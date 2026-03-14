@@ -1,0 +1,5 @@
+python-telegram-bot[socks]
+httpx[socks]
+python-dotenv
+sqlalchemy
+aiosqlite
