@@ -13,6 +13,8 @@ from src.handlers.command_handler import start, setup_commands
 from src.handlers.message_handler import handle_photo, handle_prompt, handle_video, handle_document
 from src.handlers.callback_handler import handle_callback_query
 from src.database.core import init_db
+from src.quota import QuotaManager
+from datetime import time
 import socket
 from urllib.parse import urlparse
 
@@ -65,9 +67,23 @@ def get_best_proxy(default_proxy):
     logger.warning("⚠️ All proxies failed. Trying direct connection...")
     return None # Return None to use direct connection
 
+async def clear_temp_credits_job(context):
+    """Job to clear temporary credits daily at midnight"""
+    logger = logging.getLogger("bot.jobs")
+    logger.info("🕒 Running daily temporary credits clearance...")
+    qm = QuotaManager()
+    await qm.clear_temp_credits()
+    logger.info("✅ Daily temporary credits clearance completed.")
+
 async def post_init(application):
     await init_db()
     await setup_commands(application)
+    
+    # Schedule daily job to clear temporary credits at midnight
+    application.job_queue.run_daily(
+        clear_temp_credits_job,
+        time=time(hour=0, minute=0, second=0)
+    )
 
 def main():
     setup_logging()

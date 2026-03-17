@@ -62,9 +62,14 @@ class QuotaManager:
             return user
 
     async def get_credits(self, user_id: int, username: str = None, full_name: str = None) -> int:
-        """Get user credits. Initialize with 20 if new user."""
+        """Get user credits (total of permanent and temporary). Initialize with 20 if new user."""
         user = await self.ensure_user(user_id, username, full_name)
-        return user.credits
+        return user.credits + (user.temp_credits or 0)
+
+    async def get_detailed_credits(self, user_id: int, username: str = None, full_name: str = None) -> tuple[int, int]:
+        """Get user permanent and temporary credits."""
+        user = await self.ensure_user(user_id, username, full_name)
+        return user.credits, (user.temp_credits or 0)
 
     async def check_credits(self, user_id: int, cost: int) -> bool:
         """Check if user has enough credits"""
@@ -82,9 +87,18 @@ class QuotaManager:
             user = result.scalar_one_or_none()
             
             if user:
-                old_balance = user.credits
-                user.credits = max(0, user.credits - cost)
-                new_balance = user.credits
+                old_balance = user.credits + (user.temp_credits or 0)
+                temp_credits = user.temp_credits or 0
+                
+                # Deduct from temp_credits first
+                if temp_credits >= cost:
+                    user.temp_credits = temp_credits - cost
+                else:
+                    remaining_cost = cost - temp_credits
+                    user.temp_credits = 0
+                    user.credits = max(0, user.credits - remaining_cost)
+                
+                new_balance = user.credits + user.temp_credits
                 await session.commit()
 
                 # Log action
@@ -98,7 +112,7 @@ class QuotaManager:
                         extra_info={"old_balance": old_balance}
                     )
 
-    async def checkin(self, user_id: int, username: str = None, full_name: str = None, reward: int = 10) -> bool:
+    async def checkin(self, user_id: int, username: str = None, full_name: str = None, reward: int = 5, temp_reward: int = 15) -> bool:
         """
         Perform daily check-in.
         Returns True if successful, False if already checked in today.
@@ -124,6 +138,7 @@ class QuotaManager:
             
             user.last_checkin = today
             user.credits += reward
+            user.temp_credits = (user.temp_credits or 0) + temp_reward
             user.checkin_count = (user.checkin_count or 0) + 1
             user.last_activity = datetime.now()
 
@@ -131,18 +146,27 @@ class QuotaManager:
             checkin_record = CheckinHistory(user_id=user_id, checkin_date=today)
             session.add(checkin_record)
 
-            new_balance = user.credits
+            new_balance = user.credits + user.temp_credits
             await session.commit()
             
+            total_reward = reward + temp_reward
             await LogService.log_action(
                 user_id=user_id,
                 username=username or user.username,
                 operation_type="checkin",
-                credit_change=reward,
+                credit_change=total_reward,
                 current_balance=new_balance,
-                extra_info={"checkin_date": today.isoformat()}
+                extra_info={"checkin_date": today.isoformat(), "reward": reward, "temp_reward": temp_reward}
             )
             return True
+
+    async def clear_temp_credits(self):
+        """Clear all temporary credits at midnight"""
+        async with AsyncSessionLocal() as session:
+            stmt = update(User).where(User.temp_credits > 0).values(temp_credits=0)
+            await session.execute(stmt)
+            await session.commit()
+            print(f"🔄 Temporary credits cleared at {datetime.now().isoformat()}")
 
     async def get_referral_count(self, user_id: int) -> int:
         """Get number of users invited by user_id"""

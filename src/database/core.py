@@ -51,6 +51,16 @@ async def init_db():
             except Exception as e:
                 logger.warning(f"Failed to add contribution columns: {e}")
 
+        try:
+            # Check if temp_credits column exists
+            await conn.execute(text("SELECT temp_credits FROM users LIMIT 1"))
+        except Exception:
+            try:
+                logger.info("Adding temp_credits column to users table")
+                await conn.execute(text("ALTER TABLE users ADD COLUMN temp_credits INTEGER DEFAULT 0"))
+            except Exception as e:
+                logger.warning(f"Failed to add temp_credits column: {e}")
+
 async def get_db():
     async with AsyncSessionLocal() as session:
         yield session

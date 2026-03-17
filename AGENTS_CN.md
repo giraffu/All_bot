@@ -169,10 +169,25 @@ async def test_check_quota_sufficient():
 ## 6. 部署与可观测性
 
 ### 6.1 部署步骤
+#### 本地部署
 1.  **前提条件**: Python 3.10+, PostgreSQL, MinIO, AI Backend。
 2.  **安装依赖**: `pip install -r requirements.txt`。
 3.  **设置 DB**: 运行迁移脚本（例如 `alembic` 或 `post_init` 中的 `init_db`）。
 4.  **运行**: `python src/bot_test.py`。
+
+#### Docker 部署与重启
+如果使用 Docker 部署，为了让 Bot 服务应用最新代码并正常重启，必须先移除旧容器，然后重新构建镜像。
+
+```bash
+cd deploy
+
+# 1. 停止并移除旧容器
+docker-compose down
+# (或者仅针对 bot 服务：docker-compose rm -fs bot)
+
+# 2. 重新构建镜像并在后台启动新容器
+docker-compose up -d --build
+```
 
 ### 6.2 可观测性
 -   **日志**:

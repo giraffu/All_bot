@@ -508,14 +508,15 @@ async def handle_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
         msg = (
             f"👤 **当前面板**\n\n"
             f"💠 **当前境界**：`{stats['group']}`\n"
-            f"💰 **灵石余额**：`{stats['credits']}`\n"
+            f"💰 **永久灵石**：`{stats['credits']}`\n"
+            f"⏳ **临时灵石**：`{stats['temp_credits']}` (今日有效)\n"
             f"📅 **累计签到**：`{stats['checkins']}` 天\n"
             f"🤝 **成功邀请**：`{stats['invitations']}` 人\n"
             f"🌀 **总计修炼**：`{stats['generations']}` 次\n"
             f"📤 **贡献模板**：`{stats['total_contributions']}` 个\n"
             f"✅ **采纳模板**：`{stats['approved_contributions']}` 个\n\n"
             f"{breakthrough_msg}\n\n"
-            f"💡 _每日签到或邀请道友可获得更多灵石！_"
+            f"💡 _每日签到可获得 5永久灵石 + 15临时灵石！_"
         )
         
         await robust_reply_text(update.message, msg, parse_mode="Markdown")
@@ -530,7 +531,7 @@ async def handle_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
         disclaimer = "\n\n⚠️ _注：累计签到统计始于3月5日，此前的数据未计入系统。_"
         
         if success:
-            await robust_reply_text(update.message, f"✅ **签到成功！**\n\n👤 当前境界：`{user_group}`\n📅 累计签到：`{total_days}` 天\n🎉 本次获得：`20` 灵石\n💰 当前灵石：`{current_credits}`" + disclaimer, parse_mode="Markdown")
+            await robust_reply_text(update.message, f"✅ **签到成功！**\n\n👤 当前境界：`{user_group}`\n📅 累计签到：`{total_days}` 天\n🎉 本次获得：`5` 永久灵石 + `15` 临时灵石\n💰 当前总灵石：`{current_credits}`" + disclaimer, parse_mode="Markdown")
         elif error_msg:
             await robust_reply_text(update.message, error_msg, parse_mode="Markdown")
         else:

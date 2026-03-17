@@ -169,10 +169,26 @@ async def test_check_quota_sufficient():
 ## 6. Deployment & Observability
 
 ### 6.1 Deployment Steps
+
+#### Local Deployment
 1.  **Prerequisites**: Python 3.10+, PostgreSQL, MinIO, AI Backend.
 2.  **Install Dependencies**: `pip install -r requirements.txt`.
 3.  **Setup DB**: Run migration scripts (e.g., `alembic` or `init_db` in `post_init`).
 4.  **Run**: `python src/bot_test.py`.
+
+#### Docker Deployment & Restart
+To properly restart the bot service and apply the latest code changes, you must remove the old container and rebuild it.
+
+```bash
+cd deploy
+
+# 1. Stop and remove the old container
+docker-compose down
+# (Alternatively, just for the bot service: docker-compose rm -fs bot)
+
+# 2. Rebuild the image and start the new container in the background
+docker-compose up -d --build
+```
 
 ### 6.2 Observability
 -   **Logging**:

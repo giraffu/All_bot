@@ -212,11 +212,12 @@ class PermissionService:
         """Get comprehensive stats for a user profile"""
         stats = await self.quota_manager.get_user_stats(user_id)
         group = await self.get_user_group(user_id)
-        credits = await self.quota_manager.get_credits(user_id)
+        credits, temp_credits = await self.quota_manager.get_detailed_credits(user_id)
         
         return {
             "group": group,
             "credits": credits,
+            "temp_credits": temp_credits,
             "invitations": stats.get("invitation_count", 0),
             "checkins": stats.get("checkin_count", 0),
             "generations": stats.get("generation_count", 0),
@@ -263,7 +264,7 @@ class PermissionService:
             )
             return False, 0, msg, 0
 
-        success = await self.quota_manager.checkin(user.id, username=user.username, full_name=user.full_name, reward=20)
+        success = await self.quota_manager.checkin(user.id, username=user.username, full_name=user.full_name)
         if success:
             await self.refresh_user_group(user.id)
         
