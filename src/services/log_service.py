@@ -1,7 +1,7 @@
 import json
 import logging
 from datetime import datetime, timedelta
-from typing import Optional, List, Dict, Any
+from typing import Optional, Dict, Any
 
 from sqlalchemy import select, desc, func, delete
 from sqlalchemy.exc import SQLAlchemyError

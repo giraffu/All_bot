@@ -131,24 +131,30 @@ class TestLogService(unittest.IsolatedAsyncioTestCase):
 
     async def test_retry_mechanism(self):
         """Test retry logic by mocking failure"""
-        try:
-            from unittest.mock import AsyncMock
-        except ImportError:
-            self.skipTest("AsyncMock not available")
-
-        # Mock session to fail commit
-        mock_session = AsyncMock()
-        mock_session.commit.side_effect = Exception("DB Error")
+        from sqlalchemy.exc import SQLAlchemyError
+        from unittest.mock import AsyncMock
         
-        # AsyncSessionLocal returns the session
-        mock_session_maker = MagicMock(return_value=mock_session)
+        # Create a mock that works as an async context manager
+        class MockSession:
+            def __init__(self):
+                self.add = MagicMock()
+                self.rollback = AsyncMock()
+                self.commit = AsyncMock(side_effect=SQLAlchemyError("DB Error"))
+            
+            async def __aenter__(self):
+                return self
+                
+            async def __aexit__(self, exc_type, exc_val, exc_tb):
+                pass
+                
+        mock_session_instance = MockSession()
+        mock_session_maker = MagicMock(return_value=mock_session_instance)
         
         with patch('src.services.log_service.AsyncSessionLocal', mock_session_maker):
             result = await LogService.log_action(1, "u", "op", 0, 0, max_retries=2)
             self.assertFalse(result)
             
             # Verify it retried (number of attempts = max_retries)
-            # Actually, log_action calls AsyncSessionLocal() inside the loop.
             self.assertEqual(mock_session_maker.call_count, 2)
 
 if __name__ == '__main__':

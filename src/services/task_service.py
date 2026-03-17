@@ -97,8 +97,6 @@ class TaskService:
 
         try:
             # Determine Priority
-            # user_group = await permission_service.get_user_group(user_id)
-            # priority = USER_PRIORITY_MAP.get(user_group, 0)
             priority = await permission_service.calculate_user_priority(user_id)
 
             # Submit Task
@@ -199,7 +197,6 @@ class TaskService:
             width, height = VIDEO_RESOLUTIONS.get(
                 user_group, VIDEO_RESOLUTIONS["default"]
             )
-            # priority = USER_PRIORITY_MAP.get(user_group, 0)
             priority = await permission_service.calculate_user_priority(user_id)
 
             # Submit Task
@@ -367,7 +364,6 @@ class TaskService:
             width, height = VIDEO_RESOLUTIONS.get(
                 user_group, VIDEO_RESOLUTIONS["default"]
             )
-            # priority = USER_PRIORITY_MAP.get(user_group, 0)
             priority = await permission_service.calculate_user_priority(user_id)
 
             task_id = await image_service.submit_perfect_video_edit(

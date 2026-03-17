@@ -39,7 +39,6 @@ class PermissionService:
         await self.quota_manager.ensure_user(user.id, username=user.username, full_name=user.full_name)
         
         # 1. Check Channel Subscription (If configured, this acts as the primary gatekeeper)
-        is_member = False
         if REQUIRED_CHANNEL_ID:
             try:
                 # chat_id can be string (if username) or int
@@ -48,7 +47,6 @@ class PermissionService:
                 
                 # If subscribed, allow access!
                 if member.status not in ['left', 'kicked', 'banned']:
-                    is_member = True
                     await self.check_channel_reward(user, context)
                     # Ensure is_channel_member is updated in DB
                     await self.quota_manager.update_channel_membership(user.id, True)
@@ -300,40 +298,6 @@ class PermissionService:
     async def record_contribution(self, user_id: int, file_path: str, file_type: str):
         """Record template contribution in DB"""
         await self.quota_manager.add_template_contribution(user_id, file_path, file_type)
-
-    async def is_user_exists(self, user_id: int) -> bool:
-        """Check if user exists"""
-        return await self.quota_manager.is_user_exists(user_id)
-
-    async def sync_channel_status(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
-        """
-        Force sync channel membership status from Telegram API to Database.
-        Returns True if user is a member, False otherwise.
-        """
-        user = update.effective_user
-        if not user or not REQUIRED_CHANNEL_ID:
-            return False
-
-        try:
-            channel_id = int(REQUIRED_CHANNEL_ID) if REQUIRED_CHANNEL_ID.lstrip('-').isdigit() else REQUIRED_CHANNEL_ID
-            member = await context.bot.get_chat_member(chat_id=channel_id, user_id=user.id)
-            
-            is_member = member.status not in ['left', 'kicked', 'banned']
-            
-            if is_member:
-                # Update DB and process rewards if any
-                await self.quota_manager.update_channel_membership(user.id, True)
-                await self.check_channel_reward(user, context)
-                await self.refresh_user_group(user.id, is_member=True)
-            else:
-                await self.quota_manager.update_channel_membership(user.id, False)
-                await self.refresh_user_group(user.id, is_member=False)
-                
-            return is_member
-        except Exception as e:
-            from src.logger import logger
-            logger.warning(f"Manual channel sync failed for user {user.id}: {e}")
-            return False
 
 # Singleton instance
 permission_service = PermissionService()

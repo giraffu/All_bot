@@ -1,5 +1,4 @@
-import asyncio
-from typing import AsyncGenerator, Optional
+from typing import AsyncGenerator
 from src.api_client import submit_img2img, listen_for_progress, download_image, download_video, get_system_status, submit_face_swap, submit_perfect_video_edit, submit_perfect_video_insert, get_queue_position
 
 class ImageService:

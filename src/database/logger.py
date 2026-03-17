@@ -3,7 +3,6 @@ import json
 import time
 from datetime import datetime
 from sqlalchemy import event
-from sqlalchemy.engine import Engine
 from src.context import user_id_ctx
 
 db_logger = logging.getLogger("bot.database")

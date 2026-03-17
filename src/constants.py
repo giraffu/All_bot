@@ -67,26 +67,6 @@ VIDEO_RESOLUTIONS = {
     "default": (512, 512)
 }
 
-# Default Prompts Keys
-PROMPT_KEYS = {
-    MODE_BLOWJOB: "blowjob",
-    MODE_UNDRESS_TONGUE: "undress_tongue",
-    MODE_DOGGY_STYLE: "doggy_style",
-    MODE_CLOSEUP_BLOWJOB: "closeup_blowjob",
-    MODE_PERFECT_VIDEO_INSERT: "perfect_video_insert",
-    MODE_UNDRESS: "undress",
-    # Assuming masturbation uses undress or similar if not specified
-    MODE_MASTURBATION: "masturbation" 
-}
-
-# User Group Priority Mapping (Static - Deprecated in favor of DYNAMIC_PRIORITY_RULES)
-USER_PRIORITY_MAP = {
-    "金丹期": 3,
-    "筑基期": 2,
-    "练气期": 1,
-    "凡人": 0
-}
-
 # Dynamic Priority Rules
 # Format: "Group Name": [(limit_1, priority_1), (limit_2, priority_2), ...]
 # Logic: if usage < limit_1 return priority_1, elif usage < limit_2 return priority_2... else return 0

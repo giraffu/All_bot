@@ -1,4 +1,3 @@
-import os
 import logging
 from logging.handlers import RotatingFileHandler
 from datetime import datetime
@@ -7,8 +6,6 @@ from sqlalchemy import select
 from .database.core import AsyncSessionLocal
 from .database.models import History, User
 from .services.storage import storage
-
-USER_DATA_DIR = "user_data"
 
 logger = logging.getLogger("bot")
 
@@ -39,7 +36,6 @@ class UserLogger:
     def __init__(self, user_id: int, username: str = "unknown"):
         self.user_id = int(user_id) # Store as int for DB
         self.username = username
-        # self.base_dir = Path(USER_DATA_DIR) / str(self.user_id) # Deprecated
         self.logger = logging.getLogger("bot.user")
 
     def save_input_image(self, src_path: str) -> str:

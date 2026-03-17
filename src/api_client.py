@@ -233,8 +233,8 @@ class APIClient:
                 status = info.get("status")
 
                 if status == "pending":
-                    queue_remaining = info.get("queue_remaining", "N/A")
                     # Normalize queue_pos logic removed to let service handle it
+                    pass
                 
                 yield info
                 
