@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed } from 'vue'
-import { EyeOutlined, EditOutlined, DeleteOutlined, UserDeleteOutlined } from '@ant-design/icons-vue'
+import { EyeOutlined, EditOutlined, DeleteOutlined, UserDeleteOutlined, SearchOutlined } from '@ant-design/icons-vue'
 import { formatDate } from '../utils/helpers'
 import { updateUserCredits, clearUserHistory, deleteUser } from '../api/api'
 import { message, Modal } from 'ant-design-vue'
@@ -20,11 +20,21 @@ const props = defineProps({
   }
 })
 
-const filteredUsers = computed(() => {
-  return props.users || []
-})
-
 const emit = defineEmits(['viewHistory', 'refresh'])
+
+// Search state
+const searchQuery = ref('')
+
+const filteredUsers = computed(() => {
+  if (!searchQuery.value) {
+    return props.users || []
+  }
+  const query = searchQuery.value.toLowerCase()
+  return (props.users || []).filter(user => 
+    (user.full_name && user.full_name.toLowerCase().includes(query)) ||
+    (user.username && user.username.toLowerCase().includes(query))
+  )
+})
 
 // Credits editing state
 const editCreditsVisible = ref(false)
@@ -200,7 +210,19 @@ const columns = [
 <template>
   <a-card title="用户列表" :bordered="false" class="shadow-sm rounded-xl h-full flex flex-col">
     <template #extra>
-      <a-tag color="blue">总计: {{ filteredUsers.length }}</a-tag>
+      <div class="flex items-center gap-4">
+        <a-input
+          v-model:value="searchQuery"
+          placeholder="搜索用户名称/用户名"
+          allow-clear
+          class="w-64"
+        >
+          <template #prefix>
+            <search-outlined class="text-gray-400"/>
+          </template>
+        </a-input>
+        <a-tag color="blue">总计: {{ filteredUsers.length }}</a-tag>
+      </div>
     </template>
     
     <a-alert

@@ -1,0 +1,17 @@
+version: '3.8'
+
+services:
+  bot-test:
+    build: 
+      context: ../
+      dockerfile: Dockerfile
+    container_name: tg-bot-test
+    restart: always
+    env_file:
+      - ../.env
+    volumes:
+      - ../logs:/app/logs
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    network_mode: "host" # Use host network to easily access 192.168.1.115 services
+    command: ["python", "src/bot_test.py"]

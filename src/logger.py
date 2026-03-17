@@ -1,6 +1,4 @@
 import os
-import json
-import shutil
 import logging
 from logging.handlers import RotatingFileHandler
 from datetime import datetime
@@ -8,8 +6,11 @@ from pathlib import Path
 from sqlalchemy import select
 from .database.core import AsyncSessionLocal
 from .database.models import History, User
+from .services.storage import storage
 
 USER_DATA_DIR = "user_data"
+
+logger = logging.getLogger("bot")
 
 def setup_logging(log_file="logs/bot.log"):
     """
@@ -38,52 +39,54 @@ class UserLogger:
     def __init__(self, user_id: int, username: str = "unknown"):
         self.user_id = int(user_id) # Store as int for DB
         self.username = username
-        self.base_dir = Path(USER_DATA_DIR) / str(self.user_id)
-        self.input_dir = self.base_dir / "input_images"
-        self.output_dir = self.base_dir / "output_images"
-        # self.log_file = self.base_dir / "history.jsonl" # Deprecated
-        
-        self._ensure_dirs()
+        # self.base_dir = Path(USER_DATA_DIR) / str(self.user_id) # Deprecated
         self.logger = logging.getLogger("bot.user")
-
-    def _ensure_dirs(self):
-        self.input_dir.mkdir(parents=True, exist_ok=True)
-        self.output_dir.mkdir(parents=True, exist_ok=True)
 
     def save_input_image(self, src_path: str) -> str:
         """
-        Copy input image to user's input directory.
-        Returns the filename relative to input directory.
+        Upload input image to MinIO.
+        Returns the object key.
         """
         src = Path(src_path)
         if not src.exists():
             return ""
         
         filename = src.name
-        dst = self.input_dir / filename
-        shutil.copy2(src, dst)
+        # Object key: user_id/input_images/filename
+        object_name = f"{self.user_id}/input_images/{filename}"
         
-        # Log absolute path
-        abs_path = dst.resolve()
-        self.logger.info(f"[User:{self.user_id}({self.username})] Saved input: {abs_path}")
-        return filename
+        # Upload to MinIO
+        result = storage.upload_file(src_path, object_name)
+        
+        if result:
+            self.logger.info(f"[User:{self.user_id}({self.username})] Saved input to MinIO: {object_name}")
+            return object_name
+        else:
+            self.logger.error(f"[User:{self.user_id}({self.username})] Failed to save input to MinIO")
+            return ""
 
     def save_output_image(self, image_bytes: bytes, task_id: str, extension: str = "png") -> str:
         """
-        Save generated media bytes to user's output directory.
-        Returns the filename.
+        Save generated media bytes to MinIO.
+        Returns the object key.
         """
         # Clean extension (remove dot if present)
         ext = extension.lstrip('.')
         filename = f"{task_id}.{ext}"
-        dst = self.output_dir / filename
-        with open(dst, "wb") as f:
-            f.write(image_bytes)
-            
-        # Log absolute path
-        abs_path = dst.resolve()
-        self.logger.info(f"[User:{self.user_id}({self.username})] Saved output: {abs_path} (Task: {task_id})")
-        return filename
+        
+        # Object key: user_id/output_images/filename
+        object_name = f"{self.user_id}/output_images/{filename}"
+        
+        # Upload to MinIO
+        content_type = "video/mp4" if ext in ["mp4", "webm"] else "image/png"
+        result = storage.upload_bytes(image_bytes, object_name, content_type=content_type)
+        
+        if result:
+            self.logger.info(f"[User:{self.user_id}({self.username})] Saved output to MinIO: {object_name}")
+            return object_name
+        else:
+            self.logger.error(f"[User:{self.user_id}({self.username})] Failed to save output to MinIO")
+            return ""
 
     def log_interaction(self, message: str, type: str = "Interaction"):
         """Log user interaction"""

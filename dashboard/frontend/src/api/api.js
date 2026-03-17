@@ -1,10 +1,48 @@
 import axios from 'axios'
 
-const apiBaseUrl = `http://${window.location.hostname}:8043`
+// Use relative URL in production (proxied by Nginx)
+const apiBaseUrl = import.meta.env.PROD ? '' : `http://${window.location.hostname}:8043`
 
 const api = axios.create({
   baseURL: apiBaseUrl
 })
+
+// Request interceptor to add token and prevent caching
+api.interceptors.request.use(config => {
+  const token = localStorage.getItem('token')
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`
+  }
+
+  // Add timestamp to GET requests to prevent caching
+  if (config.method === 'get') {
+    config.params = config.params || {}
+    config.params['_t'] = Date.now()
+  }
+
+  return config
+})
+
+// Response interceptor to handle 401
+api.interceptors.response.use(
+  response => response,
+  error => {
+    if (error.response && error.response.status === 401) {
+      localStorage.removeItem('token')
+      // Let the app know we are unauthorized
+      window.dispatchEvent(new Event('unauthorized'))
+    }
+    return Promise.reject(error)
+  }
+)
+
+export const login = async (username, password) => {
+  const formData = new FormData()
+  formData.append('username', username)
+  formData.append('password', password)
+  const response = await api.post('/api/auth/login', formData)
+  return response.data
+}
 
 export const fetchStats = async () => {
   const response = await api.get('/api/stats')
@@ -88,8 +126,27 @@ export const deleteTemplateContribution = async (id) => {
 }
 
 export const fetchBotQueue = async () => {
+  // Deprecated: Use fetchSystemStatus instead
   const response = await api.get('/api/bot/queue')
   return response.data
+}
+
+export const fetchSystemStatus = async () => {
+  const response = await api.get('/api/system/status')
+  return response.data
+}
+
+export const fetchTaskStatus = async (taskId) => {
+  const response = await api.get(`/api/status/${taskId}`)
+  return response.data
+}
+
+export const fetchTaskImage = (taskId) => {
+  return `${api.defaults.baseURL}/api/image/${taskId}`
+}
+
+export const fetchTaskVideo = (taskId) => {
+  return `${api.defaults.baseURL}/api/video/${taskId}`
 }
 
 export const fetchLogs = async ({ page = 1, pageSize = 20, userId = null, operationType = null, startDate = null, endDate = null }) => {

@@ -74,9 +74,13 @@ class TaskService:
         user_logger = UserLogger(user_id, username)
         saved_input_images = []
         for img_path in images:
-            saved_name = user_logger.save_input_image(img_path)
-            if saved_name:
-                saved_input_images.append(saved_name)
+            if img_path.startswith("template:"):
+                # Pass template path directly without saving
+                saved_input_images.append(img_path)
+            else:
+                saved_name = user_logger.save_input_image(img_path)
+                if saved_name:
+                    saved_input_images.append(saved_name)
 
         msg_text = (
             f"🚀 正在处理视频生成任务 (消耗{cost}灵石)..."
@@ -92,9 +96,14 @@ class TaskService:
         full_output_path = None
 
         try:
+            # Determine Priority
+            # user_group = await permission_service.get_user_group(user_id)
+            # priority = USER_PRIORITY_MAP.get(user_group, 0)
+            priority = await permission_service.calculate_user_priority(user_id)
+
             # Submit Task
             task_id = await TaskService._submit_generic_task(
-                task_type, prompt, images, negative_prompt, is_video
+                task_type, prompt, saved_input_images, negative_prompt, is_video, priority
             )
 
             # Deduct Quota (Credits)
@@ -190,15 +199,17 @@ class TaskService:
             width, height = VIDEO_RESOLUTIONS.get(
                 user_group, VIDEO_RESOLUTIONS["default"]
             )
+            # priority = USER_PRIORITY_MAP.get(user_group, 0)
+            priority = await permission_service.calculate_user_priority(user_id)
 
             # Submit Task
             if mode == MODE_DOGGY_STYLE:
                 task_id = await image_service.submit_perfect_video_insert_task(
-                    prompt, image_path, width=width, height=height
+                    prompt, saved_input_image, width=width, height=height, priority=priority
                 )
             else:
                 task_id = await image_service.submit_perfect_video_edit(
-                    prompt, image_path, width=width, height=height
+                    prompt, saved_input_image, width=width, height=height, priority=priority
                 )
 
             # Monitor Progress
@@ -356,9 +367,11 @@ class TaskService:
             width, height = VIDEO_RESOLUTIONS.get(
                 user_group, VIDEO_RESOLUTIONS["default"]
             )
+            # priority = USER_PRIORITY_MAP.get(user_group, 0)
+            priority = await permission_service.calculate_user_priority(user_id)
 
             task_id = await image_service.submit_perfect_video_edit(
-                prompt, image_path, width=width, height=height
+                prompt, saved_input_image, width=width, height=height, priority=priority
             )
 
             final_info = await TaskService._monitor_task_progress(
@@ -413,16 +426,16 @@ class TaskService:
 
     @staticmethod
     async def _submit_generic_task(
-        task_type, prompt, images, negative_prompt, is_video
+        task_type, prompt, images, negative_prompt, is_video, priority=0
     ):
         if task_type == "face_swap" and len(images) >= 2:
             return await image_service.submit_face_swap_task(
-                face_image_path=images[1], body_image_path=images[0]
+                face_image_path=images[1], body_image_path=images[0], priority=priority
             )
         elif is_video:
-            return await image_service.submit_perfect_video_edit(prompt, images[0])
+            return await image_service.submit_perfect_video_edit(prompt, images[0], priority=priority)
         else:
-            return await image_service.submit_task(prompt, images, negative_prompt)
+            return await image_service.submit_task(prompt, images, negative_prompt, priority=priority)
 
     @staticmethod
     async def _monitor_task_progress(task_id, status_msg, is_video, monitor_func):
@@ -449,13 +462,20 @@ class TaskService:
 
             # Queue handling logic
             if status == "pending":
-                queue_pos = info.get("queue_remaining")
+                # Check queue_pos (0-based) first
+                raw_pos = info.get("queue_pos")
+                queue_pos = None
                 
-                # Check for normalized queue_pos
-                if queue_pos is None:
-                    queue_pos = info.get("queue_pos")
-
-                logger.debug(f"Task {task_id} pending. Info queue_remaining: {info.get('queue_remaining')}, queue_pos: {queue_pos}")
+                if raw_pos is not None:
+                    try:
+                        queue_pos = int(raw_pos) + 1  # 0-based -> 1-based
+                    except (ValueError, TypeError):
+                        queue_pos = raw_pos
+                else:
+                    # Fallback to queue_remaining (legacy)
+                    queue_pos = info.get("queue_remaining")
+                
+                logger.debug(f"Task {task_id} pending. Info queue_pos: {raw_pos}, queue_remaining: {info.get('queue_remaining')}")
 
                 # If queue position is not in info, try fetching it explicitly
                 if queue_pos is None:
@@ -518,7 +538,7 @@ class TaskService:
             saved_output_image = user_logger.save_output_image(
                 media_bytes, task_id, extension="mp4"
             )
-            full_output_path = str(user_logger.output_dir / saved_output_image)
+            full_output_path = saved_output_image
             await user_logger.log_task(
                 prompt,
                 saved_input_images,
@@ -555,7 +575,7 @@ class TaskService:
         else:
             media_bytes = await image_service.download_result(task_id)
             saved_output_image = user_logger.save_output_image(media_bytes, task_id)
-            full_output_path = str(user_logger.output_dir / saved_output_image)
+            full_output_path = saved_output_image
             await user_logger.log_task(
                 prompt,
                 saved_input_images,

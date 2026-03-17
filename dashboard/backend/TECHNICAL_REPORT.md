@@ -12,7 +12,7 @@
 graph TD
     User[管理员] -->|访问| Web[Web 前端 (Vue3)]
     Web -->|REST API| API[后台 API (FastAPI)]
-    API -->|ORM 查询| DB[(SQLite/Postgres)]
+    API -->|ORM 查询| DB[(Postgres)]
     API -->|读取文件| Static[静态资源 (user_data/templates)]
     API -->|查询状态| Comfy[ComfyUI 服务]
     Bot[Telegram Bot] -->|写入数据| DB

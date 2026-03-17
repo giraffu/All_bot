@@ -228,10 +228,10 @@ onMounted(() => {
           <div class="flex flex-wrap gap-2 py-1">
              <template v-if="record.input_file">
                 <MediaItem 
-                  v-for="file in record.input_file.split('|')" 
-                  :key="file"
-                  :file="file"
-                  :url="getFileUrl(record.user_id, 'input_images', file)"
+                  v-for="(url, index) in (record.input_file_url || '').split('|')" 
+                  :key="index"
+                  :file="record.input_file.split('|')[index]"
+                  :url="url"
                   size="w-16 h-16"
                 />
              </template>
@@ -245,7 +245,7 @@ onMounted(() => {
             <template v-if="record.output_file">
               <MediaItem 
                 :file="record.output_file"
-                :url="getFileUrl(record.user_id, 'output_images', record.output_file)"
+                :url="record.output_file_url"
                 size="w-16 h-16"
               />
             </template>

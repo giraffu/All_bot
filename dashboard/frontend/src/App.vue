@@ -1,6 +1,7 @@
 <script setup>
-import { ref, onMounted, computed, watch } from 'vue'
-import { fetchStats, fetchUsers, fetchUserHistory, fetchStatsHistory } from './api/api'
+import { ref, onMounted, computed, watch, onUnmounted } from 'vue'
+import { fetchStats, fetchUsers, fetchUserHistory, fetchStatsHistory, fetchTaskStatus, fetchTaskImage, fetchTaskVideo } from './api/api'
+import Login from './components/Login.vue'
 import StatsCards from './components/StatsCards.vue'
 import QueueStats from './components/QueueStats.vue'
 import UserTable from './components/UserTable.vue'
@@ -19,6 +20,7 @@ import DailyTypeChart from './components/DailyTypeChart.vue'
 import CumulativeTypeChart from './components/CumulativeTypeChart.vue'
 import HistoryTable from './components/HistoryTable.vue'
 import LogTable from './components/LogTable.vue'
+import { message } from 'ant-design-vue'
 import { 
   ReloadOutlined, 
   UserOutlined, 
@@ -37,6 +39,7 @@ import {
 } from '@ant-design/icons-vue'
 
 // State
+const isAuthenticated = ref(!!localStorage.getItem('token'))
 const activeTab = ref(['home'])
 const collapsed = ref(false)
 const users = ref([])
@@ -65,6 +68,10 @@ const cumulativeStatsHistory = ref([])
 const loading = ref(false)
 const error = ref(null)
 const historyTimeRange = ref(7) // Default 7 days
+const searchQuery = ref('')
+const searchResult = ref(null)
+const searchModalVisible = ref(false)
+const searchLoading = ref(false)
 
 const timeRangeOptions = [
   { label: '最近 7 天', value: 7 },
@@ -121,6 +128,43 @@ const showModal = ref(false)
 const selectedUser = ref(null)
 const userHistory = ref([])
 const historyLoading = ref(false)
+
+const handleSearch = async () => {
+  if (!searchQuery.value.trim()) return
+  
+  searchLoading.value = true
+  try {
+    const data = await fetchTaskStatus(searchQuery.value.trim())
+    if (data) {
+      searchResult.value = { ...data, id: searchQuery.value.trim() }
+      searchModalVisible.value = true
+    }
+  } catch (err) {
+    console.error('Search error:', err)
+    message.error('未找到任务或查询失败')
+  } finally {
+    searchLoading.value = false
+  }
+}
+
+const closeSearchModal = () => {
+  searchModalVisible.value = false
+  searchResult.value = null
+}
+
+const isImage = (filename) => /\.(png|jpg|jpeg|webp)$/i.test(filename || '')
+const isVideo = (filename) => /\.(mp4|mov|webm)$/i.test(filename || '')
+const getTaskImageUrl = (id) => fetchTaskImage(id)
+const getTaskVideoUrl = (id) => fetchTaskVideo(id)
+const getStatusColor = (status) => {
+  switch(status) {
+    case 'pending': return 'orange'
+    case 'running': return 'blue'
+    case 'done': return 'success'
+    case 'error': return 'error'
+    default: return 'default'
+  }
+}
 
 // Actions
 const loadStats = async () => {
@@ -211,13 +255,36 @@ watch(activeTab, (newTab) => {
   // history and templates components handle their own data fetching on mount
 })
 
-onMounted(() => {
+const handleLoginSuccess = () => {
+  isAuthenticated.value = true
   refreshData()
+}
+
+const handleLogout = () => {
+  localStorage.removeItem('token')
+  isAuthenticated.value = false
+}
+
+const handleUnauthorized = () => {
+  isAuthenticated.value = false
+}
+
+onMounted(() => {
+  window.addEventListener('unauthorized', handleUnauthorized)
+  if (isAuthenticated.value) {
+    refreshData()
+  }
+})
+
+onUnmounted(() => {
+  window.removeEventListener('unauthorized', handleUnauthorized)
 })
 </script>
 
 <template>
-  <a-layout class="min-h-screen">
+  <Login v-if="!isAuthenticated" @login-success="handleLoginSuccess" />
+  
+  <a-layout v-else class="min-h-screen">
     <!-- Sidebar -->
     <a-layout-sider 
       v-model:collapsed="collapsed" 
@@ -262,7 +329,7 @@ onMounted(() => {
 
       <div class="sidebar-footer" v-if="!collapsed">
         <div class="text-xs text-gray-500 mb-2">v1.2.0-stable</div>
-        <a-button type="link" danger block class="flex items-center justify-center gap-2 p-0 h-auto">
+        <a-button @click="handleLogout" type="link" danger block class="flex items-center justify-center gap-2 p-0 h-auto">
           <logout-outlined /> 退出登录
         </a-button>
       </div>
@@ -295,8 +362,10 @@ onMounted(() => {
           <div class="hidden md:flex items-center bg-gray-100 rounded-full px-4 py-1.5 gap-2 border border-transparent focus-within:border-blue-400 focus-within:bg-white transition-all">
             <search-outlined class="text-gray-400" />
             <input 
+              v-model="searchQuery"
+              @keyup.enter="handleSearch"
               type="text" 
-              placeholder="快速搜索..." 
+              placeholder="输入任务ID回车搜索..." 
               class="bg-transparent border-none outline-none text-sm w-48 text-gray-600 placeholder-gray-400"
             />
           </div>
@@ -331,7 +400,7 @@ onMounted(() => {
             <template #overlay>
               <a-menu>
                 <a-menu-item>个人中心</a-menu-item>
-                <a-menu-item danger>退出登录</a-menu-item>
+                <a-menu-item danger @click="handleLogout">退出登录</a-menu-item>
               </a-menu>
             </template>
           </a-dropdown>
@@ -514,6 +583,68 @@ onMounted(() => {
       :loading="historyLoading" 
       @close="closeModal" 
     />
+
+    <!-- Task Search Result Modal -->
+    <a-modal
+      v-model:visible="searchModalVisible"
+      title="任务状态查询"
+      @cancel="closeSearchModal"
+      :footer="null"
+      width="600px"
+    >
+      <div v-if="searchResult" class="flex flex-col gap-4">
+        <div class="flex justify-between items-center p-3 bg-gray-50 rounded">
+          <span class="font-bold text-gray-600">任务ID:</span>
+          <span class="font-mono text-xs select-all">{{ searchResult.id }}</span>
+        </div>
+        
+        <div class="flex justify-between items-center p-3 bg-gray-50 rounded">
+          <span class="font-bold text-gray-600">状态:</span>
+          <a-tag :color="getStatusColor(searchResult.status)" class="text-lg px-3 py-1">
+            {{ searchResult.status ? searchResult.status.toUpperCase() : 'UNKNOWN' }}
+          </a-tag>
+        </div>
+
+        <div v-if="searchResult.status === 'pending'" class="flex flex-col gap-2 p-3 bg-orange-50 rounded border border-orange-100">
+          <div class="flex justify-between">
+            <span class="text-orange-800">当前队列位置:</span>
+            <span class="font-bold text-orange-600">{{ searchResult.queue_pos }}</span>
+          </div>
+          <div class="flex justify-between">
+            <span class="text-orange-800">剩余等待数:</span>
+            <span class="font-bold text-orange-600">{{ searchResult.queue_remaining }}</span>
+          </div>
+        </div>
+
+        <div v-if="searchResult.status === 'running'" class="flex flex-col gap-2 p-3 bg-blue-50 rounded border border-blue-100">
+          <div class="flex justify-between mb-1">
+             <span class="text-blue-800">生成进度:</span>
+             <span class="font-bold text-blue-600">{{ Math.round((searchResult.progress || 0) * 100) }}%</span>
+          </div>
+          <a-progress :percent="Math.round((searchResult.progress || 0) * 100)" status="active" />
+        </div>
+
+        <div v-if="searchResult.status === 'done'" class="flex flex-col gap-2">
+          <div v-if="isImage(searchResult.result_path)" class="rounded-lg overflow-hidden border shadow-sm">
+            <img :src="getTaskImageUrl(searchResult.id)" class="w-full object-contain max-h-[500px] bg-gray-100" />
+          </div>
+          <div v-else-if="isVideo(searchResult.result_path)" class="rounded-lg overflow-hidden border shadow-sm">
+            <video controls :src="getTaskVideoUrl(searchResult.id)" class="w-full max-h-[500px] bg-black"></video>
+          </div>
+          <div v-else class="p-4 bg-green-50 text-green-700 rounded border border-green-200">
+             任务已完成，结果文件: {{ searchResult.result_path }}
+          </div>
+          <a-button type="primary" block :href="isImage(searchResult.result_path) ? getTaskImageUrl(searchResult.id) : getTaskVideoUrl(searchResult.id)" target="_blank" class="mt-2">
+            下载/查看原文件
+          </a-button>
+        </div>
+        
+        <div v-if="searchResult.status === 'error'" class="p-4 bg-red-50 text-red-700 rounded border border-red-200">
+          <div class="font-bold mb-1">错误信息:</div>
+          <div class="font-mono text-sm whitespace-pre-wrap">{{ searchResult.error }}</div>
+        </div>
+      </div>
+    </a-modal>
   </a-layout>
 </template>
 

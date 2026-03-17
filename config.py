@@ -4,40 +4,65 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+# --- Bot Configuration ---
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 BOT_TOKEN_TEST = os.getenv("BOT_TOKEN_test")
 FILE_BOT_TOKEN = os.getenv("FILE_BOT_TOKEN")
+
+# --- Telethon Configuration ---
 TELETHON_API_ID = os.getenv("TELETHON_API_ID")
 TELETHON_API_HASH = os.getenv("TELETHON_API_HASH")
-GROUP_ID = os.getenv("GROUP_ID")
 PHONE = os.getenv("PHONE")
 PASSWORD = os.getenv("PASSWORD")
-# Default to the previously hardcoded proxy if not set in env
-PROXY_URL = os.getenv("PROXY_URL", "socks5://10.137.118.157:7890")
+GROUP_ID = os.getenv("GROUP_ID")
 
-API_BASE = os.getenv("API_BASE", "http://127.0.0.1:8003")
+# --- Proxy Configuration ---
+# Default to empty if not set, let bot detect or use system proxy
+PROXY_URL = os.getenv("PROXY_URL")
+
+# --- Database Configuration ---
+# Only PostgreSQL is supported
+DATABASE_URL = os.getenv("DATABASE_URL")
+if not DATABASE_URL or DATABASE_URL.startswith("sqlite"):
+    # Fallback or error if not provided?
+    # Better to default to a sensible Postgres URL or raise error.
+    # For now, let's assume env var is set, or provide a default local PG
+    DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+asyncpg://postgres:postgres@localhost/bot_db")
+
+# --- MinIO Configuration ---
+MINIO_ENDPOINT = os.getenv("MINIO_ENDPOINT", "192.168.1.115:9000")
+MINIO_ACCESS_KEY = os.getenv("MINIO_ACCESS_KEY", "minioadmin")
+MINIO_SECRET_KEY = os.getenv("MINIO_SECRET_KEY", "minioadmin")
+MINIO_BUCKET = os.getenv("MINIO_BUCKET", "bot-data")
+MINIO_TEMPLATE_BUCKET = os.getenv("MINIO_TEMPLATE_BUCKET", "bot-template")
+MINIO_SECURE = os.getenv("MINIO_SECURE", "false").lower() == "true"
+MINIO_PUBLIC_URL = os.getenv("MINIO_PUBLIC_URL", f"http://{MINIO_ENDPOINT}")
+
+# --- API Configuration ---
+# Default to the backend server IP
+API_BASE = os.getenv("API_BASE", "http://192.168.1.226:8003")
+API_TOKEN = os.getenv("API_TOKEN", "your_secure_token_here")  # Added based on changelog
+
+# Endpoints constructed from API_BASE
 IMG2IMG_ENDPOINT = f"{API_BASE}/comfy_img2img"
 STATUS_ENDPOINT = f"{API_BASE}/status"
-VIDEO_STATUS_ENDPOINT = f"{API_BASE}/video/status"
 IMAGE_ENDPOINT = f"{API_BASE}/image"
 VIDEO_ENDPOINT = f"{API_BASE}/video"
-PERFECT_VIDEO_EDIT_ENDPOINT = "http://10.137.70.8:8003/perfect_video_edit"
+PERFECT_VIDEO_EDIT_ENDPOINT = f"{API_BASE}/perfect_video_edit" # Unified endpoint
 PERFECT_VIDEO_INSERT_ENDPOINT = f"{API_BASE}/perfect_video_insert"
 FACE_SWAP_ENDPOINT = f"{API_BASE}/face_swap"
-QUEUE_POSITION_ENDPOINT = f"{API_BASE}/queue/position"
 
-
-# LLM 配置
+# --- LLM Configuration ---
 LLM_API_URL = os.getenv("LLM_API_URL", "http://8.148.72.50:1234/v1/chat/completions")
 LLM_MODEL_NAME = os.getenv("LLM_MODEL_NAME", "huihui-qwen3-vl-30b-a3b-instruct-abliterated")
 
-# 轮询配置
-POLL_INTERVAL = 2      # 秒
-POLL_TIMEOUT = 180     # 最大等待 3 分钟
+# --- Polling Configuration ---
+POLL_INTERVAL = int(os.getenv("POLL_INTERVAL", "2"))
+POLL_TIMEOUT = int(os.getenv("POLL_TIMEOUT", "180"))
 
-# 权限控制
+# --- Permission Configuration ---
 REQUIRED_CHANNEL_ID = os.getenv("REQUIRED_CHANNEL_ID")
 CHANNEL_INVITE_LINK = os.getenv("CHANNEL_INVITE_LINK")
 
-# 限额配置
+# --- Limit Configuration ---
 DAILY_LIMIT = int(os.getenv("DAILY_LIMIT", "10"))

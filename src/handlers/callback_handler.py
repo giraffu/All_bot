@@ -5,9 +5,9 @@ from src.utils import (
     robust_send_message, robust_edit_text, load_prompts, 
     robust_edit_reply_markup, robust_edit_caption
 )
+from src.handlers.utils import with_db_logging_context
 from src.constants import (
     MODE_UNDRESS, MODE_MASTURBATION, 
-    MODE_PENETRATION_STEP1, TEMPLATE_DIR_PENETRATION,
     MODE_NAME_MAP, MODE_RANDOM_FACESWAP
 )
 from src.services.task_service import TaskService
@@ -16,6 +16,7 @@ import os
 import random
 import asyncio
 
+@with_db_logging_context
 async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
     Handle callback queries from inline keyboards.
@@ -196,11 +197,9 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
     elif data == "random_faceswap_again":
         # "再来一张" (Random FaceSwap Again)
         face_image_path = context.user_data.get('last_face_image')
-        if not face_image_path or not os.path.exists(face_image_path):
+        if not face_image_path:
             await robust_send_message(context.bot, query.message.chat_id, "❌ 找不到原始人脸图片，请重新发送。")
             return
-
-        from src.constants import TEMPLATE_DIR_QUICK_FACE
         
         # Permission check
         if not await permission_service.check_quota(update, context, cost=2):
@@ -212,16 +211,18 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
         prompts_config = load_prompts()
 
         try:
-            os.makedirs(TEMPLATE_DIR_QUICK_FACE, exist_ok=True)
-            template_files = [f for f in os.listdir(TEMPLATE_DIR_QUICK_FACE) 
-                             if f.lower().endswith(('.png', '.jpg', '.jpeg', '.webp'))]
+            from config import MINIO_TEMPLATE_BUCKET
+            from src.services.storage import storage
+            
+            template_files = storage.list_objects("quick_face/", bucket=MINIO_TEMPLATE_BUCKET)
+            template_files = [f for f in template_files if f.lower().endswith(('.png', '.jpg', '.jpeg', '.webp'))]
             
             if not template_files:
                 await robust_send_message(context.bot, chat_id, "❌ 系统错误：未找到身体模板。")
                 return
 
             random_template = random.choice(template_files)
-            template_path = os.path.join(TEMPLATE_DIR_QUICK_FACE, random_template)
+            template_path = f"template:{random_template}"
             
             prompt = prompts_config.get("face_swap", "face swap")
             swapped_images = [template_path, face_image_path] 
@@ -292,56 +293,27 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
         processed = 0
         
         # Logic specific to modes
-        if mode == MODE_PENETRATION_STEP1:
-            # Penetration logic needs Template
-            try:
-                template_files = [f for f in os.listdir(TEMPLATE_DIR_PENETRATION) 
-                                 if f.lower().endswith(('.png', '.jpg', '.jpeg', '.webp'))]
-                
-                if not template_files:
-                    await robust_send_message(context.bot, query.message.chat_id, "❌ 系统错误：无模板")
-                else:
-                    for img_path in batch_images:
-                        # Update Progress
-                        await robust_edit_text(query.message, f"🚀 **正在处理第 {processed+1}/{total_count} 个任务...**")
-                        
-                        random_template = random.choice(template_files)
-                        template_path = os.path.join(TEMPLATE_DIR_PENETRATION, random_template)
-                        final_images = [img_path, template_path]
-                        prompt = prompts_config.get("penetration", "penetration")
-                        
-                        await TaskService.process_generation_task(context, chat_id, user_id, username, prompt, final_images, status_msg_id=status_msg_id, delete_status=False, task_type="penetration")
-                        processed += 1
-                        
-                        # Delay to prevent backend overload (422)
-                        await asyncio.sleep(2)
-                        
-            except Exception as e:
-                await robust_send_message(context.bot, query.message.chat_id, f"❌ 错误: {e}")
-
-        else:
-            # Standard Single Image Logic
-            prompt = "undress"
-            is_video = False
-            task_type = "image"
+        prompt = "undress"
+        is_video = False
+        task_type = "image"
+        
+        if mode == MODE_UNDRESS:
+            prompt = prompts_config.get("undress", "undress")
+            task_type = "undress"
+        elif mode == MODE_MASTURBATION:
+            prompt = prompts_config.get("masturbation", "masturbation")
+            task_type = "masturbation"
+        
+        for img_path in batch_images:
+            # Update Progress
+            await robust_edit_text(query.message, f"🚀 **正在处理第 {processed+1}/{total_count} 个任务...**")
             
-            if mode == MODE_UNDRESS:
-                prompt = prompts_config.get("undress", "undress")
-                task_type = "undress"
-            elif mode == MODE_MASTURBATION:
-                prompt = prompts_config.get("masturbation", "masturbation")
-                task_type = "masturbation"
+            # One by one
+            await TaskService.process_generation_task(context, chat_id, user_id, username, prompt, [img_path], is_video=is_video, status_msg_id=status_msg_id, delete_status=False, task_type=task_type)
+            processed += 1
             
-            for img_path in batch_images:
-                # Update Progress
-                await robust_edit_text(query.message, f"🚀 **正在处理第 {processed+1}/{total_count} 个任务...**")
-                
-                # One by one
-                await TaskService.process_generation_task(context, chat_id, user_id, username, prompt, [img_path], is_video=is_video, status_msg_id=status_msg_id, delete_status=False, task_type=task_type)
-                processed += 1
-                
-                # Delay to prevent backend overload (422)
-                await asyncio.sleep(2)
+            # Delay to prevent backend overload (422)
+            await asyncio.sleep(2)
         
         # Done
         try:

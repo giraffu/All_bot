@@ -1,12 +1,29 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 from sqlalchemy import select, update, func
 from .database.core import AsyncSessionLocal
-from .database.models import User, Referral, TemplateContribution, CheckinHistory, History
+from .database.models import User, Referral, TemplateContribution, CheckinHistory, History, UserLog
 from .services.log_service import LogService
+from .constants import GENERATION_TASK_TYPES
 
 class QuotaManager:
     def __init__(self):
         pass
+
+    async def get_daily_usage(self, user_id: int) -> int:
+        """Get number of generation tasks performed by user today"""
+        async with AsyncSessionLocal() as session:
+            today = datetime.now().date()
+            # Convert date to datetime for comparison if needed, but SQLAlchemy handles date comparison usually.
+            # However, UserLog.created_at is DateTime. So we should compare >= today midnight.
+            today_start = datetime.combine(today, datetime.min.time())
+            
+            stmt = select(func.count(UserLog.id)).where(
+                UserLog.user_id == user_id,
+                UserLog.operation_type.in_(GENERATION_TASK_TYPES),
+                UserLog.created_at >= today_start
+            )
+            result = await session.execute(stmt)
+            return result.scalar() or 0
 
     async def is_user_exists(self, user_id: int) -> bool:
         """Check if user exists without creating"""

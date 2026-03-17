@@ -76,10 +76,10 @@ defineEmits(['close'])
                 <div class="flex flex-wrap gap-2">
                   <template v-if="item.input_file">
                     <MediaItem 
-                      v-for="file in item.input_file.split('|')" 
-                      :key="file"
-                      :file="file"
-                      :url="getFileUrl(item.user_id, 'input_images', file)"
+                      v-for="(url, index) in (item.input_file_url || '').split('|')" 
+                      :key="index"
+                      :file="item.input_file.split('|')[index]"
+                      :url="url"
                     />
                   </template>
                   <div v-else class="w-32 h-32 flex items-center justify-center bg-gray-100 rounded-lg text-[10px] text-gray-400 border border-dashed border-gray-300">无输入</div>
@@ -93,7 +93,7 @@ defineEmits(['close'])
                   <template v-if="item.output_file">
                     <MediaItem 
                       :file="item.output_file"
-                      :url="getFileUrl(item.user_id, 'output_images', item.output_file)"
+                      :url="item.output_file_url"
                     />
                   </template>
                   <div v-else class="w-32 h-32 flex items-center justify-center bg-gray-100 rounded-lg text-[10px] text-gray-400 border border-dashed border-gray-300">未完成</div>

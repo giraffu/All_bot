@@ -7,6 +7,9 @@ Desktop.ini
 .vscode/
 .idea/
 .trae/
+.cursor/
+.cursorrules
+.zed/
 *.swp
 *.swo
 
@@ -19,6 +22,8 @@ venv/
 ENV/
 env/
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
 .coverage
 htmlcov/
 build/
@@ -88,14 +93,18 @@ yarn-error.log*
 logs/
 tmp/
 temp/
+*.diff
+*.patch
+*_progress.json
 
 # Environment and Secret files
 .env
 .env.local
 .env.development.local
+.env.test
 .env.test.local
 .env.production.local
-! .env.example
+!.env.example
 
 # Project specific (重要：忽略用户数据和临时生成内容)
 backups/

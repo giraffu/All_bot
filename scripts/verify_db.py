@@ -7,7 +7,7 @@ from sqlalchemy import select, func
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.database.core import AsyncSessionLocal
-from src.database.models import User, Permission, Referral
+from src.database.models import User, Referral
 
 async def verify():
     async with AsyncSessionLocal() as session:
@@ -15,11 +15,6 @@ async def verify():
         result = await session.execute(select(func.count(User.id)))
         user_count = result.scalar()
         print(f"Users: {user_count}")
-        
-        # Count Permissions
-        result = await session.execute(select(func.count(Permission.id)))
-        perm_count = result.scalar()
-        print(f"Permissions: {perm_count}")
         
         # Count Referrals
         result = await session.execute(select(func.count(Referral.id)))

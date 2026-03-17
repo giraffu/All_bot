@@ -3,3 +3,6 @@ httpx[socks]
 python-dotenv
 sqlalchemy
 aiosqlite
+minio
+asyncpg
+psycopg2-binary

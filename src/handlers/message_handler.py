@@ -20,7 +20,7 @@ from src.constants import (
     MODE_TEMPLATE_CONTRIBUTE, MODE_NONE, MODE_CUSTOM_VIDEO, MODE_PERFECT_VIDEO_INSERT,
     MODE_DOGGY_STYLE, MODE_BLOWJOB, MODE_UNDRESS_TONGUE, MODE_CLOSEUP_BLOWJOB
 )
-from src.handlers.utils import _is_mentioned, MockMessage
+from src.handlers.utils import _is_mentioned, MockMessage, with_db_logging_context
 
 # Re-exporting for compatibility if needed, but preferred to import from constants/utils
 process_generation_task = task_service.process_generation_task
@@ -33,6 +33,7 @@ os.makedirs(TEMP_TEMPLATE_DIR, exist_ok=True)
 
 logger = logging.getLogger(__name__)
 
+@with_db_logging_context
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Main photo handler entry point"""
     if not _is_mentioned(update, context):
@@ -72,7 +73,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data['pending_images'].append(local_path)
 
         # 2. Dispatch by Mode
-        if mode in [MODE_UNDRESS, MODE_MASTURBATION, MODE_PENETRATION_STEP1]:
+        if mode in [MODE_UNDRESS, MODE_MASTURBATION]:
             await _handle_quick_task(update, context, local_path)
             context.user_data['pending_images'] = []
         elif mode in [MODE_FACESWAP_STEP1, MODE_FACESWAP_STEP2]:
@@ -108,6 +109,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.error(f"Error in handle_photo for user {user.id}: {e}", exc_info=True)
         await robust_reply_text(msg, f"❌ 图片处理错误：{str(e)}")
 
+@with_db_logging_context
 async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle video uploads"""
     if not _is_mentioned(update, context):
@@ -123,6 +125,7 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Other video handling can go here if needed
     await robust_reply_text(update.message, "⚠️ 当前模式不支持视频处理。")
 
+@with_db_logging_context
 async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle document uploads (images or videos as files)"""
     if not _is_mentioned(update, context):
@@ -164,7 +167,7 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data['pending_images'].append(local_path)
 
         # 2. Dispatch by Mode
-        if mode in [MODE_UNDRESS, MODE_MASTURBATION, MODE_PENETRATION_STEP1]:
+        if mode in [MODE_UNDRESS, MODE_MASTURBATION]:
             await _handle_quick_task(update, context, local_path)
             context.user_data['pending_images'] = []
         elif mode in [MODE_FACESWAP_STEP1, MODE_FACESWAP_STEP2]:
@@ -240,32 +243,7 @@ async def _handle_quick_task(update: Update, context: ContextTypes.DEFAULT_TYPE,
     final_images = [image_path]
 
     try:
-        if mode == MODE_PENETRATION_STEP1:
-            # Penetration logic: Need to pick a random template
-            if not os.path.exists(TEMPLATE_DIR_PENETRATION):
-                 await robust_reply_text(msg, "❌ 系统错误：模板目录不存在")
-                 if os.path.exists(image_path):
-                     try: os.remove(image_path)
-                     except: pass
-                 return
-                 
-            template_files = [f for f in os.listdir(TEMPLATE_DIR_PENETRATION) 
-                             if f.lower().endswith(('.png', '.jpg', '.jpeg', '.webp'))]
-            
-            if not template_files:
-                await robust_reply_text(msg, "❌ 系统错误：无可用模板")
-                if os.path.exists(image_path):
-                    try: os.remove(image_path)
-                    except: pass
-                return
-            
-            random_template = random.choice(template_files)
-            template_path = os.path.join(TEMPLATE_DIR_PENETRATION, random_template)
-            final_images = [image_path, template_path] # [UserImage, Template]
-            prompt = prompts_config.get("penetration", "penetration")
-            task_type = "penetration"
-            
-        elif mode == MODE_UNDRESS:
+        if mode == MODE_UNDRESS:
             prompt = prompts_config.get("undress", "undress")
             task_type = "undress"
             
@@ -338,16 +316,20 @@ async def _handle_photo_random_faceswap(update: Update, context: ContextTypes.DE
     context.user_data['pending_images'] = []
 
     try:
-        os.makedirs(TEMPLATE_DIR_QUICK_FACE, exist_ok=True)
-        template_files = [f for f in os.listdir(TEMPLATE_DIR_QUICK_FACE) 
-                         if f.lower().endswith(('.png', '.jpg', '.jpeg', '.webp'))]
+        from config import MINIO_TEMPLATE_BUCKET
+        from src.services.storage import storage
+        
+        template_files = storage.list_objects("quick_face/", bucket=MINIO_TEMPLATE_BUCKET)
+        template_files = [f for f in template_files if f.lower().endswith(('.png', '.jpg', '.jpeg', '.webp'))]
         
         if not template_files:
-            await robust_reply_text(msg, "❌ 系统错误：未找到身体模板。请联系管理员在 templates/quick_face 目录下添加图片。")
+            await robust_reply_text(msg, "❌ 系统错误：未找到身体模板。请联系管理员添加图片。")
             return
 
         random_template = random.choice(template_files)
-        template_path = os.path.join(TEMPLATE_DIR_QUICK_FACE, random_template)
+        # Random faceswap body is images[0] (template), face is images[1] (user input)
+        # So we pass [template_path, face_image_path]
+        template_path = f"template:{random_template}"
         
         prompt = prompts_config.get("face_swap", "face swap")
         # images[0] is Body, images[1] is Face in process_generation_task for face_swap
@@ -377,8 +359,14 @@ async def _handle_photo_random_faceswap(update: Update, context: ContextTypes.DE
 async def _handle_photo_edit(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle default Edit mode"""
     msg = update.message
-    count = len(context.user_data['pending_images'])
-    await robust_reply_text(msg, f"📥 收到第 {count} 张图片。请继续发送图片，或发送提示词 (Text) 开始生成。")
+    
+    # Check how many images we already have
+    pending_count = len(context.user_data.get('pending_images', []))
+    
+    if pending_count > 1:
+        await robust_reply_text(msg, "⚠️ 已收到多张图片。当前模式仅最后一张图片会生效，请直接发送提示词 (Text) 开始生成。")
+    else:
+        await robust_reply_text(msg, "📥 收到图片。请发送提示词 (Text) 开始生成。")
 
 async def _handle_template_contribution(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle template contribution (Save to templates/temps/)"""
@@ -434,6 +422,7 @@ async def _handle_template_contribution(update: Update, context: ContextTypes.DE
         logger.error(f"Error saving template contribution: {e}", exc_info=True)
         await robust_reply_text(msg, f"❌ 保存失败：{str(e)}")
 
+@with_db_logging_context
 async def handle_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle text messages and menu commands"""
     if not await permission_service.check_access(update, context):
@@ -444,7 +433,7 @@ async def handle_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # --- New Menu Navigation Logic ---
     if text == "🖼️ 懒人P图":
         keyboard = [
-            ["💃 快速脱衣", "🎭 快速换脸", "🥵 快速自慰", "🍆 快速抽插"],
+            ["💃 快速脱衣", "🎭 快速换脸", "🥵 快速自慰"],
             ["🎭 随机换脸", "🎁 模板共建"],
             ["🔙 返回主菜单"]
         ]
@@ -475,6 +464,8 @@ async def handle_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     # Menu Commands
     if text in ["💰 个人中心", "👤 个人中心"]:
+        # 强制同步频道状态，确保“凡人”->“练气期”及时更新
+        await permission_service.sync_channel_status(update, context)
         await permission_service.ensure_user(update)
         user_id = update.effective_user.id
         stats = await permission_service.get_user_detailed_stats(user_id)
@@ -570,11 +561,14 @@ async def handle_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if text in ["⏳ 排队状态", "排队", "/queue"]:
         status = await image_service.get_queue_info()
         if status:
+             queue_by_type = status.get('queue_by_type', {})
              msg = (
                  "📊 **宗门灵气损耗现状**\n\n"
-                 f"👥 当前闭关道友：`{status.get('total_active_tasks', 0)}` 位\n"
-                 f"🎨 正在炼丹（P图）：`{status.get('img2img_active_tasks', 0)}` 炉\n"
-                 f"🎬 正在演武（视频）：`{status.get('img2video_active_tasks', 0)}` 场"
+                 f"👥 总排队任务：`{status.get('queue_size', 0)}` 个\n"
+                 f"🎨 图生图：`{queue_by_type.get('img2img', 0)}` 个\n"
+                 f"🎭 人脸替换：`{queue_by_type.get('face_swap', 0)}` 个\n"
+                 f"🎬 视频插入：`{queue_by_type.get('video_insert', 0)}` 个\n"
+                 f"🎬 视频编辑（通用）：`{queue_by_type.get('video_edit', 0)}` 个"
              )
              await robust_reply_text(update.message, msg, parse_mode="Markdown")
         else:
@@ -588,10 +582,7 @@ async def handle_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "🎭 随机换脸": (MODE_RANDOM_FACESWAP, "🎭 已切换到【随机换脸】模式 (消耗 2 灵石)。\n请发送一张【人脸】图片，我将自动匹配模板处理。"),
         "🎁 模板共建": (MODE_TEMPLATE_CONTRIBUTE, "🎁 已切换到【模板共建】模式。\n\n可以选择发送1到n张图片、视频，模板需要包含脸部和身体，露脸图片不会泄露，仅用于模板库建设，模板采纳会奖励灵石。"),
         "🥵 快速自慰": (MODE_MASTURBATION, "🥵 已切换到【快速自慰】模式 (消耗 2 灵石)。\n请发送一张图片，我将自动处理。"),
-        "🍆 快速抽插": (MODE_PENETRATION_STEP1, "🍆 已切换到【快速抽插】模式 (消耗 2 灵石)。\n请发送一张【女主】图片，我将自动匹配模板处理。"),
-        "✨ 🎨 自由P图 🎨 ✨": (MODE_EDIT, "🎨 已切换到【自由P图】模式 (消耗 2 灵石)。\n请发送1-3张图片，然后输入提示词。"),
-        "🎨 自由P图": (MODE_EDIT, "🎨 已切换到【自由P图】模式 (消耗 2 灵石)。\n请发送1-3张图片，然后输入提示词。"),
-        "🎨 AI编辑": (MODE_EDIT, "🎨 已切换到【自由P图】模式 (消耗 2 灵石)。\n请发送1-3张图片，然后输入提示词。"),
+        "🎨 自由P图": (MODE_EDIT, "🎨 已切换到【自由P图】模式 (消耗 2 灵石)。\n请发送一张图片。"),
         "🎬 自定义图生视频": (MODE_CUSTOM_VIDEO, "🎬 已切换到【自定义图生视频】模式 (消耗 6 灵石)。\n请发送一张【起始图片】。\n(注意：该模式生成 5 秒视频，请确保提示词动作逻辑合理)"),
         "🛌 动图传教士": (MODE_PERFECT_VIDEO_INSERT, "🛌 已切换到【动图传教士】模式 (消耗 6 灵石)。\n请发送一张【人脸】图片（正面、清晰），我将自动处理。"),
         "🎬 动图后入": (MODE_DOGGY_STYLE, "🎬 已切换到【动图后入】模式 (消耗 6 灵石)。\n请发送一张【人脸】图片（正面、清晰），我将自动处理。"),
@@ -616,13 +607,18 @@ async def handle_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
     images = context.user_data.get('pending_images', [])
     
     if not images:
-        await robust_reply_text(update.message, "请先发送至少一张图片。")
+        await robust_reply_text(update.message, "请先发送一张图片。")
         return
 
+    # In single image mode, we only care about the last sent valid image
     valid_images = [path for path in images if os.path.exists(path)]
     if not valid_images:
-        await robust_reply_text(update.message, "❌ 所有图片已丢失，请重新发送图片。")
+        await robust_reply_text(update.message, "❌ 图片已丢失，请重新发送图片。")
         return
+    
+    # Force single image for EDIT mode to match prompt
+    if mode == MODE_EDIT:
+        valid_images = [valid_images[-1]]
 
     # Execute Generation
     chat_id = update.message.chat_id
@@ -639,7 +635,19 @@ async def handle_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         # Default Edit/Generation
         is_video = False
-        await task_service.process_generation_task(context, chat_id, user_id, username, text, valid_images, is_video=is_video)
+        task_type = "image"
+        # Determine task type from mode if possible to avoid fallback to img2img
+        if mode in [MODE_FACESWAP_STEP1, MODE_FACESWAP_STEP2, MODE_RANDOM_FACESWAP]:
+            task_type = "face_swap"
+        elif mode == MODE_UNDRESS:
+            task_type = "undress"
+        elif mode == MODE_MASTURBATION:
+            task_type = "masturbation"
+            
+        await task_service.process_generation_task(
+            context, chat_id, user_id, username, text, valid_images, 
+            is_video=is_video, task_type=task_type
+        )
 
     # Clear pending after generation
     context.user_data['pending_images'] = []

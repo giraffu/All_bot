@@ -4,10 +4,27 @@ from config import REQUIRED_CHANNEL_ID, CHANNEL_INVITE_LINK
 from src.quota import QuotaManager
 from src.database.core import AsyncSessionLocal
 from src.utils import robust_send_message
+from src.constants import DYNAMIC_PRIORITY_RULES
 
 class PermissionService:
     def __init__(self):
         self.quota_manager = QuotaManager()
+
+    async def calculate_user_priority(self, user_id: int) -> int:
+        """
+        Calculate dynamic priority based on user group and daily usage.
+        Rules defined in DYNAMIC_PRIORITY_RULES.
+        """
+        group = await self.get_user_group(user_id)
+        usage = await self.quota_manager.get_daily_usage(user_id)
+        
+        rules = DYNAMIC_PRIORITY_RULES.get(group, [])
+        for limit, priority in rules:
+            if usage < limit:
+                return priority
+        
+        # If no rule matched (usage exceeded all limits), or empty rules (Mortal), return 0
+        return 0
 
     async def check_access(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
         """
@@ -34,6 +51,7 @@ class PermissionService:
                     is_member = True
                     await self.check_channel_reward(user, context)
                     # Ensure is_channel_member is updated in DB
+                    await self.quota_manager.update_channel_membership(user.id, True)
                     await self.quota_manager.process_channel_reward(user.id)
                     await self.refresh_user_group(user.id, is_member=True)
                     return True
@@ -53,9 +71,25 @@ class PermissionService:
         # If user has credits, they can use features even if not in channel
         credits = await self.quota_manager.get_credits(user.id)
         if credits > 0:
+            # Even if API check failed, if they have credits, let them pass.
+            # BUT, we might want to retry updating their group if they are actually a member in DB
+            stats = await self.quota_manager.get_user_stats(user.id)
+            if stats.get("is_channel_member"):
+                 await self.refresh_user_group(user.id, is_member=True)
             return True
 
         # Default: Access Denied (Must join channel or get credits)
+        # Final safety check: if API failed but we suspect they might be a member (e.g. from DB or just retry),
+        # we can't really do much without credits.
+        # However, user mentioned they are in channel but DB says False (Mortal).
+        # This block is reached if:
+        # 1. Channel check returned 'left/kicked' OR Channel check FAILED (exception)
+        # 2. AND Credits <= 0
+        
+        # If the channel check FAILED (exception), we might be blocking a valid user who has 0 credits.
+        # But we can't let them in without verifying.
+        # The user says "I am in channel", so check must be returning 'left' or failing.
+        
         invite_link = CHANNEL_INVITE_LINK or "https://t.me/AiVisionAV"
         msg = (
             "⛩️ **尚未拜入宗门**\n\n"
@@ -107,6 +141,36 @@ class PermissionService:
         """Check if user exists"""
         return await self.quota_manager.is_user_exists(user_id)
 
+    async def sync_channel_status(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
+        """
+        Force sync channel membership status from Telegram API to Database.
+        Returns True if user is a member, False otherwise.
+        """
+        user = update.effective_user
+        if not user or not REQUIRED_CHANNEL_ID:
+            return False
+
+        try:
+            channel_id = int(REQUIRED_CHANNEL_ID) if REQUIRED_CHANNEL_ID.lstrip('-').isdigit() else REQUIRED_CHANNEL_ID
+            member = await context.bot.get_chat_member(chat_id=channel_id, user_id=user.id)
+            
+            is_member = member.status not in ['left', 'kicked', 'banned']
+            
+            if is_member:
+                # Update DB and process rewards if any
+                await self.quota_manager.update_channel_membership(user.id, True)
+                await self.check_channel_reward(user, context)
+                await self.refresh_user_group(user.id, is_member=True)
+            else:
+                await self.quota_manager.update_channel_membership(user.id, False)
+                await self.refresh_user_group(user.id, is_member=False)
+                
+            return is_member
+        except Exception as e:
+            from src.logger import logger
+            logger.warning(f"Manual channel sync failed for user {user.id}: {e}")
+            return False
+
     async def ensure_user(self, update: Update):
         """Ensure user info is up to date in DB"""
         user = update.effective_user
@@ -126,7 +190,7 @@ class PermissionService:
         stats = await self.quota_manager.get_user_stats(user_id)
         
         # Use provided is_member or fall back to DB value
-        is_channel_member = is_member if is_member is not None else stats.get("is_channel_member", False)
+        is_channel_member = is_member if is_member is not None else (stats.get("is_channel_member") or False)
         
         group = "凡人"
         
@@ -236,6 +300,40 @@ class PermissionService:
     async def record_contribution(self, user_id: int, file_path: str, file_type: str):
         """Record template contribution in DB"""
         await self.quota_manager.add_template_contribution(user_id, file_path, file_type)
+
+    async def is_user_exists(self, user_id: int) -> bool:
+        """Check if user exists"""
+        return await self.quota_manager.is_user_exists(user_id)
+
+    async def sync_channel_status(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
+        """
+        Force sync channel membership status from Telegram API to Database.
+        Returns True if user is a member, False otherwise.
+        """
+        user = update.effective_user
+        if not user or not REQUIRED_CHANNEL_ID:
+            return False
+
+        try:
+            channel_id = int(REQUIRED_CHANNEL_ID) if REQUIRED_CHANNEL_ID.lstrip('-').isdigit() else REQUIRED_CHANNEL_ID
+            member = await context.bot.get_chat_member(chat_id=channel_id, user_id=user.id)
+            
+            is_member = member.status not in ['left', 'kicked', 'banned']
+            
+            if is_member:
+                # Update DB and process rewards if any
+                await self.quota_manager.update_channel_membership(user.id, True)
+                await self.check_channel_reward(user, context)
+                await self.refresh_user_group(user.id, is_member=True)
+            else:
+                await self.quota_manager.update_channel_membership(user.id, False)
+                await self.refresh_user_group(user.id, is_member=False)
+                
+            return is_member
+        except Exception as e:
+            from src.logger import logger
+            logger.warning(f"Manual channel sync failed for user {user.id}: {e}")
+            return False
 
 # Singleton instance
 permission_service = PermissionService()

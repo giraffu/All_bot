@@ -12,6 +12,7 @@ os.chdir(str(PROJECT_ROOT))
 
 from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, desc, case, Integer, Float
@@ -25,13 +26,19 @@ from src.database.core import get_db, init_db
 from src.database.models import User, History, Referral, TemplateContribution, CheckinHistory, UserLog
 from src.services.image_service import image_service
 from src.services.log_service import LogService
-from config import API_BASE, STATUS_ENDPOINT
+from src.services.storage import storage
+from config import API_BASE, STATUS_ENDPOINT, MINIO_BUCKET, MINIO_TEMPLATE_BUCKET
+from dashboard.backend.auth import auth_router, get_current_user, oauth2_scheme
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("dashboard")
 
 app = FastAPI(title="TeleBot Dashboard API")
+
+# Include Auth Router
+app.include_router(auth_router, prefix="/api/auth", tags=["auth"])
+
 
 @app.on_event("startup")
 async def startup_event():
@@ -42,36 +49,7 @@ async def startup_event():
     except Exception as e:
         logger.error(f"Failed to initialize database: {e}")
 
-# Mount user_data as static files for image access
-user_data_path = PROJECT_ROOT / "user_data"
-if user_data_path.exists():
-    app.mount("/images", StaticFiles(directory=str(user_data_path)), name="images")
-else:
-    print(f"Warning: user_data directory not found at {user_data_path}")
-
-# Mount templates/temps for template contribution preview
-temps_path = PROJECT_ROOT / "templates" / "temps"
-if temps_path.exists():
-    app.mount("/temps", StaticFiles(directory=str(temps_path)), name="temps")
-else:
-    os.makedirs(temps_path, exist_ok=True)
-    app.mount("/temps", StaticFiles(directory=str(temps_path)), name="temps")
-
-# Mount templates/quick_face for approved template preview
-quick_face_path = PROJECT_ROOT / "templates" / "quick_face"
-if quick_face_path.exists():
-    app.mount("/quick_face", StaticFiles(directory=str(quick_face_path)), name="quick_face")
-else:
-    os.makedirs(quick_face_path, exist_ok=True)
-    app.mount("/quick_face", StaticFiles(directory=str(quick_face_path)), name="quick_face")
-
-# Mount templates/video_nice for approved video template preview
-video_nice_path = PROJECT_ROOT / "templates" / "video_nice"
-if video_nice_path.exists():
-    app.mount("/video_nice", StaticFiles(directory=str(video_nice_path)), name="video_nice")
-else:
-    os.makedirs(video_nice_path, exist_ok=True)
-    app.mount("/video_nice", StaticFiles(directory=str(video_nice_path)), name="video_nice")
+# Note: Local static files mounting removed in favor of MinIO presigned URLs
 
 # Configure CORS
 app.add_middleware(
@@ -83,6 +61,33 @@ app.add_middleware(
 )
 
 from pydantic import BaseModel
+from fastapi import Request
+import fastapi.responses
+
+# Security middleware
+@app.middleware("http")
+async def check_auth_header(request: Request, call_next):
+    if request.url.path.startswith("/api/"):
+        # Exclude public endpoints
+        public_paths = ["/api/auth/login", "/api/health", "/api/status"]
+        if request.url.path not in public_paths:
+            try:
+                # FastAPI's Request doesn't have Depends easily in middleware,
+                # let's extract the token manually
+                auth_header = request.headers.get("Authorization")
+                if not auth_header or not auth_header.startswith("Bearer "):
+                    return fastapi.responses.JSONResponse(
+                        status_code=401,
+                        content={"detail": "Not authenticated"}
+                    )
+                token = auth_header.split(" ")[1]
+                await get_current_user(token)
+            except Exception as e:
+                return fastapi.responses.JSONResponse(
+                    status_code=401,
+                    content={"detail": "Could not validate credentials"}
+                )
+    return await call_next(request)
 
 # Pydantic models for request bodies
 class UpdateCreditsRequest(BaseModel):
@@ -96,6 +101,8 @@ class HistoryResponse(BaseModel):
     prompt: Optional[str]
     input_file: Optional[str]
     output_file: Optional[str]
+    input_file_url: Optional[str] = None
+    output_file_url: Optional[str] = None
     created_at: datetime
 
     class Config:
@@ -195,6 +202,16 @@ async def get_logs(
     except Exception as e:
         logger.error(f"Error getting logs: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+def get_hour_expr(col, dialect_name):
+    if dialect_name == 'postgresql':
+        return func.extract('hour', col)
+    return func.strftime('%H', col)
+
+def get_days_diff_expr(col, dialect_name):
+    if dialect_name == 'postgresql':
+        return func.extract('day', func.now() - col)
+    return func.julianday('now') - func.julianday(col)
 
 @app.get("/api/stats")
 async def get_stats(db: AsyncSession = Depends(get_db)):
@@ -310,11 +327,14 @@ async def get_stats(db: AsyncSession = Depends(get_db)):
         
         # Today's hourly distribution
         # Extract hour from created_at. In SQLite: strftime('%H', created_at)
+        dialect = db.bind.dialect.name
+        hour_expr = get_hour_expr(History.created_at, dialect)
+        
         hourly_stmt = (
-            select(func.strftime('%H', History.created_at).label("hour"), func.count(History.id).label("count"))
+            select(hour_expr.label("hour"), func.count(History.id).label("count"))
             .where(func.date(History.created_at) == today)
-            .group_by(func.strftime('%H', History.created_at))
-            .order_by(func.strftime('%H', History.created_at))
+            .group_by(hour_expr)
+            .order_by(hour_expr)
         )
         hourly_result = await db.execute(hourly_stmt)
         
@@ -322,7 +342,9 @@ async def get_stats(db: AsyncSession = Depends(get_db)):
         today_hourly_distribution = {str(h).zfill(2): 0 for h in range(24)}
         
         for row in hourly_result:
-            today_hourly_distribution[row.hour] = row.count
+            # Handle both string ('01') and integer (1) from different dialects
+            hour_str = str(int(row.hour)).zfill(2) if row.hour is not None else "00"
+            today_hourly_distribution[hour_str] = row.count
 
         # Generation Count Distribution
         # 0, 1, 2, 3, 4, 5, 6-10, 11-20, 21-50, 51-100, 101-200, 201-500, 501-1000, 1000+
@@ -371,7 +393,7 @@ async def get_stats(db: AsyncSession = Depends(get_db)):
         # SQLite: cast(julianday('now') - julianday(created_at) as integer)
         # Note: julianday returns float days.
         
-        days_diff = func.julianday('now') - func.julianday(User.created_at)
+        days_diff = get_days_diff_expr(User.created_at, dialect)
         # Ensure at least 1 day to avoid division by zero
         days_valid = case((days_diff < 1, 1), else_=days_diff)
         
@@ -507,7 +529,7 @@ async def get_stats(db: AsyncSession = Depends(get_db)):
         # We might need to fetch this and process in python if SQL is too complex for the ORM/Driver combo without raw SQL
         # Or construct the case statement with the join.
         
-        days_diff_sub = func.julianday('now') - func.julianday(User.created_at)
+        days_diff_sub = get_days_diff_expr(User.created_at, dialect)
         days_valid_sub = case((days_diff_sub < 1, 1), else_=days_diff_sub)
         
         avg_daily_credit = func.cast(consumed_col, Float) / days_valid_sub
@@ -614,12 +636,14 @@ async def get_hourly_stats(date_str: str = None, db: AsyncSession = Depends(get_
         else:
             target_date = date.today()
             
-        # Extract hour from created_at. In SQLite: strftime('%H', created_at)
+        dialect = db.bind.dialect.name
+        hour_expr = get_hour_expr(History.created_at, dialect)
+        
         hourly_stmt = (
-            select(func.strftime('%H', History.created_at).label("hour"), func.count(History.id).label("count"))
+            select(hour_expr.label("hour"), func.count(History.id).label("count"))
             .where(func.date(History.created_at) == target_date)
-            .group_by(func.strftime('%H', History.created_at))
-            .order_by(func.strftime('%H', History.created_at))
+            .group_by(hour_expr)
+            .order_by(hour_expr)
         )
         hourly_result = await db.execute(hourly_stmt)
         
@@ -627,7 +651,8 @@ async def get_hourly_stats(date_str: str = None, db: AsyncSession = Depends(get_
         hourly_distribution = {str(h).zfill(2): 0 for h in range(24)}
         
         for row in hourly_result:
-            hourly_distribution[row.hour] = row.count
+            hour_str = str(int(row.hour)).zfill(2) if row.hour is not None else "00"
+            hourly_distribution[hour_str] = row.count
             
         return hourly_distribution
     except Exception as e:
@@ -702,12 +727,15 @@ async def get_cumulative_hourly_stats(days: int = 7, db: AsyncSession = Depends(
     try:
         start_date = date.today() - timedelta(days=days-1)
         
+        dialect = db.bind.dialect.name
+        hour_expr = get_hour_expr(History.created_at, dialect)
+        
         # Aggregate count by hour across all days in range
         hourly_stmt = (
-            select(func.strftime('%H', History.created_at).label("hour"), func.count(History.id).label("count"))
+            select(hour_expr.label("hour"), func.count(History.id).label("count"))
             .where(func.date(History.created_at) >= start_date)
-            .group_by(func.strftime('%H', History.created_at))
-            .order_by(func.strftime('%H', History.created_at))
+            .group_by(hour_expr)
+            .order_by(hour_expr)
         )
         hourly_result = await db.execute(hourly_stmt)
         
@@ -715,7 +743,8 @@ async def get_cumulative_hourly_stats(days: int = 7, db: AsyncSession = Depends(
         hourly_distribution = {str(h).zfill(2): 0 for h in range(24)}
         
         for row in hourly_result:
-            hourly_distribution[row.hour] = row.count
+            hour_str = str(int(row.hour)).zfill(2) if row.hour is not None else "00"
+            hourly_distribution[hour_str] = row.count
             
         return hourly_distribution
     except Exception as e:
@@ -1001,6 +1030,29 @@ async def get_all_history(page: int = 1, page_size: int = 20, type: Optional[str
             item_dict["username"] = username
             item_dict["full_name"] = full_name
             
+            # Handle input files
+            if history.input_file:
+                urls = []
+                for f in history.input_file.split('|'):
+                    if f.startswith('template:'):
+                        # Handle template files: template:quick_face/filename.png
+                        # Remove prefix
+                        template_path = f[9:]
+                        # Template paths in DB might be full paths or relative
+                        # Usually it is relative like "quick_face/filename.png"
+                        # We need to get presigned URL from template bucket
+                        urls.append(storage.get_presigned_url(template_path, bucket=MINIO_TEMPLATE_BUCKET))
+                    else:
+                        basename = os.path.basename(f.replace('\\', '/'))
+                        obj_name = f"{history.user_id}/input_images/{basename}"
+                        urls.append(storage.get_presigned_url(obj_name))
+                item_dict['input_file_url'] = '|'.join(urls)
+                
+            if history.output_file:
+                basename = os.path.basename(history.output_file)
+                obj_name = f"{history.user_id}/output_images/{basename}"
+                item_dict['output_file_url'] = storage.get_presigned_url(obj_name)
+            
             items.append(item_dict)
             
         return {"items": items, "total": total}
@@ -1015,7 +1067,34 @@ async def get_user_history(user_id: int, db: AsyncSession = Depends(get_db)):
         stmt = select(History).where(History.user_id == user_id).order_by(desc(History.created_at)).limit(100)
         result = await db.execute(stmt)
         history = result.scalars().all()
-        return history
+        
+        # Convert to dict and add presigned URLs
+        items = []
+        for h in history:
+            item_dict = {c.name: getattr(h, c.name) for c in h.__table__.columns}
+            
+            # Handle input files (could be multiple separated by '|')
+            if h.input_file:
+                urls = []
+                for f in h.input_file.split('|'):
+                    if f.startswith('template:'):
+                        template_path = f[9:]
+                        urls.append(storage.get_presigned_url(template_path, bucket=MINIO_TEMPLATE_BUCKET))
+                    else:
+                        basename = os.path.basename(f.replace('\\', '/'))
+                        obj_name = f"{h.user_id}/input_images/{basename}"
+                        urls.append(storage.get_presigned_url(obj_name))
+                item_dict['input_file_url'] = '|'.join(urls)
+                
+            if h.output_file:
+                basename = os.path.basename(h.output_file)
+                # Same logic for output
+                obj_name = f"{h.user_id}/output_images/{basename}"
+                item_dict['output_file_url'] = storage.get_presigned_url(obj_name)
+                
+            items.append(item_dict)
+            
+        return items
     except Exception as e:
         logger.error(f"Error getting history: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -1036,7 +1115,7 @@ async def delete_user(user_id: int, db: AsyncSession = Depends(get_db)):
         # CheckinHistory, History, Referral, TemplateContribution, Conversation, SessionState
         
         # 1. Delete CheckinHistory
-        from src.database.models import CheckinHistory, Referral, Permission, SessionState, Conversation
+        from src.database.models import CheckinHistory, Referral, SessionState, Conversation
         from sqlalchemy import delete
         
         await db.execute(delete(CheckinHistory).where(CheckinHistory.user_id == user_id))
@@ -1055,9 +1134,6 @@ async def delete_user(user_id: int, db: AsyncSession = Depends(get_db)):
         
         # 6. Delete SessionState
         await db.execute(delete(SessionState).where(SessionState.user_id == user_id))
-        
-        # 7. Delete Permissions if any
-        await db.execute(delete(Permission).where(Permission.entity_id == user_id))
         
         # 8. Finally delete the user
         await db.delete(user)
@@ -1098,23 +1174,24 @@ async def clear_user_history(user_id: int, db: AsyncSession = Depends(get_db)):
         result = await db.execute(stmt)
         history_records = result.scalars().all()
         
-        # 2. Delete physical files if they exist
+        # 2. Delete physical files from MinIO
         for record in history_records:
             if record.input_file:
-                file_path = PROJECT_ROOT / record.input_file
-                if file_path.exists() and file_path.is_file():
+                for f in record.input_file.split('|'):
+                    basename = os.path.basename(f)
+                    obj_name = f"{user_id}/input_images/{basename}"
                     try:
-                        os.remove(file_path)
+                        storage.client.remove_object("bot-data", obj_name)
                     except Exception as fe:
-                        logger.warning(f"Failed to delete input file {file_path}: {fe}")
+                        logger.warning(f"Failed to delete input file {obj_name}: {fe}")
             
             if record.output_file:
-                file_path = PROJECT_ROOT / record.output_file
-                if file_path.exists() and file_path.is_file():
-                    try:
-                        os.remove(file_path)
-                    except Exception as fe:
-                        logger.warning(f"Failed to delete output file {file_path}: {fe}")
+                basename = os.path.basename(record.output_file)
+                obj_name = f"{user_id}/output_images/{basename}"
+                try:
+                    storage.client.remove_object("bot-data", obj_name)
+                except Exception as fe:
+                    logger.warning(f"Failed to delete output file {obj_name}: {fe}")
         
         # 3. Delete database records
         from sqlalchemy import delete
@@ -1165,15 +1242,21 @@ async def get_template_contributions(db: AsyncSession = Depends(get_db)):
             full_name = row[2]
             
             # Create response object
-            filename = os.path.basename(contribution.file_path)
+            # Handle both Windows and Linux paths
+            filename = os.path.basename(contribution.file_path.replace('\\', '/'))
+            
             # Determine preview URL based on review status
+            # Now we use MinIO presigned URL
             if contribution.is_reviewed:
                 if contribution.file_type == 'video':
-                    preview_url = f"/video_nice/{filename}"
+                    obj_name = f"video_nice/{filename}"
                 else:
-                    preview_url = f"/quick_face/{filename}"
+                    obj_name = f"quick_face/{filename}"
+                preview_url = storage.get_presigned_url(obj_name, bucket=MINIO_TEMPLATE_BUCKET)
             else:
-                preview_url = f"/temps/{filename}"
+                # Unreviewed templates are also in MINIO_TEMPLATE_BUCKET, but in 'temps/' directory
+                obj_name = f"temps/{filename}"
+                preview_url = storage.get_presigned_url(obj_name, bucket=MINIO_TEMPLATE_BUCKET)
 
             res = TemplateContributionResponse(
                 id=contribution.id,
@@ -1195,8 +1278,7 @@ async def get_template_contributions(db: AsyncSession = Depends(get_db)):
 
 @app.post("/api/templates/contributions/{contribution_id}/approve")
 async def approve_contribution(contribution_id: int, db: AsyncSession = Depends(get_db)):
-    """Approve a contribution: move to quick_face and mark as reviewed"""
-    import shutil
+    """Approve a contribution: move in MinIO and mark as reviewed"""
     try:
         stmt = select(TemplateContribution).where(TemplateContribution.id == contribution_id)
         result = await db.execute(stmt)
@@ -1205,26 +1287,32 @@ async def approve_contribution(contribution_id: int, db: AsyncSession = Depends(
         if not contribution:
             raise HTTPException(status_code=404, detail="Contribution not found")
             
-        source_path = Path(contribution.file_path)
-        if not source_path.exists():
-            raise HTTPException(status_code=404, detail=f"File not found: {source_path}")
-            
-        # Target path: templates/quick_face or templates/video_nice
+        filename = os.path.basename(contribution.file_path.replace('\\', '/'))
+        source_obj = f"temps/{filename}"
+        
+        # Target path: video_nice or quick_face (no templates/ prefix)
         if contribution.file_type == 'video':
-            target_dir = PROJECT_ROOT / "templates" / "video_nice"
+            target_obj = f"video_nice/{filename}"
         else:
-            target_dir = PROJECT_ROOT / "templates" / "quick_face"
+            target_obj = f"quick_face/{filename}"
             
-        target_dir.mkdir(parents=True, exist_ok=True)
-        
-        target_path = target_dir / source_path.name
-        
-        # Move file
-        shutil.move(str(source_path), str(target_path))
+        # Move object in MinIO (Copy then Remove)
+        # Both source and target are in MINIO_TEMPLATE_BUCKET now
+        try:
+            from minio.commonconfig import CopySource
+            # Storage client's raw minio client
+            storage.client.copy_object(
+                MINIO_TEMPLATE_BUCKET,
+                target_obj,
+                CopySource(MINIO_TEMPLATE_BUCKET, source_obj)
+            )
+            storage.client.remove_object(MINIO_TEMPLATE_BUCKET, source_obj)
+        except Exception as se:
+            logger.warning(f"Failed to move in MinIO: {se}")
         
         # Update database
         contribution.is_reviewed = True
-        contribution.file_path = str(target_path) # Update to new path
+        contribution.file_path = str(target_obj) # Update to new path
         
         # Award credits to the user (20 for video, 10 for photo) and increment approval count
         reward_amount = 20 if contribution.file_type == 'video' else 10
@@ -1244,7 +1332,7 @@ async def approve_contribution(contribution_id: int, db: AsyncSession = Depends(
 
 @app.delete("/api/templates/contributions/{contribution_id}")
 async def delete_contribution(contribution_id: int, db: AsyncSession = Depends(get_db)):
-    """Reject/Delete a contribution: delete file and database record"""
+    """Reject/Delete a contribution: delete from MinIO and database record"""
     try:
         stmt = select(TemplateContribution).where(TemplateContribution.id == contribution_id)
         result = await db.execute(stmt)
@@ -1253,10 +1341,19 @@ async def delete_contribution(contribution_id: int, db: AsyncSession = Depends(g
         if not contribution:
             raise HTTPException(status_code=404, detail="Contribution not found")
             
-        # Delete file if exists
-        file_path = Path(contribution.file_path)
-        if file_path.exists():
-            os.remove(file_path)
+        # Delete from MinIO
+        filename = os.path.basename(contribution.file_path.replace('\\', '/'))
+        bucket = MINIO_TEMPLATE_BUCKET
+        
+        if contribution.is_reviewed:
+            obj_name = f"video_nice/{filename}" if contribution.file_type == 'video' else f"quick_face/{filename}"
+        else:
+            obj_name = f"temps/{filename}"
+            
+        try:
+            storage.client.remove_object(bucket, obj_name)
+        except Exception as se:
+            logger.warning(f"Failed to delete from MinIO: {se}")
             
         # Delete from DB
         from sqlalchemy import delete
@@ -1266,6 +1363,118 @@ async def delete_contribution(contribution_id: int, db: AsyncSession = Depends(g
         return {"status": "ok", "message": "Contribution deleted"}
     except Exception as e:
         logger.error(f"Error deleting contribution: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/system/status")
+async def get_system_status_proxy():
+    """Proxy system status request to ComfyUI Middleware"""
+    try:
+        url = f"{API_BASE}/system/status"
+        async with httpx.AsyncClient(trust_env=False) as client:
+            response = await client.get(url, timeout=5.0)
+            if response.status_code == 200:
+                return response.json()
+            else:
+                # Fallback or error
+                return {
+                    "queue_size": 0,
+                    "queue_by_type": {},
+                    "active_workers": 0,
+                    "comfy_online": False,
+                    "error": f"Middleware returned {response.status_code}"
+                }
+    except Exception as e:
+        logger.error(f"Error proxying system status: {e}")
+        return {
+            "queue_size": 0,
+            "queue_by_type": {},
+            "active_workers": 0,
+            "comfy_online": False,
+            "error": str(e)
+        }
+
+@app.get("/api/status/{task_id}")
+async def get_task_status_proxy(task_id: str):
+    """Proxy task status request to ComfyUI Middleware"""
+    try:
+        url = f"{API_BASE}/status/{task_id}"
+        async with httpx.AsyncClient(trust_env=False) as client:
+            response = await client.get(url, timeout=5.0)
+            if response.status_code == 200:
+                return response.json()
+            else:
+                raise HTTPException(status_code=response.status_code, detail="Task not found or error")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error proxying task status: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/image/{task_id}")
+async def get_task_image_proxy(task_id: str):
+    """Proxy image download request to ComfyUI Middleware"""
+    try:
+        url = f"{API_BASE}/image/{task_id}"
+        
+        client = httpx.AsyncClient(trust_env=False)
+        req = client.build_request("GET", url, timeout=30.0)
+        r = await client.send(req, stream=True)
+        
+        if r.status_code != 200:
+            await r.aclose()
+            await client.aclose()
+            raise HTTPException(status_code=r.status_code, detail="Image not found")
+            
+        async def iter_file():
+            try:
+                async for chunk in r.aiter_bytes():
+                    yield chunk
+            finally:
+                await r.aclose()
+                await client.aclose()
+
+        return StreamingResponse(
+            iter_file(),
+            media_type=r.headers.get("content-type")
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error proxying image: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/video/{task_id}")
+async def get_task_video_proxy(task_id: str):
+    """Proxy video download request to ComfyUI Middleware"""
+    try:
+        url = f"{API_BASE}/video/{task_id}"
+        
+        client = httpx.AsyncClient(trust_env=False)
+        req = client.build_request("GET", url, timeout=60.0)
+        r = await client.send(req, stream=True)
+        
+        if r.status_code != 200:
+            await r.aclose()
+            await client.aclose()
+            raise HTTPException(status_code=r.status_code, detail="Video not found")
+
+        async def iter_file():
+            try:
+                async for chunk in r.aiter_bytes():
+                    yield chunk
+            finally:
+                await r.aclose()
+                await client.aclose()
+
+        return StreamingResponse(
+            iter_file(),
+            media_type=r.headers.get("content-type")
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error proxying video: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":

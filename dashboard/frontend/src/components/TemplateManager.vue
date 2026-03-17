@@ -70,6 +70,7 @@ const formatDate = (dateStr) => {
 
 const getFullImageUrl = (url) => {
   if (!url) return ''
+  if (url.startsWith('http')) return url
   return `${apiBaseUrl}${url}`
 }
 

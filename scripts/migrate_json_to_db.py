@@ -8,7 +8,7 @@ from datetime import datetime
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.database.core import init_db, AsyncSessionLocal
-from src.database.models import User, Permission, Referral
+from src.database.models import User, Referral
 from sqlalchemy.future import select
 
 async def migrate():
@@ -16,30 +16,6 @@ async def migrate():
     await init_db()
 
     async with AsyncSessionLocal() as session:
-        # 1. Migrate Permissions
-        if os.path.exists("permissions.json"):
-            print("Migrating permissions.json...")
-            with open("permissions.json", "r", encoding="utf-8") as f:
-                perm_data = json.load(f)
-                
-                # Users
-                for uid in perm_data.get("users", []):
-                    # Check if exists
-                    stmt = select(Permission).where(Permission.entity_id == uid, Permission.type == 'whitelist_user')
-                    result = await session.execute(stmt)
-                    if not result.scalar_one_or_none():
-                        session.add(Permission(entity_id=uid, type='whitelist_user'))
-                
-                # Groups
-                for gid in perm_data.get("groups", []):
-                    stmt = select(Permission).where(Permission.entity_id == gid, Permission.type == 'whitelist_group')
-                    result = await session.execute(stmt)
-                    if not result.scalar_one_or_none():
-                        session.add(Permission(entity_id=gid, type='whitelist_group'))
-            
-            await session.commit()
-            print("Permissions migrated.")
-
         # 2. Migrate Quota (Users & Referrals)
         if os.path.exists("quota.json"):
             print("Migrating quota.json...")

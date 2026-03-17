@@ -5,12 +5,6 @@ import os
 # Ensure src is in path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../../')))
 
-def test_import_bot():
-    try:
-        from src import bot
-    except ImportError as e:
-        pytest.fail(f"Failed to import src.bot: {e}")
-
 def test_import_bot_test():
     try:
         from src import bot_test

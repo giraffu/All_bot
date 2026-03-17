@@ -3,6 +3,7 @@ from telegram.ext import ContextTypes, Application
 import logging
 from src.services.permission_service import permission_service
 from src.utils import robust_send_message
+from src.handlers.utils import with_db_logging_context
 
 async def setup_commands(app: Application):
     """
@@ -13,6 +14,7 @@ async def setup_commands(app: Application):
     ]
     await app.bot.set_my_commands(commands)
 
+@with_db_logging_context
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger = logging.getLogger("bot.command")
     user = update.effective_user

@@ -62,6 +62,7 @@ TASK_COSTS = {
 
 # Default Video Resolutions based on User Group
 VIDEO_RESOLUTIONS = {
+    "金丹期": (720, 720),
     "筑基期": (720, 720),
     "default": (512, 512)
 }
@@ -77,3 +78,29 @@ PROMPT_KEYS = {
     # Assuming masturbation uses undress or similar if not specified
     MODE_MASTURBATION: "masturbation" 
 }
+
+# User Group Priority Mapping (Static - Deprecated in favor of DYNAMIC_PRIORITY_RULES)
+USER_PRIORITY_MAP = {
+    "金丹期": 3,
+    "筑基期": 2,
+    "练气期": 1,
+    "凡人": 0
+}
+
+# Dynamic Priority Rules
+# Format: "Group Name": [(limit_1, priority_1), (limit_2, priority_2), ...]
+# Logic: if usage < limit_1 return priority_1, elif usage < limit_2 return priority_2... else return 0
+DYNAMIC_PRIORITY_RULES = {
+    "金丹期": [(50, 3), (100, 2), (200, 1)],
+    "筑基期": [(25, 2), (50, 1)],
+    "练气期": [(15, 1)],
+    "凡人": [] # Always 0
+}
+
+# Task types that count towards daily usage limit
+GENERATION_TASK_TYPES = [
+    "image", "video", "face_swap", "undress", "masturbation",
+    MODE_EDIT, MODE_CUSTOM_VIDEO, MODE_PERFECT_VIDEO_INSERT,
+    MODE_DOGGY_STYLE, MODE_BLOWJOB, MODE_UNDRESS_TONGUE, MODE_CLOSEUP_BLOWJOB,
+    MODE_FACESWAP_STEP1, MODE_FACESWAP_STEP2, MODE_RANDOM_FACESWAP
+]

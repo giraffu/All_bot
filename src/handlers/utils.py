@@ -1,5 +1,22 @@
 from telegram import Update
 from telegram.ext import ContextTypes
+from functools import wraps
+from src.context import user_id_ctx
+
+def with_db_logging_context(func):
+    @wraps(func)
+    async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE, *args, **kwargs):
+        user = update.effective_user
+        token = None
+        if user:
+            token = user_id_ctx.set(user.id)
+        
+        try:
+            return await func(update, context, *args, **kwargs)
+        finally:
+            if token:
+                user_id_ctx.reset(token)
+    return wrapper
 
 def _is_mentioned(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
     msg = update.message

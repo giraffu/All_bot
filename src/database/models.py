@@ -44,14 +44,6 @@ class Referral(Base):
     inviter = relationship("User", foreign_keys=[inviter_id], back_populates="referrals_made")
     invitee = relationship("User", foreign_keys=[invitee_id], back_populates="referred_by")
 
-class Permission(Base):
-    __tablename__ = "permissions"
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    entity_id = Column(BigInteger, unique=True, nullable=False) # User ID or Group ID
-    type = Column(String(20), nullable=False) # 'whitelist_user', 'whitelist_group'
-    created_at = Column(DateTime, default=datetime.now)
-
 class History(Base):
     __tablename__ = "history"
 
