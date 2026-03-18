@@ -10,6 +10,7 @@ from config import (
     IMG2IMG_ENDPOINT, STATUS_ENDPOINT, IMAGE_ENDPOINT, POLL_INTERVAL, 
     VIDEO_ENDPOINT, API_BASE, FACE_SWAP_ENDPOINT, 
     PERFECT_VIDEO_EDIT_ENDPOINT, PERFECT_VIDEO_INSERT_ENDPOINT,
+    TEXT_TO_IMAGE_ENDPOINT,
     API_TOKEN
 )
 from src.circuit_breaker import CircuitBreaker, CircuitBreakerOpenException
@@ -190,6 +191,20 @@ class APIClient:
         r = await self._request("POST", FACE_SWAP_ENDPOINT, files=files, data=data)
         return r.json()["task_id"]
 
+    @async_retry(max_retries=3)
+    async def submit_text_to_image(self, prompt: str) -> str:
+        """
+        Submit text to image task (T2I Pornmaster Turbo).
+        """
+        data = {
+            "prompt": prompt
+        }
+        params = {"async": "true"}
+
+        logger.info(f"Submitting text_to_image task. Prompt: {prompt}")
+        r = await self._request("POST", TEXT_TO_IMAGE_ENDPOINT, json=data, params=params)
+        return r.json()["task_id"]
+
     async def get_system_status(self) -> Optional[dict]:
         url = f"{API_BASE}/system/status"
         try:
@@ -259,6 +274,7 @@ submit_perfect_video_insert = api_client.submit_perfect_video_insert
 submit_perfect_video_edit = api_client.submit_perfect_video_edit
 submit_img2img = api_client.submit_img2img
 submit_face_swap = api_client.submit_face_swap
+submit_text_to_image = api_client.submit_text_to_image
 download_image = api_client.download_image
 download_video = api_client.download_video
 get_system_status = api_client.get_system_status

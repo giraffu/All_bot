@@ -140,6 +140,14 @@ const columns = [
     sorter: (a, b) => a.credits - b.credits,
   },
   {
+    title: '临时灵石',
+    dataIndex: 'temporary_ingot',
+    key: 'temporary_ingot',
+    width: 100,
+    align: 'right',
+    sorter: (a, b) => (a.temporary_ingot || 0) - (b.temporary_ingot || 0),
+  },
+  {
     title: '累计签到',
     dataIndex: 'checkin_count',
     key: 'checkin_count',
@@ -281,6 +289,12 @@ const columns = [
           </a-tag>
         </template>
 
+        <template v-else-if="column.key === 'temporary_ingot'">
+          <a-tooltip title="每日 00:00 自动清零，仅当日有效">
+            <span class="text-orange-500 font-mono">{{ Number(record.temporary_ingot || 0).toLocaleString() }}</span>
+          </a-tooltip>
+        </template>
+
         <template v-else-if="column.key === 'checkin_count'">
           <a-tag :color="record.checkin_count > 10 ? 'orange' : record.checkin_count > 0 ? 'cyan' : 'default'">
             {{ record.checkin_count }} 次
@@ -390,12 +404,16 @@ const columns = [
       cancelText="取消"
     >
       <div class="py-4">
-        <p class="mb-2 text-gray-500">正在为用户 <span class="font-bold text-gray-800">{{ currentEditingUser?.full_name || currentEditingUser?.id }}</span> 修改灵石</p>
-        <div class="flex items-center gap-4">
-          <span class="shrink-0">灵石数值:</span>
-          <a-input-number v-model:value="newCreditsValue" :min="0" class="w-full" />
-        </div>
-        <p class="mt-4 text-xs text-amber-500 italic">* 增加灵石直接输入更大数值，减少灵石输入较小数值即可。</p>
+        <p class="mb-4 text-gray-500">正在为用户 <span class="font-bold text-gray-800">{{ currentEditingUser?.full_name || currentEditingUser?.id }}</span> 修改灵石</p>
+        <a-form layout="vertical">
+          <a-form-item label="永久灵石余额">
+            <a-input-number v-model:value="newCreditsValue" :min="0" class="w-full" />
+          </a-form-item>
+          <a-form-item label="临时灵石" extra="每日 00:00 自动清零，仅当日有效">
+            <a-input :value="Number(currentEditingUser?.temporary_ingot || 0).toLocaleString()" readonly class="w-full bg-gray-50 text-orange-500 font-mono" />
+          </a-form-item>
+        </a-form>
+        <p class="mt-2 text-xs text-amber-500 italic">* 增加灵石直接输入更大数值，减少灵石输入较小数值即可。</p>
       </div>
     </a-modal>
   </a-card>

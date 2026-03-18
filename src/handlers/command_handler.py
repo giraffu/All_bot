@@ -72,7 +72,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
             ["📅 每日签到", "👤 个人中心", "🤝 分享赚灵石", "⏳ 排队状态"],
             ["🖼️ 懒人P图", "🎬 懒人动图"],
-            ["🎨 自由P图 ", "🎬 自定义图生视频"]
+            ["📝 文生图", "🎨 自由P图 ", "🎬 自定义图生视频"]
     ]
     reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
@@ -83,6 +83,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "🤝 **分享赚灵石**：邀请道友入宗，无限领灵石！\n"
         "🖼️ **懒人P图**：快速脱衣、换脸、自慰、抽插等仙术。\n"
         "🎬 **懒人动图**：传教士、后入、口交黑人等场景。\n"
+        "📝 **文生图**：以言出法随，创造天地万物。\n"
         "🎨 **自由P图**：施展随心所欲的炼金术。\n"
         "🎬 **自定义视频**：赋予画卷生命，生成演武视频。\n"
         "👤 **个人中心**：查看当前境界、灵石余额及突破规则。",

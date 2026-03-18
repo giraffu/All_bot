@@ -138,7 +138,7 @@ defineProps({
       </a-card>
     </a-col>
     <a-col :xs="24" :sm="12" :md="8" :lg="4">
-      <a-card hoverable class="stat-card">
+      <a-card hoverable class="stat-card relative overflow-hidden">
         <a-statistic
           title="流通灵石"
           :value="stats.total_credits"
@@ -148,10 +148,18 @@ defineProps({
             <dollar-circle-outlined />
           </template>
         </a-statistic>
+        <div class="mt-2 text-xs">
+          <a-tooltip title="每日 00:00 自动清零">
+            <a-tag color="orange" class="m-0 border-0 flex items-center justify-between cursor-help transition-all duration-300" :class="{ 'animate-pulse bg-orange-100': stats.total_temporary_ingot >= 1000 }">
+              <span>临时灵石</span>
+              <span class="font-bold ml-1">{{ stats.total_temporary_ingot || 0 }}</span>
+            </a-tag>
+          </a-tooltip>
+        </div>
       </a-card>
     </a-col>
     <a-col :xs="24" :sm="12" :md="8" :lg="4">
-      <a-card hoverable class="stat-card">
+      <a-card hoverable class="stat-card relative overflow-hidden">
         <a-statistic
           title="流通灵石（活跃）"
           :value="stats.total_active_credits"
@@ -161,6 +169,14 @@ defineProps({
             <dollar-circle-outlined />
           </template>
         </a-statistic>
+        <div class="mt-2 text-xs">
+          <a-tooltip title="每日 00:00 自动清零">
+            <a-tag color="orange" class="m-0 border-0 flex items-center justify-between cursor-help transition-all duration-300" :class="{ 'animate-pulse bg-orange-100': stats.total_active_temporary_ingot >= 1000 }">
+              <span>临时灵石</span>
+              <span class="font-bold ml-1">{{ stats.total_active_temporary_ingot || 0 }}</span>
+            </a-tag>
+          </a-tooltip>
+        </div>
       </a-card>
     </a-col>
     <a-col :xs="24" :sm="12" :md="8" :lg="4">
@@ -196,5 +212,19 @@ defineProps({
 .stat-card {
   border-radius: 12px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: .8;
+    transform: scale(1.05);
+  }
+}
+.animate-pulse {
+  animation: pulse 1.5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
 </style>

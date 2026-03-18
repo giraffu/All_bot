@@ -20,6 +20,7 @@ from src.constants import (
     TASK_COSTS,
     TMP_DIR,
     VIDEO_RESOLUTIONS,
+    MODE_TEXT_TO_IMAGE
 )
 from src.handlers.utils import MockMessage
 from src.logger import UserLogger
@@ -407,6 +408,77 @@ class TaskService:
                 TaskService._cleanup_files([image_path])
 
     # Private Helpers
+
+    @staticmethod
+    async def process_text_to_image_task(
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        prompt: str,
+    ) -> Tuple[Optional[bytes], Optional[str]]:
+        """
+        Handle Text to Image generation task.
+        """
+        chat_id = update.effective_chat.id
+        user_id = update.effective_user.id
+        username = update.effective_user.username or update.effective_user.full_name
+        mode = MODE_TEXT_TO_IMAGE
+        cost = TASK_COSTS.get(mode, 3)
+        user_logger = UserLogger(user_id, username)
+
+        msg_text = f"🚀 正在处理文生图任务 (消耗{cost}灵石)..."
+        msg = await robust_reply_text(update.effective_message, msg_text)
+
+        media_bytes = None
+        full_output_path = None
+
+        try:
+            # 1. Check Quota
+            if not await permission_service.check_quota(update, context, cost=cost):
+                await robust_delete_message(msg)
+                return None, None
+
+            # 2. Submit Task
+            await permission_service.increment_quota(user_id, cost=cost, username=username, task_type=mode)
+            await robust_edit_text(msg, "⏳ 正在生成图片，请耐心等待...")
+
+            task_id = await image_service.submit_text_to_image_task(prompt)
+
+            # 3. Monitor Progress
+            final_info = await TaskService._monitor_task_progress(
+                task_id, msg, is_video=False, monitor_func=image_service.monitor_progress
+            )
+
+            if final_info:
+                media_bytes, full_output_path = (
+                    await TaskService._handle_task_completion(
+                        context,
+                        chat_id,
+                        user_id,
+                        prompt,
+                        mode,
+                        task_id,
+                        [], # No input images
+                        user_logger,
+                        is_video=False,
+                        send_result=True,
+                        reply_markup=None,
+                        status_msg=msg,
+                        delete_status=True,
+                        caption=f"✅ 文生图生成完成\n提示词：{prompt[:100]}...",
+                    )
+                )
+            else:
+                await robust_send_message(
+                    context.bot, chat_id, "❌ 生成完成但未获取到任务信息"
+                )
+
+        except Exception as e:
+            user_logger.logger.error(
+                f"Error in text_to_image task for user {user_id}: {e}", exc_info=True
+            )
+            await robust_send_message(context.bot, chat_id, f"❌ 出错了：{e}")
+
+        return media_bytes, full_output_path
 
     @staticmethod
     async def _get_or_send_status_msg(context, chat_id, status_msg_id, text):

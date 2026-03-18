@@ -14,7 +14,7 @@ from src.handlers.message_handler import handle_photo, handle_prompt, handle_vid
 from src.handlers.callback_handler import handle_callback_query
 from src.database.core import init_db
 from src.quota import QuotaManager
-from datetime import time
+from datetime import time, timezone, timedelta
 import socket
 from urllib.parse import urlparse
 
@@ -68,21 +68,33 @@ def get_best_proxy(default_proxy):
     return None # Return None to use direct connection
 
 async def clear_temp_credits_job(context):
-    """Job to clear temporary credits daily at midnight"""
+    """Job to clear temporary credits every 48 hours at midnight"""
     logger = logging.getLogger("bot.jobs")
-    logger.info("🕒 Running daily temporary credits clearance...")
+    logger.info("🕒 Running 48-hour temporary credits clearance...")
     qm = QuotaManager()
     await qm.clear_temp_credits()
-    logger.info("✅ Daily temporary credits clearance completed.")
+    await qm.clear_temporary_ingots()
+    logger.info("✅ 48-hour temporary credits clearance completed.")
 
 async def post_init(application):
     await init_db()
     await setup_commands(application)
     
-    # Schedule daily job to clear temporary credits at midnight
-    application.job_queue.run_daily(
+    # Schedule job to clear temporary credits every 48 hours at midnight (Beijing Time)
+    beijing_tz = timezone(timedelta(hours=8))
+    # run_repeating is used instead of run_daily to allow intervals longer than 24 hours
+    # 48 hours = 48 * 60 * 60 = 172800 seconds
+    from datetime import datetime
+    
+    # Calculate the next midnight in Beijing time to start the interval
+    now = datetime.now(beijing_tz)
+    # Move to tomorrow's midnight
+    next_midnight = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+    
+    application.job_queue.run_repeating(
         clear_temp_credits_job,
-        time=time(hour=0, minute=0, second=0)
+        interval=timedelta(hours=48),
+        first=next_midnight
     )
 
 def main():

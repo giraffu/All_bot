@@ -22,12 +22,14 @@ MODE_BLOWJOB = "blowjob"
 MODE_UNDRESS_TONGUE = "undress_tongue"
 MODE_CLOSEUP_BLOWJOB = "closeup_blowjob"
 MODE_CUSTOM_VIDEO = "custom_video"
+MODE_TEXT_TO_IMAGE = "text_to_image"
 MODE_TEMPLATE_CONTRIBUTE = "template_contribute"
 MODE_NONE = "none"
 
 # Mode Name Mapping (Human Readable)
 MODE_NAME_MAP = {
     MODE_EDIT: "自由P图",
+    MODE_TEXT_TO_IMAGE: "文生图",
     MODE_UNDRESS: "快速脱衣",
     MODE_MASTURBATION: "快速自慰",
     MODE_FACESWAP_STEP1: "快速换脸",
@@ -58,6 +60,7 @@ TASK_COSTS = {
     MODE_PERFECT_VIDEO_INSERT: 6,
     MODE_CLOSEUP_BLOWJOB: 6,
     MODE_CUSTOM_VIDEO: 6,
+    MODE_TEXT_TO_IMAGE: 3,
 }
 
 # Default Video Resolutions based on User Group
@@ -82,5 +85,6 @@ GENERATION_TASK_TYPES = [
     "image", "video", "face_swap", "undress", "masturbation",
     MODE_EDIT, MODE_CUSTOM_VIDEO, MODE_PERFECT_VIDEO_INSERT,
     MODE_DOGGY_STYLE, MODE_BLOWJOB, MODE_UNDRESS_TONGUE, MODE_CLOSEUP_BLOWJOB,
-    MODE_FACESWAP_STEP1, MODE_FACESWAP_STEP2, MODE_RANDOM_FACESWAP
+    MODE_FACESWAP_STEP1, MODE_FACESWAP_STEP2, MODE_RANDOM_FACESWAP,
+    MODE_TEXT_TO_IMAGE
 ]

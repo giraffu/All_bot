@@ -248,10 +248,18 @@ async def get_stats(db: AsyncSession = Depends(get_db)):
         # Total credits in circulation
         result = await db.execute(select(func.sum(User.credits)))
         total_credits = result.scalar() or 0
+        
+        # Total temporary ingot
+        result = await db.execute(select(func.sum(User.temp_credits)))
+        total_temporary_ingot = result.scalar() or 0
 
         # Total active credits in circulation (only users with generation_count > 0)
         result = await db.execute(select(func.sum(User.credits)).where(User.generation_count > 0))
         total_active_credits = result.scalar() or 0
+        
+        # Total active temporary ingot (only users with generation_count > 0)
+        result = await db.execute(select(func.sum(User.temp_credits)).where(User.generation_count > 0))
+        total_active_temporary_ingot = result.scalar() or 0
 
         # Total referrals
         result = await db.execute(select(func.count(Referral.id)))
@@ -603,7 +611,9 @@ async def get_stats(db: AsyncSession = Depends(get_db)):
             "total_users": total_users,
             "total_generations": total_generations,
             "total_credits": total_credits,
+            "total_temporary_ingot": total_temporary_ingot,
             "total_active_credits": total_active_credits,
+            "total_active_temporary_ingot": total_active_temporary_ingot,
             "total_referrals": total_referrals,
             "total_consumed_credits": total_consumed_credits,
             "total_template_contributions": total_template_contributions,
@@ -957,6 +967,9 @@ async def get_users(skip: int = 0, limit: int = 10000, db: AsyncSession = Depend
         for user in users:
             # Convert SQLAlchemy model to dict
             user_dict = {c.name: getattr(user, c.name) for c in user.__table__.columns}
+            
+            # Ensure temporary_ingot is mapped from temp_credits
+            user_dict['temporary_ingot'] = getattr(user, 'temp_credits', 0)
             
             # Use denormalized columns directly
             user_dict["referral_count"] = user.referral_count or 0

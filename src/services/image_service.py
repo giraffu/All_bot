@@ -1,5 +1,5 @@
 from typing import AsyncGenerator
-from src.api_client import submit_img2img, listen_for_progress, download_image, download_video, get_system_status, submit_face_swap, submit_perfect_video_edit, submit_perfect_video_insert, get_queue_position
+from src.api_client import submit_img2img, listen_for_progress, download_image, download_video, get_system_status, submit_face_swap, submit_perfect_video_edit, submit_perfect_video_insert, get_queue_position, submit_text_to_image
 
 class ImageService:
     async def submit_task(self, prompt: str, image_paths: list[str], negative_prompt: str, priority: int = 0) -> str:
@@ -9,6 +9,11 @@ class ImageService:
     async def submit_face_swap_task(self, face_image_path: str, body_image_path: str, priority: int = 0) -> str:
         """Submit face swap task"""
         return await submit_face_swap(face_image_path, body_image_path, priority=priority)
+
+    async def submit_text_to_image_task(self, prompt: str, priority: int = 0) -> str:
+        """Submit text to image task"""
+        # Note: priority is not used in the current backend API for T2I, but kept for consistency
+        return await submit_text_to_image(prompt)
 
     async def submit_perfect_video_edit(self, prompt: str, image_path: str, width: int = 512, height: int = 512, length: int = 81, priority: int = 0) -> str:
         """Submit perfect video edit task"""

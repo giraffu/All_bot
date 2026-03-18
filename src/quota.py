@@ -168,6 +168,15 @@ class QuotaManager:
             await session.commit()
             print(f"🔄 Temporary credits cleared at {datetime.now().isoformat()}")
 
+
+    async def clear_temporary_ingots(self):
+        """Clear all temporary ingots at midnight"""
+        async with AsyncSessionLocal() as session:
+            stmt = update(User).where(User.temporary_ingot > 0).values(temporary_ingot=0)
+            await session.execute(stmt)
+            await session.commit()
+            print(f"🔄 Temporary ingots cleared at {datetime.now().isoformat()}")
+
     async def get_referral_count(self, user_id: int) -> int:
         """Get number of users invited by user_id"""
         async with AsyncSessionLocal() as session:

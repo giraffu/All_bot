@@ -51,6 +51,7 @@ VIDEO_ENDPOINT = f"{API_BASE}/video"
 PERFECT_VIDEO_EDIT_ENDPOINT = f"{API_BASE}/perfect_video_edit" # Unified endpoint
 PERFECT_VIDEO_INSERT_ENDPOINT = f"{API_BASE}/perfect_video_insert"
 FACE_SWAP_ENDPOINT = f"{API_BASE}/face_swap"
+TEXT_TO_IMAGE_ENDPOINT = f"{API_BASE}/api/v1/workflows/t2i-pornmaster-turbo"
 
 # --- LLM Configuration ---
 LLM_API_URL = os.getenv("LLM_API_URL", "http://8.148.72.50:1234/v1/chat/completions")
@@ -63,6 +64,8 @@ POLL_TIMEOUT = int(os.getenv("POLL_TIMEOUT", "180"))
 # --- Permission Configuration ---
 REQUIRED_CHANNEL_ID = os.getenv("REQUIRED_CHANNEL_ID")
 CHANNEL_INVITE_LINK = os.getenv("CHANNEL_INVITE_LINK")
+REFUGE_GROUP_ID = os.getenv("REFUGE_GROUP_ID")
+REFUGE_INVITE_LINK = os.getenv("REFUGE_INVITE_LINK")
 
 # --- Limit Configuration ---
 DAILY_LIMIT = int(os.getenv("DAILY_LIMIT", "10"))

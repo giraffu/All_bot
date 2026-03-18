@@ -6,7 +6,7 @@ import logging
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup
 from telegram.ext import ContextTypes
 
-from config import REQUIRED_CHANNEL_ID, CHANNEL_INVITE_LINK
+from config import REQUIRED_CHANNEL_ID, CHANNEL_INVITE_LINK, REFUGE_GROUP_ID, REFUGE_INVITE_LINK
 from src.services.permission_service import permission_service
 from src.services.image_service import image_service
 from src.services.task_service import task_service
@@ -18,7 +18,7 @@ from src.constants import (
     MODE_FACESWAP_STEP1, MODE_FACESWAP_STEP2, MODE_RANDOM_FACESWAP,
     MODE_PENETRATION_STEP1, MODE_PENETRATION_STEP2,
     MODE_TEMPLATE_CONTRIBUTE, MODE_NONE, MODE_CUSTOM_VIDEO, MODE_PERFECT_VIDEO_INSERT,
-    MODE_DOGGY_STYLE, MODE_BLOWJOB, MODE_UNDRESS_TONGUE, MODE_CLOSEUP_BLOWJOB
+    MODE_DOGGY_STYLE, MODE_BLOWJOB, MODE_UNDRESS_TONGUE, MODE_CLOSEUP_BLOWJOB, MODE_TEXT_TO_IMAGE
 )
 from src.handlers.utils import _is_mentioned, MockMessage, with_db_logging_context
 
@@ -208,7 +208,7 @@ async def _handle_photo_idle(update: Update, context: ContextTypes.DEFAULT_TYPE)
     keyboard = [
         ["📅 每日签到", "💰 个人中心", "🤝 分享赚灵石", "⏳ 排队状态"],
         ["🖼️ 懒人P图", "🎬 懒人动图"],
-        ["✨ 🎨 自由P图 🎨 ✨", "🎬 自定义图生视频"]
+        ["📝 文生图", "✨ 🎨 自由P图 🎨 ✨", "🎬 自定义图生视频"]
     ]
     reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
     
@@ -455,7 +455,7 @@ async def handle_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
         keyboard = [
             ["📅 每日签到", "👤 个人中心", "🤝 分享赚灵石", "⏳ 排队状态"],
             ["🖼️ 懒人P图", "🎬 懒人动图"],
-            ["🎨 自由P图 ", "🎬 自定义图生视频"]
+            ["📝 文生图", "🎨 自由P图 ", "🎬 自定义图生视频"]
         ]
         reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
         await robust_reply_text(update.message, "🏠 **已返回主菜单**", reply_markup=reply_markup, parse_mode="Markdown")
@@ -509,7 +509,7 @@ async def handle_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"👤 **当前面板**\n\n"
             f"💠 **当前境界**：`{stats['group']}`\n"
             f"💰 **永久灵石**：`{stats['credits']}`\n"
-            f"⏳ **临时灵石**：`{stats['temp_credits']}` (今日有效)\n"
+            f"⏳ **临时灵石**：`{stats['temp_credits']}` (48小时有效，北京时间凌晨0:00清空)\n"
             f"📅 **累计签到**：`{stats['checkins']}` 天\n"
             f"🤝 **成功邀请**：`{stats['invitations']}` 人\n"
             f"🌀 **总计修炼**：`{stats['generations']}` 次\n"
@@ -524,6 +524,28 @@ async def handle_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if text in ["📅 每日签到", "签到", "/checkin"]:
         await permission_service.ensure_user(update)
+        
+        # 检查是否加入避难所群组
+        if REFUGE_GROUP_ID:
+            try:
+                group_id = int(REFUGE_GROUP_ID) if REFUGE_GROUP_ID.lstrip('-').isdigit() else REFUGE_GROUP_ID
+                member = await context.bot.get_chat_member(chat_id=group_id, user_id=update.effective_user.id)
+                if member.status in ['left', 'kicked', 'banned']:
+                    link = REFUGE_INVITE_LINK or "https://t.me/+J0velHHqUF01NGM1"
+                    keyboard = [[InlineKeyboardButton("🛡️ 点击加入避难所", url=link)]]
+                    reply_markup = InlineKeyboardMarkup(keyboard)
+                    msg = (
+                        "🛡️ **避难所签到检测**\n\n"
+                        "道友，检测到您尚未加入【合欢宗避难所】。\n"
+                        "**加入避难所，防封不迷路！**\n\n"
+                        "请先加入避难所后，再来进行每日签到领取奖励吧！"
+                    )
+                    await robust_reply_text(update.message, msg, parse_mode="Markdown", reply_markup=reply_markup)
+                    return
+            except Exception as e:
+                logger.warning(f"Failed to check refuge group membership: {e}")
+                # 忽略错误继续签到流程
+        
         success, current_credits, error_msg, total_days = await permission_service.perform_checkin(update)
         user_group = await permission_service.get_user_group(update.effective_user.id)
         
@@ -589,7 +611,8 @@ async def handle_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "🎬 动图后入": (MODE_DOGGY_STYLE, "🎬 已切换到【动图后入】模式 (消耗 6 灵石)。\n请发送一张【人脸】图片（正面、清晰），我将自动处理。"),
         "🎬 口交黑人": (MODE_BLOWJOB, "🎬 已切换到【口交黑人】模式 (消耗 6 灵石)。\n请发送一张【正面清晰图片】，我将自动处理。"),
         "🎬 脱衣吐舌": (MODE_UNDRESS_TONGUE, "🎬 已切换到【脱衣吐舌】模式 (消耗 6 灵石)。\n请发送一张【正面清晰图片】，我将自动处理。"),
-        "🎬 特写口交": (MODE_CLOSEUP_BLOWJOB, "🎬 已切换到【特写口交】模式 (消耗 6 灵石)。\n请发送一张【正面清晰图片】，我将自动处理。")
+        "🎬 特写口交": (MODE_CLOSEUP_BLOWJOB, "🎬 已切换到【特写口交】模式 (消耗 6 灵石)。\n请发送一张【正面清晰图片】，我将自动处理。"),
+        "📝 文生图": (MODE_TEXT_TO_IMAGE, "📝 已切换到【文生图】模式 (消耗 3 灵石)。\n请直接发送【提示词】(支持中英韩文)，我将为您生成图片。")
     }
     
     if text in mode_map:
@@ -607,19 +630,20 @@ async def handle_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
     mode = context.user_data.get('mode', MODE_EDIT)
     images = context.user_data.get('pending_images', [])
     
-    if not images:
-        await robust_reply_text(update.message, "请先发送一张图片。")
-        return
+    if mode != MODE_TEXT_TO_IMAGE:
+        if not images:
+            await robust_reply_text(update.message, "请先发送一张图片。")
+            return
 
-    # In single image mode, we only care about the last sent valid image
-    valid_images = [path for path in images if os.path.exists(path)]
-    if not valid_images:
-        await robust_reply_text(update.message, "❌ 图片已丢失，请重新发送图片。")
-        return
-    
-    # Force single image for EDIT mode to match prompt
-    if mode == MODE_EDIT:
-        valid_images = [valid_images[-1]]
+        # In single image mode, we only care about the last sent valid image
+        valid_images = [path for path in images if os.path.exists(path)]
+        if not valid_images:
+            await robust_reply_text(update.message, "❌ 图片已丢失，请重新发送图片。")
+            return
+        
+        # Force single image for EDIT mode to match prompt
+        if mode == MODE_EDIT:
+            valid_images = [valid_images[-1]]
 
     # Execute Generation
     chat_id = update.message.chat_id
@@ -633,6 +657,12 @@ async def handle_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
             context.user_data['pending_images'] = []
             return
         await task_service.process_custom_video_task(update, context, text, valid_images[0])
+    elif mode == MODE_TEXT_TO_IMAGE:
+        # 文生图
+        if len(text) > 500:
+            await robust_reply_text(update.message, "❌ 提示词过长，请控制在 500 字以内。")
+            return
+        await task_service.process_text_to_image_task(update, context, text)
     else:
         # Default Edit/Generation
         is_video = False
