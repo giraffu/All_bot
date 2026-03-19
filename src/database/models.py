@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, BigInteger, DateTime, Boolean, ForeignKey, Text, Date, func
+from sqlalchemy import Column, Integer, String, BigInteger, DateTime, Boolean, ForeignKey, Text, Date, func, DECIMAL
 from sqlalchemy.orm import declarative_base, relationship
 from datetime import datetime
 
@@ -16,6 +16,9 @@ class User(Base):
     last_checkin = Column(Date, nullable=True)
     is_channel_member = Column(Boolean, default=False)
     user_group = Column(String(20), default="凡人") # 凡人, 练气期, 筑基期
+    current_identity = Column(String(20), default="凡人") # 凡人, 内门弟子, 核心弟子, 真传弟子
+    identity_expire_at = Column(DateTime, nullable=True)
+    is_first_charge = Column(Boolean, default=True)
     total_contributions = Column(Integer, default=0) # 累计贡献次数
     approved_contributions = Column(Integer, default=0) # 累计被采纳次数
     
@@ -95,3 +98,39 @@ class UserLog(Base):
     extra_info = Column(Text, nullable=True)  # Stored as JSON string for compatibility
 
     user = relationship("User", backref="logs")
+
+class MembershipPlan(Base):
+    __tablename__ = "membership_plans"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(50), nullable=False)
+    identity_name = Column(String(50), nullable=False)
+    price_ton = Column(DECIMAL(10, 2), nullable=False)
+    reward_credits = Column(Integer, nullable=False)
+    duration_days = Column(Integer, default=30)
+    is_active = Column(Boolean, default=True)
+
+class DiscountRule(Base):
+    __tablename__ = "discount_rules"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    rule_type = Column(String(50), nullable=False) # e.g., FIRST_CHARGE, LEVEL_DISCOUNT
+    target_level = Column(String(50), nullable=True) # e.g., 化神期
+    discount_rate = Column(DECIMAL(3, 2), nullable=False) # e.g., 0.85
+    is_active = Column(Boolean, default=True)
+
+class Order(Base):
+    __tablename__ = "orders"
+
+    order_id = Column(String(64), primary_key=True) # Unique payload for TON transaction
+    telegram_id = Column(BigInteger, ForeignKey("users.id"), nullable=False, index=True)
+    plan_id = Column(Integer, ForeignKey("membership_plans.id"), nullable=False)
+    original_price = Column(DECIMAL(10, 2), nullable=False)
+    final_price = Column(DECIMAL(10, 2), nullable=False)
+    status = Column(String(20), default="PENDING") # PENDING, SUCCESS, FAILED
+    tx_hash = Column(String(100), nullable=True)
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+    user = relationship("User", backref="orders")
+    plan = relationship("MembershipPlan")

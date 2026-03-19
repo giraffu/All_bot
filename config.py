@@ -6,7 +6,7 @@ load_dotenv()
 
 # --- Bot Configuration ---
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-BOT_TOKEN_TEST = os.getenv("BOT_TOKEN_test")
+BOT_TOKEN_TEST = os.getenv("BOT_TOKEN_TEST") or os.getenv("BOT_TOKEN_test")
 FILE_BOT_TOKEN = os.getenv("FILE_BOT_TOKEN")
 
 # --- Telethon Configuration ---
@@ -19,6 +19,9 @@ GROUP_ID = os.getenv("GROUP_ID")
 # --- Proxy Configuration ---
 # Default to empty if not set, let bot detect or use system proxy
 PROXY_URL = os.getenv("PROXY_URL")
+
+# TON Payment Configuration
+VITE_MERCHANT_ADDRESS = os.getenv("VITE_MERCHANT_ADDRESS", "UQAluW2wxRCDsJIKGH59jB07xODgEbStdUPEj9AjI88d9l-s")
 
 # --- Database Configuration ---
 # Only PostgreSQL is supported

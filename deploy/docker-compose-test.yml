@@ -9,6 +9,9 @@ services:
     restart: always
     env_file:
       - ../.env
+    environment:
+      - BOT_TYPE=TEST
+      - BOT_TOKEN_TEST=8276500658:AAEeN8Lv7JfYqvcRI0rg7gbrvxq1A88GSJA
     volumes:
       - ../logs:/app/logs
     extra_hosts:

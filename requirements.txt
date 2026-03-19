@@ -6,3 +6,8 @@ aiosqlite
 minio
 asyncpg
 psycopg2-binary
+fastapi
+uvicorn
+pydantic
+pytoniq-core
+aiohttp

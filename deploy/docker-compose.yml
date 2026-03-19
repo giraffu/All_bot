@@ -11,6 +11,7 @@ services:
       - ../.env
     environment:
       - TZ=Asia/Shanghai
+      - BOT_TYPE=PROD
     volumes:
       - ../logs:/app/logs
     extra_hosts:

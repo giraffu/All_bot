@@ -7,7 +7,8 @@ from telegram.ext import (
 )
 from telegram.request import HTTPXRequest
 import logging
-from config import BOT_TOKEN_TEST, PROXY_URL
+import os
+from config import BOT_TOKEN, BOT_TOKEN_TEST, PROXY_URL
 from src.logger import setup_logging
 from src.handlers.command_handler import start, setup_commands
 from src.handlers.message_handler import handle_photo, handle_prompt, handle_video, handle_document
@@ -17,6 +18,8 @@ from src.quota import QuotaManager
 from datetime import time, timezone, timedelta
 import socket
 from urllib.parse import urlparse
+import asyncio
+from src.services.payment_validator import TonPaymentValidator
 
 def get_best_proxy(default_proxy):
     """
@@ -80,6 +83,10 @@ async def post_init(application):
     await init_db()
     await setup_commands(application)
     
+    # Initialize and start Payment Validator
+    payment_validator = TonPaymentValidator(bot_app=application)
+    asyncio.create_task(payment_validator.poll_transactions())
+
     # Schedule job to clear temporary credits every 48 hours at midnight (Beijing Time)
     beijing_tz = timezone(timedelta(hours=8))
     # run_repeating is used instead of run_daily to allow intervals longer than 24 hours
@@ -101,6 +108,24 @@ def main():
     setup_logging()
     logger = logging.getLogger("bot.core")
     
+    # Determine which token to use
+    bot_type = os.getenv("BOT_TYPE", "TEST")
+    
+    # Reload from env directly just to be safe
+    from dotenv import dotenv_values
+    env_vars = dotenv_values(".env")
+    
+    token_prod = os.getenv("BOT_TOKEN") or env_vars.get("BOT_TOKEN")
+    token_test = os.getenv("BOT_TOKEN_test") or env_vars.get("BOT_TOKEN_test") or os.getenv("BOT_TOKEN_TEST") or env_vars.get("BOT_TOKEN_TEST")
+    
+    token = token_prod if bot_type == "PROD" else token_test
+    
+    if not token:
+        logger.error(f"Failed to start: {bot_type} token is not configured.")
+        return
+
+    logger.info(f"Starting bot in {bot_type} mode...")
+
     # Detect best proxy
     active_proxy = get_best_proxy(PROXY_URL)
     logger.info(f"🌐 Using Proxy: {active_proxy}")
@@ -113,10 +138,9 @@ def main():
         connection_pool_size=100,
     )
 
-    # Use BOT_TOKEN_TEST for the test bot
     app = (
         ApplicationBuilder()
-        .token(BOT_TOKEN_TEST)
+        .token(token)
         .request(request)
         .get_updates_request(request) # Ensure get_updates uses same request config
         .post_init(post_init) # Call setup_commands on startup
@@ -132,7 +156,7 @@ def main():
     app.add_handler(MessageHandler(filters.Document.IMAGE | filters.Document.VIDEO, handle_document))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_prompt))
 
-    logger.info("🧪 TEST Telegram Bot started")
+    logger.info(f"🧪 {bot_type} Telegram Bot started")
     app.run_polling(poll_interval=2.0, timeout=30)
 
 if __name__ == "__main__":

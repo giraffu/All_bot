@@ -505,25 +505,6 @@ async def handle_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
         elif current_group == "金丹期":
             breakthrough_msg = "✨ **已登峰造极，成就金丹大道**"
 
-        msg = (
-            f"👤 **当前面板**\n\n"
-            f"💠 **当前境界**：`{stats['group']}`\n"
-            f"💰 **永久灵石**：`{stats['credits']}`\n"
-            f"⏳ **临时灵石**：`{stats['temp_credits']}` (48小时有效，北京时间凌晨0:00清空)\n"
-            f"📅 **累计签到**：`{stats['checkins']}` 天\n"
-            f"🤝 **成功邀请**：`{stats['invitations']}` 人\n"
-            f"🌀 **总计修炼**：`{stats['generations']}` 次\n"
-            f"📤 **贡献模板**：`{stats['total_contributions']}` 个\n"
-            f"✅ **采纳模板**：`{stats['approved_contributions']}` 个\n\n"
-            f"{breakthrough_msg}\n\n"
-            f"💡 _每日签到可获得 5永久灵石 + 15临时灵石！_"
-        )
-        
-        await robust_reply_text(update.message, msg, parse_mode="Markdown")
-        return
-
-    if text in ["📅 每日签到", "签到", "/checkin"]:
-        await permission_service.ensure_user(update)
         
         # 检查是否加入避难所群组
         if REFUGE_GROUP_ID:
