@@ -40,11 +40,15 @@ const filteredUsers = computed(() => {
 const editCreditsVisible = ref(false)
 const currentEditingUser = ref(null)
 const newCreditsValue = ref(0)
+const newTemporaryIngotValue = ref(0)
+const newCheckinCountValue = ref(0)
 const updatingCredits = ref(false)
 
 const handleEditCredits = (record) => {
   currentEditingUser.value = record
   newCreditsValue.value = record.credits
+  newTemporaryIngotValue.value = record.temporary_ingot || 0
+  newCheckinCountValue.value = record.checkin_count || 0
   editCreditsVisible.value = true
 }
 
@@ -53,12 +57,17 @@ const saveCredits = async () => {
   
   updatingCredits.value = true
   try {
-    await updateUserCredits(currentEditingUser.value.id, newCreditsValue.value)
-    message.success(`用户 ${currentEditingUser.value.id} 灵石已更新为 ${newCreditsValue.value}`)
+    await updateUserCredits(
+      currentEditingUser.value.id, 
+      newCreditsValue.value,
+      newTemporaryIngotValue.value,
+      newCheckinCountValue.value
+    )
+    message.success(`用户 ${currentEditingUser.value.id} 数据已更新`)
     editCreditsVisible.value = false
     emit('refresh')
   } catch (err) {
-    message.error('更新灵石失败: ' + (err.response?.data?.detail || err.message))
+    message.error('更新失败: ' + (err.response?.data?.detail || err.message))
   } finally {
     updatingCredits.value = false
   }
@@ -468,7 +477,7 @@ const columns = [
               @click="handleEditCredits(record)"
             >
               <template #icon><edit-outlined /></template>
-              修改灵石
+              修改数据
             </a-button>
 
             <a-button 
@@ -499,23 +508,26 @@ const columns = [
     <!-- Edit Credits Modal -->
     <a-modal
       v-model:visible="editCreditsVisible"
-      title="修改用户灵石"
+      title="修改用户数据"
       @ok="saveCredits"
       :confirmLoading="updatingCredits"
       okText="保存"
       cancelText="取消"
     >
       <div class="py-4">
-        <p class="mb-4 text-gray-500">正在为用户 <span class="font-bold text-gray-800">{{ currentEditingUser?.full_name || currentEditingUser?.id }}</span> 修改灵石</p>
+        <p class="mb-4 text-gray-500">正在为用户 <span class="font-bold text-gray-800">{{ currentEditingUser?.full_name || currentEditingUser?.id }}</span> 修改数据</p>
         <a-form layout="vertical">
           <a-form-item label="永久灵石余额">
             <a-input-number v-model:value="newCreditsValue" :min="0" class="w-full" />
           </a-form-item>
           <a-form-item label="临时灵石" extra="每日 00:00 自动清零，仅当日有效">
-            <a-input :value="Number(currentEditingUser?.temporary_ingot || 0).toLocaleString()" readonly class="w-full bg-gray-50 text-orange-500 font-mono" />
+            <a-input-number v-model:value="newTemporaryIngotValue" :min="0" class="w-full" />
+          </a-form-item>
+          <a-form-item label="累计签到次数">
+            <a-input-number v-model:value="newCheckinCountValue" :min="0" class="w-full" />
           </a-form-item>
         </a-form>
-        <p class="mt-2 text-xs text-amber-500 italic">* 增加灵石直接输入更大数值，减少灵石输入较小数值即可。</p>
+        <p class="mt-2 text-xs text-amber-500 italic">* 增加数值直接输入更大数值，减少数值输入较小数值即可。</p>
       </div>
     </a-modal>
 

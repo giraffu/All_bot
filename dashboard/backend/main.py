@@ -92,6 +92,8 @@ async def check_auth_header(request: Request, call_next):
 # Pydantic models for request bodies
 class UpdateCreditsRequest(BaseModel):
     credits: int
+    temporary_ingot: Optional[int] = None
+    checkin_count: Optional[int] = None
 
 class MembershipPlanCreate(BaseModel):
     name: str
@@ -1229,7 +1231,7 @@ async def delete_user(user_id: int, db: AsyncSession = Depends(get_db)):
 
 @app.post("/api/users/{user_id}/credits")
 async def update_user_credits(user_id: int, request: UpdateCreditsRequest, db: AsyncSession = Depends(get_db)):
-    """Update user credits"""
+    """Update user credits, temporary ingot and checkin count"""
     try:
         stmt = select(User).where(User.id == user_id)
         result = await db.execute(stmt)
@@ -1239,10 +1241,23 @@ async def update_user_credits(user_id: int, request: UpdateCreditsRequest, db: A
             raise HTTPException(status_code=404, detail="User not found")
             
         user.credits = request.credits
+        if request.temporary_ingot is not None:
+            user.temp_credits = request.temporary_ingot
+            # Update the temporary_ingot column as well just in case
+            if hasattr(user, 'temporary_ingot'):
+                user.temporary_ingot = request.temporary_ingot
+        if request.checkin_count is not None:
+            user.checkin_count = request.checkin_count
+            
         await db.commit()
-        return {"status": "ok", "credits": user.credits}
+        return {
+            "status": "ok", 
+            "credits": user.credits, 
+            "temporary_ingot": user.temp_credits,
+            "checkin_count": user.checkin_count
+        }
     except Exception as e:
-        logger.error(f"Error updating credits: {e}")
+        logger.error(f"Error updating user data: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.delete("/api/users/{user_id}/history")
