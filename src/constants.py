@@ -65,19 +65,67 @@ TASK_COSTS = {
 
 # Default Video Resolutions based on User Group
 VIDEO_RESOLUTIONS = {
+    "真传弟子": (720, 720),
+    "核心弟子": (720, 720),
+    "内门弟子": (720, 720),
     "金丹期": (720, 720),
     "筑基期": (720, 720),
     "default": (512, 512)
 }
 
+DEFAULT_RESOLUTION = "512p"
+
+RESOLUTION_PERMISSIONS = {
+    "凡人": ["512p"],
+    "外门弟子": ["512p"],
+    "练气期": ["512p"],
+    "筑基期": ["512p", "720p"],
+    "金丹期": ["512p", "720p", "1024p"],
+    "内门弟子": ["512p", "720p", "1024p"],
+    "核心弟子": ["512p", "720p", "1024p"],
+    "真传弟子": ["512p", "720p", "1024p"]
+}
+
+RESOLUTION_COST = {
+    "512p": 6,
+    "720p": 10,
+    "1024p": 20
+}
+
+def get_resolution_keyboard(user_group: str, user_identity: str = "外门弟子", current_resolution: str = DEFAULT_RESOLUTION):
+    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+    group_allowed = RESOLUTION_PERMISSIONS.get(user_group, ["512p"])
+    identity_allowed = RESOLUTION_PERMISSIONS.get(user_identity, ["512p"])
+    allowed_resolutions = list(set(group_allowed + identity_allowed))
+    
+    keyboard = []
+    row = []
+    # Ensure ordered display
+    for res in ['512p', '720p', '1024p']:
+        if res in allowed_resolutions:
+            cost = RESOLUTION_COST.get(res, 6)
+            display_text = f"{res} ({cost}灵石)"
+            text = f"✅ {display_text}" if res == current_resolution else display_text
+            callback_data = f"set_res_{res}"
+            row.append(InlineKeyboardButton(text, callback_data=callback_data))
+    
+    if row:
+        keyboard.append(row)
+        
+    return InlineKeyboardMarkup(keyboard)
+
 # Dynamic Priority Rules
 # Format: "Group Name": [(limit_1, priority_1), (limit_2, priority_2), ...]
 # Logic: if usage < limit_1 return priority_1, elif usage < limit_2 return priority_2... else return 0
 DYNAMIC_PRIORITY_RULES = {
+    "真传弟子": [(50, 20), (100, 10), (200, 5)],
+    "核心弟子": [(50, 10), (100, 5), (200, 1)],
+    "内门弟子": [(50, 5), (100, 3), (200, 1)],
     "金丹期": [(50, 3), (100, 2), (200, 1)],
     "筑基期": [(25, 2), (50, 1)],
     "练气期": [(15, 1)],
-    "凡人": [] # Always 0
+    "凡人": [], # Always 0
+    "外门弟子": [] # Same as Mortal
 }
 
 # Task types that count towards daily usage limit

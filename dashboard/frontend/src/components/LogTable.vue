@@ -63,6 +63,7 @@ const columns = [
 const operationTypes = [
   { label: '签到 (Checkin)', value: 'checkin' },
   { label: '生成消耗 (Generation)', value: 'generation' },
+  { label: '充值成功 (Recharge)', value: 'recharge' },
   { label: '邀请奖励 (Referral)', value: 'referral_reward_initial' },
   { label: '新人奖励 (Welcome)', value: 'welcome_bonus' },
   { label: '入群奖励 (Channel)', value: 'referral_reward_channel' },
@@ -195,6 +196,7 @@ onMounted(() => {
           <template v-else-if="column.dataIndex === 'operation_type'">
             <a-tag :color="record.operation_type === 'checkin' ? 'green' : 
                           record.operation_type === 'generation' ? 'blue' : 
+                          record.operation_type === 'recharge' ? 'purple' :
                           record.operation_type.includes('reward') ? 'gold' : 'default'">
               {{ record.operation_type }}
             </a-tag>

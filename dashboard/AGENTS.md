@@ -3,7 +3,7 @@
 这份文档旨在帮助AI助手快速理解本项目架构、技术栈及部署流程，以便进行代码维护和功能开发。
 
 ## 1. 项目简介
-本项目是一个全栈管理后台系统（Dashboard），用于管理TeleBot应用的用户、统计数据、模版贡献及系统监控。项目采用前后端分离架构，并进行容器化部署。
+本项目是一个全栈管理后台系统（Dashboard），用于管理TeleBot应用的用户、统计数据、模版贡献、系统监控以及充值系统。项目采用前后端分离架构，并进行容器化部署。
 
 ## 2. 技术栈架构
 
@@ -18,7 +18,9 @@
 - **关键文件**:
   - `vite.config.js`: 构建配置
   - `src/api/api.js`: API 接口定义
-  - `src/components/`: 业务组件
+  - `src/components/RechargeSystem.vue`: 充值系统配置与订单管理
+  - `src/components/UserTable.vue`: 用户管理（含修改灵石、赠送套餐功能）
+  - `src/components/LogTable.vue`: 操作日志记录（含充值对账展示）
 
 ### 2.2 后端 (Backend)
 - **路径**: `backend/` (及项目根目录 `src/` 模块)
@@ -69,3 +71,7 @@
 - **API 代理**: 前端开发环境 (`vite.config.js`) 和生产环境 (`nginx.conf`) 均配置了 `/api` 前缀的代理，指向后端服务。
 - **跨域 (CORS)**: 后端 `main.py` 配置了 CORS 中间件，允许跨域请求（生产环境建议限制来源）。
 - **静态资源**: 图片和视频资源通过 MinIO 的预签名 URL (Presigned URL) 提供访问，不直接通过本地文件系统服务。
+- **充值系统对账**: 
+  - 核心表包括 `Order` (链上订单)、`MembershipPlan` (商品套餐)、`User` (用户余额与身份) 和 `UserLog` (财务流水)。
+  - 当需要给用户“空降”特权时，应使用“内部赠送套餐”的方式（即伪造一笔 `0` 元的 `SUCCESS` 订单），以保持 `Order` 和 `UserLog` 的财务流水对账完整性。
+  - `MembershipPlan` 的 `is_active` 字段可控制套餐在前端是否可见，可用于隐藏内部专用或已下架的套餐。

@@ -320,3 +320,33 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
             await context.bot.delete_message(chat_id=chat_id, message_id=status_msg_id)
         except:
             pass
+
+    elif data.startswith("set_res_"):
+        new_res = data.replace("set_res_", "")
+        from src.constants import get_resolution_keyboard, RESOLUTION_COST, RESOLUTION_PERMISSIONS
+        
+        user_group = await permission_service.get_user_group(query.from_user.id)
+        user_identity = await permission_service.get_user_identity(query.from_user.id)
+        
+        group_allowed = RESOLUTION_PERMISSIONS.get(user_group, ["512p"])
+        identity_allowed = RESOLUTION_PERMISSIONS.get(user_identity, ["512p"])
+        
+        # Merge allowed resolutions (take union and unique)
+        allowed = list(set(group_allowed + identity_allowed))
+        
+        if new_res not in allowed:
+            await query.answer(f"❌ 境界或身份不足，无法选择 {new_res} 分辨率！", show_alert=True)
+            return
+
+        context.user_data['custom_video_resolution'] = new_res
+        
+        # Determine highest allowed resolution set for keyboard
+        reply_markup = get_resolution_keyboard(user_group, user_identity, new_res)
+        
+        try:
+            await robust_edit_reply_markup(query.message, reply_markup=reply_markup)
+        except Exception:
+            pass
+            
+        cost = RESOLUTION_COST.get(new_res, 6)
+        await query.answer(f"已切换至 {new_res}，灵石消耗 {cost}", show_alert=False)

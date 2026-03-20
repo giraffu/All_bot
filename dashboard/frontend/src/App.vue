@@ -20,6 +20,7 @@ import DailyTypeChart from './components/DailyTypeChart.vue'
 import CumulativeTypeChart from './components/CumulativeTypeChart.vue'
 import HistoryTable from './components/HistoryTable.vue'
 import LogTable from './components/LogTable.vue'
+import RechargeSystem from './components/RechargeSystem.vue'
 import { message } from 'ant-design-vue'
 import { 
   ReloadOutlined, 
@@ -35,7 +36,8 @@ import {
   HomeOutlined,
   PieChartOutlined,
   HistoryOutlined,
-  FileTextOutlined
+  FileTextOutlined,
+  PayCircleOutlined
 } from '@ant-design/icons-vue'
 
 // State
@@ -316,6 +318,10 @@ onUnmounted(() => {
           <template #icon><file-text-outlined /></template>
           <span>操作日志</span>
         </a-menu-item>
+        <a-menu-item key="recharge">
+          <template #icon><pay-circle-outlined /></template>
+          <span>充值系统</span>
+        </a-menu-item>
         <a-menu-item key="templates">
           <template #icon><picture-outlined /></template>
           <span>模板共建</span>
@@ -352,6 +358,7 @@ onUnmounted(() => {
                 activeTab[0] === 'users' ? '用户管理' : 
                 activeTab[0] === 'history' ? '历史生成' :
                 activeTab[0] === 'logs' ? '操作日志' :
+                activeTab[0] === 'recharge' ? '充值系统' :
                 '模板共建' 
               }}
             </a-breadcrumb-item>
@@ -410,7 +417,7 @@ onUnmounted(() => {
       <!-- Content -->
       <a-layout-content 
         class="p-6 bg-gray-50 flex flex-col h-[calc(100vh-64px)]"
-        :class="['home', 'templates', 'logs'].includes(activeTab[0]) ? 'overflow-y-auto' : 'overflow-hidden'"
+        :class="['home', 'templates', 'logs', 'recharge'].includes(activeTab[0]) ? 'overflow-y-auto' : 'overflow-hidden'"
       >
         <div class="w-full flex-1 flex flex-col">
           <!-- Main Workspace -->
@@ -566,6 +573,10 @@ onUnmounted(() => {
 
           <div v-else-if="activeTab[0] === 'logs'" class="flex-1 bg-white rounded-xl shadow-sm border p-6 flex flex-col min-h-0">
             <LogTable />
+          </div>
+
+          <div v-else-if="activeTab[0] === 'recharge'" class="flex-1 min-h-0">
+            <RechargeSystem />
           </div>
 
           <div v-else-if="activeTab[0] === 'templates'" class="flex-1 bg-white rounded-xl shadow-sm border p-6 flex flex-col min-h-0">

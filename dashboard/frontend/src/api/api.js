@@ -163,5 +163,45 @@ export const fetchLogs = async ({ page = 1, pageSize = 20, userId = null, operat
   return response.data
 }
 
+// Recharge System APIs
+export const fetchPlans = async () => {
+  const response = await api.get('/api/plans')
+  return response.data
+}
+
+export const createPlan = async (planData) => {
+  const response = await api.post('/api/plans', planData)
+  return response.data
+}
+
+export const updatePlan = async (planId, planData) => {
+  const response = await api.put(`/api/plans/${planId}`, planData)
+  return response.data
+}
+
+export const deletePlan = async (planId) => {
+  const response = await api.delete(`/api/plans/${planId}`)
+  return response.data
+}
+
+export const fetchOrders = async (page = 1, pageSize = 20, status = null) => {
+  const params = new URLSearchParams()
+  params.append('page', page)
+  params.append('page_size', pageSize)
+  if (status && status !== 'ALL') {
+    params.append('status', status)
+  }
+  const response = await api.get(`/api/orders?${params.toString()}`)
+  return response.data
+}
+
+export const adminGiftPlan = async (userId, planId, note = "后台手动赠送") => {
+  const response = await api.post(`/api/users/${userId}/gift`, {
+    plan_id: planId,
+    note: note
+  })
+  return response.data
+}
+
 export { apiBaseUrl }
 export default api

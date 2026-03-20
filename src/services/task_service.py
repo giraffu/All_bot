@@ -185,6 +185,18 @@ class TaskService:
         full_output_path = None
 
         try:
+            # Determine resolution from user group/identity for template videos
+            user_group = await permission_service.get_user_group(user_id)
+            user_identity = await permission_service.get_user_identity(user_id)
+            
+            # Check if either group or identity has 720p resolution for templates
+            group_res = VIDEO_RESOLUTIONS.get(user_group, VIDEO_RESOLUTIONS["default"])
+            identity_res = VIDEO_RESOLUTIONS.get(user_identity, VIDEO_RESOLUTIONS["default"])
+            
+            width, height = group_res if group_res[0] > identity_res[0] else identity_res
+            resolution = f"{width}p" # approximation for logging/messaging
+            
+            # Pre-flight check removed as backend can upscale
             if not await permission_service.check_quota(update, context, cost=cost):
                 await robust_delete_message(msg)
                 return None, None
@@ -193,11 +205,6 @@ class TaskService:
 
             await robust_edit_text(msg, "⏳ 正在生成视频，请耐心等待...")
 
-            # Determine resolution
-            user_group = await permission_service.get_user_group(user_id)
-            width, height = VIDEO_RESOLUTIONS.get(
-                user_group, VIDEO_RESOLUTIONS["default"]
-            )
             priority = await permission_service.calculate_user_priority(user_id)
 
             # Submit Task
@@ -355,16 +362,22 @@ class TaskService:
         msg = await robust_reply_text(update.effective_message, msg_text)
 
         try:
+            from src.constants import DEFAULT_RESOLUTION
+            resolution = context.user_data.get('custom_video_resolution', DEFAULT_RESOLUTION)
+            if resolution == "1024p":
+                width, height = 1024, 1024
+            elif resolution == "720p":
+                width, height = 720, 720
+            else:
+                width, height = 512, 512
+                
+            # Pre-flight check removed as backend can upscale
             if not await permission_service.check_quota(update, context, cost=cost):
                 await robust_delete_message(msg)
                 return None, None
             await permission_service.increment_quota(user_id, cost=cost, username=username, task_type=mode)
             await robust_edit_text(msg, "⏳ 正在生成视频，请耐心等待...")
 
-            user_group = await permission_service.get_user_group(user_id)
-            width, height = VIDEO_RESOLUTIONS.get(
-                user_group, VIDEO_RESOLUTIONS["default"]
-            )
             priority = await permission_service.calculate_user_priority(user_id)
 
             task_id = await image_service.submit_perfect_video_edit(

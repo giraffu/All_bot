@@ -23,7 +23,7 @@ from datetime import datetime, date, timedelta
 
 # Import from existing bot codebase
 from src.database.core import get_db, init_db
-from src.database.models import User, History, Referral, TemplateContribution, CheckinHistory, UserLog
+from src.database.models import User, History, Referral, TemplateContribution, CheckinHistory, UserLog, MembershipPlan, Order
 from src.services.image_service import image_service
 from src.services.log_service import LogService
 from src.services.storage import storage
@@ -92,6 +92,60 @@ async def check_auth_header(request: Request, call_next):
 # Pydantic models for request bodies
 class UpdateCreditsRequest(BaseModel):
     credits: int
+
+class MembershipPlanCreate(BaseModel):
+    name: str
+    identity_name: str
+    price_ton: float
+    reward_credits: int
+    duration_days: int = 30
+    is_active: bool = True
+
+class MembershipPlanUpdate(BaseModel):
+    name: Optional[str] = None
+    identity_name: Optional[str] = None
+    price_ton: Optional[float] = None
+    reward_credits: Optional[int] = None
+    duration_days: Optional[int] = None
+    is_active: Optional[bool] = None
+
+class MembershipPlanResponse(BaseModel):
+    id: int
+    name: str
+    identity_name: str
+    price_ton: float
+    reward_credits: int
+    duration_days: Optional[int] = 30
+    is_active: Optional[bool] = True
+
+    class Config:
+        from_attributes = True
+
+class OrderResponse(BaseModel):
+    id: int
+    order_id: str
+    telegram_id: int
+    plan_id: int
+    original_price: Optional[float] = None
+    final_price: Optional[float] = None
+    status: Optional[str] = "PENDING"
+    tx_hash: Optional[str] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+    
+    username: Optional[str] = None
+    plan_name: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+class OrderListResponse(BaseModel):
+    items: List[OrderResponse]
+    total: int
+
+class AdminGiftRequest(BaseModel):
+    plan_id: int
+    note: Optional[str] = "后台手动赠送"
 
 class HistoryResponse(BaseModel):
     id: int
@@ -962,6 +1016,16 @@ async def get_users(skip: int = 0, limit: int = 10000, db: AsyncSession = Depend
 
         result = await db.execute(stmt)
         users = result.scalars().all()
+        
+        # Subquery for total recharge per user
+        recharge_stmt = (
+            select(Order.telegram_id, func.sum(Order.final_price).label("total_recharge"))
+            .where(Order.status == "SUCCESS")
+            .group_by(Order.telegram_id)
+        )
+        recharge_result = await db.execute(recharge_stmt)
+        recharge_dict = {row.telegram_id: float(row.total_recharge or 0) for row in recharge_result}
+        
         users_with_counts = []
         
         for user in users:
@@ -976,6 +1040,9 @@ async def get_users(skip: int = 0, limit: int = 10000, db: AsyncSession = Depend
             user_dict["last_activity"] = user.last_activity
             user_dict["generation_count"] = user.generation_count or 0
             user_dict["checkin_count"] = user.checkin_count or 0
+            user_dict["current_identity"] = user.current_identity or '外门弟子'
+            user_dict["identity_expire_at"] = user.identity_expire_at
+            user_dict["total_recharge"] = recharge_dict.get(user.id, 0.0)
             
             # Add contribution stats
             user_dict["total_contributions"] = int(user.total_contributions or 0)
@@ -1234,6 +1301,198 @@ async def get_system_status():
             return {"comfyui": "online" if response.status_code == 200 else "error", "details": response.json() if response.status_code == 200 else str(response.status_code)}
     except Exception as e:
         return {"comfyui": "offline", "error": str(e)}
+
+# --- Recharge System Management ---
+
+@app.get("/api/plans", response_model=List[MembershipPlanResponse])
+async def get_membership_plans(db: AsyncSession = Depends(get_db)):
+    """Get all membership plans"""
+    try:
+        stmt = select(MembershipPlan).order_by(MembershipPlan.price_ton)
+        result = await db.execute(stmt)
+        plans = result.scalars().all()
+        return plans
+    except Exception as e:
+        logger.error(f"Error getting plans: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/plans", response_model=MembershipPlanResponse)
+async def create_membership_plan(plan: MembershipPlanCreate, db: AsyncSession = Depends(get_db)):
+    """Create a new membership plan"""
+    try:
+        new_plan = MembershipPlan(**plan.dict())
+        db.add(new_plan)
+        await db.commit()
+        await db.refresh(new_plan)
+        return new_plan
+    except Exception as e:
+        logger.error(f"Error creating plan: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.put("/api/plans/{plan_id}", response_model=MembershipPlanResponse)
+async def update_membership_plan(plan_id: int, plan_update: MembershipPlanUpdate, db: AsyncSession = Depends(get_db)):
+    """Update a membership plan"""
+    try:
+        stmt = select(MembershipPlan).where(MembershipPlan.id == plan_id)
+        result = await db.execute(stmt)
+        db_plan = result.scalar_one_or_none()
+        if not db_plan:
+            raise HTTPException(status_code=404, detail="Plan not found")
+        
+        update_data = plan_update.dict(exclude_unset=True)
+        for key, value in update_data.items():
+            setattr(db_plan, key, value)
+            
+        await db.commit()
+        await db.refresh(db_plan)
+        return db_plan
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating plan: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.delete("/api/plans/{plan_id}")
+async def delete_membership_plan(plan_id: int, db: AsyncSession = Depends(get_db)):
+    """Delete a membership plan"""
+    try:
+        stmt = select(MembershipPlan).where(MembershipPlan.id == plan_id)
+        result = await db.execute(stmt)
+        db_plan = result.scalar_one_or_none()
+        if not db_plan:
+            raise HTTPException(status_code=404, detail="Plan not found")
+        
+        await db.delete(db_plan)
+        await db.commit()
+        return {"status": "ok", "message": "Plan deleted"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting plan: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/orders", response_model=OrderListResponse)
+async def get_orders(
+    page: int = 1, 
+    page_size: int = 20, 
+    status: Optional[str] = None,
+    db: AsyncSession = Depends(get_db)
+):
+    """Get orders with pagination and optional status filter"""
+    try:
+        offset = (page - 1) * page_size
+        
+        count_stmt = select(func.count(Order.id))
+        stmt = (
+            select(Order, User.username, MembershipPlan.name.label("plan_name"))
+            .outerjoin(User, Order.telegram_id == User.id)
+            .outerjoin(MembershipPlan, Order.plan_id == MembershipPlan.id)
+            .order_by(desc(Order.created_at))
+        )
+        
+        if status and status != "ALL":
+            count_stmt = count_stmt.where(Order.status == status)
+            stmt = stmt.where(Order.status == status)
+            
+        count_result = await db.execute(count_stmt)
+        total = count_result.scalar() or 0
+        
+        stmt = stmt.offset(offset).limit(page_size)
+        result = await db.execute(stmt)
+        
+        items = []
+        for row in result:
+            order = row[0]
+            username = row[1]
+            plan_name = row[2]
+            
+            order_dict = {c.name: getattr(order, c.name) for c in order.__table__.columns}
+            order_dict["username"] = username
+            order_dict["plan_name"] = plan_name
+            items.append(order_dict)
+            
+        return {"items": items, "total": total}
+    except Exception as e:
+        logger.error(f"Error getting orders: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/users/{user_id}/gift")
+async def admin_gift_plan(user_id: int, request: AdminGiftRequest, db: AsyncSession = Depends(get_db)):
+    """Manually gift a membership plan to a user"""
+    try:
+        # 1. Verify user exists
+        stmt = select(User).where(User.id == user_id)
+        result = await db.execute(stmt)
+        user = result.scalar_one_or_none()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+            
+        # 2. Verify plan exists
+        plan_stmt = select(MembershipPlan).where(MembershipPlan.id == request.plan_id)
+        plan_result = await db.execute(plan_stmt)
+        plan = plan_result.scalar_one_or_none()
+        if not plan:
+            raise HTTPException(status_code=404, detail="Plan not found")
+            
+        # 3. Create Order
+        import uuid
+        import json
+        order_id = f"GIFT:{user_id}:{plan.id}:{int(datetime.now().timestamp())}"
+        tx_hash = f"manual_{uuid.uuid4().hex[:16]}"
+        
+        new_order = Order(
+            order_id=order_id,
+            telegram_id=user_id,
+            plan_id=plan.id,
+            original_price=0,  # 0 for gift
+            final_price=0,
+            status="SUCCESS",
+            tx_hash=tx_hash
+        )
+        db.add(new_order)
+        
+        # 4. Update User
+        user.credits += plan.reward_credits
+        user.current_identity = plan.identity_name
+        user.is_first_charge = False
+        
+        # Handle expiration
+        if not user.identity_expire_at or user.identity_expire_at < datetime.now():
+            user.identity_expire_at = datetime.now() + timedelta(days=plan.duration_days)
+        else:
+            user.identity_expire_at = user.identity_expire_at + timedelta(days=plan.duration_days)
+            
+        # 5. Create UserLog
+        extra_info = {
+            "order_id": order_id,
+            "plan_name": plan.name,
+            "note": request.note,
+            "is_gift": True
+        }
+        log_entry = UserLog(
+            user_id=user.id,
+            username=user.username,
+            operation_type="recharge", # Use recharge so it matches existing financial views
+            credit_change=plan.reward_credits,
+            current_balance=user.credits,
+            extra_info=json.dumps(extra_info, ensure_ascii=False)
+        )
+        db.add(log_entry)
+        
+        await db.commit()
+        
+        return {
+            "status": "ok", 
+            "message": f"Successfully gifted plan {plan.name} to user {user.id}",
+            "new_credits": user.credits,
+            "new_identity": user.current_identity
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        await db.rollback()
+        logger.error(f"Error gifting plan: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 # --- Template Contribution Management ---
 

@@ -12,19 +12,29 @@ class PermissionService:
 
     async def calculate_user_priority(self, user_id: int) -> int:
         """
-        Calculate dynamic priority based on user group and daily usage.
+        Calculate dynamic priority based on user group (修为), identity (身份), and daily usage.
+        Priority from group and identity are calculated independently and then added together.
         Rules defined in DYNAMIC_PRIORITY_RULES.
         """
         group = await self.get_user_group(user_id)
+        identity = await self.get_user_identity(user_id)
         usage = await self.quota_manager.get_daily_usage(user_id)
         
-        rules = DYNAMIC_PRIORITY_RULES.get(group, [])
-        for limit, priority in rules:
+        group_priority = 0
+        group_rules = DYNAMIC_PRIORITY_RULES.get(group, [])
+        for limit, priority in group_rules:
             if usage < limit:
-                return priority
+                group_priority = priority
+                break
+                
+        identity_priority = 0
+        identity_rules = DYNAMIC_PRIORITY_RULES.get(identity, [])
+        for limit, priority in identity_rules:
+            if usage < limit:
+                identity_priority = priority
+                break
         
-        # If no rule matched (usage exceeded all limits), or empty rules (Mortal), return 0
-        return 0
+        return group_priority + identity_priority
 
     async def check_access(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
         """
@@ -212,10 +222,14 @@ class PermissionService:
         """Get comprehensive stats for a user profile"""
         stats = await self.quota_manager.get_user_stats(user_id)
         group = await self.get_user_group(user_id)
+        identity = await self.get_user_identity(user_id)
+        priority = await self.calculate_user_priority(user_id)
         credits, temp_credits = await self.quota_manager.get_detailed_credits(user_id)
         
         return {
             "group": group,
+            "identity": identity,
+            "priority": priority,
             "credits": credits,
             "temp_credits": temp_credits,
             "invitations": stats.get("invitation_count", 0),
@@ -231,13 +245,14 @@ class PermissionService:
         return await self.quota_manager.get_credits(user.id, username=user.username, full_name=user.full_name)
 
     async def get_user_group(self, user_id: int) -> str:
-        """Get user group from DB"""
+        """Get user group (修为) from DB"""
         async with AsyncSessionLocal() as session:
             from src.database.models import User
             from sqlalchemy import select
             stmt = select(User.user_group).where(User.id == user_id)
             result = await session.execute(stmt)
             group = result.scalar() or "凡人"
+            
             # Migration: map old names to new names if they exist in DB
             mapping = {
                 "游客": "凡人",
@@ -245,6 +260,27 @@ class PermissionService:
                 "白银用户": "筑基期"
             }
             return mapping.get(group, group)
+            
+    async def get_user_identity(self, user_id: int) -> str:
+        """Get effective user identity (身份) from DB"""
+        async with AsyncSessionLocal() as session:
+            from src.database.models import User
+            from sqlalchemy import select
+            from datetime import datetime
+            stmt = select(User.current_identity, User.identity_expire_at).where(User.id == user_id)
+            result = await session.execute(stmt)
+            row = result.first()
+            if not row:
+                return "外门弟子"
+                
+            current_identity = row.current_identity
+            identity_expire_at = row.identity_expire_at
+            
+            if current_identity and current_identity != "外门弟子":
+                if not identity_expire_at or identity_expire_at > datetime.now():
+                    return current_identity
+                    
+            return "外门弟子"
         
     async def perform_checkin(self, update: Update) -> tuple[bool, int, str, int]:
         """

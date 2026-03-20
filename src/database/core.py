@@ -105,7 +105,7 @@ async def init_db():
     async with engine.begin() as conn:
         try:
             logger.info("Adding new payment and identity columns to users table")
-            await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS current_identity VARCHAR(20) DEFAULT '凡人'"))
+            await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS current_identity VARCHAR(20) DEFAULT '外门弟子'"))
             await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS identity_expire_at TIMESTAMP"))
             await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS is_first_charge BOOLEAN DEFAULT TRUE"))
         except Exception as e:

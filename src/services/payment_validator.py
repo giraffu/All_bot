@@ -78,14 +78,14 @@ class TonPaymentValidator:
                     if tx_lt <= self.last_lt:
                         continue # Already processed
                         
-                    self.last_lt = tx_lt
-                    
                     in_msg = tx.get("in_msg", {})
                     if not in_msg:
+                        self.last_lt = tx_lt
                         continue
                         
                     amount_nanotons = int(in_msg.get("value", 0))
                     if amount_nanotons <= 0:
+                        self.last_lt = tx_lt
                         continue
                         
                     # Extract message/payload
@@ -101,12 +101,17 @@ class TonPaymentValidator:
                         order_id = msg_data
                         
                     if order_id and order_id.startswith("ORDER:"):
-                        await self._process_order(order_id, amount_nanotons, tx_hash)
+                        success = await self._process_order(order_id, amount_nanotons, tx_hash)
+                        if success:
+                            self.last_lt = tx_lt
+                    else:
+                        self.last_lt = tx_lt
 
-    async def _process_order(self, order_id: str, amount_nanotons: int, tx_hash: str):
+    async def _process_order(self, order_id: str, amount_nanotons: int, tx_hash: str) -> bool:
         """
         Process a found order: verify amount, fulfill, and notify user.
         Format: ORDER:{tgUserId}:{planId}:{timestamp}
+        Returns True if processing is complete (success or definitive failure), False if it should be retried.
         """
         logger.info(f"Processing order from blockchain: {order_id} with amount {amount_nanotons}")
         
@@ -114,87 +119,128 @@ class TonPaymentValidator:
             parts = order_id.split(":")
             if len(parts) != 4:
                 logger.warning(f"Invalid order format: {order_id}")
-                return
+                return True # Don't retry invalid formats
                 
-            tg_user_id = int(parts[1])
-            plan_id = int(parts[2])
+            try:
+                tg_user_id = int(parts[1])
+                plan_id = int(parts[2])
+            except ValueError:
+                logger.warning(f"Invalid integer in order format: {order_id}")
+                return True
             
             async with AsyncSessionLocal() as db:
-                # 1. Check if already processed
-                existing_order = await db.execute(select(Order).where(Order.order_id == order_id))
-                if existing_order.scalar_one_or_none():
-                    logger.info(f"Order {order_id} already processed.")
-                    return
+                try:
+                    # 1. Check if already processed (by tx_hash)
+                    existing_tx = await db.execute(select(Order).where(Order.tx_hash == tx_hash))
+                    if existing_tx.scalar_one_or_none():
+                        logger.info(f"Transaction {tx_hash} already processed.")
+                        return True
+                        
+                    # Also check order_id for legacy or exact duplicate payload
+                    existing_order = await db.execute(select(Order).where(Order.order_id == order_id))
+                    if existing_order.scalar_one_or_none():
+                        # Append a suffix to avoid duplicate order_id
+                        order_id = f"{order_id}_{tx_hash[:8]}"
+
+                    # 2. Get Plan and User
+                    plan_res = await db.execute(select(MembershipPlan).where(MembershipPlan.id == plan_id))
+                    plan = plan_res.scalar_one_or_none()
+                    if not plan:
+                        logger.error(f"Plan {plan_id} not found for order {order_id}")
+                        return True
+                        
+                    user_res = await db.execute(select(User).where(User.id == tg_user_id))
+                    user = user_res.scalar_one_or_none()
+                    if not user:
+                        logger.error(f"User {tg_user_id} not found for order {order_id}")
+                        return True
                     
-                # 2. Get Plan and User
-                plan_res = await db.execute(select(MembershipPlan).where(MembershipPlan.id == plan_id))
-                plan = plan_res.scalar_one_or_none()
-                if not plan:
-                    logger.error(f"Plan {plan_id} not found for order {order_id}")
-                    return
+                    # Exact price match with tiny slippage allowed (0.01 TON)
+                    expected_min_nanotons = int(plan.price_ton * Decimal('1000000000')) - 10000000
+                    if expected_min_nanotons < 0:
+                        expected_min_nanotons = 0
+
+                    if amount_nanotons < expected_min_nanotons:
+                        logger.warning(f"Insufficient funds for order {order_id}: {amount_nanotons} < {expected_min_nanotons}")
+                        status = "FAILED"
+                    else:
+                        status = "SUCCESS"
                     
-                user_res = await db.execute(select(User).where(User.id == tg_user_id))
-                user = user_res.scalar_one_or_none()
-                if not user:
-                    logger.error(f"User {tg_user_id} not found for order {order_id}")
-                    return
-                
-                # Note: In frontend-only approach, we must trust the frontend's price or recalculate.
-                # Here we just check if they paid at least the plan's base price * 0.5 (max discount).
-                # For strict security, you'd recalculate the exact expected price here.
-                expected_min_nanotons = int(plan.price_ton * Decimal('0.5') * 10**9)
-                if amount_nanotons < expected_min_nanotons:
-                    logger.warning(f"Insufficient funds for order {order_id}: {amount_nanotons} < {expected_min_nanotons}")
-                    status = "FAILED"
-                else:
-                    status = "SUCCESS"
-                
-                # 3. Create Order Record
-                new_order = Order(
-                    order_id=order_id,
-                    telegram_id=tg_user_id,
-                    plan_id=plan_id,
-                    original_price=plan.price_ton,
-                    final_price=Decimal(amount_nanotons) / Decimal(10**9),
-                    status=status,
-                    tx_hash=tx_hash
-                )
-                db.add(new_order)
-                
-                if status == "SUCCESS":
-                    # 4. Fulfill
-                    user.credits += plan.reward_credits
-                    user.current_identity = plan.identity_name
-                    user.is_first_charge = False
-                    
-                    log = UserLog(
-                        user_id=user.id,
-                        username=user.username,
-                        operation_type="recharge",
-                        credit_change=plan.reward_credits,
-                        current_balance=user.credits,
-                        extra_info=f'{{"order_id": "{order_id}", "plan": "{plan.name}"}}'
+                    # 3. Create Order Record
+                    new_order = Order(
+                        order_id=order_id,
+                        telegram_id=tg_user_id,
+                        plan_id=plan_id,
+                        original_price=plan.price_ton,
+                        final_price=Decimal(amount_nanotons) / Decimal(10**9),
+                        status=status,
+                        tx_hash=tx_hash
                     )
-                    db.add(log)
+                    db.add(new_order)
                     
-                    await db.commit()
-                    logger.info(f"Successfully fulfilled order {order_id} for user {tg_user_id}")
-                    
-                    # 5. Notify User
-                    try:
-                        await self.bot_app.bot.send_message(
-                            chat_id=tg_user_id,
-                            text=f"🎉 **充值成功！**\n\n"
-                                 f"恭喜道友，您已成功购买【{plan.name}】。\n"
-                                 f"💎 获得灵石：+{plan.reward_credits}\n"
-                                 f"🪪 当前身份晋升为：**{plan.identity_name}**\n\n"
-                                 f"祝您仙途坦荡！",
-                            parse_mode="Markdown"
+                    if status == "SUCCESS":
+                        # 4. Fulfill using atomic update
+                        from sqlalchemy import update
+                        from datetime import datetime, timedelta
+                        
+                        now = datetime.now()
+                        new_expire_at = user.identity_expire_at
+                        if new_expire_at and new_expire_at > now:
+                            new_expire_at += timedelta(days=plan.duration_days)
+                        else:
+                            new_expire_at = now + timedelta(days=plan.duration_days)
+                            
+                        # Perform update
+                        await db.execute(
+                            update(User)
+                            .where(User.id == tg_user_id)
+                            .values(
+                                credits=User.credits + plan.reward_credits,
+                                current_identity=plan.identity_name,
+                                is_first_charge=False,
+                                identity_expire_at=new_expire_at
+                            )
                         )
-                    except Exception as e:
-                        logger.error(f"Failed to send success message to {tg_user_id}: {e}")
-                else:
-                    await db.commit()
+                        
+                        # Calculate new balance for the log
+                        new_balance = user.credits + plan.reward_credits
+                        
+                        log = UserLog(
+                            user_id=user.id,
+                            username=user.username,
+                            operation_type="recharge",
+                            credit_change=plan.reward_credits,
+                            current_balance=new_balance,
+                            extra_info=f'{{"order_id": "{order_id}", "plan": "{plan.name}"}}'
+                        )
+                        db.add(log)
+                        
+                        await db.commit()
+                        logger.info(f"Successfully fulfilled order {order_id} for user {tg_user_id}")
+                        
+                        # 5. Notify User
+                        try:
+                            await self.bot_app.bot.send_message(
+                                chat_id=tg_user_id,
+                                text=f"🎉 <b>充值成功！</b>\n\n"
+                                     f"恭喜道友，您已成功购买【{plan.name}】。\n"
+                                     f"💎 获得灵石：+{plan.reward_credits}\n"
+                                     f"🪪 当前身份晋升为：<b>{plan.identity_name}</b>\n\n"
+                                     f"祝您仙途坦荡！",
+                                parse_mode="HTML"
+                            )
+                        except Exception as e:
+                            logger.error(f"Failed to send success message to {tg_user_id}: {e}")
+                    else:
+                        await db.commit()
+                        
+                    return True
+
+                except Exception as db_e:
+                    await db.rollback()
+                    logger.error(f"Database error processing order {order_id}: {db_e}")
+                    return False
 
         except Exception as e:
             logger.error(f"Error processing order {order_id}: {e}")
+            return False

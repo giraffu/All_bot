@@ -1,0 +1,1 @@
+http://192.168.1.115:9000/bot-template/temps/7070842447_86038c609bd94a7fa5a233bf1c8ead46.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=minioadmin%2F20260319%2Fus-east-1%2Fs3%2Faws4_request&X-Amz-Date=20260319T151047Z&X-Amz-Expires=3600&X-Amz-SignedHeaders=host&X-Amz-Signature=57213584568e886fd494134324279318e7eaee9081e9200811c82249583b4e66

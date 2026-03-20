@@ -70,6 +70,7 @@ const formatDate = (dateStr) => {
 
 const getFullImageUrl = (url) => {
   if (!url) return ''
+  // Presigned URLs from MinIO are already absolute URLs starting with http:// or https://
   if (url.startsWith('http')) return url
   return `${apiBaseUrl}${url}`
 }

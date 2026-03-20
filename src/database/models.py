@@ -16,7 +16,7 @@ class User(Base):
     last_checkin = Column(Date, nullable=True)
     is_channel_member = Column(Boolean, default=False)
     user_group = Column(String(20), default="凡人") # 凡人, 练气期, 筑基期
-    current_identity = Column(String(20), default="凡人") # 凡人, 内门弟子, 核心弟子, 真传弟子
+    current_identity = Column(String(20), default="外门弟子") # 外门弟子, 内门弟子, 核心弟子, 真传弟子
     identity_expire_at = Column(DateTime, nullable=True)
     is_first_charge = Column(Boolean, default=True)
     total_contributions = Column(Integer, default=0) # 累计贡献次数
@@ -122,13 +122,14 @@ class DiscountRule(Base):
 class Order(Base):
     __tablename__ = "orders"
 
-    order_id = Column(String(64), primary_key=True) # Unique payload for TON transaction
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    order_id = Column(String(64), index=True) # Unique payload for TON transaction
     telegram_id = Column(BigInteger, ForeignKey("users.id"), nullable=False, index=True)
     plan_id = Column(Integer, ForeignKey("membership_plans.id"), nullable=False)
     original_price = Column(DECIMAL(10, 2), nullable=False)
     final_price = Column(DECIMAL(10, 2), nullable=False)
     status = Column(String(20), default="PENDING") # PENDING, SUCCESS, FAILED
-    tx_hash = Column(String(100), nullable=True)
+    tx_hash = Column(String(100), nullable=True, unique=True)
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 

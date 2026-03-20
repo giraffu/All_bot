@@ -81,7 +81,16 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         elif mode == MODE_RANDOM_FACESWAP:
             await _handle_photo_random_faceswap(update, context)
         elif mode == MODE_CUSTOM_VIDEO:
+            user_group = await permission_service.get_user_group(user.id)
+            user_identity = await permission_service.get_user_identity(user.id)
+            
+            from src.constants import get_resolution_keyboard, DEFAULT_RESOLUTION
+            current_resolution = context.user_data.get('custom_video_resolution', DEFAULT_RESOLUTION)
+            reply_markup = get_resolution_keyboard(user_group, user_identity, current_resolution)
+            
+            msg_text = f"⚙️ 当前自定义视频画质：{current_resolution}\n\n请选择您需要的画质（部分画质需要高境界或VIP身份解锁）：\n\n*提示：画质越高，消耗灵石越多。*"
             await robust_reply_text(msg, "📥 收到起始图片。请发送提示词 (Text) 以生成 5 秒视频。")
+            await robust_reply_text(msg, msg_text, reply_markup=reply_markup)
         elif mode == MODE_PERFECT_VIDEO_INSERT:
             # 动图传教士：收到图片直接开始生成
             await task_service.process_perfect_video_insert_task(update, context, local_path)
@@ -175,7 +184,16 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
         elif mode == MODE_RANDOM_FACESWAP:
             await _handle_photo_random_faceswap(update, context)
         elif mode == MODE_CUSTOM_VIDEO:
+            user_group = await permission_service.get_user_group(user.id)
+            user_identity = await permission_service.get_user_identity(user.id)
+            
+            from src.constants import get_resolution_keyboard, DEFAULT_RESOLUTION
+            current_resolution = context.user_data.get('custom_video_resolution', DEFAULT_RESOLUTION)
+            reply_markup = get_resolution_keyboard(user_group, user_identity, current_resolution)
+            
+            msg_text = f"⚙️ 当前自定义视频画质：{current_resolution}\n\n请选择您需要的画质（部分画质需要高境界或VIP身份解锁）：\n\n*提示：画质越高，消耗灵石越多。*"
             await robust_reply_text(msg, "📥 收到起始图片（文件）。请发送提示词 (Text) 以生成 5 秒视频。")
+            await robust_reply_text(msg, msg_text, reply_markup=reply_markup)
         elif mode == MODE_PERFECT_VIDEO_INSERT:
             await task_service.process_perfect_video_insert_task(update, context, local_path)
             context.user_data['pending_images'] = []
@@ -402,6 +420,12 @@ async def _handle_template_contribution(update: Update, context: ContextTypes.DE
         local_path = os.path.join(TEMP_TEMPLATE_DIR, local_filename)
         await file.download_to_drive(local_path)
         
+        # Upload to MinIO
+        from config import MINIO_TEMPLATE_BUCKET
+        from src.services.storage import storage
+        minio_object_name = f"temps/{local_filename}"
+        storage.upload_file(local_path, minio_object_name, bucket=MINIO_TEMPLATE_BUCKET)
+        
         # 3. Record in Database
         file_type_db = 'photo'
         if msg.video: file_type_db = 'video'
@@ -473,6 +497,8 @@ async def handle_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # 动态生成突破条件
         breakthrough_msg = ""
         current_group = stats['group']
+        current_identity = stats.get('identity', '普通用户')
+        current_priority = stats.get('priority', 0)
         
         if current_group == "凡人":
             invite_link = CHANNEL_INVITE_LINK or "https://t.me/AiVisionAV"
@@ -505,7 +531,27 @@ async def handle_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
         elif current_group == "金丹期":
             breakthrough_msg = "✨ **已登峰造极，成就金丹大道**"
 
+        msg = (
+            f"👤 **道友**：`{update.effective_user.first_name}`\n"
+            f"📜 **修为**：`{current_group}`\n"
+            f"🪪 **身份**：`{current_identity}`\n"
+            f"⚡ **排队加速**：`+{current_priority}` 优先级\n"
+            f"💰 **永久灵石**：`{stats['credits']}`\n"
+            f"⏳ **临时灵石**：`{stats['temp_credits']}` (每日清空)\n\n"
+            f"📊 **修炼数据**：\n"
+            f"  - 邀请同道：`{stats['invitations']}` 人\n"
+            f"  - 累计签到：`{stats['checkins']}` 天\n"
+            f"  - 施法次数：`{stats['generations']}` 次\n"
+            f"  - 贡献模板：`{stats['total_contributions']}` 次\n"
+            f"  - 采纳模板：`{stats['approved_contributions']}` 次\n\n"
+            f"💡 *提示：1点加速优先级约等于为您节约1分钟的排队时间。*\n\n"
+            f"{breakthrough_msg}"
+        )
         
+        await robust_reply_text(update.message, msg, parse_mode="Markdown")
+        return
+
+    if text in ["📅 每日签到", "签到", "/checkin"]:
         # 检查是否加入避难所群组
         if REFUGE_GROUP_ID:
             try:
@@ -601,7 +647,18 @@ async def handle_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data['mode'] = new_mode
         context.user_data['pending_images'] = []
         context.user_data['contributed_count'] = 0 # Reset count when switching mode
-        await robust_reply_text(update.message, reply)
+        
+        if new_mode == MODE_CUSTOM_VIDEO:
+            user_group = await permission_service.get_user_group(update.effective_user.id)
+            user_identity = await permission_service.get_user_identity(update.effective_user.id)
+            from src.constants import get_resolution_keyboard, DEFAULT_RESOLUTION
+            current_resolution = context.user_data.get('custom_video_resolution', DEFAULT_RESOLUTION)
+            reply_markup = get_resolution_keyboard(user_group, user_identity, current_resolution)
+            
+            reply += f"\n\n⚙️ 当前自定义视频画质：{current_resolution}\n请在下方选择您需要的画质（部分画质需要高境界或VIP身份解锁）：\n\n*提示：画质越高，消耗灵石越多。*"
+            await robust_reply_text(update.message, reply, reply_markup=reply_markup)
+        else:
+            await robust_reply_text(update.message, reply)
         return
 
     # Generation Handling
@@ -611,6 +668,10 @@ async def handle_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
     mode = context.user_data.get('mode', MODE_EDIT)
     images = context.user_data.get('pending_images', [])
     
+    # Do not treat text commands as generation prompts if they match button texts
+    if text in ["📅 每日签到", "👤 个人中心", "💰 个人中心", "🤝 分享赚灵石", "⏳ 排队状态", "签到", "排队", "/queue", "/checkin", "🔙 返回主菜单", "/start", "/help"]:
+        return
+
     if mode != MODE_TEXT_TO_IMAGE:
         if not images:
             await robust_reply_text(update.message, "请先发送一张图片。")

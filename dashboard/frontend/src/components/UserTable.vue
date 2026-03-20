@@ -1,8 +1,8 @@
 <script setup>
-import { ref, computed } from 'vue'
-import { EyeOutlined, EditOutlined, DeleteOutlined, UserDeleteOutlined, SearchOutlined } from '@ant-design/icons-vue'
+import { ref, computed, onMounted } from 'vue'
+import { EyeOutlined, EditOutlined, DeleteOutlined, UserDeleteOutlined, SearchOutlined, GiftOutlined } from '@ant-design/icons-vue'
 import { formatDate } from '../utils/helpers'
-import { updateUserCredits, clearUserHistory, deleteUser } from '../api/api'
+import { updateUserCredits, clearUserHistory, deleteUser, fetchPlans, adminGiftPlan } from '../api/api'
 import { message, Modal } from 'ant-design-vue'
 
 const props = defineProps({
@@ -102,6 +102,58 @@ const handleDeleteUser = (record) => {
   })
 }
 
+// Gift state
+const giftModalVisible = ref(false)
+const currentGiftUser = ref(null)
+const availablePlans = ref([])
+const giftForm = ref({
+  plan_id: null,
+  note: '后台手动赠送'
+})
+const giftingPlan = ref(false)
+
+const loadPlans = async () => {
+  try {
+    const res = await fetchPlans()
+    availablePlans.value = res.filter(p => p.is_active)
+  } catch (err) {
+    console.error('Failed to load plans:', err)
+  }
+}
+
+const handleGiftPlan = (record) => {
+  currentGiftUser.value = record
+  // Refresh plans just in case
+  giftForm.value = {
+    plan_id: availablePlans.value.length > 0 ? availablePlans.value[0].id : null,
+    note: '后台手动赠送'
+  }
+  giftModalVisible.value = true
+}
+
+const submitGift = async () => {
+  if (!giftForm.value.plan_id) {
+    message.warning('请选择一个套餐')
+    return
+  }
+  
+  giftingPlan.value = true
+  try {
+    await adminGiftPlan(currentGiftUser.value.id, giftForm.value.plan_id, giftForm.value.note)
+    message.success(`成功为用户 ${currentGiftUser.value.id} 赠送套餐`)
+    giftModalVisible.value = false
+    emit('refresh')
+  } catch (err) {
+    message.error('赠送套餐失败: ' + (err.response?.data?.detail || err.message))
+  } finally {
+    giftingPlan.value = false
+  }
+}
+
+onMounted(() => {
+  loadPlans()
+})
+
 const columns = [
   {
     title: '#',
@@ -126,6 +178,28 @@ const columns = [
     key: 'user_group',
     width: 100,
     align: 'center',
+  },
+  {
+    title: '身份组',
+    dataIndex: 'current_identity',
+    key: 'current_identity',
+    width: 100,
+    align: 'center',
+  },
+  {
+    title: '身份到期时间',
+    dataIndex: 'identity_expire_at',
+    key: 'identity_expire_at',
+    width: 160,
+    align: 'center',
+  },
+  {
+    title: '历史充值 (TON)',
+    dataIndex: 'total_recharge',
+    key: 'total_recharge',
+    width: 130,
+    align: 'right',
+    sorter: (a, b) => (a.total_recharge || 0) - (b.total_recharge || 0),
   },
   {
     title: '邀请人',
@@ -274,6 +348,25 @@ const columns = [
             {{ record.user_group || '凡人' }}
           </a-tag>
         </template>
+
+        <template v-else-if="column.key === 'current_identity'">
+          <a-tag :color="record.current_identity === '真传弟子' ? 'red' : record.current_identity === '核心弟子' ? 'orange' : record.current_identity === '内门弟子' ? 'cyan' : 'default'">
+            {{ record.current_identity || '外门弟子' }}
+          </a-tag>
+        </template>
+
+        <template v-else-if="column.key === 'identity_expire_at'">
+          <span v-if="record.current_identity && record.current_identity !== '外门弟子' && record.identity_expire_at" 
+                class="text-sm" 
+                :class="new Date(record.identity_expire_at) < new Date() ? 'text-red-500' : 'text-green-600'">
+            {{ formatDate(record.identity_expire_at) }}
+          </span>
+          <span v-else class="text-gray-400 text-sm">-</span>
+        </template>
+
+        <template v-else-if="column.key === 'total_recharge'">
+          <span class="text-green-600 font-bold font-mono">{{ Number(record.total_recharge || 0).toFixed(2) }}</span>
+        </template>
         
         <template v-else-if="column.key === 'inviter'">
           <div class="flex flex-col" v-if="record.inviter_info">
@@ -354,6 +447,15 @@ const columns = [
             <a-button 
               type="link" 
               size="small"
+              @click="handleGiftPlan(record)"
+            >
+              <template #icon><gift-outlined /></template>
+              赠送套餐
+            </a-button>
+
+            <a-button 
+              type="link" 
+              size="small"
               @click="$emit('viewHistory', record)"
             >
               <template #icon><eye-outlined /></template>
@@ -414,6 +516,39 @@ const columns = [
           </a-form-item>
         </a-form>
         <p class="mt-2 text-xs text-amber-500 italic">* 增加灵石直接输入更大数值，减少灵石输入较小数值即可。</p>
+      </div>
+    </a-modal>
+
+    <!-- Gift Plan Modal -->
+    <a-modal
+      v-model:visible="giftModalVisible"
+      title="赠送/补发套餐"
+      @ok="submitGift"
+      :confirmLoading="giftingPlan"
+      okText="确认赠送"
+      cancelText="取消"
+    >
+      <div class="py-4">
+        <p class="mb-4 text-gray-500">正在为用户 <span class="font-bold text-gray-800">{{ currentGiftUser?.full_name || currentGiftUser?.id }}</span> 发放权益</p>
+        <a-form layout="vertical">
+          <a-form-item label="选择套餐" required>
+            <a-select v-model:value="giftForm.plan_id" placeholder="请选择要赠送的套餐">
+              <a-select-option v-for="plan in availablePlans" :key="plan.id" :value="plan.id">
+                {{ plan.name }} (送 {{ plan.reward_credits }} 灵石 / 境界: {{ plan.identity_name }})
+              </a-select-option>
+            </a-select>
+          </a-form-item>
+          <a-form-item label="操作备注" required>
+            <a-input v-model:value="giftForm.note" placeholder="例如: 客诉补偿 / 内部赠送" />
+          </a-form-item>
+        </a-form>
+        <div class="mt-4 p-3 bg-blue-50 text-blue-700 text-xs rounded border border-blue-100">
+          <p class="font-bold mb-1">提示：</p>
+          <ul class="list-disc pl-4 m-0 space-y-1">
+            <li>赠送操作会生成一笔金额为 0 的充值订单用于对账。</li>
+            <li>会正常下发该套餐包含的灵石、更新身份组并延长身份有效期。</li>
+          </ul>
+        </div>
       </div>
     </a-modal>
   </a-card>
