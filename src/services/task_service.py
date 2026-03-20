@@ -82,10 +82,11 @@ class TaskService:
                 if saved_name:
                     saved_input_images.append(saved_name)
 
+        notice = await TaskService._get_acceleration_notice(user_id)
         msg_text = (
-            f"🚀 正在处理视频生成任务 (消耗{cost}灵石)..."
+            f"🚀 正在处理视频生成任务 (消耗{cost}灵石)...{notice}"
             if is_video
-            else f"🚀 正在处理 {len(images)} 张图片 (消耗{cost}灵石)..."
+            else f"🚀 正在处理 {len(images)} 张图片 (消耗{cost}灵石)...{notice}"
         )
 
         status_msg = await TaskService._get_or_send_status_msg(
@@ -188,7 +189,8 @@ class TaskService:
         saved_input_image = user_logger.save_input_image(image_path)
 
         mode_name = MODE_NAME_MAP.get(mode, mode)
-        msg_text = f"🚀 正在处理{mode_name}生成任务 (画质:{resolution}, 时长:{duration}, 消耗{cost}灵石)..."
+        notice = await TaskService._get_acceleration_notice(user_id)
+        msg_text = f"🚀 正在处理{mode_name}生成任务 (画质:{resolution}, 时长:{duration}, 消耗{cost}灵石)...{notice}"
         msg = await robust_reply_text(update.effective_message, msg_text)
 
         media_bytes = None
@@ -377,7 +379,8 @@ class TaskService:
         prompt = f"[{resolution}|{duration}] {prompt}"
 
         saved_input_image = user_logger.save_input_image(image_path)
-        msg_text = f"🚀 正在处理自定义视频生成任务 (画质:{resolution}, 时长:{duration}, 消耗{cost}灵石)..."
+        notice = await TaskService._get_acceleration_notice(user_id)
+        msg_text = f"🚀 正在处理自定义视频生成任务 (画质:{resolution}, 时长:{duration}, 消耗{cost}灵石)...{notice}"
         msg = await robust_reply_text(update.effective_message, msg_text)
 
         try:
@@ -457,7 +460,8 @@ class TaskService:
         cost = TASK_COSTS.get(mode, 3)
         user_logger = UserLogger(user_id, username)
 
-        msg_text = f"🚀 正在处理文生图任务 (消耗{cost}灵石)..."
+        notice = await TaskService._get_acceleration_notice(user_id)
+        msg_text = f"🚀 正在处理文生图任务 (消耗{cost}灵石)...{notice}"
         msg = await robust_reply_text(update.effective_message, msg_text)
 
         media_bytes = None
@@ -729,6 +733,13 @@ class TaskService:
                     os.remove(path)
                 except OSError:
                     pass
+
+    @staticmethod
+    async def _get_acceleration_notice(user_id: int) -> str:
+        stats = await permission_service.quota_manager.get_user_stats(user_id)
+        if stats.get("generation_count", 0) < 5:
+            return "\n✨ [新手特权] 前5次生成享受极速排队通道！"
+        return ""
 
 
 task_service = TaskService()

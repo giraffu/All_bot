@@ -16,6 +16,11 @@ class PermissionService:
         Priority from group and identity are calculated independently and then added together.
         Rules defined in DYNAMIC_PRIORITY_RULES.
         """
+        # 新手特权：前5次生成固定极高优先级 30
+        stats = await self.quota_manager.get_user_stats(user_id)
+        if stats.get("generation_count", 0) < 5:
+            return 30
+
         group = await self.get_user_group(user_id)
         identity = await self.get_user_identity(user_id)
         usage = await self.quota_manager.get_daily_usage(user_id)
