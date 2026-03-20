@@ -1,0 +1,39 @@
+version: '3.8'
+
+services:
+  dashboard-frontend:
+    build:
+      context: ./frontend
+    # ports:
+    #   - "8085:80"
+    restart: always
+    environment:
+      - TZ=Asia/Shanghai
+    depends_on:
+      - dashboard-backend
+    network_mode: "host"
+
+  dashboard-backend:
+    build:
+      context: ../
+      dockerfile: dashboard/backend/Dockerfile
+    environment:
+      # These will override the root .env for the dashboard specifically
+      - DATABASE_URL=postgresql+asyncpg://postgres:postgrespassword@192.168.1.115:5432/bot_db
+      - MINIO_ENDPOINT=192.168.1.115:9000
+      - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY:-minioadmin}
+      - MINIO_SECRET_KEY=${MINIO_SECRET_KEY:-minioadmin}
+      - MINIO_BUCKET=bot-data
+      - MINIO_SECURE=${MINIO_SECURE:-false}
+      - DASHBOARD_ADMIN_USERNAME=chuzeyu
+      - DASHBOARD_ADMIN_PASSWORD_HASH=$$2b$$12$$YIySnXRqN4W6uLKgKUzSKe/V4g4JJEghmIdOcaW0UO21Fda5H05aa
+      - DASHBOARD_SECRET_KEY=${DASHBOARD_SECRET_KEY:-super-secret-jwt-key}
+      - TZ=Asia/Shanghai
+    # ports:
+      # - "8043:8043" # Incompatible with network_mode: "host"
+    restart: always
+    volumes:
+      # Optional: mount root .env if you want it to share with bot
+      - ../.env:/app/.env
+    # Use host network to allow access to host services like MinIO on 192.168.1.115
+    network_mode: "host"
