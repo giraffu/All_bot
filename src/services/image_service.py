@@ -1,5 +1,5 @@
 from typing import AsyncGenerator
-from src.api_client import submit_img2img, listen_for_progress, download_image, download_video, get_system_status, submit_face_swap, submit_perfect_video_edit, submit_perfect_video_insert, get_queue_position, submit_text_to_image
+from src.api_client import submit_img2img, listen_for_progress, download_image, download_video, get_system_status, submit_face_swap, submit_perfect_video_edit, submit_perfect_video_insert, submit_text_to_image
 
 class ImageService:
     async def submit_task(self, prompt: str, image_paths: list[str], negative_prompt: str, priority: int = 0) -> str:
@@ -40,9 +40,6 @@ class ImageService:
         """Get system queue info"""
         return await get_system_status()
 
-    async def get_queue_position(self, task_id: str) -> dict:
-        """Get exact queue position for a task"""
-        return await get_queue_position(task_id)
 
 # Singleton instance
 image_service = ImageService()

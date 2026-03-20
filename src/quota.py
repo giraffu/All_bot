@@ -102,7 +102,7 @@ class QuotaManager:
                 await session.commit()
 
                 # Log action
-                if cost > 0:
+                if cost != 0:
                     await LogService.log_action(
                         user_id=user_id,
                         username=username or user.username,

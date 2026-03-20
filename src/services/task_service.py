@@ -19,7 +19,6 @@ from src.constants import (
     MODE_UNDRESS_TONGUE,
     TASK_COSTS,
     TMP_DIR,
-    VIDEO_RESOLUTIONS,
     MODE_TEXT_TO_IMAGE
 )
 from src.handlers.utils import MockMessage
@@ -133,8 +132,10 @@ class TaskService:
                     )
                 )
             else:
+                if deduct_quota:
+                    await permission_service.increment_quota(user_id, cost=-cost, username=username, task_type="refund")
                 await robust_send_message(
-                    context.bot, chat_id, "❌ 生成完成但未获取到文件路径"
+                    context.bot, chat_id, "❌ 生成完成但未获取到文件路径，已退还灵石"
                 )
 
         except Exception as e:
@@ -142,7 +143,9 @@ class TaskService:
                 f"Error in process_generation_task for user {user_id}: {e}",
                 exc_info=True,
             )
-            await robust_send_message(context.bot, chat_id, f"❌ 出错了：{e}")
+            if deduct_quota:
+                await permission_service.increment_quota(user_id, cost=-cost, username=username, task_type="refund")
+            await robust_send_message(context.bot, chat_id, f"❌ 出错了：{e}，已退还灵石")
 
         finally:
             if cleanup:
@@ -179,7 +182,8 @@ class TaskService:
 
         # Load prompt
         prompts_config = load_prompts()
-        prompt = prompts_config.get(default_prompt_key, default_prompt_text)
+        base_prompt = prompts_config.get(default_prompt_key, default_prompt_text)
+        prompt = f"[{resolution}|{duration}] {base_prompt}"
 
         saved_input_image = user_logger.save_input_image(image_path)
 
@@ -244,13 +248,15 @@ class TaskService:
                     )
                 )
             else:
+                await permission_service.increment_quota(user_id, cost=-cost, username=username, task_type="refund")
                 await robust_send_message(
-                    context.bot, chat_id, "❌ 生成完成但未获取到任务信息"
+                    context.bot, chat_id, "❌ 生成完成但未获取到任务信息，已退还灵石"
                 )
 
         except Exception as e:
             logger.error(f"Error in {mode} task for user {user_id}: {e}", exc_info=True)
-            await robust_send_message(context.bot, chat_id, f"❌ 出错了：{e}")
+            await permission_service.increment_quota(user_id, cost=-cost, username=username, task_type="refund")
+            await robust_send_message(context.bot, chat_id, f"❌ 出错了：{e}，已退还灵石")
         finally:
             if cleanup:
                 TaskService._cleanup_files([image_path])
@@ -367,6 +373,9 @@ class TaskService:
 
         user_logger = UserLogger(user_id, username)
 
+        # Append resolution and duration to prompt for history tracking
+        prompt = f"[{resolution}|{duration}] {prompt}"
+
         saved_input_image = user_logger.save_input_image(image_path)
         msg_text = f"🚀 正在处理自定义视频生成任务 (画质:{resolution}, 时长:{duration}, 消耗{cost}灵石)..."
         msg = await robust_reply_text(update.effective_message, msg_text)
@@ -414,15 +423,17 @@ class TaskService:
                     caption="✅ 自定义视频生成完成",
                 )
             else:
+                await permission_service.increment_quota(user_id, cost=-cost, username=username, task_type="refund")
                 await robust_send_message(
-                    context.bot, chat_id, "❌ 生成完成但未获取到任务信息"
+                    context.bot, chat_id, "❌ 生成完成但未获取到任务信息，已退还灵石"
                 )
                 return None, None
         except Exception as e:
             logger.error(
                 f"Error in custom video task for user {user_id}: {e}", exc_info=True
             )
-            await robust_send_message(context.bot, chat_id, f"❌ 出错了：{e}")
+            await permission_service.increment_quota(user_id, cost=-cost, username=username, task_type="refund")
+            await robust_send_message(context.bot, chat_id, f"❌ 出错了：{e}，已退还灵石")
             return None, None
         finally:
             if cleanup:
@@ -489,15 +500,17 @@ class TaskService:
                     )
                 )
             else:
+                await permission_service.increment_quota(user_id, cost=-cost, username=username, task_type="refund")
                 await robust_send_message(
-                    context.bot, chat_id, "❌ 生成完成但未获取到任务信息"
+                    context.bot, chat_id, "❌ 生成完成但未获取到任务信息，已退还灵石"
                 )
 
         except Exception as e:
             user_logger.logger.error(
                 f"Error in text_to_image task for user {user_id}: {e}", exc_info=True
             )
-            await robust_send_message(context.bot, chat_id, f"❌ 出错了：{e}")
+            await permission_service.increment_quota(user_id, cost=-cost, username=username, task_type="refund")
+            await robust_send_message(context.bot, chat_id, f"❌ 出错了：{e}，已退还灵石")
 
         return media_bytes, full_output_path
 
@@ -566,15 +579,7 @@ class TaskService:
                 
                 logger.debug(f"Task {task_id} pending. Info queue_pos: {raw_pos}, queue_remaining: {info.get('queue_remaining')}")
 
-                # If queue position is not in info, try fetching it explicitly
-                if queue_pos is None:
-                    try:
-                        pos_data = await image_service.get_queue_position(task_id)
-                        if pos_data:
-                            # Try common keys for queue position
-                            queue_pos = pos_data.get("position") or pos_data.get("queue_position") or pos_data.get("rank")
-                    except Exception:
-                        pass
+
 
                 if queue_pos is not None:
                     if queue_pos != last_queue_pos or last_status != "pending":

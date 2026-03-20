@@ -8,7 +8,7 @@ from telegram.ext import (
 from telegram.request import HTTPXRequest
 import logging
 import os
-from config import BOT_TOKEN, BOT_TOKEN_TEST, PROXY_URL
+from config import PROXY_URL
 from src.logger import setup_logging
 from src.handlers.command_handler import start, setup_commands
 from src.handlers.message_handler import handle_photo, handle_prompt, handle_video, handle_document

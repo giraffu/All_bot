@@ -63,7 +63,7 @@ def test_task_service_queue_logic_new():
         mock_status_msg = AsyncMock()
         
         # Mock generator
-        async def mock_monitor_func(tid, is_video=False):
+        async def mock_monitor_func(_tid, is_video=False):
             # 1. New API: queue_pos=0 (front), queue_remaining=1 (maybe)
             yield {"status": "pending", "queue_pos": 0, "queue_remaining": 1}
             
@@ -75,7 +75,7 @@ def test_task_service_queue_logic_new():
 
         # Mock image_service (though not strictly needed if we provide data in generator)
         with patch("src.services.task_service.image_service") as mock_img_svc:
-            mock_img_svc.get_queue_position = AsyncMock(return_value=None)
+
             
             with patch("src.services.task_service.robust_edit_text", new_callable=AsyncMock) as mock_edit:
                 

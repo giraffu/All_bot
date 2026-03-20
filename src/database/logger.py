@@ -19,11 +19,11 @@ def setup_db_logging(engine):
         target_engine = engine.sync_engine
 
     @event.listens_for(target_engine, "before_cursor_execute")
-    def before_cursor_execute(conn, cursor, statement, parameters, context, executemany):
+    def before_cursor_execute(conn, cursor, statement, parameters, context, _executemany):
         context._query_start_time = time.time()
 
     @event.listens_for(target_engine, "after_cursor_execute")
-    def after_cursor_execute(conn, cursor, statement, parameters, context, executemany):
+    def after_cursor_execute(conn, cursor, statement, parameters, context, _executemany):
         total = time.time() - context._query_start_time
         
         # Operation type estimation

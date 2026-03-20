@@ -213,13 +213,7 @@ class APIClient:
         except Exception:
             return None
 
-    @async_retry(max_retries=3)
-    async def get_queue_position(self, task_id: str) -> Optional[dict]:
-        """
-        Deprecated: Backend no longer supports queue position endpoint.
-        Returns None to avoid 404 errors.
-        """
-        return None
+
 
     @async_retry(max_retries=3)
     async def download_image(self, task_id: str) -> bytes:
@@ -278,6 +272,6 @@ submit_text_to_image = api_client.submit_text_to_image
 download_image = api_client.download_image
 download_video = api_client.download_video
 get_system_status = api_client.get_system_status
-get_queue_position = api_client.get_queue_position
+
 listen_for_progress = api_client.listen_for_progress
 

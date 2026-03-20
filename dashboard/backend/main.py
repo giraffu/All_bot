@@ -12,10 +12,9 @@ os.chdir(str(PROJECT_ROOT))
 
 from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
-from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, desc, case, Integer, Float
+from sqlalchemy import select, func, desc, case, Float
 from sqlalchemy.orm import selectinload
 from typing import List, Optional, Any, Dict
 import httpx
@@ -27,7 +26,7 @@ from src.database.models import User, History, Referral, TemplateContribution, C
 from src.services.image_service import image_service
 from src.services.log_service import LogService
 from src.services.storage import storage
-from config import API_BASE, STATUS_ENDPOINT, MINIO_BUCKET, MINIO_TEMPLATE_BUCKET
+from config import API_BASE, STATUS_ENDPOINT, MINIO_TEMPLATE_BUCKET
 from dashboard.backend.auth import auth_router, get_current_user, oauth2_scheme
 
 # Setup logging

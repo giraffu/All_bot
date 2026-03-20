@@ -128,11 +128,7 @@ export const deleteTemplateContribution = async (id) => {
   return response.data
 }
 
-export const fetchBotQueue = async () => {
-  // Deprecated: Use fetchSystemStatus instead
-  const response = await api.get('/api/bot/queue')
-  return response.data
-}
+
 
 export const fetchSystemStatus = async () => {
   const response = await api.get('/api/system/status')
