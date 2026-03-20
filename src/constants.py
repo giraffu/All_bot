@@ -74,6 +74,7 @@ VIDEO_RESOLUTIONS = {
 }
 
 DEFAULT_RESOLUTION = "512p"
+DEFAULT_DURATION = "5s"
 
 RESOLUTION_PERMISSIONS = {
     "凡人": ["512p"],
@@ -86,31 +87,74 @@ RESOLUTION_PERMISSIONS = {
     "真传弟子": ["512p", "720p", "1024p"]
 }
 
-RESOLUTION_COST = {
-    "512p": 6,
-    "720p": 10,
-    "1024p": 20
+DURATION_PERMISSIONS = {
+    "凡人": ["5s"],
+    "外门弟子": ["5s"],
+    "练气期": ["5s"],
+    "筑基期": ["5s", "8s"],
+    "金丹期": ["5s", "8s", "10s"],
+    "内门弟子": ["5s", "8s", "10s"],
+    "核心弟子": ["5s", "8s", "10s"],
+    "真传弟子": ["5s", "8s", "10s"]
 }
 
-def get_resolution_keyboard(user_group: str, user_identity: str = "外门弟子", current_resolution: str = DEFAULT_RESOLUTION):
+RESOLUTION_COST = {
+    "512p": 6,
+    "720p": 12,
+    "1024p": 25
+}
+
+DURATION_MULTIPLIER = {
+    "5s": 1.0,
+    "8s": 1.6,
+    "10s": 2.2
+}
+
+DURATION_FRAMES = {
+    "5s": 81,
+    "8s": 129,
+    "10s": 161
+}
+
+def get_video_settings_keyboard(user_group: str, user_identity: str = "外门弟子", current_resolution: str = DEFAULT_RESOLUTION, current_duration: str = DEFAULT_DURATION):
     from telegram import InlineKeyboardButton, InlineKeyboardMarkup
-    group_allowed = RESOLUTION_PERMISSIONS.get(user_group, ["512p"])
-    identity_allowed = RESOLUTION_PERMISSIONS.get(user_identity, ["512p"])
-    allowed_resolutions = list(set(group_allowed + identity_allowed))
+    group_res_allowed = RESOLUTION_PERMISSIONS.get(user_group, ["512p"])
+    identity_res_allowed = RESOLUTION_PERMISSIONS.get(user_identity, ["512p"])
+    allowed_resolutions = list(set(group_res_allowed + identity_res_allowed))
+    
+    group_dur_allowed = DURATION_PERMISSIONS.get(user_group, ["5s"])
+    identity_dur_allowed = DURATION_PERMISSIONS.get(user_identity, ["5s"])
+    allowed_durations = list(set(group_dur_allowed + identity_dur_allowed))
     
     keyboard = []
-    row = []
-    # Ensure ordered display
+    
+    # Resolution row
+    res_row = []
     for res in ['512p', '720p', '1024p']:
         if res in allowed_resolutions:
-            cost = RESOLUTION_COST.get(res, 6)
+            base_cost = RESOLUTION_COST.get(res, 6)
+            multiplier = DURATION_MULTIPLIER.get(current_duration, 1.0)
+            cost = int(base_cost * multiplier)
             display_text = f"{res} ({cost}灵石)"
             text = f"✅ {display_text}" if res == current_resolution else display_text
             callback_data = f"set_res_{res}"
-            row.append(InlineKeyboardButton(text, callback_data=callback_data))
+            res_row.append(InlineKeyboardButton(text, callback_data=callback_data))
     
-    if row:
-        keyboard.append(row)
+    if res_row:
+        keyboard.append(res_row)
+        
+    # Duration row
+    dur_row = []
+    for dur in ['5s', '8s', '10s']:
+        if dur in allowed_durations:
+            multiplier = DURATION_MULTIPLIER.get(dur, 1.0)
+            display_text = f"{dur} (x{multiplier})"
+            text = f"✅ {display_text}" if dur == current_duration else display_text
+            callback_data = f"set_dur_{dur}"
+            dur_row.append(InlineKeyboardButton(text, callback_data=callback_data))
+            
+    if dur_row:
+        keyboard.append(dur_row)
         
     return InlineKeyboardMarkup(keyboard)
 

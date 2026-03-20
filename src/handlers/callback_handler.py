@@ -321,32 +321,55 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
         except:
             pass
 
-    elif data.startswith("set_res_"):
-        new_res = data.replace("set_res_", "")
-        from src.constants import get_resolution_keyboard, RESOLUTION_COST, RESOLUTION_PERMISSIONS
+    elif data.startswith("set_res_") or data.startswith("set_dur_"):
+        is_res = data.startswith("set_res_")
+        new_val = data.replace("set_res_", "") if is_res else data.replace("set_dur_", "")
+        from src.constants import get_video_settings_keyboard, RESOLUTION_COST, RESOLUTION_PERMISSIONS, DURATION_PERMISSIONS, DEFAULT_RESOLUTION, DEFAULT_DURATION, DURATION_MULTIPLIER
         
         user_group = await permission_service.get_user_group(query.from_user.id)
         user_identity = await permission_service.get_user_identity(query.from_user.id)
         
-        group_allowed = RESOLUTION_PERMISSIONS.get(user_group, ["512p"])
-        identity_allowed = RESOLUTION_PERMISSIONS.get(user_identity, ["512p"])
+        if is_res:
+            group_allowed = RESOLUTION_PERMISSIONS.get(user_group, ["512p"])
+            identity_allowed = RESOLUTION_PERMISSIONS.get(user_identity, ["512p"])
+        else:
+            group_allowed = DURATION_PERMISSIONS.get(user_group, ["5s"])
+            identity_allowed = DURATION_PERMISSIONS.get(user_identity, ["5s"])
         
-        # Merge allowed resolutions (take union and unique)
+        # Merge allowed values (take union and unique)
         allowed = list(set(group_allowed + identity_allowed))
         
-        if new_res not in allowed:
-            await query.answer(f"❌ 境界或身份不足，无法选择 {new_res} 分辨率！", show_alert=True)
+        if new_val not in allowed:
+            await query.answer(f"❌ 境界或身份不足，无法选择 {new_val}！", show_alert=True)
             return
 
-        context.user_data['custom_video_resolution'] = new_res
+        if is_res:
+            context.user_data['custom_video_resolution'] = new_val
+        else:
+            context.user_data['custom_video_duration'] = new_val
+            
+        current_res = context.user_data.get('custom_video_resolution', DEFAULT_RESOLUTION)
+        current_dur = context.user_data.get('custom_video_duration', DEFAULT_DURATION)
         
-        # Determine highest allowed resolution set for keyboard
-        reply_markup = get_resolution_keyboard(user_group, user_identity, new_res)
+        # Determine highest allowed set for keyboard
+        reply_markup = get_video_settings_keyboard(user_group, user_identity, current_res, current_dur)
+        
+        base_cost = RESOLUTION_COST.get(current_res, 6)
+        multiplier = DURATION_MULTIPLIER.get(current_dur, 1.0)
+        cost = int(base_cost * multiplier)
         
         try:
-            await robust_edit_reply_markup(query.message, reply_markup=reply_markup)
-        except Exception:
+            # Try to update the text message as well if it exists
+            if query.message.text:
+                import re
+                new_text = re.sub(r"(⚙️ 当前(?:自定义)?视频画质：).*? \| 时长：.*? \| 消耗灵石：\d+(?=\n|$)", f"\\g<1>{current_res} | 时长：{current_dur} | 消耗灵石：{cost}", query.message.text)
+                # Fallback for old messages without cost string
+                if new_text == query.message.text:
+                     new_text = re.sub(r"(⚙️ 当前(?:自定义)?视频画质：).*? \| 时长：.*?(?=\n|$)", f"\\g<1>{current_res} | 时长：{current_dur} | 消耗灵石：{cost}", query.message.text)
+                await query.message.edit_text(new_text, reply_markup=reply_markup, parse_mode="Markdown")
+            else:
+                await robust_edit_reply_markup(query.message, reply_markup=reply_markup)
+        except Exception as e:
             pass
             
-        cost = RESOLUTION_COST.get(new_res, 6)
-        await query.answer(f"已切换至 {new_res}，灵石消耗 {cost}", show_alert=False)
+        await query.answer(f"已切换至 {current_res} ({current_dur})，灵石消耗 {cost}", show_alert=False)

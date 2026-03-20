@@ -84,11 +84,16 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
             user_group = await permission_service.get_user_group(user.id)
             user_identity = await permission_service.get_user_identity(user.id)
             
-            from src.constants import get_resolution_keyboard, DEFAULT_RESOLUTION
+            from src.constants import get_video_settings_keyboard, DEFAULT_RESOLUTION, DEFAULT_DURATION, RESOLUTION_COST, DURATION_MULTIPLIER
             current_resolution = context.user_data.get('custom_video_resolution', DEFAULT_RESOLUTION)
-            reply_markup = get_resolution_keyboard(user_group, user_identity, current_resolution)
+            current_duration = context.user_data.get('custom_video_duration', DEFAULT_DURATION)
+            reply_markup = get_video_settings_keyboard(user_group, user_identity, current_resolution, current_duration)
             
-            msg_text = f"⚙️ 当前自定义视频画质：{current_resolution}\n\n请选择您需要的画质（部分画质需要高境界或VIP身份解锁）：\n\n*提示：画质越高，消耗灵石越多。*"
+            base_cost = RESOLUTION_COST.get(current_resolution, 6)
+            multiplier = DURATION_MULTIPLIER.get(current_duration, 1.0)
+            cost = int(base_cost * multiplier)
+            
+            msg_text = f"⚙️ 当前自定义视频画质：{current_resolution} | 时长：{current_duration} | 消耗灵石：{cost}\n\n请选择您需要的画质和时长（部分画质和时长需要高境界或VIP身份解锁）：\n\n*提示：画质越高、时长越长，消耗灵石越多。*"
             await robust_reply_text(msg, "📥 收到起始图片。请发送提示词 (Text) 以生成 5 秒视频。")
             await robust_reply_text(msg, msg_text, reply_markup=reply_markup)
         elif mode == MODE_PERFECT_VIDEO_INSERT:
@@ -187,11 +192,16 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
             user_group = await permission_service.get_user_group(user.id)
             user_identity = await permission_service.get_user_identity(user.id)
             
-            from src.constants import get_resolution_keyboard, DEFAULT_RESOLUTION
+            from src.constants import get_video_settings_keyboard, DEFAULT_RESOLUTION, DEFAULT_DURATION, RESOLUTION_COST, DURATION_MULTIPLIER
             current_resolution = context.user_data.get('custom_video_resolution', DEFAULT_RESOLUTION)
-            reply_markup = get_resolution_keyboard(user_group, user_identity, current_resolution)
+            current_duration = context.user_data.get('custom_video_duration', DEFAULT_DURATION)
+            reply_markup = get_video_settings_keyboard(user_group, user_identity, current_resolution, current_duration)
             
-            msg_text = f"⚙️ 当前自定义视频画质：{current_resolution}\n\n请选择您需要的画质（部分画质需要高境界或VIP身份解锁）：\n\n*提示：画质越高，消耗灵石越多。*"
+            base_cost = RESOLUTION_COST.get(current_resolution, 6)
+            multiplier = DURATION_MULTIPLIER.get(current_duration, 1.0)
+            cost = int(base_cost * multiplier)
+            
+            msg_text = f"⚙️ 当前自定义视频画质：{current_resolution} | 时长：{current_duration} | 消耗灵石：{cost}\n\n请选择您需要的画质和时长（部分画质和时长需要高境界或VIP身份解锁）：\n\n*提示：画质越高、时长越长，消耗灵石越多。*"
             await robust_reply_text(msg, "📥 收到起始图片（文件）。请发送提示词 (Text) 以生成 5 秒视频。")
             await robust_reply_text(msg, msg_text, reply_markup=reply_markup)
         elif mode == MODE_PERFECT_VIDEO_INSERT:
@@ -633,12 +643,12 @@ async def handle_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "🎁 模板共建": (MODE_TEMPLATE_CONTRIBUTE, "🎁 已切换到【模板共建】模式。\n\n可以选择发送1到n张图片、视频，模板需要包含脸部和身体，露脸图片不会泄露，仅用于模板库建设，模板采纳会奖励灵石。"),
         "🥵 快速自慰": (MODE_MASTURBATION, "🥵 已切换到【快速自慰】模式 (消耗 2 灵石)。\n请发送一张图片，我将自动处理。"),
         "🎨 自由P图": (MODE_EDIT, "🎨 已切换到【自由P图】模式 (消耗 2 灵石)。\n请发送一张图片。"),
-        "🎬 自定义图生视频": (MODE_CUSTOM_VIDEO, "🎬 已切换到【自定义图生视频】模式 (消耗 6 灵石)。\n请发送一张【起始图片】。\n(注意：该模式生成 5 秒视频，请确保提示词动作逻辑合理)"),
-        "🛌 动图传教士": (MODE_PERFECT_VIDEO_INSERT, "🛌 已切换到【动图传教士】模式 (消耗 6 灵石)。\n请发送一张【人脸】图片（正面、清晰），我将自动处理。"),
-        "🎬 动图后入": (MODE_DOGGY_STYLE, "🎬 已切换到【动图后入】模式 (消耗 6 灵石)。\n请发送一张【人脸】图片（正面、清晰），我将自动处理。"),
-        "🎬 口交黑人": (MODE_BLOWJOB, "🎬 已切换到【口交黑人】模式 (消耗 6 灵石)。\n请发送一张【正面清晰图片】，我将自动处理。"),
-        "🎬 脱衣吐舌": (MODE_UNDRESS_TONGUE, "🎬 已切换到【脱衣吐舌】模式 (消耗 6 灵石)。\n请发送一张【正面清晰图片】，我将自动处理。"),
-        "🎬 特写口交": (MODE_CLOSEUP_BLOWJOB, "🎬 已切换到【特写口交】模式 (消耗 6 灵石)。\n请发送一张【正面清晰图片】，我将自动处理。"),
+        "🎬 自定义图生视频": (MODE_CUSTOM_VIDEO, "🎬 已切换到【自定义图生视频】模式。\n请发送一张【起始图片】。\n(注意：该模式生成 5 秒视频，请确保提示词动作逻辑合理)"),
+        "🛌 动图传教士": (MODE_PERFECT_VIDEO_INSERT, "🛌 已切换到【动图传教士】模式。\n请发送一张【人脸】图片（正面、清晰），我将自动处理。"),
+        "🎬 动图后入": (MODE_DOGGY_STYLE, "🎬 已切换到【动图后入】模式。\n请发送一张【人脸】图片（正面、清晰），我将自动处理。"),
+        "🎬 口交黑人": (MODE_BLOWJOB, "🎬 已切换到【口交黑人】模式。\n请发送一张【正面清晰图片】，我将自动处理。"),
+        "🎬 脱衣吐舌": (MODE_UNDRESS_TONGUE, "🎬 已切换到【脱衣吐舌】模式。\n请发送一张【正面清晰图片】，我将自动处理。"),
+        "🎬 特写口交": (MODE_CLOSEUP_BLOWJOB, "🎬 已切换到【特写口交】模式。\n请发送一张【正面清晰图片】，我将自动处理。"),
         "📝 文生图": (MODE_TEXT_TO_IMAGE, "📝 已切换到【文生图】模式 (消耗 3 灵石)。\n请直接发送【提示词】(支持中英韩文)，我将为您生成图片。")
     }
     
@@ -648,14 +658,19 @@ async def handle_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data['pending_images'] = []
         context.user_data['contributed_count'] = 0 # Reset count when switching mode
         
-        if new_mode == MODE_CUSTOM_VIDEO:
+        if new_mode in [MODE_CUSTOM_VIDEO, MODE_PERFECT_VIDEO_INSERT, MODE_DOGGY_STYLE, MODE_BLOWJOB, MODE_UNDRESS_TONGUE, MODE_CLOSEUP_BLOWJOB]:
             user_group = await permission_service.get_user_group(update.effective_user.id)
             user_identity = await permission_service.get_user_identity(update.effective_user.id)
-            from src.constants import get_resolution_keyboard, DEFAULT_RESOLUTION
+            from src.constants import get_video_settings_keyboard, DEFAULT_RESOLUTION, DEFAULT_DURATION, RESOLUTION_COST, DURATION_MULTIPLIER
             current_resolution = context.user_data.get('custom_video_resolution', DEFAULT_RESOLUTION)
-            reply_markup = get_resolution_keyboard(user_group, user_identity, current_resolution)
+            current_duration = context.user_data.get('custom_video_duration', DEFAULT_DURATION)
+            reply_markup = get_video_settings_keyboard(user_group, user_identity, current_resolution, current_duration)
             
-            reply += f"\n\n⚙️ 当前自定义视频画质：{current_resolution}\n请在下方选择您需要的画质（部分画质需要高境界或VIP身份解锁）：\n\n*提示：画质越高，消耗灵石越多。*"
+            base_cost = RESOLUTION_COST.get(current_resolution, 6)
+            multiplier = DURATION_MULTIPLIER.get(current_duration, 1.0)
+            cost = int(base_cost * multiplier)
+            
+            reply += f"\n\n⚙️ 当前视频画质：{current_resolution} | 时长：{current_duration} | 消耗灵石：{cost}\n请在下方选择您需要的画质和时长（部分选项需要高境界或VIP身份解锁）：\n\n*提示：画质越高、时长越长，消耗灵石越多。*"
             await robust_reply_text(update.message, reply, reply_markup=reply_markup)
         else:
             await robust_reply_text(update.message, reply)

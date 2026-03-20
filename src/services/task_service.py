@@ -167,34 +167,36 @@ class TaskService:
         user_id = update.effective_user.id
         username = update.effective_user.username or update.effective_user.full_name
 
-        cost = TASK_COSTS.get(mode, 6)
+        from src.constants import DEFAULT_RESOLUTION, RESOLUTION_COST, DEFAULT_DURATION, DURATION_MULTIPLIER, DURATION_FRAMES
+        resolution = context.user_data.get('custom_video_resolution', DEFAULT_RESOLUTION)
+        duration = context.user_data.get('custom_video_duration', DEFAULT_DURATION)
+        base_cost = RESOLUTION_COST.get(resolution, TASK_COSTS.get(mode, 6))
+        multiplier = DURATION_MULTIPLIER.get(duration, 1.0)
+        cost = int(base_cost * multiplier)
+        length = DURATION_FRAMES.get(duration, 81)
+
         user_logger = UserLogger(user_id, username)
 
         # Load prompt
         prompts_config = load_prompts()
         prompt = prompts_config.get(default_prompt_key, default_prompt_text)
 
-        # Save input image
         saved_input_image = user_logger.save_input_image(image_path)
 
         mode_name = MODE_NAME_MAP.get(mode, mode)
-        msg_text = f"🚀 正在处理{mode_name}生成任务 (消耗{cost}灵石)..."
+        msg_text = f"🚀 正在处理{mode_name}生成任务 (画质:{resolution}, 时长:{duration}, 消耗{cost}灵石)..."
         msg = await robust_reply_text(update.effective_message, msg_text)
 
         media_bytes = None
         full_output_path = None
 
         try:
-            # Determine resolution from user group/identity for template videos
-            user_group = await permission_service.get_user_group(user_id)
-            user_identity = await permission_service.get_user_identity(user_id)
-            
-            # Check if either group or identity has 720p resolution for templates
-            group_res = VIDEO_RESOLUTIONS.get(user_group, VIDEO_RESOLUTIONS["default"])
-            identity_res = VIDEO_RESOLUTIONS.get(user_identity, VIDEO_RESOLUTIONS["default"])
-            
-            width, height = group_res if group_res[0] > identity_res[0] else identity_res
-            resolution = f"{width}p" # approximation for logging/messaging
+            if resolution == "1024p":
+                width, height = 1024, 1024
+            elif resolution == "720p":
+                width, height = 720, 720
+            else:
+                width, height = 512, 512
             
             # Pre-flight check removed as backend can upscale
             if not await permission_service.check_quota(update, context, cost=cost):
@@ -210,11 +212,11 @@ class TaskService:
             # Submit Task
             if mode == MODE_DOGGY_STYLE:
                 task_id = await image_service.submit_perfect_video_insert_task(
-                    prompt, saved_input_image, width=width, height=height, priority=priority
+                    prompt, saved_input_image, width=width, height=height, length=length, priority=priority
                 )
             else:
                 task_id = await image_service.submit_perfect_video_edit(
-                    prompt, saved_input_image, width=width, height=height, priority=priority
+                    prompt, saved_input_image, width=width, height=height, length=length, priority=priority
                 )
 
             # Monitor Progress
@@ -354,16 +356,22 @@ class TaskService:
         user_id = update.effective_user.id
         username = update.effective_user.username or update.effective_user.full_name
         mode = MODE_CUSTOM_VIDEO
-        cost = TASK_COSTS.get(mode, 6)
+        
+        from src.constants import DEFAULT_RESOLUTION, RESOLUTION_COST, DEFAULT_DURATION, DURATION_MULTIPLIER, DURATION_FRAMES
+        resolution = context.user_data.get('custom_video_resolution', DEFAULT_RESOLUTION)
+        duration = context.user_data.get('custom_video_duration', DEFAULT_DURATION)
+        base_cost = RESOLUTION_COST.get(resolution, TASK_COSTS.get(mode, 6))
+        multiplier = DURATION_MULTIPLIER.get(duration, 1.0)
+        cost = int(base_cost * multiplier)
+        length = DURATION_FRAMES.get(duration, 81)
+
         user_logger = UserLogger(user_id, username)
 
         saved_input_image = user_logger.save_input_image(image_path)
-        msg_text = f"🚀 正在处理自定义视频生成任务 (消耗{cost}灵石)..."
+        msg_text = f"🚀 正在处理自定义视频生成任务 (画质:{resolution}, 时长:{duration}, 消耗{cost}灵石)..."
         msg = await robust_reply_text(update.effective_message, msg_text)
 
         try:
-            from src.constants import DEFAULT_RESOLUTION
-            resolution = context.user_data.get('custom_video_resolution', DEFAULT_RESOLUTION)
             if resolution == "1024p":
                 width, height = 1024, 1024
             elif resolution == "720p":
@@ -381,7 +389,7 @@ class TaskService:
             priority = await permission_service.calculate_user_priority(user_id)
 
             task_id = await image_service.submit_perfect_video_edit(
-                prompt, saved_input_image, width=width, height=height, priority=priority
+                prompt, saved_input_image, width=width, height=height, length=length, priority=priority
             )
 
             final_info = await TaskService._monitor_task_progress(
