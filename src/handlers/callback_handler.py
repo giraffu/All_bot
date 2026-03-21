@@ -8,7 +8,8 @@ from src.utils import (
 from src.handlers.utils import with_db_logging_context
 from src.constants import (
     MODE_UNDRESS, MODE_MASTURBATION, 
-    MODE_NAME_MAP, MODE_RANDOM_FACESWAP
+    MODE_NAME_MAP, MODE_RANDOM_FACESWAP,
+    FORBIDDEN_WORDS
 )
 from src.services.task_service import TaskService
 from src.services.permission_service import permission_service
@@ -22,14 +23,32 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
     Handle callback queries from inline keyboards.
     """
     query = update.callback_query
-    await query.answer() # Always answer to stop loading animation
+    
+    data = query.data
+    
+    # Do not answer immediately for public_share_request so we can show alert if needed
+    if data != "public_share_request":
+        await query.answer() # Always answer to stop loading animation
     
     # Ensure user info is up to date
     await permission_service.ensure_user(update)
     
-    data = query.data
-    
     if data == "public_share_request":
+        # Check forbidden words
+        msg_meta = context.bot_data.get(f"msg_meta_{query.message.message_id}", {})
+        prompt = msg_meta.get("prompt", "")
+        if prompt:
+            prompt_lower = prompt.lower()
+            for word in FORBIDDEN_WORDS:
+                if word.lower() in prompt_lower:
+                    await query.answer(
+                        text=f"⚠️ 您的内容包含违禁词「{word}」，无法公开！",
+                        show_alert=True
+                    )
+                    return
+        
+        await query.answer() # Answer if no forbidden words
+
         # Show confirmation menu
         # Check if already in confirmation state
         if query.message.caption and "⚠️ 公开确认" in query.message.caption:
@@ -195,6 +214,12 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
         pass
     
     elif data == "random_faceswap_again":
+        # Check maintenance mode for generation tasks
+        from src.utils import is_maintenance_mode
+        if is_maintenance_mode():
+            await robust_send_message(context.bot, query.message.chat_id, "⚠️ 服务器即将运维，暂停生成服务中")
+            return
+
         # "再来一张" (Random FaceSwap Again)
         face_image_path = context.user_data.get('last_face_image')
         if not face_image_path:
@@ -263,6 +288,12 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
         await robust_edit_text(query.message, "🚫 **已停止任务，所有图片已清除**")
         
     elif data == "batch_confirm":
+        # Check maintenance mode for generation tasks
+        from src.utils import is_maintenance_mode
+        if is_maintenance_mode():
+            await robust_edit_text(query.message, "⚠️ 服务器即将运维，暂停生成服务中")
+            return
+
         # Confirm Batch
         # Stop Timeout Task
         if 'batch_timeout_task' in context.user_data:
@@ -342,6 +373,17 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
         if new_val not in allowed:
             await query.answer(f"❌ 境界或身份不足，无法选择 {new_val}！", show_alert=True)
             return
+
+        if is_res and new_val == "1024p":
+            current_dur = context.user_data.get('custom_video_duration', DEFAULT_DURATION)
+            if current_dur == "10s":
+                await query.answer("❌ 无法同时选择 1024p 和 10s，请先降低时长！", show_alert=True)
+                return
+        elif not is_res and new_val == "10s":
+            current_res = context.user_data.get('custom_video_resolution', DEFAULT_RESOLUTION)
+            if current_res == "1024p":
+                await query.answer("❌ 无法同时选择 1024p 和 10s，请先降低分辨率！", show_alert=True)
+                return
 
         if is_res:
             context.user_data['custom_video_resolution'] = new_val

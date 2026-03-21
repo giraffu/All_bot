@@ -47,6 +47,9 @@ const collapsed = ref(false)
 const users = ref([])
 const stats = ref({
   total_users: 0,
+  inner_disciple_count: 0,
+  core_disciple_count: 0,
+  true_disciple_count: 0,
   total_generations: 0,
   total_credits: 0,
   total_active_credits: 0,

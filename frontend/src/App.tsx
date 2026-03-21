@@ -56,8 +56,8 @@ function App() {
         id: 3,
         name: '至尊月卡',
         identity_name: '真传弟子',
-        original_price: 9.90,
-        final_price: 9.90,
+        original_price: 9.99,
+        final_price: 9.99,
         reward_credits: 3000,
         duration_days: 30,
         applied_rules: []
@@ -129,7 +129,7 @@ function App() {
   return (
     <div className="app-container theme-dark-gold">
       <header className="header">
-        <h1>修仙账房 - 会员中心</h1>
+        <h1>合欢宗账房</h1>
         <div className="wallet-section">
           <TonConnectButton />
         </div>
@@ -160,30 +160,61 @@ function App() {
 
             <section className="comparison-section">
               <h2>权益对比</h2>
-              <table className="comparison-table">
-                <thead>
-                  <tr>
-                    <th>权益</th>
-                    <th>内门弟子</th>
-                    <th>核心弟子</th>
-                    <th>真传弟子</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr>
-                    <td>赠送灵石</td>
-                    <td>400</td>
-                    <td>1200</td>
-                    <td>3000</td>
-                  </tr>
-                  <tr>
-                    <td>排队优先级</td>
-                    <td>普通</td>
-                    <td>优先</td>
-                    <td>极速</td>
-                  </tr>
-                </tbody>
-              </table>
+              <div className="comparison-table-wrapper">
+                <table className="comparison-table">
+                  <thead>
+                    <tr>
+                      <th>权益项目</th>
+                      <th>内门弟子</th>
+                      <th>核心弟子</th>
+                      <th>真传弟子</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td>💎 赠送永久灵石</td>
+                      <td>400</td>
+                      <td>1200</td>
+                      <td>3000</td>
+                    </tr>
+                    <tr>
+                      <td>📅 每日签到 (临时灵石)</td>
+                      <td>+30/天</td>
+                      <td>+45/天</td>
+                      <td>+60/天</td>
+                    </tr>
+                    <tr>
+                      <td>📺 解锁最高画质</td>
+                      <td className="highlight-cell">720p</td>
+                      <td colSpan={2} className="highlight-cell">
+                        1024p
+                      </td>
+                    </tr>
+                    <tr>
+                      <td>⏳ 解锁最长时长</td>
+                      <td className="highlight-cell">8s</td>
+                      <td colSpan={2} className="highlight-cell">
+                        10s
+                      </td>
+                    </tr>
+                    <tr>
+                      <td>🚀 基础排队优先级</td>
+                      <td>
+                        <b style={{color: 'var(--gold-primary)'}}>+15</b>
+                      </td>
+                      <td>
+                        <b style={{color: 'var(--gold-primary)'}}>+25</b>
+                      </td>
+                      <td>
+                        <b style={{color: '#ff4d4f'}}>+40 (极速)</b>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              <p className="note-text" style={{marginTop: '15px', fontSize: '0.9em', color: '#aaa', textAlign: 'center'}}>
+                * 注：一点优先级约等于 1 分钟排队加速。为防霸占算力，优先级会随当日生成次数增加而动态衰减。
+              </p>
             </section>
           </>
         )}

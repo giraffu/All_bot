@@ -11,13 +11,24 @@ from config import VITE_MERCHANT_ADDRESS
 
 logger = logging.getLogger(__name__)
 
-def parse_payload_boc(boc_hex: str) -> str:
+def parse_payload_boc(boc_str: str) -> str:
     """
-    Parses a BOC payload and returns the text comment.
+    Parses a BOC payload (base64 or hex) and returns the text comment.
     """
+    import base64
     try:
         from pytoniq_core import Cell
-        cell = Cell.one_from_boc(bytes.fromhex(boc_hex))
+        boc_bytes = None
+        
+        # Try base64 first
+        try:
+            boc_bytes = base64.b64decode(boc_str)
+            cell = Cell.one_from_boc(boc_bytes)
+        except Exception:
+            # If base64 fails or Cell parsing fails, try hex
+            boc_bytes = bytes.fromhex(boc_str)
+            cell = Cell.one_from_boc(boc_bytes)
+            
         slice = cell.begin_parse()
         opcode = slice.load_uint(32)
         if opcode == 0:
@@ -104,6 +115,10 @@ class TonPaymentValidator:
                         success = await self._process_order(order_id, amount_nanotons, tx_hash)
                         if success:
                             self.last_lt = tx_lt
+                        else:
+                            # If a transaction fails to process (e.g. DB error), we should stop 
+                            # advancing last_lt and break, so it can be retried in the next poll.
+                            break
                     else:
                         self.last_lt = tx_lt
 

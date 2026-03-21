@@ -1,9 +1,11 @@
 from telegram import Update, ReplyKeyboardMarkup, BotCommand
 from telegram.ext import ContextTypes, Application
 import logging
+import os
 from src.services.permission_service import permission_service
 from src.utils import robust_send_message
 from src.handlers.utils import with_db_logging_context
+from config import ADMIN_USERS
 
 async def setup_commands(app: Application):
     """
@@ -79,7 +81,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "⛩️ **欢迎来到宗门灵境**\n\n"
         "请选择您的修炼方式：\n\n"
-        "📅 **每日签到**：每日吐纳，领取 20 灵石。\n"
+        "📅 **每日签到**：每日吐纳，根据身份领取丰厚灵石。\n"
         "🤝 **分享赚灵石**：邀请道友入宗，无限领灵石！\n"
         "🖼️ **懒人P图**：快速脱衣、换脸、自慰、抽插等仙术。\n"
         "🎬 **懒人动图**：传教士、后入、口交黑人等场景。\n"
@@ -90,3 +92,30 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=reply_markup,
         parse_mode="Markdown"
     )
+
+@with_db_logging_context
+async def toggle_maintenance(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Toggle maintenance mode for generation services. Only accessible by admins."""
+    user = update.effective_user
+    if user.id not in ADMIN_USERS:
+        await robust_send_message(context.bot, update.message.chat_id, "🚫 您没有权限执行此操作。")
+        return
+
+    args = context.args
+    if not args or args[0].lower() not in ["on", "off"]:
+        await robust_send_message(context.bot, update.message.chat_id, "用法: /maintenance on|off")
+        return
+
+    action = args[0].lower()
+    
+    from src.utils import MAINTENANCE_FILE
+    
+    if action == "on":
+        with open(MAINTENANCE_FILE, "w") as f:
+            f.write("1")
+        await robust_send_message(context.bot, update.message.chat_id, "✅ 维护模式已开启，已暂停所有生成服务。")
+    else:
+        if os.path.exists(MAINTENANCE_FILE):
+            os.remove(MAINTENANCE_FILE)
+        await robust_send_message(context.bot, update.message.chat_id, "✅ 维护模式已关闭，生成服务恢复正常。")
+

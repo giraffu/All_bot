@@ -7,7 +7,8 @@ import {
   RiseOutlined,
   ThunderboltOutlined,
   CheckCircleOutlined,
-  FireOutlined
+  FireOutlined,
+  CrownOutlined
 } from '@ant-design/icons-vue'
 
 defineProps({
@@ -107,6 +108,45 @@ defineProps({
         >
           <template #prefix>
             <user-outlined />
+          </template>
+        </a-statistic>
+      </a-card>
+    </a-col>
+    <a-col :xs="24" :sm="12" :md="8" :lg="4">
+      <a-card hoverable class="stat-card">
+        <a-statistic
+          title="内门弟子数"
+          :value="stats.inner_disciple_count || 0"
+          :value-style="{ color: '#1890ff' }"
+        >
+          <template #prefix>
+            <crown-outlined />
+          </template>
+        </a-statistic>
+      </a-card>
+    </a-col>
+    <a-col :xs="24" :sm="12" :md="8" :lg="4">
+      <a-card hoverable class="stat-card">
+        <a-statistic
+          title="核心弟子数"
+          :value="stats.core_disciple_count || 0"
+          :value-style="{ color: '#722ed1' }"
+        >
+          <template #prefix>
+            <crown-outlined />
+          </template>
+        </a-statistic>
+      </a-card>
+    </a-col>
+    <a-col :xs="24" :sm="12" :md="8" :lg="4">
+      <a-card hoverable class="stat-card">
+        <a-statistic
+          title="真传弟子数"
+          :value="stats.true_disciple_count || 0"
+          :value-style="{ color: '#eb2f96' }"
+        >
+          <template #prefix>
+            <crown-outlined />
           </template>
         </a-statistic>
       </a-card>

@@ -35,6 +35,8 @@ from src.utils import (
     robust_send_video,
 )
 
+from src.services.task_registry import TaskRegistry
+
 logger = logging.getLogger(__name__)
 
 
@@ -57,6 +59,16 @@ class TaskService:
         reply_markup: InlineKeyboardMarkup = None,
     ) -> Tuple[Optional[bytes], Optional[str]]:
         """Common generation logic for generic tasks."""
+
+        # 1. Check active tasks limit
+        active_tasks = context.user_data.get('active_tasks', 0)
+        if active_tasks >= 3:
+            await robust_send_message(context.bot, chat_id, "⚠️ 您当前已有 3 个任务正在处理中，请等待其中一个完成后再试！")
+            if cleanup:
+                TaskService._cleanup_files(images)
+            return None, None
+            
+        context.user_data['active_tasks'] = active_tasks + 1
 
         # Determine cost and default task type
         cost = TASK_COSTS.get(task_type, 6 if is_video else 2)
@@ -95,19 +107,21 @@ class TaskService:
 
         media_bytes = None
         full_output_path = None
+        registry_task_id = None
 
         try:
             # Determine Priority
             priority = await permission_service.calculate_user_priority(user_id)
 
+            # Deduct Quota (Credits) first
+            if deduct_quota:
+                await permission_service.increment_quota(user_id, cost=cost, username=username, task_type=task_type)
+                registry_task_id = TaskRegistry.add_task(user_id, username, cost, task_type)
+
             # Submit Task
             task_id = await TaskService._submit_generic_task(
                 task_type, prompt, saved_input_images, negative_prompt, is_video, priority
             )
-
-            # Deduct Quota (Credits)
-            if deduct_quota:
-                await permission_service.increment_quota(user_id, cost=cost, username=username, task_type=task_type)
 
             # Monitor Progress
             final_info = await TaskService._monitor_task_progress(
@@ -149,6 +163,11 @@ class TaskService:
             await robust_send_message(context.bot, chat_id, f"❌ 出错了：{e}，已退还灵石")
 
         finally:
+            if registry_task_id:
+                TaskRegistry.remove_task(registry_task_id)
+            if context.user_data.get('active_tasks', 0) > 0:
+                context.user_data['active_tasks'] -= 1
+                
             if cleanup:
                 TaskService._cleanup_files(images)
 
@@ -168,12 +187,29 @@ class TaskService:
         Generic handler for video generation tasks to reduce code duplication.
         """
         chat_id = update.effective_chat.id
+        
+        # 1. Check active tasks limit
+        active_tasks = context.user_data.get('active_tasks', 0)
+        if active_tasks >= 3:
+            await robust_send_message(context.bot, chat_id, "⚠️ 您当前已有 3 个任务正在处理中，请等待其中一个完成后再试！")
+            if cleanup:
+                TaskService._cleanup_files([image_path])
+            return None, None
+            
+        context.user_data['active_tasks'] = active_tasks + 1
+        
         user_id = update.effective_user.id
         username = update.effective_user.username or update.effective_user.full_name
 
         from src.constants import DEFAULT_RESOLUTION, RESOLUTION_COST, DEFAULT_DURATION, DURATION_MULTIPLIER, DURATION_FRAMES
         resolution = context.user_data.get('custom_video_resolution', DEFAULT_RESOLUTION)
         duration = context.user_data.get('custom_video_duration', DEFAULT_DURATION)
+        
+        if resolution == "1024p" and duration == "10s":
+            resolution = "720p" # Fallback safely
+            context.user_data['custom_video_resolution'] = "720p"
+            await robust_reply_text(update.effective_message, "⚠️ 检测到非法配置(1024p+10s)，已自动降级为720p+10s。")
+            
         base_cost = RESOLUTION_COST.get(resolution, TASK_COSTS.get(mode, 6))
         multiplier = DURATION_MULTIPLIER.get(duration, 1.0)
         cost = int(base_cost * multiplier)
@@ -195,6 +231,7 @@ class TaskService:
 
         media_bytes = None
         full_output_path = None
+        registry_task_id = None
 
         try:
             if resolution == "1024p":
@@ -210,6 +247,7 @@ class TaskService:
                 return None, None
 
             await permission_service.increment_quota(user_id, cost=cost, username=username, task_type=mode)
+            registry_task_id = TaskRegistry.add_task(user_id, username, cost, mode)
 
             await robust_edit_text(msg, "⏳ 正在生成视频，请耐心等待...")
 
@@ -260,6 +298,11 @@ class TaskService:
             await permission_service.increment_quota(user_id, cost=-cost, username=username, task_type="refund")
             await robust_send_message(context.bot, chat_id, f"❌ 出错了：{e}，已退还灵石")
         finally:
+            if registry_task_id:
+                TaskRegistry.remove_task(registry_task_id)
+            if context.user_data.get('active_tasks', 0) > 0:
+                context.user_data['active_tasks'] -= 1
+                
             if cleanup:
                 TaskService._cleanup_files([image_path])
 
@@ -368,6 +411,12 @@ class TaskService:
         from src.constants import DEFAULT_RESOLUTION, RESOLUTION_COST, DEFAULT_DURATION, DURATION_MULTIPLIER, DURATION_FRAMES
         resolution = context.user_data.get('custom_video_resolution', DEFAULT_RESOLUTION)
         duration = context.user_data.get('custom_video_duration', DEFAULT_DURATION)
+        
+        if resolution == "1024p" and duration == "10s":
+            resolution = "720p" # Fallback safely
+            context.user_data['custom_video_resolution'] = "720p"
+            await robust_reply_text(update.effective_message, "⚠️ 检测到非法配置(1024p+10s)，已自动降级为720p+10s。")
+            
         base_cost = RESOLUTION_COST.get(resolution, TASK_COSTS.get(mode, 6))
         multiplier = DURATION_MULTIPLIER.get(duration, 1.0)
         cost = int(base_cost * multiplier)
@@ -382,6 +431,7 @@ class TaskService:
         notice = await TaskService._get_acceleration_notice(user_id)
         msg_text = f"🚀 正在处理自定义视频生成任务 (画质:{resolution}, 时长:{duration}, 消耗{cost}灵石)...{notice}"
         msg = await robust_reply_text(update.effective_message, msg_text)
+        registry_task_id = None
 
         try:
             if resolution == "1024p":
@@ -396,6 +446,7 @@ class TaskService:
                 await robust_delete_message(msg)
                 return None, None
             await permission_service.increment_quota(user_id, cost=cost, username=username, task_type=mode)
+            registry_task_id = TaskRegistry.add_task(user_id, username, cost, mode)
             await robust_edit_text(msg, "⏳ 正在生成视频，请耐心等待...")
 
             priority = await permission_service.calculate_user_priority(user_id)
@@ -439,6 +490,8 @@ class TaskService:
             await robust_send_message(context.bot, chat_id, f"❌ 出错了：{e}，已退还灵石")
             return None, None
         finally:
+            if registry_task_id:
+                TaskRegistry.remove_task(registry_task_id)
             if cleanup:
                 TaskService._cleanup_files([image_path])
 
@@ -454,6 +507,15 @@ class TaskService:
         Handle Text to Image generation task.
         """
         chat_id = update.effective_chat.id
+        
+        # 1. Check active tasks limit
+        active_tasks = context.user_data.get('active_tasks', 0)
+        if active_tasks >= 3:
+            await robust_send_message(context.bot, chat_id, "⚠️ 您当前已有 3 个任务正在处理中，请等待其中一个完成后再试！")
+            return None, None
+            
+        context.user_data['active_tasks'] = active_tasks + 1
+        
         user_id = update.effective_user.id
         username = update.effective_user.username or update.effective_user.full_name
         mode = MODE_TEXT_TO_IMAGE
@@ -466,6 +528,7 @@ class TaskService:
 
         media_bytes = None
         full_output_path = None
+        registry_task_id = None
 
         try:
             # 1. Check Quota
@@ -475,6 +538,7 @@ class TaskService:
 
             # 2. Submit Task
             await permission_service.increment_quota(user_id, cost=cost, username=username, task_type=mode)
+            registry_task_id = TaskRegistry.add_task(user_id, username, cost, mode)
             await robust_edit_text(msg, "⏳ 正在生成图片，请耐心等待...")
 
             task_id = await image_service.submit_text_to_image_task(prompt)
@@ -510,11 +574,15 @@ class TaskService:
                 )
 
         except Exception as e:
-            user_logger.logger.error(
-                f"Error in text_to_image task for user {user_id}: {e}", exc_info=True
-            )
+            user_logger.logger.error(f"Error in Text-to-Image for user {user_id}: {e}", exc_info=True)
             await permission_service.increment_quota(user_id, cost=-cost, username=username, task_type="refund")
             await robust_send_message(context.bot, chat_id, f"❌ 出错了：{e}，已退还灵石")
+            
+        finally:
+            if registry_task_id:
+                TaskRegistry.remove_task(registry_task_id)
+            if context.user_data.get('active_tasks', 0) > 0:
+                context.user_data['active_tasks'] -= 1
 
         return media_bytes, full_output_path
 

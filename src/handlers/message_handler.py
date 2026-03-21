@@ -48,6 +48,13 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_logger = UserLogger(user.id, username)
 
     mode = context.user_data.get('mode', MODE_NONE)
+    
+    # Check maintenance mode for generation tasks
+    from src.utils import is_maintenance_mode
+    if is_maintenance_mode() and mode not in [MODE_NONE, MODE_TEMPLATE_CONTRIBUTE]:
+        await robust_reply_text(msg, "⚠️ 服务器即将运维，暂停生成服务中")
+        return
+
     user_logger.log_interaction(f"Sent photo (Mode: {mode})", type="File Interaction")
 
     try:
@@ -58,6 +65,21 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # 0.1 Template Contribution Check (Avoid double download)
         if mode == MODE_TEMPLATE_CONTRIBUTE:
             return await _handle_template_contribution(update, context)
+
+        # 0.2 Debounce media groups for one-click modes
+        one_click_modes = [MODE_UNDRESS, MODE_MASTURBATION, MODE_PERFECT_VIDEO_INSERT, MODE_DOGGY_STYLE, MODE_BLOWJOB, MODE_UNDRESS_TONGUE, MODE_CLOSEUP_BLOWJOB, MODE_RANDOM_FACESWAP]
+        if mode in one_click_modes and msg.media_group_id:
+            processed_groups = context.user_data.get('processed_media_groups', set())
+            if msg.media_group_id in processed_groups:
+                logger.info(f"Ignoring additional image from media group {msg.media_group_id} for mode {mode}")
+                notified_groups = context.user_data.get('notified_media_groups', set())
+                if msg.media_group_id not in notified_groups:
+                    await robust_reply_text(msg, "⚠️ 提醒：为了防止刷屏，系统仅处理您的**第一张图**，其余图片已被忽略。", parse_mode='Markdown')
+                    notified_groups.add(msg.media_group_id)
+                    context.user_data['notified_media_groups'] = notified_groups
+                return
+            processed_groups.add(msg.media_group_id)
+            context.user_data['processed_media_groups'] = processed_groups
 
         # 1. Save Photo
         if 'pending_images' not in context.user_data:
@@ -93,27 +115,22 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
             multiplier = DURATION_MULTIPLIER.get(current_duration, 1.0)
             cost = int(base_cost * multiplier)
             
-            msg_text = f"⚙️ 当前自定义视频画质：{current_resolution} | 时长：{current_duration} | 消耗灵石：{cost}\n\n请选择您需要的画质和时长（部分画质和时长需要高境界或VIP身份解锁）：\n\n*提示：画质越高、时长越长，消耗灵石越多。*"
+            msg_text = f"⚙️ 当前自定义视频画质：{current_resolution} | 时长：{current_duration} | 消耗灵石：{cost}\n\n请选择您需要的画质和时长（部分画质和时长需要高境界或VIP身份解锁）：\n\n*提示：画质越高、时长越长，消耗灵石越多。注意：1024p 和 10s 无法同时选择。*"
             await robust_reply_text(msg, "📥 收到起始图片。请发送提示词 (Text) 以生成 5 秒视频。")
             await robust_reply_text(msg, msg_text, reply_markup=reply_markup)
         elif mode == MODE_PERFECT_VIDEO_INSERT:
-            # 动图传教士：收到图片直接开始生成
             await task_service.process_perfect_video_insert_task(update, context, local_path)
             context.user_data['pending_images'] = []
         elif mode == MODE_DOGGY_STYLE:
-            # 动图后入：收到图片直接开始生成
             await task_service.process_doggy_style_task(update, context, local_path)
             context.user_data['pending_images'] = []
         elif mode == MODE_BLOWJOB:
-            # 口交黑人：收到图片直接开始生成
             await task_service.process_blowjob_task(update, context, local_path)
             context.user_data['pending_images'] = []
         elif mode == MODE_UNDRESS_TONGUE:
-            # 脱衣吐舌：收到图片直接开始生成
             await task_service.process_undress_tongue_task(update, context, local_path)
             context.user_data['pending_images'] = []
         elif mode == MODE_CLOSEUP_BLOWJOB:
-            # 特写口交：收到图片直接开始生成
             await task_service.process_closeup_blowjob_task(update, context, local_path)
             context.user_data['pending_images'] = []
         else:
@@ -136,6 +153,12 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if mode == MODE_TEMPLATE_CONTRIBUTE:
         return await _handle_template_contribution(update, context)
     
+    # Check maintenance mode for generation tasks
+    from src.utils import is_maintenance_mode
+    if is_maintenance_mode() and mode not in [MODE_NONE, MODE_TEMPLATE_CONTRIBUTE]:
+        await robust_reply_text(update.message, "⚠️ 服务器即将运维，暂停生成服务中")
+        return
+    
     # Other video handling can go here if needed
     await robust_reply_text(update.message, "⚠️ 当前模式不支持视频处理。")
 
@@ -154,6 +177,13 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_logger = UserLogger(user.id, username)
 
     mode = context.user_data.get('mode', MODE_NONE)
+
+    # Check maintenance mode for generation tasks
+    from src.utils import is_maintenance_mode
+    if is_maintenance_mode() and mode not in [MODE_NONE, MODE_TEMPLATE_CONTRIBUTE]:
+        await robust_reply_text(msg, "⚠️ 服务器即将运维，暂停生成服务中")
+        return
+
     user_logger.log_interaction(f"Sent document (Mode: {mode})", type="File Interaction")
 
     try:
@@ -164,6 +194,21 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # 0.1 Template Contribution Check
         if mode == MODE_TEMPLATE_CONTRIBUTE:
             return await _handle_template_contribution(update, context)
+
+        # 0.2 Debounce media groups for one-click modes
+        one_click_modes = [MODE_UNDRESS, MODE_MASTURBATION, MODE_PERFECT_VIDEO_INSERT, MODE_DOGGY_STYLE, MODE_BLOWJOB, MODE_UNDRESS_TONGUE, MODE_CLOSEUP_BLOWJOB, MODE_RANDOM_FACESWAP]
+        if mode in one_click_modes and msg.media_group_id:
+            processed_groups = context.user_data.get('processed_media_groups', set())
+            if msg.media_group_id in processed_groups:
+                logger.info(f"Ignoring additional document from media group {msg.media_group_id} for mode {mode}")
+                notified_groups = context.user_data.get('notified_media_groups', set())
+                if msg.media_group_id not in notified_groups:
+                    await robust_reply_text(msg, "⚠️ 提醒：当前功能为一键直出模式，为了防止刷屏，系统仅处理您相册中的**第一张图**，其余图片已被忽略。", parse_mode='Markdown')
+                    notified_groups.add(msg.media_group_id)
+                    context.user_data['notified_media_groups'] = notified_groups
+                return
+            processed_groups.add(msg.media_group_id)
+            context.user_data['processed_media_groups'] = processed_groups
 
         # 1. Save Document
         if 'pending_images' not in context.user_data:
@@ -201,7 +246,7 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
             multiplier = DURATION_MULTIPLIER.get(current_duration, 1.0)
             cost = int(base_cost * multiplier)
             
-            msg_text = f"⚙️ 当前自定义视频画质：{current_resolution} | 时长：{current_duration} | 消耗灵石：{cost}\n\n请选择您需要的画质和时长（部分画质和时长需要高境界或VIP身份解锁）：\n\n*提示：画质越高、时长越长，消耗灵石越多。*"
+            msg_text = f"⚙️ 当前自定义视频画质：{current_resolution} | 时长：{current_duration} | 消耗灵石：{cost}\n\n请选择您需要的画质和时长（部分画质和时长需要高境界或VIP身份解锁）：\n\n*提示：画质越高、时长越长，消耗灵石越多。注意：1024p 和 10s 无法同时选择。*"
             await robust_reply_text(msg, "📥 收到起始图片（文件）。请发送提示词 (Text) 以生成 5 秒视频。")
             await robust_reply_text(msg, msg_text, reply_markup=reply_markup)
         elif mode == MODE_PERFECT_VIDEO_INSERT:
@@ -583,14 +628,14 @@ async def handle_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 logger.warning(f"Failed to check refuge group membership: {e}")
                 # 忽略错误继续签到流程
         
-        success, current_credits, error_msg, total_days = await permission_service.perform_checkin(update)
+        success, current_credits, error_msg, total_days, temp_reward = await permission_service.perform_checkin(update)
         user_group = await permission_service.get_user_group(update.effective_user.id)
         
         # 优化后的免责声明
         disclaimer = "\n\n⚠️ _注：累计签到统计始于3月5日，此前的数据未计入系统。_"
         
         if success:
-            await robust_reply_text(update.message, f"✅ **签到成功！**\n\n👤 当前境界：`{user_group}`\n📅 累计签到：`{total_days}` 天\n🎉 本次获得：`5` 永久灵石 + `15` 临时灵石\n💰 当前总灵石：`{current_credits}`" + disclaimer, parse_mode="Markdown")
+            await robust_reply_text(update.message, f"✅ **签到成功！**\n\n👤 当前境界：`{user_group}`\n📅 累计签到：`{total_days}` 天\n🎉 本次获得：`5` 永久灵石 + `{temp_reward}` 临时灵石\n💰 当前总灵石：`{current_credits}`" + disclaimer, parse_mode="Markdown")
         elif error_msg:
             await robust_reply_text(update.message, error_msg, parse_mode="Markdown")
         else:
@@ -670,7 +715,7 @@ async def handle_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
             multiplier = DURATION_MULTIPLIER.get(current_duration, 1.0)
             cost = int(base_cost * multiplier)
             
-            reply += f"\n\n⚙️ 当前视频画质：{current_resolution} | 时长：{current_duration} | 消耗灵石：{cost}\n请在下方选择您需要的画质和时长（部分选项需要高境界或VIP身份解锁）：\n\n*提示：画质越高、时长越长，消耗灵石越多。*"
+            reply += f"\n\n⚙️ 当前视频画质：{current_resolution} | 时长：{current_duration} | 消耗灵石：{cost}\n请在下方选择您需要的画质和时长（部分选项需要高境界或VIP身份解锁）：\n\n*提示：画质越高、时长越长，消耗灵石越多。注意：1024p 和 10s 无法同时选择。*"
             await robust_reply_text(update.message, reply, reply_markup=reply_markup)
         else:
             await robust_reply_text(update.message, reply)
@@ -698,11 +743,16 @@ async def handle_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await robust_reply_text(update.message, "❌ 图片已丢失，请重新发送图片。")
             return
         
-        # Force single image for EDIT mode to match prompt
+        # Force single image for EDIT
         if mode == MODE_EDIT:
             valid_images = [valid_images[-1]]
 
     # Execute Generation
+    from src.utils import is_maintenance_mode
+    if is_maintenance_mode():
+        await robust_reply_text(update.message, "⚠️ 服务器即将运维，暂停生成服务中")
+        return
+
     chat_id = update.message.chat_id
     user_id = update.effective_user.id
     username = update.effective_user.username or update.effective_user.full_name

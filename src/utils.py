@@ -10,6 +10,15 @@ from telegram.error import Forbidden, NetworkError, TimedOut
 
 logger = logging.getLogger(__name__)
 
+# Constants for project root and maintenance file
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+MAINTENANCE_FILE = os.path.join(PROJECT_ROOT, 'MAINTENANCE')
+
+
+def is_maintenance_mode() -> bool:
+    """Check if the system is in maintenance mode by looking for the MAINTENANCE file."""
+    return os.path.exists(MAINTENANCE_FILE)
+
 
 def async_retry(max_retries: int = 3, delay: float = 1.0, backoff: float = 2.0):
     """

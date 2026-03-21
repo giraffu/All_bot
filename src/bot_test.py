@@ -10,7 +10,7 @@ import logging
 import os
 from config import PROXY_URL
 from src.logger import setup_logging
-from src.handlers.command_handler import start, setup_commands
+from src.handlers.command_handler import start, setup_commands, toggle_maintenance
 from src.handlers.message_handler import handle_photo, handle_prompt, handle_video, handle_document
 from src.handlers.callback_handler import handle_callback_query
 from src.database.core import init_db
@@ -104,6 +104,13 @@ async def post_init(application):
         first=next_midnight
     )
 
+from src.services.task_registry import TaskRegistry
+
+async def post_shutdown(application):
+    logger = logging.getLogger("bot.core")
+    logger.info("Bot is shutting down. Refunding active tasks...")
+    await TaskRegistry.refund_all(application.bot)
+
 def main():
     setup_logging()
     logger = logging.getLogger("bot.core")
@@ -144,12 +151,14 @@ def main():
         .request(request)
         .get_updates_request(request) # Ensure get_updates uses same request config
         .post_init(post_init) # Call setup_commands on startup
+        .post_shutdown(post_shutdown) # Call refund on shutdown
         .concurrent_updates(True)
         .build()
     )
     
     # Register Handlers
     app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("maintenance", toggle_maintenance))
     app.add_handler(CallbackQueryHandler(handle_callback_query))
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     app.add_handler(MessageHandler(filters.VIDEO, handle_video))

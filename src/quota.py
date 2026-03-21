@@ -90,13 +90,17 @@ class QuotaManager:
                 old_balance = user.credits + (user.temp_credits or 0)
                 temp_credits = user.temp_credits or 0
                 
-                # Deduct from temp_credits first
-                if temp_credits >= cost:
-                    user.temp_credits = temp_credits - cost
+                if cost < 0:
+                    # If cost is negative, it's a refund or addition. Refund to permanent credits to be safe.
+                    user.credits = user.credits - cost # -cost is positive
                 else:
-                    remaining_cost = cost - temp_credits
-                    user.temp_credits = 0
-                    user.credits = max(0, user.credits - remaining_cost)
+                    # Deduct from temp_credits first
+                    if temp_credits >= cost:
+                        user.temp_credits = temp_credits - cost
+                    else:
+                        remaining_cost = cost - temp_credits
+                        user.temp_credits = 0
+                        user.credits = max(0, user.credits - remaining_cost)
                 
                 new_balance = user.credits + user.temp_credits
                 await session.commit()

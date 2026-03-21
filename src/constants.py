@@ -82,7 +82,7 @@ RESOLUTION_PERMISSIONS = {
     "练气期": ["512p"],
     "筑基期": ["512p", "720p"],
     "金丹期": ["512p", "720p", "1024p"],
-    "内门弟子": ["512p", "720p", "1024p"],
+    "内门弟子": ["512p", "720p"],
     "核心弟子": ["512p", "720p", "1024p"],
     "真传弟子": ["512p", "720p", "1024p"]
 }
@@ -93,10 +93,17 @@ DURATION_PERMISSIONS = {
     "练气期": ["5s"],
     "筑基期": ["5s", "8s"],
     "金丹期": ["5s", "8s", "10s"],
-    "内门弟子": ["5s", "8s", "10s"],
+    "内门弟子": ["5s", "8s"],
     "核心弟子": ["5s", "8s", "10s"],
     "真传弟子": ["5s", "8s", "10s"]
 }
+
+# Forbidden words for public sharing
+FORBIDDEN_WORDS = [
+    "小男孩", "小女孩", "男童", "女童", "幼女", "幼童", "儿童", "小孩", "婴儿", "萝莉", "正太",
+    "boy", "girl", "child", "children", "kid", "kids", "toddler", "baby", "loli", "shota"
+]
+
 
 RESOLUTION_COST = {
     "512p": 6,
@@ -162,9 +169,9 @@ def get_video_settings_keyboard(user_group: str, user_identity: str = "外门弟
 # Format: "Group Name": [(limit_1, priority_1), (limit_2, priority_2), ...]
 # Logic: if usage < limit_1 return priority_1, elif usage < limit_2 return priority_2... else return 0
 DYNAMIC_PRIORITY_RULES = {
-    "真传弟子": [(50, 20), (100, 10), (200, 5)],
-    "核心弟子": [(50, 10), (100, 5), (200, 1)],
-    "内门弟子": [(50, 5), (100, 3), (200, 1)],
+    "真传弟子": [(50, 40), (100, 20), (200, 10)],
+    "核心弟子": [(50, 25), (100, 12), (200, 5)],
+    "内门弟子": [(50, 15), (100, 8), (200, 3)],
     "金丹期": [(50, 3), (100, 2), (200, 1)],
     "筑基期": [(25, 2), (50, 1)],
     "练气期": [(15, 1)],

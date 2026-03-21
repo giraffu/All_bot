@@ -296,6 +296,18 @@ async def get_stats(db: AsyncSession = Depends(get_db)):
         result_all = await db.execute(select(func.count(User.id)))
         total_db_users = result_all.scalar() or 0
 
+        # Identity counts
+        identity_stmt = select(User.current_identity, func.count(User.id)).group_by(User.current_identity)
+        identity_result = await db.execute(identity_stmt)
+        identity_counts = {}
+        for row in identity_result:
+            if row.current_identity:
+                identity_counts[row.current_identity] = row.count
+                
+        inner_disciple_count = identity_counts.get("内门弟子", 0)
+        core_disciple_count = identity_counts.get("核心弟子", 0)
+        true_disciple_count = identity_counts.get("真传弟子", 0)
+
         # Total history/generations
         result = await db.execute(select(func.count(History.id)))
         total_generations = result.scalar()
@@ -664,6 +676,9 @@ async def get_stats(db: AsyncSession = Depends(get_db)):
 
         return {
             "total_users": total_users,
+            "inner_disciple_count": inner_disciple_count,
+            "core_disciple_count": core_disciple_count,
+            "true_disciple_count": true_disciple_count,
             "total_generations": total_generations,
             "total_credits": total_credits,
             "total_temporary_ingot": total_temporary_ingot,

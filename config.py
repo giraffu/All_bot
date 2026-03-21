@@ -72,3 +72,6 @@ REFUGE_INVITE_LINK = os.getenv("REFUGE_INVITE_LINK")
 
 # --- Limit Configuration ---
 DAILY_LIMIT = int(os.getenv("DAILY_LIMIT", "10"))
+
+# --- Admin Configuration ---
+ADMIN_USERS = [int(u) for u in os.getenv("ADMIN_USERS", "").split(",") if u.strip()]

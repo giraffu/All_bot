@@ -218,14 +218,24 @@ class APIClient:
     @async_retry(max_retries=3)
     async def download_image(self, task_id: str) -> bytes:
         url = f"{IMAGE_ENDPOINT}/{task_id}"
-        r = await self._request("GET", url)
-        return r.content
+        try:
+            r = await self._request("GET", url)
+            return r.content
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 404:
+                raise RuntimeError("后端未找到生成的图片（可能是因为节点保存到了 temp 文件夹而导致读取失败），请联系管理员修复后端工作流。")
+            raise RuntimeError(f"获取图片失败: HTTP {e.response.status_code}")
 
     @async_retry(max_retries=3)
     async def download_video(self, task_id: str) -> bytes:
         url = f"{VIDEO_ENDPOINT}/{task_id}"
-        r = await self._request("GET", url)
-        return r.content
+        try:
+            r = await self._request("GET", url)
+            return r.content
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 404:
+                raise RuntimeError("后端未找到生成的视频文件。")
+            raise RuntimeError(f"获取视频失败: HTTP {e.response.status_code}")
 
     async def listen_for_progress(self, task_id: str, is_video: bool = False):
         """

@@ -127,16 +127,16 @@ async def test_calculate_user_priority_addition():
     # Setup
     permission_service = PermissionService()
     permission_service.get_user_group = AsyncMock(return_value="金丹期") # gives 3
-    permission_service.get_user_identity = AsyncMock(return_value="真传弟子") # gives 20
+    permission_service.get_user_identity = AsyncMock(return_value="真传弟子") # gives 40
     permission_service.quota_manager.get_daily_usage = AsyncMock()
     permission_service.quota_manager.get_user_stats = AsyncMock(return_value={"generation_count": 10})
 
-    # Rule: Golden Core (50, 3) + True Disciple (50, 20)
+    # Rule: Golden Core (50, 3) + True Disciple (50, 40)
     permission_service.quota_manager.get_daily_usage.return_value = 10
     priority = await permission_service.calculate_user_priority(123)
-    assert priority == 23 # 3 + 20
+    assert priority == 43 # 3 + 40
     
-    # Rule: Golden Core (100, 2) + True Disciple (100, 10)
+    # Rule: Golden Core (100, 2) + True Disciple (100, 20)
     permission_service.quota_manager.get_daily_usage.return_value = 75
     priority = await permission_service.calculate_user_priority(123)
-    assert priority == 12 # 2 + 10
+    assert priority == 22 # 2 + 20
