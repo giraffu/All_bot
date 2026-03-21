@@ -13,7 +13,7 @@
 **核心目录：** `src/handlers/` (`command_handler.py`, `message_handler.py`, `callback_handler.py`)
 * **会话状态机**：利用 Telegram 的 `context.user_data` 维护用户当前处于哪种工作模式（如 `MODE_FACESWAP` 换脸、`MODE_CUSTOM_VIDEO` 自定义视频等），从而决定对用户发送的媒体文件执行什么操作。
 * **UI 渲染**：负责生成回复菜单、内联按钮（Inline Keyboard），如“签到”、“个人中心”、“充值”、“私密生成”等选项。
-* **输入拦截**：对用户发送的图片尺寸、视频格式进行初步校验拦截，然后再派发给下层的 Service 层。
+* **内容合规与拦截**：对用户发送的图片尺寸、视频格式进行初步校验拦截，同时在结果公开分享前进行提示词违禁词（`FORBIDDEN_WORDS`）筛查，然后再派发给下层的 Service 层。
 
 ## 3. ⚖️ 经济、权限与修仙体系 (Permission Agent / Sect Elder)
 **核心文件：** `src/services/permission_service.py`, `src/quota.py`

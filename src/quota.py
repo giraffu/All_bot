@@ -258,7 +258,7 @@ class QuotaManager:
 
     async def process_channel_reward(self, user_id: int) -> int | None:
         """
-        Check and award channel join reward (20 credits) to the inviter.
+        Check and award channel join reward (10 credits) to the inviter.
         Also marks the user as a channel member.
         Returns inviter_id if reward was given, None otherwise.
         """
@@ -289,7 +289,7 @@ class QuotaManager:
             inviter = inviter_res.scalar_one_or_none()
             
             if inviter:
-                inviter.credits += 20
+                inviter.credits += 10
                 referral.channel_reward_claimed = True
                 await session.commit()
                 print(f"✅ Channel reward success: {referral.inviter_id} for {user_id}")
@@ -298,7 +298,7 @@ class QuotaManager:
                     user_id=referral.inviter_id,
                     username=inviter.username,
                     operation_type="referral_reward_channel",
-                    credit_change=20,
+                    credit_change=10,
                     current_balance=inviter.credits,
                     extra_info={"invitee_id": user_id}
                 )

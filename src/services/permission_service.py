@@ -113,7 +113,7 @@ class PermissionService:
         return False
 
     async def check_channel_reward(self, user, context: ContextTypes.DEFAULT_TYPE):
-        """Check and award channel join reward (20 credits)"""
+        """Check and award channel join reward (10 credits)"""
         try:
             inviter_id = await self.quota_manager.process_channel_reward(user.id)
             if inviter_id:
@@ -121,7 +121,7 @@ class PermissionService:
                     await robust_send_message(
                         context.bot,
                         chat_id=inviter_id,
-                        text=f"🎉 **宗门进阶奖励！**\n\n道友 {user.full_name} 已成功拜入宗门。\n获得额外奖励：`20` 灵石。",
+                        text=f"🎉 **宗门进阶奖励！**\n\n道友 {user.full_name} 已成功拜入宗门。\n获得额外奖励：`10` 灵石。",
                         parse_mode="Markdown"
                     )
                 except Exception as e:

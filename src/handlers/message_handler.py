@@ -648,17 +648,15 @@ async def handle_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
         invite_link = f"https://t.me/{bot_username}?start={user_id}"
         count = await permission_service.get_referral_count(user_id)
         user_group = await permission_service.get_user_group(user_id)
-        earned = count * 20
         msg = (
             "🤝 **分享赚灵石**\n\n"
             f"👤 **当前等级**：`{user_group}`\n"
             f"🔗 **您的专属链接**：\n`{invite_link}`\n\n"
             "📈 **邀请统计**：\n"
             f"👥 已邀请人数：`{count}` 人\n"
-            f"💰 累计获得奖励：`{earned}` 灵石\n\n"
             "💡 **规则**：\n"
             "每成功邀请一位**新道友**使用机器人，您将自动获得 **5 灵石**奖励！\n"
-            "**新道友**加入宗门，您将自动获得 **20 灵石**奖励！\n"
+            "**新道友**加入宗门，您将自动获得 **10 灵石**奖励！\n"
         )
         await robust_reply_text(update.message, msg, parse_mode="Markdown")
         return

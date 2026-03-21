@@ -112,6 +112,8 @@ class TaskService:
         try:
             # Determine Priority
             priority = await permission_service.calculate_user_priority(user_id)
+            identity_str = await permission_service.get_user_identity(user_id)
+            user_group = await permission_service.get_user_group(user_id)
 
             # Deduct Quota (Credits) first
             if deduct_quota:
@@ -125,7 +127,7 @@ class TaskService:
 
             # Monitor Progress
             final_info = await TaskService._monitor_task_progress(
-                task_id, status_msg, is_video, image_service.monitor_progress
+                task_id, status_msg, is_video, image_service.monitor_progress, identity_str=identity_str, user_group=user_group
             )
 
             if final_info:
@@ -252,6 +254,8 @@ class TaskService:
             await robust_edit_text(msg, "⏳ 正在生成视频，请耐心等待...")
 
             priority = await permission_service.calculate_user_priority(user_id)
+            identity_str = await permission_service.get_user_identity(user_id)
+            user_group = await permission_service.get_user_group(user_id)
 
             # Submit Task
             if mode == MODE_DOGGY_STYLE:
@@ -265,7 +269,7 @@ class TaskService:
 
             # Monitor Progress
             final_info = await TaskService._monitor_task_progress(
-                task_id, msg, is_video=True, monitor_func=image_service.monitor_progress
+                task_id, msg, is_video=True, monitor_func=image_service.monitor_progress, identity_str=identity_str, user_group=user_group
             )
 
             if final_info:
@@ -450,13 +454,15 @@ class TaskService:
             await robust_edit_text(msg, "⏳ 正在生成视频，请耐心等待...")
 
             priority = await permission_service.calculate_user_priority(user_id)
+            identity_str = await permission_service.get_user_identity(user_id)
+            user_group = await permission_service.get_user_group(user_id)
 
             task_id = await image_service.submit_perfect_video_edit(
                 prompt, saved_input_image, width=width, height=height, length=length, priority=priority
             )
 
             final_info = await TaskService._monitor_task_progress(
-                task_id, msg, is_video=True, monitor_func=image_service.monitor_progress
+                task_id, msg, is_video=True, monitor_func=image_service.monitor_progress, identity_str=identity_str, user_group=user_group
             )
 
             if final_info:
@@ -542,10 +548,13 @@ class TaskService:
             await robust_edit_text(msg, "⏳ 正在生成图片，请耐心等待...")
 
             task_id = await image_service.submit_text_to_image_task(prompt)
+            
+            identity_str = await permission_service.get_user_identity(user_id)
+            user_group = await permission_service.get_user_group(user_id)
 
             # 3. Monitor Progress
             final_info = await TaskService._monitor_task_progress(
-                task_id, msg, is_video=False, monitor_func=image_service.monitor_progress
+                task_id, msg, is_video=False, monitor_func=image_service.monitor_progress, identity_str=identity_str, user_group=user_group
             )
 
             if final_info:
@@ -612,11 +621,23 @@ class TaskService:
             return await image_service.submit_task(prompt, images, negative_prompt, priority=priority)
 
     @staticmethod
-    async def _monitor_task_progress(task_id, status_msg, is_video, monitor_func):
+    async def _monitor_task_progress(task_id, status_msg, is_video, monitor_func, identity_str=None, user_group=None):
         last_progress = 0
         last_status = None
         last_queue_pos = None
         final_info = None
+
+        # Build VIP/Group suffix if applicable
+        vip_suffix = ""
+        privileges = []
+        if identity_str and identity_str not in ["外门弟子", "凡人", "练气期", "筑基期", "金丹期", "default"]:
+            privileges.append(identity_str)
+        if user_group and user_group in ["金丹期", "筑基期"]:
+            privileges.append(user_group)
+            
+        if privileges:
+            privilege_str = " + ".join(privileges)
+            vip_suffix = f"\n🚀 _已为您开启 [{privilege_str}] 极速通道_"
 
         async for info in monitor_func(task_id, is_video=is_video):
             status = info.get("status")
@@ -656,14 +677,14 @@ class TaskService:
                 if queue_pos is not None:
                     if queue_pos != last_queue_pos or last_status != "pending":
                         await robust_edit_text(
-                            status_msg, f"⏳ 排队中... (第 {queue_pos} 位)", parse_mode="Markdown"
+                            status_msg, f"⏳ 排队中... (第 {queue_pos} 位){vip_suffix}", parse_mode="Markdown"
                         )
                         last_queue_pos = queue_pos
                         last_status = "pending"
                 else:
                     if last_status != "pending":
                         await robust_edit_text(
-                            status_msg, "⏳ 排队中...", parse_mode="Markdown"
+                            status_msg, f"⏳ 排队中...{vip_suffix}", parse_mode="Markdown"
                         )
                         last_status = "pending"
                 continue
