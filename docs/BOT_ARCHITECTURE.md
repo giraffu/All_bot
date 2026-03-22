@@ -3,11 +3,12 @@
 目前整个系统采用了**高内聚低耦合的分层设计**，分为网关层、业务逻辑层（多个独立 Agent 负责不同业务）以及基础设施层。从 `src/bot_test.py` 这个入口文件延伸，目前的系统可以分为以下 7 大核心模块系统：
 
 ## 1. 🚀 生命周期与网络网关 (Entry & Lifecycle Management)
-**核心文件：** `src/bot_test.py`
+**核心文件：** `src/bot_test.py`, `src/services/recovery_service.py`
 * **双环境切换**：通过读取 `.env` 中的 `BOT_TYPE`（PROD 或 TEST），动态加载不同的 Telegram Token，支持正式服与测试服共用一套代码的“双机器人部署”机制。
-* **动态代理探活 (`get_best_proxy`)**：内建了多个常见代理端口（如 7890、10808 等）的自动连通性检测。如果默认代理不可用，会自动降级尝试本地代理甚至回退到直连，保证 Bot 在各种网络环境下的存活率。
+* **高并发网络池 (Connection Pool)**：在启动时，Telegram Bot 配置了增大的连接池 (`connection_pool_size=250`)，以应对同时数千用户的并发交互请求。
+* **动态代理探活 (`get_best_proxy`)**：内建了多个常见代理端口的自动连通性检测。如果默认代理不可用，会自动降级尝试本地代理甚至回退到直连，保证 Bot 在各种网络环境下的存活率。
+* **异常恢复与状态补偿**：在重启初始化 (`post_init`) 阶段，调用 `recovery_service.py` 扫描并恢复意外停机时滞留在系统中的活动任务，并妥善处理退款或继续排队。
 * **后台任务调度**：注册了 `clear_temp_credits_job` 定时任务，利用 `JobQueue` 每 48 小时自动清空用户的临时“灵石”（免费积分）。
-* **路由注册与事件分发**：负责初始化 `ApplicationBuilder` 并挂载所有的命令、文本、图片、视频和按钮点击事件处理器（Handlers）。
 
 ## 2. 💬 用户交互界面系统 (Interface Agent / Handlers)
 **核心目录：** `src/handlers/` (`command_handler.py`, `message_handler.py`, `callback_handler.py`)
@@ -23,16 +24,18 @@
 * **推广与邀请**：处理用户的邀请链接逻辑，为邀请者和被邀请者发放对应奖励。
 
 ## 4. 🧠 AI 任务编排系统 (Generation Agent / Alchemist)
-**核心文件：** `src/services/task_service.py`
+**核心文件：** `src/services/task_service.py`, `src/services/task_registry.py`
 * **工作流编排**：接收 Handler 传来的文件和模式指令后，负责将图片/视频下载到本地临时目录进行预处理。
 * **多步骤状态维护**：处理复杂的任务流，例如换脸需要“先传目标人脸图片，再传身体图片”的 2 步流程。
-* **轮询与投递**：将构建好的 payload（包含分辨率、Prompt 等）提交给底层的 ImageService，并启动异步任务轮询 AI 后端的生成进度。
-* **后处理**：生成成功后，将成品下载回 Bot 服务器，并最终发送给用户，随后清理临时文件。
+* **Redis 任务注册表 (TaskRegistry)**：所有的活动任务状态、单用户并发锁均迁移至 **Redis** 维护（使用 `prod:` 和 `test:` 前缀区分环境）。这不仅实现了分布式跨进程状态共享，还为管理后台提供了实时的队列数据支撑。
+* **轮询与投递**：将构建好的 payload（包含分辨率、Prompt 等）提交给底层的 ImageService，并启动异步任务长轮询 AI 后端的生成进度。
+* **后处理与清理**：生成成功后，将成品下载回 Bot 服务器，并最终发送给用户。如果下载触发 404，API 客户端会捕获异常并给用户友好的提示；成功则清理临时文件。
 
 ## 5. 🔌 底层通信与高可用系统 (Backend Connector)
 **核心文件：** `src/api_client.py`, `src/services/image_service.py`, `src/circuit_breaker.py`
 * **REST 协议封装**：负责所有发往 AI 推理服务器（如 ComfyUI 后端）的 HTTP 异步请求（`img2img`, `face_swap`, `perfect_video_edit` 等）。
-* **熔断器 (Circuit Breaker)**：为防止 AI 后端宕机或过载导致 Bot 线程全部卡死，引入了熔断机制。如果请求连续失败多次，系统会快速失败（Fast-fail），并提示用户“后端正在维护”。
+* **高并发持久连接池**：为支撑海量用户轮询，使用了全局单例的 `httpx.AsyncClient`，并设置了自定义的 `max_keepalive_connections=200` 和 `max_connections=500`。
+* **弹性熔断器 (Circuit Breaker)**：为防止 AI 后端宕机或过载导致 Bot 线程全部卡死，引入了熔断机制。目前触发阈值已放宽为 15 次连续失败及 30s 冷却，在保护系统的同时减少高负载下的误判。
 * **自动重试**：处理网络抖动造成的偶发超时，进行安全的异步重试。
 
 ## 6. 💰 TON 区块链支付系统 (Payment Agent)

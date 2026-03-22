@@ -1,69 +1,49 @@
 # AI 编程助手参考指南 (AGENTS.md)
 
-本文档是 AI 编程助手参与“修仙主题 Telegram 图像与视频机器人”项目时的全面开发指南。它总结了项目的架构、核心逻辑、数据流以及关键系统。
+本文档是 AI 编程助手参与“修仙主题 Telegram 图像与视频机器人”项目时的全面开发指南。它基于系统最新的重构与功能迭代进行了全面更新，涵盖了架构、逻辑、数据流以及容灾机制。
 
 ## 1. 项目概述
-这是一个提供 AI 图像和视频生成服务（例如：换脸、文生图、视频模板等）的 Telegram 机器人。它具有独特的“修仙”主题进度系统、双轨制代币经济模型，并集成了去中心化的 TON 区块链支付，以及完善的内容分享与违禁词过滤机制。
+这是一个提供 AI 图像和视频生成服务（如：换脸、文生图、视频模板等）的 Telegram 机器人。它具有独特的“修仙”主题进度系统、双轨制代币经济模型，并集成了去中心化的 TON 区块链支付、Redis 高速缓存、强大的任务排队调度以及完善的后台监控与违禁词过滤机制。
 
-## 2. 系统架构 (7 大核心模块)
-* **入口与生命周期 (`src/bot_test.py`)**：处理 PROD/TEST 双环境切换、动态代理探活、路由注册以及后台定时任务调度（例如 48 小时定时清理临时灵石）。
-* **交互与处理器 (`src/handlers/`)**：管理用户状态机（如处理多步换脸逻辑）、渲染 UI（内联键盘 Inline Keyboards），并拦截和初步校验用户输入（例如：公开分享时的违禁词拦截 `FORBIDDEN_WORDS`）。
-* **权限与经济 (`src/services/permission_service.py`, `src/quota.py`)**：管理双代币系统，计算动态排队优先级，并基于用户的修为和身份执行权限控制。
-* **任务编排 (`src/services/task_service.py`)**：处理复杂的工作流编排、多步状态维护、构建发送给 AI 的 payload，并异步轮询 AI 后端的任务状态。
-* **底层通信 (`src/api_client.py`)**：封装与 AI 后端（如 ComfyUI）的 REST API 通信。内置了**熔断器 (Circuit Breaker)**和异步重试机制，以保障系统高可用性。
-* **TON 支付系统 (`src/services/payment_validator.py`)**：一个独立的守护协程，每 15 秒主动轮询一次 TON Center RPC 节点，以校验链上交易并自动完成发货。
-* **数据持久化 (`src/database/`, `src/services/storage.py`)**：使用 PostgreSQL + SQLAlchemy 管理关系型数据，使用 MinIO（兼容 S3 的对象存储）存储生成的媒体文件。
+## 2. 系统混合架构 (7 大核心模块)
+* **入口与网络网关 (`src/bot_test.py`)**：处理 PROD/TEST 双环境切换、动态代理探活、超大并发连接池 (`connection_pool_size=250`)，以及后台定时任务调度（例如 48 小时定时清理临时灵石）。
+* **交互与处理器 (`src/handlers/`)**：管理用户状态机，渲染 UI，拦截违禁词，并支持接收多格式媒体（Photo, Video, Document）用于高级场景（如模板共建）。
+* **权限与经济 (`src/services/permission_service.py`, `src/quota.py`)**：管理永久与临时双代币系统，并基于用户的修为和身份执行阶梯式的视频画质/时长权限控制。
+* **任务编排与 Redis (`src/services/task_service.py`, `task_registry.py`)**：工作流编排，**全面使用 Redis** 进行活动任务元数据的追踪以及单用户并发锁控制。
+* **底层通信 (`src/api_client.py`)**：封装与 AI 后端的 HTTP 异步请求，采用持久连接池，内置弹性**熔断器 (Circuit Breaker)**和异步重试机制。
+* **TON 支付守护 (`src/services/payment_validator.py`)**：独立守护协程，每 15 秒轮询 TON RPC 节点，校验链上 BOC 备注防双花，并**自动处理跨套餐升级的残值折算**。
+* **持久化存储 (`src/database/`, `src/services/storage.py`)**：**严格唯一使用 PostgreSQL** 管理资产流水，放弃 SQLite。使用 MinIO 存储多媒体，并生成预签名 URL 供外部访问。
 
 ## 3. 修仙与 VIP 身份系统
-机器人使用双轨制特权系统来控制高画质（最高 1024p）和长时长（最高 10s）视频生成的访问权限，以及决定在 AI 后端的排队优先级。
+双轨制特权系统控制高画质（最高 1024p）和长时长（最高 10s）的访问，并决定排队优先级。
+* **修为系统（免费驱动）**：凡人 -> 练气期 -> 筑基期 -> 金丹期。通过签到、邀请加群和生成次数自动升级。
+* **VIP 身份（付费驱动）**：外门 -> 内门 -> 核心 -> 真传弟子。
+* **动态优先级衰减机制**：`最终优先级 = 修为优先级 + 身份优先级`。
+  * **新手指引**：历史总生成 < 2 次时，无条件获得 +30 极速优先级。
+  * **防霸占衰减**：无论境界多高，优先级都会随当日生成次数阶梯式衰减（例如真传弟子 <40次为 +45，>=100次后降为 0）。
 
-* **修为系统（免费/活跃度驱动）**： 
-  * 晋升路线：凡人 -> 练气期 -> 筑基期 -> 金丹期。
-  * 通过每日签到、邀请新用户和累计生成次数自动升级。升级可解锁更高的画质和基础排队优先级。
-* **VIP 身份（付费驱动）**： 
-  * 晋升路线：外门弟子（默认） -> 内门弟子 -> 核心弟子 -> 真传弟子。
-  * 通过 TON 支付购买套餐获得。立即无条件解锁最高画质/时长，并获得极高的排队优先级加成。
-* **动态优先级叠加机制**：`最终优先级 = 修为优先级 + 身份优先级`。无论境界多高，该优先级都会根据用户当日的生成次数动态衰减，以防止单用户霸占算力。
-
-## 4. 经济与消耗模型
+## 4. 经济与审计模型
 * **双轨制代币**：
-  * `credits`（永久灵石）：通过充值或邀请奖励获得。永不过期。
-  * `temp_credits`（临时灵石）：通过每日签到获得。消费时**优先扣除**。后台每 48 小时会自动清空全服的临时灵石。
-* **任务消耗**：
-  * 图像类任务（换脸、修图）：基础消耗约 2-3 灵石。
-  * 视频类任务：基础消耗 6 灵石。自定义视频的消耗根据用户选择的画质和时长成倍增加（例如：1024p 10s 的视频 = 55 灵石）。
+  * `credits`（永久灵石）：充值或邀请获得（基础5 + 进群10 = 15灵石）。永不过期。
+  * `temp_credits`（临时灵石）：每日签到获得（根据身份 15~60 不等）。消费时**优先扣除**。后台每 48 小时自动清零。
+* **强制数据流审计**：
+  * **开发者红线**：任何涉及灵石增减的代码修改，**必须**同步在 `user_logs` 表中插入流水记录，否则会引发严重对账错误！底层通过 `contextvars` 自动追踪 SQL 触发者的 User ID。
 
-## 5. 数据库与数据流转
-* **`users`**：核心用户表，存储灵石余额、修为境界、身份信息和各种活跃度统计。
-* **`user_logs`**：**极其关键的审计表**。记录每一次灵石变动的明细（签到发放、生成扣费、充值等），用于后续对账。
-* **`referrals`**：记录邀请人与被邀请人的上下级关系。
-* **`history`**：记录全服每一次 AI 生成任务的执行情况（Task ID、提示词、输入输出路径）。
-* **`orders` & `membership_plans`**：处理 TON 区块链的充值与对账。`orders.tx_hash` 字段设有 Unique 约束，这是防止同一笔转账被双花/重复处理的核心。
+## 5. Dashboard 监控后台
+* **前后端分离**：FastAPI 后端 + Vue 3 前端，与 Bot 共享 DB 与 MinIO。
+* **核心新特性**：
+  * **双队列监控**：不仅展示底层 ComfyUI 的实时队列，还新增了基于 Redis 轮询的 `ActiveTasksTable`，展示 Bot 层面的活动任务。
+  * **人工干预**：提供了强制拦截接口 (`/api/system/refund_bot_task`)，管理员可一键终止卡死或违规的任务，释放锁并全额退款。
 
-## 6. TON 支付数据流
-1. **前端 (Mini App)**：部署在 Cloudflare Pages 的 React 应用。用户点击充值后，前端生成特定的 BOC payload（包含备注 `ORDER:{userId}:{planId}:{timestamp}`）并唤起钱包请求签名。
-2. **后端轮询监听**：Bot 中的 `TonPaymentValidator` 协程每 15 秒通过 TON RPC 接口拉取商家地址的新交易。
-3. **解析与校验**：解析交易中的 BOC 备注，校验 `tx_hash` 是否在 `orders` 中已存在（防双花），并核对转账的 TON 金额是否充足。
-4. **自动发货**：如果校验通过，开启数据库事务原子性地更新 `users.credits` 和 `users.current_identity`，并在 `user_logs` 中插入一条 `recharge` 流水。
-
-## 7. 管理后台 (Dashboard)
-* **后端 (FastAPI)**：与 Bot 共享同一个 PostgreSQL 数据库和 MinIO 实例。实现了 JWT 鉴权，提供数据统计、用户管理、日志审计接口。它不会直接暴露文件，而是生成 MinIO 预签名 URL 供前端访问。
-* **前端 (Vue 3 + Vite)**：使用 Ant Design Vue 和 ECharts 渲染可视化数据大屏，监控实时队列，审计日志，并支持管理员给特定用户手动发货。
-
-## 8. 服务重启与部署指令 (Deployment & Restart)
-本项目使用 Docker Compose 进行容器化部署。如果在开发或维护过程中需要重启服务，请在**项目根目录**执行以下指令（注意：重启服务时需要强制重建镜像以确保代码变更生效）：
-
-* **正式服 Bot (Production)**
-  * **重启并重建**: `docker-compose -f deploy/docker-compose.yml up -d --build bot`
-* **测试服 Bot (Test)**
-  * **重启并重建**: `docker-compose -f deploy/docker-compose-test.yml up -d --build bot-test`
-* **管理后台 (Dashboard)**
-  * **一键重启并重建 (包含前后端)**: `docker-compose -f dashboard/docker-compose.yml up -d --build --force-recreate` （注意：如果出现 'ContainerConfig' 报错，可以先执行 docker rm -f 删除旧容器后再启动）
-  * **仅重启并重建后端**: `docker-compose -f dashboard/docker-compose.yml up -d --build dashboard-backend`
-  * **仅重启并重建前端**: `docker-compose -f dashboard/docker-compose.yml up -d --build dashboard-frontend`
+## 6. 服务重启与容灾机制 (Deployment & Disaster Recovery)
+本项目依赖 Docker Compose 进行编排（正式服 `tg-bot`，测试服 `tg-bot-test`，后台 `dashboard`）。
+* **代码修改后必须重建容器**：如果修改了 `src/` 下的核心逻辑，仅仅重启容器是不够的，必须加上 `--build` 参数强制重建镜像，否则代码修改不会生效。
+  * **正式服**: `docker-compose -f deploy/docker-compose.yml up -d --build bot`
+  * **测试服**: `docker-compose -f deploy/docker-compose-test.yml up -d --build bot-test`
+* **平滑停机与退款**：Bot 接收到正常的停机信号时（`post_shutdown`），会自动从 Redis 中读取排队任务并全额退款。
+* **意外断电补偿**：即使遭遇 `docker kill` 或强制断电，Bot 在下次启动初始化（`post_init`）时，会调用 `recovery_service.py` 扫描并恢复/清理滞留任务。
+* **维护模式**：管理员可通过发送 `/maintenance` 指令无缝拦截新生成任务的创建，不影响用户的查询与签到。
 
 ---
-**👨‍💻 开发者注意事项**：在实现新功能或修复 Bug 时，请务必确保：
-1. 任何涉及灵石的扣除或增加，都必须同步在 `user_logs` 表中插入流水记录。
-2. 遵守高可用性设计，与外部 AI 接口交互时必须走 `api_client.py` 以利用熔断器和重试机制。
-3. 数据库操作必须正确使用 SQLAlchemy 的异步会话 (`async session`)，处理支付或扣费时合理使用事务回滚。
+**👨‍💻 最终开发指引 (To AI Assistant)**：
+当你被要求开发新功能、排查 Bug 或进行测试时，请遵循本文件及 `docs/` 目录下的具体文档（如 `TESTING_GUIDE.md` 建议使用 conda 环境进行测试）。在修改状态逻辑时，请时刻注意 PostgreSQL 事务的完整性与 Redis 缓存的同步！

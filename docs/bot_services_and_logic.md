@@ -3,7 +3,7 @@
 ## 1. 概述 (Overview)
 本项目是一个修仙主题的 Telegram 图像与视频处理机器人。所有用户的输入（图片、视频、文本）和功能触发均通过 Telegram 交互面板进行。系统内置了多种快捷的 "懒人" 模式以及高自由度的 "自定义" 模式。
 
-底层通过 `APIClient` 与后端的 ComfyUI/AI 推理服务通信，并通过 `PermissionService` 进行严格的积分（灵石）和权限（境界）控制。
+底层通过 `APIClient` 与后端的 ComfyUI/AI 推理服务通信，并通过 `PermissionService` 进行严格的积分（灵石）和权限（境界）控制。同时，系统配备了强大的高并发支持、Redis 任务恢复以及后台常驻任务机制。
 
 ---
 
@@ -59,13 +59,17 @@
 *   **📅 每日签到 (Daily Check-in)**
     *   用户每日点击领取免费的临时灵石（临时灵石优先消耗且 48 小时清空），连续签到达到阈值可触发“境界突破”。
 *   **🤝 分享赚灵石 (Referral System)**
-    *   生成专属 `t.me/Bot?start={user_id}` 链接，新用户点击进入后，邀请人自动获得 5 灵石奖励（要求邀请人境界在练气期及以上）。
+    *   生成专属 `t.me/Bot?start={user_id}` 链接，新用户点击进入后，邀请人自动获得 5 灵石基础奖励（若新用户加入频道再获 10 灵石）。
 *   **⏳ 排队状态 (Queue Status)**
     *   调用 `GET /system/status` 接口，查询当前 AI 后端的排队任务总数，向用户展示当前服务器繁忙程度。
 *   **📢 任务结果公开与分享 (Public Share)**
     *   任务生成完成后，Bot 会提供“公开”与“私密”按钮。
-    *   点击“公开”时，系统会检查任务的提示词 (`prompt`) 是否触发违禁词（如儿童相关：小男孩、小女孩等，定义在 `src/constants.py` 的 `FORBIDDEN_WORDS` 中）。
+    *   点击“公开”时，系统会检查任务的提示词 (`prompt`) 是否触发违禁词（如儿童相关词汇）。
     *   若包含违禁词，系统会直接警告拦截，拒绝公开；若合规，则请求用户确认后将内容分享至公共大厅。
+*   **🛠️ 维护模式 (Maintenance Mode)**
+    *   管理员可通过 `/maintenance` 指令一键开启或关闭维护模式。开启期间，系统将暂停处理新的生成请求，并向用户返回系统维护提示。
+*   **📂 多格式媒体接收 (Multi-format Media Handling)**
+    *   除了普通的压缩图片（`Photo`），系统支持通过文档 (`Document`) 方式接收无损图片和视频，以及直接接收 `Video` 类型文件，主要用于 `模板共建` 等高级场景，确保获取最佳质量的素材。
 
 ---
 
@@ -106,3 +110,20 @@
 4.  **权限控制墙 (Resolution & Duration Permissions)**:
     *   低境界（凡人、练气期）只能生成 512p / 5s 规格的视频。
     *   高境界（筑基期、金丹期）或充值用户（内门、核心、真传弟子）才能解锁 720p/1024p 和 8s/10s 的选项。
+
+---
+
+## 6. 系统级服务与容灾机制 (System-Level Services & Disaster Recovery)
+
+为了保障系统的高可用性、处理高并发请求，以及在异常情况下不损害用户利益，系统实现了以下底层机制：
+
+1.  **动态代理与高并发网络 (Dynamic Proxy & High Concurrency)**:
+    *   在启动时 (`bot_test.py`)，系统通过 `get_best_proxy` 自动探测并切换到最佳可用的代理节点。
+    *   网络请求模块 (`HTTPXRequest`) 默认配置了超大连接池 (`connection_pool_size=250`)，确保在海量用户同时排队查询时不会发生本地端口耗尽或连接阻塞。
+2.  **Redis 任务注册表与异常恢复 (Redis Task Registry & Crash Recovery)**:
+    *   **任务追踪**: 所有下发到 AI 后端的任务均实时记录在 Redis (`TaskRegistry`) 中，包含用户上下文和扣费信息。
+    *   **异常退款**: 捕获到停机信号时 (`post_shutdown`)，会自动触发 `TaskRegistry.refund_all`，将所有因重启中断的排队/生成中任务强制拦截并全额退还灵石。
+    *   **启动恢复**: 在 Bot 重启初始化时 (`post_init`)，会通过 `recovery_service.py` 获取 Redis 中残留的活动任务并尝试进行状态补偿。
+3.  **异步后台调度任务 (Async Background Jobs)**:
+    *   **48小时临时灵石清理**: 利用 `JobQueue` 在北京时间每日零点自动调度，每隔 48 小时触发 `clear_temp_credits_job`，自动清理全服用户的临时灵石 (`temp_credits`)。
+    *   **TON 交易轮询**: `TonPaymentValidator` 作为独立的守护协程，通过 `poll_transactions` 周期性（每 15 秒）在后台轮询 TON 区块链网络，核对用户的充值订单并自动发货，与主消息循环完全解耦。

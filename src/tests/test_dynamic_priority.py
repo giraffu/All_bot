@@ -30,37 +30,37 @@ async def test_calculate_user_priority_golden_core():
     permission_service.quota_manager.get_daily_usage = AsyncMock()
     permission_service.quota_manager.get_user_stats = AsyncMock(return_value={"generation_count": 10})
     
-    # Rule: [(5, 20), (50, 5), (100, 1)]
+    # Rule: [(10, 8), (50, 3), (100, 1)]
     
-    # Test Case 1: 0 usage -> Priority 20
+    # Test Case 1: 0 usage -> Priority 8
     permission_service.quota_manager.get_daily_usage.return_value = 0
     priority = await permission_service.calculate_user_priority(123)
-    assert priority == 20
+    assert priority == 8
 
-    # Test Case 2: 4 usage -> Priority 20
-    permission_service.quota_manager.get_daily_usage.return_value = 4
+    # Test Case 2: 9 usage -> Priority 8
+    permission_service.quota_manager.get_daily_usage.return_value = 9
     priority = await permission_service.calculate_user_priority(123)
-    assert priority == 20
+    assert priority == 8
 
-    # Test Case 3: 5 usage -> Priority 5
-    permission_service.quota_manager.get_daily_usage.return_value = 5
+    # Test Case 3: 10 usage -> Priority 3
+    permission_service.quota_manager.get_daily_usage.return_value = 10
     priority = await permission_service.calculate_user_priority(123)
-    assert priority == 5
+    assert priority == 3
 
-    # Test Case 4: 49 usage -> Priority 5
+    # Test Case 4: 49 usage -> Priority 3
     permission_service.quota_manager.get_daily_usage.return_value = 49
     priority = await permission_service.calculate_user_priority(123)
-    assert priority == 5
+    assert priority == 3
 
-    # Test Case 5: 100 usage -> Priority 1
+    # Test Case 5: 100 usage -> Priority 0
     permission_service.quota_manager.get_daily_usage.return_value = 100
     priority = await permission_service.calculate_user_priority(123)
-    assert priority == 1
+    assert priority == 0
 
-    # Test Case 6: 150 usage -> Priority 1
+    # Test Case 6: 150 usage -> Priority 0
     permission_service.quota_manager.get_daily_usage.return_value = 150
     priority = await permission_service.calculate_user_priority(123)
-    assert priority == 1
+    assert priority == 0
 
 @pytest.mark.asyncio
 async def test_calculate_user_priority_foundation():
@@ -71,17 +71,17 @@ async def test_calculate_user_priority_foundation():
     permission_service.quota_manager.get_daily_usage = AsyncMock()
     permission_service.quota_manager.get_user_stats = AsyncMock(return_value={"generation_count": 10})
     
-    # Rule: [(50, 5)]
+    # Rule: [(10, 5), (50, 1)]
     
-    # < 50 -> 5
-    permission_service.quota_manager.get_daily_usage.return_value = 49
+    # < 10 -> 5
+    permission_service.quota_manager.get_daily_usage.return_value = 9
     priority = await permission_service.calculate_user_priority(123)
     assert priority == 5
     
-    # >= 50 -> 1
+    # >= 50 -> 0
     permission_service.quota_manager.get_daily_usage.return_value = 50
     priority = await permission_service.calculate_user_priority(123)
-    assert priority == 1
+    assert priority == 0
 
 @pytest.mark.asyncio
 async def test_calculate_user_priority_qi_refining():
@@ -92,17 +92,17 @@ async def test_calculate_user_priority_qi_refining():
     permission_service.quota_manager.get_daily_usage = AsyncMock()
     permission_service.quota_manager.get_user_stats = AsyncMock(return_value={"generation_count": 10})
 
-    # Rule: [(50, 3)]
+    # Rule: [(10, 3), (50, 1)]
 
-    # < 50 -> 3
-    permission_service.quota_manager.get_daily_usage.return_value = 49
+    # < 10 -> 3
+    permission_service.quota_manager.get_daily_usage.return_value = 9
     priority = await permission_service.calculate_user_priority(123)
     assert priority == 3
 
-    # >= 50 -> 1
+    # >= 50 -> 0
     permission_service.quota_manager.get_daily_usage.return_value = 50
     priority = await permission_service.calculate_user_priority(123)
-    assert priority == 1
+    assert priority == 0
 
 @pytest.mark.asyncio
 async def test_calculate_user_priority_mortal():
@@ -132,12 +132,12 @@ async def test_calculate_user_priority_addition():
     permission_service.quota_manager.get_daily_usage = AsyncMock()
     permission_service.quota_manager.get_user_stats = AsyncMock(return_value={"generation_count": 10})
 
-    # Rule: Golden Core (10) + True Disciple (45)
+    # Rule: Golden Core (3) + True Disciple (45) -> usage 19: Golden Core=3 (since 10 <= 19 < 50), True Disciple=45 (since 19 < 40)
     permission_service.quota_manager.get_daily_usage.return_value = 19
     priority = await permission_service.calculate_user_priority(123)
-    assert priority == 55 # 10 + 45
+    assert priority == 48 # 3 + 45
 
-    # Rule: Golden Core (10) + True Disciple (20) -> usage 45: Golden Core=10, True Disciple=20
+    # Rule: Golden Core (3) + True Disciple (20) -> usage 45: Golden Core=3 (since 10 <= 45 < 50), True Disciple=20 (since 40 <= 45 < 70)
     permission_service.quota_manager.get_daily_usage.return_value = 45
     priority = await permission_service.calculate_user_priority(123)
-    assert priority == 30 # 10 + 20
+    assert priority == 23 # 3 + 20

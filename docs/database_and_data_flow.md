@@ -1,6 +1,6 @@
 # Bot 数据结构与数据流转梳理
 
-本项目使用 **PostgreSQL** 作为底层数据库，并通过 **SQLAlchemy** 进行异步 ORM 映射。整体数据模型围绕“用户资产（灵石）、活跃度（境界）、消费历史、支付充值”这几个核心维度展开。
+本项目采用混合存储架构：使用 **PostgreSQL** 作为核心持久化数据库，管理用户资产、订单和历史流水；使用 **Redis** 作为高速缓存和分布式状态协调中心，管理任务队列与并发锁。
 
 ---
 
@@ -85,7 +85,27 @@
 
 ---
 
-## 三、 定时任务流 (Cron Jobs)
+## 三、 Redis 缓存与分布式状态管理 (Redis & State Management)
+
+为了支撑高并发以及前后端（Bot 与 Dashboard）的数据互通，系统将临时性和协调性数据交由 Redis 管理：
+
+### 1. 活动任务注册表 (`TaskRegistry`)
+*   **结构**: 使用 Redis Hash 存储，键名为 `{env}:task:{task_id}`（通过 `prod:` 和 `test:` 前缀实现环境隔离）。
+*   **存储内容**: 包含 `user_id`, `chat_id`, `cost`, `status`, `created_at` 等任务元数据。
+*   **应用场景**: 
+    *   **异常恢复与退款**: 当 Bot 重启或崩溃时，系统会在初始化阶段读取 Redis 中滞留的任务，对未完成的任务执行自动退款。
+    *   **Dashboard 实时监控**: 管理后台的 `ActiveTasksTable` 组件通过接口每 5 秒读取一次 Redis 中的活动任务数据，实现对当前队列繁忙程度的实时可视化监控。
+
+### 2. 单用户并发锁 (Concurrency Control)
+*   **结构**: 使用 Redis 键值对，键名为 `{env}:user_task:{user_id}`。
+*   **应用场景**: 严格限制单个用户在同一时间内只能有一个生成任务处于 `pending` 或 `generating` 状态。在任务提交前加锁，在任务完成、失败或被拦截时释放锁，防止恶意用户通过并发请求刷单或挤占算力。
+
+---
+
+## 四、 支付折算与容灾定时机制 (Cron Jobs & System Features)
 
 *   **临时灵石清理**: 在 `bot_test.py` 中注册了 `clear_temp_credits_job`。每隔 **48 小时** 的北京时间零点，执行 `UPDATE users SET temp_credits = 0 WHERE temp_credits > 0`。强制收回用户未使用的免费福利。
 *   **境界自动刷新**: 每次用户触发签到 (`checkin`) 或完成生成任务时，都会异步触发 `refresh_user_group` 方法，根据最新的 `checkin_count` 和 `generation_count` 自动判断是否满足升级条件，如果满足则实时更新 `users.user_group`。
+*   **支付余值折算 (Residual Value Calculation)**: 当用户在 TON 支付系统中进行跨套餐的升级或降级时，系统会计算原套餐剩余有效期的价值（按日折算），并将其自动转化为新套餐的额外天数，保证用户的资产价值不受损。此逻辑完全由后端安全处理。
+*   **上下文日志追踪 (Context Logging)**: 通过 `contextvars.ContextVar` 实现了 `user_id_ctx`。配合 Telegram Handler 的 `@with_db_logging_context` 装饰器，能够在 SQLAlchemy 的底层事件监听器 (`database/logger.py`) 中自动捕获并记录触发当前 SQL 查询的 User ID，实现全链路的日志审计，无需在所有函数中透传 `user_id`。
+*   **数据库统一约束**: 本项目现已全面弃用早期版本的 SQLite (如 `bot_db.sqlite`)，**严格并唯一**使用 PostgreSQL 作为持久化存储介质，配合异步连接池(`postgresql+asyncpg`)保证高并发场景下的数据一致性和死锁避免。
