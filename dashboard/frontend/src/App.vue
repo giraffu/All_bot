@@ -1,6 +1,7 @@
 <script setup>
 import { ref, onMounted, computed, watch, onUnmounted } from 'vue'
 import { fetchStats, fetchUsers, fetchUserHistory, fetchStatsHistory, fetchTaskStatus, fetchTaskImage, fetchTaskVideo } from './api/api'
+import HomeDashboard from "./components/HomeDashboard.vue"
 import Login from './components/Login.vue'
 import StatsCards from './components/StatsCards.vue'
 import QueueStats from './components/QueueStats.vue'
@@ -434,141 +435,15 @@ onUnmounted(() => {
             <ActiveTasksTable />
           </div>
 
-          <!-- Main Workspace -->
-          <div v-else-if="activeTab[0] === 'home'" class="flex-1 flex flex-col gap-6">
-            <StatsCards :stats="stats" />
-            
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div class="h-80">
-                <DailyTypeChart 
-                  title="生成类型分布" 
-                  donut
-                />
-              </div>
-              <div class="h-80">
-                <HourlyChart 
-                  title="分时生成量" 
-                />
-              </div>
-            </div>
-
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div class="h-80">
-                <CumulativeTypeChart 
-                  title="累计生成类型分布" 
-                  donut
-                />
-              </div>
-              <div class="h-80">
-                <CumulativeHourlyChart 
-                  title="累计分时生成量" 
-                />
-              </div>
-            </div>
-
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div class="h-80">
-                <GenerationDistributionChart 
-                  title="用户生成量分布" 
-                  :data="stats.generation_distribution"
-                />
-              </div>
-              <div class="h-80">
-                <AvgDailyDistributionChart 
-                  title="用户日均生成量分布" 
-                  :data="stats.avg_daily_distribution"
-                />
-              </div>
-            </div>
-
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div class="h-80">
-                <CreditDistributionChart 
-                  title="用户积分消耗分布" 
-                  :data="stats.credit_distribution"
-                />
-              </div>
-              <div class="h-80">
-                <AvgDailyCreditDistributionChart 
-                  title="用户日均积分消耗分布" 
-                  :data="stats.avg_daily_credit_distribution"
-                />
-              </div>
-            </div>
-
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div class="h-80">
-                <CreditHoldingDistributionChart 
-                  title="用户持有积分分布" 
-                  :data="stats.credit_holding_distribution"
-                />
-              </div>
-            </div>
-
-            <div class="flex flex-col gap-6">
-              <div class="flex items-center justify-between px-2">
-                <h3 class="text-lg font-semibold text-gray-800 m-0">历史趋势 (最近 {{ historyTimeRange }} 天)</h3>
-                <a-radio-group 
-                  v-model:value="historyTimeRange" 
-                  @change="loadHistory"
-                  button-style="solid"
-                  size="small"
-                >
-                  <a-radio-button 
-                    v-for="opt in timeRangeOptions" 
-                    :key="opt.value" 
-                    :value="opt.value"
-                  >
-                    {{ opt.label }}
-                  </a-radio-button>
-                </a-radio-group>
-              </div>
-
-              <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-                <div class="h-80">
-                  <LineChart 
-                    title="用户增长 (每日)" 
-                    :data="statsHistory" 
-                    :metrics="['new_users', 'new_users_all']"
-                  />
-                </div>
-                <div class="h-80">
-                  <LineChart 
-                    title="用户每日增长率" 
-                    :data="statsHistory" 
-                    :metrics="['growth_rate']"
-                  />
-                </div>
-              </div>
-
-              <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-                <div class="h-80">
-                  <LineChart 
-                    title="总用户数量" 
-                    :data="cumulativeStatsHistory" 
-                    :metrics="['cumulative_users']"
-                  />
-                </div>
-              </div>
-              
-              <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <div class="h-80">
-                  <LineChart 
-                    title="生成量与灵石消耗" 
-                    :data="statsHistory" 
-                    :metrics="['generations', 'consumed_credits']"
-                  />
-                </div>
-                <div class="h-80">
-                  <LineChart 
-                    title="活跃与签到" 
-                    :data="statsHistory" 
-                    :metrics="['active_users', 'checkins']"
-                  />
-                </div>
-              </div>
-            </div>
-          </div>
+          <HomeDashboard 
+            v-else-if="activeTab[0] === 'home'" 
+            :stats="stats" 
+            :statsHistory="statsHistory" 
+            :cumulativeStatsHistory="cumulativeStatsHistory" 
+            v-model:historyTimeRange="historyTimeRange" 
+            :timeRangeOptions="timeRangeOptions" 
+            @loadHistory="loadHistory" 
+          />
 
           <div v-else-if="activeTab[0] === 'users'" class="flex-1 bg-white rounded-xl shadow-sm border p-6 flex flex-col min-h-0">
             <UserTable 
