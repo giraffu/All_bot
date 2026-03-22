@@ -66,7 +66,7 @@ body {
   background-color: var(--card-bg);
   border: 1px solid var(--border-color);
   border-radius: 12px;
-  padding: 16px;
+  padding: 12px 16px; /* Reduced vertical padding */
   cursor: pointer;
   transition: all 0.2s ease;
   position: relative;
@@ -79,28 +79,28 @@ body {
 }
 
 .plan-name {
-  font-size: 1.2rem;
+  font-size: 1.1rem; /* Slightly smaller */
   font-weight: bold;
   color: var(--gold-primary);
 }
 
 .plan-identity {
-  font-size: 0.9rem;
+  font-size: 0.85rem; /* Slightly smaller */
   color: var(--text-secondary);
-  margin-top: 4px;
+  margin-top: 2px; /* Reduced margin */
 }
 
 .plan-credits {
-  margin-top: 12px;
-  font-size: 1.1rem;
+  margin-top: 8px; /* Reduced margin */
+  font-size: 1rem; /* Slightly smaller */
   color: #4caf50;
 }
 
 .plan-price {
   position: absolute;
-  top: 16px;
+  top: 12px; /* Adjusted to match new padding */
   right: 16px;
-  font-size: 1.2rem;
+  font-size: 1.1rem; /* Slightly smaller */
   font-weight: bold;
 }
 

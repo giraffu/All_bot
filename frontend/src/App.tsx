@@ -159,6 +159,9 @@ function App() {
             </section>
 
             <section className="comparison-section">
+              <p className="note-text" style={{marginBottom: '15px', fontSize: '0.9em', color: '#aaa', textAlign: 'center'}}>
+                <b>⚖️ 跨套餐升级/降级说明：若您当前套餐尚未过期，购买新套餐时，系统会自动计算老套餐剩余价值，并折算为新套餐的额外天数，保证您的权益不流失。</b>
+              </p>
               <h2>权益对比</h2>
               <div className="comparison-table-wrapper">
                 <table className="comparison-table">

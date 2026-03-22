@@ -199,8 +199,37 @@ class TonPaymentValidator:
                         
                         now = datetime.now()
                         new_expire_at = user.identity_expire_at
+                        converted_days = 0
+                        
                         if new_expire_at and new_expire_at > now:
-                            new_expire_at += timedelta(days=plan.duration_days)
+                            if user.current_identity == plan.identity_name:
+                                # 同套餐续费：直接累加天数
+                                new_expire_at += timedelta(days=plan.duration_days)
+                            else:
+                                # 跨套餐升级/降级：残值折算
+                                old_plan_res = await db.execute(
+                                    select(MembershipPlan).where(MembershipPlan.identity_name == user.current_identity)
+                                )
+                                old_plan = old_plan_res.scalar_one_or_none()
+                                
+                                if old_plan and float(old_plan.price_ton) > 0 and old_plan.duration_days > 0 and float(plan.price_ton) > 0:
+                                    # 计算剩余天数 (带小数)
+                                    remaining_days = (new_expire_at - now).total_seconds() / 86400.0
+                                    # 计算老套餐日均价
+                                    old_daily_price = float(old_plan.price_ton) / old_plan.duration_days
+                                    # 计算残值 (TON)
+                                    residual_value_ton = remaining_days * old_daily_price
+                                    
+                                    # 计算新套餐日均价
+                                    new_daily_price = float(plan.price_ton) / plan.duration_days
+                                    # 折算新套餐天数
+                                    converted_days = int(residual_value_ton / new_daily_price)
+                                    
+                                    # 最终天数 = 新套餐自带天数 + 折算天数，从当前时间算起
+                                    new_expire_at = now + timedelta(days=plan.duration_days + converted_days)
+                                else:
+                                    # 若找不到老套餐，直接覆盖，从当前时间算起
+                                    new_expire_at = now + timedelta(days=plan.duration_days)
                         else:
                             new_expire_at = now + timedelta(days=plan.duration_days)
                             
@@ -234,13 +263,19 @@ class TonPaymentValidator:
                         
                         # 5. Notify User
                         try:
+                            msg_text = (
+                                f"🎉 <b>充值成功！</b>\n\n"
+                                f"恭喜道友，您已成功购买【{plan.name}】。\n"
+                                f"💎 获得灵石：+{plan.reward_credits}\n"
+                                f"🪪 当前身份晋升为：<b>{plan.identity_name}</b>\n"
+                            )
+                            if converted_days > 0:
+                                msg_text += f"⚖️ 老套餐残值已折算为 <b>{converted_days}</b> 天新套餐时长\n"
+                            msg_text += f"⏳ 到期时间：{new_expire_at.strftime('%Y-%m-%d %H:%M:%S')}\n\n祝您仙途坦荡！"
+
                             await self.bot_app.bot.send_message(
                                 chat_id=tg_user_id,
-                                text=f"🎉 <b>充值成功！</b>\n\n"
-                                     f"恭喜道友，您已成功购买【{plan.name}】。\n"
-                                     f"💎 获得灵石：+{plan.reward_credits}\n"
-                                     f"🪪 当前身份晋升为：<b>{plan.identity_name}</b>\n\n"
-                                     f"祝您仙途坦荡！",
+                                text=msg_text,
                                 parse_mode="HTML"
                             )
                         except Exception as e:
