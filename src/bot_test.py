@@ -15,11 +15,13 @@ from src.handlers.message_handler import handle_photo, handle_prompt, handle_vid
 from src.handlers.callback_handler import handle_callback_query
 from src.database.core import init_db
 from src.quota import QuotaManager
-from datetime import time, timezone, timedelta
+from datetime import timezone, timedelta
 import socket
 from urllib.parse import urlparse
 import asyncio
 from src.services.payment_validator import TonPaymentValidator
+from src.services.task_registry import TaskRegistry
+from src.services.recovery_service import recover_active_tasks
 
 def get_best_proxy(default_proxy):
     """
@@ -103,13 +105,18 @@ async def post_init(application):
         interval=timedelta(hours=48),
         first=next_midnight
     )
-
-from src.services.task_registry import TaskRegistry
+    
+    # Recover tasks from Redis
+    asyncio.create_task(recover_active_tasks(application))
 
 async def post_shutdown(application):
     logger = logging.getLogger("bot.core")
-    logger.info("Bot is shutting down. Refunding active tasks...")
+    logger.info("Bot is shutting down. Tasks are persisted in Redis.")
     await TaskRegistry.refund_all(application.bot)
+    from src.services.redis_client import redis_client
+    await redis_client.close()
+    from src.services.image_service import image_service
+    await image_service.close()
 
 def main():
     setup_logging()
@@ -142,7 +149,7 @@ def main():
         connect_timeout=60.0,
         read_timeout=120.0,
         write_timeout=120.0,
-        connection_pool_size=100,
+        connection_pool_size=250,  # Increased for higher concurrency
     )
 
     app = (

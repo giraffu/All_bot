@@ -11,3 +11,4 @@ minio
 httpx
 python-dotenv
 python-telegram-bot
+redis

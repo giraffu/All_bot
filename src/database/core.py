@@ -1,4 +1,3 @@
-import os
 import logging
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
@@ -88,7 +87,7 @@ async def init_db():
             try:
                 # We need to create a new subtransaction or execute in a new connection
                 pass # This is handled below
-            except Exception as e:
+            except Exception:
                 pass
                 
     # Need to run these outside the first transaction block if it failed

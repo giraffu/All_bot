@@ -73,5 +73,9 @@ REFUGE_INVITE_LINK = os.getenv("REFUGE_INVITE_LINK")
 # --- Limit Configuration ---
 DAILY_LIMIT = int(os.getenv("DAILY_LIMIT", "10"))
 
+# --- Redis Configuration ---
+REDIS_URL = os.getenv("REDIS_URL", "redis://:redispassword@127.0.0.1:6379/0")
+REDIS_PREFIX = os.getenv("REDIS_PREFIX", "test_bot_")
+
 # --- Admin Configuration ---
 ADMIN_USERS = [int(u) for u in os.getenv("ADMIN_USERS", "").split(",") if u.strip()]

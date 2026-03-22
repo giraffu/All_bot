@@ -1,52 +1,51 @@
 import logging
 import uuid
 from src.services.permission_service import permission_service
+from src.services.redis_client import redis_client
 
 logger = logging.getLogger(__name__)
 
 class TaskRegistry:
-    active_tasks = {}
-
     @classmethod
-    def add_task(cls, user_id: int, username: str, cost: int, task_type: str) -> str:
+    async def add_task(cls, user_id: int, username: str, cost: int, task_type: str, chat_id: int = None, message_id: int = None, **kwargs) -> str:
         task_id = str(uuid.uuid4())
-        cls.active_tasks[task_id] = {
+        task_data = {
             "user_id": user_id,
             "username": username,
             "cost": cost,
-            "task_type": task_type
+            "task_type": task_type,
+            "chat_id": chat_id,
+            "message_id": message_id,
+            "backend_task_id": None,  # Will be updated once submitted
+            **kwargs
         }
+        await redis_client.add_active_task(task_id, task_data)
         return task_id
 
     @classmethod
-    def remove_task(cls, task_id: str):
-        if task_id in cls.active_tasks:
-            del cls.active_tasks[task_id]
+    async def update_backend_task_id(cls, registry_task_id: str, backend_task_id: str):
+        tasks = await redis_client.get_active_tasks()
+        if registry_task_id in tasks:
+            task_data = tasks[registry_task_id]
+            task_data["backend_task_id"] = backend_task_id
+            await redis_client.add_active_task(registry_task_id, task_data)
+
+    @classmethod
+    async def remove_task(cls, task_id: str):
+        await redis_client.remove_active_task(task_id)
+
+    @classmethod
+    async def get_all_tasks(cls):
+        return await redis_client.get_active_tasks()
 
     @classmethod
     async def refund_all(cls, bot=None):
-        if not cls.active_tasks:
-            logger.info("No active tasks to refund on shutdown.")
-            return
-            
-        logger.info(f"Refunding {len(cls.active_tasks)} active tasks due to shutdown...")
-        for task_id, task in cls.active_tasks.items():
-            try:
-                if task["cost"] > 0:
-                    await permission_service.increment_quota(
-                        task["user_id"], 
-                        cost=-task["cost"], 
-                        username=task["username"], 
-                        task_type="refund_restart"
-                    )
-                    if bot:
-                        try:
-                            await bot.send_message(
-                                chat_id=task["user_id"], 
-                                text="⚠️ 系统正在重启/维护，您正在排队或执行中的任务已被中断。消耗的灵石已退回至您的账户，请稍后再试。"
-                            )
-                        except Exception as e:
-                            logger.error(f"Failed to notify user {task['user_id']} of refund: {e}")
-            except Exception as e:
-                logger.error(f"Failed to refund task {task_id} for user {task['user_id']}: {e}")
-        cls.active_tasks.clear()
+        """
+        退款逻辑。在新的架构下，如果 bot 重启，我们不再强制执行退款，
+        因为任务可能还在 AI 后端运行。
+        这个函数可以被保留作为紧急维护时的手动调用，或者彻底改变其行为。
+        目前可以只打印日志，或者在恢复机制中如果发现任务丢失再单独调用退款。
+        """
+        logger.info("refund_all is called, but tasks are now persisted in Redis. "
+                    "Skipping bulk refund to allow tasks to continue on restart.")
+        # 如果需要实现完全的清理退款，可以读取 get_all_tasks() 并处理。

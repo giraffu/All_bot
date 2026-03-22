@@ -1,5 +1,4 @@
 import time
-import asyncio
 from enum import Enum
 import logging
 

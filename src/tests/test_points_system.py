@@ -1,7 +1,5 @@
 import pytest
 import pytest_asyncio
-from datetime import datetime
-from sqlalchemy import select
 
 from src.database.models import User
 from src.database.core import AsyncSessionLocal

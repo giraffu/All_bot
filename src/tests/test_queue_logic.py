@@ -1,5 +1,4 @@
 
-import pytest
 import sys
 import os
 import asyncio
@@ -74,7 +73,7 @@ def test_task_service_queue_logic_new():
             yield {"status": "done", "progress": 100}
 
         # Mock image_service (though not strictly needed if we provide data in generator)
-        with patch("src.services.task_service.image_service") as mock_img_svc:
+        with patch("src.services.task_service.image_service"):
 
             
             with patch("src.services.task_service.robust_edit_text", new_callable=AsyncMock) as mock_edit:

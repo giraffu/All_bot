@@ -4,7 +4,7 @@ import httpx
 import logging
 import uuid
 import os
-from typing import Optional, Dict, Any, List
+from typing import Optional
 from src.utils import async_retry
 from config import (
     IMG2IMG_ENDPOINT, STATUS_ENDPOINT, IMAGE_ENDPOINT, POLL_INTERVAL, 
@@ -19,7 +19,7 @@ from src.services.storage import storage
 logger = logging.getLogger(__name__)
 
 # Circuit Breaker Instance
-circuit_breaker = CircuitBreaker(failure_threshold=5, reset_timeout=60)
+circuit_breaker = CircuitBreaker(failure_threshold=15, reset_timeout=30)
 
 class APIClient:
     """
@@ -30,6 +30,9 @@ class APIClient:
         self.headers = {
             "Authorization": f"Bearer {API_TOKEN}"
         }
+        # Create a single persistent client to reuse connections
+        limits = httpx.Limits(max_keepalive_connections=200, max_connections=500)
+        self.client = httpx.AsyncClient(trust_env=False, timeout=60, limits=limits)
 
     async def _request(self, method: str, url: str, **kwargs) -> httpx.Response:
         """
@@ -42,11 +45,10 @@ class APIClient:
         kwargs["headers"] = headers
 
         async def _do_request():
-            async with httpx.AsyncClient(trust_env=False, timeout=60) as client:
-                logger.debug(f"[{trace_id}] {method} {url}")
-                response = await client.request(method, url, **kwargs)
-                response.raise_for_status()
-                return response
+            logger.debug(f"[{trace_id}] {method} {url}")
+            response = await self.client.request(method, url, **kwargs)
+            response.raise_for_status()
+            return response
 
         try:
             return await circuit_breaker.call(_do_request)
@@ -268,6 +270,11 @@ class APIClient:
             except Exception as e:
                 logger.warning(f"Poll status failed for {task_id}: {e}")
                 await asyncio.sleep(POLL_INTERVAL)
+
+    async def close(self):
+        """Close the underlying HTTP client"""
+        if hasattr(self, 'client') and not self.client.is_closed:
+            await self.client.aclose()
 
 # Singleton Instance
 api_client = APIClient()

@@ -1,7 +1,6 @@
 import aiohttp
 import asyncio
 import logging
-from typing import Optional, List, Dict, Any
 from sqlalchemy.future import select
 from decimal import Decimal
 
@@ -34,7 +33,7 @@ def parse_payload_boc(boc_str: str) -> str:
         if opcode == 0:
             return slice.load_snake_string()
         return None
-    except Exception as e:
+    except Exception:
         return None
 
 class TonPaymentValidator:

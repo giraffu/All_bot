@@ -11,3 +11,4 @@ uvicorn
 pydantic
 pytoniq-core
 aiohttp
+redis

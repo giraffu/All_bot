@@ -26,6 +26,7 @@ from src.database.models import User, History, Referral, TemplateContribution, C
 from src.services.image_service import image_service
 from src.services.log_service import LogService
 from src.services.storage import storage
+from src.services.redis_client import redis_client
 from config import API_BASE, STATUS_ENDPOINT, MINIO_TEMPLATE_BUCKET
 from dashboard.backend.auth import auth_router, get_current_user, oauth2_scheme
 
@@ -781,6 +782,16 @@ async def get_cumulative_type_distribution(days: int = 7, db: AsyncSession = Dep
     except Exception as e:
         logger.error(f"Error getting cumulative type distribution stats: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/system/active_bot_tasks")
+async def get_active_bot_tasks():
+    """Get active tasks tracked by bot in Redis"""
+    try:
+        tasks = await redis_client.get_active_tasks()
+        return {"status": "success", "tasks": tasks, "count": len(tasks)}
+    except Exception as e:
+        logger.error(f"Error getting active bot tasks from Redis: {e}")
+        return {"status": "error", "message": str(e), "tasks": {}, "count": 0}
 
 @app.get("/api/bot/queue")
 async def get_bot_queue():

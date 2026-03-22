@@ -179,7 +179,7 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
                     parse_mode="Markdown"
                 )
                 sent = True
-            except Exception as e:
+            except Exception:
                 # Fallback to forward_message if copy fails, but we should try to edit it after?
                 # No, better to just use forward_message as absolute last resort
                 pass
@@ -280,7 +280,7 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
             if os.path.exists(p):
                 try:
                     os.remove(p)
-                except:
+                except Exception:
                     pass
         context.user_data['batch_images'] = []
         context.user_data.pop('batch_confirm_msg_id', None)
@@ -349,7 +349,7 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
         # Done
         try:
             await context.bot.delete_message(chat_id=chat_id, message_id=status_msg_id)
-        except:
+        except Exception:
             pass
 
     elif data.startswith("set_res_") or data.startswith("set_dur_"):
@@ -411,7 +411,7 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
                 await query.message.edit_text(new_text, reply_markup=reply_markup, parse_mode="Markdown")
             else:
                 await robust_edit_reply_markup(query.message, reply_markup=reply_markup)
-        except Exception as e:
+        except Exception:
             pass
             
         await query.answer(f"已切换至 {current_res} ({current_dur})，灵石消耗 {cost}", show_alert=False)

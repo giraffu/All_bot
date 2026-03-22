@@ -36,6 +36,7 @@ from src.utils import (
 )
 
 from src.services.task_registry import TaskRegistry
+from src.services.redis_client import redis_client
 
 logger = logging.getLogger(__name__)
 
@@ -61,14 +62,13 @@ class TaskService:
         """Common generation logic for generic tasks."""
 
         # 1. Check active tasks limit
-        active_tasks = context.user_data.get('active_tasks', 0)
-        if active_tasks >= 3:
+        active_tasks = await redis_client.increment_user_concurrency(user_id)
+        if active_tasks > 3:
+            await redis_client.decrement_user_concurrency(user_id)
             await robust_send_message(context.bot, chat_id, "⚠️ 您当前已有 3 个任务正在处理中，请等待其中一个完成后再试！")
             if cleanup:
                 TaskService._cleanup_files(images)
             return None, None
-            
-        context.user_data['active_tasks'] = active_tasks + 1
 
         # Determine cost and default task type
         cost = TASK_COSTS.get(task_type, 6 if is_video else 2)
@@ -118,12 +118,17 @@ class TaskService:
             # Deduct Quota (Credits) first
             if deduct_quota:
                 await permission_service.increment_quota(user_id, cost=cost, username=username, task_type=task_type)
-                registry_task_id = TaskRegistry.add_task(user_id, username, cost, task_type)
+                registry_task_id = await TaskRegistry.add_task(
+                    user_id, username, cost, task_type, chat_id=chat_id, message_id=status_msg.message_id if status_msg else None,
+                    prompt=prompt, saved_input_images=saved_input_images, is_video=is_video
+                )
 
             # Submit Task
             task_id = await TaskService._submit_generic_task(
                 task_type, prompt, saved_input_images, negative_prompt, is_video, priority
             )
+            if registry_task_id and task_id:
+                await TaskRegistry.update_backend_task_id(registry_task_id, task_id)
 
             # Monitor Progress
             final_info = await TaskService._monitor_task_progress(
@@ -166,9 +171,8 @@ class TaskService:
 
         finally:
             if registry_task_id:
-                TaskRegistry.remove_task(registry_task_id)
-            if context.user_data.get('active_tasks', 0) > 0:
-                context.user_data['active_tasks'] -= 1
+                await TaskRegistry.remove_task(registry_task_id)
+            await redis_client.decrement_user_concurrency(user_id)
                 
             if cleanup:
                 TaskService._cleanup_files(images)
@@ -189,20 +193,18 @@ class TaskService:
         Generic handler for video generation tasks to reduce code duplication.
         """
         chat_id = update.effective_chat.id
+        user_id = update.effective_user.id
+        username = update.effective_user.username or update.effective_user.full_name
         
         # 1. Check active tasks limit
-        active_tasks = context.user_data.get('active_tasks', 0)
-        if active_tasks >= 3:
+        active_tasks = await redis_client.increment_user_concurrency(user_id)
+        if active_tasks > 3:
+            await redis_client.decrement_user_concurrency(user_id)
             await robust_send_message(context.bot, chat_id, "⚠️ 您当前已有 3 个任务正在处理中，请等待其中一个完成后再试！")
             if cleanup:
                 TaskService._cleanup_files([image_path])
             return None, None
-            
-        context.user_data['active_tasks'] = active_tasks + 1
         
-        user_id = update.effective_user.id
-        username = update.effective_user.username or update.effective_user.full_name
-
         from src.constants import DEFAULT_RESOLUTION, RESOLUTION_COST, DEFAULT_DURATION, DURATION_MULTIPLIER, DURATION_FRAMES
         resolution = context.user_data.get('custom_video_resolution', DEFAULT_RESOLUTION)
         duration = context.user_data.get('custom_video_duration', DEFAULT_DURATION)
@@ -249,7 +251,10 @@ class TaskService:
                 return None, None
 
             await permission_service.increment_quota(user_id, cost=cost, username=username, task_type=mode)
-            registry_task_id = TaskRegistry.add_task(user_id, username, cost, mode)
+            registry_task_id = await TaskRegistry.add_task(
+                user_id, username, cost, mode, chat_id=chat_id, message_id=msg.message_id if msg else None,
+                prompt=prompt, saved_input_images=[saved_input_image], is_video=True
+            )
 
             await robust_edit_text(msg, "⏳ 正在生成视频，请耐心等待...")
 
@@ -266,6 +271,9 @@ class TaskService:
                 task_id = await image_service.submit_perfect_video_edit(
                     prompt, saved_input_image, width=width, height=height, length=length, priority=priority
                 )
+            
+            if registry_task_id and task_id:
+                await TaskRegistry.update_backend_task_id(registry_task_id, task_id)
 
             # Monitor Progress
             final_info = await TaskService._monitor_task_progress(
@@ -303,9 +311,8 @@ class TaskService:
             await robust_send_message(context.bot, chat_id, f"❌ 出错了：{e}，已退还灵石")
         finally:
             if registry_task_id:
-                TaskRegistry.remove_task(registry_task_id)
-            if context.user_data.get('active_tasks', 0) > 0:
-                context.user_data['active_tasks'] -= 1
+                await TaskRegistry.remove_task(registry_task_id)
+            await redis_client.decrement_user_concurrency(user_id)
                 
             if cleanup:
                 TaskService._cleanup_files([image_path])
@@ -450,7 +457,10 @@ class TaskService:
                 await robust_delete_message(msg)
                 return None, None
             await permission_service.increment_quota(user_id, cost=cost, username=username, task_type=mode)
-            registry_task_id = TaskRegistry.add_task(user_id, username, cost, mode)
+            registry_task_id = await TaskRegistry.add_task(
+                user_id, username, cost, mode, chat_id=chat_id, message_id=msg.message_id if msg else None,
+                prompt=prompt, saved_input_images=[saved_input_image], is_video=True
+            )
             await robust_edit_text(msg, "⏳ 正在生成视频，请耐心等待...")
 
             priority = await permission_service.calculate_user_priority(user_id)
@@ -460,6 +470,9 @@ class TaskService:
             task_id = await image_service.submit_perfect_video_edit(
                 prompt, saved_input_image, width=width, height=height, length=length, priority=priority
             )
+            
+            if registry_task_id and task_id:
+                await TaskRegistry.update_backend_task_id(registry_task_id, task_id)
 
             final_info = await TaskService._monitor_task_progress(
                 task_id, msg, is_video=True, monitor_func=image_service.monitor_progress, identity_str=identity_str, user_group=user_group
@@ -497,7 +510,8 @@ class TaskService:
             return None, None
         finally:
             if registry_task_id:
-                TaskRegistry.remove_task(registry_task_id)
+                await TaskRegistry.remove_task(registry_task_id)
+            await redis_client.decrement_user_concurrency(user_id)
             if cleanup:
                 TaskService._cleanup_files([image_path])
 
@@ -505,25 +519,24 @@ class TaskService:
 
     @staticmethod
     async def process_text_to_image_task(
-        update: Update,
-        context: ContextTypes.DEFAULT_TYPE,
+        update,
+        context,
         prompt: str,
     ) -> Tuple[Optional[bytes], Optional[str]]:
         """
         Handle Text to Image generation task.
         """
         chat_id = update.effective_chat.id
-        
-        # 1. Check active tasks limit
-        active_tasks = context.user_data.get('active_tasks', 0)
-        if active_tasks >= 3:
-            await robust_send_message(context.bot, chat_id, "⚠️ 您当前已有 3 个任务正在处理中，请等待其中一个完成后再试！")
-            return None, None
-            
-        context.user_data['active_tasks'] = active_tasks + 1
-        
         user_id = update.effective_user.id
         username = update.effective_user.username or update.effective_user.full_name
+        
+        # 1. Check active tasks limit
+        active_tasks = await redis_client.increment_user_concurrency(user_id)
+        if active_tasks > 3:
+            await redis_client.decrement_user_concurrency(user_id)
+            await robust_send_message(context.bot, chat_id, "⚠️ 您当前已有 3 个任务正在处理中，请等待其中一个完成后再试！")
+            return None, None
+        
         mode = MODE_TEXT_TO_IMAGE
         cost = TASK_COSTS.get(mode, 3)
         user_logger = UserLogger(user_id, username)
@@ -544,10 +557,16 @@ class TaskService:
 
             # 2. Submit Task
             await permission_service.increment_quota(user_id, cost=cost, username=username, task_type=mode)
-            registry_task_id = TaskRegistry.add_task(user_id, username, cost, mode)
+            registry_task_id = await TaskRegistry.add_task(
+                user_id, username, cost, mode, chat_id=chat_id, message_id=msg.message_id if msg else None,
+                prompt=prompt, saved_input_images=[], is_video=False
+            )
             await robust_edit_text(msg, "⏳ 正在生成图片，请耐心等待...")
 
             task_id = await image_service.submit_text_to_image_task(prompt)
+            
+            if registry_task_id and task_id:
+                await TaskRegistry.update_backend_task_id(registry_task_id, task_id)
             
             identity_str = await permission_service.get_user_identity(user_id)
             user_group = await permission_service.get_user_group(user_id)
@@ -589,9 +608,8 @@ class TaskService:
             
         finally:
             if registry_task_id:
-                TaskRegistry.remove_task(registry_task_id)
-            if context.user_data.get('active_tasks', 0) > 0:
-                context.user_data['active_tasks'] -= 1
+                await TaskRegistry.remove_task(registry_task_id)
+            await redis_client.decrement_user_concurrency(user_id)
 
         return media_bytes, full_output_path
 
@@ -826,8 +844,8 @@ class TaskService:
     @staticmethod
     async def _get_acceleration_notice(user_id: int) -> str:
         stats = await permission_service.quota_manager.get_user_stats(user_id)
-        if stats.get("generation_count", 0) < 5:
-            return "\n✨ [新手特权] 前5次生成享受极速排队通道！"
+        if stats.get("generation_count", 0) < 2:
+            return "\n✨ [新手特权] 前2次生成享受极速排队通道！"
         return ""
 
 

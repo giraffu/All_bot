@@ -6,21 +6,20 @@ import logging
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup
 from telegram.ext import ContextTypes
 
-from config import REQUIRED_CHANNEL_ID, CHANNEL_INVITE_LINK, REFUGE_GROUP_ID, REFUGE_INVITE_LINK
+from config import CHANNEL_INVITE_LINK, REFUGE_GROUP_ID, REFUGE_INVITE_LINK
 from src.services.permission_service import permission_service
 from src.services.image_service import image_service
 from src.services.task_service import task_service
 from src.logger import UserLogger
-from src.utils import robust_reply_text, robust_send_message, robust_edit_text, robust_send_photo, robust_delete_message, robust_send_video, load_prompts
+from src.utils import robust_reply_text, load_prompts
 from src.constants import (
     TMP_DIR, TEMPLATE_DIR_PENETRATION, TEMPLATE_DIR_QUICK_FACE, TEMPLATE_DIR_VIDEO_NICE, TEMP_TEMPLATE_DIR,
     MODE_EDIT, MODE_UNDRESS, MODE_MASTURBATION,
     MODE_FACESWAP_STEP1, MODE_FACESWAP_STEP2, MODE_RANDOM_FACESWAP,
-    MODE_PENETRATION_STEP1, MODE_PENETRATION_STEP2,
     MODE_TEMPLATE_CONTRIBUTE, MODE_NONE, MODE_CUSTOM_VIDEO, MODE_PERFECT_VIDEO_INSERT,
     MODE_DOGGY_STYLE, MODE_BLOWJOB, MODE_UNDRESS_TONGUE, MODE_CLOSEUP_BLOWJOB, MODE_TEXT_TO_IMAGE
 )
-from src.handlers.utils import _is_mentioned, MockMessage, with_db_logging_context
+from src.handlers.utils import _is_mentioned, with_db_logging_context
 
 # Re-exporting for compatibility if needed, but preferred to import from constants/utils
 process_generation_task = task_service.process_generation_task
@@ -69,17 +68,8 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # 0.2 Debounce media groups for one-click modes
         one_click_modes = [MODE_UNDRESS, MODE_MASTURBATION, MODE_PERFECT_VIDEO_INSERT, MODE_DOGGY_STYLE, MODE_BLOWJOB, MODE_UNDRESS_TONGUE, MODE_CLOSEUP_BLOWJOB, MODE_RANDOM_FACESWAP]
         if mode in one_click_modes and msg.media_group_id:
-            processed_groups = context.user_data.get('processed_media_groups', set())
-            if msg.media_group_id in processed_groups:
-                logger.info(f"Ignoring additional image from media group {msg.media_group_id} for mode {mode}")
-                notified_groups = context.user_data.get('notified_media_groups', set())
-                if msg.media_group_id not in notified_groups:
-                    await robust_reply_text(msg, "⚠️ 提醒：为了防止刷屏，系统仅处理您的**第一张图**，其余图片已被忽略。", parse_mode='Markdown')
-                    notified_groups.add(msg.media_group_id)
-                    context.user_data['notified_media_groups'] = notified_groups
+            if await _debounce_media_group(update, context, mode, msg.media_group_id):
                 return
-            processed_groups.add(msg.media_group_id)
-            context.user_data['processed_media_groups'] = processed_groups
 
         # 1. Save Photo
         if 'pending_images' not in context.user_data:
@@ -95,7 +85,20 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data['pending_images'].append(local_path)
 
         # 2. Dispatch by Mode
-        if mode in [MODE_UNDRESS, MODE_MASTURBATION]:
+        quick_modes = {
+            MODE_UNDRESS: "undress",
+            MODE_MASTURBATION: "masturbation"
+        }
+        
+        video_modes = {
+            MODE_PERFECT_VIDEO_INSERT: task_service.process_perfect_video_insert_task,
+            MODE_DOGGY_STYLE: task_service.process_doggy_style_task,
+            MODE_BLOWJOB: task_service.process_blowjob_task,
+            MODE_UNDRESS_TONGUE: task_service.process_undress_tongue_task,
+            MODE_CLOSEUP_BLOWJOB: task_service.process_closeup_blowjob_task
+        }
+        
+        if mode in quick_modes:
             await _handle_quick_task(update, context, local_path)
             context.user_data['pending_images'] = []
         elif mode in [MODE_FACESWAP_STEP1, MODE_FACESWAP_STEP2]:
@@ -103,35 +106,9 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         elif mode == MODE_RANDOM_FACESWAP:
             await _handle_photo_random_faceswap(update, context)
         elif mode == MODE_CUSTOM_VIDEO:
-            user_group = await permission_service.get_user_group(user.id)
-            user_identity = await permission_service.get_user_identity(user.id)
-            
-            from src.constants import get_video_settings_keyboard, DEFAULT_RESOLUTION, DEFAULT_DURATION, RESOLUTION_COST, DURATION_MULTIPLIER
-            current_resolution = context.user_data.get('custom_video_resolution', DEFAULT_RESOLUTION)
-            current_duration = context.user_data.get('custom_video_duration', DEFAULT_DURATION)
-            reply_markup = get_video_settings_keyboard(user_group, user_identity, current_resolution, current_duration)
-            
-            base_cost = RESOLUTION_COST.get(current_resolution, 6)
-            multiplier = DURATION_MULTIPLIER.get(current_duration, 1.0)
-            cost = int(base_cost * multiplier)
-            
-            msg_text = f"⚙️ 当前自定义视频画质：{current_resolution} | 时长：{current_duration} | 消耗灵石：{cost}\n\n请选择您需要的画质和时长（部分画质和时长需要高境界或VIP身份解锁）：\n\n*提示：画质越高、时长越长，消耗灵石越多。注意：1024p 和 10s 无法同时选择。*"
-            await robust_reply_text(msg, "📥 收到起始图片。请发送提示词 (Text) 以生成 5 秒视频。")
-            await robust_reply_text(msg, msg_text, reply_markup=reply_markup)
-        elif mode == MODE_PERFECT_VIDEO_INSERT:
-            await task_service.process_perfect_video_insert_task(update, context, local_path)
-            context.user_data['pending_images'] = []
-        elif mode == MODE_DOGGY_STYLE:
-            await task_service.process_doggy_style_task(update, context, local_path)
-            context.user_data['pending_images'] = []
-        elif mode == MODE_BLOWJOB:
-            await task_service.process_blowjob_task(update, context, local_path)
-            context.user_data['pending_images'] = []
-        elif mode == MODE_UNDRESS_TONGUE:
-            await task_service.process_undress_tongue_task(update, context, local_path)
-            context.user_data['pending_images'] = []
-        elif mode == MODE_CLOSEUP_BLOWJOB:
-            await task_service.process_closeup_blowjob_task(update, context, local_path)
+            await _handle_custom_video_setup(update, context, msg, user.id, is_document=False)
+        elif mode in video_modes:
+            await video_modes[mode](update, context, local_path)
             context.user_data['pending_images'] = []
         else:
             await _handle_photo_edit(update, context)
@@ -198,17 +175,8 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # 0.2 Debounce media groups for one-click modes
         one_click_modes = [MODE_UNDRESS, MODE_MASTURBATION, MODE_PERFECT_VIDEO_INSERT, MODE_DOGGY_STYLE, MODE_BLOWJOB, MODE_UNDRESS_TONGUE, MODE_CLOSEUP_BLOWJOB, MODE_RANDOM_FACESWAP]
         if mode in one_click_modes and msg.media_group_id:
-            processed_groups = context.user_data.get('processed_media_groups', set())
-            if msg.media_group_id in processed_groups:
-                logger.info(f"Ignoring additional document from media group {msg.media_group_id} for mode {mode}")
-                notified_groups = context.user_data.get('notified_media_groups', set())
-                if msg.media_group_id not in notified_groups:
-                    await robust_reply_text(msg, "⚠️ 提醒：当前功能为一键直出模式，为了防止刷屏，系统仅处理您相册中的**第一张图**，其余图片已被忽略。", parse_mode='Markdown')
-                    notified_groups.add(msg.media_group_id)
-                    context.user_data['notified_media_groups'] = notified_groups
+            if await _debounce_media_group(update, context, mode, msg.media_group_id):
                 return
-            processed_groups.add(msg.media_group_id)
-            context.user_data['processed_media_groups'] = processed_groups
 
         # 1. Save Document
         if 'pending_images' not in context.user_data:
@@ -226,7 +194,20 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data['pending_images'].append(local_path)
 
         # 2. Dispatch by Mode
-        if mode in [MODE_UNDRESS, MODE_MASTURBATION]:
+        quick_modes = {
+            MODE_UNDRESS: "undress",
+            MODE_MASTURBATION: "masturbation"
+        }
+        
+        video_modes = {
+            MODE_PERFECT_VIDEO_INSERT: task_service.process_perfect_video_insert_task,
+            MODE_DOGGY_STYLE: task_service.process_doggy_style_task,
+            MODE_BLOWJOB: task_service.process_blowjob_task,
+            MODE_UNDRESS_TONGUE: task_service.process_undress_tongue_task,
+            MODE_CLOSEUP_BLOWJOB: task_service.process_closeup_blowjob_task
+        }
+        
+        if mode in quick_modes:
             await _handle_quick_task(update, context, local_path)
             context.user_data['pending_images'] = []
         elif mode in [MODE_FACESWAP_STEP1, MODE_FACESWAP_STEP2]:
@@ -234,35 +215,9 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
         elif mode == MODE_RANDOM_FACESWAP:
             await _handle_photo_random_faceswap(update, context)
         elif mode == MODE_CUSTOM_VIDEO:
-            user_group = await permission_service.get_user_group(user.id)
-            user_identity = await permission_service.get_user_identity(user.id)
-            
-            from src.constants import get_video_settings_keyboard, DEFAULT_RESOLUTION, DEFAULT_DURATION, RESOLUTION_COST, DURATION_MULTIPLIER
-            current_resolution = context.user_data.get('custom_video_resolution', DEFAULT_RESOLUTION)
-            current_duration = context.user_data.get('custom_video_duration', DEFAULT_DURATION)
-            reply_markup = get_video_settings_keyboard(user_group, user_identity, current_resolution, current_duration)
-            
-            base_cost = RESOLUTION_COST.get(current_resolution, 6)
-            multiplier = DURATION_MULTIPLIER.get(current_duration, 1.0)
-            cost = int(base_cost * multiplier)
-            
-            msg_text = f"⚙️ 当前自定义视频画质：{current_resolution} | 时长：{current_duration} | 消耗灵石：{cost}\n\n请选择您需要的画质和时长（部分画质和时长需要高境界或VIP身份解锁）：\n\n*提示：画质越高、时长越长，消耗灵石越多。注意：1024p 和 10s 无法同时选择。*"
-            await robust_reply_text(msg, "📥 收到起始图片（文件）。请发送提示词 (Text) 以生成 5 秒视频。")
-            await robust_reply_text(msg, msg_text, reply_markup=reply_markup)
-        elif mode == MODE_PERFECT_VIDEO_INSERT:
-            await task_service.process_perfect_video_insert_task(update, context, local_path)
-            context.user_data['pending_images'] = []
-        elif mode == MODE_DOGGY_STYLE:
-            await task_service.process_doggy_style_task(update, context, local_path)
-            context.user_data['pending_images'] = []
-        elif mode == MODE_BLOWJOB:
-            await task_service.process_blowjob_task(update, context, local_path)
-            context.user_data['pending_images'] = []
-        elif mode == MODE_UNDRESS_TONGUE:
-            await task_service.process_undress_tongue_task(update, context, local_path)
-            context.user_data['pending_images'] = []
-        elif mode == MODE_CLOSEUP_BLOWJOB:
-            await task_service.process_closeup_blowjob_task(update, context, local_path)
+            await _handle_custom_video_setup(update, context, msg, user.id, is_document=True)
+        elif mode in video_modes:
+            await video_modes[mode](update, context, local_path)
             context.user_data['pending_images'] = []
         else:
             await _handle_photo_edit(update, context)
@@ -270,6 +225,22 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         logger.error(f"Error in handle_document for user {user.id}: {e}", exc_info=True)
         await robust_reply_text(msg, f"❌ 文件处理错误：{str(e)}")
+
+async def _debounce_media_group(update: Update, context: ContextTypes.DEFAULT_TYPE, mode: str, media_group_id: str) -> bool:
+    """Helper to debounce multiple images sent in a single media group."""
+    processed_groups = context.user_data.get('processed_media_groups', set())
+    if media_group_id in processed_groups:
+        logger.info(f"Ignoring additional image from media group {media_group_id} for mode {mode}")
+        notified_groups = context.user_data.get('notified_media_groups', set())
+        if media_group_id not in notified_groups:
+            await robust_reply_text(update.message, "⚠️ 提醒：为了防止刷屏，系统仅处理您的**第一张图**，其余图片已被忽略。", parse_mode='Markdown')
+            notified_groups.add(media_group_id)
+            context.user_data['notified_media_groups'] = notified_groups
+        return True
+    
+    processed_groups.add(media_group_id)
+    context.user_data['processed_media_groups'] = processed_groups
+    return False
 
 async def _handle_photo_idle(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle photo when no mode is selected"""
@@ -306,8 +277,10 @@ async def _handle_quick_task(update: Update, context: ContextTypes.DEFAULT_TYPE,
     if not await permission_service.check_quota(update, context, cost=cost):
         # Cleanup file if quota check fails
         if os.path.exists(image_path):
-            try: os.remove(image_path)
-            except: pass
+            try:
+                os.remove(image_path)
+            except Exception:
+                pass
         return
 
     prompts_config = load_prompts()
@@ -335,8 +308,10 @@ async def _handle_quick_task(update: Update, context: ContextTypes.DEFAULT_TYPE,
         logger.error(f"Error in quick task for user {user.id}: {e}", exc_info=True)
         await robust_reply_text(msg, f"❌ 处理出错：{str(e)}")
         if os.path.exists(image_path):
-            try: os.remove(image_path)
-            except: pass
+            try:
+                os.remove(image_path)
+            except Exception:
+                pass
 
 async def _handle_photo_faceswap(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle FaceSwap multi-step logic"""
@@ -429,6 +404,26 @@ async def _handle_photo_random_faceswap(update: Update, context: ContextTypes.DE
         logger.error(f"Error in random faceswap: {e}", exc_info=True)
         await robust_reply_text(msg, f"❌ 任务执行出错：{str(e)}")
 
+async def _handle_custom_video_setup(update: Update, context: ContextTypes.DEFAULT_TYPE, msg, user_id: int, is_document: bool = False):
+    """Extracted logic for setting up custom video generation parameters."""
+    user_group = await permission_service.get_user_group(user_id)
+    user_identity = await permission_service.get_user_identity(user_id)
+    
+    from src.constants import get_video_settings_keyboard, DEFAULT_RESOLUTION, DEFAULT_DURATION, RESOLUTION_COST, DURATION_MULTIPLIER
+    current_resolution = context.user_data.get('custom_video_resolution', DEFAULT_RESOLUTION)
+    current_duration = context.user_data.get('custom_video_duration', DEFAULT_DURATION)
+    reply_markup = get_video_settings_keyboard(user_group, user_identity, current_resolution, current_duration)
+    
+    base_cost = RESOLUTION_COST.get(current_resolution, 6)
+    multiplier = DURATION_MULTIPLIER.get(current_duration, 1.0)
+    cost = int(base_cost * multiplier)
+    
+    msg_text = f"⚙️ 当前自定义视频画质：{current_resolution} | 时长：{current_duration} | 消耗灵石：{cost}\n\n请选择您需要的画质和时长（部分画质和时长需要高境界或VIP身份解锁）：\n\n*提示：画质越高、时长越长，消耗灵石越多。注意：1024p 和 10s 无法同时选择。*"
+    
+    file_type_str = "（文件）" if is_document else ""
+    await robust_reply_text(msg, f"📥 收到起始图片{file_type_str}。请发送提示词 (Text) 以生成 5 秒视频。")
+    await robust_reply_text(msg, msg_text, reply_markup=reply_markup)
+
 async def _handle_photo_edit(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle default Edit mode"""
     msg = update.message
@@ -483,8 +478,10 @@ async def _handle_template_contribution(update: Update, context: ContextTypes.DE
         
         # 3. Record in Database
         file_type_db = 'photo'
-        if msg.video: file_type_db = 'video'
-        elif msg.document: file_type_db = 'document'
+        if msg.video:
+            file_type_db = 'video'
+        elif msg.document:
+            file_type_db = 'document'
         
         await permission_service.record_contribution(user.id, local_path, file_type_db)
         

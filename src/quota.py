@@ -1,7 +1,7 @@
-from datetime import datetime, timedelta
+from datetime import datetime
 from sqlalchemy import select, update, func
 from .database.core import AsyncSessionLocal
-from .database.models import User, Referral, TemplateContribution, CheckinHistory, History, UserLog
+from .database.models import User, Referral, TemplateContribution, CheckinHistory, UserLog
 from .services.log_service import LogService
 from .constants import GENERATION_TASK_TYPES
 
@@ -132,8 +132,10 @@ class QuotaManager:
                 session.add(user)
             else:
                 # Update info
-                if username: user.username = username
-                if full_name: user.full_name = full_name
+                if username:
+                    user.username = username
+                if full_name:
+                    user.full_name = full_name
             
             today = datetime.now().date()
             if user.last_checkin == today:
