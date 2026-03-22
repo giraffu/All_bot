@@ -784,10 +784,75 @@ async def get_cumulative_type_distribution(days: int = 7, db: AsyncSession = Dep
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/system/active_bot_tasks")
-async def get_active_bot_tasks():
-    """Get active tasks tracked by bot in Redis"""
+async def get_active_bot_tasks(db: AsyncSession = Depends(get_db)):
+    """Get active tasks tracked by bot in Redis, merged with user database info and realtime status"""
     try:
         tasks = await redis_client.get_active_tasks()
+        
+        # If there are tasks, fetch their user information from DB
+        if tasks:
+            user_ids = [task.get("user_id") for task in tasks.values() if task.get("user_id")]
+            if user_ids:
+                # Query users from database
+                stmt = select(User.id, User.user_group, User.current_identity).where(User.id.in_(user_ids))
+                result = await db.execute(stmt)
+                user_info = {row.id: {"user_group": row.user_group, "current_identity": row.current_identity} for row in result.all()}
+                
+                # We need to query the actual ComfyUI backend for the real-time status
+                # to distinguish between 'pending' (in queue) and 'generating' (executing)
+                executing_ids = []
+                # Since ComfyUI backend's /system/status doesn't return running task IDs directly in our current setup,
+                # we will query the status of the first few tasks in Redis (those most likely to be running)
+                # To avoid overwhelming the backend, we only check tasks that have a backend_task_id
+                
+                try:
+                    import asyncio
+                    from src.api_client import api_client
+                    
+                    tasks_to_check = [task.get("backend_task_id") for task in tasks.values() if task.get("backend_task_id")]
+                    # Check at most 20 tasks to find the running one(s)
+                    
+                    async def fetch_status(backend_id):
+                        try:
+                            url = f"{API_BASE}/status/{backend_id}"
+                            r = await api_client._request("GET", url, timeout=2)
+                            return backend_id, r.json()
+                        except Exception:
+                            return backend_id, None
+
+                    if tasks_to_check:
+                        results = await asyncio.gather(*(fetch_status(tid) for tid in tasks_to_check[:20]))
+                        for backend_id, status_data in results:
+                            if status_data:
+                                # In our setup, generating tasks have 'status' key but no terminal state yet.
+                                # Let's explicitly check if status is generating or similar.
+                                state = status_data.get("status")
+                                # ComfyUI middleware returns {"status": "generating", "progress": xx}
+                                # If it's explicitly 'generating' or not in our known end states:
+                                if state == "generating" or (state and state not in ["pending", "done", "error"]):
+                                    executing_ids.append(backend_id)
+                except Exception as e:
+                    logger.warning(f"Could not fetch executing tasks from backend: {e}")
+
+                # Merge DB info into tasks
+                for task_id, task in tasks.items():
+                    uid = task.get("user_id")
+                    if uid in user_info:
+                        task["user_group"] = user_info[uid]["user_group"]
+                        task["user_identity"] = user_info[uid]["current_identity"]
+                    else:
+                        task["user_group"] = "未知"
+                        task["user_identity"] = "外门弟子"
+                        
+                    # Add real-time execution status
+                    backend_id = task.get("backend_task_id")
+                    if backend_id and backend_id in executing_ids:
+                        task["execution_status"] = "generating"
+                    elif backend_id:
+                        task["execution_status"] = "pending"
+                    else:
+                        task["execution_status"] = "submitting"
+
         return {"status": "success", "tasks": tasks, "count": len(tasks)}
     except Exception as e:
         logger.error(f"Error getting active bot tasks from Redis: {e}")

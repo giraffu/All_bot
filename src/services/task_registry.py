@@ -5,6 +5,8 @@ from src.services.redis_client import redis_client
 
 logger = logging.getLogger(__name__)
 
+import time
+
 class TaskRegistry:
     @classmethod
     async def add_task(cls, user_id: int, username: str, cost: int, task_type: str, chat_id: int = None, message_id: int = None, **kwargs) -> str:
@@ -17,6 +19,7 @@ class TaskRegistry:
             "chat_id": chat_id,
             "message_id": message_id,
             "backend_task_id": None,  # Will be updated once submitted
+            "created_at": time.time(), # Added to track queue duration
             **kwargs
         }
         await redis_client.add_active_task(task_id, task_data)

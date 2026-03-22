@@ -58,7 +58,7 @@
 * **测试服 Bot (Test)**
   * **重启并重建**: `docker-compose -f deploy/docker-compose-test.yml up -d --build bot-test`
 * **管理后台 (Dashboard)**
-  * **一键重启并重建 (包含前后端)**: `docker-compose -f dashboard/docker-compose.yml up -d --build`
+  * **一键重启并重建 (包含前后端)**: `docker-compose -f dashboard/docker-compose.yml up -d --build --force-recreate` （注意：如果出现 'ContainerConfig' 报错，可以先执行 docker rm -f 删除旧容器后再启动）
   * **仅重启并重建后端**: `docker-compose -f dashboard/docker-compose.yml up -d --build dashboard-backend`
   * **仅重启并重建前端**: `docker-compose -f dashboard/docker-compose.yml up -d --build dashboard-frontend`
 

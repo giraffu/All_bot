@@ -135,6 +135,11 @@ export const fetchSystemStatus = async () => {
   return response.data
 }
 
+export const fetchActiveBotTasks = async () => {
+  const response = await api.get('/api/system/active_bot_tasks')
+  return response.data
+}
+
 export const fetchTaskStatus = async (taskId) => {
   const response = await api.get(`/api/status/${taskId}`)
   return response.data

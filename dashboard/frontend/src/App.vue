@@ -4,6 +4,7 @@ import { fetchStats, fetchUsers, fetchUserHistory, fetchStatsHistory, fetchTaskS
 import Login from './components/Login.vue'
 import StatsCards from './components/StatsCards.vue'
 import QueueStats from './components/QueueStats.vue'
+import ActiveTasksTable from './components/ActiveTasksTable.vue'
 import UserTable from './components/UserTable.vue'
 import TemplateManager from './components/TemplateManager.vue'
 import HistoryModal from './components/HistoryModal.vue'
@@ -22,22 +23,22 @@ import HistoryTable from './components/HistoryTable.vue'
 import LogTable from './components/LogTable.vue'
 import RechargeSystem from './components/RechargeSystem.vue'
 import { message } from 'ant-design-vue'
-import { 
-  ReloadOutlined, 
-  UserOutlined, 
-  PictureOutlined, 
-  DashboardOutlined,
-  SettingOutlined,
-  LogoutOutlined,
+import {
+  UserOutlined,
+  HistoryOutlined,
   MenuUnfoldOutlined,
   MenuFoldOutlined,
+  HomeOutlined,
+  FileTextOutlined,
+  PayCircleOutlined,
+  PictureOutlined,
+  SettingOutlined,
+  LogoutOutlined,
+  ReloadOutlined,
+  DashboardOutlined,
   SearchOutlined,
   BellOutlined,
-  HomeOutlined,
-  PieChartOutlined,
-  HistoryOutlined,
-  FileTextOutlined,
-  PayCircleOutlined
+  PieChartOutlined
 } from '@ant-design/icons-vue'
 
 // State
@@ -305,14 +306,18 @@ onUnmounted(() => {
       </div>
       
       <a-menu v-model:selectedKeys="activeTab" theme="dark" mode="inline">
-        <a-menu-item key="home">
-          <template #icon><home-outlined /></template>
-          <span>首页看板</span>
-        </a-menu-item>
-        <a-menu-item key="users">
-          <template #icon><user-outlined /></template>
-          <span>用户管理</span>
-        </a-menu-item>
+          <a-menu-item key="home">
+            <template #icon><home-outlined /></template>
+            <span>数据大盘</span>
+          </a-menu-item>
+          <a-menu-item key="monitor">
+            <template #icon><dashboard-outlined /></template>
+            <span>系统监控</span>
+          </a-menu-item>
+          <a-menu-item key="users">
+            <template #icon><user-outlined /></template>
+            <span>用户管理</span>
+          </a-menu-item>
         <a-menu-item key="history">
           <template #icon><history-outlined /></template>
           <span>历史生成</span>
@@ -420,12 +425,17 @@ onUnmounted(() => {
       <!-- Content -->
       <a-layout-content 
         class="p-6 bg-gray-50 flex flex-col h-[calc(100vh-64px)]"
-        :class="['home', 'templates', 'logs', 'recharge'].includes(activeTab[0]) ? 'overflow-y-auto' : 'overflow-hidden'"
+        :class="['home', 'monitor', 'templates', 'logs', 'recharge'].includes(activeTab[0]) ? 'overflow-y-auto' : 'overflow-hidden'"
       >
         <div class="w-full flex-1 flex flex-col">
-          <!-- Main Workspace -->
-          <div v-if="activeTab[0] === 'home'" class="flex-1 flex flex-col gap-6">
+          <!-- System Monitor Tab -->
+          <div v-if="activeTab[0] === 'monitor'" class="flex-1 flex flex-col gap-6">
             <QueueStats />
+            <ActiveTasksTable />
+          </div>
+
+          <!-- Main Workspace -->
+          <div v-else-if="activeTab[0] === 'home'" class="flex-1 flex flex-col gap-6">
             <StatsCards :stats="stats" />
             
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6">

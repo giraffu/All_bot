@@ -5,6 +5,8 @@ from .database.models import User, Referral, TemplateContribution, CheckinHistor
 from .services.log_service import LogService
 from .constants import GENERATION_TASK_TYPES
 
+from sqlalchemy.exc import IntegrityError
+
 class QuotaManager:
     def __init__(self):
         pass
@@ -42,9 +44,14 @@ class QuotaManager:
             if not user:
                 user = User(id=user_id, username=username, full_name=full_name, credits=20)
                 session.add(user)
-                await session.commit()
-                # Refresh to get the object attached to the session if needed, 
-                # but we're returning it so it might be better to just return it
+                try:
+                    await session.commit()
+                except IntegrityError:
+                    await session.rollback()
+                    # User was created concurrently, fetch it
+                    stmt = select(User).where(User.id == user_id)
+                    result = await session.execute(stmt)
+                    user = result.scalar_one_or_none()
                 return user
             
             # Update info if provided
