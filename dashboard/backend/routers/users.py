@@ -17,7 +17,7 @@ router = APIRouter(prefix="/api/users", tags=["users"])
 logger = logging.getLogger("dashboard.users")
 
 @router.get("")
-async def get_users(skip: int = 0, limit: int = 10000, db: AsyncSession = Depends(get_db)):
+async def get_users(skip: int = 0, limit: int = 100000, db: AsyncSession = Depends(get_db)):
     """Get user list with referral counts"""
     try:
         stmt = (

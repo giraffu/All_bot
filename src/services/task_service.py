@@ -120,7 +120,7 @@ class TaskService:
                 await permission_service.increment_quota(user_id, cost=cost, username=username, task_type=task_type)
                 registry_task_id = await TaskRegistry.add_task(
                     user_id, username, cost, task_type, chat_id=chat_id, message_id=status_msg.message_id if status_msg else None,
-                    prompt=prompt, saved_input_images=saved_input_images, is_video=is_video
+                    prompt=prompt, saved_input_images=saved_input_images, is_video=is_video, priority=priority
                 )
 
             # Submit Task
@@ -250,17 +250,17 @@ class TaskService:
                 await robust_delete_message(msg)
                 return None, None
 
-            await permission_service.increment_quota(user_id, cost=cost, username=username, task_type=mode)
-            registry_task_id = await TaskRegistry.add_task(
-                user_id, username, cost, mode, chat_id=chat_id, message_id=msg.message_id if msg else None,
-                prompt=prompt, saved_input_images=[saved_input_image], is_video=True
-            )
-
-            await robust_edit_text(msg, "⏳ 正在生成视频，请耐心等待...")
-
             priority = await permission_service.calculate_user_priority(user_id)
             identity_str = await permission_service.get_user_identity(user_id)
             user_group = await permission_service.get_user_group(user_id)
+
+            await permission_service.increment_quota(user_id, cost=cost, username=username, task_type=mode)
+            registry_task_id = await TaskRegistry.add_task(
+                user_id, username, cost, mode, chat_id=chat_id, message_id=msg.message_id if msg else None,
+                prompt=prompt, saved_input_images=[saved_input_image], is_video=True, priority=priority
+            )
+
+            await robust_edit_text(msg, "⏳ 正在生成视频，请耐心等待...")
 
             # Submit Task
             if mode == MODE_DOGGY_STYLE:
@@ -416,6 +416,16 @@ class TaskService:
     ):
         chat_id = update.effective_chat.id
         user_id = update.effective_user.id
+        
+        # 1. Check active tasks limit
+        active_tasks = await redis_client.increment_user_concurrency(user_id)
+        if active_tasks > 3:
+            await redis_client.decrement_user_concurrency(user_id)
+            await robust_send_message(context.bot, chat_id, "⚠️ 您当前已有 3 个任务正在处理中，请等待其中一个完成后再试！")
+            if cleanup and image_path:
+                TaskService._cleanup_files([image_path])
+            return None, None
+            
         username = update.effective_user.username or update.effective_user.full_name
         mode = MODE_CUSTOM_VIDEO
         
@@ -456,16 +466,17 @@ class TaskService:
             if not await permission_service.check_quota(update, context, cost=cost):
                 await robust_delete_message(msg)
                 return None, None
-            await permission_service.increment_quota(user_id, cost=cost, username=username, task_type=mode)
-            registry_task_id = await TaskRegistry.add_task(
-                user_id, username, cost, mode, chat_id=chat_id, message_id=msg.message_id if msg else None,
-                prompt=prompt, saved_input_images=[saved_input_image], is_video=True
-            )
-            await robust_edit_text(msg, "⏳ 正在生成视频，请耐心等待...")
 
             priority = await permission_service.calculate_user_priority(user_id)
             identity_str = await permission_service.get_user_identity(user_id)
             user_group = await permission_service.get_user_group(user_id)
+
+            await permission_service.increment_quota(user_id, cost=cost, username=username, task_type=mode)
+            registry_task_id = await TaskRegistry.add_task(
+                user_id, username, cost, mode, chat_id=chat_id, message_id=msg.message_id if msg else None,
+                prompt=prompt, saved_input_images=[saved_input_image], is_video=True, priority=priority
+            )
+            await robust_edit_text(msg, "⏳ 正在生成视频，请耐心等待...")
 
             task_id = await image_service.submit_perfect_video_edit(
                 prompt, saved_input_image, width=width, height=height, length=length, priority=priority
@@ -556,21 +567,22 @@ class TaskService:
                 return None, None
 
             # 2. Submit Task
+            priority = await permission_service.calculate_user_priority(user_id)
+            identity_str = await permission_service.get_user_identity(user_id)
+            user_group = await permission_service.get_user_group(user_id)
+
             await permission_service.increment_quota(user_id, cost=cost, username=username, task_type=mode)
             registry_task_id = await TaskRegistry.add_task(
                 user_id, username, cost, mode, chat_id=chat_id, message_id=msg.message_id if msg else None,
-                prompt=prompt, saved_input_images=[], is_video=False
+                prompt=prompt, saved_input_images=[], is_video=False, priority=priority
             )
             await robust_edit_text(msg, "⏳ 正在生成图片，请耐心等待...")
 
-            task_id = await image_service.submit_text_to_image_task(prompt)
+            task_id = await image_service.submit_text_to_image_task(prompt, priority=priority)
             
             if registry_task_id and task_id:
                 await TaskRegistry.update_backend_task_id(registry_task_id, task_id)
             
-            identity_str = await permission_service.get_user_identity(user_id)
-            user_group = await permission_service.get_user_group(user_id)
-
             # 3. Monitor Progress
             final_info = await TaskService._monitor_task_progress(
                 task_id, msg, is_video=False, monitor_func=image_service.monitor_progress, identity_str=identity_str, user_group=user_group

@@ -63,7 +63,12 @@ docker-compose -f dashboard/docker-compose.yml up -d --build dashboard-frontend
 
 ### 1. 维护模式开关 (Maintenance Mode)
 为了在不停机的情况下暂停接收新的生成任务（例如后端显卡服务器需要重启或更新模型时），我们在 Bot 中内置了维护模式。
-*   **如何开启/关闭**: 管理员直接在 Telegram 中向 Bot 发送 `/maintenance` 指令。
+*   **如何开启/关闭**: 
+    * **指令方式**: 管理员直接在 Telegram 中向 Bot 发送 `/maintenance on|off` 指令。
+    * **容器后台方式**: 当 Bot 无法响应时，也可直接在宿主机通过命令控制：
+      * 开启: `docker exec tg-bot touch /app/MAINTENANCE`
+      * 关闭: `docker exec tg-bot rm -f /app/MAINTENANCE`
+      * *(注：测试服请将 `tg-bot` 替换为 `tg-bot-test`)*
 *   **生效范围**: 开启后，普通用户尝试生成图片或视频时会被拦截并提示“⚠️ 服务器即将运维，暂停生成服务中”。但用户依然可以进行签到、查看个人中心等非生成操作。
 
 ### 2. 活动任务强制干预 (Active Tasks Refund)

@@ -40,9 +40,21 @@
 * **代码修改后必须重建容器**：如果修改了 `src/` 下的核心逻辑，仅仅重启容器是不够的，必须加上 `--build` 参数强制重建镜像，否则代码修改不会生效。
   * **正式服**: `docker-compose -f deploy/docker-compose.yml up -d --build bot`
   * **测试服**: `docker-compose -f deploy/docker-compose-test.yml up -d --build bot-test`
+  * **⚠️ 重建报错处理 (ContainerConfig KeyError)**：当使用旧版 `docker-compose` (如 v1.29.2) 且遇到 `KeyError: 'ContainerConfig'` 报错时，请先手动停止并删除冲突的旧容器（可通过 `docker ps -a` 查找容器 ID/名称，然后执行 `docker stop <容器名> && docker rm <容器名>`），之后再执行上述重建命令。
 * **平滑停机与退款**：Bot 接收到正常的停机信号时（`post_shutdown`），会自动从 Redis 中读取排队任务并全额退款。
 * **意外断电补偿**：即使遭遇 `docker kill` 或强制断电，Bot 在下次启动初始化（`post_init`）时，会调用 `recovery_service.py` 扫描并恢复/清理滞留任务。
 * **维护模式**：管理员可通过发送 `/maintenance` 指令无缝拦截新生成任务的创建，不影响用户的查询与签到。
+  * **后台强制模式**：当 Bot 卡死或无法响应指令时，可直接在宿主机通过命令在容器后台控制：
+    * **开启**：`docker exec tg-bot touch /app/MAINTENANCE`
+    * **关闭**：`docker exec tg-bot rm -f /app/MAINTENANCE`
+    * *(注：测试服请将 `tg-bot` 替换为 `tg-bot-test`)*
+
+## 7. 日常运维与排障 (Daily Ops & Troubleshooting)
+* **Redis 僵尸任务清理**：
+  在系统长期运行中，偶尔可能出现任务因后端异常或网络问题挂起，导致驻留时间过长（僵尸任务）。这会占用用户的并发锁（最多3个）。
+  * **监控与识别**：可通过 Dashboard 实时查看排队情况，或在宿主机执行 `docker exec tg-bot python check_redis.py` 查看活动任务的执行时间 (`Age`) 及并发锁状态。
+  * **单点干预 (Dashboard)**：在 Dashboard 发现卡死任务时，可通过人工干预按钮（调用 `/api/system/refund_bot_task`）一键强制终止、释放并发锁并全额退款。
+  * **脚本批量清理 (CLI)**：当出现大面积卡死或需要快速清理时，可执行 `docker exec tg-bot python clean_zombies.py`。该脚本会自动清理驻留时间过长（默认 > 7200秒/2小时）的任务。如需调整判定阈值，可直接修改根目录下的 `clean_zombies.py`。
 
 ---
 **👨‍💻 最终开发指引 (To AI Assistant)**：

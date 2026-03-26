@@ -21,8 +21,8 @@ services:
       # These will override the root .env for the dashboard specifically
       - DATABASE_URL=postgresql+asyncpg://postgres:postgrespassword@192.168.1.115:5432/bot_db
       - MINIO_ENDPOINT=192.168.1.115:9000
-      - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY:-minioadmin}
-      - MINIO_SECRET_KEY=${MINIO_SECRET_KEY:-minioadmin}
+      - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY:-chuzeyu}
+      - MINIO_SECRET_KEY=${MINIO_SECRET_KEY:-@Cv1347968277}
       - MINIO_BUCKET=bot-data
       - MINIO_SECURE=${MINIO_SECURE:-false}
       - DASHBOARD_ADMIN_USERNAME=chuzeyu

@@ -14,7 +14,9 @@ class QuotaManager:
     async def get_daily_usage(self, user_id: int) -> int:
         """Get number of generation tasks performed by user today"""
         async with AsyncSessionLocal() as session:
-            today = datetime.now().date()
+            from datetime import timezone, timedelta
+            beijing_tz = timezone(timedelta(hours=8))
+            today = datetime.now(beijing_tz).date()
             # Convert date to datetime for comparison if needed, but SQLAlchemy handles date comparison usually.
             # However, UserLog.created_at is DateTime. So we should compare >= today midnight.
             today_start = datetime.combine(today, datetime.min.time())
@@ -123,14 +125,14 @@ class QuotaManager:
                         extra_info={"old_balance": old_balance}
                     )
 
-    async def checkin(self, user_id: int, username: str = None, full_name: str = None, reward: int = 5, temp_reward: int = 15) -> bool:
+    async def checkin(self, user_id: int, username: str = None, full_name: str = None, reward: int = 10, temp_reward: int = 0) -> bool:
         """
         Perform daily check-in.
         Returns True if successful, False if already checked in today.
         """
         async with AsyncSessionLocal() as session:
             # We use ensure_user but inside this session to be atomic-ish
-            stmt = select(User).where(User.id == user_id)
+            stmt = select(User).where(User.id == user_id).with_for_update()
             result = await session.execute(stmt)
             user = result.scalar_one_or_none()
             
@@ -144,7 +146,9 @@ class QuotaManager:
                 if full_name:
                     user.full_name = full_name
             
-            today = datetime.now().date()
+            from datetime import timezone, timedelta
+            beijing_tz = timezone(timedelta(hours=8))
+            today = datetime.now(beijing_tz).date()
             if user.last_checkin == today:
                 await session.commit() # Save potential info updates
                 return False

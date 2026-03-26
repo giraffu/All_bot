@@ -12,8 +12,7 @@ class ImageService:
 
     async def submit_text_to_image_task(self, prompt: str, priority: int = 0) -> str:
         """Submit text to image task"""
-        # Note: priority is not used in the current backend API for T2I, but kept for consistency
-        return await submit_text_to_image(prompt)
+        return await submit_text_to_image(prompt, priority=priority)
 
     async def submit_perfect_video_edit(self, prompt: str, image_path: str, width: int = 512, height: int = 512, length: int = 81, priority: int = 0) -> str:
         """Submit perfect video edit task"""

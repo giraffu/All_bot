@@ -34,8 +34,8 @@ if not DATABASE_URL or DATABASE_URL.startswith("sqlite"):
 
 # --- MinIO Configuration ---
 MINIO_ENDPOINT = os.getenv("MINIO_ENDPOINT", "192.168.1.115:9000")
-MINIO_ACCESS_KEY = os.getenv("MINIO_ACCESS_KEY", "minioadmin")
-MINIO_SECRET_KEY = os.getenv("MINIO_SECRET_KEY", "minioadmin")
+MINIO_ACCESS_KEY = os.getenv("MINIO_ACCESS_KEY", "chuzeyu")
+MINIO_SECRET_KEY = os.getenv("MINIO_SECRET_KEY", "@Cv1347968277")
 MINIO_BUCKET = os.getenv("MINIO_BUCKET", "bot-data")
 MINIO_TEMPLATE_BUCKET = os.getenv("MINIO_TEMPLATE_BUCKET", "bot-template")
 MINIO_SECURE = os.getenv("MINIO_SECURE", "false").lower() == "true"

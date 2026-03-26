@@ -140,6 +140,16 @@ export const fetchActiveBotTasks = async () => {
   return response.data
 }
 
+export const refundBotTask = async (taskId) => {
+  const response = await api.post('/api/system/refund_bot_task', { task_id: taskId })
+  return response.data
+}
+
+export const cleanZombieTasks = async () => {
+  const response = await api.post('/api/system/clean_zombie_tasks')
+  return response.data
+}
+
 export const fetchTaskStatus = async (taskId) => {
   const response = await api.get(`/api/status/${taskId}`)
   return response.data

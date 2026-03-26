@@ -220,6 +220,12 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
             await robust_send_message(context.bot, query.message.chat_id, "⚠️ 服务器即将运维，暂停生成服务中")
             return
 
+        # Check priority
+        priority = await permission_service.calculate_user_priority(query.from_user.id)
+        if priority <= 0:
+            await robust_send_message(context.bot, query.message.chat_id, "⚠️ 道友，您的排队优先级已耗尽（或修为不足），今日已无法再凝聚灵力，请明日再来或提升修为！")
+            return
+
         # "再来一张" (Random FaceSwap Again)
         face_image_path = context.user_data.get('last_face_image')
         if not face_image_path:
@@ -292,6 +298,12 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
         from src.utils import is_maintenance_mode
         if is_maintenance_mode():
             await robust_edit_text(query.message, "⚠️ 服务器即将运维，暂停生成服务中")
+            return
+
+        # Check priority
+        priority = await permission_service.calculate_user_priority(query.from_user.id)
+        if priority <= 0:
+            await robust_edit_text(query.message, "⚠️ 道友，您的排队优先级已耗尽（或修为不足），今日已无法再凝聚灵力，请明日再来或提升修为！")
             return
 
         # Confirm Batch

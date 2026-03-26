@@ -7,10 +7,12 @@ import {
   SyncOutlined,
   RobotOutlined,
   CheckCircleOutlined,
-  CloseCircleOutlined
+  CloseCircleOutlined,
+  ClearOutlined
 } from '@ant-design/icons-vue'
 import { ref, onMounted, onUnmounted, computed } from 'vue'
-import { fetchSystemStatus } from '../api/api'
+import { fetchSystemStatus, cleanZombieTasks } from '../api/api'
+import { message, Modal } from 'ant-design-vue'
 
 const status = ref({
   queue_size: 0,
@@ -20,6 +22,7 @@ const status = ref({
 })
 
 const loading = ref(false)
+const cleaning = ref(false)
 let timer = null
 
 const updateQueue = async () => {
@@ -31,6 +34,33 @@ const updateQueue = async () => {
   } catch (err) {
     console.error('Error fetching system status:', err)
   }
+}
+
+const handleCleanZombies = () => {
+  Modal.confirm({
+    title: '确认清理卡死任务？',
+    content: '这将强制终止所有排队超过10分钟的任务，并自动为用户退款、释放并发锁。',
+    okText: '确认清理',
+    cancelText: '取消',
+    okType: 'danger',
+    onOk: async () => {
+      cleaning.value = true
+      try {
+        const res = await cleanZombieTasks()
+        if (res.status === 'success') {
+          message.success(`清理成功！共清除了 ${res.removed} 个卡死任务。`)
+          updateQueue()
+        } else {
+          message.error('清理失败: ' + res.message)
+        }
+      } catch (err) {
+        console.error(err)
+        message.error('清理过程中发生错误')
+      } finally {
+        cleaning.value = false
+      }
+    }
+  })
 }
 
 const queueByTypeDisplay = computed(() => {
@@ -62,13 +92,20 @@ onUnmounted(() => {
         <template #icon><sync-outlined spin /></template>
         每秒自动刷新
       </a-tag>
-      <a-tag :color="status.comfy_online ? 'success' : 'error'" class="ml-auto">
-        <template #icon>
-          <check-circle-outlined v-if="status.comfy_online" />
-          <close-circle-outlined v-else />
-        </template>
-        ComfyUI {{ status.comfy_online ? '在线' : '离线' }}
-      </a-tag>
+      
+      <div class="ml-auto flex items-center gap-3">
+        <a-button type="primary" danger ghost @click="handleCleanZombies" :loading="cleaning">
+          <template #icon><clear-outlined /></template>
+          一键清理卡死任务
+        </a-button>
+        <a-tag :color="status.comfy_online ? 'success' : 'error'">
+          <template #icon>
+            <check-circle-outlined v-if="status.comfy_online" />
+            <close-circle-outlined v-else />
+          </template>
+          ComfyUI {{ status.comfy_online ? '在线' : '离线' }}
+        </a-tag>
+      </div>
     </div>
     
     <a-row :gutter="[16, 16]">

@@ -65,6 +65,13 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if mode == MODE_TEMPLATE_CONTRIBUTE:
             return await _handle_template_contribution(update, context)
 
+        # 0.1.5 Check Priority for Generation Tasks
+        if mode not in [MODE_NONE, MODE_TEMPLATE_CONTRIBUTE]:
+            priority = await permission_service.calculate_user_priority(user.id)
+            if priority <= 0:
+                await robust_reply_text(msg, "⚠️ 道友，您的排队优先级已耗尽（或修为不足），今日已无法再凝聚灵力，请明日再来或提升修为！")
+                return
+
         # 0.2 Debounce media groups for one-click modes
         one_click_modes = [MODE_UNDRESS, MODE_MASTURBATION, MODE_PERFECT_VIDEO_INSERT, MODE_DOGGY_STYLE, MODE_BLOWJOB, MODE_UNDRESS_TONGUE, MODE_CLOSEUP_BLOWJOB, MODE_RANDOM_FACESWAP]
         if mode in one_click_modes and msg.media_group_id:
@@ -171,6 +178,13 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # 0.1 Template Contribution Check
         if mode == MODE_TEMPLATE_CONTRIBUTE:
             return await _handle_template_contribution(update, context)
+
+        # 0.1.5 Check Priority for Generation Tasks
+        if mode not in [MODE_NONE, MODE_TEMPLATE_CONTRIBUTE]:
+            priority = await permission_service.calculate_user_priority(user.id)
+            if priority <= 0:
+                await robust_reply_text(msg, "⚠️ 道友，您的排队优先级已耗尽（或修为不足），今日已无法再凝聚灵力，请明日再来或提升修为！")
+                return
 
         # 0.2 Debounce media groups for one-click modes
         one_click_modes = [MODE_UNDRESS, MODE_MASTURBATION, MODE_PERFECT_VIDEO_INSERT, MODE_DOGGY_STYLE, MODE_BLOWJOB, MODE_UNDRESS_TONGUE, MODE_CLOSEUP_BLOWJOB, MODE_RANDOM_FACESWAP]
@@ -625,14 +639,17 @@ async def handle_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 logger.warning(f"Failed to check refuge group membership: {e}")
                 # 忽略错误继续签到流程
         
-        success, current_credits, error_msg, total_days, temp_reward = await permission_service.perform_checkin(update)
+        success, current_credits, error_msg, total_days, reward, temp_reward = await permission_service.perform_checkin(update)
         user_group = await permission_service.get_user_group(update.effective_user.id)
         
         # 优化后的免责声明
         disclaimer = "\n\n⚠️ _注：累计签到统计始于3月5日，此前的数据未计入系统。_"
         
         if success:
-            await robust_reply_text(update.message, f"✅ **签到成功！**\n\n👤 当前境界：`{user_group}`\n📅 累计签到：`{total_days}` 天\n🎉 本次获得：`5` 永久灵石 + `{temp_reward}` 临时灵石\n💰 当前总灵石：`{current_credits}`" + disclaimer, parse_mode="Markdown")
+            reward_msg = f"`{reward}` 永久灵石"
+            if temp_reward > 0:
+                reward_msg += f" + `{temp_reward}` 临时灵石"
+            await robust_reply_text(update.message, f"✅ **签到成功！**\n\n👤 当前境界：`{user_group}`\n📅 累计签到：`{total_days}` 天\n🎉 本次获得：{reward_msg}\n💰 当前总灵石：`{current_credits}`" + disclaimer, parse_mode="Markdown")
         elif error_msg:
             await robust_reply_text(update.message, error_msg, parse_mode="Markdown")
         else:
@@ -692,6 +709,10 @@ async def handle_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "📝 文生图": (MODE_TEXT_TO_IMAGE, "📝 已切换到【文生图】模式 (消耗 3 灵石)。\n请直接发送【提示词】(支持中英韩文)，我将为您生成图片。")
     }
     
+    if text == "📝 文生图":
+        await robust_reply_text(update.message, "⚠️ 文生图功能暂时维护中，请使用其他功能。")
+        return
+
     if text in mode_map:
         new_mode, reply = mode_map[text]
         context.user_data['mode'] = new_mode
@@ -751,6 +772,14 @@ async def handle_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.message.chat_id
     user_id = update.effective_user.id
     username = update.effective_user.username or update.effective_user.full_name
+
+    # Check Priority
+    priority = await permission_service.calculate_user_priority(user_id)
+    if priority <= 0:
+        await robust_reply_text(update.message, "⚠️ 道友，您的排队优先级已耗尽（或修为不足），今日已无法再凝聚灵力，请明日再来或提升修为！")
+        # Clear pending images if they had any
+        context.user_data['pending_images'] = []
+        return
     
     if mode == MODE_CUSTOM_VIDEO:
         # 自定义图生视频
@@ -761,10 +790,8 @@ async def handle_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await task_service.process_custom_video_task(update, context, text, valid_images[0])
     elif mode == MODE_TEXT_TO_IMAGE:
         # 文生图
-        if len(text) > 500:
-            await robust_reply_text(update.message, "❌ 提示词过长，请控制在 500 字以内。")
-            return
-        await task_service.process_text_to_image_task(update, context, text)
+        await robust_reply_text(update.message, "⚠️ 文生图功能暂时维护中，请使用其他功能。")
+        return
     else:
         # Default Edit/Generation
         is_video = False

@@ -76,6 +76,13 @@
           </div>
         </template>
 
+        <template v-else-if="column.key === 'priority'">
+          <a-tag v-if="record.priority !== undefined" color="orange">
+            {{ record.priority }}
+          </a-tag>
+          <span v-else class="text-gray-400">-</span>
+        </template>
+
         <template v-else-if="column.key === 'task_type'">
           <a-tag :color="getTypeColor(record.task_type)">
             {{ record.task_type || 'Unknown' }}
@@ -108,6 +115,19 @@
           </span>
           <a-tag v-else color="warning">提交中</a-tag>
         </template>
+        
+        <template v-else-if="column.key === 'action'">
+          <a-popconfirm
+            title="确定要强制终止并全额退款吗？"
+            ok-text="确认终止"
+            cancel-text="取消"
+            @confirm="handleForceRefund(record.id)"
+          >
+            <a-button type="link" danger size="small">
+              终止退款
+            </a-button>
+          </a-popconfirm>
+        </template>
       </template>
     </a-table>
   </a-card>
@@ -116,7 +136,7 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { ReloadOutlined, UserOutlined, SyncOutlined } from '@ant-design/icons-vue'
-import { fetchActiveBotTasks } from '../api/api'
+import { fetchActiveBotTasks, refundBotTask } from '../api/api'
 import { message } from 'ant-design-vue'
 
 const loading = ref(false)
@@ -159,6 +179,13 @@ const columns = [
     width: 150,
   },
   {
+    title: '优先级',
+    key: 'priority',
+    dataIndex: 'priority',
+    width: 90,
+    sorter: (a, b) => (a.priority || 0) - (b.priority || 0),
+  },
+  {
     title: '任务类型',
     key: 'task_type',
     dataIndex: 'task_type',
@@ -189,6 +216,12 @@ const columns = [
     customRender: ({ text }) => {
       return text ? text.substring(0, 13) + '...' : '-'
     }
+  },
+  {
+    title: '操作',
+    key: 'action',
+    width: 100,
+    fixed: 'right',
   }
 ]
 
@@ -263,6 +296,21 @@ const refreshData = async () => {
   await loadData()
   loading.value = false
   message.success('排队任务已刷新')
+}
+
+const handleForceRefund = async (taskId) => {
+  try {
+    const res = await refundBotTask(taskId)
+    if (res.status === 'success') {
+      message.success('任务已终止，并已退款')
+      await loadData()
+    } else {
+      message.error('操作失败: ' + res.message)
+    }
+  } catch (error) {
+    console.error('Error refunding task:', error)
+    message.error('操作异常')
+  }
 }
 
 onMounted(() => {

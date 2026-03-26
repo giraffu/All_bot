@@ -10,8 +10,84 @@ from src.services.image_service import image_service
 from config import API_BASE, STATUS_ENDPOINT
 from fastapi.responses import StreamingResponse
 
+from pydantic import BaseModel
+
 router = APIRouter(prefix="/api", tags=["system"])
 logger = logging.getLogger("dashboard.system")
+
+class RefundTaskRequest(BaseModel):
+    task_id: str
+
+@router.post("/system/refund_bot_task")
+async def refund_bot_task(req: RefundTaskRequest, db: AsyncSession = Depends(get_db)):
+    """Force terminate a stuck task, refund credits and release concurrency lock."""
+    try:
+        from src.services.permission_service import permission_service
+        
+        task_id = req.task_id
+        tasks = await redis_client.get_active_tasks()
+        if not tasks or task_id not in tasks:
+            raise HTTPException(status_code=404, detail="Task not found in Redis active tasks")
+            
+        task = tasks[task_id]
+        user_id = task.get("user_id")
+        username = task.get("username", "Unknown")
+        cost = task.get("cost", 0)
+        
+        # 1. Refund
+        if cost > 0 and user_id:
+            await permission_service.increment_quota(user_id, cost=-cost, username=username, task_type="refund_admin_force")
+            
+        # 2. Release lock
+        if user_id:
+            await redis_client.decrement_user_concurrency(user_id)
+            
+        # 3. Remove task
+        await redis_client.remove_active_task(task_id)
+        
+        return {"status": "success", "message": f"Task {task_id} terminated and {cost} credits refunded."}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error refunding bot task: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/system/clean_zombie_tasks")
+async def clean_zombie_tasks(db: AsyncSession = Depends(get_db)):
+    """Force clean all tasks older than 10 minutes (600s) and refund."""
+    try:
+        from src.services.permission_service import permission_service
+        import time
+        
+        tasks = await redis_client.get_active_tasks()
+        if not tasks:
+            return {"status": "success", "message": "No active tasks found.", "removed": 0}
+            
+        removed = 0
+        now = time.time()
+        
+        for task_id, task in tasks.items():
+            age = now - task.get('created_at', now)
+            if age > 600:
+                user_id = task.get("user_id")
+                username = task.get("username", "Unknown")
+                cost = task.get("cost", 0)
+                
+                if cost > 0 and user_id:
+                    try:
+                        await permission_service.increment_quota(user_id, cost=-cost, username=username, task_type="refund_admin_force_cleanup")
+                    except Exception as e:
+                        logger.error(f"Error refunding during cleanup for user {user_id}: {e}")
+                
+                if user_id:
+                    await redis_client.decrement_user_concurrency(user_id)
+                await redis_client.remove_active_task(task_id)
+                removed += 1
+                
+        return {"status": "success", "message": f"Cleaned up {removed} zombie tasks.", "removed": removed}
+    except Exception as e:
+        logger.error(f"Error cleaning zombie tasks: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/health")
 async def health_check():

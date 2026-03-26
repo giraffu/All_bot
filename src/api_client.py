@@ -194,16 +194,17 @@ class APIClient:
         return r.json()["task_id"]
 
     @async_retry(max_retries=3)
-    async def submit_text_to_image(self, prompt: str) -> str:
+    async def submit_text_to_image(self, prompt: str, priority: int = 0) -> str:
         """
         Submit text to image task (T2I Pornmaster Turbo).
         """
         data = {
-            "prompt": prompt
+            "prompt": prompt,
+            "priority": priority
         }
         params = {"async": "true"}
 
-        logger.info(f"Submitting text_to_image task. Prompt: {prompt}")
+        logger.info(f"Submitting text_to_image task. Prompt: {prompt}, Priority: {priority}")
         r = await self._request("POST", TEXT_TO_IMAGE_ENDPOINT, json=data, params=params)
         return r.json()["task_id"]
 
