@@ -169,8 +169,9 @@ class TonPaymentValidator:
                         logger.error(f"User {tg_user_id} not found for order {order_id}")
                         return True
                     
-                    # Exact price match with tiny slippage allowed (0.01 TON)
-                    expected_min_nanotons = int(plan.price_ton * Decimal('1000000000')) - 10000000
+                    # Exact price match with tiny slippage allowed
+                    from src.constants import TON_TO_NANOTON, TON_SLIPPAGE_NANOTON
+                    expected_min_nanotons = int(plan.price_ton * Decimal(str(TON_TO_NANOTON))) - TON_SLIPPAGE_NANOTON
                     if expected_min_nanotons < 0:
                         expected_min_nanotons = 0
 
@@ -186,7 +187,7 @@ class TonPaymentValidator:
                         telegram_id=tg_user_id,
                         plan_id=plan_id,
                         original_price=plan.price_ton,
-                        final_price=Decimal(amount_nanotons) / Decimal(10**9),
+                        final_price=Decimal(amount_nanotons) / Decimal(str(TON_TO_NANOTON)),
                         status=status,
                         tx_hash=tx_hash
                     )
@@ -229,7 +230,7 @@ class TonPaymentValidator:
                                     import math
                                     converted_days = math.ceil(residual_value / new_daily_value)
                                     
-                                    # 最终天数 = 新套餐自带天数 + 折算天数，从当前时间算起
+                                    # Final days = new plan days + residual days, starting from now
                                     new_expire_at = now + timedelta(days=plan.duration_days + converted_days)
                                 else:
                                     # 若找不到老套餐，直接覆盖，从当前时间算起

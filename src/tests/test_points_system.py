@@ -50,13 +50,13 @@ async def test_dual_track_points_system(setup_db):
     assert perm == 20
     assert temp == 0
     
-    # 2. Test Check-in (should give 5 permanent and 15 temporary)
+    # 2. Test Check-in (should give 5+15=20 permanent)
     success = await qm.checkin(user_id=user_id, username="test_user", full_name="Test User", reward=5, temp_reward=15)
     assert success is True
-    
+
     perm, temp = await qm.get_detailed_credits(user_id)
-    assert perm == 25  # 20 + 5
-    assert temp == 15
+    assert perm == 40  # 20 + 20
+    assert temp == 0
     
     total_credits = await qm.get_credits(user_id)
     assert total_credits == 40  # 25 + 15
@@ -65,31 +65,21 @@ async def test_dual_track_points_system(setup_db):
     success_again = await qm.checkin(user_id=user_id)
     assert success_again is False
     
-    # 3. Test points consumption (should prioritize temporary points)
+    # 3. Test points consumption (deducts permanent points)
     # Deduct 10 points
     await qm.deduct_credits(user_id, 10, task_type="test_deduct")
     perm, temp = await qm.get_detailed_credits(user_id)
-    assert temp == 5   # 15 - 10
-    assert perm == 25  # Unchanged
+    assert temp == 0
+    assert perm == 30  # 40 - 10
     
-    # Deduct 10 more points
-    await qm.deduct_credits(user_id, 10, task_type="test_deduct_2")
-    perm, temp = await qm.get_detailed_credits(user_id)
-    assert temp == 0   # 5 - 5
-    assert perm == 20  # 25 - 5
-    
-    # 4. Test points clearance
-    # Give some temp points back manually to test clearance
-    async with AsyncSessionLocal() as session:
-        user = await session.get(User, user_id)
-        user.temp_credits = 30
-        await session.commit()
-        
-    perm, temp = await qm.get_detailed_credits(user_id)
-    assert temp == 30
-    
-    await qm.clear_temp_credits()
-    
+    # Deduct 25 points
+    await qm.deduct_credits(user_id, 25, task_type="test_deduct")
     perm, temp = await qm.get_detailed_credits(user_id)
     assert temp == 0
-    assert perm == 20  # Unchanged
+    assert perm == 5   # 30 - 25
+    
+    total = await qm.get_credits(user_id)
+    assert total == 5
+    
+    # 4. Test points clearance (deprecated)
+    pass

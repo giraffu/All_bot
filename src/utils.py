@@ -36,7 +36,8 @@ def async_retry(max_retries: int = 3, delay: float = 1.0, backoff: float = 2.0):
                     # Ignore "Message is not modified" errors (case-insensitive) across all exception types
                     err_msg = str(e).lower()
                     if "message is not modified" in err_msg:
-                        # logger.warning(f"Message not modified in {func.__name__}, ignoring.")
+                        # Some debug messages might not be modified if they contain the same content
+                        pass
                         return  # Successfully ignored
 
                     # Handle Forbidden (Bot blocked by user)

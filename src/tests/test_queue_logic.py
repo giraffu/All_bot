@@ -32,12 +32,8 @@ def test_api_client_no_normalization():
         }
         mock_resp_done.raise_for_status = MagicMock()
 
-        with patch("src.api_client.httpx.AsyncClient") as mock_client_cls:
-            mock_client = AsyncMock()
-            mock_client_cls.return_value.__aenter__.return_value = mock_client
-            
-            # side_effect for request(): first pending, then done
-            mock_client.request.side_effect = [mock_resp_pending, mock_resp_done]
+        with patch("src.api_client.api_client._request", new_callable=AsyncMock) as mock_request:
+            mock_request.side_effect = [mock_resp_pending, mock_resp_done]
 
             results = []
             async for info in listen_for_progress(task_id):

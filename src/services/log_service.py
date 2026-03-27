@@ -144,23 +144,3 @@ class LogService:
                 "items": items
             }
 
-    @staticmethod
-    async def cleanup_old_logs(days: int = 90) -> int:
-        """
-        Delete logs older than specific days.
-        Returns the number of deleted records.
-        """
-        cutoff_date = datetime.now() - timedelta(days=days)
-        
-        async with AsyncSessionLocal() as session:
-            try:
-                stmt = delete(UserLog).where(UserLog.created_at < cutoff_date)
-                result = await session.execute(stmt)
-                await session.commit()
-                deleted_count = result.rowcount
-                logger.info(f"Cleaned up {deleted_count} logs older than {days} days.")
-                return deleted_count
-            except SQLAlchemyError as e:
-                await session.rollback()
-                logger.error(f"Failed to cleanup logs: {e}", exc_info=True)
-                return 0

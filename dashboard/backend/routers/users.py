@@ -119,7 +119,10 @@ async def update_user_credits(user_id: int, request: UpdateCreditsRequest, db: A
         if not user:
             raise HTTPException(status_code=404, detail="User not found")
             
+        old_credits = user.credits
         user.credits = request.credits
+        credit_change = request.credits - old_credits
+        
         if request.temporary_ingot is not None:
             user.temp_credits = request.temporary_ingot
             if hasattr(user, 'temporary_ingot'):
@@ -128,6 +131,18 @@ async def update_user_credits(user_id: int, request: UpdateCreditsRequest, db: A
             user.checkin_count = request.checkin_count
             
         await db.commit()
+        
+        if credit_change != 0:
+            from src.services.log_service import LogService
+            await LogService.log_action(
+                user_id=user_id,
+                username=user.username or user.full_name,
+                operation_type="admin_update",
+                credit_change=credit_change,
+                current_balance=user.credits,
+                extra_info={"source": "dashboard_admin_edit"}
+            )
+            
         return {
             "status": "ok", 
             "credits": user.credits, 

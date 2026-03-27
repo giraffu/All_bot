@@ -4,7 +4,7 @@ from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
 from .models import Base
 from config import DATABASE_URL
-# from .logger import setup_db_logging
+from .logger import setup_db_logging
 
 logger = logging.getLogger(__name__)
 
@@ -15,8 +15,8 @@ engine = create_async_engine(
     pool_pre_ping=True,  # Useful for Postgres to detect disconnects
 )
 
-# Setup DB Logging (Disabled)
-# setup_db_logging(engine)
+# Setup DB Logging
+setup_db_logging(engine)
 
 AsyncSessionLocal = sessionmaker(
     engine, class_=AsyncSession, expire_on_commit=False

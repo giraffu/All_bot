@@ -611,7 +611,6 @@ class TaskService:
                 )
 
         except Exception as e:
-            print("EXCEPTION IN TEST:", e)
             user_logger.logger.error(f"Error in Text-to-Image for user {user_id}: {e}", exc_info=True)
             await permission_service.increment_quota(user_id, cost=-cost, username=username, task_type="refund")
             await robust_send_message(context.bot, chat_id, f"❌ 出错了：{e}，已退还灵石")

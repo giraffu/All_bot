@@ -69,16 +69,6 @@ class RedisClient:
             logger.error(f"Failed to decrement user concurrency: {e}")
             return 0
 
-    async def get_user_concurrency(self, user_id: int) -> int:
-        """获取用户当前并发数"""
-        key = f"{REDIS_PREFIX}user_concurrency:{user_id}"
-        try:
-            val = await self.redis.get(key)
-            return int(val) if val else 0
-        except Exception as e:
-            logger.error(f"Failed to get user concurrency: {e}")
-            return 0
-
     async def close(self):
         """关闭连接"""
         await self.redis.aclose()

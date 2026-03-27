@@ -20,16 +20,23 @@ async def test_process_text_to_image_task_success():
     # Mock dependencies
     with patch("src.services.task_service.permission_service") as mock_perm_service, \
          patch("src.services.task_service.image_service") as mock_image_service, \
+         patch("src.services.task_service.redis_client") as mock_redis, \
+         patch("src.services.task_service.TaskRegistry") as mock_registry, \
          patch("src.services.task_service.UserLogger"), \
-         patch("src.services.task_service.robust_reply_text"), \
-         patch("src.services.task_service.robust_edit_text"), \
-         patch("src.services.task_service.TaskService._monitor_task_progress") as mock_monitor, \
-         patch("src.services.task_service.TaskService._handle_task_completion") as mock_handle:
-        
+         patch("src.services.task_service.robust_reply_text", new_callable=AsyncMock) as mock_reply, \
+         patch("src.services.task_service.robust_edit_text", new_callable=AsyncMock) as mock_edit, \
+         patch("src.services.task_service.TaskService._monitor_task_progress", new_callable=AsyncMock) as mock_monitor, \
+         patch("src.services.task_service.TaskService._handle_task_completion", new_callable=AsyncMock) as mock_handle:
+
         # Configure mocks
         mock_perm_service.check_quota = AsyncMock(return_value=True)
         mock_perm_service.increment_quota = AsyncMock()
         mock_image_service.submit_text_to_image_task = AsyncMock(return_value=task_id)
+        mock_redis.increment_user_concurrency = AsyncMock(return_value=1)
+        mock_redis.decrement_user_concurrency = AsyncMock()
+        mock_registry.add_task = AsyncMock(return_value="registry_id")
+        mock_registry.update_backend_task_id = AsyncMock()
+        mock_registry.remove_task = AsyncMock()
         mock_monitor.return_value = {"status": "done", "result": "path/to/image.png"}
         mock_handle.return_value = (b"image_bytes", "full_path")
         
@@ -37,6 +44,7 @@ async def test_process_text_to_image_task_success():
         mock_perm_service.quota_manager.get_user_stats = AsyncMock(return_value={"generation_count": 10})
         mock_perm_service.get_user_identity = AsyncMock(return_value="外门弟子")
         mock_perm_service.get_user_group = AsyncMock(return_value="凡人")
+        mock_perm_service.calculate_user_priority = AsyncMock(return_value=10)
         
         # Execute
         media_bytes, full_path = await TaskService.process_text_to_image_task(update, context, prompt)
@@ -52,7 +60,7 @@ async def test_process_text_to_image_task_success():
         # Oh, the code does: await permission_service.increment_quota(..., cost=cost...)
         # Wait, the error said it was awaited 2 times.
         mock_perm_service.increment_quota.assert_any_call(456, cost=cost, username="testuser", task_type=MODE_TEXT_TO_IMAGE)
-        mock_image_service.submit_text_to_image_task.assert_awaited_once_with(prompt)
+        mock_image_service.submit_text_to_image_task.assert_awaited_once_with(prompt, priority=10)
         mock_monitor.assert_awaited_once()
         mock_handle.assert_awaited_once()
         
