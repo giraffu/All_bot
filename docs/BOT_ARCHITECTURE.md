@@ -8,7 +8,6 @@
 * **高并发网络池 (Connection Pool)**：在启动时，Telegram Bot 配置了增大的连接池 (`connection_pool_size=250`)，以应对同时数千用户的并发交互请求。
 * **动态代理探活 (`get_best_proxy`)**：内建了多个常见代理端口的自动连通性检测。如果默认代理不可用，会自动降级尝试本地代理甚至回退到直连，保证 Bot 在各种网络环境下的存活率。
 * **异常恢复与状态补偿**：在重启初始化 (`post_init`) 阶段，调用 `recovery_service.py` 扫描并恢复意外停机时滞留在系统中的活动任务，并妥善处理退款或继续排队。
-* **后台任务调度**：注册了 `clear_temp_credits_job` 定时任务，利用 `JobQueue` 每 48 小时自动清空用户的临时“灵石”（免费积分）。
 
 ## 2. 💬 用户交互界面系统 (Interface Agent / Handlers)
 **核心目录：** `src/handlers/` (`command_handler.py`, `message_handler.py`, `callback_handler.py`)
@@ -18,7 +17,7 @@
 
 ## 3. ⚖️ 经济、权限与修仙体系 (Permission Agent / Sect Elder)
 **核心文件：** `src/services/permission_service.py`, `src/quota.py`
-* **双轨制积分经济**：管理“永久灵石” (`credits`) 和“临时灵石” (`temp_credits`)。用户消耗时，系统会优先扣除临时灵石。
+* **单轨制积分经济**：管理用户的“永久灵石” (`credits`)，系统目前已全面废弃临时灵石机制，用户的所有资产消费都直接与永久灵石挂钩。
 * **修仙境界 (Leveling System)**：根据用户的活跃度（签到、邀请、生成次数），动态计算“境界”（凡人 -> 练气期 -> 筑基期 -> 金丹期），境界越高的用户，任务调度的优先级越高。
 * **强制频道订阅**：作为看门人，验证用户是否已经加入了官方指定的 Telegram 频道 (`REQUIRED_CHANNEL_ID`)。
 * **推广与邀请**：处理用户的邀请链接逻辑，为邀请者和被邀请者发放对应奖励。
@@ -38,11 +37,11 @@
 * **弹性熔断器 (Circuit Breaker)**：为防止 AI 后端宕机或过载导致 Bot 线程全部卡死，引入了熔断机制。目前触发阈值已放宽为 15 次连续失败及 30s 冷却，在保护系统的同时减少高负载下的误判。
 * **自动重试**：处理网络抖动造成的偶发超时，进行安全的异步重试。
 
-## 6. 💰 TON 区块链支付系统 (Payment Agent)
-**核心文件：** `src/services/payment_validator.py`
-* **去中心化对账**：以独立守护协程的形式（在 `bot_test.py` 的 `post_init` 中启动），每 15 秒主动轮询一次 TON Center RPC 节点，拉取商家钱包地址的最新链上交易。
-* **BOC Payload 解析**：解析转账附带的格式化备注（`ORDER:{tgUserId}:{planId}:{timestamp}`），防止数据篡改。
-* **防双花机制**：校验转账金额是否符合套餐要求，并将交易哈希记录入库 (`orders` 表) 防止同一笔转账被重复处理。处理成功后，自动为用户开通内门/核心/真传弟子身份，下发“灵石”并发放通知。
+## 6. 💰 双通道支付系统 (Payment Agent)
+**核心文件：** `src/services/payment_validator.py`, `src/handlers/payment_handler.py`
+* **TON 区块链对账**：以独立守护协程的形式（在 `bot_test.py` 的 `post_init` 中启动），每 15 秒主动轮询一次 TON Center RPC 节点，拉取商家钱包地址的最新链上交易。解析转账附带的格式化备注（`ORDER:{tgUserId}:{planId}:{timestamp}`），防止数据篡改。
+* **Telegram Stars 原生支付**：通过 `PreCheckoutQuery` 和 `SuccessfulPayment` 事件拦截实现 Telegram 内购，复用同一套 `ORDER` Payload 机制。
+* **防双花与发货机制**：校验转账金额或订单状态，并将交易哈希/订单号记录入库 (`orders` 表) 防止同一笔订单被重复处理。处理成功后，自动为用户开通内门/核心/真传弟子身份，下发“灵石”并发放通知。
 
 ## 7. 💾 数据持久化系统 (Data Steward Agent)
 **核心目录/文件：** `src/database/` (`core.py`, `models.py`), `src/services/log_service.py`, `src/services/storage.py`

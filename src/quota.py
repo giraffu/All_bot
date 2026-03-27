@@ -71,14 +71,14 @@ class QuotaManager:
             return user
 
     async def get_credits(self, user_id: int, username: str = None, full_name: str = None) -> int:
-        """Get user credits (total of permanent and temporary). Initialize with 20 if new user."""
+        """Get user credits. Initialize with 20 if new user."""
         user = await self.ensure_user(user_id, username, full_name)
-        return user.credits + (user.temp_credits or 0)
+        return user.credits
 
     async def get_detailed_credits(self, user_id: int, username: str = None, full_name: str = None) -> tuple[int, int]:
         """Get user permanent and temporary credits."""
         user = await self.ensure_user(user_id, username, full_name)
-        return user.credits, (user.temp_credits or 0)
+        return user.credits, 0
 
     async def check_credits(self, user_id: int, cost: int) -> bool:
         """Check if user has enough credits"""
@@ -96,22 +96,16 @@ class QuotaManager:
             user = result.scalar_one_or_none()
             
             if user:
-                old_balance = user.credits + (user.temp_credits or 0)
-                temp_credits = user.temp_credits or 0
+                old_balance = user.credits
                 
                 if cost < 0:
                     # If cost is negative, it's a refund or addition. Refund to permanent credits to be safe.
                     user.credits = user.credits - cost # -cost is positive
                 else:
-                    # Deduct from temp_credits first
-                    if temp_credits >= cost:
-                        user.temp_credits = temp_credits - cost
-                    else:
-                        remaining_cost = cost - temp_credits
-                        user.temp_credits = 0
-                        user.credits = max(0, user.credits - remaining_cost)
+                    # Deduct from credits
+                    user.credits = max(0, user.credits - cost)
                 
-                new_balance = user.credits + user.temp_credits
+                new_balance = user.credits
                 await session.commit()
 
                 # Log action
@@ -154,8 +148,8 @@ class QuotaManager:
                 return False
             
             user.last_checkin = today
-            user.credits += reward
-            user.temp_credits = (user.temp_credits or 0) + temp_reward
+            # We add temp_reward to credits as temporary credits are removed
+            user.credits += (reward + temp_reward)
             user.checkin_count = (user.checkin_count or 0) + 1
             user.last_activity = datetime.now()
 
@@ -163,7 +157,7 @@ class QuotaManager:
             checkin_record = CheckinHistory(user_id=user_id, checkin_date=today)
             session.add(checkin_record)
 
-            new_balance = user.credits + user.temp_credits
+            new_balance = user.credits
             await session.commit()
             
             total_reward = reward + temp_reward
@@ -177,22 +171,7 @@ class QuotaManager:
             )
             return True
 
-    async def clear_temp_credits(self):
-        """Clear all temporary credits at midnight"""
-        async with AsyncSessionLocal() as session:
-            stmt = update(User).where(User.temp_credits > 0).values(temp_credits=0)
-            await session.execute(stmt)
-            await session.commit()
-            print(f"🔄 Temporary credits cleared at {datetime.now().isoformat()}")
 
-
-    async def clear_temporary_ingots(self):
-        """Clear all temporary ingots at midnight"""
-        async with AsyncSessionLocal() as session:
-            stmt = update(User).where(User.temporary_ingot > 0).values(temporary_ingot=0)
-            await session.execute(stmt)
-            await session.commit()
-            print(f"🔄 Temporary ingots cleared at {datetime.now().isoformat()}")
 
     async def get_referral_count(self, user_id: int) -> int:
         """Get number of users invited by user_id"""
@@ -376,7 +355,8 @@ class QuotaManager:
                 "generation_count": user.generation_count or 0,
                 "is_channel_member": user.is_channel_member,
                 "total_contributions": user.total_contributions or 0,
-                "approved_contributions": user.approved_contributions or 0
+                "approved_contributions": user.approved_contributions or 0,
+                "identity_expire_at": user.identity_expire_at
             }
 
     async def update_user_group(self, user_id: int, group_name: str):

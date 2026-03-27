@@ -88,10 +88,6 @@ docker-compose -f dashboard/docker-compose.yml up -d --build dashboard-frontend
 *   **强制杀进程的风险**: 如果使用 `docker kill` 或服务器直接断电，`post_shutdown` 将无法执行，可能导致用户灵石被扣但没拿到图，且并发锁未释放（导致用户无法发起新任务）。
 *   **启动恢复补偿**: 为防止上述强制断电导致的数据不一致，Bot 在每次启动（`post_init`）时，会调用 `recovery_service.py` 扫描 Redis 中的滞留任务，进行状态清理或补偿退款。
 
-### 2. 临时灵石清理 (Cron Jobs)
-*   系统在 `bot_test.py` 中注册了 `clear_temp_credits_job`。它会在**每 48 小时的北京时间零点**自动执行。
-*   如果重启服务，调度器的计时器可能会被重置，但它依然会寻找下一个最近的“明天零点”作为基准点，无需人工干预。
-
-### 3. 数据一致性与对账
+### 2. 数据一致性与对账
 *   任何涉及“灵石”增减的代码修改（包括手动在数据库修改数据），**都必须**同步在 `user_logs` 表中插入对应的流水记录！
 *   如果不插入 `user_logs`，将导致用户的 `users.credits` 余额与流水对不上账，严重影响后续的财务审计。

@@ -427,3 +427,77 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
             pass
             
         await query.answer(f"已切换至 {current_res} ({current_dur})，灵石消耗 {cost}", show_alert=False)
+
+    elif data == "recharge_stars_menu":
+        from src.database.core import AsyncSessionLocal
+        from src.database.models import MembershipPlan
+        from sqlalchemy import select
+        
+        keyboard = []
+        async with AsyncSessionLocal() as session:
+            result = await session.execute(select(MembershipPlan).where(MembershipPlan.is_active == True).order_by(MembershipPlan.price_stars.asc()))
+            plans = result.scalars().all()
+            for plan in plans:
+                if getattr(plan, 'price_stars', 0) > 0:
+                    keyboard.append([InlineKeyboardButton(f"⭐️ {plan.price_stars} - {plan.name} ({plan.identity_name})", callback_data=f"buy_star_plan_{plan.id}")])
+                    
+        keyboard.append([InlineKeyboardButton("🔙 返回支付方式", callback_data="recharge_back")])
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        try:
+            await query.message.edit_reply_markup(reply_markup=reply_markup)
+        except Exception:
+            pass
+
+    elif data == "recharge_back":
+        from telegram import WebAppInfo
+        from config import WEBAPP_URL
+        webapp_url = WEBAPP_URL if 'WEBAPP_URL' in globals() and WEBAPP_URL else "https://pay.aivison.it.com/"
+        keyboard = [
+            [InlineKeyboardButton("💎 TON 钱包支付 (免手续费)", web_app=WebAppInfo(url=webapp_url))],
+            [InlineKeyboardButton("⭐️ Telegram 原生支付 (极速)", callback_data="recharge_stars_menu")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        try:
+            await query.message.edit_reply_markup(reply_markup=reply_markup)
+        except Exception:
+            pass
+
+    elif data.startswith("buy_star_plan_"):
+        from telegram import LabeledPrice
+        import time
+        from src.database.core import AsyncSessionLocal
+        from src.database.models import MembershipPlan
+        from sqlalchemy import select
+        
+        plan_id = int(data.split("_")[-1])
+        user_id = query.from_user.id
+        
+        async with AsyncSessionLocal() as session:
+            result = await session.execute(select(MembershipPlan).where(MembershipPlan.id == plan_id))
+            plan = result.scalar_one_or_none()
+            
+        if not plan or getattr(plan, 'price_stars', 0) <= 0:
+            await query.answer("❌ 找不到该套餐", show_alert=True)
+            return
+            
+        # Payload 格式保持和 TON 一致，方便防重放。ORDER:{user_id}:{plan_id}:{timestamp}
+        timestamp = int(time.time())
+        payload = f"ORDER:{user_id}:{plan_id}:{timestamp}"
+        
+        title = f"💎 合欢宗账房 - {plan.name} ({plan.identity_name})"
+        description = f"{plan.duration_days}天 | 赠 {plan.reward_credits} 永久灵石 | 身份：{plan.identity_name}"
+        currency = "XTR"
+        prices = [LabeledPrice(f"{plan.name}", plan.price_stars)]
+        
+        try:
+            await context.bot.send_invoice(
+                chat_id=query.message.chat_id,
+                title=title,
+                description=description,
+                payload=payload,
+                provider_token="",  # Telegram Stars 必须为空
+                currency=currency,
+                prices=prices
+            )
+        except Exception as e:
+            await query.answer(f"❌ 发送账单失败：{e}", show_alert=True)

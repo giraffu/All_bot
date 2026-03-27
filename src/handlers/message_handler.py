@@ -264,7 +264,8 @@ async def _handle_photo_idle(update: Update, context: ContextTypes.DEFAULT_TYPE)
         return
         
     keyboard = [
-        ["📅 每日签到", "💰 个人中心", "🤝 分享赚灵石", "⏳ 排队状态"],
+        ["💎 充值灵石", "📅 每日签到", "💰 个人中心"],
+        ["🤝 分享赚灵石", "⏳ 排队状态"],
         ["🖼️ 懒人P图", "🎬 懒人动图"],
         ["📝 文生图", "✨ 🎨 自由P图 🎨 ✨", "🎬 自定义图生视频"]
     ]
@@ -543,7 +544,8 @@ async def handle_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if text == "🔙 返回主菜单":
         keyboard = [
-            ["📅 每日签到", "👤 个人中心", "🤝 分享赚灵石", "⏳ 排队状态"],
+            ["💎 充值灵石", "📅 每日签到", "👤 个人中心"],
+            ["🤝 分享赚灵石", "⏳ 排队状态"],
             ["🖼️ 懒人P图", "🎬 懒人动图"],
             ["📝 文生图", "🎨 自由P图 ", "🎬 自定义图生视频"]
         ]
@@ -553,6 +555,44 @@ async def handle_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # ---------------------------------
     
     # Menu Commands
+    if text == "💎 充值灵石":
+        from telegram import WebAppInfo
+        from config import WEBAPP_URL
+        
+        # 默认 WebApp URL
+        webapp_url = WEBAPP_URL if 'WEBAPP_URL' in globals() and WEBAPP_URL else "https://pay.aivison.it.com/"
+        
+        keyboard = [
+            [InlineKeyboardButton("💎 TON 钱包支付 (免手续费)", web_app=WebAppInfo(url=webapp_url))],
+            [InlineKeyboardButton("⭐️ Telegram 原生支付 (极速)", callback_data="recharge_stars_menu")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        msg = (
+            "📜 **【合欢宗账房】灵石充值与身份晋升**\n\n"
+            "欢迎来到合欢宗账房！灵石乃修仙界之硬通货，可用以驱动阵法（生成图像与视频）。\n\n"
+            "🔰 **【内门弟子】** 1.99 TON / ⭐️ 200\n"
+            "   └ 🎁 直接获得 `400` 灵石\n"
+            "   └ 📅 每日签到 `30` 灵石\n"
+            "   └ 🔓 解锁特权 `720p` 画质，最长 `8s` 视频\n"
+            "   └ ⚡ 排队优先级 `+15`\n\n"
+            "💠 **【核心弟子】** 4.99 TON / ⭐️ 500\n"
+            "   └ 🎁 直接获得 `1200` 灵石\n"
+            "   └ 📅 每日签到 `40` 灵石\n"
+            "   └ 🔓 解锁特权 `1024p` 画质，最长 `10s` 视频\n"
+            "   └ ⚡ 排队优先级 `+25`\n\n"
+            "👑 **【真传弟子】** 9.99 TON / ⭐️ 1000\n"
+            "   └ 🎁 直接获得 `3000` 灵石\n"
+            "   └ 📅 每日签到 `50` 灵石\n"
+            "   └ 🔓 解锁特权 `1024p` 画质，最长 `10s` 视频\n"
+            "   └ 🚀 排队优先级 `+40` (极速)\n\n"
+            "⚠️ **注意事项**：\n"
+            "1. 充值所获灵石与身份特权，一经交付，不可退换。\n\n"
+            "👇 **请选择您的支付法门**："
+        )
+        await robust_reply_text(update.message, msg, parse_mode="Markdown", reply_markup=reply_markup)
+        return
+
     if text in ["💰 个人中心", "👤 个人中心"]:
         # 强制同步频道状态，确保“凡人”->“练气期”及时更新
         await permission_service.sync_channel_status(update, context)
@@ -597,13 +637,34 @@ async def handle_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
         elif current_group == "金丹期":
             breakthrough_msg = "✨ **已登峰造极，成就金丹大道**"
 
+        identity_display = f"`{current_identity}`"
+        if current_identity != "外门弟子" and stats.get('identity_expire_at'):
+            from datetime import datetime
+            now = datetime.now()
+            expire_at = stats['identity_expire_at']
+            
+            # 兼容可能的 timezone aware datetime
+            if expire_at.tzinfo is not None:
+                expire_at = expire_at.replace(tzinfo=None)
+                
+            if expire_at > now:
+                remaining = expire_at - now
+                days = remaining.days
+                hours = remaining.seconds // 3600
+                expire_str = expire_at.strftime('%Y-%m-%d %H:%M')
+                if days > 0:
+                    identity_display += f" (剩余 {days} 天，{expire_str} 到期)"
+                else:
+                    identity_display += f" (剩余 {hours} 小时，{expire_str} 到期)"
+            else:
+                identity_display += " (已过期)"
+
         msg = (
             f"👤 **道友**：`{update.effective_user.first_name}`\n"
             f"📜 **修为**：`{current_group}`\n"
-            f"🪪 **身份**：`{current_identity}`\n"
+            f"🪪 **身份**：{identity_display}\n"
             f"⚡ **排队加速**：`+{current_priority}` 优先级\n"
-            f"💰 **永久灵石**：`{stats['credits']}`\n"
-            f"⏳ **临时灵石**：`{stats['temp_credits']}` (每日清空)\n\n"
+            f"💰 **灵石余额**：`{stats['credits']}`\n\n"
             f"📊 **修炼数据**：\n"
             f"  - 邀请同道：`{stats['invitations']}` 人\n"
             f"  - 累计签到：`{stats['checkins']}` 天\n"
@@ -641,19 +702,18 @@ async def handle_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         success, current_credits, error_msg, total_days, reward, temp_reward = await permission_service.perform_checkin(update)
         user_group = await permission_service.get_user_group(update.effective_user.id)
+        user_identity = await permission_service.get_user_identity(update.effective_user.id)
         
         # 优化后的免责声明
         disclaimer = "\n\n⚠️ _注：累计签到统计始于3月5日，此前的数据未计入系统。_"
         
         if success:
-            reward_msg = f"`{reward}` 永久灵石"
-            if temp_reward > 0:
-                reward_msg += f" + `{temp_reward}` 临时灵石"
-            await robust_reply_text(update.message, f"✅ **签到成功！**\n\n👤 当前境界：`{user_group}`\n📅 累计签到：`{total_days}` 天\n🎉 本次获得：{reward_msg}\n💰 当前总灵石：`{current_credits}`" + disclaimer, parse_mode="Markdown")
+            reward_msg = f"`{reward}` 灵石"
+            await robust_reply_text(update.message, f"✅ **签到成功！**\n\n👤 当前境界：`{user_group}`\n🪪 当前身份：`{user_identity}`\n📅 累计签到：`{total_days}` 天\n🎉 本次获得：{reward_msg}\n💰 当前总灵石：`{current_credits}`" + disclaimer, parse_mode="Markdown")
         elif error_msg:
             await robust_reply_text(update.message, error_msg, parse_mode="Markdown")
         else:
-            await robust_reply_text(update.message, f"📅 **今日已领取灵石**\n\n👤 当前境界：`{user_group}`\n📅 累计签到：`{total_days}` 天\n\n请明天再来领取奖励吧！" + disclaimer, parse_mode="Markdown")
+            await robust_reply_text(update.message, f"📅 **今日已领取灵石**\n\n👤 当前境界：`{user_group}`\n🪪 当前身份：`{user_identity}`\n📅 累计签到：`{total_days}` 天\n\n请明天再来领取奖励吧！" + disclaimer, parse_mode="Markdown")
         return
 
     if text == "🤝 分享赚灵石":
@@ -745,7 +805,7 @@ async def handle_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
     images = context.user_data.get('pending_images', [])
     
     # Do not treat text commands as generation prompts if they match button texts
-    if text in ["📅 每日签到", "👤 个人中心", "💰 个人中心", "🤝 分享赚灵石", "⏳ 排队状态", "签到", "排队", "/queue", "/checkin", "🔙 返回主菜单", "/start", "/help"]:
+    if text in ["� 充值灵石", "�� 每日签到", "👤 个人中心", "💰 个人中心", "🤝 分享赚灵石", "⏳ 排队状态", "签到", "排队", "/queue", "/checkin", "🔙 返回主菜单", "/start", "/help"]:
         return
 
     if mode != MODE_TEXT_TO_IMAGE:

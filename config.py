@@ -22,6 +22,7 @@ PROXY_URL = os.getenv("PROXY_URL")
 
 # TON Payment Configuration
 VITE_MERCHANT_ADDRESS = os.getenv("VITE_MERCHANT_ADDRESS", "UQAluW2wxRCDsJIKGH59jB07xODgEbStdUPEj9AjI88d9l-s")
+WEBAPP_URL = os.getenv("WEBAPP_URL", "https://ton-bot-8h6.pages.dev/")
 
 # --- Database Configuration ---
 # Only PostgreSQL is supported

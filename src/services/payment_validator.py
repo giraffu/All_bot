@@ -212,18 +212,22 @@ class TonPaymentValidator:
                                 )
                                 old_plan = old_plan_res.scalar_one_or_none()
                                 
-                                if old_plan and float(old_plan.price_ton) > 0 and old_plan.duration_days > 0 and float(plan.price_ton) > 0:
+                                # 使用 reward_credits 作为通用等价物进行残值折算，因为 Stars 和 TON 的计价单位不同
+                                if old_plan and old_plan.reward_credits > 0 and old_plan.duration_days > 0 and plan.reward_credits > 0:
                                     # 计算剩余天数 (带小数)
                                     remaining_days = (new_expire_at - now).total_seconds() / 86400.0
-                                    # 计算老套餐日均价
-                                    old_daily_price = float(old_plan.price_ton) / old_plan.duration_days
-                                    # 计算残值 (TON)
-                                    residual_value_ton = remaining_days * old_daily_price
                                     
-                                    # 计算新套餐日均价
-                                    new_daily_price = float(plan.price_ton) / plan.duration_days
+                                    # 老套餐日均价值 (以灵石为锚定物)
+                                    old_daily_value = old_plan.reward_credits / old_plan.duration_days
+                                    # 剩余总价值 (灵石)
+                                    residual_value = remaining_days * old_daily_value
+                                    
+                                    # 新套餐日均价值 (以灵石为锚定物)
+                                    new_daily_value = plan.reward_credits / plan.duration_days
+                                    
                                     # 折算新套餐天数
-                                    converted_days = int(residual_value_ton / new_daily_price)
+                                    import math
+                                    converted_days = math.ceil(residual_value / new_daily_value)
                                     
                                     # 最终天数 = 新套餐自带天数 + 折算天数，从当前时间算起
                                     new_expire_at = now + timedelta(days=plan.duration_days + converted_days)

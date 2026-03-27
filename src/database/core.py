@@ -110,6 +110,17 @@ async def init_db():
         except Exception as e:
             logger.warning(f"Failed to add payment columns: {e}")
 
+        try:
+            logger.info("Adding price_stars column to membership_plans table")
+            await conn.execute(text("ALTER TABLE membership_plans ADD COLUMN IF NOT EXISTS price_stars INTEGER DEFAULT 0 NOT NULL"))
+            
+            # Update existing plans with default stars prices if they are 0
+            await conn.execute(text("UPDATE membership_plans SET price_stars = 200 WHERE name = '基础月卡' AND price_stars = 0"))
+            await conn.execute(text("UPDATE membership_plans SET price_stars = 500 WHERE name = '高级月卡' AND price_stars = 0"))
+            await conn.execute(text("UPDATE membership_plans SET price_stars = 1000 WHERE name = '至尊月卡' AND price_stars = 0"))
+        except Exception as e:
+            logger.warning(f"Failed to add price_stars column: {e}")
+
     async with engine.begin() as conn:
         # Initialize default membership plans and discount rules if tables are empty
         try:
@@ -117,10 +128,10 @@ async def init_db():
             if res.scalar() == 0:
                 logger.info("Initializing default membership plans")
                 await conn.execute(text("""
-                    INSERT INTO membership_plans (name, identity_name, price_ton, reward_credits, duration_days) VALUES
-                    ('基础月卡', '内门弟子', 1.99, 400, 30),
-                    ('高级月卡', '核心弟子', 4.99, 1200, 30),
-                    ('至尊月卡', '真传弟子', 9.90, 3000, 30)
+                    INSERT INTO membership_plans (name, identity_name, price_ton, price_stars, reward_credits, duration_days) VALUES
+                    ('基础月卡', '内门弟子', 1.99, 200, 400, 30),
+                    ('高级月卡', '核心弟子', 4.99, 500, 1200, 30),
+                    ('至尊月卡', '真传弟子', 9.90, 1000, 3000, 30)
                 """))
             res = await conn.execute(text("SELECT COUNT(*) FROM discount_rules"))
             if res.scalar() == 0:

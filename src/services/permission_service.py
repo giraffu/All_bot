@@ -234,6 +234,7 @@ class PermissionService:
         return {
             "group": group,
             "identity": identity,
+            "identity_expire_at": stats.get("identity_expire_at"),
             "priority": priority,
             "credits": credits,
             "temp_credits": temp_credits,
@@ -308,7 +309,6 @@ class PermissionService:
         # Calculate reward based on identity
         identity = await self.get_user_identity(user.id)
         reward = 10
-        temp_reward = 0
         if identity == "内门弟子":
             reward = 30
         elif identity == "核心弟子":
@@ -321,7 +321,7 @@ class PermissionService:
             username=user.username, 
             full_name=user.full_name,
             reward=reward,
-            temp_reward=temp_reward
+            temp_reward=0
         )
         if success:
             await self.refresh_user_group(user.id)
@@ -330,7 +330,7 @@ class PermissionService:
         stats = await self.quota_manager.get_user_stats(user.id)
         total_checkins = stats.get("checkin_count", 0)
         
-        return success, current_credits, "", total_checkins, reward, temp_reward
+        return success, current_credits, "", total_checkins, reward, 0
 
     async def process_referral(self, update: Update, inviter_id: int) -> tuple[bool, str]:
         """

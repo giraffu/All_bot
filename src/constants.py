@@ -169,9 +169,9 @@ def get_video_settings_keyboard(user_group: str, user_identity: str = "外门弟
 # Format: "Group Name": [(limit_1, priority_1), (limit_2, priority_2), ...]
 # Logic: if usage < limit_1 return priority_1, elif usage < limit_2 return priority_2... else return 0
 DYNAMIC_PRIORITY_RULES = {
-    "真传弟子": [(40, 45), (70, 20), (100, 1)],
-    "核心弟子": [(30, 30), (60, 12), (100, 1)],
-    "内门弟子": [(20, 20), (50, 8), (100, 1)],
+    "真传弟子": [(40, 45), (70, 20), (float('inf'), 1)],
+    "核心弟子": [(30, 30), (60, 12), (float('inf'), 1)],
+    "内门弟子": [(20, 20), (50, 8), (float('inf'), 1)],
     "金丹期": [(10, 8), (50, 3), (100, 1)],
     "筑基期": [(10, 5), (50, 1)],
     "练气期": [(10, 3), (50, 1)],

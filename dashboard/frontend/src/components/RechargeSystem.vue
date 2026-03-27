@@ -40,7 +40,7 @@ const orderColumns = [
   { title: '用户ID', dataIndex: 'telegram_id', key: 'telegram_id' },
   { title: '用户名', dataIndex: 'username', key: 'username' },
   { title: '套餐', dataIndex: 'plan_name', key: 'plan_name' },
-  { title: '支付 (TON)', dataIndex: 'final_price', key: 'final_price' },
+  { title: '支付金额', dataIndex: 'final_price', key: 'final_price' },
   { title: '状态', dataIndex: 'status', key: 'status' },
   { title: '创建时间', dataIndex: 'created_at', key: 'created_at' },
 ]
@@ -190,6 +190,11 @@ onMounted(() => {
               <a-tag :color="record.status === 'SUCCESS' ? 'green' : record.status === 'FAILED' ? 'red' : 'orange'">
                 {{ record.status }}
               </a-tag>
+            </template>
+            <template v-else-if="column.key === 'final_price'">
+              <span v-if="record.tx_hash && record.tx_hash.startsWith('manual_')">赠送 (0)</span>
+              <span v-else-if="record.final_price >= 50">{{ record.final_price }} Stars</span>
+              <span v-else>{{ record.final_price }} TON</span>
             </template>
             <template v-else-if="column.key === 'created_at'">
               {{ formatDate(record.created_at) }}

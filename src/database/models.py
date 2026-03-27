@@ -11,6 +11,7 @@ class User(Base):
     username = Column(String(100), nullable=True)
     full_name = Column(String(200), nullable=True)
     credits = Column(Integer, default=20)
+    # temp_credits and temporary_ingot are deprecated and should not be used
     temporary_ingot = Column(Integer, default=0)
     temp_credits = Column(Integer, default=0)
     last_checkin = Column(Date, nullable=True)
@@ -106,6 +107,7 @@ class MembershipPlan(Base):
     name = Column(String(50), nullable=False)
     identity_name = Column(String(50), nullable=False)
     price_ton = Column(DECIMAL(10, 2), nullable=False)
+    price_stars = Column(Integer, nullable=False, default=0)
     reward_credits = Column(Integer, nullable=False)
     duration_days = Column(Integer, default=30)
     is_active = Column(Boolean, default=True)

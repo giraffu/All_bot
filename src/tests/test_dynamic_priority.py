@@ -137,7 +137,7 @@ async def test_calculate_user_priority_addition():
     priority = await permission_service.calculate_user_priority(123)
     assert priority == 48 # 3 + 45
 
-    # Rule: Golden Core (3) + True Disciple (20) -> usage 45: Golden Core=3 (since 10 <= 45 < 50), True Disciple=20 (since 40 <= 45 < 70)
-    permission_service.quota_manager.get_daily_usage.return_value = 45
+    # Rule: Golden Core (3) + True Disciple (1) -> usage 150: Golden Core=0 (since 150 >= 100), True Disciple=1 (since 150 >= 70)
+    permission_service.quota_manager.get_daily_usage.return_value = 150
     priority = await permission_service.calculate_user_priority(123)
-    assert priority == 23 # 3 + 20
+    assert priority == 1 # 0 + 1

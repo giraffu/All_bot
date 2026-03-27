@@ -204,11 +204,19 @@ const columns = [
   },
   {
     title: '历史充值 (TON)',
-    dataIndex: 'total_recharge',
-    key: 'total_recharge',
+    dataIndex: 'total_recharge_ton',
+    key: 'total_recharge_ton',
     width: 130,
     align: 'right',
-    sorter: (a, b) => (a.total_recharge || 0) - (b.total_recharge || 0),
+    sorter: (a, b) => (a.total_recharge_ton || 0) - (b.total_recharge_ton || 0),
+  },
+  {
+    title: '历史充值 (Stars)',
+    dataIndex: 'total_recharge_stars',
+    key: 'total_recharge_stars',
+    width: 140,
+    align: 'right',
+    sorter: (a, b) => (a.total_recharge_stars || 0) - (b.total_recharge_stars || 0),
   },
   {
     title: '邀请人',
@@ -373,8 +381,11 @@ const columns = [
           <span v-else class="text-gray-400 text-sm">-</span>
         </template>
 
-        <template v-else-if="column.key === 'total_recharge'">
-          <span class="text-green-600 font-bold font-mono">{{ Number(record.total_recharge || 0).toFixed(2) }}</span>
+        <template v-else-if="column.key === 'total_recharge_ton'">
+          <span class="text-green-600 font-bold font-mono">{{ Number(record.total_recharge_ton || 0).toFixed(2) }}</span>
+        </template>
+        <template v-else-if="column.key === 'total_recharge_stars'">
+          <span class="text-yellow-600 font-bold font-mono">{{ Number(record.total_recharge_stars || 0).toFixed(0) }}</span>
         </template>
         
         <template v-else-if="column.key === 'inviter'">

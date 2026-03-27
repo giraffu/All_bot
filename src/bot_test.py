@@ -3,6 +3,7 @@ from telegram.ext import (
     MessageHandler,
     CommandHandler,
     CallbackQueryHandler,
+    PreCheckoutQueryHandler,
     filters,
 )
 from telegram.request import HTTPXRequest
@@ -72,15 +73,6 @@ def get_best_proxy(default_proxy):
     logger.warning("⚠️ All proxies failed. Trying direct connection...")
     return None # Return None to use direct connection
 
-async def clear_temp_credits_job(context):
-    """Job to clear temporary credits every 48 hours at midnight"""
-    logger = logging.getLogger("bot.jobs")
-    logger.info("🕒 Running 48-hour temporary credits clearance...")
-    qm = QuotaManager()
-    await qm.clear_temp_credits()
-    await qm.clear_temporary_ingots()
-    logger.info("✅ 48-hour temporary credits clearance completed.")
-
 async def post_init(application):
     await init_db()
     await setup_commands(application)
@@ -88,23 +80,6 @@ async def post_init(application):
     # Initialize and start Payment Validator
     payment_validator = TonPaymentValidator(bot_app=application)
     asyncio.create_task(payment_validator.poll_transactions())
-
-    # Schedule job to clear temporary credits every 48 hours at midnight (Beijing Time)
-    beijing_tz = timezone(timedelta(hours=8))
-    # run_repeating is used instead of run_daily to allow intervals longer than 24 hours
-    # 48 hours = 48 * 60 * 60 = 172800 seconds
-    from datetime import datetime
-    
-    # Calculate the next midnight in Beijing time to start the interval
-    now = datetime.now(beijing_tz)
-    # Move to tomorrow's midnight
-    next_midnight = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
-    
-    application.job_queue.run_repeating(
-        clear_temp_credits_job,
-        interval=timedelta(hours=48),
-        first=next_midnight
-    )
     
     # Recover tasks from Redis
     asyncio.create_task(recover_active_tasks(application))
@@ -163,10 +138,14 @@ def main():
         .build()
     )
     
+    from src.handlers.payment_handler import precheckout_callback, successful_payment_callback
+    
     # Register Handlers
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("maintenance", toggle_maintenance))
     app.add_handler(CallbackQueryHandler(handle_callback_query))
+    app.add_handler(PreCheckoutQueryHandler(precheckout_callback))
+    app.add_handler(MessageHandler(filters.SUCCESSFUL_PAYMENT, successful_payment_callback))
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     app.add_handler(MessageHandler(filters.VIDEO, handle_video))
     app.add_handler(MessageHandler(filters.Document.IMAGE | filters.Document.VIDEO, handle_document))

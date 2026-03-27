@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, desc, delete
+from sqlalchemy import select, func, desc, delete, case
 from sqlalchemy.orm import selectinload
 import logging
 import json
@@ -32,12 +32,22 @@ async def get_users(skip: int = 0, limit: int = 100000, db: AsyncSession = Depen
         users = result.scalars().all()
         
         recharge_stmt = (
-            select(Order.telegram_id, func.sum(Order.final_price).label("total_recharge"))
+            select(
+                Order.telegram_id, 
+                func.sum(case((Order.final_price < 50, Order.final_price), else_=0)).label("total_recharge_ton"),
+                func.sum(case((Order.final_price >= 50, Order.final_price), else_=0)).label("total_recharge_stars")
+            )
             .where(Order.status == "SUCCESS")
+            .where(Order.tx_hash.notlike("manual_%"))
             .group_by(Order.telegram_id)
         )
         recharge_result = await db.execute(recharge_stmt)
-        recharge_dict = {row.telegram_id: float(row.total_recharge or 0) for row in recharge_result}
+        recharge_dict = {}
+        for row in recharge_result:
+            recharge_dict[row.telegram_id] = {
+                "ton": float(row.total_recharge_ton or 0),
+                "stars": int(row.total_recharge_stars or 0)
+            }
         
         users_with_counts = []
         
@@ -50,7 +60,8 @@ async def get_users(skip: int = 0, limit: int = 100000, db: AsyncSession = Depen
             user_dict["checkin_count"] = user.checkin_count or 0
             user_dict["current_identity"] = user.current_identity or '外门弟子'
             user_dict["identity_expire_at"] = user.identity_expire_at
-            user_dict["total_recharge"] = recharge_dict.get(user.id, 0.0)
+            user_dict["total_recharge_ton"] = recharge_dict.get(user.id, {}).get("ton", 0.0)
+            user_dict["total_recharge_stars"] = recharge_dict.get(user.id, {}).get("stars", 0)
             user_dict["total_contributions"] = int(user.total_contributions or 0)
             user_dict["approved_contributions"] = int(user.approved_contributions or 0)
             user_dict["channel_joined"] = bool(user.is_channel_member) if hasattr(user, "is_channel_member") else False

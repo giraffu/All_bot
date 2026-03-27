@@ -1,28 +1,38 @@
-# TON 区块链支付系统架构与对账逻辑详解
+# 支付系统架构与对账逻辑详解 (TON & Stars)
 
-本项目集成了一个基于 TON (The Open Network) 区块链的去中心化支付系统。为了避免暴露公开的 REST API 从而导致跨国网络延迟或复杂的 Webhook 部署，我们采用了**前端拉起支付 + 后端主动轮询对账**的无状态架构。
+本项目集成了双通道支付系统：基于 TON (The Open Network) 区块链的去中心化支付，以及基于 Telegram 官方的 Stars 原生支付。
 
 ---
 
 ## 一、 系统架构概览
 
-支付系统由两部分组成：
-1. **前端 (Telegram Mini App)**：基于 React 部署在 Cloudflare Pages，负责渲染商品列表、计算价格，并通过 TON Connect SDK 唤起用户的 Web3 钱包进行链上签名与转账。
-2. **后端 (Payment Agent)**：位于 Bot 源码 `src/services/payment_validator.py` 中，作为守护协程随 Bot 启动，主动向 TON Center RPC 节点发起轮询请求，解析链上数据并执行发货。
+支付系统由两部分核心链路组成：
 
-### 核心优势：
-*   **无需公网 Webhook**：后端不需要暴露 HTTP 端口，极其适合在本地或内网环境部署的 Bot。
-*   **抗篡改设计**：订单信息通过加密 BOC (Bag of Cells) 写入链上，金额由后端通过链上数据反向校验，前端无法伪造支付成功状态。
+### 1. TON 区块链支付 (去中心化)
+*   **前端 (Telegram Mini App)**：基于 React 部署，负责渲染商品列表、计算价格，并通过 TON Connect SDK 唤起用户的 Web3 钱包进行链上签名与转账。
+*   **后端轮询对账**：位于 Bot 源码 `src/services/payment_validator.py` 中，作为守护协程随 Bot 启动，主动向 TON Center RPC 节点发起轮询请求，解析链上数据并执行发货。
+*   **优势**：无需公网 Webhook，订单信息通过加密 BOC (Bag of Cells) 写入链上，后端通过链上数据反向校验，抗篡改。
+
+### 2. Telegram Stars 支付 (原生内购)
+*   **交互链路**：直接在 Bot 内部通过 `send_invoice` 发送带有 `XTR` (Stars 货币) 标价的账单。
+*   **事件拦截**：通过 `src/handlers/payment_handler.py` 监听 Telegram 的 `PreCheckoutQuery`（预检请求）和 `SuccessfulPayment`（支付成功回调）。
+*   **优势**：原生体验极佳，无缝拉起苹果/谷歌应用内购，支付成功后瞬间回调。
+
+两者在后端的对账、发货与防双花逻辑高度统一，均复用 `orders` 表。
 
 ---
 
 ## 二、 核心工作流 (Data Flow)
 
-### 1. 前端发起支付
+### 1. 前端发起支付 (TON)
 *   用户在 Bot 内点击“💎 充值”，拉起 Web App。
 *   用户选择套餐（如：基础月卡、至尊月卡）。
 *   前端生成一个特定格式的明文备注：`ORDER:{tgUserId}:{planId}:{timestamp}`（例如：`ORDER:123456789:1:1710000000`）。
 *   前端调用 TON Connect，将接收地址 (`VITE_MERCHANT_ADDRESS`)、支付金额和**序列化为 BOC 格式**的备注发送给钱包（如 Tonkeeper）请求签名。
+
+### 1.5 发起支付 (Stars)
+*   用户点击 Stars 购买选项，Bot 直接下发带有 `XTR` 标价的 Invoice。
+*   Payload 同样使用 `ORDER:{tgUserId}:{planId}:{timestamp}` 格式，存储在 `invoice_payload` 中。
 
 ### 2. 后端轮询监听 (`TonPaymentValidator.poll_transactions`)
 *   Bot 启动时（`post_init` 阶段），创建一个无限循环的异步任务。
@@ -34,15 +44,14 @@
 *   如果转账金额 (`value`) <= 0，直接跳过。
 *   **BOC 备注解析**：调用 `pytoniq_core` 库，从交易的 `msg_data_boc` 中反序列化出最初前端写入的 `ORDER:...` 字符串。
 
-### 4. 核心对账与防双花逻辑 (`_process_order`)
+### 4. 核心对账与防双花逻辑
 *   **提取参数**：将 `ORDER:{tgUserId}:{planId}:{timestamp}` 切割，获得用户 ID 和套餐 ID。
 *   **防双花 (Double-Spend Prevention)**：
-    *   通过链上交易唯一的哈希值 `tx_hash` 查询 `orders` 表。
+    *   通过链上交易唯一的哈希值 `tx_hash` (对于 Stars 则是 `provider_payment_charge_id`) 查询 `orders` 表。
     *   如果 `tx_hash` 已存在，说明这笔交易已经被处理过，直接跳过（保证幂等性）。
 *   **金额校验**：
-    *   根据 `planId` 从数据库读取该套餐应付的 TON 金额。
-    *   将链上实际收到的 `amount_nanotons` 与应付金额比对。
-    *   *容错设计：允许 0.01 TON 的极小滑点或精度误差。*
+    *   TON 支付：根据 `planId` 从数据库读取该套餐应付的 TON 金额。将链上实际收到的 `amount_nanotons` 与应付金额比对。*允许 0.01 TON 的极小滑点或精度误差。*
+    *   Stars 支付：在 `PreCheckoutQuery` 阶段校验总金额 (`total_amount`) 是否与 `membership_plans.price_stars` 匹配。
     *   如果金额不足，订单标记为 `FAILED`，拦截发货；如果充足，标记为 `SUCCESS`。
 
 ### 5. 自动发货与通知 (Fulfillment)

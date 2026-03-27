@@ -11,8 +11,9 @@
 
 *   **基础信息**: `id` (Telegram User ID, 主键), `username`, `full_name`, `created_at`, `last_activity`
 *   **资产字段**:
-    *   `credits`: 永久灵石（充值、邀请奖励获得）。
-    *   `temp_credits`: 临时灵石（签到获得，每 48 小时清空）。
+    *   `credits`: 永久灵石（充值、邀请奖励、签到等所有途径获得）。
+    *   ~~`temp_credits`: 临时灵石（已废弃）。~~
+    *   ~~`temporary_ingot`: （已废弃）。~~
 *   **身份与修为**:
     *   `user_group`: 宗门修为（如：凡人, 练气期, 筑基期, 金丹期）。
     *   `current_identity`: VIP 身份（如：外门弟子, 内门弟子, 核心弟子, 真传弟子）。
@@ -65,23 +66,22 @@
 ### 场景二：AI 生成任务消费流转
 1.  **触发生成**: 用户发起一个消耗 6 灵石的视频任务。
 2.  **权限与余额校验**: `PermissionService` 调用 `check_quota`。
-3.  **优先扣除机制**: 
-    *   先检查 `users.temp_credits`（临时灵石）。如果足够，只扣临时灵石。
-    *   如果不够，清空 `temp_credits`，差额部分从 `users.credits`（永久灵石）中扣除。
+3.  **扣除机制**: 
+    *   直接从 `users.credits`（永久灵石）中扣除 6 灵石。
 4.  **记录流水**: 在 `user_logs` 中插入一条负数流水 (`credit_change = -6`)，并保存当前的余额快照。
 5.  **生成与归档**: 任务完成后，将输入输出文件路径和 Prompt 写入 `history` 表。
 
-### 场景三：TON 区块链支付与自动发货流转
-1.  **拉起支付**: 前端 Mini App 生成一个包含订单信息的 Payload（如 `ORDER:user_id:plan_id:timestamp`），用户在钱包中确认转账。
-2.  **轮询监听**: Bot 后台的 `TonPaymentValidator` 守护协程每 15 秒通过 TON RPC 接口拉取商家地址的最新交易。
-3.  **解析与验签**: 识别到带有 `ORDER` 前缀的交易，解析出 `user_id` 和 `plan_id`，并校验转账的 TON 金额是否大于等于 `membership_plans.price_ton`。
-4.  **防双花入库**: 将交易的 `hash` 尝试插入 `orders.tx_hash`。如果违反 Unique 约束，说明该笔交易已处理，直接跳过。
-5.  **自动发货**: 
+### 场景三：区块链/原生支付与自动发货流转
+系统支持 TON 区块链与 Telegram Stars 双通道，两者共享底层订单对账逻辑：
+1.  **拉起支付**: 前端 Mini App 或 Telegram Bot 生成包含订单信息的 Payload。
+2.  **轮询监听/回调拦截**: TON 支付通过后端轮询 RPC；Stars 支付通过 Telegram Bot 的 `PreCheckoutQuery` 和 `SuccessfulPayment` 事件拦截。
+3.  **防双花入库**: 将交易的 `hash` 或 Telegram `provider_payment_charge_id` 尝试插入 `orders.tx_hash`。如果违反 Unique 约束，说明该笔交易已处理，直接跳过。
+4.  **自动发货**: 
     *   更新 `users.credits`（增加套餐对应的灵石）。
     *   更新 `users.current_identity`（如变更为“内门弟子”）。
     *   更新 `users.identity_expire_at`（当前时间 + 30天）。
-6.  **记录流水**: 在 `user_logs` 中插入一条 `recharge` 操作类型的流水。
-7.  **下发通知**: 通过 Telegram Bot 接口向用户发送“充值成功”的实时通知。
+5.  **记录流水**: 在 `user_logs` 表插入一条 `recharge` 操作类型的流水。
+6.  **下发通知**: 通过 Telegram Bot 接口向用户发送“充值成功”的实时通知。
 
 ---
 
@@ -102,10 +102,9 @@
 
 ---
 
-## 四、 支付折算与容灾定时机制 (Cron Jobs & System Features)
+## 四、 系统机制与容灾 (System Features)
 
-*   **临时灵石清理**: 在 `bot_test.py` 中注册了 `clear_temp_credits_job`。每隔 **48 小时** 的北京时间零点，执行 `UPDATE users SET temp_credits = 0 WHERE temp_credits > 0`。强制收回用户未使用的免费福利。
 *   **境界自动刷新**: 每次用户触发签到 (`checkin`) 或完成生成任务时，都会异步触发 `refresh_user_group` 方法，根据最新的 `checkin_count` 和 `generation_count` 自动判断是否满足升级条件，如果满足则实时更新 `users.user_group`。
-*   **支付余值折算 (Residual Value Calculation)**: 当用户在 TON 支付系统中进行跨套餐的升级或降级时，系统会计算原套餐剩余有效期的价值（按日折算），并将其自动转化为新套餐的额外天数，保证用户的资产价值不受损。此逻辑完全由后端安全处理。
+*   **支付余值折算 (Residual Value Calculation)**: 当用户进行跨套餐的升级或降级时，系统会计算原套餐剩余有效期的价值（按日折算），并将其自动转化为新套餐的额外天数，保证用户的资产价值不受损。
 *   **上下文日志追踪 (Context Logging)**: 通过 `contextvars.ContextVar` 实现了 `user_id_ctx`。配合 Telegram Handler 的 `@with_db_logging_context` 装饰器，能够在 SQLAlchemy 的底层事件监听器 (`database/logger.py`) 中自动捕获并记录触发当前 SQL 查询的 User ID，实现全链路的日志审计，无需在所有函数中透传 `user_id`。
 *   **数据库统一约束**: 本项目现已全面弃用早期版本的 SQLite (如 `bot_db.sqlite`)，**严格并唯一**使用 PostgreSQL 作为持久化存储介质，配合异步连接池(`postgresql+asyncpg`)保证高并发场景下的数据一致性和死锁避免。

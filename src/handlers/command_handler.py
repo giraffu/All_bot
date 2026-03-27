@@ -72,7 +72,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Define menu keyboard
     keyboard = [
-            ["📅 每日签到", "👤 个人中心", "🤝 分享赚灵石", "⏳ 排队状态"],
+            ["💎 充值灵石", "📅 每日签到", "👤 个人中心"],
+            ["🤝 分享赚灵石", "⏳ 排队状态"],
             ["🖼️ 懒人P图", "🎬 懒人动图"],
             ["📝 文生图", "🎨 自由P图 ", "🎬 自定义图生视频"]
     ]
@@ -81,6 +82,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "⛩️ **欢迎来到宗门灵境**\n\n"
         "请选择您的修炼方式：\n\n"
+        "💎 **充值灵石**：在合欢宗账房换取极品灵石与身份特权。\n"
         "📅 **每日签到**：每日吐纳，根据身份领取丰厚灵石。\n"
         "🤝 **分享赚灵石**：邀请道友入宗，无限领灵石！\n"
         "🖼️ **懒人P图**：快速脱衣、换脸、自慰、抽插等仙术。\n"
