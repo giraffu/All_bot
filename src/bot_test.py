@@ -124,7 +124,7 @@ def main():
         connect_timeout=60.0,
         read_timeout=120.0,
         write_timeout=120.0,
-        connection_pool_size=250,  # Increased for higher concurrency
+        connection_pool_size=500,  # Increased for higher concurrency
     )
 
     app = (

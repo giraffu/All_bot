@@ -1,10 +1,16 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, desc, case, Float
+from sqlalchemy import select, func, desc, case, Float, text
 from datetime import datetime, date, timedelta
 import logging
+import os
+import httpx
+from telegram import Bot
+from dotenv import load_dotenv
 from src.database.core import get_db
-from src.database.models import User, History, Referral, TemplateContribution, CheckinHistory
+
+load_dotenv()
+from src.database.models import User, History, Referral, TemplateContribution, CheckinHistory, UserLog
 
 router = APIRouter(prefix="/api/stats", tags=["stats"])
 logger = logging.getLogger("dashboard.stats")
@@ -234,6 +240,63 @@ async def get_stats(db: AsyncSession = Depends(get_db)):
             if row.range in holding_distribution:
                 holding_distribution[row.range] = row.count
 
+        # 外部余额查询: TON & Stars
+        ton_balance = 0.0
+        star_balance = 0
+        
+        try:
+            ton_address = os.getenv("VITE_MERCHANT_ADDRESS")
+            if ton_address:
+                async with httpx.AsyncClient() as client:
+                    resp = await client.get(f"https://toncenter.com/api/v2/getAddressBalance?address={ton_address}")
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        if data.get("ok"):
+                            ton_balance = round(float(data.get("result", 0)) / 1e9, 2)
+        except Exception as e:
+            logger.error(f"Error fetching TON balance: {e}")
+            
+        try:
+            bot_token = os.getenv("BOT_TOKEN")
+            # 默认给一个宿主机的代理以便能够访问 Telegram API
+            proxy_url = os.getenv("PROXY_URL", "http://127.0.0.1:7890")
+            if bot_token:
+                # Add proxy configuration if it exists to allow container to access Telegram API
+                if proxy_url:
+                    from telegram.request import HTTPXRequest
+                    request = HTTPXRequest(proxy=proxy_url)
+                    bot = Bot(token=bot_token, request=request)
+                else:
+                    bot = Bot(token=bot_token)
+                    
+                offset = 0
+                limit = 100
+                total_stars = 0
+                
+                # Use a larger timeout context for the bot requests
+                response = await bot.get_star_transactions(limit=limit, offset=offset, read_timeout=30, connect_timeout=30)
+                transactions = response.transactions
+                if transactions:
+                    for tx in transactions:
+                        if tx.amount > 0:
+                            total_stars += tx.amount
+                            
+                    # Only fetch next pages if there were transactions
+                    offset += len(transactions)
+                    while len(transactions) == limit:
+                        response = await bot.get_star_transactions(limit=limit, offset=offset, read_timeout=30, connect_timeout=30)
+                        transactions = response.transactions
+                        if not transactions:
+                            break
+                        for tx in transactions:
+                            if tx.amount > 0:
+                                total_stars += tx.amount
+                        offset += len(transactions)
+                        
+                star_balance = total_stars
+        except Exception as e:
+            logger.error(f"Error fetching Stars balance: {e}")
+
         return {
             "total_users": total_users,
             "inner_disciple_count": inner_disciple_count,
@@ -262,6 +325,8 @@ async def get_stats(db: AsyncSession = Depends(get_db)):
             "credit_distribution": credit_distribution,
             "avg_daily_credit_distribution": avg_credit_distribution,
             "credit_holding_distribution": holding_distribution,
+            "ton_balance": ton_balance,
+            "star_balance": star_balance
         }
     except Exception as e:
         logger.error(f"Error getting stats: {e}")
@@ -422,6 +487,62 @@ async def get_stats_history(days: int = 7, db: AsyncSession = Depends(get_db)):
         for row in consumed_result:
             date_val = row.date if isinstance(row.date, str) else row.date.strftime("%Y-%m-%d")
             consumed_history[date_val] = row.count
+            
+        # Daily TON and Stars Recharge History
+        # We now calculate the actual TON and Stars spent, not the credits granted.
+        
+        # 1. Map plan names/ids to prices
+        plans_result = await db.execute(text('SELECT id, name, price_ton, price_stars FROM membership_plans'))
+        plan_ton_prices = {}
+        plan_stars_prices = {}
+        plan_name_to_ton = {}
+        for row in plans_result:
+            plan_ton_prices[str(row.id)] = float(row.price_ton)
+            plan_stars_prices[str(row.id)] = int(row.price_stars)
+            plan_name_to_ton[row.name] = float(row.price_ton)
+            
+        # 2. Fetch all raw recharge logs
+        logs_stmt = select(func.date(UserLog.created_at).label("date"), UserLog.extra_info).where(UserLog.created_at >= start_date, UserLog.operation_type == "recharge")
+        logs_result = await db.execute(logs_stmt)
+        
+        ton_history = {}
+        stars_history = {}
+        
+        import json
+        for row in logs_result:
+            date_val = row.date if isinstance(row.date, str) else row.date.strftime("%Y-%m-%d")
+            info = row.extra_info or ""
+            
+            try:
+                data = json.loads(info)
+                # Ignore manual gifts
+                if data.get("is_gift"):
+                    continue
+                    
+                # Check for Stars
+                if "telegram_stars" in info or "stars" in info.lower():
+                    plan_id = str(data.get("plan_id", ""))
+                    stars_spent = plan_stars_prices.get(plan_id, 0)
+                    stars_history[date_val] = stars_history.get(date_val, 0) + stars_spent
+                    
+                # Check for TON
+                elif "ORDER:" in info:
+                    plan_name = data.get("plan")
+                    ton_spent = 0.0
+                    if plan_name:
+                        ton_spent = plan_name_to_ton.get(plan_name, 0.0)
+                    else:
+                        # Try to extract plan_id from ORDER:{user_id}:{plan_id}:{timestamp}
+                        order_id = data.get("order_id", "")
+                        parts = order_id.split(":")
+                        if len(parts) >= 3:
+                            plan_id = parts[2]
+                            ton_spent = plan_ton_prices.get(plan_id, 0.0)
+                            
+                    ton_history[date_val] = ton_history.get(date_val, 0.0) + ton_spent
+                    
+            except Exception as e:
+                logger.error(f"Error parsing log info {info}: {e}")
         
         history_data = []
         for i in range(days):
@@ -435,7 +556,9 @@ async def get_stats_history(days: int = 7, db: AsyncSession = Depends(get_db)):
                 "generations": gen_history.get(date_str, 0),
                 "active_users": active_history.get(date_str, 0),
                 "checkins": checkin_history.get(date_str, 0),
-                "consumed_credits": consumed_history.get(date_str, 0)
+                "consumed_credits": consumed_history.get(date_str, 0),
+                "ton_recharge": ton_history.get(date_str, 0),
+                "stars_recharge": stars_history.get(date_str, 0)
             })
             
         return history_data

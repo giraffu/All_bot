@@ -6,7 +6,7 @@ import os
 from typing import Any, Callable
 
 import httpx
-from telegram.error import Forbidden, NetworkError, TimedOut
+from telegram.error import Forbidden, NetworkError, TimedOut, BadRequest
 
 logger = logging.getLogger(__name__)
 
@@ -142,3 +142,17 @@ async def robust_send_video(bot, chat_id, video, **kwargs):
 @async_retry(max_retries=3)
 async def robust_delete_message(message):
     return await message.delete()
+
+async def safe_answer_query(query, **kwargs):
+    """
+    Safely answer a callback query, catching and logging the "Query is too old" 
+    BadRequest exception. This prevents the entire handler from crashing if 
+    the bot was too slow to respond to the click event.
+    """
+    try:
+        await query.answer(**kwargs)
+    except BadRequest as e:
+        if "query is too old" in str(e).lower() or "query id is invalid" in str(e).lower():
+            logger.warning(f"Callback query too old/invalid for user {query.from_user.id}, ignoring answer but proceeding with logic.")
+        else:
+            raise e

@@ -107,14 +107,14 @@ FORBIDDEN_WORDS = [
 
 RESOLUTION_COST = {
     "512p": 6,
-    "720p": 12,
-    "1024p": 25
+    "720p": 18,
+    "1024p": 36
 }
 
 DURATION_MULTIPLIER = {
     "5s": 1.0,
-    "8s": 1.6,
-    "10s": 2.2
+    "8s": 2.0,
+    "10s": 3.0
 }
 
 DURATION_FRAMES = {

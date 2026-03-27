@@ -6,6 +6,7 @@ from src.database.core import AsyncSessionLocal
 from sqlalchemy import select
 from src.handlers.utils import with_db_logging_context
 from contextvars import ContextVar
+from src.utils import safe_answer_query
 
 logger = logging.getLogger("bot.payment")
 
@@ -15,9 +16,9 @@ async def precheckout_callback(update: Update, context: ContextTypes.DEFAULT_TYP
     query = update.pre_checkout_query
     # 检查 payload
     if query.invoice_payload.startswith("ORDER:"):
-        await query.answer(ok=True)
+        await safe_answer_query(query, ok=True)
     else:
-        await query.answer(ok=False, error_message="无效的订单信息，请重试。")
+        await safe_answer_query(query, ok=False, error_message="无效的订单信息，请重试。")
 
 @with_db_logging_context
 async def successful_payment_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):

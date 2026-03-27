@@ -8,7 +8,9 @@ import {
   ThunderboltOutlined,
   CheckCircleOutlined,
   FireOutlined,
-  CrownOutlined
+  CrownOutlined,
+  WalletOutlined,
+  StarOutlined
 } from '@ant-design/icons-vue'
 
 defineProps({
@@ -21,6 +23,33 @@ defineProps({
 
 <template>
   <a-row :gutter="[16, 16]" class="mb-6">
+    <a-col :xs="24" :sm="12" :md="8" :lg="4">
+      <a-card hoverable class="stat-card">
+        <a-statistic
+          title="TON 钱包余额"
+          :value="stats.ton_balance || 0"
+          :precision="2"
+          :value-style="{ color: '#1890ff' }"
+        >
+          <template #prefix>
+            <wallet-outlined />
+          </template>
+        </a-statistic>
+      </a-card>
+    </a-col>
+    <a-col :xs="24" :sm="12" :md="8" :lg="4">
+      <a-card hoverable class="stat-card">
+        <a-statistic
+          title="Stars 余额"
+          :value="stats.star_balance || 0"
+          :value-style="{ color: '#faad14' }"
+        >
+          <template #prefix>
+            <star-outlined />
+          </template>
+        </a-statistic>
+      </a-card>
+    </a-col>
     <a-col :xs="24" :sm="12" :md="8" :lg="4">
       <a-card hoverable class="stat-card">
         <a-statistic

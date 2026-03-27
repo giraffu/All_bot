@@ -119,6 +119,9 @@ const updateHistoryTimeRange = (value) => {
 
       <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
         <div class="h-80">
+          <LineChart title="每日充值 (TON & Stars)" :data="statsHistory" :metrics="['ton_recharge', 'stars_recharge']" />
+        </div>
+        <div class="h-80">
           <LineChart title="总用户数量" :data="cumulativeStatsHistory" :metrics="['cumulative_users']" />
         </div>
       </div>

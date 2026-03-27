@@ -3,7 +3,7 @@ from telegram.ext import ContextTypes
 from config import REQUIRED_CHANNEL_ID
 from src.utils import (
     robust_send_message, robust_edit_text, load_prompts, 
-    robust_edit_reply_markup, robust_edit_caption
+    robust_edit_reply_markup, robust_edit_caption, safe_answer_query
 )
 from src.handlers.utils import with_db_logging_context
 from src.constants import (
@@ -28,7 +28,7 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
     
     # Do not answer immediately for public_share_request so we can show alert if needed
     if data != "public_share_request":
-        await query.answer() # Always answer to stop loading animation
+        await safe_answer_query(query) # Always answer to stop loading animation
     
     # Ensure user info is up to date
     await permission_service.ensure_user(update)
@@ -41,13 +41,14 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
             prompt_lower = prompt.lower()
             for word in FORBIDDEN_WORDS:
                 if word.lower() in prompt_lower:
-                    await query.answer(
+                    await safe_answer_query(
+                        query,
                         text=f"⚠️ 您的内容包含违禁词「{word}」，无法公开！",
                         show_alert=True
                     )
                     return
         
-        await query.answer() # Answer if no forbidden words
+        await safe_answer_query(query) # Answer if no forbidden words
 
         # Show confirmation menu
         # Check if already in confirmation state
@@ -193,7 +194,7 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
                 )
             
             # Feedback to user
-            await query.answer("✅ 已公开并转发至宗门公告栏！", show_alert=True)
+            await safe_answer_query(query, text="✅ 已公开并转发至宗门公告栏！", show_alert=True)
             
             # Update the original message to remove buttons and show status
             try:
@@ -265,11 +266,14 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
                 ]
             ])
             
-            await TaskService.process_generation_task(
-                context, chat_id, user_id, username, 
-                prompt, swapped_images, task_type="face_swap",
-                reply_markup=reply_markup,
-                cleanup=False # Do not cleanup because we might need the face image again
+            # Use asyncio.create_task to prevent blocking the callback handler
+            asyncio.create_task(
+                TaskService.process_generation_task(
+                    context, chat_id, user_id, username, 
+                    prompt, swapped_images, task_type="face_swap",
+                    reply_markup=reply_markup,
+                    cleanup=False # Do not cleanup because we might need the face image again
+                )
             )
         except Exception as e:
             await robust_send_message(context.bot, chat_id, f"❌ 任务执行出错：{str(e)}")
@@ -347,22 +351,27 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
             prompt = prompts_config.get("masturbation", "masturbation")
             task_type = "masturbation"
         
-        for img_path in batch_images:
-            # Update Progress
-            await robust_edit_text(query.message, f"🚀 **正在处理第 {processed+1}/{total_count} 个任务...**")
+        async def process_batch_tasks():
+            nonlocal processed
+            for img_path in batch_images:
+                # Update Progress
+                await robust_edit_text(query.message, f"🚀 **正在处理第 {processed+1}/{total_count} 个任务...**")
+                
+                # One by one
+                await TaskService.process_generation_task(context, chat_id, user_id, username, prompt, [img_path], is_video=is_video, status_msg_id=status_msg_id, delete_status=False, task_type=task_type)
+                processed += 1
+                
+                # Delay to prevent backend overload (422)
+                await asyncio.sleep(2)
             
-            # One by one
-            await TaskService.process_generation_task(context, chat_id, user_id, username, prompt, [img_path], is_video=is_video, status_msg_id=status_msg_id, delete_status=False, task_type=task_type)
-            processed += 1
-            
-            # Delay to prevent backend overload (422)
-            await asyncio.sleep(2)
-        
-        # Done
-        try:
-            await context.bot.delete_message(chat_id=chat_id, message_id=status_msg_id)
-        except Exception:
-            pass
+            # Done
+            try:
+                await context.bot.delete_message(chat_id=chat_id, message_id=status_msg_id)
+            except Exception:
+                pass
+                
+        # Offload the batch processing to a background task
+        asyncio.create_task(process_batch_tasks())
 
     elif data.startswith("set_res_") or data.startswith("set_dur_"):
         is_res = data.startswith("set_res_")
@@ -383,18 +392,18 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
         allowed = list(set(group_allowed + identity_allowed))
         
         if new_val not in allowed:
-            await query.answer(f"❌ 境界或身份不足，无法选择 {new_val}！", show_alert=True)
+            await safe_answer_query(query, text=f"❌ 境界或身份不足，无法选择 {new_val}！", show_alert=True)
             return
 
         if is_res and new_val == "1024p":
             current_dur = context.user_data.get('custom_video_duration', DEFAULT_DURATION)
             if current_dur == "10s":
-                await query.answer("❌ 无法同时选择 1024p 和 10s，请先降低时长！", show_alert=True)
+                await safe_answer_query(query, text="❌ 无法同时选择 1024p 和 10s，请先降低时长！", show_alert=True)
                 return
         elif not is_res and new_val == "10s":
             current_res = context.user_data.get('custom_video_resolution', DEFAULT_RESOLUTION)
             if current_res == "1024p":
-                await query.answer("❌ 无法同时选择 1024p 和 10s，请先降低分辨率！", show_alert=True)
+                await safe_answer_query(query, text="❌ 无法同时选择 1024p 和 10s，请先降低分辨率！", show_alert=True)
                 return
 
         if is_res:
@@ -426,7 +435,7 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
         except Exception:
             pass
             
-        await query.answer(f"已切换至 {current_res} ({current_dur})，灵石消耗 {cost}", show_alert=False)
+        await safe_answer_query(query, text=f"已切换至 {current_res} ({current_dur})，灵石消耗 {cost}", show_alert=False)
 
     elif data == "recharge_stars_menu":
         from src.database.core import AsyncSessionLocal
@@ -477,7 +486,7 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
             plan = result.scalar_one_or_none()
             
         if not plan or getattr(plan, 'price_stars', 0) <= 0:
-            await query.answer("❌ 找不到该套餐", show_alert=True)
+            await safe_answer_query(query, text="❌ 找不到该套餐", show_alert=True)
             return
             
         # Payload 格式保持和 TON 一致，方便防重放。ORDER:{user_id}:{plan_id}:{timestamp}
@@ -500,4 +509,4 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
                 prices=prices
             )
         except Exception as e:
-            await query.answer(f"❌ 发送账单失败：{e}", show_alert=True)
+            await safe_answer_query(query, text=f"❌ 发送账单失败：{e}", show_alert=True)

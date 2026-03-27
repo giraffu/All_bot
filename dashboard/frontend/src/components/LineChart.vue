@@ -166,6 +166,30 @@ const option = computed(() => {
         color: '#eb2f96',
         opacity: 0.1
       }
+    },
+    {
+      id: 'ton_recharge',
+      name: 'TON充值 (TON)',
+      type: 'line',
+      yAxisIndex: 1, // Change to secondary axis to not squash other lines if TON values are small
+      data: props.data.map(item => item.ton_recharge || 0),
+      color: '#1890ff', // Blue
+      areaStyle: {
+        color: '#1890ff',
+        opacity: 0.1
+      }
+    },
+    {
+      id: 'stars_recharge',
+      name: 'Stars充值 (Stars)',
+      type: 'line',
+      yAxisIndex: 0, // Stars values are large, use primary axis
+      data: props.data.map(item => item.stars_recharge || 0),
+      color: '#faad14', // Yellow/Gold
+      areaStyle: {
+        color: '#faad14',
+        opacity: 0.1
+      }
     }
   ];
 
