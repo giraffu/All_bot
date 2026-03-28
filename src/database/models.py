@@ -61,6 +61,9 @@ class History(Base):
     input_file = Column(String(255), nullable=True)
     output_file = Column(String(255), nullable=True)
     created_at = Column(DateTime, default=datetime.now)
+    
+    is_public = Column(Boolean, default=False)
+    rating = Column(Integer, default=0)
 
     user = relationship("User", back_populates="history")
 

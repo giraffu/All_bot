@@ -409,6 +409,10 @@ async def _handle_photo_random_faceswap(update: Update, context: ContextTypes.DE
             [
                 InlineKeyboardButton("公开", callback_data="public_share_request"),
                 InlineKeyboardButton("🔄 再来一张", callback_data="random_faceswap_again")
+            ],
+            [
+                InlineKeyboardButton("👍", callback_data="rate_like"),
+                InlineKeyboardButton("👎", callback_data="rate_dislike")
             ]
         ])
         

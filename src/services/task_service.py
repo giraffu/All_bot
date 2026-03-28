@@ -790,8 +790,11 @@ class TaskService:
                         [
                             InlineKeyboardButton(
                                 "公开", callback_data="public_share_request"
-                            ),
-                            InlineKeyboardButton("私密", callback_data="private_keep"),
+                            )
+                        ],
+                        [
+                            InlineKeyboardButton("👍", callback_data="rate_like"),
+                            InlineKeyboardButton("👎", callback_data="rate_dislike")
                         ]
                     ]
                 )
@@ -807,6 +810,7 @@ class TaskService:
                     context.bot_data[f"msg_meta_{sent_msg.message_id}"] = {
                         "mode_name": mode_name,
                         "prompt": prompt,
+                        "task_id": task_id,
                     }
         else:
             media_bytes = await image_service.download_result(task_id)
@@ -827,8 +831,11 @@ class TaskService:
                         [
                             InlineKeyboardButton(
                                 "公开", callback_data="public_share_request"
-                            ),
-                            InlineKeyboardButton("私密", callback_data="private_keep"),
+                            )
+                        ],
+                        [
+                            InlineKeyboardButton("👍", callback_data="rate_like"),
+                            InlineKeyboardButton("👎", callback_data="rate_dislike")
                         ]
                     ]
                 )
@@ -853,6 +860,7 @@ class TaskService:
                     context.bot_data[f"msg_meta_{sent_msg.message_id}"] = {
                         "mode_name": mode_name,
                         "prompt": prompt,
+                        "task_id": task_id,
                     }
 
         try:

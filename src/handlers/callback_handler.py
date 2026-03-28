@@ -130,8 +130,11 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
         # Restore original keyboard
         keyboard = [
             [
-                InlineKeyboardButton("公开", callback_data="public_share_request"),
-                InlineKeyboardButton("私密", callback_data="private_keep")
+                InlineKeyboardButton("公开", callback_data="public_share_request")
+            ],
+            [
+                InlineKeyboardButton("👍", callback_data="rate_like"),
+                InlineKeyboardButton("👎", callback_data="rate_dislike")
             ]
         ]
         # Some modes might have "🔄 再来一张"
@@ -197,7 +200,24 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
                     from_chat_id=query.message.chat_id,
                     message_id=query.message.message_id
                 )
+                sent = True
             
+            if sent:
+                if meta and "task_id" in meta:
+                    task_id = meta["task_id"]
+                    try:
+                        from sqlalchemy import update
+                        from src.database.core import AsyncSessionLocal
+                        from src.database.models import History
+                        async with AsyncSessionLocal() as session:
+                            await session.execute(
+                                update(History).where(History.task_id == task_id).values(is_public=True)
+                            )
+                            await session.commit()
+                    except Exception as e:
+                        import logging
+                        logging.getLogger(__name__).error(f"Error updating is_public: {e}")
+
             # Feedback to user
             await safe_answer_query(query, text="✅ 已公开并转发至宗门公告栏！", show_alert=True)
             
@@ -215,9 +235,49 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
         except Exception as e:
             await robust_send_message(context.bot, query.message.chat_id, f"❌ 转发失败: {e}")
             
-    elif data == "private_keep":
-        # User chose private, do nothing (just answered query)
-        pass
+    elif data in ["rate_like", "rate_dislike"]:
+        msg_id = query.message.message_id
+        meta = context.bot_data.get(f"msg_meta_{msg_id}")
+        if not meta or "task_id" not in meta:
+            await safe_answer_query(query, text="❌ 无法找到对应任务记录", show_alert=True)
+            return
+            
+        task_id = meta["task_id"]
+        rating_value = 1 if data == "rate_like" else -1
+        
+        try:
+            from sqlalchemy import update
+            from src.database.core import AsyncSessionLocal
+            from src.database.models import History
+            
+            async with AsyncSessionLocal() as session:
+                await session.execute(
+                    update(History).where(History.task_id == task_id).values(rating=rating_value)
+                )
+                await session.commit()
+                
+            # Update buttons to reflect choice
+            keyboard = []
+            for row in query.message.reply_markup.inline_keyboard:
+                new_row = []
+                for btn in row:
+                    if btn.callback_data == "rate_like":
+                        text = "✅ 已赞" if rating_value == 1 else "👍"
+                        new_row.append(InlineKeyboardButton(text, callback_data="rate_like"))
+                    elif btn.callback_data == "rate_dislike":
+                        text = "✅ 已踩" if rating_value == -1 else "👎"
+                        new_row.append(InlineKeyboardButton(text, callback_data="rate_dislike"))
+                    else:
+                        new_row.append(btn)
+                keyboard.append(new_row)
+                
+            await robust_edit_reply_markup(query.message, reply_markup=InlineKeyboardMarkup(keyboard))
+            
+            await safe_answer_query(query, text="感谢您的评价，祝道友修为精进！", show_alert=False)
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).error(f"Error updating rating: {e}")
+            await safe_answer_query(query, text="❌ 评价失败，请稍后再试", show_alert=True)
     
     elif data == "random_faceswap_again":
         # Check maintenance mode for generation tasks
@@ -265,6 +325,10 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
                 [
                     InlineKeyboardButton("公开", callback_data="public_share_request"),
                     InlineKeyboardButton("🔄 再来一张", callback_data="random_faceswap_again")
+                ],
+                [
+                    InlineKeyboardButton("👍", callback_data="rate_like"),
+                    InlineKeyboardButton("👎", callback_data="rate_dislike")
                 ]
             ])
             
@@ -438,6 +502,8 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
         await safe_answer_query(query, text=f"已切换至 {current_res} ({current_dur})，灵石消耗 {cost}", show_alert=False)
 
     elif data == "recharge_stars_menu":
+        from src.database.core import AsyncSessionLocal
+        from src.database.models import MembershipPlan
         from sqlalchemy import select
         
         keyboard = []
@@ -472,6 +538,8 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
     elif data.startswith("buy_star_plan_"):
         from telegram import LabeledPrice
         import time
+        from src.database.core import AsyncSessionLocal
+        from src.database.models import MembershipPlan
         from sqlalchemy import select
         
         plan_id = int(data.split("_")[-1])
