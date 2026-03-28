@@ -675,6 +675,10 @@ async def handle_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"  - 施法次数：`{stats['generations']}` 次\n"
             f"  - 贡献模板：`{stats['total_contributions']}` 次\n"
             f"  - 采纳模板：`{stats['approved_contributions']}` 次\n\n"
+            f"🤝 **邀请数据**：\n"
+            f"  - 邀请充值：已有 `{stats['invitation_recharge']['recharged_invitees_count']}` 位道友完成 `{stats['invitation_recharge']['total_recharge_count']}` 次充值\n"
+            f"  - 累积充值：`{stats['invitation_recharge']['total_ton']:.2f}` TON\n"
+            f"  - 累积贡献：`{stats['invitation_recharge']['total_stars']}` Stars\n\n"
             f"💡 *提示：1点加速优先级约等于为您节约1分钟的排队时间。*\n\n"
             f"{breakthrough_msg}"
         )

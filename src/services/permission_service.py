@@ -231,6 +231,9 @@ class PermissionService:
         priority = await self.calculate_user_priority(user_id)
         credits = await self.quota_manager.get_credits(user_id)
         
+        # 获取邀请人的充值数据
+        invitation_recharge_stats = await self.get_invitation_recharge_stats(user_id)
+        
         return {
             "group": group,
             "identity": identity,
@@ -242,8 +245,58 @@ class PermissionService:
             "checkins": stats.get("checkin_count", 0),
             "generations": stats.get("generation_count", 0),
             "total_contributions": stats.get("total_contributions", 0),
-            "approved_contributions": stats.get("approved_contributions", 0)
+            "approved_contributions": stats.get("approved_contributions", 0),
+            "invitation_recharge": invitation_recharge_stats
         }
+
+    async def get_invitation_recharge_stats(self, user_id: int) -> dict:
+        """
+        聚合查询邀请的道友充值情况：
+        - 已有 X 位道友完成 X 次充值
+        - 累积充值 TON
+        - 累积贡献 Stars
+        """
+        async with AsyncSessionLocal() as session:
+            from src.database.models import Order, Referral
+            from sqlalchemy import select, and_
+            from decimal import Decimal
+
+            # 联表查询：查找被该用户邀请且支付成功的订单
+            stmt = (
+                select(
+                    Order.telegram_id,
+                    Order.final_price
+                )
+                .join(Referral, Referral.invitee_id == Order.telegram_id)
+                .where(
+                    and_(
+                        Referral.inviter_id == user_id,
+                        Order.status == "SUCCESS"
+                    )
+                )
+            )
+            result = await session.execute(stmt)
+            rows = result.all()
+
+            recharged_invitees = set()
+            total_ton = Decimal('0.0')
+            total_stars = 0
+            total_count = len(rows)
+
+            for tg_id, price in rows:
+                recharged_invitees.add(tg_id)
+                # 根据价格区分支付方式 (Stars 价格通常为整数且较大，如 200, 500)
+                if price >= 100:
+                    total_stars += int(price)
+                else:
+                    total_ton += price
+
+            return {
+                "recharged_invitees_count": len(recharged_invitees),
+                "total_recharge_count": total_count,
+                "total_ton": float(total_ton),
+                "total_stars": total_stars
+            }
 
     async def get_user_credits(self, update: Update) -> int:
         """Get current credits for a user"""

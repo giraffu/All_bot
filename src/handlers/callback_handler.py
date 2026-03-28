@@ -1,18 +1,23 @@
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
-from config import REQUIRED_CHANNEL_ID
+from config import REQUIRED_CHANNEL_ID, MINIO_TEMPLATE_BUCKET
 from src.utils import (
     robust_send_message, robust_edit_text, load_prompts, 
-    robust_edit_reply_markup, robust_edit_caption, safe_answer_query
+    robust_edit_reply_markup, robust_edit_caption, safe_answer_query,
+    is_maintenance_mode
 )
 from src.handlers.utils import with_db_logging_context
+from src.services.task_service import TaskService
+from src.services.permission_service import permission_service
+from src.services.storage import storage
 from src.constants import (
     MODE_UNDRESS, MODE_MASTURBATION, 
     MODE_NAME_MAP, MODE_RANDOM_FACESWAP,
-    FORBIDDEN_WORDS
+    FORBIDDEN_WORDS, TASK_COSTS,
+    get_video_settings_keyboard, RESOLUTION_COST, 
+    RESOLUTION_PERMISSIONS, DURATION_PERMISSIONS, 
+    DEFAULT_RESOLUTION, DEFAULT_DURATION, DURATION_MULTIPLIER
 )
-from src.services.task_service import TaskService
-from src.services.permission_service import permission_service
 import os
 import random
 import asyncio
@@ -216,7 +221,6 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
     
     elif data == "random_faceswap_again":
         # Check maintenance mode for generation tasks
-        from src.utils import is_maintenance_mode
         if is_maintenance_mode():
             await robust_send_message(context.bot, query.message.chat_id, "⚠️ 服务器即将运维，暂停生成服务中")
             return
@@ -234,7 +238,6 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
             return
         
         # Permission check
-        from src.constants import TASK_COSTS, MODE_RANDOM_FACESWAP
         cost = TASK_COSTS.get(MODE_RANDOM_FACESWAP, 1)
         if not await permission_service.check_quota(update, context, cost=cost):
             return
@@ -245,9 +248,6 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
         prompts_config = load_prompts()
 
         try:
-            from config import MINIO_TEMPLATE_BUCKET
-            from src.services.storage import storage
-            
             template_files = storage.list_objects("quick_face/", bucket=MINIO_TEMPLATE_BUCKET)
             template_files = [f for f in template_files if f.lower().endswith(('.png', '.jpg', '.jpeg', '.webp'))]
             
@@ -301,7 +301,6 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
         
     elif data == "batch_confirm":
         # Check maintenance mode for generation tasks
-        from src.utils import is_maintenance_mode
         if is_maintenance_mode():
             await robust_edit_text(query.message, "⚠️ 服务器即将运维，暂停生成服务中")
             return
@@ -378,7 +377,6 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
     elif data.startswith("set_res_") or data.startswith("set_dur_"):
         is_res = data.startswith("set_res_")
         new_val = data.replace("set_res_", "") if is_res else data.replace("set_dur_", "")
-        from src.constants import get_video_settings_keyboard, RESOLUTION_COST, RESOLUTION_PERMISSIONS, DURATION_PERMISSIONS, DEFAULT_RESOLUTION, DEFAULT_DURATION, DURATION_MULTIPLIER
         
         user_group = await permission_service.get_user_group(query.from_user.id)
         user_identity = await permission_service.get_user_identity(query.from_user.id)
@@ -440,8 +438,6 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
         await safe_answer_query(query, text=f"已切换至 {current_res} ({current_dur})，灵石消耗 {cost}", show_alert=False)
 
     elif data == "recharge_stars_menu":
-        from src.database.core import AsyncSessionLocal
-        from src.database.models import MembershipPlan
         from sqlalchemy import select
         
         keyboard = []
@@ -476,8 +472,6 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
     elif data.startswith("buy_star_plan_"):
         from telegram import LabeledPrice
         import time
-        from src.database.core import AsyncSessionLocal
-        from src.database.models import MembershipPlan
         from sqlalchemy import select
         
         plan_id = int(data.split("_")[-1])
