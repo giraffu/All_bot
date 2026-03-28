@@ -40,14 +40,12 @@ const filteredUsers = computed(() => {
 const editCreditsVisible = ref(false)
 const currentEditingUser = ref(null)
 const newCreditsValue = ref(0)
-const newTemporaryIngotValue = ref(0)
 const newCheckinCountValue = ref(0)
 const updatingCredits = ref(false)
 
 const handleEditCredits = (record) => {
   currentEditingUser.value = record
   newCreditsValue.value = record.credits
-  newTemporaryIngotValue.value = record.temporary_ingot || 0
   newCheckinCountValue.value = record.checkin_count || 0
   editCreditsVisible.value = true
 }
@@ -60,7 +58,6 @@ const saveCredits = async () => {
     await updateUserCredits(
       currentEditingUser.value.id, 
       newCreditsValue.value,
-      newTemporaryIngotValue.value,
       newCheckinCountValue.value
     )
     message.success(`用户 ${currentEditingUser.value.id} 数据已更新`)
@@ -231,14 +228,6 @@ const columns = [
     sorter: (a, b) => a.credits - b.credits,
   },
   {
-    title: '临时灵石',
-    dataIndex: 'temporary_ingot',
-    key: 'temporary_ingot',
-    width: 100,
-    align: 'right',
-    sorter: (a, b) => (a.temporary_ingot || 0) - (b.temporary_ingot || 0),
-  },
-  {
     title: '累计签到',
     dataIndex: 'checkin_count',
     key: 'checkin_count',
@@ -402,12 +391,6 @@ const columns = [
           </a-tag>
         </template>
 
-        <template v-else-if="column.key === 'temporary_ingot'">
-          <a-tooltip title="每日 00:00 自动清零，仅当日有效">
-            <span class="text-orange-500 font-mono">{{ Number(record.temporary_ingot || 0).toLocaleString() }}</span>
-          </a-tooltip>
-        </template>
-
         <template v-else-if="column.key === 'checkin_count'">
           <a-tag :color="record.checkin_count > 10 ? 'orange' : record.checkin_count > 0 ? 'cyan' : 'default'">
             {{ record.checkin_count }} 次
@@ -530,9 +513,6 @@ const columns = [
         <a-form layout="vertical">
           <a-form-item label="永久灵石余额">
             <a-input-number v-model:value="newCreditsValue" :min="0" class="w-full" />
-          </a-form-item>
-          <a-form-item label="临时灵石" extra="每日 00:00 自动清零，仅当日有效">
-            <a-input-number v-model:value="newTemporaryIngotValue" :min="0" class="w-full" />
           </a-form-item>
           <a-form-item label="累计签到次数">
             <a-input-number v-model:value="newCheckinCountValue" :min="0" class="w-full" />

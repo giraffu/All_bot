@@ -63,14 +63,12 @@ async def get_stats(db: AsyncSession = Depends(get_db)):
         result = await db.execute(select(func.sum(User.credits)))
         total_credits = result.scalar() or 0
         
-        result = await db.execute(select(func.sum(User.temp_credits)))
-        total_temporary_ingot = result.scalar() or 0
+        total_temporary_ingot = 0 # Deprecated
 
         result = await db.execute(select(func.sum(User.credits)).where(User.generation_count > 0))
         total_active_credits = result.scalar() or 0
         
-        result = await db.execute(select(func.sum(User.temp_credits)).where(User.generation_count > 0))
-        total_active_temporary_ingot = result.scalar() or 0
+        total_active_temporary_ingot = 0 # Deprecated
 
         result = await db.execute(select(func.count(Referral.id)))
         total_referrals = result.scalar() or 0

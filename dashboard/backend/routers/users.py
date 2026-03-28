@@ -53,7 +53,7 @@ async def get_users(skip: int = 0, limit: int = 100000, db: AsyncSession = Depen
         
         for user in users:
             user_dict = {c.name: getattr(user, c.name) for c in user.__table__.columns}
-            user_dict['temporary_ingot'] = getattr(user, 'temp_credits', 0)
+            user_dict['temporary_ingot'] = 0 # Deprecated, keep for frontend compatibility until frontend is updated
             user_dict["referral_count"] = user.referral_count or 0
             user_dict["last_activity"] = user.last_activity
             user_dict["generation_count"] = user.generation_count or 0
@@ -110,7 +110,7 @@ async def delete_user(user_id: int, db: AsyncSession = Depends(get_db)):
 
 @router.post("/{user_id}/credits")
 async def update_user_credits(user_id: int, request: UpdateCreditsRequest, db: AsyncSession = Depends(get_db)):
-    """Update user credits, temporary ingot and checkin count"""
+    """Update user credits and checkin count"""
     try:
         stmt = select(User).where(User.id == user_id)
         result = await db.execute(stmt)
@@ -123,10 +123,6 @@ async def update_user_credits(user_id: int, request: UpdateCreditsRequest, db: A
         user.credits = request.credits
         credit_change = request.credits - old_credits
         
-        if request.temporary_ingot is not None:
-            user.temp_credits = request.temporary_ingot
-            if hasattr(user, 'temporary_ingot'):
-                user.temporary_ingot = request.temporary_ingot
         if request.checkin_count is not None:
             user.checkin_count = request.checkin_count
             
@@ -146,7 +142,7 @@ async def update_user_credits(user_id: int, request: UpdateCreditsRequest, db: A
         return {
             "status": "ok", 
             "credits": user.credits, 
-            "temporary_ingot": user.temp_credits,
+            "temporary_ingot": 0,
             "checkin_count": user.checkin_count
         }
     except Exception as e:

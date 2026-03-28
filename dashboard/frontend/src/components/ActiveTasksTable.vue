@@ -200,6 +200,7 @@ const columns = [
     title: '已排队时长',
     key: 'duration',
     width: 120,
+    sorter: (a, b) => (b.created_at || 0) - (a.created_at || 0),
   },
   {
     title: '后端任务ID',

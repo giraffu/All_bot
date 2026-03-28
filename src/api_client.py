@@ -270,6 +270,9 @@ class APIClient:
                 
             except Exception as e:
                 logger.warning(f"Poll status failed for {task_id}: {e}")
+                import httpx
+                if isinstance(e, httpx.HTTPStatusError) and e.response.status_code == 404:
+                    raise RuntimeError(f"Task {task_id} not found on server (404).")
                 await asyncio.sleep(POLL_INTERVAL)
 
     async def close(self):

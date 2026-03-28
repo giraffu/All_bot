@@ -51,7 +51,7 @@ async def main():
                         print(f" -> Not found (404). Marking as dead.")
                 except Exception as e:
                     print(f"Task {task_id} (User: {username}, Age: {age:.1f}s) Backend {backend_task_id} - ERROR: {e}")
-                    if age > 600: # If we can't reach backend and task is older than 10 mins, assume dead
+                    if age > 7200: # If we can't reach backend and task is older than 2 hours, assume dead
                         is_dead = True
                         print(f" -> Marking as dead due to age and error.")
 

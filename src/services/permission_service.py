@@ -229,7 +229,7 @@ class PermissionService:
         group = await self.get_user_group(user_id)
         identity = await self.get_user_identity(user_id)
         priority = await self.calculate_user_priority(user_id)
-        credits, temp_credits = await self.quota_manager.get_detailed_credits(user_id)
+        credits = await self.quota_manager.get_credits(user_id)
         
         return {
             "group": group,
@@ -237,7 +237,7 @@ class PermissionService:
             "identity_expire_at": stats.get("identity_expire_at"),
             "priority": priority,
             "credits": credits,
-            "temp_credits": temp_credits,
+            "temp_credits": 0, # Legacy, keeping field for compatibility if needed, but always 0
             "invitations": stats.get("invitation_count", 0),
             "checkins": stats.get("checkin_count", 0),
             "generations": stats.get("generation_count", 0),
@@ -288,10 +288,10 @@ class PermissionService:
                     
             return "外门弟子"
         
-    async def perform_checkin(self, update: Update) -> tuple[bool, int, str, int, int, int]:
+    async def perform_checkin(self, update: Update) -> tuple[bool, int, str, int, int]:
         """
         Perform daily check-in for user.
-        Returns (success, current_credits, error_message, total_checkins, reward, temp_reward)
+        Returns (success, current_credits, error_message, total_checkins, reward)
         """
         user = update.effective_user
         
@@ -304,7 +304,7 @@ class PermissionService:
                 "道友目前尚处于凡人境界，请先 **拜入宗门** 踏入 **练气期** 即可解锁每日签到功能！\n\n"
                 f"👉 [点击即刻拜入宗门]({invite_link})"
             )
-            return False, 0, msg, 0, 0, 0
+            return False, 0, msg, 0, 0
 
         # Calculate reward based on identity
         identity = await self.get_user_identity(user.id)
@@ -320,8 +320,7 @@ class PermissionService:
             user.id, 
             username=user.username, 
             full_name=user.full_name,
-            reward=reward,
-            temp_reward=0
+            reward=reward
         )
         if success:
             await self.refresh_user_group(user.id)
@@ -330,7 +329,7 @@ class PermissionService:
         stats = await self.quota_manager.get_user_stats(user.id)
         total_checkins = stats.get("checkin_count", 0)
         
-        return success, current_credits, "", total_checkins, reward, 0
+        return success, current_credits, "", total_checkins, reward
 
     async def process_referral(self, update: Update, inviter_id: int) -> tuple[bool, str]:
         """

@@ -100,9 +100,8 @@ export const deleteUser = async (userId) => {
   return response.data
 }
 
-export const updateUserCredits = async (userId, credits, temporary_ingot = null, checkin_count = null) => {
+export const updateUserCredits = async (userId, credits, checkin_count = null) => {
   const payload = { credits }
-  if (temporary_ingot !== null) payload.temporary_ingot = temporary_ingot
   if (checkin_count !== null) payload.checkin_count = checkin_count
   const response = await api.post(`/api/users/${userId}/credits`, payload)
   return response.data

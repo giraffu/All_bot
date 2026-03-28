@@ -68,7 +68,7 @@ async def clean_zombie_tasks(db: AsyncSession = Depends(get_db)):
         
         for task_id, task in tasks.items():
             age = now - task.get('created_at', now)
-            if age > 600:
+            if age > 7200: # 超过2小时，认为可能卡死
                 user_id = task.get("user_id")
                 username = task.get("username", "Unknown")
                 cost = task.get("cost", 0)

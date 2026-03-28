@@ -37,7 +37,7 @@ async def setup_db():
         await session.commit()
 
 @pytest.mark.asyncio
-async def test_dual_track_points_system(setup_db):
+async def test_points_system(setup_db):
     user_id = setup_db
     qm = QuotaManager()
     
@@ -45,21 +45,12 @@ async def test_dual_track_points_system(setup_db):
     credits = await qm.get_credits(user_id)
     assert credits == 20  # Default credits for new user
     
-    # Check detailed credits
-    perm, temp = await qm.get_detailed_credits(user_id)
-    assert perm == 20
-    assert temp == 0
-    
-    # 2. Test Check-in (should give 5+15=20 permanent)
-    success = await qm.checkin(user_id=user_id, username="test_user", full_name="Test User", reward=5, temp_reward=15)
+    # 2. Test Check-in (should give 20 permanent)
+    success = await qm.checkin(user_id=user_id, username="test_user", full_name="Test User", reward=20)
     assert success is True
 
-    perm, temp = await qm.get_detailed_credits(user_id)
-    assert perm == 40  # 20 + 20
-    assert temp == 0
-    
-    total_credits = await qm.get_credits(user_id)
-    assert total_credits == 40  # 25 + 15
+    total = await qm.get_credits(user_id)
+    assert total == 40  # 20 + 20
     
     # Check-in again should fail (already checked in today)
     success_again = await qm.checkin(user_id=user_id)
@@ -68,18 +59,13 @@ async def test_dual_track_points_system(setup_db):
     # 3. Test points consumption (deducts permanent points)
     # Deduct 10 points
     await qm.deduct_credits(user_id, 10, task_type="test_deduct")
-    perm, temp = await qm.get_detailed_credits(user_id)
-    assert temp == 0
-    assert perm == 30  # 40 - 10
+    total = await qm.get_credits(user_id)
+    assert total == 30  # 40 - 10
     
     # Deduct 25 points
     await qm.deduct_credits(user_id, 25, task_type="test_deduct")
-    perm, temp = await qm.get_detailed_credits(user_id)
-    assert temp == 0
-    assert perm == 5   # 30 - 25
-    
     total = await qm.get_credits(user_id)
-    assert total == 5
+    assert total == 5   # 30 - 25
     
     # 4. Test points clearance (deprecated)
     pass

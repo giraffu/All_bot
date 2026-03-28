@@ -22,8 +22,8 @@ async def main():
         cost = task.get("cost", 0)
         age = now - task.get('created_at', now)
         
-        # 强制清理大于 600 秒 (10分钟) 的任务
-        if age > 600:
+        # 强制清理大于 7200 秒 (2小时) 的任务
+        if age > 7200:
             print(f"Removing stuck task {task_id} (User: {username}, Age: {age:.1f}s)...")
             
             if cost > 0 and user_id:

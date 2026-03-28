@@ -339,7 +339,9 @@ async def _handle_photo_faceswap(update: Update, context: ContextTypes.DEFAULT_T
         context.user_data['mode'] = MODE_FACESWAP_STEP2
         await robust_reply_text(msg, "👤 收到人脸图片，请发送身体图片。")
     elif mode == MODE_FACESWAP_STEP2:
-        if not await permission_service.check_quota(update, context, cost=2):
+        from src.constants import TASK_COSTS
+        cost = TASK_COSTS.get(MODE_FACESWAP_STEP1, 1)
+        if not await permission_service.check_quota(update, context, cost=cost):
             context.user_data['pending_images'] = []
             context.user_data['mode'] = MODE_FACESWAP_STEP1
             return
@@ -367,7 +369,9 @@ async def _handle_photo_random_faceswap(update: Update, context: ContextTypes.DE
     images = context.user_data['pending_images']
     prompts_config = load_prompts()
 
-    if not await permission_service.check_quota(update, context, cost=2):
+    from src.constants import TASK_COSTS
+    cost = TASK_COSTS.get(MODE_RANDOM_FACESWAP, 1)
+    if not await permission_service.check_quota(update, context, cost=cost):
         context.user_data['pending_images'] = []
         return
 
@@ -700,7 +704,7 @@ async def handle_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 logger.warning(f"Failed to check refuge group membership: {e}")
                 # 忽略错误继续签到流程
         
-        success, current_credits, error_msg, total_days, reward, temp_reward = await permission_service.perform_checkin(update)
+        success, current_credits, error_msg, total_days, reward = await permission_service.perform_checkin(update)
         user_group = await permission_service.get_user_group(update.effective_user.id)
         user_identity = await permission_service.get_user_identity(update.effective_user.id)
         
@@ -755,8 +759,8 @@ async def handle_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Mode Switching Commands
     mode_map = {
         "💃 快速脱衣": (MODE_UNDRESS, "💃 已切换到【快速脱衣】模式 (消耗 2 灵石)。\n请发送一张图片，我将自动处理。"),
-        "🎭 快速换脸": (MODE_FACESWAP_STEP1, "🎭 已切换到【快速换脸】模式 (消耗 2 灵石)。\n请先发送一张【人脸】图片。"),
-        "🎭 随机换脸": (MODE_RANDOM_FACESWAP, "🎭 已切换到【随机换脸】模式 (消耗 2 灵石)。\n请发送一张【人脸】图片，我将自动匹配模板处理。"),
+        "🎭 快速换脸": (MODE_FACESWAP_STEP1, "🎭 已切换到【快速换脸】模式 (消耗 1 灵石)。\n请先发送一张【人脸】图片。"),
+        "🎭 随机换脸": (MODE_RANDOM_FACESWAP, "🎭 已切换到【随机换脸】模式 (消耗 1 灵石)。\n请发送一张【人脸】图片，我将自动匹配模板处理。"),
         "🎁 模板共建": (MODE_TEMPLATE_CONTRIBUTE, "🎁 已切换到【模板共建】模式。\n\n可以选择发送1到n张图片、视频，模板需要包含脸部和身体，露脸图片不会泄露，仅用于模板库建设，模板采纳会奖励灵石。"),
         "🥵 快速自慰": (MODE_MASTURBATION, "🥵 已切换到【快速自慰】模式 (消耗 2 灵石)。\n请发送一张图片，我将自动处理。"),
         "🎨 自由P图": (MODE_EDIT, "🎨 已切换到【自由P图】模式 (消耗 2 灵石)。\n请发送一张图片。"),

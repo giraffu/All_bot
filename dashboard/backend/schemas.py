@@ -4,7 +4,6 @@ from datetime import datetime
 
 class UpdateCreditsRequest(BaseModel):
     credits: int
-    temporary_ingot: Optional[int] = None
     checkin_count: Optional[int] = None
 
 class MembershipPlanCreate(BaseModel):

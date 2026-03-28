@@ -234,7 +234,9 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
             return
         
         # Permission check
-        if not await permission_service.check_quota(update, context, cost=2):
+        from src.constants import TASK_COSTS, MODE_RANDOM_FACESWAP
+        cost = TASK_COSTS.get(MODE_RANDOM_FACESWAP, 1)
+        if not await permission_service.check_quota(update, context, cost=cost):
             return
 
         chat_id = query.message.chat_id

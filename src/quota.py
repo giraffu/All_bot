@@ -75,11 +75,6 @@ class QuotaManager:
         user = await self.ensure_user(user_id, username, full_name)
         return user.credits
 
-    async def get_detailed_credits(self, user_id: int, username: str = None, full_name: str = None) -> tuple[int, int]:
-        """Get user permanent and temporary credits."""
-        user = await self.ensure_user(user_id, username, full_name)
-        return user.credits, 0
-
     async def check_credits(self, user_id: int, cost: int) -> bool:
         """Check if user has enough credits"""
         current = await self.get_credits(user_id)
@@ -119,7 +114,7 @@ class QuotaManager:
                         extra_info={"old_balance": old_balance}
                     )
 
-    async def checkin(self, user_id: int, username: str = None, full_name: str = None, reward: int = 10, temp_reward: int = 0) -> bool:
+    async def checkin(self, user_id: int, username: str = None, full_name: str = None, reward: int = 10) -> bool:
         """
         Perform daily check-in.
         Returns True if successful, False if already checked in today.
@@ -148,8 +143,7 @@ class QuotaManager:
                 return False
             
             user.last_checkin = today
-            # We add temp_reward to credits as temporary credits are removed
-            user.credits += (reward + temp_reward)
+            user.credits += reward
             user.checkin_count = (user.checkin_count or 0) + 1
             user.last_activity = datetime.now()
 
@@ -160,14 +154,13 @@ class QuotaManager:
             new_balance = user.credits
             await session.commit()
             
-            total_reward = reward + temp_reward
             await LogService.log_action(
                 user_id=user_id,
                 username=username or user.username,
                 operation_type="checkin",
-                credit_change=total_reward,
+                credit_change=reward,
                 current_balance=new_balance,
-                extra_info={"checkin_date": today.isoformat(), "reward": reward, "temp_reward": temp_reward}
+                extra_info={"checkin_date": today.isoformat(), "reward": reward}
             )
             return True
 

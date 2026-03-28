@@ -217,14 +217,6 @@ defineProps({
             <dollar-circle-outlined />
           </template>
         </a-statistic>
-        <div class="mt-2 text-xs">
-          <a-tooltip title="每日 00:00 自动清零">
-            <a-tag color="orange" class="m-0 border-0 flex items-center justify-between cursor-help transition-all duration-300" :class="{ 'animate-pulse bg-orange-100': stats.total_temporary_ingot >= 1000 }">
-              <span>临时灵石</span>
-              <span class="font-bold ml-1">{{ stats.total_temporary_ingot || 0 }}</span>
-            </a-tag>
-          </a-tooltip>
-        </div>
       </a-card>
     </a-col>
     <a-col :xs="24" :sm="12" :md="8" :lg="4">
@@ -238,14 +230,6 @@ defineProps({
             <dollar-circle-outlined />
           </template>
         </a-statistic>
-        <div class="mt-2 text-xs">
-          <a-tooltip title="每日 00:00 自动清零">
-            <a-tag color="orange" class="m-0 border-0 flex items-center justify-between cursor-help transition-all duration-300" :class="{ 'animate-pulse bg-orange-100': stats.total_active_temporary_ingot >= 1000 }">
-              <span>临时灵石</span>
-              <span class="font-bold ml-1">{{ stats.total_active_temporary_ingot || 0 }}</span>
-            </a-tag>
-          </a-tooltip>
-        </div>
       </a-card>
     </a-col>
     <a-col :xs="24" :sm="12" :md="8" :lg="4">

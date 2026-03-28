@@ -72,7 +72,14 @@ class TaskService:
             return None, None
 
         # Determine cost and default task type
-        cost = TASK_COSTS.get(task_type, 6 if is_video else 2)
+        # For faceswap tasks, map the generic "face_swap" string back to constants for cost lookup
+        from src.constants import MODE_FACESWAP_STEP1, MODE_RANDOM_FACESWAP
+        if task_type == "face_swap":
+            # Both fast faceswap and random faceswap cost 1 credit now
+            cost = TASK_COSTS.get(MODE_FACESWAP_STEP1, 1)
+        else:
+            cost = TASK_COSTS.get(task_type, 6 if is_video else 2)
+            
         if not task_type:
             task_type = "video" if is_video else "image"
 
@@ -207,20 +214,34 @@ class TaskService:
                 TaskService._cleanup_files([image_path])
             return None, None
         
-        from src.constants import VIDEO_RESOLUTIONS, DEFAULT_DURATION, DURATION_FRAMES
-        
         user_group = await permission_service.get_user_group(user_id)
         identity_str = await permission_service.get_user_identity(user_id)
         
-        # Get resolution based on user group/identity for templates
-        res_tuple = VIDEO_RESOLUTIONS.get(identity_str, VIDEO_RESOLUTIONS.get(user_group, VIDEO_RESOLUTIONS.get("default")))
-        width, height = res_tuple
+        from src.constants import DEFAULT_RESOLUTION, DEFAULT_DURATION, RESOLUTION_COST, DURATION_MULTIPLIER, DURATION_FRAMES
+
+        # Get resolution and duration from user_data
+        resolution = context.user_data.get('custom_video_resolution', DEFAULT_RESOLUTION)
+        duration = context.user_data.get('custom_video_duration', DEFAULT_DURATION)
+
+        # Fallback safely (1024p + 10s is too heavy)
+        if resolution == "1024p" and duration == "10s":
+            resolution = "720p"
+            context.user_data['custom_video_resolution'] = "720p"
+            await robust_reply_text(update.effective_message, "⚠️ 检测到非法配置(1024p+10s)，已自动降级为720p+10s。")
+
+        # Calculate cost
+        base_cost = RESOLUTION_COST.get(resolution, TASK_COSTS.get(mode, 6))
+        multiplier = DURATION_MULTIPLIER.get(duration, 1.0)
+        cost = int(base_cost * multiplier)
         
-        # Convert tuple to string for display (e.g. "720p")
-        resolution = f"{width}p"
-        duration = DEFAULT_DURATION
-        
-        cost = TASK_COSTS.get(mode, 6) # Fixed cost for templates
+        # Calculate width/height and length
+        if resolution == "1024p":
+            width, height = 1024, 1024
+        elif resolution == "720p":
+            width, height = 720, 720
+        else:
+            width, height = 512, 512
+            
         length = DURATION_FRAMES.get(duration, 81)
 
         user_logger = UserLogger(user_id, username)

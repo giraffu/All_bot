@@ -188,13 +188,14 @@ onMounted(() => {
           <template #bodyCell="{ column, record }">
             <template v-if="column.key === 'status'">
               <a-tag :color="record.status === 'SUCCESS' ? 'green' : record.status === 'FAILED' ? 'red' : 'orange'">
-                {{ record.status }}
+                {{ record.status || '未知' }}
               </a-tag>
             </template>
             <template v-else-if="column.key === 'final_price'">
-              <span v-if="record.tx_hash && record.tx_hash.startsWith('manual_')">赠送 (0)</span>
+              <span v-if="record.tx_hash && String(record.tx_hash).startsWith('manual_')">赠送 (0)</span>
               <span v-else-if="record.final_price >= 50">{{ record.final_price }} Stars</span>
-              <span v-else>{{ record.final_price }} TON</span>
+              <span v-else-if="record.final_price !== undefined">{{ record.final_price }} TON</span>
+              <span v-else>-</span>
             </template>
             <template v-else-if="column.key === 'created_at'">
               {{ formatDate(record.created_at) }}
