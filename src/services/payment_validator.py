@@ -198,44 +198,58 @@ class TonPaymentValidator:
                         from sqlalchemy import update
                         from datetime import datetime, timedelta
                         
+                        # 身份和有效期逻辑
                         now = datetime.now()
                         new_expire_at = user.identity_expire_at
                         converted_days = 0
+                        final_identity = plan.identity_name
+                        is_downgrade = False
+                        
+                        identity_priority = {
+                            "外门弟子": 0,
+                            "内门弟子": 1,
+                            "核心弟子": 2,
+                            "真传弟子": 3
+                        }
+                        identity_ratio = {
+                            "外门弟子": 1,
+                            "内门弟子": 2,
+                            "核心弟子": 5,
+                            "真传弟子": 10
+                        }
+                        
+                        current_priority = identity_priority.get(user.current_identity, 0)
+                        new_priority = identity_priority.get(plan.identity_name, 0)
                         
                         if new_expire_at and new_expire_at > now:
                             if user.current_identity == plan.identity_name:
-                                # 同套餐续费：直接累加天数
+                                # 同套餐续费
                                 new_expire_at += timedelta(days=plan.duration_days)
-                            else:
-                                # 跨套餐升级/降级：残值折算
-                                old_plan_res = await db.execute(
-                                    select(MembershipPlan).where(MembershipPlan.identity_name == user.current_identity)
-                                )
-                                old_plan = old_plan_res.scalar_one_or_none()
+                            elif new_priority > current_priority:
+                                # 升级：将旧身份残值折算为新身份天数
+                                import math
+                                remaining_days = (new_expire_at - now).total_seconds() / 86400.0
+                                old_ratio = identity_ratio.get(user.current_identity, 1)
+                                new_ratio = identity_ratio.get(plan.identity_name, 1)
                                 
-                                # 使用 reward_credits 作为通用等价物进行残值折算，因为 Stars 和 TON 的计价单位不同
-                                if old_plan and old_plan.reward_credits > 0 and old_plan.duration_days > 0 and plan.reward_credits > 0:
-                                    # 计算剩余天数 (带小数)
-                                    remaining_days = (new_expire_at - now).total_seconds() / 86400.0
-                                    
-                                    # 老套餐日均价值 (以灵石为锚定物)
-                                    old_daily_value = old_plan.reward_credits / old_plan.duration_days
-                                    # 剩余总价值 (灵石)
-                                    residual_value = remaining_days * old_daily_value
-                                    
-                                    # 新套餐日均价值 (以灵石为锚定物)
-                                    new_daily_value = plan.reward_credits / plan.duration_days
-                                    
-                                    # 折算新套餐天数
-                                    import math
-                                    converted_days = math.ceil(residual_value / new_daily_value)
-                                    
-                                    # Final days = new plan days + residual days, starting from now
-                                    new_expire_at = now + timedelta(days=plan.duration_days + converted_days)
-                                else:
-                                    # 若找不到老套餐，直接覆盖，从当前时间算起
-                                    new_expire_at = now + timedelta(days=plan.duration_days)
+                                # 残值 = 剩余天数 * 旧比例，折算天数 = 残值 / 新比例
+                                converted_days = math.ceil((remaining_days * old_ratio) / new_ratio)
+                                new_expire_at = now + timedelta(days=plan.duration_days + converted_days)
+                            else:
+                                # 降级或同级：保留高等级身份，将新购买的低等级套餐价值折算为高等级身份的天数
+                                is_downgrade = True
+                                final_identity = user.current_identity
+                                
+                                import math
+                                old_ratio = identity_ratio.get(user.current_identity, 1)
+                                new_ratio = identity_ratio.get(plan.identity_name, 1)
+                                
+                                # 新购价值 = 新套餐天数 * 新比例，折算天数 = 新购价值 / 旧比例
+                                extra_days = math.ceil((plan.duration_days * new_ratio) / old_ratio)
+                                converted_days = extra_days
+                                new_expire_at += timedelta(days=extra_days)
                         else:
+                            # 身份已过期或首次充值
                             new_expire_at = now + timedelta(days=plan.duration_days)
                             
                         # Perform update
@@ -244,7 +258,7 @@ class TonPaymentValidator:
                             .where(User.id == tg_user_id)
                             .values(
                                 credits=User.credits + plan.reward_credits,
-                                current_identity=plan.identity_name,
+                                current_identity=final_identity,
                                 is_first_charge=False,
                                 identity_expire_at=new_expire_at
                             )
@@ -253,13 +267,20 @@ class TonPaymentValidator:
                         # Calculate new balance for the log
                         new_balance = user.credits + plan.reward_credits
                         
+                        import json
                         log = UserLog(
                             user_id=user.id,
                             username=user.username,
                             operation_type="recharge",
                             credit_change=plan.reward_credits,
                             current_balance=new_balance,
-                            extra_info=f'{{"order_id": "{order_id}", "plan": "{plan.name}"}}'
+                            extra_info=json.dumps({
+                                "order_id": order_id,
+                                "plan": plan.name,
+                                "tx_hash": tx_hash,
+                                "converted_days": converted_days,
+                                "identity": final_identity
+                            }, ensure_ascii=False)
                         )
                         db.add(log)
                         
@@ -272,10 +293,16 @@ class TonPaymentValidator:
                                 f"🎉 <b>充值成功！</b>\n\n"
                                 f"恭喜道友，您已成功购买【{plan.name}】。\n"
                                 f"💎 获得灵石：+{plan.reward_credits}\n"
-                                f"🪪 当前身份晋升为：<b>{plan.identity_name}</b>\n"
                             )
-                            if converted_days > 0:
-                                msg_text += f"⚖️ 老套餐残值已折算为 <b>{converted_days}</b> 天新套餐时长\n"
+                            if is_downgrade:
+                                msg_text += f"🪪 当前身份保持为：<b>{final_identity}</b>\n"
+                                if converted_days > 0:
+                                    msg_text += f"⚖️ 新套餐价值已折算为 <b>{converted_days}</b> 天当前高级身份时长\n"
+                            else:
+                                msg_text += f"🪪 当前身份晋升为：<b>{final_identity}</b>\n"
+                                if converted_days > 0:
+                                    msg_text += f"⚖️ 老套餐残值已折算为 <b>{converted_days}</b> 天新套餐时长\n"
+                                    
                             msg_text += f"⏳ 到期时间：{new_expire_at.strftime('%Y-%m-%d %H:%M:%S')}\n\n祝您仙途坦荡！"
 
                             await self.bot_app.bot.send_message(

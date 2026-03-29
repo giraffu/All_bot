@@ -1,8 +1,8 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
-import { EyeOutlined, EditOutlined, DeleteOutlined, UserDeleteOutlined, SearchOutlined, GiftOutlined } from '@ant-design/icons-vue'
+import { EyeOutlined, EditOutlined, DeleteOutlined, UserDeleteOutlined, SearchOutlined, GiftOutlined, SafetyCertificateOutlined } from '@ant-design/icons-vue'
 import { formatDate } from '../utils/helpers'
-import { updateUserCredits, clearUserHistory, deleteUser, fetchPlans, adminGiftPlan } from '../api/api'
+import { updateUserCredits, clearUserHistory, deleteUser, fetchPlans, adminGiftPlan, updateUserIdentity } from '../api/api'
 import { message, Modal } from 'ant-design-vue'
 
 const props = defineProps({
@@ -117,6 +117,51 @@ const giftForm = ref({
   note: '后台手动赠送'
 })
 const giftingPlan = ref(false)
+
+// Identity editing state
+const editIdentityVisible = ref(false)
+const currentIdentityUser = ref(null)
+const newIdentityValue = ref('')
+const newExpireAtValue = ref(null)
+const autoConvertIdentity = ref(true)
+const updatingIdentity = ref(false)
+
+const allIdentities = [
+  '外门弟子',
+  '内门弟子',
+  '核心弟子',
+  '真传弟子'
+]
+
+const handleEditIdentity = (record) => {
+  currentIdentityUser.value = record
+  newIdentityValue.value = record.current_identity || '外门弟子'
+  newExpireAtValue.value = null // Start as null to allow auto-conversion
+  autoConvertIdentity.value = true
+  editIdentityVisible.value = true
+}
+
+const saveIdentity = async () => {
+  if (!currentIdentityUser.value) return
+  
+  updatingIdentity.value = true
+  try {
+    const res = await updateUserIdentity(
+      currentIdentityUser.value.id,
+      newIdentityValue.value,
+      newExpireAtValue.value,
+      autoConvertIdentity.value
+    )
+    const newExpireStr = res.identity_expire_at ? formatDate(res.identity_expire_at) : '永不过期'
+    message.success(`用户 ${currentIdentityUser.value.id} 身份已更新为 ${res.current_identity}，到期时间：${newExpireStr}`)
+    editIdentityVisible.value = false
+    emit('refresh')
+  } catch (err) {
+    message.error('更新失败: ' + (err.response?.data?.detail || err.message))
+  } finally {
+    updatingIdentity.value = false
+  }
+}
 
 const loadPlans = async () => {
   try {
@@ -459,6 +504,15 @@ const columns = [
             <a-button 
               type="link" 
               size="small"
+              @click="handleEditIdentity(record)"
+            >
+              <template #icon><safety-certificate-outlined /></template>
+              切换身份
+            </a-button>
+
+            <a-button 
+              type="link" 
+              size="small"
               @click="$emit('viewHistory', record)"
             >
               <template #icon><eye-outlined /></template>
@@ -498,6 +552,51 @@ const columns = [
       </template>
     </a-table>
     </div>
+
+    <!-- Edit Identity Modal -->
+    <a-modal
+      v-model:visible="editIdentityVisible"
+      title="切换用户身份组"
+      @ok="saveIdentity"
+      :confirmLoading="updatingIdentity"
+      okText="确认切换"
+      cancelText="取消"
+    >
+      <div class="py-4">
+        <p class="mb-4 text-gray-500">正在修改用户 <span class="font-bold text-gray-800">{{ currentIdentityUser?.full_name || currentIdentityUser?.id }}</span> 的身份等级</p>
+        <a-form layout="vertical">
+          <a-form-item label="身份组等级" required>
+            <a-select v-model:value="newIdentityValue" placeholder="请选择身份组">
+              <a-select-option v-for="idnt in allIdentities" :key="idnt" :value="idnt">
+                {{ idnt }}
+              </a-select-option>
+            </a-select>
+          </a-form-item>
+          <a-form-item label="到期时间">
+            <a-date-picker 
+              v-model:value="newExpireAtValue" 
+              show-time 
+              value-format="YYYY-MM-DD HH:mm:ss" 
+              placeholder="选择到期时间（留空则不修改）" 
+              class="w-full"
+            />
+          </a-form-item>
+          <a-form-item v-if="!newExpireAtValue">
+            <a-checkbox v-model:checked="autoConvertIdentity">
+              自动折算剩余时长 (根据身份价值比例缩放时间)
+            </a-checkbox>
+          </a-form-item>
+        </a-form>
+        <div class="mt-4 p-3 bg-amber-50 text-amber-700 text-xs rounded border border-amber-100">
+          <p class="font-bold mb-1">注意：</p>
+          <ul class="list-disc pl-4 m-0 space-y-1">
+            <li>手动切换身份不会赠送灵石。</li>
+            <li>如果只需要补发灵石和套餐，请使用“赠送套餐”功能。</li>
+            <li>此操作会记录管理员操作日志。</li>
+          </ul>
+        </div>
+      </div>
+    </a-modal>
 
     <!-- Edit Credits Modal -->
     <a-modal

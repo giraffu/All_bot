@@ -71,34 +71,58 @@ const chartData = ref({});
 
 const typeMapping = {
   'undress': '快速脱衣',
-  'face_swap': '快速/随机换脸',
-  'penetration': '抽插处理',
+  'face_swap': '快速换脸',
+  'faceswap_step1': '快速换脸',
+  'faceswap_step2': '快速换脸',
+  'random_faceswap': '随机换脸',
+  'face_show': '动图露奶',
+  'face_tongue': '动图吐舌',
+  'fuck': '动图做爱',
+  'penetration': '快速抽插',
+  'penetration_step1': '快速抽插',
+  'penetration_step2': '快速抽插',
   'perfect_video_insert': '动图传教士',
   'doggy_style': '动图后入',
   'blowjob': '口交黑人',
-  'closeup_blowjob': '特写口交',
-  'undress_tongue': '脱衣吐舌',
   'masturbation': '快速自慰',
-  'image': '自由P图/其他',
+  'image': '自由P图',
+  'edit': '自由P图',
   'video': '视频生成',
-  'video_pro': '高级视频',
+  'video_pro': '专业视频',
+  'custom_video': '自定义视频',
+  'template_contribute': '模板共建',
+  'undress_tongue': '脱衣吐舌',
+  'closeup_blowjob': '特写口交',
+  'text_to_image': '文生图',
   'unknown': '未知类型'
 };
 
 const typeColors = {
-  'undress': '#ff7875',       // Light Red
-  'face_swap': '#40a9ff',     // Blue
-  'penetration': '#f759ab',   // Pink
-  'perfect_video_insert': '#eb2f96',
-  'doggy_style': '#722ed1',
-  'blowjob': '#faad14',
-  'closeup_blowjob': '#ff4d4f', // Red for closeup
-  'undress_tongue': '#bae637',  // Lime
-  'masturbation': '#ffc069',  // Orange
-  'image': '#ffd666',         // Yellow
-  'video': '#36cfc9',         // Cyan
-  'video_pro': '#597ef7',     // Geek Blue
-  'unknown': '#bfbfbf'        // Grey
+  'undress': '#ff7875',
+  'face_swap': '#40a9ff',
+  'faceswap_step1': '#40a9ff',
+  'faceswap_step2': '#40a9ff',
+  'random_faceswap': '#096dd9',
+  'face_show': '#9254de',
+  'face_tongue': '#722ed1',
+  'fuck': '#eb2f96',
+  'penetration': '#f759ab',
+  'penetration_step1': '#f759ab',
+  'penetration_step2': '#f759ab',
+  'perfect_video_insert': '#faad14',
+  'doggy_style': '#d48806',
+  'blowjob': '#fa541c',
+  'masturbation': '#ffc069',
+  'image': '#ffd666',
+  'edit': '#ffd666',
+  'video': '#36cfc9',
+  'video_pro': '#597ef7',
+  'custom_video': '#13c2c2',
+  'template_contribute': '#8c8c8c',
+  'undress_tongue': '#bae637',
+  'closeup_blowjob': '#ff4d4f',
+  'text_to_image': '#52c41a',
+  'unknown': '#bfbfbf'
 };
 
 const fetchData = async () => {

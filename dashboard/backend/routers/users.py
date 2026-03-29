@@ -10,7 +10,7 @@ from datetime import datetime, timedelta
 from typing import Optional
 from src.database.core import get_db
 from src.database.models import User, History, Referral, TemplateContribution, CheckinHistory, Order, UserLog, MembershipPlan
-from dashboard.backend.schemas import UpdateCreditsRequest, AdminGiftRequest
+from dashboard.backend.schemas import UpdateCreditsRequest, AdminGiftRequest, UpdateIdentityRequest
 from src.services.storage import storage
 
 router = APIRouter(prefix="/api/users", tags=["users"])
@@ -221,14 +221,61 @@ async def admin_gift_plan(user_id: int, request: AdminGiftRequest, db: AsyncSess
         )
         db.add(new_order)
         
-        user.credits += plan.reward_credits
-        user.current_identity = plan.identity_name
-        user.is_first_charge = False
+        # 身份和有效期逻辑 (与自主充值保持一致)
+        now = datetime.now()
+        new_expire_at = user.identity_expire_at
+        final_identity = plan.identity_name
         
-        if not user.identity_expire_at or user.identity_expire_at < datetime.now():
-            user.identity_expire_at = datetime.now() + timedelta(days=plan.duration_days)
+        identity_priority = {
+            "外门弟子": 0,
+            "内门弟子": 1,
+            "核心弟子": 2,
+            "真传弟子": 3
+        }
+        identity_ratio = {
+            "外门弟子": 1,
+            "内门弟子": 2,
+            "核心弟子": 5,
+            "真传弟子": 10
+        }
+        
+        current_priority = identity_priority.get(user.current_identity, 0)
+        new_priority = identity_priority.get(plan.identity_name, 0)
+        
+        if new_expire_at and new_expire_at > now:
+            if user.current_identity == plan.identity_name:
+                # 同套餐续费
+                new_expire_at += timedelta(days=plan.duration_days)
+            elif new_priority > current_priority:
+                # 升级：将旧身份残值折算为新身份天数
+                import math
+                remaining_days = (new_expire_at - now).total_seconds() / 86400.0
+                old_ratio = identity_ratio.get(user.current_identity, 1)
+                new_ratio = identity_ratio.get(plan.identity_name, 1)
+                
+                # 残值 = 剩余天数 * 旧比例，折算天数 = 残值 / 新比例
+                converted_days = math.ceil((remaining_days * old_ratio) / new_ratio)
+                new_expire_at = now + timedelta(days=plan.duration_days + converted_days)
+            else:
+                # 降级或同级：保留高等级身份，将新赠送的低等级套餐价值折算为高等级身份的天数
+                final_identity = user.current_identity
+                
+                import math
+                old_ratio = identity_ratio.get(user.current_identity, 1)
+                new_ratio = identity_ratio.get(plan.identity_name, 1)
+                
+                # 新购价值 = 新套餐天数 * 新比例，折算天数 = 新购价值 / 旧比例
+                extra_days = math.ceil((plan.duration_days * new_ratio) / old_ratio)
+                new_expire_at += timedelta(days=extra_days)
         else:
-            user.identity_expire_at = user.identity_expire_at + timedelta(days=plan.duration_days)
+            # 身份已过期或首次充值
+            new_expire_at = now + timedelta(days=plan.duration_days)
+            
+        # 更新用户信息
+        user.credits += plan.reward_credits
+        user.current_identity = final_identity
+        user.identity_expire_at = new_expire_at
+        user.is_first_charge = False
             
         extra_info = {
             "order_id": order_id,
@@ -259,4 +306,75 @@ async def admin_gift_plan(user_id: int, request: AdminGiftRequest, db: AsyncSess
     except Exception as e:
         await db.rollback()
         logger.error(f"Error gifting plan: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/{user_id}/identity")
+async def update_user_identity(user_id: int, request: UpdateIdentityRequest, db: AsyncSession = Depends(get_db)):
+    """Update user identity and expiration date with optional value conversion"""
+    try:
+        stmt = select(User).where(User.id == user_id)
+        result = await db.execute(stmt)
+        user = result.scalar_one_or_none()
+        
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+            
+        old_identity = user.current_identity
+        old_expire = user.identity_expire_at
+        new_expire = request.expire_at
+        
+        # 自动折算逻辑
+        if request.convert and not request.expire_at and old_expire and old_expire > datetime.now() and old_identity != request.identity:
+            import math
+            identity_ratio = {
+                "外门弟子": 1,
+                "内门弟子": 2,
+                "核心弟子": 5,
+                "真传弟子": 10
+            }
+            
+            now = datetime.now()
+            remaining_days = (old_expire - now).total_seconds() / 86400.0
+            
+            old_ratio = identity_ratio.get(old_identity, 1)
+            new_ratio = identity_ratio.get(request.identity, 1)
+            
+            # 残值 = 剩余天数 * 旧比例，折算天数 = 残值 / 新比例
+            converted_days = math.ceil((remaining_days * old_ratio) / new_ratio)
+            
+            new_expire = now + timedelta(days=converted_days)
+            logger.info(f"Admin manual convert for user {user_id}: {old_identity}({remaining_days:.2f}d) -> {request.identity}({converted_days}d)")
+
+        user.current_identity = request.identity
+        if new_expire:
+            user.identity_expire_at = new_expire
+            
+        await db.commit()
+        
+        # Log the identity change
+        from src.services.log_service import LogService
+        await LogService.log_action(
+            user_id=user_id,
+            username=user.username or user.full_name,
+            operation_type="admin_update_identity",
+            credit_change=0,
+            current_balance=user.credits,
+            extra_info={
+                "old_identity": old_identity,
+                "new_identity": user.current_identity,
+                "old_expire": str(old_expire) if old_expire else None,
+                "new_expire": str(user.identity_expire_at) if user.identity_expire_at else None,
+                "converted": request.convert,
+                "source": "dashboard_admin_edit"
+            }
+        )
+            
+        return {
+            "status": "ok", 
+            "id": user.id,
+            "current_identity": user.current_identity,
+            "identity_expire_at": user.identity_expire_at
+        }
+    except Exception as e:
+        logger.error(f"Error updating user identity: {e}")
         raise HTTPException(status_code=500, detail=str(e))

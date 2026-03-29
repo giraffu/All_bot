@@ -86,12 +86,24 @@ export const fetchUserHistory = async (userId) => {
   return response.data
 }
 
-export const fetchHistoryAll = async (page = 1, pageSize = 20, type = null) => {
-  let url = `/api/history/all?page=${page}&page_size=${pageSize}`
+export const fetchHistoryAll = async (page = 1, pageSize = 20, type = null, rating = null, isPublic = null) => {
+  const params = new URLSearchParams()
+  params.append('page', page)
+  params.append('page_size', pageSize)
+  
   if (type && type !== 'all') {
-    url += `&type=${type}`
+    params.append('type', type)
   }
-  const response = await api.get(url)
+  
+  if (rating !== null) {
+    params.append('rating', rating)
+  }
+  
+  if (isPublic !== null) {
+    params.append('is_public', isPublic)
+  }
+  
+  const response = await api.get(`/api/history/all?${params.toString()}`)
   return response.data
 }
 
@@ -104,6 +116,13 @@ export const updateUserCredits = async (userId, credits, checkin_count = null) =
   const payload = { credits }
   if (checkin_count !== null) payload.checkin_count = checkin_count
   const response = await api.post(`/api/users/${userId}/credits`, payload)
+  return response.data
+}
+
+export const updateUserIdentity = async (userId, identity, expire_at = null, convert = true) => {
+  const payload = { identity, convert }
+  if (expire_at) payload.expire_at = expire_at
+  const response = await api.post(`/api/users/${userId}/identity`, payload)
   return response.data
 }
 

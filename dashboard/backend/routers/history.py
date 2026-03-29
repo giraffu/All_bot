@@ -14,8 +14,15 @@ router = APIRouter(prefix="/api/history", tags=["history"])
 logger = logging.getLogger("dashboard.history")
 
 @router.get("/all", response_model=HistoryListResponse)
-async def get_all_history(page: int = 1, page_size: int = 20, type: Optional[str] = None, db: AsyncSession = Depends(get_db)):
-    """Get all history with pagination and optional type filter"""
+async def get_all_history(
+    page: int = 1, 
+    page_size: int = 20, 
+    type: Optional[str] = None, 
+    rating: Optional[int] = None,
+    is_public: Optional[bool] = None,
+    db: AsyncSession = Depends(get_db)
+):
+    """Get all history with pagination and multiple optional filters"""
     try:
         offset = (page - 1) * page_size
         
@@ -30,9 +37,19 @@ async def get_all_history(page: int = 1, page_size: int = 20, type: Optional[str
             .order_by(desc(History.created_at))
         )
 
+        # Handle multiple types if comma-separated
         if type and type != "all":
-            count_stmt = count_stmt.where(History.type == type)
-            stmt = stmt.where(History.type == type)
+            types = type.split(',')
+            count_stmt = count_stmt.where(History.type.in_(types))
+            stmt = stmt.where(History.type.in_(types))
+        
+        if rating is not None:
+            count_stmt = count_stmt.where(History.rating == rating)
+            stmt = stmt.where(History.rating == rating)
+            
+        if is_public is not None:
+            count_stmt = count_stmt.where(History.is_public == is_public)
+            stmt = stmt.where(History.is_public == is_public)
         
         count_result = await db.execute(count_stmt)
         total = count_result.scalar() or 0

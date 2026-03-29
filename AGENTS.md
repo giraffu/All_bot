@@ -6,15 +6,15 @@
 这是一个提供 AI 图像和视频生成服务（如：换脸、文生图、视频模板等）的 Telegram 机器人。它具有独特的“修仙”主题进度系统、单轨制代币经济模型，并集成了去中心化的 TON 区块链支付与 Telegram Stars 原生支付双通道、Redis 高速缓存、强大的任务排队调度以及完善的后台监控与违禁词过滤机制。
 
 ## 2. 系统混合架构 (7 大核心模块)
-* **入口与网络网关 (`src/bot_test.py`)**：处理 PROD/TEST 双环境切换、动态代理探活、超大并发连接池 (`connection_pool_size=250`)。系统目前统一使用 `bot_test.py` 作为双环境的启动入口。
+* **入口与网络网关 (`src/bot_test.py`)**：处理 PROD/TEST 双环境切换、动态代理探活、超大并发连接池 (`connection_pool_size=500`)。系统目前统一使用 `bot_test.py` 作为双环境的启动入口。
 * **交互与处理器 (`src/handlers/`)**：管理用户状态机，渲染 UI，拦截违禁词，并支持接收多格式媒体（Photo, Video, Document）用于高级场景（如模板共建）。
 * **权限与经济 (`src/services/permission_service.py`, `src/quota.py`)**：管理代币系统，并基于用户的修为和身份执行阶梯式的视频画质/时长权限控制。
-* **任务编排与 Redis (`src/services/task_service.py`, `task_registry.py`)**：工作流编排，**全面使用 Redis** 进行活动任务元数据的追踪以及单用户并发锁控制。
-* **底层通信 (`src/api_client.py`)**：封装与 AI 后端的 HTTP 异步请求，采用持久连接池，内置弹性**熔断器 (Circuit Breaker)**和异步重试机制。
+* **任务编排与 Redis (`src/services/task_service.py`, `task_registry.py`)**：工作流编排，**全面使用 Redis** 进行活动任务元数据的追踪以及单用户并发锁控制 (`MAX_CONCURRENT_TASKS`)。
+* **底层通信 (`src/api_client.py`)**：封装与 AI 后端的 HTTP 异步请求，采用持久连接池 (`max_connections=500`)，内置弹性**熔断器 (Circuit Breaker)**、Trace ID 追踪和异步重试机制。
 * **双通道支付守护 (`src/services/payment_validator.py`, `src/handlers/payment_handler.py`)**：
   * **TON 支付**：独立守护协程，每 15 秒轮询 TON RPC 节点，校验链上 BOC 备注防双花，并自动处理跨套餐升级的残值折算。
   * **Stars 支付**：集成 Telegram 原生 Stars 支付（`PreCheckoutQuery` 和 `SuccessfulPayment` 拦截），复用同一套防双花和订单 (`orders` 表) 逻辑，并使用 `XTR` 货币单位下发账单。
-* **持久化存储 (`src/database/`, `src/services/storage.py`)**：**严格唯一使用 PostgreSQL** 管理资产流水，放弃 SQLite。使用 MinIO 存储多媒体，并生成预签名 URL 供外部访问。
+* **持久化存储 (`src/database/`, `src/services/storage.py`)**：**严格唯一使用 PostgreSQL** (SQLAlchemy Async) 管理资产流水。使用 MinIO 存储多媒体，并通过预签名 URL 或 API 代理访问。
 
 ## 3. 修仙与 VIP 身份系统
 双轨制特权系统控制高画质（最高 1024p）和长时长（最高 10s）的访问，并决定排队优先级。
@@ -34,10 +34,12 @@
   * **开发者红线**：任何涉及灵石增减的代码修改，**必须**同步在 `user_logs` 表中插入流水记录，否则会引发严重对账错误！底层通过 `contextvars` 自动追踪 SQL 触发者的 User ID。
 
 ## 5. Dashboard 监控后台
-* **前后端分离**：FastAPI 后端 + Vue 3 前端，与 Bot 共享 DB 与 MinIO。
+* **前后端分离**：FastAPI 后端 + Vue 3 前端，与 Bot 共享 DB 与 Redis 实例。
+* **安全性**：采用 JWT Bearer Token 鉴权，由后端中间件统一拦截 `/api/` 路由。
 * **核心新特性**：
-  * **双队列监控**：不仅展示底层 ComfyUI 的实时队列，还新增了基于 Redis 轮询的 `ActiveTasksTable`，展示 Bot 层面的活动任务。
-  * **人工干预**：提供了强制拦截接口 (`/api/system/refund_bot_task`)，管理员可一键终止卡死或违规的任务，释放锁并全额退款。
+  * **实时任务监控**：通过 Redis 轮询 `ActiveTasksTable`，展示 Bot 侧活动任务的详细元数据、创建时间 (`Age`) 及后端执行状态。
+  * **API 代理机制**：Dashboard 后端作为网关，代理前端对 AI 接口的 `status`、`image`、`video` 请求，简化前端配置。
+  * **管理干预**：提供强制拦截接口 (`/api/system/refund_bot_task`) 和僵尸任务清理功能，允许管理员一键终止卡死任务、释放并发锁并全额退款。
 
 ## 6. 服务重启与容灾机制 (Deployment & Disaster Recovery)
 本项目依赖 Docker Compose 进行编排（正式服 `tg-bot`，测试服 `tg-bot-test`，后台 `dashboard`）。
@@ -61,7 +63,15 @@
   * **脚本批量清理 (CLI)**：当出现大面积卡死或需要快速清理时，可执行 `docker exec tg-bot python clean_zombies.py`。该脚本会自动清理驻留时间过长（默认 > 7200秒/2小时）的任务。如需调整判定阈值，可直接修改根目录下的 `clean_zombies.py`。
 * **核查 Telegram Stars 官方对账流水**：
   如果怀疑发生漏单或掉单，可以直接调用 Telegram Bot API 底层接口查询 Stars 的真实充值记录。
-  * **操作方法**：在宿主机根目录执行 `python check_stars.py` 即可拉取最近的官方流水，包含充值时间、金额、对应用户 ID 和订单 Payload 等关键信息。这可以用来判断用户是否真正完成了付款。
+  * **操作方法**：在宿主机根目录执行 `python check_stars.py` 即可拉取最近的官方流水。
+
+## 8. 代码审查与架构演进 (2026-03-28)
+本项目已完成全面代码审查与架构升级规划。
+*   **详细报告**：参考根目录下的 [CODE_REVIEW_REPORT.md](file:///home/hfy/APP/All_bot/CODE_REVIEW_REPORT.md) 和 [SYSTEM_UPGRADE_PLAN.md](file:///home/hfy/APP/All_bot/SYSTEM_UPGRADE_PLAN.md)。
+*   **演进方向**：
+    *   **计算存储分离**：Bot、API、Redis、DB 集中在高性能计算节点（Server A），MinIO 外挂在 NAS。
+    *   **状态同步优化**：合并 Bot 与中控 Redis 实例，利用 Redis Pub/Sub 实现任务进度的实时推送，并确保双端队列清理同步（如超时/僵尸任务处理），实时释放并发锁。
+    *   **逻辑数据层**：通过 Service/Repository 模式在内部解耦数据访问，不增加物理 API 层以保持极致响应。
 
 ---
 **👨‍💻 最终开发指引 (To AI Assistant)**：

@@ -76,53 +76,74 @@ async def successful_payment_callback(update: Update, context: ContextTypes.DEFA
             from datetime import datetime, timedelta
             now = datetime.utcnow()
             
-            # 残值折算与过期时间计算
+            # 身份和有效期逻辑
             new_expire_at = user.identity_expire_at
             converted_days = 0
+            final_identity = plan.identity_name
+            is_downgrade = False
+            
+            # 定义身份优先级和折算比例
+            identity_priority = {
+                "外门弟子": 0,
+                "内门弟子": 1,
+                "核心弟子": 2,
+                "真传弟子": 3
+            }
+            identity_ratio = {
+                "外门弟子": 1,
+                "内门弟子": 2,
+                "核心弟子": 5,
+                "真传弟子": 10
+            }
+            
+            current_priority = identity_priority.get(user.current_identity, 0)
+            new_priority = identity_priority.get(plan.identity_name, 0)
             
             if new_expire_at and new_expire_at > now:
                 if user.current_identity == plan.identity_name:
                     # 同套餐续费
                     new_expire_at += timedelta(days=plan.duration_days)
-                else:
-                    # 跨套餐折算
-                    old_plan_res = await session.execute(
-                        select(MembershipPlan).where(MembershipPlan.identity_name == user.current_identity)
-                    )
-                    old_plan = old_plan_res.scalar_one_or_none()
+                elif new_priority > current_priority:
+                    # 升级：将旧身份残值折算为新身份天数
+                    remaining_days = (new_expire_at - now).total_seconds() / 86400.0
+                    old_ratio = identity_ratio.get(user.current_identity, 1)
+                    new_ratio = identity_ratio.get(plan.identity_name, 1)
                     
-                    # 使用 reward_credits 作为通用等价物进行残值折算，因为 Stars 和 TON 的计价单位不同
-                    if old_plan and old_plan.reward_credits > 0 and plan.duration_days > 0 and plan.reward_credits > 0:
-                        remaining_days = (new_expire_at - now).total_seconds() / 86400.0
-                        
-                        # 老套餐日均价值 (以灵石为锚定物)
-                        old_daily_value = old_plan.reward_credits / old_plan.duration_days
-                        # 剩余总价值 (灵石)
-                        residual_value = remaining_days * old_daily_value
-                        
-                        # 新套餐日均价值 (以灵石为锚定物)
-                        new_daily_value = plan.reward_credits / plan.duration_days
-                        
-                        # 折算新套餐天数
-                        converted_days = math.ceil(residual_value / new_daily_value)
-                        new_expire_at = now + timedelta(days=plan.duration_days + converted_days)
-                    else:
-                        new_expire_at = now + timedelta(days=plan.duration_days)
+                    # 残值 = 剩余天数 * 旧比例，折算天数 = 残值 / 新比例
+                    converted_days = math.ceil((remaining_days * old_ratio) / new_ratio)
+                    new_expire_at = now + timedelta(days=plan.duration_days + converted_days)
+                else:
+                    # 降级或同级：保留高等级身份，将新购买的低等级套餐价值折算为高等级身份的天数
+                    is_downgrade = True
+                    final_identity = user.current_identity # 保持原身份
+                    
+                    old_ratio = identity_ratio.get(user.current_identity, 1)
+                    new_ratio = identity_ratio.get(plan.identity_name, 1)
+                    
+                    # 新购价值 = 新套餐天数 * 新比例，折算天数 = 新购价值 / 旧比例
+                    extra_days = math.ceil((plan.duration_days * new_ratio) / old_ratio)
+                    converted_days = extra_days
+                    new_expire_at += timedelta(days=extra_days)
             else:
+                # 身份已过期或首次充值
                 new_expire_at = now + timedelta(days=plan.duration_days)
                 
             # 更新用户信息
             user.credits += added_credits
-            user.current_identity = new_identity
+            user.current_identity = final_identity
             user.identity_expire_at = new_expire_at
             user.is_first_charge = False
+            new_identity = final_identity  # 同步更新 new_identity 以便后续通知使用
                 
             # 记录订单
             from src.database.models import Order
             telegram_charge_id = successful_payment.telegram_payment_charge_id
             
+            # Use truncated id for both checking and saving to prevent double processing bugs
+            tx_hash_truncated = telegram_charge_id[:100]
+            
             # Check if order already exists (prevent double processing)
-            existing_order = await session.execute(select(Order).where(Order.tx_hash == telegram_charge_id))
+            existing_order = await session.execute(select(Order).where(Order.tx_hash == tx_hash_truncated))
             if existing_order.scalar_one_or_none():
                 logger.warning(f"Order already processed for charge_id: {telegram_charge_id}")
                 return
@@ -134,7 +155,7 @@ async def successful_payment_callback(update: Update, context: ContextTypes.DEFA
                 original_price=successful_payment.total_amount, # In stars
                 final_price=successful_payment.total_amount,
                 status="SUCCESS",
-                tx_hash=telegram_charge_id[:100] # Truncate to avoid StringDataRightTruncationError
+                tx_hash=tx_hash_truncated # Truncate to avoid StringDataRightTruncationError
             )
             session.add(new_order)
                 
@@ -158,10 +179,15 @@ async def successful_payment_callback(update: Update, context: ContextTypes.DEFA
                 f"🎉 **支付成功！**\n\n"
                 f"感谢您的赞助，您已成功购买 **{plan.name}**。\n"
                 f"💰 **获得永久灵石**：`{added_credits}`\n"
-                f"👑 **当前身份**：`{new_identity}`\n"
             )
-            if converted_days > 0:
-                success_msg += f"⚖️ **老套餐残值已折算**：`{converted_days}` 天新套餐时长\n"
+            if is_downgrade:
+                success_msg += f"👑 **当前身份保持为**：`{final_identity}`\n"
+                if converted_days > 0:
+                    success_msg += f"⚖️ **新套餐价值已折算**：`{converted_days}` 天当前高级身份时长\n"
+            else:
+                success_msg += f"👑 **当前身份晋升为**：`{final_identity}`\n"
+                if converted_days > 0:
+                    success_msg += f"⚖️ **老套餐残值已折算**：`{converted_days}` 天新套餐时长\n"
                 
             success_msg += (
                 f"⏳ **身份到期时间**：`{new_expire_at.strftime('%Y-%m-%d %H:%M:%S')}` (UTC)\n\n"
