@@ -1,0 +1,300 @@
+{
+  "1": {
+    "inputs": {
+      "text": "\u8fc7\u66dd\uff0c\u9759\u6001\uff0c\u7ec6\u8282\u6a21\u7cca\u4e0d\u6e05\uff0c\u5b57\u5e55\uff0c\u98ce\u683c\uff0c\u4f5c\u54c1\uff0c\u753b\u4f5c\uff0c\u753b\u9762\uff0c\u9759\u6b62\uff0c\u6574\u4f53\u53d1\u7070\uff0c\u6700\u5dee\u8d28\u91cf\uff0c\u4f4e\u8d28\u91cf\uff0cJPEG\u538b\u7f29\u6b8b\u7559\uff0c\u4e11\u964b\u7684\uff0c\u6b8b\u7f3a\u7684\uff0c\u591a\u4f59\u7684\u624b\u6307\uff0c\u753b\u5f97\u4e0d\u597d\u7684\u624b\u90e8\uff0c\u753b\u5f97\u4e0d\u597d\u7684\u8138\u90e8\uff0c\u7578\u5f62\u7684\uff0c\u6bc1\u5bb9\u7684\uff0c\u5f62\u6001\u7578\u5f62\u7684\u80a2\u4f53\uff0c\u624b\u6307\u878d\u5408\uff0c\u9759\u6b62\u4e0d\u52a8\u7684\u753b\u9762\uff0c\u6742\u4e71\u7684\u80cc\u666f\uff0c\u4e09\u6761\u817f\uff0c\u80cc\u666f\u4eba\u5f88\u591a\uff0c\u5012\u7740\u8d70",
+      "clip": [
+        "272",
+        1
+      ]
+    },
+    "class_type": "CLIPTextEncode"
+  },
+  "29": {
+    "inputs": {
+      "samples": [
+        "118",
+        0
+      ],
+      "vae": [
+        "35",
+        0
+      ]
+    },
+    "class_type": "VAEDecode"
+  },
+  "30": {
+    "inputs": {
+      "shift": 8,
+      "model": [
+        "201",
+        0
+      ]
+    },
+    "class_type": "ModelSamplingSD3"
+  },
+  "31": {
+    "inputs": {
+      "shift": 8.000000000000002,
+      "model": [
+        "203",
+        0
+      ]
+    },
+    "class_type": "ModelSamplingSD3"
+  },
+  "32": {
+    "inputs": {
+      "unet_name": "wan22EnhancedNSFWSVICamera_nsfwFASTMOVEV2FP8L.safetensors",
+      "weight_dtype": "default"
+    },
+    "class_type": "UNETLoader"
+  },
+  "33": {
+    "inputs": {
+      "clip_name": "umt5_xxl_fp8_e4m3fn_scaled.safetensors",
+      "type": "wan",
+      "device": "default"
+    },
+    "class_type": "CLIPLoader"
+  },
+  "34": {
+    "inputs": {
+      "unet_name": "wan22EnhancedNSFWSVICamera_nsfwFASTMOVEV2FP8H.safetensors",
+      "weight_dtype": "default"
+    },
+    "class_type": "UNETLoader"
+  },
+  "35": {
+    "inputs": {
+      "vae_name": "wan_2.1_vae.safetensors"
+    },
+    "class_type": "VAELoader"
+  },
+  "117": {
+    "inputs": {
+      "add_noise": "enable",
+      "noise_seed": 168033849531311,
+      "steps": 4,
+      "cfg": 1,
+      "sampler_name": "euler",
+      "scheduler": "simple",
+      "start_at_step": 0,
+      "end_at_step": 2,
+      "return_with_leftover_noise": "enable",
+      "model": [
+        "272",
+        0
+      ],
+      "positive": [
+        "285",
+        0
+      ],
+      "negative": [
+        "285",
+        1
+      ],
+      "latent_image": [
+        "285",
+        2
+      ]
+    },
+    "class_type": "KSamplerAdvanced"
+  },
+  "118": {
+    "inputs": {
+      "add_noise": "disable",
+      "noise_seed": 0,
+      "steps": 4,
+      "cfg": 1,
+      "sampler_name": "euler",
+      "scheduler": "simple",
+      "start_at_step": 2,
+      "end_at_step": 4,
+      "return_with_leftover_noise": "disable",
+      "model": [
+        "273",
+        0
+      ],
+      "positive": [
+        "285",
+        0
+      ],
+      "negative": [
+        "285",
+        1
+      ],
+      "latent_image": [
+        "117",
+        0
+      ]
+    },
+    "class_type": "KSamplerAdvanced"
+  },
+  "195": {
+    "inputs": {
+      "text": "[512p|5s] \u5fc5\u987b\u753b\u9762\u4fdd\u6301\u539f\u56fe\u5973\u5b69\u8138\u90e8\u4e00\u81f4\u6027\uff0c\u4f7f\u7528\u4f73\u80fd\u76f8\u673a\u62cd\u6444\uff0c\u753b\u8d28\u67d4\u548c\uff0c\u5149\u7ebf\u67d4\u548c\uff0c\u771f\u5b9e\u611f\u3002\n\u5973\u751f\u77ac\u95f4\u8131\u5149\u8eab\u4e0a\u6240\u6709\u8863\u7269\uff0c\u9732\u51fa\u5b8c\u7f8e\u7684D\u7f69\u676f\u4e73\u623f\uff0c\u4e73\u5934\u7c89\u7c89\u5ae9\u5ae9\u3002\u5973\u4eba\u8e72\u5750\u5728\u4e00\u4e2a\u8eba\u5728\u5730\u4e0a\u7684\u88f8\u4f53\u7537\u4eba\u7684\u8eab\u4e0a\uff0c\u5973\u4eba\u7684\u817f\u5448m\u5b57\u5f62\uff0c\u9634\u830e\u63d2\u5165\u4e86\u5973\u4eba\u7684\u9634\u9053\uff0c\u5973\u4eba\u4e0a\u4e0b\u8815\u52a8\u8ba9\u9634\u830e\u4e0d\u65ad\u7684\u4e0e\u9634\u9053\u8fdb\u884c\u6d3b\u585e\u8fd0\u52a8\u3002\u4fdd\u6301\u5973\u5b69\u4fdd\u6301\u9762\u90e8\u7ec6\u8282\uff0c\u4fdd\u6301\u771f\u5b9e\u611f\u4e0e\u539f\u56fe\u4e00\u81f4\u3002\u5973\u5b69\u80a4\u8272\u548c\u80a4\u8d28\u548c\u539f\u56fe\u4e00\u81f4\u3002\u5973\u5b69\u8981\u4e00\u76f4\u6ce8\u89c6\u955c\u5934\u3002\u4e25\u683c\u4fdd\u6301\u5973\u751f\u7684\u8138\u90e8\u4e0e\u539f\u56fe\u7247\u4e00\u81f4\u3002",
+      "clip": [
+        "272",
+        1
+      ]
+    },
+    "class_type": "CLIPTextEncode"
+  },
+  "201": {
+    "inputs": {
+      "enable_fp16_accumulation": true,
+      "model": [
+        "202",
+        0
+      ]
+    },
+    "class_type": "ModelPatchTorchSettings"
+  },
+  "202": {
+    "inputs": {
+      "sage_attention": "auto",
+      "allow_compile": false,
+      "model": [
+        "34",
+        0
+      ]
+    },
+    "class_type": "PathchSageAttentionKJ"
+  },
+  "203": {
+    "inputs": {
+      "enable_fp16_accumulation": true,
+      "model": [
+        "204",
+        0
+      ]
+    },
+    "class_type": "ModelPatchTorchSettings"
+  },
+  "204": {
+    "inputs": {
+      "sage_attention": "auto",
+      "allow_compile": false,
+      "model": [
+        "32",
+        0
+      ]
+    },
+    "class_type": "PathchSageAttentionKJ"
+  },
+  "263": {
+    "inputs": {
+      "desired_width": 512,
+      "desired_height": 512,
+      "divisible_by": 16,
+      "upscale": false,
+      "upscale_method": "lanczos",
+      "small_image_mode": "none",
+      "pad_color": "#000000",
+      "image": [
+        "294",
+        0
+      ]
+    },
+    "class_type": "FindPerfectResolution"
+  },
+  "265": {
+    "inputs": {
+      "ckpt_name": "rife49",
+      "multiplier": 4,
+      "ensemble": false,
+      "images": [
+        "29",
+        0
+      ]
+    },
+    "class_type": "FL_RIFE"
+  },
+  "272": {
+    "inputs": {
+      "PowerLoraLoaderHeaderWidget": {
+        "type": "PowerLoraLoaderHeaderWidget"
+      },
+      "\u2795 Add Lora": "",
+      "model": [
+        "30",
+        0
+      ],
+      "clip": [
+        "33",
+        0
+      ]
+    },
+    "class_type": "Power Lora Loader (rgthree)"
+  },
+  "273": {
+    "inputs": {
+      "PowerLoraLoaderHeaderWidget": {
+        "type": "PowerLoraLoaderHeaderWidget"
+      },
+      "\u2795 Add Lora": "",
+      "model": [
+        "31",
+        0
+      ]
+    },
+    "class_type": "Power Lora Loader (rgthree)"
+  },
+  "285": {
+    "inputs": {
+      "width": [
+        "263",
+        0
+      ],
+      "height": [
+        "263",
+        1
+      ],
+      "length": 81,
+      "batch_size": 1,
+      "motion_amplitude": 1.15,
+      "positive": [
+        "195",
+        0
+      ],
+      "negative": [
+        "1",
+        0
+      ],
+      "vae": [
+        "35",
+        0
+      ],
+      "start_image": [
+        "294",
+        0
+      ]
+    },
+    "class_type": "PainterI2V"
+  },
+  "290": {
+    "inputs": {
+      "frame_rate": 64,
+      "loop_count": 0,
+      "filename_prefix": "AnimateDiff",
+      "format": "video/h264-mp4",
+      "pix_fmt": "yuv420p",
+      "crf": 19,
+      "save_metadata": true,
+      "trim_to_audio": false,
+      "pingpong": false,
+      "save_output": true,
+      "images": [
+        "265",
+        0
+      ]
+    },
+    "class_type": "VHS_VideoCombine"
+  },
+  "294": {
+    "inputs": {
+      "image": "8ba12d04-d605-447b-ba08-38fd5a55ff54_baf48113-2b9c-4fc3-a1f4-3d825c6b9bd7.png"
+    },
+    "class_type": "LoadImage"
+  }
+}

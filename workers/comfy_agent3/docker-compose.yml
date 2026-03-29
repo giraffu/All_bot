@@ -1,0 +1,16 @@
+version: '3.8'
+
+services:
+  comfy-agent:
+    build: .
+    container_name: comfy-agent
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      # Mount workflows directory
+      - ./workflows:/app/workflows
+      # Must mount ComfyUI directories for Agent to read/write input and output files
+      - /home/ubantu/comfyui/input:/home/ubantu/comfyui/input
+      - /home/ubantu/comfyui/output:/home/ubantu/comfyui/output
+    network_mode: "host" # Use host network to easily connect to local ComfyUI at 127.0.0.1:8188

@@ -69,16 +69,14 @@ class OrderListResponse(BaseModel):
 class HistoryResponse(BaseModel):
     id: int
     user_id: int
+    task_id: Optional[str] = None
     type: str
-    input_file: Optional[str]
-    output_file: Optional[str]
-    prompt: Optional[str]
-    negative_prompt: Optional[str]
-    status: str
+    input_file: Optional[str] = None
+    output_file: Optional[str] = None
+    prompt: Optional[str] = None
     created_at: datetime
-    updated_at: datetime
-    rating: Optional[int]
-    is_public: bool
+    rating: Optional[int] = None
+    is_public: bool = False
     username: Optional[str] = None
     full_name: Optional[str] = None
     input_file_url: Optional[str] = None

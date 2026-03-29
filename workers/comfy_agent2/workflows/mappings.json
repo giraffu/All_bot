@@ -1,0 +1,41 @@
+{
+    "img2img": {
+        "image": "8",
+        "prompt": "3",
+        "prompt_input": "prompt",
+        "width": "9",
+        "width_input": "width",
+        "height": "9",
+        "height_input": "height"
+    },
+    "face_swap": {
+        "face_image": "2",
+        "body_image": "3"
+    },
+    "video_insert": {
+        "image": "294",
+        "prompt": "195",
+        "prompt_input": "text",
+        "width": "263",
+        "width_input": "desired_width",
+        "height": "263",
+        "height_input": "desired_height",
+        "length": "285",
+        "length_input": "length"
+    },
+    "video_edit": {
+        "image": "294",
+        "prompt": "195",
+        "prompt_input": "text",
+        "width": "263",
+        "width_input": "desired_width",
+        "height": "263",
+        "height_input": "desired_height",
+        "length": "285",
+        "length_input": "length"
+    },
+    "t2i-pornmaster-turbo": {
+        "prompt": "90",
+        "prompt_input": "text"
+    }
+}

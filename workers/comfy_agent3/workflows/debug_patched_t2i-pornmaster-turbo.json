@@ -1,0 +1,485 @@
+{
+  "29": {
+    "inputs": {
+      "width": 1024,
+      "height": 1536,
+      "batch_size": 1
+    },
+    "class_type": "EmptyLatentImage"
+  },
+  "30": {
+    "inputs": {
+      "samples": [
+        "152",
+        0
+      ],
+      "vae": [
+        "100",
+        0
+      ]
+    },
+    "class_type": "VAEDecode"
+  },
+  "84": {
+    "inputs": {
+      "text": "",
+      "loras": {
+        "__value__": []
+      },
+      "model": [
+        "98",
+        0
+      ],
+      "clip": [
+        "99",
+        0
+      ]
+    },
+    "class_type": "Lora Loader (LoraManager)"
+  },
+  "90": {
+    "inputs": {
+      "text": "\u4e0a\u8863\u4fdd\u7559\u4e0d\u8131 \u88e4\u5b50\u8131\u4e0b\u6765\u4e00\u70b9 \u76ae\u80a4\u7a0d\u5fae\u767d\u4e00\u70b9 \u540e\u5165 \u4eba\u7269\u9762\u90e8\u4e0d\u53d8",
+      "clip": [
+        "84",
+        1
+      ]
+    },
+    "class_type": "CLIPTextEncode"
+  },
+  "98": {
+    "inputs": {
+      "unet_name": "pornmasterZImage_turboV2.safetensors",
+      "weight_dtype": "default"
+    },
+    "class_type": "UNETLoader"
+  },
+  "99": {
+    "inputs": {
+      "clip_name": "z_image/qwen_3_4b.safetensors",
+      "type": "lumina2",
+      "device": "default"
+    },
+    "class_type": "CLIPLoader"
+  },
+  "100": {
+    "inputs": {
+      "vae_name": "z_image/ae.safetensors"
+    },
+    "class_type": "VAELoader"
+  },
+  "106": {
+    "inputs": {
+      "filename_prefix": "comfyui_\u7121\u9762\u90e8\u4fee\u5fa9",
+      "images": [
+        "30",
+        0
+      ]
+    },
+    "class_type": "SaveImage"
+  },
+  "109": {
+    "inputs": {
+      "conditioning": [
+        "90",
+        0
+      ]
+    },
+    "class_type": "ConditioningZeroOut"
+  },
+  "110": {
+    "inputs": {
+      "shift": 3,
+      "model": [
+        "84",
+        0
+      ]
+    },
+    "class_type": "ModelSamplingAuraFlow"
+  },
+  "121": {
+    "inputs": {
+      "mask": [
+        "130",
+        3
+      ]
+    },
+    "class_type": "MaskToImage"
+  },
+  "122": {
+    "inputs": {
+      "images": [
+        "121",
+        0
+      ]
+    },
+    "class_type": "PreviewImage"
+  },
+  "123": {
+    "inputs": {
+      "model_name": "sam_vit_b_01ec64.pth",
+      "device_mode": "AUTO"
+    },
+    "class_type": "SAMLoader"
+  },
+  "126": {
+    "inputs": {
+      "images": [
+        "130",
+        2
+      ]
+    },
+    "class_type": "PreviewImage"
+  },
+  "127": {
+    "inputs": {
+      "images": [
+        "130",
+        1
+      ]
+    },
+    "class_type": "PreviewImage"
+  },
+  "128": {
+    "inputs": {
+      "rgthree_comparer": {
+        "images": [
+          {
+            "name": "A",
+            "selected": true,
+            "url": "/api/view?filename=rgthree.compare._temp_fqqug_00001_.png&type=temp&subfolder=&rand=0.5201591122664486"
+          },
+          {
+            "name": "B",
+            "selected": true,
+            "url": "/api/view?filename=rgthree.compare._temp_fqqug_00002_.png&type=temp&subfolder=&rand=0.7228704418523069"
+          }
+        ]
+      },
+      "image_a": [
+        "130",
+        0
+      ],
+      "image_b": [
+        "30",
+        0
+      ]
+    },
+    "class_type": "Image Comparer (rgthree)"
+  },
+  "129": {
+    "inputs": {
+      "model_name": "bbox/face_yolov9c.pt"
+    },
+    "class_type": "UltralyticsDetectorProvider"
+  },
+  "130": {
+    "inputs": {
+      "guide_size": 512,
+      "guide_size_for": true,
+      "max_size": 2432,
+      "seed": 143310729851477,
+      "steps": 2,
+      "cfg": 1,
+      "sampler_name": "euler",
+      "scheduler": "simple",
+      "denoise": 0.5,
+      "feather": 7,
+      "noise_mask": true,
+      "force_inpaint": false,
+      "bbox_threshold": 0.5,
+      "bbox_dilation": 0,
+      "bbox_crop_factor": 4,
+      "sam_detection_hint": "center-1",
+      "sam_dilation": 0,
+      "sam_threshold": 0.93,
+      "sam_bbox_expansion": 0,
+      "sam_mask_hint_threshold": 0.7,
+      "sam_mask_hint_use_negative": "False",
+      "drop_size": 10,
+      "wildcard": "",
+      "cycle": 1,
+      "inpaint_model": false,
+      "noise_mask_feather": 25,
+      "tiled_encode": false,
+      "tiled_decode": false,
+      "image": [
+        "157",
+        0
+      ],
+      "model": [
+        "132",
+        0
+      ],
+      "clip": [
+        "134",
+        0
+      ],
+      "vae": [
+        "133",
+        0
+      ],
+      "positive": [
+        "135",
+        0
+      ],
+      "negative": [
+        "131",
+        0
+      ],
+      "bbox_detector": [
+        "129",
+        0
+      ],
+      "sam_model_opt": [
+        "123",
+        0
+      ]
+    },
+    "class_type": "FaceDetailer"
+  },
+  "131": {
+    "inputs": {
+      "conditioning": [
+        "135",
+        0
+      ]
+    },
+    "class_type": "ConditioningZeroOut"
+  },
+  "132": {
+    "inputs": {
+      "shift": 3,
+      "model": [
+        "138",
+        0
+      ]
+    },
+    "class_type": "ModelSamplingAuraFlow"
+  },
+  "133": {
+    "inputs": {
+      "vae_name": "z_image/ae.safetensors"
+    },
+    "class_type": "VAELoader"
+  },
+  "134": {
+    "inputs": {
+      "clip_name": "z_image/qwen_3_4b.safetensors",
+      "type": "lumina2",
+      "device": "default"
+    },
+    "class_type": "CLIPLoader"
+  },
+  "135": {
+    "inputs": {
+      "text": "\u4e00\u5f35\u4f86\u81ea\u65e5\u672c90\u5e74\u4ee3Tokyo-Hot\u8272\u60c5\u7247\u4e2d\u7684\u4e00\u4f4d\u53ef\u611b18\u6b72\u65e5\u672c\u5973\u6027\u7167\u7247\uff0c\u9583\u5149\u71c8\u651d\u5f71\uff0c\u81a0\u7247\u9846\u7c92\uff0c\u5c08\u696d\u651d\u5f71\uff0c\u9ad8\u89e3\u6790\u5ea6\uff0c8K\uff0cUHD\u6548\u679c\uff0cHDR\u6548\u679c\uff0cRAW\u683c\u5f0f\u7167\u7247\uff0c\u7559\u8457\u9f4a\u700f\u6d77\u9ed1\u9577\u9aee.\n\u6975\u81f4\u5beb\u5be6\u651d\u5f71\u98a8\u683c\uff0c\u9ad8\u89e3\u6790\u5ea6\uff0c\u5e73\u5be6\u7684\u5ba4\u5167\u5149\u7dda.\n\u6e05\u6670\u7684\u76ae\u819a\u6bdb\u5b54\u53ef\u898b\u3002\u5979\u6709\u8457\u9ed1\u8272\u77ed\u9aee\u3002\u5979\u7684\u8868\u60c5\u5bb3\u7f9e\u3002\n",
+      "clip": [
+        "138",
+        1
+      ]
+    },
+    "class_type": "CLIPTextEncode"
+  },
+  "136": {
+    "inputs": {
+      "filename_prefix": "comfyui_FaceDetailer",
+      "images": [
+        "148",
+        0
+      ]
+    },
+    "class_type": "SaveImage"
+  },
+  "137": {
+    "inputs": {
+      "unet_name": "z image\\z_image_turbo_fp8_e4m3fn.safetensors",
+      "weight_dtype": "default"
+    },
+    "class_type": "UNETLoader"
+  },
+  "138": {
+    "inputs": {
+      "text": "",
+      "loras": {
+        "__value__": []
+      },
+      "model": [
+        "137",
+        0
+      ],
+      "clip": [
+        "134",
+        0
+      ]
+    },
+    "class_type": "Lora Loader (LoraManager)"
+  },
+  "139": {
+    "inputs": {
+      "upscale_model": [
+        "141",
+        0
+      ],
+      "image": [
+        "130",
+        0
+      ]
+    },
+    "class_type": "ImageUpscaleWithModel"
+  },
+  "140": {
+    "inputs": {
+      "filename_prefix": "comfyui_4X",
+      "images": [
+        "145",
+        0
+      ]
+    },
+    "class_type": "SaveImage"
+  },
+  "141": {
+    "inputs": {
+      "model_name": "4x-UltraSharp.pth"
+    },
+    "class_type": "UpscaleModelLoader"
+  },
+  "144": {
+    "inputs": {
+      "mode": "always",
+      "volume": 0.5,
+      "file": "notify.mp3",
+      "any": [
+        "145",
+        0
+      ]
+    },
+    "class_type": "PlaySound|pysssss"
+  },
+  "145": {
+    "inputs": {
+      "anything": [
+        "139",
+        0
+      ]
+    },
+    "class_type": "easy cleanGpuUsed"
+  },
+  "148": {
+    "inputs": {
+      "anything": [
+        "130",
+        0
+      ]
+    },
+    "class_type": "easy cleanGpuUsed"
+  },
+  "151": {
+    "inputs": {
+      "add_noise": "enable",
+      "noise_seed": 811631835302069,
+      "steps": 10,
+      "cfg": 1,
+      "sampler_name": "euler",
+      "scheduler": "simple",
+      "start_at_step": 0,
+      "end_at_step": 8,
+      "return_with_leftover_noise": "enable",
+      "model": [
+        "110",
+        0
+      ],
+      "positive": [
+        "90",
+        0
+      ],
+      "negative": [
+        "109",
+        0
+      ],
+      "latent_image": [
+        "29",
+        0
+      ]
+    },
+    "class_type": "KSamplerAdvanced"
+  },
+  "152": {
+    "inputs": {
+      "add_noise": "disable",
+      "noise_seed": 0,
+      "steps": 10,
+      "cfg": 1,
+      "sampler_name": "euler",
+      "scheduler": "simple",
+      "start_at_step": 8,
+      "end_at_step": 10000,
+      "return_with_leftover_noise": "disable",
+      "model": [
+        "155",
+        0
+      ],
+      "positive": [
+        "90",
+        0
+      ],
+      "negative": [
+        "109",
+        0
+      ],
+      "latent_image": [
+        "151",
+        0
+      ]
+    },
+    "class_type": "KSamplerAdvanced"
+  },
+  "153": {
+    "inputs": {
+      "unet_name": "z-image-turbo-fp8-e4m3fn.safetensors",
+      "weight_dtype": "default"
+    },
+    "class_type": "UNETLoader"
+  },
+  "154": {
+    "inputs": {
+      "text": "<lora:Mystic-XXX-ZIT-V5:0.10>",
+      "loras": {
+        "__value__": [
+          {
+            "name": "Mystic-XXX-ZIT-V5",
+            "strength": "0.10",
+            "active": false,
+            "expanded": false,
+            "clipStrength": "0.10",
+            "locked": false
+          }
+        ]
+      },
+      "model": [
+        "153",
+        0
+      ]
+    },
+    "class_type": "Lora Loader (LoraManager)"
+  },
+  "155": {
+    "inputs": {
+      "shift": 3,
+      "model": [
+        "154",
+        0
+      ]
+    },
+    "class_type": "ModelSamplingAuraFlow"
+  },
+  "157": {
+    "inputs": {
+      "anything": [
+        "30",
+        0
+      ]
+    },
+    "class_type": "easy cleanGpuUsed"
+  }
+}
