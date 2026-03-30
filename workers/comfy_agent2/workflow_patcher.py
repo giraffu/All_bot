@@ -1,7 +1,7 @@
 import json
 import logging
 import os
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -13,7 +13,7 @@ class WorkflowPatcher:
     def load_mappings(self) -> Dict[str, Any]:
         mapping_path = os.path.join(self.workflows_dir, "mappings.json")
         if os.path.exists(mapping_path):
-            with open(mapping_path, "r") as f:
+            with open(mapping_path, "r", encoding="utf-8") as f:
                 return json.load(f)
         return {}
 
@@ -27,7 +27,7 @@ class WorkflowPatcher:
                 data[i] = self.strip_meta(data[i])
         return data
 
-    def load_workflow(self, task_type: str) -> Dict[str, Any]:
+    def load_workflow(self, task_type: str) -> Optional[Dict[str, Any]]:
         filename = f"{task_type}.json"
         # Map task types to filenames (matching backend worker.py logic)
         if task_type == "img2img":
@@ -46,7 +46,7 @@ class WorkflowPatcher:
             logger.error(f"Workflow file {path} not found")
             return None
             
-        with open(path, "r") as f:
+        with open(path, "r", encoding="utf-8") as f:
             data = json.load(f)
             data = self.strip_meta(data)
             
@@ -77,7 +77,7 @@ class WorkflowPatcher:
 
     def heuristic_patch(self, workflow: Dict[str, Any], key: str, value: Any):
         # This is a best-effort patcher for API format workflows
-        for node_id, node in workflow.items():
+        for _, node in workflow.items():
             if not isinstance(node, dict) or "inputs" not in node:
                 continue
                 

@@ -58,11 +58,25 @@ class ComfyClient:
     async def get_view(self, filename: str, subfolder: str = "", type: str = "output") -> bytes:
         """
         Get the raw image/video data from ComfyUI output directory.
+        Includes a simple retry mechanism for file system I/O delays.
         """
+        import asyncio
         params = {"filename": filename, "subfolder": subfolder, "type": type}
-        response = await self.client.get("/view", params=params)
-        response.raise_for_status()
-        return response.content
+        
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                response = await self.client.get("/view", params=params)
+                response.raise_for_status()
+                return response.content
+            except Exception as e:
+                if attempt < max_retries - 1:
+                    logger.warning(f"Failed to fetch {filename} (attempt {attempt + 1}/{max_retries}), retrying in 2 seconds... Error: {e}")
+                    await asyncio.sleep(2)
+                else:
+                    logger.error(f"Failed to fetch {filename} after {max_retries} attempts.")
+                    raise e
+        raise Exception(f"Failed to fetch {filename}")
 
     async def close(self):
         await self.client.aclose()

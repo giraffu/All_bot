@@ -13,6 +13,7 @@ services:
       - TZ=Asia/Shanghai
       - BOT_TYPE=PROD
       - REDIS_PREFIX=prod_bot_
+      - API_BASE=http://host.docker.internal:8003
     volumes:
       - ../logs:/app/logs
     extra_hosts:

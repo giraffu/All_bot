@@ -4,8 +4,8 @@ import logging
 import os
 import sys
 import httpx
-import websockets
-from minio import Minio
+import websockets # type: ignore
+from minio import Minio # type: ignore
 from dotenv import load_dotenv
 from typing import Dict, Any, Optional
 
@@ -14,6 +14,12 @@ from workflow_patcher import WorkflowPatcher
 
 # Load environment variables
 load_dotenv()
+
+# Unset proxies to prevent internal requests from being routed through system VPN/proxies
+for proxy_var in ["http_proxy", "https_proxy", "all_proxy", "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY"]:
+    os.environ.pop(proxy_var, None)
+os.environ["NO_PROXY"] = "*"
+os.environ["no_proxy"] = "*"
 
 logging.basicConfig(
     level=logging.INFO,
@@ -67,6 +73,24 @@ class ComfyAgent:
         self.task_completed_event = asyncio.Event()
         self.task_result: Optional[str] = None
         self.task_error: Optional[str] = None
+        self.running = False
+
+    async def report_heartbeat(self):
+        try:
+            status = "running" if self.current_task_id else "idle"
+            await self.master_client.post("/api/agent/task/heartbeat", json={
+                "agent_id": AGENT_ID,
+                "types": SUPPORTED_TASK_TYPES,
+                "status": status
+            })
+        except Exception as e:
+            logger.debug(f"Failed to report heartbeat: {e}")
+
+    async def heartbeat_loop(self):
+        logger.info(f"Agent {AGENT_ID} started heartbeat loop...")
+        while getattr(self, 'running', True):
+            await self.report_heartbeat()
+            await asyncio.sleep(15)  # Send heartbeat every 15 seconds
 
     async def report_status(self, task_id: str, status: str, progress: float = 0.0, error: str = ""):
         try:
@@ -94,7 +118,7 @@ class ComfyAgent:
         client_id = f"agent_{AGENT_ID}"
         uri = f"{COMFY_WS_URL}?clientId={client_id}"
         
-        while True:
+        while getattr(self, 'running', True):
             try:
                 async with websockets.connect(uri, max_size=None) as websocket:
                     logger.info(f"Connected to ComfyUI WebSocket at {uri}")
@@ -124,8 +148,14 @@ class ComfyAgent:
                                 progress = value / max_val
                                 await self.report_status(self.current_task_id, "running", progress=progress)
                                 
+                        elif msg_type == "executing":
+                            node = data_content.get("node")
+                            if node is None:
+                                logger.info(f"Execution fully completed for prompt {prompt_id}")
+                                self.task_completed_event.set()
+                                
                         elif msg_type == "executed":
-                            logger.info(f"Execution completed for prompt {prompt_id}")
+                            logger.info(f"Node executed for prompt {prompt_id}")
                             output = data_content.get("output", {})
                             images = output.get("images", [])
                             gifs = output.get("gifs", [])
@@ -142,8 +172,9 @@ class ComfyAgent:
                                 video = videos[0]
                                 result_path = f"{video.get('subfolder', '')}/{video.get('filename')}".lstrip('/')
                                 
-                            self.task_result = result_path
-                            self.task_completed_event.set()
+                            if result_path:
+                                self.task_result = result_path
+                                # We now wait for executing node=None to set the completion event
                             
                         elif msg_type == "execution_error":
                             error_msg = str(data_content.get("exception_message", "Unknown error"))
@@ -177,8 +208,12 @@ class ComfyAgent:
         self.minio_client.fput_object(MINIO_RESULT_BUCKET, object_name, local_path, content_type=content_type)
 
     async def process_task(self, task: Dict[str, Any]):
-        task_id = task.get("task_id")
-        task_type = task.get("type")
+        task_id = str(task.get("task_id", ""))
+        if not task_id:
+            logger.error("Received task without task_id")
+            return
+            
+        task_type = str(task.get("type", ""))
         params_str = task.get("params", "{}")
         
         if isinstance(params_str, str):
@@ -203,11 +238,15 @@ class ComfyAgent:
                     await asyncio.to_thread(self.download_input_from_minio, image_filename, local_image_path)
                     logger.info(f"Downloaded input image to {local_image_path}")
                     
-                    # Ensure the image is uploaded to ComfyUI if we are using the remote API
-                    # Note: Since the agent container mounts the ComfyUI input directory directly, 
-                    # downloading the file to COMFY_INPUT_DIR *is* making it available to ComfyUI.
-                    # Upload API might be failing due to file permission/locking issues since the file is already there.
-                    # We will only try API upload if we think it's strictly necessary (it shouldn't be if paths match).
+                    # Upload to remote ComfyUI via API
+                    try:
+                        with open(local_image_path, "rb") as f:
+                            img_data = f.read()
+                        await self.comfy_client.upload_image(img_data, image_filename)
+                        logger.info(f"Uploaded {image_filename} to ComfyUI via API")
+                    except Exception as upload_err:
+                        logger.warning(f"Failed to upload {image_filename} to ComfyUI via API: {upload_err}")
+
                     params["image"] = image_filename
                 except Exception as e:
                     logger.error(f"Failed to process input image {image_filename}: {e}")
@@ -221,6 +260,16 @@ class ComfyAgent:
                     try:
                         await asyncio.to_thread(self.download_input_from_minio, img_filename, local_img_path)
                         logger.info(f"Downloaded {key} to {local_img_path}")
+                        
+                        # Upload to remote ComfyUI via API
+                        try:
+                            with open(local_img_path, "rb") as f:
+                                img_data = f.read()
+                            await self.comfy_client.upload_image(img_data, img_filename)
+                            logger.info(f"Uploaded {img_filename} to ComfyUI via API")
+                        except Exception as upload_err:
+                            logger.warning(f"Failed to upload {img_filename} to ComfyUI via API: {upload_err}")
+
                         params[key] = img_filename
                     except Exception as e:
                         logger.error(f"Failed to process {key} {img_filename}: {e}")
@@ -312,7 +361,7 @@ class ComfyAgent:
 
     async def poll_loop(self):
         logger.info(f"Agent {AGENT_ID} started polling {MASTER_API_URL} for tasks (types: {SUPPORTED_TASK_TYPES or 'all'})...")
-        while True:
+        while getattr(self, 'running', True):
             try:
                 # Poll for tasks with optional type filtering
                 params = {}
@@ -342,15 +391,61 @@ class ComfyAgent:
         os.makedirs(COMFY_INPUT_DIR, exist_ok=True)
         os.makedirs(COMFY_OUTPUT_DIR, exist_ok=True)
         
-        # Start WS listener and polling loops
-        await asyncio.gather(
-            self.ws_listener_loop(),
-            self.poll_loop()
-        )
+        # Start WS listener, polling loops, and heartbeat
+        self.running = True
+        self.tasks = [
+            asyncio.create_task(self.ws_listener_loop()),
+            asyncio.create_task(self.poll_loop()),
+            asyncio.create_task(self.heartbeat_loop())
+        ]
+        await asyncio.gather(*self.tasks)
+
+    async def shutdown(self):
+        logger.info("Initiating graceful shutdown...")
+        self.running = False
+        
+        # If there is a task currently running, report it as failed/interrupted back to master
+        if self.current_task_id:
+            logger.info(f"Returning task {self.current_task_id} to master due to shutdown")
+            try:
+                await self.report_status(
+                    self.current_task_id, 
+                    "failed", 
+                    error="Agent was shut down while processing the task. Task should be retried."
+                )
+            except Exception as e:
+                logger.error(f"Failed to report task failure during shutdown: {e}")
+                
+        # Cancel all running background loops
+        for task in self.tasks:
+            task.cancel()
+            
+        # Close HTTP clients
+        await self.master_client.aclose()
+        await self.comfy_client.close()
+        logger.info("Shutdown complete.")
 
 if __name__ == "__main__":
     agent = ComfyAgent()
+    
+    # Setup graceful shutdown signals
+    import signal
+    import sys
+    loop = asyncio.get_event_loop()
+    
+    if sys.platform != 'win32':
+        for sig in (signal.SIGINT, signal.SIGTERM):
+            loop.add_signal_handler(
+                sig,
+                lambda: asyncio.create_task(agent.shutdown())
+            )
+        
     try:
-        asyncio.run(agent.start())
+        loop.run_until_complete(agent.start())
+    except asyncio.CancelledError:
+        pass
     except KeyboardInterrupt:
-        logger.info("Agent shutting down...")
+        # 捕获 Ctrl+C，触发优雅退出逻辑，防止 Master 端任务卡死
+        loop.run_until_complete(agent.shutdown())
+    finally:
+        loop.close()

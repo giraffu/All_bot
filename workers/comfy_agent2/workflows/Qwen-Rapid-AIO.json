@@ -50,7 +50,7 @@
         2
       ],
       "image1": [
-        "8",
+        "10",
         0
       ]
     },
@@ -113,10 +113,43 @@
       "title": "Optional Input Image"
     }
   },
+  "10": {
+    "inputs": {
+      "upscale_method": "nearest-exact",
+      "megapixels": 1,
+      "resolution_steps": 1,
+      "image": [
+        "8",
+        0
+      ]
+    },
+    "class_type": "ImageScaleToTotalPixels",
+    "_meta": {
+      "title": "等比缩放至最大1024x1024"
+    }
+  },
+  "11": {
+    "inputs": {
+      "image": [
+        "10",
+        0
+      ]
+    },
+    "class_type": "GetImageSizeAndCount",
+    "_meta": {
+      "title": "Get Image Size & Count"
+    }
+  },
   "9": {
     "inputs": {
-      "width": 768,
-      "height": 768,
+      "width": [
+        "11",
+        1
+      ],
+      "height": [
+        "11",
+        2
+      ],
       "batch_size": 1
     },
     "class_type": "EmptyLatentImage",

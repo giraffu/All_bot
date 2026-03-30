@@ -44,7 +44,7 @@ MINIO_PUBLIC_URL = os.getenv("MINIO_PUBLIC_URL", f"http://{MINIO_ENDPOINT}")
 
 # --- API Configuration ---
 # Default to the backend server IP
-API_BASE = os.getenv("API_BASE", "http://192.168.1.226:8003")
+API_BASE = os.getenv("API_BASE", "http://127.0.0.1:8003")
 API_TOKEN = os.getenv("API_TOKEN", "your_secure_token_here")  # Added based on changelog
 
 # Endpoints constructed from API_BASE
