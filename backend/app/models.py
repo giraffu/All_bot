@@ -53,8 +53,9 @@ class SystemStatusResponse(BaseModel):
     comfy_online: bool
 
 class Img2ImgRequest(BaseModel):
-    image: str
+    image: Optional[str] = None
     image2: Optional[str] = None
+    images: Optional[List[str]] = None
     prompt: str
     negative_prompt: Optional[str] = " "
     num_inference_steps: Optional[int] = 6

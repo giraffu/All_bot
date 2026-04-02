@@ -55,6 +55,7 @@
 3. **MinIO 服务**：
    - **用途**：对象存储，兼容 S3 协议。用于存储用户上传的图片/视频、系统生成的中间产物以及模板。
    - **结构**：主要包含 `bot-data` (系统主数据), `comfyui-input` (传给 Worker 的输入), `comfyui-temp` (Worker 的输出), `bot-template` (模板) 等 Bucket。
+   - **引用传递机制**：为了节省内网带宽和 API 内存，Bot 和 Central API 之间不再直接传输媒体文件流，而是仅传递 MinIO 中的 `Object Key`（JSON 格式）。由底层的 Worker 直接从 MinIO 对应 Bucket 下载。
 
 ---
 
@@ -112,8 +113,10 @@
 3. **并发锁与状态一致性**：
    在修改 `src/services/task_service.py` 任务调度逻辑时，请务必保证 `ActiveTasksTable` 的状态更新与 PostgreSQL 的扣费/退费逻辑在业务上保持最终一致。
    - **双向取消机制**：一旦在 Bot 侧主动抛弃或终止了某个任务（如 `clean_zombies`），必须调用中控 API 的 `DELETE /api/tasks/{task_id}` 进行双向踢除，防止 Worker 算力浪费（俗称“幽灵任务”）。
-4. **计算与存储分离**：
-   不要在 Bot 或 API 容器内部保存任何状态文件。所有状态必须写入 PostgreSQL、Redis 或 MinIO，以便于未来随时横向扩容 Worker 或网关节点。
+5. **ComfyUI 工作流参数注入原则**：
+   - 所有的生图或视频任务类型，其 JSON 工作流模板必须由 `workflow_patcher.py` 负责动态修改参数。
+   - **红线**：禁止在带有多个图像输入的工作流（如 `face_swap`）中使用启发式 (Heuristic) 匹配来盲目覆盖图片节点，这会导致参数错乱并触发 ComfyUI 的 HTTP 400 错误。
+   - 所有的节点映射必须通过 `mappings.json` 精确绑定。例如：视频类工作流中的尺寸调整应当映射给 `FindPerfectResolution` 节点，时长控制应映射给 `PainterI2V` 节点。并且要小心 Python 的 `None` 与 `JSON null` 类型转换对 `seed` 等整数型参数引发的问题。
 
 ---
 **👨‍💻 最终开发指引 (To AI Assistant)**：

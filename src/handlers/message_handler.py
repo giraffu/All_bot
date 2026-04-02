@@ -454,8 +454,10 @@ async def _handle_photo_edit(update: Update, context: ContextTypes.DEFAULT_TYPE)
     # Check how many images we already have
     pending_count = len(context.user_data.get('pending_images', []))
     
-    if pending_count > 1:
-        await robust_reply_text(msg, "⚠️ 已收到多张图片。当前模式仅最后一张图片会生效，请直接发送提示词 (Text) 开始生成。")
+    if pending_count >= 3:
+        await robust_reply_text(msg, "✅ 已达到 3 张参考图上限。请直接发送提示词 (Text) 开始生成。")
+    elif pending_count > 0:
+        await robust_reply_text(msg, f"📥 已收到第 {pending_count} 张参考图。您可以继续发送（最多 3 张），或直接发送提示词 (Text) 开始生成。")
     else:
         await robust_reply_text(msg, "📥 收到图片。请发送提示词 (Text) 开始生成。")
 
@@ -772,7 +774,7 @@ async def handle_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "🎭 随机换脸": (MODE_RANDOM_FACESWAP, "🎭 已切换到【随机换脸】模式 (消耗 1 灵石)。\n请发送一张【人脸】图片，我将自动匹配模板处理。"),
         "🎁 模板共建": (MODE_TEMPLATE_CONTRIBUTE, "🎁 已切换到【模板共建】模式。\n\n可以选择发送1到n张图片、视频，模板需要包含脸部和身体，露脸图片不会泄露，仅用于模板库建设，模板采纳会奖励灵石。"),
         "🥵 快速自慰": (MODE_MASTURBATION, "🥵 已切换到【快速自慰】模式 (消耗 2 灵石)。\n请发送一张图片，我将自动处理。"),
-        "🎨 自由P图": (MODE_EDIT, "🎨 已切换到【自由P图】模式 (消耗 2 灵石)。\n请发送一张图片。"),
+        "🎨 自由P图": (MODE_EDIT, "🎨 已切换到【自由P图】模式 (消耗 2 灵石)。\n请发送 1-3 张参考图片，随后发送提示词开始融合生成。"),
         "🎬 自定义图生视频": (MODE_CUSTOM_VIDEO, "🎬 已切换到【自定义图生视频】模式。\n请发送一张【起始图片】。\n(注意：该模式生成 5 秒视频，请确保提示词动作逻辑合理)"),
         "🛌 动图传教士": (MODE_PERFECT_VIDEO_INSERT, "🛌 已切换到【动图传教士】模式。\n请发送一张【人脸】图片（正面、清晰），我将自动处理。"),
         "🎬 动图后入": (MODE_DOGGY_STYLE, "🎬 已切换到【动图后入】模式。\n请发送一张【人脸】图片（正面、清晰），我将自动处理。"),
@@ -832,8 +834,10 @@ async def handle_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await robust_reply_text(update.message, "❌ 图片已丢失，请重新发送图片。")
             return
         
-        # Force single image for EDIT
+        # Force maximum 3 images for EDIT mode, single image for others
         if mode == MODE_EDIT:
+            valid_images = valid_images[-3:]
+        else:
             valid_images = [valid_images[-1]]
 
     # Execute Generation

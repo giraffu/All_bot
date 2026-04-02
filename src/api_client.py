@@ -106,7 +106,8 @@ class APIClient:
             raise ValueError("No valid images found for submission")
 
         data = {
-            "image": image_paths[0],
+            "images": image_paths,  # 传递多图列表
+            "image": image_paths[0], # 保留以作向下兼容
             "prompt": prompt,
             "negative_prompt": negative_prompt,
             "num_inference_steps": 6,
@@ -114,10 +115,11 @@ class APIClient:
             "priority": priority
         }
         
+        # 兼容旧逻辑，如果有第二张也放到 image2
         if len(image_paths) > 1:
             data["image2"] = image_paths[1]
 
-        logger.info(f"Submitting img2img task. Prompt: {prompt}, Negative: {negative_prompt}, Priority: {priority}")
+        logger.info(f"Submitting img2img task. Prompt: {prompt}, Negative: {negative_prompt}, Images: {len(image_paths)}, Priority: {priority}")
         r = await self._request("POST", IMG2IMG_ENDPOINT, json=data)
         return r.json()["task_id"]
 

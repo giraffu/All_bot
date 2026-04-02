@@ -27,28 +27,27 @@
 
 ### 2.3 API 网关与中控层改造 (FastAPI)
 **目标文件**：
+*   `backend/app/models.py` (API 端请求模型)
 *   `src/api_client.py` (Bot 端请求)
-*   `backend/app/main.py` (API 端接收)
-*   **当前状态**：`/comfy_img2img` 接口签名强制要求单文件 `image: UploadFile = File(...)`。`api_client.py` 虽然循环了 `image_paths`，但表单字段硬编码为 `image` 和 `image2`（未统一设计）。
+*   **当前状态**：API 端不再接收物理文件流上传，而是接收包含 MinIO `Object Key` 的 JSON Payload。当前 `Img2ImgRequest` 模型硬编码了 `image: str` 和 `image2: Optional[str] = None`。
 *   **修改动作**：
-    1.  **API 端接收多图**：将 `backend/app/main.py` 中的 `create_img2img_task` 接口签名修改为接收文件列表：`images: List[UploadFile] = File(...)`（或显式定义三个可选字段以兼容旧客户端）。
-    2.  **API 端存储逻辑**：遍历接收到的图片，依次调用 `save_upload_file` 存入 MinIO，并将返回的所有文件名组合成一个列表，存入 Redis 任务参数：`params = {"images": [file1, file2, file3], ...}`。
-    3.  **Bot 端提交逻辑**：修改 `api_client.py` 中的 `submit_img2img`，确保将 `image_paths` 列表中的所有文件正确构建为 multipart/form-data（建议统一使用相同的表单名 `images` 配合 FastAPI 的 `List[UploadFile]`）。
+    1.  **API 端请求模型更新**：将 `backend/app/models.py` 中的 `Img2ImgRequest` 更新为支持多图列表，例如新增 `images: Optional[List[str]] = None`（为了向后兼容其他旧端，可保留原有的 `image` 字段）。
+    2.  **Bot 端提交逻辑**：修改 `src/api_client.py` 中的 `submit_img2img`，不再手动分离 `image` 和 `image2`，而是直接将包含 1-3 个路径的 `image_paths` 列表封装在 JSON Payload 的 `images` 字段中发送给中控 API。
+    3.  **调度层透传**：`backend/app/main.py` 接收到 JSON 后直接转为字典存入 Redis 任务队列，此部分调度逻辑无需改动。
 
 ### 2.4 Agent 节点与动态补丁改造 (Worker)
 **目标文件**：
 *   `workers/comfy_agentX/agent_main.py`
 *   `workers/comfy_agentX/workflow_patcher.py`
-*   **当前状态**：Agent 假定只有一个 `params["image"]`，并且 `WorkflowPatcher` 是暴力启发式替换所有 `LoadImage`。
+*   **当前状态**：`agent_main.py` 目前是针对 `image` 和 `image2` 字段进行硬编码串行下载。`workflow_patcher.py` 已支持 `mappings.json` 精确映射，但缺乏针对孤立节点的动态剪裁能力。
 *   **修改动作**：
-    1.  **Agent 端并发下载**：在 `agent_main.py` 的 `process_task` 中，检查 `params.get("images")` 列表，使用 `asyncio.gather` 并发从 MinIO 下载所有图片，并逐一上传到 ComfyUI，将内部文件名列表准备好传给 Patcher。
+    1.  **Agent 端并发下载**：在 `agent_main.py` 的 `process_task` 中，检查 `params.get("images", [])` 列表，使用 `asyncio.gather` 并发从 MinIO 下载所有参考图。下载并上传到 ComfyUI 后，将本地文件名按顺序赋值给 `params["image"]`, `params["image2"]`, `params["image3"]`，以便无缝兼容底层现有的扁平映射结构。
     2.  **智能 Patcher 逻辑（核心策略 B 的实现）**：
-        在 `workflow_patcher.py` 的 `patch_workflow` 中，针对 `img2img` 任务增加特定逻辑：
-        *   识别 JSON 中的输入节点映射关系（例如通过 `mappings.json` 显式定义 `image1_node_id`, `image2_node_id`, `image3_node_id`）。
-        *   将用户实际传入的图片赋值给对应的 `LoadImage` 节点。
-        *   **动态剪裁**：如果用户只传入了 1 张图片，Patcher 会：
-            1. 从 `TextEncodeQwenImageEditPlus`（节点 3）的 `inputs` 字典中删除 `image2` 和 `image3` 键。
-            2. （可选但推荐）从整个工作流的 `nodes` 字典中删除多余的 `LoadImage` 节点（如节点 20, 30）和对应的缩放节点（如节点 21, 31），保持工作流纯净。
+        在 `workflow_patcher.py` 的 `patch_workflow` 中，针对 `img2img` 任务增加特定防御性清理逻辑：
+        *   依赖 `mappings.json` 显式定义 `image1_node_id`, `image2_node_id`, `image3_node_id`。
+        *   **动态剪裁**：判断实际传入的图片数量。如果只传入了 1 张：
+            1. 从 `TextEncodeQwenImageEditPlus`（节点 3）的 `inputs` 字典中强行 `pop("image2")` 和 `pop("image3")`。
+            2. （可选但强烈推荐）从整个工作流的 `nodes` 字典中彻底删除多余的 `LoadImage` 节点（如节点 20, 30）和对应的缩放节点（如节点 21, 31），保持工作流纯净，杜绝报错。
 
 ---
 

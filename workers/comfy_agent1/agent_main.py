@@ -260,71 +260,50 @@ class ComfyAgent:
                 logger.info(f"Task {task_id} was cancelled before processing.")
                 return
 
-            # 1. Download input image if provided and needed
-            if "image" in params and params["image"]:
-                image_filename = params["image"]
-                # Generate a safe local filename without slashes
-                local_safe_filename = image_filename.replace("/", "_").replace("template:", "")
-                local_image_path = os.path.join(COMFY_INPUT_DIR, local_safe_filename)
-                
+            # Helper for downloading and uploading single image
+            async def process_single_image(img_filename: str, param_key: str):
+                local_safe_filename = img_filename.replace("/", "_").replace("template:", "")
+                local_img_path = os.path.join(COMFY_INPUT_DIR, local_safe_filename)
                 try:
-                    await asyncio.to_thread(self.download_input_from_minio, image_filename, local_image_path)
-                    logger.info(f"Downloaded input image to {local_image_path}")
-                    
-                    # Upload to remote ComfyUI via API
+                    await asyncio.to_thread(self.download_input_from_minio, img_filename, local_img_path)
+                    logger.info(f"Downloaded {param_key} to {local_img_path}")
                     try:
-                        with open(local_image_path, "rb") as f:
+                        with open(local_img_path, "rb") as f:
                             img_data = f.read()
                         await self.comfy_client.upload_image(img_data, local_safe_filename)
                         logger.info(f"Uploaded {local_safe_filename} to ComfyUI via API")
                     except Exception as upload_err:
                         logger.warning(f"Failed to upload {local_safe_filename} to ComfyUI via API: {upload_err}")
+                    params[param_key] = local_safe_filename
+                except Exception as e:
+                    logger.error(f"Failed to process {param_key} {img_filename}: {e}")
 
-                    params["image"] = local_safe_filename
-                except Exception as e:
-                    logger.error(f"Failed to process input image {image_filename}: {e}")
-                    params["image"] = local_safe_filename
-            
-            # Additional image input 2
-            if "image2" in params and params["image2"]:
-                image_filename2 = params["image2"]
-                local_safe_filename2 = image_filename2.replace("/", "_").replace("template:", "")
-                local_image_path2 = os.path.join(COMFY_INPUT_DIR, local_safe_filename2)
-                try:
-                    await asyncio.to_thread(self.download_input_from_minio, image_filename2, local_image_path2)
-                    logger.info(f"Downloaded input image2 to {local_image_path2}")
-                    try:
-                        with open(local_image_path2, "rb") as f:
-                            img_data = f.read()
-                        await self.comfy_client.upload_image(img_data, local_safe_filename2)
-                    except Exception as upload_err:
-                        logger.warning(f"Failed to upload {local_safe_filename2}: {upload_err}")
-                    params["image2"] = local_safe_filename2
-                except Exception as e:
-                    logger.error(f"Failed to process input image2 {image_filename2}: {e}")
+            # 1. Handle multi-image concurrent download if `images` list is provided
+            if "images" in params and isinstance(params["images"], list) and len(params["images"]) > 0:
+                images_list = params["images"]
+                tasks = []
+                keys = ["image", "image2", "image3"]
+                for i, img_filename in enumerate(images_list[:3]):
+                    tasks.append(process_single_image(img_filename, keys[i]))
+                if tasks:
+                    await asyncio.gather(*tasks)
+            else:
+                # Fallback to legacy single image keys
+                legacy_tasks = []
+                if "image" in params and params["image"]:
+                    legacy_tasks.append(process_single_image(params["image"], "image"))
+                if "image2" in params and params["image2"]:
+                    legacy_tasks.append(process_single_image(params["image2"], "image2"))
+                if legacy_tasks:
+                    await asyncio.gather(*legacy_tasks)
 
             # Also check for other potential image inputs (like face_image, body_image)
+            other_tasks = []
             for key in ["face_image", "body_image"]:
                 if key in params and params[key]:
-                    img_filename = params[key]
-                    local_safe_filename = img_filename.replace("/", "_").replace("template:", "")
-                    local_img_path = os.path.join(COMFY_INPUT_DIR, local_safe_filename)
-                    try:
-                        await asyncio.to_thread(self.download_input_from_minio, img_filename, local_img_path)
-                        logger.info(f"Downloaded {key} to {local_img_path}")
-                        
-                        # Upload to remote ComfyUI via API
-                        try:
-                            with open(local_img_path, "rb") as f:
-                                img_data = f.read()
-                            await self.comfy_client.upload_image(img_data, local_safe_filename)
-                            logger.info(f"Uploaded {local_safe_filename} to ComfyUI via API")
-                        except Exception as upload_err:
-                            logger.warning(f"Failed to upload {local_safe_filename} to ComfyUI via API: {upload_err}")
-
-                        params[key] = local_safe_filename
-                    except Exception as e:
-                        logger.error(f"Failed to process {key} {img_filename}: {e}")
+                    other_tasks.append(process_single_image(params[key], key))
+            if other_tasks:
+                await asyncio.gather(*other_tasks)
 
             # 2. Load and patch workflow
             workflow = self.patcher.load_workflow(task_type)

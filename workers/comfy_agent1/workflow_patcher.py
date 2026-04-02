@@ -77,11 +77,36 @@ class WorkflowPatcher:
                     wf[node_id]["inputs"][input_name] = value
             else:
                 # For heuristic patch of images where the mapping wasn't specific enough
-                if key in ["image", "image2", "face_image", "body_image"]:
+                if key in ["image", "image2", "image3", "images", "face_image", "body_image"]:
                     continue # Ignore heuristic patch for images to prevent overriding wrong nodes
                 
                 # Heuristic search
                 self.heuristic_patch(wf, key, value)
+                
+        # Dynamic JSON pruning for img2img task to avoid empty nodes and blank inputs
+        if task_type == "img2img":
+            # 3 is the TextEncodeQwenImageEditPlus node
+            text_encode_node_id = str(mapping.get("prompt", "3"))
+            
+            # Clean up image2 if not provided
+            if "image2" not in params or not params["image2"]:
+                if text_encode_node_id in wf and "inputs" in wf[text_encode_node_id]:
+                    wf[text_encode_node_id]["inputs"].pop("image2", None)
+                node_to_pop = str(mapping.get("image2", "20"))
+                if node_to_pop in wf:
+                    wf.pop(node_to_pop, None)
+                if "21" in wf:
+                    wf.pop("21", None) # ImageScaleToTotalPixels node 21
+                
+            # Clean up image3 if not provided
+            if "image3" not in params or not params["image3"]:
+                if text_encode_node_id in wf and "inputs" in wf[text_encode_node_id]:
+                    wf[text_encode_node_id]["inputs"].pop("image3", None)
+                node_to_pop = str(mapping.get("image3", "30"))
+                if node_to_pop in wf:
+                    wf.pop(node_to_pop, None)
+                if "31" in wf:
+                    wf.pop("31", None) # ImageScaleToTotalPixels node 31
                 
         return wf
 
