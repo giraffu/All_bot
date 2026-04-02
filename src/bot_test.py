@@ -73,6 +73,19 @@ def get_best_proxy(default_proxy):
     logger.warning("⚠️ All proxies failed. Trying direct connection...")
     return None # Return None to use direct connection
 
+async def clean_zombies_loop():
+    import sys
+    import os
+    sys.path.append(os.path.dirname(os.path.dirname(__file__)))
+    from clean_zombies import main as run_clean_zombies
+    logger = logging.getLogger("bot.core")
+    while True:
+        try:
+            await run_clean_zombies()
+        except Exception as e:
+            logger.error(f"Error in clean_zombies_loop: {e}")
+        await asyncio.sleep(600)  # Check every 10 minutes
+
 async def post_init(application):
     await init_db()
     await setup_commands(application)
@@ -83,6 +96,9 @@ async def post_init(application):
     
     # Recover tasks from Redis
     asyncio.create_task(recover_active_tasks(application))
+    
+    # Start automated zombie task cleaner
+    asyncio.create_task(clean_zombies_loop())
 
 async def post_shutdown(application):
     logger = logging.getLogger("bot.core")

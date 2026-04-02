@@ -6,7 +6,7 @@ services:
     ports:
       - "8003:8003"
     environment:
-      - REDIS_URL=redis://:redispassword@host.docker.internal:6379/0
+      - REDIS_URL=redis://:redispassword@host.docker.internal:6379/2
       - AUTH_TOKEN=your_secure_token_here
       - WORKFLOWS_DIR=/app/workflows
       - MINIO_ENDPOINT=host.docker.internal:9000

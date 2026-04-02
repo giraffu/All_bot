@@ -242,38 +242,105 @@ class APIClient:
 
     async def listen_for_progress(self, task_id: str, is_video: bool = False):
         """
-        Async generator for task progress.
+        Async generator for task progress using Redis Pub/Sub.
         """
         status_url = f"{STATUS_ENDPOINT}/{task_id}"
         
-        while True:
-            try:
-                r = await self._request("GET", status_url, timeout=10)
-                info = r.json()
-                logger.debug(f"Task {task_id} status info: {info}")
-                
-                status = info.get("status")
+        # Initial HTTP poll to get current state
+        try:
+            r = await self._request("GET", status_url, timeout=10)
+            info = r.json()
+            logger.debug(f"Task {task_id} initial status: {info}")
+            yield info
+            
+            status = info.get("status")
+            if status == "done":
+                return
+            if status in ["error", "cancelled"]:
+                raise RuntimeError(info.get("error", "generation failed or cancelled"))
+        except Exception as e:
+            import httpx
+            if isinstance(e, httpx.HTTPStatusError) and e.response.status_code == 404:
+                raise RuntimeError(f"Task {task_id} not found on server (404).")
+            logger.warning(f"Initial status fetch failed for {task_id}: {e}")
 
-                if status == "pending":
-                    # Normalize queue_pos logic removed to let service handle it
-                    pass
-                
-                yield info
-                
-                if status == "done":
-                    return
-                
-                if status == "error":
-                    raise RuntimeError(info.get("error", "generation failed"))
-                
-                await asyncio.sleep(POLL_INTERVAL)
-                
-            except Exception as e:
-                logger.warning(f"Poll status failed for {task_id}: {e}")
-                import httpx
-                if isinstance(e, httpx.HTTPStatusError) and e.response.status_code == 404:
-                    raise RuntimeError(f"Task {task_id} not found on server (404).")
-                await asyncio.sleep(POLL_INTERVAL)
+        # Subscribe to Pub/Sub
+        import redis.asyncio as redis
+        import json
+        from config import REDIS_URL
+        
+        redis_client = None
+        pubsub = None
+        try:
+            redis_client = redis.from_url(REDIS_URL, decode_responses=True)
+            pubsub = redis_client.pubsub()
+            channel = f"comfy:task_events:{task_id}"
+            await pubsub.subscribe(channel)
+            logger.info(f"Subscribed to {channel}")
+            
+            while True:
+                try:
+                    message = await asyncio.wait_for(pubsub.get_message(ignore_subscribe_messages=True, timeout=10.0), timeout=15.0)
+                    if message and message.get("data"):
+                        event_data = json.loads(message["data"])
+                        if "error_msg" in event_data and "error" not in event_data:
+                            event_data["error"] = event_data["error_msg"]
+                        
+                        logger.debug(f"Pub/Sub received for {task_id}: {event_data}")
+                        yield event_data
+                        
+                        status = event_data.get("status")
+                        if status == "done":
+                            break
+                        if status in ["error", "cancelled"]:
+                            raise RuntimeError(event_data.get("error", "generation failed or cancelled"))
+                    else:
+                        # Periodically poll via HTTP just in case we miss a message
+                        r = await self._request("GET", status_url, timeout=10)
+                        info = r.json()
+                        yield info
+                        
+                        status = info.get("status")
+                        if status == "done":
+                            break
+                        if status in ["error", "cancelled"]:
+                            raise RuntimeError(info.get("error", "generation failed or cancelled"))
+                except asyncio.TimeoutError:
+                    # Timeout from wait_for, do HTTP poll
+                    r = await self._request("GET", status_url, timeout=10)
+                    info = r.json()
+                    yield info
+                    
+                    status = info.get("status")
+                    if status == "done":
+                        break
+                    if status in ["error", "cancelled"]:
+                        raise RuntimeError(info.get("error", "generation failed or cancelled"))
+        except Exception as e:
+            logger.error(f"Pub/Sub error for {task_id}: {e}. Falling back to HTTP polling.")
+            # Fallback to pure polling
+            while True:
+                try:
+                    r = await self._request("GET", status_url, timeout=10)
+                    info = r.json()
+                    yield info
+                    
+                    status = info.get("status")
+                    if status == "done":
+                        break
+                    if status in ["error", "cancelled"]:
+                        raise RuntimeError(info.get("error", "generation failed or cancelled"))
+                    
+                    await asyncio.sleep(POLL_INTERVAL)
+                except Exception as inner_e:
+                    logger.warning(f"Poll status failed for {task_id}: {inner_e}")
+                    await asyncio.sleep(POLL_INTERVAL)
+        finally:
+            if pubsub:
+                await pubsub.unsubscribe(channel)
+                await pubsub.close()
+            if redis_client:
+                await redis_client.aclose()
 
     async def close(self):
         """Close the underlying HTTP client"""

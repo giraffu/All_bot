@@ -7,6 +7,7 @@ class TaskStatus(str, Enum):
     RUNNING = "running"
     DONE = "done"
     ERROR = "error"
+    CANCELLED = "cancelled"
 
 class TaskType(str, Enum):
     IMG2IMG = "img2img"

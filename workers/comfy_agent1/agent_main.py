@@ -83,6 +83,11 @@ class ComfyAgent:
                 "types": SUPPORTED_TASK_TYPES,
                 "status": status
             })
+            if self.current_task_id:
+                # Add task heartbeat specifically
+                await self.master_client.post("/api/agent/task/task_heartbeat", json={
+                    "task_id": self.current_task_id
+                })
         except Exception as e:
             logger.debug(f"Failed to report heartbeat: {e}")
 
@@ -211,6 +216,17 @@ class ComfyAgent:
         logger.info(f"Uploading {local_path} to MinIO bucket {MINIO_RESULT_BUCKET} as {object_name}")
         self.minio_client.fput_object(MINIO_RESULT_BUCKET, object_name, local_path, content_type=content_type)
 
+    async def check_task_cancelled(self, task_id: str) -> bool:
+        try:
+            response = await self.master_client.get(f"/api/agent/task/check/{task_id}")
+            if response.status_code == 200:
+                data = response.json()
+                if data.get("status") == "cancelled":
+                    return True
+        except Exception as e:
+            logger.debug(f"Failed to check task status: {e}")
+        return False
+
     async def process_task(self, task: Dict[str, Any]):
         task_id = str(task.get("task_id", ""))
         if not task_id:
@@ -232,6 +248,10 @@ class ComfyAgent:
         self.task_error = None
 
         try:
+            if await self.check_task_cancelled(task_id):
+                logger.info(f"Task {task_id} was cancelled before processing.")
+                return
+
             # 1. Download input image if provided and needed
             if "image" in params and params["image"]:
                 image_filename = params["image"]
@@ -336,6 +356,10 @@ class ComfyAgent:
 
             if not self.task_result:
                 raise Exception("Task completed but no result path found")
+
+            if await self.check_task_cancelled(task_id):
+                logger.info(f"Task {task_id} was cancelled during execution, skipping upload.")
+                return
 
             # 5. Fetch result from ComfyUI API and Upload to MinIO
             # We must fetch the file via the ComfyUI /view API since Agent might not have direct local disk access

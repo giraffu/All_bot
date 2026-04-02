@@ -44,7 +44,11 @@
 系统高度依赖以下三大基础设施，在开发和本地联调时需确保它们可用：
 
 1. **Redis 服务**：
-   - **用途**：高速缓存、任务排队调度 (`ActiveTasksTable`)、分布式锁（单用户并发控制 `MAX_CONCURRENT_TASKS`）以及 Bot 和 Dashboard 之间的状态同步。
+   - **分库隔离架构**：系统目前采用逻辑分库隔离以防止数据误删（Bot 使用 `DB 1`，API 使用 `DB 2`）。
+   - **用途**：
+     - **DB 1 (Bot 侧)**：高速缓存、任务追踪 (`ActiveTasksTable`)、分布式锁（单用户并发控制 `MAX_CONCURRENT_TASKS`）以及 Bot 和 Dashboard 之间的状态同步。
+     - **DB 2 (API 侧)**：任务排队调度 (`comfy:queue:pending` / `running`)、Worker 心跳检测 (`comfy:agent:heartbeat:`)、僵尸任务巡检等。
+   - **Pub/Sub 实时订阅**：Bot 端通过 Redis 的全局 Pub/Sub 机制 (`comfy:task_events:{task_id}`) 实时获取生图进度，摒弃了传统的 HTTP 高频轮询。
 2. **PostgreSQL 服务**：
    - **用途**：系统的唯一持久化信源。存储用户数据 (`users`)、订单 (`orders`) 和严格的资产流水 (`user_logs`)。
    - **访问**：使用 SQLAlchemy Async 进行异步交互。
@@ -93,7 +97,7 @@
 
 ### 3.3 日常排障脚本 (Troubleshooting Scripts)
 宿主机根目录提供了一系列排障脚本：
-- **清理僵尸任务**：`docker exec tg-bot python clean_zombies.py` (自动清理驻留过长占用并发锁的任务)。
+- **清理僵尸任务**：已内置到 `bot_test.py` 的后台自愈协程中 (`clean_zombies_loop`)。如果需要手动执行，可运行 `docker exec tg-bot python clean_zombies.py` (自动清理驻留过长占用并发锁的任务，并向 API 端发送取消请求实现双向剔除)。
 - **查看 Redis 排队**：`docker exec tg-bot python check_redis.py`。
 - **核查官方 Stars 漏单**：`python check_stars.py`。
 
@@ -107,6 +111,7 @@
    任何涉及灵石增减的代码修改，**必须**同步在 `user_logs` 表中插入流水记录。底层通过 `contextvars` 自动追踪 SQL 触发者的 User ID。如果遗漏，会导致严重的对账错误。
 3. **并发锁与状态一致性**：
    在修改 `src/services/task_service.py` 任务调度逻辑时，请务必保证 `ActiveTasksTable` 的状态更新与 PostgreSQL 的扣费/退费逻辑在业务上保持最终一致。
+   - **双向取消机制**：一旦在 Bot 侧主动抛弃或终止了某个任务（如 `clean_zombies`），必须调用中控 API 的 `DELETE /api/tasks/{task_id}` 进行双向踢除，防止 Worker 算力浪费（俗称“幽灵任务”）。
 4. **计算与存储分离**：
    不要在 Bot 或 API 容器内部保存任何状态文件。所有状态必须写入 PostgreSQL、Redis 或 MinIO，以便于未来随时横向扩容 Worker 或网关节点。
 

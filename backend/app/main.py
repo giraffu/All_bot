@@ -37,8 +37,22 @@ async def get_redis():
 async def get_queue_manager(redis: Redis = Depends(get_redis)):
     return QueueManager(redis)
 
+async def check_zombie_tasks_loop():
+    while True:
+        try:
+            from redis.asyncio import Redis
+            from app.config import settings
+            redis = Redis.from_url(settings.redis_url)
+            queue_manager = QueueManager(redis)
+            await queue_manager.check_zombie_tasks()
+            await redis.close()
+        except Exception as e:
+            logger.error(f"Error in check_zombie_tasks_loop: {e}")
+        await asyncio.sleep(60)
+
 @app.on_event("startup")
 async def startup_event():
+    asyncio.create_task(check_zombie_tasks_loop())
     global minio_client
     
     # Init MinIO
@@ -235,6 +249,17 @@ async def create_t2i_pornmaster_turbo_task(
         raise HTTPException(status_code=504, detail="Task execution timed out")
     
     return T2ITaskResponse(task_id=task_id)
+
+@app.delete("/api/tasks/{task_id}")
+async def cancel_task(
+    task_id: str,
+    queue_manager: QueueManager = Depends(get_queue_manager),
+    token: str = Depends(verify_token)
+):
+    success = await queue_manager.cancel_task(task_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Task not found")
+    return {"message": "Task cancelled successfully", "task_id": task_id}
 
 @app.get("/api/v1/tasks/{task_id}", response_model=TaskStatusResponse)
 async def get_task_status_v1(

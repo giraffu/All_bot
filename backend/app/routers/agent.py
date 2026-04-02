@@ -77,6 +77,17 @@ async def pop_task(
         
     return {"task": task_details}
 
+@router.get("/check/{task_id}")
+async def check_task(
+    task_id: str,
+    authorized: bool = Depends(verify_token),
+    queue_manager: QueueManager = Depends(get_queue_manager)
+):
+    task_details = await queue_manager.get_task_status(task_id)
+    if not task_details:
+        raise HTTPException(status_code=404, detail="Task not found")
+    return {"status": task_details.get("status")}
+
 @router.post("/status")
 async def update_status(
     req: StatusUpdateRequest, 
@@ -98,6 +109,18 @@ async def complete_task(
     queue_manager: QueueManager = Depends(get_queue_manager)
 ):
     await queue_manager.complete_task(req.task_id, req.result)
+    return {"status": "ok"}
+
+class TaskHeartbeatRequest(BaseModel):
+    task_id: str
+
+@router.post("/task_heartbeat")
+async def task_heartbeat(
+    req: TaskHeartbeatRequest,
+    authorized: bool = Depends(verify_token),
+    queue_manager: QueueManager = Depends(get_queue_manager)
+):
+    await queue_manager.update_task_heartbeat(req.task_id)
     return {"status": "ok"}
 
 @router.post("/heartbeat")

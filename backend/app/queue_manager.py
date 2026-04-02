@@ -117,6 +117,7 @@ class QueueManager:
             "progress": 1.0
         })
         await self.redis.srem(self.running_key, task_id)
+        await self.redis.publish(f"comfy:task_events:{task_id}", json.dumps({"status": "done", "result_path": result_path, "progress": 1.0}))
 
     async def fail_task(self, task_id: str, error_msg: str):
         task_key = f"{self.task_prefix}{task_id}"
@@ -125,11 +126,24 @@ class QueueManager:
             "error_msg": error_msg
         })
         await self.redis.srem(self.running_key, task_id)
+        await self.redis.publish(f"comfy:task_events:{task_id}", json.dumps({"status": "error", "error_msg": error_msg}))
 
     async def update_progress(self, task_id: str, progress: float):
         task_key = f"{self.task_prefix}{task_id}"
         await self.redis.hset(task_key, "progress", progress)
+        await self.redis.publish(f"comfy:task_events:{task_id}", json.dumps({"status": "running", "progress": progress}))
         
+    async def cancel_task(self, task_id: str) -> bool:
+        task_key = f"{self.task_prefix}{task_id}"
+        if not await self.redis.exists(task_key):
+            return False
+            
+        await self.redis.zrem(self.pending_key, task_id)
+        await self.redis.srem(self.running_key, task_id)
+        await self.redis.hset(task_key, "status", TaskStatus.CANCELLED)
+        await self.redis.publish(f"comfy:task_events:{task_id}", json.dumps({"status": "cancelled"}))
+        return True
+
     async def get_queue_position(self, task_id: str) -> Optional[int]:
         return await self.redis.zrank(self.pending_key, task_id)
 
@@ -148,6 +162,20 @@ class QueueManager:
                 break
         return count
 
+    async def update_task_heartbeat(self, task_id: str):
+        key = f"comfy:task_heartbeat:{task_id}"
+        await self.redis.setex(key, 300, "1")  # Expire after 5 mins
+
+    async def check_zombie_tasks(self):
+        """Finds running tasks that haven't sent a heartbeat recently and marks them as failed."""
+        running_tasks = await self.redis.smembers(self.running_key)
+        for task_id_bytes in running_tasks:
+            task_id = task_id_bytes.decode() if isinstance(task_id_bytes, bytes) else task_id_bytes
+            key = f"comfy:task_heartbeat:{task_id}"
+            if not await self.redis.exists(key):
+                # It's a zombie!
+                await self.fail_task(task_id, "Task execution timed out (Worker heartbeat lost)")
+                
     async def update_agent_heartbeat(self, agent_id: str, types: str, status: str):
         key = f"{self.agent_heartbeat_prefix}{agent_id}"
         data = {
