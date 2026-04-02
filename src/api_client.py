@@ -65,17 +65,9 @@ class APIClient:
         Submit perfect_video_insert task.
         image_path: MinIO Object Key
         """
-        from config import MINIO_TEMPLATE_BUCKET
-        if image_path.startswith("template:"):
-            image_bytes = storage.get_file_bytes(image_path.split("template:")[1], bucket=MINIO_TEMPLATE_BUCKET)
-        else:
-            image_bytes = storage.get_file_bytes(image_path)
-            
-        if not image_bytes:
-            raise ValueError(f"Failed to retrieve file from storage: {image_path}")
-
-        files = {"image": (os.path.basename(image_path.replace("template:", "")), image_bytes, "image/jpeg")}
+        # Changed to reference passing: we no longer download the file and send as multipart.
         data = {
+            "image": image_path,
             "prompt": prompt,
             "width": width,
             "height": height,
@@ -83,7 +75,7 @@ class APIClient:
             "priority": priority
         }
 
-        r = await self._request("POST", PERFECT_VIDEO_INSERT_ENDPOINT, files=files, data=data)
+        r = await self._request("POST", PERFECT_VIDEO_INSERT_ENDPOINT, json=data)
         return r.json()["task_id"]
 
     @async_retry(max_retries=3)
@@ -92,17 +84,8 @@ class APIClient:
         Submit perfect_video_edit task.
         image_path: MinIO Object Key
         """
-        from config import MINIO_TEMPLATE_BUCKET
-        if image_path.startswith("template:"):
-            image_bytes = storage.get_file_bytes(image_path.split("template:")[1], bucket=MINIO_TEMPLATE_BUCKET)
-        else:
-            image_bytes = storage.get_file_bytes(image_path)
-            
-        if not image_bytes:
-            raise ValueError(f"Failed to retrieve file from storage: {image_path}")
-
-        files = {"image": (os.path.basename(image_path.replace("template:", "")), image_bytes, "image/jpeg")}
         data = {
+            "image": image_path,
             "prompt": prompt,
             "width": width,
             "height": height,
@@ -110,7 +93,7 @@ class APIClient:
             "priority": priority
         }
 
-        r = await self._request("POST", PERFECT_VIDEO_EDIT_ENDPOINT, files=files, data=data)
+        r = await self._request("POST", PERFECT_VIDEO_EDIT_ENDPOINT, json=data)
         return r.json()["task_id"]
 
     @async_retry(max_retries=3)
@@ -119,44 +102,23 @@ class APIClient:
         Submit img2img task.
         image_paths: List of MinIO Object Keys
         """
-        files_payload = []
-        from config import MINIO_TEMPLATE_BUCKET
-        
-        # FastAPI might only expect one "image" field based on the changelog,
-        # but if we have multiple, we either send them as a list if supported, 
-        # or we might need to send them as separate fields (e.g. image1, image2)
-        # Assuming the backend handles multiple 'image' fields for multi-image tasks like penetration
-        for i, path in enumerate(image_paths):
-            if path.startswith("template:"):
-                # Extract real path and fetch from template bucket
-                real_path = path.split("template:")[1]
-                content = storage.get_file_bytes(real_path, bucket=MINIO_TEMPLATE_BUCKET)
-            else:
-                content = storage.get_file_bytes(path)
-                
-            if not content:
-                logger.warning(f"Skipping missing file: {path}")
-                continue
-            
-            if i == 0:
-                files_payload.append(("image", (os.path.basename(path.replace("template:", "")), content, "image/jpeg")))
-            else:
-                files_payload.append(("image2", (os.path.basename(path.replace("template:", "")), content, "image/jpeg")))
-        
-        if not files_payload:
+        if not image_paths:
             raise ValueError("No valid images found for submission")
 
         data = {
+            "image": image_paths[0],
             "prompt": prompt,
             "negative_prompt": negative_prompt,
             "num_inference_steps": 6,
             "guidance_scale": 1.0,
-            "seed": -1,
             "priority": priority
         }
+        
+        if len(image_paths) > 1:
+            data["image2"] = image_paths[1]
 
         logger.info(f"Submitting img2img task. Prompt: {prompt}, Negative: {negative_prompt}, Priority: {priority}")
-        r = await self._request("POST", IMG2IMG_ENDPOINT, files=files_payload, data=data)
+        r = await self._request("POST", IMG2IMG_ENDPOINT, json=data)
         return r.json()["task_id"]
 
     @async_retry(max_retries=3)
@@ -165,32 +127,17 @@ class APIClient:
         Submit face swap task.
         paths: MinIO Object Keys
         """
-        from config import MINIO_TEMPLATE_BUCKET
-        
-        if face_image_path.startswith("template:"):
-            face_bytes = storage.get_file_bytes(face_image_path.split("template:")[1], bucket=MINIO_TEMPLATE_BUCKET)
-        else:
-            face_bytes = storage.get_file_bytes(face_image_path)
-            
-        if body_image_path.startswith("template:"):
-            body_bytes = storage.get_file_bytes(body_image_path.split("template:")[1], bucket=MINIO_TEMPLATE_BUCKET)
-        else:
-            body_bytes = storage.get_file_bytes(body_image_path)
-        
-        if not face_bytes or not body_bytes:
-            raise ValueError("Failed to retrieve face or body image from storage")
+        if not face_image_path or not body_image_path:
+            raise ValueError("Face or body image path is missing")
 
-        files = {
-            "face_image": (os.path.basename(face_image_path.replace("template:", "")), face_bytes, "image/jpeg"),
-            "body_image": (os.path.basename(body_image_path.replace("template:", "")), body_bytes, "image/jpeg"),
-        }
-        
         data = {
+            "face_image": face_image_path,
+            "body_image": body_image_path,
             "priority": priority
         }
 
         logger.info(f"Submitting face_swap task. Face: {face_image_path}, Body: {body_image_path}, Priority: {priority}")
-        r = await self._request("POST", FACE_SWAP_ENDPOINT, files=files, data=data)
+        r = await self._request("POST", FACE_SWAP_ENDPOINT, json=data)
         return r.json()["task_id"]
 
     @async_retry(max_retries=3)

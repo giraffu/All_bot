@@ -51,3 +51,34 @@ class SystemStatusResponse(BaseModel):
     queue_by_type: dict[str, int] = {}
     active_workers: int
     comfy_online: bool
+
+class Img2ImgRequest(BaseModel):
+    image: str
+    image2: Optional[str] = None
+    prompt: str
+    negative_prompt: Optional[str] = " "
+    num_inference_steps: Optional[int] = 6
+    guidance_scale: Optional[float] = 1.0
+    seed: Optional[int] = None
+    priority: int = 0
+
+class FaceSwapRequest(BaseModel):
+    face_image: str
+    body_image: str
+    priority: int = 0
+
+class VideoInsertRequest(BaseModel):
+    image: str
+    prompt: str
+    width: int = 512
+    height: int = 512
+    length: int = 81
+    priority: int = 0
+
+class VideoEditRequest(BaseModel):
+    image: str
+    prompt: str
+    width: int = 512
+    height: int = 512
+    length: int = 81
+    priority: int = 0

@@ -8,7 +8,7 @@ from fastapi import FastAPI, UploadFile, File, Form, Depends, HTTPException, Bac
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from app.config import settings
-from app.models import TaskResponse, TaskStatusResponse, SystemStatusResponse, TaskType, T2ITaskResponse, SystemWorkersResponse
+from app.models import TaskResponse, TaskStatusResponse, SystemStatusResponse, TaskType, T2ITaskResponse, SystemWorkersResponse, Img2ImgRequest, FaceSwapRequest, VideoInsertRequest, VideoEditRequest
 from app.queue_manager import QueueManager
 from app.routers import agent
 from redis.asyncio import Redis
@@ -76,118 +76,47 @@ async def verify_token(credentials: HTTPAuthorizationCredentials = Depends(secur
         raise HTTPException(status_code=401, detail="Invalid token")
     return credentials.credentials
 
-async def save_upload_file(upload_file: UploadFile) -> str:
-    filename = f"{uuid.uuid4()}_{upload_file.filename}"
-    
-    # Read into memory
-    content = await upload_file.read()
-        
-    # Upload to MinIO (for new Agent architecture)
-    if minio_client:
-        try:
-            import io
-            # Make sure bucket exists or just put object
-            minio_client.put_object(
-                settings.minio_input_bucket,
-                filename,
-                io.BytesIO(content),
-                len(content)
-            )
-            logger.info(f"Uploaded {filename} to MinIO input bucket")
-        except Exception as e:
-            logger.error(f"Failed to upload {filename} to MinIO: {e}")
-            raise HTTPException(status_code=500, detail=f"Failed to save uploaded file to storage: {e}")
-    else:
-        logger.error("MinIO client is not initialized. Cannot save upload file.")
-        raise HTTPException(status_code=500, detail="Storage service is unavailable.")
-            
-    # Reset file pointer if someone else needs it (though not used after this)
-    await upload_file.seek(0)
-    
-    return filename
-
 @app.post("/comfy_img2img", response_model=TaskResponse)
 async def create_img2img_task(
-    image: UploadFile = File(...),
-    prompt: str = Form(...),
-    priority: int = Form(0),
+    request: Img2ImgRequest,
     queue_manager: QueueManager = Depends(get_queue_manager),
     token: str = Depends(verify_token)
 ):
-    filename = await save_upload_file(image)
-    
-    params = {
-        "image": filename,
-        "prompt": prompt
-    }
-    
+    params = request.dict()
+    priority = params.pop("priority", 0)
     task_id = await queue_manager.enqueue_task(TaskType.IMG2IMG, params, priority)
     return TaskResponse(task_id=task_id)
 
 @app.post("/face_swap", response_model=TaskResponse)
 async def create_face_swap_task(
-    face_image: UploadFile = File(...),
-    body_image: UploadFile = File(...),
-    priority: int = Form(0),
+    request: FaceSwapRequest,
     queue_manager: QueueManager = Depends(get_queue_manager),
     token: str = Depends(verify_token)
 ):
-    face_filename = await save_upload_file(face_image)
-    body_filename = await save_upload_file(body_image)
-    
-    params = {
-        "face_image": face_filename,
-        "body_image": body_filename
-    }
-    
+    params = request.dict()
+    priority = params.pop("priority", 0)
     task_id = await queue_manager.enqueue_task(TaskType.FACE_SWAP, params, priority)
     return TaskResponse(task_id=task_id)
 
 @app.post("/perfect_video_insert", response_model=TaskResponse)
 async def create_video_insert_task(
-    image: UploadFile = File(...),
-    prompt: str = Form(...),
-    width: int = Form(512),
-    height: int = Form(512),
-    length: int = Form(81),
-    priority: int = Form(0),
+    request: VideoInsertRequest,
     queue_manager: QueueManager = Depends(get_queue_manager),
     token: str = Depends(verify_token)
 ):
-    image_filename = await save_upload_file(image)
-    
-    params = {
-        "image": image_filename,
-        "prompt": prompt,
-        "width": width,
-        "height": height,
-        "length": length
-    }
-    
+    params = request.dict()
+    priority = params.pop("priority", 0)
     task_id = await queue_manager.enqueue_task(TaskType.VIDEO_INSERT, params, priority)
     return TaskResponse(task_id=task_id)
 
 @app.post("/perfect_video_edit", response_model=TaskResponse)
 async def create_video_edit_task(
-    image: UploadFile = File(...),
-    prompt: str = Form(...),
-    width: int = Form(512),
-    height: int = Form(512),
-    length: int = Form(81),
-    priority: int = Form(0),
+    request: VideoEditRequest,
     queue_manager: QueueManager = Depends(get_queue_manager),
     token: str = Depends(verify_token)
 ):
-    image_filename = await save_upload_file(image)
-    
-    params = {
-        "image": image_filename,
-        "prompt": prompt,
-        "width": width,
-        "height": height,
-        "length": length
-    }
-    
+    params = request.dict()
+    priority = params.pop("priority", 0)
     task_id = await queue_manager.enqueue_task(TaskType.VIDEO_EDIT, params, priority)
     return TaskResponse(task_id=task_id)
 

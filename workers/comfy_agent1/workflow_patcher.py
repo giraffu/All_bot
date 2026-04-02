@@ -58,6 +58,12 @@ class WorkflowPatcher:
         # Deep copy to avoid modifying template
         wf = json.loads(json.dumps(workflow))
         
+        # Inject a random seed to prevent ComfyUI from fully caching the workflow
+        # which would result in no output generation and no history record.
+        import random
+        if "seed" not in params or params["seed"] is None:
+            params["seed"] = random.randint(1, 0xffffffffffffffff)
+            
         # If we have mappings, use them
         mapping = self.mappings.get(task_type, {})
         
@@ -70,6 +76,10 @@ class WorkflowPatcher:
                         wf[node_id]["inputs"] = {}
                     wf[node_id]["inputs"][input_name] = value
             else:
+                # For heuristic patch of images where the mapping wasn't specific enough
+                if key in ["image", "image2", "face_image", "body_image"]:
+                    continue # Ignore heuristic patch for images to prevent overriding wrong nodes
+                
                 # Heuristic search
                 self.heuristic_patch(wf, key, value)
                 
@@ -91,10 +101,13 @@ class WorkflowPatcher:
                     inputs["prompt"] = value
                     
             elif key == "seed" and ("Sampler" in class_type or "Seed" in class_type):
+                # Only inject seed if the current value is a placeholder or -1, or if we passed None but we shouldn't because json.loads might convert it
                 if "seed" in inputs:
-                    inputs["seed"] = value
+                    if inputs["seed"] == -1 or inputs["seed"] is None:
+                        inputs["seed"] = value
                 if "noise_seed" in inputs:
-                    inputs["noise_seed"] = value
+                    if inputs["noise_seed"] == -1 or inputs["noise_seed"] is None:
+                        inputs["noise_seed"] = value
                     
             elif key == "steps" and "Sampler" in class_type:
                 if "steps" in inputs:
@@ -104,11 +117,17 @@ class WorkflowPatcher:
                 if "cfg" in inputs:
                     inputs["cfg"] = value
             
-            elif key == "image" and "LoadImage" in class_type:
-                inputs["image"] = value
-            
             elif key == "width" and "EmptyLatentImage" in class_type:
                 inputs["width"] = value
                 
             elif key == "height" and "EmptyLatentImage" in class_type:
                 inputs["height"] = value
+                
+            elif key == "width" and "FindPerfectResolution" in class_type:
+                inputs["desired_width"] = value
+                
+            elif key == "height" and "FindPerfectResolution" in class_type:
+                inputs["desired_height"] = value
+                
+            elif key == "length" and "PainterI2V" in class_type:
+                inputs["length"] = value

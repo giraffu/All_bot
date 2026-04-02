@@ -198,8 +198,16 @@ class ComfyAgent:
     def download_input_from_minio(self, object_name: str, local_path: str):
         if not self.minio_client:
             raise Exception("MinIO client not initialized")
-        logger.info(f"Downloading {object_name} from MinIO to {local_path}")
-        self.minio_client.fget_object(MINIO_INPUT_BUCKET, object_name, local_path)
+            
+        bucket_name = "bot-data"
+        real_object_name = object_name
+        
+        if object_name.startswith("template:"):
+            bucket_name = "bot-template"
+            real_object_name = object_name.replace("template:", "")
+            
+        logger.info(f"Downloading {real_object_name} from MinIO bucket {bucket_name} to {local_path}")
+        self.minio_client.fget_object(bucket_name, real_object_name, local_path)
 
     def upload_result_to_minio(self, local_path: str, object_name: str):
         if not self.minio_client:
@@ -255,9 +263,10 @@ class ComfyAgent:
             # 1. Download input image if provided and needed
             if "image" in params and params["image"]:
                 image_filename = params["image"]
-                local_image_path = os.path.join(COMFY_INPUT_DIR, image_filename)
+                # Generate a safe local filename without slashes
+                local_safe_filename = image_filename.replace("/", "_").replace("template:", "")
+                local_image_path = os.path.join(COMFY_INPUT_DIR, local_safe_filename)
                 
-                # Assuming the Master node saves the image in MinIO with the same filename
                 try:
                     await asyncio.to_thread(self.download_input_from_minio, image_filename, local_image_path)
                     logger.info(f"Downloaded input image to {local_image_path}")
@@ -266,21 +275,40 @@ class ComfyAgent:
                     try:
                         with open(local_image_path, "rb") as f:
                             img_data = f.read()
-                        await self.comfy_client.upload_image(img_data, image_filename)
-                        logger.info(f"Uploaded {image_filename} to ComfyUI via API")
+                        await self.comfy_client.upload_image(img_data, local_safe_filename)
+                        logger.info(f"Uploaded {local_safe_filename} to ComfyUI via API")
                     except Exception as upload_err:
-                        logger.warning(f"Failed to upload {image_filename} to ComfyUI via API: {upload_err}")
+                        logger.warning(f"Failed to upload {local_safe_filename} to ComfyUI via API: {upload_err}")
 
-                    params["image"] = image_filename
+                    params["image"] = local_safe_filename
                 except Exception as e:
                     logger.error(f"Failed to process input image {image_filename}: {e}")
-                    params["image"] = image_filename
+                    params["image"] = local_safe_filename
+            
+            # Additional image input 2
+            if "image2" in params and params["image2"]:
+                image_filename2 = params["image2"]
+                local_safe_filename2 = image_filename2.replace("/", "_").replace("template:", "")
+                local_image_path2 = os.path.join(COMFY_INPUT_DIR, local_safe_filename2)
+                try:
+                    await asyncio.to_thread(self.download_input_from_minio, image_filename2, local_image_path2)
+                    logger.info(f"Downloaded input image2 to {local_image_path2}")
+                    try:
+                        with open(local_image_path2, "rb") as f:
+                            img_data = f.read()
+                        await self.comfy_client.upload_image(img_data, local_safe_filename2)
+                    except Exception as upload_err:
+                        logger.warning(f"Failed to upload {local_safe_filename2}: {upload_err}")
+                    params["image2"] = local_safe_filename2
+                except Exception as e:
+                    logger.error(f"Failed to process input image2 {image_filename2}: {e}")
 
             # Also check for other potential image inputs (like face_image, body_image)
             for key in ["face_image", "body_image"]:
                 if key in params and params[key]:
                     img_filename = params[key]
-                    local_img_path = os.path.join(COMFY_INPUT_DIR, img_filename)
+                    local_safe_filename = img_filename.replace("/", "_").replace("template:", "")
+                    local_img_path = os.path.join(COMFY_INPUT_DIR, local_safe_filename)
                     try:
                         await asyncio.to_thread(self.download_input_from_minio, img_filename, local_img_path)
                         logger.info(f"Downloaded {key} to {local_img_path}")
@@ -289,12 +317,12 @@ class ComfyAgent:
                         try:
                             with open(local_img_path, "rb") as f:
                                 img_data = f.read()
-                            await self.comfy_client.upload_image(img_data, img_filename)
-                            logger.info(f"Uploaded {img_filename} to ComfyUI via API")
+                            await self.comfy_client.upload_image(img_data, local_safe_filename)
+                            logger.info(f"Uploaded {local_safe_filename} to ComfyUI via API")
                         except Exception as upload_err:
-                            logger.warning(f"Failed to upload {img_filename} to ComfyUI via API: {upload_err}")
+                            logger.warning(f"Failed to upload {local_safe_filename} to ComfyUI via API: {upload_err}")
 
-                        params[key] = img_filename
+                        params[key] = local_safe_filename
                     except Exception as e:
                         logger.error(f"Failed to process {key} {img_filename}: {e}")
 
@@ -302,12 +330,6 @@ class ComfyAgent:
             workflow = self.patcher.load_workflow(task_type)
             if not workflow:
                 raise ValueError(f"Workflow for {task_type} not found")
-
-            # Inject a random seed to prevent ComfyUI from fully caching the workflow
-            # which would result in no output generation and no history record.
-            import random
-            if "seed" not in params:
-                params["seed"] = random.randint(1, 0xffffffffffffffff)
 
             patched_workflow = self.patcher.patch_workflow(task_type, workflow, params)
 
