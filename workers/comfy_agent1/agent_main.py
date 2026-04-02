@@ -154,6 +154,10 @@ class ComfyAgent:
                                 logger.info(f"Execution fully completed for prompt {prompt_id}")
                                 self.task_completed_event.set()
                                 
+                        elif msg_type == "execution_success":
+                            logger.info(f"Execution success received for prompt {prompt_id}")
+                            self.task_completed_event.set()
+                                
                         elif msg_type == "executed":
                             logger.info(f"Node executed for prompt {prompt_id}")
                             output = data_content.get("output", {})
@@ -279,6 +283,12 @@ class ComfyAgent:
             if not workflow:
                 raise ValueError(f"Workflow for {task_type} not found")
 
+            # Inject a random seed to prevent ComfyUI from fully caching the workflow
+            # which would result in no output generation and no history record.
+            import random
+            if "seed" not in params:
+                params["seed"] = random.randint(1, 0xffffffffffffffff)
+
             patched_workflow = self.patcher.patch_workflow(task_type, workflow, params)
 
             # 3. Submit to ComfyUI
@@ -297,6 +307,32 @@ class ComfyAgent:
 
             if self.task_error:
                 raise Exception(self.task_error)
+
+            if not self.task_result:
+                logger.info(f"Task result not set via WS, checking history for prompt {self.current_prompt_id}")
+                try:
+                    history = await self.comfy_client.get_history(self.current_prompt_id)
+                    if history and self.current_prompt_id in history:
+                        outputs = history[self.current_prompt_id].get("outputs", {})
+                        for node_id, node_output in outputs.items():
+                            images = node_output.get("images", [])
+                            gifs = node_output.get("gifs", [])
+                            videos = node_output.get("videos", [])
+                            
+                            if images:
+                                img = images[0]
+                                self.task_result = f"{img.get('subfolder', '')}/{img.get('filename')}".lstrip('/')
+                                break
+                            elif gifs:
+                                gif = gifs[0]
+                                self.task_result = f"{gif.get('subfolder', '')}/{gif.get('filename')}".lstrip('/')
+                                break
+                            elif videos:
+                                video = videos[0]
+                                self.task_result = f"{video.get('subfolder', '')}/{video.get('filename')}".lstrip('/')
+                                break
+                except Exception as e:
+                    logger.warning(f"Failed to fetch history: {e}")
 
             if not self.task_result:
                 raise Exception("Task completed but no result path found")

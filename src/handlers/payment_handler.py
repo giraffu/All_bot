@@ -81,6 +81,7 @@ async def successful_payment_callback(update: Update, context: ContextTypes.DEFA
             converted_days = 0
             final_identity = plan.identity_name
             is_downgrade = False
+            is_pure_credit = (plan.duration_days == 0)
             
             # 定义身份优先级和折算比例
             identity_priority = {
@@ -99,7 +100,11 @@ async def successful_payment_callback(update: Update, context: ContextTypes.DEFA
             current_priority = identity_priority.get(user.current_identity, 0)
             new_priority = identity_priority.get(plan.identity_name, 0)
             
-            if new_expire_at and new_expire_at > now:
+            if is_pure_credit:
+                # 直购模式：完全不改变原有的身份和到期时间
+                final_identity = user.current_identity
+                new_expire_at = user.identity_expire_at
+            elif new_expire_at and new_expire_at > now:
                 if user.current_identity == plan.identity_name:
                     # 同套餐续费
                     new_expire_at += timedelta(days=plan.duration_days)
@@ -180,7 +185,9 @@ async def successful_payment_callback(update: Update, context: ContextTypes.DEFA
                 f"感谢您的赞助，您已成功购买 **{plan.name}**。\n"
                 f"💰 **获得永久灵石**：`{added_credits}`\n"
             )
-            if is_downgrade:
+            if is_pure_credit:
+                success_msg += f"👑 **当前身份保持为**：`{final_identity}`\n"
+            elif is_downgrade:
                 success_msg += f"👑 **当前身份保持为**：`{final_identity}`\n"
                 if converted_days > 0:
                     success_msg += f"⚖️ **新套餐价值已折算**：`{converted_days}` 天当前高级身份时长\n"
@@ -189,10 +196,9 @@ async def successful_payment_callback(update: Update, context: ContextTypes.DEFA
                 if converted_days > 0:
                     success_msg += f"⚖️ **老套餐残值已折算**：`{converted_days}` 天新套餐时长\n"
                 
-            success_msg += (
-                f"⏳ **身份到期时间**：`{new_expire_at.strftime('%Y-%m-%d %H:%M:%S')}` (UTC)\n\n"
-                f"祝您仙途坦荡，早日登峰造极！"
-            )
+            if new_expire_at:
+                success_msg += f"⏳ **身份到期时间**：`{new_expire_at.strftime('%Y-%m-%d %H:%M:%S')}` (UTC)\n\n"
+            success_msg += f"祝您仙途坦荡，早日登峰造极！"
             await message.reply_text(success_msg, parse_mode="Markdown")
             
         except Exception as e:

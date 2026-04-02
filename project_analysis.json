@@ -1,0 +1,2821 @@
+{
+  ".coverage": {
+    "type": "binary/unreadable"
+  },
+  ".dockerignore": {
+    "lines": 35,
+    "type": "other"
+  },
+  ".env": {
+    "lines": 16,
+    "type": "other"
+  },
+  ".env.example": {
+    "lines": 21,
+    "type": "other"
+  },
+  ".gitignore": {
+    "lines": 114,
+    "type": "other"
+  },
+  "AGENTS.md": {
+    "lines": 78,
+    "type": "other"
+  },
+  "Dockerfile": {
+    "lines": 22,
+    "type": "other"
+  },
+  "backend": {
+    ".env": {
+      "lines": 16,
+      "type": "other"
+    },
+    ".env.example": {
+      "lines": 7,
+      "type": "other"
+    },
+    ".gitignore": {
+      "lines": 7,
+      "type": "other"
+    },
+    "ARCHITECTURE_UPDATE_SUMMARY.md": {
+      "lines": 62,
+      "type": "other"
+    },
+    "BACKEND_TECHNICAL_REPORT.md": {
+      "lines": 337,
+      "type": "other"
+    },
+    "Dockerfile": {
+      "lines": 13,
+      "type": "other"
+    },
+    "HOW_TO_ADD_WORKFLOW.md": {
+      "lines": 112,
+      "type": "other"
+    },
+    "REFACTORING_PLAN.md": {
+      "lines": 49,
+      "type": "other"
+    },
+    "app": {
+      "config.py": {
+        "lines": 27,
+        "sloc": 17,
+        "total_complexity": 1,
+        "avg_complexity": 1.0,
+        "classes": [
+          {
+            "name": "Settings",
+            "methods": []
+          }
+        ],
+        "functions": [],
+        "imports": [
+          "pydantic_settings"
+        ]
+      },
+      "main.py": {
+        "lines": 385,
+        "sloc": 306,
+        "total_complexity": 50,
+        "avg_complexity": 3.12,
+        "classes": [],
+        "functions": [],
+        "imports": [
+          "shutil",
+          "logging",
+          "app.config",
+          "app.models",
+          "fastapi.responses",
+          "uuid",
+          "fastapi.security",
+          "redis.asyncio",
+          "app.routers",
+          "os",
+          "app.queue_manager",
+          "minio",
+          "fastapi",
+          "typing",
+          "asyncio"
+        ]
+      },
+      "models.py": {
+        "lines": 38,
+        "sloc": 32,
+        "total_complexity": 6,
+        "avg_complexity": 1.0,
+        "classes": [
+          {
+            "name": "TaskStatus",
+            "methods": []
+          },
+          {
+            "name": "TaskType",
+            "methods": []
+          },
+          {
+            "name": "TaskResponse",
+            "methods": []
+          },
+          {
+            "name": "T2ITaskResponse",
+            "methods": []
+          },
+          {
+            "name": "TaskStatusResponse",
+            "methods": []
+          },
+          {
+            "name": "SystemStatusResponse",
+            "methods": []
+          }
+        ],
+        "functions": [],
+        "imports": [
+          "pydantic",
+          "typing",
+          "enum"
+        ]
+      },
+      "queue_manager.py": {
+        "lines": 191,
+        "sloc": 141,
+        "total_complexity": 43,
+        "avg_complexity": 2.53,
+        "classes": [
+          {
+            "name": "QueueManager",
+            "methods": [
+              "__init__"
+            ]
+          }
+        ],
+        "functions": [],
+        "imports": [
+          "app.config",
+          "app.models",
+          "uuid",
+          "time",
+          "redis.asyncio",
+          "json",
+          "typing"
+        ]
+      },
+      "routers": {
+        "agent.py": {
+          "lines": 110,
+          "sloc": 86,
+          "total_complexity": 19,
+          "avg_complexity": 1.9,
+          "classes": [
+            {
+              "name": "StatusUpdateRequest",
+              "methods": []
+            },
+            {
+              "name": "CompleteRequest",
+              "methods": []
+            },
+            {
+              "name": "HeartbeatRequest",
+              "methods": []
+            }
+          ],
+          "functions": [
+            "verify_token"
+          ],
+          "imports": [
+            "pydantic",
+            "logging",
+            "app.config",
+            "app.models",
+            "redis.asyncio",
+            "app.queue_manager",
+            "fastapi",
+            "typing"
+          ]
+        }
+      }
+    },
+    "backend.log": {
+      "lines": 10,
+      "type": "other"
+    },
+    "cleanup.log": {
+      "lines": 7,
+      "type": "other"
+    },
+    "docker-compose.yml": {
+      "lines": 26,
+      "type": "other"
+    },
+    "perform_api_test.py": {
+      "lines": 183,
+      "sloc": 145,
+      "total_complexity": 24,
+      "avg_complexity": 6.0,
+      "classes": [],
+      "functions": [
+        "submit_task",
+        "wait_for_task",
+        "download_result",
+        "main"
+      ],
+      "imports": [
+        "requests",
+        "time",
+        "datetime",
+        "os",
+        "json"
+      ]
+    },
+    "requirements.txt": {
+      "lines": 11,
+      "type": "other"
+    },
+    "workflows": {
+      ".trae": {
+        "skills": {
+          "docker-ai-toolkit": {
+            "SKILL.md": {
+              "lines": 69,
+              "type": "other"
+            }
+          }
+        }
+      },
+      "Pornmaster Z-Image Turbo_t2i_Double checkpoints & realism enhancer_V1_2026_01_24.json": {
+        "lines": 599,
+        "type": "other"
+      },
+      "Qwen-Rapid-AIO.json": {
+        "lines": 127,
+        "type": "other"
+      },
+      "debug_patched_face_swap.json": {
+        "lines": 298,
+        "type": "other"
+      },
+      "debug_patched_img2img.json": {
+        "lines": 103,
+        "type": "other"
+      },
+      "debug_patched_t2i-pornmaster-turbo.json": {
+        "lines": 485,
+        "type": "other"
+      },
+      "debug_patched_video_edit.json": {
+        "lines": 300,
+        "type": "other"
+      },
+      "debug_patched_video_insert.json": {
+        "lines": 310,
+        "type": "other"
+      },
+      "face_swap.json": {
+        "lines": 376,
+        "type": "other"
+      },
+      "mappings.json": {
+        "lines": 41,
+        "type": "other"
+      },
+      "perfect_video_edit.json": {
+        "lines": 366,
+        "type": "other"
+      },
+      "perfect_video_insert.json": {
+        "lines": 376,
+        "type": "other"
+      }
+    }
+  },
+  "calculate_total_stars.py": {
+    "lines": 46,
+    "sloc": 36,
+    "total_complexity": 7,
+    "avg_complexity": 7.0,
+    "classes": [],
+    "functions": [],
+    "imports": [
+      "os",
+      "telegram",
+      "dotenv",
+      "asyncio"
+    ]
+  },
+  "check_redis.py": {
+    "lines": 34,
+    "sloc": 26,
+    "total_complexity": 6,
+    "avg_complexity": 6.0,
+    "classes": [],
+    "functions": [],
+    "imports": [
+      "config",
+      "redis.asyncio",
+      "time",
+      "os",
+      "json",
+      "asyncio"
+    ]
+  },
+  "check_redis2.py": {
+    "lines": 23,
+    "sloc": 19,
+    "total_complexity": 4,
+    "avg_complexity": 4.0,
+    "classes": [],
+    "functions": [],
+    "imports": [
+      "config",
+      "redis.asyncio",
+      "time",
+      "os",
+      "json",
+      "asyncio"
+    ]
+  },
+  "check_stars.py": {
+    "lines": 32,
+    "sloc": 26,
+    "total_complexity": 5,
+    "avg_complexity": 5.0,
+    "classes": [],
+    "functions": [],
+    "imports": [
+      "os",
+      "telegram",
+      "dotenv",
+      "asyncio"
+    ]
+  },
+  "clean_zombies.py": {
+    "lines": 32,
+    "sloc": 27,
+    "total_complexity": 5,
+    "avg_complexity": 5.0,
+    "classes": [],
+    "functions": [],
+    "imports": [
+      "config",
+      "redis.asyncio",
+      "time",
+      "json",
+      "asyncio"
+    ]
+  },
+  "clean_zombies2.py": {
+    "lines": 24,
+    "sloc": 20,
+    "total_complexity": 3,
+    "avg_complexity": 3.0,
+    "classes": [],
+    "functions": [],
+    "imports": [
+      "redis.asyncio",
+      "time",
+      "json",
+      "asyncio"
+    ]
+  },
+  "code_analyzer.py": {
+    "lines": 69,
+    "sloc": 58,
+    "total_complexity": 21,
+    "avg_complexity": 10.5,
+    "classes": [],
+    "functions": [
+      "analyze_python_file",
+      "scan_directory"
+    ],
+    "imports": [
+      "ast",
+      "os",
+      "json"
+    ]
+  },
+  "code_analyzer_radon.py": {
+    "lines": 94,
+    "sloc": 79,
+    "total_complexity": 27,
+    "avg_complexity": 13.5,
+    "classes": [],
+    "functions": [
+      "analyze_python_file",
+      "scan_directory"
+    ],
+    "imports": [
+      "ast",
+      "radon.raw",
+      "os",
+      "json",
+      "radon.complexity"
+    ]
+  },
+  "config.py": {
+    "lines": 82,
+    "sloc": 46,
+    "total_complexity": 0,
+    "avg_complexity": 0,
+    "classes": [],
+    "functions": [],
+    "imports": [
+      "os",
+      "dotenv"
+    ]
+  },
+  "dashboard": {
+    "backend": {
+      "Dockerfile": {
+        "lines": 23,
+        "type": "other"
+      },
+      "auth.py": {
+        "lines": 87,
+        "sloc": 69,
+        "total_complexity": 14,
+        "avg_complexity": 1.75,
+        "classes": [
+          {
+            "name": "Token",
+            "methods": []
+          },
+          {
+            "name": "TokenData",
+            "methods": []
+          }
+        ],
+        "functions": [
+          "verify_password",
+          "get_password_hash",
+          "create_access_token"
+        ],
+        "imports": [
+          "passlib.context",
+          "pydantic",
+          "fastapi.security",
+          "datetime",
+          "os",
+          "fastapi",
+          "dotenv",
+          "typing",
+          "jose"
+        ]
+      },
+      "main.py": {
+        "lines": 75,
+        "sloc": 64,
+        "total_complexity": 9,
+        "avg_complexity": 3.0,
+        "classes": [],
+        "functions": [],
+        "imports": [
+          "logging",
+          "fastapi.responses",
+          "pathlib",
+          "dashboard.backend.routers",
+          "fastapi",
+          "os",
+          "dashboard.backend.auth",
+          "fastapi.middleware.cors",
+          "sys",
+          "src.database.core"
+        ]
+      },
+      "requirements.txt": {
+        "lines": 14,
+        "type": "other"
+      },
+      "routers": {
+        "__init__.py": {
+          "lines": 0,
+          "sloc": 0,
+          "total_complexity": 0,
+          "avg_complexity": 0,
+          "classes": [],
+          "functions": [],
+          "imports": []
+        },
+        "history.py": {
+          "lines": 128,
+          "sloc": 104,
+          "total_complexity": 21,
+          "avg_complexity": 10.5,
+          "classes": [],
+          "functions": [],
+          "imports": [
+            "logging",
+            "dashboard.backend.schemas",
+            "sqlalchemy",
+            "config",
+            "src.database.models",
+            "os",
+            "src.database.core",
+            "src.services.storage",
+            "fastapi",
+            "sqlalchemy.ext.asyncio",
+            "typing"
+          ]
+        },
+        "logs.py": {
+          "lines": 51,
+          "sloc": 43,
+          "total_complexity": 6,
+          "avg_complexity": 6.0,
+          "classes": [],
+          "functions": [],
+          "imports": [
+            "logging",
+            "dashboard.backend.schemas",
+            "src.services.log_service",
+            "datetime",
+            "fastapi",
+            "typing"
+          ]
+        },
+        "plans.py": {
+          "lines": 123,
+          "sloc": 102,
+          "total_complexity": 20,
+          "avg_complexity": 4.0,
+          "classes": [],
+          "functions": [],
+          "imports": [
+            "logging",
+            "dashboard.backend.schemas",
+            "sqlalchemy",
+            "src.database.models",
+            "src.database.core",
+            "fastapi",
+            "sqlalchemy.ext.asyncio",
+            "typing"
+          ]
+        },
+        "stats.py": {
+          "lines": 565,
+          "sloc": 464,
+          "total_complexity": 107,
+          "avg_complexity": 13.38,
+          "classes": [],
+          "functions": [
+            "get_hour_expr",
+            "get_days_diff_expr"
+          ],
+          "imports": [
+            "logging",
+            "telegram",
+            "sqlalchemy",
+            "src.database.models",
+            "datetime",
+            "os",
+            "httpx",
+            "src.database.core",
+            "fastapi",
+            "sqlalchemy.ext.asyncio",
+            "dotenv"
+          ]
+        },
+        "system.py": {
+          "lines": 294,
+          "sloc": 240,
+          "total_complexity": 63,
+          "avg_complexity": 5.73,
+          "classes": [
+            {
+              "name": "RefundTaskRequest",
+              "methods": []
+            }
+          ],
+          "functions": [],
+          "imports": [
+            "logging",
+            "pydantic",
+            "src.services.redis_client",
+            "sqlalchemy",
+            "config",
+            "fastapi.responses",
+            "src.services.image_service",
+            "src.database.models",
+            "httpx",
+            "src.database.core",
+            "fastapi",
+            "sqlalchemy.ext.asyncio"
+          ]
+        },
+        "templates.py": {
+          "lines": 142,
+          "sloc": 116,
+          "total_complexity": 20,
+          "avg_complexity": 6.67,
+          "classes": [],
+          "functions": [],
+          "imports": [
+            "logging",
+            "dashboard.backend.schemas",
+            "sqlalchemy",
+            "config",
+            "src.database.models",
+            "os",
+            "src.database.core",
+            "src.services.storage",
+            "fastapi",
+            "sqlalchemy.ext.asyncio",
+            "typing"
+          ]
+        },
+        "users.py": {
+          "lines": 380,
+          "sloc": 309,
+          "total_complexity": 55,
+          "avg_complexity": 9.17,
+          "classes": [],
+          "functions": [],
+          "imports": [
+            "logging",
+            "dashboard.backend.schemas",
+            "sqlalchemy",
+            "uuid",
+            "fastapi",
+            "src.database.models",
+            "datetime",
+            "os",
+            "json",
+            "src.database.core",
+            "src.services.storage",
+            "sqlalchemy.orm",
+            "sqlalchemy.ext.asyncio",
+            "typing"
+          ]
+        }
+      },
+      "schemas.py": {
+        "lines": 121,
+        "sloc": 104,
+        "total_complexity": 14,
+        "avg_complexity": 1.0,
+        "classes": [
+          {
+            "name": "UpdateCreditsRequest",
+            "methods": []
+          },
+          {
+            "name": "UpdateIdentityRequest",
+            "methods": []
+          },
+          {
+            "name": "AdminGiftRequest",
+            "methods": []
+          },
+          {
+            "name": "MembershipPlanCreate",
+            "methods": []
+          },
+          {
+            "name": "MembershipPlanUpdate",
+            "methods": []
+          },
+          {
+            "name": "MembershipPlanResponse",
+            "methods": []
+          },
+          {
+            "name": "OrderResponse",
+            "methods": []
+          },
+          {
+            "name": "OrderListResponse",
+            "methods": []
+          },
+          {
+            "name": "HistoryResponse",
+            "methods": []
+          },
+          {
+            "name": "HistoryListResponse",
+            "methods": []
+          },
+          {
+            "name": "TemplateContributionResponse",
+            "methods": []
+          },
+          {
+            "name": "LogResponse",
+            "methods": []
+          },
+          {
+            "name": "LogListResponse",
+            "methods": []
+          },
+          {
+            "name": "OrderRefundRequest",
+            "methods": []
+          }
+        ],
+        "functions": [],
+        "imports": [
+          "pydantic",
+          "typing",
+          "datetime"
+        ]
+      }
+    },
+    "check_plans_debug.py": {
+      "lines": 16,
+      "sloc": 14,
+      "total_complexity": 2,
+      "avg_complexity": 2.0,
+      "classes": [],
+      "functions": [],
+      "imports": [
+        "src.database.core",
+        "src.database.models",
+        "sqlalchemy",
+        "asyncio"
+      ]
+    },
+    "docker-compose.yml": {
+      "lines": 40,
+      "type": "other"
+    },
+    "frontend": {
+      ".gitignore": {
+        "lines": 24,
+        "type": "other"
+      },
+      "Dockerfile": {
+        "lines": 25,
+        "type": "other"
+      },
+      "README.md": {
+        "lines": 5,
+        "type": "other"
+      },
+      "TECHNICAL_REPORT.md": {
+        "lines": 207,
+        "type": "other"
+      },
+      "dist": {
+        "assets": {
+          "index-CrqLVsC8.js": {
+            "lines": 497,
+            "type": "other"
+          },
+          "index-I3-CENF6.css": {
+            "lines": 1,
+            "type": "other"
+          }
+        },
+        "index.html": {
+          "lines": 14,
+          "type": "other"
+        },
+        "vite.svg": {
+          "lines": 1,
+          "type": "other"
+        }
+      },
+      "index.html": {
+        "lines": 13,
+        "type": "other"
+      },
+      "nginx.conf": {
+        "lines": 38,
+        "type": "other"
+      },
+      "package-lock.json": {
+        "lines": 2972,
+        "type": "other"
+      },
+      "package.json": {
+        "lines": 26,
+        "type": "other"
+      },
+      "postcss.config.js": {
+        "lines": 6,
+        "type": "other"
+      },
+      "public": {
+        "vite.svg": {
+          "lines": 1,
+          "type": "other"
+        }
+      },
+      "src": {
+        "App.vue": {
+          "lines": 653,
+          "type": "other"
+        },
+        "api": {
+          "api.js": {
+            "lines": 239,
+            "type": "other"
+          }
+        },
+        "assets": {
+          "vue.svg": {
+            "lines": 1,
+            "type": "other"
+          }
+        },
+        "components": {
+          "ActiveTasksTable.vue": {
+            "lines": 335,
+            "type": "other"
+          },
+          "AvgDailyCreditDistributionChart.vue": {
+            "lines": 119,
+            "type": "other"
+          },
+          "AvgDailyDistributionChart.vue": {
+            "lines": 119,
+            "type": "other"
+          },
+          "CreditDistributionChart.vue": {
+            "lines": 121,
+            "type": "other"
+          },
+          "CreditHoldingDistributionChart.vue": {
+            "lines": 120,
+            "type": "other"
+          },
+          "CumulativeHourlyChart.vue": {
+            "lines": 169,
+            "type": "other"
+          },
+          "CumulativeTypeChart.vue": {
+            "lines": 210,
+            "type": "other"
+          },
+          "DailyTypeChart.vue": {
+            "lines": 285,
+            "type": "other"
+          },
+          "GenerationDistributionChart.vue": {
+            "lines": 122,
+            "type": "other"
+          },
+          "HelloWorld.vue": {
+            "lines": 43,
+            "type": "other"
+          },
+          "HistoryModal.vue": {
+            "lines": 122,
+            "type": "other"
+          },
+          "HistoryTable.vue": {
+            "lines": 352,
+            "type": "other"
+          },
+          "HomeDashboard.vue": {
+            "lines": 139,
+            "type": "other"
+          },
+          "HourlyChart.vue": {
+            "lines": 219,
+            "type": "other"
+          },
+          "LineChart.vue": {
+            "lines": 267,
+            "type": "other"
+          },
+          "LogTable.vue": {
+            "lines": 224,
+            "type": "other"
+          },
+          "Login.vue": {
+            "lines": 93,
+            "type": "other"
+          },
+          "MediaItem.vue": {
+            "lines": 72,
+            "type": "other"
+          },
+          "PieChart.vue": {
+            "lines": 100,
+            "type": "other"
+          },
+          "QueueStats.vue": {
+            "lines": 183,
+            "type": "other"
+          },
+          "RechargeSystem.vue": {
+            "lines": 238,
+            "type": "other"
+          },
+          "SimplePieChart.vue": {
+            "lines": 221,
+            "type": "other"
+          },
+          "StatsCards.vue": {
+            "lines": 283,
+            "type": "other"
+          },
+          "TemplateManager.vue": {
+            "lines": 222,
+            "type": "other"
+          },
+          "UserTable.vue": {
+            "lines": 690,
+            "type": "other"
+          }
+        },
+        "main.js": {
+          "lines": 9,
+          "type": "other"
+        },
+        "style.css": {
+          "lines": 78,
+          "type": "other"
+        },
+        "utils": {
+          "helpers.js": {
+            "lines": 19,
+            "type": "other"
+          }
+        }
+      },
+      "tailwind.config.js": {
+        "lines": 12,
+        "type": "other"
+      },
+      "vite.config.js": {
+        "lines": 7,
+        "type": "other"
+      }
+    },
+    "test_db.py": {
+      "lines": 13,
+      "sloc": 11,
+      "total_complexity": 2,
+      "avg_complexity": 2.0,
+      "classes": [],
+      "functions": [],
+      "imports": [
+        "src.database.core",
+        "src.database.models",
+        "sqlalchemy",
+        "asyncio"
+      ]
+    }
+  },
+  "deploy": {
+    "charts": {
+      "bot": {
+        "templates": {
+          "deployment.yaml": {
+            "lines": 54,
+            "type": "other"
+          }
+        },
+        "values.yaml": {
+          "lines": 50,
+          "type": "other"
+        }
+      }
+    },
+    "docker-compose-test.yml": {
+      "lines": 22,
+      "type": "other"
+    },
+    "docker-compose.yml": {
+      "lines": 21,
+      "type": "other"
+    }
+  },
+  "docs": {
+    "BOT_ARCHITECTURE.md": {
+      "lines": 50,
+      "type": "other"
+    },
+    "DEPLOYMENT_AND_OPERATIONS.md": {
+      "lines": 93,
+      "type": "other"
+    },
+    "TESTING_GUIDE.md": {
+      "lines": 88,
+      "type": "other"
+    },
+    "bot_services_and_logic.md": {
+      "lines": 137,
+      "type": "other"
+    },
+    "cultivation_identity_system.md": {
+      "lines": 130,
+      "type": "other"
+    },
+    "dashboard_frontend_backend.md": {
+      "lines": 96,
+      "type": "other"
+    },
+    "database_and_data_flow.md": {
+      "lines": 110,
+      "type": "other"
+    },
+    "ton_payment_system.md": {
+      "lines": 82,
+      "type": "other"
+    }
+  },
+  "find_commented_code.py": {
+    "lines": 45,
+    "sloc": 40,
+    "total_complexity": 11,
+    "avg_complexity": 5.5,
+    "classes": [],
+    "functions": [
+      "is_commented_code",
+      "scan_directory"
+    ],
+    "imports": [
+      "os",
+      "re"
+    ]
+  },
+  "find_dead_locks.py": {
+    "lines": 35,
+    "sloc": 26,
+    "total_complexity": 7,
+    "avg_complexity": 7.0,
+    "classes": [],
+    "functions": [],
+    "imports": [
+      "config",
+      "redis.asyncio",
+      "time",
+      "json",
+      "asyncio"
+    ]
+  },
+  "force_cleanup.py": {
+    "lines": 45,
+    "sloc": 34,
+    "total_complexity": 8,
+    "avg_complexity": 8.0,
+    "classes": [],
+    "functions": [],
+    "imports": [
+      "src.services.redis_client",
+      "time",
+      "src.services.permission_service",
+      "src.database.core",
+      "asyncio"
+    ]
+  },
+  "frontend": {
+    ".env": {
+      "lines": 1,
+      "type": "other"
+    },
+    ".gitignore": {
+      "lines": 24,
+      "type": "other"
+    },
+    "README.md": {
+      "lines": 73,
+      "type": "other"
+    },
+    "README_ZH.md": {
+      "lines": 38,
+      "type": "other"
+    },
+    "dist": {
+      "assets": {
+        "index-DL26hvqv.js": {
+          "lines": 1206,
+          "type": "other"
+        },
+        "index-UcWMVnD3.css": {
+          "lines": 1,
+          "type": "other"
+        }
+      },
+      "index.html": {
+        "lines": 15,
+        "type": "other"
+      },
+      "tonconnect-manifest.json": {
+        "lines": 7,
+        "type": "other"
+      },
+      "vite.svg": {
+        "lines": 1,
+        "type": "other"
+      }
+    },
+    "eslint.config.js": {
+      "lines": 23,
+      "type": "other"
+    },
+    "index.html": {
+      "lines": 14,
+      "type": "other"
+    },
+    "package-lock.json": {
+      "lines": 5163,
+      "type": "other"
+    },
+    "package.json": {
+      "lines": 35,
+      "type": "other"
+    },
+    "public": {
+      "tonconnect-manifest.json": {
+        "lines": 7,
+        "type": "other"
+      },
+      "vite.svg": {
+        "lines": 1,
+        "type": "other"
+      }
+    },
+    "src": {
+      "App.css": {
+        "lines": 248,
+        "type": "other"
+      },
+      "App.tsx": {
+        "lines": 241,
+        "type": "other"
+      },
+      "assets": {
+        "react.svg": {
+          "lines": 1,
+          "type": "other"
+        }
+      },
+      "index.css": {
+        "lines": 75,
+        "type": "other"
+      },
+      "main.tsx": {
+        "lines": 13,
+        "type": "other"
+      }
+    },
+    "test_parse_boc_2.py": {
+      "lines": 28,
+      "sloc": 25,
+      "total_complexity": 6,
+      "avg_complexity": 3.0,
+      "classes": [],
+      "functions": [
+        "parse_payload_boc_hex",
+        "parse_payload_boc_b64"
+      ],
+      "imports": [
+        "pytoniq_core",
+        "base64"
+      ]
+    },
+    "tsconfig.app.json": {
+      "lines": 28,
+      "type": "other"
+    },
+    "tsconfig.json": {
+      "lines": 7,
+      "type": "other"
+    },
+    "tsconfig.node.json": {
+      "lines": 26,
+      "type": "other"
+    },
+    "vite.config.ts": {
+      "lines": 26,
+      "type": "other"
+    }
+  },
+  "generate_tree.py": {
+    "lines": 19,
+    "sloc": 16,
+    "total_complexity": 7,
+    "avg_complexity": 7.0,
+    "classes": [],
+    "functions": [
+      "generate_tree"
+    ],
+    "imports": [
+      "os"
+    ]
+  },
+  "logs": {
+    "bot.log": {
+      "lines": 10,
+      "type": "other"
+    },
+    "bot.log.1": {
+      "lines": 1176,
+      "type": "other"
+    },
+    "bot.log.2": {
+      "lines": 27571,
+      "type": "other"
+    },
+    "bot.log.3": {
+      "lines": 25547,
+      "type": "other"
+    },
+    "bot.log.4": {
+      "lines": 26633,
+      "type": "other"
+    },
+    "bot.log.5": {
+      "lines": 26426,
+      "type": "other"
+    }
+  },
+  "migrate_history.py": {
+    "lines": 20,
+    "sloc": 18,
+    "total_complexity": 3,
+    "avg_complexity": 3.0,
+    "classes": [],
+    "functions": [],
+    "imports": [
+      "src.database.core",
+      "sqlalchemy",
+      "asyncio"
+    ]
+  },
+  "print_exception.patch": {
+    "lines": 9,
+    "type": "other"
+  },
+  "project_analysis.json": {
+    "lines": 2811,
+    "type": "other"
+  },
+  "project_tree.txt": {
+    "lines": 1320,
+    "type": "other"
+  },
+  "prompts.ini": {
+    "lines": 17,
+    "type": "other"
+  },
+  "requirements.txt": {
+    "lines": 14,
+    "type": "other"
+  },
+  "smart_cleanup.py": {
+    "lines": 71,
+    "sloc": 60,
+    "total_complexity": 16,
+    "avg_complexity": 16.0,
+    "classes": [],
+    "functions": [],
+    "imports": [
+      "src.services.redis_client",
+      "config",
+      "time",
+      "httpx",
+      "json",
+      "src.services.permission_service",
+      "src.database.core",
+      "asyncio"
+    ]
+  },
+  "smart_cleanup2.py": {
+    "lines": 76,
+    "sloc": 65,
+    "total_complexity": 16,
+    "avg_complexity": 16.0,
+    "classes": [],
+    "functions": [],
+    "imports": [
+      "src.services.redis_client",
+      "config",
+      "time",
+      "httpx",
+      "json",
+      "src.services.permission_service",
+      "src.database.core",
+      "asyncio"
+    ]
+  },
+  "src": {
+    "__init__.py": {
+      "lines": 0,
+      "sloc": 0,
+      "total_complexity": 0,
+      "avg_complexity": 0,
+      "classes": [],
+      "functions": [],
+      "imports": []
+    },
+    "api_client.py": {
+      "lines": 298,
+      "sloc": 207,
+      "total_complexity": 45,
+      "avg_complexity": 3.46,
+      "classes": [
+        {
+          "name": "APIClient",
+          "methods": [
+            "__init__"
+          ]
+        }
+      ],
+      "functions": [],
+      "imports": [
+        "logging",
+        "config",
+        "uuid",
+        "src.utils",
+        "httpx",
+        "os",
+        "src.services.storage",
+        "src.circuit_breaker",
+        "typing",
+        "asyncio"
+      ]
+    },
+    "bot_test.py": {
+      "lines": 158,
+      "sloc": 118,
+      "total_complexity": 19,
+      "avg_complexity": 4.75,
+      "classes": [],
+      "functions": [
+        "get_best_proxy",
+        "main"
+      ],
+      "imports": [
+        "logging",
+        "urllib.parse",
+        "config",
+        "telegram.ext",
+        "src.handlers.message_handler",
+        "src.services.payment_validator",
+        "src.logger",
+        "src.services.recovery_service",
+        "socket",
+        "src.handlers.callback_handler",
+        "datetime",
+        "telegram.request",
+        "os",
+        "src.services.task_registry",
+        "src.handlers.command_handler",
+        "src.database.core",
+        "src.quota",
+        "asyncio"
+      ]
+    },
+    "circuit_breaker.py": {
+      "lines": 68,
+      "sloc": 55,
+      "total_complexity": 22,
+      "avg_complexity": 2.75,
+      "classes": [
+        {
+          "name": "CircuitState",
+          "methods": []
+        },
+        {
+          "name": "CircuitBreakerOpenException",
+          "methods": []
+        },
+        {
+          "name": "CircuitBreaker",
+          "methods": [
+            "__init__",
+            "record_success",
+            "record_failure",
+            "allow_request"
+          ]
+        }
+      ],
+      "functions": [],
+      "imports": [
+        "logging",
+        "time",
+        "enum"
+      ]
+    },
+    "constants.py": {
+      "lines": 197,
+      "sloc": 158,
+      "total_complexity": 9,
+      "avg_complexity": 9.0,
+      "classes": [],
+      "functions": [
+        "get_video_settings_keyboard"
+      ],
+      "imports": [
+        "os"
+      ]
+    },
+    "context.py": {
+      "lines": 3,
+      "sloc": 2,
+      "total_complexity": 0,
+      "avg_complexity": 0,
+      "classes": [],
+      "functions": [],
+      "imports": [
+        "contextvars"
+      ]
+    },
+    "database": {
+      "core.py": {
+        "lines": 156,
+        "sloc": 120,
+        "total_complexity": 20,
+        "avg_complexity": 10.0,
+        "classes": [],
+        "functions": [],
+        "imports": [
+          "logging",
+          "sqlalchemy",
+          "config",
+          "logger",
+          "models",
+          "sqlalchemy.orm",
+          "sqlalchemy.ext.asyncio"
+        ]
+      },
+      "logger.py": {
+        "lines": 79,
+        "sloc": 54,
+        "total_complexity": 2,
+        "avg_complexity": 2.0,
+        "classes": [],
+        "functions": [
+          "setup_db_logging"
+        ],
+        "imports": [
+          "logging",
+          "sqlalchemy",
+          "time",
+          "datetime",
+          "json",
+          "src.context"
+        ]
+      },
+      "models.py": {
+        "lines": 142,
+        "sloc": 110,
+        "total_complexity": 9,
+        "avg_complexity": 1.0,
+        "classes": [
+          {
+            "name": "User",
+            "methods": []
+          },
+          {
+            "name": "Referral",
+            "methods": []
+          },
+          {
+            "name": "History",
+            "methods": []
+          },
+          {
+            "name": "TemplateContribution",
+            "methods": []
+          },
+          {
+            "name": "CheckinHistory",
+            "methods": []
+          },
+          {
+            "name": "UserLog",
+            "methods": []
+          },
+          {
+            "name": "MembershipPlan",
+            "methods": []
+          },
+          {
+            "name": "DiscountRule",
+            "methods": []
+          },
+          {
+            "name": "Order",
+            "methods": []
+          }
+        ],
+        "functions": [],
+        "imports": [
+          "sqlalchemy.orm",
+          "datetime",
+          "sqlalchemy"
+        ]
+      }
+    },
+    "handlers": {
+      "callback_handler.py": {
+        "lines": 576,
+        "sloc": 426,
+        "total_complexity": 98,
+        "avg_complexity": 98.0,
+        "classes": [],
+        "functions": [],
+        "imports": [
+          "src.handlers.utils",
+          "src.services.task_service",
+          "telegram",
+          "config",
+          "telegram.ext",
+          "random",
+          "src.utils",
+          "os",
+          "src.services.storage",
+          "src.services.permission_service",
+          "src.constants",
+          "asyncio"
+        ]
+      },
+      "command_handler.py": {
+        "lines": 123,
+        "sloc": 95,
+        "total_complexity": 19,
+        "avg_complexity": 6.33,
+        "classes": [],
+        "functions": [],
+        "imports": [
+          "src.handlers.utils",
+          "logging",
+          "telegram",
+          "config",
+          "telegram.ext",
+          "src.utils",
+          "os",
+          "src.services.permission_service"
+        ]
+      },
+      "message_handler.py": {
+        "lines": 885,
+        "sloc": 685,
+        "total_complexity": 150,
+        "avg_complexity": 12.5,
+        "classes": [],
+        "functions": [],
+        "imports": [
+          "src.handlers.utils",
+          "logging",
+          "src.services.task_service",
+          "telegram",
+          "config",
+          "telegram.ext",
+          "uuid",
+          "random",
+          "src.services.image_service",
+          "time",
+          "src.logger",
+          "src.utils",
+          "os",
+          "src.services.permission_service",
+          "src.constants"
+        ]
+      },
+      "payment_handler.py": {
+        "lines": 201,
+        "sloc": 149,
+        "total_complexity": 18,
+        "avg_complexity": 9.0,
+        "classes": [],
+        "functions": [],
+        "imports": [
+          "src.handlers.utils",
+          "logging",
+          "telegram",
+          "sqlalchemy",
+          "contextvars",
+          "telegram.ext",
+          "src.database.models",
+          "src.utils",
+          "src.database.core"
+        ]
+      },
+      "utils.py": {
+        "lines": 72,
+        "sloc": 58,
+        "total_complexity": 17,
+        "avg_complexity": 2.43,
+        "classes": [
+          {
+            "name": "MockMessage",
+            "methods": [
+              "__init__"
+            ]
+          }
+        ],
+        "functions": [
+          "with_db_logging_context",
+          "_is_mentioned"
+        ],
+        "imports": [
+          "telegram.ext",
+          "telegram",
+          "src.context",
+          "functools"
+        ]
+      }
+    },
+    "logger.py": {
+      "lines": 128,
+      "sloc": 78,
+      "total_complexity": 16,
+      "avg_complexity": 2.29,
+      "classes": [
+        {
+          "name": "UserLogger",
+          "methods": [
+            "__init__",
+            "save_input_image",
+            "save_output_image",
+            "log_interaction"
+          ]
+        }
+      ],
+      "functions": [
+        "setup_logging"
+      ],
+      "imports": [
+        "logging",
+        "database.models",
+        "sqlalchemy",
+        "database.core",
+        "pathlib",
+        "services.storage",
+        "datetime",
+        "logging.handlers"
+      ]
+    },
+    "quota.py": {
+      "lines": 360,
+      "sloc": 254,
+      "total_complexity": 57,
+      "avg_complexity": 3.56,
+      "classes": [
+        {
+          "name": "QuotaManager",
+          "methods": [
+            "__init__"
+          ]
+        }
+      ],
+      "functions": [],
+      "imports": [
+        "sqlalchemy.exc",
+        "database.models",
+        "constants",
+        "sqlalchemy",
+        "database.core",
+        "services.log_service",
+        "datetime"
+      ]
+    },
+    "services": {
+      "image_service.py": {
+        "lines": 44,
+        "sloc": 23,
+        "total_complexity": 12,
+        "avg_complexity": 1.2,
+        "classes": [
+          {
+            "name": "ImageService",
+            "methods": []
+          }
+        ],
+        "functions": [],
+        "imports": [
+          "src.api_client",
+          "typing"
+        ]
+      },
+      "log_service.py": {
+        "lines": 146,
+        "sloc": 109,
+        "total_complexity": 30,
+        "avg_complexity": 10.0,
+        "classes": [
+          {
+            "name": "LogService",
+            "methods": []
+          }
+        ],
+        "functions": [],
+        "imports": [
+          "sqlalchemy.exc",
+          "logging",
+          "sqlalchemy",
+          "src.database.models",
+          "datetime",
+          "json",
+          "src.database.core",
+          "typing"
+        ]
+      },
+      "payment_validator.py": {
+        "lines": 327,
+        "sloc": 242,
+        "total_complexity": 50,
+        "avg_complexity": 8.33,
+        "classes": [
+          {
+            "name": "TonPaymentValidator",
+            "methods": [
+              "__init__"
+            ]
+          }
+        ],
+        "functions": [
+          "parse_payload_boc"
+        ],
+        "imports": [
+          "logging",
+          "config",
+          "decimal",
+          "aiohttp",
+          "src.database.models",
+          "sqlalchemy.future",
+          "src.database.core",
+          "asyncio"
+        ]
+      },
+      "permission_service.py": {
+        "lines": 414,
+        "sloc": 271,
+        "total_complexity": 72,
+        "avg_complexity": 3.6,
+        "classes": [
+          {
+            "name": "PermissionService",
+            "methods": [
+              "__init__"
+            ]
+          }
+        ],
+        "functions": [],
+        "imports": [
+          "telegram",
+          "config",
+          "telegram.ext",
+          "src.utils",
+          "src.database.core",
+          "src.quota",
+          "src.constants"
+        ]
+      },
+      "recovery_service.py": {
+        "lines": 126,
+        "sloc": 108,
+        "total_complexity": 26,
+        "avg_complexity": 2.89,
+        "classes": [
+          {
+            "name": "MockMessage",
+            "methods": [
+              "__init__"
+            ]
+          },
+          {
+            "name": "MockContext",
+            "methods": [
+              "__init__"
+            ]
+          }
+        ],
+        "functions": [],
+        "imports": [
+          "logging",
+          "src.services.task_service",
+          "src.services.redis_client",
+          "src.services.image_service",
+          "src.logger",
+          "src.services.task_registry",
+          "src.services.permission_service",
+          "asyncio"
+        ]
+      },
+      "redis_client.py": {
+        "lines": 76,
+        "sloc": 58,
+        "total_complexity": 18,
+        "avg_complexity": 2.25,
+        "classes": [
+          {
+            "name": "RedisClient",
+            "methods": [
+              "__new__"
+            ]
+          }
+        ],
+        "functions": [],
+        "imports": [
+          "logging",
+          "config",
+          "redis.asyncio",
+          "json",
+          "typing"
+        ]
+      },
+      "storage.py": {
+        "lines": 124,
+        "sloc": 99,
+        "total_complexity": 35,
+        "avg_complexity": 4.38,
+        "classes": [
+          {
+            "name": "StorageService",
+            "methods": [
+              "__new__",
+              "_init_client",
+              "upload_file",
+              "upload_bytes",
+              "get_file_bytes",
+              "list_objects",
+              "get_presigned_url"
+            ]
+          }
+        ],
+        "functions": [],
+        "imports": [
+          "logging",
+          "config",
+          "datetime",
+          "minio",
+          "io"
+        ]
+      },
+      "task_registry.py": {
+        "lines": 54,
+        "sloc": 40,
+        "total_complexity": 8,
+        "avg_complexity": 1.33,
+        "classes": [
+          {
+            "name": "TaskRegistry",
+            "methods": []
+          }
+        ],
+        "functions": [],
+        "imports": [
+          "logging",
+          "src.services.redis_client",
+          "uuid",
+          "time",
+          "src.services.permission_service"
+        ]
+      },
+      "task_service.py": {
+        "lines": 891,
+        "sloc": 737,
+        "total_complexity": 135,
+        "avg_complexity": 8.44,
+        "classes": [
+          {
+            "name": "TaskService",
+            "methods": [
+              "_cleanup_files"
+            ]
+          }
+        ],
+        "functions": [],
+        "imports": [
+          "src.handlers.utils",
+          "logging",
+          "telegram",
+          "src.services.redis_client",
+          "telegram.ext",
+          "src.constants",
+          "src.services.image_service",
+          "src.logger",
+          "src.utils",
+          "os",
+          "src.services.task_registry",
+          "src.services.permission_service",
+          "typing"
+        ]
+      },
+      "task_service.py.orig": {
+        "lines": 861,
+        "type": "other"
+      }
+    },
+    "utils.py": {
+      "lines": 159,
+      "sloc": 101,
+      "total_complexity": 17,
+      "avg_complexity": 1.42,
+      "classes": [],
+      "functions": [
+        "is_maintenance_mode",
+        "async_retry",
+        "load_prompts"
+      ],
+      "imports": [
+        "logging",
+        "typing",
+        "telegram.error",
+        "configparser",
+        "os",
+        "httpx",
+        "functools",
+        "asyncio"
+      ]
+    }
+  },
+  "templates": {
+    "quick_face": {
+      "-6339028235047777001_121.jpeg": {
+        "type": "binary/unreadable"
+      },
+      "-6339028235047777046_121.jpeg": {
+        "type": "binary/unreadable"
+      },
+      "026 (2).jpeg": {
+        "type": "binary/unreadable"
+      },
+      "041 (2).jpeg": {
+        "type": "binary/unreadable"
+      },
+      "042 (2).jpeg": {
+        "type": "binary/unreadable"
+      },
+      "048 (2).jpeg": {
+        "type": "binary/unreadable"
+      },
+      "054 (2).jpeg": {
+        "type": "binary/unreadable"
+      },
+      "05b670e644d06b286fcca5180792854f.jpeg": {
+        "type": "binary/unreadable"
+      },
+      "064 (2).jpeg": {
+        "type": "binary/unreadable"
+      },
+      "066 (2).jpeg": {
+        "type": "binary/unreadable"
+      },
+      "067 (2).jpeg": {
+        "type": "binary/unreadable"
+      },
+      "072 (2).jpeg": {
+        "type": "binary/unreadable"
+      },
+      "084 (2).jpeg": {
+        "type": "binary/unreadable"
+      },
+      "090 (2).jpeg": {
+        "type": "binary/unreadable"
+      },
+      "0beaab28-1678-4806-b07b-f67ae8f85191.jpeg": {
+        "type": "binary/unreadable"
+      },
+      "100.jpeg": {
+        "type": "binary/unreadable"
+      },
+      "110.jpeg": {
+        "type": "binary/unreadable"
+      },
+      "111.jpeg": {
+        "type": "binary/unreadable"
+      },
+      "119.jpeg": {
+        "type": "binary/unreadable"
+      },
+      "1xIRjwahFws.jpeg": {
+        "type": "binary/unreadable"
+      },
+      "4BA5B167-3B88-49E2-82CB-0C5B542CE9A8.jpeg": {
+        "type": "binary/unreadable"
+      },
+      "4bfffff3afd5ea628d842f7d43aecbd5.jpeg": {
+        "type": "binary/unreadable"
+      },
+      "57322ea1f28e455e79e0c70a7d0daf66.jpeg": {
+        "type": "binary/unreadable"
+      },
+      "6bead137e1c3d01b092f2f4a0c1d7c77.jpeg": {
+        "type": "binary/unreadable"
+      },
+      "A51A6639.jpeg": {
+        "type": "binary/unreadable"
+      },
+      "A51A6661.jpeg": {
+        "type": "binary/unreadable"
+      },
+      "A51A6666.jpeg": {
+        "type": "binary/unreadable"
+      },
+      "A51A6711.jpeg": {
+        "type": "binary/unreadable"
+      },
+      "A51A6935.jpeg": {
+        "type": "binary/unreadable"
+      },
+      "AF47A8D3523899E95FC52C2885742402.jpeg": {
+        "type": "binary/unreadable"
+      },
+      "CSBRJhAwY6Y.jpeg": {
+        "type": "binary/unreadable"
+      },
+      "DSC_0191.jpeg": {
+        "type": "binary/unreadable"
+      },
+      "DxPMpJQf2iM.jpeg": {
+        "type": "binary/unreadable"
+      },
+      "ERI-2-80.jpeg": {
+        "type": "binary/unreadable"
+      },
+      "ERI-2-81.jpeg": {
+        "type": "binary/unreadable"
+      },
+      "ERI-2-90.jpeg": {
+        "type": "binary/unreadable"
+      },
+      "FAlWRnYX0AIFFZB.jpeg": {
+        "type": "binary/unreadable"
+      },
+      "FAlWRnZWEAEw6CQ.jpeg": {
+        "type": "binary/unreadable"
+      },
+      "HEtPYy2gwzU.jpeg": {
+        "type": "binary/unreadable"
+      },
+      "IMG_0207.jpeg": {
+        "type": "binary/unreadable"
+      },
+      "IMG_0209.jpeg": {
+        "type": "binary/unreadable"
+      },
+      "IMG_0211.jpeg": {
+        "type": "binary/unreadable"
+      },
+      "IMG_0213.jpeg": {
+        "type": "binary/unreadable"
+      },
+      "IMG_1886.jpeg": {
+        "type": "binary/unreadable"
+      },
+      "IMG_1916.jpeg": {
+        "type": "binary/unreadable"
+      },
+      "IMG_1918.jpeg": {
+        "type": "binary/unreadable"
+      },
+      "IMG_1986.jpeg": {
+        "type": "binary/unreadable"
+      },
+      "IMG_1996.jpeg": {
+        "type": "binary/unreadable"
+      },
+      "IMG_2022.jpeg": {
+        "type": "binary/unreadable"
+      },
+      "IMG_3053.jpeg": {
+        "type": "binary/unreadable"
+      },
+      "IMG_6143.jpeg": {
+        "type": "binary/unreadable"
+      },
+      "IMG_6155.jpeg": {
+        "type": "binary/unreadable"
+      },
+      "IMG_6596.jpeg": {
+        "type": "binary/unreadable"
+      },
+      "IMG_6597.jpeg": {
+        "type": "binary/unreadable"
+      },
+      "IMG_6600.jpeg": {
+        "type": "binary/unreadable"
+      },
+      "IMG_6612.jpeg": {
+        "type": "binary/unreadable"
+      },
+      "IMZ0030.jpeg": {
+        "type": "binary/unreadable"
+      },
+      "J07cOqwcetQ.jpeg": {
+        "type": "binary/unreadable"
+      },
+      "JMP_110.jpeg": {
+        "type": "binary/unreadable"
+      },
+      "JMP_115.jpeg": {
+        "type": "binary/unreadable"
+      },
+      "JMP_122.jpeg": {
+        "type": "binary/unreadable"
+      },
+      "JMP_128.jpeg": {
+        "type": "binary/unreadable"
+      },
+      "KOR_x13x.jpeg": {
+        "type": "binary/unreadable"
+      },
+      "KOR_x17x.jpeg": {
+        "type": "binary/unreadable"
+      },
+      "KOR_x1x.jpeg": {
+        "type": "binary/unreadable"
+      },
+      "KOR_x23x.jpeg": {
+        "type": "binary/unreadable"
+      },
+      "KOR_x24x.jpeg": {
+        "type": "binary/unreadable"
+      },
+      "KOR_x35x.jpeg": {
+        "type": "binary/unreadable"
+      },
+      "KOR_x41x.jpeg": {
+        "type": "binary/unreadable"
+      },
+      "KOR_x44x.jpeg": {
+        "type": "binary/unreadable"
+      },
+      "KOR_x49x.jpeg": {
+        "type": "binary/unreadable"
+      },
+      "KOR_x51x.jpeg": {
+        "type": "binary/unreadable"
+      },
+      "KOR_x9x.jpeg": {
+        "type": "binary/unreadable"
+      },
+      "P (27).jpeg": {
+        "type": "binary/unreadable"
+      },
+      "P (28).jpeg": {
+        "type": "binary/unreadable"
+      },
+      "P (30).jpeg": {
+        "type": "binary/unreadable"
+      },
+      "Photo 30-3-15 2 44 01 pm.jpeg": {
+        "type": "binary/unreadable"
+      },
+      "Photo 30-3-15 3 01 10 pm.jpeg": {
+        "type": "binary/unreadable"
+      },
+      "Photo 30-3-15 3 01 21 pm.jpeg": {
+        "type": "binary/unreadable"
+      },
+      "PkpmwR8oAoQ.jpeg": {
+        "type": "binary/unreadable"
+      },
+      "Q6lXiXEBhII.jpeg": {
+        "type": "binary/unreadable"
+      },
+      "QQ图片20210910171817.jpeg": {
+        "type": "binary/unreadable"
+      },
+      "QQ图片20220212001102.jpeg": {
+        "type": "binary/unreadable"
+      },
+      "UwucPjRzPjQ.jpeg": {
+        "type": "binary/unreadable"
+      },
+      "_6mwnSejI10.jpeg": {
+        "type": "binary/unreadable"
+      },
+      "a8a5285549416470e4022c7539fc7bf4.jpeg": {
+        "type": "binary/unreadable"
+      },
+      "ac793307-fd21-4a54-aa72-f320c0177525.jpeg": {
+        "type": "binary/unreadable"
+      },
+      "acb84b1f-92da-4347-b3aa-7cdb6e8faa5a.jpeg": {
+        "type": "binary/unreadable"
+      },
+      "cAIZQyHV7CA.jpeg": {
+        "type": "binary/unreadable"
+      },
+      "eeZ7HeziED4.jpeg": {
+        "type": "binary/unreadable"
+      },
+      "lhZz2qydkTI.jpeg": {
+        "type": "binary/unreadable"
+      },
+      "mO72jp7BvI8.jpeg": {
+        "type": "binary/unreadable"
+      },
+      "mmexport1442824020569.jpeg": {
+        "type": "binary/unreadable"
+      },
+      "mmexport1442824022452.jpeg": {
+        "type": "binary/unreadable"
+      },
+      "photo_2021-06-30_00-36-07.jpeg": {
+        "type": "binary/unreadable"
+      },
+      "photo_2021-06-30_00-37-20.jpeg": {
+        "type": "binary/unreadable"
+      },
+      "photo_2022-06-21 19.27.29.jpeg": {
+        "type": "binary/unreadable"
+      },
+      "photo_2022-07-09_16-26-56.jpeg": {
+        "type": "binary/unreadable"
+      },
+      "photo_2022-08-20_12-05-23.jpeg": {
+        "type": "binary/unreadable"
+      },
+      "photo_2022-08-20_12-05-24.jpeg": {
+        "type": "binary/unreadable"
+      },
+      "photo_2022-08-20_12-05-26.jpeg": {
+        "type": "binary/unreadable"
+      },
+      "rosa01.jpeg": {
+        "type": "binary/unreadable"
+      },
+      "tLrchc2Isoo.jpeg": {
+        "type": "binary/unreadable"
+      },
+      "tina107.jpeg": {
+        "type": "binary/unreadable"
+      },
+      "tina119.jpeg": {
+        "type": "binary/unreadable"
+      },
+      "tina52.jpeg": {
+        "type": "binary/unreadable"
+      },
+      "z-uwhEmUYTs.jpeg": {
+        "type": "binary/unreadable"
+      },
+      "截屏2026-02-25 11.18.01.jpeg": {
+        "type": "binary/unreadable"
+      },
+      "截屏2026-02-25 11.21.11.jpeg": {
+        "type": "binary/unreadable"
+      }
+    },
+    "temps": {
+      "1475703743_f0d7bb1ea7644d0f9e848c99db19063c.mp4": {
+        "type": "binary/unreadable"
+      },
+      "1985530188_2d28388940bf4ef992653d7e180f2ac3.mp4": {
+        "type": "binary/unreadable"
+      },
+      "1985530188_2d868a7ba1a24be7aef2db201838afb7.mp4": {
+        "type": "binary/unreadable"
+      },
+      "1985530188_4783557a16024c0cb2647e7cc87d491b.mp4": {
+        "type": "binary/unreadable"
+      },
+      "1985530188_a100c2ff0ec945e3bfae049cef417227.mp4": {
+        "type": "binary/unreadable"
+      },
+      "6739858300_fbade0ba5276403f933a0186dbce2eea.mp4": {
+        "type": "binary/unreadable"
+      },
+      "6837645392_8921406934124043af1175b646e61106.mp4": {
+        "type": "binary/unreadable"
+      },
+      "815180016_2124536a62924005a27f8fc9ce0af924.mp4": {
+        "type": "binary/unreadable"
+      },
+      "815180016_d27782b3b3aa43cba5d81efd235f27f5.mp4": {
+        "type": "binary/unreadable"
+      },
+      "8365974163_ee780ce006cc4e0781b32d104902cd7e.MOV": {
+        "type": "binary/unreadable"
+      },
+      "8444039084_dc57518336834d089d3be537b55c86a0.mp4": {
+        "type": "binary/unreadable"
+      },
+      "8556515199_75fcc5716a4f4e21b44e6cb9e1176e6e.mp4": {
+        "type": "binary/unreadable"
+      },
+      "926732522_183f68e89eae4f8db59ca2cb0bd10a8b.mp4": {
+        "type": "binary/unreadable"
+      },
+      "926732522_908998c0901a4c7c8d19996ccc4762e6.mp4": {
+        "type": "binary/unreadable"
+      },
+      "926732522_98028f7e17444a13996005f83afd36f4.mp4": {
+        "type": "binary/unreadable"
+      },
+      "926732522_a9fa60c0e6ea4c00bafda53e0fc8432d.mp4": {
+        "type": "binary/unreadable"
+      },
+      "926732522_f2e81353580947e79e56486af6b84c15.mp4": {
+        "type": "binary/unreadable"
+      }
+    },
+    "video_nice": {
+      "6532901048_037d50c7105d470dbfe75b417b3f1485.mp4": {
+        "type": "binary/unreadable"
+      },
+      "926732522_71ccdedc6bb8481d9dadb4463ec1ff94.mp4": {
+        "type": "binary/unreadable"
+      },
+      "926732522_893d28e8ce1a44b497495c7a54ce2d19.mp4": {
+        "type": "binary/unreadable"
+      },
+      "926732522_8beec7fe34214e16944491a1ffa54fa2.mp4": {
+        "type": "binary/unreadable"
+      },
+      "926732522_91394d215a654de48f23da144da97b09.mp4": {
+        "type": "binary/unreadable"
+      },
+      "926732522_ab267ed4103e4fcd84165ded3ecfc17d.mp4": {
+        "type": "binary/unreadable"
+      },
+      "926732522_b43c03f4524e43ce957cd07243ae0f15.mp4": {
+        "type": "binary/unreadable"
+      },
+      "926732522_f7802d9188e14514984320d289803d2f.mp4": {
+        "type": "binary/unreadable"
+      }
+    }
+  },
+  "test_db.py": {
+    "lines": 8,
+    "sloc": 6,
+    "total_complexity": 1,
+    "avg_complexity": 1.0,
+    "classes": [],
+    "functions": [],
+    "imports": [
+      "src.database.core",
+      "asyncio"
+    ]
+  },
+  "test_db2.py": {
+    "lines": 11,
+    "sloc": 9,
+    "total_complexity": 1,
+    "avg_complexity": 1.0,
+    "classes": [],
+    "functions": [],
+    "imports": [
+      "src.database.core",
+      "sqlalchemy",
+      "asyncio"
+    ]
+  },
+  "test_users_query.py": {
+    "lines": 13,
+    "sloc": 11,
+    "total_complexity": 1,
+    "avg_complexity": 1.0,
+    "classes": [],
+    "functions": [],
+    "imports": [
+      "src.database.core",
+      "src.database.models",
+      "sqlalchemy",
+      "asyncio"
+    ]
+  },
+  "workers": {
+    "comfy_agent1": {
+      ".env": {
+        "lines": 21,
+        "type": "other"
+      },
+      ".env.example": {
+        "lines": 18,
+        "type": "other"
+      },
+      "Dockerfile": {
+        "lines": 10,
+        "type": "other"
+      },
+      "REMOTE_DEPLOYMENT.md": {
+        "lines": 121,
+        "type": "other"
+      },
+      "agent_main.py": {
+        "lines": 451,
+        "sloc": 346,
+        "total_complexity": 84,
+        "avg_complexity": 6.46,
+        "classes": [
+          {
+            "name": "ComfyAgent",
+            "methods": [
+              "__init__",
+              "download_input_from_minio",
+              "upload_result_to_minio"
+            ]
+          }
+        ],
+        "functions": [],
+        "imports": [
+          "logging",
+          "workflow_patcher",
+          "comfy_client",
+          "websockets",
+          "os",
+          "httpx",
+          "json",
+          "minio",
+          "sys",
+          "dotenv",
+          "typing",
+          "asyncio"
+        ]
+      },
+      "comfy_client.py": {
+        "lines": 82,
+        "sloc": 57,
+        "total_complexity": 18,
+        "avg_complexity": 2.25,
+        "classes": [
+          {
+            "name": "ComfyClient",
+            "methods": [
+              "__init__"
+            ]
+          }
+        ],
+        "functions": [],
+        "imports": [
+          "logging",
+          "httpx",
+          "typing"
+        ]
+      },
+      "docker-compose.yml": {
+        "lines": 18,
+        "type": "other"
+      },
+      "requirements.txt": {
+        "lines": 5,
+        "type": "other"
+      },
+      "workflow_patcher.py": {
+        "lines": 114,
+        "sloc": 88,
+        "total_complexity": 59,
+        "avg_complexity": 8.43,
+        "classes": [
+          {
+            "name": "WorkflowPatcher",
+            "methods": [
+              "__init__",
+              "load_mappings",
+              "strip_meta",
+              "load_workflow",
+              "patch_workflow",
+              "heuristic_patch"
+            ]
+          }
+        ],
+        "functions": [],
+        "imports": [
+          "logging",
+          "os",
+          "json",
+          "typing"
+        ]
+      },
+      "workflows": {
+        "Pornmaster Z-Image Turbo_t2i_Double checkpoints & realism enhancer_V1_2026_01_24.json": {
+          "lines": 599,
+          "type": "other"
+        },
+        "Qwen-Rapid-AIO.json": {
+          "lines": 160,
+          "type": "other"
+        },
+        "debug_patched_face_swap.json": {
+          "lines": 298,
+          "type": "other"
+        },
+        "debug_patched_img2img.json": {
+          "lines": 103,
+          "type": "other"
+        },
+        "debug_patched_t2i-pornmaster-turbo.json": {
+          "lines": 485,
+          "type": "other"
+        },
+        "debug_patched_video_edit.json": {
+          "lines": 300,
+          "type": "other"
+        },
+        "debug_patched_video_insert.json": {
+          "lines": 310,
+          "type": "other"
+        },
+        "face_swap.json": {
+          "lines": 376,
+          "type": "other"
+        },
+        "mappings.json": {
+          "lines": 41,
+          "type": "other"
+        },
+        "perfect_video_edit.json": {
+          "lines": 366,
+          "type": "other"
+        },
+        "perfect_video_insert.json": {
+          "lines": 376,
+          "type": "other"
+        }
+      }
+    },
+    "comfy_agent2": {
+      ".env": {
+        "lines": 21,
+        "type": "other"
+      },
+      ".env.example": {
+        "lines": 18,
+        "type": "other"
+      },
+      "Dockerfile": {
+        "lines": 10,
+        "type": "other"
+      },
+      "REMOTE_DEPLOYMENT.md": {
+        "lines": 121,
+        "type": "other"
+      },
+      "agent_main.py": {
+        "lines": 451,
+        "sloc": 346,
+        "total_complexity": 84,
+        "avg_complexity": 6.46,
+        "classes": [
+          {
+            "name": "ComfyAgent",
+            "methods": [
+              "__init__",
+              "download_input_from_minio",
+              "upload_result_to_minio"
+            ]
+          }
+        ],
+        "functions": [],
+        "imports": [
+          "logging",
+          "workflow_patcher",
+          "comfy_client",
+          "websockets",
+          "os",
+          "httpx",
+          "json",
+          "minio",
+          "sys",
+          "dotenv",
+          "typing",
+          "asyncio"
+        ]
+      },
+      "comfy_client.py": {
+        "lines": 82,
+        "sloc": 57,
+        "total_complexity": 18,
+        "avg_complexity": 2.25,
+        "classes": [
+          {
+            "name": "ComfyClient",
+            "methods": [
+              "__init__"
+            ]
+          }
+        ],
+        "functions": [],
+        "imports": [
+          "logging",
+          "httpx",
+          "typing"
+        ]
+      },
+      "docker-compose.yml": {
+        "lines": 18,
+        "type": "other"
+      },
+      "requirements.txt": {
+        "lines": 5,
+        "type": "other"
+      },
+      "workflow_patcher.py": {
+        "lines": 114,
+        "sloc": 88,
+        "total_complexity": 59,
+        "avg_complexity": 8.43,
+        "classes": [
+          {
+            "name": "WorkflowPatcher",
+            "methods": [
+              "__init__",
+              "load_mappings",
+              "strip_meta",
+              "load_workflow",
+              "patch_workflow",
+              "heuristic_patch"
+            ]
+          }
+        ],
+        "functions": [],
+        "imports": [
+          "logging",
+          "os",
+          "json",
+          "typing"
+        ]
+      },
+      "workflows": {
+        "Pornmaster Z-Image Turbo_t2i_Double checkpoints & realism enhancer_V1_2026_01_24.json": {
+          "lines": 599,
+          "type": "other"
+        },
+        "Qwen-Rapid-AIO.json": {
+          "lines": 160,
+          "type": "other"
+        },
+        "debug_patched_face_swap.json": {
+          "lines": 298,
+          "type": "other"
+        },
+        "debug_patched_img2img.json": {
+          "lines": 103,
+          "type": "other"
+        },
+        "debug_patched_t2i-pornmaster-turbo.json": {
+          "lines": 485,
+          "type": "other"
+        },
+        "debug_patched_video_edit.json": {
+          "lines": 300,
+          "type": "other"
+        },
+        "debug_patched_video_insert.json": {
+          "lines": 310,
+          "type": "other"
+        },
+        "face_swap.json": {
+          "lines": 376,
+          "type": "other"
+        },
+        "mappings.json": {
+          "lines": 41,
+          "type": "other"
+        },
+        "perfect_video_edit.json": {
+          "lines": 366,
+          "type": "other"
+        },
+        "perfect_video_insert.json": {
+          "lines": 376,
+          "type": "other"
+        }
+      }
+    },
+    "comfy_agent3": {
+      ".env": {
+        "lines": 21,
+        "type": "other"
+      },
+      ".env.example": {
+        "lines": 18,
+        "type": "other"
+      },
+      "Dockerfile": {
+        "lines": 10,
+        "type": "other"
+      },
+      "REMOTE_DEPLOYMENT.md": {
+        "lines": 121,
+        "type": "other"
+      },
+      "agent_main.py": {
+        "lines": 451,
+        "sloc": 346,
+        "total_complexity": 84,
+        "avg_complexity": 6.46,
+        "classes": [
+          {
+            "name": "ComfyAgent",
+            "methods": [
+              "__init__",
+              "download_input_from_minio",
+              "upload_result_to_minio"
+            ]
+          }
+        ],
+        "functions": [],
+        "imports": [
+          "logging",
+          "workflow_patcher",
+          "comfy_client",
+          "websockets",
+          "os",
+          "httpx",
+          "json",
+          "minio",
+          "sys",
+          "dotenv",
+          "typing",
+          "asyncio"
+        ]
+      },
+      "comfy_client.py": {
+        "lines": 82,
+        "sloc": 57,
+        "total_complexity": 18,
+        "avg_complexity": 2.25,
+        "classes": [
+          {
+            "name": "ComfyClient",
+            "methods": [
+              "__init__"
+            ]
+          }
+        ],
+        "functions": [],
+        "imports": [
+          "logging",
+          "httpx",
+          "typing"
+        ]
+      },
+      "docker-compose.yml": {
+        "lines": 18,
+        "type": "other"
+      },
+      "requirements.txt": {
+        "lines": 5,
+        "type": "other"
+      },
+      "workflow_patcher.py": {
+        "lines": 114,
+        "sloc": 88,
+        "total_complexity": 59,
+        "avg_complexity": 8.43,
+        "classes": [
+          {
+            "name": "WorkflowPatcher",
+            "methods": [
+              "__init__",
+              "load_mappings",
+              "strip_meta",
+              "load_workflow",
+              "patch_workflow",
+              "heuristic_patch"
+            ]
+          }
+        ],
+        "functions": [],
+        "imports": [
+          "logging",
+          "os",
+          "json",
+          "typing"
+        ]
+      },
+      "workflows": {
+        "Pornmaster Z-Image Turbo_t2i_Double checkpoints & realism enhancer_V1_2026_01_24.json": {
+          "lines": 599,
+          "type": "other"
+        },
+        "Qwen-Rapid-AIO.json": {
+          "lines": 160,
+          "type": "other"
+        },
+        "debug_patched_face_swap.json": {
+          "lines": 298,
+          "type": "other"
+        },
+        "debug_patched_img2img.json": {
+          "lines": 103,
+          "type": "other"
+        },
+        "debug_patched_t2i-pornmaster-turbo.json": {
+          "lines": 485,
+          "type": "other"
+        },
+        "debug_patched_video_edit.json": {
+          "lines": 300,
+          "type": "other"
+        },
+        "debug_patched_video_insert.json": {
+          "lines": 310,
+          "type": "other"
+        },
+        "face_swap.json": {
+          "lines": 376,
+          "type": "other"
+        },
+        "mappings.json": {
+          "lines": 41,
+          "type": "other"
+        },
+        "perfect_video_edit.json": {
+          "lines": 366,
+          "type": "other"
+        },
+        "perfect_video_insert.json": {
+          "lines": 376,
+          "type": "other"
+        }
+      }
+    }
+  }
+}

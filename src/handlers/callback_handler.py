@@ -508,11 +508,31 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
         
         keyboard = []
         async with AsyncSessionLocal() as session:
-            result = await session.execute(select(MembershipPlan).where(MembershipPlan.is_active == True).order_by(MembershipPlan.price_stars.asc()))
+            result = await session.execute(select(MembershipPlan).where(MembershipPlan.is_active == True, MembershipPlan.duration_days > 0).order_by(MembershipPlan.price_stars.asc()))
             plans = result.scalars().all()
             for plan in plans:
                 if getattr(plan, 'price_stars', 0) > 0:
                     keyboard.append([InlineKeyboardButton(f"⭐️ {plan.price_stars} - {plan.name} ({plan.identity_name})", callback_data=f"buy_star_plan_{plan.id}")])
+                    
+        keyboard.append([InlineKeyboardButton("🔙 返回支付方式", callback_data="recharge_back")])
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        try:
+            await query.message.edit_reply_markup(reply_markup=reply_markup)
+        except Exception:
+            pass
+
+    elif data == "recharge_stars_credit_menu":
+        from src.database.core import AsyncSessionLocal
+        from src.database.models import MembershipPlan
+        from sqlalchemy import select
+        
+        keyboard = []
+        async with AsyncSessionLocal() as session:
+            result = await session.execute(select(MembershipPlan).where(MembershipPlan.is_active == True, MembershipPlan.duration_days == 0).order_by(MembershipPlan.price_stars.asc()))
+            plans = result.scalars().all()
+            for plan in plans:
+                if getattr(plan, 'price_stars', 0) > 0:
+                    keyboard.append([InlineKeyboardButton(f"⭐️ {plan.price_stars} Star 直购 {plan.reward_credits} 灵石", callback_data=f"buy_star_plan_{plan.id}")])
                     
         keyboard.append([InlineKeyboardButton("🔙 返回支付方式", callback_data="recharge_back")])
         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -526,8 +546,9 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
         from config import WEBAPP_URL
         webapp_url = WEBAPP_URL if 'WEBAPP_URL' in globals() and WEBAPP_URL else "https://pay.aivison.it.com/"
         keyboard = [
-            [InlineKeyboardButton("💎 TON 钱包支付 (免手续费)", web_app=WebAppInfo(url=webapp_url))],
-            [InlineKeyboardButton("⭐️ Telegram 原生支付 (极速)", callback_data="recharge_stars_menu")]
+            [InlineKeyboardButton("💎 TON月卡套餐", web_app=WebAppInfo(url=webapp_url))],
+            [InlineKeyboardButton("⭐️ Star月卡套餐", callback_data="recharge_stars_menu")],
+            [InlineKeyboardButton("⭐️ Star直充灵石", callback_data="recharge_stars_credit_menu")]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         try:

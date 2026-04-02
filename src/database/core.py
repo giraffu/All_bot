@@ -131,7 +131,10 @@ async def init_db():
                     INSERT INTO membership_plans (name, identity_name, price_ton, price_stars, reward_credits, duration_days) VALUES
                     ('基础月卡', '内门弟子', 1.99, 200, 400, 30),
                     ('高级月卡', '核心弟子', 4.99, 500, 1200, 30),
-                    ('至尊月卡', '真传弟子', 9.90, 1000, 3000, 30)
+                    ('至尊月卡', '真传弟子', 9.90, 1000, 3000, 30),
+                    ('200 Star 直购', '纯灵石', 1.99, 200, 600, 0),
+                    ('500 Star 直购', '纯灵石', 4.99, 500, 1800, 0),
+                    ('1000 Star 直购', '纯灵石', 9.90, 1000, 4000, 0)
                 """))
             res = await conn.execute(text("SELECT COUNT(*) FROM discount_rules"))
             if res.scalar() == 0:

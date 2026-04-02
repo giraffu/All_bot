@@ -571,8 +571,9 @@ async def handle_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
         webapp_url = WEBAPP_URL if 'WEBAPP_URL' in globals() and WEBAPP_URL else "https://pay.aivison.it.com/"
         
         keyboard = [
-            [InlineKeyboardButton("💎 TON 钱包支付 (免手续费)", web_app=WebAppInfo(url=webapp_url))],
-            [InlineKeyboardButton("⭐️ Telegram 原生支付 (极速)", callback_data="recharge_stars_menu")]
+            [InlineKeyboardButton("💎 TON月卡套餐", web_app=WebAppInfo(url=webapp_url))],
+            [InlineKeyboardButton("⭐️ Star月卡套餐", callback_data="recharge_stars_menu")],
+            [InlineKeyboardButton("⭐️ Star直充灵石", callback_data="recharge_stars_credit_menu")]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         

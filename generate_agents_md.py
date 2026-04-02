@@ -1,4 +1,4 @@
-# AI 编程助手参考指南 (AGENTS.md)
+content = """# AI 编程助手参考指南 (AGENTS.md)
 
 本文档是 AI 编程助手参与“修仙主题 Telegram 图像与视频机器人”项目时的全面开发指南。它基于系统最新的重构与功能迭代进行了全面更新，涵盖了整个分布式架构、逻辑、数据流以及容灾机制。
 
@@ -113,3 +113,9 @@
 ---
 **👨‍💻 最终开发指引 (To AI Assistant)**：
 在后续的系统功能研发与维护中，请将本架构全景铭记于心。当你被要求开发新功能、排查 Bug 或进行测试时，请清晰地界定该功能属于哪个子模块（Bot/Dashboard/API/Worker），并在对应的目录下进行代码修改与容器重建！
+"""
+
+with open('AGENTS.md', 'w', encoding='utf-8') as f:
+    f.write(content)
+
+print("AGENTS.md updated successfully.")
