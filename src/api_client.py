@@ -3,7 +3,6 @@ import asyncio
 import httpx
 import logging
 import uuid
-import os
 from typing import Optional
 from src.utils import async_retry
 from config import (
@@ -14,7 +13,6 @@ from config import (
     API_TOKEN
 )
 from src.circuit_breaker import CircuitBreaker, CircuitBreakerOpenException
-from src.services.storage import storage
 
 logger = logging.getLogger(__name__)
 
@@ -311,4 +309,3 @@ download_video = api_client.download_video
 get_system_status = api_client.get_system_status
 
 listen_for_progress = api_client.listen_for_progress
-

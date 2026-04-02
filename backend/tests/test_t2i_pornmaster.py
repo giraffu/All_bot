@@ -1,10 +1,6 @@
 import pytest
-import asyncio
-import os
-import json
 from unittest.mock import patch, MagicMock, AsyncMock
-from app.models import TaskType, TaskStatus, T2ITaskResponse
-from app.config import settings
+from app.models import TaskType
 
 def test_create_t2i_task_async_success(client, auth_headers, mock_queue_manager):
     # Mock return value

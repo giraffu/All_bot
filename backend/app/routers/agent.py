@@ -4,8 +4,6 @@ from typing import Optional
 import logging
 
 from app.queue_manager import QueueManager
-from app.models import TaskStatus
-
 # Instead of importing from main.py, we redefine the dependency here 
 # or just import the Redis/Settings to avoid circular imports.
 from app.config import settings
@@ -69,7 +67,7 @@ async def pop_task(
     if not task_data:
         raise HTTPException(status_code=404, detail="No pending tasks")
         
-    task_id, score = task_data
+    task_id, _ = task_data
     task_details = await queue_manager.get_task_status(task_id)
     
     if not task_details:

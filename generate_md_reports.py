@@ -1,5 +1,4 @@
 import json
-import os
 
 with open('project_analysis.json', 'r', encoding='utf-8') as f:
     data = json.load(f)
@@ -176,4 +175,3 @@ refactor_md = """# 冗余代码分析、风险点清单与重构建议 (Refactor
 
 with open("REFACTORING_AND_RISKS.md", "w", encoding="utf-8") as f:
     f.write(refactor_md)
-

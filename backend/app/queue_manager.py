@@ -3,7 +3,6 @@ import time
 import uuid
 from typing import Optional, Dict, Any, Tuple
 from redis.asyncio import Redis
-from app.config import settings
 from app.models import TaskStatus, TaskType
 
 class QueueManager:

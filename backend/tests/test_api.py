@@ -1,7 +1,4 @@
-import pytest
-import os
-from unittest.mock import patch, MagicMock
-from app.config import settings
+from unittest.mock import patch
 
 def test_system_status(client, mock_queue_manager):
     # This endpoint does not require auth
@@ -140,4 +137,3 @@ def test_get_task_video_success(client, mock_queue_manager):
         mock_file_response.return_value = "mock_file_response"
         response = client.get("/video/task-123")
         assert response.status_code == 200 or response == "mock_file_response"
-

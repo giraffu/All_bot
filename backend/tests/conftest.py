@@ -1,5 +1,5 @@
 import pytest
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock
 from fastapi.testclient import TestClient
 from app.main import app as fastapi_app, get_queue_manager
 from app.queue_manager import QueueManager

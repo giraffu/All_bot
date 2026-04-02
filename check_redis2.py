@@ -1,8 +1,5 @@
 import asyncio
-import time
 import redis.asyncio as redis
-import json
-import os
 from config import REDIS_URL, REDIS_PREFIX
 
 async def main():

@@ -1,7 +1,6 @@
 import asyncio
 import json
 import redis.asyncio as redis
-import os
 
 # Using correct password
 REDIS_URL = "redis://:redispassword@127.0.0.1:6379/0"

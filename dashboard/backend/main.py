@@ -59,7 +59,7 @@ async def check_auth_header(request: Request, call_next):
                     )
                 token = auth_header.split(" ")[1]
                 await get_current_user(token)
-            except Exception as e:
+            except Exception:
                 return fastapi.responses.JSONResponse(
                     status_code=401,
                     content={"detail": "Could not validate credentials"}

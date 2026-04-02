@@ -1,7 +1,7 @@
 import pytest
-from unittest.mock import AsyncMock, patch, MagicMock
+from unittest.mock import AsyncMock, patch
 from src.services.task_service import TaskService
-from src.constants import MODE_BLOWJOB, TASK_COSTS
+from src.constants import MODE_BLOWJOB
 
 @pytest.mark.asyncio
 async def test_process_video_task_template():
@@ -54,4 +54,3 @@ async def test_process_video_task_template():
         kwargs = mock_image_service.submit_perfect_video_edit.await_args.kwargs
         assert kwargs["width"] == 720
         assert kwargs["height"] == 720
-

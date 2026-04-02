@@ -23,8 +23,8 @@ async def test_process_text_to_image_task_success():
          patch("src.services.task_service.redis_client") as mock_redis, \
          patch("src.services.task_service.TaskRegistry") as mock_registry, \
          patch("src.services.task_service.UserLogger"), \
-         patch("src.services.task_service.robust_reply_text", new_callable=AsyncMock) as mock_reply, \
-         patch("src.services.task_service.robust_edit_text", new_callable=AsyncMock) as mock_edit, \
+         patch("src.services.task_service.robust_reply_text", new_callable=AsyncMock), \
+         patch("src.services.task_service.robust_edit_text", new_callable=AsyncMock), \
          patch("src.services.task_service.TaskService._monitor_task_progress", new_callable=AsyncMock) as mock_monitor, \
          patch("src.services.task_service.TaskService._handle_task_completion", new_callable=AsyncMock) as mock_handle:
 

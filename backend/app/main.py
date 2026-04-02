@@ -1,11 +1,10 @@
 import asyncio
 import logging
 import os
-import shutil
 import uuid
-from typing import List, Optional
-from fastapi import FastAPI, UploadFile, File, Form, Depends, HTTPException, BackgroundTasks, Query, Body
-from fastapi.responses import FileResponse, JSONResponse
+from typing import Optional
+from fastapi import FastAPI, Depends, HTTPException, BackgroundTasks, Query, Body
+from fastapi.responses import FileResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from app.config import settings
 from app.models import TaskResponse, TaskStatusResponse, SystemStatusResponse, TaskType, T2ITaskResponse, SystemWorkersResponse, Img2ImgRequest, FaceSwapRequest, VideoInsertRequest, VideoEditRequest
@@ -219,7 +218,8 @@ async def get_task_status_v1(
         queue_remaining=queue_remaining,
         progress=float(task.get("progress", 0.0)),
         error=task.get("error_msg"),
-        result_path=result_path
+        result_path=result_path,
+        image_url=image_url
     )
 
 @app.get("/status/{task_id}", response_model=TaskStatusResponse)

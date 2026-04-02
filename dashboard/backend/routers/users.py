@@ -7,7 +7,6 @@ import json
 import uuid
 import os
 from datetime import datetime, timedelta
-from typing import Optional
 from src.database.core import get_db
 from src.database.models import User, History, Referral, TemplateContribution, CheckinHistory, Order, UserLog, MembershipPlan
 from dashboard.backend.schemas import UpdateCreditsRequest, AdminGiftRequest, UpdateIdentityRequest

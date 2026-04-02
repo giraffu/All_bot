@@ -1,9 +1,9 @@
 import json
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Optional, Dict, Any
 
-from sqlalchemy import select, desc, func, delete
+from sqlalchemy import select, desc, func
 from sqlalchemy.exc import SQLAlchemyError
 from src.database.core import AsyncSessionLocal
 from src.database.models import UserLog
@@ -143,4 +143,3 @@ class LogService:
                 "total_pages": (total + page_size - 1) // page_size if page_size > 0 else 0,
                 "items": items
             }
-

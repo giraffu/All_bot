@@ -1,6 +1,5 @@
 import logging
 import uuid
-from src.services.permission_service import permission_service
 from src.services.redis_client import redis_client
 
 logger = logging.getLogger(__name__)

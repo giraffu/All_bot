@@ -90,12 +90,21 @@ yarn-error.log*
 
 # Logs and temporary files
 *.log
+*.tmp
+*.temp
+*.bak
+*.backup
+*.orig
 logs/
 tmp/
 temp/
 *.diff
 *.patch
 *_progress.json
+project_analysis.json
+project_tree.txt
+**/debug_patched_*.json
+workers/comfy_agent*/input/
 
 # Environment and Secret files
 .env

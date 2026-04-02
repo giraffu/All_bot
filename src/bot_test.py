@@ -15,8 +15,6 @@ from src.handlers.command_handler import start, setup_commands, toggle_maintenan
 from src.handlers.message_handler import handle_photo, handle_prompt, handle_video, handle_document
 from src.handlers.callback_handler import handle_callback_query
 from src.database.core import init_db
-from src.quota import QuotaManager
-from datetime import timezone, timedelta
 import socket
 from urllib.parse import urlparse
 import asyncio

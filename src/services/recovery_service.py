@@ -17,7 +17,6 @@ class MockMessage:
 
     async def edit_text(self, text, parse_mode=None, reply_markup=None):
         try:
-            from telegram.error import BadRequest
             await self.bot.edit_message_text(
                 chat_id=self.chat_id,
                 message_id=self.message_id,
@@ -56,7 +55,6 @@ async def _recover_single_task(registry_task_id, task_data, application):
         user_id = task_data.get("user_id")
         username = task_data.get("username")
         backend_task_id = task_data.get("backend_task_id")
-        cost = task_data.get("cost", 0)
         chat_id = task_data.get("chat_id")
         message_id = task_data.get("message_id")
         task_type = task_data.get("task_type")

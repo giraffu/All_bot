@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, desc, case, Float, text
+from sqlalchemy import select, func, case, Float, text
 from datetime import datetime, date, timedelta
 import logging
 import os

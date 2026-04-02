@@ -5,7 +5,6 @@ from src.database.models import User, UserLog
 from src.database.core import AsyncSessionLocal
 from sqlalchemy import select
 from src.handlers.utils import with_db_logging_context
-from contextvars import ContextVar
 from src.utils import safe_answer_query
 
 logger = logging.getLogger("bot.payment")
@@ -63,7 +62,6 @@ async def successful_payment_callback(update: Update, context: ContextTypes.DEFA
                 return
 
             added_credits = plan.reward_credits
-            new_identity = plan.identity_name
             
             # 查找用户
             result = await session.execute(select(User).where(User.id == user_id))
@@ -138,7 +136,6 @@ async def successful_payment_callback(update: Update, context: ContextTypes.DEFA
             user.current_identity = final_identity
             user.identity_expire_at = new_expire_at
             user.is_first_charge = False
-            new_identity = final_identity  # 同步更新 new_identity 以便后续通知使用
                 
             # 记录订单
             from src.database.models import Order

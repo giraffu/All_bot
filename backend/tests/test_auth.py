@@ -1,6 +1,3 @@
-import pytest
-from fastapi.testclient import TestClient
-
 def test_no_token_fails(client):
     # Try accessing a protected endpoint without headers
     response = client.post(
