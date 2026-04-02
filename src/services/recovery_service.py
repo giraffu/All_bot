@@ -120,7 +120,7 @@ async def _refund_and_cleanup(registry_task_id, task_data, mock_context, reason)
     
     if chat_id:
         try:
-            from src.utils.helpers import robust_send_message
+            from src.utils import robust_send_message
             await robust_send_message(mock_context.bot, chat_id, reason)
         except Exception as e:
             logger.error(f"Failed to send refund notice to {chat_id}: {e}")

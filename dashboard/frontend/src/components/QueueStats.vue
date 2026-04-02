@@ -11,7 +11,7 @@ import {
   ClearOutlined
 } from '@ant-design/icons-vue'
 import { ref, onMounted, onUnmounted, computed } from 'vue'
-import { fetchSystemStatus, cleanZombieTasks } from '../api/api'
+import { fetchSystemStatus, fetchSystemWorkers, cleanZombieTasks } from '../api/api'
 import { message, Modal } from 'ant-design-vue'
 
 const status = ref({
@@ -20,6 +20,8 @@ const status = ref({
   active_workers: 0,
   comfy_online: false
 })
+
+const workers = ref([])
 
 const loading = ref(false)
 const cleaning = ref(false)
@@ -30,6 +32,11 @@ const updateQueue = async () => {
     const data = await fetchSystemStatus()
     if (data) {
       status.value = data
+    }
+    
+    const workersData = await fetchSystemWorkers()
+    if (workersData && workersData.workers) {
+      workers.value = workersData.workers
     }
   } catch (err) {
     console.error('Error fetching system status:', err)
@@ -73,6 +80,16 @@ const queueByTypeDisplay = computed(() => {
   }))
 })
 
+const formatDuration = (timestamp) => {
+  if (!timestamp) return '-'
+  const diff = Math.floor(Date.now() / 1000) - Math.floor(timestamp)
+  if (diff < 0) return '0s'
+  if (diff < 60) return `${diff}s`
+  const m = Math.floor(diff / 60)
+  const s = diff % 60
+  return `${m}m ${s}s`
+}
+
 onMounted(() => {
   updateQueue()
   timer = setInterval(updateQueue, 1000)
@@ -108,9 +125,9 @@ onUnmounted(() => {
       </div>
     </div>
     
-    <a-row :gutter="[16, 16]">
+    <a-row :gutter="[16, 16]" class="mb-4">
       <a-col :xs="24" :sm="8">
-        <a-card hoverable class="queue-card border-l-4 border-l-blue-500">
+        <a-card hoverable class="queue-card border-l-4 border-l-blue-500 h-full">
           <a-statistic
             title="总排队任务"
             :value="status.queue_size"
@@ -127,7 +144,7 @@ onUnmounted(() => {
       </a-col>
       
       <a-col :xs="24" :sm="8">
-        <a-card hoverable class="queue-card border-l-4 border-l-green-500">
+        <a-card hoverable class="queue-card border-l-4 border-l-green-500 h-full">
           <a-statistic
             title="活跃 Worker"
             :value="status.active_workers"
@@ -144,18 +161,18 @@ onUnmounted(() => {
       </a-col>
       
       <a-col :xs="24" :sm="8" v-if="queueByTypeDisplay.length > 0">
-        <a-card hoverable class="queue-card border-l-4 border-l-purple-500">
+        <a-card hoverable class="queue-card border-l-4 border-l-purple-500 h-full">
            <div class="text-gray-500 mb-1">队列详情</div>
-           <div class="flex flex-col gap-1">
-             <div v-for="item in queueByTypeDisplay" :key="item.type" class="flex justify-between items-center text-sm">
-               <span>{{ item.type }}</span>
-               <span class="font-bold text-purple-600">{{ item.count }}</span>
+           <div class="flex flex-col gap-1 max-h-24 overflow-y-auto pr-2 custom-scrollbar">
+             <div v-for="item in queueByTypeDisplay" :key="item.type" class="flex justify-between items-center text-sm border-b border-gray-100 pb-1 last:border-0">
+               <span class="truncate pr-2" :title="item.type">{{ item.type }}</span>
+               <span class="font-bold text-purple-600 shrink-0">{{ item.count }}</span>
              </div>
            </div>
         </a-card>
       </a-col>
       <a-col :xs="24" :sm="8" v-else>
-        <a-card hoverable class="queue-card border-l-4 border-l-gray-300">
+        <a-card hoverable class="queue-card border-l-4 border-l-gray-300 h-full">
           <a-statistic
             title="队列详情"
             value="暂无排队"
@@ -166,6 +183,65 @@ onUnmounted(() => {
             </template>
           </a-statistic>
         </a-card>
+      </a-col>
+    </a-row>
+
+    <!-- Worker 实时状态卡片组 -->
+    <div class="mb-2 mt-6">
+      <h4 class="text-md font-bold text-gray-700 flex items-center gap-2">
+        <robot-outlined class="text-green-500" /> Worker 节点实时状态
+      </h4>
+    </div>
+    <a-row :gutter="[16, 16]">
+      <a-col :xs="24" :sm="12" :md="8" :lg="6" v-for="worker in workers" :key="worker.agent_id">
+        <a-card size="small" hoverable class="worker-card h-full flex flex-col" :class="{'border-t-2 border-t-green-500': worker.status === 'running', 'border-t-2 border-t-gray-300': worker.status === 'idle'}">
+          <template #title>
+            <div class="flex justify-between items-center w-full">
+              <span class="font-mono text-sm font-bold truncate pr-2" :title="worker.agent_id">{{ worker.agent_id }}</span>
+              <a-badge :status="worker.status === 'running' ? 'processing' : 'default'" :text="worker.status === 'running' ? '忙碌' : '空闲'" />
+            </div>
+          </template>
+          
+          <div class="flex flex-col gap-2 flex-grow">
+            <!-- 正在执行的任务信息 -->
+            <div v-if="worker.status === 'running' && worker.current_task_id" class="bg-gray-50 p-2 rounded text-sm flex-grow flex flex-col justify-between">
+              <div>
+                <div class="flex justify-between mb-1">
+                  <span class="text-gray-500 text-xs">任务类型</span>
+                  <a-tag color="purple" size="small" class="m-0 border-0">{{ worker.current_task_type || 'Unknown' }}</a-tag>
+                </div>
+                <div class="flex justify-between mb-2">
+                  <span class="text-gray-500 text-xs">已执行</span>
+                  <span class="font-mono text-xs text-gray-700">{{ formatDuration(worker.current_task_created_at) }}</span>
+                </div>
+                <div class="truncate text-xs text-gray-400 font-mono mb-2" :title="worker.current_task_id">
+                  ID: {{ worker.current_task_id.substring(0, 8) }}...
+                </div>
+              </div>
+              <div>
+                <div class="flex justify-between text-xs mb-1">
+                  <span class="text-gray-500">进度</span>
+                  <span class="text-blue-600 font-bold">{{ Math.round((worker.current_task_progress || 0) * 100) }}%</span>
+                </div>
+                <a-progress :percent="Math.round((worker.current_task_progress || 0) * 100)" :show-info="false" size="small" strokeColor="#1890ff" class="m-0" />
+              </div>
+            </div>
+            
+            <!-- 空闲状态 -->
+            <div v-else class="flex-grow flex flex-col items-center justify-center py-4 text-gray-400">
+              <picture-outlined class="text-2xl mb-2 opacity-50" />
+              <span class="text-xs">等待任务分发中...</span>
+            </div>
+            
+            <div class="mt-auto pt-2 border-t border-gray-100 text-xs text-gray-400 flex justify-between">
+              <span class="truncate" :title="worker.types">支持: {{ worker.types.split(',').length }} 类</span>
+              <span>心跳: {{ formatDuration(worker.last_seen) }} 前</span>
+            </div>
+          </div>
+        </a-card>
+      </a-col>
+      <a-col :span="24" v-if="workers.length === 0">
+        <a-empty description="暂无在线的 Worker 节点" />
       </a-col>
     </a-row>
   </div>
@@ -179,5 +255,25 @@ onUnmounted(() => {
 .queue-card:hover {
   transform: translateY(-2px);
   box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+}
+.worker-card {
+  transition: all 0.3s;
+  border-radius: 6px;
+}
+.worker-card:hover {
+  box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+}
+.custom-scrollbar::-webkit-scrollbar {
+  width: 4px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: #e5e7eb;
+  border-radius: 4px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #d1d5db;
 }
 </style>

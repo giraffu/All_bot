@@ -98,6 +98,8 @@ class QueueManager:
         # Update status
         task_key = f"{self.task_prefix}{task_id}"
         await self.redis.hset(task_key, "status", TaskStatus.RUNNING)
+        # Initialize heartbeat to prevent immediate zombie detection
+        await self.update_task_heartbeat(task_id)
 
     async def set_prompt_id(self, task_id: str, prompt_id: str):
         task_key = f"{self.task_prefix}{task_id}"
@@ -161,6 +163,34 @@ class QueueManager:
             if cursor == 0:
                 break
         return count
+
+    async def get_all_workers(self) -> list[Dict[str, Any]]:
+        cursor = 0
+        workers = []
+        pattern = f"{self.agent_heartbeat_prefix}*"
+        while True:
+            cursor, keys = await self.redis.scan(cursor, match=pattern, count=100)
+            for key in keys:
+                key_str = key.decode() if isinstance(key, bytes) else key
+                agent_id = key_str.replace(self.agent_heartbeat_prefix, "")
+                data = await self.redis.hgetall(key)
+                if data:
+                    worker_info = {k.decode(): v.decode() for k, v in data.items()}
+                    worker_info['agent_id'] = agent_id
+                    
+                    # Fetch current task details if running
+                    current_task_id = worker_info.get('current_task_id')
+                    if worker_info.get('status') == 'running' and current_task_id:
+                        task_data = await self.get_task_status(current_task_id)
+                        if task_data:
+                            worker_info['current_task_type'] = task_data.get('type')
+                            worker_info['current_task_progress'] = float(task_data.get('progress', 0.0))
+                            worker_info['current_task_created_at'] = float(task_data.get('created_at', 0.0))
+                    
+                    workers.append(worker_info)
+            if cursor == 0:
+                break
+        return workers
 
     async def update_task_heartbeat(self, task_id: str):
         key = f"comfy:task_heartbeat:{task_id}"

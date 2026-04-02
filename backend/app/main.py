@@ -8,7 +8,7 @@ from fastapi import FastAPI, UploadFile, File, Form, Depends, HTTPException, Bac
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from app.config import settings
-from app.models import TaskResponse, TaskStatusResponse, SystemStatusResponse, TaskType, T2ITaskResponse
+from app.models import TaskResponse, TaskStatusResponse, SystemStatusResponse, TaskType, T2ITaskResponse, SystemWorkersResponse
 from app.queue_manager import QueueManager
 from app.routers import agent
 from redis.asyncio import Redis
@@ -389,6 +389,16 @@ async def get_task_video(
     except Exception as e:
         logger.error(f"MinIO download failed: {e}")
         raise HTTPException(status_code=404, detail="File not found in storage")
+
+@app.get("/system/workers", response_model=SystemWorkersResponse)
+async def get_system_workers(
+    queue_manager: QueueManager = Depends(get_queue_manager)
+):
+    workers = await queue_manager.get_all_workers()
+    return SystemWorkersResponse(
+        workers=workers,
+        count=len(workers)
+    )
 
 @app.get("/system/status", response_model=SystemStatusResponse)
 async def get_system_status(

@@ -94,6 +94,10 @@ async def update_status(
     authorized: bool = Depends(verify_token),
     queue_manager: QueueManager = Depends(get_queue_manager)
 ):
+    await queue_manager.redis.hset(f"comfy:task:{req.task_id}", "worker_id", req.agent_id)
+    await queue_manager.redis.hset(f"comfy:agent:heartbeat:{req.agent_id}", "current_task_id", req.task_id)
+    await queue_manager.update_task_heartbeat(req.task_id)
+    
     if req.status == "running":
         if req.progress > 0:
             await queue_manager.update_progress(req.task_id, req.progress)
@@ -108,11 +112,13 @@ async def complete_task(
     authorized: bool = Depends(verify_token),
     queue_manager: QueueManager = Depends(get_queue_manager)
 ):
+    await queue_manager.redis.hdel(f"comfy:agent:heartbeat:{req.agent_id}", "current_task_id")
     await queue_manager.complete_task(req.task_id, req.result)
     return {"status": "ok"}
 
 class TaskHeartbeatRequest(BaseModel):
     task_id: str
+    agent_id: Optional[str] = None
 
 @router.post("/task_heartbeat")
 async def task_heartbeat(
@@ -121,6 +127,9 @@ async def task_heartbeat(
     queue_manager: QueueManager = Depends(get_queue_manager)
 ):
     await queue_manager.update_task_heartbeat(req.task_id)
+    if req.agent_id:
+        await queue_manager.redis.hset(f"comfy:task:{req.task_id}", "worker_id", req.agent_id)
+        await queue_manager.redis.hset(f"comfy:agent:heartbeat:{req.agent_id}", "current_task_id", req.task_id)
     return {"status": "ok"}
 
 @router.post("/heartbeat")

@@ -217,8 +217,13 @@ class QuotaManager:
             inviter.credits += 5
             inviter.referral_count = (inviter.referral_count or 0) + 1
             
-            await session.commit()
-            print(f"✅ Referral success: {inviter_id} invited {new_user_id}")
+            try:
+                await session.commit()
+                print(f"✅ Referral success: {inviter_id} invited {new_user_id}")
+            except IntegrityError:
+                await session.rollback()
+                print(f"⚠️ Referral race condition: user {new_user_id} already exists")
+                return False
 
             # Log for inviter
             await LogService.log_action(

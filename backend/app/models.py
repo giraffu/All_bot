@@ -32,6 +32,20 @@ class TaskStatusResponse(BaseModel):
     result_path: Optional[str] = None # Added for convenience
     image_url: Optional[str] = None
 
+class WorkerInfo(BaseModel):
+    agent_id: str
+    types: str
+    status: str
+    last_seen: float
+    current_task_id: Optional[str] = None
+    current_task_type: Optional[str] = None
+    current_task_progress: Optional[float] = None
+    current_task_created_at: Optional[float] = None
+
+class SystemWorkersResponse(BaseModel):
+    workers: List[WorkerInfo]
+    count: int
+
 class SystemStatusResponse(BaseModel):
     queue_size: int
     queue_by_type: dict[str, int] = {}

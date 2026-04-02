@@ -209,6 +209,29 @@ async def get_system_status_proxy():
             "error": str(e)
         }
 
+@router.get("/system/workers")
+async def get_system_workers_proxy():
+    """Proxy system workers request to ComfyUI Middleware"""
+    try:
+        url = f"{API_BASE}/system/workers"
+        async with httpx.AsyncClient(trust_env=False) as client:
+            response = await client.get(url, timeout=5.0)
+            if response.status_code == 200:
+                return response.json()
+            else:
+                return {
+                    "workers": [],
+                    "count": 0,
+                    "error": f"Middleware returned {response.status_code}"
+                }
+    except Exception as e:
+        logger.error(f"Error proxying system workers: {e}")
+        return {
+            "workers": [],
+            "count": 0,
+            "error": str(e)
+        }
+
 @router.get("/status/{task_id}")
 async def get_task_status_proxy(task_id: str):
     """Proxy task status request to ComfyUI Middleware"""

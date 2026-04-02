@@ -153,6 +153,11 @@ export const fetchSystemStatus = async () => {
   return response.data
 }
 
+export const fetchSystemWorkers = async () => {
+  const response = await api.get('/api/system/workers')
+  return response.data
+}
+
 export const fetchActiveBotTasks = async () => {
   const response = await api.get('/api/system/active_bot_tasks')
   return response.data
