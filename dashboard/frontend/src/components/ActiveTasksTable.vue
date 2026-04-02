@@ -83,6 +83,13 @@
           <span v-else class="text-gray-400">-</span>
         </template>
 
+        <template v-else-if="column.key === 'queue_position'">
+          <a-tag v-if="record.queue_position !== undefined && record.queue_position !== '-'" color="purple">
+            {{ record.queue_position }}
+          </a-tag>
+          <span v-else class="text-gray-400">-</span>
+        </template>
+
         <template v-else-if="column.key === 'task_type'">
           <a-tag :color="getTypeColor(record.task_type)">
             {{ record.task_type || 'Unknown' }}
@@ -184,6 +191,20 @@ const columns = [
     dataIndex: 'priority',
     width: 90,
     sorter: (a, b) => (a.priority || 0) - (b.priority || 0),
+  },
+  {
+    title: '排队位置',
+    key: 'queue_position',
+    dataIndex: 'queue_position',
+    width: 100,
+    sorter: (a, b) => {
+      const getVal = (val) => {
+        if (val === '生成中') return -1;
+        if (val === '提交中' || val === '-') return 9999;
+        return parseInt(val) || 9999;
+      };
+      return getVal(a.queue_position) - getVal(b.queue_position);
+    },
   },
   {
     title: '任务类型',
