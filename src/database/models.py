@@ -16,10 +16,9 @@ class User(Base):
     temp_credits = Column(Integer, default=0)
     last_checkin = Column(Date, nullable=True)
     is_channel_member = Column(Boolean, default=False)
-    user_group = Column(String(20), default="凡人") # 凡人, 练气期, 筑基期
+    user_group = Column(String(20), default="凡人") # 凡人, 练气期, 筑基期, 金丹期, 元婴期
     current_identity = Column(String(20), default="外门弟子") # 外门弟子, 内门弟子, 核心弟子, 真传弟子
     identity_expire_at = Column(DateTime, nullable=True)
-    is_first_charge = Column(Boolean, default=True)
     total_contributions = Column(Integer, default=0) # 累计贡献次数
     approved_contributions = Column(Integer, default=0) # 累计被采纳次数
     
@@ -116,15 +115,6 @@ class MembershipPlan(Base):
     duration_days = Column(Integer, default=30)
     is_active = Column(Boolean, default=True)
 
-class DiscountRule(Base):
-    __tablename__ = "discount_rules"
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    rule_type = Column(String(50), nullable=False) # e.g., FIRST_CHARGE, LEVEL_DISCOUNT
-    target_level = Column(String(50), nullable=True) # e.g., 化神期
-    discount_rate = Column(DECIMAL(3, 2), nullable=False) # e.g., 0.85
-    is_active = Column(Boolean, default=True)
-
 class Order(Base):
     __tablename__ = "orders"
 
@@ -141,3 +131,17 @@ class Order(Base):
 
     user = relationship("User", backref="orders")
     plan = relationship("MembershipPlan")
+
+class WorkerLog(Base):
+    __tablename__ = "worker_logs"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    worker_id = Column(String(100), nullable=False, index=True)
+    task_id = Column(String(64), nullable=False, index=True)
+    task_type = Column(String(50), nullable=True)
+    status = Column(String(20), nullable=False) # 'success', 'failed'
+    start_time = Column(DateTime, nullable=False)
+    end_time = Column(DateTime, nullable=False)
+    duration = Column(Integer, nullable=False) # in seconds
+    error_message = Column(Text, nullable=True)
+

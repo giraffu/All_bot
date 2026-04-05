@@ -21,6 +21,7 @@ import CreditHoldingDistributionChart from './components/CreditHoldingDistributi
 import DailyTypeChart from './components/DailyTypeChart.vue'
 import CumulativeTypeChart from './components/CumulativeTypeChart.vue'
 import HistoryTable from './components/HistoryTable.vue'
+import WorkerHistoryTable from './components/WorkerHistoryTable.vue'
 import LogTable from './components/LogTable.vue'
 import RechargeSystem from './components/RechargeSystem.vue'
 import { message } from 'ant-design-vue'
@@ -39,7 +40,8 @@ import {
   DashboardOutlined,
   SearchOutlined,
   BellOutlined,
-  PieChartOutlined
+  PieChartOutlined,
+  RobotOutlined
 } from '@ant-design/icons-vue'
 
 // State
@@ -323,6 +325,10 @@ onUnmounted(() => {
           <template #icon><history-outlined /></template>
           <span>历史生成</span>
         </a-menu-item>
+        <a-menu-item key="worker_history">
+          <template #icon><robot-outlined /></template>
+          <span>Worker记录</span>
+        </a-menu-item>
         <a-menu-item key="logs">
           <template #icon><file-text-outlined /></template>
           <span>操作日志</span>
@@ -457,6 +463,10 @@ onUnmounted(() => {
 
           <div v-else-if="activeTab[0] === 'history'" class="flex-1 bg-white rounded-xl shadow-sm border p-6 flex flex-col min-h-0">
             <HistoryTable />
+          </div>
+
+          <div v-else-if="activeTab[0] === 'worker_history'" class="flex-1 bg-white rounded-xl shadow-sm border p-6 flex flex-col min-h-0">
+            <WorkerHistoryTable />
           </div>
 
           <div v-else-if="activeTab[0] === 'logs'" class="flex-1 bg-white rounded-xl shadow-sm border p-6 flex flex-col min-h-0">

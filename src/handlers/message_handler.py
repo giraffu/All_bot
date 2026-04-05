@@ -454,10 +454,10 @@ async def _handle_photo_edit(update: Update, context: ContextTypes.DEFAULT_TYPE)
     # Check how many images we already have
     pending_count = len(context.user_data.get('pending_images', []))
     
-    if pending_count >= 3:
-        await robust_reply_text(msg, "✅ 已达到 3 张参考图上限。请直接发送提示词 (Text) 开始生成。")
+    if pending_count >= 2:
+        await robust_reply_text(msg, "✅ 已达到 2 张参考图上限。请直接发送提示词 (Text) 开始生成。")
     elif pending_count > 0:
-        await robust_reply_text(msg, f"📥 已收到第 {pending_count} 张参考图。您可以继续发送（最多 3 张），或直接发送提示词 (Text) 开始生成。")
+        await robust_reply_text(msg, f"📥 已收到第 {pending_count} 张参考图。您可以继续发送（最多 2 张），或直接发送提示词 (Text) 开始生成。")
     else:
         await robust_reply_text(msg, "📥 收到图片。请发送提示词 (Text) 开始生成。")
 
@@ -535,7 +535,7 @@ async def handle_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if text == "🖼️ 懒人P图":
         keyboard = [
             ["💃 快速脱衣", "🎭 快速换脸", "🥵 快速自慰"],
-            ["🎭 随机换脸", "🎁 模板共建"],
+            ["🎭 随机换脸"],
             ["🔙 返回主菜单"]
         ]
         reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
@@ -586,17 +586,17 @@ async def handle_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "欢迎来到合欢宗账房！灵石乃修仙界之硬通货，可用以驱动阵法（生成图像与视频）。\n\n"
             "🔰 **【内门弟子】** 1.99 TON / ¥ 30.00\n"
             "   └ 🎁 直接获得 `400` 灵石\n"
-            "   └ 📅 每日签到 `30` 灵石\n"
+            "   └ 📅 每日签到 `+30` 灵石\n"
             "   └ 🔓 解锁特权 `720p` 画质，最长 `8s` 视频\n"
             "   └ ⚡ 排队优先级 `+15`\n\n"
             "💠 **【核心弟子】** 4.99 TON / ¥ 70.00\n"
             "   └ 🎁 直接获得 `1200` 灵石\n"
-            "   └ 📅 每日签到 `40` 灵石\n"
+            "   └ 📅 每日签到 `+40` 灵石\n"
             "   └ 🔓 解锁特权 `1024p` 画质，最长 `10s` 视频\n"
             "   └ ⚡ 排队优先级 `+25`\n\n"
             "👑 **【真传弟子】** 9.99 TON / ¥ 120.00\n"
             "   └ 🎁 直接获得 `3000` 灵石\n"
-            "   └ 📅 每日签到 `50` 灵石\n"
+            "   └ 📅 每日签到 `+50` 灵石\n"
             "   └ 🔓 解锁特权 `1024p` 画质，最长 `10s` 视频\n"
             "   └ 🚀 排队优先级 `+40` (极速)\n\n"
             "⚠️ **注意事项**：\n"
@@ -648,7 +648,18 @@ async def handle_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"🔸 修炼次数 > 100次 ({gen_done})"
             )
         elif current_group == "金丹期":
-            breakthrough_msg = "✨ **已登峰造极，成就金丹大道**"
+            inv_done = "✅" if stats['invitations'] > 100 else "❌"
+            checkin_done = "✅" if stats['checkins'] > 300 else "❌"
+            gen_done = "✅" if stats['generations'] > 1000 else "❌"
+            
+            breakthrough_msg = (
+                "🚀 **突破至元婴期条件**：\n"
+                f"🔸 邀请道友 > 100人 ({inv_done})\n"
+                f"🔸 累计签到 > 300天 ({checkin_done})\n"
+                f"🔸 修炼次数 > 1000次 ({gen_done})"
+            )
+        elif current_group == "元婴期":
+            breakthrough_msg = "✨ **已修成元婴，神通广大，万法不侵**"
 
         identity_display = f"`{current_identity}`"
         if current_identity != "外门弟子" and stats.get('identity_expire_at'):
@@ -681,9 +692,7 @@ async def handle_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"📊 **修炼数据**：\n"
             f"  - 邀请同道：`{stats['invitations']}` 人\n"
             f"  - 累计签到：`{stats['checkins']}` 天\n"
-            f"  - 施法次数：`{stats['generations']}` 次\n"
-            f"  - 贡献模板：`{stats['total_contributions']}` 次\n"
-            f"  - 采纳模板：`{stats['approved_contributions']}` 次\n\n"
+            f"  - 施法次数：`{stats['generations']}` 次\n\n"
             f"🤝 **邀请数据**：\n"
             f"  - 邀请充值：已有 `{stats['invitation_recharge']['recharged_invitees_count']}` 位道友完成 `{stats['invitation_recharge']['total_recharge_count']}` 次充值\n"
             f"  - 累积充值：`{stats['invitation_recharge']['total_ton']:.2f}` TON\n"
@@ -774,9 +783,8 @@ async def handle_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "💃 快速脱衣": (MODE_UNDRESS, "💃 已切换到【快速脱衣】模式 (消耗 2 灵石)。\n请发送一张图片，我将自动处理。"),
         "🎭 快速换脸": (MODE_FACESWAP_STEP1, "🎭 已切换到【快速换脸】模式 (消耗 1 灵石)。\n请先发送一张【人脸】图片。"),
         "🎭 随机换脸": (MODE_RANDOM_FACESWAP, "🎭 已切换到【随机换脸】模式 (消耗 1 灵石)。\n请发送一张【人脸】图片，我将自动匹配模板处理。"),
-        "🎁 模板共建": (MODE_TEMPLATE_CONTRIBUTE, "🎁 已切换到【模板共建】模式。\n\n可以选择发送1到n张图片、视频，模板需要包含脸部和身体，露脸图片不会泄露，仅用于模板库建设，模板采纳会奖励灵石。"),
         "🥵 快速自慰": (MODE_MASTURBATION, "🥵 已切换到【快速自慰】模式 (消耗 2 灵石)。\n请发送一张图片，我将自动处理。"),
-        "🎨 自由P图": (MODE_EDIT, "🎨 已切换到【自由P图】模式 (消耗 2 灵石)。\n请发送 1-3 张参考图片，随后发送提示词开始融合生成。"),
+        "🎨 自由P图": (MODE_EDIT, "🎨 已切换到【自由P图】模式。\n1张图消耗2灵石，2张图消耗6灵石。\n请发送 1-2 张参考图片，随后发送提示词开始融合生成。"),
         "🎬 自定义图生视频": (MODE_CUSTOM_VIDEO, "🎬 已切换到【自定义图生视频】模式。\n请发送一张【起始图片】。\n(注意：该模式生成 5 秒视频，请确保提示词动作逻辑合理)"),
         "🛌 动图传教士": (MODE_PERFECT_VIDEO_INSERT, "🛌 已切换到【动图传教士】模式。\n请发送一张【人脸】图片（正面、清晰），我将自动处理。"),
         "🎬 动图后入": (MODE_DOGGY_STYLE, "🎬 已切换到【动图后入】模式。\n请发送一张【人脸】图片（正面、清晰），我将自动处理。"),
@@ -836,9 +844,9 @@ async def handle_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await robust_reply_text(update.message, "❌ 图片已丢失，请重新发送图片。")
             return
         
-        # Force maximum 3 images for EDIT mode, single image for others
+        # Force maximum 2 images for EDIT mode, single image for others
         if mode == MODE_EDIT:
-            valid_images = valid_images[-3:]
+            valid_images = valid_images[-2:]
         else:
             valid_images = [valid_images[-1]]
 

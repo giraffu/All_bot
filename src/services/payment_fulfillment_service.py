@@ -106,7 +106,6 @@ async def fulfill_order(out_trade_no: str, external_trade_no: str, paid_amount: 
             
             user.credits += plan.reward_credits
             user.current_identity = final_identity
-            user.is_first_charge = False
             user.identity_expire_at = new_expire_at
             
             log = UserLog(

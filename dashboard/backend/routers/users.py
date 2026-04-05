@@ -277,7 +277,6 @@ async def admin_gift_plan(user_id: int, request: AdminGiftRequest, db: AsyncSess
         user.credits += plan.reward_credits
         user.current_identity = final_identity
         user.identity_expire_at = new_expire_at
-        user.is_first_charge = False
             
         extra_info = {
             "order_id": order_id,

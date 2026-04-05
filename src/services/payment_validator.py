@@ -259,7 +259,6 @@ class TonPaymentValidator:
                             .values(
                                 credits=User.credits + plan.reward_credits,
                                 current_identity=final_identity,
-                                is_first_charge=False,
                                 identity_expire_at=new_expire_at
                             )
                         )

@@ -1,5 +1,6 @@
 import sys
 import os
+import asyncio
 from pathlib import Path
 import logging
 
@@ -13,7 +14,8 @@ import fastapi.responses
 
 from src.database.core import init_db
 from dashboard.backend.auth import auth_router, get_current_user
-from dashboard.backend.routers import stats, users, history, plans, templates, system, logs
+from dashboard.backend.routers import stats, users, history, plans, templates, system, logs, workers
+from dashboard.backend.services.worker_listener import start_worker_listener
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("dashboard")
@@ -28,6 +30,9 @@ app.include_router(plans.router)
 app.include_router(templates.router)
 app.include_router(system.router)
 app.include_router(logs.router)
+app.include_router(workers.router)
+
+background_tasks = set()
 
 @app.on_event("startup")
 async def startup_event():
@@ -36,6 +41,12 @@ async def startup_event():
         logger.info("Database initialized successfully")
     except Exception as e:
         logger.error(f"Failed to initialize database: {e}")
+    
+    # Start background worker listener and keep a strong reference
+    task = asyncio.create_task(start_worker_listener())
+    background_tasks.add(task)
+    task.add_done_callback(background_tasks.discard)
+
 
 app.add_middleware(
     CORSMiddleware,

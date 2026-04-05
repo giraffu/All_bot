@@ -106,7 +106,6 @@ async def init_db():
             logger.info("Adding new payment and identity columns to users table")
             await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS current_identity VARCHAR(20) DEFAULT '外门弟子'"))
             await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS identity_expire_at TIMESTAMP"))
-            await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS is_first_charge BOOLEAN DEFAULT TRUE"))
         except Exception as e:
             logger.warning(f"Failed to add payment columns: {e}")
 
@@ -136,20 +135,8 @@ async def init_db():
                     ('500 Star 直购', '纯灵石', 4.99, 500, 1800, 0),
                     ('1000 Star 直购', '纯灵石', 9.90, 1000, 4000, 0)
                 """))
-            res = await conn.execute(text("SELECT COUNT(*) FROM discount_rules"))
-            if res.scalar() == 0:
-                logger.info("Initializing default discount rules")
-                await conn.execute(text("""
-                    INSERT INTO discount_rules (rule_type, target_level, discount_rate) VALUES
-                    ('FIRST_CHARGE', NULL, 0.50),
-                    ('LEVEL_DISCOUNT', '筑基期', 0.98),
-                    ('LEVEL_DISCOUNT', '金丹期', 0.95),
-                    ('LEVEL_DISCOUNT', '元婴期', 0.90),
-                    ('LEVEL_DISCOUNT', '化神期', 0.85),
-                    ('LEVEL_DISCOUNT', '大乘期', 0.80)
-                """))
         except Exception as e:
-            logger.warning(f"Failed to initialize default plans and rules: {e}")
+            logger.warning(f"Failed to initialize default plans: {e}")
 
 
 async def get_db():

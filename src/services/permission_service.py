@@ -195,6 +195,7 @@ class PermissionService:
         """
         Calculate and update user group based on stats.
         Tiers:
+        - 元婴期 (Nascent Soul): Invited > 100, Checked in > 300, Total generations > 1000
         - 金丹期 (Golden Core): Invited > 10, Checked in > 30, Total generations > 100
         - 筑基期 (Foundation): Invited > 1, Checked in > 3, Total generations > 10
         - 练气期 (Qi Refining): Joined channel
@@ -207,8 +208,13 @@ class PermissionService:
         
         group = "凡人"
         
+        # Check for Nascent Soul criteria
+        if (stats["invitation_count"] > 100 and 
+            stats["checkin_count"] > 300 and 
+            stats["generation_count"] > 1000):
+            group = "元婴期"
         # Check for Golden Core criteria
-        if (stats["invitation_count"] > 10 and 
+        elif (stats["invitation_count"] > 10 and 
             stats["checkin_count"] > 30 and 
             stats["generation_count"] > 100):
             group = "金丹期"
@@ -359,15 +365,27 @@ class PermissionService:
             )
             return False, 0, msg, 0, 0
 
-        # Calculate reward based on identity
+        # Calculate reward based on identity and group
         identity = await self.get_user_identity(user.id)
         reward = 10
+        
+        # Apply group base reward
+        if user_group == "元婴期":
+            reward = 20
+        elif user_group == "金丹期":
+            reward = 15
+        elif user_group == "筑基期":
+            reward = 12
+        elif user_group == "练气期":
+            reward = 10
+            
+        # Identity adds bonus reward on top of base reward
         if identity == "内门弟子":
-            reward = 30
+            reward += 30
         elif identity == "核心弟子":
-            reward = 40
+            reward += 40
         elif identity == "真传弟子":
-            reward = 50
+            reward += 50
 
         success = await self.quota_manager.checkin(
             user.id, 

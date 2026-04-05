@@ -135,7 +135,6 @@ async def successful_payment_callback(update: Update, context: ContextTypes.DEFA
             user.credits += added_credits
             user.current_identity = final_identity
             user.identity_expire_at = new_expire_at
-            user.is_first_charge = False
                 
             # 记录订单
             from src.database.models import Order

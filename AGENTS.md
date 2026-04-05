@@ -85,12 +85,16 @@
 
 ### 4.1 容器的启动与重建 (Build & Start)
 当修改了代码后，必须通过 Docker Compose 重新构建并启动容器。
+为避免旧版本 docker-compose 常见的 `ContainerConfig` 报错，建议在构建前先移除旧容器。
+
 - **主 Bot 服务与 Payment API (正式服)**:
   ```bash
+  docker rm -f tg-bot payment-api
   docker-compose -f deploy/docker-compose.yml up -d --build
   ```
 - **主 Bot 服务与 Payment API (测试服)**:
   ```bash
+  docker rm -f tg-bot-test payment-api-test
   docker-compose -f deploy/docker-compose-test.yml up -d --build
   ```
 - **Dashboard 后台服务**:
@@ -101,8 +105,6 @@
   ```bash
   cd backend && docker-compose up -d --build
   ```
-
-*⚠️ 重建报错处理 (ContainerConfig KeyError)：当使用旧版 docker-compose 时，如果遇到此报错，请先手动停止并删除旧容器（`docker rm -f <容器名>`），再执行重建命令。*
 
 ### 4.2 Bot 暂停与维护模式 (Maintenance Mode)
 当系统需要紧急维护、修复 Bug 或排查问题时，可以开启维护模式。这会无缝拦截新生成任务的创建，但不影响用户的查询与签到功能。

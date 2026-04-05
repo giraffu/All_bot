@@ -12,6 +12,9 @@ async def test_process_video_task_template():
     update.effective_user.username = "testuser"
     update.effective_user.full_name = "Test User"
     
+    # Mock user_data to have 720p for this test
+    context.user_data = {"custom_video_resolution": "720p"}
+    
     with patch("src.services.task_service.permission_service") as mock_perm, \
          patch("src.services.task_service.redis_client") as mock_redis, \
          patch("src.services.task_service.UserLogger"), \
@@ -48,8 +51,8 @@ async def test_process_video_task_template():
         
         # Check if the right cost and resolution were used
         # For 金丹期, it should be 720p (720, 720)
-        # Cost should be 6
-        mock_perm.increment_quota.assert_any_call(456, cost=6, username="testuser", task_type=MODE_BLOWJOB)
+        # Cost should be 18
+        mock_perm.increment_quota.assert_any_call(456, cost=18, username="testuser", task_type=MODE_BLOWJOB)
         mock_image_service.submit_perfect_video_edit.assert_awaited_once()
         kwargs = mock_image_service.submit_perfect_video_edit.await_args.kwargs
         assert kwargs["width"] == 720

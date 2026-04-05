@@ -74,10 +74,12 @@ class TaskService:
 
         # Determine cost and default task type
         # For faceswap tasks, map the generic "face_swap" string back to constants for cost lookup
-        from src.constants import MODE_FACESWAP_STEP1
+        from src.constants import MODE_FACESWAP_STEP1, MODE_EDIT
         if task_type == "face_swap":
             # Both fast faceswap and random faceswap cost 1 credit now
             cost = TASK_COSTS.get(MODE_FACESWAP_STEP1, 1)
+        elif task_type == MODE_EDIT or task_type == "edit":
+            cost = 6 if len(images) == 2 else 2
         else:
             cost = TASK_COSTS.get(task_type, 6 if is_video else 2)
             
@@ -688,9 +690,9 @@ class TaskService:
         # Build VIP/Group suffix if applicable
         vip_suffix = ""
         privileges = []
-        if identity_str and identity_str not in ["外门弟子", "凡人", "练气期", "筑基期", "金丹期", "default"]:
+        if identity_str and identity_str not in ["外门弟子", "凡人", "练气期", "筑基期", "金丹期", "元婴期", "default"]:
             privileges.append(identity_str)
-        if user_group and user_group in ["金丹期", "筑基期"]:
+        if user_group and user_group in ["元婴期", "金丹期", "筑基期"]:
             privileges.append(user_group)
             
         if privileges:
