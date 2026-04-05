@@ -6,7 +6,7 @@ import os
 from typing import Any, Callable
 
 import httpx
-from telegram.error import Forbidden, NetworkError, TimedOut, BadRequest
+from telegram.error import BadRequest, Forbidden, NetworkError, RetryAfter, TimedOut
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +39,25 @@ def async_retry(max_retries: int = 3, delay: float = 1.0, backoff: float = 2.0):
                         # Some debug messages might not be modified if they contain the same content
                         pass
                         return  # Successfully ignored
+
+                    if isinstance(e, RetryAfter):
+                        retry_after = e.retry_after
+                        wait_seconds = (
+                            retry_after.total_seconds()
+                            if hasattr(retry_after, "total_seconds")
+                            else float(retry_after)
+                        )
+                        if attempt == max_retries:
+                            logger.error(
+                                f"Function {func.__name__} failed after {max_retries} retries due to flood control: {e}"
+                            )
+                            raise e
+
+                        logger.warning(
+                            f"Flood control in {func.__name__}: {e}. Retrying in {wait_seconds}s... ({attempt + 1}/{max_retries})"
+                        )
+                        await asyncio.sleep(wait_seconds)
+                        continue
 
                     # Handle Forbidden (Bot blocked by user)
                     if isinstance(e, Forbidden):

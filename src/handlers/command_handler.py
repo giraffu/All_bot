@@ -85,12 +85,11 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "💎 **充值灵石**：在合欢宗账房换取极品灵石与身份特权。\n"
         "📅 **每日签到**：每日吐纳，根据身份领取丰厚灵石。\n"
         "🤝 **分享赚灵石**：邀请道友入宗，无限领灵石！\n"
-        "🖼️ **懒人P图**：快速脱衣、换脸、自慰、抽插等仙术。\n"
-        "🎬 **懒人动图**：传教士、后入、口交黑人等场景。\n"
         "📝 **文生图**：以言出法随，创造天地万物。\n"
         "🎨 **自由P图**：施展随心所欲的炼金术。\n"
         "🎬 **自定义视频**：赋予画卷生命，生成演武视频。\n"
-        "👤 **个人中心**：查看当前境界、灵石余额及突破规则。",
+        "👤 **个人中心**：查看当前境界、灵石余额及突破规则。\n\n"
+        "⚠️ **使用说明**：请仅上传您有权使用的素材，并确保生成内容符合法律法规与平台规则；严禁用于未成年人、偷拍、侵权、非自愿或其他违规场景。",
         reply_markup=reply_markup,
         parse_mode="Markdown"
     )
@@ -120,4 +119,3 @@ async def toggle_maintenance(update: Update, context: ContextTypes.DEFAULT_TYPE)
         if os.path.exists(MAINTENANCE_FILE):
             os.remove(MAINTENANCE_FILE)
         await robust_send_message(context.bot, update.message.chat_id, "✅ 维护模式已关闭，生成服务恢复正常。")
-

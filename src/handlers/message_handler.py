@@ -6,7 +6,7 @@ import logging
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup
 from telegram.ext import ContextTypes
 
-from config import CHANNEL_INVITE_LINK, REFUGE_GROUP_ID, REFUGE_INVITE_LINK
+from config import CHANNEL_INVITE_LINK, ENABLE_PUBLIC_SHARE, REFUGE_GROUP_ID, REFUGE_INVITE_LINK
 from src.services.permission_service import permission_service
 from src.services.image_service import image_service
 from src.services.task_service import task_service
@@ -405,16 +405,16 @@ async def _handle_photo_random_faceswap(update: Update, context: ContextTypes.DE
         # 保存当前人脸图片路径到 context，以便“再来一张”功能使用
         context.user_data['last_face_image'] = face_image_path
         
-        reply_markup = InlineKeyboardMarkup([
-            [
-                InlineKeyboardButton("公开", callback_data="public_share_request"),
-                InlineKeyboardButton("🔄 再来一张", callback_data="random_faceswap_again")
-            ],
+        keyboard = [
+            [InlineKeyboardButton("🔄 再来一张", callback_data="random_faceswap_again")],
             [
                 InlineKeyboardButton("👍", callback_data="rate_like"),
                 InlineKeyboardButton("👎", callback_data="rate_dislike")
             ]
-        ])
+        ]
+        if ENABLE_PUBLIC_SHARE:
+            keyboard[0].insert(0, InlineKeyboardButton("公开", callback_data="public_share_request"))
+        reply_markup = InlineKeyboardMarkup(keyboard)
         
         await task_service.process_generation_task(
             context, msg.chat_id, update.effective_user.id, 
@@ -575,24 +575,26 @@ async def handle_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
         keyboard = [
             [InlineKeyboardButton("💎 TON月卡套餐", web_app=WebAppInfo(url=webapp_url))],
             [InlineKeyboardButton("⭐️ Star月卡套餐", callback_data="recharge_stars_menu")],
-            [InlineKeyboardButton("⭐️ Star直充灵石", callback_data="recharge_stars_credit_menu")]
+            [InlineKeyboardButton("⭐️ Star直充灵石", callback_data="recharge_stars_credit_menu")],
+            [InlineKeyboardButton("¥ 人民币充值月卡", callback_data="recharge_rmb_menu")],
+            [InlineKeyboardButton("¥ 人民币直充灵石", callback_data="recharge_rmb_credit_menu")]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
         msg = (
             "📜 **【合欢宗账房】灵石充值与身份晋升**\n\n"
             "欢迎来到合欢宗账房！灵石乃修仙界之硬通货，可用以驱动阵法（生成图像与视频）。\n\n"
-            "🔰 **【内门弟子】** 1.99 TON / ⭐️ 200\n"
+            "🔰 **【内门弟子】** 1.99 TON / ¥ 30.00\n"
             "   └ 🎁 直接获得 `400` 灵石\n"
             "   └ 📅 每日签到 `30` 灵石\n"
             "   └ 🔓 解锁特权 `720p` 画质，最长 `8s` 视频\n"
             "   └ ⚡ 排队优先级 `+15`\n\n"
-            "💠 **【核心弟子】** 4.99 TON / ⭐️ 500\n"
+            "💠 **【核心弟子】** 4.99 TON / ¥ 70.00\n"
             "   └ 🎁 直接获得 `1200` 灵石\n"
             "   └ 📅 每日签到 `40` 灵石\n"
             "   └ 🔓 解锁特权 `1024p` 画质，最长 `10s` 视频\n"
             "   └ ⚡ 排队优先级 `+25`\n\n"
-            "👑 **【真传弟子】** 9.99 TON / ⭐️ 1000\n"
+            "👑 **【真传弟子】** 9.99 TON / ¥ 120.00\n"
             "   └ 🎁 直接获得 `3000` 灵石\n"
             "   └ 📅 每日签到 `50` 灵石\n"
             "   └ 🔓 解锁特权 `1024p` 画质，最长 `10s` 视频\n"

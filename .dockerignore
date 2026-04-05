@@ -1,35 +1,14 @@
-# Ignore git files
 .git
-.gitignore
-
-# Ignore data directories
-user_data/
-bot_data.db
-bot_data.db-wal
-bot_data.db-shm
-bot_test_db/
-
-# Ignore logs
-logs/
-*.log
-
-# Ignore environment files
 .env
-.env.test
-
-# Ignore virtual environments
+.venv
 venv/
-.venv/
+env/
 __pycache__/
 *.pyc
-*.pyo
-*.pyd
-
-# Ignore build artifacts
-build/
-dist/
-*.egg-info/
-
-# Ignore dashboard related
-dashboard/frontend/node_modules/
-dashboard/backend/__pycache__/
+.pytest_cache/
+.ruff_cache/
+logs/
+workers/
+frontend/
+templates/
+tg_tmp/

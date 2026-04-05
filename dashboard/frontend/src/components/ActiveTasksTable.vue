@@ -26,8 +26,11 @@
           placeholder="按状态筛选"
           allow-clear
         >
-          <a-select-option value="generating">生成中</a-select-option>
           <a-select-option value="pending">排队中</a-select-option>
+          <a-select-option value="running">生成中</a-select-option>
+          <a-select-option value="done">已完成</a-select-option>
+          <a-select-option value="error">异常</a-select-option>
+          <a-select-option value="cancelled">已取消</a-select-option>
           <a-select-option value="submitting">提交中</a-select-option>
         </a-select>
         <a-select
@@ -97,12 +100,21 @@
         </template>
 
         <template v-else-if="column.key === 'status'">
-          <a-tag v-if="record.execution_status === 'generating'" color="processing" class="animate-pulse">
+          <a-tag v-if="record.execution_status === 'running'" color="processing" class="animate-pulse">
             <template #icon><sync-outlined spin /></template>
             生成中
           </a-tag>
           <a-tag v-else-if="record.execution_status === 'pending'" color="warning">
             排队中
+          </a-tag>
+          <a-tag v-else-if="record.execution_status === 'done'" color="success">
+            已完成
+          </a-tag>
+          <a-tag v-else-if="record.execution_status === 'error'" color="error">
+            异常
+          </a-tag>
+          <a-tag v-else-if="record.execution_status === 'cancelled'" color="default">
+            已取消
           </a-tag>
           <a-tag v-else color="default">
             提交中

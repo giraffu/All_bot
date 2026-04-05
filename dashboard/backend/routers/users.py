@@ -33,8 +33,9 @@ async def get_users(skip: int = 0, limit: int = 100000, db: AsyncSession = Depen
         recharge_stmt = (
             select(
                 Order.telegram_id, 
-                func.sum(case((Order.final_price < 50, Order.final_price), else_=0)).label("total_recharge_ton"),
-                func.sum(case((Order.final_price >= 50, Order.final_price), else_=0)).label("total_recharge_stars")
+                func.sum(case((Order.order_id.like("RMB_%"), Order.final_price), else_=0)).label("total_recharge_rmb"),
+                func.sum(case((Order.order_id.notlike("RMB_%") & (Order.final_price < 50), Order.final_price), else_=0)).label("total_recharge_ton"),
+                func.sum(case((Order.order_id.notlike("RMB_%") & (Order.final_price >= 50), Order.final_price), else_=0)).label("total_recharge_stars")
             )
             .where(Order.status == "SUCCESS")
             .where(Order.tx_hash.notlike("manual_%"))
@@ -45,7 +46,8 @@ async def get_users(skip: int = 0, limit: int = 100000, db: AsyncSession = Depen
         for row in recharge_result:
             recharge_dict[row.telegram_id] = {
                 "ton": float(row.total_recharge_ton or 0),
-                "stars": int(row.total_recharge_stars or 0)
+                "stars": int(row.total_recharge_stars or 0),
+                "rmb": float(row.total_recharge_rmb or 0)
             }
         
         users_with_counts = []
@@ -61,6 +63,7 @@ async def get_users(skip: int = 0, limit: int = 100000, db: AsyncSession = Depen
             user_dict["identity_expire_at"] = user.identity_expire_at
             user_dict["total_recharge_ton"] = recharge_dict.get(user.id, {}).get("ton", 0.0)
             user_dict["total_recharge_stars"] = recharge_dict.get(user.id, {}).get("stars", 0)
+            user_dict["total_recharge_rmb"] = recharge_dict.get(user.id, {}).get("rmb", 0.0)
             user_dict["total_contributions"] = int(user.total_contributions or 0)
             user_dict["approved_contributions"] = int(user.approved_contributions or 0)
             user_dict["channel_joined"] = bool(user.is_channel_member) if hasattr(user, "is_channel_member") else False

@@ -1,0 +1,19 @@
+[Unit]
+Description=Cloudflare Tunnel for RMB Pay
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=hfy
+Group=hfy
+Environment="http_proxy=http://127.0.0.1:7890"
+Environment="https_proxy=http://127.0.0.1:7890"
+Environment="all_proxy=http://127.0.0.1:7890"
+ExecStart=/home/hfy/APP/All_bot/bin/cloudflared tunnel run rmb-pay
+Restart=always
+RestartSec=5
+TimeoutStopSec=20
+
+[Install]
+WantedBy=multi-user.target

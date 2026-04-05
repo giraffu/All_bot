@@ -22,6 +22,7 @@ class MembershipPlanCreate(BaseModel):
     duration_days: int
     price_ton: float
     price_stars: int
+    price_rmb: float = 0.00
     is_active: bool = True
 
 class MembershipPlanUpdate(BaseModel):
@@ -31,6 +32,7 @@ class MembershipPlanUpdate(BaseModel):
     duration_days: Optional[int] = None
     price_ton: Optional[float] = None
     price_stars: Optional[int] = None
+    price_rmb: Optional[float] = None
     is_active: Optional[bool] = None
 
 class MembershipPlanResponse(BaseModel):
@@ -41,6 +43,7 @@ class MembershipPlanResponse(BaseModel):
     duration_days: int
     price_ton: float
     price_stars: int
+    price_rmb: float
     is_active: bool
 
     class Config:

@@ -106,8 +106,7 @@ async def get_active_bot_tasks(db: AsyncSession = Depends(get_db)):
                 result = await db.execute(stmt)
                 user_info = {row.id: {"user_group": row.user_group, "current_identity": row.current_identity} for row in result.all()}
                 
-                executing_ids = []
-                queue_positions = {}
+                backend_statuses = {}
                 try:
                     import asyncio
                     from src.api_client import api_client
@@ -126,11 +125,7 @@ async def get_active_bot_tasks(db: AsyncSession = Depends(get_db)):
                         results = await asyncio.gather(*(fetch_status(tid) for tid in tasks_to_check[:20]))
                         for backend_id, status_data in results:
                             if status_data:
-                                state = status_data.get("status")
-                                if state == "generating" or (state and state not in ["pending", "done", "error"]):
-                                    executing_ids.append(backend_id)
-                                elif state == "pending":
-                                    queue_positions[backend_id] = status_data.get("queue_pos", 0)
+                                backend_statuses[backend_id] = status_data
                 except Exception as e:
                     logger.warning(f"Could not fetch executing tasks from backend: {e}")
 
@@ -144,12 +139,26 @@ async def get_active_bot_tasks(db: AsyncSession = Depends(get_db)):
                         task["user_identity"] = "外门弟子"
                         
                     backend_id = task.get("backend_task_id")
-                    if backend_id and backend_id in executing_ids:
-                        task["execution_status"] = "generating"
-                        task["queue_position"] = "生成中"
+                    status_data = backend_statuses.get(backend_id)
+                    
+                    if status_data:
+                        state = status_data.get("status")
+                        task["execution_status"] = state
+                        if state == "running":
+                            task["queue_position"] = "生成中"
+                        elif state == "pending":
+                            task["queue_position"] = status_data.get("queue_pos", "-")
+                        elif state == "done":
+                            task["queue_position"] = "已完成"
+                        elif state == "error":
+                            task["queue_position"] = "异常"
+                        elif state == "cancelled":
+                            task["queue_position"] = "已取消"
+                        else:
+                            task["queue_position"] = "未知"
                     elif backend_id:
                         task["execution_status"] = "pending"
-                        task["queue_position"] = queue_positions.get(backend_id, "-")
+                        task["queue_position"] = "-"
                     else:
                         task["execution_status"] = "submitting"
                         task["queue_position"] = "提交中"

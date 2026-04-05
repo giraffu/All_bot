@@ -12,6 +12,8 @@ const planForm = ref({
   name: '',
   identity_name: '',
   price_ton: 0.1,
+  price_stars: 100,
+  price_rmb: 30.00,
   reward_credits: 100,
   duration_days: 30,
   is_active: true
@@ -29,6 +31,8 @@ const planColumns = [
   { title: '套餐名称', dataIndex: 'name', key: 'name' },
   { title: '身份境界', dataIndex: 'identity_name', key: 'identity_name' },
   { title: '价格 (TON)', dataIndex: 'price_ton', key: 'price_ton' },
+  { title: '价格 (Stars)', dataIndex: 'price_stars', key: 'price_stars' },
+  { title: '价格 (RMB)', dataIndex: 'price_rmb', key: 'price_rmb' },
   { title: '奖励灵石', dataIndex: 'reward_credits', key: 'reward_credits' },
   { title: '有效期 (天)', dataIndex: 'duration_days', key: 'duration_days' },
   { title: '状态', dataIndex: 'is_active', key: 'is_active' },
@@ -83,6 +87,8 @@ const openPlanModal = (record = null) => {
       name: '',
       identity_name: '',
       price_ton: 0.1,
+      price_stars: 100,
+      price_rmb: 30.00,
       reward_credits: 100,
       duration_days: 30,
       is_active: true
@@ -193,6 +199,7 @@ onMounted(() => {
             </template>
             <template v-else-if="column.key === 'final_price'">
               <span v-if="record.tx_hash && String(record.tx_hash).startsWith('manual_')">赠送 (0)</span>
+              <span v-else-if="record.order_id && String(record.order_id).startsWith('RMB_')">¥ {{ record.final_price }}</span>
               <span v-else-if="record.final_price >= 50">{{ record.final_price }} Stars</span>
               <span v-else-if="record.final_price !== undefined">{{ record.final_price }} TON</span>
               <span v-else>-</span>
@@ -222,6 +229,12 @@ onMounted(() => {
         </a-form-item>
         <a-form-item label="价格 (TON)" required>
           <a-input-number v-model:value="planForm.price_ton" :min="0" :step="0.1" style="width: 100%" />
+        </a-form-item>
+        <a-form-item label="价格 (Stars)" required>
+          <a-input-number v-model:value="planForm.price_stars" :min="0" :step="10" style="width: 100%" />
+        </a-form-item>
+        <a-form-item label="价格 (RMB/¥)" required>
+          <a-input-number v-model:value="planForm.price_rmb" :min="0" :step="1.0" style="width: 100%" />
         </a-form-item>
         <a-form-item label="包含灵石数量" required>
           <a-input-number v-model:value="planForm.reward_credits" :min="0" :step="10" style="width: 100%" />

@@ -70,6 +70,7 @@ REQUIRED_CHANNEL_ID = os.getenv("REQUIRED_CHANNEL_ID")
 CHANNEL_INVITE_LINK = os.getenv("CHANNEL_INVITE_LINK")
 REFUGE_GROUP_ID = os.getenv("REFUGE_GROUP_ID")
 REFUGE_INVITE_LINK = os.getenv("REFUGE_INVITE_LINK")
+ENABLE_PUBLIC_SHARE = os.getenv("ENABLE_PUBLIC_SHARE", "true").lower() == "true"
 
 # --- Limit Configuration ---
 DAILY_LIMIT = int(os.getenv("DAILY_LIMIT", "10"))

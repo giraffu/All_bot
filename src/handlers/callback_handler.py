@@ -1,6 +1,6 @@
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
-from config import REQUIRED_CHANNEL_ID, MINIO_TEMPLATE_BUCKET
+from config import ENABLE_PUBLIC_SHARE, MINIO_TEMPLATE_BUCKET, REQUIRED_CHANNEL_ID
 from src.utils import (
     robust_send_message, robust_edit_text, load_prompts, 
     robust_edit_reply_markup, robust_edit_caption, safe_answer_query,
@@ -37,6 +37,10 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
     
     # Ensure user info is up to date
     await permission_service.ensure_user(update)
+
+    if not ENABLE_PUBLIC_SHARE and data in ["public_share_request", "public_share", "public_share_cancel"]:
+        await safe_answer_query(query, text="⚠️ 公开功能已关闭", show_alert=True)
+        return
     
     if data == "public_share_request":
         # Check forbidden words
@@ -544,11 +548,14 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
     elif data == "recharge_back":
         from telegram import WebAppInfo
         from config import WEBAPP_URL
+        
         webapp_url = WEBAPP_URL if 'WEBAPP_URL' in globals() and WEBAPP_URL else "https://pay.aivison.it.com/"
         keyboard = [
             [InlineKeyboardButton("💎 TON月卡套餐", web_app=WebAppInfo(url=webapp_url))],
             [InlineKeyboardButton("⭐️ Star月卡套餐", callback_data="recharge_stars_menu")],
-            [InlineKeyboardButton("⭐️ Star直充灵石", callback_data="recharge_stars_credit_menu")]
+            [InlineKeyboardButton("⭐️ Star直充灵石", callback_data="recharge_stars_credit_menu")],
+            [InlineKeyboardButton("¥ 人民币充值月卡", callback_data="recharge_rmb_menu")],
+            [InlineKeyboardButton("¥ 人民币直充灵石", callback_data="recharge_rmb_credit_menu")]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         try:
@@ -556,6 +563,162 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
         except Exception:
             pass
 
+    elif data == "recharge_rmb_menu":
+        from src.database.core import AsyncSessionLocal
+        from src.database.models import MembershipPlan
+        from sqlalchemy import select
+        
+        keyboard = []
+        async with AsyncSessionLocal() as session:
+            result = await session.execute(select(MembershipPlan).where(MembershipPlan.is_active == True, MembershipPlan.duration_days > 0).order_by(MembershipPlan.price_rmb.asc()))
+            plans = result.scalars().all()
+            for plan in plans:
+                if getattr(plan, 'price_rmb', 0) > 0:
+                    keyboard.append([InlineKeyboardButton(f"¥ {plan.price_rmb} - {plan.name} ({plan.identity_name})", callback_data=f"select_rmb_plan_{plan.id}")])
+                    
+        keyboard.append([InlineKeyboardButton("🔙 返回支付方式", callback_data="recharge_back")])
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        try:
+            await query.message.edit_reply_markup(reply_markup=reply_markup)
+        except Exception:
+            pass
+
+    elif data == "recharge_rmb_credit_menu":
+        from src.database.core import AsyncSessionLocal
+        from src.database.models import MembershipPlan
+        from sqlalchemy import select
+        
+        keyboard = []
+        async with AsyncSessionLocal() as session:
+            result = await session.execute(select(MembershipPlan).where(MembershipPlan.is_active == True, MembershipPlan.duration_days == 0).order_by(MembershipPlan.price_rmb.asc()))
+            plans = result.scalars().all()
+            for plan in plans:
+                if getattr(plan, 'price_rmb', 0) > 0:
+                    keyboard.append([InlineKeyboardButton(f"¥ {plan.price_rmb} 直购 {plan.reward_credits} 灵石", callback_data=f"select_rmb_plan_{plan.id}")])
+                    
+        keyboard.append([InlineKeyboardButton("🔙 返回支付方式", callback_data="recharge_back")])
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        try:
+            await query.message.edit_reply_markup(reply_markup=reply_markup)
+        except Exception:
+            pass
+
+    elif data.startswith("select_rmb_plan_"):
+        plan_id = int(data.split("_")[-1])
+        keyboard = [
+            [
+                InlineKeyboardButton("🟦 支付宝付款 (便利)", callback_data=f"buy_rmb_plan_{plan_id}_alipay"),
+                InlineKeyboardButton("🟩 微信付款", callback_data=f"buy_rmb_plan_{plan_id}_wxpay")
+            ],
+            [InlineKeyboardButton("🔙 返回套餐列表", callback_data="recharge_rmb_menu")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        try:
+            await query.message.edit_reply_markup(reply_markup=reply_markup)
+        except Exception:
+            pass
+
+    elif data.startswith("buy_rmb_plan_"):
+        import time
+        from src.database.core import AsyncSessionLocal
+        from src.database.models import MembershipPlan, Order
+        from sqlalchemy import select
+        from src.services.rmb_payment_service import RMBPaymentService
+        
+        parts = data.split("_")
+        pay_type = parts[-1]
+        plan_id = int(parts[-2])
+        user_id = query.from_user.id
+        
+        async with AsyncSessionLocal() as session:
+            result = await session.execute(select(MembershipPlan).where(MembershipPlan.id == plan_id))
+            plan = result.scalar_one_or_none()
+            
+            if not plan or getattr(plan, 'price_rmb', 0) <= 0:
+                await safe_answer_query(query, text="❌ 找不到该套餐", show_alert=True)
+                return
+                
+            # 尽早响应回调，清除按钮上的 loading，并修改文本提示正在生成订单
+            await safe_answer_query(query, text="⏳ 正在为您生成支付链接...")
+            
+            try:
+                await query.message.edit_text(
+                    text="⏳ **正在与支付网关建立安全连接，获取专属收银台链接，请稍候...**\n"
+                         "_(这通常需要 1~3 秒)_",
+                    parse_mode="Markdown",
+                    reply_markup=None
+                )
+            except Exception:
+                pass
+                
+            # 先落库 PENDING 订单
+            timestamp = int(time.time())
+            out_trade_no = f"RMB_{user_id}_{plan_id}_{timestamp}"
+            
+            new_order = Order(
+                order_id=out_trade_no,
+                telegram_id=user_id,
+                plan_id=plan_id,
+                original_price=plan.price_rmb,
+                final_price=plan.price_rmb,
+                status="PENDING",
+                tx_hash=out_trade_no
+            )
+            session.add(new_order)
+            await session.commit()
+            
+            # 动态调整展示名称，避免出现“Star 直购”这种奇怪的名字
+            if plan.duration_days == 0:
+                # 直充灵石
+                display_name = f"{plan.reward_credits} 灵石直充"
+            else:
+                # 月卡套餐
+                display_name = f"{plan.identity_name} ({plan.duration_days}天)"
+            
+            # 向第三方发起请求
+            pay_resp = await RMBPaymentService.create_payment_url(
+                out_trade_no=out_trade_no,
+                plan_name=display_name,
+                amount=float(plan.price_rmb),
+                pay_type=pay_type
+            )
+            
+            if pay_resp and pay_resp.get("code") == 1 and pay_resp.get("data") and pay_resp["data"].get("payurl"):
+                raw_pay_url = pay_resp["data"]["payurl"]
+                
+                # 修复易支付网关返回的链接中未进行 URL Encode 的问题
+                import urllib.parse
+                parsed = urllib.parse.urlparse(raw_pay_url)
+                query_dict = urllib.parse.parse_qs(parsed.query)
+                # 重新将参数进行标准的 urlencode
+                encoded_query = urllib.parse.urlencode(query_dict, doseq=True)
+                pay_url = urllib.parse.urlunparse((parsed.scheme, parsed.netloc, parsed.path, parsed.params, encoded_query, parsed.fragment))
+                
+                keyboard = [
+                    [InlineKeyboardButton("👉 点击前往付款", url=pay_url)],
+                    [InlineKeyboardButton("🔙 返回充值菜单", callback_data="recharge_back")]
+                ]
+                reply_markup = InlineKeyboardMarkup(keyboard)
+                
+                try:
+                    pay_method_text = "🟦 支付宝 (Alipay)" if pay_type == "alipay" else "🟩 微信支付 (WeChat Pay)"
+                    await query.message.edit_text(
+                        text=f"💎 **合欢宗账房 - {display_name}**\n\n"
+                             f"📝 **订单号**：`{out_trade_no}`\n"
+                             f"💰 **支付金额**：`¥{plan.price_rmb}`\n"
+                             f"💳 **支付方式**：{pay_method_text}\n\n"
+                             f"⚠️ **注意事项**：\n"
+                             f"• 请点击下方按钮前往安全收银台付款。\n"
+                             f"• 支付完成后，大约需要 10-30 秒处理，系统会自动发送到账通知，无需刷新本页面。",
+                        parse_mode="Markdown",
+                        reply_markup=reply_markup
+                    )
+                except Exception:
+                    pass
+            else:
+                error_msg = pay_resp.get("msg", "未知错误") if pay_resp else "请求无响应"
+                await safe_answer_query(query, text=f"❌ 获取支付链接失败：{error_msg}", show_alert=True)
+                
     elif data.startswith("buy_star_plan_"):
         from telegram import LabeledPrice
         import time

@@ -4,6 +4,7 @@ from typing import List, Optional, Tuple
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
+from config import ENABLE_PUBLIC_SHARE
 
 from src.constants import (
     MODE_BLOWJOB,
@@ -676,6 +677,14 @@ class TaskService:
         last_queue_pos = None
         final_info = None
 
+        async def update_status_message(text, **kwargs):
+            try:
+                await robust_edit_text(status_msg, text, **kwargs)
+                return True
+            except Exception as exc:
+                logger.warning(f"Failed to update status message for task {task_id}: {exc}")
+                return False
+
         # Build VIP/Group suffix if applicable
         vip_suffix = ""
         privileges = []
@@ -695,59 +704,49 @@ class TaskService:
             if status == "done":
                 final_info = info
                 if not is_video and last_progress != 100:
-                    try:
-                        await robust_edit_text(status_msg, "⏳ 生成中... 100%")
-                    except Exception:
-                        pass
+                    await update_status_message("⏳ 生成中... 100%")
                 break
 
             if status == "error":
                 raise RuntimeError(info.get("error", "generation failed"))
 
-            # Queue handling logic
             if status == "pending":
-                # Check queue_pos (0-based) first
                 raw_pos = info.get("queue_pos")
                 queue_pos = None
-                
+
                 if raw_pos is not None:
                     try:
-                        queue_pos = int(raw_pos) + 1  # 0-based -> 1-based
+                        queue_pos = int(raw_pos) + 1
                     except (ValueError, TypeError):
                         queue_pos = raw_pos
                 else:
-                    # Fallback to queue_remaining (legacy)
                     queue_pos = info.get("queue_remaining")
-                
+
                 logger.debug(f"Task {task_id} pending. Info queue_pos: {raw_pos}, queue_remaining: {info.get('queue_remaining')}")
-
-
 
                 if queue_pos is not None:
                     if queue_pos != last_queue_pos or last_status != "pending":
-                        await robust_edit_text(
-                            status_msg, f"⏳ 排队中... (第 {queue_pos} 位){vip_suffix}", parse_mode="Markdown"
-                        )
-                        last_queue_pos = queue_pos
-                        last_status = "pending"
+                        if await update_status_message(
+                            f"⏳ 排队中... (第 {queue_pos} 位){vip_suffix}", parse_mode="Markdown"
+                        ):
+                            last_queue_pos = queue_pos
+                            last_status = "pending"
                 else:
                     if last_status != "pending":
-                        await robust_edit_text(
-                            status_msg, f"⏳ 排队中...{vip_suffix}", parse_mode="Markdown"
-                        )
-                        last_status = "pending"
+                        if await update_status_message(
+                            f"⏳ 排队中...{vip_suffix}", parse_mode="Markdown"
+                        ):
+                            last_status = "pending"
                 continue
 
             if progress != last_progress or last_status == "pending":
                 msg = "⏳ 正在生成视频..." if is_video else f"⏳ 生成中... {progress}%"
-                try:
-                    await robust_edit_text(status_msg, msg)
+                if await update_status_message(msg):
                     last_progress = progress
                     last_status = status
-                except Exception:
-                    pass
 
         return final_info
+
 
     @staticmethod
     async def _handle_task_completion(
@@ -785,19 +784,18 @@ class TaskService:
             await permission_service.refresh_user_group(user_id)
 
             if send_result:
-                default_markup = InlineKeyboardMarkup(
+                keyboard = [
                     [
-                        [
-                            InlineKeyboardButton(
-                                "公开", callback_data="public_share_request"
-                            )
-                        ],
-                        [
-                            InlineKeyboardButton("👍", callback_data="rate_like"),
-                            InlineKeyboardButton("👎", callback_data="rate_dislike")
-                        ]
+                        InlineKeyboardButton("👍", callback_data="rate_like"),
+                        InlineKeyboardButton("👎", callback_data="rate_dislike")
                     ]
-                )
+                ]
+                if ENABLE_PUBLIC_SHARE:
+                    keyboard.insert(
+                        0,
+                        [InlineKeyboardButton("公开", callback_data="public_share_request")]
+                    )
+                default_markup = InlineKeyboardMarkup(keyboard)
                 sent_msg = await robust_send_video(
                     context.bot,
                     chat_id,
@@ -826,19 +824,18 @@ class TaskService:
             await permission_service.refresh_user_group(user_id)
 
             if send_result:
-                default_markup = InlineKeyboardMarkup(
+                keyboard = [
                     [
-                        [
-                            InlineKeyboardButton(
-                                "公开", callback_data="public_share_request"
-                            )
-                        ],
-                        [
-                            InlineKeyboardButton("👍", callback_data="rate_like"),
-                            InlineKeyboardButton("👎", callback_data="rate_dislike")
-                        ]
+                        InlineKeyboardButton("👍", callback_data="rate_like"),
+                        InlineKeyboardButton("👎", callback_data="rate_dislike")
                     ]
-                )
+                ]
+                if ENABLE_PUBLIC_SHARE:
+                    keyboard.insert(
+                        0,
+                        [InlineKeyboardButton("公开", callback_data="public_share_request")]
+                    )
+                default_markup = InlineKeyboardMarkup(keyboard)
                 sent_msg = await robust_send_photo(
                     context.bot,
                     chat_id,

@@ -13,9 +13,29 @@ services:
       - TZ=Asia/Shanghai
       - BOT_TYPE=PROD
       - REDIS_PREFIX=prod_bot_
+      - ENABLE_PUBLIC_SHARE=false
       - API_BASE=http://host.docker.internal:8003
     volumes:
       - ../logs:/app/logs
     extra_hosts:
       - "host.docker.internal:host-gateway"
     network_mode: "host"
+
+  payment-api:
+    build: 
+      context: ../
+      dockerfile: Dockerfile
+    container_name: payment-api
+    restart: always
+    env_file:
+      - ../.env
+    environment:
+      - TZ=Asia/Shanghai
+      - BOT_TYPE=PROD
+      - REDIS_PREFIX=prod_bot_
+    volumes:
+      - ../logs:/app/logs
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    network_mode: "host"
+    command: ["python", "src/payment_api_server.py"]

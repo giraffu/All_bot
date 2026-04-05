@@ -12,6 +12,7 @@ services:
     environment:
       - BOT_TYPE=TEST
       - REDIS_PREFIX=test_bot_
+      - ENABLE_PUBLIC_SHARE=false
       - BOT_TOKEN_TEST=8276500658:AAEeN8Lv7JfYqvcRI0rg7gbrvxq1A88GSJA
       - API_BASE=http://host.docker.internal:8003
     volumes:
@@ -20,3 +21,22 @@ services:
       - "host.docker.internal:host-gateway"
     network_mode: "host" # Use host network to easily access 192.168.1.115 services
     command: ["python", "src/bot_test.py"]
+
+  payment-api-test:
+    build: 
+      context: ../
+      dockerfile: Dockerfile
+    container_name: payment-api-test
+    restart: always
+    env_file:
+      - ../.env
+    environment:
+      - BOT_TYPE=TEST
+      - REDIS_PREFIX=test_bot_
+      - BOT_TOKEN=8276500658:AAEeN8Lv7JfYqvcRI0rg7gbrvxq1A88GSJA
+    volumes:
+      - ../logs:/app/logs
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    network_mode: "host"
+    command: ["python", "src/payment_api_server.py"]

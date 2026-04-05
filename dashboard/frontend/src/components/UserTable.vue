@@ -261,6 +261,14 @@ const columns = [
     sorter: (a, b) => (a.total_recharge_stars || 0) - (b.total_recharge_stars || 0),
   },
   {
+    title: '历史充值 (RMB)',
+    dataIndex: 'total_recharge_rmb',
+    key: 'total_recharge_rmb',
+    width: 140,
+    align: 'right',
+    sorter: (a, b) => (a.total_recharge_rmb || 0) - (b.total_recharge_rmb || 0),
+  },
+  {
     title: '邀请人',
     key: 'inviter',
     width: 150,
@@ -420,6 +428,9 @@ const columns = [
         </template>
         <template v-else-if="column.key === 'total_recharge_stars'">
           <span class="text-yellow-600 font-bold font-mono">{{ Number(record.total_recharge_stars || 0).toFixed(0) }}</span>
+        </template>
+        <template v-else-if="column.key === 'total_recharge_rmb'">
+          <span class="text-red-600 font-bold font-mono">¥ {{ Number(record.total_recharge_rmb || 0).toFixed(2) }}</span>
         </template>
         
         <template v-else-if="column.key === 'inviter'">
