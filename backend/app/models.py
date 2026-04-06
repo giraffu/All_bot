@@ -14,6 +14,7 @@ class TaskType(str, Enum):
     FACE_SWAP = "face_swap"
     VIDEO_INSERT = "video_insert"
     VIDEO_EDIT = "video_edit"
+    FACE_VIDEO = "face_video"
     T2I_PORNMASTER_TURBO = "t2i-pornmaster-turbo"
 
 class TaskResponse(BaseModel):
@@ -82,4 +83,11 @@ class VideoEditRequest(BaseModel):
     width: int = 512
     height: int = 512
     length: int = 81
+    priority: int = 0
+
+class FaceVideoRequest(BaseModel):
+    face_image: str
+    video: str
+    resolution: int = 1024
+    duration: int = 121
     priority: int = 0

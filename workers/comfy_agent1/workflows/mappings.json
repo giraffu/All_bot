@@ -39,5 +39,14 @@
     "t2i-pornmaster-turbo": {
         "prompt": "90",
         "prompt_input": "text"
+    },
+    "face_video": {
+        "face_image": "269",
+        "video": "345",
+        "video_input": "video",
+        "resolution": "362",
+        "resolution_input": "value",
+        "duration": "903",
+        "duration_input": "value"
     }
 }

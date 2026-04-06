@@ -297,9 +297,9 @@ class ComfyAgent:
                 if legacy_tasks:
                     await asyncio.gather(*legacy_tasks)
 
-            # Also check for other potential image inputs (like face_image, body_image)
+            # Also check for other potential image inputs (like face_image, body_image, video)
             other_tasks = []
-            for key in ["face_image", "body_image"]:
+            for key in ["face_image", "body_image", "video"]:
                 if key in params and params[key]:
                     other_tasks.append(process_single_image(params[key], key))
             if other_tasks:

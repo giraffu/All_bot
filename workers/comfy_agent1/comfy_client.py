@@ -19,10 +19,18 @@ class ComfyClient:
 
     async def upload_image(self, file_content: bytes, filename: str, subfolder: str = "") -> Dict[str, Any]:
         """
-        Upload an image to ComfyUI input directory.
+        Upload an image or video to ComfyUI input directory.
         """
+        content_type = "image/png"
+        if filename.lower().endswith(".mp4"):
+            content_type = "video/mp4"
+        elif filename.lower().endswith(".gif"):
+            content_type = "image/gif"
+        elif filename.lower().endswith((".jpg", ".jpeg")):
+            content_type = "image/jpeg"
+            
         # The multipart format expected by ComfyUI
-        files = {"image": (filename, file_content, "image/png")}
+        files = {"image": (filename, file_content, content_type)}
         data = {"overwrite": "true"}
         if subfolder:
             data["subfolder"] = subfolder
