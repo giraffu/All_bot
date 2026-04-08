@@ -18,10 +18,10 @@ def main():
     if not minio_client.bucket_exists(bucket_name):
         minio_client.make_bucket(bucket_name)
 
-    face_image_path = "/home/hfy/APP/All_bot/test_data/ACD8AFFA-EF8F-4A34-8F97-DEF67951592D_1_105_c.jpeg"
+    face_image_path = "/home/hfy/APP/All_bot/test_data/face_test.png"
     video_path = "/home/hfy/APP/All_bot/test_data/da71b871-b438-4f43-a32f-4faabed3e50e.mp4"
 
-    face_image_key = f"test_face_video/face_image_{int(time.time())}.jpeg"
+    face_image_key = f"test_face_video/face_image_{int(time.time())}.png"
     video_key = f"test_face_video/video_{int(time.time())}.mp4"
 
     print("Uploading face image to MinIO...")

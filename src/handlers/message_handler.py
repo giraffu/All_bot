@@ -16,8 +16,9 @@ from src.constants import (
     TMP_DIR, TEMPLATE_DIR_PENETRATION, TEMPLATE_DIR_QUICK_FACE, TEMPLATE_DIR_VIDEO_NICE, TEMP_TEMPLATE_DIR,
     MODE_EDIT, MODE_UNDRESS, MODE_MASTURBATION,
     MODE_FACESWAP_STEP1, MODE_FACESWAP_STEP2, MODE_RANDOM_FACESWAP,
+    MODE_FACE_VIDEO_STEP1, MODE_FACE_VIDEO_STEP2,
     MODE_TEMPLATE_CONTRIBUTE, MODE_NONE, MODE_CUSTOM_VIDEO, MODE_PERFECT_VIDEO_INSERT,
-    MODE_DOGGY_STYLE, MODE_BLOWJOB, MODE_UNDRESS_TONGUE, MODE_CLOSEUP_BLOWJOB, MODE_TEXT_TO_IMAGE
+    MODE_DOGGY_STYLE, MODE_BLOWJOB, MODE_UNDRESS_TONGUE, MODE_CLOSEUP_BLOWJOB, MODE_I2I_PRO
 )
 from src.handlers.utils import _is_mentioned, with_db_logging_context
 
@@ -73,10 +74,15 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 return
 
         # 0.2 Debounce media groups for one-click modes
-        one_click_modes = [MODE_UNDRESS, MODE_MASTURBATION, MODE_PERFECT_VIDEO_INSERT, MODE_DOGGY_STYLE, MODE_BLOWJOB, MODE_UNDRESS_TONGUE, MODE_CLOSEUP_BLOWJOB, MODE_RANDOM_FACESWAP]
+        one_click_modes = [MODE_UNDRESS, MODE_MASTURBATION, MODE_PERFECT_VIDEO_INSERT, MODE_DOGGY_STYLE, MODE_BLOWJOB, MODE_UNDRESS_TONGUE, MODE_CLOSEUP_BLOWJOB, MODE_RANDOM_FACESWAP, MODE_FACE_VIDEO_STEP1, MODE_FACESWAP_STEP1]
         if mode in one_click_modes and msg.media_group_id:
             if await _debounce_media_group(update, context, mode, msg.media_group_id):
                 return
+
+        # 0.3 Pre-check invalid photo uploads for specific modes
+        if mode == MODE_FACE_VIDEO_STEP2:
+            await robust_reply_text(msg, "❌ 请发送视频而不是图片，请发送身体视频。")
+            return
 
         # 1. Save Photo
         if 'pending_images' not in context.user_data:
@@ -110,6 +116,8 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
             context.user_data['pending_images'] = []
         elif mode in [MODE_FACESWAP_STEP1, MODE_FACESWAP_STEP2]:
             await _handle_photo_faceswap(update, context)
+        elif mode in [MODE_FACE_VIDEO_STEP1, MODE_FACE_VIDEO_STEP2]:
+            await _handle_photo_face_video(update, context)
         elif mode == MODE_RANDOM_FACESWAP:
             await _handle_photo_random_faceswap(update, context)
         elif mode == MODE_CUSTOM_VIDEO:
@@ -141,6 +149,13 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
     from src.utils import is_maintenance_mode
     if is_maintenance_mode() and mode not in [MODE_NONE, MODE_TEMPLATE_CONTRIBUTE]:
         await robust_reply_text(update.message, "⚠️ 服务器即将运维，暂停生成服务中")
+        return
+    
+    if mode == MODE_FACE_VIDEO_STEP2:
+        await _handle_video_face_video(update, context, update.message.video, is_document=False)
+        return
+    elif mode == MODE_FACE_VIDEO_STEP1:
+        await robust_reply_text(update.message, "❌ 请先发送【人脸图片】，不要发送视频。")
         return
     
     # Other video handling can go here if needed
@@ -226,6 +241,14 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
             context.user_data['pending_images'] = []
         elif mode in [MODE_FACESWAP_STEP1, MODE_FACESWAP_STEP2]:
             await _handle_photo_faceswap(update, context)
+        elif mode in [MODE_FACE_VIDEO_STEP1, MODE_FACE_VIDEO_STEP2]:
+            # if document is video, it might be step 2
+            if file_ext in ['.mp4', '.mov', '.avi'] and mode == MODE_FACE_VIDEO_STEP2:
+                await _handle_video_face_video(update, context, doc, is_document=True)
+            elif file_ext in ['.png', '.jpg', '.jpeg', '.webp'] and mode == MODE_FACE_VIDEO_STEP1:
+                await _handle_photo_face_video(update, context)
+            else:
+                await robust_reply_text(msg, "❌ 格式或顺序错误。第一步请发送图片，第二步请发送视频。")
         elif mode == MODE_RANDOM_FACESWAP:
             await _handle_photo_random_faceswap(update, context)
         elif mode == MODE_CUSTOM_VIDEO:
@@ -266,8 +289,8 @@ async def _handle_photo_idle(update: Update, context: ContextTypes.DEFAULT_TYPE)
     keyboard = [
         ["💎 充值灵石", "📅 每日签到", "💰 个人中心"],
         ["🤝 分享赚灵石", "⏳ 排队状态"],
-        ["🖼️ 懒人P图", "🎬 懒人动图"],
-        ["📝 文生图", "✨ 🎨 自由P图 🎨 ✨", "🎬 自定义图生视频"]
+        ["🖼️ 懒人P图", "🎬 懒人动图", "🎬 视频换脸"],
+        ["🌟 幻想换脸", "✨ 🎨 自由P图 🎨 ✨", "🎬 自定义图生视频"]
     ]
     reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
     
@@ -363,6 +386,71 @@ async def _handle_photo_faceswap(update: Update, context: ContextTypes.DEFAULT_T
             prompt, swapped_images, task_type="face_swap"
         )
 
+async def _handle_photo_face_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle Face Video multi-step logic (Step 1: Face Photo)"""
+    await robust_reply_text(update.message, "⚠️ 视频换脸功能由于底层节点升级暂时维护中，请使用其他功能。")
+    context.user_data['mode'] = "none"
+    context.user_data['pending_images'] = []
+    return
+
+    mode = context.user_data.get('mode')
+    msg = update.message
+    images = context.user_data.get('pending_images', [])
+    
+    if mode == MODE_FACE_VIDEO_STEP1:
+        if len(images) > 0:
+            logger.info(f"[User:{update.effective_user.id}] Face Video - Face image saved: {images[-1]}")
+        context.user_data['mode'] = MODE_FACE_VIDEO_STEP2
+        await robust_reply_text(msg, "👤 收到人脸图片，请发送身体视频（提示：视频时长会截取前5s的内容）。")
+    elif mode == MODE_FACE_VIDEO_STEP2:
+        await robust_reply_text(msg, "❌ 请发送视频而不是图片，请发送身体视频。")
+
+async def _handle_video_face_video(update: Update, context: ContextTypes.DEFAULT_TYPE, video_obj, is_document=False):
+    """Handle Face Video logic (Step 2: Body Video)"""
+    await robust_reply_text(update.message, "⚠️ 视频换脸功能由于底层节点升级暂时维护中，请使用其他功能。")
+    context.user_data['mode'] = "none"
+    context.user_data['pending_images'] = []
+    return
+
+    msg = update.message
+    images = context.user_data.get('pending_images', [])
+    
+    if len(images) < 1:
+        await robust_reply_text(msg, "❌ 未找到人脸图片，请重新发送人脸图片。")
+        context.user_data['mode'] = MODE_FACE_VIDEO_STEP1
+        return
+
+    # Download video
+    status_msg = await robust_reply_text(msg, "⏳ 正在下载视频，请稍候...")
+    try:
+        file = await video_obj.get_file()
+        file_ext = os.path.splitext(video_obj.file_name or "video.mp4")[1].lower() if is_document else ".mp4"
+        video_local_path = os.path.join(TMP_DIR, f"{uuid.uuid4()}{file_ext}")
+        await file.download_to_drive(video_local_path)
+        
+        # Save video path
+        context.user_data['pending_images'].append(video_local_path)
+        logger.info(f"[User:{update.effective_user.id}] Face Video - Video saved: {video_local_path}")
+        
+        # Send inline keyboard for resolution selection
+        keyboard = [
+            [
+                InlineKeyboardButton("512p (20灵石)", callback_data="start_face_video_512"),
+                InlineKeyboardButton("720p (35灵石)", callback_data="start_face_video_720"),
+                InlineKeyboardButton("1024p (50灵石)", callback_data="start_face_video_1024")
+            ]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await status_msg.edit_text("🎬 视频下载完成！请选择生成画质：\n\n(默认截取前121帧，约5秒时长)", reply_markup=reply_markup)
+        
+        # Keep mode as MODE_FACE_VIDEO_STEP2 to allow resolution selection
+        context.user_data['mode'] = MODE_FACE_VIDEO_STEP2
+        
+    except Exception as e:
+        logger.error(f"Error downloading face video: {e}", exc_info=True)
+        await status_msg.edit_text(f"❌ 视频下载失败：{str(e)}")
+        context.user_data['mode'] = MODE_FACE_VIDEO_STEP2
+
 async def _handle_photo_random_faceswap(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle Random FaceSwap logic (User Face + Random Template Body)"""
     msg = update.message
@@ -453,13 +541,18 @@ async def _handle_photo_edit(update: Update, context: ContextTypes.DEFAULT_TYPE)
     
     # Check how many images we already have
     pending_count = len(context.user_data.get('pending_images', []))
+    mode = context.user_data.get('mode')
     
-    if pending_count >= 2:
-        await robust_reply_text(msg, "✅ 已达到 2 张参考图上限。请直接发送提示词 (Text) 开始生成。")
-    elif pending_count > 0:
-        await robust_reply_text(msg, f"📥 已收到第 {pending_count} 张参考图。您可以继续发送（最多 2 张），或直接发送提示词 (Text) 开始生成。")
+    if pending_count >= 1:
+        if mode == MODE_I2I_PRO:
+            await robust_reply_text(msg, "✅ 已收到 1 张参考图。\n请直接发送提示词 (Text) 开始生成。\n\n💡 **提示词要求**：\n描述幻想的人物和场景，后续会将参考图中的人物换脸到幻想的场景人物中。")
+        else:
+            await robust_reply_text(msg, "✅ 已收到 1 张参考图。请直接发送提示词 (Text) 开始生成。")
     else:
-        await robust_reply_text(msg, "📥 收到图片。请发送提示词 (Text) 开始生成。")
+        if mode == MODE_I2I_PRO:
+            await robust_reply_text(msg, "📥 收到图片。\n请直接发送提示词 (Text) 开始生成。\n\n💡 **提示词要求**：\n描述幻想的人物和场景，后续会将参考图中的人物换脸到幻想的场景人物中。")
+        else:
+            await robust_reply_text(msg, "📥 收到图片。请直接发送提示词 (Text) 开始生成。")
 
 async def _handle_template_contribution(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle template contribution (Save to templates/temps/)"""
@@ -542,10 +635,10 @@ async def handle_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await robust_reply_text(update.message, "🖼️ **懒人P图模式**\n请选择具体功能：", reply_markup=reply_markup, parse_mode="Markdown")
         return
 
-    if text in ["🎬 懒人动图", ]:
+    if text == "🎬 懒人动图":
         keyboard = [
             ["🛌 动图传教士", "🎬 动图后入"],
-            ["🎬 口交黑人", "🎬 脱衣吐舌","🎬 特写口交"],
+            ["🎬 口交黑人", "🎬 脱衣吐舌", "🎬 特写口交"],
             ["🔙 返回主菜单"]
         ]
         reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
@@ -556,8 +649,8 @@ async def handle_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
         keyboard = [
             ["💎 充值灵石", "📅 每日签到", "👤 个人中心"],
             ["🤝 分享赚灵石", "⏳ 排队状态"],
-            ["🖼️ 懒人P图", "🎬 懒人动图"],
-            ["📝 文生图", "🎨 自由P图 ", "🎬 自定义图生视频"]
+            ["🖼️ 懒人P图", "🎬 懒人动图", "🎬 视频换脸"],
+            ["🌟 幻想换脸", "🎨 自由P图 ", "🎬 自定义图生视频"]
         ]
         reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
         await robust_reply_text(update.message, "🏠 **已返回主菜单**", reply_markup=reply_markup, parse_mode="Markdown")
@@ -784,18 +877,23 @@ async def handle_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "🎭 快速换脸": (MODE_FACESWAP_STEP1, "🎭 已切换到【快速换脸】模式 (消耗 1 灵石)。\n请先发送一张【人脸】图片。"),
         "🎭 随机换脸": (MODE_RANDOM_FACESWAP, "🎭 已切换到【随机换脸】模式 (消耗 1 灵石)。\n请发送一张【人脸】图片，我将自动匹配模板处理。"),
         "🥵 快速自慰": (MODE_MASTURBATION, "🥵 已切换到【快速自慰】模式 (消耗 2 灵石)。\n请发送一张图片，我将自动处理。"),
-        "🎨 自由P图": (MODE_EDIT, "🎨 已切换到【自由P图】模式。\n1张图消耗2灵石，2张图消耗6灵石。\n请发送 1-2 张参考图片，随后发送提示词开始融合生成。"),
+        "🎨 自由P图": (MODE_EDIT, "🎨 已切换到【自由P图】模式 (消耗 2 灵石)。\n请发送 1 张参考图片，随后发送提示词开始融合生成。"),
         "🎬 自定义图生视频": (MODE_CUSTOM_VIDEO, "🎬 已切换到【自定义图生视频】模式。\n请发送一张【起始图片】。\n(注意：该模式生成 5 秒视频，请确保提示词动作逻辑合理)"),
         "🛌 动图传教士": (MODE_PERFECT_VIDEO_INSERT, "🛌 已切换到【动图传教士】模式。\n请发送一张【人脸】图片（正面、清晰），我将自动处理。"),
         "🎬 动图后入": (MODE_DOGGY_STYLE, "🎬 已切换到【动图后入】模式。\n请发送一张【人脸】图片（正面、清晰），我将自动处理。"),
+        "🎬 视频换脸": (MODE_FACE_VIDEO_STEP1, "🎬 已切换到【视频换脸】模式。\n请先发送一张【人脸】图片。"),
         "🎬 口交黑人": (MODE_BLOWJOB, "🎬 已切换到【口交黑人】模式。\n请发送一张【正面清晰图片】，我将自动处理。"),
         "🎬 脱衣吐舌": (MODE_UNDRESS_TONGUE, "🎬 已切换到【脱衣吐舌】模式。\n请发送一张【正面清晰图片】，我将自动处理。"),
         "🎬 特写口交": (MODE_CLOSEUP_BLOWJOB, "🎬 已切换到【特写口交】模式。\n请发送一张【正面清晰图片】，我将自动处理。"),
-        "📝 文生图": (MODE_TEXT_TO_IMAGE, "📝 已切换到【文生图】模式 (消耗 3 灵石)。\n请直接发送【提示词】(支持中英韩文)，我将为您生成图片。")
+        "🌟 幻想换脸": (MODE_I2I_PRO, "🌟 已切换到【幻想换脸】模式 (消耗 6 灵石)。\n请发送 1 张参考图片，随后发送提示词开始生成。")
     }
     
     if text == "📝 文生图":
-        await robust_reply_text(update.message, "⚠️ 文生图功能暂时维护中，请使用其他功能。")
+        await robust_reply_text(update.message, "⚠️ 文生图功能已替换为图生图Pro，请使用其他功能。")
+        return
+
+    if text == "🎬 视频换脸":
+        await robust_reply_text(update.message, "⚠️ 视频换脸功能由于底层节点升级暂时维护中，请使用其他功能。")
         return
 
     if text in mode_map:
@@ -816,7 +914,7 @@ async def handle_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
             multiplier = DURATION_MULTIPLIER.get(current_duration, 1.0)
             cost = int(base_cost * multiplier)
             
-            reply += f"\n\n⚙️ 当前视频画质：{current_resolution} | 时长：{current_duration} | 消耗灵石：{cost}\n请在下方选择您需要的画质和时长（部分选项需要高境界或VIP身份解锁）：\n\n*提示：画质越高、时长越长，消耗灵石越多。注意：1024p 和 10s 无法同时选择。*"
+            reply += f"\n\n⚙️ 当前视频画质：{current_resolution} | 时长：{current_duration} | 消耗灵石：{cost}\n请在下方选择您需要的画质和时长（部分画质和时长需要高境界或VIP身份解锁）：\n\n*提示：画质越高、时长越长，消耗灵石越多。注意：1024p 和 10s 无法同时选择。*"
             await robust_reply_text(update.message, reply, reply_markup=reply_markup)
         else:
             await robust_reply_text(update.message, reply)
@@ -833,22 +931,18 @@ async def handle_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if text in ["� 充值灵石", "�� 每日签到", "👤 个人中心", "💰 个人中心", "🤝 分享赚灵石", "⏳ 排队状态", "签到", "排队", "/queue", "/checkin", "🔙 返回主菜单", "/start", "/help"]:
         return
 
-    if mode != MODE_TEXT_TO_IMAGE:
-        if not images:
-            await robust_reply_text(update.message, "请先发送一张图片。")
-            return
+    if not images:
+        await robust_reply_text(update.message, "请先发送一张图片。")
+        return
 
-        # In single image mode, we only care about the last sent valid image
-        valid_images = [path for path in images if os.path.exists(path)]
-        if not valid_images:
-            await robust_reply_text(update.message, "❌ 图片已丢失，请重新发送图片。")
-            return
-        
-        # Force maximum 2 images for EDIT mode, single image for others
-        if mode == MODE_EDIT:
-            valid_images = valid_images[-2:]
-        else:
-            valid_images = [valid_images[-1]]
+    # In single image mode, we only care about the last sent valid image
+    valid_images = [path for path in images if os.path.exists(path)]
+    if not valid_images:
+        await robust_reply_text(update.message, "❌ 图片已丢失，请重新发送图片。")
+        return
+    
+    # Force single image for all modes
+    valid_images = [valid_images[-1]]
 
     # Execute Generation
     from src.utils import is_maintenance_mode
@@ -875,10 +969,8 @@ async def handle_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
             context.user_data['pending_images'] = []
             return
         await task_service.process_custom_video_task(update, context, text, valid_images[0])
-    elif mode == MODE_TEXT_TO_IMAGE:
-        # 文生图
-        await robust_reply_text(update.message, "⚠️ 文生图功能暂时维护中，请使用其他功能。")
-        return
+    elif mode == MODE_I2I_PRO:
+        await task_service.process_i2i_pro_task(context, chat_id, user_id, username, text, valid_images)
     else:
         # Default Edit/Generation
         is_video = False

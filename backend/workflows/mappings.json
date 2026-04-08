@@ -37,5 +37,12 @@
     "t2i-pornmaster-turbo": {
         "prompt": "90",
         "prompt_input": "text"
+    },
+    "i2i_pro": {
+        "image": "20",
+        "prompt": "28",
+        "prompt_input": "text",
+        "seed": "60",
+        "seed_input": "value"
     }
 }

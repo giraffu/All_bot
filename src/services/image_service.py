@@ -1,7 +1,11 @@
 from typing import AsyncGenerator
-from src.api_client import submit_img2img, listen_for_progress, download_image, download_video, get_system_status, submit_face_swap, submit_perfect_video_edit, submit_perfect_video_insert, submit_text_to_image
+from src.api_client import submit_img2img, listen_for_progress, download_image, download_video, get_system_status, submit_face_swap, submit_perfect_video_edit, submit_perfect_video_insert, submit_i2i_pro, submit_face_video
 
 class ImageService:
+    async def submit_face_video(self, face_image_path: str, video_path: str, resolution: int = 512, duration: int = 121, priority: int = 0) -> str:
+        """Submit face video task"""
+        return await submit_face_video(face_image_path, video_path, resolution=resolution, duration=duration, priority=priority)
+
     async def submit_task(self, prompt: str, image_paths: list[str], negative_prompt: str, priority: int = 0) -> str:
         """Submit image generation task"""
         return await submit_img2img(prompt, image_paths, negative_prompt, priority=priority)
@@ -10,9 +14,9 @@ class ImageService:
         """Submit face swap task"""
         return await submit_face_swap(face_image_path, body_image_path, priority=priority)
 
-    async def submit_text_to_image_task(self, prompt: str, priority: int = 0) -> str:
-        """Submit text to image task"""
-        return await submit_text_to_image(prompt, priority=priority)
+    async def submit_i2i_pro_task(self, prompt: str, image_path: str, seed: int, priority: int = 0) -> str:
+        """Submit i2i pro task"""
+        return await submit_i2i_pro(prompt, image_path, seed, priority=priority)
 
     async def submit_perfect_video_edit(self, prompt: str, image_path: str, width: int = 512, height: int = 512, length: int = 81, priority: int = 0) -> str:
         """Submit perfect video edit task"""

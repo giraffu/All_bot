@@ -48,5 +48,12 @@
         "resolution_input": "value",
         "duration": "903",
         "duration_input": "value"
+    },
+    "i2i_pro": {
+        "image": "20",
+        "prompt": "28",
+        "prompt_input": "text",
+        "seed": "60",
+        "seed_input": "value"
     }
 }

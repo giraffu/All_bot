@@ -41,7 +41,8 @@
         >
           <a-select-option value="video">所有视频</a-select-option>
           <a-select-option value="image">所有图片</a-select-option>
-          <a-select-option value="face_swap">换脸任务</a-select-option>
+          <a-select-option value="face_swap">图片换脸</a-select-option>
+          <a-select-option value="face_video">视频换脸</a-select-option>
         </a-select>
       </div>
     </div>

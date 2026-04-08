@@ -20,7 +20,7 @@ from src.constants import (
     MODE_UNDRESS_TONGUE,
     TASK_COSTS,
     TMP_DIR,
-    MODE_TEXT_TO_IMAGE
+    MODE_I2I_PRO
 )
 from src.handlers.utils import MockMessage
 from src.logger import UserLogger
@@ -43,6 +43,109 @@ logger = logging.getLogger(__name__)
 
 
 class TaskService:
+    @staticmethod
+    async def process_face_video_task(
+        context: ContextTypes.DEFAULT_TYPE,
+        chat_id: int,
+        user_id: int,
+        username: str,
+        face_image_path: str,
+        video_path: str,
+        resolution: int,
+        duration: int,
+        cost: int,
+        message_id: int = None,
+        cleanup: bool = True,
+    ):
+        # 1. Check active tasks limit
+        active_tasks = await redis_client.increment_user_concurrency(user_id)
+        from src.constants import MAX_CONCURRENT_TASKS, MODE_FACE_VIDEO_STEP1
+        if active_tasks > MAX_CONCURRENT_TASKS:
+            await redis_client.decrement_user_concurrency(user_id)
+            await robust_send_message(context.bot, chat_id, f"⚠️ 您当前已有 {MAX_CONCURRENT_TASKS} 个任务正在处理中，请等待其中一个完成后再试！")
+            if cleanup:
+                TaskService._cleanup_files([face_image_path, video_path])
+            return None, None
+            
+        mode = MODE_FACE_VIDEO_STEP1
+        user_logger = UserLogger(user_id, username)
+        
+        saved_face_image = user_logger.save_input_image(face_image_path)
+        saved_video = user_logger.save_input_image(video_path) # save_input_image works for video too
+        
+        notice = await TaskService._get_acceleration_notice(user_id)
+        msg_text = f"🚀 正在处理视频换脸任务 (画质:{resolution}p, 消耗{cost}灵石)...{notice}"
+        
+        status_msg = await TaskService._get_or_send_status_msg(
+            context, chat_id, message_id, msg_text
+        )
+        registry_task_id = None
+        
+        try:
+            priority = await permission_service.calculate_user_priority(user_id)
+            identity_str = await permission_service.get_user_identity(user_id)
+            user_group = await permission_service.get_user_group(user_id)
+
+            await permission_service.increment_quota(user_id, cost=cost, username=username, task_type=mode)
+            registry_task_id = await TaskRegistry.add_task(
+                user_id, username, cost, mode, chat_id=chat_id, message_id=status_msg.message_id if status_msg else None,
+                prompt="face video", saved_input_images=[saved_face_image, saved_video], is_video=True, priority=priority
+            )
+            
+            task_id = await image_service.submit_face_video(
+                saved_face_image, saved_video, resolution=resolution, duration=duration, priority=priority
+            )
+            
+            if registry_task_id and task_id:
+                await TaskRegistry.update_backend_task_id(registry_task_id, task_id)
+
+            final_info = await TaskService._monitor_task_progress(
+                task_id, status_msg, is_video=True, monitor_func=image_service.monitor_progress, identity_str=identity_str, user_group=user_group
+            )
+
+            if final_info:
+                return await TaskService._handle_task_completion(
+                    context,
+                    chat_id,
+                    user_id,
+                    "face video",
+                    mode,
+                    task_id,
+                    [saved_face_image, saved_video],
+                    user_logger,
+                    is_video=True,
+                    send_result=True,
+                    reply_markup=None,
+                    status_msg=status_msg,
+                    delete_status=True,
+                    caption="✅ 视频换脸完成",
+                )
+            else:
+                if registry_task_id:
+                    try:
+                        await TaskRegistry.mark_task_status(registry_task_id, "failed")
+                    except AttributeError:
+                        pass
+                await permission_service.increment_quota(user_id, cost=-cost, username=username, task_type="refund")
+                await robust_edit_text(status_msg, "⚠️ 生成失败或超时，已退还灵石。")
+                return None, None
+
+        except Exception as e:
+            logger.error(f"Error processing face video task for {user_id}: {e}", exc_info=True)
+            if registry_task_id:
+                try:
+                    await TaskRegistry.mark_task_status(registry_task_id, "failed")
+                except AttributeError:
+                    # In case mark_task_status doesn't exist
+                    pass
+            await permission_service.increment_quota(user_id, cost=-cost, username=username, task_type="refund")
+            await robust_edit_text(status_msg, f"❌ 系统错误：{str(e)}\n已退还灵石。")
+            return None, None
+        finally:
+            await redis_client.decrement_user_concurrency(user_id)
+            if cleanup:
+                TaskService._cleanup_files([face_image_path, video_path])
+
     @staticmethod
     async def process_generation_task(
         context: ContextTypes.DEFAULT_TYPE,
@@ -79,7 +182,7 @@ class TaskService:
             # Both fast faceswap and random faceswap cost 1 credit now
             cost = TASK_COSTS.get(MODE_FACESWAP_STEP1, 1)
         elif task_type == MODE_EDIT or task_type == "edit":
-            cost = 6 if len(images) == 2 else 2
+            cost = 2
         else:
             cost = TASK_COSTS.get(task_type, 6 if is_video else 2)
             
@@ -548,46 +651,51 @@ class TaskService:
 
     # Private Helpers
 
+
+
     @staticmethod
-    async def process_text_to_image_task(
-        update,
-        context,
+    async def process_i2i_pro_task(
+        context: ContextTypes.DEFAULT_TYPE,
+        chat_id: int,
+        user_id: int,
+        username: str,
         prompt: str,
-    ) -> Tuple[Optional[bytes], Optional[str]]:
-        """
-        Handle Text to Image generation task.
-        """
-        chat_id = update.effective_chat.id
-        user_id = update.effective_user.id
-        username = update.effective_user.username or update.effective_user.full_name
+        images: list[str],
+    ):
+        """Handle MODE_I2I_PRO requests"""
+        from src.constants import MAX_CONCURRENT_TASKS, MODE_I2I_PRO, TASK_COSTS
         
         # 1. Check active tasks limit
         active_tasks = await redis_client.increment_user_concurrency(user_id)
-        from src.constants import MAX_CONCURRENT_TASKS
         if active_tasks > MAX_CONCURRENT_TASKS:
             await redis_client.decrement_user_concurrency(user_id)
             await robust_send_message(context.bot, chat_id, f"⚠️ 您当前已有 {MAX_CONCURRENT_TASKS} 个任务正在处理中，请等待其中一个完成后再试！")
-            return None, None
-        
-        mode = MODE_TEXT_TO_IMAGE
-        cost = TASK_COSTS.get(mode, 3)
+            return
+
+        cost = TASK_COSTS.get(MODE_I2I_PRO, 3)
+        mode = MODE_I2I_PRO
         user_logger = UserLogger(user_id, username)
+        
+        # Validate images
+        if not images or len(images) == 0:
+            await redis_client.decrement_user_concurrency(user_id)
+            await robust_send_message(context.bot, chat_id, "❌ 请先发送参考图片。")
+            return
+            
+        image_path = images[0]
+        saved_input_image = user_logger.save_input_image(image_path)
+        
+        import random
+        import os
+        # Use JS max safe integer (2^53 - 1) to prevent ComfyUI API 400 Bad Request
+        seed = random.randint(1, 9007199254740991)
 
         notice = await TaskService._get_acceleration_notice(user_id)
-        msg_text = f"🚀 正在处理文生图任务 (消耗{cost}灵石)...{notice}"
-        msg = await robust_reply_text(update.effective_message, msg_text)
-
-        media_bytes = None
-        full_output_path = None
+        msg_text = f"🚀 正在处理幻想换脸任务 (消耗{cost}灵石)...{notice}"
+        msg = await robust_send_message(context.bot, chat_id, msg_text)
         registry_task_id = None
 
         try:
-            # 1. Check Quota
-            if not await permission_service.check_quota(update, context, cost=cost):
-                await robust_delete_message(msg)
-                return None, None
-
-            # 2. Submit Task
             priority = await permission_service.calculate_user_priority(user_id)
             identity_str = await permission_service.get_user_identity(user_id)
             user_group = await permission_service.get_user_group(user_id)
@@ -595,57 +703,41 @@ class TaskService:
             await permission_service.increment_quota(user_id, cost=cost, username=username, task_type=mode)
             registry_task_id = await TaskRegistry.add_task(
                 user_id, username, cost, mode, chat_id=chat_id, message_id=msg.message_id if msg else None,
-                prompt=prompt, saved_input_images=[], is_video=False, priority=priority
+                prompt=prompt, saved_input_images=[saved_input_image], is_video=False, priority=priority
             )
-            await robust_edit_text(msg, "⏳ 正在生成图片，请耐心等待...")
 
-            task_id = await image_service.submit_text_to_image_task(prompt, priority=priority)
+            # Upload image to MinIO
+            # saved_input_image is already uploaded to MinIO by user_logger.save_input_image() and it returns the object_name
+            minio_object_name = saved_input_image
             
+            task_id = await image_service.submit_i2i_pro_task(prompt, minio_object_name, seed, priority=priority)
+
             if registry_task_id and task_id:
                 await TaskRegistry.update_backend_task_id(registry_task_id, task_id)
-            
-            # 3. Monitor Progress
+
             final_info = await TaskService._monitor_task_progress(
                 task_id, msg, is_video=False, monitor_func=image_service.monitor_progress, identity_str=identity_str, user_group=user_group
             )
 
             if final_info:
-                media_bytes, full_output_path = (
-                    await TaskService._handle_task_completion(
-                        context,
-                        chat_id,
-                        user_id,
-                        prompt,
-                        mode,
-                        task_id,
-                        [], # No input images
-                        user_logger,
-                        is_video=False,
-                        send_result=True,
-                        reply_markup=None,
-                        status_msg=msg,
-                        delete_status=True,
-                        caption=f"✅ 文生图生成完成\n提示词：{prompt[:100]}...",
-                    )
+                await TaskService._handle_task_completion(
+                    context, chat_id, user_id, prompt, mode, task_id, [saved_input_image], user_logger,
+                    is_video=False, send_result=True, reply_markup=None, status_msg=msg, delete_status=True,
+                    caption=f"🌟 幻想换脸生成完成\n提示词：{prompt[:100]}..."
                 )
             else:
                 await permission_service.increment_quota(user_id, cost=-cost, username=username, task_type="refund")
-                await robust_send_message(
-                    context.bot, chat_id, "❌ 生成完成但未获取到任务信息，已退还灵石"
-                )
+                await robust_send_message(context.bot, chat_id, "❌ 生成完成但未获取到文件路径，已退还灵石")
 
         except Exception as e:
-            print("EXCEPTION IN TEST:", e)
-            user_logger.logger.error(f"Error in Text-to-Image for user {user_id}: {e}", exc_info=True)
+            user_logger.logger.error(f"Error in process_i2i_pro_task for user {user_id}: {e}", exc_info=True)
             await permission_service.increment_quota(user_id, cost=-cost, username=username, task_type="refund")
             await robust_send_message(context.bot, chat_id, f"❌ 出错了：{e}，已退还灵石")
-            
         finally:
             if registry_task_id:
                 await TaskRegistry.remove_task(registry_task_id)
             await redis_client.decrement_user_concurrency(user_id)
-
-        return media_bytes, full_output_path
+            TaskService._cleanup_files(images)
 
     @staticmethod
     async def _get_or_send_status_msg(context, chat_id, status_msg_id, text):

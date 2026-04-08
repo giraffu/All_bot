@@ -62,7 +62,8 @@ class WorkflowPatcher:
         # which would result in no output generation and no history record.
         import random
         if "seed" not in params or params["seed"] is None:
-            params["seed"] = random.randint(1, 0xffffffffffffffff)
+            # Use JS max safe integer (2^53 - 1)
+            params["seed"] = random.randint(1, 9007199254740991)
             
         # If we have mappings, use them
         mapping = self.mappings.get(task_type, {})

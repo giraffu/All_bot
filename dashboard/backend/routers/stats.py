@@ -33,7 +33,8 @@ async def get_stats(db: AsyncSession = Depends(get_db)):
             'video', 'video_undress', 'custom_video', 'perfect_video_insert', 
             'video_pro', 'doggy_style', 'blowjob', 'undress_tongue', 
             'closeup_blowjob', 'face_show', 'face_tongue', 'fuck', 
-            'penetration', 'penetration_step1', 'penetration_step2', 'masturbation'
+            'penetration', 'penetration_step1', 'penetration_step2', 'masturbation',
+            'face_video_step1', 'face_video_step2'
         ]
         cost_case = case(
             (History.type.in_(video_types), 6),
@@ -414,7 +415,8 @@ async def get_stats_history(days: int = 7, db: AsyncSession = Depends(get_db)):
             'video', 'video_undress', 'custom_video', 'perfect_video_insert', 
             'video_pro', 'doggy_style', 'blowjob', 'undress_tongue', 
             'closeup_blowjob', 'face_show', 'face_tongue', 'fuck', 
-            'penetration', 'penetration_step1', 'penetration_step2', 'masturbation'
+            'penetration', 'penetration_step1', 'penetration_step2', 'masturbation',
+            'face_video_step1', 'face_video_step2'
         ]
         cost_case = case(
             (History.type.in_(video_types), 6),

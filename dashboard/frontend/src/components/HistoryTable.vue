@@ -41,6 +41,8 @@ const typeMapping = {
   'video': '视频生成',
   'video_pro': '专业视频',
   'custom_video': '自定义视频',
+  'face_video_step1': '视频换脸',
+  'face_video_step2': '视频换脸',
   'template_contribute': '模板共建',
   'undress_tongue': '脱衣吐舌',
   'closeup_blowjob': '特写口交',
@@ -50,6 +52,7 @@ const typeMapping = {
 
 const typeOptions = [
   { label: '自定义视频', value: 'custom_video' },
+  { label: '视频换脸', value: 'face_video_step1,face_video_step2' },
   { label: '自由P图', value: 'image' },
   { label: '快速换脸', value: 'face_swap' },
   { label: '快速脱衣', value: 'undress' },

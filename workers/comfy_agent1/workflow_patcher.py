@@ -42,6 +42,8 @@ class WorkflowPatcher:
             filename = "face_video.json"
         elif task_type == "t2i-pornmaster-turbo":
             filename = "Pornmaster Z-Image Turbo_t2i_Double checkpoints & realism enhancer_V1_2026_01_24.json"
+        elif task_type == "i2i_pro":
+            filename = "i2i_pro.json"
             
         path = os.path.join(self.workflows_dir, filename)
         if not os.path.exists(path):
@@ -64,7 +66,8 @@ class WorkflowPatcher:
         # which would result in no output generation and no history record.
         import random
         if "seed" not in params or params["seed"] is None:
-            params["seed"] = random.randint(1, 0xffffffffffffffff)
+            # Use JS max safe integer (2^53 - 1)
+            params["seed"] = random.randint(1, 9007199254740991)
             
         # If we have mappings, use them
         mapping = self.mappings.get(task_type, {})

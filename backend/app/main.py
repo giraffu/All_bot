@@ -7,7 +7,7 @@ from fastapi import FastAPI, Depends, HTTPException, BackgroundTasks, Query, Bod
 from fastapi.responses import FileResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from app.config import settings
-from app.models import TaskResponse, TaskStatusResponse, SystemStatusResponse, TaskType, T2ITaskResponse, SystemWorkersResponse, Img2ImgRequest, FaceSwapRequest, VideoInsertRequest, VideoEditRequest, FaceVideoRequest
+from app.models import TaskResponse, TaskStatusResponse, SystemStatusResponse, TaskType, T2ITaskResponse, SystemWorkersResponse, Img2ImgRequest, FaceSwapRequest, VideoInsertRequest, VideoEditRequest, FaceVideoRequest, I2IProRequest
 from app.queue_manager import QueueManager
 from app.routers import agent
 from redis.asyncio import Redis
@@ -128,6 +128,17 @@ async def create_face_video_task(
     params = request.dict()
     priority = params.pop("priority", 0)
     task_id = await queue_manager.enqueue_task(TaskType.FACE_VIDEO, params, priority)
+    return TaskResponse(task_id=task_id)
+
+@app.post("/i2i_pro", response_model=TaskResponse)
+async def create_i2i_pro_task(
+    request: I2IProRequest,
+    queue_manager: QueueManager = Depends(get_queue_manager),
+    token: str = Depends(verify_token)
+):
+    params = request.dict()
+    priority = params.pop("priority", 0)
+    task_id = await queue_manager.enqueue_task(TaskType.I2I_PRO, params, priority)
     return TaskResponse(task_id=task_id)
 
 @app.post("/api/v1/workflows/t2i-pornmaster-turbo", response_model=T2ITaskResponse)

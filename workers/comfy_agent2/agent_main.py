@@ -254,6 +254,8 @@ class ComfyAgent:
         self.task_completed_event.clear()
         self.task_result = None
         self.task_error = None
+        
+        downloaded_input_paths = []
 
         try:
             if await self.check_task_cancelled(task_id):
@@ -275,6 +277,8 @@ class ComfyAgent:
                     except Exception as upload_err:
                         logger.warning(f"Failed to upload {local_safe_filename} to ComfyUI via API: {upload_err}")
                     params[param_key] = local_safe_filename
+                    if local_img_path not in downloaded_input_paths:
+                        downloaded_input_paths.append(local_img_path)
                 except Exception as e:
                     logger.error(f"Failed to process {param_key} {img_filename}: {e}")
 
@@ -419,6 +423,13 @@ class ComfyAgent:
         finally:
             self.current_task_id = None
             self.current_prompt_id = None
+            for path in downloaded_input_paths:
+                try:
+                    if os.path.exists(path):
+                        os.remove(path)
+                        logger.info(f"Cleaned up input file: {path}")
+                except Exception as e:
+                    logger.warning(f"Failed to clean up input file {path}: {e}")
 
     async def poll_loop(self):
         logger.info(f"Agent {AGENT_ID} started polling {MASTER_API_URL} for tasks (types: {SUPPORTED_TASK_TYPES or 'all'})...")

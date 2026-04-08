@@ -9,7 +9,7 @@ from config import (
     IMG2IMG_ENDPOINT, STATUS_ENDPOINT, IMAGE_ENDPOINT, POLL_INTERVAL, 
     VIDEO_ENDPOINT, API_BASE, FACE_SWAP_ENDPOINT, 
     PERFECT_VIDEO_EDIT_ENDPOINT, PERFECT_VIDEO_INSERT_ENDPOINT,
-    TEXT_TO_IMAGE_ENDPOINT,
+    I2I_PRO_ENDPOINT, FACE_VIDEO_ENDPOINT,
     API_TOKEN
 )
 from src.circuit_breaker import CircuitBreaker, CircuitBreakerOpenException
@@ -141,18 +141,40 @@ class APIClient:
         return r.json()["task_id"]
 
     @async_retry(max_retries=3)
-    async def submit_text_to_image(self, prompt: str, priority: int = 0) -> str:
+    async def submit_face_video(self, face_image_path: str, video_path: str, resolution: int = 512, duration: int = 121, priority: int = 0) -> str:
         """
-        Submit text to image task (T2I Pornmaster Turbo).
+        Submit face video task.
+        paths: MinIO Object Keys
         """
+        if not face_image_path or not video_path:
+            raise ValueError("Face or video path is missing")
+
         data = {
-            "prompt": prompt,
+            "face_image": face_image_path,
+            "video": video_path,
+            "resolution": resolution,
+            "duration": duration,
             "priority": priority
         }
-        params = {"async": "true"}
 
-        logger.info(f"Submitting text_to_image task. Prompt: {prompt}, Priority: {priority}")
-        r = await self._request("POST", TEXT_TO_IMAGE_ENDPOINT, json=data, params=params)
+        logger.info(f"Submitting face_video task. Face: {face_image_path}, Video: {video_path}, Priority: {priority}")
+        r = await self._request("POST", FACE_VIDEO_ENDPOINT, json=data)
+        return r.json()["task_id"]
+
+    @async_retry(max_retries=3)
+    async def submit_i2i_pro(self, prompt: str, image_path: str, seed: int, priority: int = 0) -> str:
+        """
+        Submit i2i pro task.
+        """
+        data = {
+            "image": image_path,
+            "prompt": prompt,
+            "seed": seed,
+            "priority": priority
+        }
+
+        logger.info(f"Submitting i2i_pro task. Prompt: {prompt}, Seed: {seed}, Priority: {priority}")
+        r = await self._request("POST", I2I_PRO_ENDPOINT, json=data)
         return r.json()["task_id"]
 
     async def get_system_status(self) -> Optional[dict]:
@@ -303,7 +325,8 @@ submit_perfect_video_insert = api_client.submit_perfect_video_insert
 submit_perfect_video_edit = api_client.submit_perfect_video_edit
 submit_img2img = api_client.submit_img2img
 submit_face_swap = api_client.submit_face_swap
-submit_text_to_image = api_client.submit_text_to_image
+submit_face_video = api_client.submit_face_video
+submit_i2i_pro = api_client.submit_i2i_pro
 download_image = api_client.download_image
 download_video = api_client.download_video
 get_system_status = api_client.get_system_status

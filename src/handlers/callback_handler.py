@@ -16,11 +16,15 @@ from src.constants import (
     FORBIDDEN_WORDS, TASK_COSTS,
     get_video_settings_keyboard, RESOLUTION_COST, 
     RESOLUTION_PERMISSIONS, DURATION_PERMISSIONS, 
-    DEFAULT_RESOLUTION, DEFAULT_DURATION, DURATION_MULTIPLIER
+    DEFAULT_RESOLUTION, DEFAULT_DURATION, DURATION_MULTIPLIER,
+    MODE_FACE_VIDEO_STEP1
 )
 import os
 import random
 import asyncio
+import logging
+
+logger = logging.getLogger(__name__)
 
 @with_db_logging_context
 async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -505,6 +509,9 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
             
         await safe_answer_query(query, text=f"已切换至 {current_res} ({current_dur})，灵石消耗 {cost}", show_alert=False)
 
+    elif data.startswith("start_face_video_"):
+        await _handle_start_face_video(update, context, query, data)
+
     elif data == "recharge_stars_menu":
         from src.database.core import AsyncSessionLocal
         from src.database.models import MembershipPlan
@@ -758,3 +765,70 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
             )
         except Exception as e:
             await safe_answer_query(query, text=f"❌ 发送账单失败：{e}", show_alert=True)
+
+async def _handle_start_face_video(update: Update, context: ContextTypes.DEFAULT_TYPE, query, data):
+    """Handle resolution selection for Face Video"""
+    await safe_answer_query(query)
+    
+    # 视频换脸功能维护拦截
+    await robust_edit_text(query.message, "⚠️ 视频换脸功能由于底层节点升级暂时维护中，请使用其他功能。")
+    return
+    
+    # Check maintenance mode
+    if is_maintenance_mode():
+        await robust_edit_text(query.message, "⚠️ 服务器即将运维，暂停生成服务中")
+        return
+        
+    resolution_str = data.replace("start_face_video_", "") # '512', '720', or '1024'
+    resolution = int(resolution_str)
+    
+    # Calculate cost
+    cost = 20 if resolution == 512 else (35 if resolution == 720 else 50)
+    
+    # Check quota
+    if not await permission_service.check_quota(update, context, cost=cost):
+        return
+        
+    images = context.user_data.get('pending_images', [])
+    if len(images) < 2:
+        await robust_edit_text(query.message, "❌ 数据丢失，请重新开始视频换脸。")
+        return
+        
+    # 遍历寻找第一个视频文件作为 video_path，剩下的图片中找最后一张作为人脸
+    video_path = None
+    face_image_path = None
+    
+    # 支持的视频后缀
+    video_exts = ('.mp4', '.mov', '.avi', '.mkv')
+    
+    # 倒序查找，优先使用用户最后发送的视频和最后发送的图片
+    for path in reversed(images):
+        if path.lower().endswith(video_exts) and not video_path:
+            video_path = path
+        elif not path.lower().endswith(video_exts) and not face_image_path:
+            face_image_path = path
+            
+    if not video_path or not face_image_path:
+        logger.error(f"[User:{query.from_user.id}] Face Video Missing Data. Pending images: {images}")
+        await robust_edit_text(query.message, "❌ 找不到对应的图片或视频文件，请重新开始。")
+        context.user_data['mode'] = MODE_FACE_VIDEO_STEP1
+        context.user_data['pending_images'] = []
+        return
+    
+    logger.info(f"[User:{query.from_user.id}] Face Video Validated. Face: {face_image_path}, Video: {video_path}")
+    
+    # Clear state
+    context.user_data['pending_images'] = []
+    
+    # Edit the message to show processing state
+    await robust_edit_text(query.message, f"🚀 正在提交视频换脸任务 ({resolution_str}p)，预计消耗 {cost} 灵石，请耐心等待...")
+    
+    # Use task_service.process_face_video_task
+    asyncio.create_task(
+        TaskService.process_face_video_task(
+            context, query.message.chat_id, query.from_user.id,
+            query.from_user.username or query.from_user.full_name,
+            face_image_path, video_path, resolution, duration=121, cost=cost,
+            message_id=query.message.message_id
+        )
+    )

@@ -55,7 +55,8 @@ VIDEO_ENDPOINT = f"{API_BASE}/video"
 PERFECT_VIDEO_EDIT_ENDPOINT = f"{API_BASE}/perfect_video_edit" # Unified endpoint
 PERFECT_VIDEO_INSERT_ENDPOINT = f"{API_BASE}/perfect_video_insert"
 FACE_SWAP_ENDPOINT = f"{API_BASE}/face_swap"
-TEXT_TO_IMAGE_ENDPOINT = f"{API_BASE}/api/v1/workflows/t2i-pornmaster-turbo"
+FACE_VIDEO_ENDPOINT = f"{API_BASE}/face_video"
+I2I_PRO_ENDPOINT = f"{API_BASE}/i2i_pro"
 
 # --- LLM Configuration ---
 LLM_API_URL = os.getenv("LLM_API_URL", "http://8.148.72.50:1234/v1/chat/completions")
