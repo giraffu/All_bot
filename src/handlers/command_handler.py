@@ -71,13 +71,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['mode'] = "none"
 
     # Define menu keyboard
-    keyboard = [
-            ["💎 充值灵石", "📅 每日签到", "👤 个人中心"],
-            ["🤝 分享赚灵石", "⏳ 排队状态"],
-            ["🖼️ 懒人P图", "🎬 懒人动图", "🎬 视频换脸"],
-            ["🌟 幻想换脸", "🎨 自由P图 ", "🎬 自定义图生视频"]
-    ]
-    reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+    from src.constants import MAIN_MENU_KEYBOARD
+    reply_markup = ReplyKeyboardMarkup(MAIN_MENU_KEYBOARD, resize_keyboard=True)
 
     await update.message.reply_text(
         "⛩️ **欢迎来到宗门灵境**\n\n"

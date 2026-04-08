@@ -44,7 +44,7 @@ class QuotaManager:
             user = result.scalar_one_or_none()
             
             if not user:
-                user = User(id=user_id, username=username, full_name=full_name, credits=20)
+                user = User(id=user_id, username=username, full_name=full_name, credits=6)
                 session.add(user)
                 try:
                     await session.commit()
@@ -71,7 +71,7 @@ class QuotaManager:
             return user
 
     async def get_credits(self, user_id: int, username: str = None, full_name: str = None) -> int:
-        """Get user credits. Initialize with 20 if new user."""
+        """Get user credits. Initialize with 6 if new user."""
         user = await self.ensure_user(user_id, username, full_name)
         return user.credits
 
@@ -126,7 +126,7 @@ class QuotaManager:
             user = result.scalar_one_or_none()
             
             if not user:
-                user = User(id=user_id, username=username, full_name=full_name, credits=20)
+                user = User(id=user_id, username=username, full_name=full_name, credits=6)
                 session.add(user)
             else:
                 # Update info
@@ -198,7 +198,7 @@ class QuotaManager:
                 return False
 
             # 3. Create User (Invitee)
-            new_user = User(id=new_user_id, username=new_username, full_name=new_full_name, credits=20, invited_by=inviter_id, last_activity=datetime.now())
+            new_user = User(id=new_user_id, username=new_username, full_name=new_full_name, credits=6, invited_by=inviter_id, last_activity=datetime.now())
             session.add(new_user)
             
             # 4. Create Referral
@@ -207,7 +207,7 @@ class QuotaManager:
             result = await session.execute(stmt)
             inviter = result.scalar_one_or_none()
             if not inviter:
-                inviter = User(id=inviter_id, credits=20)
+                inviter = User(id=inviter_id, credits=6)
                 session.add(inviter)
             
             referral = Referral(inviter_id=inviter_id, invitee_id=new_user_id, channel_reward_claimed=False)
@@ -240,8 +240,8 @@ class QuotaManager:
                 user_id=new_user_id,
                 username=new_username,
                 operation_type="welcome_bonus",
-                credit_change=20,
-                current_balance=20,
+                credit_change=6,
+                current_balance=6,
                 extra_info={"inviter_id": inviter_id}
             )
             return True

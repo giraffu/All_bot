@@ -286,13 +286,8 @@ async def _handle_photo_idle(update: Update, context: ContextTypes.DEFAULT_TYPE)
     if now - last_reminder < 3.0:
         return
         
-    keyboard = [
-        ["💎 充值灵石", "📅 每日签到", "💰 个人中心"],
-        ["🤝 分享赚灵石", "⏳ 排队状态"],
-        ["🖼️ 懒人P图", "🎬 懒人动图", "🎬 视频换脸"],
-        ["🌟 幻想换脸", "✨ 🎨 自由P图 🎨 ✨", "🎬 自定义图生视频"]
-    ]
-    reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+    from src.constants import MAIN_MENU_KEYBOARD
+    reply_markup = ReplyKeyboardMarkup(MAIN_MENU_KEYBOARD, resize_keyboard=True)
     
     await robust_reply_text(
         update.message, 
@@ -622,7 +617,9 @@ async def handle_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await permission_service.check_access(update, context):
         return
 
-    text = update.message.text
+    text = update.message.text.strip() if update.message.text else ""
+    if not text:
+        return
     
     # --- New Menu Navigation Logic ---
     if text == "🖼️ 懒人P图":
@@ -646,13 +643,8 @@ async def handle_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if text == "🔙 返回主菜单":
-        keyboard = [
-            ["💎 充值灵石", "📅 每日签到", "👤 个人中心"],
-            ["🤝 分享赚灵石", "⏳ 排队状态"],
-            ["🖼️ 懒人P图", "🎬 懒人动图", "🎬 视频换脸"],
-            ["🌟 幻想换脸", "🎨 自由P图 ", "🎬 自定义图生视频"]
-        ]
-        reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+        from src.constants import MAIN_MENU_KEYBOARD
+        reply_markup = ReplyKeyboardMarkup(MAIN_MENU_KEYBOARD, resize_keyboard=True)
         await robust_reply_text(update.message, "🏠 **已返回主菜单**", reply_markup=reply_markup, parse_mode="Markdown")
         return
     # ---------------------------------
@@ -928,7 +920,12 @@ async def handle_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
     images = context.user_data.get('pending_images', [])
     
     # Do not treat text commands as generation prompts if they match button texts
-    if text in ["� 充值灵石", "�� 每日签到", "👤 个人中心", "💰 个人中心", "🤝 分享赚灵石", "⏳ 排队状态", "签到", "排队", "/queue", "/checkin", "🔙 返回主菜单", "/start", "/help"]:
+    from src.constants import MAIN_MENU_KEYBOARD
+    system_commands = ["签到", "排队", "/queue", "/checkin", "🔙 返回主菜单", "/start", "/help", "💰 个人中心"]
+    for row in MAIN_MENU_KEYBOARD:
+        system_commands.extend(row)
+        
+    if text in system_commands:
         return
 
     if not images:

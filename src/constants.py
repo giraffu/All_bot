@@ -7,6 +7,14 @@ TEMPLATE_DIR_QUICK_FACE = os.path.abspath("./templates/quick_face")
 TEMPLATE_DIR_VIDEO_NICE = os.path.abspath("./templates/video_nice")
 TEMP_TEMPLATE_DIR = os.path.abspath("./templates/temps")
 
+# Main Menu Keyboard
+MAIN_MENU_KEYBOARD = [
+    ["💎 充值灵石", "📅 每日签到", "👤 个人中心"],
+    ["🤝 分享赚灵石", "⏳ 排队状态"],
+    ["🖼️ 懒人P图", "🎬 懒人动图", "🎬 视频换脸"],
+    ["🌟 幻想换脸", "🎨 自由P图", "🎬 自定义图生视频"]
+]
+
 # Modes
 MODE_EDIT = "edit"
 MODE_UNDRESS = "undress"

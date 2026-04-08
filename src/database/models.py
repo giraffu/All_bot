@@ -10,7 +10,7 @@ class User(Base):
     id = Column(BigInteger, primary_key=True)  # Telegram User ID
     username = Column(String(100), nullable=True)
     full_name = Column(String(200), nullable=True)
-    credits = Column(Integer, default=20)
+    credits = Column(Integer, default=6)
     # temp_credits and temporary_ingot are deprecated and should not be used
     temporary_ingot = Column(Integer, default=0)
     temp_credits = Column(Integer, default=0)

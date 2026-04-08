@@ -43,14 +43,14 @@ async def test_points_system(setup_db):
     
     # 1. Test user initialization
     credits = await qm.get_credits(user_id)
-    assert credits == 20  # Default credits for new user
+    assert credits == 6  # Default credits for new user
     
     # 2. Test Check-in (should give 20 permanent)
     success = await qm.checkin(user_id=user_id, username="test_user", full_name="Test User", reward=20)
     assert success is True
 
     total = await qm.get_credits(user_id)
-    assert total == 40  # 20 + 20
+    assert total == 26  # 6 + 20
     
     # Check-in again should fail (already checked in today)
     success_again = await qm.checkin(user_id=user_id)
@@ -58,14 +58,14 @@ async def test_points_system(setup_db):
     
     # 3. Test points consumption (deducts permanent points)
     # Deduct 10 points
-    await qm.deduct_credits(user_id, 10, task_type="test_deduct")
+    await qm.deduct_credits(user_id, 10, "test_user", "test_task")
     total = await qm.get_credits(user_id)
-    assert total == 30  # 40 - 10
+    assert total == 16  # 26 - 10
     
     # Deduct 25 points
     await qm.deduct_credits(user_id, 25, task_type="test_deduct")
     total = await qm.get_credits(user_id)
-    assert total == 5   # 30 - 25
+    assert total == 0   # max(0, 16 - 25)
     
     # 4. Test points clearance (deprecated)
     pass
