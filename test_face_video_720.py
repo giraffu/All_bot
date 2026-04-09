@@ -42,7 +42,7 @@ def main():
     data = {
         "face_image": face_image_key,
         "video": video_key,
-        "resolution": 512,
+        "resolution": 720,
         "duration": 49,
         "priority": 100
     }

@@ -57,8 +57,8 @@ class History(Base):
     task_id = Column(String(64), nullable=True)
     type = Column(String(20), nullable=True) # 'image', 'video', 'video_pro', 'face_swap', etc.
     prompt = Column(Text, nullable=True)
-    input_file = Column(String(255), nullable=True)
-    output_file = Column(String(255), nullable=True)
+    input_file = Column(Text, nullable=True)
+    output_file = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.now)
     
     is_public = Column(Boolean, default=False)

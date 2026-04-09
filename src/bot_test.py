@@ -161,8 +161,22 @@ def main():
     )
     
     from src.handlers.payment_handler import precheckout_callback, successful_payment_callback
+    from src.handlers.fsm.face_video_fsm import get_face_video_fsm_handler
+    from src.handlers.fsm.faceswap_fsm import get_faceswap_fsm_handler
+    from src.handlers.fsm.edit_image_fsm import get_edit_image_fsm_handler
+    from src.handlers.fsm.custom_video_fsm import get_custom_video_fsm_handler
+    from src.handlers.fsm.quick_image_fsm import get_quick_image_fsm_handler
+    from src.handlers.fsm.quick_video_fsm import get_quick_video_fsm_handler
     
-    # Register Handlers
+    # Register FSM Handlers first (they must intercept text/callbacks before fallback handlers)
+    app.add_handler(get_face_video_fsm_handler())
+    app.add_handler(get_faceswap_fsm_handler())
+    app.add_handler(get_edit_image_fsm_handler())
+    app.add_handler(get_custom_video_fsm_handler())
+    app.add_handler(get_quick_image_fsm_handler())
+    app.add_handler(get_quick_video_fsm_handler())
+
+    # Register Fallback Handlers
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("maintenance", toggle_maintenance))
     app.add_handler(CallbackQueryHandler(handle_callback_query))

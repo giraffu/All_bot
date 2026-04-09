@@ -20,7 +20,6 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     network_mode: "host" # Use host network to easily access 192.168.1.115 services
-    command: ["python", "src/bot_test.py"]
 
   payment-api-test:
     build: 

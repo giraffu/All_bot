@@ -720,7 +720,7 @@ class TaskService:
             )
 
             if final_info:
-                await TaskService._handle_task_completion(
+                return await TaskService._handle_task_completion(
                     context, chat_id, user_id, prompt, mode, task_id, [saved_input_image], user_logger,
                     is_video=False, send_result=True, reply_markup=None, status_msg=msg, delete_status=True,
                     caption=f"🌟 幻想换脸生成完成\n提示词：{prompt[:100]}..."

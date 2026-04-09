@@ -35,252 +35,38 @@ logger = logging.getLogger(__name__)
 
 @with_db_logging_context
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Main photo handler entry point"""
-    if not _is_mentioned(update, context):
-        return
-
-    if not await permission_service.check_access(update, context):
-        return
-
-    msg = update.message
-    user = update.effective_user
-    username = user.username or user.full_name
-    user_logger = UserLogger(user.id, username)
-
-    mode = context.user_data.get('mode', MODE_NONE)
-    
-    # Check maintenance mode for generation tasks
-    from src.utils import is_maintenance_mode
-    if is_maintenance_mode() and mode not in [MODE_NONE, MODE_TEMPLATE_CONTRIBUTE]:
-        await robust_reply_text(msg, "⚠️ 服务器即将运维，暂停生成服务中")
-        return
-
-    user_logger.log_interaction(f"Sent photo (Mode: {mode})", type="File Interaction")
-
-    try:
-        # 0. Idle State Check
-        if mode == MODE_NONE:
-            return await _handle_photo_idle(update, context)
-
-        # 0.1 Template Contribution Check (Avoid double download)
-        if mode == MODE_TEMPLATE_CONTRIBUTE:
-            return await _handle_template_contribution(update, context)
-
-        # 0.1.5 Check Priority for Generation Tasks
-        if mode not in [MODE_NONE, MODE_TEMPLATE_CONTRIBUTE]:
-            priority = await permission_service.calculate_user_priority(user.id)
-            if priority <= 0:
-                await robust_reply_text(msg, "⚠️ 道友，您的排队优先级已耗尽（或修为不足），今日已无法再凝聚灵力，请明日再来或提升修为！")
-                return
-
-        # 0.2 Debounce media groups for one-click modes
-        one_click_modes = [MODE_UNDRESS, MODE_MASTURBATION, MODE_PERFECT_VIDEO_INSERT, MODE_DOGGY_STYLE, MODE_BLOWJOB, MODE_UNDRESS_TONGUE, MODE_CLOSEUP_BLOWJOB, MODE_RANDOM_FACESWAP, MODE_FACE_VIDEO_STEP1, MODE_FACESWAP_STEP1]
-        if mode in one_click_modes and msg.media_group_id:
-            if await _debounce_media_group(update, context, mode, msg.media_group_id):
-                return
-
-        # 0.3 Pre-check invalid photo uploads for specific modes
-        if mode == MODE_FACE_VIDEO_STEP2:
-            await robust_reply_text(msg, "❌ 请发送视频而不是图片，请发送身体视频。")
-            return
-
-        # 1. Save Photo
-        if 'pending_images' not in context.user_data:
-            context.user_data['pending_images'] = []
-        
-        photo = msg.photo[-1]
-        file = await photo.get_file()
-        local_path = os.path.join(TMP_DIR, f"{uuid.uuid4()}.png")
-        await file.download_to_drive(local_path)
-        
-        abs_path = os.path.abspath(local_path)
-        user_logger.logger.info(f"[User:{user.id}({username})] Temp image saved: {abs_path}")
-        context.user_data['pending_images'].append(local_path)
-
-        # 2. Dispatch by Mode
-        quick_modes = {
-            MODE_UNDRESS: "undress",
-            MODE_MASTURBATION: "masturbation"
-        }
-        
-        video_modes = {
-            MODE_PERFECT_VIDEO_INSERT: task_service.process_perfect_video_insert_task,
-            MODE_DOGGY_STYLE: task_service.process_doggy_style_task,
-            MODE_BLOWJOB: task_service.process_blowjob_task,
-            MODE_UNDRESS_TONGUE: task_service.process_undress_tongue_task,
-            MODE_CLOSEUP_BLOWJOB: task_service.process_closeup_blowjob_task
-        }
-        
-        if mode in quick_modes:
-            await _handle_quick_task(update, context, local_path)
-            context.user_data['pending_images'] = []
-        elif mode in [MODE_FACESWAP_STEP1, MODE_FACESWAP_STEP2]:
-            await _handle_photo_faceswap(update, context)
-        elif mode in [MODE_FACE_VIDEO_STEP1, MODE_FACE_VIDEO_STEP2]:
-            await _handle_photo_face_video(update, context)
-        elif mode == MODE_RANDOM_FACESWAP:
-            await _handle_photo_random_faceswap(update, context)
-        elif mode == MODE_CUSTOM_VIDEO:
-            await _handle_custom_video_setup(update, context, msg, user.id, is_document=False)
-        elif mode in video_modes:
-            await video_modes[mode](update, context, local_path)
-            context.user_data['pending_images'] = []
-        else:
-            await _handle_photo_edit(update, context)
-            
-    except Exception as e:
-        logger.error(f"Error in handle_photo for user {user.id}: {e}", exc_info=True)
-        await robust_reply_text(msg, f"❌ 图片处理错误：{str(e)}")
-
-@with_db_logging_context
-async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle video uploads"""
-    if not _is_mentioned(update, context):
-        return
-
-    if not await permission_service.check_access(update, context):
-        return
+    if not _is_mentioned(update, context): return
+    if not await permission_service.check_access(update, context): return
 
     mode = context.user_data.get('mode', MODE_NONE)
     if mode == MODE_TEMPLATE_CONTRIBUTE:
         return await _handle_template_contribution(update, context)
     
-    # Check maintenance mode for generation tasks
-    from src.utils import is_maintenance_mode
-    if is_maintenance_mode() and mode not in [MODE_NONE, MODE_TEMPLATE_CONTRIBUTE]:
-        await robust_reply_text(update.message, "⚠️ 服务器即将运维，暂停生成服务中")
-        return
+    return await _handle_photo_idle(update, context)
+
+@with_db_logging_context
+async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not _is_mentioned(update, context): return
+    if not await permission_service.check_access(update, context): return
+
+    mode = context.user_data.get('mode', MODE_NONE)
+    if mode == MODE_TEMPLATE_CONTRIBUTE:
+        return await _handle_template_contribution(update, context)
     
-    if mode == MODE_FACE_VIDEO_STEP2:
-        await _handle_video_face_video(update, context, update.message.video, is_document=False)
-        return
-    elif mode == MODE_FACE_VIDEO_STEP1:
-        await robust_reply_text(update.message, "❌ 请先发送【人脸图片】，不要发送视频。")
-        return
-    
-    # Other video handling can go here if needed
     await robust_reply_text(update.message, "⚠️ 当前模式不支持视频处理。")
 
 @with_db_logging_context
 async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle document uploads (images or videos as files)"""
-    if not _is_mentioned(update, context):
-        return
-
-    if not await permission_service.check_access(update, context):
-        return
-
-    msg = update.message
-    user = update.effective_user
-    username = user.username or user.full_name
-    user_logger = UserLogger(user.id, username)
+    if not _is_mentioned(update, context): return
+    if not await permission_service.check_access(update, context): return
 
     mode = context.user_data.get('mode', MODE_NONE)
-
-    # Check maintenance mode for generation tasks
-    from src.utils import is_maintenance_mode
-    if is_maintenance_mode() and mode not in [MODE_NONE, MODE_TEMPLATE_CONTRIBUTE]:
-        await robust_reply_text(msg, "⚠️ 服务器即将运维，暂停生成服务中")
-        return
-
-    user_logger.log_interaction(f"Sent document (Mode: {mode})", type="File Interaction")
-
-    try:
-        # 0. Idle State Check
-        if mode == MODE_NONE:
-            return await _handle_photo_idle(update, context)
-
-        # 0.1 Template Contribution Check
-        if mode == MODE_TEMPLATE_CONTRIBUTE:
-            return await _handle_template_contribution(update, context)
-
-        # 0.1.5 Check Priority for Generation Tasks
-        if mode not in [MODE_NONE, MODE_TEMPLATE_CONTRIBUTE]:
-            priority = await permission_service.calculate_user_priority(user.id)
-            if priority <= 0:
-                await robust_reply_text(msg, "⚠️ 道友，您的排队优先级已耗尽（或修为不足），今日已无法再凝聚灵力，请明日再来或提升修为！")
-                return
-
-        # 0.2 Debounce media groups for one-click modes
-        one_click_modes = [MODE_UNDRESS, MODE_MASTURBATION, MODE_PERFECT_VIDEO_INSERT, MODE_DOGGY_STYLE, MODE_BLOWJOB, MODE_UNDRESS_TONGUE, MODE_CLOSEUP_BLOWJOB, MODE_RANDOM_FACESWAP]
-        if mode in one_click_modes and msg.media_group_id:
-            if await _debounce_media_group(update, context, mode, msg.media_group_id):
-                return
-
-        # 1. Save Document
-        if 'pending_images' not in context.user_data:
-            context.user_data['pending_images'] = []
-        
-        doc = msg.document
-        file_ext = os.path.splitext(doc.file_name or "file")[1].lower()
-        
-        file = await doc.get_file()
-        local_path = os.path.join(TMP_DIR, f"{uuid.uuid4()}{file_ext}")
-        await file.download_to_drive(local_path)
-        
-        abs_path = os.path.abspath(local_path)
-        user_logger.logger.info(f"[User:{user.id}({username})] Temp document saved: {abs_path}")
-        context.user_data['pending_images'].append(local_path)
-
-        # 2. Dispatch by Mode
-        quick_modes = {
-            MODE_UNDRESS: "undress",
-            MODE_MASTURBATION: "masturbation"
-        }
-        
-        video_modes = {
-            MODE_PERFECT_VIDEO_INSERT: task_service.process_perfect_video_insert_task,
-            MODE_DOGGY_STYLE: task_service.process_doggy_style_task,
-            MODE_BLOWJOB: task_service.process_blowjob_task,
-            MODE_UNDRESS_TONGUE: task_service.process_undress_tongue_task,
-            MODE_CLOSEUP_BLOWJOB: task_service.process_closeup_blowjob_task
-        }
-        
-        if mode in quick_modes:
-            await _handle_quick_task(update, context, local_path)
-            context.user_data['pending_images'] = []
-        elif mode in [MODE_FACESWAP_STEP1, MODE_FACESWAP_STEP2]:
-            await _handle_photo_faceswap(update, context)
-        elif mode in [MODE_FACE_VIDEO_STEP1, MODE_FACE_VIDEO_STEP2]:
-            # if document is video, it might be step 2
-            if file_ext in ['.mp4', '.mov', '.avi'] and mode == MODE_FACE_VIDEO_STEP2:
-                await _handle_video_face_video(update, context, doc, is_document=True)
-            elif file_ext in ['.png', '.jpg', '.jpeg', '.webp'] and mode == MODE_FACE_VIDEO_STEP1:
-                await _handle_photo_face_video(update, context)
-            else:
-                await robust_reply_text(msg, "❌ 格式或顺序错误。第一步请发送图片，第二步请发送视频。")
-        elif mode == MODE_RANDOM_FACESWAP:
-            await _handle_photo_random_faceswap(update, context)
-        elif mode == MODE_CUSTOM_VIDEO:
-            await _handle_custom_video_setup(update, context, msg, user.id, is_document=True)
-        elif mode in video_modes:
-            await video_modes[mode](update, context, local_path)
-            context.user_data['pending_images'] = []
-        else:
-            await _handle_photo_edit(update, context)
-            
-    except Exception as e:
-        logger.error(f"Error in handle_document for user {user.id}: {e}", exc_info=True)
-        await robust_reply_text(msg, f"❌ 文件处理错误：{str(e)}")
-
-async def _debounce_media_group(update: Update, context: ContextTypes.DEFAULT_TYPE, mode: str, media_group_id: str) -> bool:
-    """Helper to debounce multiple images sent in a single media group."""
-    processed_groups = context.user_data.get('processed_media_groups', set())
-    if media_group_id in processed_groups:
-        logger.info(f"Ignoring additional image from media group {media_group_id} for mode {mode}")
-        notified_groups = context.user_data.get('notified_media_groups', set())
-        if media_group_id not in notified_groups:
-            await robust_reply_text(update.message, "⚠️ 提醒：为了防止刷屏，系统仅处理您的**第一张图**，其余图片已被忽略。", parse_mode='Markdown')
-            notified_groups.add(media_group_id)
-            context.user_data['notified_media_groups'] = notified_groups
-        return True
+    if mode == MODE_TEMPLATE_CONTRIBUTE:
+        return await _handle_template_contribution(update, context)
     
-    processed_groups.add(media_group_id)
-    context.user_data['processed_media_groups'] = processed_groups
-    return False
+    return await _handle_photo_idle(update, context)
 
 async def _handle_photo_idle(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle photo when no mode is selected"""
     now = time.time()
     last_reminder = context.user_data.get('last_reminder_time', 0)
     if now - last_reminder < 3.0:
@@ -297,265 +83,11 @@ async def _handle_photo_idle(update: Update, context: ContextTypes.DEFAULT_TYPE)
     )
     context.user_data['last_reminder_time'] = now
 
-async def _handle_quick_task(update: Update, context: ContextTypes.DEFAULT_TYPE, image_path: str):
-    """Handle single image immediate processing for quick modes"""
-    mode = context.user_data.get('mode')
-    msg = update.message
-    chat_id = msg.chat_id
-    user = update.effective_user
-    username = user.username or user.full_name
-    
-    # Check credits (Cost = 2)
-    cost = 2
-    if not await permission_service.check_quota(update, context, cost=cost):
-        # Cleanup file if quota check fails
-        if os.path.exists(image_path):
-            try:
-                os.remove(image_path)
-            except Exception:
-                pass
-        return
-
-    prompts_config = load_prompts()
-    prompt = ""
-    task_type = "image"
-    final_images = [image_path]
-
-    try:
-        if mode == MODE_UNDRESS:
-            prompt = prompts_config.get("undress", "undress")
-            task_type = "undress"
-            
-        elif mode == MODE_MASTURBATION:
-            prompt = prompts_config.get("masturbation", "masturbation")
-            task_type = "masturbation"
-            
-        # Process task
-        await task_service.process_generation_task(
-            context, chat_id, user.id, username, 
-            prompt, final_images, 
-            task_type=task_type
-        )
-        
-    except Exception as e:
-        logger.error(f"Error in quick task for user {user.id}: {e}", exc_info=True)
-        await robust_reply_text(msg, f"❌ 处理出错：{str(e)}")
-        if os.path.exists(image_path):
-            try:
-                os.remove(image_path)
-            except Exception:
-                pass
-
-async def _handle_photo_faceswap(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle FaceSwap multi-step logic"""
-    mode = context.user_data.get('mode')
-    msg = update.message
-    images = context.user_data['pending_images']
-    prompts_config = load_prompts()
-
-    if mode == MODE_FACESWAP_STEP1:
-        context.user_data['mode'] = MODE_FACESWAP_STEP2
-        await robust_reply_text(msg, "👤 收到人脸图片，请发送身体图片。")
-    elif mode == MODE_FACESWAP_STEP2:
-        from src.constants import TASK_COSTS
-        cost = TASK_COSTS.get(MODE_FACESWAP_STEP1, 1)
-        if not await permission_service.check_quota(update, context, cost=cost):
-            context.user_data['pending_images'] = []
-            context.user_data['mode'] = MODE_FACESWAP_STEP1
-            return
-
-        if len(images) < 2:
-            await robust_reply_text(msg, "❌ 需要两张图片（人脸+身体），请重新开始。")
-            context.user_data['mode'] = MODE_FACESWAP_STEP1
-            context.user_data['pending_images'] = []
-            return
-
-        context.user_data['pending_images'] = []
-        context.user_data['mode'] = MODE_FACESWAP_STEP1
-        prompt = prompts_config.get("face_swap", "face swap")
-        swapped_images = [images[1], images[0]] # Body first, Face second
-        
-        await task_service.process_generation_task(
-            context, msg.chat_id, update.effective_user.id, 
-            update.effective_user.username or update.effective_user.full_name, 
-            prompt, swapped_images, task_type="face_swap"
-        )
-
-async def _handle_photo_face_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle Face Video multi-step logic (Step 1: Face Photo)"""
-    await robust_reply_text(update.message, "⚠️ 视频换脸功能由于底层节点升级暂时维护中，请使用其他功能。")
-    context.user_data['mode'] = "none"
-    context.user_data['pending_images'] = []
-    return
-
-    mode = context.user_data.get('mode')
-    msg = update.message
-    images = context.user_data.get('pending_images', [])
-    
-    if mode == MODE_FACE_VIDEO_STEP1:
-        if len(images) > 0:
-            logger.info(f"[User:{update.effective_user.id}] Face Video - Face image saved: {images[-1]}")
-        context.user_data['mode'] = MODE_FACE_VIDEO_STEP2
-        await robust_reply_text(msg, "👤 收到人脸图片，请发送身体视频（提示：视频时长会截取前5s的内容）。")
-    elif mode == MODE_FACE_VIDEO_STEP2:
-        await robust_reply_text(msg, "❌ 请发送视频而不是图片，请发送身体视频。")
-
-async def _handle_video_face_video(update: Update, context: ContextTypes.DEFAULT_TYPE, video_obj, is_document=False):
-    """Handle Face Video logic (Step 2: Body Video)"""
-    await robust_reply_text(update.message, "⚠️ 视频换脸功能由于底层节点升级暂时维护中，请使用其他功能。")
-    context.user_data['mode'] = "none"
-    context.user_data['pending_images'] = []
-    return
-
-    msg = update.message
-    images = context.user_data.get('pending_images', [])
-    
-    if len(images) < 1:
-        await robust_reply_text(msg, "❌ 未找到人脸图片，请重新发送人脸图片。")
-        context.user_data['mode'] = MODE_FACE_VIDEO_STEP1
-        return
-
-    # Download video
-    status_msg = await robust_reply_text(msg, "⏳ 正在下载视频，请稍候...")
-    try:
-        file = await video_obj.get_file()
-        file_ext = os.path.splitext(video_obj.file_name or "video.mp4")[1].lower() if is_document else ".mp4"
-        video_local_path = os.path.join(TMP_DIR, f"{uuid.uuid4()}{file_ext}")
-        await file.download_to_drive(video_local_path)
-        
-        # Save video path
-        context.user_data['pending_images'].append(video_local_path)
-        logger.info(f"[User:{update.effective_user.id}] Face Video - Video saved: {video_local_path}")
-        
-        # Send inline keyboard for resolution selection
-        keyboard = [
-            [
-                InlineKeyboardButton("512p (20灵石)", callback_data="start_face_video_512"),
-                InlineKeyboardButton("720p (35灵石)", callback_data="start_face_video_720"),
-                InlineKeyboardButton("1024p (50灵石)", callback_data="start_face_video_1024")
-            ]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        await status_msg.edit_text("🎬 视频下载完成！请选择生成画质：\n\n(默认截取前121帧，约5秒时长)", reply_markup=reply_markup)
-        
-        # Keep mode as MODE_FACE_VIDEO_STEP2 to allow resolution selection
-        context.user_data['mode'] = MODE_FACE_VIDEO_STEP2
-        
-    except Exception as e:
-        logger.error(f"Error downloading face video: {e}", exc_info=True)
-        await status_msg.edit_text(f"❌ 视频下载失败：{str(e)}")
-        context.user_data['mode'] = MODE_FACE_VIDEO_STEP2
-
-async def _handle_photo_random_faceswap(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle Random FaceSwap logic (User Face + Random Template Body)"""
-    msg = update.message
-    images = context.user_data['pending_images']
-    prompts_config = load_prompts()
-
-    from src.constants import TASK_COSTS
-    cost = TASK_COSTS.get(MODE_RANDOM_FACESWAP, 1)
-    if not await permission_service.check_quota(update, context, cost=cost):
-        context.user_data['pending_images'] = []
-        return
-
-    if not images:
-        await robust_reply_text(msg, "❌ 未收到图片，请重新开始。")
-        return
-
-    face_image_path = images[0]
-    context.user_data['pending_images'] = []
-
-    try:
-        from config import MINIO_TEMPLATE_BUCKET
-        from src.services.storage import storage
-        
-        template_files = storage.list_objects("quick_face/", bucket=MINIO_TEMPLATE_BUCKET)
-        template_files = [f for f in template_files if f.lower().endswith(('.png', '.jpg', '.jpeg', '.webp'))]
-        
-        if not template_files:
-            await robust_reply_text(msg, "❌ 系统错误：未找到身体模板。请联系管理员添加图片。")
-            return
-
-        random_template = random.choice(template_files)
-        # Random faceswap body is images[0] (template), face is images[1] (user input)
-        # So we pass [template_path, face_image_path]
-        template_path = f"template:{random_template}"
-        
-        prompt = prompts_config.get("face_swap", "face swap")
-        # images[0] is Body, images[1] is Face in process_generation_task for face_swap
-        swapped_images = [template_path, face_image_path] 
-        
-        # 保存当前人脸图片路径到 context，以便“再来一张”功能使用
-        context.user_data['last_face_image'] = face_image_path
-        
-        keyboard = [
-            [InlineKeyboardButton("🔄 再来一张", callback_data="random_faceswap_again")],
-            [
-                InlineKeyboardButton("👍", callback_data="rate_like"),
-                InlineKeyboardButton("👎", callback_data="rate_dislike")
-            ]
-        ]
-        if ENABLE_PUBLIC_SHARE:
-            keyboard[0].insert(0, InlineKeyboardButton("公开", callback_data="public_share_request"))
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        
-        await task_service.process_generation_task(
-            context, msg.chat_id, update.effective_user.id, 
-            update.effective_user.username or update.effective_user.full_name, 
-            prompt, swapped_images, task_type="face_swap",
-            reply_markup=reply_markup,
-            cleanup=False # Keep the face image for "Again" button
-        )
-    except Exception as e:
-        logger.error(f"Error in random faceswap: {e}", exc_info=True)
-        await robust_reply_text(msg, f"❌ 任务执行出错：{str(e)}")
-
-async def _handle_custom_video_setup(update: Update, context: ContextTypes.DEFAULT_TYPE, msg, user_id: int, is_document: bool = False):
-    """Extracted logic for setting up custom video generation parameters."""
-    user_group = await permission_service.get_user_group(user_id)
-    user_identity = await permission_service.get_user_identity(user_id)
-    
-    from src.constants import get_video_settings_keyboard, DEFAULT_RESOLUTION, DEFAULT_DURATION, RESOLUTION_COST, DURATION_MULTIPLIER
-    current_resolution = context.user_data.get('custom_video_resolution', DEFAULT_RESOLUTION)
-    current_duration = context.user_data.get('custom_video_duration', DEFAULT_DURATION)
-    reply_markup = get_video_settings_keyboard(user_group, user_identity, current_resolution, current_duration)
-    
-    base_cost = RESOLUTION_COST.get(current_resolution, 6)
-    multiplier = DURATION_MULTIPLIER.get(current_duration, 1.0)
-    cost = int(base_cost * multiplier)
-    
-    msg_text = f"⚙️ 当前自定义视频画质：{current_resolution} | 时长：{current_duration} | 消耗灵石：{cost}\n\n请选择您需要的画质和时长（部分画质和时长需要高境界或VIP身份解锁）：\n\n*提示：画质越高、时长越长，消耗灵石越多。注意：1024p 和 10s 无法同时选择。*"
-    
-    file_type_str = "（文件）" if is_document else ""
-    await robust_reply_text(msg, f"📥 收到起始图片{file_type_str}。请发送提示词 (Text) 以生成 5 秒视频。")
-    await robust_reply_text(msg, msg_text, reply_markup=reply_markup)
-
-async def _handle_photo_edit(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle default Edit mode"""
-    msg = update.message
-    
-    # Check how many images we already have
-    pending_count = len(context.user_data.get('pending_images', []))
-    mode = context.user_data.get('mode')
-    
-    if pending_count >= 1:
-        if mode == MODE_I2I_PRO:
-            await robust_reply_text(msg, "✅ 已收到 1 张参考图。\n请直接发送提示词 (Text) 开始生成。\n\n💡 **提示词要求**：\n描述幻想的人物和场景，后续会将参考图中的人物换脸到幻想的场景人物中。")
-        else:
-            await robust_reply_text(msg, "✅ 已收到 1 张参考图。请直接发送提示词 (Text) 开始生成。")
-    else:
-        if mode == MODE_I2I_PRO:
-            await robust_reply_text(msg, "📥 收到图片。\n请直接发送提示词 (Text) 开始生成。\n\n💡 **提示词要求**：\n描述幻想的人物和场景，后续会将参考图中的人物换脸到幻想的场景人物中。")
-        else:
-            await robust_reply_text(msg, "📥 收到图片。请直接发送提示词 (Text) 开始生成。")
-
 async def _handle_template_contribution(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle template contribution (Save to templates/temps/)"""
     msg = update.message
     user = update.effective_user
     username = user.username or user.full_name
     
-    # 1. Determine file type and get file object
     file_id = None
     file_ext = ".png"
     file_type_name = "图片"
@@ -576,20 +108,17 @@ async def _handle_template_contribution(update: Update, context: ContextTypes.DE
     if not file_id:
         return
 
-    # 2. Download and save
     try:
         file = await context.bot.get_file(file_id)
         local_filename = f"{user.id}_{uuid.uuid4().hex}{file_ext}"
         local_path = os.path.join(TEMP_TEMPLATE_DIR, local_filename)
         await file.download_to_drive(local_path)
         
-        # Upload to MinIO
         from config import MINIO_TEMPLATE_BUCKET
         from src.services.storage import storage
         minio_object_name = f"temps/{local_filename}"
         storage.upload_file(local_path, minio_object_name, bucket=MINIO_TEMPLATE_BUCKET)
         
-        # 3. Record in Database
         file_type_db = 'photo'
         if msg.video:
             file_type_db = 'video'
@@ -598,7 +127,6 @@ async def _handle_template_contribution(update: Update, context: ContextTypes.DE
         
         await permission_service.record_contribution(user.id, local_path, file_type_db)
         
-        # 4. Track count in user_data (for session feedback)
         if 'contributed_count' not in context.user_data:
             context.user_data['contributed_count'] = 0
         context.user_data['contributed_count'] += 1
@@ -613,7 +141,6 @@ async def _handle_template_contribution(update: Update, context: ContextTypes.DE
 
 @with_db_logging_context
 async def handle_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle text messages and menu commands"""
     if not await permission_service.check_access(update, context):
         return
 
@@ -621,7 +148,6 @@ async def handle_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not text:
         return
     
-    # --- New Menu Navigation Logic ---
     if text == "🖼️ 懒人P图":
         keyboard = [
             ["💃 快速脱衣", "🎭 快速换脸", "🥵 快速自慰"],
@@ -647,14 +173,11 @@ async def handle_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup = ReplyKeyboardMarkup(MAIN_MENU_KEYBOARD, resize_keyboard=True)
         await robust_reply_text(update.message, "🏠 **已返回主菜单**", reply_markup=reply_markup, parse_mode="Markdown")
         return
-    # ---------------------------------
-    
-    # Menu Commands
+        
     if text == "💎 充值灵石":
         from telegram import WebAppInfo
         from config import WEBAPP_URL
         
-        # 默认 WebApp URL
         webapp_url = WEBAPP_URL if 'WEBAPP_URL' in globals() and WEBAPP_URL else "https://pay.aivison.it.com/"
         
         keyboard = [
@@ -692,13 +215,11 @@ async def handle_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if text in ["💰 个人中心", "👤 个人中心"]:
-        # 强制同步频道状态，确保“凡人”->“练气期”及时更新
         await permission_service.sync_channel_status(update, context)
         await permission_service.ensure_user(update)
         user_id = update.effective_user.id
         stats = await permission_service.get_user_detailed_stats(user_id)
         
-        # 动态生成突破条件
         breakthrough_msg = ""
         current_group = stats['group']
         current_identity = stats.get('identity', '普通用户')
@@ -752,7 +273,6 @@ async def handle_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
             now = datetime.now()
             expire_at = stats['identity_expire_at']
             
-            # 兼容可能的 timezone aware datetime
             if expire_at.tzinfo is not None:
                 expire_at = expire_at.replace(tzinfo=None)
                 
@@ -790,7 +310,6 @@ async def handle_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if text in ["📅 每日签到", "签到", "/checkin"]:
-        # 检查是否加入避难所群组
         if REFUGE_GROUP_ID:
             try:
                 group_id = int(REFUGE_GROUP_ID) if REFUGE_GROUP_ID.lstrip('-').isdigit() else REFUGE_GROUP_ID
@@ -809,13 +328,11 @@ async def handle_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     return
             except Exception as e:
                 logger.warning(f"Failed to check refuge group membership: {e}")
-                # 忽略错误继续签到流程
         
         success, current_credits, error_msg, total_days, reward = await permission_service.perform_checkin(update)
         user_group = await permission_service.get_user_group(update.effective_user.id)
         user_identity = await permission_service.get_user_identity(update.effective_user.id)
         
-        # 优化后的免责声明
         disclaimer = "\n\n⚠️ _注：累计签到统计始于3月5日，此前的数据未计入系统。_"
         
         if success:
@@ -862,128 +379,3 @@ async def handle_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
              await robust_reply_text(update.message, "⚠️ 无法获取实时排队数据，请稍后再试。")
         return
-    
-    # Mode Switching Commands
-    mode_map = {
-        "💃 快速脱衣": (MODE_UNDRESS, "💃 已切换到【快速脱衣】模式 (消耗 2 灵石)。\n请发送一张图片，我将自动处理。"),
-        "🎭 快速换脸": (MODE_FACESWAP_STEP1, "🎭 已切换到【快速换脸】模式 (消耗 1 灵石)。\n请先发送一张【人脸】图片。"),
-        "🎭 随机换脸": (MODE_RANDOM_FACESWAP, "🎭 已切换到【随机换脸】模式 (消耗 1 灵石)。\n请发送一张【人脸】图片，我将自动匹配模板处理。"),
-        "🥵 快速自慰": (MODE_MASTURBATION, "🥵 已切换到【快速自慰】模式 (消耗 2 灵石)。\n请发送一张图片，我将自动处理。"),
-        "🎨 自由P图": (MODE_EDIT, "🎨 已切换到【自由P图】模式 (消耗 2 灵石)。\n请发送 1 张参考图片，随后发送提示词开始融合生成。"),
-        "🎬 自定义图生视频": (MODE_CUSTOM_VIDEO, "🎬 已切换到【自定义图生视频】模式。\n请发送一张【起始图片】。\n(注意：该模式生成 5 秒视频，请确保提示词动作逻辑合理)"),
-        "🛌 动图传教士": (MODE_PERFECT_VIDEO_INSERT, "🛌 已切换到【动图传教士】模式。\n请发送一张【人脸】图片（正面、清晰），我将自动处理。"),
-        "🎬 动图后入": (MODE_DOGGY_STYLE, "🎬 已切换到【动图后入】模式。\n请发送一张【人脸】图片（正面、清晰），我将自动处理。"),
-        "🎬 视频换脸": (MODE_FACE_VIDEO_STEP1, "🎬 已切换到【视频换脸】模式。\n请先发送一张【人脸】图片。"),
-        "🎬 口交黑人": (MODE_BLOWJOB, "🎬 已切换到【口交黑人】模式。\n请发送一张【正面清晰图片】，我将自动处理。"),
-        "🎬 脱衣吐舌": (MODE_UNDRESS_TONGUE, "🎬 已切换到【脱衣吐舌】模式。\n请发送一张【正面清晰图片】，我将自动处理。"),
-        "🎬 特写口交": (MODE_CLOSEUP_BLOWJOB, "🎬 已切换到【特写口交】模式。\n请发送一张【正面清晰图片】，我将自动处理。"),
-        "🌟 幻想换脸": (MODE_I2I_PRO, "🌟 已切换到【幻想换脸】模式 (消耗 6 灵石)。\n请发送 1 张参考图片，随后发送提示词开始生成。")
-    }
-    
-    if text == "📝 文生图":
-        await robust_reply_text(update.message, "⚠️ 文生图功能已替换为图生图Pro，请使用其他功能。")
-        return
-
-    if text == "🎬 视频换脸":
-        await robust_reply_text(update.message, "⚠️ 视频换脸功能由于底层节点升级暂时维护中，请使用其他功能。")
-        return
-
-    if text in mode_map:
-        new_mode, reply = mode_map[text]
-        context.user_data['mode'] = new_mode
-        context.user_data['pending_images'] = []
-        context.user_data['contributed_count'] = 0 # Reset count when switching mode
-        
-        if new_mode in [MODE_CUSTOM_VIDEO, MODE_PERFECT_VIDEO_INSERT, MODE_DOGGY_STYLE, MODE_BLOWJOB, MODE_UNDRESS_TONGUE, MODE_CLOSEUP_BLOWJOB]:
-            user_group = await permission_service.get_user_group(update.effective_user.id)
-            user_identity = await permission_service.get_user_identity(update.effective_user.id)
-            from src.constants import get_video_settings_keyboard, DEFAULT_RESOLUTION, DEFAULT_DURATION, RESOLUTION_COST, DURATION_MULTIPLIER
-            current_resolution = context.user_data.get('custom_video_resolution', DEFAULT_RESOLUTION)
-            current_duration = context.user_data.get('custom_video_duration', DEFAULT_DURATION)
-            reply_markup = get_video_settings_keyboard(user_group, user_identity, current_resolution, current_duration)
-            
-            base_cost = RESOLUTION_COST.get(current_resolution, 6)
-            multiplier = DURATION_MULTIPLIER.get(current_duration, 1.0)
-            cost = int(base_cost * multiplier)
-            
-            reply += f"\n\n⚙️ 当前视频画质：{current_resolution} | 时长：{current_duration} | 消耗灵石：{cost}\n请在下方选择您需要的画质和时长（部分画质和时长需要高境界或VIP身份解锁）：\n\n*提示：画质越高、时长越长，消耗灵石越多。注意：1024p 和 10s 无法同时选择。*"
-            await robust_reply_text(update.message, reply, reply_markup=reply_markup)
-        else:
-            await robust_reply_text(update.message, reply)
-        return
-
-    # Generation Handling
-    if not _is_mentioned(update, context):
-        return
-
-    mode = context.user_data.get('mode', MODE_EDIT)
-    images = context.user_data.get('pending_images', [])
-    
-    # Do not treat text commands as generation prompts if they match button texts
-    from src.constants import MAIN_MENU_KEYBOARD
-    system_commands = ["签到", "排队", "/queue", "/checkin", "🔙 返回主菜单", "/start", "/help", "💰 个人中心"]
-    for row in MAIN_MENU_KEYBOARD:
-        system_commands.extend(row)
-        
-    if text in system_commands:
-        return
-
-    if not images:
-        await robust_reply_text(update.message, "请先发送一张图片。")
-        return
-
-    # In single image mode, we only care about the last sent valid image
-    valid_images = [path for path in images if os.path.exists(path)]
-    if not valid_images:
-        await robust_reply_text(update.message, "❌ 图片已丢失，请重新发送图片。")
-        return
-    
-    # Force single image for all modes
-    valid_images = [valid_images[-1]]
-
-    # Execute Generation
-    from src.utils import is_maintenance_mode
-    if is_maintenance_mode():
-        await robust_reply_text(update.message, "⚠️ 服务器即将运维，暂停生成服务中")
-        return
-
-    chat_id = update.message.chat_id
-    user_id = update.effective_user.id
-    username = update.effective_user.username or update.effective_user.full_name
-
-    # Check Priority
-    priority = await permission_service.calculate_user_priority(user_id)
-    if priority <= 0:
-        await robust_reply_text(update.message, "⚠️ 道友，您的排队优先级已耗尽（或修为不足），今日已无法再凝聚灵力，请明日再来或提升修为！")
-        # Clear pending images if they had any
-        context.user_data['pending_images'] = []
-        return
-    
-    if mode == MODE_CUSTOM_VIDEO:
-        # 自定义图生视频
-        if len(valid_images) != 1:
-            await robust_reply_text(update.message, "❌ 需要且仅能发送一张起始图片，请重新发送。")
-            context.user_data['pending_images'] = []
-            return
-        await task_service.process_custom_video_task(update, context, text, valid_images[0])
-    elif mode == MODE_I2I_PRO:
-        await task_service.process_i2i_pro_task(context, chat_id, user_id, username, text, valid_images)
-    else:
-        # Default Edit/Generation
-        is_video = False
-        task_type = "image"
-        # Determine task type from mode if possible to avoid fallback to img2img
-        if mode in [MODE_FACESWAP_STEP1, MODE_FACESWAP_STEP2, MODE_RANDOM_FACESWAP]:
-            task_type = "face_swap"
-        elif mode == MODE_UNDRESS:
-            task_type = "undress"
-        elif mode == MODE_MASTURBATION:
-            task_type = "masturbation"
-            
-        await task_service.process_generation_task(
-            context, chat_id, user_id, username, text, valid_images, 
-            is_video=is_video, task_type=task_type
-        )
-
-    # Clear pending after generation
-    context.user_data['pending_images'] = []
