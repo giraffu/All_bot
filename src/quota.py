@@ -202,8 +202,8 @@ class QuotaManager:
             session.add(new_user)
             
             # 4. Create Referral
-            # Ensure inviter exists
-            stmt = select(User).where(User.id == inviter_id)
+            # Ensure inviter exists and lock the row for update to prevent concurrent modification issues
+            stmt = select(User).where(User.id == inviter_id).with_for_update()
             result = await session.execute(stmt)
             inviter = result.scalar_one_or_none()
             if not inviter:

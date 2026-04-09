@@ -6,7 +6,8 @@ import aiohttp
 from datetime import datetime, timedelta
 from sqlalchemy import select, update
 from src.database.core import AsyncSessionLocal
-from src.database.models import User, UserLog, MembershipPlan, Order
+from src.database.models import User, MembershipPlan, Order
+from src.services.log_service import LogService
 
 logger = logging.getLogger("payment_fulfillment")
 
@@ -108,23 +109,24 @@ async def fulfill_order(out_trade_no: str, external_trade_no: str, paid_amount: 
             user.current_identity = final_identity
             user.identity_expire_at = new_expire_at
             
-            log = UserLog(
+            await session.commit()
+            
+            # 使用统一的 LogService 记录流水（自带重试机制，防止丢日志）
+            await LogService.log_action(
                 user_id=user.id,
                 username=user.username,
                 operation_type="recharge",
                 credit_change=plan.reward_credits,
                 current_balance=user.credits,
-                extra_info=json.dumps({
+                extra_info={
                     "order_id": out_trade_no,
                     "plan": plan.name,
                     "external_trade_no": external_trade_no,
                     "via": "rmb_payment",
                     "converted_days": converted_days,
                     "identity": final_identity
-                }, ensure_ascii=False)
+                }
             )
-            session.add(log)
-            await session.commit()
             
             logger.info(f"Order {out_trade_no} fulfilled for user {user.id}")
             

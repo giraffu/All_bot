@@ -72,14 +72,11 @@ def get_best_proxy(default_proxy):
     return None # Return None to use direct connection
 
 async def clean_zombies_loop():
-    import sys
-    import os
-    sys.path.append(os.path.dirname(os.path.dirname(__file__)))
-    from clean_zombies import main as run_clean_zombies
+    from src.services.zombie_cleaner_service import clean_zombies
     logger = logging.getLogger("bot.core")
     while True:
         try:
-            await run_clean_zombies()
+            await clean_zombies()
         except Exception as e:
             logger.error(f"Error in clean_zombies_loop: {e}")
         await asyncio.sleep(600)  # Check every 10 minutes
@@ -88,15 +85,26 @@ async def post_init(application):
     await init_db()
     await setup_commands(application)
     
+    # Create a set to hold strong references to background tasks
+    # The event loop only keeps weak references, so tasks can be garbage collected mid-execution if not stored.
+    if "bg_tasks" not in application.bot_data:
+        application.bot_data["bg_tasks"] = set()
+    
     # Initialize and start Payment Validator
     payment_validator = TonPaymentValidator(bot_app=application)
-    asyncio.create_task(payment_validator.poll_transactions())
+    task_payment = asyncio.create_task(payment_validator.poll_transactions())
+    application.bot_data["bg_tasks"].add(task_payment)
+    task_payment.add_done_callback(application.bot_data["bg_tasks"].discard)
     
     # Recover tasks from Redis
-    asyncio.create_task(recover_active_tasks(application))
+    task_recover = asyncio.create_task(recover_active_tasks(application))
+    application.bot_data["bg_tasks"].add(task_recover)
+    task_recover.add_done_callback(application.bot_data["bg_tasks"].discard)
     
     # Start automated zombie task cleaner
-    asyncio.create_task(clean_zombies_loop())
+    task_zombies = asyncio.create_task(clean_zombies_loop())
+    application.bot_data["bg_tasks"].add(task_zombies)
+    task_zombies.add_done_callback(application.bot_data["bg_tasks"].discard)
 
 async def post_shutdown(application):
     logger = logging.getLogger("bot.core")
