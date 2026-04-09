@@ -118,6 +118,7 @@ const typeMapping = {
   'template_contribute': '模板共建',
   'undress_tongue': '脱衣吐舌',
   'closeup_blowjob': '特写口交',
+  'i2i_pro': '幻想换脸',
   'unknown': '未知类型'
 };
 

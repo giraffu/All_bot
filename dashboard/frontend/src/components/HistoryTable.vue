@@ -47,6 +47,7 @@ const typeMapping = {
   'undress_tongue': '脱衣吐舌',
   'closeup_blowjob': '特写口交',
   'text_to_image': '文生图',
+  'i2i_pro': '幻想换脸',
   'unknown': '未知类型'
 };
 
@@ -71,7 +72,8 @@ const typeOptions = [
   { label: '视频脱衣', value: 'video_undress' },
   { label: '随机换脸', value: 'random_faceswap' },
   { label: '视频生成', value: 'video' },
-  { label: '模板共建', value: 'template_contribute' }
+  { label: '模板共建', value: 'template_contribute' },
+  { label: '幻想换脸', value: 'i2i_pro' }
 ];
 
 const ratingOptions = [

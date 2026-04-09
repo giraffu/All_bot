@@ -139,6 +139,12 @@
    - 所有的生图或视频任务类型，其 JSON 工作流模板必须由 `workflow_patcher.py` 负责动态修改参数。
    - **红线**：禁止在带有多个图像输入的工作流（如 `face_swap`）中使用启发式 (Heuristic) 匹配来盲目覆盖图片节点，这会导致参数错乱并触发 ComfyUI 的 HTTP 400 错误。
    - 所有的节点映射必须通过 `mappings.json` 精确绑定。例如：视频类工作流中的尺寸调整应当映射给 `FindPerfectResolution` 节点，时长控制应映射给 `PainterI2V` 节点。并且要小心 Python 的 `None` 与 `JSON null` 类型转换对 `seed` 等整数型参数引发的问题。
+5. **数据库表结构迁移规范 (Alembic)**：
+   - **严禁使用原生 SQL**：绝对禁止在 `src/database/core.py` 的 `init_db()` 或任何地方使用原生 `ALTER TABLE` 语句来修改表结构，以免引发分布式启动时的锁表冲突和状态混乱。
+   - **正确流程**：
+     1. 直接在 `src/database/models.py` 中修改、添加或删除字段。
+     2. 在宿主机（项目根目录）终端执行：`alembic revision --autogenerate -m "变更备注"` 以生成迁移脚本。
+     3. 容器启动时（或代码中 `run_alembic_upgrade()`）会自动应用这些迁移脚本。
 
 ---
 **👨‍💻 最终开发指引 (To AI Assistant)**：

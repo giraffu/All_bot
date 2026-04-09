@@ -94,6 +94,7 @@ const typeMapping = {
   'undress_tongue': '脱衣吐舌',
   'closeup_blowjob': '特写口交',
   'text_to_image': '文生图',
+  'i2i_pro': '幻想换脸',
   'unknown': '未知类型'
 };
 
@@ -122,6 +123,7 @@ const typeColors = {
   'undress_tongue': '#bae637',
   'closeup_blowjob': '#ff4d4f',
   'text_to_image': '#52c41a',
+  'i2i_pro': '#ff85c0',
   'unknown': '#bfbfbf'
 };
 

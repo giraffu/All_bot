@@ -22,103 +22,64 @@ AsyncSessionLocal = sessionmaker(
     engine, class_=AsyncSession, expire_on_commit=False
 )
 
+async def run_alembic_upgrade():
+    import os
+    import asyncio
+    from alembic.config import Config
+    from alembic import command
+    
+    def _run_sync():
+        # Get the path to the root directory where alembic.ini is located
+        root_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+        alembic_ini_path = os.path.join(root_dir, "alembic.ini")
+        alembic_cfg = Config(alembic_ini_path)
+        # Set the root directory so alembic can find the migrations folder
+        alembic_cfg.set_main_option("script_location", os.path.join(root_dir, "migrations"))
+        
+        command.upgrade(alembic_cfg, "head")
+        
+    await asyncio.to_thread(_run_sync)
+
+async def stamp_alembic_head():
+    import os
+    import asyncio
+    from alembic.config import Config
+    from alembic import command
+    
+    def _run_sync():
+        root_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+        alembic_ini_path = os.path.join(root_dir, "alembic.ini")
+        alembic_cfg = Config(alembic_ini_path)
+        alembic_cfg.set_main_option("script_location", os.path.join(root_dir, "migrations"))
+        
+        command.stamp(alembic_cfg, "head")
+        
+    await asyncio.to_thread(_run_sync)
+
 async def init_db():
     async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-        
-        # Migrations (idempotent checks)
-        # Note: In a real production env, use Alembic. 
-        # Here we do simple column checks for backward compatibility during dev.
-        try:
-            # Check if user_group column exists
-            await conn.execute(text("SELECT user_group FROM users LIMIT 1"))
-        except Exception:
-            pass
-            
-    async with engine.begin() as conn:
-        try:
-            # Check if user_group column exists
-            await conn.execute(text("SELECT user_group FROM users LIMIT 1"))
-        except Exception:
-            try:
-                logger.info("Adding user_group column to users table")
-                await conn.execute(text("ALTER TABLE users ADD COLUMN user_group VARCHAR(20) DEFAULT '游客'"))
-            except Exception as e:
-                logger.warning(f"Failed to add user_group column: {e}")
+        # We still run create_all to ensure tables exist if it's a completely fresh setup
+        # However, alembic upgrade head will also create tables.
+        # It's safer to just check if we need to stamp.
         
         try:
-            # Check if total_contributions column exists
-            await conn.execute(text("SELECT total_contributions FROM users LIMIT 1"))
+            res = await conn.execute(text("SELECT 1 FROM information_schema.tables WHERE table_name = 'users'"))
+            users_exists = res.scalar() == 1
         except Exception:
-            pass
-
-    async with engine.begin() as conn:
-        try:
-            # Check if total_contributions column exists
-            await conn.execute(text("SELECT total_contributions FROM users LIMIT 1"))
-        except Exception:
-            try:
-                logger.info("Adding contribution columns to users table")
-                await conn.execute(text("ALTER TABLE users ADD COLUMN total_contributions INTEGER DEFAULT 0"))
-                await conn.execute(text("ALTER TABLE users ADD COLUMN approved_contributions INTEGER DEFAULT 0"))
-            except Exception as e:
-                logger.warning(f"Failed to add contribution columns: {e}")
-
-        try:
-            # Check if temp_credits column exists
-            await conn.execute(text("SELECT temp_credits FROM users LIMIT 1"))
-        except Exception:
-            pass
-
-    async with engine.begin() as conn:
-        try:
-            await conn.execute(text("SELECT temp_credits FROM users LIMIT 1"))
-        except Exception:
-            try:
-                logger.info("Adding temp_credits column to users table")
-                await conn.execute(text("ALTER TABLE users ADD COLUMN temp_credits INTEGER DEFAULT 0"))
-            except Exception as e:
-                logger.warning(f"Failed to add temp_credits column: {e}")
-
-        try:
-            # Check if temporary_ingot column exists
-            await conn.execute(text("SELECT temporary_ingot FROM users LIMIT 1"))
-        except Exception:
-            try:
-                # We need to create a new subtransaction or execute in a new connection
-                pass # This is handled below
-            except Exception:
-                pass
-                
-    # Need to run these outside the first transaction block if it failed
-    async with engine.begin() as conn:
-        try:
-            await conn.execute(text("SELECT temporary_ingot FROM users LIMIT 1"))
-        except Exception:
-            try:
-                logger.info("Adding temporary_ingot column to users table")
-                await conn.execute(text("ALTER TABLE users ADD COLUMN temporary_ingot INTEGER DEFAULT 0"))
-            except Exception as e:
-                logger.warning(f"Failed to add temporary_ingot column: {e}")
-                
-    async with engine.begin() as conn:
-        try:
-            logger.info("Adding new payment and identity columns to users table")
-            await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS current_identity VARCHAR(20) DEFAULT '外门弟子'"))
-            await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS identity_expire_at TIMESTAMP"))
-        except Exception as e:
-            logger.warning(f"Failed to add payment columns: {e}")
-
-        try:
-            logger.info("Adding price_stars column to membership_plans table")
-            await conn.execute(text("ALTER TABLE membership_plans ADD COLUMN IF NOT EXISTS price_stars INTEGER DEFAULT 0 NOT NULL"))
+            users_exists = False
             
-            # Update existing plans with default stars prices if they are 0
-            await conn.execute(text("UPDATE membership_plans SET price_stars = 200 WHERE name = '基础月卡' AND price_stars = 0"))
-            await conn.execute(text("UPDATE membership_plans SET price_stars = 500 WHERE name = '高级月卡' AND price_stars = 0"))
-            await conn.execute(text("UPDATE membership_plans SET price_stars = 1000 WHERE name = '至尊月卡' AND price_stars = 0"))
-        except Exception as e:
-            logger.warning(f"Failed to add price_stars column: {e}")
+        try:
+            res = await conn.execute(text("SELECT 1 FROM information_schema.tables WHERE table_name = 'alembic_version'"))
+            alembic_exists = res.scalar() == 1
+        except Exception:
+            alembic_exists = False
+
+    if users_exists and not alembic_exists:
+        logger.info("检测到现存数据库未包含 Alembic 版本信息，执行 stamp head 操作平滑过渡...")
+        await stamp_alembic_head()
+
+    logger.info("执行数据库结构迁移...")
+    await run_alembic_upgrade()
 
     async with engine.begin() as conn:
         # Initialize default membership plans and discount rules if tables are empty

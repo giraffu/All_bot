@@ -12,3 +12,4 @@ pydantic
 pytoniq-core
 aiohttp
 redis
+alembic
