@@ -80,6 +80,7 @@ async def init_db():
 
     logger.info("执行数据库结构迁移...")
     await run_alembic_upgrade()
+    logger.info("数据库结构迁移完成！")
 
     async with engine.begin() as conn:
         # Initialize default membership plans and discount rules if tables are empty

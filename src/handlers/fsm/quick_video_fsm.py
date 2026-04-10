@@ -43,12 +43,26 @@ async def start_quick_video(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     user_id = update.effective_user.id
     text = update.message.text.strip()
     
+    from src.utils import is_maintenance_mode
+    if is_maintenance_mode():
+        msg = "⚠️ 🛠️ **系统正在维护升级中**\n\n为了提供更好的服务，当前生图/生视频节点正在维护，暂不接受新任务。\n\n您的灵石和会员权益不受影响，请稍后再试！"
+        if update.callback_query:
+            await robust_edit_text(update.callback_query.message, msg, parse_mode="Markdown")
+        else:
+            await robust_reply_text(update.message, msg, parse_mode="Markdown")
+        return ConversationHandler.END
+
     if context.user_data.get('in_conversation'):
         msg = "⚠️ 您当前有未完成的交互流程，请先发送 /cancel 退出当前流程后再试。"
         await robust_reply_text(update.message, msg)
         return ConversationHandler.END
 
-    mode = QUICK_VIDEO_MODES.get(text)
+    mode = None
+    for key, val in QUICK_VIDEO_MODES.items():
+        if key in text:
+            mode = val
+            break
+            
     if not mode:
         return ConversationHandler.END
 
@@ -60,7 +74,7 @@ async def start_quick_video(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         'image_path': None
     }
 
-    mode_name = text.split(" ")[1] # e.g. "动图传教士"
+    mode_name = text[2:] if len(text) > 2 else text
     msg = f"🎬 **已切换到【{mode_name}】模式**。\n\n请发送一张【正面清晰图片】，我将自动处理。\n\n随时可以发送 /cancel 退出流程。"
     await robust_reply_text(update.message, msg, parse_mode="Markdown")
     return QuickVideoState.WAIT_IMAGE
@@ -267,7 +281,7 @@ import re
 
 async def unexpected_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     text = update.message.text if update.message else ""
-    if text and re.match(r'^(🛌 动图传教士|🎬 动图后入|🎬 口交黑人|🎬 脱衣吐舌|🎬 特写口交|🎨 自由P图|🌟 幻想换脸|💃 快速脱衣|🥵 快速自慰|🎭 随机换脸|🎬 视频换脸|🎬 自定义视频|📅 每日签到|签到|/checkin|🤝 分享赚灵石|⏳ 排队状态|排队|/queue|/start)$', text):
+    if text and re.match(r'^(🖼️ 懒人P图|🎬 懒人动图|🔙 返回主菜单|🛌 动图传教士|🎬 动图后入|🎬 口交黑人|🎬 脱衣吐舌|🎬 特写口交|🎨 自由P图|🌟 幻想换脸|💃 快速脱衣|🎭 快速换脸|🥵 快速自慰|🎭 随机换脸|🎬 视频换脸|🎬 自定义视频|🎬 自定义图生视频|📅 每日签到|签到|/checkin|🤝 分享赚灵石|⏳ 排队状态|排队|/queue|💰 个人中心|👤 个人中心|💎 充值灵石|/start)$', text):
         user_id = update.effective_user.id if update.effective_user else "Unknown"
         _cleanup_context(context, user_id)
         await robust_reply_text(update.message, "🔄 已为您自动取消未完成的流程。\n👉 **请再次点击刚才的按钮**，即可开始新任务！")
@@ -279,7 +293,7 @@ async def unexpected_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 def get_quick_video_fsm_handler() -> ConversationHandler:
     return ConversationHandler(
         entry_points=[
-            MessageHandler(filters.Regex('^(🛌 动图传教士|🎬 动图后入|🎬 口交黑人|🎬 脱衣吐舌|🎬 特写口交)$'), start_quick_video)
+            MessageHandler(filters.Regex(r'.*(动图传教士|动图后入|口交黑人|脱衣吐舌|特写口交).*'), start_quick_video)
         ],
         states={
             QuickVideoState.WAIT_IMAGE: [

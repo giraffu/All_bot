@@ -1,7 +1,63 @@
 import os
 import re
 
-MENU_REGEX_STR = r"^(🛌 动图传教士|🎬 动图后入|🎬 口交黑人|🎬 脱衣吐舌|🎬 特写口交|🎨 自由P图|🌟 幻想换脸|💃 快速脱衣|🥵 快速自慰|🎭 随机换脸|🎬 视频换脸|🎬 自定义视频|📅 每日签到|签到|/checkin|🤝 分享赚灵石|⏳ 排队状态|排队|/queue|/start)$"
+import os
+import glob
+import re
+
+MENU_REGEX_STR = r"^(🖼️ 懒人P图|🎬 懒人动图|🔙 返回主菜单|🛌 动图传教士|🎬 动图后入|🎬 口交黑人|🎬 脱衣吐舌|🎬 特写口交|🎨 自由P图|🌟 幻想换脸|💃 快速脱衣|🎭 快速换脸|🥵 快速自慰|🎭 随机换脸|🎬 视频换脸|🎬 自定义视频|🎬 自定义图生视频|📅 每日签到|签到|/checkin|🤝 分享赚灵石|⏳ 排队状态|排队|/queue|💰 个人中心|👤 个人中心|💎 充值灵石|/start)$"
+
+def update_files():
+    fsm_dir = "src/handlers/fsm"
+    for filepath in glob.glob(os.path.join(fsm_dir, "*.py")):
+        with open(filepath, 'r', encoding='utf-8') as f:
+            content = f.read()
+        
+        # Replace the old regex with the new one
+        new_content = re.sub(
+            r're\.match\(r\'\^\(.*?\)#\', text\)',
+            f"re.match(r'{MENU_REGEX_STR}', text)",
+            content
+        )
+        
+        new_content = re.sub(
+            r"re\.match\(r'\^\(.*?\)#', text\)",
+            f"re.match(r'{MENU_REGEX_STR}', text)",
+            new_content
+        )
+        
+        # Another common pattern
+        new_content = re.sub(
+            r"re\.match\(r'\^\(.*?\)#', text\)",
+            f"re.match(r'{MENU_REGEX_STR}', text)",
+            new_content
+        )
+        
+        # the exact pattern in the files
+        new_content = re.sub(
+            r"re\.match\(r'\^\(.*?\)#', text\)",
+            f"re.match(r'{MENU_REGEX_STR}', text)",
+            new_content
+        )
+
+        # just replace all re.match for menu regexes in unexpected_input
+        pattern_to_find = r"re\.match\(r'\^\(.*?\)#?', text\)"
+        
+        # Let's do a more robust replacement based on what we saw in grep
+        old_regex_pattern = r"re\.match\(r'\^\(.*?\)#?', text\)"
+        # actually let's just replace the exact line we know is there
+        old_line_pattern = r"re\.match\(r'\^\(🛌 动图传教士.*?/start\)\$', text\)"
+        
+        new_content = re.sub(old_line_pattern, f"re.match(r'{MENU_REGEX_STR}', text)", content)
+        
+        if new_content != content:
+            with open(filepath, 'w', encoding='utf-8') as f:
+                f.write(new_content)
+            print(f"Updated {filepath}")
+
+if __name__ == '__main__':
+    update_files()
+
 
 NEW_UNEXPECTED_INPUT = f"""import re
 

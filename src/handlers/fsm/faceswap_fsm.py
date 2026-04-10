@@ -33,7 +33,17 @@ def _cleanup_context(context: ContextTypes.DEFAULT_TYPE, user_id: int):
 async def start_faceswap(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Entry point for Two-person Face Swap (快速换脸)."""
     user_id = update.effective_user.id
+    logger.info(f"User {user_id} triggered start_faceswap with text: {update.message.text if update.message else 'None'}")
     
+    from src.utils import is_maintenance_mode
+    if is_maintenance_mode():
+        msg = "⚠️ 🛠️ **系统正在维护升级中**\n\n为了提供更好的服务，当前生图/生视频节点正在维护，暂不接受新任务。\n\n您的灵石和会员权益不受影响，请稍后再试！"
+        if update.callback_query:
+            await robust_edit_text(update.callback_query.message, msg, parse_mode="Markdown")
+        else:
+            await robust_reply_text(update.message, msg, parse_mode="Markdown")
+        return ConversationHandler.END
+
     if context.user_data.get('in_conversation'):
         msg = "⚠️ 您当前有未完成的交互流程，请先发送 /cancel 退出当前流程后再试。"
         if update.callback_query:
@@ -161,7 +171,7 @@ import re
 
 async def unexpected_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     text = update.message.text if update.message else ""
-    if text and re.match(r'^(🛌 动图传教士|🎬 动图后入|🎬 口交黑人|🎬 脱衣吐舌|🎬 特写口交|🎨 自由P图|🌟 幻想换脸|💃 快速脱衣|🥵 快速自慰|🎭 随机换脸|🎬 视频换脸|🎬 自定义视频|📅 每日签到|签到|/checkin|🤝 分享赚灵石|⏳ 排队状态|排队|/queue|/start)$', text):
+    if text and re.match(r'^(🖼️ 懒人P图|🎬 懒人动图|🔙 返回主菜单|🛌 动图传教士|🎬 动图后入|🎬 口交黑人|🎬 脱衣吐舌|🎬 特写口交|🎨 自由P图|🌟 幻想换脸|💃 快速脱衣|🎭 快速换脸|🥵 快速自慰|🎭 随机换脸|🎬 视频换脸|🎬 自定义视频|🎬 自定义图生视频|📅 每日签到|签到|/checkin|🤝 分享赚灵石|⏳ 排队状态|排队|/queue|💰 个人中心|👤 个人中心|💎 充值灵石|/start)$', text):
         user_id = update.effective_user.id if update.effective_user else "Unknown"
         _cleanup_context(context, user_id)
         await robust_reply_text(update.message, "🔄 已为您自动取消未完成的流程。\n👉 **请再次点击刚才的按钮**，即可开始新任务！")
@@ -174,7 +184,7 @@ def get_faceswap_fsm_handler() -> ConversationHandler:
     return ConversationHandler(
         entry_points=[
             CommandHandler('faceswap', start_faceswap),
-            MessageHandler(filters.Regex('^🎭 快速换脸$'), start_faceswap),
+            MessageHandler(filters.Regex(r'.*快速换脸.*'), start_faceswap),
             CallbackQueryHandler(start_faceswap, pattern='^fsm_start_faceswap$')
         ],
         states={

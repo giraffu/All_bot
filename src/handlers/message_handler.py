@@ -145,6 +145,7 @@ async def handle_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     text = update.message.text.strip() if update.message.text else ""
+    logger.info(f"handle_prompt received: {text.encode('utf-8')}")
     if not text:
         return
     
