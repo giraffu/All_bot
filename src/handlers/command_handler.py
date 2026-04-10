@@ -13,8 +13,31 @@ async def setup_commands(app: Application):
     """
     commands = [
         BotCommand("start", "🏠 显示主菜单"),
+        BotCommand("cancel", "🚫 取消当前流程"),
     ]
     await app.bot.set_my_commands(commands)
+
+@with_db_logging_context
+async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    
+    # Globally clear the FSM lock
+    context.user_data.pop('in_conversation', None)
+    
+    # Clear all state data
+    keys_to_remove = [k for k in context.user_data.keys() if k.endswith('_data')]
+    for k in keys_to_remove:
+        context.user_data.pop(k, None)
+    
+    # Define menu keyboard
+    from src.constants import MAIN_MENU_KEYBOARD
+    reply_markup = ReplyKeyboardMarkup(MAIN_MENU_KEYBOARD, resize_keyboard=True)
+    
+    await update.message.reply_text(
+        "🚫 **已强制取消当前所有流程。**\n\n您可以重新选择菜单中的功能开始新任务。",
+        reply_markup=reply_markup,
+        parse_mode="Markdown"
+    )
 
 @with_db_logging_context
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):

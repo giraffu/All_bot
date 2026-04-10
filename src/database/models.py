@@ -11,9 +11,6 @@ class User(Base):
     username = Column(String(100), nullable=True)
     full_name = Column(String(200), nullable=True)
     credits = Column(Integer, default=6)
-    # temp_credits and temporary_ingot are deprecated and should not be used
-    temporary_ingot = Column(Integer, default=0)
-    temp_credits = Column(Integer, default=0)
     last_checkin = Column(Date, nullable=True)
     is_channel_member = Column(Boolean, default=False)
     user_group = Column(String(20), default="凡人") # 凡人, 练气期, 筑基期, 金丹期, 元婴期

@@ -14,7 +14,7 @@ from telegram.ext import (
 from src.handlers.conversation_states import EditImageState
 from src.services.permission_service import permission_service
 from src.services.task_service import TaskService
-from src.utils import robust_reply_text, robust_edit_text
+from src.utils import robust_reply_text, robust_edit_text, create_background_task
 from src.constants import TASK_COSTS, MODE_EDIT, MODE_I2I_PRO
 
 logger = logging.getLogger("fsm.edit_image")
@@ -120,6 +120,9 @@ async def receive_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     images = list(fsm_data['images'])
     
+    if not images:
+        return ConversationHandler.END # Prevent double submit
+
     # 转移文件所有权给 TaskService
     fsm_data['images'] = [] 
 
@@ -128,7 +131,8 @@ async def receive_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     if mode == MODE_I2I_PRO:
         # Mock Update to support legacy process_i2i_pro_task
         # Mock Update is no longer needed because process_i2i_pro_task doesn't take update
-        asyncio.create_task(
+        create_background_task(
+            context,
             TaskService.process_i2i_pro_task(
                 context, message.chat_id, user_id, 
                 update.effective_user.username or update.effective_user.full_name,
@@ -136,7 +140,8 @@ async def receive_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             )
         )
     else:
-        asyncio.create_task(
+        create_background_task(
+            context,
             TaskService.process_generation_task(
                 context, message.chat_id, user_id,
                 update.effective_user.username or update.effective_user.full_name,
@@ -161,8 +166,17 @@ async def timeout_conversation(update: Update, context: ContextTypes.DEFAULT_TYP
     _cleanup_context(context, user_id)
     return ConversationHandler.END
 
+import re
+
 async def unexpected_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    await robust_reply_text(update.message, "⚠️ 当前处于交互流程中。请输入要求的内容，或发送 /cancel 取消本次操作。")
+    text = update.message.text if update.message else ""
+    if text and re.match(r'^(🛌 动图传教士|🎬 动图后入|🎬 口交黑人|🎬 脱衣吐舌|🎬 特写口交|🎨 自由P图|🌟 幻想换脸|💃 快速脱衣|🥵 快速自慰|🎭 随机换脸|🎬 视频换脸|🎬 自定义视频|📅 每日签到|签到|/checkin|🤝 分享赚灵石|⏳ 排队状态|排队|/queue|/start)$', text):
+        user_id = update.effective_user.id if update.effective_user else "Unknown"
+        _cleanup_context(context, user_id)
+        await robust_reply_text(update.message, "🔄 已为您自动取消未完成的流程。\n👉 **请再次点击刚才的按钮**，即可开始新任务！")
+        return ConversationHandler.END
+
+    await robust_reply_text(update.message, "⚠️ 当前处于交互流程中。请按提示操作，或发送 /cancel 取消本次操作。")
     return None
 
 def get_edit_image_fsm_handler() -> ConversationHandler:

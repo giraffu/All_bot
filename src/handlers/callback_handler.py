@@ -4,7 +4,7 @@ from config import ENABLE_PUBLIC_SHARE, MINIO_TEMPLATE_BUCKET, REQUIRED_CHANNEL_
 from src.utils import (
     robust_send_message, robust_edit_text, load_prompts, 
     robust_edit_reply_markup, robust_edit_caption, safe_answer_query,
-    is_maintenance_mode
+    is_maintenance_mode, create_background_task
 )
 from src.handlers.utils import with_db_logging_context
 from src.services.task_service import TaskService
@@ -331,7 +331,6 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
             
             reply_markup = InlineKeyboardMarkup([
                 [
-                    InlineKeyboardButton("公开", callback_data="public_share_request"),
                     InlineKeyboardButton("🔄 再来一张", callback_data="random_faceswap_again")
                 ],
                 [
@@ -340,8 +339,9 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
                 ]
             ])
             
-            # Use asyncio.create_task to prevent blocking the callback handler
-            asyncio.create_task(
+            # Use create_background_task to prevent blocking the callback handler and avoid GC
+            create_background_task(
+                context,
                 TaskService.process_generation_task(
                     context, chat_id, user_id, username, 
                     prompt, swapped_images, task_type="face_swap",

@@ -54,7 +54,6 @@ async def get_users(skip: int = 0, limit: int = 100000, db: AsyncSession = Depen
         
         for user in users:
             user_dict = {c.name: getattr(user, c.name) for c in user.__table__.columns}
-            user_dict['temporary_ingot'] = 0 # Deprecated, keep for frontend compatibility until frontend is updated
             user_dict["referral_count"] = user.referral_count or 0
             user_dict["last_activity"] = user.last_activity
             user_dict["generation_count"] = user.generation_count or 0
@@ -144,7 +143,6 @@ async def update_user_credits(user_id: int, request: UpdateCreditsRequest, db: A
         return {
             "status": "ok", 
             "credits": user.credits, 
-            "temporary_ingot": 0,
             "checkin_count": user.checkin_count
         }
     except Exception as e:

@@ -6,6 +6,7 @@ from src.services.permission_service import permission_service
 from src.services.image_service import image_service
 from src.services.task_service import TaskService
 from src.logger import UserLogger
+from src.utils import create_background_task
 
 logger = logging.getLogger(__name__)
 
@@ -46,7 +47,7 @@ async def recover_active_tasks(application):
     
     logger.info(f"Found {len(tasks)} active tasks in Redis. Attempting recovery...")
     for registry_task_id, task_data in tasks.items():
-        asyncio.create_task(_recover_single_task(registry_task_id, task_data, application))
+        create_background_task(application, _recover_single_task(registry_task_id, task_data, application))
 
 async def _recover_single_task(registry_task_id, task_data, application):
     bot = application.bot

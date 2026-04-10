@@ -13,7 +13,7 @@ from telegram.ext import (
 from src.handlers.conversation_states import FaceVideoState, CommonState
 from src.services.permission_service import permission_service
 from src.services.task_service import TaskService
-from src.utils import robust_reply_text, robust_edit_text
+from src.utils import robust_reply_text, robust_edit_text, create_background_task
 from src.constants import RESOLUTION_COST
 
 logger = logging.getLogger("fsm.face_video")
@@ -139,8 +139,8 @@ async def receive_video(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     # Present Resolution Selection
     keyboard = [
         [
-            InlineKeyboardButton(f"高清 720p ({RESOLUTION_COST.get(720, 35)} 灵石)", callback_data="fsm_fv_res_720"),
-            InlineKeyboardButton(f"超清 1024p ({RESOLUTION_COST.get(1024, 50)} 灵石)", callback_data="fsm_fv_res_1024")
+            InlineKeyboardButton(f"高清 720p ({RESOLUTION_COST.get('720p', 18)} 灵石)", callback_data="fsm_fv_res_720"),
+            InlineKeyboardButton(f"超清 1024p ({RESOLUTION_COST.get('1024p', 36)} 灵石)", callback_data="fsm_fv_res_1024")
         ],
         [
             InlineKeyboardButton("❌ 取消", callback_data="fsm_fv_cancel")
@@ -171,8 +171,9 @@ async def process_resolution_selection(update: Update, context: ContextTypes.DEF
         return ConversationHandler.END
 
     # Parse resolution
-    resolution = int(data.split("_")[-1])
-    cost = RESOLUTION_COST.get(resolution, 20)
+    res_str = data.split("_")[-1]
+    resolution = int(res_str)
+    cost = RESOLUTION_COST.get(f"{res_str}p", 20)
     duration = 121  # Assuming a max standard duration
 
     # Validate Priority & Balance
@@ -183,26 +184,25 @@ async def process_resolution_selection(update: Update, context: ContextTypes.DEF
         return ConversationHandler.END
 
     fsm_data = context.user_data.get('face_video_data', {})
-    face_path = fsm_data.get('face_image_path')
-    video_path = fsm_data.get('video_path')
+    if not fsm_data:
+        try:
+            await query.answer("交互已失效或任务已提交，请重新开始", show_alert=True)
+        except Exception:
+            pass
+        return ConversationHandler.END
+
+    face_path = fsm_data.pop('face_image_path', None)
+    video_path = fsm_data.pop('video_path', None)
 
     if not face_path or not video_path:
-        await robust_edit_text(query.message, "❌ 内部错误：找不到对应的图片或视频缓存，请重新开始。")
-        _cleanup_context(context, user_id)
-        return ConversationHandler.END
+        return ConversationHandler.END # Prevent double submit
 
     # Update message
     await robust_edit_text(query.message, f"🚀 正在提交视频换脸任务 ({resolution}p)，预计消耗 {cost} 灵石，请耐心等待...")
 
-    # We must copy paths locally because _cleanup_context will delete FSM data keys,
-    # BUT we shouldn't os.remove the files before TaskService uses them!
-    # TaskService has its own cleanup=True mechanism which deletes paths.
-    # So we remove them from our tracked list to prevent double deletion in FSM cleanup.
-    context.user_data['face_video_data'].pop('face_image_path', None)
-    context.user_data['face_video_data'].pop('video_path', None)
-
     # Spawn task via TaskService (assuming it cleans up files afterwards)
-    asyncio.create_task(
+    create_background_task(
+        context,
         TaskService.process_face_video_task(
             context, query.message.chat_id, user_id,
             query.from_user.username or query.from_user.full_name,
@@ -243,17 +243,17 @@ async def timeout_conversation(update: Update, context: ContextTypes.DEFAULT_TYP
     _cleanup_context(context, user_id)
     return ConversationHandler.END
 
+import re
+
 async def unexpected_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Triggered when user sends something completely unexpected in a state."""
-    await robust_reply_text(
-        update.message, 
-        "⚠️ 当前处于交互流程中。请输入要求的内容（图片/视频），或发送 /cancel 取消本次操作。"
-    )
-    # Remain in the current state
-    # Returning None or omitted return implies keeping current state in some implementations, 
-    # but to be safe, PTB requires returning the exact state. 
-    # Returning ConversationHandler.WAITING is not a thing.
-    # We just don't transition.
+    text = update.message.text if update.message else ""
+    if text and re.match(r'^(🛌 动图传教士|🎬 动图后入|🎬 口交黑人|🎬 脱衣吐舌|🎬 特写口交|🎨 自由P图|🌟 幻想换脸|💃 快速脱衣|🥵 快速自慰|🎭 随机换脸|🎬 视频换脸|🎬 自定义视频|📅 每日签到|签到|/checkin|🤝 分享赚灵石|⏳ 排队状态|排队|/queue|/start)$', text):
+        user_id = update.effective_user.id if update.effective_user else "Unknown"
+        _cleanup_context(context, user_id)
+        await robust_reply_text(update.message, "🔄 已为您自动取消未完成的流程。\n👉 **请再次点击刚才的按钮**，即可开始新任务！")
+        return ConversationHandler.END
+
+    await robust_reply_text(update.message, "⚠️ 当前处于交互流程中。请按提示操作，或发送 /cancel 取消本次操作。")
     return None # Return None keeps the state unchanged in PTB
 
 # --- FSM Factory ---

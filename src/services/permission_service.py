@@ -246,7 +246,6 @@ class PermissionService:
             "identity_expire_at": stats.get("identity_expire_at"),
             "priority": priority,
             "credits": credits,
-            "temp_credits": 0, # Legacy, keeping field for compatibility if needed, but always 0
             "invitations": stats.get("invitation_count", 0),
             "checkins": stats.get("checkin_count", 0),
             "generations": stats.get("generation_count", 0),

@@ -15,7 +15,7 @@ from telegram.ext import (
 from src.handlers.conversation_states import QuickImageState
 from src.services.permission_service import permission_service
 from src.services.task_service import TaskService
-from src.utils import robust_reply_text, load_prompts
+from src.utils import robust_reply_text, load_prompts, create_background_task
 from src.constants import TASK_COSTS, MODE_UNDRESS, MODE_MASTURBATION, MODE_RANDOM_FACESWAP
 from config import ENABLE_PUBLIC_SHARE
 
@@ -111,8 +111,9 @@ async def receive_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         await robust_reply_text(message, "❌ 下载图片失败，请重试或发送 /cancel 退出。")
         return QuickImageState.WAIT_IMAGE
 
-    image_path = fsm_data['image_path']
-    fsm_data['image_path'] = None # Hand over ownership
+    image_path = fsm_data.pop('image_path', None)
+    if not image_path:
+        return ConversationHandler.END # Prevent double submit
 
     await robust_reply_text(message, f"🚀 正在提交生成任务，预计消耗 {cost} 灵石，请耐心等待...")
 
@@ -143,13 +144,14 @@ async def receive_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
                 ]
             ]
             if ENABLE_PUBLIC_SHARE:
-                keyboard[0].insert(0, InlineKeyboardButton("公开", callback_data="public_share_request"))
+                keyboard[0].insert(0, InlineKeyboardButton("🌐 公开", callback_data="public_share_request"))
             reply_markup = InlineKeyboardMarkup(keyboard)
             
             # Save face image path globally for "Again" button (outside FSM)
             context.user_data['last_face_image'] = image_path
             
-            asyncio.create_task(
+            create_background_task(
+                context,
                 TaskService.process_generation_task(
                     context, message.chat_id, user_id, 
                     update.effective_user.username or update.effective_user.full_name, 
@@ -165,7 +167,8 @@ async def receive_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     else:
         # Undress or Masturbation
         prompt = prompts_config.get(mode, mode)
-        asyncio.create_task(
+        create_background_task(
+            context,
             TaskService.process_generation_task(
                 context, message.chat_id, user_id,
                 update.effective_user.username or update.effective_user.full_name,
@@ -190,8 +193,17 @@ async def timeout_conversation(update: Update, context: ContextTypes.DEFAULT_TYP
     _cleanup_context(context, user_id)
     return ConversationHandler.END
 
+import re
+
 async def unexpected_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    await robust_reply_text(update.message, "⚠️ 当前处于交互流程中。请输入图片，或发送 /cancel 取消本次操作。")
+    text = update.message.text if update.message else ""
+    if text and re.match(r'^(🛌 动图传教士|🎬 动图后入|🎬 口交黑人|🎬 脱衣吐舌|🎬 特写口交|🎨 自由P图|🌟 幻想换脸|💃 快速脱衣|🥵 快速自慰|🎭 随机换脸|🎬 视频换脸|🎬 自定义视频|📅 每日签到|签到|/checkin|🤝 分享赚灵石|⏳ 排队状态|排队|/queue|/start)$', text):
+        user_id = update.effective_user.id if update.effective_user else "Unknown"
+        _cleanup_context(context, user_id)
+        await robust_reply_text(update.message, "🔄 已为您自动取消未完成的流程。\n👉 **请再次点击刚才的按钮**，即可开始新任务！")
+        return ConversationHandler.END
+
+    await robust_reply_text(update.message, "⚠️ 当前处于交互流程中。请按提示操作，或发送 /cancel 取消本次操作。")
     return None
 
 def get_quick_image_fsm_handler() -> ConversationHandler:

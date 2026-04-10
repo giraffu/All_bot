@@ -135,8 +135,35 @@ async def robust_reply_text(message, text, **kwargs):
 
 
 @async_retry(max_retries=3)
-async def robust_edit_text(message, text, **kwargs):
-    return await message.edit_text(text=text, **kwargs)
+async def robust_edit_text(message, text: str, **kwargs):
+    """Safely edit message text with retry and length limit"""
+    if not message:
+        return None
+    try:
+        text = text[:4000]
+        return await message.edit_text(text, **kwargs)
+    except BadRequest as e:
+        if "Message is not modified" in str(e):
+            return message
+        logger.error(f"Failed to edit message: {e}")
+        return None
+    except Exception as e:
+        logger.error(f"Unexpected error editing message: {e}")
+        return None
+
+def create_background_task(context, coro):
+    """
+    Safely create a background asyncio task and store a strong reference to it
+    in context.bot_data['bg_tasks'] to prevent Python's garbage collector
+    from destroying the task mid-execution.
+    """
+    import asyncio
+    task = asyncio.create_task(coro)
+    if "bg_tasks" not in context.bot_data:
+        context.bot_data["bg_tasks"] = set()
+    context.bot_data["bg_tasks"].add(task)
+    task.add_done_callback(context.bot_data["bg_tasks"].discard)
+    return task
 
 
 @async_retry(max_retries=3)
@@ -151,11 +178,19 @@ async def robust_edit_caption(message, caption, **kwargs):
 
 @async_retry(max_retries=3)
 async def robust_send_photo(bot, chat_id, photo, **kwargs):
+    kwargs.setdefault('read_timeout', 180)
+    kwargs.setdefault('write_timeout', 180)
+    kwargs.setdefault('connect_timeout', 120)
+    kwargs.setdefault('pool_timeout', 60)
     return await bot.send_photo(chat_id=chat_id, photo=photo, **kwargs)
 
 
 @async_retry(max_retries=3)
 async def robust_send_video(bot, chat_id, video, **kwargs):
+    kwargs.setdefault('read_timeout', 300)
+    kwargs.setdefault('write_timeout', 300)
+    kwargs.setdefault('connect_timeout', 120)
+    kwargs.setdefault('pool_timeout', 60)
     return await bot.send_video(chat_id=chat_id, video=video, **kwargs)
 
 

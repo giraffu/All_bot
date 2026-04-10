@@ -11,7 +11,7 @@ import logging
 import os
 from config import PROXY_URL
 from src.logger import setup_logging
-from src.handlers.command_handler import start, setup_commands, toggle_maintenance
+from src.handlers.command_handler import start, cancel, setup_commands, toggle_maintenance
 from src.handlers.message_handler import handle_photo, handle_prompt, handle_video, handle_document
 from src.handlers.callback_handler import handle_callback_query
 from src.database.core import init_db
@@ -178,6 +178,7 @@ def main():
 
     # Register Fallback Handlers
     app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("cancel", cancel))
     app.add_handler(CommandHandler("maintenance", toggle_maintenance))
     app.add_handler(CallbackQueryHandler(handle_callback_query))
     app.add_handler(PreCheckoutQueryHandler(precheckout_callback))

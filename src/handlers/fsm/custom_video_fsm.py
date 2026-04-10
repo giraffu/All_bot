@@ -14,7 +14,7 @@ from telegram.ext import (
 from src.handlers.conversation_states import CustomVideoState
 from src.services.permission_service import permission_service
 from src.services.task_service import TaskService
-from src.utils import robust_reply_text, robust_edit_text
+from src.utils import robust_reply_text, robust_edit_text, create_background_task
 from src.constants import get_video_settings_keyboard, DEFAULT_RESOLUTION, DEFAULT_DURATION, RESOLUTION_COST, DURATION_MULTIPLIER
 
 logger = logging.getLogger("fsm.custom_video")
@@ -101,8 +101,11 @@ async def process_settings(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     
     fsm_data = context.user_data.get('custom_video_data', {})
     if not fsm_data:
-        await query.answer("交互已失效，请重新开始", show_alert=True)
-        return CustomVideoState.WAIT_SETTINGS_AND_PROMPT
+        try:
+            await query.answer("交互已失效或任务已提交，请重新开始", show_alert=True)
+        except Exception:
+            pass
+        return ConversationHandler.END
 
     if data.startswith("set_res_"):
         fsm_data['resolution'] = data.split("_")[2]
@@ -147,8 +150,9 @@ async def receive_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         _cleanup_context(context, user_id)
         return ConversationHandler.END
 
-    image_path = fsm_data['image_path']
-    fsm_data['image_path'] = None # Hand over ownership
+    image_path = fsm_data.pop('image_path', None)
+    if not image_path:
+        return ConversationHandler.END
 
     await robust_reply_text(message, f"🚀 正在提交自定义视频任务，预计消耗 {cost} 灵石，请耐心等待...")
 
@@ -159,7 +163,8 @@ async def receive_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     context.user_data['custom_video_resolution'] = res
     context.user_data['custom_video_duration'] = dur
     
-    asyncio.create_task(
+    create_background_task(
+        context,
         TaskService.process_custom_video_task(
             update=update,
             context=context,
@@ -186,8 +191,17 @@ async def timeout_conversation(update: Update, context: ContextTypes.DEFAULT_TYP
     _cleanup_context(context, user_id)
     return ConversationHandler.END
 
+import re
+
 async def unexpected_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    await robust_reply_text(update.message, "⚠️ 当前处于交互流程中。请输入要求的内容，或发送 /cancel 取消本次操作。")
+    text = update.message.text if update.message else ""
+    if text and re.match(r'^(🛌 动图传教士|🎬 动图后入|🎬 口交黑人|🎬 脱衣吐舌|🎬 特写口交|🎨 自由P图|🌟 幻想换脸|💃 快速脱衣|🥵 快速自慰|🎭 随机换脸|🎬 视频换脸|🎬 自定义视频|📅 每日签到|签到|/checkin|🤝 分享赚灵石|⏳ 排队状态|排队|/queue|/start)$', text):
+        user_id = update.effective_user.id if update.effective_user else "Unknown"
+        _cleanup_context(context, user_id)
+        await robust_reply_text(update.message, "🔄 已为您自动取消未完成的流程。\n👉 **请再次点击刚才的按钮**，即可开始新任务！")
+        return ConversationHandler.END
+
+    await robust_reply_text(update.message, "⚠️ 当前处于交互流程中。请按提示操作，或发送 /cancel 取消本次操作。")
     return None
 
 def get_custom_video_fsm_handler() -> ConversationHandler:

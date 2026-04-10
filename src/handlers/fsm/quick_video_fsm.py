@@ -14,7 +14,7 @@ from telegram.ext import (
 from src.handlers.conversation_states import QuickVideoState
 from src.services.permission_service import permission_service
 from src.services.task_service import task_service
-from src.utils import robust_reply_text, robust_edit_text
+from src.utils import robust_reply_text, robust_edit_text, create_background_task
 from src.constants import get_video_settings_keyboard, DEFAULT_RESOLUTION, DEFAULT_DURATION, RESOLUTION_COST, DURATION_MULTIPLIER
 from src.constants import MODE_PERFECT_VIDEO_INSERT, MODE_DOGGY_STYLE, MODE_BLOWJOB, MODE_UNDRESS_TONGUE, MODE_CLOSEUP_BLOWJOB
 
@@ -121,8 +121,11 @@ async def process_settings(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     
     fsm_data = context.user_data.get('quick_video_data', {})
     if not fsm_data:
-        await query.answer("交互已失效，请重新开始", show_alert=True)
-        return QuickVideoState.WAIT_SETTINGS
+        try:
+            await query.answer("交互已失效或任务已提交，请重新开始", show_alert=True)
+        except Exception:
+            pass
+        return ConversationHandler.END
 
     if data == "qvid_start_generation":
         await query.answer()
@@ -162,7 +165,14 @@ async def start_generation(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     query = update.callback_query
     user_id = query.from_user.id
     
-    fsm_data = context.user_data['quick_video_data']
+    fsm_data = context.user_data.get('quick_video_data', {})
+    if not fsm_data:
+        return ConversationHandler.END
+        
+    image_path = fsm_data.pop('image_path', None)
+    if not image_path:
+        return ConversationHandler.END # Prevent double submit
+
     res = fsm_data['resolution']
     dur = fsm_data['duration']
     mode = fsm_data['mode']
@@ -178,11 +188,11 @@ async def start_generation(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     context.user_data['mode'] = mode
 
     if not await permission_service.check_quota(update, context, cost=cost):
+        if image_path and os.path.exists(image_path):
+            try: os.remove(image_path)
+            except: pass
         _cleanup_context(context, user_id)
         return ConversationHandler.END
-
-    image_path = fsm_data['image_path']
-    fsm_data['image_path'] = None # Hand over ownership
 
     await robust_edit_text(query.message, f"🚀 正在提交视频任务，预计消耗 {cost} 灵石，请耐心等待...")
 
@@ -231,7 +241,7 @@ async def start_generation(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
         mock_update = MockUpdate(query, update.effective_user)
         
-        asyncio.create_task(video_modes[mode](mock_update, context, image_path))
+        create_background_task(context, video_modes[mode](mock_update, context, image_path))
 
     _cleanup_context(context, user_id)
     return ConversationHandler.END
@@ -253,7 +263,16 @@ async def timeout_conversation(update: Update, context: ContextTypes.DEFAULT_TYP
     _cleanup_context(context, user_id)
     return ConversationHandler.END
 
+import re
+
 async def unexpected_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    text = update.message.text if update.message else ""
+    if text and re.match(r'^(🛌 动图传教士|🎬 动图后入|🎬 口交黑人|🎬 脱衣吐舌|🎬 特写口交|🎨 自由P图|🌟 幻想换脸|💃 快速脱衣|🥵 快速自慰|🎭 随机换脸|🎬 视频换脸|🎬 自定义视频|📅 每日签到|签到|/checkin|🤝 分享赚灵石|⏳ 排队状态|排队|/queue|/start)$', text):
+        user_id = update.effective_user.id if update.effective_user else "Unknown"
+        _cleanup_context(context, user_id)
+        await robust_reply_text(update.message, "🔄 已为您自动取消未完成的流程。\n👉 **请再次点击刚才的按钮**，即可开始新任务！")
+        return ConversationHandler.END
+
     await robust_reply_text(update.message, "⚠️ 当前处于交互流程中。请按提示操作，或发送 /cancel 取消本次操作。")
     return None
 
