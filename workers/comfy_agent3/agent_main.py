@@ -125,10 +125,23 @@ class ComfyAgent:
         
         while getattr(self, 'running', True):
             try:
-                async with websockets.connect(uri, max_size=None) as websocket:
+                async with websockets.connect(uri, max_size=None, ping_interval=20, ping_timeout=20) as websocket:
                     logger.info(f"Connected to ComfyUI WebSocket at {uri}")
                     while True:
-                        message = await websocket.recv()
+                        try:
+                            # Use timeout to periodically check connection state
+                            message = await asyncio.wait_for(websocket.recv(), timeout=60.0)
+                        except asyncio.TimeoutError:
+                            if websocket.closed:
+                                logger.error("WebSocket closed unexpectedly")
+                                break
+                            try:
+                                await websocket.ping()
+                            except Exception as e:
+                                logger.error(f"WebSocket ping failed: {e}")
+                                break
+                            continue
+                            
                         if isinstance(message, bytes):
                             continue
                             
@@ -301,9 +314,9 @@ class ComfyAgent:
                 if legacy_tasks:
                     await asyncio.gather(*legacy_tasks)
 
-            # Also check for other potential image inputs (like face_image, body_image)
+            # Also check for other potential image inputs (like face_image, body_image, video)
             other_tasks = []
-            for key in ["face_image", "body_image"]:
+            for key in ["face_image", "body_image", "video"]:
                 if key in params and params[key]:
                     other_tasks.append(process_single_image(params[key], key))
             if other_tasks:
@@ -328,7 +341,7 @@ class ComfyAgent:
             try:
                 await asyncio.wait_for(self.task_completed_event.wait(), timeout=600.0)
             except asyncio.TimeoutError:
-                raise Exception("Task execution timed out")
+                logger.warning(f"Task execution timed out for {task_id}, will attempt to fetch result from history.")
 
             if self.task_error:
                 raise Exception(self.task_error)

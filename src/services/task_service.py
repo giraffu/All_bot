@@ -142,6 +142,8 @@ class TaskService:
             await robust_edit_text(status_msg, f"❌ 系统错误：{str(e)}\n已退还灵石。")
             return None, None
         finally:
+            if registry_task_id:
+                await TaskRegistry.remove_task(registry_task_id)
             await redis_client.decrement_user_concurrency(user_id)
             if cleanup:
                 TaskService._cleanup_files([face_image_path, video_path])

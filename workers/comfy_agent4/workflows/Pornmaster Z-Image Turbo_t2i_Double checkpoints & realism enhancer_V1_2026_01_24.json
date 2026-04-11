@@ -1,0 +1,599 @@
+{
+  "29": {
+    "inputs": {
+      "width": 1024,
+      "height": 1536,
+      "batch_size": 1
+    },
+    "class_type": "EmptyLatentImage",
+    "_meta": {
+      "title": "空Latent图像"
+    }
+  },
+  "30": {
+    "inputs": {
+      "samples": [
+        "152",
+        0
+      ],
+      "vae": [
+        "100",
+        0
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "VAE解码"
+    }
+  },
+  "84": {
+    "inputs": {
+      "text": "",
+      "loras": {
+        "__value__": []
+      },
+      "model": [
+        "98",
+        0
+      ],
+      "clip": [
+        "99",
+        0
+      ]
+    },
+    "class_type": "Lora Loader (LoraManager)",
+    "_meta": {
+      "title": "Lora Loader (LoraManager) (First sampling)"
+    }
+  },
+  "90": {
+    "inputs": {
+      "text": "一張來自日本90年代Tokyo-Hot色情片中的一位可愛18歲日本女性照片，閃光燈攝影，膠片顆粒，專業攝影，高解析度，8K，UHD效果，HDR效果，RAW格式照片，留著齊瀏海黑長髮，照片主題是用許多白色透氣膠帶張開她的陰部使她的陰道內部粉紅色組織可見。她的小陰唇和大陰唇分開，露出粉紅色、濕潤的陰道內壁組織。從她的陰部流出清澈透明的液體並且拉絲滴在床上，全身赤裸仰臥在碎花床墊上。她雙手捂胸，雙腿大幅度張開。(沿著她張開的小陰唇兩側貼著多條長的白色的放射狀透氣膠帶，並且膠帶指向中心:1.2)，她完全完全裸體，露出濃密的陰毛與清晰的生理結構。她肛門清晰可見，她的肛門具有明顯的皺褶，背景為白色簡約牆面。極致寫實攝影風格，高解析度，平實的室內光線，強調生理細節的呈現。(她的屁股有許多粉刺並且起雞皮疙瘩，多顆痣在大腿上:1.2)，以及皮膚上的油脂可見，清晰的皮膚毛孔可見。她有著黑色短髮，並且有著大乳房。她的表情害羞。\n右下角用著紅色漸變且清晰的英文字體寫著\"TOKYO-HOT\",左下角用較小的黑色清晰的中文寫著\"完全无修正\"",
+      "clip": [
+        "84",
+        1
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "正面提示詞 (positive)"
+    }
+  },
+  "98": {
+    "inputs": {
+      "unet_name": "pornmasterZImage_turboV2.safetensors",
+      "weight_dtype": "default"
+    },
+    "class_type": "UNETLoader",
+    "_meta": {
+      "title": "載入擴散模型-第一次採樣 Load Diffusion Model (First sampling)"
+    }
+  },
+  "99": {
+    "inputs": {
+      "clip_name": "z_image/qwen_3_4b.safetensors",
+      "type": "lumina2",
+      "device": "default"
+    },
+    "class_type": "CLIPLoader",
+    "_meta": {
+      "title": "加载CLIP"
+    }
+  },
+  "100": {
+    "inputs": {
+      "vae_name": "z_image/ae.safetensors"
+    },
+    "class_type": "VAELoader",
+    "_meta": {
+      "title": "加载VAE"
+    }
+  },
+  "106": {
+    "inputs": {
+      "filename_prefix": "comfyui_無面部修復",
+      "images": [
+        "30",
+        0
+      ]
+    },
+    "class_type": "SaveImage",
+    "_meta": {
+      "title": "保存图像"
+    }
+  },
+  "109": {
+    "inputs": {
+      "conditioning": [
+        "90",
+        0
+      ]
+    },
+    "class_type": "ConditioningZeroOut",
+    "_meta": {
+      "title": "条件零化"
+    }
+  },
+  "110": {
+    "inputs": {
+      "shift": 3,
+      "model": [
+        "84",
+        0
+      ]
+    },
+    "class_type": "ModelSamplingAuraFlow",
+    "_meta": {
+      "title": "采样算法（AuraFlow）"
+    }
+  },
+  "121": {
+    "inputs": {
+      "mask": [
+        "130",
+        3
+      ]
+    },
+    "class_type": "MaskToImage",
+    "_meta": {
+      "title": "遮罩转换为图像"
+    }
+  },
+  "122": {
+    "inputs": {
+      "images": [
+        "121",
+        0
+      ]
+    },
+    "class_type": "PreviewImage",
+    "_meta": {
+      "title": "Mask"
+    }
+  },
+  "123": {
+    "inputs": {
+      "model_name": "sam_vit_b_01ec64.pth",
+      "device_mode": "AUTO"
+    },
+    "class_type": "SAMLoader",
+    "_meta": {
+      "title": "SAMLoader (Impact)"
+    }
+  },
+  "126": {
+    "inputs": {
+      "images": [
+        "130",
+        2
+      ]
+    },
+    "class_type": "PreviewImage",
+    "_meta": {
+      "title": "预览图像"
+    }
+  },
+  "127": {
+    "inputs": {
+      "images": [
+        "130",
+        1
+      ]
+    },
+    "class_type": "PreviewImage",
+    "_meta": {
+      "title": "Cropped (refined)"
+    }
+  },
+  "128": {
+    "inputs": {
+      "rgthree_comparer": {
+        "images": [
+          {
+            "name": "A",
+            "selected": true,
+            "url": "/api/view?filename=rgthree.compare._temp_fqqug_00001_.png&type=temp&subfolder=&rand=0.5201591122664486"
+          },
+          {
+            "name": "B",
+            "selected": true,
+            "url": "/api/view?filename=rgthree.compare._temp_fqqug_00002_.png&type=temp&subfolder=&rand=0.7228704418523069"
+          }
+        ]
+      },
+      "image_a": [
+        "130",
+        0
+      ],
+      "image_b": [
+        "30",
+        0
+      ]
+    },
+    "class_type": "Image Comparer (rgthree)",
+    "_meta": {
+      "title": "圖片對比"
+    }
+  },
+  "129": {
+    "inputs": {
+      "model_name": "bbox/face_yolov9c.pt"
+    },
+    "class_type": "UltralyticsDetectorProvider",
+    "_meta": {
+      "title": "UltralyticsDetectorProvider"
+    }
+  },
+  "130": {
+    "inputs": {
+      "guide_size": 512,
+      "guide_size_for": true,
+      "max_size": 2432,
+      "seed": 143310729851477,
+      "steps": 2,
+      "cfg": 1,
+      "sampler_name": "euler",
+      "scheduler": "simple",
+      "denoise": 0.5,
+      "feather": 7,
+      "noise_mask": true,
+      "force_inpaint": false,
+      "bbox_threshold": 0.5,
+      "bbox_dilation": 0,
+      "bbox_crop_factor": 4,
+      "sam_detection_hint": "center-1",
+      "sam_dilation": 0,
+      "sam_threshold": 0.93,
+      "sam_bbox_expansion": 0,
+      "sam_mask_hint_threshold": 0.7,
+      "sam_mask_hint_use_negative": "False",
+      "drop_size": 10,
+      "wildcard": "",
+      "cycle": 1,
+      "inpaint_model": false,
+      "noise_mask_feather": 25,
+      "tiled_encode": false,
+      "tiled_decode": false,
+      "image": [
+        "157",
+        0
+      ],
+      "model": [
+        "132",
+        0
+      ],
+      "clip": [
+        "134",
+        0
+      ],
+      "vae": [
+        "133",
+        0
+      ],
+      "positive": [
+        "135",
+        0
+      ],
+      "negative": [
+        "131",
+        0
+      ],
+      "bbox_detector": [
+        "129",
+        0
+      ],
+      "sam_model_opt": [
+        "123",
+        0
+      ]
+    },
+    "class_type": "FaceDetailer",
+    "_meta": {
+      "title": "FaceDetailer"
+    }
+  },
+  "131": {
+    "inputs": {
+      "conditioning": [
+        "135",
+        0
+      ]
+    },
+    "class_type": "ConditioningZeroOut",
+    "_meta": {
+      "title": "条件零化"
+    }
+  },
+  "132": {
+    "inputs": {
+      "shift": 3,
+      "model": [
+        "138",
+        0
+      ]
+    },
+    "class_type": "ModelSamplingAuraFlow",
+    "_meta": {
+      "title": "采样算法（AuraFlow）"
+    }
+  },
+  "133": {
+    "inputs": {
+      "vae_name": "z_image/ae.safetensors"
+    },
+    "class_type": "VAELoader",
+    "_meta": {
+      "title": "加载VAE"
+    }
+  },
+  "134": {
+    "inputs": {
+      "clip_name": "z_image/qwen_3_4b.safetensors",
+      "type": "lumina2",
+      "device": "default"
+    },
+    "class_type": "CLIPLoader",
+    "_meta": {
+      "title": "加载CLIP"
+    }
+  },
+  "135": {
+    "inputs": {
+      "text": "一張來自日本90年代Tokyo-Hot色情片中的一位可愛18歲日本女性照片，閃光燈攝影，膠片顆粒，專業攝影，高解析度，8K，UHD效果，HDR效果，RAW格式照片，留著齊瀏海黑長髮.\n極致寫實攝影風格，高解析度，平實的室內光線.\n清晰的皮膚毛孔可見。她有著黑色短髮。她的表情害羞。\n",
+      "clip": [
+        "138",
+        1
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "面部相關提示詞-正面 (Facial related prompts - positive)"
+    }
+  },
+  "136": {
+    "inputs": {
+      "filename_prefix": "comfyui_FaceDetailer",
+      "images": [
+        "148",
+        0
+      ]
+    },
+    "class_type": "SaveImage",
+    "_meta": {
+      "title": "面部修復後儲存圖片(Images saved after facial retouching.)"
+    }
+  },
+  "137": {
+    "inputs": {
+      "unet_name": "z image\\z_image_turbo_fp8_e4m3fn.safetensors",
+      "weight_dtype": "default"
+    },
+    "class_type": "UNETLoader",
+    "_meta": {
+      "title": "UNet加载器"
+    }
+  },
+  "138": {
+    "inputs": {
+      "text": "",
+      "loras": {
+        "__value__": []
+      },
+      "model": [
+        "137",
+        0
+      ],
+      "clip": [
+        "134",
+        0
+      ]
+    },
+    "class_type": "Lora Loader (LoraManager)",
+    "_meta": {
+      "title": "Lora Loader (LoraManager)"
+    }
+  },
+  "139": {
+    "inputs": {
+      "upscale_model": [
+        "141",
+        0
+      ],
+      "image": [
+        "130",
+        0
+      ]
+    },
+    "class_type": "ImageUpscaleWithModel",
+    "_meta": {
+      "title": "使用模型放大图像"
+    }
+  },
+  "140": {
+    "inputs": {
+      "filename_prefix": "comfyui_4X",
+      "images": [
+        "145",
+        0
+      ]
+    },
+    "class_type": "SaveImage",
+    "_meta": {
+      "title": "4倍放大後儲存圖片(Save the image after magnification by 4x.)"
+    }
+  },
+  "141": {
+    "inputs": {
+      "model_name": "4x-UltraSharp.pth"
+    },
+    "class_type": "UpscaleModelLoader",
+    "_meta": {
+      "title": "加载放大模型"
+    }
+  },
+  "144": {
+    "inputs": {
+      "mode": "always",
+      "volume": 0.5,
+      "file": "notify.mp3",
+      "any": [
+        "145",
+        0
+      ]
+    },
+    "class_type": "PlaySound|pysssss",
+    "_meta": {
+      "title": "PlaySound 🐍"
+    }
+  },
+  "145": {
+    "inputs": {
+      "anything": [
+        "139",
+        0
+      ]
+    },
+    "class_type": "easy cleanGpuUsed",
+    "_meta": {
+      "title": "清理显存占用"
+    }
+  },
+  "148": {
+    "inputs": {
+      "anything": [
+        "130",
+        0
+      ]
+    },
+    "class_type": "easy cleanGpuUsed",
+    "_meta": {
+      "title": "清理显存占用"
+    }
+  },
+  "151": {
+    "inputs": {
+      "add_noise": "enable",
+      "noise_seed": 811631835302069,
+      "steps": 10,
+      "cfg": 1,
+      "sampler_name": "euler",
+      "scheduler": "simple",
+      "start_at_step": 0,
+      "end_at_step": 8,
+      "return_with_leftover_noise": "enable",
+      "model": [
+        "110",
+        0
+      ],
+      "positive": [
+        "90",
+        0
+      ],
+      "negative": [
+        "109",
+        0
+      ],
+      "latent_image": [
+        "29",
+        0
+      ]
+    },
+    "class_type": "KSamplerAdvanced",
+    "_meta": {
+      "title": "K采样器（高级）"
+    }
+  },
+  "152": {
+    "inputs": {
+      "add_noise": "disable",
+      "noise_seed": 0,
+      "steps": 10,
+      "cfg": 1,
+      "sampler_name": "euler",
+      "scheduler": "simple",
+      "start_at_step": 8,
+      "end_at_step": 10000,
+      "return_with_leftover_noise": "disable",
+      "model": [
+        "155",
+        0
+      ],
+      "positive": [
+        "90",
+        0
+      ],
+      "negative": [
+        "109",
+        0
+      ],
+      "latent_image": [
+        "151",
+        0
+      ]
+    },
+    "class_type": "KSamplerAdvanced",
+    "_meta": {
+      "title": "K采样器（高级）"
+    }
+  },
+  "153": {
+    "inputs": {
+      "unet_name": "z-image-turbo-fp8-e4m3fn.safetensors",
+      "weight_dtype": "default"
+    },
+    "class_type": "UNETLoader",
+    "_meta": {
+      "title": "載入擴散模型-第二次採樣 Load Diffusion Model (Second sampling)"
+    }
+  },
+  "154": {
+    "inputs": {
+      "text": "<lora:Mystic-XXX-ZIT-V5:0.10>",
+      "loras": {
+        "__value__": [
+          {
+            "name": "Mystic-XXX-ZIT-V5",
+            "strength": "0.10",
+            "active": false,
+            "expanded": false,
+            "clipStrength": "0.10",
+            "locked": false
+          }
+        ]
+      },
+      "model": [
+        "153",
+        0
+      ]
+    },
+    "class_type": "Lora Loader (LoraManager)",
+    "_meta": {
+      "title": "Lora Loader (LoraManager)  (Second sampling)"
+    }
+  },
+  "155": {
+    "inputs": {
+      "shift": 3,
+      "model": [
+        "154",
+        0
+      ]
+    },
+    "class_type": "ModelSamplingAuraFlow",
+    "_meta": {
+      "title": "采样算法（AuraFlow）"
+    }
+  },
+  "157": {
+    "inputs": {
+      "anything": [
+        "30",
+        0
+      ]
+    },
+    "class_type": "easy cleanGpuUsed",
+    "_meta": {
+      "title": "清理显存占用"
+    }
+  }
+}
