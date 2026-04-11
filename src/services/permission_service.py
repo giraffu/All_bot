@@ -259,6 +259,7 @@ class PermissionService:
         聚合查询邀请的道友充值情况：
         - 已有 X 位道友完成 X 次充值
         - 累积充值 TON
+        - 累积充值 RMB
         - 累积贡献 Stars
         """
         async with AsyncSessionLocal() as session:
@@ -270,7 +271,8 @@ class PermissionService:
             stmt = (
                 select(
                     Order.telegram_id,
-                    Order.final_price
+                    Order.final_price,
+                    Order.order_id
                 )
                 .join(Referral, Referral.invitee_id == Order.telegram_id)
                 .where(
@@ -285,21 +287,28 @@ class PermissionService:
 
             recharged_invitees = set()
             total_ton = Decimal('0.0')
+            total_rmb = Decimal('0.0')
             total_stars = 0
             total_count = len(rows)
 
-            for tg_id, price in rows:
+            for tg_id, price, order_id in rows:
                 recharged_invitees.add(tg_id)
-                # 根据价格区分支付方式 (Stars 价格通常为整数且较大，如 200, 500)
-                if price >= 100:
-                    total_stars += int(price)
+                
+                # 人民币订单以 RMB_ 开头
+                if order_id and str(order_id).startswith("RMB_"):
+                    total_rmb += price
                 else:
-                    total_ton += price
+                    # 根据价格区分支付方式 (Stars 价格通常为整数且较大，如 200, 500)
+                    if price >= 100:
+                        total_stars += int(price)
+                    else:
+                        total_ton += price
 
             return {
                 "recharged_invitees_count": len(recharged_invitees),
                 "total_recharge_count": total_count,
                 "total_ton": float(total_ton),
+                "total_rmb": float(total_rmb),
                 "total_stars": total_stars
             }
 
