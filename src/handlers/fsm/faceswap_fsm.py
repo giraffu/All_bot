@@ -85,6 +85,7 @@ async def receive_face_image(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await new_file.download_to_drive(local_path)
         context.user_data['faceswap_data']['face_image_path'] = local_path
     except Exception as e:
+        
         logger.error(f"Error downloading face image for FSM user {user_id}: {e}")
         await robust_reply_text(message, "❌ 下载图片失败，请重试或发送 /cancel 退出。")
         return FaceSwapState.WAIT_FACE_IMAGE
@@ -122,6 +123,7 @@ async def receive_body_image(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await new_file.download_to_drive(local_path)
         context.user_data['faceswap_data']['body_image_path'] = local_path
     except Exception as e:
+        
         logger.error(f"Error downloading body image for FSM user {user_id}: {e}")
         await robust_reply_text(message, "❌ 下载图片失败，请重试或发送 /cancel 退出。")
         return FaceSwapState.WAIT_BODY_IMAGE

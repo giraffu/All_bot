@@ -17,6 +17,41 @@ from src.handlers.callback_handler import handle_callback_query
 from src.database.core import init_db
 import socket
 from urllib.parse import urlparse
+
+# ================= PATCH TELEGRAM FILE DOWNLOAD =================
+from telegram import File
+import httpx
+import os
+import logging
+logger = logging.getLogger(__name__)
+
+original_download_to_drive = File.download_to_drive
+
+async def custom_download_to_drive(self, custom_path=None, read_timeout=None, write_timeout=None, connect_timeout=None, pool_timeout=None):
+    bot = self.get_bot()
+    if bot.base_file_url and "8082" in bot.base_file_url:
+        
+        raw_path = self.file_path
+        if raw_path.startswith("http"):
+            from urllib.parse import urlparse
+            raw_path = urlparse(raw_path).path
+        if not raw_path.startswith("/"):
+            raw_path = "/" + raw_path
+        url = f"http://69.63.220.115:8082{raw_path}"
+
+        logger.info(f"Custom downloading file from: {url}")
+        async with httpx.AsyncClient(proxy=None) as client:
+            response = await client.get(url, timeout=120.0)
+            response.raise_for_status()
+            with open(custom_path, "wb") as f:
+                f.write(response.content)
+        return self
+    else:
+        return await original_download_to_drive(self, custom_path, read_timeout, write_timeout, connect_timeout, pool_timeout)
+
+File.download_to_drive = custom_download_to_drive
+# ================================================================
+
 import asyncio
 from src.services.payment_validator import TonPaymentValidator
 from src.services.task_registry import TaskRegistry
@@ -137,28 +172,53 @@ def main():
 
     logger.info(f"Starting bot in {bot_type} mode...")
 
-    # Detect best proxy
-    active_proxy = get_best_proxy(PROXY_URL)
-    logger.info(f"🌐 Using Proxy: {active_proxy}")
+    if bot_type == "TEST":
+        # 🧪 TEST: 直连 VPS Local API Server，抛弃商业代理
+        logger.info("🧪 TEST模式：已启用 Local Bot API 直连 (http://69.63.220.115:8081)")
+        
+        request = HTTPXRequest(
+            proxy=None, # MUST EXPLICITLY SET NO PROXY to bypass env variables!
+            connect_timeout=60.0,
+            read_timeout=120.0,
+            write_timeout=120.0,
+            connection_pool_size=500,
+        )
+        
+        app = (
+            ApplicationBuilder()
+            .token(token)
+            .base_url("http://69.63.220.115:8081/bot")
+            .base_file_url("http://69.63.220.115:8082")
+            .request(request)
+            .get_updates_request(request)
+            .post_init(post_init)
+            .post_shutdown(post_shutdown)
+            .concurrent_updates(True)
+            .build()
+        )
+    else:
+        # 🚀 PROD: 保持现状，走本地代理
+        active_proxy = get_best_proxy(PROXY_URL)
+        logger.info(f"🌐 PROD模式：Using Proxy: {active_proxy}")
 
-    request = HTTPXRequest(
-        proxy=active_proxy,
-        connect_timeout=60.0,
-        read_timeout=120.0,
-        write_timeout=120.0,
-        connection_pool_size=500,  # Increased for higher concurrency
-    )
+        request = HTTPXRequest(
+            proxy=active_proxy,
+            connect_timeout=60.0,
+            read_timeout=120.0,
+            write_timeout=120.0,
+            connection_pool_size=500,
+        )
 
-    app = (
-        ApplicationBuilder()
-        .token(token)
-        .request(request)
-        .get_updates_request(request) # Ensure get_updates uses same request config
-        .post_init(post_init) # Call setup_commands on startup
-        .post_shutdown(post_shutdown) # Call refund on shutdown
-        .concurrent_updates(True)
-        .build()
-    )
+        app = (
+            ApplicationBuilder()
+            .token(token)
+            .request(request)
+            .get_updates_request(request)
+            .post_init(post_init)
+            .post_shutdown(post_shutdown)
+            .concurrent_updates(True)
+            .build()
+        )
     
     from src.handlers.payment_handler import precheckout_callback, successful_payment_callback
     from src.handlers.fsm.face_video_fsm import get_face_video_fsm_handler
@@ -167,6 +227,8 @@ def main():
     from src.handlers.fsm.custom_video_fsm import get_custom_video_fsm_handler
     from src.handlers.fsm.quick_image_fsm import get_quick_image_fsm_handler
     from src.handlers.fsm.quick_video_fsm import get_quick_video_fsm_handler
+
+
     
     # Register FSM Handlers first (they must intercept text/callbacks before fallback handlers)
     app.add_handler(get_face_video_fsm_handler())

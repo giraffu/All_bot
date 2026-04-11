@@ -191,7 +191,12 @@ async def robust_send_video(bot, chat_id, video, **kwargs):
     kwargs.setdefault('write_timeout', 300)
     kwargs.setdefault('connect_timeout', 120)
     kwargs.setdefault('pool_timeout', 60)
-    return await bot.send_video(chat_id=chat_id, video=video, **kwargs)
+    import time
+    start_t = time.time()
+    logger.info(f"Uploading video to user {chat_id}...")
+    res = await bot.send_video(chat_id=chat_id, video=video, **kwargs)
+    logger.info(f"Video uploaded to user {chat_id} in {time.time() - start_t:.2f} seconds.")
+    return res
 
 
 @async_retry(max_retries=3)
