@@ -9,7 +9,7 @@ from telegram.ext import (
 from telegram.request import HTTPXRequest
 import logging
 import os
-from config import PROXY_URL
+
 from src.logger import setup_logging
 from src.handlers.command_handler import start, cancel, setup_commands, toggle_maintenance
 from src.handlers.message_handler import handle_photo, handle_prompt, handle_video, handle_document
@@ -57,54 +57,7 @@ from src.services.payment_validator import TonPaymentValidator
 from src.services.task_registry import TaskRegistry
 from src.services.recovery_service import recover_active_tasks
 
-def get_best_proxy(default_proxy):
-    """
-    Check if the default proxy is accessible. If not, try fallback proxies.
-    Fallback: local machine ports and other common ports.
-    """
-    logger = logging.getLogger("bot.network")
-    proxies = [default_proxy]
-    
-    # Add local machine proxies as fallback
-    proxies.append("socks5://127.0.0.1:7890")
-    proxies.append("http://127.0.0.1:7890")
-    proxies.append("socks5://127.0.0.1:10808")
-    proxies.append("http://127.0.0.1:10809")
-    
-    try:
-        parsed = urlparse(default_proxy)
-        ip = parsed.hostname
-        if ip and ip != "127.0.0.1":
-            # Add fallback proxies for the same IP
-            proxies.append(f"socks5://{ip}:10808")
-            proxies.append(f"http://{ip}:10809")
-    except Exception as e:
-        logger.warning(f"⚠️ Error parsing proxy URL: {e}")
-    
-    # Deduplicate while preserving order
-    unique_proxies = []
-    for p in proxies:
-        if p not in unique_proxies:
-            unique_proxies.append(p)
-    
-    for proxy in unique_proxies:
-        try:
-            parsed = urlparse(proxy)
-            host = parsed.hostname
-            port = parsed.port
-            
-            if not host or not port:
-                continue
 
-            # Try to connect with a short timeout
-            with socket.create_connection((host, port), timeout=2):
-                logger.info(f"✅ Proxy Success: {proxy}")
-                return proxy
-        except Exception:
-            continue
-            
-    logger.warning("⚠️ All proxies failed. Trying direct connection...")
-    return None # Return None to use direct connection
 
 async def clean_zombies_loop():
     from src.services.zombie_cleaner_service import clean_zombies
@@ -197,12 +150,11 @@ def main():
             .build()
         )
     else:
-        # 🚀 PROD: 保持现状，走本地代理
-        active_proxy = get_best_proxy(PROXY_URL)
-        logger.info(f"🌐 PROD模式：Using Proxy: {active_proxy}")
+        # 🚀 PROD: 直连 VPS Local API Server
+        logger.info("🚀 PROD模式：已启用 Local Bot API 直连 (http://69.63.220.115:8081)")
 
         request = HTTPXRequest(
-            proxy=active_proxy,
+            proxy=None,
             connect_timeout=60.0,
             read_timeout=120.0,
             write_timeout=120.0,
@@ -212,6 +164,8 @@ def main():
         app = (
             ApplicationBuilder()
             .token(token)
+            .base_url("http://69.63.220.115:8081/bot")
+            .base_file_url("http://69.63.220.115:8082")
             .request(request)
             .get_updates_request(request)
             .post_init(post_init)

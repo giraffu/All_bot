@@ -20,7 +20,10 @@ from src.constants import (
     MODE_UNDRESS_TONGUE,
     TASK_COSTS,
     TMP_DIR,
-    MODE_I2I_PRO
+    MODE_I2I_PRO,
+    MAX_CONCURRENT_TASKS,
+    MODE_FACE_VIDEO_STEP1,
+    MODE_EDIT
 )
 from src.handlers.utils import MockMessage
 from src.logger import UserLogger
@@ -59,7 +62,6 @@ class TaskService:
     ):
         # 1. Check active tasks limit
         active_tasks = await redis_client.increment_user_concurrency(user_id)
-        from src.constants import MAX_CONCURRENT_TASKS, MODE_FACE_VIDEO_STEP1
         if active_tasks > MAX_CONCURRENT_TASKS:
             await redis_client.decrement_user_concurrency(user_id)
             await robust_send_message(context.bot, chat_id, f"⚠️ 您当前已有 {MAX_CONCURRENT_TASKS} 个任务正在处理中，请等待其中一个完成后再试！")
@@ -169,7 +171,6 @@ class TaskService:
 
         # 1. Check active tasks limit
         active_tasks = await redis_client.increment_user_concurrency(user_id)
-        from src.constants import MAX_CONCURRENT_TASKS
         if active_tasks > MAX_CONCURRENT_TASKS:
             await redis_client.decrement_user_concurrency(user_id)
             await robust_send_message(context.bot, chat_id, f"⚠️ 您当前已有 {MAX_CONCURRENT_TASKS} 个任务正在处理中，请等待其中一个完成后再试！")
@@ -179,7 +180,6 @@ class TaskService:
 
         # Determine cost and default task type
         # For faceswap tasks, map the generic "face_swap" string back to constants for cost lookup
-        from src.constants import MODE_FACESWAP_STEP1, MODE_EDIT
         if task_type == "face_swap":
             # Both fast faceswap and random faceswap cost 1 credit now
             cost = TASK_COSTS.get(MODE_FACESWAP_STEP1, 1)

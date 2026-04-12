@@ -2,6 +2,7 @@ import os
 import logging
 import asyncio
 import uuid
+import re
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import (
     ContextTypes,
@@ -175,8 +176,6 @@ async def timeout_conversation(update: Update, context: ContextTypes.DEFAULT_TYP
         await robust_reply_text(update.message, "⏰ 操作超时，为节省系统资源，本次流程已自动取消。您可以随时重新开始。")
     _cleanup_context(context, user_id)
     return ConversationHandler.END
-
-import re
 
 async def unexpected_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     text = update.message.text if update.message else ""

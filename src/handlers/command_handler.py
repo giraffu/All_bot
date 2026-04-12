@@ -3,7 +3,8 @@ from telegram.ext import ContextTypes, Application
 import logging
 import os
 from src.services.permission_service import permission_service
-from src.utils import robust_send_message
+from src.constants import MAIN_MENU_KEYBOARD
+from src.utils import robust_send_message, MAINTENANCE_FILE
 from src.handlers.utils import with_db_logging_context
 from config import ADMIN_USERS
 
@@ -30,7 +31,6 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data.pop(k, None)
     
     # Define menu keyboard
-    from src.constants import MAIN_MENU_KEYBOARD
     reply_markup = ReplyKeyboardMarkup(MAIN_MENU_KEYBOARD, resize_keyboard=True)
     
     await update.message.reply_text(
@@ -94,7 +94,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['mode'] = "none"
 
     # Define menu keyboard
-    from src.constants import MAIN_MENU_KEYBOARD
     reply_markup = ReplyKeyboardMarkup(MAIN_MENU_KEYBOARD, resize_keyboard=True)
 
     await update.message.reply_text(
@@ -126,8 +125,6 @@ async def toggle_maintenance(update: Update, context: ContextTypes.DEFAULT_TYPE)
         return
 
     action = args[0].lower()
-    
-    from src.utils import MAINTENANCE_FILE
     
     if action == "on":
         with open(MAINTENANCE_FILE, "w") as f:

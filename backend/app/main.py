@@ -39,8 +39,7 @@ async def get_queue_manager(redis: Redis = Depends(get_redis)):
 async def check_zombie_tasks_loop():
     while True:
         try:
-            from redis.asyncio import Redis
-            from app.config import settings
+            # Re-use the settings from app.config
             redis = Redis.from_url(settings.redis_url)
             queue_manager = QueueManager(redis)
             await queue_manager.check_zombie_tasks()

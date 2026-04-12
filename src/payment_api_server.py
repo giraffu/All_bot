@@ -2,6 +2,7 @@ import logging
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, PlainTextResponse
 import uvicorn
+import os
 from src.services.rmb_payment_service import RMBPaymentService, HUANYUY_KEY
 from src.services.payment_fulfillment_service import fulfill_order
 
@@ -79,4 +80,5 @@ async def payment_result(request: Request):
     """
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8021)
+    port = int(os.getenv("PAYMENT_API_PORT", 8021))
+    uvicorn.run(app, host="0.0.0.0", port=port)

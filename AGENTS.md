@@ -147,5 +147,35 @@
      3. 容器启动时（或代码中 `run_alembic_upgrade()`）会自动应用这些迁移脚本。
 
 ---
+
+## 6. Telegram Local API 与大文件架构 (Telegram Local API & Large File Architecture)
+
+为了突破官方 Bot API 的文件大小限制（下载 20MB / 上传 50MB）并大幅提升视频等大文件的传输速度，系统采用了一套基于独立 VPS 的 Local API 与 HTTP 文件服务双轨架构。
+
+### 6.1 VPS 容器部署架构
+在独立 VPS 上运行了两个核心容器：
+1. **API Server (`telegram-bot-api`)**：
+   - **监听端口**：`8081`
+   - **关键环境变量**：`TELEGRAM_LOCAL=1`。开启 Local 模式后，API 获取文件时不再返回 HTTP 下载链接，而是返回宿主机的绝对文件路径。
+   - **权限红线**：容器内部通常以 UID 101 运行，需确保挂载的宿主机目录（如 `/var/lib/telegram-bot-api`）具备读写权限（`chown -R 101:101` 或 `chmod -R 777`），否则 Bot 获取媒体时会报 `Permission Denied` 进而引发 404 错误。
+2. **File Server (`telegram-file-server`)**：
+   - **监听端口**：`8082`
+   - **职责**：由于 API 返回的是绝对路径，必须通过额外的 HTTP 服务器将其暴露。通常运行一个极简的 Python HTTP 服务（如 `python -m http.server 8000 --directory /`），并将 API 的文件目录通过**只读模式 (ro)** 挂载到容器中，用于提供文件的直接 HTTP 下载。
+
+### 6.2 Bot 代码层适配与 Monkey Patch
+在 Bot 的主入口文件（`src/bot_test.py` 和 `src/bot_prod.py`）中，必须进行如下适配才能配合上述 VPS 架构：
+- **请求路由指向**：
+  ```python
+  .base_url("http://<VPS_IP>:8081/bot")
+  .base_file_url("http://<VPS_IP>:8082")
+  ```
+- **Monkey Patch 修复 PTB 路径拼接 Bug**：
+  `python-telegram-bot` (PTB) 默认在处理自定义的 `base_file_url` 时，会强行拼接 `bot<token>`（例如生成 `http://ip:8082bot<token>/var/lib/...`），这会导致文件服务器报 404。
+  为此，代码中对 `telegram.File.download_to_drive` 进行了全局 **Monkey Patch**：
+  1. 拦截底层下载请求，解析出真实的绝对路径。
+  2. 手动拼接至 `8082` 端口 URL：`f"http://<VPS_IP>:8082{raw_path}"`。
+  3. 使用 `httpx.AsyncClient(proxy=None)`（强制直连，禁用代理以防干扰）发起下载，并配置足够长的 `timeout` (如 120s) 以应对大文件传输。
+
+---
 **👨‍💻 最终开发指引 (To AI Assistant)**：
 在后续的系统功能研发与维护中，请将本架构全景铭记于心。当你被要求开发新功能、排查 Bug 或进行测试时，请清晰地界定该功能属于哪个子模块（Bot/Dashboard/API/Worker/Payment），并在对应的目录下进行代码修改与容器重建！

@@ -1,6 +1,6 @@
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 from telegram.ext import ContextTypes
-from config import ENABLE_PUBLIC_SHARE, MINIO_TEMPLATE_BUCKET, REQUIRED_CHANNEL_ID
+from config import ENABLE_PUBLIC_SHARE, MINIO_TEMPLATE_BUCKET, REQUIRED_CHANNEL_ID, WEBAPP_URL
 from src.utils import (
     robust_send_message, robust_edit_text, load_prompts, 
     robust_edit_reply_markup, robust_edit_caption, safe_answer_query,
@@ -393,9 +393,6 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
             pass
 
     elif data == "recharge_back":
-        from telegram import WebAppInfo
-        from config import WEBAPP_URL
-        
         webapp_url = WEBAPP_URL if 'WEBAPP_URL' in globals() and WEBAPP_URL else "https://pay.aivison.it.com/"
         keyboard = [
             [InlineKeyboardButton("💎 TON月卡套餐", web_app=WebAppInfo(url=webapp_url))],

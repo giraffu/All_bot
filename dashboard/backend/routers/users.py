@@ -29,26 +29,34 @@ async def get_users(skip: int = 0, limit: int = 100000, db: AsyncSession = Depen
 
         result = await db.execute(stmt)
         users = result.scalars().all()
+        user_ids = [user.id for user in users]
         
-        recharge_stmt = (
-            select(
-                Order.telegram_id, 
-                func.sum(case((Order.order_id.like("RMB_%"), Order.final_price), else_=0)).label("total_recharge_rmb"),
-                func.sum(case((Order.order_id.notlike("RMB_%") & (Order.final_price < 50), Order.final_price), else_=0)).label("total_recharge_ton"),
-                func.sum(case((Order.order_id.notlike("RMB_%") & (Order.final_price >= 50), Order.final_price), else_=0)).label("total_recharge_stars")
-            )
-            .where(Order.status == "SUCCESS")
-            .where(Order.tx_hash.notlike("manual_%"))
-            .group_by(Order.telegram_id)
-        )
-        recharge_result = await db.execute(recharge_stmt)
         recharge_dict = {}
-        for row in recharge_result:
-            recharge_dict[row.telegram_id] = {
-                "ton": float(row.total_recharge_ton or 0),
-                "stars": int(row.total_recharge_stars or 0),
-                "rmb": float(row.total_recharge_rmb or 0)
-            }
+        if user_ids:
+            # PostgreSQL extended query protocol limits parameters to 32767. 
+            # We must chunk user_ids to avoid "too many parameters" error.
+            chunk_size = 10000
+            for i in range(0, len(user_ids), chunk_size):
+                chunked_user_ids = user_ids[i:i + chunk_size]
+                recharge_stmt = (
+                    select(
+                        Order.telegram_id, 
+                        func.sum(case((Order.order_id.like("RMB_%"), Order.final_price), else_=0)).label("total_recharge_rmb"),
+                        func.sum(case((Order.order_id.notlike("RMB_%") & (Order.final_price < 50), Order.final_price), else_=0)).label("total_recharge_ton"),
+                        func.sum(case((Order.order_id.notlike("RMB_%") & (Order.final_price >= 50), Order.final_price), else_=0)).label("total_recharge_stars")
+                    )
+                    .where(Order.status == "SUCCESS")
+                    .where(Order.tx_hash.notlike("manual_%"))
+                    .where(Order.telegram_id.in_(chunked_user_ids))
+                    .group_by(Order.telegram_id)
+                )
+                recharge_result = await db.execute(recharge_stmt)
+                for row in recharge_result:
+                    recharge_dict[row.telegram_id] = {
+                        "ton": float(row.total_recharge_ton or 0),
+                        "stars": int(row.total_recharge_stars or 0),
+                        "rmb": float(row.total_recharge_rmb or 0)
+                    }
         
         users_with_counts = []
         

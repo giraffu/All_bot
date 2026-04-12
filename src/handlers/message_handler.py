@@ -3,12 +3,13 @@ import uuid
 import random
 import time
 import logging
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, WebAppInfo
 from telegram.ext import ContextTypes
 
-from config import CHANNEL_INVITE_LINK, ENABLE_PUBLIC_SHARE, REFUGE_GROUP_ID, REFUGE_INVITE_LINK
+from config import CHANNEL_INVITE_LINK, ENABLE_PUBLIC_SHARE, REFUGE_GROUP_ID, REFUGE_INVITE_LINK, WEBAPP_URL, MINIO_TEMPLATE_BUCKET
 from src.services.permission_service import permission_service
 from src.services.image_service import image_service
+from src.services.storage import storage
 from src.services.task_service import task_service
 from src.logger import UserLogger
 from src.utils import robust_reply_text, load_prompts
@@ -18,7 +19,8 @@ from src.constants import (
     MODE_FACESWAP_STEP1, MODE_FACESWAP_STEP2, MODE_RANDOM_FACESWAP,
     MODE_FACE_VIDEO_STEP1, MODE_FACE_VIDEO_STEP2,
     MODE_TEMPLATE_CONTRIBUTE, MODE_NONE, MODE_CUSTOM_VIDEO, MODE_PERFECT_VIDEO_INSERT,
-    MODE_DOGGY_STYLE, MODE_BLOWJOB, MODE_UNDRESS_TONGUE, MODE_CLOSEUP_BLOWJOB, MODE_I2I_PRO
+    MODE_DOGGY_STYLE, MODE_BLOWJOB, MODE_UNDRESS_TONGUE, MODE_CLOSEUP_BLOWJOB, MODE_I2I_PRO,
+    MAIN_MENU_KEYBOARD
 )
 from src.handlers.utils import _is_mentioned, with_db_logging_context
 
@@ -72,7 +74,6 @@ async def _handle_photo_idle(update: Update, context: ContextTypes.DEFAULT_TYPE)
     if now - last_reminder < 3.0:
         return
         
-    from src.constants import MAIN_MENU_KEYBOARD
     reply_markup = ReplyKeyboardMarkup(MAIN_MENU_KEYBOARD, resize_keyboard=True)
     
     await robust_reply_text(
@@ -114,8 +115,6 @@ async def _handle_template_contribution(update: Update, context: ContextTypes.DE
         local_path = os.path.join(TEMP_TEMPLATE_DIR, local_filename)
         await file.download_to_drive(local_path)
         
-        from config import MINIO_TEMPLATE_BUCKET
-        from src.services.storage import storage
         minio_object_name = f"temps/{local_filename}"
         storage.upload_file(local_path, minio_object_name, bucket=MINIO_TEMPLATE_BUCKET)
         
@@ -170,15 +169,11 @@ async def handle_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if text == "🔙 返回主菜单":
-        from src.constants import MAIN_MENU_KEYBOARD
         reply_markup = ReplyKeyboardMarkup(MAIN_MENU_KEYBOARD, resize_keyboard=True)
         await robust_reply_text(update.message, "🏠 **已返回主菜单**", reply_markup=reply_markup, parse_mode="Markdown")
         return
         
     if text == "💎 充值灵石":
-        from telegram import WebAppInfo
-        from config import WEBAPP_URL
-        
         webapp_url = WEBAPP_URL if 'WEBAPP_URL' in globals() and WEBAPP_URL else "https://pay.aivison.it.com/"
         
         keyboard = [

@@ -22,23 +22,7 @@ AsyncSessionLocal = sessionmaker(
     engine, class_=AsyncSession, expire_on_commit=False
 )
 
-async def run_alembic_upgrade():
-    import os
-    import asyncio
-    from alembic.config import Config
-    from alembic import command
-    
-    def _run_sync():
-        # Get the path to the root directory where alembic.ini is located
-        root_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
-        alembic_ini_path = os.path.join(root_dir, "alembic.ini")
-        alembic_cfg = Config(alembic_ini_path)
-        # Set the root directory so alembic can find the migrations folder
-        alembic_cfg.set_main_option("script_location", os.path.join(root_dir, "migrations"))
-        
-        command.upgrade(alembic_cfg, "head")
-        
-    await asyncio.to_thread(_run_sync)
+
 
 async def stamp_alembic_head():
     import os
@@ -78,9 +62,7 @@ async def init_db():
         logger.info("检测到现存数据库未包含 Alembic 版本信息，执行 stamp head 操作平滑过渡...")
         await stamp_alembic_head()
 
-    logger.info("执行数据库结构迁移...")
-    # await run_alembic_upgrade()
-    logger.info("数据库结构迁移完成！")
+    logger.info("数据库结构迁移跳过（交由手动Alembic执行）")
 
     async with engine.begin() as conn:
         # Initialize default membership plans and discount rules if tables are empty
