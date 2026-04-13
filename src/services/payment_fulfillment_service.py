@@ -153,7 +153,7 @@ async def fulfill_order(out_trade_no: str, external_trade_no: str, paid_amount: 
                 
                 telegram_api_url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
                 payload = {
-                    "chat_id": user.id,
+                    "chat_id": user.telegram_id or user.id, # Fallback to id if telegram_id is empty (for old users)
                     "text": success_msg,
                     "parse_mode": "HTML"
                 }

@@ -60,47 +60,55 @@ class TaskService:
         message_id: int = None,
         cleanup: bool = True,
     ):
-        # 1. Check active tasks limit
-        active_tasks = await redis_client.increment_user_concurrency(user_id)
-        if active_tasks > MAX_CONCURRENT_TASKS:
-            await redis_client.decrement_user_concurrency(user_id)
-            await robust_send_message(context.bot, chat_id, f"⚠️ 您当前已有 {MAX_CONCURRENT_TASKS} 个任务正在处理中，请等待其中一个完成后再试！")
+        from src.core.user_core import get_or_create_user_by_telegram
+        from src.core.billing_core import check_concurrency_lock, release_concurrency_lock, check_and_deduct_credits, refund_credits, get_user_priority_and_identity
+        from src.core.task_core import core_submit_face_video
+
+        # 1. 身份转换 (TG ID -> 内部 ID)
+        internal_user, _ = await get_or_create_user_by_telegram(user_id, username)
+        internal_user_id = internal_user.id
+        
+        # 2. Check active tasks limit via core
+        can_run, lock_msg = await check_concurrency_lock(internal_user_id)
+        if not can_run:
+            await robust_send_message(context.bot, chat_id, f"⚠️ {lock_msg}")
             if cleanup:
                 TaskService._cleanup_files([face_image_path, video_path])
             return None, None
             
         mode = MODE_FACE_VIDEO_STEP1
-        user_logger = UserLogger(user_id, username)
-        
-        saved_face_image = user_logger.save_input_image(face_image_path)
-        saved_video = user_logger.save_input_image(video_path) # save_input_image works for video too
-        
         notice = await TaskService._get_acceleration_notice(user_id)
         msg_text = f"🚀 正在处理视频换脸任务 (画质:{resolution}p, 消耗{cost}灵石)...{notice}"
         
         status_msg = await TaskService._get_or_send_status_msg(
             context, chat_id, message_id, msg_text
         )
-        registry_task_id = None
         
         try:
-            priority = await permission_service.calculate_user_priority(user_id)
-            identity_str = await permission_service.get_user_identity(user_id)
-            user_group = await permission_service.get_user_group(user_id)
+            # 3. 计费 via core
+            deduct_success, deduct_msg = await check_and_deduct_credits(internal_user_id, cost, mode, username)
+            if not deduct_success:
+                await release_concurrency_lock(internal_user_id)
+                await robust_edit_text(status_msg, deduct_msg)
+                if cleanup:
+                    TaskService._cleanup_files([face_image_path, video_path])
+                return None, None
 
-            await permission_service.increment_quota(user_id, cost=cost, username=username, task_type=mode)
-            registry_task_id = await TaskRegistry.add_task(
-                user_id, username, cost, mode, chat_id=chat_id, message_id=status_msg.message_id if status_msg else None,
-                prompt="face video", saved_input_images=[saved_face_image, saved_video], is_video=True, priority=priority
-            )
-            
-            task_id = await image_service.submit_face_video(
-                saved_face_image, saved_video, resolution=resolution, duration=duration, priority=priority
-            )
-            
-            if registry_task_id and task_id:
-                await TaskRegistry.update_backend_task_id(registry_task_id, task_id)
+            priority, identity_str, user_group = await get_user_priority_and_identity(internal_user_id)
 
+            # 4. 调用纯净核心逻辑提交任务
+            submit_success, submit_msg, task_id, saved_face_image, saved_video, registry_task_id = await core_submit_face_video(
+                internal_user_id, username, face_image_path, video_path, resolution, duration, cost, mode, priority,
+                chat_id=chat_id, message_id=status_msg.message_id if status_msg else None
+            )
+
+            if not submit_success:
+                await refund_credits(internal_user_id, cost, "refund", username)
+                await robust_edit_text(status_msg, f"⚠️ {submit_msg}\n已退还灵石。")
+                return None, None
+
+            # 5. 监控与完成处理保留原样，但传递正确参数
+            user_logger = UserLogger(internal_user_id, username)
             final_info = await TaskService._monitor_task_progress(
                 task_id, status_msg, is_video=True, monitor_func=image_service.monitor_progress, identity_str=identity_str, user_group=user_group
             )
@@ -109,7 +117,7 @@ class TaskService:
                 return await TaskService._handle_task_completion(
                     context,
                     chat_id,
-                    user_id,
+                    internal_user_id, # internal user_id for logging and group refresh
                     "face video",
                     mode,
                     task_id,
@@ -123,30 +131,19 @@ class TaskService:
                     caption="✅ 视频换脸完成",
                 )
             else:
-                if registry_task_id:
-                    try:
-                        await TaskRegistry.mark_task_status(registry_task_id, "failed")
-                    except AttributeError:
-                        pass
-                await permission_service.increment_quota(user_id, cost=-cost, username=username, task_type="refund")
+                await refund_credits(internal_user_id, cost, "refund", username)
                 await robust_edit_text(status_msg, "⚠️ 生成失败或超时，已退还灵石。")
                 return None, None
 
         except Exception as e:
-            logger.error(f"Error processing face video task for {user_id}: {e}", exc_info=True)
-            if registry_task_id:
-                try:
-                    await TaskRegistry.mark_task_status(registry_task_id, "failed")
-                except AttributeError:
-                    # In case mark_task_status doesn't exist
-                    pass
-            await permission_service.increment_quota(user_id, cost=-cost, username=username, task_type="refund")
+            logger.error(f"Error processing face video task for {internal_user_id}: {e}", exc_info=True)
+            await refund_credits(internal_user_id, cost, "refund", username)
             await robust_edit_text(status_msg, f"❌ 系统错误：{str(e)}\n已退还灵石。")
             return None, None
         finally:
-            if registry_task_id:
+            if 'registry_task_id' in locals() and registry_task_id:
                 await TaskRegistry.remove_task(registry_task_id)
-            await redis_client.decrement_user_concurrency(user_id)
+            await release_concurrency_lock(internal_user_id)
             if cleanup:
                 TaskService._cleanup_files([face_image_path, video_path])
 
@@ -168,20 +165,24 @@ class TaskService:
         reply_markup: InlineKeyboardMarkup = None,
     ) -> Tuple[Optional[bytes], Optional[str]]:
         """Common generation logic for generic tasks."""
+        from src.core.user_core import get_or_create_user_by_telegram
+        from src.core.billing_core import check_concurrency_lock, release_concurrency_lock, check_and_deduct_credits, refund_credits, get_user_priority_and_identity
+        from src.core.task_core import core_submit_generation_task
 
-        # 1. Check active tasks limit
-        active_tasks = await redis_client.increment_user_concurrency(user_id)
-        if active_tasks > MAX_CONCURRENT_TASKS:
-            await redis_client.decrement_user_concurrency(user_id)
-            await robust_send_message(context.bot, chat_id, f"⚠️ 您当前已有 {MAX_CONCURRENT_TASKS} 个任务正在处理中，请等待其中一个完成后再试！")
+        # 1. 身份转换
+        internal_user, _ = await get_or_create_user_by_telegram(user_id, username)
+        internal_user_id = internal_user.id
+
+        # 2. Check active tasks limit via core
+        can_run, lock_msg = await check_concurrency_lock(internal_user_id)
+        if not can_run:
+            await robust_send_message(context.bot, chat_id, f"⚠️ {lock_msg}")
             if cleanup:
                 TaskService._cleanup_files(images)
             return None, None
 
         # Determine cost and default task type
-        # For faceswap tasks, map the generic "face_swap" string back to constants for cost lookup
         if task_type == "face_swap":
-            # Both fast faceswap and random faceswap cost 1 credit now
             cost = TASK_COSTS.get(MODE_FACESWAP_STEP1, 1)
         elif task_type == MODE_EDIT or task_type == "edit":
             cost = 2
@@ -198,18 +199,6 @@ class TaskService:
             "low quality, bad anatomy, ugly, deformed, blurry, watermark, text",
         )
 
-        # Logger & Save Input
-        user_logger = UserLogger(user_id, username)
-        saved_input_images = []
-        for img_path in images:
-            if img_path.startswith("template:"):
-                # Pass template path directly without saving
-                saved_input_images.append(img_path)
-            else:
-                saved_name = user_logger.save_input_image(img_path)
-                if saved_name:
-                    saved_input_images.append(saved_name)
-
         notice = await TaskService._get_acceleration_notice(user_id)
         msg_text = (
             f"🚀 正在处理视频生成任务 (消耗{cost}灵石)...{notice}"
@@ -223,30 +212,35 @@ class TaskService:
 
         media_bytes = None
         full_output_path = None
-        registry_task_id = None
 
         try:
-            # Determine Priority
-            priority = await permission_service.calculate_user_priority(user_id)
-            identity_str = await permission_service.get_user_identity(user_id)
-            user_group = await permission_service.get_user_group(user_id)
-
-            # Deduct Quota (Credits) first
+            # 3. Deduct Quota via core
             if deduct_quota:
-                await permission_service.increment_quota(user_id, cost=cost, username=username, task_type=task_type)
-                registry_task_id = await TaskRegistry.add_task(
-                    user_id, username, cost, task_type, chat_id=chat_id, message_id=status_msg.message_id if status_msg else None,
-                    prompt=prompt, saved_input_images=saved_input_images, is_video=is_video, priority=priority
-                )
+                deduct_success, deduct_msg = await check_and_deduct_credits(internal_user_id, cost, task_type, username)
+                if not deduct_success:
+                    await release_concurrency_lock(internal_user_id)
+                    await robust_edit_text(status_msg, deduct_msg)
+                    if cleanup:
+                        TaskService._cleanup_files(images)
+                    return None, None
 
-            # Submit Task
-            task_id = await TaskService._submit_generic_task(
-                task_type, prompt, saved_input_images, negative_prompt, is_video, priority
+            # Determine Priority
+            priority, identity_str, user_group = await get_user_priority_and_identity(internal_user_id)
+
+            # 4. Submit Task via core
+            submit_success, submit_msg, task_id, saved_input_images, registry_task_id = await core_submit_generation_task(
+                internal_user_id, username, prompt, images, is_video, task_type, cost, priority, negative_prompt,
+                chat_id=chat_id, message_id=status_msg.message_id if status_msg else None
             )
-            if registry_task_id and task_id:
-                await TaskRegistry.update_backend_task_id(registry_task_id, task_id)
+
+            if not submit_success:
+                if deduct_quota:
+                    await refund_credits(internal_user_id, cost, "refund", username)
+                await robust_edit_text(status_msg, f"⚠️ {submit_msg}\n已退还灵石。")
+                return None, None
 
             # Monitor Progress
+            user_logger = UserLogger(internal_user_id, username)
             final_info = await TaskService._monitor_task_progress(
                 task_id, status_msg, is_video, image_service.monitor_progress, identity_str=identity_str, user_group=user_group
             )
@@ -256,7 +250,7 @@ class TaskService:
                     await TaskService._handle_task_completion(
                         context,
                         chat_id,
-                        user_id,
+                        internal_user_id,
                         prompt,
                         task_type,
                         task_id,
@@ -271,25 +265,21 @@ class TaskService:
                 )
             else:
                 if deduct_quota:
-                    await permission_service.increment_quota(user_id, cost=-cost, username=username, task_type="refund")
+                    await refund_credits(internal_user_id, cost, "refund", username)
                 await robust_send_message(
                     context.bot, chat_id, "❌ 生成完成但未获取到文件路径，已退还灵石"
                 )
 
         except Exception as e:
-            user_logger.logger.error(
-                f"Error in process_generation_task for user {user_id}: {e}",
-                exc_info=True,
-            )
+            logger.error(f"Error in process_generation_task for user {internal_user_id}: {e}", exc_info=True)
             if deduct_quota:
-                await permission_service.increment_quota(user_id, cost=-cost, username=username, task_type="refund")
+                await refund_credits(internal_user_id, cost, "refund", username)
             await robust_send_message(context.bot, chat_id, f"❌ 出错了：{e}，已退还灵石")
 
         finally:
-            if registry_task_id:
+            if 'registry_task_id' in locals() and registry_task_id:
                 await TaskRegistry.remove_task(registry_task_id)
-            await redis_client.decrement_user_concurrency(user_id)
-                
+            await release_concurrency_lock(internal_user_id)
             if cleanup:
                 TaskService._cleanup_files(images)
 
@@ -308,22 +298,23 @@ class TaskService:
         """
         Generic handler for video generation tasks to reduce code duplication.
         """
+        from src.core.user_core import get_or_create_user_by_telegram
+        from src.core.billing_core import check_concurrency_lock, release_concurrency_lock, check_and_deduct_credits, refund_credits, get_user_priority_and_identity
+
         chat_id = update.effective_chat.id
         user_id = update.effective_user.id
         username = update.effective_user.username or update.effective_user.full_name
         
-        # 1. Check active tasks limit
-        active_tasks = await redis_client.increment_user_concurrency(user_id)
-        from src.constants import MAX_CONCURRENT_TASKS
-        if active_tasks > MAX_CONCURRENT_TASKS:
-            await redis_client.decrement_user_concurrency(user_id)
-            await robust_send_message(context.bot, chat_id, f"⚠️ 您当前已有 {MAX_CONCURRENT_TASKS} 个任务正在处理中，请等待其中一个完成后再试！")
+        internal_user, _ = await get_or_create_user_by_telegram(user_id, username)
+        internal_user_id = internal_user.id
+
+        # 1. Check active tasks limit via core
+        can_run, lock_msg = await check_concurrency_lock(internal_user_id)
+        if not can_run:
+            await robust_send_message(context.bot, chat_id, f"⚠️ {lock_msg}")
             if cleanup:
                 TaskService._cleanup_files([image_path])
             return None, None
-        
-        user_group = await permission_service.get_user_group(user_id)
-        identity_str = await permission_service.get_user_identity(user_id)
         
         from src.constants import DEFAULT_RESOLUTION, DEFAULT_DURATION, RESOLUTION_COST, DURATION_MULTIPLIER, DURATION_FRAMES
 
@@ -352,7 +343,7 @@ class TaskService:
             
         length = DURATION_FRAMES.get(duration, 81)
 
-        user_logger = UserLogger(user_id, username)
+        user_logger = UserLogger(internal_user_id, username)
 
         # Load prompt
         prompts_config = load_prompts()
@@ -371,16 +362,20 @@ class TaskService:
         registry_task_id = None
 
         try:
-            # Pre-flight check removed as backend can upscale
-            if not await permission_service.check_quota(update, context, cost=cost):
+            # 2. 计费 via core
+            deduct_success, deduct_msg = await check_and_deduct_credits(internal_user_id, cost, mode, username)
+            if not deduct_success:
+                await release_concurrency_lock(internal_user_id)
                 await robust_delete_message(msg)
+                await robust_send_message(context.bot, chat_id, deduct_msg)
+                if cleanup:
+                    TaskService._cleanup_files([image_path])
                 return None, None
 
-            priority = await permission_service.calculate_user_priority(user_id)
+            priority, identity_str, user_group = await get_user_priority_and_identity(internal_user_id)
 
-            await permission_service.increment_quota(user_id, cost=cost, username=username, task_type=mode)
             registry_task_id = await TaskRegistry.add_task(
-                user_id, username, cost, mode, chat_id=chat_id, message_id=msg.message_id if msg else None,
+                internal_user_id, username, cost, mode, chat_id=chat_id, message_id=msg.message_id if msg else None,
                 prompt=prompt, saved_input_images=[saved_input_image], is_video=True, priority=priority
             )
 
@@ -409,7 +404,7 @@ class TaskService:
                     await TaskService._handle_task_completion(
                         context,
                         chat_id,
-                        user_id,
+                        internal_user_id,
                         prompt,
                         mode,
                         task_id,
@@ -424,19 +419,19 @@ class TaskService:
                     )
                 )
             else:
-                await permission_service.increment_quota(user_id, cost=-cost, username=username, task_type="refund")
+                await refund_credits(internal_user_id, cost, "refund", username)
                 await robust_send_message(
                     context.bot, chat_id, "❌ 生成完成但未获取到任务信息，已退还灵石"
                 )
 
         except Exception as e:
-            logger.error(f"Error in {mode} task for user {user_id}: {e}", exc_info=True)
-            await permission_service.increment_quota(user_id, cost=-cost, username=username, task_type="refund")
+            logger.error(f"Error in {mode} task for user {internal_user_id}: {e}", exc_info=True)
+            await refund_credits(internal_user_id, cost, "refund", username)
             await robust_send_message(context.bot, chat_id, f"❌ 出错了：{e}，已退还灵石")
         finally:
             if registry_task_id:
                 await TaskRegistry.remove_task(registry_task_id)
-            await redis_client.decrement_user_concurrency(user_id)
+            await release_concurrency_lock(internal_user_id)
                 
             if cleanup:
                 TaskService._cleanup_files([image_path])
@@ -538,20 +533,24 @@ class TaskService:
         image_path: str,
         cleanup: bool = True,
     ):
+        from src.core.user_core import get_or_create_user_by_telegram
+        from src.core.billing_core import check_concurrency_lock, release_concurrency_lock, check_and_deduct_credits, refund_credits, get_user_priority_and_identity
+
         chat_id = update.effective_chat.id
         user_id = update.effective_user.id
+        username = update.effective_user.username or update.effective_user.full_name
         
-        # 1. Check active tasks limit
-        active_tasks = await redis_client.increment_user_concurrency(user_id)
-        from src.constants import MAX_CONCURRENT_TASKS
-        if active_tasks > MAX_CONCURRENT_TASKS:
-            await redis_client.decrement_user_concurrency(user_id)
-            await robust_send_message(context.bot, chat_id, f"⚠️ 您当前已有 {MAX_CONCURRENT_TASKS} 个任务正在处理中，请等待其中一个完成后再试！")
+        internal_user, _ = await get_or_create_user_by_telegram(user_id, username)
+        internal_user_id = internal_user.id
+
+        # 1. Check active tasks limit via core
+        can_run, lock_msg = await check_concurrency_lock(internal_user_id)
+        if not can_run:
+            await robust_send_message(context.bot, chat_id, f"⚠️ {lock_msg}")
             if cleanup and image_path:
                 TaskService._cleanup_files([image_path])
             return None, None
             
-        username = update.effective_user.username or update.effective_user.full_name
         mode = MODE_CUSTOM_VIDEO
         
         from src.constants import DEFAULT_RESOLUTION, RESOLUTION_COST, DEFAULT_DURATION, DURATION_MULTIPLIER, DURATION_FRAMES
@@ -568,7 +567,7 @@ class TaskService:
         cost = int(base_cost * multiplier)
         length = DURATION_FRAMES.get(duration, 81)
 
-        user_logger = UserLogger(user_id, username)
+        user_logger = UserLogger(internal_user_id, username)
 
         # Append resolution and duration to prompt for history tracking
         prompt = f"[{resolution}|{duration}] {prompt}"
@@ -587,21 +586,24 @@ class TaskService:
             else:
                 width, height = 512, 512
                 
-            # Pre-flight check removed as backend can upscale
-            if not await permission_service.check_quota(update, context, cost=cost):
+            # 2. 计费 via core
+            deduct_success, deduct_msg = await check_and_deduct_credits(internal_user_id, cost, mode, username)
+            if not deduct_success:
+                await release_concurrency_lock(internal_user_id)
                 await robust_delete_message(msg)
+                await robust_send_message(context.bot, chat_id, deduct_msg)
+                if cleanup and image_path:
+                    TaskService._cleanup_files([image_path])
                 return None, None
+                
+            priority, identity_str, user_group = await get_user_priority_and_identity(internal_user_id)
 
-            priority = await permission_service.calculate_user_priority(user_id)
-            identity_str = await permission_service.get_user_identity(user_id)
-            user_group = await permission_service.get_user_group(user_id)
-
-            await permission_service.increment_quota(user_id, cost=cost, username=username, task_type=mode)
             registry_task_id = await TaskRegistry.add_task(
-                user_id, username, cost, mode, chat_id=chat_id, message_id=msg.message_id if msg else None,
-                prompt=prompt, saved_input_images=[saved_input_image], is_video=True, priority=priority
+                internal_user_id, username, cost, mode, chat_id=chat_id, message_id=msg.message_id if msg else None,
+                prompt=prompt, saved_input_images=[saved_input_image] if saved_input_image else [], is_video=True, priority=priority
             )
-            await robust_edit_text(msg, "⏳ 正在生成视频，请耐心等待...")
+            
+            await robust_edit_text(msg, "⏳ 正在生成自定义视频，请耐心等待...")
 
             task_id = await image_service.submit_perfect_video_edit(
                 prompt, saved_input_image, width=width, height=height, length=length, priority=priority
@@ -618,7 +620,7 @@ class TaskService:
                 return await TaskService._handle_task_completion(
                     context,
                     chat_id,
-                    user_id,
+                    internal_user_id,
                     prompt,
                     mode,
                     task_id,
@@ -632,23 +634,24 @@ class TaskService:
                     caption="✅ 自定义视频生成完成",
                 )
             else:
-                await permission_service.increment_quota(user_id, cost=-cost, username=username, task_type="refund")
+                await refund_credits(internal_user_id, cost, "refund", username)
                 await robust_send_message(
-                    context.bot, chat_id, "❌ 生成完成但未获取到任务信息，已退还灵石"
+                    context.bot, chat_id, "❌ 生成完成但未获取到文件路径，已退还灵石"
                 )
                 return None, None
+
         except Exception as e:
             logger.error(
-                f"Error in custom video task for user {user_id}: {e}", exc_info=True
+                f"Error in custom video task for user {internal_user_id}: {e}", exc_info=True
             )
-            await permission_service.increment_quota(user_id, cost=-cost, username=username, task_type="refund")
+            await refund_credits(internal_user_id, cost, "refund", username)
             await robust_send_message(context.bot, chat_id, f"❌ 出错了：{e}，已退还灵石")
             return None, None
         finally:
             if registry_task_id:
                 await TaskRegistry.remove_task(registry_task_id)
-            await redis_client.decrement_user_concurrency(user_id)
-            if cleanup:
+            await release_concurrency_lock(internal_user_id)
+            if cleanup and image_path:
                 TaskService._cleanup_files([image_path])
 
     # Private Helpers
@@ -665,24 +668,29 @@ class TaskService:
         images: list[str],
     ):
         """Handle MODE_I2I_PRO requests"""
-        from src.constants import MAX_CONCURRENT_TASKS, MODE_I2I_PRO, TASK_COSTS
+        from src.constants import MODE_I2I_PRO, TASK_COSTS
+        from src.core.user_core import get_or_create_user_by_telegram
+        from src.core.billing_core import check_concurrency_lock, release_concurrency_lock, check_and_deduct_credits, refund_credits, get_user_priority_and_identity
         
+        internal_user, _ = await get_or_create_user_by_telegram(user_id, username)
+        internal_user_id = internal_user.id
+
         # 1. Check active tasks limit
-        active_tasks = await redis_client.increment_user_concurrency(user_id)
-        if active_tasks > MAX_CONCURRENT_TASKS:
-            await redis_client.decrement_user_concurrency(user_id)
-            await robust_send_message(context.bot, chat_id, f"⚠️ 您当前已有 {MAX_CONCURRENT_TASKS} 个任务正在处理中，请等待其中一个完成后再试！")
-            return
+        can_run, lock_msg = await check_concurrency_lock(internal_user_id)
+        if not can_run:
+            await robust_send_message(context.bot, chat_id, f"⚠️ {lock_msg}")
+            TaskService._cleanup_files(images)
+            return None, None
 
         cost = TASK_COSTS.get(MODE_I2I_PRO, 3)
         mode = MODE_I2I_PRO
-        user_logger = UserLogger(user_id, username)
+        user_logger = UserLogger(internal_user_id, username)
         
         # Validate images
         if not images or len(images) == 0:
-            await redis_client.decrement_user_concurrency(user_id)
+            await release_concurrency_lock(internal_user_id)
             await robust_send_message(context.bot, chat_id, "❌ 请先发送参考图片。")
-            return
+            return None, None
             
         image_path = images[0]
         saved_input_image = user_logger.save_input_image(image_path)
@@ -698,13 +706,19 @@ class TaskService:
         registry_task_id = None
 
         try:
-            priority = await permission_service.calculate_user_priority(user_id)
-            identity_str = await permission_service.get_user_identity(user_id)
-            user_group = await permission_service.get_user_group(user_id)
+            # 2. 计费
+            deduct_success, deduct_msg = await check_and_deduct_credits(internal_user_id, cost, mode, username)
+            if not deduct_success:
+                await release_concurrency_lock(internal_user_id)
+                await robust_delete_message(msg)
+                await robust_send_message(context.bot, chat_id, deduct_msg)
+                TaskService._cleanup_files(images)
+                return None, None
 
-            await permission_service.increment_quota(user_id, cost=cost, username=username, task_type=mode)
+            priority, identity_str, user_group = await get_user_priority_and_identity(internal_user_id)
+
             registry_task_id = await TaskRegistry.add_task(
-                user_id, username, cost, mode, chat_id=chat_id, message_id=msg.message_id if msg else None,
+                internal_user_id, username, cost, mode, chat_id=chat_id, message_id=msg.message_id if msg else None,
                 prompt=prompt, saved_input_images=[saved_input_image], is_video=False, priority=priority
             )
 
@@ -723,22 +737,24 @@ class TaskService:
 
             if final_info:
                 return await TaskService._handle_task_completion(
-                    context, chat_id, user_id, prompt, mode, task_id, [saved_input_image], user_logger,
+                    context, chat_id, internal_user_id, prompt, mode, task_id, [saved_input_image], user_logger,
                     is_video=False, send_result=True, reply_markup=None, status_msg=msg, delete_status=True,
                     caption=f"🌟 幻想换脸生成完成\n提示词：{prompt[:100]}..."
                 )
             else:
-                await permission_service.increment_quota(user_id, cost=-cost, username=username, task_type="refund")
+                await refund_credits(internal_user_id, cost, "refund", username)
                 await robust_send_message(context.bot, chat_id, "❌ 生成完成但未获取到文件路径，已退还灵石")
+                return None, None
 
         except Exception as e:
-            user_logger.logger.error(f"Error in process_i2i_pro_task for user {user_id}: {e}", exc_info=True)
-            await permission_service.increment_quota(user_id, cost=-cost, username=username, task_type="refund")
+            user_logger.logger.error(f"Error in process_i2i_pro_task for user {internal_user_id}: {e}", exc_info=True)
+            await refund_credits(internal_user_id, cost, "refund", username)
             await robust_send_message(context.bot, chat_id, f"❌ 出错了：{e}，已退还灵石")
+            return None, None
         finally:
             if registry_task_id:
                 await TaskRegistry.remove_task(registry_task_id)
-            await redis_client.decrement_user_concurrency(user_id)
+            await release_concurrency_lock(internal_user_id)
             TaskService._cleanup_files(images)
 
     @staticmethod
@@ -848,7 +864,7 @@ class TaskService:
     async def _handle_task_completion(
         context,
         chat_id,
-        user_id,
+        internal_user_id,
         prompt,
         task_type,
         task_id,
@@ -877,7 +893,7 @@ class TaskService:
                 task_id=task_id,
                 type=task_type,
             )
-            await permission_service.refresh_user_group(user_id)
+            await permission_service.refresh_user_group(internal_user_id)
 
             if send_result:
                 keyboard = [
@@ -917,7 +933,7 @@ class TaskService:
                 task_id=task_id,
                 type=task_type,
             )
-            await permission_service.refresh_user_group(user_id)
+            await permission_service.refresh_user_group(internal_user_id)
 
             if send_result:
                 keyboard = [

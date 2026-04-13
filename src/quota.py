@@ -29,45 +29,30 @@ class QuotaManager:
             result = await session.execute(stmt)
             return result.scalar() or 0
 
-    async def is_user_exists(self, user_id: int) -> bool:
+    async def is_user_exists(self, telegram_id: int) -> bool:
         """Check if user exists without creating"""
+        from sqlalchemy import or_
         async with AsyncSessionLocal() as session:
-            stmt = select(User).where(User.id == user_id)
+            stmt = select(User).where(or_(User.telegram_id == telegram_id, User.id == telegram_id))
             result = await session.execute(stmt)
             return result.scalar_one_or_none() is not None
 
-    async def ensure_user(self, user_id: int, username: str = None, full_name: str = None) -> User:
-        """Ensure user exists and update their info"""
+    async def ensure_user(self, internal_user_id: int, username: str = None, full_name: str = None) -> User:
+        """Ensure user exists by internal ID"""
         async with AsyncSessionLocal() as session:
-            stmt = select(User).where(User.id == user_id)
+            stmt = select(User).where(User.id == internal_user_id)
             result = await session.execute(stmt)
             user = result.scalar_one_or_none()
-            
-            if not user:
-                user = User(id=user_id, username=username, full_name=full_name, credits=6)
-                session.add(user)
-                try:
+            if user:
+                updated = False
+                if username and user.username != username:
+                    user.username = username
+                    updated = True
+                if full_name and user.full_name != full_name:
+                    user.full_name = full_name
+                    updated = True
+                if updated:
                     await session.commit()
-                except IntegrityError:
-                    await session.rollback()
-                    # User was created concurrently, fetch it
-                    stmt = select(User).where(User.id == user_id)
-                    result = await session.execute(stmt)
-                    user = result.scalar_one_or_none()
-                return user
-            
-            # Update info if provided
-            updated = False
-            if username and user.username != username:
-                user.username = username
-                updated = True
-            if full_name and user.full_name != full_name:
-                user.full_name = full_name
-                updated = True
-            
-            if updated:
-                await session.commit()
-            
             return user
 
     async def get_credits(self, user_id: int, username: str = None, full_name: str = None) -> int:
@@ -185,35 +170,37 @@ class QuotaManager:
             return False
 
         async with AsyncSessionLocal() as session:
-            # 1. Check if new_user already exists (has credits/record)
-            stmt = select(User).where(User.id == new_user_id)
-            result = await session.execute(stmt)
-            if result.scalar_one_or_none():
-                return False # Already exists
-            
-            # 2. Check if referral already exists (redundant if user check passes, but safe)
+            # 1. Check if referral already exists
             stmt = select(Referral).where(Referral.invitee_id == new_user_id)
             result = await session.execute(stmt)
             if result.scalar_one_or_none():
-                return False
-
-            # 3. Create User (Invitee)
-            new_user = User(id=new_user_id, username=new_username, full_name=new_full_name, credits=6, invited_by=inviter_id, last_activity=datetime.now())
-            session.add(new_user)
+                return False # Already invited
             
-            # 4. Create Referral
-            # Ensure inviter exists and lock the row for update to prevent concurrent modification issues
+            # 2. Update Invitee (already created by user_core)
+            stmt = select(User).where(User.id == new_user_id)
+            result = await session.execute(stmt)
+            new_user = result.scalar_one_or_none()
+            if not new_user:
+                return False
+                
+            # If the user already has history or generated images, they are not really "new"
+            # But we can simplify by just checking if they have an inviter
+            if new_user.invited_by is not None:
+                return False
+                
+            new_user.invited_by = inviter_id
+            
+            # 3. Create Referral
             stmt = select(User).where(User.id == inviter_id).with_for_update()
             result = await session.execute(stmt)
             inviter = result.scalar_one_or_none()
             if not inviter:
-                inviter = User(id=inviter_id, credits=6)
-                session.add(inviter)
+                return False
             
             referral = Referral(inviter_id=inviter_id, invitee_id=new_user_id, channel_reward_claimed=False)
             session.add(referral)
             
-            # 5. Reward Inviter
+            # 4. Reward Inviter
             inviter.credits += 5
             inviter.referral_count = (inviter.referral_count or 0) + 1
             
@@ -222,7 +209,7 @@ class QuotaManager:
                 print(f"✅ Referral success: {inviter_id} invited {new_user_id}")
             except IntegrityError:
                 await session.rollback()
-                print(f"⚠️ Referral race condition: user {new_user_id} already exists")
+                print(f"⚠️ Referral race condition: user {new_user_id} already invited")
                 return False
 
             # Log for inviter

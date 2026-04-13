@@ -7,7 +7,14 @@ Base = declarative_base()
 class User(Base):
     __tablename__ = "users"
 
-    id = Column(BigInteger, primary_key=True)  # Telegram User ID
+    id = Column(BigInteger, primary_key=True, autoincrement=True)  # Internal System ID (was Telegram User ID)
+    
+    # New Multi-platform login fields
+    telegram_id = Column(BigInteger, unique=True, index=True, nullable=True) # Real TG ID
+    google_id = Column(String(255), unique=True, index=True, nullable=True)
+    email = Column(String(255), unique=True, index=True, nullable=True)
+    hashed_password = Column(String(255), nullable=True)
+
     username = Column(String(100), nullable=True)
     full_name = Column(String(200), nullable=True)
     credits = Column(Integer, default=6)

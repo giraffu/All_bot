@@ -81,10 +81,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     # Ensure user info is up to date
-    await permission_service.ensure_user(update)
+    is_new = await permission_service.ensure_user(update)
     
     # Log User Info
-    is_new = not await permission_service.is_user_exists(user.id)
     if is_new:
         logger.info(f"🆕 NEW USER REGISTERED: {user.id} (@{user.username or 'N/A'}) - {user.full_name}")
     else:

@@ -120,5 +120,17 @@ class StorageService:
             logger.error(f"Failed to generate presigned URL for {object_name} in {bucket}: {e}")
             return ""
 
+    def get_presigned_put_url(self, object_name: str, expires_minutes: int = 15, bucket: str = None) -> str:
+        """Get a presigned PUT URL for uploading an object directly to MinIO"""
+        bucket = bucket or MINIO_BUCKET
+        if not self.client:
+            return ""
+        
+        try:
+            return self.client.presigned_put_object(bucket, object_name, expires=timedelta(minutes=expires_minutes))
+        except Exception as e:
+            logger.error(f"Failed to generate presigned PUT URL for {object_name} in {bucket}: {e}")
+            return ""
+
 # Global instance
 storage = StorageService()

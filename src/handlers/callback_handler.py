@@ -472,7 +472,11 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
         parts = data.split("_")
         pay_type = parts[-1]
         plan_id = int(parts[-2])
-        user_id = query.from_user.id
+        tg_id = query.from_user.id
+        
+        from src.core.user_core import get_or_create_user_by_telegram
+        internal_user, _ = await get_or_create_user_by_telegram(tg_id)
+        internal_user_id = internal_user.id
         
         async with AsyncSessionLocal() as session:
             result = await session.execute(select(MembershipPlan).where(MembershipPlan.id == plan_id))
@@ -497,11 +501,11 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
                 
             # 先落库 PENDING 订单
             timestamp = int(time.time())
-            out_trade_no = f"RMB_{user_id}_{plan_id}_{timestamp}"
+            out_trade_no = f"RMB_{tg_id}_{plan_id}_{timestamp}"
             
             new_order = Order(
                 order_id=out_trade_no,
-                telegram_id=user_id,
+                telegram_id=internal_user_id,
                 plan_id=plan_id,
                 original_price=plan.price_rmb,
                 final_price=plan.price_rmb,

@@ -50,9 +50,10 @@ class PermissionService:
         if not user:
             return False
 
-        # Ensure user exists in DB whenever they interact
-        await self.quota_manager.ensure_user(user.id, username=user.username, full_name=user.full_name)
-        
+        from src.core.user_core import get_or_create_user_by_telegram
+        internal_user, _ = await get_or_create_user_by_telegram(user.id, user.username, user.full_name)
+        internal_user_id = internal_user.id
+
         # 1. Check Channel Subscription (If configured, this acts as the primary gatekeeper)
         if REQUIRED_CHANNEL_ID:
             try:
@@ -62,18 +63,18 @@ class PermissionService:
                 
                 # If subscribed, allow access!
                 if member.status not in ['left', 'kicked', 'banned']:
-                    await self.check_channel_reward(user, context)
+                    await self.check_channel_reward(user, context, internal_user_id)
                     # Ensure is_channel_member is updated in DB
-                    await self.quota_manager.update_channel_membership(user.id, True)
-                    await self.quota_manager.process_channel_reward(user.id)
-                    await self.refresh_user_group(user.id, is_member=True)
+                    await self.quota_manager.update_channel_membership(internal_user_id, True)
+                    await self.quota_manager.process_channel_reward(internal_user_id)
+                    await self.refresh_user_group(internal_user_id, is_member=True)
                     return True
                 else:
                     # Sync "left" status to DB if it was previously True
-                    stats = await self.quota_manager.get_user_stats(user.id)
+                    stats = await self.quota_manager.get_user_stats(internal_user_id)
                     if stats.get("is_channel_member"):
-                        await self.quota_manager.update_channel_membership(user.id, False)
-                        await self.refresh_user_group(user.id, is_member=False)
+                        await self.quota_manager.update_channel_membership(internal_user_id, False)
+                        await self.refresh_user_group(internal_user_id, is_member=False)
                 
             except Exception as e:
                 print(f"⚠️ Channel check failed: {e}")
@@ -82,27 +83,16 @@ class PermissionService:
 
         # 2. Check if user has credits (Mortal check)
         # If user has credits, they can use features even if not in channel
-        credits = await self.quota_manager.get_credits(user.id)
+        credits = await self.quota_manager.get_credits(internal_user_id)
         if credits > 0:
             # Even if API check failed, if they have credits, let them pass.
             # BUT, we might want to retry updating their group if they are actually a member in DB
-            stats = await self.quota_manager.get_user_stats(user.id)
+            stats = await self.quota_manager.get_user_stats(internal_user_id)
             if stats.get("is_channel_member"):
-                 await self.refresh_user_group(user.id, is_member=True)
+                 await self.refresh_user_group(internal_user_id, is_member=True)
             return True
 
         # Default: Access Denied (Must join channel or get credits)
-        # Final safety check: if API failed but we suspect they might be a member (e.g. from DB or just retry),
-        # we can't really do much without credits.
-        # However, user mentioned they are in channel but DB says False (Mortal).
-        # This block is reached if:
-        # 1. Channel check returned 'left/kicked' OR Channel check FAILED (exception)
-        # 2. AND Credits <= 0
-        
-        # If the channel check FAILED (exception), we might be blocking a valid user who has 0 credits.
-        # But we can't let them in without verifying.
-        # The user says "I am in channel", so check must be returning 'left' or failing.
-        
         invite_link = CHANNEL_INVITE_LINK or "https://t.me/AiVisionAV"
         msg = (
             "⛩️ **尚未拜入宗门**\n\n"
@@ -112,20 +102,33 @@ class PermissionService:
         await robust_send_message(context.bot, update.effective_chat.id, msg, parse_mode="Markdown")
         return False
 
-    async def check_channel_reward(self, user, context: ContextTypes.DEFAULT_TYPE):
+    async def check_channel_reward(self, user, context: ContextTypes.DEFAULT_TYPE, internal_user_id: int = None):
         """Check and award channel join reward (10 credits)"""
+        if internal_user_id:
+            user_id = internal_user_id
+        else:
+            from src.core.user_core import get_or_create_user_by_telegram
+            internal_user, _ = await get_or_create_user_by_telegram(user.id)
+            user_id = internal_user.id
+            
         try:
-            inviter_id = await self.quota_manager.process_channel_reward(user.id)
-            if inviter_id:
+            inviter_internal_id = await self.quota_manager.process_channel_reward(user_id)
+            if inviter_internal_id:
                 try:
-                    await robust_send_message(
-                        context.bot,
-                        chat_id=inviter_id,
-                        text=f"🎉 **宗门进阶奖励！**\n\n道友 {user.full_name} 已成功拜入宗门。\n获得额外奖励：`10` 灵石。",
-                        parse_mode="Markdown"
-                    )
+                    # To notify inviter, we need their telegram_id
+                    async with AsyncSessionLocal() as session:
+                        from src.database.models import User
+                        from sqlalchemy import select
+                        inviter = (await session.execute(select(User).where(User.id == inviter_internal_id))).scalar_one_or_none()
+                        if inviter and inviter.telegram_id:
+                            await robust_send_message(
+                                context.bot,
+                                chat_id=inviter.telegram_id,
+                                text=f"🎉 **宗门进阶奖励！**\n\n道友 {user.full_name} 已成功拜入宗门。\n获得额外奖励：`10` 灵石。",
+                                parse_mode="Markdown"
+                            )
                 except Exception as e:
-                    print(f"Failed to notify inviter {inviter_id}: {e}")
+                    print(f"Failed to notify inviter {inviter_internal_id}: {e}")
         except Exception as e:
             print(f"Failed to check channel reward: {e}")
 
@@ -135,10 +138,12 @@ class PermissionService:
         Returns True if credits are available.
         """
         user = update.effective_user
-        user_id = user.id
+        from src.core.user_core import get_or_create_user_by_telegram
+        internal_user, _ = await get_or_create_user_by_telegram(user.id, user.username, user.full_name)
+        internal_user_id = internal_user.id
         
-        if not await self.quota_manager.check_credits(user_id, cost):
-            current = await self.quota_manager.get_credits(user_id, username=user.username, full_name=user.full_name)
+        if not await self.quota_manager.check_credits(internal_user_id, cost):
+            current = await self.quota_manager.get_credits(internal_user_id, username=user.username, full_name=user.full_name)
             msg = f"🚫 **灵石不足**\n\n道友当前余额: `{current}` 灵石\n本次修炼需要: `{cost}` 灵石\n请联系管理员获取更多灵石。"
             await robust_send_message(context.bot, update.effective_chat.id, msg, parse_mode="Markdown")
             return False
@@ -163,6 +168,10 @@ class PermissionService:
         if not user or not REQUIRED_CHANNEL_ID:
             return False
 
+        from src.core.user_core import get_or_create_user_by_telegram
+        internal_user, _ = await get_or_create_user_by_telegram(user.id, user.username, user.full_name)
+        internal_user_id = internal_user.id
+
         try:
             channel_id = int(REQUIRED_CHANNEL_ID) if REQUIRED_CHANNEL_ID.lstrip('-').isdigit() else REQUIRED_CHANNEL_ID
             member = await context.bot.get_chat_member(chat_id=channel_id, user_id=user.id)
@@ -171,12 +180,12 @@ class PermissionService:
             
             if is_member:
                 # Update DB and process rewards if any
-                await self.quota_manager.update_channel_membership(user.id, True)
-                await self.check_channel_reward(user, context)
-                await self.refresh_user_group(user.id, is_member=True)
+                await self.quota_manager.update_channel_membership(internal_user_id, True)
+                await self.check_channel_reward(user, context, internal_user_id)
+                await self.refresh_user_group(internal_user_id, is_member=True)
             else:
-                await self.quota_manager.update_channel_membership(user.id, False)
-                await self.refresh_user_group(user.id, is_member=False)
+                await self.quota_manager.update_channel_membership(internal_user_id, False)
+                await self.refresh_user_group(internal_user_id, is_member=False)
                 
             return is_member
         except Exception as e:
@@ -184,12 +193,16 @@ class PermissionService:
             logger.warning(f"Manual channel sync failed for user {user.id}: {e}")
             return False
 
-    async def ensure_user(self, update: Update):
-        """Ensure user info is up to date in DB"""
+    async def ensure_user(self, update: Update) -> bool:
+        """Ensure user info is up to date in DB. Returns True if user was newly created."""
         user = update.effective_user
         if user:
-            await self.quota_manager.ensure_user(user.id, username=user.username, full_name=user.full_name)
-            await self.refresh_user_group(user.id)
+            from src.core.user_core import get_or_create_user_by_telegram
+            internal_user, is_new = await get_or_create_user_by_telegram(user.id, user.username, user.full_name)
+            await self.quota_manager.ensure_user(internal_user.id, username=user.username, full_name=user.full_name)
+            await self.refresh_user_group(internal_user.id)
+            return is_new
+        return False
 
     async def refresh_user_group(self, user_id: int, is_member: bool = None) -> str:
         """
@@ -229,16 +242,20 @@ class PermissionService:
         await self.quota_manager.update_user_group(user_id, group)
         return group
 
-    async def get_user_detailed_stats(self, user_id: int) -> dict:
+    async def get_user_detailed_stats(self, tg_id: int) -> dict:
         """Get comprehensive stats for a user profile"""
-        stats = await self.quota_manager.get_user_stats(user_id)
-        group = await self.get_user_group(user_id)
-        identity = await self.get_user_identity(user_id)
-        priority = await self.calculate_user_priority(user_id)
-        credits = await self.quota_manager.get_credits(user_id)
+        from src.core.user_core import get_or_create_user_by_telegram
+        internal_user, _ = await get_or_create_user_by_telegram(tg_id)
+        internal_user_id = internal_user.id
+
+        stats = await self.quota_manager.get_user_stats(internal_user_id)
+        group = await self.get_user_group(internal_user_id)
+        identity = await self.get_user_identity(internal_user_id)
+        priority = await self.calculate_user_priority(internal_user_id)
+        credits = await self.quota_manager.get_credits(internal_user_id)
         
         # 获取邀请人的充值数据
-        invitation_recharge_stats = await self.get_invitation_recharge_stats(user_id)
+        invitation_recharge_stats = await self.get_invitation_recharge_stats(internal_user_id)
         
         return {
             "group": group,
@@ -315,7 +332,9 @@ class PermissionService:
     async def get_user_credits(self, update: Update) -> int:
         """Get current credits for a user"""
         user = update.effective_user
-        return await self.quota_manager.get_credits(user.id, username=user.username, full_name=user.full_name)
+        from src.core.user_core import get_or_create_user_by_telegram
+        internal_user, _ = await get_or_create_user_by_telegram(user.id, user.username, user.full_name)
+        return await self.quota_manager.get_credits(internal_user.id)
 
     async def get_user_group(self, user_id: int) -> str:
         """Get user group (修为) from DB"""
@@ -361,9 +380,12 @@ class PermissionService:
         Returns (success, current_credits, error_message, total_checkins, reward)
         """
         user = update.effective_user
+        from src.core.user_core import get_or_create_user_by_telegram
+        internal_user, _ = await get_or_create_user_by_telegram(user.id, user.username, user.full_name)
+        internal_user_id = internal_user.id
         
         # Check if user is a Mortal
-        user_group = await self.get_user_group(user.id)
+        user_group = await self.get_user_group(internal_user_id)
         if user_group == "凡人":
             invite_link = CHANNEL_INVITE_LINK or "https://t.me/AiVisionAV"
             msg = (
@@ -374,7 +396,7 @@ class PermissionService:
             return False, 0, msg, 0, 0
 
         # Calculate reward based on identity and group
-        identity = await self.get_user_identity(user.id)
+        identity = await self.get_user_identity(internal_user_id)
         reward = 10
         
         # Apply group base reward
@@ -396,35 +418,44 @@ class PermissionService:
             reward += 50
 
         success = await self.quota_manager.checkin(
-            user.id, 
+            internal_user_id, 
             username=user.username, 
             full_name=user.full_name,
             reward=reward
         )
         if success:
-            await self.refresh_user_group(user.id)
+            await self.refresh_user_group(internal_user_id)
         
         current_credits = await self.get_user_credits(update)
-        stats = await self.quota_manager.get_user_stats(user.id)
+        stats = await self.quota_manager.get_user_stats(internal_user_id)
         total_checkins = stats.get("checkin_count", 0)
         
         return success, current_credits, "", total_checkins, reward
 
-    async def process_referral(self, update: Update, inviter_id: int) -> tuple[bool, str]:
+    async def process_referral(self, update: Update, inviter_tg_id: int) -> tuple[bool, str]:
         """
         Process referral reward.
         Returns (success, message)
         """
         user = update.effective_user
         
+        from src.core.user_core import get_or_create_user_by_telegram
+        inviter_internal, _ = await get_or_create_user_by_telegram(inviter_tg_id)
+        if not inviter_internal:
+            return False, "invalid_inviter"
+        inviter_internal_id = inviter_internal.id
+
+        new_internal, created = await get_or_create_user_by_telegram(user.id, user.username, user.full_name)
+        new_internal_id = new_internal.id
+        
         # Check if inviter is a Mortal
-        inviter_group = await self.get_user_group(inviter_id)
+        inviter_group = await self.get_user_group(inviter_internal_id)
         if inviter_group == "凡人":
             return False, "visitor_limit"
 
-        success = await self.quota_manager.process_referral(inviter_id, user.id, new_username=user.username, new_full_name=user.full_name)
+        success = await self.quota_manager.process_referral(inviter_internal_id, new_internal_id, new_username=user.username, new_full_name=user.full_name)
         if success:
-            await self.refresh_user_group(inviter_id)
+            await self.refresh_user_group(inviter_internal_id)
             return True, "success"
         return False, "already_invited"
 
@@ -432,9 +463,11 @@ class PermissionService:
         """Get referral count"""
         return await self.quota_manager.get_referral_count(user_id)
 
-    async def record_contribution(self, user_id: int, file_path: str, file_type: str):
+    async def record_contribution(self, tg_id: int, file_path: str, file_type: str):
         """Record template contribution in DB"""
-        await self.quota_manager.add_template_contribution(user_id, file_path, file_type)
+        from src.core.user_core import get_or_create_user_by_telegram
+        internal_user, _ = await get_or_create_user_by_telegram(tg_id)
+        await self.quota_manager.add_template_contribution(internal_user.id, file_path, file_type)
 
 # Singleton instance
 permission_service = PermissionService()

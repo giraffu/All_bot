@@ -64,7 +64,8 @@ async def successful_payment_callback(update: Update, context: ContextTypes.DEFA
             added_credits = plan.reward_credits
             
             # 查找用户
-            result = await session.execute(select(User).where(User.id == user_id))
+            from sqlalchemy import or_
+            result = await session.execute(select(User).where(or_(User.telegram_id == user_id, User.id == user_id)))
             user = result.scalar_one_or_none()
             
             if not user:
@@ -151,7 +152,7 @@ async def successful_payment_callback(update: Update, context: ContextTypes.DEFA
                 
             new_order = Order(
                 order_id=payload[:64], # Truncate to avoid StringDataRightTruncationError
-                telegram_id=user_id,
+                telegram_id=user.id, # Must be internal_id
                 plan_id=plan_id,
                 original_price=successful_payment.total_amount, # In stars
                 final_price=successful_payment.total_amount,

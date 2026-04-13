@@ -5,26 +5,45 @@
 
 ---
 
-## 📅 项目管理规划 (Project Management)
+## � 最新进展与成果总结 (Project Status & Achievements)
+
+截至目前，项目已成功完成前三个核心里程碑，Web 端的核心功能已经可以闭环运行。以下是近期取得的关键成果：
+
+### 1. 前端体验大幅升级 (Frontend UX Improvements)
+*   **统一的状态流转 (`useTaskResult.ts`)**：封装了标准的任务进度、排队人数 (`queuePos`) 监听与结果获取逻辑，彻底解决了前端状态不同步的问题。
+*   **沉浸式内联预览**：在核心页面 (`FaceSwap.vue`, `VideoSwap.vue`, `SingleImage.vue` 等) 实现了基于 `URL.createObjectURL` 的图片/视频本地瞬间预览，彻底移除了老旧的跳转交互。
+*   **优雅的结果展示**：集成了带有下载、重新生成功能的内联结果展示区，并配合 Tailwind CSS 实现了高度现代化的卡片与骨架屏加载动画。
+*   **SPA 路由修复**：修复了 Vue 3 History 模式下刷新页面导致 404 或下载 HTML 文件的单页应用路由回退 (SPA Routing Fallback) Bug。
+
+### 2. 后端稳定性与架构修复 (Backend Stability Fixes)
+*   **SSE 竞态条件修复**：修复了任务过快完成导致前端 SSE 错过“成功”事件而永久卡在“0人排队”的 Bug（通过建立订阅前预检状态解决）。
+*   **幽灵锁 (Ghost Locks) 终结**：通过引入 FastAPI `BackgroundTasks`，后端现在能异步监控任务流并可靠释放并发锁，解决了用户遇到 `429 Too Many Requests` 无法提交新任务的问题。
+*   **文件路径解析修复 (`Errno 21`)**：重构了 MinIO 预签名 URL 的解析逻辑，正确剥离 Bucket 前缀，解决了 Worker 端把目录当文件读取的崩溃问题。
+*   **空提示词透传修复**：为图生图等任务自动注入默认 Prompt，解决了生成的图片与原图完全一致 (Pass-through) 的问题。
+*   **图生视频路由修正**：修复了 `is_video` 标志位的路由判断，确保视频类任务（如“动图后入”）正确派发给视频流 ComfyUI Worker，而非降级为静态图片生成。
+
+---
+
+## �📅 项目管理规划 (Project Management)
 
 ### 1. 里程碑设置与时间估算 (Milestones & Time Estimation)
-整个项目预计耗时 **4-5 周**，分为四个关键里程碑：
-*   **Milestone 1 (Week 1): 核心解耦与数据迁移**
+整个项目预计耗时 **4-5 周**，当前进度：**Milestone 3 已完成，进入 Milestone 4 阶段**。
+
+*   ✅ **Milestone 1: 核心解耦与数据迁移 (Completed)**
     *   完成数据库 `users` 表的多平台 ID 改造。
     *   完成 Bot 业务逻辑抽离至 `src/core/` 目录。
-    *   验收：现有 Bot 在新架构下稳定运行，无性能退化。
-*   **Milestone 2 (Week 2): Web BFF 后端基建**
-    *   完成 FastAPI BFF 框架搭建。
-    *   完成 JWT 鉴权体系与第三方 OAuth（Google/TG）接入。
-    *   封装核心生图/视频接口。
-    *   验收：Postman/Swagger 跑通所有 Web API。
-*   **Milestone 3 (Week 3-4): Vue3 前端开发与对接**
-    *   完成基础框架、Ant Design Vue 引入。
-    *   实现登录、主控制台、任务流交互界面。
-    *   实现基于 SSE/WebSocket 的任务状态实时推送。
-    *   验收：前端核心主流程闭环测试通过。
-*   **Milestone 4 (Week 5): 联调、压测与上线部署**
-    *   全链路压测，CDN/Nginx 配置，发布上线。
+*   ✅ **Milestone 2: Web BFF 后端基建 (Completed)**
+    *   完成 FastAPI BFF 框架搭建 (`web_api/`)。
+    *   完成 JWT 鉴权体系与第三方 OAuth（Telegram Widget）接入。
+    *   封装核心生图/视频接口及 MinIO 预签名直传接口。
+*   ✅ **Milestone 3: Vue3 前端开发与对接 (Completed)**
+    *   完成基础框架、Ant Design Vue 及 Tailwind CSS 引入。
+    *   实现登录、主控制台、任务流交互界面（支持大图/视频实时预览）。
+    *   实现基于 SSE 的任务状态与排队位置实时推送。
+*   🔄 **Milestone 4: 支付闭环、联调与上线部署 (In Progress)**
+    *   [待办] 接入 Web 端支付体系（如 TON Connect Web 或易支付扫码）。
+    *   [待办] 全链路压测与 Nginx/CDN 缓存加速配置。
+    *   [待办] 生产环境发布上线。
 
 ### 2. 关键路径分析 (Critical Path)
 **数据库迁移 -> 核心逻辑抽离 -> BFF 接口暴露 -> 前端任务流对接**。

@@ -186,6 +186,43 @@ async def process_face_video_task(context, chat_id, tg_user_id, ...):
 
 ---
 
-## 6. 下一步行动建议
+## 6. 最小影响执行计划 (Minimal Impact Execution Plan)
 
-建议立即从 **2.1 表结构变更设计** 和编写 **Alembic 迁移脚本** 开始。确认数据库结构调整无误后，再动手编写 `src/core/` 业务代码。
+为了确保正式服 (Prod) 业务零中断，并实现平滑的架构过渡，后续研发必须严格按照以下三个阶段执行：
+
+### 阶段一：数据库无损扩容（对正式服零影响）
+*目标：在数据库层面准备好多平台登录字段，老版本正式服继续无感知运行。*
+1. **修改 `models.py`**：在 `User` 模型中新增 `telegram_id`, `google_id`, `email`, `hashed_password` 字段，**必须设置为允许为空（`nullable=True`）**。
+2. **定制 Alembic 迁移脚本**：生成自动迁移脚本后，手动在 `upgrade()` 中插入核心 SQL：
+   - **数据回填**：`UPDATE users SET telegram_id = id;`
+   - **主键防冲突**：创建一个内部 `id` 自增序列，并将其起始值设置为极大值（如 `10000000000000`），确保未来 Web 端产生的新内部 ID 永远不与历史的 10 位数 Telegram ID 冲突。
+3. **执行迁移**：运行 `alembic upgrade head`。
+   - *约束*：此时正式服继续跑老代码，新字段空置，业务不受任何影响。
+
+### 阶段二：在测试服中进行代码解耦（隔离验证）
+*目标：将业务逻辑下沉到 `src/core/`，并仅在 `tg-bot-test` 测试容器中验证。*
+1. **重构代码**：
+   - 新建 `src/core/` 目录，编写纯净的业务逻辑。
+   - 改造 `src/services/` 和 `src/handlers/`，剥离数据库和 Redis 的直接调用，改为调用 `core` 层。
+   - 注册逻辑切换：新注册的 TG ID 存入 `telegram_id`，主键 `id` 交由数据库序列自动生成极大值。
+2. **部署测试服**：`docker rm -f tg-bot-test && docker-compose -f deploy/docker-compose-test.yml up -d --build`
+3. **全量验证**：
+   - **新用户注册**：检查是否生成 14 位内部 ID 及绑定正确的 `telegram_id`。
+   - **老用户兼容**：检查能否根据 `telegram_id` 正确反查历史数据、扣费并关联外键。
+   - *约束*：在此阶段，**绝不允许**更新或重启正式服容器。所有破坏性测试必须物理隔离在测试号段。
+
+### 阶段三：正式服灰度与全量上线（微停机发布）
+*目标：测试服验证完美无误后，将重构后的代码平滑发布到生产环境。*
+1. **开启正式服维护状态**：进入宿主机执行 `docker exec tg-bot touch /app/MAINTENANCE`（优雅拦截新生图任务，允许进行中任务跑完）。
+2. **更新生产环境**：
+   ```bash
+   docker rm -f tg-bot payment-api
+   docker-compose -f deploy/docker-compose.yml up -d --build
+   ```
+3. **恢复服务**：执行 `docker exec tg-bot rm -f /app/MAINTENANCE`，正式服全面接管新架构。
+
+---
+
+## 7. 下一步行动建议
+
+建议严格按照上述计划，立即从 **阶段一** 开始：修改 `src/database/models.py` 表结构变更设计并生成 **Alembic 迁移脚本**。确认数据库结构调整无误后，再动手编写 `src/core/` 业务代码。

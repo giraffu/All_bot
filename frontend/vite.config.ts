@@ -1,26 +1,38 @@
 import { defineConfig } from 'vite'
-import react from '@vitejs/plugin-react'
-import { nodePolyfills } from 'vite-plugin-node-polyfills'
+import vue from '@vitejs/plugin-vue'
+import Components from 'unplugin-vue-components/vite'
+import { AntDesignVueResolver } from 'unplugin-vue-components/resolvers'
+import tailwindcss from '@tailwindcss/vite'
+import { fileURLToPath, URL } from 'node:url'
 
-const publicBase = process.env.PUBLIC_BASE || '/'
-
+// https://vite.dev/config/
 export default defineConfig({
-  base: publicBase,
   plugins: [
-    react(),
-    nodePolyfills({
-      include: ['buffer'],
+    vue(),
+    tailwindcss(),
+    Components({
+      resolvers: [
+        AntDesignVueResolver({
+          importStyle: false, // css in js
+        }),
+      ],
+      dts: true, // Generate components.d.ts
     }),
   ],
-  server: {
-    host: true,
-    port: 3399,
-    strictPort: true,
-    allowedHosts: ['pay.aivison.it.com', 'chuzeyu.cn'],
-    hmr: {
-      protocol: 'wss',
-      clientPort: 443,
-      path: publicBase,
-    },
+  resolve: {
+    alias: {
+      '@': fileURLToPath(new URL('./src', import.meta.url))
+    }
   },
+  server: {
+    port: 5173,
+    host: '0.0.0.0', // Allow LAN access
+    proxy: {
+      '/api': {
+        target: 'http://127.0.0.1:8000',
+        changeOrigin: true,
+        // rewrite: (path) => path.replace(/^\/api/, '')
+      }
+    }
+  }
 })

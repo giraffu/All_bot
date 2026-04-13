@@ -13,3 +13,7 @@ pytoniq-core
 aiohttp
 redis
 alembic
+python-jose[cryptography]
+passlib[bcrypt]
+python-multipart
+sse-starlette

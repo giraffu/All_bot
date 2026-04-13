@@ -141,6 +141,10 @@ class TonPaymentValidator:
             except ValueError:
                 logger.warning(f"Invalid integer in order format: {order_id}")
                 return True
+                
+            from src.core.user_core import get_or_create_user_by_telegram
+            internal_user, _ = await get_or_create_user_by_telegram(tg_user_id)
+            internal_user_id = internal_user.id
             
             async with AsyncSessionLocal() as db:
                 try:
@@ -163,10 +167,10 @@ class TonPaymentValidator:
                         logger.error(f"Plan {plan_id} not found for order {order_id}")
                         return True
                         
-                    user_res = await db.execute(select(User).where(User.id == tg_user_id))
+                    user_res = await db.execute(select(User).where(User.id == internal_user_id))
                     user = user_res.scalar_one_or_none()
                     if not user:
-                        logger.error(f"User {tg_user_id} not found for order {order_id}")
+                        logger.error(f"User {internal_user_id} not found for order {order_id}")
                         return True
                     
                     # Exact price match with tiny slippage allowed
@@ -184,7 +188,7 @@ class TonPaymentValidator:
                     # 3. Create Order Record
                     new_order = Order(
                         order_id=order_id,
-                        telegram_id=tg_user_id,
+                        telegram_id=internal_user_id,
                         plan_id=plan_id,
                         original_price=plan.price_ton,
                         final_price=Decimal(amount_nanotons) / Decimal(str(TON_TO_NANOTON)),
@@ -255,7 +259,7 @@ class TonPaymentValidator:
                         # Perform update
                         await db.execute(
                             update(User)
-                            .where(User.id == tg_user_id)
+                            .where(User.id == internal_user_id)
                             .values(
                                 credits=User.credits + plan.reward_credits,
                                 current_identity=final_identity,

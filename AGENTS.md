@@ -7,12 +7,30 @@
 当前系统已经演进为一个多模块、多节点的分布式架构。主要由以下几个核心子系统构成：
 
 ### 1.1 核心 Bot 服务 (Telegram Bot)
-这是系统的入口和核心业务逻辑层。
-- **职责**：处理 Telegram 用户消息交互、状态机管理、修仙境界与权限判定、任务的下发排队，以及提供多种支付方式的 UI 菜单入口。
+这是系统的传统入口和即时交互层。
+- **职责**：处理 Telegram 用户消息交互、状态机管理、修仙境界与权限判定、任务的下发排队，以及提供多种支付方式的 UI 菜单入口。Bot 层已全面瘦身，核心业务逻辑已下沉至 `src/core/`。
 - **代码位置**：`/src` (主要入口 `src/bot_test.py` 与 `src/bot_prod.py`，回调入口在 `src/handlers/callback_handler.py`)
 - **容器编排**：`deploy/docker-compose.yml` (正式服 `tg-bot`) 和 `deploy/docker-compose-test.yml` (测试服 `tg-bot-test`)。
 
-### 1.2 支付回调服务 (Payment API)
+### 1.2 Web BFF 后端 API (Backend For Frontend)
+这是系统的新一代 Web 端统一接口层，采用 FastAPI 架构。
+- **职责**：为 Vue3 前端提供 RESTful API，处理 JWT 鉴权（如 Telegram Widget 登录）、生成 MinIO 预签名直传 URL（绕过后端直接上传大文件），并通过 SSE (Server-Sent Events) 实时向前端推送生图/视频任务进度。
+- **代码位置**：`/src/web_api/` (路由在 `src/web_api/routers/`)
+- **容器编排**：集成在 `deploy/docker-compose.yml` 中（服务名：`web-api`，默认监听 `8000` 端口）。
+
+### 1.3 Web 前端应用 (Vue3 SPA)
+现代化、响应式的修仙主题 AI 创作工作台。
+- **职责**：提供沉浸式的图片/视频上传、生成预览、参数调节与资产管理界面。与 BFF 后端交互，实现所见即所得的 AI 创作体验。
+- **代码位置**：`/frontend` (基于 Vue 3 + Vite + Tailwind CSS + Ant Design Vue)
+- **容器编排**：集成在 `deploy/docker-compose.yml` 中（服务名：`web-frontend`，开发服 `5173`，正式服通过 Nginx 托管静态资源）。
+
+### 1.4 核心业务逻辑层 (Core Layer)
+这是系统最重要的底座，实现了**平台无关 (Platform-Agnostic)** 的业务流转。
+- **职责**：无论是 Telegram Bot 还是 Web BFF，都必须调用 `src/core/` 下的函数来执行扣费、鉴权、并发锁检查和任务分发。
+- **代码位置**：`/src/core/` (包含 `task_core.py`, `user_core.py`, `billing_core.py`)
+- **红线**：此目录下的代码**绝对禁止**引入任何与 Telegram `Update` 或 FastAPI `Request` 相关的特定平台对象。必须使用内部统一的 `internal_user_id` 进行数据流转。
+
+### 1.5 支付回调服务 (Payment API)
 用于处理第三方支付网关（如易支付/人民币支付）的异步回调请求。
 - **职责**：监听外网（通过 Cloudflare Tunnel）发来的 HTTP 回调请求，验证签名，进行订单的幂等处理，并调用统一发货服务发放灵石与身份特权。
 - **代码位置**：`src/payment_api_server.py` 与 `src/services/payment_fulfillment_service.py`
@@ -62,6 +80,7 @@
    - **用途**：对象存储，兼容 S3 协议。用于存储用户上传的图片/视频、系统生成的中间产物以及模板。
    - **结构**：主要包含 `bot-data` (系统主数据), `comfyui-input` (传给 Worker 的输入), `comfyui-temp` (Worker 的输出), `bot-template` (模板) 等 Bucket。
    - **引用传递机制**：为了节省内网带宽和 API 内存，Bot 和 Central API 之间不再直接传输媒体文件流，而是仅传递 MinIO 中的 `Object Key`（JSON 格式）。由底层的 Worker 直接从 MinIO 对应 Bucket 下载。
+   - **大文件直传 (Web 端)**：针对 100MB+ 的视频，Vue3 前端调用 BFF 获取**预签名直传 URL (Presigned PUT URL)** 后，直接与 MinIO 交互上传文件，彻底绕过后端流量瓶颈。
 
 ---
 
@@ -97,6 +116,11 @@
   docker rm -f tg-bot-test payment-api-test
   docker-compose -f deploy/docker-compose-test.yml up -d --build
   ```
+- **Web 体系 (BFF API 与 Vue Frontend)**:
+  ```bash
+  # 若在生产环境，可能只需启动 web-api，前端静态资源由 Nginx 托管
+  docker-compose -f deploy/docker-compose.yml up -d --build web-api web-frontend
+  ```
 - **Dashboard 后台服务**:
   ```bash
   cd dashboard && docker-compose up -d --build
@@ -123,6 +147,20 @@
 - **清理僵尸任务**：已内置到 `bot_test.py` 的后台自愈协程中 (`clean_zombies_loop`)。如果需要手动执行，可运行 `docker exec tg-bot python clean_zombies.py` (自动清理驻留过长占用并发锁的任务，并向 API 端发送取消请求实现双向剔除)。
 - **查看 Redis 排队**：`docker exec tg-bot python check_redis.py`。
 - **独立 API 支付联调测试**：如果易支付网关报错，可通过独立脚本如 `test_huanyuy.py` 单独发起 POST/GET HTTP 请求进行调试，以避免受限于 Docker 容器环境的调试盲区。
+
+### 4.4 Web 端与海外 VPS 边缘节点运维 (Web & VPS Edge Node Maintenance)
+为了提升海外用户访问网页和加载媒体的速度，系统引入了海外 VPS 作为边缘节点（通过 Tailscale 等与武汉底座组建虚拟局域网）。相关核心运维经验如下：
+
+1. **前端自动化部署 (Frontend Deployment)**：
+   - 前端代码发布已自动化。在 `/frontend` 目录下执行 `npm run deploy` 即可一键完成打包并同步至 VPS。
+   - 底层使用 `scp` 与内置私钥 (`ssh_key/id_rsa.pem`) 推送文件至 VPS 的 `/root/dist/` 目录。
+   - **注意**：部署环境私钥必须严格保持 `600` 权限 (`chmod 600 id_rsa.pem`)，否则 SSH 协议将拒绝连接。
+2. **Nginx 反向代理排障 (Nginx Proxy Troubleshooting)**：
+   - **502 Bad Gateway**：表示 VPS 接收到请求但无法连通武汉后端。需检查武汉服务器的 `web-api` 容器是否启动，以及两端虚拟局域网 IP 是否互通。
+   - **404 Not Found (API 路由丢失)**：极高概率是 Nginx 代理配置错误。**正确配置**：`location /api/ { proxy_pass http://<武汉IP>:8000; }`。`proxy_pass` 末尾**严禁**携带斜杠 `/`，否则会导致 `/api/auth` 等路由被截断为 `/auth` 传给后端。
+3. **Telegram 网页登录授权排障 (Telegram Web Auth)**：
+   - **前端显示 "Username invalid"**：缺少前端环境变量 `VITE_TELEGRAM_BOT_USERNAME`，或未前往 Telegram 官方 `@BotFather` 使用 `/setdomain` 绑定当前网页的访问域名。
+   - **后端报错 401 Unauthorized**：前端登录成功但后端拒绝发牌。原因是武汉服务器后端 `.env` 中配置的 `BOT_TOKEN` 与前端使用的 Bot 身份不一致，导致后台的 HMAC-SHA256 签名比对失败。
 
 ---
 
@@ -176,6 +214,19 @@
   2. 手动拼接至 `8082` 端口 URL：`f"http://<VPS_IP>:8082{raw_path}"`。
   3. 使用 `httpx.AsyncClient(proxy=None)`（强制直连，禁用代理以防干扰）发起下载，并配置足够长的 `timeout` (如 120s) 以应对大文件传输。
 
+## 7. Web 端架构与鉴权红线 (Web Architecture & Auth)
+
+随着 Web 端的引入，系统形成了一套有别于 Telegram Bot 的长连接与鉴权机制，开发时必须遵循：
+
+### 7.1 JWT 鉴权与会话管理
+- **无状态设计**：Web BFF 必须保持无状态 (Stateless)，用户的登录凭证完全依赖 `Authorization: Bearer <JWT>` 传递。
+- **Token 解析**：在 `src/web_api/core/security.py` 中，JWT Payload 里的 `sub` 字段存储的是系统内部的 `internal_user_id`（对应 `users.id`），**严禁将其混淆为 Telegram ID**。
+
+### 7.2 SSE (Server-Sent Events) 状态同步机制
+- **单向数据流**：前端不采用短轮询，而是通过向 BFF 发起 `/{task_id}/stream` 请求建立 SSE 连接。
+- **竞态条件防御**：任务提交与完成之间的耗时极短。为了防止前端建立 SSE 连接前任务已完成（导致死锁等待），BFF 的 Stream 路由中必须**先查询一次 Redis 当前状态**（`get_task_status_full`），再进入 Pub/Sub 订阅监听循环。
+- **并发锁释放策略 (Ghost Locks Defense)**：由于 Web 请求可能因网络异常中断（Client Disconnect），BFF 层采用了 FastAPI 的 `BackgroundTasks` 来监控任务执行。无论前端 SSE 是否断开，后台协程都将确保在任务结束时释放该用户的并发锁。
+
 ---
 **👨‍💻 最终开发指引 (To AI Assistant)**：
-在后续的系统功能研发与维护中，请将本架构全景铭记于心。当你被要求开发新功能、排查 Bug 或进行测试时，请清晰地界定该功能属于哪个子模块（Bot/Dashboard/API/Worker/Payment），并在对应的目录下进行代码修改与容器重建！
+在后续的系统功能研发与维护中，请将本架构全景铭记于心。当你被要求开发新功能、排查 Bug 或进行测试时，请清晰地界定该功能属于哪个子模块（Bot/Web-BFF/Vue-Frontend/Dashboard/API/Worker/Payment），并在对应的目录下进行代码修改与容器重建！
