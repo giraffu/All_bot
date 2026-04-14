@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import { Table, Modal } from 'ant-design-vue'
 import api from '@/api'
 import { Image as ImageIcon, Video, Clock, PlayCircle } from 'lucide-vue-next'
 import dayjs from 'dayjs'
@@ -94,12 +93,25 @@ const getFileUrl = (path: string) => {
   // Ensure we don't double slash if storageUrl has a trailing slash
   const base = storageUrl.endsWith('/') ? storageUrl.slice(0, -1) : storageUrl
   
-  // If the path doesn't start with the bucket name, we might need to prepend it
-  // Assuming 'bot-data' is the default bucket for these historical files
   if (!path.startsWith('bot-data/') && !path.startsWith('comfyui-temp/')) {
+    // If the path has no slash, it's a direct filename from ComfyUI worker in comfyui-temp
+    if (!path.includes('/')) {
+      return `${base}/comfyui-temp/${path}`
+    }
+    // Otherwise, it's a structured path like 12345/output_images/... from bot-data
     return `${base}/bot-data/${path}`
   }
   return `${base}/${path}`
+}
+
+const isVideoFile = (path: string) => {
+  if (!path) return false
+  const lowerPath = path.toLowerCase()
+  return lowerPath.endsWith('.mp4') || 
+         lowerPath.endsWith('.mov') || 
+         lowerPath.endsWith('.webm') || 
+         lowerPath.endsWith('.mkv') ||
+         lowerPath.endsWith('.avi')
 }
 
 onMounted(() => {
@@ -139,15 +151,15 @@ onMounted(() => {
         
         <template v-else-if="column.key === 'output_file'">
           <div v-if="record.output_file" class="flex items-center justify-center bg-black/40 rounded-lg p-2 border border-white/10 relative overflow-hidden group w-[100px] h-[100px]">
-            <!-- Check if video type based on type string -->
-            <template v-if="record.type && record.type.includes('video')">
-              <div class="relative w-full h-full cursor-pointer" @click="showVideoPreview(getFileUrl(record.output_file))">
+            <!-- Check if video type based on file extension -->
+            <template v-if="isVideoFile(record.output_file)">
+              <div class="relative w-full h-full cursor-pointer" @click.stop="showVideoPreview(getFileUrl(record.output_file))">
                 <video 
                   :src="getFileUrl(record.output_file)" 
-                  class="object-cover w-full h-full rounded-md shadow-sm opacity-80 group-hover:opacity-100 transition-opacity"
+                  class="object-cover w-full h-full rounded-md shadow-sm opacity-80 group-hover:opacity-100 transition-opacity pointer-events-none"
                   preload="metadata"
                 ></video>
-                <div class="absolute inset-0 flex items-center justify-center">
+                <div class="absolute inset-0 flex items-center justify-center pointer-events-none">
                   <div class="bg-black/50 rounded-full p-2 group-hover:bg-cyan-500/80 transition-colors">
                     <PlayCircle :size="24" class="text-white opacity-90" />
                   </div>
@@ -177,25 +189,28 @@ onMounted(() => {
     </a-table>
 
     <!-- Video Preview Modal -->
-    <a-modal 
-      v-model:open="previewVisible" 
-      title="视频预览" 
-      :footer="null" 
-      width="800px" 
-      centered
-      @cancel="handlePreviewClose"
-      :destroyOnClose="true"
+    <div 
+      v-if="previewVisible" 
+      class="fixed inset-0 z-[9999] flex items-center justify-center bg-black/90 backdrop-blur-sm transition-opacity"
+      @click="handlePreviewClose"
     >
-      <div class="flex items-center justify-center p-4">
+      <div class="relative max-w-4xl w-full mx-4 flex flex-col items-center" @click.stop>
+        <div class="w-full flex justify-end mb-2">
+          <button 
+            class="text-white hover:text-cyan-400 transition-colors bg-transparent border-none text-4xl cursor-pointer p-2"
+            @click="handlePreviewClose"
+            title="关闭"
+          >&times;</button>
+        </div>
         <video 
           v-if="previewVideoUrl" 
           :src="previewVideoUrl" 
           controls 
           autoplay 
-          class="max-w-full max-h-[60vh] rounded shadow-md bg-black"
+          class="w-full max-h-[80vh] rounded-lg shadow-2xl bg-black outline-none"
         ></video>
       </div>
-    </a-modal>
+    </div>
   </div>
 </template>
 

@@ -31,17 +31,43 @@ COST_MAP = {
     "i2i_pro": 5
 }
 
-async def monitor_task_and_release_lock(task_id: str, internal_user_id: int, registry_task_id: str, is_video: bool = False):
+from src.logger import UserLogger
+
+async def monitor_task_and_release_lock(
+    task_id: str, 
+    internal_user_id: int, 
+    username: str,
+    registry_task_id: str, 
+    is_video: bool = False,
+    task_type: str = "",
+    prompt: str = "",
+    input_images: list = None
+):
     """
     Background task to monitor progress and release concurrency lock.
     """
+    if input_images is None:
+        input_images = []
+        
+    final_status = None
+    result_path = None
     try:
         async for progress in image_service.monitor_progress(task_id, is_video):
             if progress.get("status") in ["done", "error", "cancelled", "success", "failed"]:
+                final_status = progress.get("status")
+                result_path = progress.get("result_path")
                 break
     except Exception as e:
         logger.error(f"Background monitoring error for task {task_id}: {e}")
     finally:
+        # Save to History if successful
+        if final_status == "done" and result_path:
+            try:
+                user_logger = UserLogger(internal_user_id, username)
+                await user_logger.log_task(prompt, input_images, result_path, task_id=task_id, type=task_type)
+            except Exception as log_err:
+                logger.error(f"Failed to log task history for {task_id}: {log_err}")
+                
         await release_concurrency_lock(internal_user_id)
         if registry_task_id:
             await TaskRegistry.remove_task(registry_task_id)
@@ -55,7 +81,7 @@ async def create_generation_task(
     """
     Submit a generation task (image/video).
     """
-    video_types = ["doggy_style", "perfect_video_insert", "blowjob", "undress_tongue", "closeup_blowjob", "custom_video", "face_video"]
+    video_types = ["doggy_style", "perfect_video_insert", "blowjob", "undress_tongue", "closeup_blowjob", "custom_video", "face_video", "video_lora"]
     is_video_task = req.task_type in video_types
     cost = TASK_COSTS.get(req.task_type, COST_MAP.get(req.task_type, 6 if is_video_task else 2))
     
@@ -80,19 +106,25 @@ async def create_generation_task(
         
         # 3. Load prompts if not provided
         prompts_config = load_prompts()
+        
+        # If client provided prompt in inputs, use it
+        if "prompt" in req.inputs and req.inputs["prompt"]:
+            req.prompt = req.inputs["prompt"]
+            
         if not req.prompt:
             req.prompt = prompts_config.get(req.task_type, req.task_type)
         if not req.negative_prompt:
             req.negative_prompt = prompts_config.get("negative_prompt", "")
 
         # 4. Dispatch based on task_type
+        saved_inputs = []
         if req.task_type == "face_swap":
             face_img = req.inputs.get("face_image")
             body_img = req.inputs.get("target_image")
             if not face_img or not body_img:
                 raise ValueError("face_image and target_image are required for face_swap")
                 
-            success, msg, task_id, _, registry_task_id = await core_submit_generation_task(
+            success, msg, task_id, saved_inputs, registry_task_id = await core_submit_generation_task(
                 internal_user_id=current_user.id,
                 username=current_user.username,
                 prompt=req.prompt,
@@ -109,7 +141,7 @@ async def create_generation_task(
             resolution = req.inputs.get("resolution", 512)
             duration = req.inputs.get("duration", 5)
             
-            success, msg, task_id, _, _, registry_task_id = await core_submit_face_video(
+            success, msg, task_id, saved_face_img, saved_vid, registry_task_id = await core_submit_face_video(
                 internal_user_id=current_user.id,
                 username=current_user.username,
                 face_image_path=face_img,
@@ -120,10 +152,16 @@ async def create_generation_task(
                 mode="MODE_FACE_VIDEO_STEP2",
                 priority=final_priority
             )
+            if success:
+                saved_inputs = [saved_face_img, saved_vid]
         else:
             # Generic t2i / i2i / video
             images = req.inputs.get("images", [])
-            success, msg, task_id, _, registry_task_id = await core_submit_generation_task(
+            lora_name = req.inputs.get("lora_name")
+            resolution = req.inputs.get("resolution", 512)
+            duration = req.inputs.get("duration", 5)
+            
+            success, msg, task_id, saved_inputs, registry_task_id = await core_submit_generation_task(
                 internal_user_id=current_user.id,
                 username=current_user.username,
                 prompt=req.prompt,
@@ -132,7 +170,10 @@ async def create_generation_task(
                 task_type=req.task_type,
                 cost=cost,
                 priority=final_priority,
-                negative_prompt=req.negative_prompt
+                negative_prompt=req.negative_prompt,
+                lora_name=lora_name,
+                resolution=resolution,
+                duration=duration
             )
             
         if not success or not task_id:
@@ -141,7 +182,17 @@ async def create_generation_task(
             raise ValueError(msg)
             
         # Success
-        background_tasks.add_task(monitor_task_and_release_lock, task_id, current_user.id, registry_task_id, is_video_task)
+        background_tasks.add_task(
+            monitor_task_and_release_lock, 
+            task_id, 
+            current_user.id, 
+            current_user.username,
+            registry_task_id, 
+            is_video_task,
+            req.task_type,
+            req.prompt,
+            saved_inputs
+        )
         
         balance = await quota_manager.get_credits(current_user.id)
         return TaskGenerateResponse(

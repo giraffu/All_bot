@@ -74,15 +74,14 @@ async def get_all_history(
                         template_path = f[9:]
                         urls.append(storage.get_presigned_url(template_path, bucket=MINIO_TEMPLATE_BUCKET))
                     else:
-                        basename = os.path.basename(f.replace('\\', '/'))
-                        obj_name = f"{history.user_id}/input_images/{basename}"
-                        urls.append(storage.get_presigned_url(obj_name))
+                        urls.append(storage.get_presigned_url(f))
                 item_dict['input_file_url'] = '|'.join(urls)
                 
             if history.output_file:
-                basename = os.path.basename(history.output_file)
-                obj_name = f"{history.user_id}/output_images/{basename}"
-                item_dict['output_file_url'] = storage.get_presigned_url(obj_name)
+                if '/' not in history.output_file:
+                    item_dict['output_file_url'] = storage.get_presigned_url(history.output_file, bucket="comfyui-temp")
+                else:
+                    item_dict['output_file_url'] = storage.get_presigned_url(history.output_file)
             
             items.append(item_dict)
             
@@ -110,15 +109,14 @@ async def get_user_history(user_id: int, db: AsyncSession = Depends(get_db)):
                         template_path = f[9:]
                         urls.append(storage.get_presigned_url(template_path, bucket=MINIO_TEMPLATE_BUCKET))
                     else:
-                        basename = os.path.basename(f.replace('\\', '/'))
-                        obj_name = f"{h.user_id}/input_images/{basename}"
-                        urls.append(storage.get_presigned_url(obj_name))
+                        urls.append(storage.get_presigned_url(f))
                 item_dict['input_file_url'] = '|'.join(urls)
                 
             if h.output_file:
-                basename = os.path.basename(h.output_file)
-                obj_name = f"{h.user_id}/output_images/{basename}"
-                item_dict['output_file_url'] = storage.get_presigned_url(obj_name)
+                if '/' not in h.output_file:
+                    item_dict['output_file_url'] = storage.get_presigned_url(h.output_file, bucket="comfyui-temp")
+                else:
+                    item_dict['output_file_url'] = storage.get_presigned_url(h.output_file)
                 
             items.append(item_dict)
             

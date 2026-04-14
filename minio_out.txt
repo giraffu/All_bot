@@ -1,6 +1,0 @@
-bot-data
-bot-data-test
-bot-template
-comfyui-input
-comfyui-output
-comfyui-temp

@@ -14,6 +14,7 @@ const taskType = computed(() => (route.query.type as string) || 'image2video')
 const taskTitle = computed(() => (route.query.title as string) || '动图生成')
 const taskCost = computed(() => Number(route.query.cost) || 6)
 const isCustomVideo = computed(() => taskType.value === 'custom_video')
+const isVideoLora = computed(() => taskType.value === 'video_lora')
 
 const { uploading, progress: uploadProgress, uploadFile } = useUpload()
 const { isSubmitting, submitTask } = useTaskStream()
@@ -24,6 +25,7 @@ const objectKey = ref<string | null>(null)
 const resolution = ref('512')
 const duration = ref('5')
 const prompt = ref('')
+const loraName = ref('BreastGrow')
 
 const filePreview = ref<string | null>(null)
 
@@ -55,6 +57,11 @@ const handleGenerate = async () => {
     message.warning('请先上传图片！')
     return
   }
+  
+  if (isVideoLora.value && !loraName.value) {
+    message.warning('请选择附加模型！')
+    return
+  }
 
   const payload = {
     task_type: taskType.value,
@@ -62,7 +69,8 @@ const handleGenerate = async () => {
       images: [objectKey.value],
       resolution: Number(resolution.value),
       duration: Number(duration.value),
-      ...(isCustomVideo.value && prompt.value ? { prompt: prompt.value } : {})
+      ...((isCustomVideo.value || isVideoLora.value) && prompt.value ? { prompt: prompt.value } : {}),
+      ...(isVideoLora.value ? { lora_name: loraName.value } : {})
     },
     priority: 0
   }
@@ -76,162 +84,250 @@ const handleGenerate = async () => {
 const resetForm = () => {
   handleRemove()
   prompt.value = ''
+  loraName.value = 'BreastGrow'
   setSubmittedTaskId(null)
 }
 </script>
 
 <template>
-  <div class="single-image-video-container max-w-4xl mx-auto flex flex-col h-full w-full">
-    <div class="flex items-center mb-6 shrink-0">
+  <div class="single-image-video-container max-w-7xl mx-auto flex flex-col h-[calc(100vh-80px)] w-full py-4 px-2 sm:px-6">
+    <div class="flex items-center mb-4 shrink-0">
       <a-button type="link" @click="router.push('/profile')" class="pl-0 text-blue-500 hover:text-blue-600 flex items-center text-base">
         <span class="mr-1">&larr;</span> 返回工作台
       </a-button>
     </div>
 
-    <div class="bg-white p-8 rounded-2xl shadow-sm border border-gray-100 flex-grow mb-6 overflow-y-auto">
-      <h2 class="text-3xl font-bold mb-6 text-gray-900">{{ taskTitle }}设置</h2>
-      
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-10 mb-8">
-        <!-- Image Upload -->
-        <div class="upload-section flex flex-col">
-          <h3 class="text-xl font-bold mb-4 text-gray-800 flex items-center">
-            <span class="text-gray-400 mr-2">1.</span> 提供基础图片
-          </h3>
-          <div v-if="filePreview" class="relative group rounded-xl overflow-hidden border border-gray-200 bg-gray-50 flex items-center justify-center flex-grow h-64">
-            <a-image :src="filePreview" class="max-w-full max-h-64 object-contain" :preview="true" />
-            <div class="absolute inset-0 bg-black bg-opacity-50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center pointer-events-none">
-              <a-button danger type="primary" @click="handleRemove" class="pointer-events-auto">重新上传</a-button>
+    <div class="flex flex-col lg:flex-row gap-6 flex-grow min-h-0">
+      <!-- Left Panel: Input & Settings -->
+      <div class="w-full lg:w-[45%] flex flex-col bg-slate-800/40 backdrop-blur-md rounded-2xl shadow-sm border border-slate-700/50 overflow-hidden shrink-0">
+        <div class="p-6 flex-grow overflow-y-auto custom-scrollbar">
+          <h2 class="text-2xl font-bold mb-5 text-slate-100">{{ taskTitle }}设置</h2>
+          
+          <div class="flex flex-col gap-6 mb-6">
+            <!-- Image Upload -->
+            <div class="upload-section flex flex-col">
+              <h3 class="text-lg font-bold mb-3 text-slate-200 flex items-center">
+                <span class="text-slate-500 mr-2">1.</span> 提供基础图片
+              </h3>
+              <div v-if="filePreview" class="relative group rounded-xl overflow-hidden border border-slate-600/50 bg-slate-900/50 flex items-center justify-center flex-grow h-48 w-full">
+                <a-image :src="filePreview" class="max-w-full max-h-48 object-contain" :preview="true" />
+                <div class="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center pointer-events-none">
+                  <a-button danger type="primary" @click="handleRemove" class="pointer-events-auto">重新上传</a-button>
+                </div>
+              </div>
+              <a-upload-dragger
+                v-else
+                v-model:fileList="fileList"
+                name="file"
+                :multiple="false"
+                accept="image/png, image/jpeg"
+                :before-upload="beforeUpload"
+                @remove="handleRemove"
+                class="upload-dragger flex-grow h-48 flex items-center justify-center w-full"
+                :show-upload-list="false"
+              >
+                <div class="flex flex-col items-center justify-center h-full w-full">
+                  <p class="ant-upload-drag-icon text-blue-500 text-3xl mb-2"><inbox-outlined></inbox-outlined></p>
+                  <p class="ant-upload-text font-medium text-slate-300 text-sm">点击或拖拽上传图片</p>
+                  <p class="ant-upload-hint text-slate-500 mt-1 text-xs">支持 JPG/PNG</p>
+                </div>
+              </a-upload-dragger>
+              
+              <div v-if="uploading" class="mt-3">
+                <span class="text-xs text-slate-400">正在上传...</span>
+                <a-progress :percent="uploadProgress" status="active" strokeColor="#3b82f6" size="small" />
+              </div>
+            </div>
+
+            <!-- Prompt Input (Optional, mainly for custom_video) -->
+            <div class="prompt-section flex flex-col" v-if="isCustomVideo || isVideoLora">
+              <h3 class="text-lg font-bold mb-3 text-slate-200 flex items-center">
+                <span class="text-slate-500 mr-2">2.</span> {{ isVideoLora ? '配置附加模型与动作描述' : '输入动作描述 (选填)' }}
+              </h3>
+              <div v-if="isVideoLora" class="mb-3">
+                <label class="block text-sm font-medium text-slate-300 mb-1">附加模型 <span class="text-red-500">*</span></label>
+                <a-select
+                  v-model:value="loraName"
+                  placeholder="请选择附加模型"
+                  class="w-full rounded-xl custom-select"
+                  :popupClassName="'custom-dropdown'"
+                >
+                  <a-select-option value="BreastGrow">巨乳膨胀</a-select-option>
+                  <a-select-option value="BreastInsertion">乳交</a-select-option>
+                  <a-select-option value="Cum">颜射</a-select-option>
+                  <a-select-option value="Cunilingus">舔阴</a-select-option>
+                  <a-select-option value="Flatchested">平胸</a-select-option>
+                  <a-select-option value="Footjob">足交</a-select-option>
+                  <a-select-option value="Insertion">插入优化</a-select-option>
+                </a-select>
+              </div>
+              <label v-if="isVideoLora" class="block text-sm font-medium text-slate-300 mb-1">提示词 (Prompt)</label>
+              <a-textarea 
+                v-model:value="prompt" 
+                :placeholder="isVideoLora ? '输入视频生成的正向提示词...' : '例如：人物微笑，背景有风吹过...'" 
+                class="rounded-xl border-slate-600/50 focus:border-blue-500 focus:ring-blue-500 text-sm p-3 flex-grow resize-none min-h-[120px]"
+              />
+            </div>
+            <div class="prompt-section flex flex-col justify-center text-center p-4 bg-slate-900/50 rounded-xl" v-else>
+              <component :is="InboxOutlined" class="text-3xl text-gray-300 mb-2" />
+              <h3 class="text-base font-medium text-slate-400">AI 智能动作预设</h3>
+              <p class="text-xs text-slate-500 mt-1">系统将自动为当前功能生成专属动作视频，无需手动输入提示词。</p>
             </div>
           </div>
-          <a-upload-dragger
-            v-else
-            v-model:fileList="fileList"
-            name="file"
-            :multiple="false"
-            accept="image/png, image/jpeg"
-            :before-upload="beforeUpload"
-            @remove="handleRemove"
-            class="upload-dragger flex-grow h-64 flex items-center justify-center"
-            :show-upload-list="false"
+          
+          <!-- Video Settings -->
+          <div class="settings-section border-t border-slate-700/50 pt-5">
+            <h3 class="text-lg font-bold mb-4 text-slate-200">输出设置</h3>
+            <div class="flex flex-col gap-4">
+              <div>
+                <label class="block text-sm font-medium text-slate-300 mb-2">分辨率</label>
+                <a-radio-group v-model:value="resolution" button-style="solid" class="w-full flex">
+                  <a-radio-button value="512" class="flex-1 text-center py-1 h-auto text-sm">512p (基础)</a-radio-button>
+                  <a-radio-button value="720" class="flex-1 text-center py-1 h-auto text-sm">720p (高清)</a-radio-button>
+                  <a-radio-button value="1024" class="flex-1 text-center py-1 h-auto text-sm" disabled>1024p</a-radio-button>
+                </a-radio-group>
+              </div>
+              <div>
+                <label class="block text-sm font-medium text-slate-300 mb-2">生成时长</label>
+                <a-radio-group v-model:value="duration" button-style="solid" class="w-full flex">
+                  <a-radio-button value="5" class="flex-1 text-center py-1 h-auto text-sm">5 秒</a-radio-button>
+                  <a-radio-button value="8" class="flex-1 text-center py-1 h-auto text-sm">8 秒</a-radio-button>
+                  <a-radio-button value="10" class="flex-1 text-center py-1 h-auto text-sm" disabled>10 秒</a-radio-button>
+                </a-radio-group>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Action Bar in Left Panel -->
+        <div class="action-bar bg-slate-900/40 p-6 border-t border-slate-700/50 flex justify-between items-center shrink-0">
+          <div class="cost-info flex flex-col">
+            <span class="text-slate-400 text-sm font-medium">预计消耗灵石</span>
+            <div class="flex items-end mt-1">
+              <span class="font-bold text-3xl text-blue-600 leading-none">{{ taskCost }}</span>
+              <span class="text-lg text-blue-400 ml-1 mb-0.5">💎</span>
+            </div>
+          </div>
+          
+          <a-button 
+            type="primary" 
+            size="large" 
+            class="bg-blue-600 hover:bg-blue-500 w-40 h-12 text-base font-bold tracking-wider rounded-xl shadow-md transition-all hover:shadow-lg border-none flex items-center justify-center text-white" 
+            :disabled="!objectKey"
+            :loading="isSubmitting"
+            @click="handleGenerate"
           >
-            <div class="flex flex-col items-center justify-center h-full w-full">
-              <p class="ant-upload-drag-icon text-blue-500 text-4xl mb-4"><inbox-outlined></inbox-outlined></p>
-              <p class="ant-upload-text font-medium text-gray-700">点击或拖拽上传图片</p>
-              <p class="ant-upload-hint text-gray-400 mt-2">支持 JPG/PNG，作为视频生成的起点</p>
+            <template #icon><video-camera-outlined /></template>
+            {{ isSubmitting ? '提交中...' : '生成视频' }}
+          </a-button>
+        </div>
+      </div>
+
+      <!-- Right Panel: Result Preview -->
+      <div class="w-full lg:w-[55%] flex flex-col bg-slate-800/40 backdrop-blur-md rounded-2xl shadow-sm border border-slate-700/50 overflow-hidden relative">
+        <div class="p-6 flex-grow flex flex-col items-center justify-center h-full overflow-y-auto custom-scrollbar">
+          
+          <!-- Empty State -->
+          <div v-if="!currentTask" class="flex flex-col items-center justify-center text-slate-500 w-full h-full opacity-60">
+            <video-camera-outlined class="text-6xl mb-4" />
+            <p class="text-lg font-medium">结果预览区</p>
+            <p class="text-sm mt-2">请在左侧配置参数并点击生成，结果将在此处显示</p>
+          </div>
+
+          <!-- Result Section -->
+          <div v-else class="w-full h-full flex flex-col items-center justify-center">
+            <h3 class="text-xl font-bold mb-6 text-slate-200 w-full border-b border-slate-700/50 pb-4 flex items-center">
+              <span class="text-blue-500 mr-2">✨</span> 生成结果
+            </h3>
+            
+            <div v-if="currentTask.status === 'pending' || currentTask.status === 'running'" class="flex flex-col items-center justify-center py-8 w-full flex-grow">
+              <a-spin size="large" />
+              <p class="mt-4 text-slate-400 font-medium">正在生成中... {{ currentTask.progress }}%</p>
+              <p v-if="currentTask.queuePos" class="text-sm text-slate-500 mt-1">前面还有 {{ currentTask.queuePos }} 人排队</p>
+              <a-progress :percent="currentTask.progress" status="active" strokeColor="#3b82f6" class="w-full max-w-md mt-4" />
             </div>
-          </a-upload-dragger>
+            
+            <div v-else-if="currentTask.status === 'success' && currentTask.resultUrl" class="flex flex-col items-center w-full flex-grow justify-center">
+              <a-image v-if="isImageUrl(currentTask.resultUrl)" :src="currentTask.resultUrl" class="max-w-full max-h-[50vh] rounded-xl shadow-sm object-contain" :preview="true" />
+              <video v-else :src="currentTask.resultUrl" controls class="max-w-full max-h-[50vh] rounded-xl shadow-sm bg-black"></video>
+              
+              <div class="mt-8 flex gap-4">
+                <a-button type="primary" size="large" class="bg-blue-600 rounded-xl" @click="downloadResult(currentTask.resultUrl, currentTask.title)">
+                  <template #icon><download-outlined /></template> 下载结果
+                </a-button>
+                <a-button size="large" class="rounded-xl" @click="resetForm">
+                  继续生成
+                </a-button>
+              </div>
+            </div>
+            
+            <div v-else-if="currentTask.status === 'failed'" class="flex flex-col items-center py-8 w-full flex-grow justify-center">
+              <close-circle-outlined class="text-5xl text-red-500 mb-4" />
+              <p class="text-red-600 font-medium text-lg">生成失败</p>
+              <p class="text-slate-400 mt-2">{{ currentTask.error || '未知错误' }}</p>
+              <a-button class="mt-6 rounded-xl" @click="resetForm">重试</a-button>
+            </div>
+          </div>
           
-          <div v-if="uploading" class="mt-4">
-            <span class="text-sm text-gray-500">正在上传...</span>
-            <a-progress :percent="uploadProgress" status="active" strokeColor="#3b82f6" />
-          </div>
-        </div>
-
-        <!-- Prompt Input (Optional, mainly for custom_video) -->
-        <div class="prompt-section flex flex-col h-full" v-if="isCustomVideo">
-          <h3 class="text-xl font-bold mb-4 text-gray-800 flex items-center">
-            <span class="text-gray-400 mr-2">2.</span> 输入动作描述 (选填)
-          </h3>
-          <a-textarea 
-            v-model:value="prompt" 
-            placeholder="例如：人物微笑，背景有风吹过..." 
-            class="rounded-xl border-gray-200 focus:border-blue-500 focus:ring-blue-500 text-base p-4 flex-grow resize-none"
-          />
-        </div>
-        <div class="prompt-section flex flex-col justify-center text-center p-6 bg-gray-50 rounded-xl h-full" v-else>
-          <component :is="InboxOutlined" class="text-4xl text-gray-300 mb-2" />
-          <h3 class="text-lg font-medium text-gray-600">AI 智能动作预设</h3>
-          <p class="text-sm text-gray-400 mt-2">系统将自动为当前功能生成专属动作视频，无需手动输入提示词。</p>
         </div>
       </div>
-      
-      <!-- Video Settings -->
-      <div class="settings-section border-t border-gray-100 pt-8">
-        <h3 class="text-xl font-bold mb-6 text-gray-800">输出设置</h3>
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
-          <div>
-            <label class="block text-sm font-medium text-gray-700 mb-3">分辨率</label>
-            <a-radio-group v-model:value="resolution" button-style="solid" class="w-full flex">
-              <a-radio-button value="512" class="flex-1 text-center py-2 h-auto">512p (基础)</a-radio-button>
-              <a-radio-button value="720" class="flex-1 text-center py-2 h-auto">720p (高清)</a-radio-button>
-              <a-radio-button value="1024" class="flex-1 text-center py-2 h-auto" disabled>1024p (超清)</a-radio-button>
-            </a-radio-group>
-          </div>
-          <div>
-            <label class="block text-sm font-medium text-gray-700 mb-3">生成时长</label>
-            <a-radio-group v-model:value="duration" button-style="solid" class="w-full flex">
-              <a-radio-button value="5" class="flex-1 text-center py-2 h-auto">5 秒</a-radio-button>
-              <a-radio-button value="8" class="flex-1 text-center py-2 h-auto">8 秒</a-radio-button>
-              <a-radio-button value="10" class="flex-1 text-center py-2 h-auto" disabled>10 秒</a-radio-button>
-            </a-radio-group>
-          </div>
-        </div>
-      </div>
-
-      <!-- Result Section -->
-      <div v-if="currentTask" class="mt-10 bg-gray-50 p-6 rounded-2xl border border-gray-100">
-        <h3 class="text-xl font-bold mb-4 text-gray-800 flex items-center justify-center">
-          <span class="text-blue-500 mr-2">✨</span> 生成结果
-        </h3>
-        
-        <div v-if="currentTask.status === 'pending' || currentTask.status === 'running'" class="flex flex-col items-center justify-center py-8">
-          <a-spin size="large" />
-          <p class="mt-4 text-gray-600 font-medium">正在生成中... {{ currentTask.progress }}%</p>
-          <p v-if="currentTask.queuePos" class="text-sm text-gray-400 mt-1">前面还有 {{ currentTask.queuePos }} 人排队</p>
-          <a-progress :percent="currentTask.progress" status="active" strokeColor="#3b82f6" class="w-full max-w-md mt-4" />
-        </div>
-        
-        <div v-else-if="currentTask.status === 'success' && currentTask.resultUrl" class="flex flex-col items-center">
-          <a-image v-if="isImageUrl(currentTask.resultUrl)" :src="currentTask.resultUrl" class="max-w-full max-h-96 rounded-xl shadow-sm object-contain" :preview="true" />
-          <video v-else :src="currentTask.resultUrl" controls class="max-w-full max-h-96 rounded-xl shadow-sm bg-black"></video>
-          
-          <div class="mt-6 flex gap-4">
-            <a-button type="primary" size="large" class="bg-blue-600 rounded-xl" @click="downloadResult(currentTask.resultUrl, currentTask.title)">
-              <template #icon><download-outlined /></template> 下载结果
-            </a-button>
-            <a-button size="large" class="rounded-xl" @click="resetForm">
-              继续生成
-            </a-button>
-          </div>
-        </div>
-        
-        <div v-else-if="currentTask.status === 'failed'" class="flex flex-col items-center py-8">
-          <close-circle-outlined class="text-5xl text-red-500 mb-4" />
-          <p class="text-red-600 font-medium text-lg">生成失败</p>
-          <p class="text-gray-500 mt-2">{{ currentTask.error || '未知错误' }}</p>
-          <a-button class="mt-6 rounded-xl" @click="resetForm">重试</a-button>
-        </div>
-      </div>
-    </div>
-
-    <!-- Action Bar -->
-    <div class="action-bar bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex justify-between items-center shrink-0">
-      <div class="cost-info flex flex-col">
-        <span class="text-gray-500 text-sm font-medium">预计消耗灵石</span>
-        <div class="flex items-end mt-1">
-          <span class="font-bold text-3xl text-blue-600 leading-none">{{ taskCost }}</span>
-          <span class="text-lg text-blue-400 ml-1 mb-0.5">💎</span>
-        </div>
-      </div>
-      
-      <a-button 
-        type="primary" 
-        size="large" 
-        class="bg-blue-600 hover:bg-blue-700 w-48 h-14 text-lg font-bold tracking-wider rounded-xl shadow-md transition-all hover:shadow-lg border-none flex items-center justify-center" 
-        :disabled="!objectKey"
-        :loading="isSubmitting"
-        @click="handleGenerate"
-      >
-        <template #icon><video-camera-outlined /></template>
-        {{ isSubmitting ? '提交中...' : '生成视频' }}
-      </a-button>
     </div>
   </div>
 </template>
 
+
 <style scoped>
+:deep(.ant-select-selector) {
+  background-color: rgba(15, 23, 42, 0.4) !important;
+  color: #e2e8f0 !important;
+  border-color: rgba(71, 85, 105, 0.5) !important;
+}
+:deep(.ant-select-selection-item) {
+  color: #e2e8f0 !important;
+}
+:deep(.ant-select-arrow) {
+  color: #94a3b8 !important;
+}
+:deep(.ant-input), :deep(.ant-input-affix-wrapper) {
+  background-color: rgba(15, 23, 42, 0.4) !important;
+  color: #e2e8f0 !important;
+  border-color: rgba(71, 85, 105, 0.5) !important;
+}
+:deep(.ant-input::placeholder) {
+  color: #64748b !important;
+}
+:deep(.ant-upload.ant-upload-drag) {
+  background: rgba(15, 23, 42, 0.4) !important;
+  border-color: rgba(71, 85, 105, 0.5) !important;
+}
+:deep(.ant-upload.ant-upload-drag:hover) {
+  border-color: #3b82f6 !important;
+}
+:deep(.ant-upload.ant-upload-drag .ant-upload-text) {
+  color: #cbd5e1 !important;
+}
+:deep(.ant-upload.ant-upload-drag .ant-upload-hint) {
+  color: #64748b !important;
+}
+
 .upload-dragger {
-  background: #f8fafc;
+  background: rgba(15, 23, 42, 0.4);
   border-radius: 12px;
+}
+</style>
+
+<style>
+.custom-dropdown {
+  background-color: rgba(30, 41, 59, 0.95) !important;
+  backdrop-filter: blur(12px) !important;
+  border: 1px solid rgba(71, 85, 105, 0.5) !important;
+}
+.custom-dropdown .ant-select-item {
+  color: #cbd5e1 !important;
+}
+.custom-dropdown .ant-select-item-option-active,
+.custom-dropdown .ant-select-item-option-selected {
+  background-color: rgba(56, 189, 248, 0.15) !important;
+  color: #38bdf8 !important;
 }
 </style>

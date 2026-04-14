@@ -16,3 +16,13 @@ body {
 .ant-layout {
   background: #f0f2f5;
 }
+
+/* Ant Design 覆盖：禁用的主要按钮，保持白色字体和微透的蓝色背景，避免变成黑色看不清 */
+.ant-btn-primary[disabled],
+.ant-btn-primary[disabled]:hover,
+.ant-btn-primary[disabled]:focus,
+.ant-btn-primary[disabled]:active {
+  color: rgba(255, 255, 255, 0.7) !important;
+  background-color: rgba(30, 58, 138, 0.5) !important;
+  border-color: transparent !important;
+}

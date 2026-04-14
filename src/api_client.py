@@ -9,6 +9,7 @@ from config import (
     IMG2IMG_ENDPOINT, STATUS_ENDPOINT, IMAGE_ENDPOINT, POLL_INTERVAL, 
     VIDEO_ENDPOINT, API_BASE, FACE_SWAP_ENDPOINT, 
     PERFECT_VIDEO_EDIT_ENDPOINT, PERFECT_VIDEO_INSERT_ENDPOINT,
+    PERFECT_VIDEO_LORA_ENDPOINT,
     I2I_PRO_ENDPOINT, FACE_VIDEO_ENDPOINT,
     API_TOKEN
 )
@@ -92,6 +93,26 @@ class APIClient:
         }
 
         r = await self._request("POST", PERFECT_VIDEO_EDIT_ENDPOINT, json=data)
+        return r.json()["task_id"]
+
+    @async_retry(max_retries=3)
+    async def submit_perfect_video_lora(self, prompt: str, image_path: str, lora_name: str, width: int = 512, height: int = 512, length: int = 81, priority: int = 0) -> str:
+        """
+        Submit perfect_video_lora task.
+        image_path: MinIO Object Key
+        lora_name: Name of the LoRA to inject
+        """
+        data = {
+            "image": image_path,
+            "prompt": prompt,
+            "lora_name": lora_name,
+            "width": width,
+            "height": height,
+            "length": length,
+            "priority": priority
+        }
+
+        r = await self._request("POST", PERFECT_VIDEO_LORA_ENDPOINT, json=data)
         return r.json()["task_id"]
 
     @async_retry(max_retries=3)
@@ -323,6 +344,7 @@ api_client = APIClient()
 # These wrappers call the singleton instance methods
 submit_perfect_video_insert = api_client.submit_perfect_video_insert
 submit_perfect_video_edit = api_client.submit_perfect_video_edit
+submit_perfect_video_lora = api_client.submit_perfect_video_lora
 submit_img2img = api_client.submit_img2img
 submit_face_swap = api_client.submit_face_swap
 submit_face_video = api_client.submit_face_video

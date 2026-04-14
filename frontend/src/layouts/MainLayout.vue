@@ -104,8 +104,8 @@ const initParticles = () => {
   }
 
   const animate = () => {
-    // Semi-transparent clear for trail effect
-    ctx.fillStyle = 'rgba(11, 14, 20, 0.2)' // #0b0e14
+    // Fill canvas with solid background color to remove particle trails while maintaining the dark theme
+    ctx.fillStyle = '#0b0e14'
     ctx.fillRect(0, 0, width, height)
     
     // Draw stars
@@ -250,7 +250,7 @@ watch(() => route.name, (newName) => {
         </div>
       </a-layout-header>
       
-      <a-layout-content class="m-6 p-6 bg-slate-900/60 backdrop-blur-xl rounded-2xl shadow-[0_8px_32px_rgba(0,0,0,0.4)] border border-slate-700/50 relative overflow-y-auto overflow-x-hidden flex flex-col flex-grow">
+      <a-layout-content class="m-6 p-6 bg-slate-900/20 backdrop-blur-sm rounded-2xl shadow-[0_8px_32px_rgba(0,0,0,0.4)] border border-slate-700/50 relative overflow-y-auto overflow-x-hidden flex flex-col flex-grow">
         <router-view v-slot="{ Component }">
           <transition name="fade" mode="out-in">
             <component :is="Component" class="flex-grow w-full" />
@@ -264,7 +264,10 @@ watch(() => route.name, (newName) => {
 
 <style scoped>
 .sider-custom {
-  background: linear-gradient(180deg, #09090b 0%, #0f172a 100%) !important;
+  background: rgba(15, 23, 42, 0.4) !important;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-right: 1px solid rgba(56, 189, 248, 0.15);
   position: relative;
   overflow: hidden;
 }

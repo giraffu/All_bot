@@ -117,7 +117,7 @@ class WorkflowPatcher:
 
     def heuristic_patch(self, workflow: Dict[str, Any], key: str, value: Any):
         # This is a best-effort patcher for API format workflows
-        for _, node in workflow.items():
+        for node_id, node in workflow.items():
             if not isinstance(node, dict) or "inputs" not in node:
                 continue
                 
@@ -125,10 +125,13 @@ class WorkflowPatcher:
             class_type = node.get("class_type", "")
             
             if key == "prompt" and ("CLIPTextEncode" in class_type or "Prompt" in class_type or "TextEncode" in class_type):
-                if "text" in inputs:
-                    inputs["text"] = value
-                if "prompt" in inputs:
-                    inputs["prompt"] = value
+                # Ensure we only patch Positive Prompts, not Negative Prompts
+                meta_title = node.get("_meta", {}).get("title", "").lower()
+                if "negative" not in meta_title:
+                    if "text" in inputs:
+                        inputs["text"] = value
+                    if "prompt" in inputs:
+                        inputs["prompt"] = value
                     
             elif key == "seed" and ("Sampler" in class_type or "Seed" in class_type):
                 # Only inject seed if the current value is a placeholder or -1, or if we passed None but we shouldn't because json.loads might convert it
@@ -158,6 +161,12 @@ class WorkflowPatcher:
                 
             elif key == "height" and "FindPerfectResolution" in class_type:
                 inputs["desired_height"] = value
+                
+            elif key == "lora_name" and "Power Lora Loader (rgthree)" in class_type:
+                if str(node_id) == "272":
+                    inputs["lora_1"] = {"on": True, "lora": f"{value}_high_noise.safetensors", "strength": 1}
+                elif str(node_id) == "273":
+                    inputs["lora_1"] = {"on": True, "lora": f"{value}_low_noise.safetensors", "strength": 1}
                 
             elif key == "length" and "PainterI2V" in class_type:
                 inputs["length"] = value

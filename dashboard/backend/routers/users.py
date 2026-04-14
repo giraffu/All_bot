@@ -168,20 +168,24 @@ async def clear_user_history(user_id: int, db: AsyncSession = Depends(get_db)):
         for record in history_records:
             if record.input_file:
                 for f in record.input_file.split('|'):
-                    basename = os.path.basename(f)
-                    obj_name = f"{user_id}/input_images/{basename}"
+                    if f.startswith('template:'):
+                        continue
                     try:
-                        storage.client.remove_object("bot-data", obj_name)
+                        storage.client.remove_object("bot-data", f)
                     except Exception as fe:
-                        logger.warning(f"Failed to delete input file {obj_name}: {fe}")
+                        logger.warning(f"Failed to delete input file {f}: {fe}")
             
             if record.output_file:
-                basename = os.path.basename(record.output_file)
-                obj_name = f"{user_id}/output_images/{basename}"
-                try:
-                    storage.client.remove_object("bot-data", obj_name)
-                except Exception as fe:
-                    logger.warning(f"Failed to delete output file {obj_name}: {fe}")
+                if '/' not in record.output_file:
+                    try:
+                        storage.client.remove_object("comfyui-temp", record.output_file)
+                    except Exception as fe:
+                        logger.warning(f"Failed to delete output file {record.output_file}: {fe}")
+                else:
+                    try:
+                        storage.client.remove_object("bot-data", record.output_file)
+                    except Exception as fe:
+                        logger.warning(f"Failed to delete output file {record.output_file}: {fe}")
         
         await db.execute(delete(History).where(History.user_id == user_id))
         

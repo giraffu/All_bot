@@ -1,217 +1,149 @@
-# Web端入口迁移与系统重构开发计划书
+# 修仙主题 AI 创作工作台 (Web 端) 系统架构与运维文档
 
 ## 📖 文档概述
-本文档旨在为本项目从单一的 Telegram Bot 入口向“多平台 Web + Bot 共存”架构演进提供全面、专业的开发指南与项目管理规划。计划涵盖底层重构、BFF后端开发及 Vue3 前端开发三大核心模块。
+本文档是修仙主题 AI 创作平台 Web 端的全景式技术文档。随着系统从单一的 Telegram Bot 成功演进为“多平台 Web + Bot 共存”架构，Web 端已全面重构并独立部署。本文档详细记录了 Web 端的功能特性、分布式架构、核心数据流转以及海外 VPS 边缘节点的运维规范。
 
 ---
 
-## � 最新进展与成果总结 (Project Status & Achievements)
+## 🎨 1. 核心功能与 UI/UX 设计 (Features & UX)
 
-截至目前，项目已成功完成前三个核心里程碑，Web 端的核心功能已经可以闭环运行。以下是近期取得的关键成果：
+### 1.1 主题美学：合欢宗“玄青冷翠”高级感 (High-end Spiritual Theme)
+Web 端彻底摒弃了早期的简陋 UI，重构为符合修仙设定的沉浸式高级界面：
+- **色彩规范 (Color Palette)**：以玄青 (Slate)、靛蓝 (Indigo) 和冷翠 (Cyan) 为主色调，取代了庸俗的粉色气息，营造出神秘、高级的仙侠氛围。
+- **毛玻璃质感 (Glassmorphism)**：全站核心面板（Profile、History、工作台）大量采用 `backdrop-filter: blur` 和半透明背景，实现现代化的高级悬浮感，解决页面由于滚动带来的视觉割裂问题。
+- **动态灵气背景 (Canvas Particles)**：在主布局 (`MainLayout.vue`) 注入了基于 HTML5 Canvas 的动态粒子系统，模拟修仙界的“灵气流动”与星空连线特效，性能优异且视觉震撼。
 
-### 1. 前端体验大幅升级 (Frontend UX Improvements)
-*   **统一的状态流转 (`useTaskResult.ts`)**：封装了标准的任务进度、排队人数 (`queuePos`) 监听与结果获取逻辑，彻底解决了前端状态不同步的问题。
-*   **沉浸式内联预览**：在核心页面 (`FaceSwap.vue`, `VideoSwap.vue`, `SingleImage.vue` 等) 实现了基于 `URL.createObjectURL` 的图片/视频本地瞬间预览，彻底移除了老旧的跳转交互。
-*   **优雅的结果展示**：集成了带有下载、重新生成功能的内联结果展示区，并配合 Tailwind CSS 实现了高度现代化的卡片与骨架屏加载动画。
-*   **SPA 路由修复**：修复了 Vue 3 History 模式下刷新页面导致 404 或下载 HTML 文件的单页应用路由回退 (SPA Routing Fallback) Bug。
-
-### 2. 后端稳定性与架构修复 (Backend Stability Fixes)
-*   **SSE 竞态条件修复**：修复了任务过快完成导致前端 SSE 错过“成功”事件而永久卡在“0人排队”的 Bug（通过建立订阅前预检状态解决）。
-*   **幽灵锁 (Ghost Locks) 终结**：通过引入 FastAPI `BackgroundTasks`，后端现在能异步监控任务流并可靠释放并发锁，解决了用户遇到 `429 Too Many Requests` 无法提交新任务的问题。
-*   **文件路径解析修复 (`Errno 21`)**：重构了 MinIO 预签名 URL 的解析逻辑，正确剥离 Bucket 前缀，解决了 Worker 端把目录当文件读取的崩溃问题。
-*   **空提示词透传修复**：为图生图等任务自动注入默认 Prompt，解决了生成的图片与原图完全一致 (Pass-through) 的问题。
-*   **图生视频路由修正**：修复了 `is_video` 标志位的路由判断，确保视频类任务（如“动图后入”）正确派发给视频流 ComfyUI Worker，而非降级为静态图片生成。
+### 1.2 功能模块拓扑 (Feature Modules)
+系统功能被严格划分为四大核心模块（侧边栏导航）：
+1. **个人中心 (Profile)**：展示用户头像、灵石余额、修仙境界及到期时间，实时从后端 `PermissionService` 拉取并统计累计施法次数、签到天数和邀请人数等真实数据。
+2. **自定义功能 (Custom Features)**：包含高阶玩法的入口，如：幻想换脸 (图生图Pro)、视频换脸、自由P图、自定义图生视频等。
+3. **懒人功能 (Lazy Features)**：一键式模板生成，如：脱衣吐舌、动图后入等。
+4. **历史记录 (History)**：透明化表格展示历史生成记录，支持图片实时预览与视频的内联弹窗播放 (Modal Player)，为节省前端渲染性能和网络带宽硬性限制展示最近 20 条记录。
 
 ---
 
-## �📅 项目管理规划 (Project Management)
+## 🏗️ 2. 系统架构设计 (System Architecture)
 
-### 1. 里程碑设置与时间估算 (Milestones & Time Estimation)
-整个项目预计耗时 **4-5 周**，当前进度：**Milestone 3 已完成，进入 Milestone 4 阶段**。
+Web 端采用前后端分离、BFF (Backend For Frontend) 聚合、边缘节点加速的现代分布式架构。
 
-*   ✅ **Milestone 1: 核心解耦与数据迁移 (Completed)**
-    *   完成数据库 `users` 表的多平台 ID 改造。
-    *   完成 Bot 业务逻辑抽离至 `src/core/` 目录。
-*   ✅ **Milestone 2: Web BFF 后端基建 (Completed)**
-    *   完成 FastAPI BFF 框架搭建 (`web_api/`)。
-    *   完成 JWT 鉴权体系与第三方 OAuth（Telegram Widget）接入。
-    *   封装核心生图/视频接口及 MinIO 预签名直传接口。
-*   ✅ **Milestone 3: Vue3 前端开发与对接 (Completed)**
-    *   完成基础框架、Ant Design Vue 及 Tailwind CSS 引入。
-    *   实现登录、主控制台、任务流交互界面（支持大图/视频实时预览）。
-    *   实现基于 SSE 的任务状态与排队位置实时推送。
-*   🔄 **Milestone 4: 支付闭环、联调与上线部署 (In Progress)**
-    *   [待办] 接入 Web 端支付体系（如 TON Connect Web 或易支付扫码）。
-    *   [待办] 全链路压测与 Nginx/CDN 缓存加速配置。
-    *   [待办] 生产环境发布上线。
-
-### 2. 关键路径分析 (Critical Path)
-**数据库迁移 -> 核心逻辑抽离 -> BFF 接口暴露 -> 前端任务流对接**。
-*注意：前端的基础 UI 组件可以与 BFF 开发并行，但涉及核心状态流转（如生图排队）的页面必须在 BFF 接口稳定后进行联调。*
-
----
-
-## 🛠️ 阶段一：重构现有 Bot 系统
-
-### 1.1 子步骤清单 (优先级排序)
-1.  **[P0] 数据库表结构迁移 (Alembic)**：将 `users.id` 解耦，新增多平台登录字段。
-2.  **[P0] 核心业务层 (Core Layer) 抽象**：在 `src/core/` 下新建服务类，剥离扣费、锁检测、任务分发逻辑，移除 Telegram `Update` 依赖。
-3.  **[P1] Bot Handler 适配**：将原有的 `task_service.py` 和 `permission_service.py` 改造为调用 `src/core/` 中的纯函数。
-4.  **[P2] 全局回归测试**：确保原有 Bot 流程（尤其是支付回调、发货）完全正常。
-
-### 1.2 系统架构图
+### 2.1 整体架构拓扑
 ```mermaid
 graph TD
-    subgraph "重构后系统架构"
-        TG[Telegram Bot Handlers] --> Core[Core Services<br/>业务核心逻辑层]
-        Web[Web BFF API] --> Core
-        Payment[Payment Webhooks] --> Core
-        
-        Core --> DB[(PostgreSQL)]
-        Core --> Redis[(Redis Queue/Lock)]
-        Core --> MinIO[(MinIO Object Storage)]
-        
-        Core --> CentralAPI[Central API 任务网派发]
+    User[Web 用户]
+
+    subgraph Edge["海外 VPS (边缘节点)"]
+        Nginx[Nginx Reverse Proxy]
+        Vue[Vue3 SPA 静态资源]
     end
-```
 
-### 1.3 数据流图 (请求生命周期)
-```mermaid
-sequenceDiagram
-    participant User as Telegram用户
-    participant Handler as Bot Handler
-    participant Core as Core Service
-    participant DB as PostgreSQL
-    participant Redis as Redis
-    participant Central as Central API
+    subgraph Base["核心机房 (武汉底座)"]
+        Tailscale[Tailscale VPN]
+        BFF[FastAPI Web API]
+        CoreService[Core 业务逻辑层]
+        DB[(PostgreSQL)]
+        Redis[(Redis Queue/Lock)]
+        MinIO[(MinIO 对象存储)]
+        Worker[ComfyUI Workers]
+    end
     
-    User->>Handler: 发送图片并点击生成
-    Handler->>Core: 传入内部User_ID与图片路径
-    Core->>Redis: 检查并发锁(MAX_CONCURRENT_TASKS)
-    Core->>DB: 检查灵石余额并扣除流水
-    Core->>Central: POST /face_swap (带Auth)
-    Central-->>Core: 返回 Task ID
-    Core-->>Handler: 返回成功状态与Task ID
-    Handler-->>User: 发送排队成功消息
+    User -->|HTTPS web.aivison.it.com| Nginx
+    User -->|直接上传/下载 绕过BFF| MinIO
+    
+    Nginx -->|/| Vue
+    Nginx -->|/api/| Tailscale
+    Tailscale --> BFF
+    BFF --> CoreService
+    CoreService --> DB
+    CoreService --> Redis
+    CoreService --> Worker
 ```
 
-### 1.4 核心数据结构设计 (Alembic 迁移)
-```sql
--- 目标 users 表核心结构
-CREATE TABLE users (
-    internal_id BIGSERIAL PRIMARY KEY, -- 纯内部系统ID，解耦TG
-    telegram_id BIGINT UNIQUE,         -- 原有的 TG ID
-    google_id VARCHAR(255) UNIQUE,     -- Google OAuth ID
-    email VARCHAR(255) UNIQUE,         -- 邮箱注册
-    hashed_password VARCHAR(255),      -- 密码哈希
-    credits INTEGER DEFAULT 6,
-    -- ... 其他原有业务字段保留
-);
--- 索引
-CREATE INDEX idx_users_telegram_id ON users(telegram_id);
-```
-
-### 1.5 风险与应对、验收标准
-*   **风险**：外键关联（如 `orders`, `history`）在迁移主键时断裂。
-*   **应对**：采用两步迁移法。先加 `telegram_id` 列并复制数据，然后修改外键引用，最后更换主键类型。
-*   **验收**：旧用户的积分和历史记录无缝保留，Bot 响应延迟无增加。
+### 2.2 核心组件职责
+- **Vue3 SPA (前端)**：基于 Vue 3 + Vite + Tailwind CSS + Ant Design Vue。完全无状态，通过 JWT 与后端通信。页面采用严格的 100vh 布局配合内部滚动，消除了原生滚动条带来的白边伪影。
+- **FastAPI BFF (后端)**：Web 专属的聚合 API 层 (`/src/web_api`)。复用底层 `src/core/` 逻辑，提供 RESTful 接口和 SSE 实时推送流。负责并发锁控制、扣费拦截。
+- **MinIO (存储)**：剥离媒体流量。前后端均通过配置 `assets` 域名直接访问对象存储，不再由 Python 后端代理大文件流。
 
 ---
 
-## 🌐 阶段二：开发 Web BFF 后端
+## 🔄 3. 核心数据流转 (Data Flow)
 
-### 2.1 子步骤清单
-1.  **[P0] BFF 框架初始化**：基于 FastAPI，在项目根目录新建 `web_api/`。
-2.  **[P0] JWT 认证体系**：实现 `/api/auth/login`, `/api/auth/google` 等接口。
-3.  **[P0] API 路由与网关**：实现 `/api/tasks/`，内部调用 `src/core/` 逻辑。
-4.  **[P1] MinIO 直传策略**：实现 `/api/storage/presigned-url` 接口，减轻 BFF 流量压力。
-5.  **[P1] SSE 状态推送**：实现 `/api/tasks/stream` 供前端实时监听进度。
+### 3.1 鉴权与会话流 (Auth Flow)
+- **机制**：采用 Telegram Widget 登录实现免密无缝接入。
+- **流程**：
+  1. 前端加载 Telegram Widget (`@qqchuchu_bot`)，用户点击授权。
+  2. 拦截回调，向 BFF `/api/auth/telegram` 发送包含 hash 签名的用户信息。
+  3. BFF 使用 `.env` 中的 `BOT_TOKEN` (HMAC-SHA256) 验证数据防伪造。
+  4. 验证通过后，将 Telegram ID 映射为内部 `internal_user_id`，签发 JWT Access Token 返回前端进行持久化存储。
 
-### 2.2 BFF 架构设计图
-```mermaid
-graph LR
-    subgraph "Web BFF Backend"
-        Router[FastAPI Routers]
-        Auth[JWT Auth Middleware]
-        Aggregator[Service Aggregator]
-        
-        Router --> Auth
-        Auth --> Aggregator
-        Aggregator --> Core[本地引入 src/core]
-        Aggregator --> MinIO_Auth[MinIO STS / Presigned URL]
-    end
-```
+### 3.2 大文件直传流 (Presigned Upload Flow)
+为了彻底解决大视频上传导致后端 OOM 或 Nginx 413 错误，实现了直传机制：
+1. 前端向 BFF 请求上传凭证：`GET /api/storage/presigned-url?filename=xxx.mp4`
+2. BFF 调用 MinIO SDK 生成带有过期时间、限定 Bucket (`bot-data`) 的 PUT URL。
+3. 前端使用 Axios 直接向 MinIO 发起 PUT 请求上传文件。
+4. 上传成功后，前端仅将 MinIO Object Key (例如 `bot-data/12345/inputs/xxx.mp4`) 提交给 BFF 进行生图任务排队。
 
-### 2.3 数据流图 (Web 端生成任务)
-```mermaid
-sequenceDiagram
-    participant Vue as Vue3 Frontend
-    participant BFF as Web BFF API
-    participant MinIO as MinIO Storage
-    participant Core as Core Service
-    
-    Vue->>BFF: 请求上传图片凭证 (Presigned URL)
-    BFF-->>Vue: 返回 MinIO PUT URL
-    Vue->>MinIO: 直接 PUT 上传大文件 (绕过BFF)
-    MinIO-->>Vue: 200 OK
-    Vue->>BFF: 提交任务 (带 MinIO Object Key)
-    BFF->>Core: 鉴权通过，调用核心层处理
-    Core-->>BFF: 返回 Task ID
-    BFF-->>Vue: 任务创建成功
-    Vue->>BFF: 建立 SSE 连接监听进度
-```
-
-### 2.4 接口定义示例
-*   `POST /api/auth/login`: 账号密码/OAuth 登录，返回 `{ "access_token": "jwt..." }`
-*   `GET /api/storage/upload-url`: 返回 MinIO 直传 URL。
-*   `POST /api/tasks/generate`: 提交生图任务，参数 `{"task_type": "face_swap", "inputs": {"face": "key1", "target": "key2"}}`。
-
-### 2.5 风险与应对、验收标准
-*   **风险**：SSE 占用大量后端连接导致 FastAPI Worker 耗尽。
-*   **应对**：使用异步 ASGI (Uvicorn) 运行 BFF，并配置合理的 Timeout 机制，前端加入断线重连逻辑。
-*   **验收**：前端能稳定获取 JWT，且所有受保护的路由正确拦截未授权请求。
+### 3.3 任务派发与 SSE 状态流 (Task & SSE Flow)
+1. **任务提交**：BFF 校验 JWT、检查余额、获取单用户并发锁 (`ActiveTasksTable`)，向 Redis 队列推入任务，返回 `task_id`。
+2. **SSE 建立**：前端立刻请求 `/api/tasks/{task_id}/stream` 建立 Server-Sent Events 长连接。
+3. **竞态防御预检**：BFF 在进入 Redis Pub/Sub 监听前，先主动查询一次任务状态，防止任务瞬间完成导致前端错过事件死锁等待。
+4. **状态推送**：Worker 状态更新通过 Redis Pub/Sub 广播，BFF 实时推送 `queuePos` (排队位置)、`progress` 给前端。
+5. **幽灵锁释放**：借助 FastAPI `BackgroundTasks`，即使前端意外断开 SSE，BFF 依然在后台等待任务结束信号并可靠释放并发锁，防止用户队列卡死。
 
 ---
 
-## 🖥️ 阶段三：开发 Vue3 前端
+## 🛠️ 4. 运维与部署规范 (Operations & Deployment)
 
-### 3.1 子步骤清单
-1.  **[P0] 项目初始化**：`npm create vite@latest web_frontend -- --template vue-ts`。
-2.  **[P0] 引入组件与路由**：配置 Ant Design Vue (UI) + Vue Router + Pinia。
-3.  **[P1] Auth 模块开发**：登录、注册、Google/TG 一键登录组件。
-4.  **[P1] 核心工作台页面**：包含不同模式（换脸、动图等）的表单提交与大文件分片上传组件。
-5.  **[P2] 响应式与状态优化**：处理移动端适配，接入 SSE 实现进度条动画。
+### 4.1 域名与网络规划
+为实现动静分离与合规，系统采用双域名策略：
+- **Web 主域名**：`https://web.aivison.it.com` (托管前端 SPA，代理 `/api/` 流量)。前端变量：`VITE_API_BASE_URL=/api`。
+- **存储域名**：`https://assets.aivison.it.com` (直接解析至 MinIO，提供图片/视频读取)。前端变量：`VITE_STORAGE_URL`。
 
-### 3.2 前端架构设计图
-```mermaid
-graph TD
-    subgraph "Vue 3 Frontend Architecture"
-        UI[Ant Design Vue Components]
-        Views[Pages / Views]
-        Store[Pinia State Management]
-        Router[Vue Router & Navigation Guards]
-        API[Axios / VueUse (SSE)]
+### 4.2 Nginx 反向代理配置 (边缘节点)
+在海外 VPS 上，Nginx 必须严格按照以下规则配置，以避免 API 路由截断或 404：
+```nginx
+server {
+    listen 443 ssl;
+    server_name web.aivison.it.com;
+
+    # 1. 托管前端静态资源
+    location / {
+        root /root/dist;
+        index index.html;
+        try_files $uri $uri/ /index.html; # Vue History 模式必备
+    }
+
+    # 2. 代理 BFF API (严禁在 proxy_pass 末尾加斜杠 /)
+    location /api/ {
+        proxy_pass http://<武汉底座_Tailscale_IP>:8000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
         
-        UI --> Views
-        Views --> Store
-        Views --> Router
-        Views --> API
-        Store --> API
-    end
+        # SSE 长连接必备配置
+        proxy_set_header Connection '';
+        proxy_http_version 1.1;
+        chunked_transfer_encoding off;
+        proxy_buffering off;
+        proxy_cache off;
+    }
+}
 ```
 
-### 3.3 数据流与状态管理方案
-*   **Store 设计 (Pinia)**：
-    *   `useAuthStore`: 管理 `token`, `user_info` (包含灵石余额、境界)，处理登出逻辑。
-    *   `useTaskStore`: 管理当前活动的 `task_id` 列表、进度百分比、历史记录缓存。
-*   **路由守卫 (Navigation Guard)**：全局拦截，未登录重定向至 `/login`，已登录拦截重复访问登录页。
+### 4.3 前端自动化部署 (Frontend Deploy)
+前端项目 (`/frontend`) 实现了基于 NPM Script 和 SCP 的一键部署：
+1. **环境要求**：本地必须具备访问 VPS 的 SSH 私钥 (`frontend/ssh_key/id_rsa.pem`)，且权限必须严格限制为 `600` (`chmod 600 id_rsa.pem`)，否则 SSH 会拒绝连接。
+2. **构建与推送**：
+   执行 `npm run deploy`，脚本将自动完成 Vite 打包，并通过 `scp` 将 `dist/` 目录同步覆盖至 VPS 的 `/root/dist`。
 
-### 3.4 性能优化与懒加载策略
-1.  **路由懒加载**：使用 `const Console = () => import('./views/Console.vue')` 分割代码块。
-2.  **大文件上传优化**：针对大于 50MB 的视频，前端直传 MinIO，避免通过 Base64 或表单编码占用浏览器内存。
-3.  **按需引入组件**：Ant Design Vue 配合 `unplugin-vue-components` 实现组件按需加载，减小首屏打包体积。
+### 4.4 后端容器管理 (Docker Build)
+当更新了 `src/web_api/` 等后端代码后，**必须**附加 `--build` 参数强制重建容器，否则新代码不会在容器内生效，导致接口依然返回旧数据：
+```bash
+# 在宿主机项目根目录执行
+docker-compose -f deploy/docker-compose.yml up -d --build web-api
+```
 
-### 3.5 风险与应对、验收标准
-*   **风险**：移动端 (H5) 下复杂表单（如换脸+参数调节）布局错乱。
-*   **应对**：严格遵循 Ant Design Vue 的 Grid 栅格系统，所有核心操作面板采用响应式抽屉 (Drawer) 或堆叠布局。
-*   **验收**：Lighthouse 性能评分 > 85，首屏加载时间 < 1.5s，PC 与手机端均能顺畅完成一套完整的换脸任务闭环。
+### 4.5 MinIO 公开访问权限排障
+如果前端历史记录中图片/视频无法加载，控制台或直接访问链接显示 `AccessDenied` XML 错误，说明 MinIO 的 Bucket 权限未正确开放。
+**修复方法**：前往 MinIO Console 或使用 SDK，将 `bot-data` Bucket 的 Access Policy 设置为 `Public`，以允许外网匿名执行 `s3:GetObject` 动作下载静态资源。
+
+---
+*本文档为修仙主题 AI 创作工作台 Web 端的最终架构定稿，后续的二次开发与排障请严格遵循本文档所描述的数据流与运维规范。*

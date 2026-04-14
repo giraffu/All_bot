@@ -1,5 +1,5 @@
 from typing import AsyncGenerator
-from src.api_client import submit_img2img, listen_for_progress, download_image, download_video, get_system_status, submit_face_swap, submit_perfect_video_edit, submit_perfect_video_insert, submit_i2i_pro, submit_face_video
+from src.api_client import submit_img2img, listen_for_progress, download_image, download_video, get_system_status, submit_face_swap, submit_perfect_video_edit, submit_perfect_video_insert, submit_perfect_video_lora, submit_i2i_pro, submit_face_video
 
 class ImageService:
     async def submit_face_video(self, face_image_path: str, video_path: str, resolution: int = 512, duration: int = 121, priority: int = 0) -> str:
@@ -21,6 +21,10 @@ class ImageService:
     async def submit_perfect_video_edit(self, prompt: str, image_path: str, width: int = 512, height: int = 512, length: int = 81, priority: int = 0) -> str:
         """Submit perfect video edit task"""
         return await submit_perfect_video_edit(prompt, image_path, width=width, height=height, length=length, priority=priority)
+
+    async def submit_perfect_video_lora(self, prompt: str, image_path: str, lora_name: str, width: int = 512, height: int = 512, length: int = 81, priority: int = 0) -> str:
+        """Submit perfect video lora task"""
+        return await submit_perfect_video_lora(prompt, image_path, lora_name, width=width, height=height, length=length, priority=priority)
 
     async def submit_perfect_video_insert_task(self, prompt: str, image_path: str, width: int = 512, height: int = 512, length: int = 81, priority: int = 0) -> str:
         """Submit perfect video insert task"""

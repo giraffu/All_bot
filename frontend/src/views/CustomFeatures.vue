@@ -58,6 +58,15 @@ const features = [
     color: 'bg-cyan-100 text-cyan-600',
     cost: 6,
     route: 'SingleImageToVideo'
+  },
+  {
+    key: 'video_lora',
+    title: '图生视频 (附加模型)',
+    description: '上传图像，输入提示词并指定动作模型，生成定制动作视频。',
+    icon: Video,
+    color: 'bg-emerald-100 text-emerald-600',
+    cost: 6,
+    route: 'SingleImageToVideo'
   }
 ]
 

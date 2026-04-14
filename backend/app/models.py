@@ -86,6 +86,15 @@ class VideoEditRequest(BaseModel):
     length: int = 81
     priority: int = 0
 
+class VideoLoraRequest(BaseModel):
+    image: str
+    prompt: str
+    lora_name: str
+    width: int = 512
+    height: int = 512
+    length: int = 81
+    priority: int = 0
+
 class FaceVideoRequest(BaseModel):
     face_image: str
     video: str
