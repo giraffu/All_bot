@@ -163,11 +163,13 @@ class TaskService:
         send_result: bool = True,
         deduct_quota: bool = True,
         reply_markup: InlineKeyboardMarkup = None,
+        lora_name: str = None,
     ) -> Tuple[Optional[bytes], Optional[str]]:
         """Common generation logic for generic tasks."""
         from src.core.user_core import get_or_create_user_by_telegram
         from src.core.billing_core import check_concurrency_lock, release_concurrency_lock, check_and_deduct_credits, refund_credits, get_user_priority_and_identity
         from src.core.task_core import core_submit_generation_task
+        from src.constants import DEFAULT_RESOLUTION, DEFAULT_DURATION, RESOLUTION_COST, DURATION_MULTIPLIER, DURATION_FRAMES
 
         # 1. 身份转换
         internal_user, _ = await get_or_create_user_by_telegram(user_id, username)
@@ -191,6 +193,34 @@ class TaskService:
             
         if not task_type:
             task_type = "video" if is_video else "image"
+            
+        resolution = 512
+        duration = 5
+        if is_video and task_type in [MODE_CUSTOM_VIDEO, "video_lora"]:
+            res_str = context.user_data.get('custom_video_resolution', DEFAULT_RESOLUTION)
+            dur_str = context.user_data.get('custom_video_duration', DEFAULT_DURATION)
+            
+            if res_str == "1024p" and dur_str == "10s":
+                res_str = "720p"
+                context.user_data['custom_video_resolution'] = "720p"
+                
+            if res_str == "1024p":
+                resolution = 1024
+            elif res_str == "720p":
+                resolution = 720
+            else:
+                resolution = 512
+                
+            if dur_str == "8s":
+                duration = 8
+            elif dur_str == "10s":
+                duration = 10
+            else:
+                duration = 5
+
+            base_cost = RESOLUTION_COST.get(res_str, 6)
+            multiplier = DURATION_MULTIPLIER.get(dur_str, 1.0)
+            cost = int(base_cost * multiplier)
 
         # Load prompts config
         prompts_config = load_prompts()
@@ -230,7 +260,8 @@ class TaskService:
             # 4. Submit Task via core
             submit_success, submit_msg, task_id, saved_input_images, registry_task_id = await core_submit_generation_task(
                 internal_user_id, username, prompt, images, is_video, task_type, cost, priority, negative_prompt,
-                chat_id=chat_id, message_id=status_msg.message_id if status_msg else None
+                chat_id=chat_id, message_id=status_msg.message_id if status_msg else None, lora_name=lora_name,
+                resolution=resolution, duration=duration
             )
 
             if not submit_success:
@@ -246,12 +277,17 @@ class TaskService:
             )
 
             if final_info:
+                log_prompt = prompt
+                if task_type == "video_lora" and lora_name:
+                    # 仅为了数据库和历史展示附加 lora 模型信息
+                    log_prompt = f"[模型: {lora_name}] {prompt}"
+
                 media_bytes, full_output_path = (
                     await TaskService._handle_task_completion(
                         context,
                         chat_id,
                         internal_user_id,
-                        prompt,
+                        log_prompt,
                         task_type,
                         task_id,
                         saved_input_images,
@@ -327,6 +363,16 @@ class TaskService:
             resolution = "720p"
             context.user_data['custom_video_resolution'] = "720p"
             await robust_reply_text(update.effective_message, "⚠️ 检测到非法配置(1024p+10s)，已自动降级为720p+10s。")
+
+        # Calculate width/height and length
+        if resolution == "1024p":
+            width, height = 1024, 1024
+        elif resolution == "720p":
+            width, height = 720, 720
+        else:
+            width, height = 512, 512
+            
+        length = DURATION_FRAMES.get(duration, 81)
 
         # Calculate cost
         base_cost = RESOLUTION_COST.get(resolution, TASK_COSTS.get(mode, 6))

@@ -9,10 +9,10 @@ TEMP_TEMPLATE_DIR = os.path.abspath("./templates/temps")
 
 # Main Menu Keyboard
 MAIN_MENU_KEYBOARD = [
-    ["💎 充值灵石", "📅 每日签到", "👤 个人中心"],
-    ["🤝 分享赚灵石", "⏳ 排队状态"],
+    ["💎 充值灵石", "📅 每日签到", "👤 个人中心", "🤝 分享赚灵石", "⏳ 排队状态"],
     ["🖼️ 懒人P图", "🎬 懒人动图", "🎬 视频换脸"],
-    ["🌟 幻想换脸", "🎨 自由P图", "🎬 自定义图生视频"]
+    ["🌟 幻想换脸", "🎨 自由P图", "🎬 自定义图生视频"],
+    ["🎬 图生视频(附加模型)"]
 ]
 
 # Modes
@@ -32,6 +32,7 @@ MODE_BLOWJOB = "blowjob"
 MODE_UNDRESS_TONGUE = "undress_tongue"
 MODE_CLOSEUP_BLOWJOB = "closeup_blowjob"
 MODE_CUSTOM_VIDEO = "custom_video"
+MODE_VIDEO_LORA = "video_lora"
 MODE_I2I_PRO = "i2i_pro"
 MODE_TEMPLATE_CONTRIBUTE = "template_contribute"
 MODE_NONE = "none"
@@ -55,6 +56,7 @@ MODE_NAME_MAP = {
     MODE_UNDRESS_TONGUE: "脱衣吐舌",
     MODE_CLOSEUP_BLOWJOB: "特写口交",
     MODE_CUSTOM_VIDEO: "自定义图生视频",
+    MODE_VIDEO_LORA: "图生视频(附加模型)",
     MODE_TEMPLATE_CONTRIBUTE: "模板共建",
     MODE_NONE: "无模式"
 }
@@ -73,6 +75,7 @@ TASK_COSTS = {
     MODE_PERFECT_VIDEO_INSERT: 6,
     MODE_CLOSEUP_BLOWJOB: 6,
     MODE_CUSTOM_VIDEO: 6,
+    MODE_VIDEO_LORA: 6,
     MODE_I2I_PRO: 6,
 }
 
@@ -162,6 +165,9 @@ def get_video_settings_keyboard(user_group: str, user_identity: str = "外门弟
     res_row = []
     for res in ['512p', '720p', '1024p']:
         if res in allowed_resolutions:
+            if res == "1024p" and current_duration == "10s":
+                continue # Prevent 1024p when 10s is selected
+                
             base_cost = RESOLUTION_COST.get(res, 6)
             multiplier = DURATION_MULTIPLIER.get(current_duration, 1.0)
             cost = int(base_cost * multiplier)
@@ -177,6 +183,9 @@ def get_video_settings_keyboard(user_group: str, user_identity: str = "外门弟
     dur_row = []
     for dur in ['5s', '8s', '10s']:
         if dur in allowed_durations:
+            if dur == "10s" and current_resolution == "1024p":
+                continue # Prevent 10s when 1024p is selected
+                
             multiplier = DURATION_MULTIPLIER.get(dur, 1.0)
             display_text = f"{dur} (x{multiplier})"
             text = f"✅ {display_text}" if dur == current_duration else display_text
@@ -206,7 +215,7 @@ DYNAMIC_PRIORITY_RULES = {
 # Task types that count towards daily usage limit
 GENERATION_TASK_TYPES = [
     "image", "video", "face_swap", "undress", "masturbation",
-    MODE_EDIT, MODE_CUSTOM_VIDEO, MODE_PERFECT_VIDEO_INSERT,
+    MODE_EDIT, MODE_CUSTOM_VIDEO, MODE_VIDEO_LORA, MODE_PERFECT_VIDEO_INSERT,
     MODE_DOGGY_STYLE, MODE_BLOWJOB, MODE_UNDRESS_TONGUE, MODE_CLOSEUP_BLOWJOB,
     MODE_FACESWAP_STEP1, MODE_FACESWAP_STEP2, MODE_RANDOM_FACESWAP,
     MODE_FACE_VIDEO_STEP1, MODE_FACE_VIDEO_STEP2,

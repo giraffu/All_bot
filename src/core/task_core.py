@@ -98,7 +98,7 @@ async def core_submit_generation_task(
     message_id: int = None,
     lora_name: str = None,
     resolution: int = 512,
-    duration: int = 5,
+    duration: int = 5
 ) -> Tuple[bool, str, Optional[str], List[str], Optional[str]]:
     """
     纯净的生成任务派发逻辑（包括图生图、文生图、动图等）。
@@ -139,8 +139,12 @@ async def core_submit_generation_task(
                 return False, "缺少图片", None, [], registry_task_id
                 
             # Convert duration (seconds) to frame length for I2V tasks (assuming ~16fps base)
-            # 5s -> 81 frames, 8s -> 129 frames
-            frame_length = 81 if duration <= 5 else 129
+            if duration >= 10:
+                frame_length = 161
+            elif duration >= 8:
+                frame_length = 129
+            else:
+                frame_length = 81
             
             if task_type == "doggy_style":
                 task_id = await image_service.submit_perfect_video_insert_task(
@@ -148,11 +152,13 @@ async def core_submit_generation_task(
                 )
             elif lora_name:
                 task_id = await image_service.submit_perfect_video_lora(
-                    prompt=prompt, image_path=saved_input_images[0], lora_name=lora_name, width=resolution, height=resolution, length=frame_length, priority=priority
+                    prompt=prompt, image_path=saved_input_images[0], lora_name=lora_name, priority=priority,
+                    width=resolution, height=resolution, length=frame_length
                 )
             else:
                 task_id = await image_service.submit_perfect_video_edit(
-                    prompt=prompt, image_path=saved_input_images[0], width=resolution, height=resolution, length=frame_length, priority=priority
+                    prompt=prompt, image_path=saved_input_images[0], priority=priority,
+                    width=resolution, height=resolution, length=frame_length
                 )
         else:
             task_id = await image_service.submit_task(

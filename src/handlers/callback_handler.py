@@ -294,7 +294,9 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
             return
 
         # Check priority
-        priority = await permission_service.calculate_user_priority(query.from_user.id)
+        from src.core.user_core import get_or_create_user_by_telegram
+        internal_user, _ = await get_or_create_user_by_telegram(query.from_user.id)
+        priority = await permission_service.calculate_user_priority(internal_user.id)
         if priority <= 0:
             await robust_send_message(context.bot, query.message.chat_id, "⚠️ 道友，您的排队优先级已耗尽（或修为不足），今日已无法再凝聚灵力，请明日再来或提升修为！")
             return

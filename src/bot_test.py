@@ -179,6 +179,7 @@ def main():
     from src.handlers.fsm.faceswap_fsm import get_faceswap_fsm_handler
     from src.handlers.fsm.edit_image_fsm import get_edit_image_fsm_handler
     from src.handlers.fsm.custom_video_fsm import get_custom_video_fsm_handler
+    from src.handlers.fsm.video_lora_fsm import get_video_lora_fsm_handler
     from src.handlers.fsm.quick_image_fsm import get_quick_image_fsm_handler
     from src.handlers.fsm.quick_video_fsm import get_quick_video_fsm_handler
 
@@ -189,6 +190,7 @@ def main():
     app.add_handler(get_faceswap_fsm_handler())
     app.add_handler(get_edit_image_fsm_handler())
     app.add_handler(get_custom_video_fsm_handler())
+    app.add_handler(get_video_lora_fsm_handler())
     app.add_handler(get_quick_image_fsm_handler())
     app.add_handler(get_quick_video_fsm_handler())
 

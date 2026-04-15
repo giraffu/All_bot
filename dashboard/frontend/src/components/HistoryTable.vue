@@ -48,13 +48,10 @@ const typeMapping = {
   'closeup_blowjob': '特写口交',
   'text_to_image': '文生图',
   'i2i_pro': '幻想换脸',
-  'unknown': '未知类型'
-};
-
-const typeOptions = [
+  'eOptions = [
   { label: '自定义视频', value: 'custom_video' },
-  { label: '视频换脸', value: 'face_video_step1,face_video_step2' },
-  { label: '自由P图', value: 'image' },
+  { label: '视频换脸', v,
+  al: '自由P图', value: 'image' },
   { label: '快速换脸', value: 'face_swap' },
   { label: '快速脱衣', value: 'undress' },
   { label: '动图传教士', value: 'perfect_video_insert' },
@@ -327,11 +324,20 @@ onMounted(() => {
 
         <!-- Prompt -->
         <template v-else-if="column.key === 'prompt'">
-          <a-tooltip v-if="record.prompt" :title="record.prompt" placement="topLeft" overlayClassName="max-w-md">
-             <div class="truncate max-w-xs text-xs text-gray-600 cursor-pointer hover:text-blue-600 transition-colors">
-               {{ record.prompt }}
-             </div>
-          </a-tooltip>
+          <template v-if="record.prompt">
+            <div class="flex flex-col gap-1">
+              <div v-if="record.prompt.startsWith('[')" class="flex flex-wrap gap-1">
+                <a-tag v-if="record.prompt.match(/^\[(.*?)\]/)" color="blue" class="text-[10px] m-0 px-1.5 py-0 border-blue-200 bg-blue-50/50">
+                  {{ record.prompt.match(/^\[(.*?)\]/)[1] }}
+                </a-tag>
+              </div>
+              <a-tooltip :title="record.prompt.replace(/^\[.*?\]\s*/, '')" placement="topLeft" overlayClassName="max-w-md">
+                <div class="truncate max-w-xs text-xs text-gray-600 cursor-pointer hover:text-blue-600 transition-colors">
+                  {{ record.prompt.replace(/^\[.*?\]\s*/, '') }}
+                </div>
+              </a-tooltip>
+            </div>
+          </template>
           <span v-else class="text-xs text-gray-400">无</span>
         </template>
       </template>

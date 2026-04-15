@@ -21,6 +21,12 @@ class CustomVideoState(IntEnum):
     WAIT_IMAGE = auto()
     WAIT_SETTINGS_AND_PROMPT = auto()
 
+class VideoLoraState(IntEnum):
+    """图生视频附加模型流程的状态枚举"""
+    WAIT_LORA_SELECTION = auto()
+    WAIT_IMAGE = auto()
+    WAIT_SETTINGS_AND_PROMPT = auto()
+
 class QuickImageState(IntEnum):
     """懒人P图 (脱衣/自慰/随机换脸) 状态枚举"""
     WAIT_IMAGE = auto()

@@ -182,6 +182,10 @@ async def create_generation_task(
             raise ValueError(msg)
             
         # Success
+        log_prompt = req.prompt
+        if req.task_type == "video_lora" and req.inputs.get("lora_name"):
+            log_prompt = f"[模型: {req.inputs.get('lora_name')}] {req.prompt}"
+
         background_tasks.add_task(
             monitor_task_and_release_lock, 
             task_id, 
@@ -190,7 +194,7 @@ async def create_generation_task(
             registry_task_id, 
             is_video_task,
             req.task_type,
-            req.prompt,
+            log_prompt,
             saved_inputs
         )
         

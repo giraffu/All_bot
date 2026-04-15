@@ -147,7 +147,7 @@ async def handle_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.info(f"handle_prompt received: {text.encode('utf-8')}")
     if not text:
         return
-    
+
     if text == "🖼️ 懒人P图":
         keyboard = [
             ["💃 快速脱衣", "🎭 快速换脸", "🥵 快速自慰"],
@@ -326,9 +326,13 @@ async def handle_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except Exception as e:
                 logger.warning(f"Failed to check refuge group membership: {e}")
         
+        from src.core.user_core import get_or_create_user_by_telegram
+        internal_user, _ = await get_or_create_user_by_telegram(update.effective_user.id)
+        internal_user_id = internal_user.id
+        
         success, current_credits, error_msg, total_days, reward = await permission_service.perform_checkin(update)
-        user_group = await permission_service.get_user_group(update.effective_user.id)
-        user_identity = await permission_service.get_user_identity(update.effective_user.id)
+        user_group = await permission_service.get_user_group(internal_user_id)
+        user_identity = await permission_service.get_user_identity(internal_user_id)
         
         disclaimer = "\n\n⚠️ _注：累计签到统计始于3月5日，此前的数据未计入系统。_"
         
@@ -344,9 +348,13 @@ async def handle_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if text == "🤝 分享赚灵石":
         user_id = update.effective_user.id
         bot_username = context.bot.username or (await context.bot.get_me()).username
+        from src.core.user_core import get_or_create_user_by_telegram
+        internal_user, _ = await get_or_create_user_by_telegram(user_id)
+        internal_user_id = internal_user.id
+        
         invite_link = f"https://t.me/{bot_username}?start={user_id}"
-        count = await permission_service.get_referral_count(user_id)
-        user_group = await permission_service.get_user_group(user_id)
+        count = await permission_service.get_referral_count(internal_user_id)
+        user_group = await permission_service.get_user_group(internal_user_id)
         msg = (
             "🤝 **分享赚灵石**\n\n"
             f"👤 **当前等级**：`{user_group}`\n"

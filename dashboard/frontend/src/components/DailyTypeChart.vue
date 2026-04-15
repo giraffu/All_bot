@@ -95,6 +95,7 @@ const typeMapping = {
   'closeup_blowjob': '特写口交',
   'text_to_image': '文生图',
   'i2i_pro': '幻想换脸',
+  'video_lora': '图生视频(附加模型)',
   'unknown': '未知类型'
 };
 
@@ -119,6 +120,7 @@ const typeColors = {
   'video': '#36cfc9',
   'video_pro': '#597ef7',
   'custom_video': '#13c2c2',
+  'video_lora': '#2f54eb',
   'template_contribute': '#8c8c8c',
   'undress_tongue': '#bae637',
   'closeup_blowjob': '#ff4d4f',
