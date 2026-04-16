@@ -228,5 +228,33 @@
 - **并发锁释放策略 (Ghost Locks Defense)**：由于 Web 请求可能因网络异常中断（Client Disconnect），BFF 层采用了 FastAPI 的 `BackgroundTasks` 来监控任务执行。无论前端 SSE 是否断开，后台协程都将确保在任务结束时释放该用户的并发锁。
 
 ---
+
+## 8. 社区广场与一键应用功能架构 (Community Gallery Architecture)
+
+本章节梳理了社区广场（Gallery）、排行榜、点赞/点踩以及一键应用模版等核心功能的架构、数据流和业务逻辑，以及相关开发规范。
+
+### 8.1 核心实体与缓存架构
+- **数据关联**：社区功能建立在现有的用户和任务历史体系之上，新增了 `GalleryPost` (投稿) 和 `UserInteraction` (互动) 两个核心表。`GalleryPost` 通过 `task_id` 与 `History` 1对1关联。
+- **0流量转发机制 (Zero-Bandwidth Forwarding)**：为了优化服务器带宽，排行榜采用了基于 `telegram_file_id` 的缓存转发机制。优先使用 TG 内置 file_id 转发，若无缓存才从 MinIO 下载流并重新上传，随后更新 DB 缓存。
+
+### 8.2 业务逻辑红线与设计亮点
+- **原创保护与“禁止套娃”机制**：
+  - 如果用户一键应用别人的模板生成了作品，底层发起生成请求时会**强制传入 `allow_contribute=False`**。
+  - 生成完毕后的消息键盘将不再展示“一键投稿”按钮，从而彻底切断复制者的二次投稿链路。
+- **时长计费容错与动态降级**：
+  - **阈值容错**：视频生成存在误差（如 5.78s），在计费时加入容错（`≤6秒` 均视为 5s 基础档），防止越档扣费。
+  - **动态降级**：当低权限用户一键应用高规格模板（如 10s/1024p）时，系统自动将其降级为 5s/512p，避免越权或阻断交易。
+- **动态标签与本地化映射**：
+  - 存入 DB 的是英文 LoRA 标签（如 `#BreastGrow`），在渲染排行榜卡片时，动态引入 `LORA_MODELS` 字典进行实时中文映射替换，确保前后端解耦。
+
+### 8.3 潜在 Bug 修复与优化指南 (TODOs)
+- **并发覆盖冲突 (Lost Update)**：
+  - 点赞/点踩逻辑不能使用内存累加 `post.likes_count += 1`，必须改用数据库层面的原子更新：`session.execute(update(GalleryPost).where(GalleryPost.id == post.id).values(likes_count=GalleryPost.likes_count + 1))`。
+- **连点异常处理**：
+  - 排行榜翻页的“发新删旧”逻辑中，极高频的翻页可能导致 `Message to delete not found`。必须捕获 `telegram.error.BadRequest` 异常并忽略。
+- **一键应用的参数穿透与全平台生态融合**：
+  - 未来应深度解析 `History.params` 并透传给底层生成接口，实现 100% 完美的“克隆”。同时需将社区广场从纯 Telegram 延伸到 Vue3 Web 网页端（通过 `/api/gallery/all`），实现跨平台数据互通。
+
+---
 **👨‍💻 最终开发指引 (To AI Assistant)**：
 在后续的系统功能研发与维护中，请将本架构全景铭记于心。当你被要求开发新功能、排查 Bug 或进行测试时，请清晰地界定该功能属于哪个子模块（Bot/Web-BFF/Vue-Frontend/Dashboard/API/Worker/Payment），并在对应的目录下进行代码修改与容器重建！
