@@ -156,7 +156,7 @@ async def receive_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             TaskService.process_generation_task(
                 context, message.chat_id, user_id,
                 update.effective_user.username or update.effective_user.full_name,
-                prompt, images, is_video=False, task_type="image", cleanup=True
+                prompt, images, is_video=False, task_type=mode, cleanup=True
             )
         )
 

@@ -149,3 +149,46 @@ class WorkerLog(Base):
     duration = Column(Integer, nullable=False) # in seconds
     error_message = Column(Text, nullable=True)
 
+class GalleryPost(Base):
+    __tablename__ = "gallery_posts"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    task_id = Column(String(64), index=True)
+    user_id = Column(BigInteger, ForeignKey("users.id"), index=True)  # internal_user_id
+    
+    # 元数据
+    media_type = Column(String(20)) # 'image' 或 'video'
+    width = Column(Integer, nullable=True)
+    height = Column(Integer, nullable=True)
+    duration = Column(Integer, nullable=True) # 视频时长(秒)
+    
+    # 标签 (JSON 格式存储列表)
+    tags = Column(Text, default="[]") 
+    
+    # 统计数据
+    likes_count = Column(Integer, default=0)
+    dislikes_count = Column(Integer, default=0)
+    applied_count = Column(Integer, default=0)
+    
+    # Telegram File ID 缓存（用于秒发零流量）
+    telegram_file_id = Column(String(255), nullable=True)
+    
+    is_active = Column(Boolean, default=True) # 审核/下架控制
+    created_at = Column(DateTime, default=datetime.now)
+
+    user = relationship("User", backref="gallery_posts")
+    history = relationship("History", primaryjoin="foreign(GalleryPost.task_id) == History.task_id", uselist=False, backref="gallery_post")
+
+class UserInteraction(Base):
+    __tablename__ = "user_interactions"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(BigInteger, ForeignKey("users.id"), index=True)
+    post_id = Column(Integer, ForeignKey("gallery_posts.id"), index=True)
+    action_type = Column(String(20)) # 'like', 'dislike', 'apply'
+    created_at = Column(DateTime, default=datetime.now)
+
+    user = relationship("User", backref="interactions")
+    post = relationship("GalleryPost", backref="interactions")
+
+

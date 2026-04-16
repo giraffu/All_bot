@@ -86,7 +86,7 @@ export const fetchUserHistory = async (userId) => {
   return response.data
 }
 
-export const fetchHistoryAll = async (page = 1, pageSize = 20, type = null, rating = null, isPublic = null) => {
+export const fetchHistoryAll = async (page = 1, pageSize = 20, type = null, rating = null, isPublic = null, workerId = null) => {
   const params = new URLSearchParams()
   params.append('page', page)
   params.append('page_size', pageSize)
@@ -101,6 +101,10 @@ export const fetchHistoryAll = async (page = 1, pageSize = 20, type = null, rati
   
   if (isPublic !== null) {
     params.append('is_public', isPublic)
+  }
+  
+  if (workerId && workerId !== 'all') {
+    params.append('worker_id', workerId)
   }
   
   const response = await api.get(`/api/history/all?${params.toString()}`)
@@ -147,6 +151,11 @@ export const deleteTemplateContribution = async (id) => {
 }
 
 
+
+export const fetchWorkerList = async () => {
+  const response = await api.get('/api/workers/list')
+  return response.data
+}
 
 export const fetchSystemStatus = async () => {
   const response = await api.get('/api/system/status')
@@ -237,6 +246,22 @@ export const adminGiftPlan = async (userId, planId, note = "后台手动赠送")
     plan_id: planId,
     note: note
   })
+  return response.data
+}
+
+// Gallery API
+export const fetchGalleryPosts = async (params) => {
+  const response = await api.get('/api/gallery/all', { params })
+  return response.data
+}
+
+export const updateGalleryPost = async (postId, data) => {
+  const response = await api.put(`/api/gallery/${postId}`, data)
+  return response.data
+}
+
+export const deleteGalleryPost = async (postId) => {
+  const response = await api.delete(`/api/gallery/${postId}`)
   return response.data
 }
 

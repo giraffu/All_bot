@@ -168,6 +168,21 @@ async def handle_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await robust_reply_text(update.message, "🎬 **懒人动图**\n请选择演武场景：", reply_markup=reply_markup, parse_mode="Markdown")
         return
 
+    if text == "🏆 发现/排行榜":
+        keyboard = [
+            [InlineKeyboardButton("🔥 最新投稿", callback_data="gallery_sort_latest")],
+            [InlineKeyboardButton("❤️ 最多点赞", callback_data="gallery_sort_likes")],
+            [InlineKeyboardButton("🪄 最多应用", callback_data="gallery_sort_applied")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await robust_reply_text(
+            update.message, 
+            "🏆 **修仙界广场**\n\n请选择您想查看的榜单：", 
+            reply_markup=reply_markup, 
+            parse_mode="Markdown"
+        )
+        return
+
     if text == "🔙 返回主菜单":
         reply_markup = ReplyKeyboardMarkup(MAIN_MENU_KEYBOARD, resize_keyboard=True)
         await robust_reply_text(update.message, "🏠 **已返回主菜单**", reply_markup=reply_markup, parse_mode="Markdown")

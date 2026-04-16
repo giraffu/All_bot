@@ -5,7 +5,7 @@ from typing import Optional, List
 import logging
 import os
 from src.database.core import get_db
-from src.database.models import History, User
+from src.database.models import History, User, WorkerLog
 from dashboard.backend.schemas import HistoryListResponse, HistoryResponse
 from src.services.storage import storage
 from config import MINIO_TEMPLATE_BUCKET
@@ -20,6 +20,7 @@ async def get_all_history(
     type: Optional[str] = None, 
     rating: Optional[int] = None,
     is_public: Optional[bool] = None,
+    worker_id: Optional[str] = None,
     db: AsyncSession = Depends(get_db)
 ):
     """Get all history with pagination and multiple optional filters"""
@@ -32,8 +33,9 @@ async def get_all_history(
         )
         
         stmt = (
-            select(History, User.username, User.full_name)
+            select(History, User.username, User.full_name, WorkerLog.worker_id)
             .join(User, History.user_id == User.id)
+            .outerjoin(WorkerLog, History.task_id == WorkerLog.task_id)
             .order_by(desc(History.created_at))
         )
 
@@ -50,6 +52,12 @@ async def get_all_history(
         if is_public is not None:
             count_stmt = count_stmt.where(History.is_public == is_public)
             stmt = stmt.where(History.is_public == is_public)
+            
+        if worker_id is not None and worker_id != "all":
+            # Must join WorkerLog in count_stmt as well if we filter by it
+            count_stmt = count_stmt.outerjoin(WorkerLog, History.task_id == WorkerLog.task_id)
+            count_stmt = count_stmt.where(WorkerLog.worker_id == worker_id)
+            stmt = stmt.where(WorkerLog.worker_id == worker_id)
         
         count_result = await db.execute(count_stmt)
         total = count_result.scalar() or 0
@@ -62,10 +70,12 @@ async def get_all_history(
             history = row[0]
             username = row[1]
             full_name = row[2]
+            worker_id = row[3]
             
             item_dict = {c.name: getattr(history, c.name) for c in history.__table__.columns}
             item_dict["username"] = username
             item_dict["full_name"] = full_name
+            item_dict["worker_id"] = worker_id
             
             if history.input_file:
                 urls = []
@@ -94,13 +104,21 @@ async def get_all_history(
 async def get_user_history(user_id: int, db: AsyncSession = Depends(get_db)):
     """Get history for a specific user"""
     try:
-        stmt = select(History).where(History.user_id == user_id).order_by(desc(History.created_at)).limit(100)
+        stmt = (
+            select(History, WorkerLog.worker_id)
+            .outerjoin(WorkerLog, History.task_id == WorkerLog.task_id)
+            .where(History.user_id == user_id)
+            .order_by(desc(History.created_at))
+            .limit(100)
+        )
         result = await db.execute(stmt)
-        history = result.scalars().all()
         
         items = []
-        for h in history:
+        for row in result:
+            h = row[0]
+            worker_id = row[1]
             item_dict = {c.name: getattr(h, c.name) for c in h.__table__.columns}
+            item_dict["worker_id"] = worker_id
             
             if h.input_file:
                 urls = []

@@ -24,6 +24,7 @@ import HistoryTable from './components/HistoryTable.vue'
 import WorkerHistoryTable from './components/WorkerHistoryTable.vue'
 import LogTable from './components/LogTable.vue'
 import RechargeSystem from './components/RechargeSystem.vue'
+import GalleryTable from './components/GalleryTable.vue'
 import { message } from 'ant-design-vue'
 import {
   UserOutlined,
@@ -41,7 +42,8 @@ import {
   SearchOutlined,
   BellOutlined,
   PieChartOutlined,
-  RobotOutlined
+  RobotOutlined,
+  AppstoreOutlined
 } from '@ant-design/icons-vue'
 
 // State
@@ -344,6 +346,10 @@ onUnmounted(() => {
           <template #icon><picture-outlined /></template>
           <span>模板共建</span>
         </a-menu-item>
+        <a-menu-item key="gallery">
+          <template #icon><appstore-outlined /></template>
+          <span>广场内容管理</span>
+        </a-menu-item>
         <a-menu-divider />
         <a-menu-item key="settings" disabled>
           <template #icon><setting-outlined /></template>
@@ -482,6 +488,10 @@ onUnmounted(() => {
 
           <div v-else-if="activeTab[0] === 'templates'" class="flex-1 bg-white rounded-xl shadow-sm border p-6 flex flex-col min-h-0">
             <TemplateManager />
+          </div>
+
+          <div v-else-if="activeTab[0] === 'gallery'" class="flex-1 bg-white rounded-xl shadow-sm border p-6 flex flex-col min-h-0">
+            <GalleryTable />
           </div>
         </div>
       </a-layout-content>

@@ -1,6 +1,6 @@
 <script setup>
 import { ref, onMounted } from 'vue'
-import { fetchHistoryAll } from '../api/api'
+import { fetchHistoryAll, fetchWorkerList } from '../api/api'
 import { getFileUrl, formatDate } from '../utils/helpers'
 import MediaItem from './MediaItem.vue'
 import { 
@@ -18,6 +18,8 @@ const pageSize = ref(20)
 const selectedTypes = ref([])
 const selectedRating = ref(null)
 const selectedPublic = ref(null)
+const selectedWorker = ref(null)
+const workerOptions = ref([{ label: '全部节点', value: null }])
 
 const typeMapping = {
   'undress': '快速脱衣',
@@ -48,10 +50,12 @@ const typeMapping = {
   'closeup_blowjob': '特写口交',
   'text_to_image': '文生图',
   'i2i_pro': '幻想换脸',
-  'eOptions = [
+};
+
+const typeOptions = [
   { label: '自定义视频', value: 'custom_video' },
-  { label: '视频换脸', v,
-  al: '自由P图', value: 'image' },
+  { label: '视频换脸', value: 'face_video_step1' },
+  { label: '自由P图', value: 'image' },
   { label: '快速换脸', value: 'face_swap' },
   { label: '快速脱衣', value: 'undress' },
   { label: '动图传教士', value: 'perfect_video_insert' },
@@ -91,7 +95,7 @@ const loadData = async (page = 1) => {
   loading.value = true
   try {
     const typeParam = selectedTypes.value.length > 0 ? selectedTypes.value.join(',') : null
-    const data = await fetchHistoryAll(page, pageSize.value, typeParam, selectedRating.value, selectedPublic.value)
+    const data = await fetchHistoryAll(page, pageSize.value, typeParam, selectedRating.value, selectedPublic.value, selectedWorker.value)
     history.value = data.items
     total.value = data.total
     currentPage.value = page
@@ -99,6 +103,18 @@ const loadData = async (page = 1) => {
     console.error('Failed to load history:', err)
   } finally {
     loading.value = false
+  }
+}
+
+const loadWorkers = async () => {
+  try {
+    const data = await fetchWorkerList()
+    if (data && data.workers && data.workers.length > 0) {
+      const options = data.workers.map(w => ({ label: w, value: w }))
+      workerOptions.value = [{ label: '全部节点', value: null }, ...options]
+    }
+  } catch (err) {
+    console.error('Failed to load workers:', err)
   }
 }
 
@@ -110,6 +126,7 @@ const resetFilters = () => {
   selectedTypes.value = []
   selectedRating.value = null
   selectedPublic.value = null
+  selectedWorker.value = null
   loadData(1)
 }
 
@@ -131,6 +148,12 @@ const columns = [
     title: '类型',
     dataIndex: 'type',
     key: 'type',
+    width: 120,
+  },
+  {
+    title: '生成节点',
+    dataIndex: 'worker_id',
+    key: 'worker_id',
     width: 120,
   },
   {
@@ -162,6 +185,7 @@ const refreshData = () => {
 
 onMounted(() => {
   loadData()
+  loadWorkers()
 })
 </script>
 
@@ -225,8 +249,27 @@ onMounted(() => {
               />
             </div>
 
+            <div class="h-4 w-[1px] bg-gray-200 mx-1"></div>
+
+            <!-- Worker Filter -->
+            <div class="flex items-center gap-2">
+              <span class="text-gray-500 text-xs font-medium">节点:</span>
+              <a-select
+                v-model:value="selectedWorker"
+                style="width: 120px"
+                placeholder="全部节点"
+                @change="handleFilterChange"
+                :options="workerOptions"
+                size="small"
+                show-search
+                allow-clear
+                option-filter-prop="label"
+                class="custom-select"
+              />
+            </div>
+
             <a-button 
-              v-if="selectedTypes.length > 0 || selectedRating !== null || selectedPublic !== null"
+              v-if="selectedTypes.length > 0 || selectedRating !== null || selectedPublic !== null || selectedWorker !== null"
               size="small" 
               type="text" 
               danger 
@@ -290,6 +333,14 @@ onMounted(() => {
           <a-tag :color="record.type === 'image' ? 'blue' : 'orange'">
             {{ typeMapping[record.type] || record.type }}
           </a-tag>
+        </template>
+
+        <!-- Worker ID -->
+        <template v-else-if="column.key === 'worker_id'">
+          <a-tag v-if="record.worker_id" color="purple" class="text-xs">
+            {{ record.worker_id }}
+          </a-tag>
+          <span v-else class="text-xs text-gray-400">-</span>
         </template>
 
         <!-- Input -->

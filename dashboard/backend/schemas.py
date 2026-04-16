@@ -82,6 +82,7 @@ class HistoryResponse(BaseModel):
     is_public: bool = False
     username: Optional[str] = None
     full_name: Optional[str] = None
+    worker_id: Optional[str] = None
     input_file_url: Optional[str] = None
     output_file_url: Optional[str] = None
 

@@ -286,7 +286,296 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
             import logging
             logging.getLogger(__name__).error(f"Error updating rating: {e}")
             await safe_answer_query(query, text="❌ 评价失败，请稍后再试", show_alert=True)
-    
+            
+    elif data.startswith("submit_gallery_"):
+        task_id = data.replace("submit_gallery_", "")
+        try:
+            from sqlalchemy import select
+            from src.database.core import AsyncSessionLocal
+            from src.database.models import History, GalleryPost
+            from src.core.user_core import get_or_create_user_by_telegram
+            from src.constants import MODE_NAME_MAP
+            import re
+            import json
+
+            internal_user, _ = await get_or_create_user_by_telegram(query.from_user.id)
+
+            async with AsyncSessionLocal() as session:
+                # Check if already posted
+                existing = await session.execute(select(GalleryPost).where(GalleryPost.task_id == task_id))
+                if existing.scalar_one_or_none():
+                    await safe_answer_query(query, text="⚠️ 您已经投稿过此内容啦！", show_alert=True)
+                    return
+                
+                # Get History
+                hist_res = await session.execute(select(History).where(History.task_id == task_id))
+                history = hist_res.scalar_one_or_none()
+                if not history:
+                    await safe_answer_query(query, text="❌ 无法找到对应的任务记录，投稿失败", show_alert=True)
+                    return
+                
+                # Metadata
+                media_type = 'video' if query.message.video else 'image'
+                width, height, duration = None, None, None
+                if media_type == 'video':
+                    width = query.message.video.width
+                    height = query.message.video.height
+                    duration = query.message.video.duration
+                elif query.message.photo:
+                    photo = query.message.photo[-1]
+                    width = photo.width
+                    height = photo.height
+                
+                # Auto Tags
+                tags = []
+                base_tag = MODE_NAME_MAP.get(history.type, history.type)
+                if base_tag:
+                    tags.append(f"#{base_tag}")
+                
+                # Extract LoRA from prompt
+                if history.prompt:
+                    match = re.search(r"\[模型:\s*(.*?)\]", history.prompt)
+                    if match:
+                        lora_tag = match.group(1).strip()
+                        tags.append(f"#{lora_tag}")
+                        
+                tags_json = json.dumps(tags, ensure_ascii=False)
+                
+                new_post = GalleryPost(
+                    task_id=task_id,
+                    user_id=internal_user.id,
+                    media_type=media_type,
+                    width=width,
+                    height=height,
+                    duration=duration,
+                    tags=tags_json
+                )
+                session.add(new_post)
+                await session.commit()
+                
+            tags_str = " ".join(tags)
+            await safe_answer_query(query, text=f"🎉 投稿成功！\n已自动添加标签：{tags_str}", show_alert=True)
+            
+            # Update the button to "✅ 已投稿"
+            keyboard = []
+            for row in query.message.reply_markup.inline_keyboard:
+                new_row = []
+                for btn in row:
+                    if btn.callback_data == data:
+                        new_row.append(InlineKeyboardButton("✅ 已投稿至广场", callback_data="noop"))
+                    else:
+                        new_row.append(btn)
+                keyboard.append(new_row)
+            await robust_edit_reply_markup(query.message, reply_markup=InlineKeyboardMarkup(keyboard))
+            
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).error(f"Error submitting to gallery: {e}")
+            await safe_answer_query(query, text="❌ 投稿失败，请稍后再试", show_alert=True)
+            
+    elif data.startswith("gallery_sort_") or data.startswith("gallery_page_"):
+        try:
+            from sqlalchemy import select, desc
+            from src.database.core import AsyncSessionLocal
+            from src.database.models import GalleryPost, History, User
+            from sqlalchemy.orm import selectinload
+            from src.utils import robust_send_photo, robust_send_video, robust_delete_message
+            import json
+
+            # parse data: gallery_sort_latest, gallery_page_latest_0
+            parts = data.split("_")
+            sort_type = parts[2] # latest, likes, applied
+            page = int(parts[3]) if len(parts) > 3 else 0
+            
+            async with AsyncSessionLocal() as session:
+                query_stmt = select(GalleryPost).options(selectinload(GalleryPost.user)).where(GalleryPost.is_active == True)
+                
+                if sort_type == "likes":
+                    query_stmt = query_stmt.order_by(desc(GalleryPost.likes_count), desc(GalleryPost.created_at))
+                elif sort_type == "applied":
+                    query_stmt = query_stmt.order_by(desc(GalleryPost.applied_count), desc(GalleryPost.created_at))
+                else:
+                    query_stmt = query_stmt.order_by(desc(GalleryPost.created_at))
+                    
+                query_stmt = query_stmt.offset(page).limit(2)
+                result = await session.execute(query_stmt)
+                posts = result.scalars().all()
+                
+                if not posts:
+                    if page == 0:
+                        await safe_answer_query(query, text="📭 当前排行榜空空如也，快去投稿吧！", show_alert=True)
+                    else:
+                        await safe_answer_query(query, text="没有更多内容了~", show_alert=True)
+                    return
+                    
+                post = posts[0]
+                has_next = len(posts) > 1
+                
+                hist_res = await session.execute(select(History).where(History.task_id == post.task_id))
+                history = hist_res.scalar_one_or_none()
+                
+                try:
+                    tags = json.loads(post.tags)
+                except:
+                    tags = []
+                    
+                # Translate LoRA model names in tags
+                from src.handlers.fsm.video_lora_fsm import LORA_MODELS
+                translated_tags = []
+                for tag in tags:
+                    # Tag format is usually "#Tag"
+                    raw_tag = tag.strip("#")
+                    if raw_tag in LORA_MODELS:
+                        translated_tags.append(f"#{LORA_MODELS[raw_tag]}")
+                    else:
+                        translated_tags.append(tag)
+                        
+                tags_str = " ".join(translated_tags) if translated_tags else "无标签"
+                
+                spec_str = ""
+                if post.media_type == "video":
+                    spec_str = f"{post.duration}秒 | {post.width}x{post.height}" if post.duration else "视频"
+                else:
+                    spec_str = f"图片 | {post.width}x{post.height}" if post.width else "图片"
+                    
+                import html
+                
+                author_name = "佚名道友"
+                if post.user:
+                    author_name = post.user.username or f"道友_{post.user.id}"
+                
+                caption = (
+                    f"🏆 <b>修仙界广场</b>\n\n"
+                    f"👤 <b>作者</b>：{html.escape(author_name)}\n"
+                    f"📝 <b>提示词</b>：<code>*** 已隐藏（可一键应用体验） ***</code>\n"
+                    f"🏷 <b>标签</b>：{html.escape(tags_str)}\n"
+                    f"📏 <b>规格</b>：{html.escape(spec_str)}\n\n"
+                    f"❤️ {post.likes_count}  |  👎 {post.dislikes_count}  |  🪄 {post.applied_count} 次应用"
+                )
+                
+                keyboard = [
+                    [
+                        InlineKeyboardButton(f"👍 赞 ({post.likes_count})", callback_data=f"gallery_like_{post.id}_{sort_type}_{page}"),
+                        InlineKeyboardButton(f"👎 踩 ({post.dislikes_count})", callback_data=f"gallery_dislike_{post.id}_{sort_type}_{page}")
+                    ],
+                    [
+                        InlineKeyboardButton("🪄 一键应用此模板", callback_data=f"gallery_apply_{post.id}")
+                    ],
+                    [
+                        InlineKeyboardButton("⬅️ 上一个", callback_data=f"gallery_page_{sort_type}_{max(0, page-1)}") if page > 0 else InlineKeyboardButton("🚫", callback_data="noop"),
+                        InlineKeyboardButton("下一个 ➡️", callback_data=f"gallery_page_{sort_type}_{page+1}") if has_next else InlineKeyboardButton("🚫", callback_data="noop")
+                    ]
+                ]
+                reply_markup = InlineKeyboardMarkup(keyboard)
+
+            await safe_answer_query(query, text="正在加载中...")
+            
+            # Fetch media - Use cached file_id if available to save bandwidth
+            cached_file_id = getattr(post, 'telegram_file_id', None)
+            output_file = history.output_file if history else None
+            media_bytes = None
+            
+            if not cached_file_id and output_file:
+                media_bytes = storage.get_file_bytes(output_file)
+                
+            if not cached_file_id and not media_bytes:
+                await robust_send_message(context.bot, query.message.chat_id, "❌ 抱歉，该文件已失效或被删除。")
+                return
+                
+            # Send new message and delete old one to refresh media
+            sent_msg = None
+            if post.media_type == "video":
+                media_to_send = cached_file_id if cached_file_id else media_bytes
+                sent_msg = await robust_send_video(context.bot, query.message.chat_id, video=media_to_send, caption=caption, reply_markup=reply_markup, parse_mode="HTML")
+            else:
+                media_to_send = cached_file_id if cached_file_id else media_bytes
+                sent_msg = await robust_send_photo(context.bot, query.message.chat_id, photo=media_to_send, caption=caption, reply_markup=reply_markup, parse_mode="HTML")
+                
+            # Cache the file_id if it was a new upload
+            if sent_msg and not cached_file_id:
+                new_file_id = None
+                if post.media_type == "video" and sent_msg.video:
+                    new_file_id = sent_msg.video.file_id
+                elif post.media_type != "video" and sent_msg.photo:
+                    new_file_id = sent_msg.photo[-1].file_id
+                    
+                if new_file_id:
+                    async with AsyncSessionLocal() as session:
+                        update_post = (await session.execute(select(GalleryPost).where(GalleryPost.id == post.id))).scalar_one_or_none()
+                        if update_post:
+                            update_post.telegram_file_id = new_file_id
+                            await session.commit()
+                            
+            await robust_delete_message(query.message)
+            
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).error(f"Error displaying gallery: {e}")
+            await safe_answer_query(query, text="❌ 加载失败，请稍后再试", show_alert=True)
+            
+    elif data.startswith("gallery_like_") or data.startswith("gallery_dislike_"):
+        try:
+            from sqlalchemy import select
+            from src.database.core import AsyncSessionLocal
+            from src.database.models import GalleryPost, UserInteraction
+            from src.core.user_core import get_or_create_user_by_telegram
+
+            action = "like" if data.startswith("gallery_like_") else "dislike"
+            parts = data.split("_")
+            post_id = int(parts[2])
+            sort_type = parts[3]
+            page = int(parts[4])
+
+            internal_user, _ = await get_or_create_user_by_telegram(query.from_user.id)
+
+            async with AsyncSessionLocal() as session:
+                post = (await session.execute(select(GalleryPost).where(GalleryPost.id == post_id))).scalar_one_or_none()
+                if not post:
+                    await safe_answer_query(query, text="❌ 帖子已失效", show_alert=True)
+                    return
+                
+                # Check duplicate
+                existing = (await session.execute(
+                    select(UserInteraction)
+                    .where(UserInteraction.user_id == internal_user.id)
+                    .where(UserInteraction.post_id == post_id)
+                    .where(UserInteraction.action_type == action)
+                )).scalar_one_or_none()
+                
+                if existing:
+                    await safe_answer_query(query, text=f"⚠️ 您已经{'点过赞' if action == 'like' else '点过踩'}啦！", show_alert=True)
+                    return
+                    
+                interaction = UserInteraction(user_id=internal_user.id, post_id=post.id, action_type=action)
+                session.add(interaction)
+                
+                if action == "like":
+                    post.likes_count += 1
+                else:
+                    post.dislikes_count += 1
+                    
+                await session.commit()
+                
+                # Update button text in place
+                keyboard = []
+                for row in query.message.reply_markup.inline_keyboard:
+                    new_row = []
+                    for btn in row:
+                        if btn.callback_data == data:
+                            new_text = f"✅ 已赞 ({post.likes_count})" if action == "like" else f"✅ 已踩 ({post.dislikes_count})"
+                            new_row.append(InlineKeyboardButton(new_text, callback_data="noop"))
+                        else:
+                            new_row.append(btn)
+                    keyboard.append(new_row)
+                
+                await query.message.edit_reply_markup(reply_markup=InlineKeyboardMarkup(keyboard))
+                await safe_answer_query(query, text=f"✅ {'点赞' if action == 'like' else '点踩'}成功！", show_alert=False)
+                
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).error(f"Error handling like/dislike: {e}")
+            await safe_answer_query(query, text="❌ 操作失败，请稍后再试", show_alert=True)
+            
     elif data == "random_faceswap_again":
         # Check maintenance mode for generation tasks
         if is_maintenance_mode():

@@ -15,7 +15,14 @@ def _process_input_path(user_logger: UserLogger, path: str) -> str:
         return path
     if path.startswith(f"{MINIO_BUCKET}/"):
         return path.replace(f"{MINIO_BUCKET}/", "", 1)
-    return user_logger.save_input_image(path)
+    
+    # Try to process as a local file to upload
+    processed = user_logger.save_input_image(path)
+    if processed:
+        return processed
+        
+    # If it's not a local file (e.g., an existing MinIO object key from History), return it as is
+    return path
 
 async def core_submit_face_video(
     internal_user_id: int,

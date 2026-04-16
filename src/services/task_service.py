@@ -23,7 +23,8 @@ from src.constants import (
     MODE_I2I_PRO,
     MAX_CONCURRENT_TASKS,
     MODE_FACE_VIDEO_STEP1,
-    MODE_EDIT
+    MODE_EDIT,
+    MODE_VIDEO_LORA
 )
 from src.handlers.utils import MockMessage
 from src.logger import UserLogger
@@ -43,7 +44,6 @@ from src.services.task_registry import TaskRegistry
 from src.services.redis_client import redis_client
 
 logger = logging.getLogger(__name__)
-
 
 class TaskService:
     @staticmethod
@@ -164,6 +164,7 @@ class TaskService:
         deduct_quota: bool = True,
         reply_markup: InlineKeyboardMarkup = None,
         lora_name: str = None,
+        allow_contribute: bool = True,
     ) -> Tuple[Optional[bytes], Optional[str]]:
         """Common generation logic for generic tasks."""
         from src.core.user_core import get_or_create_user_by_telegram
@@ -281,6 +282,8 @@ class TaskService:
                 if task_type == "video_lora" and lora_name:
                     # 仅为了数据库和历史展示附加 lora 模型信息
                     log_prompt = f"[模型: {lora_name}] {prompt}"
+                    
+                mode_name = MODE_NAME_MAP.get(task_type, task_type)
 
                 media_bytes, full_output_path = (
                     await TaskService._handle_task_completion(
@@ -297,6 +300,8 @@ class TaskService:
                         reply_markup,
                         status_msg,
                         delete_status,
+                        caption=f"✅ {mode_name} 生成完成",
+                        allow_contribute=allow_contribute,
                     )
                 )
             else:
@@ -330,6 +335,7 @@ class TaskService:
         default_prompt_key: str,
         default_prompt_text: str,
         cleanup: bool = True,
+        allow_contribute: bool = True,
     ) -> Tuple[Optional[bytes], Optional[str]]:
         """
         Generic handler for video generation tasks to reduce code duplication.
@@ -461,7 +467,8 @@ class TaskService:
                         reply_markup=None,
                         status_msg=msg,
                         delete_status=True,
-                        caption=f"✅ {mode_name}生成完成",
+                        caption=f"✅ {mode_name} 生成完成",
+                        allow_contribute=allow_contribute,
                     )
                 )
             else:
@@ -492,6 +499,7 @@ class TaskService:
         context: ContextTypes.DEFAULT_TYPE,
         image_path: str,
         cleanup: bool = True,
+        allow_contribute: bool = True,
     ):
         return await TaskService._process_video_task_template(
             update,
@@ -501,6 +509,7 @@ class TaskService:
             "blowjob",
             "undress blowjob",
             cleanup,
+            allow_contribute=allow_contribute,
         )
 
     @staticmethod
@@ -509,6 +518,7 @@ class TaskService:
         context: ContextTypes.DEFAULT_TYPE,
         image_path: str,
         cleanup: bool = True,
+        allow_contribute: bool = True,
     ):
         return await TaskService._process_video_task_template(
             update,
@@ -518,6 +528,7 @@ class TaskService:
             "undress_tongue",
             "undress and show tongue",
             cleanup,
+            allow_contribute=allow_contribute,
         )
 
     @staticmethod
@@ -526,6 +537,7 @@ class TaskService:
         context: ContextTypes.DEFAULT_TYPE,
         image_path: str,
         cleanup: bool = True,
+        allow_contribute: bool = True,
     ):
         return await TaskService._process_video_task_template(
             update,
@@ -535,6 +547,7 @@ class TaskService:
             "doggy_style",
             "doggy style sex",
             cleanup,
+            allow_contribute=allow_contribute,
         )
 
     @staticmethod
@@ -543,6 +556,7 @@ class TaskService:
         context: ContextTypes.DEFAULT_TYPE,
         image_path: str,
         cleanup: bool = True,
+        allow_contribute: bool = True,
     ):
         return await TaskService._process_video_task_template(
             update,
@@ -552,6 +566,7 @@ class TaskService:
             "closeup_blowjob",
             "closeup blowjob sex",
             cleanup,
+            allow_contribute=allow_contribute,
         )
 
     @staticmethod
@@ -560,6 +575,7 @@ class TaskService:
         context: ContextTypes.DEFAULT_TYPE,
         image_path: str,
         cleanup: bool = True,
+        allow_contribute: bool = True,
     ):
         return await TaskService._process_video_task_template(
             update,
@@ -569,6 +585,7 @@ class TaskService:
             "perfect_video_insert",
             "missionary sex",
             cleanup,
+            allow_contribute=allow_contribute,
         )
 
     @staticmethod
@@ -677,7 +694,7 @@ class TaskService:
                     reply_markup=None,
                     status_msg=msg,
                     delete_status=True,
-                    caption="✅ 自定义视频生成完成",
+                    caption="✅ 自定义图生视频生成完成",
                 )
             else:
                 await refund_credits(internal_user_id, cost, "refund", username)
@@ -712,6 +729,7 @@ class TaskService:
         username: str,
         prompt: str,
         images: list[str],
+        allow_contribute: bool = True,
     ):
         """Handle MODE_I2I_PRO requests"""
         from src.constants import MODE_I2I_PRO, TASK_COSTS
@@ -785,7 +803,7 @@ class TaskService:
                 return await TaskService._handle_task_completion(
                     context, chat_id, internal_user_id, prompt, mode, task_id, [saved_input_image], user_logger,
                     is_video=False, send_result=True, reply_markup=None, status_msg=msg, delete_status=True,
-                    caption=f"🌟 幻想换脸生成完成\n提示词：{prompt[:100]}..."
+                    caption=f"🌟 幻想换脸生成完成", allow_contribute=allow_contribute
                 )
             else:
                 await refund_credits(internal_user_id, cost, "refund", username)
@@ -922,6 +940,7 @@ class TaskService:
         status_msg,
         delete_status,
         caption=None,
+        allow_contribute=True,
     ):
         full_output_path = None
         media_bytes = None
@@ -942,24 +961,46 @@ class TaskService:
             await permission_service.refresh_user_group(internal_user_id)
 
             if send_result:
-                keyboard = [
-                    [
-                        InlineKeyboardButton("👍", callback_data="rate_like"),
-                        InlineKeyboardButton("👎", callback_data="rate_dislike")
-                    ]
-                ]
+                allowed_gallery_types = [MODE_I2I_PRO, MODE_EDIT, MODE_CUSTOM_VIDEO, MODE_VIDEO_LORA]
+                show_gallery_btn = task_type in allowed_gallery_types and allow_contribute
+                
+                keyboard = []
+                if show_gallery_btn:
+                    keyboard.append([InlineKeyboardButton("🚀 一键投稿至广场", callback_data=f"submit_gallery_{task_id}")])
+                    
+                keyboard.append([
+                    InlineKeyboardButton("👍", callback_data="rate_like"),
+                    InlineKeyboardButton("👎", callback_data="rate_dislike")
+                ])
+                
                 if ENABLE_PUBLIC_SHARE:
                     keyboard.insert(
                         0,
                         [InlineKeyboardButton("公开", callback_data="public_share_request")]
                     )
                 default_markup = InlineKeyboardMarkup(keyboard)
+                
+                final_markup = reply_markup or default_markup
+                if reply_markup and show_gallery_btn:
+                    # Inject gallery submit button into custom reply_markup if not present
+                    has_gallery = any(
+                        btn.callback_data and btn.callback_data.startswith("submit_gallery_")
+                        for row in final_markup.inline_keyboard for btn in row
+                    )
+                    if not has_gallery:
+                        new_keyboard = [list(row) for row in final_markup.inline_keyboard]
+                        new_keyboard.insert(
+                            0,
+                            [InlineKeyboardButton("🚀 一键投稿至广场", callback_data=f"submit_gallery_{task_id}")]
+                        )
+                        final_markup = InlineKeyboardMarkup(new_keyboard)
+                        
                 sent_msg = await robust_send_video(
                     context.bot,
                     chat_id,
                     video=media_bytes,
                     caption=caption or "✅ 视频生成完成",
-                    reply_markup=reply_markup or default_markup,
+                    reply_markup=final_markup
                 )
                 if sent_msg:
                     mode_name = MODE_NAME_MAP.get(task_type, task_type)
@@ -982,24 +1023,46 @@ class TaskService:
             await permission_service.refresh_user_group(internal_user_id)
 
             if send_result:
-                keyboard = [
-                    [
-                        InlineKeyboardButton("👍", callback_data="rate_like"),
-                        InlineKeyboardButton("👎", callback_data="rate_dislike")
-                    ]
-                ]
+                allowed_gallery_types = [MODE_I2I_PRO, MODE_EDIT, MODE_CUSTOM_VIDEO, MODE_VIDEO_LORA]
+                show_gallery_btn = task_type in allowed_gallery_types and allow_contribute
+                
+                keyboard = []
+                if show_gallery_btn:
+                    keyboard.append([InlineKeyboardButton("🚀 一键投稿至广场", callback_data=f"submit_gallery_{task_id}")])
+                    
+                keyboard.append([
+                    InlineKeyboardButton("👍", callback_data="rate_like"),
+                    InlineKeyboardButton("👎", callback_data="rate_dislike")
+                ])
+                
                 if ENABLE_PUBLIC_SHARE:
                     keyboard.insert(
                         0,
                         [InlineKeyboardButton("公开", callback_data="public_share_request")]
                     )
                 default_markup = InlineKeyboardMarkup(keyboard)
+                
+                final_markup = reply_markup or default_markup
+                if reply_markup and show_gallery_btn:
+                    # Inject gallery submit button into custom reply_markup if not present
+                    has_gallery = any(
+                        btn.callback_data and btn.callback_data.startswith("submit_gallery_")
+                        for row in final_markup.inline_keyboard for btn in row
+                    )
+                    if not has_gallery:
+                        new_keyboard = [list(row) for row in final_markup.inline_keyboard]
+                        new_keyboard.insert(
+                            0,
+                            [InlineKeyboardButton("🚀 一键投稿至广场", callback_data=f"submit_gallery_{task_id}")]
+                        )
+                        final_markup = InlineKeyboardMarkup(new_keyboard)
+                        
                 sent_msg = await robust_send_photo(
                     context.bot,
                     chat_id,
                     photo=media_bytes,
-                    caption=caption or "✅ 用户生成内容投稿",
-                    reply_markup=reply_markup or default_markup,
+                    caption=caption or "✅ 图片生成完成",
+                    reply_markup=final_markup,
                 )
                 if sent_msg:
                     mode_name = MODE_NAME_MAP.get(task_type, task_type)
