@@ -294,7 +294,6 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
             from src.database.core import AsyncSessionLocal
             from src.database.models import History, GalleryPost
             from src.core.user_core import get_or_create_user_by_telegram
-            from src.constants import MODE_NAME_MAP
             import re
             import json
 
@@ -384,7 +383,6 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
             [InlineKeyboardButton("🎬 自定义图生视频", callback_data=f"gallery_sort_{sort_type}_custvid")],
             [InlineKeyboardButton("🌟 图生视频（附加模型）", callback_data=f"gallery_sort_{sort_type}_vidlora")]
         ]
-        from src.utils import robust_edit_reply_markup
         await robust_edit_reply_markup(query.message, reply_markup=InlineKeyboardMarkup(keyboard))
         await safe_answer_query(query)
             
@@ -601,25 +599,32 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
                     await safe_answer_query(query, text="❌ 帖子已失效", show_alert=True)
                     return
                 
-                # Check duplicate
+                # Check mutual exclusion
                 existing = (await session.execute(
                     select(UserInteraction)
                     .where(UserInteraction.user_id == internal_user.id)
                     .where(UserInteraction.post_id == post_id)
-                    .where(UserInteraction.action_type == action)
-                )).scalar_one_or_none()
+                    .where(UserInteraction.action_type.in_(["like", "dislike"]))
+                )).scalars().all()
                 
                 if existing:
-                    await safe_answer_query(query, text=f"⚠️ 您已经{'点过赞' if action == 'like' else '点过踩'}啦！", show_alert=True)
+                    for ex in existing:
+                        if ex.action_type == action:
+                            await safe_answer_query(query, text=f"⚠️ 您已经{'点过赞' if action == 'like' else '点过踩'}啦！", show_alert=True)
+                            return
+                    await safe_answer_query(query, text="⚠️ 互斥操作：您已经给过评价了！", show_alert=True)
                     return
                     
                 interaction = UserInteraction(user_id=internal_user.id, post_id=post.id, action_type=action)
                 session.add(interaction)
                 
+                from sqlalchemy import update
                 if action == "like":
-                    post.likes_count += 1
+                    await session.execute(update(GalleryPost).where(GalleryPost.id == post.id).values(likes_count=GalleryPost.likes_count + 1))
+                    post.likes_count += 1 # for UI update
                 else:
-                    post.dislikes_count += 1
+                    await session.execute(update(GalleryPost).where(GalleryPost.id == post.id).values(dislikes_count=GalleryPost.dislikes_count + 1))
+                    post.dislikes_count += 1 # for UI update
                     
                 await session.commit()
                 

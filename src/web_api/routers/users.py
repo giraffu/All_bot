@@ -52,10 +52,10 @@ async def get_user_history(
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Get generation history for the current user, limited to the 20 most recent items
-    to save VPS bandwidth and reduce CDN caching pressure.
+    Get generation history for the current user, limited to the 8 most recent items
+    to save VPS bandwidth, reduce CDN caching pressure, and protect privacy.
     """
-    limit = 20
+    limit = 8
     
     # Get items
     stmt = (

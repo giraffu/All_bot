@@ -41,6 +41,7 @@ MINIO_BUCKET = os.getenv("MINIO_BUCKET", "bot-data")
 MINIO_TEMPLATE_BUCKET = os.getenv("MINIO_TEMPLATE_BUCKET", "bot-template")
 MINIO_SECURE = os.getenv("MINIO_SECURE", "false").lower() == "true"
 MINIO_PUBLIC_URL = os.getenv("MINIO_PUBLIC_URL", f"http://{MINIO_ENDPOINT}")
+IMGPROXY_URL = os.getenv("IMGPROXY_URL", "http://localhost:8080")
 
 # --- API Configuration ---
 # Default to the backend server IP

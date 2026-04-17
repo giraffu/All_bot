@@ -3,7 +3,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 
-from src.web_api.routers import auth, storage, tasks, users
+from src.web_api.routers import auth, storage, tasks, users, gallery
 from src.database.core import engine
 
 # Configure logging
@@ -41,6 +41,7 @@ app.include_router(auth.router, prefix="/api/auth", tags=["Authentication"])
 app.include_router(storage.router, prefix="/api/storage", tags=["Storage"])
 app.include_router(tasks.router, prefix="/api/tasks", tags=["Tasks"])
 app.include_router(users.router, prefix="/api/users", tags=["Users"])
+app.include_router(gallery.router, prefix="/api/gallery", tags=["Gallery"])
 
 @app.get("/api/health", tags=["Health"])
 async def health_check():

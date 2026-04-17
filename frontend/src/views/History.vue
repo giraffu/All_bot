@@ -8,9 +8,9 @@ const data = ref<any[]>([])
 const loading = ref(false)
 const pagination = ref({
   current: 1,
-  pageSize: 20,
+  pageSize: 8,
   total: 0,
-  hideOnSinglePage: true // Hide pagination since we only ever show max 20 items now
+  hideOnSinglePage: true // Hide pagination since we only ever show max 8 items now
 })
 
 const previewVisible = ref(false)
@@ -124,6 +124,14 @@ onMounted(() => {
     <div class="flex justify-between items-center mb-6">
       <h2 class="text-2xl font-bold text-slate-200 drop-shadow-sm">生成记录</h2>
       <a-button class="bg-slate-800 text-cyan-200 border-cyan-500/30 hover:bg-slate-700 hover:text-white hover:border-cyan-400" @click="fetchHistory(1)">刷新</a-button>
+    </div>
+
+    <!-- Privacy and Convenience Notice -->
+    <div class="mb-6 bg-indigo-500/10 border border-indigo-500/20 rounded-xl p-4 flex items-start">
+      <div class="text-indigo-400 mr-3 mt-0.5"><Clock :size="18" /></div>
+      <div class="text-slate-300 text-sm leading-relaxed">
+        <span class="font-semibold text-indigo-300">温馨提示：</span>为了兼顾您的数据隐私与系统的便利性，系统只会为您保留最近的 <span class="text-cyan-400 font-bold mx-1">8</span> 条生成记录。请及时保存您需要的作品哦。
+      </div>
     </div>
 
     <a-table 

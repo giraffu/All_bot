@@ -36,6 +36,7 @@ async def core_submit_face_video(
     priority: int,
     chat_id: int = None,
     message_id: int = None,
+    allow_contribute: bool = True
 ) -> Tuple[bool, str, Optional[str], Optional[str], Optional[str], Optional[str]]:
     """
     纯净的任务派发逻辑。不负责发送 Telegram 消息。
@@ -105,7 +106,8 @@ async def core_submit_generation_task(
     message_id: int = None,
     lora_name: str = None,
     resolution: int = 512,
-    duration: int = 5
+    duration: int = 5,
+    allow_contribute: bool = True
 ) -> Tuple[bool, str, Optional[str], List[str], Optional[str]]:
     """
     纯净的生成任务派发逻辑（包括图生图、文生图、动图等）。

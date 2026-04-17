@@ -115,7 +115,12 @@ class StorageService:
             return ""
         
         try:
-            return self.client.presigned_get_object(bucket, object_name, expires=timedelta(hours=expires_hours))
+            url = self.client.presigned_get_object(bucket, object_name, expires=timedelta(hours=expires_hours))
+            from config import MINIO_ENDPOINT, MINIO_PUBLIC_URL
+            if MINIO_PUBLIC_URL and MINIO_ENDPOINT in url:
+                url = url.replace(f"http://{MINIO_ENDPOINT}", MINIO_PUBLIC_URL)
+                url = url.replace(f"https://{MINIO_ENDPOINT}", MINIO_PUBLIC_URL)
+            return url
         except Exception as e:
             logger.error(f"Failed to generate presigned URL for {object_name} in {bucket}: {e}")
             return ""
@@ -127,7 +132,12 @@ class StorageService:
             return ""
         
         try:
-            return self.client.presigned_put_object(bucket, object_name, expires=timedelta(minutes=expires_minutes))
+            url = self.client.presigned_put_object(bucket, object_name, expires=timedelta(minutes=expires_minutes))
+            from config import MINIO_ENDPOINT, MINIO_PUBLIC_URL
+            if MINIO_PUBLIC_URL and MINIO_ENDPOINT in url:
+                url = url.replace(f"http://{MINIO_ENDPOINT}", MINIO_PUBLIC_URL)
+                url = url.replace(f"https://{MINIO_ENDPOINT}", MINIO_PUBLIC_URL)
+            return url
         except Exception as e:
             logger.error(f"Failed to generate presigned PUT URL for {object_name} in {bucket}: {e}")
             return ""

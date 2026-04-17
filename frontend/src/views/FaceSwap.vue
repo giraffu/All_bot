@@ -6,10 +6,14 @@ import type { UploadChangeParam } from 'ant-design-vue'
 import { useUpload } from '@/composables/useUpload'
 import { useTaskStream } from '@/composables/useTaskStream'
 import { useTaskResult } from '@/composables/useTaskResult'
+import { useRoute } from 'vue-router'
+import { onMounted } from 'vue'
+import api from '@/api'
 
 const { uploading, progress: uploadProgress, uploadFile } = useUpload()
 const { isSubmitting, submitTask } = useTaskStream()
 const { currentTask, setSubmittedTaskId, isVideoUrl, isImageUrl, downloadResult } = useTaskResult()
+const route = useRoute()
 
 const faceFileList = ref<any[]>([])
 const bodyFileList = ref<any[]>([])
@@ -19,6 +23,26 @@ const bodyObjectKey = ref<string | null>(null)
 
 const facePreview = ref<string | null>(null)
 const bodyPreview = ref<string | null>(null)
+const isTemplateApplied = ref(false)
+
+onMounted(() => {
+  if (route.query.apply === 'true') {
+    const ctxStr = sessionStorage.getItem('galleryApplyContext')
+    if (ctxStr) {
+      try {
+        const ctx = JSON.parse(ctxStr)
+        if (ctx.task_type === 'face_swap' && ctx.input_file) {
+          // prefill target image
+          bodyObjectKey.value = ctx.input_file
+          bodyPreview.value = ctx.input_file_url || null
+          isTemplateApplied.value = true
+        }
+      } catch (e) {
+        console.error('Failed to parse apply context', e)
+      }
+    }
+  }
+})
 
 watch(faceFileList, (newVal) => {
   if (newVal.length > 0 && newVal[0].originFileObj) {
@@ -79,7 +103,8 @@ const handleGenerate = async () => {
       face_image: faceObjectKey.value,
       target_image: bodyObjectKey.value
     },
-    priority: 0
+    priority: 0,
+    is_template: isTemplateApplied.value
   }
 
   const taskId = await submitTask(payload, '快速换脸')
@@ -109,6 +134,12 @@ const resetForm = () => {
         <div class="p-6 flex-grow overflow-y-auto custom-scrollbar">
           <h2 class="text-2xl font-bold mb-2 text-slate-100">快速换脸</h2>
           <p class="text-slate-400 mb-6 text-sm">请提供两张图片，系统将把第一张的人脸替换到第二张的目标场景中。</p>
+          
+          <!-- Template Mode Notice -->
+          <div v-if="isTemplateApplied" class="col-span-full mb-4 bg-indigo-500/20 border border-indigo-500/30 rounded-xl p-4 flex items-center">
+            <div class="text-indigo-400 mr-3">✨</div>
+            <div class="text-slate-300 text-sm">已加载一键换脸模板，底图已为您锁定，请在左侧上传您需要替换的人脸即可开始生成。</div>
+          </div>
           
           <div class="flex flex-col gap-6">
             <!-- Face Upload -->

@@ -62,6 +62,11 @@ const routes: RouteRecordRaw[] = [
         path: 'history',
         name: 'History',
         component: () => import('@/views/History.vue')
+      },
+      {
+        path: 'gallery',
+        name: 'Gallery',
+        component: () => import('@/views/Gallery.vue')
       }
     ]
   },

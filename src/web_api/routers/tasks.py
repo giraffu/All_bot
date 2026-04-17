@@ -141,6 +141,8 @@ async def create_generation_task(
             resolution = req.inputs.get("resolution", 512)
             duration = req.inputs.get("duration", 5)
             
+            allow_contribute = not getattr(req, 'is_template', False)
+            
             success, msg, task_id, saved_face_img, saved_vid, registry_task_id = await core_submit_face_video(
                 internal_user_id=current_user.id,
                 username=current_user.username,
@@ -150,7 +152,8 @@ async def create_generation_task(
                 duration=duration,
                 cost=cost,
                 mode="MODE_FACE_VIDEO_STEP2",
-                priority=final_priority
+                priority=final_priority,
+                allow_contribute=allow_contribute
             )
             if success:
                 saved_inputs = [saved_face_img, saved_vid]
@@ -173,7 +176,8 @@ async def create_generation_task(
                 negative_prompt=req.negative_prompt,
                 lora_name=lora_name,
                 resolution=resolution,
-                duration=duration
+                duration=duration,
+                allow_contribute=allow_contribute
             )
             
         if not success or not task_id:
