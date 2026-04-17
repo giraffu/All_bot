@@ -28,6 +28,13 @@ class StorageService:
                 secret_key=MINIO_SECRET_KEY,
                 secure=MINIO_SECURE
             )
+            
+            # CRITICAL FIX: Inject region mapping to prevent synchronous `?location=` network calls
+            # from blocking the event loop when MinIO is slow or overloaded.
+            self.client._region_map[MINIO_BUCKET] = "us-east-1"
+            if MINIO_TEMPLATE_BUCKET:
+                self.client._region_map[MINIO_TEMPLATE_BUCKET] = "us-east-1"
+                
             # Check main bucket
             if not self.client.bucket_exists(MINIO_BUCKET):
                 try:

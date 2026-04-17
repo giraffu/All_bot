@@ -361,9 +361,6 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
                 
             # Trigger background task to upload to Cloudflare R2
             if history and history.output_file:
-                from src.utils import create_background_task
-                from src.services.storage import storage
-                
                 # output_file might be "bot-data/users/..." or "comfyui-temp/..."
                 # Extract bucket and object name based on logic in gallery
                 parts = history.output_file.split("/")
@@ -544,6 +541,7 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
             
             # Fetch media - Use cached file_id if available to save bandwidth
             import os
+            from src.services.storage import storage
             is_test_bot = os.getenv("BOT_TYPE") == "TEST"
             cached_file_id = getattr(post, 'telegram_file_id', None)
             if is_test_bot:

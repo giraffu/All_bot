@@ -80,7 +80,10 @@
    - **用途**：对象存储，兼容 S3 协议。用于存储用户上传的图片/视频、系统生成的中间产物以及模板。
    - **结构**：主要包含 `bot-data` (系统主数据), `comfyui-input` (传给 Worker 的输入), `comfyui-temp` (Worker 的输出), `bot-template` (模板) 等 Bucket。
    - **引用传递机制**：为了节省内网带宽和 API 内存，Bot 和 Central API 之间不再直接传输媒体文件流，而是仅传递 MinIO 中的 `Object Key`（JSON 格式）。由底层的 Worker 直接从 MinIO 对应 Bucket 下载。
-   - **大文件直传 (Web 端)**：针对 100MB+ 的视频，Vue3 前端调用 BFF 获取**预签名直传 URL (Presigned PUT URL)** 后，直接与 MinIO 交互上传文件，彻底绕过后端流量瓶颈。
+   - **大文件直传 (Web 端)**：针对 100MB+ 的视频，Vue3 前端调用 BFF 获取**预签名直传 URL (Presigned PUT URL)** 后，直接与 MinIO 交互上传文件，彻底绕过后端流量瓶颈。注意，BFF 层使用了 `_region_map` 离线签名防御机制，防止在 MinIO 负载过高时因 SDK 发起同步的 `?location=` 网络请求而卡死主事件循环。
+4. **Cloudflare R2 (边缘存储/加速)**：
+   - **用途**：作为国内 MinIO 的公网加速层，专为“社区广场 (Gallery)”的高并发读取场景设计。
+   - **同步机制**：当作品被推送到排行榜时，后端的 `StorageService` 会开启异步守护线程，将作品从本地 MinIO 节点转存到国外的 R2 节点，然后下发 R2 的公共访问域名，极大缓解国内主节点的上行带宽压力。
 
 ---
 
@@ -148,6 +151,10 @@
 - **查看 Redis 排队**：`docker exec tg-bot python check_redis.py`。
 - **独立 API 支付联调测试**：如果易支付网关报错，可通过独立脚本如 `test_huanyuy.py` 单独发起 POST/GET HTTP 请求进行调试，以避免受限于 Docker 容器环境的调试盲区。
 
+### 4.5 MinIO 存储高并发与 503 宕机排障 (MinIO RequestTimeout)
+- **现象**：Web 端大文件上传报错 503，同时所有访问 Web 后端的请求（如获取历史记录、获取用户信息）全部陷入几十秒的死锁超时。
+- **根本原因**：当底层生图节点执行重负载任务导致磁盘 IO 拥堵时，MinIO 会因检测不到磁盘响应而强制将其下线 (`taking drive /data offline`)，进而拒绝发放资源锁。若后端（如 FastAPI）的 MinIO SDK 未做防御处理，它发起预签名时的一个**同步网络请求**（`?location=`）将会把整个异步事件循环完全卡死。
+- **恢复方案**：此情况为瞬时软故障，直接通过 `docker restart minio-server` 重启容器重新挂载磁盘即可。为了彻底避免事件循环被阻塞，代码中已通过 `self.client._region_map[MINIO_BUCKET] = "us-east-1"` 注入了静态离线映射。
 ### 4.4 Web 端与海外 VPS 边缘节点运维 (Web & VPS Edge Node Maintenance)
 为了提升海外用户访问网页和加载媒体的速度，系统引入了海外 VPS 作为边缘节点（通过 Tailscale 等与武汉底座组建虚拟局域网）。相关核心运维经验如下：
 
@@ -218,8 +225,9 @@
 
 随着 Web 端的引入，系统形成了一套有别于 Telegram Bot 的长连接与鉴权机制，开发时必须遵循：
 
-### 7.1 JWT 鉴权与会话管理
+### 7.1 JWT 鉴权与身份白名单机制 (Identity Access Control)
 - **无状态设计**：Web BFF 必须保持无状态 (Stateless)，用户的登录凭证完全依赖 `Authorization: Bearer <JWT>` 传递。
+- **动态白名单拦截**：在签发 JWT 时，BFF 会调用 `permission_service` 计算用户实时身份。当前 Web 端仅对**“内门弟子、核心弟子、真传弟子”**开放，不满足条件者将直接返回 HTTP 403。
 - **Token 解析**：在 `src/web_api/core/security.py` 中，JWT Payload 里的 `sub` 字段存储的是系统内部的 `internal_user_id`（对应 `users.id`），**严禁将其混淆为 Telegram ID**。
 
 ### 7.2 SSE (Server-Sent Events) 状态同步机制

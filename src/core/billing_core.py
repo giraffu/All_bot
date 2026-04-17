@@ -12,9 +12,20 @@ quota_manager = QuotaManager()
 
 async def check_concurrency_lock(internal_user_id: int) -> Tuple[bool, str]:
     """
-    检查用户并发锁。
+    检查用户并发锁及队列限制。
     返回 (是否允许执行, 错误信息)
     """
+    from src.api_client import get_system_status
+    from src.services.permission_service import permission_service
+
+    # 1. 检查队列长度与身份
+    identity_str = await permission_service.get_user_identity(internal_user_id)
+    if identity_str == "外门弟子":
+        sys_status = await get_system_status()
+        if sys_status and sys_status.get("queue_size", 0) > 200:
+            return False, "⚠️ **服务器繁忙**\n\n当前排队任务已超过 200 个，为了保证服务稳定性，**外门弟子**暂不可提交新任务。\n\n💡 请稍后再试，或通过「个人中心」升级至内门弟子及以上身份获取优先排队特权！"
+
+    # 2. 原有并发锁检查
     active_tasks = await redis_client.increment_user_concurrency(internal_user_id)
     if active_tasks > MAX_CONCURRENT_TASKS:
         await redis_client.decrement_user_concurrency(internal_user_id)

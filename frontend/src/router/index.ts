@@ -79,10 +79,18 @@ const router = createRouter({
 router.beforeEach((to, from, next) => {
   const authStore = useAuthStore()
   const isAuthenticated = !!authStore.token
+  const allowedIdentities = ['内门弟子', '核心弟子', '真传弟子']
+  const hasPermission = authStore.user && allowedIdentities.includes(authStore.user.current_identity)
   
-  if (to.meta.requiresAuth && !isAuthenticated) {
+  if (to.meta.requiresAuth && (!isAuthenticated || !hasPermission)) {
+    if (isAuthenticated && !hasPermission) {
+      import('ant-design-vue').then(({ message }) => {
+        message.error('权限不足：只有内门、核心、真传弟子才能访问 Web 端')
+      })
+      authStore.logout()
+    }
     next('/login')
-  } else if (to.path === '/login' && isAuthenticated) {
+  } else if (to.path === '/login' && isAuthenticated && hasPermission) {
     next('/profile')
   } else {
     next()

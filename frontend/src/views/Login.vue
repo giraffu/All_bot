@@ -14,7 +14,16 @@ const handleTelegramAuth = async (user: any) => {
   try {
     const response = await api.post('/auth/telegram', user)
     if (response.data?.access_token) {
-      authStore.setAuth(response.data.access_token, response.data.user)
+      const userData = response.data.user
+      
+      // 校验用户身份
+      const allowedIdentities = ['内门弟子', '核心弟子', '真传弟子']
+      if (!allowedIdentities.includes(userData.current_identity)) {
+        message.error('权限不足：只有内门、核心、真传弟子才能登录 Web 端')
+        return
+      }
+
+      authStore.setAuth(response.data.access_token, userData)
       message.success('登录成功！')
       router.push('/profile')
     } else {

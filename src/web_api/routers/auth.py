@@ -8,7 +8,7 @@ from fastapi.responses import JSONResponse
 from config import BOT_TOKEN
 from src.core.user_core import get_or_create_user_by_telegram
 from src.web_api.core.security import create_access_token
-from src.web_api.schemas.auth_schema import TelegramLoginRequest, Token, UserResponse
+from src.web_api.schemas.auth_schema import TelegramLoginRequest, Token, UserResponse, InvitationRechargeStats
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -68,15 +68,44 @@ async def login_telegram(req: TelegramLoginRequest):
             full_name=full_name
         )
         
+        from src.services.permission_service import permission_service
+        stats = await permission_service.get_user_detailed_stats(user.telegram_id)
+        current_identity = stats.get("identity", user.current_identity)
+        
+        allowed_identities = ["内门弟子", "核心弟子", "真传弟子"]
+        if current_identity not in allowed_identities:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="权限不足：只有内门、核心、真传弟子才能登录 Web 端"
+            )
+        
         # Issue JWT
         access_token = create_access_token(subject=user.id)
+        
+        user_response_data = UserResponse(
+            id=user.id,
+            telegram_id=user.telegram_id,
+            username=user.username,
+            full_name=user.full_name,
+            credits=stats.get("credits", user.credits),
+            user_group=stats.get("group", user.user_group),
+            current_identity=current_identity,
+            identity_expire_at=stats.get("identity_expire_at"),
+            total_contributions=stats.get("total_contributions", 0),
+            generation_count=stats.get("generations", 0),
+            checkin_count=stats.get("checkins", 0),
+            invitation_count=stats.get("invitations", 0),
+            invitation_recharge=InvitationRechargeStats(**stats.get("invitation_recharge", {})) if stats.get("invitation_recharge") else None
+        )
         
         return {
             "access_token": access_token,
             "token_type": "bearer",
-            "user": UserResponse.model_validate(user).model_dump()
+            "user": user_response_data.model_dump()
         }
         
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error during Telegram login: {e}", exc_info=True)
         raise HTTPException(
