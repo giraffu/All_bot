@@ -294,10 +294,17 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
             from src.database.core import AsyncSessionLocal
             from src.database.models import History, GalleryPost
             from src.core.user_core import get_or_create_user_by_telegram
+            from src.services.redis_client import redis_client
             import re
             import json
 
             internal_user, _ = await get_or_create_user_by_telegram(query.from_user.id)
+
+            # Check submit limit first
+            can_submit = await redis_client.check_gallery_submit_limit(internal_user.id, limit=10)
+            if not can_submit:
+                await safe_answer_query(query, text="⚠️ 您今日的投稿次数已达 10 次上限，请明日再来~", show_alert=True)
+                return
 
             async with AsyncSessionLocal() as session:
                 # Check if already posted
@@ -351,6 +358,35 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
                 )
                 session.add(new_post)
                 await session.commit()
+                
+            # Trigger background task to upload to Cloudflare R2
+            if history and history.output_file:
+                from src.utils import create_background_task
+                from src.services.storage import storage
+                
+                # output_file might be "bot-data/users/..." or "comfyui-temp/..."
+                # Extract bucket and object name based on logic in gallery
+                parts = history.output_file.split("/")
+                if len(parts) > 1 and parts[0] in ["bot-data", "comfyui-temp"]:
+                    bucket_name = parts[0]
+                    object_name = "/".join(parts[1:])
+                elif "comfyui-temp" not in history.output_file and "bot-data" not in history.output_file:
+                    # Default assumptions if no bucket prefix
+                    bucket_name = "comfyui-temp" if not "/" in history.output_file else "bot-data"
+                    object_name = history.output_file
+                else:
+                    bucket_name = "bot-data"
+                    object_name = history.output_file
+                
+                # We only need the filename in R2
+                r2_object_name = parts[-1]
+                create_background_task(
+                    context,
+                    storage.async_copy_to_r2(bucket_name, object_name, r2_object_name)
+                )
+
+            # 记录 Redis 投稿次数
+            await redis_client.increment_gallery_submit(internal_user.id)
                 
             tags_str = " ".join(tags)
             await safe_answer_query(query, text=f"🎉 投稿成功！\n已自动添加标签：{tags_str}", show_alert=True)

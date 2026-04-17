@@ -47,19 +47,43 @@ export function useTaskResult() {
     return lowerUrl.endsWith('.png') || lowerUrl.endsWith('.jpg') || lowerUrl.endsWith('.jpeg') || lowerUrl.endsWith('.webp') || lowerUrl.includes('.png?') || lowerUrl.includes('.jpg?') || lowerUrl.includes('.jpeg?') || lowerUrl.includes('.webp?')
   }
 
-  const downloadResult = (url: string, filename: string = 'result') => {
+  const downloadResult = async (url: string, filename: string = 'result') => {
     if (!url) return
-    const a = document.createElement('a')
-    a.href = url
+    
     // Try to extract extension from URL
     let ext = ''
     if (isVideoUrl(url)) ext = '.mp4'
     else if (isImageUrl(url)) ext = '.png'
     
-    a.download = `${filename}${ext}`
-    document.body.appendChild(a)
-    a.click()
-    document.body.removeChild(a)
+    const fullFilename = `${filename}${ext}`
+    
+    try {
+      // Fetch the file to bypass cross-origin / content-disposition issues
+      // This ensures the browser downloads it instead of opening it in the same tab
+      const response = await fetch(url)
+      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`)
+      
+      const blob = await response.blob()
+      const blobUrl = window.URL.createObjectURL(blob)
+      
+      const a = document.createElement('a')
+      a.href = blobUrl
+      a.download = fullFilename
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      window.URL.revokeObjectURL(blobUrl)
+    } catch (error) {
+      console.error('Download failed, falling back to direct link:', error)
+      // Fallback to direct link opening in new tab
+      const a = document.createElement('a')
+      a.href = url
+      a.download = fullFilename
+      a.target = '_blank' // Important to prevent SPA routing issues
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+    }
   }
 
   return {

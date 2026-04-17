@@ -43,6 +43,13 @@ MINIO_SECURE = os.getenv("MINIO_SECURE", "false").lower() == "true"
 MINIO_PUBLIC_URL = os.getenv("MINIO_PUBLIC_URL", f"http://{MINIO_ENDPOINT}")
 IMGPROXY_URL = os.getenv("IMGPROXY_URL", "http://localhost:8080")
 
+# --- Cloudflare R2 Configuration ---
+R2_ENDPOINT = os.getenv("R2_ENDPOINT")
+R2_ACCESS_KEY = os.getenv("R2_ACCESS_KEY")
+R2_SECRET_KEY = os.getenv("R2_SECRET_KEY")
+R2_BUCKET = os.getenv("R2_BUCKET", "user-data")
+R2_PUBLIC_DOMAIN = os.getenv("R2_PUBLIC_DOMAIN")
+
 # --- API Configuration ---
 # Default to the backend server IP
 API_BASE = os.getenv("API_BASE", "http://127.0.0.1:8003")

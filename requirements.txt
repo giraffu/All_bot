@@ -17,3 +17,4 @@ python-jose[cryptography]
 passlib[bcrypt]
 python-multipart
 sse-starlette
+boto3

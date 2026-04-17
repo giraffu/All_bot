@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onUnmounted, computed, watch } from 'vue'
+import { ref, onUnmounted, computed, watch, onMounted } from 'vue'
 import { UploadOutlined, InboxOutlined, DownloadOutlined, CloseCircleOutlined } from '@ant-design/icons-vue'
 import { message } from 'ant-design-vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -23,6 +23,24 @@ const objectKey = ref<string | null>(null)
 const prompt = ref('')
 
 const filePreview = ref<string | null>(null)
+const isTemplateApplied = ref(false)
+
+onMounted(() => {
+  if (route.query.apply === 'true') {
+    const ctxStr = sessionStorage.getItem('galleryApplyContext')
+    if (ctxStr) {
+      try {
+        const ctx = JSON.parse(ctxStr)
+        if (ctx.task_type === taskType.value) {
+          if (ctx.prompt) prompt.value = ctx.prompt
+          isTemplateApplied.value = true
+        }
+      } catch (e) {
+        console.error('Failed to parse apply context', e)
+      }
+    }
+  }
+})
 
 watch(fileList, (newVal) => {
   if (newVal.length > 0 && newVal[0].originFileObj) {
@@ -64,7 +82,8 @@ const handleGenerate = async () => {
       images: [objectKey.value]
     },
     prompt: prompt.value.trim(),
-    priority: 0
+    priority: 0,
+    is_template: isTemplateApplied.value
   }
 
   const taskId = await submitTask(payload, taskTitle.value)
@@ -94,6 +113,12 @@ const resetForm = () => {
         <div class="p-6 flex-grow overflow-y-auto custom-scrollbar">
           <h2 class="text-2xl font-bold mb-2 text-slate-100">{{ taskTitle }}</h2>
           <p class="text-slate-400 mb-6 text-sm">上传一张图片，并输入你想要 AI 如何修改它的描述。</p>
+          
+          <!-- Template Mode Notice -->
+          <div v-if="isTemplateApplied" class="mb-6 bg-indigo-500/20 border border-indigo-500/30 rounded-xl p-4 flex items-center">
+            <div class="text-indigo-400 mr-3">✨</div>
+            <div class="text-slate-300 text-sm">已加载一键应用模板，原作品的提示词已自动填入，您只需上传基础图片即可生成同款效果。</div>
+          </div>
           
           <div class="flex flex-col gap-6">
             <div class="upload-section flex flex-col">
@@ -134,12 +159,23 @@ const resetForm = () => {
               <h3 class="text-lg font-bold mb-3 text-slate-200 flex items-center">
                 <span class="text-slate-500 mr-2">2.</span> 输入修改描述
               </h3>
-              <a-textarea 
-                v-model:value="prompt" 
-                placeholder="例如：把背景变成海滩，让他戴上墨镜..." 
-                class="rounded-xl border-slate-600/50 focus:border-blue-500 focus:ring-blue-500 text-sm p-3 flex-grow resize-none min-h-[120px]"
-              />
-              <p class="text-xs text-slate-500 mt-2">提示：描述越详细， AI 理解越准确。</p>
+              
+              <div v-if="isTemplateApplied" class="bg-slate-900/80 border border-slate-700/50 rounded-xl p-4 text-center h-[120px] flex flex-col items-center justify-center">
+                <div class="flex items-center justify-center text-slate-500 mb-2">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mr-2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+                  <span class="text-sm font-medium">提示词已锁定</span>
+                </div>
+                <p class="text-slate-400 text-xs">提示词已由模板自动配置并隐藏，直接生成即可。</p>
+              </div>
+              
+              <template v-else>
+                <a-textarea 
+                  v-model:value="prompt" 
+                  placeholder="例如：把背景变成海滩，让他戴上墨镜..." 
+                  class="rounded-xl border-slate-600/50 focus:border-blue-500 focus:ring-blue-500 text-sm p-3 flex-grow resize-none min-h-[120px]"
+                />
+                <p class="text-xs text-slate-500 mt-2">提示：描述越详细， AI 理解越准确。</p>
+              </template>
             </div>
           </div>
         </div>

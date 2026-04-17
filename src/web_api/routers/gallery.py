@@ -24,11 +24,26 @@ def translate_tags(tags_list: List[str]) -> List[str]:
             translated_tags.append(tag)
     return translated_tags
 
+from config import R2_PUBLIC_DOMAIN
+
 def get_media_url(output_file: str) -> str:
+    """
+    Generate the media URL for a gallery post.
+    If R2 is configured, return the R2 public URL directly.
+    Otherwise, return the relative path for the frontend to resolve via MinIO.
+    """
     if not output_file:
         return ""
-    # We return the raw output_file here, and let the frontend use its `getFileUrl`
-    # function to prepend the CDN URL (e.g. assets.aivison.it.com)
+        
+    # If R2 is configured, return the CDN URL directly
+    if R2_PUBLIC_DOMAIN:
+        # Extract just the filename from paths like 'bot-data/users/xxx.mp4' or 'comfyui-temp/yyy.mp4'
+        filename = output_file.split("/")[-1]
+        base_url = R2_PUBLIC_DOMAIN.rstrip("/")
+        return f"{base_url}/{filename}"
+
+    # Fallback: We return the raw output_file here, and let the frontend use its `getFileUrl`
+    # logic to prepend the correct MinIO endpoint.
     return output_file
 
 def generate_thumbnail_url(output_file: str, media_type: str) -> str:
@@ -202,5 +217,5 @@ async def get_apply_context(
             width=post.width,
             height=post.height,
             duration=post.duration,
-            task_type=history.task_type
+            task_type=history.type
         )

@@ -157,18 +157,32 @@ const handleApply = async () => {
     sessionStorage.setItem('galleryApplyContext', JSON.stringify(context))
     
     // Route mapping
-    const typeMapping: Record<string, string> = {
-      'face_swap': 'FaceSwap',
-      'face_video': 'VideoSwap',
-      'txt2img': 'CustomFeatures', // Might need specific tab
-      'i2i_pro': 'CustomFeatures',
-      'video_lora': 'LazyFeatures',
-      // map others as needed
+    const featureMap: Record<string, { route: string, title: string, cost: number }> = {
+      // From CustomFeatures
+      'i2i_pro': { route: 'ImageAndPrompt', title: '幻想换脸', cost: 6 },
+      'edit': { route: 'ImageAndPrompt', title: '自由P图', cost: 2 },
+      'face_swap': { route: 'FaceSwap', title: '快速换脸', cost: 1 }, 
+      'face_video': { route: 'VideoSwap', title: '视频换脸', cost: 20 },
+      'custom_video': { route: 'SingleImageToVideo', title: '自定义图生视频', cost: 6 },
+      'video_lora': { route: 'SingleImageToVideo', title: '图生视频 (附加模型)', cost: 6 },
     }
     
-    const targetRoute = typeMapping[context.task_type] || 'CustomFeatures'
-    message.success('已载入模板，请上传您的参考图')
-    router.push({ name: targetRoute, query: { apply: 'true' } })
+    const featureInfo = featureMap[context.task_type]
+    if (featureInfo) {
+      message.success('已载入模板，请上传您的参考图')
+      router.push({ 
+        name: featureInfo.route, 
+        query: { 
+          apply: 'true',
+          type: context.task_type,
+          title: featureInfo.title,
+          cost: featureInfo.cost
+        } 
+      })
+    } else {
+      message.success('已载入模板')
+      router.push({ name: 'CustomFeatures', query: { apply: 'true' } })
+    }
     
   } catch (error) {
     console.error(error)

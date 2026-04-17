@@ -1,8 +1,13 @@
 import io
 import logging
+import asyncio
+import os
+import boto3
+from botocore.config import Config as BotoConfig
 from datetime import timedelta
 from minio import Minio
 from config import MINIO_ENDPOINT, MINIO_ACCESS_KEY, MINIO_SECRET_KEY, MINIO_BUCKET, MINIO_TEMPLATE_BUCKET, MINIO_SECURE
+from config import R2_ENDPOINT, R2_ACCESS_KEY, R2_SECRET_KEY, R2_BUCKET, R2_PUBLIC_DOMAIN
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +47,61 @@ class StorageService:
         except Exception as e:
             logger.error(f"Failed to initialize MinIO client: {e}")
             self.client = None
+
+        # Initialize Cloudflare R2 client
+        try:
+            if R2_ENDPOINT and R2_ACCESS_KEY and R2_SECRET_KEY:
+                self.r2_client = boto3.client(
+                    's3',
+                    endpoint_url=R2_ENDPOINT,
+                    aws_access_key_id=R2_ACCESS_KEY,
+                    aws_secret_access_key=R2_SECRET_KEY,
+                    config=BotoConfig(signature_version='s3v4'),
+                    region_name='auto'
+                )
+                self.r2_bucket = R2_BUCKET
+                logger.info("Cloudflare R2 client initialized for gallery")
+            else:
+                self.r2_client = None
+                logger.warning("R2 configuration missing, gallery upload will be disabled")
+        except Exception as e:
+            logger.error(f"Failed to init R2 client: {e}")
+            self.r2_client = None
+
+    def _sync_upload_to_r2(self, bucket_name: str, object_name: str, r2_object_name: str = None):
+        """Sync function to copy from MinIO to R2, meant to run in a thread"""
+        if not self.r2_client:
+            logger.error("R2 client not initialized")
+            return
+            
+        r2_key = r2_object_name or object_name.split("/")[-1]
+            
+        try:
+            # Get object from MinIO
+            response = self.client.get_object(bucket_name, object_name)
+            file_data = response.read()
+            content_type = response.headers.get('Content-Type', 'application/octet-stream')
+            
+            # Upload to R2
+            self.r2_client.put_object(
+                Bucket=self.r2_bucket,
+                Key=r2_key,
+                Body=file_data,
+                ContentType=content_type
+            )
+            logger.info(f"Successfully copied {object_name} to R2 bucket {self.r2_bucket} as {r2_key}")
+        except Exception as e:
+            logger.error(f"Failed to copy {object_name} to R2: {e}")
+        finally:
+            if 'response' in locals():
+                response.close()
+                response.release_conn()
+
+    async def async_copy_to_r2(self, bucket_name: str, object_name: str, r2_object_name: str = None):
+        """Async wrapper to copy from MinIO to R2 without blocking"""
+        if not self.r2_client:
+            return
+        await asyncio.to_thread(self._sync_upload_to_r2, bucket_name, object_name, r2_object_name)
 
     def upload_file(self, file_path: str, object_name: str, bucket: str = None) -> str:
         """Upload a local file to MinIO"""
@@ -108,35 +168,102 @@ class StorageService:
             logger.error(f"Failed to list objects in {bucket} with prefix {prefix}: {e}")
             return []
 
-    def get_presigned_url(self, object_name: str, expires_hours: int = 1, bucket: str = None) -> str:
+    def get_presigned_url(self, object_name: str, expires_hours: int = 1, bucket: str = None, download: bool = False) -> str:
         """Get a presigned URL for the object"""
         bucket = bucket or MINIO_BUCKET
         if not self.client:
             return ""
         
         try:
-            url = self.client.presigned_get_object(bucket, object_name, expires=timedelta(hours=expires_hours))
-            from config import MINIO_ENDPOINT, MINIO_PUBLIC_URL
-            if MINIO_PUBLIC_URL and MINIO_ENDPOINT in url:
-                url = url.replace(f"http://{MINIO_ENDPOINT}", MINIO_PUBLIC_URL)
-                url = url.replace(f"https://{MINIO_ENDPOINT}", MINIO_PUBLIC_URL)
+            response_headers = {}
+            if download:
+                filename = object_name.split("/")[-1]
+                response_headers = {
+                    "response-content-disposition": f'attachment; filename="{filename}"'
+                }
+                
+            from config import MINIO_ENDPOINT, MINIO_PUBLIC_URL, MINIO_ACCESS_KEY, MINIO_SECRET_KEY
+            if MINIO_PUBLIC_URL:
+                public_host = MINIO_PUBLIC_URL.replace("https://", "").replace("http://", "").rstrip("/")
+                secure = MINIO_PUBLIC_URL.startswith("https")
+                
+                # Using a fresh client purely for offline signature generation
+                public_client = Minio(
+                    public_host,
+                    access_key=MINIO_ACCESS_KEY,
+                    secret_key=MINIO_SECRET_KEY,
+                    secure=secure,
+                    region="us-east-1"
+                )
+                
+                # Force offline signature calculation
+                public_client._region_map[bucket] = "us-east-1"
+                
+                url = public_client.presigned_get_object(
+                    bucket_name=bucket, 
+                    object_name=object_name, 
+                    expires=timedelta(hours=expires_hours),
+                    response_headers=response_headers if response_headers else None
+                )
+            else:
+                url = self.client.presigned_get_object(
+                    bucket, 
+                    object_name, 
+                    expires=timedelta(hours=expires_hours),
+                    response_headers=response_headers if response_headers else None
+                )
+                
             return url
         except Exception as e:
             logger.error(f"Failed to generate presigned URL for {object_name} in {bucket}: {e}")
             return ""
 
-    def get_presigned_put_url(self, object_name: str, expires_minutes: int = 15, bucket: str = None) -> str:
+    def get_presigned_put_url(self, object_name: str, expires_minutes: int = 15, bucket: str = None, content_type: str = None) -> str:
         """Get a presigned PUT URL for uploading an object directly to MinIO"""
         bucket = bucket or MINIO_BUCKET
         if not self.client:
             return ""
         
         try:
-            url = self.client.presigned_put_object(bucket, object_name, expires=timedelta(minutes=expires_minutes))
-            from config import MINIO_ENDPOINT, MINIO_PUBLIC_URL
-            if MINIO_PUBLIC_URL and MINIO_ENDPOINT in url:
-                url = url.replace(f"http://{MINIO_ENDPOINT}", MINIO_PUBLIC_URL)
-                url = url.replace(f"https://{MINIO_ENDPOINT}", MINIO_PUBLIC_URL)
+            from config import MINIO_ENDPOINT, MINIO_PUBLIC_URL, MINIO_ACCESS_KEY, MINIO_SECRET_KEY
+            
+            # The Ultimate Fix for 403 SignatureDoesNotMatch with MinIO behind Cloudflare/Nginx:
+            # 1. The signature MUST be calculated using the EXACT Host header the browser will send.
+            # 2. We MUST initialize a temporary Minio client with the public URL to sign it correctly.
+            # 3. We MUST avoid using `region` or other params that trigger network calls in older SDKs.
+            
+            if MINIO_PUBLIC_URL:
+                public_host = MINIO_PUBLIC_URL.replace("https://", "").replace("http://", "")
+                secure = MINIO_PUBLIC_URL.startswith("https")
+                
+                # Using a fresh client purely for offline signature generation
+                public_client = Minio(
+                    public_host,
+                    access_key=MINIO_ACCESS_KEY,
+                    secret_key=MINIO_SECRET_KEY,
+                    secure=secure,
+                    region="us-east-1"
+                )
+                
+                # CRITICAL FIX for `?location=` network call crashing with 403:
+                # The python minio client tries to dynamically discover the bucket's region over the network
+                # before signing the URL. Since our public_host is behind a proxy, this internal network
+                # request gets rejected. We MUST manually inject the region into its internal cache
+                # to force it to do 100% offline signature calculation.
+                public_client._region_map[bucket] = "us-east-1"
+                
+                url = public_client.presigned_put_object(
+                    bucket_name=bucket, 
+                    object_name=object_name, 
+                    expires=timedelta(minutes=expires_minutes)
+                )
+            else:
+                url = self.client.presigned_put_object(
+                    bucket_name=bucket, 
+                    object_name=object_name, 
+                    expires=timedelta(minutes=expires_minutes)
+                )
+                
             return url
         except Exception as e:
             logger.error(f"Failed to generate presigned PUT URL for {object_name} in {bucket}: {e}")

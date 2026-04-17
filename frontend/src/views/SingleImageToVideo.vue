@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onUnmounted, computed, watch } from 'vue'
+import { ref, onUnmounted, computed, watch, onMounted } from 'vue'
 import { UploadOutlined, InboxOutlined, VideoCameraOutlined, DownloadOutlined, CloseCircleOutlined } from '@ant-design/icons-vue'
 import { message } from 'ant-design-vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -28,6 +28,26 @@ const prompt = ref('')
 const loraName = ref('BreastGrow')
 
 const filePreview = ref<string | null>(null)
+const isTemplateApplied = ref(false)
+
+onMounted(() => {
+  if (route.query.apply === 'true') {
+    const ctxStr = sessionStorage.getItem('galleryApplyContext')
+    if (ctxStr) {
+      try {
+        const ctx = JSON.parse(ctxStr)
+        if (ctx.task_type === taskType.value) {
+          if (ctx.prompt) prompt.value = ctx.prompt
+          if (ctx.width) resolution.value = ctx.width.toString()
+          if (ctx.duration) duration.value = ctx.duration.toString()
+          isTemplateApplied.value = true
+        }
+      } catch (e) {
+        console.error('Failed to parse apply context', e)
+      }
+    }
+  }
+})
 
 watch(fileList, (newVal) => {
   if (newVal.length > 0 && newVal[0].originFileObj) {
@@ -72,7 +92,8 @@ const handleGenerate = async () => {
       ...((isCustomVideo.value || isVideoLora.value) && prompt.value ? { prompt: prompt.value } : {}),
       ...(isVideoLora.value ? { lora_name: loraName.value } : {})
     },
-    priority: 0
+    priority: 0,
+    is_template: isTemplateApplied.value
   }
 
   const taskId = await submitTask(payload, taskTitle.value)
@@ -102,6 +123,12 @@ const resetForm = () => {
       <div class="w-full lg:w-[45%] flex flex-col bg-slate-800/40 backdrop-blur-md rounded-2xl shadow-sm border border-slate-700/50 overflow-hidden shrink-0">
         <div class="p-6 flex-grow overflow-y-auto custom-scrollbar">
           <h2 class="text-2xl font-bold mb-5 text-slate-100">{{ taskTitle }}设置</h2>
+          
+          <!-- Template Mode Notice -->
+          <div v-if="isTemplateApplied" class="mb-6 bg-indigo-500/20 border border-indigo-500/30 rounded-xl p-4 flex items-center">
+            <div class="text-indigo-400 mr-3">✨</div>
+            <div class="text-slate-300 text-sm">已加载一键应用模板，原作品的提示词、分辨率与时长等参数已自动填入，您只需上传基础图片即可生成同款大片。</div>
+          </div>
           
           <div class="flex flex-col gap-6 mb-6">
             <!-- Image Upload -->
@@ -144,29 +171,40 @@ const resetForm = () => {
               <h3 class="text-lg font-bold mb-3 text-slate-200 flex items-center">
                 <span class="text-slate-500 mr-2">2.</span> {{ isVideoLora ? '配置附加模型与动作描述' : '输入动作描述 (选填)' }}
               </h3>
-              <div v-if="isVideoLora" class="mb-3">
-                <label class="block text-sm font-medium text-slate-300 mb-1">附加模型 <span class="text-red-500">*</span></label>
-                <a-select
-                  v-model:value="loraName"
-                  placeholder="请选择附加模型"
-                  class="w-full rounded-xl custom-select"
-                  :popupClassName="'custom-dropdown'"
-                >
-                  <a-select-option value="BreastGrow">巨乳膨胀</a-select-option>
-                  <a-select-option value="BreastInsertion">乳交</a-select-option>
-                  <a-select-option value="Cum">颜射</a-select-option>
-                  <a-select-option value="Cunilingus">舔阴</a-select-option>
-                  <a-select-option value="Flatchested">平胸</a-select-option>
-                  <a-select-option value="Footjob">足交</a-select-option>
-                  <a-select-option value="Insertion">插入优化</a-select-option>
-                </a-select>
+              
+              <div v-if="isTemplateApplied" class="bg-slate-900/80 border border-slate-700/50 rounded-xl p-4 text-center h-[120px] flex flex-col items-center justify-center">
+                <div class="flex items-center justify-center text-slate-500 mb-2">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mr-2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+                  <span class="text-sm font-medium">参数已锁定</span>
+                </div>
+                <p class="text-slate-400 text-xs">模型与提示词已由模板自动配置并隐藏，直接生成即可。</p>
               </div>
-              <label v-if="isVideoLora" class="block text-sm font-medium text-slate-300 mb-1">提示词 (Prompt)</label>
-              <a-textarea 
-                v-model:value="prompt" 
-                :placeholder="isVideoLora ? '输入视频生成的正向提示词...' : '例如：人物微笑，背景有风吹过...'" 
-                class="rounded-xl border-slate-600/50 focus:border-blue-500 focus:ring-blue-500 text-sm p-3 flex-grow resize-none min-h-[120px]"
-              />
+              
+              <template v-else>
+                <div v-if="isVideoLora" class="mb-3">
+                  <label class="block text-sm font-medium text-slate-300 mb-1">附加模型 <span class="text-red-500">*</span></label>
+                  <a-select
+                    v-model:value="loraName"
+                    placeholder="请选择附加模型"
+                    class="w-full rounded-xl custom-select"
+                    :popupClassName="'custom-dropdown'"
+                  >
+                    <a-select-option value="BreastGrow">巨乳膨胀</a-select-option>
+                    <a-select-option value="BreastInsertion">乳交</a-select-option>
+                    <a-select-option value="Cum">颜射</a-select-option>
+                    <a-select-option value="Cunilingus">舔阴</a-select-option>
+                    <a-select-option value="Flatchested">平胸</a-select-option>
+                    <a-select-option value="Footjob">足交</a-select-option>
+                    <a-select-option value="Insertion">插入优化</a-select-option>
+                  </a-select>
+                </div>
+                <label v-if="isVideoLora" class="block text-sm font-medium text-slate-300 mb-1">提示词 (Prompt)</label>
+                <a-textarea 
+                  v-model:value="prompt" 
+                  :placeholder="isVideoLora ? '输入视频生成的正向提示词...' : '例如：人物微笑，背景有风吹过...'" 
+                  class="rounded-xl border-slate-600/50 focus:border-blue-500 focus:ring-blue-500 text-sm p-3 flex-grow resize-none min-h-[120px]"
+                />
+              </template>
             </div>
             <div class="prompt-section flex flex-col justify-center text-center p-4 bg-slate-900/50 rounded-xl" v-else>
               <component :is="InboxOutlined" class="text-3xl text-gray-300 mb-2" />
@@ -178,7 +216,10 @@ const resetForm = () => {
           <!-- Video Settings -->
           <div class="settings-section border-t border-slate-700/50 pt-5">
             <h3 class="text-lg font-bold mb-4 text-slate-200">输出设置</h3>
-            <div class="flex flex-col gap-4">
+            <div v-if="isTemplateApplied" class="bg-slate-900/80 border border-slate-700/50 rounded-xl p-4 text-center">
+              <p class="text-slate-400 text-xs">分辨率与时长已根据模板锁定，无需手动选择。</p>
+            </div>
+            <div v-else class="flex flex-col gap-4">
               <div>
                 <label class="block text-sm font-medium text-slate-300 mb-2">分辨率</label>
                 <a-radio-group v-model:value="resolution" button-style="solid" class="w-full flex">

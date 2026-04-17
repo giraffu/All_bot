@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onUnmounted, computed, watch } from 'vue'
+import { ref, onUnmounted, computed, watch, onMounted } from 'vue'
 import { UploadOutlined, InboxOutlined, DownloadOutlined, CloseCircleOutlined } from '@ant-design/icons-vue'
 import { message } from 'ant-design-vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -21,6 +21,23 @@ const { currentTask, setSubmittedTaskId, isVideoUrl, isImageUrl, downloadResult 
 const fileList = ref<any[]>([])
 const objectKey = ref<string | null>(null)
 const filePreview = ref<string | null>(null)
+const isTemplateApplied = ref(false)
+
+onMounted(() => {
+  if (route.query.apply === 'true') {
+    const ctxStr = sessionStorage.getItem('galleryApplyContext')
+    if (ctxStr) {
+      try {
+        const ctx = JSON.parse(ctxStr)
+        if (ctx.task_type === taskType.value) {
+          isTemplateApplied.value = true
+        }
+      } catch (e) {
+        console.error('Failed to parse apply context', e)
+      }
+    }
+  }
+})
 
 watch(fileList, (newVal) => {
   if (newVal.length > 0 && newVal[0].originFileObj) {
@@ -56,7 +73,8 @@ const handleGenerate = async () => {
     inputs: {
       images: [objectKey.value]
     },
-    priority: 0
+    priority: 0,
+    is_template: isTemplateApplied.value
   }
 
   const taskId = await submitTask(payload, taskTitle.value)
@@ -85,6 +103,12 @@ const resetForm = () => {
         <div class="p-6 flex-grow overflow-y-auto custom-scrollbar flex flex-col justify-center items-center text-center">
           <h2 class="text-2xl font-bold mb-2 text-slate-100">{{ taskTitle }}</h2>
           <p class="text-slate-400 mb-6 text-sm">请上传一张符合要求的图片以开始生成。</p>
+          
+          <!-- Template Mode Notice -->
+          <div v-if="isTemplateApplied" class="mb-6 w-full max-w-md bg-indigo-500/20 border border-indigo-500/30 rounded-xl p-4 flex items-center text-left">
+            <div class="text-indigo-400 mr-3">✨</div>
+            <div class="text-slate-300 text-sm">已准备好应用所选的模板效果，请上传您的图片即可生成。</div>
+          </div>
           
           <div class="upload-section w-full max-w-md h-48 flex flex-col">
             <div v-if="filePreview" class="relative group rounded-xl overflow-hidden border border-slate-600/50 bg-slate-800/40 backdrop-blur-md flex items-center justify-center flex-grow h-full w-full">

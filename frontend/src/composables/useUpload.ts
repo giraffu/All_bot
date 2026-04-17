@@ -25,28 +25,39 @@ export function useUpload() {
       // Use native XMLHttpRequest or fresh Axios instance without interceptors
       // because we don't want to send our JWT to MinIO
       await new Promise((resolve, reject) => {
-        const xhr = new XMLHttpRequest()
-        xhr.open('PUT', upload_url, true)
-        
-        xhr.upload.onprogress = (e) => {
-          if (e.lengthComputable) {
-            progress.value = Math.round((e.loaded / e.total) * 100)
+          const xhr = new XMLHttpRequest()
+          xhr.open('PUT', upload_url, true)
+          // Since the backend MinIO SDK version doesn't support signing the Content-Type header easily,
+          // the presigned URL is generated WITHOUT a Content-Type constraint.
+          // Therefore, the browser MUST NOT send any Content-Type header, otherwise MinIO 
+          // returns a 403 SignatureDoesNotMatch.
+          
+          // Force clear Content-Type 
+          xhr.setRequestHeader('Content-Type', '')
+          
+          xhr.upload.onprogress = (e) => {
+            if (e.lengthComputable) {
+              progress.value = Math.round((e.loaded * 100) / e.total)
+            }
           }
-        }
-        
-        xhr.onload = () => {
-          if (xhr.status >= 200 && xhr.status < 300) {
-            resolve(xhr.response)
-          } else {
-            reject(new Error(`Upload failed with status ${xhr.status}`))
+          
+          xhr.onload = () => {
+            if (xhr.status >= 200 && xhr.status < 300) {
+              resolve(object_key)
+            } else {
+              console.error(`Upload failed with status ${xhr.status}:`, xhr.responseText)
+              reject(new Error(`Upload failed with status ${xhr.status}`))
+            }
           }
-        }
-        
-        xhr.onerror = () => reject(new Error('Network error during upload'))
-        
-        xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream')
-        xhr.send(file)
-      })
+          
+          xhr.onerror = () => reject(new Error('Network error during upload'))
+          
+          // IMPORTANT: Convert the File to a Blob with an empty type string.
+          // This strips the MIME type (like 'image/jpeg') so the browser's XMLHttpRequest 
+          // won't automatically inject the Content-Type header when sending.
+          const blobToUpload = new Blob([file], { type: '' })
+          xhr.send(blobToUpload)
+        })
 
       message.success('文件上传成功')
       return object_key

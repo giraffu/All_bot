@@ -69,6 +69,36 @@ class RedisClient:
             logger.error(f"Failed to decrement user concurrency: {e}")
             return 0
 
+    async def increment_gallery_submit(self, user_id: int) -> int:
+        """增加每日投稿次数，并返回增加后的次数"""
+        import datetime
+        today = datetime.date.today().isoformat()
+        key = f"{REDIS_PREFIX}gallery_submit_count:{user_id}:{today}"
+        try:
+            async with self.redis.pipeline(transaction=True) as pipe:
+                pipe.incr(key)
+                # 设置 24 小时过期时间 (86400秒)，因为只管当天
+                pipe.expire(key, 86400)
+                results = await pipe.execute()
+                return results[0]
+        except Exception as e:
+            logger.error(f"Failed to increment gallery submit count for user {user_id}: {e}")
+            return 0
+            
+    async def check_gallery_submit_limit(self, user_id: int, limit: int = 10) -> bool:
+        """检查今日是否已超过投稿上限"""
+        import datetime
+        today = datetime.date.today().isoformat()
+        key = f"{REDIS_PREFIX}gallery_submit_count:{user_id}:{today}"
+        try:
+            val = await self.redis.get(key)
+            if val and int(val) >= limit:
+                return False
+            return True
+        except Exception as e:
+            logger.error(f"Failed to check gallery submit limit for user {user_id}: {e}")
+            return True  # 容灾：如果Redis报错，放行
+
     async def close(self):
         """关闭连接"""
         await self.redis.aclose()

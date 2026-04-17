@@ -29,11 +29,6 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/views/CustomFeatures.vue')
       },
       {
-        path: 'lazy-features',
-        name: 'LazyFeatures',
-        component: () => import('@/views/LazyFeatures.vue')
-      },
-      {
         path: 'face-swap',
         name: 'FaceSwap',
         component: () => import('@/views/FaceSwap.vue')

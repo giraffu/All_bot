@@ -34,7 +34,12 @@ async def get_presigned_upload_url(
     object_key = f"web_uploads/{current_user.id}/{date_str}_{unique_id}.{ext}" if ext else f"web_uploads/{current_user.id}/{date_str}_{unique_id}"
     
     try:
-        upload_url = storage.get_presigned_put_url(object_key, expires_minutes=15, bucket=MINIO_BUCKET)
+        upload_url = storage.get_presigned_put_url(
+            object_key, 
+            expires_minutes=15, 
+            bucket=MINIO_BUCKET,
+            content_type=content_type
+        )
         
         if not upload_url:
             raise HTTPException(status_code=500, detail="Failed to generate upload URL")
