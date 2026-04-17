@@ -373,6 +373,21 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
             logging.getLogger(__name__).error(f"Error submitting to gallery: {e}")
             await safe_answer_query(query, text="❌ 投稿失败，请稍后再试", show_alert=True)
             
+    elif data.startswith("gallery_catmenu_"):
+        parts = data.split("_")
+        sort_type = parts[2] # latest, likes, applied, mine
+        
+        keyboard = [
+            [InlineKeyboardButton("🌈 全部", callback_data=f"gallery_sort_{sort_type}_all")],
+            [InlineKeyboardButton("🎭 幻想换脸", callback_data=f"gallery_sort_{sort_type}_i2ipro")],
+            [InlineKeyboardButton("🖼️ 自由P图", callback_data=f"gallery_sort_{sort_type}_edit")],
+            [InlineKeyboardButton("🎬 自定义图生视频", callback_data=f"gallery_sort_{sort_type}_custvid")],
+            [InlineKeyboardButton("🌟 图生视频（附加模型）", callback_data=f"gallery_sort_{sort_type}_vidlora")]
+        ]
+        from src.utils import robust_edit_reply_markup
+        await robust_edit_reply_markup(query.message, reply_markup=InlineKeyboardMarkup(keyboard))
+        await safe_answer_query(query)
+            
     elif data.startswith("gallery_sort_") or data.startswith("gallery_page_"):
         try:
             from sqlalchemy import select, desc
@@ -382,15 +397,38 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
             from src.utils import robust_send_photo, robust_send_video, robust_delete_message
             import json
 
-            # parse data: gallery_sort_latest, gallery_page_latest_0
+            # parse data: gallery_sort_latest_all, gallery_page_latest_all_0
             parts = data.split("_")
-            sort_type = parts[2] # latest, likes, applied
-            page = int(parts[3]) if len(parts) > 3 else 0
+            sort_type = parts[2] # latest, likes, applied, mine
+            
+            # backward compatibility for old buttons
+            if len(parts) >= 4 and parts[3] in ['all', 'i2ipro', 'edit', 'custvid', 'vidlora']:
+                category = parts[3]
+                page = int(parts[4]) if len(parts) > 4 else 0
+            else:
+                category = 'all'
+                page = int(parts[3]) if len(parts) > 3 else 0
             
             async with AsyncSessionLocal() as session:
                 query_stmt = select(GalleryPost).options(selectinload(GalleryPost.user)).where(GalleryPost.is_active == True)
                 
-                if sort_type == "likes":
+                # Join with History to filter by task_type
+                if category != 'all':
+                    query_stmt = query_stmt.join(History, GalleryPost.task_id == History.task_id)
+                    if category == 'i2ipro':
+                        query_stmt = query_stmt.where(History.type == 'i2i_pro')
+                    elif category == 'edit':
+                        query_stmt = query_stmt.where(History.type.in_(['edit', 'quick_image']))
+                    elif category == 'custvid':
+                        query_stmt = query_stmt.where(History.type == 'custom_video')
+                    elif category == 'vidlora':
+                        query_stmt = query_stmt.where(History.type == 'video_lora')
+                
+                if sort_type == "mine":
+                    from src.core.user_core import get_or_create_user_by_telegram
+                    internal_user, _ = await get_or_create_user_by_telegram(update.effective_user.id)
+                    query_stmt = query_stmt.where(GalleryPost.user_id == internal_user.id).order_by(desc(GalleryPost.created_at))
+                elif sort_type == "likes":
                     query_stmt = query_stmt.order_by(desc(GalleryPost.likes_count), desc(GalleryPost.created_at))
                 elif sort_type == "applied":
                     query_stmt = query_stmt.order_by(desc(GalleryPost.applied_count), desc(GalleryPost.created_at))
@@ -455,15 +493,15 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
                 
                 keyboard = [
                     [
-                        InlineKeyboardButton(f"👍 赞 ({post.likes_count})", callback_data=f"gallery_like_{post.id}_{sort_type}_{page}"),
-                        InlineKeyboardButton(f"👎 踩 ({post.dislikes_count})", callback_data=f"gallery_dislike_{post.id}_{sort_type}_{page}")
+                        InlineKeyboardButton(f"👍 赞 ({post.likes_count})", callback_data=f"gallery_like_{post.id}_{sort_type}_{category}_{page}"),
+                        InlineKeyboardButton(f"👎 踩 ({post.dislikes_count})", callback_data=f"gallery_dislike_{post.id}_{sort_type}_{category}_{page}")
                     ],
                     [
                         InlineKeyboardButton("🪄 一键应用此模板", callback_data=f"gallery_apply_{post.id}")
                     ],
                     [
-                        InlineKeyboardButton("⬅️ 上一个", callback_data=f"gallery_page_{sort_type}_{max(0, page-1)}") if page > 0 else InlineKeyboardButton("🚫", callback_data="noop"),
-                        InlineKeyboardButton("下一个 ➡️", callback_data=f"gallery_page_{sort_type}_{page+1}") if has_next else InlineKeyboardButton("🚫", callback_data="noop")
+                        InlineKeyboardButton("⬅️ 上一个", callback_data=f"gallery_page_{sort_type}_{category}_{max(0, page-1)}") if page > 0 else InlineKeyboardButton("🚫", callback_data="noop"),
+                        InlineKeyboardButton("下一个 ➡️", callback_data=f"gallery_page_{sort_type}_{category}_{page+1}") if has_next else InlineKeyboardButton("🚫", callback_data="noop")
                     ]
                 ]
                 reply_markup = InlineKeyboardMarkup(keyboard)
@@ -471,7 +509,12 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
             await safe_answer_query(query, text="正在加载中...")
             
             # Fetch media - Use cached file_id if available to save bandwidth
+            import os
+            is_test_bot = os.getenv("BOT_TYPE") == "TEST"
             cached_file_id = getattr(post, 'telegram_file_id', None)
+            if is_test_bot:
+                cached_file_id = None  # Do not use prod file_id in test bot to prevent API errors
+                
             output_file = history.output_file if history else None
             media_bytes = None
             
@@ -484,15 +527,33 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
                 
             # Send new message and delete old one to refresh media
             sent_msg = None
-            if post.media_type == "video":
-                media_to_send = cached_file_id if cached_file_id else media_bytes
-                sent_msg = await robust_send_video(context.bot, query.message.chat_id, video=media_to_send, caption=caption, reply_markup=reply_markup, parse_mode="HTML")
-            else:
-                media_to_send = cached_file_id if cached_file_id else media_bytes
-                sent_msg = await robust_send_photo(context.bot, query.message.chat_id, photo=media_to_send, caption=caption, reply_markup=reply_markup, parse_mode="HTML")
+            try:
+                if post.media_type == "video":
+                    media_to_send = cached_file_id if cached_file_id else media_bytes
+                    sent_msg = await robust_send_video(context.bot, query.message.chat_id, video=media_to_send, caption=caption, reply_markup=reply_markup, parse_mode="HTML")
+                else:
+                    media_to_send = cached_file_id if cached_file_id else media_bytes
+                    sent_msg = await robust_send_photo(context.bot, query.message.chat_id, photo=media_to_send, caption=caption, reply_markup=reply_markup, parse_mode="HTML")
+            except Exception as e:
+                if cached_file_id and "wrong file identifier" in str(e).lower():
+                    # Fallback to downloading and sending bytes if cached_file_id is invalid (e.g., in test environment)
+                    import logging
+                    logging.getLogger(__name__).warning("Cached file_id invalid, falling back to MinIO download...")
+                    if output_file:
+                        media_bytes = storage.get_file_bytes(output_file)
+                    if not media_bytes:
+                        await robust_send_message(context.bot, query.message.chat_id, "❌ 抱歉，该文件已失效或被删除。")
+                        return
+                    if post.media_type == "video":
+                        sent_msg = await robust_send_video(context.bot, query.message.chat_id, video=media_bytes, caption=caption, reply_markup=reply_markup, parse_mode="HTML")
+                    else:
+                        sent_msg = await robust_send_photo(context.bot, query.message.chat_id, photo=media_bytes, caption=caption, reply_markup=reply_markup, parse_mode="HTML")
+                    cached_file_id = None # Force update cached_file_id below
+                else:
+                    raise e
                 
             # Cache the file_id if it was a new upload
-            if sent_msg and not cached_file_id:
+            if sent_msg and not cached_file_id and not is_test_bot:
                 new_file_id = None
                 if post.media_type == "video" and sent_msg.video:
                     new_file_id = sent_msg.video.file_id
@@ -524,7 +585,13 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
             parts = data.split("_")
             post_id = int(parts[2])
             sort_type = parts[3]
-            page = int(parts[4])
+            
+            if len(parts) >= 6:
+                category = parts[4]
+                page = int(parts[5])
+            else:
+                category = 'all'
+                page = int(parts[4])
 
             internal_user, _ = await get_or_create_user_by_telegram(query.from_user.id)
 

@@ -170,9 +170,10 @@ async def handle_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if text == "🏆 发现/排行榜":
         keyboard = [
-            [InlineKeyboardButton("🔥 最新投稿", callback_data="gallery_sort_latest")],
-            [InlineKeyboardButton("❤️ 最多点赞", callback_data="gallery_sort_likes")],
-            [InlineKeyboardButton("🪄 最多应用", callback_data="gallery_sort_applied")]
+            [InlineKeyboardButton("🔥 最新投稿", callback_data="gallery_catmenu_latest")],
+            [InlineKeyboardButton("❤️ 最多点赞", callback_data="gallery_catmenu_likes")],
+            [InlineKeyboardButton("🪄 最多应用", callback_data="gallery_catmenu_applied")],
+            [InlineKeyboardButton("🙋 我的投稿", callback_data="gallery_catmenu_mine")]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         await robust_reply_text(
