@@ -235,9 +235,10 @@ async def get_stats(db: AsyncSession = Depends(get_db)):
             if row.range in holding_distribution:
                 holding_distribution[row.range] = row.count
 
-        # 外部余额查询: TON & Stars
+        # 外部余额查询: TON & Stars & RMB
         ton_balance = 0.0
         star_balance = 0
+        rmb_balance = 0.0
         
         try:
             ton_address = os.getenv("VITE_MERCHANT_ADDRESS")
@@ -292,6 +293,28 @@ async def get_stats(db: AsyncSession = Depends(get_db)):
         except Exception as e:
             logger.error(f"Error fetching Stars balance: {e}")
 
+        # Calculate total RMB balance from logs
+        try:
+            # Get plan RMB prices
+            plans_res = await db.execute(text('SELECT name, price_rmb FROM membership_plans'))
+            plan_name_to_rmb = {row.name: float(row.price_rmb) for row in plans_res}
+            
+            # Fetch all recharge logs
+            logs_res = await db.execute(select(UserLog.extra_info).where(UserLog.operation_type == "recharge"))
+            import json
+            for row in logs_res:
+                info = row.extra_info or ""
+                if "rmb_payment" in info:
+                    try:
+                        data = json.loads(info)
+                        plan_name = data.get("plan")
+                        if plan_name:
+                            rmb_balance += plan_name_to_rmb.get(plan_name, 0.0)
+                    except Exception:
+                        pass
+        except Exception as e:
+            logger.error(f"Error calculating RMB balance: {e}")
+
         return {
             "total_users": total_users,
             "inner_disciple_count": inner_disciple_count,
@@ -319,10 +342,195 @@ async def get_stats(db: AsyncSession = Depends(get_db)):
             "avg_daily_credit_distribution": avg_credit_distribution,
             "credit_holding_distribution": holding_distribution,
             "ton_balance": ton_balance,
-            "star_balance": star_balance
+            "star_balance": star_balance,
+            "rmb_balance": round(rmb_balance, 2)
         }
     except Exception as e:
         logger.error(f"Error getting stats: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/finance_hourly")
+async def get_finance_hourly_stats(date_str: str = None, db: AsyncSession = Depends(get_db)):
+    """Get hourly finance stats (recharged credits and new disciples) for a specific date"""
+    try:
+        if date_str:
+            target_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+        else:
+            target_date = date.today()
+            
+        dialect = db.bind.dialect.name
+        hour_expr = get_hour_expr(UserLog.created_at, dialect)
+        
+        # 1. Map plan names/ids to prices and identities
+        plans_result = await db.execute(text('SELECT id, name, identity_name, reward_credits FROM membership_plans'))
+        plan_id_to_identity = {}
+        plan_name_to_identity = {}
+        plan_id_to_credits = {}
+        plan_name_to_credits = {}
+        for row in plans_result:
+            plan_id_to_identity[str(row.id)] = row.identity_name
+            plan_name_to_identity[row.name] = row.identity_name
+            plan_id_to_credits[str(row.id)] = int(row.reward_credits)
+            plan_name_to_credits[row.name] = int(row.reward_credits)
+            
+        # 2. Fetch logs for the target date
+        logs_stmt = select(hour_expr.label("hour"), UserLog.extra_info).where(
+            UserLog.operation_type == "recharge",
+            func.date(UserLog.created_at) == target_date
+        )
+        logs_result = await db.execute(logs_stmt)
+        
+        hourly_data = {
+            str(h).zfill(2): {
+                "recharged_credits": 0,
+                "inner_disciples": 0,
+                "core_disciples": 0,
+                "true_disciples": 0
+            } for h in range(24)
+        }
+        
+        import json
+        for row in logs_result:
+            hour_str = str(int(row.hour)).zfill(2) if row.hour is not None else "00"
+            info = row.extra_info or ""
+            
+            try:
+                data = json.loads(info)
+                if data.get("is_gift"):
+                    continue
+                    
+                plan_name = data.get("plan")
+                plan_id = str(data.get("plan_id", ""))
+                
+                # Track Recharge Credits
+                credits_added = 0
+                if plan_name:
+                    credits_added = plan_name_to_credits.get(plan_name, 0)
+                elif plan_id:
+                    credits_added = plan_id_to_credits.get(plan_id, 0)
+                elif "ORDER:" in info:
+                    order_id = data.get("order_id", "")
+                    parts = order_id.split(":")
+                    if len(parts) >= 3:
+                        credits_added = plan_id_to_credits.get(parts[2], 0)
+                        
+                hourly_data[hour_str]["recharged_credits"] += credits_added
+                
+                # Track Disciples
+                identity_name = data.get("identity")
+                if not identity_name:
+                    if plan_name:
+                        identity_name = plan_name_to_identity.get(plan_name)
+                    elif plan_id:
+                        identity_name = plan_id_to_identity.get(plan_id)
+                    elif "ORDER:" in info:
+                        order_id = data.get("order_id", "")
+                        parts = order_id.split(":")
+                        if len(parts) >= 3:
+                            identity_name = plan_id_to_identity.get(parts[2])
+                            
+                if identity_name:
+                    if "内门" in identity_name:
+                        hourly_data[hour_str]["inner_disciples"] += 1
+                    elif "核心" in identity_name:
+                        hourly_data[hour_str]["core_disciples"] += 1
+                    elif "真传" in identity_name:
+                        hourly_data[hour_str]["true_disciples"] += 1
+                        
+            except Exception as e:
+                logger.error(f"Error parsing log info in finance_hourly: {e}")
+                
+        return hourly_data
+    except Exception as e:
+        logger.error(f"Error getting finance hourly stats: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/finance_hourly/cumulative")
+async def get_cumulative_finance_hourly_stats(days: int = 7, db: AsyncSession = Depends(get_db)):
+    """Get cumulative hourly finance stats for the last N days"""
+    try:
+        start_date = date.today() - timedelta(days=days-1)
+        dialect = db.bind.dialect.name
+        hour_expr = get_hour_expr(UserLog.created_at, dialect)
+        
+        plans_result = await db.execute(text('SELECT id, name, identity_name, reward_credits FROM membership_plans'))
+        plan_id_to_identity = {}
+        plan_name_to_identity = {}
+        plan_id_to_credits = {}
+        plan_name_to_credits = {}
+        for row in plans_result:
+            plan_id_to_identity[str(row.id)] = row.identity_name
+            plan_name_to_identity[row.name] = row.identity_name
+            plan_id_to_credits[str(row.id)] = int(row.reward_credits)
+            plan_name_to_credits[row.name] = int(row.reward_credits)
+            
+        logs_stmt = select(hour_expr.label("hour"), UserLog.extra_info).where(
+            UserLog.operation_type == "recharge",
+            func.date(UserLog.created_at) >= start_date
+        )
+        logs_result = await db.execute(logs_stmt)
+        
+        hourly_data = {
+            str(h).zfill(2): {
+                "recharged_credits": 0,
+                "inner_disciples": 0,
+                "core_disciples": 0,
+                "true_disciples": 0
+            } for h in range(24)
+        }
+        
+        import json
+        for row in logs_result:
+            hour_str = str(int(row.hour)).zfill(2) if row.hour is not None else "00"
+            info = row.extra_info or ""
+            
+            try:
+                data = json.loads(info)
+                if data.get("is_gift"):
+                    continue
+                    
+                plan_name = data.get("plan")
+                plan_id = str(data.get("plan_id", ""))
+                
+                credits_added = 0
+                if plan_name:
+                    credits_added = plan_name_to_credits.get(plan_name, 0)
+                elif plan_id:
+                    credits_added = plan_id_to_credits.get(plan_id, 0)
+                elif "ORDER:" in info:
+                    order_id = data.get("order_id", "")
+                    parts = order_id.split(":")
+                    if len(parts) >= 3:
+                        credits_added = plan_id_to_credits.get(parts[2], 0)
+                        
+                hourly_data[hour_str]["recharged_credits"] += credits_added
+                
+                identity_name = data.get("identity")
+                if not identity_name:
+                    if plan_name:
+                        identity_name = plan_name_to_identity.get(plan_name)
+                    elif plan_id:
+                        identity_name = plan_id_to_identity.get(plan_id)
+                    elif "ORDER:" in info:
+                        order_id = data.get("order_id", "")
+                        parts = order_id.split(":")
+                        if len(parts) >= 3:
+                            identity_name = plan_id_to_identity.get(parts[2])
+                            
+                if identity_name:
+                    if "内门" in identity_name:
+                        hourly_data[hour_str]["inner_disciples"] += 1
+                    elif "核心" in identity_name:
+                        hourly_data[hour_str]["core_disciples"] += 1
+                    elif "真传" in identity_name:
+                        hourly_data[hour_str]["true_disciples"] += 1
+                        
+            except Exception as e:
+                pass
+                
+        return hourly_data
+    except Exception as e:
+        logger.error(f"Error getting cumulative finance hourly stats: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/hourly")
@@ -485,26 +693,60 @@ async def get_stats_history(days: int = 7, db: AsyncSession = Depends(get_db)):
         # Daily TON and Stars Recharge History
         # We now calculate the actual TON and Stars spent, not the credits granted.
         
-        # 1. Map plan names/ids to prices
-        plans_result = await db.execute(text('SELECT id, name, price_ton, price_stars FROM membership_plans'))
+        # 1. Map plan names/ids to prices and identities
+        plans_result = await db.execute(text('SELECT id, name, identity_name, price_ton, price_stars, price_rmb, reward_credits FROM membership_plans'))
         plan_ton_prices = {}
         plan_stars_prices = {}
+        plan_rmb_prices = {}
         plan_name_to_ton = {}
+        plan_name_to_rmb = {}
+        plan_id_to_identity = {}
+        plan_name_to_identity = {}
+        plan_id_to_credits = {}
+        plan_name_to_credits = {}
         for row in plans_result:
             plan_ton_prices[str(row.id)] = float(row.price_ton)
             plan_stars_prices[str(row.id)] = int(row.price_stars)
+            plan_rmb_prices[str(row.id)] = float(row.price_rmb)
             plan_name_to_ton[row.name] = float(row.price_ton)
+            plan_name_to_rmb[row.name] = float(row.price_rmb)
+            plan_id_to_identity[str(row.id)] = row.identity_name
+            plan_name_to_identity[row.name] = row.identity_name
+            plan_id_to_credits[str(row.id)] = int(row.reward_credits)
+            plan_name_to_credits[row.name] = int(row.reward_credits)
             
         # 2. Fetch all raw recharge logs
-        logs_stmt = select(func.date(UserLog.created_at).label("date"), UserLog.extra_info).where(UserLog.created_at >= start_date, UserLog.operation_type == "recharge")
+        logs_stmt = select(func.date(UserLog.created_at).label("date"), UserLog.extra_info).where(UserLog.operation_type == "recharge")
         logs_result = await db.execute(logs_stmt)
         
         ton_history = {}
         stars_history = {}
+        rmb_history = {}
+        
+        inner_history = {}
+        core_history = {}
+        true_history = {}
+        
+        recharged_credits_history = {}
+        
+        ton_before = 0.0
+        stars_before = 0
+        rmb_before = 0.0
+        recharged_credits_before = 0
         
         import json
         for row in logs_result:
             date_val = row.date if isinstance(row.date, str) else row.date.strftime("%Y-%m-%d")
+            
+            is_before = False
+            if isinstance(row.date, str):
+                log_date = datetime.strptime(row.date, "%Y-%m-%d").date()
+                if log_date < start_date:
+                    is_before = True
+            else:
+                if row.date < start_date:
+                    is_before = True
+                    
             info = row.extra_info or ""
             
             try:
@@ -513,11 +755,66 @@ async def get_stats_history(days: int = 7, db: AsyncSession = Depends(get_db)):
                 if data.get("is_gift"):
                     continue
                     
+                # Track Disciple Identities
+                plan_name = data.get("plan")
+                plan_id = str(data.get("plan_id", ""))
+                
+                identity_name = data.get("identity") # RMB typically has it
+                if not identity_name:
+                    if plan_name:
+                        identity_name = plan_name_to_identity.get(plan_name)
+                    elif plan_id:
+                        identity_name = plan_id_to_identity.get(plan_id)
+                    elif "ORDER:" in info:
+                        order_id = data.get("order_id", "")
+                        parts = order_id.split(":")
+                        if len(parts) >= 3:
+                            identity_name = plan_id_to_identity.get(parts[2])
+                            
+                if identity_name and not is_before:
+                    if "内门" in identity_name:
+                        inner_history[date_val] = inner_history.get(date_val, 0) + 1
+                    elif "核心" in identity_name:
+                        core_history[date_val] = core_history.get(date_val, 0) + 1
+                    elif "真传" in identity_name:
+                        true_history[date_val] = true_history.get(date_val, 0) + 1
+                        
+                # Track Recharge Credits
+                credits_added = 0
+                if plan_name:
+                    credits_added = plan_name_to_credits.get(plan_name, 0)
+                elif plan_id:
+                    credits_added = plan_id_to_credits.get(plan_id, 0)
+                elif "ORDER:" in info:
+                    order_id = data.get("order_id", "")
+                    parts = order_id.split(":")
+                    if len(parts) >= 3:
+                        credits_added = plan_id_to_credits.get(parts[2], 0)
+                        
+                if is_before:
+                    recharged_credits_before += credits_added
+                else:
+                    recharged_credits_history[date_val] = recharged_credits_history.get(date_val, 0) + credits_added
+                    
+                # Check for RMB
+                if "rmb_payment" in info:
+                    plan_name = data.get("plan")
+                    rmb_spent = 0.0
+                    if plan_name:
+                        rmb_spent = plan_name_to_rmb.get(plan_name, 0.0)
+                    if is_before:
+                        rmb_before += rmb_spent
+                    else:
+                        rmb_history[date_val] = rmb_history.get(date_val, 0.0) + rmb_spent
+
                 # Check for Stars
-                if "telegram_stars" in info or "stars" in info.lower():
+                elif "telegram_stars" in info or "stars" in info.lower():
                     plan_id = str(data.get("plan_id", ""))
                     stars_spent = plan_stars_prices.get(plan_id, 0)
-                    stars_history[date_val] = stars_history.get(date_val, 0) + stars_spent
+                    if is_before:
+                        stars_before += stars_spent
+                    else:
+                        stars_history[date_val] = stars_history.get(date_val, 0) + stars_spent
                     
                 # Check for TON
                 elif "ORDER:" in info:
@@ -533,15 +830,34 @@ async def get_stats_history(days: int = 7, db: AsyncSession = Depends(get_db)):
                             plan_id = parts[2]
                             ton_spent = plan_ton_prices.get(plan_id, 0.0)
                             
-                    ton_history[date_val] = ton_history.get(date_val, 0.0) + ton_spent
+                    if is_before:
+                        ton_before += ton_spent
+                    else:
+                        ton_history[date_val] = ton_history.get(date_val, 0.0) + ton_spent
                     
             except Exception as e:
                 logger.error(f"Error parsing log info {info}: {e}")
         
+        current_ton_cumulative = ton_before
+        current_stars_cumulative = stars_before
+        current_rmb_cumulative = rmb_before
+        current_recharged_credits_cumulative = recharged_credits_before
+
         history_data = []
         for i in range(days):
             current_date = start_date + timedelta(days=i)
             date_str = current_date.strftime("%Y-%m-%d")
+            
+            ton_today = ton_history.get(date_str, 0.0)
+            stars_today = stars_history.get(date_str, 0)
+            rmb_today = rmb_history.get(date_str, 0.0)
+            recharged_credits_today = recharged_credits_history.get(date_str, 0)
+            
+            current_ton_cumulative += ton_today
+            current_stars_cumulative += stars_today
+            current_rmb_cumulative += rmb_today
+            current_recharged_credits_cumulative += recharged_credits_today
+            
             history_data.append({
                 "date": date_str,
                 "new_users": user_history.get(date_str, 0),
@@ -551,8 +867,17 @@ async def get_stats_history(days: int = 7, db: AsyncSession = Depends(get_db)):
                 "active_users": active_history.get(date_str, 0),
                 "checkins": checkin_history.get(date_str, 0),
                 "consumed_credits": consumed_history.get(date_str, 0),
-                "ton_recharge": ton_history.get(date_str, 0),
-                "stars_recharge": stars_history.get(date_str, 0)
+                "ton_recharge": ton_today,
+                "stars_recharge": stars_today,
+                "rmb_recharge": round(rmb_today, 2),
+                "cumulative_ton": round(current_ton_cumulative, 2),
+                "cumulative_stars": current_stars_cumulative,
+                "cumulative_rmb": round(current_rmb_cumulative, 2),
+                "recharged_credits": recharged_credits_today,
+                "cumulative_recharged_credits": current_recharged_credits_cumulative,
+                "inner_disciples": inner_history.get(date_str, 0),
+                "core_disciples": core_history.get(date_str, 0),
+                "true_disciples": true_history.get(date_str, 0)
             })
             
         return history_data

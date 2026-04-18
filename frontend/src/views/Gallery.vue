@@ -32,54 +32,75 @@ const total = ref(0)
 const hasMore = ref(true)
 
 const mediaType = ref('all')
+const taskType = ref('all')
+const loraModel = ref('all')
 const sortBy = ref('latest')
+const timeRange = ref('all')
+
+const allowedTypes = ref<{id: string, name: string}[]>([])
+const loraModels = ref<{id: string, name: string}[]>([])
 
 const detailVisible = ref(false)
 const currentPost = ref<Post | null>(null)
 const applying = ref(false)
 
-const getFileUrl = (path: string, isThumbnail: boolean = false, mediaType: string = 'image') => {
+const getFileUrl = (path: string, postId?: number) => {
   if (!path) return ''
-  if (path.startsWith('http')) return path
+  let url = path
   
-  const storageUrl = import.meta.env.VITE_STORAGE_URL || ''
-  const base = storageUrl.endsWith('/') ? storageUrl.slice(0, -1) : storageUrl
-  
-  let fullPath = path
-  if (!path.startsWith('bot-data/') && !path.startsWith('comfyui-temp/')) {
-    if (!path.includes('/')) {
-        fullPath = `comfyui-temp/${path}`
-    } else {
-        fullPath = `bot-data/${path}`
-    }
-  }
-
-  const fileUrl = `${base}/${fullPath}`
-  
-  // Imgproxy optimization for thumbnails
-  if (isThumbnail) {
-    const imgproxyUrl = import.meta.env.VITE_IMGPROXY_URL || ''
-    if (imgproxyUrl) {
-      const imgproxyBase = imgproxyUrl.endsWith('/') ? imgproxyUrl.slice(0, -1) : imgproxyUrl
-      if (mediaType === 'image') {
-        // Resize images to max 400px width, maintaining aspect ratio, convert to webp
-        // Using plain url format for simplicity: /insecure/rs:auto:400:0:0/plain/{url}
-        return `${imgproxyBase}/insecure/rs:auto:400:0:0/plain/${fileUrl}`
-      } else if (mediaType === 'video') {
-        // For videos, imgproxy can extract the first frame
-        // return `${imgproxyBase}/insecure/rs:auto:400:0:0/plain/${fileUrl}`
-        // However, since the browser <video> handles metadata, we can just return original
-        // or configure imgproxy with video extensions if supported
-        return fileUrl
+  if (!path.startsWith('http')) {
+    const storageUrl = import.meta.env.VITE_STORAGE_URL || ''
+    // Ensure we don't double slash if storageUrl has a trailing slash
+    const base = storageUrl.endsWith('/') ? storageUrl.slice(0, -1) : storageUrl
+    
+    if (!path.startsWith('bot-data/') && !path.startsWith('comfyui-temp/')) {
+      // If the path has no slash, it's a direct filename from ComfyUI worker in comfyui-temp
+      if (!path.includes('/')) {
+        url = `${base}/comfyui-temp/${path}`
+      } else {
+        // Otherwise, it's a structured path like 12345/output_images/... from bot-data
+        url = `${base}/bot-data/${path}`
       }
+    } else {
+      url = `${base}/${path}`
     }
   }
   
-  return fileUrl
+  if (postId) {
+    const sep = url.includes('?') ? '&' : '?'
+    url = `${url}${sep}v=${postId}`
+  }
+  return url
+}
+
+const isVideoFile = (path: string, mediaType?: string) => {
+  if (mediaType) {
+    return mediaType === 'video'
+  }
+  if (!path) return false
+  const lowerPath = path.toLowerCase()
+  return lowerPath.endsWith('.mp4') || 
+         lowerPath.endsWith('.mov') || 
+         lowerPath.endsWith('.webm') || 
+         lowerPath.endsWith('.mkv') ||
+         lowerPath.endsWith('.avi')
+}
+
+let currentRequestId = 0
+
+const loadConfig = async () => {
+  try {
+    const res = await api.get('/gallery/config')
+    allowedTypes.value = res.data.allowed_types
+    loraModels.value = res.data.lora_models
+  } catch (error) {
+    console.error('Failed to load gallery config:', error)
+  }
 }
 
 const loadPosts = async (reset = false) => {
-  if (loading.value || (!hasMore.value && !reset)) return
+  if (!reset && (loading.value || !hasMore.value)) return
+  
   loading.value = true
   if (reset) {
     page.value = 1
@@ -87,15 +108,22 @@ const loadPosts = async (reset = false) => {
     hasMore.value = true
   }
   
+  const requestId = ++currentRequestId
+  
   try {
     const res = await api.get('/gallery/posts', {
       params: {
         page: page.value,
         size: size.value,
         media_type: mediaType.value,
-        sort_by: sortBy.value
+        task_type: taskType.value,
+        lora_model: loraModel.value === 'all' ? undefined : loraModel.value,
+        sort_by: sortBy.value,
+        time_range: timeRange.value
       }
     })
+    
+    if (requestId !== currentRequestId) return
     
     if (reset) {
       posts.value = res.data.items
@@ -110,11 +138,22 @@ const loadPosts = async (reset = false) => {
       page.value++
     }
   } catch (error) {
+    if (requestId !== currentRequestId) return
     console.error(error)
     message.error('获取广场数据失败')
   } finally {
-    loading.value = false
+    if (requestId === currentRequestId) {
+      loading.value = false
+    }
   }
+}
+
+const handleTaskTypeChange = (type: string) => {
+  taskType.value = type
+  if (type !== 'video_lora') {
+    loraModel.value = 'all'
+  }
+  loadPosts(true)
 }
 
 const handleInteract = async (post: Post, action: 'like' | 'dislike') => {
@@ -216,15 +255,14 @@ const pauseVideo = (e: Event) => {
 }
 
 const handleImageError = (e: Event, post: Post) => {
-  // Fallback to original image if imgproxy fails or times out
+  // If loading fails, just let it fail silently without infinite loop
+  // as we no longer have an alternative fallback url
   const img = e.target as HTMLImageElement
-  const originalUrl = getFileUrl(post.thumbnail_url, false, post.media_type)
-  if (img.src !== originalUrl) {
-    img.src = originalUrl
-  }
+  img.style.display = 'none' // Hide broken image icon
 }
 
 onMounted(() => {
+  loadConfig()
   loadPosts(true)
   const container = document.querySelector('.ant-layout-content')
   if (container) {
@@ -243,30 +281,79 @@ onUnmounted(() => {
 <template>
   <div class="gallery-container text-slate-200">
     <!-- Header Controls -->
-    <div class="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
-      <div class="flex bg-slate-800/50 p-1 rounded-xl border border-slate-700/50">
-        <button 
-          v-for="tab in [{k:'all', n:'全部'}, {k:'image', n:'纯图'}, {k:'video', n:'动态'}]" 
-          :key="tab.k"
-          @click="mediaType = tab.k; loadPosts(true)"
-          class="px-4 py-1.5 rounded-lg transition-all font-medium text-sm"
-          :class="mediaType === tab.k ? 'bg-cyan-500/20 text-cyan-400 shadow-[0_0_10px_rgba(56,189,248,0.2)]' : 'hover:text-cyan-300 text-slate-400'"
-        >
-          {{ tab.n }}
-        </button>
+    <div class="flex flex-col mb-6 gap-4">
+      <div class="flex flex-col md:flex-row justify-between items-center gap-4">
+        <!-- Task Types -->
+        <div class="flex flex-wrap bg-slate-800/50 p-1 rounded-xl border border-slate-700/50 gap-1">
+          <button 
+            @click="handleTaskTypeChange('all')"
+            class="px-4 py-1.5 rounded-lg transition-all font-medium text-sm"
+            :class="taskType === 'all' ? 'bg-cyan-500/20 text-cyan-400 shadow-[0_0_10px_rgba(56,189,248,0.2)]' : 'hover:text-cyan-300 text-slate-400'"
+          >
+            全部
+          </button>
+          <button 
+            v-for="tab in allowedTypes" 
+            :key="tab.id"
+            @click="handleTaskTypeChange(tab.id)"
+            class="px-4 py-1.5 rounded-lg transition-all font-medium text-sm"
+            :class="taskType === tab.id ? 'bg-cyan-500/20 text-cyan-400 shadow-[0_0_10px_rgba(56,189,248,0.2)]' : 'hover:text-cyan-300 text-slate-400'"
+          >
+            {{ tab.name }}
+          </button>
+        </div>
+        
+        <div class="flex items-center gap-3">
+          <!-- Time Range -->
+          <div class="flex bg-slate-800/50 p-1 rounded-xl border border-slate-700/50">
+            <button 
+              v-for="time in [{k:'all', n:'所有'}, {k:'today', n:'本日'}, {k:'week', n:'本周'}, {k:'month', n:'本月'}]" 
+              :key="time.k"
+              @click="timeRange = time.k; loadPosts(true)"
+              class="px-3 py-1.5 rounded-lg transition-all font-medium text-sm"
+              :class="timeRange === time.k ? 'bg-indigo-500/20 text-indigo-400 shadow-[0_0_10px_rgba(129,140,248,0.2)]' : 'hover:text-indigo-300 text-slate-400'"
+            >
+              {{ time.n }}
+            </button>
+          </div>
+          
+          <!-- Sort By -->
+          <div class="flex bg-slate-800/50 p-1 rounded-xl border border-slate-700/50">
+            <button 
+              v-for="sort in [{k:'latest', n:'最新发布', i: Clock}, {k:'likes', n:'最多点赞', i: Heart}, {k:'applied', n:'最多应用', i: Flame}]" 
+              :key="sort.k"
+              @click="sortBy = sort.k; loadPosts(true)"
+              class="px-3 py-1.5 rounded-lg transition-all font-medium text-sm flex items-center"
+              :class="sortBy === sort.k ? 'bg-indigo-500/20 text-indigo-400 shadow-[0_0_10px_rgba(129,140,248,0.2)]' : 'hover:text-indigo-300 text-slate-400'"
+            >
+              <component :is="sort.i" :size="14" class="mr-1.5" />
+              {{ sort.n }}
+            </button>
+          </div>
+        </div>
       </div>
       
-      <div class="flex bg-slate-800/50 p-1 rounded-xl border border-slate-700/50">
-        <button 
-          v-for="sort in [{k:'latest', n:'最新发布', i: Clock}, {k:'likes', n:'最多点赞', i: Heart}, {k:'applied', n:'最多应用', i: Flame}]" 
-          :key="sort.k"
-          @click="sortBy = sort.k; loadPosts(true)"
-          class="px-3 py-1.5 rounded-lg transition-all font-medium text-sm flex items-center"
-          :class="sortBy === sort.k ? 'bg-indigo-500/20 text-indigo-400 shadow-[0_0_10px_rgba(129,140,248,0.2)]' : 'hover:text-indigo-300 text-slate-400'"
-        >
-          <component :is="sort.i" :size="14" class="mr-1.5" />
-          {{ sort.n }}
-        </button>
+      <!-- Secondary Filter for LoRA Models -->
+      <div v-if="taskType === 'video_lora'" class="flex items-center gap-2 px-1">
+        <span class="text-sm text-slate-400">选择附加模型：</span>
+        <div class="flex flex-wrap gap-2">
+          <button 
+            @click="loraModel = 'all'; loadPosts(true)"
+            class="px-3 py-1 rounded-lg text-xs transition-all border"
+            :class="loraModel === 'all' ? 'bg-pink-500/20 border-pink-500/50 text-pink-400' : 'border-slate-700 hover:border-slate-500 text-slate-400'"
+          >
+            所有模型
+          </button>
+          <button 
+            v-for="lora in loraModels" 
+            :key="lora.id"
+            @click="loraModel = lora.id; loadPosts(true)"
+            class="px-3 py-1 rounded-lg text-xs transition-all border"
+            :class="loraModel === lora.id ? 'bg-pink-500/20 border-pink-500/50 text-pink-400' : 'border-slate-700 hover:border-slate-500 text-slate-400'"
+          >
+            {{ lora.name }}
+          </button>
+        </div>
       </div>
     </div>
 
@@ -281,15 +368,15 @@ onUnmounted(() => {
         <!-- Media -->
         <div class="relative w-full overflow-hidden bg-slate-900 aspect-auto min-h-[100px]">
           <img 
-            v-if="post.media_type === 'image'" 
-            :src="getFileUrl(post.thumbnail_url, true, post.media_type)" 
+            v-if="!isVideoFile(post.thumbnail_url, post.media_type)" 
+            :src="getFileUrl(post.thumbnail_url, post.id)" 
             @error="handleImageError($event, post)"
             class="w-full h-auto object-cover transition-opacity duration-300" 
             loading="lazy" 
           />
           <video 
             v-else 
-            :src="getFileUrl(post.thumbnail_url, true, post.media_type)" 
+            :src="getFileUrl(post.thumbnail_url, post.id)" 
             class="w-full h-auto object-cover" 
             preload="metadata" 
             muted 
@@ -301,7 +388,7 @@ onUnmounted(() => {
           
           <!-- Type Badge -->
           <div class="absolute top-2 right-2 bg-black/60 backdrop-blur-sm rounded-full p-1.5 shadow-sm border border-white/10">
-            <ImageIcon v-if="post.media_type === 'image'" :size="14" class="text-cyan-400" />
+            <ImageIcon v-if="!isVideoFile(post.thumbnail_url, post.media_type)" :size="14" class="text-cyan-400" />
             <Video v-else :size="14" class="text-indigo-400" />
           </div>
           
@@ -361,8 +448,8 @@ onUnmounted(() => {
       <div v-if="currentPost" class="flex flex-col lg:flex-row bg-[#0f172a] rounded-2xl overflow-hidden border border-slate-700/50 shadow-2xl">
         <!-- Media Area -->
         <div class="lg:w-2/3 bg-black flex items-center justify-center relative min-h-[300px]">
-          <img v-if="currentPost.media_type === 'image'" :src="getFileUrl(currentPost.media_url)" class="max-w-full max-h-[80vh] object-contain" />
-          <video v-else :src="getFileUrl(currentPost.media_url)" class="max-w-full max-h-[80vh] object-contain" controls autoplay loop></video>
+          <img v-if="!isVideoFile(currentPost.media_url, currentPost.media_type)" :src="getFileUrl(currentPost.media_url, currentPost.id)" class="max-w-full max-h-[80vh] object-contain" />
+          <video v-else :src="getFileUrl(currentPost.media_url, currentPost.id)" class="max-w-full max-h-[80vh] object-contain" controls autoplay loop></video>
         </div>
         
         <!-- Info Area -->

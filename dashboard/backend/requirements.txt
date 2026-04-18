@@ -8,6 +8,7 @@ bcrypt==4.0.1
 sqlalchemy
 asyncpg
 minio
+boto3
 httpx
 python-dotenv
 python-telegram-bot

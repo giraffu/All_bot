@@ -541,7 +541,6 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
             
             # Fetch media - Use cached file_id if available to save bandwidth
             import os
-            from src.services.storage import storage
             is_test_bot = os.getenv("BOT_TYPE") == "TEST"
             cached_file_id = getattr(post, 'telegram_file_id', None)
             if is_test_bot:

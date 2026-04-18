@@ -45,7 +45,7 @@ const updateHistoryTimeRange = (value) => {
 
 <template>
   <div class="flex-1 flex flex-col gap-6">
-    <StatsCards :stats="stats" />
+    <StatsCards :stats="stats" mode="user" />
     
     <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
       <div class="h-80">
@@ -119,19 +119,16 @@ const updateHistoryTimeRange = (value) => {
 
       <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
         <div class="h-80">
-          <LineChart title="每日充值 (TON & Stars)" :data="statsHistory" :metrics="['ton_recharge', 'stars_recharge']" />
+          <LineChart title="总用户数量" :data="cumulativeStatsHistory" :metrics="['cumulative_users']" />
         </div>
         <div class="h-80">
-          <LineChart title="总用户数量" :data="cumulativeStatsHistory" :metrics="['cumulative_users']" />
+          <LineChart title="活跃与签到" :data="statsHistory" :metrics="['active_users', 'checkins']" />
         </div>
       </div>
       
       <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div class="h-80">
           <LineChart title="生成量与灵石消耗" :data="statsHistory" :metrics="['generations', 'consumed_credits']" />
-        </div>
-        <div class="h-80">
-          <LineChart title="活跃与签到" :data="statsHistory" :metrics="['active_users', 'checkins']" />
         </div>
       </div>
     </div>

@@ -311,9 +311,11 @@ class PermissionService:
             for tg_id, price, order_id in rows:
                 recharged_invitees.add(tg_id)
                 
-                # 人民币订单以 RMB_ 开头
+                # 人民币订单以 RMB_ 开头，Stars订单以 XTR_ 开头
                 if order_id and str(order_id).startswith("RMB_"):
                     total_rmb += price
+                elif order_id and str(order_id).startswith("XTR_"):
+                    total_stars += int(price)
                 else:
                     # 根据价格区分支付方式 (Stars 价格通常为整数且较大，如 200, 500)
                     if price >= 100:

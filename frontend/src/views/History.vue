@@ -1,11 +1,14 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import api from '@/api'
+import { message } from 'ant-design-vue'
 import { Image as ImageIcon, Video, Clock, PlayCircle } from 'lucide-vue-next'
 import dayjs from 'dayjs'
 
 const data = ref<any[]>([])
 const loading = ref(false)
+const submittingTasks = ref<Record<string, boolean>>({})
+
 const pagination = ref({
   current: 1,
   pageSize: 8,
@@ -49,8 +52,33 @@ const columns = [
     dataIndex: 'created_at',
     key: 'created_at',
     width: 200,
+  },
+  {
+    title: '操作',
+    key: 'action',
+    width: 120,
+    align: 'center'
   }
 ]
+
+const submitToGallery = async (record: any) => {
+  if (submittingTasks.value[record.task_id]) return
+  submittingTasks.value[record.task_id] = true
+  
+  try {
+    const res = await api.post(`/gallery/posts/submit/${record.task_id}`)
+    message.success(res.data?.message || '投稿成功！')
+  } catch (error: any) {
+    console.error(error)
+    if (error.response?.data?.detail) {
+      message.error(error.response.data.detail)
+    } else {
+      message.error('投稿失败，请稍后再试')
+    }
+  } finally {
+    submittingTasks.value[record.task_id] = false
+  }
+}
 
 const fetchHistory = async (page = 1) => {
   loading.value = true
@@ -191,6 +219,24 @@ onMounted(() => {
             <Clock :size="14" class="mr-1 opacity-70" />
             {{ formatDate(record.created_at) }}
           </div>
+        </template>
+
+        <template v-else-if="column.key === 'action'">
+          <a-button 
+            v-if="record.output_file && ['i2i_pro', 'edit', 'custom_video', 'video_lora'].includes(record.type)"
+            type="primary" 
+            size="small" 
+            class="bg-gradient-to-r from-cyan-600 to-indigo-600 border-none shadow-[0_0_10px_rgba(56,189,248,0.3)] hover:scale-105 transition-transform text-xs rounded-md"
+            :loading="submittingTasks[record.task_id]"
+            @click="submitToGallery(record)"
+          >
+            <span class="flex items-center gap-1">
+              <span v-if="submittingTasks[record.task_id]">投稿中</span>
+              <span v-else>✨ 一键投稿</span>
+            </span>
+          </a-button>
+          <span v-else-if="!record.output_file" class="text-slate-600 text-xs">暂无文件</span>
+          <span v-else class="text-slate-600 text-xs">暂不支持投稿</span>
         </template>
         
       </template>

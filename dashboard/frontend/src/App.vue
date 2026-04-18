@@ -2,6 +2,7 @@
 import { ref, onMounted, computed, watch, onUnmounted } from 'vue'
 import { fetchStats, fetchUsers, fetchUserHistory, fetchStatsHistory, fetchTaskStatus, fetchTaskImage, fetchTaskVideo } from './api/api'
 import HomeDashboard from "./components/HomeDashboard.vue"
+import FinanceDashboard from "./components/FinanceDashboard.vue"
 import Login from './components/Login.vue'
 import StatsCards from './components/StatsCards.vue'
 import QueueStats from './components/QueueStats.vue'
@@ -43,7 +44,8 @@ import {
   BellOutlined,
   PieChartOutlined,
   RobotOutlined,
-  AppstoreOutlined
+  AppstoreOutlined,
+  BankOutlined
 } from '@ant-design/icons-vue'
 
 // State
@@ -260,7 +262,7 @@ const refreshData = () => {
 // Auto refresh when switching tabs
 watch(activeTab, (newTab) => {
   const tab = newTab[0]
-  if (tab === 'home') {
+  if (tab === 'home' || tab === 'finance') {
     loadStats()
     loadHistory()
   } else if (tab === 'users') {
@@ -317,6 +319,10 @@ onUnmounted(() => {
           <a-menu-item key="home">
             <template #icon><home-outlined /></template>
             <span>数据大盘</span>
+          </a-menu-item>
+          <a-menu-item key="finance">
+            <template #icon><bank-outlined /></template>
+            <span>充值数据</span>
           </a-menu-item>
           <a-menu-item key="monitor">
             <template #icon><dashboard-outlined /></template>
@@ -378,7 +384,8 @@ onUnmounted(() => {
             <a-breadcrumb-item>首页</a-breadcrumb-item>
             <a-breadcrumb-item>
               {{ 
-                activeTab[0] === 'home' ? '首页看板' : 
+                activeTab[0] === 'home' ? '数据大盘' : 
+                activeTab[0] === 'finance' ? '充值数据' : 
                 activeTab[0] === 'users' ? '用户管理' : 
                 activeTab[0] === 'history' ? '历史生成' :
                 activeTab[0] === 'logs' ? '操作日志' :
@@ -441,7 +448,7 @@ onUnmounted(() => {
       <!-- Content -->
       <a-layout-content 
         class="p-6 bg-gray-50 flex flex-col h-[calc(100vh-64px)]"
-        :class="['home', 'monitor', 'templates', 'logs', 'recharge'].includes(activeTab[0]) ? 'overflow-y-auto' : 'overflow-hidden'"
+        :class="['home', 'finance', 'monitor', 'templates', 'logs', 'recharge'].includes(activeTab[0]) ? 'overflow-y-auto' : 'overflow-hidden'"
       >
         <div class="w-full flex-1 flex flex-col">
           <!-- System Monitor Tab -->
@@ -455,6 +462,15 @@ onUnmounted(() => {
             :stats="stats" 
             :statsHistory="statsHistory" 
             :cumulativeStatsHistory="cumulativeStatsHistory" 
+            v-model:historyTimeRange="historyTimeRange" 
+            :timeRangeOptions="timeRangeOptions" 
+            @loadHistory="loadHistory" 
+          />
+
+          <FinanceDashboard 
+            v-else-if="activeTab[0] === 'finance'" 
+            :stats="stats" 
+            :statsHistory="statsHistory" 
             v-model:historyTimeRange="historyTimeRange" 
             :timeRangeOptions="timeRangeOptions" 
             @loadHistory="loadHistory" 

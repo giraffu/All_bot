@@ -60,6 +60,17 @@ export const fetchHourlyStats = async (dateStr = null) => {
   return response.data
 }
 
+export const fetchFinanceHourlyStats = async (dateStr = null) => {
+  const url = dateStr ? `/api/stats/finance_hourly?date_str=${dateStr}` : '/api/stats/finance_hourly'
+  const response = await api.get(url)
+  return response.data
+}
+
+export const fetchCumulativeFinanceHourlyStats = async (days = 7) => {
+  const response = await api.get(`/api/stats/finance_hourly/cumulative?days=${days}`)
+  return response.data
+}
+
 export const fetchTypeDistribution = async (dateStr = null) => {
   const url = dateStr ? `/api/stats/type_distribution?date_str=${dateStr}` : '/api/stats/type_distribution'
   const response = await api.get(url)

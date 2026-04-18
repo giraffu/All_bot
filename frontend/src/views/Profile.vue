@@ -113,8 +113,8 @@ onMounted(async () => {
               <Award :size="24" />
             </div>
             <div>
-              <p class="text-slate-400 text-sm mb-1">模板贡献次数</p>
-              <h3 class="text-xl font-bold text-slate-100 drop-shadow-sm">{{ authStore.user?.total_contributions || 0 }} 个</h3>
+              <p class="text-slate-400 text-sm mb-1">投稿次数</p>
+              <h3 class="text-xl font-bold text-slate-100 drop-shadow-sm">{{ authStore.user?.total_contributions || 0 }} 次</h3>
             </div>
           </div>
         </a-card>
@@ -146,8 +146,8 @@ onMounted(async () => {
               <Activity :size="24" />
             </div>
             <div>
-              <p class="text-slate-400 text-sm mb-1">受邀者充值笔数</p>
-              <h3 class="text-xl font-bold text-slate-100 drop-shadow-sm">{{ authStore.user?.invitation_recharge?.total_recharge_count || 0 }} 笔</h3>
+              <p class="text-slate-400 text-sm mb-1">受邀者充值(TON)</p>
+              <h3 class="text-xl font-bold text-slate-100 drop-shadow-sm">{{ authStore.user?.invitation_recharge?.total_ton || 0 }} TON</h3>
             </div>
           </div>
         </a-card>
@@ -158,7 +158,7 @@ onMounted(async () => {
               <Wallet :size="24" />
             </div>
             <div>
-              <p class="text-slate-400 text-sm mb-1">受邀者充值(法贝)</p>
+              <p class="text-slate-400 text-sm mb-1">受邀者充值(人民币)</p>
               <h3 class="text-xl font-bold text-slate-100 drop-shadow-sm">¥ {{ authStore.user?.invitation_recharge?.total_rmb || 0 }}</h3>
             </div>
           </div>

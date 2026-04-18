@@ -17,16 +17,20 @@ defineProps({
   stats: {
     type: Object,
     required: true
+  },
+  mode: {
+    type: String,
+    default: 'user' // 'user' or 'finance'
   }
 })
 </script>
 
 <template>
-  <a-row :gutter="[16, 16]" class="mb-6">
+  <a-row :gutter="[16, 16]" class="mb-6" v-if="mode === 'finance'">
     <a-col :xs="24" :sm="12" :md="8" :lg="4">
       <a-card hoverable class="stat-card">
         <a-statistic
-          title="TON 钱包余额"
+          title="TON 真实余额"
           :value="stats.ton_balance || 0"
           :precision="2"
           :value-style="{ color: '#1890ff' }"
@@ -40,7 +44,7 @@ defineProps({
     <a-col :xs="24" :sm="12" :md="8" :lg="4">
       <a-card hoverable class="stat-card">
         <a-statistic
-          title="Stars 余额"
+          title="用户支付的 Stars"
           :value="stats.star_balance || 0"
           :value-style="{ color: '#faad14' }"
         >
@@ -50,6 +54,62 @@ defineProps({
         </a-statistic>
       </a-card>
     </a-col>
+    <a-col :xs="24" :sm="12" :md="8" :lg="4">
+      <a-card hoverable class="stat-card">
+        <a-statistic
+          title="RMB 累计充值收入"
+          :value="stats.rmb_balance || 0"
+          :precision="2"
+          :value-style="{ color: '#f5222d' }"
+        >
+          <template #prefix>
+            <span class="mr-1">¥</span>
+          </template>
+        </a-statistic>
+      </a-card>
+    </a-col>
+    <a-col :xs="24" :sm="12" :md="8" :lg="4">
+      <a-card hoverable class="stat-card">
+        <a-statistic
+          title="内门弟子数"
+          :value="stats.inner_disciple_count || 0"
+          :value-style="{ color: '#1890ff' }"
+        >
+          <template #prefix>
+            <crown-outlined />
+          </template>
+        </a-statistic>
+      </a-card>
+    </a-col>
+    <a-col :xs="24" :sm="12" :md="8" :lg="4">
+      <a-card hoverable class="stat-card">
+        <a-statistic
+          title="核心弟子数"
+          :value="stats.core_disciple_count || 0"
+          :value-style="{ color: '#722ed1' }"
+        >
+          <template #prefix>
+            <crown-outlined />
+          </template>
+        </a-statistic>
+      </a-card>
+    </a-col>
+    <a-col :xs="24" :sm="12" :md="8" :lg="4">
+      <a-card hoverable class="stat-card">
+        <a-statistic
+          title="真传弟子数"
+          :value="stats.true_disciple_count || 0"
+          :value-style="{ color: '#eb2f96' }"
+        >
+          <template #prefix>
+            <crown-outlined />
+          </template>
+        </a-statistic>
+      </a-card>
+    </a-col>
+  </a-row>
+
+  <a-row :gutter="[16, 16]" class="mb-6" v-if="mode === 'user'">
     <a-col :xs="24" :sm="12" :md="8" :lg="4">
       <a-card hoverable class="stat-card">
         <a-statistic
@@ -137,45 +197,6 @@ defineProps({
         >
           <template #prefix>
             <user-outlined />
-          </template>
-        </a-statistic>
-      </a-card>
-    </a-col>
-    <a-col :xs="24" :sm="12" :md="8" :lg="4">
-      <a-card hoverable class="stat-card">
-        <a-statistic
-          title="内门弟子数"
-          :value="stats.inner_disciple_count || 0"
-          :value-style="{ color: '#1890ff' }"
-        >
-          <template #prefix>
-            <crown-outlined />
-          </template>
-        </a-statistic>
-      </a-card>
-    </a-col>
-    <a-col :xs="24" :sm="12" :md="8" :lg="4">
-      <a-card hoverable class="stat-card">
-        <a-statistic
-          title="核心弟子数"
-          :value="stats.core_disciple_count || 0"
-          :value-style="{ color: '#722ed1' }"
-        >
-          <template #prefix>
-            <crown-outlined />
-          </template>
-        </a-statistic>
-      </a-card>
-    </a-col>
-    <a-col :xs="24" :sm="12" :md="8" :lg="4">
-      <a-card hoverable class="stat-card">
-        <a-statistic
-          title="真传弟子数"
-          :value="stats.true_disciple_count || 0"
-          :value-style="{ color: '#eb2f96' }"
-        >
-          <template #prefix>
-            <crown-outlined />
           </template>
         </a-statistic>
       </a-card>

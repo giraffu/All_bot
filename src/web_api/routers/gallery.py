@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks
 from sqlalchemy import select, desc, update
 from typing import List, Optional
 from src.database.core import AsyncSessionLocal
@@ -6,13 +6,19 @@ from src.database.models import GalleryPost, UserInteraction, History, User
 from src.web_api.dependencies import get_current_user
 from src.web_api.schemas.gallery_schema import GalleryPostResponse, PaginatedGalleryResponse, ApplyContextResponse
 from src.handlers.fsm.video_lora_fsm import LORA_MODELS
+from src.constants import MODE_NAME_MAP, MODE_I2I_PRO, MODE_EDIT, MODE_CUSTOM_VIDEO, MODE_VIDEO_LORA
+from src.services.redis_client import redis_client
 import json
 import logging
 import os
+import re
 from src.services.storage import storage
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+# Allowed task types for web gallery submission
+ALLOWED_WEB_SUBMIT_TYPES = {MODE_I2I_PRO, MODE_EDIT, MODE_CUSTOM_VIDEO, MODE_VIDEO_LORA}
 
 def translate_tags(tags_list: List[str]) -> List[str]:
     translated_tags = []
@@ -51,19 +57,58 @@ def generate_thumbnail_url(output_file: str, media_type: str) -> str:
     # 此时直接返回原文件路径即可，前端组装 URL 时会加上 imgproxy 规则
     return get_media_url(output_file)
 
+@router.get("/config")
+async def get_gallery_config():
+    return {
+        "allowed_types": [
+            {"id": MODE_I2I_PRO, "name": MODE_NAME_MAP.get(MODE_I2I_PRO, "幻想换脸")},
+            {"id": MODE_EDIT, "name": MODE_NAME_MAP.get(MODE_EDIT, "自由P图")},
+            {"id": MODE_CUSTOM_VIDEO, "name": MODE_NAME_MAP.get(MODE_CUSTOM_VIDEO, "自定义图生视频")},
+            {"id": MODE_VIDEO_LORA, "name": MODE_NAME_MAP.get(MODE_VIDEO_LORA, "图生视频(附加模型)")}
+        ],
+        "lora_models": [{"id": k, "name": v} for k, v in LORA_MODELS.items()]
+    }
+
 @router.get("/posts", response_model=PaginatedGalleryResponse)
 async def get_gallery_posts(
     page: int = Query(1, ge=1),
     size: int = Query(20, ge=1, le=100),
     media_type: Optional[str] = None,
+    task_type: Optional[str] = None,
+    lora_model: Optional[str] = None,
     sort_by: str = Query("latest", pattern="^(latest|likes|applied)$"),
+    time_range: str = Query("all", pattern="^(today|week|month|all)$"),
     current_user: Optional[User] = Depends(get_current_user)
 ):
     async with AsyncSessionLocal() as session:
         query = select(GalleryPost).where(GalleryPost.is_active == True)
         
-        if media_type and media_type != "all":
+        # Join with History to filter by task_type
+        if task_type and task_type != "all":
+            query = query.join(History, GalleryPost.task_id == History.task_id)
+            query = query.where(History.type == task_type)
+            
+        if media_type and media_type != "all" and not task_type:
             query = query.where(GalleryPost.media_type == media_type)
+            
+        # Filter by lora_model if provided (search in tags JSON string)
+        if lora_model:
+            # tag in DB is like "#LorAName"
+            lora_tag = f'"#{lora_model}"'
+            query = query.where(GalleryPost.tags.like(f"%{lora_tag}%"))
+            
+        # Filter by time_range
+        from datetime import datetime, timedelta
+        now = datetime.now()
+        if time_range == "today":
+            start_time = now.replace(hour=0, minute=0, second=0, microsecond=0)
+            query = query.where(GalleryPost.created_at >= start_time)
+        elif time_range == "week":
+            start_time = now - timedelta(days=7)
+            query = query.where(GalleryPost.created_at >= start_time)
+        elif time_range == "month":
+            start_time = now - timedelta(days=30)
+            query = query.where(GalleryPost.created_at >= start_time)
             
         if sort_by == "likes":
             query = query.order_by(desc(GalleryPost.likes_count), desc(GalleryPost.id))
@@ -219,3 +264,90 @@ async def get_apply_context(
             duration=post.duration,
             task_type=history.type
         )
+
+@router.post("/posts/submit/{task_id}")
+async def submit_to_gallery(
+    task_id: str,
+    current_user: User = Depends(get_current_user)
+):
+    async with AsyncSessionLocal() as session:
+        # Check limit
+        can_submit = await redis_client.check_gallery_submit_limit(current_user.id, limit=10)
+        if not can_submit:
+            raise HTTPException(status_code=400, detail="您今日的投稿次数已达 10 次上限，请明日再来~")
+
+        # Check existing
+        existing = await session.execute(select(GalleryPost).where(GalleryPost.task_id == task_id))
+        if existing.scalar_one_or_none():
+            raise HTTPException(status_code=400, detail="您已经投稿过此内容啦！")
+
+        # Get History
+        hist_res = await session.execute(select(History).where(History.task_id == task_id).where(History.user_id == current_user.id))
+        history = hist_res.scalar_one_or_none()
+        if not history:
+            raise HTTPException(status_code=404, detail="无法找到对应的任务记录，投稿失败")
+
+        if history.type not in ALLOWED_WEB_SUBMIT_TYPES:
+            allowed_names = [MODE_NAME_MAP.get(t, t) for t in ALLOWED_WEB_SUBMIT_TYPES]
+            raise HTTPException(status_code=400, detail=f"暂不支持该类型记录的投稿，目前仅支持：{', '.join(allowed_names)}")
+
+        if not history.output_file:
+            raise HTTPException(status_code=400, detail="此任务没有生成文件，无法投稿")
+
+        # Determine media_type from output_file extension
+        lower_path = history.output_file.lower()
+        is_video = any(lower_path.endswith(ext) for ext in ['.mp4', '.mov', '.webm', '.mkv', '.avi'])
+        media_type = 'video' if is_video else 'image'
+
+        width, height, duration = None, None, None
+
+        # Auto Tags
+        tags = []
+        base_tag = MODE_NAME_MAP.get(history.type, history.type)
+        if base_tag:
+            tags.append(f"#{base_tag}")
+
+        if history.prompt:
+            match = re.search(r"\[模型:\s*(.*?)\]", history.prompt)
+            if match:
+                lora_tag = match.group(1).strip()
+                tags.append(f"#{lora_tag}")
+
+        tags_json = json.dumps(tags, ensure_ascii=False)
+
+        new_post = GalleryPost(
+            task_id=task_id,
+            user_id=current_user.id,
+            media_type=media_type,
+            width=width,
+            height=height,
+            duration=duration,
+            tags=tags_json
+        )
+        session.add(new_post)
+        await session.commit()
+
+        # R2 copy logic
+        parts = history.output_file.split("/")
+        if len(parts) > 1 and parts[0] in ["bot-data", "comfyui-temp"]:
+            bucket_name = parts[0]
+            object_name = "/".join(parts[1:])
+        elif "comfyui-temp" not in history.output_file and "bot-data" not in history.output_file:
+            bucket_name = "comfyui-temp" if not "/" in history.output_file else "bot-data"
+            object_name = history.output_file
+        else:
+            bucket_name = "bot-data"
+            object_name = history.output_file
+
+        r2_object_name = parts[-1]
+
+        try:
+            # Await the copy directly to avoid frontend race conditions (cached 404 on CDN)
+            await storage.async_copy_to_r2(bucket_name, object_name, r2_object_name)
+        except Exception as e:
+            logger.error(f"Failed to copy {object_name} to R2 during submit: {e}")
+
+        await redis_client.increment_gallery_submit(current_user.id)
+
+        tags_str = " ".join(tags)
+        return {"status": "success", "message": f"投稿成功！已自动添加标签：{tags_str}"}
