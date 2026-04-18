@@ -23,6 +23,13 @@ def verify_telegram_authorization(data: dict) -> bool:
     if not received_hash:
         return False
 
+    # Check auth_date to prevent replay attacks (e.g. older than 24 hours)
+    import time
+    auth_date = data.get("auth_date")
+    if not auth_date or time.time() - int(auth_date) > 86400:
+        logger.error("Telegram auth_date is too old or missing (Replay attack prevention).")
+        return False
+
     # Sort data keys alphabetically and join them as key=value separated by newline
     data_check_string = "\n".join([f"{k}={v}" for k, v in sorted(data.items())])
     
@@ -45,9 +52,8 @@ async def login_telegram(req: TelegramLoginRequest):
     """
     data = req.model_dump(exclude_unset=True)
     
-    # For development/testing purposes, if hash is "debug_mode" bypass validation
-    # IN PRODUCTION: Remove this bypass!
-    if req.hash != "debug_mode" and not verify_telegram_authorization(data):
+    # Strict HMAC-SHA256 validation
+    if not verify_telegram_authorization(data):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid Telegram authentication signature."
@@ -71,12 +77,18 @@ async def login_telegram(req: TelegramLoginRequest):
         from src.services.permission_service import permission_service
         stats = await permission_service.get_user_detailed_stats(user.telegram_id)
         current_identity = stats.get("identity", user.current_identity)
+        current_group = stats.get("group", user.user_group)
         
         allowed_identities = ["内门弟子", "核心弟子", "真传弟子"]
-        if current_identity not in allowed_identities:
+        allowed_groups = ["金丹期", "元婴期", "化神期", "炼虚期", "合体期", "大乘期", "渡劫期"]
+        
+        is_allowed_identity = current_identity in allowed_identities
+        is_allowed_group = current_group in allowed_groups
+        
+        if not (is_allowed_identity or is_allowed_group):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="权限不足：只有内门、核心、真传弟子才能登录 Web 端"
+                detail="权限不足：只有金丹期及以上境界，或内门及以上身份的弟子才能登录 Web 端"
             )
         
         # Issue JWT

@@ -16,6 +16,9 @@ class GalleryPostResponse(BaseModel):
     thumbnail_url: str
     media_url: str
     created_at: datetime
+    is_active: bool = True
+    prompt: Optional[str] = None
+    task_type: Optional[str] = None
     
     # User interaction status for current user
     has_liked: bool = False

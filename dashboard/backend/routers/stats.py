@@ -235,8 +235,9 @@ async def get_stats(db: AsyncSession = Depends(get_db)):
             if row.range in holding_distribution:
                 holding_distribution[row.range] = row.count
 
-        # 外部余额查询: TON & Stars & RMB
+        # 外部余额查询: TON & USDT & Stars & RMB
         ton_balance = 0.0
+        usdt_balance = 0.0
         star_balance = 0
         rmb_balance = 0.0
         
@@ -249,8 +250,22 @@ async def get_stats(db: AsyncSession = Depends(get_db)):
                         data = resp.json()
                         if data.get("ok"):
                             ton_balance = round(float(data.get("result", 0)) / 1e9, 2)
+                            
+                    # Fetch USDT balance
+                    resp_jettons = await client.get(f"https://tonapi.io/v2/accounts/{ton_address}/jettons")
+                    if resp_jettons.status_code == 200:
+                        data = resp_jettons.json()
+                        balances = data.get("balances", [])
+                        for b in balances:
+                            jetton = b.get("jetton", {})
+                            symbol = jetton.get("symbol", "")
+                            if symbol in ["USDT", "USD₮"]:
+                                decimals = jetton.get("decimals", 6)
+                                balance_str = b.get("balance", "0")
+                                usdt_balance = round(float(balance_str) / (10 ** decimals), 2)
+                                break
         except Exception as e:
-            logger.error(f"Error fetching TON balance: {e}")
+            logger.error(f"Error fetching TON/USDT balance: {e}")
             
         try:
             bot_token = os.getenv("BOT_TOKEN")
@@ -342,6 +357,7 @@ async def get_stats(db: AsyncSession = Depends(get_db)):
             "avg_daily_credit_distribution": avg_credit_distribution,
             "credit_holding_distribution": holding_distribution,
             "ton_balance": ton_balance,
+            "usdt_balance": usdt_balance,
             "star_balance": star_balance,
             "rmb_balance": round(rmb_balance, 2)
         }

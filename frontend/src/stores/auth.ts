@@ -19,7 +19,7 @@ export interface User {
   user_group: string
   current_identity: string
   identity_expire_at?: string | null
-  total_contributions?: number
+  priority?: number
   generation_count?: number
   checkin_count?: number
   invitation_count?: number

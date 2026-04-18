@@ -2,7 +2,7 @@
 import { ref, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
-import { Heart, ThumbsDown, Wand2, Play, Image as ImageIcon, Video, Flame, Clock, Compass, Copy } from 'lucide-vue-next'
+import { Heart, ThumbsDown, Wand2, Play, Image as ImageIcon, Video, Flame, Clock, Trash2, Eye, EyeOff, Copy, Compass } from 'lucide-vue-next'
 import api from '@/api'
 import dayjs from 'dayjs'
 
@@ -22,6 +22,8 @@ interface Post {
   created_at: string
   has_liked: boolean
   has_disliked: boolean
+  is_active: boolean
+  prompt: string
 }
 
 const router = useRouter()
@@ -37,6 +39,8 @@ const taskType = ref('all')
 const loraModel = ref('all')
 const sortBy = ref('latest')
 const timeRange = ref('all')
+
+const filterType = ref('all')
 
 const allowedTypes = ref<{id: string, name: string}[]>([])
 const loraModels = ref<{id: string, name: string}[]>([])
@@ -112,15 +116,11 @@ const loadPosts = async (reset = false) => {
   const requestId = ++currentRequestId
   
   try {
-    const res = await api.get('/gallery/posts', {
+    const res = await api.get('/gallery/my-favorites', {
       params: {
         page: page.value,
         size: size.value,
-        media_type: mediaType.value,
-        task_type: taskType.value,
-        lora_model: loraModel.value === 'all' ? undefined : loraModel.value,
-        sort_by: sortBy.value,
-        time_range: timeRange.value
+        filter_type: filterType.value
       }
     })
     
@@ -157,6 +157,11 @@ const handleTaskTypeChange = (type: string) => {
   loadPosts(true)
 }
 
+const handleFilterTypeChange = (type: string) => {
+  filterType.value = type
+  loadPosts(true)
+}
+
 const handleInteract = async (post: Post, action: 'like' | 'dislike') => {
   if ((action === 'like' && post.has_liked) || (action === 'dislike' && post.has_disliked)) return
   
@@ -182,6 +187,18 @@ const handleInteract = async (post: Post, action: 'like' | 'dislike') => {
 const openDetail = (post: Post) => {
   currentPost.value = post
   detailVisible.value = true
+}
+
+const copyPrompt = (post: Post) => {
+  if (!post.prompt) {
+    message.warning('此投稿没有提示词')
+    return
+  }
+  navigator.clipboard.writeText(post.prompt).then(() => {
+    message.success('提示词已复制到剪贴板')
+  }).catch(() => {
+    message.error('复制失败')
+  })
 }
 
 const handleApply = async () => {
@@ -281,80 +298,19 @@ onUnmounted(() => {
 
 <template>
   <div class="gallery-container text-slate-200">
-    <!-- Header Controls -->
-    <div class="flex flex-col mb-6 gap-4">
-      <div class="flex flex-col md:flex-row justify-between items-center gap-4">
-        <!-- Task Types -->
-        <div class="flex flex-wrap bg-slate-800/50 p-1 rounded-xl border border-slate-700/50 gap-1">
-          <button 
-            @click="handleTaskTypeChange('all')"
-            class="px-4 py-1.5 rounded-lg transition-all font-medium text-sm"
-            :class="taskType === 'all' ? 'bg-cyan-500/20 text-cyan-400 shadow-[0_0_10px_rgba(56,189,248,0.2)]' : 'hover:text-cyan-300 text-slate-400'"
-          >
-            全部
-          </button>
-          <button 
-            v-for="tab in allowedTypes" 
-            :key="tab.id"
-            @click="handleTaskTypeChange(tab.id)"
-            class="px-4 py-1.5 rounded-lg transition-all font-medium text-sm"
-            :class="taskType === tab.id ? 'bg-cyan-500/20 text-cyan-400 shadow-[0_0_10px_rgba(56,189,248,0.2)]' : 'hover:text-cyan-300 text-slate-400'"
-          >
-            {{ tab.name }}
-          </button>
-        </div>
-        
-        <div class="flex items-center gap-3">
-          <!-- Time Range -->
-          <div class="flex bg-slate-800/50 p-1 rounded-xl border border-slate-700/50">
-            <button 
-              v-for="time in [{k:'all', n:'所有'}, {k:'today', n:'本日'}, {k:'week', n:'本周'}, {k:'month', n:'本月'}]" 
-              :key="time.k"
-              @click="timeRange = time.k; loadPosts(true)"
-              class="px-3 py-1.5 rounded-lg transition-all font-medium text-sm"
-              :class="timeRange === time.k ? 'bg-indigo-500/20 text-indigo-400 shadow-[0_0_10px_rgba(129,140,248,0.2)]' : 'hover:text-indigo-300 text-slate-400'"
-            >
-              {{ time.n }}
-            </button>
-          </div>
-          
-          <!-- Sort By -->
-          <div class="flex bg-slate-800/50 p-1 rounded-xl border border-slate-700/50">
-            <button 
-              v-for="sort in [{k:'latest', n:'最新发布', i: Clock}, {k:'likes', n:'最多点赞', i: Heart}, {k:'applied', n:'最多应用', i: Flame}]" 
-              :key="sort.k"
-              @click="sortBy = sort.k; loadPosts(true)"
-              class="px-3 py-1.5 rounded-lg transition-all font-medium text-sm flex items-center"
-              :class="sortBy === sort.k ? 'bg-indigo-500/20 text-indigo-400 shadow-[0_0_10px_rgba(129,140,248,0.2)]' : 'hover:text-indigo-300 text-slate-400'"
-            >
-              <component :is="sort.i" :size="14" class="mr-1.5" />
-              {{ sort.n }}
-            </button>
-          </div>
-        </div>
-      </div>
-      
-      <!-- Secondary Filter for LoRA Models -->
-      <div v-if="taskType === 'video_lora'" class="flex items-center gap-2 px-1">
-        <span class="text-sm text-slate-400">选择附加模型：</span>
-        <div class="flex flex-wrap gap-2">
-          <button 
-            @click="loraModel = 'all'; loadPosts(true)"
-            class="px-3 py-1 rounded-lg text-xs transition-all border"
-            :class="loraModel === 'all' ? 'bg-pink-500/20 border-pink-500/50 text-pink-400' : 'border-slate-700 hover:border-slate-500 text-slate-400'"
-          >
-            所有模型
-          </button>
-          <button 
-            v-for="lora in loraModels" 
-            :key="lora.id"
-            @click="loraModel = lora.id; loadPosts(true)"
-            class="px-3 py-1 rounded-lg text-xs transition-all border"
-            :class="loraModel === lora.id ? 'bg-pink-500/20 border-pink-500/50 text-pink-400' : 'border-slate-700 hover:border-slate-500 text-slate-400'"
-          >
-            {{ lora.name }}
-          </button>
-        </div>
+    
+    <!-- Top Filter Tabs -->
+    <div class="mb-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div class="flex items-center space-x-2 overflow-x-auto pb-2 md:pb-0 hide-scrollbar">
+        <button 
+          v-for="ft in [{id: 'all', name: '全部'}, {id: 'like', name: '我的点赞'}, {id: 'apply', name: '我的应用'}]" 
+          :key="ft.id"
+          @click="handleFilterTypeChange(ft.id)"
+          class="px-4 py-1.5 rounded-full text-sm font-medium transition-all whitespace-nowrap"
+          :class="filterType === ft.id ? 'bg-cyan-500 text-white shadow-[0_0_10px_rgba(56,189,248,0.4)]' : 'bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-slate-200'"
+        >
+          {{ ft.name }}
+        </button>
       </div>
     </div>
 
@@ -394,7 +350,7 @@ onUnmounted(() => {
           </div>
           
           <!-- Tags Overlay on Hover -->
-          <div class="absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex flex-col justify-end p-4">
+          <div class="absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex flex-col justify-between p-4">
             <div class="flex flex-wrap gap-1.5 mb-8">
               <span v-for="tag in post.tags.slice(0, 4)" :key="tag" class="text-[10px] bg-cyan-500/20 border border-cyan-500/30 text-cyan-100 px-2 py-0.5 rounded-full backdrop-blur-md">
                 {{ tag }}
@@ -432,7 +388,7 @@ onUnmounted(() => {
     <!-- Empty State -->
     <div v-if="!loading && posts.length === 0" class="py-20 text-center text-slate-500">
       <Compass :size="48" class="mx-auto mb-4 opacity-20" />
-      <p>暂无道友分享作品</p>
+      <p>您还没有收藏过任何作品</p>
     </div>
 
     <!-- Detail Modal -->
@@ -495,7 +451,14 @@ onUnmounted(() => {
             </button>
           </div>
           
-          <div class="mt-8">
+          <div class="mt-8 space-y-4">
+            <button v-if="currentPost.prompt"
+              @click="copyPrompt(currentPost)"
+              class="w-full py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-medium shadow-sm transition-all flex items-center justify-center border border-slate-600"
+            >
+              <Copy :size="18" class="mr-2" />
+              复制提示词 (Prompt)
+            </button>
             <button 
               @click="handleApply" 
               :disabled="applying"

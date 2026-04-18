@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks
 from sqlalchemy import select, desc, update
+from sqlalchemy.exc import IntegrityError
 from typing import List, Optional
 from src.database.core import AsyncSessionLocal
 from src.database.models import GalleryPost, UserInteraction, History, User
@@ -159,6 +160,8 @@ async def get_gallery_posts(
             hist_res = await session.execute(select(History).where(History.task_id == post.task_id))
             history = hist_res.scalar_one_or_none()
             output_file = history.output_file if history else None
+            prompt = history.prompt if history else None
+            task_type = history.type if history else None
             
             media_url = get_media_url(output_file)
             thumbnail_url = media_url # 暂时代替，后续可替换为 imgproxy 格式
@@ -177,6 +180,9 @@ async def get_gallery_posts(
                 thumbnail_url=thumbnail_url,
                 media_url=media_url,
                 created_at=post.created_at,
+                is_active=post.is_active,
+                prompt=prompt,
+                task_type=task_type,
                 has_liked=post.id in user_likes,
                 has_disliked=post.id in user_dislikes
             ))
@@ -189,6 +195,239 @@ async def get_gallery_posts(
             size=size,
             pages=pages
         )
+
+@router.get("/my-posts", response_model=PaginatedGalleryResponse)
+async def get_my_gallery_posts(
+    page: int = Query(1, ge=1),
+    size: int = Query(20, ge=1, le=100),
+    current_user: User = Depends(get_current_user)
+):
+    async with AsyncSessionLocal() as session:
+        query = select(GalleryPost).where(GalleryPost.user_id == current_user.id)
+        
+        query = query.order_by(desc(GalleryPost.id))
+            
+        # Get total count
+        from sqlalchemy import func
+        total_query = select(func.count()).select_from(query.subquery())
+        total = (await session.execute(total_query)).scalar()
+        
+        # Paginate
+        offset = (page - 1) * size
+        query = query.offset(offset).limit(size)
+        
+        result = await session.execute(query)
+        posts = result.scalars().all()
+        
+        # Load interactions for current user
+        user_likes = set()
+        user_dislikes = set()
+        if posts:
+            post_ids = [p.id for p in posts]
+            interactions = (await session.execute(
+                select(UserInteraction)
+                .where(UserInteraction.user_id == current_user.id)
+                .where(UserInteraction.post_id.in_(post_ids))
+                .where(UserInteraction.action_type.in_(["like", "dislike"]))
+            )).scalars().all()
+            for inter in interactions:
+                if inter.action_type == "like":
+                    user_likes.add(inter.post_id)
+                elif inter.action_type == "dislike":
+                    user_dislikes.add(inter.post_id)
+                        
+        response_items = []
+        for post in posts:
+            try:
+                tags = json.loads(post.tags) if post.tags else []
+            except:
+                tags = []
+            translated_tags = translate_tags(tags)
+            
+            hist_res = await session.execute(select(History).where(History.task_id == post.task_id))
+            history = hist_res.scalar_one_or_none()
+            output_file = history.output_file if history else None
+            prompt = history.prompt if history else None
+            task_type = history.type if history else None
+            
+            media_url = get_media_url(output_file)
+            thumbnail_url = media_url # 暂时代替，后续可替换为 imgproxy 格式
+            
+            response_items.append(GalleryPostResponse(
+                id=post.id,
+                task_id=post.task_id,
+                media_type=post.media_type,
+                width=post.width,
+                height=post.height,
+                duration=post.duration,
+                tags=translated_tags,
+                likes_count=post.likes_count,
+                dislikes_count=post.dislikes_count,
+                applied_count=post.applied_count,
+                thumbnail_url=thumbnail_url,
+                media_url=media_url,
+                created_at=post.created_at,
+                is_active=post.is_active,
+                prompt=prompt,
+                task_type=task_type,
+                has_liked=post.id in user_likes,
+                has_disliked=post.id in user_dislikes
+            ))
+            
+        pages = (total + size - 1) // size
+        return PaginatedGalleryResponse(
+            items=response_items,
+            total=total,
+            page=page,
+            size=size,
+            pages=pages
+        )
+
+@router.get("/my-favorites", response_model=PaginatedGalleryResponse)
+async def get_my_favorite_posts(
+    page: int = Query(1, ge=1),
+    size: int = Query(20, ge=1, le=100),
+    filter_type: str = Query("all", pattern="^(all|like|apply)$"),
+    current_user: User = Depends(get_current_user)
+):
+    async with AsyncSessionLocal() as session:
+        action_types = ["like", "apply"]
+        if filter_type == "like":
+            action_types = ["like"]
+        elif filter_type == "apply":
+            action_types = ["apply"]
+
+        query = select(GalleryPost).join(
+            UserInteraction, GalleryPost.id == UserInteraction.post_id
+        ).where(
+            UserInteraction.user_id == current_user.id,
+            UserInteraction.action_type.in_(action_types),
+            GalleryPost.is_active == True
+        ).distinct().order_by(desc(GalleryPost.id))
+            
+        # Get total count
+        from sqlalchemy import func
+        total_query = select(func.count()).select_from(query.subquery())
+        total = (await session.execute(total_query)).scalar()
+        
+        # Paginate
+        offset = (page - 1) * size
+        query = query.offset(offset).limit(size)
+        
+        result = await session.execute(query)
+        posts = result.scalars().all()
+        
+        # Load interactions for current user
+        user_likes = set()
+        user_dislikes = set()
+        if posts:
+            post_ids = [p.id for p in posts]
+            interactions = (await session.execute(
+                select(UserInteraction)
+                .where(UserInteraction.user_id == current_user.id)
+                .where(UserInteraction.post_id.in_(post_ids))
+                .where(UserInteraction.action_type.in_(["like", "dislike"]))
+            )).scalars().all()
+            for inter in interactions:
+                if inter.action_type == "like":
+                    user_likes.add(inter.post_id)
+                elif inter.action_type == "dislike":
+                    user_dislikes.add(inter.post_id)
+                        
+        response_items = []
+        for post in posts:
+            try:
+                tags = json.loads(post.tags) if post.tags else []
+            except:
+                tags = []
+            translated_tags = translate_tags(tags)
+            
+            hist_res = await session.execute(select(History).where(History.task_id == post.task_id))
+            history = hist_res.scalar_one_or_none()
+            output_file = history.output_file if history else None
+            prompt = history.prompt if history else None
+            task_type = history.type if history else None
+            
+            media_url = get_media_url(output_file)
+            thumbnail_url = media_url # 暂时代替，后续可替换为 imgproxy 格式
+            
+            response_items.append(GalleryPostResponse(
+                id=post.id,
+                task_id=post.task_id,
+                media_type=post.media_type,
+                width=post.width,
+                height=post.height,
+                duration=post.duration,
+                tags=translated_tags,
+                likes_count=post.likes_count,
+                dislikes_count=post.dislikes_count,
+                applied_count=post.applied_count,
+                thumbnail_url=thumbnail_url,
+                media_url=media_url,
+                created_at=post.created_at,
+                is_active=post.is_active,
+                prompt=prompt,
+                task_type=task_type,
+                has_liked=post.id in user_likes,
+                has_disliked=post.id in user_dislikes
+            ))
+            
+        pages = (total + size - 1) // size
+        return PaginatedGalleryResponse(
+            items=response_items,
+            total=total,
+            page=page,
+            size=size,
+            pages=pages
+        )
+
+@router.put("/posts/{post_id}/status")
+async def update_post_status(
+    post_id: int,
+    is_active: bool = Query(...),
+    current_user: User = Depends(get_current_user)
+):
+    async with AsyncSessionLocal() as session:
+        post = (await session.execute(select(GalleryPost).where(GalleryPost.id == post_id))).scalar_one_or_none()
+        if not post:
+            raise HTTPException(status_code=404, detail="帖子不存在")
+        if post.user_id != current_user.id:
+            raise HTTPException(status_code=403, detail="无权操作此帖子")
+            
+        await session.execute(update(GalleryPost).where(GalleryPost.id == post_id).values(is_active=is_active))
+        await session.commit()
+        return {"status": "success", "message": f"已{'上架' if is_active else '下架'}"}
+
+@router.delete("/posts/{post_id}")
+async def delete_post(
+    post_id: int,
+    current_user: User = Depends(get_current_user)
+):
+    from sqlalchemy import delete
+    async with AsyncSessionLocal() as session:
+        post = (await session.execute(select(GalleryPost).where(GalleryPost.id == post_id))).scalar_one_or_none()
+        if not post:
+            raise HTTPException(status_code=404, detail="帖子不存在")
+        if post.user_id != current_user.id:
+            raise HTTPException(status_code=403, detail="无权操作此帖子")
+            
+        # Delete related interactions first
+        await session.execute(delete(UserInteraction).where(UserInteraction.post_id == post_id))
+        
+        # Unlink history from this post
+        await session.execute(update(History).where(History.task_id == post.task_id).values(is_public=False)) # Optionally reset is_public
+        
+        # Delete post
+        await session.execute(delete(GalleryPost).where(GalleryPost.id == post_id))
+        
+        # Decrement total_contributions in users table
+        user_record = await session.execute(select(User).where(User.id == current_user.id))
+        user_obj = user_record.scalar_one_or_none()
+        if user_obj and user_obj.total_contributions > 0:
+            user_obj.total_contributions -= 1
+            
+        await session.commit()
+        return {"status": "success", "message": "删除成功"}
 
 @router.post("/posts/{post_id}/interact")
 async def interact_with_post(
@@ -223,7 +462,11 @@ async def interact_with_post(
         else:
             await session.execute(update(GalleryPost).where(GalleryPost.id == post.id).values(dislikes_count=GalleryPost.dislikes_count + 1))
             
-        await session.commit()
+        try:
+            await session.commit()
+        except IntegrityError:
+            await session.rollback()
+            raise HTTPException(status_code=400, detail="重复操作：您已经给过评价了！")
         return {"status": "success", "message": f"{'点赞' if action == 'like' else '点踩'}成功"}
 
 @router.get("/posts/{post_id}/apply-context", response_model=ApplyContextResponse)
@@ -246,7 +489,12 @@ async def get_apply_context(
         interaction = UserInteraction(user_id=current_user.id, post_id=post.id, action_type="apply")
         session.add(interaction)
         await session.execute(update(GalleryPost).where(GalleryPost.id == post.id).values(applied_count=GalleryPost.applied_count + 1))
-        await session.commit()
+        try:
+            await session.commit()
+        except IntegrityError:
+            await session.rollback()
+            # Already applied, just ignore the increment
+            pass
         
         input_file_url = None
         if history.input_file:
@@ -325,6 +573,13 @@ async def submit_to_gallery(
             tags=tags_json
         )
         session.add(new_post)
+        
+        # Increment total_contributions in users table
+        user_record = await session.execute(select(User).where(User.id == current_user.id))
+        user_obj = user_record.scalar_one_or_none()
+        if user_obj:
+            user_obj.total_contributions = (user_obj.total_contributions or 0) + 1
+            
         await session.commit()
 
         # R2 copy logic

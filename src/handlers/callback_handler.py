@@ -659,7 +659,13 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
                     await session.execute(update(GalleryPost).where(GalleryPost.id == post.id).values(dislikes_count=GalleryPost.dislikes_count + 1))
                     post.dislikes_count += 1 # for UI update
                     
-                await session.commit()
+                from sqlalchemy.exc import IntegrityError
+                try:
+                    await session.commit()
+                except IntegrityError:
+                    await session.rollback()
+                    await safe_answer_query(query, text="⚠️ 重复操作：您已经给过评价了！", show_alert=True)
+                    return
                 
                 # Update button text in place
                 keyboard = []

@@ -44,6 +44,20 @@ defineProps({
     <a-col :xs="24" :sm="12" :md="8" :lg="4">
       <a-card hoverable class="stat-card">
         <a-statistic
+          title="USDT 真实余额"
+          :value="stats.usdt_balance || 0"
+          :precision="2"
+          :value-style="{ color: '#52c41a' }"
+        >
+          <template #prefix>
+            <wallet-outlined />
+          </template>
+        </a-statistic>
+      </a-card>
+    </a-col>
+    <a-col :xs="24" :sm="12" :md="8" :lg="4">
+      <a-card hoverable class="stat-card">
+        <a-statistic
           title="用户支付的 Stars"
           :value="stats.star_balance || 0"
           :value-style="{ color: '#faad14' }"

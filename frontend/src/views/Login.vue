@@ -18,8 +18,13 @@ const handleTelegramAuth = async (user: any) => {
       
       // 校验用户身份
       const allowedIdentities = ['内门弟子', '核心弟子', '真传弟子']
-      if (!allowedIdentities.includes(userData.current_identity)) {
-        message.error('权限不足：只有内门、核心、真传弟子才能登录 Web 端')
+      const allowedGroups = ['金丹期', '元婴期', '化神期', '炼虚期', '合体期', '大乘期', '渡劫期']
+      
+      const isAllowed = allowedIdentities.includes(userData.current_identity) || 
+                        allowedGroups.includes(userData.user_group)
+                        
+      if (!isAllowed) {
+        message.error('权限不足：只有金丹期及以上境界，或内门及以上身份的弟子才能登录 Web 端')
         return
       }
 

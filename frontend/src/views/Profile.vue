@@ -113,8 +113,8 @@ onMounted(async () => {
               <Award :size="24" />
             </div>
             <div>
-              <p class="text-slate-400 text-sm mb-1">投稿次数</p>
-              <h3 class="text-xl font-bold text-slate-100 drop-shadow-sm">{{ authStore.user?.total_contributions || 0 }} 次</h3>
+              <p class="text-slate-400 text-sm mb-1">当前生成优先级</p>
+              <h3 class="text-xl font-bold text-slate-100 drop-shadow-sm">{{ authStore.user?.priority || 0 }}</h3>
             </div>
           </div>
         </a-card>

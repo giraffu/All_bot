@@ -31,7 +31,7 @@ class UserResponse(BaseModel):
     user_group: str
     current_identity: str
     identity_expire_at: Optional[datetime] = None
-    total_contributions: int = 0
+    priority: int = 0
     generation_count: int = 0
     checkin_count: int = 0
     invitation_count: int = 0

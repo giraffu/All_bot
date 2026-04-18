@@ -80,7 +80,14 @@ async def start_gallery_apply(update: Update, context: ContextTypes.DEFAULT_TYPE
         interaction = UserInteraction(user_id=internal_user.id, post_id=post.id, action_type="apply")
         session.add(interaction)
         post.applied_count += 1
-        await session.commit()
+        
+        from sqlalchemy.exc import IntegrityError
+        try:
+            await session.commit()
+        except IntegrityError:
+            await session.rollback()
+            # 已经记录过应用，静默忽略重复计数
+            pass
 
     task_type = history.type
     

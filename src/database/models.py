@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, BigInteger, DateTime, Boolean, ForeignKey, Text, Date, func, DECIMAL
+from sqlalchemy import Column, Integer, String, BigInteger, DateTime, Boolean, ForeignKey, Text, Date, func, DECIMAL, UniqueConstraint
 from sqlalchemy.orm import declarative_base, relationship
 from datetime import datetime
 
@@ -181,6 +181,9 @@ class GalleryPost(Base):
 
 class UserInteraction(Base):
     __tablename__ = "user_interactions"
+    __table_args__ = (
+        UniqueConstraint('user_id', 'post_id', 'action_type', name='uix_user_post_action'),
+    )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     user_id = Column(BigInteger, ForeignKey("users.id"), index=True)
