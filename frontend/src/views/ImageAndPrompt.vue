@@ -101,15 +101,9 @@ const resetForm = () => {
 
 <template>
   <div class="image-prompt-container max-w-7xl mx-auto flex flex-col h-[calc(100vh-80px)] w-full py-4 px-2 sm:px-6">
-    <div class="flex items-center mb-4 shrink-0">
-      <a-button type="link" @click="router.push('/profile')" class="pl-0 text-blue-500 hover:text-blue-600 flex items-center text-base">
-        <span class="mr-1">&larr;</span> 返回工作台
-      </a-button>
-    </div>
-
     <div class="flex flex-col lg:flex-row gap-6 flex-grow min-h-0">
       <!-- Left Panel: Input & Settings -->
-      <div class="w-full lg:w-[45%] flex flex-col bg-slate-800/40 backdrop-blur-md rounded-2xl shadow-sm border border-slate-700/50 overflow-hidden shrink-0">
+      <div class="w-full lg:w-[50%] flex flex-col bg-slate-800/40 backdrop-blur-md rounded-2xl shadow-sm border border-slate-700/50 overflow-hidden shrink-0">
         <div class="p-6 flex-grow overflow-y-auto custom-scrollbar">
           <h2 class="text-2xl font-bold mb-2 text-slate-100">{{ taskTitle }}</h2>
           <p class="text-slate-400 mb-6 text-sm">上传一张图片，并输入你想要 AI 如何修改它的描述。</p>
@@ -121,79 +115,83 @@ const resetForm = () => {
           </div>
           
           <div class="flex flex-col gap-6">
-            <div class="upload-section flex flex-col">
-              <h3 class="text-lg font-bold mb-3 text-slate-200 flex items-center">
-                <span class="text-slate-500 mr-2">1.</span> 上传图片
-              </h3>
-              <div v-if="filePreview" class="relative group rounded-xl overflow-hidden border border-slate-600/50 bg-slate-900/50 flex items-center justify-center flex-grow h-48 w-full">
-                <a-image :src="filePreview" class="max-w-full max-h-48 object-contain" :preview="true" />
-                <div class="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center pointer-events-none">
-                  <a-button danger type="primary" @click="handleRemove" class="pointer-events-auto">重新上传</a-button>
+            <div class="flex flex-row gap-4 h-64 w-full">
+              <!-- Image Upload -->
+              <div class="upload-section flex flex-col w-[40%] min-w-[160px] shrink-0 h-full">
+                <h3 class="text-sm font-bold mb-2 text-slate-200 flex items-center">
+                  <span class="text-slate-500 mr-2">1.</span> 基础图片
+                </h3>
+                <div v-if="filePreview" class="relative group rounded-xl overflow-hidden border border-slate-600/50 bg-slate-900/50 flex items-center justify-center flex-grow w-full">
+                  <a-image :src="filePreview" class="max-w-full max-h-full object-contain" :preview="true" />
+                  <div class="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center pointer-events-none">
+                    <a-button danger type="primary" @click="handleRemove" class="pointer-events-auto" size="small">重新上传</a-button>
+                  </div>
+                </div>
+                <a-upload-dragger
+                  v-else
+                  v-model:fileList="fileList"
+                  name="file"
+                  :multiple="false"
+                  accept="image/png, image/jpeg"
+                  :before-upload="beforeUpload"
+                  @remove="handleRemove"
+                  class="upload-dragger flex-grow flex items-center justify-center w-full"
+                  :show-upload-list="false"
+                >
+                  <div class="flex flex-col items-center justify-center h-full w-full p-4">
+                    <p class="ant-upload-drag-icon text-blue-500 text-3xl mb-2"><inbox-outlined></inbox-outlined></p>
+                    <p class="ant-upload-text font-medium text-slate-300 text-sm">点击/拖拽</p>
+                    <p class="ant-upload-hint text-slate-500 mt-1 text-xs">JPG/PNG</p>
+                  </div>
+                </a-upload-dragger>
+                
+                <div v-if="uploading" class="mt-2 shrink-0">
+                  <span class="text-xs text-slate-400">正在上传...</span>
+                  <a-progress :percent="uploadProgress" status="active" strokeColor="#3b82f6" size="small" />
                 </div>
               </div>
-              <a-upload-dragger
-                v-else
-                v-model:fileList="fileList"
-                name="file"
-                :multiple="false"
-                accept="image/png, image/jpeg"
-                :before-upload="beforeUpload"
-                @remove="handleRemove"
-                class="upload-dragger flex-grow h-48 flex items-center justify-center w-full"
-                :show-upload-list="false"
-              >
-                <div class="flex flex-col items-center justify-center h-full w-full">
-                  <p class="ant-upload-drag-icon text-blue-500 text-3xl mb-2"><inbox-outlined></inbox-outlined></p>
-                  <p class="ant-upload-text font-medium text-slate-300 text-sm">点击或拖拽上传</p>
-                  <p class="ant-upload-hint text-slate-500 mt-1 text-xs">支持 JPG/PNG 格式</p>
-                </div>
-              </a-upload-dragger>
-              
-              <div v-if="uploading" class="mt-3">
-                <span class="text-xs text-slate-400">正在上传...</span>
-                <a-progress :percent="uploadProgress" status="active" strokeColor="#3b82f6" size="small" />
-              </div>
-            </div>
 
-            <div class="prompt-section flex flex-col">
-              <h3 class="text-lg font-bold mb-3 text-slate-200 flex items-center">
-                <span class="text-slate-500 mr-2">2.</span> 输入修改描述
-              </h3>
-              
-              <div v-if="isTemplateApplied" class="bg-slate-900/80 border border-slate-700/50 rounded-xl p-4 text-center h-[120px] flex flex-col items-center justify-center">
-                <div class="flex items-center justify-center text-slate-500 mb-2">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mr-2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+              <!-- Prompt Input -->
+              <div class="prompt-section flex flex-col flex-grow min-w-0 h-full">
+                <h3 class="text-sm font-bold mb-2 text-slate-200 flex items-center shrink-0">
+                  <span class="text-slate-500 mr-2">2.</span> 输入修改描述
+                </h3>
+                
+                <div v-if="isTemplateApplied" class="bg-slate-900/80 border border-slate-700/50 rounded-xl p-4 text-center flex-grow flex flex-col items-center justify-center">
+                  <div class="flex items-center justify-center text-slate-500 mb-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mr-2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
                   <span class="text-sm font-medium">提示词已锁定</span>
                 </div>
-                <p class="text-slate-400 text-xs">提示词已由模板自动配置并隐藏，直接生成即可。</p>
+                  <p class="text-slate-400 text-xs">提示词已由模板自动配置并隐藏。</p>
+                </div>
+                
+                <template v-else>
+                  <a-textarea 
+                    v-model:value="prompt" 
+                    placeholder="例如：把背景变成海滩，让他戴上墨镜..." 
+                    class="rounded-xl border-slate-600/50 focus:border-blue-500 focus:ring-blue-500 text-sm p-3 flex-grow resize-none w-full"
+                  />
+                  <p class="text-xs text-slate-500 mt-2 shrink-0">提示：描述越详细， AI 理解越准确。</p>
+                </template>
               </div>
-              
-              <template v-else>
-                <a-textarea 
-                  v-model:value="prompt" 
-                  placeholder="例如：把背景变成海滩，让他戴上墨镜..." 
-                  class="rounded-xl border-slate-600/50 focus:border-blue-500 focus:ring-blue-500 text-sm p-3 flex-grow resize-none min-h-[120px]"
-                />
-                <p class="text-xs text-slate-500 mt-2">提示：描述越详细， AI 理解越准确。</p>
-              </template>
             </div>
           </div>
         </div>
 
         <!-- Action Bar in Left Panel -->
-        <div class="action-bar bg-slate-900/40 p-6 border-t border-slate-700/50 flex justify-between items-center shrink-0">
-          <div class="cost-info flex flex-col">
-            <span class="text-slate-400 text-sm font-medium">预计消耗灵石</span>
-            <div class="flex items-end mt-1">
-              <span class="font-bold text-3xl text-blue-600 leading-none">{{ taskCost }}</span>
-              <span class="text-lg text-blue-400 ml-1 mb-0.5">💎</span>
+        <div class="p-6 border-t border-slate-700/50 bg-slate-900/40 shrink-0 flex items-center justify-between">
+          <div class="flex flex-col">
+            <span class="text-slate-400 text-sm font-medium mb-1">预计消耗灵石</span>
+            <div class="flex items-baseline text-blue-400 font-bold">
+              <span class="text-2xl leading-none mr-1">{{ taskCost }}</span>
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M6 2L2 8l10 14L22 8l-4-6H6z"></path></svg>
             </div>
           </div>
           
           <a-button 
             type="primary" 
             size="large" 
-            class="bg-blue-600 hover:bg-blue-500 w-40 h-12 text-base font-bold tracking-wider rounded-xl shadow-md transition-all hover:shadow-lg border-none flex items-center justify-center text-white" 
+            class="bg-blue-600 hover:bg-blue-500 border-none px-8 font-bold tracking-wider rounded-xl shadow-lg shadow-blue-500/20" 
             :disabled="!objectKey || !prompt"
             :loading="isSubmitting"
             @click="handleGenerate"
@@ -205,7 +203,7 @@ const resetForm = () => {
       </div>
 
       <!-- Right Panel: Result Preview -->
-      <div class="w-full lg:w-[55%] flex flex-col bg-slate-800/40 backdrop-blur-md rounded-2xl shadow-sm border border-slate-700/50 overflow-hidden relative">
+      <div class="w-full lg:w-[50%] flex flex-col bg-slate-800/40 backdrop-blur-md rounded-2xl shadow-sm border border-slate-700/50 overflow-hidden relative">
         <div class="p-6 flex-grow flex flex-col items-center justify-center h-full overflow-y-auto custom-scrollbar">
           
           <!-- Empty State -->

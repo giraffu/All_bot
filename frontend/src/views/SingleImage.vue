@@ -91,16 +91,10 @@ const resetForm = () => {
 
 <template>
   <div class="single-image-container max-w-7xl mx-auto flex flex-col h-[calc(100vh-80px)] w-full py-4 px-2 sm:px-6">
-    <div class="flex items-center mb-4 shrink-0">
-      <a-button type="link" @click="router.push('/profile')" class="pl-0 text-blue-500 hover:text-blue-600 flex items-center text-base">
-        <span class="mr-1">&larr;</span> 返回工作台
-      </a-button>
-    </div>
-
     <div class="flex flex-col lg:flex-row gap-6 flex-grow min-h-0">
       <!-- Left Panel: Input & Settings -->
-      <div class="w-full lg:w-[45%] flex flex-col bg-slate-800/40 backdrop-blur-md rounded-2xl shadow-sm border border-slate-700/50 overflow-hidden shrink-0">
-        <div class="p-6 flex-grow overflow-y-auto custom-scrollbar flex flex-col justify-center items-center text-center">
+      <div class="w-full lg:w-[50%] flex flex-col bg-slate-800/40 backdrop-blur-md rounded-2xl shadow-sm border border-slate-700/50 overflow-hidden shrink-0">
+        <div class="p-6 flex-grow overflow-y-auto custom-scrollbar flex flex-col">
           <h2 class="text-2xl font-bold mb-2 text-slate-100">{{ taskTitle }}</h2>
           <p class="text-slate-400 mb-6 text-sm">请上传一张符合要求的图片以开始生成。</p>
           
@@ -110,11 +104,14 @@ const resetForm = () => {
             <div class="text-slate-300 text-sm">已准备好应用所选的模板效果，请上传您的图片即可生成。</div>
           </div>
           
-          <div class="upload-section w-full max-w-md h-48 flex flex-col">
-            <div v-if="filePreview" class="relative group rounded-xl overflow-hidden border border-slate-600/50 bg-slate-800/40 backdrop-blur-md flex items-center justify-center flex-grow h-full w-full">
-              <a-image :src="filePreview" class="max-w-full max-h-48 object-contain" :preview="true" />
+          <div class="upload-section flex flex-col w-full flex-grow min-h-0">
+            <h3 class="text-sm font-bold mb-3 text-slate-200 flex items-center">
+              <span class="text-slate-500 mr-2">1.</span> 基础图片
+            </h3>
+            <div v-if="filePreview" class="relative group rounded-xl overflow-hidden border border-slate-600/50 bg-slate-900/50 flex items-center justify-center flex-grow w-full">
+              <a-image :src="filePreview" class="max-w-full max-h-full object-contain" :preview="true" />
               <div class="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center pointer-events-none">
-                <a-button danger type="primary" @click="handleRemove" class="pointer-events-auto">重新上传</a-button>
+                <a-button danger type="primary" @click="handleRemove" class="pointer-events-auto" size="small">重新上传</a-button>
               </div>
             </div>
             <a-upload-dragger
@@ -125,37 +122,37 @@ const resetForm = () => {
               accept="image/png, image/jpeg"
               :before-upload="beforeUpload"
               @remove="handleRemove"
-              class="upload-dragger bg-slate-800/40 backdrop-blur-md border-dashed border-2 border-blue-200 hover:border-blue-400 transition-colors flex-grow h-full flex items-center justify-center w-full"
+              class="upload-dragger bg-slate-800/40 backdrop-blur-md border-dashed border-2 border-blue-200 hover:border-blue-400 transition-colors flex-grow flex items-center justify-center w-full"
               :show-upload-list="false"
             >
-              <div class="flex flex-col items-center justify-center h-full w-full">
+              <div class="flex flex-col items-center justify-center h-full w-full p-4">
                 <p class="ant-upload-drag-icon text-blue-500 text-3xl mb-2"><inbox-outlined></inbox-outlined></p>
-                <p class="ant-upload-text font-medium text-slate-300 text-sm">点击或拖拽上传图片</p>
-                <p class="ant-upload-hint text-slate-500 mt-1 text-xs">支持 JPG/PNG 格式</p>
+                <p class="ant-upload-text font-medium text-slate-300 text-sm">点击/拖拽</p>
+                <p class="ant-upload-hint text-slate-500 mt-1 text-xs">JPG/PNG</p>
               </div>
             </a-upload-dragger>
           </div>
 
-          <div v-if="uploading" class="mt-4 w-full max-w-md">
+          <div v-if="uploading" class="mt-4 w-full">
             <span class="text-xs text-slate-400 mb-1 block">正在上传至服务器...</span>
             <a-progress :percent="uploadProgress" status="active" strokeColor="#3b82f6" size="small" />
           </div>
         </div>
 
         <!-- Action Bar in Left Panel -->
-        <div class="action-bar bg-slate-900/40 p-6 border-t border-slate-700/50 flex justify-between items-center shrink-0">
-          <div class="cost-info flex flex-col">
-            <span class="text-slate-400 text-sm font-medium">预计消耗灵石</span>
-            <div class="flex items-end mt-1">
-              <span class="font-bold text-3xl text-blue-600 leading-none">{{ taskCost }}</span>
-              <span class="text-lg text-blue-400 ml-1 mb-0.5">💎</span>
+        <div class="p-6 border-t border-slate-700/50 bg-slate-900/40 shrink-0 flex items-center justify-between">
+          <div class="flex flex-col">
+            <span class="text-slate-400 text-sm font-medium mb-1">预计消耗灵石</span>
+            <div class="flex items-baseline text-blue-400 font-bold">
+              <span class="text-2xl leading-none mr-1">{{ taskCost }}</span>
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M6 2L2 8l10 14L22 8l-4-6H6z"></path></svg>
             </div>
           </div>
           
           <a-button 
             type="primary" 
             size="large" 
-            class="bg-blue-600 hover:bg-blue-500 w-40 h-12 text-base font-bold tracking-wider rounded-xl shadow-md transition-all hover:shadow-lg border-none flex items-center justify-center text-white" 
+            class="bg-blue-600 hover:bg-blue-500 border-none px-8 font-bold tracking-wider rounded-xl shadow-lg shadow-blue-500/20" 
             :disabled="!objectKey"
             :loading="isSubmitting"
             @click="handleGenerate"
@@ -167,7 +164,7 @@ const resetForm = () => {
       </div>
 
       <!-- Right Panel: Result Preview -->
-      <div class="w-full lg:w-[55%] flex flex-col bg-slate-800/40 backdrop-blur-md rounded-2xl shadow-sm border border-slate-700/50 overflow-hidden relative">
+      <div class="w-full lg:w-[50%] flex flex-col bg-slate-800/40 backdrop-blur-md rounded-2xl shadow-sm border border-slate-700/50 overflow-hidden relative">
         <div class="p-6 flex-grow flex flex-col items-center justify-center h-full overflow-y-auto custom-scrollbar">
           
           <!-- Empty State -->

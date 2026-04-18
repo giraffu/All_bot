@@ -170,12 +170,22 @@ async def core_submit_generation_task(
                     width=resolution, height=resolution, length=frame_length
                 )
         else:
-            task_id = await image_service.submit_task(
-                prompt=prompt,
-                image_paths=saved_input_images,
-                negative_prompt=negative_prompt,
-                priority=priority
-            )
+            if task_type == "i2i_pro" or task_type == "MODE_I2I_PRO":
+                import random
+                seed = random.randint(1, 9007199254740991)
+                task_id = await image_service.submit_i2i_pro_task(
+                    prompt=prompt,
+                    image_path=saved_input_images[0],
+                    seed=seed,
+                    priority=priority
+                )
+            else:
+                task_id = await image_service.submit_task(
+                    prompt=prompt,
+                    image_paths=saved_input_images,
+                    negative_prompt=negative_prompt,
+                    priority=priority
+                )
 
         if registry_task_id and task_id:
             await TaskRegistry.update_backend_task_id(registry_task_id, task_id)

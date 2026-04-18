@@ -150,7 +150,7 @@ onMounted(() => {
 <template>
   <div class="history-container p-6 rounded-xl">
     <div class="flex justify-between items-center mb-6">
-      <h2 class="text-2xl font-bold text-slate-200 drop-shadow-sm">生成记录</h2>
+      <h2 class="text-2xl font-bold text-slate-200 drop-shadow-sm">闪回瓶</h2>
       <a-button class="bg-slate-800 text-cyan-200 border-cyan-500/30 hover:bg-slate-700 hover:text-white hover:border-cyan-400" @click="fetchHistory(1)">刷新</a-button>
     </div>
 

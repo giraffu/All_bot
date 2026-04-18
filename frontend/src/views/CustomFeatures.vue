@@ -93,7 +93,7 @@ onMounted(() => {
     <div>
       <h2 class="text-xl font-bold text-slate-200 mb-4 flex items-center drop-shadow-sm">
         <span class="w-1.5 h-6 bg-cyan-500 rounded-full mr-2 shadow-[0_0_8px_rgba(56,189,248,0.5)]"></span>
-        自定义功能
+        练功房
       </h2>
       
       <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">

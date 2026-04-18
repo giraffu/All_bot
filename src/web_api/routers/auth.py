@@ -102,6 +102,7 @@ async def login_telegram(req: TelegramLoginRequest):
             credits=stats.get("credits", user.credits),
             user_group=stats.get("group", user.user_group),
             current_identity=current_identity,
+            priority=stats.get("priority", 0),
             identity_expire_at=stats.get("identity_expire_at"),
             total_contributions=stats.get("total_contributions", 0),
             generation_count=stats.get("generations", 0),

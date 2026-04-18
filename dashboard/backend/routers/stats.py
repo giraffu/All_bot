@@ -58,6 +58,19 @@ async def get_stats(db: AsyncSession = Depends(get_db)):
         core_disciple_count = identity_counts.get("核心弟子", 0)
         true_disciple_count = identity_counts.get("真传弟子", 0)
 
+        # Calculate User Group (Cultivation Level) distribution
+        user_group_stmt = select(User.user_group, func.count(User.id)).group_by(User.user_group)
+        user_group_result = await db.execute(user_group_stmt)
+        user_group_distribution = {}
+        for row in user_group_result:
+            if row.user_group:
+                user_group_distribution[row.user_group] = row.count
+        
+        # We ensure the requested keys exist
+        for k in ["凡人", "练气期", "筑基期", "金丹期", "元婴期"]:
+            if k not in user_group_distribution:
+                user_group_distribution[k] = 0
+
         result = await db.execute(select(func.count(History.id)))
         total_generations = result.scalar()
 
@@ -356,6 +369,7 @@ async def get_stats(db: AsyncSession = Depends(get_db)):
             "credit_distribution": credit_distribution,
             "avg_daily_credit_distribution": avg_credit_distribution,
             "credit_holding_distribution": holding_distribution,
+            "user_group_distribution": user_group_distribution,
             "ton_balance": ton_balance,
             "usdt_balance": usdt_balance,
             "star_balance": star_balance,

@@ -10,6 +10,7 @@ import AvgDailyDistributionChart from './AvgDailyDistributionChart.vue'
 import CreditDistributionChart from './CreditDistributionChart.vue'
 import AvgDailyCreditDistributionChart from './AvgDailyCreditDistributionChart.vue'
 import CreditHoldingDistributionChart from './CreditHoldingDistributionChart.vue'
+import UserGroupDistributionChart from './UserGroupDistributionChart.vue'
 import LineChart from './LineChart.vue'
 
 const props = defineProps({
@@ -86,6 +87,9 @@ const updateHistoryTimeRange = (value) => {
     <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
       <div class="h-80">
         <CreditHoldingDistributionChart title="用户持有积分分布" :data="stats.credit_holding_distribution" />
+      </div>
+      <div class="h-80">
+        <UserGroupDistributionChart title="用户修为分布" :data="stats.user_group_distribution" />
       </div>
     </div>
 

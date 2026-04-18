@@ -22,14 +22,35 @@ logger = logging.getLogger(__name__)
 quota_manager = QuotaManager()
 
 from src.utils import load_prompts
-from src.constants import TASK_COSTS
+from src.constants import TASK_COSTS, RESOLUTION_COST, DURATION_MULTIPLIER, MODE_I2I_PRO, MODE_FACESWAP_STEP1
 
-COST_MAP = {
-    "face_swap": 3,
-    "face_video": 20,
-    "txt2img": 2,
-    "i2i_pro": 5
-}
+def calculate_task_cost(task_type: str, inputs: dict) -> int:
+    """Calculate dynamic cost for web tasks to match Bot logic"""
+    # Map web task_type to bot constants if needed
+    mode = task_type
+    if task_type == "face_swap":
+        mode = MODE_FACESWAP_STEP1
+    elif task_type == "i2i_pro":
+        mode = MODE_I2I_PRO
+        
+    video_types = ["doggy_style", "perfect_video_insert", "blowjob", "undress_tongue", "closeup_blowjob", "custom_video", "face_video", "video_lora"]
+    is_video_task = task_type in video_types
+    
+    if is_video_task:
+        resolution = inputs.get("resolution", 512)
+        duration = inputs.get("duration", 5)
+        res_str = f"{resolution}p" if isinstance(resolution, int) else str(resolution)
+        if not res_str.endswith('p'):
+            res_str += 'p'
+        dur_str = f"{duration}s" if isinstance(duration, int) else str(duration)
+        if not dur_str.endswith('s'):
+            dur_str += 's'
+            
+        base_cost = RESOLUTION_COST.get(res_str, TASK_COSTS.get(mode, 6))
+        multiplier = DURATION_MULTIPLIER.get(dur_str, 1.0)
+        return int(base_cost * multiplier)
+    else:
+        return TASK_COSTS.get(mode, 2)
 
 from src.logger import UserLogger
 
@@ -89,7 +110,15 @@ async def create_generation_task(
     """
     video_types = ["doggy_style", "perfect_video_insert", "blowjob", "undress_tongue", "closeup_blowjob", "custom_video", "face_video", "video_lora"]
     is_video_task = req.task_type in video_types
-    cost = TASK_COSTS.get(req.task_type, COST_MAP.get(req.task_type, 6 if is_video_task else 2))
+    
+    if is_video_task:
+        resolution = req.inputs.get("resolution", 512)
+        duration = req.inputs.get("duration", 5)
+        if int(resolution) >= 1024 and int(duration) >= 10:
+            raise HTTPException(status_code=400, detail="Cannot select 1024p resolution and 10s duration simultaneously due to high resource usage.")
+            
+    cost = calculate_task_cost(req.task_type, req.inputs)
+
     
     # 1. Check concurrency
     can_run, lock_err = await check_concurrency_lock(current_user.id)
@@ -148,7 +177,12 @@ async def create_generation_task(
             face_img = req.inputs.get("face_image")
             video_path = req.inputs.get("target_video")
             resolution = req.inputs.get("resolution", 512)
-            duration = req.inputs.get("duration", 5)
+            # Match Bot's duration logic for face_video which expects frames
+            duration_sec = req.inputs.get("duration", 5)
+            if duration_sec >= 10:
+                duration_frames = 161
+            else:
+                duration_frames = 121 # Default max frames for face_video
             
             success, msg, task_id, saved_face_img, saved_vid, registry_task_id = await core_submit_face_video(
                 internal_user_id=current_user.id,
@@ -156,7 +190,7 @@ async def create_generation_task(
                 face_image_path=face_img,
                 video_path=video_path,
                 resolution=resolution,
-                duration=duration,
+                duration=duration_frames,
                 cost=cost,
                 mode="MODE_FACE_VIDEO_STEP2",
                 priority=final_priority,

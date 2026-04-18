@@ -21,9 +21,12 @@ async def check_concurrency_lock(internal_user_id: int) -> Tuple[bool, str]:
     # 1. 检查队列长度与身份
     identity_str = await permission_service.get_user_identity(internal_user_id)
     if identity_str == "外门弟子":
-        sys_status = await get_system_status()
-        if sys_status and sys_status.get("queue_size", 0) > 200:
-            return False, "⚠️ **服务器繁忙**\n\n当前排队任务已超过 200 个，为了保证服务稳定性，**外门弟子**暂不可提交新任务。\n\n💡 请稍后再试，或通过「个人中心」升级至内门弟子及以上身份获取优先排队特权！"
+        # 补充检查修为境界：凡人、练气期不可突破排队限制，筑基期及以上可以
+        user_group = await permission_service.get_user_group(internal_user_id)
+        if user_group in ["凡人", "练气期"]:
+            sys_status = await get_system_status()
+            if sys_status and sys_status.get("queue_size", 0) > 200:
+                return False, "⚠️ **服务器繁忙**\n\n当前排队任务已超过 200 个，为了保证服务稳定性，**练气期及以下外门弟子**暂不可提交新任务。\n\n💡 请稍后再试，或努力提升修为至**筑基期**，也可通过「个人中心」升级至内门弟子及以上身份获取特权！"
 
     # 2. 原有并发锁检查
     active_tasks = await redis_client.increment_user_concurrency(internal_user_id)

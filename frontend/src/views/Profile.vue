@@ -182,10 +182,10 @@ onMounted(async () => {
       <h3 class="text-lg font-bold text-slate-200 mb-2 flex items-center drop-shadow-sm">
         <Activity :size="20" class="mr-2 text-cyan-400 drop-shadow-[0_0_5px_rgba(56,189,248,0.5)]" /> 快捷指引
       </h3>
-      <p class="text-slate-400 mb-4">通过侧边栏的【自定义功能】探索更多 AI 图像与视频生成玩法。</p>
+      <p class="text-slate-400 mb-4">通过侧边栏的【练功房】探索更多 AI 图像与视频生成玩法。</p>
       <div class="flex flex-wrap gap-3">
         <a-button type="primary" @click="$router.push('/custom-features')" class="bg-gradient-to-r from-indigo-600 to-cyan-700 border-none hover:from-indigo-500 hover:to-cyan-600 shadow-md">
-          前往 自定义功能
+          前往 练功房
         </a-button>
       </div>
     </div>

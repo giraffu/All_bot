@@ -188,7 +188,7 @@ watch(() => route.name, (newName) => {
     <a-layout-sider v-model:collapsed="collapsed" collapsible breakpoint="lg" theme="dark" class="sider-custom z-10">
       <div class="logo h-16 flex items-center justify-center relative z-10">
         <div class="absolute inset-0 bg-gradient-to-r from-cyan-500/10 to-indigo-500/10 opacity-50"></div>
-        <h1 class="text-slate-100 text-xl font-bold tracking-widest truncate px-4 drop-shadow-[0_2px_4px_rgba(56,189,248,0.5)]" v-if="!collapsed">合欢宗</h1>
+        <h1 class="text-slate-100 text-xl font-bold tracking-widest truncate px-4 drop-shadow-[0_2px_4px_rgba(56,189,248,0.5)]" v-if="!collapsed">合欢密宗</h1>
         <h1 class="text-slate-100 text-xl font-bold tracking-widest drop-shadow-[0_2px_4px_rgba(56,189,248,0.5)]" v-else>合欢</h1>
       </div>
       <a-menu
@@ -203,23 +203,23 @@ watch(() => route.name, (newName) => {
         </a-menu-item>
         <a-menu-item key="Gallery">
           <template #icon><Compass :size="18" /></template>
-          <span>发现广场</span>
+          <span>修仙市集</span>
         </a-menu-item>
         <a-menu-item key="CustomFeatures">
           <template #icon><Wand2 :size="18" /></template>
-          <span>自定义功能</span>
+          <span>练功房</span>
         </a-menu-item>
         <a-menu-item key="History">
           <template #icon><HistoryIcon :size="18" /></template>
-          <span>历史记录</span>
+          <span>闪回瓶</span>
         </a-menu-item>
         <a-menu-item key="MySubmissions">
           <template #icon><Bookmark :size="18" /></template>
-          <span>我的投稿</span>
+          <span>个人心得</span>
         </a-menu-item>
         <a-menu-item key="MyFavorites">
           <template #icon><Star :size="18" /></template>
-          <span>我的收藏</span>
+          <span>修仙笔记</span>
         </a-menu-item>
       </a-menu>
     </a-layout-sider>
@@ -227,7 +227,7 @@ watch(() => route.name, (newName) => {
       <a-layout class="flex flex-col h-screen overflow-hidden bg-transparent">
       <a-layout-header class="header-custom px-6 flex justify-between items-center shrink-0 z-10 sticky top-0">
         <div class="header-left">
-          <h2 class="text-lg font-bold text-slate-200 tracking-wide m-0 drop-shadow-sm">{{ route.name === 'Profile' ? '个人中心' : (route.name === 'Gallery' ? '发现广场' : (route.name === 'CustomFeatures' ? '自定义功能' : (route.name === 'History' ? '历史记录' : (route.name === 'MySubmissions' ? '我的投稿' : (route.name === 'MyFavorites' ? '我的收藏' : '功能'))))) }}</h2>
+          <h2 class="text-lg font-bold text-slate-200 tracking-wide m-0 drop-shadow-sm">{{ route.name === 'Profile' ? '个人中心' : (route.name === 'Gallery' ? '修仙市集' : (route.name === 'CustomFeatures' ? '练功房' : (route.name === 'History' ? '闪回瓶' : (route.name === 'MySubmissions' ? '个人心得' : (route.name === 'MyFavorites' ? '修仙笔记' : '功能'))))) }}</h2>
         </div>
         <div class="header-right flex items-center space-x-4">
           <div class="balance flex items-center bg-slate-800/40 backdrop-blur-md px-3 py-1 rounded-full border border-cyan-500/20 shadow-sm transition-all hover:shadow-[0_0_8px_rgba(56,189,248,0.3)] hover:scale-105">

@@ -120,160 +120,183 @@ const resetForm = () => {
 </script>
 
 <template>
-  <div class="video-swap-container max-w-4xl mx-auto flex flex-col h-full w-full py-4">
-    <div class="flex items-center mb-4 shrink-0">
-      <a-button type="link" @click="$router.push('/profile')" class="pl-0 text-blue-500 hover:text-blue-600 flex items-center text-base">
-        <span class="mr-1">&larr;</span> 返回工作台
-      </a-button>
-    </div>
+  <div class="video-swap-container max-w-7xl mx-auto flex flex-col h-[calc(100vh-80px)] w-full py-4 px-2 sm:px-6">
+    <div class="flex flex-col lg:flex-row gap-6 flex-grow min-h-0">
+      <!-- Left Panel: Input & Settings -->
+      <div class="w-full lg:w-[50%] flex flex-col bg-slate-800/40 backdrop-blur-md rounded-2xl shadow-sm border border-slate-700/50 overflow-hidden shrink-0">
+        <!-- Scrollable Content -->
+        <div class="p-6 flex-grow overflow-y-auto custom-scrollbar">
+          <h2 class="text-2xl font-bold mb-5 text-slate-100">视频换脸设置</h2>
+          
+          <div v-if="isTemplateApplied" class="mb-6 bg-indigo-500/20 border border-indigo-500/30 rounded-xl p-4 flex items-center">
+            <div class="text-indigo-400 mr-3">✨</div>
+            <div class="text-slate-300 text-sm">已加载一键视频换脸模板，目标视频已锁定，请在上方上传您需要替换的人脸即可开始生成。</div>
+          </div>
 
-    <div class="bg-slate-800/40 backdrop-blur-md p-6 rounded-2xl shadow-sm border border-slate-700/50 flex-grow mb-4 overflow-y-auto">
-      <h2 class="text-2xl font-bold mb-4 text-slate-100">视频换脸设置</h2>
-      
-      <!-- Template Mode Notice -->
-      <div v-if="isTemplateApplied" class="mb-6 bg-indigo-500/20 border border-indigo-500/30 rounded-xl p-4 flex items-center">
-        <div class="text-indigo-400 mr-3">✨</div>
-        <div class="text-slate-300 text-sm">已加载一键视频换脸模板，目标视频已锁定，请在上方上传您需要替换的人脸即可开始生成。</div>
-      </div>
+          <div class="flex flex-col gap-6 mb-6">
+            <!-- Row for Upload -->
+            <div class="flex flex-row gap-4 h-64 w-full">
+              <!-- Face Upload -->
+              <div class="upload-section flex flex-col w-[40%] min-w-[160px] shrink-0 h-full">
+                <h3 class="text-sm font-bold mb-2 text-slate-200 flex items-center shrink-0">
+                  <span class="text-slate-500 mr-2">1.</span> 清晰人脸
+                </h3>
+                <div v-if="facePreview" class="relative group rounded-xl overflow-hidden border border-slate-600/50 bg-slate-900/50 flex items-center justify-center flex-grow w-full">
+                  <a-image :src="facePreview" class="max-w-full max-h-full object-contain" :preview="true" />
+                  <div class="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center pointer-events-none">
+                    <a-button danger type="primary" @click="handleRemoveFace" class="pointer-events-auto" size="small">重新上传</a-button>
+                  </div>
+                </div>
+                <a-upload-dragger
+                  v-else
+                  v-model:fileList="faceFileList"
+                  name="file"
+                  :multiple="false"
+                  accept="image/png, image/jpeg"
+                  :before-upload="beforeUploadFace"
+                  @remove="handleRemoveFace"
+                  class="upload-dragger flex-grow flex items-center justify-center w-full"
+                  :show-upload-list="false"
+                >
+                  <div class="flex flex-col items-center justify-center h-full w-full p-4">
+                    <p class="ant-upload-drag-icon text-blue-500 text-3xl mb-2">
+                      <inbox-outlined></inbox-outlined>
+                    </p>
+                    <p class="ant-upload-text font-medium text-slate-300 text-sm">点击/拖拽</p>
+                    <p class="ant-upload-hint text-slate-500 mt-1 text-xs">JPG/PNG</p>
+                  </div>
+                </a-upload-dragger>
+              </div>
 
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-        <!-- Face Upload -->
-        <div class="upload-section flex flex-col h-full">
-          <h3 class="text-lg font-bold mb-3 text-slate-200 flex items-center">
-            <span class="text-slate-500 mr-2">1.</span> 提供清晰人脸
-          </h3>
-          <div v-if="facePreview" class="relative group rounded-xl overflow-hidden border border-slate-600/50 bg-slate-900/50 flex items-center justify-center flex-grow h-48">
-            <a-image :src="facePreview" class="max-w-full max-h-48 object-contain" :preview="true" />
-            <div class="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center pointer-events-none">
-              <a-button danger type="primary" @click="handleRemoveFace" class="pointer-events-auto">重新上传</a-button>
+              <!-- Video Upload -->
+              <div class="upload-section flex flex-col flex-grow min-w-0 h-full">
+                <h3 class="text-sm font-bold mb-2 text-slate-200 flex items-center shrink-0">
+                  <span class="text-slate-500 mr-2">2.</span> 目标视频
+                </h3>
+                <div v-if="bodyPreview" class="relative group rounded-xl overflow-hidden border border-slate-600/50 bg-slate-900/50 flex items-center justify-center flex-grow w-full">
+                  <video :src="bodyPreview" class="max-w-full max-h-full bg-black object-contain" controls></video>
+                  <div class="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center pointer-events-none">
+                    <a-button danger type="primary" @click="handleRemoveBody" class="pointer-events-auto" size="small">重新上传</a-button>
+                  </div>
+                </div>
+                <a-upload-dragger
+                  v-else
+                  v-model:fileList="bodyFileList"
+                  name="video"
+                  :multiple="false"
+                  accept="video/mp4, video/quicktime"
+                  :before-upload="beforeUploadBody"
+                  @remove="handleRemoveBody"
+                  class="upload-dragger bg-slate-800/40 backdrop-blur-md border-dashed border-2 border-blue-200 hover:border-blue-400 transition-colors flex-grow flex items-center justify-center w-full"
+                  :show-upload-list="false"
+                >
+                  <div class="flex flex-col items-center justify-center h-full w-full p-4">
+                    <p class="ant-upload-drag-icon text-blue-500 text-3xl mb-2">
+                      <video-camera-outlined></video-camera-outlined>
+                    </p>
+                    <p class="ant-upload-text font-medium text-slate-300 text-sm">上传目标视频</p>
+                    <p class="ant-upload-hint text-slate-500 mt-1 text-xs">支持 MP4/MOV</p>
+                  </div>
+                </a-upload-dragger>
+              </div>
             </div>
           </div>
-          <a-upload-dragger
-            v-else
-            v-model:fileList="faceFileList"
-            name="file"
-            :multiple="false"
-            accept="image/png, image/jpeg"
-            :before-upload="beforeUploadFace"
-            @remove="handleRemoveFace"
-            class="upload-dragger flex-grow h-48 flex items-center justify-center"
-            :show-upload-list="false"
+          
+          <!-- Video Settings -->
+          <div class="settings-section border-t border-slate-700/50 pt-5">
+            <h3 class="text-sm font-bold mb-3 text-slate-200">输出设置</h3>
+            <div class="flex flex-col gap-4">
+              <div>
+                <label class="block text-xs font-medium text-slate-300 mb-2">分辨率</label>
+                <a-radio-group v-model:value="resolution" button-style="solid" class="w-full flex max-w-sm">
+                  <a-radio-button value="512" class="flex-1 text-center py-0.5 h-auto text-xs">512p (基础)</a-radio-button>
+                  <a-radio-button value="720" class="flex-1 text-center py-0.5 h-auto text-xs">720p (高清)</a-radio-button>
+                  <a-radio-button value="1024" class="flex-1 text-center py-0.5 h-auto text-xs">1024p</a-radio-button>
+                </a-radio-group>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Fixed Bottom Bar -->
+        <div class="p-6 border-t border-slate-700/50 bg-slate-900/40 shrink-0 flex items-center justify-between">
+          <div class="flex flex-col">
+            <span class="text-slate-400 text-sm font-medium mb-1">预计消耗灵石</span>
+            <div class="flex items-baseline text-blue-400 font-bold">
+              <span class="text-2xl leading-none mr-1">20</span>
+              <span class="text-lg ml-1 mb-0.5">💎</span>
+            </div>
+          </div>
+          
+          <a-button 
+            type="primary" 
+            size="large" 
+            :loading="isSubmitting" 
+            :disabled="!faceObjectKey || !bodyObjectKey" 
+            @click="handleGenerate"
+            class="bg-blue-600 hover:bg-blue-500 border-none px-8 font-bold tracking-wider rounded-xl shadow-lg shadow-blue-500/20"
           >
-            <div class="flex flex-col items-center justify-center h-full w-full">
-              <p class="ant-upload-drag-icon text-blue-500 text-3xl mb-2">
-                <inbox-outlined></inbox-outlined>
-              </p>
-              <p class="ant-upload-text font-medium text-slate-300 text-sm">点击或拖拽上传人脸图片</p>
-              <p class="ant-upload-hint text-slate-500 mt-1 text-xs">支持 JPG/PNG，五官清晰无遮挡</p>
-            </div>
-          </a-upload-dragger>
-        </div>
-
-        <!-- Video Upload -->
-        <div class="upload-section flex flex-col h-full">
-          <h3 class="text-lg font-bold mb-3 text-slate-200 flex items-center">
-            <span class="text-slate-500 mr-2">2.</span> 提供目标视频
-          </h3>
-          <div v-if="bodyPreview" class="relative group rounded-xl overflow-hidden border border-slate-600/50 bg-slate-900/50 flex items-center justify-center flex-grow h-48">
-            <video :src="bodyPreview" class="max-w-full max-h-48 bg-black" controls></video>
-            <div class="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center pointer-events-none">
-              <a-button danger type="primary" @click="handleRemoveBody" class="pointer-events-auto">重新上传</a-button>
-            </div>
-          </div>
-          <a-upload-dragger
-            v-else
-            v-model:fileList="bodyFileList"
-            name="video"
-            :multiple="false"
-            accept="video/mp4, video/quicktime"
-            :before-upload="beforeUploadBody"
-            @remove="handleRemoveBody"
-            class="upload-dragger bg-slate-800/40 backdrop-blur-md border-dashed border-2 border-blue-200 hover:border-blue-400 transition-colors flex-grow h-48 flex items-center justify-center"
-            :show-upload-list="false"
-          >
-            <div class="flex flex-col items-center justify-center h-full w-full">
-              <p class="ant-upload-drag-icon text-blue-500 text-3xl mb-2">
-                <video-camera-outlined></video-camera-outlined>
-              </p>
-              <p class="ant-upload-text font-medium text-slate-300 text-sm">点击或拖拽上传目标视频</p>
-              <p class="ant-upload-hint text-slate-500 mt-1 text-xs">支持 MP4/MOV，最大 50MB</p>
-            </div>
-          </a-upload-dragger>
-        </div>
-      </div>
-      
-      <!-- Video Settings -->
-      <div class="settings-section border-t border-slate-700/50 pt-5 w-full max-w-2xl mx-auto">
-        <h3 class="text-lg font-bold mb-4 text-slate-200">输出设置</h3>
-        <div class="grid grid-cols-1 gap-6">
-          <div>
-            <label class="block text-sm font-medium text-slate-300 mb-2">分辨率</label>
-            <a-radio-group v-model:value="resolution" button-style="solid" class="w-full flex">
-              <a-radio-button value="512" class="flex-1 text-center py-1 h-auto text-sm">512p (基础)</a-radio-button>
-              <a-radio-button value="720" class="flex-1 text-center py-1 h-auto text-sm">720p (高清)</a-radio-button>
-              <a-radio-button value="1024" class="flex-1 text-center py-1 h-auto text-sm" disabled>1024p</a-radio-button>
-            </a-radio-group>
-          </div>
+            <template #icon><video-camera-outlined /></template>
+            {{ isSubmitting ? '提交中...' : '开始换脸' }}
+          </a-button>
         </div>
       </div>
 
-      <!-- Result Section -->
-      <div v-if="currentTask" class="mt-8 bg-slate-900/50 p-5 rounded-2xl border border-slate-700/50">
-        <h3 class="text-xl font-bold mb-4 text-slate-200 flex items-center justify-center">
-          <span class="text-blue-500 mr-2">✨</span> 生成结果
+      <!-- Right Panel: Result Preview -->
+      <div class="w-full lg:w-[50%] flex flex-col bg-slate-800/40 backdrop-blur-md rounded-2xl shadow-sm border border-slate-700/50 overflow-hidden relative">
+        <h3 class="text-lg font-bold p-4 border-b border-slate-700/50 text-slate-200 bg-slate-900/40 flex items-center shrink-0">
+          <video-camera-outlined class="mr-2 text-blue-400" /> 结果预览区
         </h3>
         
-        <div v-if="currentTask.status === 'pending' || currentTask.status === 'running'" class="flex flex-col items-center justify-center py-8">
-          <a-spin size="large" />
-          <p class="mt-4 text-slate-400 font-medium">正在生成中... {{ currentTask.progress }}%</p>
-          <p v-if="currentTask.queuePos" class="text-sm text-slate-500 mt-1">前面还有 {{ currentTask.queuePos }} 人排队</p>
-          <a-progress :percent="currentTask.progress" status="active" strokeColor="#3b82f6" class="w-full max-w-md mt-4" />
-        </div>
-        
-        <div v-else-if="currentTask.status === 'success' && currentTask.resultUrl" class="flex flex-col items-center">
-          <a-image v-if="isImageUrl(currentTask.resultUrl)" :src="currentTask.resultUrl" class="max-w-full max-h-96 rounded-xl shadow-sm object-contain" :preview="true" />
-          <video v-else :src="currentTask.resultUrl" controls class="max-w-full max-h-96 rounded-xl shadow-sm bg-black"></video>
+        <div class="flex-grow flex items-center justify-center p-6 min-h-0 bg-black/20">
+          <!-- Default State -->
+          <div v-if="!currentTask" class="text-center text-slate-500 flex flex-col items-center">
+            <video-camera-outlined class="text-5xl mb-4 opacity-50" />
+            <p>请在左侧配置参数并点击生成，结果将在此处显示</p>
+          </div>
           
-          <div class="mt-6 flex gap-4">
-            <a-button type="primary" size="large" class="bg-blue-600 rounded-xl" @click="downloadResult(currentTask.resultUrl, currentTask.title)">
-              <template #icon><download-outlined /></template> 下载结果
-            </a-button>
-            <a-button size="large" class="rounded-xl" @click="resetForm">
-              继续生成
-            </a-button>
+          <!-- Loading State -->
+          <div v-else-if="currentTask.status === 'pending' || currentTask.status === 'running'" class="flex flex-col items-center justify-center w-full h-full">
+            <div class="relative w-32 h-32 flex items-center justify-center mb-6">
+              <div class="absolute inset-0 border-4 border-slate-700 rounded-full"></div>
+              <div class="absolute inset-0 border-4 border-blue-500 rounded-full border-t-transparent animate-spin"></div>
+              <div class="text-blue-400 font-bold text-xl">{{ currentTask.progress }}%</div>
+            </div>
+            <p class="text-slate-300 font-medium text-lg animate-pulse">AI 正在为您生成大片...</p>
+            <p v-if="currentTask.queuePos" class="text-sm text-slate-500 mt-2 bg-slate-800 px-3 py-1 rounded-full">
+              队列位置: <span class="text-blue-400 font-bold">{{ currentTask.queuePos }}</span>
+            </p>
+            <div class="w-64 mt-6">
+              <a-progress :percent="currentTask.progress" status="active" strokeColor="#3b82f6" :showInfo="false" size="small" />
+            </div>
+          </div>
+          
+          <!-- Success State -->
+          <div v-else-if="currentTask.status === 'success' && currentTask.resultUrl" class="w-full h-full flex flex-col items-center justify-center">
+            <div class="relative w-full h-full flex items-center justify-center bg-black/40 rounded-xl overflow-hidden border border-slate-700/50 shadow-2xl">
+              <a-image v-if="isImageUrl(currentTask.resultUrl)" :src="currentTask.resultUrl" class="max-w-full max-h-full object-contain" :preview="true" />
+              <video v-else :src="currentTask.resultUrl" controls class="max-w-full max-h-full object-contain"></video>
+            </div>
+            
+            <!-- Actions Bar -->
+            <div class="flex gap-3 mt-4 w-full justify-center">
+              <a-button type="primary" ghost @click="downloadResult(currentTask.resultUrl, currentTask.title)" class="flex items-center px-6 rounded-lg">
+                <download-outlined class="mr-1" /> 保存到本地
+              </a-button>
+              <a-button type="default" @click="$router.push('/history')" class="flex items-center px-6 rounded-lg border-slate-600 text-slate-300 hover:text-white hover:border-slate-400 bg-slate-800/50">
+                <history-outlined class="mr-1" /> 查看历史
+              </a-button>
+            </div>
+          </div>
+          
+          <!-- Error State -->
+          <div v-else-if="currentTask.status === 'failed'" class="text-center text-red-400 flex flex-col items-center bg-red-950/20 p-8 rounded-2xl border border-red-900/50">
+            <close-circle-outlined class="text-5xl mb-4" />
+            <h4 class="text-lg font-bold mb-2">生成失败</h4>
+            <p class="text-sm opacity-80">{{ currentTask.error || '未知错误，请重试' }}</p>
           </div>
         </div>
-        
-        <div v-else-if="currentTask.status === 'failed'" class="flex flex-col items-center py-8">
-          <close-circle-outlined class="text-5xl text-red-500 mb-4" />
-          <p class="text-red-600 font-medium text-lg">生成失败</p>
-          <p class="text-slate-400 mt-2">{{ currentTask.error || '未知错误' }}</p>
-          <a-button class="mt-6 rounded-xl" @click="resetForm">重试</a-button>
-        </div>
       </div>
-    </div>
-
-    <!-- Action Bar -->
-    <div class="action-bar bg-slate-800/40 backdrop-blur-md p-6 rounded-2xl shadow-sm border border-slate-700/50 flex justify-between items-center shrink-0">
-      <div class="cost-info flex flex-col">
-        <span class="text-slate-400 text-sm font-medium">预计消耗灵石</span>
-        <div class="flex items-end mt-1">
-          <span class="font-bold text-3xl text-blue-600 leading-none">20</span>
-          <span class="text-lg text-blue-400 ml-1 mb-0.5">💎</span>
-        </div>
-      </div>
-      
-      <a-button 
-        type="primary" 
-        size="large" 
-        class="bg-blue-600 hover:bg-blue-700 w-48 h-14 text-lg font-bold tracking-wider rounded-xl shadow-md transition-all hover:shadow-lg border-none flex items-center justify-center text-white" 
-        :disabled="!faceObjectKey || !bodyObjectKey"
-        :loading="isSubmitting"
-        @click="handleGenerate"
-      >
-        <template #icon><video-camera-outlined /></template>
-        {{ isSubmitting ? '提交中...' : '开始换脸' }}
-      </a-button>
     </div>
   </div>
 </template>
