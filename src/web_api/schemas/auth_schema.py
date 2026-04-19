@@ -3,13 +3,16 @@ from typing import Optional
 from datetime import datetime
 
 class TelegramLoginRequest(BaseModel):
-    id: int
+    id: Optional[int] = None
     first_name: Optional[str] = None
     last_name: Optional[str] = None
     username: Optional[str] = None
     photo_url: Optional[str] = None
-    auth_date: int
-    hash: str
+    auth_date: Optional[int] = None
+    hash: Optional[str] = None
+    
+    # WebApp initData 字段
+    initData: Optional[str] = None
 
 class Token(BaseModel):
     access_token: str

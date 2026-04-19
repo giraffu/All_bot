@@ -183,6 +183,7 @@ onMounted(() => {
       @change="handleTableChange"
       row-key="id"
       class="custom-dark-table"
+      :scroll="{ x: 'max-content' }"
     >
       <template #bodyCell="{ column, record }">
         

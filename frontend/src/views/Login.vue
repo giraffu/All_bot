@@ -42,6 +42,52 @@ const handleTelegramAuth = async (user: any) => {
   }
 }
 
+const checkWebAppLogin = async () => {
+  // Check if we are running inside Telegram Mini App
+  const tg = (window as any).Telegram
+  if (tg && tg.WebApp && tg.WebApp.initData) {
+    loading.value = true
+    try {
+      const initData = tg.WebApp.initData
+      // Send initData to backend for verification
+      const response = await api.post('/auth/telegram', { initData })
+      
+      if (response.data?.access_token) {
+        const userData = response.data.user
+        
+        // 校验用户身份
+        const allowedIdentities = ['内门弟子', '核心弟子', '真传弟子']
+        const allowedGroups = ['金丹期', '元婴期', '化神期', '炼虚期', '合体期', '大乘期', '渡劫期']
+        
+        const isAllowed = allowedIdentities.includes(userData.current_identity) || 
+                          allowedGroups.includes(userData.user_group)
+                          
+        if (!isAllowed) {
+          message.error('权限不足：只有金丹期及以上境界，或内门及以上身份的弟子才能登录 Web 端')
+          return false
+        }
+
+        authStore.setAuth(response.data.access_token, userData)
+        message.success('Mini App 自动登录成功！')
+        
+        // Expand WebApp to full height if possible
+        if (tg.WebApp.expand) {
+          tg.WebApp.expand()
+        }
+        
+        router.push('/profile')
+        return true // Successfully logged in via WebApp
+      }
+    } catch (error: any) {
+      console.error('WebApp Login error:', error)
+      // Don't show error message here, let it fallback to widget
+    } finally {
+      loading.value = false
+    }
+  }
+  return false // Not in WebApp or failed
+}
+
 const renderTelegramWidget = () => {
   const container = document.getElementById('telegram-widget-container')
   if (!container) return
@@ -70,8 +116,14 @@ const renderTelegramWidget = () => {
   container.appendChild(script)
 }
 
-onMounted(() => {
-  renderTelegramWidget()
+onMounted(async () => {
+  // Try WebApp auto-login first
+  const isWebAppLogged = await checkWebAppLogin()
+  
+  // If not in WebApp, render the traditional widget
+  if (!isWebAppLogged) {
+    renderTelegramWidget()
+  }
 })
 </script>
 

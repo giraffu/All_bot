@@ -325,7 +325,12 @@ async def handle_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup = None
         if current_identity in allowed_identities or current_group in allowed_groups:
             msg += "\n\n🌐 **合欢密宗已解锁**"
-            keyboard = [[InlineKeyboardButton("🌐 前往合欢密宗 (Web端)", url="https://web.aivison.it.com/")]]
+            keyboard = [
+                [
+                    InlineKeyboardButton("🌐 前往合欢密宗 (Web端)", url="https://web.aivison.it.com/"),
+                    InlineKeyboardButton("📱 沉浸式 Mini App", web_app=WebAppInfo(url="https://web.aivison.it.com/"))
+                ]
+            ]
             reply_markup = InlineKeyboardMarkup(keyboard)
 
         await robust_reply_text(update.message, msg, parse_mode="Markdown", reply_markup=reply_markup)
