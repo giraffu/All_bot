@@ -319,7 +319,16 @@ async def handle_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"{breakthrough_msg}"
         )
         
-        await robust_reply_text(update.message, msg, parse_mode="Markdown")
+        allowed_identities = ["内门弟子", "核心弟子", "真传弟子"]
+        allowed_groups = ["金丹期", "元婴期", "化神期", "炼虚期", "合体期", "大乘期", "渡劫期"]
+        
+        reply_markup = None
+        if current_identity in allowed_identities or current_group in allowed_groups:
+            msg += "\n\n🌐 **合欢密宗已解锁**"
+            keyboard = [[InlineKeyboardButton("🌐 前往合欢密宗 (Web端)", url="https://web.aivison.it.com/")]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+
+        await robust_reply_text(update.message, msg, parse_mode="Markdown", reply_markup=reply_markup)
         return
 
     if text in ["📅 每日签到", "签到", "/checkin"]:

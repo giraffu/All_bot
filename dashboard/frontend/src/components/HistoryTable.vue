@@ -151,6 +151,12 @@ const columns = [
     width: 120,
   },
   {
+    title: '来源',
+    dataIndex: 'source',
+    key: 'source',
+    width: 80,
+  },
+  {
     title: '生成节点',
     dataIndex: 'worker_id',
     key: 'worker_id',
@@ -332,6 +338,13 @@ onMounted(() => {
         <template v-else-if="column.key === 'type'">
           <a-tag :color="record.type === 'image' ? 'blue' : 'orange'">
             {{ typeMapping[record.type] || record.type }}
+          </a-tag>
+        </template>
+
+        <!-- Source -->
+        <template v-else-if="column.key === 'source'">
+          <a-tag :color="record.source === 'web' ? 'green' : 'orange'" class="text-xs w-14 text-center">
+            {{ record.source === 'web' ? 'Web' : 'Bot' }}
           </a-tag>
         </template>
 

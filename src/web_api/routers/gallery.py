@@ -152,7 +152,7 @@ async def get_gallery_posts(
         for post in posts:
             try:
                 tags = json.loads(post.tags) if post.tags else []
-            except:
+            except Exception:
                 tags = []
             translated_tags = translate_tags(tags)
             
@@ -240,7 +240,7 @@ async def get_my_gallery_posts(
         for post in posts:
             try:
                 tags = json.loads(post.tags) if post.tags else []
-            except:
+            except Exception:
                 tags = []
             translated_tags = translate_tags(tags)
             
@@ -338,7 +338,7 @@ async def get_my_favorite_posts(
         for post in posts:
             try:
                 tags = json.loads(post.tags) if post.tags else []
-            except:
+            except Exception:
                 tags = []
             translated_tags = translate_tags(tags)
             
@@ -534,6 +534,9 @@ async def submit_to_gallery(
         history = hist_res.scalar_one_or_none()
         if not history:
             raise HTTPException(status_code=404, detail="无法找到对应的任务记录，投稿失败")
+
+        if getattr(history, 'allow_contribute', True) is False:
+            raise HTTPException(status_code=403, detail="这是一键应用他人的模板生成的作品，为了保护原创，暂不支持再次投稿。")
 
         if history.type not in ALLOWED_WEB_SUBMIT_TYPES:
             allowed_names = [MODE_NAME_MAP.get(t, t) for t in ALLOWED_WEB_SUBMIT_TYPES]

@@ -6,51 +6,51 @@ const tasksStore = useTasksStore()
 </script>
 
 <template>
-  <div v-if="tasksStore.activeTasks.length > 0" class="fixed top-20 left-0 right-0 z-50 pointer-events-none p-4 md:p-6 lg:left-64 flex justify-end">
-    <div class="w-full max-w-sm flex flex-col gap-3 pointer-events-auto max-h-[50vh] overflow-y-auto custom-scrollbar">
+  <div v-if="tasksStore.activeTasks.length > 0" class="fixed bottom-6 right-6 z-[9999] pointer-events-none flex flex-col items-end">
+    <div class="w-80 flex flex-col gap-3 pointer-events-auto max-h-[60vh] overflow-y-auto custom-scrollbar pr-2 pb-2">
       <transition-group name="task-list">
         <div 
           v-for="task in tasksStore.activeTasks" 
           :key="task.id" 
-          class="bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden"
+          class="bg-slate-900/80 backdrop-blur-md rounded-xl shadow-[0_8px_32px_rgba(0,0,0,0.5)] border border-white/10 overflow-hidden flex-shrink-0"
         >
-          <div class="p-4 relative">
+          <div class="p-3 relative">
             <div class="flex justify-between items-center mb-2">
-              <h4 class="font-medium text-gray-800 truncate pr-6">{{ task.title }}</h4>
+              <h4 class="font-medium text-slate-200 truncate pr-6 text-sm">{{ task.title }}</h4>
               <button 
                 @click="tasksStore.removeTask(task.id)" 
-                class="text-gray-400 hover:text-red-500 transition-colors absolute top-4 right-4"
+                class="text-slate-400 hover:text-red-400 transition-colors absolute top-3 right-3"
               >
-                <close-outlined />
+                <close-outlined class="text-xs" />
               </button>
             </div>
             
             <div v-if="task.status === 'pending' || task.status === 'running'">
-              <div class="flex justify-between text-xs text-gray-500 mb-1">
-                <span>{{ task.status === 'pending' ? (task.queuePos != null ? `等待分配资源... (前面还有 ${task.queuePos} 人)` : '等待分配资源...') : 'AI 渲染中...' }}</span>
-                <span>{{ task.progress }}%</span>
+              <div class="flex justify-between text-[11px] text-slate-400 mb-1.5">
+                <span>{{ task.status === 'pending' ? (task.queuePos != null ? `等待分配... (前面 ${task.queuePos} 人)` : '等待分配...') : 'AI 渲染中...' }}</span>
+                <span class="text-cyan-400">{{ task.progress }}%</span>
               </div>
-              <a-progress :percent="task.progress" :show-info="false" status="active" strokeColor="#3b82f6" />
+              <a-progress :percent="task.progress" :show-info="false" status="active" strokeColor="#06b6d4" trailColor="rgba(255,255,255,0.1)" :strokeWidth="6" />
             </div>
             
             <div v-else-if="task.status === 'success'" class="flex items-center justify-between mt-2">
-              <span class="text-sm text-green-600 font-medium">生成完成！</span>
+              <span class="text-xs text-emerald-400 font-medium">✨ 生成完成！</span>
               <a-button 
                 type="primary" 
                 size="small" 
                 :href="task.resultUrl" 
                 target="_blank" 
-                class="bg-green-600 hover:bg-green-700 border-none"
+                class="bg-cyan-600 hover:bg-cyan-500 border-none text-xs h-6 flex items-center justify-center"
                 download
               >
-                <template #icon><download-outlined /></template>
-                查看 / 下载
+                <template #icon><download-outlined class="text-xs" /></template>
+                查看
               </a-button>
             </div>
             
             <div v-else-if="task.status === 'failed'" class="mt-2">
-              <span class="text-sm text-red-600 font-medium block mb-1">生成失败</span>
-              <span class="text-xs text-gray-500 line-clamp-2" :title="task.error">{{ task.error }}</span>
+              <span class="text-xs text-red-400 font-medium block mb-1">❌ 生成失败</span>
+              <span class="text-[11px] text-slate-400 line-clamp-2 leading-snug" :title="task.error">{{ task.error }}</span>
             </div>
           </div>
         </div>

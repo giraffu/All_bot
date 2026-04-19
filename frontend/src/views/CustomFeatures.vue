@@ -47,7 +47,7 @@ const features = [
     description: '上传人脸和一段视频，AI 将逐帧替换视频中的人脸，生成自然流畅的换脸视频。',
     icon: Video,
     color: 'bg-blue-100 text-blue-600',
-    cost: 20,
+    cost: 18,
     route: 'VideoSwap'
   },
   {

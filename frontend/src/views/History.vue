@@ -31,12 +31,6 @@ const handlePreviewClose = () => {
 
 const columns = [
   {
-    title: '任务 ID',
-    dataIndex: 'task_id',
-    key: 'task_id',
-    width: 250,
-  },
-  {
     title: '类型',
     dataIndex: 'type',
     key: 'type',
@@ -106,8 +100,27 @@ const formatDate = (dateStr: string) => {
 
 const getTypeLabel = (type: string) => {
   const map: Record<string, string> = {
-    'face_swap': '幻想换脸',
+    'edit': '自由P图',
+    'i2i_pro': '幻想换脸',
+    'undress': '快速脱衣',
+    'masturbation': '快速自慰',
+    'face_swap': '快速换脸',
+    'face_swap_step1': '快速换脸',
+    'face_swap_step2': '快速换脸',
     'face_video': '视频换脸',
+    'face_video_step1': '视频换脸',
+    'face_video_step2': '视频换脸',
+    'random_faceswap': '随机换脸',
+    'penetration_step1': '快速抽插',
+    'penetration_step2': '快速抽插',
+    'perfect_video_insert': '动图传教士',
+    'doggy_style': '动图后入',
+    'blowjob': '口交黑人',
+    'undress_tongue': '脱衣吐舌',
+    'closeup_blowjob': '特写口交',
+    'custom_video': '自定义图生视频',
+    'video_lora': '图生视频(附加模型)',
+    'template_contribute': '模板共建',
     'txt2img': '文生图'
   }
   return map[type] || type
@@ -158,7 +171,7 @@ onMounted(() => {
     <div class="mb-6 bg-indigo-500/10 border border-indigo-500/20 rounded-xl p-4 flex items-start">
       <div class="text-indigo-400 mr-3 mt-0.5"><Clock :size="18" /></div>
       <div class="text-slate-300 text-sm leading-relaxed">
-        <span class="font-semibold text-indigo-300">温馨提示：</span>为了兼顾您的数据隐私与系统的便利性，系统只会为您保留最近的 <span class="text-cyan-400 font-bold mx-1">8</span> 条生成记录。请及时保存您需要的作品哦。
+        <span class="font-semibold text-indigo-300">温馨提示：</span>闪回瓶容量有限，只能存放 <span class="text-cyan-400 font-bold mx-1">8</span> 条修炼记录，请及时保存哦。
       </div>
     </div>
 
@@ -173,16 +186,18 @@ onMounted(() => {
     >
       <template #bodyCell="{ column, record }">
         
-        <template v-if="column.key === 'task_id'">
-          <span class="font-mono text-slate-400 text-xs bg-black/30 px-2 py-1 rounded border border-white/5">{{ record.task_id || 'N/A' }}</span>
-        </template>
-        
-        <template v-else-if="column.key === 'type'">
-          <a-tag :color="record.type === 'face_video' ? 'blue' : (record.type === 'face_swap' ? 'purple' : 'cyan')" class="flex items-center w-max bg-black/30 border-white/10">
-            <Video v-if="record.type === 'face_video'" :size="14" class="mr-1" />
-            <ImageIcon v-else :size="14" class="mr-1" />
-            {{ getTypeLabel(record.type) }}
-          </a-tag>
+        <template v-if="column.key === 'type'">
+          <div class="flex flex-col gap-1 w-max">
+            <a-tag :color="record.type === 'face_video' ? 'blue' : (record.type === 'face_swap' ? 'purple' : 'cyan')" class="flex items-center w-max bg-black/30 border-white/10 m-0">
+              <Video v-if="record.type === 'face_video'" :size="14" class="mr-1" />
+              <ImageIcon v-else :size="14" class="mr-1" />
+              {{ getTypeLabel(record.type) }}
+            </a-tag>
+            <a-tag :color="record.source === 'web' ? 'green' : 'orange'" class="flex items-center w-max bg-black/30 border-white/10 text-[10px] py-0 m-0 leading-tight">
+              <span v-if="record.source === 'web'">🌐 Web 创作</span>
+              <span v-else>🤖 Bot 创作</span>
+            </a-tag>
+          </div>
         </template>
         
         <template v-else-if="column.key === 'output_file'">
@@ -223,7 +238,7 @@ onMounted(() => {
 
         <template v-else-if="column.key === 'action'">
           <a-button 
-            v-if="record.output_file && ['i2i_pro', 'edit', 'custom_video', 'video_lora'].includes(record.type)"
+            v-if="record.output_file && ['i2i_pro', 'edit', 'custom_video', 'video_lora'].includes(record.type) && record.allow_contribute !== false"
             type="primary" 
             size="small" 
             class="bg-gradient-to-r from-cyan-600 to-indigo-600 border-none shadow-[0_0_10px_rgba(56,189,248,0.3)] hover:scale-105 transition-transform text-xs rounded-md"

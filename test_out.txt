@@ -1,2 +1,0 @@
-undress: 全身广角镜头(full body shot)，确保人物完整的头部和脸部保留在画面中，绝不裁剪头部。给
-negative_prompt: low quality, bad anatomy, ugly, deformed, blurry, 

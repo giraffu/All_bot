@@ -62,7 +62,8 @@ async def monitor_task_and_release_lock(
     is_video: bool = False,
     task_type: str = "",
     prompt: str = "",
-    input_images: list = None
+    input_images: list = None,
+    allow_contribute: bool = True
 ):
     """
     Background task to monitor progress and release concurrency lock.
@@ -89,9 +90,9 @@ async def monitor_task_and_release_lock(
                 if media_bytes:
                     ext = "mp4" if is_video else "png"
                     saved_output_image = await asyncio.to_thread(user_logger.save_output_image, media_bytes, task_id, ext)
-                    await user_logger.log_task(prompt, input_images, saved_output_image, task_id=task_id, type=task_type)
+                    await user_logger.log_task(prompt, input_images, saved_output_image, task_id=task_id, type=task_type, allow_contribute=allow_contribute, source="web")
                 else:
-                    await user_logger.log_task(prompt, input_images, result_path, task_id=task_id, type=task_type)
+                    await user_logger.log_task(prompt, input_images, result_path, task_id=task_id, type=task_type, allow_contribute=allow_contribute, source="web")
             except Exception as log_err:
                 logger.error(f"Failed to log task history for {task_id}: {log_err}")
                 
@@ -240,7 +241,8 @@ async def create_generation_task(
             is_video_task,
             req.task_type,
             log_prompt,
-            saved_inputs
+            saved_inputs,
+            allow_contribute
         )
         
         balance = await quota_manager.get_credits(current_user.id)
@@ -252,6 +254,9 @@ async def create_generation_task(
             balance_remaining=balance
         )
         
+    except HTTPException as he:
+        await release_concurrency_lock(current_user.id)
+        raise he
     except ValueError as ve:
         await release_concurrency_lock(current_user.id)
         logger.error(f"Task value error: {ve}")

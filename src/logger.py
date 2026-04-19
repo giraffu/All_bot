@@ -88,7 +88,7 @@ class UserLogger:
         """Log user interaction"""
         self.logger.info(f"[User:{self.user_id}({self.username})] {type}: {message}")
 
-    async def log_task(self, prompt: str, input_images: list[str], output_image: str, task_id: str = None, type: str = "image"):
+    async def log_task(self, prompt: str, input_images: list[str], output_image: str, task_id: str = None, type: str = "image", allow_contribute: bool = True, source: str = "bot"):
         """
         Log task details to database (History table)
         """
@@ -117,7 +117,9 @@ class UserLogger:
                 prompt=prompt,
                 input_file=input_file_str,
                 output_file=output_image,
-                created_at=datetime.now()
+                created_at=datetime.now(),
+                allow_contribute=allow_contribute,
+                source=source
             )
             session.add(history_entry)
             

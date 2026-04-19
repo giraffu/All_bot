@@ -214,7 +214,7 @@ async def start_generation(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     if not await permission_service.check_quota(update, context, cost=cost):
         if image_path and os.path.exists(image_path):
             try: os.remove(image_path)
-            except: pass
+            except OSError: pass
         _cleanup_context(context, user_id)
         return ConversationHandler.END
 

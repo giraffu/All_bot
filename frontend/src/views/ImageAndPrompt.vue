@@ -115,9 +115,9 @@ const resetForm = () => {
           </div>
           
           <div class="flex flex-col gap-6">
-            <div class="flex flex-row gap-4 h-64 w-full">
+            <div class="flex flex-col md:flex-row gap-4 md:h-64 w-full">
               <!-- Image Upload -->
-              <div class="upload-section flex flex-col w-[40%] min-w-[160px] shrink-0 h-full">
+              <div class="upload-section flex flex-col w-full md:w-[40%] min-w-[160px] shrink-0 h-48 md:h-full">
                 <h3 class="text-sm font-bold mb-2 text-slate-200 flex items-center">
                   <span class="text-slate-500 mr-2">1.</span> 基础图片
                 </h3>
@@ -152,7 +152,7 @@ const resetForm = () => {
               </div>
 
               <!-- Prompt Input -->
-              <div class="prompt-section flex flex-col flex-grow min-w-0 h-full">
+              <div class="prompt-section flex flex-col flex-grow min-w-0 h-48 md:h-full">
                 <h3 class="text-sm font-bold mb-2 text-slate-200 flex items-center shrink-0">
                   <span class="text-slate-500 mr-2">2.</span> 输入修改描述
                 </h3>

@@ -40,31 +40,33 @@ async def setup_db():
 async def test_points_system(setup_db):
     user_id = setup_db
     qm = QuotaManager()
+    from src.core.user_core import get_or_create_user_by_telegram
+    user, created = await get_or_create_user_by_telegram(user_id, "test_user")
     
     # 1. Test user initialization
-    credits = await qm.get_credits(user_id)
+    credits = await qm.get_credits(user.id)
     assert credits == 6  # Default credits for new user
     
     # 2. Test Check-in (should give 20 permanent)
-    success = await qm.checkin(user_id=user_id, username="test_user", full_name="Test User", reward=20)
+    success = await qm.checkin(user_id=user.id, username="test_user", full_name="Test User", reward=20)
     assert success is True
 
-    total = await qm.get_credits(user_id)
+    total = await qm.get_credits(user.id)
     assert total == 26  # 6 + 20
     
     # Check-in again should fail (already checked in today)
-    success_again = await qm.checkin(user_id=user_id)
+    success_again = await qm.checkin(user_id=user.id)
     assert success_again is False
     
     # 3. Test points consumption (deducts permanent points)
     # Deduct 10 points
-    await qm.deduct_credits(user_id, 10, "test_user", "test_task")
-    total = await qm.get_credits(user_id)
+    await qm.deduct_credits(user.id, 10, "test_user", "test_task")
+    total = await qm.get_credits(user.id)
     assert total == 16  # 26 - 10
     
     # Deduct 25 points
-    await qm.deduct_credits(user_id, 25, task_type="test_deduct")
-    total = await qm.get_credits(user_id)
+    await qm.deduct_credits(user.id, 25, task_type="test_deduct")
+    total = await qm.get_credits(user.id)
     assert total == 0   # max(0, 16 - 25)
     
     # 4. Test points clearance (deprecated)

@@ -12,7 +12,6 @@ const router = useRouter()
 
 const taskType = computed(() => (route.query.type as string) || 'image2video')
 const taskTitle = computed(() => (route.query.title as string) || '动图生成')
-const taskCost = computed(() => Number(route.query.cost) || 6)
 const isCustomVideo = computed(() => taskType.value === 'custom_video')
 const isVideoLora = computed(() => taskType.value === 'video_lora')
 
@@ -24,6 +23,21 @@ const fileList = ref<any[]>([])
 const objectKey = ref<string | null>(null)
 const resolution = ref('512')
 const duration = ref('5')
+
+const taskCost = computed(() => {
+  const res = resolution.value;
+  const dur = duration.value;
+  
+  let baseCost = 6;
+  if (res === '720') baseCost = 18;
+  else if (res === '1024') baseCost = 36;
+  
+  let multiplier = 1;
+  if (dur === '8') multiplier = 2;
+  else if (dur === '10') multiplier = 3;
+  
+  return baseCost * multiplier;
+})
 const prompt = ref('')
 const loraName = ref('BreastGrow')
 
@@ -138,11 +152,11 @@ const resetForm = () => {
           
           <div class="flex flex-col gap-6 mb-6">
             <!-- Row for Upload & Prompt -->
-            <div class="flex flex-row gap-4 h-64 w-full">
+            <div class="flex flex-col md:flex-row gap-4 md:h-64 w-full">
               <!-- Image Upload -->
-              <div class="upload-section flex flex-col w-[40%] min-w-[160px] shrink-0 h-full">
+              <div class="upload-section flex flex-col w-full md:w-[40%] min-w-[160px] shrink-0 h-48 md:h-full">
                 <h3 class="text-sm font-bold mb-2 text-slate-200 flex items-center shrink-0">
-                  <span class="text-slate-500 mr-2">1.</span> 图片
+                  <span class="text-slate-500 mr-2">1.</span> 基础图片
                 </h3>
                 <div v-if="filePreview" class="relative group rounded-xl overflow-hidden border border-slate-600/50 bg-slate-900/50 flex items-center justify-center flex-grow w-full">
                   <a-image :src="filePreview" class="max-w-full max-h-full object-contain" :preview="true" />
@@ -175,7 +189,7 @@ const resetForm = () => {
               </div>
 
               <!-- Prompt Input -->
-              <div class="prompt-section flex flex-col flex-grow min-w-0 h-full" v-if="isCustomVideo || isVideoLora">
+              <div class="prompt-section flex flex-col flex-grow min-w-0 h-48 md:h-full" v-if="isCustomVideo || isVideoLora">
                 <h3 class="text-sm font-bold mb-2 text-slate-200 flex items-center shrink-0">
                   <span class="text-slate-500 mr-2">2.</span> {{ isVideoLora ? '配置动作描述' : '输入描述 (选填)' }}
                 </h3>
@@ -212,7 +226,7 @@ const resetForm = () => {
                   />
                 </template>
               </div>
-              <div class="prompt-section flex flex-col justify-center text-center p-4 bg-slate-900/50 rounded-xl flex-grow min-w-0 h-full" v-else>
+              <div class="prompt-section flex flex-col justify-center text-center p-4 bg-slate-900/50 rounded-xl flex-grow min-w-0 h-48 md:h-full" v-else>
                 <component :is="InboxOutlined" class="text-4xl text-gray-300 mb-2" />
                 <h3 class="text-base font-medium text-slate-400">AI 动作预设</h3>
                 <p class="text-xs text-slate-500 mt-2">自动生成专属动作视频</p>
@@ -229,18 +243,18 @@ const resetForm = () => {
             <div v-else class="flex flex-col gap-4">
               <div>
                 <label class="block text-xs font-medium text-slate-300 mb-2">分辨率</label>
-                <a-radio-group v-model:value="resolution" button-style="solid" class="w-full flex max-w-sm">
-                  <a-radio-button value="512" class="flex-1 text-center py-0.5 h-auto text-xs">512p (基础)</a-radio-button>
-                  <a-radio-button value="720" class="flex-1 text-center py-0.5 h-auto text-xs">720p (高清)</a-radio-button>
-                  <a-radio-button value="1024" class="flex-1 text-center py-0.5 h-auto text-xs" :disabled="duration === '10'">1024p</a-radio-button>
+                <a-radio-group v-model:value="resolution" button-style="solid" class="w-full grid grid-cols-3 gap-2">
+                  <a-radio-button value="512" class="w-full text-center py-1.5 h-auto text-xs rounded-lg !border-none !border-l-0 shadow-sm leading-tight flex items-center justify-center">512p</a-radio-button>
+                  <a-radio-button value="720" class="w-full text-center py-1.5 h-auto text-xs rounded-lg !border-none !border-l-0 shadow-sm leading-tight flex items-center justify-center">720p</a-radio-button>
+                  <a-radio-button value="1024" class="w-full text-center py-1.5 h-auto text-xs rounded-lg !border-none !border-l-0 shadow-sm leading-tight flex items-center justify-center" :disabled="duration === '10'">1024p</a-radio-button>
                 </a-radio-group>
               </div>
               <div>
                 <label class="block text-xs font-medium text-slate-300 mb-2">生成时长</label>
-                <a-radio-group v-model:value="duration" button-style="solid" class="w-full flex max-w-[200px]">
-                  <a-radio-button value="5" class="flex-1 text-center py-0.5 h-auto text-xs">5 秒</a-radio-button>
-                  <a-radio-button value="8" class="flex-1 text-center py-0.5 h-auto text-xs">8 秒</a-radio-button>
-                  <a-radio-button value="10" class="flex-1 text-center py-0.5 h-auto text-xs" :disabled="resolution === '1024'">10 秒</a-radio-button>
+                <a-radio-group v-model:value="duration" button-style="solid" class="w-full grid grid-cols-3 gap-2 max-w-[240px]">
+                  <a-radio-button value="5" class="w-full text-center py-1.5 h-auto text-xs rounded-lg !border-none !border-l-0 shadow-sm leading-tight flex items-center justify-center">5 秒</a-radio-button>
+                  <a-radio-button value="8" class="w-full text-center py-1.5 h-auto text-xs rounded-lg !border-none !border-l-0 shadow-sm leading-tight flex items-center justify-center">8 秒</a-radio-button>
+                  <a-radio-button value="10" class="w-full text-center py-1.5 h-auto text-xs rounded-lg !border-none !border-l-0 shadow-sm leading-tight flex items-center justify-center" :disabled="resolution === '1024'">10 秒</a-radio-button>
                 </a-radio-group>
               </div>
             </div>
@@ -361,6 +375,19 @@ const resetForm = () => {
 .upload-dragger {
   background: rgba(15, 23, 42, 0.4);
   border-radius: 12px;
+}
+:deep(.ant-radio-button-wrapper) {
+  background: rgba(15, 23, 42, 0.4) !important;
+  color: #94a3b8 !important;
+  border-color: rgba(71, 85, 105, 0.5) !important;
+}
+:deep(.ant-radio-button-wrapper-checked:not(.ant-radio-button-wrapper-disabled)) {
+  background: #3b82f6 !important;
+  color: #ffffff !important;
+  border-color: #3b82f6 !important;
+}
+:deep(.ant-radio-button-wrapper:before) {
+  display: none !important;
 }
 </style>
 

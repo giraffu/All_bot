@@ -136,9 +136,9 @@ const resetForm = () => {
           </div>
           
           <div class="flex flex-col gap-6">
-            <div class="flex flex-row gap-4 h-64 w-full">
+            <div class="flex flex-col md:flex-row gap-4 md:h-64 w-full">
               <!-- Face Upload -->
-              <div class="upload-section flex flex-col w-1/2 min-w-[160px] shrink-0 h-full">
+              <div class="upload-section flex flex-col w-full md:w-[50%] min-w-[160px] shrink-0 h-48 md:h-full">
                 <h3 class="text-sm font-bold mb-2 text-slate-200 flex items-center">
                   <span class="text-slate-500 mr-2">1.</span> 清晰人脸
                 </h3>
@@ -170,7 +170,7 @@ const resetForm = () => {
               </div>
 
               <!-- Body Upload -->
-              <div class="upload-section flex flex-col w-1/2 min-w-[160px] shrink-0 h-full">
+              <div class="upload-section flex flex-col w-full md:w-[50%] min-w-[160px] shrink-0 h-48 md:h-full">
                 <h3 class="text-sm font-bold mb-2 text-slate-200 flex items-center">
                   <span class="text-slate-500 mr-2">2.</span> 目标场景
                 </h3>

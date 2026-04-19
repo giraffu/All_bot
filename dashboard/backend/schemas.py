@@ -85,6 +85,7 @@ class HistoryResponse(BaseModel):
     worker_id: Optional[str] = None
     input_file_url: Optional[str] = None
     output_file_url: Optional[str] = None
+    source: str = "bot"
 
     class Config:
         from_attributes = True

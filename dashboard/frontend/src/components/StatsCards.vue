@@ -10,7 +10,8 @@ import {
   FireOutlined,
   CrownOutlined,
   WalletOutlined,
-  StarOutlined
+  StarOutlined,
+  GlobalOutlined
 } from '@ant-design/icons-vue'
 
 defineProps({
@@ -166,6 +167,19 @@ defineProps({
     <a-col :xs="24" :sm="12" :md="8" :lg="4">
       <a-card hoverable class="stat-card">
         <a-statistic
+          title="今日Web活跃用户"
+          :value="stats.today_web_users || 0"
+          :value-style="{ color: '#faad14' }"
+        >
+          <template #prefix>
+            <global-outlined />
+          </template>
+        </a-statistic>
+      </a-card>
+    </a-col>
+    <a-col :xs="24" :sm="12" :md="8" :lg="4">
+      <a-card hoverable class="stat-card">
+        <a-statistic
           title="今日生成量"
           :value="stats.today_generations"
           :value-style="{ color: '#52c41a' }"
@@ -211,6 +225,19 @@ defineProps({
         >
           <template #prefix>
             <user-outlined />
+          </template>
+        </a-statistic>
+      </a-card>
+    </a-col>
+    <a-col :xs="24" :sm="12" :md="8" :lg="4">
+      <a-card hoverable class="stat-card">
+        <a-statistic
+          title="总Web创作者"
+          :value="stats.total_web_users || 0"
+          :value-style="{ color: '#666' }"
+        >
+          <template #prefix>
+            <global-outlined />
           </template>
         </a-statistic>
       </a-card>

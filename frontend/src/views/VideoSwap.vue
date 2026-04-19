@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { ref, onUnmounted, watch } from 'vue'
-import { UploadOutlined, VideoCameraOutlined, InboxOutlined, DownloadOutlined, CloseCircleOutlined } from '@ant-design/icons-vue'
+import { ref, onUnmounted, watch, computed } from 'vue'
+import { UploadOutlined, VideoCameraOutlined, InboxOutlined, DownloadOutlined, CloseCircleOutlined, HistoryOutlined } from '@ant-design/icons-vue'
 import { message } from 'ant-design-vue'
 import { useUpload } from '@/composables/useUpload'
 import { useTaskStream } from '@/composables/useTaskStream'
@@ -17,7 +17,14 @@ const faceFileList = ref<any[]>([])
 const bodyFileList = ref<any[]>([])
 const faceObjectKey = ref<string | null>(null)
 const bodyObjectKey = ref<string | null>(null)
-const resolution = ref('512')
+const resolution = ref('720')
+
+const taskCost = computed(() => {
+  const res = resolution.value;
+  if (res === '720') return 18;
+  if (res === '1024') return 36;
+  return 18; // default fallback for 720p
+})
 
 const facePreview = ref<string | null>(null)
 const bodyPreview = ref<string | null>(null)
@@ -98,8 +105,8 @@ const handleGenerate = async () => {
   const payload = {
     task_type: 'face_video',
     inputs: {
-      images: [faceObjectKey.value],
-      videos: [bodyObjectKey.value],
+      face_image: faceObjectKey.value,
+      target_video: bodyObjectKey.value,
       resolution: Number(resolution.value)
     },
     priority: 0,
@@ -135,9 +142,9 @@ const resetForm = () => {
 
           <div class="flex flex-col gap-6 mb-6">
             <!-- Row for Upload -->
-            <div class="flex flex-row gap-4 h-64 w-full">
+            <div class="flex flex-col md:flex-row gap-4 md:h-64 w-full">
               <!-- Face Upload -->
-              <div class="upload-section flex flex-col w-[40%] min-w-[160px] shrink-0 h-full">
+              <div class="upload-section flex flex-col w-full md:w-[40%] min-w-[160px] shrink-0 h-48 md:h-full">
                 <h3 class="text-sm font-bold mb-2 text-slate-200 flex items-center shrink-0">
                   <span class="text-slate-500 mr-2">1.</span> 清晰人脸
                 </h3>
@@ -169,7 +176,7 @@ const resetForm = () => {
               </div>
 
               <!-- Video Upload -->
-              <div class="upload-section flex flex-col flex-grow min-w-0 h-full">
+              <div class="upload-section flex flex-col flex-grow min-w-0 h-48 md:h-full">
                 <h3 class="text-sm font-bold mb-2 text-slate-200 flex items-center shrink-0">
                   <span class="text-slate-500 mr-2">2.</span> 目标视频
                 </h3>
@@ -208,10 +215,9 @@ const resetForm = () => {
             <div class="flex flex-col gap-4">
               <div>
                 <label class="block text-xs font-medium text-slate-300 mb-2">分辨率</label>
-                <a-radio-group v-model:value="resolution" button-style="solid" class="w-full flex max-w-sm">
-                  <a-radio-button value="512" class="flex-1 text-center py-0.5 h-auto text-xs">512p (基础)</a-radio-button>
-                  <a-radio-button value="720" class="flex-1 text-center py-0.5 h-auto text-xs">720p (高清)</a-radio-button>
-                  <a-radio-button value="1024" class="flex-1 text-center py-0.5 h-auto text-xs">1024p</a-radio-button>
+                <a-radio-group v-model:value="resolution" button-style="solid" class="w-full grid grid-cols-2 gap-2 max-w-[240px]">
+                  <a-radio-button value="720" class="w-full text-center py-1.5 h-auto text-xs rounded-lg !border-none !border-l-0 shadow-sm leading-tight flex items-center justify-center">720p (高清)</a-radio-button>
+                  <a-radio-button value="1024" class="w-full text-center py-1.5 h-auto text-xs rounded-lg !border-none !border-l-0 shadow-sm leading-tight flex items-center justify-center">1024p</a-radio-button>
                 </a-radio-group>
               </div>
             </div>
@@ -223,7 +229,7 @@ const resetForm = () => {
           <div class="flex flex-col">
             <span class="text-slate-400 text-sm font-medium mb-1">预计消耗灵石</span>
             <div class="flex items-baseline text-blue-400 font-bold">
-              <span class="text-2xl leading-none mr-1">20</span>
+              <span class="text-2xl leading-none mr-1">{{ taskCost }}</span>
               <span class="text-lg ml-1 mb-0.5">💎</span>
             </div>
           </div>
@@ -328,5 +334,18 @@ const resetForm = () => {
 .upload-dragger {
   background: rgba(15, 23, 42, 0.4);
   border-radius: 12px;
+}
+:deep(.ant-radio-button-wrapper) {
+  background: rgba(15, 23, 42, 0.4) !important;
+  color: #94a3b8 !important;
+  border-color: rgba(71, 85, 105, 0.5) !important;
+}
+:deep(.ant-radio-button-wrapper-checked:not(.ant-radio-button-wrapper-disabled)) {
+  background: #3b82f6 !important;
+  color: #ffffff !important;
+  border-color: #3b82f6 !important;
+}
+:deep(.ant-radio-button-wrapper:before) {
+  display: none !important;
 }
 </style>

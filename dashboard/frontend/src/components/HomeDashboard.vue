@@ -126,7 +126,7 @@ const updateHistoryTimeRange = (value) => {
           <LineChart title="总用户数量" :data="cumulativeStatsHistory" :metrics="['cumulative_users']" />
         </div>
         <div class="h-80">
-          <LineChart title="活跃与签到" :data="statsHistory" :metrics="['active_users', 'checkins']" />
+          <LineChart title="活跃与签到" :data="statsHistory" :metrics="['active_users', 'web_active_users', 'checkins']" />
         </div>
       </div>
       

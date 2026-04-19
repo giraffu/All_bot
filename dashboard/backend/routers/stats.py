@@ -106,6 +106,13 @@ async def get_stats(db: AsyncSession = Depends(get_db)):
         result = await db.execute(select(func.count(func.distinct(History.user_id))).where(func.date(History.created_at) == today))
         today_active_users = result.scalar() or 0
 
+        # Web user statistics
+        result = await db.execute(select(func.count(func.distinct(History.user_id))).where(History.source == 'web'))
+        total_web_users = result.scalar() or 0
+
+        result = await db.execute(select(func.count(func.distinct(History.user_id))).where(func.date(History.created_at) == today, History.source == 'web'))
+        today_web_users = result.scalar() or 0
+
         result = await db.execute(select(func.sum(cost_case)).where(func.date(History.created_at) == today))
         today_consumed_credits = result.scalar() or 0
 
@@ -359,6 +366,8 @@ async def get_stats(db: AsyncSession = Depends(get_db)):
             "today_users_all": today_users_all,
             "today_generations": today_generations,
             "today_active_users": today_active_users,
+            "total_web_users": total_web_users,
+            "today_web_users": today_web_users,
             "today_checkins": today_checkins,
             "today_consumed_credits": today_consumed_credits,
             "today_type_distribution": today_type_distribution,
@@ -706,6 +715,13 @@ async def get_stats_history(days: int = 7, db: AsyncSession = Depends(get_db)):
             date_val = row.date if isinstance(row.date, str) else row.date.strftime("%Y-%m-%d")
             active_history[date_val] = row.count
 
+        web_active_stmt = select(func.date(History.created_at).label("date"), func.count(func.distinct(History.user_id)).label("count")).where(func.date(History.created_at) >= start_date, History.source == 'web').group_by(func.date(History.created_at)).order_by(func.date(History.created_at))
+        web_active_result = await db.execute(web_active_stmt)
+        web_active_history = {}
+        for row in web_active_result:
+            date_val = row.date if isinstance(row.date, str) else row.date.strftime("%Y-%m-%d")
+            web_active_history[date_val] = row.count
+
         checkin_stmt = select(func.date(CheckinHistory.checkin_date).label("date"), func.count(CheckinHistory.id).label("count")).where(func.date(CheckinHistory.checkin_date) >= start_date).group_by(func.date(CheckinHistory.checkin_date)).order_by(func.date(CheckinHistory.checkin_date))
         checkin_result = await db.execute(checkin_stmt)
         checkin_history = {}
@@ -895,6 +911,7 @@ async def get_stats_history(days: int = 7, db: AsyncSession = Depends(get_db)):
                 "growth_rate": daily_growth_rates.get(date_str, 0),
                 "generations": gen_history.get(date_str, 0),
                 "active_users": active_history.get(date_str, 0),
+                "web_active_users": web_active_history.get(date_str, 0),
                 "checkins": checkin_history.get(date_str, 0),
                 "consumed_credits": consumed_history.get(date_str, 0),
                 "ton_recharge": ton_today,

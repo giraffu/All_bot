@@ -150,6 +150,18 @@ const option = computed(() => {
       }
     },
     {
+      id: 'web_active_users',
+      name: 'Web活跃用户',
+      type: 'line',
+      yAxisIndex: 0,
+      data: props.data.map(item => item.web_active_users || 0),
+      color: '#ff7a45',
+      areaStyle: {
+        color: '#ff7a45',
+        opacity: 0.1
+      }
+    },
+    {
       id: 'checkins',
       name: '签到人数',
       type: 'line',

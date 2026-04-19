@@ -76,26 +76,34 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
-    <div class="max-w-md w-full space-y-8 bg-white p-10 rounded-xl shadow-lg border border-gray-100">
+  <div class="min-h-screen flex items-center justify-center bg-slate-950 relative overflow-hidden">
+    <!-- 沉浸式背景光效 -->
+    <div class="absolute top-0 left-0 w-full h-full overflow-hidden z-0 pointer-events-none">
+      <div class="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] rounded-full bg-indigo-600/20 blur-[120px]"></div>
+      <div class="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] rounded-full bg-purple-600/20 blur-[120px]"></div>
+    </div>
+
+    <div class="relative z-10 max-w-md w-full space-y-8 bg-slate-900/60 backdrop-blur-xl p-10 rounded-2xl shadow-2xl border border-slate-700/50">
       <div>
         <div class="flex justify-center">
-          <div class="h-16 w-16 bg-blue-600 rounded-full flex items-center justify-center shadow-md">
-            <span class="text-white text-2xl font-bold">AB</span>
+          <div class="h-20 w-20 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-full flex items-center justify-center shadow-[0_0_30px_rgba(99,102,241,0.4)] border border-indigo-400/30">
+            <span class="text-white text-4xl drop-shadow-md">🪷</span>
           </div>
         </div>
-        <h2 class="mt-6 text-center text-3xl font-extrabold text-gray-900">
-          All_bot Web
+        <h2 class="mt-6 text-center text-3xl font-extrabold text-white tracking-widest drop-shadow-sm">
+          合欢密宗
         </h2>
-        <p class="mt-2 text-center text-sm text-gray-600">
-          修仙主题 AI 图像与视频生成平台
+        <p class="mt-3 text-center text-sm text-indigo-200/80 tracking-wide">
+          修仙主题 AI 图像与视频工作台
         </p>
       </div>
       
-      <div class="mt-8 flex flex-col items-center justify-center space-y-6">
-        <a-spin :spinning="loading" tip="正在登录...">
-          <div id="telegram-widget-container" class="min-h-[50px] flex items-center justify-center">
-            <!-- Widget will be rendered here -->
+      <div class="mt-10 flex flex-col items-center justify-center space-y-6">
+        <a-spin :spinning="loading" tip="正在开启结界...">
+          <div class="bg-white/5 p-6 rounded-xl border border-white/10 backdrop-blur-sm w-full flex justify-center hover:bg-white/10 transition-colors duration-300">
+            <div id="telegram-widget-container" class="min-h-[40px] flex items-center justify-center">
+              <!-- Widget will be rendered here -->
+            </div>
           </div>
         </a-spin>
       </div>
@@ -105,4 +113,10 @@ onMounted(() => {
 
 <style scoped>
 /* Custom styles if needed */
+:deep(.ant-spin-nested-loading > div > .ant-spin) {
+  color: #a5b4fc; /* indigo-300 */
+}
+:deep(.ant-spin-dot-item) {
+  background-color: #818cf8; /* indigo-400 */
+}
 </style>

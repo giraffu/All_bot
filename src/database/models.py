@@ -67,6 +67,8 @@ class History(Base):
     
     is_public = Column(Boolean, default=False)
     rating = Column(Integer, default=0)
+    allow_contribute = Column(Boolean, default=True)
+    source = Column(String(20), server_default='bot', nullable=False)
 
     user = relationship("User", back_populates="history")
 

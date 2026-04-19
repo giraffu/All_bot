@@ -8,7 +8,7 @@ from config import MINIO_BUCKET
 
 logger = logging.getLogger(__name__)
 
-def _process_input_path(user_logger: UserLogger, path: str) -> str:
+async def _process_input_path(user_logger: UserLogger, path: str) -> str:
     if not path:
         return ""
     if path.startswith("template:"):
@@ -16,8 +16,9 @@ def _process_input_path(user_logger: UserLogger, path: str) -> str:
     if path.startswith(f"{MINIO_BUCKET}/"):
         return path.replace(f"{MINIO_BUCKET}/", "", 1)
     
-    # Try to process as a local file to upload
-    processed = user_logger.save_input_image(path)
+    # Try to process as a local file to upload (use asyncio.to_thread to avoid blocking event loop)
+    import asyncio
+    processed = await asyncio.to_thread(user_logger.save_input_image, path)
     if processed:
         return processed
         
@@ -43,8 +44,8 @@ async def core_submit_face_video(
     返回: (是否成功, 错误/成功描述, backend_task_id, saved_face_image, saved_video, registry_task_id)
     """
     user_logger = UserLogger(internal_user_id, username)
-    saved_face_image = _process_input_path(user_logger, face_image_path)
-    saved_video = _process_input_path(user_logger, video_path)
+    saved_face_image = await _process_input_path(user_logger, face_image_path)
+    saved_video = await _process_input_path(user_logger, video_path)
 
     if not saved_face_image or not saved_video:
         return False, "Failed to process input media.", None, None, None, None
@@ -116,7 +117,7 @@ async def core_submit_generation_task(
     saved_input_images = []
     if images:
         for img in images:
-            processed_img = _process_input_path(user_logger, img)
+            processed_img = await _process_input_path(user_logger, img)
             if processed_img:
                 saved_input_images.append(processed_img)
 

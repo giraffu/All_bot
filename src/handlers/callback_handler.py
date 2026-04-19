@@ -320,6 +320,10 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
                     await safe_answer_query(query, text="❌ 无法找到对应的任务记录，投稿失败", show_alert=True)
                     return
                 
+                if getattr(history, 'allow_contribute', True) is False:
+                    await safe_answer_query(query, text="⚠️ 这是一键应用他人的模板生成的作品，为了保护原创，暂不支持再次投稿。", show_alert=True)
+                    return
+                
                 # Metadata
                 media_type = 'video' if query.message.video else 'image'
                 width, height, duration = None, None, None
@@ -485,7 +489,7 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
                 
                 try:
                     tags = json.loads(post.tags)
-                except:
+                except Exception:
                     tags = []
                     
                 # Translate LoRA model names in tags

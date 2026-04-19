@@ -957,6 +957,7 @@ class TaskService:
                 saved_output_image,
                 task_id=task_id,
                 type=task_type,
+                allow_contribute=allow_contribute
             )
             await permission_service.refresh_user_group(internal_user_id)
 
@@ -1019,6 +1020,7 @@ class TaskService:
                 saved_output_image,
                 task_id=task_id,
                 type=task_type,
+                allow_contribute=allow_contribute
             )
             await permission_service.refresh_user_group(internal_user_id)
 

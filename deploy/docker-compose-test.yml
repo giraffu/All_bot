@@ -15,6 +15,7 @@ services:
       - ENABLE_PUBLIC_SHARE=false
       - BOT_TOKEN_TEST=8276500658:AAEeN8Lv7JfYqvcRI0rg7gbrvxq1A88GSJA
       - API_BASE=http://host.docker.internal:8003
+      - TZ=Asia/Shanghai
     volumes:
       - ../logs:/app/logs
     extra_hosts:
@@ -34,6 +35,7 @@ services:
       - REDIS_PREFIX=test_bot_
       - BOT_TOKEN=8276500658:AAEeN8Lv7JfYqvcRI0rg7gbrvxq1A88GSJA
       - PAYMENT_API_PORT=8022
+      - TZ=Asia/Shanghai
     volumes:
       - ../logs:/app/logs
     extra_hosts:

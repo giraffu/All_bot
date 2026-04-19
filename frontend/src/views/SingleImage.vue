@@ -104,7 +104,7 @@ const resetForm = () => {
             <div class="text-slate-300 text-sm">已准备好应用所选的模板效果，请上传您的图片即可生成。</div>
           </div>
           
-          <div class="upload-section flex flex-col w-full flex-grow min-h-0">
+          <div class="upload-section flex flex-col w-full flex-grow min-h-0 h-48 md:h-full">
             <h3 class="text-sm font-bold mb-3 text-slate-200 flex items-center">
               <span class="text-slate-500 mr-2">1.</span> 基础图片
             </h3>
