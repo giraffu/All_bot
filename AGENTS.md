@@ -61,6 +61,16 @@
 - **代码位置**：`/workers/comfy_agent1`, `/workers/comfy_agent2` 等（通过多开隔离）。
 - **协同**：API 后端通过配置或 Redis 队列向这些 Agent 派发具体任务。
 
+### 1.7 AI 客服大师姐 (LLM Customer Service Bot)
+基于大语言模型和 LangGraph 构建的专属社群服务智能体，扮演“合欢宗大师姐”的人设。
+- **职责**：在指定的官方群组内，解答新老弟子关于系统操作、充值、排队报错等疑问。
+- **核心能力**：
+  - **意图嗅探 (Intent Sniffing)**：即使群友没有 `@` 机器人，也能通过轻量级 LLM 调用实时分析超过3个字符的对话意图，一旦判定为“求助/疑问”则主动搭话。
+  - **长效记忆**：使用 LangGraph 的 `MemorySaver` 按 `chat_id` 自动隔离并持久化各个群组的上下文。
+  - **防打扰隔离**：严格受限于 `.env` 中的 `ALLOWED_GROUP_IDS` 白名单，拒绝私聊和其他陌生群组。
+- **代码位置**：`/cs_bot` (核心逻辑在 `langgraph_client.py` 和 `bot.py`)。
+- **容器编排**：独立部署，通过 `host.docker.internal` 连接宿主机上的本地 LM Studio 推理服务 (端口 1234)。与主 Bot 一样直连 `69.63.220.115:8081` 的 Telegram Local API。
+
 ---
 
 ## 2. 核心基础设施服务 (Infrastructure Services)
@@ -132,6 +142,11 @@
   ```bash
   cd backend && docker-compose up -d --build
   ```
+- **AI 客服大师姐 (CS Bot)**:
+  ```bash
+  cd cs_bot && docker rm -f cs-bot && docker-compose up -d --build
+  ```
+  *(注意：对于 CS Bot，单纯的 `docker restart` 或 `docker-compose restart` 通常不会使环境变量或代码修改生效，必须通过 `--build` 重新构建容器！)*
 
 ### 4.2 Bot 暂停与维护模式 (Maintenance Mode)
 当系统需要紧急维护、修复 Bug 或排查问题时，可以开启维护模式。这会无缝拦截新生成任务的创建，但不影响用户的查询与签到功能。

@@ -9,18 +9,32 @@ const loading = ref(false)
 const posts = ref([])
 const pagination = ref({
   current: 1,
-  pageSize: 20,
+  pageSize: 10,
   total: 0
 })
 
 // Filters
 const filterActive = ref(undefined)
-const filterType = ref('all')
+const filterTaskType = ref('all')
+const filterSort = ref('created_at')
 
-const mediaTypeOptions = [
+const sortOptions = [
+  { label: '最新时间', value: 'created_at' },
+  { label: '最多点赞', value: 'likes' },
+  { label: '最多点踩', value: 'dislikes' },
+  { label: '最多应用', value: 'applied' }
+]
+
+const taskTypeOptions = [
   { label: '全部', value: 'all' },
-  { label: '图片', value: 'image' },
-  { label: '视频', value: 'video' }
+  { label: '幻想换脸', value: 'i2i_pro' },
+  { label: '局部重绘', value: 'edit' },
+  { label: '动态视频', value: 'custom_video' },
+  { label: '视频风格化', value: 'video_lora' },
+  { label: '图生图', value: 'img2img' },
+  { label: '文生图', value: 'txt2img' },
+  { label: '视频换脸', value: 'face_video' },
+  { label: '图片换脸', value: 'face_swap' }
 ]
 
 const statusOptions = [
@@ -44,32 +58,32 @@ const submitLoading = ref(false)
 const previewVisible = ref(false)
 const previewMedia = ref(null)
 
+const getTaskTypeName = (type) => {
+  const option = taskTypeOptions.find(opt => opt.value === type)
+  return option ? option.label : type
+}
+
 const columns = [
-  {
-    title: 'ID',
-    dataIndex: 'id',
-    width: 80,
-  },
-  {
-    title: '作者',
-    dataIndex: 'username',
-    width: 120,
-  },
   {
     title: '预览',
     key: 'preview',
-    width: 80,
+    width: 120,
     align: 'center'
   },
   {
-    title: '媒体类型',
-    dataIndex: 'media_type',
-    width: 100,
+    title: '具体类型',
+    key: 'task_type',
+    width: 120,
   },
   {
     title: '规格',
     key: 'specs',
     width: 120,
+  },
+  {
+    title: '提示词 (Prompt)',
+    dataIndex: 'prompt',
+    width: 300,
   },
   {
     title: '状态',
@@ -80,11 +94,6 @@ const columns = [
     title: '数据统计',
     key: 'stats',
     width: 200,
-  },
-  {
-    title: '创建时间',
-    dataIndex: 'created_at',
-    width: 180,
   },
   {
     title: '操作',
@@ -105,8 +114,11 @@ const loadData = async (page = pagination.value.current) => {
     if (filterActive.value !== undefined) {
       params.is_active = filterActive.value
     }
-    if (filterType.value !== 'all') {
-      params.media_type = filterType.value
+    if (filterTaskType.value !== 'all') {
+      params.task_type = filterTaskType.value
+    }
+    if (filterSort.value && filterSort.value !== 'created_at') {
+      params.sort_by = filterSort.value
     }
 
     const res = await fetchGalleryPosts(params)
@@ -250,8 +262,18 @@ onMounted(() => {
         <div class="flex items-center gap-2">
           <span class="text-gray-500">类型:</span>
           <a-select
-            v-model:value="filterType"
-            :options="mediaTypeOptions"
+            v-model:value="filterTaskType"
+            :options="taskTypeOptions"
+            class="w-32"
+            @change="onFilterChange"
+          />
+        </div>
+
+        <div class="flex items-center gap-2">
+          <span class="text-gray-500">排序:</span>
+          <a-select
+            v-model:value="filterSort"
+            :options="sortOptions"
             class="w-32"
             @change="onFilterChange"
           />
@@ -277,33 +299,28 @@ onMounted(() => {
         class="h-full"
       >
         <template #bodyCell="{ column, record }">
-          <!-- Username -->
-          <template v-if="column.dataIndex === 'username'">
-            <span class="font-medium">{{ record.username || `道友_${record.user_id}` }}</span>
-          </template>
-
           <!-- Preview -->
-          <template v-else-if="column.key === 'preview'">
+          <template v-if="column.key === 'preview'">
             <div 
-              class="w-12 h-12 rounded bg-gray-100 border cursor-pointer flex items-center justify-center hover:border-blue-400 transition-colors mx-auto relative group overflow-hidden"
+              class="w-24 h-24 rounded bg-gray-100 border cursor-pointer flex items-center justify-center hover:border-blue-400 transition-colors mx-auto relative group overflow-hidden"
               @click="showPreview(record)"
             >
               <template v-if="record.media_url">
                 <img v-if="record.media_type === 'image'" :src="getMediaUrl(record.media_url)" class="w-full h-full object-cover" />
                 <video v-else :src="getMediaUrl(record.media_url)" class="w-full h-full object-cover" />
                 <div class="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
-                  <play-circle-outlined v-if="record.media_type === 'video'" class="text-white text-lg" />
-                  <picture-outlined v-else class="text-white text-lg" />
+                  <play-circle-outlined v-if="record.media_type === 'video'" class="text-white text-3xl" />
+                  <picture-outlined v-else class="text-white text-3xl" />
                 </div>
               </template>
               <span v-else class="text-xs text-gray-400">失效</span>
             </div>
           </template>
 
-          <!-- Media Type -->
-          <template v-else-if="column.dataIndex === 'media_type'">
+          <!-- Task Type -->
+          <template v-else-if="column.key === 'task_type'">
             <a-tag :color="record.media_type === 'video' ? 'purple' : 'blue'">
-              {{ record.media_type === 'video' ? '视频' : '图片' }}
+              {{ getTaskTypeName(record.task_type) }}
             </a-tag>
           </template>
 
@@ -312,6 +329,13 @@ onMounted(() => {
             <div class="text-xs text-gray-500">
               <div>尺寸: {{ record.width || '?' }}x{{ record.height || '?' }}</div>
               <div v-if="record.media_type === 'video'">时长: {{ record.duration || '?' }}s</div>
+            </div>
+          </template>
+
+          <!-- Prompt -->
+          <template v-else-if="column.dataIndex === 'prompt'">
+            <div class="text-sm text-gray-600 line-clamp-4 break-all whitespace-pre-wrap" :title="record.prompt">
+              {{ record.prompt || '无' }}
             </div>
           </template>
 
@@ -339,11 +363,6 @@ onMounted(() => {
               </template>
               {{ record.is_active ? '已展示' : '已下架' }}
             </a-tag>
-          </template>
-
-          <!-- Created At -->
-          <template v-else-if="column.dataIndex === 'created_at'">
-            {{ formatDate(record.created_at) }}
           </template>
 
           <!-- Actions -->

@@ -26,13 +26,15 @@ async def get_all_gallery_posts(
     page_size: int = Query(20, ge=1, le=100), 
     is_active: Optional[bool] = None,
     media_type: Optional[str] = None,
+    task_type: Optional[str] = None,
+    sort_by: Optional[str] = None,
     db: AsyncSession = Depends(get_db)
 ):
     try:
         offset = (page - 1) * page_size
         
         count_stmt = select(func.count(GalleryPost.id))
-        stmt = select(GalleryPost).options(selectinload(GalleryPost.user), selectinload(GalleryPost.history)).order_by(desc(GalleryPost.created_at))
+        stmt = select(GalleryPost).options(selectinload(GalleryPost.user), selectinload(GalleryPost.history))
 
         if is_active is not None:
             count_stmt = count_stmt.where(GalleryPost.is_active == is_active)
@@ -41,6 +43,19 @@ async def get_all_gallery_posts(
         if media_type and media_type != "all":
             count_stmt = count_stmt.where(GalleryPost.media_type == media_type)
             stmt = stmt.where(GalleryPost.media_type == media_type)
+
+        if task_type and task_type != "all":
+            count_stmt = count_stmt.join(GalleryPost.history).where(History.type == task_type)
+            stmt = stmt.join(GalleryPost.history).where(History.type == task_type)
+
+        if sort_by == "dislikes":
+            stmt = stmt.order_by(desc(GalleryPost.dislikes_count), desc(GalleryPost.created_at))
+        elif sort_by == "likes":
+            stmt = stmt.order_by(desc(GalleryPost.likes_count), desc(GalleryPost.created_at))
+        elif sort_by == "applied":
+            stmt = stmt.order_by(desc(GalleryPost.applied_count), desc(GalleryPost.created_at))
+        else:
+            stmt = stmt.order_by(desc(GalleryPost.created_at))
 
         total_count = await db.scalar(count_stmt)
         
@@ -74,6 +89,7 @@ async def get_all_gallery_posts(
                 "user_id": p.user_id,
                 "username": p.user.username if p.user else None,
                 "media_type": p.media_type,
+                "task_type": p.history.type if p.history else "unknown",
                 "width": p.width,
                 "height": p.height,
                 "duration": p.duration,
