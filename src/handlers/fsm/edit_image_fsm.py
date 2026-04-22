@@ -99,7 +99,12 @@ async def receive_reference_image(update: Update, context: ContextTypes.DEFAULT_
     if fsm_data['mode'] == MODE_I2I_PRO:
         msg = "✅ **已收到 1 张参考图。**\n\n【第二步】请直接发送**提示词 (Text)** 开始生成。\n\n💡 **提示词要求**：\n描述幻想的人物和场景，后续会将参考图中的人物换脸到幻想的场景人物中。"
     else:
-        msg = f"✅ **已收到 {len(fsm_data['images'])} 张参考图。**\n\n【第二步】请直接发送**提示词 (Text)** 开始生成。\n（如果是多图融合，您可以继续发送图片）"
+        num_images = len(fsm_data['images'])
+        if num_images == 1:
+            msg = f"✅ **已收到 1 张参考图。**\n\n【第二步】请直接发送**提示词 (Text)** 开始生成。\n（如果是双图融合，您可以继续发送第2张图片，双图融合将消耗 6 灵石）"
+        else:
+            fsm_data['cost'] = 6
+            msg = f"✅ **已收到 2 张参考图。**\n\n【第二步】请直接发送**提示词 (Text)** 开始生成。\n（双图融合将消耗 6 灵石，多余的图片将不生效）"
 
     await robust_reply_text(message, msg, parse_mode="Markdown")
     
@@ -113,6 +118,10 @@ async def receive_additional_image(update: Update, context: ContextTypes.DEFAULT
     
     if fsm_data['mode'] == MODE_I2I_PRO:
         await robust_reply_text(message, "⚠️ 幻想换脸模式只需要 1 张图片，请直接发送文字提示词。")
+        return EditImageState.WAIT_PROMPT
+
+    if fsm_data['mode'] == MODE_EDIT and len(fsm_data['images']) >= 2:
+        await robust_reply_text(message, "⚠️ 自由P图最多只支持 2 张图片融合，多余的图片将不生效，请直接发送文字提示词开始生成。")
         return EditImageState.WAIT_PROMPT
 
     return await receive_reference_image(update, context)

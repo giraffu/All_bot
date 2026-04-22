@@ -4,6 +4,7 @@ from sqlalchemy import select, func, case, Float, text
 from datetime import datetime, date, timedelta
 import logging
 import os
+import time
 import httpx
 from telegram import Bot
 from dotenv import load_dotenv
@@ -14,6 +15,41 @@ from src.database.models import User, History, Referral, TemplateContribution, C
 
 router = APIRouter(prefix="/api/stats", tags=["stats"])
 logger = logging.getLogger("dashboard.stats")
+
+_exchange_rates_cache = {
+    "rates": {
+        "ton_to_usdt": 5.0,
+        "rmb_to_usdt": 0.14,
+        "stars_to_usdt": 0.013
+    },
+    "last_fetched": 0
+}
+
+async def get_exchange_rates():
+    global _exchange_rates_cache
+    now = time.time()
+    if now - _exchange_rates_cache["last_fetched"] < 3600:  # cache for 1 hour
+        return _exchange_rates_cache["rates"]
+        
+    rates = _exchange_rates_cache["rates"].copy()
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            resp1 = await client.get("https://tonapi.io/v2/rates?tokens=ton&currencies=usd")
+            if resp1.status_code == 200:
+                data = resp1.json()
+                rates["ton_to_usdt"] = float(data["rates"]["TON"]["prices"]["USD"])
+                
+            resp2 = await client.get("https://api.exchangerate-api.com/v4/latest/USD")
+            if resp2.status_code == 200:
+                cny_rate = float(resp2.json()["rates"]["CNY"])
+                rates["rmb_to_usdt"] = 1.0 / cny_rate
+                
+        _exchange_rates_cache["rates"] = rates
+        _exchange_rates_cache["last_fetched"] = now
+    except Exception as e:
+        logger.error(f"Error fetching exchange rates: {e}")
+        
+    return rates
 
 def get_hour_expr(col, dialect_name):
     if dialect_name == 'postgresql':
@@ -92,6 +128,38 @@ async def get_stats(db: AsyncSession = Depends(get_db)):
         result = await db.execute(select(func.count(TemplateContribution.id)).where(TemplateContribution.is_reviewed == True))
         total_approved_contributions = result.scalar() or 0
         
+        # Calculate invitation recharge stats
+        from sqlalchemy import and_
+        from src.database.models import Order
+        stmt = (
+            select(
+                Order.telegram_id,
+                Order.final_price,
+                Order.order_id
+            )
+            .join(Referral, Referral.invitee_id == Order.telegram_id)
+            .where(
+                Order.status == "SUCCESS"
+            )
+        )
+        result = await db.execute(stmt)
+        rows = result.all()
+        
+        total_invitation_ton = 0.0
+        total_invitation_rmb = 0.0
+        total_invitation_stars = 0
+        
+        for tg_id, price, order_id in rows:
+            if order_id and str(order_id).startswith("RMB_"):
+                total_invitation_rmb += float(price)
+            elif order_id and str(order_id).startswith("XTR_"):
+                total_invitation_stars += int(price)
+            else:
+                if price >= 100:
+                    total_invitation_stars += int(price)
+                else:
+                    total_invitation_ton += float(price)
+                    
         today = date.today()
         
         result = await db.execute(select(func.count(User.id)).where(func.date(User.created_at) == today, User.is_channel_member == True))
@@ -382,7 +450,10 @@ async def get_stats(db: AsyncSession = Depends(get_db)):
             "ton_balance": ton_balance,
             "usdt_balance": usdt_balance,
             "star_balance": star_balance,
-            "rmb_balance": round(rmb_balance, 2)
+            "rmb_balance": round(rmb_balance, 2),
+            "total_invitation_ton": round(total_invitation_ton, 2),
+            "total_invitation_rmb": round(total_invitation_rmb, 2),
+            "total_invitation_stars": total_invitation_stars
         }
     except Exception as e:
         logger.error(f"Error getting stats: {e}")
@@ -889,6 +960,11 @@ async def get_stats_history(days: int = 7, db: AsyncSession = Depends(get_db)):
         current_rmb_cumulative = rmb_before
         current_recharged_credits_cumulative = recharged_credits_before
 
+        rates = await get_exchange_rates()
+        ton_to_usdt = rates["ton_to_usdt"]
+        rmb_to_usdt = rates["rmb_to_usdt"]
+        stars_to_usdt = rates["stars_to_usdt"]
+
         history_data = []
         for i in range(days):
             current_date = start_date + timedelta(days=i)
@@ -899,10 +975,16 @@ async def get_stats_history(days: int = 7, db: AsyncSession = Depends(get_db)):
             rmb_today = rmb_history.get(date_str, 0.0)
             recharged_credits_today = recharged_credits_history.get(date_str, 0)
             
+            usdt_today = (ton_today * ton_to_usdt) + (stars_today * stars_to_usdt) + (rmb_today * rmb_to_usdt)
+            usdt_today = round(usdt_today, 2)
+            
             current_ton_cumulative += ton_today
             current_stars_cumulative += stars_today
             current_rmb_cumulative += rmb_today
             current_recharged_credits_cumulative += recharged_credits_today
+            
+            current_usdt_cumulative = (current_ton_cumulative * ton_to_usdt) + (current_stars_cumulative * stars_to_usdt) + (current_rmb_cumulative * rmb_to_usdt)
+            current_usdt_cumulative = round(current_usdt_cumulative, 2)
             
             history_data.append({
                 "date": date_str,
@@ -917,9 +999,11 @@ async def get_stats_history(days: int = 7, db: AsyncSession = Depends(get_db)):
                 "ton_recharge": ton_today,
                 "stars_recharge": stars_today,
                 "rmb_recharge": round(rmb_today, 2),
+                "usdt_recharge": usdt_today,
                 "cumulative_ton": round(current_ton_cumulative, 2),
                 "cumulative_stars": current_stars_cumulative,
                 "cumulative_rmb": round(current_rmb_cumulative, 2),
+                "cumulative_usdt": current_usdt_cumulative,
                 "recharged_credits": recharged_credits_today,
                 "cumulative_recharged_credits": current_recharged_credits_cumulative,
                 "inner_disciples": inner_history.get(date_str, 0),

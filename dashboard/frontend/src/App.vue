@@ -26,6 +26,7 @@ import WorkerHistoryTable from './components/WorkerHistoryTable.vue'
 import LogTable from './components/LogTable.vue'
 import RechargeSystem from './components/RechargeSystem.vue'
 import GalleryTable from './components/GalleryTable.vue'
+import ReferralTable from './components/ReferralTable.vue'
 import { message } from 'ant-design-vue'
 import {
   UserOutlined,
@@ -45,7 +46,8 @@ import {
   PieChartOutlined,
   RobotOutlined,
   AppstoreOutlined,
-  BankOutlined
+  BankOutlined,
+  GiftOutlined
 } from '@ant-design/icons-vue'
 
 // State
@@ -356,6 +358,10 @@ onUnmounted(() => {
           <template #icon><appstore-outlined /></template>
           <span>广场内容管理</span>
         </a-menu-item>
+        <a-menu-item key="referrals">
+          <template #icon><gift-outlined /></template>
+          <span>邀请奖励</span>
+        </a-menu-item>
         <a-menu-divider />
         <a-menu-item key="settings" disabled>
           <template #icon><setting-outlined /></template>
@@ -390,6 +396,8 @@ onUnmounted(() => {
                 activeTab[0] === 'history' ? '历史生成' :
                 activeTab[0] === 'logs' ? '操作日志' :
                 activeTab[0] === 'recharge' ? '充值系统' :
+                activeTab[0] === 'gallery' ? '广场内容管理' :
+                activeTab[0] === 'referrals' ? '邀请奖励' :
                 '模板共建' 
               }}
             </a-breadcrumb-item>
@@ -448,7 +456,7 @@ onUnmounted(() => {
       <!-- Content -->
       <a-layout-content 
         class="p-6 bg-gray-50 flex flex-col h-[calc(100vh-64px)]"
-        :class="['home', 'finance', 'monitor', 'templates', 'logs', 'recharge'].includes(activeTab[0]) ? 'overflow-y-auto' : 'overflow-hidden'"
+        :class="['home', 'finance', 'monitor', 'templates', 'logs', 'recharge', 'referrals'].includes(activeTab[0]) ? 'overflow-y-auto' : 'overflow-hidden'"
       >
         <div class="w-full flex-1 flex flex-col">
           <!-- System Monitor Tab -->
@@ -508,6 +516,10 @@ onUnmounted(() => {
 
           <div v-else-if="activeTab[0] === 'gallery'" class="flex-1 bg-white rounded-xl shadow-sm border p-6 flex flex-col min-h-0">
             <GalleryTable />
+          </div>
+
+          <div v-else-if="activeTab[0] === 'referrals'" class="flex-1 flex flex-col min-h-0">
+            <ReferralTable />
           </div>
         </div>
       </a-layout-content>

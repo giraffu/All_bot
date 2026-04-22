@@ -106,15 +106,22 @@ onMounted(() => {
         </a-radio-group>
       </div>
 
-      <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-10">
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
         <div class="h-80">
           <LineChart title="每日充值 (TON)" :data="statsHistory" :metrics="['ton_recharge', 'cumulative_ton']" />
         </div>
         <div class="h-80">
-          <LineChart title="每日充值 (Stars)" :data="statsHistory" :metrics="['stars_recharge', 'cumulative_stars']" />
+          <LineChart title="4
+             (Stars)" :data="statsHistory" :metrics="['stars_recharge', 'cumulative_stars']" />
         </div>
         <div class="h-80">
           <LineChart title="每日充值 (RMB)" :data="statsHistory" :metrics="['rmb_recharge', 'cumulative_rmb']" />
+        </div>
+      </div>
+      
+      <div class="grid grid-cols-1 gap-6 mb-10">
+        <div class="h-96">
+          <LineChart title="每日充值 (USDT)" :data="statsHistory" :metrics="['usdt_recharge', 'cumulative_usdt']" />
         </div>
       </div>
       

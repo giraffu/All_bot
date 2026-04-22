@@ -1,7 +1,7 @@
 <script setup>
 import { ref, onMounted, computed, h } from 'vue'
 import { message, Modal } from 'ant-design-vue'
-import { ExclamationCircleOutlined, PictureOutlined, PlayCircleOutlined, CheckCircleOutlined, CloseCircleOutlined } from '@ant-design/icons-vue'
+import { ExclamationCircleOutlined, PictureOutlined, PlayCircleOutlined, CheckCircleOutlined, CloseCircleOutlined, CopyOutlined } from '@ant-design/icons-vue'
 import { fetchGalleryPosts, updateGalleryPost, deleteGalleryPost, apiBaseUrl } from '../api/api'
 import { formatDate } from '../utils/helpers'
 
@@ -12,6 +12,48 @@ const pagination = ref({
   pageSize: 10,
   total: 0
 })
+
+const copyToClipboard = async (text) => {
+  if (!text) return
+  
+  // 1. 尝试使用现代 Clipboard API (仅在 HTTPS 或 localhost 下可用)
+  if (navigator.clipboard && window.isSecureContext) {
+    try {
+      await navigator.clipboard.writeText(text)
+      message.success('提示词已复制')
+      return
+    } catch (err) {
+      console.error('Clipboard API failed: ', err)
+      // 如果失败，继续走下面的降级方案
+    }
+  }
+  
+  // 2. 降级方案：使用传统 execCommand，兼容 HTTP 环境 (如局域网 IP 访问)
+  try {
+    const textArea = document.createElement('textarea')
+    textArea.value = text
+    // 隐藏文本框，防止页面滚动闪烁
+    textArea.style.position = 'fixed'
+    textArea.style.left = '-999999px'
+    textArea.style.top = '-999999px'
+    
+    document.body.appendChild(textArea)
+    textArea.focus()
+    textArea.select()
+    
+    const successful = document.execCommand('copy')
+    document.body.removeChild(textArea)
+    
+    if (successful) {
+      message.success('提示词已复制')
+    } else {
+      message.error('复制失败，浏览器可能拦截了该操作')
+    }
+  } catch (err) {
+    message.error('复制失败')
+    console.error('Fallback copy failed: ', err)
+  }
+}
 
 // Filters
 const filterActive = ref(undefined)
@@ -334,8 +376,20 @@ onMounted(() => {
 
           <!-- Prompt -->
           <template v-else-if="column.dataIndex === 'prompt'">
-            <div class="text-sm text-gray-600 line-clamp-4 break-all whitespace-pre-wrap" :title="record.prompt">
-              {{ record.prompt || '无' }}
+            <div class="flex items-start justify-between gap-2">
+              <div class="text-sm text-gray-600 line-clamp-4 break-all whitespace-pre-wrap flex-1" :title="record.prompt">
+                {{ record.prompt || '无' }}
+              </div>
+              <a-button 
+                v-if="record.prompt" 
+                type="text" 
+                size="small" 
+                class="text-gray-400 hover:text-blue-500 flex-shrink-0" 
+                @click="copyToClipboard(record.prompt)"
+                title="复制提示词"
+              >
+                <template #icon><copy-outlined /></template>
+              </a-button>
             </div>
           </template>
 

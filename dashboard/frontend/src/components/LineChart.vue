@@ -270,6 +270,34 @@ const option = computed(() => {
       }
     },
     {
+      id: 'usdt_recharge',
+      name: '每日充值 (USDT)',
+      type: 'bar',
+      yAxisIndex: 0, 
+      data: props.data.map(item => item.usdt_recharge || 0),
+      color: '#52c41a', 
+      itemStyle: {
+        borderRadius: [4, 4, 0, 0]
+      }
+    },
+    {
+      id: 'cumulative_usdt',
+      name: '累计充值 (USDT)',
+      type: 'line',
+      yAxisIndex: 1, 
+      data: props.data.map(item => item.cumulative_usdt || 0),
+      color: '#389e0d', 
+      smooth: true,
+      lineStyle: {
+        width: 3
+      },
+      symbol: 'none',
+      areaStyle: {
+        color: '#52c41a',
+        opacity: 0.05
+      }
+    },
+    {
       id: 'inner_disciples',
       name: '每日增加内门',
       type: 'bar',

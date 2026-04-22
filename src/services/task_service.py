@@ -188,7 +188,7 @@ class TaskService:
         if task_type == "face_swap":
             cost = TASK_COSTS.get(MODE_FACESWAP_STEP1, 1)
         elif task_type == MODE_EDIT or task_type == "edit":
-            cost = 2
+            cost = 6 if len(images) == 2 else 2
         else:
             cost = TASK_COSTS.get(task_type, 6 if is_video else 2)
             

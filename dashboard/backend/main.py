@@ -14,7 +14,7 @@ import fastapi.responses
 
 from src.database.core import init_db
 from dashboard.backend.auth import auth_router, get_current_user
-from dashboard.backend.routers import stats, users, history, plans, templates, system, logs, workers, gallery
+from dashboard.backend.routers import stats, users, history, plans, templates, system, logs, workers, gallery, referrals
 from dashboard.backend.services.worker_listener import start_worker_listener
 
 logging.basicConfig(level=logging.INFO)
@@ -32,6 +32,7 @@ app.include_router(system.router)
 app.include_router(logs.router)
 app.include_router(workers.router)
 app.include_router(gallery.router)
+app.include_router(referrals.router)
 
 background_tasks = set()
 

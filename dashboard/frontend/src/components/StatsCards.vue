@@ -122,6 +122,47 @@ defineProps({
         </a-statistic>
       </a-card>
     </a-col>
+    <a-col :xs="24" :sm="12" :md="8" :lg="4">
+      <a-card hoverable class="stat-card">
+        <a-statistic
+          title="受邀充值(TON)"
+          :value="stats.total_invitation_ton || 0"
+          :precision="2"
+          :value-style="{ color: '#1890ff' }"
+        >
+          <template #prefix>
+            <wallet-outlined />
+          </template>
+        </a-statistic>
+      </a-card>
+    </a-col>
+    <a-col :xs="24" :sm="12" :md="8" :lg="4">
+      <a-card hoverable class="stat-card">
+        <a-statistic
+          title="受邀充值(Stars)"
+          :value="stats.total_invitation_stars || 0"
+          :value-style="{ color: '#faad14' }"
+        >
+          <template #prefix>
+            <star-outlined />
+          </template>
+        </a-statistic>
+      </a-card>
+    </a-col>
+    <a-col :xs="24" :sm="12" :md="8" :lg="4">
+      <a-card hoverable class="stat-card">
+        <a-statistic
+          title="受邀充值(RMB)"
+          :value="stats.total_invitation_rmb || 0"
+          :precision="2"
+          :value-style="{ color: '#f5222d' }"
+        >
+          <template #prefix>
+            <span class="mr-1">¥</span>
+          </template>
+        </a-statistic>
+      </a-card>
+    </a-col>
   </a-row>
 
   <a-row :gutter="[16, 16]" class="mb-6" v-if="mode === 'user'">

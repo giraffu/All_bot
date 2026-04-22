@@ -276,5 +276,10 @@ export const deleteGalleryPost = async (postId) => {
   return response.data
 }
 
+export const fetchReferralRewards = async () => {
+  const response = await api.get('/api/referrals/rewards')
+  return response.data
+}
+
 export { apiBaseUrl }
 export default api
