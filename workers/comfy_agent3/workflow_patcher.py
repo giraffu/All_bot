@@ -38,8 +38,14 @@ class WorkflowPatcher:
             filename = "perfect_video_insert.json"
         elif task_type == "video_edit":
             filename = "perfect_video_edit.json"
+        elif task_type == "face_video":
+            filename = "face_video.json"
         elif task_type == "t2i-pornmaster-turbo":
             filename = "Pornmaster Z-Image Turbo_t2i_Double checkpoints & realism enhancer_V1_2026_01_24.json"
+        elif task_type == "i2i_pro":
+            filename = "i2i_pro.json"
+        elif task_type == "ltx_video":
+            filename = "LTX 2.3 I2V.json"
             
         path = os.path.join(self.workflows_dir, filename)
         if not os.path.exists(path):
@@ -108,6 +114,24 @@ class WorkflowPatcher:
                     wf.pop(node_to_pop, None)
                 if "31" in wf:
                     wf.pop("31", None) # ImageScaleToTotalPixels node 31
+        
+        elif task_type == "ltx_video":
+            # Remove the preview override node as it causes AttributeError in API mode (serv.last_node_id is None)
+            if "210" in wf:
+                wf.pop("210", None)
+            if "5" in wf:
+                wf.pop("5", None)
+            # Route Node 7 directly to Node 8
+            if "8" in wf and "inputs" in wf["8"]:
+                wf["8"]["inputs"]["model"] = ["7", 0]
+            
+            # Prevent caching of output nodes by ensuring a unique filename_prefix per task
+            # Using random integer as task_id if not present (since workflow_patcher only gets params)
+            unique_id = params.get("seed", random.randint(1, 9007199254740991))
+            for node_id, node in wf.items():
+                if isinstance(node, dict) and node.get("class_type") == "VHS_VideoCombine":
+                    if "inputs" in node:
+                        node["inputs"]["filename_prefix"] = f"ltx_video_{unique_id}"
                 
         return wf
 

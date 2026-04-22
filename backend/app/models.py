@@ -17,6 +17,7 @@ class TaskType(str, Enum):
     FACE_VIDEO = "face_video"
     T2I_PORNMASTER_TURBO = "t2i-pornmaster-turbo"
     I2I_PRO = "i2i_pro"
+    LTX_VIDEO = "ltx_video"
 
 class TaskResponse(BaseModel):
     task_id: str
@@ -106,4 +107,12 @@ class I2IProRequest(BaseModel):
     image: str
     prompt: str
     seed: Optional[int] = None
+    priority: int = 0
+
+class LtxVideoRequest(BaseModel):
+    image: str
+    prompt: str
+    length: int = 5
+    width: int = 704
+    height: int = 1280
     priority: int = 0
