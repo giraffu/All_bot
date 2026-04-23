@@ -5,19 +5,19 @@
     },
     "class_type": "CheckpointLoaderSimple",
     "_meta": {
-      "title": "Checkpoint加载器（简易）"
+      "title": "Checkpoint\u52a0\u8f7d\u5668\uff08\u7b80\u6613\uff09"
     }
   },
   "2": {
     "inputs": {
-      "seed": 65454653,
+      "seed": 1087042354126002,
       "steps": 4,
-      "cfg": 1,
-      "sampler_name": "sa_solver",
+      "cfg": 0.8,
+      "sampler_name": "res_multistep_cfg_pp",
       "scheduler": "beta",
       "denoise": 0.9,
       "model": [
-        "32",
+        "1",
         0
       ],
       "positive": [
@@ -35,12 +35,12 @@
     },
     "class_type": "KSampler",
     "_meta": {
-      "title": "K采样器"
+      "title": "K\u91c7\u6837\u5668"
     }
   },
   "3": {
     "inputs": {
-      "prompt": "Put the woman holding a balloon next to the ninja in the hallway.",
+      "prompt": "FemNude,\n\u8d85\u5e7f\u89d2\u955c\u5934\uff0c\u5973\u5b69\u7ad9\u8d77\u6765\uff0c\u89c6\u7ebf\u76ef\u7740\u955c\u5934\uff0c\u53cc\u817f\u5fae\u5f20\uff0c\u79c1\u5904\u9634\u6bdb\u65fa\u76db\uff0c\u9634\u5507\u5fae\u5f20",
       "clip": [
         "1",
         1
@@ -51,14 +51,6 @@
       ],
       "image1": [
         "10",
-        0
-      ],
-      "image2": [
-        "21",
-        0
-      ],
-      "image3": [
-        "31",
         0
       ]
     },
@@ -97,7 +89,7 @@
     },
     "class_type": "VAEDecode",
     "_meta": {
-      "title": "VAE解码"
+      "title": "VAE\u89e3\u7801"
     }
   },
   "6": {
@@ -109,12 +101,12 @@
     },
     "class_type": "PreviewImage",
     "_meta": {
-      "title": "预览图像"
+      "title": "\u9884\u89c8\u56fe\u50cf"
     }
   },
   "8": {
     "inputs": {
-      "image": "ComfyUI_temp_ljpig_00008_.png"
+      "image": "203.jpeg"
     },
     "class_type": "LoadImage",
     "_meta": {
@@ -150,7 +142,7 @@
     },
     "class_type": "ImageScaleToTotalPixels",
     "_meta": {
-      "title": "等比缩放至最大1024x1024"
+      "title": "\u7b49\u6bd4\u7f29\u653e\u81f3\u6700\u59271024x1024"
     }
   },
   "11": {
@@ -163,68 +155,6 @@
     "class_type": "GetImageSizeAndCount",
     "_meta": {
       "title": "Get Image Size & Count"
-    }
-  },
-  "20": {
-    "inputs": {
-      "image": "ComfyUI_temp_ljpig_00008_.png"
-    },
-    "class_type": "LoadImage",
-    "_meta": {
-      "title": "Optional Input Image 2"
-    }
-  },
-  "21": {
-    "inputs": {
-      "upscale_method": "nearest-exact",
-      "megapixels": 1,
-      "resolution_steps": 1,
-      "image": [
-        "20",
-        0
-      ]
-    },
-    "class_type": "ImageScaleToTotalPixels",
-    "_meta": {
-      "title": "等比缩放至最大1024x1024"
-    }
-  },
-  "30": {
-    "inputs": {
-      "image": "ComfyUI_temp_ljpig_00008_.png"
-    },
-    "class_type": "LoadImage",
-    "_meta": {
-      "title": "Optional Input Image 3"
-    }
-  },
-  "31": {
-    "inputs": {
-      "upscale_method": "nearest-exact",
-      "megapixels": 1,
-      "resolution_steps": 1,
-      "image": [
-        "30",
-        0
-      ]
-    },
-    "class_type": "ImageScaleToTotalPixels",
-    "_meta": {
-      "title": "等比缩放至最大1024x1024"
-    }
-  },
-  "32": {
-    "inputs": {
-      "lora_name": "qwen/YARN_1.0.safetensors",
-      "strength_model": 0.3,
-      "model": [
-        "1",
-        0
-      ]
-    },
-    "class_type": "LoraLoaderModelOnly",
-    "_meta": {
-      "title": "Load LoRA"
     }
   }
 }

@@ -24,7 +24,8 @@ from src.constants import (
     MAX_CONCURRENT_TASKS,
     MODE_FACE_VIDEO_STEP1,
     MODE_EDIT,
-    MODE_VIDEO_LORA
+    MODE_VIDEO_LORA,
+    MODE_LTX_VIDEO
 )
 from src.handlers.utils import MockMessage
 from src.logger import UserLogger
@@ -46,6 +47,129 @@ from src.services.redis_client import redis_client
 logger = logging.getLogger(__name__)
 
 class TaskService:
+    @staticmethod
+    async def process_ltx_video_task(
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        prompt: str,
+        image_path: str,
+        cleanup: bool = True,
+        allow_contribute: bool = True,
+    ):
+        from src.core.user_core import get_or_create_user_by_telegram
+        from src.core.billing_core import check_concurrency_lock, release_concurrency_lock, check_and_deduct_credits, refund_credits, get_user_priority_and_identity
+
+        chat_id = update.effective_chat.id
+        user_id = update.effective_user.id
+        username = update.effective_user.username or update.effective_user.full_name
+        
+        internal_user, _ = await get_or_create_user_by_telegram(user_id, username)
+        internal_user_id = internal_user.id
+
+        # 1. Check active tasks limit via core
+        can_run, lock_msg = await check_concurrency_lock(internal_user_id)
+        if not can_run:
+            await robust_send_message(context.bot, chat_id, f"⚠️ {lock_msg}")
+            if cleanup and image_path:
+                TaskService._cleanup_files([image_path])
+            return None, None
+            
+        from src.constants import MODE_LTX_VIDEO, LTX_RESOLUTION_COST, LTX_DURATION_MULTIPLIER
+        mode = MODE_LTX_VIDEO
+        
+        resolution = context.user_data.get('ltx_video_resolution', "1280x704")
+        duration = context.user_data.get('ltx_video_duration', "5s")
+        
+        base_cost = LTX_RESOLUTION_COST.get(resolution, 10)
+        multiplier = LTX_DURATION_MULTIPLIER.get(duration, 1.0)
+        cost = int(base_cost * multiplier)
+        
+        duration_frames = {"5s": 5, "10s": 10, "15s": 15, "20s": 20}
+        length = duration_frames.get(duration, 10)
+
+        user_logger = UserLogger(internal_user_id, username)
+
+        # Append resolution and duration to prompt for history tracking
+        prompt = f"[{resolution}|{duration}] {prompt}"
+
+        saved_input_image = user_logger.save_input_image(image_path)
+        notice = await TaskService._get_acceleration_notice(user_id)
+        msg_text = f"🚀 正在处理高级图生视频任务 (画质:{resolution}, 时长:{duration}, 消耗{cost}灵石)...{notice}"
+        msg = await robust_reply_text(update.effective_message, msg_text)
+        registry_task_id = None
+
+        try:
+            width, height = map(int, resolution.split('x'))
+                
+            # 2. 计费 via core
+            deduct_success, deduct_msg = await check_and_deduct_credits(internal_user_id, cost, mode, username)
+            if not deduct_success:
+                await release_concurrency_lock(internal_user_id)
+                await robust_delete_message(msg)
+                await robust_send_message(context.bot, chat_id, deduct_msg)
+                if cleanup and image_path:
+                    TaskService._cleanup_files([image_path])
+                return None, None
+                
+            priority, identity_str, user_group = await get_user_priority_and_identity(internal_user_id)
+
+            registry_task_id = await TaskRegistry.add_task(
+                internal_user_id, username, cost, mode, chat_id=chat_id, message_id=msg.message_id if msg else None,
+                prompt=prompt, saved_input_images=[saved_input_image] if saved_input_image else [], is_video=True, priority=priority
+            )
+            
+            await robust_edit_text(msg, "⏳ 正在生成高级视频，可能需要数分钟，请耐心等待...")
+
+            task_id = await image_service.submit_ltx_video_task(
+                prompt, saved_input_image, width=width, height=height, length=length, priority=priority
+            )
+            
+            if registry_task_id and task_id:
+                await TaskRegistry.update_backend_task_id(registry_task_id, task_id)
+
+            final_info = await TaskService._monitor_task_progress(
+                task_id, msg, is_video=True, monitor_func=image_service.monitor_progress, identity_str=identity_str, user_group=user_group
+            )
+
+            if final_info:
+                return await TaskService._handle_task_completion(
+                    context,
+                    chat_id,
+                    internal_user_id,
+                    prompt,
+                    mode,
+                    task_id,
+                    [saved_input_image] if saved_input_image else [],
+                    user_logger,
+                    is_video=True,
+                    send_result=True,
+                    reply_markup=None,
+                    status_msg=msg,
+                    delete_status=True,
+                    caption="✅ 高级图生视频生成完成",
+                    allow_contribute=allow_contribute,
+                )
+            else:
+                await refund_credits(internal_user_id, cost, "refund", username)
+                await robust_send_message(
+                    context.bot, chat_id, "❌ 生成完成但未获取到文件路径，已退还灵石"
+                )
+                return None, None
+
+        except Exception as e:
+            logger.error(
+                f"Error in ltx video task for user {internal_user_id}: {e}", exc_info=True
+            )
+            await refund_credits(internal_user_id, cost, "refund", username)
+            await robust_send_message(context.bot, chat_id, f"❌ 出错了：{e}，已退还灵石")
+            return None, None
+        finally:
+            if registry_task_id:
+                await TaskRegistry.remove_task(registry_task_id)
+            await release_concurrency_lock(internal_user_id)
+            if cleanup and image_path:
+                TaskService._cleanup_files([image_path])
+
     @staticmethod
     async def process_face_video_task(
         context: ContextTypes.DEFAULT_TYPE,
@@ -962,7 +1086,7 @@ class TaskService:
             await permission_service.refresh_user_group(internal_user_id)
 
             if send_result:
-                allowed_gallery_types = [MODE_I2I_PRO, MODE_EDIT, MODE_CUSTOM_VIDEO, MODE_VIDEO_LORA]
+                allowed_gallery_types = [MODE_I2I_PRO, MODE_EDIT, MODE_CUSTOM_VIDEO, MODE_VIDEO_LORA, MODE_LTX_VIDEO]
                 show_gallery_btn = task_type in allowed_gallery_types and allow_contribute
                 
                 keyboard = []
@@ -1025,7 +1149,7 @@ class TaskService:
             await permission_service.refresh_user_group(internal_user_id)
 
             if send_result:
-                allowed_gallery_types = [MODE_I2I_PRO, MODE_EDIT, MODE_CUSTOM_VIDEO, MODE_VIDEO_LORA]
+                allowed_gallery_types = [MODE_I2I_PRO, MODE_EDIT, MODE_CUSTOM_VIDEO, MODE_VIDEO_LORA, MODE_LTX_VIDEO]
                 show_gallery_btn = task_type in allowed_gallery_types and allow_contribute
                 
                 keyboard = []

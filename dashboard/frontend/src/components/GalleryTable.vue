@@ -69,6 +69,7 @@ const sortOptions = [
 
 const taskTypeOptions = [
   { label: '全部', value: 'all' },
+  { label: '高级图生视频', value: 'ltx_video' },
   { label: '幻想换脸', value: 'i2i_pro' },
   { label: '局部重绘', value: 'edit' },
   { label: '动态视频', value: 'custom_video' },

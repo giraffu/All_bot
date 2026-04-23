@@ -10,7 +10,7 @@ from config import (
     VIDEO_ENDPOINT, API_BASE, FACE_SWAP_ENDPOINT, 
     PERFECT_VIDEO_EDIT_ENDPOINT, PERFECT_VIDEO_INSERT_ENDPOINT,
     PERFECT_VIDEO_LORA_ENDPOINT,
-    I2I_PRO_ENDPOINT, FACE_VIDEO_ENDPOINT,
+    I2I_PRO_ENDPOINT, FACE_VIDEO_ENDPOINT, LTX_VIDEO_ENDPOINT,
     API_TOKEN
 )
 from src.circuit_breaker import CircuitBreaker, CircuitBreakerOpenException
@@ -198,6 +198,25 @@ class APIClient:
         r = await self._request("POST", I2I_PRO_ENDPOINT, json=data)
         return r.json()["task_id"]
 
+    @async_retry(max_retries=3)
+    async def submit_ltx_video(self, prompt: str, image_path: str, width: int = 1280, height: int = 704, length: int = 241, priority: int = 0) -> str:
+        """
+        Submit ltx_video task.
+        image_path: MinIO Object Key
+        """
+        data = {
+            "image": image_path,
+            "prompt": prompt,
+            "width": width,
+            "height": height,
+            "length": length,
+            "priority": priority
+        }
+
+        logger.info(f"Submitting ltx_video task. Prompt: {prompt}, Priority: {priority}")
+        r = await self._request("POST", LTX_VIDEO_ENDPOINT, json=data)
+        return r.json()["task_id"]
+
     async def get_system_status(self) -> Optional[dict]:
         url = f"{API_BASE}/system/status"
         try:
@@ -348,6 +367,7 @@ submit_perfect_video_lora = api_client.submit_perfect_video_lora
 submit_img2img = api_client.submit_img2img
 submit_face_swap = api_client.submit_face_swap
 submit_face_video = api_client.submit_face_video
+submit_ltx_video = api_client.submit_ltx_video
 submit_i2i_pro = api_client.submit_i2i_pro
 download_image = api_client.download_image
 download_video = api_client.download_video

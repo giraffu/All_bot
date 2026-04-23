@@ -191,6 +191,8 @@ async def robust_send_video(bot, chat_id, video, **kwargs):
     kwargs.setdefault('write_timeout', 300)
     kwargs.setdefault('connect_timeout', 120)
     kwargs.setdefault('pool_timeout', 60)
+    kwargs.setdefault('supports_streaming', True)
+    kwargs.setdefault('filename', 'video.mp4')
     import time
     start_t = time.time()
     logger.info(f"Uploading video to user {chat_id}...")

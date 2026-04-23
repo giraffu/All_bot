@@ -68,9 +68,12 @@ class WorkflowPatcher:
         # which would result in no output generation and no history record.
         import random
         if "seed" not in params or params["seed"] is None:
-            # Use JS max safe integer (2^53 - 1)
-            params["seed"] = random.randint(1, 9007199254740991)
+            # Use a smaller max integer to prevent "value_bigger_than_max" errors in rgthree nodes
+            params["seed"] = random.randint(1, 1125899906842624)
             
+        # Reload mappings to ensure it's up to date
+        self.mappings = self.load_mappings()
+        
         # If we have mappings, use them
         mapping = self.mappings.get(task_type, {})
         
@@ -127,11 +130,11 @@ class WorkflowPatcher:
             
             # Prevent caching of output nodes by ensuring a unique filename_prefix per task
             # Using random integer as task_id if not present (since workflow_patcher only gets params)
-            unique_id = params.get("seed", random.randint(1, 9007199254740991))
+            unique_id = params.get("seed", random.randint(1, 1125899906842624))
             for node_id, node in wf.items():
                 if isinstance(node, dict) and node.get("class_type") == "VHS_VideoCombine":
                     if "inputs" in node:
-                        node["inputs"]["filename_prefix"] = f"ltx_video_{unique_id}"
+                        node["inputs"]["filename_prefix"] = f"ltx_video_{unique_id}_{node_id}"
                 
         return wf
 

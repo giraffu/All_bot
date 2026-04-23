@@ -96,6 +96,7 @@ const typeMapping = {
   'text_to_image': '文生图',
   'i2i_pro': '幻想换脸',
   'video_lora': '图生视频(附加模型)',
+  'ltx_video': '高级图生视频',
   'unknown': '未知类型'
 };
 
@@ -126,6 +127,7 @@ const typeColors = {
   'closeup_blowjob': '#ff4d4f',
   'text_to_image': '#52c41a',
   'i2i_pro': '#ff85c0',
+  'ltx_video': '#722ed1',
   'unknown': '#bfbfbf'
 };
 

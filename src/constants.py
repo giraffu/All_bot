@@ -13,7 +13,7 @@ MAIN_MENU_KEYBOARD = [
     ["🤝 分享赚灵石", "⏳ 排队状态"],
     ["🖼️ 懒人P图", "🎬 懒人动图", "🎬 视频换脸"],
     ["🌟 幻想换脸", "🎨 自由P图", "🎬 自定义图生视频"],
-    ["🎬 图生视频(附加模型)"]
+    ["🎬 图生视频(附加模型)", "🎬 高级图生视频"]
 ]
 
 # Modes
@@ -34,6 +34,7 @@ MODE_UNDRESS_TONGUE = "undress_tongue"
 MODE_CLOSEUP_BLOWJOB = "closeup_blowjob"
 MODE_CUSTOM_VIDEO = "custom_video"
 MODE_VIDEO_LORA = "video_lora"
+MODE_LTX_VIDEO = "ltx_video"
 MODE_I2I_PRO = "i2i_pro"
 MODE_TEMPLATE_CONTRIBUTE = "template_contribute"
 MODE_NONE = "none"
@@ -57,6 +58,7 @@ MODE_NAME_MAP = {
     MODE_UNDRESS_TONGUE: "脱衣吐舌",
     MODE_CLOSEUP_BLOWJOB: "特写口交",
     MODE_CUSTOM_VIDEO: "自定义图生视频",
+    MODE_LTX_VIDEO: "高级图生视频",
     MODE_VIDEO_LORA: "图生视频(附加模型)",
     MODE_TEMPLATE_CONTRIBUTE: "模板共建",
     MODE_NONE: "无模式"
@@ -76,6 +78,7 @@ TASK_COSTS = {
     MODE_PERFECT_VIDEO_INSERT: 6,
     MODE_CLOSEUP_BLOWJOB: 6,
     MODE_CUSTOM_VIDEO: 6,
+    MODE_LTX_VIDEO: 10,
     MODE_VIDEO_LORA: 6,
     MODE_I2I_PRO: 6,
 }
@@ -138,10 +141,21 @@ RESOLUTION_COST = {
     "1024p": 36
 }
 
+LTX_RESOLUTION_COST = {
+    "1280x704": 10
+}
+
 DURATION_MULTIPLIER = {
     "5s": 1.0,
     "8s": 2.0,
     "10s": 3.0
+}
+
+LTX_DURATION_MULTIPLIER = {
+    "5s": 1.0,
+    "10s": 2.0,
+    "15s": 3.0,
+    "20s": 4.0
 }
 
 DURATION_FRAMES = {
@@ -198,6 +212,30 @@ def get_video_settings_keyboard(user_group: str, user_identity: str = "外门弟
         
     return InlineKeyboardMarkup(keyboard)
 
+def get_ltx_video_settings_keyboard(user_group: str, user_identity: str = "外门弟子", current_resolution: str = "1280x704", current_duration: str = "5s"):
+    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+    # Temporarily hardcode permissions for LTX Video, or we can use the same logic if we extend DURATION_PERMISSIONS
+    # For now, allow 5s, 10s, 15s, 20s based on groups.
+    allowed_durations = ["5s", "10s", "15s", "20s"]
+    
+    keyboard = []
+    
+    # Duration row
+    dur_row = []
+    for dur in allowed_durations:
+        multiplier = LTX_DURATION_MULTIPLIER.get(dur, 1.0)
+        display_text = f"{dur} (x{multiplier})"
+        text = f"✅ {display_text}" if dur == current_duration else display_text
+        callback_data = f"set_ltxdur_{dur}"
+        dur_row.append(InlineKeyboardButton(text, callback_data=callback_data))
+            
+    if dur_row:
+        # split duration into two rows to prevent overflow
+        keyboard.append(dur_row[:2])
+        keyboard.append(dur_row[2:])
+        
+    return InlineKeyboardMarkup(keyboard)
+
 # Dynamic Priority Rules
 # Format: "Group Name": [(limit_1, priority_1), (limit_2, priority_2), ...]
 # Logic: if usage < limit_1 return priority_1, elif usage < limit_2 return priority_2... else return 0
@@ -216,7 +254,7 @@ DYNAMIC_PRIORITY_RULES = {
 # Task types that count towards daily usage limit
 GENERATION_TASK_TYPES = [
     "image", "video", "face_swap", "undress", "masturbation",
-    MODE_EDIT, MODE_CUSTOM_VIDEO, MODE_VIDEO_LORA, MODE_PERFECT_VIDEO_INSERT,
+    MODE_EDIT, MODE_CUSTOM_VIDEO, MODE_LTX_VIDEO, MODE_VIDEO_LORA, MODE_PERFECT_VIDEO_INSERT,
     MODE_DOGGY_STYLE, MODE_BLOWJOB, MODE_UNDRESS_TONGUE, MODE_CLOSEUP_BLOWJOB,
     MODE_FACESWAP_STEP1, MODE_FACESWAP_STEP2, MODE_RANDOM_FACESWAP,
     MODE_FACE_VIDEO_STEP1, MODE_FACE_VIDEO_STEP2,

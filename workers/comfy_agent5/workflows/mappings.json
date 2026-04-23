@@ -39,5 +39,32 @@
     "t2i-pornmaster-turbo": {
         "prompt": "90",
         "prompt_input": "text"
+    },
+    "face_video": {
+        "face_image": "269",
+        "video": "345",
+        "video_input": "video",
+        "resolution": "362",
+        "resolution_input": "value",
+        "duration": "903",
+        "duration_input": "value"
+    },
+    "i2i_pro": {
+        "image": "20",
+        "prompt": "28",
+        "prompt_input": "text",
+        "seed": "60",
+        "seed_input": "value"
+    },
+    "ltx_video": {
+        "image": "15",
+        "prompt": "28",
+        "prompt_input": "text",
+        "length": "18",
+        "length_input": "Xi",
+        "width": "19",
+        "width_input": "Xi",
+        "height": "181",
+        "height_input": "Xi"
     }
 }

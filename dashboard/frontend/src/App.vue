@@ -127,6 +127,7 @@ const typeMapping = {
   'text_to_image': '文生图',
   'i2i_pro': '幻想换脸',
   'video_lora': '图生视频(附加模型)',
+  'ltx_video': '高级图生视频',
   'unknown': '未知类型'
 };
 

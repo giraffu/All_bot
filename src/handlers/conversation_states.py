@@ -21,6 +21,11 @@ class CustomVideoState(IntEnum):
     WAIT_IMAGE = auto()
     WAIT_SETTINGS_AND_PROMPT = auto()
 
+class LtxVideoState(IntEnum):
+    WAIT_IMAGE = auto()
+    WAIT_SETTINGS_AND_PROMPT = auto()
+    WAIT_CONFIRMATION = auto()
+
 class VideoLoraState(IntEnum):
     """图生视频附加模型流程的状态枚举"""
     WAIT_LORA_SELECTION = auto()

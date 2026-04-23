@@ -415,6 +415,7 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
         
         keyboard = [
             [InlineKeyboardButton("🌈 全部", callback_data=f"gallery_sort_{sort_type}_all")],
+            [InlineKeyboardButton("💎 高级图生视频", callback_data=f"gallery_sort_{sort_type}_ltxvid")],
             [InlineKeyboardButton("🎭 幻想换脸", callback_data=f"gallery_sort_{sort_type}_i2ipro")],
             [InlineKeyboardButton("🖼️ 自由P图", callback_data=f"gallery_sort_{sort_type}_edit")],
             [InlineKeyboardButton("🎬 自定义图生视频", callback_data=f"gallery_sort_{sort_type}_custvid")],
@@ -437,7 +438,7 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
             sort_type = parts[2] # latest, likes, applied, mine
             
             # backward compatibility for old buttons
-            if len(parts) >= 4 and parts[3] in ['all', 'i2ipro', 'edit', 'custvid', 'vidlora']:
+            if len(parts) >= 4 and parts[3] in ['all', 'i2ipro', 'edit', 'custvid', 'vidlora', 'ltxvid']:
                 category = parts[3]
                 page = int(parts[4]) if len(parts) > 4 else 0
             else:
@@ -458,6 +459,8 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
                         query_stmt = query_stmt.where(History.type == 'custom_video')
                     elif category == 'vidlora':
                         query_stmt = query_stmt.where(History.type == 'video_lora')
+                    elif category == 'ltxvid':
+                        query_stmt = query_stmt.where(History.type == 'ltx_video')
                 
                 if sort_type == "mine":
                     from src.core.user_core import get_or_create_user_by_telegram

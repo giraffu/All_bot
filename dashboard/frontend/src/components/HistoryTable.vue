@@ -50,10 +50,12 @@ const typeMapping = {
   'closeup_blowjob': '特写口交',
   'text_to_image': '文生图',
   'i2i_pro': '幻想换脸',
+  'ltx_video': '高级图生视频',
 };
 
 const typeOptions = [
   { label: '自定义视频', value: 'custom_video' },
+  { label: '高级图生视频', value: 'ltx_video' },
   { label: '视频换脸', value: 'face_video_step1' },
   { label: '自由P图', value: 'image' },
   { label: '快速换脸', value: 'face_swap' },

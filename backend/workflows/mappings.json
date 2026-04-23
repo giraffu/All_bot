@@ -1,6 +1,8 @@
 {
     "img2img": {
         "image": "8",
+        "image2": "20",
+        "image3": "30",
         "prompt": "3",
         "prompt_input": "prompt",
         "width": "9",
@@ -37,6 +39,15 @@
     "t2i-pornmaster-turbo": {
         "prompt": "90",
         "prompt_input": "text"
+    },
+    "face_video": {
+        "face_image": "269",
+        "video": "345",
+        "video_input": "video",
+        "resolution": "362",
+        "resolution_input": "value",
+        "duration": "903",
+        "duration_input": "value"
     },
     "i2i_pro": {
         "image": "20",
