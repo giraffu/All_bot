@@ -94,7 +94,21 @@ class WorkflowPatcher:
                 self.heuristic_patch(wf, key, value)
                 
         # Dynamic JSON pruning for img2img task to avoid empty nodes and blank inputs
-        if task_type == "img2img":
+        if task_type in ["img2img", "img2img_lora"]:
+            # Handle LoRA dynamically (default to no LoRA)
+            lora_name = params.get("lora_name", "")
+            if lora_name and str(lora_name).strip() != "":
+                if "32" in wf and "inputs" in wf["32"]:
+                    wf["32"]["inputs"]["lora_name"] = lora_name
+                    if params.get("lora_strength") is not None:
+                        wf["32"]["inputs"]["strength_model"] = float(params["lora_strength"])
+            else:
+                # Strip LoRA node and connect KSampler (2) directly to Checkpoint (1)
+                if "2" in wf and "inputs" in wf["2"]:
+                    wf["2"]["inputs"]["model"] = ["1", 0]
+                if "32" in wf:
+                    wf.pop("32", None)
+
             # 3 is the TextEncodeQwenImageEditPlus node
             text_encode_node_id = str(mapping.get("prompt", "3"))
             

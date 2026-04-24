@@ -7,7 +7,7 @@ from fastapi import FastAPI, Depends, HTTPException, BackgroundTasks, Query, Bod
 from fastapi.responses import FileResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from app.config import settings
-from app.models import TaskResponse, TaskStatusResponse, SystemStatusResponse, TaskType, T2ITaskResponse, SystemWorkersResponse, Img2ImgRequest, FaceSwapRequest, VideoInsertRequest, VideoEditRequest, FaceVideoRequest, I2IProRequest, VideoLoraRequest, LtxVideoRequest
+from app.models import TaskResponse, TaskStatusResponse, SystemStatusResponse, TaskType, T2ITaskResponse, SystemWorkersResponse, Img2ImgRequest, Img2ImgLoraRequest, FaceSwapRequest, VideoInsertRequest, VideoEditRequest, FaceVideoRequest, I2IProRequest, VideoLoraRequest, LtxVideoRequest
 from app.queue_manager import QueueManager
 from app.routers import agent
 from redis.asyncio import Redis
@@ -83,6 +83,17 @@ async def create_img2img_task(
     params = request.dict()
     priority = params.pop("priority", 0)
     task_id = await queue_manager.enqueue_task(TaskType.IMG2IMG, params, priority)
+    return TaskResponse(task_id=task_id)
+
+@app.post("/comfy_img2img_lora", response_model=TaskResponse)
+async def create_img2img_lora_task(
+    request: Img2ImgLoraRequest,
+    queue_manager: QueueManager = Depends(get_queue_manager),
+    token: str = Depends(verify_token)
+):
+    params = request.dict()
+    priority = params.pop("priority", 0)
+    task_id = await queue_manager.enqueue_task(TaskType.IMG2IMG_LORA, params, priority)
     return TaskResponse(task_id=task_id)
 
 @app.post("/face_swap", response_model=TaskResponse)

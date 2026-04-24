@@ -66,5 +66,16 @@
         "width_input": "Xi",
         "height": "181",
         "height_input": "Xi"
+    },
+    "img2img_lora": {
+        "image": "8",
+        "image2": "20",
+        "image3": "30",
+        "prompt": "3",
+        "prompt_input": "prompt",
+        "width": "9",
+        "width_input": "width",
+        "height": "9",
+        "height_input": "height"
     }
 }

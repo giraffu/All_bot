@@ -11,6 +11,7 @@ class TaskStatus(str, Enum):
 
 class TaskType(str, Enum):
     IMG2IMG = "img2img"
+    IMG2IMG_LORA = "img2img_lora"
     FACE_SWAP = "face_swap"
     VIDEO_INSERT = "video_insert"
     VIDEO_EDIT = "video_edit"
@@ -65,6 +66,19 @@ class Img2ImgRequest(BaseModel):
     guidance_scale: Optional[float] = 1.0
     seed: Optional[int] = None
     priority: int = 0
+
+class Img2ImgLoraRequest(BaseModel):
+    image: Optional[str] = None
+    image2: Optional[str] = None
+    images: Optional[List[str]] = None
+    prompt: str
+    negative_prompt: Optional[str] = " "
+    num_inference_steps: Optional[int] = 6
+    guidance_scale: Optional[float] = 1.0
+    seed: Optional[int] = None
+    priority: int = 0
+    lora_name: Optional[str] = ""
+    lora_strength: Optional[float] = 1.0
 
 class FaceSwapRequest(BaseModel):
     face_image: str
