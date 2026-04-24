@@ -167,14 +167,74 @@ async def receive_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     fsm_data['prompt'] = prompt
 
-    reply_markup = InlineKeyboardMarkup([[InlineKeyboardButton("✅ 确定生成", callback_data="confirm_ltx_video")]])
+    reply_markup = InlineKeyboardMarkup([
+        [InlineKeyboardButton("✅ 确定生成", callback_data="confirm_ltx_video")]
+    ])
     msg_text = (
-        "📝 **提示词已记录**\n\n"
+        f"📝 **您的原始提示词**:\n`{prompt}`\n\n"
         "💡 提示词最好用英文的，描写好初始图片的人物特征，背景环境，然后描述动作，镜头的移动，描述人物说的话。\n\n"
-        "请确认无误后点击下方按钮开始生成："
+        "确认无误后请点击【确定生成】。"
     )
     
     await robust_reply_text(message, msg_text, reply_markup=reply_markup, parse_mode="Markdown")
+    return LtxVideoState.WAIT_CONFIRMATION
+
+async def optimize_prompt_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    user_id = query.from_user.id
+    
+    fsm_data = context.user_data.get('ltx_video_data')
+    if not fsm_data:
+        try:
+            await query.answer("⚠️ 任务已失效，请重新开始", show_alert=True)
+        except Exception:
+            pass
+        return ConversationHandler.END
+
+    prompt = fsm_data.get('prompt', '')
+    image_path = fsm_data.get('image_path')
+    if not image_path or not os.path.exists(image_path):
+        await query.answer("⚠️ 找不到上传的图片，请重新开始", show_alert=True)
+        return ConversationHandler.END
+
+    try:
+        await robust_edit_text(query.message, "⏳ *大模型正在为您分析图片并优化提示词，这可能需要几十秒，请稍候...*", parse_mode="Markdown")
+    except Exception:
+        pass
+
+    try:
+        from src.services.prompt_optimizer_service import PromptOptimizerService
+        import base64
+        # 已经在 PromptOptimizerService 中实现了图片读取与缩放
+        # 这里我们只需要获取 base64，但是 service 的方法设计为 _resize_image_if_needed
+        # 我们调用该静态方法获取 base64
+        base64_img = PromptOptimizerService._resize_image_if_needed(image_path)
+        
+        optimized_prompt = await PromptOptimizerService.optimize_video_prompt(prompt, base64_img)
+        fsm_data['prompt'] = optimized_prompt
+        
+        msg_text = (
+            f"✨ **优化成功！**\n\n"
+            f"`{optimized_prompt}`\n\n"
+            "您可以直接生成，或点击下方【再次优化】。"
+        )
+        reply_markup = InlineKeyboardMarkup([
+            [InlineKeyboardButton("✅ 确定生成", callback_data="confirm_ltx_video")],
+            [InlineKeyboardButton("🔄 再次优化", callback_data="optimize_ltx_video")]
+        ])
+        await robust_edit_text(query.message, msg_text, reply_markup=reply_markup, parse_mode="Markdown")
+    except Exception as e:
+        logger.error(f"Prompt optimization failed for {user_id}: {e}")
+        msg_text = (
+            f"⚠️ *大模型服务当前繁忙或不可用，请直接点击确定生成。*\n\n"
+            f"**您的原始提示词**:\n`{prompt}`"
+        )
+        reply_markup = InlineKeyboardMarkup([
+            [InlineKeyboardButton("✅ 确定生成", callback_data="confirm_ltx_video")]
+        ])
+        await robust_edit_text(query.message, msg_text, reply_markup=reply_markup, parse_mode="Markdown")
+
+    await query.answer()
     return LtxVideoState.WAIT_CONFIRMATION
 
 async def confirm_generation(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:

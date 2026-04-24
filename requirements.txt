@@ -18,3 +18,4 @@ passlib[bcrypt]
 python-multipart
 sse-starlette
 boto3
+Pillow
