@@ -203,6 +203,7 @@ async def create_generation_task(
             # Generic t2i / i2i / video
             images = req.inputs.get("images", [])
             lora_name = req.inputs.get("lora_name")
+            lora_strength = req.inputs.get("lora_strength", 1.0)
             resolution = req.inputs.get("resolution", 512)
             duration = req.inputs.get("duration", 5)
             
@@ -217,6 +218,7 @@ async def create_generation_task(
                 priority=final_priority,
                 negative_prompt=req.negative_prompt,
                 lora_name=lora_name,
+                lora_strength=lora_strength,
                 resolution=resolution,
                 duration=duration,
                 allow_contribute=allow_contribute
@@ -229,7 +231,7 @@ async def create_generation_task(
             
         # Success
         log_prompt = req.prompt
-        if req.task_type == "video_lora" and req.inputs.get("lora_name"):
+        if req.task_type in ["video_lora", "img2img_lora"] and req.inputs.get("lora_name"):
             log_prompt = f"[模型: {req.inputs.get('lora_name')}] {req.prompt}"
 
         background_tasks.add_task(

@@ -218,10 +218,11 @@ const handleApply = async () => {
       // From CustomFeatures
       'i2i_pro': { route: 'ImageAndPrompt', title: '幻想换脸', cost: 6 },
       'edit': { route: 'ImageAndPrompt', title: '自由P图', cost: 2 },
+      'img2img_lora': { route: 'ImageAndPrompt', title: '图生图(附加模型)', cost: 2 },
       'face_swap': { route: 'FaceSwap', title: '快速换脸', cost: 1 }, 
       'face_video': { route: 'VideoSwap', title: '视频换脸', cost: 18 },
       'custom_video': { route: 'SingleImageToVideo', title: '自定义图生视频', cost: 6 },
-      'video_lora': { route: 'SingleImageToVideo', title: '图生视频 (附加模型)', cost: 6 },
+      'video_lora': { route: 'SingleImageToVideo', title: '图生视频(附加模型)', cost: 6 },
     }
     
     const featureInfo = featureMap[context.task_type]

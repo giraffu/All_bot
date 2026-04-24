@@ -175,14 +175,14 @@ def main():
         )
     
     from src.handlers.payment_handler import precheckout_callback, successful_payment_callback
-    from src.handlers.fsm.face_video_fsm import get_face_video_fsm_handler
-    from src.handlers.fsm.faceswap_fsm import get_faceswap_fsm_handler
-    from src.handlers.fsm.edit_image_fsm import get_edit_image_fsm_handler
-    from src.handlers.fsm.custom_video_fsm import get_custom_video_fsm_handler
-    from src.handlers.fsm.ltx_video_fsm import get_ltx_video_fsm_handler
-    from src.handlers.fsm.video_lora_fsm import get_video_lora_fsm_handler
     from src.handlers.fsm.quick_image_fsm import get_quick_image_fsm_handler
     from src.handlers.fsm.quick_video_fsm import get_quick_video_fsm_handler
+    from src.handlers.fsm.edit_image_fsm import get_edit_image_fsm_handler
+    from src.handlers.fsm.faceswap_fsm import get_faceswap_fsm_handler
+    from src.handlers.fsm.face_video_fsm import get_face_video_fsm_handler
+    from src.handlers.fsm.video_lora_fsm import get_video_lora_fsm_handler
+    from src.handlers.fsm.custom_video_fsm import get_custom_video_fsm_handler
+    from src.handlers.fsm.ltx_video_fsm import get_ltx_video_fsm_handler
     from src.handlers.fsm.gallery_apply_fsm import get_gallery_apply_fsm_handler
 
     

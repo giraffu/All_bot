@@ -16,9 +16,14 @@ from src.handlers.conversation_states import EditImageState
 from src.services.permission_service import permission_service
 from src.services.task_service import TaskService
 from src.utils import robust_reply_text, robust_edit_text, create_background_task
-from src.constants import TASK_COSTS, MODE_EDIT, MODE_I2I_PRO
+from src.constants import TASK_COSTS, MODE_EDIT, MODE_I2I_PRO, MODE_IMG2IMG_LORA
 
 logger = logging.getLogger("fsm.edit_image")
+
+LORA_MODELS = {
+    "": "无",
+    "qwen/YARN_1.0.safetensors": "逼真"
+}
 
 def _cleanup_context(context: ContextTypes.DEFAULT_TYPE, user_id: int):
     context.user_data.pop('in_conversation', None)
@@ -62,10 +67,44 @@ async def start_edit_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
     if mode == MODE_I2I_PRO:
         msg = f"🌟 **已进入【幻想换脸】模式** (消耗 {cost} 灵石)。\n\n【第一步】请发送 1 张您的参考图片。\n\n随时可以发送 /cancel 退出流程。"
+        await robust_reply_text(update.message, msg, parse_mode="Markdown")
+        return EditImageState.WAIT_REFERENCE_IMAGES
     else:
-        msg = f"🎨 **已进入【自由P图】模式** (消耗 {cost} 灵石)。\n\n【第一步】请发送您的参考图片。\n\n随时可以发送 /cancel 退出流程。"
+        keyboard = []
+        for backend_name, zh_name in LORA_MODELS.items():
+            keyboard.append([InlineKeyboardButton(zh_name, callback_data=f"editlora_select_{backend_name}")])
+        reply_markup = InlineKeyboardMarkup(keyboard)
 
-    await robust_reply_text(update.message, msg, parse_mode="Markdown")
+        msg = f"🎨 **已进入【自由P图】模式**。\n\n【第一步】请选择您要附加的模型：\n\n随时可以发送 /cancel 退出流程。"
+        await robust_reply_text(update.message, msg, reply_markup=reply_markup, parse_mode="Markdown")
+        return EditImageState.WAIT_LORA_SELECTION
+
+async def handle_lora_selection(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    await query.answer()
+    data = query.data
+    
+    if not data.startswith("editlora_select_"):
+        return EditImageState.WAIT_LORA_SELECTION
+        
+    lora_name = data.replace("editlora_select_", "")
+    zh_name = LORA_MODELS.get(lora_name, lora_name)
+    
+    fsm_data = context.user_data.get('edit_image_data', {})
+    if not fsm_data:
+        await query.edit_message_text("交互已失效，请重新开始。")
+        return ConversationHandler.END
+        
+    fsm_data['lora_name'] = lora_name
+    if lora_name: # if lora selected, change mode
+        fsm_data['mode'] = MODE_IMG2IMG_LORA
+        fsm_data['cost'] = TASK_COSTS.get(MODE_EDIT, 2)
+    else:
+        fsm_data['mode'] = MODE_EDIT
+        fsm_data['cost'] = TASK_COSTS.get(MODE_EDIT, 2)
+    
+    msg = f"✅ 已选择模型：**{zh_name}**\n\n【第二步】请发送【参考图片】。\n\n随时可以发送 /cancel 退出流程。"
+    await robust_edit_text(query.message, msg, parse_mode="Markdown")
     return EditImageState.WAIT_REFERENCE_IMAGES
 
 async def receive_reference_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -101,10 +140,10 @@ async def receive_reference_image(update: Update, context: ContextTypes.DEFAULT_
     else:
         num_images = len(fsm_data['images'])
         if num_images == 1:
-            msg = f"✅ **已收到 1 张参考图。**\n\n【第二步】请直接发送**提示词 (Text)** 开始生成。\n（如果是双图融合，您可以继续发送第2张图片，双图融合将消耗 6 灵石）"
+            msg = f"✅ **已收到 1 张参考图。**\n\n【第三步】请直接发送**提示词 (Text)** 开始生成。\n（如果是双图融合，您可以继续发送第2张图片，双图融合将消耗 6 灵石）"
         else:
             fsm_data['cost'] = 6
-            msg = f"✅ **已收到 2 张参考图。**\n\n【第二步】请直接发送**提示词 (Text)** 开始生成。\n（双图融合将消耗 6 灵石，多余的图片将不生效）"
+            msg = f"✅ **已收到 2 张参考图。**\n\n【第三步】请直接发送**提示词 (Text)** 开始生成。\n（双图融合将消耗 6 灵石，多余的图片将不生效）"
 
     await robust_reply_text(message, msg, parse_mode="Markdown")
     
@@ -120,7 +159,7 @@ async def receive_additional_image(update: Update, context: ContextTypes.DEFAULT
         await robust_reply_text(message, "⚠️ 幻想换脸模式只需要 1 张图片，请直接发送文字提示词。")
         return EditImageState.WAIT_PROMPT
 
-    if fsm_data['mode'] == MODE_EDIT and len(fsm_data['images']) >= 2:
+    if fsm_data['mode'] in (MODE_EDIT, MODE_IMG2IMG_LORA) and len(fsm_data['images']) >= 2:
         await robust_reply_text(message, "⚠️ 自由P图最多只支持 2 张图片融合，多余的图片将不生效，请直接发送文字提示词开始生成。")
         return EditImageState.WAIT_PROMPT
 
@@ -141,6 +180,7 @@ async def receive_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     cost = fsm_data['cost']
     mode = fsm_data['mode']
+    lora_name = fsm_data.get('lora_name', "")
 
     if not await permission_service.check_quota(update, context, cost=cost):
         _cleanup_context(context, user_id)
@@ -173,7 +213,8 @@ async def receive_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             TaskService.process_generation_task(
                 context, message.chat_id, user_id,
                 update.effective_user.username or update.effective_user.full_name,
-                prompt, images, is_video=False, task_type=mode, cleanup=True
+                prompt, images, is_video=False, task_type=mode, cleanup=True,
+                lora_name=lora_name, lora_strength=0.3 if lora_name == "qwen/YARN_1.0.safetensors" else 1.0
             )
         )
 
@@ -211,6 +252,10 @@ def get_edit_image_fsm_handler() -> ConversationHandler:
             MessageHandler(filters.Regex(r'.*(自由P图|幻想换脸).*'), start_edit_image)
         ],
         states={
+            EditImageState.WAIT_LORA_SELECTION: [
+                CallbackQueryHandler(handle_lora_selection, pattern="^editlora_select_"),
+                MessageHandler(filters.COMMAND, cancel_conversation)
+            ],
             EditImageState.WAIT_REFERENCE_IMAGES: [
                 MessageHandler(filters.PHOTO | filters.Document.IMAGE, receive_reference_image),
                 MessageHandler(filters.TEXT & ~filters.COMMAND, unexpected_input)

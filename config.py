@@ -57,6 +57,7 @@ API_TOKEN = os.getenv("API_TOKEN", "your_secure_token_here")  # Added based on c
 
 # Endpoints constructed from API_BASE
 IMG2IMG_ENDPOINT = f"{API_BASE}/comfy_img2img"
+IMG2IMG_LORA_ENDPOINT = f"{API_BASE}/comfy_img2img_lora"
 STATUS_ENDPOINT = f"{API_BASE}/status"
 IMAGE_ENDPOINT = f"{API_BASE}/image"
 VIDEO_ENDPOINT = f"{API_BASE}/video"

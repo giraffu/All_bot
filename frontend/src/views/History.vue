@@ -120,6 +120,7 @@ const getTypeLabel = (type: string) => {
     'closeup_blowjob': '特写口交',
     'custom_video': '自定义图生视频',
     'video_lora': '图生视频(附加模型)',
+    'img2img_lora': '图生图(附加模型)',
     'template_contribute': '模板共建',
     'txt2img': '文生图'
   }
@@ -239,7 +240,7 @@ onMounted(() => {
 
         <template v-else-if="column.key === 'action'">
           <a-button 
-            v-if="record.output_file && ['i2i_pro', 'edit', 'custom_video', 'video_lora'].includes(record.type) && record.allow_contribute !== false"
+            v-if="record.output_file && ['i2i_pro', 'edit', 'custom_video', 'video_lora', 'img2img_lora', 'ltx_video'].includes(record.type) && record.allow_contribute !== false"
             type="primary" 
             size="small" 
             class="bg-gradient-to-r from-cyan-600 to-indigo-600 border-none shadow-[0_0_10px_rgba(56,189,248,0.3)] hover:scale-105 transition-transform text-xs rounded-md"

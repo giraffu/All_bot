@@ -44,6 +44,8 @@ class WorkflowPatcher:
             filename = "Pornmaster Z-Image Turbo_t2i_Double checkpoints & realism enhancer_V1_2026_01_24.json"
         elif task_type == "i2i_pro":
             filename = "i2i_pro.json"
+        elif task_type == "img2img_lora":
+            filename = "Qwen-Rapid-AIO.json"
         elif task_type == "ltx_video":
             filename = "LTX 2.3 I2V.json"
             

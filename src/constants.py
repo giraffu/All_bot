@@ -12,8 +12,8 @@ MAIN_MENU_KEYBOARD = [
     ["🏆 发现/排行榜", "💎 充值灵石", "📅 每日签到", "👤 个人中心"],
     ["🤝 分享赚灵石", "⏳ 排队状态"],
     ["🖼️ 懒人P图", "🎬 懒人动图", "🎬 视频换脸"],
-    ["🌟 幻想换脸", "🎨 自由P图", "🎬 自定义图生视频"],
-    ["🎬 图生视频(附加模型)", "🎬 高级图生视频"]
+    ["🌟 幻想换脸", "🎨 自由P图"],
+    ["🎬 图生视频(附加模型)", "🎬 自定义图生视频", "🎬 高级图生视频"]
 ]
 
 # Modes
@@ -36,6 +36,7 @@ MODE_CUSTOM_VIDEO = "custom_video"
 MODE_VIDEO_LORA = "video_lora"
 MODE_LTX_VIDEO = "ltx_video"
 MODE_I2I_PRO = "i2i_pro"
+MODE_IMG2IMG_LORA = "img2img_lora"
 MODE_TEMPLATE_CONTRIBUTE = "template_contribute"
 MODE_NONE = "none"
 
@@ -43,6 +44,7 @@ MODE_NONE = "none"
 MODE_NAME_MAP = {
     MODE_EDIT: "自由P图",
     MODE_I2I_PRO: "幻想换脸",
+    MODE_IMG2IMG_LORA: "图生图(附加模型)",
     MODE_UNDRESS: "快速脱衣",
     MODE_MASTURBATION: "快速自慰",
     MODE_FACESWAP_STEP1: "快速换脸",
@@ -81,6 +83,7 @@ TASK_COSTS = {
     MODE_LTX_VIDEO: 10,
     MODE_VIDEO_LORA: 6,
     MODE_I2I_PRO: 6,
+    MODE_IMG2IMG_LORA: 6,
 }
 
 # Default Video Resolutions based on User Group

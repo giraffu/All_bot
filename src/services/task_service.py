@@ -288,6 +288,7 @@ class TaskService:
         deduct_quota: bool = True,
         reply_markup: InlineKeyboardMarkup = None,
         lora_name: str = None,
+        lora_strength: float = 1.0,
         allow_contribute: bool = True,
     ) -> Tuple[Optional[bytes], Optional[str]]:
         """Common generation logic for generic tasks."""
@@ -309,9 +310,10 @@ class TaskService:
             return None, None
 
         # Determine cost and default task type
+        from src.constants import MODE_IMG2IMG_LORA
         if task_type == "face_swap":
             cost = TASK_COSTS.get(MODE_FACESWAP_STEP1, 1)
-        elif task_type == MODE_EDIT or task_type == "edit":
+        elif task_type in (MODE_EDIT, "edit", MODE_IMG2IMG_LORA):
             cost = 6 if len(images) == 2 else 2
         else:
             cost = TASK_COSTS.get(task_type, 6 if is_video else 2)
@@ -386,7 +388,7 @@ class TaskService:
             submit_success, submit_msg, task_id, saved_input_images, registry_task_id = await core_submit_generation_task(
                 internal_user_id, username, prompt, images, is_video, task_type, cost, priority, negative_prompt,
                 chat_id=chat_id, message_id=status_msg.message_id if status_msg else None, lora_name=lora_name,
-                resolution=resolution, duration=duration
+                lora_strength=lora_strength, resolution=resolution, duration=duration
             )
 
             if not submit_success:
@@ -403,7 +405,7 @@ class TaskService:
 
             if final_info:
                 log_prompt = prompt
-                if task_type == "video_lora" and lora_name:
+                if task_type in ("video_lora", MODE_IMG2IMG_LORA) and lora_name:
                     # 仅为了数据库和历史展示附加 lora 模型信息
                     log_prompt = f"[模型: {lora_name}] {prompt}"
                     
@@ -1086,7 +1088,8 @@ class TaskService:
             await permission_service.refresh_user_group(internal_user_id)
 
             if send_result:
-                allowed_gallery_types = [MODE_I2I_PRO, MODE_EDIT, MODE_CUSTOM_VIDEO, MODE_VIDEO_LORA, MODE_LTX_VIDEO]
+                from src.constants import MODE_IMG2IMG_LORA
+                allowed_gallery_types = [MODE_I2I_PRO, MODE_EDIT, MODE_CUSTOM_VIDEO, MODE_VIDEO_LORA, MODE_LTX_VIDEO, MODE_IMG2IMG_LORA]
                 show_gallery_btn = task_type in allowed_gallery_types and allow_contribute
                 
                 keyboard = []
@@ -1149,7 +1152,8 @@ class TaskService:
             await permission_service.refresh_user_group(internal_user_id)
 
             if send_result:
-                allowed_gallery_types = [MODE_I2I_PRO, MODE_EDIT, MODE_CUSTOM_VIDEO, MODE_VIDEO_LORA, MODE_LTX_VIDEO]
+                from src.constants import MODE_IMG2IMG_LORA
+                allowed_gallery_types = [MODE_I2I_PRO, MODE_EDIT, MODE_CUSTOM_VIDEO, MODE_VIDEO_LORA, MODE_LTX_VIDEO, MODE_IMG2IMG_LORA]
                 show_gallery_btn = task_type in allowed_gallery_types and allow_contribute
                 
                 keyboard = []

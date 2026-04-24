@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import { Heart, ThumbsDown, Wand2, Play, Image as ImageIcon, Video, Flame, Clock, Compass, Copy } from 'lucide-vue-next'
@@ -39,7 +39,13 @@ const sortBy = ref('latest')
 const timeRange = ref('all')
 
 const allowedTypes = ref<{id: string, name: string}[]>([])
-const loraModels = ref<{id: string, name: string}[]>([])
+const videoLoraModels = ref<{id: string, name: string}[]>([])
+const img2imgLoraModels = ref<{id: string, name: string}[]>([])
+
+const currentLoraModels = computed(() => {
+  if (taskType.value === 'img2img_lora') return img2imgLoraModels.value
+  return videoLoraModels.value
+})
 
 const detailVisible = ref(false)
 const currentPost = ref<Post | null>(null)
@@ -93,7 +99,8 @@ const loadConfig = async () => {
   try {
     const res = await api.get('/gallery/config')
     allowedTypes.value = res.data.allowed_types
-    loraModels.value = res.data.lora_models
+    videoLoraModels.value = res.data.lora_models || []
+    img2imgLoraModels.value = res.data.img2img_lora_models || []
   } catch (error) {
     console.error('Failed to load gallery config:', error)
   }
@@ -151,7 +158,7 @@ const loadPosts = async (reset = false) => {
 
 const handleTaskTypeChange = (type: string) => {
   taskType.value = type
-  if (type !== 'video_lora') {
+  if (type !== 'video_lora' && type !== 'img2img_lora') {
     loraModel.value = 'all'
   }
   loadPosts(true)
@@ -198,14 +205,15 @@ const handleApply = async () => {
     
     // Route mapping
     const featureMap: Record<string, { route: string, title: string, cost: number }> = {
-      // From CustomFeatures
-      'i2i_pro': { route: 'ImageAndPrompt', title: '幻想换脸', cost: 6 },
-      'edit': { route: 'ImageAndPrompt', title: '自由P图', cost: 2 },
-      'face_swap': { route: 'FaceSwap', title: '快速换脸', cost: 1 }, 
-      'face_video': { route: 'VideoSwap', title: '视频换脸', cost: 18 },
-      'custom_video': { route: 'SingleImageToVideo', title: '自定义图生视频', cost: 6 },
-      'video_lora': { route: 'SingleImageToVideo', title: '图生视频 (附加模型)', cost: 6 },
-    }
+        // From CustomFeatures
+        'i2i_pro': { route: 'ImageAndPrompt', title: '幻想换脸', cost: 6 },
+        'edit': { route: 'ImageAndPrompt', title: '自由P图', cost: 2 },
+        'img2img_lora': { route: 'ImageAndPrompt', title: '图生图(附加模型)', cost: 2 },
+        'face_swap': { route: 'FaceSwap', title: '快速换脸', cost: 1 }, 
+        'face_video': { route: 'VideoSwap', title: '视频换脸', cost: 18 },
+        'custom_video': { route: 'SingleImageToVideo', title: '自定义图生视频', cost: 6 },
+        'video_lora': { route: 'SingleImageToVideo', title: '图生视频(附加模型)', cost: 6 },
+      }
     
     const featureInfo = featureMap[context.task_type]
     if (featureInfo) {
@@ -335,7 +343,7 @@ onUnmounted(() => {
       </div>
       
       <!-- Secondary Filter for LoRA Models -->
-      <div v-if="taskType === 'video_lora'" class="flex items-center gap-2 px-1">
+      <div v-if="taskType === 'video_lora' || taskType === 'img2img_lora'" class="flex items-center gap-2 px-1">
         <span class="text-sm text-slate-400">选择附加模型：</span>
         <div class="flex flex-wrap gap-2">
           <button 
@@ -346,7 +354,7 @@ onUnmounted(() => {
             所有模型
           </button>
           <button 
-            v-for="lora in loraModels" 
+            v-for="lora in currentLoraModels" 
             :key="lora.id"
             @click="loraModel = lora.id; loadPosts(true)"
             class="px-3 py-1 rounded-lg text-xs transition-all border"

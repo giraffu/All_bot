@@ -106,6 +106,7 @@ async def core_submit_generation_task(
     chat_id: int = None,
     message_id: int = None,
     lora_name: str = None,
+    lora_strength: float = 1.0,
     resolution: int = 512,
     duration: int = 5,
     allow_contribute: bool = True
@@ -179,6 +180,15 @@ async def core_submit_generation_task(
                     image_path=saved_input_images[0],
                     seed=seed,
                     priority=priority
+                )
+            elif task_type == "img2img_lora" or task_type == "MODE_IMG2IMG_LORA":
+                task_id = await image_service.submit_img2img_lora_task(
+                    prompt=prompt,
+                    image_paths=saved_input_images,
+                    lora_name=lora_name or "",
+                    negative_prompt=negative_prompt,
+                    priority=priority,
+                    lora_strength=lora_strength
                 )
             else:
                 task_id = await image_service.submit_task(

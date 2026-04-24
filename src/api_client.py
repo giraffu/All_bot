@@ -6,7 +6,7 @@ import uuid
 from typing import Optional
 from src.utils import async_retry
 from config import (
-    IMG2IMG_ENDPOINT, STATUS_ENDPOINT, IMAGE_ENDPOINT, POLL_INTERVAL, 
+    IMG2IMG_ENDPOINT, IMG2IMG_LORA_ENDPOINT, STATUS_ENDPOINT, IMAGE_ENDPOINT, POLL_INTERVAL, 
     VIDEO_ENDPOINT, API_BASE, FACE_SWAP_ENDPOINT, 
     PERFECT_VIDEO_EDIT_ENDPOINT, PERFECT_VIDEO_INSERT_ENDPOINT,
     PERFECT_VIDEO_LORA_ENDPOINT,
@@ -140,6 +140,35 @@ class APIClient:
 
         logger.info(f"Submitting img2img task. Prompt: {prompt}, Negative: {negative_prompt}, Images: {len(image_paths)}, Priority: {priority}")
         r = await self._request("POST", IMG2IMG_ENDPOINT, json=data)
+        return r.json()["task_id"]
+
+    @async_retry(max_retries=3)
+    async def submit_img2img_lora(self, prompt: str, image_paths: list[str], lora_name: str, negative_prompt: str = " ", priority: int = 0, lora_strength: float = 1.0) -> str:
+        """
+        Submit img2img_lora task.
+        image_paths: List of MinIO Object Keys
+        lora_name: Name of the LoRA to inject
+        """
+        if not image_paths:
+            raise ValueError("No valid images found for submission")
+
+        data = {
+            "images": image_paths,
+            "image": image_paths[0],
+            "prompt": prompt,
+            "lora_name": lora_name,
+            "lora_strength": lora_strength,
+            "negative_prompt": negative_prompt,
+            "num_inference_steps": 6,
+            "guidance_scale": 1.0,
+            "priority": priority
+        }
+        
+        if len(image_paths) > 1:
+            data["image2"] = image_paths[1]
+
+        logger.info(f"Submitting img2img_lora task. Prompt: {prompt}, LoRA: {lora_name}, Images: {len(image_paths)}, Priority: {priority}")
+        r = await self._request("POST", IMG2IMG_LORA_ENDPOINT, json=data)
         return r.json()["task_id"]
 
     @async_retry(max_retries=3)
@@ -365,6 +394,7 @@ submit_perfect_video_insert = api_client.submit_perfect_video_insert
 submit_perfect_video_edit = api_client.submit_perfect_video_edit
 submit_perfect_video_lora = api_client.submit_perfect_video_lora
 submit_img2img = api_client.submit_img2img
+submit_img2img_lora = api_client.submit_img2img_lora
 submit_face_swap = api_client.submit_face_swap
 submit_face_video = api_client.submit_face_video
 submit_ltx_video = api_client.submit_ltx_video

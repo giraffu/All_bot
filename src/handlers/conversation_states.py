@@ -8,6 +8,7 @@ class FaceVideoState(IntEnum):
 
 class EditImageState(IntEnum):
     """自由P图/幻想换脸流程的状态枚举"""
+    WAIT_LORA_SELECTION = auto()
     WAIT_REFERENCE_IMAGES = auto()
     WAIT_PROMPT = auto()
 
@@ -25,6 +26,11 @@ class LtxVideoState(IntEnum):
     WAIT_IMAGE = auto()
     WAIT_SETTINGS_AND_PROMPT = auto()
     WAIT_CONFIRMATION = auto()
+
+class Img2ImgLoraState(IntEnum):
+    WAIT_LORA_SELECTION = auto()
+    WAIT_IMAGE = auto()
+    WAIT_PROMPT = auto()
 
 class VideoLoraState(IntEnum):
     """图生视频附加模型流程的状态枚举"""

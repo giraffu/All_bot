@@ -92,7 +92,8 @@ async def start_gallery_apply(update: Update, context: ContextTypes.DEFAULT_TYPE
     task_type = history.type
     
     # Security check: Only allow specific task types for gallery application
-    allowed_types = [MODE_I2I_PRO, MODE_EDIT, MODE_CUSTOM_VIDEO, MODE_VIDEO_LORA]
+    from src.constants import MODE_IMG2IMG_LORA
+    allowed_types = [MODE_I2I_PRO, MODE_EDIT, MODE_CUSTOM_VIDEO, MODE_VIDEO_LORA, MODE_IMG2IMG_LORA]
     if task_type not in allowed_types:
         await query.answer("❌ 此模板类型不支持一键应用", show_alert=True)
         return ConversationHandler.END
@@ -104,7 +105,12 @@ async def start_gallery_apply(update: Update, context: ContextTypes.DEFAULT_TYPE
     res_str = "512p"
     dur_str = "5s"
     from src.constants import RESOLUTION_COST, DURATION_MULTIPLIER, RESOLUTION_PERMISSIONS, DURATION_PERMISSIONS
-    cost = TASK_COSTS.get(task_type, 2)
+    
+    if task_type in (MODE_EDIT, "edit", MODE_IMG2IMG_LORA):
+        # Image tasks that don't need double cost unless 2 images are provided later
+        cost = 2
+    else:
+        cost = TASK_COSTS.get(task_type, 2)
     
     if post.media_type == 'video':
         # Reconstruct resolution string
@@ -287,6 +293,7 @@ async def receive_reference_image(update: Update, context: ContextTypes.DEFAULT_
                 status_msg_id=sent_msg.message_id,
                 task_type=task_type,
                 lora_name=lora_name,
+                lora_strength=0.3 if lora_name == "qwen/YARN_1.0.safetensors" else 1.0,
                 allow_contribute=False
             )
         )

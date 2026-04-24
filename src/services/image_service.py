@@ -1,5 +1,5 @@
 from typing import AsyncGenerator
-from src.api_client import submit_img2img, listen_for_progress, download_image, download_video, get_system_status, submit_face_swap, submit_perfect_video_edit, submit_perfect_video_insert, submit_perfect_video_lora, submit_i2i_pro, submit_face_video, submit_ltx_video
+from src.api_client import submit_img2img, submit_img2img_lora, listen_for_progress, download_image, download_video, get_system_status, submit_face_swap, submit_perfect_video_edit, submit_perfect_video_insert, submit_perfect_video_lora, submit_i2i_pro, submit_face_video, submit_ltx_video
 
 class ImageService:
     async def submit_ltx_video_task(self, prompt: str, image_path: str, width: int = 1280, height: int = 704, length: int = 241, priority: int = 0) -> str:
@@ -21,6 +21,10 @@ class ImageService:
     async def submit_i2i_pro_task(self, prompt: str, image_path: str, seed: int, priority: int = 0) -> str:
         """Submit i2i pro task"""
         return await submit_i2i_pro(prompt, image_path, seed, priority=priority)
+
+    async def submit_img2img_lora_task(self, prompt: str, image_paths: list[str], lora_name: str, negative_prompt: str = " ", priority: int = 0, lora_strength: float = 1.0) -> str:
+        """Submit img2img_lora task and get task_id."""
+        return await submit_img2img_lora(prompt, image_paths, lora_name, negative_prompt=negative_prompt, priority=priority, lora_strength=lora_strength)
 
     async def submit_perfect_video_edit(self, prompt: str, image_path: str, width: int = 512, height: int = 512, length: int = 81, priority: int = 0) -> str:
         """Submit perfect video edit task"""

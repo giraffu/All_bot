@@ -418,6 +418,7 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
             [InlineKeyboardButton("💎 高级图生视频", callback_data=f"gallery_sort_{sort_type}_ltxvid")],
             [InlineKeyboardButton("🎭 幻想换脸", callback_data=f"gallery_sort_{sort_type}_i2ipro")],
             [InlineKeyboardButton("🖼️ 自由P图", callback_data=f"gallery_sort_{sort_type}_edit")],
+            [InlineKeyboardButton("🎨 图生图(附加模型)", callback_data=f"gallery_sort_{sort_type}_imglora")],
             [InlineKeyboardButton("🎬 自定义图生视频", callback_data=f"gallery_sort_{sort_type}_custvid")],
             [InlineKeyboardButton("🌟 图生视频（附加模型）", callback_data=f"gallery_sort_{sort_type}_vidlora")]
         ]
@@ -438,7 +439,7 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
             sort_type = parts[2] # latest, likes, applied, mine
             
             # backward compatibility for old buttons
-            if len(parts) >= 4 and parts[3] in ['all', 'i2ipro', 'edit', 'custvid', 'vidlora', 'ltxvid']:
+            if len(parts) >= 4 and parts[3] in ['all', 'i2ipro', 'edit', 'custvid', 'vidlora', 'ltxvid', 'imglora']:
                 category = parts[3]
                 page = int(parts[4]) if len(parts) > 4 else 0
             else:
@@ -455,6 +456,8 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
                         query_stmt = query_stmt.where(History.type == 'i2i_pro')
                     elif category == 'edit':
                         query_stmt = query_stmt.where(History.type.in_(['edit', 'quick_image']))
+                    elif category == 'imglora':
+                        query_stmt = query_stmt.where(History.type == 'img2img_lora')
                     elif category == 'custvid':
                         query_stmt = query_stmt.where(History.type == 'custom_video')
                     elif category == 'vidlora':

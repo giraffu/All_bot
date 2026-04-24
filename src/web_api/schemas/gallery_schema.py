@@ -36,6 +36,7 @@ class ApplyContextResponse(BaseModel):
     task_id: str
     media_type: str
     prompt: Optional[str]
+    lora_name: Optional[str] = None
     input_file: Optional[str]
     input_file_url: Optional[str]
     width: Optional[int]

@@ -49,14 +49,15 @@ onMounted(() => {
     const ctxStr = sessionStorage.getItem('galleryApplyContext')
     if (ctxStr) {
       try {
-        const ctx = JSON.parse(ctxStr)
-        if (ctx.task_type === taskType.value) {
-          if (ctx.prompt) prompt.value = ctx.prompt
-          if (ctx.width) resolution.value = ctx.width.toString()
-          if (ctx.duration) duration.value = ctx.duration.toString()
-          isTemplateApplied.value = true
-        }
-      } catch (e) {
+          const ctx = JSON.parse(ctxStr)
+          if (ctx.task_type === taskType.value) {
+            if (ctx.prompt) prompt.value = ctx.prompt
+            if (ctx.width) resolution.value = ctx.width.toString()
+            if (ctx.duration) duration.value = ctx.duration.toString()
+            if (ctx.lora_name) loraName.value = ctx.lora_name
+            isTemplateApplied.value = true
+          }
+        } catch (e) {
         console.error('Failed to parse apply context', e)
       }
     }

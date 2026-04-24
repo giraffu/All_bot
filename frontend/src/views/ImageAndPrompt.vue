@@ -12,7 +12,12 @@ const router = useRouter()
 
 const taskType = computed(() => (route.query.type as string) || 'i2i_pro')
 const taskTitle = computed(() => (route.query.title as string) || '图片生成')
-const taskCost = computed(() => Number(route.query.cost) || 3)
+const taskCost = computed(() => {
+  if (taskType.value === 'edit' && selectedLora.value) {
+    return 2 // img2img_lora cost
+  }
+  return Number(route.query.cost) || 3
+})
 
 const { uploading, progress: uploadProgress, uploadFile } = useUpload()
 const { isSubmitting, submitTask } = useTaskStream()
@@ -25,6 +30,13 @@ const prompt = ref('')
 const filePreview = ref<string | null>(null)
 const isTemplateApplied = ref(false)
 
+// LoRA Selection for Edit mode
+const selectedLora = ref<string>('')
+const loraOptions = [
+  { value: '', label: '无' },
+  { value: 'qwen/YARN_1.0.safetensors', label: '逼真' }
+]
+
 onMounted(() => {
   if (route.query.apply === 'true') {
     const ctxStr = sessionStorage.getItem('galleryApplyContext')
@@ -33,6 +45,7 @@ onMounted(() => {
         const ctx = JSON.parse(ctxStr)
         if (ctx.task_type === taskType.value) {
           if (ctx.prompt) prompt.value = ctx.prompt
+          if (ctx.lora_name) selectedLora.value = ctx.lora_name
           isTemplateApplied.value = true
         }
       } catch (e) {
@@ -76,14 +89,19 @@ const handleGenerate = async () => {
     return
   }
 
-  const payload = {
-    task_type: taskType.value,
+  const payload: any = {
+    task_type: taskType.value === 'edit' && selectedLora.value ? 'img2img_lora' : taskType.value,
     inputs: {
       images: [objectKey.value]
     },
     prompt: prompt.value.trim(),
     priority: 0,
     is_template: isTemplateApplied.value
+  }
+
+  if (payload.task_type === 'img2img_lora') {
+    payload.inputs.lora_name = selectedLora.value
+    payload.inputs.lora_strength = 0.3
   }
 
   const taskId = await submitTask(payload, taskTitle.value)
@@ -115,6 +133,19 @@ const resetForm = () => {
           </div>
           
           <div class="flex flex-col gap-6">
+            <div v-if="taskType === 'edit'" class="w-full bg-slate-900/60 rounded-xl p-4 border border-slate-700/50 shrink-0">
+              <h3 class="text-sm font-bold mb-3 text-slate-200 flex items-center">
+                <span class="text-slate-500 mr-2">0.</span> 附加模型 (LoRA)
+              </h3>
+              <div class="flex flex-wrap gap-3">
+                <a-radio-group v-model:value="selectedLora" button-style="solid" class="w-full sm:w-auto" :disabled="isTemplateApplied">
+                  <a-radio-button v-for="option in loraOptions" :key="option.value" :value="option.value" class="text-center">
+                    {{ option.label }}
+                  </a-radio-button>
+                </a-radio-group>
+              </div>
+            </div>
+
             <div class="flex flex-col md:flex-row gap-4 md:h-64 w-full">
               <!-- Image Upload -->
               <div class="upload-section flex flex-col w-full md:w-[40%] min-w-[160px] shrink-0 h-48 md:h-full">

@@ -19,7 +19,7 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 # Allowed task types for web gallery submission
-ALLOWED_WEB_SUBMIT_TYPES = {MODE_I2I_PRO, MODE_EDIT, MODE_CUSTOM_VIDEO, MODE_VIDEO_LORA, MODE_LTX_VIDEO}
+ALLOWED_WEB_SUBMIT_TYPES = {MODE_I2I_PRO, MODE_EDIT, MODE_CUSTOM_VIDEO, MODE_VIDEO_LORA, MODE_LTX_VIDEO, "img2img_lora"}
 
 def translate_tags(tags_list: List[str]) -> List[str]:
     translated_tags = []
@@ -64,11 +64,13 @@ async def get_gallery_config():
         "allowed_types": [
             {"id": MODE_I2I_PRO, "name": MODE_NAME_MAP.get(MODE_I2I_PRO, "幻想换脸")},
             {"id": MODE_EDIT, "name": MODE_NAME_MAP.get(MODE_EDIT, "自由P图")},
+            {"id": "img2img_lora", "name": "图生图(附加模型)"},
             {"id": MODE_CUSTOM_VIDEO, "name": MODE_NAME_MAP.get(MODE_CUSTOM_VIDEO, "自定义图生视频")},
             {"id": MODE_VIDEO_LORA, "name": MODE_NAME_MAP.get(MODE_VIDEO_LORA, "图生视频(附加模型)")},
             {"id": MODE_LTX_VIDEO, "name": MODE_NAME_MAP.get(MODE_LTX_VIDEO, "高级图生视频")}
         ],
-        "lora_models": [{"id": k, "name": v} for k, v in LORA_MODELS.items()]
+        "lora_models": [{"id": k, "name": v} for k, v in LORA_MODELS.items()],
+        "img2img_lora_models": [{"id": "qwen/YARN_1.0.safetensors", "name": "逼真"}]
     }
 
 @router.get("/posts", response_model=PaginatedGalleryResponse)
@@ -500,12 +502,30 @@ async def get_apply_context(
         input_file_url = None
         if history.input_file:
             input_file_url = get_media_url(history.input_file)
+            
+        prompt = history.prompt or ""
+        lora_name = None
+        match = re.search(r"\[模型:\s*(.*?)\]\s*(.*)", prompt)
+        if match:
+            lora_tag = match.group(1).strip()
+            prompt = match.group(2).strip()
+            
+            # Map Chinese lora_tag back to ID if needed
+            reverse_lora_models = {v: k for k, v in LORA_MODELS.items()}
+            # also handle qwen/YARN explicitly since we might map it differently
+            reverse_lora_models["逼真"] = "qwen/YARN_1.0.safetensors"
+            
+            if lora_tag in reverse_lora_models:
+                lora_name = reverse_lora_models[lora_tag]
+            else:
+                lora_name = lora_tag
         
         return ApplyContextResponse(
             post_id=post.id,
             task_id=post.task_id,
             media_type=post.media_type,
-            prompt=history.prompt,
+            prompt=prompt,
+            lora_name=lora_name,
             input_file=history.input_file,
             input_file_url=input_file_url,
             width=post.width,
