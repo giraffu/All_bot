@@ -3,6 +3,7 @@ import json
 import logging
 import os
 import sys
+from asgi_correlation_id import correlation_id
 import httpx
 import websockets # type: ignore
 from minio import Minio # type: ignore
@@ -21,10 +22,20 @@ for proxy_var in ["http_proxy", "https_proxy", "all_proxy", "HTTP_PROXY", "HTTPS
 os.environ["NO_PROXY"] = "*"
 os.environ["no_proxy"] = "*"
 
+class CorrelationIdFilter(logging.Filter):
+    def filter(self, record):
+        trace_id = correlation_id.get()
+        record.correlation_id = f"TraceID: {trace_id}" if trace_id else "TraceID: None"
+        return True
+
+log_format = '%(asctime)s - %(name)s - %(levelname)s - [%(correlation_id)s] - %(message)s'
+handler = logging.StreamHandler(sys.stdout)
+handler.setFormatter(logging.Formatter(log_format))
+handler.addFilter(CorrelationIdFilter())
+
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[logging.StreamHandler(sys.stdout)]
+    handlers=[handler]
 )
 logger = logging.getLogger("agent_main")
 
@@ -249,6 +260,10 @@ class ComfyAgent:
         return False
 
     async def process_task(self, task: Dict[str, Any]):
+        trace_id = task.get("trace_id", "")
+        if trace_id:
+            correlation_id.set(trace_id)
+            
         task_id = str(task.get("task_id", ""))
         if not task_id:
             logger.error("Received task without task_id")

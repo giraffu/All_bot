@@ -20,6 +20,8 @@ logger = logging.getLogger(__name__)
 # Circuit Breaker Instance
 circuit_breaker = CircuitBreaker(failure_threshold=15, reset_timeout=30)
 
+from asgi_correlation_id import correlation_id
+
 class APIClient:
     """
     Unified API Client with Circuit Breaker, Retries, Tracing, and MinIO integration.
@@ -37,7 +39,11 @@ class APIClient:
         """
         Internal request wrapper with Circuit Breaker and Tracing.
         """
-        trace_id = str(uuid.uuid4())
+        trace_id = correlation_id.get()
+        if not trace_id:
+            trace_id = str(uuid.uuid4())
+            correlation_id.set(trace_id)
+
         headers = kwargs.get("headers", {})
         headers.update(self.headers)
         headers["X-Trace-ID"] = trace_id

@@ -3,290 +3,56 @@ import logging
 import asyncio
 import httpx
 from typing import AsyncGenerator
-from fastapi import APIRouter, Depends, HTTPException, status, Request, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sse_starlette.sse import EventSourceResponse
 
 from src.database.models import User
 from src.web_api.dependencies import get_current_user
 from src.web_api.schemas.task_schema import TaskGenerateRequest, TaskGenerateResponse
-from src.core.task_core import core_submit_generation_task, core_submit_face_video
-from src.core.billing_core import check_concurrency_lock, release_concurrency_lock, check_and_deduct_credits, refund_credits, get_user_priority_and_identity
+from src.core.task_core import process_and_submit_task, CoreDomainError, InsufficientCreditsError, ConcurrencyLimitError
 from src.services.redis_client import redis_client
 from src.services.storage import storage
-from src.services.task_registry import TaskRegistry
-from src.services.image_service import image_service
 from src.quota import QuotaManager
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
 quota_manager = QuotaManager()
 
-from src.utils import load_prompts
-from src.constants import TASK_COSTS, RESOLUTION_COST, DURATION_MULTIPLIER, MODE_I2I_PRO, MODE_FACESWAP_STEP1
-
-def calculate_task_cost(task_type: str, inputs: dict) -> int:
-    """Calculate dynamic cost for web tasks to match Bot logic"""
-    # Map web task_type to bot constants if needed
-    mode = task_type
-    if task_type == "face_swap":
-        mode = MODE_FACESWAP_STEP1
-    elif task_type == "i2i_pro":
-        mode = MODE_I2I_PRO
-        
-    video_types = ["doggy_style", "perfect_video_insert", "blowjob", "undress_tongue", "closeup_blowjob", "custom_video", "face_video", "video_lora", "ltx_video"]
-    is_video_task = task_type in video_types
-    
-    if is_video_task:
-        resolution = inputs.get("resolution", 512)
-        duration = inputs.get("duration", 5)
-        
-        if mode == "ltx_video":
-            from src.constants import LTX_RESOLUTION_COST, LTX_DURATION_MULTIPLIER
-            res_str = str(resolution)
-            dur_str = f"{duration}s" if isinstance(duration, int) else str(duration)
-            if not dur_str.endswith('s'):
-                dur_str += 's'
-            base_cost = LTX_RESOLUTION_COST.get(res_str, 10)
-            multiplier = LTX_DURATION_MULTIPLIER.get(dur_str, 1.0)
-            return int(base_cost * multiplier)
-            
-        res_str = f"{resolution}p" if isinstance(resolution, int) else str(resolution)
-        if not res_str.endswith('p'):
-            res_str += 'p'
-        dur_str = f"{duration}s" if isinstance(duration, int) else str(duration)
-        if not dur_str.endswith('s'):
-            dur_str += 's'
-            
-        base_cost = RESOLUTION_COST.get(res_str, TASK_COSTS.get(mode, 6))
-        multiplier = DURATION_MULTIPLIER.get(dur_str, 1.0)
-        return int(base_cost * multiplier)
-    else:
-        return TASK_COSTS.get(mode, 2)
-
-from src.logger import UserLogger
-
-async def monitor_task_and_release_lock(
-    task_id: str, 
-    internal_user_id: int, 
-    username: str,
-    registry_task_id: str, 
-    is_video: bool = False,
-    task_type: str = "",
-    prompt: str = "",
-    input_images: list = None,
-    allow_contribute: bool = True
-):
-    """
-    Background task to monitor progress and release concurrency lock.
-    """
-    if input_images is None:
-        input_images = []
-        
-    final_status = None
-    result_path = None
-    try:
-        async for progress in image_service.monitor_progress(task_id, is_video):
-            if progress.get("status") in ["done", "error", "cancelled", "success", "failed"]:
-                final_status = progress.get("status")
-                result_path = progress.get("result_path")
-                break
-    except Exception as e:
-        logger.error(f"Background monitoring error for task {task_id}: {e}")
-    finally:
-        # Save to History if successful
-        if final_status == "done" and result_path:
-            try:
-                user_logger = UserLogger(internal_user_id, username)
-                media_bytes = await (image_service.download_video_result(task_id) if is_video else image_service.download_result(task_id))
-                if media_bytes:
-                    ext = "mp4" if is_video else "png"
-                    saved_output_image = await asyncio.to_thread(user_logger.save_output_image, media_bytes, task_id, ext)
-                    await user_logger.log_task(prompt, input_images, saved_output_image, task_id=task_id, type=task_type, allow_contribute=allow_contribute, source="web")
-                else:
-                    await user_logger.log_task(prompt, input_images, result_path, task_id=task_id, type=task_type, allow_contribute=allow_contribute, source="web")
-            except Exception as log_err:
-                logger.error(f"Failed to log task history for {task_id}: {log_err}")
-                
-        await release_concurrency_lock(internal_user_id)
-        if registry_task_id:
-            await TaskRegistry.remove_task(registry_task_id)
-
 @router.post("/generate", response_model=TaskGenerateResponse)
 async def create_generation_task(
     req: TaskGenerateRequest,
-    background_tasks: BackgroundTasks,
     current_user: User = Depends(get_current_user)
 ):
     """
     Submit a generation task (image/video).
     """
-    video_types = ["doggy_style", "perfect_video_insert", "blowjob", "undress_tongue", "closeup_blowjob", "custom_video", "face_video", "video_lora", "ltx_video"]
-    is_video_task = req.task_type in video_types
-    
-    if is_video_task:
-        resolution = req.inputs.get("resolution", 512)
-        duration = req.inputs.get("duration", 5)
-        if int(resolution) >= 1024 and int(duration) >= 10:
-            raise HTTPException(status_code=400, detail="Cannot select 1024p resolution and 10s duration simultaneously due to high resource usage.")
-            
-    cost = calculate_task_cost(req.task_type, req.inputs)
-
-    
-    # 1. Check concurrency
-    can_run, lock_err = await check_concurrency_lock(current_user.id)
-    if not can_run:
-        raise HTTPException(status_code=429, detail=lock_err)
-        
     try:
-        # 2. Deduct credits
-        success, billing_err = await check_and_deduct_credits(current_user.id, cost, req.task_type, current_user.username)
-        if not success:
-            await release_concurrency_lock(current_user.id)
-            raise HTTPException(status_code=402, detail=billing_err)
-            
-        # 3. Get Priority
-        priority, _, _ = await get_user_priority_and_identity(current_user.id)
-        # Allow client to override priority if it's lower (for testing), but bound by max calculated priority
-        final_priority = min(req.priority + priority, 100) 
-        
-        task_id = None
-        
-        # 3. Load prompts if not provided
-        prompts_config = load_prompts()
-        
-        # If client provided prompt in inputs, use it
-        if "prompt" in req.inputs and req.inputs["prompt"]:
-            req.prompt = req.inputs["prompt"]
-            
-        if not req.prompt:
-            req.prompt = prompts_config.get(req.task_type, req.task_type)
-        if not req.negative_prompt:
-            req.negative_prompt = prompts_config.get("negative_prompt", "")
-
-        # 4. Dispatch based on task_type
-        saved_inputs = []
-        allow_contribute = not getattr(req, 'is_template', False)
-        
-        if req.task_type == "face_swap":
-            face_img = req.inputs.get("face_image")
-            body_img = req.inputs.get("target_image")
-            if not face_img or not body_img:
-                raise ValueError("face_image and target_image are required for face_swap")
-                
-            success, msg, task_id, saved_inputs, registry_task_id = await core_submit_generation_task(
-                internal_user_id=current_user.id,
-                username=current_user.username,
-                prompt=req.prompt,
-                images=[body_img, face_img], # FSM order: body first, face second
-                is_video=False,
-                task_type="face_swap",
-                cost=cost,
-                priority=final_priority,
-                negative_prompt=req.negative_prompt,
-                allow_contribute=allow_contribute
-            )
-        elif req.task_type == "face_video":
-            face_img = req.inputs.get("face_image")
-            video_path = req.inputs.get("target_video")
-            resolution = req.inputs.get("resolution", 512)
-            # Match Bot's duration logic for face_video which expects frames
-            duration_sec = req.inputs.get("duration", 5)
-            if duration_sec >= 10:
-                duration_frames = 161
-            else:
-                duration_frames = 121 # Default max frames for face_video
-            
-            success, msg, task_id, saved_face_img, saved_vid, registry_task_id = await core_submit_face_video(
-                internal_user_id=current_user.id,
-                username=current_user.username,
-                face_image_path=face_img,
-                video_path=video_path,
-                resolution=resolution,
-                duration=duration_frames,
-                cost=cost,
-                mode="MODE_FACE_VIDEO_STEP2",
-                priority=final_priority,
-                allow_contribute=allow_contribute
-            )
-            if success:
-                saved_inputs = [saved_face_img, saved_vid]
-        else:
-            # Generic t2i / i2i / video
-            images = req.inputs.get("images", [])
-            lora_name = req.inputs.get("lora_name")
-            
-            from src.handlers.fsm.edit_image_fsm import get_lora_default_strength
-            default_strength = get_lora_default_strength(lora_name) if lora_name else 1.0
-            lora_strength = req.inputs.get("lora_strength", default_strength)
-            
-            if lora_name == "qwen/adjust_pussy_anus.safetensors":
-                if "adjust her pussy and anus" not in (req.prompt or "").lower():
-                    req.prompt = f"adjust her pussy and anus, {req.prompt or ''}".strip(", ")
-                    
-            resolution = req.inputs.get("resolution", 512)
-            duration = req.inputs.get("duration", 5)
-            
-            success, msg, task_id, saved_inputs, registry_task_id = await core_submit_generation_task(
-                internal_user_id=current_user.id,
-                username=current_user.username,
-                prompt=req.prompt,
-                images=images,
-                is_video=is_video_task,
-                task_type=req.task_type,
-                cost=cost,
-                priority=final_priority,
-                negative_prompt=req.negative_prompt,
-                lora_name=lora_name,
-                lora_strength=lora_strength,
-                resolution=resolution,
-                duration=duration,
-                allow_contribute=allow_contribute
-            )
-            
-        if not success or not task_id:
-            # Refund
-            await refund_credits(current_user.id, cost, f"refund_{req.task_type}", current_user.username)
-            raise ValueError(msg)
-            
-        # Success
-        log_prompt = req.prompt
-        if req.task_type in ["video_lora", "img2img_lora"] and req.inputs.get("lora_name"):
-            log_prompt = f"[模型: {req.inputs.get('lora_name')}] {req.prompt}"
-
-        background_tasks.add_task(
-            monitor_task_and_release_lock, 
-            task_id, 
-            current_user.id, 
-            current_user.username,
-            registry_task_id, 
-            is_video_task,
-            req.task_type,
-            log_prompt,
-            saved_inputs,
-            allow_contribute
+        is_template = getattr(req, 'is_template', False)
+        result = await process_and_submit_task(
+            user_id=current_user.id,
+            username=current_user.username,
+            task_type=req.task_type,
+            inputs=req.inputs,
+            base_priority=req.priority,
+            is_template=is_template
         )
         
         balance = await quota_manager.get_credits(current_user.id)
         return TaskGenerateResponse(
-            task_id=task_id,
+            task_id=result["task_id"],
             status="pending",
             message="Task submitted successfully",
-            cost=cost,
+            cost=result["cost"],
             balance_remaining=balance
         )
-        
-    except HTTPException as he:
-        await release_concurrency_lock(current_user.id)
-        raise he
-    except ValueError as ve:
-        await release_concurrency_lock(current_user.id)
-        logger.error(f"Task value error: {ve}")
-        raise HTTPException(status_code=400, detail=str(ve))
+    except ConcurrencyLimitError as e:
+        raise HTTPException(status_code=429, detail=str(e))
+    except InsufficientCreditsError as e:
+        raise HTTPException(status_code=402, detail=str(e))
+    except CoreDomainError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        await release_concurrency_lock(current_user.id)
         logger.error(f"Task submission error: {e}", exc_info=True)
-        # Refund on hard failure
-        await refund_credits(current_user.id, cost, f"refund_error_{req.task_type}", current_user.username)
         raise HTTPException(status_code=500, detail="Internal server error")
 
 @router.get("/{task_id}/stream")

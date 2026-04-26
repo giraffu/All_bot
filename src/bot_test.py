@@ -4,8 +4,12 @@ from telegram.ext import (
     CommandHandler,
     CallbackQueryHandler,
     PreCheckoutQueryHandler,
+    TypeHandler,
     filters,
 )
+from telegram import Update
+from asgi_correlation_id import correlation_id
+import uuid
 from telegram.request import HTTPXRequest
 import logging
 import os
@@ -69,6 +73,15 @@ async def clean_zombies_loop():
             logger.error(f"Error in clean_zombies_loop: {e}")
         await asyncio.sleep(600)  # Check every 10 minutes
 
+async def inject_trace_id(update: Update, context):
+    trace_id = str(uuid.uuid4())
+    correlation_id.set(trace_id)
+    logger = logging.getLogger("bot.core")
+    if update.callback_query:
+        logger.info(f"Received callback query: {update.callback_query.data}")
+    elif update.message and update.message.text:
+        pass # Already logged in handle_prompt
+
 async def post_init(application):
     await init_db()
     await setup_commands(application)
@@ -100,8 +113,6 @@ async def post_shutdown(application):
     await TaskRegistry.refund_all(application.bot)
     from src.services.redis_client import redis_client
     await redis_client.close()
-    from src.services.image_service import image_service
-    await image_service.close()
 
 def main():
     setup_logging()
@@ -187,6 +198,7 @@ def main():
 
     
     # Register FSM Handlers first (they must intercept text/callbacks before fallback handlers)
+    app.add_handler(TypeHandler(Update, inject_trace_id), group=-1)
     app.add_handler(get_gallery_apply_fsm_handler())
     app.add_handler(get_face_video_fsm_handler())
     app.add_handler(get_faceswap_fsm_handler())

@@ -89,7 +89,13 @@ async def core_submit_face_video(
                 await TaskRegistry.mark_task_status(registry_task_id, "failed")
             except AttributeError:
                 pass
-        return False, f"System error: {str(e)}", None, None, None, registry_task_id
+        error_msg = str(e)
+        if any(kw in error_msg for kw in ["Circuit is open", "All connection attempts failed", "Connection refused", "timeout", "ConnectError"]) or "CircuitBreaker" in str(type(e)):
+            user_msg = "当前服务器繁忙，请稍后再试"
+        else:
+            user_msg = f"System error: {error_msg}"
+
+        return False, user_msg, None, None, None, registry_task_id
 
 
 async def core_submit_generation_task(
@@ -225,4 +231,276 @@ async def core_submit_generation_task(
                 await TaskRegistry.mark_task_status(registry_task_id, "failed")
             except AttributeError:
                 pass
-        return False, f"System error: {str(e)}", None, [], registry_task_id
+        error_msg = str(e)
+        if any(kw in error_msg for kw in ["Circuit is open", "All connection attempts failed", "Connection refused", "timeout", "ConnectError"]) or "CircuitBreaker" in str(type(e)):
+            user_msg = "当前服务器繁忙，请稍后再试"
+        else:
+            user_msg = f"System error: {error_msg}"
+        return False, user_msg, None, [], registry_task_id
+
+from src.utils import load_prompts
+from src.constants import TASK_COSTS, RESOLUTION_COST, DURATION_MULTIPLIER, MODE_I2I_PRO, MODE_FACESWAP_STEP1, LTX_RESOLUTION_COST, LTX_DURATION_MULTIPLIER
+from src.core.billing_core import check_concurrency_lock, release_concurrency_lock, check_and_deduct_credits, refund_credits, get_user_priority_and_identity
+
+def calculate_task_cost(task_type: str, inputs: dict) -> int:
+    """Calculate dynamic cost for web tasks to match Bot logic"""
+    mode = task_type
+    if task_type == "face_swap":
+        mode = MODE_FACESWAP_STEP1
+    elif task_type == "i2i_pro":
+        mode = MODE_I2I_PRO
+        
+    video_types = ["doggy_style", "perfect_video_insert", "blowjob", "undress_tongue", "closeup_blowjob", "custom_video", "face_video", "video_lora", "ltx_video"]
+    is_video_task = task_type in video_types
+    
+    if is_video_task:
+        resolution = inputs.get("resolution", 512)
+        duration = inputs.get("duration", 5)
+        
+        if mode == "ltx_video":
+            res_str = str(resolution)
+            dur_str = f"{duration}s" if isinstance(duration, int) else str(duration)
+            if not dur_str.endswith('s'):
+                dur_str += 's'
+            base_cost = LTX_RESOLUTION_COST.get(res_str, 10)
+            multiplier = LTX_DURATION_MULTIPLIER.get(dur_str, 1.0)
+            return int(base_cost * multiplier)
+            
+        res_str = f"{resolution}p" if isinstance(resolution, int) else str(resolution)
+        if not res_str.endswith('p'):
+            res_str += 'p'
+        dur_str = f"{duration}s" if isinstance(duration, int) else str(duration)
+        if not dur_str.endswith('s'):
+            dur_str += 's'
+            
+        base_cost = RESOLUTION_COST.get(res_str, TASK_COSTS.get(mode, 6))
+        multiplier = DURATION_MULTIPLIER.get(dur_str, 1.0)
+        return int(base_cost * multiplier)
+    else:
+        return TASK_COSTS.get(mode, 2)
+
+class CoreDomainError(Exception):
+    pass
+    
+class InsufficientCreditsError(CoreDomainError):
+    pass
+    
+class ConcurrencyLimitError(CoreDomainError):
+    pass
+
+async def monitor_task_and_release_lock(
+    task_id: str, 
+    internal_user_id: int, 
+    username: str,
+    registry_task_id: str, 
+    is_video: bool = False,
+    task_type: str = "",
+    prompt: str = "",
+    input_images: list = None,
+    allow_contribute: bool = True
+):
+    """
+    Background task to monitor progress and release concurrency lock.
+    """
+    import asyncio
+    from src.database.core import AsyncSessionLocal
+    from src.database.models import History
+    
+    if input_images is None:
+        input_images = []
+        
+    final_status = None
+    result_path = None
+    try:
+        async for progress in image_service.monitor_progress(task_id, is_video):
+            if progress.get("status") in ["done", "error", "cancelled", "success", "failed"]:
+                final_status = progress.get("status")
+                result_path = progress.get("result_path")
+                break
+    except asyncio.CancelledError:
+        logger.error(f"Task monitor {task_id} cancelled.")
+    except Exception as e:
+        logger.error(f"Background monitoring error for task {task_id}: {e}")
+    finally:
+        # Save to History if successful
+        if final_status == "done" and result_path:
+            try:
+                user_logger = UserLogger(internal_user_id, username)
+                media_bytes = await (image_service.download_video_result(task_id) if is_video else image_service.download_result(task_id))
+                if media_bytes:
+                    ext = "mp4" if is_video else "png"
+                    saved_output_image = await asyncio.to_thread(user_logger.save_output_image, media_bytes, task_id, ext)
+                    await user_logger.log_task(prompt, input_images, saved_output_image, task_id=task_id, type=task_type, allow_contribute=allow_contribute, source="web")
+                else:
+                    await user_logger.log_task(prompt, input_images, result_path, task_id=task_id, type=task_type, allow_contribute=allow_contribute, source="web")
+            except Exception as log_err:
+                logger.error(f"Failed to log task history for {task_id}: {log_err}")
+                
+        # Use asyncio.create_task for the release to avoid being cancelled
+        try:
+            await release_concurrency_lock(internal_user_id)
+        except Exception as e:
+            logger.error(f"Failed to release concurrency lock for {internal_user_id}: {e}")
+            
+        if registry_task_id:
+            try:
+                await TaskRegistry.remove_task(registry_task_id)
+            except Exception as e:
+                logger.error(f"Failed to remove registry task {registry_task_id}: {e}")
+
+async def process_and_submit_task(
+    user_id: int, 
+    username: str,
+    task_type: str, 
+    inputs: dict,
+    base_priority: int = 0,
+    is_template: bool = False
+) -> dict:
+    cost = calculate_task_cost(task_type, inputs)
+    video_types = ["doggy_style", "perfect_video_insert", "blowjob", "undress_tongue", "closeup_blowjob", "custom_video", "face_video", "video_lora", "ltx_video"]
+    is_video_task = task_type in video_types
+    
+    if is_video_task:
+        resolution = inputs.get("resolution", 512)
+        duration = inputs.get("duration", 5)
+        if int(resolution) >= 1024 and int(duration) >= 10:
+            raise CoreDomainError("Cannot select 1024p resolution and 10s duration simultaneously due to high resource usage.")
+    
+    can_run, err = await check_concurrency_lock(user_id)
+    if not can_run:
+        raise ConcurrencyLimitError(err)
+        
+    task_submitted = False
+    credits_deducted = False
+    
+    try:
+        success, err = await check_and_deduct_credits(user_id, cost, task_type, username)
+        if not success:
+            raise InsufficientCreditsError(err)
+            
+        credits_deducted = True
+        
+        try:
+            priority, _, _ = await get_user_priority_and_identity(user_id)
+            final_priority = min(base_priority + priority, 100)
+            
+            prompts_config = load_prompts()
+            prompt = inputs.get("prompt")
+            if not prompt:
+                prompt = prompts_config.get(task_type, task_type)
+            negative_prompt = prompts_config.get("negative_prompt", "")
+            
+            allow_contribute = not is_template
+            task_id = None
+            registry_task_id = None
+            saved_inputs = []
+            log_prompt = prompt
+            
+            if task_type == "face_swap":
+                face_img = inputs.get("face_image")
+                body_img = inputs.get("target_image")
+                if not face_img or not body_img:
+                    raise CoreDomainError("face_image and target_image are required for face_swap")
+                    
+                success, msg, task_id, saved_inputs, registry_task_id = await core_submit_generation_task(
+                    internal_user_id=user_id,
+                    username=username,
+                    prompt=prompt,
+                    images=[body_img, face_img],
+                    is_video=False,
+                    task_type="face_swap",
+                    cost=cost,
+                    priority=final_priority,
+                    negative_prompt=negative_prompt,
+                    allow_contribute=allow_contribute
+                )
+            elif task_type == "face_video":
+                face_img = inputs.get("face_image")
+                video_path = inputs.get("target_video")
+                resolution = inputs.get("resolution", 512)
+                duration_sec = inputs.get("duration", 5)
+                duration_frames = 161 if duration_sec >= 10 else 121
+                
+                success, msg, task_id, saved_face_img, saved_vid, registry_task_id = await core_submit_face_video(
+                    internal_user_id=user_id,
+                    username=username,
+                    face_image_path=face_img,
+                    video_path=video_path,
+                    resolution=resolution,
+                    duration=duration_frames,
+                    cost=cost,
+                    mode="MODE_FACE_VIDEO_STEP2",
+                    priority=final_priority,
+                    allow_contribute=allow_contribute
+                )
+                if success:
+                    saved_inputs = [saved_face_img, saved_vid]
+            else:
+                images = inputs.get("images", [])
+                lora_name = inputs.get("lora_name")
+                
+                from src.handlers.fsm.edit_image_fsm import get_lora_default_strength
+                default_strength = get_lora_default_strength(lora_name) if lora_name else 1.0
+                lora_strength = inputs.get("lora_strength", default_strength)
+                
+                if lora_name == "qwen/adjust_pussy_anus.safetensors":
+                    if "adjust her pussy and anus" not in (prompt or "").lower():
+                        prompt = f"adjust her pussy and anus, {prompt or ''}".strip(", ")
+                        
+                if task_type in ["video_lora", "img2img_lora"] and lora_name:
+                    log_prompt = f"[模型: {lora_name}] {prompt}"
+                        
+                resolution = inputs.get("resolution", 512)
+                duration = inputs.get("duration", 5)
+                
+                success, msg, task_id, saved_inputs, registry_task_id = await core_submit_generation_task(
+                    internal_user_id=user_id,
+                    username=username,
+                    prompt=prompt,
+                    images=images,
+                    is_video=is_video_task,
+                    task_type=task_type,
+                    cost=cost,
+                    priority=final_priority,
+                    negative_prompt=negative_prompt,
+                    lora_name=lora_name,
+                    lora_strength=lora_strength,
+                    resolution=resolution,
+                    duration=duration,
+                    allow_contribute=allow_contribute
+                )
+                
+            if not success or not task_id:
+                raise CoreDomainError(msg)
+                
+            import asyncio
+            asyncio.create_task(
+                monitor_task_and_release_lock(
+                    task_id=task_id, 
+                    internal_user_id=user_id, 
+                    username=username,
+                    registry_task_id=registry_task_id, 
+                    is_video=is_video_task,
+                    task_type=task_type,
+                    prompt=log_prompt,
+                    input_images=saved_inputs,
+                    allow_contribute=allow_contribute
+                )
+            )
+            task_submitted = True
+            
+            return {
+                "task_id": task_id, 
+                "registry_task_id": registry_task_id, 
+                "cost": cost,
+                "saved_inputs": saved_inputs
+            }
+        except Exception as e:
+            raise CoreDomainError(f"Task submission failed: {str(e)}")
+    finally:
+        import asyncio
+        if credits_deducted and not task_submitted:
+            asyncio.create_task(refund_credits(user_id, cost, f"refund_{task_type}", username))
+            asyncio.create_task(release_concurrency_lock(user_id))
+        elif not credits_deducted:
+            asyncio.create_task(release_concurrency_lock(user_id))

@@ -3,6 +3,8 @@ from logging.handlers import RotatingFileHandler
 from datetime import datetime
 from pathlib import Path
 from sqlalchemy import select
+from asgi_correlation_id import correlation_id
+
 from .database.core import AsyncSessionLocal
 from .database.models import History, User
 from .services.storage import storage
@@ -12,18 +14,32 @@ logger = logging.getLogger("bot")
 def setup_logging(log_file="logs/bot.log"):
     """
     Setup standard logging configuration.
-    Output to file and console.
+    Output to file and console with TraceID.
     """
     Path(log_file).parent.mkdir(parents=True, exist_ok=True)
     
+    # Configure format with correlation_id
+    log_format = "%(asctime)s - %(levelname)s - %(name)s - [%(correlation_id)s] - %(message)s"
+    
+    class CorrelationIdFilter(logging.Filter):
+        def filter(self, record):
+            trace_id = correlation_id.get()
+            record.correlation_id = f"TraceID: {trace_id}" if trace_id else "TraceID: None"
+            return True
+
     # Configure root logger
+    handlers = [
+        RotatingFileHandler(log_file, maxBytes=10*1024*1024, backupCount=5, encoding='utf-8'),
+        logging.StreamHandler()
+    ]
+    
+    for handler in handlers:
+        handler.setFormatter(logging.Formatter(log_format))
+        handler.addFilter(CorrelationIdFilter())
+        
     logging.basicConfig(
         level=logging.INFO,
-        format="%(asctime)s - %(levelname)s - %(name)s - %(message)s",
-        handlers=[
-            RotatingFileHandler(log_file, maxBytes=10*1024*1024, backupCount=5, encoding='utf-8'),
-            logging.StreamHandler()
-        ]
+        handlers=handlers
     )
     
     # Reduce noise from libraries

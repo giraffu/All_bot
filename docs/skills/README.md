@@ -5,7 +5,7 @@
 
 ## 1. 技能清单 (Skills List)
 
-当前工作区包含以下 5 个核心 AI 编程辅助技能。您只需在对话中提及对应模块，或直接输入技能名称即可让 AI 加载最佳实践。
+当前工作区包含以下 6 个核心 AI 编程辅助技能。您只需在对话中提及对应模块，或直接输入技能名称即可让 AI 加载最佳实践。
 
 | 技能名称 (Skill Name) | 核心管控边界 (Responsibilities) | 触发场景 (When to invoke) |
 | :--- | :--- | :--- |
@@ -15,6 +15,7 @@
 | **`allbot-tg-fsm`** | PTB 交互状态机、菜单意外拦截防死锁、Telegram Local API 大文件 HTTP 直连 Monkey Patch。 | 当开发新的 Telegram 机器人对话流或修改文件上传下载时。 |
 | **`allbot-llm-ops`** | 本地 LM Studio 推理限流 (Semaphore)、智能客服 LangGraph 意图嗅探与群组隔离。 | 当接入本地大模型提示词优化或调整 CS Bot 记忆逻辑时。 |
 | **`allbot-ops-deployment`** | Docker Compose 容器隔离编排、Alembic 迁移、MinIO防宕机、系统自愈排障与网络穿透 502/404 故障恢复。 | 当调整微服务架构、增加环境配置或处理生产部署故障时。 |
+| **`allbot-kb-auto-updater`** | 智能监控代码变更，维护知识库体系的逻辑一致性与结构完整性。 | 当项目新增功能、修改核心接口或重构代码，需要同步更新文档时。 |
 
 ## 2. 快速开始指南 (Quick Start)
 

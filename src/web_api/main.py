@@ -1,6 +1,7 @@
 import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from asgi_correlation_id import CorrelationIdMiddleware
 from contextlib import asynccontextmanager
 
 from src.web_api.routers import auth, storage, tasks, users, gallery, utils
@@ -35,6 +36,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.add_middleware(CorrelationIdMiddleware, header_name="X-Trace-ID")
 
 # Include routers
 app.include_router(auth.router, prefix="/api/auth", tags=["Authentication"])

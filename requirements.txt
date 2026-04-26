@@ -19,3 +19,4 @@ python-multipart
 sse-starlette
 boto3
 Pillow
+asgi-correlation-id>=4.3.1

@@ -1,3 +1,10 @@
+"""
+🚨 架构红线警告 (ARCHITECTURE REDLINE) 🚨
+本文件 `task_service.py` 已经被明确定义为 Telegram Bot 专属的表示层 (Presentation Layer) / Handler 层。
+严禁在任何 Web API Router (如 src/web_api/routers/*.py) 中导入或调用此文件中的逻辑。
+Web API 应直接调用 `src/core/task_core.py` 提供的业务门面 (Facade)。
+"""
+
 import logging
 import os
 from typing import List, Optional, Tuple
@@ -161,7 +168,12 @@ class TaskService:
                 f"Error in ltx video task for user {internal_user_id}: {e}", exc_info=True
             )
             await refund_credits(internal_user_id, cost, "refund", username)
-            await robust_send_message(context.bot, chat_id, f"❌ 出错了：{e}，已退还灵石")
+            error_msg = str(e)
+            if any(kw in error_msg for kw in ["Circuit is open", "All connection attempts failed", "Connection refused", "timeout", "ConnectError"]) or "CircuitBreaker" in str(type(e)):
+                user_msg = "当前服务器繁忙，请稍后再试"
+            else:
+                user_msg = f"出错了：{error_msg}"
+            await robust_send_message(context.bot, chat_id, f"❌ {user_msg}，已退还灵石")
             return None, None
         finally:
             if registry_task_id:
@@ -262,7 +274,12 @@ class TaskService:
         except Exception as e:
             logger.error(f"Error processing face video task for {internal_user_id}: {e}", exc_info=True)
             await refund_credits(internal_user_id, cost, "refund", username)
-            await robust_edit_text(status_msg, f"❌ 系统错误：{str(e)}\n已退还灵石。")
+            error_msg = str(e)
+            if any(kw in error_msg for kw in ["Circuit is open", "All connection attempts failed", "Connection refused", "timeout", "ConnectError"]) or "CircuitBreaker" in str(type(e)):
+                user_msg = "当前服务器繁忙，请稍后再试"
+            else:
+                user_msg = f"系统错误：{error_msg}"
+            await robust_edit_text(status_msg, f"❌ {user_msg}\n已退还灵石。")
             return None, None
         finally:
             if 'registry_task_id' in locals() and registry_task_id:
@@ -441,7 +458,14 @@ class TaskService:
             logger.error(f"Error in process_generation_task for user {internal_user_id}: {e}", exc_info=True)
             if deduct_quota:
                 await refund_credits(internal_user_id, cost, "refund", username)
-            await robust_send_message(context.bot, chat_id, f"❌ 出错了：{e}，已退还灵石")
+                
+            error_msg = str(e)
+            if any(kw in error_msg for kw in ["Circuit is open", "All connection attempts failed", "Connection refused", "timeout", "ConnectError"]) or "CircuitBreaker" in str(type(e)):
+                user_msg = "当前服务器繁忙，请稍后再试"
+            else:
+                user_msg = f"出错了：{error_msg}"
+                
+            await robust_send_message(context.bot, chat_id, f"❌ {user_msg}，已退还灵石")
 
         finally:
             if 'registry_task_id' in locals() and registry_task_id:
@@ -606,7 +630,12 @@ class TaskService:
         except Exception as e:
             logger.error(f"Error in {mode} task for user {internal_user_id}: {e}", exc_info=True)
             await refund_credits(internal_user_id, cost, "refund", username)
-            await robust_send_message(context.bot, chat_id, f"❌ 出错了：{e}，已退还灵石")
+            error_msg = str(e)
+            if any(kw in error_msg for kw in ["Circuit is open", "All connection attempts failed", "Connection refused", "timeout", "ConnectError"]) or "CircuitBreaker" in str(type(e)):
+                user_msg = "当前服务器繁忙，请稍后再试"
+            else:
+                user_msg = f"出错了：{error_msg}"
+            await robust_send_message(context.bot, chat_id, f"❌ {user_msg}，已退还灵石")
         finally:
             if registry_task_id:
                 await TaskRegistry.remove_task(registry_task_id)
@@ -835,7 +864,12 @@ class TaskService:
             # If cost was calculated and potentially deducted, we might need to refund it.
             # But wait, if it fails before check_and_deduct_credits, we shouldn't refund.
             # This is a bit complex, but at least we log and exit cleanly.
-            await robust_send_message(context.bot, chat_id, f"❌ 出错了：{e}")
+            error_msg = str(e)
+            if any(kw in error_msg for kw in ["Circuit is open", "All connection attempts failed", "Connection refused", "timeout", "ConnectError"]) or "CircuitBreaker" in str(type(e)):
+                user_msg = "当前服务器繁忙，请稍后再试"
+            else:
+                user_msg = f"出错了：{error_msg}"
+            await robust_send_message(context.bot, chat_id, f"❌ {user_msg}")
             return None, None
         finally:
             if 'registry_task_id' in locals() and registry_task_id:
@@ -940,7 +974,12 @@ class TaskService:
         except Exception as e:
             user_logger.logger.error(f"Error in process_i2i_pro_task for user {internal_user_id}: {e}", exc_info=True)
             await refund_credits(internal_user_id, cost, "refund", username)
-            await robust_send_message(context.bot, chat_id, f"❌ 出错了：{e}，已退还灵石")
+            error_msg = str(e)
+            if any(kw in error_msg for kw in ["Circuit is open", "All connection attempts failed", "Connection refused", "timeout", "ConnectError"]) or "CircuitBreaker" in str(type(e)):
+                user_msg = "当前服务器繁忙，请稍后再试"
+            else:
+                user_msg = f"出错了：{error_msg}"
+            await robust_send_message(context.bot, chat_id, f"❌ {user_msg}，已退还灵石")
             return None, None
         finally:
             if registry_task_id:

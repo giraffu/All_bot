@@ -6,6 +6,7 @@ from typing import Optional
 from fastapi import FastAPI, Depends, HTTPException, BackgroundTasks, Query, Body
 from fastapi.responses import FileResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from asgi_correlation_id import CorrelationIdMiddleware
 from app.config import settings
 from app.models import TaskResponse, TaskStatusResponse, SystemStatusResponse, TaskType, T2ITaskResponse, SystemWorkersResponse, Img2ImgRequest, Img2ImgLoraRequest, FaceSwapRequest, VideoInsertRequest, VideoEditRequest, FaceVideoRequest, I2IProRequest, VideoLoraRequest, LtxVideoRequest
 from app.queue_manager import QueueManager
@@ -18,6 +19,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="ComfyUI Middleware")
+app.add_middleware(CorrelationIdMiddleware, header_name="X-Trace-ID")
 app.include_router(agent.router)
 security = HTTPBearer()
 
@@ -195,42 +197,75 @@ async def create_t2i_pornmaster_turbo_task(
     # 2. Extract priority from body if present, otherwise use query param
     task_priority = request.get("priority", priority)
     
-    # 3. Enqueue task
+    # 3. Enqueue task with pre-generated ID and Pub/Sub for sync mode
     params = {"prompt": prompt}
+    task_id = str(uuid.uuid4())
+    
+    if not async_mode:
+        pubsub = queue_manager.redis.pubsub()
+        channel = f"comfy:task_events:{task_id}"
+        await pubsub.subscribe(channel)
+        
     try:
-        task_id = await queue_manager.enqueue_task(TaskType.T2I_PORNMASTER_TURBO, params, task_priority)
+        await queue_manager.enqueue_task(TaskType.T2I_PORNMASTER_TURBO, params, task_priority, task_id=task_id)
         logger.info(f"[{request_id}] Task enqueued: {task_id} with priority {task_priority}")
     except Exception as e:
         logger.error(f"[{request_id}] Failed to enqueue task: {e}")
+        if not async_mode:
+            await pubsub.unsubscribe(channel)
+            await pubsub.close()
         raise HTTPException(status_code=500, detail="Internal server error")
     
-    # 3. Handle sync mode
+    # 4. Handle sync mode
     if not async_mode:
         logger.info(f"[{request_id}] Sync mode: waiting for task {task_id}")
         timeout = 60
-        start_time = asyncio.get_event_loop().time()
-        while asyncio.get_event_loop().time() - start_time < timeout:
-            task_status = await queue_manager.get_task_status(task_id)
-            if not task_status:
-                logger.error(f"[{request_id}] Task {task_id} status not found")
-                raise HTTPException(status_code=500, detail="Task status not found")
-            
-            status = task_status.get("status")
-            if status == "done":
-                result_path = task_status.get("result_path")
-                protocol = "https" if settings.minio_secure else "http"
-                image_url = f"{protocol}://{settings.minio_endpoint}/{settings.minio_result_bucket}/{result_path}"
-                logger.info(f"[{request_id}] Task {task_id} completed: {image_url}")
-                return T2ITaskResponse(task_id=task_id, image_url=image_url)
-            elif status == "error":
-                error_msg = task_status.get("error_msg", "Unknown error")
-                logger.error(f"[{request_id}] Task {task_id} failed: {error_msg}")
-                raise HTTPException(status_code=500, detail=f"Task failed: {error_msg}")
-            
-            await asyncio.sleep(1)
         
-        logger.error(f"[{request_id}] Task {task_id} timed out")
-        raise HTTPException(status_code=504, detail="Task execution timed out")
+        try:
+            # Active check once to prevent race conditions
+            task_status = await queue_manager.get_task_status(task_id)
+            if task_status:
+                status = task_status.get("status")
+                if status == "done":
+                    result_path = task_status.get("result_path")
+                    protocol = "https" if settings.minio_secure else "http"
+                    image_url = f"{protocol}://{settings.minio_endpoint}/{settings.minio_result_bucket}/{result_path}"
+                    logger.info(f"[{request_id}] Task {task_id} completed: {image_url}")
+                    return T2ITaskResponse(task_id=task_id, image_url=image_url)
+                elif status == "error":
+                    error_msg = task_status.get("error_msg", "Unknown error")
+                    logger.error(f"[{request_id}] Task {task_id} failed: {error_msg}")
+                    raise HTTPException(status_code=500, detail=f"Task failed: {error_msg}")
+            
+            async def listen_for_result():
+                async for message in pubsub.listen():
+                    if message["type"] == "message":
+                        data = message["data"]
+                        import json
+                        if isinstance(data, bytes):
+                            data = data.decode("utf-8")
+                        try:
+                            parsed = json.loads(data)
+                            status = parsed.get("status")
+                            if status == "done":
+                                result_path = parsed.get("result_path")
+                                protocol = "https" if settings.minio_secure else "http"
+                                image_url = f"{protocol}://{settings.minio_endpoint}/{settings.minio_result_bucket}/{result_path}"
+                                return T2ITaskResponse(task_id=task_id, image_url=image_url)
+                            elif status == "error":
+                                error_msg = parsed.get("error_msg", "Unknown error")
+                                raise HTTPException(status_code=500, detail=f"Task failed: {error_msg}")
+                        except json.JSONDecodeError:
+                            pass
+                            
+            result = await asyncio.wait_for(listen_for_result(), timeout=timeout)
+            return result
+        except asyncio.TimeoutError:
+            logger.error(f"[{request_id}] Task {task_id} timed out")
+            raise HTTPException(status_code=504, detail="Task execution timed out")
+        finally:
+            await pubsub.unsubscribe(channel)
+            await pubsub.close()
     
     return T2ITaskResponse(task_id=task_id)
 

@@ -18,6 +18,7 @@ services:
       - TZ=Asia/Shanghai
     volumes:
       - ../logs:/app/logs
+      - ../src:/app/src
     extra_hosts:
       - "host.docker.internal:host-gateway"
     network_mode: "host" # Use host network to easily access 192.168.1.115 services

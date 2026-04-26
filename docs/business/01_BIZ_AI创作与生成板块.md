@@ -60,7 +60,13 @@ sequenceDiagram
     ```
 *   **计费契约**：视频生成的成本为 `基础分辨率价格 * 时长倍数`。例如 720p 基础为 18 灵石，时长 10s (2.0x)，则总扣减 36 灵石。
 
-## 5. 用户操作手册 (Manual)
+## 5. ComfyUI 工作流参数注入原则 (Workflow Patcher Redlines)
+本板块中所有底层推理均依赖 ComfyUI 的 JSON 工作流，其参数动态注入必须严格遵守以下红线：
+*   **禁止启发式匹配 (No Heuristic Matching)**：在处理带有多个图像输入的工作流（如 `face_swap`）时，绝对禁止使用启发式遍历来盲目覆盖图片节点，这会导致参数错乱并触发 ComfyUI HTTP 400 错误。
+*   **必须使用 `mappings.json` 精确绑定**：所有需要动态修改的节点参数，必须在 Worker 节点的 `mappings.json` 中明确声明映射关系。例如：视频工作流中的尺寸调整必须映射给 `FindPerfectResolution` 节点，时长控制映射给 `PainterI2V` 节点。
+*   **类型安全转换**：在 Python 字典与 JSON 转换时，需特别注意 `None` 与 JSON `null` 的转换，尤其是在处理 `seed` 等整数型参数时，防止类型错误导致节点执行失败。
+
+## 6. 用户操作手册 (Manual)
 ### 5.1 Telegram 端操作
 1.  在 Bot 主菜单点击 `🎬 懒人动图`。
 2.  选择 `高级图生视频 (LTX)`。

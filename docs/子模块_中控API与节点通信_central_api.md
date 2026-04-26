@@ -65,8 +65,10 @@ async def poll_and_dispatch():
             continue
             
         # 3. 派发给 ComfyUI
+        # 注意：需将 task_data 中的 trace_id 提取出并注入 HTTP Headers 中 (X-Trace-ID)
+        headers = {"X-Trace-ID": task_data.get("trace_id", "")}
         async with httpx.AsyncClient() as client:
-            resp = await client.post(f"{worker_url}/prompt", json={"prompt": workflow})
+            resp = await client.post(f"{worker_url}/prompt", json={"prompt": workflow}, headers=headers)
             if resp.status_code == 200:
                 await redis_client.db2.set(f"comfy:task_node:{task_id}", worker_url)
 ```

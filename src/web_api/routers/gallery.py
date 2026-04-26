@@ -542,99 +542,21 @@ async def get_apply_context(
             task_type=history.type
         )
 
+from src.core.gallery_core import process_submit_to_gallery, GalleryCoreError
+
 @router.post("/posts/submit/{task_id}")
 async def submit_to_gallery(
     task_id: str,
+    background_tasks: BackgroundTasks,
     current_user: User = Depends(get_current_user)
 ):
-    async with AsyncSessionLocal() as session:
-        # Check limit
-        can_submit = await redis_client.check_gallery_submit_limit(current_user.id, limit=10)
-        if not can_submit:
-            raise HTTPException(status_code=400, detail="您今日的投稿次数已达 10 次上限，请明日再来~")
-
-        # Check existing
-        existing = await session.execute(select(GalleryPost).where(GalleryPost.task_id == task_id))
-        if existing.scalar_one_or_none():
-            raise HTTPException(status_code=400, detail="您已经投稿过此内容啦！")
-
-        # Get History
-        hist_res = await session.execute(select(History).where(History.task_id == task_id).where(History.user_id == current_user.id))
-        history = hist_res.scalar_one_or_none()
-        if not history:
-            raise HTTPException(status_code=404, detail="无法找到对应的任务记录，投稿失败")
-
-        if getattr(history, 'allow_contribute', True) is False:
-            raise HTTPException(status_code=403, detail="这是一键应用他人的模板生成的作品，为了保护原创，暂不支持再次投稿。")
-
-        if history.type not in ALLOWED_WEB_SUBMIT_TYPES:
-            allowed_names = [MODE_NAME_MAP.get(t, t) for t in ALLOWED_WEB_SUBMIT_TYPES]
-            raise HTTPException(status_code=400, detail=f"暂不支持该类型记录的投稿，目前仅支持：{', '.join(allowed_names)}")
-
-        if not history.output_file:
-            raise HTTPException(status_code=400, detail="此任务没有生成文件，无法投稿")
-
-        # Determine media_type from output_file extension
-        lower_path = history.output_file.lower()
-        is_video = any(lower_path.endswith(ext) for ext in ['.mp4', '.mov', '.webm', '.mkv', '.avi'])
-        media_type = 'video' if is_video else 'image'
-
-        width, height, duration = None, None, None
-
-        # Auto Tags
-        tags = []
-        base_tag = MODE_NAME_MAP.get(history.type, history.type)
-        if base_tag:
-            tags.append(f"#{base_tag}")
-
-        if history.prompt:
-            match = re.search(r"\[模型:\s*(.*?)\]\s*(.*)", history.prompt, re.DOTALL)
-            if match:
-                lora_tag = match.group(1).strip()
-                tags.append(f"#{lora_tag}")
-
-        tags_json = json.dumps(tags, ensure_ascii=False)
-
-        new_post = GalleryPost(
-            task_id=task_id,
-            user_id=current_user.id,
-            media_type=media_type,
-            width=width,
-            height=height,
-            duration=duration,
-            tags=tags_json
-        )
-        session.add(new_post)
-        
-        # Increment total_contributions in users table
-        user_record = await session.execute(select(User).where(User.id == current_user.id))
-        user_obj = user_record.scalar_one_or_none()
-        if user_obj:
-            user_obj.total_contributions = (user_obj.total_contributions or 0) + 1
-            
-        await session.commit()
-
-        # R2 copy logic
-        parts = history.output_file.split("/")
-        if len(parts) > 1 and parts[0] in ["bot-data", "comfyui-temp"]:
-            bucket_name = parts[0]
-            object_name = "/".join(parts[1:])
-        elif "comfyui-temp" not in history.output_file and "bot-data" not in history.output_file:
-            bucket_name = "comfyui-temp" if not "/" in history.output_file else "bot-data"
-            object_name = history.output_file
-        else:
-            bucket_name = "bot-data"
-            object_name = history.output_file
-
-        r2_object_name = parts[-1]
-
-        try:
-            # Await the copy directly to avoid frontend race conditions (cached 404 on CDN)
-            await storage.async_copy_to_r2(bucket_name, object_name, r2_object_name)
-        except Exception as e:
-            logger.error(f"Failed to copy {object_name} to R2 during submit: {e}")
-
-        await redis_client.increment_gallery_submit(current_user.id)
-
-        tags_str = " ".join(tags)
-        return {"status": "success", "message": f"投稿成功！已自动添加标签：{tags_str}"}
+    try:
+        result = await process_submit_to_gallery(current_user.id, task_id, background_tasks)
+        return result
+    except GalleryCoreError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Unexpected error submitting to gallery: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
