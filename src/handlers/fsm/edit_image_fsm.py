@@ -22,8 +22,24 @@ logger = logging.getLogger("fsm.edit_image")
 
 LORA_MODELS = {
     "": "无",
-    "qwen/YARN_1.0.safetensors": "逼真"
+    "qwen/YARN_1.0.safetensors": "逼真",
+    "qwen/adjust_pussy_anus.safetensors": "菊花+内凹穴",
+    "qwen/realistic_texture.safetensors": "真实质感",
+    "qwen/flat_chest_hairless.safetensors": "平胸/无毛穴",
+    "qwen/penis.safetensors": "扶他(阴茎)"
 }
+
+def get_lora_default_strength(lora_name: str) -> float:
+    if lora_name == "qwen/YARN_1.0.safetensors":
+        return 0.3
+    elif lora_name == "qwen/flat_chest_hairless.safetensors":
+        return 0.8
+    elif lora_name == "qwen/penis.safetensors":
+        return 0.7
+    elif lora_name == "qwen/realistic_texture.safetensors":
+        return 0.8
+    else:
+        return 1.0
 
 def _cleanup_context(context: ContextTypes.DEFAULT_TYPE, user_id: int):
     context.user_data.pop('in_conversation', None)
@@ -182,6 +198,10 @@ async def receive_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     mode = fsm_data['mode']
     lora_name = fsm_data.get('lora_name', "")
 
+    if lora_name == "qwen/adjust_pussy_anus.safetensors":
+        if "adjust her pussy and anus" not in prompt.lower():
+            prompt = f"adjust her pussy and anus, {prompt}"
+
     if not await permission_service.check_quota(update, context, cost=cost):
         _cleanup_context(context, user_id)
         return ConversationHandler.END
@@ -214,7 +234,7 @@ async def receive_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 context, message.chat_id, user_id,
                 update.effective_user.username or update.effective_user.full_name,
                 prompt, images, is_video=False, task_type=mode, cleanup=True,
-                lora_name=lora_name, lora_strength=0.3 if lora_name == "qwen/YARN_1.0.safetensors" else 1.0
+                lora_name=lora_name, lora_strength=get_lora_default_strength(lora_name)
             )
         )
 

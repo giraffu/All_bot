@@ -67,6 +67,15 @@ const features = [
     color: 'bg-emerald-100 text-emerald-600',
     cost: 6,
     route: 'SingleImageToVideo'
+  },
+  {
+    key: 'ltx_video',
+    title: '高级图生视频',
+    description: '上传图像与提示词，使用最先进的模型生成高分辨率、更长时长的视频。',
+    icon: Sparkles,
+    color: 'bg-amber-100 text-amber-600',
+    cost: 10,
+    route: 'SingleImageToVideo'
   }
 ]
 

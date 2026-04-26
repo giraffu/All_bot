@@ -33,12 +33,23 @@ def calculate_task_cost(task_type: str, inputs: dict) -> int:
     elif task_type == "i2i_pro":
         mode = MODE_I2I_PRO
         
-    video_types = ["doggy_style", "perfect_video_insert", "blowjob", "undress_tongue", "closeup_blowjob", "custom_video", "face_video", "video_lora"]
+    video_types = ["doggy_style", "perfect_video_insert", "blowjob", "undress_tongue", "closeup_blowjob", "custom_video", "face_video", "video_lora", "ltx_video"]
     is_video_task = task_type in video_types
     
     if is_video_task:
         resolution = inputs.get("resolution", 512)
         duration = inputs.get("duration", 5)
+        
+        if mode == "ltx_video":
+            from src.constants import LTX_RESOLUTION_COST, LTX_DURATION_MULTIPLIER
+            res_str = str(resolution)
+            dur_str = f"{duration}s" if isinstance(duration, int) else str(duration)
+            if not dur_str.endswith('s'):
+                dur_str += 's'
+            base_cost = LTX_RESOLUTION_COST.get(res_str, 10)
+            multiplier = LTX_DURATION_MULTIPLIER.get(dur_str, 1.0)
+            return int(base_cost * multiplier)
+            
         res_str = f"{resolution}p" if isinstance(resolution, int) else str(resolution)
         if not res_str.endswith('p'):
             res_str += 'p'
@@ -109,7 +120,7 @@ async def create_generation_task(
     """
     Submit a generation task (image/video).
     """
-    video_types = ["doggy_style", "perfect_video_insert", "blowjob", "undress_tongue", "closeup_blowjob", "custom_video", "face_video", "video_lora"]
+    video_types = ["doggy_style", "perfect_video_insert", "blowjob", "undress_tongue", "closeup_blowjob", "custom_video", "face_video", "video_lora", "ltx_video"]
     is_video_task = req.task_type in video_types
     
     if is_video_task:
@@ -203,7 +214,15 @@ async def create_generation_task(
             # Generic t2i / i2i / video
             images = req.inputs.get("images", [])
             lora_name = req.inputs.get("lora_name")
-            lora_strength = req.inputs.get("lora_strength", 1.0)
+            
+            from src.handlers.fsm.edit_image_fsm import get_lora_default_strength
+            default_strength = get_lora_default_strength(lora_name) if lora_name else 1.0
+            lora_strength = req.inputs.get("lora_strength", default_strength)
+            
+            if lora_name == "qwen/adjust_pussy_anus.safetensors":
+                if "adjust her pussy and anus" not in (req.prompt or "").lower():
+                    req.prompt = f"adjust her pussy and anus, {req.prompt or ''}".strip(", ")
+                    
             resolution = req.inputs.get("resolution", 512)
             duration = req.inputs.get("duration", 5)
             
@@ -315,7 +334,7 @@ async def task_status_stream(task_id: str, current_user: User = Depends(get_curr
                     if status_val == "done":
                         initial_status["status"] = "success"
                         task_type = initial_status.get("task_type", "edit")
-                        is_video = task_type in ["face_video", "txt2video", "video_lora", "custom_video", "perfect_video_insert", "doggy_style", "blowjob", "undress_tongue", "closeup_blowjob"]
+                        is_video = task_type in ["face_video", "txt2video", "video_lora", "custom_video", "perfect_video_insert", "doggy_style", "blowjob", "undress_tongue", "closeup_blowjob", "ltx_video"]
                         ext = "mp4" if is_video else "png"
                         
                         from src.database.core import AsyncSessionLocal
@@ -361,7 +380,7 @@ async def task_status_stream(task_id: str, current_user: User = Depends(get_curr
                         if status == "done":
                             parsed["status"] = "success"
                             task_type = parsed.get("task_type", "edit")
-                            is_video = task_type in ["face_video", "txt2video", "video_lora", "custom_video", "perfect_video_insert", "doggy_style", "blowjob", "undress_tongue", "closeup_blowjob"]
+                            is_video = task_type in ["face_video", "txt2video", "video_lora", "custom_video", "perfect_video_insert", "doggy_style", "blowjob", "undress_tongue", "closeup_blowjob", "ltx_video"]
                             ext = "mp4" if is_video else "png"
                             
                             # Give task_service.py time to move the file from comfyui-temp to bot-data
@@ -415,7 +434,7 @@ async def task_status_stream(task_id: str, current_user: User = Depends(get_curr
                                 if status_val == "done":
                                     status_data["status"] = "success"
                                     task_type = status_data.get("task_type", "edit")
-                                    is_video = task_type in ["face_video", "txt2video", "video_lora", "custom_video", "perfect_video_insert", "doggy_style", "blowjob", "undress_tongue", "closeup_blowjob"]
+                                    is_video = task_type in ["face_video", "txt2video", "video_lora", "custom_video", "perfect_video_insert", "doggy_style", "blowjob", "undress_tongue", "closeup_blowjob", "ltx_video"]
                                     ext = "mp4" if is_video else "png"
                                     
                                     from src.database.core import AsyncSessionLocal

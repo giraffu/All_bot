@@ -161,6 +161,16 @@ async def core_submit_generation_task(
                 task_id = await image_service.submit_perfect_video_insert_task(
                     prompt=prompt, image_path=saved_input_images[0], width=resolution, height=resolution, length=frame_length, priority=priority
                 )
+            elif task_type == "ltx_video":
+                res_str = str(resolution)
+                try:
+                    width, height = map(int, res_str.split('x'))
+                except:
+                    width, height = 1280, 704
+                # duration is already an integer
+                task_id = await image_service.submit_ltx_video_task(
+                    prompt=prompt, image_path=saved_input_images[0], width=width, height=height, length=duration, priority=priority
+                )
             elif lora_name:
                 task_id = await image_service.submit_perfect_video_lora(
                     prompt=prompt, image_path=saved_input_images[0], lora_name=lora_name, priority=priority,

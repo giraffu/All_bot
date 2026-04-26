@@ -14,9 +14,16 @@ from telegram.ext import (
 )
 from src.handlers.conversation_states import LtxVideoState
 from src.services.permission_service import permission_service
+from src.constants import (
+    TMP_DIR,
+    LTX_RESOLUTION_COST,
+    LTX_DURATION_MULTIPLIER,
+    MAIN_MENU_KEYBOARD,
+    get_ltx_video_settings_keyboard,
+    MODE_LTX_VIDEO
+)
+from src.utils import robust_reply_text, robust_edit_text, is_maintenance_mode, create_background_task
 from src.services.task_service import TaskService
-from src.utils import robust_reply_text, robust_edit_text, create_background_task
-from src.constants import get_ltx_video_settings_keyboard, LTX_RESOLUTION_COST, LTX_DURATION_MULTIPLIER
 
 logger = logging.getLogger("fsm.ltx_video")
 
@@ -103,7 +110,23 @@ async def receive_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     multiplier = LTX_DURATION_MULTIPLIER.get(dur, 1.0)
     cost = int(base_cost * multiplier)
     
-    msg_text = f"⚙️ 当前高级视频画质：{res} | 时长：{dur} | 消耗灵石：{cost}\n\n请在下方选择您需要的时长：\n\n*提示：时长越长，消耗灵石越多。*\n\n【第二步】**请直接发送提示词 (Text)** 开始生成。（建议以动作描述为主）"
+    msg_text = f"""⚙️ 当前高级视频画质：{res} | 时长：{dur} | 消耗灵石：{cost}
+
+请在下方选择您需要的时长：
+*提示：时长越长，消耗灵石越多。*
+
+【第二步】**请直接发送提示词 (Text)** 开始生成。
+💡 **提示词撰写指南**：
+1. 格式：`[风格], [动作], [具体描述]`
+2. **可选风格** (选填)：`3D`, `Real Video`, `Amateur`
+3. **特定动作触发词** (如需特定动作，请**务必**在开头添加对应英文)：
+   - 传教士(女下男上)：`m15510n4ry`
+   - 口交：`bl0wj0b`
+   - 双人口交：`d0ubl3_bj`
+   - 反向女上位：`c0wg1rl`
+   - 后入/狗狗式：`d0gg1e`
+4. **具体描述**：详细描述人物特征、穿着、动作细节和背景环境。
+*(例如：Real Video, m15510n4ry, A close-up view of a single petite woman...)*"""
     
     await robust_reply_text(message, msg_text, reply_markup=reply_markup, parse_mode="Markdown")
     return LtxVideoState.WAIT_SETTINGS_AND_PROMPT
@@ -142,7 +165,23 @@ async def process_settings(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     multiplier = LTX_DURATION_MULTIPLIER.get(dur, 1.0)
     cost = int(base_cost * multiplier)
     
-    msg_text = f"⚙️ 当前高级视频画质：{res} | 时长：{dur} | 消耗灵石：{cost}\n\n请在下方选择您需要的时长：\n\n*提示：时长越长，消耗灵石越多。*\n\n【第二步】**请直接发送提示词 (Text)** 开始生成。（建议以动作描述为主）"
+    msg_text = f"""⚙️ 当前高级视频画质：{res} | 时长：{dur} | 消耗灵石：{cost}
+
+请在下方选择您需要的时长：
+*提示：时长越长，消耗灵石越多。*
+
+【第二步】**请直接发送纯英文提示词 (Text)** 开始生成。
+💡 **提示词撰写指南**：
+1. 格式：`[风格], [动作], [具体描述]`
+2. **可选风格** (选填)：`3D`, `Real Video`, `Amateur`
+3. **特定动作触发词** (如需特定动作，请**务必**在开头添加对应英文)：
+   - 传教士(女下男上)：`m15510n4ry`
+   - 口交：`bl0wj0b`
+   - 双人口交：`d0ubl3_bj`
+   - 反向女上位：`c0wg1rl`
+   - 后入/狗狗式：`d0gg1e`
+4. **具体描述**：详细描述人物特征、穿着、动作细节和背景环境。
+*(例如：Real Video, m15510n4ry, A close-up view of a single petite woman...)*"""
     
     try:
         await robust_edit_text(query.message, msg_text, reply_markup=reply_markup, parse_mode="Markdown")
@@ -171,71 +210,14 @@ async def receive_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         [InlineKeyboardButton("✅ 确定生成", callback_data="confirm_ltx_video")]
     ])
     msg_text = (
-        f"📝 **您的原始提示词**:\n`{prompt}`\n\n"
-        "💡 提示词最好用英文的，描写好初始图片的人物特征，背景环境，然后描述动作，镜头的移动，描述人物说的话。\n\n"
+        f"📝 **您的提示词**:\n`{prompt}`\n\n"
         "确认无误后请点击【确定生成】。"
     )
     
     await robust_reply_text(message, msg_text, reply_markup=reply_markup, parse_mode="Markdown")
     return LtxVideoState.WAIT_CONFIRMATION
 
-async def optimize_prompt_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    query = update.callback_query
-    user_id = query.from_user.id
-    
-    fsm_data = context.user_data.get('ltx_video_data')
-    if not fsm_data:
-        try:
-            await query.answer("⚠️ 任务已失效，请重新开始", show_alert=True)
-        except Exception:
-            pass
-        return ConversationHandler.END
 
-    prompt = fsm_data.get('prompt', '')
-    image_path = fsm_data.get('image_path')
-    if not image_path or not os.path.exists(image_path):
-        await query.answer("⚠️ 找不到上传的图片，请重新开始", show_alert=True)
-        return ConversationHandler.END
-
-    try:
-        await robust_edit_text(query.message, "⏳ *大模型正在为您分析图片并优化提示词，这可能需要几十秒，请稍候...*", parse_mode="Markdown")
-    except Exception:
-        pass
-
-    try:
-        from src.services.prompt_optimizer_service import PromptOptimizerService
-        import base64
-        # 已经在 PromptOptimizerService 中实现了图片读取与缩放
-        # 这里我们只需要获取 base64，但是 service 的方法设计为 _resize_image_if_needed
-        # 我们调用该静态方法获取 base64
-        base64_img = PromptOptimizerService._resize_image_if_needed(image_path)
-        
-        optimized_prompt = await PromptOptimizerService.optimize_video_prompt(prompt, base64_img)
-        fsm_data['prompt'] = optimized_prompt
-        
-        msg_text = (
-            f"✨ **优化成功！**\n\n"
-            f"`{optimized_prompt}`\n\n"
-            "您可以直接生成，或点击下方【再次优化】。"
-        )
-        reply_markup = InlineKeyboardMarkup([
-            [InlineKeyboardButton("✅ 确定生成", callback_data="confirm_ltx_video")],
-            [InlineKeyboardButton("🔄 再次优化", callback_data="optimize_ltx_video")]
-        ])
-        await robust_edit_text(query.message, msg_text, reply_markup=reply_markup, parse_mode="Markdown")
-    except Exception as e:
-        logger.error(f"Prompt optimization failed for {user_id}: {e}")
-        msg_text = (
-            f"⚠️ *大模型服务当前繁忙或不可用，请直接点击确定生成。*\n\n"
-            f"**您的原始提示词**:\n`{prompt}`"
-        )
-        reply_markup = InlineKeyboardMarkup([
-            [InlineKeyboardButton("✅ 确定生成", callback_data="confirm_ltx_video")]
-        ])
-        await robust_edit_text(query.message, msg_text, reply_markup=reply_markup, parse_mode="Markdown")
-
-    await query.answer()
-    return LtxVideoState.WAIT_CONFIRMATION
 
 async def confirm_generation(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query

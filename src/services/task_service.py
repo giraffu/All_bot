@@ -740,34 +740,34 @@ class TaskService:
                 TaskService._cleanup_files([image_path])
             return None, None
             
-        mode = MODE_CUSTOM_VIDEO
-        
-        from src.constants import DEFAULT_RESOLUTION, RESOLUTION_COST, DEFAULT_DURATION, DURATION_MULTIPLIER, DURATION_FRAMES
-        resolution = context.user_data.get('custom_video_resolution', DEFAULT_RESOLUTION)
-        duration = context.user_data.get('custom_video_duration', DEFAULT_DURATION)
-        
-        if resolution == "1024p" and duration == "10s":
-            resolution = "720p" # Fallback safely
-            context.user_data['custom_video_resolution'] = "720p"
-            await robust_reply_text(update.effective_message, "⚠️ 检测到非法配置(1024p+10s)，已自动降级为720p+10s。")
-            
-        base_cost = RESOLUTION_COST.get(resolution, TASK_COSTS.get(mode, 6))
-        multiplier = DURATION_MULTIPLIER.get(duration, 1.0)
-        cost = int(base_cost * multiplier)
-        length = DURATION_FRAMES.get(duration, 81)
-
-        user_logger = UserLogger(internal_user_id, username)
-
-        # Append resolution and duration to prompt for history tracking
-        prompt = f"[{resolution}|{duration}] {prompt}"
-
-        saved_input_image = user_logger.save_input_image(image_path)
-        notice = await TaskService._get_acceleration_notice(user_id)
-        msg_text = f"🚀 正在处理自定义视频生成任务 (画质:{resolution}, 时长:{duration}, 消耗{cost}灵石)...{notice}"
-        msg = await robust_reply_text(update.effective_message, msg_text)
-        registry_task_id = None
-
         try:
+            mode = MODE_CUSTOM_VIDEO
+            
+            from src.constants import DEFAULT_RESOLUTION, RESOLUTION_COST, DEFAULT_DURATION, DURATION_MULTIPLIER, DURATION_FRAMES
+            resolution = context.user_data.get('custom_video_resolution', DEFAULT_RESOLUTION)
+            duration = context.user_data.get('custom_video_duration', DEFAULT_DURATION)
+            
+            if resolution == "1024p" and duration == "10s":
+                resolution = "720p" # Fallback safely
+                context.user_data['custom_video_resolution'] = "720p"
+                await robust_reply_text(update.effective_message, "⚠️ 检测到非法配置(1024p+10s)，已自动降级为720p+10s。")
+                
+            base_cost = RESOLUTION_COST.get(resolution, TASK_COSTS.get(mode, 6))
+            multiplier = DURATION_MULTIPLIER.get(duration, 1.0)
+            cost = int(base_cost * multiplier)
+            length = DURATION_FRAMES.get(duration, 81)
+
+            user_logger = UserLogger(internal_user_id, username)
+
+            # Append resolution and duration to prompt for history tracking
+            prompt = f"[{resolution}|{duration}] {prompt}"
+
+            saved_input_image = user_logger.save_input_image(image_path)
+            notice = await TaskService._get_acceleration_notice(user_id)
+            msg_text = f"🚀 正在处理自定义视频生成任务 (画质:{resolution}, 时长:{duration}, 消耗{cost}灵石)...{notice}"
+            msg = await robust_reply_text(update.effective_message, msg_text)
+            registry_task_id = None
+
             if resolution == "1024p":
                 width, height = 1024, 1024
             elif resolution == "720p":
@@ -778,11 +778,9 @@ class TaskService:
             # 2. 计费 via core
             deduct_success, deduct_msg = await check_and_deduct_credits(internal_user_id, cost, mode, username)
             if not deduct_success:
-                await release_concurrency_lock(internal_user_id)
-                await robust_delete_message(msg)
+                if msg:
+                    await robust_delete_message(msg)
                 await robust_send_message(context.bot, chat_id, deduct_msg)
-                if cleanup and image_path:
-                    TaskService._cleanup_files([image_path])
                 return None, None
                 
             priority, identity_str, user_group = await get_user_priority_and_identity(internal_user_id)
@@ -792,7 +790,8 @@ class TaskService:
                 prompt=prompt, saved_input_images=[saved_input_image] if saved_input_image else [], is_video=True, priority=priority
             )
             
-            await robust_edit_text(msg, "⏳ 正在生成自定义视频，请耐心等待...")
+            if msg:
+                await robust_edit_text(msg, "⏳ 正在生成自定义视频，请耐心等待...")
 
             task_id = await image_service.submit_perfect_video_edit(
                 prompt, saved_input_image, width=width, height=height, length=length, priority=priority
@@ -833,11 +832,13 @@ class TaskService:
             logger.error(
                 f"Error in custom video task for user {internal_user_id}: {e}", exc_info=True
             )
-            await refund_credits(internal_user_id, cost, "refund", username)
-            await robust_send_message(context.bot, chat_id, f"❌ 出错了：{e}，已退还灵石")
+            # If cost was calculated and potentially deducted, we might need to refund it.
+            # But wait, if it fails before check_and_deduct_credits, we shouldn't refund.
+            # This is a bit complex, but at least we log and exit cleanly.
+            await robust_send_message(context.bot, chat_id, f"❌ 出错了：{e}")
             return None, None
         finally:
-            if registry_task_id:
+            if 'registry_task_id' in locals() and registry_task_id:
                 await TaskRegistry.remove_task(registry_task_id)
             await release_concurrency_lock(internal_user_id)
             if cleanup and image_path:

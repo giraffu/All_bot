@@ -34,7 +34,11 @@ const isTemplateApplied = ref(false)
 const selectedLora = ref<string>('')
 const loraOptions = [
   { value: '', label: '无' },
-  { value: 'qwen/YARN_1.0.safetensors', label: '逼真' }
+  { value: 'qwen/YARN_1.0.safetensors', label: '逼真' },
+  { value: 'qwen/adjust_pussy_anus.safetensors', label: '菊花+内凹穴' },
+  { value: 'qwen/realistic_texture.safetensors', label: '真实质感' },
+  { value: 'qwen/flat_chest_hairless.safetensors', label: '平胸/无毛穴' },
+  { value: 'qwen/penis.safetensors', label: '扶他(阴茎)' }
 ]
 
 onMounted(() => {

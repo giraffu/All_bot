@@ -213,6 +213,7 @@ const handleApply = async () => {
         'face_video': { route: 'VideoSwap', title: '视频换脸', cost: 18 },
         'custom_video': { route: 'SingleImageToVideo', title: '自定义图生视频', cost: 6 },
         'video_lora': { route: 'SingleImageToVideo', title: '图生视频(附加模型)', cost: 6 },
+        'ltx_video': { route: 'SingleImageToVideo', title: '高级图生视频', cost: 10 },
       }
     
     const featureInfo = featureMap[context.task_type]

@@ -1,0 +1,68 @@
+name: Docs CI
+
+on:
+  push:
+    paths:
+      - 'docs/**/*.md'
+      - 'README.md'
+  pull_request:
+    paths:
+      - 'docs/**/*.md'
+      - 'README.md'
+
+jobs:
+  lint-and-sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run markdownlint
+        uses: nosborn/github-action-markdown-cli@v3.3.0
+        with:
+          files: 'docs/ README.md'
+          config_file: '.markdownlint.yaml'
+
+      - name: Verify Docs Links
+        run: |
+          echo "Checking if all referenced docs exist..."
+          for file in docs/*.md; do
+            if [ ! -f "$file" ]; then
+              echo "Error: Document $file is missing."
+              exit 1
+            fi
+          done
+
+      - name: Run Quality Checker
+        run: |
+          python scripts/doc_quality_checker.py
+
+      - name: Auto-Sync Index to README
+        run: |
+          echo "## 系统子模块架构文档索引" > temp_index.md
+          echo "" >> temp_index.md
+          for file in docs/*.md; do
+            if [ ! -f "$file" ]; then
+              continue
+            fi
+            filename=$(basename "$file")
+            # Extract Title from the first line (e.g. # 子模块: 计费与支付核心 (Billing & Payment))
+            title=$(head -n 1 "$file" | sed 's/# //g')
+            echo "- [$title](./docs/$filename)" >> temp_index.md
+          done
+          
+          # Replace the placeholder in README.md with the generated index
+          if grep -q "<!-- DOCS_INDEX_START -->" README.md; then
+            sed -i '/<!-- DOCS_INDEX_START -->/,/<!-- DOCS_INDEX_END -->/{//!d}' README.md
+            sed -i '/<!-- DOCS_INDEX_START -->/r temp_index.md' README.md
+          fi
+          rm temp_index.md
+
+      - name: Commit and Push changes
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "docs: Auto-sync submodule index in README [skip ci]"
+          file_pattern: 'README.md'

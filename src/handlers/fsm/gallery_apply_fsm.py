@@ -92,8 +92,8 @@ async def start_gallery_apply(update: Update, context: ContextTypes.DEFAULT_TYPE
     task_type = history.type
     
     # Security check: Only allow specific task types for gallery application
-    from src.constants import MODE_IMG2IMG_LORA
-    allowed_types = [MODE_I2I_PRO, MODE_EDIT, MODE_CUSTOM_VIDEO, MODE_VIDEO_LORA, MODE_IMG2IMG_LORA]
+    from src.constants import MODE_IMG2IMG_LORA, MODE_LTX_VIDEO
+    allowed_types = [MODE_I2I_PRO, MODE_EDIT, MODE_CUSTOM_VIDEO, MODE_VIDEO_LORA, MODE_IMG2IMG_LORA, MODE_LTX_VIDEO]
     if task_type not in allowed_types:
         await query.answer("❌ 此模板类型不支持一键应用", show_alert=True)
         return ConversationHandler.END
@@ -104,7 +104,7 @@ async def start_gallery_apply(update: Update, context: ContextTypes.DEFAULT_TYPE
     # Extract resolution and duration if it's a video
     res_str = "512p"
     dur_str = "5s"
-    from src.constants import RESOLUTION_COST, DURATION_MULTIPLIER, RESOLUTION_PERMISSIONS, DURATION_PERMISSIONS
+    from src.constants import RESOLUTION_COST, DURATION_MULTIPLIER, RESOLUTION_PERMISSIONS, DURATION_PERMISSIONS, LTX_RESOLUTION_COST, LTX_DURATION_MULTIPLIER
     
     if task_type in (MODE_EDIT, "edit", MODE_IMG2IMG_LORA):
         # Image tasks that don't need double cost unless 2 images are provided later
@@ -113,60 +113,86 @@ async def start_gallery_apply(update: Update, context: ContextTypes.DEFAULT_TYPE
         cost = TASK_COSTS.get(task_type, 2)
     
     if post.media_type == 'video':
-        # Reconstruct resolution string
-        if post.width and post.height:
-            min_dim = min(post.width, post.height)
-            if min_dim > 720:
-                res_str = "1024p"
-            elif min_dim > 512:
-                res_str = "720p"
+        if task_type == MODE_LTX_VIDEO:
+            match = re.search(r"\[(.*?)\|(.*?)\]\s*(.*)", prompt)
+            if match:
+                res_str = match.group(1).strip()
+                dur_str = match.group(2).strip()
+                prompt = match.group(3).strip()
             else:
-                res_str = "512p"
-        
-        # Reconstruct duration string
-        if post.duration:
-            if post.duration > 9:
-                dur_str = "10s"
-            elif post.duration > 6:
-                dur_str = "8s"
-            else:
+                res_str = "1280x704"
                 dur_str = "5s"
-                
-        # Permission check & Auto-downgrade
-        user_group = await permission_service.get_user_group(internal_user.id)
-        user_identity = await permission_service.get_user_identity(internal_user.id)
-        
-        allowed_res = set(RESOLUTION_PERMISSIONS.get(user_group, ["512p"]) + RESOLUTION_PERMISSIONS.get(user_identity, ["512p"]))
-        allowed_dur = set(DURATION_PERMISSIONS.get(user_group, ["5s"]) + DURATION_PERMISSIONS.get(user_identity, ["5s"]))
-        
-        downgraded = False
-        if res_str not in allowed_res:
-            res_str = "720p" if "720p" in allowed_res else "512p"
-            downgraded = True
             
-        if dur_str not in allowed_dur:
-            dur_str = "8s" if "8s" in allowed_dur else "5s"
-            downgraded = True
+            user_identity = await permission_service.get_user_identity(internal_user.id)
+            downgraded = False
             
-        # Global restriction: 1024p + 10s is not allowed together
-        if res_str == "1024p" and dur_str == "10s":
-            dur_str = "8s"
-            downgraded = True
-        
-        base_cost = RESOLUTION_COST.get(res_str, 6)
-        multiplier = DURATION_MULTIPLIER.get(dur_str, 1.0)
-        cost = int(base_cost * multiplier)
-        
-        if downgraded:
-            await query.answer(f"⚠️ 由于您的权限不足或系统限制，已将该模板自动降级为 {res_str} + {dur_str} 进行生成", show_alert=True)
+            if user_identity in ["凡人", "外门弟子"] and dur_str == "20s":
+                dur_str = "5s"
+                downgraded = True
+            
+            base_cost = LTX_RESOLUTION_COST.get(res_str, 10)
+            multiplier = LTX_DURATION_MULTIPLIER.get(dur_str, 1.0)
+            cost = int(base_cost * multiplier)
+            
+            if downgraded:
+                await query.answer(f"⚠️ 由于您的权限不足或系统限制，已将该模板自动降级为 {res_str} + {dur_str} 进行生成", show_alert=True)
+            else:
+                await query.answer()
         else:
-            await query.answer()
+            # Reconstruct resolution string
+            if post.width and post.height:
+                min_dim = min(post.width, post.height)
+                if min_dim > 720:
+                    res_str = "1024p"
+                elif min_dim > 512:
+                    res_str = "720p"
+                else:
+                    res_str = "512p"
+            
+            # Reconstruct duration string
+            if post.duration:
+                if post.duration > 9:
+                    dur_str = "10s"
+                elif post.duration > 6:
+                    dur_str = "8s"
+                else:
+                    dur_str = "5s"
+                    
+            # Permission check & Auto-downgrade
+            user_group = await permission_service.get_user_group(internal_user.id)
+            user_identity = await permission_service.get_user_identity(internal_user.id)
+            
+            allowed_res = set(RESOLUTION_PERMISSIONS.get(user_group, ["512p"]) + RESOLUTION_PERMISSIONS.get(user_identity, ["512p"]))
+            allowed_dur = set(DURATION_PERMISSIONS.get(user_group, ["5s"]) + DURATION_PERMISSIONS.get(user_identity, ["5s"]))
+            
+            downgraded = False
+            if res_str not in allowed_res:
+                res_str = "720p" if "720p" in allowed_res else "512p"
+                downgraded = True
+                
+            if dur_str not in allowed_dur:
+                dur_str = "8s" if "8s" in allowed_dur else "5s"
+                downgraded = True
+                
+            # Global restriction: 1024p + 10s is not allowed together
+            if res_str == "1024p" and dur_str == "10s":
+                dur_str = "8s"
+                downgraded = True
+            
+            base_cost = RESOLUTION_COST.get(res_str, 6)
+            multiplier = DURATION_MULTIPLIER.get(dur_str, 1.0)
+            cost = int(base_cost * multiplier)
+            
+            if downgraded:
+                await query.answer(f"⚠️ 由于您的权限不足或系统限制，已将该模板自动降级为 {res_str} + {dur_str} 进行生成", show_alert=True)
+            else:
+                await query.answer()
     else:
         await query.answer()
 
     # Extract LoRA from prompt if any
     lora_name = None
-    match = re.search(r"\[模型:\s*(.*?)\]\s*(.*)", prompt)
+    match = re.search(r"\[模型:\s*(.*?)\]\s*(.*)", prompt, re.DOTALL)
     if match:
         lora_name = match.group(1).strip()
         prompt = match.group(2).strip()
@@ -252,9 +278,14 @@ async def receive_reference_image(update: Update, context: ContextTypes.DEFAULT_
     _cleanup_context(context)
 
     # Inject resolution and duration back into context so process_generation_task reads them
+    from src.constants import MODE_LTX_VIDEO
     if is_video:
-        context.user_data['custom_video_resolution'] = res_str
-        context.user_data['custom_video_duration'] = dur_str
+        if task_type == MODE_LTX_VIDEO:
+            context.user_data['ltx_video_resolution'] = res_str
+            context.user_data['ltx_video_duration'] = dur_str
+        else:
+            context.user_data['custom_video_resolution'] = res_str
+            context.user_data['custom_video_duration'] = dur_str
 
     # Use default menu keyboard after finishing FSM
     reply_markup = ReplyKeyboardMarkup(MAIN_MENU_KEYBOARD, resize_keyboard=True)
@@ -264,6 +295,9 @@ async def receive_reference_image(update: Update, context: ContextTypes.DEFAULT_
     # Often the template is just prepended to images or replaced.
     # If it's an I2V task, the template is the image. But here the user provides a NEW image.
     # So we just use the NEW image and the OLD prompt/lora.
+    from src.handlers.fsm.edit_image_fsm import get_lora_default_strength
+    lora_strength = get_lora_default_strength(lora_name)
+
     if task_type == MODE_I2I_PRO:
         from src.utils import create_background_task
         create_background_task(
@@ -275,6 +309,18 @@ async def receive_reference_image(update: Update, context: ContextTypes.DEFAULT_
                 username,
                 prompt,
                 [local_path],
+                allow_contribute=False
+            )
+        )
+    elif task_type == MODE_LTX_VIDEO:
+        from src.utils import create_background_task
+        create_background_task(
+            context,
+            task_service.process_ltx_video_task(
+                update=update,
+                context=context,
+                prompt=prompt,
+                image_path=local_path,
                 allow_contribute=False
             )
         )
@@ -293,7 +339,7 @@ async def receive_reference_image(update: Update, context: ContextTypes.DEFAULT_
                 status_msg_id=sent_msg.message_id,
                 task_type=task_type,
                 lora_name=lora_name,
-                lora_strength=0.3 if lora_name == "qwen/YARN_1.0.safetensors" else 1.0,
+                lora_strength=lora_strength,
                 allow_contribute=False
             )
         )

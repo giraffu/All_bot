@@ -140,6 +140,8 @@ class WorkflowPatcher:
                 wf.pop("210", None)
             if "5" in wf:
                 wf.pop("5", None)
+            if "59" in wf:
+                wf.pop("59", None)
             # Route Node 7 directly to Node 8
             if "8" in wf and "inputs" in wf["8"]:
                 wf["8"]["inputs"]["model"] = ["7", 0]

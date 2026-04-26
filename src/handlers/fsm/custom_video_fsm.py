@@ -123,9 +123,23 @@ async def process_settings(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         return ConversationHandler.END
 
     if data.startswith("set_res_"):
-        fsm_data['resolution'] = data.split("_")[2]
+        new_res = data.split("_")[2]
+        if new_res == "1024p" and fsm_data.get('duration') == "10s":
+            fsm_data['duration'] = "8s"
+            try:
+                await query.answer("1024p和10s无法同时选择，已自动将时长调为8s", show_alert=True)
+            except Exception:
+                pass
+        fsm_data['resolution'] = new_res
     elif data.startswith("set_dur_"):
-        fsm_data['duration'] = data.split("_")[2]
+        new_dur = data.split("_")[2]
+        if new_dur == "10s" and fsm_data.get('resolution') == "1024p":
+            fsm_data['resolution'] = "720p"
+            try:
+                await query.answer("1024p和10s无法同时选择，已自动将画质调为720p", show_alert=True)
+            except Exception:
+                pass
+        fsm_data['duration'] = new_dur
 
     res = fsm_data['resolution']
     dur = fsm_data['duration']
@@ -167,6 +181,10 @@ async def receive_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     res = fsm_data['resolution']
     dur = fsm_data['duration']
+    
+    if res == "1024p" and dur == "10s":
+        res = "720p"
+        fsm_data['resolution'] = "720p"
     
     base_cost = RESOLUTION_COST.get(res, 6)
     multiplier = DURATION_MULTIPLIER.get(dur, 1.0)

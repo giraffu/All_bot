@@ -6,7 +6,11 @@ from src.database.core import AsyncSessionLocal
 from src.database.models import GalleryPost, UserInteraction, History, User
 from src.web_api.dependencies import get_current_user
 from src.web_api.schemas.gallery_schema import GalleryPostResponse, PaginatedGalleryResponse, ApplyContextResponse
-from src.handlers.fsm.video_lora_fsm import LORA_MODELS
+from src.handlers.fsm.video_lora_fsm import LORA_MODELS as VIDEO_LORA_MODELS
+from src.handlers.fsm.edit_image_fsm import LORA_MODELS as IMAGE_LORA_MODELS
+
+ALL_LORA_MODELS = {**VIDEO_LORA_MODELS, **IMAGE_LORA_MODELS}
+
 from src.constants import MODE_NAME_MAP, MODE_I2I_PRO, MODE_EDIT, MODE_CUSTOM_VIDEO, MODE_VIDEO_LORA, MODE_LTX_VIDEO
 from src.services.redis_client import redis_client
 import json
@@ -25,8 +29,8 @@ def translate_tags(tags_list: List[str]) -> List[str]:
     translated_tags = []
     for tag in tags_list:
         raw_tag = tag.strip("#")
-        if raw_tag in LORA_MODELS:
-            translated_tags.append(f"#{LORA_MODELS[raw_tag]}")
+        if raw_tag in ALL_LORA_MODELS:
+            translated_tags.append(f"#{ALL_LORA_MODELS[raw_tag]}")
         else:
             translated_tags.append(tag)
     return translated_tags
@@ -69,8 +73,8 @@ async def get_gallery_config():
             {"id": MODE_VIDEO_LORA, "name": MODE_NAME_MAP.get(MODE_VIDEO_LORA, "图生视频(附加模型)")},
             {"id": MODE_LTX_VIDEO, "name": MODE_NAME_MAP.get(MODE_LTX_VIDEO, "高级图生视频")}
         ],
-        "lora_models": [{"id": k, "name": v} for k, v in LORA_MODELS.items()],
-        "img2img_lora_models": [{"id": "qwen/YARN_1.0.safetensors", "name": "逼真"}]
+        "lora_models": [{"id": k, "name": v} for k, v in VIDEO_LORA_MODELS.items()],
+        "img2img_lora_models": [{"id": k, "name": v} for k, v in IMAGE_LORA_MODELS.items() if k]
     }
 
 @router.get("/posts", response_model=PaginatedGalleryResponse)
@@ -505,15 +509,19 @@ async def get_apply_context(
             
         prompt = history.prompt or ""
         lora_name = None
-        match = re.search(r"\[模型:\s*(.*?)\]\s*(.*)", prompt)
+        match = re.search(r"\[模型:\s*(.*?)\]\s*(.*)", prompt, re.DOTALL)
         if match:
             lora_tag = match.group(1).strip()
             prompt = match.group(2).strip()
             
             # Map Chinese lora_tag back to ID if needed
-            reverse_lora_models = {v: k for k, v in LORA_MODELS.items()}
+            reverse_lora_models = {v: k for k, v in ALL_LORA_MODELS.items()}
             # also handle qwen/YARN explicitly since we might map it differently
             reverse_lora_models["逼真"] = "qwen/YARN_1.0.safetensors"
+            reverse_lora_models["菊花+内凹穴"] = "qwen/adjust_pussy_anus.safetensors"
+            reverse_lora_models["真实质感"] = "qwen/realistic_texture.safetensors"
+            reverse_lora_models["平胸/无毛穴"] = "qwen/flat_chest_hairless.safetensors"
+            reverse_lora_models["扶他(阴茎)"] = "qwen/penis.safetensors"
             
             if lora_tag in reverse_lora_models:
                 lora_name = reverse_lora_models[lora_tag]
@@ -580,7 +588,7 @@ async def submit_to_gallery(
             tags.append(f"#{base_tag}")
 
         if history.prompt:
-            match = re.search(r"\[模型:\s*(.*?)\]", history.prompt)
+            match = re.search(r"\[模型:\s*(.*?)\]\s*(.*)", history.prompt, re.DOTALL)
             if match:
                 lora_tag = match.group(1).strip()
                 tags.append(f"#{lora_tag}")

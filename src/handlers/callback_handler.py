@@ -344,7 +344,7 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
                 
                 # Extract LoRA from prompt
                 if history.prompt:
-                    match = re.search(r"\[模型:\s*(.*?)\]", history.prompt)
+                    match = re.search(r"\[模型:\s*(.*?)\]\s*(.*)", history.prompt, re.DOTALL)
                     if match:
                         lora_tag = match.group(1).strip()
                         tags.append(f"#{lora_tag}")
@@ -499,13 +499,16 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
                     tags = []
                     
                 # Translate LoRA model names in tags
-                from src.handlers.fsm.video_lora_fsm import LORA_MODELS
+                from src.handlers.fsm.video_lora_fsm import LORA_MODELS as VIDEO_LORA_MODELS
+                from src.handlers.fsm.edit_image_fsm import LORA_MODELS as IMAGE_LORA_MODELS
+                
+                ALL_LORA_MODELS = {**VIDEO_LORA_MODELS, **IMAGE_LORA_MODELS}
                 translated_tags = []
                 for tag in tags:
                     # Tag format is usually "#Tag"
                     raw_tag = tag.strip("#")
-                    if raw_tag in LORA_MODELS:
-                        translated_tags.append(f"#{LORA_MODELS[raw_tag]}")
+                    if raw_tag in ALL_LORA_MODELS:
+                        translated_tags.append(f"#{ALL_LORA_MODELS[raw_tag]}")
                     else:
                         translated_tags.append(tag)
                         

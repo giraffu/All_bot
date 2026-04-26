@@ -121,6 +121,7 @@ const getTypeLabel = (type: string) => {
     'custom_video': '自定义图生视频',
     'video_lora': '图生视频(附加模型)',
     'img2img_lora': '图生图(附加模型)',
+    'ltx_video': '高级图生视频',
     'template_contribute': '模板共建',
     'txt2img': '文生图'
   }

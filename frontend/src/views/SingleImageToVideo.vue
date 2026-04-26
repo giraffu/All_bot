@@ -14,6 +14,7 @@ const taskType = computed(() => (route.query.type as string) || 'image2video')
 const taskTitle = computed(() => (route.query.title as string) || '动图生成')
 const isCustomVideo = computed(() => taskType.value === 'custom_video')
 const isVideoLora = computed(() => taskType.value === 'video_lora')
+const isLtxVideo = computed(() => taskType.value === 'ltx_video')
 
 const { uploading, progress: uploadProgress, uploadFile } = useUpload()
 const { isSubmitting, submitTask } = useTaskStream()
@@ -25,6 +26,17 @@ const resolution = ref('512')
 const duration = ref('5')
 
 const taskCost = computed(() => {
+  if (isLtxVideo.value) {
+    const res = resolution.value;
+    const dur = duration.value;
+    let baseCost = 10; // 1280x704
+    let multiplier = 1;
+    if (dur === '10') multiplier = 2;
+    else if (dur === '15') multiplier = 3;
+    else if (dur === '20') multiplier = 4;
+    return baseCost * multiplier;
+  }
+  
   const res = resolution.value;
   const dur = duration.value;
   
@@ -45,6 +57,10 @@ const filePreview = ref<string | null>(null)
 const isTemplateApplied = ref(false)
 
 onMounted(() => {
+  if (isLtxVideo.value) {
+    resolution.value = '1280x704'
+  }
+  
   if (route.query.apply === 'true') {
     const ctxStr = sessionStorage.getItem('galleryApplyContext')
     if (ctxStr) {
@@ -114,9 +130,9 @@ const handleGenerate = async () => {
     task_type: taskType.value,
     inputs: {
       images: [objectKey.value],
-      resolution: Number(resolution.value),
+      resolution: isLtxVideo.value ? resolution.value : Number(resolution.value),
       duration: Number(duration.value),
-      ...((isCustomVideo.value || isVideoLora.value) && prompt.value ? { prompt: prompt.value } : {}),
+      ...((isCustomVideo.value || isVideoLora.value || isLtxVideo.value) && prompt.value ? { prompt: prompt.value } : {}),
       ...(isVideoLora.value ? { lora_name: loraName.value } : {})
     },
     priority: 0,
@@ -190,7 +206,7 @@ const resetForm = () => {
               </div>
 
               <!-- Prompt Input -->
-              <div class="prompt-section flex flex-col flex-grow min-w-0 h-48 md:h-full" v-if="isCustomVideo || isVideoLora">
+              <div class="prompt-section flex flex-col flex-grow min-w-0 h-48 md:h-full" v-if="isCustomVideo || isVideoLora || isLtxVideo">
                 <h3 class="text-sm font-bold mb-2 text-slate-200 flex items-center shrink-0">
                   <span class="text-slate-500 mr-2">2.</span> {{ isVideoLora ? '配置动作描述' : '输入描述 (选填)' }}
                 </h3>
@@ -222,7 +238,7 @@ const resetForm = () => {
                   </div>
                   <a-textarea 
                     v-model:value="prompt" 
-                    :placeholder="isVideoLora ? '输入视频生成的正向提示词...' : '例如：人物微笑，背景有风吹过...'" 
+                    :placeholder="isVideoLora ? '输入视频生成的正向提示词...' : (isLtxVideo ? '例如：Real Video, m15510n4ry, A close-up view of a single petite woman...' : '例如：人物微笑，背景有风吹过...')" 
                     class="rounded-xl border-slate-600/50 focus:border-blue-500 focus:ring-blue-500 text-sm p-3 flex-grow resize-none w-full"
                   />
                 </template>
@@ -244,7 +260,10 @@ const resetForm = () => {
             <div v-else class="flex flex-col gap-4">
               <div>
                 <label class="block text-xs font-medium text-slate-300 mb-2">分辨率</label>
-                <a-radio-group v-model:value="resolution" button-style="solid" class="w-full grid grid-cols-3 gap-2">
+                <a-radio-group v-if="isLtxVideo" v-model:value="resolution" button-style="solid" class="w-full grid grid-cols-1 gap-2 max-w-[160px]">
+                  <a-radio-button value="1280x704" class="w-full text-center py-1.5 h-auto text-xs rounded-lg !border-none !border-l-0 shadow-sm leading-tight flex items-center justify-center">1280x704 (自动适应)</a-radio-button>
+                </a-radio-group>
+                <a-radio-group v-else v-model:value="resolution" button-style="solid" class="w-full grid grid-cols-3 gap-2">
                   <a-radio-button value="512" class="w-full text-center py-1.5 h-auto text-xs rounded-lg !border-none !border-l-0 shadow-sm leading-tight flex items-center justify-center">512p</a-radio-button>
                   <a-radio-button value="720" class="w-full text-center py-1.5 h-auto text-xs rounded-lg !border-none !border-l-0 shadow-sm leading-tight flex items-center justify-center">720p</a-radio-button>
                   <a-radio-button value="1024" class="w-full text-center py-1.5 h-auto text-xs rounded-lg !border-none !border-l-0 shadow-sm leading-tight flex items-center justify-center" :disabled="duration === '10'">1024p</a-radio-button>
@@ -252,7 +271,13 @@ const resetForm = () => {
               </div>
               <div>
                 <label class="block text-xs font-medium text-slate-300 mb-2">生成时长</label>
-                <a-radio-group v-model:value="duration" button-style="solid" class="w-full grid grid-cols-3 gap-2 max-w-[240px]">
+                <a-radio-group v-if="isLtxVideo" v-model:value="duration" button-style="solid" class="w-full grid grid-cols-4 gap-2 max-w-[320px]">
+                  <a-radio-button value="5" class="w-full text-center py-1.5 h-auto text-xs rounded-lg !border-none !border-l-0 shadow-sm leading-tight flex items-center justify-center">5 秒</a-radio-button>
+                  <a-radio-button value="10" class="w-full text-center py-1.5 h-auto text-xs rounded-lg !border-none !border-l-0 shadow-sm leading-tight flex items-center justify-center">10 秒</a-radio-button>
+                  <a-radio-button value="15" class="w-full text-center py-1.5 h-auto text-xs rounded-lg !border-none !border-l-0 shadow-sm leading-tight flex items-center justify-center">15 秒</a-radio-button>
+                  <a-radio-button value="20" class="w-full text-center py-1.5 h-auto text-xs rounded-lg !border-none !border-l-0 shadow-sm leading-tight flex items-center justify-center">20 秒</a-radio-button>
+                </a-radio-group>
+                <a-radio-group v-else v-model:value="duration" button-style="solid" class="w-full grid grid-cols-3 gap-2 max-w-[240px]">
                   <a-radio-button value="5" class="w-full text-center py-1.5 h-auto text-xs rounded-lg !border-none !border-l-0 shadow-sm leading-tight flex items-center justify-center">5 秒</a-radio-button>
                   <a-radio-button value="8" class="w-full text-center py-1.5 h-auto text-xs rounded-lg !border-none !border-l-0 shadow-sm leading-tight flex items-center justify-center">8 秒</a-radio-button>
                   <a-radio-button value="10" class="w-full text-center py-1.5 h-auto text-xs rounded-lg !border-none !border-l-0 shadow-sm leading-tight flex items-center justify-center" :disabled="resolution === '1024'">10 秒</a-radio-button>
