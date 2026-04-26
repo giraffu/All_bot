@@ -33,15 +33,16 @@ sequenceDiagram
     alt 有进行中任务
         Core-->>User: 返回“请等待当前任务完成”
     end
-    Core->>Core: 3. 校验用户余额与扣减灵石
+    Core->>PG: 3. (Saga短事务) 扣除灵石与流水
     Core->>Core: 4. 封装参数与动态注入 JSON 工作流
-    Core->>Redis: 5. 将 Task ID 与 JSON 推入 Pending 队列
-    Worker->>Redis: 6. 提取任务并执行推理
-    Worker->>MinIO: 7. 推理完成，直传媒体至热数据桶
-    Worker->>Redis: 8. Pub/Sub 广播 Task Completed
-    Redis-->>Core: 9. 触发完成回调
-    Core->>Redis: 10. 释放单用户并发锁
-    Core-->>User: 11. SSE 流式推送或 Telegram 消息返回结果
+    Core->>Redis: 5. (Pub/Sub) 预生成 UUID，订阅完成事件
+    Core->>Redis: 6. 将 Task ID 与 JSON 推入 Pending 队列
+    Worker->>Redis: 7. 提取任务并执行推理
+    Worker->>MinIO: 8. 推理完成，直传媒体至热数据桶
+    Worker->>Redis: 9. Pub/Sub 广播 Task Completed
+    Redis-->>Core: 10. 触发完成回调
+    Core->>PG: 11. (finally块) 写入历史记录 & 释放锁 (若失败则退款)
+    Core-->>User: 12. SSE 流式推送或 Telegram 消息返回结果
 ```
 
 ## 4. 关键接口与数据契约 (API/Data)

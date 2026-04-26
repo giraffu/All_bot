@@ -2,34 +2,35 @@
 
 ## 1. 目标与范围
 本模块是系统底层的“任务分发器 (Dispatcher)”。作为独立部署在 `/backend` 目录下的微服务（8003端口），它在前端（Tg Bot / Web API）与后端（多开隔离的 ComfyUI Workers）之间建立起解耦的缓冲层。
-中控 API 负责轮询 Redis `DB 2` 中的排队任务，解析并验证 JSON 工作流，随后将具体的计算指令派发给空闲的 Worker 节点；同时，它也监听 Worker 的心跳以维持系统的算力大盘监控，并支持在前端放弃任务时执行双向剔除（Delete Task）。
+中控 API 负责轮询 Redis `DB 2` 中的排队任务，解析并验证 JSON 工作流，随后将具体的计算指令派发给空闲的 Worker 节点；同时，它也监听 Worker 的心跳以维持系统的算力大盘监控，并支持在前端放弃任务时执行双向剔除（Delete Task）。对于同步等待任务，中控 API 全面采用 **Redis Pub/Sub** 机制替代传统的 while 轮询，实现零延迟的任务状态通知。
 
 ## 2. 架构图与流向
 
 ```mermaid
 sequenceDiagram
     autonumber
-    participant Redis2 as Redis DB2 (Pending Queue)
+    participant Client as 客户端 (Bot/Web)
+    participant Redis2 as Redis DB2 (Pending Queue / PubSub)
     participant CAPI as 中控 API (Backend 8003)
     participant Worker as ComfyUI 算力节点 1..N
-    participant Bot as 主 Bot (清理协程)
+    
+    Client->>CAPI: 1. POST /api/tasks (同步模式)
+    CAPI->>CAPI: 2. 预生成 task_id
+    CAPI->>Redis2: 3. 订阅 comfy:task_events:{task_id}
+    CAPI->>Redis2: 4. 将任务推入 Queue
     
     loop 轮询队列
-        CAPI->>Redis2: 1. BLPOP comfy:queue:pending
-        Redis2-->>CAPI: 2. 提取出 Task ID 与 Workflow JSON
+        CAPI->>Redis2: 5. BLPOP comfy:queue:pending
+        Redis2-->>CAPI: 6. 提取出 Task ID 与 Workflow JSON
     end
     
-    CAPI->>CAPI: 3. 解析 JSON，检查节点空闲状态
-    CAPI->>Worker: 4. POST /prompt (下发给指定的 ComfyUI 实例)
-    Worker-->>CAPI: 5. 200 OK (开始计算)
+    CAPI->>CAPI: 7. 解析 JSON，检查节点空闲状态
+    CAPI->>Worker: 8. POST /prompt (下发给指定的 ComfyUI 实例)
+    Worker-->>CAPI: 9. 200 OK (开始计算)
     
-    Worker->>Redis2: 6. 周期性发送心跳 (comfy:agent:heartbeat:N)
-    
-    alt 前端主动取消 / 僵尸任务超时
-        Bot->>CAPI: 7. DELETE /api/tasks/{task_id}
-        CAPI->>Worker: 8. POST /interrupt (强行终止底层计算)
-        CAPI->>Redis2: 9. 清理排队信息，双向剔除防止幽灵算力
-    end
+    Worker->>Redis2: 10. 推理完成，发布事件到 Pub/Sub
+    Redis2-->>CAPI: 11. 触发订阅回调 (asyncio.wait_for)
+    CAPI-->>Client: 12. 立即返回结果
 ```
 
 ## 3. 核心代码片段

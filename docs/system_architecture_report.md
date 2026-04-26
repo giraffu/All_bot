@@ -101,8 +101,8 @@ graph TD
    * **Telegram VPS**：运行官方 Local API 和文件服务器，专门用于突破 Telegram 官方 50MB 视频上传和 20MB 下载限制，将文件通过 HTTP 直链暴露给 Bot 底座提取。
    * **隧道穿透与组网**：使用 Tailscale 组建虚拟局域网打通海内外节点通信；使用 Cloudflare Tunnel 和 FRP 将本地的 Payment API（端口 8021）和 Dashboard 暴露到公网，既能接收外网支付回调，又能隐藏国内真实服务器 IP。
 3. **接入网关层**：接收处理解析后的请求。各微服务（主 Bot、Web BFF、支付 API、客服大师姐）互不干扰，独立运作。
-4. **核心业务逻辑层 (Platform-Agnostic)**：业务“中枢”。剥离特定平台依赖，使用内部统一的 `internal_user_id` 处理鉴权、扣费、并发锁检查及任务派发。
-5. **调度与执行层**：中控 API 作为任务调度器；ComfyUI 节点执行生图/视频计算；同时宿主机部署 **LM Studio**（监听本地 1234 端口），为 CS Bot（大师姐）提供低成本的本地大模型（如 Qwen）推理能力。
+4. **核心领域逻辑层 (Core-Driven Architecture)**：业务“中枢”。剥离特定平台依赖，废弃传统的 Service/Repository 三层架构思路，全面拥抱核心领域层架构 (`src/core/`)。使用内部统一的 `internal_user_id` 处理鉴权、通过 Saga 模式进行单轨制计费与分布式退款、并发锁检查及任务派发，完全不知道 HTTP 或 Telegram Bot 的存在。
+5. **调度与执行层**：中控 API 作为任务调度器（基于 Redis Pub/Sub 实现无阻塞分发）；ComfyUI 节点执行生图/视频计算；同时宿主机部署 **LM Studio**（监听本地 1234 端口），为 CS Bot（大师姐）提供低成本的本地大模型（如 Qwen）推理能力。
 6. **基础设施与分级存储层**：
    * **PostgreSQL / Redis**：提供财务强一致性账本与高速队列锁机制。
    * **冷热分离的 MinIO 存储**：包含一个**热数据主桶**（近期生成作品、ComfyUI 中间件传输）与一个**冷数据归档桶**（定时迁移若干天以上的旧历史文件），有效降低主库 IO 压力。
