@@ -13,3 +13,4 @@ httpx
 python-dotenv
 python-telegram-bot
 redis
+asgi-correlation-id

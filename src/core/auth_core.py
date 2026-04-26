@@ -14,6 +14,12 @@ logger = logging.getLogger(__name__)
 class AuthCoreError(Exception):
     pass
 
+class InvalidSignatureError(AuthCoreError):
+    pass
+
+class InsufficientPermissionError(AuthCoreError):
+    pass
+
 def verify_telegram_authorization(data: dict) -> bool:
     """Verify the hash of the Telegram auth data (Widget format)."""
     received_hash = data.pop("hash", None)
@@ -101,12 +107,12 @@ async def authenticate_and_get_user(
 ) -> Tuple[User, dict]:
     """
     Authenticate user via initData or widget_data, and return (user_model, stats).
-    Raises AuthCoreError if auth fails or permission denied.
+    Raises InvalidSignatureError if auth fails.
     """
     if init_data:
         user_data = verify_telegram_webapp_initdata(init_data)
         if not user_data:
-            raise AuthCoreError("Invalid Telegram WebApp authentication signature.", 401)
+            raise InvalidSignatureError("Invalid Telegram WebApp authentication signature.")
             
         tg_id = user_data.get("id")
         first_name = user_data.get("first_name", "")
@@ -119,10 +125,10 @@ async def authenticate_and_get_user(
         full_name = full_name.strip()
     elif widget_data:
         if not widget_data.get("id") or not widget_data.get("hash") or not widget_data.get("auth_date"):
-            raise AuthCoreError("Missing required fields for Login Widget auth.", 400)
+            raise InvalidSignatureError("Missing required fields for Login Widget auth.")
             
         if not verify_telegram_authorization(widget_data):
-            raise AuthCoreError("Invalid Telegram authentication signature.", 401)
+            raise InvalidSignatureError("Invalid Telegram authentication signature.")
             
         tg_id = widget_data.get("id")
         first_name = widget_data.get("first_name", "")
@@ -134,7 +140,7 @@ async def authenticate_and_get_user(
             full_name += f" {last_name}"
         full_name = full_name.strip()
     else:
-        raise AuthCoreError("No authentication data provided.", 400)
+        raise InvalidSignatureError("No authentication data provided.")
 
     user, is_new = await get_or_create_user_by_telegram(
         tg_id=tg_id, 
@@ -143,16 +149,5 @@ async def authenticate_and_get_user(
     )
     
     stats = await permission_service.get_user_detailed_stats(user.telegram_id)
-    current_identity = stats.get("identity", user.current_identity)
-    current_group = stats.get("group", user.user_group)
-    
-    allowed_identities = ["内门弟子", "核心弟子", "真传弟子"]
-    allowed_groups = ["金丹期", "元婴期", "化神期", "炼虚期", "合体期", "大乘期", "渡劫期"]
-    
-    is_allowed_identity = current_identity in allowed_identities
-    is_allowed_group = current_group in allowed_groups
-    
-    if not (is_allowed_identity or is_allowed_group):
-        raise AuthCoreError("权限不足：只有金丹期及以上境界，或内门及以上身份的弟子才能登录 Web 端", 403)
         
     return user, stats

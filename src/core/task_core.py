@@ -386,7 +386,8 @@ async def process_and_submit_task(
             
             prompts_config = load_prompts()
             prompt = inputs.get("prompt")
-            if not prompt:
+            # Only use default prompt if user didn't provide one
+            if not prompt or prompt.strip() == "":
                 prompt = prompts_config.get(task_type, task_type)
             negative_prompt = prompts_config.get("negative_prompt", "")
             

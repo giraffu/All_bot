@@ -264,3 +264,7 @@ GENERATION_TASK_TYPES = [
     MODE_PENETRATION_STEP1, MODE_PENETRATION_STEP2,
     MODE_I2I_PRO
 ]
+
+# Web Access Allowed Roles
+WEB_ACCESS_ALLOWED_IDENTITIES = ["内门弟子", "核心弟子", "真传弟子"]
+WEB_ACCESS_ALLOWED_GROUPS = ["金丹期", "元婴期", "化神期", "炼虚期", "合体期", "大乘期", "渡劫期"]

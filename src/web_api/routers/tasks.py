@@ -28,6 +28,11 @@ async def create_generation_task(
     """
     try:
         is_template = getattr(req, 'is_template', False)
+        
+        # Merge prompt from request into inputs if it exists, so core layer can use it
+        if req.prompt:
+            req.inputs["prompt"] = req.prompt
+            
         result = await process_and_submit_task(
             user_id=current_user.id,
             username=current_user.username,

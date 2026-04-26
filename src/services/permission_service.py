@@ -471,5 +471,19 @@ class PermissionService:
         internal_user, _ = await get_or_create_user_by_telegram(tg_id)
         await self.quota_manager.add_template_contribution(internal_user.id, file_path, file_type)
 
+    async def check_web_access(self, user_id: int) -> bool:
+        """
+        Check if user has sufficient identity or group to access the web UI.
+        """
+        from src.constants import WEB_ACCESS_ALLOWED_GROUPS, WEB_ACCESS_ALLOWED_IDENTITIES
+        
+        group = await self.get_user_group(user_id)
+        identity = await self.get_user_identity(user_id)
+        
+        is_allowed_identity = identity in WEB_ACCESS_ALLOWED_IDENTITIES
+        is_allowed_group = group in WEB_ACCESS_ALLOWED_GROUPS
+        
+        return is_allowed_identity or is_allowed_group
+
 # Singleton instance
 permission_service = PermissionService()

@@ -5,7 +5,8 @@ from fastapi.responses import JSONResponse
 
 from src.web_api.core.security import create_access_token
 from src.web_api.schemas.auth_schema import TelegramLoginRequest, Token, UserResponse, InvitationRechargeStats
-from src.core.auth_core import authenticate_and_get_user, AuthCoreError
+from src.core.auth_core import authenticate_and_get_user, InvalidSignatureError
+from src.services.permission_service import permission_service
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -20,6 +21,13 @@ async def login_telegram(req: TelegramLoginRequest):
         widget_data = req.model_dump(exclude_unset=True, exclude={"initData"}) if not init_data else None
         
         user, stats = await authenticate_and_get_user(init_data=init_data, widget_data=widget_data)
+        
+        # Check web access permission
+        if not await permission_service.check_web_access(user.id):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="权限不足：只有金丹期及以上境界，或内门及以上身份的弟子才能登录 Web 端"
+            )
         
         # Issue JWT
         access_token = create_access_token(subject=user.id)
@@ -47,9 +55,8 @@ async def login_telegram(req: TelegramLoginRequest):
             "token_type": "bearer",
             "user": user_response_data.model_dump()
         }
-    except AuthCoreError as e:
-        status_code = e.args[1] if len(e.args) > 1 else status.HTTP_400_BAD_REQUEST
-        raise HTTPException(status_code=status_code, detail=str(e))
+    except InvalidSignatureError as e:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(e))
     except HTTPException:
         raise
     except Exception as e:
