@@ -44,6 +44,12 @@ def _cleanup_context(context: ContextTypes.DEFAULT_TYPE, user_id: int):
 # --- Entry Point ---
 async def start_face_video(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Entry point for Video Face Swap."""
+    query = update.callback_query
+    if query:
+        try:
+            await query.answer()
+        except Exception:
+            pass
     user_id = update.effective_user.id
     
     from src.utils import is_maintenance_mode

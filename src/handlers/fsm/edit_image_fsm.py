@@ -55,7 +55,8 @@ def _cleanup_context(context: ContextTypes.DEFAULT_TYPE, user_id: int):
 async def start_edit_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Entry point for 自由P图 and 幻想换脸"""
     user_id = update.effective_user.id
-    text = update.message.text.strip()
+    message = update.message or update.edited_message
+    text = message.text.strip() if message and message.text else ""
     
     from src.utils import is_maintenance_mode
     if is_maintenance_mode():

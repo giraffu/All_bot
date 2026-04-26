@@ -143,7 +143,10 @@ async def handle_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await permission_service.check_access(update, context):
         return
 
-    text = update.message.text.strip() if update.message.text else ""
+    message = update.message or update.edited_message
+    if not message:
+        return
+    text = message.text.strip() if message.text else ""
     logger.info(f"handle_prompt received: {text.encode('utf-8')}")
     if not text:
         return

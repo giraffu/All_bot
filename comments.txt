@@ -1,0 +1,26 @@
+backend/workflows/Pornmaster Z-Image Turbo_t2i_Double checkpoints & realism enhancer_V1_2026_01_24.json:551:      "text": "<lora:Mystic-XXX-ZIT-V5:0.10>",
+backend/workflows/Pornmaster Z-Image Turbo_t2i_Double checkpoints & realism enhancer_V1_2026_01_24.json:555:            "name": "Mystic-XXX-ZIT-V5",
+cs_bot/bot.py:17:# 缓存系统：记录群组内最近发送的图片 (chat_id -> {user_id -> {"file_id": xxx, "timestamp": xxx}})
+cs_bot/skills/07_bot_identity.md:6:**Q: 如果群友在群里发了其他名字的 Bot 链接（比如 `linglongai_abot`、`xxx_bot` 等），那是我们宗门的吗？**
+src/web_api/routers/gallery.py:51:        # Extract just the filename from paths like 'bot-data/users/xxx.mp4' or 'comfyui-temp/yyy.mp4'
+workers/comfy_agent4/workflows/Pornmaster Z-Image Turbo_t2i_Double checkpoints & realism enhancer_V1_2026_01_24.json:551:      "text": "<lora:Mystic-XXX-ZIT-V5:0.10>",
+workers/comfy_agent4/workflows/Pornmaster Z-Image Turbo_t2i_Double checkpoints & realism enhancer_V1_2026_01_24.json:555:            "name": "Mystic-XXX-ZIT-V5",
+workers/comfy_agent4/workflows/LTX 2.3 I2V.json:50:        "lora": "ltx2.3/DR34ML4Y_LTXXX_PREVIEW_RC1.safetensors",
+workers/comfy_agent4/agent_main.py:411:                # (like ComfyUI_temp_xxx), it might be in the 'temp' type.
+workers/comfy_agent2/workflows/Pornmaster Z-Image Turbo_t2i_Double checkpoints & realism enhancer_V1_2026_01_24.json:551:      "text": "<lora:Mystic-XXX-ZIT-V5:0.10>",
+workers/comfy_agent2/workflows/Pornmaster Z-Image Turbo_t2i_Double checkpoints & realism enhancer_V1_2026_01_24.json:555:            "name": "Mystic-XXX-ZIT-V5",
+workers/comfy_agent2/workflows/LTX 2.3 I2V.json:50:        "lora": "ltx2.3/DR34ML4Y_LTXXX_PREVIEW_RC1.safetensors",
+workers/comfy_agent2/agent_main.py:411:                # (like ComfyUI_temp_xxx), it might be in the 'temp' type.
+workers/comfy_agent1/workflows/Pornmaster Z-Image Turbo_t2i_Double checkpoints & realism enhancer_V1_2026_01_24.json:551:      "text": "<lora:Mystic-XXX-ZIT-V5:0.10>",
+workers/comfy_agent1/workflows/Pornmaster Z-Image Turbo_t2i_Double checkpoints & realism enhancer_V1_2026_01_24.json:555:            "name": "Mystic-XXX-ZIT-V5",
+workers/comfy_agent1/workflows/LTX 2.3 I2V.json:50:        "lora": "ltx2.3/DR34ML4Y_LTXXX_PREVIEW_RC1.safetensors",
+workers/comfy_agent1/agent_main.py:411:                # (like ComfyUI_temp_xxx), it might be in the 'temp' type.
+workers/comfy_agent5/actual_prompt.json:32:        "lora": "ltx2.3/DR34ML4Y_LTXXX_PREVIEW_RC1.safetensors",
+workers/comfy_agent5/workflows/Pornmaster Z-Image Turbo_t2i_Double checkpoints & realism enhancer_V1_2026_01_24.json:551:      "text": "<lora:Mystic-XXX-ZIT-V5:0.10>",
+workers/comfy_agent5/workflows/Pornmaster Z-Image Turbo_t2i_Double checkpoints & realism enhancer_V1_2026_01_24.json:555:            "name": "Mystic-XXX-ZIT-V5",
+workers/comfy_agent5/workflows/LTX 2.3 I2V.json:50:        "lora": "ltx2.3/DR34ML4Y_LTXXX_PREVIEW_RC1.safetensors",
+workers/comfy_agent5/agent_main.py:411:                # (like ComfyUI_temp_xxx), it might be in the 'temp' type.
+workers/comfy_agent3/workflows/Pornmaster Z-Image Turbo_t2i_Double checkpoints & realism enhancer_V1_2026_01_24.json:551:      "text": "<lora:Mystic-XXX-ZIT-V5:0.10>",
+workers/comfy_agent3/workflows/Pornmaster Z-Image Turbo_t2i_Double checkpoints & realism enhancer_V1_2026_01_24.json:555:            "name": "Mystic-XXX-ZIT-V5",
+workers/comfy_agent3/workflows/LTX 2.3 I2V.json:50:        "lora": "ltx2.3/DR34ML4Y_LTXXX_PREVIEW_RC1.safetensors",
+workers/comfy_agent3/agent_main.py:411:                # (like ComfyUI_temp_xxx), it might be in the 'temp' type.

@@ -33,6 +33,12 @@ def _cleanup_context(context: ContextTypes.DEFAULT_TYPE, user_id: int):
 
 async def start_faceswap(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Entry point for Two-person Face Swap (快速换脸)."""
+    query = update.callback_query
+    if query:
+        try:
+            await query.answer()
+        except Exception:
+            pass
     user_id = update.effective_user.id
     logger.info(f"User {user_id} triggered start_faceswap with text: {update.message.text if update.message else 'None'}")
     

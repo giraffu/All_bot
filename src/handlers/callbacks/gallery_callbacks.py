@@ -375,6 +375,10 @@ async def gallery_catmenu_callback(update: Update, context: ContextTypes.DEFAULT
 @register_callback("gallery_page_")
 async def gallery_sort_page_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
+    try:
+        await query.answer()
+    except Exception:
+        pass
     data = query.data
     
     try:

@@ -1,0 +1,341 @@
+backend/app/main.py:11:121: E501 line too long (286 > 120 characters)
+backend/app/main.py:253:121: E501 line too long (130 > 120 characters)
+backend/app/queue_manager.py:18:121: E501 line too long (125 > 120 characters)
+backend/app/queue_manager.py:78:121: E501 line too long (123 > 120 characters)
+backend/app/queue_manager.py:128:121: E501 line too long (141 > 120 characters)
+backend/app/queue_manager.py:137:121: E501 line too long (121 > 120 characters)
+backend/app/queue_manager.py:142:121: E501 line too long (121 > 120 characters)
+cs_bot/bot.py:223:5: F841 local variable 'chat_type' is assigned to but never used
+cs_bot/skill_manager.py:3:1: F401 'importlib.util' imported but unused
+cs_bot/skill_manager.py:4:1: F401 'inspect' imported but unused
+cs_bot/skill_manager.py:6:1: F401 'langchain_core.tools.tool' imported but unused
+cs_bot/skill_manager.py:38:9: F401 'inspect' imported but unused
+cs_bot/skill_manager.py:38:9: F811 redefinition of unused 'inspect' from line 4
+src/api_client.py:23:1: E402 module level import not at top of file
+src/api_client.py:68:121: E501 line too long (159 > 120 characters)
+src/api_client.py:87:121: E501 line too long (157 > 120 characters)
+src/api_client.py:105:121: E501 line too long (173 > 120 characters)
+src/api_client.py:125:121: E501 line too long (126 > 120 characters)
+src/api_client.py:147:121: E501 line too long (144 > 120 characters)
+src/api_client.py:152:121: E501 line too long (175 > 120 characters)
+src/api_client.py:176:121: E501 line too long (139 > 120 characters)
+src/api_client.py:195:121: E501 line too long (121 > 120 characters)
+src/api_client.py:200:121: E501 line too long (147 > 120 characters)
+src/api_client.py:237:121: E501 line too long (150 > 120 characters)
+src/api_client.py:327:121: E501 line too long (132 > 120 characters)
+src/bot_test.py:22:1: F401 'socket' imported but unused
+src/bot_test.py:23:1: F401 'urllib.parse.urlparse' imported but unused
+src/bot_test.py:28:1: F811 redefinition of unused 'os' from line 15
+src/bot_test.py:29:1: F811 redefinition of unused 'logging' from line 14
+src/bot_test.py:34:121: E501 line too long (139 > 120 characters)
+src/bot_test.py:40:13: F811 redefinition of unused 'urlparse' from line 23
+src/bot_test.py:54:121: E501 line too long (126 > 120 characters)
+src/bot_test.py:59:1: E402 module level import not at top of file
+src/bot_test.py:60:1: E402 module level import not at top of file
+src/bot_test.py:61:1: E402 module level import not at top of file
+src/bot_test.py:62:1: E402 module level import not at top of file
+src/bot_test.py:129:121: E501 line too long (143 > 120 characters)
+src/constants.py:170:121: E501 line too long (166 > 120 characters)
+src/constants.py:218:121: E501 line too long (150 > 120 characters)
+src/core/billing_core.py:4:1: F401 'src.database.core.AsyncSessionLocal' imported but unused
+src/core/billing_core.py:5:1: F401 'src.database.models.User' imported but unused
+src/core/billing_core.py:29:121: E501 line too long (152 > 120 characters)
+src/core/billing_core.py:42:121: E501 line too long (127 > 120 characters)
+src/core/gallery_core.py:4:1: F401 'asyncio' imported but unused
+src/core/gallery_core.py:57:121: E501 line too long (125 > 120 characters)
+src/core/task_core.py:93:121: E501 line too long (181 > 120 characters)
+src/core/task_core.py:168:121: E501 line too long (144 > 120 characters)
+src/core/task_core.py:178:121: E501 line too long (131 > 120 characters)
+src/core/task_core.py:235:121: E501 line too long (181 > 120 characters)
+src/core/task_core.py:241:1: E402 module level import not at top of file
+src/core/task_core.py:242:1: E402 module level import not at top of file
+src/core/task_core.py:242:121: E501 line too long (155 > 120 characters)
+src/core/task_core.py:243:1: E402 module level import not at top of file
+src/core/task_core.py:243:121: E501 line too long (156 > 120 characters)
+src/core/task_core.py:253:121: E501 line too long (162 > 120 characters)
+src/core/task_core.py:306:5: F401 'src.database.core.AsyncSessionLocal' imported but unused
+src/core/task_core.py:307:5: F401 'src.database.models.History' imported but unused
+src/core/task_core.py:329:121: E501 line too long (138 > 120 characters)
+src/core/task_core.py:332:121: E501 line too long (122 > 120 characters)
+src/core/task_core.py:333:121: E501 line too long (170 > 120 characters)
+src/core/task_core.py:335:121: E501 line too long (163 > 120 characters)
+src/core/task_core.py:360:121: E501 line too long (162 > 120 characters)
+src/core/task_core.py:367:121: E501 line too long (127 > 120 characters)
+src/database/core.py:5:1: F401 '.models.Base' imported but unused
+src/database/core.py:56:121: E501 line too long (122 > 120 characters)
+src/database/core.py:74:121: E501 line too long (132 > 120 characters)
+src/database/models.py:1:121: E501 line too long (134 > 120 characters)
+src/database/models.py:182:121: E501 line too long (139 > 120 characters)
+src/handlers/callback_handler.py:12:1: F401 'src.handlers.callbacks.billing_callbacks' imported but unused
+src/handlers/callback_handler.py:12:1: F401 'src.handlers.callbacks.gallery_callbacks' imported but unused
+src/handlers/callback_handler.py:12:1: F401 'src.handlers.callbacks.misc_callbacks' imported but unused
+src/handlers/callbacks/billing_callbacks.py:22:121: E501 line too long (179 > 120 characters)
+src/handlers/callbacks/billing_callbacks.py:26:121: E501 line too long (160 > 120 characters)
+src/handlers/callbacks/billing_callbacks.py:42:121: E501 line too long (180 > 120 characters)
+src/handlers/callbacks/billing_callbacks.py:46:121: E501 line too long (156 > 120 characters)
+src/handlers/callbacks/billing_callbacks.py:81:121: E501 line too long (177 > 120 characters)
+src/handlers/callbacks/billing_callbacks.py:85:121: E501 line too long (159 > 120 characters)
+src/handlers/callbacks/billing_callbacks.py:101:121: E501 line too long (178 > 120 characters)
+src/handlers/callbacks/billing_callbacks.py:105:121: E501 line too long (150 > 120 characters)
+src/handlers/callbacks/billing_callbacks.py:198:121: E501 line too long (137 > 120 characters)
+src/handlers/callbacks/gallery_callbacks.py:12:1: F401 'src.database.models.User' imported but unused
+src/handlers/callbacks/gallery_callbacks.py:16:1: F401 'src.utils.robust_edit_text' imported but unused
+src/handlers/callbacks/gallery_callbacks.py:21:1: F401 'config.MINIO_TEMPLATE_BUCKET' imported but unused
+src/handlers/callbacks/gallery_callbacks.py:221:5: F841 local variable 'data' is assigned to but never used
+src/handlers/callbacks/gallery_callbacks.py:392:121: E501 line too long (121 > 120 characters)
+src/handlers/callbacks/gallery_callbacks.py:411:121: E501 line too long (125 > 120 characters)
+src/handlers/callbacks/gallery_callbacks.py:478:121: E501 line too long (141 > 120 characters)
+src/handlers/callbacks/gallery_callbacks.py:479:121: E501 line too long (146 > 120 characters)
+src/handlers/callbacks/gallery_callbacks.py:485:121: E501 line too long (187 > 120 characters)
+src/handlers/callbacks/gallery_callbacks.py:486:121: E501 line too long (178 > 120 characters)
+src/handlers/callbacks/gallery_callbacks.py:512:121: E501 line too long (170 > 120 characters)
+src/handlers/callbacks/gallery_callbacks.py:515:121: E501 line too long (170 > 120 characters)
+src/handlers/callbacks/gallery_callbacks.py:525:121: E501 line too long (172 > 120 characters)
+src/handlers/callbacks/gallery_callbacks.py:527:121: E501 line too long (172 > 120 characters)
+src/handlers/callbacks/gallery_callbacks.py:541:121: E501 line too long (132 > 120 characters)
+src/handlers/callbacks/gallery_callbacks.py:580:121: E501 line too long (127 > 120 characters)
+src/handlers/callbacks/gallery_callbacks.py:589:121: E501 line too long (142 > 120 characters)
+src/handlers/callbacks/gallery_callbacks.py:592:121: E501 line too long (148 > 120 characters)
+src/handlers/command_handler.py:23:5: F841 local variable 'user_id' is assigned to but never used
+src/handlers/fsm/custom_video_fsm.py:3:1: F401 'asyncio' imported but unused
+src/handlers/fsm/custom_video_fsm.py:6:1: F401 'telegram.InlineKeyboardMarkup' imported but unused
+src/handlers/fsm/custom_video_fsm.py:6:1: F401 'telegram.InlineKeyboardButton' imported but unused
+src/handlers/fsm/custom_video_fsm.py:19:121: E501 line too long (129 > 120 characters)
+src/handlers/fsm/custom_video_fsm.py:35:5: F841 local variable 'user_id' is assigned to but never used
+src/handlers/fsm/custom_video_fsm.py:106:121: E501 line too long (185 > 120 characters)
+src/handlers/fsm/custom_video_fsm.py:159:121: E501 line too long (185 > 120 characters)
+src/handlers/fsm/custom_video_fsm.py:174:121: E501 line too long (271 > 120 characters)
+src/handlers/fsm/custom_video_fsm.py:240:121: E501 line too long (278 > 120 characters)
+src/handlers/fsm/edit_image_fsm.py:3:1: F401 'asyncio' imported but unused
+src/handlers/fsm/edit_image_fsm.py:57:5: F841 local variable 'user_id' is assigned to but never used
+src/handlers/fsm/edit_image_fsm.py:189:121: E501 line too long (271 > 120 characters)
+src/handlers/fsm/edit_image_fsm.py:260:121: E501 line too long (278 > 120 characters)
+src/handlers/fsm/face_video_fsm.py:3:1: F401 'asyncio' imported but unused
+src/handlers/fsm/face_video_fsm.py:47:5: F841 local variable 'user_id' is assigned to but never used
+src/handlers/fsm/face_video_fsm.py:262:121: E501 line too long (278 > 120 characters)
+src/handlers/fsm/faceswap_fsm.py:3:1: F401 'asyncio' imported but unused
+src/handlers/fsm/faceswap_fsm.py:6:1: F401 'telegram.InlineKeyboardMarkup' imported but unused
+src/handlers/fsm/faceswap_fsm.py:6:1: F401 'telegram.InlineKeyboardButton' imported but unused
+src/handlers/fsm/faceswap_fsm.py:37:121: E501 line too long (122 > 120 characters)
+src/handlers/fsm/faceswap_fsm.py:175:121: E501 line too long (278 > 120 characters)
+src/handlers/fsm/gallery_apply_fsm.py:6:1: F401 'telegram.InlineKeyboardButton' imported but unused
+src/handlers/fsm/gallery_apply_fsm.py:6:1: F401 'telegram.InlineKeyboardMarkup' imported but unused
+src/handlers/fsm/gallery_apply_fsm.py:15:1: F401 'src.constants.MODE_FACE_VIDEO_STEP1' imported but unused
+src/handlers/fsm/gallery_apply_fsm.py:15:1: F401 'src.constants.MODE_FACE_VIDEO_STEP2' imported but unused
+src/handlers/fsm/gallery_apply_fsm.py:15:1: F401 'src.constants.MODE_FACESWAP_STEP1' imported but unused
+src/handlers/fsm/gallery_apply_fsm.py:107:121: E501 line too long (158 > 120 characters)
+src/handlers/fsm/gallery_apply_fsm.py:165:121: E501 line too long (133 > 120 characters)
+src/handlers/fsm/gallery_apply_fsm.py:166:121: E501 line too long (125 > 120 characters)
+src/handlers/fsm/gallery_apply_fsm.py:259:5: F841 local variable 'cost' is assigned to but never used
+src/handlers/fsm/gallery_apply_fsm.py:267:5: F841 local variable 'template_files' is assigned to but never used
+src/handlers/fsm/gallery_apply_fsm.py:351:121: E501 line too long (278 > 120 characters)
+src/handlers/fsm/ltx_video_fsm.py:3:1: F401 'asyncio' imported but unused
+src/handlers/fsm/ltx_video_fsm.py:17:1: F401 'src.constants.TMP_DIR' imported but unused
+src/handlers/fsm/ltx_video_fsm.py:17:1: F401 'src.constants.MAIN_MENU_KEYBOARD' imported but unused
+src/handlers/fsm/ltx_video_fsm.py:17:1: F401 'src.constants.MODE_LTX_VIDEO' imported but unused
+src/handlers/fsm/ltx_video_fsm.py:25:1: F401 'src.utils.is_maintenance_mode' imported but unused
+src/handlers/fsm/ltx_video_fsm.py:42:5: F841 local variable 'user_id' is assigned to but never used
+src/handlers/fsm/ltx_video_fsm.py:44:5: F811 redefinition of unused 'is_maintenance_mode' from line 25
+src/handlers/fsm/ltx_video_fsm.py:195:5: F841 local variable 'user_id' is assigned to but never used
+src/handlers/fsm/ltx_video_fsm.py:199:121: E501 line too long (271 > 120 characters)
+src/handlers/fsm/ltx_video_fsm.py:290:121: E501 line too long (278 > 120 characters)
+src/handlers/fsm/quick_image_fsm.py:3:1: F401 'asyncio' imported but unused
+src/handlers/fsm/quick_image_fsm.py:8:1: F401 'telegram.ext.CallbackQueryHandler' imported but unused
+src/handlers/fsm/quick_image_fsm.py:217:121: E501 line too long (278 > 120 characters)
+src/handlers/fsm/quick_video_fsm.py:3:1: F401 'asyncio' imported but unused
+src/handlers/fsm/quick_video_fsm.py:19:121: E501 line too long (129 > 120 characters)
+src/handlers/fsm/quick_video_fsm.py:20:121: E501 line too long (126 > 120 characters)
+src/handlers/fsm/quick_video_fsm.py:44:5: F841 local variable 'user_id' is assigned to but never used
+src/handlers/fsm/quick_video_fsm.py:127:121: E501 line too long (180 > 120 characters)
+src/handlers/fsm/quick_video_fsm.py:188:121: E501 line too long (180 > 120 characters)
+src/handlers/fsm/quick_video_fsm.py:311:121: E501 line too long (278 > 120 characters)
+src/handlers/fsm/video_lora_fsm.py:3:1: F401 'asyncio' imported but unused
+src/handlers/fsm/video_lora_fsm.py:19:121: E501 line too long (129 > 120 characters)
+src/handlers/fsm/video_lora_fsm.py:45:5: F841 local variable 'user_id' is assigned to but never used
+src/handlers/fsm/video_lora_fsm.py:146:121: E501 line too long (200 > 120 characters)
+src/handlers/fsm/video_lora_fsm.py:201:121: E501 line too long (200 > 120 characters)
+src/handlers/fsm/video_lora_fsm.py:216:121: E501 line too long (271 > 120 characters)
+src/handlers/fsm/video_lora_fsm.py:289:121: E501 line too long (278 > 120 characters)
+src/handlers/message_handler.py:3:1: F401 'random' imported but unused
+src/handlers/message_handler.py:9:1: F401 'config.ENABLE_PUBLIC_SHARE' imported but unused
+src/handlers/message_handler.py:9:121: E501 line too long (131 > 120 characters)
+src/handlers/message_handler.py:14:1: F401 'src.logger.UserLogger' imported but unused
+src/handlers/message_handler.py:15:1: F401 'src.utils.load_prompts' imported but unused
+src/handlers/message_handler.py:16:1: F401 'src.constants.MODE_EDIT' imported but unused
+src/handlers/message_handler.py:16:1: F401 'src.constants.MODE_UNDRESS' imported but unused
+src/handlers/message_handler.py:16:1: F401 'src.constants.MODE_MASTURBATION' imported but unused
+src/handlers/message_handler.py:16:1: F401 'src.constants.MODE_FACESWAP_STEP1' imported but unused
+src/handlers/message_handler.py:16:1: F401 'src.constants.MODE_FACESWAP_STEP2' imported but unused
+src/handlers/message_handler.py:16:1: F401 'src.constants.MODE_RANDOM_FACESWAP' imported but unused
+src/handlers/message_handler.py:16:1: F401 'src.constants.MODE_FACE_VIDEO_STEP1' imported but unused
+src/handlers/message_handler.py:16:1: F401 'src.constants.MODE_FACE_VIDEO_STEP2' imported but unused
+src/handlers/message_handler.py:16:1: F401 'src.constants.MODE_CUSTOM_VIDEO' imported but unused
+src/handlers/message_handler.py:16:1: F401 'src.constants.MODE_PERFECT_VIDEO_INSERT' imported but unused
+src/handlers/message_handler.py:16:1: F401 'src.constants.MODE_DOGGY_STYLE' imported but unused
+src/handlers/message_handler.py:16:1: F401 'src.constants.MODE_BLOWJOB' imported but unused
+src/handlers/message_handler.py:16:1: F401 'src.constants.MODE_UNDRESS_TONGUE' imported but unused
+src/handlers/message_handler.py:16:1: F401 'src.constants.MODE_CLOSEUP_BLOWJOB' imported but unused
+src/handlers/message_handler.py:16:1: F401 'src.constants.MODE_I2I_PRO' imported but unused
+src/handlers/message_handler.py:136:121: E501 line too long (128 > 120 characters)
+src/handlers/message_handler.py:158:121: E501 line too long (124 > 120 characters)
+src/handlers/message_handler.py:168:121: E501 line too long (121 > 120 characters)
+src/handlers/message_handler.py:314:121: E501 line too long (156 > 120 characters)
+src/handlers/message_handler.py:371:121: E501 line too long (229 > 120 characters)
+src/handlers/message_handler.py:375:121: E501 line too long (196 > 120 characters)
+src/handlers/payment_handler.py:60:121: E501 line too long (151 > 120 characters)
+src/handlers/payment_handler.py:172:121: E501 line too long (149 > 120 characters)
+src/logger.py:107:121: E501 line too long (180 > 120 characters)
+src/payment_api_server.py:66:121: E501 line too long (147 > 120 characters)
+src/payment_api_server.py:67:121: E501 line too long (183 > 120 characters)
+src/quota.py:164:121: E501 line too long (133 > 120 characters)
+src/services/image_service.py:2:121: E501 line too long (288 > 120 characters)
+src/services/image_service.py:5:121: E501 line too long (155 > 120 characters)
+src/services/image_service.py:9:121: E501 line too long (147 > 120 characters)
+src/services/image_service.py:11:121: E501 line too long (128 > 120 characters)
+src/services/image_service.py:25:121: E501 line too long (180 > 120 characters)
+src/services/image_service.py:27:121: E501 line too long (153 > 120 characters)
+src/services/image_service.py:29:121: E501 line too long (157 > 120 characters)
+src/services/image_service.py:31:121: E501 line too long (128 > 120 characters)
+src/services/image_service.py:33:121: E501 line too long (173 > 120 characters)
+src/services/image_service.py:35:121: E501 line too long (139 > 120 characters)
+src/services/image_service.py:37:121: E501 line too long (164 > 120 characters)
+src/services/image_service.py:39:121: E501 line too long (130 > 120 characters)
+src/services/payment_fulfillment_service.py:3:1: F401 'json' imported but unused
+src/services/payment_fulfillment_service.py:7:1: F401 'sqlalchemy.update' imported but unused
+src/services/payment_fulfillment_service.py:151:121: E501 line too long (122 > 120 characters)
+src/services/payment_validator.py:183:121: E501 line too long (127 > 120 characters)
+src/services/permission_service.py:61:121: E501 line too long (123 > 120 characters)
+src/services/permission_service.py:122:121: E501 line too long (130 > 120 characters)
+src/services/permission_service.py:146:121: E501 line too long (126 > 120 characters)
+src/services/permission_service.py:458:121: E501 line too long (155 > 120 characters)
+src/services/recovery_service.py:2:1: F401 'asyncio' imported but unused
+src/services/recovery_service.py:80:121: E501 line too long (131 > 120 characters)
+src/services/rmb_payment_service.py:59:121: E501 line too long (133 > 120 characters)
+src/services/rmb_payment_service.py:81:21: F841 local variable 'json_e' is assigned to but never used
+src/services/storage.py:4:1: F401 'os' imported but unused
+src/services/storage.py:10:1: F401 'config.R2_PUBLIC_DOMAIN' imported but unused
+src/services/storage.py:127:121: E501 line too long (133 > 120 characters)
+src/services/storage.py:178:121: E501 line too long (125 > 120 characters)
+src/services/storage.py:192:13: F401 'config.MINIO_ENDPOINT' imported but unused
+src/services/storage.py:228:121: E501 line too long (134 > 120 characters)
+src/services/storage.py:235:13: F401 'config.MINIO_ENDPOINT' imported but unused
+src/services/task_registry.py:7:1: E402 module level import not at top of file
+src/services/task_registry.py:11:121: E501 line too long (146 > 120 characters)
+src/services/task_service.py:16:1: F401 'src.constants.MAX_CONCURRENT_TASKS' imported but unused
+src/services/task_service.py:52:1: F401 'src.services.redis_client.redis_client' imported but unused
+src/services/task_service.py:67:121: E501 line too long (164 > 120 characters)
+src/services/task_service.py:125:121: E501 line too long (132 > 120 characters)
+src/services/task_service.py:138:121: E501 line too long (138 > 120 characters)
+src/services/task_service.py:172:121: E501 line too long (185 > 120 characters)
+src/services/task_service.py:200:121: E501 line too long (164 > 120 characters)
+src/services/task_service.py:236:121: E501 line too long (128 > 120 characters)
+src/services/task_service.py:249:121: E501 line too long (145 > 120 characters)
+src/services/task_service.py:278:121: E501 line too long (185 > 120 characters)
+src/services/task_service.py:313:121: E501 line too long (164 > 120 characters)
+src/services/task_service.py:315:9: F401 'src.constants.DURATION_FRAMES' imported but unused
+src/services/task_service.py:315:121: E501 line too long (125 > 120 characters)
+src/services/task_service.py:405:121: E501 line too long (122 > 120 characters)
+src/services/task_service.py:420:121: E501 line too long (127 > 120 characters)
+src/services/task_service.py:463:121: E501 line too long (185 > 120 characters)
+src/services/task_service.py:494:121: E501 line too long (164 > 120 characters)
+src/services/task_service.py:511:121: E501 line too long (125 > 120 characters)
+src/services/task_service.py:601:121: E501 line too long (138 > 120 characters)
+src/services/task_service.py:634:121: E501 line too long (185 > 120 characters)
+src/services/task_service.py:755:121: E501 line too long (164 > 120 characters)
+src/services/task_service.py:775:121: E501 line too long (129 > 120 characters)
+src/services/task_service.py:819:121: E501 line too long (132 > 120 characters)
+src/services/task_service.py:833:121: E501 line too long (138 > 120 characters)
+src/services/task_service.py:868:121: E501 line too long (185 > 120 characters)
+src/services/task_service.py:898:121: E501 line too long (164 > 120 characters)
+src/services/task_service.py:924:9: F401 'os' imported but unused
+src/services/task_service.py:951:121: E501 line too long (125 > 120 characters)
+src/services/task_service.py:960:121: E501 line too long (139 > 120 characters)
+src/services/task_service.py:978:121: E501 line too long (185 > 120 characters)
+src/services/task_service.py:1067:121: E501 line too long (130 > 120 characters)
+src/services/task_service.py:1132:121: E501 line too long (136 > 120 characters)
+src/services/task_service.py:1196:121: E501 line too long (136 > 120 characters)
+src/services/zombie_cleaner_service.py:40:121: E501 line too long (133 > 120 characters)
+src/tests/test_dynamic_priority.py:171:121: E501 line too long (131 > 120 characters)
+src/tests/test_dynamic_priority.py:176:121: E501 line too long (129 > 120 characters)
+src/tests/test_queue_logic.py:10:1: E402 module level import not at top of file
+src/tests/test_queue_logic.py:11:1: E402 module level import not at top of file
+src/tests/test_queue_logic.py:91:121: E501 line too long (126 > 120 characters)
+src/tests/test_task_service_refactored.py:25:121: E501 line too long (121 > 120 characters)
+src/tests/test_task_service_refactored.py:26:121: E501 line too long (121 > 120 characters)
+src/utils.py:57:121: E501 line too long (130 > 120 characters)
+src/utils.py:88:121: E501 line too long (131 > 120 characters)
+src/utils.py:218:121: E501 line too long (135 > 120 characters)
+src/web_api/routers/auth.py:2:1: F401 'typing.Optional' imported but unused
+src/web_api/routers/auth.py:4:1: F401 'fastapi.responses.JSONResponse' imported but unused
+src/web_api/routers/auth.py:7:1: F401 'src.web_api.schemas.auth_schema.Token' imported but unused
+src/web_api/routers/auth.py:50:121: E501 line too long (141 > 120 characters)
+src/web_api/routers/gallery.py:14:1: E402 module level import not at top of file
+src/web_api/routers/gallery.py:15:1: F401 'src.services.redis_client.redis_client' imported but unused
+src/web_api/routers/gallery.py:15:1: E402 module level import not at top of file
+src/web_api/routers/gallery.py:16:1: E402 module level import not at top of file
+src/web_api/routers/gallery.py:17:1: E402 module level import not at top of file
+src/web_api/routers/gallery.py:18:1: F401 'os' imported but unused
+src/web_api/routers/gallery.py:18:1: E402 module level import not at top of file
+src/web_api/routers/gallery.py:19:1: E402 module level import not at top of file
+src/web_api/routers/gallery.py:20:1: F401 'src.services.storage.storage' imported but unused
+src/web_api/routers/gallery.py:20:1: E402 module level import not at top of file
+src/web_api/routers/gallery.py:38:1: E402 module level import not at top of file
+src/web_api/routers/gallery.py:425:121: E501 line too long (138 > 120 characters)
+src/web_api/routers/gallery.py:468:121: E501 line too long (135 > 120 characters)
+src/web_api/routers/gallery.py:470:121: E501 line too long (141 > 120 characters)
+src/web_api/routers/gallery.py:498:121: E501 line too long (135 > 120 characters)
+src/web_api/routers/gallery.py:545:1: E402 module level import not at top of file
+src/web_api/routers/storage.py:3:1: F401 'fastapi.status' imported but unused
+src/web_api/routers/storage.py:4:1: F401 'typing.Optional' imported but unused
+src/web_api/routers/storage.py:34:121: E501 line too long (146 > 120 characters)
+src/web_api/routers/tasks.py:4:1: F401 'httpx' imported but unused
+src/web_api/routers/tasks.py:5:1: F401 'typing.AsyncGenerator' imported but unused
+src/web_api/routers/tasks.py:6:1: F401 'fastapi.status' imported but unused
+src/web_api/routers/tasks.py:6:1: F401 'fastapi.Request' imported but unused
+src/web_api/routers/tasks.py:70:5: F811 redefinition of unused 'httpx' from line 4
+src/web_api/routers/tasks.py:108:121: E501 line too long (205 > 120 characters)
+src/web_api/routers/tasks.py:118:121: E501 line too long (129 > 120 characters)
+src/web_api/routers/tasks.py:124:121: E501 line too long (121 > 120 characters)
+src/web_api/routers/tasks.py:148:25: F811 redefinition of unused 'status' from line 6
+src/web_api/routers/tasks.py:154:121: E501 line too long (209 > 120 characters)
+src/web_api/routers/tasks.py:165:121: E501 line too long (133 > 120 characters)
+src/web_api/routers/tasks.py:171:121: E501 line too long (125 > 120 characters)
+src/web_api/routers/tasks.py:208:121: E501 line too long (217 > 120 characters)
+src/web_api/routers/tasks.py:218:121: E501 line too long (141 > 120 characters)
+src/web_api/routers/tasks.py:219:121: E501 line too long (127 > 120 characters)
+src/web_api/routers/tasks.py:224:121: E501 line too long (133 > 120 characters)
+src/web_api/routers/users.py:2:1: F401 'fastapi.Query' imported but unused
+src/web_api/routers/users.py:2:1: F401 'fastapi.HTTPException' imported but unused
+src/web_api/routers/users.py:3:1: F401 'sqlalchemy.func' imported but unused
+src/web_api/schemas/auth_schema.py:1:1: F401 'pydantic.Field' imported but unused
+src/web_api/schemas/task_schema.py:2:1: F401 'typing.List' imported but unused
+workers/comfy_agent1/agent_main.py:415:121: E501 line too long (123 > 120 characters)
+workers/comfy_agent1/agent_main.py:463:121: E501 line too long (127 > 120 characters)
+workers/comfy_agent1/comfy_client.py:82:121: E501 line too long (140 > 120 characters)
+workers/comfy_agent1/workflow_patcher.py:62:121: E501 line too long (133 > 120 characters)
+workers/comfy_agent1/workflow_patcher.py:168:121: E501 line too long (124 > 120 characters)
+workers/comfy_agent1/workflow_patcher.py:178:121: E501 line too long (153 > 120 characters)
+workers/comfy_agent2/agent_main.py:415:121: E501 line too long (123 > 120 characters)
+workers/comfy_agent2/agent_main.py:463:121: E501 line too long (127 > 120 characters)
+workers/comfy_agent2/comfy_client.py:74:121: E501 line too long (140 > 120 characters)
+workers/comfy_agent2/workflow_patcher.py:62:121: E501 line too long (133 > 120 characters)
+workers/comfy_agent2/workflow_patcher.py:168:121: E501 line too long (124 > 120 characters)
+workers/comfy_agent2/workflow_patcher.py:178:121: E501 line too long (153 > 120 characters)
+workers/comfy_agent3/agent_main.py:415:121: E501 line too long (123 > 120 characters)
+workers/comfy_agent3/agent_main.py:463:121: E501 line too long (127 > 120 characters)
+workers/comfy_agent3/comfy_client.py:74:121: E501 line too long (140 > 120 characters)
+workers/comfy_agent3/workflow_patcher.py:62:121: E501 line too long (133 > 120 characters)
+workers/comfy_agent3/workflow_patcher.py:168:121: E501 line too long (124 > 120 characters)
+workers/comfy_agent3/workflow_patcher.py:178:121: E501 line too long (153 > 120 characters)
+workers/comfy_agent4/agent_main.py:415:121: E501 line too long (123 > 120 characters)
+workers/comfy_agent4/agent_main.py:463:121: E501 line too long (127 > 120 characters)
+workers/comfy_agent4/comfy_client.py:74:121: E501 line too long (140 > 120 characters)
+workers/comfy_agent4/workflow_patcher.py:62:121: E501 line too long (133 > 120 characters)
+workers/comfy_agent4/workflow_patcher.py:168:121: E501 line too long (124 > 120 characters)
+workers/comfy_agent4/workflow_patcher.py:178:121: E501 line too long (153 > 120 characters)
+workers/comfy_agent5/agent_main.py:415:121: E501 line too long (123 > 120 characters)
+workers/comfy_agent5/agent_main.py:463:121: E501 line too long (127 > 120 characters)
+workers/comfy_agent5/comfy_client.py:74:121: E501 line too long (140 > 120 characters)
+workers/comfy_agent5/workflow_patcher.py:62:121: E501 line too long (133 > 120 characters)
+workers/comfy_agent5/workflow_patcher.py:168:121: E501 line too long (124 > 120 characters)
+workers/comfy_agent5/workflow_patcher.py:178:121: E501 line too long (153 > 120 characters)

@@ -42,7 +42,8 @@ def _cleanup_context(context: ContextTypes.DEFAULT_TYPE, user_id: int):
 async def start_quick_video(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Entry point for 懒人动图 (单步图生视频)"""
     user_id = update.effective_user.id
-    text = update.message.text.strip()
+    message = update.message or update.edited_message
+    text = message.text.strip() if message and message.text else ""
     
     from src.utils import is_maintenance_mode
     if is_maintenance_mode():

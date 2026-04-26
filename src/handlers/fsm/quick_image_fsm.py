@@ -42,7 +42,8 @@ def _cleanup_context(context: ContextTypes.DEFAULT_TYPE, user_id: int):
 async def start_quick_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Entry point for 懒人P图 (单步图生图)"""
     user_id = update.effective_user.id
-    text = update.message.text.strip()
+    message = update.message or update.edited_message
+    text = message.text.strip() if message and message.text else ""
     logger.info(f"start_quick_image triggered by user {user_id}, text: {text.encode('utf-8')}")
     
     from src.utils import is_maintenance_mode

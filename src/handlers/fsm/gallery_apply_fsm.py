@@ -44,6 +44,13 @@ def _cleanup_context(context: ContextTypes.DEFAULT_TYPE):
 
 async def start_gallery_apply(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Entry point from the callback query 'gallery_apply_{post_id}'"""
+    query = update.callback_query
+    if query:
+        try:
+            await query.answer()
+        except Exception:
+            pass
+
     if is_maintenance_mode():
         msg = "⚠️ 🛠️ **系统正在维护升级中**\n\n暂不接受新任务，请稍后再试！"
         await robust_edit_text(update.callback_query.message, msg, parse_mode="Markdown")
