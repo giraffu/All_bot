@@ -20,7 +20,7 @@ graph TD
         M1[(MinIO server :9000)]
         PG[(PostgreSQL :5432)]
         RD[(Redis :6379)]
-        W1[ComfyUI Worker 1]
+        W1[Comfy Agent Cluster]
         LLM[LM Studio :1234 Host]
     end
 
@@ -71,6 +71,7 @@ python scripts/test_huanyuy.py
 | **前端登录 "Username invalid"** | WebApp 缺失关联的 Bot 用户名，或未在 BotFather 绑定域名。 | 配置前端环境变量 `VITE_TELEGRAM_BOT_USERNAME`，并在 TG 执行 `/setdomain`。 |
 | **CS Bot 修改代码后不生效** | 使用了单纯的 `docker restart`。 | 必须带构建参数重构容器：<br>`docker rm -f cs-bot && docker-compose up -d --build` |
 | **Bot 获取大视频时 404/403** | Local API 容器对宿主机挂载目录 `/var/lib/telegram-bot-api` 权限不足。 | `chmod -R 777 /var/lib/telegram-bot-api` |
+| **Agent 报 NoSuchKey 或 ComfyUI 400** | Agent 读取了默认的 MinIO 存储桶（如 `comfyui-input`），而主应用使用了其他桶名（如 `bot-data`）。 | 在 `workers/docker-compose.yml` 中确保 `MINIO_INPUT_BUCKET` 与后端主服务的 `MINIO_BUCKET` 保持一致。 |
 
 ## 5. 部署与重建步骤 (CI/CD)
 系统微服务分散在多个目录下，重建时需进入特定目录操作。为避免遗留 `ContainerConfig` 错误，推荐先 `rm -f` 再构建：
@@ -80,7 +81,12 @@ python scripts/test_huanyuy.py
 2. **Dashboard 与 中控 API (子目录)**：
    `cd dashboard && docker-compose up -d --build`
    `cd backend && docker-compose up -d --build`
-3. **前端 Vue 自动发布**：
+3. **Comfy Agent 算力集群 (workers 目录)**：
+   集群 Agent (`comfy-agent-x`) 支持独立平滑更新配置，不影响集群中其他节点。
+   - **整体部署**：`cd workers && docker-compose up -d --build`
+   - **单节点更新**（当修改环境变量后，重构并重启单个节点）：`docker-compose up -d comfy-agent-1`
+   - **单节点重启**（不重新构建，仅重启）：`docker-compose restart comfy-agent-1`
+4. **前端 Vue 自动发布**：
    `cd frontend && npm run deploy` (依赖内置私钥通过 SCP 同步至海外 VPS)。
 
 ## 6. 安全与权限监控规则 (SLI/SLO)

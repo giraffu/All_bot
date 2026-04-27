@@ -17,7 +17,7 @@
       "scheduler": "beta",
       "denoise": 0.9,
       "model": [
-        "1",
+        "32",
         0
       ],
       "positive": [
@@ -211,6 +211,20 @@
     "class_type": "EmptyLatentImage",
     "_meta": {
       "title": "Final Image Size"
+    }
+  },
+  "32": {
+    "inputs": {
+      "lora_name": "qwen/YARN_1.0.safetensors",
+      "strength_model": 1.0,
+      "model": [
+        "1",
+        0
+      ]
+    },
+    "class_type": "LoraLoaderModelOnly",
+    "_meta": {
+      "title": "Load LoRA"
     }
   }
 }
