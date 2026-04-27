@@ -26,6 +26,8 @@ const ordersLoading = ref(false)
 const currentOrderPage = ref(1)
 const orderPageSize = ref(10)
 const orderStatusFilter = ref('ALL')
+const searchTelegramId = ref('')
+const searchUsername = ref('')
 
 const planColumns = [
   { title: '套餐名称', dataIndex: 'name', key: 'name' },
@@ -64,7 +66,13 @@ const loadOrders = async (page = 1) => {
   ordersLoading.value = true
   currentOrderPage.value = page
   try {
-    const res = await fetchOrders(page, orderPageSize.value, orderStatusFilter.value)
+    const res = await fetchOrders(
+      page, 
+      orderPageSize.value, 
+      orderStatusFilter.value,
+      searchTelegramId.value || null,
+      searchUsername.value || null
+    )
     orders.value = res.items
     ordersTotal.value = res.total
   } catch (err) {
@@ -173,13 +181,15 @@ onMounted(() => {
         <div class="flex justify-between mb-4 items-center">
           <h2 class="text-lg font-bold">订单列表</h2>
           <div class="flex gap-2">
+            <a-input v-model:value="searchTelegramId" placeholder="搜索用户ID" style="width: 150px" @pressEnter="loadOrders(1)" allow-clear />
+            <a-input v-model:value="searchUsername" placeholder="搜索用户名" style="width: 150px" @pressEnter="loadOrders(1)" allow-clear />
             <a-select v-model:value="orderStatusFilter" style="width: 120px" @change="loadOrders(1)">
               <a-select-option value="ALL">全部状态</a-select-option>
               <a-select-option value="PENDING">处理中</a-select-option>
               <a-select-option value="SUCCESS">成功</a-select-option>
               <a-select-option value="FAILED">失败</a-select-option>
             </a-select>
-            <a-button @click="loadOrders(1)">刷新</a-button>
+            <a-button @click="loadOrders(1)">查询/刷新</a-button>
           </div>
         </div>
         <a-table 

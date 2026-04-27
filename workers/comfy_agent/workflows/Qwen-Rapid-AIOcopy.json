@@ -17,7 +17,7 @@
       "scheduler": "beta",
       "denoise": 0.9,
       "model": [
-        "1",
+        "32",
         0
       ],
       "positive": [
@@ -121,6 +121,23 @@
       "title": "Optional Input Image"
     }
   },
+  "9": {
+    "inputs": {
+      "width": [
+        "11",
+        1
+      ],
+      "height": [
+        "11",
+        2
+      ],
+      "batch_size": 1
+    },
+    "class_type": "EmptyLatentImage",
+    "_meta": {
+      "title": "Final Image Size"
+    }
+  },
   "10": {
     "inputs": {
       "upscale_method": "nearest-exact",
@@ -134,6 +151,18 @@
     "class_type": "ImageScaleToTotalPixels",
     "_meta": {
       "title": "等比缩放至最大1024x1024"
+    }
+  },
+  "11": {
+    "inputs": {
+      "image": [
+        "10",
+        0
+      ]
+    },
+    "class_type": "GetImageSizeAndCount",
+    "_meta": {
+      "title": "Get Image Size & Count"
     }
   },
   "20": {
@@ -184,33 +213,18 @@
       "title": "等比缩放至最大1024x1024"
     }
   },
-  "11": {
+  "32": {
     "inputs": {
-      "image": [
-        "10",
+      "lora_name": "qwen/YARN_1.0.safetensors",
+      "strength_model": 0.3,
+      "model": [
+        "1",
         0
       ]
     },
-    "class_type": "GetImageSizeAndCount",
+    "class_type": "LoraLoaderModelOnly",
     "_meta": {
-      "title": "Get Image Size & Count"
-    }
-  },
-  "9": {
-    "inputs": {
-      "width": [
-        "11",
-        1
-      ],
-      "height": [
-        "11",
-        2
-      ],
-      "batch_size": 1
-    },
-    "class_type": "EmptyLatentImage",
-    "_meta": {
-      "title": "Final Image Size"
+      "title": "Load LoRA"
     }
   }
 }

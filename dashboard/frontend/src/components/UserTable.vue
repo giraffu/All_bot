@@ -1,40 +1,72 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue'
-import { EyeOutlined, EditOutlined, DeleteOutlined, UserDeleteOutlined, SearchOutlined, GiftOutlined, SafetyCertificateOutlined } from '@ant-design/icons-vue'
+import { ref, computed, onMounted, watch } from 'vue'
+import { EyeOutlined, EditOutlined, DeleteOutlined, UserDeleteOutlined, SearchOutlined, GiftOutlined, SafetyCertificateOutlined, InfoCircleOutlined } from '@ant-design/icons-vue'
 import { formatDate } from '../utils/helpers'
-import { updateUserCredits, clearUserHistory, deleteUser, fetchPlans, adminGiftPlan, updateUserIdentity } from '../api/api'
+import { updateUserCredits, clearUserHistory, deleteUser, fetchPlans, adminGiftPlan, updateUserIdentity, fetchUsers, fetchUserStats } from '../api/api'
 import { message, Modal } from 'ant-design-vue'
 
-const props = defineProps({
-  users: {
-    type: Array,
-    required: true
-  },
-  loading: {
-    type: Boolean,
-    default: false
-  },
-  error: {
-    type: String,
-    default: null
-  }
-})
+const emit = defineEmits(['viewHistory'])
 
-const emit = defineEmits(['viewHistory', 'refresh'])
+// State
+const users = ref([])
+const loading = ref(false)
+const error = ref(null)
 
-// Search state
+// Pagination & Search
+const currentPage = ref(1)
+const pageSize = ref(20)
+const totalUsers = ref(0)
 const searchQuery = ref('')
+const searchTimeout = ref(null)
 
-const filteredUsers = computed(() => {
-  if (!searchQuery.value) {
-    return props.users || []
+const loadUsersData = async () => {
+  loading.value = true
+  error.value = null
+  try {
+    const res = await fetchUsers(currentPage.value, pageSize.value, searchQuery.value)
+    users.value = res.items || []
+    totalUsers.value = res.total || 0
+  } catch (err) {
+    console.error('Failed to load users:', err)
+    error.value = '加载用户列表失败'
+  } finally {
+    loading.value = false
   }
-  const query = searchQuery.value.toLowerCase()
-  return (props.users || []).filter(user => 
-    (user.full_name && user.full_name.toLowerCase().includes(query)) ||
-    (user.username && user.username.toLowerCase().includes(query))
-  )
-})
+}
+
+const handleTableChange = (pagination) => {
+  currentPage.value = pagination.current
+  pageSize.value = pagination.pageSize
+  loadUsersData()
+}
+
+const onSearchInput = () => {
+  if (searchTimeout.value) clearTimeout(searchTimeout.value)
+  searchTimeout.value = setTimeout(() => {
+    currentPage.value = 1
+    loadUsersData()
+  }, 500)
+}
+
+// User Stats Modal
+const statsModalVisible = ref(false)
+const statsLoading = ref(false)
+const currentUserStats = ref(null)
+const currentUser = ref(null)
+
+const handleViewStats = async (record) => {
+  currentUser.value = record
+  statsModalVisible.value = true
+  statsLoading.value = true
+  currentUserStats.value = null
+  try {
+    currentUserStats.value = await fetchUserStats(record.id)
+  } catch (err) {
+    message.error('获取统计数据失败: ' + (err.response?.data?.detail || err.message))
+  } finally {
+    statsLoading.value = false
+  }
+}
 
 // Credits editing state
 const editCreditsVisible = ref(false)
@@ -62,7 +94,7 @@ const saveCredits = async () => {
     )
     message.success(`用户 ${currentEditingUser.value.id} 数据已更新`)
     editCreditsVisible.value = false
-    emit('refresh')
+    loadUsersData()
   } catch (err) {
     message.error('更新失败: ' + (err.response?.data?.detail || err.message))
   } finally {
@@ -81,7 +113,7 @@ const handleClearHistory = (record) => {
       try {
         await clearUserHistory(record.id)
         message.success('用户历史数据已成功清除')
-        emit('refresh')
+        loadUsersData()
       } catch (err) {
         message.error('清除数据失败: ' + (err.response?.data?.detail || err.message))
       }
@@ -100,7 +132,7 @@ const handleDeleteUser = (record) => {
       try {
         await deleteUser(record.id)
         message.success('用户及其所有关联数据已成功从数据库移除')
-        emit('refresh')
+        loadUsersData()
       } catch (err) {
         message.error('删除用户失败: ' + (err.response?.data?.detail || err.message))
       }
@@ -155,7 +187,7 @@ const saveIdentity = async () => {
     const newExpireStr = res.identity_expire_at ? formatDate(res.identity_expire_at) : '永不过期'
     message.success(`用户 ${currentIdentityUser.value.id} 身份已更新为 ${res.current_identity}，到期时间：${newExpireStr}`)
     editIdentityVisible.value = false
-    emit('refresh')
+    loadUsersData()
   } catch (err) {
     message.error('更新失败: ' + (err.response?.data?.detail || err.message))
   } finally {
@@ -193,7 +225,7 @@ const submitGift = async () => {
     await adminGiftPlan(currentGiftUser.value.id, giftForm.value.plan_id, giftForm.value.note)
     message.success(`成功为用户 ${currentGiftUser.value.id} 赠送套餐`)
     giftModalVisible.value = false
-    emit('refresh')
+    loadUsersData()
   } catch (err) {
     message.error('赠送套餐失败: ' + (err.response?.data?.detail || err.message))
   } finally {
@@ -203,6 +235,7 @@ const submitGift = async () => {
 
 onMounted(() => {
   loadPlans()
+  loadUsersData()
 })
 
 const columns = [
@@ -245,30 +278,6 @@ const columns = [
     align: 'center',
   },
   {
-    title: '历史充值 (TON)',
-    dataIndex: 'total_recharge_ton',
-    key: 'total_recharge_ton',
-    width: 130,
-    align: 'right',
-    sorter: (a, b) => (a.total_recharge_ton || 0) - (b.total_recharge_ton || 0),
-  },
-  {
-    title: '历史充值 (Stars)',
-    dataIndex: 'total_recharge_stars',
-    key: 'total_recharge_stars',
-    width: 140,
-    align: 'right',
-    sorter: (a, b) => (a.total_recharge_stars || 0) - (b.total_recharge_stars || 0),
-  },
-  {
-    title: '历史充值 (RMB)',
-    dataIndex: 'total_recharge_rmb',
-    key: 'total_recharge_rmb',
-    width: 140,
-    align: 'right',
-    sorter: (a, b) => (a.total_recharge_rmb || 0) - (b.total_recharge_rmb || 0),
-  },
-  {
     title: '邀请人',
     key: 'inviter',
     width: 150,
@@ -308,20 +317,6 @@ const columns = [
     sorter: (a, b) => a.generation_count - b.generation_count,
   },
   {
-    title: '累计贡献',
-    dataIndex: 'total_contributions',
-    key: 'total_contributions',
-    width: 100,
-    sorter: (a, b) => (a.total_contributions || 0) - (b.total_contributions || 0),
-  },
-  {
-    title: '采纳次数',
-    dataIndex: 'approved_contributions',
-    key: 'approved_contributions',
-    width: 100,
-    sorter: (a, b) => (a.approved_contributions || 0) - (b.approved_contributions || 0),
-  },
-  {
     title: '注册时间',
     dataIndex: 'created_at',
     key: 'created_at',
@@ -354,6 +349,7 @@ const columns = [
       <div class="flex items-center gap-4">
         <a-input
           v-model:value="searchQuery"
+          @input="onSearchInput"
           placeholder="搜索用户名称/用户名"
           allow-clear
           class="w-64"
@@ -362,7 +358,7 @@ const columns = [
             <search-outlined class="text-gray-400"/>
           </template>
         </a-input>
-        <a-tag color="blue">总计: {{ filteredUsers.length }}</a-tag>
+        <a-tag color="blue">总计: {{ totalUsers }}</a-tag>
       </div>
     </template>
     
@@ -377,15 +373,18 @@ const columns = [
     <div class="flex-1 overflow-hidden relative min-h-0">
       <a-table 
         :columns="columns" 
-        :data-source="filteredUsers" 
+        :data-source="users" 
         :loading="loading"
         :row-key="record => record.id"
         :pagination="{ 
-          pageSize: 20,
+          current: currentPage,
+          pageSize: pageSize,
+          total: totalUsers,
           showSizeChanger: true,
           showTotal: (total) => `共 ${total} 条`,
           size: 'small'
         }"
+        @change="handleTableChange"
         size="middle"
         :scroll="{ y: 'calc(100vh - 350px)', x: 1400 }"
         class="ant-table-striped"
@@ -423,16 +422,6 @@ const columns = [
           <span v-else class="text-gray-400 text-sm">-</span>
         </template>
 
-        <template v-else-if="column.key === 'total_recharge_ton'">
-          <span class="text-green-600 font-bold font-mono">{{ Number(record.total_recharge_ton || 0).toFixed(2) }}</span>
-        </template>
-        <template v-else-if="column.key === 'total_recharge_stars'">
-          <span class="text-yellow-600 font-bold font-mono">{{ Number(record.total_recharge_stars || 0).toFixed(0) }}</span>
-        </template>
-        <template v-else-if="column.key === 'total_recharge_rmb'">
-          <span class="text-red-600 font-bold font-mono">¥ {{ Number(record.total_recharge_rmb || 0).toFixed(2) }}</span>
-        </template>
-        
         <template v-else-if="column.key === 'inviter'">
           <div class="flex flex-col" v-if="record.inviter_info">
             <span class="font-medium text-gray-800">{{ record.inviter_info.full_name || record.inviter_info.id }}</span>
@@ -471,18 +460,6 @@ const columns = [
           </a-tag>
         </template>
 
-        <template v-else-if="column.key === 'total_contributions'">
-          <a-tag :color="(record.total_contributions || 0) > 0 ? 'blue' : 'default'">
-            {{ record.total_contributions || 0 }}
-          </a-tag>
-        </template>
-
-        <template v-else-if="column.key === 'approved_contributions'">
-          <a-tag :color="(record.approved_contributions || 0) > 0 ? 'gold' : 'default'">
-            {{ record.approved_contributions || 0 }}
-          </a-tag>
-        </template>
-
         <template v-else-if="column.key === 'created_at'">
           <span class="text-gray-500 text-sm">
             {{ formatDate(record.created_at) }}
@@ -503,6 +480,15 @@ const columns = [
 
         <template v-else-if="column.key === 'action'">
           <div class="flex gap-2">
+            <a-button 
+              type="link" 
+              size="small"
+              @click="handleViewStats(record)"
+            >
+              <template #icon><info-circle-outlined /></template>
+              详细信息
+            </a-button>
+
             <a-button 
               type="link" 
               size="small"
@@ -662,6 +648,62 @@ const columns = [
             <li>会正常下发该套餐包含的灵石、更新身份组并延长身份有效期。</li>
           </ul>
         </div>
+      </div>
+    </a-modal>
+    <!-- Stats Modal -->
+    <a-modal
+      v-model:visible="statsModalVisible"
+      title="用户详细统计"
+      :footer="null"
+      width="600px"
+    >
+      <div v-if="statsLoading" class="flex justify-center items-center h-48">
+        <a-spin size="large" tip="加载数据中..." />
+      </div>
+      <div v-else-if="currentUserStats" class="py-4">
+        <div class="mb-6 flex items-center gap-4">
+          <a-avatar size="large" style="background-color: #1890ff">
+            <template #icon><user-outlined /></template>
+          </a-avatar>
+          <div>
+            <h3 class="text-lg font-bold m-0">{{ currentUser?.full_name || '未知用户' }}</h3>
+            <div class="text-gray-500 text-sm">@{{ currentUser?.username || 'n/a' }} | ID: {{ currentUser?.id }}</div>
+          </div>
+        </div>
+
+        <h4 class="text-md font-semibold text-gray-700 mb-3 border-b pb-2">历史充值统计</h4>
+        <div class="grid grid-cols-3 gap-4 mb-6">
+          <a-statistic title="充值 (RMB)" :value="currentUserStats.total_recharge_rmb" :precision="2" prefix="¥">
+            <template #formatter="{ value }">
+              <span class="text-red-600 font-bold font-mono">{{ value }}</span>
+            </template>
+          </a-statistic>
+          <a-statistic title="充值 (TON)" :value="currentUserStats.total_recharge_ton" :precision="2">
+            <template #formatter="{ value }">
+              <span class="text-green-600 font-bold font-mono">{{ value }}</span>
+            </template>
+          </a-statistic>
+          <a-statistic title="充值 (Stars)" :value="currentUserStats.total_recharge_stars">
+            <template #formatter="{ value }">
+              <span class="text-yellow-600 font-bold font-mono">{{ value }}</span>
+            </template>
+          </a-statistic>
+        </div>
+
+        <h4 class="text-md font-semibold text-gray-700 mb-3 border-b pb-2">其他详细信息</h4>
+        <div class="grid grid-cols-2 gap-4">
+          <div class="bg-gray-50 p-3 rounded border">
+            <div class="text-gray-500 text-xs mb-1">模板贡献次数</div>
+            <div class="font-bold text-lg text-blue-600">{{ currentUser?.total_contributions || 0 }}</div>
+          </div>
+          <div class="bg-gray-50 p-3 rounded border">
+            <div class="text-gray-500 text-xs mb-1">模板采纳次数</div>
+            <div class="font-bold text-lg text-gold-600">{{ currentUser?.approved_contributions || 0 }}</div>
+          </div>
+        </div>
+      </div>
+      <div v-else class="text-center text-gray-500 py-8">
+        数据加载失败
       </div>
     </a-modal>
   </a-card>

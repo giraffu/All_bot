@@ -104,6 +104,7 @@ class TaskService:
         msg_text = f"🚀 正在处理高级图生视频任务 (画质:{resolution}, 时长:{duration}, 消耗{cost}灵石)...{notice}"
         msg = await robust_reply_text(update.effective_message, msg_text)
         registry_task_id = None
+        credits_deducted = False
 
         try:
             width, height = map(int, resolution.split('x'))
@@ -117,6 +118,8 @@ class TaskService:
                 if cleanup and image_path:
                     TaskService._cleanup_files([image_path])
                 return None, None
+            
+            credits_deducted = True
                 
             priority, identity_str, user_group = await get_user_priority_and_identity(internal_user_id)
 
@@ -168,7 +171,9 @@ class TaskService:
                     allow_contribute=allow_contribute,
                 )
             else:
-                await refund_credits(internal_user_id, cost, "refund", username)
+                import asyncio
+                if credits_deducted:
+                    await asyncio.shield(refund_credits(internal_user_id, cost, "refund", username))
                 await robust_send_message(
                     context.bot, chat_id, "❌ 生成完成但未获取到文件路径，已退还灵石"
                 )
@@ -178,7 +183,9 @@ class TaskService:
             logger.error(
                 f"Error in ltx video task for user {internal_user_id}: {e}", exc_info=True
             )
-            await refund_credits(internal_user_id, cost, "refund", username)
+            import asyncio
+            if credits_deducted:
+                await asyncio.shield(refund_credits(internal_user_id, cost, "refund", username))
             error_msg = str(e)
             if any(kw in error_msg for kw in ["Circuit is open", "All connection attempts failed", "Connection refused", "timeout", "ConnectError"]) or "CircuitBreaker" in str(type(e)):
                 user_msg = "当前服务器繁忙，请稍后再试"
@@ -231,6 +238,8 @@ class TaskService:
             context, chat_id, message_id, msg_text
         )
         
+        credits_deducted = False
+
         try:
             # 3. 计费 via core
             deduct_success, deduct_msg = await check_and_deduct_credits(internal_user_id, cost, mode, username)
@@ -240,6 +249,8 @@ class TaskService:
                 if cleanup:
                     TaskService._cleanup_files([face_image_path, video_path])
                 return None, None
+
+            credits_deducted = True
 
             priority, identity_str, user_group = await get_user_priority_and_identity(internal_user_id)
 
@@ -298,13 +309,17 @@ class TaskService:
                     caption="✅ 视频换脸完成",
                 )
             else:
-                await refund_credits(internal_user_id, cost, "refund", username)
+                import asyncio
+                if credits_deducted:
+                    await asyncio.shield(refund_credits(internal_user_id, cost, "refund", username))
                 await robust_edit_text(status_msg, "⚠️ 生成失败或超时，已退还灵石。")
                 return None, None
 
         except Exception as e:
             logger.error(f"Error processing face video task for {internal_user_id}: {e}", exc_info=True)
-            await refund_credits(internal_user_id, cost, "refund", username)
+            import asyncio
+            if credits_deducted:
+                await asyncio.shield(refund_credits(internal_user_id, cost, "refund", username))
             error_msg = str(e)
             if any(kw in error_msg for kw in ["Circuit is open", "All connection attempts failed", "Connection refused", "timeout", "ConnectError"]) or "CircuitBreaker" in str(type(e)):
                 user_msg = "当前服务器繁忙，请稍后再试"
@@ -417,6 +432,7 @@ class TaskService:
 
         media_bytes = None
         full_output_path = None
+        credits_deducted = False
 
         try:
             # 3. Deduct Quota via core
@@ -428,6 +444,7 @@ class TaskService:
                     if cleanup:
                         TaskService._cleanup_files(images)
                     return None, None
+                credits_deducted = True
 
             # Determine Priority
             priority, identity_str, user_group = await get_user_priority_and_identity(internal_user_id)
@@ -463,8 +480,9 @@ class TaskService:
                 submit_msg = str(e)
                 
             if not submit_success:
-                if deduct_quota:
-                    await refund_credits(internal_user_id, cost, "refund", username)
+                import asyncio
+                if deduct_quota and credits_deducted:
+                    await asyncio.shield(refund_credits(internal_user_id, cost, "refund", username))
                 await robust_edit_text(status_msg, f"⚠️ {submit_msg}\n已退还灵石。")
                 return None, None
 
@@ -502,16 +520,18 @@ class TaskService:
                     )
                 )
             else:
-                if deduct_quota:
-                    await refund_credits(internal_user_id, cost, "refund", username)
+                import asyncio
+                if deduct_quota and credits_deducted:
+                    await asyncio.shield(refund_credits(internal_user_id, cost, "refund", username))
                 await robust_send_message(
                     context.bot, chat_id, "❌ 生成完成但未获取到文件路径，已退还灵石"
                 )
 
         except Exception as e:
             logger.error(f"Error in process_generation_task for user {internal_user_id}: {e}", exc_info=True)
-            if deduct_quota:
-                await refund_credits(internal_user_id, cost, "refund", username)
+            import asyncio
+            if deduct_quota and credits_deducted:
+                await asyncio.shield(refund_credits(internal_user_id, cost, "refund", username))
                 
             error_msg = str(e)
             if any(kw in error_msg for kw in ["Circuit is open", "All connection attempts failed", "Connection refused", "timeout", "ConnectError"]) or "CircuitBreaker" in str(type(e)):
@@ -616,6 +636,7 @@ class TaskService:
         media_bytes = None
         full_output_path = None
         registry_task_id = None
+        credits_deducted = False
 
         try:
             # 2. 计费 via core
@@ -627,6 +648,8 @@ class TaskService:
                 if cleanup:
                     TaskService._cleanup_files([image_path])
                 return None, None
+
+            credits_deducted = True
 
             priority, identity_str, user_group = await get_user_priority_and_identity(internal_user_id)
 
@@ -687,14 +710,18 @@ class TaskService:
                     )
                 )
             else:
-                await refund_credits(internal_user_id, cost, "refund", username)
+                import asyncio
+                if credits_deducted:
+                    await asyncio.shield(refund_credits(internal_user_id, cost, "refund", username))
                 await robust_send_message(
                     context.bot, chat_id, "❌ 生成完成但未获取到任务信息，已退还灵石"
                 )
 
         except Exception as e:
             logger.error(f"Error in {mode} task for user {internal_user_id}: {e}", exc_info=True)
-            await refund_credits(internal_user_id, cost, "refund", username)
+            import asyncio
+            if credits_deducted:
+                await asyncio.shield(refund_credits(internal_user_id, cost, "refund", username))
             error_msg = str(e)
             if any(kw in error_msg for kw in ["Circuit is open", "All connection attempts failed", "Connection refused", "timeout", "ConnectError"]) or "CircuitBreaker" in str(type(e)):
                 user_msg = "当前服务器繁忙，请稍后再试"
@@ -834,6 +861,8 @@ class TaskService:
                 TaskService._cleanup_files([image_path])
             return None, None
             
+        credits_deducted = False
+
         try:
             mode = MODE_CUSTOM_VIDEO
             
@@ -876,6 +905,8 @@ class TaskService:
                     await robust_delete_message(msg)
                 await robust_send_message(context.bot, chat_id, deduct_msg)
                 return None, None
+                
+            credits_deducted = True
                 
             priority, identity_str, user_group = await get_user_priority_and_identity(internal_user_id)
 
@@ -928,7 +959,9 @@ class TaskService:
                     caption="✅ 自定义图生视频生成完成",
                 )
             else:
-                await refund_credits(internal_user_id, cost, "refund", username)
+                import asyncio
+                if credits_deducted:
+                    await asyncio.shield(refund_credits(internal_user_id, cost, "refund", username))
                 await robust_send_message(
                     context.bot, chat_id, "❌ 生成完成但未获取到文件路径，已退还灵石"
                 )
@@ -938,9 +971,9 @@ class TaskService:
             logger.error(
                 f"Error in custom video task for user {internal_user_id}: {e}", exc_info=True
             )
-            # If cost was calculated and potentially deducted, we might need to refund it.
-            # But wait, if it fails before check_and_deduct_credits, we shouldn't refund.
-            # This is a bit complex, but at least we log and exit cleanly.
+            import asyncio
+            if credits_deducted:
+                await asyncio.shield(refund_credits(internal_user_id, cost, "refund", username))
             error_msg = str(e)
             if any(kw in error_msg for kw in ["Circuit is open", "All connection attempts failed", "Connection refused", "timeout", "ConnectError"]) or "CircuitBreaker" in str(type(e)):
                 user_msg = "当前服务器繁忙，请稍后再试"
@@ -1006,6 +1039,7 @@ class TaskService:
         msg_text = f"🚀 正在处理幻想换脸任务 (消耗{cost}灵石)...{notice}"
         msg = await robust_send_message(context.bot, chat_id, msg_text)
         registry_task_id = None
+        credits_deducted = False
 
         try:
             # 2. 计费
@@ -1016,6 +1050,8 @@ class TaskService:
                 await robust_send_message(context.bot, chat_id, deduct_msg)
                 TaskService._cleanup_files(images)
                 return None, None
+
+            credits_deducted = True
 
             priority, identity_str, user_group = await get_user_priority_and_identity(internal_user_id)
 
@@ -1055,13 +1091,17 @@ class TaskService:
                     caption=f"🌟 幻想换脸生成完成", allow_contribute=allow_contribute
                 )
             else:
-                await refund_credits(internal_user_id, cost, "refund", username)
+                import asyncio
+                if credits_deducted:
+                    await asyncio.shield(refund_credits(internal_user_id, cost, "refund", username))
                 await robust_send_message(context.bot, chat_id, "❌ 生成完成但未获取到文件路径，已退还灵石")
                 return None, None
 
         except Exception as e:
             user_logger.logger.error(f"Error in process_i2i_pro_task for user {internal_user_id}: {e}", exc_info=True)
-            await refund_credits(internal_user_id, cost, "refund", username)
+            import asyncio
+            if credits_deducted:
+                await asyncio.shield(refund_credits(internal_user_id, cost, "refund", username))
             error_msg = str(e)
             if any(kw in error_msg for kw in ["Circuit is open", "All connection attempts failed", "Connection refused", "timeout", "ConnectError"]) or "CircuitBreaker" in str(type(e)):
                 user_msg = "当前服务器繁忙，请稍后再试"

@@ -259,7 +259,7 @@ const closeModal = () => {
 const refreshData = () => {
   loadStats()
   loadHistory()
-  loadUsers()
+  // loadUsers is now handled by UserTable
 }
 
 // Auto refresh when switching tabs
@@ -268,10 +268,8 @@ watch(activeTab, (newTab) => {
   if (tab === 'home' || tab === 'finance') {
     loadStats()
     loadHistory()
-  } else if (tab === 'users') {
-    loadUsers()
   }
-  // history and templates components handle their own data fetching on mount
+  // UserTable, history, templates handle their own data fetching
 })
 
 const handleLoginSuccess = () => {
@@ -487,11 +485,7 @@ onUnmounted(() => {
 
           <div v-else-if="activeTab[0] === 'users'" class="flex-1 bg-white rounded-xl shadow-sm border p-6 flex flex-col min-h-0">
             <UserTable 
-              :users="users" 
-              :loading="loading" 
-              :error="error" 
               @view-history="viewHistory" 
-              @refresh="refreshData"
             />
           </div>
 

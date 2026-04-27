@@ -82,13 +82,18 @@ async def get_orders(
     page: int = 1, 
     page_size: int = 20, 
     status: Optional[str] = None,
+    telegram_id: Optional[int] = None,
+    username: Optional[str] = None,
     db: AsyncSession = Depends(get_db)
 ):
-    """Get orders with pagination and optional status filter"""
+    """Get orders with pagination and optional filters"""
     try:
         offset = (page - 1) * page_size
         
         count_stmt = select(func.count(Order.id))
+        if username:
+            count_stmt = count_stmt.outerjoin(User, Order.telegram_id == User.id)
+            
         stmt = (
             select(Order, User.username, MembershipPlan.name.label("plan_name"))
             .outerjoin(User, Order.telegram_id == User.id)
@@ -100,8 +105,17 @@ async def get_orders(
             count_stmt = count_stmt.where(Order.status == status)
             stmt = stmt.where(Order.status == status)
             
+        if telegram_id:
+            count_stmt = count_stmt.where(Order.telegram_id == telegram_id)
+            stmt = stmt.where(Order.telegram_id == telegram_id)
+            
+        if username:
+            count_stmt = count_stmt.where(User.username.ilike(f"%{username}%"))
+            stmt = stmt.where(User.username.ilike(f"%{username}%"))
+            
         count_result = await db.execute(count_stmt)
         total = count_result.scalar() or 0
+
         
         stmt = stmt.offset(offset).limit(page_size)
         result = await db.execute(stmt)

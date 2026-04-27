@@ -16,11 +16,22 @@ router = APIRouter(prefix="/api/users", tags=["users"])
 logger = logging.getLogger("dashboard.users")
 
 @router.get("")
-async def get_users(skip: int = 0, limit: int = 100000, db: AsyncSession = Depends(get_db)):
-    """Get user list with referral counts"""
+async def get_users(skip: int = 0, limit: int = 20, query: str = None, db: AsyncSession = Depends(get_db)):
+    """Get paginated user list with basic info"""
     try:
+        stmt = select(User)
+        
+        if query:
+            stmt = stmt.where((User.full_name.ilike(f"%{query}%")) | (User.username.ilike(f"%{query}%")))
+            
+        # Get total count
+        count_stmt = select(func.count()).select_from(stmt.subquery())
+        total_result = await db.execute(count_stmt)
+        total = total_result.scalar() or 0
+        
+        # Get paginated data
         stmt = (
-            select(User)
+            stmt
             .options(selectinload(User.inviter_user))
             .order_by(desc(User.created_at))
             .offset(skip)
@@ -29,37 +40,8 @@ async def get_users(skip: int = 0, limit: int = 100000, db: AsyncSession = Depen
 
         result = await db.execute(stmt)
         users = result.scalars().all()
-        user_ids = [user.id for user in users]
         
-        recharge_dict = {}
-        if user_ids:
-            # PostgreSQL extended query protocol limits parameters to 32767. 
-            # We must chunk user_ids to avoid "too many parameters" error.
-            chunk_size = 10000
-            for i in range(0, len(user_ids), chunk_size):
-                chunked_user_ids = user_ids[i:i + chunk_size]
-                recharge_stmt = (
-                    select(
-                        Order.telegram_id, 
-                        func.sum(case((Order.order_id.like("RMB_%"), Order.final_price), else_=0)).label("total_recharge_rmb"),
-                        func.sum(case((Order.order_id.notlike("RMB_%") & (Order.final_price < 50), Order.final_price), else_=0)).label("total_recharge_ton"),
-                        func.sum(case((Order.order_id.notlike("RMB_%") & (Order.final_price >= 50), Order.final_price), else_=0)).label("total_recharge_stars")
-                    )
-                    .where(Order.status == "SUCCESS")
-                    .where(Order.tx_hash.notlike("manual_%"))
-                    .where(Order.telegram_id.in_(chunked_user_ids))
-                    .group_by(Order.telegram_id)
-                )
-                recharge_result = await db.execute(recharge_stmt)
-                for row in recharge_result:
-                    recharge_dict[row.telegram_id] = {
-                        "ton": float(row.total_recharge_ton or 0),
-                        "stars": int(row.total_recharge_stars or 0),
-                        "rmb": float(row.total_recharge_rmb or 0)
-                    }
-        
-        users_with_counts = []
-        
+        users_basic_info = []
         for user in users:
             user_dict = {c.name: getattr(user, c.name) for c in user.__table__.columns}
             user_dict["referral_count"] = user.referral_count or 0
@@ -68,9 +50,6 @@ async def get_users(skip: int = 0, limit: int = 100000, db: AsyncSession = Depen
             user_dict["checkin_count"] = user.checkin_count or 0
             user_dict["current_identity"] = user.current_identity or '外门弟子'
             user_dict["identity_expire_at"] = user.identity_expire_at
-            user_dict["total_recharge_ton"] = recharge_dict.get(user.id, {}).get("ton", 0.0)
-            user_dict["total_recharge_stars"] = recharge_dict.get(user.id, {}).get("stars", 0)
-            user_dict["total_recharge_rmb"] = recharge_dict.get(user.id, {}).get("rmb", 0.0)
             user_dict["total_contributions"] = int(user.total_contributions or 0)
             user_dict["approved_contributions"] = int(user.approved_contributions or 0)
             user_dict["channel_joined"] = bool(user.is_channel_member) if hasattr(user, "is_channel_member") else False
@@ -84,11 +63,40 @@ async def get_users(skip: int = 0, limit: int = 100000, db: AsyncSession = Depen
             else:
                 user_dict["inviter_info"] = None
                 
-            users_with_counts.append(user_dict)
+            users_basic_info.append(user_dict)
             
-        return users_with_counts
+        return {"items": users_basic_info, "total": total}
     except Exception as e:
         logger.error(f"Error getting users: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/{user_id}/stats")
+async def get_user_stats(user_id: int, db: AsyncSession = Depends(get_db)):
+    """Get detailed heavy stats for a specific user"""
+    try:
+        # Recharge stats
+        recharge_stmt = (
+            select(
+                func.sum(case((Order.order_id.like("RMB_%"), Order.final_price), else_=0)).label("total_recharge_rmb"),
+                func.sum(case((Order.order_id.notlike("RMB_%") & (Order.final_price < 50), Order.final_price), else_=0)).label("total_recharge_ton"),
+                func.sum(case((Order.order_id.notlike("RMB_%") & (Order.final_price >= 50), Order.final_price), else_=0)).label("total_recharge_stars")
+            )
+            .where(Order.status == "SUCCESS")
+            .where(Order.tx_hash.notlike("manual_%"))
+            .where(Order.telegram_id == user_id)
+        )
+        recharge_result = await db.execute(recharge_stmt)
+        row = recharge_result.one_or_none()
+        
+        stats = {
+            "total_recharge_ton": float(row.total_recharge_ton or 0) if row else 0.0,
+            "total_recharge_stars": int(row.total_recharge_stars or 0) if row else 0,
+            "total_recharge_rmb": float(row.total_recharge_rmb or 0) if row else 0.0,
+        }
+        
+        return stats
+    except Exception as e:
+        logger.error(f"Error getting user stats: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.delete("/{user_id}")

@@ -87,8 +87,19 @@ export const fetchCumulativeHourlyStats = async (days = 7) => {
   return response.data
 }
 
-export const fetchUsers = async () => {
-  const response = await api.get('/api/users')
+export const fetchUsers = async (page = 1, pageSize = 20, query = '') => {
+  const params = new URLSearchParams()
+  params.append('skip', (page - 1) * pageSize)
+  params.append('limit', pageSize)
+  if (query) {
+    params.append('query', query)
+  }
+  const response = await api.get(`/api/users?${params.toString()}`)
+  return response.data
+}
+
+export const fetchUserStats = async (userId) => {
+  const response = await api.get(`/api/users/${userId}/stats`)
   return response.data
 }
 
@@ -251,12 +262,18 @@ export const deletePlan = async (planId) => {
   return response.data
 }
 
-export const fetchOrders = async (page = 1, pageSize = 20, status = null) => {
+export const fetchOrders = async (page = 1, pageSize = 20, status = null, telegramId = null, username = null) => {
   const params = new URLSearchParams()
   params.append('page', page)
   params.append('page_size', pageSize)
   if (status && status !== 'ALL') {
     params.append('status', status)
+  }
+  if (telegramId) {
+    params.append('telegram_id', telegramId)
+  }
+  if (username) {
+    params.append('username', username)
   }
   const response = await api.get(`/api/orders?${params.toString()}`)
   return response.data
