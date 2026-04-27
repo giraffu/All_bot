@@ -106,7 +106,10 @@ async def process_and_submit_task(
     task_type: str, 
     inputs: dict,
     base_priority: int = 0,
-    is_template: bool = False
+    is_template: bool = False,
+    client_type: str = "web",
+    deduct_quota: bool = True,
+    check_lock: bool = True,
 ) -> dict:
     import uuid
     import asyncio
@@ -122,9 +125,10 @@ async def process_and_submit_task(
         if int(resolution) >= 1024 and int(duration) >= 10:
             raise CoreDomainError("Cannot select 1024p resolution and 10s duration simultaneously due to high resource usage.")
     
-    can_run, err = await check_concurrency_lock(user_id)
-    if not can_run:
-        raise ConcurrencyLimitError(err)
+    if check_lock:
+        can_run, err = await check_concurrency_lock(user_id)
+        if not can_run:
+            raise ConcurrencyLimitError(err)
         
     task_submitted_successfully = False
     credits_deducted = False
@@ -132,11 +136,11 @@ async def process_and_submit_task(
     try:
         task_id = str(uuid.uuid4())
         
-        success, err = await check_and_deduct_credits(user_id, cost, task_type, username)
-        if not success:
-            raise InsufficientCreditsError(err)
-            
-        credits_deducted = True
+        if deduct_quota:
+            success, err = await check_and_deduct_credits(user_id, cost, task_type, username)
+            if not success:
+                raise InsufficientCreditsError(err)
+            credits_deducted = True
         
         try:
             priority, _, _ = await get_user_priority_and_identity(user_id)
@@ -210,23 +214,24 @@ async def process_and_submit_task(
             if not success or not backend_task_id:
                 raise CoreDomainError(msg)
                 
-            try:
-                asyncio.create_task(
-                    monitor_task_and_release_lock(
-                        task_id=backend_task_id, 
-                        internal_user_id=user_id, 
-                        username=username,
-                        registry_task_id=registry_task_id, 
-                        is_video=is_video_task,
-                        task_type=task_type,
-                        prompt=log_prompt,
-                        input_images=saved_inputs,
-                        allow_contribute=allow_contribute
+            if client_type == "web":
+                try:
+                    asyncio.create_task(
+                        monitor_task_and_release_lock(
+                            task_id=backend_task_id, 
+                            internal_user_id=user_id, 
+                            username=username,
+                            registry_task_id=registry_task_id, 
+                            is_video=is_video_task,
+                            task_type=task_type,
+                            prompt=log_prompt,
+                            input_images=saved_inputs,
+                            allow_contribute=allow_contribute
+                        )
                     )
-                )
-            except Exception as e:
-                # 如果监控挂载失败，由外层的 Saga 补偿机制和 finally 统一处理退款和释放锁
-                raise CoreDomainError(f"后台监控挂载失败: {e}")
+                except Exception as e:
+                    # 如果监控挂载失败，由外层的 Saga 补偿机制和 finally 统一处理退款和释放锁
+                    raise CoreDomainError(f"后台监控挂载失败: {e}")
                 
             task_submitted_successfully = True
             
@@ -257,5 +262,5 @@ async def process_and_submit_task(
             
     finally:
         # 兜底保障：确保并发锁释放
-        if not task_submitted_successfully:
+        if check_lock and not task_submitted_successfully:
             await asyncio.shield(release_concurrency_lock(user_id))

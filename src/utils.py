@@ -77,7 +77,7 @@ def async_retry(max_retries: int = 3, delay: float = 1.0, backoff: float = 2.0):
                             NetworkError,
                             TimedOut,
                         ),
-                    ):
+                    ) and not isinstance(e, BadRequest):
                         if attempt == max_retries:
                             logger.error(
                                 f"Function {func.__name__} failed after {max_retries} retries: {e}"
@@ -201,9 +201,15 @@ async def robust_send_video(bot, chat_id, video, **kwargs):
     return res
 
 
-@async_retry(max_retries=3)
 async def robust_delete_message(message):
-    return await message.delete()
+    try:
+        return await message.delete()
+    except BadRequest as e:
+        error_msg = str(e).lower()
+        if "message to delete not found" in error_msg or "message can't be deleted" in error_msg:
+            logger.warning(f"Message deletion skipped: {e}")
+            return None
+        raise e
 
 async def safe_answer_query(query, **kwargs):
     """

@@ -32,6 +32,9 @@ class DefaultImageStrategy(BaseTaskStrategy):
         self.mode = mode
         
     def get_cost(self, inputs: Dict[str, Any]) -> int:
+        from src.constants import MODE_EDIT, MODE_IMG2IMG_LORA
+        if self.mode in [MODE_EDIT, "edit", MODE_IMG2IMG_LORA, "img2img_lora"]:
+            return 6 if len(inputs.get("images", [])) >= 2 else 2
         return TASK_COSTS.get(self.mode, 2)
         
     def build_payload(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
@@ -86,6 +89,8 @@ class FaceSwapStrategy(BaseTaskStrategy):
         
     def get_file_paths_to_upload(self, inputs: Dict[str, Any]) -> list[str]:
         # 按照原来的逻辑：先是 body_img (target_image)，再是 face_img (face_image)
+        if "images" in inputs and len(inputs.get("images", [])) >= 2:
+            return inputs["images"]
         return [inputs.get("target_image"), inputs.get("face_image")]
         
     async def submit_task(self, task_id: str, inputs: Dict[str, Any], priority: int) -> str:
@@ -124,6 +129,8 @@ class BaseVideoStrategy(BaseTaskStrategy):
         
     def get_file_paths_to_upload(self, inputs: Dict[str, Any]) -> list[str]:
         if self.mode == "face_video":
+            if "images" in inputs and len(inputs.get("images", [])) >= 2:
+                return inputs["images"]
             return [inputs.get("face_image"), inputs.get("target_video")]
         elif "images" in inputs:
             return inputs.get("images", [])

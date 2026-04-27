@@ -93,6 +93,74 @@ async def clean_zombie_tasks(db: AsyncSession = Depends(get_db)):
 async def health_check():
     return {"status": "ok"}
 
+class SyncLockRequest(BaseModel):
+    user_id: int
+
+@router.post("/system/sync_user_concurrency")
+async def sync_user_concurrency(req: SyncLockRequest):
+    """Sync user's concurrency lock to match their actual active tasks count."""
+    try:
+        active_tasks = await redis_client.get_active_tasks()
+        actual_count = sum(1 for t in active_tasks.values() if t.get("user_id") == req.user_id)
+        
+        from config import REDIS_PREFIX
+        key = f"{REDIS_PREFIX}user_concurrency:{req.user_id}"
+        
+        current_lock = await redis_client.redis.get(key)
+        current_lock = int(current_lock) if current_lock else 0
+        
+        if current_lock > actual_count:
+            if actual_count > 0:
+                await redis_client.redis.set(key, actual_count)
+                await redis_client.redis.expire(key, 3600)
+            else:
+                await redis_client.redis.delete(key)
+            return {"status": "success", "message": f"用户 {req.user_id} 并发锁已从 {current_lock} 修复为 {actual_count}"}
+        else:
+            return {"status": "info", "message": "无需修复，锁数量未超出真实任务数"}
+    except Exception as e:
+        logger.error(f"Error syncing concurrency lock for user {req.user_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/system/concurrency_stats")
+async def get_concurrency_stats(db: AsyncSession = Depends(get_db)):
+    """Get active concurrency locks and tasks per user."""
+    try:
+        concurrencies = await redis_client.get_all_user_concurrencies()
+        active_tasks = await redis_client.get_active_tasks()
+        
+        user_active_tasks = {}
+        user_names = {}
+        for task_id, task in active_tasks.items():
+            uid = task.get("user_id")
+            if uid:
+                user_active_tasks[uid] = user_active_tasks.get(uid, 0) + 1
+                if task.get("username"):
+                    user_names[uid] = task.get("username")
+                    
+        all_uids = set(concurrencies.keys()).union(set(user_active_tasks.keys()))
+        
+        missing_uids = list(all_uids - set(user_names.keys()))
+        if missing_uids:
+            stmt = select(User.id, User.username).where(User.id.in_(missing_uids))
+            result = await db.execute(stmt)
+            for row in result.all():
+                user_names[row.id] = row.username
+                
+        stats = []
+        for uid in all_uids:
+            stats.append({
+                "user_id": uid,
+                "username": user_names.get(uid, f"User_{uid}"),
+                "concurrency_locks": concurrencies.get(uid, 0),
+                "active_tasks": user_active_tasks.get(uid, 0)
+            })
+            
+        return {"status": "success", "data": stats}
+    except Exception as e:
+        logger.error(f"Error getting concurrency stats: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @router.get("/system/active_bot_tasks")
 async def get_active_bot_tasks(db: AsyncSession = Depends(get_db)):
     """Get active tasks tracked by bot in Redis, merged with user database info and realtime status"""
@@ -205,9 +273,9 @@ async def get_system_status_proxy():
         async with httpx.AsyncClient(trust_env=False) as client:
             response = await client.get(url, timeout=5.0)
             if response.status_code == 200:
-                return response.json()
+                data = response.json()
             else:
-                return {
+                data = {
                     "queue_size": 0,
                     "queue_by_type": {},
                     "active_workers": 0,
@@ -216,13 +284,25 @@ async def get_system_status_proxy():
                 }
     except Exception as e:
         logger.error(f"Error proxying system status: {e}")
-        return {
+        data = {
             "queue_size": 0,
             "queue_by_type": {},
             "active_workers": 0,
             "comfy_online": False,
             "error": str(e)
         }
+        
+    # 获取并注入并发锁数据
+    try:
+        concurrencies = await redis_client.get_all_user_concurrencies()
+        data["concurrency_locks"] = sum(concurrencies.values())
+        data["concurrency_details"] = concurrencies
+    except Exception as e:
+        logger.error(f"Error getting concurrency locks: {e}")
+        data["concurrency_locks"] = 0
+        data["concurrency_details"] = {}
+        
+    return data
 
 @router.get("/system/workers")
 async def get_system_workers_proxy():

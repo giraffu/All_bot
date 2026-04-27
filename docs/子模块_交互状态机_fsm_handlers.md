@@ -1,7 +1,8 @@
-# 子模块: 交互状态机 (FSM Handlers)
+# 子模块: 交互状态机与回调路由 (FSM & Callback Handlers)
 
 ## 1. 目标与范围
-本模块包含所有通过 Python-Telegram-Bot (PTB) 的 `ConversationHandler` 实现的有限状态机逻辑（例如高级图生视频、社区一键应用等）。它负责在 Telegram 客户端收集用户的图像、分辨率、时长等分步参数，并在整个收集期间处理菜单按钮的意外中断拦截（防死锁），最后组装完整参数提交至任务调度层。
+本模块包含所有通过 Python-Telegram-Bot (PTB) 实现的有限状态机逻辑（如高级图生视频、社区一键应用等）以及**基于装饰器的回调路由体系 (`callback_router.py`)**。
+FSM 负责在 Telegram 客户端收集用户的图像、分辨率、时长等分步参数，期间处理菜单按钮的意外中断拦截（防死锁）；回调路由负责拆分庞大的 Callback 处理逻辑（拆分为 `billing`, `gallery`, `misc` 等子模块），实现单一职责原则（SRP）。
 
 ## 2. 架构图与调用链
 
@@ -60,10 +61,17 @@ def get_ltx_video_fsm_handler() -> ConversationHandler:
     )
 ```
 
-## 4. 接口定义 (OpenAPI 3.0)
+## 4. 接口定义与回调路由机制 (Routing & OpenAPI)
 
 *注：本模块完全基于 Telegram 长连接，属于内部的异步回调路由体系，不暴露 HTTP API。其触发条件如下：*
 
+### 4.1 装饰器回调路由 (`src/handlers/callback_router.py`)
+采用 `@register_callback("prefix")` 动态注册各个业务线的回调逻辑，核心模块被划分为：
+- `billing_callbacks.py`: 充值与签到相关回调。
+- `gallery_callbacks.py`: 广场作品的点赞、应用与公开分享。
+- `misc_callbacks.py`: 通用帮助与菜单回调。
+
+### 4.2 状态机触发条件 (FSM)
 ```yaml
 telegram_webhook:
   - Event: CallbackQuery

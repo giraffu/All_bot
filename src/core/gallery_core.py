@@ -50,12 +50,12 @@ async def process_submit_to_gallery(user_id: int, task_id: str, background_tasks
     async with AsyncSessionLocal() as session:
         # Check existing
         existing = await session.execute(select(GalleryPost).where(GalleryPost.task_id == task_id))
-        if existing.scalar_one_or_none():
+        if existing.scalars().first():
             raise GalleryCoreError("您已经投稿过此内容啦！")
 
         # Get History
         hist_res = await session.execute(select(History).where(History.task_id == task_id).where(History.user_id == user_id))
-        history = hist_res.scalar_one_or_none()
+        history = hist_res.scalars().first()
         if not history:
             raise GalleryCoreError("无法找到对应的任务记录，投稿失败")
 

@@ -209,7 +209,7 @@ class TaskService:
     ):
         from src.core.user_core import get_or_create_user_by_telegram
         from src.core.billing_core import check_concurrency_lock, release_concurrency_lock, check_and_deduct_credits, refund_credits, get_user_priority_and_identity
-        from src.core.task_core import core_submit_face_video
+        import uuid
 
         # 1. 身份转换 (TG ID -> 内部 ID)
         internal_user, _ = await get_or_create_user_by_telegram(user_id, username)
@@ -243,19 +243,39 @@ class TaskService:
 
             priority, identity_str, user_group = await get_user_priority_and_identity(internal_user_id)
 
-            # 4. 调用纯净核心逻辑提交任务
-            submit_success, submit_msg, task_id, saved_face_image, saved_video, registry_task_id = await core_submit_face_video(
-                internal_user_id, username, face_image_path, video_path, resolution, duration, cost, mode, priority,
-                chat_id=chat_id, message_id=status_msg.message_id if status_msg else None
+            # 4. 提交任务逻辑
+            task_id = str(uuid.uuid4())
+            user_logger = UserLogger(internal_user_id, username)
+            saved_face_image = user_logger.save_input_image(face_image_path)
+            saved_video = user_logger.save_input_image(video_path)
+
+            registry_task_id = await TaskRegistry.add_task(
+                task_id=task_id,
+                user_id=internal_user_id,
+                username=username,
+                cost=cost,
+                task_type=mode,
+                chat_id=chat_id,
+                message_id=status_msg.message_id if status_msg else None,
+                prompt="Video Face Swap",
+                saved_input_images=[saved_face_image, saved_video],
+                is_video=True,
+                priority=priority
             )
 
-            if not submit_success:
-                await refund_credits(internal_user_id, cost, "refund", username)
-                await robust_edit_text(status_msg, f"⚠️ {submit_msg}\n已退还灵石。")
-                return None, None
+            backend_task_id = await image_service.submit_face_video(
+                task_id=task_id,
+                face_image_path=saved_face_image,
+                video_path=saved_video,
+                resolution=resolution,
+                duration=duration,
+                priority=priority
+            )
+            
+            if registry_task_id and backend_task_id:
+                await TaskRegistry.update_backend_task_id(registry_task_id, backend_task_id)
 
-            # 5. 监控与完成处理保留原样，但传递正确参数
-            user_logger = UserLogger(internal_user_id, username)
+            # 5. 监控与完成处理
             final_info = await TaskService._monitor_task_progress(
                 task_id, status_msg, is_video=True, monitor_func=image_service.monitor_progress, identity_str=identity_str, user_group=user_group
             )
@@ -428,8 +448,11 @@ class TaskService:
                     username=username,
                     task_type=task_type,
                     inputs=inputs,
-                    base_priority=priority,
-                    is_template=False
+                    base_priority=0,  # Fix: prevent priority doubling, task_core will fetch it again
+                    is_template=False,
+                    client_type="bot",
+                    deduct_quota=False,
+                    check_lock=False
                 )
                 task_id = submit_res["task_id"]
                 registry_task_id = submit_res["registry_task_id"]
@@ -607,25 +630,36 @@ class TaskService:
 
             priority, identity_str, user_group = await get_user_priority_and_identity(internal_user_id)
 
+            import uuid
+            task_id = str(uuid.uuid4())
             registry_task_id = await TaskRegistry.add_task(
-                internal_user_id, username, cost, mode, chat_id=chat_id, message_id=msg.message_id if msg else None,
-                prompt=prompt, saved_input_images=[saved_input_image], is_video=True, priority=priority
+                task_id=task_id,
+                user_id=internal_user_id,
+                username=username,
+                cost=cost,
+                task_type=mode,
+                chat_id=chat_id,
+                message_id=msg.message_id if msg else None,
+                prompt=prompt,
+                saved_input_images=[saved_input_image],
+                is_video=True,
+                priority=priority
             )
 
             await robust_edit_text(msg, "⏳ 正在生成视频，请耐心等待...")
 
             # Submit Task
             if mode == MODE_DOGGY_STYLE:
-                task_id = await image_service.submit_perfect_video_insert_task(
-                    prompt, saved_input_image, width=width, height=height, length=length, priority=priority
+                backend_task_id = await image_service.submit_perfect_video_insert_task(
+                    task_id, prompt, saved_input_image, width=width, height=height, length=length, priority=priority
                 )
             else:
-                task_id = await image_service.submit_perfect_video_edit(
-                    prompt, saved_input_image, width=width, height=height, length=length, priority=priority
+                backend_task_id = await image_service.submit_perfect_video_edit(
+                    task_id, prompt, saved_input_image, width=width, height=height, length=length, priority=priority
                 )
             
-            if registry_task_id and task_id:
-                await TaskRegistry.update_backend_task_id(registry_task_id, task_id)
+            if registry_task_id and backend_task_id:
+                await TaskRegistry.update_backend_task_id(registry_task_id, backend_task_id)
 
             # Monitor Progress
             final_info = await TaskService._monitor_task_progress(
@@ -985,19 +1019,30 @@ class TaskService:
 
             priority, identity_str, user_group = await get_user_priority_and_identity(internal_user_id)
 
+            import uuid
+            task_id = str(uuid.uuid4())
             registry_task_id = await TaskRegistry.add_task(
-                internal_user_id, username, cost, mode, chat_id=chat_id, message_id=msg.message_id if msg else None,
-                prompt=prompt, saved_input_images=[saved_input_image], is_video=False, priority=priority
+                task_id=task_id,
+                user_id=internal_user_id,
+                username=username,
+                cost=cost,
+                task_type=mode,
+                chat_id=chat_id,
+                message_id=msg.message_id if msg else None,
+                prompt=prompt,
+                saved_input_images=[saved_input_image],
+                is_video=False,
+                priority=priority
             )
 
             # Upload image to MinIO
             # saved_input_image is already uploaded to MinIO by user_logger.save_input_image() and it returns the object_name
             minio_object_name = saved_input_image
             
-            task_id = await image_service.submit_i2i_pro_task(prompt, minio_object_name, seed, priority=priority)
+            backend_task_id = await image_service.submit_i2i_pro_task(task_id, prompt, minio_object_name, seed, priority=priority)
 
-            if registry_task_id and task_id:
-                await TaskRegistry.update_backend_task_id(registry_task_id, task_id)
+            if registry_task_id and backend_task_id:
+                await TaskRegistry.update_backend_task_id(registry_task_id, backend_task_id)
 
             final_info = await TaskService._monitor_task_progress(
                 task_id, msg, is_video=False, monitor_func=image_service.monitor_progress, identity_str=identity_str, user_group=user_group

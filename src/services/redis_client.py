@@ -115,6 +115,32 @@ class RedisClient:
             logger.error(f"Failed to check gallery submit limit for user {user_id}: {e}")
             return True  # 容灾：如果Redis报错，放行
 
+    async def get_all_user_concurrencies(self) -> Dict[int, int]:
+        """获取所有用户的并发锁状态"""
+        pattern = f"{REDIS_PREFIX}user_concurrency:*"
+        concurrencies = {}
+        try:
+            keys = await self.redis.keys(pattern)
+            if not keys:
+                return {}
+            
+            # 使用 pipeline 批量获取值
+            async with self.redis.pipeline(transaction=False) as pipe:
+                for key in keys:
+                    pipe.get(key)
+                values = await pipe.execute()
+                
+            prefix_len = len(f"{REDIS_PREFIX}user_concurrency:")
+            for key, val in zip(keys, values):
+                if val is not None and int(val) > 0:
+                    user_id = int(key[prefix_len:])
+                    concurrencies[user_id] = int(val)
+                    
+            return concurrencies
+        except Exception as e:
+            logger.error(f"Failed to get user concurrencies: {e}")
+            return {}
+
     async def close(self):
         """关闭连接"""
         await self.redis.aclose()

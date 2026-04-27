@@ -30,31 +30,51 @@ sequenceDiagram
 ## 3. 核心代码片段
 
 ### 任务派发与参数注入 (src/core/task_core.py)
-[`task_core.py:L95-L121`](file:///home/hfy/APP/All_bot/src/core/task_core.py#L95-L121)
+[`task_core.py`](file:///home/hfy/APP/All_bot/src/core/task_core.py)
 ```python
-async def core_submit_generation_task(
-    internal_user_id: int, 
+async def process_and_submit_task(
+    user_id: int, 
+    username: str,
     task_type: str, 
-    params: dict
-) -> str:
-    """平台无关的核心派发逻辑，负责锁定、生成 UUID 并推入队列"""
-    # 获取单用户锁
-    lock_ok, msg = await check_concurrency_lock(internal_user_id)
+    inputs: dict,
+    base_priority: int = 0
+) -> dict:
+    """平台无关的核心派发逻辑，负责锁定、扣费、预生成 UUID 并推入队列 (Saga 模式)"""
+    # 1. 获取单用户锁
+    lock_ok, msg = await check_concurrency_lock(user_id)
     if not lock_ok:
-        raise ValueError(msg)
+        raise ConcurrencyLimitError(msg)
         
-    task_id = str(uuid.uuid4())
-    # 动态注入参数到 JSON
-    workflow = await patch_workflow(task_type, params)
-    
-    # 压入 Redis
-    await redis_client.db2.rpush("comfy:queue:pending", json.dumps({
-        "task_id": task_id,
-        "workflow": workflow,
-        "user_id": internal_user_id
-    }))
-    
-    return task_id
+    task_submitted_successfully = False
+    try:
+        # 2. 前置生成 Task ID，强制透传给中控 API
+        task_id = str(uuid.uuid4())
+        
+        # 3. 强同步插入流水，扣除灵石
+        success, err = await check_and_deduct_credits(user_id, cost, task_type, username)
+        if not success:
+            raise InsufficientCreditsError(err)
+            
+        try:
+            # 4. 落库并调用 Central API
+            registry_task_id = await TaskRegistry.add_task(task_id=task_id, ...)
+            
+            # Central API 必须接收预生成的 task_id，消除 Pub/Sub 订阅竞态条件
+            backend_task_id = await dispatch_to_worker(task_id, task_type, inputs)
+            
+            task_submitted_successfully = True
+            return {"task_id": task_id}
+            
+        except Exception as e:
+            # --- Saga 补偿机制 ---
+            # 必须使用 asyncio.shield 防御外部取消信号，确保退款和锁释放强同步执行
+            await asyncio.shield(refund_credits(user_id, cost, reason=f"Task Failed: {e}"))
+            raise CoreDomainError("系统派发失败，灵石已全额退还。")
+            
+    finally:
+        # 5. 无论抛出何种异常，如果未成功派发，必须释放并发锁
+        if not task_submitted_successfully:
+            await asyncio.shield(release_concurrency_lock(user_id))
 ```
 
 ### 并发锁释放与事件回调 (src/core/billing_core.py)

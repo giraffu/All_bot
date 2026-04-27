@@ -1,4 +1,5 @@
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.error import BadRequest
 from telegram.ext import ContextTypes
 import json
 import os
@@ -264,12 +265,12 @@ async def submit_gallery_callback(update: Update, context: ContextTypes.DEFAULT_
 
         async with AsyncSessionLocal() as session:
             existing = await session.execute(select(GalleryPost).where(GalleryPost.task_id == task_id))
-            if existing.scalar_one_or_none():
+            if existing.scalars().first():
                 await safe_answer_query(query, text="⚠️ 您已经投稿过此内容啦！", show_alert=True)
                 return
             
             hist_res = await session.execute(select(History).where(History.task_id == task_id))
-            history = hist_res.scalar_one_or_none()
+            history = hist_res.scalars().first()
             if not history:
                 await safe_answer_query(query, text="❌ 无法找到对应的任务记录，投稿失败", show_alert=True)
                 return
@@ -435,7 +436,7 @@ async def gallery_sort_page_callback(update: Update, context: ContextTypes.DEFAU
             has_next = len(posts) > 1
             
             hist_res = await session.execute(select(History).where(History.task_id == post.task_id))
-            history = hist_res.scalar_one_or_none()
+            history = hist_res.scalars().first()
             
             try:
                 tags = json.loads(post.tags)
@@ -617,6 +618,14 @@ async def gallery_like_dislike_callback(update: Update, context: ContextTypes.DE
             await query.message.edit_reply_markup(reply_markup=InlineKeyboardMarkup(keyboard))
             await safe_answer_query(query, text=f"✅ {'点赞' if action == 'like' else '点踩'}成功！", show_alert=False)
             
+    except BadRequest as e:
+        error_msg = str(e).lower()
+        if "message to edit not found" in error_msg or "message is not modified" in error_msg:
+            logger.warning(f"Like/Dislike callback skipped editing: {e}")
+            await safe_answer_query(query, text=f"✅ {'点赞' if action == 'like' else '点踩'}成功！", show_alert=False)
+        else:
+            logger.error(f"BadRequest handling like/dislike: {e}")
+            await safe_answer_query(query, text="❌ 操作失败，请稍后再试", show_alert=True)
     except Exception as e:
         logger.error(f"Error handling like/dislike: {e}")
         await safe_answer_query(query, text="❌ 操作失败，请稍后再试", show_alert=True)

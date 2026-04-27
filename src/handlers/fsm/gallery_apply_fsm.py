@@ -79,7 +79,7 @@ async def start_gallery_apply(update: Update, context: ContextTypes.DEFAULT_TYPE
             await query.answer("❌ 帖子已失效", show_alert=True)
             return ConversationHandler.END
             
-        history = (await session.execute(select(History).where(History.task_id == post.task_id))).scalar_one_or_none()
+        history = (await session.execute(select(History).where(History.task_id == post.task_id))).scalars().first()
         if not history:
             await query.answer("❌ 无法获取原任务参数", show_alert=True)
             return ConversationHandler.END

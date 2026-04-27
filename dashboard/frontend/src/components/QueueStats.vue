@@ -8,10 +8,11 @@ import {
   RobotOutlined,
   CheckCircleOutlined,
   CloseCircleOutlined,
-  ClearOutlined
+  ClearOutlined,
+  LockOutlined
 } from '@ant-design/icons-vue'
 import { ref, onMounted, onUnmounted, computed } from 'vue'
-import { fetchSystemStatus, fetchSystemWorkers, cleanZombieTasks } from '../api/api'
+import { fetchSystemStatus, fetchSystemWorkers, cleanZombieTasks, fetchConcurrencyStats, syncUserConcurrency } from '../api/api'
 import { message, Modal } from 'ant-design-vue'
 
 const status = ref({
@@ -22,10 +23,13 @@ const status = ref({
 })
 
 const workers = ref([])
+const concurrencyStats = ref([])
 
 const loading = ref(false)
 const cleaning = ref(false)
+const syncing = ref({})
 let timer = null
+let tick = 0
 
 const updateQueue = async () => {
   try {
@@ -38,6 +42,15 @@ const updateQueue = async () => {
     if (workersData && workersData.workers) {
       workers.value = workersData.workers
     }
+    
+    // 每5秒更新一次并发锁数据
+    if (tick % 5 === 0) {
+      const concurrencyData = await fetchConcurrencyStats()
+      if (concurrencyData && concurrencyData.data) {
+        concurrencyStats.value = concurrencyData.data
+      }
+    }
+    tick++
   } catch (err) {
     console.error('Error fetching system status:', err)
   }
@@ -90,6 +103,28 @@ const formatDuration = (timestamp) => {
   return `${m}m ${s}s`
 }
 
+const handleSyncLock = async (userId) => {
+  syncing.value[userId] = true
+  try {
+    const res = await syncUserConcurrency(userId)
+    if (res.status === 'success') {
+      message.success(res.message)
+      // Force update
+      const concurrencyData = await fetchConcurrencyStats()
+      if (concurrencyData && concurrencyData.data) {
+        concurrencyStats.value = concurrencyData.data
+      }
+    } else {
+      message.info(res.message)
+    }
+  } catch (err) {
+    console.error(err)
+    message.error('同步并发锁失败')
+  } finally {
+    syncing.value[userId] = false
+  }
+}
+
 onMounted(() => {
   updateQueue()
   timer = setInterval(updateQueue, 1000)
@@ -126,7 +161,7 @@ onUnmounted(() => {
     </div>
     
     <a-row :gutter="[16, 16]" class="mb-4">
-      <a-col :xs="24" :sm="8">
+      <a-col :xs="24" :sm="6">
         <a-card hoverable class="queue-card border-l-4 border-l-blue-500 h-full">
           <a-statistic
             title="总排队任务"
@@ -143,7 +178,7 @@ onUnmounted(() => {
         </a-card>
       </a-col>
       
-      <a-col :xs="24" :sm="8">
+      <a-col :xs="24" :sm="6">
         <a-card hoverable class="queue-card border-l-4 border-l-green-500 h-full">
           <a-statistic
             title="活跃 Worker"
@@ -159,8 +194,25 @@ onUnmounted(() => {
           </a-statistic>
         </a-card>
       </a-col>
+
+      <a-col :xs="24" :sm="6">
+        <a-card hoverable class="queue-card border-l-4 border-l-orange-500 h-full">
+          <a-statistic
+            title="用户并发锁"
+            :value="status.concurrency_locks || 0"
+            :value-style="{ color: '#fa8c16', fontWeight: 'bold' }"
+          >
+            <template #prefix>
+              <lock-outlined />
+            </template>
+            <template #suffix>
+              <span class="text-xs text-gray-400 font-normal ml-1">个活动锁</span>
+            </template>
+          </a-statistic>
+        </a-card>
+      </a-col>
       
-      <a-col :xs="24" :sm="8" v-if="queueByTypeDisplay.length > 0">
+      <a-col :xs="24" :sm="6" v-if="queueByTypeDisplay.length > 0">
         <a-card hoverable class="queue-card border-l-4 border-l-purple-500 h-full">
            <div class="text-gray-500 mb-1">队列详情</div>
            <div class="flex flex-col gap-1 max-h-24 overflow-y-auto pr-2 custom-scrollbar">
@@ -171,7 +223,7 @@ onUnmounted(() => {
            </div>
         </a-card>
       </a-col>
-      <a-col :xs="24" :sm="8" v-else>
+      <a-col :xs="24" :sm="6" v-else>
         <a-card hoverable class="queue-card border-l-4 border-l-gray-300 h-full">
           <a-statistic
             title="队列详情"
@@ -244,6 +296,65 @@ onUnmounted(() => {
         <a-empty description="暂无在线的 Worker 节点" />
       </a-col>
     </a-row>
+
+    <!-- 用户并发锁与活跃任务表 -->
+    <div class="mb-2 mt-6">
+      <h4 class="text-md font-bold text-gray-700 flex items-center gap-2">
+        <lock-outlined class="text-orange-500" /> 用户并发锁状态监控
+      </h4>
+    </div>
+    <a-card class="mb-4">
+      <a-table 
+        :dataSource="concurrencyStats" 
+        :rowKey="record => record.user_id" 
+        size="small"
+        :pagination="{ pageSize: 5 }"
+      >
+        <a-table-column title="用户 ID" dataIndex="user_id" key="user_id">
+          <template #default="{ text }">
+            <span class="font-mono text-gray-600">{{ text }}</span>
+          </template>
+        </a-table-column>
+        <a-table-column title="用户名" dataIndex="username" key="username">
+          <template #default="{ text }">
+            <span class="font-bold text-gray-800">{{ text }}</span>
+          </template>
+        </a-table-column>
+        <a-table-column title="当前并发锁" dataIndex="concurrency_locks" key="concurrency_locks">
+          <template #default="{ text }">
+            <a-tag :color="text > 0 ? 'orange' : 'default'">{{ text }}</a-tag>
+          </template>
+        </a-table-column>
+        <a-table-column title="活跃排队任务数" dataIndex="active_tasks" key="active_tasks">
+          <template #default="{ text }">
+            <a-tag :color="text > 0 ? 'blue' : 'default'">{{ text }}</a-tag>
+          </template>
+        </a-table-column>
+        <a-table-column title="状态评估" key="status_eval">
+          <template #default="{ record }">
+            <a-tag v-if="record.concurrency_locks > record.active_tasks" color="red">可能有锁遗留</a-tag>
+            <a-tag v-else-if="record.concurrency_locks === record.active_tasks && record.active_tasks > 0" color="green">正常执行</a-tag>
+            <a-tag v-else-if="record.active_tasks > record.concurrency_locks" color="purple">超限排队</a-tag>
+            <span v-else class="text-gray-400 text-xs">空闲</span>
+          </template>
+        </a-table-column>
+        <a-table-column title="操作" key="action">
+          <template #default="{ record }">
+            <a-button 
+              v-if="record.concurrency_locks > record.active_tasks" 
+              type="primary" 
+              size="small" 
+              danger
+              @click="handleSyncLock(record.user_id)"
+              :loading="syncing[record.user_id]"
+            >
+              一键修复
+            </a-button>
+          </template>
+        </a-table-column>
+      </a-table>
+    </a-card>
+
   </div>
 </template>
 

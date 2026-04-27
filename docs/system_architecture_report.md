@@ -177,6 +177,7 @@ graph LR
 
     subgraph 交互与接入网关板块
         UI_Bot[Telegram Bot 交互模块]
+        UI_Router[装饰器 Callback 路由分发器]
         UI_Web[Web 工作台 BFF 模块]
         UI_Dash[数据看板管控模块]
         UI_Pay[第三方支付回调处理模块]

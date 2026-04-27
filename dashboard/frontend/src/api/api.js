@@ -178,6 +178,11 @@ export const fetchSystemWorkers = async () => {
   return response.data
 }
 
+export const fetchConcurrencyStats = async () => {
+  const response = await api.get('/api/system/concurrency_stats')
+  return response.data
+}
+
 export const fetchActiveBotTasks = async () => {
   const response = await api.get('/api/system/active_bot_tasks')
   return response.data
@@ -190,6 +195,11 @@ export const refundBotTask = async (taskId) => {
 
 export const cleanZombieTasks = async () => {
   const response = await api.post('/api/system/clean_zombie_tasks')
+  return response.data
+}
+
+export const syncUserConcurrency = async (userId) => {
+  const response = await api.post('/api/system/sync_user_concurrency', { user_id: userId })
   return response.data
 }
 

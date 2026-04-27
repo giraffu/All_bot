@@ -165,7 +165,7 @@ async def get_gallery_posts(
             
             # Fetch history to get output_file for URL generation
             hist_res = await session.execute(select(History).where(History.task_id == post.task_id))
-            history = hist_res.scalar_one_or_none()
+            history = hist_res.scalars().first()
             output_file = history.output_file if history else None
             prompt = history.prompt if history else None
             task_type = history.type if history else None
@@ -252,7 +252,7 @@ async def get_my_gallery_posts(
             translated_tags = translate_tags(tags)
             
             hist_res = await session.execute(select(History).where(History.task_id == post.task_id))
-            history = hist_res.scalar_one_or_none()
+            history = hist_res.scalars().first()
             output_file = history.output_file if history else None
             prompt = history.prompt if history else None
             task_type = history.type if history else None
@@ -350,7 +350,7 @@ async def get_my_favorite_posts(
             translated_tags = translate_tags(tags)
             
             hist_res = await session.execute(select(History).where(History.task_id == post.task_id))
-            history = hist_res.scalar_one_or_none()
+            history = hist_res.scalars().first()
             output_file = history.output_file if history else None
             prompt = history.prompt if history else None
             task_type = history.type if history else None
@@ -487,7 +487,7 @@ async def get_apply_context(
             raise HTTPException(status_code=404, detail="帖子不存在或已失效")
             
         hist_res = await session.execute(select(History).where(History.task_id == post.task_id))
-        history = hist_res.scalar_one_or_none()
+        history = hist_res.scalars().first()
         
         if not history:
             raise HTTPException(status_code=404, detail="未找到原任务详情")

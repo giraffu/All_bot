@@ -22,6 +22,7 @@
 | **AI 助理与大模型推理** | `allbot-llm-ops` | LM Studio 限流防 OOM、LangGraph 意图嗅探、群组记忆隔离 |
 | **部署、容器与容灾排障** | `allbot-ops-deployment` | Docker Compose 编排、Alembic 迁移、MinIO/网络故障自愈恢复 |
 | **文档维护与知识库同步** | `allbot-kb-auto-updater` | 智能监控代码变更影响，自动维护 AGENTS.md、Skills 和 /docs/ 的逻辑一致性 |
+| **后端代码审查与规范** | `backend-code-review` | 针对 FastAPI/Python 后端接口及核心层代码的架构规则审查、依赖注入和数据库模式检查 |
 
 ## 3. 文档体系导览 (Documentation Guide)
 

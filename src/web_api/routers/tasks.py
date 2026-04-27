@@ -115,7 +115,7 @@ async def task_status_stream(task_id: str, current_user: User = Depends(get_curr
                         final_result_path = f"{current_user.id}/output_images/{task_id}.{ext}"
                         for _ in range(10):
                             async with AsyncSessionLocal() as db:
-                                hist = (await db.execute(select(History).where(History.task_id == task_id))).scalar_one_or_none()
+                                hist = (await db.execute(select(History).where(History.task_id == task_id))).scalars().first()
                                 if hist and hist.output_file and hist.output_file.startswith(str(current_user.id)):
                                     final_result_path = hist.output_file
                                     break
@@ -162,7 +162,7 @@ async def task_status_stream(task_id: str, current_user: User = Depends(get_curr
                             final_result_path = f"{current_user.id}/output_images/{task_id}.{ext}"
                             for _ in range(10):
                                 async with AsyncSessionLocal() as db:
-                                    hist = (await db.execute(select(History).where(History.task_id == task_id))).scalar_one_or_none()
+                                    hist = (await db.execute(select(History).where(History.task_id == task_id))).scalars().first()
                                     if hist and hist.output_file and hist.output_file.startswith(str(current_user.id)):
                                         final_result_path = hist.output_file
                                         break
@@ -215,7 +215,7 @@ async def task_status_stream(task_id: str, current_user: User = Depends(get_curr
                                     final_result_path = f"{current_user.id}/output_images/{task_id}.{ext}"
                                     for _ in range(10):
                                         async with AsyncSessionLocal() as db:
-                                            hist = (await db.execute(select(History).where(History.task_id == task_id))).scalar_one_or_none()
+                                            hist = (await db.execute(select(History).where(History.task_id == task_id))).scalars().first()
                                             if hist and hist.output_file and hist.output_file.startswith(str(current_user.id)):
                                                 final_result_path = hist.output_file
                                                 break

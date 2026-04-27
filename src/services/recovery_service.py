@@ -91,10 +91,10 @@ async def _recover_single_task(registry_task_id, task_data, application):
                 saved_input_images,
                 user_logger,
                 is_video,
-                send_result=True,
+                send_result=bool(chat_id),
                 reply_markup=None,
                 status_msg=status_msg,
-                delete_status=True,
+                delete_status=bool(status_msg),
             )
         else:
             await _refund_and_cleanup(registry_task_id, task_data, mock_context, "❌ 任务恢复失败，已退还灵石")
