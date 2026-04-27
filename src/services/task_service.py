@@ -845,20 +845,32 @@ class TaskService:
                 
             priority, identity_str, user_group = await get_user_priority_and_identity(internal_user_id)
 
+            import uuid
+            task_id = str(uuid.uuid4())
+            
             registry_task_id = await TaskRegistry.add_task(
-                internal_user_id, username, cost, mode, chat_id=chat_id, message_id=msg.message_id if msg else None,
-                prompt=prompt, saved_input_images=[saved_input_image] if saved_input_image else [], is_video=True, priority=priority
+                task_id=task_id,
+                user_id=internal_user_id,
+                username=username,
+                cost=cost,
+                task_type=mode,
+                chat_id=chat_id,
+                message_id=msg.message_id if msg else None,
+                prompt=prompt,
+                saved_input_images=[saved_input_image] if saved_input_image else [],
+                is_video=True,
+                priority=priority
             )
             
             if msg:
                 await robust_edit_text(msg, "⏳ 正在生成自定义视频，请耐心等待...")
 
-            task_id = await image_service.submit_perfect_video_edit(
-                prompt, saved_input_image, width=width, height=height, length=length, priority=priority
+            backend_task_id = await image_service.submit_perfect_video_edit(
+                task_id, prompt, saved_input_image, width=width, height=height, length=length, priority=priority
             )
             
-            if registry_task_id and task_id:
-                await TaskRegistry.update_backend_task_id(registry_task_id, task_id)
+            if registry_task_id and backend_task_id:
+                await TaskRegistry.update_backend_task_id(registry_task_id, backend_task_id)
 
             final_info = await TaskService._monitor_task_progress(
                 task_id, msg, is_video=True, monitor_func=image_service.monitor_progress, identity_str=identity_str, user_group=user_group
