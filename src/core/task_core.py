@@ -26,6 +26,7 @@ async def _process_input_path(user_logger: UserLogger, path: str) -> str:
     return path
 
 async def core_submit_face_video(
+    task_id: str,
     internal_user_id: int,
     username: str,
     face_image_path: str,
@@ -51,6 +52,7 @@ async def core_submit_face_video(
         return False, "Failed to process input media.", None, None, None, None
 
     registry_task_id = await TaskRegistry.add_task(
+        task_id,
         internal_user_id,
         username,
         cost,
@@ -64,7 +66,8 @@ async def core_submit_face_video(
     )
 
     try:
-        task_id = await image_service.submit_face_video(
+        backend_task_id = await image_service.submit_face_video(
+            task_id,
             saved_face_image,
             saved_video,
             resolution=resolution,
@@ -72,15 +75,15 @@ async def core_submit_face_video(
             priority=priority
         )
 
-        if registry_task_id and task_id:
-            await TaskRegistry.update_backend_task_id(registry_task_id, task_id)
+        if registry_task_id and backend_task_id:
+            await TaskRegistry.update_backend_task_id(registry_task_id, backend_task_id)
         
-        if not task_id:
+        if not backend_task_id:
             if registry_task_id:
                 await TaskRegistry.mark_task_status(registry_task_id, "failed")
             return False, "Failed to submit task to backend API.", None, None, None, registry_task_id
 
-        return True, "Task submitted successfully.", task_id, saved_face_image, saved_video, registry_task_id
+        return True, "Task submitted successfully.", backend_task_id, saved_face_image, saved_video, registry_task_id
 
     except Exception as e:
         logger.error(f"Error submitting face video task for {internal_user_id}: {e}", exc_info=True)
@@ -99,6 +102,7 @@ async def core_submit_face_video(
 
 
 async def core_submit_generation_task(
+    task_id: str,
     internal_user_id: int,
     username: str,
     prompt: str,
@@ -129,6 +133,7 @@ async def core_submit_generation_task(
                 saved_input_images.append(processed_img)
 
     registry_task_id = await TaskRegistry.add_task(
+        task_id,
         internal_user_id,
         username,
         cost,
@@ -142,87 +147,32 @@ async def core_submit_generation_task(
     )
 
     try:
-        # 检查 task_type，如果是 face_swap，应该调用 submit_face_swap_task
-        if task_type == "face_swap":
-            if len(saved_input_images) < 2:
-                return False, "缺少人脸或身体图片", None, [], registry_task_id
-            task_id = await image_service.submit_face_swap_task(
-                face_image_path=saved_input_images[1], # face is at index 1
-                body_image_path=saved_input_images[0], # body is at index 0 (body first, face second in FSM)
-                priority=priority
-            )
-        elif is_video:
-            if len(saved_input_images) == 0:
-                return False, "缺少图片", None, [], registry_task_id
-                
-            # Convert duration (seconds) to frame length for I2V tasks (assuming ~16fps base)
-            if duration >= 10:
-                frame_length = 161
-            elif duration >= 8:
-                frame_length = 129
-            else:
-                frame_length = 81
+        if task_type == "face_swap" and len(saved_input_images) < 2:
+            return False, "缺少人脸或身体图片", None, [], registry_task_id
+        if is_video and len(saved_input_images) == 0:
+            return False, "缺少图片", None, [], registry_task_id
             
-            if task_type == "doggy_style":
-                task_id = await image_service.submit_perfect_video_insert_task(
-                    prompt=prompt, image_path=saved_input_images[0], width=resolution, height=resolution, length=frame_length, priority=priority
-                )
-            elif task_type == "ltx_video":
-                res_str = str(resolution)
-                try:
-                    width, height = map(int, res_str.split('x'))
-                except:
-                    width, height = 1280, 704
-                # duration is already an integer
-                task_id = await image_service.submit_ltx_video_task(
-                    prompt=prompt, image_path=saved_input_images[0], width=width, height=height, length=duration, priority=priority
-                )
-            elif lora_name:
-                task_id = await image_service.submit_perfect_video_lora(
-                    prompt=prompt, image_path=saved_input_images[0], lora_name=lora_name, priority=priority,
-                    width=resolution, height=resolution, length=frame_length
-                )
-            else:
-                task_id = await image_service.submit_perfect_video_edit(
-                    prompt=prompt, image_path=saved_input_images[0], priority=priority,
-                    width=resolution, height=resolution, length=frame_length
-                )
-        else:
-            if task_type == "i2i_pro" or task_type == "MODE_I2I_PRO":
-                import random
-                seed = random.randint(1, 9007199254740991)
-                task_id = await image_service.submit_i2i_pro_task(
-                    prompt=prompt,
-                    image_path=saved_input_images[0],
-                    seed=seed,
-                    priority=priority
-                )
-            elif task_type == "img2img_lora" or task_type == "MODE_IMG2IMG_LORA":
-                task_id = await image_service.submit_img2img_lora_task(
-                    prompt=prompt,
-                    image_paths=saved_input_images,
-                    lora_name=lora_name or "",
-                    negative_prompt=negative_prompt,
-                    priority=priority,
-                    lora_strength=lora_strength
-                )
-            else:
-                task_id = await image_service.submit_task(
-                    prompt=prompt,
-                    image_paths=saved_input_images,
-                    negative_prompt=negative_prompt,
-                    priority=priority
-                )
-
-        if registry_task_id and task_id:
-            await TaskRegistry.update_backend_task_id(registry_task_id, task_id)
+        worker_inputs = {
+            "saved_input_images": saved_input_images,
+            "prompt": prompt,
+            "negative_prompt": negative_prompt,
+            "resolution": resolution,
+            "duration": duration,
+            "lora_name": lora_name,
+            "lora_strength": lora_strength,
+        }
         
-        if not task_id:
+        backend_task_id = await dispatch_to_worker(task_id, task_type, worker_inputs, priority)
+
+        if registry_task_id and backend_task_id:
+            await TaskRegistry.update_backend_task_id(registry_task_id, backend_task_id)
+        
+        if not backend_task_id:
             if registry_task_id:
                 await TaskRegistry.mark_task_status(registry_task_id, "failed")
             return False, "Failed to submit generation task.", None, [], registry_task_id
 
-        return True, "Generation task submitted.", task_id, saved_input_images, registry_task_id
+        return True, "Generation task submitted.", backend_task_id, saved_input_images, registry_task_id
 
     except Exception as e:
         logger.error(f"Error submitting generation task for {internal_user_id}: {e}", exc_info=True)
@@ -241,43 +191,7 @@ async def core_submit_generation_task(
 from src.utils import load_prompts
 from src.constants import TASK_COSTS, RESOLUTION_COST, DURATION_MULTIPLIER, MODE_I2I_PRO, MODE_FACESWAP_STEP1, LTX_RESOLUTION_COST, LTX_DURATION_MULTIPLIER
 from src.core.billing_core import check_concurrency_lock, release_concurrency_lock, check_and_deduct_credits, refund_credits, get_user_priority_and_identity
-
-def calculate_task_cost(task_type: str, inputs: dict) -> int:
-    """Calculate dynamic cost for web tasks to match Bot logic"""
-    mode = task_type
-    if task_type == "face_swap":
-        mode = MODE_FACESWAP_STEP1
-    elif task_type == "i2i_pro":
-        mode = MODE_I2I_PRO
-        
-    video_types = ["doggy_style", "perfect_video_insert", "blowjob", "undress_tongue", "closeup_blowjob", "custom_video", "face_video", "video_lora", "ltx_video"]
-    is_video_task = task_type in video_types
-    
-    if is_video_task:
-        resolution = inputs.get("resolution", 512)
-        duration = inputs.get("duration", 5)
-        
-        if mode == "ltx_video":
-            res_str = str(resolution)
-            dur_str = f"{duration}s" if isinstance(duration, int) else str(duration)
-            if not dur_str.endswith('s'):
-                dur_str += 's'
-            base_cost = LTX_RESOLUTION_COST.get(res_str, 10)
-            multiplier = LTX_DURATION_MULTIPLIER.get(dur_str, 1.0)
-            return int(base_cost * multiplier)
-            
-        res_str = f"{resolution}p" if isinstance(resolution, int) else str(resolution)
-        if not res_str.endswith('p'):
-            res_str += 'p'
-        dur_str = f"{duration}s" if isinstance(duration, int) else str(duration)
-        if not dur_str.endswith('s'):
-            dur_str += 's'
-            
-        base_cost = RESOLUTION_COST.get(res_str, TASK_COSTS.get(mode, 6))
-        multiplier = DURATION_MULTIPLIER.get(dur_str, 1.0)
-        return int(base_cost * multiplier)
-    else:
-        return TASK_COSTS.get(mode, 2)
+from src.core.task_dispatcher import StrategyFactory, dispatch_to_worker
 
 class CoreDomainError(Exception):
     pass
@@ -356,7 +270,11 @@ async def process_and_submit_task(
     base_priority: int = 0,
     is_template: bool = False
 ) -> dict:
-    cost = calculate_task_cost(task_type, inputs)
+    import uuid
+    import asyncio
+    
+    strategy = StrategyFactory.get_strategy(task_type)
+    cost = strategy.get_cost(inputs)
     video_types = ["doggy_style", "perfect_video_insert", "blowjob", "undress_tongue", "closeup_blowjob", "custom_video", "face_video", "video_lora", "ltx_video"]
     is_video_task = task_type in video_types
     
@@ -370,10 +288,12 @@ async def process_and_submit_task(
     if not can_run:
         raise ConcurrencyLimitError(err)
         
-    task_submitted = False
+    task_submitted_successfully = False
     credits_deducted = False
     
     try:
+        task_id = str(uuid.uuid4())
+        
         success, err = await check_and_deduct_credits(user_id, cost, task_type, username)
         if not success:
             raise InsufficientCreditsError(err)
@@ -392,7 +312,6 @@ async def process_and_submit_task(
             negative_prompt = prompts_config.get("negative_prompt", "")
             
             allow_contribute = not is_template
-            task_id = None
             registry_task_id = None
             saved_inputs = []
             log_prompt = prompt
@@ -403,7 +322,8 @@ async def process_and_submit_task(
                 if not face_img or not body_img:
                     raise CoreDomainError("face_image and target_image are required for face_swap")
                     
-                success, msg, task_id, saved_inputs, registry_task_id = await core_submit_generation_task(
+                success, msg, backend_task_id, saved_inputs, registry_task_id = await core_submit_generation_task(
+                    task_id=task_id,
                     internal_user_id=user_id,
                     username=username,
                     prompt=prompt,
@@ -422,7 +342,8 @@ async def process_and_submit_task(
                 duration_sec = inputs.get("duration", 5)
                 duration_frames = 161 if duration_sec >= 10 else 121
                 
-                success, msg, task_id, saved_face_img, saved_vid, registry_task_id = await core_submit_face_video(
+                success, msg, backend_task_id, saved_face_img, saved_vid, registry_task_id = await core_submit_face_video(
+                    task_id=task_id,
                     internal_user_id=user_id,
                     username=username,
                     face_image_path=face_img,
@@ -454,7 +375,8 @@ async def process_and_submit_task(
                 resolution = inputs.get("resolution", 512)
                 duration = inputs.get("duration", 5)
                 
-                success, msg, task_id, saved_inputs, registry_task_id = await core_submit_generation_task(
+                success, msg, backend_task_id, saved_inputs, registry_task_id = await core_submit_generation_task(
+                    task_id=task_id,
                     internal_user_id=user_id,
                     username=username,
                     prompt=prompt,
@@ -471,37 +393,55 @@ async def process_and_submit_task(
                     allow_contribute=allow_contribute
                 )
                 
-            if not success or not task_id:
+            if not success or not backend_task_id:
                 raise CoreDomainError(msg)
                 
-            import asyncio
-            asyncio.create_task(
-                monitor_task_and_release_lock(
-                    task_id=task_id, 
-                    internal_user_id=user_id, 
-                    username=username,
-                    registry_task_id=registry_task_id, 
-                    is_video=is_video_task,
-                    task_type=task_type,
-                    prompt=log_prompt,
-                    input_images=saved_inputs,
-                    allow_contribute=allow_contribute
+            try:
+                asyncio.create_task(
+                    monitor_task_and_release_lock(
+                        task_id=backend_task_id, 
+                        internal_user_id=user_id, 
+                        username=username,
+                        registry_task_id=registry_task_id, 
+                        is_video=is_video_task,
+                        task_type=task_type,
+                        prompt=log_prompt,
+                        input_images=saved_inputs,
+                        allow_contribute=allow_contribute
+                    )
                 )
-            )
-            task_submitted = True
+            except Exception as e:
+                # 如果监控挂载失败，由外层的 Saga 补偿机制和 finally 统一处理退款和释放锁
+                raise CoreDomainError(f"后台监控挂载失败: {e}")
+                
+            task_submitted_successfully = True
             
             return {
-                "task_id": task_id, 
+                "task_id": backend_task_id, 
                 "registry_task_id": registry_task_id, 
                 "cost": cost,
                 "saved_inputs": saved_inputs
             }
+            
         except Exception as e:
-            raise CoreDomainError(f"Task submission failed: {str(e)}")
+            # Saga 补偿机制触发
+            logger.error(f"Saga Execute Failed: {e}")
+            if credits_deducted:
+                try:
+                    await asyncio.shield(refund_credits(user_id, cost, reason=f"Task Failed: {str(e)}", operator=username))
+                except Exception as refund_err:
+                    logger.critical(f"REFUND FAILED! Log to Outbox. User: {user_id}, Amount: {cost}, Error: {refund_err}")
+                    from src.services.redis_client import redis_client
+                    await redis_client.add_pending_refund(user_id, cost, f"Task Failed: {str(e)}", username)
+                    
+            try:
+                await asyncio.shield(TaskRegistry.remove_task(task_id))
+            except Exception: 
+                pass
+                
+            raise CoreDomainError(f"系统派发失败，灵石已全额退还。错误: {str(e)}")
+            
     finally:
-        import asyncio
-        if credits_deducted and not task_submitted:
-            asyncio.create_task(refund_credits(user_id, cost, f"refund_{task_type}", username))
-            asyncio.create_task(release_concurrency_lock(user_id))
-        elif not credits_deducted:
-            asyncio.create_task(release_concurrency_lock(user_id))
+        # 兜底保障：确保并发锁释放
+        if not task_submitted_successfully:
+            await asyncio.shield(release_concurrency_lock(user_id))

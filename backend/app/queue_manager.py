@@ -15,9 +15,7 @@ class QueueManager:
         self.agent_heartbeat_prefix = "comfy:agent:heartbeat:"
         self.ttl = 86400  # 24 hours
 
-    async def enqueue_task(self, task_type: TaskType, params: Dict[str, Any], priority: int = 0, task_id: str = None) -> str:
-        if not task_id:
-            task_id = str(uuid.uuid4())
+    async def enqueue_task(self, task_type: TaskType, params: Dict[str, Any], priority: int, task_id: str) -> str:
         task_key = f"{self.task_prefix}{task_id}"
         
         trace_id = correlation_id.get() or ""

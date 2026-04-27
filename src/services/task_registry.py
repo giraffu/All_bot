@@ -8,8 +8,7 @@ import time
 
 class TaskRegistry:
     @classmethod
-    async def add_task(cls, user_id: int, username: str, cost: int, task_type: str, chat_id: int = None, message_id: int = None, **kwargs) -> str:
-        task_id = str(uuid.uuid4())
+    async def add_task(cls, task_id: str, user_id: int, username: str, cost: int, task_type: str, chat_id: int = None, message_id: int = None, **kwargs) -> str:
         task_data = {
             "user_id": user_id,
             "username": username,

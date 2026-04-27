@@ -83,6 +83,9 @@ async def inject_trace_id(update: Update, context):
         pass # Already logged in handle_prompt
 
 async def post_init(application):
+    from src.handlers.prompt_router import build_global_menu_filter
+    build_global_menu_filter()
+    
     await init_db()
     await setup_commands(application)
     

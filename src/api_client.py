@@ -65,13 +65,14 @@ class APIClient:
             raise
 
     @async_retry(max_retries=3)
-    async def submit_perfect_video_insert(self, prompt: str, image_path: str, width: int = 512, height: int = 512, length: int = 81, priority: int = 0) -> str:
+    async def submit_perfect_video_insert(self, task_id: str, prompt: str, image_path: str, width: int = 512, height: int = 512, length: int = 81, priority: int = 0) -> str:
         """
         Submit perfect_video_insert task.
         image_path: MinIO Object Key
         """
         # Changed to reference passing: we no longer download the file and send as multipart.
         data = {
+            "task_id": task_id,
             "image": image_path,
             "prompt": prompt,
             "width": width,
@@ -84,12 +85,13 @@ class APIClient:
         return r.json()["task_id"]
 
     @async_retry(max_retries=3)
-    async def submit_perfect_video_edit(self, prompt: str, image_path: str, width: int = 512, height: int = 512, length: int = 81, priority: int = 0) -> str:
+    async def submit_perfect_video_edit(self, task_id: str, prompt: str, image_path: str, width: int = 512, height: int = 512, length: int = 81, priority: int = 0) -> str:
         """
         Submit perfect_video_edit task.
         image_path: MinIO Object Key
         """
         data = {
+            "task_id": task_id,
             "image": image_path,
             "prompt": prompt,
             "width": width,
@@ -102,13 +104,14 @@ class APIClient:
         return r.json()["task_id"]
 
     @async_retry(max_retries=3)
-    async def submit_perfect_video_lora(self, prompt: str, image_path: str, lora_name: str, width: int = 512, height: int = 512, length: int = 81, priority: int = 0) -> str:
+    async def submit_perfect_video_lora(self, task_id: str, prompt: str, image_path: str, lora_name: str, width: int = 512, height: int = 512, length: int = 81, priority: int = 0) -> str:
         """
         Submit perfect_video_lora task.
         image_path: MinIO Object Key
         lora_name: Name of the LoRA to inject
         """
         data = {
+            "task_id": task_id,
             "image": image_path,
             "prompt": prompt,
             "lora_name": lora_name,
@@ -122,7 +125,7 @@ class APIClient:
         return r.json()["task_id"]
 
     @async_retry(max_retries=3)
-    async def submit_img2img(self, prompt: str, image_paths: list[str], negative_prompt: str = " ", priority: int = 0) -> str:
+    async def submit_img2img(self, task_id: str, prompt: str, image_paths: list[str], negative_prompt: str = " ", priority: int = 0) -> str:
         """
         Submit img2img task.
         image_paths: List of MinIO Object Keys
@@ -131,6 +134,7 @@ class APIClient:
             raise ValueError("No valid images found for submission")
 
         data = {
+            "task_id": task_id,
             "images": image_paths,  # 传递多图列表
             "image": image_paths[0], # 保留以作向下兼容
             "prompt": prompt,
@@ -149,7 +153,7 @@ class APIClient:
         return r.json()["task_id"]
 
     @async_retry(max_retries=3)
-    async def submit_img2img_lora(self, prompt: str, image_paths: list[str], lora_name: str, negative_prompt: str = " ", priority: int = 0, lora_strength: float = 1.0) -> str:
+    async def submit_img2img_lora(self, task_id: str, prompt: str, image_paths: list[str], lora_name: str, negative_prompt: str = " ", priority: int = 0, lora_strength: float = 1.0) -> str:
         """
         Submit img2img_lora task.
         image_paths: List of MinIO Object Keys
@@ -159,6 +163,7 @@ class APIClient:
             raise ValueError("No valid images found for submission")
 
         data = {
+            "task_id": task_id,
             "images": image_paths,
             "image": image_paths[0],
             "prompt": prompt,
@@ -178,7 +183,7 @@ class APIClient:
         return r.json()["task_id"]
 
     @async_retry(max_retries=3)
-    async def submit_face_swap(self, face_image_path: str, body_image_path: str, priority: int = 0) -> str:
+    async def submit_face_swap(self, task_id: str, face_image_path: str, body_image_path: str, priority: int = 0) -> str:
         """
         Submit face swap task.
         paths: MinIO Object Keys
@@ -187,6 +192,7 @@ class APIClient:
             raise ValueError("Face or body image path is missing")
 
         data = {
+            "task_id": task_id,
             "face_image": face_image_path,
             "body_image": body_image_path,
             "priority": priority
@@ -197,7 +203,7 @@ class APIClient:
         return r.json()["task_id"]
 
     @async_retry(max_retries=3)
-    async def submit_face_video(self, face_image_path: str, video_path: str, resolution: int = 512, duration: int = 121, priority: int = 0) -> str:
+    async def submit_face_video(self, task_id: str, face_image_path: str, video_path: str, resolution: int = 512, duration: int = 121, priority: int = 0) -> str:
         """
         Submit face video task.
         paths: MinIO Object Keys
@@ -206,6 +212,7 @@ class APIClient:
             raise ValueError("Face or video path is missing")
 
         data = {
+            "task_id": task_id,
             "face_image": face_image_path,
             "video": video_path,
             "resolution": resolution,
@@ -218,11 +225,12 @@ class APIClient:
         return r.json()["task_id"]
 
     @async_retry(max_retries=3)
-    async def submit_i2i_pro(self, prompt: str, image_path: str, seed: int, priority: int = 0) -> str:
+    async def submit_i2i_pro(self, task_id: str, prompt: str, image_path: str, seed: int, priority: int = 0) -> str:
         """
         Submit i2i pro task.
         """
         data = {
+            "task_id": task_id,
             "image": image_path,
             "prompt": prompt,
             "seed": seed,
@@ -234,12 +242,13 @@ class APIClient:
         return r.json()["task_id"]
 
     @async_retry(max_retries=3)
-    async def submit_ltx_video(self, prompt: str, image_path: str, width: int = 1280, height: int = 704, length: int = 241, priority: int = 0) -> str:
+    async def submit_ltx_video(self, task_id: str, prompt: str, image_path: str, width: int = 1280, height: int = 704, length: int = 241, priority: int = 0) -> str:
         """
         Submit ltx_video task.
         image_path: MinIO Object Key
         """
         data = {
+            "task_id": task_id,
             "image": image_path,
             "prompt": prompt,
             "width": width,

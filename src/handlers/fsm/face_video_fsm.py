@@ -1,3 +1,4 @@
+from src.handlers.prompt_router import is_global_menu_command
 import os
 import logging
 import asyncio
@@ -47,7 +48,7 @@ async def start_face_video(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     query = update.callback_query
     if query:
         try:
-            await query.answer()
+            await query.answer(text="⏳ 任务初始化中...", cache_time=2)
         except Exception:
             pass
     user_id = update.effective_user.id
@@ -181,7 +182,7 @@ async def process_resolution_selection(update: Update, context: ContextTypes.DEF
     user_id = query.from_user.id
     data = query.data
 
-    await query.answer()
+    await query.answer(text="⏳ 任务初始化中...", cache_time=2)
 
     if data == "fsm_fv_cancel":
         await robust_edit_text(query.message, "🚫 您已取消视频换脸操作。")
@@ -265,7 +266,7 @@ async def timeout_conversation(update: Update, context: ContextTypes.DEFAULT_TYP
 
 async def unexpected_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     text = update.message.text if update.message else ""
-    if text and re.match(r'^(🖼️ 懒人P图|🎬 懒人动图|🔙 返回主菜单|🛌 动图传教士|🎬 动图后入|🎬 口交黑人|🎬 脱衣吐舌|🎬 特写口交|🎨 自由P图|🌟 幻想换脸|💃 快速脱衣|🎭 快速换脸|🥵 快速自慰|🎭 随机换脸|🎬 视频换脸|🎬 自定义视频|🎬 自定义图生视频|🎬 图生视频\(附加模型\)|🎬 高级图生视频|📅 每日签到|签到|/checkin|🤝 分享赚灵石|⏳ 排队状态|排队|/queue|💰 个人中心|👤 个人中心|💎 充值灵石|/start|🏆 发现/排行榜|一键应用该模板)$', text):
+    if text and is_global_menu_command(text):
         user_id = update.effective_user.id if update.effective_user else "Unknown"
         _cleanup_context(context, user_id)
         await robust_reply_text(update.message, "🔄 已为您退出当前输入步骤（后台正在生成的任务不受影响）。\n👉 **请再次点击刚才的按钮**，即可开始新任务！")

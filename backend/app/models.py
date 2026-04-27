@@ -57,6 +57,7 @@ class SystemStatusResponse(BaseModel):
     comfy_online: bool
 
 class Img2ImgRequest(BaseModel):
+    task_id: str
     image: Optional[str] = None
     image2: Optional[str] = None
     images: Optional[List[str]] = None
@@ -68,6 +69,7 @@ class Img2ImgRequest(BaseModel):
     priority: int = 0
 
 class Img2ImgLoraRequest(BaseModel):
+    task_id: str
     image: Optional[str] = None
     image2: Optional[str] = None
     images: Optional[List[str]] = None
@@ -81,11 +83,13 @@ class Img2ImgLoraRequest(BaseModel):
     lora_strength: Optional[float] = 1.0
 
 class FaceSwapRequest(BaseModel):
+    task_id: str
     face_image: str
     body_image: str
     priority: int = 0
 
 class VideoInsertRequest(BaseModel):
+    task_id: str
     image: str
     prompt: str
     width: int = 512
@@ -94,6 +98,7 @@ class VideoInsertRequest(BaseModel):
     priority: int = 0
 
 class VideoEditRequest(BaseModel):
+    task_id: str
     image: str
     prompt: str
     width: int = 512
@@ -102,6 +107,7 @@ class VideoEditRequest(BaseModel):
     priority: int = 0
 
 class VideoLoraRequest(BaseModel):
+    task_id: str
     image: str
     prompt: str
     lora_name: str
@@ -111,6 +117,7 @@ class VideoLoraRequest(BaseModel):
     priority: int = 0
 
 class FaceVideoRequest(BaseModel):
+    task_id: str
     face_image: str
     video: str
     resolution: int = 1024
@@ -118,12 +125,14 @@ class FaceVideoRequest(BaseModel):
     priority: int = 0
 
 class I2IProRequest(BaseModel):
+    task_id: str
     image: str
     prompt: str
     seed: Optional[int] = None
     priority: int = 0
 
 class LtxVideoRequest(BaseModel):
+    task_id: str
     image: str
     prompt: str
     length: int = 5

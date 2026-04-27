@@ -83,8 +83,9 @@ async def create_img2img_task(
     token: str = Depends(verify_token)
 ):
     params = request.dict()
+    task_id = params.pop("task_id")
     priority = params.pop("priority", 0)
-    task_id = await queue_manager.enqueue_task(TaskType.IMG2IMG, params, priority)
+    await queue_manager.enqueue_task(TaskType.IMG2IMG, params, priority, task_id)
     return TaskResponse(task_id=task_id)
 
 @app.post("/comfy_img2img_lora", response_model=TaskResponse)
@@ -94,8 +95,9 @@ async def create_img2img_lora_task(
     token: str = Depends(verify_token)
 ):
     params = request.dict()
+    task_id = params.pop("task_id")
     priority = params.pop("priority", 0)
-    task_id = await queue_manager.enqueue_task(TaskType.IMG2IMG_LORA, params, priority)
+    await queue_manager.enqueue_task(TaskType.IMG2IMG_LORA, params, priority, task_id)
     return TaskResponse(task_id=task_id)
 
 @app.post("/face_swap", response_model=TaskResponse)
@@ -105,8 +107,9 @@ async def create_face_swap_task(
     token: str = Depends(verify_token)
 ):
     params = request.dict()
+    task_id = params.pop("task_id")
     priority = params.pop("priority", 0)
-    task_id = await queue_manager.enqueue_task(TaskType.FACE_SWAP, params, priority)
+    await queue_manager.enqueue_task(TaskType.FACE_SWAP, params, priority, task_id)
     return TaskResponse(task_id=task_id)
 
 @app.post("/perfect_video_insert", response_model=TaskResponse)
@@ -116,8 +119,9 @@ async def create_video_insert_task(
     token: str = Depends(verify_token)
 ):
     params = request.dict()
+    task_id = params.pop("task_id")
     priority = params.pop("priority", 0)
-    task_id = await queue_manager.enqueue_task(TaskType.VIDEO_INSERT, params, priority)
+    await queue_manager.enqueue_task(TaskType.VIDEO_INSERT, params, priority, task_id)
     return TaskResponse(task_id=task_id)
 
 @app.post("/perfect_video_edit", response_model=TaskResponse)
@@ -127,8 +131,9 @@ async def create_video_edit_task(
     token: str = Depends(verify_token)
 ):
     params = request.dict()
+    task_id = params.pop("task_id")
     priority = params.pop("priority", 0)
-    task_id = await queue_manager.enqueue_task(TaskType.VIDEO_EDIT, params, priority)
+    await queue_manager.enqueue_task(TaskType.VIDEO_EDIT, params, priority, task_id)
     return TaskResponse(task_id=task_id)
 
 @app.post("/perfect_video_lora", response_model=TaskResponse)
@@ -138,10 +143,11 @@ async def create_video_lora_task(
     token: str = Depends(verify_token)
 ):
     params = request.dict()
+    task_id = params.pop("task_id")
     priority = params.pop("priority", 0)
     # Reusing VIDEO_EDIT task type so existing workers can pick it up. 
     # The lora_name param will be dynamically injected by the worker's patch_workflow.
-    task_id = await queue_manager.enqueue_task(TaskType.VIDEO_EDIT, params, priority)
+    await queue_manager.enqueue_task(TaskType.VIDEO_EDIT, params, priority, task_id)
     return TaskResponse(task_id=task_id)
 
 @app.post("/face_video", response_model=TaskResponse)
@@ -151,8 +157,9 @@ async def create_face_video_task(
     token: str = Depends(verify_token)
 ):
     params = request.dict()
+    task_id = params.pop("task_id")
     priority = params.pop("priority", 0)
-    task_id = await queue_manager.enqueue_task(TaskType.FACE_VIDEO, params, priority)
+    await queue_manager.enqueue_task(TaskType.FACE_VIDEO, params, priority, task_id)
     return TaskResponse(task_id=task_id)
 
 @app.post("/i2i_pro", response_model=TaskResponse)
@@ -162,8 +169,9 @@ async def create_i2i_pro_task(
     token: str = Depends(verify_token)
 ):
     params = request.dict()
+    task_id = params.pop("task_id")
     priority = params.pop("priority", 0)
-    task_id = await queue_manager.enqueue_task(TaskType.I2I_PRO, params, priority)
+    await queue_manager.enqueue_task(TaskType.I2I_PRO, params, priority, task_id)
     return TaskResponse(task_id=task_id)
 
 @app.post("/api/v1/ltx_video", response_model=TaskResponse)
@@ -173,8 +181,9 @@ async def create_ltx_video_task(
     token: str = Depends(verify_token)
 ):
     params = request.dict()
+    task_id = params.pop("task_id")
     priority = params.pop("priority", 0)
-    task_id = await queue_manager.enqueue_task(TaskType.LTX_VIDEO, params, priority)
+    await queue_manager.enqueue_task(TaskType.LTX_VIDEO, params, priority, task_id)
     return TaskResponse(task_id=task_id)
 
 @app.post("/api/v1/workflows/t2i-pornmaster-turbo", response_model=T2ITaskResponse)
@@ -207,7 +216,7 @@ async def create_t2i_pornmaster_turbo_task(
         await pubsub.subscribe(channel)
         
     try:
-        await queue_manager.enqueue_task(TaskType.T2I_PORNMASTER_TURBO, params, task_priority, task_id=task_id)
+        await queue_manager.enqueue_task(TaskType.T2I_PORNMASTER_TURBO, params, task_priority, task_id)
         logger.info(f"[{request_id}] Task enqueued: {task_id} with priority {task_priority}")
     except Exception as e:
         logger.error(f"[{request_id}] Failed to enqueue task: {e}")

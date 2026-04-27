@@ -85,6 +85,22 @@ class RedisClient:
             logger.error(f"Failed to increment gallery submit count for user {user_id}: {e}")
             return 0
             
+    async def add_pending_refund(self, user_id: int, amount: int, reason: str, operator: str) -> None:
+        """添加退款失败记录到 Outbox 队列"""
+        import time
+        key = f"{REDIS_PREFIX}pending_refunds"
+        data = {
+            "user_id": user_id,
+            "amount": amount,
+            "reason": reason,
+            "operator": operator,
+            "timestamp": time.time()
+        }
+        try:
+            await self.redis.lpush(key, json.dumps(data))
+        except Exception as e:
+            logger.error(f"Failed to add pending refund to Redis outbox: {e}")
+
     async def check_gallery_submit_limit(self, user_id: int, limit: int = 10) -> bool:
         """检查今日是否已超过投稿上限"""
         import datetime
