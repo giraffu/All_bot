@@ -120,19 +120,30 @@ class TaskService:
                 
             priority, identity_str, user_group = await get_user_priority_and_identity(internal_user_id)
 
+            import uuid
+            task_id = str(uuid.uuid4())
             registry_task_id = await TaskRegistry.add_task(
-                internal_user_id, username, cost, mode, chat_id=chat_id, message_id=msg.message_id if msg else None,
-                prompt=prompt, saved_input_images=[saved_input_image] if saved_input_image else [], is_video=True, priority=priority
+                task_id=task_id,
+                user_id=internal_user_id,
+                username=username,
+                cost=cost,
+                task_type=mode,
+                chat_id=chat_id,
+                message_id=msg.message_id if msg else None,
+                prompt=prompt,
+                saved_input_images=[saved_input_image] if saved_input_image else [],
+                is_video=True,
+                priority=priority
             )
             
             await robust_edit_text(msg, "⏳ 正在生成高级视频，可能需要数分钟，请耐心等待...")
 
-            task_id = await image_service.submit_ltx_video_task(
-                prompt, saved_input_image, width=width, height=height, length=length, priority=priority
+            backend_task_id = await image_service.submit_ltx_video_task(
+                task_id, prompt, saved_input_image, width=width, height=height, length=length, priority=priority
             )
             
-            if registry_task_id and task_id:
-                await TaskRegistry.update_backend_task_id(registry_task_id, task_id)
+            if registry_task_id and backend_task_id:
+                await TaskRegistry.update_backend_task_id(registry_task_id, backend_task_id)
 
             final_info = await TaskService._monitor_task_progress(
                 task_id, msg, is_video=True, monitor_func=image_service.monitor_progress, identity_str=identity_str, user_group=user_group
@@ -311,7 +322,7 @@ class TaskService:
         """Common generation logic for generic tasks."""
         from src.core.user_core import get_or_create_user_by_telegram
         from src.core.billing_core import check_concurrency_lock, release_concurrency_lock, check_and_deduct_credits, refund_credits, get_user_priority_and_identity
-        from src.core.task_core import core_submit_generation_task
+        from src.core.task_core import process_and_submit_task
         from src.constants import DEFAULT_RESOLUTION, DEFAULT_DURATION, RESOLUTION_COST, DURATION_MULTIPLIER, DURATION_FRAMES
 
         # 1. 身份转换
@@ -402,12 +413,32 @@ class TaskService:
             priority, identity_str, user_group = await get_user_priority_and_identity(internal_user_id)
 
             # 4. Submit Task via core
-            submit_success, submit_msg, task_id, saved_input_images, registry_task_id = await core_submit_generation_task(
-                internal_user_id, username, prompt, images, is_video, task_type, cost, priority, negative_prompt,
-                chat_id=chat_id, message_id=status_msg.message_id if status_msg else None, lora_name=lora_name,
-                lora_strength=lora_strength, resolution=resolution, duration=duration
-            )
-
+            inputs = {
+                "prompt": prompt,
+                "images": images,
+                "resolution": resolution,
+                "duration": duration,
+                "lora_name": lora_name,
+                "lora_strength": lora_strength
+            }
+            
+            try:
+                submit_res = await process_and_submit_task(
+                    user_id=internal_user_id,
+                    username=username,
+                    task_type=task_type,
+                    inputs=inputs,
+                    base_priority=priority,
+                    is_template=False
+                )
+                task_id = submit_res["task_id"]
+                registry_task_id = submit_res["registry_task_id"]
+                saved_input_images = submit_res["saved_inputs"]
+                submit_success = True
+            except Exception as e:
+                submit_success = False
+                submit_msg = str(e)
+                
             if not submit_success:
                 if deduct_quota:
                     await refund_credits(internal_user_id, cost, "refund", username)

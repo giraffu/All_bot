@@ -24,9 +24,16 @@ def build_global_menu_filter():
         if re.escape(m) not in menu_texts:
             menu_texts.append(re.escape(m))
             
-    pattern = f"^({'|'.join(menu_texts)})$"
-    from telegram.ext import filters
-    GLOBAL_MENU_FILTER = filters.Regex(re.compile(pattern))
+    exact_pattern = f"^({'|'.join(menu_texts)})$"
+    
+    # 提取已有的正则表达式
+    regex_patterns = [k[0] for k, v in prompt_routes.items() if k[1]]
+    
+    # 合并为一个大的匹配组
+    all_patterns = [exact_pattern] + regex_patterns
+    pattern = f"({'|'.join(all_patterns)})"
+    
+    GLOBAL_MENU_FILTER = re.compile(pattern)
 
 def is_global_menu_command(text: str) -> bool:
     """黑盒化拦截器：供各个 FSM 内部调用，无需暴露底层的正则细节"""

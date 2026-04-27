@@ -18,6 +18,11 @@ class BaseTaskStrategy(ABC):
         pass
         
     @abstractmethod
+    def get_file_paths_to_upload(self, inputs: Dict[str, Any]) -> list[str]:
+        """返回需要上传到 MinIO 的文件路径列表"""
+        pass
+        
+    @abstractmethod
     async def submit_task(self, task_id: str, inputs: Dict[str, Any], priority: int) -> str:
         """Responsible for sending the task to backend via image_service"""
         pass
@@ -35,6 +40,9 @@ class DefaultImageStrategy(BaseTaskStrategy):
     def get_metadata(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
         return {"saved_inputs": inputs.get("saved_input_images", [])}
         
+    def get_file_paths_to_upload(self, inputs: Dict[str, Any]) -> list[str]:
+        return inputs.get("images", [])
+        
     async def submit_task(self, task_id: str, inputs: Dict[str, Any], priority: int) -> str:
         if self.mode in ["i2i_pro", MODE_I2I_PRO]:
             import random
@@ -42,7 +50,7 @@ class DefaultImageStrategy(BaseTaskStrategy):
             return await image_service.submit_i2i_pro_task(
                 task_id,
                 prompt=inputs.get("prompt"),
-                image_path=inputs.get("saved_input_images", [])[0],
+                image_path=inputs.get("saved_input_images", [])[0] if inputs.get("saved_input_images") else "",
                 seed=seed,
                 priority=priority
             )
@@ -76,12 +84,16 @@ class FaceSwapStrategy(BaseTaskStrategy):
         saved_images = inputs.get("saved_input_images", [])
         return {"saved_inputs": saved_images}
         
+    def get_file_paths_to_upload(self, inputs: Dict[str, Any]) -> list[str]:
+        # 按照原来的逻辑：先是 body_img (target_image)，再是 face_img (face_image)
+        return [inputs.get("target_image"), inputs.get("face_image")]
+        
     async def submit_task(self, task_id: str, inputs: Dict[str, Any], priority: int) -> str:
         saved_images = inputs.get("saved_input_images", [])
         return await image_service.submit_face_swap_task(
             task_id,
-            face_image_path=saved_images[1],
-            body_image_path=saved_images[0],
+            face_image_path=saved_images[1] if len(saved_images) > 1 else "",
+            body_image_path=saved_images[0] if len(saved_images) > 0 else "",
             priority=priority
         )
 
@@ -110,6 +122,13 @@ class BaseVideoStrategy(BaseTaskStrategy):
     def get_metadata(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
         return {"saved_inputs": inputs.get("saved_input_images", [])}
         
+    def get_file_paths_to_upload(self, inputs: Dict[str, Any]) -> list[str]:
+        if self.mode == "face_video":
+            return [inputs.get("face_image"), inputs.get("target_video")]
+        elif "images" in inputs:
+            return inputs.get("images", [])
+        return []
+        
     async def submit_task(self, task_id: str, inputs: Dict[str, Any], priority: int) -> str:
         duration = inputs.get("duration", 5)
         if duration >= 10:
@@ -120,8 +139,9 @@ class BaseVideoStrategy(BaseTaskStrategy):
             frame_length = 81
             
         resolution = inputs.get("resolution", 512)
-        prompt = inputs.get("prompt")
-        image_path = inputs.get("saved_input_images", [])[0]
+        prompt = inputs.get("prompt", "video")
+        saved_images = inputs.get("saved_input_images", [])
+        image_path = saved_images[0] if saved_images else ""
         
         if self.mode == "doggy_style":
             return await image_service.submit_perfect_video_insert_task(
@@ -131,6 +151,14 @@ class BaseVideoStrategy(BaseTaskStrategy):
             return await image_service.submit_perfect_video_lora(
                 task_id, prompt=prompt, image_path=image_path, lora_name=inputs.get("lora_name"), priority=priority,
                 width=resolution, height=resolution, length=frame_length
+            )
+        elif self.mode == "face_video":
+            face_img = saved_images[0] if len(saved_images) > 0 else ""
+            video_path = saved_images[1] if len(saved_images) > 1 else ""
+            dur_frames = 161 if duration >= 10 else 121
+            return await image_service.submit_face_video(
+                task_id, face_image_path=face_img, video_path=video_path,
+                resolution=resolution, duration=dur_frames, priority=priority
             )
         else:
             return await image_service.submit_perfect_video_edit(
@@ -157,6 +185,9 @@ class LtxVideoStrategy(BaseTaskStrategy):
     def get_metadata(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
         return {"saved_inputs": inputs.get("saved_input_images", [])}
         
+    def get_file_paths_to_upload(self, inputs: Dict[str, Any]) -> list[str]:
+        return inputs.get("images", [])
+        
     async def submit_task(self, task_id: str, inputs: Dict[str, Any], priority: int) -> str:
         resolution = inputs.get("resolution", 512)
         duration = inputs.get("duration", 5)
@@ -166,10 +197,12 @@ class LtxVideoStrategy(BaseTaskStrategy):
         except:
             width, height = 1280, 704
             
+        saved_images = inputs.get("saved_input_images", [])
+        image_path = saved_images[0] if saved_images else ""
         return await image_service.submit_ltx_video_task(
             task_id, 
-            prompt=inputs.get("prompt"), 
-            image_path=inputs.get("saved_input_images", [])[0], 
+            prompt=inputs.get("prompt", "ltx video"), 
+            image_path=image_path, 
             width=width, 
             height=height, 
             length=duration, 

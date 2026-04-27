@@ -13,18 +13,20 @@ async def test_saga_compensation_refunds_credits_and_releases_lock():
 
     with patch('src.core.task_core.check_concurrency_lock', new_callable=AsyncMock) as mock_lock, \
          patch('src.core.task_core.check_and_deduct_credits', new_callable=AsyncMock) as mock_deduct, \
-         patch('src.core.task_core.core_submit_generation_task', new_callable=AsyncMock) as mock_submit, \
+         patch('src.core.task_core.dispatch_to_worker', new_callable=AsyncMock) as mock_submit, \
          patch('src.core.task_core.refund_credits', new_callable=AsyncMock) as mock_refund, \
          patch('src.core.task_core.release_concurrency_lock', new_callable=AsyncMock) as mock_release, \
-         patch('src.core.task_core.get_user_priority_and_identity', new_callable=AsyncMock) as mock_identity:
+         patch('src.core.task_core.get_user_priority_and_identity', new_callable=AsyncMock) as mock_identity, \
+         patch('src.core.task_core._process_input_path', new_callable=AsyncMock) as mock_process:
 
         # Setup mocks
         mock_lock.return_value = (True, "")
         mock_deduct.return_value = (True, "")
         mock_identity.return_value = (0, "user", "title")
+        mock_process.return_value = "processed.png"
         
         # Simulate external service failure
-        mock_submit.return_value = (False, "API refused connection", None, [], None)
+        mock_submit.side_effect = Exception("API refused connection")
 
         with pytest.raises(CoreDomainError, match="系统派发失败，灵石已全额退还"):
             await process_and_submit_task(user_id, username, task_type, inputs)

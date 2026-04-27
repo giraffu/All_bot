@@ -16,8 +16,8 @@ class UserDashboardDTO(BaseModel):
     identity_display: str
     is_unlocked: bool
 
-async def get_user_dashboard_info(internal_user_id: int, first_name: str, invite_link_template: str) -> UserDashboardDTO:
-    stats = await permission_service.get_user_detailed_stats(internal_user_id)
+async def get_user_dashboard_info(tg_id: int, first_name: str, invite_link_template: str) -> UserDashboardDTO:
+    stats = await permission_service.get_user_detailed_stats(tg_id)
     
     breakthrough_msg = ""
     current_group = stats['group']

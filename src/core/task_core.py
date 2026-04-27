@@ -25,168 +25,6 @@ async def _process_input_path(user_logger: UserLogger, path: str) -> str:
     # If it's not a local file (e.g., an existing MinIO object key from History), return it as is
     return path
 
-async def core_submit_face_video(
-    task_id: str,
-    internal_user_id: int,
-    username: str,
-    face_image_path: str,
-    video_path: str,
-    resolution: int,
-    duration: int,
-    cost: int,
-    mode: str,
-    priority: int,
-    chat_id: int = None,
-    message_id: int = None,
-    allow_contribute: bool = True
-) -> Tuple[bool, str, Optional[str], Optional[str], Optional[str], Optional[str]]:
-    """
-    纯净的任务派发逻辑。不负责发送 Telegram 消息。
-    返回: (是否成功, 错误/成功描述, backend_task_id, saved_face_image, saved_video, registry_task_id)
-    """
-    user_logger = UserLogger(internal_user_id, username)
-    saved_face_image = await _process_input_path(user_logger, face_image_path)
-    saved_video = await _process_input_path(user_logger, video_path)
-
-    if not saved_face_image or not saved_video:
-        return False, "Failed to process input media.", None, None, None, None
-
-    registry_task_id = await TaskRegistry.add_task(
-        task_id,
-        internal_user_id,
-        username,
-        cost,
-        mode,
-        chat_id=chat_id,
-        message_id=message_id,
-        prompt="face video",
-        saved_input_images=[saved_face_image, saved_video],
-        is_video=True,
-        priority=priority
-    )
-
-    try:
-        backend_task_id = await image_service.submit_face_video(
-            task_id,
-            saved_face_image,
-            saved_video,
-            resolution=resolution,
-            duration=duration,
-            priority=priority
-        )
-
-        if registry_task_id and backend_task_id:
-            await TaskRegistry.update_backend_task_id(registry_task_id, backend_task_id)
-        
-        if not backend_task_id:
-            if registry_task_id:
-                await TaskRegistry.mark_task_status(registry_task_id, "failed")
-            return False, "Failed to submit task to backend API.", None, None, None, registry_task_id
-
-        return True, "Task submitted successfully.", backend_task_id, saved_face_image, saved_video, registry_task_id
-
-    except Exception as e:
-        logger.error(f"Error submitting face video task for {internal_user_id}: {e}", exc_info=True)
-        if registry_task_id:
-            try:
-                await TaskRegistry.mark_task_status(registry_task_id, "failed")
-            except AttributeError:
-                pass
-        error_msg = str(e)
-        if any(kw in error_msg for kw in ["Circuit is open", "All connection attempts failed", "Connection refused", "timeout", "ConnectError"]) or "CircuitBreaker" in str(type(e)):
-            user_msg = "当前服务器繁忙，请稍后再试"
-        else:
-            user_msg = f"System error: {error_msg}"
-
-        return False, user_msg, None, None, None, registry_task_id
-
-
-async def core_submit_generation_task(
-    task_id: str,
-    internal_user_id: int,
-    username: str,
-    prompt: str,
-    images: List[str],
-    is_video: bool,
-    task_type: str,
-    cost: int,
-    priority: int,
-    negative_prompt: str,
-    steps: int = 25,
-    chat_id: int = None,
-    message_id: int = None,
-    lora_name: str = None,
-    lora_strength: float = 1.0,
-    resolution: int = 512,
-    duration: int = 5,
-    allow_contribute: bool = True
-) -> Tuple[bool, str, Optional[str], List[str], Optional[str]]:
-    """
-    纯净的生成任务派发逻辑（包括图生图、文生图、动图等）。
-    """
-    user_logger = UserLogger(internal_user_id, username)
-    saved_input_images = []
-    if images:
-        for img in images:
-            processed_img = await _process_input_path(user_logger, img)
-            if processed_img:
-                saved_input_images.append(processed_img)
-
-    registry_task_id = await TaskRegistry.add_task(
-        task_id,
-        internal_user_id,
-        username,
-        cost,
-        task_type,
-        chat_id=chat_id,
-        message_id=message_id,
-        prompt=prompt,
-        saved_input_images=saved_input_images,
-        is_video=is_video,
-        priority=priority
-    )
-
-    try:
-        if task_type == "face_swap" and len(saved_input_images) < 2:
-            return False, "缺少人脸或身体图片", None, [], registry_task_id
-        if is_video and len(saved_input_images) == 0:
-            return False, "缺少图片", None, [], registry_task_id
-            
-        worker_inputs = {
-            "saved_input_images": saved_input_images,
-            "prompt": prompt,
-            "negative_prompt": negative_prompt,
-            "resolution": resolution,
-            "duration": duration,
-            "lora_name": lora_name,
-            "lora_strength": lora_strength,
-        }
-        
-        backend_task_id = await dispatch_to_worker(task_id, task_type, worker_inputs, priority)
-
-        if registry_task_id and backend_task_id:
-            await TaskRegistry.update_backend_task_id(registry_task_id, backend_task_id)
-        
-        if not backend_task_id:
-            if registry_task_id:
-                await TaskRegistry.mark_task_status(registry_task_id, "failed")
-            return False, "Failed to submit generation task.", None, [], registry_task_id
-
-        return True, "Generation task submitted.", backend_task_id, saved_input_images, registry_task_id
-
-    except Exception as e:
-        logger.error(f"Error submitting generation task for {internal_user_id}: {e}", exc_info=True)
-        if registry_task_id:
-            try:
-                await TaskRegistry.mark_task_status(registry_task_id, "failed")
-            except AttributeError:
-                pass
-        error_msg = str(e)
-        if any(kw in error_msg for kw in ["Circuit is open", "All connection attempts failed", "Connection refused", "timeout", "ConnectError"]) or "CircuitBreaker" in str(type(e)):
-            user_msg = "当前服务器繁忙，请稍后再试"
-        else:
-            user_msg = f"System error: {error_msg}"
-        return False, user_msg, None, [], registry_task_id
 
 from src.utils import load_prompts
 from src.constants import TASK_COSTS, RESOLUTION_COST, DURATION_MULTIPLIER, MODE_I2I_PRO, MODE_FACESWAP_STEP1, LTX_RESOLUTION_COST, LTX_DURATION_MULTIPLIER
@@ -316,83 +154,59 @@ async def process_and_submit_task(
             saved_inputs = []
             log_prompt = prompt
             
-            if task_type == "face_swap":
-                face_img = inputs.get("face_image")
-                body_img = inputs.get("target_image")
-                if not face_img or not body_img:
-                    raise CoreDomainError("face_image and target_image are required for face_swap")
-                    
-                success, msg, backend_task_id, saved_inputs, registry_task_id = await core_submit_generation_task(
-                    task_id=task_id,
-                    internal_user_id=user_id,
-                    username=username,
-                    prompt=prompt,
-                    images=[body_img, face_img],
-                    is_video=False,
-                    task_type="face_swap",
-                    cost=cost,
-                    priority=final_priority,
-                    negative_prompt=negative_prompt,
-                    allow_contribute=allow_contribute
-                )
-            elif task_type == "face_video":
-                face_img = inputs.get("face_image")
-                video_path = inputs.get("target_video")
-                resolution = inputs.get("resolution", 512)
-                duration_sec = inputs.get("duration", 5)
-                duration_frames = 161 if duration_sec >= 10 else 121
-                
-                success, msg, backend_task_id, saved_face_img, saved_vid, registry_task_id = await core_submit_face_video(
-                    task_id=task_id,
-                    internal_user_id=user_id,
-                    username=username,
-                    face_image_path=face_img,
-                    video_path=video_path,
-                    resolution=resolution,
-                    duration=duration_frames,
-                    cost=cost,
-                    mode="MODE_FACE_VIDEO_STEP2",
-                    priority=final_priority,
-                    allow_contribute=allow_contribute
-                )
-                if success:
-                    saved_inputs = [saved_face_img, saved_vid]
-            else:
-                images = inputs.get("images", [])
-                lora_name = inputs.get("lora_name")
-                
-                from src.handlers.fsm.edit_image_fsm import get_lora_default_strength
-                default_strength = get_lora_default_strength(lora_name) if lora_name else 1.0
-                lora_strength = inputs.get("lora_strength", default_strength)
-                
-                if lora_name == "qwen/adjust_pussy_anus.safetensors":
-                    if "adjust her pussy and anus" not in (prompt or "").lower():
-                        prompt = f"adjust her pussy and anus, {prompt or ''}".strip(", ")
-                        
-                if task_type in ["video_lora", "img2img_lora"] and lora_name:
-                    log_prompt = f"[模型: {lora_name}] {prompt}"
-                        
-                resolution = inputs.get("resolution", 512)
-                duration = inputs.get("duration", 5)
-                
-                success, msg, backend_task_id, saved_inputs, registry_task_id = await core_submit_generation_task(
-                    task_id=task_id,
-                    internal_user_id=user_id,
-                    username=username,
-                    prompt=prompt,
-                    images=images,
-                    is_video=is_video_task,
-                    task_type=task_type,
-                    cost=cost,
-                    priority=final_priority,
-                    negative_prompt=negative_prompt,
-                    lora_name=lora_name,
-                    lora_strength=lora_strength,
-                    resolution=resolution,
-                    duration=duration,
-                    allow_contribute=allow_contribute
-                )
-                
+
+            # 1. 统一处理输入图片/视频上传
+            paths_to_upload = strategy.get_file_paths_to_upload(inputs)
+            saved_inputs = []
+            from src.logger import UserLogger
+            user_logger = UserLogger(user_id, username)
+            for path in paths_to_upload:
+                processed_img = await _process_input_path(user_logger, path)
+                if processed_img:
+                    saved_inputs.append(processed_img)
+            
+            inputs["saved_input_images"] = saved_inputs
+            inputs["prompt"] = prompt  # Ensure updated prompt is in inputs
+            metadata = strategy.get_metadata(inputs)
+            
+            # 2. 统一落库 TaskRegistry
+            registry_task_id = await TaskRegistry.add_task(
+                task_id=task_id,
+                user_id=user_id,
+                username=username,
+                cost=cost,
+                task_type=task_type,
+                prompt=log_prompt,
+                saved_input_images=metadata.get("saved_inputs", saved_inputs),
+                is_video=is_video_task,
+                priority=final_priority,
+                allow_contribute=allow_contribute,
+                metadata=metadata
+            )
+            
+            # 3. 统一分发到后端 worker
+            try:
+                backend_task_id = await dispatch_to_worker(task_id, task_type, inputs, final_priority)
+                if registry_task_id and backend_task_id:
+                    await TaskRegistry.update_backend_task_id(registry_task_id, backend_task_id)
+                if not backend_task_id:
+                    raise Exception("Failed to submit task to backend API.")
+                success = True
+                msg = "Task submitted successfully"
+            except Exception as e:
+                logger.error(f"Dispatch to worker failed: {e}", exc_info=True)
+                if registry_task_id:
+                    try:
+                        await TaskRegistry.mark_task_status(registry_task_id, "failed")
+                    except Exception:
+                        pass
+                success = False
+                backend_task_id = None
+                error_msg = str(e)
+                if any(kw in error_msg for kw in ["Circuit is open", "All connection attempts failed", "Connection refused", "timeout", "ConnectError"]):
+                    msg = "当前服务器繁忙，请稍后再试"
+                else:
+                    msg = f"System error: {error_msg}"
             if not success or not backend_task_id:
                 raise CoreDomainError(msg)
                 
