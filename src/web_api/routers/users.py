@@ -1,12 +1,13 @@
 import logging
-from fastapi import APIRouter, Depends, Query, HTTPException
-from sqlalchemy import select, func
+
+from fastapi import APIRouter, Depends
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.database.core import AsyncSessionLocal
-from src.database.models import User, History
+from src.database.models import History, User
 from src.web_api.dependencies import get_current_user
-from src.web_api.schemas.auth_schema import UserResponse, InvitationRechargeStats
+from src.web_api.schemas.auth_schema import InvitationRechargeStats, UserResponse
 from src.web_api.schemas.user_schema import PaginatedHistory
 
 router = APIRouter()

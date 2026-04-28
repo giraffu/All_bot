@@ -1,5 +1,6 @@
 from unittest.mock import patch
 
+
 def test_system_status(client, mock_queue_manager):
     # This endpoint does not require auth
     mock_queue_manager.get_queue_metrics_by_type.return_value = {

@@ -1,13 +1,24 @@
+import asyncio
 import io
 import logging
-import asyncio
-import os
+from datetime import timedelta
+
 import boto3
 from botocore.config import Config as BotoConfig
-from datetime import timedelta
 from minio import Minio
-from config import MINIO_ENDPOINT, MINIO_ACCESS_KEY, MINIO_SECRET_KEY, MINIO_BUCKET, MINIO_TEMPLATE_BUCKET, MINIO_SECURE
-from config import R2_ENDPOINT, R2_ACCESS_KEY, R2_SECRET_KEY, R2_BUCKET, R2_PUBLIC_DOMAIN
+
+from config import (
+    MINIO_ACCESS_KEY,
+    MINIO_BUCKET,
+    MINIO_ENDPOINT,
+    MINIO_SECRET_KEY,
+    MINIO_SECURE,
+    MINIO_TEMPLATE_BUCKET,
+    R2_ACCESS_KEY,
+    R2_BUCKET,
+    R2_ENDPOINT,
+    R2_SECRET_KEY,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -189,7 +200,11 @@ class StorageService:
                     "response-content-disposition": f'attachment; filename="{filename}"'
                 }
                 
-            from config import MINIO_ENDPOINT, MINIO_PUBLIC_URL, MINIO_ACCESS_KEY, MINIO_SECRET_KEY
+            from config import (
+                MINIO_ACCESS_KEY,
+                MINIO_PUBLIC_URL,
+                MINIO_SECRET_KEY,
+            )
             if MINIO_PUBLIC_URL:
                 public_host = MINIO_PUBLIC_URL.replace("https://", "").replace("http://", "").rstrip("/")
                 secure = MINIO_PUBLIC_URL.startswith("https")
@@ -232,7 +247,11 @@ class StorageService:
             return ""
         
         try:
-            from config import MINIO_ENDPOINT, MINIO_PUBLIC_URL, MINIO_ACCESS_KEY, MINIO_SECRET_KEY
+            from config import (
+                MINIO_ACCESS_KEY,
+                MINIO_PUBLIC_URL,
+                MINIO_SECRET_KEY,
+            )
             
             # The Ultimate Fix for 403 SignatureDoesNotMatch with MinIO behind Cloudflare/Nginx:
             # 1. The signature MUST be calculated using the EXACT Host header the browser will send.

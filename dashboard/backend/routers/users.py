@@ -1,15 +1,29 @@
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, desc, delete, case
-from sqlalchemy.orm import selectinload
-import logging
 import json
+import logging
 import uuid
-import os
-from datetime import datetime, timedelta
+from datetime import datetime
+
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import case, delete, desc, func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
+
+from dashboard.backend.schemas import (
+    AdminGiftRequest,
+    UpdateCreditsRequest,
+    UpdateIdentityRequest,
+)
 from src.database.core import get_db
-from src.database.models import User, History, Referral, TemplateContribution, CheckinHistory, Order, UserLog, MembershipPlan
-from dashboard.backend.schemas import UpdateCreditsRequest, AdminGiftRequest, UpdateIdentityRequest
+from src.database.models import (
+    CheckinHistory,
+    History,
+    MembershipPlan,
+    Order,
+    Referral,
+    TemplateContribution,
+    User,
+    UserLog,
+)
 from src.services.storage import storage
 
 router = APIRouter(prefix="/api/users", tags=["users"])

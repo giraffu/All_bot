@@ -1,13 +1,13 @@
-import uuid
 import logging
-from fastapi import APIRouter, Depends, HTTPException, Query, status
-from typing import Optional
+import uuid
 from datetime import datetime
 
+from fastapi import APIRouter, Depends, HTTPException, Query
+
+from config import MINIO_BUCKET
 from src.database.models import User
 from src.services.storage import storage
 from src.web_api.dependencies import get_current_user
-from config import MINIO_BUCKET
 
 router = APIRouter()
 logger = logging.getLogger(__name__)

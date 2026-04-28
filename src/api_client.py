@@ -1,19 +1,30 @@
 # api_client.py
 import asyncio
-import httpx
 import logging
 import uuid
 from typing import Optional
-from src.utils import async_retry
+
+import httpx
+
 from config import (
-    IMG2IMG_ENDPOINT, IMG2IMG_LORA_ENDPOINT, STATUS_ENDPOINT, IMAGE_ENDPOINT, POLL_INTERVAL, 
-    VIDEO_ENDPOINT, API_BASE, FACE_SWAP_ENDPOINT, 
-    PERFECT_VIDEO_EDIT_ENDPOINT, PERFECT_VIDEO_INSERT_ENDPOINT,
+    API_BASE,
+    API_TOKEN,
+    FACE_SWAP_ENDPOINT,
+    FACE_VIDEO_ENDPOINT,
+    I2I_PRO_ENDPOINT,
+    IMAGE_ENDPOINT,
+    IMG2IMG_ENDPOINT,
+    IMG2IMG_LORA_ENDPOINT,
+    LTX_VIDEO_ENDPOINT,
+    PERFECT_VIDEO_EDIT_ENDPOINT,
+    PERFECT_VIDEO_INSERT_ENDPOINT,
     PERFECT_VIDEO_LORA_ENDPOINT,
-    I2I_PRO_ENDPOINT, FACE_VIDEO_ENDPOINT, LTX_VIDEO_ENDPOINT,
-    API_TOKEN
+    POLL_INTERVAL,
+    STATUS_ENDPOINT,
+    VIDEO_ENDPOINT,
 )
 from src.circuit_breaker import CircuitBreaker, CircuitBreakerOpenException
+from src.utils import async_retry
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +32,7 @@ logger = logging.getLogger(__name__)
 circuit_breaker = CircuitBreaker(failure_threshold=15, reset_timeout=30)
 
 from asgi_correlation_id import correlation_id
+
 
 class APIClient:
     """
@@ -317,8 +329,10 @@ class APIClient:
             logger.warning(f"Initial status fetch failed for {task_id}: {e}")
 
         # Subscribe to Pub/Sub
-        import redis.asyncio as redis
         import json
+
+        import redis.asyncio as redis
+
         from config import REDIS_URL
         
         redis_client = None

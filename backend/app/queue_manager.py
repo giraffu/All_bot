@@ -1,10 +1,11 @@
 import json
 import time
-import uuid
-from typing import Optional, Dict, Any, Tuple
-from redis.asyncio import Redis
+from typing import Any, Dict, Optional, Tuple
+
 from app.models import TaskStatus, TaskType
 from asgi_correlation_id import correlation_id
+from redis.asyncio import Redis
+
 
 class QueueManager:
     def __init__(self, redis: Redis):

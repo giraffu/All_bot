@@ -1,9 +1,10 @@
 import logging
-from logging.handlers import RotatingFileHandler
 from datetime import datetime
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
-from sqlalchemy import select
+
 from asgi_correlation_id import correlation_id
+from sqlalchemy import select
 
 from .database.core import AsyncSessionLocal
 from .database.models import History, User

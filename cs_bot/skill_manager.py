@@ -1,9 +1,8 @@
-import os
 import glob
 import importlib.util
-import inspect
-from typing import List, Callable
-from langchain_core.tools import tool
+import os
+from typing import Callable, List
+
 
 class SkillManager:
     def __init__(self, skills_dir: str = "skills"):

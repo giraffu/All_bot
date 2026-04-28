@@ -1,9 +1,11 @@
 import logging
+
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
-from .models import Base
+
 from config import DATABASE_URL
+
 from .logger import setup_db_logging
 
 logger = logging.getLogger(__name__)
@@ -25,10 +27,11 @@ AsyncSessionLocal = sessionmaker(
 
 
 async def stamp_alembic_head():
-    import os
     import asyncio
-    from alembic.config import Config
+    import os
+
     from alembic import command
+    from alembic.config import Config
     
     def _run_sync():
         root_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))

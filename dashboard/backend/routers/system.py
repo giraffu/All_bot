@@ -1,16 +1,18 @@
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
-import httpx
 import logging
+
+import httpx
+from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from config import API_BASE, STATUS_ENDPOINT
+from src.core.task_core import force_terminate_task, get_system_task_stats
+from src.core.task_core import sync_user_concurrency as core_sync_user_concurrency
 from src.database.core import get_db
 from src.database.models import User
-from src.core.task_core import get_system_task_stats, force_terminate_task, sync_user_concurrency as core_sync_user_concurrency
 from src.services.image_service import image_service
-from config import API_BASE, STATUS_ENDPOINT
-from fastapi.responses import StreamingResponse
-
-from pydantic import BaseModel
 
 router = APIRouter(prefix="/api", tags=["system"])
 logger = logging.getLogger("dashboard.system")
@@ -52,8 +54,9 @@ async def refund_bot_task(req: RefundTaskRequest, db: AsyncSession = Depends(get
 async def clean_zombie_tasks(db: AsyncSession = Depends(get_db)):
     """Force clean all tasks older than 10 minutes (600s) and refund."""
     try:
-        from src.services.permission_service import permission_service
         import time
+
+        from src.services.permission_service import permission_service
         
         tasks, _ = await get_system_task_stats()
         if not tasks:
@@ -162,6 +165,7 @@ async def get_active_bot_tasks(db: AsyncSession = Depends(get_db)):
                 backend_statuses = {}
                 try:
                     import asyncio
+
                     from src.api_client import api_client
                     
                     tasks_to_check = [task.get("backend_task_id") for task in tasks.values() if task.get("backend_task_id")]

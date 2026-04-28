@@ -1,14 +1,15 @@
 
-import sys
-import os
 import asyncio
-from unittest.mock import MagicMock, AsyncMock, patch
+import os
+import sys
+from unittest.mock import AsyncMock, MagicMock, patch
 
 # Ensure src is in path
 sys.path.insert(0, os.path.abspath('.'))
 
 from src.api_client import listen_for_progress
 from src.services.task_service import TaskService
+
 
 def test_api_client_no_normalization():
     """

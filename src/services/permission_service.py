@@ -1,10 +1,9 @@
-from telegram import Update
-from telegram.ext import ContextTypes
-from config import REQUIRED_CHANNEL_ID, CHANNEL_INVITE_LINK
-from src.quota import QuotaManager
-from src.database.core import AsyncSessionLocal
-from src.utils import robust_send_message
+from config import CHANNEL_INVITE_LINK, REQUIRED_CHANNEL_ID
 from src.constants import DYNAMIC_PRIORITY_RULES
+from src.database.core import AsyncSessionLocal
+from src.quota import QuotaManager
+from src.utils import robust_send_message
+
 
 class PermissionService:
     def __init__(self):
@@ -113,8 +112,9 @@ class PermissionService:
                 try:
                     # To notify inviter, we need their telegram_id
                     async with AsyncSessionLocal() as session:
-                        from src.database.models import User
                         from sqlalchemy import select
+
+                        from src.database.models import User
                         inviter = (await session.execute(select(User).where(User.id == inviter_internal_id))).scalar_one_or_none()
                         if inviter and inviter.telegram_id:
                             await robust_send_message(
@@ -271,9 +271,11 @@ class PermissionService:
         - 累积贡献 Stars
         """
         async with AsyncSessionLocal() as session:
-            from src.database.models import Order, Referral
-            from sqlalchemy import select, and_
             from decimal import Decimal
+
+            from sqlalchemy import and_, select
+
+            from src.database.models import Order, Referral
 
             # 联表查询：查找被该用户邀请且支付成功的订单
             stmt = (
@@ -331,8 +333,9 @@ class PermissionService:
     async def get_user_group(self, user_id: int) -> str:
         """Get user group (修为) from DB"""
         async with AsyncSessionLocal() as session:
-            from src.database.models import User
             from sqlalchemy import select
+
+            from src.database.models import User
             stmt = select(User.user_group).where(User.id == user_id)
             result = await session.execute(stmt)
             group = result.scalar() or "凡人"
@@ -348,9 +351,11 @@ class PermissionService:
     async def get_user_identity(self, user_id: int) -> str:
         """Get effective user identity (身份) from DB"""
         async with AsyncSessionLocal() as session:
-            from src.database.models import User
-            from sqlalchemy import select
             from datetime import datetime
+
+            from sqlalchemy import select
+
+            from src.database.models import User
             stmt = select(User.current_identity, User.identity_expire_at).where(User.id == user_id)
             result = await session.execute(stmt)
             row = result.first()
@@ -462,7 +467,10 @@ class PermissionService:
         """
         Check if user has sufficient identity or group to access the web UI.
         """
-        from src.constants import WEB_ACCESS_ALLOWED_GROUPS, WEB_ACCESS_ALLOWED_IDENTITIES
+        from src.constants import (
+            WEB_ACCESS_ALLOWED_GROUPS,
+            WEB_ACCESS_ALLOWED_IDENTITIES,
+        )
         
         group = await self.get_user_group(user_id)
         identity = await self.get_user_identity(user_id)

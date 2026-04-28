@@ -1,6 +1,9 @@
+from typing import Any, Dict
+
 from pydantic import BaseModel
-from typing import Dict, Any, Optional
+
 from src.services.permission_service import permission_service
+
 
 class UserDashboardDTO(BaseModel):
     first_name: str

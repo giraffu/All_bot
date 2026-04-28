@@ -1,8 +1,17 @@
 from abc import ABC, abstractmethod
-from typing import Dict, Any
+from typing import Any, Dict
 
-from src.constants import TASK_COSTS, RESOLUTION_COST, DURATION_MULTIPLIER, MODE_I2I_PRO, MODE_FACESWAP_STEP1, LTX_RESOLUTION_COST, LTX_DURATION_MULTIPLIER
+from src.constants import (
+    DURATION_MULTIPLIER,
+    LTX_DURATION_MULTIPLIER,
+    LTX_RESOLUTION_COST,
+    MODE_FACESWAP_STEP1,
+    MODE_I2I_PRO,
+    RESOLUTION_COST,
+    TASK_COSTS,
+)
 from src.services.image_service import image_service
+
 
 class BaseTaskStrategy(ABC):
     @abstractmethod

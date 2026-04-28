@@ -1,27 +1,30 @@
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+import json
+import logging
+import os
+
+from sqlalchemy import select
+from sqlalchemy import update as sa_update
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.error import BadRequest
 from telegram.ext import ContextTypes
-import json
-import os
-import logging
-from sqlalchemy import select, desc
-from sqlalchemy import update as sa_update
-from sqlalchemy.orm import selectinload
-from sqlalchemy.exc import IntegrityError
 
-from src.database.core import AsyncSessionLocal
-from src.database.models import History, GalleryPost, UserInteraction, User
+from config import ENABLE_PUBLIC_SHARE, REQUIRED_CHANNEL_ID
+from src.constants import FORBIDDEN_WORDS, MODE_NAME_MAP, MODE_RANDOM_FACESWAP
 from src.core.user_core import get_or_create_user_by_telegram
-from src.services.redis_client import redis_client
+from src.database.core import AsyncSessionLocal
+from src.database.models import GalleryPost, History
+from src.handlers.callback_router import register_callback
 from src.services.storage import storage
 from src.utils import (
-    robust_send_message, robust_edit_text, robust_edit_reply_markup, 
-    robust_edit_caption, safe_answer_query, create_background_task,
-    robust_send_photo, robust_send_video, robust_delete_message
+    create_background_task,
+    robust_delete_message,
+    robust_edit_caption,
+    robust_edit_reply_markup,
+    robust_send_message,
+    robust_send_photo,
+    robust_send_video,
+    safe_answer_query,
 )
-from config import ENABLE_PUBLIC_SHARE, MINIO_TEMPLATE_BUCKET, REQUIRED_CHANNEL_ID
-from src.constants import MODE_NAME_MAP, FORBIDDEN_WORDS, MODE_RANDOM_FACESWAP
-from src.handlers.callback_router import register_callback
 
 logger = logging.getLogger(__name__)
 
@@ -248,7 +251,14 @@ async def handle_rate_action(update: Update, context: ContextTypes.DEFAULT_TYPE,
         logger.error(f"Error updating rating: {e}")
         await safe_answer_query(query, text="❌ 评价失败，请稍后再试", show_alert=True)
 
-from src.core.gallery_core import process_submit_to_gallery, GalleryCoreError, toggle_like, DuplicateInteractionError, get_gallery_feed
+from src.core.gallery_core import (
+    DuplicateInteractionError,
+    GalleryCoreError,
+    get_gallery_feed,
+    process_submit_to_gallery,
+    toggle_like,
+)
+
 
 class DummyBackgroundTasks:
     def __init__(self, context):

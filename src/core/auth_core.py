@@ -1,13 +1,14 @@
 import hashlib
 import hmac
+import json
 import logging
 import urllib.parse
-import json
 from typing import Optional, Tuple
+
 from config import BOT_TOKEN, BOT_TOKEN_TEST
 from src.core.user_core import get_or_create_user_by_telegram
-from src.services.permission_service import permission_service
 from src.database.models import User
+from src.services.permission_service import permission_service
 
 logger = logging.getLogger(__name__)
 

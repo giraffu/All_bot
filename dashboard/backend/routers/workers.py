@@ -1,7 +1,8 @@
-from fastapi import APIRouter, Depends, Query
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, desc
 from typing import Optional
+
+from fastapi import APIRouter, Depends, Query
+from sqlalchemy import desc, func, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.database.core import get_db
 from src.database.models import WorkerLog

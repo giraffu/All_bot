@@ -1,21 +1,32 @@
-import sys
-import os
 import asyncio
-from pathlib import Path
 import logging
+import os
+import sys
+from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.append(str(PROJECT_ROOT))
 os.chdir(str(PROJECT_ROOT))
 
+import fastapi.responses
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-import fastapi.responses
 
-from src.database.core import init_db
 from dashboard.backend.auth import auth_router, get_current_user
-from dashboard.backend.routers import stats, users, history, plans, templates, system, logs, workers, gallery, referrals
+from dashboard.backend.routers import (
+    gallery,
+    history,
+    logs,
+    plans,
+    referrals,
+    stats,
+    system,
+    templates,
+    users,
+    workers,
+)
 from dashboard.backend.services.worker_listener import start_worker_listener
+from src.database.core import init_db
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("dashboard")

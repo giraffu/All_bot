@@ -2,18 +2,43 @@ import asyncio
 import logging
 import os
 import uuid
-from typing import Optional
-from fastapi import FastAPI, Depends, HTTPException, BackgroundTasks, Query, Body, Request
-from fastapi.responses import FileResponse
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from asgi_correlation_id import CorrelationIdMiddleware
 from contextlib import asynccontextmanager
+from typing import Optional
+
 from app.config import settings
-from app.models import TaskResponse, TaskStatusResponse, SystemStatusResponse, TaskType, T2ITaskResponse, SystemWorkersResponse, Img2ImgRequest, Img2ImgLoraRequest, FaceSwapRequest, VideoInsertRequest, VideoEditRequest, FaceVideoRequest, I2IProRequest, VideoLoraRequest, LtxVideoRequest
+from app.models import (
+    FaceSwapRequest,
+    FaceVideoRequest,
+    I2IProRequest,
+    Img2ImgLoraRequest,
+    Img2ImgRequest,
+    LtxVideoRequest,
+    SystemStatusResponse,
+    SystemWorkersResponse,
+    T2ITaskResponse,
+    TaskResponse,
+    TaskStatusResponse,
+    TaskType,
+    VideoEditRequest,
+    VideoInsertRequest,
+    VideoLoraRequest,
+)
 from app.queue_manager import QueueManager
 from app.routers import agent
-from redis.asyncio import Redis
+from asgi_correlation_id import CorrelationIdMiddleware
+from fastapi import (
+    BackgroundTasks,
+    Body,
+    Depends,
+    FastAPI,
+    HTTPException,
+    Query,
+    Request,
+)
+from fastapi.responses import FileResponse
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from minio import Minio
+from redis.asyncio import Redis
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)

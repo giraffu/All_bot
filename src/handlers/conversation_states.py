@@ -1,5 +1,6 @@
 from enum import IntEnum, auto
 
+
 class FaceVideoState(IntEnum):
     """视频换脸流程的状态枚举"""
     WAIT_FACE_IMAGE = auto()

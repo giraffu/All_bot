@@ -1,12 +1,15 @@
-from telegram import Update, ReplyKeyboardMarkup, BotCommand
-from telegram.ext import ContextTypes, Application
 import logging
 import os
-from src.services.permission_service import permission_service
-from src.constants import MAIN_MENU_KEYBOARD
-from src.utils import robust_send_message, MAINTENANCE_FILE
-from src.handlers.utils import with_db_logging_context
+
+from telegram import BotCommand, ReplyKeyboardMarkup, Update
+from telegram.ext import Application, ContextTypes
+
 from config import ADMIN_USERS
+from src.constants import MAIN_MENU_KEYBOARD
+from src.handlers.utils import with_db_logging_context
+from src.services.permission_service import permission_service
+from src.utils import MAINTENANCE_FILE, robust_send_message
+
 
 async def setup_commands(app: Application):
     """

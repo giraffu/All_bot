@@ -1,14 +1,14 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, desc, update, delete
-from sqlalchemy.orm import selectinload
-from typing import Optional, List, Dict, Any
 import logging
-from src.database.core import get_db
-from src.database.models import GalleryPost, User, History
-from src.services.storage import storage
+from typing import Optional
+
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
-from datetime import datetime
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from src.database.core import get_db
+from src.database.models import GalleryPost
+from src.services.storage import storage
 
 router = APIRouter(prefix="/api/gallery", tags=["gallery"])
 logger = logging.getLogger("dashboard.gallery")

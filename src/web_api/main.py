@@ -1,11 +1,12 @@
 import logging
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
-from asgi_correlation_id import CorrelationIdMiddleware
 from contextlib import asynccontextmanager
 
-from src.web_api.routers import auth, storage, tasks, users, gallery, utils
+from asgi_correlation_id import CorrelationIdMiddleware
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
 from src.database.core import engine
+from src.web_api.routers import auth, gallery, storage, tasks, users, utils
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")

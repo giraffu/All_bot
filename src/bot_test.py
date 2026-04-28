@@ -1,32 +1,40 @@
+import logging
+import os
+import uuid
+from urllib.parse import urlparse
+
+import httpx
+from asgi_correlation_id import correlation_id
+
+# ================= PATCH TELEGRAM FILE DOWNLOAD =================
+from telegram import File, Update
 from telegram.ext import (
     ApplicationBuilder,
-    MessageHandler,
-    CommandHandler,
     CallbackQueryHandler,
+    CommandHandler,
+    MessageHandler,
     PreCheckoutQueryHandler,
     TypeHandler,
     filters,
 )
-from telegram import Update
-from asgi_correlation_id import correlation_id
-import uuid
 from telegram.request import HTTPXRequest
-import logging
-import os
 
-from src.logger import setup_logging
-from src.handlers.command_handler import start, cancel, setup_commands, toggle_maintenance
-from src.handlers.message_handler import handle_photo, handle_prompt, handle_video, handle_document
-from src.handlers.callback_handler import handle_callback_query
 from src.database.core import init_db
-import socket
-from urllib.parse import urlparse
+from src.handlers.callback_handler import handle_callback_query
+from src.handlers.command_handler import (
+    cancel,
+    setup_commands,
+    start,
+    toggle_maintenance,
+)
+from src.handlers.message_handler import (
+    handle_document,
+    handle_photo,
+    handle_prompt,
+    handle_video,
+)
+from src.logger import setup_logging
 
-# ================= PATCH TELEGRAM FILE DOWNLOAD =================
-from telegram import File
-import httpx
-import os
-import logging
 logger = logging.getLogger(__name__)
 
 original_download_to_drive = File.download_to_drive
@@ -56,10 +64,10 @@ File.download_to_drive = custom_download_to_drive
 # ================================================================
 
 import asyncio
-from src.services.payment_validator import TonPaymentValidator
-from src.services.task_registry import TaskRegistry
-from src.services.recovery_service import recover_active_tasks
 
+from src.services.payment_validator import TonPaymentValidator
+from src.services.recovery_service import recover_active_tasks
+from src.services.task_registry import TaskRegistry
 
 
 async def clean_zombies_loop():
@@ -187,16 +195,19 @@ def main():
             .build()
         )
     
-    from src.handlers.payment_handler import precheckout_callback, successful_payment_callback
+    from src.handlers.fsm.custom_video_fsm import get_custom_video_fsm_handler
+    from src.handlers.fsm.edit_image_fsm import get_edit_image_fsm_handler
+    from src.handlers.fsm.face_video_fsm import get_face_video_fsm_handler
+    from src.handlers.fsm.faceswap_fsm import get_faceswap_fsm_handler
+    from src.handlers.fsm.gallery_apply_fsm import get_gallery_apply_fsm_handler
+    from src.handlers.fsm.ltx_video_fsm import get_ltx_video_fsm_handler
     from src.handlers.fsm.quick_image_fsm import get_quick_image_fsm_handler
     from src.handlers.fsm.quick_video_fsm import get_quick_video_fsm_handler
-    from src.handlers.fsm.edit_image_fsm import get_edit_image_fsm_handler
-    from src.handlers.fsm.faceswap_fsm import get_faceswap_fsm_handler
-    from src.handlers.fsm.face_video_fsm import get_face_video_fsm_handler
     from src.handlers.fsm.video_lora_fsm import get_video_lora_fsm_handler
-    from src.handlers.fsm.custom_video_fsm import get_custom_video_fsm_handler
-    from src.handlers.fsm.ltx_video_fsm import get_ltx_video_fsm_handler
-    from src.handlers.fsm.gallery_apply_fsm import get_gallery_apply_fsm_handler
+    from src.handlers.payment_handler import (
+        precheckout_callback,
+        successful_payment_callback,
+    )
 
     
     # Register FSM Handlers first (they must intercept text/callbacks before fallback handlers)

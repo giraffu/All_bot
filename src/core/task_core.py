@@ -1,10 +1,10 @@
-from typing import Tuple, Optional, List
 import logging
+from typing import Optional, Tuple
 
+from config import MINIO_BUCKET
+from src.logger import UserLogger
 from src.services.image_service import image_service
 from src.services.task_registry import TaskRegistry
-from src.logger import UserLogger
-from config import MINIO_BUCKET
 
 logger = logging.getLogger(__name__)
 
@@ -26,10 +26,16 @@ async def _process_input_path(user_logger: UserLogger, path: str) -> str:
     return path
 
 
-from src.utils import load_prompts
-from src.constants import TASK_COSTS, RESOLUTION_COST, DURATION_MULTIPLIER, MODE_I2I_PRO, MODE_FACESWAP_STEP1, LTX_RESOLUTION_COST, LTX_DURATION_MULTIPLIER
-from src.core.billing_core import check_concurrency_lock, release_concurrency_lock, check_and_deduct_credits, refund_credits, get_user_priority_and_identity
+from src.core.billing_core import (
+    check_and_deduct_credits,
+    check_concurrency_lock,
+    get_user_priority_and_identity,
+    refund_credits,
+    release_concurrency_lock,
+)
 from src.core.task_dispatcher import StrategyFactory, dispatch_to_worker
+from src.utils import load_prompts
+
 
 class CoreDomainError(Exception):
     pass
@@ -55,8 +61,7 @@ async def monitor_task_and_release_lock(
     Background task to monitor progress and release concurrency lock.
     """
     import asyncio
-    from src.database.core import AsyncSessionLocal
-    from src.database.models import History
+
     
     if input_images is None:
         input_images = []
@@ -307,8 +312,8 @@ async def sync_user_concurrency(user_id: int, actual_count: int):
     """
     同步用户并发锁到指定数量，当 actual_count 为 0 时删除锁
     """
-    from src.services.redis_client import redis_client
     from config import REDIS_PREFIX
+    from src.services.redis_client import redis_client
     key = f"{REDIS_PREFIX}user_concurrency:{user_id}"
     
     if actual_count > 0:

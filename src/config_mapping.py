@@ -1,6 +1,7 @@
 from typing import List
-from src.handlers.fsm.video_lora_fsm import LORA_MODELS as VIDEO_LORA_MODELS
+
 from src.handlers.fsm.edit_image_fsm import LORA_MODELS as IMAGE_LORA_MODELS
+from src.handlers.fsm.video_lora_fsm import LORA_MODELS as VIDEO_LORA_MODELS
 
 ALL_LORA_MODELS = {**VIDEO_LORA_MODELS, **IMAGE_LORA_MODELS}
 

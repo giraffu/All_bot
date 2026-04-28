@@ -1,11 +1,12 @@
+from datetime import datetime
+from typing import Tuple
+
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
-from datetime import datetime
 
 from src.database.core import AsyncSessionLocal
 from src.database.models import User
 
-from typing import Tuple
 
 async def get_or_create_user_by_telegram(tg_id: int, username: str = None, full_name: str = None) -> Tuple[User, bool]:
     """根据 TG ID 获取内部 User 对象。如果不存在则创建（内部 ID 自动生成）。

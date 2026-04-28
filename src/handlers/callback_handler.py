@@ -1,15 +1,14 @@
 import logging
+
 from telegram import Update
 from telegram.ext import ContextTypes
-
-from src.utils import safe_answer_query
-from src.handlers.utils import with_db_logging_context
-from src.services.permission_service import permission_service
 
 import src.handlers.callback_router as router
 
 # 导入拆分后的子模块，触发装饰器注册路由
-from src.handlers.callbacks import billing_callbacks, gallery_callbacks, misc_callbacks
+from src.handlers.utils import with_db_logging_context
+from src.services.permission_service import permission_service
+from src.utils import safe_answer_query
 
 logger = logging.getLogger(__name__)
 

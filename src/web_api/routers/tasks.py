@@ -1,18 +1,23 @@
+import asyncio
 import json
 import logging
-import asyncio
+
 import httpx
-from typing import AsyncGenerator
-from fastapi import APIRouter, Depends, HTTPException, status, Request
+from fastapi import APIRouter, Depends, HTTPException
 from sse_starlette.sse import EventSourceResponse
 
+from src.core.task_core import (
+    ConcurrencyLimitError,
+    CoreDomainError,
+    InsufficientCreditsError,
+    process_and_submit_task,
+)
 from src.database.models import User
-from src.web_api.dependencies import get_current_user
-from src.web_api.schemas.task_schema import TaskGenerateRequest, TaskGenerateResponse
-from src.core.task_core import process_and_submit_task, CoreDomainError, InsufficientCreditsError, ConcurrencyLimitError
+from src.quota import QuotaManager
 from src.services.redis_client import redis_client
 from src.services.storage import storage
-from src.quota import QuotaManager
+from src.web_api.dependencies import get_current_user
+from src.web_api.schemas.task_schema import TaskGenerateRequest, TaskGenerateResponse
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -114,9 +119,10 @@ async def task_status_stream(task_id: str, current_user: User = Depends(get_curr
                         is_video = task_type in ["face_video", "txt2video", "video_lora", "custom_video", "perfect_video_insert", "doggy_style", "blowjob", "undress_tongue", "closeup_blowjob", "ltx_video"]
                         ext = "mp4" if is_video else "png"
                         
+                        from sqlalchemy import select
+
                         from src.database.core import AsyncSessionLocal
                         from src.database.models import History
-                        from sqlalchemy import select
                         
                         final_result_path = f"{current_user.id}/output_images/{task_id}.{ext}"
                         for _ in range(10):
@@ -161,9 +167,10 @@ async def task_status_stream(task_id: str, current_user: User = Depends(get_curr
                             ext = "mp4" if is_video else "png"
                             
                             # Give task_service.py time to move the file from comfyui-temp to bot-data
+                            from sqlalchemy import select
+
                             from src.database.core import AsyncSessionLocal
                             from src.database.models import History
-                            from sqlalchemy import select
                             
                             final_result_path = f"{current_user.id}/output_images/{task_id}.{ext}"
                             for _ in range(10):
@@ -214,9 +221,10 @@ async def task_status_stream(task_id: str, current_user: User = Depends(get_curr
                                     is_video = task_type in ["face_video", "txt2video", "video_lora", "custom_video", "perfect_video_insert", "doggy_style", "blowjob", "undress_tongue", "closeup_blowjob", "ltx_video"]
                                     ext = "mp4" if is_video else "png"
                                     
+                                    from sqlalchemy import select
+
                                     from src.database.core import AsyncSessionLocal
                                     from src.database.models import History
-                                    from sqlalchemy import select
                                     
                                     final_result_path = f"{current_user.id}/output_images/{task_id}.{ext}"
                                     for _ in range(10):

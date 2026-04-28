@@ -1,5 +1,6 @@
 from pydantic_settings import BaseSettings
 
+
 class Settings(BaseSettings):
     redis_url: str = "redis://backend-redis-1:6379/0"
     auth_token: str = "your_secure_token_here"

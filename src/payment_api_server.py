@@ -1,10 +1,12 @@
 import logging
+import os
+
+import uvicorn
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, PlainTextResponse
-import uvicorn
-import os
-from src.services.rmb_payment_service import RMBPaymentService, HUANYUY_KEY
+
 from src.services.payment_fulfillment_service import fulfill_order
+from src.services.rmb_payment_service import HUANYUY_KEY, RMBPaymentService
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("payment_api")

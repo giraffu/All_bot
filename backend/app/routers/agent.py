@@ -1,12 +1,12 @@
-from fastapi import APIRouter, Depends, HTTPException, Header, status
-from pydantic import BaseModel
-from typing import Optional
 import logging
+from typing import Optional
 
-from app.queue_manager import QueueManager
 # Instead of importing from main.py, we redefine the dependency here 
 # or just import the Redis/Settings to avoid circular imports.
 from app.config import settings
+from app.queue_manager import QueueManager
+from fastapi import APIRouter, Depends, Header, HTTPException, status
+from pydantic import BaseModel
 from redis.asyncio import Redis
 
 logger = logging.getLogger(__name__)

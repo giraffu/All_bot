@@ -1,9 +1,11 @@
-from fastapi import APIRouter, HTTPException
-from typing import Optional
-from datetime import datetime
 import logging
-from src.services.log_service import LogService
+from datetime import datetime
+from typing import Optional
+
+from fastapi import APIRouter, HTTPException
+
 from dashboard.backend.schemas import LogListResponse
+from src.services.log_service import LogService
 
 router = APIRouter(prefix="/api/logs", tags=["logs"])
 logger = logging.getLogger("dashboard.logs")

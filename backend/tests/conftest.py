@@ -1,10 +1,13 @@
-import pytest
 from unittest.mock import AsyncMock
-from fastapi.testclient import TestClient
-from app.main import app as fastapi_app, get_queue_manager
-from app.queue_manager import QueueManager
-from app.config import settings
+
 import app.main
+import pytest
+from app.config import settings
+from app.main import app as fastapi_app
+from app.main import get_queue_manager
+from app.queue_manager import QueueManager
+from fastapi.testclient import TestClient
+
 
 @pytest.fixture(name="mock_queue_manager")
 def fixture_mock_queue_manager():

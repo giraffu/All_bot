@@ -1,11 +1,11 @@
 import logging
-import asyncio
-from src.services.task_registry import TaskRegistry
-from src.services.redis_client import redis_client
-from src.services.permission_service import permission_service
-from src.services.image_service import image_service
-from src.services.task_service import TaskService
+
 from src.logger import UserLogger
+from src.services.image_service import image_service
+from src.services.permission_service import permission_service
+from src.services.redis_client import redis_client
+from src.services.task_registry import TaskRegistry
+from src.services.task_service import TaskService
 from src.utils import create_background_task
 
 logger = logging.getLogger(__name__)

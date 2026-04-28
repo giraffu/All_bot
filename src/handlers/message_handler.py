@@ -1,29 +1,41 @@
-import os
-import uuid
-import random
-import time
 import logging
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, WebAppInfo
+import os
+import time
+import uuid
+
+from telegram import (
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    ReplyKeyboardMarkup,
+    Update,
+    WebAppInfo,
+)
 from telegram.ext import ContextTypes
 
-from config import CHANNEL_INVITE_LINK, ENABLE_PUBLIC_SHARE, REFUGE_GROUP_ID, REFUGE_INVITE_LINK, WEBAPP_URL, MINIO_TEMPLATE_BUCKET
-from src.services.permission_service import permission_service
+from config import (
+    CHANNEL_INVITE_LINK,
+    MINIO_TEMPLATE_BUCKET,
+    REFUGE_GROUP_ID,
+    REFUGE_INVITE_LINK,
+    WEBAPP_URL,
+)
+from src.constants import (
+    MAIN_MENU_KEYBOARD,
+    MODE_NONE,
+    MODE_TEMPLATE_CONTRIBUTE,
+    TEMP_TEMPLATE_DIR,
+    TEMPLATE_DIR_PENETRATION,
+    TEMPLATE_DIR_QUICK_FACE,
+    TEMPLATE_DIR_VIDEO_NICE,
+    TMP_DIR,
+)
+from src.handlers.prompt_router import prompt_route, prompt_routes
+from src.handlers.utils import _is_mentioned, with_db_logging_context
 from src.services.image_service import image_service
+from src.services.permission_service import permission_service
 from src.services.storage import storage
 from src.services.task_service import task_service
-from src.logger import UserLogger
-from src.utils import robust_reply_text, load_prompts
-from src.constants import (
-    TMP_DIR, TEMPLATE_DIR_PENETRATION, TEMPLATE_DIR_QUICK_FACE, TEMPLATE_DIR_VIDEO_NICE, TEMP_TEMPLATE_DIR,
-    MODE_EDIT, MODE_UNDRESS, MODE_MASTURBATION,
-    MODE_FACESWAP_STEP1, MODE_FACESWAP_STEP2, MODE_RANDOM_FACESWAP,
-    MODE_FACE_VIDEO_STEP1, MODE_FACE_VIDEO_STEP2,
-    MODE_TEMPLATE_CONTRIBUTE, MODE_NONE, MODE_CUSTOM_VIDEO, MODE_PERFECT_VIDEO_INSERT,
-    MODE_DOGGY_STYLE, MODE_BLOWJOB, MODE_UNDRESS_TONGUE, MODE_CLOSEUP_BLOWJOB, MODE_I2I_PRO,
-    MAIN_MENU_KEYBOARD
-)
-from src.handlers.utils import _is_mentioned, with_db_logging_context
-from src.handlers.prompt_router import prompt_route, prompt_routes
+from src.utils import robust_reply_text
 
 # Re-exporting for compatibility if needed, but preferred to import from constants/utils
 process_generation_task = task_service.process_generation_task

@@ -1,19 +1,23 @@
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import ContextTypes
-import random
 import logging
+import random
 
-from src.services.task_service import TaskService
-from src.services.permission_service import permission_service
-from src.services.storage import storage
-from src.core.user_core import get_or_create_user_by_telegram
-from src.utils import (
-    robust_send_message, safe_answer_query, is_maintenance_mode,
-    create_background_task, load_prompts
-)
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram.ext import ContextTypes
+
 from config import MINIO_TEMPLATE_BUCKET
 from src.constants import MODE_RANDOM_FACESWAP, TASK_COSTS
+from src.core.user_core import get_or_create_user_by_telegram
 from src.handlers.callback_router import register_callback
+from src.services.permission_service import permission_service
+from src.services.storage import storage
+from src.services.task_service import TaskService
+from src.utils import (
+    create_background_task,
+    is_maintenance_mode,
+    load_prompts,
+    robust_send_message,
+    safe_answer_query,
+)
 
 logger = logging.getLogger(__name__)
 

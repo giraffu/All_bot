@@ -1,7 +1,10 @@
-import pytest
 from unittest.mock import AsyncMock, patch
-from src.services.task_service import TaskService
+
+import pytest
+
 from src.constants import MODE_BLOWJOB
+from src.services.task_service import TaskService
+
 
 @pytest.mark.asyncio
 async def test_process_video_task_template():
@@ -16,7 +19,6 @@ async def test_process_video_task_template():
     context.user_data = {"custom_video_resolution": "720p"}
     
     with patch("src.services.task_service.permission_service") as mock_perm, \
-         patch("src.services.task_service.redis_client") as mock_redis, \
          patch("src.services.task_service.UserLogger"), \
          patch("src.services.task_service.robust_reply_text", new_callable=AsyncMock), \
          patch("src.services.task_service.robust_edit_text", new_callable=AsyncMock), \
@@ -29,8 +31,6 @@ async def test_process_video_task_template():
 
         mock_lock.return_value = (True, "")
         mock_deduct.return_value = (True, "")
-        mock_redis.increment_user_concurrency = AsyncMock(return_value=1)
-        mock_redis.decrement_user_concurrency = AsyncMock()
         mock_perm.get_user_group = AsyncMock(return_value="金丹期")
         mock_perm.get_user_identity = AsyncMock(return_value="外门弟子")
         mock_perm.check_quota = AsyncMock(return_value=True)

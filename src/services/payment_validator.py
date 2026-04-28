@@ -1,12 +1,13 @@
-import aiohttp
 import asyncio
 import logging
-from sqlalchemy.future import select
 from decimal import Decimal
 
-from src.database.core import AsyncSessionLocal
-from src.database.models import User, Order, MembershipPlan, UserLog
+import aiohttp
+from sqlalchemy.future import select
+
 from config import VITE_MERCHANT_ADDRESS
+from src.database.core import AsyncSessionLocal
+from src.database.models import MembershipPlan, Order, User, UserLog
 
 logger = logging.getLogger(__name__)
 
@@ -174,7 +175,7 @@ class TonPaymentValidator:
                         return True
                     
                     # Exact price match with tiny slippage allowed
-                    from src.constants import TON_TO_NANOTON, TON_SLIPPAGE_NANOTON
+                    from src.constants import TON_SLIPPAGE_NANOTON, TON_TO_NANOTON
                     expected_min_nanotons = int(plan.price_ton * Decimal(str(TON_TO_NANOTON))) - TON_SLIPPAGE_NANOTON
                     if expected_min_nanotons < 0:
                         expected_min_nanotons = 0
@@ -199,8 +200,9 @@ class TonPaymentValidator:
                     
                     if status == "SUCCESS":
                         # 4. Fulfill using atomic update
-                        from sqlalchemy import update
                         from datetime import datetime, timedelta
+
+                        from sqlalchemy import update
                         
                         # 身份和有效期逻辑
                         now = datetime.now()

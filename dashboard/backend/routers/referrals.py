@@ -1,12 +1,13 @@
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_
-from sqlalchemy.orm import aliased
-from src.database.core import get_db
-from src.database.models import User, Referral, Order
 import logging
 
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
+
 from dashboard.backend.routers.stats import get_exchange_rates
+from src.database.core import get_db
+from src.database.models import Order, Referral, User
 
 router = APIRouter(prefix="/api/referrals", tags=["referrals"])
 logger = logging.getLogger("dashboard.referrals")

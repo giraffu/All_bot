@@ -1,22 +1,22 @@
-from src.handlers.prompt_router import is_global_menu_command
-import os
 import logging
-import asyncio
-import re
-from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
+import os
+
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import (
+    CallbackQueryHandler,
+    CommandHandler,
     ContextTypes,
     ConversationHandler,
-    CommandHandler,
     MessageHandler,
-    CallbackQueryHandler,
-    filters
+    filters,
 )
+
+from src.constants import RESOLUTION_COST
 from src.handlers.conversation_states import FaceVideoState
+from src.handlers.prompt_router import is_global_menu_command
 from src.services.permission_service import permission_service
 from src.services.task_service import TaskService
-from src.utils import robust_reply_text, robust_edit_text, create_background_task
-from src.constants import RESOLUTION_COST
+from src.utils import create_background_task, robust_edit_text, robust_reply_text
 
 logger = logging.getLogger("fsm.face_video")
 

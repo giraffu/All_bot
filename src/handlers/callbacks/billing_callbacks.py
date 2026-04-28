@@ -1,16 +1,18 @@
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
-from telegram.ext import ContextTypes
 import time
-from sqlalchemy import select
 import urllib.parse
-from config import WEBAPP_URL
 
+from sqlalchemy import select
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update, WebAppInfo
+from telegram.ext import ContextTypes
+
+from config import WEBAPP_URL
+from src.core.user_core import get_or_create_user_by_telegram
 from src.database.core import AsyncSessionLocal
 from src.database.models import MembershipPlan, Order
-from src.services.rmb_payment_service import RMBPaymentService
-from src.core.user_core import get_or_create_user_by_telegram
-from src.utils import safe_answer_query
 from src.handlers.callback_router import register_callback
+from src.services.rmb_payment_service import RMBPaymentService
+from src.utils import safe_answer_query
+
 
 @register_callback("recharge_stars_menu")
 async def recharge_stars_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):

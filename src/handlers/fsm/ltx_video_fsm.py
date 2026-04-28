@@ -1,30 +1,31 @@
-from src.handlers.prompt_router import is_global_menu_command
-import os
 import logging
-import asyncio
+import os
 import uuid
-import re
-from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
+
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import (
+    CallbackQueryHandler,
+    CommandHandler,
     ContextTypes,
     ConversationHandler,
-    CommandHandler,
     MessageHandler,
-    CallbackQueryHandler,
-    filters
+    filters,
+)
+
+from src.constants import (
+    LTX_DURATION_MULTIPLIER,
+    LTX_RESOLUTION_COST,
+    get_ltx_video_settings_keyboard,
 )
 from src.handlers.conversation_states import LtxVideoState
+from src.handlers.prompt_router import is_global_menu_command
 from src.services.permission_service import permission_service
-from src.constants import (
-    TMP_DIR,
-    LTX_RESOLUTION_COST,
-    LTX_DURATION_MULTIPLIER,
-    MAIN_MENU_KEYBOARD,
-    get_ltx_video_settings_keyboard,
-    MODE_LTX_VIDEO
-)
-from src.utils import robust_reply_text, robust_edit_text, is_maintenance_mode, create_background_task
 from src.services.task_service import TaskService
+from src.utils import (
+    create_background_task,
+    robust_edit_text,
+    robust_reply_text,
+)
 
 logger = logging.getLogger("fsm.ltx_video")
 

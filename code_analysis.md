@@ -2,11 +2,11 @@
 
 ## 📊 可量化指标 (Metrics)
 
-- **Total Lines of Code**: 19089
+- **Total Lines of Code**: 19081
 - **Average Complexity (Cyclomatic)**: 4.69
-- **Dead Code Ratio**: 0.39% (est.)
-- **Code Duplication Rate**: 0.31% (est.)
-- **Total Issues**: 287
+- **Dead Code Ratio**: 0.37% (est.)
+- **Code Duplication Rate**: 0.00% (est.)
+- **Total Issues**: 252
 
 ## 🏗️ 架构问题与重构建议 (Architecture & Refactoring)
 
@@ -18,9 +18,9 @@
 
 | 行号 | 严重程度 | 问题类型 | 具体描述 |
 | --- | --- | --- | --- |
-| 56 | 🟠 High | Scope Issue | Using the global statement |
 | 190 | 🟡 Medium | Code Smell | Too many local variables (22/15) |
 | 190 | 🟡 Medium | Code Smell | Too many statements (64/50) |
+| 10 | 🟢 Low | Import Optimization | standard import "contextlib.asynccontextmanager" should be placed before third party imports "fastapi.FastAPI", "fastapi.responses.FileResponse", "fastapi.security.HTTPBearer", "asgi_correlation_id.CorrelationIdMiddleware" |
 
 ### 📁 `backend/app/models.py`
 
@@ -39,22 +39,19 @@
 
 | 行号 | 严重程度 | 问题类型 | 具体描述 |
 | --- | --- | --- | --- |
-| 46 | 🟠 High | Scope Issue | Redefining name 'settings' from outer scope (line 9) |
-| 59 | 🟡 Medium | Dead Code | unused variable 'authorized' (100% confidence) |
-| 81 | 🟡 Medium | Dead Code | unused variable 'authorized' (100% confidence) |
-| 92 | 🟡 Medium | Dead Code | unused variable 'authorized' (100% confidence) |
-| 110 | 🟡 Medium | Dead Code | unused variable 'authorized' (100% confidence) |
-| 124 | 🟡 Medium | Dead Code | unused variable 'authorized' (100% confidence) |
-| 136 | 🟡 Medium | Dead Code | unused variable 'authorized' (100% confidence) |
+| 58 | 🟡 Medium | Dead Code | unused variable 'authorized' (100% confidence) |
+| 80 | 🟡 Medium | Dead Code | unused variable 'authorized' (100% confidence) |
+| 91 | 🟡 Medium | Dead Code | unused variable 'authorized' (100% confidence) |
+| 109 | 🟡 Medium | Dead Code | unused variable 'authorized' (100% confidence) |
+| 123 | 🟡 Medium | Dead Code | unused variable 'authorized' (100% confidence) |
+| 135 | 🟡 Medium | Dead Code | unused variable 'authorized' (100% confidence) |
 | 3 | 🟢 Low | Import Optimization | standard import "typing.Optional" should be placed before third party imports "fastapi.APIRouter", "pydantic.BaseModel" |
 | 4 | 🟢 Low | Import Optimization | standard import "logging" should be placed before third party imports "fastapi.APIRouter", "pydantic.BaseModel" |
-| 46 | 🟢 Low | Import Optimization | Reimport 'settings' (imported line 9) |
 
 ### 📁 `backend/tests/conftest.py`
 
 | 行号 | 严重程度 | 问题类型 | 具体描述 |
 | --- | --- | --- | --- |
-| 25 | 🟠 High | Scope Issue | Redefining name 'mock_queue_manager' from outer scope (line 10) |
 | 2 | 🟢 Low | Import Optimization | standard import "unittest.mock.AsyncMock" should be placed before third party import "pytest" |
 
 ### 📁 `backend/tests/test_t2i_pornmaster.py`
@@ -89,14 +86,9 @@
 
 | 行号 | 严重程度 | 问题类型 | 具体描述 |
 | --- | --- | --- | --- |
-| 37 | 🟠 High | Scope Issue | Redefining name 'importlib' from outer scope (line 3) |
-| 38 | 🟠 High | Scope Issue | Redefining name 'inspect' from outer scope (line 4) |
 | 4 | 🟡 Medium | Dead Code | unused import 'inspect' (90% confidence) |
-| 38 | 🟡 Medium | Dead Code | unused import 'inspect' (90% confidence) |
-| 3 | 🟢 Low | Unused Import | Unused import importlib.util |
 | 4 | 🟢 Low | Unused Import | Unused import inspect |
 | 6 | 🟢 Low | Unused Import | Unused tool imported from langchain_core.tools |
-| 38 | 🟢 Low | Import Optimization | Reimport 'inspect' (imported line 4) |
 
 ### 📁 `dashboard/backend/routers/gallery.py`
 
@@ -163,19 +155,18 @@
 
 | 行号 | 严重程度 | 问题类型 | 具体描述 |
 | --- | --- | --- | --- |
-| 29 | 🟠 High | Scope Issue | Using global for '_exchange_rates_cache' but no assignment is done |
-| 65 | 🟡 Medium | Code Smell | Too many local variables (127/15) |
-| 65 | 🟡 Medium | Code Smell | Too many branches (46/12) |
-| 65 | 🟡 Medium | Code Smell | Too many statements (209/50) |
-| 463 | 🟡 Medium | Code Smell | Too many local variables (25/15) |
-| 463 | 🟡 Medium | Code Smell | Too many branches (20/12) |
-| 463 | 🟡 Medium | Code Smell | Too many statements (63/50) |
-| 559 | 🟡 Medium | Code Smell | Too many local variables (25/15) |
-| 559 | 🟡 Medium | Code Smell | Too many branches (18/12) |
-| 559 | 🟡 Medium | Code Smell | Too many statements (60/50) |
-| 723 | 🟡 Medium | Code Smell | Too many local variables (93/15) |
-| 723 | 🟡 Medium | Code Smell | Too many branches (47/12) |
-| 723 | 🟡 Medium | Code Smell | Too many statements (195/50) |
+| 64 | 🟡 Medium | Code Smell | Too many local variables (127/15) |
+| 64 | 🟡 Medium | Code Smell | Too many branches (46/12) |
+| 64 | 🟡 Medium | Code Smell | Too many statements (209/50) |
+| 462 | 🟡 Medium | Code Smell | Too many local variables (25/15) |
+| 462 | 🟡 Medium | Code Smell | Too many branches (20/12) |
+| 462 | 🟡 Medium | Code Smell | Too many statements (63/50) |
+| 558 | 🟡 Medium | Code Smell | Too many local variables (25/15) |
+| 558 | 🟡 Medium | Code Smell | Too many branches (18/12) |
+| 558 | 🟡 Medium | Code Smell | Too many statements (60/50) |
+| 722 | 🟡 Medium | Code Smell | Too many local variables (93/15) |
+| 722 | 🟡 Medium | Code Smell | Too many branches (47/12) |
+| 722 | 🟡 Medium | Code Smell | Too many statements (195/50) |
 | 4 | 🟢 Low | Import Optimization | standard import "datetime.datetime" should be placed before third party imports "fastapi.APIRouter", "sqlalchemy.ext.asyncio.AsyncSession", "sqlalchemy.select" |
 | 5 | 🟢 Low | Import Optimization | standard import "logging" should be placed before third party imports "fastapi.APIRouter", "sqlalchemy.ext.asyncio.AsyncSession", "sqlalchemy.select" |
 | 6 | 🟢 Low | Import Optimization | standard import "os" should be placed before third party imports "fastapi.APIRouter", "sqlalchemy.ext.asyncio.AsyncSession", "sqlalchemy.select" |
@@ -241,7 +232,6 @@
 
 | 行号 | 严重程度 | 问题类型 | 具体描述 |
 | --- | --- | --- | --- |
-| 315 | 🟠 High | Scope Issue | Redefining name 'httpx' from outer scope (line 3) |
 | 68 | 🟡 Medium | Code Smell | Too many arguments (8/5) |
 | 88 | 🟡 Medium | Code Smell | Too many arguments (8/5) |
 | 107 | 🟡 Medium | Code Smell | Too many arguments (9/5) |
@@ -250,29 +240,23 @@
 | 206 | 🟡 Medium | Code Smell | Too many arguments (7/5) |
 | 228 | 🟡 Medium | Code Smell | Too many arguments (6/5) |
 | 245 | 🟡 Medium | Code Smell | Too many arguments (8/5) |
-| 296 | 🟡 Medium | Code Smell | Too many local variables (18/15) |
+| 296 | 🟡 Medium | Code Smell | Too many local variables (17/15) |
 | 296 | 🟡 Medium | Code Smell | Too many branches (23/12) |
-| 296 | 🟡 Medium | Code Smell | Too many statements (79/50) |
+| 296 | 🟡 Medium | Code Smell | Too many statements (78/50) |
 | 4 | 🟢 Low | Import Optimization | standard import "logging" should be placed before third party import "httpx" |
 | 5 | 🟢 Low | Import Optimization | standard import "uuid" should be placed before third party import "httpx" |
 | 6 | 🟢 Low | Import Optimization | standard import "typing.Optional" should be placed before third party import "httpx" |
 | 16 | 🟢 Low | Import Optimization | Imports from package src are not grouped |
 | 23 | 🟢 Low | Import Optimization | third party import "asgi_correlation_id.correlation_id" should be placed before first party imports "src.utils.async_retry", "config.IMG2IMG_ENDPOINT", "src.circuit_breaker.CircuitBreaker"  |
-| 315 | 🟢 Low | Import Optimization | Reimport 'httpx' (imported line 3) |
 
 ### 📁 `src/bot_test.py`
 
 | 行号 | 严重程度 | 问题类型 | 具体描述 |
 | --- | --- | --- | --- |
-| 40 | 🟠 High | Scope Issue | Redefining name 'urlparse' from outer scope (line 23) |
-| 68 | 🟠 High | Scope Issue | Redefining name 'logger' from outer scope (line 30) |
-| 79 | 🟠 High | Scope Issue | Redefining name 'logger' from outer scope (line 30) |
-| 114 | 🟠 High | Scope Issue | Redefining name 'logger' from outer scope (line 30) |
-| 122 | 🟠 High | Scope Issue | Redefining name 'logger' from outer scope (line 30) |
 | 22 | 🟡 Medium | Dead Code | unused import 'socket' (90% confidence) |
 | 34 | 🟡 Medium | Code Smell | Too many arguments (6/5) |
-| 120 | 🟡 Medium | Code Smell | Too many local variables (20/15) |
-| 120 | 🟡 Medium | Code Smell | Too many statements (52/50) |
+| 119 | 🟡 Medium | Code Smell | Too many local variables (20/15) |
+| 119 | 🟡 Medium | Code Smell | Too many statements (52/50) |
 | 12 | 🟢 Low | Import Optimization | standard import "uuid" should be placed before third party imports "telegram.ext.ApplicationBuilder", "telegram.Update", "asgi_correlation_id.correlation_id" |
 | 13 | 🟢 Low | Import Optimization | Imports from package telegram are not grouped |
 | 14 | 🟢 Low | Import Optimization | standard import "logging" should be placed before third party imports "telegram.ext.ApplicationBuilder", "telegram.Update", "asgi_correlation_id.correlation_id", "telegram.request.HTTPXRequest" |
@@ -280,7 +264,6 @@
 | 22 | 🟢 Low | Import Optimization | standard import "socket" should be placed before third party imports "telegram.ext.ApplicationBuilder", "telegram.Update", "asgi_correlation_id.correlation_id", "telegram.request.HTTPXRequest" and first party imports "src.logger.setup_logging", "src.handlers.command_handler.start", "src.handlers.message_handler.handle_photo", "src.handlers.callback_handler.handle_callback_query", "src.database.core.init_db"  |
 | 22 | 🟢 Low | Unused Import | Unused import socket |
 | 23 | 🟢 Low | Import Optimization | standard import "urllib.parse.urlparse" should be placed before third party imports "telegram.ext.ApplicationBuilder", "telegram.Update", "asgi_correlation_id.correlation_id", "telegram.request.HTTPXRequest" and first party imports "src.logger.setup_logging", "src.handlers.command_handler.start", "src.handlers.message_handler.handle_photo", "src.handlers.callback_handler.handle_callback_query", "src.database.core.init_db"  |
-| 23 | 🟢 Low | Unused Import | Unused urlparse imported from urllib.parse |
 | 26 | 🟢 Low | Import Optimization | third party import "telegram.File" should be placed before first party imports "src.logger.setup_logging", "src.handlers.command_handler.start", "src.handlers.message_handler.handle_photo", "src.handlers.callback_handler.handle_callback_query", "src.database.core.init_db"  |
 | 26 | 🟢 Low | Import Optimization | Imports from package telegram are not grouped |
 | 27 | 🟢 Low | Import Optimization | third party import "httpx" should be placed before first party imports "src.logger.setup_logging", "src.handlers.command_handler.start", "src.handlers.message_handler.handle_photo", "src.handlers.callback_handler.handle_callback_query", "src.database.core.init_db"  |
@@ -290,9 +273,8 @@
 | 29 | 🟢 Low | Import Optimization | Reimport 'logging' (imported line 14) |
 | 29 | 🟢 Low | Import Optimization | standard import "logging" should be placed before third party imports "telegram.ext.ApplicationBuilder", "telegram.Update", "asgi_correlation_id.correlation_id", "telegram.request.HTTPXRequest", "telegram.File", "httpx" and first party imports "src.logger.setup_logging", "src.handlers.command_handler.start", "src.handlers.message_handler.handle_photo", "src.handlers.callback_handler.handle_callback_query", "src.database.core.init_db"  |
 | 29 | 🟢 Low | Import Optimization | Imports from package logging are not grouped |
-| 40 | 🟢 Low | Import Optimization | Reimport 'urlparse' (imported line 23) |
-| 59 | 🟢 Low | Import Optimization | standard import "asyncio" should be placed before third party imports "telegram.ext.ApplicationBuilder", "telegram.Update", "asgi_correlation_id.correlation_id", "telegram.request.HTTPXRequest", "telegram.File", "httpx" and first party imports "src.logger.setup_logging", "src.handlers.command_handler.start", "src.handlers.message_handler.handle_photo", "src.handlers.callback_handler.handle_callback_query", "src.database.core.init_db"  |
-| 60 | 🟢 Low | Import Optimization | Imports from package src are not grouped |
+| 58 | 🟢 Low | Import Optimization | standard import "asyncio" should be placed before third party imports "telegram.ext.ApplicationBuilder", "telegram.Update", "asgi_correlation_id.correlation_id", "telegram.request.HTTPXRequest", "telegram.File", "httpx" and first party imports "src.logger.setup_logging", "src.handlers.command_handler.start", "src.handlers.message_handler.handle_photo", "src.handlers.callback_handler.handle_callback_query", "src.database.core.init_db"  |
+| 59 | 🟢 Low | Import Optimization | Imports from package src are not grouped |
 
 ### 📁 `src/constants.py`
 
@@ -328,13 +310,12 @@
 
 | 行号 | 严重程度 | 问题类型 | 具体描述 |
 | --- | --- | --- | --- |
-| 185 | 🟠 High | Scope Issue | Redefining name 'UserLogger' from outer scope (line 6) |
 | 43 | 🟡 Medium | Code Smell | Too many arguments (9/5) |
 | 43 | 🟡 Medium | Code Smell | Too many local variables (21/15) |
 | 103 | 🟡 Medium | Code Smell | Too many arguments (10/5) |
-| 103 | 🟡 Medium | Code Smell | Too many local variables (49/15) |
+| 103 | 🟡 Medium | Code Smell | Too many local variables (48/15) |
 | 103 | 🟡 Medium | Code Smell | Too many branches (30/12) |
-| 103 | 🟡 Medium | Code Smell | Too many statements (109/50) |
+| 103 | 🟡 Medium | Code Smell | Too many statements (108/50) |
 | 1 | 🟢 Low | Unused Import | Unused List imported from typing |
 | 29 | 🟢 Low | Import Optimization | Imports from package src are not grouped |
 | 30 | 🟢 Low | Unused Import | Unused TASK_COSTS imported from src.constants |
@@ -344,7 +325,6 @@
 | 30 | 🟢 Low | Unused Import | Unused MODE_FACESWAP_STEP1 imported from src.constants |
 | 30 | 🟢 Low | Unused Import | Unused LTX_RESOLUTION_COST imported from src.constants |
 | 30 | 🟢 Low | Unused Import | Unused LTX_DURATION_MULTIPLIER imported from src.constants |
-| 185 | 🟢 Low | Import Optimization | Reimport 'UserLogger' (imported line 6) |
 
 ### 📁 `src/core/task_dispatcher.py`
 
@@ -398,17 +378,8 @@
 
 | 行号 | 严重程度 | 问题类型 | 具体描述 |
 | --- | --- | --- | --- |
-| 159 | 🟠 High | Scope Issue | Redefining name 'func' from outer scope (line 2) |
-| 164 | 🟡 Medium | Dead Code | unused variable 'new_full_name' (100% confidence) |
+| 163 | 🟡 Medium | Dead Code | unused variable 'new_full_name' (100% confidence) |
 | 8 | 🟢 Low | Import Optimization | third party import "sqlalchemy.exc.IntegrityError" should be placed before local imports "database.core.AsyncSessionLocal", "database.models.User", "services.log_service.LogService", "constants.GENERATION_TASK_TYPES" |
-| 159 | 🟢 Low | Import Optimization | Reimport 'func' (imported line 2) |
-
-### 📁 `src/utils.py`
-
-| 行号 | 严重程度 | 问题类型 | 具体描述 |
-| --- | --- | --- | --- |
-| 160 | 🟠 High | Scope Issue | Redefining name 'asyncio' from outer scope (line 1) |
-| 160 | 🟢 Low | Import Optimization | Reimport 'asyncio' (imported line 1) |
 
 ### 📁 `src/web_api/dependencies.py`
 
@@ -420,7 +391,6 @@
 
 | 行号 | 严重程度 | 问题类型 | 具体描述 |
 | --- | --- | --- | --- |
-| 15 | 🟠 High | Scope Issue | Redefining name 'app' from outer scope (line 23) |
 | 5 | 🟢 Low | Import Optimization | standard import "contextlib.asynccontextmanager" should be placed before third party imports "fastapi.FastAPI", "fastapi.middleware.cors.CORSMiddleware", "asgi_correlation_id.CorrelationIdMiddleware" |
 
 ### 📁 `src/web_api/routers/auth.py`
@@ -465,18 +435,14 @@
 
 | 行号 | 严重程度 | 问题类型 | 具体描述 |
 | --- | --- | --- | --- |
-| 77 | 🟠 High | Scope Issue | Redefining name 'httpx' from outer scope (line 4) |
-| 155 | 🟠 High | Scope Issue | Redefining name 'status' from outer scope (line 6) |
-| 71 | 🟡 Medium | Code Smell | Too many statements (119/50) |
-| 90 | 🟡 Medium | Code Smell | Too many local variables (23/15) |
-| 90 | 🟡 Medium | Code Smell | Too many branches (29/12) |
-| 90 | 🟡 Medium | Code Smell | Too many statements (111/50) |
-| 4 | 🟢 Low | Unused Import | Unused import httpx |
+| 71 | 🟡 Medium | Code Smell | Too many statements (118/50) |
+| 89 | 🟡 Medium | Code Smell | Too many local variables (23/15) |
+| 89 | 🟡 Medium | Code Smell | Too many branches (29/12) |
+| 89 | 🟡 Medium | Code Smell | Too many statements (111/50) |
 | 5 | 🟢 Low | Import Optimization | standard import "typing.AsyncGenerator" should be placed before third party import "httpx" |
 | 5 | 🟢 Low | Unused Import | Unused AsyncGenerator imported from typing |
 | 6 | 🟢 Low | Unused Import | Unused status imported from fastapi |
 | 6 | 🟢 Low | Unused Import | Unused Request imported from fastapi |
-| 77 | 🟢 Low | Import Optimization | Reimport 'httpx' (imported line 4) |
 
 ### 📁 `src/web_api/routers/users.py`
 
@@ -519,80 +485,6 @@
 
 | 行号 | 严重程度 | 问题类型 | 具体描述 |
 | --- | --- | --- | --- |
-| 1 | 🟡 Medium | Code Duplication | Similar lines in 2 files
-==src.core.user_core:[16:30]
-==src.quota:[43:55]
-            result = await session.execute(stmt)
-            user = result.scalar_one_or_none()
-            if user:
-                updated = False
-                if username and user.username != username:
-                    user.username = username
-                    updated = True
-                if full_name and user.full_name != full_name:
-                    user.full_name = full_name
-                    updated = True
-                if updated:
-                    await session.commit() |
-| 1 | 🟡 Medium | Code Duplication | Similar lines in 2 files
-==backend.main:[52:62]
-==src.web_api.main:[31:39]
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
- |
-| 1 | 🟡 Medium | Code Duplication | Similar lines in 2 files
-==app.main:[251:259]
-==src.web_api.routers.tasks:[147:158]
-                    data = message["data"]
-                    if isinstance(data, bytes):
-                        data = data.decode("utf-8")
-
-                    # Parse to see if finished or running
-                    try:
-                        parsed = json.loads(data)
-                        status = parsed.get("status")
-
-                        # Map backend status to frontend expected status
-                        if status == "done": |
-| 1 | 🟡 Medium | Code Duplication | Similar lines in 2 files
-==app.main:[30:41]
-==app.routers.agent:[17:27]
-    redis = Redis.from_url(settings.redis_url)
-    try:
-        yield redis
-    finally:
-        await redis.close()
-
-# Dependency for QueueManager
-async def get_queue_manager(redis: Redis = Depends(get_redis)):
-    return QueueManager(redis)
-
-async def check_zombie_tasks_loop(): |
-| 1 | 🟡 Medium | Code Duplication | Similar lines in 2 files
-==backend.routers.history:[50:58]
-==backend.routers.plans:[108:116]
-        count_stmt = select(func.count()).select_from(stmt.subquery())
-        total = (await db.execute(count_stmt)).scalar() or 0
-
-        stmt = stmt.offset(offset).limit(page_size)
-        result = await db.execute(stmt)
-
-        items = []
-        for row in result: |
-| 1 | 🟡 Medium | Code Duplication | Similar lines in 2 files
-==src.core.task_core:[140:146]
-==src.core.task_dispatcher:[224:230]
-        dur_str = str(duration).replace("s", "")
-        try:
-            dur_val = int(dur_str)
-        except ValueError:
-            dur_val = 5
- |
 | 143 | 🟡 Medium | Code Smell | Too many local variables (23/15) |
 | 143 | 🟡 Medium | Code Smell | Too many branches (21/12) |
 | 143 | 🟡 Medium | Code Smell | Too many statements (70/50) |

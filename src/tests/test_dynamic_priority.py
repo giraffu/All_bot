@@ -1,6 +1,9 @@
-import pytest
 from unittest.mock import AsyncMock
+
+import pytest
+
 from src.services.permission_service import PermissionService
+
 
 @pytest.mark.asyncio
 async def test_calculate_user_priority_newbie_bonus():

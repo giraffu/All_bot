@@ -1,23 +1,28 @@
-from src.handlers.prompt_router import is_global_menu_command
-import os
 import logging
-import asyncio
+import os
 import uuid
-import re
-from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
+
+from telegram import Update
 from telegram.ext import (
+    CallbackQueryHandler,
+    CommandHandler,
     ContextTypes,
     ConversationHandler,
-    CommandHandler,
     MessageHandler,
-    CallbackQueryHandler,
-    filters
+    filters,
 )
+
+from src.constants import MODE_FACESWAP_STEP1, TASK_COSTS
 from src.handlers.conversation_states import FaceSwapState
+from src.handlers.prompt_router import is_global_menu_command
 from src.services.permission_service import permission_service
 from src.services.task_service import TaskService
-from src.utils import robust_reply_text, robust_edit_text, load_prompts, create_background_task
-from src.constants import TASK_COSTS, MODE_FACESWAP_STEP1
+from src.utils import (
+    create_background_task,
+    load_prompts,
+    robust_edit_text,
+    robust_reply_text,
+)
 
 logger = logging.getLogger("fsm.faceswap")
 

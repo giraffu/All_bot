@@ -1,17 +1,26 @@
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, case, Float, text
-from datetime import datetime, date, timedelta
 import logging
 import os
 import time
+from datetime import date, datetime, timedelta
+
 import httpx
-from telegram import Bot
 from dotenv import load_dotenv
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import Float, case, func, select, text
+from sqlalchemy.ext.asyncio import AsyncSession
+from telegram import Bot
+
 from src.database.core import get_db
 
 load_dotenv()
-from src.database.models import User, History, Referral, TemplateContribution, CheckinHistory, UserLog
+from src.database.models import (
+    CheckinHistory,
+    History,
+    Referral,
+    TemplateContribution,
+    User,
+    UserLog,
+)
 
 router = APIRouter(prefix="/api/stats", tags=["stats"])
 logger = logging.getLogger("dashboard.stats")
@@ -128,7 +137,6 @@ async def get_stats(db: AsyncSession = Depends(get_db)):
         total_approved_contributions = result.scalar() or 0
         
         # Calculate invitation recharge stats
-        from sqlalchemy import and_
         from src.database.models import Order
         stmt = (
             select(

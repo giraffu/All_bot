@@ -1,10 +1,11 @@
 import asyncio
 import logging
 import time
-from src.services.redis_client import redis_client
-from src.services.permission_service import permission_service
-from src.services.task_registry import TaskRegistry
+
 from src.api_client import api_client
+from src.services.permission_service import permission_service
+from src.services.redis_client import redis_client
+from src.services.task_registry import TaskRegistry
 
 logger = logging.getLogger("bot.zombie_cleaner")
 

@@ -1,8 +1,10 @@
 import json
 import logging
-from typing import Dict, Any
+from typing import Any, Dict
+
 import redis.asyncio as redis
-from config import REDIS_URL, REDIS_PREFIX
+
+from config import REDIS_PREFIX, REDIS_URL
 
 logger = logging.getLogger(__name__)
 

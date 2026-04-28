@@ -1,5 +1,7 @@
+from typing import Any, Dict, Optional
+
 from pydantic import BaseModel, Field
-from typing import Optional, List, Dict, Any
+
 
 class TaskGenerateRequest(BaseModel):
     task_type: str = Field(..., description="The type of the task: face_swap, face_video, txt2img, etc.")

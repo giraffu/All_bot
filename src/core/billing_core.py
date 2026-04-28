@@ -1,11 +1,9 @@
-from typing import Tuple
 import logging
+from typing import Tuple
 
-from src.database.core import AsyncSessionLocal
-from src.database.models import User
-from src.services.redis_client import redis_client
 from src.constants import MAX_CONCURRENT_TASKS
 from src.quota import QuotaManager
+from src.services.redis_client import redis_client
 
 logger = logging.getLogger(__name__)
 quota_manager = QuotaManager()
@@ -74,8 +72,9 @@ async def get_user_priority_and_identity(internal_user_id: int) -> Tuple[int, st
     user_group = await permission_service.get_user_group(internal_user_id)
     return priority, identity_str, user_group
 
-from datetime import datetime, timedelta
 import math
+from datetime import datetime, timedelta
+
 
 def calculate_identity_conversion(current_identity: str, current_expire_at: datetime, new_identity: str, duration_days: int) -> Tuple[str, datetime]:
     """

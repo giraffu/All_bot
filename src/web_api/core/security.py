@@ -1,8 +1,10 @@
 from datetime import datetime, timedelta
-from typing import Any, Union, Optional
+from typing import Any, Optional, Union
+
 from jose import jwt
 
 from src.web_api.core.config import settings
+
 
 def create_access_token(
     subject: Union[str, Any], expires_delta: timedelta = None

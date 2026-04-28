@@ -1,7 +1,8 @@
 import hashlib
-import aiohttp
 import logging
 import os
+
+import aiohttp
 
 logger = logging.getLogger("rmb_payment")
 

@@ -1,10 +1,11 @@
 import json
 import logging
 from datetime import datetime
-from typing import Optional, Dict, Any
+from typing import Any, Dict, Optional
 
-from sqlalchemy import select, desc, func
+from sqlalchemy import desc, func, select
 from sqlalchemy.exc import SQLAlchemyError
+
 from src.database.core import AsyncSessionLocal
 from src.database.models import UserLog
 

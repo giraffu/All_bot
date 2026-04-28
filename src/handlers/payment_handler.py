@@ -1,9 +1,11 @@
+import logging
+
+from sqlalchemy import select
 from telegram import Update
 from telegram.ext import ContextTypes
-import logging
-from src.database.models import User, UserLog
+
 from src.database.core import AsyncSessionLocal
-from sqlalchemy import select
+from src.database.models import User, UserLog
 from src.handlers.utils import with_db_logging_context
 from src.utils import safe_answer_query
 
@@ -22,8 +24,9 @@ async def precheckout_callback(update: Update, context: ContextTypes.DEFAULT_TYP
 @with_db_logging_context
 async def successful_payment_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """处理支付成功后的发货逻辑"""
-    from src.database.models import MembershipPlan
     import math
+
+    from src.database.models import MembershipPlan
     
     message = update.message
     successful_payment = message.successful_payment

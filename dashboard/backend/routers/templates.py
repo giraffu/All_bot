@@ -1,14 +1,16 @@
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, desc
-from typing import List
 import logging
 import os
+from typing import List
+
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import desc, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from config import MINIO_TEMPLATE_BUCKET
+from dashboard.backend.schemas import TemplateContributionResponse
 from src.database.core import get_db
 from src.database.models import TemplateContribution, User
-from dashboard.backend.schemas import TemplateContributionResponse
 from src.services.storage import storage
-from config import MINIO_TEMPLATE_BUCKET
 
 router = APIRouter(prefix="/api/templates", tags=["templates"])
 logger = logging.getLogger("dashboard.templates")

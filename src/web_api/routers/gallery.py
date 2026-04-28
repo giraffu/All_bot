@@ -1,20 +1,34 @@
-from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks
-from sqlalchemy import select, desc, update
-from sqlalchemy.exc import IntegrityError
-from typing import List, Optional
-from src.database.core import AsyncSessionLocal
-from src.database.models import GalleryPost, UserInteraction, History, User
-from src.web_api.dependencies import get_current_user
-from src.web_api.schemas.gallery_schema import GalleryPostResponse, PaginatedGalleryResponse, ApplyContextResponse
-from src.config_mapping import ALL_LORA_MODELS, VIDEO_LORA_MODELS, IMAGE_LORA_MODELS, translate_tags
-
-from src.constants import MODE_NAME_MAP, MODE_I2I_PRO, MODE_EDIT, MODE_CUSTOM_VIDEO, MODE_VIDEO_LORA, MODE_LTX_VIDEO
-from src.services.redis_client import redis_client
 import json
 import logging
-import os
 import re
-from src.services.storage import storage
+from typing import Optional
+
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
+from sqlalchemy import desc, select, update
+from sqlalchemy.exc import IntegrityError
+
+from src.config_mapping import (
+    ALL_LORA_MODELS,
+    IMAGE_LORA_MODELS,
+    VIDEO_LORA_MODELS,
+    translate_tags,
+)
+from src.constants import (
+    MODE_CUSTOM_VIDEO,
+    MODE_EDIT,
+    MODE_I2I_PRO,
+    MODE_LTX_VIDEO,
+    MODE_NAME_MAP,
+    MODE_VIDEO_LORA,
+)
+from src.database.core import AsyncSessionLocal
+from src.database.models import GalleryPost, History, User, UserInteraction
+from src.web_api.dependencies import get_current_user
+from src.web_api.schemas.gallery_schema import (
+    ApplyContextResponse,
+    GalleryPostResponse,
+    PaginatedGalleryResponse,
+)
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -23,6 +37,7 @@ logger = logging.getLogger(__name__)
 ALLOWED_WEB_SUBMIT_TYPES = {MODE_I2I_PRO, MODE_EDIT, MODE_CUSTOM_VIDEO, MODE_VIDEO_LORA, MODE_LTX_VIDEO, "img2img_lora"}
 
 from config import R2_PUBLIC_DOMAIN
+
 
 def get_media_url(output_file: str) -> str:
     """
@@ -492,7 +507,12 @@ async def get_apply_context(
             task_type=history.type
         )
 
-from src.core.gallery_core import process_submit_to_gallery, GalleryCoreError, toggle_like, DuplicateInteractionError, get_gallery_feed
+from src.core.gallery_core import (
+    GalleryCoreError,
+    get_gallery_feed,
+    process_submit_to_gallery,
+)
+
 
 @router.post("/posts/submit/{task_id}")
 async def submit_to_gallery(

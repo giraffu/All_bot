@@ -1,38 +1,35 @@
-from src.handlers.prompt_router import is_global_menu_command
+import logging
 import os
 import re
 import uuid
-import logging
 
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup
+from telegram import (
+    ReplyKeyboardMarkup,
+    Update,
+)
 from telegram.ext import (
-    CommandHandler,
-    MessageHandler,
     CallbackQueryHandler,
-    ConversationHandler,
-    filters,
+    CommandHandler,
     ContextTypes,
+    ConversationHandler,
+    MessageHandler,
+    filters,
 )
+
 from src.constants import (
-    TMP_DIR,
-    TASK_COSTS,
-    MODE_NAME_MAP,
     MAIN_MENU_KEYBOARD,
-    MODE_FACE_VIDEO_STEP1,
-    MODE_FACE_VIDEO_STEP2,
-    MODE_FACESWAP_STEP1,
-    MODE_I2I_PRO,
-    MODE_EDIT,
     MODE_CUSTOM_VIDEO,
-    MODE_VIDEO_LORA
+    MODE_EDIT,
+    MODE_I2I_PRO,
+    MODE_NAME_MAP,
+    MODE_VIDEO_LORA,
+    TASK_COSTS,
+    TMP_DIR,
 )
-from src.utils import (
-    robust_reply_text,
-    robust_edit_text,
-    is_maintenance_mode
-)
+from src.handlers.prompt_router import is_global_menu_command
 from src.services.permission_service import permission_service
 from src.services.task_service import task_service
+from src.utils import is_maintenance_mode, robust_edit_text, robust_reply_text
 
 logger = logging.getLogger(__name__)
 
@@ -67,9 +64,10 @@ async def start_gallery_apply(update: Update, context: ContextTypes.DEFAULT_TYPE
     post_id = int(data.replace("gallery_apply_", ""))
 
     from sqlalchemy import select
+
+    from src.core.user_core import get_or_create_user_by_telegram
     from src.database.core import AsyncSessionLocal
     from src.database.models import GalleryPost, History, UserInteraction
-    from src.core.user_core import get_or_create_user_by_telegram
 
     internal_user, _ = await get_or_create_user_by_telegram(query.from_user.id)
 
@@ -116,7 +114,14 @@ async def start_gallery_apply(update: Update, context: ContextTypes.DEFAULT_TYPE
     # Extract resolution and duration if it's a video
     res_str = "512p"
     dur_str = "5s"
-    from src.constants import RESOLUTION_COST, DURATION_MULTIPLIER, RESOLUTION_PERMISSIONS, DURATION_PERMISSIONS, LTX_RESOLUTION_COST, LTX_DURATION_MULTIPLIER
+    from src.constants import (
+        DURATION_MULTIPLIER,
+        DURATION_PERMISSIONS,
+        LTX_DURATION_MULTIPLIER,
+        LTX_RESOLUTION_COST,
+        RESOLUTION_COST,
+        RESOLUTION_PERMISSIONS,
+    )
     
     if task_type in (MODE_EDIT, "edit", MODE_IMG2IMG_LORA):
         # Image tasks that don't need double cost unless 2 images are provided later

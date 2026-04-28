@@ -1,12 +1,15 @@
 import logging
-from typing import Optional
-from fastapi import APIRouter, HTTPException, status
-from fastapi.responses import JSONResponse
 
-from src.web_api.core.security import create_access_token
-from src.web_api.schemas.auth_schema import TelegramLoginRequest, Token, UserResponse, InvitationRechargeStats
-from src.core.auth_core import authenticate_and_get_user, InvalidSignatureError
+from fastapi import APIRouter, HTTPException, status
+
+from src.core.auth_core import InvalidSignatureError, authenticate_and_get_user
 from src.services.permission_service import permission_service
+from src.web_api.core.security import create_access_token
+from src.web_api.schemas.auth_schema import (
+    InvitationRechargeStats,
+    TelegramLoginRequest,
+    UserResponse,
+)
 
 router = APIRouter()
 logger = logging.getLogger(__name__)

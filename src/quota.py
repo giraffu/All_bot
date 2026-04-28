@@ -1,11 +1,19 @@
 from datetime import datetime
-from sqlalchemy import select, update, func
-from .database.core import AsyncSessionLocal
-from .database.models import User, Referral, TemplateContribution, CheckinHistory, UserLog
-from .services.log_service import LogService
-from .constants import GENERATION_TASK_TYPES
 
+from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
+
+from .constants import GENERATION_TASK_TYPES
+from .database.core import AsyncSessionLocal
+from .database.models import (
+    CheckinHistory,
+    Referral,
+    TemplateContribution,
+    User,
+    UserLog,
+)
+from .services.log_service import LogService
+
 
 class QuotaManager:
     def __init__(self):
@@ -14,7 +22,7 @@ class QuotaManager:
     async def get_daily_usage(self, user_id: int) -> int:
         """Get number of generation tasks performed by user today"""
         async with AsyncSessionLocal() as session:
-            from datetime import timezone, timedelta
+            from datetime import timedelta, timezone
             beijing_tz = timezone(timedelta(hours=8))
             today = datetime.now(beijing_tz).date()
             # Convert date to datetime for comparison if needed, but SQLAlchemy handles date comparison usually.
@@ -120,7 +128,7 @@ class QuotaManager:
                 if full_name:
                     user.full_name = full_name
             
-            from datetime import timezone, timedelta
+            from datetime import timedelta, timezone
             beijing_tz = timezone(timedelta(hours=8))
             today = datetime.now(beijing_tz).date()
             if user.last_checkin == today:

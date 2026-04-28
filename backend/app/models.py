@@ -1,6 +1,8 @@
-from pydantic import BaseModel
-from typing import Optional, List
 from enum import Enum
+from typing import List, Optional
+
+from pydantic import BaseModel
+
 
 class TaskStatus(str, Enum):
     PENDING = "pending"

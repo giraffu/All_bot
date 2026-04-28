@@ -1,12 +1,13 @@
 import logging
 import math
-import json
 import os
-import aiohttp
 from datetime import datetime, timedelta
-from sqlalchemy import select, update
+
+import aiohttp
+from sqlalchemy import select
+
 from src.database.core import AsyncSessionLocal
-from src.database.models import User, MembershipPlan, Order
+from src.database.models import MembershipPlan, Order, User
 from src.services.log_service import LogService
 
 logger = logging.getLogger("payment_fulfillment")

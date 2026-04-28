@@ -1,6 +1,8 @@
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
-from unittest.mock import patch, MagicMock, AsyncMock
 from app.models import TaskType
+
 
 def test_create_t2i_task_async_success(client, auth_headers, mock_queue_manager):
     # Mock return value
@@ -133,9 +135,9 @@ def test_get_task_status_v1(client, mock_queue_manager):
 
 @pytest.mark.asyncio
 async def test_worker_retry_logic():
-    from app.worker import Worker
     from app.comfy_client import ComfyClient
     from app.queue_manager import QueueManager
+    from app.worker import Worker
     
     mock_qm = AsyncMock(spec=QueueManager)
     mock_cc = AsyncMock(spec=ComfyClient)
@@ -170,9 +172,9 @@ async def test_worker_retry_logic():
 
 @pytest.mark.asyncio
 async def test_worker_retry_max_reached():
-    from app.worker import Worker
     from app.comfy_client import ComfyClient
     from app.queue_manager import QueueManager
+    from app.worker import Worker
     
     mock_qm = AsyncMock(spec=QueueManager)
     mock_cc = AsyncMock(spec=ComfyClient)

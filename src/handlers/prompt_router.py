@@ -1,5 +1,3 @@
-from typing import Callable, Awaitable
-from telegram import Update
 import re
 
 # 定义装饰器与路由表

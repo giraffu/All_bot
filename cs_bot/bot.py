@@ -1,17 +1,23 @@
-import os
-import logging
 import base64
-import httpx
+import logging
+import os
+import re
 import time
 from collections import defaultdict
-from dotenv import load_dotenv
-from telegram import Update, File
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
-from telegram.request import HTTPXRequest
-from langgraph_client import get_langgraph_reply, check_intent
-from db import init_db, save_message
 
-import re
+import httpx
+from db import init_db, save_message
+from dotenv import load_dotenv
+from langgraph_client import check_intent, get_langgraph_reply
+from telegram import File, Update
+from telegram.ext import (
+    Application,
+    CommandHandler,
+    ContextTypes,
+    MessageHandler,
+    filters,
+)
+from telegram.request import HTTPXRequest
 
 # ==========================================
 # 缓存系统：记录群组内最近发送的图片 (chat_id -> {user_id -> {"file_id": xxx, "timestamp": xxx}})

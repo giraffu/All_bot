@@ -11,33 +11,32 @@ from typing import List, Optional, Tuple
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
-from config import ENABLE_PUBLIC_SHARE
 
+from config import ENABLE_PUBLIC_SHARE
 from src.constants import (
     MODE_BLOWJOB,
     MODE_CLOSEUP_BLOWJOB,
     MODE_CUSTOM_VIDEO,
     MODE_DOGGY_STYLE,
+    MODE_EDIT,
+    MODE_FACE_VIDEO_STEP1,
     MODE_FACESWAP_STEP1,
+    MODE_I2I_PRO,
+    MODE_LTX_VIDEO,
     MODE_MASTURBATION,
     MODE_NAME_MAP,
     MODE_PENETRATION_STEP1,
     MODE_PERFECT_VIDEO_INSERT,
     MODE_UNDRESS,
     MODE_UNDRESS_TONGUE,
-    TASK_COSTS,
-    TMP_DIR,
-    MODE_I2I_PRO,
-    MAX_CONCURRENT_TASKS,
-    MODE_FACE_VIDEO_STEP1,
-    MODE_EDIT,
     MODE_VIDEO_LORA,
-    MODE_LTX_VIDEO
+    TMP_DIR,
 )
 from src.handlers.utils import MockMessage
 from src.logger import UserLogger
 from src.services.image_service import image_service
 from src.services.permission_service import permission_service
+from src.services.task_registry import TaskRegistry
 from src.utils import (
     load_prompts,
     robust_delete_message,
@@ -47,9 +46,6 @@ from src.utils import (
     robust_send_photo,
     robust_send_video,
 )
-
-from src.services.task_registry import TaskRegistry
-from src.services.redis_client import redis_client
 
 logger = logging.getLogger(__name__)
 
@@ -63,12 +59,23 @@ class TaskService:
         cleanup: bool = True,
         allow_contribute: bool = True,
     ):
-        from src.core.user_core import get_or_create_user_by_telegram
-        from src.core.billing_core import refund_credits, get_user_priority_and_identity, release_concurrency_lock
-        from src.core.task_core import process_and_submit_task, CoreDomainError, InsufficientCreditsError, ConcurrencyLimitError
-        import uuid
         import asyncio
+        import uuid
+
         from asgi_correlation_id import correlation_id
+
+        from src.core.billing_core import (
+            get_user_priority_and_identity,
+            refund_credits,
+            release_concurrency_lock,
+        )
+        from src.core.task_core import (
+            ConcurrencyLimitError,
+            CoreDomainError,
+            InsufficientCreditsError,
+            process_and_submit_task,
+        )
+        from src.core.user_core import get_or_create_user_by_telegram
 
         chat_id = update.effective_chat.id
         user_id = update.effective_user.id
@@ -174,12 +181,23 @@ class TaskService:
         message_id: int = None,
         cleanup: bool = True,
     ):
-        from src.core.user_core import get_or_create_user_by_telegram
-        from src.core.billing_core import refund_credits, get_user_priority_and_identity, release_concurrency_lock
-        from src.core.task_core import process_and_submit_task, CoreDomainError, InsufficientCreditsError, ConcurrencyLimitError
-        import uuid
         import asyncio
+        import uuid
+
         from asgi_correlation_id import correlation_id
+
+        from src.core.billing_core import (
+            get_user_priority_and_identity,
+            refund_credits,
+            release_concurrency_lock,
+        )
+        from src.core.task_core import (
+            ConcurrencyLimitError,
+            CoreDomainError,
+            InsufficientCreditsError,
+            process_and_submit_task,
+        )
+        from src.core.user_core import get_or_create_user_by_telegram
 
         # 1. 身份转换 (TG ID -> 内部 ID)
         internal_user, _ = await get_or_create_user_by_telegram(user_id, username)
@@ -287,13 +305,24 @@ class TaskService:
         allow_contribute: bool = True,
     ) -> Tuple[Optional[bytes], Optional[str]]:
         """Common generation logic for generic tasks."""
-        from src.core.user_core import get_or_create_user_by_telegram
-        from src.core.billing_core import refund_credits, get_user_priority_and_identity, release_concurrency_lock
-        from src.core.task_core import process_and_submit_task, CoreDomainError, InsufficientCreditsError, ConcurrencyLimitError
-        import uuid
         import asyncio
+        import uuid
+
         from asgi_correlation_id import correlation_id
-        from src.constants import DEFAULT_RESOLUTION, DEFAULT_DURATION
+
+        from src.constants import DEFAULT_DURATION, DEFAULT_RESOLUTION
+        from src.core.billing_core import (
+            get_user_priority_and_identity,
+            refund_credits,
+            release_concurrency_lock,
+        )
+        from src.core.task_core import (
+            ConcurrencyLimitError,
+            CoreDomainError,
+            InsufficientCreditsError,
+            process_and_submit_task,
+        )
+        from src.core.user_core import get_or_create_user_by_telegram
 
         # 1. 身份转换
         internal_user, _ = await get_or_create_user_by_telegram(user_id, username)
@@ -304,7 +333,11 @@ class TaskService:
             
         resolution = 512
         duration = 5
-        from src.constants import MODE_CUSTOM_VIDEO, MODE_EDIT, MODE_IMG2IMG_LORA, MODE_FACESWAP_STEP1
+        from src.constants import (
+            MODE_CUSTOM_VIDEO,
+            MODE_EDIT,
+            MODE_IMG2IMG_LORA,
+        )
         if is_video and task_type in [MODE_CUSTOM_VIDEO, "video_lora"]:
             res_str = context.user_data.get('custom_video_resolution', DEFAULT_RESOLUTION)
             dur_str = context.user_data.get('custom_video_duration', DEFAULT_DURATION)
@@ -468,12 +501,23 @@ class TaskService:
         """
         Generic handler for video generation tasks to reduce code duplication.
         """
-        from src.core.user_core import get_or_create_user_by_telegram
-        from src.core.billing_core import refund_credits, get_user_priority_and_identity, release_concurrency_lock
-        from src.core.task_core import process_and_submit_task, CoreDomainError, InsufficientCreditsError, ConcurrencyLimitError
-        import uuid
         import asyncio
+        import uuid
+
         from asgi_correlation_id import correlation_id
+
+        from src.core.billing_core import (
+            get_user_priority_and_identity,
+            refund_credits,
+            release_concurrency_lock,
+        )
+        from src.core.task_core import (
+            ConcurrencyLimitError,
+            CoreDomainError,
+            InsufficientCreditsError,
+            process_and_submit_task,
+        )
+        from src.core.user_core import get_or_create_user_by_telegram
 
         chat_id = update.effective_chat.id
         user_id = update.effective_user.id
@@ -482,7 +526,7 @@ class TaskService:
         internal_user, _ = await get_or_create_user_by_telegram(user_id, username)
         internal_user_id = internal_user.id
 
-        from src.constants import DEFAULT_RESOLUTION, DEFAULT_DURATION
+        from src.constants import DEFAULT_DURATION, DEFAULT_RESOLUTION
         resolution = context.user_data.get('custom_video_resolution', DEFAULT_RESOLUTION)
         duration_str = context.user_data.get('custom_video_duration', DEFAULT_DURATION)
 
@@ -681,12 +725,23 @@ class TaskService:
         image_path: str,
         cleanup: bool = True,
     ):
-        from src.core.user_core import get_or_create_user_by_telegram
-        from src.core.billing_core import refund_credits, get_user_priority_and_identity, release_concurrency_lock
-        from src.core.task_core import process_and_submit_task, CoreDomainError, InsufficientCreditsError, ConcurrencyLimitError
-        import uuid
         import asyncio
+        import uuid
+
         from asgi_correlation_id import correlation_id
+
+        from src.core.billing_core import (
+            get_user_priority_and_identity,
+            refund_credits,
+            release_concurrency_lock,
+        )
+        from src.core.task_core import (
+            ConcurrencyLimitError,
+            CoreDomainError,
+            InsufficientCreditsError,
+            process_and_submit_task,
+        )
+        from src.core.user_core import get_or_create_user_by_telegram
 
         chat_id = update.effective_chat.id
         user_id = update.effective_user.id
@@ -697,7 +752,7 @@ class TaskService:
 
         mode = MODE_CUSTOM_VIDEO
         
-        from src.constants import DEFAULT_RESOLUTION, DEFAULT_DURATION
+        from src.constants import DEFAULT_DURATION, DEFAULT_RESOLUTION
         resolution = context.user_data.get('custom_video_resolution', DEFAULT_RESOLUTION)
         duration = context.user_data.get('custom_video_duration', DEFAULT_DURATION)
         
@@ -816,13 +871,24 @@ class TaskService:
         allow_contribute: bool = True,
     ):
         """Handle MODE_I2I_PRO requests"""
-        from src.constants import MODE_I2I_PRO
-        from src.core.user_core import get_or_create_user_by_telegram
-        from src.core.billing_core import refund_credits, get_user_priority_and_identity, release_concurrency_lock
-        from src.core.task_core import process_and_submit_task, CoreDomainError, InsufficientCreditsError, ConcurrencyLimitError
-        import uuid
         import asyncio
+        import uuid
+
         from asgi_correlation_id import correlation_id
+
+        from src.constants import MODE_I2I_PRO
+        from src.core.billing_core import (
+            get_user_priority_and_identity,
+            refund_credits,
+            release_concurrency_lock,
+        )
+        from src.core.task_core import (
+            ConcurrencyLimitError,
+            CoreDomainError,
+            InsufficientCreditsError,
+            process_and_submit_task,
+        )
+        from src.core.user_core import get_or_create_user_by_telegram
         
         internal_user, _ = await get_or_create_user_by_telegram(user_id, username)
         internal_user_id = internal_user.id

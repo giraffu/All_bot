@@ -3,14 +3,14 @@ import json
 import logging
 import os
 import sys
-from asgi_correlation_id import correlation_id
-import httpx
-import websockets # type: ignore
-from minio import Minio # type: ignore
-from dotenv import load_dotenv
-from typing import Dict, Any, Optional
+from typing import Any, Dict, Optional
 
+import httpx
+import websockets  # type: ignore
+from asgi_correlation_id import correlation_id
 from comfy_client import ComfyClient
+from dotenv import load_dotenv
+from minio import Minio  # type: ignore
 from workflow_patcher import WorkflowPatcher
 
 # Load environment variables

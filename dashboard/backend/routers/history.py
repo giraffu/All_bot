@@ -1,14 +1,15 @@
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, desc
-from typing import Optional, List
 import logging
-import os
+from typing import List, Optional
+
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import desc, func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from config import MINIO_TEMPLATE_BUCKET
+from dashboard.backend.schemas import HistoryListResponse, HistoryResponse
 from src.database.core import get_db
 from src.database.models import History, User, WorkerLog
-from dashboard.backend.schemas import HistoryListResponse, HistoryResponse
 from src.services.storage import storage
-from config import MINIO_TEMPLATE_BUCKET
 
 router = APIRouter(prefix="/api/history", tags=["history"])
 logger = logging.getLogger("dashboard.history")
