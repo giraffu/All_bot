@@ -10,6 +10,7 @@ class TaskGenerateRequest(BaseModel):
     negative_prompt: Optional[str] = Field("", description="Negative prompt")
     priority: int = Field(0, description="Task priority (0=normal, higher=faster)")
     is_template: bool = Field(False, description="If this task is generated from a gallery template")
+    source_post_id: Optional[int] = Field(None, description="The ID of the gallery post being applied")
     
     class Config:
         json_schema_extra = {

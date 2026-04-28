@@ -59,6 +59,7 @@ class TaskService:
         image_path: str,
         cleanup: bool = True,
         allow_contribute: bool = True,
+        source_post_id: Optional[int] = None,
     ):
         import asyncio
         import uuid
@@ -112,7 +113,7 @@ class TaskService:
                 task_type=mode,
                 inputs=inputs,
                 task_id=task_id,
-                client_type="bot"
+                client_type="bot", source_post_id=source_post_id
             )
             
             task_submitted = True
@@ -181,6 +182,7 @@ class TaskService:
         cost: int,
         message_id: int = None,
         cleanup: bool = True,
+        source_post_id: Optional[int] = None,
     ):
         import asyncio
         import uuid
@@ -226,7 +228,7 @@ class TaskService:
                 task_type=mode,
                 inputs=inputs,
                 task_id=task_id,
-                client_type="bot"
+                client_type="bot", source_post_id=source_post_id
             )
             
             task_submitted = True
@@ -304,6 +306,7 @@ class TaskService:
         lora_name: str = None,
         lora_strength: float = 1.0,
         allow_contribute: bool = True,
+        source_post_id: Optional[int] = None,
     ) -> Tuple[Optional[bytes], Optional[str]]:
         """Common generation logic for generic tasks."""
         import asyncio
@@ -397,7 +400,7 @@ class TaskService:
                 task_type=task_type,
                 inputs=inputs,
                 task_id=task_id,
-                client_type="bot",
+                client_type="bot", source_post_id=source_post_id,
                 deduct_quota=deduct_quota
             )
             
@@ -493,6 +496,7 @@ class TaskService:
         default_prompt_text: str,
         cleanup: bool = True,
         allow_contribute: bool = True,
+        source_post_id: Optional[int] = None,
     ) -> Tuple[Optional[bytes], Optional[str]]:
         """
         Generic handler for video generation tasks to reduce code duplication.
@@ -561,7 +565,7 @@ class TaskService:
                 task_type=mode,
                 inputs=inputs,
                 task_id=task_id,
-                client_type="bot"
+                client_type="bot", source_post_id=source_post_id
             )
             
             task_submitted = True
@@ -720,6 +724,7 @@ class TaskService:
         prompt: str,
         image_path: str,
         cleanup: bool = True,
+        source_post_id: Optional[int] = None,
     ):
         import asyncio
         import uuid
@@ -781,7 +786,7 @@ class TaskService:
                 task_type=mode,
                 inputs=inputs,
                 task_id=task_id,
-                client_type="bot"
+                client_type="bot", source_post_id=source_post_id
             )
 
             task_submitted = True
@@ -865,6 +870,7 @@ class TaskService:
         prompt: str,
         images: list[str],
         allow_contribute: bool = True,
+        source_post_id: Optional[int] = None,
     ):
         """Handle MODE_I2I_PRO requests"""
         import asyncio
@@ -922,7 +928,7 @@ class TaskService:
                 task_type=mode,
                 inputs=inputs,
                 task_id=task_id,
-                client_type="bot"
+                client_type="bot", source_post_id=source_post_id
             )
 
             task_submitted = True

@@ -363,17 +363,6 @@ async def get_apply_context(
         if not history:
             raise HTTPException(status_code=404, detail="未找到原任务详情")
             
-        # record apply action
-        interaction = UserInteraction(user_id=current_user.id, post_id=post.id, action_type="apply")
-        session.add(interaction)
-        await session.execute(update(GalleryPost).where(GalleryPost.id == post.id).values(applied_count=GalleryPost.applied_count + 1))
-        try:
-            await session.commit()
-        except IntegrityError:
-            await session.rollback()
-            # Already applied, just ignore the increment
-            pass
-        
         input_file_url = None
         if history.input_file:
             input_file_url = get_media_url(history.input_file)

@@ -51,7 +51,8 @@ async def create_generation_task(
             inputs=req.inputs,
             task_id=task_id,
             base_priority=req.priority,
-            is_template=is_template
+            is_template=is_template,
+            source_post_id=req.source_post_id
         )
         
         balance = await quota_manager.get_credits(current_user.id)

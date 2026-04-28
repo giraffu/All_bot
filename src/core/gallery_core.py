@@ -211,6 +211,32 @@ async def toggle_like(user_id: int, post_id: int, action: str) -> dict:
             "dislikes_count": post.dislikes_count
         }
 
+async def record_apply_interaction(user_id: int, post_id: int):
+    """
+    Record an apply action for a gallery post when a task is actually generated.
+    """
+    from sqlalchemy import update
+    
+    async with AsyncSessionLocal() as session:
+        try:
+            interaction = UserInteraction(user_id=user_id, post_id=post_id, action_type="apply")
+            session.add(interaction)
+            # flush first to trigger IntegrityError inside the try block
+            await session.flush()
+            
+            stmt = update(GalleryPost).where(GalleryPost.id == post_id).values(
+                applied_count=GalleryPost.applied_count + 1
+            )
+            await session.execute(stmt)
+            await session.commit()
+        except IntegrityError:
+            await session.rollback()
+            # Already recorded, silently ignore
+            pass
+        except Exception as e:
+            await session.rollback()
+            logger.error(f"Failed to record apply interaction for post {post_id}: {e}")
+
 async def get_gallery_feed(
     page: int = 1,
     size: int = 20,

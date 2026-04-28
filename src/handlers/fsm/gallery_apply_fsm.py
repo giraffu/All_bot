@@ -89,19 +89,6 @@ async def start_gallery_apply(update: Update, context: ContextTypes.DEFAULT_TYPE
         post_width = post.width
         post_height = post.height
         post_duration = post.duration
-
-        # Record interaction
-        interaction = UserInteraction(user_id=internal_user.id, post_id=post.id, action_type="apply")
-        session.add(interaction)
-        post.applied_count += 1
-        
-        from sqlalchemy.exc import IntegrityError
-        try:
-            await session.commit()
-        except IntegrityError:
-            await session.rollback()
-            # 已经记录过应用，静默忽略重复计数
-            pass
             
     # Security check: Only allow specific task types for gallery application
     from src.constants import MODE_IMG2IMG_LORA, MODE_LTX_VIDEO
@@ -222,7 +209,8 @@ async def start_gallery_apply(update: Update, context: ContextTypes.DEFAULT_TYPE
         'cost': cost,
         'res_str': res_str,
         'dur_str': dur_str,
-        'is_video': post_media_type == 'video'
+        'is_video': post_media_type == 'video',
+        'source_post_id': post_id
     }
 
     import html
@@ -275,6 +263,7 @@ async def receive_reference_image(update: Update, context: ContextTypes.DEFAULT_
     lora_name = data['lora_name']
     res_str = data['res_str']
     dur_str = data['dur_str']
+    source_post_id = data.get('source_post_id')
     
     # Original template files
     # History.input_file might contain multiple files separated by '|'.
@@ -323,7 +312,8 @@ async def receive_reference_image(update: Update, context: ContextTypes.DEFAULT_
                 username,
                 prompt,
                 [local_path],
-                allow_contribute=False
+                allow_contribute=False,
+                source_post_id=source_post_id
             )
         )
     elif task_type == MODE_LTX_VIDEO:
@@ -335,7 +325,8 @@ async def receive_reference_image(update: Update, context: ContextTypes.DEFAULT_
                 context=context,
                 prompt=prompt,
                 image_path=local_path,
-                allow_contribute=False
+                allow_contribute=False,
+                source_post_id=source_post_id
             )
         )
     else:
@@ -354,7 +345,8 @@ async def receive_reference_image(update: Update, context: ContextTypes.DEFAULT_
                 task_type=task_type,
                 lora_name=lora_name,
                 lora_strength=lora_strength,
-                allow_contribute=False
+                allow_contribute=False,
+                source_post_id=source_post_id
             )
         )
 

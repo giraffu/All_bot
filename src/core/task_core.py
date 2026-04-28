@@ -117,6 +117,7 @@ async def process_and_submit_task(
     client_type: str = "web",
     deduct_quota: bool = True,
     check_lock: bool = True,
+    source_post_id: Optional[int] = None,
 ) -> dict:
     import asyncio
     
@@ -254,6 +255,10 @@ async def process_and_submit_task(
                 except Exception as e:
                     # 如果监控挂载失败，由外层的 Saga 补偿机制和 finally 统一处理退款和释放锁
                     raise CoreDomainError(f"后台监控挂载失败: {e}")
+                
+            if source_post_id:
+                from src.core.gallery_core import record_apply_interaction
+                asyncio.create_task(record_apply_interaction(user_id, source_post_id))
                 
             task_submitted_successfully = True
             
