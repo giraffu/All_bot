@@ -34,6 +34,10 @@ sequenceDiagram
 
 ## 3. 核心代码片段
 
+### 事务管理与退款防漏 (Transaction & Refund)
+在 FastAPI 路由 (Routers) 或 Telegram Handlers 中，**严禁在 `try-except` 捕获异常后，手动调用 `refund_credits` 等业务级补偿方法同时执行 `session.rollback()`**。
+> **原因**：因为依赖注入的 `AsyncSession` 会由外层 Unit of Work (UoW) 或中间件自动 `rollback`。如果手动退款并在异常块内执行回滚，可能导致“退款流水记录未被持久化”而余额被修改，或出现重复退款漏洞。所有事务与补偿必须遵循核心层的原子性闭环，业务异常应抛出后由全局拦截器处理。
+
 ### 计费扣减与流水追踪 (src/core/billing_core.py)
 [`billing_core.py:L42-L61`](file:///home/hfy/APP/All_bot/src/core/billing_core.py#L42-L61)
 ```python

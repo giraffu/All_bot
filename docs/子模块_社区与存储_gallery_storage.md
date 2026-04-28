@@ -90,7 +90,11 @@ async def process_submit_to_gallery(user_id: int, task_id: str, background_tasks
 [`gallery_core.py`](file:///home/hfy/APP/All_bot/src/core/gallery_core.py)
 ```python
 async def get_gallery_feed(page: int = 1, size: int = 20, ...) -> tuple[list, int]:
-    """使用 subquery().count() 动态计算分页总数，彻底解决条件筛选（如 outerjoin）导致的前端页码错位 Bug"""
+    """
+    解决 N+1 查询性能问题与分页计算 Bug：
+    1. 使用 selectinload/joinedload 预加载关联数据（如 Author/History），避免列表遍历时的 N+1 查询。
+    2. 使用 subquery().count() 动态计算分页总数，彻底解决条件筛选（如 outerjoin）导致的前端页码错位。
+    """
     async with AsyncSessionLocal() as session:
         query = select(GalleryPost).where(...)
         # ... 各种复杂的 where 和 join 条件
@@ -108,11 +112,23 @@ async def get_gallery_feed(page: int = 1, size: int = 20, ...) -> tuple[list, in
 
 async def toggle_like(user_id: int, post_id: int, action: str) -> dict:
     """利用 UniqueConstraint 捕获 IntegrityError，并通过原子更新防并发连点"""
+    # 核心红线：捕获 IntegrityError 前，必须手动 flush，防止 autoflush 提前抛错
+    await session.flush()
     # 使用数据库层面的原子更新，防覆盖
     stmt = update(GalleryPost).where(GalleryPost.id == post_id)\
                               .values(likes_count=GalleryPost.likes_count + 1)\
                               .returning(GalleryPost.likes_count, GalleryPost.dislikes_count)
     # ...
+
+async def record_apply_interaction(user_id: int, post_id: int):
+    """一键应用防刷与延迟计数"""
+    # 核心红线：应用次数 (applied_count) 不能在 FSM/Router 层用户点击时立即增加，
+    # 必须通过 TaskService 在成功排队并扣费后，调用本函数进行累加，避免因余额不足或任务取消导致的虚假统计。
+    # 并在捕获 IntegrityError 前进行 session.flush()。
+    interaction = UserInteraction(user_id=user_id, post_id=post_id, action_type="apply")
+    session.add(interaction)
+    await session.flush()
+    # 原子增加...
 ```
 
 ## 4. 接口定义 (OpenAPI 3.0)
