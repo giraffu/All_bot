@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import { fetchReferralRewards } from '../api/api'
 import { message } from 'ant-design-vue'
 
@@ -21,6 +21,35 @@ const loadData = async () => {
 
 onMounted(() => {
   loadData()
+})
+
+const summaryStats = computed(() => {
+  let rewardedInvitersCount = 0
+  let totalCommission = 0
+  let totalInvitations = 0
+  let totalRMB = 0
+  let totalTON = 0
+  let totalStars = 0
+
+  data.value.forEach(item => {
+    if (item.commission_usdt > 0) {
+      rewardedInvitersCount += 1
+    }
+    totalCommission += (item.commission_usdt || 0)
+    totalInvitations += (item.total_invitations || 0)
+    totalRMB += (item.total_rmb || 0)
+    totalTON += (item.total_ton || 0)
+    totalStars += (item.total_stars || 0)
+  })
+
+  return {
+    rewardedInvitersCount,
+    totalCommission: totalCommission.toFixed(2),
+    totalInvitations,
+    totalRMB: totalRMB.toFixed(2),
+    totalTON: totalTON.toFixed(2),
+    totalStars
+  }
 })
 
 const columns = [
@@ -79,8 +108,15 @@ const columns = [
     title: '总计折合(USDT)',
     dataIndex: 'total_usdt',
     key: 'total_usdt',
-    width: '12%',
+    width: '10%',
     sorter: (a, b) => a.total_usdt - b.total_usdt
+  },
+  {
+    title: '分成金额(USDT)',
+    dataIndex: 'commission_usdt',
+    key: 'commission_usdt',
+    width: '10%',
+    sorter: (a, b) => a.commission_usdt - b.commission_usdt
   }
 ]
 
@@ -99,6 +135,11 @@ const innerColumns = [
     title: '充值笔数',
     dataIndex: 'recharge_count',
     key: 'recharge_count'
+  },
+  {
+    title: '分成金额(USDT)',
+    dataIndex: 'commission_usdt',
+    key: 'commission_usdt'
   }
 ]
 
@@ -136,6 +177,27 @@ const orderColumns = [
       </a-button>
     </div>
 
+    <a-row :gutter="16" class="mb-4">
+      <a-col :span="12">
+        <a-card class="shadow-sm border border-gray-100 h-full">
+          <div class="flex justify-around items-center">
+            <a-statistic title="获奖邀请人数" :value="summaryStats.rewardedInvitersCount" />
+            <a-statistic title="总分成金额 (USDT)" :value="summaryStats.totalCommission" prefix="$" />
+            <a-statistic title="总邀请人数" :value="summaryStats.totalInvitations" />
+          </div>
+        </a-card>
+      </a-col>
+      <a-col :span="12">
+        <a-card class="shadow-sm border border-gray-100 h-full">
+          <div class="flex justify-around items-center">
+            <a-statistic title="受邀者总充值 (RMB)" :value="summaryStats.totalRMB" prefix="¥" />
+            <a-statistic title="受邀者总充值 (TON)" :value="summaryStats.totalTON" suffix="TON" />
+            <a-statistic title="受邀者总充值 (Stars)" :value="summaryStats.totalStars" suffix="⭐" />
+          </div>
+        </a-card>
+      </a-col>
+    </a-row>
+
     <a-table
       :columns="columns"
       :data-source="data"
@@ -157,6 +219,9 @@ const orderColumns = [
         <template v-else-if="column.key === 'total_usdt'">
           <span class="font-bold text-emerald-600 bg-emerald-50 px-2 py-1 rounded border border-emerald-100">$ {{ record.total_usdt }}</span>
         </template>
+        <template v-else-if="column.key === 'commission_usdt'">
+          <span class="font-bold text-indigo-600 bg-indigo-50 px-2 py-1 rounded border border-indigo-100">$ {{ record.commission_usdt }}</span>
+        </template>
         <template v-else-if="column.key === 'total_invitations'">
           <a-tag color="purple">{{ record.total_invitations }}</a-tag>
         </template>
@@ -177,6 +242,12 @@ const orderColumns = [
           size="middle"
           class="bg-blue-50/30 my-2 rounded border border-blue-100"
         >
+          <template #bodyCell="{ column, record: innerRecord }">
+            <template v-if="column.key === 'commission_usdt'">
+              <span class="font-bold text-indigo-600 bg-indigo-50 px-2 py-1 rounded border border-indigo-100">$ {{ innerRecord.commission_usdt }}</span>
+            </template>
+          </template>
+
           <template #expandedRowRender="{ record: innerRecord }">
             <a-table
               :columns="orderColumns"

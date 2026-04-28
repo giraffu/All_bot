@@ -64,6 +64,8 @@ const sortOptions = [
   { label: '最新时间', value: 'created_at' },
   { label: '最多点赞', value: 'likes' },
   { label: '最多点踩', value: 'dislikes' },
+  { label: '绝对最多点赞', value: 'absolute_likes' },
+  { label: '绝对最多点踩', value: 'absolute_dislikes' },
   { label: '最多应用', value: 'applied' }
 ]
 

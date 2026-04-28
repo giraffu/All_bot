@@ -305,6 +305,12 @@ async def get_gallery_feed(
             
         if sort_by == "likes":
             query = query.order_by(desc(GalleryPost.likes_count), desc(GalleryPost.created_at))
+        elif sort_by == "dislikes":
+            query = query.order_by(desc(GalleryPost.dislikes_count), desc(GalleryPost.created_at))
+        elif sort_by == "absolute_likes":
+            query = query.order_by(desc(GalleryPost.likes_count - GalleryPost.dislikes_count), desc(GalleryPost.created_at))
+        elif sort_by == "absolute_dislikes":
+            query = query.order_by(desc(GalleryPost.dislikes_count - GalleryPost.likes_count), desc(GalleryPost.created_at))
         elif sort_by == "applied":
             query = query.order_by(desc(GalleryPost.applied_count), desc(GalleryPost.created_at))
         else:
@@ -315,7 +321,10 @@ async def get_gallery_feed(
         total = (await session.execute(total_query)).scalar()
         
         # Eager load related User and History
-        query = query.options(selectinload(GalleryPost.user))
+        query = query.options(
+            selectinload(GalleryPost.user),
+            selectinload(GalleryPost.history)
+        )
         
         # Paginate
         offset = (page - 1) * size if page > 0 else 0

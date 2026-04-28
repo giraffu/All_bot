@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
+from datetime import datetime
 
 from dashboard.backend.routers.stats import get_exchange_rates
 from src.database.core import get_db
@@ -94,13 +95,45 @@ async def get_referral_rewards(db: AsyncSession = Depends(get_db)):
                 "order_id": order_id_str,
                 "type": order_type,
                 "amount": price,
-                "date": order.created_at.strftime("%Y-%m-%d %H:%M:%S") if order.created_at else ""
+                "date": order.created_at.strftime("%Y-%m-%d %H:%M:%S") if order.created_at else "",
+                "created_at": order.created_at
             })
             invitees_map[invitee.telegram_id]["recharge_count"] += 1
             
         response_data = []
         for inv_tg_id, inv_data in inviters_map.items():
             invitees_list = list(inv_data["invitees"].values())
+            
+            total_commission_usdt = 0.0
+            
+            for invitee_data in invitees_list:
+                # Sort orders by created_at to find the first order
+                sorted_orders = sorted(invitee_data["orders"], key=lambda x: x["created_at"].timestamp() if x["created_at"] else 0)
+                if sorted_orders:
+                    first_order = sorted_orders[0]
+                    order_type = first_order["type"]
+                    amount = first_order["amount"]
+                    
+                    # Convert to USDT
+                    order_usdt = 0.0
+                    if order_type == "TON":
+                        order_usdt = amount * ton_to_usdt
+                    elif order_type == "RMB":
+                        order_usdt = amount * rmb_to_usdt
+                    elif order_type == "Stars":
+                        order_usdt = amount * stars_to_usdt
+                        
+                    # 10% commission
+                    invitee_commission = order_usdt * 0.1
+                    invitee_data["commission_usdt"] = round(invitee_commission, 2)
+                    total_commission_usdt += invitee_commission
+                else:
+                    invitee_data["commission_usdt"] = 0.0
+                
+                # Remove 'created_at' from orders to avoid serialization issues
+                for o in invitee_data["orders"]:
+                    o.pop("created_at", None)
+
             # Sort invitees by recharge_count descending
             invitees_list.sort(key=lambda x: x["recharge_count"], reverse=True)
             inv_data["invitees"] = invitees_list
@@ -108,6 +141,7 @@ async def get_referral_rewards(db: AsyncSession = Depends(get_db)):
             
             total_usdt = (inv_data["total_ton"] * ton_to_usdt) + (inv_data["total_rmb"] * rmb_to_usdt) + (inv_data["total_stars"] * stars_to_usdt)
             inv_data["total_usdt"] = round(total_usdt, 2)
+            inv_data["commission_usdt"] = round(total_commission_usdt, 2)
             
             inv_data["total_invitations"] = total_invitations_map.get(inv_data["inviter_telegram_id"], inv_data["total_invitees"])
             
