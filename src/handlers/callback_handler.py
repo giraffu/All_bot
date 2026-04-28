@@ -6,6 +6,10 @@ from telegram.ext import ContextTypes
 import src.handlers.callback_router as router
 
 # 导入拆分后的子模块，触发装饰器注册路由
+import src.handlers.callbacks.billing_callbacks
+import src.handlers.callbacks.gallery_callbacks
+import src.handlers.callbacks.misc_callbacks
+
 from src.handlers.utils import with_db_logging_context
 from src.services.permission_service import permission_service
 from src.utils import safe_answer_query
