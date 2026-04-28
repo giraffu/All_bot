@@ -15,6 +15,22 @@ from src.utils import safe_answer_query
 import contextlib
 
 
+async def _get_active_plans(session, is_rmb: bool, is_subscription: bool):
+    stmt = select(MembershipPlan).where(MembershipPlan.is_active == True)
+    
+    if is_subscription:
+        stmt = stmt.where(MembershipPlan.duration_days > 0)
+    else:
+        stmt = stmt.where(MembershipPlan.duration_days == 0)
+        
+    if is_rmb:
+        stmt = stmt.where(MembershipPlan.price_rmb > 0).order_by(MembershipPlan.price_rmb.asc())
+    else:
+        stmt = stmt.where(MembershipPlan.price_stars > 0).order_by(MembershipPlan.price_stars.asc())
+        
+    result = await session.execute(stmt)
+    return result.scalars().all()
+
 @register_callback("recharge_stars_menu")
 async def recharge_stars_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -22,11 +38,9 @@ async def recharge_stars_menu_callback(update: Update, context: ContextTypes.DEF
     
     keyboard = []
     async with AsyncSessionLocal() as session:
-        result = await session.execute(select(MembershipPlan).where(MembershipPlan.is_active == True, MembershipPlan.duration_days > 0).order_by(MembershipPlan.price_stars.asc()))
-        plans = result.scalars().all()
+        plans = await _get_active_plans(session, is_rmb=False, is_subscription=True)
         for plan in plans:
-            if getattr(plan, 'price_stars', 0) > 0:
-                keyboard.append([InlineKeyboardButton(f"⭐️ {plan.price_stars} - {plan.name} ({plan.identity_name})", callback_data=f"buy_star_plan_{plan.id}")])
+            keyboard.append([InlineKeyboardButton(f"⭐️ {plan.price_stars} - {plan.name} ({plan.identity_name})", callback_data=f"buy_star_plan_{plan.id}")])
                 
     keyboard.append([InlineKeyboardButton("🔙 返回支付方式", callback_data="recharge_back")])
     reply_markup = InlineKeyboardMarkup(keyboard)
@@ -40,11 +54,9 @@ async def recharge_stars_credit_menu_callback(update: Update, context: ContextTy
     
     keyboard = []
     async with AsyncSessionLocal() as session:
-        result = await session.execute(select(MembershipPlan).where(MembershipPlan.is_active == True, MembershipPlan.duration_days == 0).order_by(MembershipPlan.price_stars.asc()))
-        plans = result.scalars().all()
+        plans = await _get_active_plans(session, is_rmb=False, is_subscription=False)
         for plan in plans:
-            if getattr(plan, 'price_stars', 0) > 0:
-                keyboard.append([InlineKeyboardButton(f"⭐️ {plan.price_stars} Star 直购 {plan.reward_credits} 灵石", callback_data=f"buy_star_plan_{plan.id}")])
+            keyboard.append([InlineKeyboardButton(f"⭐️ {plan.price_stars} Star 直购 {plan.reward_credits} 灵石", callback_data=f"buy_star_plan_{plan.id}")])
                 
     keyboard.append([InlineKeyboardButton("🔙 返回支付方式", callback_data="recharge_back")])
     reply_markup = InlineKeyboardMarkup(keyboard)
@@ -75,11 +87,9 @@ async def recharge_rmb_menu_callback(update: Update, context: ContextTypes.DEFAU
     
     keyboard = []
     async with AsyncSessionLocal() as session:
-        result = await session.execute(select(MembershipPlan).where(MembershipPlan.is_active == True, MembershipPlan.duration_days > 0).order_by(MembershipPlan.price_rmb.asc()))
-        plans = result.scalars().all()
+        plans = await _get_active_plans(session, is_rmb=True, is_subscription=True)
         for plan in plans:
-            if getattr(plan, 'price_rmb', 0) > 0:
-                keyboard.append([InlineKeyboardButton(f"¥ {plan.price_rmb} - {plan.name} ({plan.identity_name})", callback_data=f"select_rmb_plan_{plan.id}")])
+            keyboard.append([InlineKeyboardButton(f"¥ {plan.price_rmb} - {plan.name} ({plan.identity_name})", callback_data=f"select_rmb_plan_{plan.id}")])
                 
     keyboard.append([InlineKeyboardButton("🔙 返回支付方式", callback_data="recharge_back")])
     reply_markup = InlineKeyboardMarkup(keyboard)
@@ -93,11 +103,9 @@ async def recharge_rmb_credit_menu_callback(update: Update, context: ContextType
     
     keyboard = []
     async with AsyncSessionLocal() as session:
-        result = await session.execute(select(MembershipPlan).where(MembershipPlan.is_active == True, MembershipPlan.duration_days == 0).order_by(MembershipPlan.price_rmb.asc()))
-        plans = result.scalars().all()
+        plans = await _get_active_plans(session, is_rmb=True, is_subscription=False)
         for plan in plans:
-            if getattr(plan, 'price_rmb', 0) > 0:
-                keyboard.append([InlineKeyboardButton(f"¥ {plan.price_rmb} 直购 {plan.reward_credits} 灵石", callback_data=f"select_rmb_plan_{plan.id}")])
+            keyboard.append([InlineKeyboardButton(f"¥ {plan.price_rmb} 直购 {plan.reward_credits} 灵石", callback_data=f"select_rmb_plan_{plan.id}")])
                 
     keyboard.append([InlineKeyboardButton("🔙 返回支付方式", callback_data="recharge_back")])
     reply_markup = InlineKeyboardMarkup(keyboard)

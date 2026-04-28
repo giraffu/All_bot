@@ -79,6 +79,73 @@ async def get_gallery_config():
         "img2img_lora_models": [{"id": k, "name": v} for k, v in IMAGE_LORA_MODELS.items() if k]
     }
 
+async def _build_post_responses(session, posts, current_user: Optional[User]):
+    if not posts:
+        return []
+
+    post_ids = [p.id for p in posts]
+    task_ids = [p.task_id for p in posts if p.task_id]
+
+    user_likes = set()
+    user_dislikes = set()
+    if current_user and post_ids:
+        interactions = (await session.execute(
+            select(UserInteraction)
+            .where(UserInteraction.user_id == current_user.id)
+            .where(UserInteraction.post_id.in_(post_ids))
+            .where(UserInteraction.action_type.in_(["like", "dislike"]))
+        )).scalars().all()
+        for inter in interactions:
+            if inter.action_type == "like":
+                user_likes.add(inter.post_id)
+            elif inter.action_type == "dislike":
+                user_dislikes.add(inter.post_id)
+
+    history_map = {}
+    if task_ids:
+        histories = (await session.execute(
+            select(History).where(History.task_id.in_(task_ids))
+        )).scalars().all()
+        history_map = {h.task_id: h for h in histories}
+
+    response_items = []
+    for post in posts:
+        try:
+            tags = json.loads(post.tags) if post.tags else []
+        except Exception:
+            tags = []
+        translated_tags = translate_tags(tags)
+
+        history = history_map.get(post.task_id)
+        output_file = history.output_file if history else None
+        prompt = history.prompt if history else None
+        task_type_from_history = history.type if history else None
+
+        media_url = get_media_url(output_file)
+        thumbnail_url = media_url
+
+        response_items.append(GalleryPostResponse(
+            id=post.id,
+            task_id=post.task_id,
+            media_type=post.media_type,
+            width=post.width,
+            height=post.height,
+            duration=post.duration,
+            tags=translated_tags,
+            likes_count=post.likes_count,
+            dislikes_count=post.dislikes_count,
+            applied_count=post.applied_count,
+            thumbnail_url=thumbnail_url,
+            media_url=media_url,
+            created_at=post.created_at,
+            is_active=post.is_active,
+            prompt=prompt,
+            task_type=task_type_from_history,
+            has_liked=post.id in user_likes,
+            has_disliked=post.id in user_dislikes
+        ))
+    return response_items
+
 @router.get("/posts", response_model=PaginatedGalleryResponse)
 async def get_gallery_posts(
     page: int = Query(1, ge=1),
@@ -102,62 +169,7 @@ async def get_gallery_posts(
     )
     
     async with AsyncSessionLocal() as session:
-        # Load interactions for current user
-        user_likes = set()
-        user_dislikes = set()
-        if current_user:
-            post_ids = [p.id for p in posts]
-            if post_ids:
-                interactions = (await session.execute(
-                    select(UserInteraction)
-                    .where(UserInteraction.user_id == current_user.id)
-                    .where(UserInteraction.post_id.in_(post_ids))
-                    .where(UserInteraction.action_type.in_(["like", "dislike"]))
-                )).scalars().all()
-                for inter in interactions:
-                    if inter.action_type == "like":
-                        user_likes.add(inter.post_id)
-                    elif inter.action_type == "dislike":
-                        user_dislikes.add(inter.post_id)
-                        
-        response_items = []
-        for post in posts:
-            try:
-                tags = json.loads(post.tags) if post.tags else []
-            except Exception:
-                tags = []
-            translated_tags = translate_tags(tags)
-            
-            # Fetch history to get output_file for URL generation
-            hist_res = await session.execute(select(History).where(History.task_id == post.task_id))
-            history = hist_res.scalars().first()
-            output_file = history.output_file if history else None
-            prompt = history.prompt if history else None
-            task_type_from_history = history.type if history else None
-            
-            media_url = get_media_url(output_file)
-            thumbnail_url = media_url # 暂时代替，后续可替换为 imgproxy 格式
-            
-            response_items.append(GalleryPostResponse(
-                id=post.id,
-                task_id=post.task_id,
-                media_type=post.media_type,
-                width=post.width,
-                height=post.height,
-                duration=post.duration,
-                tags=translated_tags,
-                likes_count=post.likes_count,
-                dislikes_count=post.dislikes_count,
-                applied_count=post.applied_count,
-                thumbnail_url=thumbnail_url,
-                media_url=media_url,
-                created_at=post.created_at,
-                is_active=post.is_active,
-                prompt=prompt,
-                task_type=task_type_from_history,
-                has_liked=post.id in user_likes,
-                has_disliked=post.id in user_dislikes
-            ))
+        response_items = await _build_post_responses(session, posts, current_user)
             
         pages = (total + size - 1) // size
         return PaginatedGalleryResponse(
@@ -191,60 +203,7 @@ async def get_my_gallery_posts(
         result = await session.execute(query)
         posts = result.scalars().all()
         
-        # Load interactions for current user
-        user_likes = set()
-        user_dislikes = set()
-        if posts:
-            post_ids = [p.id for p in posts]
-            interactions = (await session.execute(
-                select(UserInteraction)
-                .where(UserInteraction.user_id == current_user.id)
-                .where(UserInteraction.post_id.in_(post_ids))
-                .where(UserInteraction.action_type.in_(["like", "dislike"]))
-            )).scalars().all()
-            for inter in interactions:
-                if inter.action_type == "like":
-                    user_likes.add(inter.post_id)
-                elif inter.action_type == "dislike":
-                    user_dislikes.add(inter.post_id)
-                        
-        response_items = []
-        for post in posts:
-            try:
-                tags = json.loads(post.tags) if post.tags else []
-            except Exception:
-                tags = []
-            translated_tags = translate_tags(tags)
-            
-            hist_res = await session.execute(select(History).where(History.task_id == post.task_id))
-            history = hist_res.scalars().first()
-            output_file = history.output_file if history else None
-            prompt = history.prompt if history else None
-            task_type = history.type if history else None
-            
-            media_url = get_media_url(output_file)
-            thumbnail_url = media_url # 暂时代替，后续可替换为 imgproxy 格式
-            
-            response_items.append(GalleryPostResponse(
-                id=post.id,
-                task_id=post.task_id,
-                media_type=post.media_type,
-                width=post.width,
-                height=post.height,
-                duration=post.duration,
-                tags=translated_tags,
-                likes_count=post.likes_count,
-                dislikes_count=post.dislikes_count,
-                applied_count=post.applied_count,
-                thumbnail_url=thumbnail_url,
-                media_url=media_url,
-                created_at=post.created_at,
-                is_active=post.is_active,
-                prompt=prompt,
-                task_type=task_type,
-                has_liked=post.id in user_likes,
-                has_disliked=post.id in user_dislikes
-            ))
+        response_items = await _build_post_responses(session, posts, current_user)
             
         pages = (total + size - 1) // size
         return PaginatedGalleryResponse(
@@ -289,60 +248,7 @@ async def get_my_favorite_posts(
         result = await session.execute(query)
         posts = result.scalars().all()
         
-        # Load interactions for current user
-        user_likes = set()
-        user_dislikes = set()
-        if posts:
-            post_ids = [p.id for p in posts]
-            interactions = (await session.execute(
-                select(UserInteraction)
-                .where(UserInteraction.user_id == current_user.id)
-                .where(UserInteraction.post_id.in_(post_ids))
-                .where(UserInteraction.action_type.in_(["like", "dislike"]))
-            )).scalars().all()
-            for inter in interactions:
-                if inter.action_type == "like":
-                    user_likes.add(inter.post_id)
-                elif inter.action_type == "dislike":
-                    user_dislikes.add(inter.post_id)
-                        
-        response_items = []
-        for post in posts:
-            try:
-                tags = json.loads(post.tags) if post.tags else []
-            except Exception:
-                tags = []
-            translated_tags = translate_tags(tags)
-            
-            hist_res = await session.execute(select(History).where(History.task_id == post.task_id))
-            history = hist_res.scalars().first()
-            output_file = history.output_file if history else None
-            prompt = history.prompt if history else None
-            task_type = history.type if history else None
-            
-            media_url = get_media_url(output_file)
-            thumbnail_url = media_url # 暂时代替，后续可替换为 imgproxy 格式
-            
-            response_items.append(GalleryPostResponse(
-                id=post.id,
-                task_id=post.task_id,
-                media_type=post.media_type,
-                width=post.width,
-                height=post.height,
-                duration=post.duration,
-                tags=translated_tags,
-                likes_count=post.likes_count,
-                dislikes_count=post.dislikes_count,
-                applied_count=post.applied_count,
-                thumbnail_url=thumbnail_url,
-                media_url=media_url,
-                created_at=post.created_at,
-                is_active=post.is_active,
-                prompt=prompt,
-                task_type=task_type,
-                has_liked=post.id in user_likes,
-                has_disliked=post.id in user_dislikes
-            ))
+        response_items = await _build_post_responses(session, posts, current_user)
             
         pages = (total + size - 1) // size
         return PaginatedGalleryResponse(
