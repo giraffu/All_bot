@@ -122,8 +122,28 @@ async def process_and_submit_task(
     if is_video_task:
         resolution = inputs.get("resolution", "512p")
         duration = inputs.get("duration", "5s")
-        res_val = int(str(resolution).replace("p", ""))
-        dur_val = int(str(duration).replace("s", ""))
+        
+        # Safely parse resolution which might be '1024p' or '1280x704'
+        res_str = str(resolution).replace("p", "")
+        if "x" in res_str:
+            try:
+                w, h = map(int, res_str.split("x"))
+                res_val = max(w, h)
+            except ValueError:
+                res_val = 512
+        else:
+            try:
+                res_val = int(res_str)
+            except ValueError:
+                res_val = 512
+                
+        # Safely parse duration
+        dur_str = str(duration).replace("s", "")
+        try:
+            dur_val = int(dur_str)
+        except ValueError:
+            dur_val = 5
+            
         if res_val >= 1024 and dur_val >= 10:
             raise CoreDomainError("Cannot select 1024p resolution and 10s duration simultaneously due to high resource usage.")
     

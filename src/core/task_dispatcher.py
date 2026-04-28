@@ -149,8 +149,24 @@ class BaseVideoStrategy(BaseTaskStrategy):
             frame_length = 81
             
         resolution = inputs.get("resolution", 512)
+        width = height = 512
         if isinstance(resolution, str):
-            resolution = int(resolution.replace("p", ""))
+            res_str = resolution.replace("p", "")
+            if "x" in res_str:
+                try:
+                    w, h = map(int, res_str.split("x"))
+                    width, height = w, h
+                    resolution = max(w, h)
+                except ValueError:
+                    resolution = 512
+            else:
+                try:
+                    resolution = int(res_str)
+                    width = height = resolution
+                except ValueError:
+                    resolution = 512
+        else:
+            width = height = resolution
             
         prompt = inputs.get("prompt", "video")
         saved_images = inputs.get("saved_input_images", [])
@@ -158,12 +174,12 @@ class BaseVideoStrategy(BaseTaskStrategy):
         
         if self.mode == "doggy_style":
             return await image_service.submit_perfect_video_insert_task(
-                task_id, prompt=prompt, image_path=image_path, width=resolution, height=resolution, length=frame_length, priority=priority
+                task_id, prompt=prompt, image_path=image_path, width=width, height=height, length=frame_length, priority=priority
             )
         elif self.mode == "video_lora" and inputs.get("lora_name"):
             return await image_service.submit_perfect_video_lora(
                 task_id, prompt=prompt, image_path=image_path, lora_name=inputs.get("lora_name"), priority=priority,
-                width=resolution, height=resolution, length=frame_length
+                width=width, height=height, length=frame_length
             )
         elif self.mode == "face_video":
             face_img = saved_images[0] if len(saved_images) > 0 else ""
@@ -176,7 +192,7 @@ class BaseVideoStrategy(BaseTaskStrategy):
         else:
             return await image_service.submit_perfect_video_edit(
                 task_id, prompt=prompt, image_path=image_path, priority=priority,
-                width=resolution, height=resolution, length=frame_length
+                width=width, height=height, length=frame_length
             )
 
 class LtxVideoStrategy(BaseTaskStrategy):
