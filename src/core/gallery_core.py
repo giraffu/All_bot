@@ -4,6 +4,7 @@ import logging
 import asyncio
 from sqlalchemy import select, desc, func
 from sqlalchemy.orm import selectinload
+from sqlalchemy.exc import IntegrityError
 from src.database.core import AsyncSessionLocal
 from src.database.models import GalleryPost, History, User, UserInteraction
 from src.services.redis_client import redis_client
@@ -159,24 +160,50 @@ async def toggle_like(user_id: int, post_id: int, action: str) -> dict:
             if inter.action_type == action:
                 raise DuplicateInteractionError("您已经进行过此操作啦！")
             
-            # Toggle
+            # Toggle using atomic update
+            from sqlalchemy import update
             if inter.action_type == "like" and action == "dislike":
-                post.likes_count -= 1
-                post.dislikes_count += 1
+                stmt = update(GalleryPost).where(GalleryPost.id == post_id).values(
+                    likes_count=GalleryPost.likes_count - 1,
+                    dislikes_count=GalleryPost.dislikes_count + 1
+                ).returning(GalleryPost.likes_count, GalleryPost.dislikes_count)
             elif inter.action_type == "dislike" and action == "like":
-                post.dislikes_count -= 1
-                post.likes_count += 1
+                stmt = update(GalleryPost).where(GalleryPost.id == post_id).values(
+                    likes_count=GalleryPost.likes_count + 1,
+                    dislikes_count=GalleryPost.dislikes_count - 1
+                ).returning(GalleryPost.likes_count, GalleryPost.dislikes_count)
+                
+            res = await session.execute(stmt)
+            updated = res.fetchone()
+            post.likes_count = updated[0]
+            post.dislikes_count = updated[1]
                 
             inter.action_type = action
         else:
             new_inter = UserInteraction(user_id=user_id, post_id=post_id, action_type=action)
             session.add(new_inter)
+            
+            from sqlalchemy import update
             if action == "like":
-                post.likes_count += 1
+                stmt = update(GalleryPost).where(GalleryPost.id == post_id).values(
+                    likes_count=GalleryPost.likes_count + 1
+                ).returning(GalleryPost.likes_count, GalleryPost.dislikes_count)
             else:
-                post.dislikes_count += 1
+                stmt = update(GalleryPost).where(GalleryPost.id == post_id).values(
+                    dislikes_count=GalleryPost.dislikes_count + 1
+                ).returning(GalleryPost.likes_count, GalleryPost.dislikes_count)
+                
+            res = await session.execute(stmt)
+            updated = res.fetchone()
+            post.likes_count = updated[0]
+            post.dislikes_count = updated[1]
 
-        await session.commit()
+        try:
+            await session.commit()
+        except IntegrityError:
+            await session.rollback()
+            raise DuplicateInteractionError("您已经进行过此操作啦！")
+            
         return {
             "likes_count": post.likes_count,
             "dislikes_count": post.dislikes_count

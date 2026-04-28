@@ -120,9 +120,11 @@ async def process_and_submit_task(
     is_video_task = task_type in video_types
     
     if is_video_task:
-        resolution = inputs.get("resolution", 512)
-        duration = inputs.get("duration", 5)
-        if int(resolution) >= 1024 and int(duration) >= 10:
+        resolution = inputs.get("resolution", "512p")
+        duration = inputs.get("duration", "5s")
+        res_val = int(str(resolution).replace("p", ""))
+        dur_val = int(str(duration).replace("s", ""))
+        if res_val >= 1024 and dur_val >= 10:
             raise CoreDomainError("Cannot select 1024p resolution and 10s duration simultaneously due to high resource usage.")
     
     if check_lock:

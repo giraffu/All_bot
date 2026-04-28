@@ -138,6 +138,9 @@ class BaseVideoStrategy(BaseTaskStrategy):
         
     async def submit_task(self, task_id: str, inputs: Dict[str, Any], priority: int) -> str:
         duration = inputs.get("duration", 5)
+        if isinstance(duration, str):
+            duration = int(duration.replace("s", ""))
+            
         if duration >= 10:
             frame_length = 161
         elif duration >= 8:
@@ -146,6 +149,9 @@ class BaseVideoStrategy(BaseTaskStrategy):
             frame_length = 81
             
         resolution = inputs.get("resolution", 512)
+        if isinstance(resolution, str):
+            resolution = int(resolution.replace("p", ""))
+            
         prompt = inputs.get("prompt", "video")
         saved_images = inputs.get("saved_input_images", [])
         image_path = saved_images[0] if saved_images else ""
