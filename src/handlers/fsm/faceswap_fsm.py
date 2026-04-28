@@ -121,7 +121,9 @@ async def receive_body_image(update: Update, context: ContextTypes.DEFAULT_TYPE)
         return FaceSwapState.WAIT_BODY_IMAGE
 
     cost = TASK_COSTS.get(MODE_FACESWAP_STEP1, 1)
-    if not await permission_service.check_quota(update, context, cost=cost):
+    if not update.effective_user: return ConversationHandler.END
+    user = update.effective_user
+    if not await permission_service.check_quota(user.id, user.username, user.full_name, context.bot, update.effective_chat.id, cost=cost):
         _cleanup_context(context, user_id)
         return ConversationHandler.END
 

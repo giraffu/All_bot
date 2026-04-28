@@ -204,7 +204,9 @@ async def receive_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         if "adjust her pussy and anus" not in prompt.lower():
             prompt = f"adjust her pussy and anus, {prompt}"
 
-    if not await permission_service.check_quota(update, context, cost=cost):
+    if not update.effective_user: return ConversationHandler.END
+    user = update.effective_user
+    if not await permission_service.check_quota(user.id, user.username, user.full_name, context.bot, update.effective_chat.id, cost=cost):
         _cleanup_context(context, user_id)
         return ConversationHandler.END
 

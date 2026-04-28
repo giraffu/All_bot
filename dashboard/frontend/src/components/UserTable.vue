@@ -1,6 +1,16 @@
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue'
-import { EyeOutlined, EditOutlined, DeleteOutlined, UserDeleteOutlined, SearchOutlined, GiftOutlined, SafetyCertificateOutlined, InfoCircleOutlined } from '@ant-design/icons-vue'
+import { 
+  EyeOutlined, 
+  EditOutlined, 
+  DeleteOutlined, 
+  UserDeleteOutlined, 
+  SearchOutlined, 
+  GiftOutlined, 
+  SafetyCertificateOutlined, 
+  InfoCircleOutlined,
+  DownOutlined
+} from '@ant-design/icons-vue'
 import { formatDate } from '../utils/helpers'
 import { updateUserCredits, clearUserHistory, deleteUser, fetchPlans, adminGiftPlan, updateUserIdentity, fetchUsers, fetchUserStats } from '../api/api'
 import { message, Modal } from 'ant-design-vue'
@@ -479,7 +489,7 @@ const columns = [
         </template>
 
         <template v-else-if="column.key === 'action'">
-          <div class="flex gap-2">
+          <div class="flex flex-wrap gap-2">
             <a-button 
               type="link" 
               size="small"
@@ -501,49 +511,45 @@ const columns = [
             <a-button 
               type="link" 
               size="small"
-              @click="handleEditIdentity(record)"
-            >
-              <template #icon><safety-certificate-outlined /></template>
-              切换身份
-            </a-button>
-
-            <a-button 
-              type="link" 
-              size="small"
               @click="$emit('viewHistory', record)"
             >
               <template #icon><eye-outlined /></template>
               历史
             </a-button>
 
-            <a-button 
-              type="link" 
-              size="small"
-              @click="handleEditCredits(record)"
-            >
-              <template #icon><edit-outlined /></template>
-              修改数据
-            </a-button>
-
-            <a-button 
-              type="link" 
-              size="small"
-              danger
-              @click="handleClearHistory(record)"
-            >
-              <template #icon><delete-outlined /></template>
-              清除数据
-            </a-button>
-
-            <a-button 
-              type="link" 
-              size="small"
-              danger
-              @click="handleDeleteUser(record)"
-            >
-              <template #icon><user-delete-outlined /></template>
-              彻底删除
-            </a-button>
+            <a-dropdown :trigger="['click']">
+              <a-button type="link" size="small" @click.prevent>
+                更多 <down-outlined />
+              </a-button>
+              <template #overlay>
+                <a-menu>
+                  <a-menu-item key="1">
+                    <a-button type="text" size="small" @click="handleEditIdentity(record)" class="w-full text-left">
+                      <template #icon><safety-certificate-outlined /></template>
+                      切换身份
+                    </a-button>
+                  </a-menu-item>
+                  <a-menu-item key="2">
+                    <a-button type="text" size="small" @click="handleEditCredits(record)" class="w-full text-left">
+                      <template #icon><edit-outlined /></template>
+                      修改数据
+                    </a-button>
+                  </a-menu-item>
+                  <a-menu-item key="3">
+                    <a-button type="text" size="small" danger @click="handleClearHistory(record)" class="w-full text-left">
+                      <template #icon><delete-outlined /></template>
+                      清除数据
+                    </a-button>
+                  </a-menu-item>
+                  <a-menu-item key="4">
+                    <a-button type="text" size="small" danger @click="handleDeleteUser(record)" class="w-full text-left">
+                      <template #icon><user-delete-outlined /></template>
+                      彻底删除
+                    </a-button>
+                  </a-menu-item>
+                </a-menu>
+              </template>
+            </a-dropdown>
           </div>
         </template>
       </template>

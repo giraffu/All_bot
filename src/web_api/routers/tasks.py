@@ -33,11 +33,18 @@ async def create_generation_task(
         if req.prompt:
             req.inputs["prompt"] = req.prompt
             
+        import uuid
+        task_id = str(uuid.uuid4())
+        
+        from asgi_correlation_id import correlation_id
+        correlation_id.set(task_id)
+        
         result = await process_and_submit_task(
             user_id=current_user.id,
             username=current_user.username,
             task_type=req.task_type,
             inputs=req.inputs,
+            task_id=task_id,
             base_priority=req.priority,
             is_template=is_template
         )

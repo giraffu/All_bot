@@ -39,7 +39,9 @@ logger = logging.getLogger(__name__)
 @with_db_logging_context
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not _is_mentioned(update, context): return
-    if not await permission_service.check_access(update, context): return
+    if not update.effective_user: return
+    user = update.effective_user
+    if not await permission_service.check_access(user.id, user.username, user.full_name, context.bot, update.effective_chat.id): return
 
     mode = context.user_data.get('mode', MODE_NONE)
     if mode == MODE_TEMPLATE_CONTRIBUTE:
@@ -50,7 +52,9 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 @with_db_logging_context
 async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not _is_mentioned(update, context): return
-    if not await permission_service.check_access(update, context): return
+    if not update.effective_user: return
+    user = update.effective_user
+    if not await permission_service.check_access(user.id, user.username, user.full_name, context.bot, update.effective_chat.id): return
 
     mode = context.user_data.get('mode', MODE_NONE)
     if mode == MODE_TEMPLATE_CONTRIBUTE:
@@ -61,7 +65,9 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
 @with_db_logging_context
 async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not _is_mentioned(update, context): return
-    if not await permission_service.check_access(update, context): return
+    if not update.effective_user: return
+    user = update.effective_user
+    if not await permission_service.check_access(user.id, user.username, user.full_name, context.bot, update.effective_chat.id): return
 
     mode = context.user_data.get('mode', MODE_NONE)
     if mode == MODE_TEMPLATE_CONTRIBUTE:
@@ -220,8 +226,10 @@ async def handle_recharge_menu(update: Update, context: ContextTypes.DEFAULT_TYP
 
 @prompt_route("^(💰 个人中心|👤 个人中心)$", is_regex=True)
 async def handle_personal_center(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str):
-    await permission_service.sync_channel_status(update, context)
-    await permission_service.ensure_user(update)
+    if not update.effective_user: return
+    user = update.effective_user
+    await permission_service.sync_channel_status(user.id, user.username, user.full_name, context.bot)
+    await permission_service.ensure_user(user.id, user.username, user.full_name)
     user_id = update.effective_user.id
     first_name = update.effective_user.first_name
     invite_link = CHANNEL_INVITE_LINK or "https://t.me/AiVisionAV"
@@ -286,7 +294,9 @@ async def handle_checkin(update: Update, context: ContextTypes.DEFAULT_TYPE, tex
     internal_user, _ = await get_or_create_user_by_telegram(update.effective_user.id)
     internal_user_id = internal_user.id
     
-    success, current_credits, error_msg, total_days, reward = await permission_service.perform_checkin(update)
+    if not update.effective_user: return
+    user = update.effective_user
+    success, current_credits, error_msg, total_days, reward = await permission_service.perform_checkin(user.id, user.username, user.full_name)
     user_group = await permission_service.get_user_group(internal_user_id)
     user_identity = await permission_service.get_user_identity(internal_user_id)
     
@@ -342,7 +352,9 @@ async def handle_queue_status(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 @with_db_logging_context
 async def handle_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not await permission_service.check_access(update, context):
+    if not update.effective_user: return
+    user = update.effective_user
+    if not await permission_service.check_access(user.id, user.username, user.full_name, context.bot, update.effective_chat.id):
         return
 
     message = update.message or update.edited_message

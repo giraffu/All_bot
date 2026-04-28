@@ -40,7 +40,9 @@ async def random_faceswap_again_callback(update: Update, context: ContextTypes.D
         return
     
     cost = TASK_COSTS.get(MODE_RANDOM_FACESWAP, 1)
-    if not await permission_service.check_quota(update, context, cost=cost):
+    if not update.effective_user: return
+    user = update.effective_user
+    if not await permission_service.check_quota(user.id, user.username, user.full_name, context.bot, update.effective_chat.id, cost=cost):
         return
 
     chat_id = query.message.chat_id

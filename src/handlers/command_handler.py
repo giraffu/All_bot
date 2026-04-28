@@ -41,6 +41,7 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 @with_db_logging_context
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.effective_user: return
     logger = logging.getLogger("bot.command")
     user = update.effective_user
     
@@ -51,7 +52,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if args and len(args) > 0:
         try:
             inviter_id = int(args[0])
-            success, status = await permission_service.process_referral(update, inviter_id)
+            success, status = False, None
+            if inviter_id != user.id:
+                success, status = await permission_service.process_referral(user.id, user.username, user.full_name, inviter_id)
             if success:
                 # Notify inviter
                 try:
@@ -77,11 +80,11 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except ValueError:
             pass
 
-    if not await permission_service.check_access(update, context):
+    if not await permission_service.check_access(user.id, user.username, user.full_name, context.bot, update.effective_chat.id):
         return
 
     # Ensure user info is up to date
-    is_new = await permission_service.ensure_user(update)
+    is_new = await permission_service.ensure_user(user.id, user.username, user.full_name)
     
     # Log User Info
     if is_new:

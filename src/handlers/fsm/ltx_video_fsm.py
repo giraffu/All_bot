@@ -246,7 +246,9 @@ async def confirm_generation(update: Update, context: ContextTypes.DEFAULT_TYPE)
     multiplier = LTX_DURATION_MULTIPLIER.get(dur, 1.0)
     cost = int(base_cost * multiplier)
 
-    if not await permission_service.check_quota(update, context, cost=cost):
+    if not update.effective_user: return ConversationHandler.END
+    user = update.effective_user
+    if not await permission_service.check_quota(user.id, user.username, user.full_name, context.bot, update.effective_chat.id, cost=cost):
         _cleanup_context(context, user_id)
         return ConversationHandler.END
 

@@ -28,40 +28,19 @@ async def get_all_gallery_posts(
     media_type: Optional[str] = None,
     task_type: Optional[str] = None,
     sort_by: Optional[str] = None,
-    db: AsyncSession = Depends(get_db)
 ):
     try:
-        offset = (page - 1) * page_size
+        from src.core.gallery_core import get_gallery_feed
         
-        count_stmt = select(func.count(GalleryPost.id))
-        stmt = select(GalleryPost).options(selectinload(GalleryPost.user), selectinload(GalleryPost.history))
-
-        if is_active is not None:
-            count_stmt = count_stmt.where(GalleryPost.is_active == is_active)
-            stmt = stmt.where(GalleryPost.is_active == is_active)
-            
-        if media_type and media_type != "all":
-            count_stmt = count_stmt.where(GalleryPost.media_type == media_type)
-            stmt = stmt.where(GalleryPost.media_type == media_type)
-
-        if task_type and task_type != "all":
-            count_stmt = count_stmt.join(GalleryPost.history).where(History.type == task_type)
-            stmt = stmt.join(GalleryPost.history).where(History.type == task_type)
-
-        if sort_by == "dislikes":
-            stmt = stmt.order_by(desc(GalleryPost.dislikes_count), desc(GalleryPost.created_at))
-        elif sort_by == "likes":
-            stmt = stmt.order_by(desc(GalleryPost.likes_count), desc(GalleryPost.created_at))
-        elif sort_by == "applied":
-            stmt = stmt.order_by(desc(GalleryPost.applied_count), desc(GalleryPost.created_at))
-        else:
-            stmt = stmt.order_by(desc(GalleryPost.created_at))
-
-        total_count = await db.scalar(count_stmt)
-        
-        stmt = stmt.offset(offset).limit(page_size)
-        result = await db.execute(stmt)
-        posts = result.scalars().all()
+        posts, total_count = await get_gallery_feed(
+            page=page,
+            size=page_size,
+            media_type=media_type,
+            task_type=task_type,
+            sort_by=sort_by or "latest",
+            time_range="all",
+            is_active=is_active
+        )
 
         formatted_posts = []
         for p in posts:

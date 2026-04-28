@@ -2,11 +2,12 @@ import re
 import json
 import logging
 import asyncio
+from sqlalchemy import select, desc, func
+from sqlalchemy.orm import selectinload
 from src.database.core import AsyncSessionLocal
-from src.database.models import GalleryPost, History, User
+from src.database.models import GalleryPost, History, User, UserInteraction
 from src.services.redis_client import redis_client
 from src.services.storage import storage
-from sqlalchemy import select
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +34,9 @@ MODE_NAME_MAP = {
 class GalleryCoreError(Exception):
     pass
 
+class DuplicateInteractionError(GalleryCoreError):
+    pass
+
 async def async_copy_to_r2_background(bucket_name: str, object_name: str, r2_object_name: str):
     """Background task to copy file to R2."""
     try:
@@ -40,7 +44,7 @@ async def async_copy_to_r2_background(bucket_name: str, object_name: str, r2_obj
     except Exception as e:
         logger.error(f"Background task failed to copy {object_name} to R2: {e}")
 
-async def process_submit_to_gallery(user_id: int, task_id: str, background_tasks) -> dict:
+async def process_submit_to_gallery(user_id: int, task_id: str, background_tasks, width: int = None, height: int = None, duration: int = None) -> dict:
     """Core logic for submitting a task to the gallery."""
     # Check limit
     can_submit = await redis_client.check_gallery_submit_limit(user_id, limit=10)
@@ -73,8 +77,6 @@ async def process_submit_to_gallery(user_id: int, task_id: str, background_tasks
         lower_path = history.output_file.lower()
         is_video = any(lower_path.endswith(ext) for ext in ['.mp4', '.mov', '.webm', '.mkv', '.avi'])
         media_type = 'video' if is_video else 'image'
-
-        width, height, duration = None, None, None
 
         # Auto Tags
         tags = []
@@ -134,3 +136,137 @@ async def process_submit_to_gallery(user_id: int, task_id: str, background_tasks
             "message": f"投稿成功！已自动添加标签：{tags_str}",
             "tags": tags
         }
+
+async def toggle_like(user_id: int, post_id: int, action: str) -> dict:
+    """Core logic for toggling like/dislike on a gallery post."""
+    if action not in ["like", "dislike"]:
+        raise GalleryCoreError("无效的操作类型")
+
+    async with AsyncSessionLocal() as session:
+        post = await session.get(GalleryPost, post_id)
+        if not post:
+            raise GalleryCoreError("帖子不存在")
+
+        existing_inter = await session.execute(
+            select(UserInteraction).where(
+                UserInteraction.user_id == user_id,
+                UserInteraction.post_id == post_id
+            )
+        )
+        inter = existing_inter.scalars().first()
+
+        if inter:
+            if inter.action_type == action:
+                raise DuplicateInteractionError("您已经进行过此操作啦！")
+            
+            # Toggle
+            if inter.action_type == "like" and action == "dislike":
+                post.likes_count -= 1
+                post.dislikes_count += 1
+            elif inter.action_type == "dislike" and action == "like":
+                post.dislikes_count -= 1
+                post.likes_count += 1
+                
+            inter.action_type = action
+        else:
+            new_inter = UserInteraction(user_id=user_id, post_id=post_id, action_type=action)
+            session.add(new_inter)
+            if action == "like":
+                post.likes_count += 1
+            else:
+                post.dislikes_count += 1
+
+        await session.commit()
+        return {
+            "likes_count": post.likes_count,
+            "dislikes_count": post.dislikes_count
+        }
+
+async def get_gallery_feed(
+    page: int = 1,
+    size: int = 20,
+    media_type: str = None,
+    task_type: str = None,
+    lora_model: str = None,
+    sort_by: str = "latest",
+    time_range: str = "all",
+    user_id: int = None,
+    category: str = None,
+    is_active: bool = True
+) -> tuple[list, int]:
+    """
+    Core logic to fetch paginated gallery feed.
+    Returns (posts, total_count).
+    """
+    async with AsyncSessionLocal() as session:
+        query = select(GalleryPost)
+        if is_active is True:
+            query = query.where(GalleryPost.is_active == True)
+        elif is_active is False:
+            query = query.where(GalleryPost.is_active == False)
+        
+        # Join with History to filter by task_type or category
+        if task_type and task_type != "all":
+            query = query.join(History, GalleryPost.task_id == History.task_id)
+            query = query.where(History.type == task_type)
+        elif category and category != "all":
+            query = query.join(History, GalleryPost.task_id == History.task_id)
+            if category == 'i2ipro':
+                query = query.where(History.type == 'i2i_pro')
+            elif category == 'faceswap':
+                query = query.where(History.type.in_(['face_video']))
+            elif category == 'edit':
+                query = query.where(History.type.in_(['edit', 'quick_image']))
+            elif category == 'imglora':
+                query = query.where(History.type == 'img2img_lora')
+            elif category == 'custvid':
+                query = query.where(History.type == 'custom_video')
+            elif category == 'vidlora':
+                query = query.where(History.type == 'video_lora')
+            elif category == 'ltxvid':
+                query = query.where(History.type == 'ltx_video')
+            
+        if media_type and media_type != "all" and not task_type and not category:
+            query = query.where(GalleryPost.media_type == media_type)
+            
+        if lora_model:
+            lora_tag = f'"#{lora_model}"'
+            query = query.where(GalleryPost.tags.like(f"%{lora_tag}%"))
+            
+        if user_id and sort_by == "mine":
+            query = query.where(GalleryPost.user_id == user_id)
+            
+        from datetime import datetime, timedelta
+        now = datetime.now()
+        if time_range == "today":
+            start_time = now.replace(hour=0, minute=0, second=0, microsecond=0)
+            query = query.where(GalleryPost.created_at >= start_time)
+        elif time_range == "week":
+            start_time = now - timedelta(days=7)
+            query = query.where(GalleryPost.created_at >= start_time)
+        elif time_range == "month":
+            start_time = now - timedelta(days=30)
+            query = query.where(GalleryPost.created_at >= start_time)
+            
+        if sort_by == "likes":
+            query = query.order_by(desc(GalleryPost.likes_count), desc(GalleryPost.created_at))
+        elif sort_by == "applied":
+            query = query.order_by(desc(GalleryPost.applied_count), desc(GalleryPost.created_at))
+        else:
+            query = query.order_by(desc(GalleryPost.created_at))
+            
+        # Get total count dynamically
+        total_query = select(func.count()).select_from(query.subquery())
+        total = (await session.execute(total_query)).scalar()
+        
+        # Eager load related User and History
+        query = query.options(selectinload(GalleryPost.user))
+        
+        # Paginate
+        offset = (page - 1) * size if page > 0 else 0
+        query = query.offset(offset).limit(size)
+        
+        result = await session.execute(query)
+        posts = result.scalars().all()
+        
+        return posts, total

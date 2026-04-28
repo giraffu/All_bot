@@ -89,10 +89,6 @@ async def get_orders(
     """Get orders with pagination and optional filters"""
     try:
         offset = (page - 1) * page_size
-        
-        count_stmt = select(func.count(Order.id))
-        if username:
-            count_stmt = count_stmt.outerjoin(User, Order.telegram_id == User.id)
             
         stmt = (
             select(Order, User.username, MembershipPlan.name.label("plan_name"))
@@ -102,20 +98,16 @@ async def get_orders(
         )
         
         if status and status != "ALL":
-            count_stmt = count_stmt.where(Order.status == status)
             stmt = stmt.where(Order.status == status)
             
         if telegram_id:
-            count_stmt = count_stmt.where(Order.telegram_id == telegram_id)
             stmt = stmt.where(Order.telegram_id == telegram_id)
             
         if username:
-            count_stmt = count_stmt.where(User.username.ilike(f"%{username}%"))
             stmt = stmt.where(User.username.ilike(f"%{username}%"))
             
-        count_result = await db.execute(count_stmt)
-        total = count_result.scalar() or 0
-
+        count_stmt = select(func.count()).select_from(stmt.subquery())
+        total = (await db.execute(count_stmt)).scalar() or 0
         
         stmt = stmt.offset(offset).limit(page_size)
         result = await db.execute(stmt)

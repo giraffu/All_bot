@@ -6,10 +6,7 @@ from src.database.core import AsyncSessionLocal
 from src.database.models import GalleryPost, UserInteraction, History, User
 from src.web_api.dependencies import get_current_user
 from src.web_api.schemas.gallery_schema import GalleryPostResponse, PaginatedGalleryResponse, ApplyContextResponse
-from src.handlers.fsm.video_lora_fsm import LORA_MODELS as VIDEO_LORA_MODELS
-from src.handlers.fsm.edit_image_fsm import LORA_MODELS as IMAGE_LORA_MODELS
-
-ALL_LORA_MODELS = {**VIDEO_LORA_MODELS, **IMAGE_LORA_MODELS}
+from src.config_mapping import ALL_LORA_MODELS, translate_tags
 
 from src.constants import MODE_NAME_MAP, MODE_I2I_PRO, MODE_EDIT, MODE_CUSTOM_VIDEO, MODE_VIDEO_LORA, MODE_LTX_VIDEO
 from src.services.redis_client import redis_client
@@ -24,16 +21,6 @@ logger = logging.getLogger(__name__)
 
 # Allowed task types for web gallery submission
 ALLOWED_WEB_SUBMIT_TYPES = {MODE_I2I_PRO, MODE_EDIT, MODE_CUSTOM_VIDEO, MODE_VIDEO_LORA, MODE_LTX_VIDEO, "img2img_lora"}
-
-def translate_tags(tags_list: List[str]) -> List[str]:
-    translated_tags = []
-    for tag in tags_list:
-        raw_tag = tag.strip("#")
-        if raw_tag in ALL_LORA_MODELS:
-            translated_tags.append(f"#{ALL_LORA_MODELS[raw_tag]}")
-        else:
-            translated_tags.append(tag)
-    return translated_tags
 
 from config import R2_PUBLIC_DOMAIN
 
@@ -88,55 +75,18 @@ async def get_gallery_posts(
     time_range: str = Query("all", pattern="^(today|week|month|all)$"),
     current_user: Optional[User] = Depends(get_current_user)
 ):
+    posts, total = await get_gallery_feed(
+        page=page,
+        size=size,
+        media_type=media_type if media_type != "all" else None,
+        task_type=task_type if task_type != "all" else None,
+        lora_model=lora_model,
+        sort_by=sort_by,
+        time_range=time_range,
+        user_id=current_user.id if current_user else None
+    )
+    
     async with AsyncSessionLocal() as session:
-        query = select(GalleryPost).where(GalleryPost.is_active == True)
-        
-        # Join with History to filter by task_type
-        if task_type and task_type != "all":
-            query = query.join(History, GalleryPost.task_id == History.task_id)
-            query = query.where(History.type == task_type)
-            
-        if media_type and media_type != "all" and not task_type:
-            query = query.where(GalleryPost.media_type == media_type)
-            
-        # Filter by lora_model if provided (search in tags JSON string)
-        if lora_model:
-            # tag in DB is like "#LorAName"
-            lora_tag = f'"#{lora_model}"'
-            query = query.where(GalleryPost.tags.like(f"%{lora_tag}%"))
-            
-        # Filter by time_range
-        from datetime import datetime, timedelta
-        now = datetime.now()
-        if time_range == "today":
-            start_time = now.replace(hour=0, minute=0, second=0, microsecond=0)
-            query = query.where(GalleryPost.created_at >= start_time)
-        elif time_range == "week":
-            start_time = now - timedelta(days=7)
-            query = query.where(GalleryPost.created_at >= start_time)
-        elif time_range == "month":
-            start_time = now - timedelta(days=30)
-            query = query.where(GalleryPost.created_at >= start_time)
-            
-        if sort_by == "likes":
-            query = query.order_by(desc(GalleryPost.likes_count), desc(GalleryPost.id))
-        elif sort_by == "applied":
-            query = query.order_by(desc(GalleryPost.applied_count), desc(GalleryPost.id))
-        else:
-            query = query.order_by(desc(GalleryPost.id))
-            
-        # Get total count
-        from sqlalchemy import func
-        total_query = select(func.count()).select_from(query.subquery())
-        total = (await session.execute(total_query)).scalar()
-        
-        # Paginate
-        offset = (page - 1) * size
-        query = query.offset(offset).limit(size)
-        
-        result = await session.execute(query)
-        posts = result.scalars().all()
-        
         # Load interactions for current user
         user_likes = set()
         user_dislikes = set()
@@ -168,7 +118,7 @@ async def get_gallery_posts(
             history = hist_res.scalars().first()
             output_file = history.output_file if history else None
             prompt = history.prompt if history else None
-            task_type = history.type if history else None
+            task_type_from_history = history.type if history else None
             
             media_url = get_media_url(output_file)
             thumbnail_url = media_url # 暂时代替，后续可替换为 imgproxy 格式
@@ -189,7 +139,7 @@ async def get_gallery_posts(
                 created_at=post.created_at,
                 is_active=post.is_active,
                 prompt=prompt,
-                task_type=task_type,
+                task_type=task_type_from_history,
                 has_liked=post.id in user_likes,
                 has_disliked=post.id in user_dislikes
             ))
@@ -542,7 +492,7 @@ async def get_apply_context(
             task_type=history.type
         )
 
-from src.core.gallery_core import process_submit_to_gallery, GalleryCoreError
+from src.core.gallery_core import process_submit_to_gallery, GalleryCoreError, toggle_like, DuplicateInteractionError, get_gallery_feed
 
 @router.post("/posts/submit/{task_id}")
 async def submit_to_gallery(

@@ -27,11 +27,6 @@ async def get_all_history(
     try:
         offset = (page - 1) * page_size
         
-        count_stmt = (
-            select(func.count(History.id))
-            .join(User, History.user_id == User.id)
-        )
-        
         stmt = (
             select(History, User.username, User.full_name, WorkerLog.worker_id)
             .join(User, History.user_id == User.id)
@@ -42,25 +37,19 @@ async def get_all_history(
         # Handle multiple types if comma-separated
         if type and type != "all":
             types = type.split(',')
-            count_stmt = count_stmt.where(History.type.in_(types))
             stmt = stmt.where(History.type.in_(types))
         
         if rating is not None:
-            count_stmt = count_stmt.where(History.rating == rating)
             stmt = stmt.where(History.rating == rating)
             
         if is_public is not None:
-            count_stmt = count_stmt.where(History.is_public == is_public)
             stmt = stmt.where(History.is_public == is_public)
             
         if worker_id is not None and worker_id != "all":
-            # Must join WorkerLog in count_stmt as well if we filter by it
-            count_stmt = count_stmt.outerjoin(WorkerLog, History.task_id == WorkerLog.task_id)
-            count_stmt = count_stmt.where(WorkerLog.worker_id == worker_id)
             stmt = stmt.where(WorkerLog.worker_id == worker_id)
         
-        count_result = await db.execute(count_stmt)
-        total = count_result.scalar() or 0
+        count_stmt = select(func.count()).select_from(stmt.subquery())
+        total = (await db.execute(count_stmt)).scalar() or 0
         
         stmt = stmt.offset(offset).limit(page_size)
         result = await db.execute(stmt)

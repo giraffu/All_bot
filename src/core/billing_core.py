@@ -73,3 +73,84 @@ async def get_user_priority_and_identity(internal_user_id: int) -> Tuple[int, st
     identity_str = await permission_service.get_user_identity(internal_user_id)
     user_group = await permission_service.get_user_group(internal_user_id)
     return priority, identity_str, user_group
+
+from datetime import datetime, timedelta
+import math
+
+def calculate_identity_conversion(current_identity: str, current_expire_at: datetime, new_identity: str, duration_days: int) -> Tuple[str, datetime]:
+    """
+    计算身份折算逻辑。
+    返回 (最终身份, 最终过期时间)
+    """
+    now = datetime.now()
+    new_expire_at = current_expire_at
+    final_identity = new_identity
+    
+    identity_priority = {
+        "外门弟子": 0,
+        "内门弟子": 1,
+        "核心弟子": 2,
+        "真传弟子": 3
+    }
+    identity_ratio = {
+        "外门弟子": 1,
+        "内门弟子": 2,
+        "核心弟子": 5,
+        "真传弟子": 10
+    }
+    
+    current_priority = identity_priority.get(current_identity, 0)
+    new_priority = identity_priority.get(new_identity, 0)
+    
+    if new_expire_at and new_expire_at > now:
+        if current_identity == new_identity:
+            # 同套餐续费
+            new_expire_at += timedelta(days=duration_days)
+        elif new_priority > current_priority:
+            # 升级：将旧身份残值折算为新身份天数
+            remaining_days = (new_expire_at - now).total_seconds() / 86400.0
+            old_ratio = identity_ratio.get(current_identity, 1)
+            new_ratio = identity_ratio.get(new_identity, 1)
+            
+            # 残值 = 剩余天数 * 旧比例，折算天数 = 残值 / 新比例
+            converted_days = math.ceil((remaining_days * old_ratio) / new_ratio)
+            new_expire_at = now + timedelta(days=duration_days + converted_days)
+        else:
+            # 降级或同级：保留高等级身份，将新赠送的低等级套餐价值折算为高等级身份的天数
+            final_identity = current_identity
+            
+            old_ratio = identity_ratio.get(current_identity, 1)
+            new_ratio = identity_ratio.get(new_identity, 1)
+            
+            # 新购价值 = 新套餐天数 * 新比例，折算天数 = 新购价值 / 旧比例
+            extra_days = math.ceil((duration_days * new_ratio) / old_ratio)
+            new_expire_at += timedelta(days=extra_days)
+    else:
+        # 已过期或无身份，直接覆盖
+        new_expire_at = now + timedelta(days=duration_days)
+        
+    return final_identity, new_expire_at
+
+def calculate_identity_manual_conversion(current_identity: str, current_expire_at: datetime, new_identity: str) -> datetime:
+    """
+    手动修改身份时的残值折算逻辑。
+    返回折算后的过期时间。
+    """
+    now = datetime.now()
+    if not current_expire_at or current_expire_at <= now or current_identity == new_identity:
+        return current_expire_at
+        
+    identity_ratio = {
+        "外门弟子": 1,
+        "内门弟子": 2,
+        "核心弟子": 5,
+        "真传弟子": 10
+    }
+    
+    remaining_days = (current_expire_at - now).total_seconds() / 86400.0
+    old_ratio = identity_ratio.get(current_identity, 1)
+    new_ratio = identity_ratio.get(new_identity, 1)
+    
+    # 残值 = 剩余天数 * 旧比例，折算天数 = 残值 / 新比例
+    converted_days = math.ceil((remaining_days * old_ratio) / new_ratio)
+    return now + timedelta(days=converted_days)

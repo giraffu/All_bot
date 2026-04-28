@@ -5,7 +5,7 @@ import httpx
 import logging
 from src.database.core import get_db
 from src.database.models import User
-from src.services.redis_client import redis_client
+from src.core.task_core import get_system_task_stats, force_terminate_task, sync_user_concurrency as core_sync_user_concurrency
 from src.services.image_service import image_service
 from config import API_BASE, STATUS_ENDPOINT
 from fastapi.responses import StreamingResponse
@@ -25,7 +25,7 @@ async def refund_bot_task(req: RefundTaskRequest, db: AsyncSession = Depends(get
         from src.services.permission_service import permission_service
         
         task_id = req.task_id
-        tasks = await redis_client.get_active_tasks()
+        tasks, _ = await get_system_task_stats()
         if not tasks or task_id not in tasks:
             raise HTTPException(status_code=404, detail="Task not found in Redis active tasks")
             
@@ -38,12 +38,8 @@ async def refund_bot_task(req: RefundTaskRequest, db: AsyncSession = Depends(get
         if cost > 0 and user_id:
             await permission_service.increment_quota(user_id, cost=-cost, username=username, task_type="refund_admin_force")
             
-        # 2. Release lock
-        if user_id:
-            await redis_client.decrement_user_concurrency(user_id)
-            
-        # 3. Remove task
-        await redis_client.remove_active_task(task_id)
+        # 2. Release lock and remove task via Core API
+        await force_terminate_task(task_id, user_id=user_id)
         
         return {"status": "success", "message": f"Task {task_id} terminated and {cost} credits refunded."}
     except HTTPException:
@@ -59,7 +55,7 @@ async def clean_zombie_tasks(db: AsyncSession = Depends(get_db)):
         from src.services.permission_service import permission_service
         import time
         
-        tasks = await redis_client.get_active_tasks()
+        tasks, _ = await get_system_task_stats()
         if not tasks:
             return {"status": "success", "message": "No active tasks found.", "removed": 0}
             
@@ -79,9 +75,7 @@ async def clean_zombie_tasks(db: AsyncSession = Depends(get_db)):
                     except Exception as e:
                         logger.error(f"Error refunding during cleanup for user {user_id}: {e}")
                 
-                if user_id:
-                    await redis_client.decrement_user_concurrency(user_id)
-                await redis_client.remove_active_task(task_id)
+                await force_terminate_task(task_id, user_id=user_id)
                 removed += 1
                 
         return {"status": "success", "message": f"Cleaned up {removed} zombie tasks.", "removed": removed}
@@ -100,21 +94,13 @@ class SyncLockRequest(BaseModel):
 async def sync_user_concurrency(req: SyncLockRequest):
     """Sync user's concurrency lock to match their actual active tasks count."""
     try:
-        active_tasks = await redis_client.get_active_tasks()
+        active_tasks, concurrencies = await get_system_task_stats()
         actual_count = sum(1 for t in active_tasks.values() if t.get("user_id") == req.user_id)
         
-        from config import REDIS_PREFIX
-        key = f"{REDIS_PREFIX}user_concurrency:{req.user_id}"
-        
-        current_lock = await redis_client.redis.get(key)
-        current_lock = int(current_lock) if current_lock else 0
+        current_lock = concurrencies.get(req.user_id, 0)
         
         if current_lock > actual_count:
-            if actual_count > 0:
-                await redis_client.redis.set(key, actual_count)
-                await redis_client.redis.expire(key, 3600)
-            else:
-                await redis_client.redis.delete(key)
+            await core_sync_user_concurrency(req.user_id, actual_count)
             return {"status": "success", "message": f"用户 {req.user_id} 并发锁已从 {current_lock} 修复为 {actual_count}"}
         else:
             return {"status": "info", "message": "无需修复，锁数量未超出真实任务数"}
@@ -126,8 +112,7 @@ async def sync_user_concurrency(req: SyncLockRequest):
 async def get_concurrency_stats(db: AsyncSession = Depends(get_db)):
     """Get active concurrency locks and tasks per user."""
     try:
-        concurrencies = await redis_client.get_all_user_concurrencies()
-        active_tasks = await redis_client.get_active_tasks()
+        active_tasks, concurrencies = await get_system_task_stats()
         
         user_active_tasks = {}
         user_names = {}
@@ -165,7 +150,7 @@ async def get_concurrency_stats(db: AsyncSession = Depends(get_db)):
 async def get_active_bot_tasks(db: AsyncSession = Depends(get_db)):
     """Get active tasks tracked by bot in Redis, merged with user database info and realtime status"""
     try:
-        tasks = await redis_client.get_active_tasks()
+        tasks, _ = await get_system_task_stats()
         
         if tasks:
             user_ids = [task.get("user_id") for task in tasks.values() if task.get("user_id")]
@@ -294,7 +279,7 @@ async def get_system_status_proxy():
         
     # 获取并注入并发锁数据
     try:
-        concurrencies = await redis_client.get_all_user_concurrencies()
+        _, concurrencies = await get_system_task_stats()
         data["concurrency_locks"] = sum(concurrencies.values())
         data["concurrency_details"] = concurrencies
     except Exception as e:
