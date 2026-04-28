@@ -182,7 +182,6 @@ async def process_and_submit_task(
             # 1. 统一处理输入图片/视频上传
             paths_to_upload = strategy.get_file_paths_to_upload(inputs)
             saved_inputs = []
-            from src.logger import UserLogger
             user_logger = UserLogger(user_id, username)
             for path in paths_to_upload:
                 processed_img = await _process_input_path(user_logger, path)

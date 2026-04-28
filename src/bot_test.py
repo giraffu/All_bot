@@ -37,7 +37,6 @@ async def custom_download_to_drive(self, custom_path=None, read_timeout=None, wr
         
         raw_path = self.file_path
         if raw_path.startswith("http"):
-            from urllib.parse import urlparse
             raw_path = urlparse(raw_path).path
         if not raw_path.startswith("/"):
             raw_path = "/" + raw_path
@@ -65,20 +64,20 @@ from src.services.recovery_service import recover_active_tasks
 
 async def clean_zombies_loop():
     from src.services.zombie_cleaner_service import clean_zombies
-    logger = logging.getLogger("bot.core")
+    core_logger = logging.getLogger("bot.core")
     while True:
         try:
             await clean_zombies()
         except Exception as e:
-            logger.error(f"Error in clean_zombies_loop: {e}")
+            core_logger.error(f"Error in clean_zombies_loop: {e}")
         await asyncio.sleep(600)  # Check every 10 minutes
 
 async def inject_trace_id(update: Update, context):
     trace_id = str(uuid.uuid4())
     correlation_id.set(trace_id)
-    logger = logging.getLogger("bot.core")
+    core_logger = logging.getLogger("bot.core")
     if update.callback_query:
-        logger.info(f"Received callback query: {update.callback_query.data}")
+        core_logger.info(f"Received callback query: {update.callback_query.data}")
     elif update.message and update.message.text:
         pass # Already logged in handle_prompt
 
@@ -111,15 +110,15 @@ async def post_init(application):
     task_zombies.add_done_callback(application.bot_data["bg_tasks"].discard)
 
 async def post_shutdown(application):
-    logger = logging.getLogger("bot.core")
-    logger.info("Bot is shutting down. Tasks are persisted in Redis.")
+    core_logger = logging.getLogger("bot.core")
+    core_logger.info("Bot is shutting down. Tasks are persisted in Redis.")
     await TaskRegistry.refund_all(application.bot)
     from src.services.redis_client import redis_client
     await redis_client.close()
 
 def main():
     setup_logging()
-    logger = logging.getLogger("bot.core")
+    core_logger = logging.getLogger("bot.core")
     
     # Determine which token to use
     bot_type = os.getenv("BOT_TYPE", "TEST")
@@ -134,14 +133,14 @@ def main():
     token = token_prod if bot_type == "PROD" else token_test
     
     if not token:
-        logger.error(f"Failed to start: {bot_type} token is not configured.")
+        core_logger.error(f"Failed to start: {bot_type} token is not configured.")
         return
 
-    logger.info(f"Starting bot in {bot_type} mode...")
+    core_logger.info(f"Starting bot in {bot_type} mode...")
 
     if bot_type == "TEST":
         # 🧪 TEST: 直连 VPS Local API Server，抛弃商业代理
-        logger.info("🧪 TEST模式：已启用 Local Bot API 直连 (http://69.63.220.115:8081)")
+        core_logger.info("🧪 TEST模式：已启用 Local Bot API 直连 (http://69.63.220.115:8081)")
         
         request = HTTPXRequest(
             proxy=None, # MUST EXPLICITLY SET NO PROXY to bypass env variables!
@@ -165,7 +164,7 @@ def main():
         )
     else:
         # 🚀 PROD: 直连 VPS Local API Server
-        logger.info("🚀 PROD模式：已启用 Local Bot API 直连 (http://69.63.220.115:8081)")
+        core_logger.info("🚀 PROD模式：已启用 Local Bot API 直连 (http://69.63.220.115:8081)")
 
         request = HTTPXRequest(
             proxy=None,
@@ -224,7 +223,7 @@ def main():
     app.add_handler(MessageHandler(filters.Document.IMAGE | filters.Document.VIDEO, handle_document))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_prompt))
 
-    logger.info(f"🧪 {bot_type} Telegram Bot started")
+    core_logger.info(f"🧪 {bot_type} Telegram Bot started")
     app.run_polling(poll_interval=2.0, timeout=30)
 
 if __name__ == "__main__":

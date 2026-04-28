@@ -157,7 +157,6 @@ def create_background_task(context, coro):
     in context.bot_data['bg_tasks'] to prevent Python's garbage collector
     from destroying the task mid-execution.
     """
-    import asyncio
     task = asyncio.create_task(coro)
     if "bg_tasks" not in context.bot_data:
         context.bot_data["bg_tasks"] = set()

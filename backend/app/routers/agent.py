@@ -43,7 +43,6 @@ class HeartbeatRequest(BaseModel):
     status: str = "idle" # idle or running
 
 def verify_token(authorization: Optional[str] = Header(None)):
-    from app.config import settings
     # Assuming AGENT_SECRET_TOKEN is added to settings, or use placeholder
     agent_token = getattr(settings, "agent_secret_token", "super_secret_agent_token_2026")
     if not authorization or authorization != f"Bearer {agent_token}":

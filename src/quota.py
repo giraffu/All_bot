@@ -156,7 +156,6 @@ class QuotaManager:
         async with AsyncSessionLocal() as session:
             # Count referrals where inviter_id == user_id
             # Wait, sqlalchemy func.count
-            from sqlalchemy import func
             stmt = select(func.count(Referral.id)).where(Referral.inviter_id == user_id)
             result = await session.execute(stmt)
             return result.scalar() or 0

@@ -34,8 +34,6 @@ class SkillManager:
         # 2. 动态加载所有的 python tool
         # 为了方便扩展，我们约定所有的 tool 都写在 skills/ 目录下的 .py 文件里，
         # 并且可以通过一个约定的函数 get_tools() 导出，或者直接扫描带有 @tool 装饰器的函数
-        import importlib
-        import inspect
         
         py_files = glob.glob(os.path.join(self.skills_dir, "*.py"))
         for py_file in py_files:

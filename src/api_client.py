@@ -312,7 +312,6 @@ class APIClient:
             if status in ["error", "cancelled"]:
                 raise RuntimeError(info.get("error", "generation failed or cancelled"))
         except Exception as e:
-            import httpx
             if isinstance(e, httpx.HTTPStatusError) and e.response.status_code == 404:
                 raise RuntimeError(f"Task {task_id} not found on server (404).")
             logger.warning(f"Initial status fetch failed for {task_id}: {e}")

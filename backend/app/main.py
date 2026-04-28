@@ -3,10 +3,11 @@ import logging
 import os
 import uuid
 from typing import Optional
-from fastapi import FastAPI, Depends, HTTPException, BackgroundTasks, Query, Body
+from fastapi import FastAPI, Depends, HTTPException, BackgroundTasks, Query, Body, Request
 from fastapi.responses import FileResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from asgi_correlation_id import CorrelationIdMiddleware
+from contextlib import asynccontextmanager
 from app.config import settings
 from app.models import TaskResponse, TaskStatusResponse, SystemStatusResponse, TaskType, T2ITaskResponse, SystemWorkersResponse, Img2ImgRequest, Img2ImgLoraRequest, FaceSwapRequest, VideoInsertRequest, VideoEditRequest, FaceVideoRequest, I2IProRequest, VideoLoraRequest, LtxVideoRequest
 from app.queue_manager import QueueManager
@@ -18,13 +19,33 @@ from minio import Minio
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="ComfyUI Middleware")
+@asynccontextmanager
+async def lifespan(fastapi_app: FastAPI):
+    asyncio.create_task(check_zombie_tasks_loop())
+    
+    # Init MinIO
+    try:
+        minio_client = Minio(
+            settings.minio_endpoint,
+            access_key=settings.minio_access_key,
+            secret_key=settings.minio_secret_key,
+            secure=settings.minio_secure
+        )
+        fastapi_app.state.minio_client = minio_client
+        logger.info(f"MinIO client initialized: {settings.minio_endpoint}")
+    except Exception as e:
+        logger.error(f"Failed to init MinIO: {e}")
+        fastapi_app.state.minio_client = None
+        
+    yield
+
+app = FastAPI(title="ComfyUI Middleware", lifespan=lifespan)
 app.add_middleware(CorrelationIdMiddleware, header_name="X-Trace-ID")
 app.include_router(agent.router)
 security = HTTPBearer()
 
-# MinIO Client
-minio_client: Optional[Minio] = None
+def get_minio_client(request: Request) -> Optional[Minio]:
+    return getattr(request.app.state, "minio_client", None)
 
 # Dependency for Redis
 async def get_redis():
@@ -49,27 +70,6 @@ async def check_zombie_tasks_loop():
         except Exception as e:
             logger.error(f"Error in check_zombie_tasks_loop: {e}")
         await asyncio.sleep(60)
-
-@app.on_event("startup")
-async def startup_event():
-    asyncio.create_task(check_zombie_tasks_loop())
-    global minio_client
-    
-    # Init MinIO
-    try:
-        minio_client = Minio(
-            settings.minio_endpoint,
-            access_key=settings.minio_access_key,
-            secret_key=settings.minio_secret_key,
-            secure=settings.minio_secure
-        )
-        logger.info(f"MinIO client initialized: {settings.minio_endpoint}")
-    except Exception as e:
-        logger.error(f"Failed to init MinIO: {e}")
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    pass
 
 async def verify_token(credentials: HTTPAuthorizationCredentials = Depends(security)):
     if credentials.credentials != settings.auth_token:
@@ -352,7 +352,8 @@ async def get_task_status(
 @app.get("/image/{task_id}")
 async def get_task_image(
     task_id: str,
-    queue_manager: QueueManager = Depends(get_queue_manager)
+    queue_manager: QueueManager = Depends(get_queue_manager),
+    minio_client: Optional[Minio] = Depends(get_minio_client)
 ):
     task = await queue_manager.get_task_status(task_id)
     if not task or task.get("status") != "done":
@@ -388,7 +389,8 @@ async def get_task_image(
 @app.get("/video/{task_id}")
 async def get_task_video(
     task_id: str,
-    queue_manager: QueueManager = Depends(get_queue_manager)
+    queue_manager: QueueManager = Depends(get_queue_manager),
+    minio_client: Optional[Minio] = Depends(get_minio_client)
 ):
     task = await queue_manager.get_task_status(task_id)
     if not task or task.get("status") != "done":

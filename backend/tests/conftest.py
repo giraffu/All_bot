@@ -6,8 +6,8 @@ from app.queue_manager import QueueManager
 from app.config import settings
 import app.main
 
-@pytest.fixture
-def mock_queue_manager():
+@pytest.fixture(name="mock_queue_manager")
+def fixture_mock_queue_manager():
     qm = AsyncMock(spec=QueueManager)
     qm.enqueue_task.return_value = "mock-task-id"
     qm.get_task_status.return_value = {

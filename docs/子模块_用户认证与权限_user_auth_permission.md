@@ -49,8 +49,8 @@ classDiagram
 
 ## 3. 核心代码片段
 
-### Telegram Web App 签名校验 (src/web_api/routers/auth.py)
-[`auth.py:L55-L75`](file:///home/hfy/APP/All_bot/src/web_api/routers/auth.py#L55)
+### Telegram Web App 签名校验 (src/core/auth_core.py)
+[`auth_core.py:L55-L75`](file:///home/hfy/APP/All_bot/src/core/auth_core.py#L55)
 ```python
 def verify_telegram_webapp_initdata(init_data: str) -> Optional[dict]:
     """验证从 Telegram Web App 传入的 initData 签名，防止伪造登录"""

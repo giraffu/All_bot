@@ -42,8 +42,10 @@ graph TD
 
     subgraph 核心业务逻辑层 src/core
         C1[任务核心 Task Core]
-        C2[用户核心 User Core]
+        C2[任务分发 Task Dispatcher]
         C3[计费核心 Billing Core]
+        C4[用户与认证核心 User & Auth]
+        C5[画廊存储核心 Gallery Core]
     end
 
     subgraph 调度与执行层

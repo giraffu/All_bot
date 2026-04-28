@@ -10,14 +10,15 @@ sequenceDiagram
     autonumber
     actor U as 用户/BFF网关
     participant TC as 任务核心 (Task Core)
+    participant TD as 任务分发 (Task Dispatcher)
     participant Redis as Redis (DB1 & DB2)
     participant CAPI as 中控 API
     participant Worker as ComfyUI 节点
 
     U->>TC: 1. 发起图像/视频生成任务
     TC->>Redis: 2. DB1: 检查并获取用户并发锁 (check_concurrency_lock)
-    TC->>TC: 3. JSON 工作流参数注入 (workflow_patcher)
-    TC->>Redis: 4. DB2: 推入队列 (comfy:queue:pending)
+    TC->>TD: 3. 分配策略并构造 payload (dispatch_to_worker)
+    TD->>Redis: 4. DB2: 推入队列 (comfy:queue:pending)
     CAPI->>Redis: 5. 轮询提取任务
     CAPI->>Worker: 6. 下发执行指令
     Worker->>Worker: 7. 执行 AI 推理

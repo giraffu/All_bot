@@ -74,7 +74,6 @@ async def task_status_stream(task_id: str, current_user: User = Depends(get_curr
     Listens to Redis Pub/Sub channel: comfy:task_events:{task_id}
     Also periodically sends queue position while pending.
     """
-    import httpx
     from config import API_BASE
 
     async def get_task_status_full():
@@ -152,10 +151,10 @@ async def task_status_stream(task_id: str, current_user: User = Depends(get_curr
                     # Parse to see if finished or running
                     try:
                         parsed = json.loads(data)
-                        status = parsed.get("status")
+                        task_status = parsed.get("status")
                         
                         # Map backend status to frontend expected status
-                        if status == "done":
+                        if task_status == "done":
                             parsed["status"] = "success"
                             task_type = parsed.get("task_type", "edit")
                             is_video = task_type in ["face_video", "txt2video", "video_lora", "custom_video", "perfect_video_insert", "doggy_style", "blowjob", "undress_tongue", "closeup_blowjob", "ltx_video"]
@@ -177,7 +176,7 @@ async def task_status_stream(task_id: str, current_user: User = Depends(get_curr
                                 
                             presigned_url = storage.get_presigned_url(final_result_path, expires_hours=24, bucket="bot-data")
                             parsed["result"] = presigned_url if presigned_url else final_result_path
-                        elif status == "error":
+                        elif task_status == "error":
                             parsed["status"] = "failed"
                             parsed["error"] = parsed.get("error_msg")
                             
@@ -187,9 +186,9 @@ async def task_status_stream(task_id: str, current_user: User = Depends(get_curr
                             "data": json.dumps(parsed)
                         }
                         
-                        if status == "running":
+                        if task_status == "running":
                             is_running = True
-                        elif status in ["done", "error", "cancelled"]:
+                        elif task_status in ["done", "error", "cancelled"]:
                             # End stream gracefully
                             break
                     except json.JSONDecodeError:

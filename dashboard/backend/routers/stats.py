@@ -26,7 +26,6 @@ _exchange_rates_cache = {
 }
 
 async def get_exchange_rates():
-    global _exchange_rates_cache
     now = time.time()
     if now - _exchange_rates_cache["last_fetched"] < 3600:  # cache for 1 hour
         return _exchange_rates_cache["rates"]
