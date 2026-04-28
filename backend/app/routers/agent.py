@@ -55,7 +55,7 @@ def verify_token(authorization: Optional[str] = Header(None)):
 @router.get("/pop")
 async def pop_task(
     types: Optional[str] = None,
-    authorized: bool = Depends(verify_token),
+    _authorized: bool = Depends(verify_token),
     queue_manager: QueueManager = Depends(get_queue_manager)
 ):
     allowed_types = None
@@ -77,7 +77,7 @@ async def pop_task(
 @router.get("/check/{task_id}")
 async def check_task(
     task_id: str,
-    authorized: bool = Depends(verify_token),
+    _authorized: bool = Depends(verify_token),
     queue_manager: QueueManager = Depends(get_queue_manager)
 ):
     task_details = await queue_manager.get_task_status(task_id)
@@ -88,7 +88,7 @@ async def check_task(
 @router.post("/status")
 async def update_status(
     req: StatusUpdateRequest, 
-    authorized: bool = Depends(verify_token),
+    _authorized: bool = Depends(verify_token),
     queue_manager: QueueManager = Depends(get_queue_manager)
 ):
     await queue_manager.redis.hset(f"comfy:task:{req.task_id}", "worker_id", req.agent_id)
@@ -106,7 +106,7 @@ async def update_status(
 @router.post("/complete")
 async def complete_task(
     req: CompleteRequest, 
-    authorized: bool = Depends(verify_token),
+    _authorized: bool = Depends(verify_token),
     queue_manager: QueueManager = Depends(get_queue_manager)
 ):
     await queue_manager.redis.hdel(f"comfy:agent:heartbeat:{req.agent_id}", "current_task_id")
@@ -120,7 +120,7 @@ class TaskHeartbeatRequest(BaseModel):
 @router.post("/task_heartbeat")
 async def task_heartbeat(
     req: TaskHeartbeatRequest,
-    authorized: bool = Depends(verify_token),
+    _authorized: bool = Depends(verify_token),
     queue_manager: QueueManager = Depends(get_queue_manager)
 ):
     await queue_manager.update_task_heartbeat(req.task_id)
@@ -132,7 +132,7 @@ async def task_heartbeat(
 @router.post("/heartbeat")
 async def heartbeat(
     req: HeartbeatRequest,
-    authorized: bool = Depends(verify_token),
+    _authorized: bool = Depends(verify_token),
     queue_manager: QueueManager = Depends(get_queue_manager)
 ):
     await queue_manager.update_agent_heartbeat(req.agent_id, req.types, req.status)

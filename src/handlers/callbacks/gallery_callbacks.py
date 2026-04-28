@@ -25,6 +25,7 @@ from src.utils import (
     robust_send_video,
     safe_answer_query,
 )
+import contextlib
 
 logger = logging.getLogger(__name__)
 
@@ -104,14 +105,12 @@ async def public_share_callback(update: Update, context: ContextTypes.DEFAULT_TY
         if query.message.caption:
             if "⚠️ 公开确认" in query.message.caption:
                 original_caption = query.message.caption.split("\n\n⚠️ 公开确认")[0].strip()
-                try:
+                with contextlib.suppress(Exception):
                     await robust_edit_caption(
                         query.message,
                         caption=original_caption,
                         parse_mode="Markdown"
                     )
-                except Exception:
-                    pass
 
         keyboard = [
             [
@@ -222,7 +221,6 @@ async def handle_rate_action(update: Update, context: ContextTypes.DEFAULT_TYPE,
         return
         
     task_id = meta["task_id"]
-    data = query.data
     
     try:
         async with AsyncSessionLocal() as session:
@@ -258,6 +256,7 @@ from src.core.gallery_core import (
     process_submit_to_gallery,
     toggle_like,
 )
+import contextlib
 
 
 class DummyBackgroundTasks:
@@ -339,10 +338,8 @@ async def gallery_catmenu_callback(update: Update, context: ContextTypes.DEFAULT
 @register_callback("gallery_page_")
 async def gallery_sort_page_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    try:
+    with contextlib.suppress(Exception):
         await query.answer()
-    except Exception:
-        pass
     data = query.data
     
     try:

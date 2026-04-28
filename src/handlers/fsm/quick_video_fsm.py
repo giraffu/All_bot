@@ -29,6 +29,7 @@ from src.handlers.prompt_router import is_global_menu_command
 from src.services.permission_service import permission_service
 from src.services.task_service import task_service
 from src.utils import create_background_task, robust_edit_text, robust_reply_text
+import contextlib
 
 logger = logging.getLogger("fsm.quick_video")
 
@@ -52,7 +53,6 @@ def _cleanup_context(context: ContextTypes.DEFAULT_TYPE, user_id: int):
 
 async def start_quick_video(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Entry point for 懒人动图 (单步图生视频)"""
-    user_id = update.effective_user.id
     message = update.message or update.edited_message
     text = message.text.strip() if message and message.text else ""
     
@@ -153,10 +153,8 @@ async def process_settings(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     
     fsm_data = context.user_data.get('quick_video_data', {})
     if not fsm_data:
-        try:
+        with contextlib.suppress(Exception):
             await query.answer("交互已失效或任务已提交，请重新开始", show_alert=True)
-        except Exception:
-            pass
         return ConversationHandler.END
 
     if data == "qvid_start_generation":
@@ -167,19 +165,15 @@ async def process_settings(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         new_res = data.split("_")[2]
         if new_res == "1024p" and fsm_data.get('duration') == "10s":
             fsm_data['duration'] = "8s"
-            try:
+            with contextlib.suppress(Exception):
                 await query.answer("1024p和10s无法同时选择，已自动将时长调为8s", show_alert=True)
-            except Exception:
-                pass
         fsm_data['resolution'] = new_res
     elif data.startswith("set_dur_"):
         new_dur = data.split("_")[2]
         if new_dur == "10s" and fsm_data.get('resolution') == "1024p":
             fsm_data['resolution'] = "720p"
-            try:
+            with contextlib.suppress(Exception):
                 await query.answer("1024p和10s无法同时选择，已自动将画质调为720p", show_alert=True)
-            except Exception:
-                pass
         fsm_data['duration'] = new_dur
 
     res = fsm_data['resolution']
@@ -203,10 +197,8 @@ async def process_settings(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     keyboard.append([InlineKeyboardButton("🚀 开始生成", callback_data="qvid_start_generation")])
     reply_markup = InlineKeyboardMarkup(keyboard)
 
-    try:
+    with contextlib.suppress(Exception):
         await robust_edit_text(query.message, msg_text, reply_markup=reply_markup, parse_mode="Markdown")
-    except Exception:
-        pass
     
     await query.answer(text="⏳ 任务初始化中...", cache_time=2)
     return QuickVideoState.WAIT_SETTINGS
@@ -245,8 +237,7 @@ async def start_generation(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     user = update.effective_user
     if not await permission_service.check_quota(user.id, user.username, user.full_name, context.bot, update.effective_chat.id, cost=cost):
         if image_path and os.path.exists(image_path):
-            try: os.remove(image_path)
-            except OSError: pass
+            with contextlib.suppress(OSError): os.remove(image_path)
         _cleanup_context(context, user_id)
         return ConversationHandler.END
 

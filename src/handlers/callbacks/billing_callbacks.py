@@ -12,6 +12,7 @@ from src.database.models import MembershipPlan, Order
 from src.handlers.callback_router import register_callback
 from src.services.rmb_payment_service import RMBPaymentService
 from src.utils import safe_answer_query
+import contextlib
 
 
 @register_callback("recharge_stars_menu")
@@ -29,10 +30,8 @@ async def recharge_stars_menu_callback(update: Update, context: ContextTypes.DEF
                 
     keyboard.append([InlineKeyboardButton("🔙 返回支付方式", callback_data="recharge_back")])
     reply_markup = InlineKeyboardMarkup(keyboard)
-    try:
+    with contextlib.suppress(Exception):
         await query.message.edit_reply_markup(reply_markup=reply_markup)
-    except Exception:
-        pass
 
 @register_callback("recharge_stars_credit_menu")
 async def recharge_stars_credit_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -49,10 +48,8 @@ async def recharge_stars_credit_menu_callback(update: Update, context: ContextTy
                 
     keyboard.append([InlineKeyboardButton("🔙 返回支付方式", callback_data="recharge_back")])
     reply_markup = InlineKeyboardMarkup(keyboard)
-    try:
+    with contextlib.suppress(Exception):
         await query.message.edit_reply_markup(reply_markup=reply_markup)
-    except Exception:
-        pass
 
 @register_callback("recharge_back")
 async def recharge_back_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -68,10 +65,8 @@ async def recharge_back_callback(update: Update, context: ContextTypes.DEFAULT_T
         [InlineKeyboardButton("¥ 人民币直充灵石", callback_data="recharge_rmb_credit_menu")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    try:
+    with contextlib.suppress(Exception):
         await query.message.edit_reply_markup(reply_markup=reply_markup)
-    except Exception:
-        pass
 
 @register_callback("recharge_rmb_menu")
 async def recharge_rmb_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -88,10 +83,8 @@ async def recharge_rmb_menu_callback(update: Update, context: ContextTypes.DEFAU
                 
     keyboard.append([InlineKeyboardButton("🔙 返回支付方式", callback_data="recharge_back")])
     reply_markup = InlineKeyboardMarkup(keyboard)
-    try:
+    with contextlib.suppress(Exception):
         await query.message.edit_reply_markup(reply_markup=reply_markup)
-    except Exception:
-        pass
 
 @register_callback("recharge_rmb_credit_menu")
 async def recharge_rmb_credit_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -108,10 +101,8 @@ async def recharge_rmb_credit_menu_callback(update: Update, context: ContextType
                 
     keyboard.append([InlineKeyboardButton("🔙 返回支付方式", callback_data="recharge_back")])
     reply_markup = InlineKeyboardMarkup(keyboard)
-    try:
+    with contextlib.suppress(Exception):
         await query.message.edit_reply_markup(reply_markup=reply_markup)
-    except Exception:
-        pass
 
 @register_callback("select_rmb_plan_")
 async def select_rmb_plan_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -127,10 +118,8 @@ async def select_rmb_plan_callback(update: Update, context: ContextTypes.DEFAULT
         [InlineKeyboardButton("🔙 返回套餐列表", callback_data="recharge_rmb_menu")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    try:
+    with contextlib.suppress(Exception):
         await query.message.edit_reply_markup(reply_markup=reply_markup)
-    except Exception:
-        pass
 
 @register_callback("buy_rmb_plan_")
 async def buy_rmb_plan_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -155,15 +144,13 @@ async def buy_rmb_plan_callback(update: Update, context: ContextTypes.DEFAULT_TY
             
         await safe_answer_query(query, text="⏳ 正在为您生成支付链接...")
         
-        try:
+        with contextlib.suppress(Exception):
             await query.message.edit_text(
                 text="⏳ **正在与支付网关建立安全连接，获取专属收银台链接，请稍候...**\n"
                      "_(这通常需要 1~3 秒)_",
                 parse_mode="Markdown",
                 reply_markup=None
             )
-        except Exception:
-            pass
             
         timestamp = int(time.time())
         out_trade_no = f"RMB_{tg_id}_{plan_id}_{timestamp}"

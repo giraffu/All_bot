@@ -24,6 +24,7 @@ from src.handlers.prompt_router import is_global_menu_command
 from src.services.permission_service import permission_service
 from src.services.task_service import TaskService
 from src.utils import create_background_task, robust_edit_text, robust_reply_text
+import contextlib
 
 logger = logging.getLogger("fsm.video_lora")
 
@@ -51,11 +52,8 @@ async def start_video_lora(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     """Entry point for 图生视频(附加模型)"""
     query = update.callback_query
     if query:
-        try:
+        with contextlib.suppress(Exception):
             await query.answer(text="⏳ 任务初始化中...", cache_time=2)
-        except Exception:
-            pass
-    user_id = update.effective_user.id
     
     from src.utils import is_maintenance_mode
     if is_maintenance_mode():
@@ -168,29 +166,23 @@ async def process_settings(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     
     fsm_data = context.user_data.get('video_lora_data', {})
     if not fsm_data:
-        try:
+        with contextlib.suppress(Exception):
             await query.answer("交互已失效或任务已提交，请重新开始", show_alert=True)
-        except Exception:
-            pass
         return ConversationHandler.END
 
     if data.startswith("set_res_"):
         new_res = data.split("_")[2]
         if new_res == "1024p" and fsm_data.get('duration') == "10s":
             fsm_data['duration'] = "8s"
-            try:
+            with contextlib.suppress(Exception):
                 await query.answer("1024p和10s无法同时选择，已自动将时长调为8s", show_alert=True)
-            except Exception:
-                pass
         fsm_data['resolution'] = new_res
     elif data.startswith("set_dur_"):
         new_dur = data.split("_")[2]
         if new_dur == "10s" and fsm_data.get('resolution') == "1024p":
             fsm_data['resolution'] = "720p"
-            try:
+            with contextlib.suppress(Exception):
                 await query.answer("1024p和10s无法同时选择，已自动将画质调为720p", show_alert=True)
-            except Exception:
-                pass
         fsm_data['duration'] = new_dur
 
     res = fsm_data['resolution']
@@ -212,10 +204,8 @@ async def process_settings(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     
     msg_text = f"⚙️ 当前画质：{res} | 时长：{dur} | 消耗灵石：{cost}\n已选模型：**{zh_name}**\n\n请在下方选择您需要的画质和时长（部分画质和时长需要高境界或VIP身份解锁）：\n\n*提示：画质越高、时长越长，消耗灵石越多。注意：1024p 和 10s 无法同时选择。*\n\n【第三步】**请直接发送提示词 (Text)** 开始生成。"
     
-    try:
+    with contextlib.suppress(Exception):
         await robust_edit_text(query.message, msg_text, reply_markup=reply_markup, parse_mode="Markdown")
-    except Exception:
-        pass
     
     await query.answer(text="⏳ 任务初始化中...", cache_time=2)
     return VideoLoraState.WAIT_SETTINGS_AND_PROMPT

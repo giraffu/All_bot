@@ -1,0 +1,8 @@
+backend/app/routers/agent.py:58: unused variable 'authorized' (100% confidence)
+backend/app/routers/agent.py:80: unused variable 'authorized' (100% confidence)
+backend/app/routers/agent.py:91: unused variable 'authorized' (100% confidence)
+backend/app/routers/agent.py:109: unused variable 'authorized' (100% confidence)
+backend/app/routers/agent.py:123: unused variable 'authorized' (100% confidence)
+backend/app/routers/agent.py:135: unused variable 'authorized' (100% confidence)
+cs_bot/bot.py:48: unused variable 'out' (100% confidence)
+src/quota.py:171: unused variable 'new_full_name' (100% confidence)

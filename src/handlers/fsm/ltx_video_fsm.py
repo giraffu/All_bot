@@ -26,6 +26,7 @@ from src.utils import (
     robust_edit_text,
     robust_reply_text,
 )
+import contextlib
 
 logger = logging.getLogger("fsm.ltx_video")
 
@@ -43,11 +44,8 @@ async def start_ltx_video(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     """Entry point for 高级图生视频"""
     query = update.callback_query
     if query:
-        try:
+        with contextlib.suppress(Exception):
             await query.answer(text="⏳ 任务初始化中...", cache_time=2)
-        except Exception:
-            pass
-    user_id = update.effective_user.id
     
     from src.utils import is_maintenance_mode
     if is_maintenance_mode():
@@ -147,10 +145,8 @@ async def process_settings(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     
     fsm_data = context.user_data.get('ltx_video_data', {})
     if not fsm_data:
-        try:
+        with contextlib.suppress(Exception):
             await query.answer("交互已失效或任务已提交，请重新开始", show_alert=True)
-        except Exception:
-            pass
         return ConversationHandler.END
 
     if data.startswith("set_ltxres_"):
@@ -191,16 +187,13 @@ async def process_settings(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 4. **具体描述**：详细描述人物特征、穿着、动作细节和背景环境。
 *(例如：Real Video, m15510n4ry, A close-up view of a single petite woman...)*"""
     
-    try:
+    with contextlib.suppress(Exception):
         await robust_edit_text(query.message, msg_text, reply_markup=reply_markup, parse_mode="Markdown")
-    except Exception:
-        pass
     
     await query.answer(text="⏳ 任务初始化中...", cache_time=2)
     return LtxVideoState.WAIT_SETTINGS_AND_PROMPT
 
 async def receive_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    user_id = update.effective_user.id
     message = update.message
     prompt = message.text.strip()
     
@@ -233,10 +226,8 @@ async def confirm_generation(update: Update, context: ContextTypes.DEFAULT_TYPE)
     
     fsm_data = context.user_data.get('ltx_video_data')
     if not fsm_data:
-        try:
+        with contextlib.suppress(Exception):
             await query.answer("⚠️ 任务已提交或已过期，请勿重复操作。", show_alert=True)
-        except Exception:
-            pass
         return ConversationHandler.END
 
     res = fsm_data['resolution']
@@ -257,10 +248,8 @@ async def confirm_generation(update: Update, context: ContextTypes.DEFAULT_TYPE)
     if not image_path:
         return ConversationHandler.END
 
-    try:
+    with contextlib.suppress(Exception):
         await robust_edit_text(query.message, f"🚀 正在提交高级视频任务，预计消耗 {cost} 灵石，请耐心等待...")
-    except Exception:
-        pass
 
     # Use TaskService to process.
     context.user_data['ltx_video_resolution'] = res

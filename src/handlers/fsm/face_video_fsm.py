@@ -17,6 +17,7 @@ from src.handlers.prompt_router import is_global_menu_command
 from src.services.permission_service import permission_service
 from src.services.task_service import TaskService
 from src.utils import create_background_task, robust_edit_text, robust_reply_text
+import contextlib
 
 logger = logging.getLogger("fsm.face_video")
 
@@ -47,11 +48,8 @@ async def start_face_video(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     """Entry point for Video Face Swap."""
     query = update.callback_query
     if query:
-        try:
+        with contextlib.suppress(Exception):
             await query.answer(text="⏳ 任务初始化中...", cache_time=2)
-        except Exception:
-            pass
-    user_id = update.effective_user.id
     
     from src.utils import is_maintenance_mode
     if is_maintenance_mode():
@@ -206,10 +204,8 @@ async def process_resolution_selection(update: Update, context: ContextTypes.DEF
 
     fsm_data = context.user_data.get('face_video_data', {})
     if not fsm_data:
-        try:
+        with contextlib.suppress(Exception):
             await query.answer("交互已失效或任务已提交，请重新开始", show_alert=True)
-        except Exception:
-            pass
         return ConversationHandler.END
 
     face_path = fsm_data.pop('face_image_path', None)

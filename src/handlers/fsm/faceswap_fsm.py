@@ -23,6 +23,7 @@ from src.utils import (
     robust_edit_text,
     robust_reply_text,
 )
+import contextlib
 
 logger = logging.getLogger("fsm.faceswap")
 
@@ -41,10 +42,8 @@ async def start_faceswap(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     """Entry point for Two-person Face Swap (快速换脸)."""
     query = update.callback_query
     if query:
-        try:
+        with contextlib.suppress(Exception):
             await query.answer(text="⏳ 任务初始化中...", cache_time=2)
-        except Exception:
-            pass
     user_id = update.effective_user.id
     logger.info(f"User {user_id} triggered start_faceswap with text: {update.message.text if update.message else 'None'}")
     

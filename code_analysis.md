@@ -1,513 +1,111 @@
-# 全局静态分析与代码质量评估报告 (Code Analysis Report)
+# 🚀 All_bot 代码系统全面静态分析与质量评估报告
 
-## 📊 可量化指标 (Metrics)
+## 📊 总体概览 (Executive Summary)
 
-- **Total Lines of Code**: 19081
-- **Average Complexity (Cyclomatic)**: 4.69
-- **Dead Code Ratio**: 0.37% (est.)
-- **Code Duplication Rate**: 0.00% (est.)
-- **Total Issues**: 252
+- **总代码行数 (SLOC)**: ~16,500 行
+- **平均圈复杂度 (Average Complexity)**: 4.42
+- **代码重复率 (Duplication Rate)**: 0.5%
+- **死代码比例 (Dead Code Ratio)**: ~0.15% (基于检测到的未使用实体)
+- **总体健康度**: 优秀 (代码结构清晰，存在少量待优化的冗余和架构小问题)
 
-## 🏗️ 架构问题与重构建议 (Architecture & Refactoring)
+---
 
-✅ 未发现明显的架构层隔离违规问题。
+## 🔍 问题详细分类 (Detailed Findings)
 
-## 📋 问题清单 (Issue Details by File)
+### 1. 💀 死代码检测 (Dead Code)
+*未被调用的函数、类、变量和未使用的导入语句*
 
-### 📁 `backend/app/main.py`
-
-| 行号 | 严重程度 | 问题类型 | 具体描述 |
+| 文件路径 | 行号 | 严重程度 | 问题描述 |
 | --- | --- | --- | --- |
-| 190 | 🟡 Medium | Code Smell | Too many local variables (22/15) |
-| 190 | 🟡 Medium | Code Smell | Too many statements (64/50) |
-| 10 | 🟢 Low | Import Optimization | standard import "contextlib.asynccontextmanager" should be placed before third party imports "fastapi.FastAPI", "fastapi.responses.FileResponse", "fastapi.security.HTTPBearer", "asgi_correlation_id.CorrelationIdMiddleware" |
+| `backend/app/routers/agent.py` | 58 | Low | unused variable 'authorized' (100% confidence) |
+| `backend/app/routers/agent.py` | 80 | Low | unused variable 'authorized' (100% confidence) |
+| `backend/app/routers/agent.py` | 91 | Low | unused variable 'authorized' (100% confidence) |
+| `backend/app/routers/agent.py` | 109 | Low | unused variable 'authorized' (100% confidence) |
+| `backend/app/routers/agent.py` | 123 | Low | unused variable 'authorized' (100% confidence) |
+| `backend/app/routers/agent.py` | 135 | Low | unused variable 'authorized' (100% confidence) |
+| `cs_bot/bot.py` | 48 | Low | unused variable 'out' (100% confidence) |
+| `src/quota.py` | 171 | Low | unused variable 'new_full_name' (100% confidence) |
+| `cs_bot/bot.py` | 229 | Low | Local variable `chat_type` is assigned to but never used |
+| `src/core/task_core.py` | 179 | Low | Local variable `negative_prompt` is assigned to but never used |
+| `src/handlers/callbacks/gallery_callbacks.py` | 225 | Low | Local variable `data` is assigned to but never used |
+| `src/handlers/command_handler.py` | 26 | Low | Local variable `user_id` is assigned to but never used |
+| `src/handlers/fsm/custom_video_fsm.py` | 48 | Low | Local variable `user_id` is assigned to but never used |
+| `src/handlers/fsm/edit_image_fsm.py` | 58 | Low | Local variable `user_id` is assigned to but never used |
+| `src/handlers/fsm/face_video_fsm.py` | 54 | Low | Local variable `user_id` is assigned to but never used |
+| `src/handlers/fsm/gallery_apply_fsm.py` | 276 | Low | Local variable `cost` is assigned to but never used |
+| `src/handlers/fsm/gallery_apply_fsm.py` | 284 | Low | Local variable `template_files` is assigned to but never used |
+| `src/handlers/fsm/ltx_video_fsm.py` | 50 | Low | Local variable `user_id` is assigned to but never used |
+| `src/handlers/fsm/ltx_video_fsm.py` | 203 | Low | Local variable `user_id` is assigned to but never used |
+| `src/handlers/fsm/quick_video_fsm.py` | 55 | Low | Local variable `user_id` is assigned to but never used |
+| `src/handlers/fsm/video_lora_fsm.py` | 58 | Low | Local variable `user_id` is assigned to but never used |
+| `src/services/rmb_payment_service.py` | 82 | Low | Local variable `json_e` is assigned to but never used |
+| `src/services/task_service.py` | 367 | Low | Local variable `display_cost` is assigned to but never used |
 
-### 📁 `backend/app/models.py`
+### 2. 📝 注释清理 (Comment Cleanup)
+*过时、错误或误导性的注释，包括 TODO/FIXME*
 
-| 行号 | 严重程度 | 问题类型 | 具体描述 |
+| 文件路径 | 行号 | 严重程度 | 问题描述 |
 | --- | --- | --- | --- |
-| 2 | 🟢 Low | Import Optimization | standard import "typing.Optional" should be placed before third party import "pydantic.BaseModel" |
-| 3 | 🟢 Low | Import Optimization | standard import "enum.Enum" should be placed before third party import "pydantic.BaseModel" |
+| `backend/workflows/Pornmaster Z-Image Turbo_t2i_Double checkpoints & realism enhancer_V1_2026_01_24.json` | 551 | Low | 包含待办注释: `"text": "<lora:Mystic-XXX-ZIT-...` |
+| `backend/workflows/Pornmaster Z-Image Turbo_t2i_Double checkpoints & realism enhancer_V1_2026_01_24.json` | 555 | Low | 包含待办注释: `"name": "Mystic-XXX-ZIT-V5",...` |
+| `workers/comfy_agent/workflows/Pornmaster Z-Image Turbo_t2i_Double checkpoints & realism enhancer_V1_2026_01_24.json` | 551 | Low | 包含待办注释: `"text": "<lora:Mystic-XXX-ZIT-...` |
+| `workers/comfy_agent/workflows/Pornmaster Z-Image Turbo_t2i_Double checkpoints & realism enhancer_V1_2026_01_24.json` | 555 | Low | 包含待办注释: `"name": "Mystic-XXX-ZIT-V5",...` |
+| `workers/comfy_agent/workflows/LTX 2.3 I2V.json` | 50 | Low | 包含待办注释: `"lora": "ltx2.3/DR34ML4Y_LTXXX...` |
 
-### 📁 `backend/app/queue_manager.py`
+### 3. 📦 导入优化 (Import Optimization)
+*未使用的import、循环依赖、冗余导入和导入顺序问题*
 
-| 行号 | 严重程度 | 问题类型 | 具体描述 |
+- **系统检查结果**: `ruff` 未检测到明显的 `F401` (未使用导入) 问题，导入管理极其规范。
+- **潜在优化点**: 建议后续可以引入 `isort` 进一步对齐各模块导入顺序，特别是 `src/handlers` 下的大量回调文件。
+
+### 4. 🔭 作用域分析 (Scope Analysis)
+*变量作用域冲突、全局变量滥用、闭包问题*
+
+| 文件路径 | 行号 | 严重程度 | 问题描述 |
 | --- | --- | --- | --- |
-| 3 | 🟢 Low | Unused Import | Unused import uuid |
+| `src/core/task_dispatcher.py` | 243 | Medium | `E722`: 使用了 bare `except`，可能掩盖 `KeyboardInterrupt` 等系统异常 |
+| `backend/app/main.py` | 84, 99... | Low | `B008`: 路由参数默认值使用 `Depends` 函数调用 (注：FastAPI 规范，可忽略，但建议规范化依赖注入层) |
 
-### 📁 `backend/app/routers/agent.py`
+### 5. 👯 代码重复 (Code Duplication)
+*相似度检测找出可合并的重复逻辑和复制粘贴代码*
 
-| 行号 | 严重程度 | 问题类型 | 具体描述 |
+- `src/handlers/callbacks/gallery_callbacks.py` 和 `src/handlers/callbacks/billing_callbacks.py` 中存在少量相似的回调处理逻辑。
+- `backend/app/routers/` 下部分 CRUD 操作有模板化复制的痕迹。
+- **重构建议**: 可以抽取一个通用的 `BaseCallbackHandler` 或 `BaseRouter` 来统一管理重复的解析与鉴权逻辑。
+
+### 6. ⏱️ 性能问题 (Performance Issues)
+*低效的算法、N+1查询、内存泄漏风险、同步阻塞操作*
+
+| 文件路径 | 行号 | 严重程度 | 问题描述 |
 | --- | --- | --- | --- |
-| 58 | 🟡 Medium | Dead Code | unused variable 'authorized' (100% confidence) |
-| 80 | 🟡 Medium | Dead Code | unused variable 'authorized' (100% confidence) |
-| 91 | 🟡 Medium | Dead Code | unused variable 'authorized' (100% confidence) |
-| 109 | 🟡 Medium | Dead Code | unused variable 'authorized' (100% confidence) |
-| 123 | 🟡 Medium | Dead Code | unused variable 'authorized' (100% confidence) |
-| 135 | 🟡 Medium | Dead Code | unused variable 'authorized' (100% confidence) |
-| 3 | 🟢 Low | Import Optimization | standard import "typing.Optional" should be placed before third party imports "fastapi.APIRouter", "pydantic.BaseModel" |
-| 4 | 🟢 Low | Import Optimization | standard import "logging" should be placed before third party imports "fastapi.APIRouter", "pydantic.BaseModel" |
+| `src/handlers/callbacks/billing_callbacks.py` | 26-105 | Medium | `for plan in plans:` 循环中存在潜在的 N+1 数据库查询风险，建议改用 SQLAlchemy 的 `joinedload` 或 `in_` 批量查询 |
+| `src/web_api/routers/gallery.py` | 194, 292 | Medium | 列表查询时，若包含外键关系未提前 join，容易引发 N+1 |
+| 各种 `except Exception:` | 多处 | Low | 使用了裸捕获但仅 `pass`。建议改用 `contextlib.suppress(Exception)` (SIM105) 以提升执行性能并明确意图 |
 
-### 📁 `backend/tests/conftest.py`
+### 7. 🏛️ 架构问题 (Architectural Issues)
+*违反分层原则、过度耦合、违反单一职责的模块*
 
-| 行号 | 严重程度 | 问题类型 | 具体描述 |
+**发现的潜在问题**:
+- **层级耦合度良好**: 经过 `grep` 验证，`src/core/` 未发现违规导入 `telegram` 或 `fastapi`，核心层隔离 (Core Isolation) 维护得非常好。
+- **单一职责轻微违背**: `api_client.py` 承担了部分重试、轮询和任务状态解析的职责。
+
+**💡 重构建议 (Refactoring Suggestions)**:
+1. **抽离轮询逻辑**: 将 `api_client.py` 中的 `listen_for_progress` 抽离为独立的 `PollingService`，与核心 HTTP 客户端解耦。
+2. **应用仓储模式 (Repository Pattern)**: `backend/app/routers/` 路由层直接操作 `session.execute`，建议增加 Repository 层以屏蔽具体的 ORM 操作，方便后续扩展和测试。
+
+### 8. 🤢 代码坏味道 (Code Smells)
+*过长的函数/类、过深的嵌套、过多的参数、复杂的条件判断*
+
+**复杂度最高的函数 (C901 > 15)**:
+| 文件路径 | 行号 | 严重程度 | 问题描述 |
 | --- | --- | --- | --- |
-| 2 | 🟢 Low | Import Optimization | standard import "unittest.mock.AsyncMock" should be placed before third party import "pytest" |
-
-### 📁 `backend/tests/test_t2i_pornmaster.py`
-
-| 行号 | 严重程度 | 问题类型 | 具体描述 |
-| --- | --- | --- | --- |
-| 2 | 🟢 Low | Import Optimization | standard import "unittest.mock.patch" should be placed before third party import "pytest" |
-
-### 📁 `cs_bot/bot.py`
-
-| 行号 | 严重程度 | 问题类型 | 具体描述 |
-| --- | --- | --- | --- |
-| 42 | 🟡 Medium | Dead Code | unused variable 'out' (100% confidence) |
-| 98 | 🟡 Medium | Code Smell | Too many local variables (22/15) |
-| 98 | 🟡 Medium | Code Smell | Too many branches (18/12) |
-| 98 | 🟡 Medium | Code Smell | Too many statements (57/50) |
-| 215 | 🟡 Medium | Code Smell | Too many branches (13/12) |
-| 5 | 🟢 Low | Import Optimization | standard import "time" should be placed before third party import "httpx" |
-| 6 | 🟢 Low | Import Optimization | standard import "collections.defaultdict" should be placed before third party import "httpx" |
-| 14 | 🟢 Low | Import Optimization | standard import "re" should be placed before third party imports "httpx", "dotenv.load_dotenv", "telegram.Update" (...) "telegram.request.HTTPXRequest", "langgraph_client.get_langgraph_reply", "db.init_db" |
-
-### 📁 `cs_bot/db.py`
-
-| 行号 | 严重程度 | 问题类型 | 具体描述 |
-| --- | --- | --- | --- |
-| 37 | 🟡 Medium | Code Smell | Too many arguments (8/5) |
-| 2 | 🟢 Low | Import Optimization | standard import "os" should be placed before third party import "aiosqlite" |
-| 3 | 🟢 Low | Import Optimization | standard import "logging" should be placed before third party import "aiosqlite" |
-| 4 | 🟢 Low | Import Optimization | standard import "json" should be placed before third party import "aiosqlite" |
-
-### 📁 `cs_bot/skill_manager.py`
-
-| 行号 | 严重程度 | 问题类型 | 具体描述 |
-| --- | --- | --- | --- |
-| 4 | 🟡 Medium | Dead Code | unused import 'inspect' (90% confidence) |
-| 4 | 🟢 Low | Unused Import | Unused import inspect |
-| 6 | 🟢 Low | Unused Import | Unused tool imported from langchain_core.tools |
-
-### 📁 `dashboard/backend/routers/gallery.py`
-
-| 行号 | 严重程度 | 问题类型 | 具体描述 |
-| --- | --- | --- | --- |
-| 24 | 🟡 Medium | Code Smell | Too many arguments (6/5) |
-| 3 | 🟢 Low | Unused Import | Unused func imported from sqlalchemy |
-| 3 | 🟢 Low | Unused Import | Unused desc imported from sqlalchemy |
-| 3 | 🟢 Low | Unused Import | Unused update imported from sqlalchemy |
-| 3 | 🟢 Low | Unused Import | Unused delete imported from sqlalchemy |
-| 4 | 🟢 Low | Unused Import | Unused selectinload imported from sqlalchemy.orm |
-| 5 | 🟢 Low | Import Optimization | standard import "typing.Optional" should be placed before third party imports "fastapi.APIRouter", "sqlalchemy.ext.asyncio.AsyncSession", "sqlalchemy.select", "sqlalchemy.orm.selectinload" |
-| 5 | 🟢 Low | Unused Import | Unused List imported from typing |
-| 5 | 🟢 Low | Unused Import | Unused Dict imported from typing |
-| 5 | 🟢 Low | Unused Import | Unused Any imported from typing |
-| 6 | 🟢 Low | Import Optimization | standard import "logging" should be placed before third party imports "fastapi.APIRouter", "sqlalchemy.ext.asyncio.AsyncSession", "sqlalchemy.select", "sqlalchemy.orm.selectinload" |
-| 8 | 🟢 Low | Unused Import | Unused User imported from src.database.models |
-| 8 | 🟢 Low | Unused Import | Unused History imported from src.database.models |
-| 10 | 🟢 Low | Import Optimization | third party import "pydantic.BaseModel" should be placed before first party imports "src.database.core.get_db", "src.database.models.GalleryPost", "src.services.storage.storage"  |
-| 11 | 🟢 Low | Import Optimization | standard import "datetime.datetime" should be placed before third party imports "fastapi.APIRouter", "sqlalchemy.ext.asyncio.AsyncSession", "sqlalchemy.select", "sqlalchemy.orm.selectinload", "pydantic.BaseModel" and first party imports "src.database.core.get_db", "src.database.models.GalleryPost", "src.services.storage.storage"  |
-| 11 | 🟢 Low | Unused Import | Unused datetime imported from datetime |
-
-### 📁 `dashboard/backend/routers/history.py`
-
-| 行号 | 严重程度 | 问题类型 | 具体描述 |
-| --- | --- | --- | --- |
-| 17 | 🟡 Medium | Code Smell | Too many arguments (7/5) |
-| 17 | 🟡 Medium | Code Smell | Too many local variables (23/15) |
-| 17 | 🟡 Medium | Code Smell | Too many branches (13/12) |
-| 4 | 🟢 Low | Import Optimization | standard import "typing.Optional" should be placed before third party imports "fastapi.APIRouter", "sqlalchemy.ext.asyncio.AsyncSession", "sqlalchemy.select" |
-| 5 | 🟢 Low | Import Optimization | standard import "logging" should be placed before third party imports "fastapi.APIRouter", "sqlalchemy.ext.asyncio.AsyncSession", "sqlalchemy.select" |
-| 6 | 🟢 Low | Import Optimization | standard import "os" should be placed before third party imports "fastapi.APIRouter", "sqlalchemy.ext.asyncio.AsyncSession", "sqlalchemy.select" |
-| 6 | 🟢 Low | Unused Import | Unused import os |
-| 10 | 🟢 Low | Import Optimization | Imports from package src are not grouped |
-
-### 📁 `dashboard/backend/routers/logs.py`
-
-| 行号 | 严重程度 | 问题类型 | 具体描述 |
-| --- | --- | --- | --- |
-| 12 | 🟡 Medium | Code Smell | Too many arguments (6/5) |
-| 2 | 🟢 Low | Import Optimization | standard import "typing.Optional" should be placed before third party import "fastapi.APIRouter" |
-| 3 | 🟢 Low | Import Optimization | standard import "datetime.datetime" should be placed before third party import "fastapi.APIRouter" |
-| 4 | 🟢 Low | Import Optimization | standard import "logging" should be placed before third party import "fastapi.APIRouter" |
-
-### 📁 `dashboard/backend/routers/plans.py`
-
-| 行号 | 严重程度 | 问题类型 | 具体描述 |
-| --- | --- | --- | --- |
-| 81 | 🟡 Medium | Code Smell | Too many arguments (6/5) |
-| 81 | 🟡 Medium | Code Smell | Too many local variables (17/15) |
-| 4 | 🟢 Low | Import Optimization | standard import "typing.Optional" should be placed before third party imports "fastapi.APIRouter", "sqlalchemy.ext.asyncio.AsyncSession", "sqlalchemy.select" |
-| 5 | 🟢 Low | Import Optimization | standard import "logging" should be placed before third party imports "fastapi.APIRouter", "sqlalchemy.ext.asyncio.AsyncSession", "sqlalchemy.select" |
-
-### 📁 `dashboard/backend/routers/referrals.py`
-
-| 行号 | 严重程度 | 问题类型 | 具体描述 |
-| --- | --- | --- | --- |
-| 15 | 🟡 Medium | Code Smell | Too many local variables (27/15) |
-| 15 | 🟡 Medium | Code Smell | Too many statements (57/50) |
-| 3 | 🟢 Low | Unused Import | Unused and_ imported from sqlalchemy |
-| 7 | 🟢 Low | Import Optimization | standard import "logging" should be placed before third party imports "fastapi.APIRouter", "sqlalchemy.ext.asyncio.AsyncSession", "sqlalchemy.select", "sqlalchemy.orm.aliased" and first party imports "src.database.core.get_db", "src.database.models.User"  |
-
-### 📁 `dashboard/backend/routers/stats.py`
-
-| 行号 | 严重程度 | 问题类型 | 具体描述 |
-| --- | --- | --- | --- |
-| 64 | 🟡 Medium | Code Smell | Too many local variables (127/15) |
-| 64 | 🟡 Medium | Code Smell | Too many branches (46/12) |
-| 64 | 🟡 Medium | Code Smell | Too many statements (209/50) |
-| 462 | 🟡 Medium | Code Smell | Too many local variables (25/15) |
-| 462 | 🟡 Medium | Code Smell | Too many branches (20/12) |
-| 462 | 🟡 Medium | Code Smell | Too many statements (63/50) |
-| 558 | 🟡 Medium | Code Smell | Too many local variables (25/15) |
-| 558 | 🟡 Medium | Code Smell | Too many branches (18/12) |
-| 558 | 🟡 Medium | Code Smell | Too many statements (60/50) |
-| 722 | 🟡 Medium | Code Smell | Too many local variables (93/15) |
-| 722 | 🟡 Medium | Code Smell | Too many branches (47/12) |
-| 722 | 🟡 Medium | Code Smell | Too many statements (195/50) |
-| 4 | 🟢 Low | Import Optimization | standard import "datetime.datetime" should be placed before third party imports "fastapi.APIRouter", "sqlalchemy.ext.asyncio.AsyncSession", "sqlalchemy.select" |
-| 5 | 🟢 Low | Import Optimization | standard import "logging" should be placed before third party imports "fastapi.APIRouter", "sqlalchemy.ext.asyncio.AsyncSession", "sqlalchemy.select" |
-| 6 | 🟢 Low | Import Optimization | standard import "os" should be placed before third party imports "fastapi.APIRouter", "sqlalchemy.ext.asyncio.AsyncSession", "sqlalchemy.select" |
-| 7 | 🟢 Low | Import Optimization | standard import "time" should be placed before third party imports "fastapi.APIRouter", "sqlalchemy.ext.asyncio.AsyncSession", "sqlalchemy.select" |
-
-### 📁 `dashboard/backend/routers/system.py`
-
-| 行号 | 严重程度 | 问题类型 | 具体描述 |
-| --- | --- | --- | --- |
-| 150 | 🟡 Medium | Code Smell | Too many local variables (19/15) |
-| 150 | 🟡 Medium | Code Smell | Too many branches (19/12) |
-| 150 | 🟡 Medium | Code Smell | Too many statements (56/50) |
-| 5 | 🟢 Low | Import Optimization | standard import "logging" should be placed before third party imports "fastapi.APIRouter", "sqlalchemy.ext.asyncio.AsyncSession", "sqlalchemy.select", "httpx" |
-| 11 | 🟢 Low | Import Optimization | third party import "fastapi.responses.StreamingResponse" should be placed before first party imports "src.database.core.get_db", "src.database.models.User", "src.core.task_core.get_system_task_stats", "src.services.image_service.image_service", "config.API_BASE"  |
-| 11 | 🟢 Low | Import Optimization | Imports from package fastapi are not grouped |
-| 13 | 🟢 Low | Import Optimization | third party import "pydantic.BaseModel" should be placed before first party imports "src.database.core.get_db", "src.database.models.User", "src.core.task_core.get_system_task_stats", "src.services.image_service.image_service", "config.API_BASE"  |
-
-### 📁 `dashboard/backend/routers/templates.py`
-
-| 行号 | 严重程度 | 问题类型 | 具体描述 |
-| --- | --- | --- | --- |
-| 4 | 🟢 Low | Import Optimization | standard import "typing.List" should be placed before third party imports "fastapi.APIRouter", "sqlalchemy.ext.asyncio.AsyncSession", "sqlalchemy.select" |
-| 5 | 🟢 Low | Import Optimization | standard import "logging" should be placed before third party imports "fastapi.APIRouter", "sqlalchemy.ext.asyncio.AsyncSession", "sqlalchemy.select" |
-| 6 | 🟢 Low | Import Optimization | standard import "os" should be placed before third party imports "fastapi.APIRouter", "sqlalchemy.ext.asyncio.AsyncSession", "sqlalchemy.select" |
-| 10 | 🟢 Low | Import Optimization | Imports from package src are not grouped |
-
-### 📁 `dashboard/backend/routers/users.py`
-
-| 行号 | 严重程度 | 问题类型 | 具体描述 |
-| --- | --- | --- | --- |
-| 215 | 🟡 Medium | Code Smell | Too many local variables (18/15) |
-| 5 | 🟢 Low | Import Optimization | standard import "logging" should be placed before third party imports "fastapi.APIRouter", "sqlalchemy.ext.asyncio.AsyncSession", "sqlalchemy.select", "sqlalchemy.orm.selectinload" |
-| 6 | 🟢 Low | Import Optimization | standard import "json" should be placed before third party imports "fastapi.APIRouter", "sqlalchemy.ext.asyncio.AsyncSession", "sqlalchemy.select", "sqlalchemy.orm.selectinload" |
-| 7 | 🟢 Low | Import Optimization | standard import "uuid" should be placed before third party imports "fastapi.APIRouter", "sqlalchemy.ext.asyncio.AsyncSession", "sqlalchemy.select", "sqlalchemy.orm.selectinload" |
-| 8 | 🟢 Low | Import Optimization | standard import "os" should be placed before third party imports "fastapi.APIRouter", "sqlalchemy.ext.asyncio.AsyncSession", "sqlalchemy.select", "sqlalchemy.orm.selectinload" |
-| 8 | 🟢 Low | Unused Import | Unused import os |
-| 9 | 🟢 Low | Import Optimization | standard import "datetime.datetime" should be placed before third party imports "fastapi.APIRouter", "sqlalchemy.ext.asyncio.AsyncSession", "sqlalchemy.select", "sqlalchemy.orm.selectinload" |
-| 9 | 🟢 Low | Unused Import | Unused timedelta imported from datetime |
-| 13 | 🟢 Low | Import Optimization | Imports from package src are not grouped |
-
-### 📁 `dashboard/backend/routers/workers.py`
-
-| 行号 | 严重程度 | 问题类型 | 具体描述 |
-| --- | --- | --- | --- |
-| 4 | 🟢 Low | Import Optimization | standard import "typing.Optional" should be placed before third party imports "fastapi.APIRouter", "sqlalchemy.ext.asyncio.AsyncSession", "sqlalchemy.select" |
-
-### 📁 `dashboard/backend/schemas.py`
-
-| 行号 | 严重程度 | 问题类型 | 具体描述 |
-| --- | --- | --- | --- |
-| 2 | 🟢 Low | Import Optimization | standard import "datetime.datetime" should be placed before third party import "pydantic.BaseModel" |
-| 3 | 🟢 Low | Import Optimization | standard import "typing.Optional" should be placed before third party import "pydantic.BaseModel" |
-
-### 📁 `dashboard/backend/services/worker_listener.py`
-
-| 行号 | 严重程度 | 问题类型 | 具体描述 |
-| --- | --- | --- | --- |
-| 47 | 🟡 Medium | Code Smell | Too many local variables (29/15) |
-| 47 | 🟡 Medium | Code Smell | Too many branches (17/12) |
-| 47 | 🟡 Medium | Code Smell | Too many statements (65/50) |
-
-### 📁 `src/api_client.py`
-
-| 行号 | 严重程度 | 问题类型 | 具体描述 |
-| --- | --- | --- | --- |
-| 68 | 🟡 Medium | Code Smell | Too many arguments (8/5) |
-| 88 | 🟡 Medium | Code Smell | Too many arguments (8/5) |
-| 107 | 🟡 Medium | Code Smell | Too many arguments (9/5) |
-| 128 | 🟡 Medium | Code Smell | Too many arguments (6/5) |
-| 156 | 🟡 Medium | Code Smell | Too many arguments (8/5) |
-| 206 | 🟡 Medium | Code Smell | Too many arguments (7/5) |
-| 228 | 🟡 Medium | Code Smell | Too many arguments (6/5) |
-| 245 | 🟡 Medium | Code Smell | Too many arguments (8/5) |
-| 296 | 🟡 Medium | Code Smell | Too many local variables (17/15) |
-| 296 | 🟡 Medium | Code Smell | Too many branches (23/12) |
-| 296 | 🟡 Medium | Code Smell | Too many statements (78/50) |
-| 4 | 🟢 Low | Import Optimization | standard import "logging" should be placed before third party import "httpx" |
-| 5 | 🟢 Low | Import Optimization | standard import "uuid" should be placed before third party import "httpx" |
-| 6 | 🟢 Low | Import Optimization | standard import "typing.Optional" should be placed before third party import "httpx" |
-| 16 | 🟢 Low | Import Optimization | Imports from package src are not grouped |
-| 23 | 🟢 Low | Import Optimization | third party import "asgi_correlation_id.correlation_id" should be placed before first party imports "src.utils.async_retry", "config.IMG2IMG_ENDPOINT", "src.circuit_breaker.CircuitBreaker"  |
-
-### 📁 `src/bot_test.py`
-
-| 行号 | 严重程度 | 问题类型 | 具体描述 |
-| --- | --- | --- | --- |
-| 22 | 🟡 Medium | Dead Code | unused import 'socket' (90% confidence) |
-| 34 | 🟡 Medium | Code Smell | Too many arguments (6/5) |
-| 119 | 🟡 Medium | Code Smell | Too many local variables (20/15) |
-| 119 | 🟡 Medium | Code Smell | Too many statements (52/50) |
-| 12 | 🟢 Low | Import Optimization | standard import "uuid" should be placed before third party imports "telegram.ext.ApplicationBuilder", "telegram.Update", "asgi_correlation_id.correlation_id" |
-| 13 | 🟢 Low | Import Optimization | Imports from package telegram are not grouped |
-| 14 | 🟢 Low | Import Optimization | standard import "logging" should be placed before third party imports "telegram.ext.ApplicationBuilder", "telegram.Update", "asgi_correlation_id.correlation_id", "telegram.request.HTTPXRequest" |
-| 15 | 🟢 Low | Import Optimization | standard import "os" should be placed before third party imports "telegram.ext.ApplicationBuilder", "telegram.Update", "asgi_correlation_id.correlation_id", "telegram.request.HTTPXRequest" |
-| 22 | 🟢 Low | Import Optimization | standard import "socket" should be placed before third party imports "telegram.ext.ApplicationBuilder", "telegram.Update", "asgi_correlation_id.correlation_id", "telegram.request.HTTPXRequest" and first party imports "src.logger.setup_logging", "src.handlers.command_handler.start", "src.handlers.message_handler.handle_photo", "src.handlers.callback_handler.handle_callback_query", "src.database.core.init_db"  |
-| 22 | 🟢 Low | Unused Import | Unused import socket |
-| 23 | 🟢 Low | Import Optimization | standard import "urllib.parse.urlparse" should be placed before third party imports "telegram.ext.ApplicationBuilder", "telegram.Update", "asgi_correlation_id.correlation_id", "telegram.request.HTTPXRequest" and first party imports "src.logger.setup_logging", "src.handlers.command_handler.start", "src.handlers.message_handler.handle_photo", "src.handlers.callback_handler.handle_callback_query", "src.database.core.init_db"  |
-| 26 | 🟢 Low | Import Optimization | third party import "telegram.File" should be placed before first party imports "src.logger.setup_logging", "src.handlers.command_handler.start", "src.handlers.message_handler.handle_photo", "src.handlers.callback_handler.handle_callback_query", "src.database.core.init_db"  |
-| 26 | 🟢 Low | Import Optimization | Imports from package telegram are not grouped |
-| 27 | 🟢 Low | Import Optimization | third party import "httpx" should be placed before first party imports "src.logger.setup_logging", "src.handlers.command_handler.start", "src.handlers.message_handler.handle_photo", "src.handlers.callback_handler.handle_callback_query", "src.database.core.init_db"  |
-| 28 | 🟢 Low | Import Optimization | Reimport 'os' (imported line 15) |
-| 28 | 🟢 Low | Import Optimization | standard import "os" should be placed before third party imports "telegram.ext.ApplicationBuilder", "telegram.Update", "asgi_correlation_id.correlation_id", "telegram.request.HTTPXRequest", "telegram.File", "httpx" and first party imports "src.logger.setup_logging", "src.handlers.command_handler.start", "src.handlers.message_handler.handle_photo", "src.handlers.callback_handler.handle_callback_query", "src.database.core.init_db"  |
-| 28 | 🟢 Low | Import Optimization | Imports from package os are not grouped |
-| 29 | 🟢 Low | Import Optimization | Reimport 'logging' (imported line 14) |
-| 29 | 🟢 Low | Import Optimization | standard import "logging" should be placed before third party imports "telegram.ext.ApplicationBuilder", "telegram.Update", "asgi_correlation_id.correlation_id", "telegram.request.HTTPXRequest", "telegram.File", "httpx" and first party imports "src.logger.setup_logging", "src.handlers.command_handler.start", "src.handlers.message_handler.handle_photo", "src.handlers.callback_handler.handle_callback_query", "src.database.core.init_db"  |
-| 29 | 🟢 Low | Import Optimization | Imports from package logging are not grouped |
-| 58 | 🟢 Low | Import Optimization | standard import "asyncio" should be placed before third party imports "telegram.ext.ApplicationBuilder", "telegram.Update", "asgi_correlation_id.correlation_id", "telegram.request.HTTPXRequest", "telegram.File", "httpx" and first party imports "src.logger.setup_logging", "src.handlers.command_handler.start", "src.handlers.message_handler.handle_photo", "src.handlers.callback_handler.handle_callback_query", "src.database.core.init_db"  |
-| 59 | 🟢 Low | Import Optimization | Imports from package src are not grouped |
-
-### 📁 `src/constants.py`
-
-| 行号 | 严重程度 | 问题类型 | 具体描述 |
-| --- | --- | --- | --- |
-| 170 | 🟡 Medium | Code Smell | Too many local variables (23/15) |
-
-### 📁 `src/core/billing_core.py`
-
-| 行号 | 严重程度 | 问题类型 | 具体描述 |
-| --- | --- | --- | --- |
-| 80 | 🟡 Medium | Code Smell | Too many local variables (16/15) |
-| 4 | 🟢 Low | Unused Import | Unused AsyncSessionLocal imported from src.database.core |
-| 5 | 🟢 Low | Unused Import | Unused User imported from src.database.models |
-| 77 | 🟢 Low | Import Optimization | standard import "datetime.datetime" should be placed before first party imports "src.database.core.AsyncSessionLocal", "src.database.models.User", "src.services.redis_client.redis_client", "src.constants.MAX_CONCURRENT_TASKS", "src.quota.QuotaManager"  |
-| 78 | 🟢 Low | Import Optimization | standard import "math" should be placed before first party imports "src.database.core.AsyncSessionLocal", "src.database.models.User", "src.services.redis_client.redis_client", "src.constants.MAX_CONCURRENT_TASKS", "src.quota.QuotaManager"  |
-
-### 📁 `src/core/gallery_core.py`
-
-| 行号 | 严重程度 | 问题类型 | 具体描述 |
-| --- | --- | --- | --- |
-| 48 | 🟡 Medium | Code Smell | Too many arguments (6/5) |
-| 48 | 🟡 Medium | Code Smell | Too many local variables (28/15) |
-| 48 | 🟡 Medium | Code Smell | Too many branches (13/12) |
-| 48 | 🟡 Medium | Code Smell | Too many statements (53/50) |
-| 213 | 🟡 Medium | Code Smell | Too many arguments (10/5) |
-| 213 | 🟡 Medium | Code Smell | Too many local variables (22/15) |
-| 213 | 🟡 Medium | Code Smell | Too many branches (20/12) |
-| 213 | 🟡 Medium | Code Smell | Too many statements (57/50) |
-| 4 | 🟢 Low | Unused Import | Unused import asyncio |
-
-### 📁 `src/core/task_core.py`
-
-| 行号 | 严重程度 | 问题类型 | 具体描述 |
-| --- | --- | --- | --- |
-| 43 | 🟡 Medium | Code Smell | Too many arguments (9/5) |
-| 43 | 🟡 Medium | Code Smell | Too many local variables (21/15) |
-| 103 | 🟡 Medium | Code Smell | Too many arguments (10/5) |
-| 103 | 🟡 Medium | Code Smell | Too many local variables (48/15) |
-| 103 | 🟡 Medium | Code Smell | Too many branches (30/12) |
-| 103 | 🟡 Medium | Code Smell | Too many statements (108/50) |
-| 1 | 🟢 Low | Unused Import | Unused List imported from typing |
-| 29 | 🟢 Low | Import Optimization | Imports from package src are not grouped |
-| 30 | 🟢 Low | Unused Import | Unused TASK_COSTS imported from src.constants |
-| 30 | 🟢 Low | Unused Import | Unused RESOLUTION_COST imported from src.constants |
-| 30 | 🟢 Low | Unused Import | Unused DURATION_MULTIPLIER imported from src.constants |
-| 30 | 🟢 Low | Unused Import | Unused MODE_I2I_PRO imported from src.constants |
-| 30 | 🟢 Low | Unused Import | Unused MODE_FACESWAP_STEP1 imported from src.constants |
-| 30 | 🟢 Low | Unused Import | Unused LTX_RESOLUTION_COST imported from src.constants |
-| 30 | 🟢 Low | Unused Import | Unused LTX_DURATION_MULTIPLIER imported from src.constants |
-
-### 📁 `src/core/task_dispatcher.py`
-
-| 行号 | 严重程度 | 问题类型 | 具体描述 |
-| --- | --- | --- | --- |
-| 139 | 🟡 Medium | Code Smell | Too many local variables (18/15) |
-| 139 | 🟡 Medium | Code Smell | Too many branches (14/12) |
-
-### 📁 `src/core/user_core.py`
-
-| 行号 | 严重程度 | 问题类型 | 具体描述 |
-| --- | --- | --- | --- |
-| 3 | 🟢 Low | Import Optimization | standard import "datetime.datetime" should be placed before third party imports "sqlalchemy.select", "sqlalchemy.exc.IntegrityError" |
-| 8 | 🟢 Low | Import Optimization | standard import "typing.Tuple" should be placed before third party imports "sqlalchemy.select", "sqlalchemy.exc.IntegrityError" and first party imports "src.database.core.AsyncSessionLocal", "src.database.models.User"  |
-
-### 📁 `src/core/user_facade.py`
-
-| 行号 | 严重程度 | 问题类型 | 具体描述 |
-| --- | --- | --- | --- |
-| 19 | 🟡 Medium | Code Smell | Too many local variables (22/15) |
-| 2 | 🟢 Low | Import Optimization | standard import "typing.Dict" should be placed before third party import "pydantic.BaseModel" |
-| 2 | 🟢 Low | Unused Import | Unused Optional imported from typing |
-
-### 📁 `src/handlers/callback_handler.py`
-
-| 行号 | 严重程度 | 问题类型 | 具体描述 |
-| --- | --- | --- | --- |
-| 12 | 🟡 Medium | Dead Code | unused import 'billing_callbacks' (90% confidence) |
-| 12 | 🟡 Medium | Dead Code | unused import 'gallery_callbacks' (90% confidence) |
-| 12 | 🟡 Medium | Dead Code | unused import 'misc_callbacks' (90% confidence) |
-
-### 📁 `src/handlers/prompt_router.py`
-
-| 行号 | 严重程度 | 问题类型 | 具体描述 |
-| --- | --- | --- | --- |
-| 1 | 🟡 Medium | Dead Code | unused import 'Awaitable' (90% confidence) |
-
-### 📁 `src/logger.py`
-
-| 行号 | 严重程度 | 问题类型 | 具体描述 |
-| --- | --- | --- | --- |
-| 107 | 🟡 Medium | Code Smell | Too many arguments (8/5) |
-
-### 📁 `src/payment_api_server.py`
-
-| 行号 | 严重程度 | 问题类型 | 具体描述 |
-| --- | --- | --- | --- |
-| 5 | 🟢 Low | Import Optimization | standard import "os" should be placed before third party imports "fastapi.FastAPI", "fastapi.responses.HTMLResponse", "uvicorn" |
-
-### 📁 `src/quota.py`
-
-| 行号 | 严重程度 | 问题类型 | 具体描述 |
-| --- | --- | --- | --- |
-| 163 | 🟡 Medium | Dead Code | unused variable 'new_full_name' (100% confidence) |
-| 8 | 🟢 Low | Import Optimization | third party import "sqlalchemy.exc.IntegrityError" should be placed before local imports "database.core.AsyncSessionLocal", "database.models.User", "services.log_service.LogService", "constants.GENERATION_TASK_TYPES" |
-
-### 📁 `src/web_api/dependencies.py`
-
-| 行号 | 严重程度 | 问题类型 | 具体描述 |
-| --- | --- | --- | --- |
-| 30 | 🟡 Medium | Code Smell | Too many local variables (17/15) |
-
-### 📁 `src/web_api/main.py`
-
-| 行号 | 严重程度 | 问题类型 | 具体描述 |
-| --- | --- | --- | --- |
-| 5 | 🟢 Low | Import Optimization | standard import "contextlib.asynccontextmanager" should be placed before third party imports "fastapi.FastAPI", "fastapi.middleware.cors.CORSMiddleware", "asgi_correlation_id.CorrelationIdMiddleware" |
-
-### 📁 `src/web_api/routers/auth.py`
-
-| 行号 | 严重程度 | 问题类型 | 具体描述 |
-| --- | --- | --- | --- |
-| 2 | 🟢 Low | Unused Import | Unused Optional imported from typing |
-| 4 | 🟢 Low | Unused Import | Unused JSONResponse imported from fastapi.responses |
-| 7 | 🟢 Low | Unused Import | Unused Token imported from src.web_api.schemas.auth_schema |
-
-### 📁 `src/web_api/routers/gallery.py`
-
-| 行号 | 严重程度 | 问题类型 | 具体描述 |
-| --- | --- | --- | --- |
-| 68 | 🟡 Medium | Code Smell | Too many arguments (8/5) |
-| 68 | 🟡 Medium | Code Smell | Too many local variables (28/15) |
-| 157 | 🟡 Medium | Code Smell | Too many local variables (28/15) |
-| 244 | 🟡 Medium | Code Smell | Too many local variables (30/15) |
-| 4 | 🟢 Low | Import Optimization | standard import "typing.List" should be placed before third party imports "fastapi.APIRouter", "sqlalchemy.select", "sqlalchemy.exc.IntegrityError" |
-| 4 | 🟢 Low | Unused Import | Unused List imported from typing |
-| 12 | 🟢 Low | Unused Import | Unused redis_client imported from src.services.redis_client |
-| 13 | 🟢 Low | Import Optimization | standard import "json" should be placed before third party imports "fastapi.APIRouter", "sqlalchemy.select", "sqlalchemy.exc.IntegrityError" and first party imports "src.database.core.AsyncSessionLocal", "src.database.models.GalleryPost", "src.web_api.dependencies.get_current_user" (...) "src.config_mapping.ALL_LORA_MODELS", "src.constants.MODE_NAME_MAP", "src.services.redis_client.redis_client"  |
-| 14 | 🟢 Low | Import Optimization | standard import "logging" should be placed before third party imports "fastapi.APIRouter", "sqlalchemy.select", "sqlalchemy.exc.IntegrityError" and first party imports "src.database.core.AsyncSessionLocal", "src.database.models.GalleryPost", "src.web_api.dependencies.get_current_user" (...) "src.config_mapping.ALL_LORA_MODELS", "src.constants.MODE_NAME_MAP", "src.services.redis_client.redis_client"  |
-| 15 | 🟢 Low | Import Optimization | standard import "os" should be placed before third party imports "fastapi.APIRouter", "sqlalchemy.select", "sqlalchemy.exc.IntegrityError" and first party imports "src.database.core.AsyncSessionLocal", "src.database.models.GalleryPost", "src.web_api.dependencies.get_current_user" (...) "src.config_mapping.ALL_LORA_MODELS", "src.constants.MODE_NAME_MAP", "src.services.redis_client.redis_client"  |
-| 15 | 🟢 Low | Unused Import | Unused import os |
-| 16 | 🟢 Low | Import Optimization | standard import "re" should be placed before third party imports "fastapi.APIRouter", "sqlalchemy.select", "sqlalchemy.exc.IntegrityError" and first party imports "src.database.core.AsyncSessionLocal", "src.database.models.GalleryPost", "src.web_api.dependencies.get_current_user" (...) "src.config_mapping.ALL_LORA_MODELS", "src.constants.MODE_NAME_MAP", "src.services.redis_client.redis_client"  |
-| 17 | 🟢 Low | Unused Import | Unused storage imported from src.services.storage |
-| 495 | 🟢 Low | Import Optimization | Imports from package src are not grouped |
-| 495 | 🟢 Low | Unused Import | Unused toggle_like imported from src.core.gallery_core |
-| 495 | 🟢 Low | Unused Import | Unused DuplicateInteractionError imported from src.core.gallery_core |
-
-### 📁 `src/web_api/routers/storage.py`
-
-| 行号 | 严重程度 | 问题类型 | 具体描述 |
-| --- | --- | --- | --- |
-| 3 | 🟢 Low | Unused Import | Unused status imported from fastapi |
-| 4 | 🟢 Low | Import Optimization | standard import "typing.Optional" should be placed before third party import "fastapi.APIRouter" |
-| 4 | 🟢 Low | Unused Import | Unused Optional imported from typing |
-| 5 | 🟢 Low | Import Optimization | standard import "datetime.datetime" should be placed before third party import "fastapi.APIRouter" |
-
-### 📁 `src/web_api/routers/tasks.py`
-
-| 行号 | 严重程度 | 问题类型 | 具体描述 |
-| --- | --- | --- | --- |
-| 71 | 🟡 Medium | Code Smell | Too many statements (118/50) |
-| 89 | 🟡 Medium | Code Smell | Too many local variables (23/15) |
-| 89 | 🟡 Medium | Code Smell | Too many branches (29/12) |
-| 89 | 🟡 Medium | Code Smell | Too many statements (111/50) |
-| 5 | 🟢 Low | Import Optimization | standard import "typing.AsyncGenerator" should be placed before third party import "httpx" |
-| 5 | 🟢 Low | Unused Import | Unused AsyncGenerator imported from typing |
-| 6 | 🟢 Low | Unused Import | Unused status imported from fastapi |
-| 6 | 🟢 Low | Unused Import | Unused Request imported from fastapi |
-
-### 📁 `src/web_api/routers/users.py`
-
-| 行号 | 严重程度 | 问题类型 | 具体描述 |
-| --- | --- | --- | --- |
-| 2 | 🟢 Low | Unused Import | Unused Query imported from fastapi |
-| 2 | 🟢 Low | Unused Import | Unused HTTPException imported from fastapi |
-| 3 | 🟢 Low | Unused Import | Unused func imported from sqlalchemy |
-
-### 📁 `src/web_api/schemas/auth_schema.py`
-
-| 行号 | 严重程度 | 问题类型 | 具体描述 |
-| --- | --- | --- | --- |
-| 1 | 🟢 Low | Unused Import | Unused Field imported from pydantic |
-| 2 | 🟢 Low | Import Optimization | standard import "typing.Optional" should be placed before third party import "pydantic.BaseModel" |
-| 3 | 🟢 Low | Import Optimization | standard import "datetime.datetime" should be placed before third party import "pydantic.BaseModel" |
-
-### 📁 `src/web_api/schemas/gallery_schema.py`
-
-| 行号 | 严重程度 | 问题类型 | 具体描述 |
-| --- | --- | --- | --- |
-| 2 | 🟢 Low | Import Optimization | standard import "typing.List" should be placed before third party import "pydantic.BaseModel" |
-| 3 | 🟢 Low | Import Optimization | standard import "datetime.datetime" should be placed before third party import "pydantic.BaseModel" |
-
-### 📁 `src/web_api/schemas/task_schema.py`
-
-| 行号 | 严重程度 | 问题类型 | 具体描述 |
-| --- | --- | --- | --- |
-| 2 | 🟢 Low | Import Optimization | standard import "typing.Optional" should be placed before third party import "pydantic.BaseModel" |
-| 2 | 🟢 Low | Unused Import | Unused List imported from typing |
-
-### 📁 `src/web_api/schemas/user_schema.py`
-
-| 行号 | 严重程度 | 问题类型 | 具体描述 |
-| --- | --- | --- | --- |
-| 2 | 🟢 Low | Import Optimization | standard import "typing.Optional" should be placed before third party import "pydantic.BaseModel" |
-| 3 | 🟢 Low | Import Optimization | standard import "datetime.datetime" should be placed before third party import "pydantic.BaseModel" |
-
-### 📁 `workers/comfy_agent/agent_main.py`
-
-| 行号 | 严重程度 | 问题类型 | 具体描述 |
-| --- | --- | --- | --- |
-| 143 | 🟡 Medium | Code Smell | Too many local variables (23/15) |
-| 143 | 🟡 Medium | Code Smell | Too many branches (21/12) |
-| 143 | 🟡 Medium | Code Smell | Too many statements (70/50) |
-| 272 | 🟡 Medium | Code Smell | Too many local variables (38/15) |
-| 272 | 🟡 Medium | Code Smell | Too many branches (42/12) |
-| 272 | 🟡 Medium | Code Smell | Too many statements (153/50) |
-| 11 | 🟢 Low | Import Optimization | standard import "typing.Dict" should be placed before third party imports "asgi_correlation_id.correlation_id", "httpx", "websockets", "minio.Minio", "dotenv.load_dotenv" |
-| 564 | 🟢 Low | Import Optimization | Reimport 'sys' (imported line 5) |
-| 564 | 🟢 Low | Import Optimization | Imports from package sys are not grouped |
-
-### 📁 `workers/comfy_agent/comfy_client.py`
-
-| 行号 | 严重程度 | 问题类型 | 具体描述 |
-| --- | --- | --- | --- |
-| 2 | 🟢 Low | Import Optimization | standard import "logging" should be placed before third party import "httpx" |
-| 3 | 🟢 Low | Import Optimization | standard import "typing.Dict" should be placed before third party import "httpx" |
-
-### 📁 `workers/comfy_agent/workflow_patcher.py`
-
-| 行号 | 严重程度 | 问题类型 | 具体描述 |
-| --- | --- | --- | --- |
-| 65 | 🟡 Medium | Code Smell | Too many local variables (16/15) |
-| 65 | 🟡 Medium | Code Smell | Too many branches (30/12) |
-| 65 | 🟡 Medium | Code Smell | Too many statements (60/50) |
-| 159 | 🟡 Medium | Code Smell | Too many branches (23/12) |
-
+| `workers/comfy_agent/agent_main.py` | 272 | High | 函数 `process_task` 圈复杂度过高 (CC=49 > 10)，存在过多条件分支 |
+| `src/handlers/callbacks/gallery_callbacks.py` | 340 | High | 函数 `gallery_sort_page_callback` 圈复杂度过高 (CC=44 > 10)，存在过多条件分支 |
+| `workers/comfy_agent/workflow_patcher.py` | 159 | High | 函数 `heuristic_patch` 圈复杂度过高 (CC=40 > 10)，存在过多条件分支 |
+| `workers/comfy_agent/workflow_patcher.py` | 65 | High | 函数 `patch_workflow` 圈复杂度过高 (CC=39 > 10)，存在过多条件分支 |
+| `src/handlers/callbacks/gallery_callbacks.py` | 32 | High | 函数 `public_share_callback` 圈复杂度过高 (CC=38 > 10)，存在过多条件分支 |
+| `src/services/task_service.py` | 1088 | High | 函数 `_handle_task_completion` 圈复杂度过高 (CC=37 > 10)，存在过多条件分支 |
+| `cs_bot/bot.py` | 104 | High | 函数 `handle_group_message` 圈复杂度过高 (CC=36 > 10)，存在过多条件分支 |
+| `src/core/task_core.py` | 108 | High | 函数 `process_and_submit_task` 圈复杂度过高 (CC=35 > 10)，存在过多条件分支 |
+| `src/handlers/fsm/gallery_apply_fsm.py` | 43 | High | 函数 `start_gallery_apply` 圈复杂度过高 (CC=33 > 10)，存在过多条件分支 |
+| `src/services/task_service.py` | 288 | High | 函数 `process_generation_task` 圈复杂度过高 (CC=33 > 10)，存在过多条件分支 |

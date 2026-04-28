@@ -168,7 +168,7 @@ class QuotaManager:
             result = await session.execute(stmt)
             return result.scalar() or 0
 
-    async def process_referral(self, inviter_id: int, new_user_id: int, new_username: str = None, new_full_name: str = None) -> bool:
+    async def process_referral(self, inviter_id: int, new_user_id: int, new_username: str = None, _new_full_name: str = None) -> bool:
         """
         Process a new referral.
         Returns True if successful (valid new user), False otherwise.

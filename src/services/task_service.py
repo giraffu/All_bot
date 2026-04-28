@@ -46,6 +46,7 @@ from src.utils import (
     robust_send_photo,
     robust_send_video,
 )
+import contextlib
 
 logger = logging.getLogger(__name__)
 
@@ -361,10 +362,6 @@ class TaskService:
                 duration = 5
 
         notice = await TaskService._get_acceleration_notice(user_id)
-        # Determine rough cost for display only
-        display_cost = 6 if is_video else 2
-        if task_type == "face_swap": display_cost = 1
-        elif task_type in (MODE_EDIT, "edit", MODE_IMG2IMG_LORA): display_cost = 6 if len(images) == 2 else 2
         
         msg_text = (
             f"🚀 正在处理视频生成任务...{notice}"
@@ -1257,10 +1254,8 @@ class TaskService:
     def _cleanup_files(paths: List[str]):
         for path in paths:
             if path.startswith(TMP_DIR) and os.path.exists(path):
-                try:
+                with contextlib.suppress(OSError):
                     os.remove(path)
-                except OSError:
-                    pass
 
     @staticmethod
     async def _get_acceleration_notice(user_id: int) -> str:

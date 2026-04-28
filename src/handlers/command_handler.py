@@ -9,6 +9,7 @@ from src.constants import MAIN_MENU_KEYBOARD
 from src.handlers.utils import with_db_logging_context
 from src.services.permission_service import permission_service
 from src.utils import MAINTENANCE_FILE, robust_send_message
+import contextlib
 
 
 async def setup_commands(app: Application):
@@ -23,7 +24,6 @@ async def setup_commands(app: Application):
 
 @with_db_logging_context
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
     
     # Globally clear the FSM lock
     context.user_data.pop('in_conversation', None)
@@ -60,26 +60,22 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 success, status = await permission_service.process_referral(user.id, user.username, user.full_name, inviter_id)
             if success:
                 # Notify inviter
-                try:
+                with contextlib.suppress(Exception):
                     await robust_send_message(
                         context.bot,
                         chat_id=inviter_id,
                         text=f"🎉 **道缘已至！**\n\n道友 {user.full_name} 响应了您的号召，入驻宗门。\n获得奖励：`5` 灵石。",
                         parse_mode="Markdown"
                     )
-                except Exception:
-                    pass
             elif status == "visitor_limit":
                 # Notify inviter about visitor limit
-                try:
+                with contextlib.suppress(Exception):
                     await robust_send_message(
                         context.bot,
                         chat_id=inviter_id,
                         text="⚠️ **邀请奖励未发放**\n\n您目前尚处于凡人境界，无法获得邀请奖励。请先拜入 **宗门** 踏入 **练气期** 即可解锁邀请奖励权限！",
                         parse_mode="Markdown"
                     )
-                except Exception:
-                    pass
         except ValueError:
             pass
 

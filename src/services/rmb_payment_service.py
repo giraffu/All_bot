@@ -79,7 +79,7 @@ class RMBPaymentService:
                         data = await resp.json(content_type=None)
                         logger.info(f"Payment creation response: {data}")
                         return data
-                    except Exception as json_e:
+                    except Exception:
                         text_resp = await resp.text()
                         logger.error(f"Failed to parse JSON response: {text_resp}")
                         return {"code": 0, "msg": "Invalid response format"}

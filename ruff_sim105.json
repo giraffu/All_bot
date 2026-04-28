@@ -1,0 +1,2130 @@
+[
+  {
+    "cell": null,
+    "code": "SIM105",
+    "end_location": {
+      "column": 29,
+      "row": 230
+    },
+    "filename": "/home/hfy/APP/All_bot/src/core/task_core.py",
+    "fix": {
+      "applicability": "unsafe",
+      "edits": [
+        {
+          "content": "import contextlib\n",
+          "end_location": {
+            "column": 1,
+            "row": 38
+          },
+          "location": {
+            "column": 1,
+            "row": 38
+          }
+        },
+        {
+          "content": "with contextlib.suppress(Exception)",
+          "end_location": {
+            "column": 24,
+            "row": 227
+          },
+          "location": {
+            "column": 21,
+            "row": 227
+          }
+        },
+        {
+          "content": "",
+          "end_location": {
+            "column": 1,
+            "row": 231
+          },
+          "location": {
+            "column": 1,
+            "row": 229
+          }
+        }
+      ],
+      "message": "Replace `try`-`except`-`pass` with `with contextlib.suppress(Exception): ...`"
+    },
+    "location": {
+      "column": 21,
+      "row": 227
+    },
+    "message": "Use `contextlib.suppress(Exception)` instead of `try`-`except`-`pass`",
+    "noqa_row": 227,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/suppressible-exception"
+  },
+  {
+    "cell": null,
+    "code": "SIM105",
+    "end_location": {
+      "column": 21,
+      "row": 283
+    },
+    "filename": "/home/hfy/APP/All_bot/src/core/task_core.py",
+    "fix": {
+      "applicability": "unsafe",
+      "edits": [
+        {
+          "content": "import contextlib\n",
+          "end_location": {
+            "column": 1,
+            "row": 38
+          },
+          "location": {
+            "column": 1,
+            "row": 38
+          }
+        },
+        {
+          "content": "with contextlib.suppress(Exception)",
+          "end_location": {
+            "column": 16,
+            "row": 280
+          },
+          "location": {
+            "column": 13,
+            "row": 280
+          }
+        },
+        {
+          "content": "",
+          "end_location": {
+            "column": 1,
+            "row": 284
+          },
+          "location": {
+            "column": 1,
+            "row": 282
+          }
+        }
+      ],
+      "message": "Replace `try`-`except`-`pass` with `with contextlib.suppress(Exception): ...`"
+    },
+    "location": {
+      "column": 13,
+      "row": 280
+    },
+    "message": "Use `contextlib.suppress(Exception)` instead of `try`-`except`-`pass`",
+    "noqa_row": 280,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/suppressible-exception"
+  },
+  {
+    "cell": null,
+    "code": "SIM105",
+    "end_location": {
+      "column": 13,
+      "row": 35
+    },
+    "filename": "/home/hfy/APP/All_bot/src/handlers/callbacks/billing_callbacks.py",
+    "fix": {
+      "applicability": "unsafe",
+      "edits": [
+        {
+          "content": "import contextlib\n",
+          "end_location": {
+            "column": 1,
+            "row": 15
+          },
+          "location": {
+            "column": 1,
+            "row": 15
+          }
+        },
+        {
+          "content": "with contextlib.suppress(Exception)",
+          "end_location": {
+            "column": 8,
+            "row": 32
+          },
+          "location": {
+            "column": 5,
+            "row": 32
+          }
+        },
+        {
+          "content": "",
+          "end_location": {
+            "column": 1,
+            "row": 36
+          },
+          "location": {
+            "column": 1,
+            "row": 34
+          }
+        }
+      ],
+      "message": "Replace `try`-`except`-`pass` with `with contextlib.suppress(Exception): ...`"
+    },
+    "location": {
+      "column": 5,
+      "row": 32
+    },
+    "message": "Use `contextlib.suppress(Exception)` instead of `try`-`except`-`pass`",
+    "noqa_row": 32,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/suppressible-exception"
+  },
+  {
+    "cell": null,
+    "code": "SIM105",
+    "end_location": {
+      "column": 13,
+      "row": 55
+    },
+    "filename": "/home/hfy/APP/All_bot/src/handlers/callbacks/billing_callbacks.py",
+    "fix": {
+      "applicability": "unsafe",
+      "edits": [
+        {
+          "content": "import contextlib\n",
+          "end_location": {
+            "column": 1,
+            "row": 15
+          },
+          "location": {
+            "column": 1,
+            "row": 15
+          }
+        },
+        {
+          "content": "with contextlib.suppress(Exception)",
+          "end_location": {
+            "column": 8,
+            "row": 52
+          },
+          "location": {
+            "column": 5,
+            "row": 52
+          }
+        },
+        {
+          "content": "",
+          "end_location": {
+            "column": 1,
+            "row": 56
+          },
+          "location": {
+            "column": 1,
+            "row": 54
+          }
+        }
+      ],
+      "message": "Replace `try`-`except`-`pass` with `with contextlib.suppress(Exception): ...`"
+    },
+    "location": {
+      "column": 5,
+      "row": 52
+    },
+    "message": "Use `contextlib.suppress(Exception)` instead of `try`-`except`-`pass`",
+    "noqa_row": 52,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/suppressible-exception"
+  },
+  {
+    "cell": null,
+    "code": "SIM105",
+    "end_location": {
+      "column": 13,
+      "row": 74
+    },
+    "filename": "/home/hfy/APP/All_bot/src/handlers/callbacks/billing_callbacks.py",
+    "fix": {
+      "applicability": "unsafe",
+      "edits": [
+        {
+          "content": "import contextlib\n",
+          "end_location": {
+            "column": 1,
+            "row": 15
+          },
+          "location": {
+            "column": 1,
+            "row": 15
+          }
+        },
+        {
+          "content": "with contextlib.suppress(Exception)",
+          "end_location": {
+            "column": 8,
+            "row": 71
+          },
+          "location": {
+            "column": 5,
+            "row": 71
+          }
+        },
+        {
+          "content": "",
+          "end_location": {
+            "column": 1,
+            "row": 75
+          },
+          "location": {
+            "column": 1,
+            "row": 73
+          }
+        }
+      ],
+      "message": "Replace `try`-`except`-`pass` with `with contextlib.suppress(Exception): ...`"
+    },
+    "location": {
+      "column": 5,
+      "row": 71
+    },
+    "message": "Use `contextlib.suppress(Exception)` instead of `try`-`except`-`pass`",
+    "noqa_row": 71,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/suppressible-exception"
+  },
+  {
+    "cell": null,
+    "code": "SIM105",
+    "end_location": {
+      "column": 13,
+      "row": 94
+    },
+    "filename": "/home/hfy/APP/All_bot/src/handlers/callbacks/billing_callbacks.py",
+    "fix": {
+      "applicability": "unsafe",
+      "edits": [
+        {
+          "content": "import contextlib\n",
+          "end_location": {
+            "column": 1,
+            "row": 15
+          },
+          "location": {
+            "column": 1,
+            "row": 15
+          }
+        },
+        {
+          "content": "with contextlib.suppress(Exception)",
+          "end_location": {
+            "column": 8,
+            "row": 91
+          },
+          "location": {
+            "column": 5,
+            "row": 91
+          }
+        },
+        {
+          "content": "",
+          "end_location": {
+            "column": 1,
+            "row": 95
+          },
+          "location": {
+            "column": 1,
+            "row": 93
+          }
+        }
+      ],
+      "message": "Replace `try`-`except`-`pass` with `with contextlib.suppress(Exception): ...`"
+    },
+    "location": {
+      "column": 5,
+      "row": 91
+    },
+    "message": "Use `contextlib.suppress(Exception)` instead of `try`-`except`-`pass`",
+    "noqa_row": 91,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/suppressible-exception"
+  },
+  {
+    "cell": null,
+    "code": "SIM105",
+    "end_location": {
+      "column": 13,
+      "row": 114
+    },
+    "filename": "/home/hfy/APP/All_bot/src/handlers/callbacks/billing_callbacks.py",
+    "fix": {
+      "applicability": "unsafe",
+      "edits": [
+        {
+          "content": "import contextlib\n",
+          "end_location": {
+            "column": 1,
+            "row": 15
+          },
+          "location": {
+            "column": 1,
+            "row": 15
+          }
+        },
+        {
+          "content": "with contextlib.suppress(Exception)",
+          "end_location": {
+            "column": 8,
+            "row": 111
+          },
+          "location": {
+            "column": 5,
+            "row": 111
+          }
+        },
+        {
+          "content": "",
+          "end_location": {
+            "column": 1,
+            "row": 115
+          },
+          "location": {
+            "column": 1,
+            "row": 113
+          }
+        }
+      ],
+      "message": "Replace `try`-`except`-`pass` with `with contextlib.suppress(Exception): ...`"
+    },
+    "location": {
+      "column": 5,
+      "row": 111
+    },
+    "message": "Use `contextlib.suppress(Exception)` instead of `try`-`except`-`pass`",
+    "noqa_row": 111,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/suppressible-exception"
+  },
+  {
+    "cell": null,
+    "code": "SIM105",
+    "end_location": {
+      "column": 13,
+      "row": 133
+    },
+    "filename": "/home/hfy/APP/All_bot/src/handlers/callbacks/billing_callbacks.py",
+    "fix": {
+      "applicability": "unsafe",
+      "edits": [
+        {
+          "content": "import contextlib\n",
+          "end_location": {
+            "column": 1,
+            "row": 15
+          },
+          "location": {
+            "column": 1,
+            "row": 15
+          }
+        },
+        {
+          "content": "with contextlib.suppress(Exception)",
+          "end_location": {
+            "column": 8,
+            "row": 130
+          },
+          "location": {
+            "column": 5,
+            "row": 130
+          }
+        },
+        {
+          "content": "",
+          "end_location": {
+            "column": 1,
+            "row": 134
+          },
+          "location": {
+            "column": 1,
+            "row": 132
+          }
+        }
+      ],
+      "message": "Replace `try`-`except`-`pass` with `with contextlib.suppress(Exception): ...`"
+    },
+    "location": {
+      "column": 5,
+      "row": 130
+    },
+    "message": "Use `contextlib.suppress(Exception)` instead of `try`-`except`-`pass`",
+    "noqa_row": 130,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/suppressible-exception"
+  },
+  {
+    "cell": null,
+    "code": "SIM105",
+    "end_location": {
+      "column": 17,
+      "row": 166
+    },
+    "filename": "/home/hfy/APP/All_bot/src/handlers/callbacks/billing_callbacks.py",
+    "fix": {
+      "applicability": "unsafe",
+      "edits": [
+        {
+          "content": "import contextlib\n",
+          "end_location": {
+            "column": 1,
+            "row": 15
+          },
+          "location": {
+            "column": 1,
+            "row": 15
+          }
+        },
+        {
+          "content": "with contextlib.suppress(Exception)",
+          "end_location": {
+            "column": 12,
+            "row": 158
+          },
+          "location": {
+            "column": 9,
+            "row": 158
+          }
+        },
+        {
+          "content": "",
+          "end_location": {
+            "column": 1,
+            "row": 167
+          },
+          "location": {
+            "column": 1,
+            "row": 165
+          }
+        }
+      ],
+      "message": "Replace `try`-`except`-`pass` with `with contextlib.suppress(Exception): ...`"
+    },
+    "location": {
+      "column": 9,
+      "row": 158
+    },
+    "message": "Use `contextlib.suppress(Exception)` instead of `try`-`except`-`pass`",
+    "noqa_row": 158,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/suppressible-exception"
+  },
+  {
+    "cell": null,
+    "code": "SIM105",
+    "end_location": {
+      "column": 25,
+      "row": 114
+    },
+    "filename": "/home/hfy/APP/All_bot/src/handlers/callbacks/gallery_callbacks.py",
+    "fix": {
+      "applicability": "unsafe",
+      "edits": [
+        {
+          "content": "import contextlib\n",
+          "end_location": {
+            "column": 1,
+            "row": 28
+          },
+          "location": {
+            "column": 1,
+            "row": 28
+          }
+        },
+        {
+          "content": "with contextlib.suppress(Exception)",
+          "end_location": {
+            "column": 20,
+            "row": 107
+          },
+          "location": {
+            "column": 17,
+            "row": 107
+          }
+        },
+        {
+          "content": "",
+          "end_location": {
+            "column": 1,
+            "row": 115
+          },
+          "location": {
+            "column": 1,
+            "row": 113
+          }
+        }
+      ],
+      "message": "Replace `try`-`except`-`pass` with `with contextlib.suppress(Exception): ...`"
+    },
+    "location": {
+      "column": 17,
+      "row": 107
+    },
+    "message": "Use `contextlib.suppress(Exception)` instead of `try`-`except`-`pass`",
+    "noqa_row": 107,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/suppressible-exception"
+  },
+  {
+    "cell": null,
+    "code": "SIM105",
+    "end_location": {
+      "column": 13,
+      "row": 345
+    },
+    "filename": "/home/hfy/APP/All_bot/src/handlers/callbacks/gallery_callbacks.py",
+    "fix": {
+      "applicability": "unsafe",
+      "edits": [
+        {
+          "content": "import contextlib\n",
+          "end_location": {
+            "column": 1,
+            "row": 261
+          },
+          "location": {
+            "column": 1,
+            "row": 261
+          }
+        },
+        {
+          "content": "with contextlib.suppress(Exception)",
+          "end_location": {
+            "column": 8,
+            "row": 342
+          },
+          "location": {
+            "column": 5,
+            "row": 342
+          }
+        },
+        {
+          "content": "",
+          "end_location": {
+            "column": 1,
+            "row": 346
+          },
+          "location": {
+            "column": 1,
+            "row": 344
+          }
+        }
+      ],
+      "message": "Replace `try`-`except`-`pass` with `with contextlib.suppress(Exception): ...`"
+    },
+    "location": {
+      "column": 5,
+      "row": 342
+    },
+    "message": "Use `contextlib.suppress(Exception)` instead of `try`-`except`-`pass`",
+    "noqa_row": 342,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/suppressible-exception"
+  },
+  {
+    "cell": null,
+    "code": "SIM105",
+    "end_location": {
+      "column": 25,
+      "row": 71
+    },
+    "filename": "/home/hfy/APP/All_bot/src/handlers/command_handler.py",
+    "fix": {
+      "applicability": "unsafe",
+      "edits": [
+        {
+          "content": "import contextlib\n",
+          "end_location": {
+            "column": 1,
+            "row": 12
+          },
+          "location": {
+            "column": 1,
+            "row": 12
+          }
+        },
+        {
+          "content": "with contextlib.suppress(Exception)",
+          "end_location": {
+            "column": 20,
+            "row": 63
+          },
+          "location": {
+            "column": 17,
+            "row": 63
+          }
+        },
+        {
+          "content": "",
+          "end_location": {
+            "column": 1,
+            "row": 72
+          },
+          "location": {
+            "column": 1,
+            "row": 70
+          }
+        }
+      ],
+      "message": "Replace `try`-`except`-`pass` with `with contextlib.suppress(Exception): ...`"
+    },
+    "location": {
+      "column": 17,
+      "row": 63
+    },
+    "message": "Use `contextlib.suppress(Exception)` instead of `try`-`except`-`pass`",
+    "noqa_row": 63,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/suppressible-exception"
+  },
+  {
+    "cell": null,
+    "code": "SIM105",
+    "end_location": {
+      "column": 25,
+      "row": 82
+    },
+    "filename": "/home/hfy/APP/All_bot/src/handlers/command_handler.py",
+    "fix": {
+      "applicability": "unsafe",
+      "edits": [
+        {
+          "content": "import contextlib\n",
+          "end_location": {
+            "column": 1,
+            "row": 12
+          },
+          "location": {
+            "column": 1,
+            "row": 12
+          }
+        },
+        {
+          "content": "with contextlib.suppress(Exception)",
+          "end_location": {
+            "column": 20,
+            "row": 74
+          },
+          "location": {
+            "column": 17,
+            "row": 74
+          }
+        },
+        {
+          "content": "",
+          "end_location": {
+            "column": 1,
+            "row": 83
+          },
+          "location": {
+            "column": 1,
+            "row": 81
+          }
+        }
+      ],
+      "message": "Replace `try`-`except`-`pass` with `with contextlib.suppress(Exception): ...`"
+    },
+    "location": {
+      "column": 17,
+      "row": 74
+    },
+    "message": "Use `contextlib.suppress(Exception)` instead of `try`-`except`-`pass`",
+    "noqa_row": 74,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/suppressible-exception"
+  },
+  {
+    "cell": null,
+    "code": "SIM105",
+    "end_location": {
+      "column": 17,
+      "row": 47
+    },
+    "filename": "/home/hfy/APP/All_bot/src/handlers/fsm/custom_video_fsm.py",
+    "fix": {
+      "applicability": "unsafe",
+      "edits": [
+        {
+          "content": "import contextlib\n",
+          "end_location": {
+            "column": 1,
+            "row": 27
+          },
+          "location": {
+            "column": 1,
+            "row": 27
+          }
+        },
+        {
+          "content": "with contextlib.suppress(Exception)",
+          "end_location": {
+            "column": 12,
+            "row": 44
+          },
+          "location": {
+            "column": 9,
+            "row": 44
+          }
+        },
+        {
+          "content": "",
+          "end_location": {
+            "column": 1,
+            "row": 48
+          },
+          "location": {
+            "column": 1,
+            "row": 46
+          }
+        }
+      ],
+      "message": "Replace `try`-`except`-`pass` with `with contextlib.suppress(Exception): ...`"
+    },
+    "location": {
+      "column": 9,
+      "row": 44
+    },
+    "message": "Use `contextlib.suppress(Exception)` instead of `try`-`except`-`pass`",
+    "noqa_row": 44,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/suppressible-exception"
+  },
+  {
+    "cell": null,
+    "code": "SIM105",
+    "end_location": {
+      "column": 17,
+      "row": 135
+    },
+    "filename": "/home/hfy/APP/All_bot/src/handlers/fsm/custom_video_fsm.py",
+    "fix": {
+      "applicability": "unsafe",
+      "edits": [
+        {
+          "content": "import contextlib\n",
+          "end_location": {
+            "column": 1,
+            "row": 27
+          },
+          "location": {
+            "column": 1,
+            "row": 27
+          }
+        },
+        {
+          "content": "with contextlib.suppress(Exception)",
+          "end_location": {
+            "column": 12,
+            "row": 132
+          },
+          "location": {
+            "column": 9,
+            "row": 132
+          }
+        },
+        {
+          "content": "",
+          "end_location": {
+            "column": 1,
+            "row": 136
+          },
+          "location": {
+            "column": 1,
+            "row": 134
+          }
+        }
+      ],
+      "message": "Replace `try`-`except`-`pass` with `with contextlib.suppress(Exception): ...`"
+    },
+    "location": {
+      "column": 9,
+      "row": 132
+    },
+    "message": "Use `contextlib.suppress(Exception)` instead of `try`-`except`-`pass`",
+    "noqa_row": 132,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/suppressible-exception"
+  },
+  {
+    "cell": null,
+    "code": "SIM105",
+    "end_location": {
+      "column": 21,
+      "row": 145
+    },
+    "filename": "/home/hfy/APP/All_bot/src/handlers/fsm/custom_video_fsm.py",
+    "fix": {
+      "applicability": "unsafe",
+      "edits": [
+        {
+          "content": "import contextlib\n",
+          "end_location": {
+            "column": 1,
+            "row": 27
+          },
+          "location": {
+            "column": 1,
+            "row": 27
+          }
+        },
+        {
+          "content": "with contextlib.suppress(Exception)",
+          "end_location": {
+            "column": 16,
+            "row": 142
+          },
+          "location": {
+            "column": 13,
+            "row": 142
+          }
+        },
+        {
+          "content": "",
+          "end_location": {
+            "column": 1,
+            "row": 146
+          },
+          "location": {
+            "column": 1,
+            "row": 144
+          }
+        }
+      ],
+      "message": "Replace `try`-`except`-`pass` with `with contextlib.suppress(Exception): ...`"
+    },
+    "location": {
+      "column": 13,
+      "row": 142
+    },
+    "message": "Use `contextlib.suppress(Exception)` instead of `try`-`except`-`pass`",
+    "noqa_row": 142,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/suppressible-exception"
+  },
+  {
+    "cell": null,
+    "code": "SIM105",
+    "end_location": {
+      "column": 21,
+      "row": 154
+    },
+    "filename": "/home/hfy/APP/All_bot/src/handlers/fsm/custom_video_fsm.py",
+    "fix": {
+      "applicability": "unsafe",
+      "edits": [
+        {
+          "content": "import contextlib\n",
+          "end_location": {
+            "column": 1,
+            "row": 27
+          },
+          "location": {
+            "column": 1,
+            "row": 27
+          }
+        },
+        {
+          "content": "with contextlib.suppress(Exception)",
+          "end_location": {
+            "column": 16,
+            "row": 151
+          },
+          "location": {
+            "column": 13,
+            "row": 151
+          }
+        },
+        {
+          "content": "",
+          "end_location": {
+            "column": 1,
+            "row": 155
+          },
+          "location": {
+            "column": 1,
+            "row": 153
+          }
+        }
+      ],
+      "message": "Replace `try`-`except`-`pass` with `with contextlib.suppress(Exception): ...`"
+    },
+    "location": {
+      "column": 13,
+      "row": 151
+    },
+    "message": "Use `contextlib.suppress(Exception)` instead of `try`-`except`-`pass`",
+    "noqa_row": 151,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/suppressible-exception"
+  },
+  {
+    "cell": null,
+    "code": "SIM105",
+    "end_location": {
+      "column": 13,
+      "row": 177
+    },
+    "filename": "/home/hfy/APP/All_bot/src/handlers/fsm/custom_video_fsm.py",
+    "fix": {
+      "applicability": "unsafe",
+      "edits": [
+        {
+          "content": "import contextlib\n",
+          "end_location": {
+            "column": 1,
+            "row": 27
+          },
+          "location": {
+            "column": 1,
+            "row": 27
+          }
+        },
+        {
+          "content": "with contextlib.suppress(Exception)",
+          "end_location": {
+            "column": 8,
+            "row": 174
+          },
+          "location": {
+            "column": 5,
+            "row": 174
+          }
+        },
+        {
+          "content": "",
+          "end_location": {
+            "column": 1,
+            "row": 178
+          },
+          "location": {
+            "column": 1,
+            "row": 176
+          }
+        }
+      ],
+      "message": "Replace `try`-`except`-`pass` with `with contextlib.suppress(Exception): ...`"
+    },
+    "location": {
+      "column": 5,
+      "row": 174
+    },
+    "message": "Use `contextlib.suppress(Exception)` instead of `try`-`except`-`pass`",
+    "noqa_row": 174,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/suppressible-exception"
+  },
+  {
+    "cell": null,
+    "code": "SIM105",
+    "end_location": {
+      "column": 17,
+      "row": 53
+    },
+    "filename": "/home/hfy/APP/All_bot/src/handlers/fsm/face_video_fsm.py",
+    "fix": {
+      "applicability": "unsafe",
+      "edits": [
+        {
+          "content": "import contextlib\n",
+          "end_location": {
+            "column": 1,
+            "row": 20
+          },
+          "location": {
+            "column": 1,
+            "row": 20
+          }
+        },
+        {
+          "content": "with contextlib.suppress(Exception)",
+          "end_location": {
+            "column": 12,
+            "row": 50
+          },
+          "location": {
+            "column": 9,
+            "row": 50
+          }
+        },
+        {
+          "content": "",
+          "end_location": {
+            "column": 1,
+            "row": 54
+          },
+          "location": {
+            "column": 1,
+            "row": 52
+          }
+        }
+      ],
+      "message": "Replace `try`-`except`-`pass` with `with contextlib.suppress(Exception): ...`"
+    },
+    "location": {
+      "column": 9,
+      "row": 50
+    },
+    "message": "Use `contextlib.suppress(Exception)` instead of `try`-`except`-`pass`",
+    "noqa_row": 50,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/suppressible-exception"
+  },
+  {
+    "cell": null,
+    "code": "SIM105",
+    "end_location": {
+      "column": 17,
+      "row": 212
+    },
+    "filename": "/home/hfy/APP/All_bot/src/handlers/fsm/face_video_fsm.py",
+    "fix": {
+      "applicability": "unsafe",
+      "edits": [
+        {
+          "content": "import contextlib\n",
+          "end_location": {
+            "column": 1,
+            "row": 20
+          },
+          "location": {
+            "column": 1,
+            "row": 20
+          }
+        },
+        {
+          "content": "with contextlib.suppress(Exception)",
+          "end_location": {
+            "column": 12,
+            "row": 209
+          },
+          "location": {
+            "column": 9,
+            "row": 209
+          }
+        },
+        {
+          "content": "",
+          "end_location": {
+            "column": 1,
+            "row": 213
+          },
+          "location": {
+            "column": 1,
+            "row": 211
+          }
+        }
+      ],
+      "message": "Replace `try`-`except`-`pass` with `with contextlib.suppress(Exception): ...`"
+    },
+    "location": {
+      "column": 9,
+      "row": 209
+    },
+    "message": "Use `contextlib.suppress(Exception)` instead of `try`-`except`-`pass`",
+    "noqa_row": 209,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/suppressible-exception"
+  },
+  {
+    "cell": null,
+    "code": "SIM105",
+    "end_location": {
+      "column": 17,
+      "row": 47
+    },
+    "filename": "/home/hfy/APP/All_bot/src/handlers/fsm/faceswap_fsm.py",
+    "fix": {
+      "applicability": "unsafe",
+      "edits": [
+        {
+          "content": "import contextlib\n",
+          "end_location": {
+            "column": 1,
+            "row": 26
+          },
+          "location": {
+            "column": 1,
+            "row": 26
+          }
+        },
+        {
+          "content": "with contextlib.suppress(Exception)",
+          "end_location": {
+            "column": 12,
+            "row": 44
+          },
+          "location": {
+            "column": 9,
+            "row": 44
+          }
+        },
+        {
+          "content": "",
+          "end_location": {
+            "column": 1,
+            "row": 48
+          },
+          "location": {
+            "column": 1,
+            "row": 46
+          }
+        }
+      ],
+      "message": "Replace `try`-`except`-`pass` with `with contextlib.suppress(Exception): ...`"
+    },
+    "location": {
+      "column": 9,
+      "row": 44
+    },
+    "message": "Use `contextlib.suppress(Exception)` instead of `try`-`except`-`pass`",
+    "noqa_row": 44,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/suppressible-exception"
+  },
+  {
+    "cell": null,
+    "code": "SIM105",
+    "end_location": {
+      "column": 17,
+      "row": 50
+    },
+    "filename": "/home/hfy/APP/All_bot/src/handlers/fsm/gallery_apply_fsm.py",
+    "fix": {
+      "applicability": "unsafe",
+      "edits": [
+        {
+          "content": "import contextlib\n",
+          "end_location": {
+            "column": 1,
+            "row": 33
+          },
+          "location": {
+            "column": 1,
+            "row": 33
+          }
+        },
+        {
+          "content": "with contextlib.suppress(Exception)",
+          "end_location": {
+            "column": 12,
+            "row": 47
+          },
+          "location": {
+            "column": 9,
+            "row": 47
+          }
+        },
+        {
+          "content": "",
+          "end_location": {
+            "column": 1,
+            "row": 51
+          },
+          "location": {
+            "column": 1,
+            "row": 49
+          }
+        }
+      ],
+      "message": "Replace `try`-`except`-`pass` with `with contextlib.suppress(Exception): ...`"
+    },
+    "location": {
+      "column": 9,
+      "row": 47
+    },
+    "message": "Use `contextlib.suppress(Exception)` instead of `try`-`except`-`pass`",
+    "noqa_row": 47,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/suppressible-exception"
+  },
+  {
+    "cell": null,
+    "code": "SIM105",
+    "end_location": {
+      "column": 17,
+      "row": 49
+    },
+    "filename": "/home/hfy/APP/All_bot/src/handlers/fsm/ltx_video_fsm.py",
+    "fix": {
+      "applicability": "unsafe",
+      "edits": [
+        {
+          "content": "import contextlib\n",
+          "end_location": {
+            "column": 1,
+            "row": 29
+          },
+          "location": {
+            "column": 1,
+            "row": 29
+          }
+        },
+        {
+          "content": "with contextlib.suppress(Exception)",
+          "end_location": {
+            "column": 12,
+            "row": 46
+          },
+          "location": {
+            "column": 9,
+            "row": 46
+          }
+        },
+        {
+          "content": "",
+          "end_location": {
+            "column": 1,
+            "row": 50
+          },
+          "location": {
+            "column": 1,
+            "row": 48
+          }
+        }
+      ],
+      "message": "Replace `try`-`except`-`pass` with `with contextlib.suppress(Exception): ...`"
+    },
+    "location": {
+      "column": 9,
+      "row": 46
+    },
+    "message": "Use `contextlib.suppress(Exception)` instead of `try`-`except`-`pass`",
+    "noqa_row": 46,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/suppressible-exception"
+  },
+  {
+    "cell": null,
+    "code": "SIM105",
+    "end_location": {
+      "column": 17,
+      "row": 153
+    },
+    "filename": "/home/hfy/APP/All_bot/src/handlers/fsm/ltx_video_fsm.py",
+    "fix": {
+      "applicability": "unsafe",
+      "edits": [
+        {
+          "content": "import contextlib\n",
+          "end_location": {
+            "column": 1,
+            "row": 29
+          },
+          "location": {
+            "column": 1,
+            "row": 29
+          }
+        },
+        {
+          "content": "with contextlib.suppress(Exception)",
+          "end_location": {
+            "column": 12,
+            "row": 150
+          },
+          "location": {
+            "column": 9,
+            "row": 150
+          }
+        },
+        {
+          "content": "",
+          "end_location": {
+            "column": 1,
+            "row": 154
+          },
+          "location": {
+            "column": 1,
+            "row": 152
+          }
+        }
+      ],
+      "message": "Replace `try`-`except`-`pass` with `with contextlib.suppress(Exception): ...`"
+    },
+    "location": {
+      "column": 9,
+      "row": 150
+    },
+    "message": "Use `contextlib.suppress(Exception)` instead of `try`-`except`-`pass`",
+    "noqa_row": 150,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/suppressible-exception"
+  },
+  {
+    "cell": null,
+    "code": "SIM105",
+    "end_location": {
+      "column": 13,
+      "row": 197
+    },
+    "filename": "/home/hfy/APP/All_bot/src/handlers/fsm/ltx_video_fsm.py",
+    "fix": {
+      "applicability": "unsafe",
+      "edits": [
+        {
+          "content": "import contextlib\n",
+          "end_location": {
+            "column": 1,
+            "row": 29
+          },
+          "location": {
+            "column": 1,
+            "row": 29
+          }
+        },
+        {
+          "content": "with contextlib.suppress(Exception)",
+          "end_location": {
+            "column": 8,
+            "row": 194
+          },
+          "location": {
+            "column": 5,
+            "row": 194
+          }
+        },
+        {
+          "content": "",
+          "end_location": {
+            "column": 1,
+            "row": 198
+          },
+          "location": {
+            "column": 1,
+            "row": 196
+          }
+        }
+      ],
+      "message": "Replace `try`-`except`-`pass` with `with contextlib.suppress(Exception): ...`"
+    },
+    "location": {
+      "column": 5,
+      "row": 194
+    },
+    "message": "Use `contextlib.suppress(Exception)` instead of `try`-`except`-`pass`",
+    "noqa_row": 194,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/suppressible-exception"
+  },
+  {
+    "cell": null,
+    "code": "SIM105",
+    "end_location": {
+      "column": 17,
+      "row": 239
+    },
+    "filename": "/home/hfy/APP/All_bot/src/handlers/fsm/ltx_video_fsm.py",
+    "fix": {
+      "applicability": "unsafe",
+      "edits": [
+        {
+          "content": "import contextlib\n",
+          "end_location": {
+            "column": 1,
+            "row": 29
+          },
+          "location": {
+            "column": 1,
+            "row": 29
+          }
+        },
+        {
+          "content": "with contextlib.suppress(Exception)",
+          "end_location": {
+            "column": 12,
+            "row": 236
+          },
+          "location": {
+            "column": 9,
+            "row": 236
+          }
+        },
+        {
+          "content": "",
+          "end_location": {
+            "column": 1,
+            "row": 240
+          },
+          "location": {
+            "column": 1,
+            "row": 238
+          }
+        }
+      ],
+      "message": "Replace `try`-`except`-`pass` with `with contextlib.suppress(Exception): ...`"
+    },
+    "location": {
+      "column": 9,
+      "row": 236
+    },
+    "message": "Use `contextlib.suppress(Exception)` instead of `try`-`except`-`pass`",
+    "noqa_row": 236,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/suppressible-exception"
+  },
+  {
+    "cell": null,
+    "code": "SIM105",
+    "end_location": {
+      "column": 13,
+      "row": 263
+    },
+    "filename": "/home/hfy/APP/All_bot/src/handlers/fsm/ltx_video_fsm.py",
+    "fix": {
+      "applicability": "unsafe",
+      "edits": [
+        {
+          "content": "import contextlib\n",
+          "end_location": {
+            "column": 1,
+            "row": 29
+          },
+          "location": {
+            "column": 1,
+            "row": 29
+          }
+        },
+        {
+          "content": "with contextlib.suppress(Exception)",
+          "end_location": {
+            "column": 8,
+            "row": 260
+          },
+          "location": {
+            "column": 5,
+            "row": 260
+          }
+        },
+        {
+          "content": "",
+          "end_location": {
+            "column": 1,
+            "row": 264
+          },
+          "location": {
+            "column": 1,
+            "row": 262
+          }
+        }
+      ],
+      "message": "Replace `try`-`except`-`pass` with `with contextlib.suppress(Exception): ...`"
+    },
+    "location": {
+      "column": 5,
+      "row": 260
+    },
+    "message": "Use `contextlib.suppress(Exception)` instead of `try`-`except`-`pass`",
+    "noqa_row": 260,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/suppressible-exception"
+  },
+  {
+    "cell": null,
+    "code": "SIM105",
+    "end_location": {
+      "column": 17,
+      "row": 159
+    },
+    "filename": "/home/hfy/APP/All_bot/src/handlers/fsm/quick_video_fsm.py",
+    "fix": {
+      "applicability": "unsafe",
+      "edits": [
+        {
+          "content": "import contextlib\n",
+          "end_location": {
+            "column": 1,
+            "row": 32
+          },
+          "location": {
+            "column": 1,
+            "row": 32
+          }
+        },
+        {
+          "content": "with contextlib.suppress(Exception)",
+          "end_location": {
+            "column": 12,
+            "row": 156
+          },
+          "location": {
+            "column": 9,
+            "row": 156
+          }
+        },
+        {
+          "content": "",
+          "end_location": {
+            "column": 1,
+            "row": 160
+          },
+          "location": {
+            "column": 1,
+            "row": 158
+          }
+        }
+      ],
+      "message": "Replace `try`-`except`-`pass` with `with contextlib.suppress(Exception): ...`"
+    },
+    "location": {
+      "column": 9,
+      "row": 156
+    },
+    "message": "Use `contextlib.suppress(Exception)` instead of `try`-`except`-`pass`",
+    "noqa_row": 156,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/suppressible-exception"
+  },
+  {
+    "cell": null,
+    "code": "SIM105",
+    "end_location": {
+      "column": 21,
+      "row": 173
+    },
+    "filename": "/home/hfy/APP/All_bot/src/handlers/fsm/quick_video_fsm.py",
+    "fix": {
+      "applicability": "unsafe",
+      "edits": [
+        {
+          "content": "import contextlib\n",
+          "end_location": {
+            "column": 1,
+            "row": 32
+          },
+          "location": {
+            "column": 1,
+            "row": 32
+          }
+        },
+        {
+          "content": "with contextlib.suppress(Exception)",
+          "end_location": {
+            "column": 16,
+            "row": 170
+          },
+          "location": {
+            "column": 13,
+            "row": 170
+          }
+        },
+        {
+          "content": "",
+          "end_location": {
+            "column": 1,
+            "row": 174
+          },
+          "location": {
+            "column": 1,
+            "row": 172
+          }
+        }
+      ],
+      "message": "Replace `try`-`except`-`pass` with `with contextlib.suppress(Exception): ...`"
+    },
+    "location": {
+      "column": 13,
+      "row": 170
+    },
+    "message": "Use `contextlib.suppress(Exception)` instead of `try`-`except`-`pass`",
+    "noqa_row": 170,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/suppressible-exception"
+  },
+  {
+    "cell": null,
+    "code": "SIM105",
+    "end_location": {
+      "column": 21,
+      "row": 182
+    },
+    "filename": "/home/hfy/APP/All_bot/src/handlers/fsm/quick_video_fsm.py",
+    "fix": {
+      "applicability": "unsafe",
+      "edits": [
+        {
+          "content": "import contextlib\n",
+          "end_location": {
+            "column": 1,
+            "row": 32
+          },
+          "location": {
+            "column": 1,
+            "row": 32
+          }
+        },
+        {
+          "content": "with contextlib.suppress(Exception)",
+          "end_location": {
+            "column": 16,
+            "row": 179
+          },
+          "location": {
+            "column": 13,
+            "row": 179
+          }
+        },
+        {
+          "content": "",
+          "end_location": {
+            "column": 1,
+            "row": 183
+          },
+          "location": {
+            "column": 1,
+            "row": 181
+          }
+        }
+      ],
+      "message": "Replace `try`-`except`-`pass` with `with contextlib.suppress(Exception): ...`"
+    },
+    "location": {
+      "column": 13,
+      "row": 179
+    },
+    "message": "Use `contextlib.suppress(Exception)` instead of `try`-`except`-`pass`",
+    "noqa_row": 179,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/suppressible-exception"
+  },
+  {
+    "cell": null,
+    "code": "SIM105",
+    "end_location": {
+      "column": 13,
+      "row": 209
+    },
+    "filename": "/home/hfy/APP/All_bot/src/handlers/fsm/quick_video_fsm.py",
+    "fix": {
+      "applicability": "unsafe",
+      "edits": [
+        {
+          "content": "import contextlib\n",
+          "end_location": {
+            "column": 1,
+            "row": 32
+          },
+          "location": {
+            "column": 1,
+            "row": 32
+          }
+        },
+        {
+          "content": "with contextlib.suppress(Exception)",
+          "end_location": {
+            "column": 8,
+            "row": 206
+          },
+          "location": {
+            "column": 5,
+            "row": 206
+          }
+        },
+        {
+          "content": "",
+          "end_location": {
+            "column": 1,
+            "row": 210
+          },
+          "location": {
+            "column": 1,
+            "row": 208
+          }
+        }
+      ],
+      "message": "Replace `try`-`except`-`pass` with `with contextlib.suppress(Exception): ...`"
+    },
+    "location": {
+      "column": 5,
+      "row": 206
+    },
+    "message": "Use `contextlib.suppress(Exception)` instead of `try`-`except`-`pass`",
+    "noqa_row": 206,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/suppressible-exception"
+  },
+  {
+    "cell": null,
+    "code": "SIM105",
+    "end_location": {
+      "column": 33,
+      "row": 249
+    },
+    "filename": "/home/hfy/APP/All_bot/src/handlers/fsm/quick_video_fsm.py",
+    "fix": {
+      "applicability": "unsafe",
+      "edits": [
+        {
+          "content": "import contextlib\n",
+          "end_location": {
+            "column": 1,
+            "row": 32
+          },
+          "location": {
+            "column": 1,
+            "row": 32
+          }
+        },
+        {
+          "content": "with contextlib.suppress(OSError)",
+          "end_location": {
+            "column": 16,
+            "row": 248
+          },
+          "location": {
+            "column": 13,
+            "row": 248
+          }
+        },
+        {
+          "content": "",
+          "end_location": {
+            "column": 1,
+            "row": 250
+          },
+          "location": {
+            "column": 1,
+            "row": 249
+          }
+        }
+      ],
+      "message": "Replace `try`-`except`-`pass` with `with contextlib.suppress(OSError): ...`"
+    },
+    "location": {
+      "column": 13,
+      "row": 248
+    },
+    "message": "Use `contextlib.suppress(OSError)` instead of `try`-`except`-`pass`",
+    "noqa_row": 248,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/suppressible-exception"
+  },
+  {
+    "cell": null,
+    "code": "SIM105",
+    "end_location": {
+      "column": 17,
+      "row": 57
+    },
+    "filename": "/home/hfy/APP/All_bot/src/handlers/fsm/video_lora_fsm.py",
+    "fix": {
+      "applicability": "unsafe",
+      "edits": [
+        {
+          "content": "import contextlib\n",
+          "end_location": {
+            "column": 1,
+            "row": 27
+          },
+          "location": {
+            "column": 1,
+            "row": 27
+          }
+        },
+        {
+          "content": "with contextlib.suppress(Exception)",
+          "end_location": {
+            "column": 12,
+            "row": 54
+          },
+          "location": {
+            "column": 9,
+            "row": 54
+          }
+        },
+        {
+          "content": "",
+          "end_location": {
+            "column": 1,
+            "row": 58
+          },
+          "location": {
+            "column": 1,
+            "row": 56
+          }
+        }
+      ],
+      "message": "Replace `try`-`except`-`pass` with `with contextlib.suppress(Exception): ...`"
+    },
+    "location": {
+      "column": 9,
+      "row": 54
+    },
+    "message": "Use `contextlib.suppress(Exception)` instead of `try`-`except`-`pass`",
+    "noqa_row": 54,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/suppressible-exception"
+  },
+  {
+    "cell": null,
+    "code": "SIM105",
+    "end_location": {
+      "column": 17,
+      "row": 174
+    },
+    "filename": "/home/hfy/APP/All_bot/src/handlers/fsm/video_lora_fsm.py",
+    "fix": {
+      "applicability": "unsafe",
+      "edits": [
+        {
+          "content": "import contextlib\n",
+          "end_location": {
+            "column": 1,
+            "row": 27
+          },
+          "location": {
+            "column": 1,
+            "row": 27
+          }
+        },
+        {
+          "content": "with contextlib.suppress(Exception)",
+          "end_location": {
+            "column": 12,
+            "row": 171
+          },
+          "location": {
+            "column": 9,
+            "row": 171
+          }
+        },
+        {
+          "content": "",
+          "end_location": {
+            "column": 1,
+            "row": 175
+          },
+          "location": {
+            "column": 1,
+            "row": 173
+          }
+        }
+      ],
+      "message": "Replace `try`-`except`-`pass` with `with contextlib.suppress(Exception): ...`"
+    },
+    "location": {
+      "column": 9,
+      "row": 171
+    },
+    "message": "Use `contextlib.suppress(Exception)` instead of `try`-`except`-`pass`",
+    "noqa_row": 171,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/suppressible-exception"
+  },
+  {
+    "cell": null,
+    "code": "SIM105",
+    "end_location": {
+      "column": 21,
+      "row": 184
+    },
+    "filename": "/home/hfy/APP/All_bot/src/handlers/fsm/video_lora_fsm.py",
+    "fix": {
+      "applicability": "unsafe",
+      "edits": [
+        {
+          "content": "import contextlib\n",
+          "end_location": {
+            "column": 1,
+            "row": 27
+          },
+          "location": {
+            "column": 1,
+            "row": 27
+          }
+        },
+        {
+          "content": "with contextlib.suppress(Exception)",
+          "end_location": {
+            "column": 16,
+            "row": 181
+          },
+          "location": {
+            "column": 13,
+            "row": 181
+          }
+        },
+        {
+          "content": "",
+          "end_location": {
+            "column": 1,
+            "row": 185
+          },
+          "location": {
+            "column": 1,
+            "row": 183
+          }
+        }
+      ],
+      "message": "Replace `try`-`except`-`pass` with `with contextlib.suppress(Exception): ...`"
+    },
+    "location": {
+      "column": 13,
+      "row": 181
+    },
+    "message": "Use `contextlib.suppress(Exception)` instead of `try`-`except`-`pass`",
+    "noqa_row": 181,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/suppressible-exception"
+  },
+  {
+    "cell": null,
+    "code": "SIM105",
+    "end_location": {
+      "column": 21,
+      "row": 193
+    },
+    "filename": "/home/hfy/APP/All_bot/src/handlers/fsm/video_lora_fsm.py",
+    "fix": {
+      "applicability": "unsafe",
+      "edits": [
+        {
+          "content": "import contextlib\n",
+          "end_location": {
+            "column": 1,
+            "row": 27
+          },
+          "location": {
+            "column": 1,
+            "row": 27
+          }
+        },
+        {
+          "content": "with contextlib.suppress(Exception)",
+          "end_location": {
+            "column": 16,
+            "row": 190
+          },
+          "location": {
+            "column": 13,
+            "row": 190
+          }
+        },
+        {
+          "content": "",
+          "end_location": {
+            "column": 1,
+            "row": 194
+          },
+          "location": {
+            "column": 1,
+            "row": 192
+          }
+        }
+      ],
+      "message": "Replace `try`-`except`-`pass` with `with contextlib.suppress(Exception): ...`"
+    },
+    "location": {
+      "column": 13,
+      "row": 190
+    },
+    "message": "Use `contextlib.suppress(Exception)` instead of `try`-`except`-`pass`",
+    "noqa_row": 190,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/suppressible-exception"
+  },
+  {
+    "cell": null,
+    "code": "SIM105",
+    "end_location": {
+      "column": 13,
+      "row": 218
+    },
+    "filename": "/home/hfy/APP/All_bot/src/handlers/fsm/video_lora_fsm.py",
+    "fix": {
+      "applicability": "unsafe",
+      "edits": [
+        {
+          "content": "import contextlib\n",
+          "end_location": {
+            "column": 1,
+            "row": 27
+          },
+          "location": {
+            "column": 1,
+            "row": 27
+          }
+        },
+        {
+          "content": "with contextlib.suppress(Exception)",
+          "end_location": {
+            "column": 8,
+            "row": 215
+          },
+          "location": {
+            "column": 5,
+            "row": 215
+          }
+        },
+        {
+          "content": "",
+          "end_location": {
+            "column": 1,
+            "row": 219
+          },
+          "location": {
+            "column": 1,
+            "row": 217
+          }
+        }
+      ],
+      "message": "Replace `try`-`except`-`pass` with `with contextlib.suppress(Exception): ...`"
+    },
+    "location": {
+      "column": 5,
+      "row": 215
+    },
+    "message": "Use `contextlib.suppress(Exception)` instead of `try`-`except`-`pass`",
+    "noqa_row": 215,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/suppressible-exception"
+  },
+  {
+    "cell": null,
+    "code": "SIM105",
+    "end_location": {
+      "column": 25,
+      "row": 1263
+    },
+    "filename": "/home/hfy/APP/All_bot/src/services/task_service.py",
+    "fix": {
+      "applicability": "unsafe",
+      "edits": [
+        {
+          "content": "import contextlib\n",
+          "end_location": {
+            "column": 1,
+            "row": 49
+          },
+          "location": {
+            "column": 1,
+            "row": 49
+          }
+        },
+        {
+          "content": "with contextlib.suppress(OSError)",
+          "end_location": {
+            "column": 20,
+            "row": 1260
+          },
+          "location": {
+            "column": 17,
+            "row": 1260
+          }
+        },
+        {
+          "content": "",
+          "end_location": {
+            "column": 1,
+            "row": 1264
+          },
+          "location": {
+            "column": 1,
+            "row": 1262
+          }
+        }
+      ],
+      "message": "Replace `try`-`except`-`pass` with `with contextlib.suppress(OSError): ...`"
+    },
+    "location": {
+      "column": 17,
+      "row": 1260
+    },
+    "message": "Use `contextlib.suppress(OSError)` instead of `try`-`except`-`pass`",
+    "noqa_row": 1260,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/suppressible-exception"
+  }
+]

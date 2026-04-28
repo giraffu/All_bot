@@ -35,6 +35,7 @@ from src.core.billing_core import (
 )
 from src.core.task_dispatcher import StrategyFactory, dispatch_to_worker
 from src.utils import load_prompts
+import contextlib
 
 
 class CoreDomainError(Exception):
@@ -176,7 +177,6 @@ async def process_and_submit_task(
             # Only use default prompt if user didn't provide one
             if not prompt or prompt.strip() == "":
                 prompt = prompts_config.get(task_type, task_type)
-            negative_prompt = prompts_config.get("negative_prompt", "")
             
             allow_contribute = not is_template
             registry_task_id = None
@@ -224,10 +224,8 @@ async def process_and_submit_task(
             except Exception as e:
                 logger.error(f"Dispatch to worker failed: {e}", exc_info=True)
                 if registry_task_id:
-                    try:
+                    with contextlib.suppress(Exception):
                         await TaskRegistry.mark_task_status(registry_task_id, "failed")
-                    except Exception:
-                        pass
                 success = False
                 backend_task_id = None
                 error_msg = str(e)
@@ -277,10 +275,8 @@ async def process_and_submit_task(
                     from src.services.redis_client import redis_client
                     await redis_client.add_pending_refund(user_id, cost, f"Task Failed: {str(e)}", username)
                     
-            try:
+            with contextlib.suppress(Exception):
                 await asyncio.shield(TaskRegistry.remove_task(task_id))
-            except Exception: 
-                pass
                 
             raise CoreDomainError(f"系统派发失败，灵石已全额退还。错误: {str(e)}")
             

@@ -1,0 +1,54 @@
+************* Module config
+config.py:1:0: R0801: Similar lines in 2 files
+==src.core.user_core:[17:31]
+==src.quota:[51:63]
+        result = await session.execute(stmt)
+        user = result.scalar_one_or_none()
+
+        if user:
+            updated = False
+            if username and user.username != username:
+                user.username = username
+                updated = True
+            if full_name and user.full_name != full_name:
+                user.full_name = full_name
+                updated = True
+
+            if updated:
+                await session.commit() (duplicate-code)
+config.py:1:0: R0801: Similar lines in 2 files
+==app.main:[76:87]
+==app.routers.agent:[17:27]
+    redis = Redis.from_url(settings.redis_url)
+    try:
+        yield redis
+    finally:
+        await redis.close()
+
+# Dependency for QueueManager
+async def get_queue_manager(redis: Redis = Depends(get_redis)):
+    return QueueManager(redis)
+ (duplicate-code)
+config.py:1:0: R0801: Similar lines in 2 files
+==src.core.task_core:[145:151]
+==src.core.task_dispatcher:[233:239]
+        dur_str = str(duration).replace("s", "")
+        try:
+            dur_val = int(dur_str)
+        except ValueError:
+            dur_val = 5
+ (duplicate-code)
+config.py:1:0: R0801: Similar lines in 2 files
+==app.main:[276:282]
+==src.web_api.routers.tasks:[152:159]
+                    data = message["data"]
+                    if isinstance(data, bytes):
+                        data = data.decode("utf-8")
+
+                    # Parse to see if finished or running
+                    try:
+                        parsed = json.loads(data) (duplicate-code)
+
+-----------------------------------
+Your code has been rated at 9.99/10
+

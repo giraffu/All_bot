@@ -240,7 +240,7 @@ class LtxVideoStrategy(BaseTaskStrategy):
         res_str = str(resolution)
         try:
             width, height = map(int, res_str.split('x'))
-        except:
+        except Exception:
             width, height = 1280, 704
             
         saved_images = inputs.get("saved_input_images", [])

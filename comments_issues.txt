@@ -1,0 +1,5 @@
+backend/workflows/Pornmaster Z-Image Turbo_t2i_Double checkpoints & realism enhancer_V1_2026_01_24.json:551:      "text": "<lora:Mystic-XXX-ZIT-V5:0.10>",
+backend/workflows/Pornmaster Z-Image Turbo_t2i_Double checkpoints & realism enhancer_V1_2026_01_24.json:555:            "name": "Mystic-XXX-ZIT-V5",
+workers/comfy_agent/workflows/Pornmaster Z-Image Turbo_t2i_Double checkpoints & realism enhancer_V1_2026_01_24.json:551:      "text": "<lora:Mystic-XXX-ZIT-V5:0.10>",
+workers/comfy_agent/workflows/Pornmaster Z-Image Turbo_t2i_Double checkpoints & realism enhancer_V1_2026_01_24.json:555:            "name": "Mystic-XXX-ZIT-V5",
+workers/comfy_agent/workflows/LTX 2.3 I2V.json:50:        "lora": "ltx2.3/DR34ML4Y_LTXXX_PREVIEW_RC1.safetensors",

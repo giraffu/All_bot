@@ -45,7 +45,7 @@ def get_cached_photo(chat_id: int, user_id: int) -> str:
 # ==========================================
 original_download_to_drive = File.download_to_drive
 
-async def custom_download_as_bytearray(self, out=None, custom_path=None, read_timeout=120.0, *args, **kwargs):
+async def custom_download_as_bytearray(self, _out=None, custom_path=None, read_timeout=120.0, *args, **kwargs):
     """自定义下载逻辑，强制使用直连并修正 URL"""
     try:
         # 获取原始文件路径 (例如: /var/lib/telegram-bot-api/...)
@@ -226,7 +226,6 @@ async def silent_logger_handler(update: Update, context: ContextTypes.DEFAULT_TY
     if not message:
         return
         
-    chat_type = message.chat.type
     chat_id = message.chat_id
     
     # 仅记录指定群组的消息

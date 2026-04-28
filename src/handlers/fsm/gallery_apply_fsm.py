@@ -30,6 +30,7 @@ from src.handlers.prompt_router import is_global_menu_command
 from src.services.permission_service import permission_service
 from src.services.task_service import task_service
 from src.utils import is_maintenance_mode, robust_edit_text, robust_reply_text
+import contextlib
 
 logger = logging.getLogger(__name__)
 
@@ -44,10 +45,8 @@ async def start_gallery_apply(update: Update, context: ContextTypes.DEFAULT_TYPE
     """Entry point from the callback query 'gallery_apply_{post_id}'"""
     query = update.callback_query
     if query:
-        try:
+        with contextlib.suppress(Exception):
             await query.answer(text="⏳ 任务初始化中...", cache_time=2)
-        except Exception:
-            pass
 
     if is_maintenance_mode():
         msg = "⚠️ 🛠️ **系统正在维护升级中**\n\n暂不接受新任务，请稍后再试！"
@@ -273,7 +272,6 @@ async def receive_reference_image(update: Update, context: ContextTypes.DEFAULT_
     task_type = data['task_type']
     is_video = data['is_video']
     prompt = data['prompt']
-    cost = data['cost']
     lora_name = data['lora_name']
     res_str = data['res_str']
     dur_str = data['dur_str']
@@ -281,7 +279,6 @@ async def receive_reference_image(update: Update, context: ContextTypes.DEFAULT_
     # Original template files
     # History.input_file might contain multiple files separated by '|'.
     # Usually the first one is the main template.
-    template_files = data['input_file'].split('|') if data['input_file'] else []
     
     # Prepare parameters for task_service
     # If task_type is face_video or face_swap, the template is the body/video.
