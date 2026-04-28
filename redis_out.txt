@@ -1,2 +1,0 @@
-Concurrency lock for user 1331356067: None
-Total concurrency locks in Redis: 0
