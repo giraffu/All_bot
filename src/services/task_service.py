@@ -336,7 +336,6 @@ class TaskService:
         duration = 5
         from src.constants import (
             MODE_CUSTOM_VIDEO,
-            MODE_EDIT,
             MODE_IMG2IMG_LORA,
         )
         if is_video and task_type in [MODE_CUSTOM_VIDEO, "video_lora"]:

@@ -1,4 +1,4 @@
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -13,17 +13,12 @@ class Settings(BaseSettings):
     minio_endpoint: str = "192.168.1.115:9000"
     minio_access_key: str = "minioadmin"
     minio_secret_key: str = "minioadmin"
-    minio_bucket: str = "bot-data"
     minio_result_bucket: str = "comfyui-temp"
-    minio_template_bucket: str = "bot-template"
     minio_secure: bool = False
     
     # Agent Configuration
     agent_secret_token: str = "super_secret_agent_token_2026"
-    minio_input_bucket: str = "comfyui-input"
     
-    class Config:
-        env_file = ".env"
-        extra = "ignore"
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
 settings = Settings()

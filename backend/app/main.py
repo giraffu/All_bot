@@ -102,7 +102,7 @@ async def verify_token(credentials: HTTPAuthorizationCredentials = Depends(secur
     return credentials.credentials
 
 @app.post("/comfy_img2img", response_model=TaskResponse)
-async def create_img2img_task(
+async def create_img2img_task(  # vulture: ignore
     request: Img2ImgRequest,
     queue_manager: QueueManager = Depends(get_queue_manager),
     token: str = Depends(verify_token)
@@ -114,7 +114,7 @@ async def create_img2img_task(
     return TaskResponse(task_id=task_id)
 
 @app.post("/comfy_img2img_lora", response_model=TaskResponse)
-async def create_img2img_lora_task(
+async def create_img2img_lora_task(  # vulture: ignore
     request: Img2ImgLoraRequest,
     queue_manager: QueueManager = Depends(get_queue_manager),
     token: str = Depends(verify_token)
@@ -126,7 +126,7 @@ async def create_img2img_lora_task(
     return TaskResponse(task_id=task_id)
 
 @app.post("/face_swap", response_model=TaskResponse)
-async def create_face_swap_task(
+async def create_face_swap_task(  # vulture: ignore
     request: FaceSwapRequest,
     queue_manager: QueueManager = Depends(get_queue_manager),
     token: str = Depends(verify_token)
@@ -138,7 +138,7 @@ async def create_face_swap_task(
     return TaskResponse(task_id=task_id)
 
 @app.post("/perfect_video_insert", response_model=TaskResponse)
-async def create_video_insert_task(
+async def create_video_insert_task(  # vulture: ignore
     request: VideoInsertRequest,
     queue_manager: QueueManager = Depends(get_queue_manager),
     token: str = Depends(verify_token)
@@ -150,7 +150,7 @@ async def create_video_insert_task(
     return TaskResponse(task_id=task_id)
 
 @app.post("/perfect_video_edit", response_model=TaskResponse)
-async def create_video_edit_task(
+async def create_video_edit_task(  # vulture: ignore
     request: VideoEditRequest,
     queue_manager: QueueManager = Depends(get_queue_manager),
     token: str = Depends(verify_token)
@@ -162,7 +162,7 @@ async def create_video_edit_task(
     return TaskResponse(task_id=task_id)
 
 @app.post("/perfect_video_lora", response_model=TaskResponse)
-async def create_video_lora_task(
+async def create_video_lora_task(  # vulture: ignore
     request: VideoLoraRequest,
     queue_manager: QueueManager = Depends(get_queue_manager),
     token: str = Depends(verify_token)
@@ -176,7 +176,7 @@ async def create_video_lora_task(
     return TaskResponse(task_id=task_id)
 
 @app.post("/face_video", response_model=TaskResponse)
-async def create_face_video_task(
+async def create_face_video_task(  # vulture: ignore
     request: FaceVideoRequest,
     queue_manager: QueueManager = Depends(get_queue_manager),
     token: str = Depends(verify_token)
