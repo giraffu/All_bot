@@ -220,6 +220,14 @@ class LtxVideoStrategy(BaseTaskStrategy):
     async def submit_task(self, task_id: str, inputs: Dict[str, Any], priority: int) -> str:
         resolution = inputs.get("resolution", 512)
         duration = inputs.get("duration", 5)
+        
+        # Safely parse duration
+        dur_str = str(duration).replace("s", "")
+        try:
+            dur_val = int(dur_str)
+        except ValueError:
+            dur_val = 5
+            
         res_str = str(resolution)
         try:
             width, height = map(int, res_str.split('x'))
@@ -234,7 +242,7 @@ class LtxVideoStrategy(BaseTaskStrategy):
             image_path=image_path, 
             width=width, 
             height=height, 
-            length=duration, 
+            length=dur_val, 
             priority=priority
         )
 

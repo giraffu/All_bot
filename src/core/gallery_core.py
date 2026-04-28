@@ -151,7 +151,8 @@ async def toggle_like(user_id: int, post_id: int, action: str) -> dict:
         existing_inter = await session.execute(
             select(UserInteraction).where(
                 UserInteraction.user_id == user_id,
-                UserInteraction.post_id == post_id
+                UserInteraction.post_id == post_id,
+                UserInteraction.action_type.in_(["like", "dislike"])
             )
         )
         inter = existing_inter.scalars().first()

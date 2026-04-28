@@ -144,7 +144,7 @@ async def process_and_submit_task(
         except ValueError:
             dur_val = 5
             
-        if res_val >= 1024 and dur_val >= 10:
+        if task_type != "ltx_video" and res_val >= 1024 and dur_val >= 10:
             raise CoreDomainError("Cannot select 1024p resolution and 10s duration simultaneously due to high resource usage.")
     
     if check_lock:
