@@ -64,7 +64,7 @@ services:
     container_name: imgproxy
     restart: always
     environment:
-      - IMGPROXY_BIND=:8080
+      - IMGPROXY_BIND=:8084
       - IMGPROXY_ENFORCE_WEBP=true
       - IMGPROXY_MAX_SRC_RESOLUTION=50
       - IMGPROXY_MAX_ANIMATION_FRAMES=1

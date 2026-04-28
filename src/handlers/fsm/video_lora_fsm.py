@@ -313,7 +313,7 @@ def get_video_lora_fsm_handler() -> ConversationHandler:
         states={
             VideoLoraState.WAIT_LORA_SELECTION: [
                 CallbackQueryHandler(handle_lora_selection, pattern='^lora_select_'),
-                MessageHandler(filters.TEXT | filters.COMMAND, unexpected_input)
+                MessageHandler(filters.TEXT & ~filters.COMMAND, unexpected_input)
             ],
             VideoLoraState.WAIT_IMAGE: [
                 MessageHandler(filters.PHOTO | filters.Document.IMAGE, receive_image),

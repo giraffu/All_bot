@@ -6,7 +6,7 @@ from src.database.core import AsyncSessionLocal
 from src.database.models import GalleryPost, UserInteraction, History, User
 from src.web_api.dependencies import get_current_user
 from src.web_api.schemas.gallery_schema import GalleryPostResponse, PaginatedGalleryResponse, ApplyContextResponse
-from src.config_mapping import ALL_LORA_MODELS, translate_tags
+from src.config_mapping import ALL_LORA_MODELS, VIDEO_LORA_MODELS, IMAGE_LORA_MODELS, translate_tags
 
 from src.constants import MODE_NAME_MAP, MODE_I2I_PRO, MODE_EDIT, MODE_CUSTOM_VIDEO, MODE_VIDEO_LORA, MODE_LTX_VIDEO
 from src.services.redis_client import redis_client

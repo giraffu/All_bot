@@ -282,7 +282,7 @@ def get_edit_image_fsm_handler() -> ConversationHandler:
         states={
             EditImageState.WAIT_LORA_SELECTION: [
                 CallbackQueryHandler(handle_lora_selection, pattern="^editlora_select_"),
-                MessageHandler(filters.TEXT | filters.COMMAND, unexpected_input)
+                MessageHandler(filters.TEXT & ~filters.COMMAND, unexpected_input)
             ],
             EditImageState.WAIT_REFERENCE_IMAGES: [
                 MessageHandler(filters.PHOTO | filters.Document.IMAGE, receive_reference_image),
