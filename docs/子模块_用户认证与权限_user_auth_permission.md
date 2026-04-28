@@ -76,28 +76,44 @@ def verify_telegram_webapp_initdata(init_data: str) -> Optional[dict]:
 ```
 
 ### 权限与等级优先级计算 (src/services/permission_service.py)
-[`permission_service.py:L13-L35`](file:///home/hfy/APP/All_bot/src/services/permission_service.py#L13)
+[`permission_service.py:L13-L42`](file:///home/hfy/APP/All_bot/src/services/permission_service.py#L13-L42)
 ```python
 async def calculate_user_priority(self, user_id: int) -> int:
     """
-    计算用户的队列优先级和功能准入权重。
-    返回值越高，权限越大，排队越优先。
-    10: 真传弟子, 5: 核心弟子, 2: 内门弟子, 1: 筑基/金丹期 (普通活跃), 0: 凡人/练气期 (受限)
+    Calculate dynamic priority based on user group (修为), identity (身份), and daily usage.
+    Priority from group and identity are calculated independently and then added together.
+    Rules defined in DYNAMIC_PRIORITY_RULES.
     """
-    identity = await self.get_user_identity(user_id)
+    # 新手特权：前2次生成固定极高优先级 30
+    stats = await self.quota_manager.get_user_stats(user_id)
+    if stats.get("generation_count", 0) < 2:
+        return 30
+
     group = await self.get_user_group(user_id)
+    identity = await self.get_user_identity(user_id)
+    usage = await self.quota_manager.get_daily_usage(user_id)
     
-    # 身份越权优先判断
-    if identity == '真传弟子': return 10
-    if identity == '核心弟子': return 5
-    if identity == '内门弟子': return 2
+    group_priority = 0
+    group_rules = DYNAMIC_PRIORITY_RULES.get(group, [])
+    for limit, priority in group_rules:
+        if usage < limit:
+            group_priority = priority
+            break
+            
+    identity_priority = 0
+    identity_rules = DYNAMIC_PRIORITY_RULES.get(identity, [])
+    for limit, priority in identity_rules:
+        if usage < limit:
+            identity_priority = priority
+            break
     
-    # 无充值身份但有活跃等级
-    if group in ['元婴期', '金丹期', '筑基期']: return 1
-    
-    # 默认零权限，在部分节点(如视频生成)可能触发限流
-    return 0
+    return group_priority + identity_priority
 ```
+
+### 核心层隔离 (Core Isolation) 规范
+为了支持多端复用（Web API, Bot, Dashboard），`PermissionService` 中的所有核心业务方法（如 `check_access`, `ensure_user`, `perform_checkin`）已彻底剥离对 Telegram 特定对象（如 `Update`, `ContextTypes`）的依赖，全部改为接收基础类型参数（`tg_id`, `username`, `full_name` 等）。
+调用方（如 Handler 层）在调用前，必须自行完成对象的解析与前置防御（例如判断 `update.effective_user` 是否为空）。
+
 
 ## 4. 接口定义 (OpenAPI 3.0)
 

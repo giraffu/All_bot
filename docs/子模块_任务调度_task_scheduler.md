@@ -37,43 +37,51 @@ async def process_and_submit_task(
     username: str,
     task_type: str, 
     inputs: dict,
-    base_priority: int = 0
+    task_id: str,
+    base_priority: int = 0,
+    is_template: bool = False,
+    client_type: str = "web",
+    deduct_quota: bool = True,
+    check_lock: bool = True,
 ) -> dict:
-    """平台无关的核心派发逻辑，负责锁定、扣费、预生成 UUID 并推入队列 (Saga 模式)"""
+    """平台无关的核心派发逻辑，负责锁定、扣费、推入队列 (Saga 模式)"""
     # 1. 获取单用户锁
-    lock_ok, msg = await check_concurrency_lock(user_id)
-    if not lock_ok:
-        raise ConcurrencyLimitError(msg)
+    if check_lock:
+        can_run, err = await check_concurrency_lock(user_id)
+        if not can_run:
+            raise ConcurrencyLimitError(err)
         
     task_submitted_successfully = False
+    credits_deducted = False
+    
     try:
-        # 2. 前置生成 Task ID，强制透传给中控 API
-        task_id = str(uuid.uuid4())
-        
-        # 3. 强同步插入流水，扣除灵石
-        success, err = await check_and_deduct_credits(user_id, cost, task_type, username)
-        if not success:
-            raise InsufficientCreditsError(err)
+        # 2. 强同步插入流水，扣除灵石
+        if deduct_quota:
+            success, err = await check_and_deduct_credits(user_id, cost, task_type, username)
+            if not success:
+                raise InsufficientCreditsError(err)
+            credits_deducted = True
             
         try:
-            # 4. 落库并调用 Central API
+            # 3. 落库并调用 Central API
             registry_task_id = await TaskRegistry.add_task(task_id=task_id, ...)
             
-            # Central API 必须接收预生成的 task_id，消除 Pub/Sub 订阅竞态条件
-            backend_task_id = await dispatch_to_worker(task_id, task_type, inputs)
+            # Central API 必须接收由调用方（Handler/Router）预生成的 task_id，消除 Pub/Sub 订阅竞态条件
+            backend_task_id = await dispatch_to_worker(task_id, task_type, inputs, final_priority)
             
             task_submitted_successfully = True
-            return {"task_id": task_id}
+            return {"task_id": backend_task_id, "registry_task_id": registry_task_id}
             
         except Exception as e:
             # --- Saga 补偿机制 ---
             # 必须使用 asyncio.shield 防御外部取消信号，确保退款和锁释放强同步执行
-            await asyncio.shield(refund_credits(user_id, cost, reason=f"Task Failed: {e}"))
+            if credits_deducted:
+                await asyncio.shield(refund_credits(user_id, cost, reason=f"Task Failed: {e}", operator=username))
             raise CoreDomainError("系统派发失败，灵石已全额退还。")
             
     finally:
-        # 5. 无论抛出何种异常，如果未成功派发，必须释放并发锁
-        if not task_submitted_successfully:
+        # 4. 无论抛出何种异常，如果未成功派发，必须释放并发锁
+        if check_lock and not task_submitted_successfully:
             await asyncio.shield(release_concurrency_lock(user_id))
 ```
 

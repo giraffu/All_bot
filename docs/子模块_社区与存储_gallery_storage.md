@@ -60,49 +60,59 @@ sequenceDiagram
 
 ## 3. 核心代码片段
 
-### 社区原创保护投稿 (src/web_api/routers/gallery.py)
-[`gallery.py:L538-L560`](file:///home/hfy/APP/All_bot/src/web_api/routers/gallery.py#L538-L560)
+### 社区原创保护与投稿下沉 (src/core/gallery_core.py)
+[`gallery_core.py`](file:///home/hfy/APP/All_bot/src/core/gallery_core.py)
 ```python
-@router.post("/posts/submit/{task_id}")
-async def submit_to_gallery(task_id: str, db: AsyncSession = Depends(get_db)):
-    """防抄袭保护的社区投稿接口，只允许原始创作者投稿"""
-    history = await db.get(History, task_id)
-    
-    if not history or history.user_id != current_user.id:
-        raise HTTPException(status_code=403, detail="无权操作他人记录")
+async def process_submit_to_gallery(user_id: int, task_id: str, background_tasks, width: int = None, height: int = None, duration: int = None) -> dict:
+    """Core logic for submitting a task to the gallery. (防抄袭与原创保护)"""
+    # Check limit
+    can_submit = await redis_client.check_gallery_submit_limit(user_id, limit=10)
+    if not can_submit:
+        raise GalleryCoreError("您今日的投稿次数已达 10 次上限，请明日再来~")
+
+    async with AsyncSessionLocal() as session:
+        # Check existing
+        existing = await session.execute(select(GalleryPost).where(GalleryPost.task_id == task_id))
+        if existing.scalars().first():
+            raise GalleryCoreError("您已经投稿过此内容啦！")
+
+        # Get History
+        hist_res = await session.execute(select(History).where(History.task_id == task_id).where(History.user_id == user_id))
+        history = hist_res.scalars().first()
         
-    if not history.allow_contribute or history.is_template:
-        raise HTTPException(
-            status_code=400, 
-            detail="该作品由套用他人模板生成，为保护原创，禁止再次发布至广场！"
-        )
-    
-    # 执行投稿...
-    post = GalleryPost(task_id=history.id, author_id=current_user.id)
-    db.add(post)
-    await db.commit()
-    return {"message": "发布成功"}
+        if getattr(history, 'allow_contribute', True) is False:
+            raise GalleryCoreError("这是一键应用他人的模板生成的作品，为了保护原创，暂不支持再次投稿。")
+        
+        # ...执行投稿与 R2 异步转存
 ```
 
-### 并发互动保护 (src/web_api/routers/gallery.py)
-[`gallery.py:L436-L450`](file:///home/hfy/APP/All_bot/src/web_api/routers/gallery.py#L436-L450)
+### 动态分页与并发互动保护 (src/core/gallery_core.py)
+[`gallery_core.py`](file:///home/hfy/APP/All_bot/src/core/gallery_core.py)
 ```python
-@router.post("/posts/{post_id}/interact")
-async def interact_with_post(post_id: str, action: str):
-    """利用 UniqueConstraint 捕获 IntegrityError，防并发连点"""
-    try:
-        interaction = UserInteraction(user_id=uid, post_id=post_id, action_type=action)
-        db.add(interaction)
-        await db.flush()
+async def get_gallery_feed(page: int = 1, size: int = 20, ...) -> tuple[list, int]:
+    """使用 subquery().count() 动态计算分页总数，彻底解决条件筛选（如 outerjoin）导致的前端页码错位 Bug"""
+    async with AsyncSessionLocal() as session:
+        query = select(GalleryPost).where(...)
+        # ... 各种复杂的 where 和 join 条件
         
-        # 使用数据库层面的原子更新，防覆盖
-        stmt = update(GalleryPost).where(GalleryPost.id == post_id)\
-                                  .values(likes_count=GalleryPost.likes_count + 1)
-        await db.execute(stmt)
-        await db.commit()
-    except IntegrityError:
-        await db.rollback()
-        raise HTTPException(status_code=400, detail="您已经操作过了")
+        # Get total count dynamically
+        total_query = select(func.count()).select_from(query.subquery())
+        total = (await session.execute(total_query)).scalar()
+        
+        # Paginate
+        offset = (page - 1) * size if page > 0 else 0
+        query = query.offset(offset).limit(size)
+        
+        result = await session.execute(query)
+        return result.scalars().all(), total
+
+async def toggle_like(user_id: int, post_id: int, action: str) -> dict:
+    """利用 UniqueConstraint 捕获 IntegrityError，并通过原子更新防并发连点"""
+    # 使用数据库层面的原子更新，防覆盖
+    stmt = update(GalleryPost).where(GalleryPost.id == post_id)\
+                              .values(likes_count=GalleryPost.likes_count + 1)\
+                              .returning(GalleryPost.likes_count, GalleryPost.dislikes_count)
+    # ...
 ```
 
 ## 4. 接口定义 (OpenAPI 3.0)

@@ -84,6 +84,15 @@ async def start_gallery_apply(update: Update, context: ContextTypes.DEFAULT_TYPE
             await query.answer("❌ 无法获取原任务参数", show_alert=True)
             return ConversationHandler.END
 
+        # Extract attributes before commit/rollback to avoid DetachedInstanceError
+        task_type = history.type
+        prompt = history.prompt or ""
+        input_file = history.input_file or ""
+        post_media_type = post.media_type
+        post_width = post.width
+        post_height = post.height
+        post_duration = post.duration
+
         # Record interaction
         interaction = UserInteraction(user_id=internal_user.id, post_id=post.id, action_type="apply")
         session.add(interaction)
@@ -96,18 +105,13 @@ async def start_gallery_apply(update: Update, context: ContextTypes.DEFAULT_TYPE
             await session.rollback()
             # 已经记录过应用，静默忽略重复计数
             pass
-
-    task_type = history.type
-    
+            
     # Security check: Only allow specific task types for gallery application
     from src.constants import MODE_IMG2IMG_LORA, MODE_LTX_VIDEO
     allowed_types = [MODE_I2I_PRO, MODE_EDIT, MODE_CUSTOM_VIDEO, MODE_VIDEO_LORA, MODE_IMG2IMG_LORA, MODE_LTX_VIDEO]
     if task_type not in allowed_types:
         await query.answer("❌ 此模板类型不支持一键应用", show_alert=True)
         return ConversationHandler.END
-
-    prompt = history.prompt or ""
-    input_file = history.input_file or ""
     
     # Extract resolution and duration if it's a video
     res_str = "512p"
@@ -120,7 +124,7 @@ async def start_gallery_apply(update: Update, context: ContextTypes.DEFAULT_TYPE
     else:
         cost = TASK_COSTS.get(task_type, 2)
     
-    if post.media_type == 'video':
+    if post_media_type == 'video':
         if task_type == MODE_LTX_VIDEO:
             match = re.search(r"\[(.*?)\|(.*?)\]\s*(.*)", prompt)
             if match:
@@ -148,8 +152,8 @@ async def start_gallery_apply(update: Update, context: ContextTypes.DEFAULT_TYPE
                 await query.answer(text="⏳ 任务初始化中...", cache_time=2)
         else:
             # Reconstruct resolution string
-            if post.width and post.height:
-                min_dim = min(post.width, post.height)
+            if post_width and post_height:
+                min_dim = min(post_width, post_height)
                 if min_dim > 720:
                     res_str = "1024p"
                 elif min_dim > 512:
@@ -158,10 +162,10 @@ async def start_gallery_apply(update: Update, context: ContextTypes.DEFAULT_TYPE
                     res_str = "512p"
             
             # Reconstruct duration string
-            if post.duration:
-                if post.duration > 9:
+            if post_duration:
+                if post_duration > 9:
                     dur_str = "10s"
-                elif post.duration > 6:
+                elif post_duration > 6:
                     dur_str = "8s"
                 else:
                     dur_str = "5s"
@@ -214,7 +218,7 @@ async def start_gallery_apply(update: Update, context: ContextTypes.DEFAULT_TYPE
         'cost': cost,
         'res_str': res_str,
         'dur_str': dur_str,
-        'is_video': post.media_type == 'video'
+        'is_video': post_media_type == 'video'
     }
 
     import html

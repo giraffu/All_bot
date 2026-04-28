@@ -88,9 +88,8 @@ async def start_edit_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         await robust_reply_text(update.message, msg, parse_mode="Markdown")
         return EditImageState.WAIT_REFERENCE_IMAGES
     else:
-        keyboard = []
-        for backend_name, zh_name in LORA_MODELS.items():
-            keyboard.append([InlineKeyboardButton(zh_name, callback_data=f"editlora_select_{backend_name}")])
+        buttons = [InlineKeyboardButton(zh_name, callback_data=f"editlora_select_{backend_name}") for backend_name, zh_name in LORA_MODELS.items()]
+        keyboard = [buttons[i:i + 2] for i in range(0, len(buttons), 2)]
         reply_markup = InlineKeyboardMarkup(keyboard)
 
         msg = f"🎨 **已进入【自由P图】模式**。\n\n【第一步】请选择您要附加的模型：\n\n随时可以发送 /cancel 退出流程。"
@@ -121,6 +120,11 @@ async def handle_lora_selection(update: Update, context: ContextTypes.DEFAULT_TY
         fsm_data['mode'] = MODE_EDIT
         fsm_data['cost'] = TASK_COSTS.get(MODE_EDIT, 2)
     
+    # Send cleanup message if lora_name is None (meaning "无")
+    # Actually wait, lora_name is "" not None for "无"
+    if not lora_name:
+        zh_name = "无"
+
     msg = f"✅ 已选择模型：**{zh_name}**\n\n【第二步】请发送【参考图片】。\n\n随时可以发送 /cancel 退出流程。"
     await robust_edit_text(query.message, msg, parse_mode="Markdown")
     return EditImageState.WAIT_REFERENCE_IMAGES
@@ -278,7 +282,7 @@ def get_edit_image_fsm_handler() -> ConversationHandler:
         states={
             EditImageState.WAIT_LORA_SELECTION: [
                 CallbackQueryHandler(handle_lora_selection, pattern="^editlora_select_"),
-                MessageHandler(filters.COMMAND, cancel_conversation)
+                MessageHandler(filters.TEXT | filters.COMMAND, unexpected_input)
             ],
             EditImageState.WAIT_REFERENCE_IMAGES: [
                 MessageHandler(filters.PHOTO | filters.Document.IMAGE, receive_reference_image),

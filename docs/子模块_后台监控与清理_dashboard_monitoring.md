@@ -32,37 +32,26 @@ sequenceDiagram
 
 ## 3. 核心代码片段
 
-### 僵尸任务自愈协程 (src/services/zombie_cleaner_service.py)
-[`zombie_cleaner_service.py:L11-L40`](file:///home/hfy/APP/All_bot/src/services/zombie_cleaner_service.py#L11)
+### 核心层隔离与 Dashboard API (dashboard/backend/routers/system.py)
+[`system.py`](file:///home/hfy/APP/All_bot/dashboard/backend/routers/system.py)
 ```python
-async def clean_zombies():
-    """
-    自动巡检 Redis 中的 ActiveTasksTable。
-    如果任务超过设定阈值（例如 10 分钟）仍未结束，则判定为僵尸任务，自动退还灵石并释放用户并发锁。
-    """
-    from src.core.billing_core import refund_credits, release_concurrency_lock
-    import time
-    import json
+@router.post("/system/refund_bot_task")
+async def refund_bot_task(req: RefundTaskRequest, db: AsyncSession = Depends(get_db)):
+    """Force terminate a stuck task, refund credits and release concurrency lock."""
+    # 遵循 Core Isolation，Dashboard 不再直连 Redis 或手动修改锁，而是调用 Core 层统一接口
+    from src.core.task_core import get_system_task_stats, force_terminate_task
+    from src.services.permission_service import permission_service
     
-    tasks = await redis_client.db1.hgetall("ActiveTasksTable")
-    current_time = time.time()
+    tasks, _ = await get_system_task_stats()
+    task = tasks[req.task_id]
     
-    for task_id, task_data_json in tasks.items():
-        task_data = json.loads(task_data_json)
-        start_time = task_data.get('start_time', current_time)
+    # 1. Refund
+    await permission_service.increment_quota(user_id, cost=-cost, username=username, task_type="refund_admin_force")
         
-        # 超过 600 秒 (10分钟) 强制清理
-        if current_time - start_time > 600:
-            user_id = task_data.get('user_id')
-            cost = task_data.get('cost', 0)
-            
-            # 核心容灾逻辑
-            if cost > 0:
-                await refund_credits(user_id, cost, task_type="refund_zombie")
-            await release_concurrency_lock(user_id)
-            await redis_client.db1.hdel("ActiveTasksTable", task_id)
-            # 发送双向踢除 API 避免 Worker 算力浪费
-            ...
+    # 2. Release lock and remove task via Core API
+    await force_terminate_task(req.task_id, user_id=user_id)
+    
+    return {"status": "success"}
 ```
 
 ### Dashboard 接口鉴权 (dashboard/backend/main.py)

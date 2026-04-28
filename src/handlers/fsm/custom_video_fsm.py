@@ -268,7 +268,7 @@ def get_custom_video_fsm_handler() -> ConversationHandler:
                 MessageHandler(filters.TEXT & ~filters.COMMAND, unexpected_input)
             ],
             CustomVideoState.WAIT_SETTINGS_AND_PROMPT: [
-                CallbackQueryHandler(process_settings, pattern='^set_(res|dur)_'),
+                CallbackQueryHandler(process_settings, pattern='^set_(res|dur|ltxdur)_'),
                 MessageHandler(filters.TEXT & ~filters.COMMAND, receive_prompt),
                 MessageHandler(filters.PHOTO | filters.Document.IMAGE, unexpected_input),
             ],

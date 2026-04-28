@@ -73,9 +73,8 @@ async def start_video_lora(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         'lora_name': None
     }
 
-    keyboard = []
-    for backend_name, zh_name in LORA_MODELS.items():
-        keyboard.append([InlineKeyboardButton(zh_name, callback_data=f"lora_select_{backend_name}")])
+    buttons = [InlineKeyboardButton(zh_name, callback_data=f"lora_select_{backend_name}") for backend_name, zh_name in LORA_MODELS.items()]
+    keyboard = [buttons[i:i + 2] for i in range(0, len(buttons), 2)]
     
     reply_markup = InlineKeyboardMarkup(keyboard)
 
@@ -314,7 +313,7 @@ def get_video_lora_fsm_handler() -> ConversationHandler:
         states={
             VideoLoraState.WAIT_LORA_SELECTION: [
                 CallbackQueryHandler(handle_lora_selection, pattern='^lora_select_'),
-                MessageHandler(filters.TEXT & ~filters.COMMAND, unexpected_input)
+                MessageHandler(filters.TEXT | filters.COMMAND, unexpected_input)
             ],
             VideoLoraState.WAIT_IMAGE: [
                 MessageHandler(filters.PHOTO | filters.Document.IMAGE, receive_image),

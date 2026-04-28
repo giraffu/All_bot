@@ -17,6 +17,19 @@ from src.handlers.callback_router import register_callback
 
 logger = logging.getLogger(__name__)
 
+@register_callback("noop")
+async def noop_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await safe_answer_query(query)
+
+@register_callback("set_")
+@register_callback("editlora_select_")
+@register_callback("lora_select_")
+@register_callback("qvid_start_")
+async def fsm_fallback_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await safe_answer_query(query, text="该交互步骤已过期或被取消，请重新发送指令。")
+
 @register_callback("random_faceswap_again")
 async def random_faceswap_again_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
