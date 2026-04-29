@@ -51,7 +51,20 @@ const detailVisible = ref(false)
 const currentPost = ref<Post | null>(null)
 const applying = ref(false)
 
-const getFileUrl = (path: string, postId?: number) => {
+const isVideoFile = (path: string, mediaType?: string) => {
+  if (mediaType) {
+    return mediaType === 'video'
+  }
+  if (!path) return false
+  const lowerPath = path.toLowerCase()
+  return lowerPath.endsWith('.mp4') || 
+         lowerPath.endsWith('.mov') || 
+         lowerPath.endsWith('.webm') || 
+         lowerPath.endsWith('.mkv') ||
+         lowerPath.endsWith('.avi')
+}
+
+const getFileUrl = (path: string, postId?: number, isThumbnail: boolean = false) => {
   if (!path) return ''
   let url = path
   
@@ -73,24 +86,44 @@ const getFileUrl = (path: string, postId?: number) => {
     }
   }
   
-  if (postId) {
+  // 针对 Cloudflare Pro / Business 用户的 Image Resizing 功能
+  // 注意：必须在 CF 控制台 Speed -> Optimization 中开启 Image Resizing
+  if (isThumbnail && url.startsWith('http') && !url.includes('X-Amz-Signature')) {
+    try {
+      const urlObj = new URL(url)
+      // 将宽限制在 600，质量 80，自动根据浏览器转 WebP/AVIF
+      const cfPrefix = '/cdn-cgi/image/width=600,quality=80,format=auto'
+      url = `${urlObj.origin}${cfPrefix}${urlObj.pathname}${urlObj.search}`
+    } catch (e) {
+      console.warn('Failed to parse URL for CF resizing:', e)
+    }
+  }
+  
+  // 缓存策略：v=${postId} 作为静态版本号，仅在原 URL 无鉴权签名时安全拼接
+  if (postId && !url.includes('X-Amz-Signature')) {
     const sep = url.includes('?') ? '&' : '?'
     url = `${url}${sep}v=${postId}`
   }
+  
   return url
 }
 
-const isVideoFile = (path: string, mediaType?: string) => {
-  if (mediaType) {
-    return mediaType === 'video'
+const getVideoPosterUrl = (path: string, postId?: number) => {
+  let url = getFileUrl(path, postId, false)
+  
+  // 针对 Cloudflare Pro / Business 用户的 Media Transformations 功能
+  // 动态截取视频的第 0 秒作为封面图 (Poster)
+  if (url.startsWith('http') && !url.includes('X-Amz-Signature')) {
+    try {
+      const urlObj = new URL(url)
+      const cfPrefix = '/cdn-cgi/media/mode=frame,time=0s,width=600'
+      url = `${urlObj.origin}${cfPrefix}${urlObj.pathname}${urlObj.search}`
+    } catch (e) {
+      console.warn('Failed to parse URL for CF media poster:', e)
+    }
   }
-  if (!path) return false
-  const lowerPath = path.toLowerCase()
-  return lowerPath.endsWith('.mp4') || 
-         lowerPath.endsWith('.mov') || 
-         lowerPath.endsWith('.webm') || 
-         lowerPath.endsWith('.mkv') ||
-         lowerPath.endsWith('.avi')
+  
+  return url
 }
 
 let currentRequestId = 0
@@ -368,27 +401,28 @@ onUnmounted(() => {
     </div>
 
     <!-- Masonry Grid -->
-    <div class="columns-1 sm:columns-2 md:columns-3 lg:columns-4 gap-6 space-y-6">
+    <div class="columns-2 sm:columns-3 md:columns-4 lg:columns-5 xl:columns-6 gap-3 sm:gap-6">
       <div 
         v-for="post in posts" 
         :key="post.id"
-        class="break-inside-avoid rounded-2xl overflow-hidden relative group cursor-pointer border border-slate-700/30 bg-slate-800/20 hover:border-cyan-500/40 transition-all duration-300 shadow-lg hover:shadow-[0_8px_30px_rgba(56,189,248,0.15)] hover:-translate-y-1"
+        class="mb-3 sm:mb-6 break-inside-avoid rounded-2xl overflow-hidden relative group cursor-pointer border border-slate-700/30 bg-slate-800/20 hover:border-cyan-500/40 transition-all duration-300 shadow-lg hover:shadow-[0_8px_30px_rgba(56,189,248,0.15)] hover:-translate-y-1"
         @click="openDetail(post)"
       >
         <!-- Media -->
         <div class="relative w-full overflow-hidden bg-slate-900 aspect-auto min-h-[100px]">
           <img 
             v-if="!isVideoFile(post.thumbnail_url, post.media_type)" 
-            :src="getFileUrl(post.thumbnail_url, post.id)" 
+            :src="getFileUrl(post.thumbnail_url, post.id, true)" 
             @error="handleImageError($event, post)"
             class="w-full h-auto object-cover transition-opacity duration-300" 
             loading="lazy" 
           />
           <video 
             v-else 
-            :src="getFileUrl(post.thumbnail_url, post.id)" 
+            :src="getFileUrl(post.thumbnail_url, post.id, false)" 
+            :poster="getVideoPosterUrl(post.thumbnail_url, post.id)"
             class="w-full h-auto object-cover" 
-            preload="metadata" 
+            preload="none" 
             muted 
             loop
             playsinline
@@ -458,8 +492,8 @@ onUnmounted(() => {
       <div v-if="currentPost" class="flex flex-col lg:flex-row bg-[#0f172a] rounded-2xl overflow-hidden border border-slate-700/50 shadow-2xl">
         <!-- Media Area -->
         <div class="lg:w-2/3 bg-black flex items-center justify-center relative min-h-[300px]">
-          <img v-if="!isVideoFile(currentPost.media_url, currentPost.media_type)" :src="getFileUrl(currentPost.media_url, currentPost.id)" class="max-w-full max-h-[80vh] object-contain" />
-          <video v-else :src="getFileUrl(currentPost.media_url, currentPost.id)" class="max-w-full max-h-[80vh] object-contain" controls autoplay loop></video>
+          <img v-if="!isVideoFile(currentPost.media_url, currentPost.media_type)" :src="getFileUrl(currentPost.media_url, currentPost.id, false)" class="max-w-full max-h-[80vh] object-contain" />
+          <video v-else :src="getFileUrl(currentPost.media_url, currentPost.id, false)" :poster="getVideoPosterUrl(currentPost.media_url, currentPost.id)" class="max-w-full max-h-[80vh] object-contain" controls autoplay loop></video>
         </div>
         
         <!-- Info Area -->

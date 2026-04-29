@@ -144,32 +144,42 @@ onMounted(async () => {
 
 <template>
   <div class="profile-container space-y-6">
-    <div class="welcome-banner bg-gradient-to-r from-slate-800 via-slate-900 to-indigo-950 rounded-xl p-8 text-white shadow-lg relative overflow-hidden border border-slate-700/50">
+    <div class="welcome-banner bg-gradient-to-r from-slate-800 via-slate-900 to-indigo-950 rounded-xl p-5 md:p-8 text-white shadow-lg relative overflow-hidden border border-slate-700/50">
       <div class="relative z-10 flex flex-col md:flex-row justify-between items-start md:items-center">
-        <div>
-          <h1 class="text-3xl font-bold mb-2 drop-shadow-sm text-slate-100">欢迎回来，{{ authStore.user?.full_name || authStore.user?.username }}!</h1>
-          <p class="text-slate-300 text-lg max-w-2xl flex items-center">
-            <span class="mr-2 drop-shadow-sm">你的当前修仙境界是</span> 
-            <span class="font-bold text-cyan-300 bg-white/10 backdrop-blur-sm border border-white/20 px-2 py-0.5 rounded mr-3 shadow-sm">{{ authStore.user?.user_group || '凡人' }}</span>
-            <span class="mr-2 drop-shadow-sm">宗门身份：</span>
-            <span class="font-bold text-cyan-300 bg-white/10 backdrop-blur-sm border border-white/20 px-2 py-0.5 rounded shadow-sm">{{ authStore.user?.current_identity || '外门弟子' }}</span>
-          </p>
-          <div class="mt-2 text-sm text-slate-400 flex items-center drop-shadow-sm">
-            <Clock :size="14" class="mr-1" />
-            <span v-if="authStore.user?.current_identity === '外门弟子'">身份长期有效</span>
-            <span v-else>身份到期时间: {{ formatDate(authStore.user?.identity_expire_at) }}</span>
+        <!-- Left Section -->
+        <div class="w-full md:w-auto">
+          <h1 class="text-xl md:text-3xl font-bold mb-3 md:mb-2 drop-shadow-sm text-slate-100">
+            欢迎回来，{{ authStore.user?.full_name || authStore.user?.username }}!
+          </h1>
+          
+          <div class="flex flex-wrap items-center gap-2 mb-3 md:mb-2 text-sm md:text-lg text-slate-300">
+            <div class="flex items-center bg-white/5 backdrop-blur-sm border border-white/10 rounded px-2.5 py-1">
+              <span class="mr-1.5 text-slate-400">境界:</span> 
+              <span class="font-bold text-cyan-300 drop-shadow-sm">{{ authStore.user?.user_group || '凡人' }}</span>
+            </div>
+            <div class="flex items-center bg-white/5 backdrop-blur-sm border border-white/10 rounded px-2.5 py-1">
+              <span class="mr-1.5 text-slate-400">身份:</span>
+              <span class="font-bold text-cyan-300 drop-shadow-sm">{{ authStore.user?.current_identity || '外门弟子' }}</span>
+            </div>
+          </div>
+
+          <div class="text-xs md:text-sm text-slate-400 flex items-center drop-shadow-sm">
+            <Clock :size="14" class="mr-1.5 text-slate-500" />
+            <span v-if="authStore.user?.current_identity === '外门弟子' || !authStore.user?.identity_expire_at">有效期：永久</span>
+            <span v-else>有效期至：{{ formatDate(authStore.user?.identity_expire_at) }}</span>
           </div>
         </div>
         
-        <div class="mt-6 md:mt-0 inline-flex flex-col items-end">
-          <div class="inline-flex items-center bg-slate-900/40 backdrop-blur-md px-5 py-3 rounded-lg border border-slate-600/50 shadow-[0_4px_12px_rgba(0,0,0,0.3)]">
-            <Wallet :size="24" class="mr-3 text-cyan-400 drop-shadow-[0_0_8px_rgba(56,189,248,0.5)]" />
+        <!-- Right Section -->
+        <div class="mt-5 md:mt-0 w-full md:w-auto flex flex-row md:flex-col items-center md:items-end justify-between md:justify-start gap-4 md:gap-0 border-t border-slate-700/50 md:border-0 pt-4 md:pt-0">
+          <div class="flex items-center bg-slate-900/40 backdrop-blur-md px-4 py-2 md:px-5 md:py-3 rounded-lg border border-slate-600/50 shadow-inner">
+            <Wallet :size="20" class="mr-2 md:mr-3 text-cyan-400 drop-shadow-[0_0_8px_rgba(56,189,248,0.5)]" />
             <div class="flex flex-col">
-              <span class="text-xs text-slate-400 font-medium drop-shadow-sm">可用灵石余额</span>
-              <span class="text-2xl font-bold leading-none drop-shadow-sm text-slate-100">{{ authStore.user?.credits || 0 }}</span>
+              <span class="text-[10px] md:text-xs text-slate-400 font-medium leading-none mb-1">可用灵石</span>
+              <span class="text-lg md:text-2xl font-bold leading-none drop-shadow-sm text-slate-100">{{ authStore.user?.credits || 0 }}</span>
             </div>
           </div>
-          <a-button type="primary" @click="handleCheckin" :loading="checkinLoading" class="mt-3 bg-gradient-to-r from-indigo-500 to-cyan-600 hover:from-indigo-400 hover:to-cyan-500 border-none text-white font-bold w-full shadow-lg hover:shadow-cyan-500/20 transition-all transform hover:-translate-y-0.5">
+          <a-button type="primary" @click="handleCheckin" :loading="checkinLoading" class="md:mt-3 bg-gradient-to-r from-indigo-500 to-cyan-600 hover:from-indigo-400 hover:to-cyan-500 border-none text-white font-bold px-6 md:w-full shadow-lg hover:shadow-cyan-500/20 transition-all transform hover:-translate-y-0.5 h-10 md:h-auto">
             签到
           </a-button>
         </div>

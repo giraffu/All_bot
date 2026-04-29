@@ -190,7 +190,7 @@ class BaseVideoStrategy(BaseTaskStrategy):
                 task_id, prompt=prompt, image_path=image_path, lora_name=inputs.get("lora_name"), priority=priority,
                 width=width, height=height, length=frame_length
             )
-        elif self.mode == "face_video":
+        elif self.mode in ["face_video", "face_video_step1", "face_video_step2"]:
             face_img = saved_images[0] if len(saved_images) > 0 else ""
             video_path = saved_images[1] if len(saved_images) > 1 else ""
             dur_frames = 161 if duration >= 10 else 121
@@ -258,7 +258,7 @@ class LtxVideoStrategy(BaseTaskStrategy):
 class StrategyFactory:
     @staticmethod
     def get_strategy(task_type: str) -> BaseTaskStrategy:
-        video_types = ["doggy_style", "perfect_video_insert", "blowjob", "undress_tongue", "closeup_blowjob", "custom_video", "face_video", "video_lora"]
+        video_types = ["doggy_style", "perfect_video_insert", "blowjob", "undress_tongue", "closeup_blowjob", "custom_video", "face_video", "face_video_step1", "face_video_step2", "video_lora"]
         if task_type == "face_swap":
             return FaceSwapStrategy()
         elif task_type == "ltx_video":
