@@ -33,6 +33,9 @@ if not DATABASE_URL or DATABASE_URL.startswith("sqlite"):
     # For now, let's assume env var is set, or provide a default local PG
     DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+asyncpg://postgres:postgres@localhost/bot_db")
 
+DB_POOL_SIZE = int(os.getenv("DB_POOL_SIZE", "5"))
+DB_MAX_OVERFLOW = int(os.getenv("DB_MAX_OVERFLOW", "10"))
+
 # --- MinIO Configuration ---
 MINIO_ENDPOINT = os.getenv("MINIO_ENDPOINT", "192.168.1.115:9000")
 MINIO_ACCESS_KEY = os.getenv("MINIO_ACCESS_KEY", "chuzeyu")

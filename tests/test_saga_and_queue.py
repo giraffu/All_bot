@@ -29,7 +29,7 @@ async def test_saga_compensation_refunds_credits_and_releases_lock():
         mock_submit.side_effect = Exception("API refused connection")
 
         with pytest.raises(CoreDomainError, match="系统派发失败，灵石已全额退还"):
-            await process_and_submit_task(user_id, username, task_type, inputs)
+            await process_and_submit_task(user_id, username, task_type, inputs, "test_task_id")
 
         # Assert Saga compensation occurred
         mock_refund.assert_called_once()

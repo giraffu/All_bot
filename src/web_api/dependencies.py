@@ -57,6 +57,19 @@ async def get_current_user(
     if user is None:
         raise credentials_exception
         
+    # Check if the token's password version is blacklisted (if they changed password recently)
+    token_pwd_ver = payload.get("pwd_ver", 0)
+    if token_pwd_ver:
+        from src.services.redis_client import redis_client
+        redis = redis_client.redis
+        blacklist_key = f"allbot:auth:blacklist:{user.id}:{token_pwd_ver}"
+        if await redis.get(blacklist_key):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="密咒已变更，当前结界已失效，请重新登录。",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        
     # Check dynamic permission (Persistent Privilege Check)
     from src.services.permission_service import permission_service
     stats = await permission_service.get_user_detailed_stats(user.telegram_id)

@@ -70,12 +70,12 @@ from src.services.recovery_service import recover_active_tasks
 from src.services.task_registry import TaskRegistry
 
 
-async def clean_zombies_loop():
+async def clean_zombies_loop(bot=None):
     from src.services.zombie_cleaner_service import clean_zombies
     core_logger = logging.getLogger("bot.core")
     while True:
         try:
-            await clean_zombies()
+            await clean_zombies(bot)
         except Exception as e:
             core_logger.error(f"Error in clean_zombies_loop: {e}")
         await asyncio.sleep(600)  # Check every 10 minutes
@@ -113,7 +113,7 @@ async def post_init(application):
     task_recover.add_done_callback(application.bot_data["bg_tasks"].discard)
     
     # Start automated zombie task cleaner
-    task_zombies = asyncio.create_task(clean_zombies_loop())
+    task_zombies = asyncio.create_task(clean_zombies_loop(application.bot))
     application.bot_data["bg_tasks"].add(task_zombies)
     task_zombies.add_done_callback(application.bot_data["bg_tasks"].discard)
 

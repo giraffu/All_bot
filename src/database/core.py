@@ -4,7 +4,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 
-from config import DATABASE_URL
+from config import DATABASE_URL, DB_POOL_SIZE, DB_MAX_OVERFLOW
 
 from .logger import setup_db_logging
 
@@ -15,6 +15,10 @@ engine = create_async_engine(
     DATABASE_URL, 
     echo=False,
     pool_pre_ping=True,  # Useful for Postgres to detect disconnects
+    pool_size=DB_POOL_SIZE,
+    max_overflow=DB_MAX_OVERFLOW,
+    pool_timeout=30,
+    pool_recycle=1800
 )
 
 # Setup DB Logging

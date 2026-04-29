@@ -29,10 +29,13 @@ app = FastAPI(
 )
 
 # CORS configuration
-# Allows requests from any origin for development. Must be restricted in production!
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], 
+    allow_origins=[
+        "https://web.aivison.it.com",
+        "http://localhost:8085",
+        "http://localhost:5173"
+    ], 
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

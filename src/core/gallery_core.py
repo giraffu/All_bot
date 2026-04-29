@@ -14,13 +14,12 @@ from src.services.storage import storage
 logger = logging.getLogger(__name__)
 
 ALLOWED_WEB_SUBMIT_TYPES = [
-    "i2i_pro", "face_video", "custom_video", "txt2video",
-    "video_lora", "perfect_video_insert", "doggy_style",
-    "blowjob", "undress_tongue", "closeup_blowjob", "ltx_video"
+    "i2i_pro", "custom_video", 
+    "video_lora", "ltx_video", "edit", "img2img_lora"
 ]
 
 MODE_NAME_MAP = {
-    "i2i_pro": "图生图",
+    "i2i_pro": "幻想换脸",
     "face_video": "视频换脸",
     "custom_video": "自定义视频",
     "txt2video": "文生视频",
@@ -30,7 +29,9 @@ MODE_NAME_MAP = {
     "blowjob": "口交",
     "undress_tongue": "脱衣舔",
     "closeup_blowjob": "特写口交",
-    "ltx_video": "LTX视频"
+    "ltx_video": "LTX视频",
+    "edit": "自由P图",
+    "img2img_lora": "图生图(附加模型)"
 }
 
 class GalleryCoreError(Exception):

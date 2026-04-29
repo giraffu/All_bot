@@ -1,6 +1,8 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, reactive } from 'vue'
 import { useAuthStore } from '@/stores/auth'
+import api from '@/api'
+import { message } from 'ant-design-vue'
 import { 
   Wallet,
   Activity,
@@ -8,12 +10,79 @@ import {
   Zap,
   Award,
   User,
-  Clock
+  Clock,
+  Lock
 } from 'lucide-vue-next'
 import dayjs from 'dayjs'
 
 const authStore = useAuthStore()
 const loading = ref(true)
+
+const bindFormState = reactive({
+  username: '',
+  password: ''
+})
+const bindingLoading = ref(false)
+const showBindModal = ref(false)
+
+const handleBindPasswordModalOpen = () => {
+  showBindModal.value = true
+  if (authStore.user?.username) {
+    bindFormState.username = authStore.user.username
+  } else {
+    bindFormState.username = ''
+  }
+  bindFormState.password = ''
+}
+
+const handleBindPassword = async () => {
+  if (!bindFormState.username || !bindFormState.password) {
+    message.warning('请填写道号与密咒')
+    return
+  }
+  
+  if (bindFormState.password.length < 6) {
+    message.warning('密咒长度不能少于 6 位')
+    return
+  }
+  
+  bindingLoading.value = true
+  try {
+    await api.post('/auth/bind-password', bindFormState)
+    message.success('密咒设置成功！之后可以使用该道号与密咒破界登录。')
+    
+    // Update local user data
+    if (authStore.user) {
+      authStore.user.username = bindFormState.username
+      authStore.setAuth(authStore.token!, authStore.user)
+    }
+    
+    showBindModal.value = false
+    bindFormState.password = '' // Clear password
+  } catch (error: any) {
+    console.error('Bind password error:', error)
+    
+    let errorMsg = '密咒设置失败'
+    const detail = error.response?.data?.detail
+    
+    if (detail) {
+      if (Array.isArray(detail)) {
+         // Handle Pydantic Validation Error array
+         errorMsg = detail.map(err => {
+            if (err.loc && err.loc.includes('username')) return '道号格式不正确：' + err.msg
+            if (err.loc && err.loc.includes('password')) return '密咒格式不正确：' + err.msg
+            return err.msg
+         }).join('; ')
+      } else if (typeof detail === 'string') {
+         errorMsg = detail
+      }
+    }
+    
+    message.error(errorMsg)
+  } finally {
+    bindingLoading.value = false
+  }
+}
 
 const formatDate = (dateString?: string | null) => {
   if (!dateString) return '永久有效'
@@ -200,8 +269,48 @@ onMounted(async () => {
         <a-button type="primary" @click="$router.push('/custom-features')" class="bg-gradient-to-r from-indigo-600 to-cyan-700 border-none hover:from-indigo-500 hover:to-cyan-600 shadow-md">
           前往 练功房
         </a-button>
+        <a-button type="default" @click="handleBindPasswordModalOpen" class="bg-slate-800 text-indigo-300 border-indigo-500/30 hover:text-indigo-200 hover:border-indigo-400 shadow-md">
+          <Lock :size="16" class="mr-1 inline" /> {{ authStore.user?.username ? '修改密咒' : '设置道号与密咒' }}
+        </a-button>
       </div>
     </div>
+    
+    <!-- 绑定/修改密码弹窗 -->
+    <a-modal
+      v-model:open="showBindModal"
+      :title="authStore.user?.username ? '修改密咒' : '设置道号与密咒'"
+      :confirmLoading="bindingLoading"
+      @ok="handleBindPassword"
+      okText="确认结契"
+      cancelText="取消"
+      :okButtonProps="{ class: 'bg-indigo-600 hover:bg-indigo-500 border-none shadow-lg shadow-indigo-600/30' }"
+      class="dark-modal"
+    >
+      <div class="py-4 space-y-4">
+        <p class="text-slate-400 text-sm mb-4">
+          设置道号与密咒后，你可以在 Web 端直接破界登录，无需依赖 Telegram 客户端。
+        </p>
+        
+        <div>
+          <label class="block text-slate-300 mb-1 text-sm">道号 (账号)</label>
+          <a-input 
+            v-model:value="bindFormState.username" 
+            placeholder="请输入 3-20 位的道号" 
+            class="bg-slate-800/50 border-slate-700 text-white placeholder-slate-500 focus:border-indigo-500"
+          />
+          <p class="text-slate-500 text-xs mt-1">如果你是首次结契，你可以自定义你喜欢的道号。一旦设置后，以后修改密咒时道号不可更改（需保持一致）。</p>
+        </div>
+        
+        <div>
+          <label class="block text-slate-300 mb-1 text-sm">密咒 (密码)</label>
+          <a-input-password 
+            v-model:value="bindFormState.password" 
+            placeholder="请输入至少 6 位的密咒" 
+            class="bg-slate-800/50 border-slate-700 text-white placeholder-slate-500 focus:border-indigo-500"
+          />
+        </div>
+      </div>
+    </a-modal>
   </div>
 </template>
 
@@ -214,6 +323,23 @@ onMounted(async () => {
   background: transparent;
 }
 :deep(.ant-card-body) {
-  padding: 20px;
+  padding: 16px;
+}
+:deep(.dark-modal .ant-modal-content) {
+  background-color: #1e293b;
+  border: 1px solid #334155;
+}
+:deep(.dark-modal .ant-modal-header) {
+  background-color: #1e293b;
+  border-bottom: 1px solid #334155;
+}
+:deep(.dark-modal .ant-modal-title) {
+  color: #f1f5f9;
+}
+:deep(.dark-modal .ant-modal-close) {
+  color: #94a3b8;
+}
+:deep(.dark-modal .ant-modal-footer) {
+  border-top: 1px solid #334155;
 }
 </style>

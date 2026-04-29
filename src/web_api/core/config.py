@@ -9,7 +9,9 @@ class Settings:
     VERSION: str = "1.0.0"
     
     # JWT Auth
-    SECRET_KEY: str = os.getenv("JWT_SECRET_KEY", "super-secret-jwt-key-change-in-production")
+    SECRET_KEY: str = os.getenv("JWT_SECRET_KEY")
+    if not SECRET_KEY or SECRET_KEY == "super-secret-jwt-key-change-in-production":
+        raise ValueError("JWT_SECRET_KEY is not securely set in environment variables!")
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7  # 7 days
 

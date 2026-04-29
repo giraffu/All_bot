@@ -346,22 +346,46 @@ async def handle_share(update: Update, context: ContextTypes.DEFAULT_TYPE, text:
     )
     await robust_reply_text(update.message, msg, parse_mode="Markdown")
 
+TASK_TYPE_DISPLAY_NAMES = {
+    "img2img": "🎨 懒人/自由P图",
+    "img2img_lora": "🎨 图生图 (附加模型)",
+    "i2i_pro": "🌟 幻想换脸",
+    "face_swap": "🎭 人脸替换",
+    "video_insert": "🎬 视频插入",
+    "video_edit": "🎬 视频编辑 (通用)",
+    "face_video": "🎬 视频换脸",
+    "ltx_video": "🎬 高级图生视频",
+    "t2i-pornmaster-turbo": "🎨 文本生图",
+    "custom_video": "🎬 自定义图生视频",
+    "video_lora": "🎬 图生视频(附加模型)"
+}
+
 @prompt_route("^(⏳ 排队状态|排队|/queue)$", is_regex=True)
 async def handle_queue_status(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str):
     status = await image_service.get_queue_info()
     if status:
-         queue_by_type = status.get('queue_by_type', {})
-         msg = (
-             "📊 **宗门灵气损耗现状**\n\n"
-             f"👥 总排队任务：`{status.get('queue_size', 0)}` 个\n"
-             f"🎨 图生图：`{queue_by_type.get('img2img', 0)}` 个\n"
-             f"🎭 人脸替换：`{queue_by_type.get('face_swap', 0)}` 个\n"
-             f"🎬 视频插入：`{queue_by_type.get('video_insert', 0)}` 个\n"
-             f"🎬 视频编辑（通用）：`{queue_by_type.get('video_edit', 0)}` 个"
-         )
-         await robust_reply_text(update.message, msg, parse_mode="Markdown")
+        queue_size = status.get('queue_size', 0)
+        queue_by_type = status.get('queue_by_type', {})
+        
+        msg_lines = [
+            "📊 **宗门灵气损耗现状**\n",
+            f"👥 总排队任务：`{queue_size}` 个"
+        ]
+        
+        # 固定展示字典中定义的所有类型（即使数量为0）
+        for task_type, display_name in TASK_TYPE_DISPLAY_NAMES.items():
+            count = queue_by_type.get(task_type, 0)
+            msg_lines.append(f"{display_name}：`{count}` 个")
+            
+        # 兜底：如果队列里出现了未知类型，且数量大于0，也展示出来
+        for task_type, count in queue_by_type.items():
+            if task_type not in TASK_TYPE_DISPLAY_NAMES and count > 0:
+                msg_lines.append(f"❓ 其他 ({task_type})：`{count}` 个")
+                
+        msg = "\n".join(msg_lines)
+        await robust_reply_text(update.message, msg, parse_mode="Markdown")
     else:
-         await robust_reply_text(update.message, "⚠️ 无法获取实时排队数据，请稍后再试。")
+        await robust_reply_text(update.message, "⚠️ 无法获取实时排队数据，请稍后再试。")
 
 @with_db_logging_context
 async def handle_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):

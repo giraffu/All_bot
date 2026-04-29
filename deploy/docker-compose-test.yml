@@ -43,3 +43,23 @@ services:
       - "host.docker.internal:host-gateway"
     network_mode: "host"
     command: ["python", "src/payment_api_server.py"]
+
+  web-api-test:
+    build: 
+      context: ../
+      dockerfile: Dockerfile
+    container_name: web-api-test
+    restart: always
+    env_file:
+      - ../.env
+    environment:
+      - BOT_TYPE=TEST
+      - REDIS_PREFIX=test_bot_
+      - BOT_TOKEN_TEST=8276500658:AAEeN8Lv7JfYqvcRI0rg7gbrvxq1A88GSJA
+      - TZ=Asia/Shanghai
+    volumes:
+      - ../logs:/app/logs
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    network_mode: "host"
+    command: ["uvicorn", "src.web_api.main:app", "--host", "0.0.0.0", "--port", "8001"]

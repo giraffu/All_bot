@@ -20,7 +20,8 @@ async def get_or_create_user_by_telegram(tg_id: int, username: str = None, full_
         
         if user:
             updated = False
-            if username and user.username != username:
+            # 只有当用户没有设置密码时（纯TG用户），才允许Telegram用户名覆盖现有道号
+            if username and user.username != username and not user.hashed_password:
                 user.username = username
                 updated = True
             if full_name and user.full_name != full_name:

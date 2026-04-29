@@ -52,12 +52,14 @@ services:
       - TZ=Asia/Shanghai
       - BOT_TYPE=PROD
       - REDIS_PREFIX=prod_bot_
+      - DB_POOL_SIZE=15
+      - DB_MAX_OVERFLOW=10
     volumes:
       - ../logs:/app/logs
     extra_hosts:
       - "host.docker.internal:host-gateway"
     network_mode: "host"
-    command: ["uvicorn", "src.web_api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    command: ["uvicorn", "src.web_api.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]
 
   imgproxy:
     image: darthsim/imgproxy:latest

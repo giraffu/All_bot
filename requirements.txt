@@ -21,3 +21,4 @@ boto3
 Pillow
 asgi-correlation-id>=4.3.1
 asgi_correlation_id
+bcrypt==4.1.2

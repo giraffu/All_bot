@@ -1,8 +1,24 @@
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
+import re
 
+
+class UserLoginRequest(BaseModel):
+    username: str = Field(..., min_length=3, max_length=20, description="道号 (账号)")
+    password: str = Field(..., min_length=6, max_length=128, description="密咒 (密码)")
+
+class UserBindPasswordRequest(BaseModel):
+    username: str = Field(..., min_length=3, max_length=20, description="道号 (账号)")
+    password: str = Field(..., min_length=6, max_length=128, description="密咒 (密码)")
+
+    @field_validator('username')
+    @classmethod
+    def validate_username(cls, v):
+        if not re.match(r'^[a-zA-Z0-9_\-\u4e00-\u9fa5]+$', v):
+            raise ValueError('道号只能包含中英文、数字、下划线和连字符')
+        return v
 
 class TelegramLoginRequest(BaseModel):
     id: Optional[int] = None

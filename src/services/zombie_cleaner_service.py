@@ -9,13 +9,14 @@ from src.services.task_registry import TaskRegistry
 
 logger = logging.getLogger("bot.zombie_cleaner")
 
-async def clean_zombies():
+async def clean_zombies(bot=None):
     """
     扫描并清理驻留过长（超过2小时）的僵尸任务。
     1. 识别卡死的任务。
     2. 为用户退还预扣的灵石。
     3. 解除用户的并发锁。
     4. 调用中控 API 彻底取消该任务，防止算力浪费。
+    5. (可选) 通知用户已退款。
     """
     try:
         tasks = await redis_client.get_active_tasks()
@@ -76,6 +77,19 @@ async def clean_zombies():
                         logger.info(f"🛑 Sent cancellation request to Central API for backend task {backend_task_id}.")
                     except Exception as e:
                         logger.error(f"Error cancelling backend task {backend_task_id} at Central API: {e}")
+
+                # 5. 发送 Telegram 提醒给用户
+                chat_id = task.get("chat_id")
+                if bot and chat_id:
+                    try:
+                        from src.utils import robust_send_message
+                        msg = "❌ 您的任务由于等待/执行时间过长，已被系统自动清理。"
+                        if cost > 0:
+                            msg += f" 预扣的 {cost} 灵石已退回。"
+                        await robust_send_message(bot, chat_id, msg)
+                        logger.info(f"📩 Sent zombie cleanup notification to chat_id {chat_id}.")
+                    except Exception as e:
+                        logger.error(f"Failed to send zombie cleanup notice to {chat_id}: {e}")
 
                 removed_count += 1
 

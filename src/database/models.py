@@ -7,7 +7,9 @@ from sqlalchemy import (
     Column,
     Date,
     DateTime,
+    Float,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
@@ -20,6 +22,9 @@ Base = declarative_base()
 
 class User(Base):
     __tablename__ = "users"
+    __table_args__ = (
+        Index('idx_users_lower_username', func.lower(Column("username", String(100))), unique=True),
+    )
 
     id = Column(BigInteger, primary_key=True, autoincrement=True)  # Internal System ID (was Telegram User ID)
     
@@ -28,6 +33,7 @@ class User(Base):
     google_id = Column(String(255), unique=True, index=True, nullable=True)
     email = Column(String(255), unique=True, index=True, nullable=True)
     hashed_password = Column(String(255), nullable=True)
+    password_version = Column(Integer, default=1, nullable=False)
 
     username = Column(String(100), nullable=True)
     full_name = Column(String(200), nullable=True)
