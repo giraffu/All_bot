@@ -160,14 +160,49 @@ const isVideoFile = (path: string) => {
 const handleDownload = async (record: any) => {
   if (!record.output_file) return;
   const url = getFileUrl(record.output_file);
-  const ext = record.output_file.split('.').pop() || (isVideoFile(record.output_file) ? 'mp4' : 'png');
+  const ext = record.output_file.split('.').pop()?.toLowerCase() || (isVideoFile(record.output_file) ? 'mp4' : 'png');
   const filename = `${record.type}_${dayjs(record.created_at).format('YYYYMMDD_HHmmss')}.${ext}`;
   
-  const hide = message.loading('正在准备下载...', 0);
+  const hide = message.loading('正在准备保存...', 0);
   try {
     const response = await fetch(url);
     if (!response.ok) throw new Error('Network response was not ok');
     const blob = await response.blob();
+    
+    // 补充 mime type 防止部分设备无法识别
+    let mimeType = blob.type;
+    if (!mimeType || mimeType === 'application/octet-stream') {
+      if (ext === 'mp4') mimeType = 'video/mp4';
+      else if (ext === 'png') mimeType = 'image/png';
+      else if (ext === 'jpg' || ext === 'jpeg') mimeType = 'image/jpeg';
+      else if (ext === 'gif') mimeType = 'image/gif';
+    }
+    
+    // 判断是否为移动端
+    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    
+    // 移动端优先尝试 Web Share API 唤起原生分享/保存相册菜单
+    if (isMobile && navigator.canShare) {
+      const file = new File([blob], filename, { type: mimeType });
+      if (navigator.canShare({ files: [file] })) {
+        hide();
+        try {
+          await navigator.share({
+            files: [file],
+            title: '保存作品'
+          });
+          return;
+        } catch (e: any) {
+          if (e.name !== 'AbortError') {
+            console.warn('Share API failed, fallback to download:', e);
+          } else {
+            return; // 用户主动取消分享
+          }
+        }
+      }
+    }
+
+    // 桌面端或不支持 Share API 的回退下载方案
     const objectUrl = window.URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = objectUrl;
@@ -177,7 +212,7 @@ const handleDownload = async (record: any) => {
     document.body.removeChild(link);
     window.URL.revokeObjectURL(objectUrl);
     hide();
-    message.success('下载成功');
+    message.success(isMobile ? '已触发下载，若未保存成功请点击预览图长按保存' : '下载成功');
   } catch (error) {
     console.warn('Fetch download failed, falling back to new tab', error);
     hide();
@@ -188,6 +223,7 @@ const handleDownload = async (record: any) => {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    message.info('已在新标签页打开，请长按保存');
   }
 }
 
@@ -293,13 +329,15 @@ onMounted(() => {
 
             <a-button 
               v-if="record.output_file"
-              type="default" 
+              ghost
               size="small" 
-              class="bg-slate-800 text-slate-300 border-slate-600 hover:text-cyan-400 hover:border-cyan-400 transition-colors text-xs rounded-md w-full max-w-[90px] flex items-center justify-center gap-1"
+              class="text-cyan-400 border-cyan-500/50 hover:text-cyan-300 hover:border-cyan-400 hover:bg-cyan-500/10 transition-colors text-xs rounded-md w-full max-w-[90px] mt-0.5 !flex !items-center !justify-center !p-0"
               @click="handleDownload(record)"
             >
-              <Download :size="12" />
-              <span>保存本地</span>
+              <div class="flex items-center justify-center gap-1 w-full h-full">
+                <Download :size="13" />
+                <span>保存</span>
+              </div>
             </a-button>
           </div>
         </template>

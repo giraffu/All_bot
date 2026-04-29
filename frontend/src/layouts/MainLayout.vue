@@ -2,29 +2,23 @@
 import { ref, onMounted, watch, onBeforeUnmount } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
+import { useViewport } from '@/composables/useViewport'
 import { User, Wand2, Zap, History as HistoryIcon, LogOut, Wallet, Compass, Bookmark, Star, Menu } from 'lucide-vue-next'
 import TaskProgress from '@/components/TaskProgress.vue'
+import MobileTabbar from '@/components/MobileTabbar.vue'
 
 const router = useRouter()
 const route = useRoute()
 const authStore = useAuthStore()
+const { isMobile } = useViewport()
 
 const collapsed = ref(false)
-const drawerVisible = ref(false)
-const isMobile = ref(false)
 const selectedKeys = ref<string[]>([route.name as string || 'Profile'])
 const canvasRef = ref<HTMLCanvasElement | null>(null)
 let animationFrameId: number
 
 const handleMenuClick = ({ key }: { key: string }) => {
   router.push({ name: key })
-  if (isMobile.value) {
-    drawerVisible.value = false
-  }
-}
-
-const checkMobile = () => {
-  isMobile.value = window.innerWidth < 768
 }
 
 const handleLogout = () => {
@@ -165,7 +159,6 @@ const initParticles = () => {
     height = window.innerHeight
     canvas.width = width
     canvas.height = height
-    checkMobile()
   }
 
   window.addEventListener('resize', handleResize)
@@ -173,7 +166,6 @@ const initParticles = () => {
 
 // Ensure selected key matches current route
 onMounted(() => {
-  checkMobile()
   selectedKeys.value = [route.name as string || 'Profile']
   initParticles()
 })
@@ -235,60 +227,11 @@ watch(() => route.name, (newName) => {
       </a-menu>
     </a-layout-sider>
 
-    <!-- Mobile Drawer Menu -->
-    <a-drawer
-      v-if="isMobile"
-      v-model:open="drawerVisible"
-      placement="left"
-      :closable="false"
-      class="mobile-drawer"
-      :bodyStyle="{ padding: 0, background: '#0b0e14' }"
-      width="240"
-    >
-      <div class="logo h-16 flex items-center justify-center relative z-10 border-b border-cyan-500/15 bg-slate-900/40">
-        <div class="absolute inset-0 bg-gradient-to-r from-cyan-500/10 to-indigo-500/10 opacity-50"></div>
-        <h1 class="text-slate-100 text-xl font-bold tracking-widest truncate px-4 drop-shadow-[0_2px_4px_rgba(56,189,248,0.5)]">合欢密宗</h1>
-      </div>
-      <a-menu
-        v-model:selectedKeys="selectedKeys"
-        theme="dark"
-        mode="inline"
-        @click="handleMenuClick"
-        class="bg-transparent pt-4"
-      >
-        <a-menu-item key="Profile">
-          <template #icon><User :size="18" /></template>
-          <span>个人中心</span>
-        </a-menu-item>
-        <a-menu-item key="Gallery">
-          <template #icon><Compass :size="18" /></template>
-          <span>修仙市集</span>
-        </a-menu-item>
-        <a-menu-item key="CustomFeatures">
-          <template #icon><Wand2 :size="18" /></template>
-          <span>练功房</span>
-        </a-menu-item>
-        <a-menu-item key="History">
-          <template #icon><HistoryIcon :size="18" /></template>
-          <span>闪回瓶</span>
-        </a-menu-item>
-        <a-menu-item key="MySubmissions">
-          <template #icon><Bookmark :size="18" /></template>
-          <span>个人心得</span>
-        </a-menu-item>
-        <a-menu-item key="MyFavorites">
-          <template #icon><Star :size="18" /></template>
-          <span>修仙笔记</span>
-        </a-menu-item>
-      </a-menu>
-    </a-drawer>
+    <!-- 移动端不再需要 Drawer，改为底部导航 -->
     
       <a-layout class="flex flex-col h-screen overflow-hidden bg-transparent">
       <a-layout-header class="header-custom px-4 md:px-6 flex justify-between items-center shrink-0 z-10 sticky top-0">
         <div class="header-left flex items-center">
-          <button v-if="isMobile" @click="drawerVisible = true" class="mr-3 p-1.5 rounded-lg bg-slate-800/60 border border-slate-700/50 text-cyan-400 hover:bg-slate-700/60 transition-colors">
-            <Menu :size="20" />
-          </button>
           <h2 class="text-lg font-bold text-slate-200 tracking-wide m-0 drop-shadow-sm">{{ route.name === 'Profile' ? '个人中心' : (route.name === 'Gallery' ? '修仙市集' : (route.name === 'CustomFeatures' ? '练功房' : (route.name === 'History' ? '闪回瓶' : (route.name === 'MySubmissions' ? '个人心得' : (route.name === 'MyFavorites' ? '修仙笔记' : '功能'))))) }}</h2>
         </div>
         <div class="header-right flex items-center space-x-4">
@@ -320,7 +263,10 @@ watch(() => route.name, (newName) => {
         </div>
       </a-layout-header>
       
-      <a-layout-content class="m-2 p-3 md:m-6 md:p-6 bg-slate-900/20 backdrop-blur-sm rounded-2xl shadow-[0_8px_32px_rgba(0,0,0,0.4)] border border-slate-700/50 relative overflow-y-auto overflow-x-hidden flex flex-col flex-grow">
+      <a-layout-content :class="[
+        'm-2 p-3 md:m-6 md:p-6 bg-slate-900/20 backdrop-blur-sm rounded-2xl shadow-[0_8px_32px_rgba(0,0,0,0.4)] border border-slate-700/50 relative overflow-y-auto overflow-x-hidden flex flex-col flex-grow',
+        { 'mb-20': isMobile }
+      ]">
         <router-view v-slot="{ Component }">
           <transition name="fade" mode="out-in">
             <component :is="Component" class="flex-grow w-full" />
@@ -329,6 +275,7 @@ watch(() => route.name, (newName) => {
       </a-layout-content>
     </a-layout>
     <TaskProgress />
+    <MobileTabbar v-if="isMobile" />
   </a-layout>
 </template>
 

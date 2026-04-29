@@ -11,11 +11,18 @@ import {
   Award,
   User,
   Clock,
-  Lock
+  Lock,
+  Bookmark,
+  Star
 } from 'lucide-vue-next'
 import dayjs from 'dayjs'
+import { useViewport } from '@/composables/useViewport'
+import { useTelegram } from '@/composables/useTelegram'
+import { watch, onBeforeUnmount } from 'vue'
 
 const authStore = useAuthStore()
+const { isMobile } = useViewport()
+const { showMainButton, hideMainButton, hapticFeedback, isTMA } = useTelegram()
 const loading = ref(true)
 
 const bindFormState = reactive({
@@ -33,7 +40,22 @@ const handleBindPasswordModalOpen = () => {
     bindFormState.username = ''
   }
   bindFormState.password = ''
+
+  if (isMobile.value) {
+    hapticFeedback('medium')
+    showMainButton('确认结契', handleBindPassword)
+  }
 }
+
+watch(showBindModal, (newVal) => {
+  if (!newVal) {
+    hideMainButton(handleBindPassword)
+  }
+})
+
+onBeforeUnmount(() => {
+  hideMainButton(handleBindPassword)
+})
 
 const handleBindPassword = async () => {
   if (!bindFormState.username || !bindFormState.password) {
@@ -158,57 +180,78 @@ onMounted(async () => {
       <div class="absolute -bottom-24 right-12 w-48 h-48 bg-cyan-500/10 rounded-full blur-2xl pointer-events-none"></div>
     </div>
     
+    <div class="bg-slate-900/40 backdrop-blur-sm rounded-xl p-6 border border-slate-700/50 shadow-[0_4px_12px_rgba(0,0,0,0.2)]">
+      <h3 class="text-lg font-bold text-slate-200 mb-2 flex items-center drop-shadow-sm">
+        <Activity :size="20" class="mr-2 text-cyan-400 drop-shadow-[0_0_5px_rgba(56,189,248,0.5)]" /> 快捷指引
+      </h3>
+      <p class="text-slate-400 mb-4">探索更多 AI 图像与视频生成玩法，或查看你的修仙记录。</p>
+      <div class="flex flex-wrap gap-3">
+        <a-button type="primary" @click="$router.push('/custom-features')" class="bg-gradient-to-r from-indigo-600 to-cyan-700 border-none hover:from-indigo-500 hover:to-cyan-600 shadow-md">
+          <Zap :size="16" class="mr-1 inline" /> 前往 练功房
+        </a-button>
+        <a-button type="default" @click="$router.push('/my-submissions')" class="bg-slate-800 text-cyan-300 border-cyan-500/30 hover:text-cyan-200 hover:border-cyan-400 shadow-md">
+          <Bookmark :size="16" class="mr-1 inline" /> 个人心得
+        </a-button>
+        <a-button type="default" @click="$router.push('/my-favorites')" class="bg-slate-800 text-amber-300 border-amber-500/30 hover:text-amber-200 hover:border-amber-400 shadow-md">
+          <Star :size="16" class="mr-1 inline" /> 修仙笔记
+        </a-button>
+        <a-button type="default" @click="handleBindPasswordModalOpen" class="bg-slate-800 text-indigo-300 border-indigo-500/30 hover:text-indigo-200 hover:border-indigo-400 shadow-md">
+          <Lock :size="16" class="mr-1 inline" /> {{ authStore.user?.username ? '修改密咒' : '设置道号与密咒' }}
+        </a-button>
+      </div>
+    </div>
+
     <div>
       <h2 class="text-xl font-bold text-slate-200 mb-4 flex items-center drop-shadow-sm">
         <span class="w-1.5 h-6 bg-cyan-500 rounded-full mr-2 shadow-[0_0_8px_rgba(56,189,248,0.5)]"></span>
         修仙数据总览
       </h2>
       
-      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div class="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
         <a-card hoverable class="rounded-xl border border-slate-700/50 bg-slate-800/40 backdrop-blur-md shadow-[0_4px_16px_rgba(0,0,0,0.2)] hover:border-cyan-500/30 hover:shadow-[0_8px_24px_rgba(56,189,248,0.1)] transition-all group">
-          <div class="flex items-center">
-            <div class="w-12 h-12 bg-slate-700/50 border border-slate-600 text-cyan-400 rounded-full flex items-center justify-center mr-4 group-hover:scale-110 transition-transform group-hover:shadow-[0_0_12px_rgba(56,189,248,0.4)]">
-              <User :size="24" />
+          <div class="flex items-center flex-col md:flex-row text-center md:text-left">
+            <div class="w-10 h-10 md:w-12 md:h-12 bg-slate-700/50 border border-slate-600 text-cyan-400 rounded-full flex items-center justify-center mb-2 md:mb-0 md:mr-4 group-hover:scale-110 transition-transform group-hover:shadow-[0_0_12px_rgba(56,189,248,0.4)]">
+              <User :size="isMobile ? 20 : 24" />
             </div>
             <div>
-              <p class="text-slate-400 text-sm mb-1">系统ID (TG ID)</p>
-              <h3 class="text-xl font-bold text-slate-100 drop-shadow-sm">{{ authStore.user?.telegram_id || authStore.user?.id || '---' }}</h3>
+              <p class="text-slate-400 text-xs md:text-sm mb-1">系统ID (TG ID)</p>
+              <h3 class="text-lg md:text-xl font-bold text-slate-100 drop-shadow-sm">{{ authStore.user?.telegram_id || authStore.user?.id || '---' }}</h3>
             </div>
           </div>
         </a-card>
 
         <a-card hoverable class="rounded-xl border border-slate-700/50 bg-slate-800/40 backdrop-blur-md shadow-[0_4px_16px_rgba(0,0,0,0.2)] hover:border-indigo-500/30 hover:shadow-[0_8px_24px_rgba(99,102,241,0.1)] transition-all group">
-          <div class="flex items-center">
-            <div class="w-12 h-12 bg-slate-700/50 border border-slate-600 text-indigo-400 rounded-full flex items-center justify-center mr-4 group-hover:scale-110 transition-transform group-hover:shadow-[0_0_12px_rgba(99,102,241,0.4)]">
-              <Zap :size="24" />
+          <div class="flex items-center flex-col md:flex-row text-center md:text-left">
+            <div class="w-10 h-10 md:w-12 md:h-12 bg-slate-700/50 border border-slate-600 text-indigo-400 rounded-full flex items-center justify-center mb-2 md:mb-0 md:mr-4 group-hover:scale-110 transition-transform group-hover:shadow-[0_0_12px_rgba(99,102,241,0.4)]">
+              <Zap :size="isMobile ? 20 : 24" />
             </div>
             <div>
-              <p class="text-slate-400 text-sm mb-1">累计施法次数</p>
-              <h3 class="text-xl font-bold text-slate-100 drop-shadow-sm">{{ authStore.user?.generation_count || 0 }} 次</h3>
+              <p class="text-slate-400 text-xs md:text-sm mb-1">累计施法次数</p>
+              <h3 class="text-lg md:text-xl font-bold text-slate-100 drop-shadow-sm">{{ authStore.user?.generation_count || 0 }} 次</h3>
             </div>
           </div>
         </a-card>
 
         <a-card hoverable class="rounded-xl border border-slate-700/50 bg-slate-800/40 backdrop-blur-md shadow-[0_4px_16px_rgba(0,0,0,0.2)] hover:border-emerald-500/30 hover:shadow-[0_8px_24px_rgba(16,185,129,0.1)] transition-all group">
-          <div class="flex items-center">
-            <div class="w-12 h-12 bg-slate-700/50 border border-slate-600 text-emerald-400 rounded-full flex items-center justify-center mr-4 group-hover:scale-110 transition-transform group-hover:shadow-[0_0_12px_rgba(16,185,129,0.4)]">
-              <CalendarCheck :size="24" />
+          <div class="flex items-center flex-col md:flex-row text-center md:text-left">
+            <div class="w-10 h-10 md:w-12 md:h-12 bg-slate-700/50 border border-slate-600 text-emerald-400 rounded-full flex items-center justify-center mb-2 md:mb-0 md:mr-4 group-hover:scale-110 transition-transform group-hover:shadow-[0_0_12px_rgba(16,185,129,0.4)]">
+              <CalendarCheck :size="isMobile ? 20 : 24" />
             </div>
             <div>
-              <p class="text-slate-400 text-sm mb-1">累计签到天数</p>
-              <h3 class="text-xl font-bold text-slate-100 drop-shadow-sm">{{ authStore.user?.checkin_count || 0 }} 天</h3>
+              <p class="text-slate-400 text-xs md:text-sm mb-1">累计签到天数</p>
+              <h3 class="text-lg md:text-xl font-bold text-slate-100 drop-shadow-sm">{{ authStore.user?.checkin_count || 0 }} 天</h3>
             </div>
           </div>
         </a-card>
 
         <a-card hoverable class="rounded-xl border border-slate-700/50 bg-slate-800/40 backdrop-blur-md shadow-[0_4px_16px_rgba(0,0,0,0.2)] hover:border-amber-500/30 hover:shadow-[0_8px_24px_rgba(245,158,11,0.1)] transition-all group">
-          <div class="flex items-center">
-            <div class="w-12 h-12 bg-slate-700/50 border border-slate-600 text-amber-400 rounded-full flex items-center justify-center mr-4 group-hover:scale-110 transition-transform group-hover:shadow-[0_0_12px_rgba(245,158,11,0.4)]">
-              <Award :size="24" />
+          <div class="flex items-center flex-col md:flex-row text-center md:text-left">
+            <div class="w-10 h-10 md:w-12 md:h-12 bg-slate-700/50 border border-slate-600 text-amber-400 rounded-full flex items-center justify-center mb-2 md:mb-0 md:mr-4 group-hover:scale-110 transition-transform group-hover:shadow-[0_0_12px_rgba(245,158,11,0.4)]">
+              <Award :size="isMobile ? 20 : 24" />
             </div>
             <div>
-              <p class="text-slate-400 text-sm mb-1">当前生成优先级</p>
-              <h3 class="text-xl font-bold text-slate-100 drop-shadow-sm">{{ authStore.user?.priority || 0 }}</h3>
+              <p class="text-slate-400 text-xs md:text-sm mb-1">当前生成优先级</p>
+              <h3 class="text-lg md:text-xl font-bold text-slate-100 drop-shadow-sm">{{ authStore.user?.priority || 0 }}</h3>
             </div>
           </div>
         </a-card>
@@ -221,87 +264,75 @@ onMounted(async () => {
         邀请与推广明细
       </h2>
       
-      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+      <div class="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-5 gap-3 md:gap-4">
         <a-card hoverable class="rounded-xl border border-slate-700/50 bg-slate-800/40 backdrop-blur-md shadow-[0_4px_16px_rgba(0,0,0,0.2)] hover:border-cyan-500/30 hover:shadow-[0_8px_24px_rgba(56,189,248,0.1)] transition-all group">
-          <div class="flex items-center">
-            <div class="w-12 h-12 bg-slate-700/50 border border-slate-600 text-cyan-400 rounded-full flex items-center justify-center mr-4 group-hover:scale-110 transition-transform group-hover:shadow-[0_0_12px_rgba(56,189,248,0.4)]">
-              <User :size="24" />
+          <div class="flex items-center flex-col md:flex-row text-center md:text-left">
+            <div class="w-10 h-10 md:w-12 md:h-12 bg-slate-700/50 border border-slate-600 text-cyan-400 rounded-full flex items-center justify-center mb-2 md:mb-0 md:mr-4 group-hover:scale-110 transition-transform group-hover:shadow-[0_0_12px_rgba(56,189,248,0.4)]">
+              <User :size="isMobile ? 20 : 24" />
             </div>
             <div>
-              <p class="text-slate-400 text-sm mb-1">成功邀请同道</p>
-              <h3 class="text-xl font-bold text-slate-100 drop-shadow-sm">{{ authStore.user?.invitation_count || 0 }} 人</h3>
+              <p class="text-slate-400 text-xs md:text-sm mb-1">成功邀请同道</p>
+              <h3 class="text-lg md:text-xl font-bold text-slate-100 drop-shadow-sm">{{ authStore.user?.invitation_count || 0 }} 人</h3>
             </div>
           </div>
         </a-card>
 
         <a-card hoverable class="rounded-xl border border-slate-700/50 bg-slate-800/40 backdrop-blur-md shadow-[0_4px_16px_rgba(0,0,0,0.2)] hover:border-indigo-500/30 hover:shadow-[0_8px_24px_rgba(99,102,241,0.1)] transition-all group">
-          <div class="flex items-center">
-            <div class="w-12 h-12 bg-slate-700/50 border border-slate-600 text-indigo-400 rounded-full flex items-center justify-center mr-4 group-hover:scale-110 transition-transform group-hover:shadow-[0_0_12px_rgba(99,102,241,0.4)]">
-              <Activity :size="24" />
+          <div class="flex items-center flex-col md:flex-row text-center md:text-left">
+            <div class="w-10 h-10 md:w-12 md:h-12 bg-slate-700/50 border border-slate-600 text-indigo-400 rounded-full flex items-center justify-center mb-2 md:mb-0 md:mr-4 group-hover:scale-110 transition-transform group-hover:shadow-[0_0_12px_rgba(99,102,241,0.4)]">
+              <Activity :size="isMobile ? 20 : 24" />
             </div>
             <div>
-              <p class="text-slate-400 text-sm mb-1">受邀者充值(TON)</p>
-              <h3 class="text-xl font-bold text-slate-100 drop-shadow-sm">{{ authStore.user?.invitation_recharge?.total_ton || 0 }} TON</h3>
+              <p class="text-slate-400 text-xs md:text-sm mb-1">受邀者充值(TON)</p>
+              <h3 class="text-lg md:text-xl font-bold text-slate-100 drop-shadow-sm">{{ authStore.user?.invitation_recharge?.total_ton || 0 }} TON</h3>
             </div>
           </div>
         </a-card>
 
         <a-card hoverable class="rounded-xl border border-slate-700/50 bg-slate-800/40 backdrop-blur-md shadow-[0_4px_16px_rgba(0,0,0,0.2)] hover:border-emerald-500/30 hover:shadow-[0_8px_24px_rgba(16,185,129,0.1)] transition-all group">
-          <div class="flex items-center">
-            <div class="w-12 h-12 bg-slate-700/50 border border-slate-600 text-emerald-400 rounded-full flex items-center justify-center mr-4 group-hover:scale-110 transition-transform group-hover:shadow-[0_0_12px_rgba(16,185,129,0.4)]">
-              <Wallet :size="24" />
+          <div class="flex items-center flex-col md:flex-row text-center md:text-left">
+            <div class="w-10 h-10 md:w-12 md:h-12 bg-slate-700/50 border border-slate-600 text-emerald-400 rounded-full flex items-center justify-center mb-2 md:mb-0 md:mr-4 group-hover:scale-110 transition-transform group-hover:shadow-[0_0_12px_rgba(16,185,129,0.4)]">
+              <Wallet :size="isMobile ? 20 : 24" />
             </div>
             <div>
-              <p class="text-slate-400 text-sm mb-1">受邀者充值(人民币)</p>
-              <h3 class="text-xl font-bold text-slate-100 drop-shadow-sm">¥ {{ authStore.user?.invitation_recharge?.total_rmb || 0 }}</h3>
+              <p class="text-slate-400 text-xs md:text-sm mb-1">受邀者充值(人民币)</p>
+              <h3 class="text-lg md:text-xl font-bold text-slate-100 drop-shadow-sm">¥ {{ authStore.user?.invitation_recharge?.total_rmb || 0 }}</h3>
             </div>
           </div>
         </a-card>
 
         <a-card hoverable class="rounded-xl border border-slate-700/50 bg-slate-800/40 backdrop-blur-md shadow-[0_4px_16px_rgba(0,0,0,0.2)] hover:border-amber-500/30 hover:shadow-[0_8px_24px_rgba(245,158,11,0.1)] transition-all group">
-          <div class="flex items-center">
-            <div class="w-12 h-12 bg-slate-700/50 border border-slate-600 text-amber-400 rounded-full flex items-center justify-center mr-4 group-hover:scale-110 transition-transform group-hover:shadow-[0_0_12px_rgba(245,158,11,0.4)]">
-              <Zap :size="24" />
+          <div class="flex items-center flex-col md:flex-row text-center md:text-left">
+            <div class="w-10 h-10 md:w-12 md:h-12 bg-slate-700/50 border border-slate-600 text-amber-400 rounded-full flex items-center justify-center mb-2 md:mb-0 md:mr-4 group-hover:scale-110 transition-transform group-hover:shadow-[0_0_12px_rgba(245,158,11,0.4)]">
+              <Zap :size="isMobile ? 20 : 24" />
             </div>
             <div>
-              <p class="text-slate-400 text-sm mb-1">受邀者充值(Stars)</p>
-              <h3 class="text-xl font-bold text-slate-100 drop-shadow-sm">{{ authStore.user?.invitation_recharge?.total_stars || 0 }} ⭐</h3>
+              <p class="text-slate-400 text-xs md:text-sm mb-1">受邀者充值(Stars)</p>
+              <h3 class="text-lg md:text-xl font-bold text-slate-100 drop-shadow-sm">{{ authStore.user?.invitation_recharge?.total_stars || 0 }} ⭐</h3>
             </div>
           </div>
         </a-card>
 
-        <a-card hoverable class="rounded-xl border border-slate-700/50 bg-slate-800/40 backdrop-blur-md shadow-[0_4px_16px_rgba(0,0,0,0.2)] hover:border-rose-500/30 hover:shadow-[0_8px_24px_rgba(244,63,94,0.1)] transition-all group relative overflow-hidden">
+        <a-card hoverable class="col-span-2 sm:col-span-2 lg:col-span-1 rounded-xl border border-slate-700/50 bg-slate-800/40 backdrop-blur-md shadow-[0_4px_16px_rgba(0,0,0,0.2)] hover:border-rose-500/30 hover:shadow-[0_8px_24px_rgba(244,63,94,0.1)] transition-all group relative overflow-hidden">
           <div class="absolute top-0 right-0 -mr-2 -mt-2 w-16 h-16 bg-gradient-to-br from-rose-400 to-orange-500 rounded-full opacity-20 blur-xl"></div>
-          <div class="flex items-center relative z-10">
-            <div class="w-12 h-12 bg-rose-500/20 border border-rose-500/50 text-rose-400 rounded-full flex items-center justify-center mr-4 group-hover:scale-110 transition-transform group-hover:shadow-[0_0_15px_rgba(244,63,94,0.5)]">
+          <div class="flex items-center flex-col md:flex-row text-center md:text-left relative z-10">
+            <div class="w-10 h-10 md:w-12 md:h-12 bg-rose-500/20 border border-rose-500/50 text-rose-400 rounded-full flex items-center justify-center mb-2 md:mb-0 md:mr-4 group-hover:scale-110 transition-transform group-hover:shadow-[0_0_15px_rgba(244,63,94,0.5)]">
               <span class="font-bold text-xl">$</span>
             </div>
             <div>
-              <p class="text-rose-300 font-medium text-sm mb-1 drop-shadow-sm">预估邀请分成</p>
-              <h3 class="text-xl font-bold text-rose-100 drop-shadow-md">$ {{ authStore.user?.invitation_recharge?.commission_usdt || '0.00' }} USDT</h3>
+              <p class="text-rose-300 font-medium text-xs md:text-sm mb-1 drop-shadow-sm">预估邀请分成</p>
+              <h3 class="text-lg md:text-xl font-bold text-rose-100 drop-shadow-md">$ {{ authStore.user?.invitation_recharge?.commission_usdt || '0.00' }} USDT</h3>
             </div>
           </div>
         </a-card>
       </div>
     </div>
     
-    <div class="mt-8 bg-slate-900/40 backdrop-blur-sm rounded-xl p-6 border border-slate-700/50 shadow-[0_4px_12px_rgba(0,0,0,0.2)]">
-      <h3 class="text-lg font-bold text-slate-200 mb-2 flex items-center drop-shadow-sm">
-        <Activity :size="20" class="mr-2 text-cyan-400 drop-shadow-[0_0_5px_rgba(56,189,248,0.5)]" /> 快捷指引
-      </h3>
-      <p class="text-slate-400 mb-4">通过侧边栏的【练功房】探索更多 AI 图像与视频生成玩法。</p>
-      <div class="flex flex-wrap gap-3">
-        <a-button type="primary" @click="$router.push('/custom-features')" class="bg-gradient-to-r from-indigo-600 to-cyan-700 border-none hover:from-indigo-500 hover:to-cyan-600 shadow-md">
-          前往 练功房
-        </a-button>
-        <a-button type="default" @click="handleBindPasswordModalOpen" class="bg-slate-800 text-indigo-300 border-indigo-500/30 hover:text-indigo-200 hover:border-indigo-400 shadow-md">
-          <Lock :size="16" class="mr-1 inline" /> {{ authStore.user?.username ? '修改密咒' : '设置道号与密咒' }}
-        </a-button>
-      </div>
-    </div>
+
     
-    <!-- 绑定/修改密码弹窗 -->
+    <!-- 绑定/修改密码弹窗 (桌面端) -->
     <a-modal
+      v-if="!isMobile"
       v-model:open="showBindModal"
       :title="authStore.user?.username ? '修改密咒' : '设置道号与密咒'"
       :confirmLoading="bindingLoading"
@@ -336,6 +367,53 @@ onMounted(async () => {
         </div>
       </div>
     </a-modal>
+
+    <!-- 绑定/修改密码底部抽屉 (移动端) -->
+    <a-drawer
+      v-else
+      v-model:open="showBindModal"
+      placement="bottom"
+      :height="'auto'"
+      :title="authStore.user?.username ? '修改密咒' : '设置道号与密咒'"
+      class="dark-drawer"
+      :bodyStyle="{ background: '#1e293b' }"
+      :headerStyle="{ background: '#1e293b', borderBottom: '1px solid #334155', color: '#f1f5f9' }"
+    >
+      <div class="py-4 space-y-4 px-2 pb-10">
+        <p class="text-slate-400 text-sm mb-4">
+          设置道号与密咒后，你可以在 Web 端直接破界登录，无需依赖 Telegram 客户端。
+        </p>
+        
+        <div>
+          <label class="block text-slate-300 mb-1 text-sm">道号 (账号)</label>
+          <a-input 
+            v-model:value="bindFormState.username" 
+            placeholder="请输入 3-20 位的道号" 
+            class="bg-slate-800/50 border-slate-700 text-white placeholder-slate-500 focus:border-indigo-500 h-10"
+          />
+          <p class="text-slate-500 text-xs mt-1">如果你是首次结契，你可以自定义你喜欢的道号。一旦设置后，以后修改密咒时道号不可更改（需保持一致）。</p>
+        </div>
+        
+        <div>
+          <label class="block text-slate-300 mb-1 text-sm">密咒 (密码)</label>
+          <a-input-password 
+            v-model:value="bindFormState.password" 
+            placeholder="请输入至少 6 位的密咒" 
+            class="bg-slate-800/50 border-slate-700 text-white placeholder-slate-500 focus:border-indigo-500 h-10"
+          />
+        </div>
+
+        <a-button 
+          v-if="!isTMA"
+          type="primary" 
+          @click="handleBindPassword" 
+          :loading="bindingLoading"
+          class="w-full mt-4 h-12 bg-indigo-600 hover:bg-indigo-500 border-none shadow-lg shadow-indigo-600/30 text-lg font-bold"
+        >
+          确认结契
+        </a-button>
+      </div>
+    </a-drawer>
   </div>
 </template>
 
@@ -366,5 +444,18 @@ onMounted(async () => {
 }
 :deep(.dark-modal .ant-modal-footer) {
   border-top: 1px solid #334155;
+}
+:deep(.dark-drawer .ant-drawer-content) {
+  background-color: #1e293b;
+}
+:deep(.dark-drawer .ant-drawer-header) {
+  background-color: #1e293b;
+  border-bottom: 1px solid #334155;
+}
+:deep(.dark-drawer .ant-drawer-title) {
+  color: #f1f5f9;
+}
+:deep(.dark-drawer .ant-drawer-close) {
+  color: #94a3b8;
 }
 </style>
