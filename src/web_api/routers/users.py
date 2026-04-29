@@ -8,7 +8,7 @@ from src.database.core import AsyncSessionLocal
 from src.database.models import History, User
 from src.web_api.dependencies import get_current_user
 from src.web_api.schemas.auth_schema import InvitationRechargeStats, UserResponse
-from src.web_api.schemas.user_schema import PaginatedHistory
+from src.web_api.schemas.user_schema import PaginatedHistory, CheckinResponse
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -73,4 +73,25 @@ async def get_user_history(
         total=len(items),
         page=1,
         size=limit
+    )
+
+@router.post("/checkin", response_model=CheckinResponse)
+async def checkin_user(current_user: User = Depends(get_current_user)):
+    """
+    Perform daily check-in for the current user.
+    """
+    from src.services.permission_service import permission_service
+    
+    success, current_credits, error_msg, total_days, reward = await permission_service.perform_checkin(
+        current_user.telegram_id, 
+        current_user.username or "", 
+        current_user.full_name or ""
+    )
+    
+    return CheckinResponse(
+        success=success,
+        current_credits=current_credits,
+        error_msg=error_msg,
+        total_days=total_days,
+        reward=reward
     )

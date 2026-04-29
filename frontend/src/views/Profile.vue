@@ -89,6 +89,31 @@ const formatDate = (dateString?: string | null) => {
   return dayjs(dateString).format('YYYY-MM-DD HH:mm')
 }
 
+const checkinLoading = ref(false)
+
+const handleCheckin = async () => {
+  checkinLoading.value = true
+  try {
+    const response = await api.post('/users/checkin')
+    const data = response.data
+    if (data.success) {
+      message.success(`签到成功！获得 ${data.reward} 灵石`)
+      await authStore.fetchUser() // Refresh user stats
+    } else {
+      if (data.error_msg) {
+        message.warning(data.error_msg)
+      } else {
+        message.warning('今日已领取灵石，请明天再来吧！')
+      }
+    }
+  } catch (error: any) {
+    console.error('Checkin error:', error)
+    message.error('签到失败，请稍后重试')
+  } finally {
+    checkinLoading.value = false
+  }
+}
+
 onMounted(async () => {
   await authStore.fetchUser()
   loading.value = false
@@ -122,8 +147,8 @@ onMounted(async () => {
               <span class="text-2xl font-bold leading-none drop-shadow-sm text-slate-100">{{ authStore.user?.credits || 0 }}</span>
             </div>
           </div>
-          <a-button type="primary" class="mt-3 bg-gradient-to-r from-indigo-500 to-cyan-600 hover:from-indigo-400 hover:to-cyan-500 border-none text-white font-bold w-full shadow-lg hover:shadow-cyan-500/20 transition-all transform hover:-translate-y-0.5">
-            获取更多灵石
+          <a-button type="primary" @click="handleCheckin" :loading="checkinLoading" class="mt-3 bg-gradient-to-r from-indigo-500 to-cyan-600 hover:from-indigo-400 hover:to-cyan-500 border-none text-white font-bold w-full shadow-lg hover:shadow-cyan-500/20 transition-all transform hover:-translate-y-0.5">
+            签到
           </a-button>
         </div>
       </div>

@@ -23,3 +23,10 @@ class PaginatedHistory(BaseModel):
     total: int
     page: int
     size: int
+
+class CheckinResponse(BaseModel):
+    success: bool
+    current_credits: int
+    error_msg: str
+    total_days: int
+    reward: int
