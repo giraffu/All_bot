@@ -8,6 +8,7 @@ export interface InvitationRechargeStats {
   total_ton: number
   total_rmb: number
   total_stars: number
+  commission_usdt: number
 }
 
 export interface User {

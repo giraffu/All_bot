@@ -127,7 +127,7 @@ onMounted(async () => {
         邀请与推广明细
       </h2>
       
-      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
         <a-card hoverable class="rounded-xl border border-slate-700/50 bg-slate-800/40 backdrop-blur-md shadow-[0_4px_16px_rgba(0,0,0,0.2)] hover:border-cyan-500/30 hover:shadow-[0_8px_24px_rgba(56,189,248,0.1)] transition-all group">
           <div class="flex items-center">
             <div class="w-12 h-12 bg-slate-700/50 border border-slate-600 text-cyan-400 rounded-full flex items-center justify-center mr-4 group-hover:scale-110 transition-transform group-hover:shadow-[0_0_12px_rgba(56,189,248,0.4)]">
@@ -172,6 +172,19 @@ onMounted(async () => {
             <div>
               <p class="text-slate-400 text-sm mb-1">受邀者充值(Stars)</p>
               <h3 class="text-xl font-bold text-slate-100 drop-shadow-sm">{{ authStore.user?.invitation_recharge?.total_stars || 0 }} ⭐</h3>
+            </div>
+          </div>
+        </a-card>
+
+        <a-card hoverable class="rounded-xl border border-slate-700/50 bg-slate-800/40 backdrop-blur-md shadow-[0_4px_16px_rgba(0,0,0,0.2)] hover:border-rose-500/30 hover:shadow-[0_8px_24px_rgba(244,63,94,0.1)] transition-all group relative overflow-hidden">
+          <div class="absolute top-0 right-0 -mr-2 -mt-2 w-16 h-16 bg-gradient-to-br from-rose-400 to-orange-500 rounded-full opacity-20 blur-xl"></div>
+          <div class="flex items-center relative z-10">
+            <div class="w-12 h-12 bg-rose-500/20 border border-rose-500/50 text-rose-400 rounded-full flex items-center justify-center mr-4 group-hover:scale-110 transition-transform group-hover:shadow-[0_0_15px_rgba(244,63,94,0.5)]">
+              <span class="font-bold text-xl">$</span>
+            </div>
+            <div>
+              <p class="text-rose-300 font-medium text-sm mb-1 drop-shadow-sm">预估邀请分成</p>
+              <h3 class="text-xl font-bold text-rose-100 drop-shadow-md">$ {{ authStore.user?.invitation_recharge?.commission_usdt || '0.00' }} USDT</h3>
             </div>
           </div>
         </a-card>

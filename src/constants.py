@@ -107,6 +107,9 @@ MAX_CONCURRENT_TASKS = 3
 TON_TO_NANOTON = 1_000_000_000
 TON_SLIPPAGE_NANOTON = 10_000_000 # 0.01 TON allowed slippage
 
+# Commission Settings
+COMMISSION_RATE = 0.10
+
 RESOLUTION_PERMISSIONS = {
     "凡人": ["512p"],
     "外门弟子": ["512p"],

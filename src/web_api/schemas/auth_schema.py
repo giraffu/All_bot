@@ -26,6 +26,7 @@ class InvitationRechargeStats(BaseModel):
     total_ton: float = 0.0
     total_rmb: float = 0.0
     total_stars: int = 0
+    commission_usdt: float = 0.0
 
 class UserResponse(BaseModel):
     id: int

@@ -1,12 +1,12 @@
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
+from sqlalchemy import select, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 from datetime import datetime
 
-from dashboard.backend.routers.stats import get_exchange_rates
+from src.exchange_rates import get_exchange_rates
 from src.database.core import get_db
 from src.database.models import Order, Referral, User
 
@@ -26,7 +26,7 @@ async def get_referral_rewards(db: AsyncSession = Depends(get_db)):
             .join(Referral, Referral.invitee_id == Order.telegram_id)
             .join(User, User.telegram_id == Referral.inviter_id)
             .join(Invitee, Invitee.telegram_id == Referral.invitee_id)
-            .where(Order.status == "SUCCESS")
+            .where(and_(Order.status == "SUCCESS", Order.final_price > 0))
         )
         
         result = await db.execute(stmt)

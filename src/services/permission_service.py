@@ -269,28 +269,48 @@ class PermissionService:
         - 累积充值 TON
         - 累积充值 RMB
         - 累积贡献 Stars
+        - 预估分成 commission_usdt
         """
+        import json
+        import random
+        from src.services.redis_client import redis_client
+
+        # 1. 尝试读取轻量级缓存 (60-120s TTL)
+        cache_key = f"allbot:stats:invitation_recharge:{user_id}"
+        if redis_client and redis_client.redis:
+            try:
+                cached_data = await redis_client.redis.get(cache_key)
+                if cached_data:
+                    return json.loads(cached_data)
+            except Exception:
+                pass
+
         async with AsyncSessionLocal() as session:
             from decimal import Decimal
 
             from sqlalchemy import and_, select
 
             from src.database.models import Order, Referral
+            from src.exchange_rates import get_exchange_rates
+            from src.constants import COMMISSION_RATE
 
             # 联表查询：查找被该用户邀请且支付成功的订单
             stmt = (
                 select(
                     Order.telegram_id,
                     Order.final_price,
-                    Order.order_id
+                    Order.order_id,
+                    Order.created_at
                 )
                 .join(Referral, Referral.invitee_id == Order.telegram_id)
                 .where(
                     and_(
                         Referral.inviter_id == user_id,
-                        Order.status == "SUCCESS"
+                        Order.status == "SUCCESS",
+                        Order.final_price > 0
                     )
                 )
+                .order_by(Order.created_at.asc())
             )
             result = await session.execute(stmt)
             rows = result.all()
@@ -299,30 +319,64 @@ class PermissionService:
             total_ton = Decimal('0.0')
             total_rmb = Decimal('0.0')
             total_stars = 0
+            
+            # 首单累计用于分成计算
+            first_ton = Decimal('0.0')
+            first_rmb = Decimal('0.0')
+            first_stars = 0
+
             total_count = len(rows)
 
-            for tg_id, price, order_id in rows:
+            for tg_id, price, order_id, _created_at in rows:
+                is_first_order = tg_id not in recharged_invitees
                 recharged_invitees.add(tg_id)
                 
                 # 人民币订单以 RMB_ 开头，Stars订单以 XTR_ 开头
                 if order_id and str(order_id).startswith("RMB_"):
                     total_rmb += price
+                    if is_first_order:
+                        first_rmb += price
                 elif order_id and str(order_id).startswith("XTR_"):
                     total_stars += int(price)
+                    if is_first_order:
+                        first_stars += int(price)
                 else:
                     # 根据价格区分支付方式 (Stars 价格通常为整数且较大，如 200, 500)
                     if price >= 100:
                         total_stars += int(price)
+                        if is_first_order:
+                            first_stars += int(price)
                     else:
                         total_ton += price
+                        if is_first_order:
+                            first_ton += price
 
-            return {
+            # 计算汇率折算
+            rates = await get_exchange_rates()
+            commission_usdt = (
+                float(first_ton) * rates.get("ton_to_usdt", 0) +
+                float(first_rmb) * rates.get("rmb_to_usdt", 0) +
+                float(first_stars) * rates.get("stars_to_usdt", 0)
+            ) * COMMISSION_RATE
+
+            result_dict = {
                 "recharged_invitees_count": len(recharged_invitees),
                 "total_recharge_count": total_count,
                 "total_ton": float(total_ton),
                 "total_rmb": float(total_rmb),
-                "total_stars": total_stars
+                "total_stars": total_stars,
+                "commission_usdt": round(commission_usdt, 2)
             }
+            
+            # 写入短缓存
+            if redis_client and redis_client.redis:
+                try:
+                    ttl = random.randint(60, 120)
+                    await redis_client.redis.setex(cache_key, ttl, json.dumps(result_dict))
+                except Exception:
+                    pass
+
+            return result_dict
 
     async def get_user_credits(self, tg_id: int, username: str, full_name: str) -> int:
         """Get current credits for a user"""
@@ -447,7 +501,7 @@ class PermissionService:
         if inviter_group == "凡人":
             return False, "visitor_limit"
 
-        success = await self.quota_manager.process_referral(inviter_internal_id, new_internal_id, new_username=username, new_full_name=full_name)
+        success = await self.quota_manager.process_referral(inviter_internal_id, new_internal_id, new_username=username, _new_full_name=full_name)
         if success:
             await self.refresh_user_group(inviter_internal_id)
             return True, "success"

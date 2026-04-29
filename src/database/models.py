@@ -59,7 +59,7 @@ class Referral(Base):
     __tablename__ = "referrals"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    inviter_id = Column(BigInteger, ForeignKey("users.id"))
+    inviter_id = Column(BigInteger, ForeignKey("users.id"), index=True)
     invitee_id = Column(BigInteger, ForeignKey("users.id"), unique=True)
     channel_reward_claimed = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.now)
