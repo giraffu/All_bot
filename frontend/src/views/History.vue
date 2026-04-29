@@ -2,7 +2,7 @@
 import { ref, onMounted } from 'vue'
 import api from '@/api'
 import { message } from 'ant-design-vue'
-import { Image as ImageIcon, Video, Clock, PlayCircle } from 'lucide-vue-next'
+import { Image as ImageIcon, Video, Clock, PlayCircle, Download } from 'lucide-vue-next'
 import dayjs from 'dayjs'
 
 const data = ref<any[]>([])
@@ -157,6 +157,40 @@ const isVideoFile = (path: string) => {
          lowerPath.endsWith('.avi')
 }
 
+const handleDownload = async (record: any) => {
+  if (!record.output_file) return;
+  const url = getFileUrl(record.output_file);
+  const ext = record.output_file.split('.').pop() || (isVideoFile(record.output_file) ? 'mp4' : 'png');
+  const filename = `${record.type}_${dayjs(record.created_at).format('YYYYMMDD_HHmmss')}.${ext}`;
+  
+  const hide = message.loading('正在准备下载...', 0);
+  try {
+    const response = await fetch(url);
+    if (!response.ok) throw new Error('Network response was not ok');
+    const blob = await response.blob();
+    const objectUrl = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = objectUrl;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    window.URL.revokeObjectURL(objectUrl);
+    hide();
+    message.success('下载成功');
+  } catch (error) {
+    console.warn('Fetch download failed, falling back to new tab', error);
+    hide();
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    link.target = '_blank';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }
+}
+
 onMounted(() => {
   fetchHistory()
 })
@@ -240,21 +274,34 @@ onMounted(() => {
         </template>
 
         <template v-else-if="column.key === 'action'">
-          <a-button 
-            v-if="record.output_file && ['i2i_pro', 'edit', 'custom_video', 'video_lora', 'img2img_lora', 'ltx_video'].includes(record.type) && record.allow_contribute !== false"
-            type="primary" 
-            size="small" 
-            class="bg-gradient-to-r from-cyan-600 to-indigo-600 border-none shadow-[0_0_10px_rgba(56,189,248,0.3)] hover:scale-105 transition-transform text-xs rounded-md"
-            :loading="submittingTasks[record.task_id]"
-            @click="submitToGallery(record)"
-          >
-            <span class="flex items-center gap-1">
-              <span v-if="submittingTasks[record.task_id]">投稿中</span>
-              <span v-else>✨ 一键投稿</span>
-            </span>
-          </a-button>
-          <span v-else-if="!record.output_file" class="text-slate-600 text-xs">暂无文件</span>
-          <span v-else class="text-slate-600 text-xs">暂不支持投稿</span>
+          <div class="flex flex-col items-center gap-2">
+            <a-button 
+              v-if="record.output_file && ['i2i_pro', 'edit', 'custom_video', 'video_lora', 'img2img_lora', 'ltx_video'].includes(record.type) && record.allow_contribute !== false"
+              type="primary" 
+              size="small" 
+              class="bg-gradient-to-r from-cyan-600 to-indigo-600 border-none shadow-[0_0_10px_rgba(56,189,248,0.3)] hover:scale-105 transition-transform text-xs rounded-md w-full max-w-[90px]"
+              :loading="submittingTasks[record.task_id]"
+              @click="submitToGallery(record)"
+            >
+              <span class="flex items-center justify-center gap-1">
+                <span v-if="submittingTasks[record.task_id]">投稿中</span>
+                <span v-else>✨ 一键投稿</span>
+              </span>
+            </a-button>
+            <span v-else-if="!record.output_file" class="text-slate-600 text-xs">暂无文件</span>
+            <span v-else class="text-slate-600 text-xs py-1">暂不支持投稿</span>
+
+            <a-button 
+              v-if="record.output_file"
+              type="default" 
+              size="small" 
+              class="bg-slate-800 text-slate-300 border-slate-600 hover:text-cyan-400 hover:border-cyan-400 transition-colors text-xs rounded-md w-full max-w-[90px] flex items-center justify-center gap-1"
+              @click="handleDownload(record)"
+            >
+              <Download :size="12" />
+              <span>保存本地</span>
+            </a-button>
+          </div>
         </template>
         
       </template>

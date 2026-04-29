@@ -1,6 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import type { RouteRecordRaw } from 'vue-router'
-import { useAuthStore } from '@/stores/auth'
+import { useAuthStore, checkWebAccess } from '@/stores/auth'
 
 const routes: RouteRecordRaw[] = [
   {
@@ -89,18 +89,12 @@ const router = createRouter({
 router.beforeEach((to, from, next) => {
   const authStore = useAuthStore()
   const isAuthenticated = !!authStore.token
-  const allowedIdentities = ['内门弟子', '核心弟子', '真传弟子']
-  const allowedGroups = ['金丹期', '元婴期', '化神期', '炼虚期', '合体期', '大乘期', '渡劫期']
-  
-  const hasPermission = authStore.user && (
-    allowedIdentities.includes(authStore.user.current_identity) || 
-    allowedGroups.includes(authStore.user.user_group)
-  )
+  const hasPermission = checkWebAccess(authStore.user)
   
   if (to.meta.requiresAuth && (!isAuthenticated || !hasPermission)) {
     if (isAuthenticated && !hasPermission) {
       import('ant-design-vue').then(({ message }) => {
-        message.error('权限不足：只有金丹期及以上境界，或内门及以上身份的弟子才能登录 Web 端')
+        message.error('权限不足：只有练气期及以上境界，或内门及以上身份的弟子才能登录 Web 端')
       })
       authStore.logout()
     }

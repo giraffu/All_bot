@@ -84,9 +84,8 @@ async def get_user_dashboard_info(tg_id: int, first_name: str, invite_link_templ
         else:
             identity_display += " (已过期)"
 
-    allowed_identities = ["内门弟子", "核心弟子", "真传弟子"]
-    allowed_groups = ["金丹期", "元婴期", "化神期", "炼虚期", "合体期", "大乘期", "渡劫期"]
-    is_unlocked = current_identity in allowed_identities or current_group in allowed_groups
+    from src.constants import WEB_ACCESS_ALLOWED_IDENTITIES, WEB_ACCESS_ALLOWED_GROUPS
+    is_unlocked = current_identity in WEB_ACCESS_ALLOWED_IDENTITIES or current_group in WEB_ACCESS_ALLOWED_GROUPS
 
     return UserDashboardDTO(
         first_name=first_name,

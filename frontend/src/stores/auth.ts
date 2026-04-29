@@ -27,6 +27,13 @@ export interface User {
   invitation_recharge?: InvitationRechargeStats | null
 }
 
+export function checkWebAccess(user: User | null): boolean {
+  if (!user) return false
+  const allowedGroups = ['练气期', '筑基期', '金丹期', '元婴期', '化神期', '炼虚期', '合体期', '大乘期', '渡劫期']
+  const allowedIdentities = ['内门弟子', '核心弟子', '真传弟子']
+  return allowedGroups.includes(user.user_group) || allowedIdentities.includes(user.current_identity)
+}
+
 export const useAuthStore = defineStore('auth', () => {
   const token = ref<string | null>(localStorage.getItem('token') || null)
   const user = ref<User | null>(JSON.parse(localStorage.getItem('user') || 'null'))

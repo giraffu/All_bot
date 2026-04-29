@@ -270,4 +270,4 @@ GENERATION_TASK_TYPES = [
 
 # Web Access Allowed Roles
 WEB_ACCESS_ALLOWED_IDENTITIES = ["内门弟子", "核心弟子", "真传弟子"]
-WEB_ACCESS_ALLOWED_GROUPS = ["金丹期", "元婴期", "化神期", "炼虚期", "合体期", "大乘期", "渡劫期"]
+WEB_ACCESS_ALLOWED_GROUPS = ["练气期", "筑基期", "金丹期", "元婴期", "化神期", "炼虚期", "合体期", "大乘期", "渡劫期"]

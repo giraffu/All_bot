@@ -265,7 +265,7 @@ async def authenticate_user_by_password(username: str, password: str, client_ip:
             
         # 4. Check web access
         if not await permission_service.check_web_access(user.id):
-            raise InsufficientPermissionError("权限不足：只有金丹期及以上境界，或内门及以上身份的弟子才能登录 Web 端")
+            raise InsufficientPermissionError("权限不足：只有练气期及以上境界，或内门及以上身份的弟子才能登录 Web 端")
             
         # 5. Success: clear rate limits
         await redis.delete(ip_key, user_key)
@@ -298,7 +298,7 @@ async def bind_user_password(user_id: int, username: str, password: str, client_
             raise AuthCoreError("用户不存在。")
             
         if not await permission_service.check_web_access(user.id):
-            raise InsufficientPermissionError("权限不足：只有金丹期及以上境界，或内门及以上身份的弟子才能绑定 Web 端账号")
+            raise InsufficientPermissionError("权限不足：只有练气期及以上境界，或内门及以上身份的弟子才能绑定 Web 端账号")
             
         # Hash password
         hashed = await get_password_hash(password)

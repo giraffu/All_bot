@@ -76,11 +76,10 @@ async def get_current_user(
     current_identity = stats.get("identity", user.current_identity)
     current_group = stats.get("group", user.user_group)
     
-    allowed_identities = ["内门弟子", "核心弟子", "真传弟子"]
-    allowed_groups = ["金丹期", "元婴期", "化神期", "炼虚期", "合体期", "大乘期", "渡劫期"]
+    from src.constants import WEB_ACCESS_ALLOWED_IDENTITIES, WEB_ACCESS_ALLOWED_GROUPS
     
-    is_allowed_identity = current_identity in allowed_identities
-    is_allowed_group = current_group in allowed_groups
+    is_allowed_identity = current_identity in WEB_ACCESS_ALLOWED_IDENTITIES
+    is_allowed_group = current_group in WEB_ACCESS_ALLOWED_GROUPS
     
     if not (is_allowed_identity or is_allowed_group):
         raise HTTPException(

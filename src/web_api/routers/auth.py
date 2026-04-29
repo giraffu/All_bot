@@ -42,7 +42,7 @@ async def login_telegram(req: TelegramLoginRequest):
         if not await permission_service.check_web_access(user.id):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="权限不足：只有金丹期及以上境界，或内门及以上身份的弟子才能登录 Web 端"
+                detail="权限不足：只有练气期及以上境界，或内门及以上身份的弟子才能登录 Web 端"
             )
         
         # Issue JWT

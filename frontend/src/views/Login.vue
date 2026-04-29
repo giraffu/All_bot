@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref, reactive } from 'vue'
 import { useRouter } from 'vue-router'
-import { useAuthStore } from '@/stores/auth'
+import { useAuthStore, checkWebAccess } from '@/stores/auth'
 import api from '@/api'
 import { message } from 'ant-design-vue'
 import { LockOutlined, UserOutlined } from '@ant-design/icons-vue'
@@ -45,14 +45,8 @@ const handleTelegramAuth = async (user: any) => {
       const userData = response.data.user
       
       // 校验用户身份
-      const allowedIdentities = ['内门弟子', '核心弟子', '真传弟子']
-      const allowedGroups = ['金丹期', '元婴期', '化神期', '炼虚期', '合体期', '大乘期', '渡劫期']
-      
-      const isAllowed = allowedIdentities.includes(userData.current_identity) || 
-                        allowedGroups.includes(userData.user_group)
-                        
-      if (!isAllowed) {
-        message.error('权限不足：只有金丹期及以上境界，或内门及以上身份的弟子才能登录 Web 端')
+      if (!checkWebAccess(userData)) {
+        message.error('权限不足：只有练气期及以上境界，或内门及以上身份的弟子才能登录 Web 端')
         return
       }
 
@@ -84,14 +78,8 @@ const checkWebAppLogin = async () => {
         const userData = response.data.user
         
         // 校验用户身份
-        const allowedIdentities = ['内门弟子', '核心弟子', '真传弟子']
-        const allowedGroups = ['金丹期', '元婴期', '化神期', '炼虚期', '合体期', '大乘期', '渡劫期']
-        
-        const isAllowed = allowedIdentities.includes(userData.current_identity) || 
-                          allowedGroups.includes(userData.user_group)
-                          
-        if (!isAllowed) {
-          message.error('权限不足：只有金丹期及以上境界，或内门及以上身份的弟子才能登录 Web 端')
+        if (!checkWebAccess(userData)) {
+          message.error('权限不足：只有练气期及以上境界，或内门及以上身份的弟子才能登录 Web 端')
           return false
         }
 
