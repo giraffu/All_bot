@@ -258,12 +258,12 @@ class LtxVideoStrategy(BaseTaskStrategy):
 class StrategyFactory:
     @staticmethod
     def get_strategy(task_type: str) -> BaseTaskStrategy:
-        video_types = ["doggy_style", "perfect_video_insert", "blowjob", "undress_tongue", "closeup_blowjob", "custom_video", "face_video", "face_video_step1", "face_video_step2", "video_lora"]
+        from src.constants import VIDEO_TASK_TYPES
         if task_type == "face_swap":
             return FaceSwapStrategy()
         elif task_type == "ltx_video":
             return LtxVideoStrategy()
-        elif task_type in video_types:
+        elif task_type in VIDEO_TASK_TYPES:
             return BaseVideoStrategy(task_type)
         elif task_type in ["i2i_pro", "MODE_I2I_PRO"]:
             return DefaultImageStrategy(task_type)

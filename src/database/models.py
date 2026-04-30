@@ -199,7 +199,7 @@ class GalleryPost(Base):
     created_at = Column(DateTime, default=datetime.now)
 
     user = relationship("User", backref="gallery_posts")
-    history = relationship("History", primaryjoin="foreign(GalleryPost.task_id) == History.task_id", uselist=False, backref="gallery_post")
+    histories = relationship("History", primaryjoin="foreign(GalleryPost.task_id) == History.task_id", uselist=True, backref="gallery_post")
 
 class UserInteraction(Base):
     __tablename__ = "user_interactions"

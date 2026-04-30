@@ -44,7 +44,9 @@ async def get_all_gallery_posts(
 
         formatted_posts = []
         for p in posts:
-            output_file = p.history.output_file if p.history else None
+            # We might have multiple histories, use the first one if available
+            first_history = p.histories[0] if p.histories else None
+            output_file = first_history.output_file if first_history else None
             media_url = None
             if output_file:
                 # Dashboard API serves files from proxy or direct S3 link
@@ -68,7 +70,7 @@ async def get_all_gallery_posts(
                 "user_id": p.user_id,
                 "username": p.user.username if p.user else None,
                 "media_type": p.media_type,
-                "task_type": p.history.type if p.history else "unknown",
+                "task_type": first_history.type if first_history else "unknown",
                 "width": p.width,
                 "height": p.height,
                 "duration": p.duration,
@@ -79,7 +81,7 @@ async def get_all_gallery_posts(
                 "is_active": p.is_active,
                 "created_at": p.created_at.isoformat() if p.created_at else None,
                 "media_url": media_url,
-                "prompt": p.history.prompt if p.history else None
+                "prompt": first_history.prompt if first_history else None
             })
 
         return {

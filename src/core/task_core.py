@@ -123,8 +123,8 @@ async def process_and_submit_task(
     
     strategy = StrategyFactory.get_strategy(task_type)
     cost = strategy.get_cost(inputs)
-    video_types = ["doggy_style", "perfect_video_insert", "blowjob", "undress_tongue", "closeup_blowjob", "custom_video", "face_video", "face_video_step1", "face_video_step2", "video_lora", "ltx_video"]
-    is_video_task = task_type in video_types
+    from src.constants import VIDEO_TASK_TYPES
+    is_video_task = task_type in VIDEO_TASK_TYPES
     
     if is_video_task:
         resolution = inputs.get("resolution", "512p")

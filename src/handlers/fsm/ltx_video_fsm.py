@@ -222,6 +222,9 @@ async def receive_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 async def confirm_generation(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
+    if query:
+        from src.utils import safe_answer_query
+        await safe_answer_query(query, text="⏳ 任务初始化中...", cache_time=2)
     user_id = query.from_user.id
     
     fsm_data = context.user_data.get('ltx_video_data')

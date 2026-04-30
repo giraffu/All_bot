@@ -22,7 +22,7 @@ async def clean_zombies(bot=None):
         tasks = await redis_client.get_active_tasks()
         if not tasks:
             logger.debug("No active tasks found during zombie cleanup.")
-            return
+            tasks = {}
 
         now = time.time()
         removed_count = 0
@@ -95,6 +95,25 @@ async def clean_zombies(bot=None):
 
         if removed_count > 0:
             logger.info(f"🧹 Zombie cleanup complete. Removed {removed_count} zombie tasks.")
+
+        # 6. 检查并非因为僵尸任务而是由于死锁导致并发数 > 0 但没有活跃任务的用户
+        try:
+            concurrencies = await redis_client.get_all_user_concurrencies()
+            active_user_tasks = {}
+            for task_id, task in tasks.items():
+                uid = task.get("user_id")
+                if uid:
+                    active_user_tasks[uid] = active_user_tasks.get(uid, 0) + 1
+            
+            for uid, lock_count in concurrencies.items():
+                if lock_count > 0 and active_user_tasks.get(uid, 0) == 0:
+                    logger.warning(f"🔓 Detected leaked concurrency lock for user {uid} (lock_count={lock_count}, active_tasks=0). Resetting...")
+                    # 强制重置锁
+                    for _ in range(lock_count):
+                        await redis_client.decrement_user_concurrency(uid)
+                    logger.info(f"✅ Reset concurrency lock for user {uid}.")
+        except Exception as e:
+            logger.error(f"Error fixing leaked concurrency locks: {e}")
 
     except Exception as e:
         logger.error(f"Error during zombie task cleanup loop: {e}", exc_info=True)

@@ -313,39 +313,18 @@ async def interact_with_post(
     action: str = Query(..., pattern="^(like|dislike)$"),
     current_user: User = Depends(get_current_user)
 ):
-    async with AsyncSessionLocal() as session:
-        post = (await session.execute(select(GalleryPost).where(GalleryPost.id == post_id))).scalar_one_or_none()
-        if not post:
-            raise HTTPException(status_code=404, detail="帖子不存在或已失效")
-            
-        # Check mutual exclusion
-        existing = (await session.execute(
-            select(UserInteraction)
-            .where(UserInteraction.user_id == current_user.id)
-            .where(UserInteraction.post_id == post_id)
-            .where(UserInteraction.action_type.in_(["like", "dislike"]))
-        )).scalars().all()
-        
-        if existing:
-            for ex in existing:
-                if ex.action_type == action:
-                    raise HTTPException(status_code=400, detail=f"您已经{'点过赞' if action == 'like' else '点过踩'}啦！")
-            raise HTTPException(status_code=400, detail="互斥操作：您已经给过评价了！")
-            
-        interaction = UserInteraction(user_id=current_user.id, post_id=post.id, action_type=action)
-        session.add(interaction)
-        
-        if action == "like":
-            await session.execute(update(GalleryPost).where(GalleryPost.id == post.id).values(likes_count=GalleryPost.likes_count + 1))
-        else:
-            await session.execute(update(GalleryPost).where(GalleryPost.id == post.id).values(dislikes_count=GalleryPost.dislikes_count + 1))
-            
-        try:
-            await session.commit()
-        except IntegrityError:
-            await session.rollback()
-            raise HTTPException(status_code=400, detail="重复操作：您已经给过评价了！")
-        return {"status": "success", "message": f"{'点赞' if action == 'like' else '点踩'}成功"}
+    from src.core.gallery_core import toggle_like, GalleryCoreError, DuplicateInteractionError
+    try:
+        result = await toggle_like(current_user.id, post_id, action)
+        return {"status": "success", "message": f"{'点赞' if action == 'like' else '点踩'}成功", "data": result}
+    except DuplicateInteractionError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except GalleryCoreError as e:
+        if "不存在" in str(e):
+            raise HTTPException(status_code=404, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail="内部服务器错误")
 
 @router.get("/posts/{post_id}/apply-context", response_model=ApplyContextResponse)
 async def get_apply_context(

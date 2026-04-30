@@ -183,29 +183,32 @@ async def toggle_like(user_id: int, post_id: int, action: str) -> dict:
                 
             inter.action_type = action
         else:
-            new_inter = UserInteraction(user_id=user_id, post_id=post_id, action_type=action)
-            session.add(new_inter)
-            
+            from sqlalchemy.dialects.postgresql import insert
             from sqlalchemy import update
-            if action == "like":
-                stmt = update(GalleryPost).where(GalleryPost.id == post_id).values(
-                    likes_count=GalleryPost.likes_count + 1
-                ).returning(GalleryPost.likes_count, GalleryPost.dislikes_count)
-            else:
-                stmt = update(GalleryPost).where(GalleryPost.id == post_id).values(
-                    dislikes_count=GalleryPost.dislikes_count + 1
-                ).returning(GalleryPost.likes_count, GalleryPost.dislikes_count)
-                
-            res = await session.execute(stmt)
-            updated = res.fetchone()
-            post.likes_count = updated[0]
-            post.dislikes_count = updated[1]
 
-        try:
-            await session.commit()
-        except IntegrityError:
-            await session.rollback()
-            raise DuplicateInteractionError("您已经进行过此操作啦！")
+            stmt_insert = insert(UserInteraction).values(
+                user_id=user_id, post_id=post_id, action_type=action
+            ).on_conflict_do_nothing()
+            
+            result = await session.execute(stmt_insert)
+            if result.rowcount > 0:
+                if action == "like":
+                    stmt = update(GalleryPost).where(GalleryPost.id == post_id).values(
+                        likes_count=GalleryPost.likes_count + 1
+                    ).returning(GalleryPost.likes_count, GalleryPost.dislikes_count)
+                else:
+                    stmt = update(GalleryPost).where(GalleryPost.id == post_id).values(
+                        dislikes_count=GalleryPost.dislikes_count + 1
+                    ).returning(GalleryPost.likes_count, GalleryPost.dislikes_count)
+                    
+                res = await session.execute(stmt)
+                updated = res.fetchone()
+                post.likes_count = updated[0]
+                post.dislikes_count = updated[1]
+            else:
+                raise DuplicateInteractionError("您已经进行过此操作啦！")
+
+        await session.commit()
             
         return {
             "likes_count": post.likes_count,
@@ -216,24 +219,22 @@ async def record_apply_interaction(user_id: int, post_id: int):
     """
     Record an apply action for a gallery post when a task is actually generated.
     """
+    from sqlalchemy.dialects.postgresql import insert
     from sqlalchemy import update
     
     async with AsyncSessionLocal() as session:
         try:
-            interaction = UserInteraction(user_id=user_id, post_id=post_id, action_type="apply")
-            session.add(interaction)
-            # flush first to trigger IntegrityError inside the try block
-            await session.flush()
+            stmt_insert = insert(UserInteraction).values(
+                user_id=user_id, post_id=post_id, action_type="apply"
+            ).on_conflict_do_nothing()
             
-            stmt = update(GalleryPost).where(GalleryPost.id == post_id).values(
-                applied_count=GalleryPost.applied_count + 1
-            )
-            await session.execute(stmt)
+            result = await session.execute(stmt_insert)
+            if result.rowcount > 0:
+                stmt_update = update(GalleryPost).where(GalleryPost.id == post_id).values(
+                    applied_count=GalleryPost.applied_count + 1
+                )
+                await session.execute(stmt_update)
             await session.commit()
-        except IntegrityError:
-            await session.rollback()
-            # Already recorded, silently ignore
-            pass
         except Exception as e:
             await session.rollback()
             logger.error(f"Failed to record apply interaction for post {post_id}: {e}")
@@ -324,7 +325,7 @@ async def get_gallery_feed(
         # Eager load related User and History
         query = query.options(
             selectinload(GalleryPost.user),
-            selectinload(GalleryPost.history)
+            selectinload(GalleryPost.histories)
         )
         
         # Paginate

@@ -126,11 +126,15 @@ def load_prompts(file_path: str = "prompts.ini") -> dict:
 
 @async_retry(max_retries=3)
 async def robust_send_message(bot, chat_id, text, **kwargs):
+    if text and isinstance(text, str) and len(text) > 4000:
+        text = text[:4000] + "..."
     return await bot.send_message(chat_id=chat_id, text=text, **kwargs)
 
 
 @async_retry(max_retries=3)
 async def robust_reply_text(message, text, **kwargs):
+    if text and isinstance(text, str) and len(text) > 4000:
+        text = text[:4000] + "..."
     return await message.reply_text(text=text, **kwargs)
 
 
@@ -143,7 +147,11 @@ async def robust_edit_text(message, text: str, **kwargs):
         text = text[:4000]
         return await message.edit_text(text, **kwargs)
     except BadRequest as e:
-        if "Message is not modified" in str(e):
+        error_msg = str(e).lower()
+        if "message is not modified" in error_msg:
+            return message
+        if "message to edit not found" in error_msg or "there is no text in the message to edit" in error_msg:
+            logger.warning(f"Ignored edit_text exception: {e}")
             return message
         logger.error(f"Failed to edit message: {e}")
         return None
@@ -157,22 +165,37 @@ def create_background_task(context, coro):
     in context.bot_data['bg_tasks'] to prevent Python's garbage collector
     from destroying the task mid-execution.
     """
-    task = asyncio.create_task(coro)
-    if "bg_tasks" not in context.bot_data:
-        context.bot_data["bg_tasks"] = set()
-    context.bot_data["bg_tasks"].add(task)
-    task.add_done_callback(context.bot_data["bg_tasks"].discard)
+    app = getattr(context, 'application', context)
+    task = app.create_task(coro)
+    if "bg_tasks" not in app.bot_data:
+        app.bot_data["bg_tasks"] = set()
+    app.bot_data["bg_tasks"].add(task)
+    task.add_done_callback(app.bot_data["bg_tasks"].discard)
     return task
 
 
 @async_retry(max_retries=3)
 async def robust_edit_reply_markup(message, reply_markup=None, **kwargs):
-    return await message.edit_reply_markup(reply_markup=reply_markup, **kwargs)
+    try:
+        return await message.edit_reply_markup(reply_markup=reply_markup, **kwargs)
+    except BadRequest as e:
+        error_msg = str(e).lower()
+        if "message is not modified" in error_msg or "message to edit not found" in error_msg or "there is no text in the message to edit" in error_msg:
+            logger.warning(f"Ignored edit_reply_markup exception: {e}")
+            return message
+        raise e
 
 
 @async_retry(max_retries=3)
 async def robust_edit_caption(message, caption, **kwargs):
-    return await message.edit_caption(caption=caption, **kwargs)
+    try:
+        return await message.edit_caption(caption=caption, **kwargs)
+    except BadRequest as e:
+        error_msg = str(e).lower()
+        if "message is not modified" in error_msg or "message to edit not found" in error_msg or "there is no text in the message to edit" in error_msg:
+            logger.warning(f"Ignored edit_caption exception: {e}")
+            return message
+        raise e
 
 
 @async_retry(max_retries=3)

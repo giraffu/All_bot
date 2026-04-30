@@ -268,6 +268,8 @@ GENERATION_TASK_TYPES = [
     MODE_I2I_PRO
 ]
 
+VIDEO_TASK_TYPES = ["doggy_style", "perfect_video_insert", "blowjob", "undress_tongue", "closeup_blowjob", "custom_video", "face_video", "face_video_step1", "face_video_step2", "video_lora", "ltx_video"]
+
 # Web Access Allowed Roles
 WEB_ACCESS_ALLOWED_IDENTITIES = ["内门弟子", "核心弟子", "真传弟子"]
 WEB_ACCESS_ALLOWED_GROUPS = ["练气期", "筑基期", "金丹期", "元婴期", "化神期", "炼虚期", "合体期", "大乘期", "渡劫期"]

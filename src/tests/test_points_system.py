@@ -17,12 +17,10 @@ async def setup_db():
     async with AsyncSessionLocal() as session:
         # Cleanup before
         from sqlalchemy import text
-        await session.execute(text("DELETE FROM checkin_history WHERE user_id = :uid"), {"uid": user_id})
-        await session.execute(text("DELETE FROM user_logs WHERE user_id = :uid"), {"uid": user_id})
-        await session.execute(text("DELETE FROM history WHERE user_id = :uid"), {"uid": user_id})
-        user = await session.get(User, user_id)
-        if user:
-            await session.delete(user)
+        await session.execute(text("DELETE FROM checkin_history WHERE user_id IN (SELECT id FROM users WHERE username = 'test_user')"))
+        await session.execute(text("DELETE FROM user_logs WHERE user_id IN (SELECT id FROM users WHERE username = 'test_user')"))
+        await session.execute(text("DELETE FROM history WHERE user_id IN (SELECT id FROM users WHERE username = 'test_user')"))
+        await session.execute(text("DELETE FROM users WHERE username = 'test_user'"))
         await session.commit()
             
     yield user_id
@@ -30,12 +28,10 @@ async def setup_db():
     async with AsyncSessionLocal() as session:
         # Cleanup after
         from sqlalchemy import text
-        await session.execute(text("DELETE FROM checkin_history WHERE user_id = :uid"), {"uid": user_id})
-        await session.execute(text("DELETE FROM user_logs WHERE user_id = :uid"), {"uid": user_id})
-        await session.execute(text("DELETE FROM history WHERE user_id = :uid"), {"uid": user_id})
-        user = await session.get(User, user_id)
-        if user:
-            await session.delete(user)
+        await session.execute(text("DELETE FROM checkin_history WHERE user_id IN (SELECT id FROM users WHERE username = 'test_user')"))
+        await session.execute(text("DELETE FROM user_logs WHERE user_id IN (SELECT id FROM users WHERE username = 'test_user')"))
+        await session.execute(text("DELETE FROM history WHERE user_id IN (SELECT id FROM users WHERE username = 'test_user')"))
+        await session.execute(text("DELETE FROM users WHERE username = 'test_user'"))
         await session.commit()
 
 @pytest.mark.asyncio

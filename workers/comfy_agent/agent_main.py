@@ -153,7 +153,7 @@ class ComfyAgent:
                             # Use timeout to periodically check connection state
                             message = await asyncio.wait_for(websocket.recv(), timeout=60.0)
                         except asyncio.TimeoutError:
-                            if websocket.closed:
+                            if websocket.state == websockets.protocol.State.CLOSED:
                                 logger.error("WebSocket closed unexpectedly")
                                 break
                             try:
@@ -166,7 +166,13 @@ class ComfyAgent:
                         if isinstance(message, bytes):
                             continue
                             
-                        data = json.loads(message)
+                        try:
+                            data = json.loads(message)
+                        except json.JSONDecodeError:
+                            continue
+                            
+                        if not isinstance(data, dict):
+                            continue
                         msg_type = data.get("type")
                         data_content = data.get("data", {})
                         
@@ -199,7 +205,7 @@ class ComfyAgent:
                                 
                         elif msg_type == "executed":
                             logger.info(f"Node executed for prompt {prompt_id}")
-                            output = data_content.get("output", {})
+                            output = data_content.get("output") or {}
                             images = output.get("images", [])
                             gifs = output.get("gifs", [])
                             videos = output.get("videos", [])

@@ -235,7 +235,12 @@ def main():
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_prompt))
 
     core_logger.info(f"🧪 {bot_type} Telegram Bot started")
-    app.run_polling(poll_interval=2.0, timeout=30)
+    import signal
+    app.run_polling(
+        poll_interval=2.0, 
+        timeout=30,
+        stop_signals=(signal.SIGINT, signal.SIGTERM, signal.SIGABRT)
+    )
 
 if __name__ == "__main__":
     main()

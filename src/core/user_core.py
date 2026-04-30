@@ -37,6 +37,7 @@ async def get_or_create_user_by_telegram(tg_id: int, username: str = None, full_
             
             if updated:
                 try:
+                    await session.flush()
                     await session.commit()
                 except IntegrityError:
                     await session.rollback()
@@ -64,6 +65,7 @@ async def get_or_create_user_by_telegram(tg_id: int, username: str = None, full_
         )
         session.add(new_user)
         try:
+            await session.flush()
             await session.commit()
             return new_user, True
         except IntegrityError:
@@ -85,6 +87,7 @@ async def get_or_create_user_by_telegram(tg_id: int, username: str = None, full_
             )
             session.add(fallback_user)
             try:
+                await session.flush()
                 await session.commit()
                 return fallback_user, True
             except IntegrityError:
@@ -110,6 +113,7 @@ async def get_or_create_user_by_google(google_id: str, email: str, full_name: st
         )
         session.add(new_user)
         try:
+            await session.flush()
             await session.commit()
             return new_user
         except IntegrityError:
