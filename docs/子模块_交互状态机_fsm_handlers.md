@@ -1,7 +1,7 @@
 # 子模块: 交互状态机与回调路由 (FSM & Callback Handlers)
 
 ## 1. 目标与范围
-本模块包含所有通过 Python-Telegram-Bot (PTB) 实现的有限状态机逻辑（如高级图生视频、社区一键应用等）以及**基于装饰器的回调路由体系 (`callback_router.py`)**。
+本模块包含所有通过 Python-Telegram-Bot (PTB) 实现的有限状态机逻辑（如高级图生视频、自由P图、视频换脸、各类一键懒人动图/P图等）以及**基于装饰器的回调路由体系 (`callback_router.py`)**。
 FSM 负责在 Telegram 客户端收集用户的图像、分辨率、时长等分步参数，期间处理菜单按钮的意外中断拦截（防死锁）；回调路由负责拆分庞大的 Callback 处理逻辑（拆分为 `billing`, `gallery`, `misc` 等子模块），实现单一职责原则（SRP）。
 
 ## 2. 架构图与调用链

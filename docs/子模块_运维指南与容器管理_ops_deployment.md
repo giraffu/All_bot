@@ -53,7 +53,7 @@ graph TD
 在宿主机根目录执行以下脚本进行干预：
 ```bash
 # 1. 强制清理并释放由于 Worker 宕机导致的僵尸任务锁
-docker exec tg-bot python clean_zombies.py
+docker exec tg-bot python src/services/zombie_cleaner_service.py
 
 # 2. 检查 Redis DB2 的任务排队情况与 Worker 心跳
 docker exec tg-bot python check_redis.py
@@ -61,6 +61,12 @@ docker exec tg-bot python check_redis.py
 # 3. 本地模拟发送第三方支付回调请求（脱离网关限制）
 python scripts/test_huanyuy.py
 ```
+
+### 3.3 安全自动化部署脚本 (推荐)
+为了解决部署过程中的任务中断和 Redis 死锁问题，系统提供了 `safe_deploy.sh` 一键安全部署脚本。
+- **机制**：开启双端维护模式 -> 智能监控活跃任务队列至清空 -> 执行 `zombie_cleaner_service.py` 清理死锁 -> 依次平滑重建 Agent、中控 API、主服务群、Dashboard 和测试服务。
+- **用法**：在拉取最新代码并确认 `.env` 配置后，直接运行 `bash safe_deploy.sh`。
+- **详见**：[SAFE_DEPLOY_GUIDE.md](./SAFE_DEPLOY_GUIDE.md)
 
 ## 4. 常见线上故障与恢复契约 (SOP)
 
@@ -74,20 +80,25 @@ python scripts/test_huanyuy.py
 | **Agent 报 NoSuchKey 或 ComfyUI 400** | Agent 读取了默认的 MinIO 存储桶（如 `comfyui-input`），而主应用使用了其他桶名（如 `bot-data`）。 | 在 `workers/docker-compose.yml` 中确保 `MINIO_INPUT_BUCKET` 与后端主服务的 `MINIO_BUCKET` 保持一致。 |
 
 ## 5. 部署与重建步骤 (CI/CD)
-系统微服务分散在多个目录下，重建时需进入特定目录操作。为避免遗留 `ContainerConfig` 错误，推荐先 `rm -f` 再构建：
+系统微服务分散在多个目录下，重建时需进入特定目录操作。**强烈建议直接使用 `safe_deploy.sh` 进行全量一键平滑部署**。
+如需手动操作，为避免遗留 `ContainerConfig` 错误，推荐先 `rm -f` 再构建：
 
 1. **主 Bot、Web API 与 支付服务 (根目录)**：
    `docker rm -f tg-bot web-api payment-api && docker-compose -f deploy/docker-compose.yml up -d --build`
 2. **Dashboard 与 中控 API (子目录)**：
-   `cd dashboard && docker-compose up -d --build`
-   `cd backend && docker-compose up -d --build`
+   `cd dashboard && docker rm -f dashboard_dashboard-backend_1 dashboard_dashboard-frontend_1 && docker-compose up -d --build`
+   `cd backend && docker rm -f backend_api_1 && docker-compose up -d --build`
 3. **Comfy Agent 算力集群 (workers 目录)**：
    集群 Agent (`comfy-agent-x`) 支持独立平滑更新配置，不影响集群中其他节点。
-   - **整体部署**：`cd workers && docker-compose up -d --build`
+   - **整体部署**：`cd workers && docker rm -f comfy-agent-1 comfy-agent-2 comfy-agent-3 comfy-agent-4 comfy-agent-5 && docker-compose up -d --build`
    - **单节点更新**（当修改环境变量后，重构并重启单个节点）：`docker-compose up -d comfy-agent-1`
    - **单节点重启**（不重新构建，仅重启）：`docker-compose restart comfy-agent-1`
 4. **前端 Vue 自动发布**：
    `cd frontend && npm run deploy` (依赖内置私钥通过 SCP 同步至海外 VPS)。
+
+**【极度重要】数据库迁移（按需）**：
+生产环境在构建镜像时才会打入新代码，旧容器内尚未拉取新脚本，会导致迁移指令变成无效空跑。请在**部署脚本执行完毕、新容器启动后**，立刻手动执行以下命令应用迁移：
+`docker exec -it tg-bot alembic upgrade head`
 
 ## 6. 安全与权限监控规则 (SLI/SLO)
 - **SLI**：前端 SSH 私钥文件 (`id_rsa.pem`) 的权限状态；数据库表结构的 Alembic 变更一致性。

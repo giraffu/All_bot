@@ -112,7 +112,8 @@ paths:
 
 ## 6. 部署与回滚步骤
 - **部署**：
-  在主项目目录和 dashboard 目录下均可运行：
+  建议使用根目录下的 `safe_deploy.sh` 脚本进行安全平滑部署，它会自动重建 Dashboard 服务。
+  如需手动部署，可运行：
   ```bash
   cd dashboard
   docker-compose up -d --build

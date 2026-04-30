@@ -20,10 +20,11 @@
 | **对象存储与画廊社区** | `allbot-gallery-storage` | MinIO 直传/容灾、R2 边缘分发、社区防并发点赞、一键克隆限制 |
 | **Telegram 交互与文件** | `allbot-tg-fsm` | PTB 状态机、菜单互斥与防死锁、Local API 大文件下载适配 |
 | **AI 助理与大模型推理** | `allbot-llm-ops` | LM Studio 限流防 OOM、LangGraph 意图嗅探、群组记忆隔离 |
-| **部署、容器与容灾排障** | `allbot-ops-deployment` | Docker Compose 编排、Alembic 迁移、MinIO/网络故障自愈恢复 |
+| **部署、容器与容灾排障** | `allbot-ops-deployment` | Docker Compose 编排、Alembic 迁移、MinIO/网络故障自愈恢复、一键安全部署 (safe_deploy) |
 | **文档维护与知识库同步** | `allbot-kb-auto-updater` | 智能监控代码变更影响，自动维护 AGENTS.md、Skills 和 /docs/ 的逻辑一致性 |
 | **后端代码审查与规范** | `backend-code-review` | 针对 FastAPI/Python 后端接口及核心层代码的架构规则审查、依赖注入和数据库模式检查 |
 | **附加模型与工作流配置** | `allbot-comfy-models` | 处理图生图/图生视频的附加模型(LoRA/ControlNet)配置、参数透传与工作流注入 |
+| **前端代码审查与规范** | `vue-best-practices` | 针对 Vue3 / SPA 前端（如 Dashboard 或 Web 工作台）的开发规范，推荐 Composition API 与 TypeScript |
 
 ## 3. 文档体系导览 (Documentation Guide)
 

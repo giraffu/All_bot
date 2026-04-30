@@ -148,10 +148,10 @@ paths:
 
 ## 6. 部署与回滚步骤
 - **部署**：
-  调度层代码与主 Bot 或 Web API 共享。执行：
-  `docker-compose -f deploy/docker-compose.yml up -d --build tg-bot web-api`
+  调度层代码与主 Bot 或 Web API 共享。建议使用根目录下的 `safe_deploy.sh` 脚本进行安全平滑部署，它内置了任务队列监控和防死锁机制。
+  如需手动更新：`docker-compose -f deploy/docker-compose.yml up -d --build tg-bot web-api`
 - **回滚**：
-  `git revert HEAD`，随后重新拉起容器。如果锁死发生，可以运行 `/home/hfy/APP/All_bot/clean_zombies.py` 强制释放 Redis 锁。
+  `git revert HEAD`，随后重新拉起容器。如果锁死发生，可以运行 `/home/hfy/APP/All_bot/src/services/zombie_cleaner_service.py` 强制释放 Redis 锁。
 
 ## 7. 监控告警规则 (SLI/SLO)
 - **SLI**：Redis 队列深度 `comfy:queue:pending` 与死锁比例（任务超过 10 分钟未结束）。
