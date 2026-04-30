@@ -163,9 +163,9 @@ class TaskService:
             return None, None
         finally:
             if registry_task_id:
-                await TaskRegistry.remove_task(registry_task_id)
+                await asyncio.shield(TaskRegistry.remove_task(registry_task_id))
             if task_submitted:
-                await release_concurrency_lock(internal_user_id)
+                await asyncio.shield(release_concurrency_lock(internal_user_id))
             if cleanup and image_path:
                 TaskService._cleanup_files([image_path])
 
@@ -281,9 +281,9 @@ class TaskService:
             return None, None
         finally:
             if registry_task_id:
-                await TaskRegistry.remove_task(registry_task_id)
+                await asyncio.shield(TaskRegistry.remove_task(registry_task_id))
             if task_submitted:
-                await release_concurrency_lock(internal_user_id)
+                await asyncio.shield(release_concurrency_lock(internal_user_id))
             if cleanup:
                 TaskService._cleanup_files([face_image_path, video_path])
 
@@ -478,9 +478,9 @@ class TaskService:
 
         finally:
             if registry_task_id:
-                await TaskRegistry.remove_task(registry_task_id)
+                await asyncio.shield(TaskRegistry.remove_task(registry_task_id))
             if task_submitted:
-                await release_concurrency_lock(internal_user_id)
+                await asyncio.shield(release_concurrency_lock(internal_user_id))
             if cleanup:
                 TaskService._cleanup_files(images)
 
@@ -612,9 +612,9 @@ class TaskService:
             await robust_send_message(context.bot, chat_id, f"❌ {user_msg}，已退还灵石")
         finally:
             if registry_task_id:
-                await TaskRegistry.remove_task(registry_task_id)
+                await asyncio.shield(TaskRegistry.remove_task(registry_task_id))
             if task_submitted:
-                await release_concurrency_lock(internal_user_id)
+                await asyncio.shield(release_concurrency_lock(internal_user_id))
             if cleanup and image_path:
                 TaskService._cleanup_files([image_path])
 
@@ -851,9 +851,9 @@ class TaskService:
             return None, None
         finally:
             if registry_task_id:
-                await TaskRegistry.remove_task(registry_task_id)
+                await asyncio.shield(TaskRegistry.remove_task(registry_task_id))
             if task_submitted:
-                await release_concurrency_lock(internal_user_id)
+                await asyncio.shield(release_concurrency_lock(internal_user_id))
             if cleanup and image_path:
                 TaskService._cleanup_files([image_path])
 
@@ -978,9 +978,9 @@ class TaskService:
             return None, None
         finally:
             if registry_task_id:
-                await TaskRegistry.remove_task(registry_task_id)
+                await asyncio.shield(TaskRegistry.remove_task(registry_task_id))
             if task_submitted:
-                await release_concurrency_lock(internal_user_id)
+                await asyncio.shield(release_concurrency_lock(internal_user_id))
             TaskService._cleanup_files(images)
 
     @staticmethod
