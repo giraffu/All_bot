@@ -87,17 +87,18 @@ const getFileUrl = (path: string, postId?: number, isThumbnail: boolean = false)
   }
   
   // 针对 Cloudflare Pro / Business 用户的 Image Resizing 功能
-  // 注意：必须在 CF 控制台 Speed -> Optimization 中开启 Image Resizing
+  // 因免费额度 5000 次已满，暂时注释掉以加载原图
+  /*
   if (isThumbnail && url.startsWith('http') && !url.includes('X-Amz-Signature')) {
     try {
       const urlObj = new URL(url)
-      // 将宽限制在 600，质量 80，自动根据浏览器转 WebP/AVIF
       const cfPrefix = '/cdn-cgi/image/width=600,quality=80,format=auto'
       url = `${urlObj.origin}${cfPrefix}${urlObj.pathname}${urlObj.search}`
     } catch (e) {
       console.warn('Failed to parse URL for CF resizing:', e)
     }
   }
+  */
   
   // 缓存策略：v=${postId} 作为静态版本号，仅在原 URL 无鉴权签名时安全拼接
   if (postId && !url.includes('X-Amz-Signature')) {
@@ -112,7 +113,8 @@ const getVideoPosterUrl = (path: string, postId?: number) => {
   let url = getFileUrl(path, postId, false)
   
   // 针对 Cloudflare Pro / Business 用户的 Media Transformations 功能
-  // 动态截取视频的第 0 秒作为封面图 (Poster)
+  // 因免费额度已满，暂时注释掉
+  /*
   if (url.startsWith('http') && !url.includes('X-Amz-Signature')) {
     try {
       const urlObj = new URL(url)
@@ -122,6 +124,7 @@ const getVideoPosterUrl = (path: string, postId?: number) => {
       console.warn('Failed to parse URL for CF media poster:', e)
     }
   }
+  */
   
   return url
 }
@@ -298,10 +301,10 @@ const pauseVideo = (e: Event) => {
 }
 
 const handleImageError = (e: Event, post: Post) => {
-  // If loading fails, just let it fail silently without infinite loop
-  // as we no longer have an alternative fallback url
+  // If loading fails, avoid infinite loop. We don't hide it entirely anymore,
+  // so users can see there's a broken image icon instead of a confusing black box.
   const img = e.target as HTMLImageElement
-  img.style.display = 'none' // Hide broken image icon
+  img.style.opacity = '0.3' // Dim the broken image
 }
 
 onMounted(() => {
@@ -419,10 +422,10 @@ onUnmounted(() => {
           />
           <video 
             v-else 
-            :src="getFileUrl(post.thumbnail_url, post.id, false)" 
+            :src="getFileUrl(post.thumbnail_url, post.id, false) + '#t=0.001'" 
             :poster="getVideoPosterUrl(post.thumbnail_url, post.id)"
             class="w-full h-auto object-cover" 
-            preload="none" 
+            preload="metadata" 
             muted 
             loop
             playsinline
@@ -437,7 +440,7 @@ onUnmounted(() => {
           </div>
           
           <!-- Tags Overlay on Hover -->
-          <div class="absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex flex-col justify-end p-4">
+          <div class="absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-transparent opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity duration-300 flex flex-col justify-end p-4">
             <div class="flex flex-wrap gap-1.5 mb-8">
               <span v-for="tag in post.tags.slice(0, 4)" :key="tag" class="text-[10px] bg-cyan-500/20 border border-cyan-500/30 text-cyan-100 px-2 py-0.5 rounded-full backdrop-blur-md">
                 {{ tag }}
@@ -493,7 +496,7 @@ onUnmounted(() => {
         <!-- Media Area -->
         <div class="lg:w-2/3 bg-black flex items-center justify-center relative min-h-[300px]">
           <img v-if="!isVideoFile(currentPost.media_url, currentPost.media_type)" :src="getFileUrl(currentPost.media_url, currentPost.id, false)" class="max-w-full max-h-[80vh] object-contain" />
-          <video v-else :src="getFileUrl(currentPost.media_url, currentPost.id, false)" :poster="getVideoPosterUrl(currentPost.media_url, currentPost.id)" class="max-w-full max-h-[80vh] object-contain" controls autoplay loop></video>
+          <video v-else :src="getFileUrl(currentPost.media_url, currentPost.id, false) + '#t=0.001'" :poster="getVideoPosterUrl(currentPost.media_url, currentPost.id)" class="max-w-full max-h-[80vh] object-contain" controls autoplay loop playsinline></video>
         </div>
         
         <!-- Info Area -->

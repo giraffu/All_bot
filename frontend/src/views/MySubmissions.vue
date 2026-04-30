@@ -209,6 +209,9 @@ const deletePost = async (post: Post) => {
     await api.delete(`/gallery/posts/${post.id}`)
     posts.value = posts.value.filter(p => p.id !== post.id)
     message.success('删除成功')
+    if (currentPost.value?.id === post.id) {
+      detailVisible.value = false
+    }
   } catch (error) {
     console.error(error)
     message.error('删除失败')
@@ -301,10 +304,9 @@ const pauseVideo = (e: Event) => {
 }
 
 const handleImageError = (e: Event, post: Post) => {
-  // If loading fails, just let it fail silently without infinite loop
-  // as we no longer have an alternative fallback url
+  // If loading fails, avoid infinite loop. We don't hide it entirely anymore.
   const img = e.target as HTMLImageElement
-  img.style.display = 'none' // Hide broken image icon
+  img.style.opacity = '0.3' // Dim the broken image
 }
 
 onMounted(() => {
@@ -345,7 +347,7 @@ onUnmounted(() => {
           />
           <video 
             v-else 
-            :src="getFileUrl(post.thumbnail_url, post.id)" 
+            :src="getFileUrl(post.thumbnail_url, post.id) + '#t=0.001'" 
             class="w-full h-auto object-cover" 
             preload="metadata" 
             muted 
@@ -367,8 +369,8 @@ onUnmounted(() => {
             <Video v-else :size="14" class="text-indigo-400" />
           </div>
           
-          <!-- Tags Overlay on Hover -->
-          <div class="absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex flex-col justify-between p-4">
+          <!-- Tags Overlay on Hover (Desktop) / Always Visible (Mobile) -->
+          <div class="absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-transparent opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity duration-300 flex flex-col justify-between p-4">
             <!-- Top Actions -->
             <div class="flex justify-end gap-2">
               <button @click.stop="toggleStatus(post)" class="p-2 rounded-full bg-black/50 hover:bg-black/80 text-white backdrop-blur-sm transition-all" :title="post.is_active ? '点击下架' : '点击上架'">
@@ -435,70 +437,78 @@ onUnmounted(() => {
         <!-- Media Area -->
         <div class="lg:w-2/3 bg-black flex items-center justify-center relative min-h-[300px]">
           <img v-if="!isVideoFile(currentPost.media_url, currentPost.media_type)" :src="getFileUrl(currentPost.media_url, currentPost.id)" class="max-w-full max-h-[80vh] object-contain" />
-          <video v-else :src="getFileUrl(currentPost.media_url, currentPost.id)" class="max-w-full max-h-[80vh] object-contain" controls autoplay loop></video>
+          <video v-else :src="getFileUrl(currentPost.media_url, currentPost.id) + '#t=0.001'" class="max-w-full max-h-[80vh] object-contain" controls autoplay loop playsinline></video>
         </div>
         
         <!-- Info Area -->
-        <div class="lg:w-1/3 p-6 flex flex-col bg-slate-900/80 backdrop-blur-xl relative">
+        <div class="lg:w-1/3 p-4 flex flex-col bg-slate-900/80 backdrop-blur-xl relative max-h-[50vh] lg:max-h-none overflow-y-auto">
           <!-- Close button -->
-          <button @click="detailVisible = false" class="absolute top-4 right-4 text-slate-400 hover:text-white transition-colors">
-            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+          <button @click="detailVisible = false" class="absolute top-3 right-3 text-slate-400 hover:text-white transition-colors z-10 bg-black/50 p-1.5 rounded-full">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
           </button>
           
-          <h3 class="text-xl font-bold text-slate-100 mb-2 flex items-center">
-            <span class="bg-gradient-to-r from-cyan-400 to-indigo-400 bg-clip-text text-transparent">修仙界作品</span>
-          </h3>
-          
-          <div class="text-sm text-slate-400 mb-6 space-y-2">
-            <div class="flex space-x-4">
-              <span v-if="currentPost.width">📏 {{ currentPost.width }}x{{ currentPost.height }}</span>
-              <span v-if="currentPost.duration">⏱️ {{ currentPost.duration }}秒</span>
-            </div>
-            <div v-if="currentPost.created_at">
-              <span>📅 {{ dayjs(currentPost.created_at).format('YYYY-MM-DD HH:mm') }}</span>
+          <div class="flex justify-between items-start mb-3">
+            <h3 class="text-lg font-bold text-slate-100 flex items-center">
+              <span class="bg-gradient-to-r from-cyan-400 to-indigo-400 bg-clip-text text-transparent">修仙界作品</span>
+            </h3>
+            
+            <div class="text-xs text-slate-400 flex items-center gap-3 mr-8">
+              <span v-if="currentPost.width" class="bg-slate-800/80 px-2 py-1 rounded">📏 {{ currentPost.width }}x{{ currentPost.height }}</span>
+              <span v-if="currentPost.created_at" class="bg-slate-800/80 px-2 py-1 rounded">📅 {{ dayjs(currentPost.created_at).format('MM-DD HH:mm') }}</span>
             </div>
           </div>
           
-          <div class="mb-6">
-            <h4 class="text-sm font-semibold text-slate-300 mb-3 uppercase tracking-wider">包含元素 (Tags)</h4>
-            <div class="flex flex-wrap gap-2">
-              <span v-for="tag in currentPost.tags" :key="tag" class="text-xs bg-slate-800 text-cyan-200 border border-slate-700 px-2.5 py-1 rounded-md">
+          <div class="mb-4" v-if="currentPost.tags && currentPost.tags.length > 0">
+            <div class="flex flex-wrap gap-1.5">
+              <span v-for="tag in currentPost.tags" :key="tag" class="text-[11px] bg-slate-800 text-cyan-200 border border-slate-700 px-2 py-0.5 rounded">
                 {{ tag }}
               </span>
-              <span v-if="!currentPost.tags || currentPost.tags.length === 0" class="text-sm text-slate-500">无特定标签</span>
             </div>
           </div>
           
-          <div class="flex space-x-4 mb-auto pt-4">
-            <button @click="handleInteract(currentPost, 'like')" class="flex-1 py-3 rounded-xl border border-slate-700 bg-slate-800/50 hover:bg-slate-700 transition-all flex items-center justify-center group">
-              <Heart :size="20" class="mr-2 transition-transform group-hover:scale-110" :class="currentPost.has_liked ? 'fill-pink-500 text-pink-500' : 'text-slate-400 group-hover:text-pink-400'" />
-              <span class="font-medium" :class="currentPost.has_liked ? 'text-pink-400' : 'text-slate-300'">{{ currentPost.likes_count }}</span>
+          <!-- 紧凑的点赞/踩区域 -->
+          <div class="flex space-x-3 mb-4">
+            <button @click="handleInteract(currentPost, 'like')" class="flex-1 py-2 rounded-lg border border-slate-700 bg-slate-800/50 hover:bg-slate-700 transition-all flex items-center justify-center group">
+              <Heart :size="16" class="mr-1.5 transition-transform group-hover:scale-110" :class="currentPost.has_liked ? 'fill-pink-500 text-pink-500' : 'text-slate-400 group-hover:text-pink-400'" />
+              <span class="text-sm font-medium" :class="currentPost.has_liked ? 'text-pink-400' : 'text-slate-300'">{{ currentPost.likes_count }}</span>
             </button>
-            <button @click="handleInteract(currentPost, 'dislike')" class="flex-1 py-3 rounded-xl border border-slate-700 bg-slate-800/50 hover:bg-slate-700 transition-all flex items-center justify-center group">
-              <ThumbsDown :size="20" class="mr-2 transition-transform group-hover:scale-110" :class="currentPost.has_disliked ? 'fill-slate-400 text-slate-400' : 'text-slate-400 group-hover:text-slate-200'" />
-              <span class="font-medium" :class="currentPost.has_disliked ? 'text-slate-400' : 'text-slate-300'">{{ currentPost.dislikes_count }}</span>
+            <button @click="handleInteract(currentPost, 'dislike')" class="flex-1 py-2 rounded-lg border border-slate-700 bg-slate-800/50 hover:bg-slate-700 transition-all flex items-center justify-center group">
+              <ThumbsDown :size="16" class="mr-1.5 transition-transform group-hover:scale-110" :class="currentPost.has_disliked ? 'fill-slate-400 text-slate-400' : 'text-slate-400 group-hover:text-slate-200'" />
+              <span class="text-sm font-medium" :class="currentPost.has_disliked ? 'text-slate-400' : 'text-slate-300'">{{ currentPost.dislikes_count }}</span>
             </button>
           </div>
           
-          <div class="mt-8 space-y-4">
+          <!-- 移动端管理按钮区 (紧凑版) -->
+          <div class="flex space-x-3 mb-5 border-b border-slate-700/50 pb-4">
+            <button @click="toggleStatus(currentPost)" class="flex-1 py-2 rounded-lg border border-slate-700 bg-slate-800 hover:bg-slate-700 transition-all flex items-center justify-center text-xs font-medium" :class="currentPost.is_active ? 'text-orange-400' : 'text-green-400'">
+              <EyeOff v-if="currentPost.is_active" :size="14" class="mr-1.5" />
+              <Eye v-else :size="14" class="mr-1.5" />
+              {{ currentPost.is_active ? '下架' : '重新上架' }}
+            </button>
+            <button @click="deletePost(currentPost)" class="flex-1 py-2 rounded-lg border border-red-900/30 bg-red-900/10 hover:bg-red-900/30 transition-all flex items-center justify-center text-xs font-medium text-red-400">
+              <Trash2 :size="14" class="mr-1.5" />
+              删除
+            </button>
+          </div>
+          
+          <div class="mt-auto space-y-3">
             <button v-if="currentPost.prompt"
               @click="copyPrompt(currentPost)"
-              class="w-full py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-medium shadow-sm transition-all flex items-center justify-center border border-slate-600"
+              class="w-full py-2.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-white text-sm font-medium shadow-sm transition-all flex items-center justify-center border border-slate-600"
             >
-              <Copy :size="18" class="mr-2" />
-              复制提示词 (Prompt)
+              <Copy :size="16" class="mr-1.5" />
+              复制提示词
             </button>
             <button 
               @click="handleApply" 
               :disabled="applying"
-              class="w-full py-4 rounded-xl bg-gradient-to-r from-cyan-600 to-indigo-600 hover:from-cyan-500 hover:to-indigo-500 text-white font-bold text-lg shadow-[0_0_20px_rgba(56,189,248,0.4)] transition-all transform hover:scale-[1.02] flex items-center justify-center relative overflow-hidden group"
+              class="w-full py-3 rounded-lg bg-gradient-to-r from-cyan-600 to-indigo-600 hover:from-cyan-500 hover:to-indigo-500 text-white font-bold shadow-md transition-all transform hover:scale-[1.02] flex items-center justify-center relative overflow-hidden group"
             >
               <div class="absolute inset-0 bg-white/20 translate-y-full group-hover:translate-y-0 transition-transform duration-300"></div>
-              <Wand2 v-if="!applying" :size="22" class="mr-2 relative z-10" />
-              <div v-else class="inline-block w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin mr-2 relative z-10"></div>
-              <span class="relative z-10">{{ applying ? '提取模板中...' : '✨ 一键应用此模板' }}</span>
+              <Wand2 v-if="!applying" :size="18" class="mr-1.5 relative z-10" />
+              <div v-else class="inline-block w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin mr-1.5 relative z-10"></div>
+              <span class="relative z-10">{{ applying ? '提取中...' : '✨ 一键应用模板' }}</span>
             </button>
-            <p class="text-center text-xs text-slate-500 mt-3">系统将自动为您配置最佳参数，您只需上传参考图即可</p>
           </div>
         </div>
       </div>
