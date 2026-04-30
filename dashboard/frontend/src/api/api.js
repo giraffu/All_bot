@@ -87,13 +87,23 @@ export const fetchCumulativeHourlyStats = async (days = 7) => {
   return response.data
 }
 
-export const fetchUsers = async (page = 1, pageSize = 20, query = '') => {
+export const fetchUsers = async (page = 1, pageSize = 20, params_obj = {}) => {
   const params = new URLSearchParams()
   params.append('skip', (page - 1) * pageSize)
   params.append('limit', pageSize)
-  if (query) {
-    params.append('query', query)
+  
+  // Backwards compatibility if a string query is passed
+  if (typeof params_obj === 'string') {
+    if (params_obj) params.append('query', params_obj)
+  } else {
+    if (params_obj.query) params.append('query', params_obj.query)
+    if (params_obj.query_partial !== undefined) params.append('query_partial', params_obj.query_partial)
+    if (params_obj.username) params.append('username', params_obj.username)
+    if (params_obj.username_partial !== undefined) params.append('username_partial', params_obj.username_partial)
+    if (params_obj.identity) params.append('identity', params_obj.identity)
+    if (params_obj.user_group) params.append('user_group', params_obj.user_group)
   }
+  
   const response = await api.get(`/api/users?${params.toString()}`)
   return response.data
 }

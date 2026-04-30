@@ -11,7 +11,7 @@ from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import IntegrityError
 
-from config import BOT_TOKEN, BOT_TOKEN_TEST, PROXY_URL
+from config import BOT_TOKEN, BOT_TOKEN_TEST, PROXY_URL, TELEGRAM_API_BASE_URL
 from src.database.core import AsyncSessionLocal
 from src.core.user_core import get_or_create_user_by_telegram
 from src.database.models import User
@@ -74,7 +74,7 @@ async def send_tg_security_notification(telegram_id: int, message: str):
     if not token or not telegram_id:
         return
         
-    url = f"http://69.63.220.115:8081/bot{token}/sendMessage"
+    url = f"{TELEGRAM_API_BASE_URL}/bot{token}/sendMessage"
     payload = {
         "chat_id": telegram_id,
         "text": message,

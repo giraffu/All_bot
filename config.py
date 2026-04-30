@@ -5,6 +5,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # --- Bot Configuration ---
+TELEGRAM_API_BASE_URL = os.getenv("TELEGRAM_API_BASE_URL", "http://69.63.220.115:8081")
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 BOT_TOKEN_TEST = os.getenv("BOT_TOKEN_TEST") or os.getenv("BOT_TOKEN_test")
 FILE_BOT_TOKEN = os.getenv("FILE_BOT_TOKEN")

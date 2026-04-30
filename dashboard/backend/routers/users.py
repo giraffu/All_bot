@@ -30,13 +30,42 @@ router = APIRouter(prefix="/api/users", tags=["users"])
 logger = logging.getLogger("dashboard.users")
 
 @router.get("")
-async def get_users(skip: int = 0, limit: int = 20, query: str = None, db: AsyncSession = Depends(get_db)):
+async def get_users(
+    skip: int = 0, 
+    limit: int = 20, 
+    query: str = None, 
+    query_partial: bool = True,
+    identity: str = None,
+    user_group: str = None,
+    username: str = None,
+    username_partial: bool = False,
+    db: AsyncSession = Depends(get_db)
+):
     """Get paginated user list with basic info"""
     try:
         stmt = select(User)
         
         if query:
-            stmt = stmt.where((User.full_name.ilike(f"%{query}%")) | (User.username.ilike(f"%{query}%")))
+            if query_partial:
+                stmt = stmt.where((User.full_name.ilike(f"%{query}%")) | (User.username.ilike(f"%{query}%")))
+            else:
+                stmt = stmt.where((User.full_name == query) | (User.username == query))
+        if identity:
+            if identity == "外门弟子":
+                stmt = stmt.where((User.current_identity == identity) | (User.current_identity.is_(None)))
+            else:
+                stmt = stmt.where(User.current_identity == identity)
+        if user_group:
+            if user_group == "凡人":
+                stmt = stmt.where((User.user_group == user_group) | (User.user_group.is_(None)))
+            else:
+                stmt = stmt.where(User.user_group == user_group)
+        if username:
+            if username_partial:
+                stmt = stmt.where(User.username.ilike(f"%{username}%"))
+            else:
+                stmt = stmt.where(User.username == username)
+            
             
         # Get total count
         count_stmt = select(func.count()).select_from(stmt.subquery())

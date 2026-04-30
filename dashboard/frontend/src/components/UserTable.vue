@@ -27,13 +27,26 @@ const currentPage = ref(1)
 const pageSize = ref(20)
 const totalUsers = ref(0)
 const searchQuery = ref('')
+const isQueryPartial = ref(true)
+const filterIdentity = ref(null)
+const filterUserGroup = ref(null)
+const searchUsername = ref('')
+const isUsernamePartial = ref(true)
 const searchTimeout = ref(null)
 
 const loadUsersData = async () => {
   loading.value = true
   error.value = null
   try {
-    const res = await fetchUsers(currentPage.value, pageSize.value, searchQuery.value)
+    const params_obj = {
+      query: searchQuery.value,
+      query_partial: isQueryPartial.value,
+      identity: filterIdentity.value,
+      user_group: filterUserGroup.value,
+      username: searchUsername.value,
+      username_partial: isUsernamePartial.value
+    }
+    const res = await fetchUsers(currentPage.value, pageSize.value, params_obj)
     users.value = res.items || []
     totalUsers.value = res.total || 0
   } catch (err) {
@@ -356,18 +369,50 @@ const columns = [
 <template>
   <a-card title="用户列表" :bordered="false" class="shadow-sm rounded-xl h-full flex flex-col">
     <template #extra>
-      <div class="flex items-center gap-4">
-        <a-input
-          v-model:value="searchQuery"
-          @input="onSearchInput"
-          placeholder="搜索用户名称/用户名"
-          allow-clear
-          class="w-64"
-        >
-          <template #prefix>
-            <search-outlined class="text-gray-400"/>
-          </template>
-        </a-input>
+      <div class="flex items-center gap-4 flex-wrap">
+        <a-select v-model:value="filterIdentity" placeholder="身份组" allow-clear class="w-32" @change="onSearchInput">
+          <a-select-option value="外门弟子">外门弟子</a-select-option>
+          <a-select-option value="内门弟子">内门弟子</a-select-option>
+          <a-select-option value="核心弟子">核心弟子</a-select-option>
+          <a-select-option value="真传弟子">真传弟子</a-select-option>
+        </a-select>
+
+        <a-select v-model:value="filterUserGroup" placeholder="修为" allow-clear class="w-32" @change="onSearchInput">
+          <a-select-option value="凡人">凡人</a-select-option>
+          <a-select-option value="练气期">练气期</a-select-option>
+          <a-select-option value="筑基期">筑基期</a-select-option>
+          <a-select-option value="金丹期">金丹期</a-select-option>
+        </a-select>
+
+        <div class="flex items-center gap-2">
+          <a-input
+            v-model:value="searchUsername"
+            @input="onSearchInput"
+            placeholder="搜索用户名"
+            allow-clear
+            class="w-40"
+          >
+            <template #prefix>
+              <search-outlined class="text-gray-400"/>
+            </template>
+          </a-input>
+          <a-checkbox v-model:checked="isUsernamePartial" @change="onSearchInput">部分匹配</a-checkbox>
+        </div>
+
+        <div class="flex items-center gap-2">
+          <a-input
+            v-model:value="searchQuery"
+            @input="onSearchInput"
+            placeholder="搜索昵称"
+            allow-clear
+            class="w-40"
+          >
+            <template #prefix>
+              <search-outlined class="text-gray-400"/>
+            </template>
+          </a-input>
+          <a-checkbox v-model:checked="isQueryPartial" @change="onSearchInput">部分匹配</a-checkbox>
+        </div>
         <a-tag color="blue">总计: {{ totalUsers }}</a-tag>
       </div>
     </template>

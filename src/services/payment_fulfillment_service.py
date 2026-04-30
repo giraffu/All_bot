@@ -9,6 +9,7 @@ from sqlalchemy import select
 from src.database.core import AsyncSessionLocal
 from src.database.models import MembershipPlan, Order, User
 from src.services.log_service import LogService
+from config import TELEGRAM_API_BASE_URL
 
 logger = logging.getLogger("payment_fulfillment")
 
@@ -152,14 +153,19 @@ async def fulfill_order(out_trade_no: str, external_trade_no: str, paid_amount: 
                     success_msg += f"⏳ <b>身份到期时间</b>：<code>{new_expire_at.strftime('%Y-%m-%d %H:%M:%S')}</code> (UTC)\n\n"
                 success_msg += f"祝您仙途坦荡，早日登峰造极！"
                 
-                telegram_api_url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
+                telegram_api_url = f"{TELEGRAM_API_BASE_URL}/bot{bot_token}/sendMessage"
                 payload = {
                     "chat_id": user.telegram_id or user.id, # Fallback to id if telegram_id is empty (for old users)
                     "text": success_msg,
                     "parse_mode": "HTML"
                 }
-                async with aiohttp.ClientSession() as http_session:
-                    await http_session.post(telegram_api_url, json=payload)
+                try:
+                    async with aiohttp.ClientSession() as http_session:
+                        async with http_session.post(telegram_api_url, json=payload, timeout=10) as resp:
+                            if resp.status != 200:
+                                logger.error(f"Failed to send TG message, status: {resp.status}, response: {await resp.text()}")
+                except Exception as e:
+                    logger.error(f"Exception while sending TG message: {e}")
                     
             return True
             

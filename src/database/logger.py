@@ -4,6 +4,7 @@ import time
 from datetime import datetime
 
 from sqlalchemy import event
+from sqlalchemy.exc import IntegrityError
 
 from src.context import user_id_ctx
 
@@ -65,6 +66,14 @@ def setup_db_logging(engine):
         
         op_type = statement.split()[0].upper() if statement else "UNKNOWN"
         user_id = user_id_ctx.get()
+        
+        error_msg = str(exception_context.original_exception)
+        
+        is_expected_constraint = False
+        if isinstance(exception_context.original_exception, IntegrityError) or \
+           "UniqueViolationError" in error_msg or \
+           "duplicate key value violates unique constraint" in error_msg:
+            is_expected_constraint = True
 
         log_entry = {
             "event": "db_operation",
@@ -74,8 +83,11 @@ def setup_db_logging(engine):
             "sql": statement,
             "parameters": str(parameters) if parameters else None,
             "user_id": user_id,
-            "status": "failure",
-            "error": str(exception_context.original_exception)
+            "status": "warning_db_conflict" if is_expected_constraint else "failure",
+            "error": error_msg
         }
         
-        db_logger.error(json.dumps(log_entry))
+        if is_expected_constraint:
+            db_logger.warning(json.dumps(log_entry))
+        else:
+            db_logger.error(json.dumps(log_entry))
