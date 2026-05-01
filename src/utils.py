@@ -215,7 +215,7 @@ async def robust_edit_reply_markup(message, reply_markup=None, **kwargs):
     except BadRequest as e:
         error_msg = str(e).lower()
         if "message is not modified" in error_msg or "message to edit not found" in error_msg or "there is no text in the message to edit" in error_msg:
-            logger.warning(f"Ignored edit_reply_markup exception: {e}")
+            logger.debug(f"Ignored edit_reply_markup exception: {e}")
             return message
         raise e
 
@@ -263,7 +263,7 @@ async def robust_delete_message(message):
     except BadRequest as e:
         error_msg = str(e).lower()
         if "message to delete not found" in error_msg or "message can't be deleted" in error_msg:
-            logger.warning(f"Message deletion skipped: {e}")
+            logger.debug(f"Message deletion skipped: {e}")
             return None
         raise e
 

@@ -30,6 +30,7 @@ async def noop_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 @register_callback("editlora_select_")
 @register_callback("lora_select_")
 @register_callback("qvid_start_")
+@register_callback("confirm_ltx_video")
 async def fsm_fallback_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await safe_answer_query(query, text="该交互步骤已过期或被取消，请重新发送指令。")
