@@ -49,6 +49,17 @@ def build_global_menu_filter():
             
             if curr and isinstance(curr, str):
                 GLOBAL_REVERSE_MAP[curr] = key
+                
+    # 增加硬编码向后兼容映射：支持老用户点击旧键盘的按钮
+    hardcoded_backward_map = {
+        "🏆 发现/排行榜": "menu.gallery",
+        "💰 个人中心": "menu.profile",
+        "👤 个人中心": "menu.profile",
+        "🎬 懒人动图": "menu.video_edit"
+    }
+    for old_text, key in hardcoded_backward_map.items():
+        if old_text not in GLOBAL_REVERSE_MAP:
+            GLOBAL_REVERSE_MAP[old_text] = key
 
 def is_global_menu_command(text: str) -> bool:
     """黑盒化拦截器：供各个 FSM 内部调用，O(1) 字典查询"""

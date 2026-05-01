@@ -13,7 +13,21 @@
     "history": "History",
     "my_submissions": "My Posts",
     "my_favorites": "Favorites",
-    "logout": "Logout"
+    "logout": "Logout",
+    "recharge": "💎 Recharge",
+    "checkin": "📅 Daily Check-in",
+    "share": "🤝 Share for Credits",
+    "queue": "⏳ Queue Status",
+    "face_video": "🎬 Face Video",
+    "i2i_pro": "🌟 Face Swap Pro",
+    "free_edit": "🎨 Free Edit",
+    "video_lora": "🎬 Video (LoRA)",
+    "custom_video": "🎬 Custom Video",
+    "ltx_video": "🎬 LTX Video",
+    "cancel": "Cancel",
+    "exit": "Exit",
+    "main_menu": "🏠 Main Menu",
+    "back_main": "🔙 Back to Main Menu"
   },
   "profile": {
     "welcome_back": "Welcome back, {name}!",
