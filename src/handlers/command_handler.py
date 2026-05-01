@@ -5,7 +5,7 @@ from telegram import BotCommand, ReplyKeyboardMarkup, Update
 from telegram.ext import Application, ContextTypes
 
 from config import ADMIN_USERS
-from src.constants import MAIN_MENU_KEYBOARD
+
 from src.handlers.utils import with_db_logging_context
 from src.services.permission_service import permission_service
 from src.utils import MAINTENANCE_FILE, robust_send_message, get_user_channel_status, notify_inviter_reward, create_background_task
@@ -35,7 +35,8 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data.pop(k, None)
     
     # Define menu keyboard
-    reply_markup = ReplyKeyboardMarkup(MAIN_MENU_KEYBOARD, resize_keyboard=True)
+    from src.i18n.keyboards import get_main_menu_keyboard
+    reply_markup = get_main_menu_keyboard(context.lang)
     
     await update.message.reply_text(
         "🚫 **已强制取消当前所有流程。**\n\n您可以重新选择菜单中的功能开始新任务。",
@@ -99,7 +100,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['mode'] = "none"
 
     # Define menu keyboard
-    reply_markup = ReplyKeyboardMarkup(MAIN_MENU_KEYBOARD, resize_keyboard=True)
+    from src.i18n.keyboards import get_main_menu_keyboard
+    reply_markup = get_main_menu_keyboard(context.lang)
 
     await update.message.reply_text(
         "⛩️ **欢迎来到宗门灵境**\n\n"

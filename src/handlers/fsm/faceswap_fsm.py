@@ -213,11 +213,11 @@ def get_faceswap_fsm_handler() -> ConversationHandler:
         states={
             FaceSwapState.WAIT_FACE_IMAGE: [
                 MessageHandler(filters.PHOTO | filters.Document.IMAGE, receive_face_image),
-                MessageHandler(filters.TEXT & ~filters.COMMAND, unexpected_input)
+                MessageHandler((filters.TEXT | filters.COMMAND) & ~filters.Regex(r"^/cancel$"), unexpected_input)
             ],
             FaceSwapState.WAIT_BODY_IMAGE: [
                 MessageHandler(filters.PHOTO | filters.Document.IMAGE, receive_body_image),
-                MessageHandler(filters.TEXT & ~filters.COMMAND, unexpected_input)
+                MessageHandler((filters.TEXT | filters.COMMAND) & ~filters.Regex(r"^/cancel$"), unexpected_input)
             ],
             ConversationHandler.TIMEOUT: [
                 MessageHandler(filters.ALL, timeout_conversation)

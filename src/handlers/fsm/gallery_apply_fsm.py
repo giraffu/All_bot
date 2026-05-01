@@ -17,7 +17,6 @@ from telegram.ext import (
 )
 
 from src.constants import (
-    MAIN_MENU_KEYBOARD,
     MODE_CUSTOM_VIDEO,
     MODE_EDIT,
     MODE_I2I_PRO,
@@ -215,8 +214,9 @@ async def start_gallery_apply(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     import html
     mode_name = MODE_NAME_MAP.get(task_type, task_type)
+    display_mode_name = context.t(mode_name) if hasattr(context, "t") else mode_name
     msg = (
-        f"🪄 <b>一键应用模板</b>：【{html.escape(mode_name)}】\n\n"
+        f"🪄 <b>一键应用模板</b>：【{html.escape(display_mode_name)}】\n\n"
         f"原作者配置已加载。扣费标准与原模板一致 (消耗 {cost} 灵石)。\n"
         f"💡 <i>提示：应用模版的效果受初始图片影响，请尽量提供清晰、高质量的图片哦！</i>\n\n"
         f"👇 <b>请直接发送您的参考图片/人脸照片开始生成！</b>"
@@ -291,7 +291,8 @@ async def receive_reference_image(update: Update, context: ContextTypes.DEFAULT_
             context.user_data['custom_video_duration'] = dur_str
 
     # Use default menu keyboard after finishing FSM
-    reply_markup = ReplyKeyboardMarkup(MAIN_MENU_KEYBOARD, resize_keyboard=True)
+    from src.i18n.keyboards import get_main_menu_keyboard
+    reply_markup = get_main_menu_keyboard(context.lang)
     sent_msg = await robust_reply_text(msg, "✅ 收到参考图，开始生成...", reply_markup=reply_markup)
 
     # General image/video task (like video_lora, edit_image, etc)
@@ -376,7 +377,7 @@ def get_gallery_apply_fsm_handler() -> ConversationHandler:
         states={
             WAIT_REFERENCE_IMAGE: [
                 MessageHandler(filters.PHOTO | filters.Document.IMAGE, receive_reference_image),
-                MessageHandler(filters.TEXT & ~filters.COMMAND, unexpected_input)
+                MessageHandler((filters.TEXT | filters.COMMAND) & ~filters.Regex(r"^/cancel$"), unexpected_input)
             ]
         },
         fallbacks=[CommandHandler('cancel', cancel)],

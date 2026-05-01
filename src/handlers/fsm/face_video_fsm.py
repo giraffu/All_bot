@@ -283,11 +283,11 @@ def get_face_video_fsm_handler() -> ConversationHandler:
         states={
             FaceVideoState.WAIT_FACE_IMAGE: [
                 MessageHandler(filters.PHOTO | filters.Document.IMAGE, receive_face_image),
-                MessageHandler(filters.TEXT & ~filters.COMMAND, unexpected_input)
+                MessageHandler((filters.TEXT | filters.COMMAND) & ~filters.Regex(r"^/cancel$"), unexpected_input)
             ],
             FaceVideoState.WAIT_VIDEO: [
                 MessageHandler(filters.VIDEO | filters.Document.VIDEO, receive_video),
-                MessageHandler(filters.TEXT & ~filters.COMMAND, unexpected_input)
+                MessageHandler((filters.TEXT | filters.COMMAND) & ~filters.Regex(r"^/cancel$"), unexpected_input)
             ],
             FaceVideoState.SELECT_RESOLUTION: [
                 CallbackQueryHandler(process_resolution_selection, pattern='^fsm_fv_res_'),

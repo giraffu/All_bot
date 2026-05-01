@@ -7,14 +7,7 @@ TEMPLATE_DIR_QUICK_FACE = os.path.abspath("./templates/quick_face")
 TEMPLATE_DIR_VIDEO_NICE = os.path.abspath("./templates/video_nice")
 TEMP_TEMPLATE_DIR = os.path.abspath("./templates/temps")
 
-# Main Menu Keyboard
-MAIN_MENU_KEYBOARD = [
-    ["🏆 发现/排行榜", "💎 充值灵石", "📅 每日签到", "👤 个人中心"],
-    ["🤝 分享赚灵石", "⏳ 排队状态"],
-    ["🖼️ 懒人P图", "🎬 懒人动图", "🎬 视频换脸"],
-    ["🌟 幻想换脸", "🎨 自由P图"],
-    ["🎬 图生视频(附加模型)", "🎬 自定义图生视频", "🎬 高级图生视频"]
-]
+# Main Menu Keyboard definition removed. Use src.i18n.keyboards.get_main_menu_keyboard instead.
 
 # Modes
 MODE_EDIT = "edit"
@@ -42,28 +35,28 @@ MODE_NONE = "none"
 
 # Mode Name Mapping (Human Readable)
 MODE_NAME_MAP = {
-    MODE_EDIT: "自由P图",
-    MODE_I2I_PRO: "幻想换脸",
-    MODE_IMG2IMG_LORA: "图生图(附加模型)",
-    MODE_UNDRESS: "快速脱衣",
-    MODE_MASTURBATION: "快速自慰",
-    MODE_FACESWAP_STEP1: "快速换脸",
-    MODE_FACESWAP_STEP2: "快速换脸",
-    MODE_FACE_VIDEO_STEP1: "视频换脸",
-    MODE_FACE_VIDEO_STEP2: "视频换脸",
-    MODE_RANDOM_FACESWAP: "随机换脸",
-    MODE_PENETRATION_STEP1: "快速抽插",
-    MODE_PENETRATION_STEP2: "快速抽插",
-    MODE_PERFECT_VIDEO_INSERT: "动图传教士",
-    MODE_DOGGY_STYLE: "动图后入",
-    MODE_BLOWJOB: "口交黑人",
-    MODE_UNDRESS_TONGUE: "脱衣吐舌",
-    MODE_CLOSEUP_BLOWJOB: "特写口交",
-    MODE_CUSTOM_VIDEO: "自定义图生视频",
-    MODE_LTX_VIDEO: "高级图生视频",
-    MODE_VIDEO_LORA: "图生视频(附加模型)",
-    MODE_TEMPLATE_CONTRIBUTE: "模板共建",
-    MODE_NONE: "无模式"
+    MODE_EDIT: "task.mode_edit",
+    MODE_I2I_PRO: "task.mode_i2i_pro",
+    MODE_IMG2IMG_LORA: "task.mode_img2img_lora",
+    MODE_UNDRESS: "task.mode_undress",
+    MODE_MASTURBATION: "task.mode_masturbation",
+    MODE_FACESWAP_STEP1: "task.mode_faceswap_step1",
+    MODE_FACESWAP_STEP2: "task.mode_faceswap_step2",
+    MODE_FACE_VIDEO_STEP1: "task.mode_face_video_step1",
+    MODE_FACE_VIDEO_STEP2: "task.mode_face_video_step2",
+    MODE_RANDOM_FACESWAP: "task.mode_random_faceswap",
+    MODE_PENETRATION_STEP1: "task.mode_penetration_step1",
+    MODE_PENETRATION_STEP2: "task.mode_penetration_step2",
+    MODE_PERFECT_VIDEO_INSERT: "task.mode_perfect_video_insert",
+    MODE_DOGGY_STYLE: "task.mode_doggy_style",
+    MODE_BLOWJOB: "task.mode_blowjob",
+    MODE_UNDRESS_TONGUE: "task.mode_undress_tongue",
+    MODE_CLOSEUP_BLOWJOB: "task.mode_closeup_blowjob",
+    MODE_CUSTOM_VIDEO: "task.mode_custom_video",
+    MODE_LTX_VIDEO: "task.mode_ltx_video",
+    MODE_VIDEO_LORA: "task.mode_video_lora",
+    MODE_TEMPLATE_CONTRIBUTE: "task.mode_template_contribute",
+    MODE_NONE: "task.mode_none"
 }
 
 # Task Costs (Credits)
@@ -170,8 +163,9 @@ DURATION_FRAMES = {
     "10s": 161
 }
 
-def get_video_settings_keyboard(user_group: str, user_identity: str = "外门弟子", current_resolution: str = DEFAULT_RESOLUTION, current_duration: str = DEFAULT_DURATION):
+def get_video_settings_keyboard(user_group: str, user_identity: str = "外门弟子", current_resolution: str = DEFAULT_RESOLUTION, current_duration: str = DEFAULT_DURATION, lang: str = "zh"):
     from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+    from src.i18n.translator import get_text
     group_res_allowed = RESOLUTION_PERMISSIONS.get(user_group, ["512p"])
     identity_res_allowed = RESOLUTION_PERMISSIONS.get(user_identity, ["512p"])
     allowed_resolutions = list(set(group_res_allowed + identity_res_allowed))
@@ -181,6 +175,8 @@ def get_video_settings_keyboard(user_group: str, user_identity: str = "外门弟
     allowed_durations = list(set(group_dur_allowed + identity_dur_allowed))
     
     keyboard = []
+    
+    credits_text = get_text("app.credits", lang)
     
     # Resolution row
     res_row = []
@@ -192,7 +188,7 @@ def get_video_settings_keyboard(user_group: str, user_identity: str = "外门弟
             base_cost = RESOLUTION_COST.get(res, 6)
             multiplier = DURATION_MULTIPLIER.get(current_duration, 1.0)
             cost = int(base_cost * multiplier)
-            display_text = f"{res} ({cost}灵石)"
+            display_text = f"{res} ({cost}{credits_text})"
             text = f"✅ {display_text}" if res == current_resolution else display_text
             callback_data = f"set_res_{res}"
             res_row.append(InlineKeyboardButton(text, callback_data=callback_data))
@@ -218,14 +214,31 @@ def get_video_settings_keyboard(user_group: str, user_identity: str = "外门弟
         
     return InlineKeyboardMarkup(keyboard)
 
-def get_ltx_video_settings_keyboard(user_group: str, user_identity: str = "外门弟子", current_resolution: str = "1280x704", current_duration: str = "5s"):
+def get_ltx_video_settings_keyboard(user_group: str, user_identity: str = "外门弟子", current_resolution: str = "1280x704", current_duration: str = "5s", lang: str = "zh"):
     from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+    from src.i18n.translator import get_text
     # Temporarily hardcode permissions for LTX Video, or we can use the same logic if we extend DURATION_PERMISSIONS
     # For now, allow 5s, 10s, 15s, 20s based on groups.
     allowed_durations = ["5s", "10s", "15s", "20s"]
     
     keyboard = []
     
+    credits_text = get_text("app.credits", lang)
+
+    # Resolution row (Currently only one for LTX)
+    res_row = []
+    for res in ["1280x704"]:
+        base_cost = 10
+        multiplier = LTX_DURATION_MULTIPLIER.get(current_duration, 1.0)
+        cost = int(base_cost * multiplier)
+        display_text = f"{res} ({cost}{credits_text})"
+        text = f"✅ {display_text}" if res == current_resolution else display_text
+        callback_data = f"set_ltxres_{res}"
+        res_row.append(InlineKeyboardButton(text, callback_data=callback_data))
+        
+    if res_row:
+        keyboard.append(res_row)
+        
     # Duration row
     dur_row = []
     for dur in allowed_durations:

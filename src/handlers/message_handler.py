@@ -20,7 +20,7 @@ from config import (
     WEBAPP_URL,
 )
 from src.constants import (
-    MAIN_MENU_KEYBOARD,
+
     MODE_NONE,
     MODE_TEMPLATE_CONTRIBUTE,
     TEMP_TEMPLATE_DIR,
@@ -91,7 +91,8 @@ async def _handle_photo_idle(update: Update, context: ContextTypes.DEFAULT_TYPE)
     if now - last_reminder < 3.0:
         return
         
-    reply_markup = ReplyKeyboardMarkup(MAIN_MENU_KEYBOARD, resize_keyboard=True)
+    from src.i18n.keyboards import get_main_menu_keyboard
+    reply_markup = get_main_menu_keyboard(context.lang)
     
     await robust_reply_text(
         update.message, 
@@ -156,7 +157,7 @@ async def _handle_template_contribution(update: Update, context: ContextTypes.DE
         await robust_reply_text(msg, f"❌ 保存失败：{str(e)}")
 
 @with_unified_error_handler
-@prompt_route("🖼️ 懒人P图")
+@prompt_route("menu.photo_edit")
 async def handle_photo_edit_menu(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str):
     if not update.effective_user: return
     user = update.effective_user
@@ -173,7 +174,7 @@ async def handle_photo_edit_menu(update: Update, context: ContextTypes.DEFAULT_T
     reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
     await robust_reply_text(update.message, "🖼️ **懒人P图模式**\n请选择具体功能：", reply_markup=reply_markup, parse_mode="Markdown")
 
-@prompt_route("🎬 懒人动图")
+@prompt_route("menu.video_edit")
 async def handle_video_edit_menu(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str):
     keyboard = [
         ["🛌 动图传教士", "🎬 动图后入"],
@@ -183,7 +184,7 @@ async def handle_video_edit_menu(update: Update, context: ContextTypes.DEFAULT_T
     reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
     await robust_reply_text(update.message, "🎬 **懒人动图**\n请选择演武场景：", reply_markup=reply_markup, parse_mode="Markdown")
 
-@prompt_route("🏆 发现/排行榜")
+@prompt_route("menu.gallery")
 async def handle_gallery_menu(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str):
     keyboard = [
         [InlineKeyboardButton("🔥 最新投稿", callback_data="gallery_catmenu_latest")],
@@ -199,13 +200,14 @@ async def handle_gallery_menu(update: Update, context: ContextTypes.DEFAULT_TYPE
         parse_mode="Markdown"
     )
 
-@prompt_route("🔙 返回主菜单")
-@prompt_route("🏠 主菜单")
+@prompt_route("menu.back_main")
+@prompt_route("menu.main_menu")
 async def handle_back_to_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str):
-    reply_markup = ReplyKeyboardMarkup(MAIN_MENU_KEYBOARD, resize_keyboard=True)
+    from src.i18n.keyboards import get_main_menu_keyboard
+    reply_markup = get_main_menu_keyboard(context.lang)
     await robust_reply_text(update.message, "🏠 **已返回主菜单**", reply_markup=reply_markup, parse_mode="Markdown")
 
-@prompt_route("💎 充值灵石")
+@prompt_route("menu.recharge")
 async def handle_recharge_menu(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str):
     webapp_url = WEBAPP_URL if 'WEBAPP_URL' in globals() and WEBAPP_URL else "https://pay.aivison.it.com/"
     
@@ -243,7 +245,7 @@ async def handle_recharge_menu(update: Update, context: ContextTypes.DEFAULT_TYP
     await robust_reply_text(update.message, msg, parse_mode="Markdown", reply_markup=reply_markup)
 
 @with_unified_error_handler
-@prompt_route("^(💰 个人中心|👤 个人中心)$", is_regex=True)
+@prompt_route("menu.profile")
 async def handle_personal_center(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str):
     if not update.effective_user:
         return
@@ -336,8 +338,8 @@ async def handle_personal_center(update: Update, context: ContextTypes.DEFAULT_T
 
     await robust_reply_text(update.message, msg, parse_mode="Markdown", reply_markup=reply_markup)
 
-@prompt_route("^(📅 每日签到|签到|/checkin)$", is_regex=True)
-async def handle_checkin(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str):
+@prompt_route("menu.checkin")
+async def handle_checkin(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str = None):
     if REFUGE_GROUP_ID:
         try:
             group_id = int(REFUGE_GROUP_ID) if REFUGE_GROUP_ID.lstrip('-').isdigit() else REFUGE_GROUP_ID
@@ -377,8 +379,8 @@ async def handle_checkin(update: Update, context: ContextTypes.DEFAULT_TYPE, tex
     else:
         await robust_reply_text(update.message, f"📅 **今日已领取灵石**\n\n👤 当前境界：`{user_group}`\n🪪 当前身份：`{user_identity}`\n📅 累计签到：`{total_days}` 天\n\n请明天再来领取奖励吧！" + disclaimer, parse_mode="Markdown")
 
-@prompt_route("🤝 分享赚灵石")
-async def handle_share(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str):
+@prompt_route("menu.share")
+async def handle_share(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str = None):
     user_id = update.effective_user.id
     bot_username = context.bot.username or (await context.bot.get_me()).username
     from src.core.user_core import get_or_create_user_by_telegram
@@ -401,21 +403,21 @@ async def handle_share(update: Update, context: ContextTypes.DEFAULT_TYPE, text:
     await robust_reply_text(update.message, msg, parse_mode="Markdown")
 
 TASK_TYPE_DISPLAY_NAMES = {
-    "img2img": "🎨 懒人/自由P图",
-    "img2img_lora": "🎨 图生图 (附加模型)",
-    "i2i_pro": "🌟 幻想换脸",
-    "face_swap": "🎭 人脸替换",
-    "video_insert": "🎬 视频插入",
-    "video_edit": "🎬 视频编辑 (通用)",
-    "face_video": "🎬 视频换脸",
-    "ltx_video": "🎬 高级图生视频",
-    "t2i-pornmaster-turbo": "🎨 文本生图",
-    "custom_video": "🎬 自定义图生视频",
-    "video_lora": "🎬 图生视频(附加模型)"
+    "img2img": "task.img2img",
+    "img2img_lora": "task.img2img_lora",
+    "i2i_pro": "task.i2i_pro",
+    "face_swap": "task.face_swap",
+    "video_insert": "task.video_insert",
+    "video_edit": "task.video_edit",
+    "face_video": "task.face_video",
+    "ltx_video": "task.ltx_video",
+    "t2i-pornmaster-turbo": "task.t2i_pornmaster_turbo",
+    "custom_video": "task.custom_video",
+    "video_lora": "task.video_lora"
 }
 
-@prompt_route("^(⏳ 排队状态|排队|/queue)$", is_regex=True)
-async def handle_queue_status(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str):
+@prompt_route("menu.queue")
+async def handle_queue_status(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str = None):
     status = await image_service.get_queue_info()
     if status:
         queue_size = status.get('queue_size', 0)
@@ -427,8 +429,9 @@ async def handle_queue_status(update: Update, context: ContextTypes.DEFAULT_TYPE
         ]
         
         # 固定展示字典中定义的所有类型（即使数量为0）
-        for task_type, display_name in TASK_TYPE_DISPLAY_NAMES.items():
+        for task_type, i18n_key in TASK_TYPE_DISPLAY_NAMES.items():
             count = queue_by_type.get(task_type, 0)
+            display_name = context.t(i18n_key)
             msg_lines.append(f"{display_name}：`{count}` 个")
             
         # 兜底：如果队列里出现了未知类型，且数量大于0，也展示出来
@@ -458,11 +461,10 @@ async def handle_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not text:
         return
 
-    import re
-    # 遍历 prompt_routes 进行匹配（包含正则与精确匹配）
-    for (pattern, is_regex), handler_func in prompt_routes.items():
-        if (is_regex and re.match(pattern, text)) or (not is_regex and text == pattern):
-            return await handler_func(update, context, text)
+    from src.handlers.prompt_router import GLOBAL_REVERSE_MAP, prompt_routes
+    route_key = GLOBAL_REVERSE_MAP.get(text)
+    if route_key and route_key in prompt_routes:
+        return await prompt_routes[route_key](update, context, text)
             
     # 处理普通对话/Prompt 输入
     # (如果是其他普通文本，当前不需要做任何处理，或者可以交给AI对话)

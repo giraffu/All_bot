@@ -253,7 +253,7 @@ def get_quick_image_fsm_handler() -> ConversationHandler:
         states={
             QuickImageState.WAIT_IMAGE: [
                 MessageHandler(filters.PHOTO | filters.Document.IMAGE, receive_image),
-                MessageHandler(filters.TEXT & ~filters.COMMAND, unexpected_input)
+                MessageHandler((filters.TEXT | filters.COMMAND) & ~filters.Regex(r"^/cancel$"), unexpected_input)
             ],
             ConversationHandler.TIMEOUT: [
                 MessageHandler(filters.ALL, timeout_conversation)

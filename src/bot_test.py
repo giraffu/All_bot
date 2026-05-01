@@ -32,6 +32,8 @@ from src.handlers.message_handler import (
     handle_photo,
     handle_prompt,
     handle_video,
+    handle_checkin,
+    handle_queue_status
 )
 from src.logger import setup_logging
 
@@ -80,10 +82,50 @@ async def clean_zombies_loop(bot=None):
             core_logger.error(f"Error in clean_zombies_loop: {e}")
         await asyncio.sleep(600)  # Check every 10 minutes
 
-async def inject_trace_id(update: Update, context):
+async def global_middleware(update: Update, context):
+    # 1. Trace ID
     trace_id = str(uuid.uuid4())
     correlation_id.set(trace_id)
     core_logger = logging.getLogger("bot.core")
+    
+    # 2. i18n Context Injection
+    lang = None
+    tg_user = update.effective_user
+    if tg_user:
+        # Try from context user_data first
+        lang = context.user_data.get('language_code') if context.user_data else None
+        
+        # Try from Redis using TG ID
+        if not lang:
+            from src.services.redis_client import redis_client
+            if redis_client and redis_client.redis:
+                try:
+                    cached_lang = await redis_client.redis.get(f"allbot:user_lang:tg:{tg_user.id}")
+                    if cached_lang:
+                        lang = cached_lang
+                except Exception as e:
+                    core_logger.warning(f"Failed to get lang from redis: {e}")
+        
+        # Fallback to Telegram native language code
+        if not lang and tg_user.language_code:
+            native_lang = tg_user.language_code[:2].lower()
+            if native_lang in ['zh', 'en']:
+                lang = native_lang
+        
+        # Final fallback
+        if not lang:
+            lang = 'zh'
+            
+        if context.user_data is not None:
+            context.user_data['language_code'] = lang
+    else:
+        lang = 'zh'
+
+    # Mount as transient properties on context
+    context.lang = lang
+    from src.i18n.translator import I18nTranslator
+    context.t = I18nTranslator(lang)
+
     if update.callback_query:
         core_logger.info(f"Received callback query: {update.callback_query.data}")
     elif update.message and update.message.text:
@@ -212,7 +254,7 @@ def main():
 
     
     # Register FSM Handlers first (they must intercept text/callbacks before fallback handlers)
-    app.add_handler(TypeHandler(Update, inject_trace_id), group=-1)
+    app.add_handler(TypeHandler(Update, global_middleware), group=-1)
     app.add_handler(get_gallery_apply_fsm_handler())
     app.add_handler(get_face_video_fsm_handler())
     app.add_handler(get_faceswap_fsm_handler())
@@ -227,6 +269,8 @@ def main():
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("cancel", cancel))
     app.add_handler(CommandHandler("maintenance", toggle_maintenance))
+    app.add_handler(CommandHandler("checkin", handle_checkin))
+    app.add_handler(CommandHandler("queue", handle_queue_status))
     app.add_handler(CallbackQueryHandler(handle_callback_query))
     app.add_handler(PreCheckoutQueryHandler(precheckout_callback))
     app.add_handler(MessageHandler(filters.SUCCESSFUL_PAYMENT, successful_payment_callback))

@@ -108,7 +108,7 @@ async def receive_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     
     res = fsm_data['resolution']
     dur = fsm_data['duration']
-    reply_markup = get_video_settings_keyboard(user_group, user_identity, res, dur)
+    reply_markup = get_video_settings_keyboard(user_group, user_identity, res, dur, context.lang)
     
     base_cost = RESOLUTION_COST.get(res, 6)
     multiplier = DURATION_MULTIPLIER.get(dur, 1.0)
@@ -155,7 +155,7 @@ async def process_settings(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     
     user_group = await permission_service.get_user_group(internal_user_id)
     user_identity = await permission_service.get_user_identity(internal_user_id)
-    reply_markup = get_video_settings_keyboard(user_group, user_identity, res, dur)
+    reply_markup = get_video_settings_keyboard(user_group, user_identity, res, dur, context.lang)
     
     base_cost = RESOLUTION_COST.get(res, 6)
     multiplier = DURATION_MULTIPLIER.get(dur, 1.0)
@@ -270,11 +270,11 @@ def get_custom_video_fsm_handler() -> ConversationHandler:
         states={
             CustomVideoState.WAIT_IMAGE: [
                 MessageHandler(filters.PHOTO | filters.Document.IMAGE, receive_image),
-                MessageHandler(filters.TEXT & ~filters.COMMAND, unexpected_input)
+                MessageHandler((filters.TEXT | filters.COMMAND) & ~filters.Regex(r"^/cancel$"), unexpected_input)
             ],
             CustomVideoState.WAIT_SETTINGS_AND_PROMPT: [
                 CallbackQueryHandler(process_settings, pattern='^set_(res|dur|ltxdur)_'),
-                MessageHandler(filters.TEXT & ~filters.COMMAND, receive_prompt),
+                MessageHandler((filters.TEXT | filters.COMMAND) & ~filters.Regex(r"^/cancel$"), receive_prompt),
                 MessageHandler(filters.PHOTO | filters.Document.IMAGE, unexpected_input),
             ],
             ConversationHandler.TIMEOUT: [

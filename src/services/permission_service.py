@@ -160,6 +160,7 @@ class PermissionService:
             from src.services.redis_client import redis_client
             if redis_client and redis_client.redis:
                 await redis_client.redis.set(f"allbot:user_lang:{internal_user.id}", internal_user.language_code)
+                await redis_client.redis.set(f"allbot:user_lang:tg:{tg_id}", internal_user.language_code)
 
         await self.quota_manager.ensure_user(internal_user.id, username=username, full_name=full_name)
         await self.refresh_user_group(internal_user.id)

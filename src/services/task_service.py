@@ -431,6 +431,7 @@ class TaskService:
                     
                 from src.constants import MODE_NAME_MAP
                 mode_name = MODE_NAME_MAP.get(task_type, task_type)
+                display_mode_name = context.t(mode_name) if hasattr(context, "t") else mode_name
 
                 media_bytes, full_output_path = (
                     await TaskService._handle_task_completion(
@@ -447,7 +448,7 @@ class TaskService:
                         reply_markup,
                         status_msg,
                         delete_status,
-                        caption=f"✅ {mode_name} 生成完成",
+                        caption=f"✅ {display_mode_name} 生成完成",
                         allow_contribute=allow_contribute,
                     )
                 )
@@ -542,6 +543,7 @@ class TaskService:
         base_prompt = prompts_config.get(default_prompt_key, default_prompt_text)
 
         mode_name = MODE_NAME_MAP.get(mode, mode)
+        display_mode_name = context.t(mode_name) if hasattr(context, "t") else mode_name
         registry_task_id = None
         task_submitted = False
         actual_cost = 0
@@ -574,7 +576,7 @@ class TaskService:
             saved_inputs = result["saved_inputs"]
             
             notice = await TaskService._get_acceleration_notice(user_id)
-            msg_text = f"🚀 正在处理{mode_name}生成任务 (画质:{resolution}, 时长:{duration_str}, 消耗{actual_cost}灵石)...{notice}"
+            msg_text = f"🚀 正在处理{display_mode_name}生成任务 (画质:{resolution}, 时长:{duration_str}, 消耗{actual_cost}灵石)...{notice}"
             msg = await robust_reply_text(update.effective_message, msg_text)
             await robust_edit_text(msg, "⏳ 正在生成视频，请耐心等待...")
             
@@ -589,7 +591,7 @@ class TaskService:
                         context, chat_id, internal_user_id, f"[{resolution}|{duration_str}] {base_prompt}", mode, task_id,
                         saved_inputs, UserLogger(internal_user_id, username),
                         is_video=True, send_result=True, reply_markup=None, status_msg=msg, delete_status=True,
-                        caption=f"✅ {mode_name} 生成完成", allow_contribute=allow_contribute
+                        caption=f"✅ {display_mode_name} 生成完成", allow_contribute=allow_contribute
                     )
                 )
             else:
