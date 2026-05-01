@@ -441,6 +441,9 @@ async def handle_queue_status(update: Update, context: ContextTypes.DEFAULT_TYPE
     else:
         await robust_reply_text(update.message, "⚠️ 无法获取实时排队数据，请稍后再试。")
 
+from src.handlers.error_handlers import with_unified_error_handler
+
+@with_unified_error_handler
 @with_db_logging_context
 async def handle_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.effective_user: return

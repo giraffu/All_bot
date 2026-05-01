@@ -208,6 +208,7 @@ def main():
         precheckout_callback,
         successful_payment_callback,
     )
+    from src.handlers.error_handlers import global_error_handler
 
     
     # Register FSM Handlers first (they must intercept text/callbacks before fallback handlers)
@@ -233,6 +234,9 @@ def main():
     app.add_handler(MessageHandler(filters.VIDEO, handle_video))
     app.add_handler(MessageHandler(filters.Document.IMAGE | filters.Document.VIDEO, handle_document))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_prompt))
+
+    # Register Global Error Handler
+    app.add_error_handler(global_error_handler)
 
     core_logger.info(f"🧪 {bot_type} Telegram Bot started")
     import signal

@@ -1,12 +1,57 @@
 {
   "system": {
     "welcome": "Welcome to the Cultivation World!",
-    "error_insufficient_credits": "🚫 **Insufficient Credits**\n\nCurrent Balance: `{current}` Credits\nCost: `{cost}` Credits\nPlease contact the admin to recharge."
+    "error_insufficient_credits": "🚫 **Insufficient Credits**\n\nCurrent Balance: `{current}` Credits\nCost: `{cost}` Credits\nPlease contact the admin to recharge.",
+    "error_access_denied": "⛩️ **Not Joined the Sect Yet**\n\nTo seek immortality, you must first find the fairy fate. You need to join our **Official Sect** before you can start cultivating.\n\n👉 [Click here to join the Sect]({invite_link})"
   },
   "menu": {
     "photo_edit": "🖼️ AI Edit",
     "video_edit": "🎬 AI Video",
-    "profile": "👤 Profile"
+    "profile": "Profile",
+    "gallery": "Gallery",
+    "custom_features": "Lab",
+    "history": "History",
+    "my_submissions": "My Posts",
+    "my_favorites": "Favorites",
+    "logout": "Logout"
+  },
+  "profile": {
+    "welcome_back": "Welcome back, {name}!",
+    "valid_until": "Valid until: ",
+    "valid_forever": "Valid: Permanent",
+    "checkin_btn": "Check In",
+    "quick_guide": "Quick Guide",
+    "quick_guide_desc": "Explore more AI image & video features, or check your records.",
+    "go_to_lab": "Go to Lab",
+    "change_password": "Change Password",
+    "set_password": "Set Username & Password",
+    "system_id": "System ID (TG ID)",
+    "times_unit": "times",
+    "days_unit": "days",
+    "people_unit": "people",
+    "promotion_details": "Promotion Details",
+    "invited_recharge_ton": "Recharge (TON)",
+    "invited_recharge_cny": "Recharge (CNY)",
+    "invited_recharge_stars": "Recharge (Stars)",
+    "estimated_revenue": "Estimated Revenue",
+    "title": "User Profile",
+    "group": "Level",
+    "identity": "Identity",
+    "priority": "Priority",
+    "credits": "Credits",
+    "stats": "Cultivation Stats",
+    "generations": "Generations",
+    "checkins": "Check-ins",
+    "invitations": "Invitations",
+    "breakthrough_title": "Breakthrough Tasks",
+    "breakthrough_type_invite": "Invite Friends",
+    "breakthrough_type_checkin": "Check-in Days",
+    "breakthrough_type_generation": "Generation Count",
+    "breakthrough_type_channel_join": "Join Channel",
+    "done": "Done",
+    "not_done": "Pending",
+    "expire_at": "Expires at",
+    "unlimited": "Permanent"
   },
   "api": {
     "session_expired": "Session expired, please login again",
@@ -15,5 +60,23 @@
     "system_error": "System error, please try again later",
     "network_error": "Network error, please check your connection",
     "validation_error": "Validation error: {msg}"
+  },
+  "group": {
+    "凡人": "Mortal",
+    "练气期": "Qi Condensation",
+    "筑基期": "Foundation",
+    "金丹期": "Golden Core",
+    "元婴期": "Nascent Soul",
+    "化神期": "Soul Formation",
+    "炼虚期": "Void Refinement",
+    "合体期": "Integration",
+    "大乘期": "Mahayana",
+    "渡劫期": "Tribulation"
+  },
+  "identity": {
+    "外门弟子": "Outer Disciple",
+    "内门弟子": "Inner Disciple",
+    "核心弟子": "Core Disciple",
+    "真传弟子": "True Disciple"
   }
 }

@@ -52,10 +52,10 @@ class BreakthroughConditionDTO(BaseModel):
 
 class UserResponse(BaseModel):
     id: int
-    telegram_id: Optional[int]
-    username: Optional[str]
-    full_name: Optional[str]
-    language_code: Optional[str]
+    telegram_id: Optional[int] = None
+    username: Optional[str] = None
+    full_name: Optional[str] = None
+    language_code: Optional[str] = None
     credits: int
     user_group: str
     current_identity: str

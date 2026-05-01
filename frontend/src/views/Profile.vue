@@ -13,17 +13,32 @@ import {
   Clock,
   Lock,
   Bookmark,
-  Star
+  Star,
+  Globe
 } from 'lucide-vue-next'
 import dayjs from 'dayjs'
 import { useViewport } from '@/composables/useViewport'
 import { useTelegram } from '@/composables/useTelegram'
 import { watch, onBeforeUnmount } from 'vue'
+import { useI18n } from 'vue-i18n'
 
 const authStore = useAuthStore()
 const { isMobile } = useViewport()
 const { showMainButton, hideMainButton, hapticFeedback, isTMA } = useTelegram()
+const { locale } = useI18n()
 const loading = ref(true)
+
+const toggleLanguage = async () => {
+  const newLang = locale.value === 'zh' ? 'en' : 'zh'
+  locale.value = newLang
+  
+  // Persist language to backend
+  try {
+    await api.patch('/users/preferences', { language_code: newLang })
+  } catch (error) {
+    console.error('Failed to save language preference', error)
+  }
+}
 
 const bindFormState = reactive({
   username: '',
@@ -149,24 +164,29 @@ onMounted(async () => {
         <!-- Left Section -->
         <div class="w-full md:w-auto">
           <h1 class="text-xl md:text-3xl font-bold mb-3 md:mb-2 drop-shadow-sm text-slate-100">
-            欢迎回来，{{ authStore.user?.full_name || authStore.user?.username }}!
+            {{ $t('profile.welcome_back', { name: authStore.user?.full_name || authStore.user?.username }) }}
           </h1>
           
           <div class="flex flex-wrap items-center gap-2 mb-3 md:mb-2 text-sm md:text-lg text-slate-300">
             <div class="flex items-center bg-white/5 backdrop-blur-sm border border-white/10 rounded px-2.5 py-1">
-              <span class="mr-1.5 text-slate-400">境界:</span> 
-              <span class="font-bold text-cyan-300 drop-shadow-sm">{{ authStore.user?.user_group || '凡人' }}</span>
+              <span class="mr-1.5 text-slate-400">{{ $t('profile.group') }}:</span> 
+              <span class="font-bold text-cyan-300 drop-shadow-sm">{{ authStore.user?.user_group ? $t(`group.${authStore.user.user_group}`) : $t('group.凡人') }}</span>
             </div>
             <div class="flex items-center bg-white/5 backdrop-blur-sm border border-white/10 rounded px-2.5 py-1">
-              <span class="mr-1.5 text-slate-400">身份:</span>
-              <span class="font-bold text-cyan-300 drop-shadow-sm">{{ authStore.user?.current_identity || '外门弟子' }}</span>
+              <span class="mr-1.5 text-slate-400">{{ $t('profile.identity') }}:</span>
+              <span class="font-bold text-cyan-300 drop-shadow-sm">{{ authStore.user?.current_identity ? $t(`identity.${authStore.user.current_identity}`) : $t('identity.外门弟子') }}</span>
             </div>
+            <!-- Language Switcher -->
+            <button @click="toggleLanguage" class="flex items-center bg-cyan-500/10 hover:bg-cyan-500/20 backdrop-blur-sm border border-cyan-500/30 hover:border-cyan-500/50 rounded px-2.5 py-1 cursor-pointer transition-all">
+              <Globe :size="16" class="mr-1.5 text-cyan-400" />
+              <span class="font-bold text-cyan-300 drop-shadow-sm text-sm">{{ locale === 'zh' ? 'English' : '中文' }}</span>
+            </button>
           </div>
 
           <div class="text-xs md:text-sm text-slate-400 flex items-center drop-shadow-sm">
             <Clock :size="14" class="mr-1.5 text-slate-500" />
-            <span v-if="authStore.user?.current_identity === '外门弟子' || !authStore.user?.identity_expire_at">有效期：永久</span>
-            <span v-else>有效期至：{{ formatDate(authStore.user?.identity_expire_at) }}</span>
+            <span v-if="authStore.user?.current_identity === '外门弟子' || !authStore.user?.identity_expire_at">{{ $t('profile.valid_forever') }}</span>
+            <span v-else>{{ $t('profile.valid_until') }}{{ formatDate(authStore.user?.identity_expire_at) }}</span>
           </div>
         </div>
         
@@ -175,12 +195,12 @@ onMounted(async () => {
           <div class="flex items-center bg-slate-900/40 backdrop-blur-md px-4 py-2 md:px-5 md:py-3 rounded-lg border border-slate-600/50 shadow-inner">
             <Wallet :size="20" class="mr-2 md:mr-3 text-cyan-400 drop-shadow-[0_0_8px_rgba(56,189,248,0.5)]" />
             <div class="flex flex-col">
-              <span class="text-[10px] md:text-xs text-slate-400 font-medium leading-none mb-1">可用灵石</span>
+              <span class="text-[10px] md:text-xs text-slate-400 font-medium leading-none mb-1">{{ $t('profile.credits') }}</span>
               <span class="text-lg md:text-2xl font-bold leading-none drop-shadow-sm text-slate-100">{{ authStore.user?.credits || 0 }}</span>
             </div>
           </div>
           <a-button type="primary" @click="handleCheckin" :loading="checkinLoading" class="md:mt-3 bg-gradient-to-r from-indigo-500 to-cyan-600 hover:from-indigo-400 hover:to-cyan-500 border-none text-white font-bold px-6 md:w-full shadow-lg hover:shadow-cyan-500/20 transition-all transform hover:-translate-y-0.5 h-10 md:h-auto">
-            签到
+            {{ $t('profile.checkin_btn') }}
           </a-button>
         </div>
       </div>
@@ -190,23 +210,25 @@ onMounted(async () => {
       <div class="absolute -bottom-24 right-12 w-48 h-48 bg-cyan-500/10 rounded-full blur-2xl pointer-events-none"></div>
     </div>
     
+    <!-- Breakthrough Conditions Section Removed -->
+
     <div class="bg-slate-900/40 backdrop-blur-sm rounded-xl p-6 border border-slate-700/50 shadow-[0_4px_12px_rgba(0,0,0,0.2)]">
       <h3 class="text-lg font-bold text-slate-200 mb-2 flex items-center drop-shadow-sm">
-        <Activity :size="20" class="mr-2 text-cyan-400 drop-shadow-[0_0_5px_rgba(56,189,248,0.5)]" /> 快捷指引
+        <Activity :size="20" class="mr-2 text-cyan-400 drop-shadow-[0_0_5px_rgba(56,189,248,0.5)]" /> {{ $t('profile.quick_guide') }}
       </h3>
-      <p class="text-slate-400 mb-4">探索更多 AI 图像与视频生成玩法，或查看你的修仙记录。</p>
+      <p class="text-slate-400 mb-4">{{ $t('profile.quick_guide_desc') }}</p>
       <div class="flex flex-wrap gap-3">
         <a-button type="primary" @click="$router.push('/custom-features')" class="bg-gradient-to-r from-indigo-600 to-cyan-700 border-none hover:from-indigo-500 hover:to-cyan-600 shadow-md">
-          <Zap :size="16" class="mr-1 inline" /> 前往 练功房
+          <Zap :size="16" class="mr-1 inline" /> {{ $t('profile.go_to_lab') }}
         </a-button>
         <a-button type="default" @click="$router.push('/my-submissions')" class="bg-slate-800 text-cyan-300 border-cyan-500/30 hover:text-cyan-200 hover:border-cyan-400 shadow-md">
-          <Bookmark :size="16" class="mr-1 inline" /> 个人心得
+          <Bookmark :size="16" class="mr-1 inline" /> {{ $t('menu.my_submissions') }}
         </a-button>
         <a-button type="default" @click="$router.push('/my-favorites')" class="bg-slate-800 text-amber-300 border-amber-500/30 hover:text-amber-200 hover:border-amber-400 shadow-md">
-          <Star :size="16" class="mr-1 inline" /> 修仙笔记
+          <Star :size="16" class="mr-1 inline" /> {{ $t('menu.my_favorites') }}
         </a-button>
         <a-button type="default" @click="handleBindPasswordModalOpen" class="bg-slate-800 text-indigo-300 border-indigo-500/30 hover:text-indigo-200 hover:border-indigo-400 shadow-md">
-          <Lock :size="16" class="mr-1 inline" /> {{ authStore.user?.username ? '修改密咒' : '设置道号与密咒' }}
+          <Lock :size="16" class="mr-1 inline" /> {{ authStore.user?.username ? $t('profile.change_password') : $t('profile.set_password') }}
         </a-button>
       </div>
     </div>
@@ -214,7 +236,7 @@ onMounted(async () => {
     <div>
       <h2 class="text-xl font-bold text-slate-200 mb-4 flex items-center drop-shadow-sm">
         <span class="w-1.5 h-6 bg-cyan-500 rounded-full mr-2 shadow-[0_0_8px_rgba(56,189,248,0.5)]"></span>
-        修仙数据总览
+        {{ $t('profile.stats') }}
       </h2>
       
       <div class="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
@@ -224,7 +246,7 @@ onMounted(async () => {
               <User :size="isMobile ? 20 : 24" />
             </div>
             <div>
-              <p class="text-slate-400 text-xs md:text-sm mb-1">系统ID (TG ID)</p>
+              <p class="text-slate-400 text-xs md:text-sm mb-1">{{ $t('profile.system_id') }}</p>
               <h3 class="text-lg md:text-xl font-bold text-slate-100 drop-shadow-sm">{{ authStore.user?.telegram_id || authStore.user?.id || '---' }}</h3>
             </div>
           </div>
@@ -236,8 +258,8 @@ onMounted(async () => {
               <Zap :size="isMobile ? 20 : 24" />
             </div>
             <div>
-              <p class="text-slate-400 text-xs md:text-sm mb-1">累计施法次数</p>
-              <h3 class="text-lg md:text-xl font-bold text-slate-100 drop-shadow-sm">{{ authStore.user?.generation_count || 0 }} 次</h3>
+              <p class="text-slate-400 text-xs md:text-sm mb-1">{{ $t('profile.generations') }}</p>
+              <h3 class="text-lg md:text-xl font-bold text-slate-100 drop-shadow-sm">{{ authStore.user?.generation_count || 0 }} {{ $t('profile.times_unit') }}</h3>
             </div>
           </div>
         </a-card>
@@ -248,8 +270,8 @@ onMounted(async () => {
               <CalendarCheck :size="isMobile ? 20 : 24" />
             </div>
             <div>
-              <p class="text-slate-400 text-xs md:text-sm mb-1">累计签到天数</p>
-              <h3 class="text-lg md:text-xl font-bold text-slate-100 drop-shadow-sm">{{ authStore.user?.checkin_count || 0 }} 天</h3>
+              <p class="text-slate-400 text-xs md:text-sm mb-1">{{ $t('profile.checkins') }}</p>
+              <h3 class="text-lg md:text-xl font-bold text-slate-100 drop-shadow-sm">{{ authStore.user?.checkin_count || 0 }} {{ $t('profile.days_unit') }}</h3>
             </div>
           </div>
         </a-card>
@@ -260,7 +282,7 @@ onMounted(async () => {
               <Award :size="isMobile ? 20 : 24" />
             </div>
             <div>
-              <p class="text-slate-400 text-xs md:text-sm mb-1">当前生成优先级</p>
+              <p class="text-slate-400 text-xs md:text-sm mb-1">{{ $t('profile.priority') }}</p>
               <h3 class="text-lg md:text-xl font-bold text-slate-100 drop-shadow-sm">{{ authStore.user?.priority || 0 }}</h3>
             </div>
           </div>
@@ -271,7 +293,7 @@ onMounted(async () => {
     <div class="mt-8">
       <h2 class="text-xl font-bold text-slate-200 mb-4 flex items-center drop-shadow-sm">
         <span class="w-1.5 h-6 bg-indigo-500 rounded-full mr-2 shadow-[0_0_8px_rgba(99,102,241,0.5)]"></span>
-        邀请与推广明细
+        {{ $t('profile.promotion_details') }}
       </h2>
       
       <div class="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-5 gap-3 md:gap-4">
@@ -281,8 +303,8 @@ onMounted(async () => {
               <User :size="isMobile ? 20 : 24" />
             </div>
             <div>
-              <p class="text-slate-400 text-xs md:text-sm mb-1">成功邀请同道</p>
-              <h3 class="text-lg md:text-xl font-bold text-slate-100 drop-shadow-sm">{{ authStore.user?.invitation_count || 0 }} 人</h3>
+              <p class="text-slate-400 text-xs md:text-sm mb-1">{{ $t('profile.invitations') }}</p>
+              <h3 class="text-lg md:text-xl font-bold text-slate-100 drop-shadow-sm">{{ authStore.user?.invitation_count || 0 }} {{ $t('profile.people_unit') }}</h3>
             </div>
           </div>
         </a-card>
@@ -293,7 +315,7 @@ onMounted(async () => {
               <Activity :size="isMobile ? 20 : 24" />
             </div>
             <div>
-              <p class="text-slate-400 text-xs md:text-sm mb-1">受邀者充值(TON)</p>
+              <p class="text-slate-400 text-xs md:text-sm mb-1">{{ $t('profile.invited_recharge_ton') }}</p>
               <h3 class="text-lg md:text-xl font-bold text-slate-100 drop-shadow-sm">{{ authStore.user?.invitation_recharge?.total_ton || 0 }} TON</h3>
             </div>
           </div>
@@ -305,7 +327,7 @@ onMounted(async () => {
               <Wallet :size="isMobile ? 20 : 24" />
             </div>
             <div>
-              <p class="text-slate-400 text-xs md:text-sm mb-1">受邀者充值(人民币)</p>
+              <p class="text-slate-400 text-xs md:text-sm mb-1">{{ $t('profile.invited_recharge_cny') }}</p>
               <h3 class="text-lg md:text-xl font-bold text-slate-100 drop-shadow-sm">¥ {{ authStore.user?.invitation_recharge?.total_rmb || 0 }}</h3>
             </div>
           </div>
@@ -317,7 +339,7 @@ onMounted(async () => {
               <Zap :size="isMobile ? 20 : 24" />
             </div>
             <div>
-              <p class="text-slate-400 text-xs md:text-sm mb-1">受邀者充值(Stars)</p>
+              <p class="text-slate-400 text-xs md:text-sm mb-1">{{ $t('profile.invited_recharge_stars') }}</p>
               <h3 class="text-lg md:text-xl font-bold text-slate-100 drop-shadow-sm">{{ authStore.user?.invitation_recharge?.total_stars || 0 }} ⭐</h3>
             </div>
           </div>
@@ -330,7 +352,7 @@ onMounted(async () => {
               <span class="font-bold text-xl">$</span>
             </div>
             <div>
-              <p class="text-rose-300 font-medium text-xs md:text-sm mb-1 drop-shadow-sm">预估邀请分成</p>
+              <p class="text-rose-300 font-medium text-xs md:text-sm mb-1 drop-shadow-sm">{{ $t('profile.estimated_revenue') }}</p>
               <h3 class="text-lg md:text-xl font-bold text-rose-100 drop-shadow-md">$ {{ authStore.user?.invitation_recharge?.commission_usdt || '0.00' }} USDT</h3>
             </div>
           </div>
@@ -344,10 +366,10 @@ onMounted(async () => {
     <a-modal
       v-if="!isMobile"
       v-model:open="showBindModal"
-      :title="authStore.user?.username ? '修改密咒' : '设置道号与密咒'"
+      :title="authStore.user?.username ? $t('profile.change_password') : $t('profile.set_password')"
       :confirmLoading="bindingLoading"
       @ok="handleBindPassword"
-      okText="确认结契"
+      okText="确认"
       cancelText="取消"
       :okButtonProps="{ class: 'bg-indigo-600 hover:bg-indigo-500 border-none shadow-lg shadow-indigo-600/30' }"
       class="dark-modal"

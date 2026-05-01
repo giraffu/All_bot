@@ -24,18 +24,6 @@ const handleMenuClick = ({ key }: { key: string }) => {
   router.push({ name: key })
 }
 
-const toggleLanguage = async () => {
-  const newLang = locale.value === 'zh' ? 'en' : 'zh'
-  locale.value = newLang
-  
-  // Persist language to backend
-  try {
-    await api.patch('/users/preferences', { language_code: newLang })
-  } catch (error) {
-    console.error('Failed to save language preference', error)
-  }
-}
-
 const handleLogout = () => {
   authStore.logout()
   router.push('/login')
@@ -216,28 +204,28 @@ watch(() => route.name, (newName) => {
         @click="handleMenuClick"
       >
         <a-menu-item key="Profile">
-          <template #icon><User :size="18" /></template>
-          <span>个人中心</span>
+          <template #icon><UserIcon :size="18" /></template>
+          <span>{{ $t('menu.profile') }}</span>
         </a-menu-item>
         <a-menu-item key="Gallery">
           <template #icon><Compass :size="18" /></template>
-          <span>修仙市集</span>
+          <span>{{ $t('menu.gallery') }}</span>
         </a-menu-item>
         <a-menu-item key="CustomFeatures">
           <template #icon><Wand2 :size="18" /></template>
-          <span>练功房</span>
+          <span>{{ $t('menu.custom_features') }}</span>
         </a-menu-item>
         <a-menu-item key="History">
           <template #icon><HistoryIcon :size="18" /></template>
-          <span>闪回瓶</span>
+          <span>{{ $t('menu.history') }}</span>
         </a-menu-item>
         <a-menu-item key="MySubmissions">
           <template #icon><Bookmark :size="18" /></template>
-          <span>个人心得</span>
+          <span>{{ $t('menu.my_submissions') }}</span>
         </a-menu-item>
         <a-menu-item key="MyFavorites">
           <template #icon><Star :size="18" /></template>
-          <span>修仙笔记</span>
+          <span>{{ $t('menu.my_favorites') }}</span>
         </a-menu-item>
       </a-menu>
     </a-layout-sider>
@@ -247,7 +235,7 @@ watch(() => route.name, (newName) => {
       <a-layout class="flex flex-col h-screen overflow-hidden bg-transparent">
       <a-layout-header class="header-custom px-4 md:px-6 flex justify-between items-center shrink-0 z-10 sticky top-0">
         <div class="header-left flex items-center">
-          <h2 class="text-lg font-bold text-slate-200 tracking-wide m-0 drop-shadow-sm">{{ route.name === 'Profile' ? '个人中心' : (route.name === 'Gallery' ? '修仙市集' : (route.name === 'CustomFeatures' ? '练功房' : (route.name === 'History' ? '闪回瓶' : (route.name === 'MySubmissions' ? '个人心得' : (route.name === 'MyFavorites' ? '修仙笔记' : '功能'))))) }}</h2>
+          <h2 class="text-lg font-bold text-slate-200 tracking-wide m-0 drop-shadow-sm">{{ route.name === 'Profile' ? $t('menu.profile') : (route.name === 'Gallery' ? $t('menu.gallery') : (route.name === 'CustomFeatures' ? $t('menu.custom_features') : (route.name === 'History' ? $t('menu.history') : (route.name === 'MySubmissions' ? $t('menu.my_submissions') : (route.name === 'MyFavorites' ? $t('menu.my_favorites') : ''))))) }}</h2>
         </div>
         <div class="header-right flex items-center space-x-4">
           <div class="balance flex items-center bg-slate-800/40 backdrop-blur-md px-3 py-1 rounded-full border border-cyan-500/20 shadow-sm transition-all hover:shadow-[0_0_8px_rgba(56,189,248,0.3)] hover:scale-105">
@@ -263,20 +251,13 @@ watch(() => route.name, (newName) => {
               <template #overlay>
                 <a-menu>
                   <a-menu-item class="text-gray-500" disabled>
-                    身份: {{ authStore.user?.current_identity }}
-                  </a-menu-item>
-                  <a-menu-divider />
-                  <a-menu-item @click="toggleLanguage" class="text-cyan-400">
-                    <div class="flex items-center">
-                      <Globe :size="16" class="mr-2" />
-                      <span>{{ locale === 'zh' ? 'English' : '中文' }}</span>
-                    </div>
+                    {{ $t('profile.identity') }}: {{ authStore.user?.current_identity }}
                   </a-menu-item>
                   <a-menu-divider />
                   <a-menu-item @click="handleLogout" class="text-red-500">
                     <div class="flex items-center">
                       <LogOut :size="16" class="mr-2" />
-                      <span>退出登录</span>
+                      <span>{{ $t('menu.logout') }}</span>
                     </div>
                   </a-menu-item>
                 </a-menu>

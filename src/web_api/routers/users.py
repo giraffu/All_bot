@@ -9,6 +9,7 @@ from src.database.models import History, User
 from src.web_api.dependencies import get_current_user
 from src.web_api.schemas.auth_schema import InvitationRechargeStats, UserResponse
 from src.web_api.schemas.user_schema import PaginatedHistory, CheckinResponse
+from pydantic import BaseModel
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -48,6 +49,36 @@ async def get_user_profile(current_user: User = Depends(get_current_user)):
         breakthrough_conditions=[cond.dict() for cond in dto.breakthrough_conditions],
         is_unlocked=dto.is_unlocked
     )
+
+class PreferencesUpdate(BaseModel):
+    language_code: str
+
+@router.patch("/preferences")
+async def update_user_preferences(
+    prefs: PreferencesUpdate,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Update user preferences like language_code.
+    """
+    from src.database.models import User
+    from sqlalchemy import update
+    
+    stmt = (
+        update(User)
+        .where(User.id == current_user.id)
+        .values(language_code=prefs.language_code)
+    )
+    await db.execute(stmt)
+    await db.commit()
+    
+    # Sync to Redis cache
+    from src.services.redis_client import redis_client
+    if redis_client and redis_client.redis:
+        await redis_client.redis.set(f"allbot:user_lang:{current_user.id}", prefs.language_code)
+        
+    return {"status": "success", "language_code": prefs.language_code}
 
 @router.get("/history", response_model=PaginatedHistory)
 async def get_user_history(
