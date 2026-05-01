@@ -13,7 +13,7 @@ from .database.models import (
     UserLog,
 )
 from .services.log_service import LogService
-
+from src.logger import logger
 
 class QuotaManager:
     def __init__(self):

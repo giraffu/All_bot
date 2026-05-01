@@ -75,7 +75,10 @@ async def start_custom_video(update: Update, context: ContextTypes.DEFAULT_TYPE)
 async def receive_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user_id = update.effective_user.id
     message = update.message
-    fsm_data = context.user_data['custom_video_data']
+    fsm_data = context.user_data.get('custom_video_data')
+    if not fsm_data:
+        await robust_reply_text(message, "⚠️ 状态已失效或清理，请发送 /cancel 退出并重新发起任务。")
+        return ConversationHandler.END
 
     if message.document:
         if not message.document.mime_type.startswith('image/'):
@@ -127,7 +130,7 @@ async def process_settings(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     user_id = query.from_user.id
     data = query.data
     
-    fsm_data = context.user_data.get('custom_video_data', {})
+    fsm_data = context.user_data.get('custom_video_data')
     if not fsm_data:
         with contextlib.suppress(Exception):
             await query.answer("交互已失效或任务已提交，请重新开始", show_alert=True)

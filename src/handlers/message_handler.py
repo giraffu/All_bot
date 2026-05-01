@@ -37,6 +37,7 @@ from src.services.storage import storage
 from src.services.task_service import task_service
 from src.utils import robust_reply_text, create_background_task, is_maintenance_mode, robust_send_message, get_user_channel_status, notify_inviter_reward
 from src.handlers.error_handlers import with_unified_error_handler
+from src.logger import logger
 
 # Re-exporting for compatibility if needed, but preferred to import from constants/utils
 process_generation_task = task_service.process_generation_task
@@ -47,7 +48,6 @@ os.makedirs(TEMPLATE_DIR_QUICK_FACE, exist_ok=True)
 os.makedirs(TEMPLATE_DIR_VIDEO_NICE, exist_ok=True)
 os.makedirs(TEMP_TEMPLATE_DIR, exist_ok=True)
 
-logger = logging.getLogger(__name__)
 
 @with_unified_error_handler
 @with_db_logging_context
@@ -402,6 +402,60 @@ TASK_TYPE_DISPLAY_NAMES = {
     "custom_video": "task.custom_video",
     "video_lora": "task.video_lora"
 }
+
+@prompt_route("menu.switch_lang")
+async def handle_switch_lang(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str = None):
+    """Handle language switching."""
+    user = update.effective_user
+    if not user:
+        return
+
+    # Determine current language
+    current_lang = context.user_data.get('language_code')
+    if not current_lang:
+        from src.services.redis_client import redis_client
+        if redis_client and redis_client.redis:
+            current_lang = await redis_client.redis.get(f"allbot:user_lang:tg:{user.id}")
+            if current_lang:
+                current_lang = current_lang.decode('utf-8')
+    if not current_lang:
+        current_lang = user.language_code[:2] if user.language_code else 'zh'
+        if current_lang not in ['zh', 'en']:
+            current_lang = 'zh'
+
+    # Toggle language
+    new_lang = 'en' if current_lang == 'zh' else 'zh'
+
+    # Update Context
+    context.user_data['language_code'] = new_lang
+    
+    # Instantiate new Translator
+    from src.i18n.translator import I18nTranslator
+    context.t = I18nTranslator(new_lang)
+
+    # Update DB and Redis
+    from src.database.core import AsyncSessionLocal
+    from src.database.models import User
+    from src.core.user_core import get_or_create_user_by_telegram
+    
+    internal_user, _ = await get_or_create_user_by_telegram(user.id, user.username, user.full_name)
+    
+    async with AsyncSessionLocal() as session:
+        db_user = await session.get(User, internal_user.id)
+        if db_user:
+            db_user.language_code = new_lang
+            await session.commit()
+            
+    from src.services.redis_client import redis_client
+    if redis_client and redis_client.redis:
+        await redis_client.redis.set(f"allbot:user_lang:{internal_user.id}", new_lang)
+        await redis_client.redis.set(f"allbot:user_lang:tg:{user.id}", new_lang)
+
+    # Reply with new keyboard
+    from src.i18n.keyboards import get_main_menu_keyboard
+    msg = "🌐 语言已切换为中文。" if new_lang == 'zh' else "🌐 Language switched to English."
+    await robust_reply_text(update.message, msg, reply_markup=get_main_menu_keyboard(new_lang))
+
 
 @prompt_route("menu.queue")
 async def handle_queue_status(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str = None):
