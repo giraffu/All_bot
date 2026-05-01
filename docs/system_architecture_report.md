@@ -97,7 +97,7 @@ graph TD
 ```
 
 ### 架构物理与逻辑层级说明
-1. **客户端层**：多端覆盖。包括传统的 Telegram 交互、内嵌的 TON Web App、独立的 Vue3 创作工作台，以及三方支付网关的异步回调发起方。
+1. **客户端层**：多端覆盖。包括传统的 Telegram 交互、内嵌的 TON Web App、独立的 Vue3 创作工作台，以及三方支付网关的异步回调发起方。支持多语言 (i18n)，Web 端基于 `vue-i18n`，Telegram 端基于 `I18nFilter` 和 Redis 语言偏好缓存。
 2. **边缘节点与代理穿透层 (Edge & Network Layer)**：
    * **Web VPS**：部署 Nginx，负责 Web 前端（Vue3 打包的 `/dist`）的静态文件托管，并将 `/api/` 的动态请求通过内网反向代理（Proxy Pass）给国内底座。
    * **Telegram VPS**：运行官方 Local API 和文件服务器，专门用于突破 Telegram 官方 50MB 视频上传和 20MB 下载限制，将文件通过 HTTP 直链暴露给 Bot 底座提取。

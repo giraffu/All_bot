@@ -44,18 +44,18 @@ async def unexpected_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
 def get_ltx_video_fsm_handler() -> ConversationHandler:
     return ConversationHandler(
-        entry_points=[CallbackQueryHandler(start_ltx_video, pattern='^ltx_video$')],
+        entry_points=[MessageHandler(I18nFilter('menu.ltx_video'), start_ltx_video)],
         states={
             # ... 其它状态
             WAITING_PROMPT: [
-                MessageHandler(filters.Regex('^(取消|退出)$'), cancel_conversation),
+                MessageHandler(I18nFilter(['menu.cancel', 'menu.exit']), cancel_conversation),
                 MessageHandler(filters.TEXT & ~filters.COMMAND, receive_prompt),
                 CallbackQueryHandler(optimize_prompt_handler, pattern='^optimize_prompt$')
             ],
         },
         fallbacks=[
             CommandHandler('cancel', cancel_conversation),
-            MessageHandler(filters.Regex('^(🏠 主菜单|💎 充值|...)$'), unexpected_input)
+            MessageHandler(I18nFilter('menu.main_menu'), unexpected_input)
         ],
         conversation_timeout=600 # 10分钟超时
     )
@@ -71,11 +71,17 @@ def get_ltx_video_fsm_handler() -> ConversationHandler:
 - `gallery_callbacks.py`: 广场作品的点赞、应用与公开分享。
 - `misc_callbacks.py`: 通用帮助与菜单回调。
 
-### 4.2 状态机触发条件 (FSM)
+### 4.2 状态机触发条件 (FSM) 与多语言 (i18n) 路由
+采用 O(1) 的精确匹配多语言路由架构，彻底废弃硬编码的中文字符串正则。
+
+*   **多语言拦截器 (`I18nFilter`)**: 
+    在 FSM 的 `entry_points` 中，使用 `I18nFilter(['menu.ltx_video', 'menu.custom_video'])` 替代原有的正则。它通过读取系统启动时构建的 `GLOBAL_REVERSE_MAP`，实现 O(1) 复杂度的双语按键精准拦截。
+*   **按键定义**: 所有 FSM 的入口 key（如 `menu.photo_edit_undress`）必须注册在 `prompt_router.py` 的 `additional_menu_keys` 中，以便被反向映射字典正确收录。
+
 ```yaml
 telegram_webhook:
-  - Event: CallbackQuery
-    Pattern: "^ltx_video$"
+  - Event: Message (Text)
+    Filter: I18nFilter("menu.ltx_video")
     Action: 触发 START_LTX_VIDEO 状态，提示用户上传基础图像
   - Event: Message (Photo)
     State: WAITING_IMAGE

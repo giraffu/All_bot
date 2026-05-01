@@ -18,7 +18,7 @@
 | **并发、排队与任务调度** | `allbot-task-engine` | Redis 队列调度、并发锁防刷、中控分发、僵尸任务双向剔除 |
 | **计费、鉴权与会员体系** | `allbot-billing-auth` | 灵石账本 (credits)、JWT 无状态鉴权、支付回调幂等、身份折算 |
 | **对象存储与画廊社区** | `allbot-gallery-storage` | MinIO 直传/容灾、R2 边缘分发、社区防并发点赞、一键克隆限制 |
-| **Telegram 交互与文件** | `allbot-tg-fsm` | PTB 状态机、菜单互斥与防死锁、Local API 大文件下载适配 |
+| **Telegram 交互与文件** | `allbot-tg-fsm` | PTB 状态机、多语言(i18n)精准路由、菜单互斥防死锁、大文件 Monkey Patch |
 | **AI 助理与大模型推理** | `allbot-llm-ops` | LM Studio 限流防 OOM、LangGraph 意图嗅探、群组记忆隔离 |
 | **部署、容器与容灾排障** | `allbot-ops-deployment` | Docker Compose 编排、Alembic 迁移、MinIO/网络故障自愈恢复、一键安全部署 (safe_deploy) |
 | **文档维护与知识库同步** | `allbot-kb-auto-updater` | 智能监控代码变更影响，自动维护 AGENTS.md、Skills 和 /docs/ 的逻辑一致性 |
