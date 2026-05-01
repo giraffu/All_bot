@@ -1,0 +1,11 @@
+{
+  "system": {
+    "welcome": "欢迎来到修仙世界！",
+    "error_insufficient_credits": "🚫 **灵石不足**\n\n道友当前余额: `{current}` 灵石\n本次修炼需要: `{cost}` 灵石\n请联系管理员获取更多灵石。"
+  },
+  "menu": {
+    "photo_edit": "🖼️ 懒人P图",
+    "video_edit": "🎬 视频创作",
+    "profile": "👤 个人中心"
+  }
+}

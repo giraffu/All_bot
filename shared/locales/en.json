@@ -1,0 +1,11 @@
+{
+  "system": {
+    "welcome": "Welcome to the Cultivation World!",
+    "error_insufficient_credits": "🚫 **Insufficient Credits**\n\nCurrent Balance: `{current}` Credits\nCost: `{cost}` Credits\nPlease contact the admin to recharge."
+  },
+  "menu": {
+    "photo_edit": "🖼️ AI Edit",
+    "video_edit": "🎬 AI Video",
+    "profile": "👤 Profile"
+  }
+}

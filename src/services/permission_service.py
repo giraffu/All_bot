@@ -187,10 +187,17 @@ class PermissionService:
             logger.warning(f"Manual channel sync failed for user {tg_id}: {e}")
             return False
 
-    async def ensure_user(self, tg_id: int, username: str, full_name: str) -> bool:
+    async def ensure_user(self, tg_id: int, username: str, full_name: str, language_code: str = None) -> bool:
         """Ensure user info is up to date in DB. Returns True if user was newly created."""
         from src.core.user_core import get_or_create_user_by_telegram
-        internal_user, is_new = await get_or_create_user_by_telegram(tg_id, username, full_name)
+        internal_user, is_new = await get_or_create_user_by_telegram(tg_id, username, full_name, language_code)
+        
+        # Sync language_code to Redis Cache
+        if internal_user.language_code:
+            from src.services.redis_client import redis_client
+            if redis_client and redis_client.redis:
+                await redis_client.redis.set(f"allbot:user_lang:{internal_user.id}", internal_user.language_code)
+
         await self.quota_manager.ensure_user(internal_user.id, username=username, full_name=full_name)
         await self.refresh_user_group(internal_user.id)
         return is_new

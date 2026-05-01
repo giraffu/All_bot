@@ -241,7 +241,7 @@ async def handle_personal_center(update: Update, context: ContextTypes.DEFAULT_T
     if not update.effective_user: return
     user = update.effective_user
     await permission_service.sync_channel_status(user.id, user.username, user.full_name, context.bot)
-    await permission_service.ensure_user(user.id, user.username, user.full_name)
+    await permission_service.ensure_user(user.id, user.username, user.full_name, user.language_code)
     user_id = update.effective_user.id
     first_name = update.effective_user.first_name
     invite_link = CHANNEL_INVITE_LINK or "https://t.me/AiVisionAV"

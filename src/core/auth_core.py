@@ -224,10 +224,18 @@ async def authenticate_and_get_user(
     else:
         raise InvalidSignatureError("No authentication data provided.")
 
+    # Initialize language_code
+    language_code = None
+    if init_data:
+        language_code = user_data.get('language_code')
+    elif widget_data:
+        language_code = widget_data.get('language_code')
+
     user, is_new = await get_or_create_user_by_telegram(
-        tg_id=tg_id, 
-        username=username, 
-        full_name=full_name
+        tg_id=tg_id,
+        username=username,
+        full_name=full_name,
+        language_code=language_code
     )
     
     stats = await permission_service.get_user_detailed_stats(user.telegram_id)

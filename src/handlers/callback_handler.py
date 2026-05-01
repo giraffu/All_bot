@@ -27,7 +27,7 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
     # 身份强同步保留
     if not update.effective_user: return
     user = update.effective_user
-    await permission_service.ensure_user(user.id, user.username, user.full_name)
+    await permission_service.ensure_user(user.id, user.username, user.full_name, user.language_code)
     
     # 按前缀长度降序匹配，防止短前缀劫持长前缀
     for prefix in router.SORTED_ROUTES:

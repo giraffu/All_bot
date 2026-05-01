@@ -64,13 +64,13 @@ async def pop_task(
         
     task_data = await queue_manager.dequeue_task(allowed_types=allowed_types)
     if not task_data:
-        raise HTTPException(status_code=404, detail="No pending tasks")
+        return {"task": None, "message": "No pending tasks"}
         
     task_id, _ = task_data
     task_details = await queue_manager.get_task_status(task_id)
     
     if not task_details:
-        raise HTTPException(status_code=404, detail="Task details not found")
+        return {"task": None, "message": "Task details not found"}
         
     return {"task": task_details}
 
