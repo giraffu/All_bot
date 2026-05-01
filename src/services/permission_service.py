@@ -74,6 +74,12 @@ class PermissionService:
                  await self.refresh_user_group(internal_user_id, is_member=True)
             return inviter_id
 
+        # 3. Fallback: If is_member was not explicitly passed and credits are 0, check DB state
+        if is_member is None:
+            stats = await self.quota_manager.get_user_stats(internal_user_id)
+            if stats.get("is_channel_member"):
+                return inviter_id
+
         # Access Denied
         raise AccessDeniedError()
 
