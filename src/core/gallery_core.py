@@ -9,6 +9,7 @@ from sqlalchemy.orm import selectinload
 from src.database.core import AsyncSessionLocal
 from src.database.models import GalleryPost, History, User, UserInteraction
 from src.services.redis_client import redis_client
+from src.constants import MODE_NAME_MAP
 from src.services.storage import storage
 
 logger = logging.getLogger(__name__)
@@ -17,22 +18,6 @@ ALLOWED_WEB_SUBMIT_TYPES = [
     "i2i_pro", "custom_video", 
     "video_lora", "ltx_video", "edit", "img2img_lora"
 ]
-
-MODE_NAME_MAP = {
-    "i2i_pro": "幻想换脸",
-    "face_video": "视频换脸",
-    "custom_video": "自定义视频",
-    "txt2video": "文生视频",
-    "video_lora": "视频微调",
-    "perfect_video_insert": "完美插入",
-    "doggy_style": "后入",
-    "blowjob": "口交",
-    "undress_tongue": "脱衣舔",
-    "closeup_blowjob": "特写口交",
-    "ltx_video": "LTX视频",
-    "edit": "自由P图",
-    "img2img_lora": "图生图(附加模型)"
-}
 
 class GalleryCoreError(Exception):
     pass

@@ -66,14 +66,13 @@ async def random_faceswap_again_callback(update: Update, context: ContextTypes.D
         if isinstance(e, InsufficientCreditsError):
             chat_id = update.effective_chat.id
             msg = f"🚫 **灵石不足**\n\n道友当前余额: `{e.current}` 灵石\n本次修炼需要: `{e.cost}` 灵石\n请联系管理员获取更多灵石。"
-            from src.utils import robust_send_message
             await robust_send_message(context.bot, chat_id, msg, parse_mode="Markdown")
             return
         raise e
 
     chat_id = query.message.chat_id
     user_id = query.from_user.id
-    username = query.from_user.username or query.from_user.full_name
+    username = query.from_user.username
     prompts_config = load_prompts()
 
     try:

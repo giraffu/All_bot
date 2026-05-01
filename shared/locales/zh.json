@@ -1,5 +1,10 @@
 {
   "system": {
+    "photo_edit_hint": "🖼️ **懒人P图模式**\n请选择具体功能：",
+    "video_edit_hint": "🎬 **懒人动图**\n请选择演武场景：",
+    "gallery_hint": "🏆 **修仙界广场**\n\n请选择您想查看的榜单：",
+    "fsm_exit_hint": "🔄 已为您退出当前输入步骤（后台正在生成的任务不受影响）。\n👉 **请再次点击刚才的按钮**，即可开始新任务！",
+    "fsm_in_progress_hint": "⚠️ 当前处于交互流程中。请按提示操作，或发送 /cancel 取消本次操作。",
     "welcome": "欢迎来到修仙世界！",
     "error_insufficient_credits": "🚫 **灵石不足**\n\n道友当前余额: `{current}` 灵石\n本次修炼需要: `{cost}` 灵石\n请联系管理员获取更多灵石。",
     "error_access_denied": "⛩️ **尚未拜入宗门**\n\n欲求长生，必先寻得仙缘。您需要先加入我们的 **官方宗门** 才能开始修炼。\n\n👉 [点击即刻拜入宗门]({invite_link})"
@@ -27,7 +32,20 @@
     "cancel": "取消",
     "exit": "退出",
     "main_menu": "🏠 主菜单",
-    "back_main": "🔙 返回主菜单"
+    "back_main": "🔙 返回主菜单",
+    "photo_edit_undress": "💃 快速脱衣",
+    "photo_edit_faceswap": "🎭 快速换脸",
+    "photo_edit_masturbation": "🥵 快速自慰",
+    "photo_edit_random_faceswap": "🎭 随机换脸",
+    "video_edit_missionary": "🛌 动图传教士",
+    "video_edit_doggy": "🎬 动图后入",
+    "video_edit_blowjob": "🎬 口交黑人",
+    "video_edit_undress_tongue": "🎬 脱衣吐舌",
+    "video_edit_closeup_blowjob": "🎬 特写口交",
+    "gallery_latest": "🔥 最新投稿",
+    "gallery_likes": "❤️ 最多点赞",
+    "gallery_applied": "🪄 最多应用",
+    "gallery_mine": "🙋 我的投稿"
   },
   "profile": {
     "welcome_back": "欢迎回来，{name}!",

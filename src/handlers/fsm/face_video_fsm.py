@@ -222,7 +222,7 @@ async def process_resolution_selection(update: Update, context: ContextTypes.DEF
         context,
         TaskService.process_face_video_task(
             context, query.message.chat_id, user_id,
-            query.from_user.username or query.from_user.full_name,
+            query.from_user.username,
             face_path, video_path, resolution, duration=duration, cost=cost,
             message_id=query.message.message_id,
             cleanup=True  # TaskService will delete the files
@@ -265,10 +265,10 @@ async def unexpected_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     if text and is_global_menu_command(text):
         user_id = update.effective_user.id if update.effective_user else "Unknown"
         _cleanup_context(context, user_id)
-        await robust_reply_text(update.message, "🔄 已为您退出当前输入步骤（后台正在生成的任务不受影响）。\n👉 **请再次点击刚才的按钮**，即可开始新任务！")
+        await robust_reply_text(update.message, context.t("system.fsm_exit_hint"))
         return ConversationHandler.END
 
-    await robust_reply_text(update.message, "⚠️ 当前处于交互流程中。请按提示操作，或发送 /cancel 取消本次操作。")
+    await robust_reply_text(update.message, context.t("system.fsm_in_progress_hint"))
     return None # Return None keeps the state unchanged in PTB
 
 # --- FSM Factory ---

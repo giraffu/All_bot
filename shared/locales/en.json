@@ -1,5 +1,10 @@
 {
   "system": {
+    "photo_edit_hint": "🖼️ **AI Edit Mode**\nPlease select a feature:",
+    "video_edit_hint": "🎬 **AI GIF Mode**\nPlease select a scenario:",
+    "gallery_hint": "🏆 **Gallery**\n\nPlease select a category:",
+    "fsm_exit_hint": "🔄 You have exited the current input step (tasks generating in the background are not affected).\n👉 **Please click the button again** to start a new task!",
+    "fsm_in_progress_hint": "⚠️ You are currently in an interactive process. Please follow the instructions, or send /cancel to cancel.",
     "welcome": "Welcome to the Cultivation World!",
     "error_insufficient_credits": "🚫 **Insufficient Credits**\n\nCurrent Balance: `{current}` Credits\nCost: `{cost}` Credits\nPlease contact the admin to recharge.",
     "error_access_denied": "⛩️ **Not Joined the Sect Yet**\n\nTo seek immortality, you must first find the fairy fate. You need to join our **Official Sect** before you can start cultivating.\n\n👉 [Click here to join the Sect]({invite_link})"
@@ -27,7 +32,20 @@
     "cancel": "Cancel",
     "exit": "Exit",
     "main_menu": "🏠 Main Menu",
-    "back_main": "🔙 Back to Main Menu"
+    "back_main": "🔙 Back to Main Menu",
+    "photo_edit_undress": "💃 Quick Undress",
+    "photo_edit_faceswap": "🎭 Quick Faceswap",
+    "photo_edit_masturbation": "🥵 Quick Masturbation",
+    "photo_edit_random_faceswap": "🎭 Random Faceswap",
+    "video_edit_missionary": "🛌 GIF Missionary",
+    "video_edit_doggy": "🎬 GIF Doggy Style",
+    "video_edit_blowjob": "🎬 Blowjob",
+    "video_edit_undress_tongue": "🎬 Undress & Tongue",
+    "video_edit_closeup_blowjob": "🎬 Closeup Blowjob",
+    "gallery_latest": "🔥 Latest",
+    "gallery_likes": "❤️ Most Liked",
+    "gallery_applied": "🪄 Most Applied",
+    "gallery_mine": "🙋 My Submissions"
   },
   "profile": {
     "welcome_back": "Welcome back, {name}!",

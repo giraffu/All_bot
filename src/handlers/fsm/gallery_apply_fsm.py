@@ -275,7 +275,7 @@ async def receive_reference_image(update: Update, context: ContextTypes.DEFAULT_
     
     chat_id = msg.chat_id
     user_id = update.effective_user.id
-    username = update.effective_user.username or update.effective_user.full_name
+    username = update.effective_user.username
 
     # We must reset conversation state BEFORE task runs, because task_service handles it async
     _cleanup_context(context)

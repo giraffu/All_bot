@@ -81,7 +81,7 @@ class TaskService:
 
         chat_id = update.effective_chat.id
         user_id = update.effective_user.id
-        username = update.effective_user.username or update.effective_user.full_name
+        username = update.effective_user.username
         
         internal_user, _ = await get_or_create_user_by_telegram(user_id, username)
         internal_user_id = internal_user.id
@@ -522,7 +522,7 @@ class TaskService:
 
         chat_id = update.effective_chat.id
         user_id = update.effective_user.id
-        username = update.effective_user.username or update.effective_user.full_name
+        username = update.effective_user.username
         
         internal_user, _ = await get_or_create_user_by_telegram(user_id, username)
         internal_user_id = internal_user.id
@@ -748,7 +748,7 @@ class TaskService:
 
         chat_id = update.effective_chat.id
         user_id = update.effective_user.id
-        username = update.effective_user.username or update.effective_user.full_name
+        username = update.effective_user.username
         
         internal_user, _ = await get_or_create_user_by_telegram(user_id, username)
         internal_user_id = internal_user.id

@@ -48,13 +48,14 @@ async def get_or_create_user_by_telegram(tg_id: int, username: str = None, full_
                 updated = True
             
             if updated:
+                user_id = user.id
                 try:
                     await session.flush()
                     await session.commit()
                 except IntegrityError:
                     await session.rollback()
                     # 重新查询获取最新状态，避免向外返回游离对象
-                    user = await session.get(User, user.id)
+                    user = await session.get(User, user_id)
             return user, False
             
         # 如果不存在 telegram_id，为了兼容第一阶段的遗留数据，也检查一下 id 是否等于 tg_id

@@ -68,12 +68,12 @@ def generate_thumbnail_url(output_file: str, media_type: str) -> str:
 async def get_gallery_config():
     return {
         "allowed_types": [
-            {"id": MODE_I2I_PRO, "name": MODE_NAME_MAP.get(MODE_I2I_PRO, "幻想换脸")},
-            {"id": MODE_EDIT, "name": MODE_NAME_MAP.get(MODE_EDIT, "自由P图")},
-            {"id": "img2img_lora", "name": "图生图(附加模型)"},
-            {"id": MODE_CUSTOM_VIDEO, "name": MODE_NAME_MAP.get(MODE_CUSTOM_VIDEO, "自定义图生视频")},
-            {"id": MODE_VIDEO_LORA, "name": MODE_NAME_MAP.get(MODE_VIDEO_LORA, "图生视频(附加模型)")},
-            {"id": MODE_LTX_VIDEO, "name": MODE_NAME_MAP.get(MODE_LTX_VIDEO, "高级图生视频")}
+            {"id": MODE_I2I_PRO, "name": MODE_NAME_MAP.get(MODE_I2I_PRO, "task.mode_i2i_pro")},
+            {"id": MODE_EDIT, "name": MODE_NAME_MAP.get(MODE_EDIT, "task.mode_edit")},
+            {"id": "img2img_lora", "name": "task.mode_img2img_lora"},
+            {"id": MODE_CUSTOM_VIDEO, "name": MODE_NAME_MAP.get(MODE_CUSTOM_VIDEO, "task.mode_custom_video")},
+            {"id": MODE_VIDEO_LORA, "name": MODE_NAME_MAP.get(MODE_VIDEO_LORA, "task.mode_video_lora")},
+            {"id": MODE_LTX_VIDEO, "name": MODE_NAME_MAP.get(MODE_LTX_VIDEO, "task.mode_ltx_video")}
         ],
         "lora_models": [{"id": k, "name": v} for k, v in VIDEO_LORA_MODELS.items()],
         "img2img_lora_models": [{"id": k, "name": v} for k, v in IMAGE_LORA_MODELS.items() if k]

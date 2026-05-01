@@ -30,7 +30,13 @@ def build_global_menu_filter():
         "menu.cancel",        # 取消
         "menu.exit",          # 退出
         "menu.main_menu",     # 🏠 主菜单
-        "menu.back_main"      # 🔙 返回主菜单
+        "menu.back_main",     # 🔙 返回主菜单
+        "menu.face_video",    # 🎬 视频换脸
+        "menu.i2i_pro",       # 🌟 幻想换脸
+        "menu.free_edit",     # 🎨 自由P图
+        "menu.video_lora",    # 🎬 图生视频(附加模型)
+        "menu.custom_video",  # 🎬 自定义图生视频
+        "menu.ltx_video"      # 🎬 高级图生视频
     ]
     all_keys = registered_keys.union(additional_menu_keys)
     
@@ -67,7 +73,7 @@ def is_global_menu_command(text: str) -> bool:
         return False
         
     # 如果是已被剥离的全局命令，也允许 FSM 安全退出
-    if text in ["/checkin", "/queue", "/start", "/cancel", "/maintenance"]:
+    if text.split(' ')[0] in ["/checkin", "/queue", "/start", "/cancel", "/maintenance"]:
         return True
         
     return text in GLOBAL_REVERSE_MAP

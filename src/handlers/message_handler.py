@@ -105,7 +105,7 @@ async def _handle_photo_idle(update: Update, context: ContextTypes.DEFAULT_TYPE)
 async def _handle_template_contribution(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.message
     user = update.effective_user
-    username = user.username or user.full_name
+    username = user.username
     
     file_id = None
     file_ext = ".png"
@@ -166,36 +166,23 @@ async def handle_photo_edit_menu(update: Update, context: ContextTypes.DEFAULT_T
     if inviter_id:
         create_background_task(context, notify_inviter_reward(context.bot, inviter_id, user.full_name))
         
-    keyboard = [
-        ["💃 快速脱衣", "🎭 快速换脸", "🥵 快速自慰"],
-        ["🎭 随机换脸"],
-        ["🔙 返回主菜单"]
-    ]
-    reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
-    await robust_reply_text(update.message, "🖼️ **懒人P图模式**\n请选择具体功能：", reply_markup=reply_markup, parse_mode="Markdown")
+    from src.i18n.keyboards import get_photo_edit_keyboard
+    reply_markup = get_photo_edit_keyboard(context.lang)
+    await robust_reply_text(update.message, context.t("system.photo_edit_hint"), reply_markup=reply_markup, parse_mode="Markdown")
 
 @prompt_route("menu.video_edit")
 async def handle_video_edit_menu(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str):
-    keyboard = [
-        ["🛌 动图传教士", "🎬 动图后入"],
-        ["🎬 口交黑人", "🎬 脱衣吐舌", "🎬 特写口交"],
-        ["🔙 返回主菜单"]
-    ]
-    reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
-    await robust_reply_text(update.message, "🎬 **懒人动图**\n请选择演武场景：", reply_markup=reply_markup, parse_mode="Markdown")
+    from src.i18n.keyboards import get_video_edit_keyboard
+    reply_markup = get_video_edit_keyboard(context.lang)
+    await robust_reply_text(update.message, context.t("system.video_edit_hint"), reply_markup=reply_markup, parse_mode="Markdown")
 
 @prompt_route("menu.gallery")
 async def handle_gallery_menu(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str):
-    keyboard = [
-        [InlineKeyboardButton("🔥 最新投稿", callback_data="gallery_catmenu_latest")],
-        [InlineKeyboardButton("❤️ 最多点赞", callback_data="gallery_catmenu_likes")],
-        [InlineKeyboardButton("🪄 最多应用", callback_data="gallery_catmenu_applied")],
-        [InlineKeyboardButton("🙋 我的投稿", callback_data="gallery_catmenu_mine")]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
+    from src.i18n.keyboards import get_gallery_keyboard
+    reply_markup = get_gallery_keyboard(context.lang)
     await robust_reply_text(
         update.message, 
-        "🏆 **修仙界广场**\n\n请选择您想查看的榜单：", 
+        context.t("system.gallery_hint"), 
         reply_markup=reply_markup, 
         parse_mode="Markdown"
     )
@@ -461,7 +448,7 @@ async def handle_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not text:
         return
 
-    from src.handlers.prompt_router import GLOBAL_REVERSE_MAP, prompt_routes
+    from src.handlers.prompt_router import GLOBAL_REVERSE_MAP
     route_key = GLOBAL_REVERSE_MAP.get(text)
     if route_key and route_key in prompt_routes:
         return await prompt_routes[route_key](update, context, text)
