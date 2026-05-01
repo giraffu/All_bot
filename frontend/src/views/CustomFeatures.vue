@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { 
   PlayCircle, 
   Video, 
@@ -11,13 +12,14 @@ import {
 } from 'lucide-vue-next'
 
 const router = useRouter()
+const { t } = useI18n()
 const loading = ref(true)
 
 const features = [
   {
     key: 'i2i_pro',
-    title: '幻想换脸',
-    description: '上传一张人脸图片，AI 将根据你的文字提示词为你实现无缝换脸，生成逼真的图像。',
+    title: 'lab.cards.face_swap_title',
+    description: 'lab.cards.face_swap_desc',
     icon: Sparkles,
     color: 'bg-purple-100 text-purple-600',
     cost: 6,
@@ -25,8 +27,8 @@ const features = [
   },
   {
     key: 'edit',
-    title: '自由P图',
-    description: '上传图片并提供文字指令，AI将根据你的描述修改图片内容。',
+    title: 'lab.cards.custom_edit_title',
+    description: 'lab.cards.custom_edit_desc',
     icon: Wand2,
     color: 'bg-teal-100 text-teal-600',
     cost: 2,
@@ -34,8 +36,8 @@ const features = [
   },
   {
     key: 'faceswap',
-    title: '快速换脸',
-    description: '极速人脸替换体验，适合标准场景的快速处理。',
+    title: 'lab.cards.fast_face_swap_title',
+    description: 'lab.cards.fast_face_swap_desc',
     icon: Repeat,
     color: 'bg-indigo-100 text-indigo-600',
     cost: 1,
@@ -43,8 +45,8 @@ const features = [
   },
   {
     key: 'face_video',
-    title: '视频换脸',
-    description: '上传人脸和一段视频，AI 将逐帧替换视频中的人脸，生成自然流畅的换脸视频。',
+    title: 'lab.cards.video_face_swap_title',
+    description: 'lab.cards.video_face_swap_desc',
     icon: Video,
     color: 'bg-blue-100 text-blue-600',
     cost: 18,
@@ -52,8 +54,8 @@ const features = [
   },
   {
     key: 'custom_video',
-    title: '自定义图生视频',
-    description: '上传图像，AI 将其转化为生动的视频片段。',
+    title: 'lab.cards.custom_video_title',
+    description: 'lab.cards.custom_video_desc',
     icon: PlayCircle,
     color: 'bg-cyan-100 text-cyan-600',
     cost: 6,
@@ -61,8 +63,8 @@ const features = [
   },
   {
     key: 'video_lora',
-    title: '图生视频 (附加模型)',
-    description: '上传图像，输入提示词并指定动作模型，生成定制动作视频。',
+    title: 'lab.cards.img2video_title',
+    description: 'lab.cards.img2video_desc',
     icon: Video,
     color: 'bg-emerald-100 text-emerald-600',
     cost: 6,
@@ -70,8 +72,8 @@ const features = [
   },
   {
     key: 'ltx_video',
-    title: '高级图生视频',
-    description: '上传图像与提示词，使用最先进的模型生成高分辨率、更长时长的视频。',
+    title: 'lab.cards.high_res_video_title',
+    description: 'lab.cards.high_res_video_desc',
     icon: Sparkles,
     color: 'bg-amber-100 text-amber-600',
     cost: 10,
@@ -84,7 +86,7 @@ const handleFeatureClick = (route: string, feature: any) => {
     name: route,
     query: { 
       type: feature.key,
-      title: feature.title,
+      title: t(feature.title),
       cost: feature.cost
     }
   })
@@ -102,7 +104,7 @@ onMounted(() => {
     <div>
       <h2 class="text-xl font-bold text-slate-200 mb-4 flex items-center drop-shadow-sm">
         <span class="w-1.5 h-6 bg-cyan-500 rounded-full mr-2 shadow-[0_0_8px_rgba(56,189,248,0.5)]"></span>
-        练功房
+        {{ $t('lab.title') }}
       </h2>
       
       <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
@@ -126,8 +128,8 @@ onMounted(() => {
                 <Wallet :size="12" class="mr-1 text-cyan-400"/> {{ feature.cost }}
               </span>
             </div>
-            <h3 class="text-base font-bold text-slate-100 mb-1 relative z-10 drop-shadow-sm">{{ feature.title }}</h3>
-            <p class="text-slate-400 text-sm line-clamp-2 relative z-10">{{ feature.description }}</p>
+            <h3 class="text-base font-bold text-slate-100 mb-1 relative z-10 drop-shadow-sm">{{ $t(feature.title) }}</h3>
+            <p class="text-slate-400 text-sm line-clamp-2 relative z-10">{{ $t(feature.description) }}</p>
           </div>
         </a-card>
       </div>

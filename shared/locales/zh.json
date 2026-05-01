@@ -78,5 +78,84 @@
     "内门弟子": "内门弟子",
     "核心弟子": "核心弟子",
     "真传弟子": "真传弟子"
+  },
+  "app": {
+    "name": "合欢密宗",
+    "credits": "灵石"
+  },
+  "gallery": {
+    "tabs": {
+      "all": "全部",
+      "face_swap": "幻想换脸",
+      "custom_edit": "自由P图",
+      "img2img": "图生图(附加模型)",
+      "custom_video": "自定义图生视频",
+      "img2video": "图生视频(附加模型)",
+      "high_res_video": "高级图生视频"
+    },
+    "filters": {
+      "all": "所有",
+      "today": "本日",
+      "this_week": "本周",
+      "this_month": "本月",
+      "latest": "最新发布",
+      "most_liked": "最多点赞",
+      "most_used": "最多应用"
+    },
+    "choose_addon": "选择附加模型：",
+    "all_models": "所有模型",
+    "no_posts": "暂无道友分享作品",
+    "modal": {
+      "title": "修仙界作品",
+      "tags": "包含元素 (TAGS)",
+      "apply_btn": "一键应用此模板",
+      "apply_hint": "系统将自动为您配置最佳参数，您只需上传参考图即可"
+    }
+  },
+  "lab": {
+    "title": "练功房",
+    "cards": {
+      "face_swap_title": "幻想换脸",
+      "face_swap_desc": "上传一张人脸图片，AI 将根据你的文字提示词为你实现无缝换脸，生成逼真...",
+      "custom_edit_title": "自由P图",
+      "custom_edit_desc": "上传图片并提供文字指令，AI 将根据你的描述修改图片内容。",
+      "fast_face_swap_title": "快速换脸",
+      "fast_face_swap_desc": "极速人脸替换体验，适合标准场景的快速处理。",
+      "video_face_swap_title": "视频换脸",
+      "video_face_swap_desc": "上传人脸和一段视频，AI 将逐帧替换视频中的人脸，生成自然流畅的换脸视...",
+      "custom_video_title": "自定义图生视频",
+      "custom_video_desc": "上传图像，AI 将其转化为生动的视频片段。",
+      "img2video_title": "图生视频 (附加模型)",
+      "img2video_desc": "上传图像，输入提示词并指定动作模型，生成定制动作视频。",
+      "high_res_video_title": "高级图生视频",
+      "high_res_video_desc": "上传图像与提示词，使用最先进的模型生成高分辨率、更长时长的视频。"
+    }
+  },
+  "history": {
+    "title": "闪回瓶",
+    "refresh": "刷新",
+    "warning": "温馨提示：闪回瓶容量有限，只能存放 {max} 条修炼记录，请及时保存哦。",
+    "table": {
+      "type": "类型",
+      "result": "结果",
+      "created_at": "创建时间",
+      "actions": "操作"
+    },
+    "fast_undress": "快速脱衣",
+    "bot_creation": "Bot创作",
+    "web_creation": "Web创作",
+    "cannot_post": "暂不支持投稿",
+    "save": "保存",
+    "submitting": "投稿中",
+    "submit": "✨ 一键投稿"
+  },
+  "my_posts": {
+    "on_shelf": "已上架",
+    "off_shelf": "已下架",
+    "no_submissions": "您还没有投稿任何作品",
+    "put_off_shelf": "下架",
+    "put_on_shelf": "重新上架",
+    "delete": "删除",
+    "copy_prompt": "复制提示词"
   }
 }

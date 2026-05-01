@@ -2,6 +2,7 @@
 import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
+import { useI18n } from 'vue-i18n'
 import { Heart, ThumbsDown, Wand2, Play, Image as ImageIcon, Video, Flame, Clock, Compass, Copy } from 'lucide-vue-next'
 import api from '@/api'
 import dayjs from 'dayjs'
@@ -25,6 +26,7 @@ interface Post {
 }
 
 const router = useRouter()
+const { t } = useI18n()
 const posts = ref<Post[]>([])
 const loading = ref(false)
 const page = ref(1)
@@ -336,7 +338,7 @@ onUnmounted(() => {
             class="px-4 py-1.5 rounded-lg transition-all font-medium text-sm"
             :class="taskType === 'all' ? 'bg-cyan-500/20 text-cyan-400 shadow-[0_0_10px_rgba(56,189,248,0.2)]' : 'hover:text-cyan-300 text-slate-400'"
           >
-            全部
+            {{ $t('gallery.tabs.all') }}
           </button>
           <button 
             v-for="tab in allowedTypes" 
@@ -345,7 +347,7 @@ onUnmounted(() => {
             class="px-4 py-1.5 rounded-lg transition-all font-medium text-sm"
             :class="taskType === tab.id ? 'bg-cyan-500/20 text-cyan-400 shadow-[0_0_10px_rgba(56,189,248,0.2)]' : 'hover:text-cyan-300 text-slate-400'"
           >
-            {{ tab.name }}
+            {{ $t(`gallery.tabs.${tab.id.replace('i2i_pro', 'face_swap').replace('edit', 'custom_edit').replace('img2img_lora', 'img2img').replace('custom_video', 'custom_video').replace('video_lora', 'img2video').replace('ltx_video', 'high_res_video')}`) }}
           </button>
         </div>
         
@@ -353,7 +355,7 @@ onUnmounted(() => {
           <!-- Time Range -->
           <div class="flex bg-slate-800/50 p-1 rounded-xl border border-slate-700/50">
             <button 
-              v-for="time in [{k:'all', n:'所有'}, {k:'today', n:'本日'}, {k:'week', n:'本周'}, {k:'month', n:'本月'}]" 
+              v-for="time in [{k:'all', n: $t('gallery.filters.all')}, {k:'today', n: $t('gallery.filters.today')}, {k:'week', n: $t('gallery.filters.this_week')}, {k:'month', n: $t('gallery.filters.this_month')}]" 
               :key="time.k"
               @click="timeRange = time.k; loadPosts(true)"
               class="px-3 py-1.5 rounded-lg transition-all font-medium text-sm"
@@ -366,7 +368,7 @@ onUnmounted(() => {
           <!-- Sort By -->
           <div class="flex bg-slate-800/50 p-1 rounded-xl border border-slate-700/50">
             <button 
-              v-for="sort in [{k:'latest', n:'最新发布', i: Clock}, {k:'likes', n:'最多点赞', i: Heart}, {k:'applied', n:'最多应用', i: Flame}]" 
+              v-for="sort in [{k:'latest', n: $t('gallery.filters.latest'), i: Clock}, {k:'likes', n: $t('gallery.filters.most_liked'), i: Heart}, {k:'applied', n: $t('gallery.filters.most_used'), i: Flame}]" 
               :key="sort.k"
               @click="sortBy = sort.k; loadPosts(true)"
               class="px-3 py-1.5 rounded-lg transition-all font-medium text-sm flex items-center"
@@ -381,14 +383,14 @@ onUnmounted(() => {
       
       <!-- Secondary Filter for LoRA Models -->
       <div v-if="taskType === 'video_lora' || taskType === 'img2img_lora'" class="flex items-center gap-2 px-1">
-        <span class="text-sm text-slate-400">选择附加模型：</span>
+        <span class="text-sm text-slate-400">{{ $t('gallery.choose_addon') }}</span>
         <div class="flex flex-wrap gap-2">
           <button 
             @click="loraModel = 'all'; loadPosts(true)"
             class="px-3 py-1 rounded-lg text-xs transition-all border"
             :class="loraModel === 'all' ? 'bg-pink-500/20 border-pink-500/50 text-pink-400' : 'border-slate-700 hover:border-slate-500 text-slate-400'"
           >
-            所有模型
+            {{ $t('gallery.all_models') }}
           </button>
           <button 
             v-for="lora in currentLoraModels" 
@@ -478,7 +480,7 @@ onUnmounted(() => {
     <!-- Empty State -->
     <div v-if="!loading && posts.length === 0" class="py-20 text-center text-slate-500">
       <Compass :size="48" class="mx-auto mb-4 opacity-20" />
-      <p>暂无道友分享作品</p>
+      <p>{{ $t('gallery.no_posts') }}</p>
     </div>
 
     <!-- Detail Modal -->
@@ -507,26 +509,26 @@ onUnmounted(() => {
           </button>
           
           <h3 class="text-xl font-bold text-slate-100 mb-2 flex items-center">
-            <span class="bg-gradient-to-r from-cyan-400 to-indigo-400 bg-clip-text text-transparent">修仙界作品</span>
+            <span class="bg-gradient-to-r from-cyan-400 to-indigo-400 bg-clip-text text-transparent">{{ $t('gallery.modal.title') }}</span>
           </h3>
           
           <div class="text-sm text-slate-400 mb-6 space-y-2">
             <div class="flex space-x-4">
-              <span v-if="currentPost.width">📏 {{ currentPost.width }}x{{ currentPost.height }}</span>
-              <span v-if="currentPost.duration">⏱️ {{ currentPost.duration }}秒</span>
+              <span v-if="currentPost.width" class="flex items-center"><ImageIcon :size="14" class="mr-1.5" />{{ currentPost.width }}x{{ currentPost.height }}</span>
+              <span v-if="currentPost.duration" class="flex items-center"><Play :size="14" class="mr-1.5" />{{ currentPost.duration }}s</span>
             </div>
             <div v-if="currentPost.created_at">
-              <span>📅 {{ dayjs(currentPost.created_at).format('YYYY-MM-DD HH:mm') }}</span>
+              <span class="flex items-center"><Clock :size="14" class="mr-1.5" />{{ dayjs(currentPost.created_at).format('YYYY-MM-DD HH:mm') }}</span>
             </div>
           </div>
           
           <div class="mb-6">
-            <h4 class="text-sm font-semibold text-slate-300 mb-3 uppercase tracking-wider">包含元素 (Tags)</h4>
+            <h4 class="text-sm font-semibold text-slate-300 mb-3 uppercase tracking-wider">{{ $t('gallery.modal.tags') }}</h4>
             <div class="flex flex-wrap gap-2">
               <span v-for="tag in currentPost.tags" :key="tag" class="text-xs bg-slate-800 text-cyan-200 border border-slate-700 px-2.5 py-1 rounded-md">
-                {{ tag }}
+                #{{ tag }}
               </span>
-              <span v-if="!currentPost.tags || currentPost.tags.length === 0" class="text-sm text-slate-500">无特定标签</span>
+              <span v-if="!currentPost.tags || currentPost.tags.length === 0" class="text-sm text-slate-500">None</span>
             </div>
           </div>
           
@@ -550,9 +552,9 @@ onUnmounted(() => {
               <div class="absolute inset-0 bg-white/20 translate-y-full group-hover:translate-y-0 transition-transform duration-300"></div>
               <Wand2 v-if="!applying" :size="22" class="mr-2 relative z-10" />
               <div v-else class="inline-block w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin mr-2 relative z-10"></div>
-              <span class="relative z-10">{{ applying ? '提取模板中...' : '✨ 一键应用此模板' }}</span>
+              <span class="relative z-10">{{ applying ? '...' : $t('gallery.modal.apply_btn') }}</span>
             </button>
-            <p class="text-center text-xs text-slate-500 mt-3">系统将自动为您配置最佳参数，您只需上传参考图即可</p>
+            <p class="text-center text-xs text-slate-500 mt-3">{{ $t('gallery.modal.apply_hint') }}</p>
           </div>
         </div>
       </div>

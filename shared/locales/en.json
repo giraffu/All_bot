@@ -78,5 +78,84 @@
     "内门弟子": "Inner Disciple",
     "核心弟子": "Core Disciple",
     "真传弟子": "True Disciple"
+  },
+  "app": {
+    "name": "Hehuan Sect",
+    "credits": "Credits"
+  },
+  "gallery": {
+    "tabs": {
+      "all": "All",
+      "face_swap": "Face Swap",
+      "custom_edit": "Custom Edit",
+      "img2img": "Img2Img (Addon)",
+      "custom_video": "Custom Img2Video",
+      "img2video": "Img2Video (Addon)",
+      "high_res_video": "High-Res Video"
+    },
+    "filters": {
+      "all": "All",
+      "today": "Today",
+      "this_week": "This Week",
+      "this_month": "This Month",
+      "latest": "Latest",
+      "most_liked": "Most Liked",
+      "most_used": "Most Used"
+    },
+    "choose_addon": "Select Model:",
+    "all_models": "All Models",
+    "no_posts": "No posts shared yet",
+    "modal": {
+      "title": "Cultivation Masterpiece",
+      "tags": "Elements (TAGS)",
+      "apply_btn": "1-Click Apply Template",
+      "apply_hint": "The system will automatically configure the best parameters, you just need to upload a reference image"
+    }
+  },
+  "lab": {
+    "title": "Laboratory",
+    "cards": {
+      "face_swap_title": "Face Swap",
+      "face_swap_desc": "Upload a face image, and AI will seamlessly swap it based on your prompt...",
+      "custom_edit_title": "Custom Edit",
+      "custom_edit_desc": "Upload an image and provide a prompt, AI will edit the content.",
+      "fast_face_swap_title": "Fast Face Swap",
+      "fast_face_swap_desc": "Rapid face replacement, suitable for standard fast processing.",
+      "video_face_swap_title": "Video Face Swap",
+      "video_face_swap_desc": "Upload a face and a video, AI will swap the face frame by frame...",
+      "custom_video_title": "Custom Img2Video",
+      "custom_video_desc": "Upload an image, AI will transform it into a vivid video clip.",
+      "img2video_title": "Img2Video (Addon)",
+      "img2video_desc": "Upload an image, enter prompt and specify action model to generate video.",
+      "high_res_video_title": "High-Res Video",
+      "high_res_video_desc": "Upload image and prompt, use state-of-the-art models to generate high-res video."
+    }
+  },
+  "history": {
+    "title": "History Flask",
+    "refresh": "Refresh",
+    "warning": "Note: Flask capacity is limited, can only store {max} records. Please save in time.",
+    "table": {
+      "type": "Type",
+      "result": "Result",
+      "created_at": "Created At",
+      "actions": "Actions"
+    },
+    "fast_undress": "Fast Undress",
+    "bot_creation": "Bot Creation",
+    "web_creation": "Web Creation",
+    "cannot_post": "Cannot Post",
+    "save": "Save",
+    "submitting": "Submitting",
+    "submit": "✨ 1-Click Post"
+  },
+  "my_posts": {
+    "on_shelf": "Published",
+    "off_shelf": "Unpublished",
+    "no_submissions": "No posts submitted yet",
+    "put_off_shelf": "Unpublish",
+    "put_on_shelf": "Republish",
+    "delete": "Delete",
+    "copy_prompt": "Copy Prompt"
   }
 }

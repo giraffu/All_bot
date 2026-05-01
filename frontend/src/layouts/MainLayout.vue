@@ -194,7 +194,7 @@ watch(() => route.name, (newName) => {
     <a-layout-sider v-show="!isMobile" v-model:collapsed="collapsed" collapsible breakpoint="lg" theme="dark" class="sider-custom z-10">
       <div class="logo h-16 flex items-center justify-center relative z-10">
         <div class="absolute inset-0 bg-gradient-to-r from-cyan-500/10 to-indigo-500/10 opacity-50"></div>
-        <h1 class="text-slate-100 text-xl font-bold tracking-widest truncate px-4 drop-shadow-[0_2px_4px_rgba(56,189,248,0.5)]" v-if="!collapsed">合欢密宗</h1>
+        <h1 class="text-slate-100 text-xl font-bold tracking-widest truncate px-4 drop-shadow-[0_2px_4px_rgba(56,189,248,0.5)]" v-if="!collapsed">{{ $t('app.name') }}</h1>
         <h1 class="text-slate-100 text-xl font-bold tracking-widest drop-shadow-[0_2px_4px_rgba(56,189,248,0.5)]" v-else>合欢</h1>
       </div>
       <a-menu
@@ -240,7 +240,7 @@ watch(() => route.name, (newName) => {
         <div class="header-right flex items-center space-x-4">
           <div class="balance flex items-center bg-slate-800/40 backdrop-blur-md px-3 py-1 rounded-full border border-cyan-500/20 shadow-sm transition-all hover:shadow-[0_0_8px_rgba(56,189,248,0.3)] hover:scale-105">
             <Wallet :size="14" class="text-cyan-400 mr-1.5 drop-shadow-[0_0_3px_rgba(56,189,248,0.5)]" />
-            <span class="text-slate-200 font-bold tracking-wide text-sm">{{ authStore.user?.credits || 0 }} <span class="text-slate-400 text-xs font-normal">灵石</span></span>
+            <span class="text-slate-200 font-bold tracking-wide text-sm">{{ authStore.user?.credits || 0 }} <span class="text-slate-400 text-xs font-normal">{{ $t('app.credits') }}</span></span>
           </div>
           
           <a-dropdown placement="bottomRight">

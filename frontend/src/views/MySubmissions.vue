@@ -2,6 +2,7 @@
 import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
+import { useI18n } from 'vue-i18n'
 import { Heart, ThumbsDown, Wand2, Play, Image as ImageIcon, Video, Flame, Clock, Trash2, Eye, EyeOff, Copy, Compass } from 'lucide-vue-next'
 import api from '@/api'
 import dayjs from 'dayjs'
@@ -27,6 +28,7 @@ interface Post {
 }
 
 const router = useRouter()
+const { t } = useI18n()
 const posts = ref<Post[]>([])
 const loading = ref(false)
 const page = ref(1)
@@ -360,7 +362,7 @@ onUnmounted(() => {
           <!-- Status & Type Badge -->
           <div class="absolute top-2 left-2 flex items-center gap-2">
             <div class="bg-black/60 backdrop-blur-sm rounded-full px-2 py-1 shadow-sm border border-white/10 text-xs font-bold" :class="post.is_active ? 'text-green-400' : 'text-orange-400'">
-              {{ post.is_active ? '已上架' : '已下架' }}
+              {{ post.is_active ? $t('my_posts.on_shelf') : $t('my_posts.off_shelf') }}
             </div>
           </div>
           <!-- Type Badge -->
@@ -419,7 +421,7 @@ onUnmounted(() => {
     <!-- Empty State -->
     <div v-if="!loading && posts.length === 0" class="py-20 text-center text-slate-500">
       <Compass :size="48" class="mx-auto mb-4 opacity-20" />
-      <p>您还没有投稿任何作品</p>
+      <p>{{ $t('my_posts.no_submissions') }}</p>
     </div>
 
     <!-- Detail Modal -->
@@ -449,7 +451,7 @@ onUnmounted(() => {
           
           <div class="flex justify-between items-start mb-3">
             <h3 class="text-lg font-bold text-slate-100 flex items-center">
-              <span class="bg-gradient-to-r from-cyan-400 to-indigo-400 bg-clip-text text-transparent">修仙界作品</span>
+              <span class="bg-gradient-to-r from-cyan-400 to-indigo-400 bg-clip-text text-transparent">{{ $t('gallery.modal.title') }}</span>
             </h3>
             
             <div class="text-xs text-slate-400 flex items-center gap-3 mr-8">
@@ -461,7 +463,7 @@ onUnmounted(() => {
           <div class="mb-4" v-if="currentPost.tags && currentPost.tags.length > 0">
             <div class="flex flex-wrap gap-1.5">
               <span v-for="tag in currentPost.tags" :key="tag" class="text-[11px] bg-slate-800 text-cyan-200 border border-slate-700 px-2 py-0.5 rounded">
-                {{ tag }}
+                #{{ tag }}
               </span>
             </div>
           </div>
@@ -483,11 +485,11 @@ onUnmounted(() => {
             <button @click="toggleStatus(currentPost)" class="flex-1 py-2 rounded-lg border border-slate-700 bg-slate-800 hover:bg-slate-700 transition-all flex items-center justify-center text-xs font-medium" :class="currentPost.is_active ? 'text-orange-400' : 'text-green-400'">
               <EyeOff v-if="currentPost.is_active" :size="14" class="mr-1.5" />
               <Eye v-else :size="14" class="mr-1.5" />
-              {{ currentPost.is_active ? '下架' : '重新上架' }}
+              {{ currentPost.is_active ? $t('my_posts.put_off_shelf') : $t('my_posts.put_on_shelf') }}
             </button>
             <button @click="deletePost(currentPost)" class="flex-1 py-2 rounded-lg border border-red-900/30 bg-red-900/10 hover:bg-red-900/30 transition-all flex items-center justify-center text-xs font-medium text-red-400">
               <Trash2 :size="14" class="mr-1.5" />
-              删除
+              {{ $t('my_posts.delete') }}
             </button>
           </div>
           
@@ -497,7 +499,7 @@ onUnmounted(() => {
               class="w-full py-2.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-white text-sm font-medium shadow-sm transition-all flex items-center justify-center border border-slate-600"
             >
               <Copy :size="16" class="mr-1.5" />
-              复制提示词
+              {{ $t('my_posts.copy_prompt') }}
             </button>
             <button 
               @click="handleApply" 
@@ -505,9 +507,9 @@ onUnmounted(() => {
               class="w-full py-3 rounded-lg bg-gradient-to-r from-cyan-600 to-indigo-600 hover:from-cyan-500 hover:to-indigo-500 text-white font-bold shadow-md transition-all transform hover:scale-[1.02] flex items-center justify-center relative overflow-hidden group"
             >
               <div class="absolute inset-0 bg-white/20 translate-y-full group-hover:translate-y-0 transition-transform duration-300"></div>
-              <Wand2 v-if="!applying" :size="18" class="mr-1.5 relative z-10" />
-              <div v-else class="inline-block w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin mr-1.5 relative z-10"></div>
-              <span class="relative z-10">{{ applying ? '提取中...' : '✨ 一键应用模板' }}</span>
+              <Wand2 v-if="!applying" :size="18" class="mr-2 relative z-10" />
+              <div v-else class="inline-block w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin mr-2 relative z-10"></div>
+              <span class="relative z-10">{{ applying ? '...' : $t('gallery.modal.apply_btn') }}</span>
             </button>
           </div>
         </div>

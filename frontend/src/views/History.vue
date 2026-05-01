@@ -1,10 +1,12 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import api from '@/api'
 import { message } from 'ant-design-vue'
+import { useI18n } from 'vue-i18n'
 import { Image as ImageIcon, Video, Clock, PlayCircle, Download } from 'lucide-vue-next'
 import dayjs from 'dayjs'
 
+const { t } = useI18n()
 const data = ref<any[]>([])
 const loading = ref(false)
 const submittingTasks = ref<Record<string, boolean>>({})
@@ -29,31 +31,30 @@ const handlePreviewClose = () => {
   previewVideoUrl.value = ''
 }
 
-const columns = [
+const columns = computed(() => [
   {
-    title: '类型',
+    title: t('history.table.type'),
     dataIndex: 'type',
     key: 'type',
     width: 120,
   },
   {
-    title: '结果',
+    title: t('history.table.result'),
     dataIndex: 'output_file',
     key: 'output_file',
   },
   {
-    title: '创建时间',
+    title: t('history.table.created_at'),
     dataIndex: 'created_at',
     key: 'created_at',
     width: 200,
   },
   {
-    title: '操作',
-    key: 'action',
-    width: 120,
-    align: 'center'
+    title: t('history.table.actions'),
+    key: 'actions',
+    width: 150,
   }
-]
+])
 
 const submitToGallery = async (record: any) => {
   if (submittingTasks.value[record.task_id]) return
@@ -235,15 +236,15 @@ onMounted(() => {
 <template>
   <div class="history-container p-6 rounded-xl">
     <div class="flex justify-between items-center mb-6">
-      <h2 class="text-2xl font-bold text-slate-200 drop-shadow-sm">闪回瓶</h2>
-      <a-button class="bg-slate-800 text-cyan-200 border-cyan-500/30 hover:bg-slate-700 hover:text-white hover:border-cyan-400" @click="fetchHistory(1)">刷新</a-button>
+      <h2 class="text-2xl font-bold text-slate-200 drop-shadow-sm">{{ $t('history.title') }}</h2>
+      <a-button class="bg-slate-800 text-cyan-200 border-cyan-500/30 hover:bg-slate-700 hover:text-white hover:border-cyan-400" @click="fetchHistory(1)">{{ $t('history.refresh') }}</a-button>
     </div>
 
     <!-- Privacy and Convenience Notice -->
     <div class="mb-6 bg-indigo-500/10 border border-indigo-500/20 rounded-xl p-4 flex items-start">
       <div class="text-indigo-400 mr-3 mt-0.5"><Clock :size="18" /></div>
       <div class="text-slate-300 text-sm leading-relaxed">
-        <span class="font-semibold text-indigo-300">温馨提示：</span>闪回瓶容量有限，只能存放 <span class="text-cyan-400 font-bold mx-1">8</span> 条修炼记录，请及时保存哦。
+        {{ $t('history.warning', { max: 8 }) }}
       </div>
     </div>
 
@@ -267,8 +268,8 @@ onMounted(() => {
               {{ getTypeLabel(record.type) }}
             </a-tag>
             <a-tag :color="record.source === 'web' ? 'green' : 'orange'" class="flex items-center w-max bg-black/30 border-white/10 text-[10px] py-0 m-0 leading-tight">
-              <span v-if="record.source === 'web'">🌐 Web 创作</span>
-              <span v-else>🤖 Bot 创作</span>
+              <span v-if="record.source === 'web'">🌐 {{ $t('history.web_creation') }}</span>
+              <span v-else>🤖 {{ $t('history.bot_creation') }}</span>
             </a-tag>
           </div>
         </template>
@@ -309,7 +310,7 @@ onMounted(() => {
           </div>
         </template>
 
-        <template v-else-if="column.key === 'action'">
+        <template v-else-if="column.key === 'actions'">
           <div class="flex flex-col items-center gap-2">
             <a-button 
               v-if="record.output_file && ['i2i_pro', 'edit', 'custom_video', 'video_lora', 'img2img_lora', 'ltx_video'].includes(record.type) && record.allow_contribute !== false"
@@ -320,12 +321,12 @@ onMounted(() => {
               @click="submitToGallery(record)"
             >
               <span class="flex items-center justify-center gap-1">
-                <span v-if="submittingTasks[record.task_id]">投稿中</span>
-                <span v-else>✨ 一键投稿</span>
+                <span v-if="submittingTasks[record.task_id]">{{ $t('history.submitting') }}</span>
+                <span v-else>{{ $t('history.submit') }}</span>
               </span>
             </a-button>
             <span v-else-if="!record.output_file" class="text-slate-600 text-xs">暂无文件</span>
-            <span v-else class="text-slate-600 text-xs py-1">暂不支持投稿</span>
+            <span v-else class="text-slate-600 text-xs py-1">{{ $t('history.cannot_post') }}</span>
 
             <a-button 
               v-if="record.output_file"
@@ -336,7 +337,7 @@ onMounted(() => {
             >
               <div class="flex items-center justify-center gap-1 w-full h-full">
                 <Download :size="13" />
-                <span>保存</span>
+                <span>{{ $t('history.save') }}</span>
               </div>
             </a-button>
           </div>
