@@ -2,6 +2,7 @@ import json
 import os
 from typing import Any, Dict
 from functools import lru_cache
+from telegram.helpers import escape_markdown
 
 class SafeDict(dict):
     """
@@ -37,13 +38,14 @@ def _get_nested_value(d: dict, key_path: str) -> Any:
             return None
     return current
 
-def get_text(key: str, lang: str = 'zh', **kwargs) -> str:
+def get_text(key: str, lang: str = 'zh', escape_md: bool = False, **kwargs) -> str:
     """
     Get translated text by key and language, with safe formatting.
     
     Args:
         key: The key in the JSON file (e.g., 'system.error_insufficient_credits')
         lang: The language code ('zh', 'en', etc.)
+        escape_md: If True, escapes Markdown V1 characters in kwargs values
         kwargs: The parameters to format the string
     """
     locales = load_locales()
@@ -52,11 +54,11 @@ def get_text(key: str, lang: str = 'zh', **kwargs) -> str:
     if lang not in locales:
         lang = 'zh'
         
-    text = _get_nested_value(locales[lang], key)
+    text = _get_nested_value(locales.get(lang, {}), key)
     
     # Fallback to zh translation if key is missing in target language
     if text is None and lang != 'zh':
-        text = _get_nested_value(locales['zh'], key)
+        text = _get_nested_value(locales.get('zh', {}), key)
         
     # Fallback to key itself if absolutely not found
     if text is None:
@@ -64,6 +66,11 @@ def get_text(key: str, lang: str = 'zh', **kwargs) -> str:
         
     # Format the text safely
     if kwargs and isinstance(text, str):
+        if escape_md:
+            # Only escape the values injected, preserving JSON predefined structure
+            escaped_kwargs = {k: escape_markdown(str(v), version=1) for k, v in kwargs.items()}
+            kwargs = escaped_kwargs
+            
         try:
             return text.format_map(SafeDict(**kwargs))
         except Exception:
@@ -75,5 +82,5 @@ class I18nTranslator:
     def __init__(self, lang: str = 'zh'):
         self.lang = lang
         
-    def __call__(self, key: str, **kwargs) -> str:
-        return get_text(key, self.lang, **kwargs)
+    def __call__(self, key: str, escape_md: bool = False, **kwargs) -> str:
+        return get_text(key, lang=self.lang, escape_md=escape_md, **kwargs)

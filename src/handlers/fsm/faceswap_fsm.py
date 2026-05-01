@@ -25,6 +25,8 @@ from src.utils import (
 )
 import contextlib
 
+from src.filters.i18n_filter import I18nFilter
+
 logger = logging.getLogger("fsm.faceswap")
 
 def _cleanup_context(context: ContextTypes.DEFAULT_TYPE, user_id: int):
@@ -207,7 +209,7 @@ def get_faceswap_fsm_handler() -> ConversationHandler:
     return ConversationHandler(
         entry_points=[
             CommandHandler('faceswap', start_faceswap),
-            MessageHandler(filters.Regex(r'.*快速换脸.*'), start_faceswap),
+            MessageHandler(I18nFilter("menu.photo_edit_faceswap"), start_faceswap),
             CallbackQueryHandler(start_faceswap, pattern='^fsm_start_faceswap$')
         ],
         states={

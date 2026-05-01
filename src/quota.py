@@ -213,10 +213,10 @@ class QuotaManager:
             
             try:
                 await session.commit()
-                print(f"✅ Referral success: {inviter_id} invited {new_user_id}")
+                logger.info(f"✅ Referral success: {inviter_id} invited {new_user_id}")
             except IntegrityError:
                 await session.rollback()
-                print(f"⚠️ Referral race condition: user {new_user_id} already invited")
+                logger.warning(f"⚠️ Referral race condition: user {new_user_id} already invited")
                 return False
 
             # Log for inviter
@@ -276,7 +276,7 @@ class QuotaManager:
                 inviter.credits += 10
                 referral.channel_reward_claimed = True
                 await session.commit()
-                print(f"✅ Channel reward success: {referral.inviter_id} for {user_id}")
+                logger.info(f"✅ Channel reward success: {referral.inviter_id} for {user_id}")
 
                 await LogService.log_action(
                     user_id=referral.inviter_id,
@@ -296,7 +296,7 @@ class QuotaManager:
             stmt = update(User).where(User.id == user_id).values(is_channel_member=is_member)
             await session.execute(stmt)
             await session.commit()
-            print(f"🔄 Updated channel membership for {user_id}: {is_member}")
+            logger.info(f"🔄 Updated channel membership for {user_id}: {is_member}")
 
     async def add_template_contribution(self, user_id: int, file_path: str, file_type: str = 'photo'):
         """Record a template contribution to DB"""

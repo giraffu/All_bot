@@ -15,13 +15,27 @@ import contextlib
 
 async def setup_commands(app: Application):
     """
-    Set default commands for the bot menu button
+    Set default commands for the bot menu button with multi-language support
     """
-    commands = [
-        BotCommand("start", "🏠 显示主菜单"),
-        BotCommand("cancel", "🚫 取消当前流程"),
+    from src.i18n.translator import get_text
+    
+    # Define commands for Chinese (Default)
+    commands_zh = [
+        BotCommand("start", get_text("menu.main_menu", "zh")),
+        BotCommand("cancel", get_text("menu.cancel", "zh")),
     ]
-    await app.bot.set_my_commands(commands)
+    
+    # Define commands for English
+    commands_en = [
+        BotCommand("start", get_text("menu.main_menu", "en")),
+        BotCommand("cancel", get_text("menu.cancel", "en")),
+    ]
+    
+    # Register native Telegram menus
+    await app.bot.set_my_commands(commands_zh, language_code='zh')
+    await app.bot.set_my_commands(commands_en, language_code='en')
+    # Fallback to English for users with other languages
+    await app.bot.set_my_commands(commands_en)
 
 @with_db_logging_context
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):

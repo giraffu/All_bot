@@ -36,7 +36,20 @@ def build_global_menu_filter():
         "menu.free_edit",     # 🎨 自由P图
         "menu.video_lora",    # 🎬 图生视频(附加模型)
         "menu.custom_video",  # 🎬 自定义图生视频
-        "menu.ltx_video"      # 🎬 高级图生视频
+        "menu.ltx_video",     # 🎬 高级图生视频
+        
+        # 图片编辑子菜单 FSM 入口
+        "menu.photo_edit_undress",
+        "menu.photo_edit_faceswap",
+        "menu.photo_edit_masturbation",
+        "menu.photo_edit_random_faceswap",
+        
+        # 视频编辑子菜单 FSM 入口
+        "menu.video_edit_missionary",
+        "menu.video_edit_doggy",
+        "menu.video_edit_blowjob",
+        "menu.video_edit_undress_tongue",
+        "menu.video_edit_closeup_blowjob"
     ]
     all_keys = registered_keys.union(additional_menu_keys)
     

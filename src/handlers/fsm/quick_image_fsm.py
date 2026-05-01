@@ -30,13 +30,15 @@ from src.utils import (
     robust_reply_text,
 )
 
+from src.filters.i18n_filter import I18nFilter
+
 logger = logging.getLogger("fsm.quick_image")
 
 # Map button text to mode
 QUICK_MODES = {
-    "💃 快速脱衣": MODE_UNDRESS,
-    "🥵 快速自慰": MODE_MASTURBATION,
-    "🎭 随机换脸": MODE_RANDOM_FACESWAP
+    "menu.photo_edit_undress": MODE_UNDRESS,
+    "menu.photo_edit_masturbation": MODE_MASTURBATION,
+    "menu.photo_edit_random_faceswap": MODE_RANDOM_FACESWAP
 }
 
 def _cleanup_context(context: ContextTypes.DEFAULT_TYPE, user_id: int):
@@ -71,10 +73,10 @@ async def start_quick_image(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         return ConversationHandler.END
 
     mode = None
-    for key, val in QUICK_MODES.items():
-        if key in text:
-            mode = val
-            break
+    from src.handlers.prompt_router import GLOBAL_REVERSE_MAP
+    route_key = GLOBAL_REVERSE_MAP.get(text)
+    if route_key:
+        mode = QUICK_MODES.get(route_key)
 
     if not mode:
         return ConversationHandler.END
@@ -248,7 +250,7 @@ async def unexpected_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 def get_quick_image_fsm_handler() -> ConversationHandler:
     return ConversationHandler(
         entry_points=[
-            MessageHandler(filters.Regex(r'.*(快速脱衣|快速自慰|随机换脸).*'), start_quick_image)
+            MessageHandler(I18nFilter(["menu.photo_edit_undress", "menu.photo_edit_masturbation", "menu.photo_edit_random_faceswap"]), start_quick_image)
         ],
         states={
             QuickImageState.WAIT_IMAGE: [

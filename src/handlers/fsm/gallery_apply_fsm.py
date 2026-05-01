@@ -16,6 +16,7 @@ from telegram.ext import (
     filters,
 )
 
+from src.i18n.keyboards import get_main_menu_keyboard
 from src.constants import (
     MODE_CUSTOM_VIDEO,
     MODE_EDIT,
@@ -357,15 +358,16 @@ async def unexpected_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     text = update.message.text if update.message else ""
     if text and is_global_menu_command(text):
         _cleanup_context(context)
-        await robust_reply_text(update.message, "🔄 已为您退出一键应用流程。\n👉 **请再次点击刚才的按钮**，即可开始新功能！")
+        await robust_reply_text(update.message, context.t("system.fsm_exit_hint"))
         return ConversationHandler.END
         
-    await robust_reply_text(update.message, "⚠️ 请发送一张图片，或发送 /cancel 退出。")
+    await robust_reply_text(update.message, context.t("system.fsm_in_progress_hint"))
     return WAIT_REFERENCE_IMAGE
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     _cleanup_context(context)
-    reply_markup = ReplyKeyboardMarkup(MAIN_MENU_KEYBOARD, resize_keyboard=True)
+    lang = context.user_data.get('language_code', 'zh') if context.user_data else 'zh'
+    reply_markup = get_main_menu_keyboard(lang)
     await robust_reply_text(update.message, "✅ 已取消一键应用操作。", reply_markup=reply_markup)
     return ConversationHandler.END
 

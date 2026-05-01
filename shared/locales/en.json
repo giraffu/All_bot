@@ -9,6 +9,9 @@
     "error_insufficient_credits": "🚫 **Insufficient Credits**\n\nCurrent Balance: `{current}` Credits\nCost: `{cost}` Credits\nPlease contact the admin to recharge.",
     "error_access_denied": "⛩️ **Not Joined the Sect Yet**\n\nTo seek immortality, you must first find the fairy fate. You need to join our **Official Sect** before you can start cultivating.\n\n👉 [Click here to join the Sect]({invite_link})"
   },
+  "notification": {
+    "referral_reward": "🎉 **Sect Advancement Reward!**\n\nFellow cultivator {invitee_name} has successfully joined the sect.\nYou received a bonus reward: `{reward}` Credits."
+  },
   "menu": {
     "photo_edit": "🖼️ AI Edit",
     "video_edit": "🎬 AI Video",

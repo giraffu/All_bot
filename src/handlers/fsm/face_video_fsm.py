@@ -19,6 +19,8 @@ from src.services.task_service import TaskService
 from src.utils import create_background_task, robust_edit_text, robust_reply_text
 import contextlib
 
+from src.filters.i18n_filter import I18nFilter
+
 logger = logging.getLogger("fsm.face_video")
 
 # --- Helpers ---
@@ -277,7 +279,7 @@ def get_face_video_fsm_handler() -> ConversationHandler:
     return ConversationHandler(
         entry_points=[
             CommandHandler('video_swap', start_face_video),
-            MessageHandler(filters.Regex(r'.*视频换脸.*'), start_face_video),
+            MessageHandler(I18nFilter("menu.face_video"), start_face_video),
             CallbackQueryHandler(start_face_video, pattern='^fsm_start_face_video$')
         ],
         states={

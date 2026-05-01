@@ -26,6 +26,8 @@ from src.services.task_service import TaskService
 from src.utils import create_background_task, robust_edit_text, robust_reply_text
 import contextlib
 
+from src.filters.i18n_filter import I18nFilter
+
 logger = logging.getLogger("fsm.video_lora")
 
 LORA_MODELS = {
@@ -312,7 +314,7 @@ def get_video_lora_fsm_handler() -> ConversationHandler:
     return ConversationHandler(
         entry_points=[
             CommandHandler('video_lora', start_video_lora),
-            MessageHandler(filters.Regex(r'.*图生视频\(附加模型\).*'), start_video_lora),
+            MessageHandler(I18nFilter("menu.video_lora"), start_video_lora),
             CallbackQueryHandler(start_video_lora, pattern='^fsm_start_video_lora$')
         ],
         states={

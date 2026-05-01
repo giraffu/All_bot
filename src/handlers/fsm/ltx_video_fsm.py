@@ -28,6 +28,8 @@ from src.utils import (
 )
 import contextlib
 
+from src.filters.i18n_filter import I18nFilter
+
 logger = logging.getLogger("fsm.ltx_video")
 
 def _cleanup_context(context: ContextTypes.DEFAULT_TYPE, user_id: int):
@@ -311,7 +313,7 @@ def get_ltx_video_fsm_handler() -> ConversationHandler:
     return ConversationHandler(
         entry_points=[
             CommandHandler('ltx_video', start_ltx_video),
-            MessageHandler(filters.Regex(r'.*高级图生视频.*'), start_ltx_video),
+            MessageHandler(I18nFilter("menu.ltx_video"), start_ltx_video),
             CallbackQueryHandler(start_ltx_video, pattern='^fsm_start_ltx_video$')
         ],
         states={

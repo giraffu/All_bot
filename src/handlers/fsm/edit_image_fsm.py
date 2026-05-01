@@ -19,6 +19,8 @@ from src.services.permission_service import permission_service
 from src.services.task_service import TaskService
 from src.utils import create_background_task, robust_edit_text, robust_reply_text
 
+from src.filters.i18n_filter import I18nFilter
+
 logger = logging.getLogger("fsm.edit_image")
 
 LORA_MODELS = {
@@ -72,7 +74,9 @@ async def start_edit_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         await robust_reply_text(update.message, msg)
         return ConversationHandler.END
 
-    mode = MODE_EDIT if "自由P图" in text else MODE_I2I_PRO
+    from src.handlers.prompt_router import GLOBAL_REVERSE_MAP
+    route_key = GLOBAL_REVERSE_MAP.get(text)
+    mode = MODE_EDIT if route_key == "menu.free_edit" else MODE_I2I_PRO
     cost = TASK_COSTS.get(mode, 2)
 
     context.user_data['in_conversation'] = "EDIT_IMAGE"
@@ -131,7 +135,10 @@ async def handle_lora_selection(update: Update, context: ContextTypes.DEFAULT_TY
 async def receive_reference_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user_id = update.effective_user.id
     message = update.message
-    fsm_data = context.user_data['edit_image_data']
+    fsm_data = context.user_data.get('edit_image_data')
+    if not fsm_data:
+        await robust_reply_text(message, "⚠️ 状态已过期，请重新点击菜单开始任务。")
+        return ConversationHandler.END
 
     if message.document:
         if not message.document.mime_type.startswith('image/'):
@@ -174,7 +181,10 @@ async def receive_reference_image(update: Update, context: ContextTypes.DEFAULT_
 async def receive_additional_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """如果在 WAIT_PROMPT 状态下继续发图，就把图追加进去（仅自由P图）"""
     message = update.message
-    fsm_data = context.user_data['edit_image_data']
+    fsm_data = context.user_data.get('edit_image_data')
+    if not fsm_data:
+        await robust_reply_text(message, "⚠️ 状态已过期，请重新点击菜单开始任务。")
+        return ConversationHandler.END
     
     if fsm_data['mode'] == MODE_I2I_PRO:
         await robust_reply_text(message, "⚠️ 幻想换脸模式只需要 1 张图片，请直接发送文字提示词。")
@@ -285,7 +295,7 @@ async def unexpected_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 def get_edit_image_fsm_handler() -> ConversationHandler:
     return ConversationHandler(
         entry_points=[
-            MessageHandler(filters.Regex(r'.*(自由P图|幻想换脸).*'), start_edit_image)
+            MessageHandler(I18nFilter(["menu.free_edit", "menu.i2i_pro"]), start_edit_image)
         ],
         states={
             EditImageState.WAIT_LORA_SELECTION: [

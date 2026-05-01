@@ -30,13 +30,16 @@ async def notify_inviter_reward(bot: Bot, inviter_internal_id: int, invitee_name
     from src.database.core import AsyncSessionLocal
     from src.database.models import User
     from sqlalchemy import select
+    from src.i18n.translator import get_text
+    from telegram.helpers import escape_markdown
 
     try:
         async with AsyncSessionLocal() as session:
             inviter = (await session.execute(select(User).where(User.id == inviter_internal_id))).scalar_one_or_none()
             if inviter and inviter.telegram_id:
-                # TODO: Retrieve inviter's language preference for i18n
-                text = f"🎉 **宗门进阶奖励！**\n\n道友 {invitee_name} 已成功拜入宗门。\n获得额外奖励：`{reward}` 灵石。"
+                lang = inviter.language_code or 'zh'
+                # Pass escape_md=True to prevent Markdown V1 crash on invitee_name
+                text = get_text("notification.referral_reward", lang=lang, escape_md=True, invitee_name=invitee_name, reward=reward)
                 await robust_send_message(bot, chat_id=inviter.telegram_id, text=text, parse_mode="Markdown")
     except Exception as e:
         logger.error(f"Failed to notify inviter {inviter_internal_id}: {e}")

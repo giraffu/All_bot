@@ -11,7 +11,7 @@ from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import IntegrityError
 
-from config import BOT_TOKEN, BOT_TOKEN_TEST, PROXY_URL, TELEGRAM_API_BASE_URL
+from config import BOT_TOKEN, BOT_TOKEN_TEST, TELEGRAM_API_BASE_URL
 from src.database.core import AsyncSessionLocal
 from src.core.user_core import get_or_create_user_by_telegram
 from src.database.models import User

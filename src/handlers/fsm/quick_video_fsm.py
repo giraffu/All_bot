@@ -31,14 +31,16 @@ from src.services.task_service import task_service
 from src.utils import create_background_task, robust_edit_text, robust_reply_text
 import contextlib
 
+from src.filters.i18n_filter import I18nFilter
+
 logger = logging.getLogger("fsm.quick_video")
 
 QUICK_VIDEO_MODES = {
-    "🛌 动图传教士": MODE_PERFECT_VIDEO_INSERT,
-    "🎬 动图后入": MODE_DOGGY_STYLE,
-    "🎬 口交黑人": MODE_BLOWJOB,
-    "🎬 脱衣吐舌": MODE_UNDRESS_TONGUE,
-    "🎬 特写口交": MODE_CLOSEUP_BLOWJOB
+    "menu.video_edit_missionary": MODE_PERFECT_VIDEO_INSERT,
+    "menu.video_edit_doggy": MODE_DOGGY_STYLE,
+    "menu.video_edit_blowjob": MODE_BLOWJOB,
+    "menu.video_edit_undress_tongue": MODE_UNDRESS_TONGUE,
+    "menu.video_edit_closeup_blowjob": MODE_CLOSEUP_BLOWJOB
 }
 
 def _cleanup_context(context: ContextTypes.DEFAULT_TYPE, user_id: int):
@@ -71,10 +73,10 @@ async def start_quick_video(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         return ConversationHandler.END
 
     mode = None
-    for key, val in QUICK_VIDEO_MODES.items():
-        if key in text:
-            mode = val
-            break
+    from src.handlers.prompt_router import GLOBAL_REVERSE_MAP
+    route_key = GLOBAL_REVERSE_MAP.get(text)
+    if route_key:
+        mode = QUICK_VIDEO_MODES.get(route_key)
             
     if not mode:
         return ConversationHandler.END
@@ -337,7 +339,7 @@ async def unexpected_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 def get_quick_video_fsm_handler() -> ConversationHandler:
     return ConversationHandler(
         entry_points=[
-            MessageHandler(filters.Regex(r'.*(动图传教士|动图后入|口交黑人|脱衣吐舌|特写口交).*'), start_quick_video)
+            MessageHandler(I18nFilter(["menu.video_edit_missionary", "menu.video_edit_doggy", "menu.video_edit_blowjob", "menu.video_edit_undress_tongue", "menu.video_edit_closeup_blowjob"]), start_quick_video)
         ],
         states={
             QuickVideoState.WAIT_IMAGE: [

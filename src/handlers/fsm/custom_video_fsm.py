@@ -26,6 +26,8 @@ from src.services.task_service import TaskService
 from src.utils import create_background_task, robust_edit_text, robust_reply_text
 import contextlib
 
+from src.filters.i18n_filter import I18nFilter
+
 logger = logging.getLogger("fsm.custom_video")
 
 def _cleanup_context(context: ContextTypes.DEFAULT_TYPE, user_id: int):
@@ -264,7 +266,7 @@ def get_custom_video_fsm_handler() -> ConversationHandler:
     return ConversationHandler(
         entry_points=[
             CommandHandler('custom_video', start_custom_video),
-            MessageHandler(filters.Regex(r'.*自定义图生视频.*'), start_custom_video),
+            MessageHandler(I18nFilter("menu.custom_video"), start_custom_video),
             CallbackQueryHandler(start_custom_video, pattern='^fsm_start_custom_video$')
         ],
         states={
