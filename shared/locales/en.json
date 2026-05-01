@@ -7,5 +7,13 @@
     "photo_edit": "🖼️ AI Edit",
     "video_edit": "🎬 AI Video",
     "profile": "👤 Profile"
+  },
+  "api": {
+    "session_expired": "Session expired, please login again",
+    "insufficient_balance": "Insufficient balance, please recharge",
+    "too_many_tasks": "Too many tasks in queue, please try again later",
+    "system_error": "System error, please try again later",
+    "network_error": "Network error, please check your connection",
+    "validation_error": "Validation error: {msg}"
   }
 }

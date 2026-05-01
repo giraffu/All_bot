@@ -2,7 +2,6 @@ from config import CHANNEL_INVITE_LINK, REQUIRED_CHANNEL_ID
 from src.constants import DYNAMIC_PRIORITY_RULES
 from src.database.core import AsyncSessionLocal
 from src.quota import QuotaManager
-from src.utils import robust_send_message
 
 
 class PermissionService:
@@ -40,65 +39,46 @@ class PermissionService:
         
         return group_priority + identity_priority
 
-    async def check_access(self, tg_id: int, username: str, full_name: str, bot, chat_id: int) -> bool:
+    async def check_access(self, tg_id: int, username: str, full_name: str, is_member: bool = None) -> int:
         """
         Check if the user has access to the bot.
         Priority: Channel Subscription > Credits
+        Raises AccessDeniedError if access denied.
+        Returns inviter_internal_id if channel reward triggered, else None.
         """
         from src.core.user_core import get_or_create_user_by_telegram
+        from src.core.exceptions import AccessDeniedError
+        
         internal_user, _ = await get_or_create_user_by_telegram(tg_id, username, full_name)
         internal_user_id = internal_user.id
+        inviter_id = None
 
-        # 1. Check Channel Subscription (If configured, this acts as the primary gatekeeper)
-        if REQUIRED_CHANNEL_ID:
-            try:
-                # chat_id can be string (if username) or int
-                channel_id = int(REQUIRED_CHANNEL_ID) if REQUIRED_CHANNEL_ID.lstrip('-').isdigit() else REQUIRED_CHANNEL_ID
-                member = await bot.get_chat_member(chat_id=channel_id, user_id=tg_id)
-                
-                # If subscribed, allow access!
-                if member.status not in ['left', 'kicked', 'banned']:
-                    await self.check_channel_reward(tg_id, username, full_name, bot, internal_user_id)
-                    # Ensure is_channel_member is updated in DB
-                    await self.quota_manager.update_channel_membership(internal_user_id, True)
-                    await self.quota_manager.process_channel_reward(internal_user_id)
-                    await self.refresh_user_group(internal_user_id, is_member=True)
-                    return True
-                else:
-                    # Sync "left" status to DB if it was previously True
-                    stats = await self.quota_manager.get_user_stats(internal_user_id)
-                    if stats.get("is_channel_member"):
-                        await self.quota_manager.update_channel_membership(internal_user_id, False)
-                        await self.refresh_user_group(internal_user_id, is_member=False)
-                
-            except Exception as e:
-                print(f"⚠️ Channel check failed: {e}")
-                # If check fails, fall through to credits check
-                pass
+        # 1. Check Channel Subscription
+        if REQUIRED_CHANNEL_ID and is_member is not None:
+            if is_member:
+                inviter_id = await self.check_channel_reward(tg_id, username, full_name, internal_user_id)
+                await self.quota_manager.update_channel_membership(internal_user_id, True)
+                await self.refresh_user_group(internal_user_id, is_member=True)
+                return inviter_id
+            else:
+                stats = await self.quota_manager.get_user_stats(internal_user_id)
+                if stats.get("is_channel_member"):
+                    await self.quota_manager.update_channel_membership(internal_user_id, False)
+                    await self.refresh_user_group(internal_user_id, is_member=False)
 
-        # 2. Check if user has credits (Mortal check)
-        # If user has credits, they can use features even if not in channel
+        # 2. Check if user has credits
         credits = await self.quota_manager.get_credits(internal_user_id)
         if credits > 0:
-            # Even if API check failed, if they have credits, let them pass.
-            # BUT, we might want to retry updating their group if they are actually a member in DB
             stats = await self.quota_manager.get_user_stats(internal_user_id)
             if stats.get("is_channel_member"):
                  await self.refresh_user_group(internal_user_id, is_member=True)
-            return True
+            return inviter_id
 
-        # Default: Access Denied (Must join channel or get credits)
-        invite_link = CHANNEL_INVITE_LINK or "https://t.me/AiVisionAV"
-        msg = (
-            "⛩️ **尚未拜入宗门**\n\n"
-            "欲求长生，必先寻得仙缘。您需要先加入我们的 **官方宗门** 才能开始修炼。\n\n"
-            f"👉 [点击即刻拜入宗门]({invite_link})"
-        )
-        await robust_send_message(bot, chat_id, msg, parse_mode="Markdown")
-        return False
+        # Access Denied
+        raise AccessDeniedError()
 
-    async def check_channel_reward(self, tg_id: int, username: str, full_name: str, bot, internal_user_id: int = None):
-        """Check and award channel join reward (10 credits)"""
+    async def check_channel_reward(self, tg_id: int, username: str, full_name: str, internal_user_id: int = None) -> int:
+        """Check and award channel join reward (10 credits). Returns inviter_internal_id if triggered."""
         if internal_user_id:
             user_id = internal_user_id
         else:
@@ -108,40 +88,27 @@ class PermissionService:
             
         try:
             inviter_internal_id = await self.quota_manager.process_channel_reward(user_id)
-            if inviter_internal_id:
-                try:
-                    # To notify inviter, we need their telegram_id
-                    async with AsyncSessionLocal() as session:
-                        from sqlalchemy import select
-
-                        from src.database.models import User
-                        inviter = (await session.execute(select(User).where(User.id == inviter_internal_id))).scalar_one_or_none()
-                        if inviter and inviter.telegram_id:
-                            await robust_send_message(
-                                bot,
-                                chat_id=inviter.telegram_id,
-                                text=f"🎉 **宗门进阶奖励！**\n\n道友 {full_name} 已成功拜入宗门。\n获得额外奖励：`10` 灵石。",
-                                parse_mode="Markdown"
-                            )
-                except Exception as e:
-                    print(f"Failed to notify inviter {inviter_internal_id}: {e}")
+            return inviter_internal_id
         except Exception as e:
-            print(f"Failed to check channel reward: {e}")
+            from src.logger import logger
+            logger.warning(f"Failed to check channel reward: {e}")
+            return None
 
-    async def check_quota(self, tg_id: int, username: str, full_name: str, bot, chat_id: int, cost: int = 1) -> bool:
+    async def check_quota(self, tg_id: int, username: str, full_name: str, cost: int = 1) -> bool:
         """
         Check if user has sufficient credits.
+        Raises InsufficientCreditsError if not.
         Returns True if credits are available.
         """
         from src.core.user_core import get_or_create_user_by_telegram
+        from src.core.exceptions import InsufficientCreditsError
+        
         internal_user, _ = await get_or_create_user_by_telegram(tg_id, username, full_name)
         internal_user_id = internal_user.id
         
         if not await self.quota_manager.check_credits(internal_user_id, cost):
             current = await self.quota_manager.get_credits(internal_user_id, username=username, full_name=full_name)
-            msg = f"🚫 **灵石不足**\n\n道友当前余额: `{current}` 灵石\n本次修炼需要: `{cost}` 灵石\n请联系管理员获取更多灵石。"
-            await robust_send_message(bot, chat_id, msg, parse_mode="Markdown")
-            return False
+            raise InsufficientCreditsError(current=current, cost=cost)
             
         return True
 
@@ -154,38 +121,34 @@ class PermissionService:
         """Check if user exists"""
         return await self.quota_manager.is_user_exists(user_id)
 
-    async def sync_channel_status(self, tg_id: int, username: str, full_name: str, bot) -> bool:
+    async def sync_channel_status(self, tg_id: int, username: str, full_name: str, is_member: bool) -> int:
         """
         Force sync channel membership status from Telegram API to Database.
-        Returns True if user is a member, False otherwise.
+        Returns inviter_internal_id if channel reward triggered, else None.
         """
         if not REQUIRED_CHANNEL_ID:
-            return False
+            return None
 
         from src.core.user_core import get_or_create_user_by_telegram
         internal_user, _ = await get_or_create_user_by_telegram(tg_id, username, full_name)
         internal_user_id = internal_user.id
 
         try:
-            channel_id = int(REQUIRED_CHANNEL_ID) if REQUIRED_CHANNEL_ID.lstrip('-').isdigit() else REQUIRED_CHANNEL_ID
-            member = await bot.get_chat_member(chat_id=channel_id, user_id=tg_id)
-            
-            is_member = member.status not in ['left', 'kicked', 'banned']
-            
             if is_member:
                 # Update DB and process rewards if any
                 await self.quota_manager.update_channel_membership(internal_user_id, True)
-                await self.check_channel_reward(tg_id, username, full_name, bot, internal_user_id)
+                inviter_id = await self.check_channel_reward(tg_id, username, full_name, internal_user_id)
                 await self.refresh_user_group(internal_user_id, is_member=True)
+                return inviter_id
             else:
                 await self.quota_manager.update_channel_membership(internal_user_id, False)
                 await self.refresh_user_group(internal_user_id, is_member=False)
                 
-            return is_member
+            return None
         except Exception as e:
             from src.logger import logger
             logger.warning(f"Manual channel sync failed for user {tg_id}: {e}")
-            return False
+            return None
 
     async def ensure_user(self, tg_id: int, username: str, full_name: str, language_code: str = None) -> bool:
         """Ensure user info is up to date in DB. Returns True if user was newly created."""

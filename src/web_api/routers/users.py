@@ -22,29 +22,31 @@ async def get_user_profile(current_user: User = Depends(get_current_user)):
     """
     Get current logged in user's profile and credit balance.
     """
-    # Use PermissionService to get real-time calculated stats
-    from src.services.permission_service import permission_service
-    stats = await permission_service.get_user_detailed_stats(current_user.telegram_id)
+    from src.core.user_facade import get_user_dashboard_info
     
-    # Map stats to UserResponse
-    # stats returned by get_user_detailed_stats:
-    # "group", "identity", "identity_expire_at", "priority", "credits", "invitations",
-    # "checkins", "generations", "total_contributions", "approved_contributions", "invitation_recharge"
+    # We pass telegram_id and full_name to the facade.
+    dto = await get_user_dashboard_info(
+        current_user.telegram_id, 
+        current_user.full_name or current_user.username or "道友"
+    )
     
     return UserResponse(
         id=current_user.id,
         telegram_id=current_user.telegram_id,
         username=current_user.username,
         full_name=current_user.full_name,
-        credits=stats.get("credits", current_user.credits),
-        user_group=stats.get("group", current_user.user_group),
-        current_identity=stats.get("identity", current_user.current_identity),
-        identity_expire_at=stats.get("identity_expire_at"),
-        priority=stats.get("priority", 0),
-        generation_count=stats.get("generations", 0),
-        checkin_count=stats.get("checkins", 0),
-        invitation_count=stats.get("invitations", 0),
-        invitation_recharge=InvitationRechargeStats(**stats.get("invitation_recharge", {}))
+        language_code=current_user.language_code,
+        credits=dto.credits,
+        user_group=dto.current_group,
+        current_identity=dto.current_identity,
+        identity_expire_at=dto.identity_expire_at,
+        priority=dto.current_priority,
+        generation_count=dto.generations,
+        checkin_count=dto.checkins,
+        invitation_count=dto.invitations,
+        invitation_recharge=InvitationRechargeStats(**dto.invitation_recharge),
+        breakthrough_conditions=[cond.dict() for cond in dto.breakthrough_conditions],
+        is_unlocked=dto.is_unlocked
     )
 
 @router.get("/history", response_model=PaginatedHistory)

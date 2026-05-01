@@ -3,12 +3,43 @@ import configparser
 import functools
 import logging
 import os
-from typing import Any, Callable
+from typing import Any, Callable, Optional
 
 import httpx
+from telegram import Bot
 from telegram.error import BadRequest, Forbidden, NetworkError, RetryAfter, TimedOut
 
+from config import REQUIRED_CHANNEL_ID
+
 logger = logging.getLogger(__name__)
+
+async def get_user_channel_status(bot: Bot, tg_id: int) -> Optional[bool]:
+    """Check if the user is in the required channel. Returns None if check fails or not required."""
+    if not REQUIRED_CHANNEL_ID:
+        return None
+    try:
+        channel_id = int(REQUIRED_CHANNEL_ID) if REQUIRED_CHANNEL_ID.lstrip('-').isdigit() else REQUIRED_CHANNEL_ID
+        member = await bot.get_chat_member(chat_id=channel_id, user_id=tg_id)
+        return member.status not in ['left', 'kicked', 'banned']
+    except Exception as e:
+        logger.warning(f"Channel check failed for user {tg_id}: {e}")
+        return None
+
+async def notify_inviter_reward(bot: Bot, inviter_internal_id: int, invitee_name: str, reward: int = 10):
+    """Background task to notify inviter about referral reward."""
+    from src.database.core import AsyncSessionLocal
+    from src.database.models import User
+    from sqlalchemy import select
+
+    try:
+        async with AsyncSessionLocal() as session:
+            inviter = (await session.execute(select(User).where(User.id == inviter_internal_id))).scalar_one_or_none()
+            if inviter and inviter.telegram_id:
+                # TODO: Retrieve inviter's language preference for i18n
+                text = f"🎉 **宗门进阶奖励！**\n\n道友 {invitee_name} 已成功拜入宗门。\n获得额外奖励：`{reward}` 灵石。"
+                await robust_send_message(bot, chat_id=inviter.telegram_id, text=text, parse_mode="Markdown")
+    except Exception as e:
+        logger.error(f"Failed to notify inviter {inviter_internal_id}: {e}")
 
 # Constants for project root and maintenance file
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))

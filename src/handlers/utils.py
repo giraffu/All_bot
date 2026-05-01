@@ -36,13 +36,13 @@ def with_unified_error_handler(func):
             return await func(update, context, *args, **kwargs)
         except ConcurrencyLimitError as e:
             if update.effective_chat:
-                await robust_send_message(context.bot, update.effective_chat.id, f"⚠️ {e}")
+                await robust_send_message(f"⚠️ {e}")
         except InsufficientCreditsError as e:
             if update.effective_chat:
-                await robust_send_message(context.bot, update.effective_chat.id, f"⚠️ {e}")
+                await robust_send_message(f"⚠️ {e}")
         except CoreDomainError as e:
             if update.effective_chat:
-                await robust_send_message(context.bot, update.effective_chat.id, f"❌ {e}")
+                await robust_send_message(f"❌ {e}")
         except Exception as e:
             logger.error(f"Unhandled exception in handler {func.__name__}: {e}", exc_info=True)
             if update.effective_chat:
@@ -51,8 +51,28 @@ def with_unified_error_handler(func):
                     user_msg = "当前服务器繁忙，请稍后再试"
                 else:
                     user_msg = f"系统错误：{error_msg}"
-                await robust_send_message(context.bot, update.effective_chat.id, f"❌ {user_msg}")
+                await robust_send_message(f"❌ {user_msg}")
     return wrapper
+
+from src.services.permission_service import permission_service
+from src.utils import get_user_channel_status, create_background_task, notify_inviter_reward
+
+async def ensure_access_and_reward(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
+    """
+    Check access and trigger background reward notification if needed.
+    Returns True if access is granted (or exception raised), False if no user.
+    """
+    user = update.effective_user
+    if not user:
+        return False
+        
+    is_member = await get_user_channel_status(context.bot, user.id)
+    inviter_id = await permission_service.check_access(user.id, user.username, user.full_name, is_member)
+    
+    if inviter_id:
+        create_background_task(context, notify_inviter_reward(context.bot, inviter_id, user.full_name))
+        
+    return True
 
 def _is_mentioned(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
     msg = update.message

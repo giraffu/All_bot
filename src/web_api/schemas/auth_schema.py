@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Optional
+from typing import Any, Dict, Optional, List
 
 from pydantic import BaseModel, Field, field_validator
 import re
@@ -44,11 +44,18 @@ class InvitationRechargeStats(BaseModel):
     total_stars: int = 0
     commission_usdt: float = 0.0
 
+class BreakthroughConditionDTO(BaseModel):
+    type: str
+    target: int
+    current: int
+    done: bool
+
 class UserResponse(BaseModel):
     id: int
     telegram_id: Optional[int]
     username: Optional[str]
     full_name: Optional[str]
+    language_code: Optional[str]
     credits: int
     user_group: str
     current_identity: str
@@ -58,6 +65,8 @@ class UserResponse(BaseModel):
     checkin_count: int = 0
     invitation_count: int = 0
     invitation_recharge: Optional[InvitationRechargeStats] = None
+    breakthrough_conditions: List[BreakthroughConditionDTO] = []
+    is_unlocked: bool = False
     
     class Config:
         from_attributes = True

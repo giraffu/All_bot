@@ -2,6 +2,7 @@ import axios from 'axios'
 import { useAuthStore } from '@/stores/auth'
 import router from '@/router'
 import { message } from 'ant-design-vue'
+import i18n from '@/i18n'
 
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL || '/api',
@@ -19,17 +20,35 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response?.status === 401) {
+    const t = i18n.global.t
+    if (!error.response) {
+      message.error(t('api.network_error'))
+      return Promise.reject(error)
+    }
+    
+    const status = error.response.status
+    const data = error.response.data
+    
+    if (status === 401) {
       const authStore = useAuthStore()
       authStore.logout()
       router.push('/login')
-      message.error('Session expired, please login again.')
-    } else if (error.response?.status === 402) {
-      message.warning(error.response?.data?.detail || 'Insufficient balance.')
-    } else if (error.response?.status === 429) {
-      message.warning(error.response?.data?.detail || 'Too many tasks running.')
+      message.error(t('api.session_expired'))
+    } else if (status === 402) {
+      message.warning(data?.message || t('api.insufficient_balance'))
+    } else if (status === 429) {
+      message.warning(data?.detail || t('api.too_many_tasks'))
+    } else if (status === 422) {
+      // Handle Pydantic validation errors
+      let errMsg = t('api.validation_error', { msg: 'Invalid parameters' })
+      if (data?.details && data.details.length > 0) {
+        const firstErr = data.details[0]
+        const loc = firstErr.loc.join('.')
+        errMsg = t('api.validation_error', { msg: `${loc}: ${firstErr.msg}` })
+      }
+      message.error(errMsg)
     } else {
-      message.error(error.response?.data?.detail || 'System error occurred.')
+      message.error(data?.message || data?.detail || t('api.system_error'))
     }
     return Promise.reject(error)
   }

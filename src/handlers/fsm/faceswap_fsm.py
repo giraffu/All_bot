@@ -127,9 +127,18 @@ async def receive_body_image(update: Update, context: ContextTypes.DEFAULT_TYPE)
     cost = TASK_COSTS.get(MODE_FACESWAP_STEP1, 1)
     if not update.effective_user: return ConversationHandler.END
     user = update.effective_user
-    if not await permission_service.check_quota(user.id, user.username, user.full_name, context.bot, update.effective_chat.id, cost=cost):
-        _cleanup_context(context, user_id)
-        return ConversationHandler.END
+    try:
+        await permission_service.check_quota(user.id, user.username, user.full_name, cost=cost)
+    except Exception as e:
+        from src.core.exceptions import InsufficientCreditsError
+        if isinstance(e, InsufficientCreditsError):
+            chat_id = update.effective_chat.id
+            msg = f"🚫 **灵石不足**\n\n道友当前余额: `{e.current}` 灵石\n本次修炼需要: `{e.cost}` 灵石\n请联系管理员获取更多灵石。"
+            from src.utils import robust_send_message
+            await robust_send_message(context.bot, chat_id, msg, parse_mode="Markdown")
+            _cleanup_context(context, user_id)
+            return ConversationHandler.END
+        raise e
 
     try:
         new_file = await context.bot.get_file(file_id)

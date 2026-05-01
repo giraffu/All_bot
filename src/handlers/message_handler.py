@@ -30,12 +30,13 @@ from src.constants import (
     TMP_DIR,
 )
 from src.handlers.prompt_router import prompt_route, prompt_routes
-from src.handlers.utils import _is_mentioned, with_db_logging_context
+from src.handlers.utils import _is_mentioned, with_db_logging_context, ensure_access_and_reward
 from src.services.image_service import image_service
 from src.services.permission_service import permission_service
 from src.services.storage import storage
 from src.services.task_service import task_service
-from src.utils import robust_reply_text
+from src.utils import robust_reply_text, create_background_task, is_maintenance_mode, robust_send_message, get_user_channel_status, notify_inviter_reward
+from src.handlers.error_handlers import with_unified_error_handler
 
 # Re-exporting for compatibility if needed, but preferred to import from constants/utils
 process_generation_task = task_service.process_generation_task
@@ -48,12 +49,11 @@ os.makedirs(TEMP_TEMPLATE_DIR, exist_ok=True)
 
 logger = logging.getLogger(__name__)
 
+@with_unified_error_handler
 @with_db_logging_context
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not _is_mentioned(update, context): return
-    if not update.effective_user: return
-    user = update.effective_user
-    if not await permission_service.check_access(user.id, user.username, user.full_name, context.bot, update.effective_chat.id): return
+    if not await ensure_access_and_reward(update, context): return
 
     mode = context.user_data.get('mode', MODE_NONE)
     if mode == MODE_TEMPLATE_CONTRIBUTE:
@@ -61,12 +61,11 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     return await _handle_photo_idle(update, context)
 
+@with_unified_error_handler
 @with_db_logging_context
 async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not _is_mentioned(update, context): return
-    if not update.effective_user: return
-    user = update.effective_user
-    if not await permission_service.check_access(user.id, user.username, user.full_name, context.bot, update.effective_chat.id): return
+    if not await ensure_access_and_reward(update, context): return
 
     mode = context.user_data.get('mode', MODE_NONE)
     if mode == MODE_TEMPLATE_CONTRIBUTE:
@@ -74,18 +73,17 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     await robust_reply_text(update.message, "⚠️ 当前模式不支持视频处理。")
 
+@with_unified_error_handler
 @with_db_logging_context
 async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not _is_mentioned(update, context): return
-    if not update.effective_user: return
-    user = update.effective_user
-    if not await permission_service.check_access(user.id, user.username, user.full_name, context.bot, update.effective_chat.id): return
+    if not await ensure_access_and_reward(update, context): return
 
     mode = context.user_data.get('mode', MODE_NONE)
     if mode == MODE_TEMPLATE_CONTRIBUTE:
         return await _handle_template_contribution(update, context)
     
-    return await _handle_photo_idle(update, context)
+    await robust_reply_text(update.message, "⚠️ 请发送压缩后的图片或视频格式，不要发送原图/文件。")
 
 async def _handle_photo_idle(update: Update, context: ContextTypes.DEFAULT_TYPE):
     now = time.time()
@@ -157,8 +155,16 @@ async def _handle_template_contribution(update: Update, context: ContextTypes.DE
         logger.error(f"Error saving template contribution: {e}", exc_info=True)
         await robust_reply_text(msg, f"❌ 保存失败：{str(e)}")
 
+@with_unified_error_handler
 @prompt_route("🖼️ 懒人P图")
 async def handle_photo_edit_menu(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str):
+    if not update.effective_user: return
+    user = update.effective_user
+    is_member = await get_user_channel_status(context.bot, user.id)
+    inviter_id = await permission_service.check_access(user.id, user.username, user.full_name, is_member)
+    if inviter_id:
+        create_background_task(context, notify_inviter_reward(context.bot, inviter_id, user.full_name))
+        
     keyboard = [
         ["💃 快速脱衣", "🎭 快速换脸", "🥵 快速自慰"],
         ["🎭 随机换脸"],
@@ -236,23 +242,71 @@ async def handle_recharge_menu(update: Update, context: ContextTypes.DEFAULT_TYP
     )
     await robust_reply_text(update.message, msg, parse_mode="Markdown", reply_markup=reply_markup)
 
+@with_unified_error_handler
 @prompt_route("^(💰 个人中心|👤 个人中心)$", is_regex=True)
 async def handle_personal_center(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str):
-    if not update.effective_user: return
+    if not update.effective_user:
+        return
     user = update.effective_user
-    await permission_service.sync_channel_status(user.id, user.username, user.full_name, context.bot)
+    
+    is_member = await get_user_channel_status(context.bot, user.id)
+    if is_member is not None:
+        await permission_service.sync_channel_status(user.id, user.username, user.full_name, is_member)
+        
     await permission_service.ensure_user(user.id, user.username, user.full_name, user.language_code)
     user_id = update.effective_user.id
     first_name = update.effective_user.first_name
     invite_link = CHANNEL_INVITE_LINK or "https://t.me/AiVisionAV"
     
     from src.core.user_facade import get_user_dashboard_info
-    dto = await get_user_dashboard_info(user_id, first_name, invite_link)
+    dto = await get_user_dashboard_info(user_id, first_name)
+    
+    # 构建突破提示
+    breakthrough_msg = ""
+    if dto.current_group == "凡人":
+        breakthrough_msg = f"🚀 **突破至练气期条件**：\n🔸 拜入宗门 [👉 [点击即刻拜入]({invite_link})]"
+    elif dto.current_group == "练气期":
+        inv_done = "✅" if dto.invitations > 1 else "❌"
+        checkin_done = "✅" if dto.checkins > 3 else "❌"
+        gen_done = "✅" if dto.generations > 10 else "❌"
+        breakthrough_msg = f"🚀 **突破至筑基期(视野更加清晰了)条件**：\n🔸 邀请道友 > 1人 ({inv_done})\n🔸 累计签到 > 3天 ({checkin_done})\n🔸 修炼次数 > 10次 ({gen_done})"
+    elif dto.current_group == "筑基期":
+        inv_done = "✅" if dto.invitations > 10 else "❌"
+        checkin_done = "✅" if dto.checkins > 30 else "❌"
+        gen_done = "✅" if dto.generations > 100 else "❌"
+        breakthrough_msg = f"🚀 **突破至金丹期条件**：\n🔸 邀请道友 > 10人 ({inv_done})\n🔸 累计签到 > 30天 ({checkin_done})\n🔸 修炼次数 > 100次 ({gen_done})"
+    elif dto.current_group == "金丹期":
+        inv_done = "✅" if dto.invitations > 100 else "❌"
+        checkin_done = "✅" if dto.checkins > 300 else "❌"
+        gen_done = "✅" if dto.generations > 1000 else "❌"
+        breakthrough_msg = f"🚀 **突破至元婴期条件**：\n🔸 邀请道友 > 100人 ({inv_done})\n🔸 累计签到 > 300天 ({checkin_done})\n🔸 修炼次数 > 1000次 ({gen_done})"
+    elif dto.current_group == "元婴期":
+        breakthrough_msg = "✨ **已修成元婴，神通广大，万法不侵**"
+
+    # 构建身份展示
+    identity_display = f"`{dto.current_identity}`"
+    if dto.current_identity != "外门弟子" and dto.identity_expire_at:
+        from datetime import datetime
+        now = datetime.now()
+        expire_at = dto.identity_expire_at
+        if expire_at.tzinfo is not None:
+            expire_at = expire_at.replace(tzinfo=None)
+        if expire_at > now:
+            remaining = expire_at - now
+            days = remaining.days
+            hours = remaining.seconds // 3600
+            expire_str = expire_at.strftime('%Y-%m-%d %H:%M')
+            if days > 0:
+                identity_display += f" (剩余 {days} 天，{expire_str} 到期)"
+            else:
+                identity_display += f" (剩余 {hours} 小时，{expire_str} 到期)"
+        else:
+            identity_display += " (已过期)"
 
     msg = (
         f"👤 **道友**：`{dto.first_name}`\n"
         f"📜 **修为**：`{dto.current_group}`\n"
-        f"🪪 **身份**：{dto.identity_display}\n"
+        f"🪪 **身份**：{identity_display}\n"
         f"⚡ **排队加速**：`+{dto.current_priority}` 优先级\n"
         f"💰 **灵石余额**：`{dto.credits}`\n\n"
         f"📊 **修炼数据**：\n"
@@ -266,7 +320,7 @@ async def handle_personal_center(update: Update, context: ContextTypes.DEFAULT_T
         f"  - 累积贡献：`{dto.invitation_recharge['total_stars']}` Stars\n"
         f"  - 预估分成：*$ {dto.invitation_recharge.get('commission_usdt', 0.0):.2f} USDT* (仅计算受邀者历史首充金额的10%)\n\n"
         f"💡 *提示：1点加速优先级约等于为您节约1分钟的排队时间。*\n\n"
-        f"{dto.breakthrough_msg}"
+        f"{breakthrough_msg}"
     )
     
     reply_markup = None
@@ -391,8 +445,7 @@ async def handle_queue_status(update: Update, context: ContextTypes.DEFAULT_TYPE
 async def handle_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.effective_user: return
     user = update.effective_user
-    if not await permission_service.check_access(user.id, user.username, user.full_name, context.bot, update.effective_chat.id):
-        return
+    await permission_service.check_access(user.id, user.username, user.full_name)
 
     message = update.message or update.edited_message
     if not message:

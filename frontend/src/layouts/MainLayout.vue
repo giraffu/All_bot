@@ -3,7 +3,9 @@ import { ref, onMounted, watch, onBeforeUnmount } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useViewport } from '@/composables/useViewport'
-import { User, Wand2, Zap, History as HistoryIcon, LogOut, Wallet, Compass, Bookmark, Star, Menu } from 'lucide-vue-next'
+import { useI18n } from 'vue-i18n'
+import api from '@/api'
+import { User, Wand2, Zap, History as HistoryIcon, LogOut, Wallet, Compass, Bookmark, Star, Menu, Globe } from 'lucide-vue-next'
 import TaskProgress from '@/components/TaskProgress.vue'
 import MobileTabbar from '@/components/MobileTabbar.vue'
 
@@ -11,6 +13,7 @@ const router = useRouter()
 const route = useRoute()
 const authStore = useAuthStore()
 const { isMobile } = useViewport()
+const { locale } = useI18n()
 
 const collapsed = ref(false)
 const selectedKeys = ref<string[]>([route.name as string || 'Profile'])
@@ -19,6 +22,18 @@ let animationFrameId: number
 
 const handleMenuClick = ({ key }: { key: string }) => {
   router.push({ name: key })
+}
+
+const toggleLanguage = async () => {
+  const newLang = locale.value === 'zh' ? 'en' : 'zh'
+  locale.value = newLang
+  
+  // Persist language to backend
+  try {
+    await api.patch('/users/preferences', { language_code: newLang })
+  } catch (error) {
+    console.error('Failed to save language preference', error)
+  }
 }
 
 const handleLogout = () => {
@@ -241,25 +256,32 @@ watch(() => route.name, (newName) => {
           </div>
           
           <a-dropdown placement="bottomRight">
-            <div class="user-profile flex items-center cursor-pointer hover:bg-white/5 p-1.5 rounded-lg transition-all border border-transparent hover:border-cyan-500/30">
-              <a-avatar class="bg-gradient-to-br from-indigo-500 to-cyan-600 mr-2 shadow-[0_0_10px_rgba(56,189,248,0.2)] border border-white/10 text-white font-bold" :size="32">{{ authStore.user?.username?.charAt(0).toUpperCase() || 'U' }}</a-avatar>
-              <span class="font-medium text-slate-200">{{ authStore.user?.username || 'User' }}</span>
-            </div>
-            <template #overlay>
-              <a-menu>
-                <a-menu-item class="text-gray-500" disabled>
-                  身份: {{ authStore.user?.current_identity }}
-                </a-menu-item>
-                <a-menu-divider />
-                <a-menu-item @click="handleLogout" class="text-red-500">
-                  <div class="flex items-center">
-                    <LogOut :size="16" class="mr-2" />
-                    <span>退出登录</span>
-                  </div>
-                </a-menu-item>
-              </a-menu>
-            </template>
-          </a-dropdown>
+              <div class="user-profile flex items-center cursor-pointer hover:bg-white/5 p-1.5 rounded-lg transition-all border border-transparent hover:border-cyan-500/30">
+                <a-avatar class="bg-gradient-to-br from-indigo-500 to-cyan-600 mr-2 shadow-[0_0_10px_rgba(56,189,248,0.2)] border border-white/10 text-white font-bold" :size="32">{{ authStore.user?.username?.charAt(0).toUpperCase() || 'U' }}</a-avatar>
+                <span class="font-medium text-slate-200">{{ authStore.user?.username || 'User' }}</span>
+              </div>
+              <template #overlay>
+                <a-menu>
+                  <a-menu-item class="text-gray-500" disabled>
+                    身份: {{ authStore.user?.current_identity }}
+                  </a-menu-item>
+                  <a-menu-divider />
+                  <a-menu-item @click="toggleLanguage" class="text-cyan-400">
+                    <div class="flex items-center">
+                      <Globe :size="16" class="mr-2" />
+                      <span>{{ locale === 'zh' ? 'English' : '中文' }}</span>
+                    </div>
+                  </a-menu-item>
+                  <a-menu-divider />
+                  <a-menu-item @click="handleLogout" class="text-red-500">
+                    <div class="flex items-center">
+                      <LogOut :size="16" class="mr-2" />
+                      <span>退出登录</span>
+                    </div>
+                  </a-menu-item>
+                </a-menu>
+              </template>
+            </a-dropdown>
         </div>
       </a-layout-header>
       

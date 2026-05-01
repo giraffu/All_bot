@@ -7,5 +7,13 @@
     "photo_edit": "🖼️ 懒人P图",
     "video_edit": "🎬 视频创作",
     "profile": "👤 个人中心"
+  },
+  "api": {
+    "session_expired": "会话已过期，请重新登录",
+    "insufficient_balance": "灵石不足，请联系管理员获取",
+    "too_many_tasks": "任务排队过多，请稍后再试",
+    "system_error": "系统开小差了，请稍后再试",
+    "network_error": "网络连接失败，请检查网络",
+    "validation_error": "参数校验失败: {msg}"
   }
 }

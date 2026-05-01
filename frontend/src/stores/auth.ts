@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import api from '@/api'
+import i18n from '@/i18n'
 
 export interface InvitationRechargeStats {
   recharged_invitees_count: number
@@ -11,11 +12,19 @@ export interface InvitationRechargeStats {
   commission_usdt: number
 }
 
+export interface BreakthroughCondition {
+  type: string
+  target: number
+  current: number
+  done: boolean
+}
+
 export interface User {
   id: number
   telegram_id: number | null
   username: string | null
   full_name: string | null
+  language_code: string | null
   credits: number
   user_group: string
   current_identity: string
@@ -25,6 +34,8 @@ export interface User {
   checkin_count?: number
   invitation_count?: number
   invitation_recharge?: InvitationRechargeStats | null
+  breakthrough_conditions?: BreakthroughCondition[]
+  is_unlocked?: boolean
 }
 
 export function checkWebAccess(user: User | null): boolean {
@@ -43,6 +54,10 @@ export const useAuthStore = defineStore('auth', () => {
     user.value = newUser
     localStorage.setItem('token', newToken)
     localStorage.setItem('user', JSON.stringify(newUser))
+    
+    if (newUser.language_code && ['zh', 'en'].includes(newUser.language_code)) {
+      i18n.global.locale.value = newUser.language_code as 'zh' | 'en'
+    }
   }
 
   function updateBalance(newCredits: number) {
@@ -58,6 +73,10 @@ export const useAuthStore = defineStore('auth', () => {
       if (response.data) {
         user.value = response.data
         localStorage.setItem('user', JSON.stringify(user.value))
+        
+        if (user.value?.language_code && ['zh', 'en'].includes(user.value.language_code)) {
+          i18n.global.locale.value = user.value.language_code as 'zh' | 'en'
+        }
       }
     } catch (e) {
       console.error('Failed to fetch user data', e)

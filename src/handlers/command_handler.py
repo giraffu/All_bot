@@ -8,7 +8,8 @@ from config import ADMIN_USERS
 from src.constants import MAIN_MENU_KEYBOARD
 from src.handlers.utils import with_db_logging_context
 from src.services.permission_service import permission_service
-from src.utils import MAINTENANCE_FILE, robust_send_message
+from src.utils import MAINTENANCE_FILE, robust_send_message, get_user_channel_status, notify_inviter_reward, create_background_task
+from src.handlers.error_handlers import with_unified_error_handler
 import contextlib
 
 
@@ -42,6 +43,7 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode="Markdown"
     )
 
+@with_unified_error_handler
 @with_db_logging_context
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.effective_user: return
@@ -79,8 +81,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except ValueError:
             pass
 
-    if not await permission_service.check_access(user.id, user.username, user.full_name, context.bot, update.effective_chat.id):
-        return
+    is_member = await get_user_channel_status(context.bot, user.id)
+    inviter_id_reward = await permission_service.check_access(user.id, user.username, user.full_name, is_member)
+    if inviter_id_reward:
+        create_background_task(context, notify_inviter_reward(context.bot, inviter_id_reward, user.full_name))
 
     # Ensure user info is up to date
     is_new = await permission_service.ensure_user(user.id, user.username, user.full_name, user.language_code)
