@@ -2,19 +2,35 @@
 
 :root {
   --primary-color: #1890ff;
+  color-scheme: dark;
 }
 
-body {
+/* 完美跨平台（兼容 iOS 和 MIUI）的防反色方案 */
+body, html {
   margin: 0;
   padding: 0;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial,
     "Noto Sans", sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol",
     "Noto Color Emoji";
+  /* 
+   * 核心黑科技：MIUI 的反色算法只处理 background-color，不处理图片背景。
+   * 我们使用线性渐变（linear-gradient）来伪装成图片背景，这样 MIUI 就不会去反转它，
+   * 同时这完全符合 W3C 标准，苹果 iOS 设备解析完全正常。
+   */
+  background-color: #0f172a !important;
+  background-image: linear-gradient(#0f172a, #0f172a) !important;
+  color: #f1f5f9 !important;
+}
+
+#app {
+  background-color: transparent !important;
+  background-image: linear-gradient(#0f172a, #0f172a) !important;
+  min-height: 100vh;
 }
 
 /* Ant Design 覆盖与调整 */
 .ant-layout {
-  background: #f0f2f5;
+  background: transparent !important;
 }
 
 /* Ant Design 覆盖：禁用的主要按钮，保持白色字体和微透的蓝色背景，避免变成黑色看不清 */

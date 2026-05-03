@@ -204,7 +204,7 @@ const resetForm = () => {
                   <a-textarea 
                     v-model:value="prompt" 
                     placeholder="例如：把背景变成海滩，让他戴上墨镜..." 
-                    class="rounded-xl border-slate-600/50 focus:border-blue-500 focus:ring-blue-500 text-sm p-3 flex-grow resize-none w-full"
+                    class="rounded-xl border-slate-600/50 focus:border-blue-500 focus:ring-blue-500 text-sm p-3 flex-grow resize-none w-full !text-slate-200"
                   />
                   <p class="text-xs text-slate-500 mt-2 shrink-0">提示：描述越详细， AI 理解越准确。</p>
                 </template>

@@ -117,20 +117,32 @@ const updateHistoryTimeRange = (value) => {
           <LineChart title="用户增长 (每日)" :data="statsHistory" :metrics="['new_users', 'new_users_all']" />
         </div>
         <div class="h-80">
+          <LineChart title="中英文用户增长 (每日)" :data="statsHistory" :metrics="['new_en_users', 'new_zh_users']" />
+        </div>
+      </div>
+      
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+        <div class="h-80">
           <LineChart title="用户每日增长率" :data="statsHistory" :metrics="['growth_rate']" />
+        </div>
+        <div class="h-80">
+          <LineChart title="总用户数量" :data="cumulativeStatsHistory" :metrics="['cumulative_users']" />
         </div>
       </div>
 
       <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
         <div class="h-80">
-          <LineChart title="总用户数量" :data="cumulativeStatsHistory" :metrics="['cumulative_users']" />
+          <LineChart title="累计中英文用户数量" :data="cumulativeStatsHistory" :metrics="['cumulative_en_users', 'cumulative_zh_users']" />
         </div>
         <div class="h-80">
-          <LineChart title="活跃与签到" :data="statsHistory" :metrics="['active_users', 'web_active_users', 'checkins']" />
+          <LineChart title="密码注册用户增长" :data="cumulativeStatsHistory" :metrics="['new_pwd_users', 'cumulative_pwd_users']" />
         </div>
       </div>
       
-      <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+        <div class="h-80">
+          <LineChart title="活跃与签到" :data="statsHistory" :metrics="['active_users', 'web_active_users', 'checkins']" />
+        </div>
         <div class="h-80">
           <LineChart title="生成量与灵石消耗" :data="statsHistory" :metrics="['generations', 'consumed_credits']" />
         </div>

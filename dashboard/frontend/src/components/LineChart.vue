@@ -67,6 +67,33 @@ const option = computed(() => {
       }
     },
     {
+      id: 'cumulative_en_users',
+      name: '累计英文用户',
+      type: 'line',
+      yAxisIndex: 0,
+      data: props.data.map(item => item.cumulative_en_users),
+      color: '#1890ff',
+      smooth: true
+    },
+    {
+      id: 'cumulative_zh_users',
+      name: '累计中文用户',
+      type: 'line',
+      yAxisIndex: 0,
+      data: props.data.map(item => item.cumulative_zh_users),
+      color: '#faad14',
+      smooth: true
+    },
+    {
+      id: 'cumulative_pwd_users',
+      name: '累计密码注册用户',
+      type: 'line',
+      yAxisIndex: 0,
+      data: props.data.map(item => item.cumulative_pwd_users || 0),
+      color: '#13c2c2',
+      smooth: true
+    },
+    {
       id: 'new_users',
       name: '新增用户',
       type: 'line',
@@ -77,6 +104,33 @@ const option = computed(() => {
         color: '#1890ff',
         opacity: 0.1
       }
+    },
+    {
+      id: 'new_en_users',
+      name: '新增英文用户',
+      type: 'line',
+      yAxisIndex: 0,
+      data: props.data.map(item => item.new_en_users),
+      color: '#52c41a',
+      smooth: true
+    },
+    {
+      id: 'new_zh_users',
+      name: '新增中文用户',
+      type: 'line',
+      yAxisIndex: 0,
+      data: props.data.map(item => item.new_zh_users),
+      color: '#faad14',
+      smooth: true
+    },
+    {
+      id: 'new_pwd_users',
+      name: '每日密码注册',
+      type: 'bar',
+      yAxisIndex: 1,
+      data: props.data.map(item => item.new_pwd_users || 0),
+      color: '#36cfc9',
+      barMaxWidth: 30
     },
     {
       id: 'new_users_all',
@@ -369,10 +423,10 @@ const option = computed(() => {
   const yAxis = [];
   if (hasAxis0 && hasAxis1) {
     yAxis.push(
-      { type: 'value', name: '每日新增', position: 'left' },
+      { type: 'value', name: '', position: 'left' },
       { 
         type: 'value', 
-        name: '累计充值总额', 
+        name: '', 
         position: 'right', 
         splitLine: { show: false },
         axisLabel: {
@@ -388,11 +442,11 @@ const option = computed(() => {
       }
     );
   } else if (hasAxis0) {
-    yAxis.push({ type: 'value', name: '数量', position: 'left' });
+    yAxis.push({ type: 'value', name: '', position: 'left' });
     // Update yAxisIndex for all series to 0
     visibleSeries.forEach(s => s.yAxisIndex = 0);
   } else if (hasAxis1) {
-    yAxis.push({ type: 'value', name: '数量', position: 'left' });
+    yAxis.push({ type: 'value', name: '', position: 'left' });
     // Update yAxisIndex for all series to 0
     visibleSeries.forEach(s => s.yAxisIndex = 0);
   }

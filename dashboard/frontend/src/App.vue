@@ -214,7 +214,11 @@ watch([() => stats.value.total_users, statsHistory], ([totalUsers, history]) => 
       currentTotal -= day.new_users
       return {
         date: day.date,
-        cumulative_users: totalForDay
+        cumulative_users: totalForDay,
+        cumulative_en_users: day.cumulative_en_users,
+        cumulative_zh_users: day.cumulative_zh_users,
+        cumulative_pwd_users: day.cumulative_pwd_users,
+        new_pwd_users: day.new_pwd_users
       }
     }).reverse()
     

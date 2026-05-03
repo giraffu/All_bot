@@ -273,6 +273,32 @@ defineProps({
     <a-col :xs="24" :sm="12" :md="8" :lg="4">
       <a-card hoverable class="stat-card">
         <a-statistic
+          title="总英文用户"
+          :value="stats.total_en_users || 0"
+          :value-style="{ color: '#1890ff' }"
+        >
+          <template #prefix>
+            <user-outlined />
+          </template>
+        </a-statistic>
+      </a-card>
+    </a-col>
+    <a-col :xs="24" :sm="12" :md="8" :lg="4">
+      <a-card hoverable class="stat-card">
+        <a-statistic
+          title="总中文用户"
+          :value="stats.total_zh_users || 0"
+          :value-style="{ color: '#faad14' }"
+        >
+          <template #prefix>
+            <user-outlined />
+          </template>
+        </a-statistic>
+      </a-card>
+    </a-col>
+    <a-col :xs="24" :sm="12" :md="8" :lg="4">
+      <a-card hoverable class="stat-card">
+        <a-statistic
           title="总Web创作者"
           :value="stats.total_web_users || 0"
           :value-style="{ color: '#666' }"
@@ -357,6 +383,19 @@ defineProps({
         >
           <template #prefix>
             <check-circle-outlined />
+          </template>
+        </a-statistic>
+      </a-card>
+    </a-col>
+    <a-col :xs="24" :sm="12" :md="8" :lg="4">
+      <a-card hoverable class="stat-card">
+        <a-statistic
+          title="密码注册用户"
+          :value="stats.total_password_users || 0"
+          :value-style="{ color: '#13c2c2' }"
+        >
+          <template #prefix>
+            <safety-certificate-outlined />
           </template>
         </a-statistic>
       </a-card>
