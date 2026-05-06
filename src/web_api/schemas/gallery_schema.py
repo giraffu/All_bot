@@ -25,6 +25,7 @@ class GalleryPostResponse(BaseModel):
     # User interaction status for current user
     has_liked: bool = False
     has_disliked: bool = False
+    author_name: Optional[str] = None
 
 class PaginatedGalleryResponse(BaseModel):
     items: List[GalleryPostResponse]

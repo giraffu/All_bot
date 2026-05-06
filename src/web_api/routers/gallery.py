@@ -108,6 +108,19 @@ async def _build_post_responses(session, posts, current_user: Optional[User]):
         )).scalars().all()
         history_map = {h.task_id: h for h in histories}
 
+    user_ids = list(set([p.user_id for p in posts if p.user_id]))
+    user_map = {}
+    if user_ids:
+        from src.database.models import User
+        users = (await session.execute(
+            select(User).where(User.id.in_(user_ids))
+        )).scalars().all()
+        # use first_name + last_name, fallback to username or string ID
+        for u in users:
+            name_parts = [p for p in [u.first_name, u.last_name] if p]
+            name = " ".join(name_parts) if name_parts else (u.username or f"User {u.id}")
+            user_map[u.id] = name
+
     response_items = []
     for post in posts:
         try:
@@ -142,7 +155,8 @@ async def _build_post_responses(session, posts, current_user: Optional[User]):
             prompt=prompt,
             task_type=task_type_from_history,
             has_liked=post.id in user_likes,
-            has_disliked=post.id in user_dislikes
+            has_disliked=post.id in user_dislikes,
+            author_name=user_map.get(post.user_id) if post.user_id else "匿名修士"
         ))
     return response_items
 
