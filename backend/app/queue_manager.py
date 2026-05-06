@@ -118,13 +118,18 @@ class QueueManager:
 
     async def complete_task(self, task_id: str, result_path: str):
         task_key = f"{self.task_prefix}{task_id}"
+        
+        # 先从 Redis 中读取 type
+        task_type_bytes = await self.redis.hget(task_key, "type")
+        task_type = task_type_bytes.decode() if task_type_bytes else "edit"
+        
         await self.redis.hset(task_key, mapping={
             "status": TaskStatus.DONE,
             "result_path": result_path,
             "progress": 1.0
         })
         await self.redis.srem(self.running_key, task_id)
-        await self.redis.publish(f"comfy:task_events:{task_id}", json.dumps({"status": "done", "result_path": result_path, "progress": 1.0}))
+        await self.redis.publish(f"comfy:task_events:{task_id}", json.dumps({"status": "done", "result_path": result_path, "progress": 1.0, "task_type": task_type}))
 
     async def fail_task(self, task_id: str, error_msg: str):
         task_key = f"{self.task_prefix}{task_id}"

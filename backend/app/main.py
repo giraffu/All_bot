@@ -371,7 +371,8 @@ async def get_task_status(
         queue_remaining=queue_remaining,
         progress=float(task.get("progress", 0.0)),
         error=task.get("error_msg"),
-        result_path=task.get("result_path")
+        result_path=task.get("result_path"),
+        task_type=task.get("type")
     )
 
 @app.get("/image/{task_id}")

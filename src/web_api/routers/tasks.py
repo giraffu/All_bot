@@ -12,6 +12,7 @@ from src.core.task_core import (
     InsufficientCreditsError,
     process_and_submit_task,
 )
+from src.constants import VIDEO_TASK_TYPES
 from src.database.models import User
 from src.quota import QuotaManager
 from src.services.redis_client import redis_client
@@ -117,7 +118,7 @@ async def task_status_stream(task_id: str, current_user: User = Depends(get_curr
                     if status_val == "done":
                         initial_status["status"] = "success"
                         task_type = initial_status.get("task_type", "edit")
-                        is_video = task_type in ["face_video", "txt2video", "video_lora", "custom_video", "perfect_video_insert", "doggy_style", "blowjob", "undress_tongue", "closeup_blowjob", "ltx_video"]
+                        is_video = task_type in VIDEO_TASK_TYPES
                         ext = "mp4" if is_video else "png"
                         
                         from sqlalchemy import select
@@ -126,7 +127,7 @@ async def task_status_stream(task_id: str, current_user: User = Depends(get_curr
                         from src.database.models import History
                         
                         final_result_path = f"{current_user.id}/output_images/{task_id}.{ext}"
-                        for _ in range(10):
+                        for _ in range(30):
                             async with AsyncSessionLocal() as db:
                                 hist = (await db.execute(select(History).where(History.task_id == task_id))).scalars().first()
                                 if hist and hist.output_file and hist.output_file.startswith(str(current_user.id)):
@@ -164,7 +165,7 @@ async def task_status_stream(task_id: str, current_user: User = Depends(get_curr
                         if task_status == "done":
                             parsed["status"] = "success"
                             task_type = parsed.get("task_type", "edit")
-                            is_video = task_type in ["face_video", "txt2video", "video_lora", "custom_video", "perfect_video_insert", "doggy_style", "blowjob", "undress_tongue", "closeup_blowjob", "ltx_video"]
+                            is_video = task_type in VIDEO_TASK_TYPES
                             ext = "mp4" if is_video else "png"
                             
                             # Give task_service.py time to move the file from comfyui-temp to bot-data
@@ -174,7 +175,7 @@ async def task_status_stream(task_id: str, current_user: User = Depends(get_curr
                             from src.database.models import History
                             
                             final_result_path = f"{current_user.id}/output_images/{task_id}.{ext}"
-                            for _ in range(10):
+                            for _ in range(30):
                                 async with AsyncSessionLocal() as db:
                                     hist = (await db.execute(select(History).where(History.task_id == task_id))).scalars().first()
                                     if hist and hist.output_file and hist.output_file.startswith(str(current_user.id)):
@@ -219,7 +220,7 @@ async def task_status_stream(task_id: str, current_user: User = Depends(get_curr
                                 if status_val == "done":
                                     status_data["status"] = "success"
                                     task_type = status_data.get("task_type", "edit")
-                                    is_video = task_type in ["face_video", "txt2video", "video_lora", "custom_video", "perfect_video_insert", "doggy_style", "blowjob", "undress_tongue", "closeup_blowjob", "ltx_video"]
+                                    is_video = task_type in VIDEO_TASK_TYPES
                                     ext = "mp4" if is_video else "png"
                                     
                                     from sqlalchemy import select
@@ -228,7 +229,7 @@ async def task_status_stream(task_id: str, current_user: User = Depends(get_curr
                                     from src.database.models import History
                                     
                                     final_result_path = f"{current_user.id}/output_images/{task_id}.{ext}"
-                                    for _ in range(10):
+                                    for _ in range(30):
                                         async with AsyncSessionLocal() as db:
                                             hist = (await db.execute(select(History).where(History.task_id == task_id))).scalars().first()
                                             if hist and hist.output_file and hist.output_file.startswith(str(current_user.id)):

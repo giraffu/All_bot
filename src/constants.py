@@ -281,7 +281,12 @@ GENERATION_TASK_TYPES = [
     MODE_I2I_PRO
 ]
 
-VIDEO_TASK_TYPES = ["doggy_style", "perfect_video_insert", "blowjob", "undress_tongue", "closeup_blowjob", "custom_video", "face_video", "face_video_step1", "face_video_step2", "video_lora", "ltx_video"]
+VIDEO_TASK_TYPES = [
+    "doggy_style", "perfect_video_insert", "blowjob", "undress_tongue", 
+    "closeup_blowjob", "custom_video", "face_video", "face_video_step1", 
+    "face_video_step2", "video_lora", "ltx_video", 
+    "video_edit", "perfect_video_edit", "txt2video", "video_insert"
+]
 
 # Web Access Allowed Roles
 WEB_ACCESS_ALLOWED_IDENTITIES = ["内门弟子", "核心弟子", "真传弟子"]

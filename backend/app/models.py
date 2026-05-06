@@ -37,6 +37,7 @@ class TaskStatusResponse(BaseModel):
     error: Optional[str] = None
     result_path: Optional[str] = None # Added for convenience
     image_url: Optional[str] = None
+    task_type: Optional[str] = None
 
 class WorkerInfo(BaseModel):
     agent_id: str
