@@ -129,11 +129,12 @@ const loadPosts = async (reset = false) => {
   const requestId = ++currentRequestId
   
   try {
-    const res = await api.get('/gallery/my-favorites', {
+    const endpoint = filterType.value === 'favorite' ? '/users/my-favorites' : '/gallery/my-favorites'
+    const res = await api.get(endpoint, {
       params: {
         page: page.value,
         size: size.value,
-        filter_type: filterType.value
+        filter_type: filterType.value === 'favorite' ? 'all' : filterType.value
       }
     })
     
@@ -197,6 +198,20 @@ const handleInteract = async (post: Post, action: 'like' | 'dislike') => {
   }
 }
 
+const handleUnfavorite = async (post: Post) => {
+  if (!post) return
+  
+  try {
+    await api.delete(`/users/history/${post.task_id}/favorite`)
+    message.success('已取消收藏')
+    detailVisible.value = false
+    loadPosts(true)
+  } catch (error: any) {
+    console.error(error)
+    message.error(error.response?.data?.detail || '操作失败')
+  }
+}
+
 const openDetail = (post: Post) => {
   currentPost.value = post
   detailVisible.value = true
@@ -219,7 +234,10 @@ const handleApply = async () => {
   applying.value = true
   
   try {
-    const res = await api.get(`/gallery/posts/${currentPost.value.id}/apply-context`)
+    const applyEndpoint = filterType.value === 'favorite'
+        ? `/users/history/${currentPost.value.task_id}/apply-context`
+        : `/gallery/posts/${currentPost.value.id}/apply-context`
+    const res = await api.get(applyEndpoint)
     const context = res.data
     detailVisible.value = false
     
@@ -318,7 +336,7 @@ onUnmounted(() => {
     <div class="mb-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
       <div class="flex items-center space-x-2 overflow-x-auto pb-2 md:pb-0 hide-scrollbar">
         <button 
-          v-for="ft in [{id: 'all', name: '全部'}, {id: 'like', name: '我的点赞'}, {id: 'apply', name: '我的应用'}]" 
+          v-for="ft in [{id: 'all', name: '全部'}, {id: 'like', name: '我的点赞'}, {id: 'apply', name: '我的应用'}, {id: 'favorite', name: '我的收藏'}]" 
           :key="ft.id"
           @click="handleFilterTypeChange(ft.id)"
           class="px-4 py-1.5 rounded-full text-sm font-medium transition-all whitespace-nowrap"
@@ -330,11 +348,11 @@ onUnmounted(() => {
     </div>
 
     <!-- Masonry Grid -->
-    <div class="columns-1 sm:columns-2 md:columns-3 lg:columns-4 gap-6 space-y-6">
+    <div class="columns-2 sm:columns-3 md:columns-4 lg:columns-5 gap-3 sm:gap-6">
       <div 
         v-for="post in posts" 
         :key="post.id"
-        class="break-inside-avoid rounded-2xl overflow-hidden relative group cursor-pointer border border-slate-400/50 bg-slate-500/40 hover:border-cyan-500/40 transition-all duration-300 shadow-lg hover:shadow-[0_8px_30px_rgba(56,189,248,0.15)] hover:-translate-y-1"
+        class="mb-3 sm:mb-6 break-inside-avoid rounded-2xl overflow-hidden relative group cursor-pointer border border-slate-400/50 bg-slate-500/40 hover:border-cyan-500/40 transition-all duration-300 shadow-lg hover:shadow-[0_8px_30px_rgba(56,189,248,0.15)] hover:-translate-y-1"
         @click="openDetail(post)"
       >
         <!-- Media -->
@@ -376,7 +394,7 @@ onUnmounted(() => {
         </div>
         
         <!-- Stats Bar -->
-        <div class="absolute bottom-0 left-0 right-0 p-3 bg-black/60 backdrop-blur-md border-t border-white/10 flex justify-between items-center z-10 translate-y-0">
+        <div v-if="filterType !== 'favorite'" class="absolute bottom-0 left-0 right-0 p-3 bg-black/60 backdrop-blur-md border-t border-white/10 flex justify-between items-center z-10 translate-y-0">
           <div class="flex items-center space-x-3">
             <div class="flex items-center text-slate-300 hover:text-pink-400 transition-colors" @click.stop="handleInteract(post, 'like')">
               <Heart :size="14" class="mr-1" :class="{'fill-pink-500 text-pink-500': post.has_liked}" />
@@ -455,7 +473,7 @@ onUnmounted(() => {
             </div>
           </div>
           
-          <div class="flex space-x-4 mb-auto pt-4">
+          <div class="flex space-x-4 mb-auto pt-4" v-if="filterType !== 'favorite'">
             <button @click="handleInteract(currentPost, 'like')" class="flex-1 py-3 rounded-xl border border-slate-400 bg-slate-500/50 hover:bg-slate-500 transition-all flex items-center justify-center group">
               <Heart :size="20" class="mr-2 transition-transform group-hover:scale-110" :class="currentPost.has_liked ? 'fill-pink-500 text-pink-500' : 'text-slate-400 group-hover:text-pink-400'" />
               <span class="font-medium" :class="currentPost.has_liked ? 'text-pink-400' : 'text-slate-300'">{{ currentPost.likes_count }}</span>
@@ -463,6 +481,13 @@ onUnmounted(() => {
             <button @click="handleInteract(currentPost, 'dislike')" class="flex-1 py-3 rounded-xl border border-slate-400 bg-slate-500/50 hover:bg-slate-500 transition-all flex items-center justify-center group">
               <ThumbsDown :size="20" class="mr-2 transition-transform group-hover:scale-110" :class="currentPost.has_disliked ? 'fill-slate-400 text-slate-400' : 'text-slate-400 group-hover:text-slate-200'" />
               <span class="font-medium" :class="currentPost.has_disliked ? 'text-slate-400' : 'text-slate-300'">{{ currentPost.dislikes_count }}</span>
+            </button>
+          </div>
+          
+          <div class="flex space-x-4 mb-auto pt-4" v-if="filterType === 'favorite'">
+            <button @click="handleUnfavorite(currentPost)" class="flex-1 py-3 rounded-xl border border-red-500/30 bg-red-500/10 hover:bg-red-500/20 text-red-400 transition-all flex items-center justify-center">
+              <Trash2 :size="18" class="mr-2" />
+              <span class="font-medium">取消收藏</span>
             </button>
           </div>
           

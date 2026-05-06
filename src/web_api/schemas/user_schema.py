@@ -15,6 +15,7 @@ class HistoryItem(BaseModel):
     allow_contribute: Optional[bool] = True
     source: Optional[str] = "bot"
     is_public: Optional[bool] = False
+    is_favorited: Optional[bool] = False
     
     class Config:
         from_attributes = True

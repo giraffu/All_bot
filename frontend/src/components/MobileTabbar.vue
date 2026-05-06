@@ -1,16 +1,19 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { User, Wand2, History as HistoryIcon, Compass, Bookmark, Star } from 'lucide-vue-next'
+import { User, Plus, History as HistoryIcon, Compass, Bookmark } from 'lucide-vue-next'
+import { useI18n } from 'vue-i18n'
 
 const router = useRouter()
 const route = useRoute()
+const { t } = useI18n()
 
 const navItems = [
-  { key: 'Gallery', label: '市集', icon: Compass },
-  { key: 'CustomFeatures', label: '练功房', icon: Wand2 },
-  { key: 'History', label: '闪回瓶', icon: HistoryIcon },
-  { key: 'Profile', label: '我的', icon: User },
+  { key: 'Gallery', labelKey: 'menu.gallery', icon: Compass },
+  { key: 'MyFavorites', labelKey: 'menu.my_favorites', icon: Bookmark },
+  { key: 'CustomFeatures', labelKey: 'menu.custom_features', icon: Plus },
+  { key: 'History', labelKey: 'menu.history', icon: HistoryIcon },
+  { key: 'Profile', labelKey: 'menu.profile', icon: User },
 ]
 
 const currentRouteName = computed(() => route.name as string)
@@ -27,17 +30,31 @@ const handleNavigation = (key: string) => {
         v-for="item in navItems" 
         :key="item.key"
         @click="handleNavigation(item.key)"
-        class="flex flex-col items-center justify-center w-full h-full space-y-1 transition-colors relative"
-        :class="currentRouteName === item.key ? 'text-cyan-400' : 'text-slate-500 hover:text-slate-300'"
+        class="flex flex-col items-center justify-center w-full h-full transition-colors relative"
+        :class="[
+          item.key === 'CustomFeatures' ? 'z-10' : '',
+          currentRouteName === item.key && item.key !== 'CustomFeatures' ? 'text-cyan-400' : 'text-slate-500 hover:text-slate-300'
+        ]"
       >
-        <!-- 激活状态的顶部指示条 -->
-        <div 
-          v-if="currentRouteName === item.key" 
-          class="absolute top-0 w-8 h-0.5 bg-cyan-400 rounded-b-full shadow-[0_2px_8px_rgba(34,211,238,0.6)]"
-        ></div>
-        
-        <component :is="item.icon" :size="22" :stroke-width="currentRouteName === item.key ? 2.5 : 2" />
-        <span class="text-[10px] font-medium tracking-wide">{{ item.label }}</span>
+        <template v-if="item.key === 'CustomFeatures'">
+          <!-- 悬浮凸起的加号按钮 (FAB) -->
+          <div 
+            class="absolute -translate-y-4 w-14 h-14 rounded-full flex items-center justify-center bg-gradient-to-r from-indigo-500 to-cyan-500 shadow-lg shadow-cyan-500/30 border-4 border-[#0b0e14]"
+            :class="currentRouteName === item.key ? 'scale-110 shadow-cyan-500/50 transition-all' : 'transition-all hover:scale-105'"
+          >
+            <component :is="item.icon" :size="28" :stroke-width="2.5" class="text-white" />
+          </div>
+        </template>
+        <template v-else>
+          <!-- 激活状态的顶部指示条 -->
+          <div 
+            v-if="currentRouteName === item.key" 
+            class="absolute top-0 w-8 h-0.5 bg-cyan-400 rounded-b-full shadow-[0_2px_8px_rgba(34,211,238,0.6)]"
+          ></div>
+          
+          <component :is="item.icon" :size="22" :stroke-width="currentRouteName === item.key ? 2.5 : 2" class="mb-1" />
+          <span class="text-[10px] font-medium tracking-wide">{{ t(item.labelKey) }}</span>
+        </template>
       </button>
     </div>
   </div>

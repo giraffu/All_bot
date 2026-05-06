@@ -75,6 +75,9 @@ class Referral(Base):
 
 class History(Base):
     __tablename__ = "history"
+    __table_args__ = (
+        Index('idx_history_user_favorite', 'user_id', 'is_favorited'),
+    )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     user_id = Column(BigInteger, ForeignKey("users.id"))
@@ -86,6 +89,7 @@ class History(Base):
     created_at = Column(DateTime, default=datetime.now)
     
     is_public = Column(Boolean, default=False)
+    is_favorited = Column(Boolean, default=False)
     rating = Column(Integer, default=0)
     allow_contribute = Column(Boolean, default=True)
     source = Column(String(20), server_default='bot', nullable=False)

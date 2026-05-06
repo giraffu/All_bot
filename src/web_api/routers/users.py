@@ -9,7 +9,10 @@ from src.database.models import History, User
 from src.web_api.dependencies import get_current_user
 from src.web_api.schemas.auth_schema import InvitationRechargeStats, UserResponse
 from src.web_api.schemas.user_schema import PaginatedHistory, CheckinResponse
+from src.web_api.schemas.gallery_schema import PaginatedGalleryResponse, ApplyContextResponse, GalleryPostResponse
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from pydantic import BaseModel
+import re
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -144,4 +147,194 @@ async def checkin_user(current_user: User = Depends(get_current_user)):
         error_msg=error_msg,
         total_days=total_days,
         reward=reward
+    )
+
+@router.post("/history/{task_id}/favorite")
+async def favorite_history(
+    task_id: str,
+    background_tasks: BackgroundTasks,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    stmt = select(History).where(History.task_id == task_id, History.user_id == current_user.id)
+    result = await db.execute(stmt)
+    history = result.scalar_one_or_none()
+    
+    if not history:
+        raise HTTPException(status_code=404, detail="未找到原任务详情")
+    
+    if not history.output_file:
+        raise HTTPException(status_code=400, detail="该任务没有生成文件")
+
+    if not history.is_favorited:
+        history.is_favorited = True
+        await db.commit()
+        
+        # 触发 R2 上传
+        from src.core.gallery_core import async_copy_to_r2_background
+        
+        parts = history.output_file.split("/")
+        if len(parts) > 1 and parts[0] in ["bot-data", "comfyui-temp"]:
+            bucket_name = parts[0]
+            object_name = "/".join(parts[1:])
+        elif "comfyui-temp" not in history.output_file and "bot-data" not in history.output_file:
+            bucket_name = "comfyui-temp" if not "/" in history.output_file else "bot-data"
+            object_name = history.output_file
+        else:
+            bucket_name = "bot-data"
+            object_name = history.output_file
+
+        r2_object_name = parts[-1]
+
+        background_tasks.add_task(async_copy_to_r2_background, bucket_name, object_name, r2_object_name)
+        
+    return {"status": "success", "message": "收藏成功"}
+
+@router.delete("/history/{task_id}/favorite")
+async def unfavorite_history(
+    task_id: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    stmt = select(History).where(History.task_id == task_id, History.user_id == current_user.id)
+    result = await db.execute(stmt)
+    history = result.scalar_one_or_none()
+    
+    if not history:
+        raise HTTPException(status_code=404, detail="未找到原任务详情")
+
+    if history.is_favorited:
+        history.is_favorited = False
+        await db.commit()
+        
+    return {"status": "success", "message": "已取消收藏"}
+
+@router.get("/my-favorites", response_model=PaginatedGalleryResponse)
+async def get_my_favorites(
+    page: int = 1,
+    size: int = 20,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    from sqlalchemy import desc
+    from src.web_api.routers.gallery import get_media_url
+    
+    # Query current user's favorite histories
+    stmt = select(History).where(
+        History.user_id == current_user.id,
+        History.is_favorited == True
+    ).order_by(desc(History.created_at))
+    
+    # Get total
+    from sqlalchemy import func
+    total_query = select(func.count()).select_from(stmt.subquery())
+    total = (await db.execute(total_query)).scalar()
+    
+    # Paginate
+    offset = (page - 1) * size
+    stmt = stmt.offset(offset).limit(size)
+    result = await db.execute(stmt)
+    histories = result.scalars().all()
+    
+    response_items = []
+    for history in histories:
+        media_url = get_media_url(history.output_file)
+        
+        # media_type mapping
+        media_type = 'image'
+        if history.type and 'video' in history.type.lower():
+            media_type = 'video'
+            
+        # extract tags from prompt
+        tags = []
+        if history.prompt:
+            match = re.search(r"\[模型:\s*(.*?)\]", history.prompt)
+            if match:
+                tags.append(f"#{match.group(1).strip()}")
+                
+        response_items.append(GalleryPostResponse(
+            id=history.id,
+            task_id=history.task_id,
+            media_type=media_type,
+            width=None,
+            height=None,
+            duration=None,
+            tags=tags,
+            likes_count=0,
+            dislikes_count=0,
+            applied_count=0,
+            thumbnail_url=media_url,
+            media_url=media_url,
+            created_at=history.created_at,
+            is_active=True,
+            prompt=history.prompt,
+            task_type=history.type,
+            has_liked=False,
+            has_disliked=False
+        ))
+        
+    pages = (total + size - 1) // size
+    return PaginatedGalleryResponse(
+        items=response_items,
+        total=total,
+        page=page,
+        size=size,
+        pages=pages
+    )
+
+@router.get("/history/{task_id}/apply-context", response_model=ApplyContextResponse)
+async def get_favorite_apply_context(
+    task_id: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    from src.web_api.routers.gallery import get_media_url
+    from src.config_mapping import ALL_LORA_MODELS
+    
+    stmt = select(History).where(History.task_id == task_id, History.user_id == current_user.id)
+    result = await db.execute(stmt)
+    history = result.scalar_one_or_none()
+    
+    if not history:
+        raise HTTPException(status_code=404, detail="未找到原任务详情")
+        
+    input_file_url = None
+    if history.input_file:
+        input_file_url = get_media_url(history.input_file)
+        
+    prompt = history.prompt or ""
+    lora_name = None
+    match = re.search(r"\[模型:\s*(.*?)\]\s*(.*)", prompt, re.DOTALL)
+    if match:
+        lora_tag = match.group(1).strip()
+        prompt = match.group(2).strip()
+        
+        reverse_lora_models = {v: k for k, v in ALL_LORA_MODELS.items()}
+        reverse_lora_models["逼真"] = "qwen/YARN_1.0.safetensors"
+        reverse_lora_models["菊花+内凹穴"] = "qwen/adjust_pussy_anus.safetensors"
+        reverse_lora_models["真实质感"] = "qwen/realistic_texture.safetensors"
+        reverse_lora_models["平胸/无毛穴"] = "qwen/flat_chest_hairless.safetensors"
+        reverse_lora_models["扶他(阴茎)"] = "qwen/penis.safetensors"
+        
+        if lora_tag in reverse_lora_models:
+            lora_name = reverse_lora_models[lora_tag]
+        else:
+            lora_name = lora_tag
+            
+    media_type = 'image'
+    if history.type and 'video' in history.type.lower():
+        media_type = 'video'
+        
+    return ApplyContextResponse(
+        post_id=history.id,  # mock post_id
+        task_id=history.task_id,
+        media_type=media_type,
+        prompt=prompt,
+        lora_name=lora_name,
+        input_file=history.input_file,
+        input_file_url=input_file_url,
+        width=None,
+        height=None,
+        duration=None,
+        task_type=history.type
     )

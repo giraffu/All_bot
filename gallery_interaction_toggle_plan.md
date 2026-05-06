@@ -14,6 +14,7 @@
 
 ## 2. API 路由层透传保障 (Pydantic Model)
 * **【优化点：无需修改 Schema】**：经排查 `src/web_api/routers/gallery.py` 中的 `interact_with_post` 路由，发现该接口并未限制 `response_model`，而是直接返回 `{"status": "success", "data": result}`。因此，只要在 `gallery_core.py` 中返回了 `action_state`，前端就能无损接收，无需改动现有的 Pydantic 模型。
+* **【补充细节：动态返回文案】**：接口返回的 `message` 需要动态化。解析 `result["action_state"]`，如果是 `canceled`，则返回 `"取消成功"` 或 `"已取消点踩"`，以确保前后端语义的严谨一致。
 
 ## 3. Web 前端改造 (`frontend/src/views/Gallery.vue` & `MyFavorites.vue`)
 目前前端的 `handleInteract` 方法是“乐观预测”机制：只要接口不报错，就盲目执行 `count++` 和 `has_liked = true`。这需要改为**基于后端响应的状态同步**。
@@ -33,6 +34,5 @@
 * **当前机制**：TG 端用户点击点赞后，底层原先会抛出 `DuplicateInteractionError` 拦截。且回调中会将按钮的 `callback_data` 替换为 `noop`，导致用户目前在不刷新画廊的情况下无法进行“二次点击”。
 * **兼容处理与【核心优化点：动态重绘双按钮】**：
   * 彻底废弃 `noop`，利用回调数据拆分出的参数，永远重新组装完整的 `callback_data`（包含 `sort_type`, `category`, `page` 等上下文）。
-  * 在 TG 的 `gallery_like_dislike_callback` 中接收新的 `action_state`，**整体重绘当前行的“赞”和“踩”两个按钮**。
-  * 若是 `switched`，不仅新点击的按钮要变成“✅ 已踩”，原先的“✅ 已赞”也必须恢复为普通的“👍 赞”。
-  * 若是 `canceled`，将对应按钮恢复为原始提示（如“👍 赞”或“👎 踩”），从而在 TG 端也实现完美的无缝 Toggle 体验。
+  * **【补充细节：动态 Toast 弹窗】**：在调用 `safe_answer_query` 时，提示语应根据 `action_state` 动态生成。如果是取消操作，提示 `"已取消点赞"` 或 `"已取消点踩"`，避免给用户造成困惑。
+  * **【补充细节：简化重绘逻辑】**：在 TG 的 `gallery_like_dislike_callback` 中接收新的 `action_state` 后，**不需要**去遍历匹配旧按钮的状态。可以直接根据 `action_state` 的结果（`added`, `switched`, `canceled`）推导出两个按钮的最终文本和状态，直接重新生成当前行的“赞”和“踩”两个按钮进行替换，这样代码更清晰且不易出错。

@@ -3,7 +3,7 @@ import { ref, onMounted } from 'vue'
 import api from '@/api'
 import { message } from 'ant-design-vue'
 import { useI18n } from 'vue-i18n'
-import { Image as ImageIcon, Video, Clock, Download, Compass } from 'lucide-vue-next'
+import { Image as ImageIcon, Video, Clock, Download, Compass, Star } from 'lucide-vue-next'
 import dayjs from 'dayjs'
 
 const { t } = useI18n()
@@ -59,6 +59,22 @@ const fetchHistory = async (page = 1) => {
     console.error('Failed to fetch history:', error)
   } finally {
     loading.value = false
+  }
+}
+
+const handleFavorite = async (record: any) => {
+  if (record.is_favorited) return
+  
+  const hide = message.loading('正在收藏...', 0)
+  try {
+    await api.post(`/users/history/${record.task_id}/favorite`)
+    hide()
+    message.success('已收藏至修仙笔记')
+    record.is_favorited = true
+  } catch (error: any) {
+    console.error(error)
+    hide()
+    message.error(error.response?.data?.detail || '收藏失败，请稍后再试')
   }
 }
 
@@ -367,6 +383,18 @@ onMounted(() => {
               <div v-else class="w-full h-12 bg-slate-600/30 border border-slate-500/30 rounded-xl text-slate-400 flex items-center justify-center text-sm">
                 {{ $t('history.cannot_post') }}
               </div>
+
+              <a-button
+                ghost
+                class="w-full h-12 border-slate-500/50 hover:bg-slate-500/30 transition-colors rounded-xl text-base font-medium !flex !items-center !justify-center"
+                :class="currentRecord.is_favorited ? 'text-slate-400 cursor-not-allowed' : 'text-amber-400 hover:text-amber-300 hover:border-amber-400/50'"
+                @click="!currentRecord.is_favorited && handleFavorite(currentRecord)"
+              >
+                <span class="flex items-center justify-center">
+                  <Star :size="18" class="mr-2" :class="{ 'fill-current': currentRecord.is_favorited }" />
+                  {{ currentRecord.is_favorited ? '已收藏' : '收藏' }}
+                </span>
+              </a-button>
 
               <a-button
                 ghost
