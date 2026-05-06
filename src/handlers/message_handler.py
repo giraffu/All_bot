@@ -178,12 +178,9 @@ async def handle_video_edit_menu(update: Update, context: ContextTypes.DEFAULT_T
 
 @prompt_route("menu.gallery")
 async def handle_gallery_menu(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str):
-    from src.i18n.keyboards import get_gallery_keyboard
-    reply_markup = get_gallery_keyboard(context.lang)
     await robust_reply_text(
         update.message, 
-        context.t("system.gallery_hint"), 
-        reply_markup=reply_markup, 
+        "浏览器进入 `https://web.aivison.it.com/` 或点击web按钮，查看市集内容哦", 
         parse_mode="Markdown"
     )
 
