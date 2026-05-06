@@ -12,6 +12,8 @@ from dashboard.backend.schemas import (
     AdminGiftRequest,
     UpdateCreditsRequest,
     UpdateIdentityRequest,
+    UpdateGroupRequest,
+    UpdateChannelMemberRequest,
 )
 from src.database.core import get_db
 from src.database.models import (
@@ -387,4 +389,84 @@ async def update_user_identity(user_id: int, request: UpdateIdentityRequest, db:
         }
     except Exception as e:
         logger.error(f"Error updating user identity: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/{user_id}/group")
+async def update_user_group(user_id: int, request: UpdateGroupRequest, db: AsyncSession = Depends(get_db)):
+    """Update user group (修为)"""
+    try:
+        stmt = select(User).where(User.id == user_id)
+        result = await db.execute(stmt)
+        user = result.scalar_one_or_none()
+        
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+            
+        old_group = user.user_group
+        user.user_group = request.user_group
+            
+        await db.commit()
+        
+        # Log the group change
+        from src.services.log_service import LogService
+        await LogService.log_action(
+            user_id=user_id,
+            username=user.username or user.full_name,
+            operation_type="admin_update_group",
+            credit_change=0,
+            current_balance=user.credits,
+            extra_info={
+                "old_group": old_group,
+                "new_group": user.user_group,
+                "source": "dashboard_admin_edit"
+            }
+        )
+            
+        return {
+            "status": "ok", 
+            "id": user.id,
+            "user_group": user.user_group
+        }
+    except Exception as e:
+        logger.error(f"Error updating user group: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/{user_id}/channel_member")
+async def update_user_channel_member(user_id: int, request: UpdateChannelMemberRequest, db: AsyncSession = Depends(get_db)):
+    """Update user channel member status (已入宗门)"""
+    try:
+        stmt = select(User).where(User.id == user_id)
+        result = await db.execute(stmt)
+        user = result.scalar_one_or_none()
+        
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+            
+        old_status = user.is_channel_member
+        user.is_channel_member = request.is_channel_member
+            
+        await db.commit()
+        
+        # Log the change
+        from src.services.log_service import LogService
+        await LogService.log_action(
+            user_id=user_id,
+            username=user.username or user.full_name,
+            operation_type="admin_update_channel_member",
+            credit_change=0,
+            current_balance=user.credits,
+            extra_info={
+                "old_status": old_status,
+                "new_status": user.is_channel_member,
+                "source": "dashboard_admin_edit"
+            }
+        )
+            
+        return {
+            "status": "ok", 
+            "id": user.id,
+            "is_channel_member": user.is_channel_member
+        }
+    except Exception as e:
+        logger.error(f"Error updating user channel member status: {e}")
         raise HTTPException(status_code=500, detail=str(e))

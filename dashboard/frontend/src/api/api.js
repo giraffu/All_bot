@@ -162,6 +162,16 @@ export const updateUserIdentity = async (userId, identity, expire_at = null, con
   return response.data
 }
 
+export const updateUserGroup = async (userId, userGroup) => {
+  const response = await api.post(`/api/users/${userId}/group`, { user_group: userGroup })
+  return response.data
+}
+
+export const updateUserChannelMember = async (userId, isChannelMember) => {
+  const response = await api.post(`/api/users/${userId}/channel_member`, { is_channel_member: isChannelMember })
+  return response.data
+}
+
 export const clearUserHistory = async (userId) => {
   const response = await api.delete(`/api/users/${userId}/history`)
   return response.data

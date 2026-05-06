@@ -13,6 +13,12 @@ class UpdateIdentityRequest(BaseModel):
     expire_at: Optional[datetime] = None
     convert: bool = True
 
+class UpdateGroupRequest(BaseModel):
+    user_group: str
+
+class UpdateChannelMemberRequest(BaseModel):
+    is_channel_member: bool
+
 class AdminGiftRequest(BaseModel):
     plan_id: int
     note: Optional[str] = "后台手动赠送"

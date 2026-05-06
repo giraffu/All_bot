@@ -12,7 +12,7 @@ import {
   DownOutlined
 } from '@ant-design/icons-vue'
 import { formatDate } from '../utils/helpers'
-import { updateUserCredits, clearUserHistory, deleteUser, fetchPlans, adminGiftPlan, updateUserIdentity, fetchUsers, fetchUserStats } from '../api/api'
+import { updateUserCredits, clearUserHistory, deleteUser, fetchPlans, adminGiftPlan, updateUserIdentity, fetchUsers, fetchUserStats, updateUserGroup, updateUserChannelMember } from '../api/api'
 import { message, Modal } from 'ant-design-vue'
 
 const emit = defineEmits(['viewHistory'])
@@ -176,10 +176,19 @@ const giftingPlan = ref(false)
 // Identity editing state
 const editIdentityVisible = ref(false)
 const currentIdentityUser = ref(null)
-const newIdentityValue = ref('')
+const newIdentityValue = ref('外门弟子')
 const newExpireAtValue = ref(null)
 const autoConvertIdentity = ref(true)
-const updatingIdentity = ref(false)
+
+const editGroupVisible = ref(false)
+const updatingGroup = ref(false)
+const currentGroupUser = ref(null)
+const newGroupValue = ref('凡人')
+
+const editChannelMemberVisible = ref(false)
+const updatingChannelMember = ref(false)
+const currentChannelMemberUser = ref(null)
+const newChannelMemberValue = ref(false)
 
 const allIdentities = [
   '外门弟子',
@@ -194,6 +203,18 @@ const handleEditIdentity = (record) => {
   newExpireAtValue.value = null // Start as null to allow auto-conversion
   autoConvertIdentity.value = true
   editIdentityVisible.value = true
+}
+
+const handleEditGroup = (record) => {
+  currentGroupUser.value = record
+  newGroupValue.value = record.user_group || '凡人'
+  editGroupVisible.value = true
+}
+
+const handleEditChannelMember = (record) => {
+  currentChannelMemberUser.value = record
+  newChannelMemberValue.value = !!record.is_channel_member
+  editChannelMemberVisible.value = true
 }
 
 const saveIdentity = async () => {
@@ -215,6 +236,44 @@ const saveIdentity = async () => {
     message.error('更新失败: ' + (err.response?.data?.detail || err.message))
   } finally {
     updatingIdentity.value = false
+  }
+}
+
+const saveGroup = async () => {
+  if (!currentGroupUser.value) return
+  
+  updatingGroup.value = true
+  try {
+    const res = await updateUserGroup(
+      currentGroupUser.value.id,
+      newGroupValue.value
+    )
+    message.success(`用户 ${currentGroupUser.value.id} 修为已更新为 ${res.user_group}`)
+    editGroupVisible.value = false
+    loadUsersData()
+  } catch (err) {
+    message.error('更新失败: ' + (err.response?.data?.detail || err.message))
+  } finally {
+    updatingGroup.value = false
+  }
+}
+
+const saveChannelMember = async () => {
+  if (!currentChannelMemberUser.value) return
+  
+  updatingChannelMember.value = true
+  try {
+    const res = await updateUserChannelMember(
+      currentChannelMemberUser.value.id,
+      newChannelMemberValue.value
+    )
+    message.success(`用户 ${currentChannelMemberUser.value.id} 宗门状态已更新`)
+    editChannelMemberVisible.value = false
+    loadUsersData()
+  } catch (err) {
+    message.error('更新失败: ' + (err.response?.data?.detail || err.message))
+  } finally {
+    updatingChannelMember.value = false
   }
 }
 
@@ -504,8 +563,8 @@ const columns = [
         </template>
 
         <template v-else-if="column.key === 'channel_joined'">
-          <a-tag :color="record.channel_joined ? 'green' : 'red'">
-            {{ record.channel_joined ? '是' : '否' }}
+          <a-tag :color="record.is_channel_member ? 'green' : 'red'">
+            {{ record.is_channel_member ? '是' : '否' }}
           </a-tag>
         </template>
 
@@ -572,6 +631,18 @@ const columns = [
                     <a-button type="text" size="small" @click="handleEditIdentity(record)" class="w-full text-left">
                       <template #icon><safety-certificate-outlined /></template>
                       切换身份
+                    </a-button>
+                  </a-menu-item>
+                  <a-menu-item key="group">
+                    <a-button type="text" size="small" @click="handleEditGroup(record)" class="w-full text-left">
+                      <template #icon><user-outlined /></template>
+                      切换修为
+                    </a-button>
+                  </a-menu-item>
+                  <a-menu-item key="channel">
+                    <a-button type="text" size="small" @click="handleEditChannelMember(record)" class="w-full text-left">
+                      <template #icon><team-outlined /></template>
+                      入宗状态
                     </a-button>
                   </a-menu-item>
                   <a-menu-item key="2">
@@ -643,6 +714,56 @@ const columns = [
             <li>此操作会记录管理员操作日志。</li>
           </ul>
         </div>
+      </div>
+    </a-modal>
+
+    <!-- 切换修为 Modal -->
+    <a-modal
+      v-model:visible="editGroupVisible"
+      title="切换用户修为"
+      @ok="saveGroup"
+      :confirmLoading="updatingGroup"
+      okText="确认切换"
+      cancelText="取消"
+    >
+      <div class="py-4">
+        <p class="mb-4 text-gray-500">正在修改用户 <span class="font-bold text-gray-800">{{ currentGroupUser?.full_name || currentGroupUser?.id }}</span> 的修为</p>
+        <a-form layout="vertical">
+          <a-form-item label="修为类型">
+            <a-select v-model:value="newGroupValue" style="width: 100%">
+              <a-select-option value="凡人">凡人</a-select-option>
+              <a-select-option value="练气期">练气期</a-select-option>
+              <a-select-option value="筑基期">筑基期</a-select-option>
+              <a-select-option value="金丹期">金丹期</a-select-option>
+              <a-select-option value="元婴期">元婴期</a-select-option>
+            </a-select>
+          </a-form-item>
+          <div class="text-xs text-gray-500 mt-1">
+              注意：修为是基于用户在系统内的贡献和资历来决定的（如邀请人数、签到次数、生成图片数量等）。<br/>手动更改修为可能会在系统下次重新评估时被覆盖。
+          </div>
+        </a-form>
+      </div>
+    </a-modal>
+
+    <!-- 切换入宗状态 Modal -->
+    <a-modal
+      v-model:visible="editChannelMemberVisible"
+      title="切换入宗状态"
+      @ok="saveChannelMember"
+      :confirmLoading="updatingChannelMember"
+      okText="确认切换"
+      cancelText="取消"
+    >
+      <div class="py-4">
+        <p class="mb-4 text-gray-500">正在修改用户 <span class="font-bold text-gray-800">{{ currentChannelMemberUser?.full_name || currentChannelMemberUser?.id }}</span> 的入宗状态</p>
+        <a-form layout="vertical">
+          <a-form-item label="是否已入宗门 (频道)">
+            <a-switch v-model:checked="newChannelMemberValue" checked-children="是" un-checked-children="否" />
+          </a-form-item>
+          <div class="text-xs text-gray-500 mt-1">
+              注意：如果用户实际并未加入官方频道，即使用此开关强制修改，当用户下次与机器人交互时，系统重新校验 Telegram 接口后，状态仍可能被重置。
+          </div>
+        </a-form>
       </div>
     </a-modal>
 

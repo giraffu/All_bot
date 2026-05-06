@@ -115,10 +115,9 @@ async def _build_post_responses(session, posts, current_user: Optional[User]):
         users = (await session.execute(
             select(User).where(User.id.in_(user_ids))
         )).scalars().all()
-        # use first_name + last_name, fallback to username or string ID
+        # use full_name, fallback to username or string ID
         for u in users:
-            name_parts = [p for p in [u.first_name, u.last_name] if p]
-            name = " ".join(name_parts) if name_parts else (u.username or f"User {u.id}")
+            name = u.full_name if u.full_name else (u.username or f"User {u.id}")
             user_map[u.id] = name
 
     response_items = []
