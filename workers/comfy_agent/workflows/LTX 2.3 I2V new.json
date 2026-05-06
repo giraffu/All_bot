@@ -50,10 +50,45 @@
         "lora": "ltx2.3/DR34ML4Y_LTXXX_PREVIEW_RC1.safetensors",
         "strength": 0.6
       },
-      "lora_5": {
+      "lora_3": {
         "on": true,
         "lora": "ltx2.3/SynthPussy_01_rank32.safetensors",
         "strength": 0.5
+      },
+      "lora_4": {
+        "on": false,
+        "lora": "ltx2.3/LTX2.3TITFUCKE2000.safetensors",
+        "strength": 1
+      },
+      "lora_5": {
+        "on": false,
+        "lora": "ltx2.3/ltxdeepthroat_v01.safetensors",
+        "strength": 1
+      },
+      "lora_6": {
+        "on": false,
+        "lora": "ltx2.3/penile-praxis-general-nsfw-ltx-2-t2v-i2v.safetensors",
+        "strength": 1
+      },
+      "lora_7": {
+        "on": false,
+        "lora": "ltx2.3/pussyjob_v1.1_merged_ltx23.safetensors",
+        "strength": 1
+      },
+      "lora_8": {
+        "on": false,
+        "lora": "ltx2.3/st0mach_bulge_ltx23_v1.1.safetensors",
+        "strength": 1
+      },
+      "lora_9": {
+        "on": false,
+        "lora": "ltx2.3/sfbehind_LTX2_3_v0_1.safetensors",
+        "strength": 1
+      },
+      "lora_10": {
+        "on": false,
+        "lora": "ltx2.3/nsfw_anal_insertion_ltx23_v1.0.safetensors",
+        "strength": 1
       },
       "➕ Add Lora": "",
       "model": [
@@ -120,8 +155,8 @@
   },
   "18": {
     "inputs": {
-      "Xi": 10,
-      "Xf": 10,
+      "Xi": 20,
+      "Xf": 20,
       "isfloatX": 0
     },
     "class_type": "mxSlider",
@@ -131,8 +166,8 @@
   },
   "19": {
     "inputs": {
-      "Xi": 704,
-      "Xf": 704,
+      "Xi": 20,
+      "Xf": 20,
       "isfloatX": 0
     },
     "class_type": "mxSlider",
@@ -295,8 +330,8 @@
   },
   "181": {
     "inputs": {
-      "Xi": 1280,
-      "Xf": 1280,
+      "Xi": 20,
+      "Xf": 20,
       "isfloatX": 0
     },
     "class_type": "mxSlider",
@@ -474,32 +509,6 @@
       "title": "FPS"
     }
   },
-  "26:178": {
-    "inputs": {
-      "width": [
-        "19",
-        0
-      ],
-      "height": [
-        "181",
-        0
-      ],
-      "upscale_method": "lanczos",
-      "keep_proportion": "resize",
-      "pad_color": "0, 0, 0",
-      "crop_position": "center",
-      "divisible_by": 32,
-      "device": "cpu",
-      "image": [
-        "15",
-        0
-      ]
-    },
-    "class_type": "ImageResizeKJv2",
-    "_meta": {
-      "title": "Resize Image v2"
-    }
-  },
   "26:231": {
     "inputs": {
       "longer_edge": 1536,
@@ -526,6 +535,32 @@
       "title": "Video Length"
     }
   },
+  "26:178": {
+    "inputs": {
+      "width": [
+        "19",
+        0
+      ],
+      "height": [
+        "181",
+        0
+      ],
+      "upscale_method": "lanczos",
+      "keep_proportion": "resize",
+      "pad_color": "0, 0, 0",
+      "crop_position": "center",
+      "divisible_by": 32,
+      "device": "cpu",
+      "image": [
+        "15",
+        0
+      ]
+    },
+    "class_type": "ImageResizeKJv2",
+    "_meta": {
+      "title": "Resize Image v2"
+    }
+  },
   "26:53": {
     "inputs": {
       "int_value": [
@@ -536,6 +571,19 @@
     "class_type": "IntToFloat",
     "_meta": {
       "title": "IntToFloat"
+    }
+  },
+  "26:232": {
+    "inputs": {
+      "img_compression": 18,
+      "image": [
+        "26:231",
+        0
+      ]
+    },
+    "class_type": "LTXVPreprocess",
+    "_meta": {
+      "title": "LTXV预处理"
     }
   },
   "26:179": {
@@ -554,19 +602,6 @@
     "class_type": "EmptyImage",
     "_meta": {
       "title": "空图像"
-    }
-  },
-  "26:232": {
-    "inputs": {
-      "img_compression": 18,
-      "image": [
-        "26:231",
-        0
-      ]
-    },
-    "class_type": "LTXVPreprocess",
-    "_meta": {
-      "title": "LTXV预处理"
     }
   },
   "26:40": {
@@ -615,26 +650,6 @@
     "class_type": "GetImageSize",
     "_meta": {
       "title": "获取图像尺寸"
-    }
-  },
-  "26:46": {
-    "inputs": {
-      "frame_rate": [
-        "26:53",
-        0
-      ],
-      "positive": [
-        "28",
-        0
-      ],
-      "negative": [
-        "29",
-        0
-      ]
-    },
-    "class_type": "LTXVConditioning",
-    "_meta": {
-      "title": "LTXV条件"
     }
   },
   "26:93": {
@@ -692,25 +707,24 @@
       "title": "空Latent视频（LTXV）"
     }
   },
-  "26:49": {
+  "26:46": {
     "inputs": {
-      "cfg": 1,
-      "model": [
-        "8",
+      "frame_rate": [
+        "26:53",
         0
       ],
       "positive": [
-        "26:46",
+        "28",
         0
       ],
       "negative": [
-        "26:46",
-        1
+        "29",
+        0
       ]
     },
-    "class_type": "CFGGuider",
+    "class_type": "LTXVConditioning",
     "_meta": {
-      "title": "CFG引导器"
+      "title": "LTXV条件"
     }
   },
   "26:44": {
@@ -733,6 +747,27 @@
     "class_type": "LTXVImgToVideoInplace",
     "_meta": {
       "title": "LTXV图像转视频（原地）"
+    }
+  },
+  "26:49": {
+    "inputs": {
+      "cfg": 1,
+      "model": [
+        "8",
+        0
+      ],
+      "positive": [
+        "26:46",
+        0
+      ],
+      "negative": [
+        "26:46",
+        1
+      ]
+    },
+    "class_type": "CFGGuider",
+    "_meta": {
+      "title": "CFG引导器"
     }
   },
   "26:45": {

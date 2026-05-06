@@ -97,6 +97,8 @@ async def process_submit_to_gallery(user_id: int, task_id: str, background_tasks
         if user_obj:
             user_obj.total_contributions = (user_obj.total_contributions or 0) + 1
             
+        history.is_public = True
+            
         await session.commit()
 
         # R2 copy logic

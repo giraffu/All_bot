@@ -1,5 +1,8 @@
 {
   "system": {
+    "maintenance_title": "系统维护中",
+    "maintenance_desc": "我们正在进行系统升级与维护，请稍后再试...",
+    "refresh": "刷新状态",
     "photo_edit_hint": "🖼️ **懒人P图模式**\n请选择具体功能：",
     "video_edit_hint": "🎬 **懒人动图**\n请选择演武场景：",
     "gallery_hint": "🏆 **修仙界广场**\n\n请选择您想查看的榜单：",

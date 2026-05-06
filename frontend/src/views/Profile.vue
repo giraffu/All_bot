@@ -159,7 +159,7 @@ onMounted(async () => {
 
 <template>
   <div class="profile-container space-y-6">
-    <div class="welcome-banner bg-gradient-to-r from-slate-800 via-slate-900 to-indigo-950 rounded-xl p-5 md:p-8 text-white shadow-lg relative overflow-hidden border border-slate-700/50">
+    <div class="welcome-banner bg-gradient-to-r from-indigo-500 via-purple-500 to-cyan-500 rounded-xl p-5 md:p-8 text-white shadow-lg relative overflow-hidden border border-indigo-400/50">
       <div class="relative z-10 flex flex-col md:flex-row justify-between items-start md:items-center">
         <!-- Left Section -->
         <div class="w-full md:w-auto">
@@ -191,9 +191,9 @@ onMounted(async () => {
         </div>
         
         <!-- Right Section -->
-        <div class="mt-5 md:mt-0 w-full md:w-auto flex flex-row md:flex-col items-center md:items-end justify-between md:justify-start gap-4 md:gap-0 border-t border-slate-700/50 md:border-0 pt-4 md:pt-0">
-          <div class="flex items-center bg-slate-900/40 backdrop-blur-md px-4 py-2 md:px-5 md:py-3 rounded-lg border border-slate-600/50 shadow-inner">
-            <Wallet :size="20" class="mr-2 md:mr-3 text-cyan-400 drop-shadow-[0_0_8px_rgba(56,189,248,0.5)]" />
+        <div class="mt-5 md:mt-0 w-full md:w-auto flex flex-row md:flex-col items-center md:items-end justify-between md:justify-start gap-4 md:gap-0 border-t border-white/20 md:border-0 pt-4 md:pt-0">
+          <div class="flex items-center bg-white/20 backdrop-blur-md px-4 py-2 md:px-5 md:py-3 rounded-lg border border-white/30 shadow-inner">
+            <Wallet :size="20" class="mr-2 md:mr-3 text-cyan-200 drop-shadow-[0_0_8px_rgba(255,255,255,0.5)]" />
             <div class="flex flex-col">
               <span class="text-[10px] md:text-xs text-slate-400 font-medium leading-none mb-1">{{ $t('profile.credits') }}</span>
               <span class="text-lg md:text-2xl font-bold leading-none drop-shadow-sm text-slate-100">{{ authStore.user?.credits || 0 }}</span>
@@ -212,7 +212,7 @@ onMounted(async () => {
     
     <!-- Breakthrough Conditions Section Removed -->
 
-    <div class="bg-slate-900/40 backdrop-blur-sm rounded-xl p-6 border border-slate-700/50 shadow-[0_4px_12px_rgba(0,0,0,0.2)]">
+    <div class="bg-slate-500/50 backdrop-blur-md rounded-xl p-6 border border-slate-400/50 shadow-[0_4px_12px_rgba(0,0,0,0.2)]">
       <h3 class="text-lg font-bold text-slate-200 mb-2 flex items-center drop-shadow-sm">
         <Activity :size="20" class="mr-2 text-cyan-400 drop-shadow-[0_0_5px_rgba(56,189,248,0.5)]" /> {{ $t('profile.quick_guide') }}
       </h3>
@@ -221,13 +221,13 @@ onMounted(async () => {
         <a-button type="primary" @click="$router.push('/custom-features')" class="bg-gradient-to-r from-indigo-600 to-cyan-700 border-none hover:from-indigo-500 hover:to-cyan-600 shadow-md">
           <Zap :size="16" class="mr-1 inline" /> {{ $t('profile.go_to_lab') }}
         </a-button>
-        <a-button type="default" @click="$router.push('/my-submissions')" class="bg-slate-800 text-cyan-300 border-cyan-500/30 hover:text-cyan-200 hover:border-cyan-400 shadow-md">
+        <a-button type="default" @click="$router.push('/my-submissions')" class="bg-slate-500 text-cyan-300 border-cyan-500/30 hover:text-cyan-200 hover:border-cyan-400 shadow-md">
           <Bookmark :size="16" class="mr-1 inline" /> {{ $t('menu.my_submissions') }}
         </a-button>
-        <a-button type="default" @click="$router.push('/my-favorites')" class="bg-slate-800 text-amber-300 border-amber-500/30 hover:text-amber-200 hover:border-amber-400 shadow-md">
+        <a-button type="default" @click="$router.push('/my-favorites')" class="bg-slate-500 text-amber-300 border-amber-500/30 hover:text-amber-200 hover:border-amber-400 shadow-md">
           <Star :size="16" class="mr-1 inline" /> {{ $t('menu.my_favorites') }}
         </a-button>
-        <a-button type="default" @click="handleBindPasswordModalOpen" class="bg-slate-800 text-indigo-300 border-indigo-500/30 hover:text-indigo-200 hover:border-indigo-400 shadow-md">
+        <a-button type="default" @click="handleBindPasswordModalOpen" class="bg-slate-500 text-indigo-300 border-indigo-500/30 hover:text-indigo-200 hover:border-indigo-400 shadow-md">
           <Lock :size="16" class="mr-1 inline" /> {{ authStore.user?.username ? $t('profile.change_password') : $t('profile.set_password') }}
         </a-button>
       </div>
@@ -240,9 +240,9 @@ onMounted(async () => {
       </h2>
       
       <div class="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
-        <a-card hoverable class="rounded-xl border border-slate-700/50 bg-slate-800/40 backdrop-blur-md shadow-[0_4px_16px_rgba(0,0,0,0.2)] hover:border-cyan-500/30 hover:shadow-[0_8px_24px_rgba(56,189,248,0.1)] transition-all group">
+        <a-card hoverable class="rounded-xl border border-slate-400/50 bg-slate-500/40 backdrop-blur-md shadow-[0_4px_16px_rgba(0,0,0,0.2)] hover:border-cyan-500/30 hover:shadow-[0_8px_24px_rgba(56,189,248,0.1)] transition-all group">
           <div class="flex items-center flex-col md:flex-row text-center md:text-left">
-            <div class="w-10 h-10 md:w-12 md:h-12 bg-slate-700/50 border border-slate-600 text-cyan-400 rounded-full flex items-center justify-center mb-2 md:mb-0 md:mr-4 group-hover:scale-110 transition-transform group-hover:shadow-[0_0_12px_rgba(56,189,248,0.4)]">
+            <div class="w-10 h-10 md:w-12 md:h-12 bg-slate-500/50 border border-slate-400 text-cyan-400 rounded-full flex items-center justify-center mb-2 md:mb-0 md:mr-4 group-hover:scale-110 transition-transform group-hover:shadow-[0_0_12px_rgba(56,189,248,0.4)]">
               <User :size="isMobile ? 20 : 24" />
             </div>
             <div>
@@ -252,9 +252,9 @@ onMounted(async () => {
           </div>
         </a-card>
 
-        <a-card hoverable class="rounded-xl border border-slate-700/50 bg-slate-800/40 backdrop-blur-md shadow-[0_4px_16px_rgba(0,0,0,0.2)] hover:border-indigo-500/30 hover:shadow-[0_8px_24px_rgba(99,102,241,0.1)] transition-all group">
+        <a-card hoverable class="rounded-xl border border-slate-400/50 bg-slate-500/40 backdrop-blur-md shadow-[0_4px_16px_rgba(0,0,0,0.2)] hover:border-indigo-500/30 hover:shadow-[0_8px_24px_rgba(99,102,241,0.1)] transition-all group">
           <div class="flex items-center flex-col md:flex-row text-center md:text-left">
-            <div class="w-10 h-10 md:w-12 md:h-12 bg-slate-700/50 border border-slate-600 text-indigo-400 rounded-full flex items-center justify-center mb-2 md:mb-0 md:mr-4 group-hover:scale-110 transition-transform group-hover:shadow-[0_0_12px_rgba(99,102,241,0.4)]">
+            <div class="w-10 h-10 md:w-12 md:h-12 bg-slate-500/50 border border-slate-400 text-indigo-400 rounded-full flex items-center justify-center mb-2 md:mb-0 md:mr-4 group-hover:scale-110 transition-transform group-hover:shadow-[0_0_12px_rgba(99,102,241,0.4)]">
               <Zap :size="isMobile ? 20 : 24" />
             </div>
             <div>
@@ -264,9 +264,9 @@ onMounted(async () => {
           </div>
         </a-card>
 
-        <a-card hoverable class="rounded-xl border border-slate-700/50 bg-slate-800/40 backdrop-blur-md shadow-[0_4px_16px_rgba(0,0,0,0.2)] hover:border-emerald-500/30 hover:shadow-[0_8px_24px_rgba(16,185,129,0.1)] transition-all group">
+        <a-card hoverable class="rounded-xl border border-slate-400/50 bg-slate-500/40 backdrop-blur-md shadow-[0_4px_16px_rgba(0,0,0,0.2)] hover:border-emerald-500/30 hover:shadow-[0_8px_24px_rgba(16,185,129,0.1)] transition-all group">
           <div class="flex items-center flex-col md:flex-row text-center md:text-left">
-            <div class="w-10 h-10 md:w-12 md:h-12 bg-slate-700/50 border border-slate-600 text-emerald-400 rounded-full flex items-center justify-center mb-2 md:mb-0 md:mr-4 group-hover:scale-110 transition-transform group-hover:shadow-[0_0_12px_rgba(16,185,129,0.4)]">
+            <div class="w-10 h-10 md:w-12 md:h-12 bg-slate-500/50 border border-slate-400 text-emerald-400 rounded-full flex items-center justify-center mb-2 md:mb-0 md:mr-4 group-hover:scale-110 transition-transform group-hover:shadow-[0_0_12px_rgba(16,185,129,0.4)]">
               <CalendarCheck :size="isMobile ? 20 : 24" />
             </div>
             <div>
@@ -276,9 +276,9 @@ onMounted(async () => {
           </div>
         </a-card>
 
-        <a-card hoverable class="rounded-xl border border-slate-700/50 bg-slate-800/40 backdrop-blur-md shadow-[0_4px_16px_rgba(0,0,0,0.2)] hover:border-amber-500/30 hover:shadow-[0_8px_24px_rgba(245,158,11,0.1)] transition-all group">
+        <a-card hoverable class="rounded-xl border border-slate-400/50 bg-slate-500/40 backdrop-blur-md shadow-[0_4px_16px_rgba(0,0,0,0.2)] hover:border-amber-500/30 hover:shadow-[0_8px_24px_rgba(245,158,11,0.1)] transition-all group">
           <div class="flex items-center flex-col md:flex-row text-center md:text-left">
-            <div class="w-10 h-10 md:w-12 md:h-12 bg-slate-700/50 border border-slate-600 text-amber-400 rounded-full flex items-center justify-center mb-2 md:mb-0 md:mr-4 group-hover:scale-110 transition-transform group-hover:shadow-[0_0_12px_rgba(245,158,11,0.4)]">
+            <div class="w-10 h-10 md:w-12 md:h-12 bg-slate-500/50 border border-slate-400 text-amber-400 rounded-full flex items-center justify-center mb-2 md:mb-0 md:mr-4 group-hover:scale-110 transition-transform group-hover:shadow-[0_0_12px_rgba(245,158,11,0.4)]">
               <Award :size="isMobile ? 20 : 24" />
             </div>
             <div>
@@ -297,9 +297,9 @@ onMounted(async () => {
       </h2>
       
       <div class="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-5 gap-3 md:gap-4">
-        <a-card hoverable class="rounded-xl border border-slate-700/50 bg-slate-800/40 backdrop-blur-md shadow-[0_4px_16px_rgba(0,0,0,0.2)] hover:border-cyan-500/30 hover:shadow-[0_8px_24px_rgba(56,189,248,0.1)] transition-all group">
+        <a-card hoverable class="rounded-xl border border-slate-400/50 bg-slate-500/40 backdrop-blur-md shadow-[0_4px_16px_rgba(0,0,0,0.2)] hover:border-cyan-500/30 hover:shadow-[0_8px_24px_rgba(56,189,248,0.1)] transition-all group">
           <div class="flex items-center flex-col md:flex-row text-center md:text-left">
-            <div class="w-10 h-10 md:w-12 md:h-12 bg-slate-700/50 border border-slate-600 text-cyan-400 rounded-full flex items-center justify-center mb-2 md:mb-0 md:mr-4 group-hover:scale-110 transition-transform group-hover:shadow-[0_0_12px_rgba(56,189,248,0.4)]">
+            <div class="w-10 h-10 md:w-12 md:h-12 bg-slate-500/50 border border-slate-400 text-cyan-400 rounded-full flex items-center justify-center mb-2 md:mb-0 md:mr-4 group-hover:scale-110 transition-transform group-hover:shadow-[0_0_12px_rgba(56,189,248,0.4)]">
               <User :size="isMobile ? 20 : 24" />
             </div>
             <div>
@@ -309,9 +309,9 @@ onMounted(async () => {
           </div>
         </a-card>
 
-        <a-card hoverable class="rounded-xl border border-slate-700/50 bg-slate-800/40 backdrop-blur-md shadow-[0_4px_16px_rgba(0,0,0,0.2)] hover:border-indigo-500/30 hover:shadow-[0_8px_24px_rgba(99,102,241,0.1)] transition-all group">
+        <a-card hoverable class="rounded-xl border border-slate-400/50 bg-slate-500/40 backdrop-blur-md shadow-[0_4px_16px_rgba(0,0,0,0.2)] hover:border-indigo-500/30 hover:shadow-[0_8px_24px_rgba(99,102,241,0.1)] transition-all group">
           <div class="flex items-center flex-col md:flex-row text-center md:text-left">
-            <div class="w-10 h-10 md:w-12 md:h-12 bg-slate-700/50 border border-slate-600 text-indigo-400 rounded-full flex items-center justify-center mb-2 md:mb-0 md:mr-4 group-hover:scale-110 transition-transform group-hover:shadow-[0_0_12px_rgba(99,102,241,0.4)]">
+            <div class="w-10 h-10 md:w-12 md:h-12 bg-slate-500/50 border border-slate-400 text-indigo-400 rounded-full flex items-center justify-center mb-2 md:mb-0 md:mr-4 group-hover:scale-110 transition-transform group-hover:shadow-[0_0_12px_rgba(99,102,241,0.4)]">
               <Activity :size="isMobile ? 20 : 24" />
             </div>
             <div>
@@ -321,9 +321,9 @@ onMounted(async () => {
           </div>
         </a-card>
 
-        <a-card hoverable class="rounded-xl border border-slate-700/50 bg-slate-800/40 backdrop-blur-md shadow-[0_4px_16px_rgba(0,0,0,0.2)] hover:border-emerald-500/30 hover:shadow-[0_8px_24px_rgba(16,185,129,0.1)] transition-all group">
+        <a-card hoverable class="rounded-xl border border-slate-400/50 bg-slate-500/40 backdrop-blur-md shadow-[0_4px_16px_rgba(0,0,0,0.2)] hover:border-emerald-500/30 hover:shadow-[0_8px_24px_rgba(16,185,129,0.1)] transition-all group">
           <div class="flex items-center flex-col md:flex-row text-center md:text-left">
-            <div class="w-10 h-10 md:w-12 md:h-12 bg-slate-700/50 border border-slate-600 text-emerald-400 rounded-full flex items-center justify-center mb-2 md:mb-0 md:mr-4 group-hover:scale-110 transition-transform group-hover:shadow-[0_0_12px_rgba(16,185,129,0.4)]">
+            <div class="w-10 h-10 md:w-12 md:h-12 bg-slate-500/50 border border-slate-400 text-emerald-400 rounded-full flex items-center justify-center mb-2 md:mb-0 md:mr-4 group-hover:scale-110 transition-transform group-hover:shadow-[0_0_12px_rgba(16,185,129,0.4)]">
               <Wallet :size="isMobile ? 20 : 24" />
             </div>
             <div>
@@ -333,9 +333,9 @@ onMounted(async () => {
           </div>
         </a-card>
 
-        <a-card hoverable class="rounded-xl border border-slate-700/50 bg-slate-800/40 backdrop-blur-md shadow-[0_4px_16px_rgba(0,0,0,0.2)] hover:border-amber-500/30 hover:shadow-[0_8px_24px_rgba(245,158,11,0.1)] transition-all group">
+        <a-card hoverable class="rounded-xl border border-slate-400/50 bg-slate-500/40 backdrop-blur-md shadow-[0_4px_16px_rgba(0,0,0,0.2)] hover:border-amber-500/30 hover:shadow-[0_8px_24px_rgba(245,158,11,0.1)] transition-all group">
           <div class="flex items-center flex-col md:flex-row text-center md:text-left">
-            <div class="w-10 h-10 md:w-12 md:h-12 bg-slate-700/50 border border-slate-600 text-amber-400 rounded-full flex items-center justify-center mb-2 md:mb-0 md:mr-4 group-hover:scale-110 transition-transform group-hover:shadow-[0_0_12px_rgba(245,158,11,0.4)]">
+            <div class="w-10 h-10 md:w-12 md:h-12 bg-slate-500/50 border border-slate-400 text-amber-400 rounded-full flex items-center justify-center mb-2 md:mb-0 md:mr-4 group-hover:scale-110 transition-transform group-hover:shadow-[0_0_12px_rgba(245,158,11,0.4)]">
               <Zap :size="isMobile ? 20 : 24" />
             </div>
             <div>
@@ -345,7 +345,7 @@ onMounted(async () => {
           </div>
         </a-card>
 
-        <a-card hoverable class="col-span-2 sm:col-span-2 lg:col-span-1 rounded-xl border border-slate-700/50 bg-slate-800/40 backdrop-blur-md shadow-[0_4px_16px_rgba(0,0,0,0.2)] hover:border-rose-500/30 hover:shadow-[0_8px_24px_rgba(244,63,94,0.1)] transition-all group relative overflow-hidden">
+        <a-card hoverable class="col-span-2 sm:col-span-2 lg:col-span-1 rounded-xl border border-slate-400/50 bg-slate-500/40 backdrop-blur-md shadow-[0_4px_16px_rgba(0,0,0,0.2)] hover:border-rose-500/30 hover:shadow-[0_8px_24px_rgba(244,63,94,0.1)] transition-all group relative overflow-hidden">
           <div class="absolute top-0 right-0 -mr-2 -mt-2 w-16 h-16 bg-gradient-to-br from-rose-400 to-orange-500 rounded-full opacity-20 blur-xl"></div>
           <div class="flex items-center flex-col md:flex-row text-center md:text-left relative z-10">
             <div class="w-10 h-10 md:w-12 md:h-12 bg-rose-500/20 border border-rose-500/50 text-rose-400 rounded-full flex items-center justify-center mb-2 md:mb-0 md:mr-4 group-hover:scale-110 transition-transform group-hover:shadow-[0_0_15px_rgba(244,63,94,0.5)]">
@@ -384,7 +384,7 @@ onMounted(async () => {
           <a-input 
             v-model:value="bindFormState.username" 
             placeholder="请输入 3-20 位的道号" 
-            class="bg-slate-800/50 border-slate-700 text-white placeholder-slate-500 focus:border-indigo-500"
+            class="bg-slate-500/50 border-slate-400 text-white placeholder-slate-500 focus:border-indigo-500"
           />
           <p class="text-slate-500 text-xs mt-1">如果你是首次结契，你可以自定义你喜欢的道号。一旦设置后，以后修改密咒时道号不可更改（需保持一致）。</p>
         </div>
@@ -394,7 +394,7 @@ onMounted(async () => {
           <a-input-password 
             v-model:value="bindFormState.password" 
             placeholder="请输入至少 6 位的密咒" 
-            class="bg-slate-800/50 border-slate-700 text-white placeholder-slate-500 focus:border-indigo-500"
+            class="bg-slate-500/50 border-slate-400 text-white placeholder-slate-500 focus:border-indigo-500"
           />
         </div>
       </div>
@@ -421,7 +421,7 @@ onMounted(async () => {
           <a-input 
             v-model:value="bindFormState.username" 
             placeholder="请输入 3-20 位的道号" 
-            class="bg-slate-800/50 border-slate-700 text-white placeholder-slate-500 focus:border-indigo-500 h-10"
+            class="bg-slate-500/50 border-slate-400 text-white placeholder-slate-500 focus:border-indigo-500 h-10"
           />
           <p class="text-slate-500 text-xs mt-1">如果你是首次结契，你可以自定义你喜欢的道号。一旦设置后，以后修改密咒时道号不可更改（需保持一致）。</p>
         </div>
@@ -431,7 +431,7 @@ onMounted(async () => {
           <a-input-password 
             v-model:value="bindFormState.password" 
             placeholder="请输入至少 6 位的密咒" 
-            class="bg-slate-800/50 border-slate-700 text-white placeholder-slate-500 focus:border-indigo-500 h-10"
+            class="bg-slate-500/50 border-slate-400 text-white placeholder-slate-500 focus:border-indigo-500 h-10"
           />
         </div>
 

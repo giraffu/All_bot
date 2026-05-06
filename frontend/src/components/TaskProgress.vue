@@ -12,7 +12,7 @@ const tasksStore = useTasksStore()
         <div 
           v-for="task in tasksStore.activeTasks" 
           :key="task.id" 
-          class="bg-slate-900/80 backdrop-blur-md rounded-xl shadow-[0_8px_32px_rgba(0,0,0,0.5)] border border-white/10 overflow-hidden flex-shrink-0"
+          class="bg-slate-500/80 backdrop-blur-md rounded-xl shadow-[0_8px_32px_rgba(0,0,0,0.5)] border border-white/10 overflow-hidden flex-shrink-0"
         >
           <div class="p-3 relative">
             <div class="flex justify-between items-center mb-2">

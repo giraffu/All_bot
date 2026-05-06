@@ -9,14 +9,16 @@ echo "🚀 开始 All_Bot 安全更新与重建流程 (带队列监控)..."
 echo "1️⃣ 开启系统维护模式..."
 if [ -n "$(docker ps -q -f name=^tg-bot$)" ]; then
     docker exec tg-bot touch /app/MAINTENANCE
-    echo "✅ 已开启 tg-bot (生产环境) 维护模式，所有新任务提交将被拒绝。"
+    docker exec web-api touch /app/MAINTENANCE 2>/dev/null || true
+    echo "✅ 已开启 tg-bot 与 web-api (生产环境) 维护模式，所有新任务提交将被拒绝。"
 else
     echo "⚠️ tg-bot 容器未运行，跳过生产环境维护模式标记。"
 fi
 
 if [ -n "$(docker ps -q -f name=^tg-bot-test$)" ]; then
     docker exec tg-bot-test touch /app/MAINTENANCE
-    echo "✅ 已开启 tg-bot-test (测试环境) 维护模式，所有新任务提交将被拒绝。"
+    docker exec web-api-test touch /app/MAINTENANCE 2>/dev/null || true
+    echo "✅ 已开启 tg-bot-test 与 web-api-test (测试环境) 维护模式，所有新任务提交将被拒绝。"
 else
     echo "⚠️ tg-bot-test 容器未运行，跳过测试环境维护模式标记。"
 fi

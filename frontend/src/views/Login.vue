@@ -155,7 +155,7 @@ onMounted(async () => {
       <div class="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] rounded-full bg-purple-600/20 blur-[120px]"></div>
     </div>
 
-    <div class="relative z-10 max-w-md w-full space-y-6 bg-slate-900/60 backdrop-blur-xl p-8 rounded-2xl shadow-2xl border border-slate-700/50">
+    <div class="relative z-10 max-w-md w-full space-y-6 bg-slate-500/60 backdrop-blur-xl p-8 rounded-2xl shadow-2xl border border-slate-400/50">
       <div>
         <div class="flex justify-center">
           <div class="h-16 w-16 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-full flex items-center justify-center shadow-[0_0_30px_rgba(99,102,241,0.4)] border border-indigo-400/30">
@@ -178,7 +178,7 @@ onMounted(async () => {
               v-model:value="pwdFormState.username" 
               size="large" 
               placeholder="道号" 
-              class="bg-slate-800/50 border-slate-700 text-white placeholder-slate-400 focus:border-indigo-500"
+              class="bg-slate-500/50 border-slate-400 text-white placeholder-slate-400 focus:border-indigo-500"
             >
               <template #prefix>
                 <UserOutlined class="text-slate-400" />
@@ -189,7 +189,7 @@ onMounted(async () => {
               v-model:value="pwdFormState.password" 
               size="large" 
               placeholder="密咒" 
-              class="bg-slate-800/50 border-slate-700 text-white placeholder-slate-400 focus:border-indigo-500"
+              class="bg-slate-500/50 border-slate-400 text-white placeholder-slate-400 focus:border-indigo-500"
               @pressEnter="handlePasswordLogin"
             >
               <template #prefix>
@@ -216,9 +216,9 @@ onMounted(async () => {
 
           <!-- 分割线 -->
           <div class="relative flex items-center py-2">
-            <div class="flex-grow border-t border-slate-700/50"></div>
+            <div class="flex-grow border-t border-slate-400/50"></div>
             <span class="flex-shrink-0 mx-4 text-slate-500 text-xs tracking-wider">或使用 Telegram 开启结界</span>
-            <div class="flex-grow border-t border-slate-700/50"></div>
+            <div class="flex-grow border-t border-slate-400/50"></div>
           </div>
 
           <!-- Telegram 登录区域 -->

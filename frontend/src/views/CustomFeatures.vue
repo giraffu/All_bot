@@ -112,7 +112,7 @@ onMounted(() => {
           v-for="feature in features" 
           :key="feature.key"
           hoverable 
-          class="feature-card h-full flex flex-col overflow-hidden transition-all duration-300 border-slate-700/50 bg-slate-800/40 backdrop-blur-md shadow-[0_4px_16px_rgba(0,0,0,0.2)] hover:border-cyan-500/30 hover:shadow-[0_8px_24px_rgba(56,189,248,0.15)] hover:-translate-y-1 group"
+          class="feature-card h-full flex flex-col overflow-hidden transition-all duration-300 border-slate-400/50 bg-slate-500/40 backdrop-blur-md shadow-[0_4px_16px_rgba(0,0,0,0.2)] hover:border-cyan-500/30 hover:shadow-[0_8px_24px_rgba(56,189,248,0.15)] hover:-translate-y-1 group"
           :bodyStyle="{ padding: '0', height: '100%', display: 'flex', flexDirection: 'column' }"
           @click="handleFeatureClick(feature.route, feature)"
         >
@@ -121,11 +121,11 @@ onMounted(() => {
             <div class="absolute -top-10 -right-10 w-24 h-24 bg-cyan-500/10 rounded-full blur-xl opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
             
             <div class="flex justify-between items-start mb-3 relative z-10">
-              <div class="w-10 h-10 rounded-lg flex items-center justify-center bg-slate-700/50 border border-slate-600 text-cyan-400 group-hover:scale-110 transition-transform group-hover:shadow-[0_0_12px_rgba(56,189,248,0.4)]">
+              <div class="w-10 h-10 rounded-lg flex items-center justify-center bg-slate-500/50 border border-slate-400 text-cyan-400 group-hover:scale-110 transition-transform group-hover:shadow-[0_0_12px_rgba(56,189,248,0.4)]">
                 <component :is="feature.icon" :size="20" />
               </div>
-              <span class="bg-slate-900/50 text-cyan-300/90 border border-cyan-500/20 px-2 py-0.5 rounded-full text-xs font-medium flex items-center shadow-inner">
-                <Wallet :size="12" class="mr-1 text-cyan-400"/> {{ feature.cost }}
+              <span class="bg-white/20 text-cyan-200 border border-cyan-300/30 px-2 py-0.5 rounded-full text-xs font-medium flex items-center shadow-inner">
+                <Wallet :size="12" class="mr-1 text-cyan-200"/> {{ feature.cost }}
               </span>
             </div>
             <h3 class="text-base font-bold text-slate-100 mb-1 relative z-10 drop-shadow-sm">{{ $t(feature.title) }}</h3>

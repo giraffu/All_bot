@@ -47,6 +47,15 @@ api.interceptors.response.use(
         errMsg = t('api.validation_error', { msg: `${loc}: ${firstErr.msg}` })
       }
       message.error(errMsg)
+    } else if (status === 503) {
+      // 如果是维护模式，直接跳转到维护页面
+      if (data?.code === 5030 || data?.intent === 'MAINTENANCE') {
+        if (router.currentRoute.value.path !== '/maintenance') {
+          router.push('/maintenance')
+        }
+      } else {
+        message.error(t('api.system_error'))
+      }
     } else {
       message.error(data?.message || data?.detail || t('api.system_error'))
     }

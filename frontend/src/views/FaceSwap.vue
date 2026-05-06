@@ -124,7 +124,7 @@ const resetForm = () => {
   <div class="face-swap-container max-w-7xl mx-auto flex flex-col h-[calc(100vh-80px)] w-full py-4 px-2 sm:px-6">
     <div class="flex flex-col lg:flex-row gap-6 flex-grow min-h-0">
       <!-- Left Panel: Input & Settings -->
-      <div class="w-full lg:w-[50%] flex flex-col bg-slate-800/40 backdrop-blur-md rounded-2xl shadow-sm border border-slate-700/50 overflow-hidden shrink-0">
+      <div class="w-full lg:w-[50%] flex flex-col bg-slate-500/40 backdrop-blur-md rounded-2xl shadow-sm border border-slate-400/50 overflow-hidden shrink-0">
         <div class="p-6 flex-grow overflow-y-auto custom-scrollbar">
           <h2 class="text-2xl font-bold mb-2 text-slate-100">快速换脸</h2>
           <p class="text-slate-400 mb-6 text-sm">请提供两张图片，系统将把第一张的人脸替换到第二张的目标场景中。</p>
@@ -142,7 +142,7 @@ const resetForm = () => {
                 <h3 class="text-sm font-bold mb-2 text-slate-200 flex items-center">
                   <span class="text-slate-500 mr-2">1.</span> 清晰人脸
                 </h3>
-                <div v-if="facePreview" class="relative group rounded-xl overflow-hidden border border-slate-600/50 bg-slate-900/50 flex items-center justify-center flex-grow w-full">
+                <div v-if="facePreview" class="relative group rounded-xl overflow-hidden border border-slate-400/50 bg-slate-500/50 flex items-center justify-center flex-grow w-full">
                   <a-image :src="facePreview" class="max-w-full max-h-full object-contain" :preview="true" />
                   <div class="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center pointer-events-none">
                     <a-button danger type="primary" @click="handleRemoveFace" class="pointer-events-auto" size="small">重新上传</a-button>
@@ -174,7 +174,7 @@ const resetForm = () => {
                 <h3 class="text-sm font-bold mb-2 text-slate-200 flex items-center">
                   <span class="text-slate-500 mr-2">2.</span> 目标场景
                 </h3>
-                <div v-if="bodyPreview" class="relative group rounded-xl overflow-hidden border border-slate-600/50 bg-slate-900/50 flex items-center justify-center flex-grow w-full">
+                <div v-if="bodyPreview" class="relative group rounded-xl overflow-hidden border border-slate-400/50 bg-slate-500/50 flex items-center justify-center flex-grow w-full">
                   <a-image :src="bodyPreview" class="max-w-full max-h-full object-contain" :preview="true" />
                   <div class="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center pointer-events-none">
                     <a-button danger type="primary" @click="handleRemoveBody" class="pointer-events-auto" size="small">重新上传</a-button>
@@ -210,7 +210,7 @@ const resetForm = () => {
         </div>
 
         <!-- Action Bar in Left Panel -->
-        <div class="p-6 border-t border-slate-700/50 bg-slate-900/40 shrink-0 flex items-center justify-between">
+        <div class="p-6 border-t border-slate-400/50 bg-slate-500/40 shrink-0 flex items-center justify-between">
           <div class="flex flex-col">
             <span class="text-slate-400 text-sm font-medium mb-1">预计消耗灵石</span>
             <div class="flex items-baseline text-blue-400 font-bold">
@@ -234,7 +234,7 @@ const resetForm = () => {
       </div>
 
       <!-- Right Panel: Result Preview -->
-      <div class="w-full lg:w-[50%] flex flex-col bg-slate-800/40 backdrop-blur-md rounded-2xl shadow-sm border border-slate-700/50 overflow-hidden relative">
+      <div class="w-full lg:w-[50%] flex flex-col bg-slate-500/40 backdrop-blur-md rounded-2xl shadow-sm border border-slate-400/50 overflow-hidden relative">
         <div class="p-6 flex-grow flex flex-col items-center justify-center h-full overflow-y-auto custom-scrollbar">
           
           <!-- Empty State -->
@@ -246,7 +246,7 @@ const resetForm = () => {
 
           <!-- Result Section -->
           <div v-else class="w-full h-full flex flex-col items-center justify-center">
-            <h3 class="text-xl font-bold mb-6 text-slate-200 w-full border-b border-slate-700/50 pb-4 flex items-center">
+            <h3 class="text-xl font-bold mb-6 text-slate-200 w-full border-b border-slate-400/50 pb-4 flex items-center">
               <span class="text-blue-500 mr-2">✨</span> 生成结果
             </h3>
             

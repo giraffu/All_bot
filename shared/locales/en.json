@@ -1,5 +1,8 @@
 {
   "system": {
+    "maintenance_title": "System Under Maintenance",
+    "maintenance_desc": "We are currently upgrading and maintaining the system. Please try again later...",
+    "refresh": "Refresh Status",
     "photo_edit_hint": "🖼️ **AI Edit Mode**\nPlease select a feature:",
     "video_edit_hint": "🎬 **AI GIF Mode**\nPlease select a scenario:",
     "gallery_hint": "🏆 **Gallery**\n\nPlease select a category:",

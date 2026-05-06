@@ -238,7 +238,7 @@ watch(() => route.name, (newName) => {
           <h2 class="text-lg font-bold text-slate-200 tracking-wide m-0 drop-shadow-sm">{{ route.name === 'Profile' ? $t('menu.profile') : (route.name === 'Gallery' ? $t('menu.gallery') : (route.name === 'CustomFeatures' ? $t('menu.custom_features') : (route.name === 'History' ? $t('menu.history') : (route.name === 'MySubmissions' ? $t('menu.my_submissions') : (route.name === 'MyFavorites' ? $t('menu.my_favorites') : ''))))) }}</h2>
         </div>
         <div class="header-right flex items-center space-x-4">
-          <div class="balance flex items-center bg-slate-800/40 backdrop-blur-md px-3 py-1 rounded-full border border-cyan-500/20 shadow-sm transition-all hover:shadow-[0_0_8px_rgba(56,189,248,0.3)] hover:scale-105">
+          <div class="balance flex items-center bg-slate-500/40 backdrop-blur-md px-3 py-1 rounded-full border border-cyan-500/20 shadow-sm transition-all hover:shadow-[0_0_8px_rgba(56,189,248,0.3)] hover:scale-105">
             <Wallet :size="14" class="text-cyan-400 mr-1.5 drop-shadow-[0_0_3px_rgba(56,189,248,0.5)]" />
             <span class="text-slate-200 font-bold tracking-wide text-sm">{{ authStore.user?.credits || 0 }} <span class="text-slate-400 text-xs font-normal">{{ $t('app.credits') }}</span></span>
           </div>
@@ -267,7 +267,7 @@ watch(() => route.name, (newName) => {
       </a-layout-header>
       
       <a-layout-content :class="[
-        'm-2 p-3 md:m-6 md:p-6 bg-slate-900/20 backdrop-blur-sm rounded-2xl shadow-[0_8px_32px_rgba(0,0,0,0.4)] border border-slate-700/50 relative overflow-y-auto overflow-x-hidden flex flex-col flex-grow',
+        'm-2 p-3 md:m-6 md:p-6 bg-slate-500/20 backdrop-blur-sm rounded-2xl shadow-[0_8px_32px_rgba(0,0,0,0.4)] border border-slate-400/50 relative overflow-y-auto overflow-x-hidden flex flex-col flex-grow',
         { 'mb-20': isMobile }
       ]">
         <router-view v-slot="{ Component }">
@@ -316,7 +316,7 @@ watch(() => route.name, (newName) => {
 }
 
 .header-custom {
-  background: rgba(15, 23, 42, 0.4) !important;
+  background: rgba(100, 116, 139, 0.5) !important;
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
   border-bottom: 1px solid rgba(56, 189, 248, 0.15);

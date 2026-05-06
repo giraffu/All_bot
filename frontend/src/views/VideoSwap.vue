@@ -130,7 +130,7 @@ const resetForm = () => {
   <div class="video-swap-container max-w-7xl mx-auto flex flex-col h-[calc(100vh-80px)] w-full py-4 px-2 sm:px-6">
     <div class="flex flex-col lg:flex-row gap-6 flex-grow min-h-0">
       <!-- Left Panel: Input & Settings -->
-      <div class="w-full lg:w-[50%] flex flex-col bg-slate-800/40 backdrop-blur-md rounded-2xl shadow-sm border border-slate-700/50 overflow-hidden shrink-0">
+      <div class="w-full lg:w-[50%] flex flex-col bg-slate-500/40 backdrop-blur-md rounded-2xl shadow-sm border border-slate-400/50 overflow-hidden shrink-0">
         <!-- Scrollable Content -->
         <div class="p-6 flex-grow overflow-y-auto custom-scrollbar">
           <h2 class="text-2xl font-bold mb-5 text-slate-100">视频换脸设置</h2>
@@ -148,7 +148,7 @@ const resetForm = () => {
                 <h3 class="text-sm font-bold mb-2 text-slate-200 flex items-center shrink-0">
                   <span class="text-slate-500 mr-2">1.</span> 清晰人脸
                 </h3>
-                <div v-if="facePreview" class="relative group rounded-xl overflow-hidden border border-slate-600/50 bg-slate-900/50 flex items-center justify-center flex-grow w-full">
+                <div v-if="facePreview" class="relative group rounded-xl overflow-hidden border border-slate-400/50 bg-slate-500/50 flex items-center justify-center flex-grow w-full">
                   <a-image :src="facePreview" class="max-w-full max-h-full object-contain" :preview="true" />
                   <div class="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center pointer-events-none">
                     <a-button danger type="primary" @click="handleRemoveFace" class="pointer-events-auto" size="small">重新上传</a-button>
@@ -180,7 +180,7 @@ const resetForm = () => {
                 <h3 class="text-sm font-bold mb-2 text-slate-200 flex items-center shrink-0">
                   <span class="text-slate-500 mr-2">2.</span> 目标视频
                 </h3>
-                <div v-if="bodyPreview" class="relative group rounded-xl overflow-hidden border border-slate-600/50 bg-slate-900/50 flex items-center justify-center flex-grow w-full">
+                <div v-if="bodyPreview" class="relative group rounded-xl overflow-hidden border border-slate-400/50 bg-slate-500/50 flex items-center justify-center flex-grow w-full">
                   <video :src="bodyPreview" class="max-w-full max-h-full bg-black object-contain" controls></video>
                   <div class="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center pointer-events-none">
                     <a-button danger type="primary" @click="handleRemoveBody" class="pointer-events-auto" size="small">重新上传</a-button>
@@ -194,7 +194,7 @@ const resetForm = () => {
                   accept="video/mp4, video/quicktime"
                   :before-upload="beforeUploadBody"
                   @remove="handleRemoveBody"
-                  class="upload-dragger bg-slate-800/40 backdrop-blur-md border-dashed border-2 border-blue-200 hover:border-blue-400 transition-colors flex-grow flex items-center justify-center w-full"
+                  class="upload-dragger bg-slate-500/50 backdrop-blur-md border-dashed border-2 border-blue-200 hover:border-blue-400 transition-colors flex-grow flex items-center justify-center w-full"
                   :show-upload-list="false"
                 >
                   <div class="flex flex-col items-center justify-center h-full w-full p-4">
@@ -210,7 +210,7 @@ const resetForm = () => {
           </div>
           
           <!-- Video Settings -->
-          <div class="settings-section border-t border-slate-700/50 pt-5">
+          <div class="settings-section border-t border-slate-400/50 pt-5">
             <h3 class="text-sm font-bold mb-3 text-slate-200">输出设置</h3>
             <div class="flex flex-col gap-4">
               <div>
@@ -225,7 +225,7 @@ const resetForm = () => {
         </div>
 
         <!-- Fixed Bottom Bar -->
-        <div class="p-6 border-t border-slate-700/50 bg-slate-900/40 shrink-0 flex items-center justify-between">
+        <div class="p-6 border-t border-slate-400/50 bg-slate-500/40 shrink-0 flex items-center justify-between">
           <div class="flex flex-col">
             <span class="text-slate-400 text-sm font-medium mb-1">预计消耗灵石</span>
             <div class="flex items-baseline text-blue-400 font-bold">
@@ -249,8 +249,8 @@ const resetForm = () => {
       </div>
 
       <!-- Right Panel: Result Preview -->
-      <div class="w-full lg:w-[50%] flex flex-col bg-slate-800/40 backdrop-blur-md rounded-2xl shadow-sm border border-slate-700/50 overflow-hidden relative">
-        <h3 class="text-lg font-bold p-4 border-b border-slate-700/50 text-slate-200 bg-slate-900/40 flex items-center shrink-0">
+      <div class="w-full lg:w-[50%] flex flex-col bg-slate-500/40 backdrop-blur-md rounded-2xl shadow-sm border border-slate-400/50 overflow-hidden relative">
+        <h3 class="text-lg font-bold p-4 border-b border-slate-400/50 text-slate-200 bg-slate-500/50 flex items-center shrink-0">
           <video-camera-outlined class="mr-2 text-blue-400" /> 结果预览区
         </h3>
         
@@ -264,12 +264,12 @@ const resetForm = () => {
           <!-- Loading State -->
           <div v-else-if="currentTask.status === 'pending' || currentTask.status === 'running'" class="flex flex-col items-center justify-center w-full h-full">
             <div class="relative w-32 h-32 flex items-center justify-center mb-6">
-              <div class="absolute inset-0 border-4 border-slate-700 rounded-full"></div>
+              <div class="absolute inset-0 border-4 border-slate-400 rounded-full"></div>
               <div class="absolute inset-0 border-4 border-blue-500 rounded-full border-t-transparent animate-spin"></div>
               <div class="text-blue-400 font-bold text-xl">{{ currentTask.progress }}%</div>
             </div>
             <p class="text-slate-300 font-medium text-lg animate-pulse">AI 正在为您生成大片...</p>
-            <p v-if="currentTask.queuePos" class="text-sm text-slate-500 mt-2 bg-slate-800 px-3 py-1 rounded-full">
+            <p v-if="currentTask.queuePos" class="text-sm text-slate-500 mt-2 bg-slate-500 px-3 py-1 rounded-full">
               队列位置: <span class="text-blue-400 font-bold">{{ currentTask.queuePos }}</span>
             </p>
             <div class="w-64 mt-6">
@@ -279,7 +279,7 @@ const resetForm = () => {
           
           <!-- Success State -->
           <div v-else-if="currentTask.status === 'success' && currentTask.resultUrl" class="w-full h-full flex flex-col items-center justify-center">
-            <div class="relative w-full h-full flex items-center justify-center bg-black/40 rounded-xl overflow-hidden border border-slate-700/50 shadow-2xl">
+            <div class="relative w-full h-full flex items-center justify-center bg-black/40 rounded-xl overflow-hidden border border-slate-400/50 shadow-2xl">
               <a-image v-if="isImageUrl(currentTask.resultUrl)" :src="currentTask.resultUrl" class="max-w-full max-h-full object-contain" :preview="true" />
               <video v-else :src="currentTask.resultUrl" controls class="max-w-full max-h-full object-contain"></video>
             </div>
@@ -289,7 +289,7 @@ const resetForm = () => {
               <a-button type="primary" ghost @click="downloadResult(currentTask.resultUrl, currentTask.title)" class="flex items-center px-6 rounded-lg">
                 <download-outlined class="mr-1" /> 保存到本地
               </a-button>
-              <a-button type="default" @click="$router.push('/history')" class="flex items-center px-6 rounded-lg border-slate-600 text-slate-300 hover:text-white hover:border-slate-400 bg-slate-800/50">
+              <a-button type="default" @click="$router.push('/history')" class="flex items-center px-6 rounded-lg border-slate-400 text-slate-300 hover:text-white hover:border-slate-400 bg-slate-500/50">
                 <history-outlined class="mr-1" /> 查看历史
               </a-button>
             </div>

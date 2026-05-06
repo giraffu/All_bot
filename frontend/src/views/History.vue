@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted } from 'vue'
 import api from '@/api'
 import { message } from 'ant-design-vue'
 import { useI18n } from 'vue-i18n'
-import { Image as ImageIcon, Video, Clock, PlayCircle, Download } from 'lucide-vue-next'
+import { Image as ImageIcon, Video, Clock, Download, Compass } from 'lucide-vue-next'
 import dayjs from 'dayjs'
 
 const { t } = useI18n()
@@ -18,43 +18,13 @@ const pagination = ref({
   hideOnSinglePage: true // Hide pagination since we only ever show max 8 items now
 })
 
-const previewVisible = ref(false)
-const previewVideoUrl = ref('')
+const detailVisible = ref(false)
+const currentRecord = ref<any>(null)
 
-const showVideoPreview = (url: string) => {
-  previewVideoUrl.value = url
-  previewVisible.value = true
+const openDetail = (record: any) => {
+  currentRecord.value = record
+  detailVisible.value = true
 }
-
-const handlePreviewClose = () => {
-  previewVisible.value = false
-  previewVideoUrl.value = ''
-}
-
-const columns = computed(() => [
-  {
-    title: t('history.table.type'),
-    dataIndex: 'type',
-    key: 'type',
-    width: 120,
-  },
-  {
-    title: t('history.table.result'),
-    dataIndex: 'output_file',
-    key: 'output_file',
-  },
-  {
-    title: t('history.table.created_at'),
-    dataIndex: 'created_at',
-    key: 'created_at',
-    width: 200,
-  },
-  {
-    title: t('history.table.actions'),
-    key: 'actions',
-    width: 150,
-  }
-])
 
 const submitToGallery = async (record: any) => {
   if (submittingTasks.value[record.task_id]) return
@@ -63,6 +33,7 @@ const submitToGallery = async (record: any) => {
   try {
     const res = await api.post(`/gallery/posts/submit/${record.task_id}`)
     message.success(res.data?.message || '投稿成功！')
+    record.is_public = true
   } catch (error: any) {
     console.error(error)
     if (error.response?.data?.detail) {
@@ -89,10 +60,6 @@ const fetchHistory = async (page = 1) => {
   } finally {
     loading.value = false
   }
-}
-
-const handleTableChange = (pag: any) => {
-  fetchHistory(pag.current)
 }
 
 const formatDate = (dateStr: string) => {
@@ -234,10 +201,10 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="history-container p-6 rounded-xl">
+  <div class="history-container p-4 sm:p-6 rounded-xl text-slate-200">
     <div class="flex justify-between items-center mb-6">
-      <h2 class="text-2xl font-bold text-slate-200 drop-shadow-sm">{{ $t('history.title') }}</h2>
-      <a-button class="bg-slate-800 text-cyan-200 border-cyan-500/30 hover:bg-slate-700 hover:text-white hover:border-cyan-400" @click="fetchHistory(1)">{{ $t('history.refresh') }}</a-button>
+      <h2 class="text-2xl font-bold drop-shadow-sm">{{ $t('history.title') }}</h2>
+      <a-button class="bg-slate-500 text-cyan-200 border-cyan-500/30 hover:bg-slate-500 hover:text-white hover:border-cyan-400" @click="fetchHistory(1)">{{ $t('history.refresh') }}</a-button>
     </div>
 
     <!-- Privacy and Convenience Notice -->
@@ -248,156 +215,191 @@ onMounted(() => {
       </div>
     </div>
 
-    <a-table 
-      :columns="columns" 
-      :data-source="data" 
-      :loading="loading"
-      :pagination="pagination"
-      @change="handleTableChange"
-      row-key="id"
-      class="custom-dark-table"
-      :scroll="{ x: 'max-content' }"
-    >
-      <template #bodyCell="{ column, record }">
-        
-        <template v-if="column.key === 'type'">
-          <div class="flex flex-col gap-1 w-max">
-            <a-tag :color="record.type === 'face_video' ? 'blue' : (record.type === 'face_swap' ? 'purple' : 'cyan')" class="flex items-center w-max bg-black/30 border-white/10 m-0">
-              <Video v-if="record.type === 'face_video'" :size="14" class="mr-1" />
-              <ImageIcon v-else :size="14" class="mr-1" />
-              {{ getTypeLabel(record.type) }}
-            </a-tag>
-            <a-tag :color="record.source === 'web' ? 'green' : 'orange'" class="flex items-center w-max bg-black/30 border-white/10 text-[10px] py-0 m-0 leading-tight">
-              <span v-if="record.source === 'web'">🌐 {{ $t('history.web_creation') }}</span>
-              <span v-else>🤖 {{ $t('history.bot_creation') }}</span>
-            </a-tag>
-          </div>
-        </template>
-        
-        <template v-else-if="column.key === 'output_file'">
-          <div v-if="record.output_file" class="flex items-center justify-center bg-black/40 rounded-lg p-2 border border-white/10 relative overflow-hidden group w-[100px] h-[100px]">
-            <!-- Check if video type based on file extension -->
-            <template v-if="isVideoFile(record.output_file)">
-              <div class="relative w-full h-full cursor-pointer" @click.stop="showVideoPreview(getFileUrl(record.output_file))">
-                <video 
-                  :src="getFileUrl(record.output_file)" 
-                  class="object-cover w-full h-full rounded-md shadow-sm opacity-80 group-hover:opacity-100 transition-opacity pointer-events-none"
-                  preload="metadata"
-                ></video>
-                <div class="absolute inset-0 flex items-center justify-center pointer-events-none">
-                  <div class="bg-black/50 rounded-full p-2 group-hover:bg-cyan-500/80 transition-colors">
-                    <PlayCircle :size="24" class="text-white opacity-90" />
-                  </div>
-                </div>
-              </div>
-            </template>
-            <a-image 
+    <!-- Loading State -->
+    <div v-if="loading" class="py-8 text-center">
+      <div class="inline-block w-8 h-8 border-2 border-cyan-500/30 border-t-cyan-500 rounded-full animate-spin"></div>
+    </div>
+
+    <!-- Empty State -->
+    <div v-else-if="data.length === 0" class="py-20 text-center text-slate-500">
+      <Compass :size="48" class="mx-auto mb-4 opacity-20" />
+      <p>暂无记录</p>
+    </div>
+
+    <!-- Cards Grid -->
+    <div v-else class="columns-2 md:columns-4 gap-3 sm:gap-6">
+      <div
+        v-for="record in data"
+        :key="record.id"
+        class="mb-3 sm:mb-6 break-inside-avoid rounded-2xl overflow-hidden relative group cursor-pointer border border-slate-400/50 bg-slate-800 hover:border-cyan-500/40 transition-all duration-300 shadow-lg hover:shadow-[0_8px_30px_rgba(56,189,248,0.15)] hover:-translate-y-1"
+        @click="openDetail(record)"
+      >
+        <!-- Media -->
+        <div class="relative w-full overflow-hidden aspect-auto min-h-[120px] flex items-center justify-center bg-slate-900">
+          <template v-if="record.output_file">
+            <video
+              v-if="isVideoFile(record.output_file)"
+              :src="getFileUrl(record.output_file) + '#t=0.001'"
+              class="w-full h-auto object-cover min-h-[120px]"
+              preload="metadata"
+              muted
+              loop
+              playsinline
+              @mouseenter="(e) => (e.target as HTMLVideoElement).play().catch(()=>{})"
+              @mouseleave="(e) => { const v = e.target as HTMLVideoElement; v.pause(); v.currentTime = 0; }"
+            ></video>
+            <img
               v-else
-              :width="80" 
-              :height="80"
-              :src="getFileUrl(record.output_file)" 
-              class="object-cover rounded-md shadow-sm"
-              :preview="{ src: getFileUrl(record.output_file) }"
+              :src="getFileUrl(record.output_file)"
+              class="w-full h-auto object-cover min-h-[120px]"
+              loading="lazy"
             />
-          </div>
-          <span v-else class="text-slate-500 italic text-sm">无文件</span>
-        </template>
-        
-        <template v-else-if="column.key === 'created_at'">
-          <div class="flex items-center text-slate-400 text-sm">
-            <Clock :size="14" class="mr-1 opacity-70" />
-            {{ formatDate(record.created_at) }}
-          </div>
-        </template>
+          </template>
+          <div v-else class="py-10 text-slate-500 italic text-sm">无文件</div>
 
-        <template v-else-if="column.key === 'actions'">
-          <div class="flex flex-col items-center gap-2">
-            <a-button 
-              v-if="record.output_file && ['i2i_pro', 'edit', 'custom_video', 'video_lora', 'img2img_lora', 'ltx_video'].includes(record.type) && record.allow_contribute !== false"
-              type="primary" 
-              size="small" 
-              class="bg-gradient-to-r from-cyan-600 to-indigo-600 border-none shadow-[0_0_10px_rgba(56,189,248,0.3)] hover:scale-105 transition-transform text-xs rounded-md w-full max-w-[90px]"
-              :loading="submittingTasks[record.task_id]"
-              @click="submitToGallery(record)"
-            >
-              <span class="flex items-center justify-center gap-1">
-                <span v-if="submittingTasks[record.task_id]">{{ $t('history.submitting') }}</span>
-                <span v-else>{{ $t('history.submit') }}</span>
-              </span>
-            </a-button>
-            <span v-else-if="!record.output_file" class="text-slate-600 text-xs">暂无文件</span>
-            <span v-else class="text-slate-600 text-xs py-1">{{ $t('history.cannot_post') }}</span>
+          <!-- Video Icon Badge (Top Right) -->
+          <div v-if="record.output_file && isVideoFile(record.output_file)" class="absolute top-2 right-2 bg-black/60 backdrop-blur-sm rounded-full p-1.5 shadow-sm border border-white/10 z-10">
+            <Video :size="14" class="text-indigo-400" />
+          </div>
 
-            <a-button 
-              v-if="record.output_file"
-              ghost
-              size="small" 
-              class="text-cyan-400 border-cyan-500/50 hover:text-cyan-300 hover:border-cyan-400 hover:bg-cyan-500/10 transition-colors text-xs rounded-md w-full max-w-[90px] mt-0.5 !flex !items-center !justify-center !p-0"
-              @click="handleDownload(record)"
-            >
-              <div class="flex items-center justify-center gap-1 w-full h-full">
-                <Download :size="13" />
-                <span>{{ $t('history.save') }}</span>
+          <!-- Tags Overlay (Always Visible, Bottom) -->
+          <div class="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/90 via-black/40 to-transparent p-2.5 pt-8 z-10">
+            <div class="flex justify-between items-end">
+              <div class="flex flex-col gap-1.5 items-start">
+                <span class="text-[11px] px-2 py-0.5 rounded-md backdrop-blur-md flex items-center border border-white/20 shadow-sm"
+                      :class="record.type === 'face_video' ? 'bg-blue-500/40 text-blue-100' : (record.type === 'face_swap' ? 'bg-purple-500/40 text-purple-100' : 'bg-cyan-500/40 text-cyan-100')">
+                  <Video v-if="record.type === 'face_video'" :size="12" class="mr-1 text-blue-300" />
+                  <ImageIcon v-else :size="12" class="mr-1 text-cyan-300" />
+                  {{ getTypeLabel(record.type) }}
+                </span>
+                <span class="text-[10px] px-2 py-0.5 rounded-md backdrop-blur-md border border-white/10 shadow-sm"
+                      :class="record.source === 'web' ? 'bg-green-500/40 text-green-100' : 'bg-orange-500/40 text-orange-100'">
+                  <span v-if="record.source === 'web'">🌐 {{ $t('history.web_creation') }}</span>
+                  <span v-else>🤖 {{ $t('history.bot_creation') }}</span>
+                </span>
               </div>
-            </a-button>
+              
+              <!-- 投稿状态 -->
+              <span v-if="['i2i_pro', 'edit', 'custom_video', 'video_lora', 'img2img_lora', 'ltx_video'].includes(record.type) && record.allow_contribute !== false"
+                    class="text-[10px] px-2 py-0.5 rounded-full backdrop-blur-md border border-white/20 shadow-sm whitespace-nowrap ml-1"
+                    :class="record.is_public ? 'bg-indigo-500/40 text-indigo-100' : 'bg-slate-500/40 text-slate-200'">
+                {{ record.is_public ? '已投稿' : '未投稿' }}
+              </span>
+            </div>
           </div>
-        </template>
-        
-      </template>
-    </a-table>
-
-    <!-- Video Preview Modal -->
-    <div 
-      v-if="previewVisible" 
-      class="fixed inset-0 z-[9999] flex items-center justify-center bg-black/90 backdrop-blur-sm transition-opacity"
-      @click="handlePreviewClose"
-    >
-      <div class="relative max-w-4xl w-full mx-4 flex flex-col items-center" @click.stop>
-        <div class="w-full flex justify-end mb-2">
-          <button 
-            class="text-white hover:text-cyan-400 transition-colors bg-transparent border-none text-4xl cursor-pointer p-2"
-            @click="handlePreviewClose"
-            title="关闭"
-          >&times;</button>
         </div>
-        <video 
-          v-if="previewVideoUrl" 
-          :src="previewVideoUrl" 
-          controls 
-          autoplay 
-          class="w-full max-h-[80vh] rounded-lg shadow-2xl bg-black outline-none"
-        ></video>
       </div>
     </div>
+
+    <!-- Detail Modal -->
+    <a-modal
+      v-model:visible="detailVisible"
+      :footer="null"
+      :closable="false"
+      width="90%"
+      style="max-width: 1000px; top: 20px"
+      class="history-detail-modal"
+      :bodyStyle="{ padding: 0, backgroundColor: 'transparent' }"
+      destroyOnClose
+    >
+      <div v-if="currentRecord" class="flex flex-col lg:flex-row bg-[#0f172a] rounded-2xl overflow-hidden border border-slate-400/50 shadow-2xl">
+        <!-- Media Area -->
+        <div class="lg:w-2/3 bg-black flex items-center justify-center relative min-h-[300px]">
+          <template v-if="currentRecord.output_file">
+            <video v-if="isVideoFile(currentRecord.output_file)" :src="getFileUrl(currentRecord.output_file)" class="max-w-full max-h-[80vh] object-contain" controls autoplay loop playsinline></video>
+            <img v-else :src="getFileUrl(currentRecord.output_file)" class="max-w-full max-h-[80vh] object-contain" />
+          </template>
+          <div v-else class="text-slate-500">无文件</div>
+        </div>
+
+        <!-- Info Area -->
+        <div class="lg:w-1/3 p-6 flex flex-col bg-slate-500/80 backdrop-blur-xl relative">
+          <!-- Close button -->
+          <button @click="detailVisible = false" class="absolute top-4 right-4 text-slate-400 hover:text-white transition-colors">
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+          </button>
+
+          <h3 class="text-xl font-bold text-slate-100 mb-6 flex items-center mt-2">
+            <span class="bg-gradient-to-r from-cyan-400 to-indigo-400 bg-clip-text text-transparent">作品详情</span>
+          </h3>
+
+          <div class="space-y-6 mb-8">
+            <!-- Labels -->
+            <div>
+              <div class="text-xs text-slate-400 mb-2 uppercase tracking-wider">类型标签</div>
+              <div class="flex flex-wrap gap-2">
+                <span class="text-sm px-3 py-1 rounded-md border border-white/20 bg-black/40 text-white flex items-center shadow-sm">
+                  <Video v-if="currentRecord.type === 'face_video'" :size="14" class="mr-1.5 text-blue-400" />
+                  <ImageIcon v-else :size="14" class="mr-1.5 text-cyan-400" />
+                  {{ getTypeLabel(currentRecord.type) }}
+                </span>
+                <span class="text-sm px-3 py-1 rounded-md border border-white/10"
+                      :class="currentRecord.source === 'web' ? 'bg-green-500/30 text-green-100' : 'bg-orange-500/30 text-orange-100'">
+                  {{ currentRecord.source === 'web' ? '🌐 ' + $t('history.web_creation') : '🤖 ' + $t('history.bot_creation') }}
+                </span>
+              </div>
+            </div>
+
+            <!-- Time -->
+            <div>
+              <div class="text-xs text-slate-400 mb-2 uppercase tracking-wider">创建时间</div>
+              <div class="flex items-center text-slate-200 text-sm bg-black/20 w-fit px-3 py-1.5 rounded-lg border border-slate-500/30">
+                <Clock :size="16" class="mr-2 text-cyan-400" />
+                {{ formatDate(currentRecord.created_at) }}
+              </div>
+            </div>
+          </div>
+
+          <!-- Actions -->
+          <div class="mt-auto space-y-3 pt-6">
+            <template v-if="currentRecord.output_file">
+              <a-button
+                v-if="['i2i_pro', 'edit', 'custom_video', 'video_lora', 'img2img_lora', 'ltx_video'].includes(currentRecord.type) && currentRecord.allow_contribute !== false"
+                type="primary"
+                :disabled="currentRecord.is_public"
+                class="w-full h-12 border-none rounded-xl text-base font-medium flex items-center justify-center"
+                :class="currentRecord.is_public ? 'bg-indigo-500/50 text-indigo-100 cursor-not-allowed' : 'bg-gradient-to-r from-cyan-600 to-indigo-600 shadow-[0_0_15px_rgba(56,189,248,0.3)] hover:scale-[1.02] transition-transform'"
+                :loading="submittingTasks[currentRecord.task_id]"
+                @click="!currentRecord.is_public && submitToGallery(currentRecord)"
+              >
+                {{ currentRecord.is_public ? '已投稿' : (submittingTasks[currentRecord.task_id] ? $t('history.submitting') : $t('history.submit')) }}
+              </a-button>
+              <div v-else class="w-full h-12 bg-slate-600/30 border border-slate-500/30 rounded-xl text-slate-400 flex items-center justify-center text-sm">
+                {{ $t('history.cannot_post') }}
+              </div>
+
+              <a-button
+                ghost
+                class="w-full h-12 text-cyan-400 border-cyan-500/50 hover:text-cyan-300 hover:border-cyan-400 hover:bg-cyan-500/10 transition-colors rounded-xl text-base font-medium !flex !items-center !justify-center"
+                @click="handleDownload(currentRecord)"
+              >
+                <span class="flex items-center justify-center">
+                  <Download :size="18" class="mr-2" />
+                  {{ $t('history.save') }}
+                </span>
+              </a-button>
+            </template>
+            <div v-else class="text-center text-slate-500 italic py-4 border border-dashed border-slate-600 rounded-xl">暂无文件可操作</div>
+          </div>
+        </div>
+      </div>
+    </a-modal>
   </div>
 </template>
+
+<style>
+.history-detail-modal .ant-modal-content {
+  background-color: transparent !important;
+  box-shadow: none !important;
+}
+.history-detail-modal .ant-modal-mask {
+  background-color: rgba(0, 0, 0, 0.85) !important;
+  backdrop-filter: blur(8px);
+}
+</style>
 
 <style scoped>
 .history-container {
   min-height: 100%;
-}
-:deep(.custom-dark-table) {
-  background: transparent !important;
-}
-:deep(.custom-dark-table .ant-table) {
-  background: transparent !important;
-}
-:deep(.custom-dark-table .ant-table-thead > tr > th) {
-  background: rgba(15, 23, 42, 0.4) !important;
-  color: #e2e8f0 !important;
-  border-bottom: 1px solid rgba(56, 189, 248, 0.2) !important;
-  font-weight: 600;
-}
-:deep(.custom-dark-table .ant-table-tbody > tr > td) {
-  border-bottom: 1px solid rgba(148, 163, 184, 0.1) !important;
-  background: transparent !important;
-  transition: background 0.3s;
-}
-:deep(.custom-dark-table .ant-table-tbody > tr:hover > td) {
-  background: rgba(56, 189, 248, 0.05) !important;
-}
-:deep(.custom-dark-table .ant-empty-description) {
-  color: #94a3b8 !important;
-  opacity: 0.8;
 }
 </style>

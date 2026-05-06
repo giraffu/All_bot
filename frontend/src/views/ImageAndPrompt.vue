@@ -125,7 +125,7 @@ const resetForm = () => {
   <div class="image-prompt-container max-w-7xl mx-auto flex flex-col h-[calc(100vh-80px)] w-full py-4 px-2 sm:px-6">
     <div class="flex flex-col lg:flex-row gap-6 flex-grow min-h-0">
       <!-- Left Panel: Input & Settings -->
-      <div class="w-full lg:w-[50%] flex flex-col bg-slate-800/40 backdrop-blur-md rounded-2xl shadow-sm border border-slate-700/50 overflow-hidden shrink-0">
+      <div class="w-full lg:w-[50%] flex flex-col bg-slate-500/50 backdrop-blur-md rounded-2xl shadow-sm border border-slate-400/50 overflow-hidden shrink-0">
         <div class="p-6 flex-grow overflow-y-auto custom-scrollbar">
           <h2 class="text-2xl font-bold mb-2 text-slate-100">{{ taskTitle }}</h2>
           <p class="text-slate-400 mb-6 text-sm">上传一张图片，并输入你想要 AI 如何修改它的描述。</p>
@@ -137,7 +137,7 @@ const resetForm = () => {
           </div>
           
           <div class="flex flex-col gap-6">
-            <div v-if="taskType === 'edit'" class="w-full bg-slate-900/60 rounded-xl p-4 border border-slate-700/50 shrink-0">
+            <div v-if="taskType === 'edit'" class="w-full bg-slate-500/60 rounded-xl p-4 border border-slate-400/50 shrink-0">
               <h3 class="text-sm font-bold mb-3 text-slate-200 flex items-center">
                 <span class="text-slate-500 mr-2">0.</span> 附加模型 (LoRA)
               </h3>
@@ -156,7 +156,7 @@ const resetForm = () => {
                 <h3 class="text-sm font-bold mb-2 text-slate-200 flex items-center">
                   <span class="text-slate-500 mr-2">1.</span> 基础图片
                 </h3>
-                <div v-if="filePreview" class="relative group rounded-xl overflow-hidden border border-slate-600/50 bg-slate-900/50 flex items-center justify-center flex-grow w-full">
+                <div v-if="filePreview" class="relative group rounded-xl overflow-hidden border border-slate-400/50 bg-slate-500/50 flex items-center justify-center flex-grow w-full">
                   <a-image :src="filePreview" class="max-w-full max-h-full object-contain" :preview="true" />
                   <div class="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center pointer-events-none">
                     <a-button danger type="primary" @click="handleRemove" class="pointer-events-auto" size="small">重新上传</a-button>
@@ -192,7 +192,7 @@ const resetForm = () => {
                   <span class="text-slate-500 mr-2">2.</span> 输入修改描述
                 </h3>
                 
-                <div v-if="isTemplateApplied" class="bg-slate-900/80 border border-slate-700/50 rounded-xl p-4 text-center flex-grow flex flex-col items-center justify-center">
+                <div v-if="isTemplateApplied" class="bg-slate-500/80 border border-slate-400/50 rounded-xl p-4 text-center flex-grow flex flex-col items-center justify-center">
                   <div class="flex items-center justify-center text-slate-500 mb-2">
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mr-2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
                   <span class="text-sm font-medium">提示词已锁定</span>
@@ -204,7 +204,7 @@ const resetForm = () => {
                   <a-textarea 
                     v-model:value="prompt" 
                     placeholder="例如：把背景变成海滩，让他戴上墨镜..." 
-                    class="rounded-xl border-slate-600/50 focus:border-blue-500 focus:ring-blue-500 text-sm p-3 flex-grow resize-none w-full !text-slate-200"
+                    class="rounded-xl border-slate-400/50 focus:border-blue-500 focus:ring-blue-500 text-sm p-3 flex-grow resize-none w-full !text-slate-200"
                   />
                   <p class="text-xs text-slate-500 mt-2 shrink-0">提示：描述越详细， AI 理解越准确。</p>
                 </template>
@@ -214,7 +214,7 @@ const resetForm = () => {
         </div>
 
         <!-- Action Bar in Left Panel -->
-        <div class="p-6 border-t border-slate-700/50 bg-slate-900/40 shrink-0 flex items-center justify-between">
+        <div class="p-6 border-t border-slate-400/50 bg-slate-500/50 shrink-0 flex items-center justify-between">
           <div class="flex flex-col">
             <span class="text-slate-400 text-sm font-medium mb-1">预计消耗灵石</span>
             <div class="flex items-baseline text-blue-400 font-bold">
@@ -238,7 +238,7 @@ const resetForm = () => {
       </div>
 
       <!-- Right Panel: Result Preview -->
-      <div class="w-full lg:w-[50%] flex flex-col bg-slate-800/40 backdrop-blur-md rounded-2xl shadow-sm border border-slate-700/50 overflow-hidden relative">
+      <div class="w-full lg:w-[50%] flex flex-col bg-slate-500/50 backdrop-blur-md rounded-2xl shadow-sm border border-slate-400/50 overflow-hidden relative">
         <div class="p-6 flex-grow flex flex-col items-center justify-center h-full overflow-y-auto custom-scrollbar">
           
           <!-- Empty State -->
@@ -250,7 +250,7 @@ const resetForm = () => {
 
           <!-- Result Section -->
           <div v-else class="w-full h-full flex flex-col items-center justify-center">
-            <h3 class="text-xl font-bold mb-6 text-slate-200 w-full border-b border-slate-700/50 pb-4 flex items-center">
+            <h3 class="text-xl font-bold mb-6 text-slate-200 w-full border-b border-slate-400/50 pb-4 flex items-center">
               <span class="text-blue-500 mr-2">✨</span> 生成结果
             </h3>
             

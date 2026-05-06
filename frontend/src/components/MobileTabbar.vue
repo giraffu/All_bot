@@ -21,7 +21,7 @@ const handleNavigation = (key: string) => {
 </script>
 
 <template>
-  <div class="fixed bottom-0 left-0 right-0 z-50 bg-[#0b0e14]/90 backdrop-blur-lg border-t border-slate-700/50 pb-safe">
+  <div class="fixed bottom-0 left-0 right-0 z-50 bg-[#0b0e14]/90 backdrop-blur-lg border-t border-slate-400/50 pb-safe">
     <div class="flex items-center justify-around h-16 px-2">
       <button 
         v-for="item in navItems" 

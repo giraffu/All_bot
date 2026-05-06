@@ -1,3 +1,4 @@
+import os
 import logging
 from contextlib import asynccontextmanager
 
@@ -6,6 +7,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
+from starlette.middleware.base import BaseHTTPMiddleware
 from src.core.exceptions import DomainException, InsufficientCreditsError, AccessDeniedError
 
 from src.database.core import engine
@@ -14,6 +16,20 @@ from src.web_api.routers import auth, gallery, storage, tasks, users, utils
 # Configure logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
+
+class MaintenanceMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        # 检测维护标志文件
+        if os.path.exists("/app/MAINTENANCE"):
+            return JSONResponse(
+                status_code=503,
+                content={
+                    "code": 5030,
+                    "message": "System is under maintenance. Please try again later.",
+                    "intent": "MAINTENANCE"
+                }
+            )
+        return await call_next(request)
 
 @asynccontextmanager
 async def lifespan(fastapi_app: FastAPI):
@@ -30,6 +46,8 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan
 )
+
+app.add_middleware(MaintenanceMiddleware)
 
 # CORS configuration
 app.add_middleware(

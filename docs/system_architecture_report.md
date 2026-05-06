@@ -32,7 +32,7 @@ graph TD
         T2[Tailscale 虚拟局域网 VLAN<br>底座与节点安全互联]
     end
 
-    subgraph 接入网关层 武汉算力底座
+    subgraph 接入网关层 算力底座
         B1[主 Bot 服务 Tg-Bot]
         B2[Web BFF API FastAPI 8000]
         B3[Dashboard 后端]

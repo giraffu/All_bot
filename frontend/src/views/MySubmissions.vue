@@ -55,6 +55,17 @@ const detailVisible = ref(false)
 const currentPost = ref<Post | null>(null)
 const applying = ref(false)
 
+const formatTag = (tag: string) => {
+  if (tag.startsWith('#task.')) {
+    const key = tag.substring(1)
+    return '#' + t(key)
+  }
+  if (tag.startsWith('task.')) {
+    return t(tag)
+  }
+  return tag
+}
+
 const getFileUrl = (path: string, postId?: number) => {
   if (!path) return ''
   let url = path
@@ -335,11 +346,11 @@ onUnmounted(() => {
       <div 
         v-for="post in posts" 
         :key="post.id"
-        class="break-inside-avoid rounded-2xl overflow-hidden relative group cursor-pointer border border-slate-700/30 bg-slate-800/20 hover:border-cyan-500/40 transition-all duration-300 shadow-lg hover:shadow-[0_8px_30px_rgba(56,189,248,0.15)] hover:-translate-y-1"
+        class="break-inside-avoid rounded-2xl overflow-hidden relative group cursor-pointer border border-slate-400/50 bg-slate-500/40 hover:border-cyan-500/40 transition-all duration-300 shadow-lg hover:shadow-[0_8px_30px_rgba(56,189,248,0.15)] hover:-translate-y-1"
         @click="openDetail(post)"
       >
         <!-- Media -->
-        <div class="relative w-full overflow-hidden bg-slate-900 aspect-auto min-h-[100px]">
+        <div class="relative w-full overflow-hidden bg-slate-500 aspect-auto min-h-[100px]">
           <img 
             v-if="!isVideoFile(post.thumbnail_url, post.media_type)" 
             :src="getFileUrl(post.thumbnail_url, post.id)" 
@@ -386,7 +397,7 @@ onUnmounted(() => {
             
             <div class="flex flex-wrap gap-1.5 mb-8">
               <span v-for="tag in post.tags.slice(0, 4)" :key="tag" class="text-[10px] bg-cyan-500/20 border border-cyan-500/30 text-cyan-100 px-2 py-0.5 rounded-full backdrop-blur-md">
-                {{ tag }}
+                {{ formatTag(tag) }}
               </span>
               <span v-if="post.tags.length > 4" class="text-[10px] text-slate-300 px-1">...</span>
             </div>
@@ -435,7 +446,7 @@ onUnmounted(() => {
       :bodyStyle="{ padding: 0, backgroundColor: 'transparent' }"
       destroyOnClose
     >
-      <div v-if="currentPost" class="flex flex-col lg:flex-row bg-[#0f172a] rounded-2xl overflow-hidden border border-slate-700/50 shadow-2xl">
+      <div v-if="currentPost" class="flex flex-col lg:flex-row bg-[#0f172a] rounded-2xl overflow-hidden border border-slate-400/50 shadow-2xl">
         <!-- Media Area -->
         <div class="lg:w-2/3 bg-black flex items-center justify-center relative min-h-[300px]">
           <img v-if="!isVideoFile(currentPost.media_url, currentPost.media_type)" :src="getFileUrl(currentPost.media_url, currentPost.id)" class="max-w-full max-h-[80vh] object-contain" />
@@ -443,7 +454,7 @@ onUnmounted(() => {
         </div>
         
         <!-- Info Area -->
-        <div class="lg:w-1/3 p-4 flex flex-col bg-slate-900/80 backdrop-blur-xl relative max-h-[50vh] lg:max-h-none overflow-y-auto">
+        <div class="lg:w-1/3 p-4 flex flex-col bg-slate-500/80 backdrop-blur-xl relative max-h-[50vh] lg:max-h-none overflow-y-auto">
           <!-- Close button -->
           <button @click="detailVisible = false" class="absolute top-3 right-3 text-slate-400 hover:text-white transition-colors z-10 bg-black/50 p-1.5 rounded-full">
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
@@ -455,34 +466,34 @@ onUnmounted(() => {
             </h3>
             
             <div class="text-xs text-slate-400 flex items-center gap-3 mr-8">
-              <span v-if="currentPost.width" class="bg-slate-800/80 px-2 py-1 rounded">📏 {{ currentPost.width }}x{{ currentPost.height }}</span>
-              <span v-if="currentPost.created_at" class="bg-slate-800/80 px-2 py-1 rounded">📅 {{ dayjs(currentPost.created_at).format('MM-DD HH:mm') }}</span>
+              <span v-if="currentPost.width" class="bg-slate-500/80 px-2 py-1 rounded">📏 {{ currentPost.width }}x{{ currentPost.height }}</span>
+              <span v-if="currentPost.created_at" class="bg-slate-500/80 px-2 py-1 rounded">📅 {{ dayjs(currentPost.created_at).format('MM-DD HH:mm') }}</span>
             </div>
           </div>
           
           <div class="mb-4" v-if="currentPost.tags && currentPost.tags.length > 0">
             <div class="flex flex-wrap gap-1.5">
-              <span v-for="tag in currentPost.tags" :key="tag" class="text-[11px] bg-slate-800 text-cyan-200 border border-slate-700 px-2 py-0.5 rounded">
-                #{{ tag }}
+              <span v-for="tag in currentPost.tags" :key="tag" class="text-[11px] bg-slate-500 text-cyan-200 border border-slate-400 px-2 py-0.5 rounded">
+                {{ tag.startsWith('#') ? formatTag(tag) : '#' + formatTag(tag) }}
               </span>
             </div>
           </div>
           
           <!-- 紧凑的点赞/踩区域 -->
           <div class="flex space-x-3 mb-4">
-            <button @click="handleInteract(currentPost, 'like')" class="flex-1 py-2 rounded-lg border border-slate-700 bg-slate-800/50 hover:bg-slate-700 transition-all flex items-center justify-center group">
+            <button @click="handleInteract(currentPost, 'like')" class="flex-1 py-2 rounded-lg border border-slate-400 bg-slate-500/50 hover:bg-slate-500 transition-all flex items-center justify-center group">
               <Heart :size="16" class="mr-1.5 transition-transform group-hover:scale-110" :class="currentPost.has_liked ? 'fill-pink-500 text-pink-500' : 'text-slate-400 group-hover:text-pink-400'" />
               <span class="text-sm font-medium" :class="currentPost.has_liked ? 'text-pink-400' : 'text-slate-300'">{{ currentPost.likes_count }}</span>
             </button>
-            <button @click="handleInteract(currentPost, 'dislike')" class="flex-1 py-2 rounded-lg border border-slate-700 bg-slate-800/50 hover:bg-slate-700 transition-all flex items-center justify-center group">
+            <button @click="handleInteract(currentPost, 'dislike')" class="flex-1 py-2 rounded-lg border border-slate-400 bg-slate-500/50 hover:bg-slate-500 transition-all flex items-center justify-center group">
               <ThumbsDown :size="16" class="mr-1.5 transition-transform group-hover:scale-110" :class="currentPost.has_disliked ? 'fill-slate-400 text-slate-400' : 'text-slate-400 group-hover:text-slate-200'" />
               <span class="text-sm font-medium" :class="currentPost.has_disliked ? 'text-slate-400' : 'text-slate-300'">{{ currentPost.dislikes_count }}</span>
             </button>
           </div>
           
           <!-- 移动端管理按钮区 (紧凑版) -->
-          <div class="flex space-x-3 mb-5 border-b border-slate-700/50 pb-4">
-            <button @click="toggleStatus(currentPost)" class="flex-1 py-2 rounded-lg border border-slate-700 bg-slate-800 hover:bg-slate-700 transition-all flex items-center justify-center text-xs font-medium" :class="currentPost.is_active ? 'text-orange-400' : 'text-green-400'">
+          <div class="flex space-x-3 mb-5 border-b border-slate-400/50 pb-4">
+            <button @click="toggleStatus(currentPost)" class="flex-1 py-2 rounded-lg border border-slate-400 bg-slate-500 hover:bg-slate-500 transition-all flex items-center justify-center text-xs font-medium" :class="currentPost.is_active ? 'text-orange-400' : 'text-green-400'">
               <EyeOff v-if="currentPost.is_active" :size="14" class="mr-1.5" />
               <Eye v-else :size="14" class="mr-1.5" />
               {{ currentPost.is_active ? $t('my_posts.put_off_shelf') : $t('my_posts.put_on_shelf') }}
@@ -496,7 +507,7 @@ onUnmounted(() => {
           <div class="mt-auto space-y-3">
             <button v-if="currentPost.prompt"
               @click="copyPrompt(currentPost)"
-              class="w-full py-2.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-white text-sm font-medium shadow-sm transition-all flex items-center justify-center border border-slate-600"
+              class="w-full py-2.5 rounded-lg bg-slate-500 hover:bg-slate-500 text-white text-sm font-medium shadow-sm transition-all flex items-center justify-center border border-slate-400"
             >
               <Copy :size="16" class="mr-1.5" />
               {{ $t('my_posts.copy_prompt') }}

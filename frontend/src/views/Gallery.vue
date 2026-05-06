@@ -6,6 +6,7 @@ import { useI18n } from 'vue-i18n'
 import { Heart, ThumbsDown, Wand2, Play, Image as ImageIcon, Video, Flame, Clock, Compass, Copy } from 'lucide-vue-next'
 import api from '@/api'
 import dayjs from 'dayjs'
+import { useViewport } from '@/composables/useViewport'
 
 interface Post {
   id: number
@@ -27,10 +28,12 @@ interface Post {
 
 const router = useRouter()
 const { t } = useI18n()
+const { isMobile } = useViewport()
+
 const posts = ref<Post[]>([])
 const loading = ref(false)
 const page = ref(1)
-const size = ref(20)
+const size = ref(isMobile.value ? 10 : 20)
 const total = ref(0)
 const hasMore = ref(true)
 
@@ -52,6 +55,17 @@ const currentLoraModels = computed(() => {
 const detailVisible = ref(false)
 const currentPost = ref<Post | null>(null)
 const applying = ref(false)
+
+const formatTag = (tag: string) => {
+  if (tag.startsWith('#task.')) {
+    const key = tag.substring(1)
+    return '#' + t(key)
+  }
+  if (tag.startsWith('task.')) {
+    return t(tag)
+  }
+  return tag
+}
 
 const isVideoFile = (path: string, mediaType?: string) => {
   if (mediaType) {
@@ -329,13 +343,13 @@ onUnmounted(() => {
 <template>
   <div class="gallery-container text-slate-200">
     <!-- Header Controls -->
-    <div class="flex flex-col mb-6 gap-4">
-      <div class="flex flex-col md:flex-row justify-between items-center gap-4">
+    <div class="flex flex-col mb-4 pb-4 sticky top-0 z-40 bg-[#0f172a]/90 backdrop-blur-md -mx-4 px-4 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8 pt-4 gap-4 border-b border-slate-700/50">
+      <div class="flex flex-col xl:flex-row justify-between xl:items-center gap-4">
         <!-- Task Types -->
-        <div class="flex flex-wrap bg-slate-800/50 p-1 rounded-xl border border-slate-700/50 gap-1">
+        <div class="flex overflow-x-auto scrollbar-hide bg-slate-500/50 p-1 rounded-xl border border-slate-400/50 gap-1 w-full xl:w-auto shrink-0">
           <button 
             @click="handleTaskTypeChange('all')"
-            class="px-4 py-1.5 rounded-lg transition-all font-medium text-sm"
+            class="px-3 py-1 sm:px-4 sm:py-1.5 rounded-lg transition-all font-medium text-xs sm:text-sm whitespace-nowrap shrink-0"
             :class="taskType === 'all' ? 'bg-cyan-500/20 text-cyan-400 shadow-[0_0_10px_rgba(56,189,248,0.2)]' : 'hover:text-cyan-300 text-slate-400'"
           >
             {{ $t('gallery.tabs.all') }}
@@ -344,21 +358,21 @@ onUnmounted(() => {
             v-for="tab in allowedTypes" 
             :key="tab.id"
             @click="handleTaskTypeChange(tab.id)"
-            class="px-4 py-1.5 rounded-lg transition-all font-medium text-sm"
+            class="px-3 py-1 sm:px-4 sm:py-1.5 rounded-lg transition-all font-medium text-xs sm:text-sm whitespace-nowrap shrink-0"
             :class="taskType === tab.id ? 'bg-cyan-500/20 text-cyan-400 shadow-[0_0_10px_rgba(56,189,248,0.2)]' : 'hover:text-cyan-300 text-slate-400'"
           >
             {{ $t(`gallery.tabs.${tab.id.replace('i2i_pro', 'face_swap').replace('edit', 'custom_edit').replace('img2img_lora', 'img2img').replace('custom_video', 'custom_video').replace('video_lora', 'img2video').replace('ltx_video', 'high_res_video')}`) }}
           </button>
         </div>
         
-        <div class="flex items-center gap-3">
+        <div class="flex items-center gap-3 overflow-x-auto scrollbar-hide w-full xl:w-auto shrink-0">
           <!-- Time Range -->
-          <div class="flex bg-slate-800/50 p-1 rounded-xl border border-slate-700/50">
+          <div class="flex bg-slate-500/50 p-1 rounded-xl border border-slate-400/50 shrink-0">
             <button 
               v-for="time in [{k:'all', n: $t('gallery.filters.all')}, {k:'today', n: $t('gallery.filters.today')}, {k:'week', n: $t('gallery.filters.this_week')}, {k:'month', n: $t('gallery.filters.this_month')}]" 
               :key="time.k"
               @click="timeRange = time.k; loadPosts(true)"
-              class="px-3 py-1.5 rounded-lg transition-all font-medium text-sm"
+              class="px-2 py-1 sm:px-3 sm:py-1.5 rounded-lg transition-all font-medium text-xs sm:text-sm whitespace-nowrap shrink-0"
               :class="timeRange === time.k ? 'bg-indigo-500/20 text-indigo-400 shadow-[0_0_10px_rgba(129,140,248,0.2)]' : 'hover:text-indigo-300 text-slate-400'"
             >
               {{ time.n }}
@@ -366,15 +380,15 @@ onUnmounted(() => {
           </div>
           
           <!-- Sort By -->
-          <div class="flex bg-slate-800/50 p-1 rounded-xl border border-slate-700/50">
+          <div class="flex bg-slate-500/50 p-1 rounded-xl border border-slate-400/50 shrink-0">
             <button 
               v-for="sort in [{k:'latest', n: $t('gallery.filters.latest'), i: Clock}, {k:'likes', n: $t('gallery.filters.most_liked'), i: Heart}, {k:'applied', n: $t('gallery.filters.most_used'), i: Flame}]" 
               :key="sort.k"
               @click="sortBy = sort.k; loadPosts(true)"
-              class="px-3 py-1.5 rounded-lg transition-all font-medium text-sm flex items-center"
+              class="px-2 py-1 sm:px-3 sm:py-1.5 rounded-lg transition-all font-medium text-xs sm:text-sm flex items-center whitespace-nowrap shrink-0"
               :class="sortBy === sort.k ? 'bg-indigo-500/20 text-indigo-400 shadow-[0_0_10px_rgba(129,140,248,0.2)]' : 'hover:text-indigo-300 text-slate-400'"
             >
-              <component :is="sort.i" :size="14" class="mr-1.5" />
+              <component :is="sort.i" :size="14" class="mr-1.5 hidden sm:block" />
               {{ sort.n }}
             </button>
           </div>
@@ -382,13 +396,13 @@ onUnmounted(() => {
       </div>
       
       <!-- Secondary Filter for LoRA Models -->
-      <div v-if="taskType === 'video_lora' || taskType === 'img2img_lora'" class="flex items-center gap-2 px-1">
-        <span class="text-sm text-slate-400">{{ $t('gallery.choose_addon') }}</span>
-        <div class="flex flex-wrap gap-2">
+      <div v-if="taskType === 'video_lora' || taskType === 'img2img_lora'" class="flex items-center gap-2 px-1 overflow-x-auto scrollbar-hide w-full shrink-0">
+        <span class="text-xs sm:text-sm text-slate-400 whitespace-nowrap shrink-0">{{ $t('gallery.choose_addon') }}</span>
+        <div class="flex gap-2 shrink-0">
           <button 
             @click="loraModel = 'all'; loadPosts(true)"
-            class="px-3 py-1 rounded-lg text-xs transition-all border"
-            :class="loraModel === 'all' ? 'bg-pink-500/20 border-pink-500/50 text-pink-400' : 'border-slate-700 hover:border-slate-500 text-slate-400'"
+            class="px-2 py-0.5 sm:px-3 sm:py-1 rounded-lg text-xs transition-all border whitespace-nowrap shrink-0"
+            :class="loraModel === 'all' ? 'bg-pink-500/20 border-pink-500/50 text-pink-400' : 'border-slate-400 hover:border-slate-500 text-slate-400'"
           >
             {{ $t('gallery.all_models') }}
           </button>
@@ -396,8 +410,8 @@ onUnmounted(() => {
             v-for="lora in currentLoraModels" 
             :key="lora.id"
             @click="loraModel = lora.id; loadPosts(true)"
-            class="px-3 py-1 rounded-lg text-xs transition-all border"
-            :class="loraModel === lora.id ? 'bg-pink-500/20 border-pink-500/50 text-pink-400' : 'border-slate-700 hover:border-slate-500 text-slate-400'"
+            class="px-2 py-0.5 sm:px-3 sm:py-1 rounded-lg text-xs transition-all border whitespace-nowrap shrink-0"
+            :class="loraModel === lora.id ? 'bg-pink-500/20 border-pink-500/50 text-pink-400' : 'border-slate-400 hover:border-slate-500 text-slate-400'"
           >
             {{ lora.name }}
           </button>
@@ -410,11 +424,11 @@ onUnmounted(() => {
       <div 
         v-for="post in posts" 
         :key="post.id"
-        class="mb-3 sm:mb-6 break-inside-avoid rounded-2xl overflow-hidden relative group cursor-pointer border border-slate-700/30 bg-slate-800/20 hover:border-cyan-500/40 transition-all duration-300 shadow-lg hover:shadow-[0_8px_30px_rgba(56,189,248,0.15)] hover:-translate-y-1"
+        class="mb-3 sm:mb-6 break-inside-avoid rounded-2xl overflow-hidden relative group cursor-pointer border border-slate-400/50 bg-slate-500/40 hover:border-cyan-500/40 transition-all duration-300 shadow-lg hover:shadow-[0_8px_30px_rgba(56,189,248,0.15)] hover:-translate-y-1"
         @click="openDetail(post)"
       >
         <!-- Media -->
-        <div class="relative w-full overflow-hidden bg-slate-900 aspect-auto min-h-[100px]">
+        <div class="relative w-full overflow-hidden bg-slate-500 aspect-auto min-h-[100px]">
           <img 
             v-if="!isVideoFile(post.thumbnail_url, post.media_type)" 
             :src="getFileUrl(post.thumbnail_url, post.id, true)" 
@@ -445,7 +459,7 @@ onUnmounted(() => {
           <div class="absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-transparent opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity duration-300 flex flex-col justify-end p-4">
             <div class="flex flex-wrap gap-1.5 mb-8">
               <span v-for="tag in post.tags.slice(0, 4)" :key="tag" class="text-[10px] bg-cyan-500/20 border border-cyan-500/30 text-cyan-100 px-2 py-0.5 rounded-full backdrop-blur-md">
-                {{ tag }}
+                {{ formatTag(tag) }}
               </span>
               <span v-if="post.tags.length > 4" class="text-[10px] text-slate-300 px-1">...</span>
             </div>
@@ -494,7 +508,7 @@ onUnmounted(() => {
       :bodyStyle="{ padding: 0, backgroundColor: 'transparent' }"
       destroyOnClose
     >
-      <div v-if="currentPost" class="flex flex-col lg:flex-row bg-[#0f172a] rounded-2xl overflow-hidden border border-slate-700/50 shadow-2xl">
+      <div v-if="currentPost" class="flex flex-col lg:flex-row bg-[#0f172a] rounded-2xl overflow-hidden border border-slate-400/50 shadow-2xl">
         <!-- Media Area -->
         <div class="lg:w-2/3 bg-black flex items-center justify-center relative min-h-[300px]">
           <img v-if="!isVideoFile(currentPost.media_url, currentPost.media_type)" :src="getFileUrl(currentPost.media_url, currentPost.id, false)" class="max-w-full max-h-[80vh] object-contain" />
@@ -502,7 +516,7 @@ onUnmounted(() => {
         </div>
         
         <!-- Info Area -->
-        <div class="lg:w-1/3 p-6 flex flex-col bg-slate-900/80 backdrop-blur-xl relative">
+        <div class="lg:w-1/3 p-6 flex flex-col bg-slate-500/80 backdrop-blur-xl relative">
           <!-- Close button -->
           <button @click="detailVisible = false" class="absolute top-4 right-4 text-slate-400 hover:text-white transition-colors">
             <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
@@ -525,19 +539,19 @@ onUnmounted(() => {
           <div class="mb-6">
             <h4 class="text-sm font-semibold text-slate-300 mb-3 uppercase tracking-wider">{{ $t('gallery.modal.tags') }}</h4>
             <div class="flex flex-wrap gap-2">
-              <span v-for="tag in currentPost.tags" :key="tag" class="text-xs bg-slate-800 text-cyan-200 border border-slate-700 px-2.5 py-1 rounded-md">
-                #{{ tag }}
+              <span v-for="tag in currentPost.tags" :key="tag" class="text-xs bg-slate-500 text-cyan-200 border border-slate-400 px-2.5 py-1 rounded-md">
+                {{ tag.startsWith('#') ? formatTag(tag) : '#' + formatTag(tag) }}
               </span>
               <span v-if="!currentPost.tags || currentPost.tags.length === 0" class="text-sm text-slate-500">None</span>
             </div>
           </div>
           
           <div class="flex space-x-4 mb-auto pt-4">
-            <button @click="handleInteract(currentPost, 'like')" class="flex-1 py-3 rounded-xl border border-slate-700 bg-slate-800/50 hover:bg-slate-700 transition-all flex items-center justify-center group">
+            <button @click="handleInteract(currentPost, 'like')" class="flex-1 py-3 rounded-xl border border-slate-400 bg-slate-500/50 hover:bg-slate-500 transition-all flex items-center justify-center group">
               <Heart :size="20" class="mr-2 transition-transform group-hover:scale-110" :class="currentPost.has_liked ? 'fill-pink-500 text-pink-500' : 'text-slate-400 group-hover:text-pink-400'" />
               <span class="font-medium" :class="currentPost.has_liked ? 'text-pink-400' : 'text-slate-300'">{{ currentPost.likes_count }}</span>
             </button>
-            <button @click="handleInteract(currentPost, 'dislike')" class="flex-1 py-3 rounded-xl border border-slate-700 bg-slate-800/50 hover:bg-slate-700 transition-all flex items-center justify-center group">
+            <button @click="handleInteract(currentPost, 'dislike')" class="flex-1 py-3 rounded-xl border border-slate-400 bg-slate-500/50 hover:bg-slate-500 transition-all flex items-center justify-center group">
               <ThumbsDown :size="20" class="mr-2 transition-transform group-hover:scale-110" :class="currentPost.has_disliked ? 'fill-slate-400 text-slate-400' : 'text-slate-400 group-hover:text-slate-200'" />
               <span class="font-medium" :class="currentPost.has_disliked ? 'text-slate-400' : 'text-slate-300'">{{ currentPost.dislikes_count }}</span>
             </button>
@@ -570,5 +584,14 @@ onUnmounted(() => {
 .gallery-detail-modal .ant-modal-mask {
   background-color: rgba(0, 0, 0, 0.85) !important;
   backdrop-filter: blur(8px);
+}
+
+/* Hide scrollbar for horizontal scrolling areas */
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+.scrollbar-hide {
+  -ms-overflow-style: none;  /* IE and Edge */
+  scrollbar-width: none;  /* Firefox */
 }
 </style>

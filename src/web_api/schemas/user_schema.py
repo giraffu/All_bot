@@ -14,6 +14,7 @@ class HistoryItem(BaseModel):
     created_at: datetime
     allow_contribute: Optional[bool] = True
     source: Optional[str] = "bot"
+    is_public: Optional[bool] = False
     
     class Config:
         from_attributes = True

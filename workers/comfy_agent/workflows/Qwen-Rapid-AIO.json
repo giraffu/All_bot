@@ -125,7 +125,7 @@
     "inputs": {
       "upscale_method": "nearest-exact",
       "megapixels": 1,
-      "resolution_steps": 1,
+      "resolution_steps": 64,
       "image": [
         "8",
         0
@@ -149,7 +149,7 @@
     "inputs": {
       "upscale_method": "nearest-exact",
       "megapixels": 1,
-      "resolution_steps": 1,
+      "resolution_steps": 64,
       "image": [
         "20",
         0
@@ -173,7 +173,7 @@
     "inputs": {
       "upscale_method": "nearest-exact",
       "megapixels": 1,
-      "resolution_steps": 1,
+      "resolution_steps": 64,
       "image": [
         "30",
         0
