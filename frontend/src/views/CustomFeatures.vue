@@ -107,7 +107,7 @@ onMounted(() => {
         {{ $t('lab.title') }}
       </h2>
       
-      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+      <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-6">
         <a-card 
           v-for="feature in features" 
           :key="feature.key"
@@ -116,20 +116,25 @@ onMounted(() => {
           :bodyStyle="{ padding: '0', height: '100%', display: 'flex', flexDirection: 'column' }"
           @click="handleFeatureClick(feature.route, feature)"
         >
-          <div class="p-5 flex-grow relative overflow-hidden">
+          <div class="p-3 sm:p-5 flex-grow relative overflow-hidden flex flex-col">
             <!-- Decorative glow on hover -->
             <div class="absolute -top-10 -right-10 w-24 h-24 bg-cyan-500/10 rounded-full blur-xl opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
             
-            <div class="flex justify-between items-start mb-3 relative z-10">
-              <div class="w-10 h-10 rounded-lg flex items-center justify-center bg-slate-500/50 border border-slate-400 text-cyan-400 group-hover:scale-110 transition-transform group-hover:shadow-[0_0_12px_rgba(56,189,248,0.4)]">
-                <component :is="feature.icon" :size="20" />
+            <div class="flex justify-between items-start mb-2 sm:mb-3 relative z-10">
+              <div class="w-8 h-8 sm:w-10 sm:h-10 shrink-0 rounded-lg flex items-center justify-center bg-slate-500/50 border border-slate-400 text-cyan-400 group-hover:scale-110 transition-transform group-hover:shadow-[0_0_12px_rgba(56,189,248,0.4)]">
+                <component :is="feature.icon" :size="16" class="sm:hidden" />
+                <component :is="feature.icon" :size="20" class="hidden sm:block" />
               </div>
-              <span class="bg-white/20 text-cyan-200 border border-cyan-300/30 px-2 py-0.5 rounded-full text-xs font-medium flex items-center shadow-inner">
-                <Wallet :size="12" class="mr-1 text-cyan-200"/> {{ feature.cost }}
+              <span class="bg-white/20 text-cyan-200 border border-cyan-300/30 px-1.5 sm:px-2 py-0.5 rounded-full text-[10px] sm:text-xs font-medium flex items-center shadow-inner whitespace-nowrap shrink-0 ml-1">
+                <Wallet :size="10" class="mr-1 text-cyan-200 sm:hidden"/>
+                <Wallet :size="12" class="mr-1 text-cyan-200 hidden sm:block"/>
+                {{ feature.cost }}
               </span>
             </div>
-            <h3 class="text-base font-bold text-slate-100 mb-1 relative z-10 drop-shadow-sm">{{ $t(feature.title) }}</h3>
-            <p class="text-slate-400 text-sm line-clamp-2 relative z-10">{{ $t(feature.description) }}</p>
+            <div class="flex flex-col flex-grow justify-start">
+              <h3 class="text-sm sm:text-base font-bold text-slate-100 mb-1 relative z-10 drop-shadow-sm truncate">{{ $t(feature.title) }}</h3>
+              <p class="text-slate-400 text-xs sm:text-sm line-clamp-2 relative z-10 leading-snug">{{ $t(feature.description) }}</p>
+            </div>
           </div>
         </a-card>
       </div>

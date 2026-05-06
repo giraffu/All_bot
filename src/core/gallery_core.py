@@ -166,29 +166,55 @@ async def toggle_like(user_id: int, post_id: int, action: str) -> dict:
         )
         inter = existing_inter.scalars().first()
 
+        action_state = ""
+
         if inter:
+            from sqlalchemy import update, delete, func
             if inter.action_type == action:
-                raise DuplicateInteractionError("您已经进行过此操作啦！")
-            
-            # Toggle using atomic update
-            from sqlalchemy import update
-            if inter.action_type == "like" and action == "dislike":
-                stmt = update(GalleryPost).where(GalleryPost.id == post_id).values(
-                    likes_count=GalleryPost.likes_count - 1,
-                    dislikes_count=GalleryPost.dislikes_count + 1
-                ).returning(GalleryPost.likes_count, GalleryPost.dislikes_count)
-            elif inter.action_type == "dislike" and action == "like":
-                stmt = update(GalleryPost).where(GalleryPost.id == post_id).values(
-                    likes_count=GalleryPost.likes_count + 1,
-                    dislikes_count=GalleryPost.dislikes_count - 1
-                ).returning(GalleryPost.likes_count, GalleryPost.dislikes_count)
+                # Cancel action
+                stmt_del = delete(UserInteraction).where(
+                    UserInteraction.user_id == user_id,
+                    UserInteraction.post_id == post_id,
+                    UserInteraction.action_type == action
+                )
+                res_del = await session.execute(stmt_del)
                 
-            res = await session.execute(stmt)
-            updated = res.fetchone()
-            post.likes_count = updated[0]
-            post.dislikes_count = updated[1]
+                if res_del.rowcount > 0:
+                    if action == "like":
+                        stmt_upd = update(GalleryPost).where(GalleryPost.id == post_id).values(
+                            likes_count=func.greatest(GalleryPost.likes_count - 1, 0)
+                        ).returning(GalleryPost.likes_count, GalleryPost.dislikes_count)
+                    else:
+                        stmt_upd = update(GalleryPost).where(GalleryPost.id == post_id).values(
+                            dislikes_count=func.greatest(GalleryPost.dislikes_count - 1, 0)
+                        ).returning(GalleryPost.likes_count, GalleryPost.dislikes_count)
+                        
+                    res = await session.execute(stmt_upd)
+                    updated = res.fetchone()
+                    post.likes_count = updated[0]
+                    post.dislikes_count = updated[1]
                 
-            inter.action_type = action
+                action_state = "canceled"
+            else:
+                # Switch action
+                if inter.action_type == "like" and action == "dislike":
+                    stmt = update(GalleryPost).where(GalleryPost.id == post_id).values(
+                        likes_count=func.greatest(GalleryPost.likes_count - 1, 0),
+                        dislikes_count=GalleryPost.dislikes_count + 1
+                    ).returning(GalleryPost.likes_count, GalleryPost.dislikes_count)
+                elif inter.action_type == "dislike" and action == "like":
+                    stmt = update(GalleryPost).where(GalleryPost.id == post_id).values(
+                        likes_count=GalleryPost.likes_count + 1,
+                        dislikes_count=func.greatest(GalleryPost.dislikes_count - 1, 0)
+                    ).returning(GalleryPost.likes_count, GalleryPost.dislikes_count)
+                    
+                res = await session.execute(stmt)
+                updated = res.fetchone()
+                post.likes_count = updated[0]
+                post.dislikes_count = updated[1]
+                    
+                inter.action_type = action
+                action_state = "switched"
         else:
             from sqlalchemy.dialects.postgresql import insert
             from sqlalchemy import update
@@ -212,6 +238,7 @@ async def toggle_like(user_id: int, post_id: int, action: str) -> dict:
                 updated = res.fetchone()
                 post.likes_count = updated[0]
                 post.dislikes_count = updated[1]
+                action_state = "added"
             else:
                 raise DuplicateInteractionError("您已经进行过此操作啦！")
 
@@ -219,7 +246,8 @@ async def toggle_like(user_id: int, post_id: int, action: str) -> dict:
             
         return {
             "likes_count": post.likes_count,
-            "dislikes_count": post.dislikes_count
+            "dislikes_count": post.dislikes_count,
+            "action_state": action_state
         }
 
 async def record_apply_interaction(user_id: int, post_id: int):

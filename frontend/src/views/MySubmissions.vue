@@ -54,6 +54,7 @@ const currentLoraModels = computed(() => {
 const detailVisible = ref(false)
 const currentPost = ref<Post | null>(null)
 const applying = ref(false)
+const interactingPosts = ref<Record<number, boolean>>({})
 
 const formatTag = (tag: string) => {
   if (tag.startsWith('#task.')) {
@@ -175,24 +176,42 @@ const handleTaskTypeChange = (type: string) => {
 }
 
 const handleInteract = async (post: Post, action: 'like' | 'dislike') => {
-  if ((action === 'like' && post.has_liked) || (action === 'dislike' && post.has_disliked)) return
+  if (interactingPosts.value[post.id]) return
   
+  interactingPosts.value[post.id] = true
   try {
-    await api.post(`/gallery/posts/${post.id}/interact`, null, {
+    const { data: resData } = await api.post(`/gallery/posts/${post.id}/interact`, null, {
       params: { action }
     })
     
-    if (action === 'like') {
-      post.likes_count++
-      post.has_liked = true
-    } else {
-      post.dislikes_count++
-      post.has_disliked = true
+    const result = resData.data
+    const action_state = result.action_state
+    
+    post.likes_count = result.likes_count
+    post.dislikes_count = result.dislikes_count
+    
+    if (action_state === 'added') {
+      if (action === 'like') post.has_liked = true
+      else post.has_disliked = true
+      message.success(action === 'like' ? '点赞成功' : '点踩成功')
+    } else if (action_state === 'canceled') {
+      if (action === 'like') post.has_liked = false
+      else post.has_disliked = false
+      message.success(action === 'like' ? '已取消点赞' : '已取消点踩')
+    } else if (action_state === 'switched') {
+      if (action === 'like') {
+        post.has_liked = true
+        post.has_disliked = false
+      } else {
+        post.has_disliked = true
+        post.has_liked = false
+      }
+      message.success(action === 'like' ? '点赞成功' : '点踩成功')
     }
-    message.success(action === 'like' ? '点赞成功' : '点踩成功')
   } catch (error: any) {
-    // Error is handled by interceptor, but we can show a specific message if needed
     console.error(error)
+  } finally {
+    interactingPosts.value[post.id] = false
   }
 }
 

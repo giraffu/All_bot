@@ -316,7 +316,12 @@ async def interact_with_post(
     from src.core.gallery_core import toggle_like, GalleryCoreError, DuplicateInteractionError
     try:
         result = await toggle_like(current_user.id, post_id, action)
-        return {"status": "success", "message": f"{'点赞' if action == 'like' else '点踩'}成功", "data": result}
+        action_state = result.get("action_state")
+        if action_state == "canceled":
+            message = "已取消点赞" if action == "like" else "已取消点踩"
+        else:
+            message = "点赞成功" if action == "like" else "点踩成功"
+        return {"status": "success", "message": message, "data": result}
     except DuplicateInteractionError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except GalleryCoreError as e:

@@ -497,6 +497,9 @@ async def gallery_like_dislike_callback(update: Update, context: ContextTypes.DE
     action = "like" if data.startswith("gallery_like_") else "dislike"
     parts = data.split("_")
     post_id = int(parts[2])
+    sort_type = parts[3] if len(parts) > 3 else "latest"
+    category = parts[4] if len(parts) > 4 else "all"
+    page = parts[5] if len(parts) > 5 else "1"
     
     try:
         internal_user, _ = await get_or_create_user_by_telegram(query.from_user.id)
@@ -512,26 +515,59 @@ async def gallery_like_dislike_callback(update: Update, context: ContextTypes.DE
             
         likes_count = result["likes_count"]
         dislikes_count = result["dislikes_count"]
+        action_state = result.get("action_state")
+
+        if action_state == "canceled":
+            toast_text = "✅ 已取消点赞" if action == "like" else "✅ 已取消点踩"
+        else:
+            toast_text = "✅ 点赞成功！" if action == "like" else "✅ 点踩成功！"
 
         keyboard = []
         for row in query.message.reply_markup.inline_keyboard:
             new_row = []
             for btn in row:
-                if btn.callback_data == data:
-                    new_text = f"✅ 已赞 ({likes_count})" if action == "like" else f"✅ 已踩 ({dislikes_count})"
-                    new_row.append(InlineKeyboardButton(new_text, callback_data="noop"))
+                if btn.callback_data and btn.callback_data.startswith(f"gallery_like_{post_id}"):
+                    if action_state == "canceled":
+                        new_text = f"👍 赞 ({likes_count})"
+                    else:
+                        if action == "like":
+                            new_text = f"✅ 已赞 ({likes_count})"
+                        else:
+                            new_text = f"👍 赞 ({likes_count})"
+                    new_row.append(InlineKeyboardButton(new_text, callback_data=f"gallery_like_{post_id}_{sort_type}_{category}_{page}"))
+                elif btn.callback_data and btn.callback_data.startswith(f"gallery_dislike_{post_id}"):
+                    if action_state == "canceled":
+                        new_text = f"👎 踩 ({dislikes_count})"
+                    else:
+                        if action == "dislike":
+                            new_text = f"✅ 已踩 ({dislikes_count})"
+                        else:
+                            new_text = f"👎 踩 ({dislikes_count})"
+                    new_row.append(InlineKeyboardButton(new_text, callback_data=f"gallery_dislike_{post_id}_{sort_type}_{category}_{page}"))
                 else:
                     new_row.append(btn)
             keyboard.append(new_row)
         
-        await query.message.edit_reply_markup(reply_markup=InlineKeyboardMarkup(keyboard))
-        await safe_answer_query(query, text=f"✅ {'点赞' if action == 'like' else '点踩'}成功！", show_alert=False)
+        caption_html = query.message.caption_html if query.message.caption_html else ""
+        if caption_html:
+            import re
+            caption_html = re.sub(r"❤️ \d+(?=\s*\|)", f"❤️ {likes_count}", caption_html)
+            caption_html = re.sub(r"👎 \d+(?=\s*\|)", f"👎 {dislikes_count}", caption_html)
+            await query.message.edit_caption(
+                caption=caption_html,
+                parse_mode="HTML",
+                reply_markup=InlineKeyboardMarkup(keyboard)
+            )
+        else:
+            await query.message.edit_reply_markup(reply_markup=InlineKeyboardMarkup(keyboard))
+            
+        await safe_answer_query(query, text=toast_text, show_alert=False)
         
     except BadRequest as e:
         error_msg = str(e).lower()
         if "message to edit not found" in error_msg or "message is not modified" in error_msg:
             logger.warning(f"Like/Dislike callback skipped editing: {e}")
-            await safe_answer_query(query, text=f"✅ {'点赞' if action == 'like' else '点踩'}成功！", show_alert=False)
+            await safe_answer_query(query, text=toast_text if 'toast_text' in locals() else "✅ 操作成功！", show_alert=False)
         else:
             logger.error(f"BadRequest handling like/dislike: {e}")
             await safe_answer_query(query, text="❌ 操作失败，请稍后再试", show_alert=True)
