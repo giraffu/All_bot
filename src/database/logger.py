@@ -60,7 +60,13 @@ def setup_db_logging(engine):
 
     @event.listens_for(target_engine, "handle_error")
     def handle_error(exception_context):
-        total = time.time() - exception_context.execution_context._query_start_time
+        # 安全获取 execution_context，避免空指针异常
+        execution_context = exception_context.execution_context
+        if execution_context and hasattr(execution_context, "_query_start_time"):
+            total = time.time() - execution_context._query_start_time
+        else:
+            total = 0.0
+            
         statement = exception_context.statement
         parameters = exception_context.parameters
         

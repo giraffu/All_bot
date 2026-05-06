@@ -26,7 +26,7 @@
 - **核心逻辑**:
   1. 鉴权并查询对应的 `History` 记录，确保其属于当前用户且存在生成文件。
   2. 若未收藏，则更新 `is_favorited = True`。
-  3. **触发 R2 上传**：复用 `allbot-gallery-storage` 规范，通过 FastAPI 的 `BackgroundTasks` 调用现有的 `async_copy_to_r2`，异步将 MinIO 中的文件复制到 Cloudflare R2，实现 CDN 加速和永久保存。
+  3. **触发 R2 上传**：复用 `allbot-gallery-storage` 规范，通过 FastAPI 的 `BackgroundTasks` 调用现有的 `async_copy_to_r2`，异步将 MinIO 中的文件复制到 Cloudflare R2，实现 CDN 加速和永久保存。注意：需根据 `History.output_file` 动态判断源桶，如果不包含斜杠（`/`）则源桶为 `comfyui-temp`，包含则为正式数据桶。
   4. 返回操作成功状态。
 
 **2.2 获取“我的收藏”列表接口**
@@ -47,13 +47,13 @@
   - `likes_count`、`applied_count` 等社区互动数据固定为 0。
 
 **2.3 Schema 更新与一键应用支持**
-- **更新 `HistoryItem` Schema**：必须在 `src/web_api/schemas/user_schema.py` 的 `HistoryItem` 中增加 `is_favorited: bool = False` 字段，否则前端无法在闪回瓶获取收藏状态。
-- **新增收藏记录的“一键应用”接口**：由于收藏的是私人 `History` 记录，不能复用广场的 `/gallery/posts/{id}/apply-context` 接口（会导致 404 或越权）。需在 `users.py` 中新增 `GET /api/users/history/{task_id}/apply-context`，专门用于解析历史记录的生成参数。
+- **更新 `HistoryItem` Schema**：必须在 `src/web_api/schemas/user_schema.py` 的 `HistoryItem` 中增加 `is_favorited: Optional[bool] = False` 字段（使用 Optional 防止旧数据 null 导致 Pydantic 校验报错），否则前端无法在闪回瓶获取收藏状态。
+- **新增收藏记录的“一键应用”接口**：由于收藏的是私人 `History` 记录，不能复用广场的 `/gallery/posts/{id}/apply-context` 接口（会导致 404 或越权）。需在 `users.py` 中新增 `GET /api/users/history/{task_id}/apply-context`，专门用于解析历史记录的生成参数。注意：返回 `ApplyContextResponse` 时必须 mock 一个 `post_id`（如 `history.id` 或 `-1`），防止前端由于缺少该字段报错。
 
 ## 3. 前端修改方案 (Frontend Implementation)
 
 **3.1 闪回瓶 (`frontend/src/views/History.vue`)**
-- **UI 增加按钮**：在表格的操作列（Actions）中，增加一个“收藏”按钮（使用 Lucide 的 `Star` 或 `Bookmark` 图标）。
+- **UI 增加按钮**：由于页面已重构为卡片网格，需在详情弹窗（Detail Modal）的底部操作区增加一个“收藏”按钮（与“投稿”、“下载”并列，使用 Lucide 的 `Star` 或 `Bookmark` 图标），或在卡片界面右上角增加快捷图标。
 - **状态联动**：接口 `/users/history` 需要在返回值中带上 `is_favorited`。若为 `true`，按钮显示为“已收藏”并置灰，防止重复点击。
 - **交互逻辑**：点击触发收藏 API，显示 loading 状态，成功后通过 `message.success` 提示用户已存入修仙笔记。
 

@@ -41,9 +41,29 @@ async def process_submit_to_gallery(user_id: int, task_id: str, background_tasks
 
     async with AsyncSessionLocal() as session:
         # Check existing
-        existing = await session.execute(select(GalleryPost).where(GalleryPost.task_id == task_id))
-        if existing.scalars().first():
-            raise GalleryCoreError("您已经投稿过此内容啦！")
+        existing_res = await session.execute(select(GalleryPost).where(GalleryPost.task_id == task_id))
+        existing = existing_res.scalars().first()
+        
+        if existing:
+            if existing.user_id != user_id:
+                raise GalleryCoreError("无法操作他人的投稿！")
+                
+            if existing.is_active:
+                raise GalleryCoreError("您已经投稿过此内容啦！")
+            else:
+                # 重新上架
+                existing.is_active = True
+                # Get History to update is_public
+                hist_res = await session.execute(select(History).where(History.task_id == task_id).where(History.user_id == user_id))
+                history = hist_res.scalars().first()
+                if history:
+                    history.is_public = True
+                await session.commit()
+                return {
+                    "status": "success", 
+                    "message": "已为您重新上架该作品！",
+                    "tags": []
+                }
 
         # Get History
         hist_res = await session.execute(select(History).where(History.task_id == task_id).where(History.user_id == user_id))

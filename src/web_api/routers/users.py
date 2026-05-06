@@ -91,7 +91,7 @@ async def get_user_history(
     """
     limit = 8
     
-    # Get items
+    # Get items with gallery post check
     stmt = (
         select(History)
         .where(History.user_id == current_user.id)
@@ -100,6 +100,23 @@ async def get_user_history(
     )
     result = await db.execute(stmt)
     items = result.scalars().all()
+    
+    # Batch check gallery status for items to avoid N+1 queries
+    task_ids_to_check = [item.task_id for item in items if item.is_public and item.task_id]
+    
+    if task_ids_to_check:
+        from src.database.models import GalleryPost
+        gp_stmt = select(GalleryPost.task_id).where(
+            GalleryPost.task_id.in_(task_ids_to_check), 
+            GalleryPost.is_active == True
+        )
+        gp_result = await db.execute(gp_stmt)
+        active_task_ids = set(gp_result.scalars().all())
+        
+        for item in items:
+            if item.is_public and item.task_id:
+                if item.task_id not in active_task_ids:
+                    item.is_public = False
     
     return PaginatedHistory(
         items=list(items),
