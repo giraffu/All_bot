@@ -94,13 +94,21 @@ async def get_user_history(
     """
     limit = 8
     
-    # Get items with gallery post check
-    stmt = (
-        select(History)
+    # First get the latest 8 items regardless of visibility to enforce the strict 8-item window limit
+    subq = (
+        select(History.id)
         .where(History.user_id == current_user.id)
-        .where(History.is_visible.is_not(False))
         .order_by(History.created_at.desc())
         .limit(limit)
+        .subquery()
+    )
+    
+    # Then filter out the invisible ones from those 8 items
+    stmt = (
+        select(History)
+        .where(History.id.in_(select(subq.c.id)))
+        .where(History.is_visible.is_not(False))
+        .order_by(History.created_at.desc())
     )
     result = await db.execute(stmt)
     items = result.scalars().all()
