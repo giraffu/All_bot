@@ -1,0 +1,342 @@
+{
+  "104": {
+    "inputs": {
+      "samples": [
+        "138",
+        0
+      ],
+      "vae": [
+        "110",
+        0
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "VAE解码"
+    }
+  },
+  "106": {
+    "inputs": {
+      "unet_name": "flux-2-klein-9b-fp8.safetensors",
+      "weight_dtype": "default"
+    },
+    "class_type": "UNETLoader",
+    "_meta": {
+      "title": "UNet加载器"
+    }
+  },
+  "107": {
+    "inputs": {
+      "clip_name": "qwen_3_8b_fp8mixed.safetensors",
+      "type": "flux2",
+      "device": "default"
+    },
+    "class_type": "CLIPLoader",
+    "_meta": {
+      "title": "加载CLIP"
+    }
+  },
+  "108": {
+    "inputs": {
+      "text": "让女孩浑身赤裸，一件衣服都不穿，露出多毛的私处，挺翘的乳头，乳头挂上乳环，流出乳汁，私处也流出白色的液体\n保持身体姿势不变",
+      "clip": [
+        "107",
+        0
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIP Text Encode (Positive Prompt)"
+    }
+  },
+  "109": {
+    "inputs": {
+      "text": "",
+      "clip": [
+        "107",
+        0
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIP Text Encode (Negative Prompt)"
+    }
+  },
+  "110": {
+    "inputs": {
+      "vae_name": "flux2-vae.safetensors"
+    },
+    "class_type": "VAELoader",
+    "_meta": {
+      "title": "加载VAE"
+    }
+  },
+  "138": {
+    "inputs": {
+      "seed": 463410191827968,
+      "steps": 8,
+      "cfg": 1,
+      "sampler_name": "euler",
+      "scheduler": "simple",
+      "denoise": 1,
+      "model": [
+        "144",
+        0
+      ],
+      "positive": [
+        "160",
+        0
+      ],
+      "negative": [
+        "159",
+        0
+      ],
+      "latent_image": [
+        "141",
+        0
+      ]
+    },
+    "class_type": "KSampler",
+    "_meta": {
+      "title": "K采样器"
+    }
+  },
+  "140": {
+    "inputs": {
+      "conditioning": [
+        "108",
+        0
+      ],
+      "latent": [
+        "141",
+        0
+      ]
+    },
+    "class_type": "ReferenceLatent",
+    "_meta": {
+      "title": "参考Latent"
+    }
+  },
+  "141": {
+    "inputs": {
+      "pixels": [
+        "146",
+        0
+      ],
+      "vae": [
+        "110",
+        0
+      ]
+    },
+    "class_type": "VAEEncode",
+    "_meta": {
+      "title": "VAE编码"
+    }
+  },
+  "144": {
+    "inputs": {
+      "lora_name": "flux/Flux Klein - NSFW v2.safetensors",
+      "strength_model": 0.7,
+      "model": [
+        "106",
+        0
+      ]
+    },
+    "class_type": "LoraLoaderModelOnly",
+    "_meta": {
+      "title": "LoRA加载器（仅模型）"
+    }
+  },
+  "146": {
+    "inputs": {
+      "width": 1024,
+      "height": 1024,
+      "interpolation": "lanczos",
+      "method": "keep proportion",
+      "condition": "always",
+      "multiple_of": 0,
+      "image": [
+        "167",
+        0
+      ]
+    },
+    "class_type": "ImageResize+",
+    "_meta": {
+      "title": "🔧 Image Resize"
+    }
+  },
+  "147": {
+    "inputs": {
+      "da_model": [
+        "148",
+        0
+      ],
+      "images": [
+        "146",
+        0
+      ]
+    },
+    "class_type": "DepthAnything_V2",
+    "_meta": {
+      "title": "Depth Anything V2"
+    }
+  },
+  "148": {
+    "inputs": {
+      "model": "depth_anything_v2_vits_fp16.safetensors",
+      "precision": "auto"
+    },
+    "class_type": "DownloadAndLoadDepthAnythingV2Model",
+    "_meta": {
+      "title": "DownloadAndLoadDepthAnythingV2Model"
+    }
+  },
+  "149": {
+    "inputs": {
+      "conditioning": [
+        "109",
+        0
+      ],
+      "latent": [
+        "141",
+        0
+      ]
+    },
+    "class_type": "ReferenceLatent",
+    "_meta": {
+      "title": "参考Latent"
+    }
+  },
+  "151": {
+    "inputs": {
+      "conditioning": [
+        "140",
+        0
+      ],
+      "latent": [
+        "152",
+        0
+      ]
+    },
+    "class_type": "ReferenceLatent",
+    "_meta": {
+      "title": "参考Latent"
+    }
+  },
+  "152": {
+    "inputs": {
+      "pixels": [
+        "147",
+        0
+      ],
+      "vae": [
+        "110",
+        0
+      ]
+    },
+    "class_type": "VAEEncode",
+    "_meta": {
+      "title": "VAE编码"
+    }
+  },
+  "156": {
+    "inputs": {
+      "conditioning": [
+        "149",
+        0
+      ],
+      "latent": [
+        "152",
+        0
+      ]
+    },
+    "class_type": "ReferenceLatent",
+    "_meta": {
+      "title": "参考Latent"
+    }
+  },
+  "159": {
+    "inputs": {
+      "conditioning": [
+        "156",
+        0
+      ],
+      "latent": [
+        "162",
+        0
+      ]
+    },
+    "class_type": "ReferenceLatent",
+    "_meta": {
+      "title": "参考Latent"
+    }
+  },
+  "160": {
+    "inputs": {
+      "conditioning": [
+        "151",
+        0
+      ],
+      "latent": [
+        "162",
+        0
+      ]
+    },
+    "class_type": "ReferenceLatent",
+    "_meta": {
+      "title": "参考Latent"
+    }
+  },
+  "161": {
+    "inputs": {
+      "low_threshold": 0.2,
+      "high_threshold": 0.7,
+      "image": [
+        "146",
+        0
+      ]
+    },
+    "class_type": "Canny",
+    "_meta": {
+      "title": "Canny边缘检测"
+    }
+  },
+  "162": {
+    "inputs": {
+      "pixels": [
+        "161",
+        0
+      ],
+      "vae": [
+        "110",
+        0
+      ]
+    },
+    "class_type": "VAEEncode",
+    "_meta": {
+      "title": "VAE编码"
+    }
+  },
+  "166": {
+    "inputs": {
+      "filename_prefix": "ComfyUI",
+      "images": [
+        "104",
+        0
+      ]
+    },
+    "class_type": "SaveImage",
+    "_meta": {
+      "title": "保存图像"
+    }
+  },
+  "167": {
+    "inputs": {
+      "image": "IMG_1813.jpeg"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "加载图像"
+    }
+  }
+}
