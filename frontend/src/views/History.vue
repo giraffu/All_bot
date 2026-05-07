@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import api from '@/api'
-import { message } from 'ant-design-vue'
+import { message, Modal } from 'ant-design-vue'
 import { useI18n } from 'vue-i18n'
-import { Image as ImageIcon, Video, Clock, Download, Compass, Star } from 'lucide-vue-next'
+import { Image as ImageIcon, Video, Clock, Download, Compass, Star, Trash2 } from 'lucide-vue-next'
 import dayjs from 'dayjs'
 
 const { t } = useI18n()
@@ -76,6 +76,31 @@ const handleFavorite = async (record: any) => {
     hide()
     message.error(error.response?.data?.detail || '收藏失败，请稍后再试')
   }
+}
+
+const handleDelete = async (record: any, event?: Event) => {
+  if (event) event.stopPropagation()
+  
+  Modal.confirm({
+    title: '确认删除',
+    content: '确认删除该记录吗？（若已发布至广场也将同步下架）',
+    okText: '确认',
+    okType: 'danger',
+    cancelText: '取消',
+    onOk: async () => {
+      try {
+        await api.delete(`/users/history/${record.id}`)
+        message.success('删除成功')
+        data.value = data.value.filter(item => item.id !== record.id)
+        if (detailVisible.value && currentRecord.value?.id === record.id) {
+          detailVisible.value = false
+        }
+      } catch (error: any) {
+        console.error(error)
+        message.error(error.response?.data?.detail || '删除失败，请稍后再试')
+      }
+    }
+  })
 }
 
 const formatDate = (dateStr: string) => {
@@ -252,6 +277,14 @@ onMounted(() => {
       >
         <!-- Media -->
         <div class="relative w-full overflow-hidden aspect-auto min-h-[120px] flex items-center justify-center bg-slate-900">
+          <!-- Delete Button (Top Left) -->
+          <button
+            class="absolute top-2 left-2 bg-black/60 hover:bg-red-500/80 backdrop-blur-sm rounded-full p-1.5 shadow-sm border border-white/10 z-20 text-slate-300 hover:text-white transition-colors opacity-0 group-hover:opacity-100"
+            @click="handleDelete(record, $event)"
+            title="删除"
+          >
+            <Trash2 :size="14" />
+          </button>
           <template v-if="record.output_file">
             <video
               v-if="isVideoFile(record.output_file)"

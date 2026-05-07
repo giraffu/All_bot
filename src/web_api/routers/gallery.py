@@ -200,7 +200,15 @@ async def get_my_gallery_posts(
     current_user: User = Depends(get_current_user)
 ):
     async with AsyncSessionLocal() as session:
-        query = select(GalleryPost).where(GalleryPost.user_id == current_user.id)
+        query = (
+            select(GalleryPost)
+            .outerjoin(History, GalleryPost.task_id == History.task_id)
+            .where(
+                GalleryPost.user_id == current_user.id,
+                History.is_visible.is_not(False)
+            )
+            .distinct()
+        )
         
         query = query.order_by(desc(GalleryPost.id))
             
@@ -294,7 +302,7 @@ async def delete_post(
     post_id: int,
     current_user: User = Depends(get_current_user)
 ):
-    from sqlalchemy import delete
+    from sqlalchemy import update
     async with AsyncSessionLocal() as session:
         post = (await session.execute(select(GalleryPost).where(GalleryPost.id == post_id))).scalar_one_or_none()
         if not post:
@@ -302,21 +310,24 @@ async def delete_post(
         if post.user_id != current_user.id:
             raise HTTPException(status_code=403, detail="无权操作此帖子")
             
-        # Delete related interactions first
-        await session.execute(delete(UserInteraction).where(UserInteraction.post_id == post_id))
-        
-        # Unlink history from this post
-        await session.execute(update(History).where(History.task_id == post.task_id).values(is_public=False)) # Optionally reset is_public
-        
-        # Delete post
-        await session.execute(delete(GalleryPost).where(GalleryPost.id == post_id))
-        
-        # Decrement total_contributions in users table
-        user_record = await session.execute(select(User).where(User.id == current_user.id))
-        user_obj = user_record.scalar_one_or_none()
-        if user_obj and user_obj.total_contributions > 0:
-            user_obj.total_contributions -= 1
+        # Soft delete: set is_active to False
+        if post.is_active:
+            post.is_active = False
             
+            # Decrement total_contributions safely
+            user_record = await session.execute(select(User).where(User.id == current_user.id))
+            user_obj = user_record.scalar_one_or_none()
+            if user_obj:
+                user_obj.total_contributions = max(user_obj.total_contributions - 1, 0)
+        
+        # Unlink history from this post so user can re-submit if they want
+        if post.task_id:
+            await session.execute(
+                update(History)
+                .where(History.task_id == post.task_id, History.user_id == current_user.id)
+                .values(is_public=False)
+            )
+        
         await session.commit()
         return {"status": "success", "message": "删除成功"}
 

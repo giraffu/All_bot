@@ -98,6 +98,7 @@ async def get_user_history(
     stmt = (
         select(History)
         .where(History.user_id == current_user.id)
+        .where(History.is_visible.is_not(False))
         .order_by(History.created_at.desc())
         .limit(limit)
     )
@@ -209,6 +210,47 @@ async def unfavorite_history(
         
     return {"status": "success", "message": "已取消收藏"}
 
+@router.delete("/history/{history_id}")
+async def delete_history(
+    history_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    from sqlalchemy import update
+    from src.database.models import GalleryPost
+    
+    stmt = select(History).where(History.id == history_id, History.user_id == current_user.id)
+    result = await db.execute(stmt)
+    history = result.scalar_one_or_none()
+    
+    if not history:
+        raise HTTPException(status_code=404, detail="未找到对应的记录")
+        
+    if not history.is_visible:
+        return {"status": "success", "message": "记录已删除"}
+        
+    # Soft delete in history
+    history.is_visible = False
+    
+    # If it was public and has a task_id, also hide the gallery post
+    if history.is_public and history.task_id:
+        upd_stmt = (
+            update(GalleryPost)
+            .where(
+                GalleryPost.task_id == history.task_id,
+                GalleryPost.user_id == current_user.id,
+                GalleryPost.is_active == True
+            )
+            .values(is_active=False)
+        )
+        upd_result = await db.execute(upd_stmt)
+        
+        if upd_result.rowcount > 0:
+            current_user.total_contributions = max(current_user.total_contributions - 1, 0)
+            
+    await db.commit()
+    return {"status": "success", "message": "记录已删除"}
+
 @router.get("/my-favorites", response_model=PaginatedGalleryResponse)
 async def get_my_favorites(
     page: int = 1,
@@ -222,7 +264,8 @@ async def get_my_favorites(
     # Query current user's favorite histories
     stmt = select(History).where(
         History.user_id == current_user.id,
-        History.is_favorited == True
+        History.is_favorited == True,
+        History.is_visible.is_not(False)
     ).order_by(desc(History.created_at))
     
     # Get total

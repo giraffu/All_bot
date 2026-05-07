@@ -14,6 +14,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy.orm import declarative_base, relationship
 
@@ -89,6 +90,7 @@ class History(Base):
     created_at = Column(DateTime, default=datetime.now)
     
     is_public = Column(Boolean, default=False)
+    is_visible = Column(Boolean, default=True, server_default=text("true"))
     is_favorited = Column(Boolean, default=False)
     rating = Column(Integer, default=0)
     allow_contribute = Column(Boolean, default=True)
