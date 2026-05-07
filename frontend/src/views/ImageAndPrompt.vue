@@ -13,8 +13,8 @@ const router = useRouter()
 const taskType = computed(() => (route.query.type as string) || 'i2i_pro')
 const taskTitle = computed(() => (route.query.title as string) || '图片生成')
 const taskCost = computed(() => {
-  if (taskType.value === 'edit' && selectedLora.value) {
-    return 2 // img2img_lora cost
+  if (taskType.value === 'edit') {
+    return uploadedImages.value.length === 2 ? 6 : 2
   }
   return Number(route.query.cost) || 3
 })
@@ -23,11 +23,10 @@ const { uploading, progress: uploadProgress, uploadFile } = useUpload()
 const { isSubmitting, submitTask } = useTaskStream()
 const { currentTask, setSubmittedTaskId, isVideoUrl, isImageUrl, downloadResult } = useTaskResult()
 
-const fileList = ref<any[]>([])
-const objectKey = ref<string | null>(null)
+const uploadedImages = ref<{key: string, preview: string}[]>([])
+const pendingUploads = ref(0)
 const prompt = ref('')
 
-const filePreview = ref<string | null>(null)
 const isTemplateApplied = ref(false)
 
 // LoRA Selection for Edit mode
@@ -59,31 +58,36 @@ onMounted(() => {
   }
 })
 
-watch(fileList, (newVal) => {
-  if (newVal.length > 0 && newVal[0].originFileObj) {
-    filePreview.value = URL.createObjectURL(newVal[0].originFileObj)
-  } else if (newVal.length > 0 && newVal[0] instanceof File) {
-    filePreview.value = URL.createObjectURL(newVal[0])
-  } else {
-    if (filePreview.value) URL.revokeObjectURL(filePreview.value)
-    filePreview.value = null
-  }
-})
-
 const beforeUpload = async (file: any) => {
-  fileList.value = [file]
-  const key = await uploadFile(file)
-  if (key) objectKey.value = key
+  if (uploadedImages.value.length + pendingUploads.value >= 2) {
+    message.warning('最多只能上传两张图片！')
+    return false
+  }
+  pendingUploads.value++
+  try {
+    const key = await uploadFile(file)
+    if (key) {
+      uploadedImages.value.push({
+        key,
+        preview: URL.createObjectURL(file)
+      })
+    }
+  } finally {
+    pendingUploads.value--
+  }
   return false
 }
 
-const handleRemove = () => {
-  fileList.value = []
-  objectKey.value = null
+const handleRemove = (index: number) => {
+  const img = uploadedImages.value[index]
+  if (img && img.preview) {
+    URL.revokeObjectURL(img.preview)
+  }
+  uploadedImages.value.splice(index, 1)
 }
 
 const handleGenerate = async () => {
-  if (!objectKey.value) {
+  if (uploadedImages.value.length === 0) {
     message.warning('请先上传图片！')
     return
   }
@@ -96,7 +100,7 @@ const handleGenerate = async () => {
   const payload: any = {
     task_type: taskType.value === 'edit' && selectedLora.value ? 'img2img_lora' : taskType.value,
     inputs: {
-      images: [objectKey.value]
+      images: uploadedImages.value.map(img => img.key)
     },
     prompt: prompt.value.trim(),
     priority: 0,
@@ -115,7 +119,10 @@ const handleGenerate = async () => {
 }
 
 const resetForm = () => {
-  handleRemove()
+  uploadedImages.value.forEach(img => {
+    if (img.preview) URL.revokeObjectURL(img.preview)
+  })
+  uploadedImages.value = []
   prompt.value = ''
   setSubmittedTaskId(null)
 }
@@ -153,32 +160,39 @@ const resetForm = () => {
             <div class="flex flex-col md:flex-row gap-4 md:h-64 w-full">
               <!-- Image Upload -->
               <div class="upload-section flex flex-col w-full md:w-[40%] min-w-[160px] shrink-0 h-48 md:h-full">
-                <h3 class="text-sm font-bold mb-2 text-slate-200 flex items-center">
-                  <span class="text-slate-500 mr-2">1.</span> 基础图片
-                </h3>
-                <div v-if="filePreview" class="relative group rounded-xl overflow-hidden border border-slate-400/50 bg-slate-500/50 flex items-center justify-center flex-grow w-full">
-                  <a-image :src="filePreview" class="max-w-full max-h-full object-contain" :preview="true" />
-                  <div class="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center pointer-events-none">
-                    <a-button danger type="primary" @click="handleRemove" class="pointer-events-auto" size="small">重新上传</a-button>
-                  </div>
+                <div class="flex items-center justify-between mb-2">
+                  <h3 class="text-sm font-bold text-slate-200 flex items-center">
+                    <span class="text-slate-500 mr-2">1.</span> 基础图片
+                  </h3>
+                  <span v-if="taskType === 'edit'" class="text-[10px] text-slate-400 font-normal">1张=2灵石, 2张=6灵石</span>
                 </div>
-                <a-upload-dragger
-                  v-else
-                  v-model:fileList="fileList"
-                  name="file"
-                  :multiple="false"
-                  accept="image/png, image/jpeg"
-                  :before-upload="beforeUpload"
-                  @remove="handleRemove"
-                  class="upload-dragger flex-grow flex items-center justify-center w-full"
-                  :show-upload-list="false"
-                >
-                  <div class="flex flex-col items-center justify-center h-full w-full p-4">
-                    <p class="ant-upload-drag-icon text-blue-500 text-3xl mb-2"><inbox-outlined></inbox-outlined></p>
-                    <p class="ant-upload-text font-medium text-slate-300 text-sm">点击/拖拽</p>
-                    <p class="ant-upload-hint text-slate-500 mt-1 text-xs">JPG/PNG</p>
+                
+                <div class="flex gap-2 flex-grow w-full overflow-hidden">
+                  <div v-for="(img, index) in uploadedImages" :key="img.key" class="relative group rounded-xl overflow-hidden border border-slate-400/50 bg-slate-500/50 flex items-center justify-center h-full" :class="uploadedImages.length === 1 ? 'w-1/2' : 'w-1/2'">
+                    <a-image :src="img.preview" class="max-w-full max-h-full object-contain" :preview="true" />
+                    <div class="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center pointer-events-none">
+                      <a-button danger type="primary" @click="handleRemove(index)" class="pointer-events-auto" size="small">删除</a-button>
+                    </div>
                   </div>
-                </a-upload-dragger>
+                  
+                  <a-upload-dragger
+                    v-if="uploadedImages.length < 2"
+                    name="file"
+                    :multiple="true"
+                    accept="image/png, image/jpeg, image/webp"
+                    :before-upload="beforeUpload"
+                    class="upload-dragger flex-grow flex items-center justify-center h-full"
+                    :class="uploadedImages.length === 1 ? 'w-1/2' : 'w-full'"
+                    :show-upload-list="false"
+                  >
+                    <div class="flex flex-col items-center justify-center h-full w-full p-2">
+                      <p class="ant-upload-drag-icon text-blue-500 text-2xl mb-1"><inbox-outlined></inbox-outlined></p>
+                      <p class="ant-upload-text font-medium text-slate-300 text-xs">点击/拖拽</p>
+                      <p v-if="uploadedImages.length === 1" class="ant-upload-hint text-slate-500 mt-1 text-[10px]">第2张(可选)</p>
+                      <p v-else class="ant-upload-hint text-slate-500 mt-1 text-[10px]">JPG/PNG</p>
+                    </div>
+                  </a-upload-dragger>
+                </div>
                 
                 <div v-if="uploading" class="mt-2 shrink-0">
                   <span class="text-xs text-slate-400">正在上传...</span>
@@ -227,7 +241,7 @@ const resetForm = () => {
             type="primary" 
             size="large" 
             class="bg-blue-600 hover:bg-blue-500 border-none px-8 font-bold tracking-wider rounded-xl shadow-lg shadow-blue-500/20" 
-            :disabled="!objectKey || !prompt"
+            :disabled="uploadedImages.length === 0 || !prompt"
             :loading="isSubmitting"
             @click="handleGenerate"
           >

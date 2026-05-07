@@ -191,7 +191,7 @@ watch(() => route.name, (newName) => {
     <!-- 动态星空灵气背景 -->
     <canvas ref="canvasRef" class="absolute inset-0 z-0 pointer-events-none"></canvas>
     
-    <a-layout-sider v-show="!isMobile" v-model:collapsed="collapsed" collapsible breakpoint="lg" theme="dark" class="sider-custom z-10">
+    <a-layout-sider v-if="!isMobile" v-model:collapsed="collapsed" collapsible breakpoint="lg" theme="dark" class="sider-custom z-10">
       <div class="logo h-16 flex items-center justify-center relative z-10">
         <div class="absolute inset-0 bg-gradient-to-r from-cyan-500/10 to-indigo-500/10 opacity-50"></div>
         <h1 class="text-slate-100 text-xl font-bold tracking-widest truncate px-4 drop-shadow-[0_2px_4px_rgba(56,189,248,0.5)]" v-if="!collapsed">{{ $t('app.name') }}</h1>
