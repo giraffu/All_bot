@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import api from '@/api'
 import { message, Modal } from 'ant-design-vue'
 import { useI18n } from 'vue-i18n'
@@ -8,6 +9,8 @@ import dayjs from 'dayjs'
 import { useViewport } from '@/composables/useViewport'
 
 const { t } = useI18n()
+const route = useRoute()
+const router = useRouter()
 const { isMobile } = useViewport()
 const data = ref<any[]>([])
 const loading = ref(false)
@@ -57,6 +60,21 @@ const fetchHistory = async (page = 1) => {
     data.value = res.data.items
     pagination.value.total = res.data.total
     pagination.value.current = res.data.page
+    
+    // Check if we need to auto-open a specific task detail
+    if (route.query.task_id) {
+      const targetId = route.query.task_id as string
+      const targetRecord = data.value.find(item => item.task_id === targetId)
+      if (targetRecord) {
+        openDetail(targetRecord)
+      } else if (page === 1) {
+        // If not found on first page, maybe it's still generating or on another page.
+        // For now, just show a message.
+        message.info('未在近期历史中找到该任务记录')
+      }
+      // Remove query param so it doesn't reopen on refresh
+      router.replace({ query: {} })
+    }
   } catch (error) {
     console.error('Failed to fetch history:', error)
   } finally {
@@ -241,6 +259,19 @@ const handleDownload = async (record: any) => {
 onMounted(() => {
   fetchHistory()
 })
+
+watch(() => route.query.task_id, (newTaskId) => {
+  if (newTaskId) {
+    const targetRecord = data.value.find(item => item.task_id === newTaskId)
+    if (targetRecord) {
+      openDetail(targetRecord)
+      router.replace({ query: {} })
+    } else {
+      // If not in current data, fetch again
+      fetchHistory()
+    }
+  }
+})
 </script>
 
 <template>
@@ -373,7 +404,7 @@ onMounted(() => {
         </div>
 
         <!-- Info Area -->
-        <div class="w-full lg:w-1/3 flex flex-col bg-[#0f172a] lg:bg-slate-500/80 lg:backdrop-blur-xl relative pb-[80px] lg:pb-0">
+        <div class="w-full lg:w-1/3 flex flex-col bg-[#0f172a] lg:bg-slate-500/80 lg:backdrop-blur-xl relative pb-[120px] lg:pb-0">
           <!-- Desktop Close button -->
           <button @click="detailVisible = false" class="hidden lg:block absolute top-4 right-4 text-slate-400 hover:text-white transition-colors z-10">
             <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
@@ -469,7 +500,7 @@ onMounted(() => {
         </div>
 
         <!-- Mobile Bottom Interaction Bar -->
-        <div class="lg:hidden fixed bottom-0 left-0 right-0 bg-[#0f172a]/95 backdrop-blur-lg border-t border-slate-800 px-4 py-2 flex items-center justify-between z-50 safe-area-bottom">
+        <div class="lg:hidden fixed bottom-0 left-0 right-0 bg-[#0f172a]/95 backdrop-blur-lg border-t border-slate-800 px-4 py-2 pb-6 flex items-center justify-between z-50 safe-area-bottom">
           <template v-if="currentRecord.output_file">
             <div class="flex gap-6">
               <button class="flex flex-col items-center justify-center gap-1 transition-colors" :class="currentRecord.is_favorited ? 'text-amber-400' : 'text-slate-400 hover:text-slate-200'" @click="!currentRecord.is_favorited && handleFavorite(currentRecord)">
