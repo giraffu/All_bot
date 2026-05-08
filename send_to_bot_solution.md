@@ -7,9 +7,9 @@
 ## 2. 前端改造方案 (Vue 3)
 
 ### 2.1 UI 交互更新
-- **位置**：在移动端/PC端的作品操作栏（如下载、收藏、删除旁）新增一个「发送给 Bot」的按钮。
-- **图标**：使用 Telegram 风格的纸飞机图标（如 `SendOutlined` 或类似的纸飞机 SVG）。
-- **文案**：转发给 Bot (Forward to Bot) 或 发送至聊天。
+- **位置**：在 `TaskDetailModal.vue`（作品详情弹窗）的移动端和 PC 端操作栏（下载、收藏、删除旁）新增一个「发送给 Bot」按钮。
+- **图标**：使用 `lucide-vue-next` 提供的 `Send` 图标（纸飞机）。
+- **文案**：发送至私聊 (Send to Bot)。
 
 ### 2.2 逻辑封装 (`useTaskInteraction.ts`)
 在现有的 `useTaskInteraction` composable 中新增 `handleSendToBot` 方法。
@@ -64,16 +64,8 @@ return {
 **具体代码实现 (`users.py`)**：
 ```python
 import httpx
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
-
-from src.database.models import History, User
-from src.services.redis_client import redis_client
 from src.services.storage import storage
 from config import TELEGRAM_API_BASE_URL, BOT_TOKEN
-from src.web_api.dependencies import get_current_user
-from src.database.core import AsyncSessionLocal
 
 @router.post("/history/{task_id}/send-to-bot")
 async def send_history_to_bot(
@@ -86,6 +78,7 @@ async def send_history_to_bot(
         raise HTTPException(status_code=400, detail="您尚未绑定 Telegram 账号，无法发送至私聊")
 
     # 2. Redis 10秒防刷锁（严格对齐现有 redis_client 模式）
+    from src.services.redis_client import redis_client
     lock_key = f"rate_limit:send_to_bot:{current_user.id}"
     is_locked = await redis_client.redis.set(lock_key, "1", nx=True, ex=10)
     if not is_locked:
@@ -123,13 +116,15 @@ async def send_history_to_bot(
     method = "sendVideo" if is_video else "sendPhoto"
     url = f"{TELEGRAM_API_BASE_URL}/bot{BOT_TOKEN}/{method}"
     
-    # 截取 Prompt 前 100 字符作为 caption，避免太长导致发送失败
-    caption = history.prompt[:100] + "..." if history.prompt and len(history.prompt) > 100 else history.prompt
-    
     payload = {
-        "chat_id": current_user.telegram_id,
-        "caption": caption
+        "chat_id": current_user.telegram_id
     }
+    
+    # 截取 Prompt 前 100 字符作为 caption，避免太长导致发送失败，同时避免传入 null
+    if history.prompt:
+        caption = history.prompt[:100] + "..." if len(history.prompt) > 100 else history.prompt
+        payload["caption"] = caption
+        
     if is_video:
         payload["video"] = file_url
     else:

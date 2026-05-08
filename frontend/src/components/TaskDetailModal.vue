@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { Image as ImageIcon, Video, Clock, Download, Star, Trash2, Upload } from 'lucide-vue-next'
+import { Image as ImageIcon, Video, Clock, Download, Star, Trash2, Upload, Send } from 'lucide-vue-next'
 import { useViewport } from '@/composables/useViewport'
 import { useTasksStore } from '@/stores/tasks'
 import { useTaskFormat } from '@/composables/useTaskFormat'
@@ -27,7 +27,8 @@ const {
   submitToGallery,
   handleFavorite,
   handleDelete,
-  handleDownload
+  handleDownload,
+  handleSendToBot
 } = useTaskInteraction({
   onDeleteSuccess: (record) => {
     // If the currently viewed record is deleted, close the modal
@@ -151,6 +152,17 @@ const {
 
               <a-button
                 ghost
+                class="w-full h-12 text-indigo-400 border-indigo-500/50 hover:text-indigo-300 hover:border-indigo-400 hover:bg-indigo-500/10 transition-colors rounded-xl text-base font-medium !flex !items-center !justify-center"
+                @click="handleSendToBot(currentRecord)"
+              >
+                <span class="flex items-center justify-center">
+                  <Send :size="18" class="mr-2" />
+                  发送至私聊
+                </span>
+              </a-button>
+
+              <a-button
+                ghost
                 class="w-full h-12 text-red-400 border-red-500/50 hover:text-red-300 hover:border-red-400 hover:bg-red-500/10 transition-colors rounded-xl text-base font-medium !flex !items-center !justify-center mt-3"
                 @click="handleDelete(currentRecord)"
               >
@@ -176,6 +188,10 @@ const {
             <button class="flex flex-col items-center justify-center gap-1 text-slate-400 hover:text-slate-200 transition-colors" @click="handleDownload(currentRecord)">
               <Download :size="20" />
               <span class="text-[10px]">保存</span>
+            </button>
+            <button class="flex flex-col items-center justify-center gap-1 text-indigo-400 hover:text-indigo-300 transition-colors" @click="handleSendToBot(currentRecord)">
+              <Send :size="20" />
+              <span class="text-[10px]">发私聊</span>
             </button>
             <button class="flex flex-col items-center justify-center gap-1 text-slate-400 hover:text-red-400 transition-colors" @click="handleDelete(currentRecord)">
               <Trash2 :size="20" />

@@ -136,11 +136,30 @@ export function useTaskInteraction(options?: {
     }
   }
 
+  const handleSendToBot = async (record: any) => {
+    if (!record.output_file) {
+      message.warning('该记录无文件可发送')
+      return
+    }
+    
+    const hide = message.loading('正在发送至私聊...', 0)
+    try {
+      await api.post(`/users/history/${record.task_id}/send-to-bot`)
+      hide()
+      message.success('已发送至您的私聊，请在 Telegram 中查收')
+    } catch (error: any) {
+      console.error(error)
+      hide()
+      message.error(error.response?.data?.detail || '发送失败，请确保机器人未被屏蔽')
+    }
+  }
+
   return {
     submittingTasks,
     submitToGallery,
     handleFavorite,
     handleDelete,
-    handleDownload
+    handleDownload,
+    handleSendToBot
   }
 }
