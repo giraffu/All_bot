@@ -7,6 +7,13 @@ export function useUpload() {
   const progress = ref(0)
 
   const uploadFile = async (file: File): Promise<string | null> => {
+    // 限制上传文件大小为 20MB
+    const MAX_SIZE = 20 * 1024 * 1024;
+    if (file.size > MAX_SIZE) {
+      message.error('文件大小不能超过 20MB，请压缩后再试');
+      return null;
+    }
+
     uploading.value = true
     progress.value = 0
     
