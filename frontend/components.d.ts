@@ -42,6 +42,7 @@ declare module 'vue' {
     MobileTabbar: typeof import('./src/components/MobileTabbar.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
+    TaskDetailModal: typeof import('./src/components/TaskDetailModal.vue')['default']
     TaskProgress: typeof import('./src/components/TaskProgress.vue')['default']
   }
 }

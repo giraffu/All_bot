@@ -14,10 +14,14 @@ const handleClose = (task: any) => {
 
 const handleTaskClick = (task: any) => {
   if (task.status === 'success' && task.resultUrl) {
+    // 触发全局弹窗，传入 task.id，并用现有信息作为 fallback 
+    tasksStore.openDetailModal(task.id, {
+      task_id: task.id,
+      type: task.type,
+      output_file: task.resultUrl
+    })
     // 移除任务（关闭悬浮球）
     tasksStore.removeTask(task.id)
-    // 跳转到闪回瓶，并带上 task_id 参数，以便自动打开详情
-    router.push({ path: '/history', query: { task_id: task.id } })
   }
 }
 </script>

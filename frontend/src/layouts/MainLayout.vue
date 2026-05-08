@@ -8,6 +8,7 @@ import api from '@/api'
 import { User, Wand2, Zap, History as HistoryIcon, LogOut, Wallet, Compass, Bookmark, Star, Menu, Globe } from 'lucide-vue-next'
 import TaskProgress from '@/components/TaskProgress.vue'
 import MobileTabbar from '@/components/MobileTabbar.vue'
+import TaskDetailModal from '@/components/TaskDetailModal.vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -278,6 +279,7 @@ watch(() => route.name, (newName) => {
       </a-layout-content>
     </a-layout>
     <TaskProgress />
+    <TaskDetailModal />
     <MobileTabbar v-if="isMobile" />
   </a-layout>
 </template>
