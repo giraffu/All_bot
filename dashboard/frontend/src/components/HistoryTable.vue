@@ -50,6 +50,8 @@ const typeMapping = {
   'closeup_blowjob': '特写口交',
   'text_to_image': '文生图',
   'i2i_pro': '幻想换脸',
+  'i2i_draw': '局部重绘',
+  'img2img_lora': '图生图(附加模型)',
   'ltx_video': '高级图生视频',
 };
 
@@ -57,7 +59,7 @@ const typeOptions = [
   { label: '自定义视频', value: 'custom_video' },
   { label: '高级图生视频', value: 'ltx_video' },
   { label: '视频换脸', value: 'face_video_step1' },
-  { label: '自由P图', value: 'image' },
+  { label: '自由P图', value: 'image,edit' },
   { label: '快速换脸', value: 'face_swap' },
   { label: '快速脱衣', value: 'undress' },
   { label: '动图传教士', value: 'perfect_video_insert' },
@@ -76,7 +78,9 @@ const typeOptions = [
   { label: '随机换脸', value: 'random_faceswap' },
   { label: '视频生成', value: 'video' },
   { label: '模板共建', value: 'template_contribute' },
-  { label: '幻想换脸', value: 'i2i_pro' }
+  { label: '幻想换脸', value: 'i2i_pro' },
+  { label: '局部重绘', value: 'i2i_draw' },
+  { label: '图生图(附加模型)', value: 'img2img_lora' }
 ];
 
 const ratingOptions = [

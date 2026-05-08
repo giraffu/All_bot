@@ -129,8 +129,10 @@ const formatDate = (dateStr: string) => {
 
 const getTypeLabel = (type: string) => {
   const map: Record<string, string> = {
+    'image': '自由P图',
     'edit': '自由P图',
     'i2i_pro': '幻想换脸',
+    'i2i_draw': '局部重绘',
     'undress': '快速脱衣',
     'masturbation': '快速自慰',
     'face_swap': '快速换脸',
