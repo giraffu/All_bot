@@ -3,7 +3,7 @@ import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import { useI18n } from 'vue-i18n'
-import { Heart, ThumbsDown, Wand2, Play, Image as ImageIcon, Video, Flame, Clock, Compass, Copy } from 'lucide-vue-next'
+import { Heart, ThumbsDown, Wand2, Play, Image as ImageIcon, Video, Flame, Clock, Compass, Copy, ChevronLeft, ChevronRight } from 'lucide-vue-next'
 import api from '@/api'
 import dayjs from 'dayjs'
 import { useViewport } from '@/composables/useViewport'
@@ -57,6 +57,29 @@ const detailVisible = ref(false)
 const currentPost = ref<Post | null>(null)
 const applying = ref(false)
 const interactingPosts = ref<Record<number, boolean>>({})
+
+const currentIndex = computed(() => {
+  if (!currentPost.value) return -1
+  return posts.value.findIndex(p => p.id === currentPost.value?.id)
+})
+
+const hasPrev = computed(() => currentIndex.value > 0)
+const hasNext = computed(() => currentIndex.value >= 0 && currentIndex.value < posts.value.length - 1)
+
+const goPrev = () => {
+  if (hasPrev.value) {
+    currentPost.value = posts.value[currentIndex.value - 1]
+  }
+}
+
+const goNext = () => {
+  if (hasNext.value) {
+    currentPost.value = posts.value[currentIndex.value + 1]
+    if (currentIndex.value >= posts.value.length - 3 && hasMore.value) {
+      loadPosts()
+    }
+  }
+}
 
 const formatTag = (tag: string) => {
   if (tag.startsWith('#task.')) {
@@ -547,9 +570,17 @@ onUnmounted(() => {
         </div>
 
         <!-- Media Area -->
-        <div class="w-full lg:w-2/3 bg-black flex items-center justify-center relative">
-          <img v-if="!isVideoFile(currentPost.media_url, currentPost.media_type)" :src="getFileUrl(currentPost.media_url, currentPost.id, false)" class="w-full h-auto lg:max-w-full lg:max-h-[80vh] lg:object-contain object-cover" />
-          <video v-else :src="getFileUrl(currentPost.media_url, currentPost.id, false) + '#t=0.001'" :poster="getVideoPosterUrl(currentPost.media_url, currentPost.id)" class="w-full h-auto lg:max-w-full lg:max-h-[80vh] lg:object-contain object-cover" controls autoplay loop playsinline></video>
+        <div class="w-full lg:w-2/3 bg-black flex items-center justify-center relative group/media">
+          <img v-if="!isVideoFile(currentPost.media_url, currentPost.media_type)" :src="getFileUrl(currentPost.media_url, currentPost.id, false)" class="w-full h-auto max-h-[65vh] object-contain lg:max-w-full lg:max-h-[80vh]" />
+          <video v-else :src="getFileUrl(currentPost.media_url, currentPost.id, false) + '#t=0.001'" :poster="getVideoPosterUrl(currentPost.media_url, currentPost.id)" class="w-full h-auto max-h-[65vh] object-contain lg:max-w-full lg:max-h-[80vh]" controls autoplay loop playsinline></video>
+          
+          <!-- Navigation Arrows -->
+          <button v-if="hasPrev" @click.stop="goPrev" class="absolute left-2 top-1/2 -translate-y-1/2 w-10 h-10 sm:w-12 sm:h-12 bg-black/40 hover:bg-black/60 rounded-full flex items-center justify-center text-white/80 hover:text-white transition-all z-20 border border-white/10 backdrop-blur-sm opacity-100 lg:opacity-0 lg:group-hover/media:opacity-100">
+            <ChevronLeft :size="24" />
+          </button>
+          <button v-if="hasNext" @click.stop="goNext" class="absolute right-2 top-1/2 -translate-y-1/2 w-10 h-10 sm:w-12 sm:h-12 bg-black/40 hover:bg-black/60 rounded-full flex items-center justify-center text-white/80 hover:text-white transition-all z-20 border border-white/10 backdrop-blur-sm opacity-100 lg:opacity-0 lg:group-hover/media:opacity-100">
+            <ChevronRight :size="24" />
+          </button>
         </div>
         
         <!-- Info Area -->
