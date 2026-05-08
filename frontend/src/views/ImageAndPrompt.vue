@@ -12,8 +12,9 @@ const router = useRouter()
 
 const taskType = computed(() => (route.query.type as string) || 'i2i_pro')
 const taskTitle = computed(() => (route.query.title as string) || '图片生成')
+const maxImages = computed(() => taskType.value === 'i2i_pro' ? 1 : 2)
 const taskCost = computed(() => {
-  if (taskType.value === 'edit') {
+  if (taskType.value === 'edit' || taskType.value === 'img2img_lora') {
     return uploadedImages.value.length === 2 ? 6 : 2
   }
   return Number(route.query.cost) || 3
@@ -40,6 +41,28 @@ const loraOptions = [
   { value: 'qwen/penis.safetensors', label: '扶他(阴茎)' }
 ]
 
+const LORA_DEFAULT_STRENGTHS: Record<string, number> = {
+  'qwen/YARN_1.0.safetensors': 0.3,
+  'qwen/adjust_pussy_anus.safetensors': 1.0,
+  'qwen/realistic_texture.safetensors': 0.8,
+  'qwen/flat_chest_hairless.safetensors': 0.8,
+  'qwen/penis.safetensors': 0.7
+}
+
+const customLoraStrength = ref<number>(1.0)
+
+watch(selectedLora, (newLora) => {
+  if (isTemplateApplied.value) return 
+
+  if (newLora) {
+    customLoraStrength.value = LORA_DEFAULT_STRENGTHS[newLora] || 1.0
+  }
+})
+
+watch(taskType, () => {
+  resetForm()
+})
+
 onMounted(() => {
   if (route.query.apply === 'true') {
     const ctxStr = sessionStorage.getItem('galleryApplyContext')
@@ -48,7 +71,12 @@ onMounted(() => {
         const ctx = JSON.parse(ctxStr)
         if (ctx.task_type === taskType.value) {
           if (ctx.prompt) prompt.value = ctx.prompt
-          if (ctx.lora_name) selectedLora.value = ctx.lora_name
+          if (ctx.lora_name) {
+            selectedLora.value = ctx.lora_name
+            customLoraStrength.value = ctx.lora_strength != null 
+              ? Number(ctx.lora_strength) 
+              : (LORA_DEFAULT_STRENGTHS[ctx.lora_name] || 1.0)
+          }
           isTemplateApplied.value = true
         }
       } catch (e) {
@@ -59,8 +87,8 @@ onMounted(() => {
 })
 
 const beforeUpload = async (file: any) => {
-  if (uploadedImages.value.length + pendingUploads.value >= 2) {
-    message.warning('最多只能上传两张图片！')
+  if (uploadedImages.value.length + pendingUploads.value >= maxImages.value) {
+    message.warning(`最多只能上传${maxImages.value}张图片！`)
     return false
   }
   pendingUploads.value++
@@ -109,7 +137,7 @@ const handleGenerate = async () => {
 
   if (payload.task_type === 'img2img_lora') {
     payload.inputs.lora_name = selectedLora.value
-    payload.inputs.lora_strength = 0.3
+    payload.inputs.lora_strength = Number(customLoraStrength.value)
   }
 
   const taskId = await submitTask(payload, taskTitle.value)
@@ -123,7 +151,13 @@ const resetForm = () => {
     if (img.preview) URL.revokeObjectURL(img.preview)
   })
   uploadedImages.value = []
-  prompt.value = ''
+  
+  if (!isTemplateApplied.value) {
+    prompt.value = ''
+    selectedLora.value = ''
+    customLoraStrength.value = 1.0
+  }
+  
   setSubmittedTaskId(null)
 }
 </script>
@@ -144,7 +178,7 @@ const resetForm = () => {
           </div>
           
           <div class="flex flex-col gap-6">
-            <div v-if="taskType === 'edit'" class="w-full bg-slate-500/60 rounded-xl p-4 border border-slate-400/50 shrink-0">
+            <div v-if="taskType === 'edit' || taskType === 'img2img_lora'" class="w-full bg-slate-500/60 rounded-xl p-4 border border-slate-400/50 shrink-0">
               <h3 class="text-sm font-bold mb-3 text-slate-200 flex items-center">
                 <span class="text-slate-500 mr-2">0.</span> 附加模型 (LoRA)
               </h3>
@@ -155,6 +189,33 @@ const resetForm = () => {
                   </a-radio-button>
                 </a-radio-group>
               </div>
+              
+              <!-- 新增：强度自定义滑块 (仅在选中了具体模型时显示) -->
+              <div v-if="selectedLora" class="flex flex-col mt-4 pt-4 border-t border-slate-500/50">
+                <div class="flex justify-between items-center mb-2">
+                  <span class="text-xs text-slate-300">模型强度 (Lora Strength)</span>
+                  <span class="text-xs text-slate-400">推荐值已自动适配</span>
+                </div>
+                <div class="flex items-center gap-4">
+                  <a-slider 
+                    v-model:value="customLoraStrength" 
+                    :min="0.1" 
+                    :max="2.0" 
+                    :step="0.05" 
+                    class="flex-grow"
+                    :disabled="isTemplateApplied"
+                  />
+                  <a-input-number 
+                    v-model:value="customLoraStrength" 
+                    :min="0.1" 
+                    :max="2.0" 
+                    :step="0.05" 
+                    class="w-20 bg-slate-800/50 border-slate-400/50 text-slate-200"
+                    size="small"
+                    :disabled="isTemplateApplied"
+                  />
+                </div>
+              </div>
             </div>
 
             <div class="flex flex-col md:flex-row gap-4 md:h-64 w-full">
@@ -164,11 +225,11 @@ const resetForm = () => {
                   <h3 class="text-sm font-bold text-slate-200 flex items-center">
                     <span class="text-slate-500 mr-2">1.</span> 基础图片
                   </h3>
-                  <span v-if="taskType === 'edit'" class="text-[10px] text-slate-400 font-normal">1张=2灵石, 2张=6灵石</span>
+                  <span v-if="taskType === 'edit' || taskType === 'img2img_lora'" class="text-[10px] text-slate-400 font-normal">1张=2灵石, 2张=6灵石</span>
                 </div>
                 
                 <div class="flex gap-2 flex-grow w-full overflow-hidden">
-                  <div v-for="(img, index) in uploadedImages" :key="img.key" class="relative group rounded-xl overflow-hidden border border-slate-400/50 bg-slate-500/50 flex items-center justify-center h-full" :class="uploadedImages.length === 1 ? 'w-1/2' : 'w-1/2'">
+                  <div v-for="(img, index) in uploadedImages" :key="img.key" class="relative group rounded-xl overflow-hidden border border-slate-400/50 bg-slate-500/50 flex items-center justify-center h-full" :class="maxImages === 1 ? 'w-full' : 'w-1/2'">
                     <a-image :src="img.preview" class="max-w-full max-h-full object-contain" :preview="true" />
                     <div class="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center pointer-events-none">
                       <a-button danger type="primary" @click="handleRemove(index)" class="pointer-events-auto" size="small">删除</a-button>
@@ -176,19 +237,19 @@ const resetForm = () => {
                   </div>
                   
                   <a-upload-dragger
-                    v-if="uploadedImages.length < 2"
+                    v-if="uploadedImages.length < maxImages"
                     name="file"
-                    :multiple="true"
+                    :multiple="maxImages === 2"
                     accept="image/png, image/jpeg, image/webp"
                     :before-upload="beforeUpload"
                     class="upload-dragger flex-grow flex items-center justify-center h-full"
-                    :class="uploadedImages.length === 1 ? 'w-1/2' : 'w-full'"
+                    :class="maxImages === 1 ? 'w-full' : (uploadedImages.length === 1 ? 'w-1/2' : 'w-full')"
                     :show-upload-list="false"
                   >
                     <div class="flex flex-col items-center justify-center h-full w-full p-2">
                       <p class="ant-upload-drag-icon text-blue-500 text-2xl mb-1"><inbox-outlined></inbox-outlined></p>
                       <p class="ant-upload-text font-medium text-slate-300 text-xs">点击/拖拽</p>
-                      <p v-if="uploadedImages.length === 1" class="ant-upload-hint text-slate-500 mt-1 text-[10px]">第2张(可选)</p>
+                      <p v-if="taskType !== 'i2i_pro' && uploadedImages.length === 1" class="ant-upload-hint text-slate-500 mt-1 text-[10px]">第2张(可选)</p>
                       <p v-else class="ant-upload-hint text-slate-500 mt-1 text-[10px]">JPG/PNG</p>
                     </div>
                   </a-upload-dragger>
@@ -330,5 +391,25 @@ const resetForm = () => {
 .upload-dragger {
   background: rgba(15, 23, 42, 0.4);
   border-radius: 12px;
+}
+
+:deep(.ant-input-number) {
+  background-color: rgba(15, 23, 42, 0.4) !important;
+  border-color: rgba(71, 85, 105, 0.5) !important;
+  color: #e2e8f0 !important;
+}
+:deep(.ant-input-number-input) {
+  color: #e2e8f0 !important;
+}
+:deep(.ant-input-number-handler-wrap) {
+  background-color: rgba(15, 23, 42, 0.6) !important;
+  border-color: rgba(71, 85, 105, 0.5) !important;
+}
+:deep(.ant-input-number-handler) {
+  border-color: rgba(71, 85, 105, 0.5) !important;
+}
+:deep(.ant-input-number-handler-up-inner),
+:deep(.ant-input-number-handler-down-inner) {
+  color: #94a3b8 !important;
 }
 </style>
