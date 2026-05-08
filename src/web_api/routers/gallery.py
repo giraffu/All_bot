@@ -17,6 +17,7 @@ from src.constants import (
     MODE_CUSTOM_VIDEO,
     MODE_EDIT,
     MODE_I2I_PRO,
+    MODE_I2I_DRAW,
     MODE_LTX_VIDEO,
     MODE_NAME_MAP,
     MODE_VIDEO_LORA,
@@ -34,7 +35,7 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 # Allowed task types for web gallery submission
-ALLOWED_WEB_SUBMIT_TYPES = {MODE_I2I_PRO, MODE_EDIT, MODE_CUSTOM_VIDEO, MODE_VIDEO_LORA, MODE_LTX_VIDEO, "img2img_lora"}
+ALLOWED_WEB_SUBMIT_TYPES = {MODE_I2I_PRO, MODE_I2I_DRAW, MODE_EDIT, MODE_CUSTOM_VIDEO, MODE_VIDEO_LORA, MODE_LTX_VIDEO, "img2img_lora"}
 
 from config import R2_PUBLIC_DOMAIN
 
@@ -69,6 +70,7 @@ async def get_gallery_config():
     return {
         "allowed_types": [
             {"id": MODE_I2I_PRO, "name": MODE_NAME_MAP.get(MODE_I2I_PRO, "task.mode_i2i_pro")},
+            {"id": MODE_I2I_DRAW, "name": MODE_NAME_MAP.get(MODE_I2I_DRAW, "task.mode_i2i_draw")},
             {"id": MODE_EDIT, "name": MODE_NAME_MAP.get(MODE_EDIT, "task.mode_edit")},
             {"id": "img2img_lora", "name": "task.mode_img2img_lora"},
             {"id": MODE_CUSTOM_VIDEO, "name": MODE_NAME_MAP.get(MODE_CUSTOM_VIDEO, "task.mode_custom_video")},

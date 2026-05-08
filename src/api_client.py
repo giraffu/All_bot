@@ -12,6 +12,7 @@ from config import (
     FACE_SWAP_ENDPOINT,
     FACE_VIDEO_ENDPOINT,
     I2I_PRO_ENDPOINT,
+    I2I_DRAW_ENDPOINT,
     IMAGE_ENDPOINT,
     IMG2IMG_ENDPOINT,
     IMG2IMG_LORA_ENDPOINT,
@@ -254,6 +255,23 @@ class APIClient:
         return r.json()["task_id"]
 
     @async_retry(max_retries=3)
+    async def submit_i2i_draw(self, task_id: str, prompt: str, image_path: str, seed: int, priority: int = 0) -> str:
+        """
+        Submit i2i draw task.
+        """
+        data = {
+            "task_id": task_id,
+            "image": image_path,
+            "prompt": prompt,
+            "seed": seed,
+            "priority": priority
+        }
+
+        logger.info(f"Submitting i2i_draw task. Prompt: {prompt}, Seed: {seed}, Priority: {priority}")
+        r = await self._request("POST", I2I_DRAW_ENDPOINT, json=data)
+        return r.json()["task_id"]
+
+    @async_retry(max_retries=3)
     async def submit_ltx_video(self, task_id: str, prompt: str, image_path: str, width: int = 1280, height: int = 704, length: int = 241, priority: int = 0) -> str:
         """
         Submit ltx_video task.
@@ -427,6 +445,7 @@ submit_face_swap = api_client.submit_face_swap
 submit_face_video = api_client.submit_face_video
 submit_ltx_video = api_client.submit_ltx_video
 submit_i2i_pro = api_client.submit_i2i_pro
+submit_i2i_draw = api_client.submit_i2i_draw
 download_image = api_client.download_image
 download_video = api_client.download_video
 get_system_status = api_client.get_system_status

@@ -8,6 +8,7 @@ from src.api_client import (
     submit_face_swap,
     submit_face_video,
     submit_i2i_pro,
+    submit_i2i_draw,
     submit_img2img,
     submit_img2img_lora,
     submit_ltx_video,
@@ -37,6 +38,10 @@ class ImageService:
     async def submit_i2i_pro_task(self, task_id: str, prompt: str, image_path: str, seed: int, priority: int = 0) -> str:
         """Submit i2i pro task"""
         return await submit_i2i_pro(task_id, prompt, image_path, seed, priority=priority)
+
+    async def submit_i2i_draw_task(self, task_id: str, prompt: str, image_path: str, seed: int, priority: int = 0) -> str:
+        """Submit i2i draw task"""
+        return await submit_i2i_draw(task_id, prompt, image_path, seed, priority=priority)
 
     async def submit_img2img_lora_task(self, task_id: str, prompt: str, image_paths: list[str], lora_name: str, negative_prompt: str = " ", priority: int = 0, lora_strength: float = 1.0) -> str:
         """Submit img2img_lora task and get task_id."""

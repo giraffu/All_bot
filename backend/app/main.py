@@ -10,6 +10,7 @@ from app.models import (
     FaceSwapRequest,
     FaceVideoRequest,
     I2IProRequest,
+    I2IDrawRequest,
     Img2ImgLoraRequest,
     Img2ImgRequest,
     LtxVideoRequest,
@@ -197,6 +198,18 @@ async def create_i2i_pro_task(
     task_id = params.pop("task_id")
     priority = params.pop("priority", 0)
     await queue_manager.enqueue_task(TaskType.I2I_PRO, params, priority, task_id)
+    return TaskResponse(task_id=task_id)
+
+@app.post("/i2i_draw", response_model=TaskResponse)
+async def create_i2i_draw_task(
+    request: I2IDrawRequest,
+    queue_manager: QueueManager = Depends(get_queue_manager),
+    token: str = Depends(verify_token)
+):
+    params = request.dict()
+    task_id = params.pop("task_id")
+    priority = params.pop("priority", 0)
+    await queue_manager.enqueue_task(TaskType.I2I_DRAW, params, priority, task_id)
     return TaskResponse(task_id=task_id)
 
 @app.post("/api/v1/ltx_video", response_model=TaskResponse)

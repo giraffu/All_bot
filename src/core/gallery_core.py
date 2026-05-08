@@ -15,7 +15,7 @@ from src.services.storage import storage
 logger = logging.getLogger(__name__)
 
 ALLOWED_WEB_SUBMIT_TYPES = [
-    "i2i_pro", "custom_video", 
+    "i2i_pro", "i2i_draw", "custom_video", 
     "video_lora", "ltx_video", "edit", "img2img_lora"
 ]
 

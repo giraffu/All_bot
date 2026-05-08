@@ -26,6 +26,15 @@ const features = [
     route: 'ImageAndPrompt' 
   },
   {
+    key: 'i2i_draw',
+    title: 'lab.cards.i2i_draw_title',
+    description: 'lab.cards.i2i_draw_desc',
+    icon: Wand2,
+    color: 'bg-pink-100 text-pink-600',
+    cost: 3,
+    route: 'ImageAndPrompt' 
+  },
+  {
     key: 'edit',
     title: 'lab.cards.custom_edit_title',
     description: 'lab.cards.custom_edit_desc',

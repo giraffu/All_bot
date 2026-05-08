@@ -71,6 +71,7 @@ PERFECT_VIDEO_INSERT_ENDPOINT = f"{API_BASE}/perfect_video_insert"
 FACE_SWAP_ENDPOINT = f"{API_BASE}/face_swap"
 FACE_VIDEO_ENDPOINT = f"{API_BASE}/face_video"
 I2I_PRO_ENDPOINT = f"{API_BASE}/i2i_pro"
+I2I_DRAW_ENDPOINT = f"{API_BASE}/i2i_draw"
 LTX_VIDEO_ENDPOINT = f"{API_BASE}/api/v1/ltx_video"
 
 # --- LLM Configuration ---

@@ -29,6 +29,7 @@ MODE_CUSTOM_VIDEO = "custom_video"
 MODE_VIDEO_LORA = "video_lora"
 MODE_LTX_VIDEO = "ltx_video"
 MODE_I2I_PRO = "i2i_pro"
+MODE_I2I_DRAW = "i2i_draw"
 MODE_IMG2IMG_LORA = "img2img_lora"
 MODE_TEMPLATE_CONTRIBUTE = "template_contribute"
 MODE_NONE = "none"
@@ -37,6 +38,7 @@ MODE_NONE = "none"
 MODE_NAME_MAP = {
     MODE_EDIT: "task.mode_edit",
     MODE_I2I_PRO: "task.mode_i2i_pro",
+    MODE_I2I_DRAW: "task.mode_i2i_draw",
     MODE_IMG2IMG_LORA: "task.mode_img2img_lora",
     MODE_UNDRESS: "task.mode_undress",
     MODE_MASTURBATION: "task.mode_masturbation",
@@ -76,6 +78,7 @@ TASK_COSTS = {
     MODE_LTX_VIDEO: 10,
     MODE_VIDEO_LORA: 6,
     MODE_I2I_PRO: 6,
+    MODE_I2I_DRAW: 3,
     MODE_IMG2IMG_LORA: 6,
 }
 
@@ -278,7 +281,7 @@ GENERATION_TASK_TYPES = [
     MODE_FACESWAP_STEP1, MODE_FACESWAP_STEP2, MODE_RANDOM_FACESWAP,
     MODE_FACE_VIDEO_STEP1, MODE_FACE_VIDEO_STEP2,
     MODE_PENETRATION_STEP1, MODE_PENETRATION_STEP2,
-    MODE_I2I_PRO
+    MODE_I2I_PRO, MODE_I2I_DRAW
 ]
 
 VIDEO_TASK_TYPES = [

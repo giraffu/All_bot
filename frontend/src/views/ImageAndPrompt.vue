@@ -12,7 +12,7 @@ const router = useRouter()
 
 const taskType = computed(() => (route.query.type as string) || 'i2i_pro')
 const taskTitle = computed(() => (route.query.title as string) || '图片生成')
-const maxImages = computed(() => taskType.value === 'i2i_pro' ? 1 : 2)
+const maxImages = computed(() => ['i2i_pro', 'i2i_draw'].includes(taskType.value) ? 1 : 2)
 const taskCost = computed(() => {
   if (taskType.value === 'edit' || taskType.value === 'img2img_lora') {
     return uploadedImages.value.length === 2 ? 6 : 2

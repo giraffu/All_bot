@@ -156,6 +156,8 @@
     "cards": {
       "face_swap_title": "幻想换脸",
       "face_swap_desc": "上传一张人脸图片，AI 将根据你的文字提示词为你实现无缝换脸，生成逼真...",
+      "i2i_draw_title": "局部重绘",
+      "i2i_draw_desc": "上传一张单人女性的图片，输入提示词（不改变动作，不然会有面部变形），AI 将局部修改画面。",
       "custom_edit_title": "自由P图",
       "custom_edit_desc": "上传图片并提供文字指令，AI 将根据你的描述修改图片内容。",
       "fast_face_swap_title": "快速换脸",
@@ -211,6 +213,7 @@
     "video_lora": "🎬 图生视频(附加模型)",
     "mode_edit": "自由P图",
     "mode_i2i_pro": "幻想换脸",
+    "mode_i2i_draw": "局部重绘",
     "mode_img2img_lora": "图生图(附加模型)",
     "mode_undress": "快速脱衣",
     "mode_masturbation": "快速自慰",

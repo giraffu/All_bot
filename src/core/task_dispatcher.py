@@ -7,6 +7,7 @@ from src.constants import (
     LTX_RESOLUTION_COST,
     MODE_FACESWAP_STEP1,
     MODE_I2I_PRO,
+    MODE_I2I_DRAW,
     RESOLUTION_COST,
     TASK_COSTS,
 )
@@ -60,6 +61,16 @@ class DefaultImageStrategy(BaseTaskStrategy):
             import random
             seed = random.randint(1, 9007199254740991)
             return await image_service.submit_i2i_pro_task(
+                task_id,
+                prompt=inputs.get("prompt"),
+                image_path=inputs.get("saved_input_images", [])[0] if inputs.get("saved_input_images") else "",
+                seed=seed,
+                priority=priority
+            )
+        elif self.mode in ["i2i_draw", MODE_I2I_DRAW]:
+            import random
+            seed = random.randint(1, 9007199254740991)
+            return await image_service.submit_i2i_draw_task(
                 task_id,
                 prompt=inputs.get("prompt"),
                 image_path=inputs.get("saved_input_images", [])[0] if inputs.get("saved_input_images") else "",
@@ -265,7 +276,7 @@ class StrategyFactory:
             return LtxVideoStrategy()
         elif task_type in VIDEO_TASK_TYPES:
             return BaseVideoStrategy(task_type)
-        elif task_type in ["i2i_pro", "MODE_I2I_PRO"]:
+        elif task_type in ["i2i_pro", "MODE_I2I_PRO", "i2i_draw", MODE_I2I_DRAW]:
             return DefaultImageStrategy(task_type)
         else:
             return DefaultImageStrategy(task_type)

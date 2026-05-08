@@ -56,6 +56,13 @@
         "seed": "60",
         "seed_input": "value"
     },
+    "i2i_draw": {
+        "image": "167",
+        "prompt": "108",
+        "prompt_input": "text",
+        "seed": "138",
+        "seed_input": "seed"
+    },
     "ltx_video": {
         "image": "15",
         "prompt": "28",

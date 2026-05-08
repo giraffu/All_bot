@@ -44,6 +44,8 @@ class WorkflowPatcher:
             filename = "Pornmaster Z-Image Turbo_t2i_Double checkpoints & realism enhancer_V1_2026_01_24.json"
         elif task_type == "i2i_pro":
             filename = "i2i_pro.json"
+        elif task_type == "i2i_draw":
+            filename = "I2I_draw.json"
         elif task_type == "img2img_lora":
             filename = "Qwen-Rapid-AIO.json"
         elif task_type == "ltx_video":
@@ -134,6 +136,16 @@ class WorkflowPatcher:
                 if "31" in wf:
                     wf.pop("31", None) # ImageScaleToTotalPixels node 31
         
+        elif task_type == "i2i_draw":
+            # Hardcode negative prompt to a space
+            if "109" in wf and "inputs" in wf["109"]:
+                wf["109"]["inputs"]["text"] = " "
+                
+            # Isolate and remove LoRA node (144)
+            if "106" in wf and "138" in wf and "inputs" in wf["138"]:
+                wf["138"]["inputs"]["model"] = ["106", 0]
+            wf.pop("144", None)
+            
         elif task_type == "ltx_video":
             # Remove the preview override node as it causes AttributeError in API mode (serv.last_node_id is None)
             if "210" in wf:
