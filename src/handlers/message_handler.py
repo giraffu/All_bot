@@ -349,6 +349,16 @@ async def handle_checkin(update: Update, context: ContextTypes.DEFAULT_TYPE, tex
     
     if not update.effective_user: return
     user = update.effective_user
+    
+    # 新增逻辑：在签到前强制获取最新频道状态并同步
+    is_member = await get_user_channel_status(context.bot, user.id)
+    if is_member is not None:
+        inviter_id_reward = await permission_service.sync_channel_status(
+            user.id, user.username, user.full_name, is_member
+        )
+        if inviter_id_reward:
+            create_background_task(context, notify_inviter_reward(context.bot, inviter_id_reward, user.full_name))
+
     success, current_credits, error_msg, total_days, reward = await permission_service.perform_checkin(user.id, user.username, user.full_name)
     user_group = await permission_service.get_user_group(internal_user_id)
     user_identity = await permission_service.get_user_identity(internal_user_id)
@@ -489,7 +499,11 @@ from src.handlers.error_handlers import with_unified_error_handler
 async def handle_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.effective_user: return
     user = update.effective_user
-    await permission_service.check_access(user.id, user.username, user.full_name)
+    
+    is_member = await get_user_channel_status(context.bot, user.id)
+    inviter_id_reward = await permission_service.check_access(user.id, user.username, user.full_name, is_member)
+    if inviter_id_reward:
+        create_background_task(context, notify_inviter_reward(context.bot, inviter_id_reward, user.full_name))
 
     message = update.message or update.edited_message
     if not message:

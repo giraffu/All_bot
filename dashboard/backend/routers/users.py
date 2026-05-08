@@ -461,6 +461,19 @@ async def update_user_channel_member(user_id: int, request: UpdateChannelMemberR
                 "source": "dashboard_admin_edit"
             }
         )
+        
+        # 新增逻辑：如果是从 False 改为 True，则联动触发奖励和修为刷新
+        if request.is_channel_member and not old_status:
+            from src.services.permission_service import permission_service
+            # 尝试发放邀请奖励
+            await permission_service.check_channel_reward(
+                tg_id=user.telegram_id or user.id, 
+                username=user.username, 
+                full_name=user.full_name, 
+                internal_user_id=user.id
+            )
+            # 刷新修为境界（凡人 -> 练气期）
+            await permission_service.refresh_user_group(user.id, is_member=True)
             
         return {
             "status": "ok", 
