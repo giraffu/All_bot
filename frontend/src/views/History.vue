@@ -362,7 +362,7 @@ watch(() => route.query.task_id, (newTaskId) => {
               </div>
               
               <!-- 投稿状态 -->
-              <span v-if="['i2i_pro', 'edit', 'custom_video', 'video_lora', 'img2img_lora', 'ltx_video'].includes(record.type) && record.allow_contribute !== false"
+              <span v-if="['i2i_pro', 'i2i_draw', 'edit', 'custom_video', 'video_lora', 'img2img_lora', 'ltx_video'].includes(record.type) && record.allow_contribute !== false"
                     class="text-[10px] px-2 py-0.5 rounded-full backdrop-blur-md border border-white/20 shadow-sm whitespace-nowrap ml-1"
                     :class="record.is_public ? 'bg-indigo-500/40 text-indigo-100' : 'bg-slate-500/40 text-slate-200'">
                 {{ record.is_public ? '已投稿' : '未投稿' }}
@@ -446,7 +446,7 @@ watch(() => route.query.task_id, (newTaskId) => {
             <div class="hidden lg:flex mt-auto flex-col space-y-3 pt-6">
               <template v-if="currentRecord.output_file">
                 <a-button
-                  v-if="['i2i_pro', 'edit', 'custom_video', 'video_lora', 'img2img_lora', 'ltx_video'].includes(currentRecord.type) && currentRecord.allow_contribute !== false"
+                  v-if="['i2i_pro', 'i2i_draw', 'edit', 'custom_video', 'video_lora', 'img2img_lora', 'ltx_video'].includes(currentRecord.type) && currentRecord.allow_contribute !== false"
                   type="primary"
                   :disabled="currentRecord.is_public"
                   class="w-full h-12 border-none rounded-xl text-base font-medium flex items-center justify-center"
@@ -518,7 +518,7 @@ watch(() => route.query.task_id, (newTaskId) => {
             </div>
             
             <button 
-              v-if="['i2i_pro', 'edit', 'custom_video', 'video_lora', 'img2img_lora', 'ltx_video'].includes(currentRecord.type) && currentRecord.allow_contribute !== false"
+              v-if="['i2i_pro', 'i2i_draw', 'edit', 'custom_video', 'video_lora', 'img2img_lora', 'ltx_video'].includes(currentRecord.type) && currentRecord.allow_contribute !== false"
               @click="!currentRecord.is_public && submitToGallery(currentRecord)"
               :disabled="currentRecord.is_public || submittingTasks[currentRecord.task_id]"
               class="px-5 py-2 rounded-full font-medium text-sm transition-all flex items-center justify-center min-w-[100px]"

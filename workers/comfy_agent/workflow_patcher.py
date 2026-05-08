@@ -81,6 +81,9 @@ class WorkflowPatcher:
         # If we have mappings, use them
         mapping = self.mappings.get(task_type, {})
         
+        if task_type == "i2i_draw" and "prompt" in params and isinstance(params["prompt"], str):
+            params["prompt"] = f"{params['prompt']}, 身体姿势保持不变"
+        
         for key, value in params.items():
             if key in mapping:
                 node_id = str(mapping[key])
@@ -140,11 +143,6 @@ class WorkflowPatcher:
             # Hardcode negative prompt to a space
             if "109" in wf and "inputs" in wf["109"]:
                 wf["109"]["inputs"]["text"] = " "
-                
-            # Isolate and remove LoRA node (144)
-            if "106" in wf and "138" in wf and "inputs" in wf["138"]:
-                wf["138"]["inputs"]["model"] = ["106", 0]
-            wf.pop("144", None)
             
         elif task_type == "ltx_video":
             # Remove the preview override node as it causes AttributeError in API mode (serv.last_node_id is None)

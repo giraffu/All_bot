@@ -119,7 +119,8 @@ fi
 # ==============================================================================
 echo "4️⃣ 重建并重启 Comfy Agent 工作节点..."
 cd workers
-docker rm -f comfy-agent-1 comfy-agent-2 comfy-agent-3 comfy-agent-4 comfy-agent-5 || true
+docker-compose rm -fsv || true
+docker rm -f $(docker ps -a -q -f name=comfy-agent) 2>/dev/null || true
 docker-compose up -d --build
 cd ..
 echo "✅ Agent 集群重建完成。"

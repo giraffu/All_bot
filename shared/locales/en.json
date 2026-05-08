@@ -126,6 +126,7 @@
     "tabs": {
       "all": "All",
       "face_swap": "Face Swap",
+      "i2i_draw": "Inpaint",
       "custom_edit": "Custom Edit",
       "img2img": "Img2Img (Addon)",
       "custom_video": "Custom Img2Video",

@@ -126,6 +126,7 @@
     "tabs": {
       "all": "全部",
       "face_swap": "幻想换脸",
+      "i2i_draw": "局部重绘",
       "custom_edit": "自由P图",
       "img2img": "图生图(附加模型)",
       "custom_video": "自定义图生视频",

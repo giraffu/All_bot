@@ -302,6 +302,7 @@ const handleApply = async () => {
     const featureMap: Record<string, { route: string, title: string, cost: number }> = {
         // From CustomFeatures
         'i2i_pro': { route: 'ImageAndPrompt', title: '幻想换脸', cost: 6 },
+        'i2i_draw': { route: 'ImageAndPrompt', title: '局部重绘', cost: 3 },
         'edit': { route: 'ImageAndPrompt', title: '自由P图', cost: 2 },
         'img2img_lora': { route: 'ImageAndPrompt', title: '图生图(附加模型)', cost: 2 },
         'face_swap': { route: 'FaceSwap', title: '快速换脸', cost: 1 }, 
