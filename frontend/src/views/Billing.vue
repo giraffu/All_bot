@@ -38,6 +38,7 @@ const orderStatus = ref<'PENDING' | 'SUCCESS' | 'FAILED' | 'TIMEOUT'>('PENDING')
 const tonConnectUI = ref<TonConnectUI | null>(null)
 const tonWalletAddress = ref<string | null>(null)
 const tonPollingTimer = ref<any>(null)
+const systemTonReceiver = ref<string>("UQC2q_W2d061mO_g3zB-hK12v0p2u44-nI5z9F82L1j88g7b")
 
 // ================= Initialization =================
 onMounted(async () => {
@@ -79,7 +80,10 @@ const fetchPlans = async () => {
   try {
     const res = await api.get('/payment/plans')
     if (res.data?.data) {
-      plans.value = res.data.data
+      plans.value = res.data.data.plans || res.data.data
+      if (res.data.data.ton_receiver_address) {
+        systemTonReceiver.value = res.data.data.ton_receiver_address
+      }
     }
   } catch (error) {
     console.error('Failed to fetch plans', error)
@@ -132,9 +136,8 @@ const startRmbPolling = (orderId: string) => {
   stopRmbPolling()
   pollCount.value = 0
   
-  rmbPollingTimer.value = setInterval(async () => {
+  const poll = async () => {
     if (pollCount.value >= maxPollCount) {
-      stopRmbPolling()
       orderStatus.value = 'TIMEOUT'
       return
     }
@@ -144,22 +147,28 @@ const startRmbPolling = (orderId: string) => {
       const res = await api.get(`/payment/orders/${orderId}/status`)
       const status = res.data?.data?.status
       if (status === 'SUCCESS') {
-        stopRmbPolling()
         orderStatus.value = 'SUCCESS'
         handlePaymentSuccess()
+        return // 结束轮询
       } else if (status === 'FAILED') {
-        stopRmbPolling()
         orderStatus.value = 'FAILED'
+        return // 结束轮询
       }
     } catch (error) {
       console.error('Polling error', error)
     }
-  }, 3000)
+    
+    // 继续下一次轮询
+    rmbPollingTimer.value = setTimeout(poll, 3000)
+  }
+  
+  // 启动第一次
+  rmbPollingTimer.value = setTimeout(poll, 3000)
 }
 
 const stopRmbPolling = () => {
   if (rmbPollingTimer.value) {
-    clearInterval(rmbPollingTimer.value)
+    clearTimeout(rmbPollingTimer.value)
     rmbPollingTimer.value = null
   }
 }
@@ -195,7 +204,7 @@ const handleTonPay = async () => {
       validUntil: Math.floor(Date.now() / 1000) + 600, // 10 minutes
       messages: [
         {
-          address: "UQC2q_W2d061mO_g3zB-hK12v0p2u44-nI5z9F82L1j88g7b", // 合欢宗收款钱包
+          address: systemTonReceiver.value, // 动态获取的系统收款钱包
           amount: amountNanotons,
           payload: textCellHex
         }
@@ -233,9 +242,8 @@ const startTonPolling = () => {
   const oldExpireAt = authStore.user?.identity_expire_at
   let tonPollCount = 0
   
-  tonPollingTimer.value = setInterval(async () => {
+  const poll = async () => {
     if (tonPollCount >= maxPollCount) {
-      stopTonPolling()
       orderStatus.value = 'TIMEOUT'
       return
     }
@@ -248,19 +256,25 @@ const startTonPolling = () => {
       
       // 判定逻辑：灵石增加，或者过期时间增加
       if (newCredits > oldCredits || (newExpireAt && newExpireAt !== oldExpireAt)) {
-        stopTonPolling()
         orderStatus.value = 'SUCCESS'
         handlePaymentSuccess()
+        return // 结束轮询
       }
     } catch (error) {
       console.error('TON Polling error', error)
     }
-  }, 5000) // 5s interval for TON
+    
+    // 继续下一次轮询
+    tonPollingTimer.value = setTimeout(poll, 5000)
+  }
+  
+  // 启动第一次
+  tonPollingTimer.value = setTimeout(poll, 5000)
 }
 
 const stopTonPolling = () => {
   if (tonPollingTimer.value) {
-    clearInterval(tonPollingTimer.value)
+    clearTimeout(tonPollingTimer.value)
     tonPollingTimer.value = null
   }
 }
