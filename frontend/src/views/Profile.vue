@@ -216,15 +216,20 @@ onMounted(async () => {
         </div>
         
         <!-- Right Section -->
-        <div class="mt-5 md:mt-0 w-full md:w-auto flex flex-row md:flex-col items-center md:items-end justify-between md:justify-start gap-4 md:gap-0 border-t border-white/20 md:border-0 pt-4 md:pt-0">
-          <div class="flex items-center bg-white/20 backdrop-blur-md px-4 py-2 md:px-5 md:py-3 rounded-lg border border-white/30 shadow-inner">
-            <Wallet :size="20" class="mr-2 md:mr-3 text-cyan-200 drop-shadow-[0_0_8px_rgba(255,255,255,0.5)]" />
-            <div class="flex flex-col">
-              <span class="text-[10px] md:text-xs text-slate-400 font-medium leading-none mb-1">{{ $t('profile.credits') }}</span>
-              <span class="text-lg md:text-2xl font-bold leading-none drop-shadow-sm text-slate-100">{{ authStore.user?.credits || 0 }}</span>
+        <div class="mt-5 md:mt-0 w-full md:w-auto flex flex-col items-end gap-3 border-t border-white/20 md:border-0 pt-4 md:pt-0">
+          <div class="flex items-center bg-white/20 backdrop-blur-md px-4 py-2 md:px-5 md:py-3 rounded-lg border border-white/30 shadow-inner w-full md:w-auto justify-between md:justify-start">
+            <div class="flex items-center">
+              <Wallet :size="20" class="mr-2 md:mr-3 text-cyan-200 drop-shadow-[0_0_8px_rgba(255,255,255,0.5)]" />
+              <div class="flex flex-col">
+                <span class="text-[10px] md:text-xs text-slate-400 font-medium leading-none mb-1">{{ $t('profile.credits') }}</span>
+                <span class="text-lg md:text-2xl font-bold leading-none drop-shadow-sm text-slate-100">{{ authStore.user?.credits || 0 }}</span>
+              </div>
             </div>
+            <a-button size="small" type="primary" @click="$router.push('/billing')" class="ml-4 bg-gradient-to-r from-amber-500 to-orange-500 border-none shadow-lg hover:shadow-orange-500/50 hover:from-amber-400 hover:to-orange-400">
+              💎 充值 / 升级
+            </a-button>
           </div>
-          <a-button type="primary" @click="handleCheckin" :loading="checkinLoading" class="md:mt-3 bg-gradient-to-r from-indigo-500 to-cyan-600 hover:from-indigo-400 hover:to-cyan-500 border-none text-white font-bold px-6 md:w-full shadow-lg hover:shadow-cyan-500/20 transition-all transform hover:-translate-y-0.5 h-10 md:h-auto">
+          <a-button type="primary" @click="handleCheckin" :loading="checkinLoading" class="bg-gradient-to-r from-indigo-500 to-cyan-600 hover:from-indigo-400 hover:to-cyan-500 border-none text-white font-bold px-6 w-full shadow-lg hover:shadow-cyan-500/20 transition-all transform hover:-translate-y-0.5 h-10 md:h-auto">
             {{ $t('profile.checkin_btn') }}
           </a-button>
         </div>

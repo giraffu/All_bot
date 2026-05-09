@@ -39,7 +39,7 @@ class RMBPaymentService:
         return received_sign == expected_sign
 
     @staticmethod
-    async def create_payment_url(out_trade_no: str, plan_name: str, amount: float, pay_type: str = "alipay") -> dict:
+    async def create_payment_url(out_trade_no: str, plan_name: str, amount: float, pay_type: str = "alipay", return_url: str = None) -> dict:
         """
         发起支付请求，获取 pay_url
         """
@@ -51,7 +51,7 @@ class RMBPaymentService:
             "notify_url": HUANYUY_NOTIFY_URL,
             "out_trade_no": out_trade_no,
             "pid": HUANYUY_PID,
-            "return_url": HUANYUY_RETURN_URL,
+            "return_url": return_url or HUANYUY_RETURN_URL,
             "sitename": HUANYUY_SITENAME,
             "type": pay_type,
         }

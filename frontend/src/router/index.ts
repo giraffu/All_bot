@@ -78,6 +78,11 @@ const routes: RouteRecordRaw[] = [
         path: 'my-favorites',
         name: 'MyFavorites',
         component: () => import('@/views/MyFavorites.vue')
+      },
+      {
+        path: 'billing',
+        name: 'Billing',
+        component: () => import('@/views/Billing.vue')
       }
     ]
   },
