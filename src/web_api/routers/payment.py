@@ -28,7 +28,7 @@ async def get_plans(db: AsyncSession = Depends(get_db)):
     result = await db.execute(
         select(MembershipPlan)
         .where(MembershipPlan.is_active == True)
-        .order_by(MembershipPlan.sort_order.asc())
+        .order_by(MembershipPlan.price_rmb.asc())
     )
     plans = result.scalars().all()
     
@@ -40,13 +40,13 @@ async def get_plans(db: AsyncSession = Depends(get_db)):
                 {
                     "id": plan.id,
                     "name": plan.name,
-                    "description": plan.description,
+                    "description": f"获得 {plan.reward_credits} 灵石",
                     "price_rmb": float(plan.price_rmb),
                     "price_ton": float(plan.price_ton),
                     "duration_days": plan.duration_days,
-                    "identity_override": plan.identity_override,
-                    "credits_granted": plan.credits_granted,
-                    "type": plan.type
+                    "identity_override": plan.identity_name,
+                    "credits_granted": plan.reward_credits,
+                    "type": "monthly" if plan.duration_days > 0 else "one_time"
                 }
                 for plan in plans
             ],
@@ -92,7 +92,7 @@ async def create_order(
     
     # 调用易支付获取链接
     origin = request.headers.get("origin", "https://web.aivison.it.com")
-    return_url = f"{origin}/dashboard/billing?order_id={out_trade_no}"
+    return_url = f"{origin}/billing?order_id={out_trade_no}"
     
     pay_result = await RMBPaymentService.create_payment_url(
         out_trade_no=out_trade_no,

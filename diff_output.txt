@@ -1,0 +1,1176 @@
+diff --git a/frontend/package-lock.json b/frontend/package-lock.json
+index 4d4a890..a019390 100644
+--- a/frontend/package-lock.json
++++ b/frontend/package-lock.json
+@@ -9,6 +9,8 @@
+       "version": "0.0.0",
+       "dependencies": {
+         "@tailwindcss/vite": "^4.2.2",
++        "@ton/core": "^0.63.1",
++        "@tonconnect/ui": "^2.4.4",
+         "@vueuse/core": "^14.2.1",
+         "ant-design-vue": "^4.2.6",
+         "axios": "^1.15.0",
+@@ -797,6 +799,88 @@
+         "vite": "^5.2.0 || ^6 || ^7 || ^8"
+       }
+     },
++    "node_modules/@ton/core": {
++      "version": "0.63.1",
++      "resolved": "https://registry.npmjs.org/@ton/core/-/core-0.63.1.tgz",
++      "integrity": "sha512-hDWMjlKzc18W2E4OeV3hUP8ohRJNHPD4Wd1+AQJj8zshZyCRT0usrvnExgbNUTo/vntDqCGMzgYWbXxyaA+L4g==",
++      "license": "MIT",
++      "peerDependencies": {
++        "@ton/crypto": ">=3.2.0"
++      }
++    },
++    "node_modules/@ton/crypto": {
++      "version": "3.3.0",
++      "resolved": "https://registry.npmjs.org/@ton/crypto/-/crypto-3.3.0.tgz",
++      "integrity": "sha512-/A6CYGgA/H36OZ9BbTaGerKtzWp50rg67ZCH2oIjV1NcrBaCK9Z343M+CxedvM7Haf3f/Ee9EhxyeTp0GKMUpA==",
++      "license": "MIT",
++      "peer": true,
++      "dependencies": {
++        "@ton/crypto-primitives": "2.1.0",
++        "jssha": "3.2.0",
++        "tweetnacl": "1.0.3"
++      }
++    },
++    "node_modules/@ton/crypto-primitives": {
++      "version": "2.1.0",
++      "resolved": "https://registry.npmjs.org/@ton/crypto-primitives/-/crypto-primitives-2.1.0.tgz",
++      "integrity": "sha512-PQesoyPgqyI6vzYtCXw4/ZzevePc4VGcJtFwf08v10OevVJHVfW238KBdpj1kEDQkxWLeuNHEpTECNFKnP6tow==",
++      "license": "MIT",
++      "dependencies": {
++        "jssha": "3.2.0"
++      }
++    },
++    "node_modules/@tonconnect/isomorphic-eventsource": {
++      "version": "0.0.2",
++      "resolved": "https://registry.npmjs.org/@tonconnect/isomorphic-eventsource/-/isomorphic-eventsource-0.0.2.tgz",
++      "integrity": "sha512-B4UoIjPi0QkvIzZH5fV3BQLWrqSYABdrzZQSI9sJA9aA+iC0ohOzFwVVGXanlxeDAy1bcvPbb29f6sVUk0UnnQ==",
++      "license": "Apache-2.0",
++      "dependencies": {
++        "eventsource": "^2.0.2"
++      }
++    },
++    "node_modules/@tonconnect/isomorphic-fetch": {
++      "version": "0.0.3",
++      "resolved": "https://registry.npmjs.org/@tonconnect/isomorphic-fetch/-/isomorphic-fetch-0.0.3.tgz",
++      "integrity": "sha512-jIg5nTrDwnite4fXao3dD83eCpTvInTjZon/rZZrIftIegh4XxyVb5G2mpMqXrVGk1e8SVXm3Kj5OtfMplQs0w==",
++      "license": "Apache-2.0",
++      "dependencies": {
++        "node-fetch": "^2.6.9"
++      }
++    },
++    "node_modules/@tonconnect/protocol": {
++      "version": "2.4.0",
++      "resolved": "https://registry.npmjs.org/@tonconnect/protocol/-/protocol-2.4.0.tgz",
++      "integrity": "sha512-3xg6sMWIrSgW7/f7iPgOb2BI3LaMScjDMqfu20fcEMbOVvNFk3TGAUKK5cJ3pfvUINsyLgPoylcIbPap37jXiA==",
++      "license": "Apache-2.0",
++      "dependencies": {
++        "tweetnacl": "^1.0.3",
++        "tweetnacl-util": "^0.15.1"
++      }
++    },
++    "node_modules/@tonconnect/sdk": {
++      "version": "3.4.1",
++      "resolved": "https://registry.npmjs.org/@tonconnect/sdk/-/sdk-3.4.1.tgz",
++      "integrity": "sha512-eVH8erAFout89gXYHXua/es+mmLPiW1r7ng9hgHKYQv85HLq8/zzQEkbJpbTlnIuQ6CJ/QKchjMsIgYz3BYCUQ==",
++      "license": "Apache-2.0",
++      "dependencies": {
++        "@tonconnect/isomorphic-eventsource": "0.0.2",
++        "@tonconnect/isomorphic-fetch": "0.0.3",
++        "@tonconnect/protocol": "2.4.0"
++      }
++    },
++    "node_modules/@tonconnect/ui": {
++      "version": "2.4.4",
++      "resolved": "https://registry.npmjs.org/@tonconnect/ui/-/ui-2.4.4.tgz",
++      "integrity": "sha512-XgIHAkdimDk+YeRDPsQp7eOz2lM4aScYL3hiTP1Z9YgWRVROjEqTbw5ZP9pt6rgmYTzL26QpqhI6uNTFdYNFIA==",
++      "license": "Apache-2.0",
++      "dependencies": {
++        "@tonconnect/sdk": "3.4.1",
++        "classnames": "^2.5.1",
++        "csstype": "^3.1.3",
++        "deepmerge": "^4.3.1",
++        "ua-parser-js": "^1.0.35"
++      }
++    },
+     "node_modules/@tybys/wasm-util": {
+       "version": "0.10.1",
+       "resolved": "https://registry.npmjs.org/@tybys/wasm-util/-/wasm-util-0.10.1.tgz",
+@@ -1203,6 +1287,12 @@
+         "url": "https://paulmillr.com/funding/"
+       }
+     },
++    "node_modules/classnames": {
++      "version": "2.5.1",
++      "resolved": "https://registry.npmjs.org/classnames/-/classnames-2.5.1.tgz",
++      "integrity": "sha512-saHYOzhIQs6wy2sVxTM6bUDsQO4F50V9RQ22qBpEdCW+I+/Wmke2HOl6lS6dTpdxVhb88/I6+Hs+438c3lfUow==",
++      "license": "MIT"
++    },
+     "node_modules/combined-stream": {
+       "version": "1.0.8",
+       "resolved": "https://registry.npmjs.org/combined-stream/-/combined-stream-1.0.8.tgz",
+@@ -1266,6 +1356,15 @@
+       "integrity": "sha512-YbwwqR/uYpeoP4pu043q+LTDLFBLApUP6VxRihdfNTqu4ubqMlGDLd6ErXhEgsyvY0K6nCs7nggYumAN+9uEuQ==",
+       "license": "MIT"
+     },
++    "node_modules/deepmerge": {
++      "version": "4.3.1",
++      "resolved": "https://registry.npmjs.org/deepmerge/-/deepmerge-4.3.1.tgz",
++      "integrity": "sha512-3sUqbMEc77XqpdNO7FRyRog+eW3ph+GYCbj+rK+uYyRMuwsVy0rMiVtPn+QJlKFvWP/1PYpapqYn0Me2knFn+A==",
++      "license": "MIT",
++      "engines": {
++        "node": ">=0.10.0"
++      }
++    },
+     "node_modules/delayed-stream": {
+       "version": "1.0.0",
+       "resolved": "https://registry.npmjs.org/delayed-stream/-/delayed-stream-1.0.0.tgz",
+@@ -1386,6 +1485,15 @@
+       "integrity": "sha512-Rfkk/Mp/DL7JVje3u18FxFujQlTNR2q6QfMSMB7AvCBx91NGj/ba3kCfza0f6dVDbw7YlRf/nDrn7pQrCCyQ/w==",
+       "license": "MIT"
+     },
++    "node_modules/eventsource": {
++      "version": "2.0.2",
++      "resolved": "https://registry.npmjs.org/eventsource/-/eventsource-2.0.2.tgz",
++      "integrity": "sha512-IzUmBGPR3+oUG9dUeXynyNmf91/3zUSJg1lCktzKw47OXuhco54U3r9B7O4XX+Rb1Itm9OZ2b0RkTs10bICOxA==",
++      "license": "MIT",
++      "engines": {
++        "node": ">=12.0.0"
++      }
++    },
+     "node_modules/exsolve": {
+       "version": "1.0.8",
+       "resolved": "https://registry.npmjs.org/exsolve/-/exsolve-1.0.8.tgz",
+@@ -1605,6 +1713,15 @@
+       "integrity": "sha512-RdJUflcE3cUzKiMqQgsCu06FPu9UdIJO0beYbPhHN4k6apgJtifcoCtT9bcxOpYBtpD2kCM6Sbzg4CausW/PKQ==",
+       "license": "MIT"
+     },
++    "node_modules/jssha": {
++      "version": "3.2.0",
++      "resolved": "https://registry.npmjs.org/jssha/-/jssha-3.2.0.tgz",
++      "integrity": "sha512-QuruyBENDWdN4tZwJbQq7/eAK85FqrI4oDbXjy5IBhYD+2pTJyBUWZe8ctWaCkrV0gy6AaelgOZZBMeswEa/6Q==",
++      "license": "BSD-3-Clause",
++      "engines": {
++        "node": "*"
++      }
++    },
+     "node_modules/lightningcss": {
+       "version": "1.32.0",
+       "resolved": "https://registry.npmjs.org/lightningcss/-/lightningcss-1.32.0.tgz",
+@@ -2013,6 +2130,26 @@
+       "integrity": "sha512-NzOgmMQ+elxxHeIha+OG/Pv3Oc3p4RU2aBhwWwAqDpXrdTbtRylbRLQztLy8dMMwfl6pclznBdfUhccEn9ZIzw==",
+       "license": "MIT"
+     },
++    "node_modules/node-fetch": {
++      "version": "2.7.0",
++      "resolved": "https://registry.npmjs.org/node-fetch/-/node-fetch-2.7.0.tgz",
++      "integrity": "sha512-c4FRfUm/dbcWZ7U+1Wq0AwCyFL+3nt2bEw05wfxSz+DWpWsitgmSgYmy2dQdWyKC1694ELPqMs/YzUSNozLt8A==",
++      "license": "MIT",
++      "dependencies": {
++        "whatwg-url": "^5.0.0"
++      },
++      "engines": {
++        "node": "4.x || >=6.0.0"
++      },
++      "peerDependencies": {
++        "encoding": "^0.1.0"
++      },
++      "peerDependenciesMeta": {
++        "encoding": {
++          "optional": true
++        }
++      }
++    },
+     "node_modules/obug": {
+       "version": "2.1.1",
+       "resolved": "https://registry.npmjs.org/obug/-/obug-2.1.1.tgz",
+@@ -2309,6 +2446,12 @@
+         "url": "https://github.com/sponsors/SuperchupuDev"
+       }
+     },
++    "node_modules/tr46": {
++      "version": "0.0.3",
++      "resolved": "https://registry.npmjs.org/tr46/-/tr46-0.0.3.tgz",
++      "integrity": "sha512-N3WMsuqV66lT30CrXNbEjx4GEwlow3v6rr4mCcv6prnfwhS01rkgyFdjPNBYd9br7LpXV1+Emh01fHnq2Gdgrw==",
++      "license": "MIT"
++    },
+     "node_modules/tslib": {
+       "version": "2.8.1",
+       "resolved": "https://registry.npmjs.org/tslib/-/tslib-2.8.1.tgz",
+@@ -2316,6 +2459,18 @@
+       "license": "0BSD",
+       "optional": true
+     },
++    "node_modules/tweetnacl": {
++      "version": "1.0.3",
++      "resolved": "https://registry.npmjs.org/tweetnacl/-/tweetnacl-1.0.3.tgz",
++      "integrity": "sha512-6rt+RN7aOi1nGMyC4Xa5DdYiukl2UWCbcJft7YhxReBGQD7OAM8Pbxw6YMo4r2diNEA8FEmu32YOn9rhaiE5yw==",
++      "license": "Unlicense"
++    },
++    "node_modules/tweetnacl-util": {
++      "version": "0.15.1",
++      "resolved": "https://registry.npmjs.org/tweetnacl-util/-/tweetnacl-util-0.15.1.tgz",
++      "integrity": "sha512-RKJBIj8lySrShN4w6i/BonWp2Z/uxwC3h4y7xsRrpP59ZboCd0GpEVsOnMDYLMmKBpYhb5TgHzZXy7wTfYFBRw==",
++      "license": "Unlicense"
++    },
+     "node_modules/typescript": {
+       "version": "6.0.2",
+       "resolved": "https://registry.npmjs.org/typescript/-/typescript-6.0.2.tgz",
+@@ -2331,6 +2486,32 @@
+         "node": ">=14.17"
+       }
+     },
++    "node_modules/ua-parser-js": {
++      "version": "1.0.41",
++      "resolved": "https://registry.npmjs.org/ua-parser-js/-/ua-parser-js-1.0.41.tgz",
++      "integrity": "sha512-LbBDqdIC5s8iROCUjMbW1f5dJQTEFB1+KO9ogbvlb3nm9n4YHa5p4KTvFPWvh2Hs8gZMBuiB1/8+pdfe/tDPug==",
++      "funding": [
++        {
++          "type": "opencollective",
++          "url": "https://opencollective.com/ua-parser-js"
++        },
++        {
++          "type": "paypal",
++          "url": "https://paypal.me/faisalman"
++        },
++        {
++          "type": "github",
++          "url": "https://github.com/sponsors/faisalman"
++        }
++      ],
++      "license": "MIT",
++      "bin": {
++        "ua-parser-js": "script/cli.js"
++      },
++      "engines": {
++        "node": "*"
++      }
++    },
+     "node_modules/ufo": {
+       "version": "1.6.3",
+       "resolved": "https://registry.npmjs.org/ufo/-/ufo-1.6.3.tgz",
+@@ -2606,12 +2787,28 @@
+         "loose-envify": "^1.0.0"
+       }
+     },
++    "node_modules/webidl-conversions": {
++      "version": "3.0.1",
++      "resolved": "https://registry.npmjs.org/webidl-conversions/-/webidl-conversions-3.0.1.tgz",
++      "integrity": "sha512-2JAn3z8AR6rjK8Sm8orRC0h/bcl/DqL7tRPdGZ4I1CjdF+EaMLmYxBHyXuKL849eucPFhvBoxMsflfOb8kxaeQ==",
++      "license": "BSD-2-Clause"
++    },
+     "node_modules/webpack-virtual-modules": {
+       "version": "0.6.2",
+       "resolved": "https://registry.npmjs.org/webpack-virtual-modules/-/webpack-virtual-modules-0.6.2.tgz",
+       "integrity": "sha512-66/V2i5hQanC51vBQKPH4aI8NMAcBW59FVBs+rC7eGHupMyfn34q7rZIE+ETlJ+XTevqfUhVVBgSUNSW2flEUQ==",
+       "dev": true,
+       "license": "MIT"
++    },
++    "node_modules/whatwg-url": {
++      "version": "5.0.0",
++      "resolved": "https://registry.npmjs.org/whatwg-url/-/whatwg-url-5.0.0.tgz",
++      "integrity": "sha512-saE57nupxk6v3HY35+jzBwYa0rKSy0XR8JSxZPwgLr7ys0IBzhGviA1/TUGJLmSVqs8pb9AnvICXEuOHLprYTw==",
++      "license": "MIT",
++      "dependencies": {
++        "tr46": "~0.0.3",
++        "webidl-conversions": "^3.0.0"
++      }
+     }
+   }
+ }
+diff --git a/frontend/package.json b/frontend/package.json
+index e198b62..c90d04c 100644
+--- a/frontend/package.json
++++ b/frontend/package.json
+@@ -11,6 +11,8 @@
+   },
+   "dependencies": {
+     "@tailwindcss/vite": "^4.2.2",
++    "@ton/core": "^0.63.1",
++    "@tonconnect/ui": "^2.4.4",
+     "@vueuse/core": "^14.2.1",
+     "ant-design-vue": "^4.2.6",
+     "axios": "^1.15.0",
+diff --git a/frontend/public/tonconnect-manifest.json b/frontend/public/tonconnect-manifest.json
+new file mode 100644
+index 0000000..7e26bdb
+--- /dev/null
++++ b/frontend/public/tonconnect-manifest.json
+@@ -0,0 +1,7 @@
++{
++  "url": "https://web.aivison.it.com",
++  "name": "AllBot 修仙工作台",
++  "iconUrl": "https://web.aivison.it.com/favicon.ico",
++  "termsOfUseUrl": "https://web.aivison.it.com/terms",
++  "privacyPolicyUrl": "https://web.aivison.it.com/privacy"
++}
+\ No newline at end of file
+diff --git a/frontend/src/router/index.ts b/frontend/src/router/index.ts
+index 1794814..ab3315f 100644
+--- a/frontend/src/router/index.ts
++++ b/frontend/src/router/index.ts
+@@ -78,6 +78,11 @@ const routes: RouteRecordRaw[] = [
+         path: 'my-favorites',
+         name: 'MyFavorites',
+         component: () => import('@/views/MyFavorites.vue')
++      },
++      {
++        path: 'billing',
++        name: 'Billing',
++        component: () => import('@/views/Billing.vue')
+       }
+     ]
+   },
+diff --git a/frontend/src/views/Billing.vue b/frontend/src/views/Billing.vue
+new file mode 100644
+index 0000000..195a9b6
+--- /dev/null
++++ b/frontend/src/views/Billing.vue
+@@ -0,0 +1,511 @@
++<script setup lang="ts">
++import { ref, onMounted, onUnmounted, watch } from 'vue'
++import { useAuthStore } from '@/stores/auth'
++import api from '@/api'
++import { message } from 'ant-design-vue'
++import { 
++  Wallet,
++  Zap,
++  CheckCircle,
++  CreditCard,
++  RefreshCw,
++  Loader
++} from 'lucide-vue-next'
++import { useI18n } from 'vue-i18n'
++import { useRoute } from 'vue-router'
++import { TonConnectUI } from '@tonconnect/ui'
++import { beginCell } from '@ton/core'
++
++const authStore = useAuthStore()
++const { t } = useI18n()
++const route = useRoute()
++
++// ================= State =================
++const loadingPlans = ref(true)
++const plans = ref<any[]>([])
++const selectedPlan = ref<any>(null)
++const payMethod = ref<'rmb' | 'ton'>('rmb')
++const isPaying = ref(false)
++
++// RMB Polling State
++const rmbPollingTimer = ref<any>(null)
++const pollCount = ref(0)
++const maxPollCount = 100 // 5 mins with 3s interval
++const showPaymentModal = ref(false)
++const orderStatus = ref<'PENDING' | 'SUCCESS' | 'FAILED' | 'TIMEOUT'>('PENDING')
++
++// TON State
++const tonConnectUI = ref<TonConnectUI | null>(null)
++const tonWalletAddress = ref<string | null>(null)
++const tonPollingTimer = ref<any>(null)
++const systemTonReceiver = ref<string>("UQC2q_W2d061mO_g3zB-hK12v0p2u44-nI5z9F82L1j88g7b")
++
++// ================= Initialization =================
++onMounted(async () => {
++  fetchPlans()
++  
++  // 初始化 TON Connect UI (不挂载原生按钮，使用自定义按钮唤起)
++  try {
++    tonConnectUI.value = new TonConnectUI({
++      manifestUrl: 'https://web.aivison.it.com/tonconnect-manifest.json'
++    })
++    
++    tonConnectUI.value.onStatusChange(wallet => {
++      if (wallet) {
++        tonWalletAddress.value = wallet.account.address
++      } else {
++        tonWalletAddress.value = null
++      }
++    })
++  } catch (error) {
++    console.error("TON Connect UI Init Error:", error)
++  }
++
++  // 检查是否从支付网关跳回
++  if (route.query.order_id) {
++    showPaymentModal.value = true
++    orderStatus.value = 'PENDING'
++    startRmbPolling(route.query.order_id as string)
++  }
++})
++
++onUnmounted(() => {
++  stopRmbPolling()
++  stopTonPolling()
++})
++
++// ================= API Calls =================
++const fetchPlans = async () => {
++  loadingPlans.value = true
++  try {
++    const res = await api.get('/payment/plans')
++    if (res.data?.data) {
++      plans.value = res.data.data.plans || res.data.data
++      if (res.data.data.ton_receiver_address) {
++        systemTonReceiver.value = res.data.data.ton_receiver_address
++      }
++    }
++  } catch (error) {
++    console.error('Failed to fetch plans', error)
++    message.error('无法加载充值套餐')
++  } finally {
++    loadingPlans.value = false
++  }
++}
++
++// ================= RMB Payment =================
++const handleRmbPay = async () => {
++  if (!selectedPlan.value) return
++  
++  isPaying.value = true
++  // 提前打开空白页，防止浏览器拦截弹窗
++  const newWin = window.open('about:blank', '_blank')
++  
++  try {
++    const res = await api.post('/payment/orders', {
++      plan_id: selectedPlan.value.id,
++      pay_type: 'alipay'
++    })
++    
++    if (res.data?.data?.pay_url) {
++      const { order_id, pay_url } = res.data.data
++      
++      // 赋值真实的支付链接
++      if (newWin) {
++        newWin.location.href = pay_url
++      } else {
++        // 如果 window.open 还是被拦截，降级为当前页跳转
++        window.location.href = pay_url
++        return
++      }
++      
++      showPaymentModal.value = true
++      orderStatus.value = 'PENDING'
++      startRmbPolling(order_id)
++    }
++  } catch (error) {
++    console.error('Create order error', error)
++    message.error('创建订单失败，请稍后重试')
++    if (newWin) newWin.close()
++  } finally {
++    isPaying.value = false
++  }
++}
++
++const startRmbPolling = (orderId: string) => {
++  stopRmbPolling()
++  pollCount.value = 0
++  
++  const poll = async () => {
++    if (pollCount.value >= maxPollCount) {
++      orderStatus.value = 'TIMEOUT'
++      return
++    }
++    
++    pollCount.value++
++    try {
++      const res = await api.get(`/payment/orders/${orderId}/status`)
++      const status = res.data?.data?.status
++      if (status === 'SUCCESS') {
++        orderStatus.value = 'SUCCESS'
++        handlePaymentSuccess()
++        return // 结束轮询
++      } else if (status === 'FAILED') {
++        orderStatus.value = 'FAILED'
++        return // 结束轮询
++      }
++    } catch (error) {
++      console.error('Polling error', error)
++    }
++    
++    // 继续下一次轮询
++    rmbPollingTimer.value = setTimeout(poll, 3000)
++  }
++  
++  // 启动第一次
++  rmbPollingTimer.value = setTimeout(poll, 3000)
++}
++
++const stopRmbPolling = () => {
++  if (rmbPollingTimer.value) {
++    clearTimeout(rmbPollingTimer.value)
++    rmbPollingTimer.value = null
++  }
++}
++
++// ================= TON Payment =================
++const handleTonPay = async () => {
++  if (!selectedPlan.value || !tonConnectUI.value) return
++  
++  if (!tonConnectUI.value.connected) {
++    message.warning('请先连接 TON 钱包')
++    tonConnectUI.value.openModal()
++    return
++  }
++
++  const tgId = authStore.user?.telegram_id
++  if (!tgId) {
++    message.error('未绑定 Telegram 账号，无法使用 TON 支付')
++    return
++  }
++
++  isPaying.value = true
++  try {
++    // 构建 Payload: ORDER:{tg_id}:{plan_id}:{timestamp}
++    const timestamp = Date.now()
++    const payloadStr = `ORDER:${tgId}:${selectedPlan.value.id}:${timestamp}`
++    
++    // Convert string to hex for text payload
++    const textCellHex = stringToCellHex(payloadStr)
++    
++    const amountNanotons = Math.floor(selectedPlan.value.price_ton * 1000000000).toString()
++    
++    const transaction = {
++      validUntil: Math.floor(Date.now() / 1000) + 600, // 10 minutes
++      messages: [
++        {
++          address: systemTonReceiver.value, // 动态获取的系统收款钱包
++          amount: amountNanotons,
++          payload: textCellHex
++        }
++      ]
++    }
++    
++    const result = await tonConnectUI.value.sendTransaction(transaction)
++    
++    if (result) {
++      showPaymentModal.value = true
++      orderStatus.value = 'PENDING'
++      startTonPolling()
++    }
++  } catch (error) {
++    console.error("TON transaction error:", error)
++    message.error('支付已取消或发生错误')
++  } finally {
++    isPaying.value = false
++  }
++}
++
++// Helper for TON Payload
++const stringToCellHex = (text: string) => {
++  return beginCell()
++    .storeUint(0, 32) // Text comment OP code
++    .storeStringTail(text)
++    .endCell()
++    .toBoc()
++    .toString('base64')
++}
++
++const startTonPolling = () => {
++  stopTonPolling()
++  const oldCredits = authStore.user?.credits || 0
++  const oldExpireAt = authStore.user?.identity_expire_at
++  let tonPollCount = 0
++  
++  const poll = async () => {
++    if (tonPollCount >= maxPollCount) {
++      orderStatus.value = 'TIMEOUT'
++      return
++    }
++    tonPollCount++
++    
++    try {
++      await authStore.fetchUser()
++      const newCredits = authStore.user?.credits || 0
++      const newExpireAt = authStore.user?.identity_expire_at
++      
++      // 判定逻辑：灵石增加，或者过期时间增加
++      if (newCredits > oldCredits || (newExpireAt && newExpireAt !== oldExpireAt)) {
++        orderStatus.value = 'SUCCESS'
++        handlePaymentSuccess()
++        return // 结束轮询
++      }
++    } catch (error) {
++      console.error('TON Polling error', error)
++    }
++    
++    // 继续下一次轮询
++    tonPollingTimer.value = setTimeout(poll, 5000)
++  }
++  
++  // 启动第一次
++  tonPollingTimer.value = setTimeout(poll, 5000)
++}
++
++const stopTonPolling = () => {
++  if (tonPollingTimer.value) {
++    clearTimeout(tonPollingTimer.value)
++    tonPollingTimer.value = null
++  }
++}
++
++// ================= Success Handling =================
++const handlePaymentSuccess = async () => {
++  message.success('支付成功，灵石/身份已到账！')
++  await authStore.fetchUser()
++  // Trigger fireworks or confetti if you have a library
++}
++
++</script>
++
++<template>
++  <div class="billing-container space-y-6">
++    <!-- Header -->
++    <div class="flex flex-col md:flex-row justify-between items-start md:items-center bg-slate-500/30 backdrop-blur-md rounded-xl p-5 border border-slate-400/50 shadow-lg">
++      <div>
++        <h1 class="text-2xl font-bold text-slate-100 flex items-center drop-shadow-sm">
++          <Wallet class="mr-2 text-amber-400" :size="28" />
++          {{ t('billing.title', '充值中心') }}
++        </h1>
++        <p class="text-slate-400 text-sm mt-1">获取更多灵石，突破更高境界</p>
++      </div>
++      <div class="mt-4 md:mt-0 flex items-center bg-slate-800/50 px-4 py-2 rounded-lg border border-slate-600/50">
++        <div class="mr-4">
++          <span class="text-xs text-slate-400 block">{{ t('profile.credits', '当前灵石') }}</span>
++          <span class="text-xl font-bold text-cyan-300">{{ authStore.user?.credits || 0 }}</span>
++        </div>
++        <div class="pl-4 border-l border-slate-600/50">
++          <span class="text-xs text-slate-400 block">{{ t('profile.identity', '当前身份') }}</span>
++          <span class="text-lg font-bold text-indigo-300">{{ authStore.user?.current_identity || '外门弟子' }}</span>
++        </div>
++      </div>
++    </div>
++
++    <!-- Plans Grid -->
++    <div v-if="loadingPlans" class="flex justify-center py-20">
++      <Loader class="animate-spin text-cyan-500 w-10 h-10" />
++    </div>
++    
++    <div v-else class="grid grid-cols-1 md:grid-cols-3 gap-5">
++      <div 
++        v-for="plan in plans" 
++        :key="plan.id"
++        @click="selectedPlan = plan"
++        class="relative overflow-hidden cursor-pointer rounded-xl border-2 transition-all duration-300 bg-slate-800/60 backdrop-blur-sm"
++        :class="selectedPlan?.id === plan.id ? 'border-amber-400 shadow-[0_0_20px_rgba(251,191,36,0.3)] transform -translate-y-1' : 'border-slate-600/50 hover:border-slate-400 hover:shadow-lg'"
++      >
++        <!-- Highlight badge for current identity -->
++        <div v-if="authStore.user?.current_identity === plan.identity_override" 
++             class="absolute top-0 right-0 bg-emerald-500 text-white text-xs font-bold px-3 py-1 rounded-bl-lg z-10">
++          当前身份
++        </div>
++        
++        <div class="p-6">
++          <h3 class="text-xl font-bold text-slate-100 mb-2">{{ plan.name }}</h3>
++          <p class="text-slate-400 text-sm h-10 line-clamp-2">{{ plan.description }}</p>
++          
++          <div class="mt-4 pt-4 border-t border-slate-700">
++            <div class="flex justify-between items-baseline mb-1">
++              <span class="text-slate-400 text-sm">灵石额度</span>
++              <span class="text-lg font-bold text-cyan-400">{{ plan.credits_granted }}</span>
++            </div>
++            <div class="flex justify-between items-baseline mb-1">
++              <span class="text-slate-400 text-sm">身份有效期</span>
++              <span class="text-md font-medium text-indigo-300">{{ plan.duration_days > 0 ? `${plan.duration_days} 天` : '无' }}</span>
++            </div>
++          </div>
++          
++          <div class="mt-6 flex items-end gap-2">
++            <span class="text-3xl font-extrabold text-amber-400">¥{{ plan.price_rmb }}</span>
++            <span class="text-sm text-slate-500 mb-1 line-through" v-if="plan.price_ton">/ {{ plan.price_ton }} TON</span>
++          </div>
++        </div>
++        
++        <!-- Check overlay -->
++        <div v-if="selectedPlan?.id === plan.id" class="absolute top-3 right-3 text-amber-400">
++          <CheckCircle :size="24" class="fill-amber-400/20" />
++        </div>
++      </div>
++    </div>
++
++    <!-- Payment Area (Slide Fade) -->
++    <Transition name="slide-fade">
++      <div v-if="selectedPlan" class="bg-slate-500/20 backdrop-blur-md rounded-xl p-6 border border-slate-400/50 shadow-xl mt-8">
++        <h2 class="text-xl font-bold text-slate-200 mb-4">选择支付方式</h2>
++        
++        <div class="flex gap-4 mb-6">
++          <button 
++            @click="payMethod = 'rmb'"
++            class="flex-1 py-3 px-4 rounded-lg border-2 flex items-center justify-center transition-all"
++            :class="payMethod === 'rmb' ? 'border-blue-500 bg-blue-500/20 text-blue-300' : 'border-slate-600 bg-slate-800/50 text-slate-400 hover:bg-slate-700'"
++          >
++            <CreditCard class="mr-2" :size="20" /> 支付宝 / 微信
++          </button>
++          
++          <button 
++            @click="payMethod = 'ton'"
++            class="flex-1 py-3 px-4 rounded-lg border-2 flex items-center justify-center transition-all"
++            :class="payMethod === 'ton' ? 'border-cyan-500 bg-cyan-500/20 text-cyan-300' : 'border-slate-600 bg-slate-800/50 text-slate-400 hover:bg-slate-700'"
++          >
++            <Zap class="mr-2" :size="20" /> TON 钱包
++          </button>
++        </div>
++        
++        <!-- RMB Action -->
++        <div v-if="payMethod === 'rmb'" class="flex flex-col items-center">
++          <p class="text-slate-400 mb-4">将前往易支付安全收银台完成支付</p>
++          <a-button 
++            type="primary" 
++            size="large" 
++            @click="handleRmbPay" 
++            :loading="isPaying"
++            class="w-full md:w-64 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 border-none h-12 text-lg font-bold shadow-lg"
++          >
++            确认支付 ¥{{ selectedPlan.price_rmb }}
++          </a-button>
++        </div>
++        
++        <!-- TON Action -->
++        <div v-if="payMethod === 'ton'" class="flex flex-col items-center">
++          <p class="text-slate-400 mb-4">连接钱包并发送 {{ selectedPlan.price_ton }} TON 即可自动发货</p>
++          
++          <a-button 
++            v-if="!tonWalletAddress"
++            type="primary" 
++            size="large" 
++            @click="tonConnectUI?.openModal()" 
++            class="w-full md:w-64 bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 border-none h-12 text-lg font-bold shadow-lg mb-4"
++          >
++            连接 TON 钱包
++          </a-button>
++          
++          <div v-else class="w-full flex flex-col items-center">
++            <div class="bg-slate-800/50 border border-slate-600/50 rounded-lg px-4 py-2 mb-4 text-slate-300 text-sm flex items-center">
++              已连接: {{ tonWalletAddress.slice(0, 4) }}...{{ tonWalletAddress.slice(-4) }}
++              <a-button type="link" size="small" @click="tonConnectUI?.disconnect()" class="ml-2 text-rose-400 hover:text-rose-300 p-0">断开</a-button>
++            </div>
++            <a-button 
++              type="primary" 
++              size="large" 
++              @click="handleTonPay" 
++              :loading="isPaying"
++              class="w-full md:w-64 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 border-none h-12 text-lg font-bold shadow-lg"
++            >
++              确认发送 {{ selectedPlan.price_ton }} TON
++            </a-button>
++          </div>
++        </div>
++      </div>
++    </Transition>
++
++    <!-- Payment Polling Modal -->
++    <a-modal
++      v-model:open="showPaymentModal"
++      title="订单状态"
++      :footer="null"
++      :closable="orderStatus === 'FAILED' || orderStatus === 'TIMEOUT' || orderStatus === 'SUCCESS'"
++      :maskClosable="false"
++      class="dark-modal"
++    >
++      <div class="py-8 flex flex-col items-center justify-center">
++        <!-- PENDING -->
++        <template v-if="orderStatus === 'PENDING'">
++          <RefreshCw class="animate-spin text-cyan-500 w-16 h-16 mb-4" />
++          <h3 class="text-xl font-bold text-slate-200">等待支付完成</h3>
++          <p class="text-slate-400 mt-2 text-center">
++            请在弹出的页面/钱包中完成支付。<br/>
++            我们正在等待区块链或网关确认，请勿关闭此窗口...
++          </p>
++        </template>
++        
++        <!-- SUCCESS -->
++        <template v-else-if="orderStatus === 'SUCCESS'">
++          <CheckCircle class="text-emerald-500 w-16 h-16 mb-4" />
++          <h3 class="text-xl font-bold text-emerald-400">支付成功！</h3>
++          <p class="text-slate-400 mt-2">灵石已入账，感谢道友的赞助。</p>
++          <a-button type="primary" class="mt-6 bg-emerald-600 border-none" @click="showPaymentModal = false">
++            关闭
++          </a-button>
++        </template>
++
++        <!-- TIMEOUT -->
++        <template v-else-if="orderStatus === 'TIMEOUT'">
++          <h3 class="text-xl font-bold text-amber-400">查询超时</h3>
++          <p class="text-slate-400 mt-2 text-center">
++            订单可能尚未支付，或网络延迟导致未查询到结果。<br/>
++            若您已扣款，系统将在几分钟内自动补发，请稍后刷新页面查看。
++          </p>
++          <a-button class="mt-6" @click="showPaymentModal = false">关闭</a-button>
++        </template>
++        
++        <!-- FAILED -->
++        <template v-else>
++          <h3 class="text-xl font-bold text-rose-400">支付失败或已取消</h3>
++          <p class="text-slate-400 mt-2">如果您遇到问题，请联系客服。</p>
++          <a-button class="mt-6" @click="showPaymentModal = false">关闭</a-button>
++        </template>
++      </div>
++    </a-modal>
++  </div>
++</template>
++
++<style scoped>
++.slide-fade-enter-active {
++  transition: all 0.3s ease-out;
++}
++
++.slide-fade-leave-active {
++  transition: all 0.3s cubic-bezier(1, 0.5, 0.8, 1);
++}
++
++.slide-fade-enter-from,
++.slide-fade-leave-to {
++  transform: translateY(20px);
++  opacity: 0;
++}
++
++:deep(.dark-modal .ant-modal-content) {
++  background-color: #1e293b;
++  border: 1px solid #334155;
++}
++:deep(.dark-modal .ant-modal-header) {
++  background-color: #1e293b;
++  border-bottom: 1px solid #334155;
++}
++:deep(.dark-modal .ant-modal-title) {
++  color: #f1f5f9;
++}
++:deep(.dark-modal .ant-modal-close) {
++  color: #94a3b8;
++}
++</style>
+diff --git a/frontend/src/views/Profile.vue b/frontend/src/views/Profile.vue
+index 018be93..0855586 100644
+--- a/frontend/src/views/Profile.vue
++++ b/frontend/src/views/Profile.vue
+@@ -216,15 +216,20 @@ onMounted(async () => {
+         </div>
+         
+         <!-- Right Section -->
+-        <div class="mt-5 md:mt-0 w-full md:w-auto flex flex-row md:flex-col items-center md:items-end justify-between md:justify-start gap-4 md:gap-0 border-t border-white/20 md:border-0 pt-4 md:pt-0">
+-          <div class="flex items-center bg-white/20 backdrop-blur-md px-4 py-2 md:px-5 md:py-3 rounded-lg border border-white/30 shadow-inner">
+-            <Wallet :size="20" class="mr-2 md:mr-3 text-cyan-200 drop-shadow-[0_0_8px_rgba(255,255,255,0.5)]" />
+-            <div class="flex flex-col">
+-              <span class="text-[10px] md:text-xs text-slate-400 font-medium leading-none mb-1">{{ $t('profile.credits') }}</span>
+-              <span class="text-lg md:text-2xl font-bold leading-none drop-shadow-sm text-slate-100">{{ authStore.user?.credits || 0 }}</span>
++        <div class="mt-5 md:mt-0 w-full md:w-auto flex flex-col items-end gap-3 border-t border-white/20 md:border-0 pt-4 md:pt-0">
++          <div class="flex items-center bg-white/20 backdrop-blur-md px-4 py-2 md:px-5 md:py-3 rounded-lg border border-white/30 shadow-inner w-full md:w-auto justify-between md:justify-start">
++            <div class="flex items-center">
++              <Wallet :size="20" class="mr-2 md:mr-3 text-cyan-200 drop-shadow-[0_0_8px_rgba(255,255,255,0.5)]" />
++              <div class="flex flex-col">
++                <span class="text-[10px] md:text-xs text-slate-400 font-medium leading-none mb-1">{{ $t('profile.credits') }}</span>
++                <span class="text-lg md:text-2xl font-bold leading-none drop-shadow-sm text-slate-100">{{ authStore.user?.credits || 0 }}</span>
++              </div>
+             </div>
++            <a-button size="small" type="primary" @click="$router.push('/billing')" class="ml-4 bg-gradient-to-r from-amber-500 to-orange-500 border-none shadow-lg hover:shadow-orange-500/50 hover:from-amber-400 hover:to-orange-400">
++              💎 充值 / 升级
++            </a-button>
+           </div>
+-          <a-button type="primary" @click="handleCheckin" :loading="checkinLoading" class="md:mt-3 bg-gradient-to-r from-indigo-500 to-cyan-600 hover:from-indigo-400 hover:to-cyan-500 border-none text-white font-bold px-6 md:w-full shadow-lg hover:shadow-cyan-500/20 transition-all transform hover:-translate-y-0.5 h-10 md:h-auto">
++          <a-button type="primary" @click="handleCheckin" :loading="checkinLoading" class="bg-gradient-to-r from-indigo-500 to-cyan-600 hover:from-indigo-400 hover:to-cyan-500 border-none text-white font-bold px-6 w-full shadow-lg hover:shadow-cyan-500/20 transition-all transform hover:-translate-y-0.5 h-10 md:h-auto">
+             {{ $t('profile.checkin_btn') }}
+           </a-button>
+         </div>
+diff --git a/src/constants.py b/src/constants.py
+index ba0ecf8..a464c41 100644
+--- a/src/constants.py
++++ b/src/constants.py
+@@ -102,6 +102,7 @@ MAX_CONCURRENT_TASKS = 3
+ # TON Payment Constants
+ TON_TO_NANOTON = 1_000_000_000
+ TON_SLIPPAGE_NANOTON = 10_000_000 # 0.01 TON allowed slippage
++TON_RECEIVER_ADDRESS = "UQC2q_W2d061mO_g3zB-hK12v0p2u44-nI5z9F82L1j88g7b"
+ 
+ # Commission Settings
+ COMMISSION_RATE = 0.10
+diff --git a/src/services/rmb_payment_service.py b/src/services/rmb_payment_service.py
+index 4c0483a..76d093e 100644
+--- a/src/services/rmb_payment_service.py
++++ b/src/services/rmb_payment_service.py
+@@ -39,7 +39,7 @@ class RMBPaymentService:
+         return received_sign == expected_sign
+ 
+     @staticmethod
+-    async def create_payment_url(out_trade_no: str, plan_name: str, amount: float, pay_type: str = "alipay") -> dict:
++    async def create_payment_url(out_trade_no: str, plan_name: str, amount: float, pay_type: str = "alipay", return_url: str = None) -> dict:
+         """
+         发起支付请求，获取 pay_url
+         """
+@@ -51,7 +51,7 @@ class RMBPaymentService:
+             "notify_url": HUANYUY_NOTIFY_URL,
+             "out_trade_no": out_trade_no,
+             "pid": HUANYUY_PID,
+-            "return_url": HUANYUY_RETURN_URL,
++            "return_url": return_url or HUANYUY_RETURN_URL,
+             "sitename": HUANYUY_SITENAME,
+             "type": pay_type,
+         }
+diff --git a/src/web_api/main.py b/src/web_api/main.py
+index 83fd6e2..94e6f36 100644
+--- a/src/web_api/main.py
++++ b/src/web_api/main.py
+@@ -11,7 +11,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
+ from src.core.exceptions import DomainException, InsufficientCreditsError, AccessDeniedError
+ 
+ from src.database.core import engine
+-from src.web_api.routers import auth, gallery, storage, tasks, users, utils
++from src.web_api.routers import auth, gallery, storage, tasks, users, utils, payment
+ 
+ # Configure logging
+ logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+@@ -118,6 +118,7 @@ app.include_router(storage.router, prefix="/api/storage", tags=["Storage"])
+ app.include_router(tasks.router, prefix="/api/tasks", tags=["Tasks"])
+ app.include_router(users.router, prefix="/api/users", tags=["Users"])
+ app.include_router(gallery.router, prefix="/api/gallery", tags=["Gallery"])
++app.include_router(payment.router, prefix="/api/payment", tags=["Payment"])
+ app.include_router(utils.router, prefix="/api/utils", tags=["Utils"])
+ 
+ @app.get("/api/health", tags=["Health"])
+diff --git a/src/web_api/routers/payment.py b/src/web_api/routers/payment.py
+new file mode 100644
+index 0000000..c1bad99
+--- /dev/null
++++ b/src/web_api/routers/payment.py
+@@ -0,0 +1,141 @@
++import logging
++import uuid
++from datetime import datetime
++
++from fastapi import APIRouter, Depends, HTTPException, Request
++from pydantic import BaseModel
++from sqlalchemy import select
++from sqlalchemy.ext.asyncio import AsyncSession
++
++from src.constants import TON_RECEIVER_ADDRESS
++from src.database.core import AsyncSessionLocal
++from src.database.models import MembershipPlan, Order, User
++from src.services.rmb_payment_service import RMBPaymentService
++from src.web_api.dependencies import get_current_user
++
++router = APIRouter()
++logger = logging.getLogger(__name__)
++
++async def get_db():
++    async with AsyncSessionLocal() as session:
++        yield session
++
++@router.get("/plans")
++async def get_plans(db: AsyncSession = Depends(get_db)):
++    """
++    获取充值套餐列表
++    """
++    result = await db.execute(
++        select(MembershipPlan)
++        .where(MembershipPlan.is_active == True)
++        .order_by(MembershipPlan.sort_order.asc())
++    )
++    plans = result.scalars().all()
++    
++    return {
++        "code": 0,
++        "message": "success",
++        "data": {
++            "plans": [
++                {
++                    "id": plan.id,
++                    "name": plan.name,
++                    "description": plan.description,
++                    "price_rmb": float(plan.price_rmb),
++                    "price_ton": float(plan.price_ton),
++                    "duration_days": plan.duration_days,
++                    "identity_override": plan.identity_override,
++                    "credits_granted": plan.credits_granted,
++                    "type": plan.type
++                }
++                for plan in plans
++            ],
++            "ton_receiver_address": TON_RECEIVER_ADDRESS
++        }
++    }
++
++class CreateOrderRequest(BaseModel):
++    plan_id: int
++    pay_type: str = "alipay"  # wxpay, alipay, etc.
++
++@router.post("/orders")
++async def create_order(
++    req: CreateOrderRequest,
++    request: Request,
++    current_user: User = Depends(get_current_user),
++    db: AsyncSession = Depends(get_db)
++):
++    """
++    创建 RMB 预建单并返回支付链接
++    """
++    # 查询套餐
++    plan_res = await db.execute(select(MembershipPlan).where(MembershipPlan.id == req.plan_id))
++    plan = plan_res.scalar_one_or_none()
++    if not plan or not plan.is_active:
++        raise HTTPException(status_code=404, detail="Plan not found or inactive")
++
++    # 创建单号 (每次都生成新单号，避免切换支付方式时引发网关报错)
++    out_trade_no = f"WEB_{datetime.now().strftime('%Y%m%d%H%M%S')}_{uuid.uuid4().hex[:8]}"
++
++    # 写库
++    new_order = Order(
++        order_id=out_trade_no,
++        telegram_id=current_user.id, # 核心避坑：必须赋值 internal_user_id
++        plan_id=plan.id,
++        original_price=plan.price_rmb,
++        final_price=plan.price_rmb,
++        status="PENDING",
++        created_at=datetime.now()
++    )
++    db.add(new_order)
++    await db.commit()
++    
++    # 调用易支付获取链接
++    origin = request.headers.get("origin", "https://web.aivison.it.com")
++    return_url = f"{origin}/dashboard/billing?order_id={out_trade_no}"
++    
++    pay_result = await RMBPaymentService.create_payment_url(
++        out_trade_no=out_trade_no,
++        plan_name=plan.name,
++        amount=float(plan.price_rmb),
++        pay_type=req.pay_type,
++        return_url=return_url
++    )
++    
++    if pay_result and pay_result.get("code") == 1:
++        pay_url = pay_result.get("payurl")
++        return {
++            "code": 0, 
++            "message": "success", 
++            "data": {
++                "order_id": out_trade_no, 
++                "pay_url": pay_url
++            }
++        }
++    else:
++        raise HTTPException(status_code=500, detail=f"Failed to create payment url: {pay_result.get('msg')}")
++
++@router.get("/orders/{order_id}/status")
++async def get_order_status(
++    order_id: str,
++    current_user: User = Depends(get_current_user),
++    db: AsyncSession = Depends(get_db)
++):
++    """
++    轮询订单状态
++    """
++    order_res = await db.execute(
++        select(Order).where(Order.order_id == order_id, Order.telegram_id == current_user.id)
++    )
++    order = order_res.scalar_one_or_none()
++    
++    if not order:
++        raise HTTPException(status_code=404, detail="Order not found")
++        
++    return {
++        "code": 0,
++        "message": "success",
++        "data": {
++            "status": order.status
++        }
++    }
+diff --git a/web_recharge_plan.md b/web_recharge_plan.md
+new file mode 100644
+index 0000000..e84ddcb
+--- /dev/null
++++ b/web_recharge_plan.md
+@@ -0,0 +1,92 @@
++# Web 端充值功能实施方案
++
++## 1. 需求背景与核心决策
++为了提升转化率并完善 Web 端的闭环体验，系统将在 Web 端新增充值与会员升级功能。基于与用户的讨论，明确以下核心决策：
++- **支付渠道限制**：Web 端直接隐藏 Telegram Stars 支付，仅提供 **RMB (易支付)** 和 **TON (Crypto)** 两种支付方式。
++- **页面交互设计**：充值界面设计为**独立的页面**（如 `/dashboard/billing`），并在用户的**个人中心（User Center）**提供显眼的快捷进入入口（如“💎 充值 / 升级会员”按钮）。
++- **底层架构复用**：严格遵循 `allbot-billing-auth` 规范，前端不可信。后端完全复用现有的异步预建单与 Webhook 回调发货逻辑（Saga 模式），确保资产变动强一致性。
++
++---
++
++## 2. 后端改造规划 (Web API 层)
++
++后端逻辑基本做到“0”侵入现有发货核心，只需在 Web API 层新增三个轻量级接口供前端调用。
++
++### 2.1 新增路由模块 (`src/web_api/routers/payment.py`)
++
++1. **`GET /api/payment/plans` (获取商品列表)**
++   - **逻辑**：查询 `membership_plans` 表。
++   - **过滤**：可以直接返回所有可用套餐，但前端展示时将只显示对应的 RMB 价格和 TON 价格（忽略 Stars 价格配置）。
++
++2. **`POST /api/payment/orders` (创建 RMB 预建单)**
++   - **鉴权**：需 `Depends(get_current_user)` 提取当前用户对象。
++   - **参数**：`plan_id` (int)。
++   - **逻辑**：
++     1. 根据 `plan_id` 查库获取真实的 `final_price`（防前端篡改）。
++     2. 在 `orders` 表插入一条 `status="PENDING"` 的记录。（**避坑注意**：由于历史遗留命名，写库时必须赋值 `telegram_id=current_user.id`，因为履约核心 `fulfill_order` 依赖 `User.id == order.telegram_id` 进行反查匹配）
++     3. 调用 `RMBPaymentService` 构造易支付（或其他网关）的带签名支付跳转 URL。**（⚠️ 避坑注意：当前 `RMBPaymentService.create_payment_url` 的 `return_url` 是写死读取环境变量的，必须修改该方法签名，增加 `return_url: str = None` 参数来支持动态覆盖，否则前端付完款会停留在后端的静态死胡同页面）**
++   - **返回**：`{"order_id": "...", "pay_url": "https://..."}`
++
++3. **`GET /api/payment/orders/{order_id}/status` (订单状态轮询)**
++   - **逻辑**：查询 `orders` 表对应 `order_id` 的 `status`。
++   - **返回**：`{"status": "PENDING" | "SUCCESS" | "FAILED"}`
++
++### 2.2 核心机制复用说明
++- **RMB 回调**：易支付回调将继续打到现有的 `payment_api_server.py`，验签后调用 `fulfill_order` 发货。
++- **TON 支付**：Web 前端构造好 payload 链上发交易后，现有的 `TonPaymentValidator` 守护进程会自动扫块并完成发货。完全不需要 Web API 介入。
++
++---
++
++## 3. 前端改造规划 (Vue3)
++
++### 3.1 路由与页面入口
++- **新增路由**：在 `router/index.ts` 注册 `/dashboard/billing`（需登录鉴权）。
++- **个人中心入口**：在 `UserCenter.vue` 或 Header 区域，用户余额/身份旁边添加「充值 / 升级」按钮，点击跳转至 `/dashboard/billing`。
++
++### 3.2 独立充值页面 (`Billing.vue`) 设计
++- **商品橱窗**：卡片化展示各档位月卡与散修盘缠。高亮显示当前用户的身份以做对比。
++- **支付收银台区**：选中商品后，下方滑出/展开支付方式选择：
++  - **选项 A：使用支付宝/微信 (RMB)**
++  - **选项 B：使用 TON 钱包连接支付**
++
++### 3.3 支付交互逻辑
++
++#### 场景一：RMB 支付
++1. 点击支付 -> 调用 `POST /api/payment/orders`。
++2. 拿到 `pay_url` 后，提示用户“正在前往收银台...”，并跳转支付链接。**（⚠️ 前端避坑：如果使用 `window.open` 在 `await` 异步请求之后执行，极大概率会被浏览器弹窗拦截器拦截。建议在请求前同步打开 `const newWin = window.open('about:blank', '_blank')`，拿到 url 后再赋值 `newWin.location.href = url`，或者直接在当前页 `window.location.href = url` 跳转）**
++3. 原页面弹出“等待支付完成”的 Modal，并开启 `setInterval` 每 3 秒轮询一次 `GET /api/payment/orders/{order_id}/status`。
++4. 当轮询到 `SUCCESS`，关闭 Modal，播放撒花动画，并调用 `fetchUserInfo` 刷新全局 Store 中的灵石余额与会员头衔。
++
++#### 场景二：TON 支付
++1. 前端需引入 `@tonconnect/ui-vue` 库（如已存在则复用）。
++2. 无需调用后端建单。前端直接获取当前用户的 `telegram_id`，并构造 Payload：`ORDER:{telegram_id}:{plan_id}:{Date.now()}`。（**核心避坑**：现有后端的 `TonPaymentValidator` 强依赖解析出的 TG ID 查库，且目前所有 Web 用户均已绑定 TG，所以必须传 `telegram_id` 而非 `internal_user_id`）。
++3. 拉起钱包授权并发送链上交易。
++4. 交易发出后，由于没有本地 order_id，前端可通过**轮询获取用户最新信息 API (`GET /api/users/me`)** 来监听余额/身份是否发生变化，以此判断链上发货是否成功。
++
++### 3.4 前端交互与性能规范 (Vue 3)
++- **防内存泄漏**：使用 `setInterval` 轮询订单或用户信息时，必须在组件的 `onUnmounted` 生命周期中主动 `clearInterval`。
++- **防无限轮询死锁 (风险控制)**：如果用户点击支付后在收银台页面放弃了支付，原来工作台的 Modal 可能会一直以 3 秒/次的频率无限请求后端。**必须设置一个最大轮询次数或超时时间**（例如 5 分钟，即 100 次），达到上限后自动 `clearInterval`，并将 Modal 状态改为：“订单可能尚未支付或网络延迟，请稍后刷新页面查看”。
++- **优雅动效**：支付方式的展开/折叠区域，推荐使用 Vue 3 内置的 `<Transition name="slide-fade">` 配合 `v-if/v-show` 实现。
++- **全局状态无缝同步**：支付成功结束动画后，务必调用 Pinia Store 的 `fetchUserInfo()` 刷新全局状态，这会自然触发 Header 栏的余额/身份实时变化。
++
++---
++
++## 4. 实施与推进步骤
++
++1. **第一阶段：后端接口就绪**
++   - **修改 `src/services/rmb_payment_service.py` 中的 `create_payment_url`，使其支持动态接收 `return_url` 参数**。
++   - 创建 `src/web_api/routers/payment.py`。
++   - 实现查询套餐、建单、状态轮询三个 API。
++   - 在 `src/web_api/main.py` 挂载路由。
++
++2. **第二阶段：前端页面与 RMB 联调**
++   - 完成 `/dashboard/billing` 静态页面与入口组件。
++   - 对接 RMB 支付 API，跑通预建单 -> 跳转 -> 回调 -> 轮询成功的完整闭环。
++
++3. **第三阶段：前端 TON 钱包对接**
++   - 引入 TON Connect UI 组件。
++   - 构造交易 Payload 并测试链上扫块与异步发货。
++
++4. **第四阶段：验收与上线**
++   - 检查越权漏洞（能否为他人建单？前端能否篡改金额？）。
++   - 检查极端情况（用户支付完立刻关掉网页，系统能否正常发货？——由于后端有异步回调和守护进程，可以正常发货）。
