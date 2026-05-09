@@ -55,6 +55,11 @@
     "gallery_mine": "🙋 我的投稿"
   },
   "profile": {
+    "queue_status_title": "炼丹炉状态",
+    "online": "运行中",
+    "offline": "休息中",
+    "total_queue": "总排队任务",
+    "tasks_unit": "个",
     "welcome_back": "欢迎回来，{name}!",
     "valid_until": "有效期至：",
     "valid_forever": "有效期：永久",
@@ -91,6 +96,16 @@
     "not_done": "未达成",
     "expire_at": "到期时间",
     "unlimited": "永久"
+  },
+  "task_type": {
+    "img2img": "图生图",
+    "ltx_video": "高级视频生成",
+    "i2i_pro": "幻想换脸",
+    "i2i_draw": "局部重绘",
+    "face_swap": "快速换脸",
+    "video_insert": "视频生成",
+    "video_lora": "图生视频(附加模型)",
+    "face_video": "视频换脸"
   },
   "api": {
     "session_expired": "会话已过期，请重新登录",

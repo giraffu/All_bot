@@ -17,6 +17,7 @@ from src.database.models import User
 from src.quota import QuotaManager
 from src.services.redis_client import redis_client
 from src.services.storage import storage
+from src.services.image_service import image_service
 from src.web_api.dependencies import get_current_user
 from src.web_api.schemas.task_schema import TaskGenerateRequest, TaskGenerateResponse
 
@@ -284,3 +285,11 @@ async def task_status_stream(task_id: str, request: Request):
             await pubsub.close()
 
     return EventSourceResponse(event_generator())
+
+@router.get("/queue-status")
+async def get_queue_status(current_user: User = Depends(get_current_user)) -> dict:
+    """获取当前系统的排队宏观大盘数据"""
+    status = await image_service.get_queue_info()
+    if not status:
+        return {"comfy_online": False, "queue_size": 0, "queue_by_type": {}}
+    return status

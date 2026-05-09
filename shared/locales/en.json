@@ -55,6 +55,11 @@
     "gallery_mine": "🙋 My Submissions"
   },
   "profile": {
+    "queue_status_title": "Furnace Status",
+    "online": "Online",
+    "offline": "Offline",
+    "total_queue": "Total Queue",
+    "tasks_unit": "tasks",
     "welcome_back": "Welcome back, {name}!",
     "valid_until": "Valid until: ",
     "valid_forever": "Valid: Permanent",
@@ -91,6 +96,16 @@
     "not_done": "Pending",
     "expire_at": "Expires at",
     "unlimited": "Permanent"
+  },
+  "task_type": {
+    "img2img": "Img2Img",
+    "ltx_video": "Advanced Video",
+    "i2i_pro": "Fantasy FaceSwap",
+    "i2i_draw": "Inpaint",
+    "face_swap": "FaceSwap",
+    "video_insert": "Video Gen",
+    "video_lora": "Video Gen (LoRA)",
+    "face_video": "Video FaceSwap"
   },
   "api": {
     "session_expired": "Session expired, please login again",
