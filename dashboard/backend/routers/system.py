@@ -21,7 +21,7 @@ class RefundTaskRequest(BaseModel):
     task_id: str
 
 @router.post("/system/refund_bot_task")
-async def refund_bot_task(req: RefundTaskRequest, db: AsyncSession = Depends(get_db)):
+async def refund_bot_task(req: RefundTaskRequest):
     """Force terminate a stuck task, refund credits and release concurrency lock."""
     try:
         from src.services.permission_service import permission_service
@@ -51,7 +51,7 @@ async def refund_bot_task(req: RefundTaskRequest, db: AsyncSession = Depends(get
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/system/clean_zombie_tasks")
-async def clean_zombie_tasks(db: AsyncSession = Depends(get_db)):
+async def clean_zombie_tasks():
     """Force clean all tasks older than 10 minutes (600s) and refund."""
     try:
         import time
@@ -112,8 +112,9 @@ async def sync_user_concurrency(req: SyncLockRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/system/concurrency_stats")
-async def get_concurrency_stats(db: AsyncSession = Depends(get_db)):
+async def get_concurrency_stats():
     """Get active concurrency locks and tasks per user."""
+    from src.database.core import AsyncSessionLocal
     try:
         active_tasks, concurrencies = await get_system_task_stats()
         
@@ -130,10 +131,11 @@ async def get_concurrency_stats(db: AsyncSession = Depends(get_db)):
         
         missing_uids = list(all_uids - set(user_names.keys()))
         if missing_uids:
-            stmt = select(User.id, User.username).where(User.id.in_(missing_uids))
-            result = await db.execute(stmt)
-            for row in result.all():
-                user_names[row.id] = row.username
+            async with AsyncSessionLocal() as db:
+                stmt = select(User.id, User.username).where(User.id.in_(missing_uids))
+                result = await db.execute(stmt)
+                for row in result.all():
+                    user_names[row.id] = row.username
                 
         stats = []
         for uid in all_uids:
@@ -150,50 +152,53 @@ async def get_concurrency_stats(db: AsyncSession = Depends(get_db)):
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/system/active_bot_tasks")
-async def get_active_bot_tasks(db: AsyncSession = Depends(get_db)):
+async def get_active_bot_tasks():
     """Get active tasks tracked by bot in Redis, merged with user database info and realtime status"""
+    from src.database.core import AsyncSessionLocal
     try:
         tasks, _ = await get_system_task_stats()
         
         if tasks:
             user_ids = [task.get("user_id") for task in tasks.values() if task.get("user_id")]
+            user_info = {}
             if user_ids:
-                stmt = select(User.id, User.user_group, User.current_identity).where(User.id.in_(user_ids))
-                result = await db.execute(stmt)
-                user_info = {row.id: {"user_group": row.user_group, "current_identity": row.current_identity} for row in result.all()}
+                async with AsyncSessionLocal() as db:
+                    stmt = select(User.id, User.user_group, User.current_identity).where(User.id.in_(user_ids))
+                    result = await db.execute(stmt)
+                    user_info = {row.id: {"user_group": row.user_group, "current_identity": row.current_identity} for row in result.all()}
                 
-                backend_statuses = {}
-                try:
-                    import asyncio
+            backend_statuses = {}
+            try:
+                import asyncio
 
-                    from src.api_client import api_client
-                    
-                    tasks_to_check = [task.get("backend_task_id") for task in tasks.values() if task.get("backend_task_id")]
-                    
-                    async def fetch_status(backend_id):
-                        try:
-                            url = f"{API_BASE}/status/{backend_id}"
-                            r = await api_client._request("GET", url, timeout=2)
-                            return backend_id, r.json()
-                        except Exception:
-                            return backend_id, None
+                from src.api_client import api_client
+                
+                tasks_to_check = [task.get("backend_task_id") for task in tasks.values() if task.get("backend_task_id")]
+                
+                async def fetch_status(backend_id):
+                    try:
+                        url = f"{API_BASE}/status/{backend_id}"
+                        r = await api_client._request("GET", url, timeout=2)
+                        return backend_id, r.json()
+                    except Exception:
+                        return backend_id, None
 
-                    if tasks_to_check:
-                        results = await asyncio.gather(*(fetch_status(tid) for tid in tasks_to_check[:20]))
-                        for backend_id, status_data in results:
-                            if status_data:
-                                backend_statuses[backend_id] = status_data
-                except Exception as e:
-                    logger.warning(f"Could not fetch executing tasks from backend: {e}")
+                if tasks_to_check:
+                    results = await asyncio.gather(*(fetch_status(tid) for tid in tasks_to_check[:20]))
+                    for backend_id, status_data in results:
+                        if status_data:
+                            backend_statuses[backend_id] = status_data
+            except Exception as e:
+                logger.warning(f"Could not fetch executing tasks from backend: {e}")
 
-                for task_id, task in tasks.items():
-                    uid = task.get("user_id")
-                    if uid in user_info:
-                        task["user_group"] = user_info[uid]["user_group"]
-                        task["user_identity"] = user_info[uid]["current_identity"]
-                    else:
-                        task["user_group"] = "未知"
-                        task["user_identity"] = "外门弟子"
+            for task_id, task in tasks.items():
+                uid = task.get("user_id")
+                if uid in user_info:
+                    task["user_group"] = user_info[uid]["user_group"]
+                    task["user_identity"] = user_info[uid]["current_identity"]
+                else:
+                    task["user_group"] = "未知"
+                    task["user_identity"] = "外门弟子"
                         
                     backend_id = task.get("backend_task_id")
                     status_data = backend_statuses.get(backend_id)

@@ -3,7 +3,7 @@ import json
 import logging
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sse_starlette.sse import EventSourceResponse
 
 from src.core.task_core import (
@@ -75,13 +75,28 @@ async def create_generation_task(
         raise HTTPException(status_code=500, detail="Internal server error")
 
 @router.get("/{task_id}/stream")
-async def task_status_stream(task_id: str, current_user: User = Depends(get_current_user)):
+async def task_status_stream(task_id: str, request: Request):
     """
     SSE Endpoint for real-time task progress tracking.
     Listens to Redis Pub/Sub channel: comfy:task_events:{task_id}
     Also periodically sends queue position while pending.
     """
     from config import API_BASE
+    from src.database.core import AsyncSessionLocal
+    from src.web_api.dependencies import get_current_user
+
+    token = request.query_params.get("token")
+    if not token:
+        auth_header = request.headers.get("Authorization")
+        if auth_header and auth_header.startswith("Bearer "):
+            token = auth_header.split(" ")[1]
+            
+    if not token:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+
+    async with AsyncSessionLocal() as session:
+        current_user = await get_current_user(session, token)
+        user_id = current_user.id
 
     async def get_task_status_full():
         try:
@@ -126,11 +141,11 @@ async def task_status_stream(task_id: str, current_user: User = Depends(get_curr
                         from src.database.core import AsyncSessionLocal
                         from src.database.models import History
                         
-                        final_result_path = f"{current_user.id}/output_images/{task_id}.{ext}"
+                        final_result_path = f"{user_id}/output_images/{task_id}.{ext}"
                         for _ in range(30):
                             async with AsyncSessionLocal() as db:
                                 hist = (await db.execute(select(History).where(History.task_id == task_id))).scalars().first()
-                                if hist and hist.output_file and hist.output_file.startswith(str(current_user.id)):
+                                if hist and hist.output_file and hist.output_file.startswith(str(user_id)):
                                     final_result_path = hist.output_file
                                     break
                             await asyncio.sleep(0.5)
@@ -174,11 +189,11 @@ async def task_status_stream(task_id: str, current_user: User = Depends(get_curr
                             from src.database.core import AsyncSessionLocal
                             from src.database.models import History
                             
-                            final_result_path = f"{current_user.id}/output_images/{task_id}.{ext}"
+                            final_result_path = f"{user_id}/output_images/{task_id}.{ext}"
                             for _ in range(30):
                                 async with AsyncSessionLocal() as db:
                                     hist = (await db.execute(select(History).where(History.task_id == task_id))).scalars().first()
-                                    if hist and hist.output_file and hist.output_file.startswith(str(current_user.id)):
+                                    if hist and hist.output_file and hist.output_file.startswith(str(user_id)):
                                         final_result_path = hist.output_file
                                         break
                                 await asyncio.sleep(0.5)
@@ -228,11 +243,11 @@ async def task_status_stream(task_id: str, current_user: User = Depends(get_curr
                                     from src.database.core import AsyncSessionLocal
                                     from src.database.models import History
                                     
-                                    final_result_path = f"{current_user.id}/output_images/{task_id}.{ext}"
+                                    final_result_path = f"{user_id}/output_images/{task_id}.{ext}"
                                     for _ in range(30):
                                         async with AsyncSessionLocal() as db:
                                             hist = (await db.execute(select(History).where(History.task_id == task_id))).scalars().first()
-                                            if hist and hist.output_file and hist.output_file.startswith(str(current_user.id)):
+                                            if hist and hist.output_file and hist.output_file.startswith(str(user_id)):
                                                 final_result_path = hist.output_file
                                                 break
                                         await asyncio.sleep(0.5)

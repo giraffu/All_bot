@@ -10,7 +10,7 @@ from src.web_api.dependencies import get_current_user
 from src.web_api.schemas.auth_schema import InvitationRechargeStats, UserResponse
 from src.web_api.schemas.user_schema import PaginatedHistory, CheckinResponse
 from src.web_api.schemas.gallery_schema import PaginatedGalleryResponse, ApplyContextResponse, GalleryPostResponse
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Request
 from pydantic import BaseModel
 import httpx
 import re
@@ -394,45 +394,64 @@ async def get_favorite_apply_context(
 @router.post("/history/{task_id}/send-to-bot")
 async def send_history_to_bot(
     task_id: str,
-    current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
+    request: Request
 ):
     from src.services.storage import storage
     from config import TELEGRAM_API_BASE_URL, BOT_TOKEN
-    
-    # 1. 检查多渠道登录用户的 TG 绑定状态
-    if not current_user.telegram_id:
-        raise HTTPException(status_code=400, detail="您尚未绑定 Telegram 账号，无法发送至私聊")
+    from src.database.core import AsyncSessionLocal
+    from src.web_api.dependencies import get_current_user
 
-    # 2. Redis 10秒防刷锁（严格对齐现有 redis_client 模式）
-    from src.services.redis_client import redis_client
-    lock_key = f"rate_limit:send_to_bot:{current_user.id}"
-    if redis_client and redis_client.redis:
-        is_locked = await redis_client.redis.set(lock_key, "1", nx=True, ex=10)
-        if not is_locked:
-            raise HTTPException(status_code=429, detail="操作过于频繁，请10秒后再试")
+    token = request.query_params.get("token")
+    if not token:
+        auth_header = request.headers.get("Authorization")
+        if auth_header and auth_header.startswith("Bearer "):
+            token = auth_header.split(" ")[1]
+            
+    if not token:
+        raise HTTPException(status_code=401, detail="Not authenticated")
 
-    # 3. 校验历史记录与文件存在性
-    stmt = select(History).where(History.task_id == task_id, History.user_id == current_user.id)
-    result = await db.execute(stmt)
-    history = result.scalar_one_or_none()
+    async with AsyncSessionLocal() as db:
+        current_user = await get_current_user(db, token)
+        user_id = current_user.id
+        telegram_id = current_user.telegram_id
+        
+        # 1. 检查多渠道登录用户的 TG 绑定状态
+        if not telegram_id:
+            raise HTTPException(status_code=400, detail="您尚未绑定 Telegram 账号，无法发送至私聊")
 
-    if not history:
-        raise HTTPException(status_code=404, detail="未找到对应的任务记录")
-    if not history.output_file:
-        raise HTTPException(status_code=400, detail="该任务没有生成文件")
+        # 2. Redis 10秒防刷锁（严格对齐现有 redis_client 模式）
+        from src.services.redis_client import redis_client
+        lock_key = f"rate_limit:send_to_bot:{user_id}"
+        if redis_client and redis_client.redis:
+            is_locked = await redis_client.redis.set(lock_key, "1", nx=True, ex=10)
+            if not is_locked:
+                raise HTTPException(status_code=429, detail="操作过于频繁，请10秒后再试")
+
+        # 3. 校验历史记录与文件存在性
+        stmt = select(History).where(History.task_id == task_id, History.user_id == user_id)
+        result = await db.execute(stmt)
+        history = result.scalar_one_or_none()
+
+        if not history:
+            raise HTTPException(status_code=404, detail="未找到对应的任务记录")
+        if not history.output_file:
+            raise HTTPException(status_code=400, detail="该任务没有生成文件")
+
+        history_output_file = history.output_file
+        history_type = history.type
+        history_prompt = history.prompt
 
     # 4. 严谨提取 bucket 和 object_name
-    parts = history.output_file.split("/")
+    parts = history_output_file.split("/")
     if len(parts) > 1 and parts[0] in ["bot-data", "comfyui-temp"]:
         bucket_name = parts[0]
         object_name = "/".join(parts[1:])
-    elif "comfyui-temp" not in history.output_file and "bot-data" not in history.output_file:
-        bucket_name = "comfyui-temp" if not "/" in history.output_file else "bot-data"
-        object_name = history.output_file
+    elif "comfyui-temp" not in history_output_file and "bot-data" not in history_output_file:
+        bucket_name = "comfyui-temp" if not "/" in history_output_file else "bot-data"
+        object_name = history_output_file
     else:
         bucket_name = "bot-data"
-        object_name = history.output_file
+        object_name = history_output_file
 
     # 5. 生成预签名 URL 供 Telegram 抓取
     file_url = storage.get_presigned_url(object_name, expires_hours=1, bucket=bucket_name)
@@ -440,17 +459,17 @@ async def send_history_to_bot(
         raise HTTPException(status_code=500, detail="无法生成文件访问链接")
 
     # 6. 构造 Local API 请求并发送
-    is_video = history.type and 'video' in history.type.lower()
+    is_video = history_type and 'video' in history_type.lower()
     method = "sendVideo" if is_video else "sendPhoto"
     url = f"{TELEGRAM_API_BASE_URL}/bot{BOT_TOKEN}/{method}"
     
     payload = {
-        "chat_id": current_user.telegram_id
+        "chat_id": telegram_id
     }
     
     # 截取 Prompt 前 100 字符作为 caption，避免太长导致发送失败，同时避免传入 null
-    if history.prompt:
-        caption = history.prompt[:100] + "..." if len(history.prompt) > 100 else history.prompt
+    if history_prompt:
+        caption = history_prompt[:100] + "..." if len(history_prompt) > 100 else history_prompt
         payload["caption"] = caption
         
     if is_video:
