@@ -56,7 +56,8 @@ async def monitor_task_and_release_lock(
     task_type: str = "",
     prompt: str = "",
     input_images: list = None,
-    allow_contribute: bool = True
+    allow_contribute: bool = True,
+    cost: int = 0
 ):
     """
     Background task to monitor progress and release concurrency lock.
@@ -77,8 +78,10 @@ async def monitor_task_and_release_lock(
                 break
     except asyncio.CancelledError:
         logger.error(f"Task monitor {task_id} cancelled.")
+        final_status = "cancelled"
     except Exception as e:
         logger.error(f"Background monitoring error for task {task_id}: {e}")
+        final_status = "error"
     finally:
         # Save to History if successful
         if final_status == "done" and result_path:
@@ -93,6 +96,12 @@ async def monitor_task_and_release_lock(
                     await user_logger.log_task(prompt, input_images, result_path, task_id=task_id, type=task_type, allow_contribute=allow_contribute, source="web")
             except Exception as log_err:
                 logger.error(f"Failed to log task history for {task_id}: {log_err}")
+        else:
+            if cost > 0:
+                try:
+                    await asyncio.shield(refund_credits(internal_user_id, cost, task_type=f"refund_async_failed_{final_status}", username=username))
+                except Exception as refund_err:
+                    logger.critical(f"Async refund failed for user {internal_user_id}: {refund_err}")
                 
         # Use asyncio.create_task for the release to avoid being cancelled
         try:
@@ -249,7 +258,8 @@ async def process_and_submit_task(
                             task_type=task_type,
                             prompt=log_prompt,
                             input_images=saved_inputs,
-                            allow_contribute=allow_contribute
+                            allow_contribute=allow_contribute,
+                            cost=cost if deduct_quota else 0
                         )
                     )
                 except Exception as e:
@@ -274,7 +284,7 @@ async def process_and_submit_task(
             logger.error(f"Saga Execute Failed: {e}")
             if credits_deducted:
                 try:
-                    await asyncio.shield(refund_credits(user_id, cost, reason=f"Task Failed: {str(e)}", operator=username))
+                    await asyncio.shield(refund_credits(user_id, cost, task_type=f"refund_saga_failed", username=username))
                 except Exception as refund_err:
                     logger.critical(f"REFUND FAILED! Log to Outbox. User: {user_id}, Amount: {cost}, Error: {refund_err}")
                     from src.services.redis_client import redis_client

@@ -73,6 +73,7 @@ python scripts/test_huanyuy.py
 | 故障现象 | 根本原因分析 (RCA) | 应急恢复指令/方案 |
 | :--- | :--- | :--- |
 | **Web大文件上传 503** | Worker 高负载导致磁盘 IO 拥堵，MinIO 被迫离线，导致 SDK 获取 Region 的网络请求卡死 FastAPI 事件循环。 | `docker restart minio-server`。<br>代码层必须注入静态 `_region_map` 离线映射。 |
+| **边缘节点上传超时或 403** | Nginx `proxy_pass` 包含斜杠导致预签名 URL 解码，或缓冲导致 Tailscale 拥堵。 | 请严格参阅 [边缘节点运维指南](./子模块_边缘节点运维指南_edge_node_ops.md) 优化代理配置。 |
 | **Web端 502 Bad Gateway** | 海外 VPS 的 Nginx 无法连通国内 `web-api`。 | 1. 检查 `docker ps` 确认 `web-api` 存活。<br>2. 检查 Tailscale 节点状态 (`tailscale status`)。 |
 | **前端登录 "Username invalid"** | WebApp 缺失关联的 Bot 用户名，或未在 BotFather 绑定域名。 | 配置前端环境变量 `VITE_TELEGRAM_BOT_USERNAME`，并在 TG 执行 `/setdomain`。 |
 | **CS Bot 修改代码后不生效** | 使用了单纯的 `docker restart`。 | 必须带构建参数重构容器：<br>`docker rm -f cs-bot && docker-compose up -d --build` |
@@ -115,6 +116,7 @@ python scripts/test_huanyuy.py
 - **监控目标**：正式环境 bot 日志、测试环境 bot 日志、web api 日志、后端中控 api 日志。
 - **时间范围**：提取过去10分钟的历史日志，并持续追加监控后续2分钟的实时日志（总计覆盖12分钟的日志窗口）。
 - **排查边缘节点与 Nginx 代理**：当涉及网络层、跨域（CORS）、文件上传失败（413 Payload Too Large）、或者请求根本未到达后端时，**必须**使用 SSH 登录边缘节点 `100.88.57.122`（执行指令 `ssh -i frontend/ssh_key/id_rsa.pem root@100.88.57.122 "tail -n 100 /var/log/nginx/error.log"`）检查 Nginx 的错误日志。
+- **排查后端数据库慢查询与连接池**：当出现 `110 Connection timed out` 且后端日志无明显应用报错时，**必须**排查 PostgreSQL 连接池是否被耗尽。使用 `docker exec -i postgres-server psql -U postgres -d bot_db -c "SELECT count(*), state FROM pg_stat_activity GROUP BY state;"` 检查 `idle in transaction` 的数量。若发现大量卡死进程，可使用 `ALTER SYSTEM SET idle_in_transaction_session_timeout = '60000';` 进行熔断恢复，并配置 `log_min_duration_statement = '1000'` 追踪慢查询。
 - **执行要求**：在此期间仅做观察、采集与记录，**绝对不要修改任何代码**。请将采集到的日志暂存到专用的临时文件或内存中，不要在控制台或对话窗口中打印原始日志流。
 
 ### 7.2 日志综合分析

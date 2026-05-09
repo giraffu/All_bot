@@ -159,6 +159,11 @@ class TaskService:
                 user_msg = "当前服务器繁忙，请稍后再试"
             else:
                 user_msg = f"出错了：{error_msg}"
+                
+            if task_submitted and cost > 0:
+                await asyncio.shield(refund_credits(internal_user_id, cost, "refund", username))
+                user_msg += "，已退还灵石"
+                
             await robust_send_message(context.bot, chat_id, f"❌ {user_msg}")
             return None, None
         finally:
@@ -273,9 +278,14 @@ class TaskService:
                 user_msg = "当前服务器繁忙，请稍后再试"
             else:
                 user_msg = f"系统错误：{error_msg}"
+                
+            if task_submitted and actual_cost > 0:
+                await asyncio.shield(refund_credits(internal_user_id, actual_cost, "refund", username))
+                user_msg += "，已退还灵石"
+                
             # status_msg might not be defined if exception occurs early
             if 'status_msg' in locals():
-                await robust_edit_text(status_msg, f"❌ {user_msg}\n已退还灵石。")
+                await robust_edit_text(status_msg, f"❌ {user_msg}")
             else:
                 await robust_send_message(context.bot, chat_id, f"❌ {user_msg}")
             return None, None
@@ -611,7 +621,12 @@ class TaskService:
                 user_msg = "当前服务器繁忙，请稍后再试"
             else:
                 user_msg = f"出错了：{error_msg}"
-            await robust_send_message(context.bot, chat_id, f"❌ {user_msg}，已退还灵石")
+                
+            if task_submitted and actual_cost > 0:
+                await asyncio.shield(refund_credits(internal_user_id, actual_cost, "refund", username))
+                user_msg += "，已退还灵石"
+                
+            await robust_send_message(context.bot, chat_id, f"❌ {user_msg}")
         finally:
             if registry_task_id:
                 await asyncio.shield(TaskRegistry.remove_task(registry_task_id))

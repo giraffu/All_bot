@@ -62,6 +62,8 @@ server {
 - `100.x.x.x:8003` (Tailscale) -> Central API
 - `Cloudflare Tunnel (Public URL)` -> 映射到本地 `8021` 供支付网关回调。
 
+> **注**：边缘节点的 Nginx 运维细则、大文件流式传输优化及 MinIO 代理的防签名失效红线，请参阅专项文档：[边缘节点运维指南](./子模块_边缘节点运维指南_edge_node_ops.md)。
+
 ## 5. 单元与集成测试要求
 - **核心用例**：
   1. `test_nginx_static_routing`：向海外 VPS 发起 `GET /`，断言返回的 HTML 文件状态码为 200，且延迟小于 100ms。

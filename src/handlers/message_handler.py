@@ -485,7 +485,8 @@ async def handle_queue_status(update: Update, context: ContextTypes.DEFAULT_TYPE
         # 兜底：如果队列里出现了未知类型，且数量大于0，也展示出来
         for task_type, count in queue_by_type.items():
             if task_type not in TASK_TYPE_DISPLAY_NAMES and count > 0:
-                msg_lines.append(f"❓ 其他 ({task_type})：`{count}` 个")
+                safe_task_type = task_type.replace('_', '\\_')
+                msg_lines.append(f"❓ 其他 ({safe_task_type})：`{count}` 个")
                 
         msg = "\n".join(msg_lines)
         await robust_reply_text(update.message, msg, parse_mode="Markdown")
@@ -520,4 +521,18 @@ async def handle_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
     # 处理普通对话/Prompt 输入
     # (如果是其他普通文本，当前不需要做任何处理，或者可以交给AI对话)
+    # 为防止用户丢失菜单键盘（尤其是配置了 WebApp 菜单按钮覆盖了默认 Menu 按钮时），提供兜底回复，但仅限私聊
+    if update.message.chat.type == "private":
+        from src.i18n.keyboards import get_main_menu_keyboard
+        reply_markup = get_main_menu_keyboard(context.lang)
+        
+        fallback_msg = "✨ 似乎是不认识的指令呢。\n👇 请使用下方菜单进行操作，或输入 /start 重新唤醒菜单。"
+        if context.lang == "en":
+            fallback_msg = "✨ Unrecognized command.\n👇 Please use the menu below, or type /start to wake up the menu."
+            
+        await robust_reply_text(
+            update.message,
+            fallback_msg,
+            reply_markup=reply_markup
+        )
     return
