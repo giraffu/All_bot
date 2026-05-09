@@ -15,7 +15,8 @@ import {
   Bookmark,
   Star,
   Globe,
-  Server
+  Server,
+  RefreshCw
 } from 'lucide-vue-next'
 import dayjs from 'dayjs'
 import { useViewport } from '@/composables/useViewport'
@@ -225,11 +226,11 @@ onMounted(async () => {
                 <span class="text-lg md:text-2xl font-bold leading-none drop-shadow-sm text-slate-100">{{ authStore.user?.credits || 0 }}</span>
               </div>
             </div>
-            <a-button size="small" type="primary" @click="$router.push('/billing')" class="ml-4 bg-gradient-to-r from-amber-500 to-orange-500 border-none shadow-lg hover:shadow-orange-500/50 hover:from-amber-400 hover:to-orange-400">
+            <a-button v-if="false" size="small" type="primary" @click="$router.push('/billing')" class="ml-4 bg-gradient-to-r from-amber-500 to-orange-500 border-none shadow-lg hover:shadow-orange-500/50 hover:from-amber-400 hover:to-orange-400 z-50 pointer-events-auto">
               💎 充值 / 升级
             </a-button>
           </div>
-          <a-button type="primary" @click="handleCheckin" :loading="checkinLoading" class="bg-gradient-to-r from-indigo-500 to-cyan-600 hover:from-indigo-400 hover:to-cyan-500 border-none text-white font-bold px-6 w-full shadow-lg hover:shadow-cyan-500/20 transition-all transform hover:-translate-y-0.5 h-10 md:h-auto">
+          <a-button type="primary" @click="handleCheckin" :loading="checkinLoading" class="bg-gradient-to-r from-indigo-500 to-cyan-600 hover:from-indigo-400 hover:to-cyan-500 border-none text-white font-bold px-6 w-full shadow-lg hover:shadow-cyan-500/20 transition-all transform hover:-translate-y-0.5 h-10 md:h-auto z-50 pointer-events-auto">
             {{ $t('profile.checkin_btn') }}
           </a-button>
         </div>
@@ -270,11 +271,22 @@ onMounted(async () => {
           <Server class="w-5 h-5 text-cyan-400 drop-shadow-[0_0_5px_rgba(56,189,248,0.5)]" />
         </div>
         <h3 class="text-lg font-bold text-slate-200 drop-shadow-sm">{{ t('profile.queue_status_title', '炼丹炉状态') }}</h3>
-        <!-- 在线状态指示器 -->
-        <div class="ml-auto flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border"
-             :class="queueStatus.data.comfy_online ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 'bg-rose-500/10 text-rose-400 border-rose-500/20'">
-          <div class="w-1.5 h-1.5 rounded-full" :class="queueStatus.data.comfy_online ? 'bg-emerald-400 animate-pulse shadow-[0_0_5px_rgba(16,185,129,0.8)]' : 'bg-rose-400'"></div>
-          {{ queueStatus.data.comfy_online ? t('profile.online', '运行中') : t('profile.offline', '休息中') }}
+        
+        <div class="ml-auto flex items-center gap-2">
+          <!-- 刷新按钮 -->
+          <button @click="fetchQueueStatus" 
+                  class="p-1.5 rounded-lg text-cyan-400 hover:bg-cyan-500/20 transition-all border border-transparent hover:border-cyan-500/30 flex items-center justify-center cursor-pointer"
+                  :disabled="queueStatus.loading"
+                  :title="t('profile.refresh_queue', '刷新')">
+            <RefreshCw class="w-4 h-4" :class="{ 'animate-spin': queueStatus.loading }" />
+          </button>
+          
+          <!-- 在线状态指示器 -->
+          <div class="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border"
+               :class="queueStatus.data.comfy_online ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 'bg-rose-500/10 text-rose-400 border-rose-500/20'">
+            <div class="w-1.5 h-1.5 rounded-full" :class="queueStatus.data.comfy_online ? 'bg-emerald-400 animate-pulse shadow-[0_0_5px_rgba(16,185,129,0.8)]' : 'bg-rose-400'"></div>
+            {{ queueStatus.data.comfy_online ? t('profile.online', '运行中') : t('profile.offline', '休息中') }}
+          </div>
         </div>
       </div>
 

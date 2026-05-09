@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, watch } from 'vue'
+import { ref, shallowRef, onMounted, onUnmounted, watch } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import api from '@/api'
 import { message } from 'ant-design-vue'
@@ -35,7 +35,7 @@ const showPaymentModal = ref(false)
 const orderStatus = ref<'PENDING' | 'SUCCESS' | 'FAILED' | 'TIMEOUT'>('PENDING')
 
 // TON State
-const tonConnectUI = ref<TonConnectUI | null>(null)
+const tonConnectUI = shallowRef<TonConnectUI | null>(null)
 const tonWalletAddress = ref<string | null>(null)
 const tonPollingTimer = ref<any>(null)
 const systemTonReceiver = ref<string>("UQC2q_W2d061mO_g3zB-hK12v0p2u44-nI5z9F82L1j88g7b")
