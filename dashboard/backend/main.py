@@ -25,7 +25,10 @@ from dashboard.backend.routers import (
     users,
     workers,
 )
+from fastapi_cache import FastAPICache
+from fastapi_cache.backends.inmemory import InMemoryBackend
 from dashboard.backend.services.worker_listener import start_worker_listener
+from dashboard.backend.services.balance_monitor import update_external_balances
 from src.database.core import init_db
 
 logging.basicConfig(level=logging.INFO)
@@ -50,6 +53,7 @@ background_tasks = set()
 
 @app.on_event("startup")
 async def startup_event():
+    FastAPICache.init(InMemoryBackend(), prefix="fastapi-cache")
     try:
         await init_db()
         logger.info("Database initialized successfully")
@@ -60,6 +64,11 @@ async def startup_event():
     task = asyncio.create_task(start_worker_listener())
     background_tasks.add(task)
     task.add_done_callback(background_tasks.discard)
+
+    # Start balance monitor
+    balance_task = asyncio.create_task(update_external_balances())
+    background_tasks.add(balance_task)
+    balance_task.add_done_callback(background_tasks.discard)
 
 
 app.add_middleware(

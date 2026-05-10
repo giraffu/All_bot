@@ -1,3 +1,4 @@
+import json
 import logging
 import os
 from datetime import date, datetime, timedelta
@@ -5,9 +6,10 @@ from datetime import date, datetime, timedelta
 import httpx
 from dotenv import load_dotenv
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import Float, case, func, select, text
+from sqlalchemy import Float, case, func, select, text, and_, not_
 from sqlalchemy.ext.asyncio import AsyncSession
 from telegram import Bot
+from fastapi_cache.decorator import cache
 
 from src.database.core import get_db
 
@@ -15,6 +17,8 @@ load_dotenv()
 from src.database.models import (
     CheckinHistory,
     History,
+    Order,
+    MembershipPlan,
     Referral,
     TemplateContribution,
     User,
@@ -39,6 +43,7 @@ def get_days_diff_expr(col, dialect_name):
 
 
 @router.get("")
+@cache(expire=60)
 async def get_stats(db: AsyncSession = Depends(get_db)):
     """Get dashboard statistics"""
     try:
@@ -64,30 +69,25 @@ async def get_stats(db: AsyncSession = Depends(get_db)):
         ]
         cost_case = case((History.type.in_(video_types), 6), else_=2)
 
-        result = await db.execute(
-            select(func.count(User.id)).where(User.is_channel_member == True)
+        user_stats_stmt = select(
+            func.count(User.id).label("total_db_users"),
+            func.coalesce(func.sum(case((User.is_channel_member.is_(True), 1), else_=0)), 0).label("total_users"),
+            func.coalesce(func.sum(case((User.hashed_password.is_not(None), 1), else_=0)), 0).label("total_password_users"),
+            func.coalesce(func.sum(case((User.language_code.like("en%"), 1), else_=0)), 0).label("total_en_users"),
+            func.coalesce(func.sum(case((User.language_code.like("zh%"), 1), else_=0)), 0).label("total_zh_users"),
+            func.coalesce(func.sum(User.credits), 0).label("total_credits"),
+            func.coalesce(func.sum(case((User.generation_count > 0, User.credits), else_=0)), 0).label("total_active_credits"),
         )
-        total_users = result.scalar()
+        user_stats_result = await db.execute(user_stats_stmt)
+        user_stats_row = user_stats_result.first()
 
-        result_all = await db.execute(select(func.count(User.id)))
-        total_db_users = result_all.scalar() or 0
-
-        # Password users
-        result_pwd = await db.execute(
-            select(func.count(User.id)).where(User.hashed_password.is_not(None))
-        )
-        total_password_users = result_pwd.scalar() or 0
-
-        # Language distribution
-        lang_en_result = await db.execute(
-            select(func.count(User.id)).where(User.language_code.like("en%"))
-        )
-        total_en_users = lang_en_result.scalar() or 0
-
-        lang_zh_result = await db.execute(
-            select(func.count(User.id)).where(User.language_code.like("zh%"))
-        )
-        total_zh_users = lang_zh_result.scalar() or 0
+        total_db_users = user_stats_row.total_db_users or 0
+        total_users = int(user_stats_row.total_users)
+        total_password_users = int(user_stats_row.total_password_users)
+        total_en_users = int(user_stats_row.total_en_users)
+        total_zh_users = int(user_stats_row.total_zh_users)
+        total_credits = user_stats_row.total_credits
+        total_active_credits = user_stats_row.total_active_credits
 
         identity_stmt = select(User.current_identity, func.count(User.id)).group_by(
             User.current_identity
@@ -120,13 +120,7 @@ async def get_stats(db: AsyncSession = Depends(get_db)):
         result = await db.execute(select(func.count(History.id)))
         total_generations = result.scalar()
 
-        result = await db.execute(select(func.sum(User.credits)))
-        total_credits = result.scalar() or 0
 
-        result = await db.execute(
-            select(func.sum(User.credits)).where(User.generation_count > 0)
-        )
-        total_active_credits = result.scalar() or 0
 
         result = await db.execute(select(func.count(Referral.id)))
         total_referrals = result.scalar() or 0
@@ -134,99 +128,63 @@ async def get_stats(db: AsyncSession = Depends(get_db)):
         result = await db.execute(select(func.sum(cost_case)))
         total_consumed_credits = result.scalar() or 0
 
-        result = await db.execute(select(func.count(TemplateContribution.id)))
-        total_template_contributions = result.scalar() or 0
-
-        result = await db.execute(
-            select(func.count(TemplateContribution.id)).where(
-                TemplateContribution.is_reviewed == True
-            )
+        template_stmt = select(
+            func.count(TemplateContribution.id).label("total"),
+            func.coalesce(func.sum(case((TemplateContribution.is_reviewed.is_(True), 1), else_=0)), 0).label("approved")
         )
-        total_approved_contributions = result.scalar() or 0
+        template_row = (await db.execute(template_stmt)).first()
+        total_template_contributions = template_row.total or 0
+        total_approved_contributions = int(template_row.approved)
 
         # Calculate invitation recharge stats
-        from src.database.models import Order
+        invitation_stmt = select(
+            func.coalesce(func.sum(case((Order.order_id.like("RMB_%"), Order.final_price), else_=0)), 0).label("rmb_sum"),
+            func.coalesce(func.sum(case(
+                (Order.order_id.like("XTR_%"), Order.final_price),
+                (and_(not_(Order.order_id.like("RMB_%")), not_(Order.order_id.like("XTR_%")), Order.final_price >= 100), Order.final_price),
+                else_=0
+            )), 0).label("stars_sum"),
+            func.coalesce(func.sum(case(
+                (and_(not_(Order.order_id.like("RMB_%")), not_(Order.order_id.like("XTR_%")), Order.final_price < 100), Order.final_price),
+                else_=0
+            )), 0).label("ton_sum")
+        ).join(Referral, Referral.invitee_id == Order.telegram_id).where(Order.status == "SUCCESS")
 
-        stmt = (
-            select(Order.telegram_id, Order.final_price, Order.order_id)
-            .join(Referral, Referral.invitee_id == Order.telegram_id)
-            .where(Order.status == "SUCCESS")
-        )
-        result = await db.execute(stmt)
-        rows = result.all()
-
-        total_invitation_ton = 0.0
-        total_invitation_rmb = 0.0
-        total_invitation_stars = 0
-
-        for tg_id, price, order_id in rows:
-            if order_id and str(order_id).startswith("RMB_"):
-                total_invitation_rmb += float(price)
-            elif order_id and str(order_id).startswith("XTR_"):
-                total_invitation_stars += int(price)
-            else:
-                if price >= 100:
-                    total_invitation_stars += int(price)
-                else:
-                    total_invitation_ton += float(price)
+        invitation_row = (await db.execute(invitation_stmt)).first()
+        total_invitation_rmb = float(invitation_row.rmb_sum)
+        total_invitation_stars = int(invitation_row.stars_sum)
+        total_invitation_ton = float(invitation_row.ton_sum)
 
         today = date.today()
 
-        result = await db.execute(
-            select(func.count(User.id)).where(
-                func.date(User.created_at) == today, User.is_channel_member == True
-            )
-        )
-        today_users = result.scalar() or 0
+        today_user_stmt = select(
+            func.count(User.id).label("today_users_all"),
+            func.coalesce(func.sum(case((User.is_channel_member.is_(True), 1), else_=0)), 0).label("today_users"),
+            func.coalesce(func.sum(case((User.hashed_password.is_not(None), 1), else_=0)), 0).label("today_password_users")
+        ).where(func.date(User.created_at) == today)
+        today_user_row = (await db.execute(today_user_stmt)).first()
+        today_users_all = today_user_row.today_users_all or 0
+        today_users = int(today_user_row.today_users)
+        today_password_users = int(today_user_row.today_password_users)
 
-        result = await db.execute(
-            select(func.count(User.id)).where(func.date(User.created_at) == today)
-        )
-        today_users_all = result.scalar() or 0
+        checkin_stmt = select(func.count(User.id)).where(User.last_checkin == today)
+        today_checkins = (await db.execute(checkin_stmt)).scalar() or 0
 
-        result = await db.execute(
-            select(func.count(User.id)).where(
-                func.date(User.created_at) == today, User.hashed_password.is_not(None)
-            )
-        )
-        today_password_users = result.scalar() or 0
+        history_stats_stmt = select(
+            func.count(History.id).label("today_generations"),
+            func.count(func.distinct(History.user_id)).label("today_active_users"),
+            func.count(func.distinct(case((History.source == "web", History.user_id), else_=None))).label("today_web_users"),
+            func.coalesce(func.sum(cost_case), 0).label("today_consumed_credits")
+        ).where(func.date(History.created_at) == today)
+        history_stats_row = (await db.execute(history_stats_stmt)).first()
+        today_generations = history_stats_row.today_generations or 0
+        today_active_users = history_stats_row.today_active_users or 0
+        today_web_users = history_stats_row.today_web_users or 0
+        today_consumed_credits = history_stats_row.today_consumed_credits or 0
 
-        result = await db.execute(
-            select(func.count(History.id)).where(func.date(History.created_at) == today)
-        )
-        today_generations = result.scalar() or 0
-
-        result = await db.execute(
-            select(func.count(func.distinct(History.user_id))).where(
-                func.date(History.created_at) == today
-            )
-        )
-        today_active_users = result.scalar() or 0
-
-        # Web user statistics
-        result = await db.execute(
-            select(func.count(func.distinct(History.user_id))).where(
-                History.source == "web"
-            )
-        )
-        total_web_users = result.scalar() or 0
-
-        result = await db.execute(
-            select(func.count(func.distinct(History.user_id))).where(
-                func.date(History.created_at) == today, History.source == "web"
-            )
-        )
-        today_web_users = result.scalar() or 0
-
-        result = await db.execute(
-            select(func.sum(cost_case)).where(func.date(History.created_at) == today)
-        )
-        today_consumed_credits = result.scalar() or 0
-
-        result = await db.execute(
-            select(func.count(User.id)).where(User.last_checkin == today)
-        )
-        today_checkins = result.scalar() or 0
+        # Web user statistics overall
+        web_user_stmt = select(func.count(func.distinct(History.user_id))).where(History.source == "web")
+        total_web_users = (await db.execute(web_user_stmt)).scalar() or 0
 
         today_dist_stmt = (
             select(History.type, func.count(History.id))
@@ -444,110 +402,29 @@ async def get_stats(db: AsyncSession = Depends(get_db)):
         rmb_balance = 0.0
 
         try:
-            ton_address = os.getenv("VITE_MERCHANT_ADDRESS")
-            if ton_address:
-                async with httpx.AsyncClient() as client:
-                    resp = await client.get(
-                        f"https://toncenter.com/api/v2/getAddressBalance?address={ton_address}"
-                    )
-                    if resp.status_code == 200:
-                        data = resp.json()
-                        if data.get("ok"):
-                            ton_balance = round(float(data.get("result", 0)) / 1e9, 2)
-
-                    # Fetch USDT balance
-                    resp_jettons = await client.get(
-                        f"https://tonapi.io/v2/accounts/{ton_address}/jettons"
-                    )
-                    if resp_jettons.status_code == 200:
-                        data = resp_jettons.json()
-                        balances = data.get("balances", [])
-                        for b in balances:
-                            jetton = b.get("jetton", {})
-                            symbol = jetton.get("symbol", "")
-                            if symbol in ["USDT", "USD₮"]:
-                                decimals = jetton.get("decimals", 6)
-                                balance_str = b.get("balance", "0")
-                                usdt_balance = round(
-                                    float(balance_str) / (10**decimals), 2
-                                )
-                                break
+            from src.services.redis_client import redis_client
+            if redis_client and redis_client.redis:
+                ton_balance_str = await redis_client.redis.get("dashboard:ton_balance")
+                if ton_balance_str:
+                    ton_balance = float(ton_balance_str)
+                    
+                usdt_balance_str = await redis_client.redis.get("dashboard:usdt_balance")
+                if usdt_balance_str:
+                    usdt_balance = float(usdt_balance_str)
+                    
+                star_balance_str = await redis_client.redis.get("dashboard:star_balance")
+                if star_balance_str:
+                    star_balance = int(star_balance_str)
         except Exception as e:
-            logger.error(f"Error fetching TON/USDT balance: {e}")
+            logger.error(f"Error fetching external balances from Redis: {e}")
 
+        # Calculate total RMB balance from Order table
         try:
-            bot_token = os.getenv("BOT_TOKEN")
-            # 默认给一个宿主机的代理以便能够访问 Telegram API
-            proxy_url = os.getenv("PROXY_URL", "http://127.0.0.1:7890")
-            if bot_token:
-                # Add proxy configuration if it exists to allow container to access Telegram API
-                if proxy_url:
-                    from telegram.request import HTTPXRequest
-
-                    request = HTTPXRequest(proxy=proxy_url)
-                    bot = Bot(token=bot_token, request=request)
-                else:
-                    bot = Bot(token=bot_token)
-
-                offset = 0
-                limit = 100
-                total_stars = 0
-
-                # Use a larger timeout context for the bot requests
-                response = await bot.get_star_transactions(
-                    limit=limit, offset=offset, read_timeout=30, connect_timeout=30
-                )
-                transactions = response.transactions
-                if transactions:
-                    for tx in transactions:
-                        if tx.amount > 0:
-                            total_stars += tx.amount
-
-                    # Only fetch next pages if there were transactions
-                    offset += len(transactions)
-                    while len(transactions) == limit:
-                        response = await bot.get_star_transactions(
-                            limit=limit,
-                            offset=offset,
-                            read_timeout=30,
-                            connect_timeout=30,
-                        )
-                        transactions = response.transactions
-                        if not transactions:
-                            break
-                        for tx in transactions:
-                            if tx.amount > 0:
-                                total_stars += tx.amount
-                        offset += len(transactions)
-
-                star_balance = total_stars
-        except Exception as e:
-            logger.error(f"Error fetching Stars balance: {e}")
-
-        # Calculate total RMB balance from logs
-        try:
-            # Get plan RMB prices
-            plans_res = await db.execute(
-                text("SELECT name, price_rmb FROM membership_plans")
+            rmb_stmt = select(func.coalesce(func.sum(Order.final_price), 0)).where(
+                Order.status == "SUCCESS", Order.order_id.like("RMB_%")
             )
-            plan_name_to_rmb = {row.name: float(row.price_rmb) for row in plans_res}
-
-            # Fetch all recharge logs
-            logs_res = await db.execute(
-                select(UserLog.extra_info).where(UserLog.operation_type == "recharge")
-            )
-            import json
-
-            for row in logs_res:
-                info = row.extra_info or ""
-                if "rmb_payment" in info:
-                    try:
-                        data = json.loads(info)
-                        plan_name = data.get("plan")
-                        if plan_name:
-                            rmb_balance += plan_name_to_rmb.get(plan_name, 0.0)
-                    except Exception:
-                        pass
+            rmb_balance_scalar = (await db.execute(rmb_stmt)).scalar()
+            rmb_balance += float(rmb_balance_scalar)
         except Exception as e:
             logger.error(f"Error calculating RMB balance: {e}")
 
@@ -598,6 +475,7 @@ async def get_stats(db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/finance_hourly")
+@cache(expire=60)
 async def get_finance_hourly_stats(
     date_str: str = None, db: AsyncSession = Depends(get_db)
 ):
@@ -609,28 +487,20 @@ async def get_finance_hourly_stats(
             target_date = date.today()
 
         dialect = db.bind.dialect.name
-        hour_expr = get_hour_expr(UserLog.created_at, dialect)
+        hour_expr = get_hour_expr(Order.created_at, dialect)
 
-        # 1. Map plan names/ids to prices and identities
-        plans_result = await db.execute(
-            text("SELECT id, name, identity_name, reward_credits FROM membership_plans")
-        )
-        plan_id_to_identity = {}
-        plan_name_to_identity = {}
-        plan_id_to_credits = {}
-        plan_name_to_credits = {}
-        for row in plans_result:
-            plan_id_to_identity[str(row.id)] = row.identity_name
-            plan_name_to_identity[row.name] = row.identity_name
-            plan_id_to_credits[str(row.id)] = int(row.reward_credits)
-            plan_name_to_credits[row.name] = int(row.reward_credits)
+        order_stmt = select(
+            hour_expr.label("hour"),
+            func.coalesce(func.sum(MembershipPlan.reward_credits), 0).label("recharged_credits"),
+            func.coalesce(func.sum(case((MembershipPlan.identity_name.like("%内门%"), 1), else_=0)), 0).label("inner_disciples"),
+            func.coalesce(func.sum(case((MembershipPlan.identity_name.like("%核心%"), 1), else_=0)), 0).label("core_disciples"),
+            func.coalesce(func.sum(case((MembershipPlan.identity_name.like("%真传%"), 1), else_=0)), 0).label("true_disciples")
+        ).join(MembershipPlan, Order.plan_id == MembershipPlan.id).where(
+            Order.status == "SUCCESS",
+            func.date(Order.created_at) == target_date
+        ).group_by(hour_expr)
 
-        # 2. Fetch logs for the target date
-        logs_stmt = select(hour_expr.label("hour"), UserLog.extra_info).where(
-            UserLog.operation_type == "recharge",
-            func.date(UserLog.created_at) == target_date,
-        )
-        logs_result = await db.execute(logs_stmt)
+        logs_result = await db.execute(order_stmt)
 
         hourly_data = {
             str(h).zfill(2): {
@@ -642,57 +512,12 @@ async def get_finance_hourly_stats(
             for h in range(24)
         }
 
-        import json
-
         for row in logs_result:
             hour_str = str(int(row.hour)).zfill(2) if row.hour is not None else "00"
-            info = row.extra_info or ""
-
-            try:
-                data = json.loads(info)
-                if data.get("is_gift"):
-                    continue
-
-                plan_name = data.get("plan")
-                plan_id = str(data.get("plan_id", ""))
-
-                # Track Recharge Credits
-                credits_added = 0
-                if plan_name:
-                    credits_added = plan_name_to_credits.get(plan_name, 0)
-                elif plan_id:
-                    credits_added = plan_id_to_credits.get(plan_id, 0)
-                elif "ORDER:" in info:
-                    order_id = data.get("order_id", "")
-                    parts = order_id.split(":")
-                    if len(parts) >= 3:
-                        credits_added = plan_id_to_credits.get(parts[2], 0)
-
-                hourly_data[hour_str]["recharged_credits"] += credits_added
-
-                # Track Disciples
-                identity_name = data.get("identity")
-                if not identity_name:
-                    if plan_name:
-                        identity_name = plan_name_to_identity.get(plan_name)
-                    elif plan_id:
-                        identity_name = plan_id_to_identity.get(plan_id)
-                    elif "ORDER:" in info:
-                        order_id = data.get("order_id", "")
-                        parts = order_id.split(":")
-                        if len(parts) >= 3:
-                            identity_name = plan_id_to_identity.get(parts[2])
-
-                if identity_name:
-                    if "内门" in identity_name:
-                        hourly_data[hour_str]["inner_disciples"] += 1
-                    elif "核心" in identity_name:
-                        hourly_data[hour_str]["core_disciples"] += 1
-                    elif "真传" in identity_name:
-                        hourly_data[hour_str]["true_disciples"] += 1
-
-            except Exception as e:
-                logger.error(f"Error parsing log info in finance_hourly: {e}")
+            hourly_data[hour_str]["recharged_credits"] += int(row.recharged_credits)
+            hourly_data[hour_str]["inner_disciples"] += int(row.inner_disciples)
+            hourly_data[hour_str]["core_disciples"] += int(row.core_disciples)
+            hourly_data[hour_str]["true_disciples"] += int(row.true_disciples)
 
         return hourly_data
     except Exception as e:
@@ -701,6 +526,7 @@ async def get_finance_hourly_stats(
 
 
 @router.get("/finance_hourly/cumulative")
+@cache(expire=60)
 async def get_cumulative_finance_hourly_stats(
     days: int = 7, db: AsyncSession = Depends(get_db)
 ):
@@ -708,26 +534,20 @@ async def get_cumulative_finance_hourly_stats(
     try:
         start_date = date.today() - timedelta(days=days - 1)
         dialect = db.bind.dialect.name
-        hour_expr = get_hour_expr(UserLog.created_at, dialect)
+        hour_expr = get_hour_expr(Order.created_at, dialect)
 
-        plans_result = await db.execute(
-            text("SELECT id, name, identity_name, reward_credits FROM membership_plans")
-        )
-        plan_id_to_identity = {}
-        plan_name_to_identity = {}
-        plan_id_to_credits = {}
-        plan_name_to_credits = {}
-        for row in plans_result:
-            plan_id_to_identity[str(row.id)] = row.identity_name
-            plan_name_to_identity[row.name] = row.identity_name
-            plan_id_to_credits[str(row.id)] = int(row.reward_credits)
-            plan_name_to_credits[row.name] = int(row.reward_credits)
+        order_stmt = select(
+            hour_expr.label("hour"),
+            func.coalesce(func.sum(MembershipPlan.reward_credits), 0).label("recharged_credits"),
+            func.coalesce(func.sum(case((MembershipPlan.identity_name.like("%内门%"), 1), else_=0)), 0).label("inner_disciples"),
+            func.coalesce(func.sum(case((MembershipPlan.identity_name.like("%核心%"), 1), else_=0)), 0).label("core_disciples"),
+            func.coalesce(func.sum(case((MembershipPlan.identity_name.like("%真传%"), 1), else_=0)), 0).label("true_disciples")
+        ).join(MembershipPlan, Order.plan_id == MembershipPlan.id).where(
+            Order.status == "SUCCESS",
+            func.date(Order.created_at) >= start_date
+        ).group_by(hour_expr)
 
-        logs_stmt = select(hour_expr.label("hour"), UserLog.extra_info).where(
-            UserLog.operation_type == "recharge",
-            func.date(UserLog.created_at) >= start_date,
-        )
-        logs_result = await db.execute(logs_stmt)
+        logs_result = await db.execute(order_stmt)
 
         hourly_data = {
             str(h).zfill(2): {
@@ -739,55 +559,12 @@ async def get_cumulative_finance_hourly_stats(
             for h in range(24)
         }
 
-        import json
-
         for row in logs_result:
             hour_str = str(int(row.hour)).zfill(2) if row.hour is not None else "00"
-            info = row.extra_info or ""
-
-            try:
-                data = json.loads(info)
-                if data.get("is_gift"):
-                    continue
-
-                plan_name = data.get("plan")
-                plan_id = str(data.get("plan_id", ""))
-
-                credits_added = 0
-                if plan_name:
-                    credits_added = plan_name_to_credits.get(plan_name, 0)
-                elif plan_id:
-                    credits_added = plan_id_to_credits.get(plan_id, 0)
-                elif "ORDER:" in info:
-                    order_id = data.get("order_id", "")
-                    parts = order_id.split(":")
-                    if len(parts) >= 3:
-                        credits_added = plan_id_to_credits.get(parts[2], 0)
-
-                hourly_data[hour_str]["recharged_credits"] += credits_added
-
-                identity_name = data.get("identity")
-                if not identity_name:
-                    if plan_name:
-                        identity_name = plan_name_to_identity.get(plan_name)
-                    elif plan_id:
-                        identity_name = plan_id_to_identity.get(plan_id)
-                    elif "ORDER:" in info:
-                        order_id = data.get("order_id", "")
-                        parts = order_id.split(":")
-                        if len(parts) >= 3:
-                            identity_name = plan_id_to_identity.get(parts[2])
-
-                if identity_name:
-                    if "内门" in identity_name:
-                        hourly_data[hour_str]["inner_disciples"] += 1
-                    elif "核心" in identity_name:
-                        hourly_data[hour_str]["core_disciples"] += 1
-                    elif "真传" in identity_name:
-                        hourly_data[hour_str]["true_disciples"] += 1
-
-            except Exception as e:
-                pass
+            hourly_data[hour_str]["recharged_credits"] += int(row.recharged_credits)
+            hourly_data[hour_str]["inner_disciples"] += int(row.inner_disciples)
+            hourly_data[hour_str]["core_disciples"] += int(row.core_disciples)
+            hourly_data[hour_str]["true_disciples"] += int(row.true_disciples)
 
         return hourly_data
     except Exception as e:
@@ -900,6 +677,7 @@ async def get_cumulative_hourly_stats(
 
 
 @router.get("/history")
+@cache(expire=60)
 async def get_stats_history(days: int = 7, db: AsyncSession = Depends(get_db)):
     """Get historical stats for charts (last N days)"""
     try:
@@ -933,7 +711,7 @@ async def get_stats_history(days: int = 7, db: AsyncSession = Depends(get_db)):
                 func.count(User.id).label("count"),
             )
             .where(
-                func.date(User.created_at) >= start_date, User.is_channel_member == True
+                func.date(User.created_at) >= start_date, User.is_channel_member.is_(True)
             )
             .group_by(func.date(User.created_at))
             .order_by(func.date(User.created_at))
@@ -1040,29 +818,18 @@ async def get_stats_history(days: int = 7, db: AsyncSession = Depends(get_db)):
             )
             user_pwd_history[date_val] = row.count
 
-        total_users_before_stmt = select(func.count(User.id)).where(
-            func.date(User.created_at) < start_date
-        )
-        total_users_before_result = await db.execute(total_users_before_stmt)
-        cumulative_users = total_users_before_result.scalar() or 0
-
-        total_en_before_stmt = select(func.count(User.id)).where(
-            func.date(User.created_at) < start_date, User.language_code.like("en%")
-        )
-        total_en_before_result = await db.execute(total_en_before_stmt)
-        cumulative_en_users = total_en_before_result.scalar() or 0
-
-        total_zh_before_stmt = select(func.count(User.id)).where(
-            func.date(User.created_at) < start_date, User.language_code.like("zh%")
-        )
-        total_zh_before_result = await db.execute(total_zh_before_stmt)
-        cumulative_zh_users = total_zh_before_result.scalar() or 0
-
-        total_pwd_before_stmt = select(func.count(User.id)).where(
-            func.date(User.created_at) < start_date, User.hashed_password.is_not(None)
-        )
-        total_pwd_before_result = await db.execute(total_pwd_before_stmt)
-        cumulative_pwd_users = total_pwd_before_result.scalar() or 0
+        users_before_stmt = select(
+            func.count(User.id).label("cumulative_users"),
+            func.coalesce(func.sum(case((User.language_code.like("en%"), 1), else_=0)), 0).label("cumulative_en_users"),
+            func.coalesce(func.sum(case((User.language_code.like("zh%"), 1), else_=0)), 0).label("cumulative_zh_users"),
+            func.coalesce(func.sum(case((User.hashed_password.is_not(None), 1), else_=0)), 0).label("cumulative_pwd_users")
+        ).where(func.date(User.created_at) < start_date)
+        
+        users_before_row = (await db.execute(users_before_stmt)).first()
+        cumulative_users = users_before_row.cumulative_users or 0
+        cumulative_en_users = int(users_before_row.cumulative_en_users)
+        cumulative_zh_users = int(users_before_row.cumulative_zh_users)
+        cumulative_pwd_users = int(users_before_row.cumulative_pwd_users)
 
         current_cumulative = cumulative_users
         current_cumulative_en = cumulative_en_users
@@ -1193,169 +960,72 @@ async def get_stats_history(days: int = 7, db: AsyncSession = Depends(get_db)):
             consumed_history[date_val] = row.count
 
         # Daily TON and Stars Recharge History
-        # We now calculate the actual TON and Stars spent, not the credits granted.
-
-        # 1. Map plan names/ids to prices and identities
-        plans_result = await db.execute(
-            text(
-                "SELECT id, name, identity_name, price_ton, price_stars, price_rmb, reward_credits FROM membership_plans"
-            )
+        # Calculate from Order table instead of UserLog JSON
+        
+        orders_before_stmt = select(
+            func.coalesce(func.sum(case((Order.order_id.like("RMB_%"), Order.final_price), else_=0)), 0).label("rmb_sum"),
+            func.coalesce(func.sum(case(
+                (Order.order_id.like("XTR_%"), Order.final_price),
+                (and_(not_(Order.order_id.like("RMB_%")), not_(Order.order_id.like("XTR_%")), Order.final_price >= 100), Order.final_price),
+                else_=0
+            )), 0).label("stars_sum"),
+            func.coalesce(func.sum(case(
+                (and_(not_(Order.order_id.like("RMB_%")), not_(Order.order_id.like("XTR_%")), Order.final_price < 100), Order.final_price),
+                else_=0
+            )), 0).label("ton_sum"),
+            func.coalesce(func.sum(MembershipPlan.reward_credits), 0).label("credits_sum")
+        ).join(MembershipPlan, Order.plan_id == MembershipPlan.id).where(
+            Order.status == "SUCCESS",
+            func.date(Order.created_at) < start_date
         )
-        plan_ton_prices = {}
-        plan_stars_prices = {}
-        plan_rmb_prices = {}
-        plan_name_to_ton = {}
-        plan_name_to_rmb = {}
-        plan_id_to_identity = {}
-        plan_name_to_identity = {}
-        plan_id_to_credits = {}
-        plan_name_to_credits = {}
-        for row in plans_result:
-            plan_ton_prices[str(row.id)] = float(row.price_ton)
-            plan_stars_prices[str(row.id)] = int(row.price_stars)
-            plan_rmb_prices[str(row.id)] = float(row.price_rmb)
-            plan_name_to_ton[row.name] = float(row.price_ton)
-            plan_name_to_rmb[row.name] = float(row.price_rmb)
-            plan_id_to_identity[str(row.id)] = row.identity_name
-            plan_name_to_identity[row.name] = row.identity_name
-            plan_id_to_credits[str(row.id)] = int(row.reward_credits)
-            plan_name_to_credits[row.name] = int(row.reward_credits)
 
-        # 2. Fetch all raw recharge logs
-        logs_stmt = select(
-            func.date(UserLog.created_at).label("date"), UserLog.extra_info
-        ).where(UserLog.operation_type == "recharge")
-        logs_result = await db.execute(logs_stmt)
+        before_row = (await db.execute(orders_before_stmt)).first()
+        ton_before = float(before_row.ton_sum) if before_row else 0.0
+        stars_before = int(before_row.stars_sum) if before_row else 0
+        rmb_before = float(before_row.rmb_sum) if before_row else 0.0
+        recharged_credits_before = int(before_row.credits_sum) if before_row else 0
+
+        order_stmt = select(
+            func.date(Order.created_at).label("date"),
+            func.coalesce(func.sum(case((Order.order_id.like("RMB_%"), Order.final_price), else_=0)), 0).label("rmb_sum"),
+            func.coalesce(func.sum(case(
+                (Order.order_id.like("XTR_%"), Order.final_price),
+                (and_(not_(Order.order_id.like("RMB_%")), not_(Order.order_id.like("XTR_%")), Order.final_price >= 100), Order.final_price),
+                else_=0
+            )), 0).label("stars_sum"),
+            func.coalesce(func.sum(case(
+                (and_(not_(Order.order_id.like("RMB_%")), not_(Order.order_id.like("XTR_%")), Order.final_price < 100), Order.final_price),
+                else_=0
+            )), 0).label("ton_sum"),
+            func.coalesce(func.sum(MembershipPlan.reward_credits), 0).label("credits_sum"),
+            func.coalesce(func.sum(case((MembershipPlan.identity_name.like("%内门%"), 1), else_=0)), 0).label("inner_count"),
+            func.coalesce(func.sum(case((MembershipPlan.identity_name.like("%核心%"), 1), else_=0)), 0).label("core_count"),
+            func.coalesce(func.sum(case((MembershipPlan.identity_name.like("%真传%"), 1), else_=0)), 0).label("true_count")
+        ).join(MembershipPlan, Order.plan_id == MembershipPlan.id).where(
+            Order.status == "SUCCESS",
+            func.date(Order.created_at) >= start_date
+        ).group_by(func.date(Order.created_at))
+
+        order_result = await db.execute(order_stmt)
 
         ton_history = {}
         stars_history = {}
         rmb_history = {}
-
         inner_history = {}
         core_history = {}
         true_history = {}
-
         recharged_credits_history = {}
 
-        ton_before = 0.0
-        stars_before = 0
-        rmb_before = 0.0
-        recharged_credits_before = 0
-
-        import json
-
-        for row in logs_result:
-            date_val = (
-                row.date if isinstance(row.date, str) else row.date.strftime("%Y-%m-%d")
-            )
-
-            is_before = False
-            if isinstance(row.date, str):
-                log_date = datetime.strptime(row.date, "%Y-%m-%d").date()
-                if log_date < start_date:
-                    is_before = True
-            else:
-                if row.date < start_date:
-                    is_before = True
-
-            info = row.extra_info or ""
-
-            try:
-                data = json.loads(info)
-                # Ignore manual gifts
-                if data.get("is_gift"):
-                    continue
-
-                # Track Disciple Identities
-                plan_name = data.get("plan")
-                plan_id = str(data.get("plan_id", ""))
-
-                identity_name = data.get("identity")  # RMB typically has it
-                if not identity_name:
-                    if plan_name:
-                        identity_name = plan_name_to_identity.get(plan_name)
-                    elif plan_id:
-                        identity_name = plan_id_to_identity.get(plan_id)
-                    elif "ORDER:" in info:
-                        order_id = data.get("order_id", "")
-                        parts = order_id.split(":")
-                        if len(parts) >= 3:
-                            identity_name = plan_id_to_identity.get(parts[2])
-
-                if identity_name and not is_before:
-                    if "内门" in identity_name:
-                        inner_history[date_val] = inner_history.get(date_val, 0) + 1
-                    elif "核心" in identity_name:
-                        core_history[date_val] = core_history.get(date_val, 0) + 1
-                    elif "真传" in identity_name:
-                        true_history[date_val] = true_history.get(date_val, 0) + 1
-
-                # Track Recharge Credits
-                credits_added = 0
-                if plan_name:
-                    credits_added = plan_name_to_credits.get(plan_name, 0)
-                elif plan_id:
-                    credits_added = plan_id_to_credits.get(plan_id, 0)
-                elif "ORDER:" in info:
-                    order_id = data.get("order_id", "")
-                    parts = order_id.split(":")
-                    if len(parts) >= 3:
-                        credits_added = plan_id_to_credits.get(parts[2], 0)
-
-                if is_before:
-                    recharged_credits_before += credits_added
-                else:
-                    recharged_credits_history[date_val] = (
-                        recharged_credits_history.get(date_val, 0) + credits_added
-                    )
-
-                # Check for RMB
-                if "rmb_payment" in info:
-                    plan_name = data.get("plan")
-                    rmb_spent = 0.0
-                    if plan_name:
-                        rmb_spent = plan_name_to_rmb.get(plan_name, 0.0)
-                    if is_before:
-                        rmb_before += rmb_spent
-                    else:
-                        rmb_history[date_val] = (
-                            rmb_history.get(date_val, 0.0) + rmb_spent
-                        )
-
-                # Check for Stars
-                elif "telegram_stars" in info or "stars" in info.lower():
-                    plan_id = str(data.get("plan_id", ""))
-                    stars_spent = plan_stars_prices.get(plan_id, 0)
-                    if is_before:
-                        stars_before += stars_spent
-                    else:
-                        stars_history[date_val] = (
-                            stars_history.get(date_val, 0) + stars_spent
-                        )
-
-                # Check for TON
-                elif "ORDER:" in info:
-                    plan_name = data.get("plan")
-                    ton_spent = 0.0
-                    if plan_name:
-                        ton_spent = plan_name_to_ton.get(plan_name, 0.0)
-                    else:
-                        # Try to extract plan_id from ORDER:{user_id}:{plan_id}:{timestamp}
-                        order_id = data.get("order_id", "")
-                        parts = order_id.split(":")
-                        if len(parts) >= 3:
-                            plan_id = parts[2]
-                            ton_spent = plan_ton_prices.get(plan_id, 0.0)
-
-                    if is_before:
-                        ton_before += ton_spent
-                    else:
-                        ton_history[date_val] = (
-                            ton_history.get(date_val, 0.0) + ton_spent
-                        )
-
-            except Exception as e:
-                logger.error(f"Error parsing log info {info}: {e}")
+        for row in order_result:
+            date_val = row.date if isinstance(row.date, str) else row.date.strftime("%Y-%m-%d")
+            
+            ton_history[date_val] = float(row.ton_sum)
+            stars_history[date_val] = int(row.stars_sum)
+            rmb_history[date_val] = float(row.rmb_sum)
+            recharged_credits_history[date_val] = int(row.credits_sum)
+            inner_history[date_val] = int(row.inner_count)
+            core_history[date_val] = int(row.core_count)
+            true_history[date_val] = int(row.true_count)
 
         current_ton_cumulative = ton_before
         current_stars_cumulative = stars_before
