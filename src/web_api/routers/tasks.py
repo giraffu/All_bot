@@ -26,6 +26,15 @@ logger = logging.getLogger(__name__)
 quota_manager = QuotaManager()
 
 
+@router.delete("/cancel/{task_id}")
+async def cancel_pending_task(task_id: str, current_user: User = Depends(get_current_user)):
+    try:
+        from src.core.task_core import cancel_user_task
+        await cancel_user_task(task_id, current_user.id)
+        return {"status": "success", "message": "任务已成功撤销，灵石已退回"}
+    except CoreDomainError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
 @router.post("/generate", response_model=TaskGenerateResponse)
 async def create_generation_task(
     req: TaskGenerateRequest, current_user: User = Depends(get_current_user)

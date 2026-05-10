@@ -1,4 +1,5 @@
 import logging
+import httpx
 from typing import Optional, Tuple
 
 from config import MINIO_BUCKET
@@ -412,3 +413,29 @@ async def sync_user_concurrency(user_id: int, actual_count: int):
         await redis_client.redis.expire(key, 3600)
     else:
         await redis_client.redis.delete(key)
+
+
+async def cancel_user_task(task_id: str, user_id: int):
+    """供用户主动调用的任务撤销逻辑"""
+    from src.services.redis_client import redis_client
+    tasks = await redis_client.get_active_tasks()
+    if not tasks or task_id not in tasks:
+        raise CoreDomainError("任务不存在或已脱离排队阶段")
+    
+    task = tasks[task_id]
+    if task.get("user_id") != user_id:
+        raise CoreDomainError("无权撤销该任务")
+
+    # 仅调用中控移除排队，触发 cancelled 事件广播
+    from src.api_client import api_client
+    try:
+        await api_client.cancel_task(task_id)
+    except httpx.HTTPStatusError as e:
+        if e.response.status_code == 404:
+            raise CoreDomainError("任务已在执行中，无法撤销")
+        raise CoreDomainError(f"撤销请求失败: HTTP {e.response.status_code}")
+    except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"中控取消任务网络异常: {e}")
+        raise CoreDomainError("撤销请求失败，请稍后重试")

@@ -376,6 +376,12 @@ class APIClient:
         r = await self._request("POST", LTX_VIDEO_ENDPOINT, json=data)
         return r.json()["task_id"]
 
+    @async_retry(max_retries=3)
+    async def cancel_task(self, task_id: str) -> dict:
+        url = f"{API_BASE}/api/tasks/{task_id}"
+        response = await self._request("DELETE", url)
+        return response.json()
+
     async def get_system_status(self) -> Optional[dict]:
         url = f"{API_BASE}/system/status"
         try:
@@ -428,6 +434,7 @@ class APIClient:
                 raise RuntimeError(info.get("error", "generation failed or cancelled"))
         except Exception as e:
             if isinstance(e, httpx.HTTPStatusError) and e.response.status_code == 404:
+                yield {"status": "cancelled", "error": "Task cancelled (404)"}
                 raise RuntimeError(f"Task {task_id} not found on server (404).")
             logger.warning(f"Initial status fetch failed for {task_id}: {e}")
 
@@ -519,6 +526,10 @@ class APIClient:
 
                     await asyncio.sleep(POLL_INTERVAL)
                 except Exception as inner_e:
+                    if isinstance(inner_e, httpx.HTTPStatusError) and inner_e.response.status_code == 404:
+                        logger.warning(f"Task {task_id} deleted by central (404), treating as cancelled.")
+                        yield {"status": "cancelled", "error": "Task cancelled (404)"}
+                        raise RuntimeError("cancelled")
                     logger.warning(f"Poll status failed for {task_id}: {inner_e}")
                     await asyncio.sleep(POLL_INTERVAL)
         finally:
@@ -552,5 +563,6 @@ submit_i2i_draw = api_client.submit_i2i_draw
 download_image = api_client.download_image
 download_video = api_client.download_video
 get_system_status = api_client.get_system_status
+cancel_task = api_client.cancel_task
 
 listen_for_progress = api_client.listen_for_progress

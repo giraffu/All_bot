@@ -177,6 +177,13 @@ class TaskService:
             await robust_send_message(context.bot, chat_id, f"⚠️ {e}")
             return None, None
         except CoreDomainError as e:
+            if str(e) == "cancelled":
+                if task_submitted and cost > 0:
+                    await asyncio.shield(
+                        refund_credits(internal_user_id, cost, "refund_user_cancel", username)
+                    )
+                await robust_edit_text(msg, f"✅ 任务已撤销，预扣的 {cost} 灵石已全额退回。")
+                return None, None
             await robust_send_message(context.bot, chat_id, f"❌ {e}")
             return None, None
         except Exception as e:
@@ -334,6 +341,14 @@ class TaskService:
             await robust_send_message(context.bot, chat_id, f"⚠️ {e}")
             return None, None
         except CoreDomainError as e:
+            if str(e) == "cancelled":
+                if task_submitted and actual_cost > 0:
+                    await asyncio.shield(
+                        refund_credits(internal_user_id, actual_cost, "refund_user_cancel", username)
+                    )
+                if "status_msg" in locals():
+                    await robust_edit_text(status_msg, f"✅ 任务已撤销，预扣的 {actual_cost} 灵石已全额退回。")
+                return None, None
             await robust_send_message(context.bot, chat_id, f"❌ {e}")
             return None, None
         except Exception as e:
@@ -572,6 +587,14 @@ class TaskService:
         except InsufficientCreditsError as e:
             await robust_send_message(context.bot, chat_id, f"⚠️ {e}")
         except CoreDomainError as e:
+            if str(e) == "cancelled":
+                if deduct_quota and task_submitted and actual_cost > 0:
+                    await asyncio.shield(
+                        refund_credits(internal_user_id, actual_cost, "refund_user_cancel", username)
+                    )
+                if "status_msg" in locals():
+                    await robust_edit_text(status_msg, f"✅ 任务已撤销，预扣的 {actual_cost} 灵石已全额退回。")
+                return None, None
             await robust_send_message(context.bot, chat_id, f"❌ {e}")
         except Exception as e:
             logger.error(
@@ -757,6 +780,14 @@ class TaskService:
         except InsufficientCreditsError as e:
             await robust_send_message(context.bot, chat_id, f"⚠️ {e}")
         except CoreDomainError as e:
+            if str(e) == "cancelled":
+                if task_submitted and actual_cost > 0:
+                    await asyncio.shield(
+                        refund_credits(internal_user_id, actual_cost, "refund_user_cancel", username)
+                    )
+                if "msg" in locals():
+                    await robust_edit_text(msg, f"✅ 任务已撤销，预扣的 {actual_cost} 灵石已全额退回。")
+                return None, None
             await robust_send_message(context.bot, chat_id, f"❌ {e}")
         except Exception as e:
             logger.error(
@@ -1027,6 +1058,14 @@ class TaskService:
             await robust_send_message(context.bot, chat_id, f"⚠️ {e}")
             return None, None
         except CoreDomainError as e:
+            if str(e) == "cancelled":
+                if task_submitted and actual_cost > 0:
+                    await asyncio.shield(
+                        refund_credits(internal_user_id, actual_cost, "refund_user_cancel", username)
+                    )
+                if "msg" in locals():
+                    await robust_edit_text(msg, f"✅ 任务已撤销，预扣的 {actual_cost} 灵石已全额退回。")
+                return None, None
             await robust_send_message(context.bot, chat_id, f"❌ {e}")
             return None, None
         except Exception as e:
@@ -1192,6 +1231,14 @@ class TaskService:
             await robust_send_message(context.bot, chat_id, f"⚠️ {e}")
             return None, None
         except CoreDomainError as e:
+            if str(e) == "cancelled":
+                if task_submitted and actual_cost > 0:
+                    await asyncio.shield(
+                        refund_credits(internal_user_id, actual_cost, "refund_user_cancel", username)
+                    )
+                if "msg" in locals():
+                    await robust_edit_text(msg, f"✅ 任务已撤销，预扣的 {actual_cost} 灵石已全额退回。")
+                return None, None
             await robust_send_message(context.bot, chat_id, f"❌ {e}")
             return None, None
         except Exception as e:
@@ -1266,8 +1313,17 @@ class TaskService:
         last_queue_pos = None
         final_info = None
 
+        from telegram import InlineKeyboardMarkup, InlineKeyboardButton
+        cancel_markup = InlineKeyboardMarkup([[
+            InlineKeyboardButton("❌ 撤销任务", callback_data=f"cancel_task_{task_id}")
+        ]])
+
         async def update_status_message(text, **kwargs):
             try:
+                if "排队中" in text:
+                    kwargs["reply_markup"] = cancel_markup
+                else:
+                    kwargs["reply_markup"] = None
                 await robust_edit_text(status_msg, text, **kwargs)
                 return True
             except Exception as exc:
@@ -1306,8 +1362,15 @@ class TaskService:
                     await update_status_message("⏳ 生成中... 100%")
                 break
 
-            if status == "error":
-                raise RuntimeError(info.get("error", "generation failed"))
+            if status in ["error", "failed", "cancelled"]:
+                if status == "cancelled":
+                    logger.warning(f"Task {task_id} was cancelled.")
+                    from src.core.task_core import CoreDomainError
+                    raise CoreDomainError("cancelled")
+                else:
+                    error_msg = info.get("error", "Unknown error")
+                    logger.error(f"Task {task_id} failed: {error_msg}")
+                    raise RuntimeError(error_msg)
 
             if status == "pending":
                 raw_pos = info.get("queue_pos")

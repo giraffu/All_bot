@@ -9,6 +9,7 @@ import src.handlers.callback_router as router
 import src.handlers.callbacks.billing_callbacks  # noqa: F401
 import src.handlers.callbacks.gallery_callbacks  # noqa: F401
 import src.handlers.callbacks.misc_callbacks  # noqa: F401
+import src.handlers.callbacks.task_callbacks  # noqa: F401
 
 from src.handlers.utils import with_db_logging_context
 from src.services.permission_service import permission_service

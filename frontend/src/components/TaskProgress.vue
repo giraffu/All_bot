@@ -3,9 +3,11 @@ import { useTasksStore } from '@/stores/tasks'
 import { CloseOutlined, CheckOutlined, LoadingOutlined } from '@ant-design/icons-vue'
 import { message } from 'ant-design-vue'
 import { useRouter } from 'vue-router'
+import { ref } from 'vue'
 
 const tasksStore = useTasksStore()
 const router = useRouter()
+const expandedTaskId = ref<string | null>(null)
 
 const handleClose = (task: any) => {
   tasksStore.removeTask(task.id)
@@ -13,7 +15,9 @@ const handleClose = (task: any) => {
 }
 
 const handleTaskClick = (task: any) => {
-  if (task.status === 'success' && task.resultUrl) {
+  if (task.status === 'pending') {
+    expandedTaskId.value = expandedTaskId.value === task.id ? null : task.id
+  } else if (task.status === 'success' && task.resultUrl) {
     // 触发全局弹窗，传入 task.id，并用现有信息作为 fallback 
     tasksStore.openDetailModal(task.id, {
       task_id: task.id,
@@ -22,6 +26,13 @@ const handleTaskClick = (task: any) => {
     })
     // 移除任务（关闭悬浮球）
     tasksStore.removeTask(task.id)
+  }
+}
+
+const doCancelTask = async (taskId: string) => {
+  const success = await tasksStore.cancelActiveTask(taskId)
+  if (success) {
+    expandedTaskId.value = null
   }
 }
 </script>
@@ -85,6 +96,17 @@ const handleTaskClick = (task: any) => {
         >
           <close-outlined class="text-[10px]" />
         </button>
+
+        <!-- 悬浮撤销面板 -->
+        <transition name="fade-slide">
+          <div v-if="expandedTaskId === task.id && task.status === 'pending'"
+               class="absolute right-16 top-1/2 -translate-y-1/2 bg-slate-800 border border-slate-600 rounded-lg p-2 shadow-lg flex items-center whitespace-nowrap z-50">
+            <span class="text-xs text-slate-300 mr-3">任务排队中</span>
+            <a-button type="primary" danger size="small" @click.stop="doCancelTask(task.id)">
+              撤销任务
+            </a-button>
+          </div>
+        </transition>
       </div>
     </transition-group>
   </div>
@@ -99,5 +121,15 @@ const handleTaskClick = (task: any) => {
 .task-list-leave-to {
   opacity: 0;
   transform: scale(0.8) translateY(20px);
+}
+
+.fade-slide-enter-active,
+.fade-slide-leave-active {
+  transition: all 0.2s ease;
+}
+.fade-slide-enter-from,
+.fade-slide-leave-to {
+  opacity: 0;
+  transform: translate(10px, -50%);
 }
 </style>

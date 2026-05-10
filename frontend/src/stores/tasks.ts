@@ -165,5 +165,20 @@ export const useTasksStore = defineStore('tasks', () => {
     toRemove.forEach(t => removeTask(t.id))
   }
 
-  return { activeTasks, detailModalVisible, currentDetailRecord, addTask, removeTask, clearCompleted, openDetailModal }
+  const cancelActiveTask = async (taskId: string) => {
+    try {
+      await api.delete(`/tasks/cancel/${taskId}`)
+      removeTask(taskId)
+      message.success('✅ 任务已撤销，灵石已退回')
+      // Delay before returning to allow backend refund propagation
+      await new Promise(resolve => setTimeout(resolve, 1500))
+      return true
+    } catch (e: any) {
+      const errorMsg = e.response?.data?.detail || '撤销请求失败'
+      message.error(`撤销失败: ${errorMsg}`)
+      return false
+    }
+  }
+
+  return { activeTasks, detailModalVisible, currentDetailRecord, addTask, removeTask, clearCompleted, cancelActiveTask, openDetailModal }
 })
