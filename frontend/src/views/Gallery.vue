@@ -4,6 +4,8 @@ import { useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import { useI18n } from 'vue-i18n'
 import { Heart, ThumbsDown, Wand2, Play, Image as ImageIcon, Video, Flame, Clock, Compass, Copy, ChevronLeft, ChevronRight } from 'lucide-vue-next'
+import { Waterfall } from 'vue-waterfall-plugin-next'
+import 'vue-waterfall-plugin-next/dist/style.css'
 import api from '@/api'
 import dayjs from 'dayjs'
 import { useViewport } from '@/composables/useViewport'
@@ -25,11 +27,20 @@ interface Post {
   has_liked: boolean
   has_disliked: boolean
   author_name?: string
+  src?: string
 }
 
 const router = useRouter()
 const { t } = useI18n()
 const { isMobile } = useViewport()
+
+const breakpoints = {
+  99999: { rowPerView: 6 },
+  1280: { rowPerView: 5 },
+  1024: { rowPerView: 4 },
+  768:  { rowPerView: 3 },
+  640:  { rowPerView: 2 }
+}
 
 const posts = ref<Post[]>([])
 const loading = ref(false)
@@ -210,10 +221,17 @@ const loadPosts = async (reset = false) => {
     
     if (requestId !== currentRequestId) return
     
+    const newItems = res.data.items.map((p: Post) => {
+      const src = isVideoFile(p.thumbnail_url, p.media_type) 
+        ? getVideoPosterUrl(p.thumbnail_url, p.id) 
+        : getFileUrl(p.thumbnail_url, p.id, true)
+      return { ...p, src }
+    })
+    
     if (reset) {
-      posts.value = res.data.items
+      posts.value = newItems
     } else {
-      posts.value = [...posts.value, ...res.data.items]
+      posts.value = [...posts.value, ...newItems]
     }
     
     total.value = res.data.total
@@ -222,14 +240,25 @@ const loadPosts = async (reset = false) => {
     } else {
       page.value++
     }
+    
+    // 如果返回数据为空，或者没有更多数据，必须手动释放 loading 锁
+    // 因为 Waterfall 的 @afterRender 可能不会被触发
+    if (newItems.length === 0) {
+      loading.value = false
+    } else {
+      // 异常情况兜底：防止瀑布流渲染失败或卡死导致 loading 锁无法释放
+      setTimeout(() => {
+        if (loading.value) {
+          loading.value = false
+          console.warn('Fallback: Force released loading lock after 3s')
+        }
+      }, 3000)
+    }
   } catch (error) {
     if (requestId !== currentRequestId) return
     console.error(error)
     message.error('获取广场数据失败')
-  } finally {
-    if (requestId === currentRequestId) {
-      loading.value = false
-    }
+    loading.value = false
   }
 }
 
@@ -464,34 +493,46 @@ onUnmounted(() => {
     </div>
 
     <!-- Masonry Grid -->
-    <div class="columns-2 sm:columns-3 md:columns-4 lg:columns-5 xl:columns-6 gap-3 sm:gap-6">
-      <div 
-        v-for="post in posts" 
-        :key="post.id"
-        class="mb-3 sm:mb-6 break-inside-avoid rounded-2xl overflow-hidden relative group cursor-pointer border border-slate-400/50 bg-slate-500/40 hover:border-cyan-500/40 transition-all duration-300 shadow-lg hover:shadow-[0_8px_30px_rgba(56,189,248,0.15)] hover:-translate-y-1"
-        @click="openDetail(post)"
-      >
-        <!-- Media -->
-        <div class="relative w-full overflow-hidden bg-slate-500 aspect-auto min-h-[100px]">
-          <img 
-            v-if="!isVideoFile(post.thumbnail_url, post.media_type)" 
-            :src="getFileUrl(post.thumbnail_url, post.id, true)" 
-            @error="handleImageError($event, post)"
-            class="w-full h-auto object-cover transition-opacity duration-300" 
-            loading="lazy" 
-          />
-          <video 
-            v-else 
-            :src="getFileUrl(post.thumbnail_url, post.id, false) + '#t=0.001'" 
-            :poster="getVideoPosterUrl(post.thumbnail_url, post.id)"
-            class="w-full h-auto object-cover" 
-            preload="metadata" 
-            muted 
-            loop
-            playsinline
-            @mouseenter="playVideo"
-            @mouseleave="pauseVideo"
-          ></video>
+    <Waterfall 
+      :list="posts" 
+      :breakpoints="breakpoints" 
+      :gutter="isMobile ? 12 : 24" 
+      :animationDuration="400"
+      backgroundColor="transparent"
+      @afterRender="() => { loading = false }"
+      :hasAroundGutter="false"
+    >
+      <template #default="{ item: post }">
+        <div 
+          class="rounded-2xl overflow-hidden relative group cursor-pointer border border-slate-400/50 bg-slate-500/40 hover:border-cyan-500/40 transition-all duration-300 shadow-lg hover:shadow-[0_8px_30px_rgba(56,189,248,0.15)] hover:-translate-y-1"
+          @click="openDetail(post)"
+        >
+          <!-- Media -->
+          <div 
+            class="relative w-full overflow-hidden bg-slate-500"
+            :style="post.width && post.height ? { aspectRatio: `${post.width}/${post.height}` } : { minHeight: '100px' }"
+          >
+            <img 
+              v-if="!isVideoFile(post.thumbnail_url, post.media_type)" 
+              :src="post.src" 
+              @error="handleImageError($event, post)"
+              class="w-full object-cover transition-opacity duration-300"
+              :class="post.width && post.height ? 'absolute inset-0 h-full' : 'h-auto'"
+              loading="lazy" 
+            />
+            <video 
+              v-else 
+              :src="getFileUrl(post.thumbnail_url, post.id, false) + '#t=0.001'" 
+              :poster="post.src"
+              class="w-full object-cover"
+              :class="post.width && post.height ? 'absolute inset-0 h-full' : 'h-auto'"
+              preload="metadata" 
+              muted 
+              loop
+              playsinline
+              @mouseenter="playVideo"
+              @mouseleave="pauseVideo"
+            ></video>
           
           <!-- Type Badge -->
           <div class="absolute top-2 right-2 bg-black/60 backdrop-blur-sm rounded-full p-1.5 shadow-sm border border-white/10">
@@ -527,8 +568,9 @@ onUnmounted(() => {
             <span class="text-xs font-medium">{{ post.applied_count }}</span>
           </div>
         </div>
-      </div>
-    </div>
+        </div>
+      </template>
+    </Waterfall>
     
     <!-- Loading State -->
     <div v-if="loading" class="py-8 text-center">

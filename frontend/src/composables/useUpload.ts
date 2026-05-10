@@ -40,7 +40,7 @@ export function useUpload() {
           // returns a 403 SignatureDoesNotMatch.
           
           // Force clear Content-Type 
-          xhr.setRequestHeader('Content-Type', '')
+          // xhr.setRequestHeader('Content-Type', '')
           
           xhr.upload.onprogress = (e) => {
             if (e.lengthComputable) {
@@ -57,7 +57,7 @@ export function useUpload() {
             }
           }
           
-          xhr.onerror = () => reject(new Error('Network error during upload'))
+          xhr.onerror = () => reject(new Error('Network error during upload (可能是服务器繁忙或跨域拦截，请稍后再试)'))
           
           // IMPORTANT: Convert the File to a Blob with an empty type string.
           // This strips the MIME type (like 'image/jpeg') so the browser's XMLHttpRequest 

@@ -115,7 +115,9 @@ python scripts/test_huanyuy.py
 ### 7.1 日志采集与监控（静默执行）
 - **监控目标**：正式环境 bot 日志、测试环境 bot 日志、web api 日志、后端中控 api 日志。
 - **时间范围**：提取过去10分钟的历史日志，并持续追加监控后续2分钟的实时日志（总计覆盖12分钟的日志窗口）。
-- **排查边缘节点与 Nginx 代理**：当涉及网络层、跨域（CORS）、文件上传失败（413 Payload Too Large）、或者请求根本未到达后端时，**必须**使用 SSH 登录边缘节点 `100.88.57.122`（执行指令 `ssh -i frontend/ssh_key/id_rsa.pem root@100.88.57.122 "tail -n 100 /var/log/nginx/error.log"`）检查 Nginx 的错误日志。
+- **排查双边缘节点故障**：当涉及网络层、跨域（CORS）、文件上传失败（413 Payload Too Large）、或者请求根本未到达后端时，**必须**使用 SSH 检查以下两个边缘节点的日志：
+  - **Web 前端与流量转发节点** (`100.88.57.122` / `154.17.30.113`)：执行指令 `ssh -i frontend/ssh_key/id_rsa.pem root@100.88.57.122 "tail -n 100 /var/log/nginx/error.log"` 检查 Nginx 代理报错。
+  - **Telegram Local API 节点** (`69.63.220.115`)：当出现 `telegram.error.TimedOut`、大文件下载 404/403 等异常时，执行指令 `ssh root@69.63.220.115 "docker logs --tail 100 tg-local-api"` 或检查 HTTP 文件服务器日志。
 - **排查后端数据库慢查询与连接池**：当出现 `110 Connection timed out` 且后端日志无明显应用报错时，**必须**排查 PostgreSQL 连接池是否被耗尽。使用 `docker exec -i postgres-server psql -U postgres -d bot_db -c "SELECT count(*), state FROM pg_stat_activity GROUP BY state;"` 检查 `idle in transaction` 的数量。若发现大量卡死进程，可使用 `ALTER SYSTEM SET idle_in_transaction_session_timeout = '60000';` 进行熔断恢复，并配置 `log_min_duration_statement = '1000'` 追踪慢查询。
 - **执行要求**：在此期间仅做观察、采集与记录，**绝对不要修改任何代码**。请将采集到的日志暂存到专用的临时文件或内存中，不要在控制台或对话窗口中打印原始日志流。
 
