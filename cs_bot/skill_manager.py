@@ -29,22 +29,22 @@ class SkillManager:
                     # 获取文件名作为知识模块的标题
                     base_name = os.path.basename(md_file).replace(".md", "")
                     self.prompts.append(f"--- [知识库: {base_name}] ---\n{content}\n")
-                    
+
         # 2. 动态加载所有的 python tool
         # 为了方便扩展，我们约定所有的 tool 都写在 skills/ 目录下的 .py 文件里，
         # 并且可以通过一个约定的函数 get_tools() 导出，或者直接扫描带有 @tool 装饰器的函数
-        
+
         py_files = glob.glob(os.path.join(self.skills_dir, "*.py"))
         for py_file in py_files:
             if os.path.basename(py_file).startswith("__"):
                 continue
-            
+
             module_name = os.path.basename(py_file).replace(".py", "")
             spec = importlib.util.spec_from_file_location(module_name, py_file)
             if spec and spec.loader:
                 module = importlib.util.module_from_spec(spec)
                 spec.loader.exec_module(module)
-                
+
                 # 如果模块定义了 get_tools() 函数，则调用它获取 tools
                 if hasattr(module, "get_tools") and callable(module.get_tools):
                     module_tools = module.get_tools()
@@ -62,6 +62,7 @@ class SkillManager:
         返回所有动态加载的工具列表
         """
         return self.tools
+
 
 # 单例模式，供全局使用
 skill_manager = SkillManager()

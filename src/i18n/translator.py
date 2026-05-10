@@ -4,32 +4,36 @@ from typing import Any, Dict
 from functools import lru_cache
 from telegram.helpers import escape_markdown
 
+
 class SafeDict(dict):
     """
     A dictionary that safely falls back to the placeholder if a key is missing.
     Used for safe string formatting.
     """
+
     def __missing__(self, key: str) -> str:
-        return '{' + key + '}'
+        return "{" + key + "}"
+
 
 @lru_cache(maxsize=1)
 def load_locales() -> Dict[str, Dict[str, Any]]:
     """Load JSON locales into memory."""
     locales = {}
-    base_dir = os.path.join(os.path.dirname(__file__), '..', '..', 'shared', 'locales')
-    
-    for lang in ['zh', 'en']:
+    base_dir = os.path.join(os.path.dirname(__file__), "..", "..", "shared", "locales")
+
+    for lang in ["zh", "en"]:
         file_path = os.path.join(base_dir, f"{lang}.json")
         if os.path.exists(file_path):
-            with open(file_path, 'r', encoding='utf-8') as f:
+            with open(file_path, "r", encoding="utf-8") as f:
                 locales[lang] = json.load(f)
         else:
             locales[lang] = {}
-            
+
     return locales
 
+
 def _get_nested_value(d: dict, key_path: str) -> Any:
-    keys = key_path.split('.')
+    keys = key_path.split(".")
     current = d
     for key in keys:
         if isinstance(current, dict) and key in current:
@@ -38,10 +42,11 @@ def _get_nested_value(d: dict, key_path: str) -> Any:
             return None
     return current
 
-def get_text(key: str, lang: str = 'zh', escape_md: bool = False, **kwargs) -> str:
+
+def get_text(key: str, lang: str = "zh", escape_md: bool = False, **kwargs) -> str:
     """
     Get translated text by key and language, with safe formatting.
-    
+
     Args:
         key: The key in the JSON file (e.g., 'system.error_insufficient_credits')
         lang: The language code ('zh', 'en', etc.)
@@ -49,38 +54,41 @@ def get_text(key: str, lang: str = 'zh', escape_md: bool = False, **kwargs) -> s
         kwargs: The parameters to format the string
     """
     locales = load_locales()
-    
+
     # Fallback to zh if language not found
     if lang not in locales:
-        lang = 'zh'
-        
+        lang = "zh"
+
     text = _get_nested_value(locales.get(lang, {}), key)
-    
+
     # Fallback to zh translation if key is missing in target language
-    if text is None and lang != 'zh':
-        text = _get_nested_value(locales.get('zh', {}), key)
-        
+    if text is None and lang != "zh":
+        text = _get_nested_value(locales.get("zh", {}), key)
+
     # Fallback to key itself if absolutely not found
     if text is None:
         text = key
-        
+
     # Format the text safely
     if kwargs and isinstance(text, str):
         if escape_md:
             # Only escape the values injected, preserving JSON predefined structure
-            escaped_kwargs = {k: escape_markdown(str(v), version=1) for k, v in kwargs.items()}
+            escaped_kwargs = {
+                k: escape_markdown(str(v), version=1) for k, v in kwargs.items()
+            }
             kwargs = escaped_kwargs
-            
+
         try:
             return text.format_map(SafeDict(**kwargs))
         except Exception:
             return text
-            
+
     return str(text)
 
+
 class I18nTranslator:
-    def __init__(self, lang: str = 'zh'):
+    def __init__(self, lang: str = "zh"):
         self.lang = lang
-        
+
     def __call__(self, key: str, escape_md: bool = False, **kwargs) -> str:
         return get_text(key, lang=self.lang, escape_md=escape_md, **kwargs)

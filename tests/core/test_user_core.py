@@ -2,6 +2,7 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from src.core.user_core import get_or_create_user_by_telegram
 
+
 @pytest.mark.asyncio
 async def test_user_core_flush_mechanism():
     # Mock AsyncSessionLocal and its session
@@ -19,13 +20,16 @@ async def test_user_core_flush_mechanism():
     class MockAsyncSessionLocal:
         async def __aenter__(self):
             return mock_session
+
         async def __aexit__(self, exc_type, exc_val, exc_tb):
             pass
 
     with patch("src.core.user_core.AsyncSessionLocal", MockAsyncSessionLocal):
         # Using a valid username pattern "test_user"
-        user, is_new = await get_or_create_user_by_telegram(123456, username="test_user", full_name="Test User")
-        
+        user, is_new = await get_or_create_user_by_telegram(
+            123456, username="test_user", full_name="Test User"
+        )
+
         # Check if flush was called
         mock_session.flush.assert_called()
         assert is_new is True

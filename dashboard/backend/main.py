@@ -47,6 +47,7 @@ app.include_router(referrals.router)
 
 background_tasks = set()
 
+
 @app.on_event("startup")
 async def startup_event():
     try:
@@ -54,7 +55,7 @@ async def startup_event():
         logger.info("Database initialized successfully")
     except Exception as e:
         logger.error(f"Failed to initialize database: {e}")
-    
+
     # Start background worker listener and keep a strong reference
     task = asyncio.create_task(start_worker_listener())
     background_tasks.add(task)
@@ -69,6 +70,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
 @app.middleware("http")
 async def check_auth_header(request: Request, call_next):
     if request.url.path.startswith("/api/"):
@@ -78,22 +80,24 @@ async def check_auth_header(request: Request, call_next):
                 auth_header = request.headers.get("Authorization")
                 if not auth_header or not auth_header.startswith("Bearer "):
                     return fastapi.responses.JSONResponse(
-                        status_code=401,
-                        content={"detail": "Not authenticated"}
+                        status_code=401, content={"detail": "Not authenticated"}
                     )
                 token = auth_header.split(" ")[1]
                 await get_current_user(token)
             except Exception:
                 return fastapi.responses.JSONResponse(
                     status_code=401,
-                    content={"detail": "Could not validate credentials"}
+                    content={"detail": "Could not validate credentials"},
                 )
     return await call_next(request)
+
 
 @app.get("/")
 async def root():
     return {"message": "TeleBot Dashboard Backend is Running", "status": "ok"}
 
+
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(app, host="0.0.0.0", port=8043)

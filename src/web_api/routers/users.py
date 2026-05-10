@@ -9,8 +9,12 @@ from src.database.models import History, User
 from src.web_api.dependencies import get_current_user
 from src.web_api.schemas.auth_schema import InvitationRechargeStats, UserResponse
 from src.web_api.schemas.user_schema import PaginatedHistory, CheckinResponse
-from src.web_api.schemas.gallery_schema import PaginatedGalleryResponse, ApplyContextResponse, GalleryPostResponse
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Request
+from src.web_api.schemas.gallery_schema import (
+    PaginatedGalleryResponse,
+    ApplyContextResponse,
+    GalleryPostResponse,
+)
+from fastapi import HTTPException, BackgroundTasks, Request
 from pydantic import BaseModel
 import httpx
 import re
@@ -18,9 +22,11 @@ import re
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
+
 async def get_db():
     async with AsyncSessionLocal() as session:
         yield session
+
 
 @router.get("/me", response_model=UserResponse)
 async def get_user_profile(current_user: User = Depends(get_current_user)):
@@ -28,13 +34,13 @@ async def get_user_profile(current_user: User = Depends(get_current_user)):
     Get current logged in user's profile and credit balance.
     """
     from src.core.user_facade import get_user_dashboard_info
-    
+
     # We pass telegram_id and full_name to the facade.
     dto = await get_user_dashboard_info(
-        current_user.telegram_id, 
-        current_user.full_name or current_user.username or "道友"
+        current_user.telegram_id,
+        current_user.full_name or current_user.username or "道友",
     )
-    
+
     return UserResponse(
         id=current_user.id,
         telegram_id=current_user.telegram_id,
@@ -51,24 +57,26 @@ async def get_user_profile(current_user: User = Depends(get_current_user)):
         invitation_count=dto.invitations,
         invitation_recharge=InvitationRechargeStats(**dto.invitation_recharge),
         breakthrough_conditions=[cond.dict() for cond in dto.breakthrough_conditions],
-        is_unlocked=dto.is_unlocked
+        is_unlocked=dto.is_unlocked,
     )
+
 
 class PreferencesUpdate(BaseModel):
     language_code: str
+
 
 @router.patch("/preferences")
 async def update_user_preferences(
     prefs: PreferencesUpdate,
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
 ):
     """
     Update user preferences like language_code.
     """
     from src.database.models import User
     from sqlalchemy import update
-    
+
     stmt = (
         update(User)
         .where(User.id == current_user.id)
@@ -76,25 +84,28 @@ async def update_user_preferences(
     )
     await db.execute(stmt)
     await db.commit()
-    
+
     # Sync to Redis cache
     from src.services.redis_client import redis_client
+
     if redis_client and redis_client.redis:
-        await redis_client.redis.set(f"allbot:user_lang:{current_user.id}", prefs.language_code)
-        
+        await redis_client.redis.set(
+            f"allbot:user_lang:{current_user.id}", prefs.language_code
+        )
+
     return {"status": "success", "language_code": prefs.language_code}
+
 
 @router.get("/history", response_model=PaginatedHistory)
 async def get_user_history(
-    current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
+    current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
 ):
     """
     Get generation history for the current user, limited to the 8 most recent items
     to save VPS bandwidth, reduce CDN caching pressure, and protect privacy.
     """
     limit = 8
-    
+
     # First get the latest 8 items regardless of visibility to enforce the strict 8-item window limit
     subq = (
         select(History.id)
@@ -103,7 +114,7 @@ async def get_user_history(
         .limit(limit)
         .subquery()
     )
-    
+
     # Then filter out the invisible ones from those 8 items
     stmt = (
         select(History)
@@ -113,30 +124,28 @@ async def get_user_history(
     )
     result = await db.execute(stmt)
     items = result.scalars().all()
-    
+
     # Batch check gallery status for items to avoid N+1 queries
-    task_ids_to_check = [item.task_id for item in items if item.is_public and item.task_id]
-    
+    task_ids_to_check = [
+        item.task_id for item in items if item.is_public and item.task_id
+    ]
+
     if task_ids_to_check:
         from src.database.models import GalleryPost
+
         gp_stmt = select(GalleryPost.task_id).where(
-            GalleryPost.task_id.in_(task_ids_to_check), 
-            GalleryPost.is_active == True
+            GalleryPost.task_id.in_(task_ids_to_check), GalleryPost.is_active == True
         )
         gp_result = await db.execute(gp_stmt)
         active_task_ids = set(gp_result.scalars().all())
-        
+
         for item in items:
             if item.is_public and item.task_id:
                 if item.task_id not in active_task_ids:
                     item.is_public = False
-    
-    return PaginatedHistory(
-        items=list(items),
-        total=len(items),
-        page=1,
-        size=limit
-    )
+
+    return PaginatedHistory(items=list(items), total=len(items), page=1, size=limit)
+
 
 @router.post("/checkin", response_model=CheckinResponse)
 async def checkin_user(current_user: User = Depends(get_current_user)):
@@ -144,51 +153,65 @@ async def checkin_user(current_user: User = Depends(get_current_user)):
     Perform daily check-in for the current user.
     """
     from src.services.permission_service import permission_service
-    
-    success, current_credits, error_msg, total_days, reward = await permission_service.perform_checkin(
-        current_user.telegram_id, 
-        current_user.username or "", 
-        current_user.full_name or ""
+
+    (
+        success,
+        current_credits,
+        error_msg,
+        total_days,
+        reward,
+    ) = await permission_service.perform_checkin(
+        current_user.telegram_id,
+        current_user.username or "",
+        current_user.full_name or "",
     )
-    
+
     return CheckinResponse(
         success=success,
         current_credits=current_credits,
         error_msg=error_msg,
         total_days=total_days,
-        reward=reward
+        reward=reward,
     )
+
 
 @router.post("/history/{task_id}/favorite")
 async def favorite_history(
     task_id: str,
     background_tasks: BackgroundTasks,
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
 ):
-    stmt = select(History).where(History.task_id == task_id, History.user_id == current_user.id)
+    stmt = select(History).where(
+        History.task_id == task_id, History.user_id == current_user.id
+    )
     result = await db.execute(stmt)
     history = result.scalar_one_or_none()
-    
+
     if not history:
         raise HTTPException(status_code=404, detail="未找到原任务详情")
-    
+
     if not history.output_file:
         raise HTTPException(status_code=400, detail="该任务没有生成文件")
 
     if not history.is_favorited:
         history.is_favorited = True
         await db.commit()
-        
+
         # 触发 R2 上传
         from src.core.gallery_core import async_copy_to_r2_background
-        
+
         parts = history.output_file.split("/")
         if len(parts) > 1 and parts[0] in ["bot-data", "comfyui-temp"]:
             bucket_name = parts[0]
             object_name = "/".join(parts[1:])
-        elif "comfyui-temp" not in history.output_file and "bot-data" not in history.output_file:
-            bucket_name = "comfyui-temp" if not "/" in history.output_file else "bot-data"
+        elif (
+            "comfyui-temp" not in history.output_file
+            and "bot-data" not in history.output_file
+        ):
+            bucket_name = (
+                "comfyui-temp" if not "/" in history.output_file else "bot-data"
+            )
             object_name = history.output_file
         else:
             bucket_name = "bot-data"
@@ -196,51 +219,59 @@ async def favorite_history(
 
         r2_object_name = parts[-1]
 
-        background_tasks.add_task(async_copy_to_r2_background, bucket_name, object_name, r2_object_name)
-        
+        background_tasks.add_task(
+            async_copy_to_r2_background, bucket_name, object_name, r2_object_name
+        )
+
     return {"status": "success", "message": "收藏成功"}
+
 
 @router.delete("/history/{task_id}/favorite")
 async def unfavorite_history(
     task_id: str,
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
 ):
-    stmt = select(History).where(History.task_id == task_id, History.user_id == current_user.id)
+    stmt = select(History).where(
+        History.task_id == task_id, History.user_id == current_user.id
+    )
     result = await db.execute(stmt)
     history = result.scalar_one_or_none()
-    
+
     if not history:
         raise HTTPException(status_code=404, detail="未找到原任务详情")
 
     if history.is_favorited:
         history.is_favorited = False
         await db.commit()
-        
+
     return {"status": "success", "message": "已取消收藏"}
+
 
 @router.delete("/history/{history_id}")
 async def delete_history(
     history_id: int,
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
 ):
     from sqlalchemy import update
     from src.database.models import GalleryPost
-    
-    stmt = select(History).where(History.id == history_id, History.user_id == current_user.id)
+
+    stmt = select(History).where(
+        History.id == history_id, History.user_id == current_user.id
+    )
     result = await db.execute(stmt)
     history = result.scalar_one_or_none()
-    
+
     if not history:
         raise HTTPException(status_code=404, detail="未找到对应的记录")
-        
+
     if not history.is_visible:
         return {"status": "success", "message": "记录已删除"}
-        
+
     # Soft delete in history
     history.is_visible = False
-    
+
     # If it was public and has a task_id, also hide the gallery post
     if history.is_public and history.task_id:
         upd_stmt = (
@@ -248,135 +279,144 @@ async def delete_history(
             .where(
                 GalleryPost.task_id == history.task_id,
                 GalleryPost.user_id == current_user.id,
-                GalleryPost.is_active == True
+                GalleryPost.is_active == True,
             )
             .values(is_active=False)
         )
         upd_result = await db.execute(upd_stmt)
-        
+
         if upd_result.rowcount > 0:
-            current_user.total_contributions = max(current_user.total_contributions - 1, 0)
-            
+            current_user.total_contributions = max(
+                current_user.total_contributions - 1, 0
+            )
+
     await db.commit()
     return {"status": "success", "message": "记录已删除"}
+
 
 @router.get("/my-favorites", response_model=PaginatedGalleryResponse)
 async def get_my_favorites(
     page: int = 1,
     size: int = 20,
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
 ):
     from sqlalchemy import desc
     from src.web_api.routers.gallery import get_media_url
-    
+
     # Query current user's favorite histories
-    stmt = select(History).where(
-        History.user_id == current_user.id,
-        History.is_favorited == True,
-        History.is_visible.is_not(False)
-    ).order_by(desc(History.created_at))
-    
+    stmt = (
+        select(History)
+        .where(
+            History.user_id == current_user.id,
+            History.is_favorited == True,
+            History.is_visible.is_not(False),
+        )
+        .order_by(desc(History.created_at))
+    )
+
     # Get total
     from sqlalchemy import func
+
     total_query = select(func.count()).select_from(stmt.subquery())
     total = (await db.execute(total_query)).scalar()
-    
+
     # Paginate
     offset = (page - 1) * size
     stmt = stmt.offset(offset).limit(size)
     result = await db.execute(stmt)
     histories = result.scalars().all()
-    
+
     response_items = []
     for history in histories:
         media_url = get_media_url(history.output_file)
-        
+
         # media_type mapping
-        media_type = 'image'
-        if history.type and 'video' in history.type.lower():
-            media_type = 'video'
-            
+        media_type = "image"
+        if history.type and "video" in history.type.lower():
+            media_type = "video"
+
         # extract tags from prompt
         tags = []
         if history.prompt:
             match = re.search(r"\[模型:\s*(.*?)\]", history.prompt)
             if match:
                 tags.append(f"#{match.group(1).strip()}")
-                
-        response_items.append(GalleryPostResponse(
-            id=history.id,
-            task_id=history.task_id,
-            media_type=media_type,
-            width=None,
-            height=None,
-            duration=None,
-            tags=tags,
-            likes_count=0,
-            dislikes_count=0,
-            applied_count=0,
-            thumbnail_url=media_url,
-            media_url=media_url,
-            created_at=history.created_at,
-            is_active=True,
-            prompt=history.prompt,
-            task_type=history.type,
-            has_liked=False,
-            has_disliked=False
-        ))
-        
+
+        response_items.append(
+            GalleryPostResponse(
+                id=history.id,
+                task_id=history.task_id,
+                media_type=media_type,
+                width=None,
+                height=None,
+                duration=None,
+                tags=tags,
+                likes_count=0,
+                dislikes_count=0,
+                applied_count=0,
+                thumbnail_url=media_url,
+                media_url=media_url,
+                created_at=history.created_at,
+                is_active=True,
+                prompt=history.prompt,
+                task_type=history.type,
+                has_liked=False,
+                has_disliked=False,
+            )
+        )
+
     pages = (total + size - 1) // size
     return PaginatedGalleryResponse(
-        items=response_items,
-        total=total,
-        page=page,
-        size=size,
-        pages=pages
+        items=response_items, total=total, page=page, size=size, pages=pages
     )
+
 
 @router.get("/history/{task_id}/apply-context", response_model=ApplyContextResponse)
 async def get_favorite_apply_context(
     task_id: str,
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
 ):
     from src.web_api.routers.gallery import get_media_url
     from src.config_mapping import ALL_LORA_MODELS
-    
-    stmt = select(History).where(History.task_id == task_id, History.user_id == current_user.id)
+
+    stmt = select(History).where(
+        History.task_id == task_id, History.user_id == current_user.id
+    )
     result = await db.execute(stmt)
     history = result.scalar_one_or_none()
-    
+
     if not history:
         raise HTTPException(status_code=404, detail="未找到原任务详情")
-        
+
     input_file_url = None
     if history.input_file:
         input_file_url = get_media_url(history.input_file)
-        
+
     prompt = history.prompt or ""
     lora_name = None
     match = re.search(r"\[模型:\s*(.*?)\]\s*(.*)", prompt, re.DOTALL)
     if match:
         lora_tag = match.group(1).strip()
         prompt = match.group(2).strip()
-        
+
         reverse_lora_models = {v: k for k, v in ALL_LORA_MODELS.items()}
         reverse_lora_models["逼真"] = "qwen/YARN_1.0.safetensors"
         reverse_lora_models["菊花+内凹穴"] = "qwen/adjust_pussy_anus.safetensors"
         reverse_lora_models["真实质感"] = "qwen/realistic_texture.safetensors"
         reverse_lora_models["平胸/无毛穴"] = "qwen/flat_chest_hairless.safetensors"
         reverse_lora_models["扶他(阴茎)"] = "qwen/penis.safetensors"
-        
+
         if lora_tag in reverse_lora_models:
             lora_name = reverse_lora_models[lora_tag]
         else:
             lora_name = lora_tag
-            
-    media_type = 'image'
-    if history.type and 'video' in history.type.lower():
-        media_type = 'video'
-        
+
+    media_type = "image"
+    if history.type and "video" in history.type.lower():
+        media_type = "video"
+
     return ApplyContextResponse(
         post_id=history.id,  # mock post_id
         task_id=history.task_id,
@@ -388,14 +428,12 @@ async def get_favorite_apply_context(
         width=None,
         height=None,
         duration=None,
-        task_type=history.type
+        task_type=history.type,
     )
 
+
 @router.post("/history/{task_id}/send-to-bot")
-async def send_history_to_bot(
-    task_id: str,
-    request: Request
-):
+async def send_history_to_bot(task_id: str, request: Request):
     from src.services.storage import storage
     from config import TELEGRAM_API_BASE_URL, BOT_TOKEN
     from src.database.core import AsyncSessionLocal
@@ -406,7 +444,7 @@ async def send_history_to_bot(
         auth_header = request.headers.get("Authorization")
         if auth_header and auth_header.startswith("Bearer "):
             token = auth_header.split(" ")[1]
-            
+
     if not token:
         raise HTTPException(status_code=401, detail="Not authenticated")
 
@@ -414,21 +452,28 @@ async def send_history_to_bot(
         current_user = await get_current_user(db, token)
         user_id = current_user.id
         telegram_id = current_user.telegram_id
-        
+
         # 1. 检查多渠道登录用户的 TG 绑定状态
         if not telegram_id:
-            raise HTTPException(status_code=400, detail="您尚未绑定 Telegram 账号，无法发送至私聊")
+            raise HTTPException(
+                status_code=400, detail="您尚未绑定 Telegram 账号，无法发送至私聊"
+            )
 
         # 2. Redis 10秒防刷锁（严格对齐现有 redis_client 模式）
         from src.services.redis_client import redis_client
+
         lock_key = f"rate_limit:send_to_bot:{user_id}"
         if redis_client and redis_client.redis:
             is_locked = await redis_client.redis.set(lock_key, "1", nx=True, ex=10)
             if not is_locked:
-                raise HTTPException(status_code=429, detail="操作过于频繁，请10秒后再试")
+                raise HTTPException(
+                    status_code=429, detail="操作过于频繁，请10秒后再试"
+                )
 
         # 3. 校验历史记录与文件存在性
-        stmt = select(History).where(History.task_id == task_id, History.user_id == user_id)
+        stmt = select(History).where(
+            History.task_id == task_id, History.user_id == user_id
+        )
         result = await db.execute(stmt)
         history = result.scalar_one_or_none()
 
@@ -446,7 +491,10 @@ async def send_history_to_bot(
     if len(parts) > 1 and parts[0] in ["bot-data", "comfyui-temp"]:
         bucket_name = parts[0]
         object_name = "/".join(parts[1:])
-    elif "comfyui-temp" not in history_output_file and "bot-data" not in history_output_file:
+    elif (
+        "comfyui-temp" not in history_output_file
+        and "bot-data" not in history_output_file
+    ):
         bucket_name = "comfyui-temp" if not "/" in history_output_file else "bot-data"
         object_name = history_output_file
     else:
@@ -454,24 +502,28 @@ async def send_history_to_bot(
         object_name = history_output_file
 
     # 5. 生成预签名 URL 供 Telegram 抓取
-    file_url = storage.get_presigned_url(object_name, expires_hours=1, bucket=bucket_name)
+    file_url = storage.get_presigned_url(
+        object_name, expires_hours=1, bucket=bucket_name
+    )
     if not file_url:
         raise HTTPException(status_code=500, detail="无法生成文件访问链接")
 
     # 6. 构造 Local API 请求并发送
-    is_video = history_type and 'video' in history_type.lower()
+    is_video = history_type and "video" in history_type.lower()
     method = "sendVideo" if is_video else "sendPhoto"
     url = f"{TELEGRAM_API_BASE_URL}/bot{BOT_TOKEN}/{method}"
-    
-    payload = {
-        "chat_id": telegram_id
-    }
-    
+
+    payload = {"chat_id": telegram_id}
+
     # 截取 Prompt 前 100 字符作为 caption，避免太长导致发送失败，同时避免传入 null
     if history_prompt:
-        caption = history_prompt[:100] + "..." if len(history_prompt) > 100 else history_prompt
+        caption = (
+            history_prompt[:100] + "..."
+            if len(history_prompt) > 100
+            else history_prompt
+        )
         payload["caption"] = caption
-        
+
     if is_video:
         payload["video"] = file_url
     else:
@@ -485,7 +537,10 @@ async def send_history_to_bot(
         except httpx.HTTPStatusError as e:
             if e.response.status_code in [400, 403]:
                 # 用户拉黑机器人或者 Telegram 找不到该 Chat
-                raise HTTPException(status_code=403, detail="发送失败，请确保您在 Telegram 中已允许机器人发送消息")
+                raise HTTPException(
+                    status_code=403,
+                    detail="发送失败，请确保您在 Telegram 中已允许机器人发送消息",
+                )
             logger.error(f"Telegram API Error: {e.response.text}")
             raise HTTPException(status_code=500, detail="发送失败，Telegram 服务器异常")
         except Exception as e:

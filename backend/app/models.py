@@ -11,6 +11,7 @@ class TaskStatus(str, Enum):
     ERROR = "error"
     CANCELLED = "cancelled"
 
+
 class TaskType(str, Enum):
     IMG2IMG = "img2img"
     IMG2IMG_LORA = "img2img_lora"
@@ -23,12 +24,15 @@ class TaskType(str, Enum):
     I2I_DRAW = "i2i_draw"
     LTX_VIDEO = "ltx_video"
 
+
 class TaskResponse(BaseModel):
     task_id: str
+
 
 class T2ITaskResponse(BaseModel):
     task_id: str
     image_url: Optional[str] = None
+
 
 class TaskStatusResponse(BaseModel):
     status: TaskStatus
@@ -36,9 +40,10 @@ class TaskStatusResponse(BaseModel):
     queue_remaining: Optional[int] = None
     progress: Optional[float] = None
     error: Optional[str] = None
-    result_path: Optional[str] = None # Added for convenience
+    result_path: Optional[str] = None  # Added for convenience
     image_url: Optional[str] = None
     task_type: Optional[str] = None
+
 
 class WorkerInfo(BaseModel):
     agent_id: str
@@ -50,15 +55,18 @@ class WorkerInfo(BaseModel):
     current_task_progress: Optional[float] = None
     current_task_created_at: Optional[float] = None
 
+
 class SystemWorkersResponse(BaseModel):
     workers: List[WorkerInfo]
     count: int
+
 
 class SystemStatusResponse(BaseModel):
     queue_size: int
     queue_by_type: dict[str, int] = {}
     active_workers: int
     comfy_online: bool
+
 
 class Img2ImgRequest(BaseModel):
     task_id: str
@@ -71,6 +79,7 @@ class Img2ImgRequest(BaseModel):
     guidance_scale: Optional[float] = 1.0
     seed: Optional[int] = None
     priority: int = 0
+
 
 class Img2ImgLoraRequest(BaseModel):
     task_id: str
@@ -86,11 +95,13 @@ class Img2ImgLoraRequest(BaseModel):
     lora_name: Optional[str] = ""
     lora_strength: Optional[float] = 1.0
 
+
 class FaceSwapRequest(BaseModel):
     task_id: str
     face_image: str
     body_image: str
     priority: int = 0
+
 
 class VideoInsertRequest(BaseModel):
     task_id: str
@@ -101,6 +112,7 @@ class VideoInsertRequest(BaseModel):
     length: int = 81
     priority: int = 0
 
+
 class VideoEditRequest(BaseModel):
     task_id: str
     image: str
@@ -109,6 +121,7 @@ class VideoEditRequest(BaseModel):
     height: int = 512
     length: int = 81
     priority: int = 0
+
 
 class VideoLoraRequest(BaseModel):
     task_id: str
@@ -120,6 +133,7 @@ class VideoLoraRequest(BaseModel):
     length: int = 81
     priority: int = 0
 
+
 class FaceVideoRequest(BaseModel):
     task_id: str
     face_image: str
@@ -128,6 +142,7 @@ class FaceVideoRequest(BaseModel):
     duration: int = 121
     priority: int = 0
 
+
 class I2IProRequest(BaseModel):
     task_id: str
     image: str
@@ -135,12 +150,14 @@ class I2IProRequest(BaseModel):
     seed: Optional[int] = None
     priority: int = 0
 
+
 class I2IDrawRequest(BaseModel):
     task_id: str
     image: str
     prompt: str
     seed: Optional[int] = None
     priority: int = 0
+
 
 class LtxVideoRequest(BaseModel):
     task_id: str

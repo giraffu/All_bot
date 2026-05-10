@@ -15,6 +15,7 @@ from .database.models import (
 from .services.log_service import LogService
 from src.logger import logger
 
+
 class QuotaManager:
     def __init__(self):
         pass
@@ -23,16 +24,17 @@ class QuotaManager:
         """Get number of generation tasks performed by user today"""
         async with AsyncSessionLocal() as session:
             from datetime import timedelta, timezone
+
             beijing_tz = timezone(timedelta(hours=8))
             today = datetime.now(beijing_tz).date()
             # Convert date to datetime for comparison if needed, but SQLAlchemy handles date comparison usually.
             # However, UserLog.created_at is DateTime. So we should compare >= today midnight.
             today_start = datetime.combine(today, datetime.min.time())
-            
+
             stmt = select(func.count(UserLog.id)).where(
                 UserLog.user_id == user_id,
                 UserLog.operation_type.in_(GENERATION_TASK_TYPES),
-                UserLog.created_at >= today_start
+                UserLog.created_at >= today_start,
             )
             result = await session.execute(stmt)
             return result.scalar() or 0
@@ -40,12 +42,17 @@ class QuotaManager:
     async def is_user_exists(self, telegram_id: int) -> bool:
         """Check if user exists without creating"""
         from sqlalchemy import or_
+
         async with AsyncSessionLocal() as session:
-            stmt = select(User).where(or_(User.telegram_id == telegram_id, User.id == telegram_id))
+            stmt = select(User).where(
+                or_(User.telegram_id == telegram_id, User.id == telegram_id)
+            )
             result = await session.execute(stmt)
             return result.scalar_one_or_none() is not None
 
-    async def ensure_user(self, internal_user_id: int, username: str = None, full_name: str = None) -> User:
+    async def ensure_user(
+        self, internal_user_id: int, username: str = None, full_name: str = None
+    ) -> User:
         """Ensure user exists by internal ID"""
         async with AsyncSessionLocal() as session:
             stmt = select(User).where(User.id == internal_user_id)
@@ -63,7 +70,9 @@ class QuotaManager:
                     await session.commit()
             return user
 
-    async def get_credits(self, user_id: int, username: str = None, full_name: str = None) -> int:
+    async def get_credits(
+        self, user_id: int, username: str = None, full_name: str = None
+    ) -> int:
         """Get user credits. Initialize with 6 if new user."""
         user = await self.ensure_user(user_id, username, full_name)
         return user.credits
@@ -73,7 +82,13 @@ class QuotaManager:
         current = await self.get_credits(user_id)
         return current >= cost
 
-    async def deduct_credits(self, user_id: int, cost: int, username: str = None, task_type: str = "generation"):
+    async def deduct_credits(
+        self,
+        user_id: int,
+        cost: int,
+        username: str = None,
+        task_type: str = "generation",
+    ):
         """Deduct credits from user"""
         async with AsyncSessionLocal() as session:
             # We fetch again to ensure atomic update in transaction (though logic here is simplified)
@@ -82,17 +97,17 @@ class QuotaManager:
             stmt = select(User).where(User.id == user_id)
             result = await session.execute(stmt)
             user = result.scalar_one_or_none()
-            
+
             if user:
                 old_balance = user.credits
-                
+
                 if cost < 0:
                     # If cost is negative, it's a refund or addition. Refund to permanent credits to be safe.
-                    user.credits = user.credits - cost # -cost is positive
+                    user.credits = user.credits - cost  # -cost is positive
                 else:
                     # Deduct from credits
                     user.credits = max(0, user.credits - cost)
-                
+
                 new_balance = user.credits
                 await session.commit()
 
@@ -104,10 +119,16 @@ class QuotaManager:
                         operation_type=task_type,
                         credit_change=-cost,
                         current_balance=new_balance,
-                        extra_info={"old_balance": old_balance}
+                        extra_info={"old_balance": old_balance},
                     )
 
-    async def checkin(self, user_id: int, username: str = None, full_name: str = None, reward: int = 10) -> bool:
+    async def checkin(
+        self,
+        user_id: int,
+        username: str = None,
+        full_name: str = None,
+        reward: int = 10,
+    ) -> bool:
         """
         Perform daily check-in.
         Returns True if successful, False if already checked in today.
@@ -117,9 +138,11 @@ class QuotaManager:
             stmt = select(User).where(User.id == user_id).with_for_update()
             result = await session.execute(stmt)
             user = result.scalar_one_or_none()
-            
+
             if not user:
-                user = User(id=user_id, username=username, full_name=full_name, credits=6)
+                user = User(
+                    id=user_id, username=username, full_name=full_name, credits=6
+                )
                 session.add(user)
             else:
                 # Update info
@@ -127,14 +150,15 @@ class QuotaManager:
                     user.username = username
                 if full_name:
                     user.full_name = full_name
-            
+
             from datetime import timedelta, timezone
+
             beijing_tz = timezone(timedelta(hours=8))
             today = datetime.now(beijing_tz).date()
             if user.last_checkin == today:
-                await session.commit() # Save potential info updates
+                await session.commit()  # Save potential info updates
                 return False
-            
+
             user.last_checkin = today
             user.credits += reward
             user.checkin_count = (user.checkin_count or 0) + 1
@@ -146,18 +170,16 @@ class QuotaManager:
 
             new_balance = user.credits
             await session.commit()
-            
+
             await LogService.log_action(
                 user_id=user_id,
                 username=username or user.username,
                 operation_type="checkin",
                 credit_change=reward,
                 current_balance=new_balance,
-                extra_info={"checkin_date": today.isoformat(), "reward": reward}
+                extra_info={"checkin_date": today.isoformat(), "reward": reward},
             )
             return True
-
-
 
     async def get_referral_count(self, user_id: int) -> int:
         """Get number of users invited by user_id"""
@@ -168,7 +190,13 @@ class QuotaManager:
             result = await session.execute(stmt)
             return result.scalar() or 0
 
-    async def process_referral(self, inviter_id: int, new_user_id: int, new_username: str = None, _new_full_name: str = None) -> bool:
+    async def process_referral(
+        self,
+        inviter_id: int,
+        new_user_id: int,
+        new_username: str = None,
+        _new_full_name: str = None,
+    ) -> bool:
         """
         Process a new referral.
         Returns True if successful (valid new user), False otherwise.
@@ -181,42 +209,48 @@ class QuotaManager:
             stmt = select(Referral).where(Referral.invitee_id == new_user_id)
             result = await session.execute(stmt)
             if result.scalar_one_or_none():
-                return False # Already invited
-            
+                return False  # Already invited
+
             # 2. Update Invitee (already created by user_core)
             stmt = select(User).where(User.id == new_user_id)
             result = await session.execute(stmt)
             new_user = result.scalar_one_or_none()
             if not new_user:
                 return False
-                
+
             # If the user already has history or generated images, they are not really "new"
             # But we can simplify by just checking if they have an inviter
             if new_user.invited_by is not None:
                 return False
-                
+
             new_user.invited_by = inviter_id
-            
+
             # 3. Create Referral
             stmt = select(User).where(User.id == inviter_id).with_for_update()
             result = await session.execute(stmt)
             inviter = result.scalar_one_or_none()
             if not inviter:
                 return False
-            
-            referral = Referral(inviter_id=inviter_id, invitee_id=new_user_id, channel_reward_claimed=False)
+
+            referral = Referral(
+                inviter_id=inviter_id,
+                invitee_id=new_user_id,
+                channel_reward_claimed=False,
+            )
             session.add(referral)
-            
+
             # 4. Reward Inviter
             inviter.credits += 5
             inviter.referral_count = (inviter.referral_count or 0) + 1
-            
+
             try:
                 await session.commit()
                 logger.info(f"✅ Referral success: {inviter_id} invited {new_user_id}")
             except IntegrityError:
                 await session.rollback()
-                logger.warning(f"⚠️ Referral race condition: user {new_user_id} already invited")
+                logger.warning(
+                    f"⚠️ Referral race condition: user {new_user_id} already invited"
+                )
                 return False
 
             # Log for inviter
@@ -226,9 +260,9 @@ class QuotaManager:
                 operation_type="referral_reward_initial",
                 credit_change=5,
                 current_balance=inviter.credits,
-                extra_info={"invitee_id": new_user_id}
+                extra_info={"invitee_id": new_user_id},
             )
-            
+
             # Log for new user (welcome bonus)
             await LogService.log_action(
                 user_id=new_user_id,
@@ -236,7 +270,7 @@ class QuotaManager:
                 operation_type="welcome_bonus",
                 credit_change=6,
                 current_balance=6,
-                extra_info={"inviter_id": inviter_id}
+                extra_info={"inviter_id": inviter_id},
             )
             return True
 
@@ -260,23 +294,25 @@ class QuotaManager:
             stmt = select(Referral).where(Referral.invitee_id == user_id)
             result = await session.execute(stmt)
             referral = result.scalar_one_or_none()
-            
+
             if not referral:
                 return None
-                
+
             if referral.channel_reward_claimed:
                 return None
-                
+
             # Award to inviter
             inviter_stmt = select(User).where(User.id == referral.inviter_id)
             inviter_res = await session.execute(inviter_stmt)
             inviter = inviter_res.scalar_one_or_none()
-            
+
             if inviter:
                 inviter.credits += 10
                 referral.channel_reward_claimed = True
                 await session.commit()
-                logger.info(f"✅ Channel reward success: {referral.inviter_id} for {user_id}")
+                logger.info(
+                    f"✅ Channel reward success: {referral.inviter_id} for {user_id}"
+                )
 
                 await LogService.log_action(
                     user_id=referral.inviter_id,
@@ -284,26 +320,34 @@ class QuotaManager:
                     operation_type="referral_reward_channel",
                     credit_change=10,
                     current_balance=inviter.credits,
-                    extra_info={"invitee_id": user_id}
+                    extra_info={"invitee_id": user_id},
                 )
                 return referral.inviter_id
-            
+
             return None
 
     async def update_channel_membership(self, user_id: int, is_member: bool):
         """Update user's channel membership status in DB"""
         async with AsyncSessionLocal() as session:
-            stmt = update(User).where(User.id == user_id).values(is_channel_member=is_member)
+            stmt = (
+                update(User)
+                .where(User.id == user_id)
+                .values(is_channel_member=is_member)
+            )
             await session.execute(stmt)
             await session.commit()
             logger.info(f"🔄 Updated channel membership for {user_id}: {is_member}")
 
-    async def add_template_contribution(self, user_id: int, file_path: str, file_type: str = 'photo'):
+    async def add_template_contribution(
+        self, user_id: int, file_path: str, file_type: str = "photo"
+    ):
         """Record a template contribution to DB"""
         async with AsyncSessionLocal() as session:
-            contribution = TemplateContribution(user_id=user_id, file_path=file_path, file_type=file_type)
+            contribution = TemplateContribution(
+                user_id=user_id, file_path=file_path, file_type=file_type
+            )
             session.add(contribution)
-            
+
             # Increment user's total contributions count
             user_stmt = select(User).where(User.id == user_id)
             user_result = await session.execute(user_stmt)
@@ -311,9 +355,9 @@ class QuotaManager:
             if user:
                 user.total_contributions = (user.total_contributions or 0) + 1
                 user.last_activity = datetime.now()
-                
+
             await session.commit()
-            
+
             if user:
                 await LogService.log_action(
                     user_id=user_id,
@@ -321,7 +365,7 @@ class QuotaManager:
                     operation_type="template_submission",
                     credit_change=0,
                     current_balance=user.credits,
-                    extra_info={"file_path": file_path, "file_type": file_type}
+                    extra_info={"file_path": file_path, "file_type": file_type},
                 )
 
     async def get_user_stats(self, user_id: int) -> dict:
@@ -330,7 +374,7 @@ class QuotaManager:
             stmt = select(User).where(User.id == user_id)
             result = await session.execute(stmt)
             user = result.scalar_one_or_none()
-            
+
             if not user:
                 return {
                     "invitation_count": 0,
@@ -338,7 +382,7 @@ class QuotaManager:
                     "generation_count": 0,
                     "is_channel_member": False,
                     "total_contributions": 0,
-                    "approved_contributions": 0
+                    "approved_contributions": 0,
                 }
 
             return {
@@ -348,7 +392,7 @@ class QuotaManager:
                 "is_channel_member": user.is_channel_member,
                 "total_contributions": user.total_contributions or 0,
                 "approved_contributions": user.approved_contributions or 0,
-                "identity_expire_at": user.identity_expire_at
+                "identity_expire_at": user.identity_expire_at,
             }
 
     async def update_user_group(self, user_id: int, group_name: str):

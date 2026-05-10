@@ -5,7 +5,6 @@ from typing import Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from sqlalchemy import desc, select, update
-from sqlalchemy.exc import IntegrityError
 
 from src.config_mapping import (
     ALL_LORA_MODELS,
@@ -35,7 +34,15 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 # Allowed task types for web gallery submission
-ALLOWED_WEB_SUBMIT_TYPES = {MODE_I2I_PRO, MODE_I2I_DRAW, MODE_EDIT, MODE_CUSTOM_VIDEO, MODE_VIDEO_LORA, MODE_LTX_VIDEO, "img2img_lora"}
+ALLOWED_WEB_SUBMIT_TYPES = {
+    MODE_I2I_PRO,
+    MODE_I2I_DRAW,
+    MODE_EDIT,
+    MODE_CUSTOM_VIDEO,
+    MODE_VIDEO_LORA,
+    MODE_LTX_VIDEO,
+    "img2img_lora",
+}
 
 from config import R2_PUBLIC_DOMAIN
 
@@ -48,7 +55,7 @@ def get_media_url(output_file: str) -> str:
     """
     if not output_file:
         return ""
-        
+
     # If R2 is configured, return the CDN URL directly
     if R2_PUBLIC_DOMAIN:
         # Extract just the filename from paths like 'bot-data/users/xxx.mp4' or 'comfyui-temp/yyy.mp4'
@@ -60,26 +67,46 @@ def get_media_url(output_file: str) -> str:
     # logic to prepend the correct MinIO endpoint.
     return output_file
 
+
 def generate_thumbnail_url(output_file: str, media_type: str) -> str:
     # 假设使用 imgproxy 并且可以通过代理来访问缩略图
     # 此时直接返回原文件路径即可，前端组装 URL 时会加上 imgproxy 规则
     return get_media_url(output_file)
 
+
 @router.get("/config")
 async def get_gallery_config():
     return {
         "allowed_types": [
-            {"id": MODE_I2I_PRO, "name": MODE_NAME_MAP.get(MODE_I2I_PRO, "task.mode_i2i_pro")},
-            {"id": MODE_I2I_DRAW, "name": MODE_NAME_MAP.get(MODE_I2I_DRAW, "task.mode_i2i_draw")},
+            {
+                "id": MODE_I2I_PRO,
+                "name": MODE_NAME_MAP.get(MODE_I2I_PRO, "task.mode_i2i_pro"),
+            },
+            {
+                "id": MODE_I2I_DRAW,
+                "name": MODE_NAME_MAP.get(MODE_I2I_DRAW, "task.mode_i2i_draw"),
+            },
             {"id": MODE_EDIT, "name": MODE_NAME_MAP.get(MODE_EDIT, "task.mode_edit")},
             {"id": "img2img_lora", "name": "task.mode_img2img_lora"},
-            {"id": MODE_CUSTOM_VIDEO, "name": MODE_NAME_MAP.get(MODE_CUSTOM_VIDEO, "task.mode_custom_video")},
-            {"id": MODE_VIDEO_LORA, "name": MODE_NAME_MAP.get(MODE_VIDEO_LORA, "task.mode_video_lora")},
-            {"id": MODE_LTX_VIDEO, "name": MODE_NAME_MAP.get(MODE_LTX_VIDEO, "task.mode_ltx_video")}
+            {
+                "id": MODE_CUSTOM_VIDEO,
+                "name": MODE_NAME_MAP.get(MODE_CUSTOM_VIDEO, "task.mode_custom_video"),
+            },
+            {
+                "id": MODE_VIDEO_LORA,
+                "name": MODE_NAME_MAP.get(MODE_VIDEO_LORA, "task.mode_video_lora"),
+            },
+            {
+                "id": MODE_LTX_VIDEO,
+                "name": MODE_NAME_MAP.get(MODE_LTX_VIDEO, "task.mode_ltx_video"),
+            },
         ],
         "lora_models": [{"id": k, "name": v} for k, v in VIDEO_LORA_MODELS.items()],
-        "img2img_lora_models": [{"id": k, "name": v} for k, v in IMAGE_LORA_MODELS.items() if k]
+        "img2img_lora_models": [
+            {"id": k, "name": v} for k, v in IMAGE_LORA_MODELS.items() if k
+        ],
     }
+
 
 async def _build_post_responses(session, posts, current_user: Optional[User]):
     if not posts:
@@ -91,12 +118,18 @@ async def _build_post_responses(session, posts, current_user: Optional[User]):
     user_likes = set()
     user_dislikes = set()
     if current_user and post_ids:
-        interactions = (await session.execute(
-            select(UserInteraction)
-            .where(UserInteraction.user_id == current_user.id)
-            .where(UserInteraction.post_id.in_(post_ids))
-            .where(UserInteraction.action_type.in_(["like", "dislike"]))
-        )).scalars().all()
+        interactions = (
+            (
+                await session.execute(
+                    select(UserInteraction)
+                    .where(UserInteraction.user_id == current_user.id)
+                    .where(UserInteraction.post_id.in_(post_ids))
+                    .where(UserInteraction.action_type.in_(["like", "dislike"]))
+                )
+            )
+            .scalars()
+            .all()
+        )
         for inter in interactions:
             if inter.action_type == "like":
                 user_likes.add(inter.post_id)
@@ -105,18 +138,27 @@ async def _build_post_responses(session, posts, current_user: Optional[User]):
 
     history_map = {}
     if task_ids:
-        histories = (await session.execute(
-            select(History).where(History.task_id.in_(task_ids))
-        )).scalars().all()
+        histories = (
+            (
+                await session.execute(
+                    select(History).where(History.task_id.in_(task_ids))
+                )
+            )
+            .scalars()
+            .all()
+        )
         history_map = {h.task_id: h for h in histories}
 
     user_ids = list(set([p.user_id for p in posts if p.user_id]))
     user_map = {}
     if user_ids:
         from src.database.models import User
-        users = (await session.execute(
-            select(User).where(User.id.in_(user_ids))
-        )).scalars().all()
+
+        users = (
+            (await session.execute(select(User).where(User.id.in_(user_ids))))
+            .scalars()
+            .all()
+        )
         # use full_name, fallback to username or string ID
         for u in users:
             name = u.full_name if u.full_name else (u.username or f"User {u.id}")
@@ -138,28 +180,31 @@ async def _build_post_responses(session, posts, current_user: Optional[User]):
         media_url = get_media_url(output_file)
         thumbnail_url = media_url
 
-        response_items.append(GalleryPostResponse(
-            id=post.id,
-            task_id=post.task_id,
-            media_type=post.media_type,
-            width=post.width,
-            height=post.height,
-            duration=post.duration,
-            tags=translated_tags,
-            likes_count=post.likes_count,
-            dislikes_count=post.dislikes_count,
-            applied_count=post.applied_count,
-            thumbnail_url=thumbnail_url,
-            media_url=media_url,
-            created_at=post.created_at,
-            is_active=post.is_active,
-            prompt=prompt,
-            task_type=task_type_from_history,
-            has_liked=post.id in user_likes,
-            has_disliked=post.id in user_dislikes,
-            author_name=user_map.get(post.user_id) if post.user_id else "匿名修士"
-        ))
+        response_items.append(
+            GalleryPostResponse(
+                id=post.id,
+                task_id=post.task_id,
+                media_type=post.media_type,
+                width=post.width,
+                height=post.height,
+                duration=post.duration,
+                tags=translated_tags,
+                likes_count=post.likes_count,
+                dislikes_count=post.dislikes_count,
+                applied_count=post.applied_count,
+                thumbnail_url=thumbnail_url,
+                media_url=media_url,
+                created_at=post.created_at,
+                is_active=post.is_active,
+                prompt=prompt,
+                task_type=task_type_from_history,
+                has_liked=post.id in user_likes,
+                has_disliked=post.id in user_dislikes,
+                author_name=user_map.get(post.user_id) if post.user_id else "匿名修士",
+            )
+        )
     return response_items
+
 
 @router.get("/posts", response_model=PaginatedGalleryResponse)
 async def get_gallery_posts(
@@ -170,7 +215,7 @@ async def get_gallery_posts(
     lora_model: Optional[str] = None,
     sort_by: str = Query("latest", pattern="^(latest|likes|applied)$"),
     time_range: str = Query("all", pattern="^(today|week|month|all)$"),
-    current_user: Optional[User] = Depends(get_current_user)
+    current_user: Optional[User] = Depends(get_current_user),
 ):
     posts, total = await get_gallery_feed(
         page=page,
@@ -180,69 +225,63 @@ async def get_gallery_posts(
         lora_model=lora_model,
         sort_by=sort_by,
         time_range=time_range,
-        user_id=current_user.id if current_user else None
+        user_id=current_user.id if current_user else None,
     )
-    
+
     async with AsyncSessionLocal() as session:
         response_items = await _build_post_responses(session, posts, current_user)
-            
+
         pages = (total + size - 1) // size
         return PaginatedGalleryResponse(
-            items=response_items,
-            total=total,
-            page=page,
-            size=size,
-            pages=pages
+            items=response_items, total=total, page=page, size=size, pages=pages
         )
+
 
 @router.get("/my-posts", response_model=PaginatedGalleryResponse)
 async def get_my_gallery_posts(
     page: int = Query(1, ge=1),
     size: int = Query(20, ge=1, le=100),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
 ):
     async with AsyncSessionLocal() as session:
         query = (
             select(GalleryPost)
             .outerjoin(History, GalleryPost.task_id == History.task_id)
             .where(
-                GalleryPost.user_id == current_user.id,
-                History.is_visible.is_not(False)
+                GalleryPost.user_id == current_user.id, History.is_visible.is_not(False)
             )
             .distinct()
         )
-        
+
         query = query.order_by(desc(GalleryPost.id))
-            
+
         # Get total count
         from sqlalchemy import func
+
         total_query = select(func.count()).select_from(query.subquery())
         total = (await session.execute(total_query)).scalar()
-        
+
         # Paginate
         offset = (page - 1) * size
         query = query.offset(offset).limit(size)
-        
+
         result = await session.execute(query)
         posts = result.scalars().all()
-        
+
         response_items = await _build_post_responses(session, posts, current_user)
-            
+
         pages = (total + size - 1) // size
         return PaginatedGalleryResponse(
-            items=response_items,
-            total=total,
-            page=page,
-            size=size,
-            pages=pages
+            items=response_items, total=total, page=page, size=size, pages=pages
         )
+
 
 @router.get("/my-favorites", response_model=PaginatedGalleryResponse)
 async def get_my_favorite_posts(
     page: int = Query(1, ge=1),
     size: int = Query(20, ge=1, le=100),
     filter_type: str = Query("all", pattern="^(all|like|apply)$"),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
 ):
     async with AsyncSessionLocal() as session:
         action_types = ["like", "apply"]
@@ -251,95 +290,114 @@ async def get_my_favorite_posts(
         elif filter_type == "apply":
             action_types = ["apply"]
 
-        query = select(GalleryPost).join(
-            UserInteraction, GalleryPost.id == UserInteraction.post_id
-        ).where(
-            UserInteraction.user_id == current_user.id,
-            UserInteraction.action_type.in_(action_types),
-            GalleryPost.is_active == True
-        ).distinct().order_by(desc(GalleryPost.id))
-            
+        query = (
+            select(GalleryPost)
+            .join(UserInteraction, GalleryPost.id == UserInteraction.post_id)
+            .where(
+                UserInteraction.user_id == current_user.id,
+                UserInteraction.action_type.in_(action_types),
+                GalleryPost.is_active == True,
+            )
+            .distinct()
+            .order_by(desc(GalleryPost.id))
+        )
+
         # Get total count
         from sqlalchemy import func
+
         total_query = select(func.count()).select_from(query.subquery())
         total = (await session.execute(total_query)).scalar()
-        
+
         # Paginate
         offset = (page - 1) * size
         query = query.offset(offset).limit(size)
-        
+
         result = await session.execute(query)
         posts = result.scalars().all()
-        
+
         response_items = await _build_post_responses(session, posts, current_user)
-            
+
         pages = (total + size - 1) // size
         return PaginatedGalleryResponse(
-            items=response_items,
-            total=total,
-            page=page,
-            size=size,
-            pages=pages
+            items=response_items, total=total, page=page, size=size, pages=pages
         )
+
 
 @router.put("/posts/{post_id}/status")
 async def update_post_status(
     post_id: int,
     is_active: bool = Query(...),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
 ):
     async with AsyncSessionLocal() as session:
-        post = (await session.execute(select(GalleryPost).where(GalleryPost.id == post_id))).scalar_one_or_none()
+        post = (
+            await session.execute(select(GalleryPost).where(GalleryPost.id == post_id))
+        ).scalar_one_or_none()
         if not post:
             raise HTTPException(status_code=404, detail="帖子不存在")
         if post.user_id != current_user.id:
             raise HTTPException(status_code=403, detail="无权操作此帖子")
-            
-        await session.execute(update(GalleryPost).where(GalleryPost.id == post_id).values(is_active=is_active))
+
+        await session.execute(
+            update(GalleryPost)
+            .where(GalleryPost.id == post_id)
+            .values(is_active=is_active)
+        )
         await session.commit()
         return {"status": "success", "message": f"已{'上架' if is_active else '下架'}"}
 
+
 @router.delete("/posts/{post_id}")
-async def delete_post(
-    post_id: int,
-    current_user: User = Depends(get_current_user)
-):
+async def delete_post(post_id: int, current_user: User = Depends(get_current_user)):
     from sqlalchemy import update
+
     async with AsyncSessionLocal() as session:
-        post = (await session.execute(select(GalleryPost).where(GalleryPost.id == post_id))).scalar_one_or_none()
+        post = (
+            await session.execute(select(GalleryPost).where(GalleryPost.id == post_id))
+        ).scalar_one_or_none()
         if not post:
             raise HTTPException(status_code=404, detail="帖子不存在")
         if post.user_id != current_user.id:
             raise HTTPException(status_code=403, detail="无权操作此帖子")
-            
+
         # Soft delete: set is_active to False
         if post.is_active:
             post.is_active = False
-            
+
             # Decrement total_contributions safely
-            user_record = await session.execute(select(User).where(User.id == current_user.id))
+            user_record = await session.execute(
+                select(User).where(User.id == current_user.id)
+            )
             user_obj = user_record.scalar_one_or_none()
             if user_obj:
                 user_obj.total_contributions = max(user_obj.total_contributions - 1, 0)
-        
+
         # Unlink history from this post so user can re-submit if they want
         if post.task_id:
             await session.execute(
                 update(History)
-                .where(History.task_id == post.task_id, History.user_id == current_user.id)
+                .where(
+                    History.task_id == post.task_id, History.user_id == current_user.id
+                )
                 .values(is_public=False)
             )
-        
+
         await session.commit()
         return {"status": "success", "message": "删除成功"}
+
 
 @router.post("/posts/{post_id}/interact")
 async def interact_with_post(
     post_id: int,
     action: str = Query(..., pattern="^(like|dislike)$"),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
 ):
-    from src.core.gallery_core import toggle_like, GalleryCoreError, DuplicateInteractionError
+    from src.core.gallery_core import (
+        toggle_like,
+        GalleryCoreError,
+        DuplicateInteractionError,
+    )
+
     try:
         result = await toggle_like(current_user.id, post_id, action)
         action_state = result.get("action_state")
@@ -354,36 +412,41 @@ async def interact_with_post(
         if "不存在" in str(e):
             raise HTTPException(status_code=404, detail=str(e))
         raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
+    except Exception:
+        logger.error("发生未捕获异常", exc_info=True)
         raise HTTPException(status_code=500, detail="内部服务器错误")
+
 
 @router.get("/posts/{post_id}/apply-context", response_model=ApplyContextResponse)
 async def get_apply_context(
-    post_id: int,
-    current_user: User = Depends(get_current_user)
+    post_id: int, current_user: User = Depends(get_current_user)
 ):
     async with AsyncSessionLocal() as session:
-        post = (await session.execute(select(GalleryPost).where(GalleryPost.id == post_id))).scalar_one_or_none()
+        post = (
+            await session.execute(select(GalleryPost).where(GalleryPost.id == post_id))
+        ).scalar_one_or_none()
         if not post:
             raise HTTPException(status_code=404, detail="帖子不存在或已失效")
-            
-        hist_res = await session.execute(select(History).where(History.task_id == post.task_id))
+
+        hist_res = await session.execute(
+            select(History).where(History.task_id == post.task_id)
+        )
         history = hist_res.scalars().first()
-        
+
         if not history:
             raise HTTPException(status_code=404, detail="未找到原任务详情")
-            
+
         input_file_url = None
         if history.input_file:
             input_file_url = get_media_url(history.input_file)
-            
+
         prompt = history.prompt or ""
         lora_name = None
         match = re.search(r"\[模型:\s*(.*?)\]\s*(.*)", prompt, re.DOTALL)
         if match:
             lora_tag = match.group(1).strip()
             prompt = match.group(2).strip()
-            
+
             # Map Chinese lora_tag back to ID if needed
             reverse_lora_models = {v: k for k, v in ALL_LORA_MODELS.items()}
             # also handle qwen/YARN explicitly since we might map it differently
@@ -392,12 +455,12 @@ async def get_apply_context(
             reverse_lora_models["真实质感"] = "qwen/realistic_texture.safetensors"
             reverse_lora_models["平胸/无毛穴"] = "qwen/flat_chest_hairless.safetensors"
             reverse_lora_models["扶他(阴茎)"] = "qwen/penis.safetensors"
-            
+
             if lora_tag in reverse_lora_models:
                 lora_name = reverse_lora_models[lora_tag]
             else:
                 lora_name = lora_tag
-        
+
         return ApplyContextResponse(
             post_id=post.id,
             task_id=post.task_id,
@@ -409,8 +472,9 @@ async def get_apply_context(
             width=post.width,
             height=post.height,
             duration=post.duration,
-            task_type=history.type
+            task_type=history.type,
         )
+
 
 from src.core.gallery_core import (
     GalleryCoreError,
@@ -423,10 +487,12 @@ from src.core.gallery_core import (
 async def submit_to_gallery(
     task_id: str,
     background_tasks: BackgroundTasks,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
 ):
     try:
-        result = await process_submit_to_gallery(current_user.id, task_id, background_tasks)
+        result = await process_submit_to_gallery(
+            current_user.id, task_id, background_tasks
+        )
         return result
     except GalleryCoreError as e:
         raise HTTPException(status_code=400, detail=str(e))

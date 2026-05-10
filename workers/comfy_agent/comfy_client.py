@@ -5,6 +5,7 @@ import httpx
 
 logger = logging.getLogger(__name__)
 
+
 class ComfyClient:
     def __init__(self, base_url: str):
         self.base_url = base_url
@@ -18,7 +19,9 @@ class ComfyClient:
             logger.error(f"ComfyUI connection failed: {e}")
             return False
 
-    async def upload_image(self, file_content: bytes, filename: str, subfolder: str = "") -> Dict[str, Any]:
+    async def upload_image(
+        self, file_content: bytes, filename: str, subfolder: str = ""
+    ) -> Dict[str, Any]:
         """
         Upload an image or video to ComfyUI input directory.
         """
@@ -29,13 +32,13 @@ class ComfyClient:
             content_type = "image/gif"
         elif filename.lower().endswith((".jpg", ".jpeg")):
             content_type = "image/jpeg"
-            
+
         # The multipart format expected by ComfyUI
         files = {"image": (filename, file_content, content_type)}
         data = {"overwrite": "true"}
         if subfolder:
             data["subfolder"] = subfolder
-        
+
         # Use multipart explicitly
         response = await self.client.post("/upload/image", files=files, data=data)
         if response.status_code != 200:
@@ -64,14 +67,17 @@ class ComfyClient:
             return response.json()
         return {}
 
-    async def get_view(self, filename: str, subfolder: str = "", type: str = "output") -> bytes:
+    async def get_view(
+        self, filename: str, subfolder: str = "", type: str = "output"
+    ) -> bytes:
         """
         Get the raw image/video data from ComfyUI output directory.
         Includes a simple retry mechanism for file system I/O delays.
         """
         import asyncio
+
         params = {"filename": filename, "subfolder": subfolder, "type": type}
-        
+
         max_retries = 3
         for attempt in range(max_retries):
             try:
@@ -80,10 +86,14 @@ class ComfyClient:
                 return response.content
             except Exception as e:
                 if attempt < max_retries - 1:
-                    logger.warning(f"Failed to fetch {filename} (attempt {attempt + 1}/{max_retries}), retrying in 2 seconds... Error: {e}")
+                    logger.warning(
+                        f"Failed to fetch {filename} (attempt {attempt + 1}/{max_retries}), retrying in 2 seconds... Error: {e}"
+                    )
                     await asyncio.sleep(2)
                 else:
-                    logger.error(f"Failed to fetch {filename} after {max_retries} attempts.")
+                    logger.error(
+                        f"Failed to fetch {filename} after {max_retries} attempts."
+                    )
                     raise e
         raise Exception(f"Failed to fetch {filename}")
 

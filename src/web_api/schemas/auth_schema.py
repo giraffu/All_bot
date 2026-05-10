@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Any, Dict, Optional, List
+from typing import Optional, List
 
 from pydantic import BaseModel, Field, field_validator
 import re
@@ -9,16 +9,18 @@ class UserLoginRequest(BaseModel):
     username: str = Field(..., min_length=3, max_length=20, description="道号 (账号)")
     password: str = Field(..., min_length=6, max_length=128, description="密咒 (密码)")
 
+
 class UserBindPasswordRequest(BaseModel):
     username: str = Field(..., min_length=3, max_length=20, description="道号 (账号)")
     password: str = Field(..., min_length=6, max_length=128, description="密咒 (密码)")
 
-    @field_validator('username')
+    @field_validator("username")
     @classmethod
     def validate_username(cls, v):
-        if not re.match(r'^[a-zA-Z0-9_\-\u4e00-\u9fa5]+$', v):
-            raise ValueError('道号只能包含中英文、数字、下划线和连字符')
+        if not re.match(r"^[a-zA-Z0-9_\-\u4e00-\u9fa5]+$", v):
+            raise ValueError("道号只能包含中英文、数字、下划线和连字符")
         return v
+
 
 class TelegramLoginRequest(BaseModel):
     id: Optional[int] = None
@@ -28,13 +30,15 @@ class TelegramLoginRequest(BaseModel):
     photo_url: Optional[str] = None
     auth_date: Optional[int] = None
     hash: Optional[str] = None
-    
+
     # WebApp initData 字段
     initData: Optional[str] = None
+
 
 class Token(BaseModel):
     access_token: str
     token_type: str
+
 
 class InvitationRechargeStats(BaseModel):
     recharged_invitees_count: int = 0
@@ -44,11 +48,13 @@ class InvitationRechargeStats(BaseModel):
     total_stars: int = 0
     commission_usdt: float = 0.0
 
+
 class BreakthroughConditionDTO(BaseModel):
     type: str
     target: int
     current: int
     done: bool
+
 
 class UserResponse(BaseModel):
     id: int
@@ -67,6 +73,6 @@ class UserResponse(BaseModel):
     invitation_recharge: Optional[InvitationRechargeStats] = None
     breakthrough_conditions: List[BreakthroughConditionDTO] = []
     is_unlocked: bool = False
-    
+
     class Config:
         from_attributes = True

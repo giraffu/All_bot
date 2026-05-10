@@ -16,15 +16,17 @@ class HistoryItem(BaseModel):
     source: Optional[str] = "bot"
     is_public: Optional[bool] = False
     is_favorited: Optional[bool] = False
-    
+
     class Config:
         from_attributes = True
+
 
 class PaginatedHistory(BaseModel):
     items: List[HistoryItem]
     total: int
     page: int
     size: int
+
 
 class CheckinResponse(BaseModel):
     success: bool

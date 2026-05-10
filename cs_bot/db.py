@@ -8,6 +8,7 @@ DB_DIR = "data"
 os.makedirs(DB_DIR, exist_ok=True)
 DB_FILE = os.getenv("SQLITE_DB_PATH", os.path.join(DB_DIR, "group_messages.db"))
 
+
 async def init_db():
     """初始化数据库并创建表"""
     async with aiosqlite.connect(DB_FILE) as db:
@@ -28,12 +29,15 @@ async def init_db():
         await db.commit()
     logging.info(f"数据库 {DB_FILE} 已初始化")
 
+
 def json_serial(obj):
     """JSON serializer for objects not serializable by default json code"""
     import datetime
+
     if isinstance(obj, (datetime.datetime, datetime.date)):
         return obj.isoformat()
     raise TypeError(f"Type {type(obj)} not serializable")
+
 
 async def save_message(
     chat_id: int,
@@ -43,7 +47,7 @@ async def save_message(
     message_type: str,
     content: str,
     media_file_id: str,
-    raw_data: dict
+    raw_data: dict,
 ):
     """保存消息到数据库"""
     try:
@@ -56,9 +60,15 @@ async def save_message(
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
-                    chat_id, message_id, user_id, username,
-                    message_type, content, media_file_id, json.dumps(raw_data, default=json_serial, ensure_ascii=False)
-                )
+                    chat_id,
+                    message_id,
+                    user_id,
+                    username,
+                    message_type,
+                    content,
+                    media_file_id,
+                    json.dumps(raw_data, default=json_serial, ensure_ascii=False),
+                ),
             )
             await db.commit()
     except Exception as e:

@@ -10,6 +10,7 @@ from src.services.log_service import LogService
 router = APIRouter(prefix="/api/logs", tags=["logs"])
 logger = logging.getLogger("dashboard.logs")
 
+
 @router.get("", response_model=LogListResponse)
 async def get_logs(
     user_id: Optional[int] = None,
@@ -17,7 +18,7 @@ async def get_logs(
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
     page: int = 1,
-    page_size: int = 20
+    page_size: int = 20,
 ):
     """
     Get user operation logs with filtering and pagination.
@@ -30,7 +31,7 @@ async def get_logs(
                 start_dt = datetime.strptime(start_date, "%Y-%m-%d")
             except ValueError:
                 pass
-        
+
         end_dt = None
         if end_date:
             try:
@@ -45,7 +46,7 @@ async def get_logs(
             start_date=start_dt,
             end_date=end_dt,
             page=page,
-            page_size=page_size
+            page_size=page_size,
         )
         return result
     except Exception as e:

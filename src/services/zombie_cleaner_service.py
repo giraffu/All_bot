@@ -9,6 +9,7 @@ from src.services.task_registry import TaskRegistry
 
 logger = logging.getLogger("bot.zombie_cleaner")
 
+
 async def clean_zombies(bot=None):
     """
     扫描并清理驻留过长（超过2小时）的僵尸任务。
@@ -29,7 +30,7 @@ async def clean_zombies(bot=None):
 
         for task_id, task in tasks.items():
             # 如果没有 created_at 时间戳，为了安全起见假设它刚创建
-            created_at = task.get('created_at', now)
+            created_at = task.get("created_at", now)
             age_seconds = now - created_at
 
             # 如果任务驻留超过 2 小时 (7200秒)，判定为僵尸任务
@@ -39,28 +40,38 @@ async def clean_zombies(bot=None):
                 cost = task.get("cost", 0)
                 backend_task_id = task.get("backend_task_id")
 
-                logger.warning(f"🧟 Detected zombie task {task_id} for user {user_id} (age: {age_seconds:.0f}s). Initiating cleanup.")
+                logger.warning(
+                    f"🧟 Detected zombie task {task_id} for user {user_id} (age: {age_seconds:.0f}s). Initiating cleanup."
+                )
 
                 # 1. 退还灵石
                 if cost > 0 and user_id:
                     try:
                         await permission_service.increment_quota(
-                            user_id, 
-                            cost=-cost, 
-                            username=username, 
-                            task_type="refund_zombie_cleanup"
+                            user_id,
+                            cost=-cost,
+                            username=username,
+                            task_type="refund_zombie_cleanup",
                         )
-                        logger.info(f"💰 Refunded {cost} credits to user {user_id} for zombie task {task_id}.")
+                        logger.info(
+                            f"💰 Refunded {cost} credits to user {user_id} for zombie task {task_id}."
+                        )
                     except Exception as e:
-                        logger.error(f"Error refunding during zombie cleanup for user {user_id}: {e}")
+                        logger.error(
+                            f"Error refunding during zombie cleanup for user {user_id}: {e}"
+                        )
 
                 # 2. 解除用户并发锁
                 if user_id:
                     try:
                         await redis_client.decrement_user_concurrency(user_id)
-                        logger.info(f"🔓 Decremented concurrency lock for user {user_id}.")
+                        logger.info(
+                            f"🔓 Decremented concurrency lock for user {user_id}."
+                        )
                     except Exception as e:
-                        logger.error(f"Error decrementing concurrency for user {user_id}: {e}")
+                        logger.error(
+                            f"Error decrementing concurrency for user {user_id}: {e}"
+                        )
 
                 # 3. 从 Bot 侧的任务注册表中移除
                 try:
@@ -74,27 +85,38 @@ async def clean_zombies(bot=None):
                         # 假设中控 API 有一个取消任务的 DELETE 接口
                         # 从之前的分析中得知路径为 /api/tasks/{task_id}
                         await api_client.cancel_task(backend_task_id)
-                        logger.info(f"🛑 Sent cancellation request to Central API for backend task {backend_task_id}.")
+                        logger.info(
+                            f"🛑 Sent cancellation request to Central API for backend task {backend_task_id}."
+                        )
                     except Exception as e:
-                        logger.error(f"Error cancelling backend task {backend_task_id} at Central API: {e}")
+                        logger.error(
+                            f"Error cancelling backend task {backend_task_id} at Central API: {e}"
+                        )
 
                 # 5. 发送 Telegram 提醒给用户
                 chat_id = task.get("chat_id")
                 if bot and chat_id:
                     try:
                         from src.utils import robust_send_message
+
                         msg = "❌ 您的任务由于等待/执行时间过长，已被系统自动清理。"
                         if cost > 0:
                             msg += f" 预扣的 {cost} 灵石已退回。"
                         await robust_send_message(bot, chat_id, msg)
-                        logger.info(f"📩 Sent zombie cleanup notification to chat_id {chat_id}.")
+                        logger.info(
+                            f"📩 Sent zombie cleanup notification to chat_id {chat_id}."
+                        )
                     except Exception as e:
-                        logger.error(f"Failed to send zombie cleanup notice to {chat_id}: {e}")
+                        logger.error(
+                            f"Failed to send zombie cleanup notice to {chat_id}: {e}"
+                        )
 
                 removed_count += 1
 
         if removed_count > 0:
-            logger.info(f"🧹 Zombie cleanup complete. Removed {removed_count} zombie tasks.")
+            logger.info(
+                f"🧹 Zombie cleanup complete. Removed {removed_count} zombie tasks."
+            )
 
         # 6. 检查并非因为僵尸任务而是由于死锁导致并发数 > 0 但没有活跃任务的用户
         try:
@@ -104,10 +126,12 @@ async def clean_zombies(bot=None):
                 uid = task.get("user_id")
                 if uid:
                     active_user_tasks[uid] = active_user_tasks.get(uid, 0) + 1
-            
+
             for uid, lock_count in concurrencies.items():
                 if lock_count > 0 and active_user_tasks.get(uid, 0) == 0:
-                    logger.warning(f"🔓 Detected leaked concurrency lock for user {uid} (lock_count={lock_count}, active_tasks=0). Resetting...")
+                    logger.warning(
+                        f"🔓 Detected leaked concurrency lock for user {uid} (lock_count={lock_count}, active_tasks=0). Resetting..."
+                    )
                     # 强制重置锁
                     for _ in range(lock_count):
                         await redis_client.decrement_user_concurrency(uid)
@@ -118,6 +142,7 @@ async def clean_zombies(bot=None):
     except Exception as e:
         logger.error(f"Error during zombie task cleanup loop: {e}", exc_info=True)
 
+
 async def main():
     """
     独立的入口函数，如果需要手动运行此脚本时调用。
@@ -126,6 +151,7 @@ async def main():
     logger.info("Starting manual zombie cleanup...")
     await clean_zombies()
     logger.info("Manual zombie cleanup finished.")
+
 
 if __name__ == "__main__":
     asyncio.run(main())

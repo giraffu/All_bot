@@ -21,11 +21,12 @@ class GalleryPostResponse(BaseModel):
     is_active: bool = True
     prompt: Optional[str] = None
     task_type: Optional[str] = None
-    
+
     # User interaction status for current user
     has_liked: bool = False
     has_disliked: bool = False
     author_name: Optional[str] = None
+
 
 class PaginatedGalleryResponse(BaseModel):
     items: List[GalleryPostResponse]
@@ -33,6 +34,7 @@ class PaginatedGalleryResponse(BaseModel):
     page: int
     size: int
     pages: int
+
 
 class ApplyContextResponse(BaseModel):
     post_id: int

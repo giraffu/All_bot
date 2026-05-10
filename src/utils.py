@@ -13,40 +13,60 @@ from config import REQUIRED_CHANNEL_ID
 
 logger = logging.getLogger(__name__)
 
+
 async def get_user_channel_status(bot: Bot, tg_id: int) -> Optional[bool]:
     """Check if the user is in the required channel. Returns None if check fails or not required."""
     if not REQUIRED_CHANNEL_ID:
         return None
     try:
-        channel_id = int(REQUIRED_CHANNEL_ID) if REQUIRED_CHANNEL_ID.lstrip('-').isdigit() else REQUIRED_CHANNEL_ID
+        channel_id = (
+            int(REQUIRED_CHANNEL_ID)
+            if REQUIRED_CHANNEL_ID.lstrip("-").isdigit()
+            else REQUIRED_CHANNEL_ID
+        )
         member = await bot.get_chat_member(chat_id=channel_id, user_id=tg_id)
-        return member.status not in ['left', 'kicked', 'banned']
+        return member.status not in ["left", "kicked", "banned"]
     except Exception as e:
         logger.warning(f"Channel check failed for user {tg_id}: {e}")
         return None
 
-async def notify_inviter_reward(bot: Bot, inviter_internal_id: int, invitee_name: str, reward: int = 10):
+
+async def notify_inviter_reward(
+    bot: Bot, inviter_internal_id: int, invitee_name: str, reward: int = 10
+):
     """Background task to notify inviter about referral reward."""
     from src.database.core import AsyncSessionLocal
     from src.database.models import User
     from sqlalchemy import select
     from src.i18n.translator import get_text
-    from telegram.helpers import escape_markdown
 
     try:
         async with AsyncSessionLocal() as session:
-            inviter = (await session.execute(select(User).where(User.id == inviter_internal_id))).scalar_one_or_none()
+            inviter = (
+                await session.execute(
+                    select(User).where(User.id == inviter_internal_id)
+                )
+            ).scalar_one_or_none()
             if inviter and inviter.telegram_id:
-                lang = inviter.language_code or 'zh'
+                lang = inviter.language_code or "zh"
                 # Pass escape_md=True to prevent Markdown V1 crash on invitee_name
-                text = get_text("notification.referral_reward", lang=lang, escape_md=True, invitee_name=invitee_name, reward=reward)
-                await robust_send_message(bot, chat_id=inviter.telegram_id, text=text, parse_mode="Markdown")
+                text = get_text(
+                    "notification.referral_reward",
+                    lang=lang,
+                    escape_md=True,
+                    invitee_name=invitee_name,
+                    reward=reward,
+                )
+                await robust_send_message(
+                    bot, chat_id=inviter.telegram_id, text=text, parse_mode="Markdown"
+                )
     except Exception as e:
         logger.error(f"Failed to notify inviter {inviter_internal_id}: {e}")
 
+
 # Constants for project root and maintenance file
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-MAINTENANCE_FILE = os.path.join(PROJECT_ROOT, 'MAINTENANCE')
+MAINTENANCE_FILE = os.path.join(PROJECT_ROOT, "MAINTENANCE")
 
 
 def is_maintenance_mode() -> bool:
@@ -184,7 +204,10 @@ async def robust_edit_text(message, text: str, **kwargs):
         error_msg = str(e).lower()
         if "message is not modified" in error_msg:
             return message
-        if "message to edit not found" in error_msg or "there is no text in the message to edit" in error_msg:
+        if (
+            "message to edit not found" in error_msg
+            or "there is no text in the message to edit" in error_msg
+        ):
             logger.warning(f"Ignored edit_text exception: {e}")
             return message
         logger.error(f"Failed to edit message: {e}")
@@ -193,13 +216,14 @@ async def robust_edit_text(message, text: str, **kwargs):
         logger.error(f"Unexpected error editing message: {e}")
         return None
 
+
 def create_background_task(context, coro):
     """
     Safely create a background asyncio task and store a strong reference to it
     in context.bot_data['bg_tasks'] to prevent Python's garbage collector
     from destroying the task mid-execution.
     """
-    app = getattr(context, 'application', context)
+    app = getattr(context, "application", context)
     task = app.create_task(coro)
     if "bg_tasks" not in app.bot_data:
         app.bot_data["bg_tasks"] = set()
@@ -214,7 +238,11 @@ async def robust_edit_reply_markup(message, reply_markup=None, **kwargs):
         return await message.edit_reply_markup(reply_markup=reply_markup, **kwargs)
     except BadRequest as e:
         error_msg = str(e).lower()
-        if "message is not modified" in error_msg or "message to edit not found" in error_msg or "there is no text in the message to edit" in error_msg:
+        if (
+            "message is not modified" in error_msg
+            or "message to edit not found" in error_msg
+            or "there is no text in the message to edit" in error_msg
+        ):
             logger.debug(f"Ignored edit_reply_markup exception: {e}")
             return message
         raise e
@@ -226,7 +254,11 @@ async def robust_edit_caption(message, caption, **kwargs):
         return await message.edit_caption(caption=caption, **kwargs)
     except BadRequest as e:
         error_msg = str(e).lower()
-        if "message is not modified" in error_msg or "message to edit not found" in error_msg or "there is no text in the message to edit" in error_msg:
+        if (
+            "message is not modified" in error_msg
+            or "message to edit not found" in error_msg
+            or "there is no text in the message to edit" in error_msg
+        ):
             logger.warning(f"Ignored edit_caption exception: {e}")
             return message
         raise e
@@ -234,26 +266,29 @@ async def robust_edit_caption(message, caption, **kwargs):
 
 @async_retry(max_retries=3)
 async def robust_send_photo(bot, chat_id, photo, **kwargs):
-    kwargs.setdefault('read_timeout', 180)
-    kwargs.setdefault('write_timeout', 180)
-    kwargs.setdefault('connect_timeout', 120)
-    kwargs.setdefault('pool_timeout', 60)
+    kwargs.setdefault("read_timeout", 180)
+    kwargs.setdefault("write_timeout", 180)
+    kwargs.setdefault("connect_timeout", 120)
+    kwargs.setdefault("pool_timeout", 60)
     return await bot.send_photo(chat_id=chat_id, photo=photo, **kwargs)
 
 
 @async_retry(max_retries=3)
 async def robust_send_video(bot, chat_id, video, **kwargs):
-    kwargs.setdefault('read_timeout', 300)
-    kwargs.setdefault('write_timeout', 300)
-    kwargs.setdefault('connect_timeout', 120)
-    kwargs.setdefault('pool_timeout', 60)
-    kwargs.setdefault('supports_streaming', True)
-    kwargs.setdefault('filename', 'video.mp4')
+    kwargs.setdefault("read_timeout", 300)
+    kwargs.setdefault("write_timeout", 300)
+    kwargs.setdefault("connect_timeout", 120)
+    kwargs.setdefault("pool_timeout", 60)
+    kwargs.setdefault("supports_streaming", True)
+    kwargs.setdefault("filename", "video.mp4")
     import time
+
     start_t = time.time()
     logger.info(f"Uploading video to user {chat_id}...")
     res = await bot.send_video(chat_id=chat_id, video=video, **kwargs)
-    logger.info(f"Video uploaded to user {chat_id} in {time.time() - start_t:.2f} seconds.")
+    logger.info(
+        f"Video uploaded to user {chat_id} in {time.time() - start_t:.2f} seconds."
+    )
     return res
 
 
@@ -262,21 +297,30 @@ async def robust_delete_message(message):
         return await message.delete()
     except BadRequest as e:
         error_msg = str(e).lower()
-        if "message to delete not found" in error_msg or "message can't be deleted" in error_msg:
+        if (
+            "message to delete not found" in error_msg
+            or "message can't be deleted" in error_msg
+        ):
             logger.debug(f"Message deletion skipped: {e}")
             return None
         raise e
 
+
 async def safe_answer_query(query, **kwargs):
     """
-    Safely answer a callback query, catching and logging the "Query is too old" 
-    BadRequest exception. This prevents the entire handler from crashing if 
+    Safely answer a callback query, catching and logging the "Query is too old"
+    BadRequest exception. This prevents the entire handler from crashing if
     the bot was too slow to respond to the click event.
     """
     try:
         await query.answer(**kwargs)
     except BadRequest as e:
-        if "query is too old" in str(e).lower() or "query id is invalid" in str(e).lower():
-            logger.warning(f"Callback query too old/invalid for user {query.from_user.id}, ignoring answer but proceeding with logic.")
+        if (
+            "query is too old" in str(e).lower()
+            or "query id is invalid" in str(e).lower()
+        ):
+            logger.warning(
+                f"Callback query too old/invalid for user {query.from_user.id}, ignoring answer but proceeding with logic."
+            )
         else:
             raise e

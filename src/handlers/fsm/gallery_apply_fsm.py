@@ -4,7 +4,6 @@ import re
 import uuid
 
 from telegram import (
-    ReplyKeyboardMarkup,
     Update,
 )
 from telegram.ext import (
@@ -37,11 +36,15 @@ logger = logging.getLogger(__name__)
 # Single state for waiting for user's face/reference image
 WAIT_REFERENCE_IMAGE = 1
 
-def _cleanup_context(context: ContextTypes.DEFAULT_TYPE):
-    context.user_data.pop('in_conversation', None)
-    context.user_data.pop('gallery_apply_data', None)
 
-async def start_gallery_apply(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+def _cleanup_context(context: ContextTypes.DEFAULT_TYPE):
+    context.user_data.pop("in_conversation", None)
+    context.user_data.pop("gallery_apply_data", None)
+
+
+async def start_gallery_apply(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> int:
     """Entry point from the callback query 'gallery_apply_{post_id}'"""
     query = update.callback_query
     if query:
@@ -50,10 +53,12 @@ async def start_gallery_apply(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     if is_maintenance_mode():
         msg = "⚠️ 🛠️ **系统正在维护升级中**\n\n暂不接受新任务，请稍后再试！"
-        await robust_edit_text(update.callback_query.message, msg, parse_mode="Markdown")
+        await robust_edit_text(
+            update.callback_query.message, msg, parse_mode="Markdown"
+        )
         return ConversationHandler.END
 
-    if context.user_data.get('in_conversation'):
+    if context.user_data.get("in_conversation"):
         msg = "⚠️ 您当前有未完成的交互流程，请先发送 /cancel 退出当前流程后再试。"
         await robust_reply_text(update.callback_query.message, msg)
         return ConversationHandler.END
@@ -66,17 +71,27 @@ async def start_gallery_apply(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     from src.core.user_core import get_or_create_user_by_telegram
     from src.database.core import AsyncSessionLocal
-    from src.database.models import GalleryPost, History, UserInteraction
+    from src.database.models import GalleryPost, History
 
     internal_user, _ = await get_or_create_user_by_telegram(query.from_user.id)
 
     async with AsyncSessionLocal() as session:
-        post = (await session.execute(select(GalleryPost).where(GalleryPost.id == post_id))).scalar_one_or_none()
+        post = (
+            await session.execute(select(GalleryPost).where(GalleryPost.id == post_id))
+        ).scalar_one_or_none()
         if not post:
             await query.answer("❌ 帖子已失效", show_alert=True)
             return ConversationHandler.END
-            
-        history = (await session.execute(select(History).where(History.task_id == post.task_id))).scalars().first()
+
+        history = (
+            (
+                await session.execute(
+                    select(History).where(History.task_id == post.task_id)
+                )
+            )
+            .scalars()
+            .first()
+        )
         if not history:
             await query.answer("❌ 无法获取原任务参数", show_alert=True)
             return ConversationHandler.END
@@ -89,14 +104,22 @@ async def start_gallery_apply(update: Update, context: ContextTypes.DEFAULT_TYPE
         post_width = post.width
         post_height = post.height
         post_duration = post.duration
-            
+
     # Security check: Only allow specific task types for gallery application
     from src.constants import MODE_IMG2IMG_LORA, MODE_LTX_VIDEO
-    allowed_types = [MODE_I2I_PRO, MODE_EDIT, MODE_CUSTOM_VIDEO, MODE_VIDEO_LORA, MODE_IMG2IMG_LORA, MODE_LTX_VIDEO]
+
+    allowed_types = [
+        MODE_I2I_PRO,
+        MODE_EDIT,
+        MODE_CUSTOM_VIDEO,
+        MODE_VIDEO_LORA,
+        MODE_IMG2IMG_LORA,
+        MODE_LTX_VIDEO,
+    ]
     if task_type not in allowed_types:
         await query.answer("❌ 此模板类型不支持一键应用", show_alert=True)
         return ConversationHandler.END
-    
+
     # Extract resolution and duration if it's a video
     res_str = "512p"
     dur_str = "5s"
@@ -108,14 +131,14 @@ async def start_gallery_apply(update: Update, context: ContextTypes.DEFAULT_TYPE
         RESOLUTION_COST,
         RESOLUTION_PERMISSIONS,
     )
-    
+
     if task_type in (MODE_EDIT, "edit", MODE_IMG2IMG_LORA):
         # Image tasks that don't need double cost unless 2 images are provided later
         cost = 2
     else:
         cost = TASK_COSTS.get(task_type, 2)
-    
-    if post_media_type == 'video':
+
+    if post_media_type == "video":
         if task_type == MODE_LTX_VIDEO:
             match = re.search(r"\[(.*?)\|(.*?)\]\s*(.*)", prompt)
             if match:
@@ -125,20 +148,23 @@ async def start_gallery_apply(update: Update, context: ContextTypes.DEFAULT_TYPE
             else:
                 res_str = "1280x704"
                 dur_str = "5s"
-            
+
             user_identity = await permission_service.get_user_identity(internal_user.id)
             downgraded = False
-            
+
             if user_identity in ["凡人", "外门弟子"] and dur_str == "20s":
                 dur_str = "5s"
                 downgraded = True
-            
+
             base_cost = LTX_RESOLUTION_COST.get(res_str, 10)
             multiplier = LTX_DURATION_MULTIPLIER.get(dur_str, 1.0)
             cost = int(base_cost * multiplier)
-            
+
             if downgraded:
-                await query.answer(f"⚠️ 由于您的权限不足或系统限制，已将该模板自动降级为 {res_str} + {dur_str} 进行生成", show_alert=True)
+                await query.answer(
+                    f"⚠️ 由于您的权限不足或系统限制，已将该模板自动降级为 {res_str} + {dur_str} 进行生成",
+                    show_alert=True,
+                )
             else:
                 await query.answer(text="⏳ 任务初始化中...", cache_time=2)
         else:
@@ -151,7 +177,7 @@ async def start_gallery_apply(update: Update, context: ContextTypes.DEFAULT_TYPE
                     res_str = "720p"
                 else:
                     res_str = "512p"
-            
+
             # Reconstruct duration string
             if post_duration:
                 if post_duration > 9:
@@ -160,34 +186,43 @@ async def start_gallery_apply(update: Update, context: ContextTypes.DEFAULT_TYPE
                     dur_str = "8s"
                 else:
                     dur_str = "5s"
-                    
+
             # Permission check & Auto-downgrade
             user_group = await permission_service.get_user_group(internal_user.id)
             user_identity = await permission_service.get_user_identity(internal_user.id)
-            
-            allowed_res = set(RESOLUTION_PERMISSIONS.get(user_group, ["512p"]) + RESOLUTION_PERMISSIONS.get(user_identity, ["512p"]))
-            allowed_dur = set(DURATION_PERMISSIONS.get(user_group, ["5s"]) + DURATION_PERMISSIONS.get(user_identity, ["5s"]))
-            
+
+            allowed_res = set(
+                RESOLUTION_PERMISSIONS.get(user_group, ["512p"])
+                + RESOLUTION_PERMISSIONS.get(user_identity, ["512p"])
+            )
+            allowed_dur = set(
+                DURATION_PERMISSIONS.get(user_group, ["5s"])
+                + DURATION_PERMISSIONS.get(user_identity, ["5s"])
+            )
+
             downgraded = False
             if res_str not in allowed_res:
                 res_str = "720p" if "720p" in allowed_res else "512p"
                 downgraded = True
-                
+
             if dur_str not in allowed_dur:
                 dur_str = "8s" if "8s" in allowed_dur else "5s"
                 downgraded = True
-                
+
             # Global restriction: 1024p + 10s is not allowed together
             if res_str == "1024p" and dur_str == "10s":
                 dur_str = "8s"
                 downgraded = True
-            
+
             base_cost = RESOLUTION_COST.get(res_str, 6)
             multiplier = DURATION_MULTIPLIER.get(dur_str, 1.0)
             cost = int(base_cost * multiplier)
-            
+
             if downgraded:
-                await query.answer(f"⚠️ 由于您的权限不足或系统限制，已将该模板自动降级为 {res_str} + {dur_str} 进行生成", show_alert=True)
+                await query.answer(
+                    f"⚠️ 由于您的权限不足或系统限制，已将该模板自动降级为 {res_str} + {dur_str} 进行生成",
+                    show_alert=True,
+                )
             else:
                 await query.answer(text="⏳ 任务初始化中...", cache_time=2)
     else:
@@ -200,20 +235,21 @@ async def start_gallery_apply(update: Update, context: ContextTypes.DEFAULT_TYPE
         lora_name = match.group(1).strip()
         prompt = match.group(2).strip()
 
-    context.user_data['in_conversation'] = "GALLERY_APPLY"
-    context.user_data['gallery_apply_data'] = {
-        'task_type': task_type,
-        'prompt': prompt,
-        'input_file': input_file,
-        'lora_name': lora_name,
-        'cost': cost,
-        'res_str': res_str,
-        'dur_str': dur_str,
-        'is_video': post_media_type == 'video',
-        'source_post_id': post_id
+    context.user_data["in_conversation"] = "GALLERY_APPLY"
+    context.user_data["gallery_apply_data"] = {
+        "task_type": task_type,
+        "prompt": prompt,
+        "input_file": input_file,
+        "lora_name": lora_name,
+        "cost": cost,
+        "res_str": res_str,
+        "dur_str": dur_str,
+        "is_video": post_media_type == "video",
+        "source_post_id": post_id,
     }
 
     import html
+
     mode_name = MODE_NAME_MAP.get(task_type, task_type)
     display_mode_name = context.t(mode_name) if hasattr(context, "t") else mode_name
     msg = (
@@ -222,13 +258,16 @@ async def start_gallery_apply(update: Update, context: ContextTypes.DEFAULT_TYPE
         f"💡 <i>提示：应用模版的效果受初始图片影响，请尽量提供清晰、高质量的图片哦！</i>\n\n"
         f"👇 <b>请直接发送您的参考图片/人脸照片开始生成！</b>"
     )
-    
+
     await robust_reply_text(query.message, msg, parse_mode="HTML")
 
     return WAIT_REFERENCE_IMAGE
 
-async def receive_reference_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    data = context.user_data.get('gallery_apply_data')
+
+async def receive_reference_image(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> int:
+    data = context.user_data.get("gallery_apply_data")
     if not data:
         _cleanup_context(context)
         return ConversationHandler.END
@@ -241,7 +280,11 @@ async def receive_reference_image(update: Update, context: ContextTypes.DEFAULT_
     file_id = None
     if msg.photo:
         file_id = msg.photo[-1].file_id
-    elif msg.document and msg.document.mime_type and msg.document.mime_type.startswith('image/'):
+    elif (
+        msg.document
+        and msg.document.mime_type
+        and msg.document.mime_type.startswith("image/")
+    ):
         file_id = msg.document.file_id
     else:
         await robust_reply_text(msg, "⚠️ 仅支持图片格式。")
@@ -258,22 +301,22 @@ async def receive_reference_image(update: Update, context: ContextTypes.DEFAULT_
         await robust_reply_text(msg, "❌ 图片下载失败，请重试。")
         return WAIT_REFERENCE_IMAGE
 
-    task_type = data['task_type']
-    is_video = data['is_video']
-    prompt = data['prompt']
-    lora_name = data['lora_name']
-    res_str = data['res_str']
-    dur_str = data['dur_str']
-    source_post_id = data.get('source_post_id')
-    
+    task_type = data["task_type"]
+    is_video = data["is_video"]
+    prompt = data["prompt"]
+    lora_name = data["lora_name"]
+    res_str = data["res_str"]
+    dur_str = data["dur_str"]
+    source_post_id = data.get("source_post_id")
+
     # Original template files
     # History.input_file might contain multiple files separated by '|'.
     # Usually the first one is the main template.
-    
+
     # Prepare parameters for task_service
     # If task_type is face_video or face_swap, the template is the body/video.
     # The newly uploaded image is the face.
-    
+
     chat_id = msg.chat_id
     user_id = update.effective_user.id
     username = update.effective_user.username
@@ -283,28 +326,34 @@ async def receive_reference_image(update: Update, context: ContextTypes.DEFAULT_
 
     # Inject resolution and duration back into context so process_generation_task reads them
     from src.constants import MODE_LTX_VIDEO
+
     if is_video:
         if task_type == MODE_LTX_VIDEO:
-            context.user_data['ltx_video_resolution'] = res_str
-            context.user_data['ltx_video_duration'] = dur_str
+            context.user_data["ltx_video_resolution"] = res_str
+            context.user_data["ltx_video_duration"] = dur_str
         else:
-            context.user_data['custom_video_resolution'] = res_str
-            context.user_data['custom_video_duration'] = dur_str
+            context.user_data["custom_video_resolution"] = res_str
+            context.user_data["custom_video_duration"] = dur_str
 
     # Use default menu keyboard after finishing FSM
     from src.i18n.keyboards import get_main_menu_keyboard
+
     reply_markup = get_main_menu_keyboard(context.lang)
-    sent_msg = await robust_reply_text(msg, "✅ 收到参考图，开始生成...", reply_markup=reply_markup)
+    sent_msg = await robust_reply_text(
+        msg, "✅ 收到参考图，开始生成...", reply_markup=reply_markup
+    )
 
     # General image/video task (like video_lora, edit_image, etc)
     # Often the template is just prepended to images or replaced.
     # If it's an I2V task, the template is the image. But here the user provides a NEW image.
     # So we just use the NEW image and the OLD prompt/lora.
     from src.handlers.fsm.edit_image_fsm import get_lora_default_strength
+
     lora_strength = get_lora_default_strength(lora_name)
 
     if task_type == MODE_I2I_PRO:
         from src.utils import create_background_task
+
         create_background_task(
             context,
             task_service.process_i2i_pro_task(
@@ -315,11 +364,12 @@ async def receive_reference_image(update: Update, context: ContextTypes.DEFAULT_
                 prompt,
                 [local_path],
                 allow_contribute=False,
-                source_post_id=source_post_id
-            )
+                source_post_id=source_post_id,
+            ),
         )
     elif task_type == MODE_LTX_VIDEO:
         from src.utils import create_background_task
+
         create_background_task(
             context,
             task_service.process_ltx_video_task(
@@ -328,11 +378,12 @@ async def receive_reference_image(update: Update, context: ContextTypes.DEFAULT_
                 prompt=prompt,
                 image_path=local_path,
                 allow_contribute=False,
-                source_post_id=source_post_id
-            )
+                source_post_id=source_post_id,
+            ),
         )
     else:
         from src.utils import create_background_task
+
         create_background_task(
             context,
             task_service.process_generation_task(
@@ -348,11 +399,12 @@ async def receive_reference_image(update: Update, context: ContextTypes.DEFAULT_
                 lora_name=lora_name,
                 lora_strength=lora_strength,
                 allow_contribute=False,
-                source_post_id=source_post_id
-            )
+                source_post_id=source_post_id,
+            ),
         )
 
     return ConversationHandler.END
+
 
 async def unexpected_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     text = update.message.text if update.message else ""
@@ -360,28 +412,37 @@ async def unexpected_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         _cleanup_context(context)
         await robust_reply_text(update.message, context.t("system.fsm_exit_hint"))
         return ConversationHandler.END
-        
+
     await robust_reply_text(update.message, context.t("system.fsm_in_progress_hint"))
     return WAIT_REFERENCE_IMAGE
 
+
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     _cleanup_context(context)
-    lang = context.user_data.get('language_code', 'zh') if context.user_data else 'zh'
+    lang = context.user_data.get("language_code", "zh") if context.user_data else "zh"
     reply_markup = get_main_menu_keyboard(lang)
-    await robust_reply_text(update.message, "✅ 已取消一键应用操作。", reply_markup=reply_markup)
+    await robust_reply_text(
+        update.message, "✅ 已取消一键应用操作。", reply_markup=reply_markup
+    )
     return ConversationHandler.END
+
 
 def get_gallery_apply_fsm_handler() -> ConversationHandler:
     return ConversationHandler(
         entry_points=[
-            CallbackQueryHandler(start_gallery_apply, pattern=r'^gallery_apply_\d+$')
+            CallbackQueryHandler(start_gallery_apply, pattern=r"^gallery_apply_\d+$")
         ],
         states={
             WAIT_REFERENCE_IMAGE: [
-                MessageHandler(filters.PHOTO | filters.Document.IMAGE, receive_reference_image),
-                MessageHandler((filters.TEXT | filters.COMMAND) & ~filters.Regex(r"^/cancel$"), unexpected_input)
+                MessageHandler(
+                    filters.PHOTO | filters.Document.IMAGE, receive_reference_image
+                ),
+                MessageHandler(
+                    (filters.TEXT | filters.COMMAND) & ~filters.Regex(r"^/cancel$"),
+                    unexpected_input,
+                ),
             ]
         },
-        fallbacks=[CommandHandler('cancel', cancel)],
-        allow_reentry=True
+        fallbacks=[CommandHandler("cancel", cancel)],
+        allow_reentry=True,
     )

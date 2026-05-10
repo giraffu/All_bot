@@ -13,6 +13,7 @@ logger = logging.getLogger("payment_api")
 
 app = FastAPI(title="RMB Payment Webhook API")
 
+
 @app.get("/api/pay/notify/huanyuy", response_class=PlainTextResponse)
 async def huanyuy_notify(request: Request):
     """
@@ -25,20 +26,20 @@ async def huanyuy_notify(request: Request):
     if not RMBPaymentService.verify_callback_sign(params, HUANYUY_KEY):
         logger.error("Signature verification failed")
         return "fail"
-        
+
     # 2. 检查支付状态
     if params.get("trade_status") != "TRADE_SUCCESS":
         logger.error(f"Trade not successful: {params.get('trade_status')}")
         return "fail"
-        
+
     out_trade_no = params.get("out_trade_no")
     trade_no = params.get("trade_no")
     money = params.get("money")
-    
+
     if not all([out_trade_no, trade_no, money]):
         logger.error("Missing required parameters")
         return "fail"
-        
+
     # 3. 触发统一发货逻辑
     try:
         success = await fulfill_order(out_trade_no, trade_no, float(money))
@@ -51,6 +52,7 @@ async def huanyuy_notify(request: Request):
     except Exception as e:
         logger.error(f"Exception in fulfillment: {e}")
         return "fail"
+
 
 @app.get("/pay/result", response_class=HTMLResponse)
 async def payment_result(request: Request):
@@ -80,6 +82,7 @@ async def payment_result(request: Request):
     </body>
     </html>
     """
+
 
 if __name__ == "__main__":
     port = int(os.getenv("PAYMENT_API_PORT", 8021))

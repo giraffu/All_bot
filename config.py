@@ -22,7 +22,9 @@ GROUP_ID = os.getenv("GROUP_ID")
 PROXY_URL = os.getenv("PROXY_URL")
 
 # TON Payment Configuration
-VITE_MERCHANT_ADDRESS = os.getenv("VITE_MERCHANT_ADDRESS", "UQAluW2wxRCDsJIKGH59jB07xODgEbStdUPEj9AjI88d9l-s")
+VITE_MERCHANT_ADDRESS = os.getenv(
+    "VITE_MERCHANT_ADDRESS", "UQAluW2wxRCDsJIKGH59jB07xODgEbStdUPEj9AjI88d9l-s"
+)
 WEBAPP_URL = os.getenv("WEBAPP_URL", "https://pay.aivison.it.com/")
 
 # --- Database Configuration ---
@@ -32,7 +34,9 @@ if not DATABASE_URL or DATABASE_URL.startswith("sqlite"):
     # Fallback or error if not provided?
     # Better to default to a sensible Postgres URL or raise error.
     # For now, let's assume env var is set, or provide a default local PG
-    DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+asyncpg://postgres:postgres@localhost/bot_db")
+    DATABASE_URL = os.getenv(
+        "DATABASE_URL", "postgresql+asyncpg://postgres:postgres@localhost/bot_db"
+    )
 
 DB_POOL_SIZE = int(os.getenv("DB_POOL_SIZE", "5"))
 DB_MAX_OVERFLOW = int(os.getenv("DB_MAX_OVERFLOW", "10"))
@@ -65,7 +69,7 @@ IMG2IMG_LORA_ENDPOINT = f"{API_BASE}/comfy_img2img_lora"
 STATUS_ENDPOINT = f"{API_BASE}/status"
 IMAGE_ENDPOINT = f"{API_BASE}/image"
 VIDEO_ENDPOINT = f"{API_BASE}/video"
-PERFECT_VIDEO_EDIT_ENDPOINT = f"{API_BASE}/perfect_video_edit" # Unified endpoint
+PERFECT_VIDEO_EDIT_ENDPOINT = f"{API_BASE}/perfect_video_edit"  # Unified endpoint
 PERFECT_VIDEO_LORA_ENDPOINT = f"{API_BASE}/perfect_video_lora"
 PERFECT_VIDEO_INSERT_ENDPOINT = f"{API_BASE}/perfect_video_insert"
 FACE_SWAP_ENDPOINT = f"{API_BASE}/face_swap"
@@ -76,7 +80,9 @@ LTX_VIDEO_ENDPOINT = f"{API_BASE}/api/v1/ltx_video"
 
 # --- LLM Configuration ---
 LLM_API_URL = os.getenv("LLM_API_URL", "http://8.148.72.50:1234/v1/chat/completions")
-LLM_MODEL_NAME = os.getenv("LLM_MODEL_NAME", "huihui-qwen3-vl-30b-a3b-instruct-abliterated")
+LLM_MODEL_NAME = os.getenv(
+    "LLM_MODEL_NAME", "huihui-qwen3-vl-30b-a3b-instruct-abliterated"
+)
 
 # --- Polling Configuration ---
 POLL_INTERVAL = int(os.getenv("POLL_INTERVAL", "2"))

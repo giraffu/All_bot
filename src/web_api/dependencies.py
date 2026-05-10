@@ -9,42 +9,44 @@ from src.web_api.core.security import verify_token
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login", auto_error=False)
 
+
 async def get_db():
     async with AsyncSessionLocal() as session:
         yield session
 
+
 async def get_token(request: Request, token: str = Depends(oauth2_scheme)) -> str:
     if token:
         return token
-    
+
     query_token = request.query_params.get("token")
     if query_token:
         return query_token
-        
+
     raise HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Not authenticated",
         headers={"WWW-Authenticate": "Bearer"},
     )
 
+
 async def get_current_user(
-    db: AsyncSession = Depends(get_db),
-    token: str = Depends(get_token)
+    db: AsyncSession = Depends(get_db), token: str = Depends(get_token)
 ) -> User:
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
         headers={"WWW-Authenticate": "Bearer"},
     )
-    
+
     payload = verify_token(token)
     if payload is None:
         raise credentials_exception
-        
+
     internal_id_str: str = payload.get("sub")
     if internal_id_str is None:
         raise credentials_exception
-        
+
     try:
         internal_id = int(internal_id_str)
     except ValueError:
@@ -53,14 +55,15 @@ async def get_current_user(
     stmt = select(User).where(User.id == internal_id)
     result = await db.execute(stmt)
     user = result.scalar_one_or_none()
-    
+
     if user is None:
         raise credentials_exception
-        
+
     # Check if the token's password version is blacklisted (if they changed password recently)
     token_pwd_ver = payload.get("pwd_ver", 0)
     if token_pwd_ver:
         from src.services.redis_client import redis_client
+
         redis = redis_client.redis
         blacklist_key = f"allbot:auth:blacklist:{user.id}:{token_pwd_ver}"
         if await redis.get(blacklist_key):
@@ -69,22 +72,23 @@ async def get_current_user(
                 detail="密咒已变更，当前结界已失效，请重新登录。",
                 headers={"WWW-Authenticate": "Bearer"},
             )
-        
+
     # Check dynamic permission (Persistent Privilege Check)
     from src.services.permission_service import permission_service
+
     stats = await permission_service.get_user_detailed_stats(user.telegram_id)
     current_identity = stats.get("identity", user.current_identity)
     current_group = stats.get("group", user.user_group)
-    
+
     from src.constants import WEB_ACCESS_ALLOWED_IDENTITIES, WEB_ACCESS_ALLOWED_GROUPS
-    
+
     is_allowed_identity = current_identity in WEB_ACCESS_ALLOWED_IDENTITIES
     is_allowed_group = current_group in WEB_ACCESS_ALLOWED_GROUPS
-    
+
     if not (is_allowed_identity or is_allowed_group):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="您的权限已变更：目前境界或身份已不满足访问 Web 端的要求"
+            detail="您的权限已变更：目前境界或身份已不满足访问 Web 端的要求",
         )
-        
+
     return user

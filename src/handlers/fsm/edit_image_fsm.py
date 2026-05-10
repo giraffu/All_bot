@@ -29,8 +29,9 @@ LORA_MODELS = {
     "qwen/adjust_pussy_anus.safetensors": "菊花+内凹穴",
     "qwen/realistic_texture.safetensors": "真实质感",
     "qwen/flat_chest_hairless.safetensors": "平胸/无毛穴",
-    "qwen/penis.safetensors": "扶他(阴茎)"
+    "qwen/penis.safetensors": "扶他(阴茎)",
 }
+
 
 def get_lora_default_strength(lora_name: str) -> float:
     if lora_name == "qwen/YARN_1.0.safetensors":
@@ -44,10 +45,11 @@ def get_lora_default_strength(lora_name: str) -> float:
     else:
         return 1.0
 
+
 def _cleanup_context(context: ContextTypes.DEFAULT_TYPE, user_id: int):
-    context.user_data.pop('in_conversation', None)
-    pending_files = context.user_data.pop('edit_image_data', {})
-    images = pending_files.get('images', [])
+    context.user_data.pop("in_conversation", None)
+    pending_files = context.user_data.pop("edit_image_data", {})
+    images = pending_files.get("images", [])
     for path in images:
         if path and os.path.exists(path):
             try:
@@ -55,74 +57,85 @@ def _cleanup_context(context: ContextTypes.DEFAULT_TYPE, user_id: int):
             except Exception as e:
                 logger.error(f"Failed to remove {path}: {e}")
 
+
 async def start_edit_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Entry point for 自由P图 and 幻想换脸"""
     message = update.message or update.edited_message
     text = message.text.strip() if message and message.text else ""
-    
+
     from src.utils import is_maintenance_mode
+
     if is_maintenance_mode():
         msg = "⚠️ 🛠️ **系统正在维护升级中**\n\n为了提供更好的服务，当前生图/生视频节点正在维护，暂不接受新任务。\n\n您的灵石和会员权益不受影响，请稍后再试！"
         if update.callback_query:
-            await robust_edit_text(update.callback_query.message, msg, parse_mode="Markdown")
+            await robust_edit_text(
+                update.callback_query.message, msg, parse_mode="Markdown"
+            )
         else:
             await robust_reply_text(update.message, msg, parse_mode="Markdown")
         return ConversationHandler.END
 
-    if context.user_data.get('in_conversation'):
+    if context.user_data.get("in_conversation"):
         msg = "⚠️ 您当前有未完成的交互流程，请先发送 /cancel 退出当前流程后再试。"
         await robust_reply_text(update.message, msg)
         return ConversationHandler.END
 
     from src.handlers.prompt_router import GLOBAL_REVERSE_MAP
+
     route_key = GLOBAL_REVERSE_MAP.get(text)
     mode = MODE_EDIT if route_key == "menu.free_edit" else MODE_I2I_PRO
     cost = TASK_COSTS.get(mode, 2)
 
-    context.user_data['in_conversation'] = "EDIT_IMAGE"
-    context.user_data['edit_image_data'] = {
-        'mode': mode,
-        'images': [],
-        'cost': cost
-    }
+    context.user_data["in_conversation"] = "EDIT_IMAGE"
+    context.user_data["edit_image_data"] = {"mode": mode, "images": [], "cost": cost}
 
     if mode == MODE_I2I_PRO:
         msg = f"🌟 **已进入【幻想换脸】模式** (消耗 {cost} 灵石)。\n\n【第一步】请发送 1 张您的参考图片。\n\n随时可以发送 /cancel 退出流程。"
         await robust_reply_text(update.message, msg, parse_mode="Markdown")
         return EditImageState.WAIT_REFERENCE_IMAGES
     else:
-        buttons = [InlineKeyboardButton(zh_name, callback_data=f"editlora_select_{backend_name}") for backend_name, zh_name in LORA_MODELS.items()]
-        keyboard = [buttons[i:i + 2] for i in range(0, len(buttons), 2)]
+        buttons = [
+            InlineKeyboardButton(
+                zh_name, callback_data=f"editlora_select_{backend_name}"
+            )
+            for backend_name, zh_name in LORA_MODELS.items()
+        ]
+        keyboard = [buttons[i : i + 2] for i in range(0, len(buttons), 2)]
         reply_markup = InlineKeyboardMarkup(keyboard)
 
-        msg = f"🎨 **已进入【自由P图】模式**。\n\n【第一步】请选择您要附加的模型：\n\n随时可以发送 /cancel 退出流程。"
-        await robust_reply_text(update.message, msg, reply_markup=reply_markup, parse_mode="Markdown")
+        msg = "🎨 **已进入【自由P图】模式**。\n\n【第一步】请选择您要附加的模型：\n\n随时可以发送 /cancel 退出流程。"
+        await robust_reply_text(
+            update.message, msg, reply_markup=reply_markup, parse_mode="Markdown"
+        )
         return EditImageState.WAIT_LORA_SELECTION
 
-async def handle_lora_selection(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+
+async def handle_lora_selection(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> int:
     query = update.callback_query
     await query.answer(text="⏳ 任务初始化中...", cache_time=2)
     data = query.data
-    
+
     if not data.startswith("editlora_select_"):
         return EditImageState.WAIT_LORA_SELECTION
-        
+
     lora_name = data.replace("editlora_select_", "")
     zh_name = LORA_MODELS.get(lora_name, lora_name)
-    
-    fsm_data = context.user_data.get('edit_image_data', {})
+
+    fsm_data = context.user_data.get("edit_image_data", {})
     if not fsm_data:
         await query.edit_message_text("交互已失效，请重新开始。")
         return ConversationHandler.END
-        
-    fsm_data['lora_name'] = lora_name
-    if lora_name: # if lora selected, change mode
-        fsm_data['mode'] = MODE_IMG2IMG_LORA
-        fsm_data['cost'] = TASK_COSTS.get(MODE_EDIT, 2)
+
+    fsm_data["lora_name"] = lora_name
+    if lora_name:  # if lora selected, change mode
+        fsm_data["mode"] = MODE_IMG2IMG_LORA
+        fsm_data["cost"] = TASK_COSTS.get(MODE_EDIT, 2)
     else:
-        fsm_data['mode'] = MODE_EDIT
-        fsm_data['cost'] = TASK_COSTS.get(MODE_EDIT, 2)
-    
+        fsm_data["mode"] = MODE_EDIT
+        fsm_data["cost"] = TASK_COSTS.get(MODE_EDIT, 2)
+
     # Send cleanup message if lora_name is None (meaning "无")
     # Actually wait, lora_name is "" not None for "无"
     if not lora_name:
@@ -132,16 +145,19 @@ async def handle_lora_selection(update: Update, context: ContextTypes.DEFAULT_TY
     await robust_edit_text(query.message, msg, parse_mode="Markdown")
     return EditImageState.WAIT_REFERENCE_IMAGES
 
-async def receive_reference_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+
+async def receive_reference_image(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> int:
     user_id = update.effective_user.id
     message = update.message
-    fsm_data = context.user_data.get('edit_image_data')
+    fsm_data = context.user_data.get("edit_image_data")
     if not fsm_data:
         await robust_reply_text(message, "⚠️ 状态已过期，请重新点击菜单开始任务。")
         return ConversationHandler.END
 
     if message.document:
-        if not message.document.mime_type.startswith('image/'):
+        if not message.document.mime_type.startswith("image/"):
             await robust_reply_text(message, "❌ 格式错误！请发送图片。")
             return EditImageState.WAIT_REFERENCE_IMAGES
         file_id = message.document.file_id
@@ -156,91 +172,109 @@ async def receive_reference_image(update: Update, context: ContextTypes.DEFAULT_
         os.makedirs("/tmp/bot_fsm_tmp", exist_ok=True)
         local_path = f"/tmp/bot_fsm_tmp/{uuid.uuid4()}_ref.png"
         await new_file.download_to_drive(local_path)
-        fsm_data['images'].append(local_path)
+        fsm_data["images"].append(local_path)
     except Exception as e:
-        
         logger.error(f"Error downloading image for FSM user {user_id}: {e}")
         await robust_reply_text(message, "❌ 下载图片失败，请重试或发送 /cancel 退出。")
         return EditImageState.WAIT_REFERENCE_IMAGES
 
-    if fsm_data['mode'] == MODE_I2I_PRO:
+    if fsm_data["mode"] == MODE_I2I_PRO:
         msg = "✅ **已收到 1 张参考图。**\n\n【第二步】请直接发送**提示词 (Text)** 开始生成。\n\n💡 **提示词要求**：\n描述幻想的人物和场景，后续会将参考图中的人物换脸到幻想的场景人物中。"
     else:
-        num_images = len(fsm_data['images'])
+        num_images = len(fsm_data["images"])
         if num_images == 1:
-            msg = f"✅ **已收到 1 张参考图。**\n\n【第三步】请直接发送**提示词 (Text)** 开始生成。\n（如果是双图融合，您可以继续发送第2张图片，双图融合将消耗 6 灵石）"
+            msg = "✅ **已收到 1 张参考图。**\n\n【第三步】请直接发送**提示词 (Text)** 开始生成。\n（如果是双图融合，您可以继续发送第2张图片，双图融合将消耗 6 灵石）"
         else:
-            fsm_data['cost'] = 6
-            msg = f"✅ **已收到 2 张参考图。**\n\n【第三步】请直接发送**提示词 (Text)** 开始生成。\n（双图融合将消耗 6 灵石，多余的图片将不生效）"
+            fsm_data["cost"] = 6
+            msg = "✅ **已收到 2 张参考图。**\n\n【第三步】请直接发送**提示词 (Text)** 开始生成。\n（双图融合将消耗 6 灵石，多余的图片将不生效）"
 
     await robust_reply_text(message, msg, parse_mode="Markdown")
-    
+
     # 允许接收多个图片（对于自由P图），但也允许接收文字进入下一步
     return EditImageState.WAIT_PROMPT
 
-async def receive_additional_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+
+async def receive_additional_image(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> int:
     """如果在 WAIT_PROMPT 状态下继续发图，就把图追加进去（仅自由P图）"""
     message = update.message
-    fsm_data = context.user_data.get('edit_image_data')
+    fsm_data = context.user_data.get("edit_image_data")
     if not fsm_data:
         await robust_reply_text(message, "⚠️ 状态已过期，请重新点击菜单开始任务。")
         return ConversationHandler.END
-    
-    if fsm_data['mode'] == MODE_I2I_PRO:
-        await robust_reply_text(message, "⚠️ 幻想换脸模式只需要 1 张图片，请直接发送文字提示词。")
+
+    if fsm_data["mode"] == MODE_I2I_PRO:
+        await robust_reply_text(
+            message, "⚠️ 幻想换脸模式只需要 1 张图片，请直接发送文字提示词。"
+        )
         return EditImageState.WAIT_PROMPT
 
-    if fsm_data['mode'] in (MODE_EDIT, MODE_IMG2IMG_LORA) and len(fsm_data['images']) >= 2:
-        await robust_reply_text(message, "⚠️ 自由P图最多只支持 2 张图片融合，多余的图片将不生效，请直接发送文字提示词开始生成。")
+    if (
+        fsm_data["mode"] in (MODE_EDIT, MODE_IMG2IMG_LORA)
+        and len(fsm_data["images"]) >= 2
+    ):
+        await robust_reply_text(
+            message,
+            "⚠️ 自由P图最多只支持 2 张图片融合，多余的图片将不生效，请直接发送文字提示词开始生成。",
+        )
         return EditImageState.WAIT_PROMPT
 
     return await receive_reference_image(update, context)
+
 
 async def receive_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user_id = update.effective_user.id
     message = update.message
     prompt = message.text.strip()
-    
+
     if is_global_menu_command(prompt):
         return await unexpected_input(update, context)
 
-    fsm_data = context.user_data.get('edit_image_data')
+    fsm_data = context.user_data.get("edit_image_data")
     if not fsm_data:
         await robust_reply_text(message, "⚠️ 任务已提交或已过期，请勿重复操作。")
         return ConversationHandler.END
 
-    cost = fsm_data['cost']
-    mode = fsm_data['mode']
-    lora_name = fsm_data.get('lora_name', "")
+    cost = fsm_data["cost"]
+    mode = fsm_data["mode"]
+    lora_name = fsm_data.get("lora_name", "")
 
     if lora_name == "qwen/adjust_pussy_anus.safetensors":
         if "adjust her pussy and anus" not in prompt.lower():
             prompt = f"adjust her pussy and anus, {prompt}"
 
-    if not update.effective_user: return ConversationHandler.END
+    if not update.effective_user:
+        return ConversationHandler.END
     user = update.effective_user
     try:
-        await permission_service.check_quota(user.id, user.username, user.full_name, cost=cost)
+        await permission_service.check_quota(
+            user.id, user.username, user.full_name, cost=cost
+        )
     except Exception as e:
         from src.core.exceptions import InsufficientCreditsError
+
         if isinstance(e, InsufficientCreditsError):
             chat_id = update.effective_chat.id
             msg = f"🚫 **灵石不足**\n\n道友当前余额: `{e.current}` 灵石\n本次修炼需要: `{e.cost}` 灵石\n请联系管理员获取更多灵石。"
             from src.utils import robust_send_message
+
             await robust_send_message(context.bot, chat_id, msg, parse_mode="Markdown")
             _cleanup_context(context, user_id)
             return ConversationHandler.END
         raise e
 
-    images = list(fsm_data['images'])
-    
+    images = list(fsm_data["images"])
+
     if not images:
-        return ConversationHandler.END # Prevent double submit
+        return ConversationHandler.END  # Prevent double submit
 
     # 转移文件所有权给 TaskService
-    fsm_data['images'] = [] 
+    fsm_data["images"] = []
 
-    await robust_reply_text(message, f"🚀 正在提交生成任务，预计消耗 {cost} 灵石，请耐心等待...")
+    await robust_reply_text(
+        message, f"🚀 正在提交生成任务，预计消耗 {cost} 灵石，请耐心等待..."
+    )
 
     if mode == MODE_I2I_PRO:
         # Mock Update to support legacy process_i2i_pro_task
@@ -248,38 +282,58 @@ async def receive_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         create_background_task(
             context,
             TaskService.process_i2i_pro_task(
-                context, message.chat_id, user_id, 
+                context,
+                message.chat_id,
+                user_id,
                 update.effective_user.username,
-                prompt, images
-            )
+                prompt,
+                images,
+            ),
         )
     else:
         create_background_task(
             context,
             TaskService.process_generation_task(
-                context, message.chat_id, user_id,
+                context,
+                message.chat_id,
+                user_id,
                 update.effective_user.username,
-                prompt, images, is_video=False, task_type=mode, cleanup=True,
-                lora_name=lora_name, lora_strength=get_lora_default_strength(lora_name)
-            )
+                prompt,
+                images,
+                is_video=False,
+                task_type=mode,
+                cleanup=True,
+                lora_name=lora_name,
+                lora_strength=get_lora_default_strength(lora_name),
+            ),
         )
 
     _cleanup_context(context, user_id)
     return ConversationHandler.END
 
-async def cancel_conversation(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+
+async def cancel_conversation(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> int:
     user_id = update.effective_user.id
     msg = "🚫 流程已取消。已清空历史上传内容。"
     await robust_reply_text(update.message, msg)
     _cleanup_context(context, user_id)
     return ConversationHandler.END
 
-async def timeout_conversation(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+
+async def timeout_conversation(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> int:
     user_id = update.effective_user.id if update.effective_user else "Unknown"
     if update and update.message:
-        await robust_reply_text(update.message, "⏰ 操作超时，为节省系统资源，本次流程已自动取消。您可以随时重新开始。")
+        await robust_reply_text(
+            update.message,
+            "⏰ 操作超时，为节省系统资源，本次流程已自动取消。您可以随时重新开始。",
+        )
     _cleanup_context(context, user_id)
     return ConversationHandler.END
+
 
 async def unexpected_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     text = update.message.text if update.message else ""
@@ -292,30 +346,48 @@ async def unexpected_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     await robust_reply_text(update.message, context.t("system.fsm_in_progress_hint"))
     return None
 
+
 def get_edit_image_fsm_handler() -> ConversationHandler:
     return ConversationHandler(
         entry_points=[
-            MessageHandler(I18nFilter(["menu.free_edit", "menu.i2i_pro"]), start_edit_image)
+            MessageHandler(
+                I18nFilter(["menu.free_edit", "menu.i2i_pro"]), start_edit_image
+            )
         ],
         states={
             EditImageState.WAIT_LORA_SELECTION: [
-                CallbackQueryHandler(handle_lora_selection, pattern="^editlora_select_"),
-                MessageHandler((filters.TEXT | filters.COMMAND) & ~filters.Regex(r"^/cancel$"), unexpected_input)
+                CallbackQueryHandler(
+                    handle_lora_selection, pattern="^editlora_select_"
+                ),
+                MessageHandler(
+                    (filters.TEXT | filters.COMMAND) & ~filters.Regex(r"^/cancel$"),
+                    unexpected_input,
+                ),
             ],
             EditImageState.WAIT_REFERENCE_IMAGES: [
-                MessageHandler(filters.PHOTO | filters.Document.IMAGE, receive_reference_image),
-                MessageHandler((filters.TEXT | filters.COMMAND) & ~filters.Regex(r"^/cancel$"), unexpected_input)
+                MessageHandler(
+                    filters.PHOTO | filters.Document.IMAGE, receive_reference_image
+                ),
+                MessageHandler(
+                    (filters.TEXT | filters.COMMAND) & ~filters.Regex(r"^/cancel$"),
+                    unexpected_input,
+                ),
             ],
             EditImageState.WAIT_PROMPT: [
-                MessageHandler((filters.TEXT | filters.COMMAND) & ~filters.Regex(r"^/cancel$"), receive_prompt),
-                MessageHandler(filters.PHOTO | filters.Document.IMAGE, receive_additional_image),
+                MessageHandler(
+                    (filters.TEXT | filters.COMMAND) & ~filters.Regex(r"^/cancel$"),
+                    receive_prompt,
+                ),
+                MessageHandler(
+                    filters.PHOTO | filters.Document.IMAGE, receive_additional_image
+                ),
             ],
             ConversationHandler.TIMEOUT: [
                 MessageHandler(filters.ALL, timeout_conversation)
-            ]
+            ],
         },
-        fallbacks=[CommandHandler('cancel', cancel_conversation)],
+        fallbacks=[CommandHandler("cancel", cancel_conversation)],
         conversation_timeout=300,
         name="edit_image_fsm",
-        persistent=False
+        persistent=False,
     )

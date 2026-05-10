@@ -12,30 +12,40 @@ from pydantic import BaseModel
 load_dotenv()
 
 # JWT Configuration
-SECRET_KEY = os.getenv("DASHBOARD_SECRET_KEY", "your-super-secret-key-change-in-production")
+SECRET_KEY = os.getenv(
+    "DASHBOARD_SECRET_KEY", "your-super-secret-key-change-in-production"
+)
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7  # 7 days
 
 # Admin Credentials (in production, should be in DB or secure env vars)
 ADMIN_USERNAME = os.getenv("DASHBOARD_ADMIN_USERNAME", "admin")
 # Default password is "admin", bcrypt hashed
-ADMIN_PASSWORD_HASH = os.getenv("DASHBOARD_ADMIN_PASSWORD_HASH", "$2b$12$Kk9WvI6qO8uA5j0M7Nf8q.nB2sA1qQ.xZ1HjD3wUoYv2yQ1.hX1bC")
+ADMIN_PASSWORD_HASH = os.getenv(
+    "DASHBOARD_ADMIN_PASSWORD_HASH",
+    "$2b$12$Kk9WvI6qO8uA5j0M7Nf8q.nB2sA1qQ.xZ1HjD3wUoYv2yQ1.hX1bC",
+)
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
+
 
 class Token(BaseModel):
     access_token: str
     token_type: str
 
+
 class TokenData(BaseModel):
     username: Optional[str] = None
+
 
 def verify_password(plain_password, hashed_password):
     return pwd_context.verify(plain_password, hashed_password)
 
+
 def get_password_hash(password):
     return pwd_context.hash(password)
+
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     to_encode = data.copy()
@@ -46,6 +56,7 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     to_encode.update({"exp": expire})
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
+
 
 async def get_current_user(token: str = Depends(oauth2_scheme)):
     credentials_exception = HTTPException(
@@ -61,17 +72,21 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
         token_data = TokenData(username=username)
     except JWTError:
         raise credentials_exception
-        
+
     if token_data.username != ADMIN_USERNAME:
         raise credentials_exception
-        
+
     return token_data
+
 
 auth_router = APIRouter()
 
+
 @auth_router.post("/login", response_model=Token)
 async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends()):
-    if form_data.username != ADMIN_USERNAME or not verify_password(form_data.password, ADMIN_PASSWORD_HASH):
+    if form_data.username != ADMIN_USERNAME or not verify_password(
+        form_data.password, ADMIN_PASSWORD_HASH
+    ):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect username or password",
@@ -82,6 +97,7 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(
         data={"sub": ADMIN_USERNAME}, expires_delta=access_token_expires
     )
     return {"access_token": access_token, "token_type": "bearer"}
+
 
 @auth_router.get("/me")
 async def read_users_me(current_user: TokenData = Depends(get_current_user)):
