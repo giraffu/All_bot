@@ -16,9 +16,15 @@ sequenceDiagram
 
     Admin->>DB: 1. GET /api/stats (请求监控数据)
     DB->>Redis: 2. DB2 扫描 active workers & queue size
-    DB->>PG: 3. 统计今日新用户与消耗
+    DB->>PG: 3. 统计今日新用户与消耗 (通过SQL聚合)
     DB-->>Admin: 4. 返回可视化图表数据
     
+    loop 余额监控与统计轮询 (balance_monitor.py)
+        BM->>TG_API: 异步增量拉取 Stars 流水
+        BM->>TON_API: 异步查询 TON/USDT 余额
+        BM->>Redis: 缓存外部余额与 last_tx_id
+    end
+
     loop 后台定时巡检 (每 1 分钟)
         ZC->>Redis: 5. DB1 提取所有 active_tasks (状态=running/pending)
         ZC->>Redis: 6. 检查 task_id 是否已超时 (>10分钟)
