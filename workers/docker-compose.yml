@@ -116,8 +116,8 @@ services:
       - SUPPORTED_TASK_TYPES=img2img,img2img_lora
       - MASTER_API_URL=http://127.0.0.1:8003
       - AGENT_SECRET_TOKEN=super_secret_agent_token_2026
-      - COMFY_API_URL=http://192.168.1.89:8188
-      - COMFY_WS_URL=ws://192.168.1.89:8188/ws
+      - COMFY_API_URL=http://192.168.1.2:8188
+      - COMFY_WS_URL=ws://192.168.1.2:8188/ws
       - COMFY_INPUT_DIR=/tmp/input
       - COMFY_OUTPUT_DIR=/tmp/output
       - MINIO_INPUT_BUCKET=${MINIO_BUCKET:-bot-data}
@@ -125,19 +125,19 @@ services:
       - MINIO_RESULT_BUCKET=comfyui-temp
 
   # Agent 7 (192.168.1.2:8189)
-#  comfy-agent-7:
-#    <<: *worker-base
-#    container_name: comfy-agent-7
-#    environment:
-#      - TZ=Asia/Shanghai
-#      - AGENT_ID=worker_local_07
-#      - SUPPORTED_TASK_TYPES=video_insert,video_edit
-#      - MASTER_API_URL=http://127.0.0.1:8003
-#      - AGENT_SECRET_TOKEN=super_secret_agent_token_2026
-#      - COMFY_API_URL=http://192.168.1.89:8189
-#      - COMFY_WS_URL=ws://192.168.1.89:8189/ws
-#      - COMFY_INPUT_DIR=/tmp/input
-#      - COMFY_OUTPUT_DIR=/tmp/output
-#      - MINIO_INPUT_BUCKET=${MINIO_BUCKET:-bot-data}
-#      - MINIO_ENDPOINT=host.docker.internal:9000
-#      - MINIO_RESULT_BUCKET=comfyui-temp
+  comfy-agent-7:
+    <<: *worker-base
+    container_name: comfy-agent-7
+    environment:
+      - TZ=Asia/Shanghai
+      - AGENT_ID=worker_local_07
+      - SUPPORTED_TASK_TYPES=video_insert,video_edit
+      - MASTER_API_URL=http://127.0.0.1:8003
+      - AGENT_SECRET_TOKEN=super_secret_agent_token_2026
+      - COMFY_API_URL=http://192.168.1.2:8189
+      - COMFY_WS_URL=ws://192.168.1.2:8189/ws
+      - COMFY_INPUT_DIR=/tmp/input
+      - COMFY_OUTPUT_DIR=/tmp/output
+      - MINIO_INPUT_BUCKET=${MINIO_BUCKET:-bot-data}
+      - MINIO_ENDPOINT=host.docker.internal:9000
+      - MINIO_RESULT_BUCKET=comfyui-temp
