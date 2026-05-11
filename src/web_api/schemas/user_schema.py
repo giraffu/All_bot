@@ -12,6 +12,7 @@ class HistoryItem(BaseModel):
     input_file: Optional[str]
     output_file: Optional[str]
     output_file_url: Optional[str] = None
+    thumbnail_url: Optional[str] = None
     created_at: datetime
     allow_contribute: Optional[bool] = True
     source: Optional[str] = "bot"

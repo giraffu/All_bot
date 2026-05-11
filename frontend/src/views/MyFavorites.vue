@@ -382,7 +382,7 @@ const handleImageError = (e: Event, post: Post) => {
   // 但注意：如果原图是视频，绝不能让 img 去加载 .mp4
   if (!img.dataset.fallbackAttempted && post.media_url && !isVideoFile(post.media_url, post.media_type)) {
     img.dataset.fallbackAttempted = 'true'
-    img.src = getFileUrl(post.media_url, post.id)
+    img.src = post.media_url.includes('X-Amz-Signature') ? post.media_url : getFileUrl(post.media_url, post.id)
     img.style.opacity = '1'
   } else {
     // 如果原图也加载失败，或者是视频（视频封面还没生成），则变暗显示破图图标/占位图

@@ -146,19 +146,32 @@ async def get_user_history(
                     item.is_public = False
             
             if item.output_file:
-                parts = item.output_file.split("/")
-                if len(parts) > 1 and parts[0] in ["bot-data", "comfyui-temp"]:
-                    bucket_name = parts[0]
-                    object_name = "/".join(parts[1:])
-                elif "comfyui-temp" not in item.output_file and "bot-data" not in item.output_file:
-                    bucket_name = "comfyui-temp" if "/" not in item.output_file else "bot-data"
-                    object_name = item.output_file
-                else:
+                if item.output_file.startswith("bot-data/"):
                     bucket_name = "bot-data"
+                    object_name = item.output_file[len("bot-data/"):]
+                elif item.output_file.startswith("comfyui-temp/"):
+                    bucket_name = "comfyui-temp"
+                    object_name = item.output_file[len("comfyui-temp/"):]
+                else:
+                    bucket_name = "bot-data" if "/" in item.output_file else "comfyui-temp"
                     object_name = item.output_file
                     
                 item.output_file_url = storage.get_presigned_url(
                     object_name, bucket=bucket_name
+                )
+                
+                # Generate thumbnail url
+                is_video = item.type and "video" in item.type.lower()
+                last_dot_idx = object_name.rfind(".")
+                if last_dot_idx != -1:
+                    base_name = object_name[:last_dot_idx]
+                else:
+                    base_name = object_name
+                
+                thumb_ext = "_thumb.jpg" if is_video else "_thumb.webp"
+                thumb_object_name = f"{base_name}{thumb_ext}"
+                item.thumbnail_url = storage.get_presigned_url(
+                    thumb_object_name, bucket=bucket_name
                 )
 
     return PaginatedHistory(items=list(items), total=len(items), page=1, size=limit)
@@ -218,23 +231,17 @@ async def favorite_history(
         # 触发 R2 上传
         from src.core.gallery_core import async_copy_to_r2_background
 
-        parts = history.output_file.split("/")
-        if len(parts) > 1 and parts[0] in ["bot-data", "comfyui-temp"]:
-            bucket_name = parts[0]
-            object_name = "/".join(parts[1:])
-        elif (
-            "comfyui-temp" not in history.output_file
-            and "bot-data" not in history.output_file
-        ):
-            bucket_name = (
-                "comfyui-temp" if not "/" in history.output_file else "bot-data"
-            )
-            object_name = history.output_file
-        else:
+        if history.output_file.startswith("bot-data/"):
             bucket_name = "bot-data"
+            object_name = history.output_file[len("bot-data/"):]
+        elif history.output_file.startswith("comfyui-temp/"):
+            bucket_name = "comfyui-temp"
+            object_name = history.output_file[len("comfyui-temp/"):]
+        else:
+            bucket_name = "bot-data" if "/" in history.output_file else "comfyui-temp"
             object_name = history.output_file
 
-        r2_object_name = parts[-1]
+        r2_object_name = object_name.split('/')[-1]
 
         background_tasks.add_task(
             async_copy_to_r2_background, bucket_name, object_name, r2_object_name
@@ -504,18 +511,14 @@ async def send_history_to_bot(task_id: str, request: Request):
         history_prompt = history.prompt
 
     # 4. 严谨提取 bucket 和 object_name
-    parts = history_output_file.split("/")
-    if len(parts) > 1 and parts[0] in ["bot-data", "comfyui-temp"]:
-        bucket_name = parts[0]
-        object_name = "/".join(parts[1:])
-    elif (
-        "comfyui-temp" not in history_output_file
-        and "bot-data" not in history_output_file
-    ):
-        bucket_name = "comfyui-temp" if not "/" in history_output_file else "bot-data"
-        object_name = history_output_file
-    else:
+    if history_output_file.startswith("bot-data/"):
         bucket_name = "bot-data"
+        object_name = history_output_file[len("bot-data/"):]
+    elif history_output_file.startswith("comfyui-temp/"):
+        bucket_name = "comfyui-temp"
+        object_name = history_output_file[len("comfyui-temp/"):]
+    else:
+        bucket_name = "bot-data" if "/" in history_output_file else "comfyui-temp"
         object_name = history_output_file
 
     # 5. 从 MinIO 下载文件字节流到内存 (方案 B: 内存流直传)

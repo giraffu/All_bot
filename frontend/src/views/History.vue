@@ -38,7 +38,7 @@ const handleImageError = (e: Event, record: any) => {
   const img = e.target as HTMLImageElement
   if (!img.dataset.fallbackAttempted && record.output_file && !isVideoFile(record.output_file)) {
     img.dataset.fallbackAttempted = 'true'
-    img.src = getFileUrl(record.output_file)
+    img.src = record.output_file_url || getFileUrl(record.output_file)
     img.style.opacity = '1'
   } else {
     img.style.opacity = '0.3'
@@ -180,7 +180,7 @@ watch(() => route.query.task_id, (newTaskId) => {
           </button>
           <template v-if="record.output_file">
             <img
-              :src="getThumbnailUrl(record.output_file)"
+              :src="record.thumbnail_url || getThumbnailUrl(record.output_file)"
               @error="handleImageError($event, record)"
               class="w-full h-auto object-cover min-h-[120px] transition-opacity duration-300"
               loading="lazy"

@@ -11,6 +11,7 @@ from config import (
     MINIO_ACCESS_KEY,
     MINIO_BUCKET,
     MINIO_ENDPOINT,
+    MINIO_PUBLIC_URL,
     MINIO_SECRET_KEY,
     MINIO_SECURE,
     MINIO_TEMPLATE_BUCKET,
@@ -50,6 +51,24 @@ class StorageService:
             # 必须补充新增的桶映射，防止签名时触发同步网络阻塞
             self.client._region_map["comfyui-temp"] = "us-east-1"
             self.client._region_map["bot-data"] = "us-east-1"
+
+            if MINIO_PUBLIC_URL:
+                public_host = MINIO_PUBLIC_URL.replace("https://", "").replace("http://", "")
+                secure = MINIO_PUBLIC_URL.startswith("https")
+                self.public_client = Minio(
+                    public_host,
+                    access_key=MINIO_ACCESS_KEY,
+                    secret_key=MINIO_SECRET_KEY,
+                    secure=secure,
+                    region="us-east-1",
+                )
+                self.public_client._region_map[MINIO_BUCKET] = "us-east-1"
+                if MINIO_TEMPLATE_BUCKET:
+                    self.public_client._region_map[MINIO_TEMPLATE_BUCKET] = "us-east-1"
+                self.public_client._region_map["comfyui-temp"] = "us-east-1"
+                self.public_client._region_map["bot-data"] = "us-east-1"
+            else:
+                self.public_client = None
 
             # Check main bucket
             if not self.client.bucket_exists(MINIO_BUCKET):
@@ -249,7 +268,6 @@ class StorageService:
                 )
 
             from datetime import timedelta
-            from config import MINIO_PUBLIC_URL, MINIO_ACCESS_KEY, MINIO_SECRET_KEY
             # 兼容：原来的 expires_hours 表示小时，现在我们在 media_processor 里其实传入的是秒，
             # 为了防止冲突，我们可以做个简单的判断，如果传入的值 > 24，我们认为它是秒，否则是小时
             if expires_hours > 24:
@@ -257,18 +275,8 @@ class StorageService:
             else:
                 expire_time = timedelta(hours=float(expires_hours))
 
-            if MINIO_PUBLIC_URL:
-                public_host = MINIO_PUBLIC_URL.replace("https://", "").replace("http://", "")
-                secure = MINIO_PUBLIC_URL.startswith("https")
-                public_client = Minio(
-                    public_host,
-                    access_key=MINIO_ACCESS_KEY,
-                    secret_key=MINIO_SECRET_KEY,
-                    secure=secure,
-                    region="us-east-1",
-                )
-                public_client._region_map[bucket_name] = "us-east-1"
-                url = public_client.presigned_get_object(
+            if hasattr(self, 'public_client') and self.public_client:
+                url = self.public_client.presigned_get_object(
                     bucket_name,
                     object_name,
                     expires=expire_time,
@@ -299,41 +307,14 @@ class StorageService:
             return ""
 
         try:
-            from config import (
-                MINIO_ACCESS_KEY,
-                MINIO_PUBLIC_URL,
-                MINIO_SECRET_KEY,
-            )
-
             # The Ultimate Fix for 403 SignatureDoesNotMatch with MinIO behind Cloudflare/Nginx:
             # 1. The signature MUST be calculated using the EXACT Host header the browser will send.
             # 2. We MUST initialize a temporary Minio client with the public URL to sign it correctly.
             # 3. We MUST avoid using `region` or other params that trigger network calls in older SDKs.
 
-            if MINIO_PUBLIC_URL:
-                public_host = MINIO_PUBLIC_URL.replace("https://", "").replace(
-                    "http://", ""
-                )
-                secure = MINIO_PUBLIC_URL.startswith("https")
-
-                # Using a fresh client purely for offline signature generation
-                public_client = Minio(
-                    public_host,
-                    access_key=MINIO_ACCESS_KEY,
-                    secret_key=MINIO_SECRET_KEY,
-                    secure=secure,
-                    region="us-east-1",
-                )
-
-                # CRITICAL FIX for `?location=` network call crashing with 403:
-                # The python minio client tries to dynamically discover the bucket's region over the network
-                # before signing the URL. Since our public_host is behind a proxy, this internal network
-                # request gets rejected. We MUST manually inject the region into its internal cache
-                # to force it to do 100% offline signature calculation.
-                public_client._region_map[bucket] = "us-east-1"
-
+            if hasattr(self, 'public_client') and self.public_client:
                 # Ensure expires_minutes is a float to avoid TypeError with string from config
-                url = public_client.presigned_put_object(
+                url = self.public_client.presigned_put_object(
                     bucket_name=bucket,
                     object_name=object_name,
                     expires=timedelta(minutes=float(expires_minutes)),

@@ -361,9 +361,18 @@ const pauseVideo = (e: Event) => {
 }
 
 const handleImageError = (e: Event, post: Post) => {
-  // If loading fails, avoid infinite loop. We don't hide it entirely anymore.
   const img = e.target as HTMLImageElement
-  img.style.opacity = '0.3' // Dim the broken image
+  
+  // 降级机制：如果缩略图加载失败（如尚未生成），回退加载原图
+  // 但注意：如果原图是视频，绝不能让 img 去加载 .mp4
+  if (!img.dataset.fallbackAttempted && post.media_url && !isVideoFile(post.media_url, post.media_type)) {
+    img.dataset.fallbackAttempted = 'true'
+    img.src = post.media_url.includes('X-Amz-Signature') ? post.media_url : getFileUrl(post.media_url, post.id)
+    img.style.opacity = '1'
+  } else {
+    // 如果原图也加载失败，或者是视频（视频封面还没生成），则变暗显示破图图标/占位图
+    img.style.opacity = '0.3'
+  }
 }
 
 onMounted(() => {
