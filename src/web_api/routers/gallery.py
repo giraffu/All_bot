@@ -452,7 +452,23 @@ async def get_apply_context(
 
         input_file_url = None
         if history.input_file:
-            input_file_url = get_media_url(history.input_file)
+            from src.services.storage import storage
+            if history.input_file.startswith("bot-data/"):
+                bucket_name = "bot-data"
+                object_name = history.input_file[len("bot-data/"):]
+            elif history.input_file.startswith("comfyui-temp/"):
+                bucket_name = "comfyui-temp"
+                object_name = history.input_file[len("comfyui-temp/"):]
+            elif history.input_file.startswith("web_uploads/"):
+                bucket_name = "bot-data" if "/" in history.input_file else "comfyui-temp"
+                object_name = history.input_file
+            else:
+                bucket_name = "bot-data" if "/" in history.input_file else "comfyui-temp"
+                object_name = history.input_file
+                
+            input_file_url = storage.get_presigned_url(
+                object_name, bucket=bucket_name
+            )
 
         prompt = history.prompt or ""
         lora_name = None

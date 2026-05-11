@@ -131,6 +131,7 @@ async def get_user_history(
         item.task_id for item in items if item.is_public and item.task_id
     ]
 
+    active_task_ids = set()
     if task_ids_to_check:
         from src.database.models import GalleryPost
 
@@ -140,39 +141,39 @@ async def get_user_history(
         gp_result = await db.execute(gp_stmt)
         active_task_ids = set(gp_result.scalars().all())
 
-        for item in items:
-            if item.is_public and item.task_id:
-                if item.task_id not in active_task_ids:
-                    item.is_public = False
+    for item in items:
+        if item.is_public and item.task_id:
+            if item.task_id not in active_task_ids:
+                item.is_public = False
+        
+        if item.output_file:
+            if item.output_file.startswith("bot-data/"):
+                bucket_name = "bot-data"
+                object_name = item.output_file[len("bot-data/"):]
+            elif item.output_file.startswith("comfyui-temp/"):
+                bucket_name = "comfyui-temp"
+                object_name = item.output_file[len("comfyui-temp/"):]
+            else:
+                bucket_name = "bot-data" if "/" in item.output_file else "comfyui-temp"
+                object_name = item.output_file
+                
+            item.output_file_url = storage.get_presigned_url(
+                object_name, bucket=bucket_name
+            )
             
-            if item.output_file:
-                if item.output_file.startswith("bot-data/"):
-                    bucket_name = "bot-data"
-                    object_name = item.output_file[len("bot-data/"):]
-                elif item.output_file.startswith("comfyui-temp/"):
-                    bucket_name = "comfyui-temp"
-                    object_name = item.output_file[len("comfyui-temp/"):]
-                else:
-                    bucket_name = "bot-data" if "/" in item.output_file else "comfyui-temp"
-                    object_name = item.output_file
-                    
-                item.output_file_url = storage.get_presigned_url(
-                    object_name, bucket=bucket_name
-                )
-                
-                # Generate thumbnail url
-                is_video = item.type and "video" in item.type.lower()
-                last_dot_idx = object_name.rfind(".")
-                if last_dot_idx != -1:
-                    base_name = object_name[:last_dot_idx]
-                else:
-                    base_name = object_name
-                
-                thumb_ext = "_thumb.jpg" if is_video else "_thumb.webp"
-                thumb_object_name = f"{base_name}{thumb_ext}"
-                item.thumbnail_url = storage.get_presigned_url(
-                    thumb_object_name, bucket=bucket_name
-                )
+            # Generate thumbnail url
+            is_video = item.type and "video" in item.type.lower()
+            last_dot_idx = object_name.rfind(".")
+            if last_dot_idx != -1:
+                base_name = object_name[:last_dot_idx]
+            else:
+                base_name = object_name
+            
+            thumb_ext = "_thumb.jpg" if is_video else "_thumb.webp"
+            thumb_object_name = f"{base_name}{thumb_ext}"
+            item.thumbnail_url = storage.get_presigned_url(
+                thumb_object_name, bucket=bucket_name
+            )
 
     return PaginatedHistory(items=list(items), total=len(items), page=1, size=limit)
 
@@ -352,8 +353,34 @@ async def get_my_favorites(
     histories = result.scalars().all()
 
     response_items = []
+    from src.services.storage import storage
     for history in histories:
-        media_url = get_media_url(history.output_file)
+        media_url = ""
+        thumbnail_url = ""
+        if history.output_file:
+            if history.output_file.startswith("bot-data/"):
+                bucket_name = "bot-data"
+                object_name = history.output_file[len("bot-data/"):]
+            elif history.output_file.startswith("comfyui-temp/"):
+                bucket_name = "comfyui-temp"
+                object_name = history.output_file[len("comfyui-temp/"):]
+            else:
+                bucket_name = "bot-data" if "/" in history.output_file else "comfyui-temp"
+                object_name = history.output_file
+                
+            media_url = storage.get_presigned_url(object_name, bucket=bucket_name)
+            
+            # Generate thumbnail url
+            is_video = history.type and "video" in history.type.lower()
+            last_dot_idx = object_name.rfind(".")
+            if last_dot_idx != -1:
+                base_name = object_name[:last_dot_idx]
+            else:
+                base_name = object_name
+            
+            thumb_ext = "_thumb.jpg" if is_video else "_thumb.webp"
+            thumb_object_name = f"{base_name}{thumb_ext}"
+            thumbnail_url = storage.get_presigned_url(thumb_object_name, bucket=bucket_name)
 
         # media_type mapping
         media_type = "image"
@@ -379,7 +406,7 @@ async def get_my_favorites(
                 likes_count=0,
                 dislikes_count=0,
                 applied_count=0,
-                thumbnail_url=media_url,
+                thumbnail_url=thumbnail_url or media_url,
                 media_url=media_url,
                 created_at=history.created_at,
                 is_active=True,
@@ -416,7 +443,23 @@ async def get_favorite_apply_context(
 
     input_file_url = None
     if history.input_file:
-        input_file_url = get_media_url(history.input_file)
+        from src.services.storage import storage
+        if history.input_file.startswith("bot-data/"):
+            bucket_name = "bot-data"
+            object_name = history.input_file[len("bot-data/"):]
+        elif history.input_file.startswith("comfyui-temp/"):
+            bucket_name = "comfyui-temp"
+            object_name = history.input_file[len("comfyui-temp/"):]
+        elif history.input_file.startswith("web_uploads/"):
+            bucket_name = "bot-data" if "/" in history.input_file else "comfyui-temp"
+            object_name = history.input_file
+        else:
+            bucket_name = "bot-data" if "/" in history.input_file else "comfyui-temp"
+            object_name = history.input_file
+            
+        input_file_url = storage.get_presigned_url(
+            object_name, bucket=bucket_name
+        )
 
     prompt = history.prompt or ""
     lora_name = None
