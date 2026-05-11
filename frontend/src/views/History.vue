@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import api from '@/api'
 import { message, Modal } from 'ant-design-vue'
 import { useI18n } from 'vue-i18n'
+import LazyVideo from '@/components/LazyVideo.vue'
 import { Image as ImageIcon, Video, Clock, Download, Compass, Star, Trash2, Upload } from 'lucide-vue-next'
 import dayjs from 'dayjs'
 import { useViewport } from '@/composables/useViewport'
@@ -151,17 +152,11 @@ watch(() => route.query.task_id, (newTaskId) => {
             <Trash2 :size="14" />
           </button>
           <template v-if="record.output_file">
-            <video
+            <LazyVideo
               v-if="isVideoFile(record.output_file)"
-              :src="getFileUrl(record.output_file) + '#t=0.001'"
-              class="w-full h-auto object-cover min-h-[120px]"
-              preload="metadata"
-              muted
-              loop
-              playsinline
-              @mouseenter="(e) => (e.target as HTMLVideoElement).play().catch(()=>{})"
-              @mouseleave="(e) => { const v = e.target as HTMLVideoElement; v.pause(); v.currentTime = 0; }"
-            ></video>
+              :src="getFileUrl(record.output_file)"
+              className="w-full h-auto object-cover min-h-[120px]"
+            />
             <img
               v-else
               :src="getFileUrl(record.output_file)"

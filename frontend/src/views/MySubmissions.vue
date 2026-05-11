@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { message } from 'ant-design-vue'
+import { message, Modal } from 'ant-design-vue'
 import { useI18n } from 'vue-i18n'
+import LazyVideo from '@/components/LazyVideo.vue'
 import { Heart, ThumbsDown, Wand2, Play, Image as ImageIcon, Video, Flame, Clock, Trash2, Eye, EyeOff, Copy, Compass, ChevronLeft, ChevronRight } from 'lucide-vue-next'
 import api from '@/api'
 import dayjs from 'dayjs'
@@ -401,17 +402,11 @@ onUnmounted(() => {
             class="w-full h-auto object-cover transition-opacity duration-300" 
             loading="lazy" 
           />
-          <video 
+          <LazyVideo 
             v-else 
-            :src="getFileUrl(post.thumbnail_url, post.id) + '#t=0.001'" 
-            class="w-full h-auto object-cover" 
-            preload="metadata" 
-            muted 
-            loop
-            playsinline
-            @mouseenter="playVideo"
-            @mouseleave="pauseVideo"
-          ></video>
+            :src="getFileUrl(post.thumbnail_url, post.id)" 
+            className="w-full h-auto object-cover" 
+          />
           
           <!-- Status & Type Badge -->
           <div class="absolute top-2 left-2 flex items-center gap-2">
@@ -493,7 +488,7 @@ onUnmounted(() => {
         <!-- Media Area -->
         <div class="lg:w-2/3 bg-black flex items-center justify-center relative min-h-[300px] group/media">
           <img v-if="!isVideoFile(currentPost.media_url, currentPost.media_type)" :src="getFileUrl(currentPost.media_url, currentPost.id)" class="max-w-full max-h-[65vh] lg:max-h-[80vh] object-contain" />
-          <video v-else :src="getFileUrl(currentPost.media_url, currentPost.id) + '#t=0.001'" class="max-w-full max-h-[65vh] lg:max-h-[80vh] object-contain" controls autoplay loop playsinline></video>
+          <video v-else :src="getFileUrl(currentPost.media_url, currentPost.id)" class="max-w-full max-h-[65vh] lg:max-h-[80vh] object-contain" controls autoplay loop playsinline></video>
           
           <!-- Navigation Arrows -->
           <button v-if="hasPrev" @click.stop="goPrev" class="absolute left-2 top-1/2 -translate-y-1/2 w-10 h-10 sm:w-12 sm:h-12 bg-black/40 hover:bg-black/60 rounded-full flex items-center justify-center text-white/80 hover:text-white transition-all z-20 border border-white/10 backdrop-blur-sm opacity-100 lg:opacity-0 lg:group-hover/media:opacity-100">

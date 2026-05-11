@@ -67,20 +67,30 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
   
+  let fetchUserPromise: Promise<void> | null = null
+
   async function fetchUser() {
-    try {
-      const response = await api.get('/users/me')
-      if (response.data) {
-        user.value = response.data
-        localStorage.setItem('user', JSON.stringify(user.value))
-        
-        if (user.value?.language_code && ['zh', 'en'].includes(user.value.language_code)) {
-          i18n.global.locale.value = user.value.language_code as 'zh' | 'en'
+    if (fetchUserPromise) return fetchUserPromise
+    
+    fetchUserPromise = (async () => {
+      try {
+        const response = await api.get('/users/me')
+        if (response.data) {
+          user.value = response.data
+          localStorage.setItem('user', JSON.stringify(user.value))
+          
+          if (user.value?.language_code && ['zh', 'en'].includes(user.value.language_code)) {
+            i18n.global.locale.value = user.value.language_code as 'zh' | 'en'
+          }
         }
+      } catch (e) {
+        console.error('Failed to fetch user data', e)
+      } finally {
+        fetchUserPromise = null
       }
-    } catch (e) {
-      console.error('Failed to fetch user data', e)
-    }
+    })()
+    
+    return fetchUserPromise
   }
 
   function logout() {

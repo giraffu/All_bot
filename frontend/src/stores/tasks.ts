@@ -13,6 +13,7 @@ export interface Task {
   resultUrl?: string
   error?: string
   eventSource?: EventSource
+  retryCount?: number
 }
 
 export const useTasksStore = defineStore('tasks', () => {
@@ -99,7 +100,23 @@ export const useTasksStore = defineStore('tasks', () => {
     
     source.onerror = (err) => {
       console.error(`SSE Error for task ${task.id}`, err)
-      // source.close() 
+      if (task.eventSource) {
+        task.eventSource.close()
+        task.eventSource = undefined
+      }
+      
+      if (!task.retryCount) task.retryCount = 0
+      if (task.retryCount < 3) {
+        task.retryCount++
+        setTimeout(() => {
+          const currentTask = activeTasks.value.find(t => t.id === task.id)
+          if (currentTask && (currentTask.status === 'pending' || currentTask.status === 'running')) {
+            startListening(currentTask)
+          }
+        }, 5000 * task.retryCount)
+      } else {
+        message.warning(`网络不稳定，任务 [${task.title}] 监听已断开，请稍后刷新页面查看结果`)
+      }
     }
   }
 

@@ -9,6 +9,7 @@ import 'vue-waterfall-plugin-next/dist/style.css'
 import api from '@/api'
 import dayjs from 'dayjs'
 import { useViewport } from '@/composables/useViewport'
+import LazyVideo from '@/components/LazyVideo.vue'
 
 interface Post {
   id: number
@@ -161,37 +162,29 @@ const getFileUrl = (path: string, postId?: number, isThumbnail: boolean = false)
   return url
 }
 
-const getVideoPosterUrl = (path: string, postId?: number) => {
-  let url = getFileUrl(path, postId, false)
-  
-  // 针对 Cloudflare Pro / Business 用户的 Media Transformations 功能
-  // 因免费额度已满，暂时注释掉
-  /*
-  if (url.startsWith('http') && !url.includes('X-Amz-Signature')) {
-    try {
-      const urlObj = new URL(url)
-      const cfPrefix = '/cdn-cgi/media/mode=frame,time=0s,width=600'
-      url = `${urlObj.origin}${cfPrefix}${urlObj.pathname}${urlObj.search}`
-    } catch (e) {
-      console.warn('Failed to parse URL for CF media poster:', e)
-    }
-  }
-  */
-  
-  return url
-}
+
 
 let currentRequestId = 0
 
+let configPromise: Promise<void> | null = null
+
 const loadConfig = async () => {
-  try {
-    const res = await api.get('/gallery/config')
-    allowedTypes.value = res.data.allowed_types
-    videoLoraModels.value = res.data.lora_models || []
-    img2imgLoraModels.value = res.data.img2img_lora_models || []
-  } catch (error) {
-    console.error('Failed to load gallery config:', error)
-  }
+  if (configPromise) return configPromise
+  
+  configPromise = (async () => {
+    try {
+      const res = await api.get('/gallery/config')
+      allowedTypes.value = res.data.allowed_types
+      videoLoraModels.value = res.data.lora_models || []
+      img2imgLoraModels.value = res.data.img2img_lora_models || []
+    } catch (error) {
+      console.error('Failed to load gallery config:', error)
+    } finally {
+      configPromise = null
+    }
+  })()
+  
+  return configPromise
 }
 
 const loadPosts = async (reset = false) => {
@@ -221,9 +214,10 @@ const loadPosts = async (reset = false) => {
     
     if (requestId !== currentRequestId) return
     
+    const transparentPixel = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'
     const newItems = res.data.items.map((p: Post) => {
       const src = isVideoFile(p.thumbnail_url, p.media_type) 
-        ? getVideoPosterUrl(p.thumbnail_url, p.id) 
+        ? transparentPixel 
         : getFileUrl(p.thumbnail_url, p.id, true)
       return { ...p, src }
     })
@@ -377,18 +371,6 @@ const handleScroll = () => {
   }
 }
 
-// Video hover logic
-const playVideo = (e: Event) => {
-  const video = e.target as HTMLVideoElement
-  video.play().catch(() => {})
-}
-
-const pauseVideo = (e: Event) => {
-  const video = e.target as HTMLVideoElement
-  video.pause()
-  video.currentTime = 0
-}
-
 const handleImageError = (e: Event, post: Post) => {
   // If loading fails, avoid infinite loop. We don't hide it entirely anymore,
   // so users can see there's a broken image icon instead of a confusing black box.
@@ -495,6 +477,7 @@ onUnmounted(() => {
     <!-- Masonry Grid -->
     <Waterfall 
       :list="posts" 
+      rowKey="id"
       :breakpoints="breakpoints" 
       :gutter="isMobile ? 12 : 24" 
       :animationDuration="400"
@@ -510,34 +493,33 @@ onUnmounted(() => {
           <!-- Media -->
           <div 
             class="relative w-full overflow-hidden bg-slate-500"
-            :style="post.width && post.height ? { aspectRatio: `${post.width}/${post.height}` } : { minHeight: '100px' }"
+            :style="post.width && post.height ? { aspectRatio: `${post.width}/${post.height}` } : { aspectRatio: '1/1' }"
           >
             <img 
               v-if="!isVideoFile(post.thumbnail_url, post.media_type)" 
               :src="post.src" 
               @error="handleImageError($event, post)"
-              class="w-full object-cover transition-opacity duration-300"
-              :class="post.width && post.height ? 'absolute inset-0 h-full' : 'h-auto'"
+              class="w-full object-cover transition-opacity duration-300 absolute inset-0 h-full"
               loading="lazy" 
             />
-            <video 
+            <LazyVideo 
               v-else 
-              :src="getFileUrl(post.thumbnail_url, post.id, false) + '#t=0.001'" 
+              :src="getFileUrl(post.thumbnail_url, post.id, false)" 
               :poster="post.src"
-              class="w-full object-cover"
-              :class="post.width && post.height ? 'absolute inset-0 h-full' : 'h-auto'"
-              preload="metadata" 
-              muted 
-              loop
-              playsinline
-              @mouseenter="playVideo"
-              @mouseleave="pauseVideo"
-            ></video>
+              className="w-full object-cover absolute inset-0 h-full"
+            />
           
           <!-- Type Badge -->
           <div class="absolute top-2 right-2 bg-black/60 backdrop-blur-sm rounded-full p-1.5 shadow-sm border border-white/10">
             <ImageIcon v-if="!isVideoFile(post.thumbnail_url, post.media_type)" :size="14" class="text-cyan-400" />
             <Video v-else :size="14" class="text-indigo-400" />
+          </div>
+          
+          <!-- Play Icon Overlay for Videos -->
+          <div v-if="isVideoFile(post.thumbnail_url, post.media_type)" class="absolute inset-0 flex items-center justify-center pointer-events-none opacity-80 group-hover:opacity-0 transition-opacity duration-300">
+            <div class="w-12 h-12 bg-black/50 backdrop-blur-md rounded-full flex items-center justify-center border border-white/20 shadow-lg">
+              <Play :size="24" class="text-white ml-1" />
+            </div>
           </div>
           
           <!-- Tags Overlay on Hover -->
@@ -615,7 +597,7 @@ onUnmounted(() => {
         <!-- Media Area -->
         <div class="w-full lg:w-2/3 bg-black flex items-center justify-center relative group/media">
           <img v-if="!isVideoFile(currentPost.media_url, currentPost.media_type)" :src="getFileUrl(currentPost.media_url, currentPost.id, false)" class="w-full h-auto max-h-[65vh] object-contain lg:max-w-full lg:max-h-[80vh]" />
-          <video v-else :src="getFileUrl(currentPost.media_url, currentPost.id, false) + '#t=0.001'" :poster="getVideoPosterUrl(currentPost.media_url, currentPost.id)" class="w-full h-auto max-h-[65vh] object-contain lg:max-w-full lg:max-h-[80vh]" controls autoplay loop playsinline></video>
+          <video v-else :src="getFileUrl(currentPost.media_url, currentPost.id, false)" class="w-full h-auto max-h-[65vh] object-contain lg:max-w-full lg:max-h-[80vh]" controls autoplay loop playsinline></video>
           
           <!-- Navigation Arrows -->
           <button v-if="hasPrev" @click.stop="goPrev" class="absolute left-2 top-1/2 -translate-y-1/2 w-10 h-10 sm:w-12 sm:h-12 bg-black/40 hover:bg-black/60 rounded-full flex items-center justify-center text-white/80 hover:text-white transition-all z-20 border border-white/10 backdrop-blur-sm opacity-100 lg:opacity-0 lg:group-hover/media:opacity-100">

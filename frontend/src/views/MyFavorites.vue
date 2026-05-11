@@ -3,6 +3,7 @@ import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
+import LazyVideo from '@/components/LazyVideo.vue'
 import { Heart, ThumbsDown, Wand2, Play, Image as ImageIcon, Video, Flame, Clock, Trash2, Eye, EyeOff, Copy, Compass, ChevronLeft, ChevronRight } from 'lucide-vue-next'
 import api from '@/api'
 import dayjs from 'dayjs'
@@ -407,22 +408,23 @@ onUnmounted(() => {
             class="w-full h-auto object-cover transition-opacity duration-300" 
             loading="lazy" 
           />
-          <video 
+          <LazyVideo 
             v-else 
             :src="getFileUrl(post.thumbnail_url, post.id)" 
-            class="w-full h-auto object-cover" 
-            preload="metadata" 
-            muted 
-            loop
-            playsinline
-            @mouseenter="playVideo"
-            @mouseleave="pauseVideo"
-          ></video>
+            className="w-full h-auto object-cover" 
+          />
           
           <!-- Type Badge -->
           <div class="absolute top-2 right-2 bg-black/60 backdrop-blur-sm rounded-full p-1.5 shadow-sm border border-white/10">
             <ImageIcon v-if="!isVideoFile(post.thumbnail_url, post.media_type)" :size="14" class="text-cyan-400" />
             <Video v-else :size="14" class="text-indigo-400" />
+          </div>
+          
+          <!-- Play Icon Overlay for Videos -->
+          <div v-if="isVideoFile(post.thumbnail_url, post.media_type)" class="absolute inset-0 flex items-center justify-center pointer-events-none opacity-80 group-hover:opacity-0 transition-opacity duration-300">
+            <div class="w-12 h-12 bg-black/50 backdrop-blur-md rounded-full flex items-center justify-center border border-white/20 shadow-lg">
+              <Play :size="24" class="text-white ml-1" />
+            </div>
           </div>
           
           <!-- Tags Overlay on Hover -->

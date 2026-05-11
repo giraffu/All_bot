@@ -42,8 +42,8 @@ async def get_referral_rewards(db: AsyncSession = Depends(get_db)):
         total_invitations_map = {row[0]: row[1] for row in count_result.all()}
 
         rates = await get_exchange_rates()
-        ton_to_usdt = rates.get("ton_to_usdt", 5.0)
-        rmb_to_usdt = rates.get("rmb_to_usdt", 0.14)
+        ton_to_usdt = rates.get("ton_to_usdt", 1.4)
+        rmb_to_usdt = rates.get("rmb_to_usdt", 1.0 / 6.7)
         stars_to_usdt = rates.get("stars_to_usdt", 0.013)
 
         inviters_map = {}

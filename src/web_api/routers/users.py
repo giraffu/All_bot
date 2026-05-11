@@ -502,9 +502,16 @@ async def send_history_to_bot(task_id: str, request: Request):
         object_name = history_output_file
 
     # 5. 生成预签名 URL 供 Telegram 抓取
-    file_url = storage.get_presigned_url(
-        object_name, expires_hours=1, bucket=bucket_name
-    )
+    # Telegram Local API requires HTTP URLs, MinIO might return HTTPS if configured that way, 
+    # but more importantly, if presigned URL generation fails, we should handle it.
+    try:
+        file_url = storage.get_presigned_url(
+            object_name, expires_hours=1, bucket=bucket_name
+        )
+    except Exception as e:
+        logger.error(f"Failed to generate presigned URL for {object_name} in {bucket_name}: {e}")
+        file_url = None
+        
     if not file_url:
         raise HTTPException(status_code=500, detail="无法生成文件访问链接")
 
@@ -536,7 +543,14 @@ async def send_history_to_bot(task_id: str, request: Request):
             resp.raise_for_status()
         except httpx.HTTPStatusError as e:
             if e.response.status_code in [400, 403]:
-                # 用户拉黑机器人或者 Telegram 找不到该 Chat
+                # 用户拉黑机器人或者 Telegram 找不到该 Chat，或者文件太大
+                error_msg = e.response.text
+                logger.error(f"Telegram API Error (400/403): {error_msg}")
+                if "wrong file identifier/HTTP URL specified" in error_msg:
+                    raise HTTPException(
+                        status_code=400,
+                        detail="发送失败：无法访问该文件链接，文件可能已被清理或存在网络限制"
+                    )
                 raise HTTPException(
                     status_code=403,
                     detail="发送失败，请确保您在 Telegram 中已允许机器人发送消息",

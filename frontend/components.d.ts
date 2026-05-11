@@ -39,6 +39,7 @@ declare module 'vue' {
     ATextarea: typeof import('ant-design-vue/es')['Textarea']
     AUploadDragger: typeof import('ant-design-vue/es')['UploadDragger']
     HelloWorld: typeof import('./src/components/HelloWorld.vue')['default']
+    LazyVideo: typeof import('./src/components/LazyVideo.vue')['default']
     MobileTabbar: typeof import('./src/components/MobileTabbar.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
