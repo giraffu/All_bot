@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.database.core import AsyncSessionLocal
 from src.database.models import History, User
+from src.services.storage import storage
 from src.web_api.dependencies import get_current_user
 from src.web_api.schemas.auth_schema import InvitationRechargeStats, UserResponse
 from src.web_api.schemas.user_schema import PaginatedHistory, CheckinResponse
@@ -143,6 +144,22 @@ async def get_user_history(
             if item.is_public and item.task_id:
                 if item.task_id not in active_task_ids:
                     item.is_public = False
+            
+            if item.output_file:
+                parts = item.output_file.split("/")
+                if len(parts) > 1 and parts[0] in ["bot-data", "comfyui-temp"]:
+                    bucket_name = parts[0]
+                    object_name = "/".join(parts[1:])
+                elif "comfyui-temp" not in item.output_file and "bot-data" not in item.output_file:
+                    bucket_name = "comfyui-temp" if "/" not in item.output_file else "bot-data"
+                    object_name = item.output_file
+                else:
+                    bucket_name = "bot-data"
+                    object_name = item.output_file
+                    
+                item.output_file_url = storage.get_presigned_url(
+                    object_name, bucket=bucket_name
+                )
 
     return PaginatedHistory(items=list(items), total=len(items), page=1, size=limit)
 

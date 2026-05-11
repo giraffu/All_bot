@@ -64,8 +64,8 @@ const {
       <!-- Media Area -->
       <div class="w-full lg:w-2/3 bg-black flex items-center justify-center relative min-h-[60vh] lg:min-h-[300px]">
         <template v-if="currentRecord.output_file">
-          <video v-if="isVideoFile(currentRecord.output_file)" :src="getFileUrl(currentRecord.output_file)" class="w-full h-auto lg:max-w-full lg:max-h-[80vh] lg:object-contain object-cover" controls autoplay loop playsinline></video>
-          <img v-else :src="getFileUrl(currentRecord.output_file)" class="w-full h-auto lg:max-w-full lg:max-h-[80vh] lg:object-contain object-cover" />
+          <video v-if="isVideoFile(currentRecord.output_file)" :src="currentRecord.output_file_url || getFileUrl(currentRecord.output_file)" class="w-full h-auto lg:max-w-full lg:max-h-[80vh] lg:object-contain object-cover" controls autoplay loop playsinline></video>
+          <img v-else :src="currentRecord.output_file_url || getFileUrl(currentRecord.output_file)" class="w-full h-auto lg:max-w-full lg:max-h-[80vh] lg:object-contain object-cover" />
         </template>
         <div v-else class="text-slate-500">无文件</div>
       </div>

@@ -605,8 +605,10 @@ onUnmounted(() => {
 
         <!-- Media Area -->
         <div class="w-full lg:w-2/3 bg-black flex items-center justify-center relative group/media">
-          <img v-if="!isVideoFile(currentPost.media_url, currentPost.media_type)" :src="getFileUrl(currentPost.media_url, currentPost.id, false)" class="w-full h-auto max-h-[65vh] object-contain lg:max-w-full lg:max-h-[80vh]" />
-          <video v-else :src="getFileUrl(currentPost.media_url, currentPost.id, false)" class="w-full h-auto max-h-[65vh] object-contain lg:max-w-full lg:max-h-[80vh]" controls autoplay loop playsinline></video>
+          <template v-if="currentPost.media_url">
+            <img v-if="!isVideoFile(currentPost.media_url, currentPost.media_type)" :src="getFileUrl(currentPost.media_url, currentPost.id, false)" class="w-full h-auto max-h-[65vh] object-contain lg:max-w-full lg:max-h-[80vh]" />
+            <video v-else :src="getFileUrl(currentPost.media_url, currentPost.id, false)" class="w-full h-auto max-h-[65vh] object-contain lg:max-w-full lg:max-h-[80vh]" controls autoplay loop playsinline></video>
+          </template>
           
           <!-- Navigation Arrows -->
           <button v-if="hasPrev" @click.stop="goPrev" class="absolute left-2 top-1/2 -translate-y-1/2 w-10 h-10 sm:w-12 sm:h-12 bg-black/40 hover:bg-black/60 rounded-full flex items-center justify-center text-white/80 hover:text-white transition-all z-20 border border-white/10 backdrop-blur-sm opacity-100 lg:opacity-0 lg:group-hover/media:opacity-100">

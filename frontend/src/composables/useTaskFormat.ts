@@ -56,11 +56,11 @@ export function useTaskFormat() {
   const isVideoFile = (path: string) => {
     if (!path) return false
     const lowerPath = path.toLowerCase()
-    return lowerPath.endsWith('.mp4') || 
-           lowerPath.endsWith('.mov') || 
-           lowerPath.endsWith('.webm') || 
-           lowerPath.endsWith('.mkv') ||
-           lowerPath.endsWith('.avi')
+    return lowerPath.endsWith('.mp4') || lowerPath.includes('.mp4?') ||
+           lowerPath.endsWith('.mov') || lowerPath.includes('.mov?') ||
+           lowerPath.endsWith('.webm') || lowerPath.includes('.webm?') ||
+           lowerPath.endsWith('.mkv') || lowerPath.includes('.mkv?') ||
+           lowerPath.endsWith('.avi') || lowerPath.includes('.avi?')
   }
 
   return {

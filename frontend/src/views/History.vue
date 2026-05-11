@@ -18,6 +18,33 @@ const { isMobile } = useViewport()
 const tasksStore = useTasksStore()
 const { getTypeLabel, getFileUrl, isVideoFile } = useTaskFormat()
 
+const getThumbnailUrl = (output_file: string) => {
+  if (!output_file) return ''
+  
+  // Split URL and query parameters to avoid truncating signatures
+  const [pathPart, queryPart] = output_file.split('?')
+  
+  const isVideo = isVideoFile(pathPart)
+  const lastDotIndex = pathPart.lastIndexOf('.')
+  const basePath = lastDotIndex !== -1 ? pathPart.substring(0, lastDotIndex) : pathPart
+  
+  const newPath = isVideo ? `${basePath}_thumb.jpg` : `${basePath}_thumb.webp`
+  const thumbUrl = queryPart ? `${newPath}?${queryPart}` : newPath
+  
+  return getFileUrl(thumbUrl)
+}
+
+const handleImageError = (e: Event, record: any) => {
+  const img = e.target as HTMLImageElement
+  if (!img.dataset.fallbackAttempted && record.output_file && !isVideoFile(record.output_file)) {
+    img.dataset.fallbackAttempted = 'true'
+    img.src = getFileUrl(record.output_file)
+    img.style.opacity = '1'
+  } else {
+    img.style.opacity = '0.3'
+  }
+}
+
 const data = ref<any[]>([])
 const loading = ref(false)
 
@@ -152,17 +179,18 @@ watch(() => route.query.task_id, (newTaskId) => {
             <Trash2 :size="14" />
           </button>
           <template v-if="record.output_file">
-            <LazyVideo
-              v-if="isVideoFile(record.output_file)"
-              :src="getFileUrl(record.output_file)"
-              className="w-full h-auto object-cover min-h-[120px]"
-            />
             <img
-              v-else
-              :src="getFileUrl(record.output_file)"
-              class="w-full h-auto object-cover min-h-[120px]"
+              :src="getThumbnailUrl(record.output_file)"
+              @error="handleImageError($event, record)"
+              class="w-full h-auto object-cover min-h-[120px] transition-opacity duration-300"
               loading="lazy"
             />
+            <!-- Play Icon Overlay for Videos -->
+            <div v-if="isVideoFile(record.output_file)" class="absolute inset-0 flex items-center justify-center pointer-events-none opacity-80 group-hover:opacity-0 transition-opacity duration-300">
+              <div class="w-12 h-12 bg-black/50 backdrop-blur-md rounded-full flex items-center justify-center border border-white/20 shadow-lg">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-white ml-1"><polygon points="6 3 20 12 6 21 6 3"></polygon></svg>
+              </div>
+            </div>
           </template>
           <div v-else class="py-10 text-slate-500 italic text-sm">无文件</div>
 

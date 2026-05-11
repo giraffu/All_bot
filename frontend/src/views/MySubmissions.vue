@@ -396,17 +396,17 @@ onUnmounted(() => {
         <!-- Media -->
         <div class="relative w-full overflow-hidden bg-slate-500 aspect-auto min-h-[100px]">
           <img 
-            v-if="!isVideoFile(post.thumbnail_url, post.media_type)" 
             :src="getFileUrl(post.thumbnail_url, post.id)" 
             @error="handleImageError($event, post)"
             class="w-full h-auto object-cover transition-opacity duration-300" 
             loading="lazy" 
           />
-          <LazyVideo 
-            v-else 
-            :src="getFileUrl(post.thumbnail_url, post.id)" 
-            className="w-full h-auto object-cover" 
-          />
+          <!-- Play Icon Overlay for Videos -->
+          <div v-if="isVideoFile(post.thumbnail_url, post.media_type)" class="absolute inset-0 flex items-center justify-center pointer-events-none opacity-80 group-hover:opacity-0 transition-opacity duration-300">
+            <div class="w-12 h-12 bg-black/50 backdrop-blur-md rounded-full flex items-center justify-center border border-white/20 shadow-lg">
+              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-white ml-1"><polygon points="6 3 20 12 6 21 6 3"></polygon></svg>
+            </div>
+          </div>
           
           <!-- Status & Type Badge -->
           <div class="absolute top-2 left-2 flex items-center gap-2">
@@ -487,8 +487,10 @@ onUnmounted(() => {
       <div v-if="currentPost" class="flex flex-col lg:flex-row bg-[#0f172a] rounded-2xl overflow-hidden border border-slate-400/50 shadow-2xl">
         <!-- Media Area -->
         <div class="lg:w-2/3 bg-black flex items-center justify-center relative min-h-[300px] group/media">
-          <img v-if="!isVideoFile(currentPost.media_url, currentPost.media_type)" :src="getFileUrl(currentPost.media_url, currentPost.id)" class="max-w-full max-h-[65vh] lg:max-h-[80vh] object-contain" />
-          <video v-else :src="getFileUrl(currentPost.media_url, currentPost.id)" class="max-w-full max-h-[65vh] lg:max-h-[80vh] object-contain" controls autoplay loop playsinline></video>
+          <template v-if="currentPost.media_url">
+            <img v-if="!isVideoFile(currentPost.media_url, currentPost.media_type)" :src="getFileUrl(currentPost.media_url, currentPost.id)" class="max-w-full max-h-[65vh] lg:max-h-[80vh] object-contain" />
+            <video v-else :src="getFileUrl(currentPost.media_url, currentPost.id)" class="max-w-full max-h-[65vh] lg:max-h-[80vh] object-contain" controls autoplay loop playsinline></video>
+          </template>
           
           <!-- Navigation Arrows -->
           <button v-if="hasPrev" @click.stop="goPrev" class="absolute left-2 top-1/2 -translate-y-1/2 w-10 h-10 sm:w-12 sm:h-12 bg-black/40 hover:bg-black/60 rounded-full flex items-center justify-center text-white/80 hover:text-white transition-all z-20 border border-white/10 backdrop-blur-sm opacity-100 lg:opacity-0 lg:group-hover/media:opacity-100">

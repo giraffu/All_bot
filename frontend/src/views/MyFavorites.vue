@@ -167,15 +167,24 @@ const loadPosts = async (reset = false) => {
     if (requestId !== currentRequestId) return
     
     const newItems = res.data.items.map((p: Post) => {
-      let thumbUrl = p.thumbnail_url
+      let thumbUrl = p.thumbnail_url || p.media_url
       const isVideo = isVideoFile(p.media_url, p.media_type)
       
-      if (isVideo && thumbUrl && isVideoFile(thumbUrl)) {
-        const basePath = thumbUrl.substring(0, thumbUrl.lastIndexOf('.'))
-        thumbUrl = `${basePath}_thumb.jpg`
-      } else if (!isVideo && thumbUrl && !thumbUrl.endsWith('_thumb.webp')) {
-        const basePath = thumbUrl.substring(0, thumbUrl.lastIndexOf('.'))
-        thumbUrl = `${basePath}_thumb.webp`
+      if (thumbUrl) {
+        // Split URL and query parameters to avoid truncating signatures
+        const [pathPart, queryPart] = thumbUrl.split('?')
+        let newPath = pathPart
+        
+        if (isVideo && isVideoFile(pathPart)) {
+          const basePath = pathPart.substring(0, pathPart.lastIndexOf('.'))
+          newPath = `${basePath}_thumb.jpg`
+        } else if (!isVideo && !pathPart.endsWith('_thumb.webp')) {
+          const lastDotIndex = pathPart.lastIndexOf('.')
+          const basePath = lastDotIndex !== -1 ? pathPart.substring(0, lastDotIndex) : pathPart
+          newPath = `${basePath}_thumb.webp`
+        }
+        
+        thumbUrl = queryPart ? `${newPath}?${queryPart}` : newPath
       }
       
       const src = getFileUrl(thumbUrl, p.id)
@@ -428,17 +437,10 @@ onUnmounted(() => {
         <div class="relative w-full overflow-hidden bg-slate-500 aspect-auto min-h-[100px]"
              :style="post.width && post.height ? { aspectRatio: `${post.width}/${post.height}` } : { aspectRatio: '1/1' }">
           <img 
-            v-show="!isVideoFile(post.media_url, post.media_type)" 
             :src="post.src" 
             @error="handleImageError($event, post)"
             class="w-full h-full object-cover transition-opacity duration-300 absolute inset-0" 
             loading="lazy" 
-          />
-          <LazyVideo 
-            v-show="isVideoFile(post.media_url, post.media_type)" 
-            :src="getFileUrl(post.media_url, post.id)" 
-            :poster="post.src"
-            className="w-full h-full object-cover absolute inset-0" 
           />
           
           <!-- Type Badge -->
@@ -510,8 +512,10 @@ onUnmounted(() => {
       <div v-if="currentPost" class="flex flex-col lg:flex-row bg-[#0f172a] rounded-2xl overflow-hidden border border-slate-400/50 shadow-2xl">
         <!-- Media Area -->
         <div class="lg:w-2/3 bg-black flex items-center justify-center relative min-h-[300px] group/media">
-          <img v-if="!isVideoFile(currentPost.media_url, currentPost.media_type)" :src="getFileUrl(currentPost.media_url, currentPost.id)" class="max-w-full max-h-[65vh] lg:max-h-[80vh] object-contain" />
-          <video v-else :src="getFileUrl(currentPost.media_url, currentPost.id)" :poster="currentPost.src" class="max-w-full max-h-[65vh] lg:max-h-[80vh] object-contain" controls autoplay loop playsinline></video>
+          <template v-if="currentPost.media_url">
+            <img v-if="!isVideoFile(currentPost.media_url, currentPost.media_type)" :src="getFileUrl(currentPost.media_url, currentPost.id)" class="max-w-full max-h-[65vh] lg:max-h-[80vh] object-contain" />
+            <video v-else :src="getFileUrl(currentPost.media_url, currentPost.id)" :poster="currentPost.src" class="max-w-full max-h-[65vh] lg:max-h-[80vh] object-contain" controls autoplay loop playsinline></video>
+          </template>
           
           <!-- Navigation Arrows -->
           <button v-if="hasPrev" @click.stop="goPrev" class="absolute left-2 top-1/2 -translate-y-1/2 w-10 h-10 sm:w-12 sm:h-12 bg-black/40 hover:bg-black/60 rounded-full flex items-center justify-center text-white/80 hover:text-white transition-all z-20 border border-white/10 backdrop-blur-sm opacity-100 lg:opacity-0 lg:group-hover/media:opacity-100">

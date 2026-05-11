@@ -79,37 +79,63 @@ class TonPaymentValidator:
             }
 
             async with session.post(self.api_base, json=payload) as resp:
-                data = await resp.json()
+                try:
+                    data = await resp.json()
+                except Exception as e:
+                    logger.warning(f"Failed to decode JSON from TON API: {e}. Status: {resp.status}")
+                    return
 
-                if "result" not in data:
-                    logger.error(f"Failed to fetch transactions: {data}")
+                if not isinstance(data, dict) or "result" not in data:
+                    logger.error(f"Failed to fetch transactions or invalid format: {data}")
                     return
 
                 transactions = data["result"]
+                if not isinstance(transactions, list):
+                    logger.error(f"Transactions is not a list: {transactions}")
+                    return
 
                 # Process from oldest to newest in the current batch
                 for tx in reversed(transactions):
-                    tx_lt = int(tx.get("transaction_id", {}).get("lt", 0))
-                    tx_hash = tx.get("transaction_id", {}).get("hash", "")
+                    if not isinstance(tx, dict):
+                        continue
+
+                    tx_id_info = tx.get("transaction_id", {})
+                    if not isinstance(tx_id_info, dict):
+                        tx_id_info = {}
+
+                    try:
+                        tx_lt = int(tx_id_info.get("lt", 0))
+                    except (ValueError, TypeError):
+                        tx_lt = 0
+
+                    tx_hash = tx_id_info.get("hash", "")
 
                     if tx_lt <= self.last_lt:
                         continue  # Already processed
 
                     in_msg = tx.get("in_msg", {})
-                    if not in_msg:
+                    if not isinstance(in_msg, dict) or not in_msg:
                         self.last_lt = tx_lt
                         continue
 
-                    amount_nanotons = int(in_msg.get("value", 0))
+                    try:
+                        amount_nanotons = int(in_msg.get("value", 0))
+                    except (ValueError, TypeError):
+                        amount_nanotons = 0
+
                     if amount_nanotons <= 0:
                         self.last_lt = tx_lt
                         continue
 
                     # Extract message/payload
                     msg_data = in_msg.get("message", "")
-                    msg_data_boc = in_msg.get("msg_data", {}).get(
-                        "body", ""
-                    )  # Might be in body
+                    if not isinstance(msg_data, str):
+                        msg_data = ""
+
+                    msg_data_info = in_msg.get("msg_data", {})
+                    if not isinstance(msg_data_info, dict):
+                        msg_data_info = {}
+                    msg_data_boc = msg_data_info.get("body", "")  # Might be in body
 
                     # Try to parse payload
                     order_id = None
