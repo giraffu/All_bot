@@ -29,6 +29,7 @@ interface Post {
   has_disliked: boolean
   author_name?: string
   src?: string
+  imgLoaded?: boolean
 }
 
 const router = useRouter()
@@ -139,20 +140,6 @@ const getFileUrl = (path: string, postId?: number, isThumbnail: boolean = false)
     }
   }
   
-  // 针对 Cloudflare Pro / Business 用户的 Image Resizing 功能
-  // 因免费额度 5000 次已满，暂时注释掉以加载原图
-  /*
-  if (isThumbnail && url.startsWith('http') && !url.includes('X-Amz-Signature')) {
-    try {
-      const urlObj = new URL(url)
-      const cfPrefix = '/cdn-cgi/image/width=600,quality=80,format=auto'
-      url = `${urlObj.origin}${cfPrefix}${urlObj.pathname}${urlObj.search}`
-    } catch (e) {
-      console.warn('Failed to parse URL for CF resizing:', e)
-    }
-  }
-  */
-  
   // 缓存策略：v=${postId} 作为静态版本号，仅在原 URL 无鉴权签名时安全拼接
   if (postId && !url.includes('X-Amz-Signature')) {
     const sep = url.includes('?') ? '&' : '?'
@@ -216,9 +203,21 @@ const loadPosts = async (reset = false) => {
     
     const transparentPixel = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'
     const newItems = res.data.items.map((p: Post) => {
-      const src = isVideoFile(p.thumbnail_url, p.media_type) 
-        ? transparentPixel 
-        : getFileUrl(p.thumbnail_url, p.id, true)
+      // 兼容后端还没重启的情况：如果后端下发的 thumbnail_url 还是原视频 (.mp4)，前端自己算出 _thumb.jpg
+      let thumbUrl = p.thumbnail_url
+      const isVideo = isVideoFile(p.media_url, p.media_type)
+      
+      if (isVideo && thumbUrl && isVideoFile(thumbUrl)) {
+        // 前端强制计算 _thumb.jpg，摆脱对后端新代码的强依赖
+        const basePath = thumbUrl.substring(0, thumbUrl.lastIndexOf('.'))
+        thumbUrl = `${basePath}_thumb.jpg`
+      } else if (!isVideo && thumbUrl && !thumbUrl.endsWith('_thumb.webp')) {
+        // 图片同样做兼容处理
+        const basePath = thumbUrl.substring(0, thumbUrl.lastIndexOf('.'))
+        thumbUrl = `${basePath}_thumb.webp`
+      }
+      
+      const src = getFileUrl(thumbUrl, p.id, true)
       return { ...p, src }
     })
     
@@ -372,10 +371,18 @@ const handleScroll = () => {
 }
 
 const handleImageError = (e: Event, post: Post) => {
-  // If loading fails, avoid infinite loop. We don't hide it entirely anymore,
-  // so users can see there's a broken image icon instead of a confusing black box.
   const img = e.target as HTMLImageElement
-  img.style.opacity = '0.3' // Dim the broken image
+  
+  // 降级机制：如果缩略图加载失败（如尚未生成），回退加载原图
+  // 但注意：如果原图是视频，绝不能让 img 去加载 .mp4
+  if (!img.dataset.fallbackAttempted && post.media_url && !isVideoFile(post.media_url, post.media_type)) {
+    img.dataset.fallbackAttempted = 'true'
+    img.src = getFileUrl(post.media_url, post.id, false)
+    img.style.opacity = '1'
+  } else {
+    // 如果原图也加载失败，或者是视频（视频封面还没生成），则变暗显示破图图标/占位图
+    img.style.opacity = '0.3'
+  }
 }
 
 onMounted(() => {
@@ -495,28 +502,30 @@ onUnmounted(() => {
             class="relative w-full overflow-hidden bg-slate-500"
             :style="post.width && post.height ? { aspectRatio: `${post.width}/${post.height}` } : { aspectRatio: '1/1' }"
           >
+            <!-- Render as standard image if it's an image task OR if it's a video BUT the thumbnail is loaded successfully -->
             <img 
-              v-if="!isVideoFile(post.thumbnail_url, post.media_type)" 
+              v-show="!isVideoFile(post.media_url, post.media_type)" 
               :src="post.src" 
               @error="handleImageError($event, post)"
               class="w-full object-cover transition-opacity duration-300 absolute inset-0 h-full"
               loading="lazy" 
             />
+            
             <LazyVideo 
-              v-else 
-              :src="getFileUrl(post.thumbnail_url, post.id, false)" 
+              v-show="isVideoFile(post.media_url, post.media_type)" 
+              :src="getFileUrl(post.media_url, post.id, false)" 
               :poster="post.src"
               className="w-full object-cover absolute inset-0 h-full"
             />
           
           <!-- Type Badge -->
           <div class="absolute top-2 right-2 bg-black/60 backdrop-blur-sm rounded-full p-1.5 shadow-sm border border-white/10">
-            <ImageIcon v-if="!isVideoFile(post.thumbnail_url, post.media_type)" :size="14" class="text-cyan-400" />
+            <ImageIcon v-if="!isVideoFile(post.media_url, post.media_type)" :size="14" class="text-cyan-400" />
             <Video v-else :size="14" class="text-indigo-400" />
           </div>
           
           <!-- Play Icon Overlay for Videos -->
-          <div v-if="isVideoFile(post.thumbnail_url, post.media_type)" class="absolute inset-0 flex items-center justify-center pointer-events-none opacity-80 group-hover:opacity-0 transition-opacity duration-300">
+          <div v-if="isVideoFile(post.media_url, post.media_type)" class="absolute inset-0 flex items-center justify-center pointer-events-none opacity-80 group-hover:opacity-0 transition-opacity duration-300">
             <div class="w-12 h-12 bg-black/50 backdrop-blur-md rounded-full flex items-center justify-center border border-white/20 shadow-lg">
               <Play :size="24" class="text-white ml-1" />
             </div>

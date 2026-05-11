@@ -15,7 +15,13 @@ export function useTaskInteraction(options?: {
     submittingTasks.value[record.task_id] = true
     
     try {
-      const res = await api.post(`/gallery/posts/submit/${record.task_id}`)
+      const payload = {
+        width: record.width || null,
+        height: record.height || null,
+        duration: record.duration || null
+      }
+      
+      const res = await api.post(`/gallery/posts/submit/${record.task_id}`, payload)
       message.success(res.data?.message || '投稿成功！')
       record.is_public = true
     } catch (error: any) {

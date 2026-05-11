@@ -28,6 +28,7 @@ from src.web_api.schemas.gallery_schema import (
     ApplyContextResponse,
     GalleryPostResponse,
     PaginatedGalleryResponse,
+    GallerySubmitRequest,
 )
 
 router = APIRouter()
@@ -69,9 +70,22 @@ def get_media_url(output_file: str) -> str:
 
 
 def generate_thumbnail_url(output_file: str, media_type: str) -> str:
-    # 假设使用 imgproxy 并且可以通过代理来访问缩略图
-    # 此时直接返回原文件路径即可，前端组装 URL 时会加上 imgproxy 规则
-    return get_media_url(output_file)
+    """
+    Generate the thumbnail URL based on the original file path.
+    Appends _thumb.jpg for videos and _thumb.webp for images.
+    """
+    if not output_file:
+        return ""
+        
+    # 剥离原扩展名
+    base_path = output_file.rsplit(".", 1)[0]
+    
+    if media_type == "video":
+        thumb_file = f"{base_path}_thumb.jpg"
+    else:
+        thumb_file = f"{base_path}_thumb.webp"
+        
+    return get_media_url(thumb_file)
 
 
 @router.get("/config")
@@ -178,7 +192,7 @@ async def _build_post_responses(session, posts, current_user: Optional[User]):
         task_type_from_history = history.type if history else None
 
         media_url = get_media_url(output_file)
-        thumbnail_url = media_url
+        thumbnail_url = generate_thumbnail_url(output_file, post.media_type)
 
         response_items.append(
             GalleryPostResponse(
@@ -487,11 +501,16 @@ from src.core.gallery_core import (
 async def submit_to_gallery(
     task_id: str,
     background_tasks: BackgroundTasks,
+    request: GallerySubmitRequest = None,
     current_user: User = Depends(get_current_user),
 ):
     try:
+        width = request.width if request else None
+        height = request.height if request else None
+        duration = request.duration if request else None
+        
         result = await process_submit_to_gallery(
-            current_user.id, task_id, background_tasks
+            current_user.id, task_id, background_tasks, width, height, duration
         )
         return result
     except GalleryCoreError as e:

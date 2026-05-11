@@ -1,8 +1,11 @@
-from datetime import datetime
 from typing import List, Optional
-
+from datetime import datetime
 from pydantic import BaseModel
 
+class GallerySubmitRequest(BaseModel):
+    width: Optional[int] = None
+    height: Optional[int] = None
+    duration: Optional[int] = None
 
 class GalleryPostResponse(BaseModel):
     id: int

@@ -138,21 +138,19 @@ class StorageService:
             self._sync_upload_to_r2, bucket_name, object_name, r2_object_name
         )
 
-    def upload_file(self, file_path: str, object_name: str, bucket: str = None) -> str:
+    def upload_file(self, bucket_name: str, file_path: str, object_name: str) -> bool:
         """Upload a local file to MinIO"""
-        bucket = bucket or MINIO_BUCKET
+        bucket = bucket_name or MINIO_BUCKET
         if not self.client:
             logger.error("MinIO client not initialized")
-            return ""
+            return False
 
         try:
             self.client.fput_object(bucket, object_name, file_path)
-            return object_name
+            return True
         except Exception as e:
-            logger.error(
-                f"Failed to upload file {file_path} to {object_name} in {bucket}: {e}"
-            )
-            return ""
+            logger.error(f"Failed to upload file {file_path} to {bucket}/{object_name}: {e}")
+            return False
 
     def upload_bytes(
         self,
@@ -213,71 +211,48 @@ class StorageService:
             )
             return []
 
+    def object_exists(self, bucket_name: str, object_name: str) -> bool:
+        """检查对象是否存在"""
+        try:
+            self.client.stat_object(bucket_name, object_name)
+            return True
+        except Exception:
+            return False
+            
+    def download_file(self, bucket_name: str, object_name: str, file_path: str):
+        """将对象下载到本地文件"""
+        self.client.fget_object(bucket_name, object_name, file_path)
+
     def get_presigned_url(
         self,
+        bucket_name: str,
         object_name: str,
-        expires_hours: int = 1,
-        bucket: str = None,
+        expires: float = 3600,
         download: bool = False,
     ) -> str:
-        """Get a presigned URL for the object"""
-        bucket = bucket or MINIO_BUCKET
+        """Generate a presigned URL for downloading an object."""
         if not self.client:
+            logger.error("MinIO client not initialized")
             return ""
 
         try:
             response_headers = {}
             if download:
                 filename = object_name.split("/")[-1]
-                response_headers = {
-                    "response-content-disposition": f'attachment; filename="{filename}"'
-                }
+                response_headers["response-content-disposition"] = (
+                    f'attachment; filename="{filename}"'
+                )
 
-            from config import (
-                MINIO_ACCESS_KEY,
-                MINIO_PUBLIC_URL,
-                MINIO_SECRET_KEY,
+            from datetime import timedelta
+            url = self.client.presigned_get_object(
+                bucket_name,
+                object_name,
+                expires=timedelta(seconds=float(expires)),
+                response_headers=response_headers,
             )
-
-            if MINIO_PUBLIC_URL:
-                public_host = (
-                    MINIO_PUBLIC_URL.replace("https://", "")
-                    .replace("http://", "")
-                    .rstrip("/")
-                )
-                secure = MINIO_PUBLIC_URL.startswith("https")
-
-                # Using a fresh client purely for offline signature generation
-                public_client = Minio(
-                    public_host,
-                    access_key=MINIO_ACCESS_KEY,
-                    secret_key=MINIO_SECRET_KEY,
-                    secure=secure,
-                    region="us-east-1",
-                )
-
-                # Force offline signature calculation
-                public_client._region_map[bucket] = "us-east-1"
-
-                url = public_client.presigned_get_object(
-                    bucket_name=bucket,
-                    object_name=object_name,
-                    expires=timedelta(hours=expires_hours),
-                    response_headers=response_headers if response_headers else None,
-                )
-            else:
-                url = self.client.presigned_get_object(
-                    bucket,
-                    object_name,
-                    expires=timedelta(hours=expires_hours),
-                    response_headers=response_headers if response_headers else None,
-                )
-
             return url
         except Exception as e:
-            logger.error(
-                f"Failed to generate presigned URL for {object_name} in {bucket}: {e}"
-            )
+            logger.error(f"Failed to generate presigned URL for {object_name} in {bucket_name}: {e}")
             return ""
 
     def get_presigned_put_url(
@@ -326,16 +301,17 @@ class StorageService:
                 # to force it to do 100% offline signature calculation.
                 public_client._region_map[bucket] = "us-east-1"
 
+                # Ensure expires_minutes is a float to avoid TypeError with string from config
                 url = public_client.presigned_put_object(
                     bucket_name=bucket,
                     object_name=object_name,
-                    expires=timedelta(minutes=expires_minutes),
+                    expires=timedelta(minutes=float(expires_minutes)),
                 )
             else:
                 url = self.client.presigned_put_object(
                     bucket_name=bucket,
                     object_name=object_name,
-                    expires=timedelta(minutes=expires_minutes),
+                    expires=timedelta(minutes=float(expires_minutes)),
                 )
 
             return url

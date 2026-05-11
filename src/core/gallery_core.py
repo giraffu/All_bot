@@ -10,6 +10,7 @@ from src.database.models import GalleryPost, History, User, UserInteraction
 from src.services.redis_client import redis_client
 from src.constants import MODE_NAME_MAP
 from src.services.storage import storage
+from src.core.media_processor import generate_and_upload_thumbnail
 
 logger = logging.getLogger(__name__)
 
@@ -177,6 +178,11 @@ async def process_submit_to_gallery(
         # Add R2 copy to BackgroundTasks instead of awaiting it directly
         background_tasks.add_task(
             async_copy_to_r2_background, bucket_name, object_name, r2_object_name
+        )
+        
+        # Add Thumbnail Generation to BackgroundTasks
+        background_tasks.add_task(
+            generate_and_upload_thumbnail, history.output_file, media_type
         )
 
         await redis_client.increment_gallery_submit(user_id)
