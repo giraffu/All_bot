@@ -501,26 +501,27 @@ async def send_history_to_bot(task_id: str, request: Request):
         bucket_name = "bot-data"
         object_name = history_output_file
 
-    # 5. 生成预签名 URL 供 Telegram 抓取
-    # Telegram Local API requires HTTP URLs, MinIO might return HTTPS if configured that way, 
-    # but more importantly, if presigned URL generation fails, we should handle it.
+    # 5. 从 MinIO 下载文件字节流到内存 (方案 B: 内存流直传)
+    import asyncio
     try:
-        file_url = storage.get_presigned_url(
-            object_name, expires_hours=1, bucket=bucket_name
+        # 【核心规范】必须使用 asyncio.to_thread 包装同步的 MinIO SDK 调用，防止阻塞 FastAPI 事件循环
+        file_bytes = await asyncio.to_thread(
+            storage.get_file_bytes, object_name, bucket_name
         )
     except Exception as e:
-        logger.error(f"Failed to generate presigned URL for {object_name} in {bucket_name}: {e}")
-        file_url = None
+        logger.error(f"Failed to download {object_name} from {bucket_name}: {e}")
+        file_bytes = None
         
-    if not file_url:
-        raise HTTPException(status_code=500, detail="无法生成文件访问链接")
+    if not file_bytes:
+        raise HTTPException(status_code=500, detail="无法读取文件内容")
 
-    # 6. 构造 Local API 请求并发送
+    # 6. 构造 Local API 请求并以 multipart/form-data 发送
     is_video = history_type and "video" in history_type.lower()
     method = "sendVideo" if is_video else "sendPhoto"
     url = f"{TELEGRAM_API_BASE_URL}/bot{BOT_TOKEN}/{method}"
 
-    payload = {"chat_id": telegram_id}
+    # httpx 发送 multipart data 时，普通字段放 data，文件放 files
+    payload = {"chat_id": str(telegram_id)}
 
     # 截取 Prompt 前 100 字符作为 caption，避免太长导致发送失败，同时避免传入 null
     if history_prompt:
@@ -531,25 +532,30 @@ async def send_history_to_bot(task_id: str, request: Request):
         )
         payload["caption"] = caption
 
+    filename = object_name.split("/")[-1]
+    files = {}
     if is_video:
-        payload["video"] = file_url
+        files["video"] = (filename, file_bytes, "video/mp4")
     else:
-        payload["photo"] = file_url
+        # 简单推断 content_type
+        ext = filename.split(".")[-1].lower() if "." in filename else "jpeg"
+        content_type = f"image/{ext}" if ext != "jpg" else "image/jpeg"
+        files["photo"] = (filename, file_bytes, content_type)
 
     async with httpx.AsyncClient() as client:
         try:
-            # timeout 设置宽裕点，因为 Local API 需要去 MinIO 拉取大视频
-            resp = await client.post(url, json=payload, timeout=30.0)
+            # timeout 设置宽裕点 (60秒)，因为直传大文件需要时间
+            resp = await client.post(url, data=payload, files=files, timeout=60.0)
             resp.raise_for_status()
         except httpx.HTTPStatusError as e:
             if e.response.status_code in [400, 403]:
-                # 用户拉黑机器人或者 Telegram 找不到该 Chat，或者文件太大
                 error_msg = e.response.text
                 logger.error(f"Telegram API Error (400/403): {error_msg}")
-                if "wrong file identifier/HTTP URL specified" in error_msg:
+                # 兼容不同类型的 Telegram 报错
+                if "wrong file identifier" in error_msg or "failed to get HTTP URL content" in error_msg:
                     raise HTTPException(
                         status_code=400,
-                        detail="发送失败：无法访问该文件链接，文件可能已被清理或存在网络限制"
+                        detail="发送失败：Telegram 无法访问该文件或文件格式错误"
                     )
                 raise HTTPException(
                     status_code=403,

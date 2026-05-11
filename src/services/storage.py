@@ -138,7 +138,7 @@ class StorageService:
             self._sync_upload_to_r2, bucket_name, object_name, r2_object_name
         )
 
-    def upload_file(self, bucket_name: str, file_path: str, object_name: str) -> bool:
+    def upload_file(self, file_path: str, object_name: str, bucket_name: str = None) -> bool:
         """Upload a local file to MinIO"""
         bucket = bucket_name or MINIO_BUCKET
         if not self.client:
@@ -225,12 +225,13 @@ class StorageService:
 
     def get_presigned_url(
         self,
-        bucket_name: str,
         object_name: str,
-        expires: float = 3600,
+        expires_hours: float = 1,
+        bucket: str = None,
         download: bool = False,
     ) -> str:
         """Generate a presigned URL for downloading an object."""
+        bucket_name = bucket or MINIO_BUCKET
         if not self.client:
             logger.error("MinIO client not initialized")
             return ""
@@ -244,10 +245,17 @@ class StorageService:
                 )
 
             from datetime import timedelta
+            # 兼容：原来的 expires_hours 表示小时，现在我们在 media_processor 里其实传入的是秒，
+            # 为了防止冲突，我们可以做个简单的判断，如果传入的值 > 24，我们认为它是秒，否则是小时
+            if expires_hours > 24:
+                expire_time = timedelta(seconds=float(expires_hours))
+            else:
+                expire_time = timedelta(hours=float(expires_hours))
+
             url = self.client.presigned_get_object(
                 bucket_name,
                 object_name,
-                expires=timedelta(seconds=float(expires)),
+                expires=expire_time,
                 response_headers=response_headers,
             )
             return url

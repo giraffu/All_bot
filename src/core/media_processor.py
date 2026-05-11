@@ -58,7 +58,8 @@ async def generate_and_upload_thumbnail(output_file: str, media_type: str) -> No
         if media_type == "video":
             # For video, use FFmpeg with presigned URL (HTTP Range support)
             # Fallback to synchronous get_presigned_url
-            input_url = await asyncio.to_thread(storage.get_presigned_url, bucket_name, object_name)
+            # 兼容：storage.get_presigned_url 的签名是 (object_name, expires_hours, bucket)
+            input_url = await asyncio.to_thread(storage.get_presigned_url, object_name, 1.0, bucket_name)
             
             # Run FFmpeg in a separate thread to prevent event loop blocking
             # Fast seek (-ss 00:00:00.000) before -i is crucial for performance on large files
@@ -115,7 +116,7 @@ async def generate_and_upload_thumbnail(output_file: str, media_type: str) -> No
         # Upload the generated thumbnail back to MinIO
         logger.info(f"Uploading thumbnail to {bucket_name}/{thumb_object_name}")
         # Fallback to synchronous upload_file
-        await asyncio.to_thread(storage.upload_file, bucket_name, thumb_local_path, thumb_object_name)
+        await asyncio.to_thread(storage.upload_file, thumb_local_path, thumb_object_name, bucket_name)
         
         # Also sync to R2
         try:

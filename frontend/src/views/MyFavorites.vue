@@ -26,6 +26,7 @@ interface Post {
   has_disliked: boolean
   is_active: boolean
   prompt: string
+  src?: string
 }
 
 const router = useRouter()
@@ -109,7 +110,7 @@ const getFileUrl = (path: string, postId?: number) => {
     }
   }
   
-  if (postId) {
+  if (postId && !url.includes('X-Amz-Signature')) {
     const sep = url.includes('?') ? '&' : '?'
     url = `${url}${sep}v=${postId}`
   }
@@ -165,10 +166,26 @@ const loadPosts = async (reset = false) => {
     
     if (requestId !== currentRequestId) return
     
+    const newItems = res.data.items.map((p: Post) => {
+      let thumbUrl = p.thumbnail_url
+      const isVideo = isVideoFile(p.media_url, p.media_type)
+      
+      if (isVideo && thumbUrl && isVideoFile(thumbUrl)) {
+        const basePath = thumbUrl.substring(0, thumbUrl.lastIndexOf('.'))
+        thumbUrl = `${basePath}_thumb.jpg`
+      } else if (!isVideo && thumbUrl && !thumbUrl.endsWith('_thumb.webp')) {
+        const basePath = thumbUrl.substring(0, thumbUrl.lastIndexOf('.'))
+        thumbUrl = `${basePath}_thumb.webp`
+      }
+      
+      const src = getFileUrl(thumbUrl, p.id)
+      return { ...p, src }
+    })
+    
     if (reset) {
-      posts.value = res.data.items
+      posts.value = newItems
     } else {
-      posts.value = [...posts.value, ...res.data.items]
+      posts.value = [...posts.value, ...newItems]
     }
     
     total.value = res.data.total
@@ -350,10 +367,18 @@ const pauseVideo = (e: Event) => {
 }
 
 const handleImageError = (e: Event, post: Post) => {
-  // If loading fails, just let it fail silently without infinite loop
-  // as we no longer have an alternative fallback url
   const img = e.target as HTMLImageElement
-  img.style.display = 'none' // Hide broken image icon
+  
+  // 降级机制：如果缩略图加载失败（如尚未生成），回退加载原图
+  // 但注意：如果原图是视频，绝不能让 img 去加载 .mp4
+  if (!img.dataset.fallbackAttempted && post.media_url && !isVideoFile(post.media_url, post.media_type)) {
+    img.dataset.fallbackAttempted = 'true'
+    img.src = getFileUrl(post.media_url, post.id)
+    img.style.opacity = '1'
+  } else {
+    // 如果原图也加载失败，或者是视频（视频封面还没生成），则变暗显示破图图标/占位图
+    img.style.opacity = '0.3'
+  }
 }
 
 onMounted(() => {
@@ -400,28 +425,30 @@ onUnmounted(() => {
         @click="openDetail(post)"
       >
         <!-- Media -->
-        <div class="relative w-full overflow-hidden bg-slate-500 aspect-auto min-h-[100px]">
+        <div class="relative w-full overflow-hidden bg-slate-500 aspect-auto min-h-[100px]"
+             :style="post.width && post.height ? { aspectRatio: `${post.width}/${post.height}` } : { aspectRatio: '1/1' }">
           <img 
-            v-if="!isVideoFile(post.thumbnail_url, post.media_type)" 
-            :src="getFileUrl(post.thumbnail_url, post.id)" 
+            v-show="!isVideoFile(post.media_url, post.media_type)" 
+            :src="post.src" 
             @error="handleImageError($event, post)"
-            class="w-full h-auto object-cover transition-opacity duration-300" 
+            class="w-full h-full object-cover transition-opacity duration-300 absolute inset-0" 
             loading="lazy" 
           />
           <LazyVideo 
-            v-else 
-            :src="getFileUrl(post.thumbnail_url, post.id)" 
-            className="w-full h-auto object-cover" 
+            v-show="isVideoFile(post.media_url, post.media_type)" 
+            :src="getFileUrl(post.media_url, post.id)" 
+            :poster="post.src"
+            className="w-full h-full object-cover absolute inset-0" 
           />
           
           <!-- Type Badge -->
           <div class="absolute top-2 right-2 bg-black/60 backdrop-blur-sm rounded-full p-1.5 shadow-sm border border-white/10">
-            <ImageIcon v-if="!isVideoFile(post.thumbnail_url, post.media_type)" :size="14" class="text-cyan-400" />
+            <ImageIcon v-if="!isVideoFile(post.media_url, post.media_type)" :size="14" class="text-cyan-400" />
             <Video v-else :size="14" class="text-indigo-400" />
           </div>
           
           <!-- Play Icon Overlay for Videos -->
-          <div v-if="isVideoFile(post.thumbnail_url, post.media_type)" class="absolute inset-0 flex items-center justify-center pointer-events-none opacity-80 group-hover:opacity-0 transition-opacity duration-300">
+          <div v-if="isVideoFile(post.media_url, post.media_type)" class="absolute inset-0 flex items-center justify-center pointer-events-none opacity-80 group-hover:opacity-0 transition-opacity duration-300">
             <div class="w-12 h-12 bg-black/50 backdrop-blur-md rounded-full flex items-center justify-center border border-white/20 shadow-lg">
               <Play :size="24" class="text-white ml-1" />
             </div>
@@ -484,7 +511,7 @@ onUnmounted(() => {
         <!-- Media Area -->
         <div class="lg:w-2/3 bg-black flex items-center justify-center relative min-h-[300px] group/media">
           <img v-if="!isVideoFile(currentPost.media_url, currentPost.media_type)" :src="getFileUrl(currentPost.media_url, currentPost.id)" class="max-w-full max-h-[65vh] lg:max-h-[80vh] object-contain" />
-          <video v-else :src="getFileUrl(currentPost.media_url, currentPost.id)" class="max-w-full max-h-[65vh] lg:max-h-[80vh] object-contain" controls autoplay loop></video>
+          <video v-else :src="getFileUrl(currentPost.media_url, currentPost.id)" :poster="currentPost.src" class="max-w-full max-h-[65vh] lg:max-h-[80vh] object-contain" controls autoplay loop playsinline></video>
           
           <!-- Navigation Arrows -->
           <button v-if="hasPrev" @click.stop="goPrev" class="absolute left-2 top-1/2 -translate-y-1/2 w-10 h-10 sm:w-12 sm:h-12 bg-black/40 hover:bg-black/60 rounded-full flex items-center justify-center text-white/80 hover:text-white transition-all z-20 border border-white/10 backdrop-blur-sm opacity-100 lg:opacity-0 lg:group-hover/media:opacity-100">
