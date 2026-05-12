@@ -4,15 +4,17 @@ import os
 import shutil
 import subprocess
 import tempfile
-from pathlib import Path
 from PIL import Image, ImageOps
 
+from src.core.media_paths import build_legacy_r2_key
 from src.services.storage import storage
 
 logger = logging.getLogger(__name__)
 
 
-async def generate_and_upload_thumbnail(output_file: str, media_type: str) -> None:
+async def generate_and_upload_thumbnail(
+    output_file: str, media_type: str, r2_object_name: str | None = None
+) -> None:
     """
     Generate a thumbnail for a given output_file and upload it to MinIO/R2.
     - Videos: Extract the first frame using FFmpeg (-> .jpg).
@@ -40,12 +42,22 @@ async def generate_and_upload_thumbnail(output_file: str, media_type: str) -> No
     else:
         thumb_object_name = f"{base_path}_thumb.webp"
 
-    # Check if thumbnail already exists to avoid redundant work
+    target_r2_key = r2_object_name or build_legacy_r2_key(thumb_object_name)
+
+    # If the thumbnail already exists in MinIO, skip regeneration but still补齐 R2 同步。
     try:
-        # Fallback to synchronous object_exists since async_object_exists is not available
-        exists = await asyncio.to_thread(storage.object_exists, bucket_name, thumb_object_name)
-        if exists:
-            logger.info(f"Thumbnail {thumb_object_name} already exists in {bucket_name}, skipping.")
+        thumb_exists, r2_exists = await asyncio.gather(
+            storage.async_object_exists(bucket_name, thumb_object_name),
+            storage.async_r2_object_exists(target_r2_key),
+        )
+        if thumb_exists:
+            if not r2_exists:
+                await storage.async_copy_to_r2(
+                    bucket_name, thumb_object_name, target_r2_key
+                )
+            logger.info(
+                f"Thumbnail {thumb_object_name} already exists in {bucket_name}, skipping."
+            )
             return
     except Exception as e:
         logger.warning(f"Failed to check object existence: {e}, proceeding with generation.")
@@ -120,9 +132,9 @@ async def generate_and_upload_thumbnail(output_file: str, media_type: str) -> No
         
         # Also sync to R2
         try:
-            # Reusing the background logic: R2 object name is usually just the basename in this system
-            r2_object_name = thumb_object_name.split("/")[-1]
-            await storage.async_copy_to_r2(bucket_name, thumb_object_name, r2_object_name)
+            await storage.async_copy_to_r2(
+                bucket_name, thumb_object_name, target_r2_key
+            )
         except Exception as e:
             logger.error(f"Failed to sync thumbnail {thumb_object_name} to R2: {e}")
 

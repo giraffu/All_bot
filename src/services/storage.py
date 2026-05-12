@@ -18,6 +18,7 @@ from config import (
     R2_ACCESS_KEY,
     R2_BUCKET,
     R2_ENDPOINT,
+    R2_PUBLIC_DOMAIN,
     R2_SECRET_KEY,
 )
 
@@ -241,6 +242,27 @@ class StorageService:
             return True
         except Exception:
             return False
+
+    async def async_object_exists(self, bucket_name: str, object_name: str) -> bool:
+        return await asyncio.to_thread(self.object_exists, bucket_name, object_name)
+
+    def r2_object_exists(self, object_name: str) -> bool:
+        if not self.r2_client or not self.r2_bucket:
+            return False
+        try:
+            self.r2_client.head_object(Bucket=self.r2_bucket, Key=object_name)
+            return True
+        except Exception:
+            return False
+
+    async def async_r2_object_exists(self, object_name: str) -> bool:
+        return await asyncio.to_thread(self.r2_object_exists, object_name)
+
+    def get_r2_public_url(self, object_name: str) -> str:
+        if not R2_PUBLIC_DOMAIN or not object_name:
+            return ""
+        base_url = R2_PUBLIC_DOMAIN.rstrip("/")
+        return f"{base_url}/{object_name.lstrip('/')}"
             
     def download_file(self, bucket_name: str, object_name: str, file_path: str):
         """将对象下载到本地文件"""
@@ -307,6 +329,7 @@ class StorageService:
             return ""
 
         try:
+            _ = content_type
             # The Ultimate Fix for 403 SignatureDoesNotMatch with MinIO behind Cloudflare/Nginx:
             # 1. The signature MUST be calculated using the EXACT Host header the browser will send.
             # 2. We MUST initialize a temporary Minio client with the public URL to sign it correctly.

@@ -11,6 +11,7 @@ from src.services.redis_client import redis_client
 from src.constants import MODE_NAME_MAP
 from src.services.storage import storage
 from src.core.media_processor import generate_and_upload_thumbnail
+from src.core.media_paths import build_legacy_r2_key
 
 logger = logging.getLogger(__name__)
 
@@ -173,7 +174,7 @@ async def process_submit_to_gallery(
             bucket_name = "bot-data"
             object_name = history.output_file
 
-        r2_object_name = parts[-1]
+        r2_object_name = build_legacy_r2_key(object_name)
 
         # Add R2 copy to BackgroundTasks instead of awaiting it directly
         background_tasks.add_task(
@@ -182,7 +183,9 @@ async def process_submit_to_gallery(
         
         # Add Thumbnail Generation to BackgroundTasks
         background_tasks.add_task(
-            generate_and_upload_thumbnail, history.output_file, media_type
+            generate_and_upload_thumbnail,
+            history.output_file,
+            media_type,
         )
 
         await redis_client.increment_gallery_submit(user_id)

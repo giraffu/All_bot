@@ -1,3 +1,4 @@
+import asyncio
 import logging
 
 from fastapi import APIRouter, Depends
@@ -6,6 +7,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.database.core import AsyncSessionLocal
 from src.database.models import History, User
+from src.core.media_paths import (
+    build_history_r2_media_key,
+    build_history_r2_thumbnail_key,
+    build_legacy_r2_key,
+    build_thumbnail_object_name,
+    get_media_type_from_history,
+    resolve_storage_object,
+)
+from src.core.media_processor import generate_and_upload_thumbnail
 from src.services.storage import storage
 from src.web_api.dependencies import get_current_user
 from src.web_api.schemas.auth_schema import InvitationRechargeStats, UserResponse
@@ -27,6 +37,78 @@ logger = logging.getLogger(__name__)
 async def get_db():
     async with AsyncSessionLocal() as session:
         yield session
+
+
+async def _get_r2_url_if_exists(object_key: str) -> str:
+    public_url = storage.get_r2_public_url(object_key)
+    if not public_url:
+        return ""
+    if await storage.async_r2_object_exists(object_key):
+        return public_url
+    return ""
+
+
+async def _get_first_r2_url_if_exists(*object_keys: str) -> str:
+    for object_key in object_keys:
+        if not object_key:
+            continue
+        url = await _get_r2_url_if_exists(object_key)
+        if url:
+            return url
+    return ""
+
+
+async def _pick_favorite_media_urls(
+    *,
+    task_id: str | None,
+    output_file: str | None,
+    history_type: str | None,
+) -> tuple[str, str]:
+    if not output_file:
+        return "", ""
+
+    bucket_name, object_name = resolve_storage_object(output_file)
+    media_type = get_media_type_from_history(history_type)
+    thumb_object_name = build_thumbnail_object_name(object_name, media_type)
+    legacy_media_r2_key = build_legacy_r2_key(object_name)
+    legacy_thumb_r2_key = build_legacy_r2_key(thumb_object_name)
+
+    media_url = storage.get_presigned_url(object_name, bucket=bucket_name)
+    thumbnail_url = ""
+
+    if not task_id:
+        media_r2_url, thumbnail_r2_url, thumb_exists = await asyncio.gather(
+            _get_first_r2_url_if_exists(legacy_media_r2_key),
+            _get_first_r2_url_if_exists(legacy_thumb_r2_key),
+            storage.async_object_exists(bucket_name, thumb_object_name),
+        )
+        if media_r2_url:
+            media_url = media_r2_url
+        if thumbnail_r2_url:
+            thumbnail_url = thumbnail_r2_url
+        elif thumb_exists:
+            thumbnail_url = storage.get_presigned_url(
+                thumb_object_name, bucket=bucket_name
+            )
+        return media_url, thumbnail_url
+
+    media_r2_key = build_history_r2_media_key(task_id, output_file)
+    thumb_r2_key = build_history_r2_thumbnail_key(task_id, media_type)
+
+    media_r2_url, thumbnail_r2_url, thumb_exists = await asyncio.gather(
+        _get_first_r2_url_if_exists(media_r2_key, legacy_media_r2_key),
+        _get_first_r2_url_if_exists(thumb_r2_key, legacy_thumb_r2_key),
+        storage.async_object_exists(bucket_name, thumb_object_name),
+    )
+
+    if media_r2_url:
+        media_url = media_r2_url
+    if thumbnail_r2_url:
+        thumbnail_url = thumbnail_r2_url
+    elif thumb_exists:
+        thumbnail_url = storage.get_presigned_url(thumb_object_name, bucket=bucket_name)
+
+    return media_url, thumbnail_url
 
 
 @router.get("/me", response_model=UserResponse)
@@ -232,20 +314,18 @@ async def favorite_history(
         # 触发 R2 上传
         from src.core.gallery_core import async_copy_to_r2_background
 
-        if history.output_file.startswith("bot-data/"):
-            bucket_name = "bot-data"
-            object_name = history.output_file[len("bot-data/"):]
-        elif history.output_file.startswith("comfyui-temp/"):
-            bucket_name = "comfyui-temp"
-            object_name = history.output_file[len("comfyui-temp/"):]
-        else:
-            bucket_name = "bot-data" if "/" in history.output_file else "comfyui-temp"
-            object_name = history.output_file
-
-        r2_object_name = object_name.split('/')[-1]
+        bucket_name, object_name = resolve_storage_object(history.output_file)
+        media_type = get_media_type_from_history(history.type)
+        r2_object_name = build_history_r2_media_key(history.task_id, history.output_file)
 
         background_tasks.add_task(
             async_copy_to_r2_background, bucket_name, object_name, r2_object_name
+        )
+        background_tasks.add_task(
+            generate_and_upload_thumbnail,
+            history.output_file,
+            media_type,
+            build_history_r2_thumbnail_key(history.task_id, media_type),
         )
 
     return {"status": "success", "message": "收藏成功"}
@@ -327,7 +407,6 @@ async def get_my_favorites(
     db: AsyncSession = Depends(get_db),
 ):
     from sqlalchemy import desc
-    from src.web_api.routers.gallery import get_media_url
 
     # Query current user's favorite histories
     stmt = (
@@ -352,40 +431,22 @@ async def get_my_favorites(
     result = await db.execute(stmt)
     histories = result.scalars().all()
 
+    url_pairs = await asyncio.gather(
+        *[
+            _pick_favorite_media_urls(
+                task_id=history.task_id,
+                output_file=history.output_file,
+                history_type=history.type,
+            )
+            for history in histories
+        ]
+    )
+
     response_items = []
-    from src.services.storage import storage
-    for history in histories:
-        media_url = ""
-        thumbnail_url = ""
-        if history.output_file:
-            if history.output_file.startswith("bot-data/"):
-                bucket_name = "bot-data"
-                object_name = history.output_file[len("bot-data/"):]
-            elif history.output_file.startswith("comfyui-temp/"):
-                bucket_name = "comfyui-temp"
-                object_name = history.output_file[len("comfyui-temp/"):]
-            else:
-                bucket_name = "bot-data" if "/" in history.output_file else "comfyui-temp"
-                object_name = history.output_file
-                
-            media_url = storage.get_presigned_url(object_name, bucket=bucket_name)
-            
-            # Generate thumbnail url
-            is_video = history.type and "video" in history.type.lower()
-            last_dot_idx = object_name.rfind(".")
-            if last_dot_idx != -1:
-                base_name = object_name[:last_dot_idx]
-            else:
-                base_name = object_name
-            
-            thumb_ext = "_thumb.jpg" if is_video else "_thumb.webp"
-            thumb_object_name = f"{base_name}{thumb_ext}"
-            thumbnail_url = storage.get_presigned_url(thumb_object_name, bucket=bucket_name)
+    for history, (media_url, thumbnail_url) in zip(histories, url_pairs):
 
         # media_type mapping
-        media_type = "image"
-        if history.type and "video" in history.type.lower():
-            media_type = "video"
+        media_type = get_media_type_from_history(history.type)
 
         # extract tags from prompt
         tags = []
@@ -406,7 +467,7 @@ async def get_my_favorites(
                 likes_count=0,
                 dislikes_count=0,
                 applied_count=0,
-                thumbnail_url=thumbnail_url or media_url,
+                thumbnail_url=thumbnail_url,
                 media_url=media_url,
                 created_at=history.created_at,
                 is_active=True,
@@ -429,7 +490,6 @@ async def get_favorite_apply_context(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    from src.web_api.routers.gallery import get_media_url
     from src.config_mapping import ALL_LORA_MODELS
 
     stmt = select(History).where(

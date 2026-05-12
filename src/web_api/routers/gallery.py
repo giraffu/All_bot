@@ -21,8 +21,10 @@ from src.constants import (
     MODE_NAME_MAP,
     MODE_VIDEO_LORA,
 )
+from src.core.media_paths import build_legacy_r2_key
 from src.database.core import AsyncSessionLocal
 from src.database.models import GalleryPost, History, User, UserInteraction
+from src.services.storage import storage
 from src.web_api.dependencies import get_current_user
 from src.web_api.schemas.gallery_schema import (
     ApplyContextResponse,
@@ -45,10 +47,7 @@ ALLOWED_WEB_SUBMIT_TYPES = {
     "img2img_lora",
 }
 
-from config import R2_PUBLIC_DOMAIN
-
-
-def get_media_url(output_file: str) -> str:
+def get_media_url(output_file: str, r2_object_name: str | None = None) -> str:
     """
     Generate the media URL for a gallery post.
     If R2 is configured, return the R2 public URL directly.
@@ -58,18 +57,19 @@ def get_media_url(output_file: str) -> str:
         return ""
 
     # If R2 is configured, return the CDN URL directly
-    if R2_PUBLIC_DOMAIN:
-        # Extract just the filename from paths like 'bot-data/users/xxx.mp4' or 'comfyui-temp/yyy.mp4'
-        filename = output_file.split("/")[-1]
-        base_url = R2_PUBLIC_DOMAIN.rstrip("/")
-        return f"{base_url}/{filename}"
+    r2_key = r2_object_name or build_legacy_r2_key(output_file)
+    r2_url = storage.get_r2_public_url(r2_key)
+    if r2_url:
+        return r2_url
 
     # Fallback: We return the raw output_file here, and let the frontend use its `getFileUrl`
     # logic to prepend the correct MinIO endpoint.
     return output_file
 
 
-def generate_thumbnail_url(output_file: str, media_type: str) -> str:
+def generate_thumbnail_url(
+    output_file: str, media_type: str, r2_object_name: str | None = None
+) -> str:
     """
     Generate the thumbnail URL based on the original file path.
     Appends _thumb.jpg for videos and _thumb.webp for images.
@@ -84,8 +84,9 @@ def generate_thumbnail_url(output_file: str, media_type: str) -> str:
         thumb_file = f"{base_path}_thumb.jpg"
     else:
         thumb_file = f"{base_path}_thumb.webp"
-        
-    return get_media_url(thumb_file)
+
+    thumb_r2_key = r2_object_name or build_legacy_r2_key(thumb_file)
+    return get_media_url(thumb_file, thumb_r2_key)
 
 
 @router.get("/config")

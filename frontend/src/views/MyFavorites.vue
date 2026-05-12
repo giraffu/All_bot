@@ -34,9 +34,9 @@ const { t } = useI18n()
 const posts = ref<Post[]>([])
 const loading = ref(false)
 const page = ref(1)
-const size = ref(20)
 const total = ref(0)
 const hasMore = ref(true)
+const isMobile = ref(false)
 
 const mediaType = ref('all')
 const taskType = ref('all')
@@ -57,6 +57,13 @@ const interactingPosts = ref<Record<number, boolean>>({})
 const currentIndex = computed(() => {
   if (!currentPost.value) return -1
   return posts.value.findIndex(p => p.id === currentPost.value?.id)
+})
+
+const pageSize = computed(() => {
+  if (filterType.value === 'favorite' && isMobile.value) {
+    return 5
+  }
+  return 20
 })
 
 const hasPrev = computed(() => currentIndex.value > 0)
@@ -110,11 +117,21 @@ const getFileUrl = (path: string, postId?: number) => {
     }
   }
   
-  if (postId && !url.includes('X-Amz-Signature')) {
-    const sep = url.includes('?') ? '&' : '?'
-    url = `${url}${sep}v=${postId}`
+  if (!postId || url.includes('X-Amz-Signature') || /[?&]v=/.test(url)) {
+    return url
   }
-  return url
+  const sep = url.includes('?') ? '&' : '?'
+  return `${url}${sep}v=${postId}`
+}
+
+const getCardSrc = (post: Post) => {
+  if (post.thumbnail_url) {
+    return getFileUrl(post.thumbnail_url, post.id)
+  }
+  if (filterType.value !== 'favorite' && !isVideoFile(post.media_url, post.media_type) && post.media_url) {
+    return getFileUrl(post.media_url, post.id)
+  }
+  return ''
 }
 
 const isVideoFile = (path: string, mediaType?: string) => {
@@ -131,6 +148,17 @@ const isVideoFile = (path: string, mediaType?: string) => {
 }
 
 let currentRequestId = 0
+
+const updateViewportMode = () => {
+  const nextIsMobile = window.innerWidth < 768
+  if (nextIsMobile === isMobile.value) {
+    return
+  }
+  isMobile.value = nextIsMobile
+  if (filterType.value === 'favorite') {
+    loadPosts(true)
+  }
+}
 
 const loadConfig = async () => {
   try {
@@ -159,7 +187,7 @@ const loadPosts = async (reset = false) => {
     const res = await api.get(endpoint, {
       params: {
         page: page.value,
-        size: size.value,
+        size: pageSize.value,
         filter_type: filterType.value === 'favorite' ? 'all' : filterType.value
       }
     })
@@ -167,27 +195,7 @@ const loadPosts = async (reset = false) => {
     if (requestId !== currentRequestId) return
     
     const newItems = res.data.items.map((p: Post) => {
-      let thumbUrl = p.thumbnail_url || p.media_url
-      const isVideo = isVideoFile(p.media_url, p.media_type)
-      
-      if (thumbUrl) {
-        // Split URL and query parameters to avoid truncating signatures
-        const [pathPart, queryPart] = thumbUrl.split('?')
-        let newPath = pathPart
-        
-        if (isVideo && isVideoFile(pathPart)) {
-          const basePath = pathPart.substring(0, pathPart.lastIndexOf('.'))
-          newPath = `${basePath}_thumb.jpg`
-        } else if (!isVideo && !pathPart.endsWith('_thumb.webp')) {
-          const lastDotIndex = pathPart.lastIndexOf('.')
-          const basePath = lastDotIndex !== -1 ? pathPart.substring(0, lastDotIndex) : pathPart
-          newPath = `${basePath}_thumb.webp`
-        }
-        
-        thumbUrl = queryPart ? `${newPath}?${queryPart}` : newPath
-      }
-      
-      const src = getFileUrl(thumbUrl, p.id)
+      const src = getCardSrc(p)
       return { ...p, src }
     })
     
@@ -378,11 +386,10 @@ const pauseVideo = (e: Event) => {
 const handleImageError = (e: Event, post: Post) => {
   const img = e.target as HTMLImageElement
   
-  // 降级机制：如果缩略图加载失败（如尚未生成），回退加载原图
-  // 但注意：如果原图是视频，绝不能让 img 去加载 .mp4
-  if (!img.dataset.fallbackAttempted && post.media_url && !isVideoFile(post.media_url, post.media_type)) {
+  // 只有拿到缩略图后才允许回退原图，避免收藏列表在缺缩略图时直接加载大图。
+  if (!img.dataset.fallbackAttempted && post.thumbnail_url && post.media_url && !isVideoFile(post.media_url, post.media_type)) {
     img.dataset.fallbackAttempted = 'true'
-    img.src = post.media_url.includes('X-Amz-Signature') ? post.media_url : getFileUrl(post.media_url, post.id)
+    img.src = getFileUrl(post.media_url, post.id)
     img.style.opacity = '1'
   } else {
     // 如果原图也加载失败，或者是视频（视频封面还没生成），则变暗显示破图图标/占位图
@@ -391,12 +398,14 @@ const handleImageError = (e: Event, post: Post) => {
 }
 
 onMounted(() => {
+  isMobile.value = window.innerWidth < 768
   loadConfig()
   loadPosts(true)
   const container = document.querySelector('.ant-layout-content')
   if (container) {
     container.addEventListener('scroll', handleScroll)
   }
+  window.addEventListener('resize', updateViewportMode)
 })
 
 onUnmounted(() => {
@@ -404,6 +413,7 @@ onUnmounted(() => {
   if (container) {
     container.removeEventListener('scroll', handleScroll)
   }
+  window.removeEventListener('resize', updateViewportMode)
 })
 </script>
 
@@ -437,11 +447,16 @@ onUnmounted(() => {
         <div class="relative w-full overflow-hidden bg-slate-500 aspect-auto min-h-[100px]"
              :style="post.width && post.height ? { aspectRatio: `${post.width}/${post.height}` } : { aspectRatio: '1/1' }">
           <img 
+            v-if="post.src"
             :src="post.src" 
             @error="handleImageError($event, post)"
             class="w-full h-full object-cover transition-opacity duration-300 absolute inset-0" 
             loading="lazy" 
           />
+          <div v-else class="absolute inset-0 flex items-center justify-center text-slate-400">
+            <ImageIcon v-if="!isVideoFile(post.media_url, post.media_type)" :size="24" />
+            <Video v-else :size="24" />
+          </div>
           
           <!-- Type Badge -->
           <div class="absolute top-2 right-2 bg-black/60 backdrop-blur-sm rounded-full p-1.5 shadow-sm border border-white/10">
