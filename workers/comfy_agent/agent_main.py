@@ -364,6 +364,8 @@ class ComfyAgent:
                         self.download_input_from_minio, img_filename, local_img_path
                     )
                     logger.info(f"Downloaded {param_key} to {local_img_path}")
+                    if local_img_path not in downloaded_input_paths:
+                        downloaded_input_paths.append(local_img_path)
                     try:
                         with open(local_img_path, "rb") as f:
                             img_data = f.read()
@@ -374,14 +376,18 @@ class ComfyAgent:
                             f"Uploaded {local_safe_filename} to ComfyUI via API"
                         )
                     except Exception as upload_err:
-                        logger.warning(
+                        logger.error(
                             f"Failed to upload {local_safe_filename} to ComfyUI via API: {upload_err}"
                         )
+                        raise RuntimeError(
+                            f"Failed to upload prepared input '{img_filename}' to ComfyUI"
+                        ) from upload_err
                     params[param_key] = local_safe_filename
-                    if local_img_path not in downloaded_input_paths:
-                        downloaded_input_paths.append(local_img_path)
                 except Exception as e:
                     logger.error(f"Failed to process {param_key} {img_filename}: {e}")
+                    raise RuntimeError(
+                        f"Failed to prepare {param_key} input '{img_filename}'"
+                    ) from e
 
             # 1. Handle multi-image concurrent download if `images` list is provided
             if (

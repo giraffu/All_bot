@@ -1,4 +1,5 @@
 import logging
+import os
 import httpx
 from typing import Optional, Tuple
 
@@ -18,15 +19,23 @@ async def _process_input_path(user_logger: UserLogger, path: str) -> str:
     if path.startswith(f"{MINIO_BUCKET}/"):
         return path.replace(f"{MINIO_BUCKET}/", "", 1)
 
-    # Try to process as a local file to upload (use asyncio.to_thread to avoid blocking event loop)
+    # Existing history records may already store a plain object key without bucket prefix.
+    # Only treat the value as a local file when it is an absolute path or actually exists on disk.
+    is_local_file = os.path.isabs(path) or os.path.exists(path)
+    if not is_local_file:
+        return path
+
+    if not os.path.exists(path):
+        raise CoreDomainError(f"本地输入文件不存在，无法继续派发任务: {path}")
+
+    # Upload local files to MinIO before dispatching to workers.
     import asyncio
 
     processed = await asyncio.to_thread(user_logger.save_input_image, path)
     if processed:
         return processed
 
-    # If it's not a local file (e.g., an existing MinIO object key from History), return it as is
-    return path
+    raise CoreDomainError(f"本地输入文件上传失败，无法继续派发任务: {path}")
 
 
 from src.core.billing_core import (

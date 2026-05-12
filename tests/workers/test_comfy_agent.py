@@ -13,3 +13,12 @@ def test_agent_main_websocket_error_handling():
 
     # Verify it compiles valid Python
     ast.parse(content)
+
+
+def test_agent_main_fail_fast_on_input_prepare_errors():
+    with open("workers/comfy_agent/agent_main.py", "r", encoding="utf-8") as f:
+        content = f.read()
+
+    assert "Failed to upload prepared input" in content
+    assert "Failed to prepare {param_key} input" in content
+    assert "raise RuntimeError(" in content
