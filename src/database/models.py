@@ -2,6 +2,7 @@ from datetime import datetime
 
 from sqlalchemy import (
     DECIMAL,
+    JSON,
     BigInteger,
     Boolean,
     Column,
@@ -190,11 +191,31 @@ class Order(Base):
     final_price = Column(DECIMAL(10, 2), nullable=False)
     status = Column(String(20), default="PENDING")  # PENDING, SUCCESS, FAILED
     tx_hash = Column(String(100), nullable=True, unique=True)
+    commission_usdt = Column(
+        DECIMAL(10, 4), nullable=False, default=0, server_default=text("0")
+    )
+    payment_channel = Column(String(20), nullable=True, index=True)
+    paid_at = Column(DateTime, nullable=True, index=True)
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 
     user = relationship("User", backref="orders")
     plan = relationship("MembershipPlan")
+
+
+class AffiliateTransaction(Base):
+    __tablename__ = "affiliate_transactions"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(BigInteger, ForeignKey("users.id"), nullable=False, index=True)
+    amount_usdt = Column(DECIMAL(10, 4), nullable=False)
+    transaction_type = Column(String(50), nullable=False)
+    status = Column(String(20), default="PENDING")
+    details = Column(JSON, nullable=True)
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+    user = relationship("User", backref="affiliate_transactions")
 
 
 class WorkerLog(Base):

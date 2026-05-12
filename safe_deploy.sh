@@ -1,6 +1,9 @@
 #!/bin/bash
 set -e
 
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$ROOT_DIR"
+
 echo "🚀 开始 All_Bot 安全更新与重建流程 (带队列监控)..."
 
 # ==============================================================================
@@ -115,48 +118,68 @@ if [ -n "$(docker ps -q -f name=^tg-bot-test$)" ]; then
 fi
 
 # ==============================================================================
-# 第四步：重建 Agent 容器服务 (底层工作节点)
+# 第四步：执行数据库迁移 (无待迁移时会安全跳过)
 # ==============================================================================
-echo "4️⃣ 重建并重启 Comfy Agent 工作节点..."
-cd workers
+echo "4️⃣ 执行 Alembic 数据库迁移..."
+
+ALEMBIC_CMD=()
+if [ -x "$ROOT_DIR/venv/bin/alembic" ]; then
+    ALEMBIC_CMD=("$ROOT_DIR/venv/bin/alembic")
+elif [ -x "$ROOT_DIR/.venv/bin/alembic" ]; then
+    ALEMBIC_CMD=("$ROOT_DIR/.venv/bin/alembic")
+elif command -v alembic >/dev/null 2>&1; then
+    ALEMBIC_CMD=("$(command -v alembic)")
+else
+    echo "❌ 未找到 alembic 可执行文件，请先激活正确的 Python 环境或安装 Alembic。"
+    exit 1
+fi
+
+"${ALEMBIC_CMD[@]}" upgrade head
+echo "✅ 数据库迁移完成（若无待执行迁移，此步会直接安全通过）。"
+
+# ==============================================================================
+# 第五步：重建 Agent 容器服务 (底层工作节点)
+# ==============================================================================
+echo "5️⃣ 重建并重启 Comfy Agent 工作节点..."
+cd "$ROOT_DIR/workers"
 docker-compose rm -fsv || true
 docker rm -f $(docker ps -a -q -f name=comfy-agent) 2>/dev/null || true
 docker-compose up -d --build
-cd ..
+cd "$ROOT_DIR"
 echo "✅ Agent 集群重建完成。"
 
 # ==============================================================================
-# 第五步：重建中控 API (Central API)
+# 第六步：重建中控 API (Central API)
 # ==============================================================================
-echo "5️⃣ 重建并重启中控 API..."
-cd backend
+echo "6️⃣ 重建并重启中控 API..."
+cd "$ROOT_DIR/backend"
 docker rm -f backend_api_1 || true 
 docker-compose up -d --build
-cd ..
+cd "$ROOT_DIR"
 echo "✅ 中控 API 重建完成。"
 
 # ==============================================================================
-# 第六步：重建主服务群 (Bot, Payment API, Web API)
+# 第七步：重建主服务群 (Bot, Payment API, Web API)
 # ==============================================================================
-echo "6️⃣ 重建并重启主服务群 (Bot & APIs)..."
+echo "7️⃣ 重建并重启主服务群 (Bot & APIs)..."
 docker rm -f tg-bot payment-api web-api || true
 docker-compose -f deploy/docker-compose.yml up -d --build
 echo "✅ 主服务群重建完成。"
 
 # ==============================================================================
-# 第七步：重建 Dashboard 服务 (前端与后端)
+# 第八步：重建 Dashboard 服务 (前端与后端)
 # ==============================================================================
-echo "7️⃣ 重建并重启 Dashboard 服务 (前端与后端)..."
-cd dashboard
+echo "8️⃣ 重建并重启 Dashboard 服务 (前端与后端)..."
+cd "$ROOT_DIR/dashboard"
 docker rm -f dashboard_dashboard-backend_1 dashboard_dashboard-frontend_1 || true
 docker-compose up -d --build
-cd ..
+cd "$ROOT_DIR"
 echo "✅ Dashboard 服务重建完成。"
 
 # ==============================================================================
-# 第八步：重建测试服务群 (Test Bot, Payment API, Web API)
+# 第九步：重建测试服务群 (Test Bot, Payment API, Web API)
 # ==============================================================================
-echo "8️⃣ 重建并重启测试环境服务群 (Test Environment)..."
+echo "9️⃣ 重建并重启测试环境服务群 (Test Environment)..."
 docker rm -f tg-bot-test payment-api-test web-api-test || true
 docker-compose -f deploy/docker-compose-test.yml up -d --build
 echo "✅ 测试环境服务群重建完成。"

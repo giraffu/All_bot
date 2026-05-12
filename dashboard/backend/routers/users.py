@@ -135,12 +135,12 @@ async def get_user_stats(user_id: int, db: AsyncSession = Depends(get_db)):
         recharge_stmt = (
             select(
                 func.sum(
-                    case((Order.order_id.like("RMB_%"), Order.final_price), else_=0)
+                    case((Order.payment_channel == "RMB", Order.final_price), else_=0)
                 ).label("total_recharge_rmb"),
                 func.sum(
                     case(
                         (
-                            Order.order_id.notlike("RMB_%") & (Order.final_price < 50),
+                            Order.payment_channel == "TON",
                             Order.final_price,
                         ),
                         else_=0,
@@ -149,7 +149,7 @@ async def get_user_stats(user_id: int, db: AsyncSession = Depends(get_db)):
                 func.sum(
                     case(
                         (
-                            Order.order_id.notlike("RMB_%") & (Order.final_price >= 50),
+                            Order.payment_channel == "XTR",
                             Order.final_price,
                         ),
                         else_=0,
@@ -336,6 +336,7 @@ async def admin_gift_plan(
             final_price=0,
             status="SUCCESS",
             tx_hash=tx_hash,
+            paid_at=datetime.now(),
         )
         db.add(new_order)
 

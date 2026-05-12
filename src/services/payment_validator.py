@@ -1,5 +1,6 @@
 import asyncio
 import logging
+from datetime import datetime
 from decimal import Decimal
 
 import aiohttp
@@ -253,12 +254,21 @@ class TonPaymentValidator:
                         / Decimal(str(TON_TO_NANOTON)),
                         status=status,
                         tx_hash=tx_hash,
+                        payment_channel="TON",
+                        paid_at=datetime.now() if status == "SUCCESS" else None,
                     )
                     db.add(new_order)
 
                     if status == "SUCCESS":
+                        from src.core.affiliate_core import (
+                            calculate_and_set_commission_for_paid_order,
+                        )
+
+                        await db.flush()
+                        await calculate_and_set_commission_for_paid_order(db, new_order)
+
                         # 4. Fulfill using atomic update
-                        from datetime import datetime, timedelta
+                        from datetime import timedelta
 
                         from sqlalchemy import update
 

@@ -8,6 +8,7 @@ from sqlalchemy import select
 
 from src.database.core import AsyncSessionLocal
 from src.database.models import MembershipPlan, Order, User
+from src.core.affiliate_core import calculate_and_set_commission_for_paid_order
 from src.services.log_service import LogService
 from config import TELEGRAM_API_BASE_URL
 
@@ -24,7 +25,7 @@ async def fulfill_order(
         try:
             # 1. 查找订单
             order_res = await session.execute(
-                select(Order).where(Order.order_id == out_trade_no)
+                select(Order).where(Order.order_id == out_trade_no).with_for_update()
             )
             order = order_res.scalar_one_or_none()
             if not order:
@@ -119,8 +120,12 @@ async def fulfill_order(
                 new_expire_at = now + timedelta(days=plan.duration_days)
 
             # 5. 更新订单、用户与插入日志
+            order.payment_channel = "RMB"
             order.status = "SUCCESS"
             order.tx_hash = external_trade_no
+            order.paid_at = now
+            await session.flush()
+            await calculate_and_set_commission_for_paid_order(session, order)
 
             user.credits += plan.reward_credits
             user.current_identity = final_identity

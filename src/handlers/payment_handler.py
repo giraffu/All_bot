@@ -184,8 +184,15 @@ async def successful_payment_callback(
                 final_price=successful_payment.total_amount,
                 status="SUCCESS",
                 tx_hash=tx_hash_truncated,  # Truncate to avoid StringDataRightTruncationError
+                payment_channel="XTR",
+                paid_at=now,
             )
             session.add(new_order)
+            await session.flush()
+
+            from src.core.affiliate_core import calculate_and_set_commission_for_paid_order
+
+            await calculate_and_set_commission_for_paid_order(session, new_order)
 
             # 记录流水 (遵循开发者红线)
             import json

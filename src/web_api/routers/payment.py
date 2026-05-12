@@ -93,6 +93,7 @@ async def create_order(
         original_price=plan.price_rmb,
         final_price=plan.price_rmb,
         status="PENDING",
+        payment_channel="RMB",
         created_at=datetime.now(),
     )
     db.add(new_order)

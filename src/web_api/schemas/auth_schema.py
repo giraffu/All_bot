@@ -47,6 +47,9 @@ class InvitationRechargeStats(BaseModel):
     total_rmb: float = 0.0
     total_stars: int = 0
     commission_usdt: float = 0.0
+    total_commission_usdt: float = 0.0
+    spent_commission_usdt: float = 0.0
+    available_balance_usdt: float = 0.0
 
 
 class BreakthroughConditionDTO(BaseModel):

@@ -243,6 +243,7 @@ async def buy_rmb_plan_callback(update: Update, context: ContextTypes.DEFAULT_TY
             original_price=plan.price_rmb,
             final_price=plan.price_rmb,
             status="PENDING",
+            payment_channel="RMB",
             tx_hash=out_trade_no,
         )
         session.add(new_order)

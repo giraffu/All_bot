@@ -6,7 +6,7 @@ from datetime import date, datetime, timedelta
 import httpx
 from dotenv import load_dotenv
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import Float, case, func, select, text, and_, not_
+from sqlalchemy import Float, case, func, select, text, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 from telegram import Bot
 from fastapi_cache.decorator import cache
@@ -138,14 +138,16 @@ async def get_stats(db: AsyncSession = Depends(get_db)):
 
         # Calculate invitation recharge stats
         invitation_stmt = select(
-            func.coalesce(func.sum(case((Order.order_id.like("RMB_%"), Order.final_price), else_=0)), 0).label("rmb_sum"),
+            func.coalesce(
+                func.sum(case((Order.payment_channel == "RMB", Order.final_price), else_=0)),
+                0,
+            ).label("rmb_sum"),
             func.coalesce(func.sum(case(
-                (Order.order_id.like("XTR_%"), Order.final_price),
-                (and_(not_(Order.order_id.like("RMB_%")), not_(Order.order_id.like("XTR_%")), Order.final_price >= 100), Order.final_price),
+                (Order.payment_channel == "XTR", Order.final_price),
                 else_=0
             )), 0).label("stars_sum"),
             func.coalesce(func.sum(case(
-                (and_(not_(Order.order_id.like("RMB_%")), not_(Order.order_id.like("XTR_%")), Order.final_price < 100), Order.final_price),
+                (Order.payment_channel == "TON", Order.final_price),
                 else_=0
             )), 0).label("ton_sum")
         ).join(Referral, Referral.invitee_id == Order.telegram_id).where(Order.status == "SUCCESS")
@@ -421,7 +423,7 @@ async def get_stats(db: AsyncSession = Depends(get_db)):
         # Calculate total RMB balance from Order table
         try:
             rmb_stmt = select(func.coalesce(func.sum(Order.final_price), 0)).where(
-                Order.status == "SUCCESS", Order.order_id.like("RMB_%")
+                Order.status == "SUCCESS", Order.payment_channel == "RMB"
             )
             rmb_balance_scalar = (await db.execute(rmb_stmt)).scalar()
             rmb_balance += float(rmb_balance_scalar)
@@ -487,7 +489,8 @@ async def get_finance_hourly_stats(
             target_date = date.today()
 
         dialect = db.bind.dialect.name
-        hour_expr = get_hour_expr(Order.created_at, dialect)
+        order_paid_expr = func.coalesce(Order.paid_at, Order.created_at)
+        hour_expr = get_hour_expr(order_paid_expr, dialect)
 
         order_stmt = select(
             hour_expr.label("hour"),
@@ -497,7 +500,7 @@ async def get_finance_hourly_stats(
             func.coalesce(func.sum(case((MembershipPlan.identity_name.like("%真传%"), 1), else_=0)), 0).label("true_disciples")
         ).join(MembershipPlan, Order.plan_id == MembershipPlan.id).where(
             Order.status == "SUCCESS",
-            func.date(Order.created_at) == target_date
+            func.date(order_paid_expr) == target_date
         ).group_by(hour_expr)
 
         logs_result = await db.execute(order_stmt)
@@ -534,7 +537,8 @@ async def get_cumulative_finance_hourly_stats(
     try:
         start_date = date.today() - timedelta(days=days - 1)
         dialect = db.bind.dialect.name
-        hour_expr = get_hour_expr(Order.created_at, dialect)
+        order_paid_expr = func.coalesce(Order.paid_at, Order.created_at)
+        hour_expr = get_hour_expr(order_paid_expr, dialect)
 
         order_stmt = select(
             hour_expr.label("hour"),
@@ -544,7 +548,7 @@ async def get_cumulative_finance_hourly_stats(
             func.coalesce(func.sum(case((MembershipPlan.identity_name.like("%真传%"), 1), else_=0)), 0).label("true_disciples")
         ).join(MembershipPlan, Order.plan_id == MembershipPlan.id).where(
             Order.status == "SUCCESS",
-            func.date(Order.created_at) >= start_date
+            func.date(order_paid_expr) >= start_date
         ).group_by(hour_expr)
 
         logs_result = await db.execute(order_stmt)
@@ -961,22 +965,25 @@ async def get_stats_history(days: int = 7, db: AsyncSession = Depends(get_db)):
 
         # Daily TON and Stars Recharge History
         # Calculate from Order table instead of UserLog JSON
-        
+        order_paid_date = func.date(func.coalesce(Order.paid_at, Order.created_at))
+
         orders_before_stmt = select(
-            func.coalesce(func.sum(case((Order.order_id.like("RMB_%"), Order.final_price), else_=0)), 0).label("rmb_sum"),
+            func.coalesce(
+                func.sum(case((Order.payment_channel == "RMB", Order.final_price), else_=0)),
+                0,
+            ).label("rmb_sum"),
             func.coalesce(func.sum(case(
-                (Order.order_id.like("XTR_%"), Order.final_price),
-                (and_(not_(Order.order_id.like("RMB_%")), not_(Order.order_id.like("XTR_%")), Order.final_price >= 100), Order.final_price),
+                (Order.payment_channel == "XTR", Order.final_price),
                 else_=0
             )), 0).label("stars_sum"),
             func.coalesce(func.sum(case(
-                (and_(not_(Order.order_id.like("RMB_%")), not_(Order.order_id.like("XTR_%")), Order.final_price < 100), Order.final_price),
+                (Order.payment_channel == "TON", Order.final_price),
                 else_=0
             )), 0).label("ton_sum"),
             func.coalesce(func.sum(MembershipPlan.reward_credits), 0).label("credits_sum")
         ).join(MembershipPlan, Order.plan_id == MembershipPlan.id).where(
             Order.status == "SUCCESS",
-            func.date(Order.created_at) < start_date
+            order_paid_date < start_date
         )
 
         before_row = (await db.execute(orders_before_stmt)).first()
@@ -986,15 +993,17 @@ async def get_stats_history(days: int = 7, db: AsyncSession = Depends(get_db)):
         recharged_credits_before = int(before_row.credits_sum) if before_row else 0
 
         order_stmt = select(
-            func.date(Order.created_at).label("date"),
-            func.coalesce(func.sum(case((Order.order_id.like("RMB_%"), Order.final_price), else_=0)), 0).label("rmb_sum"),
+            order_paid_date.label("date"),
+            func.coalesce(
+                func.sum(case((Order.payment_channel == "RMB", Order.final_price), else_=0)),
+                0,
+            ).label("rmb_sum"),
             func.coalesce(func.sum(case(
-                (Order.order_id.like("XTR_%"), Order.final_price),
-                (and_(not_(Order.order_id.like("RMB_%")), not_(Order.order_id.like("XTR_%")), Order.final_price >= 100), Order.final_price),
+                (Order.payment_channel == "XTR", Order.final_price),
                 else_=0
             )), 0).label("stars_sum"),
             func.coalesce(func.sum(case(
-                (and_(not_(Order.order_id.like("RMB_%")), not_(Order.order_id.like("XTR_%")), Order.final_price < 100), Order.final_price),
+                (Order.payment_channel == "TON", Order.final_price),
                 else_=0
             )), 0).label("ton_sum"),
             func.coalesce(func.sum(MembershipPlan.reward_credits), 0).label("credits_sum"),
@@ -1003,8 +1012,8 @@ async def get_stats_history(days: int = 7, db: AsyncSession = Depends(get_db)):
             func.coalesce(func.sum(case((MembershipPlan.identity_name.like("%真传%"), 1), else_=0)), 0).label("true_count")
         ).join(MembershipPlan, Order.plan_id == MembershipPlan.id).where(
             Order.status == "SUCCESS",
-            func.date(Order.created_at) >= start_date
-        ).group_by(func.date(Order.created_at))
+            order_paid_date >= start_date
+        ).group_by(order_paid_date)
 
         order_result = await db.execute(order_stmt)
 
