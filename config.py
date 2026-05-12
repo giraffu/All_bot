@@ -57,6 +57,15 @@ R2_ACCESS_KEY = os.getenv("R2_ACCESS_KEY")
 R2_SECRET_KEY = os.getenv("R2_SECRET_KEY")
 R2_BUCKET = os.getenv("R2_BUCKET", "user-data")
 R2_PUBLIC_DOMAIN = os.getenv("R2_PUBLIC_DOMAIN")
+R2_MAX_POOL_CONNECTIONS = int(os.getenv("R2_MAX_POOL_CONNECTIONS", "100"))
+R2_EXISTS_POSITIVE_TTL_SECONDS = int(
+    os.getenv("R2_EXISTS_POSITIVE_TTL_SECONDS", "60")
+)
+R2_EXISTS_NEGATIVE_TTL_SECONDS = int(
+    os.getenv("R2_EXISTS_NEGATIVE_TTL_SECONDS", "5")
+)
+R2_EXISTS_CACHE_MAX_ENTRIES = int(os.getenv("R2_EXISTS_CACHE_MAX_ENTRIES", "5000"))
+R2_HEAD_SEMAPHORE_LIMIT = int(os.getenv("R2_HEAD_SEMAPHORE_LIMIT", "32"))
 
 # --- API Configuration ---
 # Default to the backend server IP

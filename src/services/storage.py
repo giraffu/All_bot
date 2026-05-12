@@ -1,10 +1,13 @@
 import asyncio
 import io
 import logging
+import threading
+import time
 from datetime import timedelta
 
 import boto3
 from botocore.config import Config as BotoConfig
+from botocore.exceptions import ClientError
 from minio import Minio
 
 from config import (
@@ -18,6 +21,11 @@ from config import (
     R2_ACCESS_KEY,
     R2_BUCKET,
     R2_ENDPOINT,
+    R2_EXISTS_CACHE_MAX_ENTRIES,
+    R2_EXISTS_NEGATIVE_TTL_SECONDS,
+    R2_EXISTS_POSITIVE_TTL_SECONDS,
+    R2_HEAD_SEMAPHORE_LIMIT,
+    R2_MAX_POOL_CONNECTIONS,
     R2_PUBLIC_DOMAIN,
     R2_SECRET_KEY,
 )
@@ -34,7 +42,125 @@ class StorageService:
             cls._instance._init_client()
         return cls._instance
 
+    def _init_r2_runtime_state(self):
+        self._r2_exists_cache = {}
+        self._r2_exists_cache_lock = threading.Lock()
+        self._r2_exists_positive_ttl = max(1, R2_EXISTS_POSITIVE_TTL_SECONDS)
+        self._r2_exists_negative_ttl = max(1, R2_EXISTS_NEGATIVE_TTL_SECONDS)
+        self._r2_exists_cache_max_entries = max(100, R2_EXISTS_CACHE_MAX_ENTRIES)
+        self._r2_head_semaphore_limit = max(1, R2_HEAD_SEMAPHORE_LIMIT)
+        self._r2_head_semaphore = None
+        self._r2_exists_inflight_lock = None
+        self._r2_exists_inflight = {}
+        self._r2_async_primitives_loop = None
+
+    def _ensure_r2_async_primitives(self):
+        loop = asyncio.get_running_loop()
+        if self._r2_async_primitives_loop is loop:
+            return
+
+        self._r2_async_primitives_loop = loop
+        self._r2_head_semaphore = asyncio.Semaphore(self._r2_head_semaphore_limit)
+        self._r2_exists_inflight_lock = asyncio.Lock()
+        self._r2_exists_inflight = {}
+
+    def _trim_r2_exists_cache_locked(self):
+        if len(self._r2_exists_cache) <= self._r2_exists_cache_max_entries:
+            return
+
+        now = time.monotonic()
+        expired_keys = [
+            key
+            for key, (_, expires_at) in self._r2_exists_cache.items()
+            if expires_at <= now
+        ]
+        for key in expired_keys:
+            self._r2_exists_cache.pop(key, None)
+
+        while len(self._r2_exists_cache) > self._r2_exists_cache_max_entries:
+            oldest_key = next(iter(self._r2_exists_cache))
+            self._r2_exists_cache.pop(oldest_key, None)
+
+    def _get_r2_exists_cache_entry_locked(
+        self, object_name: str, now: float
+    ) -> tuple[bool, float, float] | None:
+        entry = self._r2_exists_cache.get(object_name)
+        if not entry:
+            return None
+
+        exists, expires_at, updated_at = entry
+        if expires_at <= now:
+            self._r2_exists_cache.pop(object_name, None)
+            return None
+
+        return exists, expires_at, updated_at
+
+    def _get_r2_exists_cache(self, object_name: str):
+        if not object_name:
+            return None
+
+        now = time.monotonic()
+        with self._r2_exists_cache_lock:
+            entry = self._get_r2_exists_cache_entry_locked(object_name, now)
+            if not entry:
+                return None
+            return entry[0]
+
+    def _set_r2_exists_cache(self, object_name: str, exists: bool):
+        if not object_name:
+            return
+
+        ttl = (
+            self._r2_exists_positive_ttl
+            if exists
+            else self._r2_exists_negative_ttl
+        )
+        updated_at = time.monotonic()
+        expires_at = updated_at + ttl
+        with self._r2_exists_cache_lock:
+            self._r2_exists_cache[object_name] = (exists, expires_at, updated_at)
+            self._trim_r2_exists_cache_locked()
+
+    def _has_newer_positive_r2_exists_cache(
+        self, object_name: str, probe_started_at: float
+    ) -> bool:
+        now = time.monotonic()
+        with self._r2_exists_cache_lock:
+            entry = self._get_r2_exists_cache_entry_locked(object_name, now)
+            if not entry:
+                return False
+
+            exists, _, updated_at = entry
+            return exists is True and updated_at > probe_started_at
+
+    def invalidate_r2_exists_cache(self, object_name: str):
+        if not object_name:
+            return
+        with self._r2_exists_cache_lock:
+            self._r2_exists_cache.pop(object_name, None)
+
+    def mark_r2_object_exists(self, object_name: str):
+        self._set_r2_exists_cache(object_name, True)
+
+    async def _remove_r2_inflight_task(self, object_name: str, task: asyncio.Task):
+        if self._r2_exists_inflight_lock is None:
+            return
+
+        async with self._r2_exists_inflight_lock:
+            if self._r2_exists_inflight.get(object_name) is task:
+                self._r2_exists_inflight.pop(object_name, None)
+
+    def _attach_r2_inflight_cleanup(self, object_name: str, task: asyncio.Task):
+        def _cleanup(done_task: asyncio.Task):
+            loop = done_task.get_loop()
+            if loop.is_closed():
+                return
+            loop.create_task(self._remove_r2_inflight_task(object_name, done_task))
+
+        task.add_done_callback(_cleanup)
+
     def _init_client(self):
+        self._init_r2_runtime_state()
         try:
             self.client = Minio(
                 MINIO_ENDPOINT,
@@ -103,7 +229,10 @@ class StorageService:
                     endpoint_url=R2_ENDPOINT,
                     aws_access_key_id=R2_ACCESS_KEY,
                     aws_secret_access_key=R2_SECRET_KEY,
-                    config=BotoConfig(signature_version="s3v4"),
+                    config=BotoConfig(
+                        signature_version="s3v4",
+                        max_pool_connections=R2_MAX_POOL_CONNECTIONS,
+                    ),
                     region_name="auto",
                 )
                 self.r2_bucket = R2_BUCKET
@@ -123,7 +252,7 @@ class StorageService:
         """Sync function to copy from MinIO to R2, meant to run in a thread"""
         if not self.r2_client:
             logger.error("R2 client not initialized")
-            return
+            return False
 
         r2_key = r2_object_name or object_name.split("/")[-1]
 
@@ -142,11 +271,15 @@ class StorageService:
                 Body=file_data,
                 ContentType=content_type,
             )
+            self.mark_r2_object_exists(r2_key)
             logger.info(
                 f"Successfully copied {object_name} to R2 bucket {self.r2_bucket} as {r2_key}"
             )
+            return True
         except Exception as e:
+            self.invalidate_r2_exists_cache(r2_key)
             logger.error(f"Failed to copy {object_name} to R2: {e}")
+            return False
         finally:
             if "response" in locals():
                 response.close()
@@ -157,8 +290,8 @@ class StorageService:
     ):
         """Async wrapper to copy from MinIO to R2 without blocking"""
         if not self.r2_client:
-            return
-        await asyncio.to_thread(
+            return False
+        return await asyncio.to_thread(
             self._sync_upload_to_r2, bucket_name, object_name, r2_object_name
         )
 
@@ -246,17 +379,84 @@ class StorageService:
     async def async_object_exists(self, bucket_name: str, object_name: str) -> bool:
         return await asyncio.to_thread(self.object_exists, bucket_name, object_name)
 
-    def r2_object_exists(self, object_name: str) -> bool:
+    def _r2_object_exists_with_cache_hint(self, object_name: str) -> tuple[bool, bool]:
         if not self.r2_client or not self.r2_bucket:
-            return False
+            return False, False
         try:
             self.r2_client.head_object(Bucket=self.r2_bucket, Key=object_name)
-            return True
-        except Exception:
-            return False
+            return True, True
+        except ClientError as exc:
+            error = exc.response.get("Error", {}) if exc.response else {}
+            code = str(error.get("Code", ""))
+            status_code = (
+                exc.response.get("ResponseMetadata", {}).get("HTTPStatusCode")
+                if exc.response
+                else None
+            )
+            if code in {"404", "NoSuchKey", "NotFound"} or status_code == 404:
+                return False, True
+
+            logger.warning(
+                "R2 head_object failed for %s with cache skipped: code=%s status=%s",
+                object_name,
+                code or "unknown",
+                status_code,
+            )
+            return False, False
+        except Exception as exc:
+            logger.warning(
+                "R2 head_object raised transient error for %s, skip negative cache: %s",
+                object_name,
+                exc,
+            )
+            return False, False
+
+    def r2_object_exists(self, object_name: str) -> bool:
+        exists, _ = self._r2_object_exists_with_cache_hint(object_name)
+        return exists
+
+    async def _async_r2_object_exists_uncached(self, object_name: str) -> bool:
+        probe_started_at = time.monotonic()
+        async with self._r2_head_semaphore:
+            exists, cacheable = await asyncio.to_thread(
+                self._r2_object_exists_with_cache_hint, object_name
+            )
+        if cacheable:
+            # Preserve the latest write-after-copy state when an older HEAD result
+            # returns after the object has already been uploaded successfully.
+            if not exists and self._has_newer_positive_r2_exists_cache(
+                object_name, probe_started_at
+            ):
+                return True
+            self._set_r2_exists_cache(object_name, exists)
+        return exists
 
     async def async_r2_object_exists(self, object_name: str) -> bool:
-        return await asyncio.to_thread(self.r2_object_exists, object_name)
+        if not object_name:
+            return False
+
+        cached = self._get_r2_exists_cache(object_name)
+        if cached is not None:
+            return cached
+
+        if not self.r2_client or not self.r2_bucket:
+            return False
+
+        self._ensure_r2_async_primitives()
+
+        async with self._r2_exists_inflight_lock:
+            cached = self._get_r2_exists_cache(object_name)
+            if cached is not None:
+                return cached
+
+            inflight_task = self._r2_exists_inflight.get(object_name)
+            if inflight_task is None:
+                inflight_task = asyncio.create_task(
+                    self._async_r2_object_exists_uncached(object_name)
+                )
+                self._r2_exists_inflight[object_name] = inflight_task
+                self._attach_r2_inflight_cleanup(object_name, inflight_task)
+        return await asyncio.shield(inflight_task)
 
     def get_r2_public_url(self, object_name: str) -> str:
         if not R2_PUBLIC_DOMAIN or not object_name:
