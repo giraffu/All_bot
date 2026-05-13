@@ -9,6 +9,7 @@ import boto3
 from botocore.config import Config as BotoConfig
 from botocore.exceptions import ClientError
 from minio import Minio
+import urllib3
 
 from config import (
     MINIO_ACCESS_KEY,
@@ -162,11 +163,17 @@ class StorageService:
     def _init_client(self):
         self._init_r2_runtime_state()
         try:
+            self._minio_http_client = urllib3.PoolManager(
+                maxsize=100,
+                num_pools=100,
+                retries=False,
+            )
             self.client = Minio(
                 MINIO_ENDPOINT,
                 access_key=MINIO_ACCESS_KEY,
                 secret_key=MINIO_SECRET_KEY,
                 secure=MINIO_SECURE,
+                http_client=self._minio_http_client,
             )
 
             # CRITICAL FIX: Inject region mapping to prevent synchronous `?location=` network calls
@@ -188,6 +195,7 @@ class StorageService:
                     secret_key=MINIO_SECRET_KEY,
                     secure=secure,
                     region="us-east-1",
+                    http_client=self._minio_http_client,
                 )
                 self.public_client._region_map[MINIO_BUCKET] = "us-east-1"
                 if MINIO_TEMPLATE_BUCKET:
