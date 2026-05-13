@@ -175,9 +175,10 @@ class WorkflowPatcher:
                 wf.pop("5", None)
             if "59" in wf:
                 wf.pop("59", None)
-            # Route Node 7 directly to Node 8
+            # In the I2V5 topology, removing node 210 requires reconnecting node 8 to 256.
+            # Reconnecting to 7 would create a 7 -> 8 -> 7 cycle.
             if "8" in wf and "inputs" in wf["8"]:
-                wf["8"]["inputs"]["model"] = ["7", 0]
+                wf["8"]["inputs"]["model"] = ["256", 0]
 
             # Prevent caching of output nodes by ensuring a unique filename_prefix per task
             # Using random integer as task_id if not present (since workflow_patcher only gets params)
