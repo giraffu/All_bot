@@ -38,3 +38,11 @@ class TaskGenerateResponse(BaseModel):
     message: str
     cost: int
     balance_remaining: int
+
+
+class TaskResultResponse(BaseModel):
+    status: str
+    task_id: str
+    task_type: Optional[str] = None
+    media_type: Optional[str] = None
+    result_url: Optional[str] = None

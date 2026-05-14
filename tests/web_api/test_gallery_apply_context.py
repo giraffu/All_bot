@@ -132,8 +132,8 @@ async def test_get_apply_context_backfills_missing_portrait_video_billing_resolu
     assert response.width == 640
     assert response.height == 800
     assert response.duration == 8
-    assert history.billing_resolution == "720"
-    session.commit.assert_awaited_once()
+    assert history.billing_resolution is None
+    session.commit.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -171,8 +171,8 @@ async def test_get_apply_context_clears_non_video_billing_resolution(monkeypatch
     )
 
     assert response.billing_resolution is None
-    assert history.billing_resolution is None
-    session.commit.assert_awaited_once()
+    assert history.billing_resolution == "720"
+    session.commit.assert_not_awaited()
 
 
 @pytest.mark.asyncio

@@ -13,13 +13,16 @@ from src.core.task_core import (
     process_and_submit_task,
 )
 from src.constants import VIDEO_TASK_TYPES
-from src.database.models import User
+from src.core.media_paths import resolve_storage_object
+from src.database.models import User, History
 from src.quota import QuotaManager
 from src.services.redis_client import redis_client
 from src.services.storage import storage
 from src.services.image_service import image_service
-from src.web_api.dependencies import get_current_user
-from src.web_api.schemas.task_schema import TaskGenerateRequest, TaskGenerateResponse
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
+from src.web_api.dependencies import get_current_user, get_db
+from src.web_api.schemas.task_schema import TaskGenerateRequest, TaskGenerateResponse, TaskResultResponse
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -87,6 +90,57 @@ async def create_generation_task(
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
+@router.get("/{task_id}/result", response_model=TaskResultResponse)
+async def get_task_result(
+    task_id: str, 
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Get task generation result directly.
+    """
+
+    hist = (
+        (await db.execute(select(History).where(History.task_id == task_id)))
+        .scalars()
+        .first()
+    )
+
+    if not hist:
+        return {
+            "status": "pending_result",
+            "task_id": task_id,
+            "task_type": None,
+            "media_type": None,
+        }
+
+    if hist.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Not authorized to access this task")
+
+    is_video = hist.type in VIDEO_TASK_TYPES if hist.type else False
+    media_type = "video" if is_video else "image"
+
+    if hist.output_file:
+        bucket_name, object_name = resolve_storage_object(hist.output_file)
+        presigned_url = storage.get_presigned_url(
+            object_name, expires_hours=24, bucket=bucket_name
+        )
+        return {
+            "status": "success",
+            "task_id": task_id,
+            "task_type": hist.type,
+            "media_type": media_type,
+            "result_url": presigned_url if presigned_url else hist.output_file,
+        }
+    else:
+        return {
+            "status": "pending_result",
+            "task_id": task_id,
+            "task_type": hist.type,
+            "media_type": media_type,
+        }
+
+
 @router.get("/{task_id}/stream")
 async def task_status_stream(task_id: str, request: Request):
     """
@@ -145,44 +199,8 @@ async def task_status_stream(task_id: str, request: Request):
                     # Map backend status to frontend expected status
                     if status_val == "done":
                         initial_status["status"] = "success"
-                        task_type = initial_status.get("task_type", "edit")
-                        is_video = task_type in VIDEO_TASK_TYPES
-                        ext = "mp4" if is_video else "png"
-
-                        from sqlalchemy import select
-
-                        from src.database.core import AsyncSessionLocal
-                        from src.database.models import History
-
-                        final_result_path = f"{user_id}/output_images/{task_id}.{ext}"
-                        for _ in range(30):
-                            async with AsyncSessionLocal() as db:
-                                hist = (
-                                    (
-                                        await db.execute(
-                                            select(History).where(
-                                                History.task_id == task_id
-                                            )
-                                        )
-                                    )
-                                    .scalars()
-                                    .first()
-                                )
-                                if (
-                                    hist
-                                    and hist.output_file
-                                    and hist.output_file.startswith(str(user_id))
-                                ):
-                                    final_result_path = hist.output_file
-                                    break
-                            await asyncio.sleep(0.5)
-
-                        presigned_url = storage.get_presigned_url(
-                            final_result_path, expires_hours=24, bucket="bot-data"
-                        )
-                        initial_status["result"] = (
-                            presigned_url if presigned_url else final_result_path
-                        )
+                        initial_status["task_id"] = task_id
+                        initial_status["task_type"] = initial_status.get("task_type", "edit")
                     elif status_val == "error":
                         initial_status["status"] = "failed"
                         initial_status["error"] = initial_status.get("error_msg")
@@ -209,47 +227,8 @@ async def task_status_stream(task_id: str, request: Request):
                         # Map backend status to frontend expected status
                         if task_status == "done":
                             parsed["status"] = "success"
-                            task_type = parsed.get("task_type", "edit")
-                            is_video = task_type in VIDEO_TASK_TYPES
-                            ext = "mp4" if is_video else "png"
-
-                            # Give task_service.py time to move the file from comfyui-temp to bot-data
-                            from sqlalchemy import select
-
-                            from src.database.core import AsyncSessionLocal
-                            from src.database.models import History
-
-                            final_result_path = (
-                                f"{user_id}/output_images/{task_id}.{ext}"
-                            )
-                            for _ in range(30):
-                                async with AsyncSessionLocal() as db:
-                                    hist = (
-                                        (
-                                            await db.execute(
-                                                select(History).where(
-                                                    History.task_id == task_id
-                                                )
-                                            )
-                                        )
-                                        .scalars()
-                                        .first()
-                                    )
-                                    if (
-                                        hist
-                                        and hist.output_file
-                                        and hist.output_file.startswith(str(user_id))
-                                    ):
-                                        final_result_path = hist.output_file
-                                        break
-                                await asyncio.sleep(0.5)
-
-                            presigned_url = storage.get_presigned_url(
-                                final_result_path, expires_hours=24, bucket="bot-data"
-                            )
-                            parsed["result"] = (
-                                presigned_url if presigned_url else final_result_path
-                            )
+                            parsed["task_id"] = task_id
+                            parsed["task_type"] = parsed.get("task_type", "edit")
                         elif task_status == "error":
                             parsed["status"] = "failed"
                             parsed["error"] = parsed.get("error_msg")
@@ -278,52 +257,8 @@ async def task_status_stream(task_id: str, request: Request):
                             elif status_val in ["done", "error", "cancelled"]:
                                 if status_val == "done":
                                     status_data["status"] = "success"
-                                    task_type = status_data.get("task_type", "edit")
-                                    is_video = task_type in VIDEO_TASK_TYPES
-                                    ext = "mp4" if is_video else "png"
-
-                                    from sqlalchemy import select
-
-                                    from src.database.core import AsyncSessionLocal
-                                    from src.database.models import History
-
-                                    final_result_path = (
-                                        f"{user_id}/output_images/{task_id}.{ext}"
-                                    )
-                                    for _ in range(30):
-                                        async with AsyncSessionLocal() as db:
-                                            hist = (
-                                                (
-                                                    await db.execute(
-                                                        select(History).where(
-                                                            History.task_id == task_id
-                                                        )
-                                                    )
-                                                )
-                                                .scalars()
-                                                .first()
-                                            )
-                                            if (
-                                                hist
-                                                and hist.output_file
-                                                and hist.output_file.startswith(
-                                                    str(user_id)
-                                                )
-                                            ):
-                                                final_result_path = hist.output_file
-                                                break
-                                        await asyncio.sleep(0.5)
-
-                                    presigned_url = storage.get_presigned_url(
-                                        final_result_path,
-                                        expires_hours=24,
-                                        bucket="bot-data",
-                                    )
-                                    status_data["result"] = (
-                                        presigned_url
-                                        if presigned_url
-                                        else final_result_path
-                                    )
+                                    status_data["task_id"] = task_id
+                                    status_data["task_type"] = status_data.get("task_type", "edit")
                                 elif status_val == "error":
                                     status_data["status"] = "failed"
                                     status_data["error"] = status_data.get("error_msg")

@@ -2,6 +2,11 @@ import { defineStore } from 'pinia'
 import { ref, watch } from 'vue'
 import { message } from 'ant-design-vue'
 import api from '@/api'
+import {
+  decideTaskResultFromError,
+  decideTaskResultFromResponse,
+  shouldResumeTaskListening
+} from '@/stores/taskResultState'
 
 export interface Task {
   id: string
@@ -14,6 +19,7 @@ export interface Task {
   error?: string
   eventSource?: EventSource
   retryCount?: number
+  awaitingResult?: boolean
 }
 
 export const useTasksStore = defineStore('tasks', () => {
@@ -55,6 +61,47 @@ export const useTasksStore = defineStore('tasks', () => {
   }
 
   // Forward declaration of startListening
+  const pollForResult = async (task: Task, retryCount = 0) => {
+    const currentTask = activeTasks.value.find(t => t.id === task.id)
+    if (!currentTask) return
+
+    try {
+      const res = await api.get(`/tasks/${task.id}/result`)
+      const decision = decideTaskResultFromResponse(res.data, retryCount, 10)
+      if (decision.type === 'resolved' && decision.resultUrl) {
+        currentTask.progress = 100
+        currentTask.status = 'success'
+        currentTask.resultUrl = decision.resultUrl
+        currentTask.awaitingResult = false
+        message.success(`任务 [${currentTask.title}] 生成完成！`)
+      } else if (decision.type === 'retry') {
+        setTimeout(() => pollForResult(task, retryCount + 1), 1500)
+      } else {
+        currentTask.status = 'failed'
+        currentTask.error = '获取结果超时，请在历史记录中查看'
+        currentTask.awaitingResult = false
+        message.warning(`获取任务 [${currentTask.title}] 结果超时，请稍后在历史记录中查看`)
+      }
+    } catch (err: any) {
+      console.error('Failed to fetch task result:', err)
+      const status = err.response?.status
+      const decision = decideTaskResultFromError(status, retryCount, 10)
+      if (decision.type === 'forbidden') {
+         currentTask.status = 'failed'
+         currentTask.error = '任务不存在或无权限'
+         currentTask.awaitingResult = false
+         message.error(`获取任务 [${currentTask.title}] 结果失败: 任务不存在或无权限`)
+      } else if (decision.type === 'retry') {
+        setTimeout(() => pollForResult(task, retryCount + 1), 1500)
+      } else {
+        currentTask.status = 'failed'
+        currentTask.error = '获取结果失败'
+        currentTask.awaitingResult = false
+        message.error(`获取任务 [${currentTask.title}] 结果失败`)
+      }
+    }
+  }
+
   const startListening = (task: Task) => {
     const token = localStorage.getItem('token')
     const authUrl = `/api/tasks/${task.id}/stream?token=${token}`
@@ -76,14 +123,14 @@ export const useTasksStore = defineStore('tasks', () => {
         }
         
         if (payload.status === 'success') {
-          task.progress = 100
-          task.status = 'success'
-          task.resultUrl = payload.result
-          message.success(`任务 [${task.title}] 生成完成！`)
+          task.progress = 99
+          task.awaitingResult = true
+          // Delay task.status = 'success' until resultUrl is fetched
           if (task.eventSource) {
             task.eventSource.close()
             task.eventSource = undefined
           }
+          pollForResult(task)
         } else if (payload.status === 'failed') {
           task.status = 'failed'
           task.error = payload.error || '未知错误'
@@ -121,21 +168,27 @@ export const useTasksStore = defineStore('tasks', () => {
   }
 
   // Load from localStorage on initialization
-  const storedTasks = localStorage.getItem('active_tasks')
-  if (storedTasks) {
-    try {
-      const parsed = JSON.parse(storedTasks)
-      activeTasks.value = parsed
-      // Re-establish connections for unfinished tasks
-      activeTasks.value.forEach(task => {
-        if (task.status === 'pending' || task.status === 'running') {
-          startListening(task)
-        }
-      })
-    } catch (e) {
-      console.error('Failed to parse stored tasks', e)
+    const storedTasks = localStorage.getItem('active_tasks')
+    if (storedTasks) {
+      try {
+        const parsed = JSON.parse(storedTasks)
+        activeTasks.value = parsed
+        // Re-establish connections for unfinished tasks
+        activeTasks.value.forEach(task => {
+          if (task.awaitingResult || (task.status === 'success' && !task.resultUrl)) {
+            // Recover tasks that were persisted after SSE success but before result fetch finished.
+            task.awaitingResult = true
+            task.status = 'running'
+            task.progress = Math.max(task.progress, 99)
+            pollForResult(task)
+          } else if (shouldResumeTaskListening(task)) {
+            startListening(task)
+          }
+        })
+      } catch (e) {
+        console.error('Failed to parse stored tasks', e)
+      }
     }
-  }
 
   // Persist to localStorage whenever tasks change
   watch(activeTasks, (newTasks) => {

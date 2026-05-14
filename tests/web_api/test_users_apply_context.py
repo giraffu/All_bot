@@ -3,7 +3,9 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from src.database import core as db_core
 from src.database.models import GalleryPost, History
+from src.web_api import dependencies as web_dependencies
 from src.web_api.routers import users as users_router
 
 
@@ -25,13 +27,21 @@ class _FakeResult:
         return list(self._many)
 
 
-class _FakeDB:
+class _FakeSession:
     def __init__(self, results):
         self._results = iter(results)
         self.commit = AsyncMock()
+        self.closed = False
 
     async def execute(self, _stmt):
         return next(self._results)
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb):
+        self.closed = True
+        return False
 
 
 def test_pick_preferred_gallery_post_prefers_active_and_newer_post():
@@ -63,7 +73,7 @@ def test_pick_preferred_gallery_post_prefers_active_and_newer_post():
 
 
 @pytest.mark.asyncio
-async def test_get_favorite_apply_context_backfills_missing_video_metadata(
+async def test_get_favorite_apply_context_probes_media_after_session_closes(
     monkeypatch,
 ):
     history = History(
@@ -74,39 +84,43 @@ async def test_get_favorite_apply_context_backfills_missing_video_metadata(
         prompt="prompt",
         output_file="bot-data/history/task-1/output.mp4",
     )
-    db = _FakeDB(
+    session = _FakeSession(
         [
             _FakeResult(single=history),
             _FakeResult(many=[]),
         ]
     )
 
-    monkeypatch.setattr(
-        users_router,
-        "extract_media_metadata_from_storage",
-        AsyncMock(return_value=(1024, 1024, 8)),
-    )
+    async def _probe(_output_file, _media_type):
+        assert session.closed is True
+        return (1024, 1024, 8)
 
-    response = await users_router.get_favorite_apply_context(
-        "task-1",
-        current_user=type("User", (), {"id": 123})(),
-        db=db,
+    monkeypatch.setattr(db_core, "AsyncSessionLocal", lambda: session)
+    monkeypatch.setattr(
+        web_dependencies,
+        "get_current_user",
+        AsyncMock(return_value=type("User", (), {"id": 123})()),
     )
+    monkeypatch.setattr(users_router, "extract_media_metadata_from_storage", _probe)
+
+    response = await users_router.get_favorite_apply_context("task-1", token="test-token")
 
     assert response.task_id == "task-1"
     assert response.billing_resolution == "1024"
     assert response.width == 1024
     assert response.height == 1024
     assert response.duration == 8
-    assert history.billing_resolution == "1024"
-    assert history.width == 1024
-    assert history.height == 1024
-    assert history.duration == 8
-    db.commit.assert_awaited_once()
+    assert history.billing_resolution is None
+    assert history.width is None
+    assert history.height is None
+    assert history.duration is None
+    session.commit.assert_not_awaited()
 
 
 @pytest.mark.asyncio
-async def test_get_favorite_apply_context_prefers_active_newer_gallery_post_metadata():
+async def test_get_favorite_apply_context_prefers_active_newer_gallery_post_metadata(
+    monkeypatch,
+):
     now = datetime.now()
     history = History(
         id=11,
@@ -143,18 +157,21 @@ async def test_get_favorite_apply_context_prefers_active_newer_gallery_post_meta
         height=1024,
         duration=10,
     )
-    db = _FakeDB(
+    session = _FakeSession(
         [
             _FakeResult(single=history),
             _FakeResult(many=[inactive_newer, active_older, active_newer]),
         ]
     )
 
-    response = await users_router.get_favorite_apply_context(
-        "task-1",
-        current_user=type("User", (), {"id": 123})(),
-        db=db,
+    monkeypatch.setattr(db_core, "AsyncSessionLocal", lambda: session)
+    monkeypatch.setattr(
+        web_dependencies,
+        "get_current_user",
+        AsyncMock(return_value=type("User", (), {"id": 123})()),
     )
+
+    response = await users_router.get_favorite_apply_context("task-1", token="test-token")
 
     assert response.post_id == 2
     assert response.source_post_id == 2
@@ -162,12 +179,14 @@ async def test_get_favorite_apply_context_prefers_active_newer_gallery_post_meta
     assert response.width == 1024
     assert response.height == 1024
     assert response.duration == 10
-    assert history.billing_resolution == "1024"
-    db.commit.assert_awaited_once()
+    assert history.billing_resolution is None
+    session.commit.assert_not_awaited()
 
 
 @pytest.mark.asyncio
-async def test_get_favorite_apply_context_normalizes_existing_portrait_video_to_720_tier():
+async def test_get_favorite_apply_context_normalizes_existing_portrait_video_to_720_tier(
+    monkeypatch,
+):
     history = History(
         id=11,
         user_id=123,
@@ -178,29 +197,34 @@ async def test_get_favorite_apply_context_normalizes_existing_portrait_video_to_
         height=800,
         duration=8,
     )
-    db = _FakeDB(
+    session = _FakeSession(
         [
             _FakeResult(single=history),
             _FakeResult(many=[]),
         ]
     )
 
-    response = await users_router.get_favorite_apply_context(
-        "task-1",
-        current_user=type("User", (), {"id": 123})(),
-        db=db,
+    monkeypatch.setattr(db_core, "AsyncSessionLocal", lambda: session)
+    monkeypatch.setattr(
+        web_dependencies,
+        "get_current_user",
+        AsyncMock(return_value=type("User", (), {"id": 123})()),
     )
+
+    response = await users_router.get_favorite_apply_context("task-1", token="test-token")
 
     assert response.billing_resolution == "720"
     assert response.width == 640
     assert response.height == 800
     assert response.duration == 8
-    assert history.billing_resolution == "720"
-    db.commit.assert_awaited_once()
+    assert history.billing_resolution is None
+    session.commit.assert_not_awaited()
 
 
 @pytest.mark.asyncio
-async def test_get_favorite_apply_context_clears_non_video_billing_resolution():
+async def test_get_favorite_apply_context_keeps_non_video_billing_resolution_read_only(
+    monkeypatch,
+):
     history = History(
         id=11,
         user_id=123,
@@ -211,19 +235,22 @@ async def test_get_favorite_apply_context_clears_non_video_billing_resolution():
         width=1024,
         height=1024,
     )
-    db = _FakeDB(
+    session = _FakeSession(
         [
             _FakeResult(single=history),
             _FakeResult(many=[]),
         ]
     )
 
-    response = await users_router.get_favorite_apply_context(
-        "task-1",
-        current_user=type("User", (), {"id": 123})(),
-        db=db,
+    monkeypatch.setattr(db_core, "AsyncSessionLocal", lambda: session)
+    monkeypatch.setattr(
+        web_dependencies,
+        "get_current_user",
+        AsyncMock(return_value=type("User", (), {"id": 123})()),
     )
 
+    response = await users_router.get_favorite_apply_context("task-1", token="test-token")
+
     assert response.billing_resolution is None
-    assert history.billing_resolution is None
-    db.commit.assert_awaited_once()
+    assert history.billing_resolution == "720"
+    session.commit.assert_not_awaited()

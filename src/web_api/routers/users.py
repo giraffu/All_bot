@@ -6,7 +6,6 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.database.core import AsyncSessionLocal
 from src.database.models import GalleryPost, History, User
 from src.core.media_paths import (
     build_history_r2_media_key,
@@ -28,7 +27,6 @@ from src.core.video_billing import (
     normalize_requested_billing_resolution,
 )
 from src.services.storage import storage
-from src.web_api.dependencies import get_current_user
 from src.web_api.schemas.auth_schema import InvitationRechargeStats, UserResponse
 from src.web_api.schemas.user_schema import (
     CheckinResponse,
@@ -49,9 +47,7 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
-async def get_db():
-    async with AsyncSessionLocal() as session:
-        yield session
+from src.web_api.dependencies import get_current_user, get_db, get_token
 
 
 async def _get_r2_url_if_exists(object_key: str) -> str:
@@ -633,24 +629,29 @@ async def get_my_favorites(
 @router.get("/history/{task_id}/apply-context", response_model=ApplyContextResponse)
 async def get_favorite_apply_context(
     task_id: str,
-    current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    token: str = Depends(get_token),
 ):
     from src.config_mapping import ALL_LORA_MODELS
+    from src.database.core import AsyncSessionLocal
+    from src.web_api.dependencies import get_current_user
 
-    stmt = select(History).where(
-        History.task_id == task_id, History.user_id == current_user.id
-    )
-    result = await db.execute(stmt)
-    history = result.scalar_one_or_none()
+    async with AsyncSessionLocal() as db:
+        current_user = await get_current_user(db, token)
+        user_id = current_user.id
 
-    if not history:
-        raise HTTPException(status_code=404, detail="未找到原任务详情")
-
-    gallery_posts = (
-        await db.execute(select(GalleryPost).where(GalleryPost.task_id == history.task_id))
-    ).scalars().all()
-    gallery_post = _pick_preferred_gallery_post(gallery_posts)
+        stmt = select(History).where(
+            History.task_id == task_id, History.user_id == user_id
+        )
+        result = await db.execute(stmt)
+        history = result.scalar_one_or_none()
+    
+        if not history:
+            raise HTTPException(status_code=404, detail="未找到原任务详情")
+    
+        gallery_posts = (
+            await db.execute(select(GalleryPost).where(GalleryPost.task_id == history.task_id))
+        ).scalars().all()
+        gallery_post = _pick_preferred_gallery_post(gallery_posts)
 
     input_file_url = None
     if history.input_file:
@@ -701,7 +702,6 @@ async def get_favorite_apply_context(
     billing_resolution = _resolve_history_billing_resolution(
         history, gallery_post=gallery_post
     )
-    should_commit = False
 
     if width is None and gallery_post:
         width = gallery_post.width
@@ -709,10 +709,6 @@ async def get_favorite_apply_context(
         height = gallery_post.height
     if duration is None and gallery_post:
         duration = gallery_post.duration
-
-    if history.billing_resolution != billing_resolution:
-        history.billing_resolution = billing_resolution
-        should_commit = True
 
     if history.output_file and (
         width is None or height is None or (media_type == "video" and duration is None)
@@ -728,26 +724,12 @@ async def get_favorite_apply_context(
                 billing_resolution = infer_billing_resolution_from_dimensions(
                     width, height, history.type
                 )
-            if (
-                history.billing_resolution != billing_resolution
-                or history.width != width
-                or history.height != height
-                or history.duration != duration
-            ):
-                history.billing_resolution = billing_resolution
-                history.width = width
-                history.height = height
-                history.duration = duration
-                should_commit = True
         except Exception as exc:
             logger.warning(
-                "Failed to backfill history media metadata for task %s: %s",
+                "Failed to probe media metadata for task %s: %s",
                 history.task_id,
                 exc,
             )
-
-    if should_commit:
-        await db.commit()
 
     return ApplyContextResponse(
         post_id=gallery_post.id if gallery_post else history.id,

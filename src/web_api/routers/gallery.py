@@ -587,10 +587,6 @@ async def get_apply_context(
             history, width=width, height=height, gallery_post=post
         )
 
-        if history.billing_resolution != billing_resolution:
-            history.billing_resolution = billing_resolution
-            await session.commit()
-
         return ApplyContextResponse(
             post_id=post.id,
             source_post_id=post.id,
