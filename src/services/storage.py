@@ -72,7 +72,7 @@ class StorageService:
         now = time.monotonic()
         expired_keys = [
             key
-            for key, (_, expires_at) in self._r2_exists_cache.items()
+            for key, (_, expires_at, _) in self._r2_exists_cache.items()
             if expires_at <= now
         ]
         for key in expired_keys:

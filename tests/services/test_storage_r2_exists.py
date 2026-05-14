@@ -33,6 +33,18 @@ def test_r2_not_found_is_cacheable_negative_result(storage_service):
     assert cacheable is True
 
 
+def test_r2_exists_cache_trim_handles_three_value_entries(storage_service):
+    storage_service._r2_exists_cache_max_entries = 2
+    storage_service._r2_exists_cache["expired-key"] = (True, 1.0, 1.0)
+
+    storage_service._set_r2_exists_cache("fresh-key-1", True)
+    storage_service._set_r2_exists_cache("fresh-key-2", True)
+
+    assert "expired-key" not in storage_service._r2_exists_cache
+    assert storage_service._get_r2_exists_cache("fresh-key-1") is True
+    assert storage_service._get_r2_exists_cache("fresh-key-2") is True
+
+
 @pytest.mark.asyncio
 async def test_async_r2_object_exists_does_not_cache_transient_failures(storage_service):
     storage_service.r2_client.head_object.side_effect = [
