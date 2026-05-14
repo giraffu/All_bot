@@ -141,6 +141,10 @@ async def _pick_history_media_urls(
 
     bucket_name, object_name = resolve_storage_object(output_file)
     media_type = get_media_type_from_history(history_type)
+    media_r2_keys = build_r2_media_key_candidates(
+        output_file=output_file,
+        task_id=task_id,
+    )
     thumb_file, thumb_r2_keys = build_r2_thumbnail_info(
         output_file=output_file,
         media_type=media_type,
@@ -148,13 +152,18 @@ async def _pick_history_media_urls(
     )
     _, thumb_object_name = resolve_storage_object(thumb_file)
 
-    output_file_url = storage.get_presigned_url(object_name, bucket=bucket_name)
-    thumbnail_r2_url, thumb_exists = await asyncio.gather(
+    media_r2_url, thumbnail_r2_url, thumb_exists = await asyncio.gather(
+        _get_first_r2_url_if_exists(*media_r2_keys),
         _get_first_r2_url_if_exists(*thumb_r2_keys),
         storage.async_object_exists(bucket_name, thumb_object_name),
     )
 
+    output_file_url = ""
     thumbnail_url = ""
+    if media_r2_url:
+        output_file_url = media_r2_url
+    else:
+        output_file_url = storage.get_presigned_url(object_name, bucket=bucket_name)
     if thumbnail_r2_url:
         thumbnail_url = thumbnail_r2_url
     elif thumb_exists:
