@@ -41,6 +41,7 @@ class PaginatedGalleryResponse(BaseModel):
 
 class ApplyContextResponse(BaseModel):
     post_id: int
+    source_post_id: Optional[int] = None
     task_id: str
     media_type: str
     prompt: Optional[str]

@@ -494,6 +494,7 @@ async def get_apply_context(
 
         return ApplyContextResponse(
             post_id=post.id,
+            source_post_id=post.id,
             task_id=post.task_id,
             media_type=post.media_type,
             prompt=prompt,

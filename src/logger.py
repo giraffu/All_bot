@@ -131,6 +131,9 @@ class UserLogger:
         type: str = "image",
         allow_contribute: bool = True,
         source: str = "bot",
+        width: int | None = None,
+        height: int | None = None,
+        duration: int | None = None,
     ):
         """
         Log task details to database (History table)
@@ -162,6 +165,9 @@ class UserLogger:
                 prompt=prompt,
                 input_file=input_file_str,
                 output_file=output_image,
+                width=width,
+                height=height,
+                duration=duration,
                 created_at=datetime.now(),
                 allow_contribute=allow_contribute,
                 source=source,

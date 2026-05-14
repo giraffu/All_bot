@@ -1,15 +1,129 @@
 import asyncio
+import json
 import logging
 import os
 import shutil
 import subprocess
 import tempfile
+from io import BytesIO
 from PIL import Image, ImageOps
 
-from src.core.media_paths import build_legacy_r2_key
+from src.core.media_paths import build_legacy_r2_key, resolve_storage_object
 from src.services.storage import storage
 
 logger = logging.getLogger(__name__)
+
+
+def _extract_image_metadata_from_file(file_path: str) -> tuple[int | None, int | None, None]:
+    with Image.open(file_path) as img:
+        img = ImageOps.exif_transpose(img)
+        return img.width, img.height, None
+
+
+def _extract_video_metadata_with_ffprobe(input_source: str) -> tuple[int | None, int | None, int | None]:
+    ffprobe_cmd = [
+        "ffprobe",
+        "-v",
+        "error",
+        "-select_streams",
+        "v:0",
+        "-show_entries",
+        "stream=width,height:format=duration",
+        "-of",
+        "json",
+        input_source,
+    ]
+    result = subprocess.run(
+        ffprobe_cmd,
+        check=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    payload = json.loads(result.stdout or "{}")
+    streams = payload.get("streams") or []
+    stream = streams[0] if streams else {}
+    raw_duration = (payload.get("format") or {}).get("duration")
+    duration = int(round(float(raw_duration))) if raw_duration is not None else None
+    return stream.get("width"), stream.get("height"), duration
+
+
+def extract_media_metadata_from_bytes(
+    media_bytes: bytes,
+    media_type: str,
+    file_extension: str | None = None,
+) -> tuple[int | None, int | None, int | None]:
+    if not media_bytes:
+        return None, None, None
+
+    normalized_media_type = "video" if media_type == "video" else "image"
+    if normalized_media_type == "image":
+        with Image.open(BytesIO(media_bytes)) as img:
+            img = ImageOps.exif_transpose(img)
+            return img.width, img.height, None
+
+    temp_dir = tempfile.mkdtemp()
+    try:
+        suffix = f".{(file_extension or 'mp4').lstrip('.')}"
+        media_path = os.path.join(temp_dir, f"media{suffix}")
+        with open(media_path, "wb") as f:
+            f.write(media_bytes)
+        return _extract_video_metadata_with_ffprobe(media_path)
+    finally:
+        shutil.rmtree(temp_dir, ignore_errors=True)
+
+
+def extract_media_metadata_from_bytes_best_effort(
+    media_bytes: bytes,
+    media_type: str,
+    file_extension: str | None = None,
+    fallback: tuple[int | None, int | None, int | None] = (None, None, None),
+) -> tuple[int | None, int | None, int | None]:
+    try:
+        return extract_media_metadata_from_bytes(
+            media_bytes, media_type, file_extension
+        )
+    except Exception as exc:
+        logger.warning("Failed to extract media metadata from bytes: %s", exc)
+        return fallback
+
+
+async def extract_media_metadata_from_storage(
+    output_file: str,
+    media_type: str,
+) -> tuple[int | None, int | None, int | None]:
+    if not output_file:
+        return None, None, None
+
+    bucket_name, object_name = resolve_storage_object(output_file)
+    normalized_media_type = "video" if media_type == "video" else "image"
+
+    if normalized_media_type == "video":
+        input_url = await asyncio.to_thread(
+            storage.get_presigned_url, object_name, 1.0, bucket_name
+        )
+        return await asyncio.to_thread(_extract_video_metadata_with_ffprobe, input_url)
+
+    temp_dir = tempfile.mkdtemp()
+    try:
+        original_ext = object_name.rsplit(".", 1)[-1] if "." in object_name else "png"
+        local_path = os.path.join(temp_dir, f"media.{original_ext}")
+        await asyncio.to_thread(storage.download_file, bucket_name, object_name, local_path)
+        return await asyncio.to_thread(_extract_image_metadata_from_file, local_path)
+    finally:
+        shutil.rmtree(temp_dir, ignore_errors=True)
+
+
+async def extract_media_metadata_from_storage_best_effort(
+    output_file: str,
+    media_type: str,
+    fallback: tuple[int | None, int | None, int | None] = (None, None, None),
+) -> tuple[int | None, int | None, int | None]:
+    try:
+        return await extract_media_metadata_from_storage(output_file, media_type)
+    except Exception as exc:
+        logger.warning("Failed to extract media metadata from storage: %s", exc)
+        return fallback
 
 
 async def generate_and_upload_thumbnail(

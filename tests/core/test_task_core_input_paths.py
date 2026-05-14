@@ -2,7 +2,11 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from src.core.task_core import CoreDomainError, _process_input_path
+from src.core.task_core import (
+    CoreDomainError,
+    _infer_requested_output_metadata,
+    _process_input_path,
+)
 
 
 @pytest.mark.asyncio
@@ -39,3 +43,15 @@ async def test_process_input_path_rejects_failed_local_upload(tmp_path):
         await _process_input_path(user_logger, str(local_file))
 
     user_logger.save_input_image.assert_called_once_with(str(local_file))
+
+
+def test_infer_requested_output_metadata_keeps_unknown_height_for_tier_based_video():
+    assert _infer_requested_output_metadata(
+        {"resolution": 1024, "duration": 8}
+    ) == (1024, None, 8)
+
+
+def test_infer_requested_output_metadata_parses_explicit_ltx_resolution():
+    assert _infer_requested_output_metadata(
+        {"resolution": "1280x704", "duration": "10s"}
+    ) == (1280, 704, 10)

@@ -11,6 +11,9 @@ class HistoryItem(BaseModel):
     prompt: Optional[str]
     input_file: Optional[str]
     output_file: Optional[str]
+    width: Optional[int] = None
+    height: Optional[int] = None
+    duration: Optional[int] = None
     output_file_url: Optional[str] = None
     thumbnail_url: Optional[str] = None
     created_at: datetime

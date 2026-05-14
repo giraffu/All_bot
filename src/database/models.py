@@ -111,6 +111,9 @@ class History(Base):
     prompt = Column(Text, nullable=True)
     input_file = Column(Text, nullable=True)
     output_file = Column(Text, nullable=True)
+    width = Column(Integer, nullable=True)
+    height = Column(Integer, nullable=True)
+    duration = Column(Integer, nullable=True)
     created_at = Column(DateTime, default=datetime.now)
 
     is_public = Column(Boolean, default=False)

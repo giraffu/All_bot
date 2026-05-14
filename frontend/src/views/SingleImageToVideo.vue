@@ -1,14 +1,14 @@
 <script setup lang="ts">
-import { ref, onUnmounted, computed, watch, onMounted } from 'vue'
-import { UploadOutlined, InboxOutlined, VideoCameraOutlined, DownloadOutlined, CloseCircleOutlined } from '@ant-design/icons-vue'
+import { ref, computed, watch, onMounted } from 'vue'
+import { InboxOutlined, VideoCameraOutlined, DownloadOutlined, CloseCircleOutlined } from '@ant-design/icons-vue'
 import { message } from 'ant-design-vue'
-import { useRoute, useRouter } from 'vue-router'
+import { useRoute } from 'vue-router'
 import { useUpload } from '@/composables/useUpload'
 import { useTaskStream } from '@/composables/useTaskStream'
 import { useTaskResult } from '@/composables/useTaskResult'
+import { resolveTemplateVideoApplyState } from '@/utils/templateVideoApplyState'
 
 const route = useRoute()
-const router = useRouter()
 
 const taskType = computed(() => (route.query.type as string) || 'image2video')
 const taskTitle = computed(() => (route.query.title as string) || '动图生成')
@@ -18,16 +18,16 @@ const isLtxVideo = computed(() => taskType.value === 'ltx_video')
 
 const { uploading, progress: uploadProgress, uploadFile } = useUpload()
 const { isSubmitting, submitTask } = useTaskStream()
-const { currentTask, setSubmittedTaskId, isVideoUrl, isImageUrl, downloadResult } = useTaskResult()
+const { currentTask, setSubmittedTaskId, isImageUrl, downloadResult } = useTaskResult()
 
 const fileList = ref<any[]>([])
 const objectKey = ref<string | null>(null)
 const resolution = ref('512')
 const duration = ref('5')
+const templateSourcePostId = ref<number | null>(null)
 
 const taskCost = computed(() => {
   if (isLtxVideo.value) {
-    const res = resolution.value;
     const dur = duration.value;
     let baseCost = 10; // 1280x704
     let multiplier = 1;
@@ -55,6 +55,29 @@ const loraName = ref('BreastGrow')
 
 const filePreview = ref<string | null>(null)
 const isTemplateApplied = ref(false)
+const isTemplateVideoSettingsLocked = ref(false)
+const isTemplatePromptLocked = ref(false)
+const templateSettingsWarning = ref('')
+
+const templateApplyNotice = computed(() => {
+  if (!isTemplateApplied.value) {
+    return ''
+  }
+
+  if (isTemplateVideoSettingsLocked.value && isTemplatePromptLocked.value) {
+    return '已加载一键应用模板，原作品的提示词、分辨率与时长等参数已自动填入，您只需上传基础图片即可生成同款大片。'
+  }
+
+  if (isTemplateVideoSettingsLocked.value) {
+    return '已加载一键应用模板，分辨率与时长已按原作品恢复；模板缺少完整的提示词或模型信息，您仍可手动调整相关参数。'
+  }
+
+  if (isTemplatePromptLocked.value) {
+    return '已加载一键应用模板，原作品的提示词已自动填入；由于模板缺少完整画质信息，您仍可手动选择分辨率与时长。'
+  }
+
+  return '已加载一键应用模板，但模板信息不完整，您仍可手动调整提示词、模型、分辨率与时长。'
+})
 
 onMounted(() => {
   if (isLtxVideo.value) {
@@ -65,15 +88,29 @@ onMounted(() => {
     const ctxStr = sessionStorage.getItem('galleryApplyContext')
     if (ctxStr) {
       try {
-          const ctx = JSON.parse(ctxStr)
-          if (ctx.task_type === taskType.value) {
-            if (ctx.prompt) prompt.value = ctx.prompt
-            if (ctx.width) resolution.value = ctx.width.toString()
-            if (ctx.duration) duration.value = ctx.duration.toString()
-            if (ctx.lora_name) loraName.value = ctx.lora_name
-            isTemplateApplied.value = true
+        const ctx = JSON.parse(ctxStr)
+        if (
+          taskType.value === 'custom_video'
+          || taskType.value === 'video_lora'
+          || taskType.value === 'ltx_video'
+        ) {
+          const templateState = resolveTemplateVideoApplyState(ctx, taskType.value)
+          if (templateState) {
+            if (templateState.prompt) prompt.value = templateState.prompt
+            if (templateState.loraName) loraName.value = templateState.loraName
+            if (templateState.sourcePostId != null) {
+              templateSourcePostId.value = templateState.sourcePostId
+            }
+            if (templateState.resolution) resolution.value = templateState.resolution
+            if (templateState.duration) duration.value = templateState.duration
+
+            templateSettingsWarning.value = templateState.templateSettingsWarning
+            isTemplateApplied.value = templateState.isTemplateApplied
+            isTemplateVideoSettingsLocked.value = templateState.isTemplateVideoSettingsLocked
+            isTemplatePromptLocked.value = templateState.isTemplatePromptLocked
           }
-        } catch (e) {
+        }
+      } catch (e) {
         console.error('Failed to parse apply context', e)
       }
     }
@@ -136,7 +173,8 @@ const handleGenerate = async () => {
       ...(isVideoLora.value ? { lora_name: loraName.value } : {})
     },
     priority: 0,
-    is_template: isTemplateApplied.value
+    is_template: isTemplateApplied.value,
+    ...(templateSourcePostId.value != null ? { source_post_id: templateSourcePostId.value } : {})
   }
 
   const taskId = await submitTask(payload, taskTitle.value)
@@ -164,7 +202,12 @@ const resetForm = () => {
           <!-- Template Mode Notice -->
           <div v-if="isTemplateApplied" class="mb-6 bg-indigo-500/20 border border-indigo-500/30 rounded-xl p-4 flex items-center">
             <div class="text-indigo-400 mr-3">✨</div>
-            <div class="text-slate-300 text-sm">已加载一键应用模板，原作品的提示词、分辨率与时长等参数已自动填入，您只需上传基础图片即可生成同款大片。</div>
+            <div class="text-slate-300 text-sm">
+              {{ templateApplyNotice }}
+            </div>
+          </div>
+          <div v-if="templateSettingsWarning" class="mb-6 bg-amber-500/20 border border-amber-500/30 rounded-xl p-4 text-sm text-amber-200">
+            {{ templateSettingsWarning }}
           </div>
           
           <div class="flex flex-col gap-6 mb-6">
@@ -211,7 +254,7 @@ const resetForm = () => {
                   <span class="text-slate-500 mr-2">2.</span> {{ isVideoLora ? '配置动作描述' : '输入描述 (选填)' }}
                 </h3>
                 
-                <div v-if="isTemplateApplied" class="bg-slate-500/80 border border-slate-400/50 rounded-xl p-4 text-center flex-grow flex flex-col items-center justify-center">
+                <div v-if="isTemplatePromptLocked" class="bg-slate-500/80 border border-slate-400/50 rounded-xl p-4 text-center flex-grow flex flex-col items-center justify-center">
                   <div class="flex items-center justify-center text-slate-500 mb-2">
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mr-2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
                     <span class="text-sm font-medium">参数已锁定</span>
@@ -254,7 +297,7 @@ const resetForm = () => {
           <!-- Video Settings -->
           <div class="settings-section border-t border-slate-400/50 pt-5">
             <h3 class="text-sm font-bold mb-3 text-slate-200">输出设置</h3>
-            <div v-if="isTemplateApplied" class="bg-slate-500/80 border border-slate-400/50 rounded-xl p-4 text-center">
+            <div v-if="isTemplateVideoSettingsLocked" class="bg-slate-500/80 border border-slate-400/50 rounded-xl p-4 text-center">
               <p class="text-slate-400 text-xs">分辨率与时长已根据模板锁定，无需手动选择。</p>
             </div>
             <div v-else class="flex flex-col gap-4">

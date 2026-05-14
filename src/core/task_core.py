@@ -4,6 +4,10 @@ import httpx
 from typing import Optional, Tuple
 
 from config import MINIO_BUCKET
+from src.core.media_processor import (
+    extract_media_metadata_from_bytes_best_effort,
+    extract_media_metadata_from_storage_best_effort,
+)
 from src.logger import UserLogger
 from src.services.image_service import image_service
 from src.services.task_registry import TaskRegistry
@@ -62,6 +66,40 @@ class ConcurrencyLimitError(CoreDomainError):
     pass
 
 
+def _infer_requested_output_metadata(
+    inputs: dict,
+) -> Tuple[int | None, int | None, int | None]:
+    output_width = None
+    output_height = None
+    output_duration = None
+
+    resolution = inputs.get("resolution")
+    if resolution is not None:
+        res_text = str(resolution).replace("p", "")
+        if "x" in res_text:
+            try:
+                width_text, height_text = res_text.split("x", 1)
+                output_width = int(width_text)
+                output_height = int(height_text)
+            except ValueError:
+                output_width = None
+                output_height = None
+        else:
+            try:
+                output_width = int(res_text)
+            except ValueError:
+                output_width = None
+
+    duration_value = inputs.get("duration")
+    if duration_value is not None:
+        try:
+            output_duration = int(str(duration_value).replace("s", ""))
+        except ValueError:
+            output_duration = None
+
+    return output_width, output_height, output_duration
+
+
 async def monitor_task_and_release_lock(
     task_id: str,
     internal_user_id: int,
@@ -73,6 +111,9 @@ async def monitor_task_and_release_lock(
     input_images: list = None,
     allow_contribute: bool = True,
     cost: int = 0,
+    output_width: int | None = None,
+    output_height: int | None = None,
+    output_duration: int | None = None,
 ):
     """
     Background task to monitor progress and release concurrency lock.
@@ -107,12 +148,22 @@ async def monitor_task_and_release_lock(
         if final_status == "done" and result_path:
             try:
                 user_logger = UserLogger(internal_user_id, username)
+                width = output_width
+                height = output_height
+                duration = output_duration
                 media_bytes = await (
                     image_service.download_video_result(task_id)
                     if is_video
                     else image_service.download_result(task_id)
                 )
                 if media_bytes:
+                    width, height, duration = await asyncio.to_thread(
+                        extract_media_metadata_from_bytes_best_effort,
+                        media_bytes,
+                        "video" if is_video else "image",
+                        "mp4" if is_video else "png",
+                        (width, height, duration),
+                    )
                     ext = "mp4" if is_video else "png"
                     saved_output_image = await asyncio.to_thread(
                         user_logger.save_output_image, media_bytes, task_id, ext
@@ -125,8 +176,16 @@ async def monitor_task_and_release_lock(
                         type=task_type,
                         allow_contribute=allow_contribute,
                         source="web",
+                        width=width,
+                        height=height,
+                        duration=duration,
                     )
                 else:
+                    width, height, duration = await extract_media_metadata_from_storage_best_effort(
+                        result_path,
+                        "video" if is_video else "image",
+                        (width, height, duration),
+                    )
                     await user_logger.log_task(
                         prompt,
                         input_images,
@@ -135,6 +194,9 @@ async def monitor_task_and_release_lock(
                         type=task_type,
                         allow_contribute=allow_contribute,
                         source="web",
+                        width=width,
+                        height=height,
+                        duration=duration,
                     )
             except Exception as log_err:
                 logger.error(f"Failed to log task history for {task_id}: {log_err}")
@@ -266,6 +328,14 @@ async def process_and_submit_task(
             metadata = strategy.get_metadata(inputs)
 
             # 2. 统一落库 TaskRegistry
+            output_width = None
+            output_height = None
+            output_duration = None
+            if is_video_task:
+                output_width, output_height, output_duration = (
+                    _infer_requested_output_metadata(inputs)
+                )
+
             registry_task_id = await TaskRegistry.add_task(
                 task_id=task_id,
                 user_id=user_id,
@@ -331,6 +401,9 @@ async def process_and_submit_task(
                             input_images=saved_inputs,
                             allow_contribute=allow_contribute,
                             cost=cost if deduct_quota else 0,
+                            output_width=output_width,
+                            output_height=output_height,
+                            output_duration=output_duration,
                         )
                     )
                 except Exception as e:

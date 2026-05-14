@@ -5,6 +5,7 @@
 Web API 应直接调用 `src/core/task_core.py` 提供的业务门面 (Facade)。
 """
 
+import asyncio
 import logging
 import os
 from typing import List, Optional, Tuple
@@ -13,6 +14,7 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
 
 from config import ENABLE_PUBLIC_SHARE
+from src.core.media_processor import extract_media_metadata_from_bytes_best_effort
 from src.constants import (
     MODE_BLOWJOB,
     MODE_CLOSEUP_BLOWJOB,
@@ -1435,6 +1437,12 @@ class TaskService:
 
         if is_video:
             media_bytes = await image_service.download_video_result(task_id)
+            width, height, duration = await asyncio.to_thread(
+                extract_media_metadata_from_bytes_best_effort,
+                media_bytes,
+                "video",
+                "mp4",
+            )
             saved_output_image = user_logger.save_output_image(
                 media_bytes, task_id, extension="mp4"
             )
@@ -1446,6 +1454,9 @@ class TaskService:
                 task_id=task_id,
                 type=task_type,
                 allow_contribute=allow_contribute,
+                width=width,
+                height=height,
+                duration=duration,
             )
             await permission_service.refresh_user_group(internal_user_id)
 
@@ -1533,6 +1544,12 @@ class TaskService:
                     }
         else:
             media_bytes = await image_service.download_result(task_id)
+            width, height, duration = await asyncio.to_thread(
+                extract_media_metadata_from_bytes_best_effort,
+                media_bytes,
+                "image",
+                "png",
+            )
             saved_output_image = user_logger.save_output_image(media_bytes, task_id)
             full_output_path = saved_output_image
             await user_logger.log_task(
@@ -1542,6 +1559,9 @@ class TaskService:
                 task_id=task_id,
                 type=task_type,
                 allow_contribute=allow_contribute,
+                width=width,
+                height=height,
+                duration=duration,
             )
             await permission_service.refresh_user_group(internal_user_id)
 

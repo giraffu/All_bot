@@ -16,3 +16,4 @@ redis
 asgi-correlation-id
 fastapi-cache2
 jinja2
+Pillow

@@ -24,6 +24,7 @@ const bodyObjectKey = ref<string | null>(null)
 const facePreview = ref<string | null>(null)
 const bodyPreview = ref<string | null>(null)
 const isTemplateApplied = ref(false)
+const templateSourcePostId = ref<number | null>(null)
 
 onMounted(() => {
   if (route.query.apply === 'true') {
@@ -35,6 +36,9 @@ onMounted(() => {
           // prefill target image
           bodyObjectKey.value = ctx.input_file
           bodyPreview.value = ctx.input_file_url || null
+          if (ctx.source_post_id != null) {
+            templateSourcePostId.value = Number(ctx.source_post_id)
+          }
           isTemplateApplied.value = true
         }
       } catch (e) {
@@ -104,7 +108,8 @@ const handleGenerate = async () => {
       target_image: bodyObjectKey.value
     },
     priority: 0,
-    is_template: isTemplateApplied.value
+    is_template: isTemplateApplied.value,
+    ...(templateSourcePostId.value != null ? { source_post_id: templateSourcePostId.value } : {})
   }
 
   const taskId = await submitTask(payload, '快速换脸')

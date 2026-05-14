@@ -27,6 +27,7 @@ const { currentTask, setSubmittedTaskId, isVideoUrl, isImageUrl, downloadResult 
 const uploadedImages = ref<{key: string, preview: string}[]>([])
 const pendingUploads = ref(0)
 const prompt = ref('')
+const templateSourcePostId = ref<number | null>(null)
 
 const isTemplateApplied = ref(false)
 
@@ -71,6 +72,9 @@ onMounted(() => {
         const ctx = JSON.parse(ctxStr)
         if (ctx.task_type === taskType.value) {
           if (ctx.prompt) prompt.value = ctx.prompt
+          if (ctx.source_post_id != null) {
+            templateSourcePostId.value = Number(ctx.source_post_id)
+          }
           if (ctx.lora_name) {
             selectedLora.value = ctx.lora_name
             customLoraStrength.value = ctx.lora_strength != null 
@@ -132,7 +136,8 @@ const handleGenerate = async () => {
     },
     prompt: prompt.value.trim(),
     priority: 0,
-    is_template: isTemplateApplied.value
+    is_template: isTemplateApplied.value,
+    ...(templateSourcePostId.value != null ? { source_post_id: templateSourcePostId.value } : {})
   }
 
   if (payload.task_type === 'img2img_lora') {

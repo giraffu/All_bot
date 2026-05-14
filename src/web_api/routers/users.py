@@ -1,12 +1,13 @@
 import asyncio
 import logging
+from datetime import datetime
 
 from fastapi import APIRouter, Depends
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.database.core import AsyncSessionLocal
-from src.database.models import History, User
+from src.database.models import GalleryPost, History, User
 from src.core.media_paths import (
     build_history_r2_media_key,
     build_history_r2_thumbnail_key,
@@ -15,7 +16,10 @@ from src.core.media_paths import (
     get_media_type_from_history,
     resolve_storage_object,
 )
-from src.core.media_processor import generate_and_upload_thumbnail
+from src.core.media_processor import (
+    extract_media_metadata_from_storage,
+    generate_and_upload_thumbnail,
+)
 from src.services.storage import storage
 from src.web_api.dependencies import get_current_user
 from src.web_api.schemas.auth_schema import InvitationRechargeStats, UserResponse
@@ -109,6 +113,42 @@ async def _pick_favorite_media_urls(
         thumbnail_url = storage.get_presigned_url(thumb_object_name, bucket=bucket_name)
 
     return media_url, thumbnail_url
+
+
+def _gallery_post_sort_key(post: GalleryPost) -> tuple[int, datetime, int]:
+    created_at = getattr(post, "created_at", None) or datetime.min
+    return (
+        1 if getattr(post, "is_active", False) else 0,
+        created_at,
+        getattr(post, "id", 0) or 0,
+    )
+
+
+def _pick_preferred_gallery_post(
+    posts: list[GalleryPost] | tuple[GalleryPost, ...],
+) -> GalleryPost | None:
+    preferred: GalleryPost | None = None
+    for post in posts:
+        if post is None:
+            continue
+        if preferred is None or _gallery_post_sort_key(post) > _gallery_post_sort_key(
+            preferred
+        ):
+            preferred = post
+    return preferred
+
+
+def _build_gallery_post_map(posts: list[GalleryPost]) -> dict[str, GalleryPost]:
+    post_map: dict[str, GalleryPost] = {}
+    for post in posts:
+        if not post or not post.task_id:
+            continue
+        current = post_map.get(post.task_id)
+        if current is None or _gallery_post_sort_key(post) > _gallery_post_sort_key(
+            current
+        ):
+            post_map[post.task_id] = post
+    return post_map
 
 
 @router.get("/me", response_model=UserResponse)
@@ -431,6 +471,14 @@ async def get_my_favorites(
     result = await db.execute(stmt)
     histories = result.scalars().all()
 
+    task_ids = [history.task_id for history in histories if history.task_id]
+    gallery_post_map = {}
+    if task_ids:
+        gallery_posts = (
+            await db.execute(select(GalleryPost).where(GalleryPost.task_id.in_(task_ids)))
+        ).scalars().all()
+        gallery_post_map = _build_gallery_post_map(gallery_posts)
+
     url_pairs = await asyncio.gather(
         *[
             _pick_favorite_media_urls(
@@ -444,6 +492,7 @@ async def get_my_favorites(
 
     response_items = []
     for history, (media_url, thumbnail_url) in zip(histories, url_pairs):
+        gallery_post = gallery_post_map.get(history.task_id)
 
         # media_type mapping
         media_type = get_media_type_from_history(history.type)
@@ -460,9 +509,9 @@ async def get_my_favorites(
                 id=history.id,
                 task_id=history.task_id,
                 media_type=media_type,
-                width=None,
-                height=None,
-                duration=None,
+                width=history.width if history.width is not None else (gallery_post.width if gallery_post else None),
+                height=history.height if history.height is not None else (gallery_post.height if gallery_post else None),
+                duration=history.duration if history.duration is not None else (gallery_post.duration if gallery_post else None),
                 tags=tags,
                 likes_count=0,
                 dislikes_count=0,
@@ -500,6 +549,11 @@ async def get_favorite_apply_context(
 
     if not history:
         raise HTTPException(status_code=404, detail="未找到原任务详情")
+
+    gallery_posts = (
+        await db.execute(select(GalleryPost).where(GalleryPost.task_id == history.task_id))
+    ).scalars().all()
+    gallery_post = _pick_preferred_gallery_post(gallery_posts)
 
     input_file_url = None
     if history.input_file:
@@ -544,17 +598,55 @@ async def get_favorite_apply_context(
     if history.type and "video" in history.type.lower():
         media_type = "video"
 
+    width = history.width
+    height = history.height
+    duration = history.duration
+
+    if width is None and gallery_post:
+        width = gallery_post.width
+    if height is None and gallery_post:
+        height = gallery_post.height
+    if duration is None and gallery_post:
+        duration = gallery_post.duration
+
+    if history.output_file and (
+        width is None or height is None or (media_type == "video" and duration is None)
+    ):
+        try:
+            probed_width, probed_height, probed_duration = await extract_media_metadata_from_storage(
+                history.output_file, media_type
+            )
+            width = probed_width if probed_width is not None else width
+            height = probed_height if probed_height is not None else height
+            duration = probed_duration if probed_duration is not None else duration
+            if (
+                history.width != width
+                or history.height != height
+                or history.duration != duration
+            ):
+                history.width = width
+                history.height = height
+                history.duration = duration
+                await db.commit()
+        except Exception as exc:
+            logger.warning(
+                "Failed to backfill history media metadata for task %s: %s",
+                history.task_id,
+                exc,
+            )
+
     return ApplyContextResponse(
-        post_id=history.id,  # mock post_id
+        post_id=gallery_post.id if gallery_post else history.id,
+        source_post_id=gallery_post.id if gallery_post else None,
         task_id=history.task_id,
         media_type=media_type,
         prompt=prompt,
         lora_name=lora_name,
         input_file=history.input_file,
         input_file_url=input_file_url,
-        width=None,
-        height=None,
-        duration=None,
+        width=width,
+        height=height,
+        duration=duration,
         task_type=history.type,
     )
 

@@ -22,6 +22,7 @@ const fileList = ref<any[]>([])
 const objectKey = ref<string | null>(null)
 const filePreview = ref<string | null>(null)
 const isTemplateApplied = ref(false)
+const templateSourcePostId = ref<number | null>(null)
 
 onMounted(() => {
   if (route.query.apply === 'true') {
@@ -30,6 +31,9 @@ onMounted(() => {
       try {
         const ctx = JSON.parse(ctxStr)
         if (ctx.task_type === taskType.value) {
+          if (ctx.source_post_id != null) {
+            templateSourcePostId.value = Number(ctx.source_post_id)
+          }
           isTemplateApplied.value = true
         }
       } catch (e) {
@@ -74,7 +78,8 @@ const handleGenerate = async () => {
       images: [objectKey.value]
     },
     priority: 0,
-    is_template: isTemplateApplied.value
+    is_template: isTemplateApplied.value,
+    ...(templateSourcePostId.value != null ? { source_post_id: templateSourcePostId.value } : {})
   }
 
   const taskId = await submitTask(payload, taskTitle.value)
