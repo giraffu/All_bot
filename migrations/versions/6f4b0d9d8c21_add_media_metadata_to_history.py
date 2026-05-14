@@ -21,6 +21,7 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     """Upgrade schema."""
+    op.add_column("history", sa.Column("billing_resolution", sa.String(length=32), nullable=True))
     op.add_column("history", sa.Column("width", sa.Integer(), nullable=True))
     op.add_column("history", sa.Column("height", sa.Integer(), nullable=True))
     op.add_column("history", sa.Column("duration", sa.Integer(), nullable=True))
@@ -45,6 +46,64 @@ def upgrade() -> None:
         )
         UPDATE history AS h
         SET
+            billing_resolution = CASE
+                WHEN h.type = 'ltx_video'
+                     AND ranked.width IS NOT NULL
+                     AND ranked.height IS NOT NULL
+                    THEN ranked.width::text || 'x' || ranked.height::text
+                WHEN h.type IN (
+                    'doggy_style',
+                    'perfect_video_insert',
+                    'blowjob',
+                    'undress_tongue',
+                    'closeup_blowjob',
+                    'custom_video',
+                    'face_video',
+                    'face_video_step1',
+                    'face_video_step2',
+                    'video_lora',
+                    'video_edit',
+                    'perfect_video_edit',
+                    'txt2video',
+                    'video_insert'
+                ) AND GREATEST(COALESCE(ranked.width, 0), COALESCE(ranked.height, 0)) >= 960
+                    THEN '1024'
+                WHEN h.type IN (
+                    'doggy_style',
+                    'perfect_video_insert',
+                    'blowjob',
+                    'undress_tongue',
+                    'closeup_blowjob',
+                    'custom_video',
+                    'face_video',
+                    'face_video_step1',
+                    'face_video_step2',
+                    'video_lora',
+                    'video_edit',
+                    'perfect_video_edit',
+                    'txt2video',
+                    'video_insert'
+                ) AND GREATEST(COALESCE(ranked.width, 0), COALESCE(ranked.height, 0)) >= 700
+                    THEN '720'
+                WHEN h.type IN (
+                    'doggy_style',
+                    'perfect_video_insert',
+                    'blowjob',
+                    'undress_tongue',
+                    'closeup_blowjob',
+                    'custom_video',
+                    'face_video',
+                    'face_video_step1',
+                    'face_video_step2',
+                    'video_lora',
+                    'video_edit',
+                    'perfect_video_edit',
+                    'txt2video',
+                    'video_insert'
+                ) AND GREATEST(COALESCE(ranked.width, 0), COALESCE(ranked.height, 0)) > 0
+                    THEN '512'
+                ELSE NULL
+            END,
             width = ranked.width,
             height = ranked.height,
             duration = ranked.duration
@@ -61,3 +120,4 @@ def downgrade() -> None:
     op.drop_column("history", "duration")
     op.drop_column("history", "height")
     op.drop_column("history", "width")
+    op.drop_column("history", "billing_resolution")

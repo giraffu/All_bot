@@ -94,9 +94,11 @@ async def test_get_favorite_apply_context_backfills_missing_video_metadata(
     )
 
     assert response.task_id == "task-1"
+    assert response.billing_resolution == "1024"
     assert response.width == 1024
     assert response.height == 1024
     assert response.duration == 8
+    assert history.billing_resolution == "1024"
     assert history.width == 1024
     assert history.height == 1024
     assert history.duration == 8
@@ -156,7 +158,72 @@ async def test_get_favorite_apply_context_prefers_active_newer_gallery_post_meta
 
     assert response.post_id == 2
     assert response.source_post_id == 2
+    assert response.billing_resolution == "1024"
     assert response.width == 1024
     assert response.height == 1024
     assert response.duration == 10
-    db.commit.assert_not_awaited()
+    assert history.billing_resolution == "1024"
+    db.commit.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_get_favorite_apply_context_normalizes_existing_portrait_video_to_720_tier():
+    history = History(
+        id=11,
+        user_id=123,
+        task_id="task-1",
+        type="custom_video",
+        prompt="prompt",
+        width=640,
+        height=800,
+        duration=8,
+    )
+    db = _FakeDB(
+        [
+            _FakeResult(single=history),
+            _FakeResult(many=[]),
+        ]
+    )
+
+    response = await users_router.get_favorite_apply_context(
+        "task-1",
+        current_user=type("User", (), {"id": 123})(),
+        db=db,
+    )
+
+    assert response.billing_resolution == "720"
+    assert response.width == 640
+    assert response.height == 800
+    assert response.duration == 8
+    assert history.billing_resolution == "720"
+    db.commit.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_get_favorite_apply_context_clears_non_video_billing_resolution():
+    history = History(
+        id=11,
+        user_id=123,
+        task_id="task-1",
+        type="image",
+        prompt="prompt",
+        billing_resolution="720",
+        width=1024,
+        height=1024,
+    )
+    db = _FakeDB(
+        [
+            _FakeResult(single=history),
+            _FakeResult(many=[]),
+        ]
+    )
+
+    response = await users_router.get_favorite_apply_context(
+        "task-1",
+        current_user=type("User", (), {"id": 123})(),
+        db=db,
+    )
+
+    assert response.billing_resolution is None
+    assert history.billing_resolution is None
+    db.commit.assert_awaited_once()

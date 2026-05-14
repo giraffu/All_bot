@@ -30,4 +30,8 @@ def test_history_media_metadata_migration_uses_ranked_gallery_post_backfill(monk
     assert "ROW_NUMBER() OVER" in sql
     assert "PARTITION BY gp.task_id" in sql
     assert "CASE WHEN gp.is_active THEN 1 ELSE 0 END DESC" in sql
+    assert "billing_resolution = CASE" in sql
+    assert "'custom_video'" in sql
+    assert "'video_insert'" in sql
+    assert "THEN '720'" in sql
     assert "ranked.row_num = 1" in sql

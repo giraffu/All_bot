@@ -4,6 +4,7 @@ import pytest
 
 from src.core.task_core import (
     CoreDomainError,
+    _infer_requested_billing_resolution,
     _infer_requested_output_metadata,
     _process_input_path,
 )
@@ -55,3 +56,16 @@ def test_infer_requested_output_metadata_parses_explicit_ltx_resolution():
     assert _infer_requested_output_metadata(
         {"resolution": "1280x704", "duration": "10s"}
     ) == (1280, 704, 10)
+
+
+def test_infer_requested_billing_resolution_keeps_requested_tier():
+    assert _infer_requested_billing_resolution({"resolution": 720}, "custom_video") == "720"
+
+
+def test_infer_requested_billing_resolution_keeps_ltx_resolution_pair():
+    assert (
+        _infer_requested_billing_resolution(
+            {"resolution": "1280x704"}, "ltx_video"
+        )
+        == "1280x704"
+    )

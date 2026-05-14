@@ -57,6 +57,7 @@ async def test_handle_task_completion_keeps_success_flow_when_metadata_probe_fai
     assert output_path == "saved-output.mp4"
     user_logger.log_task.assert_awaited_once()
     kwargs = user_logger.log_task.await_args.kwargs
+    assert kwargs["billing_resolution"] is None
     assert kwargs["width"] is None
     assert kwargs["height"] is None
     assert kwargs["duration"] is None

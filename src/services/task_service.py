@@ -15,6 +15,7 @@ from telegram.ext import ContextTypes
 
 from config import ENABLE_PUBLIC_SHARE
 from src.core.media_processor import extract_media_metadata_from_bytes_best_effort
+from src.core.video_billing import normalize_requested_billing_resolution
 from src.constants import (
     MODE_BLOWJOB,
     MODE_CLOSEUP_BLOWJOB,
@@ -162,6 +163,9 @@ class TaskService:
                     delete_status=True,
                     caption="✅ 高级图生视频生成完成",
                     allow_contribute=allow_contribute,
+                    billing_resolution=normalize_requested_billing_resolution(
+                        resolution, mode
+                    ),
                 )
             else:
                 await asyncio.shield(
@@ -328,6 +332,9 @@ class TaskService:
                     status_msg=status_msg,
                     delete_status=True,
                     caption="✅ 视频换脸完成",
+                    billing_resolution=normalize_requested_billing_resolution(
+                        resolution, mode
+                    ),
                 )
             else:
                 await asyncio.shield(
@@ -572,6 +579,11 @@ class TaskService:
                     delete_status,
                     caption=f"✅ {display_mode_name} 生成完成",
                     allow_contribute=allow_contribute,
+                    billing_resolution=(
+                        normalize_requested_billing_resolution(resolution, task_type)
+                        if is_video
+                        else None
+                    ),
                 )
             else:
                 if deduct_quota:
@@ -768,6 +780,9 @@ class TaskService:
                     delete_status=True,
                     caption=f"✅ {display_mode_name} 生成完成",
                     allow_contribute=allow_contribute,
+                    billing_resolution=normalize_requested_billing_resolution(
+                        resolution, mode
+                    ),
                 )
             else:
                 await asyncio.shield(
@@ -1043,6 +1058,9 @@ class TaskService:
                     status_msg=msg,
                     delete_status=True,
                     caption="✅ 自定义图生视频生成完成",
+                    billing_resolution=normalize_requested_billing_resolution(
+                        resolution, mode
+                    ),
                 )
             else:
                 await asyncio.shield(
@@ -1431,6 +1449,7 @@ class TaskService:
         delete_status,
         caption=None,
         allow_contribute=True,
+        billing_resolution: Optional[str] = None,
     ):
         full_output_path = None
         media_bytes = None
@@ -1454,6 +1473,7 @@ class TaskService:
                 task_id=task_id,
                 type=task_type,
                 allow_contribute=allow_contribute,
+                billing_resolution=billing_resolution,
                 width=width,
                 height=height,
                 duration=duration,
@@ -1559,6 +1579,7 @@ class TaskService:
                 task_id=task_id,
                 type=task_type,
                 allow_contribute=allow_contribute,
+                billing_resolution=billing_resolution,
                 width=width,
                 height=height,
                 duration=duration,

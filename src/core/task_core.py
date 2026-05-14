@@ -8,6 +8,7 @@ from src.core.media_processor import (
     extract_media_metadata_from_bytes_best_effort,
     extract_media_metadata_from_storage_best_effort,
 )
+from src.core.video_billing import normalize_requested_billing_resolution
 from src.logger import UserLogger
 from src.services.image_service import image_service
 from src.services.task_registry import TaskRegistry
@@ -100,6 +101,12 @@ def _infer_requested_output_metadata(
     return output_width, output_height, output_duration
 
 
+def _infer_requested_billing_resolution(
+    inputs: dict, task_type: str
+) -> str | None:
+    return normalize_requested_billing_resolution(inputs.get("resolution"), task_type)
+
+
 async def monitor_task_and_release_lock(
     task_id: str,
     internal_user_id: int,
@@ -111,6 +118,7 @@ async def monitor_task_and_release_lock(
     input_images: list = None,
     allow_contribute: bool = True,
     cost: int = 0,
+    billing_resolution: str | None = None,
     output_width: int | None = None,
     output_height: int | None = None,
     output_duration: int | None = None,
@@ -176,6 +184,7 @@ async def monitor_task_and_release_lock(
                         type=task_type,
                         allow_contribute=allow_contribute,
                         source="web",
+                        billing_resolution=billing_resolution,
                         width=width,
                         height=height,
                         duration=duration,
@@ -194,6 +203,7 @@ async def monitor_task_and_release_lock(
                         type=task_type,
                         allow_contribute=allow_contribute,
                         source="web",
+                        billing_resolution=billing_resolution,
                         width=width,
                         height=height,
                         duration=duration,
@@ -331,9 +341,13 @@ async def process_and_submit_task(
             output_width = None
             output_height = None
             output_duration = None
+            billing_resolution = None
             if is_video_task:
                 output_width, output_height, output_duration = (
                     _infer_requested_output_metadata(inputs)
+                )
+                billing_resolution = _infer_requested_billing_resolution(
+                    inputs, task_type
                 )
 
             registry_task_id = await TaskRegistry.add_task(
@@ -401,6 +415,7 @@ async def process_and_submit_task(
                             input_images=saved_inputs,
                             allow_contribute=allow_contribute,
                             cost=cost if deduct_quota else 0,
+                            billing_resolution=billing_resolution,
                             output_width=output_width,
                             output_height=output_height,
                             output_duration=output_duration,

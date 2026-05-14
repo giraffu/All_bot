@@ -20,6 +20,11 @@ from src.core.media_processor import (
     extract_media_metadata_from_storage,
     generate_and_upload_thumbnail,
 )
+from src.core.video_billing import (
+    infer_billing_resolution_from_dimensions,
+    is_video_billing_task_type,
+    normalize_requested_billing_resolution,
+)
 from src.services.storage import storage
 from src.web_api.dependencies import get_current_user
 from src.web_api.schemas.auth_schema import InvitationRechargeStats, UserResponse
@@ -149,6 +154,36 @@ def _build_gallery_post_map(posts: list[GalleryPost]) -> dict[str, GalleryPost]:
         ):
             post_map[post.task_id] = post
     return post_map
+
+
+def _resolve_history_billing_resolution(
+    history: History,
+    *,
+    gallery_post: GalleryPost | None = None,
+    width: int | None = None,
+    height: int | None = None,
+) -> str | None:
+    if not is_video_billing_task_type(history.type):
+        return None
+    if history.billing_resolution:
+        normalized = normalize_requested_billing_resolution(
+            history.billing_resolution, history.type
+        )
+        if normalized is not None:
+            return normalized
+    return infer_billing_resolution_from_dimensions(
+        width if width is not None else history.width,
+        height if height is not None else history.height,
+        history.type,
+    ) or (
+        infer_billing_resolution_from_dimensions(
+            getattr(gallery_post, "width", None),
+            getattr(gallery_post, "height", None),
+            history.type,
+        )
+        if gallery_post
+        else None
+    )
 
 
 @router.get("/me", response_model=UserResponse)
@@ -509,6 +544,9 @@ async def get_my_favorites(
                 id=history.id,
                 task_id=history.task_id,
                 media_type=media_type,
+                billing_resolution=_resolve_history_billing_resolution(
+                    history, gallery_post=gallery_post
+                ),
                 width=history.width if history.width is not None else (gallery_post.width if gallery_post else None),
                 height=history.height if history.height is not None else (gallery_post.height if gallery_post else None),
                 duration=history.duration if history.duration is not None else (gallery_post.duration if gallery_post else None),
@@ -601,6 +639,10 @@ async def get_favorite_apply_context(
     width = history.width
     height = history.height
     duration = history.duration
+    billing_resolution = _resolve_history_billing_resolution(
+        history, gallery_post=gallery_post
+    )
+    should_commit = False
 
     if width is None and gallery_post:
         width = gallery_post.width
@@ -608,6 +650,10 @@ async def get_favorite_apply_context(
         height = gallery_post.height
     if duration is None and gallery_post:
         duration = gallery_post.duration
+
+    if history.billing_resolution != billing_resolution:
+        history.billing_resolution = billing_resolution
+        should_commit = True
 
     if history.output_file and (
         width is None or height is None or (media_type == "video" and duration is None)
@@ -619,15 +665,21 @@ async def get_favorite_apply_context(
             width = probed_width if probed_width is not None else width
             height = probed_height if probed_height is not None else height
             duration = probed_duration if probed_duration is not None else duration
+            if billing_resolution is None:
+                billing_resolution = infer_billing_resolution_from_dimensions(
+                    width, height, history.type
+                )
             if (
-                history.width != width
+                history.billing_resolution != billing_resolution
+                or history.width != width
                 or history.height != height
                 or history.duration != duration
             ):
+                history.billing_resolution = billing_resolution
                 history.width = width
                 history.height = height
                 history.duration = duration
-                await db.commit()
+                should_commit = True
         except Exception as exc:
             logger.warning(
                 "Failed to backfill history media metadata for task %s: %s",
@@ -635,9 +687,13 @@ async def get_favorite_apply_context(
                 exc,
             )
 
+    if should_commit:
+        await db.commit()
+
     return ApplyContextResponse(
         post_id=gallery_post.id if gallery_post else history.id,
         source_post_id=gallery_post.id if gallery_post else None,
+        billing_resolution=billing_resolution,
         task_id=history.task_id,
         media_type=media_type,
         prompt=prompt,

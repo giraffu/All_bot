@@ -11,6 +11,7 @@ class GalleryPostResponse(BaseModel):
     id: int
     task_id: str
     media_type: str
+    billing_resolution: Optional[str] = None
     width: Optional[int]
     height: Optional[int]
     duration: Optional[int]
@@ -42,6 +43,7 @@ class PaginatedGalleryResponse(BaseModel):
 class ApplyContextResponse(BaseModel):
     post_id: int
     source_post_id: Optional[int] = None
+    billing_resolution: Optional[str] = None
     task_id: str
     media_type: str
     prompt: Optional[str]

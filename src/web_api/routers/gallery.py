@@ -22,6 +22,11 @@ from src.constants import (
     MODE_VIDEO_LORA,
 )
 from src.core.media_paths import build_legacy_r2_key
+from src.core.video_billing import (
+    infer_billing_resolution_from_dimensions,
+    is_video_billing_task_type,
+    normalize_requested_billing_resolution,
+)
 from src.database.core import AsyncSessionLocal
 from src.database.models import GalleryPost, History, User, UserInteraction
 from src.services.storage import storage
@@ -87,6 +92,36 @@ def generate_thumbnail_url(
 
     thumb_r2_key = r2_object_name or build_legacy_r2_key(thumb_file)
     return get_media_url(thumb_file, thumb_r2_key)
+
+
+def _resolve_history_billing_resolution(
+    history: History,
+    *,
+    width: int | None = None,
+    height: int | None = None,
+    gallery_post: GalleryPost | None = None,
+) -> str | None:
+    if not is_video_billing_task_type(history.type):
+        return None
+    if history.billing_resolution:
+        normalized = normalize_requested_billing_resolution(
+            history.billing_resolution, history.type
+        )
+        if normalized is not None:
+            return normalized
+    return infer_billing_resolution_from_dimensions(
+        width if width is not None else history.width,
+        height if height is not None else history.height,
+        history.type,
+    ) or (
+        infer_billing_resolution_from_dimensions(
+            getattr(gallery_post, "width", None),
+            getattr(gallery_post, "height", None),
+            history.type,
+        )
+        if gallery_post
+        else None
+    )
 
 
 @router.get("/config")
@@ -191,6 +226,14 @@ async def _build_post_responses(session, posts, current_user: Optional[User]):
         output_file = history.output_file if history else None
         prompt = history.prompt if history else None
         task_type_from_history = history.type if history else None
+        billing_resolution = None
+        if history:
+            billing_resolution = _resolve_history_billing_resolution(
+                history,
+                width=post.width if post.width is not None else history.width,
+                height=post.height if post.height is not None else history.height,
+                gallery_post=post,
+            )
 
         media_url = get_media_url(output_file)
         thumbnail_url = generate_thumbnail_url(output_file, post.media_type)
@@ -200,6 +243,7 @@ async def _build_post_responses(session, posts, current_user: Optional[User]):
                 id=post.id,
                 task_id=post.task_id,
                 media_type=post.media_type,
+                billing_resolution=billing_resolution,
                 width=post.width,
                 height=post.height,
                 duration=post.duration,
@@ -492,18 +536,30 @@ async def get_apply_context(
             else:
                 lora_name = lora_tag
 
+        width = post.width if post.width is not None else history.width
+        height = post.height if post.height is not None else history.height
+        duration = post.duration if post.duration is not None else history.duration
+        billing_resolution = _resolve_history_billing_resolution(
+            history, width=width, height=height, gallery_post=post
+        )
+
+        if history.billing_resolution != billing_resolution:
+            history.billing_resolution = billing_resolution
+            await session.commit()
+
         return ApplyContextResponse(
             post_id=post.id,
             source_post_id=post.id,
+            billing_resolution=billing_resolution,
             task_id=post.task_id,
             media_type=post.media_type,
             prompt=prompt,
             lora_name=lora_name,
             input_file=history.input_file,
             input_file_url=input_file_url,
-            width=post.width,
-            height=post.height,
-            duration=post.duration,
+            width=width,
+            height=height,
+            duration=duration,
             task_type=history.type,
         )
 

@@ -10,6 +10,7 @@ type SupportedVideoTaskType = 'custom_video' | 'video_lora' | 'ltx_video'
 export type TemplateVideoApplyContext = TemplateVideoContext & {
   task_type?: unknown
   source_post_id?: unknown
+  billing_resolution?: unknown
 }
 
 export type ResolvedTemplateVideoApplyState = {
@@ -27,6 +28,65 @@ export type ResolvedTemplateVideoApplyState = {
 
 const hasNonEmptyString = (value: unknown): value is string =>
   typeof value === 'string' && value.trim() !== ''
+
+const normalizeTierFromLongestSide = (longestSide: number | null): string | null => {
+  if (longestSide === null || longestSide <= 0) {
+    return null
+  }
+  if (longestSide >= 960) {
+    return '1024'
+  }
+  if (longestSide >= 700) {
+    return '720'
+  }
+  return '512'
+}
+
+const normalizePersistedTierBillingResolution = (value: unknown): string | null => {
+  if (typeof value !== 'string') {
+    return null
+  }
+
+  let normalized = value.trim().toLowerCase()
+  if (normalized === '') {
+    return null
+  }
+
+  if (normalized.endsWith('p')) {
+    normalized = normalized.slice(0, -1)
+  }
+
+  if (normalized === '512' || normalized === '720' || normalized === '1024') {
+    return normalized
+  }
+
+  const explicitResolution = /^(\d+)x(\d+)$/.exec(normalized)
+  if (explicitResolution) {
+    const width = Number(explicitResolution[1])
+    const height = Number(explicitResolution[2])
+    if (Number.isInteger(width) && Number.isInteger(height) && width > 0 && height > 0) {
+      return normalizeTierFromLongestSide(Math.max(width, height))
+    }
+  }
+
+  const numeric = Number(normalized)
+  if (Number.isInteger(numeric) && numeric > 0) {
+    return normalizeTierFromLongestSide(numeric)
+  }
+
+  return null
+}
+
+const resolveTierBillingResolution = (ctx: TemplateVideoApplyContext): string | null => {
+  const normalizedPersisted = normalizePersistedTierBillingResolution(ctx.billing_resolution)
+  if (normalizedPersisted !== null) {
+    return normalizedPersisted
+  }
+
+  const width = toPositiveInteger(ctx.width)
+  const height = toPositiveInteger(ctx.height)
+  return normalizeTierFromLongestSide(Math.max(width ?? 0, height ?? 0) || null)
+}
 
 const getTemplateApplyNotice = (
   isTemplateVideoSettingsLocked: boolean,
@@ -60,6 +120,7 @@ export const resolveTemplateVideoApplyState = (
   const isTemplatePromptLocked = canLockTemplateVideoPromptControls(ctx, taskType)
   const templateVideoSettings = getTemplateVideoSettings(ctx, isLtxVideo)
   const isTemplateVideoSettingsLocked = templateVideoSettings !== null
+  const tierBillingResolution = isLtxVideo ? null : resolveTierBillingResolution(ctx)
 
   if (!templateVideoSettings) {
     warnings.push('模板缺少完整的分辨率或时长信息，已保留当前画质设置供您手动调整。')
@@ -76,7 +137,7 @@ export const resolveTemplateVideoApplyState = (
     resolution: templateVideoSettings
       ? (isLtxVideo
           ? `${templateVideoSettings.width}x${templateVideoSettings.height}`
-          : String(templateVideoSettings.width))
+          : (tierBillingResolution ?? String(templateVideoSettings.width)))
       : null,
     duration: templateVideoSettings ? String(templateVideoSettings.duration) : null,
     isTemplateApplied: true,

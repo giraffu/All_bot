@@ -11,6 +11,7 @@ class HistoryItem(BaseModel):
     prompt: Optional[str]
     input_file: Optional[str]
     output_file: Optional[str]
+    billing_resolution: Optional[str] = None
     width: Optional[int] = None
     height: Optional[int] = None
     duration: Optional[int] = None

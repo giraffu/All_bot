@@ -30,6 +30,59 @@ test('favorite custom_video template restores high-tier settings and keeps contr
   })
 })
 
+test('favorite custom_video template prefers persisted billing tier over raw portrait width', () => {
+  const state = resolveTemplateVideoApplyState(
+    {
+      task_type: 'custom_video',
+      prompt: 'cinematic action shot',
+      width: 640,
+      height: 800,
+      duration: 8,
+      billing_resolution: '720'
+    },
+    'custom_video'
+  )
+
+  assert.equal(state?.resolution, '720')
+  assert.equal(state?.duration, '8')
+  assert.equal(state?.isTemplateVideoSettingsLocked, true)
+})
+
+test('favorite custom_video template falls back to normalized tier when persisted billing tier is missing', () => {
+  const state = resolveTemplateVideoApplyState(
+    {
+      task_type: 'custom_video',
+      prompt: 'cinematic action shot',
+      width: 640,
+      height: 800,
+      duration: 8
+    },
+    'custom_video'
+  )
+
+  assert.equal(state?.resolution, '720')
+  assert.equal(state?.duration, '8')
+  assert.equal(state?.isTemplateVideoSettingsLocked, true)
+})
+
+test('favorite custom_video template sanitizes invalid persisted billing tier before applying', () => {
+  const state = resolveTemplateVideoApplyState(
+    {
+      task_type: 'custom_video',
+      prompt: 'cinematic action shot',
+      width: 640,
+      height: 800,
+      duration: 8,
+      billing_resolution: 'bad-tier'
+    },
+    'custom_video'
+  )
+
+  assert.equal(state?.resolution, '720')
+  assert.equal(state?.duration, '8')
+  assert.equal(state?.isTemplateVideoSettingsLocked, true)
+})
+
 test('favorite custom_video template keeps video settings editable when metadata is incomplete', () => {
   const state = resolveTemplateVideoApplyState(
     {
