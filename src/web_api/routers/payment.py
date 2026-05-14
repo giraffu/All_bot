@@ -11,15 +11,10 @@ from src.constants import TON_RECEIVER_ADDRESS
 from src.database.core import AsyncSessionLocal
 from src.database.models import MembershipPlan, Order, User
 from src.services.rmb_payment_service import RMBPaymentService
-from src.web_api.dependencies import get_current_user
+from src.web_api.dependencies import get_current_user, get_db
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
-
-
-async def get_db():
-    async with AsyncSessionLocal() as session:
-        yield session
 
 
 @router.get("/plans")

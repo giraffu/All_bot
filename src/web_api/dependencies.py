@@ -10,9 +10,34 @@ from src.web_api.core.security import verify_token
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login", auto_error=False)
 
 
+import asyncio
+import logging
+
+logger = logging.getLogger(__name__)
+
 async def get_db():
-    async with AsyncSessionLocal() as session:
+    session = AsyncSessionLocal()
+    try:
         yield session
+    except asyncio.CancelledError:
+        logger.warning("Request was cancelled by the client. Cleaning up session.")
+        try:
+            await session.rollback()
+        except Exception as e:
+            logger.error(f"Failed to rollback session on request cancel: {e}")
+        raise
+    except Exception as e:
+        logger.error(f"Unhandled error in request, rolling back session: {e}")
+        try:
+            await session.rollback()
+        except Exception as rollback_err:
+            logger.error(f"Failed to rollback session on error: {rollback_err}")
+        raise
+    finally:
+        try:
+            await session.close()
+        except Exception as close_err:
+            logger.error(f"Failed to close session during cleanup: {close_err}")
 
 
 async def get_token(request: Request, token: str = Depends(oauth2_scheme)) -> str:
