@@ -11,7 +11,11 @@ from src.services.redis_client import redis_client
 from src.constants import MODE_NAME_MAP
 from src.services.storage import storage
 from src.core.media_processor import generate_and_upload_thumbnail
-from src.core.media_paths import build_legacy_r2_key
+from src.core.media_paths import (
+    build_history_r2_media_key,
+    build_history_r2_thumbnail_key,
+    resolve_storage_object,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -158,23 +162,8 @@ async def process_submit_to_gallery(
         await session.commit()
 
         # R2 copy logic
-        parts = history.output_file.split("/")
-        if len(parts) > 1 and parts[0] in ["bot-data", "comfyui-temp"]:
-            bucket_name = parts[0]
-            object_name = "/".join(parts[1:])
-        elif (
-            "comfyui-temp" not in history.output_file
-            and "bot-data" not in history.output_file
-        ):
-            bucket_name = (
-                "comfyui-temp" if not "/" in history.output_file else "bot-data"
-            )
-            object_name = history.output_file
-        else:
-            bucket_name = "bot-data"
-            object_name = history.output_file
-
-        r2_object_name = build_legacy_r2_key(object_name)
+        bucket_name, object_name = resolve_storage_object(history.output_file)
+        r2_object_name = build_history_r2_media_key(task_id, history.output_file)
 
         # Add R2 copy to BackgroundTasks instead of awaiting it directly
         background_tasks.add_task(
@@ -186,6 +175,7 @@ async def process_submit_to_gallery(
             generate_and_upload_thumbnail,
             history.output_file,
             media_type,
+            build_history_r2_thumbnail_key(task_id, media_type),
         )
 
         await redis_client.increment_gallery_submit(user_id)

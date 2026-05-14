@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 import re
@@ -21,7 +22,10 @@ from src.constants import (
     MODE_NAME_MAP,
     MODE_VIDEO_LORA,
 )
-from src.core.media_paths import build_legacy_r2_key
+from src.core.media_urls import (
+    build_r2_media_key_candidates,
+    build_r2_thumbnail_info,
+)
 from src.core.video_billing import (
     infer_billing_resolution_from_dimensions,
     is_video_billing_task_type,
@@ -52,28 +56,35 @@ ALLOWED_WEB_SUBMIT_TYPES = {
     "img2img_lora",
 }
 
-def get_media_url(output_file: str, r2_object_name: str | None = None) -> str:
+async def get_media_url(
+    output_file: str,
+    task_id: str | None = None,
+    r2_object_name: str | None = None,
+) -> str:
     """
     Generate the media URL for a gallery post.
-    If R2 is configured, return the R2 public URL directly.
-    Otherwise, return the relative path for the frontend to resolve via MinIO.
+    Prefer an existing R2 object and fall back to the original storage path.
     """
     if not output_file:
         return ""
 
-    # If R2 is configured, return the CDN URL directly
-    r2_key = r2_object_name or build_legacy_r2_key(output_file)
-    r2_url = storage.get_r2_public_url(r2_key)
-    if r2_url:
-        return r2_url
+    for object_key in build_r2_media_key_candidates(
+        output_file=output_file,
+        task_id=task_id,
+        preferred_r2_object_name=r2_object_name,
+    ):
+        public_url = storage.get_r2_public_url(object_key)
+        if public_url and await storage.async_r2_object_exists(object_key):
+            return public_url
 
-    # Fallback: We return the raw output_file here, and let the frontend use its `getFileUrl`
-    # logic to prepend the correct MinIO endpoint.
     return output_file
 
 
-def generate_thumbnail_url(
-    output_file: str, media_type: str, r2_object_name: str | None = None
+async def generate_thumbnail_url(
+    output_file: str,
+    media_type: str,
+    task_id: str | None = None,
+    r2_object_name: str | None = None,
 ) -> str:
     """
     Generate the thumbnail URL based on the original file path.
@@ -81,17 +92,47 @@ def generate_thumbnail_url(
     """
     if not output_file:
         return ""
-        
-    # 剥离原扩展名
-    base_path = output_file.rsplit(".", 1)[0]
-    
-    if media_type == "video":
-        thumb_file = f"{base_path}_thumb.jpg"
-    else:
-        thumb_file = f"{base_path}_thumb.webp"
 
-    thumb_r2_key = r2_object_name or build_legacy_r2_key(thumb_file)
-    return get_media_url(thumb_file, thumb_r2_key)
+    thumb_file, thumb_r2_keys = build_r2_thumbnail_info(
+        output_file=output_file,
+        media_type=media_type,
+        task_id=task_id,
+        preferred_r2_object_name=r2_object_name,
+    )
+    preferred_thumb_key = thumb_r2_keys[0] if thumb_r2_keys else None
+    return await get_media_url(
+        thumb_file,
+        task_id=None,
+        r2_object_name=preferred_thumb_key,
+    )
+
+
+async def _pick_gallery_media_urls(
+    *,
+    task_id: str | None,
+    output_file: str | None,
+    media_type: str,
+) -> tuple[str, str]:
+    if not output_file:
+        return "", ""
+
+    _, thumb_r2_keys = build_r2_thumbnail_info(
+        output_file=output_file,
+        media_type=media_type,
+        task_id=task_id,
+    )
+    preferred_thumb_key = thumb_r2_keys[0] if thumb_r2_keys else None
+
+    media_url, thumbnail_url = await asyncio.gather(
+        get_media_url(output_file, task_id=task_id),
+        generate_thumbnail_url(
+            output_file,
+            media_type,
+            task_id=task_id,
+            r2_object_name=preferred_thumb_key,
+        ),
+    )
+    return media_url, thumbnail_url
 
 
 def _resolve_history_billing_resolution(
@@ -223,9 +264,14 @@ async def _build_post_responses(session, posts, current_user: Optional[User]):
         translated_tags = translate_tags(tags)
 
         history = history_map.get(post.task_id)
-        output_file = history.output_file if history else None
         prompt = history.prompt if history else None
         task_type_from_history = history.type if history else None
+        output_file = history.output_file if history else None
+        media_url, thumbnail_url = await _pick_gallery_media_urls(
+            task_id=post.task_id,
+            output_file=output_file,
+            media_type=post.media_type,
+        )
         billing_resolution = None
         if history:
             billing_resolution = _resolve_history_billing_resolution(
@@ -234,9 +280,6 @@ async def _build_post_responses(session, posts, current_user: Optional[User]):
                 height=post.height if post.height is not None else history.height,
                 gallery_post=post,
             )
-
-        media_url = get_media_url(output_file)
-        thumbnail_url = generate_thumbnail_url(output_file, post.media_type)
 
         response_items.append(
             GalleryPostResponse(
@@ -480,6 +523,7 @@ async def interact_with_post(
 async def get_apply_context(
     post_id: int, current_user: User = Depends(get_current_user)
 ):
+    _ = current_user
     async with AsyncSessionLocal() as session:
         post = (
             await session.execute(select(GalleryPost).where(GalleryPost.id == post_id))

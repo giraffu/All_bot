@@ -11,10 +11,12 @@ from src.database.models import GalleryPost, History, User
 from src.core.media_paths import (
     build_history_r2_media_key,
     build_history_r2_thumbnail_key,
-    build_legacy_r2_key,
-    build_thumbnail_object_name,
     get_media_type_from_history,
     resolve_storage_object,
+)
+from src.core.media_urls import (
+    build_r2_media_key_candidates,
+    build_r2_thumbnail_info,
 )
 from src.core.media_processor import (
     extract_media_metadata_from_storage,
@@ -28,7 +30,11 @@ from src.core.video_billing import (
 from src.services.storage import storage
 from src.web_api.dependencies import get_current_user
 from src.web_api.schemas.auth_schema import InvitationRechargeStats, UserResponse
-from src.web_api.schemas.user_schema import PaginatedHistory, CheckinResponse
+from src.web_api.schemas.user_schema import (
+    CheckinResponse,
+    HistoryItem,
+    PaginatedHistory,
+)
 from src.web_api.schemas.gallery_schema import (
     PaginatedGalleryResponse,
     ApplyContextResponse,
@@ -78,17 +84,24 @@ async def _pick_favorite_media_urls(
 
     bucket_name, object_name = resolve_storage_object(output_file)
     media_type = get_media_type_from_history(history_type)
-    thumb_object_name = build_thumbnail_object_name(object_name, media_type)
-    legacy_media_r2_key = build_legacy_r2_key(object_name)
-    legacy_thumb_r2_key = build_legacy_r2_key(thumb_object_name)
+    media_r2_keys = build_r2_media_key_candidates(
+        output_file=output_file,
+        task_id=task_id,
+    )
+    thumb_file, thumb_r2_keys = build_r2_thumbnail_info(
+        output_file=output_file,
+        media_type=media_type,
+        task_id=task_id,
+    )
+    _, thumb_object_name = resolve_storage_object(thumb_file)
 
     media_url = storage.get_presigned_url(object_name, bucket=bucket_name)
     thumbnail_url = ""
 
     if not task_id:
         media_r2_url, thumbnail_r2_url, thumb_exists = await asyncio.gather(
-            _get_first_r2_url_if_exists(legacy_media_r2_key),
-            _get_first_r2_url_if_exists(legacy_thumb_r2_key),
+            _get_first_r2_url_if_exists(*media_r2_keys),
+            _get_first_r2_url_if_exists(*thumb_r2_keys),
             storage.async_object_exists(bucket_name, thumb_object_name),
         )
         if media_r2_url:
@@ -101,12 +114,9 @@ async def _pick_favorite_media_urls(
             )
         return media_url, thumbnail_url
 
-    media_r2_key = build_history_r2_media_key(task_id, output_file)
-    thumb_r2_key = build_history_r2_thumbnail_key(task_id, media_type)
-
     media_r2_url, thumbnail_r2_url, thumb_exists = await asyncio.gather(
-        _get_first_r2_url_if_exists(media_r2_key, legacy_media_r2_key),
-        _get_first_r2_url_if_exists(thumb_r2_key, legacy_thumb_r2_key),
+        _get_first_r2_url_if_exists(*media_r2_keys),
+        _get_first_r2_url_if_exists(*thumb_r2_keys),
         storage.async_object_exists(bucket_name, thumb_object_name),
     )
 
@@ -118,6 +128,41 @@ async def _pick_favorite_media_urls(
         thumbnail_url = storage.get_presigned_url(thumb_object_name, bucket=bucket_name)
 
     return media_url, thumbnail_url
+
+
+async def _pick_history_media_urls(
+    *,
+    task_id: str | None,
+    output_file: str | None,
+    history_type: str | None,
+) -> tuple[str, str]:
+    if not output_file:
+        return "", ""
+
+    bucket_name, object_name = resolve_storage_object(output_file)
+    media_type = get_media_type_from_history(history_type)
+    thumb_file, thumb_r2_keys = build_r2_thumbnail_info(
+        output_file=output_file,
+        media_type=media_type,
+        task_id=task_id,
+    )
+    _, thumb_object_name = resolve_storage_object(thumb_file)
+
+    output_file_url = storage.get_presigned_url(object_name, bucket=bucket_name)
+    thumbnail_r2_url, thumb_exists = await asyncio.gather(
+        _get_first_r2_url_if_exists(*thumb_r2_keys),
+        storage.async_object_exists(bucket_name, thumb_object_name),
+    )
+
+    thumbnail_url = ""
+    if thumbnail_r2_url:
+        thumbnail_url = thumbnail_r2_url
+    elif thumb_exists:
+        thumbnail_url = storage.get_presigned_url(
+            thumb_object_name, bucket=bucket_name
+        )
+
+    return output_file_url, thumbnail_url
 
 
 def _gallery_post_sort_key(post: GalleryPost) -> tuple[int, datetime, int]:
@@ -298,41 +343,46 @@ async def get_user_history(
         gp_result = await db.execute(gp_stmt)
         active_task_ids = set(gp_result.scalars().all())
 
-    for item in items:
-        if item.is_public and item.task_id:
-            if item.task_id not in active_task_ids:
-                item.is_public = False
-        
-        if item.output_file:
-            if item.output_file.startswith("bot-data/"):
-                bucket_name = "bot-data"
-                object_name = item.output_file[len("bot-data/"):]
-            elif item.output_file.startswith("comfyui-temp/"):
-                bucket_name = "comfyui-temp"
-                object_name = item.output_file[len("comfyui-temp/"):]
-            else:
-                bucket_name = "bot-data" if "/" in item.output_file else "comfyui-temp"
-                object_name = item.output_file
-                
-            item.output_file_url = storage.get_presigned_url(
-                object_name, bucket=bucket_name
+    url_pairs = await asyncio.gather(
+        *[
+            _pick_history_media_urls(
+                task_id=item.task_id,
+                output_file=item.output_file,
+                history_type=item.type,
             )
-            
-            # Generate thumbnail url
-            is_video = item.type and "video" in item.type.lower()
-            last_dot_idx = object_name.rfind(".")
-            if last_dot_idx != -1:
-                base_name = object_name[:last_dot_idx]
-            else:
-                base_name = object_name
-            
-            thumb_ext = "_thumb.jpg" if is_video else "_thumb.webp"
-            thumb_object_name = f"{base_name}{thumb_ext}"
-            item.thumbnail_url = storage.get_presigned_url(
-                thumb_object_name, bucket=bucket_name
-            )
+            for item in items
+        ]
+    )
 
-    return PaginatedHistory(items=list(items), total=len(items), page=1, size=limit)
+    response_items = []
+    for item, (output_file_url, thumbnail_url) in zip(items, url_pairs):
+        is_public = bool(item.is_public)
+        if is_public and item.task_id and item.task_id not in active_task_ids:
+            is_public = False
+
+        response_items.append(
+            HistoryItem(
+                id=item.id,
+                task_id=item.task_id,
+                type=item.type,
+                prompt=item.prompt,
+                input_file=item.input_file,
+                output_file=item.output_file,
+                billing_resolution=item.billing_resolution,
+                width=item.width,
+                height=item.height,
+                duration=item.duration,
+                output_file_url=output_file_url,
+                thumbnail_url=thumbnail_url,
+                created_at=item.created_at,
+                allow_contribute=item.allow_contribute,
+                source=item.source,
+                is_public=is_public,
+                is_favorited=item.is_favorited,
+            )
+        )
+
+    return PaginatedHistory(items=response_items, total=len(response_items), page=1, size=limit)
 
 
 @router.post("/checkin", response_model=CheckinResponse)

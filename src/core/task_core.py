@@ -1,16 +1,24 @@
+import asyncio
 import logging
 import os
 import httpx
 from typing import Optional, Tuple
 
 from config import MINIO_BUCKET
+from src.core.media_paths import (
+    build_history_r2_media_key,
+    build_history_r2_thumbnail_key,
+    resolve_storage_object,
+)
 from src.core.media_processor import (
     extract_media_metadata_from_bytes_best_effort,
     extract_media_metadata_from_storage_best_effort,
+    generate_and_upload_thumbnail,
 )
 from src.core.video_billing import normalize_requested_billing_resolution
 from src.logger import UserLogger
 from src.services.image_service import image_service
+from src.services.storage import storage
 from src.services.task_registry import TaskRegistry
 
 logger = logging.getLogger(__name__)
@@ -107,6 +115,55 @@ def _infer_requested_billing_resolution(
     return normalize_requested_billing_resolution(inputs.get("resolution"), task_type)
 
 
+def schedule_web_history_r2_warmup(
+    *,
+    user_id: int,
+    task_id: str,
+    output_file: str,
+    media_type: str,
+    source: str,
+):
+    if source != "web" or not user_id or not task_id or not output_file:
+        return
+
+    async def _runner():
+        bucket_name, object_name = resolve_storage_object(output_file)
+        warmup_results = await asyncio.gather(
+            storage.async_copy_to_r2(
+                bucket_name,
+                object_name,
+                build_history_r2_media_key(task_id, output_file),
+            ),
+            generate_and_upload_thumbnail(
+                output_file,
+                media_type,
+                build_history_r2_thumbnail_key(task_id, media_type),
+            ),
+            return_exceptions=True,
+        )
+        for step_name, result in zip(("copy", "thumbnail"), warmup_results):
+            if isinstance(result, Exception):
+                logger.warning(
+                    "Web history R2 warmup %s failed for task %s user %s: %s",
+                    step_name,
+                    task_id,
+                    user_id,
+                    result,
+                )
+
+        try:
+            await storage.async_prune_user_web_history_r2_cache(user_id)
+        except Exception as exc:
+            logger.warning(
+                "Web history R2 warmup prune failed for task %s user %s: %s",
+                task_id,
+                user_id,
+                exc,
+            )
+
+    asyncio.create_task(_runner())
+
+
 async def monitor_task_and_release_lock(
     task_id: str,
     internal_user_id: int,
@@ -156,6 +213,7 @@ async def monitor_task_and_release_lock(
         if final_status == "done" and result_path:
             try:
                 user_logger = UserLogger(internal_user_id, username)
+                history_output_file = ""
                 width = output_width
                 height = output_height
                 duration = output_duration
@@ -189,6 +247,7 @@ async def monitor_task_and_release_lock(
                         height=height,
                         duration=duration,
                     )
+                    history_output_file = saved_output_image
                 else:
                     width, height, duration = await extract_media_metadata_from_storage_best_effort(
                         result_path,
@@ -207,6 +266,16 @@ async def monitor_task_and_release_lock(
                         width=width,
                         height=height,
                         duration=duration,
+                    )
+                    history_output_file = result_path
+
+                if history_output_file:
+                    schedule_web_history_r2_warmup(
+                        user_id=internal_user_id,
+                        task_id=task_id,
+                        output_file=history_output_file,
+                        media_type="video" if is_video else "image",
+                        source="web",
                     )
             except Exception as log_err:
                 logger.error(f"Failed to log task history for {task_id}: {log_err}")
