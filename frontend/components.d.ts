@@ -41,6 +41,7 @@ declare module 'vue' {
     HelloWorld: typeof import('./src/components/HelloWorld.vue')['default']
     LazyVideo: typeof import('./src/components/LazyVideo.vue')['default']
     MobileTabbar: typeof import('./src/components/MobileTabbar.vue')['default']
+    MySubmissionsPanel: typeof import('./src/components/MySubmissionsPanel.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
     TaskDetailModal: typeof import('./src/components/TaskDetailModal.vue')['default']

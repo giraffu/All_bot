@@ -72,7 +72,10 @@ const routes: RouteRecordRaw[] = [
       {
         path: 'my-submissions',
         name: 'MySubmissions',
-        component: () => import('@/views/MySubmissions.vue')
+        redirect: {
+          name: 'MyFavorites',
+          query: { tab: 'submissions' }
+        }
       },
       {
         path: 'my-favorites',

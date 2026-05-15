@@ -2,6 +2,8 @@ import { defineStore } from 'pinia'
 import { ref, watch } from 'vue'
 import { message } from 'ant-design-vue'
 import api from '@/api'
+import i18n from '@/i18n'
+import { useAuthStore } from '@/stores/auth'
 import {
   shouldResumeTaskListening
 } from '@/stores/taskResultState'
@@ -28,6 +30,21 @@ export const useTasksStore = defineStore('tasks', () => {
   const activeTasks = ref<Task[]>([])
   const detailModalVisible = ref(false)
   const currentDetailRecord = ref<any>(null)
+  const authStore = useAuthStore()
+
+  const refreshBalanceAfterCancel = async (previousCredits: number | null) => {
+    const retryDelays = [300, 800, 1500]
+
+    for (const delayMs of retryDelays) {
+      await new Promise(resolve => setTimeout(resolve, delayMs))
+      await authStore.fetchUser()
+
+      const latestCredits = authStore.user?.credits ?? null
+      if (previousCredits === null || latestCredits === null || latestCredits !== previousCredits) {
+        return
+      }
+    }
+  }
 
   const openDetailModal = async (taskId: string, fallbackRecord?: any) => {
     const hide = message.loading('正在加载详情...', 0)
@@ -214,11 +231,11 @@ export const useTasksStore = defineStore('tasks', () => {
 
   const cancelActiveTask = async (taskId: string) => {
     try {
+      const previousCredits = authStore.user?.credits ?? null
       await api.delete(`/tasks/cancel/${taskId}`)
       removeTask(taskId)
-      message.success('✅ 任务已撤销，灵石已退回')
-      // Delay before returning to allow backend refund propagation
-      await new Promise(resolve => setTimeout(resolve, 1500))
+      message.success(i18n.global.t('task.cancel_success_refreshing_balance'))
+      await refreshBalanceAfterCancel(previousCredits)
       return true
     } catch (e: any) {
       const errorMsg = e.response?.data?.detail || '撤销请求失败'

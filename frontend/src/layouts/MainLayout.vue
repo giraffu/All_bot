@@ -1,11 +1,11 @@
 <script setup lang="ts">
-import { ref, onMounted, watch, onBeforeUnmount } from 'vue'
+import { computed, ref, onMounted, watch, onBeforeUnmount } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useViewport } from '@/composables/useViewport'
 import { useI18n } from 'vue-i18n'
 import api from '@/api'
-import { User, Wand2, Zap, History as HistoryIcon, LogOut, Wallet, Compass, Bookmark, Star, Menu, Globe } from 'lucide-vue-next'
+import { User, Wand2, History as HistoryIcon, LogOut, Wallet, Compass, Bookmark } from 'lucide-vue-next'
 import TaskProgress from '@/components/TaskProgress.vue'
 import MobileTabbar from '@/components/MobileTabbar.vue'
 import TaskDetailModal from '@/components/TaskDetailModal.vue'
@@ -14,7 +14,7 @@ const router = useRouter()
 const route = useRoute()
 const authStore = useAuthStore()
 const { isMobile } = useViewport()
-const { locale } = useI18n()
+const { t } = useI18n()
 
 const collapsed = ref(false)
 const selectedKeys = ref<string[]>([route.name as string || 'Profile'])
@@ -29,6 +29,17 @@ const handleLogout = () => {
   authStore.logout()
   router.push('/login')
 }
+
+const pageTitle = computed(() => {
+  const titleMap: Record<string, string> = {
+    Profile: t('menu.profile'),
+    Gallery: t('menu.gallery'),
+    CustomFeatures: t('menu.custom_features'),
+    History: t('menu.history'),
+    MyFavorites: t('menu.my_favorites'),
+  }
+  return titleMap[route.name as string] || ''
+})
 
 const initParticles = () => {
   const canvas = canvasRef.value
@@ -171,6 +182,7 @@ const initParticles = () => {
 // Ensure selected key matches current route
 onMounted(() => {
   selectedKeys.value = [route.name as string || 'Profile']
+  void authStore.fetchUser()
   initParticles()
 })
 
@@ -220,12 +232,8 @@ watch(() => route.name, (newName) => {
           <template #icon><HistoryIcon :size="18" /></template>
           <span>{{ $t('menu.history') }}</span>
         </a-menu-item>
-        <a-menu-item key="MySubmissions">
-          <template #icon><Bookmark :size="18" /></template>
-          <span>{{ $t('menu.my_submissions') }}</span>
-        </a-menu-item>
         <a-menu-item key="MyFavorites">
-          <template #icon><Star :size="18" /></template>
+          <template #icon><Bookmark :size="18" /></template>
           <span>{{ $t('menu.my_favorites') }}</span>
         </a-menu-item>
       </a-menu>
@@ -236,7 +244,7 @@ watch(() => route.name, (newName) => {
       <a-layout class="flex flex-col h-screen overflow-hidden bg-transparent">
       <a-layout-header class="header-custom px-4 md:px-6 flex justify-between items-center shrink-0 z-10 sticky top-0">
         <div class="header-left flex items-center">
-          <h2 class="text-lg font-bold text-slate-200 tracking-wide m-0 drop-shadow-sm">{{ route.name === 'Profile' ? $t('menu.profile') : (route.name === 'Gallery' ? $t('menu.gallery') : (route.name === 'CustomFeatures' ? $t('menu.custom_features') : (route.name === 'History' ? $t('menu.history') : (route.name === 'MySubmissions' ? $t('menu.my_submissions') : (route.name === 'MyFavorites' ? $t('menu.my_favorites') : ''))))) }}</h2>
+          <h2 class="text-lg font-bold text-slate-200 tracking-wide m-0 drop-shadow-sm">{{ pageTitle }}</h2>
         </div>
         <div class="header-right flex items-center space-x-4">
           <div class="balance flex items-center bg-slate-500/40 backdrop-blur-md px-3 py-1 rounded-full border border-cyan-500/20 shadow-sm transition-all hover:shadow-[0_0_8px_rgba(56,189,248,0.3)] hover:scale-105">

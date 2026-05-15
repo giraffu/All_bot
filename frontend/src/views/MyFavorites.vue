@@ -1,12 +1,23 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, computed } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
-import LazyVideo from '@/components/LazyVideo.vue'
-import { Heart, ThumbsDown, Wand2, Play, Image as ImageIcon, Video, Flame, Clock, Trash2, Eye, EyeOff, Copy, Compass, ChevronLeft, ChevronRight } from 'lucide-vue-next'
+import {
+  ChevronLeft,
+  ChevronRight,
+  Compass,
+  Heart,
+  Image as ImageIcon,
+  Play,
+  ThumbsDown,
+  Trash2,
+  Video,
+  Wand2,
+} from 'lucide-vue-next'
 import api from '@/api'
 import dayjs from 'dayjs'
+import MySubmissionsPanel from '@/components/MySubmissionsPanel.vue'
 
 interface Post {
   id: number
@@ -29,6 +40,9 @@ interface Post {
   src?: string
 }
 
+type FilterTab = 'favorite' | 'like' | 'apply' | 'submissions'
+
+const route = useRoute()
 const router = useRouter()
 const { t } = useI18n()
 const posts = ref<Post[]>([])
@@ -36,18 +50,19 @@ const loading = ref(false)
 const page = ref(1)
 const total = ref(0)
 const hasMore = ref(true)
-const isMobile = ref(false)
 
-const mediaType = ref('all')
-const taskType = ref('all')
-const loraModel = ref('all')
-const sortBy = ref('latest')
-const timeRange = ref('all')
+function normalizeFilterType(tabValue: unknown): FilterTab {
+  const value = typeof tabValue === 'string' ? tabValue : ''
+  if (value === 'like' || value === 'apply' || value === 'submissions') {
+    return value
+  }
+  return 'favorite'
+}
 
-const filterType = ref('all')
+// Initialize from the current environment/route before immediate watchers run.
+const isMobile = ref(typeof window !== 'undefined' ? window.innerWidth < 768 : false)
 
-const allowedTypes = ref<{id: string, name: string}[]>([])
-const loraModels = ref<{id: string, name: string}[]>([])
+const filterType = ref<FilterTab>(normalizeFilterType(route.query.tab))
 
 const detailVisible = ref(false)
 const currentPost = ref<Post | null>(null)
@@ -68,6 +83,18 @@ const pageSize = computed(() => {
 
 const hasPrev = computed(() => currentIndex.value > 0)
 const hasNext = computed(() => currentIndex.value >= 0 && currentIndex.value < posts.value.length - 1)
+const isSubmissionTab = computed(() => filterType.value === 'submissions')
+const filterTabs = computed(() => [
+  { id: 'favorite' as const, name: t('my_notes.tabs.favorite') },
+  { id: 'like' as const, name: t('my_notes.tabs.like') },
+  { id: 'apply' as const, name: t('my_notes.tabs.apply') },
+  { id: 'submissions' as const, name: t('my_notes.tabs.submissions') },
+])
+const emptyStateText = computed(() => {
+  if (filterType.value === 'like') return t('my_notes.empty_like')
+  if (filterType.value === 'apply') return t('my_notes.empty_apply')
+  return t('my_notes.empty_favorite')
+})
 
 const goPrev = () => {
   if (hasPrev.value) {
@@ -156,21 +183,12 @@ const updateViewportMode = () => {
   }
   isMobile.value = nextIsMobile
   if (filterType.value === 'favorite') {
-    loadPosts(true)
-  }
-}
-
-const loadConfig = async () => {
-  try {
-    const res = await api.get('/gallery/config')
-    allowedTypes.value = res.data.allowed_types
-    loraModels.value = res.data.lora_models
-  } catch (error) {
-    console.error('Failed to load gallery config:', error)
+    void loadPosts(true)
   }
 }
 
 const loadPosts = async (reset = false) => {
+  if (isSubmissionTab.value) return
   if (!reset && (loading.value || !hasMore.value)) return
   
   loading.value = true
@@ -214,7 +232,7 @@ const loadPosts = async (reset = false) => {
   } catch (error) {
     if (requestId !== currentRequestId) return
     console.error(error)
-    message.error('获取广场数据失败')
+    message.error(t('my_notes.load_failed'))
   } finally {
     if (requestId === currentRequestId) {
       loading.value = false
@@ -222,17 +240,10 @@ const loadPosts = async (reset = false) => {
   }
 }
 
-const handleTaskTypeChange = (type: string) => {
-  taskType.value = type
-  if (type !== 'video_lora') {
-    loraModel.value = 'all'
-  }
-  loadPosts(true)
-}
-
 const handleFilterTypeChange = (type: string) => {
-  filterType.value = type
-  loadPosts(true)
+  const nextType = normalizeFilterType(type)
+  if (nextType === filterType.value) return
+  filterType.value = nextType
 }
 
 const handleInteract = async (post: Post, action: 'like' | 'dislike') => {
@@ -253,11 +264,11 @@ const handleInteract = async (post: Post, action: 'like' | 'dislike') => {
     if (action_state === 'added') {
       if (action === 'like') post.has_liked = true
       else post.has_disliked = true
-      message.success(action === 'like' ? '点赞成功' : '点踩成功')
+      message.success(action === 'like' ? t('my_notes.like_added') : t('my_notes.dislike_added'))
     } else if (action_state === 'canceled') {
       if (action === 'like') post.has_liked = false
       else post.has_disliked = false
-      message.success(action === 'like' ? '已取消点赞' : '已取消点踩')
+      message.success(action === 'like' ? t('my_notes.like_removed') : t('my_notes.dislike_removed'))
     } else if (action_state === 'switched') {
       if (action === 'like') {
         post.has_liked = true
@@ -266,7 +277,7 @@ const handleInteract = async (post: Post, action: 'like' | 'dislike') => {
         post.has_disliked = true
         post.has_liked = false
       }
-      message.success(action === 'like' ? '点赞成功' : '点踩成功')
+      message.success(action === 'like' ? t('my_notes.like_added') : t('my_notes.dislike_added'))
     }
   } catch (error: any) {
     console.error(error)
@@ -280,30 +291,18 @@ const handleUnfavorite = async (post: Post) => {
   
   try {
     await api.delete(`/users/history/${post.task_id}/favorite`)
-    message.success('已取消收藏')
+    message.success(t('my_notes.favorite_removed'))
     detailVisible.value = false
-    loadPosts(true)
+    void loadPosts(true)
   } catch (error: any) {
     console.error(error)
-    message.error(error.response?.data?.detail || '操作失败')
+    message.error(error.response?.data?.detail || t('my_notes.action_failed'))
   }
 }
 
 const openDetail = (post: Post) => {
   currentPost.value = post
   detailVisible.value = true
-}
-
-const copyPrompt = (post: Post) => {
-  if (!post.prompt) {
-    message.warning('此投稿没有提示词')
-    return
-  }
-  navigator.clipboard.writeText(post.prompt).then(() => {
-    message.success('提示词已复制到剪贴板')
-  }).catch(() => {
-    message.error('复制失败')
-  })
 }
 
 const handleApply = async () => {
@@ -318,12 +317,9 @@ const handleApply = async () => {
     const context = res.data
     detailVisible.value = false
     
-    // Store context in sessionStorage to pass to target page
     sessionStorage.setItem('galleryApplyContext', JSON.stringify(context))
-    
-    // Route mapping
+
     const featureMap: Record<string, { route: string, title: string, cost: number }> = {
-      // From CustomFeatures
       'i2i_pro': { route: 'ImageAndPrompt', title: '幻想换脸', cost: 6 },
       'i2i_draw': { route: 'ImageAndPrompt', title: '局部重绘', cost: 3 },
       'edit': { route: 'ImageAndPrompt', title: '自由P图', cost: 2 },
@@ -337,8 +333,8 @@ const handleApply = async () => {
     
     const featureInfo = featureMap[context.task_type]
     if (featureInfo) {
-      message.success('已载入模板，请上传您的参考图')
-      router.push({ 
+      message.success(t('my_notes.template_loaded_with_upload_hint'))
+      void router.push({ 
         name: featureInfo.route, 
         query: { 
           apply: 'true',
@@ -348,13 +344,13 @@ const handleApply = async () => {
         } 
       })
     } else {
-      message.success('已载入模板')
-      router.push({ name: 'CustomFeatures', query: { apply: 'true' } })
+      message.success(t('my_notes.template_loaded'))
+      void router.push({ name: 'CustomFeatures', query: { apply: 'true' } })
     }
     
   } catch (error) {
     console.error(error)
-    message.error('获取模板数据失败')
+    message.error(t('my_notes.template_load_failed'))
   } finally {
     applying.value = false
   }
@@ -367,20 +363,8 @@ const handleScroll = () => {
   
   const { scrollTop, scrollHeight, clientHeight } = container
   if (scrollHeight - scrollTop - clientHeight < 200) {
-    loadPosts()
+    void loadPosts()
   }
-}
-
-// Video hover logic
-const playVideo = (e: Event) => {
-  const video = e.target as HTMLVideoElement
-  video.play().catch(() => {})
-}
-
-const pauseVideo = (e: Event) => {
-  const video = e.target as HTMLVideoElement
-  video.pause()
-  video.currentTime = 0
 }
 
 const handleImageError = (e: Event, post: Post) => {
@@ -398,9 +382,6 @@ const handleImageError = (e: Event, post: Post) => {
 }
 
 onMounted(() => {
-  isMobile.value = window.innerWidth < 768
-  loadConfig()
-  loadPosts(true)
   const container = document.querySelector('.ant-layout-content')
   if (container) {
     container.addEventListener('scroll', handleScroll)
@@ -415,6 +396,44 @@ onUnmounted(() => {
   }
   window.removeEventListener('resize', updateViewportMode)
 })
+
+watch(
+  () => route.query.tab,
+  (tabValue) => {
+    const nextType = normalizeFilterType(tabValue)
+    if (nextType !== filterType.value) {
+      filterType.value = nextType
+    }
+  },
+)
+
+watch(
+  filterType,
+  (nextType) => {
+    const currentTab = typeof route.query.tab === 'string' ? route.query.tab : undefined
+    if (currentTab !== nextType) {
+      void router.replace({
+        name: 'MyFavorites',
+        query: {
+          ...route.query,
+          tab: nextType,
+        },
+      })
+    }
+
+    if (nextType === 'submissions') {
+      currentRequestId++
+      loading.value = false
+      posts.value = []
+      hasMore.value = false
+      page.value = 1
+      return
+    }
+
+    void loadPosts(true)
+  },
+  { immediate: true },
+)
 </script>
 
 <template>
@@ -424,7 +443,7 @@ onUnmounted(() => {
     <div class="mb-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
       <div class="flex items-center space-x-2 overflow-x-auto pb-2 md:pb-0 hide-scrollbar">
         <button 
-          v-for="ft in [{id: 'all', name: '全部'}, {id: 'like', name: '我的点赞'}, {id: 'apply', name: '我的应用'}, {id: 'favorite', name: '我的收藏'}]" 
+          v-for="ft in filterTabs" 
           :key="ft.id"
           @click="handleFilterTypeChange(ft.id)"
           class="px-4 py-1.5 rounded-full text-sm font-medium transition-all whitespace-nowrap"
@@ -435,8 +454,10 @@ onUnmounted(() => {
       </div>
     </div>
 
+    <MySubmissionsPanel v-if="isSubmissionTab" />
+
     <!-- Masonry Grid -->
-    <div class="columns-2 sm:columns-3 md:columns-4 lg:columns-5 gap-3 sm:gap-6">
+    <div v-else class="columns-2 sm:columns-3 md:columns-4 lg:columns-5 gap-3 sm:gap-6">
       <div 
         v-for="post in posts" 
         :key="post.id"
@@ -503,14 +524,14 @@ onUnmounted(() => {
     </div>
     
     <!-- Loading State -->
-    <div v-if="loading" class="py-8 text-center">
+    <div v-if="!isSubmissionTab && loading" class="py-8 text-center">
       <div class="inline-block w-8 h-8 border-2 border-cyan-500/30 border-t-cyan-500 rounded-full animate-spin"></div>
     </div>
     
     <!-- Empty State -->
-    <div v-if="!loading && posts.length === 0" class="py-20 text-center text-slate-500">
+    <div v-if="!isSubmissionTab && !loading && posts.length === 0" class="py-20 text-center text-slate-500">
       <Compass :size="48" class="mx-auto mb-4 opacity-20" />
-      <p>您还没有收藏过任何作品</p>
+      <p>{{ emptyStateText }}</p>
     </div>
 
     <!-- Detail Modal -->
@@ -549,13 +570,13 @@ onUnmounted(() => {
           </button>
           
           <h3 class="text-xl font-bold text-slate-100 mb-2 flex items-center">
-            <span class="bg-gradient-to-r from-cyan-400 to-indigo-400 bg-clip-text text-transparent">修仙界作品</span>
+            <span class="bg-gradient-to-r from-cyan-400 to-indigo-400 bg-clip-text text-transparent">{{ t('gallery.modal.title') }}</span>
           </h3>
           
           <div class="text-sm text-slate-400 mb-6 space-y-2">
             <div class="flex space-x-4">
               <span v-if="currentPost.width">📏 {{ currentPost.width }}x{{ currentPost.height }}</span>
-              <span v-if="currentPost.duration">⏱️ {{ currentPost.duration }}秒</span>
+              <span v-if="currentPost.duration">⏱️ {{ currentPost.duration }}{{ t('my_notes.duration_unit') }}</span>
             </div>
             <div v-if="currentPost.created_at">
               <span>📅 {{ dayjs(currentPost.created_at).format('YYYY-MM-DD HH:mm') }}</span>
@@ -563,12 +584,12 @@ onUnmounted(() => {
           </div>
           
           <div class="mb-6">
-            <h4 class="text-sm font-semibold text-slate-300 mb-3 uppercase tracking-wider">包含元素 (Tags)</h4>
+            <h4 class="text-sm font-semibold text-slate-300 mb-3 uppercase tracking-wider">{{ t('gallery.modal.tags') }}</h4>
             <div class="flex flex-wrap gap-2">
               <span v-for="tag in currentPost.tags" :key="tag" class="text-xs bg-slate-500 text-cyan-200 border border-slate-400 px-2.5 py-1 rounded-md">
                 {{ tag.startsWith('#') ? formatTag(tag) : '#' + formatTag(tag) }}
               </span>
-              <span v-if="!currentPost.tags || currentPost.tags.length === 0" class="text-sm text-slate-500">无特定标签</span>
+              <span v-if="!currentPost.tags || currentPost.tags.length === 0" class="text-sm text-slate-500">{{ t('my_notes.no_tags') }}</span>
             </div>
           </div>
           
@@ -586,18 +607,11 @@ onUnmounted(() => {
           <div class="flex space-x-4 mb-auto pt-4" v-if="filterType === 'favorite'">
             <button @click="handleUnfavorite(currentPost)" class="flex-1 py-3 rounded-xl border border-red-500/30 bg-red-500/10 hover:bg-red-500/20 text-red-400 transition-all flex items-center justify-center">
               <Trash2 :size="18" class="mr-2" />
-              <span class="font-medium">取消收藏</span>
+              <span class="font-medium">{{ t('my_notes.unfavorite_button') }}</span>
             </button>
           </div>
           
           <div class="mt-8 space-y-4">
-            <button v-if="currentPost.prompt"
-              @click="copyPrompt(currentPost)"
-              class="w-full py-3 rounded-xl bg-slate-500 hover:bg-slate-500 text-white font-medium shadow-sm transition-all flex items-center justify-center border border-slate-400"
-            >
-              <Copy :size="18" class="mr-2" />
-              复制提示词 (Prompt)
-            </button>
             <button 
               @click="handleApply" 
               :disabled="applying"
@@ -606,9 +620,9 @@ onUnmounted(() => {
               <div class="absolute inset-0 bg-white/20 translate-y-full group-hover:translate-y-0 transition-transform duration-300"></div>
               <Wand2 v-if="!applying" :size="22" class="mr-2 relative z-10" />
               <div v-else class="inline-block w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin mr-2 relative z-10"></div>
-              <span class="relative z-10">{{ applying ? '提取模板中...' : '✨ 一键应用此模板' }}</span>
+              <span class="relative z-10">{{ applying ? t('my_notes.applying_template') : t('gallery.modal.apply_btn') }}</span>
             </button>
-            <p class="text-center text-xs text-slate-500 mt-3">系统将自动为您配置最佳参数，您只需上传参考图即可</p>
+            <p class="text-center text-xs text-slate-500 mt-3">{{ t('gallery.modal.apply_hint') }}</p>
           </div>
         </div>
       </div>
