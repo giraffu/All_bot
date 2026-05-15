@@ -1,3 +1,4 @@
+import asyncio
 from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock
 
@@ -288,6 +289,239 @@ async def test_build_post_responses_uses_r2_fallback_chain(monkeypatch):
     assert len(responses) == 1
     assert responses[0].media_url == "https://cdn.example/task-1.png"
     assert responses[0].thumbnail_url == "https://cdn.example/task-1_thumb.webp"
+
+
+@pytest.mark.asyncio
+async def test_build_post_responses_preserves_post_order_with_concurrent_url_tasks(
+    monkeypatch,
+):
+    history_1 = History(
+        id=11,
+        user_id=123,
+        task_id="task-1",
+        type="image",
+        prompt="prompt-1",
+        output_file="bot-data/history/task-1/output.png",
+    )
+    history_2 = History(
+        id=12,
+        user_id=123,
+        task_id="task-2",
+        type="image",
+        prompt="prompt-2",
+        output_file="bot-data/history/task-2/output.png",
+    )
+    posts = [
+        GalleryPost(
+            id=2,
+            task_id="task-1",
+            media_type="image",
+            tags="[]",
+            likes_count=0,
+            dislikes_count=0,
+            applied_count=0,
+            is_active=True,
+            created_at=datetime.now(),
+        ),
+        GalleryPost(
+            id=3,
+            task_id="task-2",
+            media_type="image",
+            tags="[]",
+            likes_count=0,
+            dislikes_count=0,
+            applied_count=0,
+            is_active=True,
+            created_at=datetime.now(),
+        ),
+    ]
+    session = _FakeSession([_FakeResult(many=[history_1, history_2])])
+
+    async def fake_pick_gallery_media_urls(*, task_id, output_file, media_type):
+        assert output_file is not None
+        assert media_type == "image"
+        if task_id == "task-1":
+            await asyncio.sleep(0.02)
+            return "media-1", "thumb-1"
+        await asyncio.sleep(0.001)
+        return "media-2", "thumb-2"
+
+    monkeypatch.setattr(
+        gallery_router,
+        "_pick_gallery_media_urls",
+        fake_pick_gallery_media_urls,
+    )
+
+    responses = await gallery_router._build_post_responses(session, posts, None)
+
+    assert [item.task_id for item in responses] == ["task-1", "task-2"]
+    assert [item.media_url for item in responses] == ["media-1", "media-2"]
+    assert [item.thumbnail_url for item in responses] == ["thumb-1", "thumb-2"]
+
+
+@pytest.mark.asyncio
+async def test_build_post_responses_degrades_single_url_task_exception(monkeypatch):
+    history_1 = History(
+        id=11,
+        user_id=123,
+        task_id="task-1",
+        type="image",
+        prompt="prompt-1",
+        output_file="bot-data/history/task-1/output.png",
+    )
+    history_2 = History(
+        id=12,
+        user_id=123,
+        task_id="task-2",
+        type="image",
+        prompt="prompt-2",
+        output_file="bot-data/history/task-2/output.png",
+    )
+    posts = [
+        GalleryPost(
+            id=2,
+            task_id="task-1",
+            media_type="image",
+            tags="[]",
+            likes_count=0,
+            dislikes_count=0,
+            applied_count=0,
+            is_active=True,
+            created_at=datetime.now(),
+        ),
+        GalleryPost(
+            id=3,
+            task_id="task-2",
+            media_type="image",
+            tags="[]",
+            likes_count=0,
+            dislikes_count=0,
+            applied_count=0,
+            is_active=True,
+            created_at=datetime.now(),
+        ),
+    ]
+    session = _FakeSession([_FakeResult(many=[history_1, history_2])])
+
+    async def fake_pick_gallery_media_urls(*, task_id, output_file, media_type):
+        assert output_file is not None
+        assert media_type == "image"
+        if task_id == "task-1":
+            return "media-1", "thumb-1"
+        raise RuntimeError("r2 probe failed")
+
+    monkeypatch.setattr(
+        gallery_router,
+        "_pick_gallery_media_urls",
+        fake_pick_gallery_media_urls,
+    )
+
+    responses = await gallery_router._build_post_responses(session, posts, None)
+
+    assert len(responses) == 2
+    assert responses[0].media_url == "media-1"
+    assert responses[0].thumbnail_url == "thumb-1"
+    assert responses[1].media_url == "bot-data/history/task-2/output.png"
+    assert responses[1].thumbnail_url == ""
+
+
+@pytest.mark.asyncio
+async def test_build_post_responses_runs_url_tasks_concurrently(monkeypatch):
+    history_1 = History(
+        id=11,
+        user_id=123,
+        task_id="task-1",
+        type="image",
+        prompt="prompt-1",
+        output_file="bot-data/history/task-1/output.png",
+    )
+    history_2 = History(
+        id=12,
+        user_id=123,
+        task_id="task-2",
+        type="image",
+        prompt="prompt-2",
+        output_file="bot-data/history/task-2/output.png",
+    )
+    posts = [
+        GalleryPost(
+            id=2,
+            task_id="task-1",
+            media_type="image",
+            tags="[]",
+            likes_count=0,
+            dislikes_count=0,
+            applied_count=0,
+            is_active=True,
+            created_at=datetime.now(),
+        ),
+        GalleryPost(
+            id=3,
+            task_id="task-2",
+            media_type="image",
+            tags="[]",
+            likes_count=0,
+            dislikes_count=0,
+            applied_count=0,
+            is_active=True,
+            created_at=datetime.now(),
+        ),
+    ]
+    session = _FakeSession([_FakeResult(many=[history_1, history_2])])
+    first_started = asyncio.Event()
+    second_started = asyncio.Event()
+    first_finished = False
+
+    async def fake_pick_gallery_media_urls(*, task_id, output_file, media_type):
+        nonlocal first_finished
+        assert output_file is not None
+        assert media_type == "image"
+        if task_id == "task-1":
+            first_started.set()
+            # If the implementation becomes serial again, this wait times out
+            # because task-2 cannot start before task-1 returns.
+            await asyncio.wait_for(second_started.wait(), timeout=0.2)
+            first_finished = True
+            return "media-1", "thumb-1"
+
+        assert first_started.is_set()
+        assert first_finished is False
+        second_started.set()
+        return "media-2", "thumb-2"
+
+    monkeypatch.setattr(
+        gallery_router,
+        "_pick_gallery_media_urls",
+        fake_pick_gallery_media_urls,
+    )
+
+    responses = await gallery_router._build_post_responses(session, posts, None)
+
+    assert second_started.is_set()
+    assert [item.media_url for item in responses] == ["media-1", "media-2"]
+
+
+@pytest.mark.asyncio
+async def test_pick_gallery_media_urls_best_effort_when_inner_probes_raise(monkeypatch):
+    monkeypatch.setattr(
+        gallery_router,
+        "get_media_url",
+        AsyncMock(side_effect=RuntimeError("media failed")),
+    )
+    monkeypatch.setattr(
+        gallery_router,
+        "generate_thumbnail_url",
+        AsyncMock(side_effect=RuntimeError("thumb failed")),
+    )
+
+    media_url, thumbnail_url = await gallery_router._pick_gallery_media_urls(
+        task_id="task-1",
+        output_file="bot-data/history/task-1/output.png",
+        media_type="image",
+    )
+
+    assert media_url == "bot-data/history/task-1/output.png"
+    assert thumbnail_url == ""
 
 
 @pytest.mark.asyncio

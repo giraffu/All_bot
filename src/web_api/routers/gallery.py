@@ -131,7 +131,24 @@ async def _pick_gallery_media_urls(
             task_id=task_id,
             r2_object_name=preferred_thumb_key,
         ),
+        return_exceptions=True,
     )
+    if isinstance(media_url, Exception):
+        logger.warning(
+            "Failed to build gallery media URL for task_id=%s: %s",
+            task_id,
+            media_url,
+            exc_info=media_url,
+        )
+        media_url = output_file
+    if isinstance(thumbnail_url, Exception):
+        logger.warning(
+            "Failed to build gallery thumbnail URL for task_id=%s: %s",
+            task_id,
+            thumbnail_url,
+            exc_info=thumbnail_url,
+        )
+        thumbnail_url = ""
     return media_url, thumbnail_url
 
 
@@ -255,8 +272,22 @@ async def _build_post_responses(session, posts, current_user: Optional[User]):
             name = u.full_name if u.full_name else (u.username or f"User {u.id}")
             user_map[u.id] = name
 
-    response_items = []
+    # 并发获取媒体 URL 和缩略图 URL
+    tasks = []
     for post in posts:
+        history = history_map.get(post.task_id)
+        output_file = history.output_file if history else None
+        tasks.append(
+            _pick_gallery_media_urls(
+                task_id=post.task_id,
+                output_file=output_file,
+                media_type=post.media_type,
+            )
+        )
+    urls_results = await asyncio.gather(*tasks, return_exceptions=True)
+
+    response_items = []
+    for i, post in enumerate(posts):
         try:
             tags = json.loads(post.tags) if post.tags else []
         except Exception:
@@ -266,12 +297,21 @@ async def _build_post_responses(session, posts, current_user: Optional[User]):
         history = history_map.get(post.task_id)
         prompt = history.prompt if history else None
         task_type_from_history = history.type if history else None
-        output_file = history.output_file if history else None
-        media_url, thumbnail_url = await _pick_gallery_media_urls(
-            task_id=post.task_id,
-            output_file=output_file,
-            media_type=post.media_type,
-        )
+
+        url_result = urls_results[i]
+        if isinstance(url_result, Exception):
+            logger.warning(
+                "Failed to build gallery media URLs for post_id=%s task_id=%s: %s",
+                post.id,
+                post.task_id,
+                url_result,
+                exc_info=url_result,
+            )
+            media_url = history.output_file if history and history.output_file else ""
+            thumbnail_url = ""
+        else:
+            media_url, thumbnail_url = url_result
+
         billing_resolution = None
         if history:
             billing_resolution = _resolve_history_billing_resolution(
