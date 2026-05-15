@@ -19,14 +19,15 @@
   },
   "4": {
     "inputs": {
+      "filename_prefix": "face_swap",
       "images": [
         "15",
         0
       ]
     },
-    "class_type": "PreviewImage",
+    "class_type": "SaveImage",
     "_meta": {
-      "title": "First Frame Head Swap"
+      "title": "Save Face Swap Result"
     }
   },
   "6": {
@@ -44,42 +45,6 @@
     "class_type": "EmptyFlux2LatentImage",
     "_meta": {
       "title": "空Latent图像（Flux2）"
-    }
-  },
-  "8": {
-    "inputs": {
-      "direction": "right",
-      "match_image_size": true,
-      "image1": [
-        "9",
-        0
-      ],
-      "image2": [
-        "4",
-        0
-      ]
-    },
-    "class_type": "ImageConcanate",
-    "_meta": {
-      "title": "Image Concatenate"
-    }
-  },
-  "9": {
-    "inputs": {
-      "direction": "down",
-      "match_image_size": true,
-      "image1": [
-        "3",
-        0
-      ],
-      "image2": [
-        "2",
-        0
-      ]
-    },
-    "class_type": "ImageConcanate",
-    "_meta": {
-      "title": "Image Concatenate"
     }
   },
   "10": {
