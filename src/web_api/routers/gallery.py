@@ -5,7 +5,8 @@ import re
 from typing import Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
-from sqlalchemy import desc, select, update
+from sqlalchemy import desc, select, update, func
+from sqlalchemy.orm import joinedload
 
 from src.config_mapping import (
     ALL_LORA_MODELS,
@@ -32,7 +33,7 @@ from src.core.video_billing import (
     normalize_requested_billing_resolution,
 )
 from src.database.core import AsyncSessionLocal
-from src.database.models import GalleryPost, History, User, UserInteraction
+from src.database.models import GalleryPost, History, User, UserInteraction, GalleryComment
 from src.services.storage import storage
 from src.web_api.dependencies import get_current_user
 from src.web_api.schemas.gallery_schema import (
@@ -40,6 +41,10 @@ from src.web_api.schemas.gallery_schema import (
     GalleryPostResponse,
     PaginatedGalleryResponse,
     GallerySubmitRequest,
+    CommentCreate,
+    CommentUserResponse,
+    GalleryCommentResponse,
+    PaginatedCommentResponse,
 )
 
 router = APIRouter()
@@ -55,6 +60,14 @@ ALLOWED_WEB_SUBMIT_TYPES = {
     MODE_LTX_VIDEO,
     "img2img_lora",
 }
+
+
+def _resolve_author_name(user: User | None, fallback_user_id: int | None = None) -> str:
+    if user:
+        return user.full_name or user.username or f"User {user.id}"
+    if fallback_user_id is not None:
+        return f"User {fallback_user_id}"
+    return "匿名修士"
 
 async def get_media_url(
     output_file: str,
@@ -334,6 +347,7 @@ async def _build_post_responses(session, posts, current_user: Optional[User]):
                 likes_count=post.likes_count,
                 dislikes_count=post.dislikes_count,
                 applied_count=post.applied_count,
+                comments_count=post.comments_count or 0,
                 thumbnail_url=thumbnail_url,
                 media_url=media_url,
                 created_at=post.created_at,
@@ -556,8 +570,130 @@ async def interact_with_post(
         raise HTTPException(status_code=400, detail=str(e))
     except Exception:
         logger.error("发生未捕获异常", exc_info=True)
-        raise HTTPException(status_code=500, detail="内部服务器错误")
+        raise HTTPException(status_code=500, detail="服务器内部错误")
 
+
+@router.post("/posts/{post_id}/comments", response_model=GalleryCommentResponse)
+async def create_gallery_comment(
+    post_id: int,
+    comment: CommentCreate,
+    current_user: User = Depends(get_current_user),
+):
+    from src.services.redis_client import redis_client
+
+    async with AsyncSessionLocal() as session:
+        # 校验帖子
+        post = await session.get(GalleryPost, post_id)
+        if not post or not post.is_active:
+            raise HTTPException(status_code=404, detail="帖子不存在或已下架")
+
+        # 防刷校验：仅对有效帖子申请频率锁，避免 404 请求误伤后续正常评论
+        lock_acquired = await redis_client.set_comment_lock(current_user.id, ttl=5)
+        if not lock_acquired:
+            raise HTTPException(status_code=429, detail="操作过于频繁，请稍后再试")
+
+        # 插入评论
+        new_comment = GalleryComment(
+            post_id=post_id,
+            user_id=current_user.id,
+            content=comment.content,
+        )
+        try:
+            session.add(new_comment)
+            await session.flush()
+
+            # 原子更新评论数（附带 is_active 二次校验，防止并发下架）
+            stmt = (
+                update(GalleryPost)
+                .where(GalleryPost.id == post_id, GalleryPost.is_active.is_(True))
+                .values(comments_count=GalleryPost.comments_count + 1)
+            )
+            result = await session.execute(stmt)
+            
+            if result.rowcount == 0:
+                # 帖子在此期间已被下架或删除，回滚整个事务（包括 session.flush() 中已插入的评论）
+                await session.rollback()
+                await redis_client.delete_comment_lock(current_user.id)
+                raise HTTPException(status_code=404, detail="帖子已下架，无法发布评论")
+
+            # 在 commit 前构造返回值对象
+            response_data = GalleryCommentResponse(
+                id=new_comment.id,
+                content=new_comment.content,
+                created_at=new_comment.created_at,
+                user=CommentUserResponse(
+                    id=current_user.id,
+                    author_name=_resolve_author_name(current_user),
+                ),
+            )
+
+            await session.commit()
+            return response_data
+        except HTTPException:
+            raise
+        except Exception:
+            await session.rollback()
+            await redis_client.delete_comment_lock(current_user.id)
+            logger.error("Failed to create comment", exc_info=True)
+            raise HTTPException(status_code=500, detail="发布评论失败")
+
+
+@router.get("/posts/{post_id}/comments", response_model=PaginatedCommentResponse)
+async def get_gallery_comments(
+    post_id: int,
+    page: int = Query(1, ge=1),
+    size: int = Query(20, ge=1, le=100),
+):
+    async with AsyncSessionLocal() as session:
+        # 校验帖子
+        post = await session.get(GalleryPost, post_id)
+        if not post or not post.is_active:
+            raise HTTPException(status_code=404, detail="帖子不存在或已下架")
+
+        # 查询总数
+        count_stmt = select(func.count(GalleryComment.id)).where(
+            GalleryComment.post_id == post_id,
+            GalleryComment.is_active.is_(True),
+        )
+        total = await session.scalar(count_stmt) or 0
+
+        # 分页查询
+        stmt = (
+            select(GalleryComment)
+            .options(joinedload(GalleryComment.user))
+            .where(
+                GalleryComment.post_id == post_id,
+                GalleryComment.is_active.is_(True),
+            )
+            .order_by(desc(GalleryComment.created_at), desc(GalleryComment.id))
+            .offset((page - 1) * size)
+            .limit(size)
+        )
+        result = await session.execute(stmt)
+        comments = result.scalars().all()
+
+        response_items = []
+        for c in comments:
+            response_items.append(
+                GalleryCommentResponse(
+                    id=c.id,
+                    content=c.content,
+                    created_at=c.created_at,
+                    user=CommentUserResponse(
+                        id=c.user.id if c.user else c.user_id,
+                        author_name=_resolve_author_name(c.user, c.user_id),
+                    ),
+                )
+            )
+
+        pages = (total + size - 1) // size
+        return PaginatedCommentResponse(
+            items=response_items,
+            total=total,
+            page=page,
+            size=size,
+            pages=pages
+        )
 
 @router.get("/posts/{post_id}/apply-context", response_model=ApplyContextResponse)
 async def get_apply_context(
