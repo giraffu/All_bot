@@ -20,6 +20,7 @@ import {
 import api from '@/api'
 import dayjs from 'dayjs'
 import { useViewport } from '@/composables/useViewport'
+import { useGalleryComments } from '@/composables/useGalleryComments'
 
 interface Post {
   id: number
@@ -32,6 +33,7 @@ interface Post {
   likes_count: number
   dislikes_count: number
   applied_count: number
+  comments_count: number
   thumbnail_url: string
   media_url: string
   created_at: string
@@ -51,6 +53,21 @@ const size = ref(20)
 const hasMore = ref(true)
 const detailVisible = ref(false)
 const currentPost = ref<Post | null>(null)
+
+const {
+  comments,
+  commentsLoading,
+  commentsError,
+  commentsPage,
+  commentsTotal,
+  commentsHasMore,
+  showCommentInput,
+  newComment,
+  submittingComment,
+  loadComments,
+  loadMoreComments,
+  submitComment
+} = useGalleryComments(currentPost, posts, detailVisible)
 const applying = ref(false)
 const interactingPosts = ref<Record<number, boolean>>({})
 
@@ -231,7 +248,10 @@ const toggleStatus = async (post: Post) => {
     })
     post.is_active = newStatus
     message.success(newStatus ? t('my_notes.submission_published') : t('my_notes.submission_unpublished'))
-  } catch (error) {
+  } catch (error: any) {
+    if (error.response?.status === 404) {
+      return
+    }
     console.error(error)
     message.error(t('my_notes.action_failed'))
   }
@@ -247,7 +267,10 @@ const deletePost = async (post: Post) => {
     if (currentPost.value?.id === post.id) {
       detailVisible.value = false
     }
-  } catch (error) {
+  } catch (error: any) {
+    if (error.response?.status === 404) {
+      return
+    }
     console.error(error)
     message.error(t('my_notes.delete_failed'))
   }
@@ -390,7 +413,7 @@ onUnmounted(() => {
 
 <template>
   <div class="gallery-container text-slate-200">
-    <div class="columns-1 sm:columns-2 md:columns-3 lg:columns-4 gap-6 space-y-6">
+    <div class="columns-2 sm:columns-3 md:columns-4 lg:columns-5 gap-3 sm:gap-6 space-y-3 sm:space-y-6">
       <div
         v-for="post in posts"
         :key="post.id"
@@ -573,6 +596,10 @@ onUnmounted(() => {
                   <ThumbsDown :size="20" class="mr-2 transition-transform group-hover:scale-110" :class="currentPost.has_disliked ? 'fill-slate-400 text-slate-400' : 'text-slate-400 group-hover:text-slate-200'" />
                   <span class="font-medium" :class="currentPost.has_disliked ? 'text-slate-400' : 'text-slate-300'">{{ currentPost.dislikes_count }}</span>
                 </button>
+                <button @click="showCommentInput = true" class="flex-1 py-3 rounded-xl border border-slate-400 bg-slate-500/50 hover:bg-slate-500 transition-all flex items-center justify-center group">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mr-2 transition-transform group-hover:scale-110 text-slate-400 group-hover:text-blue-400"><path d="m3 21 1.9-5.7a8.5 8.5 0 1 1 3.8 3.8z"/></svg>
+                  <span class="font-medium text-slate-300">{{ currentPost.comments_count || 0 }}</span>
+                </button>
               </div>
 
               <!-- Management Row -->
@@ -596,6 +623,70 @@ onUnmounted(() => {
               </div>
             </div>
             
+
+            <!-- Comments Section -->
+            <div class="mt-6 flex flex-col min-h-[200px] lg:flex-1 lg:max-h-none lg:overflow-hidden border-t border-slate-700 lg:border-slate-400/30 pt-4">
+              <div class="flex items-center justify-between mb-4 shrink-0">
+                <h3 class="text-slate-200 font-medium flex items-center gap-2">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-message-circle"><path d="m3 21 1.9-5.7a8.5 8.5 0 1 1 3.8 3.8z"/></svg>
+                  {{ t('gallery.comments.section_title', { count: commentsTotal }) }}
+                </h3>
+              </div>
+              <div
+                :class="isMobile
+                  ? 'pr-0'
+                  : 'flex-1 overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-slate-600 scrollbar-track-transparent'"
+              >
+                <div v-if="commentsLoading && commentsPage === 1" class="py-8 text-center">
+                  <div class="inline-block w-6 h-6 border-2 border-cyan-500/30 border-t-cyan-500 rounded-full animate-spin"></div>
+                </div>
+                <div v-else-if="commentsError && comments.length === 0" class="py-8 text-center text-sm">
+                  <p class="text-rose-300">{{ commentsError }}</p>
+                  <button
+                    @click="currentPost && loadComments(currentPost.id, { page: 1, append: false })"
+                    class="mt-3 text-cyan-400 hover:text-cyan-300 transition-colors"
+                  >
+                    {{ t('gallery.comments.retry') }}
+                  </button>
+                </div>
+                <div v-else-if="comments.length === 0" class="py-8 text-center text-slate-500 text-sm">
+                  {{ t('gallery.comments.empty') }}
+                </div>
+                <div v-else class="space-y-4 pb-24 lg:pb-4">
+                  <div v-if="commentsError" class="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
+                    <span>{{ commentsError }}</span>
+                    <button
+                      @click="loadMoreComments"
+                      class="ml-3 text-cyan-300 hover:text-cyan-200 transition-colors"
+                    >
+                      {{ t('gallery.comments.retry') }}
+                    </button>
+                  </div>
+                  <div v-for="comment in comments" :key="comment.id" class="flex gap-3">
+                    <div class="w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center shrink-0 border border-slate-600">
+                      <span class="text-slate-300 text-xs font-medium">{{ comment.user.author_name.charAt(0).toUpperCase() }}</span>
+                    </div>
+                    <div class="flex-1 min-w-0">
+                      <div class="flex items-center gap-2 mb-1">
+                        <span class="text-sm font-medium text-slate-300 truncate">{{ comment.user.author_name }}</span>
+                        <span class="text-xs text-slate-500">{{ dayjs(comment.created_at).format('MM-DD HH:mm') }}</span>
+                      </div>
+                      <p class="text-sm text-slate-300 break-words whitespace-pre-wrap">{{ comment.content }}</p>
+                    </div>
+                  </div>
+                  <div v-if="commentsHasMore" class="pt-2 pb-4 text-center">
+                    <button 
+                      @click="loadMoreComments" 
+                      :disabled="commentsLoading"
+                      class="text-xs text-cyan-400 hover:text-cyan-300 transition-colors disabled:opacity-50"
+                    >
+                      {{ commentsLoading ? t('gallery.comments.loading_more') : t('gallery.comments.load_more') }}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
             <div class="hidden lg:flex space-x-2 mt-auto pt-4 border-t border-slate-700 lg:border-slate-400/30">
               <button
                 v-if="currentPost.prompt?.trim()"
@@ -653,6 +744,10 @@ onUnmounted(() => {
               <ThumbsDown :size="20" :class="{'fill-slate-400': currentPost.has_disliked}" />
               <span class="text-xs font-medium">{{ currentPost.dislikes_count }}</span>
             </button>
+            <button @click="showCommentInput = true" class="flex items-center gap-1.5 transition-all text-slate-300">
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-message-circle"><path d="m3 21 1.9-5.7a8.5 8.5 0 1 1 3.8 3.8z"/></svg>
+              <span class="text-xs font-medium">{{ currentPost.comments_count || 0 }}</span>
+            </button>
             <button v-if="currentPost.prompt?.trim()" @click="copyPrompt(currentPost)" class="flex items-center gap-1.5 transition-all text-slate-300 ml-2">
               <Copy :size="20" />
             </button>
@@ -668,6 +763,44 @@ onUnmounted(() => {
           </button>
         </div>
 
+      </div>
+    </a-modal>
+    <!-- Comment Input Modal -->
+    <a-modal
+      v-model:visible="showCommentInput"
+      :title="t('gallery.comments.modal_title')"
+      :footer="null"
+      :destroyOnClose="true"
+      :width="isMobile ? '95%' : 500"
+      :bodyStyle="{ padding: '24px' }"
+      class="comment-modal"
+    >
+      <div class="flex flex-col gap-4">
+        <textarea
+          v-model="newComment"
+          maxlength="500"
+          :placeholder="t('gallery.comments.placeholder')"
+          class="w-full h-32 p-3 rounded-xl bg-slate-800 border border-slate-600 text-slate-200 focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 outline-none resize-none"
+        ></textarea>
+        <div class="flex justify-between items-center">
+          <span class="text-xs text-slate-500">{{ newComment.length }}/500</span>
+          <div class="flex gap-3">
+            <button 
+              @click="showCommentInput = false"
+              class="px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-300 transition-colors text-sm font-medium"
+            >
+              {{ t('gallery.comments.cancel') }}
+            </button>
+            <button 
+              @click="submitComment"
+              :disabled="!newComment.trim() || submittingComment"
+              class="px-4 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 disabled:hover:bg-cyan-600 text-white transition-colors text-sm font-medium flex items-center"
+            >
+              <div v-if="submittingComment" class="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin mr-2"></div>
+              {{ t('gallery.comments.submit') }}
+            </button>
+          </div>
+        </div>
       </div>
     </a-modal>
   </div>
