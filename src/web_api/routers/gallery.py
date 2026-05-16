@@ -5,6 +5,7 @@ import re
 from typing import Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy import desc, select, update, func
 from sqlalchemy.orm import joinedload
 
@@ -580,6 +581,7 @@ async def create_gallery_comment(
     current_user: User = Depends(get_current_user),
 ):
     from src.services.redis_client import redis_client
+    unavailable_comment_error = "帖子已下架或已删除，无法发布评论"
 
     async with AsyncSessionLocal() as session:
         # 校验帖子
@@ -614,7 +616,7 @@ async def create_gallery_comment(
                 # 帖子在此期间已被下架或删除，回滚整个事务（包括 session.flush() 中已插入的评论）
                 await session.rollback()
                 await redis_client.delete_comment_lock(current_user.id)
-                raise HTTPException(status_code=404, detail="帖子已下架，无法发布评论")
+                raise HTTPException(status_code=404, detail=unavailable_comment_error)
 
             # 在 commit 前构造返回值对象
             response_data = GalleryCommentResponse(
@@ -631,6 +633,11 @@ async def create_gallery_comment(
             return response_data
         except HTTPException:
             raise
+        except IntegrityError:
+            # 并发删除帖子时，flush/commit 可能触发外键约束错误。
+            await session.rollback()
+            await redis_client.delete_comment_lock(current_user.id)
+            raise HTTPException(status_code=404, detail=unavailable_comment_error)
         except Exception:
             await session.rollback()
             await redis_client.delete_comment_lock(current_user.id)

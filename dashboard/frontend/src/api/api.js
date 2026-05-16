@@ -318,6 +318,16 @@ export const updateGalleryPost = async (postId, data) => {
   return response.data
 }
 
+export const fetchGalleryComments = async (params) => {
+  const response = await api.get('/api/gallery/comments', { params })
+  return response.data
+}
+
+export const updateGalleryComment = async (commentId, data) => {
+  const response = await api.put(`/api/gallery/comments/${commentId}`, data)
+  return response.data
+}
+
 export const deleteGalleryPost = async (postId) => {
   const response = await api.delete(`/api/gallery/${postId}`)
   return response.data

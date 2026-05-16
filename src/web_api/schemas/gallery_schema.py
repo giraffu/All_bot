@@ -1,6 +1,37 @@
-from typing import List, Optional
 from datetime import datetime
-from pydantic import BaseModel
+from typing import List, Optional
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+class CommentCreate(BaseModel):
+    content: str = Field(max_length=500, min_length=1)
+
+    @field_validator("content")
+    @classmethod
+    def strip_and_validate_content(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("评论内容不能为空")
+        return stripped
+
+class CommentUserResponse(BaseModel):
+    id: int
+    author_name: str
+
+class GalleryCommentResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    content: str
+    created_at: datetime
+    user: CommentUserResponse
+
+class PaginatedCommentResponse(BaseModel):
+    items: List[GalleryCommentResponse]
+    total: int
+    page: int
+    size: int
+    pages: int
 
 class GallerySubmitRequest(BaseModel):
     width: Optional[int] = None
@@ -19,6 +50,7 @@ class GalleryPostResponse(BaseModel):
     likes_count: int
     dislikes_count: int
     applied_count: int
+    comments_count: int = 0
     thumbnail_url: str
     media_url: str
     created_at: datetime

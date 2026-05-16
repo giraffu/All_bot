@@ -2,12 +2,13 @@ import logging
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel
-from sqlalchemy import select
+from pydantic import BaseModel, Field
+from sqlalchemy import desc, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import joinedload
 
 from src.database.core import get_db
-from src.database.models import GalleryPost
+from src.database.models import GalleryComment, GalleryPost
 from src.services.storage import storage
 
 router = APIRouter(prefix="/api/gallery", tags=["gallery"])
@@ -16,9 +17,10 @@ logger = logging.getLogger("dashboard.gallery")
 
 class GalleryPostUpdate(BaseModel):
     is_active: Optional[bool] = None
-    likes_count: Optional[int] = None
-    dislikes_count: Optional[int] = None
-    applied_count: Optional[int] = None
+    likes_count: Optional[int] = Field(default=None, ge=0)
+    dislikes_count: Optional[int] = Field(default=None, ge=0)
+    applied_count: Optional[int] = Field(default=None, ge=0)
+    comments_count: Optional[int] = Field(default=None, ge=0)
     tags: Optional[str] = None
 
 
@@ -81,6 +83,7 @@ async def get_all_gallery_posts(
                     "likes_count": p.likes_count,
                     "dislikes_count": p.dislikes_count,
                     "applied_count": p.applied_count,
+                    "comments_count": p.comments_count,
                     "is_active": p.is_active,
                     "created_at": p.created_at.isoformat() if p.created_at else None,
                     "media_url": media_url,
@@ -99,7 +102,7 @@ async def get_all_gallery_posts(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.put("/{post_id}")
+@router.put("/{post_id:int}")
 async def update_gallery_post(
     post_id: int, update_data: GalleryPostUpdate, db: AsyncSession = Depends(get_db)
 ):
@@ -114,11 +117,13 @@ async def update_gallery_post(
         if update_data.is_active is not None:
             post.is_active = update_data.is_active
         if update_data.likes_count is not None:
-            post.likes_count = update_data.likes_count
+            post.likes_count = max(update_data.likes_count, 0)
         if update_data.dislikes_count is not None:
-            post.dislikes_count = update_data.dislikes_count
+            post.dislikes_count = max(update_data.dislikes_count, 0)
         if update_data.applied_count is not None:
-            post.applied_count = update_data.applied_count
+            post.applied_count = max(update_data.applied_count, 0)
+        if update_data.comments_count is not None:
+            post.comments_count = max(update_data.comments_count, 0)
         if update_data.tags is not None:
             post.tags = update_data.tags
 
@@ -146,4 +151,122 @@ async def delete_gallery_post(post_id: int, db: AsyncSession = Depends(get_db)):
         return {"success": True, "message": "Post deleted successfully"}
     except Exception as e:
         logger.error(f"Failed to delete gallery post: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class CommentUpdate(BaseModel):
+    is_active: bool
+
+
+@router.get("/comments")
+async def get_gallery_comments(
+    post_id: int = Query(..., ge=1),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        post = await db.get(GalleryPost, post_id)
+        if not post:
+            raise HTTPException(status_code=404, detail="Post not found")
+
+        total_stmt = select(func.count(GalleryComment.id)).where(
+            GalleryComment.post_id == post_id
+        )
+        total = await db.scalar(total_stmt) or 0
+        active_total_stmt = select(func.count(GalleryComment.id)).where(
+            GalleryComment.post_id == post_id,
+            GalleryComment.is_active.is_(True),
+        )
+        active_total = await db.scalar(active_total_stmt) or 0
+
+        stmt = (
+            select(GalleryComment)
+            .options(joinedload(GalleryComment.user))
+            .where(GalleryComment.post_id == post_id)
+            .order_by(desc(GalleryComment.created_at), desc(GalleryComment.id))
+            .offset((page - 1) * page_size)
+            .limit(page_size)
+        )
+        result = await db.execute(stmt)
+        comments = result.scalars().all()
+
+        return {
+            "total": total,
+            "active_total": active_total,
+            "page": page,
+            "page_size": page_size,
+            "items": [
+                {
+                    "id": comment.id,
+                    "post_id": comment.post_id,
+                    "user_id": comment.user_id,
+                    "author_name": (
+                        comment.user.full_name
+                        or comment.user.username
+                        or f"User {comment.user_id}"
+                    )
+                    if comment.user
+                    else f"User {comment.user_id}",
+                    "content": comment.content,
+                    "is_active": comment.is_active,
+                    "created_at": (
+                        comment.created_at.isoformat() if comment.created_at else None
+                    ),
+                }
+                for comment in comments
+            ],
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get gallery comments: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.put("/comments/{comment_id}")
+async def update_gallery_comment(
+    comment_id: int, update_data: CommentUpdate, db: AsyncSession = Depends(get_db)
+):
+    try:
+        comment = await db.get(GalleryComment, comment_id)
+        if not comment:
+            raise HTTPException(status_code=404, detail="Comment not found")
+
+        update_comment_stmt = (
+            update(GalleryComment)
+            .where(
+                GalleryComment.id == comment_id,
+                GalleryComment.is_active.is_not(update_data.is_active),
+            )
+            .values(is_active=update_data.is_active)
+            .returning(GalleryComment.post_id)
+        )
+        post_id = (await db.execute(update_comment_stmt)).scalar_one_or_none()
+        if post_id is None:
+            return {"success": True, "message": "No change needed"}
+
+        if update_data.is_active:
+            stmt = (
+                update(GalleryPost)
+                .where(GalleryPost.id == post_id)
+                .values(comments_count=GalleryPost.comments_count + 1)
+            )
+        else:
+            stmt = (
+                update(GalleryPost)
+                .where(GalleryPost.id == post_id)
+                .values(
+                    comments_count=func.greatest(GalleryPost.comments_count - 1, 0)
+                )
+            )
+
+        await db.execute(stmt)
+        await db.commit()
+        return {"success": True, "message": "Comment updated successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        await db.rollback()
+        logger.error(f"Failed to update gallery comment: {e}")
         raise HTTPException(status_code=500, detail=str(e))

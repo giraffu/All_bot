@@ -165,6 +165,22 @@
       "tags": "Elements (TAGS)",
       "apply_btn": "1-Click Apply Template",
       "apply_hint": "The system will automatically configure the best parameters, you just need to upload a reference image"
+    },
+    "comments": {
+      "section_title": "Comments ({count})",
+      "empty": "No comments yet, be the first to reply.",
+      "load_more": "Load More",
+      "loading_more": "Loading...",
+      "retry": "Retry",
+      "modal_title": "Post Comment",
+      "placeholder": "Write your comment...",
+      "cancel": "Cancel",
+      "submit": "Send",
+      "submit_success": "Comment posted successfully",
+      "submit_failed": "Failed to post comment",
+      "load_failed": "Failed to load comments",
+      "rate_limit": "You're posting too fast. Please try again later.",
+      "post_unavailable": "This post is unavailable."
     }
   },
   "lab": {

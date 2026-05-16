@@ -256,6 +256,7 @@ class GalleryPost(Base):
     likes_count = Column(Integer, default=0)
     dislikes_count = Column(Integer, default=0)
     applied_count = Column(Integer, default=0)
+    comments_count = Column(Integer, default=0, server_default="0", nullable=False)
 
     # Telegram File ID 缓存（用于秒发零流量）
     telegram_file_id = Column(String(255), nullable=True)
@@ -264,6 +265,7 @@ class GalleryPost(Base):
     created_at = Column(DateTime, default=datetime.now)
 
     user = relationship("User", backref="gallery_posts")
+    comments = relationship("GalleryComment", back_populates="post", cascade="all, delete-orphan", passive_deletes=True)
     histories = relationship(
         "History",
         primaryjoin="foreign(GalleryPost.task_id) == History.task_id",
@@ -288,3 +290,26 @@ class UserInteraction(Base):
 
     user = relationship("User", backref="interactions")
     post = relationship("GalleryPost", backref="interactions")
+
+
+class GalleryComment(Base):
+    __tablename__ = "gallery_comments"
+    __table_args__ = (
+        Index("ix_gallery_comments_post_created_at", "post_id", "created_at"),
+        Index(
+            "ix_gallery_comments_active_post_created_at",
+            "post_id",
+            "created_at",
+            postgresql_where=text("is_active = true"),
+        ),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    post_id = Column(Integer, ForeignKey("gallery_posts.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(BigInteger, ForeignKey("users.id"), index=True, nullable=False)
+    content = Column(String(500), nullable=False)  # 限制评论长度
+    is_active = Column(Boolean, default=True, server_default=text("true"), nullable=False)  # 软删除与审核控制
+    created_at = Column(DateTime, default=datetime.now, server_default=func.now(), nullable=False)
+
+    user = relationship("User")
+    post = relationship("GalleryPost", back_populates="comments")

@@ -127,6 +127,38 @@ class RedisClient:
             )
             return True  # 容灾：如果Redis报错，放行
 
+    async def get_gallery_submit_count(self, user_id: int) -> int:
+        from datetime import datetime
+
+        today = datetime.now().strftime("%Y-%m-%d")
+        key = f"{REDIS_PREFIX}gallery_submit_count:{user_id}:{today}"
+        try:
+            count = await self.redis.get(key)
+            return int(count) if count else 0
+        except Exception as e:
+            logger.error(
+                f"Failed to get gallery submit count for user {user_id}: {e}"
+            )
+            return 0
+
+    async def set_comment_lock(self, user_id: int, ttl: int = 5) -> bool:
+        """限制用户的发评频率防范脚本水军"""
+        key = f"{REDIS_PREFIX}comment_lock:{user_id}"
+        try:
+            # nx=True 时若键已存在会返回 None，必须显式转换为 bool
+            return bool(await self.redis.set(key, "1", ex=ttl, nx=True))
+        except Exception as e:
+            logger.error(f"Failed to set comment lock for user {user_id}: {e}")
+            return True  # 容灾：如果Redis报错，放行
+
+    async def delete_comment_lock(self, user_id: int) -> None:
+        """删除用户评论频率锁，避免写库失败后残留限流"""
+        key = f"{REDIS_PREFIX}comment_lock:{user_id}"
+        try:
+            await self.redis.delete(key)
+        except Exception as e:
+            logger.error(f"Failed to delete comment lock for user {user_id}: {e}")
+
     async def get_all_user_concurrencies(self) -> Dict[int, int]:
         """获取所有用户的并发锁状态"""
         pattern = f"{REDIS_PREFIX}user_concurrency:*"

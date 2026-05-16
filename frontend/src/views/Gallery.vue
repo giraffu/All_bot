@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, computed } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import { useI18n } from 'vue-i18n'
-import { Heart, ThumbsDown, Wand2, Play, Image as ImageIcon, Video, Flame, Clock, Compass, Copy, ChevronLeft, ChevronRight } from 'lucide-vue-next'
+import { Heart, ThumbsDown, Wand2, Play, Image as ImageIcon, Video, Flame, Clock, Compass, ChevronLeft, ChevronRight, MessageCircle } from 'lucide-vue-next'
 import { Waterfall } from 'vue-waterfall-plugin-next'
 import 'vue-waterfall-plugin-next/dist/style.css'
 import api from '@/api'
@@ -22,6 +22,7 @@ interface Post {
   likes_count: number
   dislikes_count: number
   applied_count: number
+  comments_count: number
   thumbnail_url: string
   media_url: string
   created_at: string
@@ -30,6 +31,18 @@ interface Post {
   author_name?: string
   src?: string
   imgLoaded?: boolean
+}
+
+interface CommentUser {
+  id: number
+  author_name: string
+}
+
+interface GalleryComment {
+  id: number
+  content: string
+  created_at: string
+  user: CommentUser
 }
 
 const router = useRouter()
@@ -68,6 +81,160 @@ const currentLoraModels = computed(() => {
 
 const detailVisible = ref(false)
 const currentPost = ref<Post | null>(null)
+const comments = ref<GalleryComment[]>([])
+const commentsLoading = ref(false)
+const commentsError = ref('')
+const commentsPage = ref(1)
+const commentsTotal = ref(0)
+const commentsHasMore = computed(() => comments.value.length < commentsTotal.value)
+const showCommentInput = ref(false)
+const newComment = ref('')
+const submittingComment = ref(false)
+let currentCommentsRequestId = 0
+
+const invalidateCommentsRequests = () => {
+  currentCommentsRequestId++
+  commentsLoading.value = false
+}
+
+const mergeComments = (items: GalleryComment[], append: boolean) => {
+  const merged = append ? [...comments.value, ...items] : items
+  const seen = new Set<number>()
+  return merged.filter((item) => {
+    if (seen.has(item.id)) return false
+    seen.add(item.id)
+    return true
+  })
+}
+
+const getCommentErrorMessage = (error: any, fallbackKey: string) => {
+  const status = error?.response?.status
+  if (status === 429) return t('gallery.comments.rate_limit')
+  if (status === 404) return t('gallery.comments.post_unavailable')
+  return t(fallbackKey)
+}
+
+const resetCommentComposer = () => {
+  showCommentInput.value = false
+  newComment.value = ''
+}
+
+const syncPostCommentsCount = (postId: number, nextCount: number) => {
+  if (currentPost.value?.id === postId) {
+    currentPost.value.comments_count = nextCount
+  }
+
+  const postInList = posts.value.find(post => post.id === postId)
+  if (postInList && postInList !== currentPost.value) {
+    postInList.comments_count = nextCount
+  }
+}
+
+watch(currentPost, (newPost) => {
+  resetCommentComposer()
+  if (newPost) {
+    invalidateCommentsRequests()
+    commentsError.value = ''
+    comments.value = []
+    commentsPage.value = 1
+    commentsTotal.value = 0
+    loadComments(newPost.id, { page: 1, append: false })
+  } else {
+    invalidateCommentsRequests()
+    commentsError.value = ''
+    comments.value = []
+    commentsPage.value = 1
+    commentsTotal.value = 0
+  }
+})
+
+watch(detailVisible, (visible) => {
+  if (!visible) {
+    resetCommentComposer()
+    currentPost.value = null
+  }
+})
+
+const loadComments = async (
+  postId: number,
+  options: { page?: number; append?: boolean } = {}
+) => {
+  const pageToLoad = options.page ?? 1
+  const append = options.append ?? false
+  const requestId = ++currentCommentsRequestId
+  commentsError.value = ''
+  commentsLoading.value = true
+
+  try {
+    const res = await api.get(`/gallery/posts/${postId}/comments`, {
+      params: { page: pageToLoad, size: 20 }
+    })
+
+    if (requestId !== currentCommentsRequestId || currentPost.value?.id !== postId) {
+      return false
+    }
+
+    commentsPage.value = res.data.page
+    commentsTotal.value = res.data.total
+    comments.value = mergeComments(res.data.items, append)
+    return true
+  } catch (error) {
+    console.error('Failed to load comments:', error)
+    if (requestId === currentCommentsRequestId) {
+      commentsError.value = getCommentErrorMessage(error, 'gallery.comments.load_failed')
+    }
+    return false
+  } finally {
+    if (requestId === currentCommentsRequestId) {
+      commentsLoading.value = false
+    }
+  }
+}
+
+const loadMoreComments = async () => {
+  if (commentsHasMore.value && !commentsLoading.value && currentPost.value) {
+    const nextPage = commentsPage.value + 1
+    await loadComments(currentPost.value.id, { page: nextPage, append: true })
+  }
+}
+
+const submitComment = async () => {
+  if (!newComment.value.trim() || !currentPost.value) return
+  const submitPostId = currentPost.value.id
+  const trimmedContent = newComment.value.trim()
+  submittingComment.value = true
+  try {
+    const res = await api.post(`/gallery/posts/${submitPostId}/comments`, {
+      content: trimmedContent
+    })
+
+    const postInList = posts.value.find(post => post.id === submitPostId)
+    const baseCount = currentPost.value?.id === submitPostId
+      ? (currentPost.value.comments_count || 0)
+      : (postInList?.comments_count || 0)
+    syncPostCommentsCount(submitPostId, baseCount + 1)
+
+    if (currentPost.value?.id === submitPostId) {
+      // Invalidate older list requests so a stale response cannot overwrite the optimistic item.
+      invalidateCommentsRequests()
+      commentsError.value = ''
+      commentsPage.value = 1
+      comments.value = mergeComments([res.data, ...comments.value], false)
+      commentsTotal.value++
+      void loadComments(submitPostId, { page: 1, append: false })
+
+      newComment.value = ''
+      showCommentInput.value = false
+    }
+
+    message.success(t('gallery.comments.submit_success'))
+  } catch (error: any) {
+    message.error(getCommentErrorMessage(error, 'gallery.comments.submit_failed'))
+  } finally {
+    submittingComment.value = false
+  }
+}
+
 const applying = ref(false)
 const interactingPosts = ref<Record<number, boolean>>({})
 
@@ -118,7 +285,7 @@ const isVideoFile = (path: string, mediaType?: string) => {
          lowerPath.endsWith('.avi')
 }
 
-const getFileUrl = (path: string, postId?: number, isThumbnail: boolean = false) => {
+const getFileUrl = (path: string, postId?: number) => {
   if (!path) return ''
   let url = path
   
@@ -201,7 +368,6 @@ const loadPosts = async (reset = false) => {
     
     if (requestId !== currentRequestId) return
     
-    const transparentPixel = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'
     const newItems = res.data.items.map((p: Post) => {
       // 兼容后端还没重启的情况：如果后端下发的 thumbnail_url 还是原视频 (.mp4)，前端自己算出 _thumb.jpg
       let thumbUrl = p.thumbnail_url
@@ -217,7 +383,7 @@ const loadPosts = async (reset = false) => {
         thumbUrl = `${basePath}_thumb.webp`
       }
       
-      const src = getFileUrl(thumbUrl, p.id, true)
+      const src = getFileUrl(thumbUrl, p.id)
       return { ...p, src }
     })
     
@@ -377,7 +543,7 @@ const handleImageError = (e: Event, post: Post) => {
   // 但注意：如果原图是视频，绝不能让 img 去加载 .mp4
   if (!img.dataset.fallbackAttempted && post.media_url && !isVideoFile(post.media_url, post.media_type)) {
     img.dataset.fallbackAttempted = 'true'
-    img.src = post.media_url.includes('X-Amz-Signature') ? post.media_url : getFileUrl(post.media_url, post.id, false)
+    img.src = post.media_url.includes('X-Amz-Signature') ? post.media_url : getFileUrl(post.media_url, post.id)
     img.style.opacity = '1'
   } else {
     // 如果原图也加载失败，或者是视频（视频封面还没生成），则变暗显示破图图标/占位图
@@ -513,7 +679,7 @@ onUnmounted(() => {
             
             <LazyVideo 
               v-show="isVideoFile(post.media_url, post.media_type)" 
-              :src="getFileUrl(post.media_url, post.id, false)" 
+              :src="getFileUrl(post.media_url, post.id)" 
               :poster="post.src"
               className="w-full object-cover absolute inset-0 h-full"
             />
@@ -552,6 +718,10 @@ onUnmounted(() => {
             <div class="flex items-center text-slate-300 hover:text-slate-100 transition-colors" @click.stop="handleInteract(post, 'dislike')">
               <ThumbsDown :size="14" class="mr-1" :class="{'fill-slate-400 text-slate-400': post.has_disliked}" />
               <span class="text-xs font-medium">{{ post.dislikes_count }}</span>
+            </div>
+            <div class="flex items-center text-slate-300 hover:text-blue-400 transition-colors" @click.stop="openDetail(post)">
+              <MessageCircle :size="14" class="mr-1" />
+              <span class="text-xs font-medium">{{ post.comments_count }}</span>
             </div>
           </div>
           <div class="flex items-center text-indigo-300">
@@ -606,8 +776,8 @@ onUnmounted(() => {
         <!-- Media Area -->
         <div class="w-full lg:w-2/3 bg-black flex items-center justify-center relative group/media">
           <template v-if="currentPost.media_url">
-            <img v-if="!isVideoFile(currentPost.media_url, currentPost.media_type)" :src="getFileUrl(currentPost.media_url, currentPost.id, false)" class="w-full h-auto max-h-[65vh] object-contain lg:max-w-full lg:max-h-[80vh]" />
-            <video v-else :src="getFileUrl(currentPost.media_url, currentPost.id, false)" class="w-full h-auto max-h-[65vh] object-contain lg:max-w-full lg:max-h-[80vh]" controls autoplay loop playsinline></video>
+            <img v-if="!isVideoFile(currentPost.media_url, currentPost.media_type)" :src="getFileUrl(currentPost.media_url, currentPost.id)" class="w-full h-auto max-h-[65vh] object-contain lg:max-w-full lg:max-h-[80vh]" />
+            <video v-else :src="getFileUrl(currentPost.media_url, currentPost.id)" class="w-full h-auto max-h-[65vh] object-contain lg:max-w-full lg:max-h-[80vh]" controls autoplay loop playsinline></video>
           </template>
           
           <!-- Navigation Arrows -->
@@ -652,7 +822,7 @@ onUnmounted(() => {
             </div>
             
             <!-- Desktop Interactions (Hidden on Mobile) -->
-            <div class="hidden lg:flex space-x-4 mb-auto pt-4">
+            <div class="hidden lg:flex space-x-2 mb-4 pt-4">
               <button @click="handleInteract(currentPost, 'like')" class="flex-1 py-3 rounded-xl border border-slate-400 bg-slate-500/50 hover:bg-slate-500 transition-all flex items-center justify-center group">
                 <Heart :size="20" class="mr-2 transition-transform group-hover:scale-110" :class="currentPost.has_liked ? 'fill-pink-500 text-pink-500' : 'text-slate-400 group-hover:text-pink-400'" />
                 <span class="font-medium" :class="currentPost.has_liked ? 'text-pink-400' : 'text-slate-300'">{{ currentPost.likes_count }}</span>
@@ -660,6 +830,10 @@ onUnmounted(() => {
               <button @click="handleInteract(currentPost, 'dislike')" class="flex-1 py-3 rounded-xl border border-slate-400 bg-slate-500/50 hover:bg-slate-500 transition-all flex items-center justify-center group">
                 <ThumbsDown :size="20" class="mr-2 transition-transform group-hover:scale-110" :class="currentPost.has_disliked ? 'fill-slate-400 text-slate-400' : 'text-slate-400 group-hover:text-slate-200'" />
                 <span class="font-medium" :class="currentPost.has_disliked ? 'text-slate-400' : 'text-slate-300'">{{ currentPost.dislikes_count }}</span>
+              </button>
+              <button @click="showCommentInput = true" class="flex-1 py-3 rounded-xl border border-slate-400 bg-slate-500/50 hover:bg-slate-500 transition-all flex items-center justify-center group">
+                <MessageCircle :size="20" class="mr-2 transition-transform group-hover:scale-110 text-slate-400 group-hover:text-blue-400" />
+                <span class="font-medium text-slate-300">{{ currentPost.comments_count }}</span>
               </button>
             </div>
             
@@ -677,6 +851,69 @@ onUnmounted(() => {
               </button>
               <p class="text-center text-xs text-slate-500 mt-3">{{ $t('gallery.modal.apply_hint') }}</p>
             </div>
+
+            <!-- Comments Section -->
+            <div class="mt-6 flex flex-col min-h-[200px] lg:flex-1 lg:max-h-none lg:overflow-hidden">
+              <div class="flex items-center justify-between mb-4 shrink-0">
+                <h3 class="text-slate-200 font-medium flex items-center gap-2">
+                  <MessageCircle :size="18" />
+                  {{ t('gallery.comments.section_title', { count: commentsTotal }) }}
+                </h3>
+              </div>
+              <div
+                :class="isMobile
+                  ? 'pr-0'
+                  : 'flex-1 overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-slate-600 scrollbar-track-transparent'"
+              >
+                <div v-if="commentsLoading && commentsPage === 1" class="py-8 text-center">
+                  <div class="inline-block w-6 h-6 border-2 border-cyan-500/30 border-t-cyan-500 rounded-full animate-spin"></div>
+                </div>
+                <div v-else-if="commentsError && comments.length === 0" class="py-8 text-center text-sm">
+                  <p class="text-rose-300">{{ commentsError }}</p>
+                  <button
+                    @click="currentPost && loadComments(currentPost.id, { page: 1, append: false })"
+                    class="mt-3 text-cyan-400 hover:text-cyan-300 transition-colors"
+                  >
+                    {{ t('gallery.comments.retry') }}
+                  </button>
+                </div>
+                <div v-else-if="comments.length === 0" class="py-8 text-center text-slate-500 text-sm">
+                  {{ t('gallery.comments.empty') }}
+                </div>
+                <div v-else class="space-y-4 pb-24 lg:pb-4">
+                  <div v-if="commentsError" class="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
+                    <span>{{ commentsError }}</span>
+                    <button
+                      @click="loadMoreComments"
+                      class="ml-3 text-cyan-300 hover:text-cyan-200 transition-colors"
+                    >
+                      {{ t('gallery.comments.retry') }}
+                    </button>
+                  </div>
+                  <div v-for="comment in comments" :key="comment.id" class="flex gap-3">
+                    <div class="w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center shrink-0 border border-slate-600">
+                      <span class="text-slate-300 text-xs font-medium">{{ comment.user.author_name.charAt(0).toUpperCase() }}</span>
+                    </div>
+                    <div class="flex-1 min-w-0">
+                      <div class="flex items-center gap-2 mb-1">
+                        <span class="text-sm font-medium text-slate-300 truncate">{{ comment.user.author_name }}</span>
+                        <span class="text-xs text-slate-500">{{ dayjs(comment.created_at).format('MM-DD HH:mm') }}</span>
+                      </div>
+                      <p class="text-sm text-slate-300 break-words whitespace-pre-wrap">{{ comment.content }}</p>
+                    </div>
+                  </div>
+                  <div v-if="commentsHasMore" class="pt-2 pb-4 text-center">
+                    <button 
+                      @click="loadMoreComments" 
+                      :disabled="commentsLoading"
+                      class="text-xs text-cyan-400 hover:text-cyan-300 transition-colors disabled:opacity-50"
+                    >
+                      {{ commentsLoading ? t('gallery.comments.loading_more') : t('gallery.comments.load_more') }}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -691,6 +928,10 @@ onUnmounted(() => {
               <ThumbsDown :size="22" :class="{'fill-slate-400': currentPost.has_disliked}" />
               <span class="text-sm font-medium">{{ currentPost.dislikes_count }}</span>
             </button>
+            <button @click="showCommentInput = true" class="flex items-center gap-1.5 transition-all text-slate-300">
+              <MessageCircle :size="22" />
+              <span class="text-sm font-medium">{{ currentPost.comments_count }}</span>
+            </button>
           </div>
           <button 
             @click="handleApply" 
@@ -703,6 +944,45 @@ onUnmounted(() => {
           </button>
         </div>
 
+      </div>
+    </a-modal>
+
+    <!-- Comment Input Modal -->
+    <a-modal
+      v-model:visible="showCommentInput"
+      :title="t('gallery.comments.modal_title')"
+      :footer="null"
+      :destroyOnClose="true"
+      :width="isMobile ? '95%' : 500"
+      :bodyStyle="{ padding: '24px' }"
+      class="comment-modal"
+    >
+      <div class="flex flex-col gap-4">
+        <textarea
+          v-model="newComment"
+          maxlength="500"
+          :placeholder="t('gallery.comments.placeholder')"
+          class="w-full h-32 p-3 rounded-xl bg-slate-800 border border-slate-600 text-slate-200 focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 outline-none resize-none"
+        ></textarea>
+        <div class="flex justify-between items-center">
+          <span class="text-xs text-slate-500">{{ newComment.length }}/500</span>
+          <div class="flex gap-3">
+            <button 
+              @click="showCommentInput = false"
+              class="px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-300 transition-colors text-sm font-medium"
+            >
+              {{ t('gallery.comments.cancel') }}
+            </button>
+            <button 
+              @click="submitComment"
+              :disabled="!newComment.trim() || submittingComment"
+              class="px-4 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 disabled:hover:bg-cyan-600 text-white transition-colors text-sm font-medium flex items-center"
+            >
+              <div v-if="submittingComment" class="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin mr-2"></div>
+              {{ t('gallery.comments.submit') }}
+            </button>
+          </div>
+        </div>
       </div>
     </a-modal>
   </div>

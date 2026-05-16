@@ -165,6 +165,22 @@
       "tags": "包含元素 (TAGS)",
       "apply_btn": "一键应用此模板",
       "apply_hint": "系统将自动为您配置最佳参数，您只需上传参考图即可"
+    },
+    "comments": {
+      "section_title": "评论 ({count})",
+      "empty": "暂无评论，来抢沙发吧~",
+      "load_more": "加载更多",
+      "loading_more": "加载中...",
+      "retry": "重试",
+      "modal_title": "发表评论",
+      "placeholder": "写下你的评论...",
+      "cancel": "取消",
+      "submit": "发送",
+      "submit_success": "评论发布成功",
+      "submit_failed": "评论发布失败",
+      "load_failed": "加载评论失败",
+      "rate_limit": "操作过于频繁，请稍后再试",
+      "post_unavailable": "帖子不存在或已下架"
     }
   },
   "lab": {

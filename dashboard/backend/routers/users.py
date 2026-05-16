@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import case, delete, desc, func, select
+from sqlalchemy import case, delete, desc, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -18,11 +18,13 @@ from dashboard.backend.schemas import (
 from src.database.core import get_db
 from src.database.models import (
     CheckinHistory,
+    GalleryComment,
     History,
     MembershipPlan,
     Order,
     Referral,
     TemplateContribution,
+    GalleryPost,
     User,
     UserLog,
 )
@@ -198,6 +200,32 @@ async def delete_user(user_id: int, db: AsyncSession = Depends(get_db)):
         await db.execute(
             delete(TemplateContribution).where(TemplateContribution.user_id == user_id)
         )
+        comment_count_rows = (
+            await db.execute(
+                select(
+                    GalleryComment.post_id,
+                    func.count(GalleryComment.id).label("deleted_count"),
+                )
+                .where(
+                    GalleryComment.user_id == user_id,
+                    GalleryComment.is_active.is_(True),
+                )
+                .group_by(GalleryComment.post_id)
+            )
+        ).all()
+        await db.execute(delete(GalleryComment).where(GalleryComment.user_id == user_id))
+        for post_id, deleted_count in comment_count_rows:
+            if not post_id or not deleted_count:
+                continue
+            await db.execute(
+                update(GalleryPost)
+                .where(GalleryPost.id == post_id)
+                .values(
+                    comments_count=func.greatest(
+                        GalleryPost.comments_count - deleted_count, 0
+                    )
+                )
+            )
         await db.delete(user)
 
         await db.commit()
