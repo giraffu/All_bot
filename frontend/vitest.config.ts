@@ -6,11 +6,7 @@ export default mergeConfig(
   defineConfig({
     test: {
       include: ['src/**/*.test.ts'],
-      exclude: [
-        'node_modules/**',
-        'src/stores/taskResultState.test.ts',
-        'src/stores/tasksRuntime.test.ts'
-      ]
+      exclude: ['node_modules/**']
     }
   })
 )

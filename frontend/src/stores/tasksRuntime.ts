@@ -12,6 +12,7 @@ export interface RuntimeTaskLike {
   resultUrl?: string
   error?: string
   awaitingResult?: boolean
+  updatedAt?: number
 }
 
 export interface RuntimeStorageLike {
@@ -34,6 +35,57 @@ export interface RestoreTasksDeps<T extends RuntimeTaskLike> {
   onParseError?: (error: unknown) => void
 }
 
+export interface PersistableTaskLike extends RuntimeTaskLike {
+  eventSource?: unknown
+}
+
+export const STALE_ACTIVE_TASK_TTL_MS = 24 * 60 * 60 * 1000
+
+export function touchTaskActivity<T extends RuntimeTaskLike>(
+  task: T,
+  now = Date.now()
+): T {
+  task.updatedAt = now
+  return task
+}
+
+function hydrateStoredTask<T extends RuntimeTaskLike>(task: T, now: number): T {
+  if (typeof task.updatedAt === 'number') {
+    return task
+  }
+
+  return {
+    ...task,
+    updatedAt: now
+  }
+}
+
+export function serializeTasksForStorage<T extends PersistableTaskLike>(
+  tasks: T[],
+  now = Date.now()
+): Array<Omit<T, 'eventSource'> & { updatedAt: number }> {
+  return tasks.map(({ eventSource: _eventSource, ...task }) => ({
+    ...task,
+    updatedAt: typeof task.updatedAt === 'number' ? task.updatedAt : now
+  }))
+}
+
+function isStaleActiveTask(task: RuntimeTaskLike, now: number): boolean {
+  if (task.awaitingResult) {
+    return false
+  }
+
+  if (task.status !== 'pending' && task.status !== 'running') {
+    return false
+  }
+
+  if (typeof task.updatedAt !== 'number') {
+    return false
+  }
+
+  return now - task.updatedAt > STALE_ACTIVE_TASK_TTL_MS
+}
+
 export async function pollTaskResult<T extends RuntimeTaskLike>(
   task: T,
   activeTasks: T[],
@@ -51,7 +103,7 @@ export async function pollTaskResult<T extends RuntimeTaskLike>(
       retryCount,
       10
     )
-    Object.assign(currentTask, transition.task)
+    Object.assign(currentTask, touchTaskActivity(transition.task))
 
     if (transition.type === 'resolved') {
       deps.onSuccess?.(currentTask)
@@ -79,7 +131,7 @@ export async function pollTaskResult<T extends RuntimeTaskLike>(
       retryCount,
       10
     )
-    Object.assign(currentTask, transition.task)
+    Object.assign(currentTask, touchTaskActivity(transition.task))
 
     if (transition.type === 'forbidden') {
       deps.onForbidden?.(currentTask)
@@ -105,13 +157,16 @@ export async function pollTaskResult<T extends RuntimeTaskLike>(
 export function restoreTasksFromStorage<T extends RuntimeTaskLike>(
   storage: RuntimeStorageLike,
   activeTasks: T[],
-  deps: RestoreTasksDeps<T>
+  deps: RestoreTasksDeps<T>,
+  now = Date.now()
 ): void {
   const storedTasks = storage.getItem('active_tasks')
   if (!storedTasks) return
 
   try {
-    const parsed = JSON.parse(storedTasks) as T[]
+    const parsed = (JSON.parse(storedTasks) as T[])
+      .map(task => hydrateStoredTask(task, now))
+      .filter(task => !isStaleActiveTask(task, now))
     activeTasks.splice(0, activeTasks.length, ...parsed)
 
     activeTasks.forEach(task => {

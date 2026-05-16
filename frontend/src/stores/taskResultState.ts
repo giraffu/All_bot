@@ -63,11 +63,7 @@ export function decideTaskResultFromError(
 }
 
 export function shouldResumeTaskListening(task: ResumableTaskLike): boolean {
-  return (
-    task.status === 'pending' ||
-    task.status === 'running' ||
-    (task.status === 'success' && !task.resultUrl)
-  )
+  return task.status === 'pending' || task.status === 'running'
 }
 
 export function restorePersistedTask<T extends RecoverableTaskLike>(

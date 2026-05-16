@@ -1,5 +1,5 @@
-import test from 'node:test'
 import assert from 'node:assert/strict'
+import { test } from 'vitest'
 
 import {
   applyTaskResultResponseToTask,
@@ -38,10 +38,18 @@ test('decideTaskResultFromError keeps retrying transient not-ready responses', (
   assert.deepEqual(decision, { type: 'retry' })
 })
 
-test('shouldResumeTaskListening restores tasks stuck after sse success without a result url', () => {
+test('shouldResumeTaskListening only resumes pending or running tasks', () => {
   assert.equal(
     shouldResumeTaskListening({
-      status: 'success',
+      status: 'pending',
+      resultUrl: undefined
+    }),
+    true
+  )
+
+  assert.equal(
+    shouldResumeTaskListening({
+      status: 'running',
       resultUrl: undefined
     }),
     true
@@ -50,10 +58,27 @@ test('shouldResumeTaskListening restores tasks stuck after sse success without a
   assert.equal(
     shouldResumeTaskListening({
       status: 'success',
-      resultUrl: 'https://cdn.example/result.png'
+      resultUrl: undefined
     }),
     false
   )
+})
+
+test('restorePersistedTask routes success without result url to result polling before SSE restore checks', () => {
+  const restoration = restorePersistedTask({
+    status: 'success',
+    progress: 100,
+    awaitingResult: false,
+    resultUrl: undefined
+  })
+
+  assert.equal(restoration.type, 'poll_result')
+  assert.deepEqual(restoration.task, {
+    status: 'running',
+    progress: 100,
+    awaitingResult: true,
+    resultUrl: undefined
+  })
 })
 
 test('restorePersistedTask keeps awaiting-result tasks in running state and resumes result polling', () => {

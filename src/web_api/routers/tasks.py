@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+from typing import Any
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -27,6 +28,60 @@ from src.web_api.schemas.task_schema import TaskGenerateRequest, TaskGenerateRes
 router = APIRouter()
 logger = logging.getLogger(__name__)
 quota_manager = QuotaManager()
+
+
+def _build_terminal_progress_payload(status_data: dict[str, Any], task_id: str) -> dict[str, Any] | None:
+    payload = dict(status_data)
+    status_val = payload.get("status")
+
+    if status_val == "done":
+        payload["status"] = "success"
+        payload["task_id"] = task_id
+        payload["task_type"] = payload.get("task_type", "edit")
+        return payload
+
+    if status_val == "error":
+        payload["status"] = "failed"
+        payload["task_id"] = task_id
+        payload["error"] = payload.get("error_msg")
+        payload.pop("error_msg", None)
+        return payload
+
+    if status_val == "cancelled":
+        payload["status"] = "failed"
+        payload["task_id"] = task_id
+        payload["error"] = payload.get("error_msg") or "任务已取消"
+        payload.pop("error_msg", None)
+        return payload
+
+    return None
+
+
+async def _get_user_history_record(task_id: str, user_id: int, session_factory) -> History | None:
+    async with session_factory() as session:
+        result = await session.execute(
+            select(History).where(
+                History.task_id == task_id,
+                History.user_id == user_id,
+            )
+        )
+        return result.scalars().first()
+
+
+async def _build_not_found_progress_payload(task_id: str, user_id: int, session_factory) -> dict[str, Any]:
+    history = await _get_user_history_record(task_id, user_id, session_factory)
+    if history:
+        return {
+            "status": "success",
+            "task_id": task_id,
+            "task_type": history.type or "edit",
+        }
+
+    return {
+        "status": "failed",
+        "task_id": task_id,
+        "error": "任务不存在或无权限",
+    }
 
 
 @router.delete("/cancel/{task_id}")
@@ -169,8 +224,16 @@ async def task_status_stream(task_id: str, request: Request):
         try:
             async with httpx.AsyncClient() as client:
                 resp = await client.get(f"{API_BASE}/status/{task_id}", timeout=2.0)
-                if resp.status_code == 200:
-                    return resp.json()
+                if resp.status_code == 404:
+                    return {"not_found": True}
+                resp.raise_for_status()
+                return resp.json()
+        except httpx.HTTPStatusError as e:
+            logger.error(
+                "Unexpected status while getting task %s state: %s",
+                task_id,
+                e.response.status_code,
+            )
         except Exception as e:
             logger.error(f"Error getting status for {task_id}: {e}")
         return None
@@ -192,21 +255,27 @@ async def task_status_stream(task_id: str, request: Request):
             is_running = False
 
             if initial_status:
+                if initial_status.get("not_found"):
+                    yield {
+                        "event": "progress",
+                        "data": json.dumps(
+                            await _build_not_found_progress_payload(
+                                task_id,
+                                user_id,
+                                AsyncSessionLocal,
+                            )
+                        ),
+                    }
+                    return
+
                 status_val = initial_status.get("status")
                 if status_val == "running":
                     is_running = True
-                elif status_val in ["done", "error", "cancelled"]:
-                    # Map backend status to frontend expected status
-                    if status_val == "done":
-                        initial_status["status"] = "success"
-                        initial_status["task_id"] = task_id
-                        initial_status["task_type"] = initial_status.get("task_type", "edit")
-                    elif status_val == "error":
-                        initial_status["status"] = "failed"
-                        initial_status["error"] = initial_status.get("error_msg")
-
-                    yield {"event": "progress", "data": json.dumps(initial_status)}
-                    return  # End stream immediately
+                else:
+                    terminal_payload = _build_terminal_progress_payload(initial_status, task_id)
+                    if terminal_payload:
+                        yield {"event": "progress", "data": json.dumps(terminal_payload)}
+                        return  # End stream immediately
 
             last_queue_check = 0
 
@@ -224,14 +293,9 @@ async def task_status_stream(task_id: str, request: Request):
                         parsed = json.loads(data)
                         task_status = parsed.get("status")
 
-                        # Map backend status to frontend expected status
-                        if task_status == "done":
-                            parsed["status"] = "success"
-                            parsed["task_id"] = task_id
-                            parsed["task_type"] = parsed.get("task_type", "edit")
-                        elif task_status == "error":
-                            parsed["status"] = "failed"
-                            parsed["error"] = parsed.get("error_msg")
+                        terminal_payload = _build_terminal_progress_payload(parsed, task_id)
+                        if terminal_payload:
+                            parsed = terminal_payload
 
                         # Yield the mapped data
                         yield {"event": "progress", "data": json.dumps(parsed)}
@@ -250,32 +314,40 @@ async def task_status_stream(task_id: str, request: Request):
                     if current_time - last_queue_check > 5.0:  # Check every 5 seconds
                         status_data = await get_task_status_full()
                         if status_data:
+                            if status_data.get("not_found"):
+                                yield {
+                                    "event": "progress",
+                                    "data": json.dumps(
+                                        await _build_not_found_progress_payload(
+                                            task_id,
+                                            user_id,
+                                            AsyncSessionLocal,
+                                        )
+                                    ),
+                                }
+                                break
+
                             status_val = status_data.get("status")
                             # If the task actually started or finished but we missed the pubsub message
                             if status_val == "running":
                                 is_running = True
-                            elif status_val in ["done", "error", "cancelled"]:
-                                if status_val == "done":
-                                    status_data["status"] = "success"
-                                    status_data["task_id"] = task_id
-                                    status_data["task_type"] = status_data.get("task_type", "edit")
-                                elif status_val == "error":
-                                    status_data["status"] = "failed"
-                                    status_data["error"] = status_data.get("error_msg")
-                                yield {
-                                    "event": "progress",
-                                    "data": json.dumps(status_data),
-                                }
-                                break
+                            else:
+                                terminal_payload = _build_terminal_progress_payload(status_data, task_id)
+                                if terminal_payload:
+                                    yield {
+                                        "event": "progress",
+                                        "data": json.dumps(terminal_payload),
+                                    }
+                                    break
 
-                            queue_pos = status_data.get("queue_pos")
-                            if queue_pos is not None:
-                                yield {
-                                    "event": "progress",
-                                    "data": json.dumps(
-                                        {"status": "pending", "queue_pos": queue_pos}
-                                    ),
-                                }
+                                queue_pos = status_data.get("queue_pos")
+                                if queue_pos is not None:
+                                    yield {
+                                        "event": "progress",
+                                        "data": json.dumps(
+                                            {"status": "pending", "queue_pos": queue_pos}
+                                        ),
+                                    }
                         last_queue_check = current_time
 
                 # Check if client disconnected

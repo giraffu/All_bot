@@ -9,7 +9,9 @@ import {
 } from '@/stores/taskResultState'
 import {
   pollTaskResult,
-  restoreTasksFromStorage
+  restoreTasksFromStorage,
+  serializeTasksForStorage,
+  touchTaskActivity
 } from './tasksRuntime'
 
 export interface Task {
@@ -24,6 +26,7 @@ export interface Task {
   eventSource?: EventSource
   retryCount?: number
   awaitingResult?: boolean
+  updatedAt?: number
 }
 
 export const useTasksStore = defineStore('tasks', () => {
@@ -87,15 +90,19 @@ export const useTasksStore = defineStore('tasks', () => {
         setTimeout(callback, delayMs)
       },
       onSuccess: (currentTask) => {
+        touchTaskActivity(currentTask)
         message.success(`任务 [${currentTask.title}] 生成完成！`)
       },
       onTimeout: (currentTask) => {
+        touchTaskActivity(currentTask)
         message.warning(`获取任务 [${currentTask.title}] 结果超时，请稍后在历史记录中查看`)
       },
       onForbidden: (currentTask) => {
+        touchTaskActivity(currentTask)
         message.error(`获取任务 [${currentTask.title}] 结果失败: 任务不存在或无权限`)
       },
       onError: (currentTask) => {
+        touchTaskActivity(currentTask)
         message.error(`获取任务 [${currentTask.title}] 结果失败`)
       },
       onRequestError: (err) => {
@@ -110,6 +117,7 @@ export const useTasksStore = defineStore('tasks', () => {
     
     const source = new EventSource(authUrl)
     task.eventSource = source
+    touchTaskActivity(task)
     
     source.addEventListener('progress', (e: any) => {
       try {
@@ -117,16 +125,19 @@ export const useTasksStore = defineStore('tasks', () => {
         
         if (payload.status === 'pending' && payload.queue_pos != null) {
           task.queuePos = payload.queue_pos
+          touchTaskActivity(task)
         }
         
         if (payload.progress !== undefined) {
           task.progress = payload.progress
           task.status = 'running'
+          touchTaskActivity(task)
         }
         
         if (payload.status === 'success') {
           task.progress = 99
           task.awaitingResult = true
+          touchTaskActivity(task)
           // Delay task.status = 'success' until resultUrl is fetched
           if (task.eventSource) {
             task.eventSource.close()
@@ -136,6 +147,7 @@ export const useTasksStore = defineStore('tasks', () => {
         } else if (payload.status === 'failed') {
           task.status = 'failed'
           task.error = payload.error || '未知错误'
+          touchTaskActivity(task)
           message.error(`任务 [${task.title}] 生成失败: ${task.error}`)
           if (task.eventSource) {
             task.eventSource.close()
@@ -157,6 +169,7 @@ export const useTasksStore = defineStore('tasks', () => {
       if (!task.retryCount) task.retryCount = 0
       if (task.retryCount < 3) {
         task.retryCount++
+        touchTaskActivity(task)
         setTimeout(() => {
           const currentTask = activeTasks.value.find(t => t.id === task.id)
           if (currentTask && (currentTask.status === 'pending' || currentTask.status === 'running')) {
@@ -186,10 +199,7 @@ export const useTasksStore = defineStore('tasks', () => {
 
   // Persist to localStorage whenever tasks change
   watch(activeTasks, (newTasks) => {
-    const serialized = newTasks.map(t => ({
-      ...t,
-      eventSource: undefined // Do not serialize EventSource object
-    }))
+    const serialized = serializeTasksForStorage(newTasks)
     localStorage.setItem('active_tasks', JSON.stringify(serialized))
   }, { deep: true })
 
@@ -204,7 +214,8 @@ export const useTasksStore = defineStore('tasks', () => {
       type,
       title,
       progress: 0,
-      status: 'pending'
+      status: 'pending',
+      updatedAt: Date.now()
     }
     
     const newLength = activeTasks.value.push(newTask)
