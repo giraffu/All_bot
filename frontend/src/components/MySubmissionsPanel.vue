@@ -19,6 +19,7 @@ import {
 } from 'lucide-vue-next'
 import api from '@/api'
 import dayjs from 'dayjs'
+import { useViewport } from '@/composables/useViewport'
 
 interface Post {
   id: number
@@ -41,6 +42,7 @@ interface Post {
 }
 
 const router = useRouter()
+const { isMobile } = useViewport()
 const { t } = useI18n()
 const posts = ref<Post[]>([])
 const loading = ref(false)
@@ -490,159 +492,182 @@ onUnmounted(() => {
       v-model:visible="detailVisible"
       :footer="null"
       :closable="false"
-      width="90%"
-      style="max-width: 1000px; top: 20px"
+      :width="isMobile ? '100%' : '90%'"
+      :style="isMobile ? { top: 0, padding: 0, margin: 0, maxWidth: '100%' } : { maxWidth: '1000px', top: '20px' }"
+      :wrapClassName="isMobile ? 'mobile-full-modal' : ''"
       class="gallery-detail-modal"
-      :bodyStyle="{ padding: 0, backgroundColor: 'transparent' }"
+      :bodyStyle="isMobile ? { padding: 0, height: '100%', backgroundColor: '#0f172a' } : { padding: 0, backgroundColor: 'transparent' }"
       destroyOnClose
     >
-      <div
-        v-if="currentPost"
-        class="flex flex-col lg:flex-row bg-[#0f172a] rounded-2xl overflow-hidden border border-slate-400/50 shadow-2xl"
-      >
-        <div class="lg:w-2/3 bg-black flex items-center justify-center relative min-h-[300px] group/media">
-          <template v-if="currentPost.media_url">
-            <img
-              v-if="!isVideoFile(currentPost.media_url, currentPost.media_type)"
-              :src="getFileUrl(currentPost.media_url, currentPost.id)"
-              class="max-w-full max-h-[65vh] lg:max-h-[80vh] object-contain"
-            />
-            <video
-              v-else
-              :src="getFileUrl(currentPost.media_url, currentPost.id)"
-              class="max-w-full max-h-[65vh] lg:max-h-[80vh] object-contain"
-              controls
-              autoplay
-              loop
-              playsinline
-            ></video>
-          </template>
+      <div v-if="currentPost" class="flex flex-col lg:flex-row bg-[#0f172a] sm:rounded-2xl overflow-hidden sm:border border-slate-400/50 sm:shadow-2xl w-full min-h-full sm:min-h-0 relative">
+        
+        <!-- Mobile Header (Visible only on mobile) -->
+        <div class="lg:hidden flex items-center justify-between px-4 h-14 shrink-0 bg-[#0f172a]/90 backdrop-blur-md sticky top-0 z-50 border-b border-slate-800">
+          <div class="flex items-center gap-3">
+            <button @click="detailVisible = false" class="text-slate-200 hover:text-white p-1 -ml-1">
+              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+            </button>
+            <div class="flex items-center gap-2">
+              <span class="text-slate-200 font-medium text-sm">{{ t('gallery.modal.title') }}</span>
+            </div>
+          </div>
+        </div>
 
-          <button
-            v-if="hasPrev"
-            @click.stop="goPrev"
-            class="absolute left-2 top-1/2 -translate-y-1/2 w-10 h-10 sm:w-12 sm:h-12 bg-black/40 hover:bg-black/60 rounded-full flex items-center justify-center text-white/80 hover:text-white transition-all z-20 border border-white/10 backdrop-blur-sm opacity-100 lg:opacity-0 lg:group-hover/media:opacity-100"
-          >
+        <!-- Media Area -->
+        <div class="w-full lg:w-2/3 bg-black flex items-center justify-center relative group/media">
+          <template v-if="currentPost.media_url">
+            <img v-if="!isVideoFile(currentPost.media_url, currentPost.media_type)" :src="getFileUrl(currentPost.media_url, currentPost.id)" class="w-full h-auto max-h-[65vh] object-contain lg:max-w-full lg:max-h-[80vh]" />
+            <video v-else :src="getFileUrl(currentPost.media_url, currentPost.id)" :poster="getFileUrl(currentPost.thumbnail_url, currentPost.id)" class="w-full h-auto max-h-[65vh] object-contain lg:max-w-full lg:max-h-[80vh]" controls autoplay loop playsinline></video>
+          </template>
+          
+          <!-- Navigation Arrows -->
+          <button v-if="hasPrev" @click.stop="goPrev" class="absolute left-2 top-1/2 -translate-y-1/2 w-10 h-10 sm:w-12 sm:h-12 bg-black/40 hover:bg-black/60 rounded-full flex items-center justify-center text-white/80 hover:text-white transition-all z-20 border border-white/10 backdrop-blur-sm opacity-100 lg:opacity-0 lg:group-hover/media:opacity-100">
             <ChevronLeft :size="24" />
           </button>
-          <button
-            v-if="hasNext"
-            @click.stop="goNext"
-            class="absolute right-2 top-1/2 -translate-y-1/2 w-10 h-10 sm:w-12 sm:h-12 bg-black/40 hover:bg-black/60 rounded-full flex items-center justify-center text-white/80 hover:text-white transition-all z-20 border border-white/10 backdrop-blur-sm opacity-100 lg:opacity-0 lg:group-hover/media:opacity-100"
-          >
+          <button v-if="hasNext" @click.stop="goNext" class="absolute right-2 top-1/2 -translate-y-1/2 w-10 h-10 sm:w-12 sm:h-12 bg-black/40 hover:bg-black/60 rounded-full flex items-center justify-center text-white/80 hover:text-white transition-all z-20 border border-white/10 backdrop-blur-sm opacity-100 lg:opacity-0 lg:group-hover/media:opacity-100">
             <ChevronRight :size="24" />
           </button>
         </div>
-
-        <div class="lg:w-1/3 p-4 flex flex-col bg-slate-500/80 backdrop-blur-xl relative max-h-[50vh] lg:max-h-none overflow-y-auto">
-          <button
-            @click="detailVisible = false"
-            class="absolute top-3 right-3 text-slate-400 hover:text-white transition-colors z-10 bg-black/50 p-1.5 rounded-full"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+        
+        <!-- Info Area -->
+        <div class="w-full lg:w-1/3 flex flex-col bg-[#0f172a] lg:bg-slate-500/80 lg:backdrop-blur-xl relative pb-[80px] lg:pb-0">
+          <!-- Desktop Close button -->
+          <button @click="detailVisible = false" class="hidden lg:block absolute top-4 right-4 text-slate-400 hover:text-white transition-colors z-10">
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
           </button>
-
-          <div class="flex justify-between items-start mb-3">
-            <h3 class="text-lg font-bold text-slate-100 flex items-center">
-              <span class="bg-gradient-to-r from-cyan-400 to-indigo-400 bg-clip-text text-transparent">
-                {{ t('gallery.modal.title') }}
-              </span>
+          
+          <div class="p-4 lg:p-6 flex-1 flex flex-col overflow-y-auto scrollbar-thin scrollbar-thumb-slate-600 scrollbar-track-transparent">
+            <!-- Desktop Title -->
+            <h3 class="hidden lg:flex text-xl font-bold text-slate-100 mb-2 items-center">
+              <span class="bg-gradient-to-r from-cyan-400 to-indigo-400 bg-clip-text text-transparent">{{ t('gallery.modal.title') }}</span>
             </h3>
-
-            <div class="text-xs text-slate-400 flex items-center gap-3 mr-8">
-              <span v-if="currentPost.width" class="bg-slate-500/80 px-2 py-1 rounded">
-                📏 {{ currentPost.width }}x{{ currentPost.height }}
-              </span>
-              <span v-if="currentPost.created_at" class="bg-slate-500/80 px-2 py-1 rounded">
-                📅 {{ dayjs(currentPost.created_at).format('MM-DD HH:mm') }}
-              </span>
+            
+            <!-- Tags & Time Area -->
+            <div class="mb-4 lg:mb-6 mt-2 lg:mt-0">
+              <div class="flex flex-wrap gap-2 mb-3">
+                <span v-for="tag in currentPost.tags" :key="tag" class="text-xs bg-slate-800 lg:bg-slate-500 text-cyan-400 lg:text-cyan-200 border border-slate-700 lg:border-slate-400 px-2.5 py-1 rounded-full">
+                  {{ tag.startsWith('#') ? formatTag(tag) : '#' + formatTag(tag) }}
+                </span>
+                <span v-if="!currentPost.tags || currentPost.tags.length === 0" class="text-sm text-slate-500 lg:text-slate-400">{{ t('my_notes.no_tags') }}</span>
+              </div>
+              <div class="text-xs text-slate-500 lg:text-slate-400 space-y-1">
+                <div v-if="currentPost.created_at">
+                  <span>{{ dayjs(currentPost.created_at).format('YYYY-MM-DD HH:mm') }}</span>
+                </div>
+                <div class="flex space-x-4">
+                  <span v-if="currentPost.width">{{ currentPost.width }}x{{ currentPost.height }}</span>
+                  <span v-if="currentPost.duration">{{ currentPost.duration }}s</span>
+                </div>
+              </div>
             </div>
-          </div>
+            
+            <!-- Desktop Interactions (Hidden on Mobile) -->
+            <div class="hidden lg:flex flex-col space-y-4 mb-4 pt-4 border-t border-slate-700 lg:border-slate-400/30">
+              <!-- Like/Dislike Row -->
+              <div class="flex space-x-2">
+                <button @click="handleInteract(currentPost, 'like')" class="flex-1 py-3 rounded-xl border border-slate-400 bg-slate-500/50 hover:bg-slate-500 transition-all flex items-center justify-center group">
+                  <Heart :size="20" class="mr-2 transition-transform group-hover:scale-110" :class="currentPost.has_liked ? 'fill-pink-500 text-pink-500' : 'text-slate-400 group-hover:text-pink-400'" />
+                  <span class="font-medium" :class="currentPost.has_liked ? 'text-pink-400' : 'text-slate-300'">{{ currentPost.likes_count }}</span>
+                </button>
+                <button @click="handleInteract(currentPost, 'dislike')" class="flex-1 py-3 rounded-xl border border-slate-400 bg-slate-500/50 hover:bg-slate-500 transition-all flex items-center justify-center group">
+                  <ThumbsDown :size="20" class="mr-2 transition-transform group-hover:scale-110" :class="currentPost.has_disliked ? 'fill-slate-400 text-slate-400' : 'text-slate-400 group-hover:text-slate-200'" />
+                  <span class="font-medium" :class="currentPost.has_disliked ? 'text-slate-400' : 'text-slate-300'">{{ currentPost.dislikes_count }}</span>
+                </button>
+              </div>
 
-          <div v-if="currentPost.tags && currentPost.tags.length > 0" class="mb-4">
-            <div class="flex flex-wrap gap-1.5">
-              <span
-                v-for="tag in currentPost.tags"
-                :key="tag"
-                class="text-[11px] bg-slate-500 text-cyan-200 border border-slate-400 px-2 py-0.5 rounded"
-              >
-                {{ tag.startsWith('#') ? formatTag(tag) : '#' + formatTag(tag) }}
-              </span>
+              <!-- Management Row -->
+              <div class="flex space-x-2">
+                <button
+                  @click="toggleStatus(currentPost)"
+                  class="flex-1 py-3 rounded-xl border border-slate-400 bg-slate-500 hover:bg-slate-400 transition-all flex items-center justify-center text-sm font-medium"
+                  :class="currentPost.is_active ? 'text-orange-400' : 'text-green-400'"
+                >
+                  <EyeOff v-if="currentPost.is_active" :size="18" class="mr-2" />
+                  <Eye v-else :size="18" class="mr-2" />
+                  {{ currentPost.is_active ? t('my_posts.put_off_shelf') : t('my_posts.put_on_shelf') }}
+                </button>
+                <button
+                  @click="deletePost(currentPost)"
+                  class="flex-1 py-3 rounded-xl border border-red-500/30 bg-red-500/10 hover:bg-red-500/20 transition-all flex items-center justify-center text-sm font-medium text-red-400 group"
+                >
+                  <Trash2 :size="18" class="mr-2 transition-transform group-hover:scale-110" />
+                  {{ t('my_posts.delete') }}
+                </button>
+              </div>
             </div>
-          </div>
-
-          <div class="flex space-x-3 mb-4">
-            <button
-              @click="handleInteract(currentPost, 'like')"
-              class="flex-1 py-2 rounded-lg border border-slate-400 bg-slate-500/50 hover:bg-slate-500 transition-all flex items-center justify-center group"
-            >
-              <Heart
-                :size="16"
-                class="mr-1.5 transition-transform group-hover:scale-110"
-                :class="currentPost.has_liked ? 'fill-pink-500 text-pink-500' : 'text-slate-400 group-hover:text-pink-400'"
-              />
-              <span class="text-sm font-medium" :class="currentPost.has_liked ? 'text-pink-400' : 'text-slate-300'">
-                {{ currentPost.likes_count }}
-              </span>
-            </button>
-            <button
-              @click="handleInteract(currentPost, 'dislike')"
-              class="flex-1 py-2 rounded-lg border border-slate-400 bg-slate-500/50 hover:bg-slate-500 transition-all flex items-center justify-center group"
-            >
-              <ThumbsDown
-                :size="16"
-                class="mr-1.5 transition-transform group-hover:scale-110"
-                :class="currentPost.has_disliked ? 'fill-slate-400 text-slate-400' : 'text-slate-400 group-hover:text-slate-200'"
-              />
-              <span
-                class="text-sm font-medium"
-                :class="currentPost.has_disliked ? 'text-slate-400' : 'text-slate-300'"
+            
+            <div class="hidden lg:flex space-x-2 mt-auto pt-4 border-t border-slate-700 lg:border-slate-400/30">
+              <button
+                v-if="currentPost.prompt?.trim()"
+                @click="copyPrompt(currentPost)"
+                class="flex-1 py-4 rounded-xl bg-slate-500 hover:bg-slate-400 text-white font-medium shadow-sm transition-all flex items-center justify-center border border-slate-400"
               >
-                {{ currentPost.dislikes_count }}
-              </span>
-            </button>
-          </div>
+                <Copy :size="18" class="mr-2" />
+                {{ t('my_posts.copy_prompt') }}
+              </button>
+              <button 
+                @click="handleApply" 
+                :disabled="applying"
+                class="flex-1 py-4 rounded-xl bg-gradient-to-r from-cyan-600 to-indigo-600 hover:from-cyan-500 hover:to-indigo-500 text-white font-bold text-lg shadow-[0_0_20px_rgba(56,189,248,0.4)] transition-all transform hover:scale-[1.02] flex items-center justify-center relative overflow-hidden group"
+              >
+                <div class="absolute inset-0 bg-white/20 translate-y-full group-hover:translate-y-0 transition-transform duration-300"></div>
+                <Wand2 v-if="!applying" :size="22" class="mr-2 relative z-10" />
+                <div v-else class="inline-block w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin mr-2 relative z-10"></div>
+                <span class="relative z-10">{{ applying ? '...' : t('gallery.modal.apply_btn') }}</span>
+              </button>
+            </div>
 
-          <div class="flex space-x-3 mb-5 border-b border-slate-400/50 pb-4">
-            <button
-              @click="toggleStatus(currentPost)"
-              class="flex-1 py-2 rounded-lg border border-slate-400 bg-slate-500 hover:bg-slate-500 transition-all flex items-center justify-center text-xs font-medium"
-              :class="currentPost.is_active ? 'text-orange-400' : 'text-green-400'"
-            >
-              <EyeOff v-if="currentPost.is_active" :size="14" class="mr-1.5" />
-              <Eye v-else :size="14" class="mr-1.5" />
-              {{ currentPost.is_active ? t('my_posts.put_off_shelf') : t('my_posts.put_on_shelf') }}
-            </button>
-            <button
-              @click="deletePost(currentPost)"
-              class="flex-1 py-2 rounded-lg border border-red-900/30 bg-red-900/10 hover:bg-red-900/30 transition-all flex items-center justify-center text-xs font-medium text-red-400"
-            >
-              <Trash2 :size="14" class="mr-1.5" />
-              {{ t('my_posts.delete') }}
-            </button>
-          </div>
+            <!-- Mobile Management Row (Visible only on mobile) -->
+            <div class="lg:hidden mt-auto pt-6 pb-2">
+              <div class="flex space-x-3">
+                <button
+                  @click="toggleStatus(currentPost)"
+                  class="flex-1 py-2.5 rounded-lg border border-slate-700 bg-slate-800/80 transition-all flex items-center justify-center text-xs font-medium"
+                  :class="currentPost.is_active ? 'text-orange-400' : 'text-green-400'"
+                >
+                  <EyeOff v-if="currentPost.is_active" :size="16" class="mr-1.5" />
+                  <Eye v-else :size="16" class="mr-1.5" />
+                  {{ currentPost.is_active ? t('my_posts.put_off_shelf') : t('my_posts.put_on_shelf') }}
+                </button>
+                <button
+                  @click="deletePost(currentPost)"
+                  class="flex-1 py-2.5 rounded-lg border border-red-900/50 bg-red-900/20 transition-all flex items-center justify-center text-xs font-medium text-red-400"
+                >
+                  <Trash2 :size="16" class="mr-1.5" />
+                  {{ t('my_posts.delete') }}
+                </button>
+              </div>
+            </div>
 
-          <div class="mt-auto space-y-3">
-            <button
-              v-if="currentPost.prompt?.trim()"
-              @click="copyPrompt(currentPost)"
-              class="w-full py-2.5 rounded-lg bg-slate-500 hover:bg-slate-500 text-white text-sm font-medium shadow-sm transition-all flex items-center justify-center border border-slate-400"
-            >
-              <Copy :size="16" class="mr-1.5" />
-              {{ t('my_posts.copy_prompt') }}
-            </button>
-            <button
-              @click="handleApply"
-              :disabled="applying"
-              class="w-full py-3 rounded-lg bg-gradient-to-r from-cyan-600 to-indigo-600 hover:from-cyan-500 hover:to-indigo-500 text-white font-bold shadow-md transition-all transform hover:scale-[1.02] flex items-center justify-center relative overflow-hidden group"
-            >
-              <div class="absolute inset-0 bg-white/20 translate-y-full group-hover:translate-y-0 transition-transform duration-300"></div>
-              <Wand2 v-if="!applying" :size="18" class="mr-2 relative z-10" />
-              <div v-else class="inline-block w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin mr-2 relative z-10"></div>
-              <span class="relative z-10">{{ applying ? '...' : t('gallery.modal.apply_btn') }}</span>
-            </button>
           </div>
         </div>
+
+        <!-- Mobile Bottom Interaction Bar -->
+        <div class="lg:hidden fixed bottom-0 left-0 right-0 bg-[#0f172a]/95 backdrop-blur-lg border-t border-slate-800 px-4 py-3 flex items-center justify-between z-50 safe-area-bottom">
+          <div class="flex items-center gap-4">
+            <button @click="handleInteract(currentPost, 'like')" class="flex items-center gap-1.5 transition-all" :class="currentPost.has_liked ? 'text-pink-500' : 'text-slate-300'">
+              <Heart :size="20" :class="{'fill-pink-500': currentPost.has_liked}" />
+              <span class="text-xs font-medium">{{ currentPost.likes_count }}</span>
+            </button>
+            <button @click="handleInteract(currentPost, 'dislike')" class="flex items-center gap-1.5 transition-all" :class="currentPost.has_disliked ? 'text-slate-400' : 'text-slate-300'">
+              <ThumbsDown :size="20" :class="{'fill-slate-400': currentPost.has_disliked}" />
+              <span class="text-xs font-medium">{{ currentPost.dislikes_count }}</span>
+            </button>
+            <button v-if="currentPost.prompt?.trim()" @click="copyPrompt(currentPost)" class="flex items-center gap-1.5 transition-all text-slate-300 ml-2">
+              <Copy :size="20" />
+            </button>
+          </div>
+          <button 
+            @click="handleApply" 
+            :disabled="applying"
+            class="px-5 py-2 rounded-full bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-sm shadow-lg flex items-center ml-2"
+          >
+            <Wand2 v-if="!applying" :size="16" class="mr-1.5" />
+            <div v-else class="inline-block w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin mr-1.5"></div>
+            {{ applying ? '...' : t('gallery.modal.apply_btn') }}
+          </button>
+        </div>
+
       </div>
     </a-modal>
   </div>
