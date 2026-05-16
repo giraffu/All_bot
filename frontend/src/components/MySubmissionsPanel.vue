@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import { useI18n } from 'vue-i18n'
@@ -20,7 +20,12 @@ import {
 import api from '@/api'
 import dayjs from 'dayjs'
 import { useViewport } from '@/composables/useViewport'
+import { useMainLayoutContentRef } from '@/composables/useWorkbenchScrollLock'
 import { useGalleryComments } from '@/composables/useGalleryComments'
+import {
+  buildLegacyTemplateRoute,
+  resolveTemplateApplyEntry
+} from '@/utils/templateApplyEntry'
 
 interface Post {
   id: number
@@ -46,6 +51,7 @@ interface Post {
 const router = useRouter()
 const { isMobile } = useViewport()
 const { t } = useI18n()
+const layoutContentRef = useMainLayoutContentRef()
 const posts = ref<Post[]>([])
 const loading = ref(false)
 const page = ref(1)
@@ -331,38 +337,28 @@ const handleApply = async () => {
 
   try {
     const res = await api.get(`/gallery/posts/${currentPost.value.id}/apply-context`)
-    const context = res.data
+    const rawContext = res.data
+    const resolvedEntry = resolveTemplateApplyEntry({
+      rawContext,
+      source: 'submissions',
+      entryEntityId: currentPost.value.id,
+      preferredMode: 'legacy'
+    })
+
+    if (resolvedEntry.status === 'invalid') {
+      message.error(t('my_notes.template_load_failed'))
+      return
+    }
+
+    if (resolvedEntry.status === 'unknown_task_type') {
+      message.warning(t('template_apply.unknown_task_type'))
+      return
+    }
+
     detailVisible.value = false
-    sessionStorage.setItem('galleryApplyContext', JSON.stringify(context))
-
-    const featureMap: Record<string, { route: string; title: string; cost: number }> = {
-      i2i_pro: { route: 'ImageAndPrompt', title: '幻想换脸', cost: 6 },
-      i2i_draw: { route: 'ImageAndPrompt', title: '局部重绘', cost: 3 },
-      edit: { route: 'ImageAndPrompt', title: '自由P图', cost: 2 },
-      img2img_lora: { route: 'ImageAndPrompt', title: '图生图(附加模型)', cost: 2 },
-      face_swap: { route: 'FaceSwap', title: '快速换脸', cost: 1 },
-      face_video: { route: 'VideoSwap', title: '视频换脸', cost: 18 },
-      custom_video: { route: 'SingleImageToVideo', title: '自定义图生视频', cost: 6 },
-      video_lora: { route: 'SingleImageToVideo', title: '图生视频(附加模型)', cost: 6 },
-      ltx_video: { route: 'SingleImageToVideo', title: '高级图生视频', cost: 10 },
-    }
-
-    const featureInfo = featureMap[context.task_type]
-    if (featureInfo) {
-      message.success(t('my_notes.template_loaded_with_upload_hint'))
-      void router.push({
-        name: featureInfo.route,
-        query: {
-          apply: 'true',
-          type: context.task_type,
-          title: featureInfo.title,
-          cost: featureInfo.cost,
-        },
-      })
-    } else {
-      message.success(t('my_notes.template_loaded'))
-      void router.push({ name: 'CustomFeatures', query: { apply: 'true' } })
-    }
+    sessionStorage.setItem('galleryApplyContext', JSON.stringify(rawContext))
+    message.success(t('my_notes.template_loaded_with_upload_hint'))
+    void router.push(buildLegacyTemplateRoute(resolvedEntry, t))
   } catch (error) {
     console.error(error)
     message.error(t('my_notes.template_load_failed'))
@@ -372,7 +368,7 @@ const handleApply = async () => {
 }
 
 const handleScroll = () => {
-  const container = document.querySelector('.ant-layout-content')
+  const container = layoutContentRef.value
   if (!container) return
 
   const { scrollTop, scrollHeight, clientHeight } = container
@@ -397,17 +393,19 @@ const handleImageError = (event: Event, post: Post) => {
 
 onMounted(() => {
   void loadPosts(true)
-  const container = document.querySelector('.ant-layout-content')
-  if (container) {
-    container.addEventListener('scroll', handleScroll)
-  }
 })
 
+watch(
+  layoutContentRef,
+  (container, previousContainer) => {
+    previousContainer?.removeEventListener('scroll', handleScroll)
+    container?.addEventListener('scroll', handleScroll)
+  },
+  { immediate: true }
+)
+
 onUnmounted(() => {
-  const container = document.querySelector('.ant-layout-content')
-  if (container) {
-    container.removeEventListener('scroll', handleScroll)
-  }
+  layoutContentRef.value?.removeEventListener('scroll', handleScroll)
 })
 </script>
 
@@ -512,7 +510,7 @@ onUnmounted(() => {
     </div>
 
     <a-modal
-      v-model:visible="detailVisible"
+      v-model:open="detailVisible"
       :footer="null"
       :closable="false"
       :width="isMobile ? '100%' : '90%'"
@@ -767,7 +765,7 @@ onUnmounted(() => {
     </a-modal>
     <!-- Comment Input Modal -->
     <a-modal
-      v-model:visible="showCommentInput"
+      v-model:open="showCommentInput"
       :title="t('gallery.comments.modal_title')"
       :footer="null"
       :destroyOnClose="true"

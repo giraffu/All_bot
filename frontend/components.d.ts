@@ -46,5 +46,10 @@ declare module 'vue' {
     RouterView: typeof import('vue-router')['RouterView']
     TaskDetailModal: typeof import('./src/components/TaskDetailModal.vue')['default']
     TaskProgress: typeof import('./src/components/TaskProgress.vue')['default']
+    TemplateApplyWorkbenchHost: typeof import('./src/components/template-apply/TemplateApplyWorkbenchHost.vue')['default']
+    TemplateFaceSwapPanel: typeof import('./src/components/template-apply/TemplateFaceSwapPanel.vue')['default']
+    TemplateImagePromptPanel: typeof import('./src/components/template-apply/TemplateImagePromptPanel.vue')['default']
+    TemplateImageToVideoPanel: typeof import('./src/components/template-apply/TemplateImageToVideoPanel.vue')['default']
+    TemplateVideoSwapPanel: typeof import('./src/components/template-apply/TemplateVideoSwapPanel.vue')['default']
   }
 }

@@ -8,6 +8,16 @@ import { Heart, ThumbsDown, Wand2, Play, Image as ImageIcon, Video, Flame, Clock
 import { Waterfall } from 'vue-waterfall-plugin-next'
 import 'vue-waterfall-plugin-next/dist/style.css'
 import api from '@/api'
+import { useMainLayoutContentRef } from '@/composables/useWorkbenchScrollLock'
+import {
+  confirmTemplateApplyClose,
+  useTemplateApplyStore
+} from '@/stores/templateApply'
+import { normalizeGalleryThumbnailPath } from '@/utils/galleryThumbnail'
+import {
+  buildLegacyTemplateRoute,
+  resolveTemplateApplyEntry
+} from '@/utils/templateApplyEntry'
 import dayjs from 'dayjs'
 import { useViewport } from '@/composables/useViewport'
 import LazyVideo from '@/components/LazyVideo.vue'
@@ -39,6 +49,8 @@ interface Post {
 const router = useRouter()
 const { t } = useI18n()
 const { isMobile } = useViewport()
+const templateApplyStore = useTemplateApplyStore()
+const layoutContentRef = useMainLayoutContentRef()
 
 const breakpoints = {
   99999: { rowPerView: 6 },
@@ -72,6 +84,9 @@ const currentLoraModels = computed(() => {
 
 const detailVisible = ref(false)
 const currentPost = ref<Post | null>(null)
+let applyRequestToken = 0
+let pendingApplyAbortController: AbortController | null = null
+let isGalleryUnmounted = false
 
 const {
   comments,
@@ -223,18 +238,8 @@ const loadPosts = async (reset = false) => {
     
     const newItems = res.data.items.map((p: Post) => {
       // 兼容后端还没重启的情况：如果后端下发的 thumbnail_url 还是原视频 (.mp4)，前端自己算出 _thumb.jpg
-      let thumbUrl = p.thumbnail_url
       const isVideo = isVideoFile(p.media_url, p.media_type)
-      
-      if (isVideo && thumbUrl && isVideoFile(thumbUrl)) {
-        // 前端强制计算 _thumb.jpg，摆脱对后端新代码的强依赖
-        const basePath = thumbUrl.substring(0, thumbUrl.lastIndexOf('.'))
-        thumbUrl = `${basePath}_thumb.jpg`
-      } else if (!isVideo && thumbUrl && !thumbUrl.endsWith('_thumb.webp')) {
-        // 图片同样做兼容处理
-        const basePath = thumbUrl.substring(0, thumbUrl.lastIndexOf('.'))
-        thumbUrl = `${basePath}_thumb.webp`
-      }
+      const thumbUrl = normalizeGalleryThumbnailPath(p.thumbnail_url, isVideo)
       
       const src = getFileUrl(thumbUrl, p.id)
       return { ...p, src }
@@ -327,60 +332,142 @@ const openDetail = (post: Post) => {
   detailVisible.value = true
 }
 
+const invalidatePendingApplyContext = () => {
+  applyRequestToken += 1
+  pendingApplyAbortController?.abort()
+  pendingApplyAbortController = null
+  applying.value = false
+}
+
+const handleLegacyFallback = async (params: {
+  rawContext: any
+  entryEntityId: number | string | null
+}) => {
+  const resolvedEntry = resolveTemplateApplyEntry({
+    rawContext: params.rawContext,
+    source: 'gallery',
+    entryEntityId: params.entryEntityId,
+    preferredMode: 'legacy'
+  })
+
+  if (resolvedEntry.status === 'invalid') {
+    message.error(t('template_apply.invalid_context'))
+    return false
+  }
+
+  if (resolvedEntry.status === 'unknown_task_type') {
+    message.warning(t('template_apply.unknown_task_type'))
+    return false
+  }
+
+  sessionStorage.setItem('galleryApplyContext', JSON.stringify(params.rawContext))
+  detailVisible.value = false
+  message.success(t('template_apply.legacy_loaded'))
+  await router.push(buildLegacyTemplateRoute(resolvedEntry, t))
+  return true
+}
+
+const openTemplateWorkbench = async (
+  rawContext: any,
+  snapshot: { entryEntityId: number | string | null }
+): Promise<boolean> => {
+  const result = await templateApplyStore.openFromRawContext({
+    source: 'gallery',
+    entryEntityId: snapshot.entryEntityId,
+    rawContext
+  })
+
+  if (result.status === 'opened') {
+    detailVisible.value = false
+    message.success(t('template_apply.open_success'))
+    return true
+  }
+
+  if (result.status === 'legacy_fallback') {
+    if (result.fallbackKind === 'legacy_supported' && result.context && result.meta) {
+      sessionStorage.setItem('galleryApplyContext', JSON.stringify(rawContext))
+      detailVisible.value = false
+      message.success(t('template_apply.legacy_loaded'))
+      await router.push(buildLegacyTemplateRoute({
+        status: 'legacy_supported',
+        context: result.context,
+        meta: result.meta
+      }, t))
+      return true
+    }
+
+    return handleLegacyFallback({
+      rawContext,
+      entryEntityId: snapshot.entryEntityId
+    })
+  }
+
+  if (result.status === 'invalid') {
+    message.error(result.message)
+    return false
+  }
+
+  if (result.status === 'confirm_required') {
+    const confirmed = await confirmTemplateApplyClose(result.confirmReason)
+    if (!confirmed) {
+      return false
+    }
+    await templateApplyStore.confirmCloseAndCleanup('open_replace')
+    return openTemplateWorkbench(rawContext, snapshot)
+  }
+
+  return false
+}
+
 const handleApply = async () => {
   if (!currentPost.value || applying.value) return
+  const snapshot = {
+    postId: currentPost.value.id,
+    entryEntityId: currentPost.value.id
+  }
+  const requestToken = ++applyRequestToken
+  pendingApplyAbortController?.abort()
+  const abortController = new AbortController()
+  pendingApplyAbortController = abortController
   applying.value = true
   
   try {
-    const res = await api.get(`/gallery/posts/${currentPost.value.id}/apply-context`)
-    const context = res.data
-    detailVisible.value = false
-    
-    // Store context in sessionStorage to pass to target page
-    sessionStorage.setItem('galleryApplyContext', JSON.stringify(context))
-    
-    // Route mapping
-    const featureMap: Record<string, { route: string, title: string, cost: number }> = {
-        // From CustomFeatures
-        'i2i_pro': { route: 'ImageAndPrompt', title: '幻想换脸', cost: 6 },
-        'i2i_draw': { route: 'ImageAndPrompt', title: '局部重绘', cost: 3 },
-        'edit': { route: 'ImageAndPrompt', title: '自由P图', cost: 2 },
-        'img2img_lora': { route: 'ImageAndPrompt', title: '图生图(附加模型)', cost: 2 },
-        'face_swap': { route: 'FaceSwap', title: '快速换脸', cost: 1 }, 
-        'face_video': { route: 'VideoSwap', title: '视频换脸', cost: 18 },
-        'custom_video': { route: 'SingleImageToVideo', title: '自定义图生视频', cost: 6 },
-        'video_lora': { route: 'SingleImageToVideo', title: '图生视频(附加模型)', cost: 6 },
-        'ltx_video': { route: 'SingleImageToVideo', title: '高级图生视频', cost: 10 },
-      }
-    
-    const featureInfo = featureMap[context.task_type]
-    if (featureInfo) {
-      message.success('已载入模板，请上传您的参考图')
-      router.push({ 
-        name: featureInfo.route, 
-        query: { 
-          apply: 'true',
-          type: context.task_type,
-          title: featureInfo.title,
-          cost: featureInfo.cost
-        } 
-      })
-    } else {
-      message.success('已载入模板')
-      router.push({ name: 'CustomFeatures', query: { apply: 'true' } })
+    const res = await api.get(`/gallery/posts/${snapshot.postId}/apply-context`, {
+      signal: abortController.signal
+    })
+    if (
+      applyRequestToken !== requestToken
+      || pendingApplyAbortController !== abortController
+      || isGalleryUnmounted
+      || !detailVisible.value
+      || currentPost.value?.id !== snapshot.postId
+    ) {
+      return
     }
-    
-  } catch (error) {
+    await openTemplateWorkbench(res.data, snapshot)
+  } catch (error: any) {
+    if (error?.name === 'CanceledError' || error?.code === 'ERR_CANCELED') {
+      return
+    }
     console.error(error)
-    message.error('获取模板数据失败')
+    message.error(t('my_notes.template_load_failed'))
   } finally {
-    applying.value = false
+    if (pendingApplyAbortController === abortController) {
+      pendingApplyAbortController = null
+    }
+    if (applyRequestToken === requestToken) {
+      applying.value = false
+    }
   }
 }
 
 // Scroll detection for lazy loading
 const handleScroll = () => {
-  const container = document.querySelector('.ant-layout-content')
+  if (templateApplyStore.visible) {
+    return
+  }
+
+  const container = layoutContentRef.value
   if (!container) return
   
   const { scrollTop, scrollHeight, clientHeight } = container
@@ -407,17 +494,31 @@ const handleImageError = (e: Event, post: Post) => {
 onMounted(() => {
   loadConfig()
   loadPosts(true)
-  const container = document.querySelector('.ant-layout-content')
-  if (container) {
-    container.addEventListener('scroll', handleScroll)
-  }
 })
 
+watch(
+  layoutContentRef,
+  (container, previousContainer) => {
+    previousContainer?.removeEventListener('scroll', handleScroll)
+    container?.addEventListener('scroll', handleScroll)
+  },
+  { immediate: true }
+)
+
+watch(
+  detailVisible,
+  (visible, previousVisible) => {
+    if (!visible && previousVisible) {
+      invalidatePendingApplyContext()
+    }
+  },
+  { flush: 'sync' }
+)
+
 onUnmounted(() => {
-  const container = document.querySelector('.ant-layout-content')
-  if (container) {
-    container.removeEventListener('scroll', handleScroll)
-  }
+  isGalleryUnmounted = true
+  invalidatePendingApplyContext()
+  layoutContentRef.value?.removeEventListener('scroll', handleScroll)
 })
 </script>
 
@@ -599,7 +700,7 @@ onUnmounted(() => {
 
     <!-- Detail Modal -->
     <a-modal
-      v-model:visible="detailVisible"
+      v-model:open="detailVisible"
       :footer="null"
       :closable="false"
       :width="isMobile ? '100%' : '90%'"
@@ -614,7 +715,7 @@ onUnmounted(() => {
         <!-- Mobile Header (Visible only on mobile) -->
         <div class="lg:hidden flex items-center justify-between px-4 h-14 shrink-0 bg-[#0f172a]/90 backdrop-blur-md sticky top-0 z-50 border-b border-slate-800">
           <div class="flex items-center gap-3">
-            <button @click="detailVisible = false" class="text-slate-200 hover:text-white p-1 -ml-1">
+              <button @click="detailVisible = false" class="text-slate-200 hover:text-white p-1 -ml-1">
               <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
             </button>
             <div class="flex items-center gap-2">
@@ -802,7 +903,7 @@ onUnmounted(() => {
 
     <!-- Comment Input Modal -->
     <a-modal
-      v-model:visible="showCommentInput"
+      v-model:open="showCommentInput"
       :title="t('gallery.comments.modal_title')"
       :footer="null"
       :destroyOnClose="true"

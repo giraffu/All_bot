@@ -1,11 +1,14 @@
 <script setup lang="ts">
-import { computed, ref, onMounted, watch, onBeforeUnmount } from 'vue'
+import { computed, defineAsyncComponent, ref, onMounted, watch, onBeforeUnmount, provide } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
+import { useTemplateApplyStore } from '@/stores/templateApply'
 import { useViewport } from '@/composables/useViewport'
 import { useI18n } from 'vue-i18n'
-import api from '@/api'
-import { User, Wand2, History as HistoryIcon, LogOut, Wallet, Compass, Bookmark } from 'lucide-vue-next'
+import {
+  mainLayoutContentRefKey
+} from '@/composables/useWorkbenchScrollLock'
+import { User as UserIcon, Wand2, History as HistoryIcon, LogOut, Wallet, Compass, Bookmark } from 'lucide-vue-next'
 import TaskProgress from '@/components/TaskProgress.vue'
 import MobileTabbar from '@/components/MobileTabbar.vue'
 import TaskDetailModal from '@/components/TaskDetailModal.vue'
@@ -13,13 +16,34 @@ import TaskDetailModal from '@/components/TaskDetailModal.vue'
 const router = useRouter()
 const route = useRoute()
 const authStore = useAuthStore()
+const templateApplyStore = useTemplateApplyStore()
 const { isMobile } = useViewport()
 const { t } = useI18n()
+const TemplateApplyWorkbenchHost = defineAsyncComponent(
+  () => import('@/components/template-apply/TemplateApplyWorkbenchHost.vue')
+)
 
 const collapsed = ref(false)
 const selectedKeys = ref<string[]>([route.name as string || 'Profile'])
 const canvasRef = ref<HTMLCanvasElement | null>(null)
+const layoutContentRef = ref<HTMLElement | { $el?: HTMLElement } | null>(null)
 let animationFrameId: number
+
+const contentRef = computed<HTMLElement | null>(() => {
+  if (layoutContentRef.value instanceof HTMLElement) {
+    return layoutContentRef.value
+  }
+
+  return layoutContentRef.value?.$el ?? null
+})
+
+const shouldRenderTemplateApplyWorkbench = computed(() =>
+  templateApplyStore.visible
+  || templateApplyStore.loading
+  || templateApplyStore.status === 'opening'
+)
+
+provide(mainLayoutContentRefKey, contentRef)
 
 const handleMenuClick = ({ key }: { key: string }) => {
   router.push({ name: key })
@@ -275,7 +299,7 @@ watch(() => route.name, (newName) => {
         </div>
       </a-layout-header>
       
-      <a-layout-content :class="[
+      <a-layout-content ref="layoutContentRef" :class="[
         'm-2 p-3 md:m-6 md:p-6 bg-slate-500/20 backdrop-blur-sm rounded-2xl shadow-[0_8px_32px_rgba(0,0,0,0.4)] border border-slate-400/50 relative overflow-y-auto overflow-x-hidden flex flex-col flex-grow',
         { 'mb-20': isMobile }
       ]">
@@ -288,6 +312,7 @@ watch(() => route.name, (newName) => {
     </a-layout>
     <TaskProgress />
     <TaskDetailModal />
+    <TemplateApplyWorkbenchHost v-if="shouldRenderTemplateApplyWorkbench" />
     <MobileTabbar v-if="isMobile" />
   </a-layout>
 </template>

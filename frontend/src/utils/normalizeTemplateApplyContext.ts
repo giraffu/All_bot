@@ -1,0 +1,91 @@
+import {
+  getCanonicalTemplateTaskType,
+  getTemplateTaskMeta
+} from '@/constants/templateTaskMeta'
+import type {
+  NormalizeContextOptions,
+  RawApplyContextResponse,
+  TemplateApplyContext
+} from '@/types/templateApply'
+
+const asNonEmptyString = (value: unknown): string | null =>
+  typeof value === 'string' && value.trim() !== '' ? value.trim() : null
+
+const asNullableNumber = (value: unknown): number | null => {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value
+  }
+
+  if (typeof value === 'string' && value.trim() !== '') {
+    const parsed = Number(value)
+    if (Number.isFinite(parsed)) {
+      return parsed
+    }
+  }
+
+  return null
+}
+
+const asPositiveInteger = (value: unknown): number | null => {
+  const parsed = asNullableNumber(value)
+  if (parsed === null) {
+    return null
+  }
+
+  const normalized = Math.trunc(parsed)
+  return normalized > 0 ? normalized : null
+}
+
+export const normalizeTemplateApplyContext = (
+  rawContext: RawApplyContextResponse | null | undefined,
+  options: NormalizeContextOptions
+): TemplateApplyContext | null => {
+  if (!rawContext) {
+    return null
+  }
+
+  const rawTaskType = asNonEmptyString(rawContext.task_type)
+  if (!rawTaskType) {
+    return null
+  }
+
+  const taskType = getCanonicalTemplateTaskType(rawTaskType)
+  const meta = taskType ? getTemplateTaskMeta(taskType) : null
+
+  const normalizedRaw: RawApplyContextResponse = {
+    post_id: rawContext.post_id,
+    source_post_id: rawContext.source_post_id ?? null,
+    billing_resolution: rawContext.billing_resolution ?? null,
+    task_id: rawContext.task_id ?? null,
+    media_type: rawContext.media_type ?? null,
+    prompt: rawContext.prompt ?? null,
+    lora_name: rawContext.lora_name ?? null,
+    lora_strength: rawContext.lora_strength ?? null,
+    input_file: rawContext.input_file ?? null,
+    input_file_url: rawContext.input_file_url ?? null,
+    width: rawContext.width ?? null,
+    height: rawContext.height ?? null,
+    duration: rawContext.duration ?? null,
+    task_type: rawTaskType
+  }
+
+  return {
+    raw: normalizedRaw,
+    source: options.source,
+    entryEntityId: options.entryEntityId,
+    rawEntityId: asPositiveInteger(rawContext.post_id),
+    rawTaskType,
+    taskType,
+    supportMode: meta?.supportMode ?? 'unknown',
+    sourcePostId: asPositiveInteger(rawContext.source_post_id),
+    prompt: asNonEmptyString(rawContext.prompt),
+    loraName: asNonEmptyString(rawContext.lora_name),
+    loraStrength: asNullableNumber(rawContext.lora_strength),
+    inputFile: asNonEmptyString(rawContext.input_file),
+    inputFileUrl: asNonEmptyString(rawContext.input_file_url),
+    width: asPositiveInteger(rawContext.width),
+    height: asPositiveInteger(rawContext.height),
+    duration: asPositiveInteger(rawContext.duration),
+    billingResolution: asNonEmptyString(rawContext.billing_resolution)
+  }
+}

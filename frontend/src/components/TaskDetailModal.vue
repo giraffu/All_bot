@@ -42,7 +42,7 @@ const {
 
 <template>
   <a-modal
-    v-model:visible="detailVisible"
+    v-model:open="detailVisible"
     :footer="null"
     :closable="false"
     :width="isMobile ? '100%' : '90%'"

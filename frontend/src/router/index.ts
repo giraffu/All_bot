@@ -1,19 +1,23 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import type { RouteRecordRaw } from 'vue-router'
 import { useAuthStore, checkWebAccess } from '@/stores/auth'
+import {
+  confirmTemplateApplyClose,
+  useTemplateApplyStore
+} from '@/stores/templateApply'
 
 const routes: RouteRecordRaw[] = [
   {
     path: '/login',
     name: 'Login',
     component: () => import('@/views/Login.vue'),
-    meta: { requiresAuth: false }
+    meta: { requiresAuth: false, bypassTemplateApplyGuard: true }
   },
   {
     path: '/maintenance',
     name: 'Maintenance',
     component: () => import('@/views/Maintenance.vue'),
-    meta: { requiresAuth: false }
+    meta: { requiresAuth: false, bypassTemplateApplyGuard: true }
   },
   {
     path: '/',
@@ -100,11 +104,32 @@ const router = createRouter({
   routes
 })
 
-router.beforeEach((to, from, next) => {
+router.beforeEach(async (to) => {
   const authStore = useAuthStore()
+  const templateApplyStore = useTemplateApplyStore()
   const isAuthenticated = !!authStore.token
   const hasPermission = checkWebAccess(authStore.user)
-  
+
+  if (templateApplyStore.visible) {
+    if (to.meta.bypassTemplateApplyGuard) {
+      await templateApplyStore.confirmCloseAndCleanup('route_leave')
+    } else {
+      const closeResult = await templateApplyStore.requestClose('route_leave')
+      if (closeResult.status === 'blocked') {
+        return false
+      }
+
+      if (closeResult.status === 'confirm_required') {
+        const confirmed = await confirmTemplateApplyClose(closeResult.confirmReason)
+        if (!confirmed) {
+          return false
+        }
+      }
+
+      await templateApplyStore.confirmCloseAndCleanup('route_leave')
+    }
+  }
+
   if (to.meta.requiresAuth && (!isAuthenticated || !hasPermission)) {
     if (isAuthenticated && !hasPermission) {
       import('ant-design-vue').then(({ message }) => {
@@ -112,12 +137,14 @@ router.beforeEach((to, from, next) => {
       })
       authStore.logout()
     }
-    next('/login')
-  } else if (to.path === '/login' && isAuthenticated && hasPermission) {
-    next('/profile')
-  } else {
-    next()
+    return '/login'
   }
+
+  if (to.path === '/login' && isAuthenticated && hasPermission) {
+    return '/profile'
+  }
+
+  return true
 })
 
 export default router
