@@ -7,6 +7,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Compass,
+  Copy,
   Heart,
   Image as ImageIcon,
   Play,
@@ -303,6 +304,55 @@ const handleUnfavorite = async (post: Post) => {
 const openDetail = (post: Post) => {
   currentPost.value = post
   detailVisible.value = true
+}
+
+const copyPrompt = (post: Post) => {
+  const prompt = post.prompt?.trim()
+  if (!prompt) {
+    message.warning(t('my_notes.prompt_empty'))
+    return
+  }
+
+  if (navigator.clipboard && window.isSecureContext) {
+    navigator.clipboard
+      .writeText(prompt)
+      .then(() => {
+        message.success(t('my_notes.prompt_copied'))
+      })
+      .catch((error) => {
+        console.error('Clipboard API failed:', error)
+        fallbackCopyPrompt(prompt)
+      })
+    return
+  }
+
+  fallbackCopyPrompt(prompt)
+}
+
+const fallbackCopyPrompt = (text: string) => {
+  try {
+    const textArea = document.createElement('textarea')
+    textArea.value = text
+    textArea.style.position = 'fixed'
+    textArea.style.left = '-999999px'
+    textArea.style.top = '-999999px'
+
+    document.body.appendChild(textArea)
+    textArea.focus()
+    textArea.select()
+
+    const successful = document.execCommand('copy')
+    document.body.removeChild(textArea)
+
+    if (successful) {
+      message.success(t('my_notes.prompt_copied'))
+    } else {
+      message.error(t('my_notes.copy_failed'))
+    }
+  } catch (error) {
+    console.error('Fallback copy failed:', error)
+    message.error(t('my_notes.copy_failed'))
+  }
 }
 
 const handleApply = async () => {
@@ -612,6 +662,14 @@ watch(
           </div>
           
           <div class="mt-8 space-y-4">
+            <button
+              v-if="filterType === 'apply' && currentPost.prompt?.trim()"
+              @click="copyPrompt(currentPost)"
+              class="w-full py-3 rounded-xl bg-slate-500 hover:bg-slate-500 text-white font-medium shadow-sm transition-all flex items-center justify-center border border-slate-400"
+            >
+              <Copy :size="18" class="mr-2" />
+              {{ t('my_posts.copy_prompt') }}
+            </button>
             <button 
               @click="handleApply" 
               :disabled="applying"
