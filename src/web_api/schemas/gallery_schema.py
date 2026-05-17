@@ -76,6 +76,7 @@ class ApplyContextResponse(BaseModel):
     post_id: int
     source_post_id: Optional[int] = None
     billing_resolution: Optional[str] = None
+    requested_duration: Optional[int] = None
     task_id: str
     media_type: str
     prompt: Optional[str]

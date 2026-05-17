@@ -159,6 +159,7 @@ const buildContext = (overrides: Record<string, unknown> = {}): TemplateApplyCon
   width: 512,
   height: 512,
   duration: null,
+  requestedDuration: null,
   billingResolution: null,
   ...overrides
 })

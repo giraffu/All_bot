@@ -56,6 +56,7 @@ export const normalizeTemplateApplyContext = (
     post_id: rawContext.post_id,
     source_post_id: rawContext.source_post_id ?? null,
     billing_resolution: rawContext.billing_resolution ?? null,
+    requested_duration: rawContext.requested_duration ?? null,
     task_id: rawContext.task_id ?? null,
     media_type: rawContext.media_type ?? null,
     prompt: rawContext.prompt ?? null,
@@ -86,6 +87,7 @@ export const normalizeTemplateApplyContext = (
     width: asPositiveInteger(rawContext.width),
     height: asPositiveInteger(rawContext.height),
     duration: asPositiveInteger(rawContext.duration),
+    requestedDuration: asPositiveInteger(rawContext.requested_duration),
     billingResolution: asNonEmptyString(rawContext.billing_resolution)
   }
 }

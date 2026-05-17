@@ -24,6 +24,7 @@ export interface RawApplyContextResponse {
   post_id: unknown
   source_post_id?: unknown
   billing_resolution?: unknown
+  requested_duration?: unknown
   task_id?: unknown
   media_type?: unknown
   prompt?: unknown
@@ -59,6 +60,7 @@ export interface TemplateApplyContext {
   width: number | null
   height: number | null
   duration: number | null
+  requestedDuration: number | null
   billingResolution: string | null
 }
 

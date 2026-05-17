@@ -135,6 +135,7 @@ class UserLogger:
         width: int | None = None,
         height: int | None = None,
         duration: int | None = None,
+        requested_duration: int | None = None,
     ):
         """
         Log task details to database (History table)
@@ -170,6 +171,7 @@ class UserLogger:
                 width=width,
                 height=height,
                 duration=duration,
+                requested_duration=requested_duration,
                 created_at=datetime.now(),
                 allow_contribute=allow_contribute,
                 source=source,

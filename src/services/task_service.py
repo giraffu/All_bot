@@ -15,7 +15,10 @@ from telegram.ext import ContextTypes
 
 from config import ENABLE_PUBLIC_SHARE
 from src.core.media_processor import extract_media_metadata_from_bytes_best_effort
-from src.core.video_billing import normalize_requested_billing_resolution
+from src.core.video_billing import (
+    normalize_requested_billing_resolution,
+    normalize_requested_duration_seconds,
+)
 from src.constants import (
     MODE_BLOWJOB,
     MODE_CLOSEUP_BLOWJOB,
@@ -166,6 +169,7 @@ class TaskService:
                     billing_resolution=normalize_requested_billing_resolution(
                         resolution, mode
                     ),
+                    requested_duration=normalize_requested_duration_seconds(duration),
                 )
             else:
                 await asyncio.shield(
@@ -584,6 +588,11 @@ class TaskService:
                         if is_video
                         else None
                     ),
+                    requested_duration=(
+                        duration
+                        if is_video and task_type in (MODE_CUSTOM_VIDEO, "video_lora")
+                        else None
+                    ),
                 )
             else:
                 if deduct_quota:
@@ -783,6 +792,7 @@ class TaskService:
                     billing_resolution=normalize_requested_billing_resolution(
                         resolution, mode
                     ),
+                    requested_duration=duration,
                 )
             else:
                 await asyncio.shield(
@@ -1061,6 +1071,7 @@ class TaskService:
                     billing_resolution=normalize_requested_billing_resolution(
                         resolution, mode
                     ),
+                    requested_duration=normalize_requested_duration_seconds(duration),
                 )
             else:
                 await asyncio.shield(
@@ -1450,6 +1461,7 @@ class TaskService:
         caption=None,
         allow_contribute=True,
         billing_resolution: Optional[str] = None,
+        requested_duration: Optional[int] = None,
     ):
         full_output_path = None
         media_bytes = None
@@ -1477,6 +1489,7 @@ class TaskService:
                 width=width,
                 height=height,
                 duration=duration,
+                requested_duration=requested_duration,
             )
             await permission_service.refresh_user_group(internal_user_id)
 
@@ -1583,6 +1596,7 @@ class TaskService:
                 width=width,
                 height=height,
                 duration=duration,
+                requested_duration=requested_duration,
             )
             await permission_service.refresh_user_group(internal_user_id)
 

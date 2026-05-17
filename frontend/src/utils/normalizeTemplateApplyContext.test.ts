@@ -21,6 +21,7 @@ describe('normalizeTemplateApplyContext', () => {
         post_id: '12',
         source_post_id: '88',
         billing_resolution: '1024p',
+        requested_duration: '10',
         task_id: 'task_1',
         media_type: 'image',
         prompt: '  cinematic portrait  ',
@@ -51,6 +52,7 @@ describe('normalizeTemplateApplyContext', () => {
       width: 1024,
       height: 768,
       duration: 8,
+      requestedDuration: 10,
       billingResolution: '1024p'
     })
   })

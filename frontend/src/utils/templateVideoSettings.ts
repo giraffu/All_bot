@@ -3,6 +3,7 @@ export type TemplateVideoContext = {
   width?: unknown
   height?: unknown
   duration?: unknown
+  requested_duration?: unknown
   prompt?: unknown
   lora_name?: unknown
 }
@@ -12,6 +13,8 @@ export type TemplateVideoSettings = {
   height: number | null
   duration: number
 }
+
+const LTX_ALLOWED_DURATIONS = new Set([5, 10, 15, 20])
 
 export const toPositiveInteger = (value: unknown): number | null => {
   if (value === null || value === undefined || value === '') {
@@ -34,16 +37,16 @@ export const toPositiveInteger = (value: unknown): number | null => {
 const hasNonEmptyString = (value: unknown): boolean =>
   typeof value === 'string' && value.trim() !== ''
 
-const normalizeTierFromLongestSide = (longestSide: number | null): string | null => {
-  if (longestSide === null || longestSide <= 0) {
+const normalizeTierFromVideoSide = (side: number | null): string | null => {
+  if (side === null || side <= 0) {
     return null
   }
 
-  if (longestSide >= 960) {
+  if (side >= 960) {
     return '1024'
   }
 
-  if (longestSide >= 700) {
+  if (side >= 700) {
     return '720'
   }
 
@@ -73,13 +76,13 @@ export const normalizePersistedTierBillingResolution = (value: unknown): string 
     const width = Number(explicitResolution[1])
     const height = Number(explicitResolution[2])
     if (Number.isInteger(width) && Number.isInteger(height) && width > 0 && height > 0) {
-      return normalizeTierFromLongestSide(Math.max(width, height))
+      return normalizeTierFromVideoSide(Math.min(width, height))
     }
   }
 
   const numeric = Number(normalized)
   if (Number.isInteger(numeric) && numeric > 0) {
-    return normalizeTierFromLongestSide(numeric)
+    return normalizeTierFromVideoSide(numeric)
   }
 
   return null
@@ -95,16 +98,26 @@ export const resolveTierBillingResolution = (
 
   const width = toPositiveInteger(ctx.width)
   const height = toPositiveInteger(ctx.height)
-  return normalizeTierFromLongestSide(Math.max(width ?? 0, height ?? 0) || null)
+  const inferredSide =
+    width !== null && height !== null ? Math.min(width, height) : (width ?? height)
+  return normalizeTierFromVideoSide(inferredSide)
 }
 
 export const getTemplateVideoSettings = (
   ctx: TemplateVideoContext,
-  requiresHeight = false
+  requiresHeight = false,
+  taskType?: string
 ): TemplateVideoSettings | null => {
   const width = toPositiveInteger(ctx?.width)
   const height = toPositiveInteger(ctx?.height)
-  const duration = toPositiveInteger(ctx?.duration)
+  const requestedDuration = toPositiveInteger(ctx?.requested_duration)
+  const mediaDuration = toPositiveInteger(ctx?.duration)
+  const duration =
+    taskType === 'ltx_video'
+      ? (requestedDuration && LTX_ALLOWED_DURATIONS.has(requestedDuration)
+          ? requestedDuration
+          : (mediaDuration && LTX_ALLOWED_DURATIONS.has(mediaDuration) ? mediaDuration : null))
+      : (requestedDuration ?? mediaDuration)
 
   if (width === null || duration === null) {
     return null

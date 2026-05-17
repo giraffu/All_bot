@@ -57,8 +57,8 @@ async def test_build_post_responses_includes_billing_resolution_for_gallery_list
         type="custom_video",
         prompt="prompt",
         output_file="bot-data/history/task-1/output.mp4",
-        width=640,
-        height=800,
+        width=720,
+        height=1280,
         duration=8,
     )
     post = GalleryPost(
@@ -92,7 +92,7 @@ async def test_build_post_responses_includes_billing_resolution_for_gallery_list
 
 
 @pytest.mark.asyncio
-async def test_get_apply_context_backfills_missing_portrait_video_billing_resolution(
+async def test_get_apply_context_backfills_missing_video_billing_resolution_from_short_side(
     monkeypatch,
 ):
     history = History(
@@ -101,8 +101,8 @@ async def test_get_apply_context_backfills_missing_portrait_video_billing_resolu
         task_id="task-1",
         type="custom_video",
         prompt="prompt",
-        width=640,
-        height=800,
+        width=720,
+        height=1280,
         duration=8,
     )
     post = GalleryPost(
@@ -130,9 +130,10 @@ async def test_get_apply_context_backfills_missing_portrait_video_billing_resolu
     assert response.post_id == 2
     assert response.source_post_id == 2
     assert response.billing_resolution == "720"
-    assert response.width == 640
-    assert response.height == 800
+    assert response.width == 720
+    assert response.height == 1280
     assert response.duration == 8
+    assert response.requested_duration is None
     assert history.billing_resolution is None
     session.commit.assert_not_awaited()
 
@@ -173,6 +174,94 @@ async def test_get_apply_context_clears_non_video_billing_resolution(monkeypatch
 
     assert response.billing_resolution is None
     assert history.billing_resolution == "720"
+    session.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_get_apply_context_prefers_requested_duration_and_strips_ltx_prefix(
+    monkeypatch,
+):
+    history = History(
+        id=11,
+        user_id=123,
+        task_id="task-1",
+        type="ltx_video",
+        prompt="[1344x768|20s] wide cinematic dolly shot",
+        billing_resolution="1344x768",
+        width=1344,
+        height=768,
+        duration=1,
+        requested_duration=20,
+    )
+    post = GalleryPost(
+        id=2,
+        task_id="task-1",
+        media_type="video",
+        width=1344,
+        height=768,
+        duration=1,
+    )
+    session = _FakeSession(
+        [
+            _FakeResult(single=post),
+            _FakeResult(many=[history]),
+        ]
+    )
+
+    monkeypatch.setattr(gallery_router, "AsyncSessionLocal", lambda: session)
+
+    response = await gallery_router.get_apply_context(
+        2,
+        current_user=type("User", (), {"id": 123})(),
+    )
+
+    assert response.prompt == "wide cinematic dolly shot"
+    assert response.duration == 1
+    assert response.requested_duration == 20
+    session.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_get_apply_context_strips_ltx_prefix_without_promoting_it_to_requested_duration(
+    monkeypatch,
+):
+    history = History(
+        id=11,
+        user_id=123,
+        task_id="task-1",
+        type="ltx_video",
+        prompt="[1344x768|20s] wide cinematic dolly shot",
+        billing_resolution="1344x768",
+        width=1344,
+        height=768,
+        duration=1,
+        requested_duration=None,
+    )
+    post = GalleryPost(
+        id=2,
+        task_id="task-1",
+        media_type="video",
+        width=1344,
+        height=768,
+        duration=1,
+    )
+    session = _FakeSession(
+        [
+            _FakeResult(single=post),
+            _FakeResult(many=[history]),
+        ]
+    )
+
+    monkeypatch.setattr(gallery_router, "AsyncSessionLocal", lambda: session)
+
+    response = await gallery_router.get_apply_context(
+        2,
+        current_user=type("User", (), {"id": 123})(),
+    )
+
+    assert response.prompt == "wide cinematic dolly shot"
+    assert response.duration == 1
+    assert response.requested_duration is None
     session.commit.assert_not_awaited()
 
 

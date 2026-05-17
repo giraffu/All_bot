@@ -29,6 +29,11 @@ import contextlib
 
 logger = logging.getLogger(__name__)
 
+# Legacy note:
+# The old TG "修仙市集" browsing/apply experience is no longer a usable product
+# path. Any remaining `gallery_apply_*` callback wiring below is retained only
+# for legacy compatibility and should not be expanded as an active feature.
+
 
 @register_callback("public_share")
 async def public_share_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -524,6 +529,7 @@ async def gallery_sort_page_callback(
                 ],
                 [
                     InlineKeyboardButton(
+                        # Legacy-only callback for the deprecated TG gallery apply flow.
                         "🪄 一键应用此模板", callback_data=f"gallery_apply_{post.id}"
                     )
                 ],

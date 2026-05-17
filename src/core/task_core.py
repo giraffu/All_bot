@@ -15,7 +15,10 @@ from src.core.media_processor import (
     extract_media_metadata_from_storage_best_effort,
     generate_and_upload_thumbnail,
 )
-from src.core.video_billing import normalize_requested_billing_resolution
+from src.core.video_billing import (
+    normalize_requested_billing_resolution,
+    normalize_requested_duration_seconds,
+)
 from src.logger import UserLogger
 from src.services.image_service import image_service
 from src.services.storage import storage
@@ -179,6 +182,7 @@ async def monitor_task_and_release_lock(
     output_width: int | None = None,
     output_height: int | None = None,
     output_duration: int | None = None,
+    requested_duration: int | None = None,
 ):
     """
     Background task to monitor progress and release concurrency lock.
@@ -246,6 +250,7 @@ async def monitor_task_and_release_lock(
                         width=width,
                         height=height,
                         duration=duration,
+                        requested_duration=requested_duration,
                     )
                     history_output_file = saved_output_image
                 else:
@@ -266,6 +271,7 @@ async def monitor_task_and_release_lock(
                         width=width,
                         height=height,
                         duration=duration,
+                        requested_duration=requested_duration,
                     )
                     history_output_file = result_path
 
@@ -331,9 +337,11 @@ async def process_and_submit_task(
 
     is_video_task = task_type in VIDEO_TASK_TYPES
 
+    requested_duration = None
     if is_video_task:
         resolution = inputs.get("resolution", "512p")
         duration = inputs.get("duration", "5s")
+        requested_duration = normalize_requested_duration_seconds(duration)
 
         # Safely parse resolution which might be '1024p' or '1280x704'
         res_str = str(resolution).replace("p", "")
@@ -488,6 +496,7 @@ async def process_and_submit_task(
                             output_width=output_width,
                             output_height=output_height,
                             output_duration=output_duration,
+                            requested_duration=requested_duration,
                         )
                     )
                 except Exception as e:

@@ -22,6 +22,7 @@ from src.core.media_processor import (
     generate_and_upload_thumbnail,
 )
 from src.core.video_billing import (
+    extract_video_prompt_prefix,
     infer_billing_resolution_from_dimensions,
     is_video_billing_task_type,
     normalize_requested_billing_resolution,
@@ -124,6 +125,17 @@ async def _pick_favorite_media_urls(
         thumbnail_url = storage.get_presigned_url(thumb_object_name, bucket=bucket_name)
 
     return media_url, thumbnail_url
+
+
+def _resolve_apply_prompt_and_requested_duration(history: History) -> tuple[str, int | None]:
+    prompt = history.prompt or ""
+    requested_duration = history.requested_duration
+
+    if history.type == "ltx_video":
+        _, _, clean_prompt = extract_video_prompt_prefix(prompt)
+        prompt = clean_prompt
+
+    return prompt, requested_duration
 
 
 async def _pick_history_media_urls(
@@ -673,7 +685,7 @@ async def get_favorite_apply_context(
             object_name, bucket=bucket_name
         )
 
-    prompt = history.prompt or ""
+    prompt, requested_duration = _resolve_apply_prompt_and_requested_duration(history)
     lora_name = None
     match = re.search(r"\[模型:\s*(.*?)\]\s*(.*)", prompt, re.DOTALL)
     if match:
@@ -698,6 +710,8 @@ async def get_favorite_apply_context(
 
     width = history.width
     height = history.height
+    # Keep `duration` as probed media metadata. Canonical request duration is exposed
+    # separately via `requested_duration`.
     duration = history.duration
     billing_resolution = _resolve_history_billing_resolution(
         history, gallery_post=gallery_post
@@ -735,6 +749,7 @@ async def get_favorite_apply_context(
         post_id=gallery_post.id if gallery_post else history.id,
         source_post_id=gallery_post.id if gallery_post else None,
         billing_resolution=billing_resolution,
+        requested_duration=requested_duration,
         task_id=history.task_id,
         media_type=media_type,
         prompt=prompt,

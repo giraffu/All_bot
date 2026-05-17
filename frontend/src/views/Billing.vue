@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, shallowRef, onMounted, onUnmounted, watch } from 'vue'
+import type { TonConnectUI } from '@tonconnect/ui'
 import { useAuthStore } from '@/stores/auth'
 import api from '@/api'
 import { message } from 'ant-design-vue'
@@ -13,8 +14,6 @@ import {
 } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import { useRoute } from 'vue-router'
-import { TonConnectUI } from '@tonconnect/ui'
-import { beginCell } from '@ton/core'
 
 const authStore = useAuthStore()
 const { t } = useI18n()
@@ -39,27 +38,36 @@ const tonConnectUI = shallowRef<TonConnectUI | null>(null)
 const tonWalletAddress = ref<string | null>(null)
 const tonPollingTimer = ref<any>(null)
 const systemTonReceiver = ref<string>("UQC2q_W2d061mO_g3zB-hK12v0p2u44-nI5z9F82L1j88g7b")
+let tonBeginCell: ((typeof import('@ton/core'))['beginCell']) | null = null
+
+const handleTonWalletStatusChange = (wallet: { account: { address: string } } | null) => {
+  tonWalletAddress.value = wallet ? wallet.account.address : null
+}
+
+const ensureTonModules = async () => {
+  if (!tonConnectUI.value || !tonBeginCell) {
+    const [{ TonConnectUI }, tonCore] = await Promise.all([
+      import('@tonconnect/ui'),
+      import('@ton/core')
+    ])
+
+    tonBeginCell ??= tonCore.beginCell
+
+    if (!tonConnectUI.value) {
+      const instance = new TonConnectUI({
+        manifestUrl: 'https://web.aivison.it.com/tonconnect-manifest.json'
+      })
+      instance.onStatusChange(handleTonWalletStatusChange)
+      tonConnectUI.value = instance
+    }
+  }
+
+  return tonConnectUI.value
+}
 
 // ================= Initialization =================
 onMounted(async () => {
   fetchPlans()
-  
-  // 初始化 TON Connect UI (不挂载原生按钮，使用自定义按钮唤起)
-  try {
-    tonConnectUI.value = new TonConnectUI({
-      manifestUrl: 'https://web.aivison.it.com/tonconnect-manifest.json'
-    })
-    
-    tonConnectUI.value.onStatusChange(wallet => {
-      if (wallet) {
-        tonWalletAddress.value = wallet.account.address
-      } else {
-        tonWalletAddress.value = null
-      }
-    })
-  } catch (error) {
-    console.error("TON Connect UI Init Error:", error)
-  }
 
   // 检查是否从支付网关跳回
   if (route.query.order_id) {
@@ -72,6 +80,18 @@ onMounted(async () => {
 onUnmounted(() => {
   stopRmbPolling()
   stopTonPolling()
+})
+
+watch(payMethod, async (method) => {
+  if (method !== 'ton') {
+    return
+  }
+
+  try {
+    await ensureTonModules()
+  } catch (error) {
+    console.error('TON module preload error:', error)
+  }
 })
 
 // ================= API Calls =================
@@ -174,12 +194,46 @@ const stopRmbPolling = () => {
 }
 
 // ================= TON Payment =================
+const openTonConnectModal = async () => {
+  try {
+    const tonUI = await ensureTonModules()
+    tonUI?.openModal()
+  } catch (error) {
+    console.error('TON Connect modal open error:', error)
+    message.error('TON 钱包组件加载失败，请稍后重试')
+  }
+}
+
+const disconnectTonWallet = async () => {
+  try {
+    const tonUI = await ensureTonModules()
+    await tonUI?.disconnect()
+  } catch (error) {
+    console.error('TON wallet disconnect error:', error)
+    message.error('断开 TON 钱包失败，请稍后重试')
+  }
+}
+
 const handleTonPay = async () => {
-  if (!selectedPlan.value || !tonConnectUI.value) return
-  
-  if (!tonConnectUI.value.connected) {
+  if (!selectedPlan.value) return
+
+  let tonUI: TonConnectUI | null = null
+  try {
+    tonUI = await ensureTonModules()
+  } catch (error) {
+    console.error('TON modules load error:', error)
+    message.error('TON 钱包组件加载失败，请稍后重试')
+    return
+  }
+
+  if (!tonUI) {
+    message.error('TON 钱包初始化失败，请稍后重试')
+    return
+  }
+
+  if (!tonUI.connected) {
     message.warning('请先连接 TON 钱包')
-    tonConnectUI.value.openModal()
+    tonUI.openModal()
     return
   }
 
@@ -196,7 +250,7 @@ const handleTonPay = async () => {
     const payloadStr = `ORDER:${tgId}:${selectedPlan.value.id}:${timestamp}`
     
     // Convert string to hex for text payload
-    const textCellHex = stringToCellHex(payloadStr)
+    const textCellHex = await stringToCellHex(payloadStr)
     
     const amountNanotons = Math.floor(selectedPlan.value.price_ton * 1000000000).toString()
     
@@ -211,7 +265,7 @@ const handleTonPay = async () => {
       ]
     }
     
-    const result = await tonConnectUI.value.sendTransaction(transaction)
+    const result = await tonUI.sendTransaction(transaction)
     
     if (result) {
       showPaymentModal.value = true
@@ -227,8 +281,14 @@ const handleTonPay = async () => {
 }
 
 // Helper for TON Payload
-const stringToCellHex = (text: string) => {
-  return beginCell()
+const stringToCellHex = async (text: string) => {
+  await ensureTonModules()
+
+  if (!tonBeginCell) {
+    throw new Error('TON core is not initialized')
+  }
+
+  return tonBeginCell()
     .storeUint(0, 32) // Text comment OP code
     .storeStringTail(text)
     .endCell()
@@ -403,7 +463,7 @@ const handlePaymentSuccess = async () => {
             v-if="!tonWalletAddress"
             type="primary" 
             size="large" 
-            @click="tonConnectUI?.openModal()" 
+            @click="openTonConnectModal" 
             class="w-full md:w-64 bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 border-none h-12 text-lg font-bold shadow-lg mb-4"
           >
             连接 TON 钱包
@@ -412,7 +472,7 @@ const handlePaymentSuccess = async () => {
           <div v-else class="w-full flex flex-col items-center">
             <div class="bg-slate-800/50 border border-slate-600/50 rounded-lg px-4 py-2 mb-4 text-slate-300 text-sm flex items-center">
               已连接: {{ tonWalletAddress.slice(0, 4) }}...{{ tonWalletAddress.slice(-4) }}
-              <a-button type="link" size="small" @click="tonConnectUI?.disconnect()" class="ml-2 text-rose-400 hover:text-rose-300 p-0">断开</a-button>
+              <a-button type="link" size="small" @click="disconnectTonWallet" class="ml-2 text-rose-400 hover:text-rose-300 p-0">断开</a-button>
             </div>
             <a-button 
               type="primary" 

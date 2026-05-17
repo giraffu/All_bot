@@ -38,6 +38,32 @@ describe('templateVideoSettings', () => {
     })
   })
 
+  it('prefers requested_duration over probed duration when available', () => {
+    expect(
+      getTemplateVideoSettings({
+        width: '1280',
+        height: '704',
+        duration: '1',
+        requested_duration: '20'
+      }, true, 'ltx_video')
+    ).toEqual({
+      width: 1280,
+      height: 704,
+      duration: 20
+    })
+  })
+
+  it('rejects dirty probed duration for legacy ltx_video templates without canonical duration', () => {
+    expect(
+      getTemplateVideoSettings({
+        width: '1344',
+        height: '768',
+        duration: '1',
+        requested_duration: null
+      }, true, 'ltx_video')
+    ).toBeNull()
+  })
+
   it('locks prompt controls only when template prompt config is complete', () => {
     expect(
       canLockTemplateVideoPromptControls({ prompt: 'cinematic motion blur' }, 'custom_video')
@@ -62,7 +88,7 @@ describe('templateVideoSettings', () => {
   it('normalizes persisted billing tiers and explicit resolutions', () => {
     expect(normalizePersistedTierBillingResolution('720p')).toBe('720')
     expect(normalizePersistedTierBillingResolution('1024')).toBe('1024')
-    expect(normalizePersistedTierBillingResolution('640x800')).toBe('720')
+    expect(normalizePersistedTierBillingResolution('720x1280')).toBe('720')
     expect(normalizePersistedTierBillingResolution('bad-tier')).toBeNull()
   })
 
@@ -78,9 +104,9 @@ describe('templateVideoSettings', () => {
     expect(
       resolveTierBillingResolution({
         billing_resolution: null,
-        width: 1024,
-        height: 576
+        width: 720,
+        height: 1280
       })
-    ).toBe('1024')
+    ).toBe('720')
   })
 })

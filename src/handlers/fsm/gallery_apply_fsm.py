@@ -1,3 +1,10 @@
+"""Legacy TG gallery apply FSM.
+
+This flow depends on the old Telegram gallery ("修仙市集") entry. The market
+is no longer a usable user-facing product path, so this module is kept only as
+legacy compatibility code and should not be treated as an active main flow.
+"""
+
 import logging
 import os
 import re
@@ -26,6 +33,7 @@ from src.constants import (
     TMP_DIR,
 )
 from src.handlers.prompt_router import is_global_menu_command
+from src.core.video_billing import extract_video_prompt_prefix
 from src.services.permission_service import permission_service
 from src.services.task_service import task_service
 from src.utils import is_maintenance_mode, robust_edit_text, robust_reply_text
@@ -100,6 +108,7 @@ async def start_gallery_apply(
         task_type = history.type
         prompt = history.prompt or ""
         input_file = history.input_file or ""
+        requested_duration = history.requested_duration
         post_media_type = post.media_type
         post_width = post.width
         post_height = post.height
@@ -140,14 +149,20 @@ async def start_gallery_apply(
 
     if post_media_type == "video":
         if task_type == MODE_LTX_VIDEO:
-            match = re.search(r"\[(.*?)\|(.*?)\]\s*(.*)", prompt)
-            if match:
-                res_str = match.group(1).strip()
-                dur_str = match.group(2).strip()
-                prompt = match.group(3).strip()
+            prefixed_resolution, prefixed_duration, clean_prompt = (
+                extract_video_prompt_prefix(prompt)
+            )
+            prompt = clean_prompt
+            if prefixed_resolution:
+                res_str = prefixed_resolution
             else:
                 res_str = "1280x704"
-                dur_str = "5s"
+
+            resolved_duration = requested_duration
+            if resolved_duration is None:
+                resolved_duration = prefixed_duration
+
+            dur_str = f"{resolved_duration or 5}s"
 
             user_identity = await permission_service.get_user_identity(internal_user.id)
             downgraded = False
@@ -428,6 +443,7 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
 
 def get_gallery_apply_fsm_handler() -> ConversationHandler:
+    # Legacy-only registration for the deprecated TG gallery apply chain.
     return ConversationHandler(
         entry_points=[
             CallbackQueryHandler(start_gallery_apply, pattern=r"^gallery_apply_\d+$")

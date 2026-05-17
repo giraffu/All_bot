@@ -49,9 +49,11 @@ async def test_monitor_task_and_release_lock_schedules_web_history_r2_warmup(mon
         output_width=1024,
         output_height=1024,
         output_duration=None,
+        requested_duration=10,
     )
 
     fake_user_logger.log_task.assert_awaited_once()
+    assert fake_user_logger.log_task.await_args.kwargs["requested_duration"] == 10
     warmup_mock.assert_called_once_with(
         user_id=123,
         task_id="task-1",
@@ -114,3 +116,53 @@ async def test_schedule_web_history_r2_warmup_still_prunes_when_copy_fails(monke
     )
     prune_mock.assert_awaited_once_with(123)
     warning_mock.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_process_and_submit_task_passes_requested_duration_to_web_monitor(monkeypatch):
+    monitor_mock = AsyncMock()
+
+    def _capture_background_task(coro):
+        coro.close()
+        return None
+
+    monkeypatch.setattr(
+        task_core, "check_concurrency_lock", AsyncMock(return_value=(True, ""))
+    )
+    monkeypatch.setattr(
+        task_core, "check_and_deduct_credits", AsyncMock(return_value=(True, ""))
+    )
+    monkeypatch.setattr(
+        task_core,
+        "get_user_priority_and_identity",
+        AsyncMock(return_value=(0, "user", "外门弟子")),
+    )
+    monkeypatch.setattr(task_core, "load_prompts", lambda: {})
+    monkeypatch.setattr(task_core.TaskRegistry, "add_task", AsyncMock(return_value="reg-1"))
+    monkeypatch.setattr(
+        task_core.TaskRegistry, "update_backend_task_id", AsyncMock(return_value=None)
+    )
+    monkeypatch.setattr(
+        task_core, "dispatch_to_worker", AsyncMock(return_value="backend-task-1")
+    )
+    monkeypatch.setattr(task_core, "monitor_task_and_release_lock", monitor_mock)
+    monkeypatch.setattr(task_core.asyncio, "create_task", _capture_background_task)
+
+    result = await task_core.process_and_submit_task(
+        user_id=123,
+        username="tester",
+        task_type="ltx_video",
+        inputs={
+            "prompt": "wide cinematic dolly shot",
+            "images": [],
+            "resolution": "1280x704",
+            "duration": "20s",
+        },
+        task_id="task-1",
+        client_type="web",
+    )
+
+    assert result["task_id"] == "backend-task-1"
+    monitor_mock.assert_called_once()
+    assert monitor_mock.call_args.kwargs["requested_duration"] == 20
+    assert monitor_mock.call_args.kwargs["output_duration"] == 20

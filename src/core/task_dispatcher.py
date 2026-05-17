@@ -11,6 +11,7 @@ from src.constants import (
     RESOLUTION_COST,
     TASK_COSTS,
 )
+from src.core.video_billing import convert_ltx_seconds_to_length_frames
 from src.services.image_service import image_service
 
 
@@ -282,13 +283,7 @@ class LtxVideoStrategy(BaseTaskStrategy):
     ) -> str:
         resolution = inputs.get("resolution", 512)
         duration = inputs.get("duration", 5)
-
-        # Safely parse duration
-        dur_str = str(duration).replace("s", "")
-        try:
-            dur_val = int(dur_str)
-        except ValueError:
-            dur_val = 5
+        length_frames = convert_ltx_seconds_to_length_frames(duration)
 
         res_str = str(resolution)
         try:
@@ -304,7 +299,7 @@ class LtxVideoStrategy(BaseTaskStrategy):
             image_path=image_path,
             width=width,
             height=height,
-            length=dur_val,
+            length=length_frames,
             priority=priority,
         )
 

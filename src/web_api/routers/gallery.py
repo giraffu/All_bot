@@ -29,6 +29,7 @@ from src.core.media_urls import (
     build_r2_thumbnail_info,
 )
 from src.core.video_billing import (
+    extract_video_prompt_prefix,
     infer_billing_resolution_from_dimensions,
     is_video_billing_task_type,
     normalize_requested_billing_resolution,
@@ -69,6 +70,17 @@ def _resolve_author_name(user: User | None, fallback_user_id: int | None = None)
     if fallback_user_id is not None:
         return f"User {fallback_user_id}"
     return "匿名修士"
+
+
+def _resolve_apply_prompt_and_requested_duration(history: History) -> tuple[str, int | None]:
+    prompt = history.prompt or ""
+    requested_duration = history.requested_duration
+
+    if history.type == MODE_LTX_VIDEO:
+        _, _, clean_prompt = extract_video_prompt_prefix(prompt)
+        prompt = clean_prompt
+
+    return prompt, requested_duration
 
 async def get_media_url(
     output_file: str,
@@ -742,7 +754,7 @@ async def get_apply_context(
                 object_name, bucket=bucket_name
             )
 
-        prompt = history.prompt or ""
+        prompt, requested_duration = _resolve_apply_prompt_and_requested_duration(history)
         lora_name = None
         match = re.search(r"\[模型:\s*(.*?)\]\s*(.*)", prompt, re.DOTALL)
         if match:
@@ -765,6 +777,8 @@ async def get_apply_context(
 
         width = post.width if post.width is not None else history.width
         height = post.height if post.height is not None else history.height
+        # Keep `duration` as media metadata; request canonical stays in
+        # `requested_duration`.
         duration = post.duration if post.duration is not None else history.duration
         billing_resolution = _resolve_history_billing_resolution(
             history, width=width, height=height, gallery_post=post
@@ -774,6 +788,7 @@ async def get_apply_context(
             post_id=post.id,
             source_post_id=post.id,
             billing_resolution=billing_resolution,
+            requested_duration=requested_duration,
             task_id=post.task_id,
             media_type=post.media_type,
             prompt=prompt,

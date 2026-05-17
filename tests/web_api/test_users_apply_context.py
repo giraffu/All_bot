@@ -110,6 +110,7 @@ async def test_get_favorite_apply_context_probes_media_after_session_closes(
     assert response.width == 1024
     assert response.height == 1024
     assert response.duration == 8
+    assert response.requested_duration is None
     assert history.billing_resolution is None
     assert history.width is None
     assert history.height is None
@@ -179,12 +180,13 @@ async def test_get_favorite_apply_context_prefers_active_newer_gallery_post_meta
     assert response.width == 1024
     assert response.height == 1024
     assert response.duration == 10
+    assert response.requested_duration is None
     assert history.billing_resolution is None
     session.commit.assert_not_awaited()
 
 
 @pytest.mark.asyncio
-async def test_get_favorite_apply_context_normalizes_existing_portrait_video_to_720_tier(
+async def test_get_favorite_apply_context_uses_short_side_for_video_billing_tier(
     monkeypatch,
 ):
     history = History(
@@ -193,8 +195,8 @@ async def test_get_favorite_apply_context_normalizes_existing_portrait_video_to_
         task_id="task-1",
         type="custom_video",
         prompt="prompt",
-        width=640,
-        height=800,
+        width=720,
+        height=1280,
         duration=8,
     )
     session = _FakeSession(
@@ -214,10 +216,49 @@ async def test_get_favorite_apply_context_normalizes_existing_portrait_video_to_
     response = await users_router.get_favorite_apply_context("task-1", token="test-token")
 
     assert response.billing_resolution == "720"
-    assert response.width == 640
-    assert response.height == 800
+    assert response.width == 720
+    assert response.height == 1280
     assert response.duration == 8
+    assert response.requested_duration is None
     assert history.billing_resolution is None
+    session.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_get_favorite_apply_context_strips_ltx_prefix_but_keeps_media_duration(
+    monkeypatch,
+):
+    history = History(
+        id=11,
+        user_id=123,
+        task_id="task-1",
+        type="ltx_video",
+        prompt="[1344x768|20s] wide cinematic dolly shot",
+        billing_resolution="1344x768",
+        width=1344,
+        height=768,
+        duration=1,
+        requested_duration=None,
+    )
+    session = _FakeSession(
+        [
+            _FakeResult(single=history),
+            _FakeResult(many=[]),
+        ]
+    )
+
+    monkeypatch.setattr(db_core, "AsyncSessionLocal", lambda: session)
+    monkeypatch.setattr(
+        web_dependencies,
+        "get_current_user",
+        AsyncMock(return_value=type("User", (), {"id": 123})()),
+    )
+
+    response = await users_router.get_favorite_apply_context("task-1", token="test-token")
+
+    assert response.prompt == "wide cinematic dolly shot"
+    assert response.duration == 1
+    assert response.requested_duration is None
     session.commit.assert_not_awaited()
 
 
@@ -253,4 +294,42 @@ async def test_get_favorite_apply_context_keeps_non_video_billing_resolution_rea
 
     assert response.billing_resolution is None
     assert history.billing_resolution == "720"
+    session.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_get_favorite_apply_context_prefers_requested_duration_and_strips_ltx_prefix(
+    monkeypatch,
+):
+    history = History(
+        id=11,
+        user_id=123,
+        task_id="task-1",
+        type="ltx_video",
+        prompt="[1280x704|20s] cinematic motion",
+        billing_resolution="1280x704",
+        width=1280,
+        height=704,
+        duration=1,
+        requested_duration=20,
+    )
+    session = _FakeSession(
+        [
+            _FakeResult(single=history),
+            _FakeResult(many=[]),
+        ]
+    )
+
+    monkeypatch.setattr(db_core, "AsyncSessionLocal", lambda: session)
+    monkeypatch.setattr(
+        web_dependencies,
+        "get_current_user",
+        AsyncMock(return_value=type("User", (), {"id": 123})()),
+    )
+
+    response = await users_router.get_favorite_apply_context("task-1", token="test-token")
+
+    assert response.prompt == "cinematic motion"
+    assert response.duration == 1
+    assert response.requested_duration == 20
     session.commit.assert_not_awaited()

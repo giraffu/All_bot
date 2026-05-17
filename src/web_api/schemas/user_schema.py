@@ -15,6 +15,7 @@ class HistoryItem(BaseModel):
     width: Optional[int] = None
     height: Optional[int] = None
     duration: Optional[int] = None
+    requested_duration: Optional[int] = None
     output_file_url: Optional[str] = None
     thumbnail_url: Optional[str] = None
     created_at: datetime

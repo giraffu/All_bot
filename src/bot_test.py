@@ -290,6 +290,8 @@ def main():
 
     # Register FSM Handlers first (they must intercept text/callbacks before fallback handlers)
     app.add_handler(TypeHandler(Update, global_middleware), group=-1)
+    # Legacy-only: the old TG gallery/apply chain is retained for compatibility,
+    # but "修仙市集" is no longer a usable product path.
     app.add_handler(get_gallery_apply_fsm_handler())
     app.add_handler(get_face_video_fsm_handler())
     app.add_handler(get_faceswap_fsm_handler())

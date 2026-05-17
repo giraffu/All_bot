@@ -1,3 +1,4 @@
+import re
 from typing import Any
 
 from src.constants import VIDEO_TASK_TYPES
@@ -6,12 +7,12 @@ from src.constants import VIDEO_TASK_TYPES
 VIDEO_BILLING_TASK_TYPES = frozenset(VIDEO_TASK_TYPES)
 
 
-def _normalize_tier_from_longest_side(longest_side: int | None) -> str | None:
-    if longest_side is None or longest_side <= 0:
+def _normalize_tier_from_video_side(side: int | None) -> str | None:
+    if side is None or side <= 0:
         return None
-    if longest_side >= 960:
+    if side >= 960:
         return "1024"
-    if longest_side >= 700:
+    if side >= 700:
         return "720"
     return "512"
 
@@ -43,7 +44,7 @@ def normalize_requested_billing_resolution(
 
         if task_type == "ltx_video":
             return f"{width}x{height}"
-        return _normalize_tier_from_longest_side(max(width, height))
+        return _normalize_tier_from_video_side(min(width, height))
 
     try:
         numeric = int(text)
@@ -52,7 +53,45 @@ def normalize_requested_billing_resolution(
 
     if numeric in (512, 720, 1024):
         return str(numeric)
-    return _normalize_tier_from_longest_side(numeric)
+    return _normalize_tier_from_video_side(numeric)
+
+
+def normalize_requested_duration_seconds(duration: Any) -> int | None:
+    if duration is None:
+        return None
+
+    text = str(duration).strip().lower()
+    if not text:
+        return None
+
+    if text.endswith("s"):
+        text = text[:-1]
+
+    try:
+        parsed = int(text)
+    except ValueError:
+        return None
+
+    return parsed if parsed > 0 else None
+
+
+def convert_ltx_seconds_to_length_frames(duration_seconds: Any) -> int:
+    seconds = normalize_requested_duration_seconds(duration_seconds) or 5
+    return seconds * 24 + 1
+
+
+def extract_video_prompt_prefix(
+    prompt: str | None,
+) -> tuple[str | None, int | None, str]:
+    raw_prompt = (prompt or "").strip()
+    match = re.match(r"^\[(?P<resolution>[^|\]]+)\|(?P<duration>[^\]]+)\]\s*(?P<body>.*)$", raw_prompt, re.DOTALL)
+    if not match:
+        return None, None, raw_prompt
+
+    resolution = match.group("resolution").strip() or None
+    duration = normalize_requested_duration_seconds(match.group("duration"))
+    clean_prompt = match.group("body").strip()
+    return resolution, duration, clean_prompt
 
 
 def infer_billing_resolution_from_dimensions(
@@ -66,5 +105,9 @@ def infer_billing_resolution_from_dimensions(
     if task_type == "ltx_video" and width and height:
         return f"{width}x{height}"
 
-    longest_side = max(width or 0, height or 0) or None
-    return _normalize_tier_from_longest_side(longest_side)
+    inferred_side = None
+    if width and height:
+        inferred_side = min(width, height)
+    else:
+        inferred_side = width or height or None
+    return _normalize_tier_from_video_side(inferred_side)

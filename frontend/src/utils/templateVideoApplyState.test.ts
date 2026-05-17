@@ -52,8 +52,8 @@ describe('templateVideoApplyState', () => {
       {
         task_type: 'custom_video',
         prompt: 'cinematic action shot',
-        width: 640,
-        height: 800,
+        width: 720,
+        height: 1280,
         duration: 8
       },
       'custom_video'
@@ -62,8 +62,8 @@ describe('templateVideoApplyState', () => {
       {
         task_type: 'custom_video',
         prompt: 'cinematic action shot',
-        width: 640,
-        height: 800,
+        width: 720,
+        height: 1280,
         duration: 8,
         billing_resolution: 'bad-tier'
       },
@@ -132,6 +132,42 @@ describe('templateVideoApplyState', () => {
     expect(state?.resolution).toBe('1344x768')
     expect(state?.duration).toBe('5')
     expect(state?.isTemplateVideoSettingsLocked).toBe(true)
+    expect(state?.isTemplatePromptLocked).toBe(true)
+  })
+
+  it('prefers requested_duration for ltx_video templates when metadata duration is dirty', () => {
+    const state = resolveTemplateVideoApplyState(
+      {
+        task_type: 'ltx_video',
+        prompt: 'wide cinematic dolly shot',
+        width: 1344,
+        height: 768,
+        duration: 1,
+        requested_duration: 20
+      },
+      'ltx_video'
+    )
+
+    expect(state?.duration).toBe('20')
+    expect(state?.isTemplateVideoSettingsLocked).toBe(true)
+  })
+
+  it('keeps ltx_video settings editable when legacy metadata duration is dirty and canonical duration is missing', () => {
+    const state = resolveTemplateVideoApplyState(
+      {
+        task_type: 'ltx_video',
+        prompt: 'wide cinematic dolly shot',
+        width: 1344,
+        height: 768,
+        duration: 1,
+        requested_duration: null
+      },
+      'ltx_video'
+    )
+
+    expect(state?.resolution).toBeNull()
+    expect(state?.duration).toBeNull()
+    expect(state?.isTemplateVideoSettingsLocked).toBe(false)
     expect(state?.isTemplatePromptLocked).toBe(true)
   })
 })

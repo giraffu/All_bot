@@ -115,6 +115,7 @@ class History(Base):
     width = Column(Integer, nullable=True)
     height = Column(Integer, nullable=True)
     duration = Column(Integer, nullable=True)
+    requested_duration = Column(Integer, nullable=True)
     created_at = Column(DateTime, default=datetime.now)
 
     is_public = Column(Boolean, default=False)

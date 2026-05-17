@@ -8,6 +8,35 @@ import { nodePolyfills } from 'vite-plugin-node-polyfills'
 
 // https://vite.dev/config/
 export default defineConfig({
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (!id.includes('node_modules')) {
+            return
+          }
+
+          if (id.includes('@tonconnect') || id.includes('@ton/core')) {
+            return 'vendor-ton'
+          }
+
+          if (id.includes('ant-design-vue')) {
+            return 'vendor-ant'
+          }
+
+          if (
+            id.includes('/vue/') ||
+            id.includes('vue-router') ||
+            id.includes('pinia') ||
+            id.includes('vue-i18n') ||
+            id.includes('@vueuse')
+          ) {
+            return 'vendor-vue'
+          }
+        }
+      }
+    }
+  },
   plugins: [
     vue(),
     tailwindcss(),

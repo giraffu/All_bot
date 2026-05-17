@@ -63,7 +63,7 @@ export const resolveTemplateVideoApplyState = (
   const warnings: string[] = []
   const isLtxVideo = taskType === 'ltx_video'
   const isTemplatePromptLocked = canLockTemplateVideoPromptControls(ctx, taskType)
-  const templateVideoSettings = getTemplateVideoSettings(ctx, isLtxVideo)
+  const templateVideoSettings = getTemplateVideoSettings(ctx, isLtxVideo, taskType)
   const isTemplateVideoSettingsLocked = templateVideoSettings !== null
   const tierBillingResolution = isLtxVideo ? null : resolveTierBillingResolution(ctx)
 

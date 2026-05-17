@@ -1,3 +1,7 @@
+from unittest.mock import AsyncMock
+
+import pytest
+
 from src.core.task_dispatcher import (
     StrategyFactory,
     DefaultImageStrategy,
@@ -46,3 +50,40 @@ def test_video_strategy_cost_calculation():
     # 720p base is 18, 8s multiplier is 2.0
     cost = strategy.get_cost({"resolution": "720p", "duration": "8s"})
     assert cost == 36
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("duration", "expected_length"),
+    [(5, 121), ("10s", 241), (15, 361), ("20", 481)],
+)
+async def test_ltx_video_submit_task_converts_seconds_to_frames(
+    monkeypatch, duration, expected_length
+):
+    strategy = StrategyFactory.get_strategy("ltx_video")
+    submit_mock = AsyncMock(return_value="backend-task-id")
+    monkeypatch.setattr(
+        "src.core.task_dispatcher.image_service.submit_ltx_video_task", submit_mock
+    )
+
+    result = await strategy.submit_task(
+        "task-1",
+        {
+            "prompt": "cinematic motion",
+            "resolution": "1280x704",
+            "duration": duration,
+            "saved_input_images": ["demo/input.png"],
+        },
+        priority=3,
+    )
+
+    assert result == "backend-task-id"
+    submit_mock.assert_awaited_once_with(
+        "task-1",
+        prompt="cinematic motion",
+        image_path="demo/input.png",
+        width=1280,
+        height=704,
+        length=expected_length,
+        priority=3,
+    )
