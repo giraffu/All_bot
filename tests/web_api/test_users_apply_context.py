@@ -225,6 +225,82 @@ async def test_get_favorite_apply_context_uses_short_side_for_video_billing_tier
 
 
 @pytest.mark.asyncio
+async def test_get_favorite_apply_context_maps_512x768_to_512_billing_tier(
+    monkeypatch,
+):
+    history = History(
+        id=11,
+        user_id=123,
+        task_id="task-1",
+        type="custom_video",
+        prompt="prompt",
+        width=512,
+        height=768,
+        duration=5,
+    )
+    session = _FakeSession(
+        [
+            _FakeResult(single=history),
+            _FakeResult(many=[]),
+        ]
+    )
+
+    monkeypatch.setattr(db_core, "AsyncSessionLocal", lambda: session)
+    monkeypatch.setattr(
+        web_dependencies,
+        "get_current_user",
+        AsyncMock(return_value=type("User", (), {"id": 123})()),
+    )
+
+    response = await users_router.get_favorite_apply_context("task-1", token="test-token")
+
+    assert response.billing_resolution == "512"
+    assert response.width == 512
+    assert response.height == 768
+    assert response.duration == 5
+    assert response.requested_duration == 5
+    session.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_get_favorite_apply_context_maps_1024x1536_to_1024_billing_tier(
+    monkeypatch,
+):
+    history = History(
+        id=11,
+        user_id=123,
+        task_id="task-1",
+        type="video_lora",
+        prompt="[模型: BreastGrow] prompt",
+        width=1024,
+        height=1536,
+        duration=10,
+    )
+    session = _FakeSession(
+        [
+            _FakeResult(single=history),
+            _FakeResult(many=[]),
+        ]
+    )
+
+    monkeypatch.setattr(db_core, "AsyncSessionLocal", lambda: session)
+    monkeypatch.setattr(
+        web_dependencies,
+        "get_current_user",
+        AsyncMock(return_value=type("User", (), {"id": 123})()),
+    )
+
+    response = await users_router.get_favorite_apply_context("task-1", token="test-token")
+
+    assert response.billing_resolution == "1024"
+    assert response.width == 1024
+    assert response.height == 1536
+    assert response.duration == 10
+    assert response.requested_duration == 10
+    session.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_get_favorite_apply_context_strips_ltx_prefix_but_keeps_media_duration(
     monkeypatch,
 ):

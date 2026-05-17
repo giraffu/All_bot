@@ -162,6 +162,8 @@ describe('templateVideoSettings', () => {
     expect(normalizePersistedTierBillingResolution('720p')).toBe('720')
     expect(normalizePersistedTierBillingResolution('1024')).toBe('1024')
     expect(normalizePersistedTierBillingResolution('720x1280')).toBe('720')
+    expect(normalizePersistedTierBillingResolution('512x768')).toBe('512')
+    expect(normalizePersistedTierBillingResolution('1024x1536')).toBe('1024')
     expect(normalizePersistedTierBillingResolution('bad-tier')).toBeNull()
   })
 
@@ -181,5 +183,21 @@ describe('templateVideoSettings', () => {
         height: 1280
       })
     ).toBe('720')
+
+    expect(
+      resolveTierBillingResolution({
+        billing_resolution: null,
+        width: 512,
+        height: 768
+      })
+    ).toBe('512')
+
+    expect(
+      resolveTierBillingResolution({
+        billing_resolution: null,
+        width: 1024,
+        height: 1536
+      })
+    ).toBe('1024')
   })
 })

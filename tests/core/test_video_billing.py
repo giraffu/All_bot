@@ -1,6 +1,7 @@
 import pytest
 
 from src.core.video_billing import (
+    infer_billing_resolution_from_dimensions,
     infer_legacy_ltx_requested_duration,
     infer_legacy_tier_video_requested_duration,
 )
@@ -52,4 +53,21 @@ def test_infer_legacy_tier_video_requested_duration(
     assert (
         infer_legacy_tier_video_requested_duration(media_duration)
         == expected_requested_duration
+    )
+
+
+@pytest.mark.parametrize(
+    ("width", "height", "task_type", "expected_billing_resolution"),
+    [
+        (720, 1280, "custom_video", "720"),
+        (512, 768, "custom_video", "512"),
+        (1024, 1536, "video_lora", "1024"),
+    ],
+)
+def test_infer_billing_resolution_from_dimensions_uses_short_side_for_tier_video(
+    width, height, task_type, expected_billing_resolution
+):
+    assert (
+        infer_billing_resolution_from_dimensions(width, height, task_type)
+        == expected_billing_resolution
     )
