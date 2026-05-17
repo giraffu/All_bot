@@ -374,6 +374,127 @@ describe('TemplateImageToVideoPanel', () => {
     expect(setSubmittedTaskIdMock).toHaveBeenLastCalledWith('task-789')
   })
 
+  it('maps legacy custom_video media duration 9s to canonical 8s before submit', async () => {
+    const wrapper = mountPanel({
+      raw: {
+        post_id: 4,
+        source_post_id: 120,
+        task_id: 'task-template-custom-video-legacy',
+        media_type: 'video',
+        task_type: 'custom_video',
+        prompt: 'cinematic action shot',
+        width: 720,
+        height: 1280,
+        duration: 9,
+        requested_duration: null,
+        billing_resolution: '720'
+      },
+      rawEntityId: 4,
+      rawTaskType: 'custom_video',
+      taskType: 'custom_video',
+      sourcePostId: 120,
+      prompt: 'cinematic action shot',
+      width: 720,
+      height: 1280,
+      duration: 9,
+      requestedDuration: null,
+      billingResolution: '720'
+    })
+    await nextTick()
+
+    const file = new File(['base'], 'base.png', { type: 'image/png' })
+    const uploader = wrapper.findComponent(UploadDraggerStub)
+    await uploader.props('beforeUpload')(file)
+    await flushPromises()
+
+    const generateButton = wrapper
+      .findAllComponents(ButtonStub)
+      .find(button => button.text().includes('生成视频'))
+
+    if (!generateButton) {
+      throw new Error('Expected generate button to exist')
+    }
+
+    await generateButton.trigger('click')
+    await flushPromises()
+
+    expect(submitTaskMock).toHaveBeenCalledTimes(1)
+    expect(submitTaskMock.mock.calls[0]?.[0]).toEqual({
+      task_type: 'custom_video',
+      inputs: {
+        images: ['uploads/base.png'],
+        resolution: 720,
+        duration: 8,
+        prompt: 'cinematic action shot'
+      },
+      priority: 0,
+      is_template: true,
+      source_post_id: 120
+    })
+  })
+
+  it('maps legacy video_lora media duration 11s to canonical 10s before submit', async () => {
+    const wrapper = mountPanel({
+      raw: {
+        post_id: 5,
+        source_post_id: 121,
+        task_id: 'task-template-video-lora-legacy',
+        media_type: 'video',
+        task_type: 'video_lora',
+        prompt: 'glowing neon city',
+        lora_name: 'BreastGrow',
+        width: 1024,
+        height: 1024,
+        duration: 11,
+        requested_duration: null,
+        billing_resolution: '1024'
+      },
+      rawEntityId: 5,
+      rawTaskType: 'video_lora',
+      taskType: 'video_lora',
+      sourcePostId: 121,
+      prompt: 'glowing neon city',
+      loraName: 'BreastGrow',
+      width: 1024,
+      height: 1024,
+      duration: 11,
+      requestedDuration: null,
+      billingResolution: '1024'
+    })
+    await nextTick()
+
+    const file = new File(['base'], 'base.png', { type: 'image/png' })
+    const uploader = wrapper.findComponent(UploadDraggerStub)
+    await uploader.props('beforeUpload')(file)
+    await flushPromises()
+
+    const generateButton = wrapper
+      .findAllComponents(ButtonStub)
+      .find(button => button.text().includes('生成视频'))
+
+    if (!generateButton) {
+      throw new Error('Expected generate button to exist')
+    }
+
+    await generateButton.trigger('click')
+    await flushPromises()
+
+    expect(submitTaskMock).toHaveBeenCalledTimes(1)
+    expect(submitTaskMock.mock.calls[0]?.[0]).toEqual({
+      task_type: 'video_lora',
+      inputs: {
+        images: ['uploads/base.png'],
+        resolution: 720,
+        duration: 10,
+        prompt: 'glowing neon city',
+        lora_name: 'BreastGrow'
+      },
+      priority: 0,
+      is_template: true,
+      source_post_id: 121
+    })
+  })
+
   it('does not submit dirty legacy ltx_video media duration when requestedDuration is missing', async () => {
     const wrapper = mountPanel({
       raw: {

@@ -133,7 +133,7 @@ async def test_get_apply_context_backfills_missing_video_billing_resolution_from
     assert response.width == 720
     assert response.height == 1280
     assert response.duration == 8
-    assert response.requested_duration is None
+    assert response.requested_duration == 8
     assert history.billing_resolution is None
     session.commit.assert_not_awaited()
 
@@ -262,6 +262,178 @@ async def test_get_apply_context_strips_ltx_prefix_without_promoting_it_to_reque
     assert response.prompt == "wide cinematic dolly shot"
     assert response.duration == 1
     assert response.requested_duration is None
+    session.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_get_apply_context_maps_legacy_ltx_media_duration_to_requested_duration(
+    monkeypatch,
+):
+    history = History(
+        id=11,
+        user_id=123,
+        task_id="task-1",
+        type="ltx_video",
+        prompt="wide cinematic dolly shot",
+        billing_resolution="512x704",
+        width=512,
+        height=704,
+        duration=21,
+        requested_duration=None,
+    )
+    post = GalleryPost(
+        id=2,
+        task_id="task-1",
+        media_type="video",
+        width=512,
+        height=704,
+        duration=21,
+    )
+    session = _FakeSession(
+        [
+            _FakeResult(single=post),
+            _FakeResult(many=[history]),
+        ]
+    )
+
+    monkeypatch.setattr(gallery_router, "AsyncSessionLocal", lambda: session)
+
+    response = await gallery_router.get_apply_context(
+        2,
+        current_user=type("User", (), {"id": 123})(),
+    )
+
+    assert response.duration == 21
+    assert response.requested_duration == 20
+    session.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_get_apply_context_maps_legacy_ltx_media_duration_16_to_15(
+    monkeypatch,
+):
+    history = History(
+        id=11,
+        user_id=123,
+        task_id="task-1",
+        type="ltx_video",
+        prompt="wide cinematic dolly shot",
+        billing_resolution="512x704",
+        width=512,
+        height=704,
+        duration=16,
+        requested_duration=None,
+    )
+    post = GalleryPost(
+        id=2,
+        task_id="task-1",
+        media_type="video",
+        width=512,
+        height=704,
+        duration=16,
+    )
+    session = _FakeSession(
+        [
+            _FakeResult(single=post),
+            _FakeResult(many=[history]),
+        ]
+    )
+
+    monkeypatch.setattr(gallery_router, "AsyncSessionLocal", lambda: session)
+
+    response = await gallery_router.get_apply_context(
+        2,
+        current_user=type("User", (), {"id": 123})(),
+    )
+
+    assert response.duration == 16
+    assert response.requested_duration == 15
+    session.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_get_apply_context_maps_legacy_custom_video_duration_9_to_8(
+    monkeypatch,
+):
+    history = History(
+        id=11,
+        user_id=123,
+        task_id="task-1",
+        type="custom_video",
+        prompt="cinematic action shot",
+        billing_resolution="720",
+        width=720,
+        height=1280,
+        duration=9,
+        requested_duration=None,
+    )
+    post = GalleryPost(
+        id=2,
+        task_id="task-1",
+        media_type="video",
+        width=720,
+        height=1280,
+        duration=9,
+    )
+    session = _FakeSession(
+        [
+            _FakeResult(single=post),
+            _FakeResult(many=[history]),
+        ]
+    )
+
+    monkeypatch.setattr(gallery_router, "AsyncSessionLocal", lambda: session)
+
+    response = await gallery_router.get_apply_context(
+        2,
+        current_user=type("User", (), {"id": 123})(),
+    )
+
+    assert response.duration == 9
+    assert response.requested_duration == 8
+    session.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_get_apply_context_maps_legacy_video_lora_duration_11_to_10(
+    monkeypatch,
+):
+    history = History(
+        id=11,
+        user_id=123,
+        task_id="task-1",
+        type="video_lora",
+        prompt="[模型: BreastGrow] glowing neon city",
+        billing_resolution="1024",
+        width=1024,
+        height=1024,
+        duration=11,
+        requested_duration=None,
+    )
+    post = GalleryPost(
+        id=2,
+        task_id="task-1",
+        media_type="video",
+        width=1024,
+        height=1024,
+        duration=11,
+    )
+    session = _FakeSession(
+        [
+            _FakeResult(single=post),
+            _FakeResult(many=[history]),
+        ]
+    )
+
+    monkeypatch.setattr(gallery_router, "AsyncSessionLocal", lambda: session)
+
+    response = await gallery_router.get_apply_context(
+        2,
+        current_user=type("User", (), {"id": 123})(),
+    )
+
+    assert response.duration == 11
+    assert response.requested_duration == 10
     session.commit.assert_not_awaited()
 
 

@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 import {
   canLockTemplateVideoPromptControls,
   getTemplateVideoSettings,
+  inferLegacyTierVideoRequestedDuration,
+  inferLegacyLtxRequestedDuration,
   normalizePersistedTierBillingResolution,
   resolveTierBillingResolution,
   toPositiveInteger
@@ -53,6 +55,66 @@ describe('templateVideoSettings', () => {
     })
   })
 
+  it('maps nearby legacy ltx media durations back to canonical request tiers', () => {
+    expect(inferLegacyLtxRequestedDuration(6)).toBe(5)
+    expect(inferLegacyLtxRequestedDuration(7)).toBe(5)
+    expect(inferLegacyLtxRequestedDuration(8)).toBe(10)
+    expect(inferLegacyLtxRequestedDuration(9)).toBe(10)
+    expect(inferLegacyLtxRequestedDuration('11')).toBe(10)
+    expect(inferLegacyLtxRequestedDuration(13)).toBe(15)
+    expect(inferLegacyLtxRequestedDuration(16)).toBe(15)
+    expect(inferLegacyLtxRequestedDuration(17)).toBe(15)
+    expect(inferLegacyLtxRequestedDuration(18)).toBe(20)
+    expect(inferLegacyLtxRequestedDuration(19)).toBe(20)
+    expect(inferLegacyLtxRequestedDuration('21')).toBe(20)
+    expect(inferLegacyLtxRequestedDuration(22)).toBe(20)
+    expect(inferLegacyLtxRequestedDuration(1)).toBeNull()
+    expect(inferLegacyLtxRequestedDuration(23)).toBeNull()
+  })
+
+  it('maps nearby legacy tier-video media durations back to canonical request tiers', () => {
+    expect(inferLegacyTierVideoRequestedDuration(5)).toBe(5)
+    expect(inferLegacyTierVideoRequestedDuration(6)).toBe(5)
+    expect(inferLegacyTierVideoRequestedDuration(7)).toBe(8)
+    expect(inferLegacyTierVideoRequestedDuration(8)).toBe(8)
+    expect(inferLegacyTierVideoRequestedDuration(9)).toBe(8)
+    expect(inferLegacyTierVideoRequestedDuration(10)).toBe(10)
+    expect(inferLegacyTierVideoRequestedDuration(11)).toBe(10)
+    expect(inferLegacyTierVideoRequestedDuration(12)).toBe(10)
+    expect(inferLegacyTierVideoRequestedDuration(1)).toBeNull()
+    expect(inferLegacyTierVideoRequestedDuration(13)).toBeNull()
+  })
+
+  it('uses nearest legacy ltx duration compatibility when canonical duration is missing', () => {
+    expect(
+      getTemplateVideoSettings({
+        width: '512',
+        height: '704',
+        duration: '16',
+        requested_duration: null
+      }, true, 'ltx_video')
+    ).toEqual({
+      width: 512,
+      height: 704,
+      duration: 15
+    })
+  })
+
+  it('uses nearest legacy tier-video duration compatibility when canonical duration is missing', () => {
+    expect(
+      getTemplateVideoSettings({
+        width: '720',
+        height: '1280',
+        duration: '9',
+        requested_duration: null
+      }, false, 'custom_video')
+    ).toEqual({
+      width: 720,
+      height: 1280,
+      duration: 8
+    })
+  })
+
   it('rejects dirty probed duration for legacy ltx_video templates without canonical duration', () => {
     expect(
       getTemplateVideoSettings({
@@ -61,6 +123,17 @@ describe('templateVideoSettings', () => {
         duration: '1',
         requested_duration: null
       }, true, 'ltx_video')
+    ).toBeNull()
+  })
+
+  it('rejects dirty probed duration for legacy tier-video templates without canonical duration', () => {
+    expect(
+      getTemplateVideoSettings({
+        width: '720',
+        height: '1280',
+        duration: '13',
+        requested_duration: null
+      }, false, 'custom_video')
     ).toBeNull()
   })
 

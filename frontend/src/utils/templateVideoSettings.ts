@@ -15,6 +15,11 @@ export type TemplateVideoSettings = {
 }
 
 const LTX_ALLOWED_DURATIONS = new Set([5, 10, 15, 20])
+const LTX_ALLOWED_DURATION_VALUES = [5, 10, 15, 20]
+const MAX_LEGACY_LTX_DURATION_DRIFT = 2
+const TIER_VIDEO_ALLOWED_DURATIONS = new Set([5, 8, 10])
+const TIER_VIDEO_ALLOWED_DURATION_VALUES = [5, 8, 10]
+const MAX_LEGACY_TIER_VIDEO_DURATION_DRIFT = 2
 
 export const toPositiveInteger = (value: unknown): number | null => {
   if (value === null || value === undefined || value === '') {
@@ -32,6 +37,32 @@ export const toPositiveInteger = (value: unknown): number | null => {
   }
 
   return parsed
+}
+
+export const inferLegacyLtxRequestedDuration = (value: unknown): number | null => {
+  const normalized = toPositiveInteger(value)
+  if (normalized === null || normalized < LTX_ALLOWED_DURATION_VALUES[0]) {
+    return null
+  }
+
+  const nearest = LTX_ALLOWED_DURATION_VALUES.reduce((closest, candidate) =>
+    Math.abs(candidate - normalized) < Math.abs(closest - normalized) ? candidate : closest
+  )
+
+  return Math.abs(nearest - normalized) <= MAX_LEGACY_LTX_DURATION_DRIFT ? nearest : null
+}
+
+export const inferLegacyTierVideoRequestedDuration = (value: unknown): number | null => {
+  const normalized = toPositiveInteger(value)
+  if (normalized === null || normalized < TIER_VIDEO_ALLOWED_DURATION_VALUES[0]) {
+    return null
+  }
+
+  const nearest = TIER_VIDEO_ALLOWED_DURATION_VALUES.reduce((closest, candidate) =>
+    Math.abs(candidate - normalized) < Math.abs(closest - normalized) ? candidate : closest
+  )
+
+  return Math.abs(nearest - normalized) <= MAX_LEGACY_TIER_VIDEO_DURATION_DRIFT ? nearest : null
 }
 
 const hasNonEmptyString = (value: unknown): boolean =>
@@ -112,12 +143,22 @@ export const getTemplateVideoSettings = (
   const height = toPositiveInteger(ctx?.height)
   const requestedDuration = toPositiveInteger(ctx?.requested_duration)
   const mediaDuration = toPositiveInteger(ctx?.duration)
+  const legacyCompatibleLtxDuration = inferLegacyLtxRequestedDuration(ctx?.duration)
+  const legacyCompatibleTierDuration = inferLegacyTierVideoRequestedDuration(ctx?.duration)
   const duration =
     taskType === 'ltx_video'
       ? (requestedDuration && LTX_ALLOWED_DURATIONS.has(requestedDuration)
           ? requestedDuration
-          : (mediaDuration && LTX_ALLOWED_DURATIONS.has(mediaDuration) ? mediaDuration : null))
-      : (requestedDuration ?? mediaDuration)
+          : (mediaDuration && LTX_ALLOWED_DURATIONS.has(mediaDuration)
+              ? mediaDuration
+              : legacyCompatibleLtxDuration))
+      : ((taskType === 'custom_video' || taskType === 'video_lora')
+          ? (requestedDuration && TIER_VIDEO_ALLOWED_DURATIONS.has(requestedDuration)
+              ? requestedDuration
+              : (mediaDuration && TIER_VIDEO_ALLOWED_DURATIONS.has(mediaDuration)
+                  ? mediaDuration
+                  : legacyCompatibleTierDuration))
+          : (requestedDuration ?? mediaDuration))
 
   if (width === null || duration === null) {
     return null

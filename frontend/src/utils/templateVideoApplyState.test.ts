@@ -76,6 +76,24 @@ describe('templateVideoApplyState', () => {
     expect(invalidState?.duration).toBe('8')
   })
 
+  it('maps legacy custom_video media duration 9s back to canonical 8s when requested_duration is missing', () => {
+    const state = resolveTemplateVideoApplyState(
+      {
+        task_type: 'custom_video',
+        prompt: 'cinematic action shot',
+        width: 720,
+        height: 1280,
+        duration: 9,
+        requested_duration: null
+      },
+      'custom_video'
+    )
+
+    expect(state?.resolution).toBe('720')
+    expect(state?.duration).toBe('8')
+    expect(state?.isTemplateVideoSettingsLocked).toBe(true)
+  })
+
   it('keeps video settings editable when custom_video metadata is incomplete', () => {
     const state = resolveTemplateVideoApplyState(
       {
@@ -117,6 +135,25 @@ describe('templateVideoApplyState', () => {
     expect(state?.templateSettingsWarning).toContain('模板缺少完整的提示词或模型信息')
   })
 
+  it('maps legacy video_lora media duration 11s back to canonical 10s when requested_duration is missing', () => {
+    const state = resolveTemplateVideoApplyState(
+      {
+        task_type: 'video_lora',
+        prompt: 'glowing neon city',
+        lora_name: 'BreastGrow',
+        width: 1024,
+        height: 1024,
+        duration: 11,
+        requested_duration: null
+      },
+      'video_lora'
+    )
+
+    expect(state?.resolution).toBe('1024')
+    expect(state?.duration).toBe('10')
+    expect(state?.isTemplateVideoSettingsLocked).toBe(true)
+  })
+
   it('uses exact width and height for ltx_video templates', () => {
     const state = resolveTemplateVideoApplyState(
       {
@@ -149,6 +186,42 @@ describe('templateVideoApplyState', () => {
     )
 
     expect(state?.duration).toBe('20')
+    expect(state?.isTemplateVideoSettingsLocked).toBe(true)
+  })
+
+  it('maps legacy ltx media duration 21s back to canonical 20s when requested_duration is missing', () => {
+    const state = resolveTemplateVideoApplyState(
+      {
+        task_type: 'ltx_video',
+        prompt: 'wide cinematic dolly shot',
+        width: 512,
+        height: 704,
+        duration: 21,
+        requested_duration: null
+      },
+      'ltx_video'
+    )
+
+    expect(state?.resolution).toBe('512x704')
+    expect(state?.duration).toBe('20')
+    expect(state?.isTemplateVideoSettingsLocked).toBe(true)
+  })
+
+  it('maps legacy ltx media duration 16s back to canonical 15s when requested_duration is missing', () => {
+    const state = resolveTemplateVideoApplyState(
+      {
+        task_type: 'ltx_video',
+        prompt: 'wide cinematic dolly shot',
+        width: 512,
+        height: 704,
+        duration: 16,
+        requested_duration: null
+      },
+      'ltx_video'
+    )
+
+    expect(state?.resolution).toBe('512x704')
+    expect(state?.duration).toBe('15')
     expect(state?.isTemplateVideoSettingsLocked).toBe(true)
   })
 

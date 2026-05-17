@@ -23,6 +23,7 @@ from src.core.media_processor import (
 )
 from src.core.video_billing import (
     extract_video_prompt_prefix,
+    infer_legacy_video_requested_duration,
     infer_billing_resolution_from_dimensions,
     is_video_billing_task_type,
     normalize_requested_billing_resolution,
@@ -136,6 +137,16 @@ def _resolve_apply_prompt_and_requested_duration(history: History) -> tuple[str,
         prompt = clean_prompt
 
     return prompt, requested_duration
+
+
+def _resolve_legacy_requested_duration(
+    *,
+    history: History,
+    duration: int | None,
+) -> int | None:
+    if history.requested_duration is not None:
+        return history.requested_duration
+    return infer_legacy_video_requested_duration(history.type, duration)
 
 
 async def _pick_history_media_urls(
@@ -744,6 +755,11 @@ async def get_favorite_apply_context(
                 history.task_id,
                 exc,
             )
+
+    requested_duration = _resolve_legacy_requested_duration(
+        history=history,
+        duration=duration,
+    )
 
     return ApplyContextResponse(
         post_id=gallery_post.id if gallery_post else history.id,

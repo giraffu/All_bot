@@ -33,7 +33,11 @@ from src.constants import (
     TMP_DIR,
 )
 from src.handlers.prompt_router import is_global_menu_command
-from src.core.video_billing import extract_video_prompt_prefix
+from src.core.video_billing import (
+    extract_video_prompt_prefix,
+    infer_legacy_ltx_requested_duration,
+    infer_legacy_tier_video_requested_duration,
+)
 from src.services.permission_service import permission_service
 from src.services.task_service import task_service
 from src.utils import is_maintenance_mode, robust_edit_text, robust_reply_text
@@ -109,6 +113,7 @@ async def start_gallery_apply(
         prompt = history.prompt or ""
         input_file = history.input_file or ""
         requested_duration = history.requested_duration
+        history_duration = history.duration
         post_media_type = post.media_type
         post_width = post.width
         post_height = post.height
@@ -161,6 +166,10 @@ async def start_gallery_apply(
             resolved_duration = requested_duration
             if resolved_duration is None:
                 resolved_duration = prefixed_duration
+            if resolved_duration is None:
+                resolved_duration = infer_legacy_ltx_requested_duration(
+                    post_duration if post_duration is not None else history_duration
+                )
 
             dur_str = f"{resolved_duration or 5}s"
 
@@ -193,14 +202,12 @@ async def start_gallery_apply(
                 else:
                     res_str = "512p"
 
-            # Reconstruct duration string
-            if post_duration:
-                if post_duration > 9:
-                    dur_str = "10s"
-                elif post_duration > 6:
-                    dur_str = "8s"
-                else:
-                    dur_str = "5s"
+            resolved_duration = requested_duration
+            if resolved_duration is None:
+                resolved_duration = infer_legacy_tier_video_requested_duration(
+                    post_duration if post_duration is not None else history_duration
+                )
+            dur_str = f"{resolved_duration or 5}s"
 
             # Permission check & Auto-downgrade
             user_group = await permission_service.get_user_group(internal_user.id)

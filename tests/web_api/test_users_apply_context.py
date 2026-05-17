@@ -110,7 +110,7 @@ async def test_get_favorite_apply_context_probes_media_after_session_closes(
     assert response.width == 1024
     assert response.height == 1024
     assert response.duration == 8
-    assert response.requested_duration is None
+    assert response.requested_duration == 8
     assert history.billing_resolution is None
     assert history.width is None
     assert history.height is None
@@ -180,7 +180,7 @@ async def test_get_favorite_apply_context_prefers_active_newer_gallery_post_meta
     assert response.width == 1024
     assert response.height == 1024
     assert response.duration == 10
-    assert response.requested_duration is None
+    assert response.requested_duration == 10
     assert history.billing_resolution is None
     session.commit.assert_not_awaited()
 
@@ -219,7 +219,7 @@ async def test_get_favorite_apply_context_uses_short_side_for_video_billing_tier
     assert response.width == 720
     assert response.height == 1280
     assert response.duration == 8
-    assert response.requested_duration is None
+    assert response.requested_duration == 8
     assert history.billing_resolution is None
     session.commit.assert_not_awaited()
 
@@ -259,6 +259,154 @@ async def test_get_favorite_apply_context_strips_ltx_prefix_but_keeps_media_dura
     assert response.prompt == "wide cinematic dolly shot"
     assert response.duration == 1
     assert response.requested_duration is None
+    session.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_get_favorite_apply_context_maps_legacy_ltx_media_duration_to_requested_duration(
+    monkeypatch,
+):
+    history = History(
+        id=11,
+        user_id=123,
+        task_id="task-1",
+        type="ltx_video",
+        prompt="wide cinematic dolly shot",
+        billing_resolution="512x704",
+        width=512,
+        height=704,
+        duration=21,
+        requested_duration=None,
+    )
+    session = _FakeSession(
+        [
+            _FakeResult(single=history),
+            _FakeResult(many=[]),
+        ]
+    )
+
+    monkeypatch.setattr(db_core, "AsyncSessionLocal", lambda: session)
+    monkeypatch.setattr(
+        web_dependencies,
+        "get_current_user",
+        AsyncMock(return_value=type("User", (), {"id": 123})()),
+    )
+
+    response = await users_router.get_favorite_apply_context("task-1", token="test-token")
+
+    assert response.duration == 21
+    assert response.requested_duration == 20
+    session.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_get_favorite_apply_context_maps_legacy_ltx_media_duration_16_to_15(
+    monkeypatch,
+):
+    history = History(
+        id=11,
+        user_id=123,
+        task_id="task-1",
+        type="ltx_video",
+        prompt="wide cinematic dolly shot",
+        billing_resolution="512x704",
+        width=512,
+        height=704,
+        duration=16,
+        requested_duration=None,
+    )
+    session = _FakeSession(
+        [
+            _FakeResult(single=history),
+            _FakeResult(many=[]),
+        ]
+    )
+
+    monkeypatch.setattr(db_core, "AsyncSessionLocal", lambda: session)
+    monkeypatch.setattr(
+        web_dependencies,
+        "get_current_user",
+        AsyncMock(return_value=type("User", (), {"id": 123})()),
+    )
+
+    response = await users_router.get_favorite_apply_context("task-1", token="test-token")
+
+    assert response.duration == 16
+    assert response.requested_duration == 15
+    session.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_get_favorite_apply_context_maps_legacy_custom_video_duration_9_to_8(
+    monkeypatch,
+):
+    history = History(
+        id=11,
+        user_id=123,
+        task_id="task-1",
+        type="custom_video",
+        prompt="cinematic action shot",
+        billing_resolution="720",
+        width=720,
+        height=1280,
+        duration=9,
+        requested_duration=None,
+    )
+    session = _FakeSession(
+        [
+            _FakeResult(single=history),
+            _FakeResult(many=[]),
+        ]
+    )
+
+    monkeypatch.setattr(db_core, "AsyncSessionLocal", lambda: session)
+    monkeypatch.setattr(
+        web_dependencies,
+        "get_current_user",
+        AsyncMock(return_value=type("User", (), {"id": 123})()),
+    )
+
+    response = await users_router.get_favorite_apply_context("task-1", token="test-token")
+
+    assert response.duration == 9
+    assert response.requested_duration == 8
+    session.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_get_favorite_apply_context_maps_legacy_video_lora_duration_11_to_10(
+    monkeypatch,
+):
+    history = History(
+        id=11,
+        user_id=123,
+        task_id="task-1",
+        type="video_lora",
+        prompt="[模型: BreastGrow] glowing neon city",
+        billing_resolution="1024",
+        width=1024,
+        height=1024,
+        duration=11,
+        requested_duration=None,
+    )
+    session = _FakeSession(
+        [
+            _FakeResult(single=history),
+            _FakeResult(many=[]),
+        ]
+    )
+
+    monkeypatch.setattr(db_core, "AsyncSessionLocal", lambda: session)
+    monkeypatch.setattr(
+        web_dependencies,
+        "get_current_user",
+        AsyncMock(return_value=type("User", (), {"id": 123})()),
+    )
+
+    response = await users_router.get_favorite_apply_context("task-1", token="test-token")
+
+    assert response.duration == 11
+    assert response.requested_duration == 10
     session.commit.assert_not_awaited()
 
 

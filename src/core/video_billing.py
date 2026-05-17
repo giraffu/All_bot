@@ -5,6 +5,10 @@ from src.constants import VIDEO_TASK_TYPES
 
 
 VIDEO_BILLING_TASK_TYPES = frozenset(VIDEO_TASK_TYPES)
+LTX_ALLOWED_DURATIONS = (5, 10, 15, 20)
+MAX_LEGACY_LTX_DURATION_DRIFT = 2
+TIER_VIDEO_ALLOWED_DURATIONS = (5, 8, 10)
+MAX_LEGACY_TIER_VIDEO_DURATION_DRIFT = 2
 
 
 def _normalize_tier_from_video_side(side: int | None) -> str | None:
@@ -78,6 +82,49 @@ def normalize_requested_duration_seconds(duration: Any) -> int | None:
 def convert_ltx_seconds_to_length_frames(duration_seconds: Any) -> int:
     seconds = normalize_requested_duration_seconds(duration_seconds) or 5
     return seconds * 24 + 1
+
+
+def infer_legacy_ltx_requested_duration(duration: Any) -> int | None:
+    normalized = normalize_requested_duration_seconds(duration)
+    if normalized is None:
+        return None
+    if normalized < LTX_ALLOWED_DURATIONS[0]:
+        return None
+
+    nearest = min(
+        LTX_ALLOWED_DURATIONS,
+        key=lambda candidate: abs(candidate - normalized),
+    )
+    if abs(nearest - normalized) > MAX_LEGACY_LTX_DURATION_DRIFT:
+        return None
+    return nearest
+
+
+def infer_legacy_tier_video_requested_duration(duration: Any) -> int | None:
+    normalized = normalize_requested_duration_seconds(duration)
+    if normalized is None:
+        return None
+    if normalized < TIER_VIDEO_ALLOWED_DURATIONS[0]:
+        return None
+
+    nearest = min(
+        TIER_VIDEO_ALLOWED_DURATIONS,
+        key=lambda candidate: abs(candidate - normalized),
+    )
+    if abs(nearest - normalized) > MAX_LEGACY_TIER_VIDEO_DURATION_DRIFT:
+        return None
+    return nearest
+
+
+def infer_legacy_video_requested_duration(
+    task_type: str | None,
+    duration: Any,
+) -> int | None:
+    if task_type == "ltx_video":
+        return infer_legacy_ltx_requested_duration(duration)
+    if task_type in {"custom_video", "video_lora"}:
+        return infer_legacy_tier_video_requested_duration(duration)
+    return None
 
 
 def extract_video_prompt_prefix(

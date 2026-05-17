@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from src.constants import MODE_LTX_VIDEO
+from src.constants import MODE_CUSTOM_VIDEO, MODE_LTX_VIDEO, MODE_VIDEO_LORA
 from src.database.models import GalleryPost, History
 from src.handlers.fsm import gallery_apply_fsm
 
@@ -155,4 +155,165 @@ async def test_start_gallery_apply_falls_back_to_legacy_prefix_when_requested_du
     assert state == gallery_apply_fsm.WAIT_REFERENCE_IMAGE
     assert context.user_data["gallery_apply_data"]["dur_str"] == "20s"
     assert context.user_data["gallery_apply_data"]["prompt"] == "wide cinematic dolly shot"
+    reply_mock.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_start_gallery_apply_maps_legacy_ltx_media_duration_when_canonical_and_prefix_missing(
+    monkeypatch,
+):
+    post = GalleryPost(
+        id=9,
+        task_id="task-1",
+        media_type="video",
+        width=512,
+        height=704,
+        duration=21,
+    )
+    history = History(
+        id=11,
+        user_id=123,
+        task_id="task-1",
+        type=MODE_LTX_VIDEO,
+        prompt="wide cinematic dolly shot",
+        input_file="history/template.png",
+        requested_duration=None,
+        duration=21,
+    )
+    session = _FakeSession(
+        [
+            _FakeResult(single=post),
+            _FakeResult(many=[history]),
+        ]
+    )
+    reply_mock = AsyncMock()
+
+    monkeypatch.setattr("src.core.user_core.get_or_create_user_by_telegram", AsyncMock(return_value=(SimpleNamespace(id=123), None)))
+    monkeypatch.setattr("src.database.core.AsyncSessionLocal", lambda: session)
+    monkeypatch.setattr(gallery_apply_fsm, "is_maintenance_mode", lambda: False)
+    monkeypatch.setattr(gallery_apply_fsm, "robust_reply_text", reply_mock)
+    monkeypatch.setattr(
+        gallery_apply_fsm.permission_service,
+        "get_user_identity",
+        AsyncMock(return_value="核心弟子"),
+    )
+
+    update = _build_update(9)
+    context = _build_context()
+
+    state = await gallery_apply_fsm.start_gallery_apply(update, context)
+
+    assert state == gallery_apply_fsm.WAIT_REFERENCE_IMAGE
+    assert context.user_data["gallery_apply_data"]["dur_str"] == "20s"
+    assert context.user_data["gallery_apply_data"]["prompt"] == "wide cinematic dolly shot"
+    reply_mock.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_start_gallery_apply_prefers_requested_duration_for_custom_video(
+    monkeypatch,
+):
+    post = GalleryPost(
+        id=9,
+        task_id="task-1",
+        media_type="video",
+        width=720,
+        height=1280,
+        duration=9,
+    )
+    history = History(
+        id=11,
+        user_id=123,
+        task_id="task-1",
+        type=MODE_CUSTOM_VIDEO,
+        prompt="cinematic action shot",
+        input_file="history/template.png",
+        requested_duration=8,
+        duration=9,
+    )
+    session = _FakeSession(
+        [
+            _FakeResult(single=post),
+            _FakeResult(many=[history]),
+        ]
+    )
+    reply_mock = AsyncMock()
+
+    monkeypatch.setattr("src.core.user_core.get_or_create_user_by_telegram", AsyncMock(return_value=(SimpleNamespace(id=123), None)))
+    monkeypatch.setattr("src.database.core.AsyncSessionLocal", lambda: session)
+    monkeypatch.setattr(gallery_apply_fsm, "is_maintenance_mode", lambda: False)
+    monkeypatch.setattr(gallery_apply_fsm, "robust_reply_text", reply_mock)
+    monkeypatch.setattr(
+        gallery_apply_fsm.permission_service,
+        "get_user_group",
+        AsyncMock(return_value="凡人"),
+    )
+    monkeypatch.setattr(
+        gallery_apply_fsm.permission_service,
+        "get_user_identity",
+        AsyncMock(return_value="核心弟子"),
+    )
+
+    update = _build_update(9)
+    context = _build_context()
+
+    state = await gallery_apply_fsm.start_gallery_apply(update, context)
+
+    assert state == gallery_apply_fsm.WAIT_REFERENCE_IMAGE
+    assert context.user_data["gallery_apply_data"]["dur_str"] == "8s"
+    reply_mock.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_start_gallery_apply_maps_legacy_video_lora_duration_11_to_10(
+    monkeypatch,
+):
+    post = GalleryPost(
+        id=9,
+        task_id="task-1",
+        media_type="video",
+        width=1024,
+        height=1024,
+        duration=11,
+    )
+    history = History(
+        id=11,
+        user_id=123,
+        task_id="task-1",
+        type=MODE_VIDEO_LORA,
+        prompt="[模型: BreastGrow] glowing neon city",
+        input_file="history/template.png",
+        requested_duration=None,
+        duration=11,
+    )
+    session = _FakeSession(
+        [
+            _FakeResult(single=post),
+            _FakeResult(many=[history]),
+        ]
+    )
+    reply_mock = AsyncMock()
+
+    monkeypatch.setattr("src.core.user_core.get_or_create_user_by_telegram", AsyncMock(return_value=(SimpleNamespace(id=123), None)))
+    monkeypatch.setattr("src.database.core.AsyncSessionLocal", lambda: session)
+    monkeypatch.setattr(gallery_apply_fsm, "is_maintenance_mode", lambda: False)
+    monkeypatch.setattr(gallery_apply_fsm, "robust_reply_text", reply_mock)
+    monkeypatch.setattr(
+        gallery_apply_fsm.permission_service,
+        "get_user_group",
+        AsyncMock(return_value="真传弟子"),
+    )
+    monkeypatch.setattr(
+        gallery_apply_fsm.permission_service,
+        "get_user_identity",
+        AsyncMock(return_value="核心弟子"),
+    )
+
+    update = _build_update(9)
+    context = _build_context()
+
+    state = await gallery_apply_fsm.start_gallery_apply(update, context)
+
+    assert state == gallery_apply_fsm.WAIT_REFERENCE_IMAGE
+    assert context.user_data["gallery_apply_data"]["dur_str"] == "8s"
     reply_mock.assert_awaited_once()
