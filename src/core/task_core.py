@@ -565,9 +565,39 @@ async def get_system_task_stats() -> Tuple[dict, dict]:
 
 async def force_terminate_task(task_id: str, user_id: Optional[int] = None):
     """
-    强制终止一个活跃任务并释放对应的用户锁
+    强制终止一个活跃任务并释放对应的用户锁。
+
+    这里的 ``task_id`` 是 Bot 侧注册表中的任务 ID；真正提交给中控的
+    任务 ID 可能保存在 ``backend_task_id`` 中，因此终止时需要双向剔除。
     """
+    from src.api_client import api_client
     from src.services.redis_client import redis_client
+
+    tasks = await redis_client.get_active_tasks()
+    task_data = tasks.get(task_id, {}) if tasks else {}
+    backend_task_id = task_data.get("backend_task_id")
+
+    if not user_id:
+        user_id = task_data.get("user_id")
+
+    if backend_task_id:
+        try:
+            await api_client.cancel_task(backend_task_id)
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code != 404:
+                raise
+            logger.info(
+                "Backend task %s already missing during force terminate of %s.",
+                backend_task_id,
+                task_id,
+            )
+        except Exception:
+            logger.exception(
+                "Failed to cancel backend task %s for registry task %s.",
+                backend_task_id,
+                task_id,
+            )
+            raise
 
     if user_id:
         await release_concurrency_lock(user_id)

@@ -164,7 +164,7 @@ onUnmounted(() => {
       <a-col :xs="24" :sm="6">
         <a-card hoverable class="queue-card border-l-4 border-l-blue-500 h-full">
           <a-statistic
-            title="总排队任务"
+            title="总活跃任务"
             :value="status.queue_size"
             :value-style="{ color: '#1890ff', fontWeight: 'bold' }"
           >
@@ -172,7 +172,7 @@ onUnmounted(() => {
               <thunderbolt-outlined />
             </template>
             <template #suffix>
-              <span class="text-xs text-gray-400 font-normal ml-1">个任务</span>
+              <span class="text-xs text-gray-400 font-normal ml-1">排队或执行中</span>
             </template>
           </a-statistic>
         </a-card>
@@ -214,7 +214,7 @@ onUnmounted(() => {
       
       <a-col :xs="24" :sm="6" v-if="queueByTypeDisplay.length > 0">
         <a-card hoverable class="queue-card border-l-4 border-l-purple-500 h-full">
-           <div class="text-gray-500 mb-1">队列详情</div>
+           <div class="text-gray-500 mb-1">活跃任务详情</div>
            <div class="flex flex-col gap-1 max-h-24 overflow-y-auto pr-2 custom-scrollbar">
              <div v-for="item in queueByTypeDisplay" :key="item.type" class="flex justify-between items-center text-sm border-b border-gray-100 pb-1 last:border-0">
                <span class="truncate pr-2" :title="item.type">{{ item.type }}</span>
@@ -226,7 +226,7 @@ onUnmounted(() => {
       <a-col :xs="24" :sm="6" v-else>
         <a-card hoverable class="queue-card border-l-4 border-l-gray-300 h-full">
           <a-statistic
-            title="队列详情"
+            title="活跃任务详情"
             value="暂无排队"
             :value-style="{ color: '#8c8c8c', fontSize: '16px' }"
           >

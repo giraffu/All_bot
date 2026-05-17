@@ -20,6 +20,14 @@ class RefundTaskRequest(BaseModel):
     task_id: str
 
 
+def _count_tasks_by_type(tasks: dict) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for task in tasks.values():
+        task_type = task.get("task_type") or "unknown"
+        counts[task_type] = counts.get(task_type, 0) + 1
+    return counts
+
+
 @router.post("/system/refund_bot_task")
 async def refund_bot_task(req: RefundTaskRequest):
     """Force terminate a stuck task, refund credits and release concurrency lock."""
@@ -253,30 +261,30 @@ async def get_active_bot_tasks():
                     task["user_group"] = "未知"
                     task["user_identity"] = "外门弟子"
 
-                    backend_id = task.get("backend_task_id")
-                    status_data = backend_statuses.get(backend_id)
+                backend_id = task.get("backend_task_id")
+                status_data = backend_statuses.get(backend_id)
 
-                    if status_data:
-                        state = status_data.get("status")
-                        task["execution_status"] = state
-                        if state == "running":
-                            task["queue_position"] = "生成中"
-                        elif state == "pending":
-                            task["queue_position"] = status_data.get("queue_pos", "-")
-                        elif state == "done":
-                            task["queue_position"] = "已完成"
-                        elif state == "error":
-                            task["queue_position"] = "异常"
-                        elif state == "cancelled":
-                            task["queue_position"] = "已取消"
-                        else:
-                            task["queue_position"] = "未知"
-                    elif backend_id:
-                        task["execution_status"] = "pending"
-                        task["queue_position"] = "-"
+                if status_data:
+                    state = status_data.get("status")
+                    task["execution_status"] = state
+                    if state == "running":
+                        task["queue_position"] = "生成中"
+                    elif state == "pending":
+                        task["queue_position"] = status_data.get("queue_pos", "-")
+                    elif state == "done":
+                        task["queue_position"] = "已完成"
+                    elif state == "error":
+                        task["queue_position"] = "异常"
+                    elif state == "cancelled":
+                        task["queue_position"] = "已取消"
                     else:
-                        task["execution_status"] = "submitting"
-                        task["queue_position"] = "提交中"
+                        task["queue_position"] = "未知"
+                elif backend_id:
+                    task["execution_status"] = "pending"
+                    task["queue_position"] = "-"
+                else:
+                    task["execution_status"] = "submitting"
+                    task["queue_position"] = "提交中"
 
         return {"status": "success", "tasks": tasks, "count": len(tasks)}
     except Exception as e:
@@ -322,7 +330,7 @@ async def get_system_status():
 
 @router.get("/system/status")
 async def get_system_status_proxy():
-    """Proxy system status request to ComfyUI Middleware"""
+    """聚合 Bot 活跃任务与中控状态，供仪表盘统一展示。"""
     try:
         url = f"{API_BASE}/system/status"
         async with httpx.AsyncClient(trust_env=False) as client:
@@ -347,9 +355,14 @@ async def get_system_status_proxy():
             "error": str(e),
         }
 
-    # 获取并注入并发锁数据
+    # 上方面板和下方活跃任务表应共享同一份 Bot 侧活跃任务口径，
+    # 避免一个展示中控待调度队列、一个展示 active_tasks 导致数字分叉。
     try:
-        _, concurrencies = await get_system_task_stats()
+        active_tasks, concurrencies = await get_system_task_stats()
+        data["middleware_queue_size"] = data.get("queue_size", 0)
+        data["middleware_queue_by_type"] = data.get("queue_by_type", {})
+        data["queue_size"] = len(active_tasks)
+        data["queue_by_type"] = _count_tasks_by_type(active_tasks)
         data["concurrency_locks"] = sum(concurrencies.values())
         data["concurrency_details"] = concurrencies
     except Exception as e:
