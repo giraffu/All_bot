@@ -353,7 +353,7 @@ class APIClient:
         image_path: str,
         width: int = 1280,
         height: int = 704,
-        length: int = 241,
+        length: int = 5,
         priority: int = 0,
     ) -> str:
         """

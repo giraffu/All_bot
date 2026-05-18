@@ -11,7 +11,6 @@ from src.constants import (
     RESOLUTION_COST,
     TASK_COSTS,
 )
-from src.core.video_billing import convert_ltx_seconds_to_length_frames
 from src.services.image_service import image_service
 
 
@@ -283,13 +282,19 @@ class LtxVideoStrategy(BaseTaskStrategy):
     ) -> str:
         resolution = inputs.get("resolution", 512)
         duration = inputs.get("duration", 5)
-        length_frames = convert_ltx_seconds_to_length_frames(duration)
 
         res_str = str(resolution)
         try:
             width, height = map(int, res_str.split("x"))
         except Exception:
             width, height = 1280, 704
+
+        # The LTX workflow expects `length` to be seconds on the mxSlider node,
+        # then converts it to frames internally via `a * 24 + 1`.
+        try:
+            requested_seconds = int(str(duration).replace("s", ""))
+        except (TypeError, ValueError):
+            requested_seconds = 5
 
         saved_images = inputs.get("saved_input_images", [])
         image_path = saved_images[0] if saved_images else ""
@@ -299,7 +304,7 @@ class LtxVideoStrategy(BaseTaskStrategy):
             image_path=image_path,
             width=width,
             height=height,
-            length=length_frames,
+            length=requested_seconds,
             priority=priority,
         )
 

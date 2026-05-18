@@ -55,9 +55,9 @@ def test_video_strategy_cost_calculation():
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("duration", "expected_length"),
-    [(5, 121), ("10s", 241), (15, 361), ("20", 481)],
+    [(5, 5), ("10s", 10), (15, 15), ("20", 20)],
 )
-async def test_ltx_video_submit_task_converts_seconds_to_frames(
+async def test_ltx_video_submit_task_passes_seconds_to_workflow_slider(
     monkeypatch, duration, expected_length
 ):
     strategy = StrategyFactory.get_strategy("ltx_video")
