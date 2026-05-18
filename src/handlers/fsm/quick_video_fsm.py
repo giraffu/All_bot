@@ -245,7 +245,13 @@ async def start_generation(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
     image_path = fsm_data.pop("image_path", None)
     if not image_path:
-        return ConversationHandler.END  # Prevent double submit
+        logger.warning(
+            f"user={user_id} image_path missing or already consumed in quick_video"
+        )
+        with contextlib.suppress(Exception):
+            await query.answer("⚠️ 任务已提交或状态已失效，请勿重复操作。", show_alert=True)
+        _cleanup_context(context, user_id)
+        return ConversationHandler.END
 
     res = fsm_data["resolution"]
     dur = fsm_data["duration"]

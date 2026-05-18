@@ -136,6 +136,16 @@ async def receive_body_image(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await robust_reply_text(message, "❌ 无法识别。请发送图片！")
         return FaceSwapState.WAIT_BODY_IMAGE
 
+    fsm_data = context.user_data.get("faceswap_data")
+    face_path = fsm_data.get("face_image_path") if fsm_data else None
+    if not face_path:
+        logger.warning(
+            f"user={user_id} face_path missing before quota check in faceswap"
+        )
+        await robust_reply_text(message, "⚠️ 任务状态已过期，请重新发送图片。")
+        _cleanup_context(context, user_id)
+        return ConversationHandler.END
+
     cost = TASK_COSTS.get(MODE_FACESWAP_STEP1, 1)
     if not update.effective_user:
         return ConversationHandler.END
@@ -161,17 +171,20 @@ async def receive_body_image(update: Update, context: ContextTypes.DEFAULT_TYPE)
         new_file = await context.bot.get_file(file_id)
         local_path = f"/tmp/bot_fsm_tmp/{uuid.uuid4()}_body.png"
         await new_file.download_to_drive(local_path)
-        context.user_data["faceswap_data"]["body_image_path"] = local_path
+        fsm_data["body_image_path"] = local_path
     except Exception as e:
         logger.error(f"Error downloading body image for FSM user {user_id}: {e}")
         await robust_reply_text(message, "❌ 下载图片失败，请重试或发送 /cancel 退出。")
         return FaceSwapState.WAIT_BODY_IMAGE
 
-    face_path = context.user_data["faceswap_data"].pop("face_image_path", None)
-    body_path = context.user_data["faceswap_data"].pop("body_image_path", None)
+    face_path = fsm_data.pop("face_image_path", None)
+    body_path = fsm_data.pop("body_image_path", None)
 
     if not face_path or not body_path:
-        return ConversationHandler.END  # Prevent double submit
+        logger.warning(f"user={user_id} face_path or body_path missing before submit in faceswap")
+        await robust_reply_text(message, "⚠️ 任务状态已过期，请重新发送图片。")
+        _cleanup_context(context, user_id)
+        return ConversationHandler.END
 
     await robust_reply_text(
         message, f"🚀 正在提交双人换脸任务，预计消耗 {cost} 灵石，请耐心等待..."

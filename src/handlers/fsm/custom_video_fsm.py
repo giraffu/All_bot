@@ -221,6 +221,13 @@ async def receive_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     multiplier = DURATION_MULTIPLIER.get(dur, 1.0)
     cost = int(base_cost * multiplier)
 
+    image_path = fsm_data.get("image_path")
+    if not image_path:
+        logger.warning(f"user={user_id} image_path missing before submit in custom_video")
+        await robust_reply_text(message, "⚠️ 任务状态已过期，请重新发送图片和提示词。")
+        _cleanup_context(context, user_id)
+        return ConversationHandler.END
+
     if not update.effective_user:
         return ConversationHandler.END
     user = update.effective_user
@@ -243,6 +250,11 @@ async def receive_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     image_path = fsm_data.pop("image_path", None)
     if not image_path:
+        logger.warning(
+            f"user={user_id} image_path consumed by another request before submit in custom_video"
+        )
+        await robust_reply_text(message, "⚠️ 任务已提交或状态已失效，请勿重复操作。")
+        _cleanup_context(context, user_id)
         return ConversationHandler.END
 
     await robust_reply_text(

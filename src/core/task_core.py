@@ -378,6 +378,17 @@ async def process_and_submit_task(
     credits_deducted = False
 
     try:
+        paths_to_upload = strategy.get_file_paths_to_upload(inputs)
+        user_logger = UserLogger(user_id, username)
+        for path in paths_to_upload:
+            if not path:
+                continue
+            if path.startswith("template:") or path.startswith(f"{MINIO_BUCKET}/"):
+                continue
+            is_local_file = os.path.isabs(path) or os.path.exists(path)
+            if is_local_file and not os.path.exists(path):
+                raise CoreDomainError(f"本地输入文件不存在，无法继续派发任务: {path}")
+
         if deduct_quota:
             success, err = await check_and_deduct_credits(
                 user_id, cost, task_type, username
@@ -392,7 +403,6 @@ async def process_and_submit_task(
 
             prompts_config = load_prompts()
             prompt = inputs.get("prompt")
-            # Only use default prompt if user didn't provide one
             if not prompt or prompt.strip() == "":
                 prompt = prompts_config.get(task_type, task_type)
 
@@ -401,10 +411,7 @@ async def process_and_submit_task(
             saved_inputs = []
             log_prompt = prompt
 
-            # 1. 统一处理输入图片/视频上传
-            paths_to_upload = strategy.get_file_paths_to_upload(inputs)
             saved_inputs = []
-            user_logger = UserLogger(user_id, username)
             for path in paths_to_upload:
                 processed_img = await _process_input_path(user_logger, path)
                 if processed_img:

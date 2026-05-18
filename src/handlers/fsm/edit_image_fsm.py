@@ -244,6 +244,13 @@ async def receive_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         if "adjust her pussy and anus" not in prompt.lower():
             prompt = f"adjust her pussy and anus, {prompt}"
 
+    images = list(fsm_data["images"])
+    if not images:
+        logger.warning(f"user={user_id} images empty before submit in edit_image")
+        await robust_reply_text(message, "⚠️ 任务已提交或状态已失效，请重新发送图片。")
+        _cleanup_context(context, user_id)
+        return ConversationHandler.END
+
     if not update.effective_user:
         return ConversationHandler.END
     user = update.effective_user
@@ -263,11 +270,6 @@ async def receive_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             _cleanup_context(context, user_id)
             return ConversationHandler.END
         raise e
-
-    images = list(fsm_data["images"])
-
-    if not images:
-        return ConversationHandler.END  # Prevent double submit
 
     # 转移文件所有权给 TaskService
     fsm_data["images"] = []

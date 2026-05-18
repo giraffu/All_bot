@@ -259,6 +259,14 @@ async def confirm_generation(update: Update, context: ContextTypes.DEFAULT_TYPE)
     multiplier = LTX_DURATION_MULTIPLIER.get(dur, 1.0)
     cost = int(base_cost * multiplier)
 
+    image_path = fsm_data.get("image_path")
+    if not image_path:
+        logger.warning(f"user={user_id} image_path missing before submit in ltx_video")
+        with contextlib.suppress(Exception):
+            await query.answer("⚠️ 任务状态已过期，请重新发送图片和提示词。", show_alert=True)
+        _cleanup_context(context, user_id)
+        return ConversationHandler.END
+
     if not update.effective_user:
         return ConversationHandler.END
     user = update.effective_user
@@ -281,6 +289,12 @@ async def confirm_generation(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     image_path = fsm_data.pop("image_path", None)
     if not image_path:
+        logger.warning(
+            f"user={user_id} image_path consumed by another request before submit in ltx_video"
+        )
+        with contextlib.suppress(Exception):
+            await query.answer("⚠️ 任务已提交或状态已失效，请勿重复操作。", show_alert=True)
+        _cleanup_context(context, user_id)
         return ConversationHandler.END
 
     with contextlib.suppress(Exception):

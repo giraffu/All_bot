@@ -187,6 +187,9 @@ async def robust_send_message(bot, chat_id, text, **kwargs):
 
 @async_retry(max_retries=3)
 async def robust_reply_text(message, text, **kwargs):
+    if not message:
+        logger.warning("robust_reply_text called with None message, skipping")
+        return None
     if text and isinstance(text, str) and len(text) > 4000:
         text = text[:4000] + "..."
     return await message.reply_text(text=text, **kwargs)

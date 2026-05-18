@@ -55,6 +55,14 @@ os.makedirs(TEMPLATE_DIR_VIDEO_NICE, exist_ok=True)
 os.makedirs(TEMP_TEMPLATE_DIR, exist_ok=True)
 
 
+def _get_reply_message(update: Update):
+    return (
+        getattr(update, "effective_message", None)
+        or update.message
+        or update.edited_message
+    )
+
+
 @with_unified_error_handler
 @with_db_logging_context
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -187,6 +195,9 @@ async def _handle_template_contribution(
 async def handle_photo_edit_menu(
     update: Update, context: ContextTypes.DEFAULT_TYPE, text: str
 ):
+    message = _get_reply_message(update)
+    if not message:
+        return
     if not update.effective_user:
         return
     user = update.effective_user
@@ -203,7 +214,7 @@ async def handle_photo_edit_menu(
 
     reply_markup = get_photo_edit_keyboard(context.lang)
     await robust_reply_text(
-        update.message,
+        message,
         context.t("system.photo_edit_hint"),
         reply_markup=reply_markup,
         parse_mode="Markdown",
@@ -214,11 +225,14 @@ async def handle_photo_edit_menu(
 async def handle_video_edit_menu(
     update: Update, context: ContextTypes.DEFAULT_TYPE, text: str
 ):
+    message = _get_reply_message(update)
+    if not message:
+        return
     from src.i18n.keyboards import get_video_edit_keyboard
 
     reply_markup = get_video_edit_keyboard(context.lang)
     await robust_reply_text(
-        update.message,
+        message,
         context.t("system.video_edit_hint"),
         reply_markup=reply_markup,
         parse_mode="Markdown",
@@ -229,8 +243,11 @@ async def handle_video_edit_menu(
 async def handle_gallery_menu(
     update: Update, context: ContextTypes.DEFAULT_TYPE, text: str
 ):
+    message = _get_reply_message(update)
+    if not message:
+        return
     await robust_reply_text(
-        update.message,
+        message,
         "浏览器进入 `https://web.aivison.it.com/` 或点击web按钮，查看市集内容哦",
         parse_mode="Markdown",
     )
@@ -241,11 +258,14 @@ async def handle_gallery_menu(
 async def handle_back_to_main_menu(
     update: Update, context: ContextTypes.DEFAULT_TYPE, text: str
 ):
+    message = _get_reply_message(update)
+    if not message:
+        return
     from src.i18n.keyboards import get_main_menu_keyboard
 
     reply_markup = get_main_menu_keyboard(context.lang)
     await robust_reply_text(
-        update.message,
+        message,
         "🏠 **已返回主菜单**",
         reply_markup=reply_markup,
         parse_mode="Markdown",
@@ -256,6 +276,9 @@ async def handle_back_to_main_menu(
 async def handle_recharge_menu(
     update: Update, context: ContextTypes.DEFAULT_TYPE, text: str
 ):
+    message = _get_reply_message(update)
+    if not message:
+        return
     webapp_url = (
         WEBAPP_URL
         if "WEBAPP_URL" in globals() and WEBAPP_URL
@@ -302,7 +325,7 @@ async def handle_recharge_menu(
         "👇 **请选择您的支付法门**："
     )
     await robust_reply_text(
-        update.message, msg, parse_mode="Markdown", reply_markup=reply_markup
+        message, msg, parse_mode="Markdown", reply_markup=reply_markup
     )
 
 
@@ -311,6 +334,9 @@ async def handle_recharge_menu(
 async def handle_personal_center(
     update: Update, context: ContextTypes.DEFAULT_TYPE, text: str
 ):
+    message = _get_reply_message(update)
+    if not message:
+        return
     if not update.effective_user:
         return
     user = update.effective_user
@@ -414,7 +440,7 @@ async def handle_personal_center(
         reply_markup = InlineKeyboardMarkup(keyboard)
 
     await robust_reply_text(
-        update.message, msg, parse_mode="Markdown", reply_markup=reply_markup
+        message, msg, parse_mode="Markdown", reply_markup=reply_markup
     )
 
 
@@ -422,6 +448,9 @@ async def handle_personal_center(
 async def handle_checkin(
     update: Update, context: ContextTypes.DEFAULT_TYPE, text: str = None
 ):
+    message = _get_reply_message(update)
+    if not message:
+        return
     if REFUGE_GROUP_ID:
         try:
             group_id = (
@@ -443,7 +472,7 @@ async def handle_checkin(
                     "请先加入避难所后，再来进行每日签到领取奖励吧！"
                 )
                 await robust_reply_text(
-                    update.message,
+                    message,
                     msg,
                     parse_mode="Markdown",
                     reply_markup=reply_markup,
@@ -488,16 +517,16 @@ async def handle_checkin(
     if success:
         reward_msg = f"`{reward}` 灵石"
         await robust_reply_text(
-            update.message,
+            message,
             f"✅ **签到成功！**\n\n👤 当前境界：`{user_group}`\n🪪 当前身份：`{user_identity}`\n📅 累计签到：`{total_days}` 天\n🎉 本次获得：{reward_msg}\n💰 当前总灵石：`{current_credits}`"
             + disclaimer,
             parse_mode="Markdown",
         )
     elif error_msg:
-        await robust_reply_text(update.message, error_msg, parse_mode="Markdown")
+        await robust_reply_text(message, error_msg, parse_mode="Markdown")
     else:
         await robust_reply_text(
-            update.message,
+            message,
             f"📅 **今日已领取灵石**\n\n👤 当前境界：`{user_group}`\n🪪 当前身份：`{user_identity}`\n📅 累计签到：`{total_days}` 天\n\n请明天再来领取奖励吧！"
             + disclaimer,
             parse_mode="Markdown",
@@ -508,6 +537,9 @@ async def handle_checkin(
 async def handle_share(
     update: Update, context: ContextTypes.DEFAULT_TYPE, text: str = None
 ):
+    message = _get_reply_message(update)
+    if not message:
+        return
     user_id = update.effective_user.id
     bot_username = context.bot.username or (await context.bot.get_me()).username
     from src.core.user_core import get_or_create_user_by_telegram
@@ -528,7 +560,7 @@ async def handle_share(
         "每成功邀请一位**新道友**使用机器人，您将自动获得 **5 灵石**奖励！\n"
         "**新道友**加入宗门，您将自动获得 **10 灵石**奖励！\n"
     )
-    await robust_reply_text(update.message, msg, parse_mode="Markdown")
+    await robust_reply_text(message, msg, parse_mode="Markdown")
 
 
 TASK_TYPE_DISPLAY_NAMES = {
@@ -551,6 +583,9 @@ async def handle_switch_lang(
     update: Update, context: ContextTypes.DEFAULT_TYPE, text: str = None
 ):
     """Handle language switching."""
+    message = _get_reply_message(update)
+    if not message:
+        return
     user = update.effective_user
     if not user:
         return
@@ -611,15 +646,16 @@ async def handle_switch_lang(
         if new_lang == "zh"
         else "🌐 Language switched to English."
     )
-    await robust_reply_text(
-        update.message, msg, reply_markup=get_main_menu_keyboard(new_lang)
-    )
+    await robust_reply_text(message, msg, reply_markup=get_main_menu_keyboard(new_lang))
 
 
 @prompt_route("menu.queue")
 async def handle_queue_status(
     update: Update, context: ContextTypes.DEFAULT_TYPE, text: str = None
 ):
+    message = _get_reply_message(update)
+    if not message:
+        return
     status = await image_service.get_queue_info()
     if status:
         queue_size = status.get("queue_size", 0)
@@ -640,9 +676,9 @@ async def handle_queue_status(
                 msg_lines.append(f"❓ 其他 ({safe_task_type})：`{count}` 个")
 
         msg = "\n".join(msg_lines)
-        await robust_reply_text(update.message, msg, parse_mode="Markdown")
+        await robust_reply_text(message, msg, parse_mode="Markdown")
     else:
-        await robust_reply_text(update.message, "⚠️ 无法获取实时排队数据，请稍后再试。")
+        await robust_reply_text(message, "⚠️ 无法获取实时排队数据，请稍后再试。")
 
 
 from src.handlers.error_handlers import with_unified_error_handler
@@ -679,10 +715,8 @@ async def handle_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if route_key and route_key in prompt_routes:
         return await prompt_routes[route_key](update, context, text)
 
-    # 处理普通对话/Prompt 输入
-    # (如果是其他普通文本，当前不需要做任何处理，或者可以交给AI对话)
-    # 为防止用户丢失菜单键盘（尤其是配置了 WebApp 菜单按钮覆盖了默认 Menu 按钮时），提供兜底回复，但仅限私聊
-    if update.message.chat.type == "private":
+    chat = message.chat or update.effective_chat
+    if chat and chat.type == "private":
         from src.i18n.keyboards import get_main_menu_keyboard
 
         reply_markup = get_main_menu_keyboard(context.lang)
@@ -691,5 +725,5 @@ async def handle_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if context.lang == "en":
             fallback_msg = "✨ Unrecognized command.\n👇 Please use the menu below, or type /start to wake up the menu."
 
-        await robust_reply_text(update.message, fallback_msg, reply_markup=reply_markup)
+        await robust_reply_text(message, fallback_msg, reply_markup=reply_markup)
     return
