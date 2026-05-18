@@ -4,6 +4,7 @@ from datetime import datetime
 from decimal import Decimal
 
 import aiohttp
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.future import select
 
 from config import VITE_MERCHANT_ADDRESS
@@ -191,15 +192,7 @@ class TonPaymentValidator:
 
             async with AsyncSessionLocal() as db:
                 try:
-                    # 1. Check if already processed (by tx_hash)
-                    existing_tx = await db.execute(
-                        select(Order).where(Order.tx_hash == tx_hash)
-                    )
-                    if existing_tx.scalar_one_or_none():
-                        logger.info(f"Transaction {tx_hash} already processed.")
-                        return True
-
-                    # Also check order_id for legacy or exact duplicate payload
+                    # Check order_id for legacy or exact duplicate payload
                     existing_order = await db.execute(
                         select(Order).where(Order.order_id == order_id)
                     )
@@ -217,7 +210,7 @@ class TonPaymentValidator:
                         return True
 
                     user_res = await db.execute(
-                        select(User).where(User.id == internal_user_id)
+                        select(User).where(User.id == internal_user_id).with_for_update()
                     )
                     user = user_res.scalar_one_or_none()
                     if not user:
@@ -244,28 +237,66 @@ class TonPaymentValidator:
                     else:
                         status = "SUCCESS"
 
-                    # 3. Create Order Record
-                    new_order = Order(
-                        order_id=order_id,
-                        telegram_id=internal_user_id,
-                        plan_id=plan_id,
-                        original_price=plan.price_ton,
-                        final_price=Decimal(amount_nanotons)
-                        / Decimal(str(TON_TO_NANOTON)),
-                        status=status,
-                        tx_hash=tx_hash,
-                        payment_channel="TON",
-                        paid_at=datetime.now() if status == "SUCCESS" else None,
-                    )
-                    db.add(new_order)
+                    inserted_order_id = (
+                        await db.execute(
+                            insert(Order)
+                            .values(
+                                order_id=order_id,
+                                telegram_id=internal_user_id,
+                                plan_id=plan_id,
+                                original_price=plan.price_ton,
+                                final_price=Decimal(amount_nanotons)
+                                / Decimal(str(TON_TO_NANOTON)),
+                                status=status,
+                                tx_hash=tx_hash,
+                                payment_channel="TON",
+                                paid_at=datetime.now()
+                                if status == "SUCCESS"
+                                else None,
+                            )
+                            .on_conflict_do_nothing(index_elements=["tx_hash"])
+                            .returning(Order.id)
+                        )
+                    ).scalar_one_or_none()
+                    if inserted_order_id is None:
+                        logger.info(f"Transaction {tx_hash} already processed.")
+                        return True
+
+                    new_order = await db.get(Order, inserted_order_id)
+                    if new_order is None:
+                        raise RuntimeError(
+                            f"failed to reload inserted TON order for tx_hash: {tx_hash}"
+                        )
+                    if new_order.tx_hash != tx_hash:
+                        raise RuntimeError(
+                            f"inserted TON order tx_hash mismatch for tx_hash: {tx_hash}"
+                        )
 
                     if status == "SUCCESS":
                         from src.core.affiliate_core import (
                             calculate_and_set_commission_for_paid_order,
+                            invalidate_invitation_recharge_cache,
+                            record_affiliate_commission_transaction,
                         )
 
                         await db.flush()
-                        await calculate_and_set_commission_for_paid_order(db, new_order)
+                        referral = await calculate_and_set_commission_for_paid_order(
+                            db, new_order
+                        )
+                        if referral and Decimal(str(new_order.commission_usdt or 0)) > 0:
+                            inserted = await record_affiliate_commission_transaction(
+                                db,
+                                new_order,
+                                referral,
+                                source="ton_payment_validator",
+                            )
+                            if not inserted:
+                                logger.warning(
+                                    "affiliate ledger insert skipped for TON order_id=%s order_pk=%s tx_hash=%s",
+                                    new_order.order_id,
+                                    new_order.id,
+                                    new_order.tx_hash,
+                                )
 
                         # 4. Fulfill using atomic update
                         from datetime import timedelta
@@ -374,6 +405,10 @@ class TonPaymentValidator:
                         db.add(log)
 
                         await db.commit()
+                        if referral:
+                            await invalidate_invitation_recharge_cache(
+                                referral.inviter_id
+                            )
                         logger.info(
                             f"Successfully fulfilled order {order_id} for user {tg_user_id}"
                         )

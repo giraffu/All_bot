@@ -1,10 +1,12 @@
 import hashlib
 import logging
 import os
+from decimal import Decimal, ROUND_HALF_UP
 
 import aiohttp
 
 logger = logging.getLogger("rmb_payment")
+RMB_AMOUNT_QUANT = Decimal("0.01")
 
 # 配置项，生产环境请在环境变量中设置
 HUANYUY_PID = os.getenv("HUANYUY_PID", "10001")
@@ -20,6 +22,13 @@ HUANYUY_SITENAME = os.getenv("HUANYUY_SITENAME", "合欢宗账房")
 
 
 class RMBPaymentService:
+    @staticmethod
+    def _format_amount(amount: Decimal | str | int) -> str:
+        normalized = Decimal(str(amount)).quantize(
+            RMB_AMOUNT_QUANT, rounding=ROUND_HALF_UP
+        )
+        return f"{normalized:.2f}"
+
     @staticmethod
     def generate_sign(params: dict, key: str) -> str:
         """
@@ -48,7 +57,7 @@ class RMBPaymentService:
     async def create_payment_url(
         out_trade_no: str,
         plan_name: str,
-        amount: float,
+        amount: Decimal | str | int,
         pay_type: str = "alipay",
         return_url: str = None,
     ) -> dict:
@@ -58,7 +67,7 @@ class RMBPaymentService:
         import urllib.parse
 
         params = {
-            "money": f"{amount:.2f}",
+            "money": RMBPaymentService._format_amount(amount),
             "name": plan_name,
             "notify_url": HUANYUY_NOTIFY_URL,
             "out_trade_no": out_trade_no,

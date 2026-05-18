@@ -1,13 +1,22 @@
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 
-from sqlalchemy import and_, func, select
+from sqlalchemy import and_, case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
-from src.database.models import Order, Referral, User
+from src.database.models import AffiliateTransaction, Order, Referral, User
 from src.exchange_rates import get_exchange_rates
 
 VALID_PAYMENT_CHANNELS = ("RMB", "TON", "XTR")
+ZERO_DECIMAL = Decimal("0.0")
+DISPLAY_MONEY_QUANT = Decimal("0.01")
+
+
+def _round_money(value: Decimal | None) -> float:
+    rounded = Decimal(str(value or 0)).quantize(
+        DISPLAY_MONEY_QUANT, rounding=ROUND_HALF_UP
+    )
+    return float(rounded)
 
 
 async def query_invitation_recharge_stats(
@@ -32,11 +41,54 @@ async def query_invitation_recharge_stats(
     )
     rows = (await session.execute(stmt)).all()
 
+    ledger_stmt = select(
+        func.coalesce(
+            func.sum(
+                case(
+                    (
+                        and_(
+                            AffiliateTransaction.direction == "OUT",
+                            AffiliateTransaction.status == "SUCCESS",
+                        ),
+                        AffiliateTransaction.amount_usdt,
+                    ),
+                    else_=0,
+                )
+            ),
+            0,
+        ),
+        func.coalesce(
+            func.sum(
+                case(
+                    (
+                        and_(
+                            AffiliateTransaction.direction == "IN",
+                            AffiliateTransaction.status == "SUCCESS",
+                        ),
+                        AffiliateTransaction.amount_usdt,
+                    ),
+                    (
+                        and_(
+                            AffiliateTransaction.direction == "OUT",
+                            AffiliateTransaction.status == "SUCCESS",
+                        ),
+                        -AffiliateTransaction.amount_usdt,
+                    ),
+                    else_=0,
+                )
+            ),
+            0,
+        ),
+    ).where(AffiliateTransaction.user_id == inviter_id)
+    spent_commission_usdt, available_balance_usdt = (
+        await session.execute(ledger_stmt)
+    ).all()[0]
+
     recharged_invitees = set()
-    total_ton = Decimal("0.0")
-    total_rmb = Decimal("0.0")
+    total_ton = ZERO_DECIMAL
+    total_rmb = ZERO_DECIMAL
     total_stars = 0
-    total_commission_usdt = Decimal("0.0")
+    total_commission_usdt = ZERO_DECIMAL
 
     for invitee_id, final_price, payment_channel, commission_usdt in rows:
         recharged_invitees.add(invitee_id)
@@ -50,7 +102,7 @@ async def query_invitation_recharge_stats(
 
         total_commission_usdt += Decimal(str(commission_usdt or 0))
 
-    total_commission = round(float(total_commission_usdt), 2)
+    total_commission = _round_money(total_commission_usdt)
     return {
         "recharged_invitees_count": len(recharged_invitees),
         "total_recharge_count": len(rows),
@@ -59,8 +111,10 @@ async def query_invitation_recharge_stats(
         "total_stars": total_stars,
         "commission_usdt": total_commission,
         "total_commission_usdt": total_commission,
-        "spent_commission_usdt": 0.0,
-        "available_balance_usdt": total_commission,
+        "spent_commission_usdt": _round_money(Decimal(str(spent_commission_usdt or 0))),
+        "available_balance_usdt": _round_money(
+            Decimal(str(available_balance_usdt or 0))
+        ),
     }
 
 
@@ -123,7 +177,7 @@ async def query_referral_rewards(session: AsyncSession) -> list[dict]:
                 or invitee.username
                 or str(invitee.telegram_id or invitee.id),
                 "recharge_count": 0,
-                "commission_usdt": 0.0,
+                "commission_usdt": Decimal("0.0"),
                 "orders": [],
             },
         )
@@ -153,14 +207,19 @@ async def query_referral_rewards(session: AsyncSession) -> list[dict]:
             }
         )
         invitee_data["recharge_count"] += 1
-        invitee_data["commission_usdt"] = round(
-            invitee_data["commission_usdt"] + float(order.commission_usdt or 0), 2
-        )
+        invitee_data["commission_usdt"] += Decimal(str(order.commission_usdt or 0))
 
     response_data = []
     for inv_data in inviters_map.values():
         invitees_list = list(inv_data["invitees"].values())
+        total_commission_usdt = sum(
+            (invitee["commission_usdt"] for invitee in invitees_list),
+            Decimal("0.0"),
+        )
         for invitee_data in invitees_list:
+            invitee_data["commission_usdt"] = round(
+                float(invitee_data["commission_usdt"]), 2
+            )
             invitee_data["orders"].sort(
                 key=lambda item: item["created_at"].timestamp()
                 if item["created_at"]
@@ -172,9 +231,7 @@ async def query_referral_rewards(session: AsyncSession) -> list[dict]:
         invitees_list.sort(key=lambda item: item["recharge_count"], reverse=True)
         inv_data["invitees"] = invitees_list
         inv_data["total_invitees"] = len(invitees_list)
-        inv_data["commission_usdt"] = round(
-            sum(invitee["commission_usdt"] for invitee in invitees_list), 2
-        )
+        inv_data["commission_usdt"] = round(float(total_commission_usdt), 2)
         inv_data["total_usdt"] = round(
             (inv_data["total_ton"] * ton_to_usdt)
             + (inv_data["total_rmb"] * rmb_to_usdt)

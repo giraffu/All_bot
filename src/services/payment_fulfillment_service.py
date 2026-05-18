@@ -2,21 +2,31 @@ import logging
 import math
 import os
 from datetime import datetime, timedelta
+from decimal import Decimal, ROUND_HALF_UP
 
 import aiohttp
 from sqlalchemy import select
 
 from src.database.core import AsyncSessionLocal
 from src.database.models import MembershipPlan, Order, User
-from src.core.affiliate_core import calculate_and_set_commission_for_paid_order
+from src.core.affiliate_core import (
+    calculate_and_set_commission_for_paid_order,
+    invalidate_invitation_recharge_cache,
+    record_affiliate_commission_transaction,
+)
 from src.services.log_service import LogService
 from config import TELEGRAM_API_BASE_URL
 
 logger = logging.getLogger("payment_fulfillment")
+RMB_AMOUNT_QUANT = Decimal("0.01")
+
+
+def _normalize_rmb_amount(amount: Decimal | str | int) -> Decimal:
+    return Decimal(str(amount)).quantize(RMB_AMOUNT_QUANT, rounding=ROUND_HALF_UP)
 
 
 async def fulfill_order(
-    out_trade_no: str, external_trade_no: str, paid_amount: float
+    out_trade_no: str, external_trade_no: str, paid_amount: Decimal | str | int
 ) -> bool:
     """
     统一发货逻辑，目前供 RMB 支付网关回调使用。
@@ -39,7 +49,9 @@ async def fulfill_order(
                 return True  # 幂等返回
 
             # 金额校验
-            if float(order.final_price) != float(paid_amount):
+            if _normalize_rmb_amount(order.final_price) != _normalize_rmb_amount(
+                paid_amount
+            ):
                 logger.error(
                     f"Amount mismatch for {out_trade_no}: paid {paid_amount}, expected {order.final_price}"
                 )
@@ -56,7 +68,7 @@ async def fulfill_order(
 
             # 3. 查找用户
             user_res = await session.execute(
-                select(User).where(User.id == order.telegram_id)
+                select(User).where(User.id == order.telegram_id).with_for_update()
             )
             user = user_res.scalar_one_or_none()
             if not user:
@@ -125,13 +137,29 @@ async def fulfill_order(
             order.tx_hash = external_trade_no
             order.paid_at = now
             await session.flush()
-            await calculate_and_set_commission_for_paid_order(session, order)
+            referral = await calculate_and_set_commission_for_paid_order(session, order)
+            if referral and Decimal(str(order.commission_usdt or 0)) > 0:
+                inserted = await record_affiliate_commission_transaction(
+                    session,
+                    order,
+                    referral,
+                    source="rmb_payment_callback",
+                )
+                if not inserted:
+                    logger.warning(
+                        "affiliate ledger insert skipped for RMB order_id=%s order_pk=%s tx_hash=%s",
+                        order.order_id,
+                        order.id,
+                        order.tx_hash,
+                    )
 
             user.credits += plan.reward_credits
             user.current_identity = final_identity
             user.identity_expire_at = new_expire_at
 
             await session.commit()
+            if referral:
+                await invalidate_invitation_recharge_cache(referral.inviter_id)
 
             # 使用统一的 LogService 记录流水（自带重试机制，防止丢日志）
             await LogService.log_action(

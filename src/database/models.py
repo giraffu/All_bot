@@ -210,11 +210,31 @@ class Order(Base):
 
 class AffiliateTransaction(Base):
     __tablename__ = "affiliate_transactions"
+    __table_args__ = (
+        UniqueConstraint(
+            "idempotency_key", name="uq_affiliate_transactions_idempotency_key"
+        ),
+        Index(
+            "ix_affiliate_transactions_user_status_direction",
+            "user_id",
+            "status",
+            "direction",
+        ),
+        Index(
+            "ix_affiliate_transactions_reference_type_reference_id",
+            "reference_type",
+            "reference_id",
+        ),
+    )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     user_id = Column(BigInteger, ForeignKey("users.id"), nullable=False, index=True)
     amount_usdt = Column(DECIMAL(10, 4), nullable=False)
     transaction_type = Column(String(50), nullable=False)
+    direction = Column(String(10), nullable=False)
+    reference_type = Column(String(50), nullable=False)
+    reference_id = Column(String(64), nullable=False)
+    idempotency_key = Column(String(128), nullable=False)
     status = Column(String(20), default="PENDING")
     details = Column(JSON, nullable=True)
     created_at = Column(DateTime, default=datetime.now)

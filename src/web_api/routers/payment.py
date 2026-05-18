@@ -8,7 +8,6 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.constants import TON_RECEIVER_ADDRESS
-from src.database.core import AsyncSessionLocal
 from src.database.models import MembershipPlan, Order, User
 from src.services.rmb_payment_service import RMBPaymentService
 from src.web_api.dependencies import get_current_user, get_db
@@ -101,7 +100,7 @@ async def create_order(
     pay_result = await RMBPaymentService.create_payment_url(
         out_trade_no=out_trade_no,
         plan_name=plan.name,
-        amount=float(plan.price_rmb),
+        amount=plan.price_rmb,
         pay_type=req.pay_type,
         return_url=return_url,
     )

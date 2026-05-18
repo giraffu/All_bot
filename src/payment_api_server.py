@@ -42,7 +42,7 @@ async def huanyuy_notify(request: Request):
 
     # 3. 触发统一发货逻辑
     try:
-        success = await fulfill_order(out_trade_no, trade_no, float(money))
+        success = await fulfill_order(out_trade_no, trade_no, money)
         if success:
             logger.info(f"Order {out_trade_no} fulfilled successfully")
             return "SUCCESS"
@@ -55,7 +55,7 @@ async def huanyuy_notify(request: Request):
 
 
 @app.get("/pay/result", response_class=HTMLResponse)
-async def payment_result(request: Request):
+async def payment_result():
     """
     支付完成后的页面跳转
     """

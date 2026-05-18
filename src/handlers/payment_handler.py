@@ -1,6 +1,8 @@
 import logging
+from decimal import Decimal
 
 from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert
 from telegram import Update
 from telegram.ext import ContextTypes
 
@@ -80,7 +82,9 @@ async def successful_payment_callback(
             from sqlalchemy import or_
 
             result = await session.execute(
-                select(User).where(or_(User.telegram_id == user_id, User.id == user_id))
+                select(User)
+                .where(or_(User.telegram_id == user_id, User.id == user_id))
+                .with_for_update()
             )
             user = result.scalar_one_or_none()
 
@@ -90,7 +94,7 @@ async def successful_payment_callback(
 
             from datetime import datetime, timedelta
 
-            now = datetime.utcnow()
+            now = datetime.now()
 
             # 身份和有效期逻辑
             new_expire_at = user.identity_expire_at
@@ -164,35 +168,66 @@ async def successful_payment_callback(
             # Use truncated id for both checking and saving to prevent double processing bugs
             tx_hash_truncated = telegram_charge_id[:100]
 
-            # Check if order already exists (prevent double processing)
-            existing_order = await session.execute(
-                select(Order).where(Order.tx_hash == tx_hash_truncated)
-            )
-            if existing_order.scalar_one_or_none():
+            inserted_order_id = (
+                await session.execute(
+                    insert(Order)
+                    .values(
+                        order_id=payload[
+                            :64
+                        ],  # Truncate to avoid StringDataRightTruncationError
+                        telegram_id=user.id,  # Must be internal_id
+                        plan_id=plan_id,
+                        original_price=successful_payment.total_amount,  # In stars
+                        final_price=successful_payment.total_amount,
+                        status="SUCCESS",
+                        tx_hash=tx_hash_truncated,  # Truncate to avoid StringDataRightTruncationError
+                        payment_channel="XTR",
+                        paid_at=now,
+                    )
+                    .on_conflict_do_nothing(index_elements=["tx_hash"])
+                    .returning(Order.id)
+                )
+            ).scalar_one_or_none()
+            if inserted_order_id is None:
                 logger.warning(
                     f"Order already processed for charge_id: {telegram_charge_id}"
                 )
                 return
 
-            new_order = Order(
-                order_id=payload[
-                    :64
-                ],  # Truncate to avoid StringDataRightTruncationError
-                telegram_id=user.id,  # Must be internal_id
-                plan_id=plan_id,
-                original_price=successful_payment.total_amount,  # In stars
-                final_price=successful_payment.total_amount,
-                status="SUCCESS",
-                tx_hash=tx_hash_truncated,  # Truncate to avoid StringDataRightTruncationError
-                payment_channel="XTR",
-                paid_at=now,
-            )
-            session.add(new_order)
+            new_order = await session.get(Order, inserted_order_id)
+            if new_order is None:
+                raise RuntimeError(
+                    f"failed to reload inserted Stars order for charge_id: {telegram_charge_id}"
+                )
             await session.flush()
+            if new_order.tx_hash != tx_hash_truncated:
+                raise RuntimeError(
+                    f"inserted Stars order tx_hash mismatch for charge_id: {telegram_charge_id}"
+                )
 
-            from src.core.affiliate_core import calculate_and_set_commission_for_paid_order
+            from src.core.affiliate_core import (
+                calculate_and_set_commission_for_paid_order,
+                invalidate_invitation_recharge_cache,
+                record_affiliate_commission_transaction,
+            )
 
-            await calculate_and_set_commission_for_paid_order(session, new_order)
+            referral = await calculate_and_set_commission_for_paid_order(
+                session, new_order
+            )
+            if referral and Decimal(str(new_order.commission_usdt or 0)) > 0:
+                inserted = await record_affiliate_commission_transaction(
+                    session,
+                    new_order,
+                    referral,
+                    source="telegram_stars_payment",
+                )
+                if not inserted:
+                    logger.warning(
+                        "affiliate ledger insert skipped for Stars order_id=%s order_pk=%s tx_hash=%s",
+                        new_order.order_id,
+                        new_order.id,
+                        new_order.tx_hash,
+                    )
 
             # 记录流水 (遵循开发者红线)
             import json
@@ -214,6 +249,8 @@ async def successful_payment_callback(
             )
             session.add(log)
             await session.commit()
+            if referral:
+                await invalidate_invitation_recharge_cache(referral.inviter_id)
 
             logger.info(
                 f"Payment success processed for user {user_id}, plan: {plan.name}"
