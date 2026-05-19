@@ -48,8 +48,11 @@ async def refund_bot_task(req: RefundTaskRequest):
 
         # 1. Refund
         if cost > 0 and user_id:
-            await permission_service.increment_quota(
-                user_id, cost=-cost, username=username, task_type="refund_admin_force"
+            await permission_service.refund_quota(
+                user_id,
+                credits=cost,
+                username=username,
+                task_type="refund_admin_force",
             )
 
         # 2. Release lock and remove task via Core API
@@ -94,9 +97,9 @@ async def clean_zombie_tasks():
 
                 if cost > 0 and user_id:
                     try:
-                        await permission_service.increment_quota(
+                        await permission_service.refund_quota(
                             user_id,
-                            cost=-cost,
+                            credits=cost,
                             username=username,
                             task_type="refund_admin_force_cleanup",
                         )

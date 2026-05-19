@@ -1,6 +1,8 @@
 import asyncio
+import inspect
 import logging
 from datetime import datetime
+from typing import Annotated
 
 from fastapi import APIRouter, Depends
 from sqlalchemy import select
@@ -29,6 +31,16 @@ from src.core.video_billing import (
     normalize_requested_billing_resolution,
 )
 from src.services.storage import storage
+from src.services.affiliate_redeem_service import (
+    AffiliateRedeemConflictError,
+    AffiliateRedeemInsufficientBalanceError,
+    invalidate_affiliate_redeem_cache_after_commit,
+    redeem_affiliate_balance_to_credits,
+)
+from src.web_api.schemas.affiliate_redeem_schema import (
+    AffiliateCreditsRedeemRequest,
+    AffiliateCreditsRedeemResponse,
+)
 from src.web_api.schemas.auth_schema import InvitationRechargeStats, UserResponse
 from src.web_api.schemas.user_schema import (
     CheckinResponse,
@@ -50,6 +62,9 @@ logger = logging.getLogger(__name__)
 
 
 from src.web_api.dependencies import get_current_user, get_db, get_token
+
+CurrentUserDep = Annotated[User, Depends(get_current_user)]
+DbSessionDep = Annotated[AsyncSession, Depends(get_db)]
 
 
 async def _get_r2_url_if_exists(object_key: str) -> str:
@@ -289,6 +304,64 @@ async def get_user_profile(current_user: User = Depends(get_current_user)):
         invitation_recharge=InvitationRechargeStats(**dto.invitation_recharge),
         breakthrough_conditions=[cond.dict() for cond in dto.breakthrough_conditions],
         is_unlocked=dto.is_unlocked,
+    )
+
+
+@router.post(
+    "/me/affiliate/redeem-credits",
+    response_model=AffiliateCreditsRedeemResponse,
+)
+async def redeem_current_user_affiliate_credits(
+    payload: AffiliateCreditsRedeemRequest,
+    current_user: CurrentUserDep,
+    db: DbSessionDep,
+) -> AffiliateCreditsRedeemResponse:
+    user_id = current_user.id
+    committed_here = False
+
+    try:
+        result = await redeem_affiliate_balance_to_credits(
+            db,
+            user_id=user_id,
+            amount_usdt=payload.amount_usdt,
+            idempotency_key=payload.idempotency_key,
+        )
+        in_transaction = db.in_transaction()
+        if inspect.isawaitable(in_transaction):
+            in_transaction = await in_transaction
+        if in_transaction:
+            await db.commit()
+            committed_here = True
+    except AffiliateRedeemConflictError as exc:
+        raise HTTPException(
+            status_code=409, detail="同一幂等键已被不同兑换参数占用"
+        ) from exc
+    except AffiliateRedeemInsufficientBalanceError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "message": "返佣可用余额不足",
+                "available_balance_usdt": float(exc.available_balance_usdt),
+                "requested_amount_usdt": float(exc.requested_amount_usdt),
+            },
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    if committed_here:
+        await invalidate_affiliate_redeem_cache_after_commit(user_id)
+
+    return AffiliateCreditsRedeemResponse(
+        redeem_id=result.redeem_id,
+        redeem_type=result.redeem_type,
+        amount_usdt=float(result.amount_usdt),
+        credits_granted=result.credits_granted,
+        status=result.status,
+        idempotency_key=result.idempotency_key,
+        available_balance_usdt=float(result.available_balance_usdt),
+        current_credits=result.current_credits,
+        exchange_rate_snapshot=result.exchange_rate_snapshot,
+        rounding_mode=result.rounding_mode,
     )
 
 

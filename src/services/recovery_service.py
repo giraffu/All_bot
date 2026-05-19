@@ -143,8 +143,8 @@ async def _refund_and_cleanup(registry_task_id, task_data, mock_context, reason)
     chat_id = task_data.get("chat_id")
 
     if cost > 0:
-        await permission_service.increment_quota(
-            user_id, cost=-cost, username=username, task_type="refund_restart"
+        await permission_service.refund_quota(
+            user_id, credits=cost, username=username, task_type="refund_restart"
         )
 
     if chat_id:

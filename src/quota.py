@@ -1,7 +1,10 @@
+from dataclasses import dataclass
 from datetime import datetime
+from typing import Any, Optional
 
 from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from .constants import GENERATION_TASK_TYPES
 from .database.core import AsyncSessionLocal
@@ -13,7 +16,15 @@ from .database.models import (
     UserLog,
 )
 from .services.log_service import LogService
+from src.core.exceptions import InsufficientCreditsError
 from src.logger import logger
+
+
+@dataclass(frozen=True)
+class CreditChangeResult:
+    old_balance: int
+    new_balance: int
+    username: str | None
 
 
 class QuotaManager:
@@ -82,45 +93,155 @@ class QuotaManager:
         current = await self.get_credits(user_id)
         return current >= cost
 
+    async def _get_user_for_update(
+        self, session: AsyncSession, user_id: int
+    ) -> User | None:
+        stmt = select(User).where(User.id == user_id).with_for_update()
+        result = await session.execute(stmt)
+        return result.scalar_one_or_none()
+
+    async def _apply_credit_delta(
+        self, session: AsyncSession, user_id: int, credit_delta: int
+    ) -> tuple[User, CreditChangeResult]:
+        user = await self._get_user_for_update(session, user_id)
+        if not user:
+            raise ValueError(f"User {user_id} not found")
+
+        old_balance = int(user.credits or 0)
+        if credit_delta < 0:
+            required_credits = -credit_delta
+            if old_balance < required_credits:
+                raise InsufficientCreditsError(
+                    current=old_balance, cost=required_credits
+                )
+
+        user.credits = old_balance + credit_delta
+        user.last_activity = datetime.now()
+        await session.flush()
+
+        return user, CreditChangeResult(
+            old_balance=old_balance,
+            new_balance=int(user.credits or 0),
+            username=user.username,
+        )
+
+    async def _log_credit_change(
+        self,
+        *,
+        user_id: int,
+        task_type: str,
+        result: CreditChangeResult,
+        username: str = None,
+        extra_info: Optional[dict[str, Any]] = None,
+        session: AsyncSession | None = None,
+    ) -> None:
+        credit_change = result.new_balance - result.old_balance
+        if credit_change == 0:
+            return
+
+        log_extra = {"old_balance": result.old_balance}
+        if extra_info:
+            log_extra.update(extra_info)
+
+        await LogService.log_action(
+            user_id=user_id,
+            username=username or result.username,
+            operation_type=task_type,
+            credit_change=credit_change,
+            current_balance=result.new_balance,
+            extra_info=log_extra,
+            session=session,
+        )
+
+    async def adjust_credits(
+        self,
+        user_id: int,
+        credit_delta: int,
+        username: str = None,
+        task_type: str = "generation",
+        session: AsyncSession | None = None,
+        extra_info: Optional[dict[str, Any]] = None,
+    ) -> CreditChangeResult:
+        """
+        Atomically apply a credit delta.
+
+        Positive values increase credits, negative values deduct credits.
+        When a session is passed, the caller owns the surrounding transaction.
+        """
+        if session is not None:
+            _, result = await self._apply_credit_delta(session, user_id, credit_delta)
+            await self._log_credit_change(
+                user_id=user_id,
+                username=username,
+                task_type=task_type,
+                result=result,
+                extra_info=extra_info,
+                session=session,
+            )
+            return result
+
+        async with AsyncSessionLocal() as managed_session:
+            try:
+                _, result = await self._apply_credit_delta(
+                    managed_session, user_id, credit_delta
+                )
+                await self._log_credit_change(
+                    user_id=user_id,
+                    username=username,
+                    task_type=task_type,
+                    result=result,
+                    extra_info=extra_info,
+                    session=managed_session,
+                )
+                await managed_session.commit()
+            except Exception:
+                await managed_session.rollback()
+                raise
+        return result
+
     async def deduct_credits(
         self,
         user_id: int,
         cost: int,
         username: str = None,
         task_type: str = "generation",
-    ):
-        """Deduct credits from user"""
-        async with AsyncSessionLocal() as session:
-            # We fetch again to ensure atomic update in transaction (though logic here is simplified)
-            # Better: UPDATE users SET credits = credits - cost WHERE id = user_id AND credits >= cost
-            # But for now, let's keep it simple.
-            stmt = select(User).where(User.id == user_id)
-            result = await session.execute(stmt)
-            user = result.scalar_one_or_none()
+        session: AsyncSession | None = None,
+        extra_info: Optional[dict[str, Any]] = None,
+    ) -> CreditChangeResult:
+        """Deduct credits from user with a locked, atomic balance check."""
+        if cost < 0:
+            raise ValueError("cost must be non-negative; refunds must use add_credits()")
 
-            if user:
-                old_balance = user.credits
+        return await self.adjust_credits(
+            user_id=user_id,
+            credit_delta=-cost,
+            username=username,
+            task_type=task_type,
+            session=session,
+            extra_info=extra_info,
+        )
 
-                if cost < 0:
-                    # If cost is negative, it's a refund or addition. Refund to permanent credits to be safe.
-                    user.credits = user.credits - cost  # -cost is positive
-                else:
-                    # Deduct from credits
-                    user.credits = max(0, user.credits - cost)
+    async def add_credits(
+        self,
+        user_id: int,
+        credits: int,
+        username: str = None,
+        task_type: str = "credit_adjustment",
+        session: AsyncSession | None = None,
+        extra_info: Optional[dict[str, Any]] = None,
+    ) -> CreditChangeResult:
+        """Increase credits using the same transaction-safe primitive."""
+        if credits < 0:
+            raise ValueError("credits must be non-negative")
 
-                new_balance = user.credits
-                await session.commit()
-
-                # Log action
-                if cost != 0:
-                    await LogService.log_action(
-                        user_id=user_id,
-                        username=username or user.username,
-                        operation_type=task_type,
-                        credit_change=-cost,
-                        current_balance=new_balance,
-                        extra_info={"old_balance": old_balance},
-                    )
+        return await self.adjust_credits(
+            user_id=user_id,
+            credit_delta=credits,
+            username=username,
+            task_type=task_type,
+            session=session,
+            extra_info=extra_info,
+        )
 
     async def checkin(
         self,

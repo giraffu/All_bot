@@ -6,7 +6,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.constants import COMMISSION_RATE
-from src.database.models import AffiliateTransaction, Order, Referral
+from src.database.models import AffiliateTransaction, Order, Referral, User
 from src.exchange_rates import get_exchange_rates
 
 logger = logging.getLogger(__name__)
@@ -54,6 +54,23 @@ async def invalidate_invitation_recharge_cache(inviter_id: int | None) -> None:
             )
 
 
+async def lock_affiliate_balance_owner(
+    session: AsyncSession, inviter_id: int
+) -> User:
+    """
+    Serialize affiliate balance mutations on the inviter's user row.
+
+    Redeems already lock `users` via `FOR UPDATE`, so commission accrual must
+    use the same row-level lock to avoid stale balance reads under concurrency.
+    """
+    inviter = (
+        await session.execute(select(User).where(User.id == inviter_id).with_for_update())
+    ).scalar_one_or_none()
+    if inviter is None:
+        raise ValueError(f"affiliate inviter user not found: inviter_id={inviter_id}")
+    return inviter
+
+
 async def calculate_and_set_commission_for_paid_order(
     session: AsyncSession, order: Order
 ) -> Referral | None:
@@ -74,6 +91,8 @@ async def calculate_and_set_commission_for_paid_order(
     if not referral:
         order.commission_usdt = _zero_commission()
         return None
+
+    await lock_affiliate_balance_owner(session, referral.inviter_id)
 
     existing_successful_paid_order = (
         await session.execute(

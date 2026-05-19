@@ -145,15 +145,36 @@ class PermissionService:
     async def increment_quota(
         self,
         user_id: int,
-        cost: int = 1,
+        credits: int = 1,
         username: str = None,
         task_type: str = "generation",
     ):
-        """Deduct credits from user"""
-        await self.quota_manager.deduct_credits(
-            user_id, cost, username=username, task_type=task_type
+        """Increase user credits."""
+        if credits <= 0:
+            raise ValueError("credits must be positive")
+
+        await self.quota_manager.add_credits(
+            user_id, credits, username=username, task_type=task_type
         )
         # We'll refresh the group separately after the task is logged to ensure counts are accurate.
+
+    async def refund_quota(
+        self,
+        user_id: int,
+        credits: int,
+        username: str = None,
+        task_type: str = "refund",
+    ):
+        """Refund previously deducted credits using explicit add semantics."""
+        if credits <= 0:
+            return
+
+        await self.increment_quota(
+            user_id=user_id,
+            credits=credits,
+            username=username,
+            task_type=task_type,
+        )
 
     async def is_user_exists(self, user_id: int) -> bool:
         """Check if user exists"""

@@ -2,6 +2,7 @@ import logging
 from typing import Tuple
 
 from src.constants import MAX_CONCURRENT_TASKS
+from src.core.exceptions import InsufficientCreditsError
 from src.quota import QuotaManager
 from src.services.redis_client import redis_client
 
@@ -56,19 +57,16 @@ async def check_and_deduct_credits(
     if cost <= 0:
         return True, ""
 
-    has_enough = await quota_manager.check_credits(internal_user_id, cost)
-    if not has_enough:
-        current = await quota_manager.get_credits(internal_user_id)
-        return (
-            False,
-            f"🚫 **灵石不足**\n\n当前余额: `{current}` 灵石\n本次需要: `{cost}` 灵石\n请获取更多灵石。",
-        )
-
     try:
         await quota_manager.deduct_credits(
             internal_user_id, cost, username=username, task_type=task_type
         )
         return True, ""
+    except InsufficientCreditsError as e:
+        return (
+            False,
+            f"🚫 **灵石不足**\n\n当前余额: `{e.current}` 灵石\n本次需要: `{e.cost}` 灵石\n请获取更多灵石。",
+        )
     except Exception as e:
         logger.error(f"Error deducting credits for user {internal_user_id}: {e}")
         return False, "系统错误，扣费失败"
@@ -79,8 +77,8 @@ async def refund_credits(
 ):
     """退还灵石"""
     if cost > 0:
-        await quota_manager.deduct_credits(
-            internal_user_id, -cost, username=username, task_type=task_type
+        await quota_manager.add_credits(
+            internal_user_id, cost, username=username, task_type=task_type
         )
 
 

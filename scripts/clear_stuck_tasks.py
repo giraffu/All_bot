@@ -57,9 +57,9 @@ async def clean_stuck_tasks_and_reset_locks(timeout_seconds=300):
                 # 1. 退还灵石
                 if cost > 0 and user_id:
                     try:
-                        await permission_service.increment_quota(
+                        await permission_service.refund_quota(
                             user_id,
-                            cost=-cost,
+                            credits=cost,
                             username=username,
                             task_type="refund_admin_force_script",
                         )

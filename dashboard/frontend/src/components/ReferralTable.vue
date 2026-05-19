@@ -112,7 +112,7 @@ const columns = [
     sorter: (a, b) => a.total_usdt - b.total_usdt
   },
   {
-    title: '分成金额(USDT)',
+    title: '历史累计返佣(USDT)',
     dataIndex: 'commission_usdt',
     key: 'commission_usdt',
     width: '10%',
@@ -137,7 +137,7 @@ const innerColumns = [
     key: 'recharge_count'
   },
   {
-    title: '分成金额(USDT)',
+    title: '历史累计返佣(USDT)',
     dataIndex: 'commission_usdt',
     key: 'commission_usdt'
   }
@@ -171,7 +171,7 @@ const orderColumns = [
 <template>
   <div class="h-full flex flex-col">
     <div class="flex justify-between items-center mb-4">
-      <h2 class="text-xl font-bold text-gray-800 m-0">邀请奖励与充值数据分析</h2>
+      <h2 class="text-xl font-bold text-gray-800 m-0">邀请返佣历史榜与充值数据分析</h2>
       <a-button type="primary" @click="loadData" :loading="loading">
         刷新数据
       </a-button>
@@ -181,8 +181,8 @@ const orderColumns = [
       <a-col :span="12">
         <a-card class="shadow-sm border border-gray-100 h-full">
           <div class="flex justify-around items-center">
-            <a-statistic title="获奖邀请人数" :value="summaryStats.rewardedInvitersCount" />
-            <a-statistic title="总分成金额 (USDT)" :value="summaryStats.totalCommission" prefix="$" />
+            <a-statistic title="有历史返佣的邀请人" :value="summaryStats.rewardedInvitersCount" />
+            <a-statistic title="历史累计返佣 (USDT)" :value="summaryStats.totalCommission" prefix="$" />
             <a-statistic title="总邀请人数" :value="summaryStats.totalInvitations" />
           </div>
         </a-card>
@@ -206,6 +206,11 @@ const orderColumns = [
       :pagination="{ pageSize: 20 }"
       class="flex-1 bg-white rounded-lg shadow-sm overflow-hidden border border-gray-100"
     >
+      <template #title>
+        <div class="text-slate-500 text-sm">
+          当前表格展示的是邀请返佣历史累计成绩，不是“当前可兑换余额”面板。
+        </div>
+      </template>
       <template #bodyCell="{ column, record }">
         <template v-if="column.key === 'total_stars'">
           <span class="font-bold text-amber-500">{{ record.total_stars }} ⭐</span>

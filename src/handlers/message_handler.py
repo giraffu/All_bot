@@ -418,7 +418,10 @@ async def handle_personal_center(
         f"  - 累积充值：`{dto.invitation_recharge['total_ton']:.2f}` TON\n"
         f"  - 累积充值：`¥ {dto.invitation_recharge['total_rmb']:.2f}`\n"
         f"  - 累积贡献：`{dto.invitation_recharge['total_stars']}` Stars\n"
-        f"  - 预估分成：*$ {dto.invitation_recharge.get('commission_usdt', 0.0):.2f} USDT* (仅计算受邀者历史首充金额的10%)\n\n"
+        f"  - 历史累计返佣：*$ {dto.invitation_recharge.get('total_commission_usdt', dto.invitation_recharge.get('commission_usdt', 0.0)):.2f} USDT*\n"
+        f"  - 已兑换返佣：*$ {dto.invitation_recharge.get('spent_commission_usdt', 0.0):.2f} USDT*\n"
+        f"  - 当前可兑换余额：*$ {dto.invitation_recharge.get('available_balance_usdt', 0.0):.2f} USDT*\n"
+        f"  - 返佣说明：历史累计返佣用于展示成绩；当前可兑换余额才会随兑换减少\n\n"
         f"💡 *提示：1点加速优先级约等于为您节约1分钟的排队时间。*\n\n"
         f"{breakthrough_msg}"
     )

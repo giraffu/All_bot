@@ -35,6 +35,24 @@ def _build_context():
     )
 
 
+def _build_profile_update():
+    chat = SimpleNamespace(type="private", id=10001)
+    message = SimpleNamespace(text="个人中心", chat=chat, chat_id=chat.id)
+    user = SimpleNamespace(
+        id=20001,
+        username="tester",
+        full_name="Test User",
+        first_name="Tester",
+        language_code="zh",
+    )
+    return SimpleNamespace(
+        message=message,
+        edited_message=None,
+        effective_user=user,
+        effective_chat=chat,
+    )
+
+
 @pytest.mark.asyncio
 async def test_handle_prompt_uses_edited_message_for_private_fallback(monkeypatch):
     reply_mock = AsyncMock()
@@ -111,3 +129,63 @@ async def test_handle_prompt_route_uses_edited_message_reply_target(
     call_args = reply_mock.await_args
     assert call_args.args[0] is update.edited_message
     assert expected_text in call_args.args[1]
+
+
+@pytest.mark.asyncio
+async def test_handle_personal_center_displays_affiliate_balance_semantics(monkeypatch):
+    reply_mock = AsyncMock()
+
+    monkeypatch.setattr(
+        message_handler, "get_user_channel_status", AsyncMock(return_value=False)
+    )
+    monkeypatch.setattr(
+        message_handler.permission_service,
+        "sync_channel_status",
+        AsyncMock(return_value=None),
+    )
+    monkeypatch.setattr(
+        message_handler.permission_service,
+        "ensure_user",
+        AsyncMock(return_value=None),
+    )
+    monkeypatch.setattr(message_handler, "robust_reply_text", reply_mock)
+
+    fake_dto = SimpleNamespace(
+        first_name="Tester",
+        current_group="练气期",
+        current_identity="外门弟子",
+        identity_expire_at=None,
+        current_priority=3,
+        credits=88,
+        invitations=2,
+        checkins=5,
+        generations=11,
+        invitation_recharge={
+            "recharged_invitees_count": 3,
+            "total_recharge_count": 4,
+            "total_ton": 1.23,
+            "total_rmb": 45.67,
+            "total_stars": 89,
+            "commission_usdt": 9.99,
+            "total_commission_usdt": 9.99,
+            "spent_commission_usdt": 1.11,
+            "available_balance_usdt": 8.88,
+        },
+        is_unlocked=False,
+    )
+    monkeypatch.setattr(
+        "src.core.user_facade.get_user_dashboard_info",
+        AsyncMock(return_value=fake_dto),
+    )
+
+    update = _build_profile_update()
+    context = _build_context()
+
+    await message_handler.handle_personal_center(update, context, text="个人中心")
+
+    reply_mock.assert_awaited_once()
+    sent_text = reply_mock.await_args.args[1]
+    assert "历史累计返佣：*$ 9.99 USDT*" in sent_text
+    assert "已兑换返佣：*$ 1.11 USDT*" in sent_text
+    assert "当前可兑换余额：*$ 8.88 USDT*" in sent_text
+    assert "返佣说明：历史累计返佣用于展示成绩；当前可兑换余额才会随兑换减少" in sent_text

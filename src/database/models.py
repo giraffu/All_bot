@@ -156,7 +156,7 @@ class UserLog(Base):
     __tablename__ = "user_logs"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    user_id = Column(BigInteger, ForeignKey("users.id"), nullable=False, index=True)
+    user_id = Column(BigInteger, ForeignKey("users.id"), nullable=False)
     username = Column(String(100), nullable=True)
     operation_type = Column(
         String(50), nullable=False, index=True
@@ -241,6 +241,35 @@ class AffiliateTransaction(Base):
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 
     user = relationship("User", backref="affiliate_transactions")
+
+
+class AffiliateRedeem(Base):
+    __tablename__ = "affiliate_redeems"
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id",
+            "idempotency_key",
+            name="uq_affiliate_redeems_user_idempotency_key",
+        ),
+        Index("ix_affiliate_redeems_user_created_at", "user_id", "created_at"),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(BigInteger, ForeignKey("users.id"), nullable=False, index=True)
+    redeem_type = Column(String(50), nullable=False)
+    redeem_option_key = Column(String(64), nullable=False)
+    requested_amount_usdt = Column(DECIMAL(10, 4), nullable=False)
+    amount_usdt = Column(DECIMAL(10, 4), nullable=False)
+    credits_granted = Column(Integer, nullable=False)
+    exchange_rate_snapshot = Column(String(64), nullable=False)
+    rounding_mode = Column(String(32), nullable=False)
+    status = Column(String(20), nullable=False, default="SUCCESS")
+    idempotency_key = Column(String(128), nullable=False)
+    details = Column(JSON, nullable=True)
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+    user = relationship("User", backref="affiliate_redeems")
 
 
 class WorkerLog(Base):

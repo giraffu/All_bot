@@ -5,6 +5,7 @@ from typing import Any, Dict, Optional
 
 from sqlalchemy import desc, func, select
 from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.database.core import AsyncSessionLocal
 from src.database.models import UserLog
@@ -26,6 +27,7 @@ class LogService:
         current_balance: int,
         extra_info: Optional[Dict[str, Any]] = None,
         max_retries: int = 3,
+        session: AsyncSession | None = None,
     ) -> bool:
         """
         Asynchronously log a user action with retry mechanism.
@@ -38,10 +40,34 @@ class LogService:
             current_balance: Balance after operation
             extra_info: Dictionary containing additional metadata
             max_retries: Number of retry attempts for DB write
+            session: Optional existing transaction. When provided, the caller
+                owns commit/rollback and logging failures are raised to keep the
+                write-path atomic.
         """
         import asyncio
 
         extra_info_str = json.dumps(extra_info) if extra_info else None
+        log_entry = UserLog(
+            user_id=user_id,
+            username=username,
+            operation_type=operation_type,
+            credit_change=credit_change,
+            current_balance=current_balance,
+            created_at=datetime.now(),
+            extra_info=extra_info_str,
+        )
+
+        if session is not None:
+            session.add(log_entry)
+            try:
+                await session.flush()
+            except Exception:
+                logger.error(
+                    "Failed to stage user log inside existing transaction",
+                    exc_info=True,
+                )
+                raise
+            return True
 
         for attempt in range(max_retries):
             async with AsyncSessionLocal() as session:
