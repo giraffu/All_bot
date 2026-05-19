@@ -196,10 +196,23 @@ def main():
     setup_logging()
     core_logger = logging.getLogger("bot.core")
 
-    # Determine which token to use
+    # NOTE:
+    # `src/bot_test.py` is the shared Telegram bot entrypoint for both PROD and TEST.
+    # The name is historical. Runtime mode is selected by `BOT_TYPE`, not by filename.
+    #
+    # Current deployment mapping:
+    # - prod container `tg-bot` also starts this file
+    # - test container `tg-bot-test` also starts this file
+    #
+    # Token mapping:
+    # - when BOT_TYPE=PROD -> use `BOT_TOKEN`
+    # - when BOT_TYPE=TEST -> use `BOT_TOKEN_TEST` (or legacy `BOT_TOKEN_test`)
+    #
+    # In container deployment, the effective token should come from environment variables
+    # injected by docker compose. Reading `.env` below is only a local fallback for manual runs.
     bot_type = os.getenv("BOT_TYPE", "TEST")
 
-    # Reload from env directly just to be safe
+    # Local fallback only. In Docker, env_file / environment has higher priority via os.getenv().
     from dotenv import dotenv_values
 
     env_vars = dotenv_values(".env")

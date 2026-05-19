@@ -4,6 +4,17 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+BOT_TYPE = os.getenv("BOT_TYPE", "TEST").upper()
+
+
+def _get_env_value(name: str, default: str | None = None) -> str | None:
+    """Allow TEST mode to read *_TEST overrides without affecting prod."""
+    if BOT_TYPE == "TEST":
+        test_value = os.getenv(f"{name}_TEST")
+        if test_value not in (None, ""):
+            return test_value
+    return os.getenv(name, default)
+
 # --- Bot Configuration ---
 TELEGRAM_API_BASE_URL = os.getenv("TELEGRAM_API_BASE_URL", "http://69.63.220.115:8081")
 BOT_TOKEN = os.getenv("BOT_TOKEN")
@@ -22,19 +33,19 @@ GROUP_ID = os.getenv("GROUP_ID")
 PROXY_URL = os.getenv("PROXY_URL")
 
 # TON Payment Configuration
-VITE_MERCHANT_ADDRESS = os.getenv(
+VITE_MERCHANT_ADDRESS = _get_env_value(
     "VITE_MERCHANT_ADDRESS", "UQAluW2wxRCDsJIKGH59jB07xODgEbStdUPEj9AjI88d9l-s"
 )
-WEBAPP_URL = os.getenv("WEBAPP_URL", "https://pay.aivison.it.com/")
+WEBAPP_URL = _get_env_value("WEBAPP_URL", "https://pay.aivison.it.com/")
 
 # --- Database Configuration ---
 # Only PostgreSQL is supported
-DATABASE_URL = os.getenv("DATABASE_URL")
+DATABASE_URL = _get_env_value("DATABASE_URL")
 if not DATABASE_URL or DATABASE_URL.startswith("sqlite"):
     # Fallback or error if not provided?
     # Better to default to a sensible Postgres URL or raise error.
     # For now, let's assume env var is set, or provide a default local PG
-    DATABASE_URL = os.getenv(
+    DATABASE_URL = _get_env_value(
         "DATABASE_URL", "postgresql+asyncpg://postgres:postgres@localhost/bot_db"
     )
 
@@ -69,8 +80,8 @@ R2_HEAD_SEMAPHORE_LIMIT = int(os.getenv("R2_HEAD_SEMAPHORE_LIMIT", "32"))
 
 # --- API Configuration ---
 # Default to the backend server IP
-API_BASE = os.getenv("API_BASE", "http://127.0.0.1:8003")
-API_TOKEN = os.getenv("API_TOKEN", "your_secure_token_here")  # Added based on changelog
+API_BASE = _get_env_value("API_BASE", "http://127.0.0.1:8003")
+API_TOKEN = _get_env_value("API_TOKEN", "your_secure_token_here")  # Added based on changelog
 
 # Endpoints constructed from API_BASE
 IMG2IMG_ENDPOINT = f"{API_BASE}/comfy_img2img"
@@ -108,7 +119,7 @@ ENABLE_PUBLIC_SHARE = os.getenv("ENABLE_PUBLIC_SHARE", "false").lower() == "true
 DAILY_LIMIT = int(os.getenv("DAILY_LIMIT", "10"))
 
 # --- Redis Configuration ---
-REDIS_URL = os.getenv("REDIS_URL", "redis://:redispassword@127.0.0.1:6379/0")
+REDIS_URL = _get_env_value("REDIS_URL", "redis://:redispassword@127.0.0.1:6379/0")
 REDIS_PREFIX = os.getenv("REDIS_PREFIX", "test_bot_")
 
 # --- Admin Configuration ---

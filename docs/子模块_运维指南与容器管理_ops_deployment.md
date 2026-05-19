@@ -1,143 +1,63 @@
 # 子模块: 运维指南与容器管理 (Ops & Deployment)
 
 ## 1. 目标与范围
-本模块梳理了修仙主题 AI 创作工作台 (All_Bot) 的分布式部署策略、微服务容器管理规范以及各类线上突发故障的排查指南。涵盖了从代码构建、服务启停、网络配置（含 Host 模式与 Nginx 反代）、数据库迁移到常见存储与网络假死（如 502/503）的应急恢复操作。
+本模块记录当前仓库真实生效的部署顺序、迁移策略与常见故障恢复方式。最重要的事实更新有两点：
+- 数据库迁移已经由 `safe_deploy.sh` 在宿主机上主动执行，不再依赖“容器下次启动自动迁移”。
+- `web-api` 等服务若未挂载源码卷，代码变更后必须 `--build` 重建镜像才会生效。
 
-## 2. 架构图与服务拓扑
+## 2. 当前推荐部署路径
+- 功能研发、联调、修复、配置调整：首选仓库根目录执行 `bash safe_deploy_test.sh`
+- 正式发布、交付上线：仅在用户明确确认测试通过后，才执行 `bash safe_deploy.sh`
+- 原因：脚本已经把以下步骤串成标准顺序：
+  - 进入维护模式
+  - 等待活跃任务清空
+  - 清理僵尸任务与 Redis 锁
+  - 检查 Alembic 多 head
+  - 宿主机执行 `alembic upgrade head`
+  - 重建 workers
+  - 重建 central api
+  - 重建主服务群
+  - 重建 dashboard
+  - 重建测试环境
+- 若仅更新隔离测试栈，可执行 `bash safe_deploy_test.sh`；它只处理 `.env.test`、测试数据库迁移、测试 workers、测试 central api 与测试入口服务，不会重建生产服务，也不会重建正式 Dashboard。
 
-```mermaid
-graph TD
-    subgraph "武汉底座核心宿主机 (Docker Compose)"
-        B1[tg-bot]
-        B2[web-api :8000]
-        B3[payment-api :8021]
-        B4[dashboard-backend :8001]
-        C1[backend_api :8003]
-        CS[cs-bot host network]
-    end
+## 2.1 当前默认发布策略
+- AI 在功能研发期间默认只能更新隔离测试环境，不得主动执行生产部署。
+- “帮我改功能”“帮我修 Bug”“帮我联调”“帮我验证配置”这类请求，默认理解为测试环境操作。
+- 只有在用户明确表达“上线”“发布”“部署正式环境”“交付生产”后，才允许切换到 `safe_deploy.sh` 或生产 compose。
+- 在用户完成测试验收前，不得把测试环境变更直接同步到正式 Bot、正式 Web、正式 Payment、正式 Central API 或正式 Dashboard。
 
-    subgraph "本地算力与存储节点"
-        M1[(MinIO server :9000)]
-        PG[(PostgreSQL :5432)]
-        RD[(Redis :6379)]
-        W1[Comfy Agent Cluster]
-        LLM[LM Studio :1234 Host]
-    end
+## 3. 当前真实迁移口径
+- 迁移入口在 `safe_deploy.sh` 第 4 步。
+- 脚本会先寻找可用的 Alembic 可执行文件，再检查 `heads` 数量。
+- 一旦发现多个 head，脚本会直接中止，要求先合并 migration，而不是带病部署。
+- 通过多 head 检查后，脚本会立即执行 `alembic upgrade head`。
 
-    subgraph "海外 VPS 边缘节点"
-        V1[Web Frontend Nginx]
-        V2[Tg Local API 8081/8082]
-    end
+这意味着知识库里以下旧说法都应删除：
+- “等容器启动时自动迁移”
+- “部署完新容器后再手动进容器跑 upgrade head 才是标准流程”
 
-    %% 关联
-    B1 --> PG
-    B2 --> PG
-    B3 --> PG
-    B1 --> RD
-    B2 --> RD
-    B3 --> RD
-    B1 --> M1
-    C1 --> M1
-    CS --> LLM
-    V1 -.->|Tailscale VLAN| B2
-```
+## 4. 服务重建注意事项
+- `web-api`、`payment-api`、Dashboard、CS Bot 等通过镜像 `COPY` 代码的服务，修改代码后都要重建镜像，单纯 `restart` 不会拿到新代码。
+- `workers` 更新环境变量时，应使用 `docker-compose up -d` 触发重新创建，而不是只做 `restart`。
+- 测试环境 `tg-bot-test` 与正式环境共享同一个 `bot_db`，数据库迁移只需执行一次，不要重复跑两遍。
+- 若启用隔离测试栈，应使用独立的 `.env.test`、`backend/docker-compose-test.yml` 与 `workers/docker-compose-test.yml`，并让测试入口服务指向独立的 Central API 端口与独立 Redis 队列。
+- 隔离测试栈的最低要求是：测试 Bot/Web/Payment 使用测试库，Central API 使用独立 Redis DB 作为队列，测试 workers 连接测试 Central API；否则仍会与正式环境共用任务调度面。
 
-## 3. 核心运维与排障脚本
+## 5. 常见问题与恢复约束
+- MinIO 503 / 上传假死
+  - 现象：Web 请求超时，甚至非上传接口也被拖慢。
+  - 根因：Region 探测阻塞事件循环。
+  - 处理：重启 MinIO，并保持 `_region_map` 离线映射策略。
+- Nginx 404 / 502
+  - `404` 常见于 `proxy_pass` 带错误路径
+  - `502` 常见于后端服务或 Tailscale 链路不可达
+- CS Bot 改代码不生效
+  - 根因通常是只做了 `docker restart`
+  - 处理必须是 `docker-compose up -d --build`
 
-### 3.1 紧急维护模式切换
-当需要阻止新任务提交而不影响查询时，使用文件锁机制：
-- **开启维护模式**：`docker exec tg-bot touch /app/MAINTENANCE`
-- **关闭维护模式**：`docker exec tg-bot rm -f /app/MAINTENANCE`
-
-### 3.2 常见排障脚本调用
-在宿主机根目录执行以下脚本进行干预：
-```bash
-# 1. 强制清理并释放由于 Worker 宕机导致的僵尸任务锁
-docker exec tg-bot python src/services/zombie_cleaner_service.py
-
-# 2. 检查 Redis DB2 的任务排队情况与 Worker 心跳
-docker exec tg-bot python check_redis.py
-
-# 3. 本地模拟发送第三方支付回调请求（脱离网关限制）
-python scripts/test_huanyuy.py
-```
-
-### 3.3 安全自动化部署脚本 (推荐)
-为了解决部署过程中的任务中断和 Redis 死锁问题，系统提供了 `safe_deploy.sh` 一键安全部署脚本。
-- **机制**：开启双端维护模式 -> 智能监控活跃任务队列至清空 -> 执行 `zombie_cleaner_service.py` 清理死锁 -> 依次平滑重建 Agent、中控 API、主服务群、Dashboard 和测试服务。
-- **用法**：在拉取最新代码并确认 `.env` 配置后，直接运行 `bash safe_deploy.sh`。
-- **详见**：[SAFE_DEPLOY_GUIDE.md](./SAFE_DEPLOY_GUIDE.md)
-
-## 4. 常见线上故障与恢复契约 (SOP)
-
-| 故障现象 | 根本原因分析 (RCA) | 应急恢复指令/方案 |
-| :--- | :--- | :--- |
-| **Web大文件上传 503** | Worker 高负载导致磁盘 IO 拥堵，MinIO 被迫离线，导致 SDK 获取 Region 的网络请求卡死 FastAPI 事件循环。 | `docker restart minio-server`。<br>代码层必须注入静态 `_region_map` 离线映射。 |
-| **边缘节点上传超时或 403** | Nginx `proxy_pass` 包含斜杠导致预签名 URL 解码，或缓冲导致 Tailscale 拥堵。 | 请严格参阅 [边缘节点运维指南](./子模块_边缘节点运维指南_edge_node_ops.md) 优化代理配置。 |
-| **Web端 502 Bad Gateway** | 海外 VPS 的 Nginx 无法连通国内 `web-api`。 | 1. 检查 `docker ps` 确认 `web-api` 存活。<br>2. 检查 Tailscale 节点状态 (`tailscale status`)。 |
-| **前端登录 "Username invalid"** | WebApp 缺失关联的 Bot 用户名，或未在 BotFather 绑定域名。 | 配置前端环境变量 `VITE_TELEGRAM_BOT_USERNAME`，并在 TG 执行 `/setdomain`。 |
-| **CS Bot 修改代码后不生效** | 使用了单纯的 `docker restart`。 | 必须带构建参数重构容器：<br>`docker rm -f cs-bot && docker-compose up -d --build` |
-| **Bot 获取大视频时 404/403** | Local API 容器对宿主机挂载目录 `/var/lib/telegram-bot-api` 权限不足。 | `chmod -R 777 /var/lib/telegram-bot-api` |
-| **Agent 报 NoSuchKey 或 ComfyUI 400** | Agent 读取了默认的 MinIO 存储桶（如 `comfyui-input`），而主应用使用了其他桶名（如 `bot-data`）。 | 在 `workers/docker-compose.yml` 中确保 `MINIO_INPUT_BUCKET` 与后端主服务的 `MINIO_BUCKET` 保持一致。 |
-
-## 5. 部署与重建步骤 (CI/CD)
-系统微服务分散在多个目录下，重建时需进入特定目录操作。**强烈建议直接使用 `safe_deploy.sh` 进行全量一键平滑部署**。
-如需手动操作，为避免遗留 `ContainerConfig` 错误，推荐先 `rm -f` 再构建：
-
-1. **主 Bot、Web API 与 支付服务 (根目录)**：
-   `docker rm -f tg-bot web-api payment-api && docker-compose -f deploy/docker-compose.yml up -d --build`
-2. **Dashboard 与 中控 API (子目录)**：
-   `cd dashboard && docker rm -f dashboard_dashboard-backend_1 dashboard_dashboard-frontend_1 && docker-compose up -d --build`
-   `cd backend && docker rm -f backend_api_1 && docker-compose up -d --build`
-3. **Comfy Agent 算力集群 (workers 目录)**：
-   集群 Agent (`comfy-agent-x`) 支持独立平滑更新配置，不影响集群中其他节点。
-   - **整体部署**：`cd workers && docker rm -f comfy-agent-1 comfy-agent-2 comfy-agent-3 comfy-agent-4 comfy-agent-5 && docker-compose up -d --build`
-   - **单节点更新**（当修改环境变量后，重构并重启单个节点）：`docker-compose up -d comfy-agent-1`
-   - **单节点重启**（不重新构建，仅重启）：`docker-compose restart comfy-agent-1`
-4. **前端 Vue 自动发布**：
-   `cd frontend && npm run deploy` (依赖内置私钥通过 SCP 同步至海外 VPS)。
-
-**【极度重要】数据库迁移（按需）**：
-生产环境在构建镜像时才会打入新代码，旧容器内尚未拉取新脚本，会导致迁移指令变成无效空跑。请在**部署脚本执行完毕、新容器启动后**，立刻手动执行以下命令应用迁移：
-`docker exec -it tg-bot alembic upgrade head`
-
-## 6. 安全与权限监控规则 (SLI/SLO)
-- **SLI**：前端 SSH 私钥文件 (`id_rsa.pem`) 的权限状态；数据库表结构的 Alembic 变更一致性。
-- **SLO**：自动化部署 100% 成功，无原生 SQL Alter 引发的锁表。
-- **告警与防线策略**：
-  - **Critical**：绝对禁止在生产环境直接使用 `ALTER TABLE` 原生 SQL 修改数据库结构。必须通过 `alembic revision --autogenerate` 生成迁移版本并在容器启动时统一应用。
-  - **Warning**：执行部署脚本前，务必检查私钥权限：`chmod 600 id_rsa.pem`，否则 SSH 将因为权限过大拒绝通信。
-
-## 7. 系统日志监控与故障排查规范 (Log Monitoring & Troubleshooting SOP)
-
-在进行系统日志监控与深度分析任务时，请严格按照以下标准化步骤操作。此规范已封装为 `ops-log-monitor` AI 技能，供自动化排障时调用。
-
-### 7.1 日志采集与监控（静默执行）
-- **监控目标**：正式环境 bot 日志、测试环境 bot 日志、web api 日志、后端中控 api 日志。
-- **时间范围**：提取过去10分钟的历史日志，并持续追加监控后续2分钟的实时日志（总计覆盖12分钟的日志窗口）。
-- **排查双边缘节点故障**：当涉及网络层、跨域（CORS）、文件上传失败（413 Payload Too Large）、或者请求根本未到达后端时，**必须**使用 SSH 检查以下两个边缘节点的日志：
-  - **Web 前端与流量转发节点** (`100.88.57.122` / `154.17.30.113`)：执行指令 `ssh -i frontend/ssh_key/id_rsa.pem root@100.88.57.122 "tail -n 100 /var/log/nginx/error.log"` 检查 Nginx 代理报错。
-  - **Telegram Local API 节点** (`69.63.220.115`)：当出现 `telegram.error.TimedOut`、大文件下载 404/403 等异常时，执行指令 `ssh root@69.63.220.115 "docker logs --tail 100 tg-local-api"` 或检查 HTTP 文件服务器日志。
-- **排查后端数据库慢查询与连接池**：当出现 `110 Connection timed out` 且后端日志无明显应用报错时，**必须**排查 PostgreSQL 连接池是否被耗尽。使用 `docker exec -i postgres-server psql -U postgres -d bot_db -c "SELECT count(*), state FROM pg_stat_activity GROUP BY state;"` 检查 `idle in transaction` 的数量。若发现大量卡死进程，可使用 `ALTER SYSTEM SET idle_in_transaction_session_timeout = '60000';` 进行熔断恢复，并配置 `log_min_duration_statement = '1000'` 追踪慢查询。
-- **执行要求**：在此期间仅做观察、采集与记录，**绝对不要修改任何代码**。请将采集到的日志暂存到专用的临时文件或内存中，不要在控制台或对话窗口中打印原始日志流。
-
-### 7.2 日志综合分析
-采集结束后，基于临时日志数据进行以下多维分析：
-1. **异常检测**：精准识别所有 ERROR、WARN、Exception、StackTrace、超时、重试、状态码非200等异常信号。
-2. **频率统计**：按分钟粒度统计各类异常的出现次数，为趋势折线图准备数据。
-3. **链路追踪**：利用 TraceId 等标识，对同一请求在 `bot → web api → 后端中控api` 之间的调用链进行关联，定位首次出错的节点。
-4. **根因归类**：将发现的问题按“配置错误、依赖服务故障、代码逻辑缺陷、资源瓶颈、网络抖动、权限/鉴权失败”六大类进行归档。
-5. **影响评估**：评估并定级每类问题对线上用户、测试流程、系统稳定性的影响级别（P0/P1/P2）。
-6. **解决方案**：针对每类根因提供可执行的修复或缓解措施（包括：参数调优、降级策略、重试机制、告警阈值调整、代码后续改动建议）。**注：此处仅做文字描述，禁止直接实施代码修改。**
-
-### 7.3 报告生成与无痕清理（核心要求）
-- **生成报告**：输出一份 Markdown 格式的分析报告，必须包含以下模块：
-  - 监控时间范围与日志源列表
-  - 异常总览表（异常类型、出现次数、首次/末次时间、影响接口）
-  - 趋势图（必须使用 inline Mermaid 语法绘制折线图）
-  - 调用链追踪示例（以文本形式粘贴关键 TraceId 与各节点耗时截图/片段）
-  - 根因与解决方案对照表
-  - 后续行动清单（责任人、优先级、截止时间）
-- **保存文件**：将报告命名为 `log_analysis_report_<yyyyMMdd_HHmm>.md`，使用 UTF-8 编码，写入到项目根目录的 `logs/` 文件夹下（若目录不存在请自动创建）。此文件无需提交 Git。
-- **清理中间产物**：**强制要求**在报告成功写入磁盘后，立即通过 shell 命令彻底删除所有临时日志文件、数据切片或缓存记录。
-- **最终输出**：排障结束时，仅输出“报告已生成完毕”及文件的绝对路径，并简要总结报告中的 P0/P1 级核心结论。**严禁输出任何监控过程的中间产物或大段原始日志。**
+## 6. 文档维护口径
+- 部署文档与运维技能必须和 `safe_deploy.sh` 的真实顺序保持一致。
+- 若测试栈流程、`.env.test` 口径、`safe_deploy_test.sh` 或“测试优先发布”策略发生变化，必须同步更新运维技能、`AGENTS.md` 与本子模块文档。
+- 任何涉及 Alembic 的说明，都应明确“先检查多 head，再在宿主机执行 upgrade head”。
+- 任何涉及容器代码更新的说明，都应先核对卷挂载，再决定是 `restart` 还是 `--build`。

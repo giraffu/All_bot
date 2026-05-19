@@ -1,0 +1,93 @@
+version: '3.8'
+
+x-worker-base-test: &worker-base-test
+  build:
+    context: ./
+    dockerfile: Dockerfile
+  restart: always
+  env_file:
+    - ../.env.test
+  network_mode: "host"
+  extra_hosts:
+    - "host.docker.internal:host-gateway"
+  volumes:
+    - ../logs/workers-test:/app/logs
+    - ./comfy_agent/workflows:/app/worker/workflows
+
+services:
+  comfy-agent-test-1:
+    <<: *worker-base-test
+    container_name: comfy-agent-test-1
+    environment:
+      - TZ=Asia/Shanghai
+      - AGENT_ID=worker_test_01
+      - SUPPORTED_TASK_TYPES=face_swap,i2i_pro,i2i_draw,face_video,video_edit
+      - MASTER_API_URL=http://127.0.0.1:8004
+      - COMFY_API_URL=http://192.168.1.226:8188
+      - COMFY_WS_URL=ws://192.168.1.226:8188/ws
+
+  comfy-agent-test-2:
+    <<: *worker-base-test
+    container_name: comfy-agent-test-2
+    environment:
+      - TZ=Asia/Shanghai
+      - AGENT_ID=worker_test_02
+      - SUPPORTED_TASK_TYPES=video_insert,video_edit
+      - MASTER_API_URL=http://127.0.0.1:8004
+      - COMFY_API_URL=http://192.168.1.177:8188
+      - COMFY_WS_URL=ws://192.168.1.177:8188/ws
+
+  comfy-agent-test-3:
+    <<: *worker-base-test
+    container_name: comfy-agent-test-3
+    environment:
+      - TZ=Asia/Shanghai
+      - AGENT_ID=worker_test_03
+      - SUPPORTED_TASK_TYPES=ltx_video
+      - MASTER_API_URL=http://127.0.0.1:8004
+      - COMFY_API_URL=http://192.168.1.177:8189
+      - COMFY_WS_URL=ws://192.168.1.177:8189/ws
+
+  comfy-agent-test-4:
+    <<: *worker-base-test
+    container_name: comfy-agent-test-4
+    environment:
+      - TZ=Asia/Shanghai
+      - AGENT_ID=worker_test_04
+      - SUPPORTED_TASK_TYPES=img2img,img2img_lora
+      - MASTER_API_URL=http://127.0.0.1:8004
+      - COMFY_API_URL=http://192.168.1.252:8188
+      - COMFY_WS_URL=ws://192.168.1.252:8188/ws
+
+  comfy-agent-test-5:
+    <<: *worker-base-test
+    container_name: comfy-agent-test-5
+    environment:
+      - TZ=Asia/Shanghai
+      - AGENT_ID=worker_test_05
+      - SUPPORTED_TASK_TYPES=video_insert,video_edit
+      - MASTER_API_URL=http://127.0.0.1:8004
+      - COMFY_API_URL=http://192.168.1.252:8189
+      - COMFY_WS_URL=ws://192.168.1.252:8189/ws
+
+  comfy-agent-test-6:
+    <<: *worker-base-test
+    container_name: comfy-agent-test-6
+    environment:
+      - TZ=Asia/Shanghai
+      - AGENT_ID=worker_test_06
+      - SUPPORTED_TASK_TYPES=img2img,img2img_lora
+      - MASTER_API_URL=http://127.0.0.1:8004
+      - COMFY_API_URL=http://192.168.1.2:8188
+      - COMFY_WS_URL=ws://192.168.1.2:8188/ws
+
+  comfy-agent-test-7:
+    <<: *worker-base-test
+    container_name: comfy-agent-test-7
+    environment:
+      - TZ=Asia/Shanghai
+      - AGENT_ID=worker_test_07
+      - SUPPORTED_TASK_TYPES=video_insert,video_edit
+      - MASTER_API_URL=http://127.0.0.1:8004
+      - COMFY_API_URL=http://192.168.1.2:8189
+      - COMFY_WS_URL=ws://192.168.1.2:8189/ws

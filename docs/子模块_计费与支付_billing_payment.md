@@ -1,147 +1,125 @@
 # 子模块: 计费与支付核心 (Billing & Payment)
 
 ## 1. 目标与范围
-本模块负责系统全局的资产管理、扣费/退费逻辑以及跨渠道（如微信、支付宝、TON、Telegram Stars）的支付回调与履约（Fulfillment）。通过实施**单轨制代币（灵石）**和**异步预建单与回调验签分离**架构，确保所有账本流水的强一致性（ACID）和极高的并发幂等性。
+本模块负责 AllBot 的资产变动、支付履约、返佣账本与返佣兑换闭环。当前实现已经从“单一支付回调 + 充值发货”扩展为四条并行链路：
+- 灵石同步扣减与退款
+- RMB 网关异步回调履约
+- Telegram Stars 官方支付回调履约
+- TON 链上轮询入账与发货
+- Affiliate 返佣入账、余额统计与兑换灵石
 
-## 2. 架构图与调用链
+核心目标不是“把钱加上”，而是保证任意真实资产变化都具备以下性质：
+- 有唯一业务单或唯一外部流水作为幂等锚点
+- 有数据库锁或唯一约束阻断并发双花
+- 有不可变快照或流水支持事后审计
+- 有 user_logs / affiliate_transactions / affiliate_redeems 三类账本可追溯
+
+## 2. 当前架构概览
 
 ```mermaid
 sequenceDiagram
     autonumber
     actor U as 用户
-    participant Bot as 交互层 (Bot/Web)
-    participant BC as 计费核心 (Billing Core)
-    participant PG as PostgreSQL (bot_db)
-    participant Ext as 第三方支付网关
-    participant PayAPI as 支付回调 API
+    participant Bot as Bot/Web
+    participant Auth as Web Auth
+    participant PG as PostgreSQL
+    participant RMB as RMB网关
+    participant TG as Telegram Stars
+    participant TON as TON轮询器
+    participant Aff as Affiliate账本
 
-    U->>Bot: 1. 请求生成任务 / 发起充值
-    alt 扣费链路 (同步)
-        Bot->>BC: 2. check_and_deduct_credits()
-        BC->>PG: 3. 校验余额 & 开启事务
-        PG-->>BC: 4. 插入 user_logs 流水
-        BC-->>Bot: 5. 扣费成功，允许生成
-    else 充值发货链路 (异步)
-        Bot->>PG: 2. 预建单 (status=PENDING)
-        Bot->>Ext: 3. 拉起支付收银台
-        Ext->>PayAPI: 4. POST /api/payment/notify (异步回调)
-        PayAPI->>PayAPI: 5. 验签 (Signature Validation)
-        PayAPI->>PG: 6. fulfill_order() 幂等校验与发货
-        PG-->>PayAPI: 7. 插入流水 & 更新身份
-        PayAPI-->>Ext: 8. 返回 "success"
+    U->>Bot: 发起购买或消费
+    alt 同步扣费
+        Bot->>PG: QuotaManager.adjust/add/deduct_credits
+        PG-->>Bot: 写 users + user_logs 同事务提交
+    else RMB 支付
+        Bot->>PG: 预建 PENDING 订单
+        RMB->>PG: payment_fulfillment_service.fulfill_order()
+        PG->>Aff: 计算首单返佣并写 affiliate_transactions
+    else Telegram Stars 支付
+        TG->>PG: payment_handler 回调履约
+        PG->>Aff: 同步写返佣账本
+    else TON 支付
+        TON->>PG: 按 tx_hash 幂等插入 SUCCESS/FAILED 订单
+        PG->>Aff: 成功单写返佣账本
     end
+
+    U->>Bot: 发起返佣兑换灵石
+    Bot->>PG: affiliate_redeem_service + user/redo lock
+    PG->>Aff: 写 affiliate_redeems + OUT 账本 + user_logs
+    PG-->>Bot: 返回兑换结果与余额/灵石快照
 ```
 
-## 3. 核心代码片段
+## 3. 已落地的数据模型
+- `orders`
+  - 保存本地业务单、支付渠道、`tx_hash`、支付状态、`commission_usdt`、支付时间。
+  - `tx_hash` 唯一，用于 TON 等外部流水幂等拦截。
+- `affiliate_transactions`
+  - 返佣主账本，记录 `IN/OUT`、`transaction_type`、`reference_type/reference_id`、`idempotency_key`。
+  - 当前既承载首单返佣入账，也承载返佣兑换灵石的 `CREDITS_REDEEM / OUT / SUCCESS`。
+- `affiliate_redeems`
+  - 返佣兑换记录表，按 `(user_id, idempotency_key)` 保证单用户幂等。
+  - `details` 中落地 `current_credits` 与 `available_balance_usdt` 快照，供重放时稳定返回首次成功结果。
 
-### 事务管理与退款防漏 (Transaction & Refund)
-在 FastAPI 路由 (Routers) 或 Telegram Handlers 中，**严禁在 `try-except` 捕获异常后，手动调用 `refund_credits` 等业务级补偿方法同时执行 `session.rollback()`**。
-> **原因**：因为依赖注入的 `AsyncSession` 会由外层 Unit of Work (UoW) 或中间件自动 `rollback`。如果手动退款并在异常块内执行回滚，可能导致“退款流水记录未被持久化”而余额被修改，或出现重复退款漏洞。所有事务与补偿必须遵循核心层的原子性闭环，业务异常应抛出后由全局拦截器处理。
+## 4. 核心实现事实
 
-### 计费扣减与流水追踪 (src/core/billing_core.py)
-[`billing_core.py:L42-L61`](file:///home/hfy/APP/All_bot/src/core/billing_core.py#L42-L61)
-```python
-async def check_and_deduct_credits(internal_user_id: int, cost: int, task_type: str, username: str = None) -> Tuple[bool, str]:
-    """同步扣费逻辑，强依赖 user_logs 表进行流水追踪，保障账本一致性"""
-    async with async_session() as session:
-        user = await session.get(User, internal_user_id)
-        if user.credits < cost:
-            return False, "灵石不足，请前往「个人中心」充值"
-        
-        # 执行扣费
-        user.credits -= cost
-        
-        # 核心红线：强制写入流水以供审计
-        log_entry = UserLog(
-            user_id=internal_user_id,
-            credit_change=-cost,
-            operation_type=task_type,
-            description=f"Task: {task_type}"
-        )
-        session.add(log_entry)
-        await session.commit()
-        return True, "扣费成功"
-```
+### 4.1 Web 鉴权与资产访问前提
+- Web 侧 JWT 由 `src/web_api/core/security.py` 使用 `SECRET_KEY` 签发，不再由 `BOT_TOKEN` 直接签发。
+- 登录通道已经包含 Telegram Mini App / Login Widget 与账号密码两类入口。
+- `get_current_user` 在解 JWT 后还会做两次动态校验：
+  - `password_version` 黑名单校验，确保改密后旧 Token 失效。
+  - 当前身份/境界是否仍满足 Web 访问条件，防止“先登录后降权”继续访问。
 
-### 订单发货与幂等处理 (src/services/payment_fulfillment_service.py)
-[`payment_fulfillment_service.py:L14-L35`](file:///home/hfy/APP/All_bot/src/services/payment_fulfillment_service.py#L14-L35)
-```python
-async def fulfill_order(out_trade_no: str, external_trade_no: str, paid_amount: float) -> bool:
-    """订单发货逻辑，包含幂等性校验和月卡跨级折算"""
-    async with async_session() as session:
-        order = await session.execute(select(Order).where(Order.out_trade_no == out_trade_no))
-        order = order.scalar_one_or_none()
-        
-        # 幂等性拦截：防止第三方网关重发回调导致重复发货
-        if order.status == 'SUCCESS':
-            return True
-            
-        order.status = 'SUCCESS'
-        order.external_trade_no = external_trade_no
-        order.paid_at = datetime.utcnow()
-        
-        # 调用发货、权限升级逻辑...
-        await session.commit()
-        return True
-```
+### 4.2 订单履约红线
+- RMB 回调通过 `fulfill_order()` 处理，按 `order_id` 加 `FOR UPDATE` 锁，先校验金额，再更新订单与用户资产。
+- TON 不依赖单一 Webhook，而是由轮询器抓链上交易，按 `tx_hash` 唯一约束落单，避免重复到账。
+- 各支付渠道发货完成后都会同步尝试：
+  - 计算首单返佣 `commission_usdt`
+  - 写入 `affiliate_transactions`
+  - 失效邀请充值相关缓存
+- “纯灵石套餐”与“身份月卡套餐”共用履约入口，但 `duration_days == 0` 时只加灵石，不变更身份。
 
-## 4. 接口定义 (OpenAPI 3.0)
+### 4.3 Affiliate 返佣闭环
+- 首单返佣金额写入 `orders.commission_usdt`，缺汇率时必须失败并回滚，不能静默写 0。
+- 邀请人余额不是冗余字段，而是通过 `affiliate_transactions` 汇总得到。
+- 返佣兑换灵石当前已正式落地：
+  - 汇率固定为 `1.0000 USDT = 90 credits`
+  - `amount_usdt` 量化到 4 位小数
+  - `credits_granted` 采用 `ROUND_HALF_UP`
+  - 会写入 `affiliate_redeems`、`affiliate_transactions`、`user_logs`
+- 同一个 `idempotency_key` 重放时，服务返回首次成功的快照结果，而不是重新计算当前余额。
+- 返佣余额缓存失效必须在最终事务提交后执行，不能在外部事务提交前抢跑。
 
-```yaml
-openapi: 3.0.3
-info:
-  title: Payment Fulfillment API
-  version: 1.0.0
-paths:
-  /api/payment/notify:
-    post:
-      summary: 第三方支付网关异步回调
-      description: 接收外部支付网关的异步通知，进行验签和发货处理。
-      requestBody:
-        required: true
-        content:
-          application/x-www-form-urlencoded:
-            schema:
-              type: object
-              properties:
-                out_trade_no:
-                  type: string
-                trade_no:
-                  type: string
-                money:
-                  type: string
-                sign:
-                  type: string
-      responses:
-        '200':
-          description: 处理成功，必须返回文本 success 阻断第三方重试
-          content:
-            text/plain:
-              schema:
-                type: string
-                example: success
-        '400':
-          description: 验签失败或参数缺失
-```
+### 4.4 审计与事务边界
+- `QuotaManager.adjust_credits/add_credits/deduct_credits` 在复用外部 `AsyncSession` 时，也必须把 `user_logs` 一并写进当前事务。
+- 路由层如果传入外部事务，核心服务应复用该事务并由调用方统一 `commit`；核心服务不能擅自提前提交半个闭环。
+- “先持久化唯一业务单/外部流水，再做资产副作用”仍是支付与返佣相关逻辑的统一基线。
 
-## 5. 单元与集成测试要求
-- **覆盖率基准**：此模块涉及真金白银，代码测试覆盖率要求 **≥95%**。
-- **核心用例**：
-  1. `test_concurrent_deduction`：模拟 100 个并发请求调用扣费接口，断言 `user_logs` 流水总和与 `users.credits` 扣减额完全一致（防超卖）。
-  2. `test_idempotent_fulfillment`：使用相同的 `out_trade_no` 发起两次支付回调，断言系统只发放一次奖励，第二次直接返回 `True`。
-  3. `test_invalid_signature`：构造错误的网关 `sign` 请求回调接口，断言系统抛出 `400` 并拒绝发货。
+## 5. 对外接口口径
+- RMB 支付回调：`POST /api/payment/notify`
+  - 仅适用于 RMB 网关异步通知。
+  - 成功必须返回文本 `success` 阻断第三方重试。
+- Telegram 登录：`POST /api/auth/telegram`
+  - 支持 Mini App `initData` 与 Login Widget 字段。
+- 密码登录：`POST /api/auth/login`
+- 绑定/修改密码：`POST /api/auth/bind-password`
+- Affiliate 兑换灵石：位于 `users` 路由下的兑换接口，调用 `redeem_affiliate_balance_to_credits()` 完成。
 
-## 6. 部署与回滚步骤
-- **部署**：
-  由于支付 API 独立于主 Bot 容器，修改支付逻辑后，在宿主机执行：
-  `docker-compose -f deploy/docker-compose.yml up -d --build payment-api`
-- **回滚**：
-  保留上一个镜像 Tag。若出现严重的发货 Bug，执行：
-  `docker tag my-payment-api:last-stable my-payment-api:latest && docker-compose restart payment-api`
+## 6. 必须同步维护的测试面
+- 支付履约幂等
+  - 同一 RMB 回调重复通知只发货一次。
+  - 同一 TON `tx_hash` 重复出现只落一笔单。
+- 支付金额校验
+  - RMB 金额按 Decimal/字符串链路量化到两位，禁止 float 漂移。
+- Affiliate 并发与幂等
+  - 同用户并发兑换不能双花。
+  - 同 `idempotency_key` 同参数稳定返回首次结果。
+  - 同 `idempotency_key` 不同参数必须冲突失败。
+- 审计闭环
+  - `users.credits` 变化必须与 `user_logs` 对平。
+  - `affiliate_transactions` IN/OUT 汇总必须能回推出当前可兑换余额。
 
-## 7. 监控告警规则 (SLI/SLO)
-- **SLI (Service Level Indicator)**：支付回调接口 `/api/payment/notify` 的 5xx 错误率与 400（验签失败）频率。
-- **SLO (Service Level Objective)**：回调接口可用性 99.99%，处理延迟 < 500ms。
-- **告警策略**：
-  - **Critical**：连续 5 分钟内出现 3 次以上“支付成功但发货异常（如数据库锁死）”报错，触发 P0 级电话/短信告警。
-  - **Warning**：`user_logs` 表每小时核对总额与 `users` 表的余额变化差值不为 0 时（对账不平），触发飞书/钉钉告警。
+## 7. 文档维护约束
+- 不要再把本模块描述成“只有一个 `/api/payment/notify` 回调”。这已经只覆盖 RMB 子链路。
+- 不要把 JWT 描述成由 `BOT_TOKEN` 直接签发。当前是 `SECRET_KEY` JWT，Telegram Token 仅用于验签。
+- 不要把 affiliate 写成“规划中”。返佣账本与返佣兑换灵石已经是现行生产能力。
