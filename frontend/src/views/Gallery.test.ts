@@ -97,15 +97,25 @@ vi.mock('@/components/LazyVideo.vue', async () => {
 })
 
 vi.mock('vue-waterfall-plugin-next', async () => {
-  const { defineComponent } = await vi.importActual<typeof import('vue')>('vue')
+  const { defineComponent, nextTick, onMounted, onUpdated } = await vi.importActual<typeof import('vue')>('vue')
   return {
     Waterfall: defineComponent({
       name: 'WaterfallStub',
+      emits: ['afterRender'],
       props: {
         list: {
           type: Array,
           default: () => []
         }
+      },
+      setup(_, { emit }) {
+        const triggerAfterRender = () => {
+          void nextTick(() => emit('afterRender'))
+        }
+
+        onMounted(triggerAfterRender)
+        onUpdated(triggerAfterRender)
+        return {}
       },
       template: `
         <div class="waterfall-stub">
@@ -154,6 +164,7 @@ const samplePostTwo = {
   ...samplePost,
   id: 2,
   task_id: 'task-2',
+  thumbnail_url: 'https://example.com/thumb-2.png',
   media_url: 'https://example.com/image-2.png'
 }
 
@@ -166,8 +177,8 @@ const faceSwapContext = {
   prompt: 'demo prompt'
 }
 
-const primeGalleryApi = () => {
-  apiGetMock.mockImplementation((url: string) => {
+const primeGalleryApi = (options?: { paged?: boolean }) => {
+  apiGetMock.mockImplementation((url: string, config?: { params?: Record<string, unknown> }) => {
     if (url === '/gallery/config') {
       return Promise.resolve({
         data: {
@@ -179,10 +190,24 @@ const primeGalleryApi = () => {
     }
 
     if (url === '/gallery/posts') {
+      const page = Number(config?.params?.page ?? 1)
+      if (options?.paged) {
+        return Promise.resolve({
+          data: {
+            items: page === 2 ? [samplePostTwo] : [samplePost],
+            total: 2,
+            page,
+            pages: 2
+          }
+        })
+      }
+
       return Promise.resolve({
         data: {
           items: [samplePost, samplePostTwo],
-          total: 2
+          total: 2,
+          page: 1,
+          pages: 1
         }
       })
     }
@@ -264,6 +289,33 @@ describe('Gallery template apply integration', () => {
     })
     expect(routerPushMock).not.toHaveBeenCalled()
     expect(messageSuccessMock).toHaveBeenCalledWith('已载入模板工作台')
+  })
+
+  it('switches page with paged navigation and requests the target page', async () => {
+    primeGalleryApi({ paged: true })
+
+    const wrapper = mountGallery()
+    await flushPromises()
+    await flushPromises()
+
+    const pageTwoButton = wrapper
+      .findAll('button')
+      .find(button => button.text().trim() === '2')
+
+    expect(pageTwoButton).toBeTruthy()
+
+    await pageTwoButton!.trigger('click')
+    await flushPromises()
+    await flushPromises()
+
+    expect(apiGetMock).toHaveBeenCalledWith('/gallery/posts', expect.objectContaining({
+      params: expect.objectContaining({
+        page: 2
+      })
+    }))
+
+    expect(wrapper.html()).toContain(samplePostTwo.media_url)
+    expect(wrapper.html()).not.toContain(samplePost.media_url)
   })
 
   it('falls back to the legacy page with the normalized query when workbench fallback is returned', async () => {

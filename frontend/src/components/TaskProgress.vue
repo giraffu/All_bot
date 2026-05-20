@@ -52,21 +52,25 @@ const doCancelTask = async (taskId: string) => {
           :class="{'cursor-default': task.status !== 'success'}"
         >
           <!-- 环形进度条 -->
-          <a-progress 
+          <div
             v-if="task.status === 'pending' || task.status === 'running'"
-            type="circle" 
-            :percent="task.progress" 
-            :width="56"
-            :show-info="false" 
-            status="active" 
-            strokeColor="#06b6d4" 
-            trailColor="rgba(255,255,255,0.1)" 
-            :strokeWidth="6" 
-            class="absolute inset-0"
-          />
+            class="absolute inset-0 flex items-center justify-center"
+          >
+            <a-progress 
+              type="circle" 
+              :percent="task.progress" 
+              :size="42"
+              :show-info="false" 
+              status="active" 
+              strokeColor="#06b6d4" 
+              trailColor="rgba(255,255,255,0.1)" 
+              :strokeWidth="5" 
+            />
+          </div>
           
           <!-- 中心状态指示 -->
-          <div class="z-10 flex flex-col items-center justify-center">
+          <div class="z-10 flex h-10 w-10 items-center justify-center rounded-full bg-slate-900/95 border border-white/8 shadow-inner shadow-black/30">
+            <div class="flex flex-col items-center justify-center leading-none">
             <template v-if="task.status === 'pending'">
               <span class="text-[11px] text-cyan-400 font-medium font-mono">
                 <template v-if="task.queuePos != null">
@@ -86,6 +90,7 @@ const doCancelTask = async (taskId: string) => {
             <template v-else-if="task.status === 'failed'">
               <close-outlined class="text-red-400 text-xl" />
             </template>
+            </div>
           </div>
         </div>
 

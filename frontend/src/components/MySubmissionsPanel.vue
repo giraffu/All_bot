@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import { useI18n } from 'vue-i18n'
@@ -26,6 +26,7 @@ import {
   buildLegacyTemplateRoute,
   resolveTemplateApplyEntry
 } from '@/utils/templateApplyEntry'
+import PagedNavigation from '@/components/PagedNavigation.vue'
 
 interface Post {
   id: number
@@ -63,11 +64,13 @@ const { t } = useI18n()
 const layoutContentRef = useMainLayoutContentRef()
 const posts = ref<Post[]>([])
 const loading = ref(false)
-const page = ref(1)
+const currentPage = ref(1)
+const pageCache = ref<Record<number, Post[]>>({})
 const size = ref(20)
-const hasMore = ref(true)
+const totalPages = ref(0)
 const detailVisible = ref(false)
 const currentPost = ref<Post | null>(null)
+const pendingPages = new Set<number>()
 
 const {
   comments,
@@ -91,25 +94,12 @@ const currentIndex = computed(() => {
   return posts.value.findIndex((post) => post.id === currentPost.value?.id)
 })
 
-const hasPrev = computed(() => currentIndex.value > 0)
+const hasPrev = computed(() => currentIndex.value > 0 || currentPage.value > 1)
 const hasNext = computed(
-  () => currentIndex.value >= 0 && currentIndex.value < posts.value.length - 1,
+  () => currentIndex.value >= 0 && (
+    currentIndex.value < posts.value.length - 1 || currentPage.value < totalPages.value
+  ),
 )
-
-const goPrev = () => {
-  if (hasPrev.value) {
-    currentPost.value = posts.value[currentIndex.value - 1]
-  }
-}
-
-const goNext = () => {
-  if (hasNext.value) {
-    currentPost.value = posts.value[currentIndex.value + 1]
-    if (currentIndex.value >= posts.value.length - 3 && hasMore.value) {
-      void loadPosts()
-    }
-  }
-}
 
 const formatTag = (tag: string) => {
   if (tag.startsWith('#task.')) {
@@ -164,50 +154,155 @@ const isVideoFile = (path: string, mediaType?: string) => {
   )
 }
 
-let currentRequestId = 0
+let currentVisibleRequestId = 0
+let currentQueryVersion = 0
 
-const loadPosts = async (reset = false) => {
-  if (!reset && (loading.value || !hasMore.value)) return
+const resetPaginationState = () => {
+  currentPage.value = 1
+  posts.value = []
+  pageCache.value = {}
+  totalPages.value = 0
+  loading.value = false
+}
 
-  loading.value = true
-  if (reset) {
-    page.value = 1
-    posts.value = []
-    hasMore.value = true
+const scrollToTop = async () => {
+  await nextTick()
+  layoutContentRef.value?.scrollTo({
+    top: 0,
+    behavior: 'smooth'
+  })
+}
+
+const syncPageResult = (pageNumber: number, items: Post[], resData: any) => {
+  pageCache.value = {
+    ...pageCache.value,
+    [pageNumber]: items
+  }
+  const totalItems = typeof resData.total === 'number'
+    ? resData.total
+    : items.length
+  totalPages.value = typeof resData.pages === 'number' && resData.pages > 0
+    ? resData.pages
+    : Math.max(1, Math.ceil(totalItems / size.value))
+}
+
+const fetchPostsPage = async (
+  pageNumber: number,
+  options: { activate?: boolean; force?: boolean } = {}
+) => {
+  const { activate = false, force = false } = options
+  const cachedItems = pageCache.value[pageNumber]
+
+  if (!force && cachedItems) {
+    if (activate) {
+      currentPage.value = pageNumber
+      posts.value = cachedItems
+    }
+    return true
   }
 
-  const requestId = ++currentRequestId
+  if (pendingPages.has(pageNumber)) {
+    return false
+  }
+
+  const requestVersion = currentQueryVersion
+  const visibleRequestId = activate ? ++currentVisibleRequestId : currentVisibleRequestId
+  pendingPages.add(pageNumber)
+
+  if (activate) {
+    loading.value = true
+  }
 
   try {
     const res = await api.get('/gallery/my-posts', {
       params: {
-        page: page.value,
+        page: pageNumber,
         size: size.value,
         task_type: props.taskType === 'all' ? undefined : props.taskType,
       },
     })
 
-    if (requestId !== currentRequestId) return
+    if (requestVersion !== currentQueryVersion) return false
 
-    if (reset) {
+    syncPageResult(pageNumber, res.data.items, res.data)
+
+    if (activate && visibleRequestId === currentVisibleRequestId) {
+      currentPage.value = pageNumber
       posts.value = res.data.items
-    } else {
-      posts.value = [...posts.value, ...res.data.items]
     }
-
-    if (page.value >= res.data.pages) {
-      hasMore.value = false
-    } else {
-      page.value++
-    }
+    return true
   } catch (error) {
-    if (requestId !== currentRequestId) return
+    if (requestVersion !== currentQueryVersion) return false
     console.error(error)
     message.error(t('my_notes.load_failed'))
+    return false
   } finally {
-    if (requestId === currentRequestId) {
+    pendingPages.delete(pageNumber)
+    if (activate && visibleRequestId === currentVisibleRequestId) {
       loading.value = false
     }
+  }
+}
+
+const prefetchNextPage = () => {
+  if (!totalPages.value || currentPage.value >= totalPages.value) {
+    return
+  }
+  void fetchPostsPage(currentPage.value + 1)
+}
+
+const goToPage = async (pageNumber: number) => {
+  if (pageNumber < 1 || (totalPages.value > 0 && pageNumber > totalPages.value)) {
+    return
+  }
+
+  const changed = await fetchPostsPage(pageNumber, { activate: true })
+  if (!changed) return
+
+  await scrollToTop()
+  prefetchNextPage()
+}
+
+const goPrev = async () => {
+  if (currentIndex.value > 0) {
+    currentPost.value = posts.value[currentIndex.value - 1]
+    return
+  }
+
+  if (currentPage.value <= 1) return
+  const changed = await fetchPostsPage(currentPage.value - 1, { activate: true })
+  if (changed) {
+    currentPost.value = posts.value[posts.value.length - 1] ?? null
+  }
+}
+
+const goNext = async () => {
+  if (currentIndex.value >= 0 && currentIndex.value < posts.value.length - 1) {
+    currentPost.value = posts.value[currentIndex.value + 1]
+    if (currentIndex.value >= posts.value.length - 3) {
+      prefetchNextPage()
+    }
+    return
+  }
+
+  if (currentPage.value >= totalPages.value) return
+  const changed = await fetchPostsPage(currentPage.value + 1, { activate: true })
+  if (changed) {
+    currentPost.value = posts.value[0] ?? null
+  }
+}
+
+const loadPosts = async (reset = false) => {
+  if (!reset) {
+    prefetchNextPage()
+    return
+  }
+
+  currentQueryVersion += 1
+  resetPaginationState()
+  const loaded = await fetchPostsPage(1, { activate: true, force: true })
+  if (loaded) {
+    prefetchNextPage()
   }
 }
 
@@ -383,7 +478,7 @@ const handleScroll = () => {
 
   const { scrollTop, scrollHeight, clientHeight } = container
   if (scrollHeight - scrollTop - clientHeight < 200) {
-    void loadPosts()
+    prefetchNextPage()
   }
 }
 
@@ -425,6 +520,20 @@ onUnmounted(() => {
 
 <template>
   <div class="gallery-container text-slate-200">
+    <div class="sticky top-0 z-40 -mx-3 px-3 md:-mx-6 md:px-6 pt-3 pb-2 mb-3">
+      <div class="flex justify-center">
+        <div class="rounded-2xl border border-slate-700/50 bg-slate-950/55 px-3 py-2 shadow-[0_6px_18px_rgba(2,6,23,0.25)]">
+          <PagedNavigation
+            :current-page="currentPage"
+            :total-pages="totalPages"
+            :disabled="loading"
+            :compact="isMobile"
+            @change="goToPage"
+          />
+        </div>
+      </div>
+    </div>
+
     <div class="columns-2 sm:columns-3 md:columns-4 lg:columns-5 gap-3 sm:gap-6 space-y-3 sm:space-y-6">
       <div
         v-for="post in posts"

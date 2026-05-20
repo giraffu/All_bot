@@ -28,6 +28,14 @@ api.interceptors.response.use(
     
     const status = error.response.status
     const data = error.response.data
+    const requestUrl = String(error.config?.url || '')
+    const isGalleryCommentsRequest = /\/gallery\/posts\/\d+\/comments(?:\?.*)?$/.test(requestUrl)
+
+    // 评论接口在“无评论”或评论资源不可用时可能返回 404，这里静默交给调用方处理，
+    // 避免详情弹窗误报“帖子不存在或已下架”影响浏览内容。
+    if (status === 404 && isGalleryCommentsRequest) {
+      return Promise.reject(error)
+    }
     
     if (status === 401) {
       const authStore = useAuthStore()

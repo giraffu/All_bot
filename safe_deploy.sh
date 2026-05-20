@@ -10,8 +10,6 @@ remove_maintenance_markers() {
     local containers=(
         "tg-bot"
         "web-api"
-        "tg-bot-test"
-        "web-api-test"
     )
 
     for container_name in "${containers[@]}"; do
@@ -27,7 +25,7 @@ cleanup_on_exit() {
     remove_maintenance_markers
 
     if [ "$exit_code" -eq 0 ] && [ "$DEPLOY_SUCCEEDED" -eq 1 ]; then
-        echo "✅ 已自动清理生产与测试环境的维护模式标记。"
+        echo "✅ 已自动清理生产环境维护模式标记。"
     else
         echo "⚠️ 部署未完成，已尽力清理维护模式标记，请检查容器状态与日志。"
     fi
@@ -37,12 +35,12 @@ cleanup_on_exit() {
 
 trap cleanup_on_exit EXIT
 
-echo "🚀 开始 All_Bot 安全更新与重建流程 (带队列监控)..."
+echo "🚀 开始 All_Bot 生产环境安全更新与重建流程 (带队列监控)..."
 
 # ==============================================================================
-# 第一步：开启维护模式，拦截新任务提交 (包含生产与测试环境)
+# 第一步：开启生产环境维护模式，拦截新任务提交
 # ==============================================================================
-echo "1️⃣ 开启系统维护模式..."
+echo "1️⃣ 开启生产环境维护模式..."
 if [ -n "$(docker ps -q -f name=^tg-bot$)" ]; then
     docker exec tg-bot touch /app/MAINTENANCE
     docker exec web-api touch /app/MAINTENANCE 2>/dev/null || true
@@ -51,18 +49,10 @@ else
     echo "⚠️ tg-bot 容器未运行，跳过生产环境维护模式标记。"
 fi
 
-if [ -n "$(docker ps -q -f name=^tg-bot-test$)" ]; then
-    docker exec tg-bot-test touch /app/MAINTENANCE
-    docker exec web-api-test touch /app/MAINTENANCE 2>/dev/null || true
-    echo "✅ 已开启 tg-bot-test 与 web-api-test (测试环境) 维护模式，所有新任务提交将被拒绝。"
-else
-    echo "⚠️ tg-bot-test 容器未运行，跳过测试环境维护模式标记。"
-fi
-
 # ==============================================================================
-# 第二步：智能监控 Redis 活跃队列，直到任务清空
+# 第二步：智能监控生产 Redis 活跃队列，直到任务清空
 # ==============================================================================
-echo "2️⃣ 开始监控活跃任务队列，等待当前任务处理完毕..."
+echo "2️⃣ 开始监控生产环境活跃任务队列，等待当前任务处理完毕..."
 
 monitor_queue() {
     local container_name=$1
@@ -133,21 +123,15 @@ EOF
 }
 
 monitor_queue "tg-bot" "生产环境"
-monitor_queue "tg-bot-test" "测试环境"
 
 # ==============================================================================
-# 第三步：执行僵尸任务与并发锁清理 (确保并发状态一致)
+# 第三步：执行生产僵尸任务与并发锁清理 (确保并发状态一致)
 # ==============================================================================
-echo "3️⃣ 执行僵尸任务与 Redis 并发锁清理..."
+echo "3️⃣ 执行生产环境僵尸任务与 Redis 并发锁清理..."
 if [ -n "$(docker ps -q -f name=^tg-bot$)" ]; then
     # 由于上面的检测保证了活跃任务为 0，此时如果还有残留的锁，必定是死锁，这步脚本能完美将其清空
     docker exec tg-bot python src/services/zombie_cleaner_service.py || echo "⚠️ 生产环境清理脚本执行警告，继续流程..."
     echo "✅ 生产环境 Redis 并发状态核对完成。"
-fi
-
-if [ -n "$(docker ps -q -f name=^tg-bot-test$)" ]; then
-    docker exec tg-bot-test python src/services/zombie_cleaner_service.py || echo "⚠️ 测试环境清理脚本执行警告，继续流程..."
-    echo "✅ 测试环境 Redis 并发状态核对完成。"
 fi
 
 # ==============================================================================
@@ -218,14 +202,7 @@ cd "$ROOT_DIR"
 echo "✅ Dashboard 服务重建完成。"
 
 # ==============================================================================
-# 第九步：重建测试服务群 (Test Bot, Payment API, Web API)
-# ==============================================================================
-echo "9️⃣ 重建并重启测试环境服务群 (Test Environment)..."
-docker rm -f tg-bot-test payment-api-test web-api-test || true
-docker-compose -f deploy/docker-compose-test.yml up -d --build
-echo "✅ 测试环境服务群重建完成。"
-
 DEPLOY_SUCCEEDED=1
 
-echo "🎉 所有服务更新与重建已成功完成！系统已自动解除维护模式并恢复服务。"
+echo "🎉 生产环境服务更新与重建已成功完成！系统已自动解除维护模式并恢复服务。"
 echo "👉 请执行 'docker logs -f tg-bot' 查看主程序启动日志。"

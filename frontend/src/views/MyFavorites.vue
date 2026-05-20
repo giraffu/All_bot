@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
@@ -20,6 +20,7 @@ import api from '@/api'
 import dayjs from 'dayjs'
 import MySubmissionsPanel from '@/components/MySubmissionsPanel.vue'
 import OverflowScrollRail from '@/components/OverflowScrollRail.vue'
+import PagedNavigation from '@/components/PagedNavigation.vue'
 import { useMainLayoutContentRef } from '@/composables/useWorkbenchScrollLock'
 import { useGalleryComments } from '@/composables/useGalleryComments'
 import {
@@ -61,9 +62,10 @@ const { t } = useI18n()
 const layoutContentRef = useMainLayoutContentRef()
 const posts = ref<Post[]>([])
 const loading = ref(false)
-const page = ref(1)
+const currentPage = ref(1)
+const pageCache = ref<Record<number, Post[]>>({})
 const total = ref(0)
-const hasMore = ref(true)
+const totalPages = ref(0)
 
 function normalizeFilterType(tabValue: unknown): FilterTab {
   const value = typeof tabValue === 'string' ? tabValue : ''
@@ -100,6 +102,7 @@ const {
 } = useGalleryComments(currentPost, posts, detailVisible)
 const applying = ref(false)
 const interactingPosts = ref<Record<number, boolean>>({})
+const pendingPages = new Set<number>()
 
 const currentIndex = computed(() => {
   if (!currentPost.value) return -1
@@ -113,8 +116,10 @@ const pageSize = computed(() => {
   return 20
 })
 
-const hasPrev = computed(() => currentIndex.value > 0)
-const hasNext = computed(() => currentIndex.value >= 0 && currentIndex.value < posts.value.length - 1)
+const hasPrev = computed(() => currentIndex.value > 0 || currentPage.value > 1)
+const hasNext = computed(() => currentIndex.value >= 0 && (
+  currentIndex.value < posts.value.length - 1 || currentPage.value < totalPages.value
+))
 const isSubmissionTab = computed(() => filterType.value === 'submissions')
 const filterTabs = computed(() => [
   { id: 'favorite' as const, name: t('my_notes.tabs.favorite') },
@@ -146,21 +151,6 @@ const resolveTaskTypeLabel = (taskTypeId: string) => {
     .replace('ltx_video', 'high_res_video')
 
   return t(`gallery.tabs.${translationKey}`)
-}
-
-const goPrev = () => {
-  if (hasPrev.value) {
-    currentPost.value = posts.value[currentIndex.value - 1]
-  }
-}
-
-const goNext = () => {
-  if (hasNext.value) {
-    currentPost.value = posts.value[currentIndex.value + 1]
-    if (currentIndex.value >= posts.value.length - 3 && hasMore.value) {
-      loadPosts()
-    }
-  }
 }
 
 const formatTag = (tag: string) => {
@@ -226,7 +216,8 @@ const isVideoFile = (path: string, mediaType?: string) => {
          lowerPath.endsWith('.avi')
 }
 
-let currentRequestId = 0
+let currentVisibleRequestId = 0
+let currentQueryVersion = 0
 
 const loadConfig = async () => {
   if (configPromise) return configPromise
@@ -256,57 +247,161 @@ const updateViewportMode = () => {
   }
 }
 
-const loadPosts = async (reset = false) => {
-  if (isSubmissionTab.value) return
-  if (!reset && (loading.value || !hasMore.value)) return
-  
-  loading.value = true
-  if (reset) {
-    page.value = 1
-    posts.value = []
-    hasMore.value = true
+const resetPaginationState = () => {
+  currentPage.value = 1
+  posts.value = []
+  pageCache.value = {}
+  total.value = 0
+  totalPages.value = 0
+  loading.value = false
+}
+
+const scrollToTop = async () => {
+  await nextTick()
+  layoutContentRef.value?.scrollTo({
+    top: 0,
+    behavior: 'smooth'
+  })
+}
+
+const syncPageResult = (pageNumber: number, items: Post[], resData: any) => {
+  pageCache.value = {
+    ...pageCache.value,
+    [pageNumber]: items
   }
-  
-  const requestId = ++currentRequestId
-  
+  total.value = typeof resData.total === 'number' ? resData.total : total.value
+  totalPages.value = typeof resData.pages === 'number' && resData.pages > 0
+    ? resData.pages
+    : Math.max(1, Math.ceil((total.value || items.length) / pageSize.value))
+}
+
+const fetchPostsPage = async (
+  pageNumber: number,
+  options: { activate?: boolean; force?: boolean } = {}
+) => {
+  if (isSubmissionTab.value) return false
+
+  const { activate = false, force = false } = options
+  const cachedItems = pageCache.value[pageNumber]
+
+  if (!force && cachedItems) {
+    if (activate) {
+      currentPage.value = pageNumber
+      posts.value = cachedItems
+    }
+    return true
+  }
+
+  if (pendingPages.has(pageNumber)) {
+    return false
+  }
+
+  const requestVersion = currentQueryVersion
+  const visibleRequestId = activate ? ++currentVisibleRequestId : currentVisibleRequestId
+  pendingPages.add(pageNumber)
+
+  if (activate) {
+    loading.value = true
+  }
+
   try {
     const endpoint = filterType.value === 'favorite' ? '/users/my-favorites' : '/gallery/my-favorites'
     const res = await api.get(endpoint, {
       params: {
-        page: page.value,
+        page: pageNumber,
         size: pageSize.value,
         filter_type: filterType.value === 'favorite' ? 'all' : filterType.value,
         task_type: selectedTaskType.value === 'all' ? undefined : selectedTaskType.value,
       }
     })
-    
-    if (requestId !== currentRequestId) return
-    
+
+    if (requestVersion !== currentQueryVersion) return false
+
     const newItems = res.data.items.map((p: Post) => {
       const src = getCardSrc(p)
       return { ...p, src }
     })
-    
-    if (reset) {
+
+    syncPageResult(pageNumber, newItems, res.data)
+
+    if (activate && visibleRequestId === currentVisibleRequestId) {
+      currentPage.value = pageNumber
       posts.value = newItems
-    } else {
-      posts.value = [...posts.value, ...newItems]
     }
-    
-    total.value = res.data.total
-    if (page.value >= res.data.pages) {
-      hasMore.value = false
-    } else {
-      page.value++
-    }
+    return true
   } catch (error) {
-    if (requestId !== currentRequestId) return
+    if (requestVersion !== currentQueryVersion) return false
     console.error(error)
     message.error(t('my_notes.load_failed'))
+    return false
   } finally {
-    if (requestId === currentRequestId) {
+    pendingPages.delete(pageNumber)
+    if (activate && visibleRequestId === currentVisibleRequestId) {
       loading.value = false
     }
+  }
+}
+
+const prefetchNextPage = () => {
+  if (isSubmissionTab.value || !totalPages.value || currentPage.value >= totalPages.value) {
+    return
+  }
+  void fetchPostsPage(currentPage.value + 1)
+}
+
+const goToPage = async (pageNumber: number) => {
+  if (pageNumber < 1 || (totalPages.value > 0 && pageNumber > totalPages.value)) {
+    return
+  }
+
+  const changed = await fetchPostsPage(pageNumber, { activate: true })
+  if (!changed) return
+
+  await scrollToTop()
+  prefetchNextPage()
+}
+
+const goPrev = async () => {
+  if (currentIndex.value > 0) {
+    currentPost.value = posts.value[currentIndex.value - 1]
+    return
+  }
+
+  if (currentPage.value <= 1) return
+  const changed = await fetchPostsPage(currentPage.value - 1, { activate: true })
+  if (changed) {
+    currentPost.value = posts.value[posts.value.length - 1] ?? null
+  }
+}
+
+const goNext = async () => {
+  if (currentIndex.value >= 0 && currentIndex.value < posts.value.length - 1) {
+    currentPost.value = posts.value[currentIndex.value + 1]
+    if (currentIndex.value >= posts.value.length - 3) {
+      prefetchNextPage()
+    }
+    return
+  }
+
+  if (currentPage.value >= totalPages.value) return
+  const changed = await fetchPostsPage(currentPage.value + 1, { activate: true })
+  if (changed) {
+    currentPost.value = posts.value[0] ?? null
+  }
+}
+
+const loadPosts = async (reset = false) => {
+  if (isSubmissionTab.value) return
+  if (!reset) {
+    prefetchNextPage()
+    return
+  }
+
+  currentQueryVersion += 1
+  resetPaginationState()
+  const loaded = await fetchPostsPage(1, { activate: true, force: true })
+  if (loaded) {
+    prefetchNextPage()
   }
 }
 
@@ -485,7 +580,7 @@ const handleScroll = () => {
   
   const { scrollTop, scrollHeight, clientHeight } = container
   if (scrollHeight - scrollTop - clientHeight < 200) {
-    void loadPosts()
+    prefetchNextPage()
   }
 }
 
@@ -547,11 +642,8 @@ watch(
     }
 
     if (nextType === 'submissions') {
-      currentRequestId++
-      loading.value = false
-      posts.value = []
-      hasMore.value = false
-      page.value = 1
+      currentQueryVersion += 1
+      resetPaginationState()
       return
     }
 
@@ -570,40 +662,56 @@ watch(selectedTaskType, () => {
 
 <template>
   <div class="gallery-container text-slate-200">
-    
-    <!-- Top Filter Tabs -->
-    <div class="mb-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
-      <OverflowScrollRail
-        container-class="pb-2 md:pb-0"
-        content-class="flex items-center space-x-2"
-      >
-        <button 
-          v-for="ft in filterTabs" 
-          :key="ft.id"
-          @click="handleFilterTypeChange(ft.id)"
-          class="px-4 py-1.5 rounded-full text-sm font-medium transition-all whitespace-nowrap"
-          :class="filterType === ft.id ? 'bg-cyan-500 text-white shadow-[0_0_10px_rgba(56,189,248,0.4)]' : 'bg-slate-500 text-slate-400 hover:bg-slate-500 hover:text-slate-200'"
+    <div class="sticky top-0 z-40 -mx-3 px-3 md:-mx-6 md:px-6 pt-3 pb-2 mb-3">
+      <!-- Top Filter Tabs -->
+      <div class="flex flex-col md:flex-row md:items-center justify-between gap-3">
+        <OverflowScrollRail
+          container-class="pb-2 md:pb-0"
+          content-class="flex items-center space-x-2"
         >
-          {{ ft.name }}
+          <button 
+            v-for="ft in filterTabs" 
+            :key="ft.id"
+            @click="handleFilterTypeChange(ft.id)"
+            class="px-4 py-1.5 rounded-full text-sm font-medium transition-all whitespace-nowrap"
+            :class="filterType === ft.id ? 'bg-cyan-500 text-white shadow-[0_0_10px_rgba(56,189,248,0.4)]' : 'bg-slate-500 text-slate-400 hover:bg-slate-500 hover:text-slate-200'"
+          >
+            {{ ft.name }}
+          </button>
+        </OverflowScrollRail>
+      </div>
+
+      <OverflowScrollRail
+        v-if="taskTypeTabs.length > 1"
+        container-class="mt-3 rounded-2xl border border-slate-700/50 bg-slate-950/55 px-2 py-2 shadow-[0_6px_18px_rgba(2,6,23,0.25)]"
+        content-class="flex gap-1 bg-slate-500/50 p-1 rounded-xl border border-slate-400/50"
+      >
+        <button
+          v-for="tab in taskTypeTabs"
+          :key="tab.id"
+          @click="handleTaskTypeChange(tab.id)"
+          class="px-3 py-1 sm:px-4 sm:py-1.5 rounded-lg transition-all font-medium text-xs sm:text-sm whitespace-nowrap shrink-0"
+          :class="selectedTaskType === tab.id ? 'bg-cyan-500/20 text-cyan-400 shadow-[0_0_10px_rgba(56,189,248,0.2)]' : 'hover:text-cyan-300 text-slate-400'"
+        >
+          {{ resolveTaskTypeLabel(tab.id) }}
         </button>
       </OverflowScrollRail>
-    </div>
 
-    <OverflowScrollRail
-      v-if="taskTypeTabs.length > 1"
-      container-class="mb-6"
-      content-class="flex gap-1 bg-slate-500/50 p-1 rounded-xl border border-slate-400/50"
-    >
-      <button
-        v-for="tab in taskTypeTabs"
-        :key="tab.id"
-        @click="handleTaskTypeChange(tab.id)"
-        class="px-3 py-1 sm:px-4 sm:py-1.5 rounded-lg transition-all font-medium text-xs sm:text-sm whitespace-nowrap shrink-0"
-        :class="selectedTaskType === tab.id ? 'bg-cyan-500/20 text-cyan-400 shadow-[0_0_10px_rgba(56,189,248,0.2)]' : 'hover:text-cyan-300 text-slate-400'"
+      <div
+        v-if="!isSubmissionTab"
+        class="mt-3 flex justify-center"
       >
-        {{ resolveTaskTypeLabel(tab.id) }}
-      </button>
-    </OverflowScrollRail>
+        <div class="rounded-2xl border border-slate-700/50 bg-slate-950/55 px-3 py-2 shadow-[0_6px_18px_rgba(2,6,23,0.25)]">
+          <PagedNavigation
+            :current-page="currentPage"
+            :total-pages="totalPages"
+            :disabled="loading"
+            :compact="isMobile"
+            @change="goToPage"
+          />
+        </div>
+      </div>
+    </div>
 
     <MySubmissionsPanel v-if="isSubmissionTab" :task-type="selectedTaskType" />
 

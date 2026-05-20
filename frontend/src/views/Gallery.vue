@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import { useI18n } from 'vue-i18n'
@@ -22,6 +22,7 @@ import dayjs from 'dayjs'
 import { useViewport } from '@/composables/useViewport'
 import LazyVideo from '@/components/LazyVideo.vue'
 import OverflowScrollRail from '@/components/OverflowScrollRail.vue'
+import PagedNavigation from '@/components/PagedNavigation.vue'
 
 interface Post {
   id: number
@@ -63,10 +64,11 @@ const breakpoints = {
 
 const posts = ref<Post[]>([])
 const loading = ref(false)
-const page = ref(1)
-const size = ref(isMobile.value ? 10 : 20)
+const currentPage = ref(1)
+const pageCache = ref<Record<number, Post[]>>({})
 const total = ref(0)
-const hasMore = ref(true)
+const totalPages = ref(0)
+const pageSize = computed(() => (isMobile.value ? 10 : 20))
 
 const mediaType = ref('all')
 const taskType = ref('all')
@@ -106,29 +108,17 @@ const {
 
 const applying = ref(false)
 const interactingPosts = ref<Record<number, boolean>>({})
+const pendingPages = new Set<number>()
 
 const currentIndex = computed(() => {
   if (!currentPost.value) return -1
   return posts.value.findIndex(p => p.id === currentPost.value?.id)
 })
 
-const hasPrev = computed(() => currentIndex.value > 0)
-const hasNext = computed(() => currentIndex.value >= 0 && currentIndex.value < posts.value.length - 1)
-
-const goPrev = () => {
-  if (hasPrev.value) {
-    currentPost.value = posts.value[currentIndex.value - 1]
-  }
-}
-
-const goNext = () => {
-  if (hasNext.value) {
-    currentPost.value = posts.value[currentIndex.value + 1]
-    if (currentIndex.value >= posts.value.length - 3 && hasMore.value) {
-      loadPosts()
-    }
-  }
-}
+const hasPrev = computed(() => currentIndex.value > 0 || currentPage.value > 1)
+const hasNext = computed(() => currentIndex.value >= 0 && (
+  currentIndex.value < posts.value.length - 1 || currentPage.value < totalPages.value
+))
 
 const formatTag = (tag: string) => {
   if (tag.startsWith('#task.')) {
@@ -184,10 +174,8 @@ const getFileUrl = (path: string, postId?: number) => {
   
   return url
 }
-
-
-
-let currentRequestId = 0
+let currentVisibleRequestId = 0
+let currentQueryVersion = 0
 
 let configPromise: Promise<void> | null = null
 
@@ -210,23 +198,66 @@ const loadConfig = async () => {
   return configPromise
 }
 
-const loadPosts = async (reset = false) => {
-  if (!reset && (loading.value || !hasMore.value)) return
-  
-  loading.value = true
-  if (reset) {
-    page.value = 1
-    posts.value = []
-    hasMore.value = true
+const resetPaginationState = () => {
+  currentPage.value = 1
+  posts.value = []
+  pageCache.value = {}
+  total.value = 0
+  totalPages.value = 0
+  loading.value = false
+}
+
+const scrollToTop = async () => {
+  await nextTick()
+  layoutContentRef.value?.scrollTo({
+    top: 0,
+    behavior: 'smooth'
+  })
+}
+
+const syncPageResult = (pageNumber: number, items: Post[], resData: any) => {
+  pageCache.value = {
+    ...pageCache.value,
+    [pageNumber]: items
   }
-  
-  const requestId = ++currentRequestId
-  
+  total.value = typeof resData.total === 'number' ? resData.total : total.value
+  totalPages.value = typeof resData.pages === 'number' && resData.pages > 0
+    ? resData.pages
+    : Math.max(1, Math.ceil((total.value || items.length) / pageSize.value))
+}
+
+const fetchPostsPage = async (
+  pageNumber: number,
+  options: { activate?: boolean; force?: boolean } = {}
+) => {
+  const { activate = false, force = false } = options
+  const cachedItems = pageCache.value[pageNumber]
+
+  if (!force && cachedItems) {
+    if (activate) {
+      currentPage.value = pageNumber
+      posts.value = cachedItems
+    }
+    return true
+  }
+
+  if (pendingPages.has(pageNumber)) {
+    return false
+  }
+
+  const requestVersion = currentQueryVersion
+  const visibleRequestId = activate ? ++currentVisibleRequestId : currentVisibleRequestId
+  pendingPages.add(pageNumber)
+
+  if (activate) {
+    loading.value = true
+  }
+
   try {
     const res = await api.get('/gallery/posts', {
       params: {
-        page: page.value,
-        size: size.value,
+        page: pageNumber,
+        size: pageSize.value,
         media_type: mediaType.value,
         task_type: taskType.value,
         lora_model: loraModel.value === 'all' ? undefined : loraModel.value,
@@ -234,49 +265,111 @@ const loadPosts = async (reset = false) => {
         time_range: timeRange.value
       }
     })
-    
-    if (requestId !== currentRequestId) return
-    
+
+    if (requestVersion !== currentQueryVersion) return false
+
     const newItems = res.data.items.map((p: Post) => {
       // 兼容后端还没重启的情况：如果后端下发的 thumbnail_url 还是原视频 (.mp4)，前端自己算出 _thumb.jpg
       const isVideo = isVideoFile(p.media_url, p.media_type)
       const thumbUrl = normalizeGalleryThumbnailPath(p.thumbnail_url, isVideo)
-      
+
       const src = getFileUrl(thumbUrl, p.id)
       return { ...p, src }
     })
-    
-    if (reset) {
+
+    syncPageResult(pageNumber, newItems, res.data)
+
+    if (activate && visibleRequestId === currentVisibleRequestId) {
+      currentPage.value = pageNumber
       posts.value = newItems
-    } else {
-      posts.value = [...posts.value, ...newItems]
+
+      // 如果返回数据为空，或者没有更多数据，必须手动释放 loading 锁
+      // 因为 Waterfall 的 @afterRender 可能不会被触发
+      if (newItems.length === 0) {
+        loading.value = false
+      } else {
+        // 异常情况兜底：防止瀑布流渲染失败或卡死导致 loading 锁无法释放
+        setTimeout(() => {
+          if (loading.value && visibleRequestId === currentVisibleRequestId) {
+            loading.value = false
+            console.warn('Fallback: Force released loading lock after 3s')
+          }
+        }, 3000)
+      }
     }
-    
-    total.value = res.data.total
-    if (page.value >= res.data.pages) {
-      hasMore.value = false
-    } else {
-      page.value++
-    }
-    
-    // 如果返回数据为空，或者没有更多数据，必须手动释放 loading 锁
-    // 因为 Waterfall 的 @afterRender 可能不会被触发
-    if (newItems.length === 0) {
-      loading.value = false
-    } else {
-      // 异常情况兜底：防止瀑布流渲染失败或卡死导致 loading 锁无法释放
-      setTimeout(() => {
-        if (loading.value) {
-          loading.value = false
-          console.warn('Fallback: Force released loading lock after 3s')
-        }
-      }, 3000)
-    }
+    return true
   } catch (error) {
-    if (requestId !== currentRequestId) return
+    if (requestVersion !== currentQueryVersion) return false
     console.error(error)
     message.error('获取广场数据失败')
-    loading.value = false
+    if (activate && visibleRequestId === currentVisibleRequestId) {
+      loading.value = false
+    }
+    return false
+  } finally {
+    pendingPages.delete(pageNumber)
+  }
+}
+
+const prefetchNextPage = () => {
+  if (!totalPages.value || currentPage.value >= totalPages.value) {
+    return
+  }
+  void fetchPostsPage(currentPage.value + 1)
+}
+
+const goToPage = async (pageNumber: number) => {
+  if (pageNumber < 1 || (totalPages.value > 0 && pageNumber > totalPages.value)) {
+    return
+  }
+
+  const changed = await fetchPostsPage(pageNumber, { activate: true })
+  if (!changed) return
+
+  await scrollToTop()
+  prefetchNextPage()
+}
+
+const goPrev = async () => {
+  if (currentIndex.value > 0) {
+    currentPost.value = posts.value[currentIndex.value - 1]
+    return
+  }
+
+  if (currentPage.value <= 1) return
+  const changed = await fetchPostsPage(currentPage.value - 1, { activate: true })
+  if (changed) {
+    currentPost.value = posts.value[posts.value.length - 1] ?? null
+  }
+}
+
+const goNext = async () => {
+  if (currentIndex.value >= 0 && currentIndex.value < posts.value.length - 1) {
+    currentPost.value = posts.value[currentIndex.value + 1]
+    if (currentIndex.value >= posts.value.length - 3) {
+      prefetchNextPage()
+    }
+    return
+  }
+
+  if (currentPage.value >= totalPages.value) return
+  const changed = await fetchPostsPage(currentPage.value + 1, { activate: true })
+  if (changed) {
+    currentPost.value = posts.value[0] ?? null
+  }
+}
+
+const loadPosts = async (reset = false) => {
+  if (!reset) {
+    prefetchNextPage()
+    return
+  }
+
+  currentQueryVersion += 1
+  resetPaginationState()
+  const loaded = await fetchPostsPage(1, { activate: true, force: true })
+  if (loaded) {
+    prefetchNextPage()
   }
 }
 
@@ -473,7 +566,7 @@ const handleScroll = () => {
   
   const { scrollTop, scrollHeight, clientHeight } = container
   if (scrollHeight - scrollTop - clientHeight < 200) {
-    loadPosts()
+    prefetchNextPage()
   }
 }
 
@@ -495,6 +588,12 @@ const handleImageError = (e: Event, post: Post) => {
 onMounted(() => {
   loadConfig()
   loadPosts(true)
+})
+
+watch(pageSize, (nextSize, previousSize) => {
+  if (nextSize !== previousSize) {
+    void loadPosts(true)
+  }
 })
 
 watch(
@@ -526,7 +625,7 @@ onUnmounted(() => {
 <template>
   <div class="gallery-container text-slate-200">
     <!-- Header Controls -->
-    <div class="flex flex-col mb-4 pb-4 sticky top-0 z-40 bg-[#0f172a]/90 backdrop-blur-md -mx-4 px-4 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8 pt-4 gap-4 border-b border-slate-700/50">
+    <div class="flex flex-col mb-3 sticky top-0 z-40 -mx-4 px-4 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8 pt-3 gap-3">
       <div class="flex flex-col xl:flex-row justify-between xl:items-center gap-4">
         <!-- Task Types -->
         <OverflowScrollRail
@@ -552,7 +651,7 @@ onUnmounted(() => {
         </OverflowScrollRail>
         
         <OverflowScrollRail
-          container-class="w-full xl:w-auto shrink-0"
+          container-class="w-full xl:w-auto shrink-0 rounded-2xl border border-slate-700/50 bg-slate-950/55 px-2 py-2 shadow-[0_6px_18px_rgba(2,6,23,0.25)]"
           content-class="flex items-center gap-3"
         >
           <!-- Time Range -->
@@ -587,7 +686,7 @@ onUnmounted(() => {
       <!-- Secondary Filter for LoRA Models -->
       <OverflowScrollRail
         v-if="taskType === 'video_lora' || taskType === 'img2img_lora'"
-        container-class="w-full shrink-0 px-1"
+        container-class="w-full shrink-0 px-1 rounded-2xl border border-slate-700/50 bg-slate-950/55 py-2 shadow-[0_6px_18px_rgba(2,6,23,0.25)]"
         content-class="flex items-center gap-2"
       >
         <span class="text-xs sm:text-sm text-slate-400 whitespace-nowrap shrink-0">{{ $t('gallery.choose_addon') }}</span>
@@ -610,6 +709,18 @@ onUnmounted(() => {
           </button>
         </div>
       </OverflowScrollRail>
+    </div>
+
+    <div class="-mt-1 flex justify-center">
+      <div class="rounded-2xl border border-slate-700/50 bg-slate-950/55 px-3 py-2 shadow-[0_6px_18px_rgba(2,6,23,0.25)]">
+        <PagedNavigation
+          :current-page="currentPage"
+          :total-pages="totalPages"
+          :disabled="loading"
+          :compact="isMobile"
+          @change="goToPage"
+        />
+      </div>
     </div>
 
     <!-- Masonry Grid -->
