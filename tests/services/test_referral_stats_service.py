@@ -72,6 +72,7 @@ async def test_query_referral_rewards_sums_commission_before_rounding(monkeypatc
                 (order_2, inviter, invitee),
             ],
             [(1, 1)],
+            [(1, Decimal("0.0111"))],
         ]
     )
 
@@ -80,6 +81,7 @@ async def test_query_referral_rewards_sums_commission_before_rounding(monkeypatc
     assert len(rewards) == 1
     reward = rewards[0]
     assert reward["commission_usdt"] == 0.03
+    assert reward["spent_commission_usdt"] == 0.01
     assert reward["invitees"][0]["commission_usdt"] == 0.03
     assert reward["total_invitees"] == 1
     assert reward["total_invitations"] == 1

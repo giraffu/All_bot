@@ -1,10 +1,10 @@
 from decimal import Decimal, ROUND_HALF_UP
 
-from sqlalchemy import and_, case, func, select
+from sqlalchemy import String, and_, case, cast, desc, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
-from src.database.models import AffiliateTransaction, Order, Referral, User
+from src.database.models import AffiliateRedeem, AffiliateTransaction, Order, Referral, User
 from src.exchange_rates import get_exchange_rates
 
 VALID_PAYMENT_CHANNELS = ("RMB", "TON", "XTR")
@@ -160,6 +160,35 @@ async def query_referral_rewards(session: AsyncSession) -> list[dict]:
     total_invitations_map = {
         row[0]: row[1] for row in (await session.execute(count_stmt)).all()
     }
+    inviter_ids = {inviter.id for _order, inviter, _invitee in rows}
+    spent_commission_map: dict[int, float] = {}
+    if inviter_ids:
+        spent_stmt = (
+            select(
+                AffiliateTransaction.user_id,
+                func.coalesce(
+                    func.sum(
+                        case(
+                            (
+                                and_(
+                                    AffiliateTransaction.direction == "OUT",
+                                    AffiliateTransaction.status == "SUCCESS",
+                                ),
+                                AffiliateTransaction.amount_usdt,
+                            ),
+                            else_=0,
+                        )
+                    ),
+                    0,
+                ),
+            )
+            .where(AffiliateTransaction.user_id.in_(inviter_ids))
+            .group_by(AffiliateTransaction.user_id)
+        )
+        spent_commission_map = {
+            int(user_id): _round_money(Decimal(str(spent_usdt or 0)))
+            for user_id, spent_usdt in (await session.execute(spent_stmt)).all()
+        }
 
     rates = await get_exchange_rates()
     ton_to_usdt = rates.get("ton_to_usdt", 1.4)
@@ -179,6 +208,7 @@ async def query_referral_rewards(session: AsyncSession) -> list[dict]:
                 "total_stars": 0,
                 "total_ton": 0.0,
                 "total_rmb": 0.0,
+                "spent_commission_usdt": spent_commission_map.get(inviter.id, 0.0),
                 "invitees": {},
             },
         )
@@ -270,3 +300,69 @@ async def query_referral_rewards(session: AsyncSession) -> list[dict]:
 
     response_data.sort(key=lambda item: item["total_invitees"], reverse=True)
     return response_data
+
+
+async def query_affiliate_redeem_records(
+    session: AsyncSession,
+    *,
+    page: int = 1,
+    page_size: int = 20,
+    query: str | None = None,
+    redeem_type: str | None = None,
+) -> dict:
+    stmt = select(AffiliateRedeem, User).join(User, User.id == AffiliateRedeem.user_id)
+
+    if query:
+        like_query = f"%{query.strip()}%"
+        stmt = stmt.where(
+            or_(
+                User.full_name.ilike(like_query),
+                User.username.ilike(like_query),
+                cast(User.telegram_id, String).ilike(like_query),
+                cast(User.id, String).ilike(like_query),
+            )
+        )
+
+    if redeem_type:
+        stmt = stmt.where(AffiliateRedeem.redeem_type == redeem_type)
+
+    count_stmt = select(func.count()).select_from(stmt.subquery())
+    total = (await session.execute(count_stmt)).scalar() or 0
+
+    stmt = (
+        stmt.order_by(desc(AffiliateRedeem.created_at), desc(AffiliateRedeem.id))
+        .offset(max(page - 1, 0) * page_size)
+        .limit(page_size)
+    )
+    rows = (await session.execute(stmt)).all()
+
+    items = []
+    for redeem, user in rows:
+        user_name = user.full_name or user.username or str(user.telegram_id or user.id)
+        items.append(
+            {
+                "redeem_id": redeem.id,
+                "user_id": user.id,
+                "user_telegram_id": user.telegram_id,
+                "user_name": user_name,
+                "username": user.username,
+                "redeem_type": redeem.redeem_type,
+                "redeem_option_key": redeem.redeem_option_key,
+                "requested_amount_usdt": float(redeem.requested_amount_usdt or 0),
+                "amount_usdt": float(redeem.amount_usdt or 0),
+                "credits_granted": int(redeem.credits_granted or 0),
+                "target_identity": redeem.target_identity,
+                "duration_days": redeem.duration_days,
+                "status": redeem.status,
+                "created_at": redeem.created_at.strftime("%Y-%m-%d %H:%M:%S")
+                if redeem.created_at
+                else "",
+            }
+        )
+
+    return {
+        "items": items,
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+    }

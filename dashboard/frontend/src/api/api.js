@@ -338,5 +338,20 @@ export const fetchReferralRewards = async () => {
   return response.data
 }
 
+export const fetchAffiliateRedeemRecords = async ({
+  page = 1,
+  pageSize = 20,
+  query = '',
+  redeemType = ''
+} = {}) => {
+  const params = new URLSearchParams()
+  params.append('page', page)
+  params.append('page_size', pageSize)
+  if (query) params.append('query', query)
+  if (redeemType) params.append('redeem_type', redeemType)
+  const response = await api.get(`/api/referrals/redeems?${params.toString()}`)
+  return response.data
+}
+
 export { apiBaseUrl }
 export default api
