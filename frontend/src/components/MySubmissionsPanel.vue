@@ -48,6 +48,15 @@ interface Post {
   prompt: string
 }
 
+const props = withDefaults(
+  defineProps<{
+    taskType?: string
+  }>(),
+  {
+    taskType: 'all',
+  },
+)
+
 const router = useRouter()
 const { isMobile } = useViewport()
 const { t } = useI18n()
@@ -174,6 +183,7 @@ const loadPosts = async (reset = false) => {
       params: {
         page: page.value,
         size: size.value,
+        task_type: props.taskType === 'all' ? undefined : props.taskType,
       },
     })
 
@@ -391,9 +401,13 @@ const handleImageError = (event: Event, post: Post) => {
   }
 }
 
-onMounted(() => {
-  void loadPosts(true)
-})
+watch(
+  () => props.taskType,
+  () => {
+    void loadPosts(true)
+  },
+  { immediate: true },
+)
 
 watch(
   layoutContentRef,

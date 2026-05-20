@@ -19,6 +19,7 @@ import {
 import api from '@/api'
 import dayjs from 'dayjs'
 import MySubmissionsPanel from '@/components/MySubmissionsPanel.vue'
+import OverflowScrollRail from '@/components/OverflowScrollRail.vue'
 import { useMainLayoutContentRef } from '@/composables/useWorkbenchScrollLock'
 import { useGalleryComments } from '@/composables/useGalleryComments'
 import {
@@ -49,6 +50,10 @@ interface Post {
 }
 
 type FilterTab = 'favorite' | 'like' | 'apply' | 'submissions'
+interface TaskTypeOption {
+  id: string
+  name: string
+}
 
 const route = useRoute()
 const router = useRouter()
@@ -72,6 +77,9 @@ function normalizeFilterType(tabValue: unknown): FilterTab {
 const isMobile = ref(typeof window !== 'undefined' ? window.innerWidth < 768 : false)
 
 const filterType = ref<FilterTab>(normalizeFilterType(route.query.tab))
+const selectedTaskType = ref('all')
+const allowedTypes = ref<TaskTypeOption[]>([])
+let configPromise: Promise<void> | null = null
 
 const detailVisible = ref(false)
 const currentPost = ref<Post | null>(null)
@@ -114,11 +122,31 @@ const filterTabs = computed(() => [
   { id: 'apply' as const, name: t('my_notes.tabs.apply') },
   { id: 'submissions' as const, name: t('my_notes.tabs.submissions') },
 ])
+const taskTypeTabs = computed(() => [
+  { id: 'all', name: t('gallery.tabs.all') },
+  ...allowedTypes.value,
+])
 const emptyStateText = computed(() => {
   if (filterType.value === 'like') return t('my_notes.empty_like')
   if (filterType.value === 'apply') return t('my_notes.empty_apply')
   return t('my_notes.empty_favorite')
 })
+
+const resolveTaskTypeLabel = (taskTypeId: string) => {
+  if (taskTypeId === 'all') {
+    return t('gallery.tabs.all')
+  }
+
+  const translationKey = taskTypeId
+    .replace('i2i_pro', 'face_swap')
+    .replace('edit', 'custom_edit')
+    .replace('img2img_lora', 'img2img')
+    .replace('custom_video', 'custom_video')
+    .replace('video_lora', 'img2video')
+    .replace('ltx_video', 'high_res_video')
+
+  return t(`gallery.tabs.${translationKey}`)
+}
 
 const goPrev = () => {
   if (hasPrev.value) {
@@ -200,6 +228,23 @@ const isVideoFile = (path: string, mediaType?: string) => {
 
 let currentRequestId = 0
 
+const loadConfig = async () => {
+  if (configPromise) return configPromise
+
+  configPromise = (async () => {
+    try {
+      const res = await api.get('/gallery/config')
+      allowedTypes.value = res.data.allowed_types || []
+    } catch (error) {
+      console.error('Failed to load note filters config:', error)
+    } finally {
+      configPromise = null
+    }
+  })()
+
+  return configPromise
+}
+
 const updateViewportMode = () => {
   const nextIsMobile = window.innerWidth < 768
   if (nextIsMobile === isMobile.value) {
@@ -230,7 +275,8 @@ const loadPosts = async (reset = false) => {
       params: {
         page: page.value,
         size: pageSize.value,
-        filter_type: filterType.value === 'favorite' ? 'all' : filterType.value
+        filter_type: filterType.value === 'favorite' ? 'all' : filterType.value,
+        task_type: selectedTaskType.value === 'all' ? undefined : selectedTaskType.value,
       }
     })
     
@@ -268,6 +314,11 @@ const handleFilterTypeChange = (type: string) => {
   const nextType = normalizeFilterType(type)
   if (nextType === filterType.value) return
   filterType.value = nextType
+}
+
+const handleTaskTypeChange = (taskType: string) => {
+  if (taskType === selectedTaskType.value) return
+  selectedTaskType.value = taskType
 }
 
 const handleInteract = async (post: Post, action: 'like' | 'dislike') => {
@@ -453,6 +504,7 @@ const handleImageError = (e: Event, post: Post) => {
 }
 
 onMounted(() => {
+  void loadConfig()
   window.addEventListener('resize', updateViewportMode)
 })
 
@@ -507,6 +559,13 @@ watch(
   },
   { immediate: true },
 )
+
+watch(selectedTaskType, () => {
+  if (isSubmissionTab.value) {
+    return
+  }
+  void loadPosts(true)
+})
 </script>
 
 <template>
@@ -514,7 +573,10 @@ watch(
     
     <!-- Top Filter Tabs -->
     <div class="mb-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
-      <div class="flex items-center space-x-2 overflow-x-auto pb-2 md:pb-0 hide-scrollbar">
+      <OverflowScrollRail
+        container-class="pb-2 md:pb-0"
+        content-class="flex items-center space-x-2"
+      >
         <button 
           v-for="ft in filterTabs" 
           :key="ft.id"
@@ -524,10 +586,26 @@ watch(
         >
           {{ ft.name }}
         </button>
-      </div>
+      </OverflowScrollRail>
     </div>
 
-    <MySubmissionsPanel v-if="isSubmissionTab" />
+    <OverflowScrollRail
+      v-if="taskTypeTabs.length > 1"
+      container-class="mb-6"
+      content-class="flex gap-1 bg-slate-500/50 p-1 rounded-xl border border-slate-400/50"
+    >
+      <button
+        v-for="tab in taskTypeTabs"
+        :key="tab.id"
+        @click="handleTaskTypeChange(tab.id)"
+        class="px-3 py-1 sm:px-4 sm:py-1.5 rounded-lg transition-all font-medium text-xs sm:text-sm whitespace-nowrap shrink-0"
+        :class="selectedTaskType === tab.id ? 'bg-cyan-500/20 text-cyan-400 shadow-[0_0_10px_rgba(56,189,248,0.2)]' : 'hover:text-cyan-300 text-slate-400'"
+      >
+        {{ resolveTaskTypeLabel(tab.id) }}
+      </button>
+    </OverflowScrollRail>
+
+    <MySubmissionsPanel v-if="isSubmissionTab" :task-type="selectedTaskType" />
 
     <!-- Masonry Grid -->
     <div v-else class="columns-2 sm:columns-3 md:columns-4 lg:columns-5 gap-3 sm:gap-6">

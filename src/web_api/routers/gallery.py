@@ -6,7 +6,7 @@ from typing import Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy import desc, select, update, func
+from sqlalchemy import delete, desc, func, select, update
 from sqlalchemy.orm import joinedload
 
 from src.config_mapping import (
@@ -24,7 +24,14 @@ from src.constants import (
     MODE_NAME_MAP,
     MODE_VIDEO_LORA,
 )
-from src.core.media_paths import resolve_storage_object
+from src.core.media_paths import (
+    build_history_r2_media_key,
+    build_history_r2_thumbnail_key,
+    build_legacy_r2_key,
+    build_thumbnail_object_name,
+    get_media_type_from_history,
+    resolve_storage_object,
+)
 from src.core.media_urls import (
     build_r2_media_key_candidates,
     build_r2_thumbnail_info,
@@ -425,6 +432,7 @@ async def get_gallery_posts(
 async def get_my_gallery_posts(
     page: int = Query(1, ge=1),
     size: int = Query(20, ge=1, le=100),
+    task_type: Optional[str] = None,
     current_user: User = Depends(get_current_user),
 ):
     async with AsyncSessionLocal() as session:
@@ -436,6 +444,9 @@ async def get_my_gallery_posts(
             )
             .distinct()
         )
+
+        if task_type:
+            query = query.where(History.type == task_type)
 
         query = query.order_by(desc(GalleryPost.id))
 
@@ -465,6 +476,7 @@ async def get_my_favorite_posts(
     page: int = Query(1, ge=1),
     size: int = Query(20, ge=1, le=100),
     filter_type: str = Query("all", pattern="^(all|like|apply)$"),
+    task_type: Optional[str] = None,
     current_user: User = Depends(get_current_user),
 ):
     async with AsyncSessionLocal() as session:
@@ -477,6 +489,7 @@ async def get_my_favorite_posts(
         query = (
             select(GalleryPost)
             .join(UserInteraction, GalleryPost.id == UserInteraction.post_id)
+            .outerjoin(History, GalleryPost.task_id == History.task_id)
             .where(
                 UserInteraction.user_id == current_user.id,
                 UserInteraction.action_type.in_(action_types),
@@ -485,6 +498,9 @@ async def get_my_favorite_posts(
             .distinct()
             .order_by(desc(GalleryPost.id))
         )
+
+        if task_type:
+            query = query.where(History.type == task_type)
 
         # Get total count
         from sqlalchemy import func
@@ -533,8 +549,7 @@ async def update_post_status(
 
 @router.delete("/posts/{post_id}")
 async def delete_post(post_id: int, current_user: User = Depends(get_current_user)):
-    from sqlalchemy import update
-
+    r2_cleanup_keys: set[str] = set()
     async with AsyncSessionLocal() as session:
         post = (
             await session.execute(select(GalleryPost).where(GalleryPost.id == post_id))
@@ -544,20 +559,46 @@ async def delete_post(post_id: int, current_user: User = Depends(get_current_use
         if post.user_id != current_user.id:
             raise HTTPException(status_code=403, detail="无权操作此帖子")
 
-        # Soft delete: set is_active to False
-        if post.is_active:
-            post.is_active = False
+        history = None
+        if post.task_id:
+            history = (
+                await session.execute(
+                    select(History).where(
+                        History.task_id == post.task_id, History.user_id == current_user.id
+                    )
+                )
+            ).scalar_one_or_none()
 
-            # Decrement total_contributions safely
+        # Keep the existing contribution counter behavior: only decrement when the
+        # post was still on shelf at delete time.
+        if post.is_active:
             user_record = await session.execute(
                 select(User).where(User.id == current_user.id)
             )
             user_obj = user_record.scalar_one_or_none()
             if user_obj:
-                user_obj.total_contributions = max(user_obj.total_contributions - 1, 0)
+                user_obj.total_contributions = max(
+                    (user_obj.total_contributions or 0) - 1, 0
+                )
 
-        # Unlink history from this post so user can re-submit if they want
-        if post.task_id:
+        # Unlink history from this post so user can re-submit if they want.
+        if history:
+            history.is_public = False
+            if history.output_file:
+                media_type = get_media_type_from_history(history.type)
+                _, object_name = resolve_storage_object(history.output_file)
+                thumb_object_name = build_thumbnail_object_name(object_name, media_type)
+                r2_cleanup_keys = {
+                    key
+                    for key in {
+                        build_history_r2_media_key(post.task_id, history.output_file),
+                        build_history_r2_thumbnail_key(post.task_id, media_type),
+                        build_legacy_r2_key(object_name),
+                        build_legacy_r2_key(thumb_object_name),
+                    }
+                    if key
+                }
+        elif post.task_id:
             await session.execute(
                 update(History)
                 .where(
@@ -566,8 +607,27 @@ async def delete_post(post_id: int, current_user: User = Depends(get_current_use
                 .values(is_public=False)
             )
 
+        await session.execute(
+            delete(UserInteraction).where(UserInteraction.post_id == post_id)
+        )
+        await session.execute(
+            delete(GalleryComment).where(GalleryComment.post_id == post_id)
+        )
+        await session.execute(delete(GalleryPost).where(GalleryPost.id == post_id))
+
         await session.commit()
-        return {"status": "success", "message": "删除成功"}
+
+    if r2_cleanup_keys:
+        try:
+            await storage.async_delete_r2_objects(list(r2_cleanup_keys))
+        except Exception:
+            logger.warning(
+                "Failed to clean R2 cache after deleting gallery post %s",
+                post_id,
+                exc_info=True,
+            )
+
+    return {"status": "success", "message": "删除成功"}
 
 
 @router.post("/posts/{post_id}/interact")

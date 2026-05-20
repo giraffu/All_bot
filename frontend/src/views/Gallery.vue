@@ -21,6 +21,7 @@ import {
 import dayjs from 'dayjs'
 import { useViewport } from '@/composables/useViewport'
 import LazyVideo from '@/components/LazyVideo.vue'
+import OverflowScrollRail from '@/components/OverflowScrollRail.vue'
 
 interface Post {
   id: number
@@ -528,7 +529,10 @@ onUnmounted(() => {
     <div class="flex flex-col mb-4 pb-4 sticky top-0 z-40 bg-[#0f172a]/90 backdrop-blur-md -mx-4 px-4 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8 pt-4 gap-4 border-b border-slate-700/50">
       <div class="flex flex-col xl:flex-row justify-between xl:items-center gap-4">
         <!-- Task Types -->
-        <div class="flex overflow-x-auto scrollbar-hide bg-slate-500/50 p-1 rounded-xl border border-slate-400/50 gap-1 w-full xl:w-auto shrink-0">
+        <OverflowScrollRail
+          container-class="w-full xl:w-auto shrink-0"
+          content-class="flex gap-1 bg-slate-500/50 p-1 rounded-xl border border-slate-400/50"
+        >
           <button 
             @click="handleTaskTypeChange('all')"
             class="px-3 py-1 sm:px-4 sm:py-1.5 rounded-lg transition-all font-medium text-xs sm:text-sm whitespace-nowrap shrink-0"
@@ -545,9 +549,12 @@ onUnmounted(() => {
           >
             {{ $t(`gallery.tabs.${tab.id.replace('i2i_pro', 'face_swap').replace('edit', 'custom_edit').replace('img2img_lora', 'img2img').replace('custom_video', 'custom_video').replace('video_lora', 'img2video').replace('ltx_video', 'high_res_video')}`) }}
           </button>
-        </div>
+        </OverflowScrollRail>
         
-        <div class="flex items-center gap-3 overflow-x-auto scrollbar-hide w-full xl:w-auto shrink-0">
+        <OverflowScrollRail
+          container-class="w-full xl:w-auto shrink-0"
+          content-class="flex items-center gap-3"
+        >
           <!-- Time Range -->
           <div class="flex bg-slate-500/50 p-1 rounded-xl border border-slate-400/50 shrink-0">
             <button 
@@ -574,11 +581,15 @@ onUnmounted(() => {
               {{ sort.n }}
             </button>
           </div>
-        </div>
+        </OverflowScrollRail>
       </div>
       
       <!-- Secondary Filter for LoRA Models -->
-      <div v-if="taskType === 'video_lora' || taskType === 'img2img_lora'" class="flex items-center gap-2 px-1 overflow-x-auto scrollbar-hide w-full shrink-0">
+      <OverflowScrollRail
+        v-if="taskType === 'video_lora' || taskType === 'img2img_lora'"
+        container-class="w-full shrink-0 px-1"
+        content-class="flex items-center gap-2"
+      >
         <span class="text-xs sm:text-sm text-slate-400 whitespace-nowrap shrink-0">{{ $t('gallery.choose_addon') }}</span>
         <div class="flex gap-2 shrink-0">
           <button 
@@ -598,7 +609,7 @@ onUnmounted(() => {
             {{ lora.name }}
           </button>
         </div>
-      </div>
+      </OverflowScrollRail>
     </div>
 
     <!-- Masonry Grid -->

@@ -4,7 +4,7 @@ import logging
 from datetime import datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -629,6 +629,7 @@ async def delete_history(
 async def get_my_favorites(
     page: int = 1,
     size: int = 20,
+    task_type: str | None = Query(default=None),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -644,6 +645,9 @@ async def get_my_favorites(
         )
         .order_by(desc(History.created_at))
     )
+
+    if task_type:
+        stmt = stmt.where(History.type == task_type)
 
     # Get total
     from sqlalchemy import func
