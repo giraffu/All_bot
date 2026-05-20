@@ -709,17 +709,17 @@ onUnmounted(() => {
           </button>
         </div>
       </OverflowScrollRail>
-    </div>
 
-    <div class="-mt-1 flex justify-center">
-      <div class="rounded-2xl border border-slate-700/50 bg-slate-950/55 px-3 py-2 shadow-[0_6px_18px_rgba(2,6,23,0.25)]">
-        <PagedNavigation
-          :current-page="currentPage"
-          :total-pages="totalPages"
-          :disabled="loading"
-          :compact="isMobile"
-          @change="goToPage"
-        />
+      <div class="-mt-1 flex justify-center">
+        <div class="rounded-2xl border border-slate-700/50 bg-slate-950/55 px-3 py-2 shadow-[0_6px_18px_rgba(2,6,23,0.25)]">
+          <PagedNavigation
+            :current-page="currentPage"
+            :total-pages="totalPages"
+            :disabled="loading"
+            :compact="isMobile"
+            @change="goToPage"
+          />
+        </div>
       </div>
     </div>
 

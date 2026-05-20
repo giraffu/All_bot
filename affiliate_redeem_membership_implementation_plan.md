@@ -1,20 +1,43 @@
-# Affiliate 二期「返佣兑换身份」实施方案（可执行版 V2.1）
+# Affiliate 二期「返佣兑换身份」实施方案（测试环境可落地版 V2.3）
 
 ## 1. 目标
 
-本期只交付三件事：
+本版把“测试环境先落地”和“全量统一收敛”拆成两个层次，避免因为支付协议与前端改造阻塞返佣兑换身份主链。
+
+### 1.1 本次在测试环境必须交付
 
 1. 返佣余额兑换会员身份 / 月卡权益
 2. `MEMBERSHIP_REDEEM / OUT / SUCCESS` 返佣账本闭环
-3. 全项目会员结算统一到一套规则、一套写路径、一套审计协议
+3. 会员结算新 primitive 与 apply helper 落地，并由返佣兑换身份主链真实复用
 
-本期不做：
+### 1.2 本次明确不阻塞 MVP 的事项
+
+- 不改 TON 支付前端
+- 不改 RMB 支付前端
+- 不要求先完成 Stars `ORDER_V2` 全量切换
+- 不要求先完成 RMB / TON / Stars 全链路迁到统一写路径
+
+补充红线：
+
+- 本方案任一 Phase 都不得把“修改 TON / RMB 支付前端”作为前置条件
+- 若后端协议收敛需要兼容旧前端，必须通过后端双读 / 兼容返回完成，不得把成本转嫁到本次前端改造
+
+### 1.3 后续正式全量版目标
+
+在测试环境 MVP 跑通后，再继续完成：
+
+1. 支付 / 后台赠送迁移到统一写路径
+2. `Order.business_order_id + settlement_snapshot + ORDER_V2` 协议收敛
+3. 全项目统一到一套会员结算规则、一套写路径、一套审计协议
+
+### 1.4 本期不做
 
 - 提现申请、冻结、审核、打款
 - 独立返佣商城
 - 复杂失败状态机
+- 为返佣兑换身份新增 TON / RMB 前端交互改造
 
-首版业务限制：
+### 1.5 首版业务限制
 
 - 前端只提交 `option_key`、`idempotency_key`
 - 前端不得直传 `target_identity`、`duration_days`、`amount_usdt`、`grant_reward_credits`
@@ -22,51 +45,108 @@
 - 首版不开放纯灵石套餐参与返佣兑换
 - 首版固定 `grant_reward_credits = false`
 
-## 2. 开工前置条件
+## 2. 分层落地策略
 
-以下条件未完成前，不得开发或上线返佣兑换身份主链：
+### 2.1 MVP（测试环境可落地）
+
+MVP 只要求打通以下主链：
+
+1. `calculate_membership_settlement(...)`
+2. `apply_membership_settlement_in_session(...)`
+3. `affiliate_redeems` membership 字段兼容迁移
+4. `redeem_affiliate_balance_to_membership(...)`
+5. `POST /me/affiliate/redeem-membership`
+6. PostgreSQL 并发与幂等集成测试
+
+MVP 明确允许：
+
+- RMB / TON / Stars 保持现有前端与现有下单协议
+- 现有支付链路暂时继续走 legacy 结算逻辑
+- 新 primitive / apply helper 先只服务于 affiliate membership redeem
+
+MVP 验收边界：
+
+- “测试环境可完整测试”仅指返佣兑换身份实施范围可完整验证
+- 不包含 TON / RMB 支付前端改造
+- 不包含 `ORDER_V2` 全量切换
+- 不包含支付链路全部迁到统一写路径后的最终形态回归
+
+### 2.2 Full（正式统一收敛）
+
+Full 阶段再继续完成：
+
+1. `admin_gift_plan()` 迁到业务单 + snapshot + apply helper
+2. RMB / Stars / TON 后端迁到统一写路径
+3. `Order.business_order_id`、`settlement_snapshot`、`ORDER_V2`
+4. 旧支付发货逻辑与重复 `recharge` 日志清理
+
+Full 阶段约束：
+
+- Full 阶段默认也不要求 TON / RMB 支付前端立即改造
+- 若未来要彻底删除旧订单标识读法，应单独立项做前端迁移，不属于本次 affiliate membership redeem 实施范围
+
+## 3. 开工前置条件
+
+### 3.1 测试环境 MVP 前置条件
+
+以下条件满足后，即可在测试环境开发并验证返佣兑换身份主链：
 
 1. 统一会员结算 primitive 已落地
 2. 统一事务 apply helper 已落地
-3. 支付链路与后台赠送已迁到统一写路径
-4. `affiliate_redeems` 已完成字段兼容迁移
-5. Stars `ORDER_V2` 兼容矩阵已完整落地
+3. `affiliate_redeems` 已完成字段兼容迁移
+4. 测试环境 PostgreSQL 集成测试可运行
+5. 已提供灰度开关 `AFFILIATE_MEMBERSHIP_REDEEM_ENABLED`
 
-## 3. 硬约束
+### 3.2 正式全量上线前置条件
 
-### 3.1 唯一资产 owner
+以下条件未完成前，不得把“全量统一版”定义为正式完成：
 
-- `apply_membership_settlement_in_session(...)` 是以下动作的唯一 owner：
+1. 支付链路与后台赠送已迁到统一写路径
+2. `Order.business_order_id` 已完成双写、回填、唯一化
+3. Stars `ORDER_V2` 兼容矩阵已完整落地
+4. 老 `PENDING` 订单兼容 cutover 已明确并执行完毕
+
+说明：
+
+- 上述前置条件用于定义“全量统一版完成”，不是测试环境 MVP 的阻塞条件
+- 即使这些条件尚未完成，也不影响返佣兑换身份在测试环境的完整功能测试
+
+## 4. 硬约束
+
+### 4.1 唯一资产 owner
+
+在测试环境 MVP 范围内：
+
+- `apply_membership_settlement_in_session(...)` 是 `affiliate membership redeem` 的唯一资产 owner：
   - 身份变更
   - 到期时间变更
   - 可选赠送灵石
   - `operation_type="recharge"` 审计日志
-- 任何外层调用方不得再补发币
-- 任何外层调用方不得再补写第二条 `recharge` 日志
+- `redeem_affiliate_balance_to_membership(...)` 外层不得再补发币
+- `redeem_affiliate_balance_to_membership(...)` 外层不得再补写第二条 `recharge` 日志
+
+在 Full 阶段：
+
+- 该唯一 owner 约束再扩展到支付链路与后台赠送
 
 实现约束：
 
 - `QuotaManager.add_credits()/adjust_credits()` 现状会在复用外部事务时自动写 `user_logs`
-- 因此 V2 必须先给 `QuotaManager` 增加 `audit_mode`，至少支持：
+- 因此 V2.2 必须先给 `QuotaManager` 增加 `audit_mode`，至少支持：
   - `auto`：保持现状，自动写日志
   - `skip`：只改余额，不写日志
 - `apply_membership_settlement_in_session(...)` 只能调用 `audit_mode="skip"` 的 credits primitive
 - 统一 `recharge` 日志由 `apply_membership_settlement_in_session(...)` 单独写入一次
 
-### 3.2 统一幂等原则
+### 4.2 统一幂等原则
 
-V2.1 不再强行要求所有链路共用完全相同的事务顺序，只统一幂等原则与资产副作用边界。
+V2.2 允许在测试环境内短期并存“新旧两套会员结算写路径”，但要求边界清晰：
 
-支付 / 后台赠送链路必须遵守：
+- affiliate membership redeem 必须走新 primitive + apply helper
+- legacy 支付链路在 Full 阶段前允许暂留，但不得阻塞 MVP 上线
+- 新链路与旧链路都必须遵守“先唯一锚点，后资产副作用，提交后再失效缓存”的原则
 
-1. 解析请求 / 回调
-2. 先持久化唯一业务单或唯一外部流水
-3. 再锁定用户
-4. 再执行资产副作用
-5. 同事务写账本 / 审计
-6. 提交成功后再做缓存失效和外部通知
-
-affiliate redeem 链路保持现有短事务模型：
+affiliate redeem 链路固定保持短事务模型：
 
 1. 先锁定用户
 2. 再检查幂等键是否已占用
@@ -76,18 +156,25 @@ affiliate redeem 链路保持现有短事务模型：
 
 约束：
 
-- 支付 / 后台赠送不得先改 `users.credits/current_identity/identity_expire_at`，再插业务单
-- affiliate redeem 不引入 `PENDING/FAILED` 业务状态机
-- 所有链路都不得先发币，再用唯一键兜底“重复成功”
-- 所有链路都不得在提交前失效缓存
+- affiliate redeem 不引入 `PENDING/FAILED` redeem 状态机
+- 不得先发币，再用唯一键兜底“重复成功”
+- 不得在提交前失效缓存
 
-### 3.3 不可变 settlement snapshot
+### 4.3 不可变 settlement snapshot
 
-统一 settlement primitive 只解决“怎么算”，不能解决“按什么语义算”。V2.1 明确要求：
+V2.2 拆成两层要求：
+
+#### MVP 强制要求
+
+- `affiliate membership redeem` 的首次成功快照必须不可变
+- 快照必须完全由固定 option 配置 + 当前结算结果生成
+- 幂等重放只能读取首次成功快照，不能回查可变 `MembershipPlan`
+
+#### Full 强制要求
 
 - 订单创建时必须持久化不可变 settlement snapshot
 - 后台赠送时必须持久化同类 snapshot
-- 发货 / 结算只能读取 snapshot，不能在履约时重新读取可变 `MembershipPlan` 作为真实语义源
+- 发货 / 结算只能读取 snapshot，不能在履约时重新读取可变 `MembershipPlan`
 
 最小 snapshot 字段：
 
@@ -101,7 +188,7 @@ affiliate redeem 链路保持现有短事务模型：
 - `grant_reward_credits`
 - `allow_pure_credit_plan`
 
-### 3.4 纯灵石语义进入 core
+### 4.4 纯灵石语义进入 core
 
 `duration_days == 0` 必须由新 primitive 原生表达，不允许再由渠道侧各自补丁。
 
@@ -111,16 +198,21 @@ affiliate redeem 链路保持现有短事务模型：
 - 纯灵石套餐不改到期时间
 - 是否赠送灵石由 `grant_reward_credits` 与 snapshot 决定
 
-### 3.5 identity 与时间基线
+注：
 
-为避免渠道迁移后出现隐性语义漂移，V2.1 写死以下基线：
+- MVP 的 affiliate membership redeem 首版不开放纯灵石 option
+- 但 primitive 必须把该语义原生支持好，避免后续再次改 core
+
+### 4.5 identity 与时间基线
+
+为避免渠道迁移后出现隐性语义漂移，V2.2 写死以下基线：
 
 - `current_identity is None` 或未知身份时，一律按 `外门弟子` 处理
 - `current_expire_at is None` 视为当前无有效身份
 - 结算内部统一使用单一时间源，默认要求收敛为项目统一时钟函数；在统一时钟函数落地前，所有新 primitive 与 apply helper 必须显式复用同一个 `now`
 - API 输出格式统一不等于内部计算基线统一；内部时间基线必须在 primitive 层固定，禁止渠道侧自行调用各自的 `datetime.now()`
 
-### 3.6 幂等命名空间
+### 4.6 幂等命名空间
 
 V2 不修改 `affiliate_redeems` 的唯一键设计，继续保留：
 
@@ -131,9 +223,9 @@ V2 不修改 `affiliate_redeems` 的唯一键设计，继续保留：
 - 同一用户下，`credits redeem` 与 `membership redeem` 共享幂等命名空间
 - 前端必须为不同 redeem_type 生成不同前缀的幂等键
 
-## 4. 统一会员结算模型
+## 5. 统一会员结算模型
 
-### 4.1 纯规则层
+### 5.1 纯规则层
 
 在 `src/core/billing_core.py` 新增：
 
@@ -171,7 +263,7 @@ V2 不修改 `affiliate_redeems` 的唯一键设计，继续保留：
 - `DOWNGRADE_EXTENSION`
 - `EXPIRED_REPLACE`
 
-### 4.2 事务应用层
+### 5.2 事务应用层
 
 新增：
 
@@ -198,77 +290,6 @@ V2 不修改 `affiliate_redeems` 的唯一键设计，继续保留：
 - `calculate_identity_manual_conversion()`
 
 保留为兼容包装层，内部转调新 primitive；新代码不得再直接依赖旧语义。
-
-## 5. 订单与赠送模型调整
-
-### 5.1 订单侧
-
-`Order` 需要同时解决两件事：不可变 settlement snapshot 与唯一业务单标识。
-
-`Order` 必须新增或持久化：
-
-- `business_order_id`
-- `settlement_schema_version`
-- `settlement_snapshot`
-
-硬约束：
-
-- `business_order_id` 必须是全局唯一字段
-- `ORDER_V2:{business_order_id}` 中的 `business_order_id` 指向该唯一字段，不得直接复用当前非唯一的 `orders.order_id`
-- `orders.order_id` 在完成唯一化改造前，只能视为渠道侧单号，不得再被文档定义为统一幂等锚点
-
-规则：
-
-- 创建订单时同时写入 `business_order_id` 与 snapshot
-- 履约时只读 snapshot
-- `MembershipPlan` 仅用于下单阶段生成 snapshot，不参与回调阶段的最终发货语义
-- RMB / Stars / TON / admin gift 统一以 `business_order_id` 或唯一外部流水作为幂等锚点
-
-强制迁移 choreography：
-
-1. 先给 `orders` 扩 `business_order_id`，初期允许为空，且暂不加唯一约束
-2. 新建单入口开始双写 `order_id + business_order_id`
-3. 所有消费方、轮询方、脚本方进入双读窗口：优先读 `business_order_id`，缺失时回退 `order_id`
-4. 回填历史订单的 `business_order_id`
-5. 校验无空值、无重复后，再为 `business_order_id` 加唯一约束
-6. 唯一约束生效后，生产侧才允许切到 `ORDER_V2:{business_order_id}`
-7. 兼容窗口结束后，删除以 `order_id` 充当业务单锚点的旧读法
-
-双读 / 双写窗口必须覆盖：
-
-- Web RMB 建单与状态轮询
-- RMB 发货
-- Stars payload 生产与消费
-- TON 订单解析与去重兜底
-- 返佣补账脚本及其他离线脚本
-
-### 5.2 旧 `PENDING` 订单兼容
-
-切换到 snapshot 发货前，必须处理已经存在但尚未支付完成的历史 `PENDING` 订单。
-
-V2.1 采用双路径兼容：
-
-- cutover 时间之前创建的 `PENDING` 订单继续走旧发货路径
-- cutover 时间之后创建的新订单必须强制写入 `business_order_id` 与 `settlement_snapshot`
-- 新发货逻辑优先读取 snapshot；若命中 cutover 前老订单，则按旧路径兼容履约
-
-约束：
-
-- 兼容窗口必须有明确结束时间
-- 兼容窗口结束后，未支付老订单统一作废或迁移，不允许永久保留双语义
-- 文档和代码都要显式区分“老订单兼容路径”和“新订单 snapshot 路径”
-- 历史 `PENDING` 订单如参与 `business_order_id` 回填，必须在双读窗口内完成，避免轮询接口、回调与脚本对同一订单使用不同标识
-
-### 5.3 后台赠送侧
-
-`admin_gift_plan()` 不再直接改用户资产。
-
-V2.1 统一改为：
-
-1. 创建一条 `payment_channel="ADMIN_GIFT"` 的业务单
-2. 同时写入不可变 settlement snapshot
-3. 调用统一 apply helper 发货
-4. 同事务写统一审计日志
 
 ## 6. 返佣兑换配置
 
@@ -427,11 +448,11 @@ V2.1 统一改为：
 - 至少校验 `redeem_option_key`、`schema_version`、`target_identity`、`duration_days`、`amount_usdt`、`grant_reward_credits`
 - 本流程刻意保持“先锁用户，再写成功态 redeem 记录”的短事务模型，不引入 `PENDING/FAILED` redeem 状态机
 
-## 9. 支付与赠送迁移要求
+## 9. 支付与赠送迁移要求（后续 Full 阶段，不阻塞 MVP）
 
-### 9.1 统一迁移范围
+### 9.1 范围界定
 
-必须迁移的代码：
+以下迁移仍然要做，但不再作为测试环境 MVP 的阻塞前置：
 
 - `src/web_api/routers/payment.py`
 - `src/services/payment_fulfillment_service.py`
@@ -440,7 +461,7 @@ V2.1 统一改为：
 - `src/handlers/callbacks/billing_callbacks.py`
 - `dashboard/backend/routers/users.py::admin_gift_plan()`
 
-统一要求：
+统一要求保持不变：
 
 - 删除各自内联的身份折算实现
 - 删除各自直接改 `user.credits/current_identity/identity_expire_at` 的逻辑
@@ -448,9 +469,25 @@ V2.1 统一改为：
 - 统一只保留一条 `recharge` 审计日志
 - 缓存失效与外部通知全部延后到最终提交成功后
 
-### 9.2 Stars / TON payload 协议
+### 9.2 明确不改前端边界
 
-V2.1 新协议使用：
+本次为了让返佣兑换身份先在测试环境落地，明确不做：
+
+- 不改 TON 支付前端
+- 不改 RMB 支付前端
+- 不为了本次 MVP 强行要求 Web 支付页面改新字段
+- 不为了本次 MVP 强行要求 Telegram 购买入口改 payload 协议
+
+结论：
+
+- TON / RMB 前端保持现状
+- 需要改的是后续支付后端收敛方案，而不是当前返佣兑换身份入口
+- 即使进入 Phase 3 / Phase 4，也默认优先用后端兼容层保证旧前端可继续工作
+- 任何需要前端配合切换的事项，必须单独立项，不得回流阻塞本次返佣实施
+
+### 9.3 `ORDER_V2` 协议
+
+Full 阶段新协议仍使用：
 
 - `ORDER_V2:{business_order_id}`
 
@@ -466,7 +503,7 @@ V2.1 新协议使用：
 - V2 payload 不再携带 `plan_id`
 - 用户定位与结算语义全部来自业务单
 
-### 9.3 兼容矩阵
+### 9.4 兼容矩阵
 
 兼容窗口内必须同时支持旧版与新版：
 
@@ -486,38 +523,7 @@ V2.1 新协议使用：
 - 兼容窗口结束后删除旧解析逻辑
 - 不允许继续使用 `User.telegram_id == user_id OR User.id == user_id` 兜底查人
 - `precheckout_callback` 不得只做前缀放行，必须在 `ok=True` 前完成强校验
-
-### 9.4 渠道具体要求
-
-RMB：
-
-- 保持“先锁业务单，再发货”的骨架
-- 补齐 snapshot 发货
-- 删除提交后单独补 `recharge` 日志的旧路径
-
-Stars：
-
-- 发票生成前先创建 `PENDING` 业务单
-- invoice payload 改为 `ORDER_V2:{business_order_id}`
-- `precheckout_callback` 必须按 payload 查单，并校验：
-  - 订单存在
-  - 订单归属当前用户
-  - 订单状态仍为 `PENDING`
-  - 支付金额与 snapshot 一致
-- 上述任一条件不满足时必须 `ok=False`，不得放到 `successful_payment_callback` 再失败
-- `successful_payment_callback` 先按业务单 / 外部流水做幂等，再执行资产副作用
-
-TON：
-
-- 若继续复用订单协议，链上 memo 同步升级为 `ORDER_V2:{business_order_id}`
-- 先按唯一外部流水或唯一业务单幂等落单，再执行资产副作用
-- 纯灵石套餐语义改为走新 primitive，不再使用渠道侧分支
-
-后台赠送：
-
-- 创建业务单并写 snapshot
-- 统一走 apply helper
-- 保证与支付链路相同的行锁与事务审计约束
+- RMB / TON 前端若仍依赖旧字段或旧轮询标识，后端必须在兼容窗口内继续提供回退支持
 
 ## 10. 审计协议
 
@@ -550,33 +556,41 @@ TON：
 3. 落地 `apply_membership_settlement_in_session(...)`
 4. 将旧 `calculate_identity_*` 改为兼容包装
 
-### Phase 1：订单与协议收敛
+### Phase 1：返佣兑换身份 MVP
 
-5. 为 `Order` 增加全局唯一 `business_order_id`
-6. 为 `Order` 增加不可变 settlement snapshot
-7. 新建单入口进入双写：迁移 `src/web_api/routers/payment.py` 与 `billing_callbacks.py`，统一写入 `order_id + business_order_id + settlement_snapshot`
-8. 消费方、轮询方、脚本方进入双读：补齐 `precheckout_callback`、`successful_payment_callback`、`payment_validator.py`、订单状态轮询与补账脚本的 `business_order_id -> order_id fallback`
-9. 回填历史订单的 `business_order_id`
-10. 校验回填结果，无空值、无重复后，为 `business_order_id` 加唯一约束
-11. 加强 `precheckout_callback`，把查单、归属、状态、金额校验变成强约束
-12. 再切 `billing_callbacks.py` 生产 `ORDER_V2:{business_order_id}`
-13. 落地老 `PENDING` 订单兼容策略与 cutover 时间
-14. 迁移 `admin_gift_plan()` 到业务单 + snapshot + apply helper
+5. 扩展 `affiliate_redeems` 字段并将 `exchange_rate_snapshot/rounding_mode` 改为可空
+6. 落地 `AFFILIATE_MEMBERSHIP_REDEEM_OPTIONS`
+7. 实现 `redeem_affiliate_balance_to_membership(...)`
+8. 新增 `POST /me/affiliate/redeem-membership`
+9. 补齐独立响应 schema，金额字段按字符串返回
+10. 补齐单测与 PostgreSQL 集成测试
 
-### Phase 2：支付链路迁移
+### Phase 2：测试环境验证与灰度
 
-15. 迁移 RMB 到统一写路径
-16. 迁移 Stars 到统一写路径
-17. 迁移 TON 到统一写路径
-18. 删除旧渠道内联结算与重复日志逻辑
+11. 打开 `MEMBERSHIP_SETTLEMENT_V2_ENABLED`
+12. 在测试环境灰度 `AFFILIATE_MEMBERSHIP_REDEEM_ENABLED`
+13. 验证账本、幂等、余额、身份、审计日志
+14. 用真实测试账号走通 Web / TG 返佣兑换身份主链
 
-### Phase 3：返佣兑换身份
+### Phase 3：后台赠送与支付后端收敛
 
-19. 扩展 `affiliate_redeems` 字段并将 `exchange_rate_snapshot/rounding_mode` 改为可空
-20. 实现 `redeem_affiliate_balance_to_membership(...)`
-21. 新增 `POST /me/affiliate/redeem-membership`
-22. 补齐单测与 PostgreSQL 集成测试
-23. 通过开关灰度上线
+15. 迁移 `admin_gift_plan()` 到 apply helper
+16. 迁移 RMB 后端到统一写路径
+17. 迁移 Stars 后端到统一写路径
+18. 迁移 TON 后端到统一写路径
+19. 删除旧渠道内联结算与重复日志逻辑
+
+### Phase 4：订单与协议收敛
+
+20. 为 `Order` 增加 `business_order_id`
+21. 为 `Order` 增加不可变 settlement snapshot
+22. 新建单入口进入双写：统一写入 `order_id + business_order_id + settlement_snapshot`
+23. 消费方、轮询方、脚本方进入双读：补齐 `business_order_id -> order_id fallback`
+24. 回填历史订单的 `business_order_id`
+25. 校验回填结果，无空值、无重复后，为 `business_order_id` 加唯一约束
+26. 加强 `precheckout_callback`，把查单、归属、状态、金额校验变成强约束
+27. 再切 `billing_callbacks.py` 生产 `ORDER_V2:{business_order_id}`
+28. 落地老 `PENDING` 订单兼容策略与 cutover 时间
 
 ## 12. 测试清单
 
@@ -596,20 +610,7 @@ TON：
 10. 未知身份按 `外门弟子` 处理
 11. 同一 `now` 输入下，多渠道 primitive 结果一致
 
-### 12.2 支付与赠送回归
-
-至少覆盖：
-
-1. RMB / TON / Stars / admin gift 全部复用统一 primitive
-2. 各链路都只保留一条统一 `recharge` 审计日志
-3. Stars 新旧 payload 在兼容窗口内都可成功发货
-4. TON 如消费订单协议，则新旧 payload 都可正确解析
-5. 纯灵石套餐在所有渠道都不改身份
-6. `precheckout_callback` 对旧新 payload 都会查单校验，不会放行已支付、过期或串号订单
-7. Web 订单状态轮询在双读窗口内可同时兼容 `business_order_id` 与历史 `order_id`
-8. 补账脚本在双读窗口内可同时兼容 `business_order_id` 与历史 `order_id`
-
-### 12.3 affiliate membership redeem
+### 12.2 affiliate membership redeem MVP
 
 至少覆盖：
 
@@ -622,7 +623,12 @@ TON：
 7. 若未来开放赠币，不会出现双重加币
 8. 不会出现第二条重复 `recharge` 日志
 
-### 12.4 PostgreSQL 集成测试
+测试完成判定：
+
+- 当上述用例在测试环境全部通过时，可认定“返佣兑换身份实施”已在测试环境完成完整功能测试
+- 该结论不依赖 TON / RMB 支付前端改造完成
+
+### 12.3 PostgreSQL 集成测试
 
 至少覆盖：
 
@@ -630,7 +636,19 @@ TON：
 2. `credits redeem` 与 `membership redeem` 并发竞争一致
 3. `membership redeem` 与返佣入账并发时余额一致
 4. 业务幂等与账本幂等同时生效
-5. 支付链路迁移后端到端回归通过
+
+### 12.4 Full 阶段回归
+
+至少覆盖：
+
+1. RMB / TON / Stars / admin gift 全部复用统一 primitive
+2. 各链路都只保留一条统一 `recharge` 审计日志
+3. Stars 新旧 payload 在兼容窗口内都可成功发货
+4. TON 如消费订单协议，则新旧 payload 都可正确解析
+5. 纯灵石套餐在所有渠道都不改身份
+6. `precheckout_callback` 对旧新 payload 都会查单校验，不会放行已支付、过期或串号订单
+7. Web 订单状态轮询在双读窗口内可同时兼容 `business_order_id` 与历史 `order_id`
+8. 补账脚本在双读窗口内可同时兼容 `business_order_id` 与历史 `order_id`
 
 ## 13. 上线策略
 
@@ -638,13 +656,14 @@ TON：
 
 - `MEMBERSHIP_SETTLEMENT_V2_ENABLED`
 - `AFFILIATE_MEMBERSHIP_REDEEM_ENABLED`
-- 必要时为 Stars 单独拆开关
+- Full 阶段再视需要增加 `ORDER_V2` / Stars 独立开关
 
 灰度顺序：
 
-1. 先灰度统一 settlement
-2. 再灰度支付 / admin gift 迁移
-3. 最后灰度 affiliate membership redeem
+1. 先灰度统一 settlement primitive / apply helper
+2. 再灰度 affiliate membership redeem
+3. 测试环境验证稳定后，再进入支付 / admin gift 后端收敛
+4. 最后再处理 `ORDER_V2`
 
 观测指标：
 
@@ -657,15 +676,24 @@ TON：
 
 ## 14. DoD
 
-- 全项目会员结算只剩一套 primitive 和一套 apply helper
-- `apply_membership_settlement_in_session(...)` 成为唯一资产 owner
-- 支付、后台赠送、返佣兑换全部遵守统一幂等写路径
-- 订单与后台赠送已持久化不可变 settlement snapshot
+### 14.1 测试环境 MVP DoD
+
+- `calculate_membership_settlement(...)` 已落地并通过单测
+- `apply_membership_settlement_in_session(...)` 已落地并成为 affiliate membership redeem 的唯一资产 owner
 - `affiliate_redeems` 已持久化 membership redeem 关键快照
 - 幂等重放稳定返回首次成功快照
-- `credits_to_grant` 只有一个真实执行入口
-- `recharge` 审计日志只有一个真实写入入口
-- Stars / TON 的新旧 payload 在兼容窗口内都可消费
-- 兼容窗口结束后旧 payload 解析逻辑可安全删除
+- `credits_to_grant` 在新链路中只有一个真实执行入口
+- `recharge` 审计日志在新链路中只有一个真实写入入口
 - membership redeem 使用独立 schema，金额字段按字符串返回
 - PostgreSQL 并发集成测试通过
+- 测试环境可实际完成返佣兑换身份功能验证
+- 上述验证结论不以 TON / RMB 支付前端改造为前提
+- 测试环境可对 affiliate membership redeem 范围做完整测试，但不等于支付全链路统一重构已完成
+
+### 14.2 Full 阶段 DoD
+
+- 全项目会员结算只剩一套 primitive 和一套 apply helper
+- 支付、后台赠送、返佣兑换全部遵守统一幂等写路径
+- 订单与后台赠送已持久化不可变 settlement snapshot
+- Stars / TON 的新旧 payload 在兼容窗口内都可消费
+- 兼容窗口结束后旧 payload 解析逻辑可安全删除
