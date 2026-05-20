@@ -60,3 +60,28 @@ services:
       - "host.docker.internal:host-gateway"
     network_mode: "host"
     command: ["uvicorn", "src.web_api.main:app", "--host", "0.0.0.0", "--port", "8001"]
+
+  web-frontend-test:
+    image: node:22-alpine
+    container_name: web-frontend-test
+    restart: always
+    working_dir: /app/frontend
+    environment:
+      - TZ=Asia/Shanghai
+      - CHOKIDAR_USEPOLLING=true
+    volumes:
+      - ../frontend:/app/frontend
+      - ../shared:/app/shared:ro
+      - frontend-test-node-modules:/app/frontend/node_modules
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    network_mode: "host"
+    command:
+      [
+        "sh",
+        "-c",
+        "npm config set registry https://registry.npmmirror.com && npm install --no-fund --no-audit && npm run dev:test -- --host 0.0.0.0 --port 5173 --strictPort",
+      ]
+
+volumes:
+  frontend-test-node-modules:

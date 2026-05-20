@@ -6,6 +6,49 @@ cd "$ROOT_DIR"
 
 DEPLOY_SUCCEEDED=0
 TEST_ENV_FILE="$ROOT_DIR/.env.test"
+TEST_ENTRY_CONTAINERS=(
+    "tg-bot-test"
+    "payment-api-test"
+    "web-api-test"
+    "web-frontend-test"
+)
+TEST_ENTRY_SERVICES=(
+    "bot-test"
+    "payment-api-test"
+    "web-api-test"
+    "web-frontend-test"
+)
+
+remove_container_if_exists() {
+    local container_name=$1
+
+    if [ -n "$(docker ps -aq -f name=^${container_name}$)" ]; then
+        docker rm -f "${container_name}" >/dev/null 2>&1 || true
+    fi
+}
+
+remove_compose_service_containers() {
+    local service_name=$1
+    local container_ids
+
+    container_ids=$(docker ps -aq -f "label=com.docker.compose.service=${service_name}")
+    if [ -n "$container_ids" ]; then
+        docker rm -f $container_ids >/dev/null 2>&1 || true
+    fi
+}
+
+cleanup_test_entry_service_containers() {
+    local container_name
+    local service_name
+
+    for container_name in "${TEST_ENTRY_CONTAINERS[@]}"; do
+        remove_container_if_exists "$container_name"
+    done
+
+    for service_name in "${TEST_ENTRY_SERVICES[@]}"; do
+        remove_compose_service_containers "$service_name"
+    done
+}
 
 remove_maintenance_markers() {
     local containers=(
@@ -193,8 +236,8 @@ echo "✅ 测试中控 API 重建完成。"
 # ==============================================================================
 # 第七步：重建测试入口服务群
 # ==============================================================================
-echo "7️⃣ 重建并重启测试环境服务群..."
-docker rm -f tg-bot-test payment-api-test web-api-test 2>/dev/null || true
+echo "7️⃣ 重建并重启测试环境服务群（含 Web 测试前端）..."
+cleanup_test_entry_service_containers
 docker-compose -f deploy/docker-compose-test.yml up -d --build
 echo "✅ 测试环境服务群重建完成。"
 
@@ -203,3 +246,5 @@ DEPLOY_SUCCEEDED=1
 echo "🎉 测试环境更新与重建已成功完成！"
 echo "ℹ️ 正式 Dashboard 未参与本次部署，继续使用现有生产实例。"
 echo "👉 可执行 'docker logs -f tg-bot-test' 查看测试 Bot 启动日志。"
+echo "👉 可执行 'docker logs -f web-frontend-test' 查看测试前端启动日志。"
+echo "👉 测试前端默认监听 5173 端口，可通过 http://<宿主机IP>:5173 访问。"

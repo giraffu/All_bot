@@ -57,6 +57,7 @@ MINIO_ENDPOINT = os.getenv("MINIO_ENDPOINT", "192.168.1.115:9000")
 MINIO_ACCESS_KEY = os.getenv("MINIO_ACCESS_KEY", "chuzeyu")
 MINIO_SECRET_KEY = os.getenv("MINIO_SECRET_KEY", "@Cv1347968277")
 MINIO_BUCKET = os.getenv("MINIO_BUCKET", "bot-data")
+MINIO_RESULT_BUCKET = os.getenv("MINIO_RESULT_BUCKET", "comfyui-temp")
 MINIO_TEMPLATE_BUCKET = os.getenv("MINIO_TEMPLATE_BUCKET", "bot-template")
 MINIO_SECURE = os.getenv("MINIO_SECURE", "false").lower() == "true"
 MINIO_PUBLIC_URL = os.getenv("MINIO_PUBLIC_URL", f"http://{MINIO_ENDPOINT}")

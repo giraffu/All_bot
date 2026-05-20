@@ -24,6 +24,7 @@ from src.constants import (
     MODE_NAME_MAP,
     MODE_VIDEO_LORA,
 )
+from src.core.media_paths import resolve_storage_object
 from src.core.media_urls import (
     build_r2_media_key_candidates,
     build_r2_thumbnail_info,
@@ -97,6 +98,7 @@ async def get_media_url(
     output_file: str,
     task_id: str | None = None,
     r2_object_name: str | None = None,
+    media_type: str | None = None,
 ) -> str:
     """
     Generate the media URL for a gallery post.
@@ -114,7 +116,8 @@ async def get_media_url(
         if public_url and await storage.async_r2_object_exists(object_key):
             return public_url
 
-    return output_file
+    bucket_name, object_name = resolve_storage_object(output_file)
+    return storage.get_presigned_url(object_name, bucket=bucket_name) or output_file
 
 
 async def generate_thumbnail_url(
@@ -141,6 +144,7 @@ async def generate_thumbnail_url(
         thumb_file,
         task_id=None,
         r2_object_name=preferred_thumb_key,
+        media_type=media_type,
     )
 
 
@@ -161,7 +165,7 @@ async def _pick_gallery_media_urls(
     preferred_thumb_key = thumb_r2_keys[0] if thumb_r2_keys else None
 
     media_url, thumbnail_url = await asyncio.gather(
-        get_media_url(output_file, task_id=task_id),
+        get_media_url(output_file, task_id=task_id, media_type=media_type),
         generate_thumbnail_url(
             output_file,
             media_type,
@@ -748,19 +752,8 @@ async def get_apply_context(
         input_file_url = None
         if history.input_file:
             from src.services.storage import storage
-            if history.input_file.startswith("bot-data/"):
-                bucket_name = "bot-data"
-                object_name = history.input_file[len("bot-data/"):]
-            elif history.input_file.startswith("comfyui-temp/"):
-                bucket_name = "comfyui-temp"
-                object_name = history.input_file[len("comfyui-temp/"):]
-            elif history.input_file.startswith("web_uploads/"):
-                bucket_name = "bot-data" if "/" in history.input_file else "comfyui-temp"
-                object_name = history.input_file
-            else:
-                bucket_name = "bot-data" if "/" in history.input_file else "comfyui-temp"
-                object_name = history.input_file
-                
+
+            bucket_name, object_name = resolve_storage_object(history.input_file)
             input_file_url = storage.get_presigned_url(
                 object_name, bucket=bucket_name
             )

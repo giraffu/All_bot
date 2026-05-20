@@ -4,6 +4,7 @@ import pytest
 from fastapi import HTTPException
 
 from src.database.models import History
+from src.core.media_paths import MINIO_BUCKET
 from src.web_api.routers import tasks as tasks_router
 
 
@@ -96,7 +97,41 @@ async def test_get_task_result_uses_resolved_storage_object_for_bucket_prefixed_
     presign_mock.assert_called_once_with(
         "history/task-1/output.png",
         expires_hours=24,
-        bucket="bot-data",
+        bucket=MINIO_BUCKET,
+    )
+
+
+@pytest.mark.asyncio
+async def test_get_task_result_uses_primary_bucket_for_unprefixed_history_video_path(
+    monkeypatch,
+):
+    history = History(
+        id=11,
+        user_id=123,
+        task_id="task-1",
+        type="custom_video",
+        output_file="123/output_images/task-1.mp4",
+    )
+    presign_mock = MagicMock(return_value="https://cdn.example/task-1.mp4")
+    monkeypatch.setattr(tasks_router.storage, "get_presigned_url", presign_mock)
+
+    response = await tasks_router.get_task_result(
+        "task-1",
+        current_user=type("User", (), {"id": 123})(),
+        db=_FakeDB([_FakeResult(single=history)]),
+    )
+
+    assert response == {
+        "status": "success",
+        "task_id": "task-1",
+        "task_type": "custom_video",
+        "media_type": "video",
+        "result_url": "https://cdn.example/task-1.mp4",
+    }
+    presign_mock.assert_called_once_with(
+        "123/output_images/task-1.mp4",
+        expires_hours=24,
+        bucket=MINIO_BUCKET,
     )
 
 

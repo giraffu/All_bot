@@ -1,13 +1,32 @@
 from pathlib import Path
 
+from config import MINIO_BUCKET, MINIO_RESULT_BUCKET
 
-def resolve_storage_object(output_file: str) -> tuple[str, str]:
-    if output_file.startswith("bot-data/"):
-        return "bot-data", output_file[len("bot-data/") :]
-    if output_file.startswith("comfyui-temp/"):
-        return "comfyui-temp", output_file[len("comfyui-temp/") :]
-    bucket_name = "bot-data" if "/" in output_file else "comfyui-temp"
-    return bucket_name, output_file
+
+def resolve_storage_object(
+    output_file: str,
+) -> tuple[str, str]:
+    legacy_bucket_aliases = {
+        "bot-data": MINIO_BUCKET,
+        "comfyui-temp": MINIO_RESULT_BUCKET,
+    }
+    current_bucket_aliases = {
+        MINIO_BUCKET: MINIO_BUCKET,
+        MINIO_RESULT_BUCKET: MINIO_RESULT_BUCKET,
+    }
+
+    for bucket_name, resolved_bucket in {
+        **legacy_bucket_aliases,
+        **current_bucket_aliases,
+    }.items():
+        prefix = f"{bucket_name}/"
+        if output_file.startswith(prefix):
+            return resolved_bucket, output_file[len(prefix) :]
+
+    if "/" not in output_file:
+        return MINIO_RESULT_BUCKET, output_file
+
+    return MINIO_BUCKET, output_file
 
 
 def get_media_type_from_history(history_type: str | None) -> str:

@@ -17,6 +17,7 @@ from config import (
     MINIO_BUCKET,
     MINIO_ENDPOINT,
     MINIO_PUBLIC_URL,
+    MINIO_RESULT_BUCKET,
     MINIO_SECRET_KEY,
     MINIO_SECURE,
     MINIO_TEMPLATE_BUCKET,
@@ -192,6 +193,8 @@ class StorageService:
             self.client._region_map[MINIO_BUCKET] = "us-east-1"
             if MINIO_TEMPLATE_BUCKET:
                 self.client._region_map[MINIO_TEMPLATE_BUCKET] = "us-east-1"
+            if MINIO_RESULT_BUCKET:
+                self.client._region_map[MINIO_RESULT_BUCKET] = "us-east-1"
             
             # 必须补充新增的桶映射，防止签名时触发同步网络阻塞
             self.client._region_map["comfyui-temp"] = "us-east-1"
@@ -211,6 +214,8 @@ class StorageService:
                 self.public_client._region_map[MINIO_BUCKET] = "us-east-1"
                 if MINIO_TEMPLATE_BUCKET:
                     self.public_client._region_map[MINIO_TEMPLATE_BUCKET] = "us-east-1"
+                if MINIO_RESULT_BUCKET:
+                    self.public_client._region_map[MINIO_RESULT_BUCKET] = "us-east-1"
                 self.public_client._region_map["comfyui-temp"] = "us-east-1"
                 self.public_client._region_map["bot-data"] = "us-east-1"
             else:
@@ -234,6 +239,15 @@ class StorageService:
                 except Exception as e:
                     logger.error(
                         f"Failed to create template bucket {MINIO_TEMPLATE_BUCKET}: {e}"
+                    )
+
+            if MINIO_RESULT_BUCKET and not self.client.bucket_exists(MINIO_RESULT_BUCKET):
+                try:
+                    self.client.make_bucket(MINIO_RESULT_BUCKET)
+                    logger.info(f"Created MinIO result bucket: {MINIO_RESULT_BUCKET}")
+                except Exception as e:
+                    logger.error(
+                        f"Failed to create result bucket {MINIO_RESULT_BUCKET}: {e}"
                     )
 
         except Exception as e:

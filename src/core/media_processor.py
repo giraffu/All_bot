@@ -95,8 +95,8 @@ async def extract_media_metadata_from_storage(
     if not output_file:
         return None, None, None
 
-    bucket_name, object_name = resolve_storage_object(output_file)
     normalized_media_type = "video" if media_type == "video" else "image"
+    bucket_name, object_name = resolve_storage_object(output_file)
 
     if normalized_media_type == "video":
         input_url = await asyncio.to_thread(
@@ -137,17 +137,7 @@ async def generate_and_upload_thumbnail(
     if not output_file:
         return
 
-    # Determine bucket and object paths based on how gallery_core handles it
-    parts = output_file.split("/")
-    if len(parts) > 1 and parts[0] in ["bot-data", "comfyui-temp"]:
-        bucket_name = parts[0]
-        object_name = "/".join(parts[1:])
-    elif "comfyui-temp" not in output_file and "bot-data" not in output_file:
-        bucket_name = "comfyui-temp" if "/" not in output_file else "bot-data"
-        object_name = output_file
-    else:
-        bucket_name = "bot-data"
-        object_name = output_file
+    bucket_name, object_name = resolve_storage_object(output_file)
 
     base_path = object_name.rsplit(".", 1)[0]
 

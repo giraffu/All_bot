@@ -7,68 +7,73 @@ import { fileURLToPath, URL } from 'node:url'
 import { nodePolyfills } from 'vite-plugin-node-polyfills'
 
 // https://vite.dev/config/
-export default defineConfig({
-  build: {
-    rollupOptions: {
-      output: {
-        manualChunks(id) {
-          if (!id.includes('node_modules')) {
-            return
-          }
+export default defineConfig(({ mode }) => {
+  const apiProxyTarget =
+    mode === 'test' ? 'http://127.0.0.1:8001' : 'http://127.0.0.1:8000'
 
-          if (id.includes('@tonconnect') || id.includes('@ton/core')) {
-            return 'vendor-ton'
-          }
+  return {
+    build: {
+      rollupOptions: {
+        output: {
+          manualChunks(id) {
+            if (!id.includes('node_modules')) {
+              return
+            }
 
-          if (id.includes('ant-design-vue')) {
-            return 'vendor-ant'
-          }
+            if (id.includes('@tonconnect') || id.includes('@ton/core')) {
+              return 'vendor-ton'
+            }
 
-          if (
-            id.includes('/vue/') ||
-            id.includes('vue-router') ||
-            id.includes('pinia') ||
-            id.includes('vue-i18n') ||
-            id.includes('@vueuse')
-          ) {
-            return 'vendor-vue'
-          }
-        }
-      }
-    }
-  },
-  plugins: [
-    vue(),
-    tailwindcss(),
-    nodePolyfills({
-      include: ['buffer'],
-      globals: {
-        Buffer: true,
+            if (id.includes('ant-design-vue')) {
+              return 'vendor-ant'
+            }
+
+            if (
+              id.includes('/vue/') ||
+              id.includes('vue-router') ||
+              id.includes('pinia') ||
+              id.includes('vue-i18n') ||
+              id.includes('@vueuse')
+            ) {
+              return 'vendor-vue'
+            }
+          },
+        },
       },
-    }),
-    Components({
-      resolvers: [
-        AntDesignVueResolver({
-          importStyle: false, // css in js
-        }),
-      ],
-      dts: true, // Generate components.d.ts
-    }),
-  ],
-  resolve: {
-    alias: {
-      '@': fileURLToPath(new URL('./src', import.meta.url))
-    }
-  },
-  server: {
-    port: 5173,
-    host: '0.0.0.0', // Allow LAN access
-    proxy: {
-      '/api': {
-        target: 'http://127.0.0.1:8000',
-        changeOrigin: true,
-        // rewrite: (path) => path.replace(/^\/api/, '')
-      }
-    }
+    },
+    plugins: [
+      vue(),
+      tailwindcss(),
+      nodePolyfills({
+        include: ['buffer'],
+        globals: {
+          Buffer: true,
+        },
+      }),
+      Components({
+        resolvers: [
+          AntDesignVueResolver({
+            importStyle: false, // css in js
+          }),
+        ],
+        dts: true, // Generate components.d.ts
+      }),
+    ],
+    resolve: {
+      alias: {
+        '@': fileURLToPath(new URL('./src', import.meta.url)),
+      },
+    },
+    server: {
+      port: 5173,
+      host: '0.0.0.0', // Allow LAN access
+      proxy: {
+        '/api': {
+          target: apiProxyTarget,
+          changeOrigin: true,
+          // rewrite: (path) => path.replace(/^\/api/, '')
+        },
+      },
+    },
   }
 })

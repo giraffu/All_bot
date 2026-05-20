@@ -95,8 +95,8 @@ async def _pick_favorite_media_urls(
     if not output_file:
         return "", ""
 
-    bucket_name, object_name = resolve_storage_object(output_file)
     media_type = get_media_type_from_history(history_type)
+    bucket_name, object_name = resolve_storage_object(output_file)
     media_r2_keys = build_r2_media_key_candidates(
         output_file=output_file,
         task_id=task_id,
@@ -173,8 +173,8 @@ async def _pick_history_media_urls(
     if not output_file:
         return "", ""
 
-    bucket_name, object_name = resolve_storage_object(output_file)
     media_type = get_media_type_from_history(history_type)
+    bucket_name, object_name = resolve_storage_object(output_file)
     media_r2_keys = build_r2_media_key_candidates(
         output_file=output_file,
         task_id=task_id,
@@ -752,19 +752,8 @@ async def get_favorite_apply_context(
     input_file_url = None
     if history.input_file:
         from src.services.storage import storage
-        if history.input_file.startswith("bot-data/"):
-            bucket_name = "bot-data"
-            object_name = history.input_file[len("bot-data/"):]
-        elif history.input_file.startswith("comfyui-temp/"):
-            bucket_name = "comfyui-temp"
-            object_name = history.input_file[len("comfyui-temp/"):]
-        elif history.input_file.startswith("web_uploads/"):
-            bucket_name = "bot-data" if "/" in history.input_file else "comfyui-temp"
-            object_name = history.input_file
-        else:
-            bucket_name = "bot-data" if "/" in history.input_file else "comfyui-temp"
-            object_name = history.input_file
-            
+
+        bucket_name, object_name = resolve_storage_object(history.input_file)
         input_file_url = storage.get_presigned_url(
             object_name, bucket=bucket_name
         )
@@ -907,15 +896,7 @@ async def send_history_to_bot(task_id: str, request: Request):
         history_prompt = history.prompt
 
     # 4. 严谨提取 bucket 和 object_name
-    if history_output_file.startswith("bot-data/"):
-        bucket_name = "bot-data"
-        object_name = history_output_file[len("bot-data/"):]
-    elif history_output_file.startswith("comfyui-temp/"):
-        bucket_name = "comfyui-temp"
-        object_name = history_output_file[len("comfyui-temp/"):]
-    else:
-        bucket_name = "bot-data" if "/" in history_output_file else "comfyui-temp"
-        object_name = history_output_file
+    bucket_name, object_name = resolve_storage_object(history_output_file)
 
     # 5. 从 MinIO 下载文件字节流到内存 (方案 B: 内存流直传)
     import asyncio
