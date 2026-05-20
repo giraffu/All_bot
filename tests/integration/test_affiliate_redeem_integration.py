@@ -179,6 +179,23 @@ async def _run_redeem(
         )
 
 
+async def _run_membership_redeem(
+    *,
+    user_id: int,
+    option_key: str,
+    idempotency_key: str,
+    gate: _TwoPartyGate | None = None,
+):
+    async with DBSessionLocal() as session:
+        proxy = _ProxySession(session, gate)
+        return await affiliate_redeem_service.redeem_affiliate_balance_to_membership(
+            proxy,
+            user_id=user_id,
+            option_key=option_key,
+            idempotency_key=idempotency_key,
+        )
+
+
 async def _record_commission_with_user_lock(
     *,
     user_id: int,
@@ -209,6 +226,35 @@ async def _record_commission_with_user_lock(
                     .returning(AffiliateTransaction.id)
                 )
             ).scalar_one_or_none() is not None
+
+
+async def _load_membership_redeem_state(user_id: int) -> dict:
+    async with DBSessionLocal() as session:
+        user = await session.get(User, user_id)
+        redeem_count = (
+            await session.execute(
+                select(func.count(AffiliateRedeem.id)).where(
+                    AffiliateRedeem.user_id == user_id,
+                    AffiliateRedeem.redeem_type == "MEMBERSHIP",
+                )
+            )
+        ).scalar_one()
+        out_count = (
+            await session.execute(
+                select(func.count(AffiliateTransaction.id)).where(
+                    AffiliateTransaction.user_id == user_id,
+                    AffiliateTransaction.direction == "OUT",
+                    AffiliateTransaction.transaction_type == "MEMBERSHIP_REDEEM",
+                    AffiliateTransaction.status == "SUCCESS",
+                )
+            )
+        ).scalar_one()
+        return {
+            "credits": int(user.credits or 0) if user else None,
+            "identity": user.current_identity if user else None,
+            "redeem_count": redeem_count,
+            "out_count": out_count,
+        }
 
 
 async def test_affiliate_redeem_concurrent_requests_do_not_double_spend(monkeypatch):
@@ -255,10 +301,10 @@ async def test_affiliate_redeem_concurrent_requests_do_not_double_spend(monkeypa
         assert isinstance(
             error_results[0], affiliate_redeem_service.AffiliateRedeemInsufficientBalanceError
         )
-        assert success_results[0].credits_granted == 90
+        assert success_results[0].credits_granted == 130
 
         state = await _load_user_redeem_state(fixture["user_id"])
-        assert state == {"credits": 90, "redeem_count": 1, "out_count": 1}
+        assert state == {"credits": 130, "redeem_count": 1, "out_count": 1}
         invalidate_mock.assert_awaited_once_with(fixture["user_id"])
         log_action_mock.assert_awaited_once()
     finally:
@@ -295,11 +341,11 @@ async def test_affiliate_redeem_same_idempotency_returns_first_success_result(mo
         )
 
         assert result_1.redeem_id == result_2.redeem_id
-        assert result_1.credits_granted == result_2.credits_granted == 90
-        assert result_1.current_credits == result_2.current_credits == 90
+        assert result_1.credits_granted == result_2.credits_granted == 130
+        assert result_1.current_credits == result_2.current_credits == 130
 
         state = await _load_user_redeem_state(fixture["user_id"])
-        assert state == {"credits": 90, "redeem_count": 1, "out_count": 1}
+        assert state == {"credits": 130, "redeem_count": 1, "out_count": 1}
         invalidate_mock.assert_awaited_once_with(fixture["user_id"])
         log_action_mock.assert_awaited_once()
     finally:
@@ -324,7 +370,7 @@ async def test_affiliate_redeem_same_idempotency_keeps_first_current_credits_sna
             amount_usdt=Decimal("1.0000"),
             idempotency_key="sticky-current-credits",
         )
-        assert first.current_credits == 90
+        assert first.current_credits == 130
 
         async with DBSessionLocal() as session:
             user = await session.get(User, fixture["user_id"])
@@ -338,7 +384,7 @@ async def test_affiliate_redeem_same_idempotency_keeps_first_current_credits_sna
         )
 
         assert replay.redeem_id == first.redeem_id
-        assert replay.current_credits == 90
+        assert replay.current_credits == 130
         assert replay.available_balance_usdt == Decimal("2.0000")
 
         state = await _load_user_redeem_state(fixture["user_id"])
@@ -411,17 +457,17 @@ async def test_affiliate_redeem_same_idempotency_with_different_amount_conflicts
             amount_usdt=Decimal("1.0000"),
             idempotency_key="conflict-idem",
         )
-        assert first.credits_granted == 90
+        assert first.credits_granted == 130
 
         with pytest.raises(affiliate_redeem_service.AffiliateRedeemConflictError):
             await _run_redeem(
                 user_id=fixture["user_id"],
-                amount_usdt=Decimal("2.0000"),
+                amount_usdt=Decimal("3.0000"),
                 idempotency_key="conflict-idem",
             )
 
         state = await _load_user_redeem_state(fixture["user_id"])
-        assert state == {"credits": 90, "redeem_count": 1, "out_count": 1}
+        assert state == {"credits": 130, "redeem_count": 1, "out_count": 1}
     finally:
         await _cleanup_redeem_fixture(user_id=fixture["user_id"])
 
@@ -445,11 +491,11 @@ async def test_affiliate_redeem_side_effect_failures_do_not_break_success_respon
         )
 
         assert result.status == "SUCCESS"
-        assert result.credits_granted == 90
-        assert result.current_credits == 90
+        assert result.credits_granted == 130
+        assert result.current_credits == 130
 
         state = await _load_user_redeem_state(fixture["user_id"])
-        assert state == {"credits": 90, "redeem_count": 1, "out_count": 1}
+        assert state == {"credits": 130, "redeem_count": 1, "out_count": 1}
     finally:
         await _cleanup_redeem_fixture(user_id=fixture["user_id"])
 
@@ -501,12 +547,189 @@ async def test_affiliate_redeem_api_succeeds_with_real_auth_session_chain(monkey
         assert response.status_code == 200, response.text
         data = response.json()
         assert data["status"] == "SUCCESS"
-        assert data["credits_granted"] == 90
-        assert data["current_credits"] == 90
+        assert data["credits_granted"] == 130
+        assert data["current_credits"] == 130
         assert data["available_balance_usdt"] == 1.0
 
         state = await _load_user_redeem_state(fixture["user_id"])
-        assert state == {"credits": 90, "redeem_count": 1, "out_count": 1}
+        assert state == {"credits": 130, "redeem_count": 1, "out_count": 1}
+        invalidate_mock.assert_awaited_once_with(fixture["user_id"])
+        log_action_mock.assert_awaited_once()
+    finally:
+        await _cleanup_redeem_fixture(user_id=fixture["user_id"])
+
+
+async def test_affiliate_membership_redeem_succeeds_and_updates_identity(monkeypatch):
+    invalidate_mock = AsyncMock()
+    log_action_mock = AsyncMock()
+    monkeypatch.setattr(
+        affiliate_redeem_service,
+        "invalidate_invitation_recharge_cache",
+        invalidate_mock,
+    )
+    monkeypatch.setattr("src.services.log_service.LogService.log_action", log_action_mock)
+
+    fixture = await _create_redeem_fixture(_unique_suffix(), Decimal("100.0000"))
+
+    try:
+        result = await _run_membership_redeem(
+            user_id=fixture["user_id"],
+            option_key="inner_30d",
+            idempotency_key="membership-success",
+        )
+
+        assert result.status == "SUCCESS"
+        assert result.redeem_type == "MEMBERSHIP"
+        assert result.target_identity == "内门弟子"
+        assert result.current_identity == "内门弟子"
+        assert result.amount_usdt == Decimal("4.4118")
+        assert result.available_balance_usdt == Decimal("95.5882")
+
+        state = await _load_membership_redeem_state(fixture["user_id"])
+        assert state == {
+            "credits": 400,
+            "identity": "内门弟子",
+            "redeem_count": 1,
+            "out_count": 1,
+        }
+        invalidate_mock.assert_awaited_once_with(fixture["user_id"])
+        log_action_mock.assert_awaited_once()
+    finally:
+        await _cleanup_redeem_fixture(user_id=fixture["user_id"])
+
+
+async def test_affiliate_membership_redeem_same_idempotency_returns_first_snapshot(
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        affiliate_redeem_service,
+        "invalidate_invitation_recharge_cache",
+        AsyncMock(),
+    )
+    monkeypatch.setattr("src.services.log_service.LogService.log_action", AsyncMock())
+
+    fixture = await _create_redeem_fixture(_unique_suffix(), Decimal("100.0000"))
+
+    try:
+        first = await _run_membership_redeem(
+            user_id=fixture["user_id"],
+            option_key="core_30d",
+            idempotency_key="membership-idem",
+        )
+
+        async with DBSessionLocal() as session:
+            user = await session.get(User, fixture["user_id"])
+            user.current_identity = "真传弟子"
+            await session.commit()
+
+        replay = await _run_membership_redeem(
+            user_id=fixture["user_id"],
+            option_key="core_30d",
+            idempotency_key="membership-idem",
+        )
+
+        assert replay.redeem_id == first.redeem_id
+        assert replay.current_identity == first.current_identity == "核心弟子"
+        assert replay.available_balance_usdt == first.available_balance_usdt == Decimal(
+            "89.7059"
+        )
+    finally:
+        await _cleanup_redeem_fixture(user_id=fixture["user_id"])
+
+
+async def test_affiliate_membership_redeem_same_idempotency_different_option_conflicts(
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        affiliate_redeem_service,
+        "invalidate_invitation_recharge_cache",
+        AsyncMock(),
+    )
+    monkeypatch.setattr("src.services.log_service.LogService.log_action", AsyncMock())
+
+    fixture = await _create_redeem_fixture(_unique_suffix(), Decimal("100.0000"))
+
+    try:
+        first = await _run_membership_redeem(
+            user_id=fixture["user_id"],
+            option_key="inner_30d",
+            idempotency_key="membership-conflict",
+        )
+        assert first.target_identity == "内门弟子"
+
+        with pytest.raises(affiliate_redeem_service.AffiliateRedeemConflictError):
+            await _run_membership_redeem(
+                user_id=fixture["user_id"],
+                option_key="true_30d",
+                idempotency_key="membership-conflict",
+            )
+    finally:
+        await _cleanup_redeem_fixture(user_id=fixture["user_id"])
+
+
+async def test_affiliate_membership_redeem_api_succeeds_with_feature_flags(
+    monkeypatch,
+):
+    invalidate_mock = AsyncMock()
+    log_action_mock = AsyncMock()
+    monkeypatch.setenv("MEMBERSHIP_SETTLEMENT_V2_ENABLED", "true")
+    monkeypatch.setenv("AFFILIATE_MEMBERSHIP_REDEEM_ENABLED", "true")
+    monkeypatch.setattr(
+        affiliate_redeem_service,
+        "invalidate_invitation_recharge_cache",
+        invalidate_mock,
+    )
+    monkeypatch.setattr("src.services.log_service.LogService.log_action", log_action_mock)
+    monkeypatch.setattr(
+        "src.services.permission_service.permission_service.get_user_detailed_stats",
+        AsyncMock(return_value={"identity": "内门弟子", "group": "练气期"}),
+    )
+    monkeypatch.setattr(
+        "src.web_api.routers.users.invalidate_affiliate_redeem_cache_after_commit",
+        invalidate_mock,
+    )
+    monkeypatch.setattr(
+        "src.services.redis_client.redis_client",
+        SimpleNamespace(
+            redis=SimpleNamespace(
+                get=AsyncMock(return_value=None),
+                delete=AsyncMock(return_value=1),
+            )
+        ),
+    )
+
+    fixture = await _create_redeem_fixture(_unique_suffix(), Decimal("100.0000"))
+    token = create_access_token(str(fixture["user_id"]))
+
+    try:
+        async with AsyncClient(
+            transport=ASGITransport(app=app),
+            base_url="http://testserver",
+        ) as client:
+            response = await client.post(
+                "/api/users/me/affiliate/redeem-membership",
+                headers={"Authorization": f"Bearer {token}"},
+                json={
+                    "option_key": "inner_30d",
+                    "idempotency_key": f"api-membership-{_unique_suffix()}",
+                },
+            )
+
+        assert response.status_code == 200, response.text
+        data = response.json()
+        assert data["status"] == "SUCCESS"
+        assert data["redeem_type"] == "MEMBERSHIP"
+        assert data["target_identity"] == "内门弟子"
+        assert data["amount_usdt"] == "4.4118"
+        assert data["available_balance_usdt"] == "95.5882"
+
+        state = await _load_membership_redeem_state(fixture["user_id"])
+        assert state == {
+            "credits": 400,
+            "identity": "内门弟子",
+            "redeem_count": 1,
+            "out_count": 1,
+        }
         invalidate_mock.assert_awaited_once_with(fixture["user_id"])
         log_action_mock.assert_awaited_once()
     finally:
@@ -563,7 +786,7 @@ async def test_affiliate_redeem_concurrent_with_commission_accrual_keeps_balance
 
         assert commission_inserted is True
         assert redeem_result.status == "SUCCESS"
-        assert redeem_result.credits_granted == 90
+        assert redeem_result.credits_granted == 130
 
         async with DBSessionLocal() as session:
             balance = await affiliate_redeem_service.query_affiliate_available_balance(
@@ -571,7 +794,7 @@ async def test_affiliate_redeem_concurrent_with_commission_accrual_keeps_balance
             )
 
         state = await _load_user_redeem_state(fixture["user_id"])
-        assert state == {"credits": 90, "redeem_count": 1, "out_count": 1}
+        assert state == {"credits": 130, "redeem_count": 1, "out_count": 1}
         assert balance == Decimal("0.5000")
     finally:
         await _cleanup_redeem_fixture(user_id=fixture["user_id"])
@@ -605,7 +828,7 @@ async def test_affiliate_redeem_defers_cache_invalidation_when_reusing_external_
             invalidate_mock.assert_not_awaited()
 
         state = await _load_user_redeem_state(fixture["user_id"])
-        assert state == {"credits": 90, "redeem_count": 1, "out_count": 1}
+        assert state == {"credits": 130, "redeem_count": 1, "out_count": 1}
     finally:
         await _cleanup_redeem_fixture(user_id=fixture["user_id"])
 
@@ -626,7 +849,7 @@ async def test_affiliate_redeem_waits_for_commission_commit_on_same_user(monkeyp
         commission_task = asyncio.create_task(
             _record_commission_with_user_lock(
                 user_id=fixture["user_id"],
-                amount_usdt=Decimal("0.5000"),
+                amount_usdt=Decimal("2.0000"),
                 locked_event=locked_event,
                 release_event=release_event,
             )
@@ -636,7 +859,7 @@ async def test_affiliate_redeem_waits_for_commission_commit_on_same_user(monkeyp
         redeem_task = asyncio.create_task(
             _run_redeem(
                 user_id=fixture["user_id"],
-                amount_usdt=Decimal("1.5000"),
+                amount_usdt=Decimal("3.0000"),
                 idempotency_key="redeem-after-commission-lock",
             )
         )
@@ -651,11 +874,11 @@ async def test_affiliate_redeem_waits_for_commission_commit_on_same_user(monkeyp
 
         assert commission_inserted is True
         assert redeem_result.status == "SUCCESS"
-        assert redeem_result.credits_granted == 135
+        assert redeem_result.credits_granted == 390
         assert redeem_result.available_balance_usdt == Decimal("0.0000")
 
         state = await _load_user_redeem_state(fixture["user_id"])
-        assert state == {"credits": 135, "redeem_count": 1, "out_count": 1}
+        assert state == {"credits": 390, "redeem_count": 1, "out_count": 1}
     finally:
         release_event.set()
         await _cleanup_redeem_fixture(user_id=fixture["user_id"])

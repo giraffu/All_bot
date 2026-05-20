@@ -1,7 +1,6 @@
 import logging
-import math
 import os
-from datetime import datetime, timedelta
+from datetime import datetime
 from decimal import Decimal, ROUND_HALF_UP
 
 import aiohttp
@@ -14,7 +13,13 @@ from src.core.affiliate_core import (
     invalidate_invitation_recharge_cache,
     record_affiliate_commission_transaction,
 )
-from src.services.log_service import LogService
+from src.services.log_service import LogService  # Backward-compatible test patch target.
+from src.services.affiliate_redeem_service import is_membership_settlement_v2_enabled
+from src.services.membership_settlement_service import (
+    MembershipSettlementAuditSource,
+    settle_membership_plan_in_session,
+)
+from src.services.order_v2_service import build_order_public_lookup_stmt
 from config import TELEGRAM_API_BASE_URL
 
 logger = logging.getLogger("payment_fulfillment")
@@ -35,7 +40,7 @@ async def fulfill_order(
         try:
             # 1. 查找订单
             order_res = await session.execute(
-                select(Order).where(Order.order_id == out_trade_no).with_for_update()
+                build_order_public_lookup_stmt(out_trade_no, for_update=True)
             )
             order = order_res.scalar_one_or_none()
             if not order:
@@ -75,63 +80,7 @@ async def fulfill_order(
                 logger.error(f"User not found: {order.telegram_id}")
                 return False
 
-            # 4. 计算身份和时长折算逻辑
             now = datetime.now()
-            new_expire_at = user.identity_expire_at
-            converted_days = 0
-            final_identity = plan.identity_name
-            is_downgrade = False
-            is_pure_credit = plan.duration_days == 0
-
-            identity_priority = {
-                "外门弟子": 0,
-                "内门弟子": 1,
-                "核心弟子": 2,
-                "真传弟子": 3,
-            }
-            identity_ratio = {
-                "外门弟子": 1,
-                "内门弟子": 2,
-                "核心弟子": 5,
-                "真传弟子": 10,
-            }
-
-            current_priority = identity_priority.get(user.current_identity, 0)
-            new_priority = identity_priority.get(plan.identity_name, 0)
-
-            if is_pure_credit:
-                final_identity = user.current_identity
-                new_expire_at = user.identity_expire_at
-            elif new_expire_at and new_expire_at > now:
-                if user.current_identity == plan.identity_name:
-                    # 同套餐续费
-                    new_expire_at += timedelta(days=plan.duration_days)
-                elif new_priority > current_priority:
-                    # 升级：用原套餐剩余的价值折算成新套餐的天数，再加上新套餐本身的天数
-                    remaining_days = (new_expire_at - now).total_seconds() / 86400.0
-                    old_ratio = identity_ratio.get(user.current_identity, 1)
-                    new_ratio = identity_ratio.get(plan.identity_name, 1)
-                    # converted_days 代表从老套餐折算过来的额外天数
-                    converted_days = math.ceil((remaining_days * old_ratio) / new_ratio)
-                    # 新的到期时间 = 现在 + 折算天数 + 新买的天数
-                    new_expire_at = now + timedelta(
-                        days=plan.duration_days + converted_days
-                    )
-                else:
-                    # 降级或同级
-                    is_downgrade = True
-                    final_identity = user.current_identity
-                    old_ratio = identity_ratio.get(user.current_identity, 1)
-                    new_ratio = identity_ratio.get(plan.identity_name, 1)
-                    # converted_days 代表新买的低级套餐折算成老套餐增加的天数
-                    extra_days = math.ceil((plan.duration_days * new_ratio) / old_ratio)
-                    converted_days = extra_days
-                    new_expire_at += timedelta(days=extra_days)
-            else:
-                # 过期或首次充值
-                new_expire_at = now + timedelta(days=plan.duration_days)
-
-            # 5. 更新订单、用户与插入日志
             order.payment_channel = "RMB"
             order.status = "SUCCESS"
             order.tx_hash = external_trade_no
@@ -152,41 +101,65 @@ async def fulfill_order(
                         order.id,
                         order.tx_hash,
                     )
+            if is_membership_settlement_v2_enabled():
+                applied_snapshot = await settle_membership_plan_in_session(
+                    locked_user=user,
+                    plan=plan,
+                    audit_source=MembershipSettlementAuditSource(
+                        source="rmb_payment_callback",
+                        source_channel="RMB",
+                        source_order_id=order.order_id,
+                        source_tx_hash=external_trade_no,
+                    ),
+                    session=session,
+                    now=now,
+                    grant_reward_credits=True,
+                )
+            else:
+                from src.core.billing_core import calculate_identity_conversion
 
-            user.credits += plan.reward_credits
-            user.current_identity = final_identity
-            user.identity_expire_at = new_expire_at
+                final_identity, new_expire_at = calculate_identity_conversion(
+                    current_identity=user.current_identity,
+                    current_expire_at=user.identity_expire_at,
+                    new_identity=plan.identity_name,
+                    duration_days=plan.duration_days,
+                )
+                user.credits += plan.reward_credits
+                user.current_identity = final_identity
+                user.identity_expire_at = new_expire_at
+                applied_snapshot = {
+                    "credits_granted": int(plan.reward_credits or 0),
+                    "converted_days": 0,
+                    "final_identity": final_identity,
+                    "final_expire_at": new_expire_at.isoformat()
+                    if new_expire_at
+                    else None,
+                    "current_credits": int(user.credits or 0),
+                    "settlement_reason": "LEGACY_FALLBACK",
+                    "is_pure_credit_plan": int(plan.duration_days or 0) == 0,
+                    "kept_current_identity": final_identity == user.current_identity,
+                    "is_downgrade": False,
+                }
 
             await session.commit()
             if referral:
                 await invalidate_invitation_recharge_cache(referral.inviter_id)
-
-            # 使用统一的 LogService 记录流水（自带重试机制，防止丢日志）
-            await LogService.log_action(
-                user_id=user.id,
-                username=user.username,
-                operation_type="recharge",
-                credit_change=plan.reward_credits,
-                current_balance=user.credits,
-                extra_info={
-                    "order_id": out_trade_no,
-                    "plan": plan.name,
-                    "external_trade_no": external_trade_no,
-                    "via": "rmb_payment",
-                    "converted_days": converted_days,
-                    "identity": final_identity,
-                },
-            )
 
             logger.info(f"Order {out_trade_no} fulfilled for user {user.id}")
 
             # 6. 通知用户
             bot_token = os.getenv("BOT_TOKEN")
             if bot_token:
+                credits_granted = int(applied_snapshot.get("credits_granted", 0))
+                converted_days = int(applied_snapshot.get("converted_days", 0))
+                final_identity = str(applied_snapshot.get("final_identity", user.current_identity))
+                final_expire_at = applied_snapshot.get("final_expire_at")
+                is_pure_credit = bool(applied_snapshot.get("is_pure_credit_plan", False))
+                is_downgrade = bool(applied_snapshot.get("is_downgrade", False))
                 success_msg = (
                     f"🎉 <b>支付成功！</b>\n\n"
                     f"感谢您的赞助，您已成功购买 <b>{plan.name}</b>。\n"
-                    f"💎 <b>获得永久灵石</b>：<code>{plan.reward_credits}</code>\n"
+                    f"💎 <b>获得永久灵石</b>：<code>{credits_granted}</code>\n"
                 )
                 if is_pure_credit or is_downgrade:
                     success_msg += (
@@ -201,8 +174,8 @@ async def fulfill_order(
                     if converted_days > 0:
                         success_msg += f"⚖️ <b>老套餐残值已折算</b>：<code>{converted_days}</code> 天新套餐时长\n"
 
-                if new_expire_at:
-                    success_msg += f"⏳ <b>身份到期时间</b>：<code>{new_expire_at.strftime('%Y-%m-%d %H:%M:%S')}</code> (UTC)\n\n"
+                if final_expire_at:
+                    success_msg += f"⏳ <b>身份到期时间</b>：<code>{final_expire_at}</code>\n\n"
                 success_msg += "祝您仙途坦荡，早日登峰造极！"
 
                 telegram_api_url = f"{TELEGRAM_API_BASE_URL}/bot{bot_token}/sendMessage"

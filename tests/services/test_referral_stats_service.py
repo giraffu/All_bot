@@ -92,7 +92,7 @@ def test_round_money_uses_half_up_decimal_rounding():
 
 
 @pytest.mark.asyncio
-async def test_query_invitation_recharge_stats_reads_balance_from_ledger_not_orders():
+async def test_query_invitation_recharge_stats_reads_history_and_balance_from_ledger():
     session = _FakeSession(
         results=[
             [
@@ -101,7 +101,7 @@ async def test_query_invitation_recharge_stats_reads_balance_from_ledger_not_ord
                 (4004, 100, "XTR", Decimal("0.0000")),
             ],
             [
-                (Decimal("0.1111"), Decimal("0.9187")),
+                (Decimal("1.2345"), Decimal("0.1111"), Decimal("1.1234")),
             ],
         ]
     )
@@ -114,10 +114,10 @@ async def test_query_invitation_recharge_stats_reads_balance_from_ledger_not_ord
         "total_ton": 2.5,
         "total_rmb": 10.0,
         "total_stars": 100,
-        "commission_usdt": 0.03,
-        "total_commission_usdt": 0.03,
+        "commission_usdt": 1.23,
+        "total_commission_usdt": 1.23,
         "spent_commission_usdt": 0.11,
-        "available_balance_usdt": 0.92,
+        "available_balance_usdt": 1.12,
     }
 
 
@@ -129,14 +129,35 @@ async def test_query_invitation_recharge_stats_defaults_ledger_aggregates_to_zer
                 (2002, Decimal("8.00"), "RMB", Decimal("1.2345")),
             ],
             [
-                (None, None),
+                (None, None, None),
             ],
         ]
     )
 
     stats = await referral_stats_service.query_invitation_recharge_stats(session, 1001)
 
-    assert stats["commission_usdt"] == 1.23
-    assert stats["total_commission_usdt"] == 1.23
+    assert stats["commission_usdt"] == 0.0
+    assert stats["total_commission_usdt"] == 0.0
     assert stats["spent_commission_usdt"] == 0.0
     assert stats["available_balance_usdt"] == 0.0
+
+
+@pytest.mark.asyncio
+async def test_query_invitation_recharge_stats_can_show_non_zero_history_when_orders_sum_zero():
+    session = _FakeSession(
+        results=[
+            [
+                (2002, Decimal("8.00"), "RMB", Decimal("0.0000")),
+            ],
+            [
+                (Decimal("300.0000"), Decimal("67.6500"), Decimal("232.3500")),
+            ],
+        ]
+    )
+
+    stats = await referral_stats_service.query_invitation_recharge_stats(session, 1001)
+
+    assert stats["commission_usdt"] == 300.0
+    assert stats["total_commission_usdt"] == 300.0
+    assert stats["spent_commission_usdt"] == 67.65
+    assert stats["available_balance_usdt"] == 232.35

@@ -126,6 +126,11 @@ async def test_successful_payment_callback_records_affiliate_transaction(monkeyp
         payment_handler, "AsyncSessionLocal", lambda: _SessionContext(session)
     )
     monkeypatch.setattr(
+        payment_handler,
+        "is_membership_settlement_v2_enabled",
+        lambda: False,
+    )
+    monkeypatch.setattr(
         "src.core.affiliate_core.calculate_and_set_commission_for_paid_order",
         calculate_mock,
     )
@@ -163,6 +168,11 @@ async def test_successful_payment_callback_duplicate_charge_does_not_record_affi
 
     monkeypatch.setattr(
         payment_handler, "AsyncSessionLocal", lambda: _SessionContext(session)
+    )
+    monkeypatch.setattr(
+        payment_handler,
+        "is_membership_settlement_v2_enabled",
+        lambda: False,
     )
     monkeypatch.setattr(
         "src.core.affiliate_core.calculate_and_set_commission_for_paid_order",
@@ -208,6 +218,11 @@ async def test_successful_payment_callback_handles_existing_naive_expire_at(
 
     monkeypatch.setattr(
         payment_handler, "AsyncSessionLocal", lambda: _SessionContext(session)
+    )
+    monkeypatch.setattr(
+        payment_handler,
+        "is_membership_settlement_v2_enabled",
+        lambda: False,
     )
     monkeypatch.setattr(
         "src.core.affiliate_core.calculate_and_set_commission_for_paid_order",
@@ -258,6 +273,11 @@ async def test_successful_payment_callback_logs_warning_when_affiliate_ledger_in
         payment_handler, "AsyncSessionLocal", lambda: _SessionContext(session)
     )
     monkeypatch.setattr(
+        payment_handler,
+        "is_membership_settlement_v2_enabled",
+        lambda: False,
+    )
+    monkeypatch.setattr(
         "src.core.affiliate_core.calculate_and_set_commission_for_paid_order",
         calculate_mock,
     )
@@ -274,3 +294,166 @@ async def test_successful_payment_callback_logs_warning_when_affiliate_ledger_in
     await payment_handler.successful_payment_callback(update, context)
 
     warning_mock.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_successful_payment_callback_uses_unified_membership_settlement_when_enabled(
+    monkeypatch,
+):
+    inserted_order = _build_inserted_order()
+    session = _FakeSession(
+        [_build_plan(), _build_user(), inserted_order.id],
+        get_results={inserted_order.id: inserted_order},
+    )
+    update = _build_update()
+    context = SimpleNamespace()
+    referral = SimpleNamespace(inviter_id=1001)
+
+    calculate_mock = AsyncMock(
+        side_effect=lambda _session, order: setattr(
+            order, "commission_usdt", Decimal("0.5500")
+        )
+        or referral
+    )
+    record_mock = AsyncMock(return_value=True)
+    invalidate_mock = AsyncMock()
+    settle_mock = AsyncMock(
+        return_value={
+            "credits_granted": 12,
+            "converted_days": 0,
+            "final_identity": "外门弟子",
+            "final_expire_at": "2026-06-30T00:00:00",
+            "is_pure_credit_plan": True,
+            "is_downgrade": False,
+        }
+    )
+
+    monkeypatch.setattr(
+        payment_handler, "AsyncSessionLocal", lambda: _SessionContext(session)
+    )
+    monkeypatch.setattr(
+        "src.core.affiliate_core.calculate_and_set_commission_for_paid_order",
+        calculate_mock,
+    )
+    monkeypatch.setattr(
+        "src.core.affiliate_core.record_affiliate_commission_transaction",
+        record_mock,
+    )
+    monkeypatch.setattr(
+        "src.core.affiliate_core.invalidate_invitation_recharge_cache",
+        invalidate_mock,
+    )
+    monkeypatch.setattr(
+        payment_handler,
+        "is_membership_settlement_v2_enabled",
+        lambda: True,
+    )
+    monkeypatch.setattr(
+        payment_handler,
+        "settle_membership_plan_in_session",
+        settle_mock,
+    )
+
+    await payment_handler.successful_payment_callback(update, context)
+
+    settle_mock.assert_awaited_once()
+    session.commit.assert_awaited_once()
+    invalidate_mock.assert_awaited_once_with(1001)
+
+
+@pytest.mark.asyncio
+async def test_precheckout_callback_accepts_order_v2_after_strong_validation(
+    monkeypatch,
+):
+    query = SimpleNamespace(
+        invoice_payload="ORDER_V2:bo_123",
+        from_user=SimpleNamespace(id=12345),
+        total_amount=100,
+    )
+    update = SimpleNamespace(
+        pre_checkout_query=query, effective_user=SimpleNamespace(id=12345)
+    )
+    context = SimpleNamespace()
+    session = _FakeSession(
+        [
+            SimpleNamespace(
+                business_order_id="bo_123",
+                telegram_id=2002,
+                status="PENDING",
+                plan_id=1,
+            ),
+            _build_plan(),
+        ]
+    )
+    safe_answer_mock = AsyncMock()
+
+    monkeypatch.setattr(
+        payment_handler, "AsyncSessionLocal", lambda: _SessionContext(session)
+    )
+    monkeypatch.setattr(
+        "src.core.user_core.get_or_create_user_by_telegram",
+        AsyncMock(return_value=(SimpleNamespace(id=2002), False)),
+    )
+    monkeypatch.setattr(payment_handler, "safe_answer_query", safe_answer_mock)
+
+    await payment_handler.precheckout_callback(update, context)
+
+    safe_answer_mock.assert_awaited_once_with(query, ok=True)
+
+
+@pytest.mark.asyncio
+async def test_successful_payment_callback_updates_pending_order_for_order_v2(
+    monkeypatch,
+):
+    pending_order = SimpleNamespace(
+        id=321,
+        order_id="ORDER:12345:1:999",
+        business_order_id="bo_123",
+        telegram_id=2002,
+        plan_id=1,
+        original_price=100,
+        final_price=100,
+        status="PENDING",
+        tx_hash=None,
+        payment_channel="XTR",
+        paid_at=None,
+        commission_usdt=Decimal("0.0000"),
+    )
+    session = _FakeSession([pending_order, _build_user(), _build_plan()])
+    message = SimpleNamespace(
+        successful_payment=SimpleNamespace(
+            invoice_payload="ORDER_V2:bo_123",
+            total_amount=100,
+            telegram_payment_charge_id="charge-id-456",
+        ),
+        reply_text=AsyncMock(),
+    )
+    update = SimpleNamespace(effective_user=SimpleNamespace(id=12345), message=message)
+    context = SimpleNamespace()
+
+    monkeypatch.setattr(
+        payment_handler, "AsyncSessionLocal", lambda: _SessionContext(session)
+    )
+    monkeypatch.setattr(
+        payment_handler,
+        "is_membership_settlement_v2_enabled",
+        lambda: False,
+    )
+    monkeypatch.setattr(
+        "src.core.affiliate_core.calculate_and_set_commission_for_paid_order",
+        AsyncMock(return_value=None),
+    )
+    monkeypatch.setattr(
+        "src.core.affiliate_core.record_affiliate_commission_transaction",
+        AsyncMock(return_value=True),
+    )
+    monkeypatch.setattr(
+        "src.core.affiliate_core.invalidate_invitation_recharge_cache",
+        AsyncMock(),
+    )
+
+    await payment_handler.successful_payment_callback(update, context)
+
+    assert pending_order.status == "SUCCESS"
+    assert pending_order.tx_hash == "charge-id-456"
+    session.commit.assert_awaited_once()

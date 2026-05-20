@@ -38,6 +38,7 @@ const tonConnectUI = shallowRef<TonConnectUI | null>(null)
 const tonWalletAddress = ref<string | null>(null)
 const tonPollingTimer = ref<any>(null)
 const systemTonReceiver = ref<string>("UQC2q_W2d061mO_g3zB-hK12v0p2u44-nI5z9F82L1j88g7b")
+const currentTonOrderId = ref<string | null>(null)
 let tonBeginCell: ((typeof import('@ton/core'))['beginCell']) | null = null
 
 const handleTonWalletStatusChange = (wallet: { account: { address: string } } | null) => {
@@ -237,29 +238,25 @@ const handleTonPay = async () => {
     return
   }
 
-  const tgId = authStore.user?.telegram_id
-  if (!tgId) {
-    message.error('未绑定 Telegram 账号，无法使用 TON 支付')
-    return
-  }
-
   isPaying.value = true
   try {
-    // 构建 Payload: ORDER:{tg_id}:{plan_id}:{timestamp}
-    const timestamp = Date.now()
-    const payloadStr = `ORDER:${tgId}:${selectedPlan.value.id}:${timestamp}`
-    
-    // Convert string to hex for text payload
-    const textCellHex = await stringToCellHex(payloadStr)
-    
-    const amountNanotons = Math.floor(selectedPlan.value.price_ton * 1000000000).toString()
+    const res = await api.post('/payment/ton-orders', {
+      plan_id: selectedPlan.value.id
+    })
+    const tonOrder = res.data?.data
+    if (!tonOrder?.ton_comment || !tonOrder?.amount_nanotons) {
+      throw new Error('invalid TON order response')
+    }
+
+    const textCellHex = await stringToCellHex(tonOrder.ton_comment)
+    currentTonOrderId.value = tonOrder.order_id
     
     const transaction = {
       validUntil: Math.floor(Date.now() / 1000) + 600, // 10 minutes
       messages: [
         {
-          address: systemTonReceiver.value, // 动态获取的系统收款钱包
-          amount: amountNanotons,
+          address: tonOrder.ton_receiver_address || systemTonReceiver.value,
+          amount: tonOrder.amount_nanotons,
           payload: textCellHex
         }
       ]
@@ -270,7 +267,7 @@ const handleTonPay = async () => {
     if (result) {
       showPaymentModal.value = true
       orderStatus.value = 'PENDING'
-      startTonPolling()
+      startTonPolling(currentTonOrderId.value)
     }
   } catch (error) {
     console.error("TON transaction error:", error)
@@ -296,10 +293,13 @@ const stringToCellHex = async (text: string) => {
     .toString('base64')
 }
 
-const startTonPolling = () => {
+const startTonPolling = (orderId?: string | null) => {
   stopTonPolling()
-  const oldCredits = authStore.user?.credits || 0
-  const oldExpireAt = authStore.user?.identity_expire_at
+  const targetOrderId = orderId || currentTonOrderId.value
+  if (!targetOrderId) {
+    orderStatus.value = 'FAILED'
+    return
+  }
   let tonPollCount = 0
   
   const poll = async () => {
@@ -310,15 +310,15 @@ const startTonPolling = () => {
     tonPollCount++
     
     try {
-      await authStore.fetchUser()
-      const newCredits = authStore.user?.credits || 0
-      const newExpireAt = authStore.user?.identity_expire_at
-      
-      // 判定逻辑：灵石增加，或者过期时间增加
-      if (newCredits > oldCredits || (newExpireAt && newExpireAt !== oldExpireAt)) {
+      const res = await api.get(`/payment/orders/${targetOrderId}/status`)
+      const status = res.data?.data?.status
+      if (status === 'SUCCESS') {
         orderStatus.value = 'SUCCESS'
         handlePaymentSuccess()
         return // 结束轮询
+      } else if (status === 'FAILED') {
+        orderStatus.value = 'FAILED'
+        return
       }
     } catch (error) {
       console.error('TON Polling error', error)

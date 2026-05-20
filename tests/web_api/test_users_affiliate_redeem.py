@@ -17,7 +17,7 @@ from src.web_api.schemas.affiliate_redeem_schema import AffiliateCreditsRedeemRe
 @pytest.mark.asyncio
 async def test_redeem_current_user_affiliate_credits_success():
     payload = AffiliateCreditsRedeemRequest(
-        amount_usdt=Decimal("1.2345"),
+        amount_usdt=Decimal("3.0000"),
         idempotency_key="idem-1",
     )
     current_user = User(id=123, username="tester")
@@ -30,23 +30,23 @@ async def test_redeem_current_user_affiliate_credits_success():
             return_value=AffiliateCreditsRedeemResult(
                 redeem_id=1,
                 redeem_type="CREDITS",
-                amount_usdt=Decimal("1.2345"),
-                credits_granted=111,
+                amount_usdt=Decimal("3.0000"),
+                credits_granted=390,
                 status="SUCCESS",
                 idempotency_key="idem-1",
-                available_balance_usdt=Decimal("8.7655"),
-                current_credits=222,
-                exchange_rate_snapshot="1.0000 USDT = 90 credits",
-                rounding_mode="ROUND_HALF_UP",
+                available_balance_usdt=Decimal("7.0000"),
+                current_credits=390,
+                exchange_rate_snapshot="3.0000 USDT = 390 credits",
+                rounding_mode="FIXED_PACKAGE",
             )
         ),
     ):
         response = await redeem_current_user_affiliate_credits(payload, current_user, db)
 
     assert response.redeem_id == 1
-    assert response.credits_granted == 111
-    assert response.available_balance_usdt == 8.7655
-    assert response.current_credits == 222
+    assert response.credits_granted == 390
+    assert response.available_balance_usdt == 7.0
+    assert response.current_credits == 390
 
 
 @pytest.mark.asyncio
@@ -66,13 +66,13 @@ async def test_redeem_current_user_affiliate_credits_succeeds_even_when_post_com
                 redeem_id=9,
                 redeem_type="CREDITS",
                 amount_usdt=Decimal("1.0000"),
-                credits_granted=90,
+                credits_granted=130,
                 status="SUCCESS",
                 idempotency_key="idem-side-effects-fail",
                 available_balance_usdt=Decimal("0.5000"),
-                current_credits=90,
-                exchange_rate_snapshot="1.0000 USDT = 90 credits",
-                rounding_mode="ROUND_HALF_UP",
+                current_credits=130,
+                exchange_rate_snapshot="1.0000 USDT = 130 credits",
+                rounding_mode="FIXED_PACKAGE",
             )
         ),
     ) as mock_redeem:
@@ -82,7 +82,7 @@ async def test_redeem_current_user_affiliate_credits_succeeds_even_when_post_com
     mock_redeem.assert_awaited_once()
     assert response.redeem_id == 9
     assert response.status == "SUCCESS"
-    assert response.credits_granted == 90
+    assert response.credits_granted == 130
 
 
 @pytest.mark.asyncio
@@ -113,13 +113,13 @@ async def test_redeem_current_user_affiliate_credits_invalidates_cache_after_com
                     redeem_id=10,
                     redeem_type="CREDITS",
                     amount_usdt=Decimal("1.0000"),
-                    credits_granted=90,
+                    credits_granted=130,
                     status="SUCCESS",
                     idempotency_key="idem-after-commit",
                     available_balance_usdt=Decimal("0.5000"),
-                    current_credits=90,
-                    exchange_rate_snapshot="1.0000 USDT = 90 credits",
-                    rounding_mode="ROUND_HALF_UP",
+                    current_credits=130,
+                    exchange_rate_snapshot="1.0000 USDT = 130 credits",
+                    rounding_mode="FIXED_PACKAGE",
                 )
             ),
         ),
@@ -134,13 +134,12 @@ async def test_redeem_current_user_affiliate_credits_invalidates_cache_after_com
     assert events == ["commit", "invalidate"]
 
 
-def test_redeem_current_user_affiliate_credits_request_normalizes_amount_usdt():
-    payload = AffiliateCreditsRedeemRequest(
-        amount_usdt=Decimal("1.23456"),
-        idempotency_key="idem-normalized-request",
-    )
-
-    assert payload.amount_usdt == Decimal("1.2346")
+def test_redeem_current_user_affiliate_credits_request_rejects_non_package_amount():
+    with pytest.raises(ValueError, match="固定套餐"):
+        AffiliateCreditsRedeemRequest(
+            amount_usdt=Decimal("1.23456"),
+            idempotency_key="idem-invalid-package-request",
+        )
 
 
 @pytest.mark.asyncio
@@ -167,7 +166,7 @@ async def test_redeem_current_user_affiliate_credits_conflict():
 @pytest.mark.asyncio
 async def test_redeem_current_user_affiliate_credits_insufficient_balance():
     payload = AffiliateCreditsRedeemRequest(
-        amount_usdt=Decimal("2.0000"),
+        amount_usdt=Decimal("3.0000"),
         idempotency_key="idem-balance",
     )
     current_user = User(id=123, username="tester")
@@ -179,7 +178,7 @@ async def test_redeem_current_user_affiliate_credits_insufficient_balance():
         new=AsyncMock(
             side_effect=AffiliateRedeemInsufficientBalanceError(
                 available_balance_usdt=Decimal("1.5000"),
-                requested_amount_usdt=Decimal("2.0000"),
+                requested_amount_usdt=Decimal("3.0000"),
             )
         ),
     ):
@@ -190,5 +189,5 @@ async def test_redeem_current_user_affiliate_credits_insufficient_balance():
     assert exc_info.value.detail == {
         "message": "返佣可用余额不足",
         "available_balance_usdt": 1.5,
-        "requested_amount_usdt": 2.0,
+        "requested_amount_usdt": 3.0,
     }

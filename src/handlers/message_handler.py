@@ -63,6 +63,23 @@ def _get_reply_message(update: Update):
     )
 
 
+def _format_invitation_stats(invitation_recharge: dict) -> str:
+    total_commission = invitation_recharge.get(
+        "total_commission_usdt", invitation_recharge.get("commission_usdt", 0.0)
+    )
+    return (
+        "🤝 **邀请数据**：\n"
+        f"  - 邀请充值：已有 `{invitation_recharge['recharged_invitees_count']}` 位道友完成 `{invitation_recharge['total_recharge_count']}` 次充值\n"
+        f"  - 累积充值：`{invitation_recharge['total_ton']:.2f}` TON\n"
+        f"  - 累积充值：`¥ {invitation_recharge['total_rmb']:.2f}`\n"
+        f"  - 累积贡献：`{invitation_recharge['total_stars']}` Stars\n"
+        f"  - 历史累计返佣：*$ {float(total_commission):.2f} USDT*\n"
+        f"  - 已兑换返佣：*$ {invitation_recharge.get('spent_commission_usdt', 0.0):.2f} USDT*\n"
+        f"  - 当前可兑换余额：*$ {invitation_recharge.get('available_balance_usdt', 0.0):.2f} USDT*\n"
+        "  - 返佣说明：历史累计返佣用于展示成绩；当前可兑换余额才会随兑换减少"
+    )
+
+
 @with_unified_error_handler
 @with_db_logging_context
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -413,15 +430,6 @@ async def handle_personal_center(
         f"  - 邀请同道：`{dto.invitations}` 人\n"
         f"  - 累计签到：`{dto.checkins}` 天\n"
         f"  - 施法次数：`{dto.generations}` 次\n\n"
-        f"🤝 **邀请数据**：\n"
-        f"  - 邀请充值：已有 `{dto.invitation_recharge['recharged_invitees_count']}` 位道友完成 `{dto.invitation_recharge['total_recharge_count']}` 次充值\n"
-        f"  - 累积充值：`{dto.invitation_recharge['total_ton']:.2f}` TON\n"
-        f"  - 累积充值：`¥ {dto.invitation_recharge['total_rmb']:.2f}`\n"
-        f"  - 累积贡献：`{dto.invitation_recharge['total_stars']}` Stars\n"
-        f"  - 历史累计返佣：*$ {dto.invitation_recharge.get('total_commission_usdt', dto.invitation_recharge.get('commission_usdt', 0.0)):.2f} USDT*\n"
-        f"  - 已兑换返佣：*$ {dto.invitation_recharge.get('spent_commission_usdt', 0.0):.2f} USDT*\n"
-        f"  - 当前可兑换余额：*$ {dto.invitation_recharge.get('available_balance_usdt', 0.0):.2f} USDT*\n"
-        f"  - 返佣说明：历史累计返佣用于展示成绩；当前可兑换余额才会随兑换减少\n\n"
         f"💡 *提示：1点加速优先级约等于为您节约1分钟的排队时间。*\n\n"
         f"{breakthrough_msg}"
     )
@@ -543,27 +551,43 @@ async def handle_share(
     message = _get_reply_message(update)
     if not message:
         return
+    if not update.effective_user:
+        return
     user_id = update.effective_user.id
     bot_username = context.bot.username or (await context.bot.get_me()).username
-    from src.core.user_core import get_or_create_user_by_telegram
-
-    internal_user, _ = await get_or_create_user_by_telegram(user_id)
-    internal_user_id = internal_user.id
+    from src.core.user_facade import get_user_dashboard_info
 
     invite_link = f"https://t.me/{bot_username}?start={user_id}"
-    count = await permission_service.get_referral_count(internal_user_id)
-    user_group = await permission_service.get_user_group(internal_user_id)
+    dto = await get_user_dashboard_info(user_id, update.effective_user.first_name)
     msg = (
         "🤝 **分享赚灵石**\n\n"
-        f"👤 **当前等级**：`{user_group}`\n"
+        f"👤 **当前等级**：`{dto.current_group}`\n"
         f"🔗 **您的专属链接**：\n`{invite_link}`\n\n"
         "📈 **邀请统计**：\n"
-        f"👥 已邀请人数：`{count}` 人\n"
+        f"👥 已邀请人数：`{dto.invitations}` 人\n\n"
+        f"{_format_invitation_stats(dto.invitation_recharge)}\n\n"
         "💡 **规则**：\n"
         "每成功邀请一位**新道友**使用机器人，您将自动获得 **5 灵石**奖励！\n"
         "**新道友**加入宗门，您将自动获得 **10 灵石**奖励！\n"
     )
-    await robust_reply_text(message, msg, parse_mode="Markdown")
+    reply_markup = InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton(
+                    "返佣兑灵石", callback_data="affiliate_redeem_credits_menu"
+                ),
+                InlineKeyboardButton(
+                    "返佣兑身份", callback_data="affiliate_redeem_membership_menu"
+                ),
+            ]
+        ]
+    )
+    await robust_reply_text(
+        message,
+        msg,
+        parse_mode="Markdown",
+        reply_markup=reply_markup,
+    )
 
 
 TASK_TYPE_DISPLAY_NAMES = {

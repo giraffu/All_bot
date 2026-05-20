@@ -47,6 +47,21 @@ async def query_invitation_recharge_stats(
                 case(
                     (
                         and_(
+                            AffiliateTransaction.direction == "IN",
+                            AffiliateTransaction.status == "SUCCESS",
+                        ),
+                        AffiliateTransaction.amount_usdt,
+                    ),
+                    else_=0,
+                )
+            ),
+            0,
+        ),
+        func.coalesce(
+            func.sum(
+                case(
+                    (
+                        and_(
                             AffiliateTransaction.direction == "OUT",
                             AffiliateTransaction.status == "SUCCESS",
                         ),
@@ -80,7 +95,11 @@ async def query_invitation_recharge_stats(
             0,
         ),
     ).where(AffiliateTransaction.user_id == inviter_id)
-    spent_commission_usdt, available_balance_usdt = (
+    (
+        total_commission_ledger_usdt,
+        spent_commission_usdt,
+        available_balance_usdt,
+    ) = (
         await session.execute(ledger_stmt)
     ).all()[0]
 
@@ -88,9 +107,7 @@ async def query_invitation_recharge_stats(
     total_ton = ZERO_DECIMAL
     total_rmb = ZERO_DECIMAL
     total_stars = 0
-    total_commission_usdt = ZERO_DECIMAL
-
-    for invitee_id, final_price, payment_channel, commission_usdt in rows:
+    for invitee_id, final_price, payment_channel, _commission_usdt in rows:
         recharged_invitees.add(invitee_id)
 
         if payment_channel == "TON":
@@ -100,9 +117,7 @@ async def query_invitation_recharge_stats(
         elif payment_channel == "XTR":
             total_stars += int(final_price)
 
-        total_commission_usdt += Decimal(str(commission_usdt or 0))
-
-    total_commission = _round_money(total_commission_usdt)
+    total_commission = _round_money(Decimal(str(total_commission_ledger_usdt or 0)))
     return {
         "recharged_invitees_count": len(recharged_invitees),
         "total_recharge_count": len(rows),

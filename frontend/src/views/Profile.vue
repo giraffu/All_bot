@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, reactive } from 'vue'
+import { ref, onMounted, reactive, computed } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import api from '@/api'
 import { message } from 'ant-design-vue'
@@ -152,6 +152,170 @@ const formatDate = (dateString?: string | null) => {
 }
 
 const checkinLoading = ref(false)
+const redeemCreditsLoading = ref(false)
+const redeemMembershipLoading = ref(false)
+const showRedeemCreditsModal = ref(false)
+const showRedeemMembershipModal = ref(false)
+const redeemCreditsForm = reactive({
+  amountUsdt: '1.0000'
+})
+const redeemCreditsPackages = [
+  {
+    amountUsdt: '1.0000',
+    credits: 130,
+    description: '1 USDT = 130 灵石'
+  },
+  {
+    amountUsdt: '3.0000',
+    credits: 390,
+    description: '3 USDT = 390 灵石'
+  },
+  {
+    amountUsdt: '6.0000',
+    credits: 780,
+    description: '6 USDT = 780 灵石'
+  },
+  {
+    amountUsdt: '10.0000',
+    credits: 1800,
+    description: '10 USDT = 1800 灵石'
+  },
+  {
+    amountUsdt: '15.0000',
+    credits: 2700,
+    description: '15 USDT = 2700 灵石'
+  },
+  {
+    amountUsdt: '20.0000',
+    credits: 4000,
+    description: '20 USDT = 4000 灵石'
+  }
+] as const
+const redeemMembershipForm = reactive({
+  optionKey: 'inner_30d'
+})
+const membershipRedeemOptions = [
+  {
+    key: 'inner_30d',
+    label: '内门弟子 30 天',
+    amountUsdt: '4.4118',
+    bonusCredits: 400,
+    description: '兑换后附加 400 灵石'
+  },
+  {
+    key: 'core_30d',
+    label: '核心弟子 30 天',
+    amountUsdt: '10.2941',
+    bonusCredits: 1200,
+    description: '兑换后附加 1200 灵石'
+  },
+  {
+    key: 'true_30d',
+    label: '真传弟子 30 天',
+    amountUsdt: '17.6471',
+    bonusCredits: 3000,
+    description: '兑换后附加 3000 灵石'
+  }
+] as const
+const availableCommissionUsdt = computed(() => {
+  const raw =
+    authStore.user?.invitation_recharge?.available_balance_usdt ??
+    authStore.user?.invitation_recharge?.commission_usdt
+  const parsed = Number(raw ?? 0)
+  return Number.isFinite(parsed) ? parsed.toFixed(4) : '0.0000'
+})
+
+const totalCommissionUsdt = computed(() => {
+  const raw =
+    authStore.user?.invitation_recharge?.total_commission_usdt ??
+    authStore.user?.invitation_recharge?.commission_usdt
+  const parsed = Number(raw ?? 0)
+  return Number.isFinite(parsed) ? parsed.toFixed(2) : '0.00'
+})
+
+const spentCommissionUsdt = computed(() => {
+  const raw = authStore.user?.invitation_recharge?.spent_commission_usdt
+  const parsed = Number(raw ?? 0)
+  return Number.isFinite(parsed) ? parsed.toFixed(2) : '0.00'
+})
+
+const buildIdempotencyKey = (prefix: string) => {
+  const randomPart =
+    typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+      ? crypto.randomUUID()
+      : `${Date.now()}_${Math.random().toString(16).slice(2)}`
+  return `${prefix}_${randomPart}`
+}
+
+const openRedeemCreditsModal = () => {
+  showRedeemCreditsModal.value = true
+}
+
+const openRedeemMembershipModal = () => {
+  showRedeemMembershipModal.value = true
+}
+
+const handleRedeemCredits = async () => {
+  redeemCreditsLoading.value = true
+  try {
+    const selectedPackage = redeemCreditsPackages.find(
+      item => item.amountUsdt === redeemCreditsForm.amountUsdt
+    )
+    await api.post('/users/me/affiliate/redeem-credits', {
+      amount_usdt: redeemCreditsForm.amountUsdt,
+      idempotency_key: buildIdempotencyKey('credits_redeem')
+    })
+    await authStore.fetchUser()
+    message.success(
+      selectedPackage
+        ? `返佣兑换灵石成功：${selectedPackage.amountUsdt} USDT -> ${selectedPackage.credits} 灵石`
+        : '返佣兑换灵石成功，灵石与返佣余额已更新'
+    )
+    showRedeemCreditsModal.value = false
+  } catch (error: any) {
+    console.error('Redeem credits error:', error)
+    const detail = error.response?.data?.detail
+    if (typeof detail === 'string') {
+      message.error(detail)
+    } else if (detail?.message) {
+      message.error(detail.message)
+    } else {
+      message.error('返佣兑换灵石失败，请稍后重试')
+    }
+  } finally {
+    redeemCreditsLoading.value = false
+  }
+}
+
+const handleRedeemMembership = async () => {
+  redeemMembershipLoading.value = true
+  try {
+    const selectedOption = membershipRedeemOptions.find(
+      option => option.key === redeemMembershipForm.optionKey
+    )
+    await api.post('/users/me/affiliate/redeem-membership', {
+      option_key: redeemMembershipForm.optionKey,
+      idempotency_key: buildIdempotencyKey('membership_redeem')
+    })
+    await authStore.fetchUser()
+    message.success(
+      `返佣兑换身份成功${selectedOption ? `：${selectedOption.label}，附加 ${selectedOption.bonusCredits} 灵石` : ''}`
+    )
+    showRedeemMembershipModal.value = false
+  } catch (error: any) {
+    console.error('Redeem membership error:', error)
+    const detail = error.response?.data?.detail
+    if (typeof detail === 'string') {
+      message.error(detail)
+    } else if (detail?.message) {
+      message.error(detail.message)
+    } else {
+      message.error('返佣兑换身份失败，请稍后重试')
+    }
+  } finally {
+    redeemMembershipLoading.value = false
+  }
+}
 
 const handleCheckin = async () => {
   checkinLoading.value = true
@@ -257,6 +421,12 @@ onMounted(async () => {
         </a-button>
         <a-button type="default" @click="$router.push('/my-favorites')" class="bg-slate-500 text-amber-300 border-amber-500/30 hover:text-amber-200 hover:border-amber-400 shadow-md">
           <Star :size="16" class="mr-1 inline" /> {{ $t('menu.my_favorites') }}
+        </a-button>
+        <a-button type="default" @click="openRedeemCreditsModal" class="bg-slate-500 text-emerald-300 border-emerald-500/30 hover:text-emerald-200 hover:border-emerald-400 shadow-md">
+          <Wallet :size="16" class="mr-1 inline" /> 返佣兑灵石
+        </a-button>
+        <a-button type="default" @click="openRedeemMembershipModal" class="bg-slate-500 text-violet-300 border-violet-500/30 hover:text-violet-200 hover:border-violet-400 shadow-md">
+          <Award :size="16" class="mr-1 inline" /> 返佣兑身份
         </a-button>
         <a-button type="default" @click="handleBindPasswordModalOpen" class="bg-slate-500 text-indigo-300 border-indigo-500/30 hover:text-indigo-200 hover:border-indigo-400 shadow-md">
           <Lock :size="16" class="mr-1 inline" /> {{ authStore.user?.username ? $t('profile.change_password') : $t('profile.set_password') }}
@@ -437,16 +607,178 @@ onMounted(async () => {
               <span class="font-bold text-xl">$</span>
             </div>
             <div>
-              <p class="text-rose-300 font-medium text-xs md:text-sm mb-1 drop-shadow-sm">{{ $t('profile.estimated_revenue') }}</p>
-              <h3 class="text-lg md:text-xl font-bold text-rose-100 drop-shadow-md">$ {{ authStore.user?.invitation_recharge?.commission_usdt || '0.00' }} USDT</h3>
+              <p class="text-rose-300 font-medium text-xs md:text-sm mb-1 drop-shadow-sm">历史累计返佣</p>
+              <h3 class="text-lg md:text-xl font-bold text-rose-100 drop-shadow-md">$ {{ totalCommissionUsdt }} USDT</h3>
+            </div>
+          </div>
+        </a-card>
+
+        <a-card hoverable class="col-span-2 sm:col-span-1 lg:col-span-1 rounded-xl border border-slate-400/50 bg-slate-500/40 backdrop-blur-md shadow-[0_4px_16px_rgba(0,0,0,0.2)] hover:border-amber-500/30 hover:shadow-[0_8px_24px_rgba(245,158,11,0.1)] transition-all group">
+          <div class="flex items-center flex-col md:flex-row text-center md:text-left">
+            <div class="w-10 h-10 md:w-12 md:h-12 bg-amber-500/20 border border-amber-500/50 text-amber-400 rounded-full flex items-center justify-center mb-2 md:mb-0 md:mr-4 group-hover:scale-110 transition-transform group-hover:shadow-[0_0_12px_rgba(245,158,11,0.4)]">
+              <Wallet :size="isMobile ? 20 : 24" />
+            </div>
+            <div>
+              <p class="text-slate-400 text-xs md:text-sm mb-1">已兑换返佣</p>
+              <h3 class="text-lg md:text-xl font-bold text-slate-100 drop-shadow-sm">$ {{ spentCommissionUsdt }} USDT</h3>
+            </div>
+          </div>
+        </a-card>
+
+        <a-card hoverable class="col-span-2 sm:col-span-1 lg:col-span-1 rounded-xl border border-slate-400/50 bg-slate-500/40 backdrop-blur-md shadow-[0_4px_16px_rgba(0,0,0,0.2)] hover:border-emerald-500/30 hover:shadow-[0_8px_24px_rgba(16,185,129,0.1)] transition-all group">
+          <div class="flex items-center flex-col md:flex-row text-center md:text-left">
+            <div class="w-10 h-10 md:w-12 md:h-12 bg-emerald-500/20 border border-emerald-500/50 text-emerald-400 rounded-full flex items-center justify-center mb-2 md:mb-0 md:mr-4 group-hover:scale-110 transition-transform group-hover:shadow-[0_0_12px_rgba(16,185,129,0.4)]">
+              <Wallet :size="isMobile ? 20 : 24" />
+            </div>
+            <div>
+              <p class="text-slate-400 text-xs md:text-sm mb-1">当前可兑换返佣</p>
+              <h3 class="text-lg md:text-xl font-bold text-slate-100 drop-shadow-sm">$ {{ availableCommissionUsdt }} USDT</h3>
             </div>
           </div>
         </a-card>
       </div>
     </div>
-    
 
-    
+    <a-modal
+      v-if="!isMobile"
+      v-model:open="showRedeemCreditsModal"
+      title="返佣兑换灵石"
+      :confirmLoading="redeemCreditsLoading"
+      @ok="handleRedeemCredits"
+      okText="确认兑换"
+      cancelText="取消"
+      :okButtonProps="{ class: 'bg-emerald-600 hover:bg-emerald-500 border-none shadow-lg shadow-emerald-600/30' }"
+      class="dark-modal"
+    >
+      <div class="py-4 space-y-4">
+        <p class="text-slate-300 text-sm">当前可兑换返佣：<span class="font-bold text-emerald-300">{{ availableCommissionUsdt }} USDT</span></p>
+        <p class="text-slate-400 text-sm">仅支持固定套餐：1 / 3 / 6 / 10 / 15 / 20 USDT。</p>
+        <div>
+          <label class="block text-slate-300 mb-2 text-sm">选择兑换套餐</label>
+          <a-radio-group v-model:value="redeemCreditsForm.amountUsdt" class="w-full space-y-2">
+            <div
+              v-for="item in redeemCreditsPackages"
+              :key="item.amountUsdt"
+              class="rounded-lg border border-slate-600 bg-slate-800/50 px-3 py-3"
+            >
+              <a-radio :value="item.amountUsdt">
+                <span class="text-slate-100 font-medium">{{ item.amountUsdt }} USDT</span>
+                <span class="ml-2 text-emerald-300">{{ item.credits }} 灵石</span>
+              </a-radio>
+              <p class="mt-2 text-xs text-slate-400">{{ item.description }}</p>
+            </div>
+          </a-radio-group>
+        </div>
+      </div>
+    </a-modal>
+
+    <a-modal
+      v-if="!isMobile"
+      v-model:open="showRedeemMembershipModal"
+      title="返佣兑换身份"
+      :confirmLoading="redeemMembershipLoading"
+      @ok="handleRedeemMembership"
+      okText="确认兑换"
+      cancelText="取消"
+      :okButtonProps="{ class: 'bg-violet-600 hover:bg-violet-500 border-none shadow-lg shadow-violet-600/30' }"
+      class="dark-modal"
+    >
+      <div class="py-4 space-y-4">
+        <p class="text-slate-300 text-sm">当前可兑换返佣：<span class="font-bold text-violet-300">{{ availableCommissionUsdt }} USDT</span></p>
+        <div>
+          <label class="block text-slate-300 mb-2 text-sm">选择兑换档位</label>
+          <a-radio-group v-model:value="redeemMembershipForm.optionKey" class="w-full space-y-2">
+            <div
+              v-for="option in membershipRedeemOptions"
+              :key="option.key"
+              class="rounded-lg border border-slate-600 bg-slate-800/50 px-3 py-3"
+            >
+              <a-radio :value="option.key">
+                <span class="text-slate-100 font-medium">{{ option.label }}</span>
+                <span class="ml-2 text-cyan-300">{{ option.amountUsdt }} USDT</span>
+              </a-radio>
+              <p class="mt-2 text-xs text-slate-400">{{ option.description }}</p>
+            </div>
+          </a-radio-group>
+        </div>
+      </div>
+    </a-modal>
+
+    <a-drawer
+      v-if="isMobile"
+      v-model:open="showRedeemCreditsModal"
+      placement="bottom"
+      :height="'auto'"
+      title="返佣兑换灵石"
+      class="dark-drawer"
+      :bodyStyle="{ background: '#1e293b' }"
+      :headerStyle="{ background: '#1e293b', borderBottom: '1px solid #334155', color: '#f1f5f9' }"
+    >
+      <div class="py-4 space-y-4 px-2 pb-10">
+        <p class="text-slate-300 text-sm">当前可兑换返佣：<span class="font-bold text-emerald-300">{{ availableCommissionUsdt }} USDT</span></p>
+        <p class="text-slate-400 text-sm">仅支持固定套餐：1 / 3 / 6 / 10 / 15 / 20 USDT。</p>
+        <a-radio-group v-model:value="redeemCreditsForm.amountUsdt" class="w-full space-y-2">
+          <div
+            v-for="item in redeemCreditsPackages"
+            :key="item.amountUsdt"
+            class="rounded-lg border border-slate-600 bg-slate-800/50 px-3 py-3"
+          >
+            <a-radio :value="item.amountUsdt">
+              <span class="text-slate-100 font-medium">{{ item.amountUsdt }} USDT</span>
+              <span class="ml-2 text-emerald-300">{{ item.credits }} 灵石</span>
+            </a-radio>
+            <p class="mt-2 text-xs text-slate-400">{{ item.description }}</p>
+          </div>
+        </a-radio-group>
+        <a-button
+          type="primary"
+          block
+          :loading="redeemCreditsLoading"
+          @click="handleRedeemCredits"
+          class="bg-emerald-600 hover:bg-emerald-500 border-none"
+        >
+          确认兑换
+        </a-button>
+      </div>
+    </a-drawer>
+
+    <a-drawer
+      v-if="isMobile"
+      v-model:open="showRedeemMembershipModal"
+      placement="bottom"
+      :height="'auto'"
+      title="返佣兑换身份"
+      class="dark-drawer"
+      :bodyStyle="{ background: '#1e293b' }"
+      :headerStyle="{ background: '#1e293b', borderBottom: '1px solid #334155', color: '#f1f5f9' }"
+    >
+      <div class="py-4 space-y-4 px-2 pb-10">
+        <p class="text-slate-300 text-sm">当前可兑换返佣：<span class="font-bold text-violet-300">{{ availableCommissionUsdt }} USDT</span></p>
+        <a-radio-group v-model:value="redeemMembershipForm.optionKey" class="w-full space-y-2">
+          <div
+            v-for="option in membershipRedeemOptions"
+            :key="option.key"
+            class="rounded-lg border border-slate-600 bg-slate-800/50 px-3 py-3"
+          >
+            <a-radio :value="option.key">
+              <span class="text-slate-100 font-medium">{{ option.label }}</span>
+              <span class="ml-2 text-cyan-300">{{ option.amountUsdt }} USDT</span>
+            </a-radio>
+            <p class="mt-2 text-xs text-slate-400">{{ option.description }}</p>
+          </div>
+        </a-radio-group>
+        <a-button
+          type="primary"
+          block
+          :loading="redeemMembershipLoading"
+          @click="handleRedeemMembership"
+          class="bg-violet-600 hover:bg-violet-500 border-none"
+        >
+          确认兑换
+        </a-button>
+      </div>
+    </a-drawer>
+
     <!-- 绑定/修改密码弹窗 (桌面端) -->
     <a-modal
       v-if="!isMobile"

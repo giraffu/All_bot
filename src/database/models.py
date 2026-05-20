@@ -190,10 +190,13 @@ class Order(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     order_id = Column(String(64), index=True)  # Unique payload for TON transaction
+    business_order_id = Column(String(64), nullable=True, unique=True, index=True)
     telegram_id = Column(BigInteger, ForeignKey("users.id"), nullable=False, index=True)
     plan_id = Column(Integer, ForeignKey("membership_plans.id"), nullable=False)
     original_price = Column(DECIMAL(10, 2), nullable=False)
     final_price = Column(DECIMAL(10, 2), nullable=False)
+    settlement_schema_version = Column(String(32), nullable=True)
+    settlement_snapshot = Column(JSON, nullable=True)
     status = Column(String(20), default="PENDING")  # PENDING, SUCCESS, FAILED
     tx_hash = Column(String(100), nullable=True, unique=True)
     commission_usdt = Column(
@@ -261,8 +264,13 @@ class AffiliateRedeem(Base):
     requested_amount_usdt = Column(DECIMAL(10, 4), nullable=False)
     amount_usdt = Column(DECIMAL(10, 4), nullable=False)
     credits_granted = Column(Integer, nullable=False)
-    exchange_rate_snapshot = Column(String(64), nullable=False)
-    rounding_mode = Column(String(32), nullable=False)
+    target_plan_id = Column(Integer, nullable=True)
+    target_identity = Column(String(50), nullable=True)
+    duration_days = Column(Integer, nullable=True)
+    grant_reward_credits = Column(Boolean, nullable=True)
+    settlement_reason = Column(String(50), nullable=True)
+    exchange_rate_snapshot = Column(String(64), nullable=True)
+    rounding_mode = Column(String(32), nullable=True)
     status = Column(String(20), nullable=False, default="SUCCESS")
     idempotency_key = Column(String(128), nullable=False)
     details = Column(JSON, nullable=True)

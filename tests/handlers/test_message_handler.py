@@ -132,21 +132,15 @@ async def test_handle_prompt_route_uses_edited_message_reply_target(
 
 
 @pytest.mark.asyncio
-async def test_handle_personal_center_displays_affiliate_balance_semantics(monkeypatch):
+async def test_handle_share_displays_affiliate_balance_semantics(monkeypatch):
     reply_mock = AsyncMock()
 
     monkeypatch.setattr(
         message_handler, "get_user_channel_status", AsyncMock(return_value=False)
     )
     monkeypatch.setattr(
-        message_handler.permission_service,
-        "sync_channel_status",
-        AsyncMock(return_value=None),
-    )
-    monkeypatch.setattr(
-        message_handler.permission_service,
-        "ensure_user",
-        AsyncMock(return_value=None),
+        "src.i18n.keyboards.get_main_menu_keyboard",
+        lambda _lang: "fake-main-keyboard",
     )
     monkeypatch.setattr(message_handler, "robust_reply_text", reply_mock)
 
@@ -180,8 +174,9 @@ async def test_handle_personal_center_displays_affiliate_balance_semantics(monke
 
     update = _build_profile_update()
     context = _build_context()
+    context.bot.username = "aivision666_bot"
 
-    await message_handler.handle_personal_center(update, context, text="个人中心")
+    await message_handler.handle_share(update, context, text="分享赚灵石")
 
     reply_mock.assert_awaited_once()
     sent_text = reply_mock.await_args.args[1]

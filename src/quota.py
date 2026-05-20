@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 
 from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
@@ -25,6 +25,9 @@ class CreditChangeResult:
     old_balance: int
     new_balance: int
     username: str | None
+
+
+AuditMode = Literal["auto", "skip"]
 
 
 class QuotaManager:
@@ -134,7 +137,11 @@ class QuotaManager:
         username: str = None,
         extra_info: Optional[dict[str, Any]] = None,
         session: AsyncSession | None = None,
+        audit_mode: AuditMode = "auto",
     ) -> None:
+        if audit_mode == "skip":
+            return
+
         credit_change = result.new_balance - result.old_balance
         if credit_change == 0:
             return
@@ -161,6 +168,7 @@ class QuotaManager:
         task_type: str = "generation",
         session: AsyncSession | None = None,
         extra_info: Optional[dict[str, Any]] = None,
+        audit_mode: AuditMode = "auto",
     ) -> CreditChangeResult:
         """
         Atomically apply a credit delta.
@@ -177,6 +185,7 @@ class QuotaManager:
                 result=result,
                 extra_info=extra_info,
                 session=session,
+                audit_mode=audit_mode,
             )
             return result
 
@@ -192,6 +201,7 @@ class QuotaManager:
                     result=result,
                     extra_info=extra_info,
                     session=managed_session,
+                    audit_mode=audit_mode,
                 )
                 await managed_session.commit()
             except Exception:
@@ -207,6 +217,7 @@ class QuotaManager:
         task_type: str = "generation",
         session: AsyncSession | None = None,
         extra_info: Optional[dict[str, Any]] = None,
+        audit_mode: AuditMode = "auto",
     ) -> CreditChangeResult:
         """Deduct credits from user with a locked, atomic balance check."""
         if cost < 0:
@@ -219,6 +230,7 @@ class QuotaManager:
             task_type=task_type,
             session=session,
             extra_info=extra_info,
+            audit_mode=audit_mode,
         )
 
     async def add_credits(
@@ -229,6 +241,7 @@ class QuotaManager:
         task_type: str = "credit_adjustment",
         session: AsyncSession | None = None,
         extra_info: Optional[dict[str, Any]] = None,
+        audit_mode: AuditMode = "auto",
     ) -> CreditChangeResult:
         """Increase credits using the same transaction-safe primitive."""
         if credits < 0:
@@ -241,6 +254,7 @@ class QuotaManager:
             task_type=task_type,
             session=session,
             extra_info=extra_info,
+            audit_mode=audit_mode,
         )
 
     async def checkin(

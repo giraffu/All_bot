@@ -10,6 +10,9 @@ export interface InvitationRechargeStats {
   total_rmb: number
   total_stars: number
   commission_usdt: number
+  total_commission_usdt?: number
+  spent_commission_usdt?: number
+  available_balance_usdt?: number
 }
 
 export interface BreakthroughCondition {

@@ -1,3 +1,4 @@
+from datetime import datetime, timedelta
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -73,3 +74,84 @@ async def test_refund_credits_uses_explicit_add_credits():
         mock_add.assert_awaited_once_with(
             123, 5, username="tester", task_type="refund_case"
         )
+
+
+def test_calculate_membership_settlement_treats_unknown_identity_as_default():
+    now = datetime(2026, 5, 20, 12, 0, 0)
+
+    result = billing_core.calculate_membership_settlement(
+        current_identity=None,
+        current_expire_at=None,
+        target_identity="内门弟子",
+        duration_days=30,
+        reward_credits=0,
+        grant_reward_credits=False,
+        now=now,
+    )
+
+    assert result.final_identity == "内门弟子"
+    assert result.final_expire_at == now + timedelta(days=30)
+    assert result.settlement_reason == "NEW_PURCHASE"
+
+
+def test_calculate_membership_settlement_handles_upgrade_conversion():
+    now = datetime(2026, 5, 20, 12, 0, 0)
+    expire_at = now + timedelta(days=10)
+
+    result = billing_core.calculate_membership_settlement(
+        current_identity="内门弟子",
+        current_expire_at=expire_at,
+        target_identity="核心弟子",
+        duration_days=30,
+        reward_credits=0,
+        grant_reward_credits=False,
+        now=now,
+    )
+
+    assert result.final_identity == "核心弟子"
+    assert result.converted_days == 4
+    assert result.final_expire_at == now + timedelta(days=34)
+    assert result.settlement_reason == "UPGRADE_CONVERSION"
+    assert result.is_upgrade is True
+
+
+def test_calculate_membership_settlement_handles_downgrade_extension():
+    now = datetime(2026, 5, 20, 12, 0, 0)
+    expire_at = now + timedelta(days=10)
+
+    result = billing_core.calculate_membership_settlement(
+        current_identity="真传弟子",
+        current_expire_at=expire_at,
+        target_identity="内门弟子",
+        duration_days=30,
+        reward_credits=0,
+        grant_reward_credits=False,
+        now=now,
+    )
+
+    assert result.final_identity == "真传弟子"
+    assert result.converted_days == 6
+    assert result.final_expire_at == expire_at + timedelta(days=6)
+    assert result.settlement_reason == "DOWNGRADE_EXTENSION"
+    assert result.kept_current_identity is True
+
+
+def test_calculate_membership_settlement_supports_pure_credit_plan():
+    now = datetime(2026, 5, 20, 12, 0, 0)
+    expire_at = now + timedelta(days=10)
+
+    result = billing_core.calculate_membership_settlement(
+        current_identity="核心弟子",
+        current_expire_at=expire_at,
+        target_identity="核心弟子",
+        duration_days=0,
+        reward_credits=1200,
+        grant_reward_credits=True,
+        now=now,
+    )
+
+    assert result.final_identity == "核心弟子"
+    assert result.final_expire_at == expire_at
+    assert result.credits_to_grant == 1200
+    assert result.settlement_reason == "PURE_CREDIT_PLAN"
+    assert result.is_pure_credit_plan is True

@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 
 from config import DATABASE_URL, DB_POOL_SIZE, DB_MAX_OVERFLOW
+from src.services.membership_plan_catalog import CANONICAL_MEMBERSHIP_PLAN_ROWS
 
 from .logger import setup_db_logging
 
@@ -25,6 +26,33 @@ engine = create_async_engine(
 setup_db_logging(engine)
 
 AsyncSessionLocal = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+
+
+def _build_membership_plan_sync_sql() -> str:
+    values_sql = ",\n                    ".join(
+        (
+            f"({plan['id']}, '{plan['name']}', '{plan['identity_name']}', "
+            f"{plan['price_ton']}, {plan['price_stars']}, {plan['price_rmb']}, "
+            f"{plan['reward_credits']}, {plan['duration_days']}, "
+            f"{'TRUE' if plan['is_active'] else 'FALSE'})"
+        )
+        for plan in CANONICAL_MEMBERSHIP_PLAN_ROWS
+    )
+    return f"""
+                    INSERT INTO membership_plans
+                        (id, name, identity_name, price_ton, price_stars, price_rmb, reward_credits, duration_days, is_active)
+                    VALUES
+                    {values_sql}
+                    ON CONFLICT (id) DO UPDATE SET
+                        name = EXCLUDED.name,
+                        identity_name = EXCLUDED.identity_name,
+                        price_ton = EXCLUDED.price_ton,
+                        price_stars = EXCLUDED.price_stars,
+                        price_rmb = EXCLUDED.price_rmb,
+                        reward_credits = EXCLUDED.reward_credits,
+                        duration_days = EXCLUDED.duration_days,
+                        is_active = EXCLUDED.is_active
+                """
 
 
 async def stamp_alembic_head():
@@ -82,24 +110,23 @@ async def init_db():
     logger.info("数据库结构迁移跳过（交由手动Alembic执行）")
 
     async with engine.begin() as conn:
-        # Initialize default membership plans and discount rules if tables are empty
+        # Ensure canonical membership plans exist in every environment.
         try:
-            res = await conn.execute(text("SELECT COUNT(*) FROM membership_plans"))
-            if res.scalar() == 0:
-                logger.info("Initializing default membership plans")
-                await conn.execute(
-                    text("""
-                    INSERT INTO membership_plans (name, identity_name, price_ton, price_stars, reward_credits, duration_days) VALUES
-                    ('基础月卡', '内门弟子', 1.99, 200, 400, 30),
-                    ('高级月卡', '核心弟子', 4.99, 500, 1200, 30),
-                    ('至尊月卡', '真传弟子', 9.90, 1000, 3000, 30),
-                    ('200 Star 直购', '纯灵石', 1.99, 200, 600, 0),
-                    ('500 Star 直购', '纯灵石', 4.99, 500, 1800, 0),
-                    ('1000 Star 直购', '纯灵石', 9.90, 1000, 4000, 0)
-                """)
+            logger.info("Synchronizing canonical membership plans")
+            await conn.execute(text(_build_membership_plan_sync_sql()))
+            await conn.execute(
+                text(
+                    """
+                    SELECT setval(
+                        pg_get_serial_sequence('membership_plans', 'id'),
+                        GREATEST((SELECT COALESCE(MAX(id), 1) FROM membership_plans), 1),
+                        true
+                    )
+                    """
                 )
+            )
         except Exception as e:
-            logger.warning(f"Failed to initialize default plans: {e}")
+            logger.warning(f"Failed to synchronize canonical membership plans: {e}")
 
 
 async def get_db():

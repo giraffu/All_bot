@@ -1,38 +1,38 @@
 import time
 import urllib.parse
+from datetime import datetime
 
-from sqlalchemy import select
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update, WebAppInfo
 from telegram.ext import ContextTypes
 
 from config import WEBAPP_URL
 from src.core.user_core import get_or_create_user_by_telegram
 from src.database.core import AsyncSessionLocal
-from src.database.models import MembershipPlan, Order
+from src.database.models import Order
 from src.handlers.callback_router import register_callback
+from src.services.membership_plan_catalog import (
+    build_visible_membership_plan_lookup_stmt,
+    build_visible_membership_plans_stmt,
+)
+from src.services.order_v2_service import (
+    build_legacy_order_payload,
+    build_order_settlement_snapshot,
+    build_order_v2_payload,
+    generate_business_order_id,
+    get_order_public_id,
+    is_order_v2_enabled,
+)
 from src.services.rmb_payment_service import RMBPaymentService
 from src.utils import safe_answer_query
 import contextlib
 
 
 async def _get_active_plans(session, is_rmb: bool, is_subscription: bool):
-    stmt = select(MembershipPlan).where(MembershipPlan.is_active == True)
-
-    if is_subscription:
-        stmt = stmt.where(MembershipPlan.duration_days > 0)
-    else:
-        stmt = stmt.where(MembershipPlan.duration_days == 0)
-
-    if is_rmb:
-        stmt = stmt.where(MembershipPlan.price_rmb > 0).order_by(
-            MembershipPlan.price_rmb.asc()
+    result = await session.execute(
+        build_visible_membership_plans_stmt(
+            is_rmb=is_rmb, is_subscription=is_subscription
         )
-    else:
-        stmt = stmt.where(MembershipPlan.price_stars > 0).order_by(
-            MembershipPlan.price_stars.asc()
-        )
-
-    result = await session.execute(stmt)
+    )
     return result.scalars().all()
 
 
@@ -215,7 +215,7 @@ async def buy_rmb_plan_callback(update: Update, context: ContextTypes.DEFAULT_TY
 
     async with AsyncSessionLocal() as session:
         result = await session.execute(
-            select(MembershipPlan).where(MembershipPlan.id == plan_id)
+            build_visible_membership_plan_lookup_stmt(plan_id)
         )
         plan = result.scalar_one_or_none()
 
@@ -238,16 +238,21 @@ async def buy_rmb_plan_callback(update: Update, context: ContextTypes.DEFAULT_TY
 
         new_order = Order(
             order_id=out_trade_no,
+            business_order_id=generate_business_order_id(),
             telegram_id=internal_user_id,
             plan_id=plan_id,
             original_price=plan.price_rmb,
             final_price=plan.price_rmb,
+            settlement_schema_version="order_plan_v1",
+            settlement_snapshot=build_order_settlement_snapshot(plan),
             status="PENDING",
             payment_channel="RMB",
             tx_hash=out_trade_no,
         )
         session.add(new_order)
         await session.commit()
+
+        public_order_id = get_order_public_id(new_order)
 
         if plan.duration_days == 0:
             display_name = f"{plan.reward_credits} 灵石直充"
@@ -300,7 +305,7 @@ async def buy_rmb_plan_callback(update: Update, context: ContextTypes.DEFAULT_TY
                 )
                 await query.message.edit_text(
                     text=f"💎 **合欢宗账房 - {display_name}**\n\n"
-                    f"📝 **订单号**：`{out_trade_no}`\n"
+                    f"📝 **订单号**：`{public_order_id}`\n"
                     f"💰 **支付金额**：`¥{plan.price_rmb}`\n"
                     f"💳 **支付方式**：{pay_method_text}\n\n"
                     f"⚠️ **注意事项**：\n"
@@ -329,7 +334,7 @@ async def buy_star_plan_callback(update: Update, context: ContextTypes.DEFAULT_T
 
     async with AsyncSessionLocal() as session:
         result = await session.execute(
-            select(MembershipPlan).where(MembershipPlan.id == plan_id)
+            build_visible_membership_plan_lookup_stmt(plan_id)
         )
         plan = result.scalar_one_or_none()
 
@@ -340,7 +345,32 @@ async def buy_star_plan_callback(update: Update, context: ContextTypes.DEFAULT_T
     await safe_answer_query(query)  # Acknowledge
 
     timestamp = int(time.time())
-    payload = f"ORDER:{user_id}:{plan_id}:{timestamp}"
+    payload = build_legacy_order_payload(
+        telegram_user_id=user_id,
+        plan_id=plan_id,
+        timestamp=timestamp,
+    )
+
+    if is_order_v2_enabled():
+        internal_user, _ = await get_or_create_user_by_telegram(user_id)
+        async with AsyncSessionLocal() as session:
+            business_order_id = generate_business_order_id()
+            pending_order = Order(
+                order_id=payload[:64],
+                business_order_id=business_order_id,
+                telegram_id=internal_user.id,
+                plan_id=plan.id,
+                original_price=plan.price_stars,
+                final_price=plan.price_stars,
+                settlement_schema_version="order_plan_v1",
+                settlement_snapshot=build_order_settlement_snapshot(plan),
+                status="PENDING",
+                payment_channel="XTR",
+                created_at=datetime.now(),
+            )
+            session.add(pending_order)
+            await session.commit()
+        payload = build_order_v2_payload(business_order_id)
 
     title = f"💎 合欢宗账房 - {plan.name} ({plan.identity_name})"
     description = f"{plan.duration_days}天 | 赠 {plan.reward_credits} 永久灵石 | 身份：{plan.identity_name}"

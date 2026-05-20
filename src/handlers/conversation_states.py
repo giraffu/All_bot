@@ -64,6 +64,12 @@ class QuickVideoState(IntEnum):
     WAIT_SETTINGS = auto()
 
 
+class AffiliateRedeemState(IntEnum):
+    """返佣兑换流程状态枚举"""
+
+    WAIT_CREDITS_AMOUNT = auto()
+
+
 class CommonState(IntEnum):
     """通用的 ConversationHandler 状态，比如超时"""
 

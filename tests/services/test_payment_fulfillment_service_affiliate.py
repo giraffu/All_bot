@@ -100,6 +100,11 @@ async def test_fulfill_order_records_affiliate_transaction_on_success(monkeypatc
     )
     monkeypatch.setattr(
         payment_fulfillment_service,
+        "is_membership_settlement_v2_enabled",
+        lambda: False,
+    )
+    monkeypatch.setattr(
+        payment_fulfillment_service,
         "calculate_and_set_commission_for_paid_order",
         calculate_mock,
     )
@@ -138,7 +143,6 @@ async def test_fulfill_order_records_affiliate_transaction_on_success(monkeypatc
         source="rmb_payment_callback",
     )
     invalidate_mock.assert_awaited_once_with(1001)
-    log_action_mock.assert_awaited_once()
     compiled_user_query = session.statements[2].compile(dialect=postgresql.dialect())
     assert "FOR UPDATE" in str(compiled_user_query)
 
@@ -164,6 +168,11 @@ async def test_fulfill_order_accepts_string_paid_amount(monkeypatch):
 
     monkeypatch.setattr(
         payment_fulfillment_service, "AsyncSessionLocal", lambda: _SessionContext(session)
+    )
+    monkeypatch.setattr(
+        payment_fulfillment_service,
+        "is_membership_settlement_v2_enabled",
+        lambda: False,
     )
     monkeypatch.setattr(
         payment_fulfillment_service,
@@ -207,6 +216,11 @@ async def test_fulfill_order_duplicate_callback_does_not_record_affiliate_transa
 
     monkeypatch.setattr(
         payment_fulfillment_service, "AsyncSessionLocal", lambda: _SessionContext(session)
+    )
+    monkeypatch.setattr(
+        payment_fulfillment_service,
+        "is_membership_settlement_v2_enabled",
+        lambda: False,
     )
     monkeypatch.setattr(
         payment_fulfillment_service,
@@ -257,6 +271,11 @@ async def test_fulfill_order_logs_warning_when_affiliate_ledger_insert_is_skippe
     )
     monkeypatch.setattr(
         payment_fulfillment_service,
+        "is_membership_settlement_v2_enabled",
+        lambda: False,
+    )
+    monkeypatch.setattr(
+        payment_fulfillment_service,
         "calculate_and_set_commission_for_paid_order",
         calculate_mock,
     )
@@ -284,3 +303,71 @@ async def test_fulfill_order_logs_warning_when_affiliate_ledger_insert_is_skippe
 
     assert ok is True
     warning_mock.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_fulfill_order_uses_unified_membership_settlement_when_enabled(monkeypatch):
+    order = _build_order(status="PENDING")
+    plan = _build_plan()
+    user = _build_user()
+    referral = SimpleNamespace(inviter_id=1001)
+    session = _FakeSession([order, plan, user])
+
+    calculate_mock = AsyncMock(
+        side_effect=lambda _s, current_order: setattr(
+            current_order, "commission_usdt", Decimal("1.2500")
+        )
+        or referral
+    )
+    record_mock = AsyncMock(return_value=True)
+    invalidate_mock = AsyncMock()
+    settle_mock = AsyncMock(
+        return_value={
+            "credits_granted": 100,
+            "converted_days": 0,
+            "final_identity": "外门弟子",
+            "final_expire_at": "2026-06-30T00:00:00",
+            "is_pure_credit_plan": False,
+            "is_downgrade": False,
+        }
+    )
+
+    monkeypatch.setattr(
+        payment_fulfillment_service, "AsyncSessionLocal", lambda: _SessionContext(session)
+    )
+    monkeypatch.setattr(
+        payment_fulfillment_service,
+        "calculate_and_set_commission_for_paid_order",
+        calculate_mock,
+    )
+    monkeypatch.setattr(
+        payment_fulfillment_service,
+        "record_affiliate_commission_transaction",
+        record_mock,
+    )
+    monkeypatch.setattr(
+        payment_fulfillment_service,
+        "invalidate_invitation_recharge_cache",
+        invalidate_mock,
+    )
+    monkeypatch.setattr(
+        payment_fulfillment_service,
+        "is_membership_settlement_v2_enabled",
+        lambda: True,
+    )
+    monkeypatch.setattr(
+        payment_fulfillment_service,
+        "settle_membership_plan_in_session",
+        settle_mock,
+    )
+    monkeypatch.delenv("BOT_TOKEN", raising=False)
+
+    ok = await payment_fulfillment_service.fulfill_order(
+        "RMB-ORDER-1",
+        "external-tx-unified",
+        "10.00",
+    )
+
+    assert ok is True
+    settle_mock.assert_awaited_once()
+    session.commit.assert_awaited_once()

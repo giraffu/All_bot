@@ -162,7 +162,12 @@ async def collect_backfill_candidates(
     if order_pk is not None:
         stmt = stmt.where(Order.id == order_pk)
     if business_order_id is not None:
-        stmt = stmt.where(Order.order_id == business_order_id)
+        stmt = stmt.where(
+            or_(
+                Order.business_order_id == business_order_id,
+                Order.order_id == business_order_id,
+            )
+        )
     if limit is not None:
         stmt = stmt.limit(limit)
 

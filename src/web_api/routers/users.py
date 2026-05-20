@@ -32,14 +32,20 @@ from src.core.video_billing import (
 )
 from src.services.storage import storage
 from src.services.affiliate_redeem_service import (
+    AffiliateMembershipRedeemResult,
     AffiliateRedeemConflictError,
     AffiliateRedeemInsufficientBalanceError,
     invalidate_affiliate_redeem_cache_after_commit,
+    is_affiliate_membership_redeem_enabled,
+    is_membership_settlement_v2_enabled,
     redeem_affiliate_balance_to_credits,
+    redeem_affiliate_balance_to_membership,
 )
 from src.web_api.schemas.affiliate_redeem_schema import (
     AffiliateCreditsRedeemRequest,
     AffiliateCreditsRedeemResponse,
+    AffiliateMembershipRedeemRequest,
+    AffiliateMembershipRedeemResponse,
 )
 from src.web_api.schemas.auth_schema import InvitationRechargeStats, UserResponse
 from src.web_api.schemas.user_schema import (
@@ -363,6 +369,82 @@ async def redeem_current_user_affiliate_credits(
         exchange_rate_snapshot=result.exchange_rate_snapshot,
         rounding_mode=result.rounding_mode,
     )
+
+
+def _to_membership_redeem_response(
+    result: AffiliateMembershipRedeemResult,
+) -> AffiliateMembershipRedeemResponse:
+    return AffiliateMembershipRedeemResponse(
+        redeem_id=result.redeem_id,
+        redeem_type=result.redeem_type,
+        option_key=result.option_key,
+        target_plan_id=result.target_plan_id,
+        target_identity=result.target_identity,
+        duration_days=result.duration_days,
+        amount_usdt=f"{result.amount_usdt:.4f}",
+        credits_granted=result.credits_granted,
+        status=result.status,
+        idempotency_key=result.idempotency_key,
+        available_balance_usdt=f"{result.available_balance_usdt:.4f}",
+        current_identity=result.current_identity,
+        identity_expire_at=result.identity_expire_at,
+        current_credits=result.current_credits,
+        converted_days=result.converted_days,
+        settlement_reason=result.settlement_reason,
+    )
+
+
+@router.post(
+    "/me/affiliate/redeem-membership",
+    response_model=AffiliateMembershipRedeemResponse,
+)
+async def redeem_current_user_affiliate_membership(
+    payload: AffiliateMembershipRedeemRequest,
+    current_user: CurrentUserDep,
+    db: DbSessionDep,
+) -> AffiliateMembershipRedeemResponse:
+    if not (
+        is_membership_settlement_v2_enabled()
+        and is_affiliate_membership_redeem_enabled()
+    ):
+        raise HTTPException(status_code=404, detail="返佣兑换身份功能未开启")
+
+    user_id = current_user.id
+    committed_here = False
+
+    try:
+        result = await redeem_affiliate_balance_to_membership(
+            db,
+            user_id=user_id,
+            option_key=payload.option_key,
+            idempotency_key=payload.idempotency_key,
+        )
+        in_transaction = db.in_transaction()
+        if inspect.isawaitable(in_transaction):
+            in_transaction = await in_transaction
+        if in_transaction:
+            await db.commit()
+            committed_here = True
+    except AffiliateRedeemConflictError as exc:
+        raise HTTPException(
+            status_code=409, detail="同一幂等键已被不同兑换参数占用"
+        ) from exc
+    except AffiliateRedeemInsufficientBalanceError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "message": "返佣可用余额不足",
+                "available_balance_usdt": float(exc.available_balance_usdt),
+                "requested_amount_usdt": float(exc.requested_amount_usdt),
+            },
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    if committed_here:
+        await invalidate_affiliate_redeem_cache_after_commit(user_id)
+
+    return _to_membership_redeem_response(result)
 
 
 class PreferencesUpdate(BaseModel):

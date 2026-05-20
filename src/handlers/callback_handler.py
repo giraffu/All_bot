@@ -6,6 +6,7 @@ from telegram.ext import ContextTypes
 import src.handlers.callback_router as router
 
 # 导入拆分后的子模块，触发装饰器注册路由
+import src.handlers.callbacks.affiliate_callbacks  # noqa: F401
 import src.handlers.callbacks.billing_callbacks  # noqa: F401
 import src.handlers.callbacks.gallery_callbacks  # noqa: F401
 import src.handlers.callbacks.misc_callbacks  # noqa: F401

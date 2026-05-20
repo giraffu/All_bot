@@ -10,6 +10,15 @@ from sqlalchemy.future import select
 from config import VITE_MERCHANT_ADDRESS
 from src.database.core import AsyncSessionLocal
 from src.database.models import MembershipPlan, Order, User, UserLog
+from src.services.affiliate_redeem_service import is_membership_settlement_v2_enabled
+from src.services.membership_settlement_service import (
+    MembershipSettlementAuditSource,
+    settle_membership_plan_in_session,
+)
+from src.services.order_v2_service import (
+    build_order_public_lookup_stmt,
+    parse_order_payload,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -147,7 +156,8 @@ class TonPaymentValidator:
                         # If it's plain text somehow
                         order_id = msg_data
 
-                    if order_id and order_id.startswith("ORDER:"):
+                    parsed_payload = parse_order_payload(order_id) if order_id else None
+                    if parsed_payload and parsed_payload.kind in {"legacy", "v2"}:
                         success = await self._process_order(
                             order_id, amount_nanotons, tx_hash
                         )
@@ -165,7 +175,6 @@ class TonPaymentValidator:
     ) -> bool:
         """
         Process a found order: verify amount, fulfill, and notify user.
-        Format: ORDER:{tgUserId}:{planId}:{timestamp}
         Returns True if processing is complete (success or definitive failure), False if it should be retried.
         """
         logger.info(
@@ -173,46 +182,78 @@ class TonPaymentValidator:
         )
 
         try:
-            parts = order_id.split(":")
-            if len(parts) != 4:
+            parsed_payload = parse_order_payload(order_id)
+            if parsed_payload.kind == "unknown":
                 logger.warning(f"Invalid order format: {order_id}")
-                return True  # Don't retry invalid formats
-
-            try:
-                tg_user_id = int(parts[1])
-                plan_id = int(parts[2])
-            except ValueError:
-                logger.warning(f"Invalid integer in order format: {order_id}")
                 return True
 
             from src.core.user_core import get_or_create_user_by_telegram
 
-            internal_user, _ = await get_or_create_user_by_telegram(tg_user_id)
-            internal_user_id = internal_user.id
-
             async with AsyncSessionLocal() as db:
                 try:
-                    # Check order_id for legacy or exact duplicate payload
-                    existing_order = await db.execute(
-                        select(Order).where(Order.order_id == order_id)
-                    )
-                    if existing_order.scalar_one_or_none():
-                        # Append a suffix to avoid duplicate order_id
-                        order_id = f"{order_id}_{tx_hash[:8]}"
+                    tg_user_id = None
+                    existing_pending_order = None
+                    if parsed_payload.kind == "v2" and parsed_payload.business_order_id:
+                        existing_pending_order = (
+                            await db.execute(
+                                build_order_public_lookup_stmt(
+                                    parsed_payload.business_order_id, for_update=True
+                                )
+                            )
+                        ).scalar_one_or_none()
+                        if not existing_pending_order:
+                            logger.warning(
+                                "business_order_id not found for TON payment: %s",
+                                parsed_payload.business_order_id,
+                            )
+                            return True
+                        plan_id = existing_pending_order.plan_id
+                        internal_user_id = existing_pending_order.telegram_id
+                        tg_user_id = internal_user_id
+                        plan = (
+                            await db.execute(
+                                select(MembershipPlan).where(
+                                    MembershipPlan.id == existing_pending_order.plan_id
+                                )
+                            )
+                        ).scalar_one_or_none()
+                        user = (
+                            await db.execute(
+                                select(User)
+                                .where(User.id == existing_pending_order.telegram_id)
+                                .with_for_update()
+                            )
+                        ).scalar_one_or_none()
+                    else:
+                        internal_user, _ = await get_or_create_user_by_telegram(
+                            int(parsed_payload.telegram_user_id)
+                        )
+                        internal_user_id = internal_user.id
+                        tg_user_id = int(parsed_payload.telegram_user_id)
+                        plan_id = int(parsed_payload.plan_id)
 
-                    # 2. Get Plan and User
-                    plan_res = await db.execute(
-                        select(MembershipPlan).where(MembershipPlan.id == plan_id)
-                    )
-                    plan = plan_res.scalar_one_or_none()
+                        existing_order = await db.execute(
+                            select(Order).where(Order.order_id == order_id)
+                        )
+                        if existing_order.scalar_one_or_none():
+                            order_id = f"{order_id}_{tx_hash[:8]}"
+
+                        plan = (
+                            await db.execute(
+                                select(MembershipPlan).where(MembershipPlan.id == plan_id)
+                            )
+                        ).scalar_one_or_none()
+                        user = (
+                            await db.execute(
+                                select(User)
+                                .where(User.id == internal_user_id)
+                                .with_for_update()
+                            )
+                        ).scalar_one_or_none()
+
                     if not plan:
                         logger.error(f"Plan {plan_id} not found for order {order_id}")
                         return True
-
-                    user_res = await db.execute(
-                        select(User).where(User.id == internal_user_id).with_for_update()
-                    )
-                    user = user_res.scalar_one_or_none()
                     if not user:
                         logger.error(
                             f"User {internal_user_id} not found for order {order_id}"
@@ -237,40 +278,56 @@ class TonPaymentValidator:
                     else:
                         status = "SUCCESS"
 
-                    inserted_order_id = (
-                        await db.execute(
-                            insert(Order)
-                            .values(
-                                order_id=order_id,
-                                telegram_id=internal_user_id,
-                                plan_id=plan_id,
-                                original_price=plan.price_ton,
-                                final_price=Decimal(amount_nanotons)
-                                / Decimal(str(TON_TO_NANOTON)),
-                                status=status,
-                                tx_hash=tx_hash,
-                                payment_channel="TON",
-                                paid_at=datetime.now()
-                                if status == "SUCCESS"
-                                else None,
+                    if existing_pending_order is not None:
+                        if existing_pending_order.status == "SUCCESS":
+                            logger.info("Transaction %s already processed.", tx_hash)
+                            return True
+                        existing_pending_order.status = status
+                        existing_pending_order.tx_hash = tx_hash
+                        existing_pending_order.payment_channel = "TON"
+                        existing_pending_order.final_price = Decimal(amount_nanotons) / Decimal(
+                            str(TON_TO_NANOTON)
+                        )
+                        existing_pending_order.paid_at = (
+                            datetime.now() if status == "SUCCESS" else None
+                        )
+                        new_order = existing_pending_order
+                        await db.flush()
+                    else:
+                        inserted_order_id = (
+                            await db.execute(
+                                insert(Order)
+                                .values(
+                                    order_id=order_id,
+                                    telegram_id=internal_user_id,
+                                    plan_id=plan_id,
+                                    original_price=plan.price_ton,
+                                    final_price=Decimal(amount_nanotons)
+                                    / Decimal(str(TON_TO_NANOTON)),
+                                    status=status,
+                                    tx_hash=tx_hash,
+                                    payment_channel="TON",
+                                    paid_at=datetime.now()
+                                    if status == "SUCCESS"
+                                    else None,
+                                )
+                                .on_conflict_do_nothing(index_elements=["tx_hash"])
+                                .returning(Order.id)
                             )
-                            .on_conflict_do_nothing(index_elements=["tx_hash"])
-                            .returning(Order.id)
-                        )
-                    ).scalar_one_or_none()
-                    if inserted_order_id is None:
-                        logger.info(f"Transaction {tx_hash} already processed.")
-                        return True
+                        ).scalar_one_or_none()
+                        if inserted_order_id is None:
+                            logger.info(f"Transaction {tx_hash} already processed.")
+                            return True
 
-                    new_order = await db.get(Order, inserted_order_id)
-                    if new_order is None:
-                        raise RuntimeError(
-                            f"failed to reload inserted TON order for tx_hash: {tx_hash}"
-                        )
-                    if new_order.tx_hash != tx_hash:
-                        raise RuntimeError(
-                            f"inserted TON order tx_hash mismatch for tx_hash: {tx_hash}"
-                        )
+                        new_order = await db.get(Order, inserted_order_id)
+                        if new_order is None:
+                            raise RuntimeError(
+                                f"failed to reload inserted TON order for tx_hash: {tx_hash}"
+                            )
+                        if new_order.tx_hash != tx_hash:
+                            raise RuntimeError(
+                                f"inserted TON order tx_hash mismatch for tx_hash: {tx_hash}"
+                            )
 
                     if status == "SUCCESS":
                         from src.core.affiliate_core import (
@@ -298,111 +355,59 @@ class TonPaymentValidator:
                                     new_order.tx_hash,
                                 )
 
-                        # 4. Fulfill using atomic update
-                        from datetime import timedelta
-
-                        from sqlalchemy import update
-
-                        # 身份和有效期逻辑
                         now = datetime.now()
-                        new_expire_at = user.identity_expire_at
-                        converted_days = 0
-                        final_identity = plan.identity_name
-                        is_downgrade = False
-
-                        identity_priority = {
-                            "外门弟子": 0,
-                            "内门弟子": 1,
-                            "核心弟子": 2,
-                            "真传弟子": 3,
-                        }
-                        identity_ratio = {
-                            "外门弟子": 1,
-                            "内门弟子": 2,
-                            "核心弟子": 5,
-                            "真传弟子": 10,
-                        }
-
-                        current_priority = identity_priority.get(
-                            user.current_identity, 0
-                        )
-                        new_priority = identity_priority.get(plan.identity_name, 0)
-
-                        if new_expire_at and new_expire_at > now:
-                            if user.current_identity == plan.identity_name:
-                                # 同套餐续费
-                                new_expire_at += timedelta(days=plan.duration_days)
-                            elif new_priority > current_priority:
-                                # 升级：将旧身份残值折算为新身份天数
-                                import math
-
-                                remaining_days = (
-                                    new_expire_at - now
-                                ).total_seconds() / 86400.0
-                                old_ratio = identity_ratio.get(user.current_identity, 1)
-                                new_ratio = identity_ratio.get(plan.identity_name, 1)
-
-                                # 残值 = 剩余天数 * 旧比例，折算天数 = 残值 / 新比例
-                                converted_days = math.ceil(
-                                    (remaining_days * old_ratio) / new_ratio
-                                )
-                                new_expire_at = now + timedelta(
-                                    days=plan.duration_days + converted_days
-                                )
-                            else:
-                                # 降级或同级：保留高等级身份，将新购买的低等级套餐价值折算为高等级身份的天数
-                                is_downgrade = True
-                                final_identity = user.current_identity
-
-                                import math
-
-                                old_ratio = identity_ratio.get(user.current_identity, 1)
-                                new_ratio = identity_ratio.get(plan.identity_name, 1)
-
-                                # 新购价值 = 新套餐天数 * 新比例，折算天数 = 新购价值 / 旧比例
-                                extra_days = math.ceil(
-                                    (plan.duration_days * new_ratio) / old_ratio
-                                )
-                                converted_days = extra_days
-                                new_expire_at += timedelta(days=extra_days)
-                        else:
-                            # 身份已过期或首次充值
-                            new_expire_at = now + timedelta(days=plan.duration_days)
-
-                        # Perform update
-                        await db.execute(
-                            update(User)
-                            .where(User.id == internal_user_id)
-                            .values(
-                                credits=User.credits + plan.reward_credits,
-                                current_identity=final_identity,
-                                identity_expire_at=new_expire_at,
+                        if is_membership_settlement_v2_enabled():
+                            applied_snapshot = await settle_membership_plan_in_session(
+                                locked_user=user,
+                                plan=plan,
+                                audit_source=MembershipSettlementAuditSource(
+                                    source="ton_payment_validator",
+                                    source_channel="TON",
+                                    source_order_id=str(new_order.order_id),
+                                    source_tx_hash=tx_hash,
+                                ),
+                                session=db,
+                                now=now,
+                                grant_reward_credits=True,
                             )
-                        )
+                        else:
+                            from src.core.billing_core import calculate_identity_conversion
+                            import json
 
-                        # Calculate new balance for the log
-                        new_balance = user.credits + plan.reward_credits
-
-                        import json
-
-                        log = UserLog(
-                            user_id=user.id,
-                            username=user.username,
-                            operation_type="recharge",
-                            credit_change=plan.reward_credits,
-                            current_balance=new_balance,
-                            extra_info=json.dumps(
-                                {
-                                    "order_id": order_id,
-                                    "plan": plan.name,
-                                    "tx_hash": tx_hash,
-                                    "converted_days": converted_days,
-                                    "identity": final_identity,
-                                },
-                                ensure_ascii=False,
-                            ),
-                        )
-                        db.add(log)
+                            final_identity, new_expire_at = calculate_identity_conversion(
+                                current_identity=user.current_identity,
+                                current_expire_at=user.identity_expire_at,
+                                new_identity=plan.identity_name,
+                                duration_days=plan.duration_days,
+                            )
+                            user.credits += plan.reward_credits
+                            user.current_identity = final_identity
+                            user.identity_expire_at = new_expire_at
+                            applied_snapshot = {
+                                "credits_granted": int(plan.reward_credits or 0),
+                                "converted_days": 0,
+                                "final_identity": final_identity,
+                                "final_expire_at": new_expire_at.isoformat()
+                                if new_expire_at
+                                else None,
+                                "is_downgrade": False,
+                            }
+                            log = UserLog(
+                                user_id=user.id,
+                                username=user.username,
+                                operation_type="recharge",
+                                credit_change=plan.reward_credits,
+                                current_balance=user.credits,
+                                extra_info=json.dumps(
+                                    {
+                                        "order_id": order_id,
+                                        "plan": plan.name,
+                                        "tx_hash": tx_hash,
+                                    },
+                                    ensure_ascii=False,
+                                ),
+                            )
+                            db.add(log)
 
                         await db.commit()
                         if referral:
@@ -415,10 +420,17 @@ class TonPaymentValidator:
 
                         # 5. Notify User
                         try:
+                            credits_granted = int(applied_snapshot.get("credits_granted", 0))
+                            converted_days = int(applied_snapshot.get("converted_days", 0))
+                            final_identity = str(
+                                applied_snapshot.get("final_identity", user.current_identity)
+                            )
+                            final_expire_at = applied_snapshot.get("final_expire_at")
+                            is_downgrade = bool(applied_snapshot.get("is_downgrade", False))
                             msg_text = (
                                 f"🎉 <b>充值成功！</b>\n\n"
                                 f"恭喜道友，您已成功购买【{plan.name}】。\n"
-                                f"💎 获得灵石：+{plan.reward_credits}\n"
+                                f"💎 获得灵石：+{credits_granted}\n"
                             )
                             if is_downgrade:
                                 msg_text += (
@@ -433,7 +445,12 @@ class TonPaymentValidator:
                                 if converted_days > 0:
                                     msg_text += f"⚖️ 老套餐残值已折算为 <b>{converted_days}</b> 天新套餐时长\n"
 
-                            msg_text += f"⏳ 到期时间：{new_expire_at.strftime('%Y-%m-%d %H:%M:%S')}\n\n祝您仙途坦荡！"
+                            if final_expire_at:
+                                msg_text += (
+                                    f"⏳ 到期时间：{final_expire_at}\n\n祝您仙途坦荡！"
+                                )
+                            else:
+                                msg_text += "\n祝您仙途坦荡！"
 
                             await self.bot_app.bot.send_message(
                                 chat_id=tg_user_id, text=msg_text, parse_mode="HTML"

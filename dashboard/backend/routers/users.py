@@ -28,6 +28,11 @@ from src.database.models import (
     User,
     UserLog,
 )
+from src.services.affiliate_redeem_service import is_membership_settlement_v2_enabled
+from src.services.membership_settlement_service import (
+    MembershipSettlementAuditSource,
+    settle_membership_plan_in_session,
+)
 from src.services.storage import storage
 
 router = APIRouter(prefix="/api/users", tags=["users"])
@@ -367,37 +372,49 @@ async def admin_gift_plan(
             paid_at=datetime.now(),
         )
         db.add(new_order)
+        if is_membership_settlement_v2_enabled():
+            await db.flush()
+            await settle_membership_plan_in_session(
+                locked_user=user,
+                plan=plan,
+                audit_source=MembershipSettlementAuditSource(
+                    source="admin_gift_plan",
+                    source_channel="ADMIN_GIFT",
+                    source_order_id=order_id,
+                    source_tx_hash=tx_hash,
+                ),
+                session=db,
+                now=datetime.now(),
+                grant_reward_credits=True,
+            )
+        else:
+            from src.core.billing_core import calculate_identity_conversion
 
-        from src.core.billing_core import calculate_identity_conversion
+            final_identity, new_expire_at = calculate_identity_conversion(
+                current_identity=user.current_identity,
+                current_expire_at=user.identity_expire_at,
+                new_identity=plan.identity_name,
+                duration_days=plan.duration_days,
+            )
+            user.credits += plan.reward_credits
+            user.current_identity = final_identity
+            user.identity_expire_at = new_expire_at
 
-        # 身份和有效期逻辑 (通过 Core 层折算)
-        final_identity, new_expire_at = calculate_identity_conversion(
-            current_identity=user.current_identity,
-            current_expire_at=user.identity_expire_at,
-            new_identity=plan.identity_name,
-            duration_days=plan.duration_days,
-        )
-
-        # 更新用户信息
-        user.credits += plan.reward_credits
-        user.current_identity = final_identity
-        user.identity_expire_at = new_expire_at
-
-        extra_info = {
-            "order_id": order_id,
-            "plan_name": plan.name,
-            "note": request.note,
-            "is_gift": True,
-        }
-        log_entry = UserLog(
-            user_id=user.id,
-            username=user.username,
-            operation_type="recharge",
-            credit_change=plan.reward_credits,
-            current_balance=user.credits,
-            extra_info=json.dumps(extra_info, ensure_ascii=False),
-        )
-        db.add(log_entry)
+            extra_info = {
+                "order_id": order_id,
+                "plan_name": plan.name,
+                "note": request.note,
+                "is_gift": True,
+            }
+            log_entry = UserLog(
+                user_id=user.id,
+                username=user.username,
+                operation_type="recharge",
+                credit_change=plan.reward_credits,
+                current_balance=user.credits,
+                extra_info=json.dumps(extra_info, ensure_ascii=False),
+            )
+            db.add(log_entry)
 
         await db.commit()
 
