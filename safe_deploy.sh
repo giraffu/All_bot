@@ -35,6 +35,28 @@ cleanup_on_exit() {
 
 trap cleanup_on_exit EXIT
 
+wait_for_http_ready() {
+    local service_name=$1
+    local url=$2
+    local max_retries=${3:-30}
+    local sleep_seconds=${4:-5}
+    local attempt=1
+
+    echo "   👉 等待 ${service_name} 就绪: ${url}"
+    while [ "$attempt" -le "$max_retries" ]; do
+        if curl -fsS "$url" >/dev/null 2>&1; then
+            echo "   ✅ ${service_name} 已就绪。"
+            return 0
+        fi
+        echo "   ⏳ ${service_name} 尚未就绪，${sleep_seconds}秒后重试 (${attempt}/${max_retries})..."
+        sleep "$sleep_seconds"
+        attempt=$((attempt + 1))
+    done
+
+    echo "   ❌ ${service_name} 在等待窗口内未就绪，停止部署。"
+    return 1
+}
+
 echo "🚀 开始 All_Bot 生产环境安全更新与重建流程 (带队列监控)..."
 
 # ==============================================================================
@@ -181,6 +203,7 @@ cd "$ROOT_DIR/backend"
 docker rm -f backend_api_1 || true 
 docker-compose up -d --build
 cd "$ROOT_DIR"
+wait_for_http_ready "生产中控 API" "http://127.0.0.1:8003/health"
 echo "✅ 中控 API 重建完成。"
 
 # ==============================================================================
@@ -189,6 +212,8 @@ echo "✅ 中控 API 重建完成。"
 echo "7️⃣ 重建并重启主服务群 (Bot & APIs)..."
 docker rm -f tg-bot payment-api web-api || true
 docker-compose -f deploy/docker-compose.yml up -d --build
+wait_for_http_ready "生产 Web API" "http://127.0.0.1:8000/api/health"
+wait_for_http_ready "Imgproxy" "http://127.0.0.1:8084/health"
 echo "✅ 主服务群重建完成。"
 
 # ==============================================================================
@@ -199,6 +224,8 @@ cd "$ROOT_DIR/dashboard"
 docker rm -f dashboard_dashboard-backend_1 dashboard_dashboard-frontend_1 || true
 docker-compose up -d --build
 cd "$ROOT_DIR"
+wait_for_http_ready "Dashboard Backend" "http://127.0.0.1:8043/api/health"
+wait_for_http_ready "Dashboard Frontend" "http://127.0.0.1:8085"
 echo "✅ Dashboard 服务重建完成。"
 
 # ==============================================================================

@@ -18,6 +18,7 @@ import {
   buildLegacyTemplateRoute,
   resolveTemplateApplyEntry
 } from '@/utils/templateApplyEntry'
+import { useGalleryApplyContext } from '@/composables/useGalleryApplyContext'
 import dayjs from 'dayjs'
 import { useViewport } from '@/composables/useViewport'
 import LazyVideo from '@/components/LazyVideo.vue'
@@ -53,6 +54,7 @@ const { t } = useI18n()
 const { isMobile } = useViewport()
 const templateApplyStore = useTemplateApplyStore()
 const layoutContentRef = useMainLayoutContentRef()
+const { saveApplyContext } = useGalleryApplyContext()
 
 const breakpoints = {
   99999: { rowPerView: 6 },
@@ -454,7 +456,7 @@ const handleLegacyFallback = async (params: {
     return false
   }
 
-  sessionStorage.setItem('galleryApplyContext', JSON.stringify(params.rawContext))
+  saveApplyContext(params.rawContext)
   detailVisible.value = false
   message.success(t('template_apply.legacy_loaded'))
   await router.push(buildLegacyTemplateRoute(resolvedEntry, t))
@@ -479,7 +481,7 @@ const openTemplateWorkbench = async (
 
   if (result.status === 'legacy_fallback') {
     if (result.fallbackKind === 'legacy_supported' && result.context && result.meta) {
-      sessionStorage.setItem('galleryApplyContext', JSON.stringify(rawContext))
+      saveApplyContext(rawContext)
       detailVisible.value = false
       message.success(t('template_apply.legacy_loaded'))
       await router.push(buildLegacyTemplateRoute({

@@ -49,10 +49,13 @@ class HeartbeatRequest(BaseModel):
 
 
 def verify_token(authorization: Optional[str] = Header(None)):
-    # Assuming AGENT_SECRET_TOKEN is added to settings, or use placeholder
-    agent_token = getattr(
-        settings, "agent_secret_token", "super_secret_agent_token_2026"
-    )
+    agent_token = getattr(settings, "agent_secret_token", None)
+    if not agent_token:
+        logger.error("AGENT_SECRET_TOKEN is not configured")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Agent authentication is not configured",
+        )
     if not authorization or authorization != f"Bearer {agent_token}":
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -93,7 +96,12 @@ async def check_task(
     task_details = await queue_manager.get_task_status(task_id)
     if not task_details:
         raise HTTPException(status_code=404, detail="Task not found")
-    return {"status": task_details.get("status")}
+    return {
+        "status": task_details.get("status"),
+        "cancel_requested": queue_manager._as_bool(
+            task_details.get("cancel_requested")
+        ),
+    }
 
 
 @router.post("/status")
@@ -114,6 +122,9 @@ async def update_status(
         if req.progress > 0:
             await queue_manager.update_progress(req.task_id, req.progress)
     elif req.status == "failed":
+        await queue_manager.redis.hdel(
+            f"comfy:agent:heartbeat:{req.agent_id}", "current_task_id"
+        )
         await queue_manager.fail_task(req.task_id, req.error)
 
     return {"status": "ok"}

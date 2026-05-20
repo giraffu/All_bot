@@ -1,18 +1,18 @@
 <script setup lang="ts">
-import { ref, onUnmounted, watch } from 'vue'
-import { UploadOutlined, InboxOutlined, SwapOutlined, DownloadOutlined, CloseCircleOutlined } from '@ant-design/icons-vue'
+import { ref, watch } from 'vue'
+import { InboxOutlined, SwapOutlined, DownloadOutlined, CloseCircleOutlined } from '@ant-design/icons-vue'
 import { message } from 'ant-design-vue'
-import type { UploadChangeParam } from 'ant-design-vue'
 import { useUpload } from '@/composables/useUpload'
 import { useTaskStream } from '@/composables/useTaskStream'
 import { useTaskResult } from '@/composables/useTaskResult'
+import { useGalleryApplyContext } from '@/composables/useGalleryApplyContext'
 import { useRoute } from 'vue-router'
 import { onMounted } from 'vue'
-import api from '@/api'
 
 const { uploading, progress: uploadProgress, uploadFile } = useUpload()
 const { isSubmitting, submitTask } = useTaskStream()
-const { currentTask, setSubmittedTaskId, isVideoUrl, isImageUrl, downloadResult } = useTaskResult()
+const { currentTask, setSubmittedTaskId, isImageUrl, downloadResult } = useTaskResult()
+const { loadApplyContext } = useGalleryApplyContext()
 const route = useRoute()
 
 const faceFileList = ref<any[]>([])
@@ -28,22 +28,15 @@ const templateSourcePostId = ref<number | null>(null)
 
 onMounted(() => {
   if (route.query.apply === 'true') {
-    const ctxStr = sessionStorage.getItem('galleryApplyContext')
-    if (ctxStr) {
-      try {
-        const ctx = JSON.parse(ctxStr)
-        if (ctx.task_type === 'face_swap' && ctx.input_file) {
-          // prefill target image
-          bodyObjectKey.value = ctx.input_file
-          bodyPreview.value = ctx.input_file_url || null
-          if (ctx.source_post_id != null) {
-            templateSourcePostId.value = Number(ctx.source_post_id)
-          }
-          isTemplateApplied.value = true
-        }
-      } catch (e) {
-        console.error('Failed to parse apply context', e)
+    const ctx = loadApplyContext()
+    if (ctx && ctx.task_type === 'face_swap' && ctx.input_file) {
+      // prefill target image
+      bodyObjectKey.value = ctx.input_file
+      bodyPreview.value = ctx.input_file_url || null
+      if (ctx.source_post_id != null) {
+        templateSourcePostId.value = Number(ctx.source_post_id)
       }
+      isTemplateApplied.value = true
     }
   }
 })

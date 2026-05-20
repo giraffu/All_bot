@@ -43,6 +43,8 @@ class TaskStatusResponse(BaseModel):
     result_path: Optional[str] = None  # Added for convenience
     image_url: Optional[str] = None
     task_type: Optional[str] = None
+    cancel_requested: Optional[bool] = None
+    cancel_requested_at: Optional[float] = None
 
 
 class WorkerInfo(BaseModel):

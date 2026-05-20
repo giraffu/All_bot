@@ -60,6 +60,18 @@ services:
       - "host.docker.internal:host-gateway"
     network_mode: "host"
     command: ["uvicorn", "src.web_api.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import sys, urllib.request; sys.exit(0) if urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=5).status == 200 else sys.exit(1)",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 20s
 
   imgproxy:
     image: darthsim/imgproxy:latest
@@ -73,3 +85,15 @@ services:
       - IMGPROXY_DOWNLOAD_TIMEOUT=5
       - IMGPROXY_CONCURRENCY=8
     network_mode: "host"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "sh",
+          "-c",
+          "wget -q -O /dev/null http://127.0.0.1:8084/health || exit 1",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 20s

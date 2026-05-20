@@ -49,8 +49,9 @@ api.interceptors.response.use(
     } else if (status === 422) {
       // Handle Pydantic validation errors
       let errMsg = t('api.validation_error', { msg: 'Invalid parameters' })
-      if (data?.details && data.details.length > 0) {
-        const firstErr = data.details[0]
+      const validationDetails = Array.isArray(data?.detail) ? data.detail : Array.isArray(data?.details) ? data.details : []
+      if (validationDetails.length > 0) {
+        const firstErr = validationDetails[0]
         const loc = firstErr.loc.join('.')
         errMsg = t('api.validation_error', { msg: `${loc}: ${firstErr.msg}` })
       }

@@ -17,7 +17,7 @@ const router = useRouter()
 const checkStatus = async () => {
   try {
     // 请求一下 /api/health，如果不报错且不是 503，说明维护结束
-    await api.get('/api/health')
+    await api.get('/health')
     router.push('/')
   } catch (error) {
     // 依然维护中，无操作

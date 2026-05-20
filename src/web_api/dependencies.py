@@ -1,4 +1,4 @@
-from fastapi import Depends, HTTPException, Request, status
+from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -40,13 +40,9 @@ async def get_db():
             logger.error(f"Failed to close session during cleanup: {close_err}")
 
 
-async def get_token(request: Request, token: str = Depends(oauth2_scheme)) -> str:
+async def get_bearer_token(token: str = Depends(oauth2_scheme)) -> str:
     if token:
         return token
-
-    query_token = request.query_params.get("token")
-    if query_token:
-        return query_token
 
     raise HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -55,9 +51,7 @@ async def get_token(request: Request, token: str = Depends(oauth2_scheme)) -> st
     )
 
 
-async def get_current_user(
-    db: AsyncSession = Depends(get_db), token: str = Depends(get_token)
-) -> User:
+async def _get_current_user_from_session(db: AsyncSession, token: str) -> User:
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
@@ -117,3 +111,16 @@ async def get_current_user(
         )
 
     return user
+
+
+async def get_current_user(
+    db: AsyncSession = Depends(get_db), token: str = Depends(get_bearer_token)
+) -> User:
+    return await _get_current_user_from_session(db, token)
+
+
+async def get_current_user_once(
+    token: str = Depends(get_bearer_token),
+) -> User:
+    async with AsyncSessionLocal() as session:
+        return await _get_current_user_from_session(session, token)

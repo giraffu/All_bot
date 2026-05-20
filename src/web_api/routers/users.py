@@ -58,7 +58,7 @@ from src.web_api.schemas.gallery_schema import (
     ApplyContextResponse,
     GalleryPostResponse,
 )
-from fastapi import HTTPException, BackgroundTasks, Request
+from fastapi import HTTPException, BackgroundTasks
 from pydantic import BaseModel
 import httpx
 import re
@@ -67,7 +67,7 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
-from src.web_api.dependencies import get_current_user, get_db, get_token
+from src.web_api.dependencies import get_current_user, get_db
 
 CurrentUserDep = Annotated[User, Depends(get_current_user)]
 DbSessionDep = Annotated[AsyncSession, Depends(get_db)]
@@ -811,29 +811,25 @@ async def get_my_favorites(
 @router.get("/history/{task_id}/apply-context", response_model=ApplyContextResponse)
 async def get_favorite_apply_context(
     task_id: str,
-    token: str = Depends(get_token),
+    current_user: CurrentUserDep,
+    db: DbSessionDep,
 ):
     from src.config_mapping import ALL_LORA_MODELS
-    from src.database.core import AsyncSessionLocal
-    from src.web_api.dependencies import get_current_user
+    user_id = current_user.id
 
-    async with AsyncSessionLocal() as db:
-        current_user = await get_current_user(db, token)
-        user_id = current_user.id
+    stmt = select(History).where(
+        History.task_id == task_id, History.user_id == user_id
+    )
+    result = await db.execute(stmt)
+    history = result.scalar_one_or_none()
 
-        stmt = select(History).where(
-            History.task_id == task_id, History.user_id == user_id
-        )
-        result = await db.execute(stmt)
-        history = result.scalar_one_or_none()
-    
-        if not history:
-            raise HTTPException(status_code=404, detail="未找到原任务详情")
-    
-        gallery_posts = (
-            await db.execute(select(GalleryPost).where(GalleryPost.task_id == history.task_id))
-        ).scalars().all()
-        gallery_post = _pick_preferred_gallery_post(gallery_posts)
+    if not history:
+        raise HTTPException(status_code=404, detail="未找到原任务详情")
+
+    gallery_posts = (
+        await db.execute(select(GalleryPost).where(GalleryPost.task_id == history.task_id))
+    ).scalars().all()
+    gallery_post = _pick_preferred_gallery_post(gallery_posts)
 
     input_file_url = None
     if history.input_file:
@@ -928,58 +924,45 @@ async def get_favorite_apply_context(
 
 
 @router.post("/history/{task_id}/send-to-bot")
-async def send_history_to_bot(task_id: str, request: Request):
+async def send_history_to_bot(
+    task_id: str,
+    current_user: CurrentUserDep,
+    db: DbSessionDep,
+):
     from src.services.storage import storage
     from config import TELEGRAM_API_BASE_URL, BOT_TOKEN
-    from src.database.core import AsyncSessionLocal
-    from src.web_api.dependencies import get_current_user
+    user_id = current_user.id
+    telegram_id = current_user.telegram_id
 
-    token = request.query_params.get("token")
-    if not token:
-        auth_header = request.headers.get("Authorization")
-        if auth_header and auth_header.startswith("Bearer "):
-            token = auth_header.split(" ")[1]
+    if not telegram_id:
+        raise HTTPException(
+            status_code=400, detail="您尚未绑定 Telegram 账号，无法发送至私聊"
+        )
 
-    if not token:
-        raise HTTPException(status_code=401, detail="Not authenticated")
+    from src.services.redis_client import redis_client
 
-    async with AsyncSessionLocal() as db:
-        current_user = await get_current_user(db, token)
-        user_id = current_user.id
-        telegram_id = current_user.telegram_id
-
-        # 1. 检查多渠道登录用户的 TG 绑定状态
-        if not telegram_id:
+    lock_key = f"rate_limit:send_to_bot:{user_id}"
+    if redis_client and redis_client.redis:
+        is_locked = await redis_client.redis.set(lock_key, "1", nx=True, ex=10)
+        if not is_locked:
             raise HTTPException(
-                status_code=400, detail="您尚未绑定 Telegram 账号，无法发送至私聊"
+                status_code=429, detail="操作过于频繁，请10秒后再试"
             )
 
-        # 2. Redis 10秒防刷锁（严格对齐现有 redis_client 模式）
-        from src.services.redis_client import redis_client
+    stmt = select(History).where(
+        History.task_id == task_id, History.user_id == user_id
+    )
+    result = await db.execute(stmt)
+    history = result.scalar_one_or_none()
 
-        lock_key = f"rate_limit:send_to_bot:{user_id}"
-        if redis_client and redis_client.redis:
-            is_locked = await redis_client.redis.set(lock_key, "1", nx=True, ex=10)
-            if not is_locked:
-                raise HTTPException(
-                    status_code=429, detail="操作过于频繁，请10秒后再试"
-                )
+    if not history:
+        raise HTTPException(status_code=404, detail="未找到对应的任务记录")
+    if not history.output_file:
+        raise HTTPException(status_code=400, detail="该任务没有生成文件")
 
-        # 3. 校验历史记录与文件存在性
-        stmt = select(History).where(
-            History.task_id == task_id, History.user_id == user_id
-        )
-        result = await db.execute(stmt)
-        history = result.scalar_one_or_none()
-
-        if not history:
-            raise HTTPException(status_code=404, detail="未找到对应的任务记录")
-        if not history.output_file:
-            raise HTTPException(status_code=400, detail="该任务没有生成文件")
-
-        history_output_file = history.output_file
-        history_type = history.type
-        history_prompt = history.prompt
+    history_output_file = history.output_file
+    history_type = history.type
+    history_prompt = history.prompt
 
     # 4. 严谨提取 bucket 和 object_name
     bucket_name, object_name = resolve_storage_object(history_output_file)

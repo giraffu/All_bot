@@ -6,9 +6,11 @@ import { useRoute, useRouter } from 'vue-router'
 import { useUpload } from '@/composables/useUpload'
 import { useTaskStream } from '@/composables/useTaskStream'
 import { useTaskResult } from '@/composables/useTaskResult'
+import { useGalleryApplyContext } from '@/composables/useGalleryApplyContext'
 
 const route = useRoute()
 const router = useRouter()
+const { loadApplyContext } = useGalleryApplyContext()
 
 const taskType = computed(() => (route.query.type as string) || 'i2i_pro')
 const taskTitle = computed(() => (route.query.title as string) || '图片生成')
@@ -66,26 +68,19 @@ watch(taskType, () => {
 
 onMounted(() => {
   if (route.query.apply === 'true') {
-    const ctxStr = sessionStorage.getItem('galleryApplyContext')
-    if (ctxStr) {
-      try {
-        const ctx = JSON.parse(ctxStr)
-        if (ctx.task_type === taskType.value) {
-          if (ctx.prompt) prompt.value = ctx.prompt
-          if (ctx.source_post_id != null) {
-            templateSourcePostId.value = Number(ctx.source_post_id)
-          }
-          if (ctx.lora_name) {
-            selectedLora.value = ctx.lora_name
-            customLoraStrength.value = ctx.lora_strength != null 
-              ? Number(ctx.lora_strength) 
-              : (LORA_DEFAULT_STRENGTHS[ctx.lora_name] || 1.0)
-          }
-          isTemplateApplied.value = true
-        }
-      } catch (e) {
-        console.error('Failed to parse apply context', e)
+    const ctx = loadApplyContext()
+    if (ctx && ctx.task_type === taskType.value) {
+      if (ctx.prompt) prompt.value = ctx.prompt
+      if (ctx.source_post_id != null) {
+        templateSourcePostId.value = Number(ctx.source_post_id)
       }
+      if (ctx.lora_name) {
+        selectedLora.value = ctx.lora_name
+        customLoraStrength.value = ctx.lora_strength != null 
+          ? Number(ctx.lora_strength) 
+          : (LORA_DEFAULT_STRENGTHS[ctx.lora_name] || 1.0)
+      }
+      isTemplateApplied.value = true
     }
   }
 })

@@ -16,6 +16,25 @@ class QueueManager:
         self.agent_heartbeat_prefix = "comfy:agent:heartbeat:"
         self.ttl = 86400  # 24 hours
 
+    @staticmethod
+    def _decode_redis_value(value: Any) -> Any:
+        return value.decode() if isinstance(value, bytes) else value
+
+    @classmethod
+    def _decode_redis_dict(cls, data: Dict[Any, Any]) -> Dict[str, Any]:
+        return {
+            str(cls._decode_redis_value(k)): cls._decode_redis_value(v)
+            for k, v in data.items()
+        }
+
+    @staticmethod
+    def _as_bool(value: Any) -> bool:
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            return value.lower() in {"1", "true", "yes", "on"}
+        return bool(value)
+
     async def enqueue_task(
         self, task_type: TaskType, params: Dict[str, Any], priority: int, task_id: str
     ) -> str:
@@ -57,8 +76,7 @@ class QueueManager:
             return None
 
         data = await self.redis.hgetall(task_key)
-        # Convert bytes to string
-        return {k.decode(): v.decode() for k, v in data.items()}
+        return self._decode_redis_dict(data)
 
     async def dequeue_task(
         self, allowed_types: Optional[list[str]] = None
@@ -125,7 +143,7 @@ class QueueManager:
 
         # 先从 Redis 中读取 type
         task_type_bytes = await self.redis.hget(task_key, "type")
-        task_type = task_type_bytes.decode() if task_type_bytes else "edit"
+        task_type = self._decode_redis_value(task_type_bytes) if task_type_bytes else "edit"
 
         await self.redis.hset(
             task_key,
@@ -133,6 +151,7 @@ class QueueManager:
                 "status": TaskStatus.DONE,
                 "result_path": result_path,
                 "progress": 1.0,
+                "cancel_requested": 0,
             },
         )
         await self.redis.srem(self.running_key, task_id)
@@ -151,7 +170,12 @@ class QueueManager:
     async def fail_task(self, task_id: str, error_msg: str):
         task_key = f"{self.task_prefix}{task_id}"
         await self.redis.hset(
-            task_key, mapping={"status": TaskStatus.ERROR, "error_msg": error_msg}
+            task_key,
+            mapping={
+                "status": TaskStatus.ERROR,
+                "error_msg": error_msg,
+                "cancel_requested": 0,
+            },
         )
         await self.redis.srem(self.running_key, task_id)
         await self.redis.publish(
@@ -167,18 +191,73 @@ class QueueManager:
             json.dumps({"status": "running", "progress": progress}),
         )
 
-    async def cancel_task(self, task_id: str) -> bool:
+    async def cancel_task(self, task_id: str) -> Optional[Dict[str, Any]]:
         task_key = f"{self.task_prefix}{task_id}"
         if not await self.redis.exists(task_key):
-            return False
+            return None
 
-        await self.redis.zrem(self.pending_key, task_id)
-        await self.redis.srem(self.running_key, task_id)
-        await self.redis.hset(task_key, "status", TaskStatus.CANCELLED)
-        await self.redis.publish(
-            f"comfy:task_events:{task_id}", json.dumps({"status": "cancelled"})
-        )
-        return True
+        removed_from_pending = await self.redis.zrem(self.pending_key, task_id)
+        if removed_from_pending:
+            await self.redis.srem(self.running_key, task_id)
+            await self.redis.hset(
+                task_key,
+                mapping={
+                    "status": TaskStatus.CANCELLED,
+                    "cancel_requested": 0,
+                    "cancel_requested_at": "",
+                },
+            )
+            await self.redis.publish(
+                f"comfy:task_events:{task_id}", json.dumps({"status": "cancelled"})
+            )
+            return {
+                "state": "cancelled",
+                "task_id": task_id,
+                "message": "任务已从排队队列移除",
+            }
+
+        is_running = bool(await self.redis.sismember(self.running_key, task_id))
+        if is_running:
+            cancel_requested_at = time.time()
+            await self.redis.hset(
+                task_key,
+                mapping={
+                    "cancel_requested": 1,
+                    "cancel_requested_at": cancel_requested_at,
+                },
+            )
+            await self.redis.publish(
+                f"comfy:task_events:{task_id}",
+                json.dumps(
+                    {
+                        "status": "running",
+                        "cancel_requested": True,
+                        "message": "已请求取消，等待执行端确认",
+                    }
+                ),
+            )
+            return {
+                "state": "cancellation_requested",
+                "task_id": task_id,
+                "message": "任务已请求取消，等待执行端确认",
+                "cancel_requested": True,
+                "cancel_requested_at": cancel_requested_at,
+            }
+
+        task_data = await self.get_task_status(task_id)
+        status = task_data.get("status") if task_data else None
+        if status == TaskStatus.CANCELLED:
+            return {
+                "state": "already_cancelled",
+                "task_id": task_id,
+                "message": "任务已取消",
+            }
+
+        return {
+            "state": "not_cancellable",
+            "task_id": task_id,
+            "message": "任务已结束，无法再取消",
+        }
 
     async def get_queue_position(self, task_id: str) -> Optional[int]:
         return await self.redis.zrank(self.pending_key, task_id)
@@ -209,7 +288,7 @@ class QueueManager:
                 agent_id = key_str.replace(self.agent_heartbeat_prefix, "")
                 data = await self.redis.hgetall(key)
                 if data:
-                    worker_info = {k.decode(): v.decode() for k, v in data.items()}
+                    worker_info = self._decode_redis_dict(data)
                     worker_info["agent_id"] = agent_id
 
                     # Fetch current task details if running

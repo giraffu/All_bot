@@ -79,6 +79,28 @@ cleanup_on_exit() {
 
 trap cleanup_on_exit EXIT
 
+wait_for_http_ready() {
+    local service_name=$1
+    local url=$2
+    local max_retries=${3:-30}
+    local sleep_seconds=${4:-5}
+    local attempt=1
+
+    echo "   👉 等待 ${service_name} 就绪: ${url}"
+    while [ "$attempt" -le "$max_retries" ]; do
+        if curl -fsS "$url" >/dev/null 2>&1; then
+            echo "   ✅ ${service_name} 已就绪。"
+            return 0
+        fi
+        echo "   ⏳ ${service_name} 尚未就绪，${sleep_seconds}秒后重试 (${attempt}/${max_retries})..."
+        sleep "$sleep_seconds"
+        attempt=$((attempt + 1))
+    done
+
+    echo "   ❌ ${service_name} 在等待窗口内未就绪，停止部署。"
+    return 1
+}
+
 if [ ! -f "$TEST_ENV_FILE" ]; then
     echo "❌ 未找到 $TEST_ENV_FILE，请先补齐测试环境配置。"
     exit 1
@@ -231,6 +253,7 @@ cd "$ROOT_DIR/backend"
 docker rm -f central-api-test 2>/dev/null || true
 docker-compose -f docker-compose-test.yml up -d --build
 cd "$ROOT_DIR"
+wait_for_http_ready "测试中控 API" "http://127.0.0.1:8004/health"
 echo "✅ 测试中控 API 重建完成。"
 
 # ==============================================================================
@@ -239,6 +262,8 @@ echo "✅ 测试中控 API 重建完成。"
 echo "7️⃣ 重建并重启测试环境服务群（含 Web 测试前端）..."
 cleanup_test_entry_service_containers
 docker-compose -f deploy/docker-compose-test.yml up -d --build
+wait_for_http_ready "测试 Web API" "http://127.0.0.1:8001/api/health"
+wait_for_http_ready "测试 Web 前端" "http://127.0.0.1:5173" 60 5
 echo "✅ 测试环境服务群重建完成。"
 
 DEPLOY_SUCCEEDED=1

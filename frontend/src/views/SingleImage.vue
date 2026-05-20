@@ -6,9 +6,11 @@ import { useRoute, useRouter } from 'vue-router'
 import { useUpload } from '@/composables/useUpload'
 import { useTaskStream } from '@/composables/useTaskStream'
 import { useTaskResult } from '@/composables/useTaskResult'
+import { useGalleryApplyContext } from '@/composables/useGalleryApplyContext'
 
 const route = useRoute()
 const router = useRouter()
+const { loadApplyContext } = useGalleryApplyContext()
 
 const taskType = computed(() => (route.query.type as string) || 'random_faceswap')
 const taskTitle = computed(() => (route.query.title as string) || '单图生成')
@@ -26,19 +28,12 @@ const templateSourcePostId = ref<number | null>(null)
 
 onMounted(() => {
   if (route.query.apply === 'true') {
-    const ctxStr = sessionStorage.getItem('galleryApplyContext')
-    if (ctxStr) {
-      try {
-        const ctx = JSON.parse(ctxStr)
-        if (ctx.task_type === taskType.value) {
-          if (ctx.source_post_id != null) {
-            templateSourcePostId.value = Number(ctx.source_post_id)
-          }
-          isTemplateApplied.value = true
-        }
-      } catch (e) {
-        console.error('Failed to parse apply context', e)
+    const ctx = loadApplyContext()
+    if (ctx && ctx.task_type === taskType.value) {
+      if (ctx.source_post_id != null) {
+        templateSourcePostId.value = Number(ctx.source_post_id)
       }
+      isTemplateApplied.value = true
     }
   }
 })

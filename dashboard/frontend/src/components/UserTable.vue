@@ -5,10 +5,12 @@ import {
   EditOutlined, 
   DeleteOutlined, 
   UserDeleteOutlined, 
+  UserOutlined,
   SearchOutlined, 
   GiftOutlined, 
   SafetyCertificateOutlined, 
   InfoCircleOutlined,
+  TeamOutlined,
   DownOutlined
 } from '@ant-design/icons-vue'
 import { formatDate } from '../utils/helpers'
@@ -33,8 +35,10 @@ const filterUserGroup = ref(null)
 const searchUsername = ref('')
 const isUsernamePartial = ref(true)
 const searchTimeout = ref(null)
+let latestUsersRequestId = 0
 
 const loadUsersData = async () => {
+  const requestId = ++latestUsersRequestId
   loading.value = true
   error.value = null
   try {
@@ -47,13 +51,21 @@ const loadUsersData = async () => {
       username_partial: isUsernamePartial.value
     }
     const res = await fetchUsers(currentPage.value, pageSize.value, params_obj)
+    if (requestId !== latestUsersRequestId) {
+      return
+    }
     users.value = res.items || []
     totalUsers.value = res.total || 0
   } catch (err) {
+    if (requestId !== latestUsersRequestId) {
+      return
+    }
     console.error('Failed to load users:', err)
     error.value = '加载用户列表失败'
   } finally {
-    loading.value = false
+    if (requestId === latestUsersRequestId) {
+      loading.value = false
+    }
   }
 }
 
@@ -179,6 +191,7 @@ const currentIdentityUser = ref(null)
 const newIdentityValue = ref('外门弟子')
 const newExpireAtValue = ref(null)
 const autoConvertIdentity = ref(true)
+const updatingIdentity = ref(false)
 
 const editGroupVisible = ref(false)
 const updatingGroup = ref(false)

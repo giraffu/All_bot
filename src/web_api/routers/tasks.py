@@ -4,7 +4,7 @@ import logging
 from typing import Any
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException
 from sse_starlette.sse import EventSourceResponse
 
 from src.core.task_core import (
@@ -22,7 +22,7 @@ from src.services.storage import storage
 from src.services.image_service import image_service
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from src.web_api.dependencies import get_current_user, get_db
+from src.web_api.dependencies import get_current_user, get_current_user_once, get_db
 from src.web_api.schemas.task_schema import TaskGenerateRequest, TaskGenerateResponse, TaskResultResponse
 
 router = APIRouter()
@@ -68,6 +68,14 @@ async def _get_user_history_record(task_id: str, user_id: int, session_factory) 
         return result.scalars().first()
 
 
+async def _get_owned_active_task(task_id: str, user_id: int) -> dict[str, Any] | None:
+    tasks = await redis_client.get_active_tasks()
+    task = tasks.get(task_id)
+    if task and task.get("user_id") == user_id:
+        return task
+    return None
+
+
 async def _build_not_found_progress_payload(task_id: str, user_id: int, session_factory) -> dict[str, Any]:
     history = await _get_user_history_record(task_id, user_id, session_factory)
     if history:
@@ -88,8 +96,12 @@ async def _build_not_found_progress_payload(task_id: str, user_id: int, session_
 async def cancel_pending_task(task_id: str, current_user: User = Depends(get_current_user)):
     try:
         from src.core.task_core import cancel_user_task
-        await cancel_user_task(task_id, current_user.id)
-        return {"status": "success", "message": "任务已成功撤销，灵石已退回"}
+        result = await cancel_user_task(task_id, current_user.id)
+        return {
+            "status": "success",
+            "message": result.get("message", "取消请求已受理"),
+            "cancel_state": result.get("state"),
+        }
     except CoreDomainError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -156,7 +168,14 @@ async def get_task_result(
     """
 
     hist = (
-        (await db.execute(select(History).where(History.task_id == task_id)))
+        (
+            await db.execute(
+                select(History).where(
+                    History.task_id == task_id,
+                    History.user_id == current_user.id,
+                )
+            )
+        )
         .scalars()
         .first()
     )
@@ -168,9 +187,6 @@ async def get_task_result(
             "task_type": None,
             "media_type": None,
         }
-
-    if hist.user_id != current_user.id:
-        raise HTTPException(status_code=403, detail="Not authorized to access this task")
 
     is_video = hist.type in VIDEO_TASK_TYPES if hist.type else False
     media_type = "video" if is_video else "image"
@@ -197,7 +213,10 @@ async def get_task_result(
 
 
 @router.get("/{task_id}/stream")
-async def task_status_stream(task_id: str, request: Request):
+async def task_status_stream(
+    task_id: str,
+    current_user: User = Depends(get_current_user_once),
+):
     """
     SSE Endpoint for real-time task progress tracking.
     Listens to Redis Pub/Sub channel: comfy:task_events:{task_id}
@@ -205,20 +224,12 @@ async def task_status_stream(task_id: str, request: Request):
     """
     from config import API_BASE
     from src.database.core import AsyncSessionLocal
-    from src.web_api.dependencies import get_current_user
+    user_id = current_user.id
 
-    token = request.query_params.get("token")
-    if not token:
-        auth_header = request.headers.get("Authorization")
-        if auth_header and auth_header.startswith("Bearer "):
-            token = auth_header.split(" ")[1]
-
-    if not token:
-        raise HTTPException(status_code=401, detail="Not authenticated")
-
-    async with AsyncSessionLocal() as session:
-        current_user = await get_current_user(session, token)
-        user_id = current_user.id
+    owned_active_task = await _get_owned_active_task(task_id, user_id)
+    owned_history = await _get_user_history_record(task_id, user_id, AsyncSessionLocal)
+    if not owned_active_task and not owned_history:
+        raise HTTPException(status_code=404, detail="任务不存在或无权限")
 
     async def get_task_status_full():
         try:
@@ -363,7 +374,7 @@ async def task_status_stream(task_id: str, request: Request):
 
 
 @router.get("/queue-status")
-async def get_queue_status(current_user: User = Depends(get_current_user)) -> dict:
+async def get_queue_status(_current_user: User = Depends(get_current_user)) -> dict:
     """获取当前系统的排队宏观大盘数据"""
     status = await image_service.get_queue_info()
     if not status:

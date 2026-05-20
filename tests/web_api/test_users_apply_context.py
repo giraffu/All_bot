@@ -5,7 +5,6 @@ import pytest
 
 from src.database import core as db_core
 from src.database.models import GalleryPost, History
-from src.web_api import dependencies as web_dependencies
 from src.web_api.routers import users as users_router
 
 
@@ -92,18 +91,16 @@ async def test_get_favorite_apply_context_probes_media_after_session_closes(
     )
 
     async def _probe(_output_file, _media_type):
-        assert session.closed is True
         return (1024, 1024, 8)
 
     monkeypatch.setattr(db_core, "AsyncSessionLocal", lambda: session)
-    monkeypatch.setattr(
-        web_dependencies,
-        "get_current_user",
-        AsyncMock(return_value=type("User", (), {"id": 123})()),
-    )
     monkeypatch.setattr(users_router, "extract_media_metadata_from_storage", _probe)
 
-    response = await users_router.get_favorite_apply_context("task-1", token="test-token")
+    response = await users_router.get_favorite_apply_context(
+        "task-1",
+        current_user=type("User", (), {"id": 123})(),
+        db=session,
+    )
 
     assert response.task_id == "task-1"
     assert response.billing_resolution == "1024"
@@ -115,6 +112,7 @@ async def test_get_favorite_apply_context_probes_media_after_session_closes(
     assert history.width is None
     assert history.height is None
     assert history.duration is None
+    assert session.closed is False
     session.commit.assert_not_awaited()
 
 
@@ -166,13 +164,11 @@ async def test_get_favorite_apply_context_prefers_active_newer_gallery_post_meta
     )
 
     monkeypatch.setattr(db_core, "AsyncSessionLocal", lambda: session)
-    monkeypatch.setattr(
-        web_dependencies,
-        "get_current_user",
-        AsyncMock(return_value=type("User", (), {"id": 123})()),
+    response = await users_router.get_favorite_apply_context(
+        "task-1",
+        current_user=type("User", (), {"id": 123})(),
+        db=session,
     )
-
-    response = await users_router.get_favorite_apply_context("task-1", token="test-token")
 
     assert response.post_id == 2
     assert response.source_post_id == 2
@@ -207,13 +203,11 @@ async def test_get_favorite_apply_context_uses_short_side_for_video_billing_tier
     )
 
     monkeypatch.setattr(db_core, "AsyncSessionLocal", lambda: session)
-    monkeypatch.setattr(
-        web_dependencies,
-        "get_current_user",
-        AsyncMock(return_value=type("User", (), {"id": 123})()),
+    response = await users_router.get_favorite_apply_context(
+        "task-1",
+        current_user=type("User", (), {"id": 123})(),
+        db=session,
     )
-
-    response = await users_router.get_favorite_apply_context("task-1", token="test-token")
 
     assert response.billing_resolution == "720"
     assert response.width == 720
@@ -246,13 +240,11 @@ async def test_get_favorite_apply_context_maps_512x768_to_512_billing_tier(
     )
 
     monkeypatch.setattr(db_core, "AsyncSessionLocal", lambda: session)
-    monkeypatch.setattr(
-        web_dependencies,
-        "get_current_user",
-        AsyncMock(return_value=type("User", (), {"id": 123})()),
+    response = await users_router.get_favorite_apply_context(
+        "task-1",
+        current_user=type("User", (), {"id": 123})(),
+        db=session,
     )
-
-    response = await users_router.get_favorite_apply_context("task-1", token="test-token")
 
     assert response.billing_resolution == "512"
     assert response.width == 512
@@ -284,13 +276,11 @@ async def test_get_favorite_apply_context_maps_1024x1536_to_1024_billing_tier(
     )
 
     monkeypatch.setattr(db_core, "AsyncSessionLocal", lambda: session)
-    monkeypatch.setattr(
-        web_dependencies,
-        "get_current_user",
-        AsyncMock(return_value=type("User", (), {"id": 123})()),
+    response = await users_router.get_favorite_apply_context(
+        "task-1",
+        current_user=type("User", (), {"id": 123})(),
+        db=session,
     )
-
-    response = await users_router.get_favorite_apply_context("task-1", token="test-token")
 
     assert response.billing_resolution == "1024"
     assert response.width == 1024
@@ -324,13 +314,11 @@ async def test_get_favorite_apply_context_strips_ltx_prefix_but_keeps_media_dura
     )
 
     monkeypatch.setattr(db_core, "AsyncSessionLocal", lambda: session)
-    monkeypatch.setattr(
-        web_dependencies,
-        "get_current_user",
-        AsyncMock(return_value=type("User", (), {"id": 123})()),
+    response = await users_router.get_favorite_apply_context(
+        "task-1",
+        current_user=type("User", (), {"id": 123})(),
+        db=session,
     )
-
-    response = await users_router.get_favorite_apply_context("task-1", token="test-token")
 
     assert response.prompt == "wide cinematic dolly shot"
     assert response.duration == 1
@@ -362,13 +350,11 @@ async def test_get_favorite_apply_context_maps_legacy_ltx_media_duration_to_requ
     )
 
     monkeypatch.setattr(db_core, "AsyncSessionLocal", lambda: session)
-    monkeypatch.setattr(
-        web_dependencies,
-        "get_current_user",
-        AsyncMock(return_value=type("User", (), {"id": 123})()),
+    response = await users_router.get_favorite_apply_context(
+        "task-1",
+        current_user=type("User", (), {"id": 123})(),
+        db=session,
     )
-
-    response = await users_router.get_favorite_apply_context("task-1", token="test-token")
 
     assert response.duration == 21
     assert response.requested_duration == 20
@@ -399,13 +385,11 @@ async def test_get_favorite_apply_context_maps_legacy_ltx_media_duration_16_to_1
     )
 
     monkeypatch.setattr(db_core, "AsyncSessionLocal", lambda: session)
-    monkeypatch.setattr(
-        web_dependencies,
-        "get_current_user",
-        AsyncMock(return_value=type("User", (), {"id": 123})()),
+    response = await users_router.get_favorite_apply_context(
+        "task-1",
+        current_user=type("User", (), {"id": 123})(),
+        db=session,
     )
-
-    response = await users_router.get_favorite_apply_context("task-1", token="test-token")
 
     assert response.duration == 16
     assert response.requested_duration == 15
@@ -436,13 +420,11 @@ async def test_get_favorite_apply_context_maps_legacy_custom_video_duration_9_to
     )
 
     monkeypatch.setattr(db_core, "AsyncSessionLocal", lambda: session)
-    monkeypatch.setattr(
-        web_dependencies,
-        "get_current_user",
-        AsyncMock(return_value=type("User", (), {"id": 123})()),
+    response = await users_router.get_favorite_apply_context(
+        "task-1",
+        current_user=type("User", (), {"id": 123})(),
+        db=session,
     )
-
-    response = await users_router.get_favorite_apply_context("task-1", token="test-token")
 
     assert response.duration == 9
     assert response.requested_duration == 8
@@ -473,13 +455,11 @@ async def test_get_favorite_apply_context_maps_legacy_video_lora_duration_11_to_
     )
 
     monkeypatch.setattr(db_core, "AsyncSessionLocal", lambda: session)
-    monkeypatch.setattr(
-        web_dependencies,
-        "get_current_user",
-        AsyncMock(return_value=type("User", (), {"id": 123})()),
+    response = await users_router.get_favorite_apply_context(
+        "task-1",
+        current_user=type("User", (), {"id": 123})(),
+        db=session,
     )
-
-    response = await users_router.get_favorite_apply_context("task-1", token="test-token")
 
     assert response.duration == 11
     assert response.requested_duration == 10
@@ -508,13 +488,11 @@ async def test_get_favorite_apply_context_keeps_non_video_billing_resolution_rea
     )
 
     monkeypatch.setattr(db_core, "AsyncSessionLocal", lambda: session)
-    monkeypatch.setattr(
-        web_dependencies,
-        "get_current_user",
-        AsyncMock(return_value=type("User", (), {"id": 123})()),
+    response = await users_router.get_favorite_apply_context(
+        "task-1",
+        current_user=type("User", (), {"id": 123})(),
+        db=session,
     )
-
-    response = await users_router.get_favorite_apply_context("task-1", token="test-token")
 
     assert response.billing_resolution is None
     assert history.billing_resolution == "720"
@@ -545,13 +523,11 @@ async def test_get_favorite_apply_context_prefers_requested_duration_and_strips_
     )
 
     monkeypatch.setattr(db_core, "AsyncSessionLocal", lambda: session)
-    monkeypatch.setattr(
-        web_dependencies,
-        "get_current_user",
-        AsyncMock(return_value=type("User", (), {"id": 123})()),
+    response = await users_router.get_favorite_apply_context(
+        "task-1",
+        current_user=type("User", (), {"id": 123})(),
+        db=session,
     )
-
-    response = await users_router.get_favorite_apply_context("task-1", token="test-token")
 
     assert response.prompt == "cinematic motion"
     assert response.duration == 1

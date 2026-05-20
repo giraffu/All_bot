@@ -1336,6 +1336,19 @@ class TaskService:
             )
 
     @staticmethod
+    async def monitor_task_progress(
+        task_id, status_msg, is_video, monitor_func, identity_str=None, user_group=None
+    ):
+        return await TaskService._monitor_task_progress(
+            task_id,
+            status_msg,
+            is_video,
+            monitor_func,
+            identity_str=identity_str,
+            user_group=user_group,
+        )
+
+    @staticmethod
     async def _monitor_task_progress(
         task_id, status_msg, is_video, monitor_func, identity_str=None, user_group=None
     ):
@@ -1442,6 +1455,46 @@ class TaskService:
                     last_status = status
 
         return final_info
+
+    @staticmethod
+    async def handle_task_completion(
+        context,
+        chat_id,
+        internal_user_id,
+        prompt,
+        task_type,
+        task_id,
+        saved_input_images,
+        user_logger,
+        is_video,
+        send_result,
+        reply_markup,
+        status_msg,
+        delete_status,
+        caption=None,
+        allow_contribute=True,
+        billing_resolution: Optional[str] = None,
+        requested_duration: Optional[int] = None,
+    ):
+        return await TaskService._handle_task_completion(
+            context=context,
+            chat_id=chat_id,
+            internal_user_id=internal_user_id,
+            prompt=prompt,
+            task_type=task_type,
+            task_id=task_id,
+            saved_input_images=saved_input_images,
+            user_logger=user_logger,
+            is_video=is_video,
+            send_result=send_result,
+            reply_markup=reply_markup,
+            status_msg=status_msg,
+            delete_status=delete_status,
+            caption=caption,
+            allow_contribute=allow_contribute,
+            billing_resolution=billing_resolution,
+            requested_duration=requested_duration,
+        )
 
     @staticmethod
     async def _handle_task_completion(

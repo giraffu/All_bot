@@ -110,6 +110,11 @@ async def verify_token(credentials: HTTPAuthorizationCredentials = Depends(secur
     return credentials.credentials
 
 
+@app.get("/health")
+async def health_check():
+    return {"status": "ok", "service": "central-api"}
+
+
 @app.post("/comfy_img2img", response_model=TaskResponse)
 async def create_img2img_task(  # vulture: ignore
     request: Img2ImgRequest,
@@ -359,10 +364,10 @@ async def cancel_task(
     queue_manager: QueueManager = Depends(get_queue_manager),
     token: str = Depends(verify_token),
 ):
-    success = await queue_manager.cancel_task(task_id)
-    if not success:
+    result = await queue_manager.cancel_task(task_id)
+    if not result:
         raise HTTPException(status_code=404, detail="Task not found")
-    return {"message": "Task cancelled successfully", "task_id": task_id}
+    return result
 
 
 @app.get("/api/v1/tasks/{task_id}", response_model=TaskStatusResponse)
@@ -395,6 +400,10 @@ async def get_task_status_v1(
         error=task.get("error_msg"),
         result_path=result_path,
         image_url=image_url,
+        cancel_requested=queue_manager._as_bool(task.get("cancel_requested")),
+        cancel_requested_at=float(task["cancel_requested_at"])
+        if task.get("cancel_requested_at")
+        else None,
     )
 
 
@@ -423,6 +432,10 @@ async def get_task_status(
         error=task.get("error_msg"),
         result_path=task.get("result_path"),
         task_type=task.get("type"),
+        cancel_requested=queue_manager._as_bool(task.get("cancel_requested")),
+        cancel_requested_at=float(task["cancel_requested_at"])
+        if task.get("cancel_requested_at")
+        else None,
     )
 
 
@@ -456,8 +469,10 @@ async def get_task_image(
         os.close(fd)
 
         minio_client.fget_object(settings.minio_result_bucket, result_path, temp_path)
+        background_tasks = BackgroundTasks()
+        background_tasks.add_task(os.remove, temp_path)
         return FileResponse(
-            temp_path, background=BackgroundTasks().add_task(os.remove, temp_path)
+            temp_path, background=background_tasks
         )
     except Exception as e:
         logger.error(f"MinIO download failed: {e}")
@@ -492,8 +507,10 @@ async def get_task_video(
         os.close(fd)
 
         minio_client.fget_object(settings.minio_result_bucket, result_path, temp_path)
+        background_tasks = BackgroundTasks()
+        background_tasks.add_task(os.remove, temp_path)
         return FileResponse(
-            temp_path, background=BackgroundTasks().add_task(os.remove, temp_path)
+            temp_path, background=background_tasks
         )
     except Exception as e:
         logger.error(f"MinIO download failed: {e}")

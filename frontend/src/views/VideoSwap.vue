@@ -5,12 +5,14 @@ import { message } from 'ant-design-vue'
 import { useUpload } from '@/composables/useUpload'
 import { useTaskStream } from '@/composables/useTaskStream'
 import { useTaskResult } from '@/composables/useTaskResult'
+import { useGalleryApplyContext } from '@/composables/useGalleryApplyContext'
 import { useRoute } from 'vue-router'
 import { onMounted } from 'vue'
 
 const { uploading, progress: uploadProgress, uploadFile } = useUpload()
 const { isSubmitting, submitTask } = useTaskStream()
 const { currentTask, setSubmittedTaskId, isVideoUrl, isImageUrl, downloadResult } = useTaskResult()
+const { loadApplyContext } = useGalleryApplyContext()
 const route = useRoute()
 
 const faceFileList = ref<any[]>([])
@@ -33,23 +35,16 @@ const templateSourcePostId = ref<number | null>(null)
 
 onMounted(() => {
   if (route.query.apply === 'true') {
-    const ctxStr = sessionStorage.getItem('galleryApplyContext')
-    if (ctxStr) {
-      try {
-        const ctx = JSON.parse(ctxStr)
-        if (ctx.task_type === 'face_video' && ctx.input_file) {
-          // prefill target video
-          bodyObjectKey.value = ctx.input_file
-          bodyPreview.value = ctx.input_file_url || null
-          if (ctx.width) resolution.value = ctx.width.toString()
-          if (ctx.source_post_id != null) {
-            templateSourcePostId.value = Number(ctx.source_post_id)
-          }
-          isTemplateApplied.value = true
-        }
-      } catch (e) {
-        console.error('Failed to parse apply context', e)
+    const ctx = loadApplyContext()
+    if (ctx && ctx.task_type === 'face_video' && ctx.input_file) {
+      // prefill target video
+      bodyObjectKey.value = ctx.input_file
+      bodyPreview.value = ctx.input_file_url || null
+      if (ctx.width) resolution.value = ctx.width.toString()
+      if (ctx.source_post_id != null) {
+        templateSourcePostId.value = Number(ctx.source_post_id)
       }
+      isTemplateApplied.value = true
     }
   }
 })

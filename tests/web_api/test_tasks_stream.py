@@ -1,11 +1,11 @@
 import asyncio
 import json
+from unittest.mock import AsyncMock
 
 import pytest
 
 from src.database.models import History
 from src.database import core as db_core
-from src.web_api import dependencies as web_dependencies
 from src.web_api.routers import tasks as tasks_router
 
 
@@ -121,12 +121,6 @@ class _FakeAsyncClient:
         return next_response
 
 
-class _FakeRequest:
-    def __init__(self, token="test-token"):
-        self.query_params = {"token": token}
-        self.headers = {}
-
-
 async def _collect_stream_events(response):
     events = []
     async for event in response.body_iterator:
@@ -218,15 +212,16 @@ async def test_task_status_stream_emits_success_once_and_stops_when_initial_stat
         output_file="bot-data/history/task-1/output.mp4",
     )
 
-    async def fake_get_current_user(_session, _token):
-        return type("User", (), {"id": 123})()
-
     async def fake_get_user_history_record(_task_id, _user_id, _session_factory):
         return history
 
     monkeypatch.setattr(db_core, "AsyncSessionLocal", lambda: _FakeAuthSession())
-    monkeypatch.setattr(web_dependencies, "get_current_user", fake_get_current_user)
     monkeypatch.setattr(tasks_router.redis_client, "redis", _FakeRedis(pubsub))
+    monkeypatch.setattr(
+        tasks_router,
+        "_get_owned_active_task",
+        AsyncMock(return_value={"task_id": "task-1", "user_id": 123}),
+    )
     monkeypatch.setattr(
         tasks_router.httpx,
         "AsyncClient",
@@ -238,7 +233,9 @@ async def test_task_status_stream_emits_success_once_and_stops_when_initial_stat
         fake_get_user_history_record,
     )
 
-    response = await tasks_router.task_status_stream("task-1", _FakeRequest())
+    response = await tasks_router.task_status_stream(
+        "task-1", type("User", (), {"id": 123})()
+    )
     events = await _collect_stream_events(response)
 
     assert len(events) == 2
@@ -269,15 +266,16 @@ async def test_task_status_stream_emits_failed_once_and_stops_when_queue_poll_la
     ]
     pubsub = _FakePubSub(messages=[None])
 
-    async def fake_get_current_user(_session, _token):
-        return type("User", (), {"id": 123})()
-
     async def fake_get_user_history_record(_task_id, _user_id, _session_factory):
         return None
 
     monkeypatch.setattr(db_core, "AsyncSessionLocal", lambda: _FakeAuthSession())
-    monkeypatch.setattr(web_dependencies, "get_current_user", fake_get_current_user)
     monkeypatch.setattr(tasks_router.redis_client, "redis", _FakeRedis(pubsub))
+    monkeypatch.setattr(
+        tasks_router,
+        "_get_owned_active_task",
+        AsyncMock(return_value={"task_id": "task-1", "user_id": 123}),
+    )
     monkeypatch.setattr(
         tasks_router.httpx,
         "AsyncClient",
@@ -289,7 +287,9 @@ async def test_task_status_stream_emits_failed_once_and_stops_when_queue_poll_la
         fake_get_user_history_record,
     )
 
-    response = await tasks_router.task_status_stream("task-1", _FakeRequest())
+    response = await tasks_router.task_status_stream(
+        "task-1", type("User", (), {"id": 123})()
+    )
     events = await _collect_stream_events(response)
 
     assert len(events) == 2
@@ -329,16 +329,17 @@ async def test_task_status_stream_does_not_emit_not_found_terminal_event_for_tra
     pubsub = _FakePubSub(messages=[asyncio.CancelledError()])
     history_lookup_calls = []
 
-    async def fake_get_current_user(_session, _token):
-        return type("User", (), {"id": 123})()
-
     async def fake_get_user_history_record(_task_id, _user_id, _session_factory):
         history_lookup_calls.append((_task_id, _user_id))
         return None
 
     monkeypatch.setattr(db_core, "AsyncSessionLocal", lambda: _FakeAuthSession())
-    monkeypatch.setattr(web_dependencies, "get_current_user", fake_get_current_user)
     monkeypatch.setattr(tasks_router.redis_client, "redis", _FakeRedis(pubsub))
+    monkeypatch.setattr(
+        tasks_router,
+        "_get_owned_active_task",
+        AsyncMock(return_value={"task_id": "task-1", "user_id": 123}),
+    )
     monkeypatch.setattr(
         tasks_router.httpx,
         "AsyncClient",
@@ -350,7 +351,9 @@ async def test_task_status_stream_does_not_emit_not_found_terminal_event_for_tra
         fake_get_user_history_record,
     )
 
-    response = await tasks_router.task_status_stream("task-1", _FakeRequest())
+    response = await tasks_router.task_status_stream(
+        "task-1", type("User", (), {"id": 123})()
+    )
     events = await _collect_stream_events(response)
 
     assert case_name in {"5xx", "timeout"}
@@ -361,7 +364,7 @@ async def test_task_status_stream_does_not_emit_not_found_terminal_event_for_tra
         }
     ]
     assert status_calls == [("http://127.0.0.1:8003/status/task-1", 2.0)]
-    assert history_lookup_calls == []
+    assert history_lookup_calls == [("task-1", 123)]
     assert pubsub.subscribed == ["comfy:task_events:task-1"]
     assert pubsub.unsubscribed == ["comfy:task_events:task-1"]
     assert pubsub.closed is True
@@ -396,16 +399,17 @@ async def test_task_status_stream_does_not_emit_terminal_event_when_queue_poll_h
     pubsub = _FakePubSub(messages=[None, asyncio.CancelledError()])
     history_lookup_calls = []
 
-    async def fake_get_current_user(_session, _token):
-        return type("User", (), {"id": 123})()
-
     async def fake_get_user_history_record(_task_id, _user_id, _session_factory):
         history_lookup_calls.append((_task_id, _user_id))
         return None
 
     monkeypatch.setattr(db_core, "AsyncSessionLocal", lambda: _FakeAuthSession())
-    monkeypatch.setattr(web_dependencies, "get_current_user", fake_get_current_user)
     monkeypatch.setattr(tasks_router.redis_client, "redis", _FakeRedis(pubsub))
+    monkeypatch.setattr(
+        tasks_router,
+        "_get_owned_active_task",
+        AsyncMock(return_value={"task_id": "task-1", "user_id": 123}),
+    )
     monkeypatch.setattr(
         tasks_router.httpx,
         "AsyncClient",
@@ -417,7 +421,9 @@ async def test_task_status_stream_does_not_emit_terminal_event_when_queue_poll_h
         fake_get_user_history_record,
     )
 
-    response = await tasks_router.task_status_stream("task-1", _FakeRequest())
+    response = await tasks_router.task_status_stream(
+        "task-1", type("User", (), {"id": 123})()
+    )
     events = await _collect_stream_events(response)
 
     assert case_name in {"5xx", "timeout"}
@@ -440,7 +446,7 @@ async def test_task_status_stream_does_not_emit_terminal_event_when_queue_poll_h
         ("http://127.0.0.1:8003/status/task-1", 2.0),
         ("http://127.0.0.1:8003/status/task-1", 2.0),
     ]
-    assert history_lookup_calls == []
+    assert history_lookup_calls == [("task-1", 123)]
     assert pubsub.subscribed == ["comfy:task_events:task-1"]
     assert pubsub.unsubscribed == ["comfy:task_events:task-1"]
     assert pubsub.closed is True

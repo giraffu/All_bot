@@ -26,6 +26,7 @@ import {
   buildLegacyTemplateRoute,
   resolveTemplateApplyEntry
 } from '@/utils/templateApplyEntry'
+import { useGalleryApplyContext } from '@/composables/useGalleryApplyContext'
 import PagedNavigation from '@/components/PagedNavigation.vue'
 
 interface Post {
@@ -57,6 +58,7 @@ const props = withDefaults(
     taskType: 'all',
   },
 )
+const { saveApplyContext } = useGalleryApplyContext()
 
 const router = useRouter()
 const { isMobile } = useViewport()
@@ -461,7 +463,7 @@ const handleApply = async () => {
     }
 
     detailVisible.value = false
-    sessionStorage.setItem('galleryApplyContext', JSON.stringify(rawContext))
+    saveApplyContext(rawContext)
     message.success(t('my_notes.template_loaded_with_upload_hint'))
     void router.push(buildLegacyTemplateRoute(resolvedEntry, t))
   } catch (error) {

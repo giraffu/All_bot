@@ -27,6 +27,7 @@ import {
   buildLegacyTemplateRoute,
   resolveTemplateApplyEntry
 } from '@/utils/templateApplyEntry'
+import { useGalleryApplyContext } from '@/composables/useGalleryApplyContext'
 
 interface Post {
   id: number
@@ -60,6 +61,7 @@ const route = useRoute()
 const router = useRouter()
 const { t } = useI18n()
 const layoutContentRef = useMainLayoutContentRef()
+const { saveApplyContext } = useGalleryApplyContext()
 const posts = ref<Post[]>([])
 const loading = ref(false)
 const currentPage = ref(1)
@@ -558,7 +560,7 @@ const handleApply = async () => {
     }
 
     detailVisible.value = false
-    sessionStorage.setItem('galleryApplyContext', JSON.stringify(rawContext))
+    saveApplyContext(rawContext)
     message.success(t('my_notes.template_loaded_with_upload_hint'))
     void router.push(buildLegacyTemplateRoute(resolvedEntry, t))
     

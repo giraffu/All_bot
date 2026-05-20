@@ -34,29 +34,36 @@ async def test_monitor_task_and_release_lock_schedules_web_history_r2_warmup(mon
     monkeypatch.setattr(task_core.TaskRegistry, "remove_task", AsyncMock())
     monkeypatch.setattr(task_core, "refund_credits", AsyncMock())
 
+    submission_context = task_core.TaskSubmissionContext(
+        task_type="image",
+        is_video_task=False,
+        user_logger=fake_user_logger,
+        prompt="hello",
+        saved_inputs=[],
+        metadata={},
+        allow_contribute=True,
+        final_priority=0,
+        video_request=task_core.VideoTaskRequest(
+            requested_duration=10,
+            output_width=1024,
+            output_height=1024,
+        ),
+    )
+
     await task_core.monitor_task_and_release_lock(
-        task_id="task-1",
+        backend_task_id="task-1",
         internal_user_id=123,
         username="tester",
         registry_task_id="registry-1",
-        is_video=False,
-        task_type="image",
-        prompt="hello",
-        input_images=[],
-        allow_contribute=True,
+        submission_context=submission_context,
         cost=1,
-        billing_resolution=None,
-        output_width=1024,
-        output_height=1024,
-        output_duration=None,
-        requested_duration=10,
     )
 
     fake_user_logger.log_task.assert_awaited_once()
     assert fake_user_logger.log_task.await_args.kwargs["requested_duration"] == 10
     warmup_mock.assert_called_once_with(
         user_id=123,
-        task_id="task-1",
+        task_id="registry-1",
         output_file="123/output_images/task-1.png",
         media_type="image",
         source="web",
@@ -162,7 +169,8 @@ async def test_process_and_submit_task_passes_requested_duration_to_web_monitor(
         client_type="web",
     )
 
-    assert result["task_id"] == "backend-task-1"
+    assert result["task_id"] == "reg-1"
     monitor_mock.assert_called_once()
-    assert monitor_mock.call_args.kwargs["requested_duration"] == 20
-    assert monitor_mock.call_args.kwargs["output_duration"] == 20
+    submission_context = monitor_mock.call_args.kwargs["submission_context"]
+    assert submission_context.requested_duration == 20
+    assert submission_context.output_duration == 20

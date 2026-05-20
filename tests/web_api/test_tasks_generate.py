@@ -5,7 +5,6 @@ import pytest
 from src.core import task_core
 from src.database import core as db_core
 from src.database.models import History
-from src.web_api import dependencies as web_dependencies
 from src.web_api.routers import tasks as tasks_router
 from src.web_api.routers import users as users_router
 from src.web_api.schemas.task_schema import TaskGenerateRequest
@@ -112,14 +111,8 @@ async def test_web_apply_submit_cost_for_custom_video(monkeypatch):
     )
 
     monkeypatch.setattr(db_core, "AsyncSessionLocal", lambda: apply_session)
-    monkeypatch.setattr(
-        web_dependencies,
-        "get_current_user",
-        AsyncMock(return_value=_build_current_user()),
-    )
-
     apply_context = await users_router.get_favorite_apply_context(
-        "task-1", token="test-token"
+        "task-1", current_user=_build_current_user(), db=apply_session
     )
 
     assert apply_context.billing_resolution == "720"
@@ -148,8 +141,9 @@ async def test_web_apply_submit_cost_for_custom_video(monkeypatch):
     assert response.balance_remaining == 888
     monitor_mock.assert_called_once()
     assert monitor_mock.call_args.kwargs["cost"] == 36
-    assert monitor_mock.call_args.kwargs["billing_resolution"] == "720"
-    assert monitor_mock.call_args.kwargs["requested_duration"] == 8
+    submission_context = monitor_mock.call_args.kwargs["submission_context"]
+    assert submission_context.billing_resolution == "720"
+    assert submission_context.requested_duration == 8
 
 
 @pytest.mark.asyncio
@@ -174,14 +168,8 @@ async def test_web_apply_submit_cost_for_video_lora(monkeypatch):
     )
 
     monkeypatch.setattr(db_core, "AsyncSessionLocal", lambda: apply_session)
-    monkeypatch.setattr(
-        web_dependencies,
-        "get_current_user",
-        AsyncMock(return_value=_build_current_user()),
-    )
-
     apply_context = await users_router.get_favorite_apply_context(
-        "task-2", token="test-token"
+        "task-2", current_user=_build_current_user(), db=apply_session
     )
 
     assert apply_context.billing_resolution == "1024"
@@ -212,5 +200,6 @@ async def test_web_apply_submit_cost_for_video_lora(monkeypatch):
     assert response.balance_remaining == 888
     monitor_mock.assert_called_once()
     assert monitor_mock.call_args.kwargs["cost"] == 72
-    assert monitor_mock.call_args.kwargs["billing_resolution"] == "1024"
-    assert monitor_mock.call_args.kwargs["requested_duration"] == 8
+    submission_context = monitor_mock.call_args.kwargs["submission_context"]
+    assert submission_context.billing_resolution == "1024"
+    assert submission_context.requested_duration == 8

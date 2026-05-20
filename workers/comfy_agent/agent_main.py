@@ -316,7 +316,7 @@ class ComfyAgent:
             response = await self.master_client.get(f"/api/agent/task/check/{task_id}")
             if response.status_code == 200:
                 data = response.json()
-                if data.get("status") == "cancelled":
+                if data.get("status") == "cancelled" or data.get("cancel_requested"):
                     return True
         except Exception as e:
             logger.debug(f"Failed to check task status: {e}")

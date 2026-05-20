@@ -1,284 +1,84 @@
 <script setup>
-import { ref, onMounted, computed, watch, onUnmounted } from 'vue'
-import { fetchStats, fetchUsers, fetchUserHistory, fetchStatsHistory, fetchTaskStatus, fetchTaskImage, fetchTaskVideo } from './api/api'
-import HomeDashboard from "./components/HomeDashboard.vue"
-import FinanceDashboard from "./components/FinanceDashboard.vue"
+import { ref, onMounted, watch, onUnmounted } from 'vue'
 import Login from './components/Login.vue'
-import StatsCards from './components/StatsCards.vue'
-import QueueStats from './components/QueueStats.vue'
-import ActiveTasksTable from './components/ActiveTasksTable.vue'
-import UserTable from './components/UserTable.vue'
-import TemplateManager from './components/TemplateManager.vue'
 import HistoryModal from './components/HistoryModal.vue'
-import PieChart from './components/PieChart.vue'
-import LineChart from './components/LineChart.vue'
-import HourlyChart from './components/HourlyChart.vue'
-import CumulativeHourlyChart from './components/CumulativeHourlyChart.vue'
-import GenerationDistributionChart from './components/GenerationDistributionChart.vue'
-import AvgDailyDistributionChart from './components/AvgDailyDistributionChart.vue'
-import CreditDistributionChart from './components/CreditDistributionChart.vue'
-import AvgDailyCreditDistributionChart from './components/AvgDailyCreditDistributionChart.vue'
-import CreditHoldingDistributionChart from './components/CreditHoldingDistributionChart.vue'
-import DailyTypeChart from './components/DailyTypeChart.vue'
-import CumulativeTypeChart from './components/CumulativeTypeChart.vue'
-import HistoryTable from './components/HistoryTable.vue'
-import WorkerHistoryTable from './components/WorkerHistoryTable.vue'
-import LogTable from './components/LogTable.vue'
-import RechargeSystem from './components/RechargeSystem.vue'
-import GalleryTable from './components/GalleryTable.vue'
-import ReferralTable from './components/ReferralTable.vue'
-import { message } from 'ant-design-vue'
 import {
   UserOutlined,
-  HistoryOutlined,
   MenuUnfoldOutlined,
   MenuFoldOutlined,
-  HomeOutlined,
-  FileTextOutlined,
-  PayCircleOutlined,
-  PictureOutlined,
-  SettingOutlined,
-  LogoutOutlined,
   ReloadOutlined,
-  DashboardOutlined,
-  SearchOutlined,
   BellOutlined,
-  PieChartOutlined,
-  RobotOutlined,
-  AppstoreOutlined,
-  BankOutlined,
-  GiftOutlined
+  SearchOutlined,
 } from '@ant-design/icons-vue'
+import { useDashboardOverview } from './composables/useDashboardOverview'
+import { useDashboardTaskSearch } from './composables/useDashboardTaskSearch'
+import { useDashboardUserHistory } from './composables/useDashboardUserHistory'
+import { useDashboardNavigation } from './composables/useDashboardNavigation'
+import { useDashboardTabView } from './composables/useDashboardTabView'
 
-// State
 const isAuthenticated = ref(!!localStorage.getItem('token'))
 const activeTab = ref(['home'])
 const collapsed = ref(false)
-const users = ref([])
-const stats = ref({
-  total_users: 0,
-  inner_disciple_count: 0,
-  core_disciple_count: 0,
-  true_disciple_count: 0,
-  total_generations: 0,
-  total_credits: 0,
-  total_active_credits: 0,
-  total_referrals: 0,
-  total_template_contributions: 0,
-  total_approved_contributions: 0,
-  today_users: 0,
-  today_generations: 0,
-  today_active_users: 0,
-  today_checkins: 0,
-  today_type_distribution: {},
-  total_type_distribution: {},
-  generation_distribution: {},
-  avg_daily_distribution: {},
-  credit_distribution: {},
-  avg_daily_credit_distribution: {},
-  credit_holding_distribution: {}
-})
-const statsHistory = ref([])
-const cumulativeStatsHistory = ref([])
-const loading = ref(false)
-const error = ref(null)
-const historyTimeRange = ref(7) // Default 7 days
-const searchQuery = ref('')
-const searchResult = ref(null)
-const searchModalVisible = ref(false)
-const searchLoading = ref(false)
-
-const timeRangeOptions = [
-  { label: '最近 7 天', value: 7 },
-  { label: '最近 2 周', value: 14 },
-  { label: '最近 1 个月', value: 30 },
-  { label: '最近 2 个月', value: 60 },
-  { label: '最近 3 个月', value: 90 },
-  { label: '最近半年', value: 180 },
-  { label: '最近 1 年', value: 365 }
-]
-
-// Type Mapping
-const typeMapping = {
-  'undress': '快速脱衣',
-  'video_undress': '视频脱衣',
-  'face_swap': '快速换脸',
-  'faceswap_step1': '快速换脸',
-  'faceswap_step2': '快速换脸',
-  'random_faceswap': '随机换脸',
-  'face_show': '动图露奶',
-  'face_tongue': '动图吐舌',
-  'fuck': '动图做爱',
-  'penetration': '快速抽插',
-  'penetration_step1': '快速抽插',
-  'penetration_step2': '快速抽插',
-  'perfect_video_insert': '动图传教士',
-  'doggy_style': '动图后入',
-  'blowjob': '脱衣口交',
-  'masturbation': '快速自慰',
-  'image': '自由P图',
-  'edit': '自由P图',
-  'video': '视频生成',
-  'video_pro': '专业视频',
-  'custom_video': '自定义视频',
-  'template_contribute': '模板共建',
-  'undress_tongue': '脱衣吐舌',
-  'closeup_blowjob': '特写口交',
-  'text_to_image': '文生图',
-  'i2i_pro': '幻想换脸',
-  'video_lora': '图生视频(附加模型)',
-  'ltx_video': '高级图生视频',
-  'unknown': '未知类型'
-};
-
-const transformDistribution = (dist) => {
-  if (!dist) return [];
-  return Object.entries(dist).map(([key, value]) => ({
-    name: typeMapping[key] || key,
-    value: value
-  }));
-};
-
-const todayTypeData = computed(() => transformDistribution(stats.value.today_type_distribution));
-const totalTypeData = computed(() => transformDistribution(stats.value.total_type_distribution));
-
-// Modal state
-const showModal = ref(false)
-const selectedUser = ref(null)
-const userHistory = ref([])
-const historyLoading = ref(false)
-
-const handleSearch = async () => {
-  if (!searchQuery.value.trim()) return
-  
-  searchLoading.value = true
-  try {
-    const data = await fetchTaskStatus(searchQuery.value.trim())
-    if (data) {
-      searchResult.value = { ...data, id: searchQuery.value.trim() }
-      searchModalVisible.value = true
-    }
-  } catch (err) {
-    console.error('Search error:', err)
-    message.error('未找到任务或查询失败')
-  } finally {
-    searchLoading.value = false
+const {
+  stats,
+  statsHistory,
+  cumulativeStatsHistory,
+  historyTimeRange,
+  refreshLoading,
+  timeRangeOptions,
+  loadHistory,
+  refreshData
+} = useDashboardOverview()
+const {
+  searchQuery,
+  searchResult,
+  searchModalVisible,
+  searchLoading,
+  handleSearch,
+  closeSearchModal,
+  isImage,
+  isVideo,
+  getTaskImageUrl,
+  getTaskVideoUrl,
+  getStatusColor
+} = useDashboardTaskSearch()
+const {
+  showModal,
+  selectedUser,
+  userHistory,
+  historyLoading,
+  viewHistory,
+  closeModal
+} = useDashboardUserHistory()
+const { menuItems, scrollableTabKeys, currentTabTitle, logoutIcon } =
+  useDashboardNavigation(activeTab)
+const { currentTabView } = useDashboardTabView(
+  activeTab,
+  {
+    stats,
+    statsHistory,
+    cumulativeStatsHistory,
+    historyTimeRange,
+    timeRangeOptions,
+    loadHistory,
+  },
+  {
+    viewHistory,
   }
-}
-
-const closeSearchModal = () => {
-  searchModalVisible.value = false
-  searchResult.value = null
-}
-
-const isImage = (filename) => /\.(png|jpg|jpeg|webp)$/i.test(filename || '')
-const isVideo = (filename) => /\.(mp4|mov|webm)$/i.test(filename || '')
-const getTaskImageUrl = (id) => fetchTaskImage(id)
-const getTaskVideoUrl = (id) => fetchTaskVideo(id)
-const getStatusColor = (status) => {
-  switch(status) {
-    case 'pending': return 'orange'
-    case 'running': return 'blue'
-    case 'done': return 'success'
-    case 'error': return 'error'
-    default: return 'default'
-  }
-}
-
-// Actions
-const loadStats = async () => {
-  try {
-    stats.value = await fetchStats()
-  } catch (err) {
-    console.error('Error fetching stats:', err)
-  }
-}
-
-const loadHistory = async () => {
-  try {
-    const data = await fetchStatsHistory(historyTimeRange.value)
-    statsHistory.value = data
-  } catch (err) {
-    console.error('Error fetching history:', err)
-  }
-}
-
-// Watch stats and statsHistory to calculate cumulative
-watch([() => stats.value.total_users, statsHistory], ([totalUsers, history]) => {
-  if (totalUsers > 0 && history.length > 0) {
-    let currentTotal = totalUsers
-    const reversedData = [...history].reverse()
-    
-    const cumulativeData = reversedData.map((day) => {
-      const totalForDay = currentTotal
-      currentTotal -= day.new_users
-      return {
-        date: day.date,
-        cumulative_users: totalForDay,
-        cumulative_en_users: day.cumulative_en_users,
-        cumulative_zh_users: day.cumulative_zh_users,
-        cumulative_pwd_users: day.cumulative_pwd_users,
-        new_pwd_users: day.new_pwd_users
-      }
-    }).reverse()
-    
-    cumulativeStatsHistory.value = cumulativeData
-  }
-}, { immediate: true })
-
-const loadUsers = async () => {
-  loading.value = true
-  error.value = null
-  try {
-    users.value = await fetchUsers()
-  } catch (err) {
-    console.error('Error fetching users:', err)
-    error.value = '无法加载用户列表，请检查后端服务是否启动。'
-  } finally {
-    loading.value = false
-  }
-}
-
-const viewHistory = async (user) => {
-  selectedUser.value = user
-  showModal.value = true
-  historyLoading.value = true
-  userHistory.value = []
-  
-  try {
-    userHistory.value = await fetchUserHistory(user.id)
-  } catch (err) {
-    console.error('Error fetching history:', err)
-  } finally {
-    historyLoading.value = false
-  }
-}
-
-const closeModal = () => {
-  showModal.value = false
-  selectedUser.value = null
-  userHistory.value = []
-}
-
-const refreshData = () => {
-  loadStats()
-  loadHistory()
-  // loadUsers is now handled by UserTable
-}
+)
 
 // Auto refresh when switching tabs
 watch(activeTab, (newTab) => {
   const tab = newTab[0]
   if (tab === 'home' || tab === 'finance') {
-    loadStats()
-    loadHistory()
+    void refreshData()
   }
   // UserTable, history, templates handle their own data fetching
 })
 
 const handleLoginSuccess = () => {
   isAuthenticated.value = true
-  refreshData()
+  void refreshData()
 }
 
 const handleLogout = () => {
@@ -293,7 +93,7 @@ const handleUnauthorized = () => {
 onMounted(() => {
   window.addEventListener('unauthorized', handleUnauthorized)
   if (isAuthenticated.value) {
-    refreshData()
+    void refreshData()
   }
 })
 
@@ -321,61 +121,22 @@ onUnmounted(() => {
       </div>
       
       <a-menu v-model:selectedKeys="activeTab" theme="dark" mode="inline">
-          <a-menu-item key="home">
-            <template #icon><home-outlined /></template>
-            <span>数据大盘</span>
-          </a-menu-item>
-          <a-menu-item key="finance">
-            <template #icon><bank-outlined /></template>
-            <span>充值数据</span>
-          </a-menu-item>
-          <a-menu-item key="monitor">
-            <template #icon><dashboard-outlined /></template>
-            <span>系统监控</span>
-          </a-menu-item>
-          <a-menu-item key="users">
-            <template #icon><user-outlined /></template>
-            <span>用户管理</span>
-          </a-menu-item>
-        <a-menu-item key="history">
-          <template #icon><history-outlined /></template>
-          <span>历史生成</span>
-        </a-menu-item>
-        <a-menu-item key="worker_history">
-          <template #icon><robot-outlined /></template>
-          <span>Worker记录</span>
-        </a-menu-item>
-        <a-menu-item key="logs">
-          <template #icon><file-text-outlined /></template>
-          <span>操作日志</span>
-        </a-menu-item>
-        <a-menu-item key="recharge">
-          <template #icon><pay-circle-outlined /></template>
-          <span>充值系统</span>
-        </a-menu-item>
-        <a-menu-item key="templates">
-          <template #icon><picture-outlined /></template>
-          <span>模板共建</span>
-        </a-menu-item>
-        <a-menu-item key="gallery">
-          <template #icon><appstore-outlined /></template>
-          <span>广场内容管理</span>
-        </a-menu-item>
-        <a-menu-item key="referrals">
-          <template #icon><gift-outlined /></template>
-          <span>邀请奖励</span>
-        </a-menu-item>
-        <a-menu-divider />
-        <a-menu-item key="settings" disabled>
-          <template #icon><setting-outlined /></template>
-          <span>系统设置</span>
+        <a-menu-item
+          v-for="item in menuItems"
+          :key="item.key"
+          :disabled="item.disabled"
+        >
+          <template #icon>
+            <component :is="item.icon" />
+          </template>
+          <span>{{ item.label }}</span>
         </a-menu-item>
       </a-menu>
 
       <div class="sidebar-footer" v-if="!collapsed">
         <div class="text-xs text-gray-500 mb-2">v1.2.0-stable</div>
         <a-button @click="handleLogout" type="link" danger block class="flex items-center justify-center gap-2 p-0 h-auto">
-          <logout-outlined /> 退出登录
+          <component :is="logoutIcon" /> 退出登录
         </a-button>
       </div>
     </a-layout-sider>
@@ -391,19 +152,7 @@ onUnmounted(() => {
           />
           <a-breadcrumb class="hidden sm:block">
             <a-breadcrumb-item>首页</a-breadcrumb-item>
-            <a-breadcrumb-item>
-              {{ 
-                activeTab[0] === 'home' ? '数据大盘' : 
-                activeTab[0] === 'finance' ? '充值数据' : 
-                activeTab[0] === 'users' ? '用户管理' : 
-                activeTab[0] === 'history' ? '历史生成' :
-                activeTab[0] === 'logs' ? '操作日志' :
-                activeTab[0] === 'recharge' ? '充值系统' :
-                activeTab[0] === 'gallery' ? '广场内容管理' :
-                activeTab[0] === 'referrals' ? '邀请奖励' :
-                '模板共建' 
-              }}
-            </a-breadcrumb-item>
+            <a-breadcrumb-item>{{ currentTabTitle }}</a-breadcrumb-item>
           </a-breadcrumb>
         </div>
 
@@ -431,7 +180,7 @@ onUnmounted(() => {
                 shape="circle"
                 size="small"
                 @click="refreshData" 
-                :loading="loading"
+                :loading="refreshLoading"
                 class="flex items-center justify-center border-none shadow-none"
               >
                 <template #icon><reload-outlined /></template>
@@ -459,66 +208,11 @@ onUnmounted(() => {
       <!-- Content -->
       <a-layout-content 
         class="p-6 bg-gray-50 flex flex-col h-[calc(100vh-64px)]"
-        :class="['home', 'finance', 'monitor', 'templates', 'logs', 'recharge', 'referrals'].includes(activeTab[0]) ? 'overflow-y-auto' : 'overflow-hidden'"
+        :class="scrollableTabKeys.includes(activeTab[0]) ? 'overflow-y-auto' : 'overflow-hidden'"
       >
         <div class="w-full flex-1 flex flex-col">
-          <!-- System Monitor Tab -->
-          <div v-if="activeTab[0] === 'monitor'" class="flex-1 flex flex-col gap-6">
-            <QueueStats />
-            <ActiveTasksTable />
-          </div>
-
-          <HomeDashboard 
-            v-else-if="activeTab[0] === 'home'" 
-            :stats="stats" 
-            :statsHistory="statsHistory" 
-            :cumulativeStatsHistory="cumulativeStatsHistory" 
-            v-model:historyTimeRange="historyTimeRange" 
-            :timeRangeOptions="timeRangeOptions" 
-            @loadHistory="loadHistory" 
-          />
-
-          <FinanceDashboard 
-            v-else-if="activeTab[0] === 'finance'" 
-            :stats="stats" 
-            :statsHistory="statsHistory" 
-            v-model:historyTimeRange="historyTimeRange" 
-            :timeRangeOptions="timeRangeOptions" 
-            @loadHistory="loadHistory" 
-          />
-
-          <div v-else-if="activeTab[0] === 'users'" class="flex-1 bg-white rounded-xl shadow-sm border p-6 flex flex-col min-h-0">
-            <UserTable 
-              @view-history="viewHistory" 
-            />
-          </div>
-
-          <div v-else-if="activeTab[0] === 'history'" class="flex-1 bg-white rounded-xl shadow-sm border p-6 flex flex-col min-h-0">
-            <HistoryTable />
-          </div>
-
-          <div v-else-if="activeTab[0] === 'worker_history'" class="flex-1 bg-white rounded-xl shadow-sm border p-6 flex flex-col min-h-0">
-            <WorkerHistoryTable />
-          </div>
-
-          <div v-else-if="activeTab[0] === 'logs'" class="flex-1 bg-white rounded-xl shadow-sm border p-6 flex flex-col min-h-0">
-            <LogTable />
-          </div>
-
-          <div v-else-if="activeTab[0] === 'recharge'" class="flex-1 min-h-0">
-            <RechargeSystem />
-          </div>
-
-          <div v-else-if="activeTab[0] === 'templates'" class="flex-1 bg-white rounded-xl shadow-sm border p-6 flex flex-col min-h-0">
-            <TemplateManager />
-          </div>
-
-          <div v-else-if="activeTab[0] === 'gallery'" class="flex-1 bg-white rounded-xl shadow-sm border p-6 flex flex-col min-h-0">
-            <GalleryTable />
-          </div>
-
-          <div v-else-if="activeTab[0] === 'referrals'" class="flex-1 flex flex-col min-h-0">
-            <ReferralTable />
+          <div :class="currentTabView.containerClass">
+            <component :is="currentTabView.component" v-bind="currentTabView.bindings" />
           </div>
         </div>
       </a-layout-content>

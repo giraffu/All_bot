@@ -6,9 +6,11 @@ import { useRoute } from 'vue-router'
 import { useUpload } from '@/composables/useUpload'
 import { useTaskStream } from '@/composables/useTaskStream'
 import { useTaskResult } from '@/composables/useTaskResult'
+import { useGalleryApplyContext } from '@/composables/useGalleryApplyContext'
 import { resolveTemplateVideoApplyState } from '@/utils/templateVideoApplyState'
 
 const route = useRoute()
+const { loadApplyContext } = useGalleryApplyContext()
 
 const taskType = computed(() => (route.query.type as string) || 'image2video')
 const taskTitle = computed(() => (route.query.title as string) || '动图生成')
@@ -85,33 +87,27 @@ onMounted(() => {
   }
   
   if (route.query.apply === 'true') {
-    const ctxStr = sessionStorage.getItem('galleryApplyContext')
-    if (ctxStr) {
-      try {
-        const ctx = JSON.parse(ctxStr)
-        if (
-          taskType.value === 'custom_video'
-          || taskType.value === 'video_lora'
-          || taskType.value === 'ltx_video'
-        ) {
-          const templateState = resolveTemplateVideoApplyState(ctx, taskType.value)
-          if (templateState) {
-            if (templateState.prompt) prompt.value = templateState.prompt
-            if (templateState.loraName) loraName.value = templateState.loraName
-            if (templateState.sourcePostId != null) {
-              templateSourcePostId.value = templateState.sourcePostId
-            }
-            if (templateState.resolution) resolution.value = templateState.resolution
-            if (templateState.duration) duration.value = templateState.duration
-
-            templateSettingsWarning.value = templateState.templateSettingsWarning
-            isTemplateApplied.value = templateState.isTemplateApplied
-            isTemplateVideoSettingsLocked.value = templateState.isTemplateVideoSettingsLocked
-            isTemplatePromptLocked.value = templateState.isTemplatePromptLocked
-          }
+    const ctx = loadApplyContext()
+    if (
+      ctx
+      && (taskType.value === 'custom_video'
+        || taskType.value === 'video_lora'
+        || taskType.value === 'ltx_video')
+    ) {
+      const templateState = resolveTemplateVideoApplyState(ctx, taskType.value)
+      if (templateState) {
+        if (templateState.prompt) prompt.value = templateState.prompt
+        if (templateState.loraName) loraName.value = templateState.loraName
+        if (templateState.sourcePostId != null) {
+          templateSourcePostId.value = templateState.sourcePostId
         }
-      } catch (e) {
-        console.error('Failed to parse apply context', e)
+        if (templateState.resolution) resolution.value = templateState.resolution
+        if (templateState.duration) duration.value = templateState.duration
+
+        templateSettingsWarning.value = templateState.templateSettingsWarning
+        isTemplateApplied.value = templateState.isTemplateApplied
+        isTemplateVideoSettingsLocked.value = templateState.isTemplateVideoSettingsLocked
+        isTemplatePromptLocked.value = templateState.isTemplatePromptLocked
       }
     }
   }

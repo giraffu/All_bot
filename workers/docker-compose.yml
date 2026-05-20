@@ -59,7 +59,7 @@ services:
     environment:
       - TZ=Asia/Shanghai
       - AGENT_ID=worker_local_03
-      - SUPPORTED_TASK_TYPES=ltx_video,video_edit
+      - SUPPORTED_TASK_TYPES=ltx_video
       - MASTER_API_URL=http://127.0.0.1:8003
       - AGENT_SECRET_TOKEN=super_secret_agent_token_2026
       - COMFY_API_URL=http://192.168.1.177:8189

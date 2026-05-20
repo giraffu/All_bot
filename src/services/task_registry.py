@@ -43,6 +43,27 @@ class TaskRegistry:
             await redis_client.add_active_task(registry_task_id, task_data)
 
     @classmethod
+    async def mark_task_status(cls, registry_task_id: str, status: str):
+        tasks = await redis_client.get_active_tasks()
+        if registry_task_id in tasks:
+            task_data = tasks[registry_task_id]
+            task_data["status"] = status
+            await redis_client.add_active_task(registry_task_id, task_data)
+
+    @classmethod
+    async def get_task(cls, registry_task_id: str):
+        tasks = await redis_client.get_active_tasks()
+        return tasks.get(registry_task_id)
+
+    @classmethod
+    async def find_task_by_backend_task_id(cls, backend_task_id: str):
+        tasks = await redis_client.get_active_tasks()
+        for registry_task_id, task_data in tasks.items():
+            if task_data.get("backend_task_id") == backend_task_id:
+                return registry_task_id, task_data
+        return None, None
+
+    @classmethod
     async def remove_task(cls, task_id: str):
         await redis_client.remove_active_task(task_id)
 
