@@ -9,6 +9,10 @@ import { useTaskResult } from '@/composables/useTaskResult'
 import { useGalleryApplyContext } from '@/composables/useGalleryApplyContext'
 import { resolveTemplateVideoApplyState } from '@/utils/templateVideoApplyState'
 import { useSingleFileUploadPreview } from '@/composables/useSingleFileUploadPreview'
+import GenerationActionBar from '@/components/GenerationActionBar.vue'
+import GenerationUploadCard from '@/components/GenerationUploadCard.vue'
+import GenerationWorkbenchShell from '@/components/GenerationWorkbenchShell.vue'
+import TaskResultPreviewPanel from '@/components/TaskResultPreviewPanel.vue'
 
 const route = useRoute()
 const { loadApplyContext } = useGalleryApplyContext()
@@ -171,61 +175,44 @@ const resetForm = () => {
 </script>
 
 <template>
-  <div class="single-image-video-container max-w-7xl mx-auto flex flex-col h-[calc(100vh-80px)] w-full py-4 px-2 sm:px-6">
-    <div class="flex flex-col lg:flex-row gap-6 flex-grow min-h-0">
-      <!-- Left Panel: Input & Settings -->
-      <div class="w-full lg:w-[50%] flex flex-col bg-slate-500/40 backdrop-blur-md rounded-2xl shadow-sm border border-slate-400/50 overflow-hidden shrink-0">
-        <div class="p-6 flex-grow overflow-y-auto custom-scrollbar">
-          <h2 class="text-2xl font-bold mb-5 text-slate-100">{{ taskTitle }}设置</h2>
-          
-          <!-- Template Mode Notice -->
-          <div v-if="isTemplateApplied" class="mb-6 bg-indigo-500/20 border border-indigo-500/30 rounded-xl p-4 flex items-center">
-            <div class="text-indigo-400 mr-3">✨</div>
-            <div class="text-slate-300 text-sm">
-              {{ templateApplyNotice }}
-            </div>
-          </div>
-          <div v-if="templateSettingsWarning" class="mb-6 bg-amber-500/20 border border-amber-500/30 rounded-xl p-4 text-sm text-amber-200">
-            {{ templateSettingsWarning }}
-          </div>
-          
-          <div class="flex flex-col gap-6 mb-6">
+  <GenerationWorkbenchShell :title="`${taskTitle}设置`">
+    <template #left-top>
+      <div v-if="isTemplateApplied" class="mb-6 bg-indigo-500/20 border border-indigo-500/30 rounded-xl p-4 flex items-center">
+        <div class="text-indigo-400 mr-3">✨</div>
+        <div class="text-slate-300 text-sm">
+          {{ templateApplyNotice }}
+        </div>
+      </div>
+      <div v-if="templateSettingsWarning" class="mb-6 bg-amber-500/20 border border-amber-500/30 rounded-xl p-4 text-sm text-amber-200">
+        {{ templateSettingsWarning }}
+      </div>
+    </template>
+
+    <template #left-content>
+      <div class="flex flex-col gap-6 mb-6">
             <!-- Row for Upload & Prompt -->
             <div class="flex flex-col md:flex-row gap-4 md:h-64 w-full">
               <!-- Image Upload -->
-              <div class="upload-section flex flex-col w-full md:w-[40%] min-w-[160px] shrink-0 h-48 md:h-full">
-                <h3 class="text-sm font-bold mb-2 text-slate-200 flex items-center shrink-0">
-                  <span class="text-slate-500 mr-2">1.</span> 基础图片
-                </h3>
-                <div v-if="filePreview" class="relative group rounded-xl overflow-hidden border border-slate-400/50 bg-slate-500/50 flex items-center justify-center flex-grow w-full">
-                  <a-image :src="filePreview" class="max-w-full max-h-full object-contain" :preview="true" />
-                  <div class="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center pointer-events-none">
-                    <a-button danger type="primary" @click="handleRemove" class="pointer-events-auto" size="small">重新上传</a-button>
-                  </div>
-                </div>
-                <a-upload-dragger
-                  v-else
-                  v-model:fileList="fileList"
-                  name="file"
-                  :multiple="false"
-                  accept="image/png, image/jpeg"
-                  :before-upload="beforeUpload"
-                  @remove="handleRemove"
-                  class="upload-dragger flex-grow flex items-center justify-center w-full"
-                  :show-upload-list="false"
-                >
-                  <div class="flex flex-col items-center justify-center h-full w-full p-4">
-                    <p class="ant-upload-drag-icon text-blue-500 text-3xl mb-2"><inbox-outlined></inbox-outlined></p>
-                    <p class="ant-upload-text font-medium text-slate-300 text-sm">点击/拖拽</p>
-                    <p class="ant-upload-hint text-slate-500 mt-1 text-xs">JPG/PNG</p>
-                  </div>
-                </a-upload-dragger>
-                
+              <GenerationUploadCard
+                title="基础图片"
+                step="1."
+                :file-list="fileList"
+                :preview-url="filePreview"
+                accept="image/png, image/jpeg"
+                wrapper-class="upload-section flex flex-col w-full md:w-[40%] min-w-[160px] shrink-0 h-48 md:h-full"
+                :before-upload="beforeUpload"
+                @remove="handleRemove"
+                @update:fileList="fileList = $event"
+              >
+                <template #placeholder-icon>
+                  <inbox-outlined />
+                </template>
+              </GenerationUploadCard>
+
                 <div v-if="uploading" class="mt-2 shrink-0">
                   <span class="text-xs text-slate-400">正在上传...</span>
                   <a-progress :percent="uploadProgress" status="active" strokeColor="#3b82f6" size="small" />
                 </div>
-              </div>
 
               <!-- Prompt Input -->
               <div class="prompt-section flex flex-col flex-grow min-w-0 h-48 md:h-full" v-if="isCustomVideo || isVideoLora || isLtxVideo">
@@ -271,118 +258,75 @@ const resetForm = () => {
                 <p class="text-xs text-slate-500 mt-2">自动生成专属动作视频</p>
               </div>
             </div>
-          </div>
-          
-          <!-- Video Settings -->
-          <div class="settings-section border-t border-slate-400/50 pt-5">
-            <h3 class="text-sm font-bold mb-3 text-slate-200">输出设置</h3>
-            <div v-if="isTemplateVideoSettingsLocked" class="bg-slate-500/80 border border-slate-400/50 rounded-xl p-4 text-center">
-              <p class="text-slate-400 text-xs">分辨率与时长已根据模板锁定，无需手动选择。</p>
-            </div>
-            <div v-else class="flex flex-col gap-4">
-              <div>
-                <label class="block text-xs font-medium text-slate-300 mb-2">分辨率</label>
-                <a-radio-group v-if="isLtxVideo" v-model:value="resolution" button-style="solid" class="w-full grid grid-cols-1 gap-2 max-w-[160px]">
-                  <a-radio-button value="1280x704" class="w-full text-center py-1.5 h-auto text-xs rounded-lg !border-none !border-l-0 shadow-sm leading-tight flex items-center justify-center">1280x704 (自动适应)</a-radio-button>
-                </a-radio-group>
-                <a-radio-group v-else v-model:value="resolution" button-style="solid" class="w-full grid grid-cols-3 gap-2">
-                  <a-radio-button value="512" class="w-full text-center py-1.5 h-auto text-xs rounded-lg !border-none !border-l-0 shadow-sm leading-tight flex items-center justify-center">512p</a-radio-button>
-                  <a-radio-button value="720" class="w-full text-center py-1.5 h-auto text-xs rounded-lg !border-none !border-l-0 shadow-sm leading-tight flex items-center justify-center">720p</a-radio-button>
-                  <a-radio-button value="1024" class="w-full text-center py-1.5 h-auto text-xs rounded-lg !border-none !border-l-0 shadow-sm leading-tight flex items-center justify-center" :disabled="duration === '10'">1024p</a-radio-button>
-                </a-radio-group>
-              </div>
-              <div>
-                <label class="block text-xs font-medium text-slate-300 mb-2">生成时长</label>
-                <a-radio-group v-if="isLtxVideo" v-model:value="duration" button-style="solid" class="w-full grid grid-cols-4 gap-2 max-w-[320px]">
-                  <a-radio-button value="5" class="w-full text-center py-1.5 h-auto text-xs rounded-lg !border-none !border-l-0 shadow-sm leading-tight flex items-center justify-center">5 秒</a-radio-button>
-                  <a-radio-button value="10" class="w-full text-center py-1.5 h-auto text-xs rounded-lg !border-none !border-l-0 shadow-sm leading-tight flex items-center justify-center">10 秒</a-radio-button>
-                  <a-radio-button value="15" class="w-full text-center py-1.5 h-auto text-xs rounded-lg !border-none !border-l-0 shadow-sm leading-tight flex items-center justify-center">15 秒</a-radio-button>
-                  <a-radio-button value="20" class="w-full text-center py-1.5 h-auto text-xs rounded-lg !border-none !border-l-0 shadow-sm leading-tight flex items-center justify-center">20 秒</a-radio-button>
-                </a-radio-group>
-                <a-radio-group v-else v-model:value="duration" button-style="solid" class="w-full grid grid-cols-3 gap-2 max-w-[240px]">
-                  <a-radio-button value="5" class="w-full text-center py-1.5 h-auto text-xs rounded-lg !border-none !border-l-0 shadow-sm leading-tight flex items-center justify-center">5 秒</a-radio-button>
-                  <a-radio-button value="8" class="w-full text-center py-1.5 h-auto text-xs rounded-lg !border-none !border-l-0 shadow-sm leading-tight flex items-center justify-center">8 秒</a-radio-button>
-                  <a-radio-button value="10" class="w-full text-center py-1.5 h-auto text-xs rounded-lg !border-none !border-l-0 shadow-sm leading-tight flex items-center justify-center" :disabled="resolution === '1024'">10 秒</a-radio-button>
-                </a-radio-group>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Action Bar in Left Panel -->
-        <div class="action-bar bg-slate-500/40 p-6 border-t border-slate-400/50 flex justify-between items-center shrink-0">
-          <div class="cost-info flex flex-col">
-            <span class="text-slate-400 text-sm font-medium">预计消耗灵石</span>
-            <div class="flex items-end mt-1">
-              <span class="font-bold text-3xl text-blue-600 leading-none">{{ taskCost }}</span>
-              <span class="text-lg text-blue-400 ml-1 mb-0.5">💎</span>
-            </div>
-          </div>
-          
-          <a-button 
-            type="primary" 
-            size="large" 
-            class="bg-blue-600 hover:bg-blue-500 w-40 h-12 text-base font-bold tracking-wider rounded-xl shadow-md transition-all hover:shadow-lg border-none flex items-center justify-center text-white" 
-            :disabled="!objectKey"
-            :loading="isSubmitting"
-            @click="handleGenerate"
-          >
-            <template #icon><video-camera-outlined /></template>
-            {{ isSubmitting ? '提交中...' : '生成视频' }}
-          </a-button>
-        </div>
       </div>
 
-      <!-- Right Panel: Result Preview -->
-      <div class="w-full lg:w-[50%] flex flex-col bg-slate-500/40 backdrop-blur-md rounded-2xl shadow-sm border border-slate-400/50 overflow-hidden relative">
-        <div class="p-6 flex-grow flex flex-col items-center justify-center h-full overflow-y-auto custom-scrollbar">
-          
-          <!-- Empty State -->
-          <div v-if="!currentTask" class="flex flex-col items-center justify-center text-slate-500 w-full h-full opacity-60">
-            <video-camera-outlined class="text-6xl mb-4" />
-            <p class="text-lg font-medium">结果预览区</p>
-            <p class="text-sm mt-2">请在左侧配置参数并点击生成，结果将在此处显示</p>
+      <div class="settings-section border-t border-slate-400/50 pt-5">
+        <h3 class="text-sm font-bold mb-3 text-slate-200">输出设置</h3>
+        <div v-if="isTemplateVideoSettingsLocked" class="bg-slate-500/80 border border-slate-400/50 rounded-xl p-4 text-center">
+          <p class="text-slate-400 text-xs">分辨率与时长已根据模板锁定，无需手动选择。</p>
+        </div>
+        <div v-else class="flex flex-col gap-4">
+          <div>
+            <label class="block text-xs font-medium text-slate-300 mb-2">分辨率</label>
+            <a-radio-group v-if="isLtxVideo" v-model:value="resolution" button-style="solid" class="w-full grid grid-cols-1 gap-2 max-w-[160px]">
+              <a-radio-button value="1280x704" class="w-full text-center py-1.5 h-auto text-xs rounded-lg !border-none !border-l-0 shadow-sm leading-tight flex items-center justify-center">1280x704 (自动适应)</a-radio-button>
+            </a-radio-group>
+            <a-radio-group v-else v-model:value="resolution" button-style="solid" class="w-full grid grid-cols-3 gap-2">
+              <a-radio-button value="512" class="w-full text-center py-1.5 h-auto text-xs rounded-lg !border-none !border-l-0 shadow-sm leading-tight flex items-center justify-center">512p</a-radio-button>
+              <a-radio-button value="720" class="w-full text-center py-1.5 h-auto text-xs rounded-lg !border-none !border-l-0 shadow-sm leading-tight flex items-center justify-center">720p</a-radio-button>
+              <a-radio-button value="1024" class="w-full text-center py-1.5 h-auto text-xs rounded-lg !border-none !border-l-0 shadow-sm leading-tight flex items-center justify-center" :disabled="duration === '10'">1024p</a-radio-button>
+            </a-radio-group>
           </div>
-
-          <!-- Result Section -->
-          <div v-else class="w-full h-full flex flex-col items-center justify-center">
-            <h3 class="text-xl font-bold mb-6 text-slate-200 w-full border-b border-slate-400/50 pb-4 flex items-center">
-              <span class="text-blue-500 mr-2">✨</span> 生成结果
-            </h3>
-            
-            <div v-if="currentTask.status === 'pending' || currentTask.status === 'running'" class="flex flex-col items-center justify-center py-8 w-full flex-grow">
-              <a-spin size="large" />
-              <p class="mt-4 text-slate-400 font-medium">正在生成中... {{ currentTask.progress }}%</p>
-              <p v-if="currentTask.queuePos" class="text-sm text-slate-500 mt-1">前面还有 {{ currentTask.queuePos }} 人排队</p>
-              <a-progress :percent="currentTask.progress" status="active" strokeColor="#3b82f6" class="w-full max-w-md mt-4" />
-            </div>
-            
-            <div v-else-if="currentTask.status === 'success' && currentTask.resultUrl" class="flex flex-col items-center w-full flex-grow justify-center">
-              <a-image v-if="isImageUrl(currentTask.resultUrl)" :src="currentTask.resultUrl" class="max-w-full max-h-[50vh] rounded-xl shadow-sm object-contain" :preview="true" />
-              <video v-else :src="currentTask.resultUrl" controls class="max-w-full max-h-[50vh] rounded-xl shadow-sm bg-black"></video>
-              
-              <div class="mt-8 flex gap-4">
-                <a-button type="primary" size="large" class="bg-blue-600 rounded-xl" @click="downloadResult(currentTask.resultUrl, currentTask.title)">
-                  <template #icon><download-outlined /></template> 下载结果
-                </a-button>
-                <a-button size="large" class="rounded-xl" @click="resetForm">
-                  继续生成
-                </a-button>
-              </div>
-            </div>
-            
-            <div v-else-if="currentTask.status === 'failed'" class="flex flex-col items-center py-8 w-full flex-grow justify-center">
-              <close-circle-outlined class="text-5xl text-red-500 mb-4" />
-              <p class="text-red-600 font-medium text-lg">生成失败</p>
-              <p class="text-slate-400 mt-2">{{ currentTask.error || '未知错误' }}</p>
-              <a-button class="mt-6 rounded-xl" @click="resetForm">重试</a-button>
-            </div>
+          <div>
+            <label class="block text-xs font-medium text-slate-300 mb-2">生成时长</label>
+            <a-radio-group v-if="isLtxVideo" v-model:value="duration" button-style="solid" class="w-full grid grid-cols-4 gap-2 max-w-[320px]">
+              <a-radio-button value="5" class="w-full text-center py-1.5 h-auto text-xs rounded-lg !border-none !border-l-0 shadow-sm leading-tight flex items-center justify-center">5 秒</a-radio-button>
+              <a-radio-button value="10" class="w-full text-center py-1.5 h-auto text-xs rounded-lg !border-none !border-l-0 shadow-sm leading-tight flex items-center justify-center">10 秒</a-radio-button>
+              <a-radio-button value="15" class="w-full text-center py-1.5 h-auto text-xs rounded-lg !border-none !border-l-0 shadow-sm leading-tight flex items-center justify-center">15 秒</a-radio-button>
+              <a-radio-button value="20" class="w-full text-center py-1.5 h-auto text-xs rounded-lg !border-none !border-l-0 shadow-sm leading-tight flex items-center justify-center">20 秒</a-radio-button>
+            </a-radio-group>
+            <a-radio-group v-else v-model:value="duration" button-style="solid" class="w-full grid grid-cols-3 gap-2 max-w-[240px]">
+              <a-radio-button value="5" class="w-full text-center py-1.5 h-auto text-xs rounded-lg !border-none !border-l-0 shadow-sm leading-tight flex items-center justify-center">5 秒</a-radio-button>
+              <a-radio-button value="8" class="w-full text-center py-1.5 h-auto text-xs rounded-lg !border-none !border-l-0 shadow-sm leading-tight flex items-center justify-center">8 秒</a-radio-button>
+              <a-radio-button value="10" class="w-full text-center py-1.5 h-auto text-xs rounded-lg !border-none !border-l-0 shadow-sm leading-tight flex items-center justify-center" :disabled="resolution === '1024'">10 秒</a-radio-button>
+            </a-radio-group>
           </div>
-          
         </div>
       </div>
-    </div>
-  </div>
+    </template>
+
+    <template #left-footer>
+      <GenerationActionBar
+        :cost="taskCost"
+        button-text="生成视频"
+        :disabled="!objectKey"
+        :loading="isSubmitting"
+        button-class="bg-blue-600 hover:bg-blue-500 w-40 h-12 text-base font-bold tracking-wider rounded-xl shadow-md transition-all hover:shadow-lg border-none flex items-center justify-center text-white"
+        @submit="handleGenerate"
+      >
+        <template #button-icon><video-camera-outlined /></template>
+      </GenerationActionBar>
+    </template>
+
+    <template #right-panel>
+      <TaskResultPreviewPanel
+        :current-task="currentTask"
+        :is-image-url="isImageUrl"
+        @download="downloadResult"
+        @reset="resetForm"
+      >
+        <template #empty-icon>
+          <video-camera-outlined class="text-6xl mb-4" />
+        </template>
+        <template #download-icon>
+          <download-outlined />
+        </template>
+        <template #failed-icon>
+          <close-circle-outlined class="text-5xl text-red-500 mb-4" />
+        </template>
+      </TaskResultPreviewPanel>
+    </template>
+  </GenerationWorkbenchShell>
 </template>
 
 

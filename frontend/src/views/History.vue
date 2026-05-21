@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { useRoute, useRouter } from 'vue-router'
-import { Image as ImageIcon, Video, Clock, Compass, Trash2 } from 'lucide-vue-next'
+import { Image as ImageIcon, Video, Clock, Trash2 } from 'lucide-vue-next'
 import { useTasksStore } from '@/stores/tasks'
 import { useTaskFormat } from '@/composables/useTaskFormat'
 import { useHistoryRecords } from '@/composables/useHistoryRecords'
+import ListStateBlock from '@/components/ListStateBlock.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -65,16 +66,12 @@ const {
       </div>
     </div>
 
-    <!-- Loading State -->
-    <div v-if="loading" class="py-8 text-center">
-      <div class="inline-block w-8 h-8 border-2 border-cyan-500/30 border-t-cyan-500 rounded-full animate-spin"></div>
-    </div>
-
-    <!-- Empty State -->
-    <div v-else-if="data.length === 0" class="py-20 text-center text-slate-500">
-      <Compass :size="48" class="mx-auto mb-4 opacity-20" />
-      <p>暂无记录</p>
-    </div>
+    <ListStateBlock
+      v-if="loading || data.length === 0"
+      :loading="loading"
+      :empty="data.length === 0"
+      empty-text="暂无记录"
+    />
 
     <!-- Cards Grid -->
     <div v-else class="columns-2 md:columns-4 gap-3 sm:gap-6">

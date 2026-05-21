@@ -1,3 +1,4 @@
+import logging
 import asyncio
 import json
 
@@ -15,6 +16,8 @@ from src.core.media_paths import (
     resolve_storage_object,
 )
 from src.database.models import GalleryComment, GalleryPost, History, User, UserInteraction
+from src.lora_mapping import translate_tags
+from src.web_api.routers.utils import resolve_history_billing_resolution
 from src.web_api.schemas.gallery_schema import (
     ApplyContextResponse,
     CommentUserResponse,
@@ -23,6 +26,141 @@ from src.web_api.schemas.gallery_schema import (
     PaginatedCommentResponse,
     PaginatedGalleryResponse,
 )
+
+logger = logging.getLogger(__name__)
+
+
+def build_gallery_config_payload(
+    *,
+    allowed_type_configs: list[tuple[str, str]],
+    mode_name_map: dict[str, str],
+    video_lora_models: dict[str, str],
+    image_lora_models: dict[str, str],
+) -> dict[str, list[dict[str, str]]]:
+    return {
+        "allowed_types": [
+            {"id": task_type, "name": mode_name_map.get(task_type, fallback_name)}
+            for task_type, fallback_name in allowed_type_configs
+        ],
+        "lora_models": [{"id": key, "name": value} for key, value in video_lora_models.items()],
+        "img2img_lora_models": [
+            {"id": key, "name": value}
+            for key, value in image_lora_models.items()
+            if key
+        ],
+    }
+
+
+async def submit_gallery_post_payload(
+    *,
+    task_id: str,
+    background_tasks,
+    request,
+    current_user,
+    process_submit_to_gallery_fn,
+) -> dict:
+    try:
+        width = request.width if request else None
+        height = request.height if request else None
+        duration = request.duration if request else None
+        return await process_submit_to_gallery_fn(
+            current_user.id,
+            task_id,
+            background_tasks,
+            width,
+            height,
+            duration,
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        if exc.__class__.__name__ == "GalleryCoreError":
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        logger.error(
+            "Unexpected error submitting to gallery for user_id=%s task_id=%s: %s",
+            getattr(current_user, "id", None),
+            task_id,
+            exc,
+        )
+        raise HTTPException(status_code=500, detail="Internal server error") from exc
+
+
+def should_return_gallery_apply_input_file(
+    history: History,
+    *,
+    allow_input_reuse_task_types: set[str],
+) -> bool:
+    return (history.type or "") in allow_input_reuse_task_types
+
+
+async def build_gallery_media_url(
+    output_file: str | None,
+    *,
+    task_id: str | None,
+    resolve_media_url_fn,
+) -> str:
+    return await resolve_media_url_fn(
+        output_file,
+        task_id=task_id,
+        fallback_to_storage_path=True,
+    )
+
+
+async def build_gallery_thumbnail_url(
+    output_file: str | None,
+    media_type: str,
+    *,
+    task_id: str | None,
+    resolve_thumbnail_url_fn,
+    resolve_storage_object_fn,
+    build_thumbnail_object_name_fn,
+    get_presigned_url_fn,
+) -> str:
+    thumbnail_url = await resolve_thumbnail_url_fn(
+        output_file,
+        media_type,
+        task_id=task_id,
+    )
+    if thumbnail_url:
+        return thumbnail_url
+
+    if not output_file:
+        return ""
+
+    bucket_name, object_name = resolve_storage_object_fn(output_file)
+    thumb_object_name = build_thumbnail_object_name_fn(object_name, media_type)
+    return get_presigned_url_fn(thumb_object_name, bucket=bucket_name) or ""
+
+
+async def pick_gallery_media_urls(
+    *,
+    task_id: str | None,
+    output_file: str | None,
+    media_type: str,
+    resolve_gallery_media_urls_fn,
+    build_media_url_fn,
+    build_thumbnail_url_fn,
+    logger,
+) -> tuple[str, str]:
+    return await resolve_gallery_media_urls_fn(
+        task_id=task_id,
+        output_file=output_file,
+        media_type=media_type,
+        build_media_url=build_media_url_fn,
+        build_thumbnail_url=build_thumbnail_url_fn,
+        logger=logger,
+    )
+
+
+def resolve_gallery_author_name(
+    user: User | None,
+    fallback_user_id: int | None = None,
+) -> str:
+    if user:
+        return user.full_name or user.username or f"User {user.id}"
+    if fallback_user_id is not None:
+        return f"User {fallback_user_id}"
+    return "匿名修士"
 
 
 async def build_post_responses(
@@ -166,6 +304,25 @@ async def build_post_responses(
     return response_items
 
 
+async def build_gallery_post_responses(
+    *,
+    session,
+    posts,
+    current_user,
+    pick_gallery_media_urls,
+) -> list[GalleryPostResponse]:
+    return await build_post_responses(
+        session=session,
+        posts=posts,
+        current_user=current_user,
+        translate_tags=translate_tags,
+        resolve_history_billing_resolution=resolve_history_billing_resolution,
+        resolve_author_name=resolve_gallery_author_name,
+        pick_gallery_media_urls=pick_gallery_media_urls,
+        logger=logger,
+    )
+
+
 async def get_my_gallery_posts_payload(
     *,
     current_user,
@@ -255,6 +412,41 @@ async def get_my_favorite_posts_payload(
     )
 
 
+async def get_gallery_posts_payload(
+    *,
+    page: int,
+    size: int,
+    media_type: str | None,
+    task_type: str | None,
+    lora_model: str | None,
+    sort_by: str,
+    time_range: str,
+    current_user,
+    db,
+    fetch_gallery_feed,
+    build_post_responses_fn,
+) -> PaginatedGalleryResponse:
+    posts, total = await fetch_gallery_feed(
+        page=page,
+        size=size,
+        media_type=media_type if media_type != "all" else None,
+        task_type=task_type if task_type != "all" else None,
+        lora_model=lora_model,
+        sort_by=sort_by,
+        time_range=time_range,
+        user_id=current_user.id if current_user else None,
+    )
+    response_items = await build_post_responses_fn(db, posts, current_user)
+    pages = (total + size - 1) // size
+    return PaginatedGalleryResponse(
+        items=response_items,
+        total=total,
+        page=page,
+        size=size,
+        pages=pages,
+    )
+
+
 async def build_apply_context_payload(
     *,
     post_id: int,
@@ -290,6 +482,23 @@ async def build_apply_context_payload(
         fallback_height=history.height,
         fallback_duration=history.duration,
         include_input_file=should_return_apply_input_file(history),
+        build_input_file_url=build_input_file_url,
+    )
+
+
+async def get_gallery_apply_context_payload(
+    *,
+    post_id: int,
+    db,
+    build_history_apply_context_response_fn,
+    should_return_apply_input_file,
+    build_input_file_url,
+) -> ApplyContextResponse:
+    return await build_apply_context_payload(
+        post_id=post_id,
+        db=db,
+        build_history_apply_context_response_fn=build_history_apply_context_response_fn,
+        should_return_apply_input_file=should_return_apply_input_file,
         build_input_file_url=build_input_file_url,
     )
 

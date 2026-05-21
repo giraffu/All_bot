@@ -1,7 +1,6 @@
 from typing import Optional
 
 from src.logger import UserLogger
-from src.services.image_service import image_service
 from src.services.task_service_finalize import finalize_failed_task_for_bot
 from src.services.task_service_types import BotTaskMessageSpec
 from src.services.tg_task_runtime import monitor_task_progress
@@ -14,13 +13,21 @@ async def monitor_submitted_bot_task(
     is_video,
     internal_user_id,
     monitor_func,
+    get_user_priority_and_identity_func=None,
+    monitor_bot_task_progress_func=None,
 ):
     from src.core.billing_core import get_user_priority_and_identity
 
-    _priority, identity_str, user_group = await get_user_priority_and_identity(
+    get_user_priority_and_identity_func = (
+        get_user_priority_and_identity_func or get_user_priority_and_identity
+    )
+    monitor_bot_task_progress_func = (
+        monitor_bot_task_progress_func or monitor_bot_task_progress
+    )
+    _priority, identity_str, user_group = await get_user_priority_and_identity_func(
         internal_user_id
     )
-    return await _monitor_task_progress(
+    return await monitor_bot_task_progress_func(
         task_id,
         status_msg,
         is_video=is_video,
@@ -30,8 +37,14 @@ async def monitor_submitted_bot_task(
     )
 
 
-async def _monitor_task_progress(
-    task_id, status_msg, is_video, monitor_func, identity_str=None, user_group=None
+async def monitor_bot_task_progress(
+    task_id,
+    status_msg,
+    is_video,
+    monitor_func,
+    identity_str=None,
+    user_group=None,
+    edit_status_text_func=None,
 ):
     from src.core.task_core import CoreDomainError
 
@@ -46,6 +59,7 @@ async def _monitor_task_progress(
         identity_str=identity_str,
         user_group=user_group,
         on_cancelled=_raise_cancelled,
+        edit_status_text_func=edit_status_text_func,
     )
     if final_info is None:
         raise CoreDomainError("cancelled")
@@ -60,6 +74,7 @@ async def complete_monitored_bot_task(
     runtime_state,
     internal_user_id,
     username,
+    user_logger=None,
     prompt,
     task_type,
     task_id,
@@ -77,9 +92,16 @@ async def complete_monitored_bot_task(
     missing_output_should_refund: bool = True,
     send_result_media_func=None,
     cleanup_completion_status_message_func=None,
+    handle_task_completion_func=None,
+    finalize_failed_task_for_bot_func=None,
 ):
+    handle_task_completion_func = handle_task_completion_func or handle_task_completion
+    finalize_failed_task_for_bot_func = (
+        finalize_failed_task_for_bot_func or finalize_failed_task_for_bot
+    )
+    user_logger = user_logger or UserLogger(internal_user_id, username)
     if final_info:
-        return await handle_task_completion(
+        return await handle_task_completion_func(
             context=context,
             chat_id=chat_id,
             internal_user_id=internal_user_id,
@@ -87,7 +109,7 @@ async def complete_monitored_bot_task(
             task_type=task_type,
             task_id=task_id,
             saved_input_images=saved_input_images,
-            user_logger=UserLogger(internal_user_id, username),
+            user_logger=user_logger,
             is_video=is_video,
             send_result=send_result,
             reply_markup=reply_markup,
@@ -101,7 +123,7 @@ async def complete_monitored_bot_task(
             cleanup_completion_status_message_func=cleanup_completion_status_message_func,
         )
 
-    await finalize_failed_task_for_bot(
+    await finalize_failed_task_for_bot_func(
         context=context,
         chat_id=chat_id,
         status_msg=None,
@@ -177,9 +199,13 @@ async def handle_task_completion(
     requested_duration: Optional[int] = None,
     send_result_media_func,
     cleanup_completion_status_message_func,
+    download_and_log_task_output_func=None,
 ):
+    download_and_log_task_output_func = (
+        download_and_log_task_output_func or download_and_log_task_output
+    )
     media_bytes, full_output_path, _width, _height, _duration = (
-        await download_and_log_task_output(
+        await download_and_log_task_output_func(
             internal_user_id=internal_user_id,
             username=user_logger.username,
             prompt=prompt,

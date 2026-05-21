@@ -59,11 +59,13 @@ async def submit_bot_task(
     inputs,
     source_post_id=None,
     deduct_quota=True,
+    process_and_submit_task_func=None,
 ) -> tuple[str, list[str]]:
     task_id = str(uuid.uuid4())
     correlation_id.set(task_id)
+    process_and_submit_task_func = process_and_submit_task_func or process_and_submit_task
 
-    result = await process_and_submit_task(
+    result = await process_and_submit_task_func(
         user_id=internal_user_id,
         username=username,
         task_type=task_type,
@@ -85,21 +87,27 @@ async def send_initial_task_status(
     status_msg_id,
     message_spec: BotTaskMessageSpec,
     get_or_send_status_msg_func,
+    reply_text_func=None,
 ):
+    reply_text_func = reply_text_func or robust_reply_text
     if update is not None:
-        return await robust_reply_text(
-            update.effective_message, message_spec.initial_status_text
-        )
+        return await reply_text_func(update.effective_message, message_spec.initial_status_text)
     return await get_or_send_status_msg_func(
         context, chat_id, status_msg_id, message_spec.initial_status_text
     )
 
 
-async def update_submitted_task_status(*, status_msg, message_spec: BotTaskMessageSpec):
+async def update_submitted_task_status(
+    *,
+    status_msg,
+    message_spec: BotTaskMessageSpec,
+    edit_text_func=None,
+):
+    edit_text_func = edit_text_func or robust_edit_text
     if message_spec.submitted_status_text:
-        await robust_edit_text(status_msg, message_spec.submitted_status_text)
+        await edit_text_func(status_msg, message_spec.submitted_status_text)
     elif message_spec.progress_wait_text:
-        await robust_edit_text(status_msg, message_spec.progress_wait_text)
+        await edit_text_func(status_msg, message_spec.progress_wait_text)
 
 
 async def prepare_and_submit_bot_task(

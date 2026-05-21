@@ -72,6 +72,49 @@ async def test_handle_task_completion_keeps_success_flow_when_metadata_probe_fai
 
 
 @pytest.mark.asyncio
+async def test_handle_task_completion_uses_task_service_download_seam(monkeypatch):
+    download_output = AsyncMock(
+        return_value=(b"image-bytes", "saved-output.png", 768, 1024, None)
+    )
+    send_result_media = AsyncMock()
+    cleanup_status = AsyncMock()
+    monkeypatch.setattr(TaskService, "_download_and_log_task_output", download_output)
+    monkeypatch.setattr(TaskService, "_send_result_media", send_result_media)
+    monkeypatch.setattr(TaskService, "_cleanup_completion_status_message", cleanup_status)
+
+    user_logger = SimpleNamespace(username="tester")
+    status_msg = MagicMock()
+
+    media_bytes, output_path = await TaskService._handle_task_completion(
+        context=SimpleNamespace(bot=MagicMock(), bot_data={}),
+        chat_id=123,
+        internal_user_id=456,
+        prompt="prompt",
+        task_type="image",
+        task_id="task-seam",
+        saved_input_images=["input.png"],
+        user_logger=user_logger,
+        is_video=False,
+        send_result=True,
+        reply_markup=None,
+        status_msg=status_msg,
+        delete_status=True,
+        caption="done",
+        allow_contribute=False,
+    )
+
+    assert media_bytes == b"image-bytes"
+    assert output_path == "saved-output.png"
+    download_output.assert_awaited_once()
+    send_result_media.assert_awaited_once()
+    cleanup_status.assert_awaited_once_with(
+        status_msg=status_msg,
+        delete_status=True,
+        send_result=True,
+    )
+
+
+@pytest.mark.asyncio
 async def test_download_and_log_task_output_handles_image_branch(monkeypatch):
     persist_mock = AsyncMock(
         return_value=TaskSuccessPersistenceResult(
@@ -258,6 +301,174 @@ async def test_cleanup_completion_status_message_only_deletes_when_enabled(
         send_result=True,
     )
     delete_message.assert_awaited_once_with(status_msg)
+
+
+@pytest.mark.asyncio
+async def test_monitor_submitted_bot_task_uses_task_service_monitor_seam(monkeypatch):
+    monitor_progress = AsyncMock(return_value={"status": "done"})
+    monkeypatch.setattr(
+        "src.core.billing_core.get_user_priority_and_identity",
+        AsyncMock(return_value=(5, "外门弟子", "金丹期")),
+    )
+    monkeypatch.setattr(TaskService, "_monitor_task_progress", monitor_progress)
+
+    result = await TaskService._monitor_submitted_bot_task(
+        task_id="task-monitor",
+        status_msg="status-msg",
+        is_video=True,
+        internal_user_id=456,
+        monitor_func="monitor-func",
+    )
+
+    assert result == {"status": "done"}
+    monitor_progress.assert_awaited_once_with(
+        "task-monitor",
+        "status-msg",
+        is_video=True,
+        monitor_func="monitor-func",
+        identity_str="外门弟子",
+        user_group="金丹期",
+    )
+
+
+@pytest.mark.asyncio
+async def test_complete_monitored_bot_task_preserves_supplied_user_logger(monkeypatch):
+    handle_task_completion = AsyncMock(return_value=(b"video-bytes", "output.mp4"))
+    monkeypatch.setattr(TaskService, "_handle_task_completion", handle_task_completion)
+
+    user_logger = SimpleNamespace(username="tester")
+    runtime_state = SimpleNamespace(actual_cost=9, registry_task_id="reg-1", task_submitted=True)
+    message_spec = SimpleNamespace(
+        completion_caption="done",
+        missing_output_message="missing",
+    )
+
+    result = await TaskService._complete_monitored_bot_task(
+        context=SimpleNamespace(bot=MagicMock(), bot_data={}),
+        chat_id=123,
+        status_msg=MagicMock(),
+        runtime_state=runtime_state,
+        internal_user_id=456,
+        username="tester",
+        user_logger=user_logger,
+        prompt="prompt",
+        task_type="custom_video",
+        task_id="task-complete",
+        saved_input_images=["input.png"],
+        final_info={"status": "done"},
+        is_video=True,
+        send_result=True,
+        reply_markup=None,
+        delete_status=True,
+        caption=None,
+        allow_contribute=True,
+        message_spec=message_spec,
+    )
+
+    assert result == (b"video-bytes", "output.mp4")
+    assert handle_task_completion.await_args.kwargs["user_logger"] is user_logger
+
+
+@pytest.mark.asyncio
+async def test_finalize_cancelled_task_for_bot_uses_task_service_edit_seam(monkeypatch):
+    finalize_cancel = AsyncMock(
+        return_value=TaskCancellationFinalizationResult(
+            refunded=True,
+            user_message="任务已撤销",
+        )
+    )
+    edit_text = AsyncMock()
+    monkeypatch.setattr("src.core.task_core.finalize_task_cancellation", finalize_cancel)
+    monkeypatch.setattr("src.services.task_service.robust_edit_text", edit_text)
+
+    result = await TaskService._finalize_cancelled_task_for_bot(
+        status_msg="status-msg",
+        internal_user_id=456,
+        username="tester",
+        cost=5,
+        task_submitted=True,
+        registry_task_id="reg-1",
+        explicit_user_message="任务已撤销",
+    )
+
+    assert result.user_message == "任务已撤销"
+    edit_text.assert_awaited_once_with("status-msg", "✅ 任务已撤销")
+
+
+@pytest.mark.asyncio
+async def test_finalize_failed_task_for_bot_uses_task_service_send_message_seam(monkeypatch):
+    finalize_failure = AsyncMock(
+        return_value=TaskFailureFinalizationResult(
+            refunded=True,
+            user_message="系统错误：boom，已退还灵石",
+        )
+    )
+    send_message = AsyncMock()
+    monkeypatch.setattr("src.core.task_core.finalize_task_failure", finalize_failure)
+    monkeypatch.setattr("src.services.task_service.robust_send_message", send_message)
+
+    context = SimpleNamespace(bot=MagicMock())
+    result = await TaskService._finalize_failed_task_for_bot(
+        context=context,
+        chat_id=123,
+        status_msg=None,
+        internal_user_id=456,
+        username="tester",
+        cost=5,
+        should_refund=True,
+        registry_task_id="reg-2",
+        release_lock=True,
+        error=RuntimeError("boom"),
+        generic_error_prefix="系统错误",
+    )
+
+    assert "系统错误" in result.user_message
+    send_message.assert_awaited_once_with(
+        context.bot,
+        123,
+        f"❌ {result.user_message}",
+    )
+
+
+@pytest.mark.asyncio
+async def test_send_bot_warning_uses_task_service_send_message_seam(monkeypatch):
+    send_message = AsyncMock()
+    monkeypatch.setattr("src.services.task_service.robust_send_message", send_message)
+
+    context = SimpleNamespace(bot=MagicMock())
+    await TaskService._send_bot_warning(context, 123, "warn")
+
+    send_message.assert_awaited_once_with(context.bot, 123, "⚠️ warn")
+
+
+@pytest.mark.asyncio
+async def test_send_bot_domain_error_uses_task_service_send_message_seam(monkeypatch):
+    send_message = AsyncMock()
+    monkeypatch.setattr("src.services.task_service.robust_send_message", send_message)
+
+    context = SimpleNamespace(bot=MagicMock())
+    await TaskService._send_bot_domain_error(context, 123, "bad")
+
+    send_message.assert_awaited_once_with(context.bot, 123, "❌ bad")
+
+
+@pytest.mark.asyncio
+async def test_cleanup_runtime_state_if_needed_uses_core_cleanup_seam(monkeypatch):
+    cleanup_runtime = AsyncMock()
+    monkeypatch.setattr("src.core.task_core.cleanup_task_runtime_state", cleanup_runtime)
+
+    await TaskService._cleanup_runtime_state_if_needed(
+        internal_user_id=456,
+        registry_task_id="reg-cleanup",
+        release_lock=True,
+        terminal_state_finalized=False,
+    )
+
+    cleanup_runtime.assert_awaited_once_with(
+        internal_user_id=456,
+        registry_task_id="reg-cleanup",
+        release_lock=True,
+    )
 
 
 @pytest.mark.asyncio

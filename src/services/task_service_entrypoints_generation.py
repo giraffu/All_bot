@@ -3,8 +3,7 @@ from typing import Optional, Tuple
 from telegram import InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 
-from src.constants import MODE_CUSTOM_VIDEO, MODE_I2I_PRO, MODE_NAME_MAP
-from src.core.video_billing import normalize_requested_billing_resolution
+from src.constants import MODE_CUSTOM_VIDEO, MODE_I2I_PRO
 from src.services.task_service_entrypoints_common import resolve_internal_user_id
 from src.utils import robust_send_message
 
@@ -43,32 +42,43 @@ async def process_generation_task(
 
     runtime_state = service._create_runtime_state()
     notice = await service._get_acceleration_notice(user_id)
-    inputs = {
-        "prompt": prompt,
-        "images": images,
-        "resolution": resolution,
-        "duration": duration,
-        "lora_name": lora_name,
-        "lora_strength": lora_strength,
-    }
+    inputs = service._build_task_inputs(
+        prompt=prompt,
+        images=images,
+        resolution=resolution,
+        duration=duration,
+        lora_name=lora_name,
+        lora_strength=lora_strength,
+    )
     message_spec = service._build_message_spec(
-        initial_status_text=(
-            f"🚀 正在处理视频生成任务...{notice}"
+        initial_status_text=service._build_status_message(
+            "🚀 正在处理视频生成任务"
             if is_video
-            else f"🚀 正在处理 {len(images)} 张图片...{notice}"
+            else f"🚀 正在处理 {len(images)} 张图片",
+            notice=notice,
         ),
         missing_output_message="生成完成但未获取到文件路径，已退还灵石",
     )
 
-    log_prompt = prompt
-    if task_type in ("video_lora", "img2img_lora") and lora_name:
-        log_prompt = f"[模型: {lora_name}] {prompt}"
+    log_prompt = service._build_log_prompt(
+        prompt,
+        lora_name=lora_name,
+        task_type=task_type,
+        lora_task_types=("video_lora", "img2img_lora"),
+    )
 
-    mode_name = MODE_NAME_MAP.get(task_type, task_type)
-    display_mode_name = context.t(mode_name) if hasattr(context, "t") else mode_name
+    display_mode_name = service._resolve_display_mode_name(task_type, context)
     message_spec = service._with_completion_caption(
         message_spec,
         f"✅ {display_mode_name} 生成完成",
+    )
+
+    billing_args = service._resolve_video_billing_args(
+        is_video=is_video,
+        resolution=resolution,
+        task_type=task_type,
+        duration=duration,
+        allowed_task_types=(MODE_CUSTOM_VIDEO, "video_lora"),
     )
 
     return await service._run_bot_task_flow(
@@ -84,10 +94,11 @@ async def process_generation_task(
         prompt=log_prompt,
         is_video=is_video,
         message_spec=message_spec,
-        submitted_status_builder=lambda actual_cost: (
-            f"🚀 正在处理视频生成任务 (消耗{actual_cost}灵石)...{notice}"
+        submitted_status_builder=service._build_cost_status_builder(
+            "🚀 正在处理视频生成任务 (消耗{actual_cost}灵石)"
             if is_video
-            else f"🚀 正在处理 {len(images)} 张图片 (消耗{actual_cost}灵石)...{notice}"
+            else f"🚀 正在处理 {len(images)} 张图片 (消耗{{actual_cost}}灵石)",
+            notice=notice,
         ),
         source_post_id=source_post_id,
         deduct_quota=deduct_quota,
@@ -95,18 +106,14 @@ async def process_generation_task(
         reply_markup=reply_markup,
         delete_status=delete_status,
         allow_contribute=allow_contribute,
-        billing_resolution=(
-            normalize_requested_billing_resolution(resolution, task_type)
-            if is_video
-            else None
-        ),
-        requested_duration=(
-            duration if is_video and task_type in (MODE_CUSTOM_VIDEO, "video_lora") else None
-        ),
+        billing_resolution=billing_args["billing_resolution"],
+        requested_duration=billing_args["requested_duration"],
         missing_output_should_refund=deduct_quota,
-        unexpected_error_log_message="Error in process_generation_task for user {internal_user_id}: {error}",
+        unexpected_error_log_message=service._build_unexpected_error_log_message(
+            "process_generation_task"
+        ),
         unexpected_error_prefix="出错了",
-        cleanup_paths=images,
+        cleanup_paths=service._build_cleanup_paths(images),
         cleanup_enabled=cleanup,
     )
 
@@ -133,15 +140,18 @@ async def process_i2i_pro_task(
     runtime_state = service._create_runtime_state()
     notice = await service._get_acceleration_notice(user_id)
     message_spec = service._build_message_spec(
-        initial_status_text=f"🚀 正在处理幻想换脸任务...{notice}",
+        initial_status_text=service._build_status_message(
+            "🚀 正在处理幻想换脸任务",
+            notice=notice,
+        ),
         completion_caption="🌟 幻想换脸生成完成",
     )
-    inputs = {
-        "prompt": prompt,
-        "images": [image_path],
-        "resolution": 512,
-        "duration": 5,
-    }
+    inputs = service._build_task_inputs(
+        prompt=prompt,
+        images=[image_path],
+        resolution=512,
+        duration=5,
+    )
 
     return await service._run_bot_task_flow(
         context=context,
@@ -155,14 +165,17 @@ async def process_i2i_pro_task(
         prompt=prompt,
         is_video=False,
         message_spec=message_spec,
-        submitted_status_builder=lambda actual_cost: (
-            f"🚀 正在处理幻想换脸任务 (消耗{actual_cost}灵石)...{notice}"
+        submitted_status_builder=service._build_cost_status_builder(
+            "🚀 正在处理幻想换脸任务 (消耗{actual_cost}灵石)",
+            notice=notice,
         ),
         source_post_id=source_post_id,
         allow_contribute=allow_contribute,
         refund_suffix_mode="always",
         unexpected_should_refund=lambda state: state.task_submitted,
-        unexpected_error_log_message="Error in process_i2i_pro_task for user {internal_user_id}: {error}",
+        unexpected_error_log_message=service._build_unexpected_error_log_message(
+            "process_i2i_pro_task"
+        ),
         unexpected_error_prefix="出错了",
-        cleanup_paths=images,
+        cleanup_paths=service._build_cleanup_paths(images),
     )

@@ -1,3 +1,5 @@
+from typing import Annotated
+
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy import select
@@ -124,3 +126,7 @@ async def get_current_user_once(
 ) -> User:
     async with AsyncSessionLocal() as session:
         return await _get_current_user_from_session(session, token)
+
+
+CurrentUserDep = Annotated[User, Depends(get_current_user)]
+DbSessionDep = Annotated[AsyncSession, Depends(get_db)]

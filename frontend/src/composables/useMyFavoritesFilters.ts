@@ -90,7 +90,6 @@ export function useMyFavoritesFilters(options: UseMyFavoritesFiltersOptions) {
 
       options.reloadPosts()
     },
-    { immediate: true },
   )
 
   watch(selectedTaskType, () => {

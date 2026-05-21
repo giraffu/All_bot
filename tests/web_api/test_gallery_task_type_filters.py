@@ -2,6 +2,7 @@ import pytest
 
 from src.web_api.routers import gallery as gallery_router
 from src.web_api.routers import users as users_router
+from src.web_api.schemas.gallery_schema import GalleryPostResponse
 
 
 class _ScalarResult:
@@ -47,6 +48,14 @@ class _DbSession:
     async def execute(self, stmt):
         self.executed_statements.append(stmt)
         return next(self._results)
+
+
+class _NoopSession:
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb):
+        return False
 
 
 def _statement_contains_task_type_filter(stmt, expected_task_type: str) -> bool:
@@ -120,3 +129,76 @@ async def test_get_my_favorites_applies_task_type_filter():
         _statement_contains_task_type_filter(stmt, "img2img_lora")
         for stmt in db.executed_statements
     )
+
+
+@pytest.mark.asyncio
+async def test_get_gallery_posts_normalizes_all_filters_and_builds_response(monkeypatch):
+    fetch_calls = {}
+    build_calls = {}
+    db = _NoopSession()
+    current_user = type("User", (), {"id": 123})()
+
+    async def fake_get_gallery_feed(**kwargs):
+        fetch_calls.update(kwargs)
+        return ["post-1"], 21
+
+    async def fake_build_post_responses(session, posts, user):
+        build_calls["session"] = session
+        build_calls["posts"] = posts
+        build_calls["user"] = user
+        return [
+            GalleryPostResponse(
+                id=1,
+                task_id="task-1",
+                media_type="image",
+                width=None,
+                height=None,
+                duration=None,
+                tags=[],
+                likes_count=0,
+                dislikes_count=0,
+                applied_count=0,
+                comments_count=0,
+                thumbnail_url="thumb",
+                media_url="media",
+                created_at="2026-05-22T00:00:00",
+                is_active=True,
+                has_liked=False,
+                has_disliked=False,
+            )
+        ]
+
+    monkeypatch.setattr(gallery_router, "get_gallery_feed", fake_get_gallery_feed)
+    monkeypatch.setattr(gallery_router, "_build_post_responses", fake_build_post_responses)
+
+    response = await gallery_router.get_gallery_posts(
+        page=2,
+        size=10,
+        media_type="all",
+        task_type="all",
+        lora_model="lora-a",
+        sort_by="likes",
+        time_range="week",
+        current_user=current_user,
+        db=db,
+    )
+
+    assert len(response.items) == 1
+    assert response.items[0].task_id == "task-1"
+    assert response.total == 21
+    assert response.pages == 3
+    assert fetch_calls == {
+        "page": 2,
+        "size": 10,
+        "media_type": None,
+        "task_type": None,
+        "lora_model": "lora-a",
+        "sort_by": "likes",
+        "time_range": "week",
+        "user_id": 123,
+    }
+    assert build_calls == {
+        "session": db,
+        "posts": ["post-1"],
+        "user": current_user,
+    }

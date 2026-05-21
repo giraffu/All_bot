@@ -131,9 +131,6 @@ onMounted(async () => {
                 <span class="text-lg md:text-2xl font-bold leading-none drop-shadow-sm text-slate-100">{{ authStore.user?.credits || 0 }}</span>
               </div>
             </div>
-            <a-button v-if="false" size="small" type="primary" @click="$router.push('/billing')" class="ml-4 bg-gradient-to-r from-amber-500 to-orange-500 border-none shadow-lg hover:shadow-orange-500/50 hover:from-amber-400 hover:to-orange-400 z-50 pointer-events-auto">
-              💎 充值 / 升级
-            </a-button>
           </div>
           <a-button type="primary" @click="handleCheckin" :loading="checkinLoading" class="bg-gradient-to-r from-indigo-500 to-cyan-600 hover:from-indigo-400 hover:to-cyan-500 border-none text-white font-bold px-6 w-full shadow-lg hover:shadow-cyan-500/20 transition-all transform hover:-translate-y-0.5 h-10 md:h-auto z-50 pointer-events-auto">
             {{ $t('profile.checkin_btn') }}

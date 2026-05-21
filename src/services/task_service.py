@@ -5,31 +5,39 @@
 Web API 应直接调用 `src/core/task_core.py` 提供的业务门面 (Facade)。
 """
 
+import contextlib
 import logging
 import os
-from dataclasses import replace
 from typing import Callable, List, Optional, Tuple
 
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram import InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
 
 from src.constants import (
-    DEFAULT_DURATION,
-    DEFAULT_RESOLUTION,
     MODE_BLOWJOB,
     MODE_CLOSEUP_BLOWJOB,
     MODE_DOGGY_STYLE,
+    MODE_NAME_MAP,
     MODE_PERFECT_VIDEO_INSERT,
     MODE_UNDRESS_TONGUE,
     TMP_DIR,
+)
+from src.services.task_service_support import (
+    get_acceleration_notice,
+    normalize_custom_video_duration_value,
+    normalize_custom_video_resolution_value,
+    resolve_custom_video_settings,
 )
 from src.logger import UserLogger
 from src.services.image_service import image_service
 from src.services.permission_service import permission_service
 from src.services.task_registry import TaskRegistry
 from src.services.task_service_completion import (
+    complete_monitored_bot_task,
     download_and_log_task_output,
     handle_task_completion,
+    monitor_submitted_bot_task,
+    monitor_bot_task_progress,
 )
 from src.services.task_service_entrypoints import (
     process_custom_video_task as process_custom_video_task_entrypoint,
@@ -39,24 +47,41 @@ from src.services.task_service_entrypoints import (
     process_ltx_video_task as process_ltx_video_task_entrypoint,
     process_video_task_template as process_video_task_template_entrypoint,
 )
+from src.services.task_service_entrypoint_support import (
+    build_cleanup_paths,
+    build_log_prompt,
+    build_task_inputs,
+    build_unexpected_error_log_message,
+    resolve_video_billing_args,
+)
 from src.services.task_service_finalize import (
     build_bot_cancellation_message,
     cleanup_runtime_state_if_needed,
+    finalize_cancelled_task_for_bot,
+    finalize_failed_task_for_bot,
     send_bot_domain_error,
     send_bot_warning,
 )
 from src.services.task_service_flow import (
-    mark_task_submission_succeeded,
     prepare_and_submit_bot_task,
     run_bot_task_flow,
+    send_initial_task_status,
     submit_bot_task,
+    update_submitted_task_status,
+)
+from src.services.task_service_message_support import (
+    build_message_spec,
+    build_cost_status_builder,
+    build_status_message,
+    resolve_display_mode_name,
+    with_completion_caption,
+    with_submitted_status,
 )
 from src.services.task_service_types import BotTaskMessageSpec, BotTaskRuntimeState
 from src.services.tg_task_runtime import (
-    TelegramMessageAdapter,
-    build_vip_suffix,
     build_result_reply_markup,
     cleanup_completion_status_message,
+    get_or_send_status_message,
     record_result_message_meta,
     resolve_result_mode_name,
     send_result_media,
@@ -76,19 +101,11 @@ class TaskService:
 
     @staticmethod
     def _normalize_custom_video_resolution_value(resolution: str) -> int:
-        if resolution == "1024p":
-            return 1024
-        if resolution == "720p":
-            return 720
-        return 512
+        return normalize_custom_video_resolution_value(resolution)
 
     @staticmethod
     def _normalize_custom_video_duration_value(duration: str) -> int:
-        if duration == "10s":
-            return 10
-        if duration == "8s":
-            return 8
-        return 5
+        return normalize_custom_video_duration_value(duration)
 
     @staticmethod
     async def _resolve_custom_video_settings(
@@ -97,23 +114,11 @@ class TaskService:
         update: Optional[Update] = None,
         warn_invalid_combo: bool = False,
     ) -> Tuple[str, str, int, int]:
-        resolution = context.user_data.get("custom_video_resolution", DEFAULT_RESOLUTION)
-        duration = context.user_data.get("custom_video_duration", DEFAULT_DURATION)
-
-        if resolution == "1024p" and duration == "10s":
-            resolution = "720p"
-            context.user_data["custom_video_resolution"] = resolution
-            if warn_invalid_combo and update is not None:
-                await robust_reply_text(
-                    update.effective_message,
-                    "⚠️ 检测到非法配置(1024p+10s)，已自动降级为720p+10s。",
-                )
-
-        return (
-            resolution,
-            duration,
-            TaskService._normalize_custom_video_resolution_value(resolution),
-            TaskService._normalize_custom_video_duration_value(duration),
+        return await resolve_custom_video_settings(
+            context,
+            update=update,
+            warn_invalid_combo=warn_invalid_combo,
+            reply_text_func=robust_reply_text,
         )
 
     @staticmethod
@@ -126,7 +131,7 @@ class TaskService:
         missing_output_message: str = "生成完成但未获取到文件路径，已退还灵石",
         cancellation_message_template: str = "任务已撤销，预扣的 {cost} 灵石已全额退回。",
     ) -> BotTaskMessageSpec:
-        return BotTaskMessageSpec(
+        return build_message_spec(
             initial_status_text=initial_status_text,
             submitted_status_text=submitted_status_text,
             progress_wait_text=progress_wait_text,
@@ -139,13 +144,112 @@ class TaskService:
     def _with_submitted_status(
         spec: BotTaskMessageSpec, submitted_status_text: str
     ) -> BotTaskMessageSpec:
-        return replace(spec, submitted_status_text=submitted_status_text)
+        return with_submitted_status(spec, submitted_status_text)
 
     @staticmethod
     def _with_completion_caption(
         spec: BotTaskMessageSpec, completion_caption: str
     ) -> BotTaskMessageSpec:
-        return replace(spec, completion_caption=completion_caption)
+        return with_completion_caption(spec, completion_caption)
+
+    @staticmethod
+    def _resolve_display_mode_name(task_type: str, context) -> str:
+        return resolve_display_mode_name(
+            task_type,
+            context=context,
+            mode_name_map=MODE_NAME_MAP,
+        )
+
+    @staticmethod
+    def _build_status_message(
+        headline: str,
+        *,
+        notice: str = "",
+        wait_text: Optional[str] = None,
+    ) -> str:
+        return build_status_message(
+            headline,
+            notice=notice,
+            wait_text=wait_text,
+        )
+
+    @staticmethod
+    def _build_cost_status_builder(
+        headline_template: str,
+        *,
+        notice: str = "",
+        wait_text: Optional[str] = None,
+    ):
+        return build_cost_status_builder(
+            headline_template,
+            notice=notice,
+            wait_text=wait_text,
+        )
+
+    @staticmethod
+    def _build_task_inputs(
+        *,
+        prompt: str,
+        images: list[str],
+        resolution,
+        duration,
+        **extra_fields,
+    ):
+        return build_task_inputs(
+            prompt=prompt,
+            images=images,
+            resolution=resolution,
+            duration=duration,
+            **extra_fields,
+        )
+
+    @staticmethod
+    def _resolve_video_billing_args(
+        *,
+        is_video: bool,
+        resolution,
+        task_type: str,
+        duration=None,
+        include_requested_duration: bool = True,
+        allowed_task_types: set[str] | tuple[str, ...] | None = None,
+        duration_transform=None,
+    ):
+        return resolve_video_billing_args(
+            is_video=is_video,
+            resolution=resolution,
+            task_type=task_type,
+            duration=duration,
+            include_requested_duration=include_requested_duration,
+            allowed_task_types=allowed_task_types,
+            duration_transform=duration_transform,
+        )
+
+    @staticmethod
+    def _build_log_prompt(
+        prompt: str,
+        *,
+        resolution=None,
+        duration=None,
+        lora_name: str | None = None,
+        task_type: str | None = None,
+        lora_task_types: set[str] | tuple[str, ...] | None = None,
+    ) -> str:
+        return build_log_prompt(
+            prompt,
+            resolution=resolution,
+            duration=duration,
+            lora_name=lora_name,
+            task_type=task_type,
+            lora_task_types=lora_task_types,
+        )
+
+    @staticmethod
+    def _build_cleanup_paths(paths):
+        return build_cleanup_paths(paths)
+
+    @staticmethod
+    def _build_unexpected_error_log_message(task_label: str, *, verb: str = "in") -> str:
+        return build_unexpected_error_log_message(task_label, verb=verb)
 
     @staticmethod
     def _build_result_reply_markup(task_type, task_id, allow_contribute, reply_markup):
@@ -212,16 +316,17 @@ class TaskService:
     ):
         from src.core.task_core import finalize_task_cancellation
 
-        cancellation_result = await finalize_task_cancellation(
+        cancellation_result = await finalize_cancelled_task_for_bot(
+            status_msg=status_msg,
             internal_user_id=internal_user_id,
             username=username,
             cost=cost,
             task_submitted=task_submitted,
             registry_task_id=registry_task_id,
             explicit_user_message=explicit_user_message,
+            finalize_task_cancellation_func=finalize_task_cancellation,
+            edit_text_func=robust_edit_text,
         )
-        if status_msg:
-            await robust_edit_text(status_msg, f"✅ {cancellation_result.user_message}")
         return cancellation_result
 
     @staticmethod
@@ -246,35 +351,45 @@ class TaskService:
     ):
         from src.core.task_core import finalize_task_failure
 
-        failure_result = await finalize_task_failure(
+        return await finalize_failed_task_for_bot(
+            context=context,
+            chat_id=chat_id,
+            status_msg=status_msg,
             internal_user_id=internal_user_id,
             username=username,
             cost=cost,
             should_refund=should_refund,
             registry_task_id=registry_task_id,
             release_lock=release_lock,
+            message_prefix=message_prefix,
+            prefer_edit_status=prefer_edit_status,
+            fallback_to_send_message=fallback_to_send_message,
             explicit_user_message=explicit_user_message,
             error=error,
             generic_error_prefix=generic_error_prefix,
             refund_suffix_mode=refund_suffix_mode,
+            finalize_task_failure_func=finalize_task_failure,
+            edit_text_func=robust_edit_text,
+            send_message_func=robust_send_message,
         )
-        if prefer_edit_status and status_msg:
-            await robust_edit_text(status_msg, f"{message_prefix} {failure_result.user_message}")
-        elif fallback_to_send_message:
-            await robust_send_message(
-                context.bot,
-                chat_id,
-                f"{message_prefix} {failure_result.user_message}",
-            )
-        return failure_result
 
     @staticmethod
     async def _send_bot_warning(context, chat_id, error):
-        await send_bot_warning(context, chat_id, error)
+        await send_bot_warning(
+            context,
+            chat_id,
+            error,
+            send_message_func=robust_send_message,
+        )
 
     @staticmethod
     async def _send_bot_domain_error(context, chat_id, error):
-        await send_bot_domain_error(context, chat_id, error)
+        await send_bot_domain_error(
+            context,
+            chat_id,
+            error,
+            send_message_func=robust_send_message,
+        )
 
     @staticmethod
     async def _handle_bot_cancelled_exception(
@@ -343,16 +458,15 @@ class TaskService:
         release_lock,
         terminal_state_finalized,
     ):
+        from src.core.task_core import cleanup_task_runtime_state
+
         await cleanup_runtime_state_if_needed(
             internal_user_id=internal_user_id,
             registry_task_id=registry_task_id,
             release_lock=release_lock,
             terminal_state_finalized=terminal_state_finalized,
+            cleanup_task_runtime_state_func=cleanup_task_runtime_state,
         )
-
-    @staticmethod
-    def _mark_task_submission_succeeded(runtime_state, result: dict) -> list[str]:
-        return mark_task_submission_succeeded(runtime_state, result)
 
     @staticmethod
     async def _submit_bot_task(
@@ -365,6 +479,8 @@ class TaskService:
         source_post_id=None,
         deduct_quota=True,
     ) -> tuple[str, list[str]]:
+        from src.core.task_core import process_and_submit_task
+
         return await submit_bot_task(
             runtime_state=runtime_state,
             internal_user_id=internal_user_id,
@@ -373,6 +489,7 @@ class TaskService:
             inputs=inputs,
             source_post_id=source_post_id,
             deduct_quota=deduct_quota,
+            process_and_submit_task_func=process_and_submit_task,
         )
 
     @staticmethod
@@ -388,20 +505,23 @@ class TaskService:
         status_msg_id,
         message_spec: BotTaskMessageSpec,
     ):
-        if update is not None:
-            return await robust_reply_text(
-                update.effective_message, message_spec.initial_status_text
-            )
-        return await TaskService._get_or_send_status_msg(
-            context, chat_id, status_msg_id, message_spec.initial_status_text
+        return await send_initial_task_status(
+            context=context,
+            update=update,
+            chat_id=chat_id,
+            status_msg_id=status_msg_id,
+            message_spec=message_spec,
+            get_or_send_status_msg_func=TaskService._get_or_send_status_msg,
+            reply_text_func=robust_reply_text,
         )
 
     @staticmethod
     async def _update_submitted_task_status(*, status_msg, message_spec: BotTaskMessageSpec):
-        if message_spec.submitted_status_text:
-            await robust_edit_text(status_msg, message_spec.submitted_status_text)
-        elif message_spec.progress_wait_text:
-            await robust_edit_text(status_msg, message_spec.progress_wait_text)
+        await update_submitted_task_status(
+            status_msg=status_msg,
+            message_spec=message_spec,
+            edit_text_func=robust_edit_text,
+        )
 
     @staticmethod
     async def _prepare_and_submit_bot_task(
@@ -532,16 +652,14 @@ class TaskService:
     ):
         from src.core.billing_core import get_user_priority_and_identity
 
-        _priority, identity_str, user_group = await get_user_priority_and_identity(
-            internal_user_id
-        )
-        return await TaskService._monitor_task_progress(
-            task_id,
-            status_msg,
+        return await monitor_submitted_bot_task(
+            task_id=task_id,
+            status_msg=status_msg,
             is_video=is_video,
+            internal_user_id=internal_user_id,
             monitor_func=monitor_func,
-            identity_str=identity_str,
-            user_group=user_group,
+            get_user_priority_and_identity_func=get_user_priority_and_identity,
+            monitor_bot_task_progress_func=TaskService._monitor_task_progress,
         )
 
     @staticmethod
@@ -570,41 +688,30 @@ class TaskService:
         message_spec: BotTaskMessageSpec,
         missing_output_should_refund: bool = True,
     ) -> Tuple[Optional[bytes], Optional[str]]:
-        if final_info:
-            return await TaskService._handle_task_completion(
-                context,
-                chat_id,
-                internal_user_id,
-                prompt,
-                task_type,
-                task_id,
-                saved_input_images,
-                user_logger,
-                is_video=is_video,
-                send_result=send_result,
-                reply_markup=reply_markup,
-                status_msg=status_msg,
-                delete_status=delete_status,
-                caption=caption or message_spec.completion_caption,
-                allow_contribute=allow_contribute,
-                billing_resolution=billing_resolution,
-                requested_duration=requested_duration,
-            )
-
-        await TaskService._finalize_failed_task_for_bot(
+        return await TaskService._complete_monitored_bot_task_with_current_seams(
             context=context,
             chat_id=chat_id,
-            status_msg=None,
+            status_msg=status_msg,
+            runtime_state=runtime_state,
             internal_user_id=internal_user_id,
             username=username,
-            cost=runtime_state.actual_cost,
-            should_refund=missing_output_should_refund,
-            registry_task_id=runtime_state.registry_task_id,
-            release_lock=runtime_state.task_submitted,
-            explicit_user_message=message_spec.missing_output_message,
+            user_logger=user_logger,
+            prompt=prompt,
+            task_type=task_type,
+            task_id=task_id,
+            saved_input_images=saved_input_images,
+            final_info=final_info,
+            is_video=is_video,
+            send_result=send_result,
+            reply_markup=reply_markup,
+            delete_status=delete_status,
+            caption=caption,
+            allow_contribute=allow_contribute,
+            billing_resolution=billing_resolution,
+            requested_duration=requested_duration,
+            message_spec=message_spec,
+            missing_output_should_refund=missing_output_should_refund,
         )
-        runtime_state.terminal_state_finalized = True
-        return None, None
 
     @staticmethod
     async def _download_and_log_task_output(
@@ -631,6 +738,105 @@ class TaskService:
             allow_contribute=allow_contribute,
             billing_resolution=billing_resolution,
             requested_duration=requested_duration,
+        )
+
+    @staticmethod
+    async def _complete_monitored_bot_task_with_current_seams(
+        *,
+        context,
+        chat_id,
+        status_msg,
+        runtime_state,
+        internal_user_id,
+        username,
+        user_logger,
+        prompt,
+        task_type,
+        task_id,
+        saved_input_images,
+        final_info,
+        is_video,
+        send_result=True,
+        reply_markup=None,
+        delete_status=True,
+        caption=None,
+        allow_contribute=True,
+        billing_resolution: Optional[str] = None,
+        requested_duration: Optional[int] = None,
+        message_spec: BotTaskMessageSpec,
+        missing_output_should_refund: bool = True,
+    ) -> Tuple[Optional[bytes], Optional[str]]:
+        return await complete_monitored_bot_task(
+            context=context,
+            chat_id=chat_id,
+            status_msg=status_msg,
+            runtime_state=runtime_state,
+            internal_user_id=internal_user_id,
+            username=username,
+            user_logger=user_logger,
+            prompt=prompt,
+            task_type=task_type,
+            task_id=task_id,
+            saved_input_images=saved_input_images,
+            final_info=final_info,
+            is_video=is_video,
+            send_result=send_result,
+            reply_markup=reply_markup,
+            delete_status=delete_status,
+            caption=caption,
+            allow_contribute=allow_contribute,
+            billing_resolution=billing_resolution,
+            requested_duration=requested_duration,
+            message_spec=message_spec,
+            missing_output_should_refund=missing_output_should_refund,
+            send_result_media_func=TaskService._send_result_media,
+            cleanup_completion_status_message_func=TaskService._cleanup_completion_status_message,
+            handle_task_completion_func=TaskService._handle_task_completion,
+            finalize_failed_task_for_bot_func=TaskService._finalize_failed_task_for_bot,
+        )
+
+    @staticmethod
+    async def _handle_task_completion_with_current_seams(
+        *,
+        context,
+        chat_id,
+        internal_user_id,
+        prompt,
+        task_type,
+        task_id,
+        saved_input_images,
+        user_logger,
+        is_video,
+        send_result,
+        reply_markup,
+        status_msg,
+        delete_status,
+        caption=None,
+        allow_contribute=True,
+        billing_resolution: Optional[str] = None,
+        requested_duration: Optional[int] = None,
+    ):
+        return await handle_task_completion(
+            context=context,
+            chat_id=chat_id,
+            internal_user_id=internal_user_id,
+            prompt=prompt,
+            task_type=task_type,
+            task_id=task_id,
+            saved_input_images=saved_input_images,
+            user_logger=user_logger,
+            is_video=is_video,
+            send_result=send_result,
+            reply_markup=reply_markup,
+            status_msg=status_msg,
+            delete_status=delete_status,
+            caption=caption,
+            allow_contribute=allow_contribute,
+            billing_resolution=billing_resolution,
+            requested_duration=requested_duration,
+            send_result_media_func=TaskService._send_result_media,
+            cleanup_completion_status_message_func=TaskService._cleanup_completion_status_message,
+            download_and_log_task_output_func=TaskService._download_and_log_task_output,
         )
 
     @staticmethod
@@ -896,15 +1102,7 @@ class TaskService:
 
     @staticmethod
     async def _get_or_send_status_msg(context, chat_id, status_msg_id, text):
-        if status_msg_id:
-            try:
-                await context.bot.edit_message_text(
-                    chat_id=chat_id, message_id=status_msg_id, text=text
-                )
-                return TelegramMessageAdapter(context.bot, chat_id, status_msg_id)
-            except Exception:
-                pass
-        return await robust_send_message(context.bot, chat_id, text)
+        return await get_or_send_status_message(context, chat_id, status_msg_id, text)
 
     @staticmethod
     async def monitor_task_progress(
@@ -923,88 +1121,15 @@ class TaskService:
     async def _monitor_task_progress(
         task_id, status_msg, is_video, monitor_func, identity_str=None, user_group=None
     ):
-        from src.core.task_core import CoreDomainError
-
-        def _raise_cancelled():
-            raise CoreDomainError("cancelled")
-
-        last_progress = 0
-        last_status = None
-        last_queue_pos = None
-        final_info = None
-        cancel_markup = InlineKeyboardMarkup(
-            [[InlineKeyboardButton("❌ 撤销任务", callback_data=f"cancel_task_{task_id}")]]
+        return await monitor_bot_task_progress(
+            task_id,
+            status_msg,
+            is_video=is_video,
+            monitor_func=monitor_func,
+            identity_str=identity_str,
+            user_group=user_group,
+            edit_status_text_func=robust_edit_text,
         )
-
-        async def update_status_message(text, **kwargs):
-            if not status_msg:
-                return False
-            try:
-                kwargs["reply_markup"] = cancel_markup if "排队中" in text else None
-                await robust_edit_text(status_msg, text, **kwargs)
-                return True
-            except Exception as exc:
-                logger.warning(
-                    "Failed to update status message for task %s: %s", task_id, exc
-                )
-                return False
-
-        vip_suffix = build_vip_suffix(
-            identity_str=identity_str, user_group=user_group
-        )
-
-        async for info in monitor_func(task_id, is_video=is_video):
-            status = info.get("status")
-            progress = info.get("progress", 0)
-
-            if status == "done":
-                final_info = info
-                if not is_video and last_progress != 100:
-                    await update_status_message("⏳ 生成中... 100%")
-                break
-
-            if status in ["error", "failed", "cancelled"]:
-                if status == "cancelled":
-                    logger.warning("Task %s was cancelled.", task_id)
-                    _raise_cancelled()
-                raise RuntimeError(info.get("error", "Unknown error"))
-
-            if status == "pending":
-                raw_pos = info.get("queue_pos")
-                queue_pos = None
-                if raw_pos is not None:
-                    try:
-                        queue_pos = int(raw_pos) + 1
-                    except (ValueError, TypeError):
-                        queue_pos = raw_pos
-                else:
-                    queue_pos = info.get("queue_remaining")
-
-                if queue_pos is not None:
-                    if queue_pos != last_queue_pos or last_status != "pending":
-                        if await update_status_message(
-                            f"⏳ 排队中... (第 {queue_pos} 位){vip_suffix}",
-                            parse_mode="Markdown",
-                        ):
-                            last_queue_pos = queue_pos
-                            last_status = "pending"
-                else:
-                    if last_status != "pending":
-                        if await update_status_message(
-                            f"⏳ 排队中...{vip_suffix}", parse_mode="Markdown"
-                        ):
-                            last_status = "pending"
-                continue
-
-            if progress != last_progress or last_status == "pending":
-                text = "⏳ 正在生成视频..." if is_video else f"⏳ 生成中... {progress}%"
-                if await update_status_message(text):
-                    last_progress = progress
-                    last_status = status
-
-        if final_info is None:
-            raise CoreDomainError("cancelled")
-        return final_info
 
     @staticmethod
     async def handle_task_completion(
@@ -1066,7 +1191,7 @@ class TaskService:
         billing_resolution: Optional[str] = None,
         requested_duration: Optional[int] = None,
     ):
-        return await handle_task_completion(
+        return await TaskService._handle_task_completion_with_current_seams(
             context=context,
             chat_id=chat_id,
             internal_user_id=internal_user_id,
@@ -1084,8 +1209,6 @@ class TaskService:
             allow_contribute=allow_contribute,
             billing_resolution=billing_resolution,
             requested_duration=requested_duration,
-            send_result_media_func=TaskService._send_result_media,
-            cleanup_completion_status_message_func=TaskService._cleanup_completion_status_message,
         )
 
     @staticmethod
@@ -1097,10 +1220,10 @@ class TaskService:
 
     @staticmethod
     async def _get_acceleration_notice(user_id: int) -> str:
-        stats = await permission_service.quota_manager.get_user_stats(user_id)
-        if stats.get("generation_count", 0) < 2:
-            return "\n✨ [新手特权] 前2次生成享受极速排队通道！"
-        return ""
+        return await get_acceleration_notice(
+            user_id,
+            quota_manager=permission_service.quota_manager,
+        )
 
 
 task_service = TaskService()

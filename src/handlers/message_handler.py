@@ -1,25 +1,10 @@
 import os
-import time
-import uuid
 
-from telegram import (
-    InlineKeyboardButton,
-    InlineKeyboardMarkup,
-    Update,
-    WebAppInfo,
-)
+from telegram import Update
 from telegram.ext import ContextTypes
 
-from config import (
-    CHANNEL_INVITE_LINK,
-    MINIO_TEMPLATE_BUCKET,
-    REFUGE_GROUP_ID,
-    REFUGE_INVITE_LINK,
-    WEBAPP_URL,
-)
+from config import CHANNEL_INVITE_LINK, REFUGE_GROUP_ID
 from src.constants import (
-    MODE_NONE,
-    MODE_TEMPLATE_CONTRIBUTE,
     TEMP_TEMPLATE_DIR,
     TEMPLATE_DIR_PENETRATION,
     TEMPLATE_DIR_QUICK_FACE,
@@ -27,6 +12,32 @@ from src.constants import (
     TMP_DIR,
 )
 from src.handlers.prompt_router import prompt_route, prompt_routes
+from src.handlers.message_handler_common import (
+    build_private_prompt_fallback,
+    ensure_user_access_reward,
+    get_reply_message,
+)
+from src.handlers.message_handler_profile import (
+    build_checkin_repeat_message,
+    build_checkin_success_message,
+    build_personal_center_payload,
+    build_refuge_checkin_payload,
+    build_share_payload,
+)
+from src.handlers.message_handler_media import (
+    handle_media_message,
+    handle_photo_idle as media_handle_photo_idle,
+    handle_template_contribution as media_handle_template_contribution,
+)
+from src.handlers.message_handler_menu import (
+    build_back_to_main_payload,
+    build_gallery_payload,
+    build_photo_edit_payload,
+    build_queue_status_message,
+    build_recharge_payload,
+    build_switch_lang_message,
+    build_video_edit_payload,
+)
 from src.handlers.utils import (
     _is_mentioned,
     with_db_logging_context,
@@ -34,7 +45,6 @@ from src.handlers.utils import (
 )
 from src.services.image_service import image_service
 from src.services.permission_service import permission_service
-from src.services.storage import storage
 from src.services.task_service import task_service
 from src.utils import (
     robust_reply_text,
@@ -55,31 +65,6 @@ os.makedirs(TEMPLATE_DIR_VIDEO_NICE, exist_ok=True)
 os.makedirs(TEMP_TEMPLATE_DIR, exist_ok=True)
 
 
-def _get_reply_message(update: Update):
-    return (
-        getattr(update, "effective_message", None)
-        or update.message
-        or update.edited_message
-    )
-
-
-def _format_invitation_stats(invitation_recharge: dict) -> str:
-    total_commission = invitation_recharge.get(
-        "total_commission_usdt", invitation_recharge.get("commission_usdt", 0.0)
-    )
-    return (
-        "🤝 **邀请数据**：\n"
-        f"  - 邀请充值：已有 `{invitation_recharge['recharged_invitees_count']}` 位道友完成 `{invitation_recharge['total_recharge_count']}` 次充值\n"
-        f"  - 累积充值：`{invitation_recharge['total_ton']:.2f}` TON\n"
-        f"  - 累积充值：`¥ {invitation_recharge['total_rmb']:.2f}`\n"
-        f"  - 累积贡献：`{invitation_recharge['total_stars']}` Stars\n"
-        f"  - 历史累计返佣：*$ {float(total_commission):.2f} USDT*\n"
-        f"  - 已兑换返佣：*$ {invitation_recharge.get('spent_commission_usdt', 0.0):.2f} USDT*\n"
-        f"  - 当前可兑换余额：*$ {invitation_recharge.get('available_balance_usdt', 0.0):.2f} USDT*\n"
-        "  - 返佣说明：历史累计返佣用于展示成绩；当前可兑换余额才会随兑换减少"
-    )
-
-
 @with_unified_error_handler
 @with_db_logging_context
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -88,11 +73,12 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await ensure_access_and_reward(update, context):
         return
 
-    mode = context.user_data.get("mode", MODE_NONE)
-    if mode == MODE_TEMPLATE_CONTRIBUTE:
-        return await _handle_template_contribution(update, context)
-
-    return await _handle_photo_idle(update, context)
+    return await handle_media_message(
+        update,
+        context,
+        on_template_contribution=_handle_template_contribution,
+        on_photo_idle=_handle_photo_idle,
+    )
 
 
 @with_unified_error_handler
@@ -103,11 +89,13 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await ensure_access_and_reward(update, context):
         return
 
-    mode = context.user_data.get("mode", MODE_NONE)
-    if mode == MODE_TEMPLATE_CONTRIBUTE:
-        return await _handle_template_contribution(update, context)
-
-    await robust_reply_text(update.message, "⚠️ 当前模式不支持视频处理。")
+    return await handle_media_message(
+        update,
+        context,
+        unsupported_message="⚠️ 当前模式不支持视频处理。",
+        on_template_contribution=_handle_template_contribution,
+        on_photo_idle=_handle_photo_idle,
+    )
 
 
 @with_unified_error_handler
@@ -118,93 +106,23 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await ensure_access_and_reward(update, context):
         return
 
-    mode = context.user_data.get("mode", MODE_NONE)
-    if mode == MODE_TEMPLATE_CONTRIBUTE:
-        return await _handle_template_contribution(update, context)
-
-    await robust_reply_text(
-        update.message, "⚠️ 请发送压缩后的图片或视频格式，不要发送原图/文件。"
+    return await handle_media_message(
+        update,
+        context,
+        unsupported_message="⚠️ 请发送压缩后的图片或视频格式，不要发送原图/文件。",
+        on_template_contribution=_handle_template_contribution,
+        on_photo_idle=_handle_photo_idle,
     )
 
 
 async def _handle_photo_idle(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    now = time.time()
-    last_reminder = context.user_data.get("last_reminder_time", 0)
-    if now - last_reminder < 3.0:
-        return
-
-    from src.i18n.keyboards import get_main_menu_keyboard
-
-    reply_markup = get_main_menu_keyboard(context.lang)
-
-    await robust_reply_text(
-        update.message,
-        "⚠️ **请先选择功能模式**\n\n点击下方菜单选择您想要的功能 👇",
-        reply_markup=reply_markup,
-        parse_mode="Markdown",
-    )
-    context.user_data["last_reminder_time"] = now
+    return await media_handle_photo_idle(update, context)
 
 
 async def _handle_template_contribution(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ):
-    msg = update.message
-    user = update.effective_user
-    username = user.username
-
-    file_id = None
-    file_ext = ".png"
-    file_type_name = "图片"
-
-    if msg.photo:
-        file_id = msg.photo[-1].file_id
-        file_ext = ".png"
-        file_type_name = "图片"
-    elif msg.video:
-        file_id = msg.video.file_id
-        file_ext = os.path.splitext(msg.video.file_name or "video.mp4")[1] or ".mp4"
-        file_type_name = "视频"
-    elif msg.document:
-        file_id = msg.document.file_id
-        file_ext = os.path.splitext(msg.document.file_name or "file")[1]
-        file_type_name = "文件"
-
-    if not file_id:
-        return
-
-    try:
-        file = await context.bot.get_file(file_id)
-        local_filename = f"{user.id}_{uuid.uuid4().hex}{file_ext}"
-        local_path = os.path.join(TEMP_TEMPLATE_DIR, local_filename)
-        await file.download_to_drive(local_path)
-
-        minio_object_name = f"temps/{local_filename}"
-        storage.upload_file(local_path, minio_object_name, bucket=MINIO_TEMPLATE_BUCKET)
-
-        file_type_db = "photo"
-        if msg.video:
-            file_type_db = "video"
-        elif msg.document:
-            file_type_db = "document"
-
-        await permission_service.record_contribution(user.id, local_path, file_type_db)
-
-        if "contributed_count" not in context.user_data:
-            context.user_data["contributed_count"] = 0
-        context.user_data["contributed_count"] += 1
-
-        count = context.user_data["contributed_count"]
-        await robust_reply_text(
-            msg, f"✅ 已经收到 {count} 张图片/视频，待审核收入模板库。"
-        )
-
-        logger.info(
-            f"[Template Contribution] User {user.id}({username}) saved {file_type_name}: {local_path} (Recorded in DB)"
-        )
-    except Exception as e:
-        logger.error(f"Error saving template contribution: {e}", exc_info=True)
-        await robust_reply_text(msg, f"❌ 保存失败：{str(e)}")
+    return await media_handle_template_contribution(update, context, logger)
 
 
 @with_unified_error_handler
@@ -212,27 +130,17 @@ async def _handle_template_contribution(
 async def handle_photo_edit_menu(
     update: Update, context: ContextTypes.DEFAULT_TYPE, text: str
 ):
-    message = _get_reply_message(update)
+    message = get_reply_message(update)
     if not message:
         return
     if not update.effective_user:
         return
     user = update.effective_user
-    is_member = await get_user_channel_status(context.bot, user.id)
-    inviter_id = await permission_service.check_access(
-        user.id, user.username, user.full_name, is_member
-    )
-    if inviter_id:
-        create_background_task(
-            context, notify_inviter_reward(context.bot, inviter_id, user.full_name)
-        )
-
-    from src.i18n.keyboards import get_photo_edit_keyboard
-
-    reply_markup = get_photo_edit_keyboard(context.lang)
+    await ensure_user_access_reward(context, user)
+    msg, reply_markup = build_photo_edit_payload(context)
     await robust_reply_text(
         message,
-        context.t("system.photo_edit_hint"),
+        msg,
         reply_markup=reply_markup,
         parse_mode="Markdown",
     )
@@ -242,15 +150,13 @@ async def handle_photo_edit_menu(
 async def handle_video_edit_menu(
     update: Update, context: ContextTypes.DEFAULT_TYPE, text: str
 ):
-    message = _get_reply_message(update)
+    message = get_reply_message(update)
     if not message:
         return
-    from src.i18n.keyboards import get_video_edit_keyboard
-
-    reply_markup = get_video_edit_keyboard(context.lang)
+    msg, reply_markup = build_video_edit_payload(context)
     await robust_reply_text(
         message,
-        context.t("system.video_edit_hint"),
+        msg,
         reply_markup=reply_markup,
         parse_mode="Markdown",
     )
@@ -260,12 +166,13 @@ async def handle_video_edit_menu(
 async def handle_gallery_menu(
     update: Update, context: ContextTypes.DEFAULT_TYPE, text: str
 ):
-    message = _get_reply_message(update)
+    message = get_reply_message(update)
     if not message:
         return
+    msg, _reply_markup = build_gallery_payload()
     await robust_reply_text(
         message,
-        "浏览器进入 `https://web.aivison.it.com/` 或点击web按钮，查看市集内容哦",
+        msg,
         parse_mode="Markdown",
     )
 
@@ -275,15 +182,13 @@ async def handle_gallery_menu(
 async def handle_back_to_main_menu(
     update: Update, context: ContextTypes.DEFAULT_TYPE, text: str
 ):
-    message = _get_reply_message(update)
+    message = get_reply_message(update)
     if not message:
         return
-    from src.i18n.keyboards import get_main_menu_keyboard
-
-    reply_markup = get_main_menu_keyboard(context.lang)
+    msg, reply_markup = build_back_to_main_payload(context)
     await robust_reply_text(
         message,
-        "🏠 **已返回主菜单**",
+        msg,
         reply_markup=reply_markup,
         parse_mode="Markdown",
     )
@@ -293,54 +198,10 @@ async def handle_back_to_main_menu(
 async def handle_recharge_menu(
     update: Update, context: ContextTypes.DEFAULT_TYPE, text: str
 ):
-    message = _get_reply_message(update)
+    message = get_reply_message(update)
     if not message:
         return
-    webapp_url = (
-        WEBAPP_URL
-        if "WEBAPP_URL" in globals() and WEBAPP_URL
-        else "https://pay.aivison.it.com/"
-    )
-
-    keyboard = [
-        [InlineKeyboardButton("💎 TON月卡套餐", web_app=WebAppInfo(url=webapp_url))],
-        [InlineKeyboardButton("⭐️ Star月卡套餐", callback_data="recharge_stars_menu")],
-        [
-            InlineKeyboardButton(
-                "⭐️ Star直充灵石", callback_data="recharge_stars_credit_menu"
-            )
-        ],
-        [InlineKeyboardButton("¥ 人民币充值月卡", callback_data="recharge_rmb_menu")],
-        [
-            InlineKeyboardButton(
-                "¥ 人民币直充灵石", callback_data="recharge_rmb_credit_menu"
-            )
-        ],
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-
-    msg = (
-        "📜 **【合欢宗账房】灵石充值与身份晋升**\n\n"
-        "欢迎来到合欢宗账房！灵石乃修仙界之硬通货，可用以驱动阵法（生成图像与视频）。\n\n"
-        "🔰 **【内门弟子】** 1.99 TON / ¥ 30.00\n"
-        "   └ 🎁 直接获得 `400` 灵石\n"
-        "   └ 📅 每日签到额外 `+30` 灵石\n"
-        "   └ 🔓 解锁特权 `720p` 画质，最长 `8s` 视频\n"
-        "   └ ⚡ 排队优先级 `+20`\n\n"
-        "💠 **【核心弟子】** 4.99 TON / ¥ 70.00\n"
-        "   └ 🎁 直接获得 `1200` 灵石\n"
-        "   └ 📅 每日签到额外 `+40` 灵石\n"
-        "   └ 🔓 解锁特权 `1024p` 画质，最长 `10s` 视频\n"
-        "   └ ⚡ 排队优先级 `+30`\n\n"
-        "👑 **【真传弟子】** 9.99 TON / ¥ 120.00\n"
-        "   └ 🎁 直接获得 `3000` 灵石\n"
-        "   └ 📅 每日签到额外 `+50` 灵石\n"
-        "   └ 🔓 解锁特权 `1024p` 画质，最长 `10s` 视频\n"
-        "   └ 🚀 排队优先级 `+45` (极速)\n\n"
-        "⚠️ **注意事项**：\n"
-        "1. 充值所获灵石与身份特权，一经交付，不可退换。\n\n"
-        "👇 **请选择您的支付法门**："
-    )
+    msg, reply_markup = build_recharge_payload()
     await robust_reply_text(
         message, msg, parse_mode="Markdown", reply_markup=reply_markup
     )
@@ -351,7 +212,7 @@ async def handle_recharge_menu(
 async def handle_personal_center(
     update: Update, context: ContextTypes.DEFAULT_TYPE, text: str
 ):
-    message = _get_reply_message(update)
+    message = get_reply_message(update)
     if not message:
         return
     if not update.effective_user:
@@ -375,80 +236,11 @@ async def handle_personal_center(
 
     dto = await get_user_dashboard_info(user_id, first_name)
 
-    # 构建突破提示
-    breakthrough_msg = ""
-    if dto.current_group == "凡人":
-        breakthrough_msg = (
-            f"🚀 **突破至练气期条件**：\n🔸 拜入宗门 [👉 [点击即刻拜入]({invite_link})]"
-        )
-    elif dto.current_group == "练气期":
-        inv_done = "✅" if dto.invitations > 1 else "❌"
-        checkin_done = "✅" if dto.checkins > 3 else "❌"
-        gen_done = "✅" if dto.generations > 10 else "❌"
-        breakthrough_msg = f"🚀 **突破至筑基期(视野更加清晰了)条件**：\n🔸 邀请道友 > 1人 ({inv_done})\n🔸 累计签到 > 3天 ({checkin_done})\n🔸 修炼次数 > 10次 ({gen_done})"
-    elif dto.current_group == "筑基期":
-        inv_done = "✅" if dto.invitations > 10 else "❌"
-        checkin_done = "✅" if dto.checkins > 30 else "❌"
-        gen_done = "✅" if dto.generations > 100 else "❌"
-        breakthrough_msg = f"🚀 **突破至金丹期条件**：\n🔸 邀请道友 > 10人 ({inv_done})\n🔸 累计签到 > 30天 ({checkin_done})\n🔸 修炼次数 > 100次 ({gen_done})"
-    elif dto.current_group == "金丹期":
-        inv_done = "✅" if dto.invitations > 100 else "❌"
-        checkin_done = "✅" if dto.checkins > 300 else "❌"
-        gen_done = "✅" if dto.generations > 1000 else "❌"
-        breakthrough_msg = f"🚀 **突破至元婴期条件**：\n🔸 邀请道友 > 100人 ({inv_done})\n🔸 累计签到 > 300天 ({checkin_done})\n🔸 修炼次数 > 1000次 ({gen_done})"
-    elif dto.current_group == "元婴期":
-        breakthrough_msg = "✨ **已修成元婴，神通广大，万法不侵**"
-
-    # 构建身份展示
-    identity_display = f"`{dto.current_identity}`"
-    if dto.current_identity != "外门弟子" and dto.identity_expire_at:
-        from datetime import datetime
-
-        now = datetime.now()
-        expire_at = dto.identity_expire_at
-        if expire_at.tzinfo is not None:
-            expire_at = expire_at.replace(tzinfo=None)
-        if expire_at > now:
-            remaining = expire_at - now
-            days = remaining.days
-            hours = remaining.seconds // 3600
-            expire_str = expire_at.strftime("%Y-%m-%d %H:%M")
-            if days > 0:
-                identity_display += f" (剩余 {days} 天，{expire_str} 到期)"
-            else:
-                identity_display += f" (剩余 {hours} 小时，{expire_str} 到期)"
-        else:
-            identity_display += " (已过期)"
-
-    msg = (
-        f"👤 **道友**：`{dto.first_name}`\n"
-        f"📜 **修为**：`{dto.current_group}`\n"
-        f"🪪 **身份**：{identity_display}\n"
-        f"⚡ **排队加速**：`+{dto.current_priority}` 优先级\n"
-        f"💰 **灵石余额**：`{dto.credits}`\n\n"
-        f"📊 **修炼数据**：\n"
-        f"  - 邀请同道：`{dto.invitations}` 人\n"
-        f"  - 累计签到：`{dto.checkins}` 天\n"
-        f"  - 施法次数：`{dto.generations}` 次\n\n"
-        f"💡 *提示：1点加速优先级约等于为您节约1分钟的排队时间。*\n\n"
-        f"{breakthrough_msg}"
+    msg, reply_markup = build_personal_center_payload(
+        dto,
+        invite_link=invite_link,
+        web_url="https://web.aivison.it.com/",
     )
-
-    reply_markup = None
-    if dto.is_unlocked:
-        msg += "\n\n🌐 **合欢密宗已解锁**"
-        keyboard = [
-            [
-                InlineKeyboardButton(
-                    "🌐 前往合欢密宗 (Web端)", url="https://web.aivison.it.com/"
-                ),
-                InlineKeyboardButton(
-                    "📱 沉浸式 Mini App",
-                    web_app=WebAppInfo(url="https://web.aivison.it.com/"),
-                ),
-            ]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
 
     await robust_reply_text(
         message, msg, parse_mode="Markdown", reply_markup=reply_markup
@@ -459,7 +251,7 @@ async def handle_personal_center(
 async def handle_checkin(
     update: Update, context: ContextTypes.DEFAULT_TYPE, text: str = None
 ):
-    message = _get_reply_message(update)
+    message = get_reply_message(update)
     if not message:
         return
     if REFUGE_GROUP_ID:
@@ -473,15 +265,7 @@ async def handle_checkin(
                 chat_id=group_id, user_id=update.effective_user.id
             )
             if member.status in ["left", "kicked", "banned"]:
-                link = REFUGE_INVITE_LINK or "https://t.me/+J0velHHqUF01NGM1"
-                keyboard = [[InlineKeyboardButton("🛡️ 点击加入避难所", url=link)]]
-                reply_markup = InlineKeyboardMarkup(keyboard)
-                msg = (
-                    "🛡️ **避难所签到检测**\n\n"
-                    "道友，检测到您尚未加入【合欢宗避难所】。\n"
-                    "**加入避难所，防封不迷路！**\n\n"
-                    "请先加入避难所后，再来进行每日签到领取奖励吧！"
-                )
+                msg, reply_markup = build_refuge_checkin_payload()
                 await robust_reply_text(
                     message,
                     msg,
@@ -523,14 +307,16 @@ async def handle_checkin(
     user_group = await permission_service.get_user_group(internal_user_id)
     user_identity = await permission_service.get_user_identity(internal_user_id)
 
-    disclaimer = "\n\n⚠️ _注：累计签到统计始于3月5日，此前的数据未计入系统。_"
-
     if success:
-        reward_msg = f"`{reward}` 灵石"
         await robust_reply_text(
             message,
-            f"✅ **签到成功！**\n\n👤 当前境界：`{user_group}`\n🪪 当前身份：`{user_identity}`\n📅 累计签到：`{total_days}` 天\n🎉 本次获得：{reward_msg}\n💰 当前总灵石：`{current_credits}`"
-            + disclaimer,
+            build_checkin_success_message(
+                user_group=user_group,
+                user_identity=user_identity,
+                total_days=total_days,
+                reward=reward,
+                current_credits=current_credits,
+            ),
             parse_mode="Markdown",
         )
     elif error_msg:
@@ -538,8 +324,11 @@ async def handle_checkin(
     else:
         await robust_reply_text(
             message,
-            f"📅 **今日已领取灵石**\n\n👤 当前境界：`{user_group}`\n🪪 当前身份：`{user_identity}`\n📅 累计签到：`{total_days}` 天\n\n请明天再来领取奖励吧！"
-            + disclaimer,
+            build_checkin_repeat_message(
+                user_group=user_group,
+                user_identity=user_identity,
+                total_days=total_days,
+            ),
             parse_mode="Markdown",
         )
 
@@ -548,7 +337,7 @@ async def handle_checkin(
 async def handle_share(
     update: Update, context: ContextTypes.DEFAULT_TYPE, text: str = None
 ):
-    message = _get_reply_message(update)
+    message = get_reply_message(update)
     if not message:
         return
     if not update.effective_user:
@@ -559,29 +348,7 @@ async def handle_share(
 
     invite_link = f"https://t.me/{bot_username}?start={user_id}"
     dto = await get_user_dashboard_info(user_id, update.effective_user.first_name)
-    msg = (
-        "🤝 **分享赚灵石**\n\n"
-        f"👤 **当前等级**：`{dto.current_group}`\n"
-        f"🔗 **您的专属链接**：\n`{invite_link}`\n\n"
-        "📈 **邀请统计**：\n"
-        f"👥 已邀请人数：`{dto.invitations}` 人\n\n"
-        f"{_format_invitation_stats(dto.invitation_recharge)}\n\n"
-        "💡 **规则**：\n"
-        "每成功邀请一位**新道友**使用机器人，您将自动获得 **5 灵石**奖励！\n"
-        "**新道友**加入宗门，您将自动获得 **10 灵石**奖励！\n"
-    )
-    reply_markup = InlineKeyboardMarkup(
-        [
-            [
-                InlineKeyboardButton(
-                    "返佣兑灵石", callback_data="affiliate_redeem_credits_menu"
-                ),
-                InlineKeyboardButton(
-                    "返佣兑身份", callback_data="affiliate_redeem_membership_menu"
-                ),
-            ]
-        ]
-    )
+    msg, reply_markup = build_share_payload(dto, invite_link=invite_link)
     await robust_reply_text(
         message,
         msg,
@@ -610,7 +377,7 @@ async def handle_switch_lang(
     update: Update, context: ContextTypes.DEFAULT_TYPE, text: str = None
 ):
     """Handle language switching."""
-    message = _get_reply_message(update)
+    message = get_reply_message(update)
     if not message:
         return
     user = update.effective_user
@@ -668,11 +435,7 @@ async def handle_switch_lang(
     # Reply with new keyboard
     from src.i18n.keyboards import get_main_menu_keyboard
 
-    msg = (
-        "🌐 语言已切换为中文。"
-        if new_lang == "zh"
-        else "🌐 Language switched to English."
-    )
+    msg = build_switch_lang_message(new_lang)
     await robust_reply_text(message, msg, reply_markup=get_main_menu_keyboard(new_lang))
 
 
@@ -680,29 +443,19 @@ async def handle_switch_lang(
 async def handle_queue_status(
     update: Update, context: ContextTypes.DEFAULT_TYPE, text: str = None
 ):
-    message = _get_reply_message(update)
+    message = get_reply_message(update)
     if not message:
         return
     status = await image_service.get_queue_info()
     if status:
         queue_size = status.get("queue_size", 0)
         queue_by_type = status.get("queue_by_type", {})
-
-        msg_lines = ["📊 **宗门灵气损耗现状**\n", f"👥 总排队任务：`{queue_size}` 个"]
-
-        # 固定展示字典中定义的所有类型（即使数量为0）
-        for task_type, i18n_key in TASK_TYPE_DISPLAY_NAMES.items():
-            count = queue_by_type.get(task_type, 0)
-            display_name = context.t(i18n_key)
-            msg_lines.append(f"{display_name}：`{count}` 个")
-
-        # 兜底：如果队列里出现了未知类型，且数量大于0，也展示出来
-        for task_type, count in queue_by_type.items():
-            if task_type not in TASK_TYPE_DISPLAY_NAMES and count > 0:
-                safe_task_type = task_type.replace("_", "\\_")
-                msg_lines.append(f"❓ 其他 ({safe_task_type})：`{count}` 个")
-
-        msg = "\n".join(msg_lines)
+        msg = build_queue_status_message(
+            queue_size,
+            queue_by_type,
+            context,
+            TASK_TYPE_DISPLAY_NAMES,
+        )
         await robust_reply_text(message, msg, parse_mode="Markdown")
     else:
         await robust_reply_text(message, "⚠️ 无法获取实时排队数据，请稍后再试。")
@@ -718,15 +471,7 @@ async def handle_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     user = update.effective_user
 
-    is_member = await get_user_channel_status(context.bot, user.id)
-    inviter_id_reward = await permission_service.check_access(
-        user.id, user.username, user.full_name, is_member
-    )
-    if inviter_id_reward:
-        create_background_task(
-            context,
-            notify_inviter_reward(context.bot, inviter_id_reward, user.full_name),
-        )
+    await ensure_user_access_reward(context, user)
 
     message = update.message or update.edited_message
     if not message:
@@ -748,9 +493,9 @@ async def handle_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         reply_markup = get_main_menu_keyboard(context.lang)
 
-        fallback_msg = "✨ 似乎是不认识的指令呢。\n👇 请使用下方菜单进行操作，或输入 /start 重新唤醒菜单。"
-        if context.lang == "en":
-            fallback_msg = "✨ Unrecognized command.\n👇 Please use the menu below, or type /start to wake up the menu."
-
-        await robust_reply_text(message, fallback_msg, reply_markup=reply_markup)
+        await robust_reply_text(
+            message,
+            build_private_prompt_fallback(context.lang),
+            reply_markup=reply_markup,
+        )
     return

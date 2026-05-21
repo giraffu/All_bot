@@ -57,12 +57,7 @@ def _build_profile_update():
 async def test_handle_prompt_uses_edited_message_for_private_fallback(monkeypatch):
     reply_mock = AsyncMock()
 
-    monkeypatch.setattr(message_handler, "get_user_channel_status", AsyncMock(return_value=False))
-    monkeypatch.setattr(
-        message_handler.permission_service,
-        "check_access",
-        AsyncMock(return_value=None),
-    )
+    monkeypatch.setattr(message_handler, "ensure_user_access_reward", AsyncMock())
     monkeypatch.setattr(message_handler, "robust_reply_text", reply_mock)
     monkeypatch.setattr(
         "src.handlers.prompt_router.GLOBAL_REVERSE_MAP",
@@ -100,14 +95,7 @@ async def test_handle_prompt_route_uses_edited_message_reply_target(
 ):
     reply_mock = AsyncMock()
 
-    monkeypatch.setattr(
-        message_handler, "get_user_channel_status", AsyncMock(return_value=False)
-    )
-    monkeypatch.setattr(
-        message_handler.permission_service,
-        "check_access",
-        AsyncMock(return_value=None),
-    )
+    monkeypatch.setattr(message_handler, "ensure_user_access_reward", AsyncMock())
     monkeypatch.setattr(message_handler, "robust_reply_text", reply_mock)
     monkeypatch.setattr(
         "src.handlers.prompt_router.GLOBAL_REVERSE_MAP",
@@ -135,9 +123,6 @@ async def test_handle_prompt_route_uses_edited_message_reply_target(
 async def test_handle_share_displays_affiliate_balance_semantics(monkeypatch):
     reply_mock = AsyncMock()
 
-    monkeypatch.setattr(
-        message_handler, "get_user_channel_status", AsyncMock(return_value=False)
-    )
     monkeypatch.setattr(
         "src.i18n.keyboards.get_main_menu_keyboard",
         lambda _lang: "fake-main-keyboard",

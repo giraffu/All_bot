@@ -20,10 +20,16 @@ async def finalize_cancelled_task_for_bot(
     task_submitted,
     registry_task_id,
     explicit_user_message,
+    finalize_task_cancellation_func=None,
+    edit_text_func=None,
 ):
     from src.core.task_core import finalize_task_cancellation
 
-    cancellation_result = await finalize_task_cancellation(
+    finalize_task_cancellation_func = (
+        finalize_task_cancellation_func or finalize_task_cancellation
+    )
+    edit_text_func = edit_text_func or robust_edit_text
+    cancellation_result = await finalize_task_cancellation_func(
         internal_user_id=internal_user_id,
         username=username,
         cost=cost,
@@ -33,7 +39,7 @@ async def finalize_cancelled_task_for_bot(
         explicit_user_message=explicit_user_message,
     )
     if status_msg:
-        await robust_edit_text(status_msg, f"✅ {cancellation_result.user_message}")
+        await edit_text_func(status_msg, f"✅ {cancellation_result.user_message}")
     return cancellation_result
 
 
@@ -55,10 +61,16 @@ async def finalize_failed_task_for_bot(
     error=None,
     generic_error_prefix=None,
     refund_suffix_mode="if_refunded",
+    finalize_task_failure_func=None,
+    edit_text_func=None,
+    send_message_func=None,
 ):
     from src.core.task_core import finalize_task_failure
 
-    failure_result = await finalize_task_failure(
+    finalize_task_failure_func = finalize_task_failure_func or finalize_task_failure
+    edit_text_func = edit_text_func or robust_edit_text
+    send_message_func = send_message_func or robust_send_message
+    failure_result = await finalize_task_failure_func(
         internal_user_id=internal_user_id,
         username=username,
         cost=cost,
@@ -71,9 +83,9 @@ async def finalize_failed_task_for_bot(
         refund_suffix_mode=refund_suffix_mode,
     )
     if prefer_edit_status and status_msg:
-        await robust_edit_text(status_msg, f"{message_prefix} {failure_result.user_message}")
+        await edit_text_func(status_msg, f"{message_prefix} {failure_result.user_message}")
     elif fallback_to_send_message:
-        await robust_send_message(
+        await send_message_func(
             context.bot,
             chat_id,
             f"{message_prefix} {failure_result.user_message}",
@@ -81,12 +93,14 @@ async def finalize_failed_task_for_bot(
     return failure_result
 
 
-async def send_bot_warning(context, chat_id, error):
-    await robust_send_message(context.bot, chat_id, f"⚠️ {error}")
+async def send_bot_warning(context, chat_id, error, send_message_func=None):
+    send_message_func = send_message_func or robust_send_message
+    await send_message_func(context.bot, chat_id, f"⚠️ {error}")
 
 
-async def send_bot_domain_error(context, chat_id, error):
-    await robust_send_message(context.bot, chat_id, f"❌ {error}")
+async def send_bot_domain_error(context, chat_id, error, send_message_func=None):
+    send_message_func = send_message_func or robust_send_message
+    await send_message_func(context.bot, chat_id, f"❌ {error}")
 
 
 async def handle_bot_cancelled_exception(
@@ -154,14 +168,18 @@ async def cleanup_runtime_state_if_needed(
     registry_task_id,
     release_lock,
     terminal_state_finalized,
+    cleanup_task_runtime_state_func=None,
 ):
     if terminal_state_finalized or not (release_lock or registry_task_id):
         return
 
     from src.core.task_core import cleanup_task_runtime_state
 
+    cleanup_task_runtime_state_func = (
+        cleanup_task_runtime_state_func or cleanup_task_runtime_state
+    )
     await asyncio.shield(
-        cleanup_task_runtime_state(
+        cleanup_task_runtime_state_func(
             internal_user_id=internal_user_id,
             registry_task_id=registry_task_id,
             release_lock=release_lock,

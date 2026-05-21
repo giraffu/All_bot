@@ -41,3 +41,7 @@ class CheckinResponse(BaseModel):
     error_msg: str
     total_days: int
     reward: int
+
+
+class PreferencesUpdate(BaseModel):
+    language_code: str

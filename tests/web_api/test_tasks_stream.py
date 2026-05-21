@@ -2,11 +2,14 @@ import asyncio
 import json
 from unittest.mock import AsyncMock
 
+import httpx
 import pytest
+from fastapi import HTTPException
 
 from src.database.models import History
 from src.database import core as db_core
 from src.web_api.routers import tasks as tasks_router
+from src.web_api.services import task_stream_api_service
 
 
 class _FakeResult:
@@ -89,13 +92,13 @@ class _FakeStatusResponse:
 
     def raise_for_status(self):
         if self.status_code >= 400 and self.status_code != 404:
-            response = type("Response", (), {"status_code": self.status_code})()
-            raise tasks_router.httpx.HTTPStatusError(
+            fake_response = type("Response", (), {"status_code": self.status_code})()
+            raise httpx.HTTPStatusError(
                 "unexpected status",
                 request=None,
-                response=response,
+                response=fake_response,
             )
-
+            
     def json(self):
         return self._payload
 
@@ -129,15 +132,15 @@ async def _collect_stream_events(response):
 
 
 def test_build_terminal_progress_payload_maps_backend_terminal_states():
-    done_payload = tasks_router._build_terminal_progress_payload(
+    done_payload = task_stream_api_service.build_terminal_progress_payload(
         {"status": "done", "task_type": "image"},
         "task-1",
     )
-    error_payload = tasks_router._build_terminal_progress_payload(
+    error_payload = task_stream_api_service.build_terminal_progress_payload(
         {"status": "error", "error_msg": "worker failed"},
         "task-1",
     )
-    cancelled_payload = tasks_router._build_terminal_progress_payload(
+    cancelled_payload = task_stream_api_service.build_terminal_progress_payload(
         {"status": "cancelled"},
         "task-1",
     )
@@ -169,7 +172,7 @@ async def test_build_not_found_progress_payload_returns_success_when_history_exi
         output_file="bot-data/history/task-1/output.mp4",
     )
 
-    payload = await tasks_router._build_not_found_progress_payload(
+    payload = await task_stream_api_service.build_not_found_progress_payload(
         "task-1",
         123,
         _session_factory(history),
@@ -184,7 +187,7 @@ async def test_build_not_found_progress_payload_returns_success_when_history_exi
 
 @pytest.mark.asyncio
 async def test_build_not_found_progress_payload_returns_failed_when_history_missing():
-    payload = await tasks_router._build_not_found_progress_payload(
+    payload = await task_stream_api_service.build_not_found_progress_payload(
         "task-1",
         123,
         _session_factory(None),
@@ -195,6 +198,54 @@ async def test_build_not_found_progress_payload_returns_failed_when_history_miss
         "task_id": "task-1",
         "error": "任务不存在或无权限",
     }
+
+
+@pytest.mark.asyncio
+async def test_build_task_stream_response_payload_rejects_unowned_task(monkeypatch):
+    monkeypatch.setattr(
+        task_stream_api_service,
+        "get_owned_active_task",
+        AsyncMock(return_value=None),
+    )
+    monkeypatch.setattr(
+        task_stream_api_service,
+        "get_user_history_record",
+        AsyncMock(return_value=None),
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        await task_stream_api_service.build_task_stream_response_payload(
+            task_id="task-1",
+            user_id=123,
+            session_factory=_session_factory(None),
+            redis=_FakeRedis(_FakePubSub()),
+            api_base="http://127.0.0.1:8003",
+            httpx_async_client_factory=lambda: _FakeAsyncClient([], []),
+            logger=tasks_router.logger,
+        )
+
+    assert exc_info.value.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_task_status_stream_routes_to_service(monkeypatch):
+    expected = object()
+    service_mock = AsyncMock(return_value=expected)
+    monkeypatch.setattr(db_core, "AsyncSessionLocal", _FakeAuthSession)
+    monkeypatch.setattr(tasks_router.redis_client, "redis", _FakeRedis(_FakePubSub()))
+    monkeypatch.setattr(
+        tasks_router,
+        "build_task_stream_response_payload",
+        service_mock,
+    )
+
+    response = await tasks_router.task_status_stream(
+        "task-1",
+        type("User", (), {"id": 123})(),
+    )
+
+    assert response is expected
+    service_mock.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -215,26 +266,25 @@ async def test_task_status_stream_emits_success_once_and_stops_when_initial_stat
     async def fake_get_user_history_record(_task_id, _user_id, _session_factory):
         return history
 
-    monkeypatch.setattr(db_core, "AsyncSessionLocal", lambda: _FakeAuthSession())
-    monkeypatch.setattr(tasks_router.redis_client, "redis", _FakeRedis(pubsub))
     monkeypatch.setattr(
-        tasks_router,
-        "_get_owned_active_task",
+        task_stream_api_service,
+        "get_owned_active_task",
         AsyncMock(return_value={"task_id": "task-1", "user_id": 123}),
     )
     monkeypatch.setattr(
-        tasks_router.httpx,
-        "AsyncClient",
-        lambda: _FakeAsyncClient(status_responses, status_calls),
-    )
-    monkeypatch.setattr(
-        tasks_router,
-        "_get_user_history_record",
+        task_stream_api_service,
+        "get_user_history_record",
         fake_get_user_history_record,
     )
 
-    response = await tasks_router.task_status_stream(
-        "task-1", type("User", (), {"id": 123})()
+    response = await task_stream_api_service.build_task_stream_response_payload(
+        task_id="task-1",
+        user_id=123,
+        session_factory=_session_factory(history),
+        redis=_FakeRedis(pubsub),
+        api_base="http://127.0.0.1:8003",
+        httpx_async_client_factory=lambda: _FakeAsyncClient(status_responses, status_calls),
+        logger=tasks_router.logger,
     )
     events = await _collect_stream_events(response)
 
@@ -269,26 +319,25 @@ async def test_task_status_stream_emits_failed_once_and_stops_when_queue_poll_la
     async def fake_get_user_history_record(_task_id, _user_id, _session_factory):
         return None
 
-    monkeypatch.setattr(db_core, "AsyncSessionLocal", lambda: _FakeAuthSession())
-    monkeypatch.setattr(tasks_router.redis_client, "redis", _FakeRedis(pubsub))
     monkeypatch.setattr(
-        tasks_router,
-        "_get_owned_active_task",
+        task_stream_api_service,
+        "get_owned_active_task",
         AsyncMock(return_value={"task_id": "task-1", "user_id": 123}),
     )
     monkeypatch.setattr(
-        tasks_router.httpx,
-        "AsyncClient",
-        lambda: _FakeAsyncClient(status_responses, status_calls),
-    )
-    monkeypatch.setattr(
-        tasks_router,
-        "_get_user_history_record",
+        task_stream_api_service,
+        "get_user_history_record",
         fake_get_user_history_record,
     )
 
-    response = await tasks_router.task_status_stream(
-        "task-1", type("User", (), {"id": 123})()
+    response = await task_stream_api_service.build_task_stream_response_payload(
+        task_id="task-1",
+        user_id=123,
+        session_factory=_session_factory(None),
+        redis=_FakeRedis(pubsub),
+        api_base="http://127.0.0.1:8003",
+        httpx_async_client_factory=lambda: _FakeAsyncClient(status_responses, status_calls),
+        logger=tasks_router.logger,
     )
     events = await _collect_stream_events(response)
 
@@ -333,26 +382,25 @@ async def test_task_status_stream_does_not_emit_not_found_terminal_event_for_tra
         history_lookup_calls.append((_task_id, _user_id))
         return None
 
-    monkeypatch.setattr(db_core, "AsyncSessionLocal", lambda: _FakeAuthSession())
-    monkeypatch.setattr(tasks_router.redis_client, "redis", _FakeRedis(pubsub))
     monkeypatch.setattr(
-        tasks_router,
-        "_get_owned_active_task",
+        task_stream_api_service,
+        "get_owned_active_task",
         AsyncMock(return_value={"task_id": "task-1", "user_id": 123}),
     )
     monkeypatch.setattr(
-        tasks_router.httpx,
-        "AsyncClient",
-        lambda: _FakeAsyncClient(list(status_responses), status_calls),
-    )
-    monkeypatch.setattr(
-        tasks_router,
-        "_get_user_history_record",
+        task_stream_api_service,
+        "get_user_history_record",
         fake_get_user_history_record,
     )
 
-    response = await tasks_router.task_status_stream(
-        "task-1", type("User", (), {"id": 123})()
+    response = await task_stream_api_service.build_task_stream_response_payload(
+        task_id="task-1",
+        user_id=123,
+        session_factory=_session_factory(None),
+        redis=_FakeRedis(pubsub),
+        api_base="http://127.0.0.1:8003",
+        httpx_async_client_factory=lambda: _FakeAsyncClient(list(status_responses), status_calls),
+        logger=tasks_router.logger,
     )
     events = await _collect_stream_events(response)
 
@@ -403,26 +451,25 @@ async def test_task_status_stream_does_not_emit_terminal_event_when_queue_poll_h
         history_lookup_calls.append((_task_id, _user_id))
         return None
 
-    monkeypatch.setattr(db_core, "AsyncSessionLocal", lambda: _FakeAuthSession())
-    monkeypatch.setattr(tasks_router.redis_client, "redis", _FakeRedis(pubsub))
     monkeypatch.setattr(
-        tasks_router,
-        "_get_owned_active_task",
+        task_stream_api_service,
+        "get_owned_active_task",
         AsyncMock(return_value={"task_id": "task-1", "user_id": 123}),
     )
     monkeypatch.setattr(
-        tasks_router.httpx,
-        "AsyncClient",
-        lambda: _FakeAsyncClient(list(status_responses), status_calls),
-    )
-    monkeypatch.setattr(
-        tasks_router,
-        "_get_user_history_record",
+        task_stream_api_service,
+        "get_user_history_record",
         fake_get_user_history_record,
     )
 
-    response = await tasks_router.task_status_stream(
-        "task-1", type("User", (), {"id": 123})()
+    response = await task_stream_api_service.build_task_stream_response_payload(
+        task_id="task-1",
+        user_id=123,
+        session_factory=_session_factory(None),
+        redis=_FakeRedis(pubsub),
+        api_base="http://127.0.0.1:8003",
+        httpx_async_client_factory=lambda: _FakeAsyncClient(list(status_responses), status_calls),
+        logger=tasks_router.logger,
     )
     events = await _collect_stream_events(response)
 

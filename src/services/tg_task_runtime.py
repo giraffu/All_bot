@@ -19,6 +19,7 @@ from src.utils import (
     robust_delete_message,
     robust_edit_text,
     robust_send_photo,
+    robust_send_message,
     robust_send_video,
 )
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
@@ -58,6 +59,20 @@ class TelegramBotContextAdapter:
     def __init__(self, application):
         self.bot = application.bot
         self.bot_data = getattr(application, "bot_data", {})
+
+
+async def get_or_send_status_message(context, chat_id, status_msg_id, text):
+    if status_msg_id:
+        try:
+            await context.bot.edit_message_text(
+                chat_id=chat_id,
+                message_id=status_msg_id,
+                text=text,
+            )
+            return TelegramMessageAdapter(context.bot, chat_id, status_msg_id)
+        except Exception:
+            pass
+    return await robust_send_message(context.bot, chat_id, text)
 
 
 def build_result_reply_markup(task_type, task_id, allow_contribute, reply_markup):
@@ -210,7 +225,9 @@ async def monitor_task_progress(
     identity_str=None,
     user_group=None,
     on_cancelled: Callable[[], Awaitable[None] | None] | None = None,
+    edit_status_text_func=None,
 ):
+    edit_status_text_func = edit_status_text_func or robust_edit_text
     last_progress = 0
     last_status = None
     last_queue_pos = None
@@ -224,7 +241,7 @@ async def monitor_task_progress(
             return False
         try:
             kwargs["reply_markup"] = cancel_markup if "排队中" in text else None
-            await robust_edit_text(status_msg, text, **kwargs)
+            await edit_status_text_func(status_msg, text, **kwargs)
             return True
         except Exception as exc:
             logger.warning("Failed to update status message for task %s: %s", task_id, exc)

@@ -1,11 +1,8 @@
-import asyncio
 import logging
-from typing import Annotated, Optional
+from typing import Optional
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
-from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi import APIRouter, BackgroundTasks, Depends, Query
 
-from src.lora_mapping import translate_tags
 from src.constants import (
     MODE_CUSTOM_VIDEO,
     MODE_EDIT,
@@ -20,27 +17,41 @@ from src.core.media_paths import (
     build_thumbnail_object_name,
     resolve_storage_object,
 )
-from src.core.media_urls import (
-    build_storage_presigned_url,
-)
 from src.database.core import AsyncSessionLocal
 from src.database.models import History, User
 from src.services.storage import storage
-from src.web_api.dependencies import get_current_user, get_db
+from src.web_api.dependencies import (
+    CurrentUserDep,
+    DbSessionDep,
+    get_current_user,
+)
 from src.web_api.routers.utils import (
+    build_storage_input_file_url,
     build_history_apply_context_response,
-    resolve_history_billing_resolution,
+    call_with_optional_db,
+    run_with_optional_db,
 )
 from src.web_api.presenters.media_presenter import resolve_media_url, resolve_thumbnail_url
+from src.web_api.presenters.media_presenter import (
+    resolve_gallery_media_urls as presenter_resolve_gallery_media_urls,
+)
 from src.web_api.services.gallery_service import (
-    build_apply_context_payload,
-    build_post_responses as service_build_post_responses,
+    build_gallery_media_url,
+    build_gallery_post_responses,
+    build_gallery_thumbnail_url,
+    build_gallery_config_payload,
     create_gallery_comment_payload,
     delete_gallery_post,
     get_gallery_comments_payload,
+    get_gallery_apply_context_payload,
+    get_gallery_posts_payload,
     get_my_favorite_posts_payload,
     get_my_gallery_posts_payload,
     interact_with_gallery_post,
+    pick_gallery_media_urls as service_pick_gallery_media_urls,
+    resolve_gallery_author_name,
+    submit_gallery_post_payload,
+    should_return_gallery_apply_input_file,
     update_gallery_post_status,
 )
 from src.web_api.schemas.gallery_schema import (
@@ -54,8 +65,6 @@ from src.web_api.schemas.gallery_schema import (
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
-CurrentUserDep = Annotated[User, Depends(get_current_user)]
-DbSessionDep = Annotated[AsyncSession, Depends(get_db)]
 
 # Allowed task types for web gallery submission
 ALLOWED_WEB_SUBMIT_TYPES = {
@@ -73,17 +82,22 @@ APPLY_CONTEXT_ALLOW_INPUT_REUSE_TASK_TYPES = {
     "face_video",
 }
 
-
-def _resolve_author_name(user: User | None, fallback_user_id: int | None = None) -> str:
-    if user:
-        return user.full_name or user.username or f"User {user.id}"
-    if fallback_user_id is not None:
-        return f"User {fallback_user_id}"
-    return "匿名修士"
+GALLERY_ALLOWED_TYPE_CONFIGS = [
+    (MODE_I2I_PRO, "task.mode_i2i_pro"),
+    (MODE_I2I_DRAW, "task.mode_i2i_draw"),
+    (MODE_EDIT, "task.mode_edit"),
+    ("img2img_lora", "task.mode_img2img_lora"),
+    (MODE_CUSTOM_VIDEO, "task.mode_custom_video"),
+    (MODE_VIDEO_LORA, "task.mode_video_lora"),
+    (MODE_LTX_VIDEO, "task.mode_ltx_video"),
+]
 
 
 def _should_return_apply_input_file(history: History) -> bool:
-    return (history.type or "") in APPLY_CONTEXT_ALLOW_INPUT_REUSE_TASK_TYPES
+    return should_return_gallery_apply_input_file(
+        history,
+        allow_input_reuse_task_types=APPLY_CONTEXT_ALLOW_INPUT_REUSE_TASK_TYPES,
+    )
 
 
 
@@ -93,30 +107,15 @@ async def _pick_gallery_media_urls(
     output_file: str | None,
     media_type: str,
 ) -> tuple[str, str]:
-    if not output_file:
-        return "", ""
-
-    try:
-        media_url, thumbnail_url = await asyncio.gather(
-            get_media_url(
-                output_file,
-                task_id=task_id,
-            ),
-            generate_thumbnail_url(
-                output_file,
-                media_type,
-                task_id=task_id,
-            ),
-        )
-        return media_url or output_file, thumbnail_url
-    except Exception as exc:
-        logger.warning(
-            "Failed to build gallery media URL for task_id=%s: %s",
-            task_id,
-            exc,
-            exc_info=exc,
-        )
-        return output_file, ""
+    return await service_pick_gallery_media_urls(
+        task_id=task_id,
+        output_file=output_file,
+        media_type=media_type,
+        resolve_gallery_media_urls_fn=presenter_resolve_gallery_media_urls,
+        build_media_url_fn=get_media_url,
+        build_thumbnail_url_fn=generate_thumbnail_url,
+        logger=logger,
+    )
 
 
 async def get_media_url(
@@ -124,10 +123,10 @@ async def get_media_url(
     *,
     task_id: str | None = None,
 ) -> str:
-    return await resolve_media_url(
-        output_file,
+    return await build_gallery_media_url(
+        output_file=output_file,
         task_id=task_id,
-        fallback_to_storage_path=True,
+        resolve_media_url_fn=resolve_media_url,
     )
 
 
@@ -137,66 +136,33 @@ async def generate_thumbnail_url(
     *,
     task_id: str | None = None,
 ) -> str:
-    thumbnail_url = await resolve_thumbnail_url(
-        output_file,
-        media_type,
+    return await build_gallery_thumbnail_url(
+        output_file=output_file,
+        media_type=media_type,
         task_id=task_id,
+        resolve_thumbnail_url_fn=resolve_thumbnail_url,
+        resolve_storage_object_fn=resolve_storage_object,
+        build_thumbnail_object_name_fn=build_thumbnail_object_name,
+        get_presigned_url_fn=storage.get_presigned_url,
     )
-    if thumbnail_url:
-        return thumbnail_url
-
-    if not output_file:
-        return ""
-
-    bucket_name, object_name = resolve_storage_object(output_file)
-    thumb_object_name = build_thumbnail_object_name(object_name, media_type)
-    return storage.get_presigned_url(thumb_object_name, bucket=bucket_name) or ""
 
 
 @router.get("/config")
 async def get_gallery_config():
-    return {
-        "allowed_types": [
-            {
-                "id": MODE_I2I_PRO,
-                "name": MODE_NAME_MAP.get(MODE_I2I_PRO, "task.mode_i2i_pro"),
-            },
-            {
-                "id": MODE_I2I_DRAW,
-                "name": MODE_NAME_MAP.get(MODE_I2I_DRAW, "task.mode_i2i_draw"),
-            },
-            {"id": MODE_EDIT, "name": MODE_NAME_MAP.get(MODE_EDIT, "task.mode_edit")},
-            {"id": "img2img_lora", "name": "task.mode_img2img_lora"},
-            {
-                "id": MODE_CUSTOM_VIDEO,
-                "name": MODE_NAME_MAP.get(MODE_CUSTOM_VIDEO, "task.mode_custom_video"),
-            },
-            {
-                "id": MODE_VIDEO_LORA,
-                "name": MODE_NAME_MAP.get(MODE_VIDEO_LORA, "task.mode_video_lora"),
-            },
-            {
-                "id": MODE_LTX_VIDEO,
-                "name": MODE_NAME_MAP.get(MODE_LTX_VIDEO, "task.mode_ltx_video"),
-            },
-        ],
-        "lora_models": [{"id": k, "name": v} for k, v in VIDEO_LORA_MODELS.items()],
-        "img2img_lora_models": [
-            {"id": k, "name": v} for k, v in IMAGE_LORA_MODELS.items() if k
-        ],
-    }
+    return build_gallery_config_payload(
+        allowed_type_configs=GALLERY_ALLOWED_TYPE_CONFIGS,
+        mode_name_map=MODE_NAME_MAP,
+        video_lora_models=VIDEO_LORA_MODELS,
+        image_lora_models=IMAGE_LORA_MODELS,
+    )
 
 
 async def _build_post_responses(session, posts, current_user: Optional[User]):
-    return await service_build_post_responses(
+    return await build_gallery_post_responses(
         session=session,
         posts=posts,
         current_user=current_user,
-        translate_tags=translate_tags,
-        resolve_history_billing_resolution=resolve_history_billing_resolution,
-        resolve_author_name=_resolve_author_name,
         pick_gallery_media_urls=_pick_gallery_media_urls,
-        logger=logger,
     )
 
 
@@ -212,22 +178,22 @@ async def get_gallery_posts(
     current_user: Optional[User] = Depends(get_current_user),
     db: DbSessionDep = None,
 ):
-    posts, total = await get_gallery_feed(
-        page=page,
-        size=size,
-        media_type=media_type if media_type != "all" else None,
-        task_type=task_type if task_type != "all" else None,
-        lora_model=lora_model,
-        sort_by=sort_by,
-        time_range=time_range,
-        user_id=current_user.id if current_user else None,
-    )
-
-    response_items = await _build_post_responses(db, posts, current_user)
-
-    pages = (total + size - 1) // size
-    return PaginatedGalleryResponse(
-        items=response_items, total=total, page=page, size=size, pages=pages
+    return await run_with_optional_db(
+        db=db,
+        session_factory=AsyncSessionLocal,
+        action=lambda session: get_gallery_posts_payload(
+            page=page,
+            size=size,
+            media_type=media_type,
+            task_type=task_type,
+            lora_model=lora_model,
+            sort_by=sort_by,
+            time_range=time_range,
+            current_user=current_user,
+            db=session,
+            fetch_gallery_feed=get_gallery_feed,
+            build_post_responses_fn=_build_post_responses,
+        ),
     )
 
 
@@ -239,24 +205,16 @@ async def get_my_gallery_posts(
     size: int = Query(20, ge=1, le=100),
     task_type: Optional[str] = None,
 ):
-    if db is not None:
-        return await get_my_gallery_posts_payload(
-            current_user=current_user,
-            db=db,
-            page=page,
-            size=size,
-            task_type=task_type,
-            build_post_responses_fn=_build_post_responses,
-        )
-    async with AsyncSessionLocal() as fallback_db:
-        return await get_my_gallery_posts_payload(
-            current_user=current_user,
-            db=fallback_db,
-            page=page,
-            size=size,
-            task_type=task_type,
-            build_post_responses_fn=_build_post_responses,
-        )
+    return await call_with_optional_db(
+        db=db,
+        service_fn=get_my_gallery_posts_payload,
+        session_factory=AsyncSessionLocal,
+        current_user=current_user,
+        page=page,
+        size=size,
+        task_type=task_type,
+        build_post_responses_fn=_build_post_responses,
+    )
 
 
 @router.get("/my-favorites", response_model=PaginatedGalleryResponse)
@@ -268,26 +226,17 @@ async def get_my_favorite_posts(
     filter_type: str = Query("all", pattern="^(all|like|apply)$"),
     task_type: Optional[str] = None,
 ):
-    if db is not None:
-        return await get_my_favorite_posts_payload(
-            current_user=current_user,
-            db=db,
-            page=page,
-            size=size,
-            filter_type=filter_type,
-            task_type=task_type,
-            build_post_responses_fn=_build_post_responses,
-        )
-    async with AsyncSessionLocal() as fallback_db:
-        return await get_my_favorite_posts_payload(
-            current_user=current_user,
-            db=fallback_db,
-            page=page,
-            size=size,
-            filter_type=filter_type,
-            task_type=task_type,
-            build_post_responses_fn=_build_post_responses,
-        )
+    return await call_with_optional_db(
+        db=db,
+        service_fn=get_my_favorite_posts_payload,
+        session_factory=AsyncSessionLocal,
+        current_user=current_user,
+        page=page,
+        size=size,
+        filter_type=filter_type,
+        task_type=task_type,
+        build_post_responses_fn=_build_post_responses,
+    )
 
 
 @router.put("/posts/{post_id}/status")
@@ -307,22 +256,15 @@ async def update_post_status(
 
 @router.delete("/posts/{post_id}")
 async def delete_post(post_id: int, current_user: CurrentUserDep, db: DbSessionDep = None):
-    if db is not None:
-        return await delete_gallery_post(
-            post_id=post_id,
-            current_user=current_user,
-            db=db,
-            storage=storage,
-            logger=logger,
-        )
-    async with AsyncSessionLocal() as fallback_db:
-        return await delete_gallery_post(
-            post_id=post_id,
-            current_user=current_user,
-            db=fallback_db,
-            storage=storage,
-            logger=logger,
-        )
+    return await call_with_optional_db(
+        db=db,
+        service_fn=delete_gallery_post,
+        session_factory=AsyncSessionLocal,
+        post_id=post_id,
+        current_user=current_user,
+        storage=storage,
+        logger=logger,
+    )
 
 
 @router.post("/posts/{post_id}/interact")
@@ -356,24 +298,17 @@ async def create_gallery_comment(
     db: DbSessionDep = None,
 ):
     from src.services.redis_client import redis_client
-    if db is not None:
-        return await create_gallery_comment_payload(
-            post_id=post_id,
-            comment=comment,
-            current_user=current_user,
-            db=db,
-            redis_client=redis_client,
-            resolve_author_name=_resolve_author_name,
-        )
-    async with AsyncSessionLocal() as fallback_db:
-        return await create_gallery_comment_payload(
-            post_id=post_id,
-            comment=comment,
-            current_user=current_user,
-            db=fallback_db,
-            redis_client=redis_client,
-            resolve_author_name=_resolve_author_name,
-        )
+
+    return await call_with_optional_db(
+        db=db,
+        service_fn=create_gallery_comment_payload,
+        session_factory=AsyncSessionLocal,
+        post_id=post_id,
+        comment=comment,
+        current_user=current_user,
+        redis_client=redis_client,
+        resolve_author_name=resolve_gallery_author_name,
+    )
 
 
 @router.get("/posts/{post_id}/comments", response_model=PaginatedCommentResponse)
@@ -383,42 +318,15 @@ async def get_gallery_comments(
     size: int = Query(20, ge=1, le=100),
     db: DbSessionDep = None,
 ):
-    if db is not None:
-        return await get_gallery_comments_payload(
-            post_id=post_id,
-            page=page,
-            size=size,
-            db=db,
-            resolve_author_name=_resolve_author_name,
-        )
-    async with AsyncSessionLocal() as fallback_db:
-        return await get_gallery_comments_payload(
-            post_id=post_id,
-            page=page,
-            size=size,
-            db=fallback_db,
-            resolve_author_name=_resolve_author_name,
-        )
-
-async def _build_apply_context_response(
-    post_id: int,
-    current_user: User,
-    db: AsyncSession,
-) -> ApplyContextResponse:
-    _ = current_user
-    return await build_apply_context_payload(
-        post_id=post_id,
+    return await call_with_optional_db(
         db=db,
-        build_history_apply_context_response_fn=build_history_apply_context_response,
-        should_return_apply_input_file=_should_return_apply_input_file,
-        build_input_file_url=lambda file_path: build_storage_presigned_url(
-            file_path,
-            lambda object_name, bucket_name: storage.get_presigned_url(
-                object_name, bucket=bucket_name
-            ),
-        ),
+        service_fn=get_gallery_comments_payload,
+        session_factory=AsyncSessionLocal,
+        post_id=post_id,
+        page=page,
+        size=size,
+        resolve_author_name=resolve_gallery_author_name,
     )
-
 
 @router.get("/posts/{post_id}/apply-context", response_model=ApplyContextResponse)
 async def get_apply_context(
@@ -426,14 +334,19 @@ async def get_apply_context(
     current_user: CurrentUserDep,
     db: DbSessionDep = None,
 ):
-    if db is not None:
-        return await _build_apply_context_response(post_id, current_user, db)
-    async with AsyncSessionLocal() as fallback_db:
-        return await _build_apply_context_response(post_id, current_user, fallback_db)
+    _ = current_user
+    return await call_with_optional_db(
+        db=db,
+        service_fn=get_gallery_apply_context_payload,
+        session_factory=AsyncSessionLocal,
+        post_id=post_id,
+        build_history_apply_context_response_fn=build_history_apply_context_response,
+        should_return_apply_input_file=_should_return_apply_input_file,
+        build_input_file_url=build_storage_input_file_url,
+    )
 
 
 from src.core.gallery_core import (
-    GalleryCoreError,
     get_gallery_feed,
     process_submit_to_gallery,
 )
@@ -443,22 +356,13 @@ from src.core.gallery_core import (
 async def submit_to_gallery(
     task_id: str,
     background_tasks: BackgroundTasks,
+    current_user: CurrentUserDep,
     request: GallerySubmitRequest = None,
-    current_user: User = Depends(get_current_user),
 ):
-    try:
-        width = request.width if request else None
-        height = request.height if request else None
-        duration = request.duration if request else None
-        
-        result = await process_submit_to_gallery(
-            current_user.id, task_id, background_tasks, width, height, duration
-        )
-        return result
-    except GalleryCoreError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Unexpected error submitting to gallery: {e}")
-        raise HTTPException(status_code=500, detail="Internal server error")
+    return await submit_gallery_post_payload(
+        task_id=task_id,
+        background_tasks=background_tasks,
+        request=request,
+        current_user=current_user,
+        process_submit_to_gallery_fn=process_submit_to_gallery,
+    )

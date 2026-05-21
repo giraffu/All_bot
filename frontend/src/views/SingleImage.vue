@@ -1,16 +1,19 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
-import { UploadOutlined, InboxOutlined, DownloadOutlined, CloseCircleOutlined } from '@ant-design/icons-vue'
+import { InboxOutlined, DownloadOutlined, CloseCircleOutlined } from '@ant-design/icons-vue'
 import { message } from 'ant-design-vue'
-import { useRoute, useRouter } from 'vue-router'
+import { useRoute } from 'vue-router'
 import { useUpload } from '@/composables/useUpload'
 import { useTaskStream } from '@/composables/useTaskStream'
 import { useTaskResult } from '@/composables/useTaskResult'
 import { useGalleryApplyContext } from '@/composables/useGalleryApplyContext'
 import { useSingleFileUploadPreview } from '@/composables/useSingleFileUploadPreview'
+import GenerationActionBar from '@/components/GenerationActionBar.vue'
+import GenerationUploadCard from '@/components/GenerationUploadCard.vue'
+import GenerationWorkbenchShell from '@/components/GenerationWorkbenchShell.vue'
+import TaskResultPreviewPanel from '@/components/TaskResultPreviewPanel.vue'
 
 const route = useRoute()
-const router = useRouter()
 const { loadApplyContext } = useGalleryApplyContext()
 
 const taskType = computed(() => (route.query.type as string) || 'random_faceswap')
@@ -19,7 +22,7 @@ const taskCost = computed(() => Number(route.query.cost) || 1)
 
 const { uploading, progress: uploadProgress, uploadFile } = useUpload()
 const { isSubmitting, submitTask } = useTaskStream()
-const { currentTask, setSubmittedTaskId, isVideoUrl, isImageUrl, downloadResult } = useTaskResult()
+const { currentTask, setSubmittedTaskId, isImageUrl, downloadResult } = useTaskResult()
 const {
   fileList,
   objectKey,
@@ -73,129 +76,76 @@ const resetForm = () => {
 </script>
 
 <template>
-  <div class="single-image-container max-w-7xl mx-auto flex flex-col h-[calc(100vh-80px)] w-full py-4 px-2 sm:px-6">
-    <div class="flex flex-col lg:flex-row gap-6 flex-grow min-h-0">
-      <!-- Left Panel: Input & Settings -->
-      <div class="w-full lg:w-[50%] flex flex-col bg-slate-500/40 backdrop-blur-md rounded-2xl shadow-sm border border-slate-400/50 overflow-hidden shrink-0">
-        <div class="p-6 flex-grow overflow-y-auto custom-scrollbar flex flex-col">
-          <h2 class="text-2xl font-bold mb-2 text-slate-100">{{ taskTitle }}</h2>
-          <p class="text-slate-400 mb-6 text-sm">请上传一张符合要求的图片以开始生成。</p>
-          
-          <!-- Template Mode Notice -->
-          <div v-if="isTemplateApplied" class="mb-6 w-full max-w-md bg-indigo-500/20 border border-indigo-500/30 rounded-xl p-4 flex items-center text-left">
-            <div class="text-indigo-400 mr-3">✨</div>
-            <div class="text-slate-300 text-sm">已准备好应用所选的模板效果，请上传您的图片即可生成。</div>
-          </div>
-          
-          <div class="upload-section flex flex-col w-full flex-grow min-h-0 h-48 md:h-full">
-            <h3 class="text-sm font-bold mb-3 text-slate-200 flex items-center">
-              <span class="text-slate-500 mr-2">1.</span> 基础图片
-            </h3>
-            <div v-if="filePreview" class="relative group rounded-xl overflow-hidden border border-slate-400/50 bg-slate-500/50 flex items-center justify-center flex-grow w-full">
-              <a-image :src="filePreview" class="max-w-full max-h-full object-contain" :preview="true" />
-              <div class="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center pointer-events-none">
-                <a-button danger type="primary" @click="handleRemove" class="pointer-events-auto" size="small">重新上传</a-button>
-              </div>
-            </div>
-            <a-upload-dragger
-              v-else
-              v-model:fileList="fileList"
-              name="file"
-              :multiple="false"
-              accept="image/png, image/jpeg"
-              :before-upload="beforeUpload"
-              @remove="handleRemove"
-              class="upload-dragger bg-slate-500/50 backdrop-blur-md border-dashed border-2 border-blue-200 hover:border-blue-400 transition-colors flex-grow flex items-center justify-center w-full"
-              :show-upload-list="false"
-            >
-              <div class="flex flex-col items-center justify-center h-full w-full p-4">
-                <p class="ant-upload-drag-icon text-blue-500 text-3xl mb-2"><inbox-outlined></inbox-outlined></p>
-                <p class="ant-upload-text font-medium text-slate-300 text-sm">点击/拖拽</p>
-                <p class="ant-upload-hint text-slate-500 mt-1 text-xs">JPG/PNG</p>
-              </div>
-            </a-upload-dragger>
-          </div>
-
-          <div v-if="uploading" class="mt-4 w-full">
-            <span class="text-xs text-slate-400 mb-1 block">正在上传至服务器...</span>
-            <a-progress :percent="uploadProgress" status="active" strokeColor="#3b82f6" size="small" />
-          </div>
-        </div>
-
-        <!-- Action Bar in Left Panel -->
-        <div class="p-6 border-t border-slate-400/50 bg-slate-500/40 shrink-0 flex items-center justify-between">
-          <div class="flex flex-col">
-            <span class="text-slate-400 text-sm font-medium mb-1">预计消耗灵石</span>
-            <div class="flex items-baseline text-blue-400 font-bold">
-              <span class="text-2xl leading-none mr-1">{{ taskCost }}</span>
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M6 2L2 8l10 14L22 8l-4-6H6z"></path></svg>
-            </div>
-          </div>
-          
-          <a-button 
-            type="primary" 
-            size="large" 
-            class="bg-blue-600 hover:bg-blue-500 border-none px-8 font-bold tracking-wider rounded-xl shadow-lg shadow-blue-500/20" 
-            :disabled="!objectKey"
-            :loading="isSubmitting"
-            @click="handleGenerate"
-          >
-            <template #icon><picture-outlined /></template>
-            {{ isSubmitting ? '提交中...' : '生成图片' }}
-          </a-button>
-        </div>
+  <GenerationWorkbenchShell
+    :title="taskTitle"
+    description="请上传一张符合要求的图片以开始生成。"
+    left-body-class="p-6 flex-grow overflow-y-auto custom-scrollbar flex flex-col"
+  >
+    <template #left-top>
+      <div v-if="isTemplateApplied" class="mb-6 w-full max-w-md bg-indigo-500/20 border border-indigo-500/30 rounded-xl p-4 flex items-center text-left">
+        <div class="text-indigo-400 mr-3">✨</div>
+        <div class="text-slate-300 text-sm">已准备好应用所选的模板效果，请上传您的图片即可生成。</div>
       </div>
+    </template>
 
-      <!-- Right Panel: Result Preview -->
-      <div class="w-full lg:w-[50%] flex flex-col bg-slate-500/40 backdrop-blur-md rounded-2xl shadow-sm border border-slate-400/50 overflow-hidden relative">
-        <div class="p-6 flex-grow flex flex-col items-center justify-center h-full overflow-y-auto custom-scrollbar">
-          
-          <!-- Empty State -->
-          <div v-if="!currentTask" class="flex flex-col items-center justify-center text-slate-500 w-full h-full opacity-60">
-            <picture-outlined class="text-6xl mb-4" />
-            <p class="text-lg font-medium">结果预览区</p>
-            <p class="text-sm mt-2">请在左侧配置参数并点击生成，结果将在此处显示</p>
-          </div>
+    <template #left-content>
+      <GenerationUploadCard
+        title="基础图片"
+        step="1."
+        :file-list="fileList"
+        :preview-url="filePreview"
+        accept="image/png, image/jpeg"
+        wrapper-class="upload-section flex flex-col w-full flex-grow min-h-0 h-48 md:h-full"
+        dragger-class="upload-dragger bg-slate-500/50 backdrop-blur-md border-dashed border-2 border-blue-200 hover:border-blue-400 transition-colors flex-grow flex items-center justify-center w-full"
+        :before-upload="beforeUpload"
+        @remove="handleRemove"
+        @update:fileList="fileList = $event"
+      >
+        <template #placeholder-icon>
+          <inbox-outlined />
+        </template>
+      </GenerationUploadCard>
 
-          <!-- Result Section -->
-          <div v-else class="w-full h-full flex flex-col items-center justify-center">
-            <h3 class="text-xl font-bold mb-6 text-slate-200 w-full border-b border-slate-400/50 pb-4 flex items-center text-left">
-              <span class="text-blue-500 mr-2">✨</span> 生成结果
-            </h3>
-            
-            <div v-if="currentTask.status === 'pending' || currentTask.status === 'running'" class="flex flex-col items-center justify-center py-8 w-full flex-grow">
-              <a-spin size="large" />
-              <p class="mt-4 text-slate-400 font-medium">正在生成中... {{ currentTask.progress }}%</p>
-              <p v-if="currentTask.queuePos" class="text-sm text-slate-500 mt-1">前面还有 {{ currentTask.queuePos }} 人排队</p>
-              <a-progress :percent="currentTask.progress" status="active" strokeColor="#3b82f6" class="w-full max-w-md mt-4" />
-            </div>
-            
-            <div v-else-if="currentTask.status === 'success' && currentTask.resultUrl" class="flex flex-col items-center w-full flex-grow justify-center">
-              <a-image v-if="isImageUrl(currentTask.resultUrl)" :src="currentTask.resultUrl" class="max-w-full max-h-[50vh] rounded-xl shadow-sm object-contain" :preview="true" />
-              <video v-else :src="currentTask.resultUrl" controls class="max-w-full max-h-[50vh] rounded-xl shadow-sm bg-black"></video>
-              
-              <div class="mt-8 flex gap-4">
-                <a-button type="primary" size="large" class="bg-blue-600 rounded-xl" @click="downloadResult(currentTask.resultUrl, currentTask.title)">
-                  <template #icon><download-outlined /></template> 下载结果
-                </a-button>
-                <a-button size="large" class="rounded-xl" @click="resetForm">
-                  继续生成
-                </a-button>
-              </div>
-            </div>
-            
-            <div v-else-if="currentTask.status === 'failed'" class="flex flex-col items-center py-8 w-full flex-grow justify-center">
-              <close-circle-outlined class="text-5xl text-red-500 mb-4" />
-              <p class="text-red-600 font-medium text-lg">生成失败</p>
-              <p class="text-slate-400 mt-2">{{ currentTask.error || '未知错误' }}</p>
-              <a-button class="mt-6 rounded-xl" @click="resetForm">重试</a-button>
-            </div>
-          </div>
-          
-        </div>
+      <div v-if="uploading" class="mt-4 w-full">
+        <span class="text-xs text-slate-400 mb-1 block">正在上传至服务器...</span>
+        <a-progress :percent="uploadProgress" status="active" strokeColor="#3b82f6" size="small" />
       </div>
-    </div>
-  </div>
+    </template>
+
+    <template #left-footer>
+      <GenerationActionBar
+        :cost="taskCost"
+        button-text="生成图片"
+        :disabled="!objectKey"
+        :loading="isSubmitting"
+        @submit="handleGenerate"
+      >
+        <template #button-icon><picture-outlined /></template>
+        <template #cost-unit>
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M6 2L2 8l10 14L22 8l-4-6H6z"></path></svg>
+        </template>
+      </GenerationActionBar>
+    </template>
+
+    <template #right-panel>
+      <TaskResultPreviewPanel
+        :current-task="currentTask"
+        :is-image-url="isImageUrl"
+        @download="downloadResult"
+        @reset="resetForm"
+      >
+        <template #empty-icon>
+          <picture-outlined class="text-6xl mb-4" />
+        </template>
+        <template #download-icon>
+          <download-outlined />
+        </template>
+        <template #failed-icon>
+          <close-circle-outlined class="text-5xl text-red-500 mb-4" />
+        </template>
+      </TaskResultPreviewPanel>
+    </template>
+  </GenerationWorkbenchShell>
 </template>
 
 

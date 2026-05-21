@@ -132,6 +132,41 @@ async def resolve_media_and_thumbnail_urls(
     return media_url, thumbnail_url
 
 
+async def resolve_gallery_media_urls(
+    *,
+    task_id: str | None,
+    output_file: str | None,
+    media_type: str,
+    build_media_url,
+    build_thumbnail_url,
+    logger,
+) -> tuple[str, str]:
+    if not output_file:
+        return "", ""
+
+    try:
+        media_url, thumbnail_url = await asyncio.gather(
+            build_media_url(
+                output_file,
+                task_id=task_id,
+            ),
+            build_thumbnail_url(
+                output_file,
+                media_type,
+                task_id=task_id,
+            ),
+        )
+        return media_url or output_file, thumbnail_url
+    except Exception as exc:
+        logger.warning(
+            "Failed to build gallery media URL for task_id=%s: %s",
+            task_id,
+            exc,
+            exc_info=exc,
+        )
+        return output_file, ""
+
+
 async def resolve_history_media_urls(
     *,
     task_id: str | None,
