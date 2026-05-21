@@ -94,21 +94,40 @@ class TaskSuccessPersistenceResult:
 
 
 @dataclass(frozen=True, slots=True)
-class TaskFailureFinalizationResult:
+class TaskFinalizationResult:
     refunded: bool
     user_message: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
-class TaskCancellationFinalizationResult:
-    refunded: bool
-    user_message: str | None = None
+class TaskFailureFinalizationResult(TaskFinalizationResult):
+    pass
 
 
 @dataclass(frozen=True, slots=True)
-class TaskTerminationFinalizationResult:
-    terminated: bool
-    refunded: bool
+class TaskCancellationFinalizationResult(TaskFinalizationResult):
+    pass
+
+
+@dataclass(frozen=True, slots=True)
+class TaskTerminationFinalizationResult(TaskFinalizationResult):
+    terminated: bool = True
+
+
+@dataclass(frozen=True, slots=True)
+class TaskFinalizationContext:
+    internal_user_id: int
+    username: str
+    cost: int
+    registry_task_id: str | None
+    release_lock: bool = True
+
+
+@dataclass(frozen=True, slots=True)
+class TaskSubmissionExecutionResult:
+    registry_task_id: str
+    backend_task_id: str
+    submission_context: TaskSubmissionContext
 
 
 async def _process_input_path(user_logger: UserLogger, path: str) -> str:
@@ -496,6 +515,23 @@ async def refund_failed_task(
     )
 
 
+TASK_BUSY_ERROR_KEYWORDS = (
+    "Circuit is open",
+    "All connection attempts failed",
+    "Connection refused",
+    "timeout",
+    "ConnectError",
+)
+
+
+def is_task_backend_busy_error(error: Exception | str) -> bool:
+    error_msg = error if isinstance(error, str) else str(error)
+    error_type = "" if isinstance(error, str) else str(type(error))
+    return any(keyword in error_msg for keyword in TASK_BUSY_ERROR_KEYWORDS) or (
+        "CircuitBreaker" in error_type
+    )
+
+
 def build_failed_task_user_message(
     *,
     error: Exception,
@@ -504,16 +540,7 @@ def build_failed_task_user_message(
     refund_suffix_mode: str = "if_refunded",
 ) -> str:
     error_msg = str(error)
-    if any(
-        keyword in error_msg
-        for keyword in [
-            "Circuit is open",
-            "All connection attempts failed",
-            "Connection refused",
-            "timeout",
-            "ConnectError",
-        ]
-    ) or "CircuitBreaker" in str(type(error)):
+    if is_task_backend_busy_error(error):
         user_msg = "当前服务器繁忙，请稍后再试"
     else:
         user_msg = f"{generic_error_prefix}：{error_msg}"
@@ -549,6 +576,56 @@ async def handle_failed_task_exception(
     )
 
 
+async def _cleanup_after_finalization(context: TaskFinalizationContext):
+    await cleanup_task_runtime_state(
+        internal_user_id=context.internal_user_id,
+        registry_task_id=context.registry_task_id,
+        release_lock=context.release_lock,
+    )
+
+
+def _build_cancelled_task_user_message(
+    *,
+    cost: int,
+    refunded: bool,
+    explicit_user_message: str | None,
+) -> str | None:
+    if explicit_user_message is not None:
+        return explicit_user_message
+    if refunded:
+        return f"任务已撤销，预扣的 {cost} 灵石已全额退回。"
+    return None
+
+
+async def _refund_terminated_task_best_effort(
+    *,
+    user_id: int | None,
+    username: str,
+    cost: int,
+    should_refund: bool,
+    refund_task_type: str,
+    registry_task_id: str,
+) -> bool:
+    if user_id is None:
+        return False
+
+    try:
+        return await _refund_task_with_type(
+            internal_user_id=user_id,
+            username=username,
+            cost=cost,
+            should_refund=should_refund,
+            refund_task_type=refund_task_type,
+        )
+    except Exception:
+        logger.exception(
+            "Failed to refund terminated task %s for user %s.",
+            registry_task_id,
+            user_id,
+        )
+        return False
+
+
 async def finalize_task_failure(
     *,
     internal_user_id: int,
@@ -563,10 +640,17 @@ async def finalize_task_failure(
     explicit_user_message: str | None = None,
     refund_suffix_mode: str = "if_refunded",
 ) -> TaskFailureFinalizationResult:
-    refunded = await _refund_task_with_type(
+    context = TaskFinalizationContext(
         internal_user_id=internal_user_id,
         username=username,
         cost=cost,
+        registry_task_id=registry_task_id,
+        release_lock=release_lock,
+    )
+    refunded = await _refund_task_with_type(
+        internal_user_id=context.internal_user_id,
+        username=context.username,
+        cost=context.cost,
         should_refund=should_refund,
         refund_task_type=refund_task_type,
     )
@@ -580,11 +664,7 @@ async def finalize_task_failure(
             refund_suffix_mode=refund_suffix_mode,
         )
 
-    await cleanup_task_runtime_state(
-        internal_user_id=internal_user_id,
-        registry_task_id=registry_task_id,
-        release_lock=release_lock,
-    )
+    await _cleanup_after_finalization(context)
 
     return TaskFailureFinalizationResult(
         refunded=refunded,
@@ -602,22 +682,27 @@ async def finalize_task_cancellation(
     release_lock: bool = True,
     explicit_user_message: str | None = None,
 ) -> TaskCancellationFinalizationResult:
-    refunded = await refund_cancelled_task(
+    context = TaskFinalizationContext(
         internal_user_id=internal_user_id,
         username=username,
         cost=cost,
-        task_submitted=task_submitted,
-    )
-
-    await cleanup_task_runtime_state(
-        internal_user_id=internal_user_id,
         registry_task_id=registry_task_id,
         release_lock=release_lock,
     )
+    refunded = await refund_cancelled_task(
+        internal_user_id=context.internal_user_id,
+        username=context.username,
+        cost=context.cost,
+        task_submitted=task_submitted,
+    )
 
-    user_message = explicit_user_message
-    if user_message is None and refunded:
-        user_message = f"任务已撤销，预扣的 {cost} 灵石已全额退回。"
+    await _cleanup_after_finalization(context)
+
+    user_message = _build_cancelled_task_user_message(
+        cost=context.cost,
+        refunded=refunded,
+        explicit_user_message=explicit_user_message,
+    )
 
     return TaskCancellationFinalizationResult(
         refunded=refunded,
@@ -636,24 +721,16 @@ async def finalize_terminated_task(
 ) -> TaskTerminationFinalizationResult:
     await force_terminate_task(registry_task_id, user_id=user_id)
 
-    refunded = False
-    try:
-        refunded = await _refund_task_with_type(
-            internal_user_id=user_id or 0,
-            username=username,
-            cost=cost,
-            should_refund=should_refund and user_id is not None,
-            refund_task_type=refund_task_type,
-        )
-    except Exception:
-        logger.exception(
-            "Failed to refund terminated task %s for user %s.",
-            registry_task_id,
-            user_id,
-        )
+    refunded = await _refund_terminated_task_best_effort(
+        user_id=user_id,
+        username=username,
+        cost=cost,
+        should_refund=should_refund,
+        refund_task_type=refund_task_type,
+        registry_task_id=registry_task_id,
+    )
 
     return TaskTerminationFinalizationResult(
-        terminated=True,
         refunded=refunded,
     )
 
@@ -783,18 +860,39 @@ async def _dispatch_registered_task(
             with contextlib.suppress(Exception):
                 await TaskRegistry.mark_task_status(registry_task_id, "failed")
         error_msg = str(e)
-        if any(
-            kw in error_msg
-            for kw in [
-                "Circuit is open",
-                "All connection attempts failed",
-                "Connection refused",
-                "timeout",
-                "ConnectError",
-            ]
-        ):
+        if is_task_backend_busy_error(error_msg):
             raise CoreDomainError("当前服务器繁忙，请稍后再试") from e
         raise CoreDomainError(f"System error: {error_msg}") from e
+
+
+async def _execute_task_submission_saga(
+    *,
+    task_type: str,
+    inputs: dict,
+    registry_task_id: str,
+    cost: int,
+    submission_context: TaskSubmissionContext,
+) -> TaskSubmissionExecutionResult:
+    registry_task_id = await _register_task_submission(
+        registry_task_id=registry_task_id,
+        user_id=submission_context.user_logger.user_id,
+        username=submission_context.user_logger.username,
+        cost=cost,
+        submission_context=submission_context,
+    )
+
+    backend_task_id = await _dispatch_registered_task(
+        registry_task_id=registry_task_id,
+        task_type=task_type,
+        inputs=inputs,
+        final_priority=submission_context.final_priority,
+    )
+
+    return TaskSubmissionExecutionResult(
+        registry_task_id=registry_task_id,
+        backend_task_id=backend_task_id,
+        submission_context=submission_context,
+    )
 
 
 async def _compensate_failed_submission(
@@ -828,6 +926,143 @@ async def _compensate_failed_submission(
 
     with contextlib.suppress(Exception):
         await asyncio.shield(TaskRegistry.remove_task(registry_task_id))
+
+
+def _attach_web_task_monitor(
+    *,
+    backend_task_id: str,
+    internal_user_id: int,
+    username: str,
+    registry_task_id: str,
+    submission_context: TaskSubmissionContext,
+    cost: int,
+):
+    asyncio.create_task(
+        monitor_task_and_release_lock(
+            backend_task_id=backend_task_id,
+            internal_user_id=internal_user_id,
+            username=username,
+            registry_task_id=registry_task_id,
+            submission_context=submission_context,
+            cost=cost,
+        )
+    )
+
+
+def _schedule_apply_interaction(user_id: int, source_post_id: Optional[int]):
+    if not source_post_id:
+        return
+    from src.core.gallery_core import record_apply_interaction
+
+    asyncio.create_task(record_apply_interaction(user_id, source_post_id))
+
+
+def _attach_submission_side_effects(
+    *,
+    client_type: str,
+    backend_task_id: str,
+    internal_user_id: int,
+    username: str,
+    registry_task_id: str,
+    submission_context: TaskSubmissionContext,
+    cost: int,
+    source_post_id: Optional[int],
+):
+    if client_type == "web":
+        try:
+            _attach_web_task_monitor(
+                backend_task_id=backend_task_id,
+                internal_user_id=internal_user_id,
+                username=username,
+                registry_task_id=registry_task_id,
+                submission_context=submission_context,
+                cost=cost,
+            )
+        except Exception as e:
+            raise CoreDomainError(f"后台监控挂载失败: {e}")
+
+    _schedule_apply_interaction(internal_user_id, source_post_id)
+
+
+async def _finalize_monitored_web_task_success(
+    *,
+    backend_task_id: str,
+    internal_user_id: int,
+    username: str,
+    registry_task_id: str,
+    submission_context: TaskSubmissionContext,
+    result_path: str,
+):
+    try:
+        await _persist_successful_web_history(
+            backend_task_id=backend_task_id,
+            registry_task_id=registry_task_id,
+            internal_user_id=internal_user_id,
+            username=username,
+            prompt=submission_context.log_prompt,
+            task_type=submission_context.task_type,
+            input_images=submission_context.saved_inputs,
+            allow_contribute=submission_context.allow_contribute,
+            is_video=submission_context.is_video_task,
+            result_path=result_path,
+            billing_resolution=submission_context.billing_resolution,
+            output_width=submission_context.output_width,
+            output_height=submission_context.output_height,
+            output_duration=submission_context.output_duration,
+            requested_duration=submission_context.requested_duration,
+        )
+    except Exception as log_err:
+        logger.error(
+            f"Failed to log task history for {registry_task_id}: {log_err}"
+        )
+    await cleanup_task_runtime_state(
+        internal_user_id=internal_user_id,
+        registry_task_id=registry_task_id,
+    )
+
+
+async def _finalize_monitored_web_task_cancellation(
+    *,
+    internal_user_id: int,
+    username: str,
+    cost: int,
+    registry_task_id: str,
+):
+    try:
+        await finalize_task_cancellation(
+            internal_user_id=internal_user_id,
+            username=username,
+            cost=cost,
+            task_submitted=True,
+            registry_task_id=registry_task_id,
+        )
+    except Exception as refund_err:
+        logger.critical(
+            f"Async cancellation finalize failed for user {internal_user_id}: {refund_err}"
+        )
+
+
+async def _finalize_monitored_web_task_failure(
+    *,
+    internal_user_id: int,
+    username: str,
+    cost: int,
+    registry_task_id: str,
+    final_status: str | None,
+):
+    try:
+        await finalize_task_failure(
+            internal_user_id=internal_user_id,
+            username=username,
+            cost=cost,
+            should_refund=cost > 0,
+            registry_task_id=registry_task_id,
+            refund_task_type=f"refund_async_failed_{final_status}",
+        )
+    except Exception as refund_err:
+        logger.critical(
+            f"Async refund failed for user {internal_user_id}: {refund_err}"
+        )
 
 async def monitor_task_and_release_lock(
     backend_task_id: str,
@@ -864,61 +1099,30 @@ async def monitor_task_and_release_lock(
         logger.error(f"Background monitoring error for task {backend_task_id}: {e}")
         final_status = "error"
     finally:
-        # Save to History if successful
         if final_status == "done" and result_path:
-            try:
-                await _persist_successful_web_history(
-                    backend_task_id=backend_task_id,
-                    registry_task_id=registry_task_id,
-                    internal_user_id=internal_user_id,
-                    username=username,
-                    prompt=submission_context.log_prompt,
-                    task_type=submission_context.task_type,
-                    input_images=submission_context.saved_inputs,
-                    allow_contribute=submission_context.allow_contribute,
-                    is_video=submission_context.is_video_task,
-                    result_path=result_path,
-                    billing_resolution=submission_context.billing_resolution,
-                    output_width=submission_context.output_width,
-                    output_height=submission_context.output_height,
-                    output_duration=submission_context.output_duration,
-                    requested_duration=submission_context.requested_duration,
-                )
-            except Exception as log_err:
-                logger.error(
-                    f"Failed to log task history for {registry_task_id}: {log_err}"
-                )
-            await cleanup_task_runtime_state(
+            await _finalize_monitored_web_task_success(
+                backend_task_id=backend_task_id,
                 internal_user_id=internal_user_id,
+                username=username,
                 registry_task_id=registry_task_id,
+                submission_context=submission_context,
+                result_path=result_path,
             )
         elif final_status == "cancelled":
-            try:
-                await finalize_task_cancellation(
-                    internal_user_id=internal_user_id,
-                    username=username,
-                    cost=cost,
-                    task_submitted=True,
-                    registry_task_id=registry_task_id,
-                )
-            except Exception as refund_err:
-                logger.critical(
-                    f"Async cancellation finalize failed for user {internal_user_id}: {refund_err}"
-                )
+            await _finalize_monitored_web_task_cancellation(
+                internal_user_id=internal_user_id,
+                username=username,
+                cost=cost,
+                registry_task_id=registry_task_id,
+            )
         else:
-            try:
-                await finalize_task_failure(
-                    internal_user_id=internal_user_id,
-                    username=username,
-                    cost=cost,
-                    should_refund=cost > 0,
-                    registry_task_id=registry_task_id,
-                    refund_task_type=f"refund_async_failed_{final_status}",
-                )
-            except Exception as refund_err:
-                logger.critical(
-                    f"Async refund failed for user {internal_user_id}: {refund_err}"
-                )
+            await _finalize_monitored_web_task_failure(
+                internal_user_id=internal_user_id,
+                username=username,
+                cost=cost,
+                registry_task_id=registry_task_id,
+                final_status=final_status,
+            )
 
 
 async def process_and_submit_task(
@@ -958,6 +1162,18 @@ async def process_and_submit_task(
     registry_task_id = task_id
 
     try:
+        submission_context = await _prepare_task_submission_payload(
+            user_id=user_id,
+            username=username,
+            task_type=task_type,
+            inputs=inputs,
+            strategy=strategy,
+            base_priority=base_priority,
+            is_template=is_template,
+            is_video_task=is_video_task,
+            video_request=video_request,
+        )
+
         if deduct_quota:
             success, err = await check_and_deduct_credits(
                 user_id, cost, task_type, username
@@ -967,62 +1183,33 @@ async def process_and_submit_task(
             credits_deducted = True
 
         try:
-            submission_context = await _prepare_task_submission_payload(
-                user_id=user_id,
-                username=username,
+            execution_result = await _execute_task_submission_saga(
                 task_type=task_type,
                 inputs=inputs,
-                strategy=strategy,
-                base_priority=base_priority,
-                is_template=is_template,
-                is_video_task=is_video_task,
-                video_request=video_request,
-            )
-
-            registry_task_id = await _register_task_submission(
                 registry_task_id=registry_task_id,
-                user_id=user_id,
-                username=username,
                 cost=cost,
                 submission_context=submission_context,
             )
-
-            backend_task_id = await _dispatch_registered_task(
+            registry_task_id = execution_result.registry_task_id
+            _attach_submission_side_effects(
+                client_type=client_type,
+                backend_task_id=execution_result.backend_task_id,
+                internal_user_id=user_id,
+                username=username,
                 registry_task_id=registry_task_id,
-                task_type=task_type,
-                inputs=inputs,
-                final_priority=submission_context.final_priority,
+                submission_context=execution_result.submission_context,
+                cost=cost if deduct_quota else 0,
+                source_post_id=source_post_id,
             )
-
-            if client_type == "web":
-                try:
-                    asyncio.create_task(
-                        monitor_task_and_release_lock(
-                            backend_task_id=backend_task_id,
-                            internal_user_id=user_id,
-                            username=username,
-                            registry_task_id=registry_task_id,
-                            submission_context=submission_context,
-                            cost=cost if deduct_quota else 0,
-                        )
-                    )
-                except Exception as e:
-                    # 如果监控挂载失败，由外层的 Saga 补偿机制和 finally 统一处理退款和释放锁
-                    raise CoreDomainError(f"后台监控挂载失败: {e}")
-
-            if source_post_id:
-                from src.core.gallery_core import record_apply_interaction
-
-                asyncio.create_task(record_apply_interaction(user_id, source_post_id))
 
             task_submitted_successfully = True
 
             return {
                 "task_id": registry_task_id,
                 "registry_task_id": registry_task_id,
-                "backend_task_id": backend_task_id,
+                "backend_task_id": execution_result.backend_task_id,
                 "cost": cost,
-                "saved_inputs": submission_context.saved_inputs,
+                "saved_inputs": execution_result.submission_context.saved_inputs,
             }
 
         except Exception as e:

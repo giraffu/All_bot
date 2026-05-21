@@ -115,6 +115,51 @@ async def test_monitor_task_and_release_lock_uses_cancellation_finalize_for_canc
 
 
 @pytest.mark.asyncio
+async def test_monitor_task_and_release_lock_uses_failure_finalize_for_error(
+    monkeypatch,
+):
+    async def _monitor_progress(_task_id, _is_video):
+        yield {"status": "error"}
+
+    finalize_cancel = AsyncMock()
+    finalize_failure = AsyncMock()
+
+    monkeypatch.setattr(task_core.image_service, "monitor_progress", _monitor_progress)
+    monkeypatch.setattr(task_core, "finalize_task_cancellation", finalize_cancel)
+    monkeypatch.setattr(task_core, "finalize_task_failure", finalize_failure)
+
+    submission_context = task_core.TaskSubmissionContext(
+        task_type="image",
+        is_video_task=False,
+        user_logger=MagicMock(),
+        prompt="fail me",
+        saved_inputs=[],
+        metadata={},
+        allow_contribute=True,
+        final_priority=0,
+    )
+
+    await task_core.monitor_task_and_release_lock(
+        backend_task_id="task-error",
+        internal_user_id=321,
+        username="tester",
+        registry_task_id="registry-error",
+        submission_context=submission_context,
+        cost=7,
+    )
+
+    finalize_cancel.assert_not_awaited()
+    finalize_failure.assert_awaited_once_with(
+        internal_user_id=321,
+        username="tester",
+        cost=7,
+        should_refund=True,
+        registry_task_id="registry-error",
+        refund_task_type="refund_async_failed_error",
+    )
+
+
+@pytest.mark.asyncio
 async def test_schedule_web_history_r2_warmup_still_prunes_when_copy_fails(monkeypatch):
     original_create_task = asyncio.create_task
     scheduled_tasks = []

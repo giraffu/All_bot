@@ -7,7 +7,8 @@ Web API 应直接调用 `src/core/task_core.py` 提供的业务门面 (Facade)�
 
 import logging
 import os
-from typing import List, Optional, Tuple
+from dataclasses import dataclass, replace
+from typing import Callable, List, Optional, Tuple
 
 from telegram import InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
@@ -17,11 +18,15 @@ from src.core.video_billing import (
     normalize_requested_duration_seconds,
 )
 from src.constants import (
+    DEFAULT_DURATION,
+    DEFAULT_RESOLUTION,
     MODE_BLOWJOB,
     MODE_CLOSEUP_BLOWJOB,
     MODE_CUSTOM_VIDEO,
     MODE_DOGGY_STYLE,
     MODE_FACE_VIDEO_STEP1,
+    MODE_IMG2IMG_LORA,
+    MODE_NAME_MAP,
     MODE_PERFECT_VIDEO_INSERT,
     MODE_UNDRESS_TONGUE,
     TMP_DIR,
@@ -48,7 +53,98 @@ from src.utils import (
 logger = logging.getLogger(__name__)
 
 
+@dataclass
+class BotTaskRuntimeState:
+    registry_task_id: Optional[str] = None
+    task_submitted: bool = False
+    actual_cost: int = 0
+    terminal_state_finalized: bool = False
+
+
+@dataclass(frozen=True)
+class BotTaskMessageSpec:
+    initial_status_text: str
+    submitted_status_text: Optional[str] = None
+    progress_wait_text: Optional[str] = None
+    completion_caption: Optional[str] = None
+    missing_output_message: str = "生成完成但未获取到文件路径，已退还灵石"
+    cancellation_message_template: str = "任务已撤销，预扣的 {cost} 灵石已全额退回。"
+
+
 class TaskService:
+    @staticmethod
+    def _normalize_custom_video_resolution_value(resolution: str) -> int:
+        if resolution == "1024p":
+            return 1024
+        if resolution == "720p":
+            return 720
+        return 512
+
+    @staticmethod
+    def _normalize_custom_video_duration_value(duration: str) -> int:
+        if duration == "10s":
+            return 10
+        if duration == "8s":
+            return 8
+        return 5
+
+    @staticmethod
+    async def _resolve_custom_video_settings(
+        context,
+        *,
+        update: Optional[Update] = None,
+        warn_invalid_combo: bool = False,
+    ) -> Tuple[str, str, int, int]:
+        resolution = context.user_data.get("custom_video_resolution", DEFAULT_RESOLUTION)
+        duration = context.user_data.get("custom_video_duration", DEFAULT_DURATION)
+
+        if resolution == "1024p" and duration == "10s":
+            resolution = "720p"
+            context.user_data["custom_video_resolution"] = resolution
+            if warn_invalid_combo and update is not None:
+                await robust_reply_text(
+                    update.effective_message,
+                    "⚠️ 检测到非法配置(1024p+10s)，已自动降级为720p+10s。",
+                )
+
+        return (
+            resolution,
+            duration,
+            TaskService._normalize_custom_video_resolution_value(resolution),
+            TaskService._normalize_custom_video_duration_value(duration),
+        )
+
+    @staticmethod
+    def _build_message_spec(
+        *,
+        initial_status_text: str,
+        submitted_status_text: Optional[str] = None,
+        progress_wait_text: Optional[str] = None,
+        completion_caption: Optional[str] = None,
+        missing_output_message: str = "生成完成但未获取到文件路径，已退还灵石",
+        cancellation_message_template: str = "任务已撤销，预扣的 {cost} 灵石已全额退回。",
+    ) -> BotTaskMessageSpec:
+        return BotTaskMessageSpec(
+            initial_status_text=initial_status_text,
+            submitted_status_text=submitted_status_text,
+            progress_wait_text=progress_wait_text,
+            completion_caption=completion_caption,
+            missing_output_message=missing_output_message,
+            cancellation_message_template=cancellation_message_template,
+        )
+
+    @staticmethod
+    def _with_submitted_status(
+        spec: BotTaskMessageSpec, submitted_status_text: str
+    ) -> BotTaskMessageSpec:
+        return replace(spec, submitted_status_text=submitted_status_text)
+
+    @staticmethod
+    def _with_completion_caption(
+        spec: BotTaskMessageSpec, completion_caption: str
+    ) -> BotTaskMessageSpec:
+        return replace(spec, completion_caption=completion_caption)
+
     @staticmethod
     def _build_result_reply_markup(task_type, task_id, allow_contribute, reply_markup):
         return build_result_reply_markup(
@@ -172,6 +268,73 @@ class TaskService:
         return failure_result
 
     @staticmethod
+    async def _send_bot_warning(context, chat_id, error):
+        await robust_send_message(context.bot, chat_id, f"⚠️ {error}")
+
+    @staticmethod
+    async def _send_bot_domain_error(context, chat_id, error):
+        await robust_send_message(context.bot, chat_id, f"❌ {error}")
+
+    @staticmethod
+    async def _handle_bot_cancelled_exception(
+        *,
+        status_msg,
+        runtime_state,
+        internal_user_id,
+        username,
+        message_spec,
+        deduct_quota=True,
+    ):
+        await TaskService._finalize_cancelled_task_for_bot(
+            status_msg=status_msg,
+            internal_user_id=internal_user_id,
+            username=username,
+            cost=runtime_state.actual_cost,
+            task_submitted=deduct_quota and runtime_state.task_submitted,
+            registry_task_id=runtime_state.registry_task_id,
+            explicit_user_message=TaskService._build_bot_cancellation_message(
+                runtime_state.actual_cost, message_spec
+            ),
+        )
+        runtime_state.terminal_state_finalized = True
+        return None, None
+
+    @staticmethod
+    async def _handle_bot_unexpected_exception(
+        *,
+        context,
+        chat_id,
+        status_msg,
+        runtime_state,
+        internal_user_id,
+        username,
+        error,
+        log_message,
+        should_refund,
+        generic_error_prefix,
+        prefer_edit_status=False,
+        refund_suffix_mode="if_refunded",
+    ):
+        logger.error(log_message, exc_info=True)
+        await TaskService._finalize_failed_task_for_bot(
+            context=context,
+            chat_id=chat_id,
+            status_msg=status_msg,
+            internal_user_id=internal_user_id,
+            username=username,
+            cost=runtime_state.actual_cost,
+            should_refund=should_refund,
+            registry_task_id=runtime_state.registry_task_id,
+            release_lock=runtime_state.task_submitted,
+            error=error,
+            generic_error_prefix=generic_error_prefix,
+            prefer_edit_status=prefer_edit_status,
+            refund_suffix_mode=refund_suffix_mode,
+        )
+        runtime_state.terminal_state_finalized = True
+        return None, None
+
+    @staticmethod
     async def _cleanup_runtime_state_if_needed(
         *,
         internal_user_id,
@@ -193,6 +356,352 @@ class TaskService:
                 release_lock=release_lock,
             )
         )
+
+    @staticmethod
+    def _mark_task_submission_succeeded(runtime_state, result: dict) -> list[str]:
+        runtime_state.task_submitted = True
+        runtime_state.actual_cost = result["cost"]
+        runtime_state.registry_task_id = result["registry_task_id"]
+        return result["saved_inputs"]
+
+    @staticmethod
+    async def _submit_bot_task(
+        *,
+        runtime_state,
+        internal_user_id,
+        username,
+        task_type,
+        inputs,
+        source_post_id=None,
+        deduct_quota=True,
+    ) -> tuple[str, list[str]]:
+        import uuid
+
+        from asgi_correlation_id import correlation_id
+
+        from src.core.task_core import process_and_submit_task
+
+        task_id = str(uuid.uuid4())
+        correlation_id.set(task_id)
+
+        result = await process_and_submit_task(
+            user_id=internal_user_id,
+            username=username,
+            task_type=task_type,
+            inputs=inputs,
+            task_id=task_id,
+            client_type="bot",
+            source_post_id=source_post_id,
+            deduct_quota=deduct_quota,
+        )
+        saved_inputs = TaskService._mark_task_submission_succeeded(runtime_state, result)
+        return task_id, saved_inputs
+
+    @staticmethod
+    def _build_bot_cancellation_message(cost: int, spec: BotTaskMessageSpec) -> str:
+        return spec.cancellation_message_template.format(cost=cost)
+
+    @staticmethod
+    async def _send_initial_task_status(
+        *,
+        context,
+        update,
+        chat_id,
+        status_msg_id,
+        message_spec: BotTaskMessageSpec,
+    ):
+        if update is not None:
+            return await robust_reply_text(
+                update.effective_message, message_spec.initial_status_text
+            )
+        return await TaskService._get_or_send_status_msg(
+            context, chat_id, status_msg_id, message_spec.initial_status_text
+        )
+
+    @staticmethod
+    async def _update_submitted_task_status(*, status_msg, message_spec: BotTaskMessageSpec):
+        if message_spec.submitted_status_text:
+            await robust_edit_text(status_msg, message_spec.submitted_status_text)
+        elif message_spec.progress_wait_text:
+            await robust_edit_text(status_msg, message_spec.progress_wait_text)
+
+    @staticmethod
+    async def _prepare_and_submit_bot_task(
+        *,
+        context,
+        update,
+        chat_id,
+        status_msg_id=None,
+        message_spec: BotTaskMessageSpec,
+        submitted_status_builder: Optional[Callable[[int], str]] = None,
+        runtime_state,
+        internal_user_id,
+        username,
+        task_type,
+        inputs,
+        source_post_id=None,
+        deduct_quota=True,
+    ):
+        status_msg = await TaskService._send_initial_task_status(
+            context=context,
+            update=update,
+            chat_id=chat_id,
+            status_msg_id=status_msg_id,
+            message_spec=message_spec,
+        )
+        task_id, saved_inputs = await TaskService._submit_bot_task(
+            runtime_state=runtime_state,
+            internal_user_id=internal_user_id,
+            username=username,
+            task_type=task_type,
+            inputs=inputs,
+            source_post_id=source_post_id,
+            deduct_quota=deduct_quota,
+        )
+        if submitted_status_builder is not None:
+            message_spec = TaskService._with_submitted_status(
+                message_spec,
+                submitted_status_builder(runtime_state.actual_cost),
+            )
+        await TaskService._update_submitted_task_status(
+            status_msg=status_msg,
+            message_spec=message_spec,
+        )
+        return status_msg, task_id, saved_inputs, message_spec
+
+    @staticmethod
+    async def _run_bot_task_flow(
+        *,
+        context,
+        chat_id,
+        runtime_state,
+        internal_user_id,
+        username,
+        task_type,
+        inputs,
+        prompt,
+        is_video,
+        message_spec: BotTaskMessageSpec,
+        update=None,
+        status_msg_id=None,
+        submitted_status_builder: Optional[Callable[[int], str]] = None,
+        source_post_id=None,
+        deduct_quota=True,
+        send_result=True,
+        reply_markup=None,
+        delete_status=True,
+        allow_contribute=True,
+        billing_resolution: Optional[str] = None,
+        requested_duration: Optional[int] = None,
+        missing_output_should_refund: bool = True,
+        prefer_edit_status=False,
+        refund_suffix_mode="if_refunded",
+        unexpected_should_refund: Optional[
+            Callable[[BotTaskRuntimeState], bool]
+        ] = None,
+        unexpected_error_log_message: str,
+        unexpected_error_prefix: str,
+        cleanup_paths: Optional[list[str]] = None,
+        cleanup_enabled: bool = True,
+    ) -> Tuple[Optional[bytes], Optional[str]]:
+        from src.core.task_core import (
+            ConcurrencyLimitError,
+            CoreDomainError,
+            InsufficientCreditsError,
+        )
+
+        media_bytes = None
+        full_output_path = None
+
+        try:
+            status_msg, task_id, saved_inputs, message_spec = (
+                await TaskService._prepare_and_submit_bot_task(
+                    context=context,
+                    update=update,
+                    chat_id=chat_id,
+                    status_msg_id=status_msg_id,
+                    message_spec=message_spec,
+                    submitted_status_builder=submitted_status_builder,
+                    runtime_state=runtime_state,
+                    internal_user_id=internal_user_id,
+                    username=username,
+                    task_type=task_type,
+                    inputs=inputs,
+                    source_post_id=source_post_id,
+                    deduct_quota=deduct_quota,
+                )
+            )
+
+            final_info = await TaskService._monitor_submitted_bot_task(
+                task_id=task_id,
+                status_msg=status_msg,
+                is_video=is_video,
+                internal_user_id=internal_user_id,
+                monitor_func=image_service.monitor_progress,
+            )
+
+            media_bytes, full_output_path = await TaskService._complete_monitored_bot_task(
+                context=context,
+                chat_id=chat_id,
+                status_msg=status_msg,
+                runtime_state=runtime_state,
+                internal_user_id=internal_user_id,
+                username=username,
+                prompt=prompt,
+                task_type=task_type,
+                task_id=task_id,
+                saved_input_images=saved_inputs,
+                user_logger=UserLogger(internal_user_id, username),
+                final_info=final_info,
+                is_video=is_video,
+                send_result=send_result,
+                reply_markup=reply_markup,
+                delete_status=delete_status,
+                allow_contribute=allow_contribute,
+                billing_resolution=billing_resolution,
+                requested_duration=requested_duration,
+                message_spec=message_spec,
+                missing_output_should_refund=missing_output_should_refund,
+            )
+
+        except ConcurrencyLimitError as e:
+            await TaskService._send_bot_warning(context, chat_id, e)
+            return None, None
+        except InsufficientCreditsError as e:
+            await TaskService._send_bot_warning(context, chat_id, e)
+            return None, None
+        except CoreDomainError as e:
+            if str(e) == "cancelled":
+                return await TaskService._handle_bot_cancelled_exception(
+                    status_msg=locals().get("status_msg"),
+                    runtime_state=runtime_state,
+                    internal_user_id=internal_user_id,
+                    username=username,
+                    message_spec=locals().get("message_spec", message_spec),
+                    deduct_quota=deduct_quota,
+                )
+            await TaskService._send_bot_domain_error(context, chat_id, e)
+            return None, None
+        except Exception as e:
+            return await TaskService._handle_bot_unexpected_exception(
+                context=context,
+                chat_id=chat_id,
+                status_msg=locals().get("status_msg") if prefer_edit_status else None,
+                runtime_state=runtime_state,
+                internal_user_id=internal_user_id,
+                username=username,
+                error=e,
+                log_message=unexpected_error_log_message.format(
+                    internal_user_id=internal_user_id,
+                    error=e,
+                ),
+                should_refund=(
+                    unexpected_should_refund(runtime_state)
+                    if unexpected_should_refund is not None
+                    else deduct_quota and runtime_state.task_submitted
+                ),
+                generic_error_prefix=unexpected_error_prefix,
+                prefer_edit_status=prefer_edit_status,
+                refund_suffix_mode=refund_suffix_mode,
+            )
+        finally:
+            await TaskService._cleanup_runtime_state_if_needed(
+                internal_user_id=internal_user_id,
+                registry_task_id=runtime_state.registry_task_id,
+                release_lock=runtime_state.task_submitted,
+                terminal_state_finalized=runtime_state.terminal_state_finalized,
+            )
+            if cleanup_enabled and cleanup_paths:
+                TaskService._cleanup_files(cleanup_paths)
+
+        return media_bytes, full_output_path
+
+    @staticmethod
+    async def _monitor_submitted_bot_task(
+        *,
+        task_id,
+        status_msg,
+        is_video,
+        internal_user_id,
+        monitor_func,
+    ):
+        from src.core.billing_core import (
+            get_user_priority_and_identity,
+        )
+
+        _priority, identity_str, user_group = await get_user_priority_and_identity(
+            internal_user_id
+        )
+        return await TaskService._monitor_task_progress(
+            task_id,
+            status_msg,
+            is_video=is_video,
+            monitor_func=monitor_func,
+            identity_str=identity_str,
+            user_group=user_group,
+        )
+
+    @staticmethod
+    async def _complete_monitored_bot_task(
+        *,
+        context,
+        chat_id,
+        status_msg,
+        runtime_state,
+        internal_user_id,
+        username,
+        prompt,
+        task_type,
+        task_id,
+        saved_input_images,
+        user_logger,
+        final_info,
+        is_video,
+        send_result=True,
+        reply_markup=None,
+        delete_status=True,
+        caption=None,
+        allow_contribute=True,
+        billing_resolution: Optional[str] = None,
+        requested_duration: Optional[int] = None,
+        message_spec: BotTaskMessageSpec,
+        missing_output_should_refund: bool = True,
+    ) -> Tuple[Optional[bytes], Optional[str]]:
+        if final_info:
+            return await TaskService._handle_task_completion(
+                context,
+                chat_id,
+                internal_user_id,
+                prompt,
+                task_type,
+                task_id,
+                saved_input_images,
+                user_logger,
+                is_video=is_video,
+                send_result=send_result,
+                reply_markup=reply_markup,
+                status_msg=status_msg,
+                delete_status=delete_status,
+                caption=caption or message_spec.completion_caption,
+                allow_contribute=allow_contribute,
+                billing_resolution=billing_resolution,
+                requested_duration=requested_duration,
+            )
+
+        await TaskService._finalize_failed_task_for_bot(
+            context=context,
+            chat_id=chat_id,
+            status_msg=None,
+            internal_user_id=internal_user_id,
+            username=username,
+            cost=runtime_state.actual_cost,
+            should_refund=missing_output_should_refund,
+            registry_task_id=runtime_state.registry_task_id,
+            release_lock=runtime_state.task_submitted,
+            explicit_user_message=message_spec.missing_output_message,
+        )
+        runtime_state.terminal_state_finalized = True
+        return None, None
 
     @staticmethod
     async def _download_and_log_task_output(
@@ -243,19 +752,6 @@ class TaskService:
         allow_contribute: bool = True,
         source_post_id: Optional[int] = None,
     ):
-        import uuid
-
-        from asgi_correlation_id import correlation_id
-
-        from src.core.billing_core import (
-            get_user_priority_and_identity,
-        )
-        from src.core.task_core import (
-            ConcurrencyLimitError,
-            CoreDomainError,
-            InsufficientCreditsError,
-            process_and_submit_task,
-        )
         from src.core.user_core import get_or_create_user_by_telegram
 
         chat_id = update.effective_chat.id
@@ -272,148 +768,50 @@ class TaskService:
         resolution = context.user_data.get("ltx_video_resolution", "1280x704")
         duration = context.user_data.get("ltx_video_duration", "5s")
 
-        registry_task_id = None
-        cost = 0
-        task_submitted = False
-        terminal_state_finalized = False
+        runtime_state = BotTaskRuntimeState()
+        notice = await TaskService._get_acceleration_notice(user_id)
+        message_spec = TaskService._build_message_spec(
+            initial_status_text=(
+                f"🚀 正在处理高级图生视频任务 (画质:{resolution}, 时长:{duration})...{notice}"
+            ),
+            progress_wait_text="⏳ 正在生成高级视频，可能需要数分钟，请耐心等待...",
+            completion_caption="✅ 高级图生视频生成完成",
+        )
+        inputs = {
+            "prompt": prompt,
+            "images": [image_path] if image_path else [],
+            "resolution": resolution,
+            "duration": duration,
+        }
 
-        try:
-            task_id = str(uuid.uuid4())
-            correlation_id.set(task_id)
-
-            inputs = {
-                "prompt": prompt,
-                "images": [image_path] if image_path else [],
-                "resolution": resolution,
-                "duration": duration,
-            }
-
-            result = await process_and_submit_task(
-                user_id=internal_user_id,
-                username=username,
-                task_type=mode,
-                inputs=inputs,
-                task_id=task_id,
-                client_type="bot",
-                source_post_id=source_post_id,
-            )
-
-            task_submitted = True
-            cost = result["cost"]
-            registry_task_id = result["registry_task_id"]
-            saved_inputs = result["saved_inputs"]
-
-            notice = await TaskService._get_acceleration_notice(user_id)
-            msg_text = f"🚀 正在处理高级图生视频任务 (画质:{resolution}, 时长:{duration}, 消耗{cost}灵石)...{notice}"
-            msg = await robust_reply_text(update.effective_message, msg_text)
-            await robust_edit_text(
-                msg, "⏳ 正在生成高级视频，可能需要数分钟，请耐心等待..."
-            )
-
-            _priority, identity_str, user_group = await get_user_priority_and_identity(
-                internal_user_id
-            )
-            final_info = await TaskService._monitor_task_progress(
-                task_id,
-                msg,
-                is_video=True,
-                monitor_func=image_service.monitor_progress,
-                identity_str=identity_str,
-                user_group=user_group,
-            )
-
-            if final_info:
-                return await TaskService._handle_task_completion(
-                    context,
-                    chat_id,
-                    internal_user_id,
-                    prompt,
-                    mode,
-                    task_id,
-                    saved_inputs,
-                    UserLogger(internal_user_id, username),
-                    is_video=True,
-                    send_result=True,
-                    reply_markup=None,
-                    status_msg=msg,
-                    delete_status=True,
-                    caption="✅ 高级图生视频生成完成",
-                    allow_contribute=allow_contribute,
-                    billing_resolution=normalize_requested_billing_resolution(
-                        resolution, mode
-                    ),
-                    requested_duration=normalize_requested_duration_seconds(duration),
-                )
-            else:
-                failure_result = await finalize_task_failure(
-                    internal_user_id=internal_user_id,
-                    username=username,
-                    cost=cost,
-                    should_refund=True,
-                    registry_task_id=registry_task_id,
-                    release_lock=task_submitted,
-                    explicit_user_message="生成完成但未获取到文件路径，已退还灵石",
-                )
-                terminal_state_finalized = True
-                await robust_send_message(
-                    context.bot, chat_id, f"❌ {failure_result.user_message}"
-                )
-                return None, None
-
-        except ConcurrencyLimitError as e:
-            await robust_send_message(context.bot, chat_id, f"⚠️ {e}")
-            return None, None
-        except InsufficientCreditsError as e:
-            await robust_send_message(context.bot, chat_id, f"⚠️ {e}")
-            return None, None
-        except CoreDomainError as e:
-            if str(e) == "cancelled":
-                cancellation_result = await finalize_task_cancellation(
-                    internal_user_id=internal_user_id,
-                    username=username,
-                    cost=cost,
-                    task_submitted=task_submitted,
-                    registry_task_id=registry_task_id,
-                    release_lock=task_submitted,
-                    explicit_user_message=f"任务已撤销，预扣的 {cost} 灵石已全额退回。",
-                )
-                terminal_state_finalized = True
-                await robust_edit_text(msg, f"✅ {cancellation_result.user_message}")
-                return None, None
-            await robust_send_message(context.bot, chat_id, f"❌ {e}")
-            return None, None
-        except Exception as e:
-            logger.error(
-                f"Error in ltx video task for user {internal_user_id}: {e}",
-                exc_info=True,
-            )
-            failure_result = await finalize_task_failure(
-                internal_user_id=internal_user_id,
-                username=username,
-                cost=cost,
-                should_refund=task_submitted and cost > 0,
-                registry_task_id=registry_task_id,
-                release_lock=task_submitted,
-                error=e,
-                generic_error_prefix="出错了",
-            )
-            terminal_state_finalized = True
-
-            await robust_send_message(
-                context.bot, chat_id, f"❌ {failure_result.user_message}"
-            )
-            return None, None
-        finally:
-            if not terminal_state_finalized and (task_submitted or registry_task_id):
-                await asyncio.shield(
-                    cleanup_task_runtime_state(
-                        internal_user_id=internal_user_id,
-                        registry_task_id=registry_task_id,
-                        release_lock=task_submitted,
-                    )
-                )
-            if cleanup and image_path:
-                TaskService._cleanup_files([image_path])
+        return await TaskService._run_bot_task_flow(
+            context=context,
+            update=update,
+            chat_id=chat_id,
+            runtime_state=runtime_state,
+            internal_user_id=internal_user_id,
+            username=username,
+            task_type=mode,
+            inputs=inputs,
+            prompt=prompt,
+            is_video=True,
+            message_spec=message_spec,
+            submitted_status_builder=lambda actual_cost: (
+                f"🚀 正在处理高级图生视频任务 (画质:{resolution}, 时长:{duration}, 消耗{actual_cost}灵石)...{notice}"
+            ),
+            source_post_id=source_post_id,
+            allow_contribute=allow_contribute,
+            billing_resolution=normalize_requested_billing_resolution(
+                resolution, mode
+            ),
+            requested_duration=normalize_requested_duration_seconds(duration),
+            unexpected_should_refund=lambda state: state.task_submitted
+            and state.actual_cost > 0,
+            unexpected_error_log_message="Error in ltx video task for user {internal_user_id}: {error}",
+            unexpected_error_prefix="出错了",
+            cleanup_paths=[image_path] if image_path else None,
+            cleanup_enabled=cleanup,
+        )
 
     @staticmethod
     async def process_face_video_task(
@@ -430,20 +828,6 @@ class TaskService:
         cleanup: bool = True,
         source_post_id: Optional[int] = None,
     ):
-        import asyncio
-        import uuid
-
-        from asgi_correlation_id import correlation_id
-
-        from src.core.billing_core import (
-            get_user_priority_and_identity,
-        )
-        from src.core.task_core import (
-            ConcurrencyLimitError,
-            CoreDomainError,
-            InsufficientCreditsError,
-            process_and_submit_task,
-        )
         from src.core.user_core import get_or_create_user_by_telegram
 
         # 1. 身份转换 (TG ID -> 内部 ID)
@@ -451,152 +835,50 @@ class TaskService:
         internal_user_id = internal_user.id
 
         mode = MODE_FACE_VIDEO_STEP1
-        registry_task_id = None
-        task_submitted = False
-        actual_cost = cost
-        terminal_state_finalized = False
+        runtime_state = BotTaskRuntimeState(actual_cost=cost)
+        notice = await TaskService._get_acceleration_notice(user_id)
+        message_spec = TaskService._build_message_spec(
+            initial_status_text=f"🚀 正在处理视频换脸任务 (画质:{resolution}p)...{notice}",
+            completion_caption="✅ 视频换脸完成",
+            missing_output_message="生成失败或超时，已退还灵石。",
+        )
+        inputs = {
+            "prompt": "Video Face Swap",
+            "images": [face_image_path, video_path]
+            if face_image_path and video_path
+            else [],
+            "resolution": resolution,
+            "duration": duration,
+        }
 
-        try:
-            task_id = str(uuid.uuid4())
-            correlation_id.set(task_id)
-
-            inputs = {
-                "prompt": "Video Face Swap",
-                "images": [face_image_path, video_path]
-                if face_image_path and video_path
-                else [],
-                "resolution": resolution,
-                "duration": duration,
-            }
-
-            result = await process_and_submit_task(
-                user_id=internal_user_id,
-                username=username,
-                task_type=mode,
-                inputs=inputs,
-                task_id=task_id,
-                client_type="bot",
-                source_post_id=source_post_id,
-            )
-
-            task_submitted = True
-            actual_cost = result["cost"]
-            registry_task_id = result["registry_task_id"]
-            saved_inputs = result["saved_inputs"]
-
-            notice = await TaskService._get_acceleration_notice(user_id)
-            msg_text = f"🚀 正在处理视频换脸任务 (画质:{resolution}p, 消耗{actual_cost}灵石)...{notice}"
-            status_msg = await TaskService._get_or_send_status_msg(
-                context, chat_id, message_id, msg_text
-            )
-
-            _priority, identity_str, user_group = await get_user_priority_and_identity(
-                internal_user_id
-            )
-            final_info = await TaskService._monitor_task_progress(
-                task_id,
-                status_msg,
-                is_video=True,
-                monitor_func=image_service.monitor_progress,
-                identity_str=identity_str,
-                user_group=user_group,
-            )
-
-            if final_info:
-                return await TaskService._handle_task_completion(
-                    context,
-                    chat_id,
-                    internal_user_id,
-                    "face video",
-                    mode,
-                    task_id,
-                    saved_inputs,
-                    UserLogger(internal_user_id, username),
-                    is_video=True,
-                    send_result=True,
-                    reply_markup=None,
-                    status_msg=status_msg,
-                    delete_status=True,
-                    caption="✅ 视频换脸完成",
-                    billing_resolution=normalize_requested_billing_resolution(
-                        resolution, mode
-                    ),
-                )
-            else:
-                failure_result = await finalize_task_failure(
-                    internal_user_id=internal_user_id,
-                    username=username,
-                    cost=actual_cost,
-                    should_refund=True,
-                    registry_task_id=registry_task_id,
-                    release_lock=task_submitted,
-                    explicit_user_message="生成失败或超时，已退还灵石。",
-                )
-                terminal_state_finalized = True
-                await robust_edit_text(status_msg, f"⚠️ {failure_result.user_message}")
-                return None, None
-
-        except ConcurrencyLimitError as e:
-            await robust_send_message(context.bot, chat_id, f"⚠️ {e}")
-            return None, None
-        except InsufficientCreditsError as e:
-            await robust_send_message(context.bot, chat_id, f"⚠️ {e}")
-            return None, None
-        except CoreDomainError as e:
-            if str(e) == "cancelled":
-                cancellation_result = await finalize_task_cancellation(
-                    internal_user_id=internal_user_id,
-                    username=username,
-                    cost=actual_cost,
-                    task_submitted=task_submitted,
-                    registry_task_id=registry_task_id,
-                    release_lock=task_submitted,
-                    explicit_user_message=f"任务已撤销，预扣的 {actual_cost} 灵石已全额退回。",
-                )
-                terminal_state_finalized = True
-                if "status_msg" in locals():
-                    await robust_edit_text(
-                        status_msg, f"✅ {cancellation_result.user_message}"
-                    )
-                return None, None
-            await robust_send_message(context.bot, chat_id, f"❌ {e}")
-            return None, None
-        except Exception as e:
-            logger.error(
-                f"Error processing face video task for {internal_user_id}: {e}",
-                exc_info=True,
-            )
-            failure_result = await finalize_task_failure(
-                internal_user_id=internal_user_id,
-                username=username,
-                cost=actual_cost,
-                should_refund=task_submitted and actual_cost > 0,
-                registry_task_id=registry_task_id,
-                release_lock=task_submitted,
-                error=e,
-                generic_error_prefix="系统错误",
-            )
-            terminal_state_finalized = True
-
-            # status_msg might not be defined if exception occurs early
-            if "status_msg" in locals():
-                await robust_edit_text(status_msg, f"❌ {failure_result.user_message}")
-            else:
-                await robust_send_message(
-                    context.bot, chat_id, f"❌ {failure_result.user_message}"
-                )
-            return None, None
-        finally:
-            if not terminal_state_finalized and (task_submitted or registry_task_id):
-                await asyncio.shield(
-                    cleanup_task_runtime_state(
-                        internal_user_id=internal_user_id,
-                        registry_task_id=registry_task_id,
-                        release_lock=task_submitted,
-                    )
-                )
-            if cleanup:
-                TaskService._cleanup_files([face_image_path, video_path])
+        return await TaskService._run_bot_task_flow(
+            context=context,
+            update=None,
+            chat_id=chat_id,
+            status_msg_id=message_id,
+            runtime_state=runtime_state,
+            internal_user_id=internal_user_id,
+            username=username,
+            task_type=mode,
+            inputs=inputs,
+            prompt="face video",
+            is_video=True,
+            message_spec=message_spec,
+            submitted_status_builder=lambda actual_cost: (
+                f"🚀 正在处理视频换脸任务 (画质:{resolution}p, 消耗{actual_cost}灵石)...{notice}"
+            ),
+            source_post_id=source_post_id,
+            billing_resolution=normalize_requested_billing_resolution(
+                resolution, mode
+            ),
+            prefer_edit_status=True,
+            unexpected_should_refund=lambda state: state.task_submitted
+            and state.actual_cost > 0,
+            unexpected_error_log_message="Error processing face video task for {internal_user_id}: {error}",
+            unexpected_error_prefix="系统错误",
+            cleanup_paths=[face_image_path, video_path],
+            cleanup_enabled=cleanup,
+        )
 
     @staticmethod
     async def process_generation_task(
@@ -620,20 +902,6 @@ class TaskService:
         source_post_id: Optional[int] = None,
     ) -> Tuple[Optional[bytes], Optional[str]]:
         """Common generation logic for generic tasks."""
-        import uuid
-
-        from asgi_correlation_id import correlation_id
-
-        from src.constants import DEFAULT_DURATION, DEFAULT_RESOLUTION
-        from src.core.billing_core import (
-            get_user_priority_and_identity,
-        )
-        from src.core.task_core import (
-            ConcurrencyLimitError,
-            CoreDomainError,
-            InsufficientCreditsError,
-            process_and_submit_task,
-        )
         from src.core.user_core import get_or_create_user_by_telegram
 
         # 1. 身份转换
@@ -645,211 +913,84 @@ class TaskService:
 
         resolution = 512
         duration = 5
-        from src.constants import (
-            MODE_CUSTOM_VIDEO,
-            MODE_IMG2IMG_LORA,
-        )
 
         if is_video and task_type in [MODE_CUSTOM_VIDEO, "video_lora"]:
-            res_str = context.user_data.get(
-                "custom_video_resolution", DEFAULT_RESOLUTION
+            _, _, resolution, duration = await TaskService._resolve_custom_video_settings(
+                context
             )
-            dur_str = context.user_data.get("custom_video_duration", DEFAULT_DURATION)
 
-            if res_str == "1024p" and dur_str == "10s":
-                res_str = "720p"
-                context.user_data["custom_video_resolution"] = "720p"
-
-            if res_str == "1024p":
-                resolution = 1024
-            elif res_str == "720p":
-                resolution = 720
-            else:
-                resolution = 512
-
-            if dur_str == "8s":
-                duration = 8
-            elif dur_str == "10s":
-                duration = 10
-            else:
-                duration = 5
-
+        runtime_state = BotTaskRuntimeState()
         notice = await TaskService._get_acceleration_notice(user_id)
-
-        msg_text = (
-            f"🚀 正在处理视频生成任务...{notice}"
-            if is_video
-            else f"🚀 正在处理 {len(images)} 张图片...{notice}"
+        inputs = {
+            "prompt": prompt,
+            "images": images,
+            "resolution": resolution,
+            "duration": duration,
+            "lora_name": lora_name,
+            "lora_strength": lora_strength,
+        }
+        message_spec = TaskService._build_message_spec(
+            initial_status_text=(
+                f"🚀 正在处理视频生成任务...{notice}"
+                if is_video
+                else f"🚀 正在处理 {len(images)} 张图片...{notice}"
+            ),
+            missing_output_message="生成完成但未获取到文件路径，已退还灵石",
         )
 
-        status_msg = await TaskService._get_or_send_status_msg(
-            context, chat_id, status_msg_id, msg_text
+        log_prompt = prompt
+        if task_type in ("video_lora", MODE_IMG2IMG_LORA) and lora_name:
+            log_prompt = f"[模型: {lora_name}] {prompt}"
+
+        from src.constants import MODE_NAME_MAP
+
+        mode_name = MODE_NAME_MAP.get(task_type, task_type)
+        display_mode_name = context.t(mode_name) if hasattr(context, "t") else mode_name
+        message_spec = TaskService._with_completion_caption(
+            message_spec,
+            f"✅ {display_mode_name} 生成完成",
         )
 
-        media_bytes = None
-        full_output_path = None
-        registry_task_id = None
-        task_submitted = False
-        actual_cost = 0
-        terminal_state_finalized = False
-
-        try:
-            task_id = str(uuid.uuid4())
-            correlation_id.set(task_id)
-
-            inputs = {
-                "prompt": prompt,
-                "images": images,
-                "resolution": resolution,
-                "duration": duration,
-                "lora_name": lora_name,
-                "lora_strength": lora_strength,
-            }
-
-            result = await process_and_submit_task(
-                user_id=internal_user_id,
-                username=username,
-                task_type=task_type,
-                inputs=inputs,
-                task_id=task_id,
-                client_type="bot",
-                source_post_id=source_post_id,
-                deduct_quota=deduct_quota,
-            )
-
-            task_submitted = True
-            actual_cost = result["cost"]
-            registry_task_id = result["registry_task_id"]
-            saved_input_images = result["saved_inputs"]
-
-            # Update msg with actual cost
-            updated_msg_text = (
+        return await TaskService._run_bot_task_flow(
+            context=context,
+            update=None,
+            chat_id=chat_id,
+            status_msg_id=status_msg_id,
+            runtime_state=runtime_state,
+            internal_user_id=internal_user_id,
+            username=username,
+            task_type=task_type,
+            inputs=inputs,
+            prompt=log_prompt,
+            is_video=is_video,
+            message_spec=message_spec,
+            submitted_status_builder=lambda actual_cost: (
                 f"🚀 正在处理视频生成任务 (消耗{actual_cost}灵石)...{notice}"
                 if is_video
                 else f"🚀 正在处理 {len(images)} 张图片 (消耗{actual_cost}灵石)...{notice}"
-            )
-            await robust_edit_text(status_msg, updated_msg_text)
-
-            _priority, identity_str, user_group = await get_user_priority_and_identity(
-                internal_user_id
-            )
-            user_logger = UserLogger(internal_user_id, username)
-
-            final_info = await TaskService._monitor_task_progress(
-                task_id,
-                status_msg,
-                is_video,
-                image_service.monitor_progress,
-                identity_str=identity_str,
-                user_group=user_group,
-            )
-
-            if final_info:
-                log_prompt = prompt
-                if task_type in ("video_lora", MODE_IMG2IMG_LORA) and lora_name:
-                    log_prompt = f"[模型: {lora_name}] {prompt}"
-
-                from src.constants import MODE_NAME_MAP
-
-                mode_name = MODE_NAME_MAP.get(task_type, task_type)
-                display_mode_name = (
-                    context.t(mode_name) if hasattr(context, "t") else mode_name
-                )
-
-                (
-                    media_bytes,
-                    full_output_path,
-                ) = await TaskService._handle_task_completion(
-                    context,
-                    chat_id,
-                    internal_user_id,
-                    log_prompt,
-                    task_type,
-                    task_id,
-                    saved_input_images,
-                    user_logger,
-                    is_video,
-                    send_result,
-                    reply_markup,
-                    status_msg,
-                    delete_status,
-                    caption=f"✅ {display_mode_name} 生成完成",
-                    allow_contribute=allow_contribute,
-                    billing_resolution=(
-                        normalize_requested_billing_resolution(resolution, task_type)
-                        if is_video
-                        else None
-                    ),
-                    requested_duration=(
-                        duration
-                        if is_video and task_type in (MODE_CUSTOM_VIDEO, "video_lora")
-                        else None
-                    ),
-                )
-            else:
-                await TaskService._finalize_failed_task_for_bot(
-                    context=context,
-                    chat_id=chat_id,
-                    status_msg=None,
-                    internal_user_id=internal_user_id,
-                    username=username,
-                    cost=actual_cost,
-                    should_refund=deduct_quota,
-                    registry_task_id=registry_task_id,
-                    release_lock=task_submitted,
-                    explicit_user_message="生成完成但未获取到文件路径，已退还灵石",
-                )
-                terminal_state_finalized = True
-
-        except ConcurrencyLimitError as e:
-            await robust_send_message(context.bot, chat_id, f"⚠️ {e}")
-        except InsufficientCreditsError as e:
-            await robust_send_message(context.bot, chat_id, f"⚠️ {e}")
-        except CoreDomainError as e:
-            if str(e) == "cancelled":
-                await TaskService._finalize_cancelled_task_for_bot(
-                    status_msg=status_msg if "status_msg" in locals() else None,
-                    internal_user_id=internal_user_id,
-                    username=username,
-                    cost=actual_cost,
-                    task_submitted=deduct_quota and task_submitted,
-                    registry_task_id=registry_task_id,
-                    explicit_user_message=f"任务已撤销，预扣的 {actual_cost} 灵石已全额退回。",
-                )
-                terminal_state_finalized = True
-                return None, None
-            await robust_send_message(context.bot, chat_id, f"❌ {e}")
-        except Exception as e:
-            logger.error(
-                f"Error in process_generation_task for user {internal_user_id}: {e}",
-                exc_info=True,
-            )
-            await TaskService._finalize_failed_task_for_bot(
-                context=context,
-                chat_id=chat_id,
-                status_msg=None,
-                internal_user_id=internal_user_id,
-                username=username,
-                cost=actual_cost,
-                should_refund=deduct_quota and task_submitted,
-                registry_task_id=registry_task_id,
-                release_lock=task_submitted,
-                error=e,
-                generic_error_prefix="出错了",
-            )
-            terminal_state_finalized = True
-
-        finally:
-            await TaskService._cleanup_runtime_state_if_needed(
-                internal_user_id=internal_user_id,
-                registry_task_id=registry_task_id,
-                release_lock=task_submitted,
-                terminal_state_finalized=terminal_state_finalized,
-            )
-            if cleanup:
-                TaskService._cleanup_files(images)
-
-        return media_bytes, full_output_path
+            ),
+            source_post_id=source_post_id,
+            deduct_quota=deduct_quota,
+            send_result=send_result,
+            reply_markup=reply_markup,
+            delete_status=delete_status,
+            allow_contribute=allow_contribute,
+            billing_resolution=(
+                normalize_requested_billing_resolution(resolution, task_type)
+                if is_video
+                else None
+            ),
+            requested_duration=(
+                duration
+                if is_video and task_type in (MODE_CUSTOM_VIDEO, "video_lora")
+                else None
+            ),
+            missing_output_should_refund=deduct_quota,
+            unexpected_error_log_message="Error in process_generation_task for user {internal_user_id}: {error}",
+            unexpected_error_prefix="出错了",
+            cleanup_paths=images,
+            cleanup_enabled=cleanup,
+        )
 
     @staticmethod
     async def _process_video_task_template(
@@ -866,19 +1007,6 @@ class TaskService:
         """
         Generic handler for video generation tasks to reduce code duplication.
         """
-        import uuid
-
-        from asgi_correlation_id import correlation_id
-
-        from src.core.billing_core import (
-            get_user_priority_and_identity,
-        )
-        from src.core.task_core import (
-            ConcurrencyLimitError,
-            CoreDomainError,
-            InsufficientCreditsError,
-            process_and_submit_task,
-        )
         from src.core.user_core import get_or_create_user_by_telegram
 
         chat_id = update.effective_chat.id
@@ -888,24 +1016,12 @@ class TaskService:
         internal_user, _ = await get_or_create_user_by_telegram(user_id, username)
         internal_user_id = internal_user.id
 
-        from src.constants import DEFAULT_DURATION, DEFAULT_RESOLUTION
-
-        resolution = context.user_data.get(
-            "custom_video_resolution", DEFAULT_RESOLUTION
-        )
-        duration_str = context.user_data.get("custom_video_duration", DEFAULT_DURATION)
-
-        if resolution == "1024p" and duration_str == "10s":
-            resolution = "720p"
-            context.user_data["custom_video_resolution"] = "720p"
-            await robust_reply_text(
-                update.effective_message,
-                "⚠️ 检测到非法配置(1024p+10s)，已自动降级为720p+10s。",
+        resolution, duration_str, res_val, duration = (
+            await TaskService._resolve_custom_video_settings(
+                context,
+                update=update,
+                warn_invalid_combo=True,
             )
-
-        duration = 10 if duration_str == "10s" else (8 if duration_str == "8s" else 5)
-        res_val = (
-            1024 if resolution == "1024p" else (720 if resolution == "720p" else 512)
         )
 
         prompts_config = load_prompts()
@@ -913,143 +1029,53 @@ class TaskService:
 
         mode_name = MODE_NAME_MAP.get(mode, mode)
         display_mode_name = context.t(mode_name) if hasattr(context, "t") else mode_name
-        registry_task_id = None
-        task_submitted = False
-        actual_cost = 0
-        terminal_state_finalized = False
-        media_bytes = None
-        full_output_path = None
+        runtime_state = BotTaskRuntimeState()
+        notice = await TaskService._get_acceleration_notice(user_id)
+        message_spec = TaskService._build_message_spec(
+            initial_status_text=(
+                f"🚀 正在处理{display_mode_name}生成任务 (画质:{resolution}, 时长:{duration_str})...{notice}"
+            ),
+            progress_wait_text="⏳ 正在生成视频，请耐心等待...",
+            completion_caption=f"✅ {display_mode_name} 生成完成",
+            missing_output_message="生成完成但未获取到任务信息，已退还灵石",
+        )
+        inputs = {
+            "prompt": base_prompt,
+            "images": [image_path] if image_path else [],
+            "resolution": res_val,
+            "duration": duration,
+        }
 
-        try:
-            task_id = str(uuid.uuid4())
-            correlation_id.set(task_id)
-
-            inputs = {
-                "prompt": base_prompt,
-                "images": [image_path] if image_path else [],
-                "resolution": res_val,
-                "duration": duration,
-            }
-
-            result = await process_and_submit_task(
-                user_id=internal_user_id,
-                username=username,
-                task_type=mode,
-                inputs=inputs,
-                task_id=task_id,
-                client_type="bot",
-                source_post_id=source_post_id,
-            )
-
-            task_submitted = True
-            actual_cost = result["cost"]
-            registry_task_id = result["registry_task_id"]
-            saved_inputs = result["saved_inputs"]
-
-            notice = await TaskService._get_acceleration_notice(user_id)
-            msg_text = f"🚀 正在处理{display_mode_name}生成任务 (画质:{resolution}, 时长:{duration_str}, 消耗{actual_cost}灵石)...{notice}"
-            msg = await robust_reply_text(update.effective_message, msg_text)
-            await robust_edit_text(msg, "⏳ 正在生成视频，请耐心等待...")
-
-            _priority, identity_str, user_group = await get_user_priority_and_identity(
-                internal_user_id
-            )
-            final_info = await TaskService._monitor_task_progress(
-                task_id,
-                msg,
-                is_video=True,
-                monitor_func=image_service.monitor_progress,
-                identity_str=identity_str,
-                user_group=user_group,
-            )
-
-            if final_info:
-                (
-                    media_bytes,
-                    full_output_path,
-                ) = await TaskService._handle_task_completion(
-                    context,
-                    chat_id,
-                    internal_user_id,
-                    f"[{resolution}|{duration_str}] {base_prompt}",
-                    mode,
-                    task_id,
-                    saved_inputs,
-                    UserLogger(internal_user_id, username),
-                    is_video=True,
-                    send_result=True,
-                    reply_markup=None,
-                    status_msg=msg,
-                    delete_status=True,
-                    caption=f"✅ {display_mode_name} 生成完成",
-                    allow_contribute=allow_contribute,
-                    billing_resolution=normalize_requested_billing_resolution(
-                        resolution, mode
-                    ),
-                    requested_duration=duration,
-                )
-            else:
-                await TaskService._finalize_failed_task_for_bot(
-                    context=context,
-                    chat_id=chat_id,
-                    status_msg=None,
-                    internal_user_id=internal_user_id,
-                    username=username,
-                    cost=actual_cost,
-                    should_refund=True,
-                    registry_task_id=registry_task_id,
-                    release_lock=task_submitted,
-                    explicit_user_message="生成完成但未获取到任务信息，已退还灵石",
-                )
-                terminal_state_finalized = True
-
-        except ConcurrencyLimitError as e:
-            await robust_send_message(context.bot, chat_id, f"⚠️ {e}")
-        except InsufficientCreditsError as e:
-            await robust_send_message(context.bot, chat_id, f"⚠️ {e}")
-        except CoreDomainError as e:
-            if str(e) == "cancelled":
-                await TaskService._finalize_cancelled_task_for_bot(
-                    status_msg=msg if "msg" in locals() else None,
-                    internal_user_id=internal_user_id,
-                    username=username,
-                    cost=actual_cost,
-                    task_submitted=task_submitted,
-                    registry_task_id=registry_task_id,
-                    explicit_user_message=f"任务已撤销，预扣的 {actual_cost} 灵石已全额退回。",
-                )
-                terminal_state_finalized = True
-                return None, None
-            await robust_send_message(context.bot, chat_id, f"❌ {e}")
-        except Exception as e:
-            logger.error(
-                f"Error in {mode} task for user {internal_user_id}: {e}", exc_info=True
-            )
-            await TaskService._finalize_failed_task_for_bot(
-                context=context,
-                chat_id=chat_id,
-                status_msg=None,
-                internal_user_id=internal_user_id,
-                username=username,
-                cost=actual_cost,
-                should_refund=task_submitted and actual_cost > 0,
-                registry_task_id=registry_task_id,
-                release_lock=task_submitted,
-                error=e,
-                generic_error_prefix="出错了",
-            )
-            terminal_state_finalized = True
-        finally:
-            await TaskService._cleanup_runtime_state_if_needed(
-                internal_user_id=internal_user_id,
-                registry_task_id=registry_task_id,
-                release_lock=task_submitted,
-                terminal_state_finalized=terminal_state_finalized,
-            )
-            if cleanup and image_path:
-                TaskService._cleanup_files([image_path])
-
-        return media_bytes, full_output_path
+        return await TaskService._run_bot_task_flow(
+            context=context,
+            update=update,
+            chat_id=chat_id,
+            runtime_state=runtime_state,
+            internal_user_id=internal_user_id,
+            username=username,
+            task_type=mode,
+            inputs=inputs,
+            prompt=f"[{resolution}|{duration_str}] {base_prompt}",
+            is_video=True,
+            message_spec=message_spec,
+            submitted_status_builder=lambda actual_cost: (
+                f"🚀 正在处理{display_mode_name}生成任务 (画质:{resolution}, 时长:{duration_str}, 消耗{actual_cost}灵石)...{notice}"
+            ),
+            source_post_id=source_post_id,
+            allow_contribute=allow_contribute,
+            billing_resolution=normalize_requested_billing_resolution(
+                resolution, mode
+            ),
+            requested_duration=duration,
+            unexpected_should_refund=lambda state: state.task_submitted
+            and state.actual_cost > 0,
+            unexpected_error_log_message="Error in {mode} task for user {internal_user_id}: {error}".replace(
+                "{mode}", mode
+            ),
+            unexpected_error_prefix="出错了",
+            cleanup_paths=[image_path] if image_path else None,
+            cleanup_enabled=cleanup,
+        )
 
     # Public Methods mapped to the generic template
 
@@ -1157,19 +1183,6 @@ class TaskService:
         cleanup: bool = True,
         source_post_id: Optional[int] = None,
     ):
-        import uuid
-
-        from asgi_correlation_id import correlation_id
-
-        from src.core.billing_core import (
-            get_user_priority_and_identity,
-        )
-        from src.core.task_core import (
-            ConcurrencyLimitError,
-            CoreDomainError,
-            InsufficientCreditsError,
-            process_and_submit_task,
-        )
         from src.core.user_core import get_or_create_user_by_telegram
 
         chat_id = update.effective_chat.id
@@ -1180,163 +1193,57 @@ class TaskService:
         internal_user_id = internal_user.id
 
         mode = MODE_CUSTOM_VIDEO
-
-        from src.constants import DEFAULT_DURATION, DEFAULT_RESOLUTION
-
-        resolution = context.user_data.get(
-            "custom_video_resolution", DEFAULT_RESOLUTION
+        resolution, duration, _res_val, _duration_val = (
+            await TaskService._resolve_custom_video_settings(
+                context,
+                update=update,
+                warn_invalid_combo=True,
+            )
         )
-        duration = context.user_data.get("custom_video_duration", DEFAULT_DURATION)
 
-        if resolution == "1024p" and duration == "10s":
-            resolution = "720p"  # Fallback safely
-            context.user_data["custom_video_resolution"] = "720p"
-            await robust_reply_text(
-                update.effective_message,
-                "⚠️ 检测到非法配置(1024p+10s)，已自动降级为720p+10s。",
-            )
-
+        runtime_state = BotTaskRuntimeState()
         notice = await TaskService._get_acceleration_notice(user_id)
-        msg_text = f"🚀 正在处理自定义视频生成任务 (画质:{resolution}, 时长:{duration})...{notice}"
-        msg = await robust_reply_text(update.effective_message, msg_text)
-        registry_task_id = None
-        task_submitted = False
-        actual_cost = 0
-        terminal_state_finalized = False
+        message_spec = TaskService._build_message_spec(
+            initial_status_text=(
+                f"🚀 正在处理自定义视频生成任务 (画质:{resolution}, 时长:{duration})...{notice}"
+            ),
+            progress_wait_text="⏳ 正在生成自定义视频，请耐心等待...",
+            completion_caption="✅ 自定义图生视频生成完成",
+        )
+        inputs = {
+            "prompt": prompt,
+            "images": [image_path] if image_path else [],
+            "resolution": resolution,
+            "duration": duration,
+        }
 
-        try:
-            task_id = str(uuid.uuid4())
-            correlation_id.set(task_id)
-
-            inputs = {
-                "prompt": prompt,
-                "images": [image_path] if image_path else [],
-                "resolution": resolution,
-                "duration": duration,
-            }
-
-            result = await process_and_submit_task(
-                user_id=internal_user_id,
-                username=username,
-                task_type=mode,
-                inputs=inputs,
-                task_id=task_id,
-                client_type="bot",
-                source_post_id=source_post_id,
-            )
-
-            task_submitted = True
-            actual_cost = result["cost"]
-            registry_task_id = result["registry_task_id"]
-            saved_inputs = result["saved_inputs"]
-
-            await robust_edit_text(
-                msg,
-                f"🚀 正在处理自定义视频生成任务 (画质:{resolution}, 时长:{duration}, 消耗{actual_cost}灵石)...{notice}\n⏳ 正在生成自定义视频，请耐心等待...",
-            )
-
-            _priority, identity_str, user_group = await get_user_priority_and_identity(
-                internal_user_id
-            )
-            user_logger = UserLogger(internal_user_id, username)
-
-            final_info = await TaskService._monitor_task_progress(
-                task_id,
-                msg,
-                is_video=True,
-                monitor_func=image_service.monitor_progress,
-                identity_str=identity_str,
-                user_group=user_group,
-            )
-
-            if final_info:
-                return await TaskService._handle_task_completion(
-                    context,
-                    chat_id,
-                    internal_user_id,
-                    f"[{resolution}|{duration}] {prompt}",
-                    mode,
-                    task_id,
-                    saved_inputs,
-                    user_logger,
-                    is_video=True,
-                    send_result=True,
-                    reply_markup=None,
-                    status_msg=msg,
-                    delete_status=True,
-                    caption="✅ 自定义图生视频生成完成",
-                    billing_resolution=normalize_requested_billing_resolution(
-                        resolution, mode
-                    ),
-                    requested_duration=normalize_requested_duration_seconds(duration),
-                )
-            else:
-                await TaskService._finalize_failed_task_for_bot(
-                    context=context,
-                    chat_id=chat_id,
-                    status_msg=None,
-                    internal_user_id=internal_user_id,
-                    username=username,
-                    cost=actual_cost,
-                    should_refund=True,
-                    registry_task_id=registry_task_id,
-                    release_lock=task_submitted,
-                    explicit_user_message="生成完成但未获取到文件路径，已退还灵石",
-                )
-                terminal_state_finalized = True
-                return None, None
-
-        except ConcurrencyLimitError as e:
-            await robust_send_message(context.bot, chat_id, f"⚠️ {e}")
-            return None, None
-        except InsufficientCreditsError as e:
-            await robust_send_message(context.bot, chat_id, f"⚠️ {e}")
-            return None, None
-        except CoreDomainError as e:
-            if str(e) == "cancelled":
-                await TaskService._finalize_cancelled_task_for_bot(
-                    status_msg=msg if "msg" in locals() else None,
-                    internal_user_id=internal_user_id,
-                    username=username,
-                    cost=actual_cost,
-                    task_submitted=task_submitted,
-                    registry_task_id=registry_task_id,
-                    explicit_user_message=f"任务已撤销，预扣的 {actual_cost} 灵石已全额退回。",
-                )
-                terminal_state_finalized = True
-                return None, None
-            await robust_send_message(context.bot, chat_id, f"❌ {e}")
-            return None, None
-        except Exception as e:
-            logger.error(
-                f"Error in custom video task for user {internal_user_id}: {e}",
-                exc_info=True,
-            )
-            await TaskService._finalize_failed_task_for_bot(
-                context=context,
-                chat_id=chat_id,
-                status_msg=None,
-                internal_user_id=internal_user_id,
-                username=username,
-                cost=actual_cost,
-                should_refund=task_submitted,
-                registry_task_id=registry_task_id,
-                release_lock=task_submitted,
-                error=e,
-                generic_error_prefix="出错了",
-                refund_suffix_mode="never",
-            )
-            terminal_state_finalized = True
-            return None, None
-        finally:
-            await TaskService._cleanup_runtime_state_if_needed(
-                internal_user_id=internal_user_id,
-                registry_task_id=registry_task_id,
-                release_lock=task_submitted,
-                terminal_state_finalized=terminal_state_finalized,
-            )
-            if cleanup and image_path:
-                TaskService._cleanup_files([image_path])
+        return await TaskService._run_bot_task_flow(
+            context=context,
+            update=update,
+            chat_id=chat_id,
+            runtime_state=runtime_state,
+            internal_user_id=internal_user_id,
+            username=username,
+            task_type=mode,
+            inputs=inputs,
+            prompt=f"[{resolution}|{duration}] {prompt}",
+            is_video=True,
+            message_spec=message_spec,
+            submitted_status_builder=lambda actual_cost: (
+                f"🚀 正在处理自定义视频生成任务 (画质:{resolution}, 时长:{duration}, 消耗{actual_cost}灵石)...{notice}\n⏳ 正在生成自定义视频，请耐心等待..."
+            ),
+            source_post_id=source_post_id,
+            billing_resolution=normalize_requested_billing_resolution(
+                resolution, mode
+            ),
+            requested_duration=normalize_requested_duration_seconds(duration),
+            refund_suffix_mode="never",
+            unexpected_should_refund=lambda state: state.task_submitted,
+            unexpected_error_log_message="Error in custom video task for user {internal_user_id}: {error}",
+            unexpected_error_prefix="出错了",
+            cleanup_paths=[image_path] if image_path else None,
+            cleanup_enabled=cleanup,
+        )
 
     # Private Helpers
 
@@ -1352,20 +1259,7 @@ class TaskService:
         source_post_id: Optional[int] = None,
     ):
         """Handle MODE_I2I_PRO requests"""
-        import uuid
-
-        from asgi_correlation_id import correlation_id
-
         from src.constants import MODE_I2I_PRO
-        from src.core.billing_core import (
-            get_user_priority_and_identity,
-        )
-        from src.core.task_core import (
-            ConcurrencyLimitError,
-            CoreDomainError,
-            InsufficientCreditsError,
-            process_and_submit_task,
-        )
         from src.core.user_core import get_or_create_user_by_telegram
 
         internal_user, _ = await get_or_create_user_by_telegram(user_id, username)
@@ -1380,141 +1274,42 @@ class TaskService:
 
         image_path = images[0]
 
+        runtime_state = BotTaskRuntimeState()
         notice = await TaskService._get_acceleration_notice(user_id)
-        msg_text = f"🚀 正在处理幻想换脸任务...{notice}"
-        msg = await robust_send_message(context.bot, chat_id, msg_text)
-        registry_task_id = None
-        task_submitted = False
-        actual_cost = 0
+        message_spec = TaskService._build_message_spec(
+            initial_status_text=f"🚀 正在处理幻想换脸任务...{notice}",
+            completion_caption="🌟 幻想换脸生成完成",
+        )
+        inputs = {
+            "prompt": prompt,
+            "images": [image_path],
+            "resolution": 512,
+            "duration": 5,
+        }
 
-        try:
-            task_id = str(uuid.uuid4())
-            correlation_id.set(task_id)
-
-            inputs = {
-                "prompt": prompt,
-                "images": [image_path],
-                "resolution": 512,
-                "duration": 5,
-            }
-
-            result = await process_and_submit_task(
-                user_id=internal_user_id,
-                username=username,
-                task_type=mode,
-                inputs=inputs,
-                task_id=task_id,
-                client_type="bot",
-                source_post_id=source_post_id,
-            )
-
-            task_submitted = True
-            actual_cost = result["cost"]
-            registry_task_id = result["registry_task_id"]
-            saved_inputs = result["saved_inputs"]
-
-            await robust_edit_text(
-                msg, f"🚀 正在处理幻想换脸任务 (消耗{actual_cost}灵石)...{notice}"
-            )
-
-            _priority, identity_str, user_group = await get_user_priority_and_identity(
-                internal_user_id
-            )
-            user_logger = UserLogger(internal_user_id, username)
-
-            final_info = await TaskService._monitor_task_progress(
-                task_id,
-                msg,
-                is_video=False,
-                monitor_func=image_service.monitor_progress,
-                identity_str=identity_str,
-                user_group=user_group,
-            )
-
-            if final_info:
-                return await TaskService._handle_task_completion(
-                    context,
-                    chat_id,
-                    internal_user_id,
-                    prompt,
-                    mode,
-                    task_id,
-                    saved_inputs,
-                    user_logger,
-                    is_video=False,
-                    send_result=True,
-                    reply_markup=None,
-                    status_msg=msg,
-                    delete_status=True,
-                    caption="🌟 幻想换脸生成完成",
-                    allow_contribute=allow_contribute,
-                )
-            else:
-                await TaskService._finalize_failed_task_for_bot(
-                    context=context,
-                    chat_id=chat_id,
-                    status_msg=None,
-                    internal_user_id=internal_user_id,
-                    username=username,
-                    cost=actual_cost,
-                    should_refund=True,
-                    registry_task_id=registry_task_id,
-                    release_lock=task_submitted,
-                    explicit_user_message="生成完成但未获取到文件路径，已退还灵石",
-                )
-                terminal_state_finalized = True
-                return None, None
-
-        except ConcurrencyLimitError as e:
-            await robust_send_message(context.bot, chat_id, f"⚠️ {e}")
-            return None, None
-        except InsufficientCreditsError as e:
-            await robust_send_message(context.bot, chat_id, f"⚠️ {e}")
-            return None, None
-        except CoreDomainError as e:
-            if str(e) == "cancelled":
-                await TaskService._finalize_cancelled_task_for_bot(
-                    status_msg=msg if "msg" in locals() else None,
-                    internal_user_id=internal_user_id,
-                    username=username,
-                    cost=actual_cost,
-                    task_submitted=task_submitted,
-                    registry_task_id=registry_task_id,
-                    explicit_user_message=f"任务已撤销，预扣的 {actual_cost} 灵石已全额退回。",
-                )
-                terminal_state_finalized = True
-                return None, None
-            await robust_send_message(context.bot, chat_id, f"❌ {e}")
-            return None, None
-        except Exception as e:
-            logger.error(
-                f"Error in process_i2i_pro_task for user {internal_user_id}: {e}",
-                exc_info=True,
-            )
-            await TaskService._finalize_failed_task_for_bot(
-                context=context,
-                chat_id=chat_id,
-                status_msg=None,
-                internal_user_id=internal_user_id,
-                username=username,
-                cost=actual_cost,
-                should_refund=task_submitted,
-                registry_task_id=registry_task_id,
-                release_lock=task_submitted,
-                error=e,
-                generic_error_prefix="出错了",
-                refund_suffix_mode="always",
-            )
-            terminal_state_finalized = True
-            return None, None
-        finally:
-            await TaskService._cleanup_runtime_state_if_needed(
-                internal_user_id=internal_user_id,
-                registry_task_id=registry_task_id,
-                release_lock=task_submitted,
-                terminal_state_finalized=terminal_state_finalized,
-            )
-            TaskService._cleanup_files(images)
+        return await TaskService._run_bot_task_flow(
+            context=context,
+            update=None,
+            chat_id=chat_id,
+            runtime_state=runtime_state,
+            internal_user_id=internal_user_id,
+            username=username,
+            task_type=mode,
+            inputs=inputs,
+            prompt=prompt,
+            is_video=False,
+            message_spec=message_spec,
+            submitted_status_builder=lambda actual_cost: (
+                f"🚀 正在处理幻想换脸任务 (消耗{actual_cost}灵石)...{notice}"
+            ),
+            source_post_id=source_post_id,
+            allow_contribute=allow_contribute,
+            refund_suffix_mode="always",
+            unexpected_should_refund=lambda state: state.task_submitted,
+            unexpected_error_log_message="Error in process_i2i_pro_task for user {internal_user_id}: {error}",
+            unexpected_error_prefix="出错了",
+            cleanup_paths=images,
+        )
 
     @staticmethod
     async def _get_or_send_status_msg(context, chat_id, status_msg_id, text):

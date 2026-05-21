@@ -1,12 +1,8 @@
 import asyncio
-import json
 import logging
 from typing import Annotated, Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
-from sqlalchemy.exc import IntegrityError
-from sqlalchemy import delete, desc, func, select, update
-from sqlalchemy.orm import joinedload
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.lora_mapping import translate_tags
@@ -21,32 +17,37 @@ from src.constants import (
 )
 from src.lora_catalog import IMAGE_LORA_MODELS, VIDEO_LORA_MODELS
 from src.core.media_paths import (
-    build_history_r2_media_key,
-    build_history_r2_thumbnail_key,
-    build_legacy_r2_key,
     build_thumbnail_object_name,
-    get_media_type_from_history,
     resolve_storage_object,
 )
 from src.core.media_urls import (
     build_storage_presigned_url,
 )
 from src.database.core import AsyncSessionLocal
-from src.database.models import GalleryPost, History, User, UserInteraction, GalleryComment
+from src.database.models import History, User
 from src.services.storage import storage
 from src.web_api.dependencies import get_current_user, get_db
 from src.web_api.routers.utils import (
     build_history_apply_context_response,
     resolve_history_billing_resolution,
 )
-from src.web_api.presenters.media_presenter import resolve_media_and_thumbnail_urls
+from src.web_api.presenters.media_presenter import resolve_media_url, resolve_thumbnail_url
+from src.web_api.services.gallery_service import (
+    build_apply_context_payload,
+    build_post_responses as service_build_post_responses,
+    create_gallery_comment_payload,
+    delete_gallery_post,
+    get_gallery_comments_payload,
+    get_my_favorite_posts_payload,
+    get_my_gallery_posts_payload,
+    interact_with_gallery_post,
+    update_gallery_post_status,
+)
 from src.web_api.schemas.gallery_schema import (
     ApplyContextResponse,
-    GalleryPostResponse,
     PaginatedGalleryResponse,
     GallerySubmitRequest,
     CommentCreate,
-    CommentUserResponse,
     GalleryCommentResponse,
     PaginatedCommentResponse,
 )
@@ -96,12 +97,18 @@ async def _pick_gallery_media_urls(
         return "", ""
 
     try:
-        return await resolve_media_and_thumbnail_urls(
-            output_file,
-            media_type,
-            task_id=task_id,
-            fallback_to_storage_path=True,
+        media_url, thumbnail_url = await asyncio.gather(
+            get_media_url(
+                output_file,
+                task_id=task_id,
+            ),
+            generate_thumbnail_url(
+                output_file,
+                media_type,
+                task_id=task_id,
+            ),
         )
+        return media_url or output_file, thumbnail_url
     except Exception as exc:
         logger.warning(
             "Failed to build gallery media URL for task_id=%s: %s",
@@ -110,6 +117,40 @@ async def _pick_gallery_media_urls(
             exc_info=exc,
         )
         return output_file, ""
+
+
+async def get_media_url(
+    output_file: str | None,
+    *,
+    task_id: str | None = None,
+) -> str:
+    return await resolve_media_url(
+        output_file,
+        task_id=task_id,
+        fallback_to_storage_path=True,
+    )
+
+
+async def generate_thumbnail_url(
+    output_file: str | None,
+    media_type: str,
+    *,
+    task_id: str | None = None,
+) -> str:
+    thumbnail_url = await resolve_thumbnail_url(
+        output_file,
+        media_type,
+        task_id=task_id,
+    )
+    if thumbnail_url:
+        return thumbnail_url
+
+    if not output_file:
+        return ""
+
+    bucket_name, object_name = resolve_storage_object(output_file)
+    thumb_object_name = build_thumbnail_object_name(object_name, media_type)
+    return storage.get_presigned_url(thumb_object_name, bucket=bucket_name) or ""
 
 
 @router.get("/config")
@@ -147,136 +188,16 @@ async def get_gallery_config():
 
 
 async def _build_post_responses(session, posts, current_user: Optional[User]):
-    if not posts:
-        return []
-
-    post_ids = [p.id for p in posts]
-    task_ids = [p.task_id for p in posts if p.task_id]
-
-    user_likes = set()
-    user_dislikes = set()
-    if current_user and post_ids:
-        interactions = (
-            (
-                await session.execute(
-                    select(UserInteraction)
-                    .where(UserInteraction.user_id == current_user.id)
-                    .where(UserInteraction.post_id.in_(post_ids))
-                    .where(UserInteraction.action_type.in_(["like", "dislike"]))
-                )
-            )
-            .scalars()
-            .all()
-        )
-        for inter in interactions:
-            if inter.action_type == "like":
-                user_likes.add(inter.post_id)
-            elif inter.action_type == "dislike":
-                user_dislikes.add(inter.post_id)
-
-    history_map = {}
-    if task_ids:
-        histories = (
-            (
-                await session.execute(
-                    select(History).where(History.task_id.in_(task_ids))
-                )
-            )
-            .scalars()
-            .all()
-        )
-        history_map = {h.task_id: h for h in histories}
-
-    user_ids = list(set([p.user_id for p in posts if p.user_id]))
-    user_map = {}
-    if user_ids:
-        from src.database.models import User
-
-        users = (
-            (await session.execute(select(User).where(User.id.in_(user_ids))))
-            .scalars()
-            .all()
-        )
-        # use full_name, fallback to username or string ID
-        for u in users:
-            name = u.full_name if u.full_name else (u.username or f"User {u.id}")
-            user_map[u.id] = name
-
-    # 并发获取媒体 URL 和缩略图 URL
-    tasks = []
-    for post in posts:
-        history = history_map.get(post.task_id)
-        output_file = history.output_file if history else None
-        tasks.append(
-            _pick_gallery_media_urls(
-                task_id=post.task_id,
-                output_file=output_file,
-                media_type=post.media_type,
-            )
-        )
-    urls_results = await asyncio.gather(*tasks, return_exceptions=True)
-
-    response_items = []
-    for i, post in enumerate(posts):
-        try:
-            tags = json.loads(post.tags) if post.tags else []
-        except Exception:
-            tags = []
-        translated_tags = translate_tags(tags)
-
-        history = history_map.get(post.task_id)
-        prompt = history.prompt if history else None
-        task_type_from_history = history.type if history else None
-
-        url_result = urls_results[i]
-        if isinstance(url_result, Exception):
-            logger.warning(
-                "Failed to build gallery media URLs for post_id=%s task_id=%s: %s",
-                post.id,
-                post.task_id,
-                url_result,
-                exc_info=url_result,
-            )
-            media_url = history.output_file if history and history.output_file else ""
-            thumbnail_url = ""
-        else:
-            media_url, thumbnail_url = url_result
-
-        billing_resolution = None
-        if history:
-            billing_resolution = resolve_history_billing_resolution(
-                history,
-                width=post.width if post.width is not None else history.width,
-                height=post.height if post.height is not None else history.height,
-                gallery_post=post,
-            )
-
-        response_items.append(
-            GalleryPostResponse(
-                id=post.id,
-                task_id=post.task_id,
-                media_type=post.media_type,
-                billing_resolution=billing_resolution,
-                width=post.width,
-                height=post.height,
-                duration=post.duration,
-                tags=translated_tags,
-                likes_count=post.likes_count,
-                dislikes_count=post.dislikes_count,
-                applied_count=post.applied_count,
-                comments_count=post.comments_count or 0,
-                thumbnail_url=thumbnail_url,
-                media_url=media_url,
-                created_at=post.created_at,
-                is_active=post.is_active,
-                prompt=prompt,
-                task_type=task_type_from_history,
-                has_liked=post.id in user_likes,
-                has_disliked=post.id in user_dislikes,
-                author_name=user_map.get(post.user_id) if post.user_id else "匿名修士",
-            )
-        )
-    return response_items
+    return await service_build_post_responses(
+        session=session,
+        posts=posts,
+        current_user=current_user,
+        translate_tags=translate_tags,
+        resolve_history_billing_resolution=resolve_history_billing_resolution,
+        resolve_author_name=_resolve_author_name,
+        pick_gallery_media_urls=_pick_gallery_media_urls,
+        logger=logger,
+    )
 
 
 @router.get("/posts", response_model=PaginatedGalleryResponse)
@@ -313,88 +234,60 @@ async def get_gallery_posts(
 @router.get("/my-posts", response_model=PaginatedGalleryResponse)
 async def get_my_gallery_posts(
     current_user: CurrentUserDep,
-    db: DbSessionDep,
+    db: DbSessionDep = None,
     page: int = Query(1, ge=1),
     size: int = Query(20, ge=1, le=100),
     task_type: Optional[str] = None,
 ):
-    query = (
-        select(GalleryPost)
-        .outerjoin(History, GalleryPost.task_id == History.task_id)
-        .where(
-            GalleryPost.user_id == current_user.id, History.is_visible.is_not(False)
+    if db is not None:
+        return await get_my_gallery_posts_payload(
+            current_user=current_user,
+            db=db,
+            page=page,
+            size=size,
+            task_type=task_type,
+            build_post_responses_fn=_build_post_responses,
         )
-        .distinct()
-    )
-
-    if task_type:
-        query = query.where(History.type == task_type)
-
-    query = query.order_by(desc(GalleryPost.id))
-
-    total_query = select(func.count()).select_from(query.subquery())
-    total = (await db.execute(total_query)).scalar()
-
-    offset = (page - 1) * size
-    query = query.offset(offset).limit(size)
-
-    result = await db.execute(query)
-    posts = result.scalars().all()
-
-    response_items = await _build_post_responses(db, posts, current_user)
-
-    pages = (total + size - 1) // size
-    return PaginatedGalleryResponse(
-        items=response_items, total=total, page=page, size=size, pages=pages
-    )
+    async with AsyncSessionLocal() as fallback_db:
+        return await get_my_gallery_posts_payload(
+            current_user=current_user,
+            db=fallback_db,
+            page=page,
+            size=size,
+            task_type=task_type,
+            build_post_responses_fn=_build_post_responses,
+        )
 
 
 @router.get("/my-favorites", response_model=PaginatedGalleryResponse)
 async def get_my_favorite_posts(
     current_user: CurrentUserDep,
-    db: DbSessionDep,
+    db: DbSessionDep = None,
     page: int = Query(1, ge=1),
     size: int = Query(20, ge=1, le=100),
     filter_type: str = Query("all", pattern="^(all|like|apply)$"),
     task_type: Optional[str] = None,
 ):
-    action_types = ["like", "apply"]
-    if filter_type == "like":
-        action_types = ["like"]
-    elif filter_type == "apply":
-        action_types = ["apply"]
-
-    query = (
-        select(GalleryPost)
-        .join(UserInteraction, GalleryPost.id == UserInteraction.post_id)
-        .outerjoin(History, GalleryPost.task_id == History.task_id)
-        .where(
-            UserInteraction.user_id == current_user.id,
-            UserInteraction.action_type.in_(action_types),
-            GalleryPost.is_active == True,
+    if db is not None:
+        return await get_my_favorite_posts_payload(
+            current_user=current_user,
+            db=db,
+            page=page,
+            size=size,
+            filter_type=filter_type,
+            task_type=task_type,
+            build_post_responses_fn=_build_post_responses,
         )
-        .distinct()
-        .order_by(desc(GalleryPost.id))
-    )
-
-    if task_type:
-        query = query.where(History.type == task_type)
-
-    total_query = select(func.count()).select_from(query.subquery())
-    total = (await db.execute(total_query)).scalar()
-
-    offset = (page - 1) * size
-    query = query.offset(offset).limit(size)
-
-    result = await db.execute(query)
-    posts = result.scalars().all()
-
-    response_items = await _build_post_responses(db, posts, current_user)
-
-    pages = (total + size - 1) // size
-    return PaginatedGalleryResponse(
-        items=response_items, total=total, page=page, size=size, pages=pages
-    )
+    async with AsyncSessionLocal() as fallback_db:
+        return await get_my_favorite_posts_payload(
+            current_user=current_user,
+            db=fallback_db,
+            page=page,
+            size=size,
+            filter_type=filter_type,
+            task_type=task_type,
+            build_post_responses_fn=_build_post_responses,
+        )
 
 
 @router.put("/posts/{post_id}/status")
@@ -404,100 +297,32 @@ async def update_post_status(
     db: DbSessionDep,
     is_active: bool = Query(...),
 ):
-    post = (
-        await db.execute(select(GalleryPost).where(GalleryPost.id == post_id))
-    ).scalar_one_or_none()
-    if not post:
-        raise HTTPException(status_code=404, detail="帖子不存在")
-    if post.user_id != current_user.id:
-        raise HTTPException(status_code=403, detail="无权操作此帖子")
-
-    await db.execute(
-        update(GalleryPost)
-        .where(GalleryPost.id == post_id)
-        .values(is_active=is_active)
+    return await update_gallery_post_status(
+        post_id=post_id,
+        current_user=current_user,
+        db=db,
+        is_active=is_active,
     )
-    await db.commit()
-    return {"status": "success", "message": f"已{'上架' if is_active else '下架'}"}
 
 
 @router.delete("/posts/{post_id}")
-async def delete_post(post_id: int, current_user: CurrentUserDep, db: DbSessionDep):
-    r2_cleanup_keys: set[str] = set()
-    post = (
-        await db.execute(select(GalleryPost).where(GalleryPost.id == post_id))
-    ).scalar_one_or_none()
-    if not post:
-        raise HTTPException(status_code=404, detail="帖子不存在")
-    if post.user_id != current_user.id:
-        raise HTTPException(status_code=403, detail="无权操作此帖子")
-
-    history = None
-    if post.task_id:
-        history = (
-            await db.execute(
-                select(History).where(
-                    History.task_id == post.task_id, History.user_id == current_user.id
-                )
-            )
-        ).scalar_one_or_none()
-
-    if post.is_active:
-        user_record = await db.execute(
-            select(User).where(User.id == current_user.id)
+async def delete_post(post_id: int, current_user: CurrentUserDep, db: DbSessionDep = None):
+    if db is not None:
+        return await delete_gallery_post(
+            post_id=post_id,
+            current_user=current_user,
+            db=db,
+            storage=storage,
+            logger=logger,
         )
-        user_obj = user_record.scalar_one_or_none()
-        if user_obj:
-            user_obj.total_contributions = max(
-                (user_obj.total_contributions or 0) - 1, 0
-            )
-
-    if history:
-        history.is_public = False
-        if history.output_file:
-            media_type = get_media_type_from_history(history.type)
-            _, object_name = resolve_storage_object(history.output_file)
-            thumb_object_name = build_thumbnail_object_name(object_name, media_type)
-            r2_cleanup_keys = {
-                key
-                for key in {
-                    build_history_r2_media_key(post.task_id, history.output_file),
-                    build_history_r2_thumbnail_key(post.task_id, media_type),
-                    build_legacy_r2_key(object_name),
-                    build_legacy_r2_key(thumb_object_name),
-                }
-                if key
-            }
-    elif post.task_id:
-        await db.execute(
-            update(History)
-            .where(
-                History.task_id == post.task_id, History.user_id == current_user.id
-            )
-            .values(is_public=False)
+    async with AsyncSessionLocal() as fallback_db:
+        return await delete_gallery_post(
+            post_id=post_id,
+            current_user=current_user,
+            db=fallback_db,
+            storage=storage,
+            logger=logger,
         )
-
-    await db.execute(
-        delete(UserInteraction).where(UserInteraction.post_id == post_id)
-    )
-    await db.execute(
-        delete(GalleryComment).where(GalleryComment.post_id == post_id)
-    )
-    await db.execute(delete(GalleryPost).where(GalleryPost.id == post_id))
-
-    await db.commit()
-
-    if r2_cleanup_keys:
-        try:
-            await storage.async_delete_r2_objects(list(r2_cleanup_keys))
-        except Exception:
-            logger.warning(
-                "Failed to clean R2 cache after deleting gallery post %s",
-                post_id,
-                exc_info=True,
-            )
-
-    return {"status": "success", "message": "删除成功"}
 
 
 @router.post("/posts/{post_id}/interact")
@@ -512,23 +337,15 @@ async def interact_with_post(
         DuplicateInteractionError,
     )
 
-    try:
-        result = await toggle_like(current_user.id, post_id, action)
-        action_state = result.get("action_state")
-        if action_state == "canceled":
-            message = "已取消点赞" if action == "like" else "已取消点踩"
-        else:
-            message = "点赞成功" if action == "like" else "点踩成功"
-        return {"status": "success", "message": message, "data": result}
-    except DuplicateInteractionError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except GalleryCoreError as e:
-        if "不存在" in str(e):
-            raise HTTPException(status_code=404, detail=str(e))
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception:
-        logger.error("发生未捕获异常", exc_info=True)
-        raise HTTPException(status_code=500, detail="服务器内部错误")
+    return await interact_with_gallery_post(
+        post_id=post_id,
+        action=action,
+        current_user=current_user,
+        toggle_like=toggle_like,
+        gallery_core_error_cls=GalleryCoreError,
+        duplicate_interaction_error_cls=DuplicateInteractionError,
+        logger=logger,
+    )
 
 
 @router.post("/posts/{post_id}/comments", response_model=GalleryCommentResponse)
@@ -536,63 +353,27 @@ async def create_gallery_comment(
     post_id: int,
     comment: CommentCreate,
     current_user: CurrentUserDep,
-    db: DbSessionDep,
+    db: DbSessionDep = None,
 ):
     from src.services.redis_client import redis_client
-    unavailable_comment_error = "帖子已下架或已删除，无法发布评论"
-
-    post = await db.get(GalleryPost, post_id)
-    if not post or not post.is_active:
-        raise HTTPException(status_code=404, detail="帖子不存在或已下架")
-
-    lock_acquired = await redis_client.set_comment_lock(current_user.id, ttl=5)
-    if not lock_acquired:
-        raise HTTPException(status_code=429, detail="操作过于频繁，请稍后再试")
-
-    new_comment = GalleryComment(
-        post_id=post_id,
-        user_id=current_user.id,
-        content=comment.content,
-    )
-    try:
-        db.add(new_comment)
-        await db.flush()
-
-        stmt = (
-            update(GalleryPost)
-            .where(GalleryPost.id == post_id, GalleryPost.is_active.is_(True))
-            .values(comments_count=GalleryPost.comments_count + 1)
+    if db is not None:
+        return await create_gallery_comment_payload(
+            post_id=post_id,
+            comment=comment,
+            current_user=current_user,
+            db=db,
+            redis_client=redis_client,
+            resolve_author_name=_resolve_author_name,
         )
-        result = await db.execute(stmt)
-
-        if result.rowcount == 0:
-            await db.rollback()
-            await redis_client.delete_comment_lock(current_user.id)
-            raise HTTPException(status_code=404, detail=unavailable_comment_error)
-
-        response_data = GalleryCommentResponse(
-            id=new_comment.id,
-            content=new_comment.content,
-            created_at=new_comment.created_at,
-            user=CommentUserResponse(
-                id=current_user.id,
-                author_name=_resolve_author_name(current_user),
-            ),
+    async with AsyncSessionLocal() as fallback_db:
+        return await create_gallery_comment_payload(
+            post_id=post_id,
+            comment=comment,
+            current_user=current_user,
+            db=fallback_db,
+            redis_client=redis_client,
+            resolve_author_name=_resolve_author_name,
         )
-
-        await db.commit()
-        return response_data
-    except HTTPException:
-        raise
-    except IntegrityError:
-        await db.rollback()
-        await redis_client.delete_comment_lock(current_user.id)
-        raise HTTPException(status_code=404, detail=unavailable_comment_error)
-    except Exception:
-        await db.rollback()
-        await redis_client.delete_comment_lock(current_user.id)
-        logger.error("Failed to create comment", exc_info=True)
-        raise HTTPException(status_code=500, detail="发布评论失败")
 
 
 @router.get("/posts/{post_id}/comments", response_model=PaginatedCommentResponse)
@@ -602,52 +383,22 @@ async def get_gallery_comments(
     size: int = Query(20, ge=1, le=100),
     db: DbSessionDep = None,
 ):
-    post = await db.get(GalleryPost, post_id)
-    if not post or not post.is_active:
-        raise HTTPException(status_code=404, detail="帖子不存在或已下架")
-
-    count_stmt = select(func.count(GalleryComment.id)).where(
-        GalleryComment.post_id == post_id,
-        GalleryComment.is_active.is_(True),
-    )
-    total = await db.scalar(count_stmt) or 0
-
-    stmt = (
-        select(GalleryComment)
-        .options(joinedload(GalleryComment.user))
-        .where(
-            GalleryComment.post_id == post_id,
-            GalleryComment.is_active.is_(True),
+    if db is not None:
+        return await get_gallery_comments_payload(
+            post_id=post_id,
+            page=page,
+            size=size,
+            db=db,
+            resolve_author_name=_resolve_author_name,
         )
-        .order_by(desc(GalleryComment.created_at), desc(GalleryComment.id))
-        .offset((page - 1) * size)
-        .limit(size)
-    )
-    result = await db.execute(stmt)
-    comments = result.scalars().all()
-
-    response_items = []
-    for c in comments:
-        response_items.append(
-            GalleryCommentResponse(
-                id=c.id,
-                content=c.content,
-                created_at=c.created_at,
-                user=CommentUserResponse(
-                    id=c.user.id if c.user else c.user_id,
-                    author_name=_resolve_author_name(c.user, c.user_id),
-                ),
-            )
+    async with AsyncSessionLocal() as fallback_db:
+        return await get_gallery_comments_payload(
+            post_id=post_id,
+            page=page,
+            size=size,
+            db=fallback_db,
+            resolve_author_name=_resolve_author_name,
         )
-
-    pages = (total + size - 1) // size
-    return PaginatedCommentResponse(
-        items=response_items,
-        total=total,
-        page=page,
-        size=size,
-        pages=pages
-    )
 
 async def _build_apply_context_response(
     post_id: int,
@@ -655,33 +406,11 @@ async def _build_apply_context_response(
     db: AsyncSession,
 ) -> ApplyContextResponse:
     _ = current_user
-    post = (
-        await db.execute(select(GalleryPost).where(GalleryPost.id == post_id))
-    ).scalar_one_or_none()
-    if not post or post.is_active is False:
-        raise HTTPException(status_code=404, detail="帖子不存在或已失效")
-
-    hist_res = await db.execute(
-        select(History).where(History.task_id == post.task_id)
-    )
-    history = hist_res.scalars().first()
-
-    if not history:
-        raise HTTPException(status_code=404, detail="未找到原任务详情")
-
-    return await build_history_apply_context_response(
-        history=history,
-        post_id=post.id,
-        source_post_id=post.id,
-        gallery_post=post,
-        primary_media_type=post.media_type,
-        primary_width=post.width,
-        primary_height=post.height,
-        primary_duration=post.duration,
-        fallback_width=history.width,
-        fallback_height=history.height,
-        fallback_duration=history.duration,
-        include_input_file=_should_return_apply_input_file(history),
+    return await build_apply_context_payload(
+        post_id=post_id,
+        db=db,
+        build_history_apply_context_response_fn=build_history_apply_context_response,
+        should_return_apply_input_file=_should_return_apply_input_file,
         build_input_file_url=lambda file_path: build_storage_presigned_url(
             file_path,
             lambda object_name, bucket_name: storage.get_presigned_url(

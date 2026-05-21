@@ -150,6 +150,54 @@ def test_record_result_message_meta_uses_special_mode_mapping_for_face_swap():
 
 
 @pytest.mark.asyncio
+async def test_resolve_custom_video_settings_warns_and_downgrades_invalid_combo(
+    monkeypatch,
+):
+    reply_text = AsyncMock()
+    monkeypatch.setattr("src.services.task_service.robust_reply_text", reply_text)
+
+    update = SimpleNamespace(effective_message=SimpleNamespace())
+    context = SimpleNamespace(
+        user_data={
+            "custom_video_resolution": "1024p",
+            "custom_video_duration": "10s",
+        }
+    )
+
+    result = await TaskService._resolve_custom_video_settings(
+        context,
+        update=update,
+        warn_invalid_combo=True,
+    )
+
+    assert result == ("720p", "10s", 720, 10)
+    assert context.user_data["custom_video_resolution"] == "720p"
+    reply_text.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_resolve_custom_video_settings_can_downgrade_silently(monkeypatch):
+    reply_text = AsyncMock()
+    monkeypatch.setattr("src.services.task_service.robust_reply_text", reply_text)
+
+    context = SimpleNamespace(
+        user_data={
+            "custom_video_resolution": "1024p",
+            "custom_video_duration": "10s",
+        }
+    )
+
+    result = await TaskService._resolve_custom_video_settings(
+        context,
+        warn_invalid_combo=False,
+    )
+
+    assert result == ("720p", "10s", 720, 10)
+    assert context.user_data["custom_video_resolution"] == "720p"
+    reply_text.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_send_result_media_uses_photo_sender_and_records_meta(monkeypatch):
     sent_msg = SimpleNamespace(message_id=99)
     send_photo = AsyncMock(return_value=sent_msg)
@@ -348,3 +396,129 @@ async def test_process_generation_task_uses_finalize_task_failure(monkeypatch):
     finalize_failure.assert_awaited_once()
     cleanup_runtime.assert_not_awaited()
     send_message.assert_awaited()
+
+
+@pytest.mark.asyncio
+async def test_process_ltx_video_task_uses_finalize_task_cancellation(monkeypatch):
+    msg = MagicMock()
+    finalize_cancel = AsyncMock()
+    cleanup_runtime = AsyncMock()
+
+    async def fake_submit(*, runtime_state, **_kwargs):
+        runtime_state.task_submitted = True
+        runtime_state.actual_cost = 12
+        runtime_state.registry_task_id = "task-ltx"
+        return "task-ltx", ["input.png"]
+
+    monkeypatch.setattr(
+        "src.core.user_core.get_or_create_user_by_telegram",
+        AsyncMock(return_value=(SimpleNamespace(id=456), False)),
+    )
+    monkeypatch.setattr(
+        "src.services.task_service.TaskService._submit_bot_task",
+        AsyncMock(side_effect=fake_submit),
+    )
+    monkeypatch.setattr(
+        "src.services.task_service.TaskService._get_acceleration_notice",
+        AsyncMock(return_value=""),
+    )
+    monkeypatch.setattr("src.services.task_service.robust_reply_text", AsyncMock(return_value=msg))
+    monkeypatch.setattr("src.services.task_service.robust_edit_text", AsyncMock())
+    monkeypatch.setattr(
+        "src.services.task_service.TaskService._monitor_submitted_bot_task",
+        AsyncMock(side_effect=CoreDomainError("cancelled")),
+    )
+    monkeypatch.setattr(
+        "src.services.task_service.TaskService._finalize_cancelled_task_for_bot",
+        finalize_cancel,
+    )
+    monkeypatch.setattr(
+        "src.services.task_service.TaskService._cleanup_runtime_state_if_needed",
+        cleanup_runtime,
+    )
+    monkeypatch.setattr("src.services.task_service.robust_send_message", AsyncMock())
+
+    update = SimpleNamespace(
+        effective_chat=SimpleNamespace(id=123),
+        effective_user=SimpleNamespace(id=789, username="tester"),
+        effective_message=SimpleNamespace(),
+    )
+    context = SimpleNamespace(user_data={}, bot=MagicMock(), t=lambda value: value)
+
+    result = await TaskService.process_ltx_video_task(
+        update=update,
+        context=context,
+        prompt="prompt",
+        image_path="input.png",
+        cleanup=False,
+    )
+
+    assert result == (None, None)
+    finalize_cancel.assert_awaited_once()
+    cleanup_runtime.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_process_face_video_task_uses_finalize_task_failure(monkeypatch):
+    status_msg = MagicMock()
+    finalize_failure = AsyncMock(
+        return_value=TaskFailureFinalizationResult(
+            refunded=True,
+            user_message="系统错误：boom，已退还灵石",
+        )
+    )
+    cleanup_runtime = AsyncMock()
+
+    async def fake_submit(*, runtime_state, **_kwargs):
+        runtime_state.task_submitted = True
+        runtime_state.actual_cost = 9
+        runtime_state.registry_task_id = "task-face-video"
+        return "task-face-video", ["face.png", "video.mp4"]
+
+    monkeypatch.setattr(
+        "src.core.user_core.get_or_create_user_by_telegram",
+        AsyncMock(return_value=(SimpleNamespace(id=456), False)),
+    )
+    monkeypatch.setattr(
+        "src.services.task_service.TaskService._submit_bot_task",
+        AsyncMock(side_effect=fake_submit),
+    )
+    monkeypatch.setattr(
+        "src.services.task_service.TaskService._get_acceleration_notice",
+        AsyncMock(return_value=""),
+    )
+    monkeypatch.setattr(
+        "src.services.task_service.TaskService._get_or_send_status_msg",
+        AsyncMock(return_value=status_msg),
+    )
+    monkeypatch.setattr(
+        "src.services.task_service.TaskService._monitor_submitted_bot_task",
+        AsyncMock(side_effect=RuntimeError("boom")),
+    )
+    monkeypatch.setattr(
+        "src.services.task_service.TaskService._finalize_failed_task_for_bot",
+        finalize_failure,
+    )
+    monkeypatch.setattr(
+        "src.services.task_service.TaskService._cleanup_runtime_state_if_needed",
+        cleanup_runtime,
+    )
+    monkeypatch.setattr("src.services.task_service.robust_send_message", AsyncMock())
+
+    context = SimpleNamespace(user_data={}, bot=MagicMock())
+    result = await TaskService.process_face_video_task(
+        context=context,
+        chat_id=123,
+        user_id=789,
+        username="tester",
+        face_image_path="face.png",
+        video_path="video.mp4",
+        resolution=720,
+        duration=5,
+        cost=9,
+        cleanup=False,
+    )
+
+    assert result == (None, None)
+    finalize_failure.assert_awaited_once()
+    cleanup_runtime.assert_awaited_once()

@@ -1,19 +1,14 @@
-import asyncio
-import json
 import logging
 from typing import Any
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException
-from sse_starlette.sse import EventSourceResponse
 
 from src.core.task_core import (
     ConcurrencyLimitError,
     CoreDomainError,
     InsufficientCreditsError,
-    process_and_submit_task,
 )
-from src.constants import VIDEO_TASK_TYPES
 from src.database.models import User, History
 from src.quota import QuotaManager
 from src.services.redis_client import redis_client
@@ -22,7 +17,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from src.web_api.dependencies import get_current_user, get_current_user_once, get_db
 from src.web_api.schemas.task_schema import TaskGenerateRequest, TaskGenerateResponse, TaskResultResponse
-from src.web_api.presenters.media_presenter import build_storage_media_url
+from src.web_api.services.task_result_service import get_task_result_payload
+from src.web_api.services.task_submission_service import submit_generation_task
+from src.web_api.services.task_stream_service import build_task_status_stream_response
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -112,38 +109,10 @@ async def create_generation_task(
     Submit a generation task (image/video).
     """
     try:
-        is_template = getattr(req, "is_template", False)
-
-        # Merge prompt from request into inputs if it exists, so core layer can use it
-        if req.prompt:
-            req.inputs["prompt"] = req.prompt
-
-        import uuid
-
-        task_id = str(uuid.uuid4())
-
-        from asgi_correlation_id import correlation_id
-
-        correlation_id.set(task_id)
-
-        result = await process_and_submit_task(
-            user_id=current_user.id,
-            username=current_user.username,
-            task_type=req.task_type,
-            inputs=req.inputs,
-            task_id=task_id,
-            base_priority=req.priority,
-            is_template=is_template,
-            source_post_id=req.source_post_id,
-        )
-
-        balance = await quota_manager.get_credits(current_user.id)
-        return TaskGenerateResponse(
-            task_id=result["task_id"],
-            status="pending",
-            message="Task submitted successfully",
-            cost=result["cost"],
-            balance_remaining=balance,
+        return await submit_generation_task(
+            req=req,
+            current_user=current_user,
+            get_balance=quota_manager.get_credits,
         )
     except ConcurrencyLimitError as e:
         raise HTTPException(status_code=429, detail=str(e))
@@ -165,53 +134,11 @@ async def get_task_result(
     """
     Get task generation result directly.
     """
-
-    hist = (
-        (
-            await db.execute(
-                select(History).where(
-                    History.task_id == task_id,
-                    History.user_id == current_user.id,
-                )
-            )
-        )
-        .scalars()
-        .first()
+    return await get_task_result_payload(
+        task_id=task_id,
+        current_user=current_user,
+        db=db,
     )
-
-    if not hist:
-        return {
-            "status": "pending_result",
-            "task_id": task_id,
-            "task_type": None,
-            "media_type": None,
-        }
-
-    if hist.user_id != current_user.id:
-        raise HTTPException(status_code=403, detail="任务不存在或无权限")
-
-    is_video = hist.type in VIDEO_TASK_TYPES if hist.type else False
-    media_type = "video" if is_video else "image"
-
-    if hist.output_file:
-        return {
-            "status": "success",
-            "task_id": task_id,
-            "task_type": hist.type,
-            "media_type": media_type,
-            "result_url": build_storage_media_url(
-                hist.output_file,
-                expires_hours=24,
-            )
-            or hist.output_file,
-        }
-    else:
-        return {
-            "status": "pending_result",
-            "task_id": task_id,
-            "task_type": hist.type,
-            "media_type": media_type,
-        }
 
 
 @router.get("/{task_id}/stream")
@@ -224,7 +151,6 @@ async def task_status_stream(
     Listens to Redis Pub/Sub channel: comfy:task_events:{task_id}
     Also periodically sends queue position while pending.
     """
-    from config import API_BASE
     from src.database.core import AsyncSessionLocal
     user_id = current_user.id
 
@@ -232,147 +158,19 @@ async def task_status_stream(
     owned_history = await _get_user_history_record(task_id, user_id, AsyncSessionLocal)
     if not owned_active_task and not owned_history:
         raise HTTPException(status_code=404, detail="任务不存在或无权限")
+    from config import API_BASE
 
-    async def get_task_status_full():
-        try:
-            async with httpx.AsyncClient() as client:
-                resp = await client.get(f"{API_BASE}/status/{task_id}", timeout=2.0)
-                if resp.status_code == 404:
-                    return {"not_found": True}
-                resp.raise_for_status()
-                return resp.json()
-        except httpx.HTTPStatusError as e:
-            logger.error(
-                "Unexpected status while getting task %s state: %s",
-                task_id,
-                e.response.status_code,
-            )
-        except Exception as e:
-            logger.error(f"Error getting status for {task_id}: {e}")
-        return None
-
-    async def event_generator():
-        pubsub = redis_client.redis.pubsub()
-        channel = f"comfy:task_events:{task_id}"
-        await pubsub.subscribe(channel)
-
-        try:
-            # Initial connection message
-            yield {
-                "event": "connected",
-                "data": json.dumps({"status": "listening", "task_id": task_id}),
-            }
-
-            # Fetch initial status to avoid missing early completion/error events
-            initial_status = await get_task_status_full()
-            is_running = False
-
-            if initial_status:
-                if initial_status.get("not_found"):
-                    yield {
-                        "event": "progress",
-                        "data": json.dumps(
-                            await _build_not_found_progress_payload(
-                                task_id,
-                                user_id,
-                                AsyncSessionLocal,
-                            )
-                        ),
-                    }
-                    return
-
-                status_val = initial_status.get("status")
-                if status_val == "running":
-                    is_running = True
-                else:
-                    terminal_payload = _build_terminal_progress_payload(initial_status, task_id)
-                    if terminal_payload:
-                        yield {"event": "progress", "data": json.dumps(terminal_payload)}
-                        return  # End stream immediately
-
-            last_queue_check = 0
-
-            while True:
-                message = await pubsub.get_message(
-                    ignore_subscribe_messages=True, timeout=1.0
-                )
-                if message:
-                    data = message["data"]
-                    if isinstance(data, bytes):
-                        data = data.decode("utf-8")
-
-                    # Parse to see if finished or running
-                    try:
-                        parsed = json.loads(data)
-                        task_status = parsed.get("status")
-
-                        terminal_payload = _build_terminal_progress_payload(parsed, task_id)
-                        if terminal_payload:
-                            parsed = terminal_payload
-
-                        # Yield the mapped data
-                        yield {"event": "progress", "data": json.dumps(parsed)}
-
-                        if task_status == "running":
-                            is_running = True
-                        elif task_status in ["done", "error", "cancelled"]:
-                            # End stream gracefully
-                            break
-                    except json.JSONDecodeError:
-                        yield {"event": "progress", "data": data}
-
-                # Periodically send queue position if not running yet
-                if not is_running:
-                    current_time = asyncio.get_event_loop().time()
-                    if current_time - last_queue_check > 5.0:  # Check every 5 seconds
-                        status_data = await get_task_status_full()
-                        if status_data:
-                            if status_data.get("not_found"):
-                                yield {
-                                    "event": "progress",
-                                    "data": json.dumps(
-                                        await _build_not_found_progress_payload(
-                                            task_id,
-                                            user_id,
-                                            AsyncSessionLocal,
-                                        )
-                                    ),
-                                }
-                                break
-
-                            status_val = status_data.get("status")
-                            # If the task actually started or finished but we missed the pubsub message
-                            if status_val == "running":
-                                is_running = True
-                            else:
-                                terminal_payload = _build_terminal_progress_payload(status_data, task_id)
-                                if terminal_payload:
-                                    yield {
-                                        "event": "progress",
-                                        "data": json.dumps(terminal_payload),
-                                    }
-                                    break
-
-                                queue_pos = status_data.get("queue_pos")
-                                if queue_pos is not None:
-                                    yield {
-                                        "event": "progress",
-                                        "data": json.dumps(
-                                            {"status": "pending", "queue_pos": queue_pos}
-                                        ),
-                                    }
-                        last_queue_check = current_time
-
-                # Check if client disconnected
-                await asyncio.sleep(0.5)
-
-        except asyncio.CancelledError:
-            logger.info(f"SSE client disconnected for task {task_id}")
-        finally:
-            await pubsub.unsubscribe(channel)
-            await pubsub.close()
-
-    return EventSourceResponse(event_generator())
+    return build_task_status_stream_response(
+        task_id=task_id,
+        user_id=user_id,
+        session_factory=AsyncSessionLocal,
+        redis=redis_client.redis,
+        api_base=API_BASE,
+        httpx_async_client_factory=httpx.AsyncClient,
+        logger=logger,
+        build_not_found_progress_payload=_build_not_found_progress_payload,
+        build_terminal_progress_payload=_build_terminal_progress_payload,
+    )
 
 
 @router.get("/queue-status")
