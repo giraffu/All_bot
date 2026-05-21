@@ -5,12 +5,10 @@ import logging
 import urllib.parse
 import asyncio
 import bcrypt
-import aiohttp
 from typing import Optional, Tuple
 from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError
 
-from config import BOT_TOKEN, BOT_TOKEN_TEST, TELEGRAM_API_BASE_URL
 from src.database.core import AsyncSessionLocal
 from src.core.user_core import get_or_create_user_by_telegram
 from src.database.models import User
@@ -70,30 +68,6 @@ if user_new == 1 then
 end
 return 1
 """
-
-
-async def send_tg_security_notification(telegram_id: int, message: str):
-    import os
-
-    bot_type = os.getenv("BOT_TYPE", "PROD")
-    token = BOT_TOKEN_TEST if bot_type == "TEST" else BOT_TOKEN
-
-    if not token or not telegram_id:
-        return
-
-    url = f"{TELEGRAM_API_BASE_URL}/bot{token}/sendMessage"
-    payload = {"chat_id": telegram_id, "text": message, "parse_mode": "Markdown"}
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.post(url, json=payload, proxy=None) as response:
-                if response.status != 200:
-                    logger.error(
-                        f"Failed to send security notification: {await response.text()}"
-                    )
-    except Exception as e:
-        logger.error(f"Exception sending security notification: {e}")
-
-
 def _verify_password_sync(plain_password: str, hashed_password: str) -> bool:
     pre_hashed = hashlib.sha256(plain_password.encode("utf-8")).hexdigest()
     return bcrypt.checkpw(pre_hashed.encode("utf-8"), hashed_password.encode("utf-8"))
@@ -252,7 +226,7 @@ async def authenticate_and_get_user(
     elif widget_data:
         language_code = widget_data.get("language_code")
 
-    user, is_new = await get_or_create_user_by_telegram(
+    user, _is_new = await get_or_create_user_by_telegram(
         tg_id=tg_id, username=username, full_name=full_name, language_code=language_code
     )
 
@@ -307,14 +281,6 @@ async def authenticate_user_by_password(
         # 5. Success: clear rate limits
         await redis.delete(ip_key, user_key)
 
-        # 6. Trigger Security Notification
-        asyncio.create_task(
-            send_tg_security_notification(
-                user.telegram_id,
-                f"⚠️ **结界异动提醒**\n您的修仙结界刚刚通过密咒登录 (IP: {client_ip})。若非本人操作，请及时前往个人中心重置密咒。",
-            )
-        )
-
         stats = await permission_service.get_user_detailed_stats(user.telegram_id)
         return user, stats
 
@@ -361,14 +327,6 @@ async def bind_user_password(
 
         # Success: clear rate limits
         await redis.delete(ip_key, user_key)
-
-        # Trigger Security Notification
-        asyncio.create_task(
-            send_tg_security_notification(
-                user.telegram_id,
-                "🔒 **密咒变更提醒**\n您的修仙结界密咒已重新设置，旧会话已全部强制失效。若非本人操作，您的 Telegram 账号可能存在极高风险！",
-            )
-        )
 
         # Optional: session invalidation via Redis blacklisting could be added here
         # block old version

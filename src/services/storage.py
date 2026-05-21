@@ -518,7 +518,24 @@ class StorageService:
         try:
             self.client.stat_object(bucket_name, object_name)
             return True
-        except Exception:
+        except S3Error as exc:
+            code = getattr(exc, "code", "")
+            if code in {"NoSuchKey", "NoSuchObject", "NoSuchBucket"}:
+                return False
+            logger.warning(
+                "MinIO stat_object failed for %s/%s: %s",
+                bucket_name,
+                object_name,
+                exc,
+            )
+            return False
+        except Exception as exc:
+            logger.warning(
+                "Unexpected object_exists failure for %s/%s: %s",
+                bucket_name,
+                object_name,
+                exc,
+            )
             return False
 
     async def async_object_exists(self, bucket_name: str, object_name: str) -> bool:

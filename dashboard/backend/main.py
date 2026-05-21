@@ -11,6 +11,7 @@ os.chdir(str(PROJECT_ROOT))
 import fastapi.responses
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from jose import JWTError
 
 from dashboard.backend.auth import auth_router, get_current_user
 from dashboard.backend.routers import (
@@ -107,7 +108,15 @@ async def check_auth_header(request: Request, call_next):
                     return _build_auth_error_response(request, "Not authenticated")
                 token = auth_header.split(" ")[1]
                 await get_current_user(token)
+            except JWTError:
+                return _build_auth_error_response(
+                    request, "Could not validate credentials"
+                )
             except Exception:
+                logger.exception(
+                    "Unexpected dashboard auth middleware failure for path=%s",
+                    request.url.path,
+                )
                 return _build_auth_error_response(
                     request, "Could not validate credentials"
                 )

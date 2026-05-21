@@ -13,6 +13,10 @@ from src.core.auth_core import (
     AuthCoreError,
 )
 from src.services.permission_service import permission_service
+from src.services.auth_security_notification_service import (
+    schedule_password_changed_notification,
+    schedule_password_login_notification,
+)
 from src.web_api.core.security import create_access_token
 from src.web_api.presenters.user_presenter import (
     build_token_user_payload,
@@ -91,6 +95,7 @@ async def login_with_password(req: UserLoginRequest, request: Request):
         user, stats = await authenticate_user_by_password(
             req.username, req.password, client_ip
         )
+        schedule_password_login_notification(user.telegram_id, client_ip)
 
         # Issue JWT
         access_token = create_access_token(
@@ -135,6 +140,7 @@ async def bind_password(
 
     try:
         await bind_user_password(current_user.id, req.username, req.password, client_ip)
+        schedule_password_changed_notification(current_user.telegram_id)
         return {"status": "success", "message": "密咒设置成功。请使用新密咒重新登录。"}
     except InsufficientPermissionError as e:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))

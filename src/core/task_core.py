@@ -1,24 +1,52 @@
 import asyncio
 import logging
 import os
-import httpx
-from dataclasses import dataclass, field
-from typing import Any, Optional, Tuple
+from typing import Optional
 
 from config import MINIO_BUCKET
-from src.core.media_paths import (
-    build_history_r2_media_key,
-    build_history_r2_thumbnail_key,
-    resolve_storage_object,
-)
+from src.core.media_paths import resolve_storage_object
 from src.core.media_processor import (
     extract_media_metadata_from_bytes_best_effort,
     extract_media_metadata_from_storage_best_effort,
     generate_and_upload_thumbnail,
 )
-from src.core.video_billing import (
-    normalize_requested_billing_resolution,
-    normalize_requested_duration_seconds,
+from src.core.task_core_finalization import (
+    finalize_task_cancellation,
+    finalize_task_failure,
+    finalize_terminated_task,
+    handle_failed_task_exception,
+    refund_cancelled_task,
+    refund_failed_task,
+)
+from src.core.task_core_persistence import (
+    _persist_successful_web_history,
+    persist_successful_task_result,
+    schedule_web_history_r2_warmup,
+)
+from src.core.task_core_runtime import (
+    cancel_user_task,
+    cleanup_task_runtime_state,
+    force_terminate_task,
+    get_system_task_stats,
+    sync_user_concurrency,
+)
+from src.core.task_core_types import (
+    ConcurrencyLimitError,
+    CoreDomainError,
+    InsufficientCreditsError,
+    TaskCancellationFinalizationResult,
+    TaskFailureFinalizationResult,
+    TaskSubmissionContext,
+    TaskSubmissionExecutionResult,
+    TaskSuccessPersistenceResult,
+    TaskTerminationFinalizationResult,
+    VideoTaskRequest,
+    build_failed_task_user_message,
+    build_video_task_request,
+    infer_requested_billing_resolution,
+    infer_requested_output_metadata,
+    is_task_backend_busy_error,
+    normalize_terminal_status,
 )
 from src.logger import UserLogger
 from src.services.image_service import image_service
@@ -27,107 +55,44 @@ from src.services.task_registry import TaskRegistry
 
 logger = logging.getLogger(__name__)
 
+__all__ = [
+    "ConcurrencyLimitError",
+    "CoreDomainError",
+    "InsufficientCreditsError",
+    "TaskCancellationFinalizationResult",
+    "TaskFailureFinalizationResult",
+    "TaskSubmissionContext",
+    "TaskSubmissionExecutionResult",
+    "TaskSuccessPersistenceResult",
+    "TaskTerminationFinalizationResult",
+    "VideoTaskRequest",
+    "build_failed_task_user_message",
+    "_infer_requested_billing_resolution",
+    "_infer_requested_output_metadata",
+    "cancel_user_task",
+    "cleanup_task_runtime_state",
+    "extract_media_metadata_from_bytes_best_effort",
+    "extract_media_metadata_from_storage_best_effort",
+    "finalize_task_cancellation",
+    "finalize_task_failure",
+    "finalize_terminated_task",
+    "force_terminate_task",
+    "generate_and_upload_thumbnail",
+    "get_system_task_stats",
+    "handle_failed_task_exception",
+    "is_task_backend_busy_error",
+    "persist_successful_task_result",
+    "process_and_submit_task",
+    "refund_cancelled_task",
+    "refund_failed_task",
+    "resolve_storage_object",
+    "schedule_web_history_r2_warmup",
+    "storage",
+    "sync_user_concurrency",
+]
 
-@dataclass(frozen=True, slots=True)
-class VideoTaskRequest:
-    requested_duration: int | None = None
-    output_width: int | None = None
-    output_height: int | None = None
-    output_duration: int | None = None
-    billing_resolution: str | None = None
-
-
-@dataclass(slots=True)
-class TaskSubmissionContext:
-    task_type: str
-    is_video_task: bool
-    user_logger: UserLogger
-    prompt: str
-    saved_inputs: list[str]
-    metadata: dict[str, Any]
-    allow_contribute: bool
-    final_priority: int
-    video_request: VideoTaskRequest = field(default_factory=VideoTaskRequest)
-
-    @property
-    def log_prompt(self) -> str:
-        return self.prompt
-
-    @property
-    def billing_resolution(self) -> str | None:
-        return self.video_request.billing_resolution
-
-    @property
-    def output_width(self) -> int | None:
-        return self.video_request.output_width
-
-    @property
-    def output_height(self) -> int | None:
-        return self.video_request.output_height
-
-    @property
-    def output_duration(self) -> int | None:
-        return self.video_request.output_duration
-
-    @property
-    def requested_duration(self) -> int | None:
-        return self.video_request.requested_duration
-
-    def apply_to_inputs(self, inputs: dict):
-        inputs["saved_input_images"] = self.saved_inputs
-        inputs["prompt"] = self.prompt
-
-    def registry_saved_inputs(self) -> list[str]:
-        metadata_saved_inputs = self.metadata.get("saved_inputs")
-        if isinstance(metadata_saved_inputs, list):
-            return metadata_saved_inputs
-        return self.saved_inputs
-
-
-@dataclass(frozen=True, slots=True)
-class TaskSuccessPersistenceResult:
-    media_bytes: bytes | None
-    output_file: str
-    width: int | None
-    height: int | None
-    duration: int | None
-
-
-@dataclass(frozen=True, slots=True)
-class TaskFinalizationResult:
-    refunded: bool
-    user_message: str | None = None
-
-
-@dataclass(frozen=True, slots=True)
-class TaskFailureFinalizationResult(TaskFinalizationResult):
-    pass
-
-
-@dataclass(frozen=True, slots=True)
-class TaskCancellationFinalizationResult(TaskFinalizationResult):
-    pass
-
-
-@dataclass(frozen=True, slots=True)
-class TaskTerminationFinalizationResult(TaskFinalizationResult):
-    terminated: bool = True
-
-
-@dataclass(frozen=True, slots=True)
-class TaskFinalizationContext:
-    internal_user_id: int
-    username: str
-    cost: int
-    registry_task_id: str | None
-    release_lock: bool = True
-
-
-@dataclass(frozen=True, slots=True)
-class TaskSubmissionExecutionResult:
-    registry_task_id: str
-    backend_task_id: str
-    submission_context: TaskSubmissionContext
+_infer_requested_output_metadata = infer_requested_output_metadata
+_infer_requested_billing_resolution = infer_requested_billing_resolution
 
 
 async def _process_input_path(user_logger: UserLogger, path: str) -> str:
@@ -167,594 +132,6 @@ from src.core.billing_core import (
 from src.core.task_dispatcher import StrategyFactory, dispatch_to_worker
 from src.utils import load_prompts
 import contextlib
-
-
-class CoreDomainError(Exception):
-    pass
-
-
-class InsufficientCreditsError(CoreDomainError):
-    pass
-
-
-class ConcurrencyLimitError(CoreDomainError):
-    pass
-
-
-def _normalize_terminal_status(status: str | None) -> str | None:
-    if status == "success":
-        return "done"
-    if status == "failed":
-        return "error"
-    return status
-
-
-def _infer_requested_output_metadata(
-    inputs: dict,
-) -> Tuple[int | None, int | None, int | None]:
-    output_width = None
-    output_height = None
-    output_duration = None
-
-    resolution = inputs.get("resolution")
-    if resolution is not None:
-        res_text = str(resolution).replace("p", "")
-        if "x" in res_text:
-            try:
-                width_text, height_text = res_text.split("x", 1)
-                output_width = int(width_text)
-                output_height = int(height_text)
-            except ValueError:
-                output_width = None
-                output_height = None
-        else:
-            try:
-                output_width = int(res_text)
-            except ValueError:
-                output_width = None
-
-    duration_value = inputs.get("duration")
-    if duration_value is not None:
-        try:
-            output_duration = int(str(duration_value).replace("s", ""))
-        except ValueError:
-            output_duration = None
-
-    return output_width, output_height, output_duration
-
-
-def _infer_requested_billing_resolution(
-    inputs: dict, task_type: str
-) -> str | None:
-    return normalize_requested_billing_resolution(inputs.get("resolution"), task_type)
-
-
-def _parse_resolution_edge(resolution: object) -> int:
-    res_str = str(resolution or "512p").replace("p", "")
-    if "x" in res_str:
-        try:
-            width, height = map(int, res_str.split("x", 1))
-            return max(width, height)
-        except ValueError:
-            return 512
-    try:
-        return int(res_str)
-    except ValueError:
-        return 512
-
-
-def _parse_duration_seconds(duration: object) -> int:
-    dur_str = str(duration or "5s").replace("s", "")
-    try:
-        return int(dur_str)
-    except ValueError:
-        return 5
-
-
-def _build_video_task_request(task_type: str, inputs: dict) -> VideoTaskRequest:
-    if not task_type:
-        return VideoTaskRequest()
-
-    requested_duration = normalize_requested_duration_seconds(
-        inputs.get("duration", "5s")
-    )
-    resolution_edge = _parse_resolution_edge(inputs.get("resolution", "512p"))
-    duration_seconds = _parse_duration_seconds(inputs.get("duration", "5s"))
-
-    if task_type != "ltx_video" and resolution_edge >= 1024 and duration_seconds >= 10:
-        raise CoreDomainError(
-            "Cannot select 1024p resolution and 10s duration simultaneously due to high resource usage."
-        )
-
-    output_width, output_height, output_duration = _infer_requested_output_metadata(
-        inputs
-    )
-    billing_resolution = _infer_requested_billing_resolution(inputs, task_type)
-    return VideoTaskRequest(
-        requested_duration=requested_duration,
-        output_width=output_width,
-        output_height=output_height,
-        output_duration=output_duration,
-        billing_resolution=billing_resolution,
-    )
-
-
-def schedule_web_history_r2_warmup(
-    *,
-    user_id: int,
-    task_id: str,
-    output_file: str,
-    media_type: str,
-    source: str,
-):
-    if source != "web" or not user_id or not task_id or not output_file:
-        return
-
-    async def _runner():
-        bucket_name, object_name = resolve_storage_object(output_file)
-        warmup_results = await asyncio.gather(
-            storage.async_copy_to_r2(
-                bucket_name,
-                object_name,
-                build_history_r2_media_key(task_id, output_file),
-            ),
-            generate_and_upload_thumbnail(
-                output_file,
-                media_type,
-                build_history_r2_thumbnail_key(task_id, media_type),
-            ),
-            return_exceptions=True,
-        )
-        for step_name, result in zip(("copy", "thumbnail"), warmup_results):
-            if isinstance(result, Exception):
-                logger.warning(
-                    "Web history R2 warmup %s failed for task %s user %s: %s",
-                    step_name,
-                    task_id,
-                    user_id,
-                    result,
-                )
-
-        try:
-            await storage.async_prune_user_web_history_r2_cache(user_id)
-        except Exception as exc:
-            logger.warning(
-                "Web history R2 warmup prune failed for task %s user %s: %s",
-                task_id,
-                user_id,
-                exc,
-            )
-
-    asyncio.create_task(_runner())
-
-
-async def _persist_successful_web_history(
-    *,
-    backend_task_id: str,
-    registry_task_id: str,
-    internal_user_id: int,
-    username: str,
-    prompt: str,
-    task_type: str,
-    input_images: list[str],
-    allow_contribute: bool,
-    is_video: bool,
-    result_path: str,
-    billing_resolution: str | None,
-    output_width: int | None,
-    output_height: int | None,
-    output_duration: int | None,
-    requested_duration: int | None,
-):
-    await persist_successful_task_result(
-        backend_task_id=backend_task_id,
-        registry_task_id=registry_task_id,
-        internal_user_id=internal_user_id,
-        username=username,
-        prompt=prompt,
-        task_type=task_type,
-        input_images=input_images,
-        allow_contribute=allow_contribute,
-        is_video=is_video,
-        result_path=result_path,
-        billing_resolution=billing_resolution,
-        output_width=output_width,
-        output_height=output_height,
-        output_duration=output_duration,
-        requested_duration=requested_duration,
-        source="web",
-        warmup_web_history=True,
-    )
-
-
-async def persist_successful_task_result(
-    *,
-    backend_task_id: str,
-    registry_task_id: str,
-    internal_user_id: int,
-    username: str,
-    prompt: str,
-    task_type: str,
-    input_images: list[str],
-    allow_contribute: bool,
-    is_video: bool,
-    billing_resolution: str | None,
-    requested_duration: int | None,
-    output_width: int | None = None,
-    output_height: int | None = None,
-    output_duration: int | None = None,
-    result_path: str | None = None,
-    source: str = "bot",
-    refresh_user_group_after_log: bool = False,
-    warmup_web_history: bool = False,
-) -> TaskSuccessPersistenceResult:
-    user_logger = UserLogger(internal_user_id, username)
-    width = output_width
-    height = output_height
-    duration = output_duration
-    media_kind = "video" if is_video else "image"
-    file_ext = "mp4" if is_video else "png"
-    media_bytes = await (
-        image_service.download_video_result(backend_task_id)
-        if is_video
-        else image_service.download_result(backend_task_id)
-    )
-
-    if media_bytes:
-        width, height, duration = await asyncio.to_thread(
-            extract_media_metadata_from_bytes_best_effort,
-            media_bytes,
-            media_kind,
-            file_ext,
-            (width, height, duration),
-        )
-        output_file = await asyncio.to_thread(
-            user_logger.save_output_image,
-            media_bytes,
-            registry_task_id,
-            file_ext,
-        )
-    else:
-        if not result_path:
-            raise CoreDomainError("任务成功但缺少结果文件路径，无法写入历史")
-        width, height, duration = await extract_media_metadata_from_storage_best_effort(
-            result_path,
-            media_kind,
-            (width, height, duration),
-        )
-        output_file = result_path
-
-    await user_logger.log_task(
-        prompt,
-        input_images,
-        output_file,
-        task_id=registry_task_id,
-        type=task_type,
-        allow_contribute=allow_contribute,
-        source=source,
-        billing_resolution=billing_resolution,
-        width=width,
-        height=height,
-        duration=duration,
-        requested_duration=requested_duration,
-    )
-
-    if refresh_user_group_after_log:
-        from src.services.permission_service import permission_service
-
-        await permission_service.refresh_user_group(internal_user_id)
-
-    if warmup_web_history and output_file:
-        schedule_web_history_r2_warmup(
-            user_id=internal_user_id,
-            task_id=registry_task_id,
-            output_file=output_file,
-            media_type=media_kind,
-            source=source,
-        )
-
-    return TaskSuccessPersistenceResult(
-        media_bytes=media_bytes,
-        output_file=output_file,
-        width=width,
-        height=height,
-        duration=duration,
-    )
-
-
-async def _refund_task_with_type(
-    *,
-    internal_user_id: int,
-    username: str,
-    cost: int,
-    should_refund: bool,
-    refund_task_type: str,
-) -> bool:
-    if not should_refund or cost <= 0:
-        return False
-    await asyncio.shield(
-        refund_credits(
-            internal_user_id,
-            cost,
-            task_type=refund_task_type,
-            username=username,
-        )
-    )
-    return True
-
-
-async def refund_cancelled_task(
-    *,
-    internal_user_id: int,
-    username: str,
-    cost: int,
-    task_submitted: bool,
-) -> bool:
-    return await _refund_task_with_type(
-        internal_user_id=internal_user_id,
-        username=username,
-        cost=cost,
-        should_refund=task_submitted,
-        refund_task_type="refund_user_cancel",
-    )
-
-
-async def refund_failed_task(
-    *,
-    internal_user_id: int,
-    username: str,
-    cost: int,
-    should_refund: bool,
-) -> bool:
-    return await _refund_task_with_type(
-        internal_user_id=internal_user_id,
-        username=username,
-        cost=cost,
-        should_refund=should_refund,
-        refund_task_type="refund",
-    )
-
-
-TASK_BUSY_ERROR_KEYWORDS = (
-    "Circuit is open",
-    "All connection attempts failed",
-    "Connection refused",
-    "timeout",
-    "ConnectError",
-)
-
-
-def is_task_backend_busy_error(error: Exception | str) -> bool:
-    error_msg = error if isinstance(error, str) else str(error)
-    error_type = "" if isinstance(error, str) else str(type(error))
-    return any(keyword in error_msg for keyword in TASK_BUSY_ERROR_KEYWORDS) or (
-        "CircuitBreaker" in error_type
-    )
-
-
-def build_failed_task_user_message(
-    *,
-    error: Exception,
-    generic_error_prefix: str,
-    refunded: bool,
-    refund_suffix_mode: str = "if_refunded",
-) -> str:
-    error_msg = str(error)
-    if is_task_backend_busy_error(error):
-        user_msg = "当前服务器繁忙，请稍后再试"
-    else:
-        user_msg = f"{generic_error_prefix}：{error_msg}"
-
-    if refund_suffix_mode == "always":
-        user_msg += "，已退还灵石"
-    elif refund_suffix_mode == "if_refunded" and refunded:
-        user_msg += "，已退还灵石"
-    return user_msg
-
-
-async def handle_failed_task_exception(
-    *,
-    internal_user_id: int,
-    username: str,
-    cost: int,
-    should_refund: bool,
-    error: Exception,
-    generic_error_prefix: str,
-    refund_suffix_mode: str = "if_refunded",
-) -> str:
-    refunded = await refund_failed_task(
-        internal_user_id=internal_user_id,
-        username=username,
-        cost=cost,
-        should_refund=should_refund,
-    )
-    return build_failed_task_user_message(
-        error=error,
-        generic_error_prefix=generic_error_prefix,
-        refunded=refunded,
-        refund_suffix_mode=refund_suffix_mode,
-    )
-
-
-async def _cleanup_after_finalization(context: TaskFinalizationContext):
-    await cleanup_task_runtime_state(
-        internal_user_id=context.internal_user_id,
-        registry_task_id=context.registry_task_id,
-        release_lock=context.release_lock,
-    )
-
-
-def _build_cancelled_task_user_message(
-    *,
-    cost: int,
-    refunded: bool,
-    explicit_user_message: str | None,
-) -> str | None:
-    if explicit_user_message is not None:
-        return explicit_user_message
-    if refunded:
-        return f"任务已撤销，预扣的 {cost} 灵石已全额退回。"
-    return None
-
-
-async def _refund_terminated_task_best_effort(
-    *,
-    user_id: int | None,
-    username: str,
-    cost: int,
-    should_refund: bool,
-    refund_task_type: str,
-    registry_task_id: str,
-) -> bool:
-    if user_id is None:
-        return False
-
-    try:
-        return await _refund_task_with_type(
-            internal_user_id=user_id,
-            username=username,
-            cost=cost,
-            should_refund=should_refund,
-            refund_task_type=refund_task_type,
-        )
-    except Exception:
-        logger.exception(
-            "Failed to refund terminated task %s for user %s.",
-            registry_task_id,
-            user_id,
-        )
-        return False
-
-
-async def finalize_task_failure(
-    *,
-    internal_user_id: int,
-    username: str,
-    cost: int,
-    should_refund: bool,
-    registry_task_id: str | None,
-    release_lock: bool = True,
-    refund_task_type: str = "refund",
-    error: Exception | None = None,
-    generic_error_prefix: str | None = None,
-    explicit_user_message: str | None = None,
-    refund_suffix_mode: str = "if_refunded",
-) -> TaskFailureFinalizationResult:
-    context = TaskFinalizationContext(
-        internal_user_id=internal_user_id,
-        username=username,
-        cost=cost,
-        registry_task_id=registry_task_id,
-        release_lock=release_lock,
-    )
-    refunded = await _refund_task_with_type(
-        internal_user_id=context.internal_user_id,
-        username=context.username,
-        cost=context.cost,
-        should_refund=should_refund,
-        refund_task_type=refund_task_type,
-    )
-
-    user_message = explicit_user_message
-    if user_message is None and error is not None and generic_error_prefix is not None:
-        user_message = build_failed_task_user_message(
-            error=error,
-            generic_error_prefix=generic_error_prefix,
-            refunded=refunded,
-            refund_suffix_mode=refund_suffix_mode,
-        )
-
-    await _cleanup_after_finalization(context)
-
-    return TaskFailureFinalizationResult(
-        refunded=refunded,
-        user_message=user_message,
-    )
-
-
-async def finalize_task_cancellation(
-    *,
-    internal_user_id: int,
-    username: str,
-    cost: int,
-    task_submitted: bool,
-    registry_task_id: str | None,
-    release_lock: bool = True,
-    explicit_user_message: str | None = None,
-) -> TaskCancellationFinalizationResult:
-    context = TaskFinalizationContext(
-        internal_user_id=internal_user_id,
-        username=username,
-        cost=cost,
-        registry_task_id=registry_task_id,
-        release_lock=release_lock,
-    )
-    refunded = await refund_cancelled_task(
-        internal_user_id=context.internal_user_id,
-        username=context.username,
-        cost=context.cost,
-        task_submitted=task_submitted,
-    )
-
-    await _cleanup_after_finalization(context)
-
-    user_message = _build_cancelled_task_user_message(
-        cost=context.cost,
-        refunded=refunded,
-        explicit_user_message=explicit_user_message,
-    )
-
-    return TaskCancellationFinalizationResult(
-        refunded=refunded,
-        user_message=user_message,
-    )
-
-
-async def finalize_terminated_task(
-    *,
-    registry_task_id: str,
-    user_id: int | None,
-    username: str,
-    cost: int,
-    should_refund: bool,
-    refund_task_type: str,
-) -> TaskTerminationFinalizationResult:
-    await force_terminate_task(registry_task_id, user_id=user_id)
-
-    refunded = await _refund_terminated_task_best_effort(
-        user_id=user_id,
-        username=username,
-        cost=cost,
-        should_refund=should_refund,
-        refund_task_type=refund_task_type,
-        registry_task_id=registry_task_id,
-    )
-
-    return TaskTerminationFinalizationResult(
-        refunded=refunded,
-    )
-
-
-async def cleanup_task_runtime_state(
-    *,
-    internal_user_id: int,
-    registry_task_id: str | None,
-    release_lock: bool = True,
-):
-    if release_lock:
-        try:
-            await release_concurrency_lock(internal_user_id)
-        except Exception as e:
-            logger.error(
-                f"Failed to release concurrency lock for {internal_user_id}: {e}"
-            )
-
-    if registry_task_id:
-        try:
-            await TaskRegistry.remove_task(registry_task_id)
-        except Exception as e:
-            logger.error(f"Failed to remove registry task {registry_task_id}: {e}")
-
 
 def _validate_local_input_paths(paths_to_upload: list[str]):
     for path in paths_to_upload:
@@ -1083,7 +460,7 @@ async def monitor_task_and_release_lock(
         async for progress in image_service.monitor_progress(
             backend_task_id, submission_context.is_video_task
         ):
-            normalized_status = _normalize_terminal_status(progress.get("status"))
+            normalized_status = normalize_terminal_status(progress.get("status"))
             if normalized_status in [
                 "done",
                 "error",
@@ -1147,7 +524,7 @@ async def process_and_submit_task(
     is_video_task = task_type in VIDEO_TASK_TYPES
 
     video_request = (
-        _build_video_task_request(task_type, inputs)
+        build_video_task_request(task_type, inputs)
         if is_video_task
         else VideoTaskRequest()
     )
@@ -1228,103 +605,3 @@ async def process_and_submit_task(
         # 兜底保障：确保并发锁释放
         if check_lock and not task_submitted_successfully:
             await asyncio.shield(release_concurrency_lock(user_id))
-
-
-async def get_system_task_stats() -> Tuple[dict, dict]:
-    """
-    获取全系统任务统计信息。
-    返回 (active_tasks, user_concurrencies)
-    """
-    from src.services.redis_client import redis_client
-
-    active_tasks = await redis_client.get_active_tasks()
-    user_concurrencies = await redis_client.get_all_user_concurrencies()
-    return active_tasks, user_concurrencies
-
-
-async def force_terminate_task(task_id: str, user_id: Optional[int] = None):
-    """
-    强制终止一个活跃任务并释放对应的用户锁。
-
-    这里的 ``task_id`` 是 Bot 侧注册表中的任务 ID；真正提交给中控的
-    任务 ID 可能保存在 ``backend_task_id`` 中，因此终止时需要双向剔除。
-    """
-    from src.api_client import api_client
-    from src.services.redis_client import redis_client
-
-    tasks = await redis_client.get_active_tasks()
-    task_data = tasks.get(task_id, {}) if tasks else {}
-    backend_task_id = task_data.get("backend_task_id")
-
-    if not user_id:
-        user_id = task_data.get("user_id")
-
-    if backend_task_id:
-        try:
-            await api_client.cancel_task(backend_task_id)
-        except httpx.HTTPStatusError as exc:
-            if exc.response.status_code != 404:
-                raise
-            logger.info(
-                "Backend task %s already missing during force terminate of %s.",
-                backend_task_id,
-                task_id,
-            )
-        except Exception:
-            logger.exception(
-                "Failed to cancel backend task %s for registry task %s.",
-                backend_task_id,
-                task_id,
-            )
-            raise
-
-    await cleanup_task_runtime_state(
-        internal_user_id=user_id or 0,
-        registry_task_id=task_id,
-        release_lock=user_id is not None,
-    )
-
-
-async def sync_user_concurrency(user_id: int, actual_count: int):
-    """
-    同步用户并发锁到指定数量，当 actual_count 为 0 时删除锁
-    """
-    from config import REDIS_PREFIX
-    from src.services.redis_client import redis_client
-
-    key = f"{REDIS_PREFIX}user_concurrency:{user_id}"
-
-    if actual_count > 0:
-        await redis_client.redis.set(key, actual_count)
-        await redis_client.redis.expire(key, 3600)
-    else:
-        await redis_client.redis.delete(key)
-
-
-async def cancel_user_task(task_id: str, user_id: int):
-    """供用户主动调用的任务撤销逻辑"""
-    task = await TaskRegistry.get_task(task_id)
-    registry_task_id = task_id
-    if not task:
-        registry_task_id, task = await TaskRegistry.find_task_by_backend_task_id(task_id)
-
-    if not task or not registry_task_id:
-        raise CoreDomainError("任务不存在或已脱离排队阶段")
-
-    if task.get("user_id") != user_id:
-        raise CoreDomainError("无权撤销该任务")
-
-    from src.api_client import api_client
-    backend_task_id = task.get("backend_task_id") or registry_task_id
-    try:
-        cancel_result = await api_client.cancel_task(backend_task_id)
-    except httpx.HTTPStatusError as e:
-        if e.response.status_code == 404:
-            raise CoreDomainError("任务不存在或已结束，当前无法取消")
-        raise CoreDomainError(f"撤销请求失败: HTTP {e.response.status_code}")
-    except Exception as e:
-        import logging
-        logger = logging.getLogger(__name__)
-        logger.error(f"中控取消任务网络异常: {e}")
-        raise CoreDomainError("撤销请求失败，请稍后重试")
-    return cancel_result
