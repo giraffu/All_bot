@@ -56,8 +56,7 @@ const pagination = ref({
 })
 
 const openDetail = (record: any) => {
-  tasksStore.currentDetailRecord = record
-  tasksStore.detailModalVisible = true
+  tasksStore.showDetailRecord(record)
 }
 
 const fetchHistory = async (page = 1) => {
@@ -105,7 +104,7 @@ const handleDelete = async (record: any, event?: Event) => {
         message.success('删除成功')
         data.value = data.value.filter(item => item.id !== record.id)
         if (tasksStore.detailModalVisible && tasksStore.currentDetailRecord?.id === record.id) {
-          tasksStore.detailModalVisible = false
+          tasksStore.closeDetailModal()
         }
       } catch (error: any) {
         console.error(error)

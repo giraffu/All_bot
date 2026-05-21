@@ -17,22 +17,15 @@ from src.core.media_paths import (
 )
 from src.core.media_urls import (
     build_storage_presigned_url,
-    build_r2_media_key_candidates,
-    build_r2_thumbnail_info,
 )
 from src.core.media_processor import (
     extract_media_metadata_from_storage,
     generate_and_upload_thumbnail,
 )
-from src.config_mapping import extract_prompt_lora_name
-from src.core.video_billing import (
-    infer_billing_resolution_from_dimensions,
-    is_video_billing_task_type,
-    normalize_requested_billing_resolution,
-    resolve_apply_prompt_and_requested_duration,
-    resolve_legacy_requested_duration,
-)
 from src.services.storage import storage
+from src.web_api.presenters.user_presenter import (
+    build_user_response_from_dashboard_dto,
+)
 from src.services.affiliate_redeem_service import (
     AffiliateMembershipRedeemResult,
     AffiliateRedeemConflictError,
@@ -49,7 +42,7 @@ from src.web_api.schemas.affiliate_redeem_schema import (
     AffiliateMembershipRedeemRequest,
     AffiliateMembershipRedeemResponse,
 )
-from src.web_api.schemas.auth_schema import InvitationRechargeStats, UserResponse
+from src.web_api.schemas.auth_schema import UserResponse
 from src.web_api.schemas.user_schema import (
     CheckinResponse,
     HistoryItem,
@@ -61,10 +54,10 @@ from src.web_api.schemas.gallery_schema import (
     GalleryPostResponse,
 )
 from src.web_api.routers.utils import (
-    build_apply_context_response,
-    probe_apply_context_media_metadata,
-    resolve_apply_context_media_metadata,
+    build_history_apply_context_response,
+    resolve_history_billing_resolution,
 )
+from src.web_api.presenters.media_presenter import resolve_history_media_urls
 from fastapi import HTTPException, BackgroundTasks
 from pydantic import BaseModel
 import httpx
@@ -80,80 +73,17 @@ CurrentUserDep = Annotated[User, Depends(get_current_user)]
 DbSessionDep = Annotated[AsyncSession, Depends(get_db)]
 
 
-async def _get_r2_url_if_exists(object_key: str) -> str:
-    public_url = storage.get_r2_public_url(object_key)
-    if not public_url:
-        return ""
-    if await storage.async_r2_object_exists(object_key):
-        return public_url
-    return ""
-
-
-async def _get_first_r2_url_if_exists(*object_keys: str) -> str:
-    for object_key in object_keys:
-        if not object_key:
-            continue
-        url = await _get_r2_url_if_exists(object_key)
-        if url:
-            return url
-    return ""
-
-
 async def _pick_favorite_media_urls(
     *,
     task_id: str | None,
     output_file: str | None,
     history_type: str | None,
 ) -> tuple[str, str]:
-    if not output_file:
-        return "", ""
-
-    media_type = get_media_type_from_history(history_type)
-    bucket_name, object_name = resolve_storage_object(output_file)
-    media_r2_keys = build_r2_media_key_candidates(
-        output_file=output_file,
+    return await resolve_history_media_urls(
         task_id=task_id,
-    )
-    thumb_file, thumb_r2_keys = build_r2_thumbnail_info(
         output_file=output_file,
-        media_type=media_type,
-        task_id=task_id,
+        history_type=history_type,
     )
-    _, thumb_object_name = resolve_storage_object(thumb_file)
-
-    media_url = storage.get_presigned_url(object_name, bucket=bucket_name)
-    thumbnail_url = ""
-
-    if not task_id:
-        media_r2_url, thumbnail_r2_url, thumb_exists = await asyncio.gather(
-            _get_first_r2_url_if_exists(*media_r2_keys),
-            _get_first_r2_url_if_exists(*thumb_r2_keys),
-            storage.async_object_exists(bucket_name, thumb_object_name),
-        )
-        if media_r2_url:
-            media_url = media_r2_url
-        if thumbnail_r2_url:
-            thumbnail_url = thumbnail_r2_url
-        elif thumb_exists:
-            thumbnail_url = storage.get_presigned_url(
-                thumb_object_name, bucket=bucket_name
-            )
-        return media_url, thumbnail_url
-
-    media_r2_url, thumbnail_r2_url, thumb_exists = await asyncio.gather(
-        _get_first_r2_url_if_exists(*media_r2_keys),
-        _get_first_r2_url_if_exists(*thumb_r2_keys),
-        storage.async_object_exists(bucket_name, thumb_object_name),
-    )
-
-    if media_r2_url:
-        media_url = media_r2_url
-    if thumbnail_r2_url:
-        thumbnail_url = thumbnail_r2_url
-    elif thumb_exists:
-        thumbnail_url = storage.get_presigned_url(thumb_object_name, bucket=bucket_name)
-
-    return media_url, thumbnail_url
 
 
 async def _pick_history_media_urls(
@@ -162,42 +92,11 @@ async def _pick_history_media_urls(
     output_file: str | None,
     history_type: str | None,
 ) -> tuple[str, str]:
-    if not output_file:
-        return "", ""
-
-    media_type = get_media_type_from_history(history_type)
-    bucket_name, object_name = resolve_storage_object(output_file)
-    media_r2_keys = build_r2_media_key_candidates(
-        output_file=output_file,
+    return await resolve_history_media_urls(
         task_id=task_id,
-    )
-    thumb_file, thumb_r2_keys = build_r2_thumbnail_info(
         output_file=output_file,
-        media_type=media_type,
-        task_id=task_id,
+        history_type=history_type,
     )
-    _, thumb_object_name = resolve_storage_object(thumb_file)
-
-    media_r2_url, thumbnail_r2_url, thumb_exists = await asyncio.gather(
-        _get_first_r2_url_if_exists(*media_r2_keys),
-        _get_first_r2_url_if_exists(*thumb_r2_keys),
-        storage.async_object_exists(bucket_name, thumb_object_name),
-    )
-
-    output_file_url = ""
-    thumbnail_url = ""
-    if media_r2_url:
-        output_file_url = media_r2_url
-    else:
-        output_file_url = storage.get_presigned_url(object_name, bucket=bucket_name)
-    if thumbnail_r2_url:
-        thumbnail_url = thumbnail_r2_url
-    elif thumb_exists:
-        thumbnail_url = storage.get_presigned_url(
-            thumb_object_name, bucket=bucket_name
-        )
-
-    return output_file_url, thumbnail_url
 
 
 def _gallery_post_sort_key(post: GalleryPost) -> tuple[int, datetime, int]:
@@ -236,36 +135,6 @@ def _build_gallery_post_map(posts: list[GalleryPost]) -> dict[str, GalleryPost]:
     return post_map
 
 
-def _resolve_history_billing_resolution(
-    history: History,
-    *,
-    gallery_post: GalleryPost | None = None,
-    width: int | None = None,
-    height: int | None = None,
-) -> str | None:
-    if not is_video_billing_task_type(history.type):
-        return None
-    if history.billing_resolution:
-        normalized = normalize_requested_billing_resolution(
-            history.billing_resolution, history.type
-        )
-        if normalized is not None:
-            return normalized
-    return infer_billing_resolution_from_dimensions(
-        width if width is not None else history.width,
-        height if height is not None else history.height,
-        history.type,
-    ) or (
-        infer_billing_resolution_from_dimensions(
-            getattr(gallery_post, "width", None),
-            getattr(gallery_post, "height", None),
-            history.type,
-        )
-        if gallery_post
-        else None
-    )
-
-
 @router.get("/me", response_model=UserResponse)
 async def get_user_profile(current_user: User = Depends(get_current_user)):
     """
@@ -278,25 +147,7 @@ async def get_user_profile(current_user: User = Depends(get_current_user)):
         current_user.telegram_id,
         current_user.full_name or current_user.username or "道友",
     )
-
-    return UserResponse(
-        id=current_user.id,
-        telegram_id=current_user.telegram_id,
-        username=current_user.username,
-        full_name=current_user.full_name,
-        language_code=current_user.language_code,
-        credits=dto.credits,
-        user_group=dto.current_group,
-        current_identity=dto.current_identity,
-        identity_expire_at=dto.identity_expire_at,
-        priority=dto.current_priority,
-        generation_count=dto.generations,
-        checkin_count=dto.checkins,
-        invitation_count=dto.invitations,
-        invitation_recharge=InvitationRechargeStats(**dto.invitation_recharge),
-        breakthrough_conditions=[cond.dict() for cond in dto.breakthrough_conditions],
-        is_unlocked=dto.is_unlocked,
-    )
+    return build_user_response_from_dashboard_dto(current_user, dto)
 
 
 @router.post(
@@ -767,7 +618,7 @@ async def get_my_favorites(
                 id=history.id,
                 task_id=history.task_id,
                 media_type=media_type,
-                billing_resolution=_resolve_history_billing_resolution(
+                billing_resolution=resolve_history_billing_resolution(
                     history, gallery_post=gallery_post
                 ),
                 width=history.width if history.width is not None else (gallery_post.width if gallery_post else None),
@@ -816,71 +667,26 @@ async def get_favorite_apply_context(
     ).scalars().all()
     gallery_post = _pick_preferred_gallery_post(gallery_posts)
 
-    input_file_url = None
-    if history.input_file:
-        input_file_url = build_storage_presigned_url(
-            history.input_file,
-            lambda object_name, bucket_name: storage.get_presigned_url(
-                object_name, bucket=bucket_name
-            ),
-        )
-
-    prompt, requested_duration = resolve_apply_prompt_and_requested_duration(
-        history.type,
-        history.prompt,
-        history.requested_duration,
-    )
-    prompt, lora_name = extract_prompt_lora_name(prompt)
-
-    media_type, width, height, duration = resolve_apply_context_media_metadata(
-        task_type=history.type,
+    return await build_history_apply_context_response(
+        history=history,
+        post_id=gallery_post.id if gallery_post else history.id,
+        source_post_id=gallery_post.id if gallery_post else None,
+        gallery_post=gallery_post,
         primary_width=history.width,
         primary_height=history.height,
         primary_duration=history.duration,
         fallback_width=gallery_post.width if gallery_post else None,
         fallback_height=gallery_post.height if gallery_post else None,
         fallback_duration=gallery_post.duration if gallery_post else None,
-    )
-    billing_resolution = _resolve_history_billing_resolution(
-        history, gallery_post=gallery_post
-    )
-
-    width, height, duration, billing_resolution = (
-        await probe_apply_context_media_metadata(
-            output_file=history.output_file,
-            media_type=media_type,
-            width=width,
-            height=height,
-            duration=duration,
-            billing_resolution=billing_resolution,
-            task_type=history.type,
-            task_id=history.task_id,
-            probe_media_metadata=extract_media_metadata_from_storage,
-            logger=logger,
-        )
-    )
-
-    requested_duration = resolve_legacy_requested_duration(
-        task_type=history.type,
-        requested_duration=history.requested_duration,
-        duration=duration,
-    )
-
-    return build_apply_context_response(
-        post_id=gallery_post.id if gallery_post else history.id,
-        source_post_id=gallery_post.id if gallery_post else None,
-        billing_resolution=billing_resolution,
-        requested_duration=requested_duration,
-        task_id=history.task_id,
-        media_type=media_type,
-        prompt=prompt,
-        lora_name=lora_name,
-        input_file=history.input_file,
-        input_file_url=input_file_url,
-        width=width,
-        height=height,
-        duration=duration,
-        task_type=history.type,
+        build_input_file_url=lambda file_path: build_storage_presigned_url(
+            file_path,
+            lambda object_name, bucket_name: storage.get_presigned_url(
+                object_name, bucket=bucket_name
+            ),
+        ),
+        probe_output_file=history.output_file,
+        probe_media_metadata=extract_media_metadata_from_storage,
+        logger=logger,
     )
 
 

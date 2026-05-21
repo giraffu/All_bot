@@ -15,6 +15,7 @@ from telegram.ext import (
 from src.constants import MODE_EDIT, MODE_I2I_PRO, MODE_IMG2IMG_LORA, TASK_COSTS
 from src.handlers.conversation_states import EditImageState
 from src.handlers.prompt_router import is_global_menu_command
+from src.lora_catalog import IMAGE_LORA_MODELS, get_lora_default_strength
 from src.services.permission_service import permission_service
 from src.services.task_service import TaskService
 from src.utils import create_background_task, robust_edit_text, robust_reply_text
@@ -23,30 +24,8 @@ from src.filters.i18n_filter import I18nFilter
 
 logger = logging.getLogger("fsm.edit_image")
 
-LORA_MODELS = {
-    "": "无",
-    "qwen/YARN_1.0.safetensors": "逼真",
-    "qwen/adjust_pussy_anus.safetensors": "菊花+内凹穴",
-    "qwen/realistic_texture.safetensors": "真实质感",
-    "qwen/flat_chest_hairless.safetensors": "平胸/无毛穴",
-    "qwen/penis.safetensors": "扶他(阴茎)",
-}
 
-
-def get_lora_default_strength(lora_name: str) -> float:
-    if lora_name == "qwen/YARN_1.0.safetensors":
-        return 0.3
-    elif lora_name == "qwen/flat_chest_hairless.safetensors":
-        return 0.8
-    elif lora_name == "qwen/penis.safetensors":
-        return 0.7
-    elif lora_name == "qwen/realistic_texture.safetensors":
-        return 0.8
-    else:
-        return 1.0
-
-
-def _cleanup_context(context: ContextTypes.DEFAULT_TYPE, user_id: int):
+def _cleanup_context(context: ContextTypes.DEFAULT_TYPE, _user_id: int):
     context.user_data.pop("in_conversation", None)
     pending_files = context.user_data.pop("edit_image_data", {})
     images = pending_files.get("images", [])
@@ -98,7 +77,7 @@ async def start_edit_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             InlineKeyboardButton(
                 zh_name, callback_data=f"editlora_select_{backend_name}"
             )
-            for backend_name, zh_name in LORA_MODELS.items()
+            for backend_name, zh_name in IMAGE_LORA_MODELS.items()
         ]
         keyboard = [buttons[i : i + 2] for i in range(0, len(buttons), 2)]
         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -121,7 +100,7 @@ async def handle_lora_selection(
         return EditImageState.WAIT_LORA_SELECTION
 
     lora_name = data.replace("editlora_select_", "")
-    zh_name = LORA_MODELS.get(lora_name, lora_name)
+    zh_name = IMAGE_LORA_MODELS.get(lora_name, lora_name)
 
     fsm_data = context.user_data.get("edit_image_data", {})
     if not fsm_data:

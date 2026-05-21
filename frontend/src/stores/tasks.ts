@@ -36,6 +36,15 @@ export const useTasksStore = defineStore('tasks', () => {
   const currentDetailRecord = ref<any>(null)
   const authStore = useAuthStore()
 
+  const showDetailRecord = (record: any) => {
+    currentDetailRecord.value = record
+    detailModalVisible.value = true
+  }
+
+  const closeDetailModal = () => {
+    detailModalVisible.value = false
+  }
+
   const refreshBalanceAfterCancel = async (previousCredits: number | null) => {
     const retryDelays = [300, 800, 1500]
 
@@ -58,23 +67,21 @@ export const useTasksStore = defineStore('tasks', () => {
       const record = res.data.items.find((item: any) => item.task_id === taskId)
       
       if (record) {
-        currentDetailRecord.value = record
+        showDetailRecord(record)
       } else if (fallbackRecord) {
         // 如果没找到，退退一步使用 mock / fallback 对象展示基础信息
-        currentDetailRecord.value = {
+        showDetailRecord({
           ...fallbackRecord,
           is_public: false,
           is_favorited: false,
           allow_contribute: false,
           created_at: new Date().toISOString()
-        }
+        })
       } else {
         hide()
         message.warning('未找到对应的任务记录')
         return
       }
-      
-      detailModalVisible.value = true
     } catch (error) {
       console.error('Failed to fetch detail record:', error)
       message.error('加载详情失败，请稍后重试')
@@ -373,5 +380,16 @@ export const useTasksStore = defineStore('tasks', () => {
     }
   }
 
-  return { activeTasks, detailModalVisible, currentDetailRecord, addTask, removeTask, clearCompleted, cancelActiveTask, openDetailModal }
+  return {
+    activeTasks,
+    detailModalVisible,
+    currentDetailRecord,
+    addTask,
+    removeTask,
+    clearCompleted,
+    cancelActiveTask,
+    openDetailModal,
+    showDetailRecord,
+    closeDetailModal,
+  }
 })

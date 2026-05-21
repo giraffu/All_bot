@@ -3,6 +3,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from src.database.models import History
+from src.web_api.presenters import media_presenter
 from src.web_api.routers import users as users_router
 
 
@@ -27,10 +28,10 @@ class _FakeSession:
 async def test_pick_history_media_urls_prefers_r2_media_and_thumbnail(monkeypatch):
     get_presigned_url = MagicMock(return_value="minio-original-url")
 
-    monkeypatch.setattr(users_router.storage, "get_presigned_url", get_presigned_url)
+    monkeypatch.setattr(media_presenter.storage, "get_presigned_url", get_presigned_url)
     monkeypatch.setattr(
-        users_router,
-        "_get_first_r2_url_if_exists",
+        media_presenter,
+        "get_first_r2_url_if_exists",
         AsyncMock(
             side_effect=[
                 "https://r2.example/original.mp4",
@@ -39,7 +40,7 @@ async def test_pick_history_media_urls_prefers_r2_media_and_thumbnail(monkeypatc
         ),
     )
     monkeypatch.setattr(
-        users_router.storage,
+        media_presenter.storage,
         "async_object_exists",
         AsyncMock(return_value=True),
     )
@@ -59,10 +60,10 @@ async def test_pick_history_media_urls_prefers_r2_media_and_thumbnail(monkeypatc
 async def test_pick_history_media_urls_prefers_r2_thumbnail(monkeypatch):
     get_presigned_url = MagicMock(return_value="minio-original-url")
 
-    monkeypatch.setattr(users_router.storage, "get_presigned_url", get_presigned_url)
+    monkeypatch.setattr(media_presenter.storage, "get_presigned_url", get_presigned_url)
     monkeypatch.setattr(
-        users_router,
-        "_get_first_r2_url_if_exists",
+        media_presenter,
+        "get_first_r2_url_if_exists",
         AsyncMock(
             side_effect=[
                 "",
@@ -71,7 +72,7 @@ async def test_pick_history_media_urls_prefers_r2_thumbnail(monkeypatch):
         ),
     )
     monkeypatch.setattr(
-        users_router.storage,
+        media_presenter.storage,
         "async_object_exists",
         AsyncMock(return_value=True),
     )
@@ -103,14 +104,14 @@ async def test_pick_history_media_urls_uses_legacy_r2_media_key_when_history_key
             return "https://r2.example/task-1.mp4"
         return ""
 
-    monkeypatch.setattr(users_router.storage, "get_presigned_url", get_presigned_url)
+    monkeypatch.setattr(media_presenter.storage, "get_presigned_url", get_presigned_url)
     monkeypatch.setattr(
-        users_router,
-        "_get_first_r2_url_if_exists",
+        media_presenter,
+        "get_first_r2_url_if_exists",
         fake_get_first_r2_url_if_exists,
     )
     monkeypatch.setattr(
-        users_router.storage,
+        media_presenter.storage,
         "async_object_exists",
         AsyncMock(return_value=False),
     )
@@ -134,14 +135,14 @@ async def test_pick_history_media_urls_falls_back_to_minio_thumbnail(monkeypatch
         side_effect=["minio-original-url", "minio-thumb-url"]
     )
 
-    monkeypatch.setattr(users_router.storage, "get_presigned_url", get_presigned_url)
+    monkeypatch.setattr(media_presenter.storage, "get_presigned_url", get_presigned_url)
     monkeypatch.setattr(
-        users_router,
-        "_get_first_r2_url_if_exists",
+        media_presenter,
+        "get_first_r2_url_if_exists",
         AsyncMock(side_effect=["", ""]),
     )
     monkeypatch.setattr(
-        users_router.storage,
+        media_presenter.storage,
         "async_object_exists",
         AsyncMock(return_value=True),
     )

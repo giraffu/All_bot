@@ -14,16 +14,15 @@ from src.core.task_core import (
     process_and_submit_task,
 )
 from src.constants import VIDEO_TASK_TYPES
-from src.core.media_paths import resolve_storage_object
 from src.database.models import User, History
 from src.quota import QuotaManager
 from src.services.redis_client import redis_client
-from src.services.storage import storage
 from src.services.image_service import image_service
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from src.web_api.dependencies import get_current_user, get_current_user_once, get_db
 from src.web_api.schemas.task_schema import TaskGenerateRequest, TaskGenerateResponse, TaskResultResponse
+from src.web_api.presenters.media_presenter import build_storage_media_url
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -188,20 +187,23 @@ async def get_task_result(
             "media_type": None,
         }
 
+    if hist.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="任务不存在或无权限")
+
     is_video = hist.type in VIDEO_TASK_TYPES if hist.type else False
     media_type = "video" if is_video else "image"
 
     if hist.output_file:
-        bucket_name, object_name = resolve_storage_object(hist.output_file)
-        presigned_url = storage.get_presigned_url(
-            object_name, expires_hours=24, bucket=bucket_name
-        )
         return {
             "status": "success",
             "task_id": task_id,
             "task_type": hist.type,
             "media_type": media_type,
-            "result_url": presigned_url if presigned_url else hist.output_file,
+            "result_url": build_storage_media_url(
+                hist.output_file,
+                expires_hours=24,
+            )
+            or hist.output_file,
         }
     else:
         return {

@@ -9,12 +9,7 @@ from sqlalchemy import delete, desc, func, select, update
 from sqlalchemy.orm import joinedload
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.config_mapping import (
-    IMAGE_LORA_MODELS,
-    VIDEO_LORA_MODELS,
-    extract_prompt_lora_name,
-    translate_tags,
-)
+from src.lora_mapping import translate_tags
 from src.constants import (
     MODE_CUSTOM_VIDEO,
     MODE_EDIT,
@@ -24,6 +19,7 @@ from src.constants import (
     MODE_NAME_MAP,
     MODE_VIDEO_LORA,
 )
+from src.lora_catalog import IMAGE_LORA_MODELS, VIDEO_LORA_MODELS
 from src.core.media_paths import (
     build_history_r2_media_key,
     build_history_r2_thumbnail_key,
@@ -34,24 +30,16 @@ from src.core.media_paths import (
 )
 from src.core.media_urls import (
     build_storage_presigned_url,
-    build_r2_media_key_candidates,
-    build_r2_thumbnail_info,
-)
-from src.core.video_billing import (
-    infer_billing_resolution_from_dimensions,
-    is_video_billing_task_type,
-    normalize_requested_billing_resolution,
-    resolve_apply_prompt_and_requested_duration,
-    resolve_legacy_requested_duration,
 )
 from src.database.core import AsyncSessionLocal
 from src.database.models import GalleryPost, History, User, UserInteraction, GalleryComment
 from src.services.storage import storage
 from src.web_api.dependencies import get_current_user, get_db
 from src.web_api.routers.utils import (
-    build_apply_context_response,
-    resolve_apply_context_media_metadata,
+    build_history_apply_context_response,
+    resolve_history_billing_resolution,
 )
+from src.web_api.presenters.media_presenter import resolve_media_and_thumbnail_urls
 from src.web_api.schemas.gallery_schema import (
     ApplyContextResponse,
     GalleryPostResponse,
@@ -98,61 +86,6 @@ def _should_return_apply_input_file(history: History) -> bool:
 
 
 
-async def get_media_url(
-    output_file: str | None,
-    task_id: str | None = None,
-    r2_object_name: str | None = None,
-    media_type: str | None = None,
-) -> str:
-    """
-    Generate the media URL for a gallery post.
-    Prefer an existing R2 object and fall back to the original storage path.
-    """
-    _ = media_type
-    if not output_file:
-        return ""
-
-    for object_key in build_r2_media_key_candidates(
-        output_file=output_file,
-        task_id=task_id,
-        preferred_r2_object_name=r2_object_name,
-    ):
-        public_url = storage.get_r2_public_url(object_key)
-        if public_url and await storage.async_r2_object_exists(object_key):
-            return public_url
-
-    bucket_name, object_name = resolve_storage_object(output_file)
-    return storage.get_presigned_url(object_name, bucket=bucket_name)
-
-
-async def generate_thumbnail_url(
-    output_file: str,
-    media_type: str,
-    task_id: str | None = None,
-    r2_object_name: str | None = None,
-) -> str:
-    """
-    Generate the thumbnail URL based on the original file path.
-    Appends _thumb.jpg for videos and _thumb.webp for images.
-    """
-    if not output_file:
-        return ""
-
-    thumb_file, thumb_r2_keys = build_r2_thumbnail_info(
-        output_file=output_file,
-        media_type=media_type,
-        task_id=task_id,
-        preferred_r2_object_name=r2_object_name,
-    )
-    preferred_thumb_key = thumb_r2_keys[0] if thumb_r2_keys else None
-    return await get_media_url(
-        thumb_file,
-        task_id=None,
-        r2_object_name=preferred_thumb_key,
-        media_type=media_type,
-    )
-
-
 async def _pick_gallery_media_urls(
     *,
     task_id: str | None,
@@ -162,70 +95,21 @@ async def _pick_gallery_media_urls(
     if not output_file:
         return "", ""
 
-    _, thumb_r2_keys = build_r2_thumbnail_info(
-        output_file=output_file,
-        media_type=media_type,
-        task_id=task_id,
-    )
-    preferred_thumb_key = thumb_r2_keys[0] if thumb_r2_keys else None
-
-    media_url, thumbnail_url = await asyncio.gather(
-        get_media_url(output_file, task_id=task_id, media_type=media_type),
-        generate_thumbnail_url(
+    try:
+        return await resolve_media_and_thumbnail_urls(
             output_file,
             media_type,
             task_id=task_id,
-            r2_object_name=preferred_thumb_key,
-        ),
-        return_exceptions=True,
-    )
-    if isinstance(media_url, Exception):
+            fallback_to_storage_path=True,
+        )
+    except Exception as exc:
         logger.warning(
             "Failed to build gallery media URL for task_id=%s: %s",
             task_id,
-            media_url,
-            exc_info=media_url,
+            exc,
+            exc_info=exc,
         )
-        media_url = output_file
-    if isinstance(thumbnail_url, Exception):
-        logger.warning(
-            "Failed to build gallery thumbnail URL for task_id=%s: %s",
-            task_id,
-            thumbnail_url,
-            exc_info=thumbnail_url,
-        )
-        thumbnail_url = ""
-    return media_url, thumbnail_url
-
-
-def _resolve_history_billing_resolution(
-    history: History,
-    *,
-    width: int | None = None,
-    height: int | None = None,
-    gallery_post: GalleryPost | None = None,
-) -> str | None:
-    if not is_video_billing_task_type(history.type):
-        return None
-    if history.billing_resolution:
-        normalized = normalize_requested_billing_resolution(
-            history.billing_resolution, history.type
-        )
-        if normalized is not None:
-            return normalized
-    return infer_billing_resolution_from_dimensions(
-        width if width is not None else history.width,
-        height if height is not None else history.height,
-        history.type,
-    ) or (
-        infer_billing_resolution_from_dimensions(
-            getattr(gallery_post, "width", None),
-            getattr(gallery_post, "height", None),
-            history.type,
-        )
-        if gallery_post
-        else None
-    )
+        return output_file, ""
 
 
 @router.get("/config")
@@ -360,7 +244,7 @@ async def _build_post_responses(session, posts, current_user: Optional[User]):
 
         billing_resolution = None
         if history:
-            billing_resolution = _resolve_history_billing_resolution(
+            billing_resolution = resolve_history_billing_resolution(
                 history,
                 width=post.width if post.width is not None else history.width,
                 height=post.height if post.height is not None else history.height,
@@ -785,26 +669,11 @@ async def _build_apply_context_response(
     if not history:
         raise HTTPException(status_code=404, detail="未找到原任务详情")
 
-    input_file = None
-    input_file_url = None
-    if history.input_file and _should_return_apply_input_file(history):
-        input_file = history.input_file
-        input_file_url = build_storage_presigned_url(
-            history.input_file,
-            lambda object_name, bucket_name: storage.get_presigned_url(
-                object_name, bucket=bucket_name
-            ),
-        )
-
-    prompt, requested_duration = resolve_apply_prompt_and_requested_duration(
-        history.type,
-        history.prompt,
-        history.requested_duration,
-    )
-    prompt, lora_name = extract_prompt_lora_name(prompt)
-
-    media_type, width, height, duration = resolve_apply_context_media_metadata(
-        task_type=history.type,
+    return await build_history_apply_context_response(
+        history=history,
+        post_id=post.id,
+        source_post_id=post.id,
+        gallery_post=post,
         primary_media_type=post.media_type,
         primary_width=post.width,
         primary_height=post.height,
@@ -812,31 +681,13 @@ async def _build_apply_context_response(
         fallback_width=history.width,
         fallback_height=history.height,
         fallback_duration=history.duration,
-    )
-    requested_duration = resolve_legacy_requested_duration(
-        task_type=history.type,
-        requested_duration=history.requested_duration,
-        duration=duration,
-    )
-    billing_resolution = _resolve_history_billing_resolution(
-        history, width=width, height=height, gallery_post=post
-    )
-
-    return build_apply_context_response(
-        post_id=post.id,
-        source_post_id=post.id,
-        billing_resolution=billing_resolution,
-        requested_duration=requested_duration,
-        task_id=post.task_id,
-        media_type=media_type,
-        prompt=prompt,
-        lora_name=lora_name,
-        input_file=input_file,
-        input_file_url=input_file_url,
-        width=width,
-        height=height,
-        duration=duration,
-        task_type=history.type,
+        include_input_file=_should_return_apply_input_file(history),
+        build_input_file_url=lambda file_path: build_storage_presigned_url(
+            file_path,
+            lambda object_name, bucket_name: storage.get_presigned_url(
+                object_name, bucket=bucket_name
+            ),
+        ),
     )
 
 

@@ -1,11 +1,9 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
 import {
-  ChevronLeft,
-  ChevronRight,
   Compass,
   Copy,
   Heart,
@@ -21,8 +19,20 @@ import dayjs from 'dayjs'
 import MySubmissionsPanel from '@/components/MySubmissionsPanel.vue'
 import OverflowScrollRail from '@/components/OverflowScrollRail.vue'
 import PagedNavigation from '@/components/PagedNavigation.vue'
+import DetailMediaPreview from '@/components/DetailMediaPreview.vue'
+import DetailModalShell from '@/components/DetailModalShell.vue'
+import DetailCommentsSection from '@/components/DetailCommentsSection.vue'
+import DetailDesktopActions from '@/components/DetailDesktopActions.vue'
+import DetailMobileBottomBar from '@/components/DetailMobileBottomBar.vue'
+import { usePagedPostBrowser } from '@/composables/usePagedPostBrowser'
 import { useMainLayoutContentRef } from '@/composables/useWorkbenchScrollLock'
 import { useGalleryComments } from '@/composables/useGalleryComments'
+import { useGalleryPostInteractions } from '@/composables/useGalleryPostInteractions'
+import { useScrollPrefetch } from '@/composables/useScrollPrefetch'
+import { useViewport } from '@/composables/useViewport'
+import { copyTextWithFallback } from '@/utils/clipboard'
+import { handleMediaCardImageError } from '@/utils/mediaCardFallback'
+import { resolveMediaCardView, resolveMediaDetailView } from '@/utils/mediaCardView'
 import {
   buildLegacyTemplateRoute,
   resolveTemplateApplyEntry
@@ -49,6 +59,8 @@ interface Post {
   is_active: boolean
   prompt: string
   src?: string
+  cardIsVideo?: boolean
+  cardPoster?: string
 }
 
 type FilterTab = 'favorite' | 'like' | 'apply' | 'submissions'
@@ -62,12 +74,6 @@ const router = useRouter()
 const { t } = useI18n()
 const layoutContentRef = useMainLayoutContentRef()
 const { saveApplyContext } = useGalleryApplyContext()
-const posts = ref<Post[]>([])
-const loading = ref(false)
-const currentPage = ref(1)
-const pageCache = ref<Record<number, Post[]>>({})
-const total = ref(0)
-const totalPages = ref(0)
 
 function normalizeFilterType(tabValue: unknown): FilterTab {
   const value = typeof tabValue === 'string' ? tabValue : ''
@@ -77,16 +83,69 @@ function normalizeFilterType(tabValue: unknown): FilterTab {
   return 'favorite'
 }
 
-// Initialize from the current environment/route before immediate watchers run.
-const isMobile = ref(typeof window !== 'undefined' ? window.innerWidth < 768 : false)
+const { isMobile } = useViewport()
 
 const filterType = ref<FilterTab>(normalizeFilterType(route.query.tab))
 const selectedTaskType = ref('all')
 const allowedTypes = ref<TaskTypeOption[]>([])
 let configPromise: Promise<void> | null = null
+const pageSize = computed(() => {
+  if (filterType.value === 'favorite' && isMobile.value) {
+    return 5
+  }
+  return 20
+})
 
-const detailVisible = ref(false)
-const currentPost = ref<Post | null>(null)
+const {
+  posts,
+  loading,
+  currentPage,
+  totalPages,
+  detailVisible,
+  currentPost,
+  hasPrev,
+  hasNext,
+  clearBrowserState,
+  goNext,
+  goPrev,
+  goToPage: browserGoToPage,
+  loadPosts: loadBrowserPosts,
+  openDetail,
+  prefetchNextPage: prefetchBrowserNextPage,
+} = usePagedPostBrowser<Post>({
+  pageSize,
+  fetchPageData: async (pageNumber) => {
+    const endpoint = filterType.value === 'favorite' ? '/users/my-favorites' : '/gallery/my-favorites'
+    const res = await api.get(endpoint, {
+      params: {
+        page: pageNumber,
+        size: pageSize.value,
+        filter_type: filterType.value === 'favorite' ? 'all' : filterType.value,
+        task_type: selectedTaskType.value === 'all' ? undefined : selectedTaskType.value,
+      }
+    })
+
+    return {
+      items: res.data.items.map((post: Post) => {
+        const cardView = resolveMediaCardView(post, {
+          fallbackToOriginalWithoutThumbnail: filterType.value !== 'favorite',
+        })
+        return {
+          ...post,
+          src: cardView.initialSrc,
+          cardIsVideo: cardView.isVideo,
+          cardPoster: cardView.posterSrc,
+        }
+      }),
+      total: res.data.total,
+      pages: res.data.pages,
+    }
+  },
+  onFetchError: (error) => {
+    console.error(error)
+    message.error(t('my_notes.load_failed'))
+  },
+})
 
 const {
   comments,
@@ -103,25 +162,19 @@ const {
   submitComment
 } = useGalleryComments(currentPost, posts, detailVisible)
 const applying = ref(false)
-const interactingPosts = ref<Record<number, boolean>>({})
-const pendingPages = new Set<number>()
-
-const currentIndex = computed(() => {
-  if (!currentPost.value) return -1
-  return posts.value.findIndex(p => p.id === currentPost.value?.id)
+const { handleInteract } = useGalleryPostInteractions<Post>({
+  resolveSuccessMessage: (action, state) => {
+    if (action === 'like') {
+      return state === 'canceled' ? t('my_notes.like_removed') : t('my_notes.like_added')
+    }
+    return state === 'canceled' ? t('my_notes.dislike_removed') : t('my_notes.dislike_added')
+  },
+  shouldIgnoreError: (error) => error.response?.status === 404,
+  onError: (error) => {
+    console.error(error)
+  },
 })
 
-const pageSize = computed(() => {
-  if (filterType.value === 'favorite' && isMobile.value) {
-    return 5
-  }
-  return 20
-})
-
-const hasPrev = computed(() => currentIndex.value > 0 || currentPage.value > 1)
-const hasNext = computed(() => currentIndex.value >= 0 && (
-  currentIndex.value < posts.value.length - 1 || currentPage.value < totalPages.value
-))
 const isSubmissionTab = computed(() => filterType.value === 'submissions')
 const filterTabs = computed(() => [
   { id: 'favorite' as const, name: t('my_notes.tabs.favorite') },
@@ -137,6 +190,13 @@ const emptyStateText = computed(() => {
   if (filterType.value === 'like') return t('my_notes.empty_like')
   if (filterType.value === 'apply') return t('my_notes.empty_apply')
   return t('my_notes.empty_favorite')
+})
+const currentDetailMedia = computed(() => {
+  if (!currentPost.value) {
+    return null
+  }
+
+  return resolveMediaDetailView(currentPost.value)
 })
 
 const resolveTaskTypeLabel = (taskTypeId: string) => {
@@ -166,61 +226,6 @@ const formatTag = (tag: string) => {
   return tag
 }
 
-const getFileUrl = (path: string, postId?: number) => {
-  if (!path) return ''
-  let url = path
-  
-  if (!path.startsWith('http')) {
-    const storageUrl = import.meta.env.VITE_STORAGE_URL || ''
-    // Ensure we don't double slash if storageUrl has a trailing slash
-    const base = storageUrl.endsWith('/') ? storageUrl.slice(0, -1) : storageUrl
-    
-    if (!path.startsWith('bot-data/') && !path.startsWith('comfyui-temp/')) {
-      // If the path has no slash, it's a direct filename from ComfyUI worker in comfyui-temp
-      if (!path.includes('/')) {
-        url = `${base}/comfyui-temp/${path}`
-      } else {
-        // Otherwise, it's a structured path like 12345/output_images/... from bot-data
-        url = `${base}/bot-data/${path}`
-      }
-    } else {
-      url = `${base}/${path}`
-    }
-  }
-  
-  if (!postId || url.includes('X-Amz-Signature') || /[?&]v=/.test(url)) {
-    return url
-  }
-  const sep = url.includes('?') ? '&' : '?'
-  return `${url}${sep}v=${postId}`
-}
-
-const getCardSrc = (post: Post) => {
-  if (post.thumbnail_url) {
-    return getFileUrl(post.thumbnail_url, post.id)
-  }
-  if (filterType.value !== 'favorite' && !isVideoFile(post.media_url, post.media_type) && post.media_url) {
-    return getFileUrl(post.media_url, post.id)
-  }
-  return ''
-}
-
-const isVideoFile = (path: string, mediaType?: string) => {
-  if (mediaType) {
-    return mediaType === 'video'
-  }
-  if (!path) return false
-  const lowerPath = path.toLowerCase()
-  return lowerPath.endsWith('.mp4') || 
-         lowerPath.endsWith('.mov') || 
-         lowerPath.endsWith('.webm') || 
-         lowerPath.endsWith('.mkv') ||
-         lowerPath.endsWith('.avi')
-}
-
-let currentVisibleRequestId = 0
-let currentQueryVersion = 0
-
 const loadConfig = async () => {
   if (configPromise) return configPromise
 
@@ -238,26 +243,6 @@ const loadConfig = async () => {
   return configPromise
 }
 
-const updateViewportMode = () => {
-  const nextIsMobile = window.innerWidth < 768
-  if (nextIsMobile === isMobile.value) {
-    return
-  }
-  isMobile.value = nextIsMobile
-  if (filterType.value === 'favorite') {
-    void loadPosts(true)
-  }
-}
-
-const resetPaginationState = () => {
-  currentPage.value = 1
-  posts.value = []
-  pageCache.value = {}
-  total.value = 0
-  totalPages.value = 0
-  loading.value = false
-}
-
 const scrollToTop = async () => {
   await nextTick()
   layoutContentRef.value?.scrollTo({
@@ -265,146 +250,27 @@ const scrollToTop = async () => {
     behavior: 'smooth'
   })
 }
-
-const syncPageResult = (pageNumber: number, items: Post[], resData: any) => {
-  pageCache.value = {
-    ...pageCache.value,
-    [pageNumber]: items
-  }
-  total.value = typeof resData.total === 'number' ? resData.total : total.value
-  totalPages.value = typeof resData.pages === 'number' && resData.pages > 0
-    ? resData.pages
-    : Math.max(1, Math.ceil((total.value || items.length) / pageSize.value))
-}
-
-const fetchPostsPage = async (
-  pageNumber: number,
-  options: { activate?: boolean; force?: boolean } = {}
-) => {
-  if (isSubmissionTab.value) return false
-
-  const { activate = false, force = false } = options
-  const cachedItems = pageCache.value[pageNumber]
-
-  if (!force && cachedItems) {
-    if (activate) {
-      currentPage.value = pageNumber
-      posts.value = cachedItems
-    }
-    return true
-  }
-
-  if (pendingPages.has(pageNumber)) {
-    return false
-  }
-
-  const requestVersion = currentQueryVersion
-  const visibleRequestId = activate ? ++currentVisibleRequestId : currentVisibleRequestId
-  pendingPages.add(pageNumber)
-
-  if (activate) {
-    loading.value = true
-  }
-
-  try {
-    const endpoint = filterType.value === 'favorite' ? '/users/my-favorites' : '/gallery/my-favorites'
-    const res = await api.get(endpoint, {
-      params: {
-        page: pageNumber,
-        size: pageSize.value,
-        filter_type: filterType.value === 'favorite' ? 'all' : filterType.value,
-        task_type: selectedTaskType.value === 'all' ? undefined : selectedTaskType.value,
-      }
-    })
-
-    if (requestVersion !== currentQueryVersion) return false
-
-    const newItems = res.data.items.map((p: Post) => {
-      const src = getCardSrc(p)
-      return { ...p, src }
-    })
-
-    syncPageResult(pageNumber, newItems, res.data)
-
-    if (activate && visibleRequestId === currentVisibleRequestId) {
-      currentPage.value = pageNumber
-      posts.value = newItems
-    }
-    return true
-  } catch (error) {
-    if (requestVersion !== currentQueryVersion) return false
-    console.error(error)
-    message.error(t('my_notes.load_failed'))
-    return false
-  } finally {
-    pendingPages.delete(pageNumber)
-    if (activate && visibleRequestId === currentVisibleRequestId) {
-      loading.value = false
-    }
-  }
-}
-
 const prefetchNextPage = () => {
-  if (isSubmissionTab.value || !totalPages.value || currentPage.value >= totalPages.value) {
+  if (isSubmissionTab.value) {
     return
   }
-  void fetchPostsPage(currentPage.value + 1)
+  prefetchBrowserNextPage()
 }
 
 const goToPage = async (pageNumber: number) => {
-  if (pageNumber < 1 || (totalPages.value > 0 && pageNumber > totalPages.value)) {
+  if (isSubmissionTab.value) {
     return
   }
 
-  const changed = await fetchPostsPage(pageNumber, { activate: true })
+  const changed = await browserGoToPage(pageNumber)
   if (!changed) return
 
   await scrollToTop()
   prefetchNextPage()
 }
-
-const goPrev = async () => {
-  if (currentIndex.value > 0) {
-    currentPost.value = posts.value[currentIndex.value - 1]
-    return
-  }
-
-  if (currentPage.value <= 1) return
-  const changed = await fetchPostsPage(currentPage.value - 1, { activate: true })
-  if (changed) {
-    currentPost.value = posts.value[posts.value.length - 1] ?? null
-  }
-}
-
-const goNext = async () => {
-  if (currentIndex.value >= 0 && currentIndex.value < posts.value.length - 1) {
-    currentPost.value = posts.value[currentIndex.value + 1]
-    if (currentIndex.value >= posts.value.length - 3) {
-      prefetchNextPage()
-    }
-    return
-  }
-
-  if (currentPage.value >= totalPages.value) return
-  const changed = await fetchPostsPage(currentPage.value + 1, { activate: true })
-  if (changed) {
-    currentPost.value = posts.value[0] ?? null
-  }
-}
-
 const loadPosts = async (reset = false) => {
   if (isSubmissionTab.value) return
-  if (!reset) {
-    prefetchNextPage()
-    return
-  }
-
-  currentQueryVersion += 1
-  resetPaginationState()
-  const loaded = await fetchPostsPage(1, { activate: true, force: true })
-  if (loaded) {
-    prefetchNextPage()
-  }
+  await loadBrowserPosts(reset)
 }
 
 const handleFilterTypeChange = (type: string) => {
@@ -416,49 +282,6 @@ const handleFilterTypeChange = (type: string) => {
 const handleTaskTypeChange = (taskType: string) => {
   if (taskType === selectedTaskType.value) return
   selectedTaskType.value = taskType
-}
-
-const handleInteract = async (post: Post, action: 'like' | 'dislike') => {
-  if (interactingPosts.value[post.id]) return
-  
-  interactingPosts.value[post.id] = true
-  try {
-    const { data: resData } = await api.post(`/gallery/posts/${post.id}/interact`, null, {
-      params: { action }
-    })
-    
-    const result = resData.data
-    const action_state = result.action_state
-    
-    post.likes_count = result.likes_count
-    post.dislikes_count = result.dislikes_count
-    
-    if (action_state === 'added') {
-      if (action === 'like') post.has_liked = true
-      else post.has_disliked = true
-      message.success(action === 'like' ? t('my_notes.like_added') : t('my_notes.dislike_added'))
-    } else if (action_state === 'canceled') {
-      if (action === 'like') post.has_liked = false
-      else post.has_disliked = false
-      message.success(action === 'like' ? t('my_notes.like_removed') : t('my_notes.dislike_removed'))
-    } else if (action_state === 'switched') {
-      if (action === 'like') {
-        post.has_liked = true
-        post.has_disliked = false
-      } else {
-        post.has_disliked = true
-        post.has_liked = false
-      }
-      message.success(action === 'like' ? t('my_notes.like_added') : t('my_notes.dislike_added'))
-    }
-  } catch (error: any) {
-    if (error.response?.status === 404) {
-      return
-    }
-    console.error(error)
-  } finally {
-    interactingPosts.value[post.id] = false
-  }
 }
 
 const handleUnfavorite = async (post: Post) => {
@@ -478,11 +301,6 @@ const handleUnfavorite = async (post: Post) => {
   }
 }
 
-const openDetail = (post: Post) => {
-  currentPost.value = post
-  detailVisible.value = true
-}
-
 const copyPrompt = (post: Post) => {
   const prompt = post.prompt?.trim()
   if (!prompt) {
@@ -490,46 +308,13 @@ const copyPrompt = (post: Post) => {
     return
   }
 
-  if (navigator.clipboard && window.isSecureContext) {
-    navigator.clipboard
-      .writeText(prompt)
-      .then(() => {
-        message.success(t('my_notes.prompt_copied'))
-      })
-      .catch((error) => {
-        console.error('Clipboard API failed:', error)
-        fallbackCopyPrompt(prompt)
-      })
-    return
-  }
-
-  fallbackCopyPrompt(prompt)
-}
-
-const fallbackCopyPrompt = (text: string) => {
-  try {
-    const textArea = document.createElement('textarea')
-    textArea.value = text
-    textArea.style.position = 'fixed'
-    textArea.style.left = '-999999px'
-    textArea.style.top = '-999999px'
-
-    document.body.appendChild(textArea)
-    textArea.focus()
-    textArea.select()
-
-    const successful = document.execCommand('copy')
-    document.body.removeChild(textArea)
-
+  void copyTextWithFallback(prompt).then((successful) => {
     if (successful) {
       message.success(t('my_notes.prompt_copied'))
     } else {
       message.error(t('my_notes.copy_failed'))
     }
-  } catch (error) {
-    console.error('Fallback copy failed:', error)
-    message.error(t('my_notes.copy_failed'))
-  }
+  })
 }
 
 const handleApply = async () => {
@@ -575,48 +360,16 @@ const handleApply = async () => {
   }
 }
 
-// Scroll detection for lazy loading
-const handleScroll = () => {
-  const container = layoutContentRef.value
-  if (!container) return
-  
-  const { scrollTop, scrollHeight, clientHeight } = container
-  if (scrollHeight - scrollTop - clientHeight < 200) {
-    prefetchNextPage()
-  }
-}
+useScrollPrefetch(layoutContentRef, prefetchNextPage)
 
-const handleImageError = (e: Event, post: Post) => {
-  const img = e.target as HTMLImageElement
-  
-  // 只有拿到缩略图后才允许回退原图，避免收藏列表在缺缩略图时直接加载大图。
-  if (!img.dataset.fallbackAttempted && post.thumbnail_url && post.media_url && !isVideoFile(post.media_url, post.media_type)) {
-    img.dataset.fallbackAttempted = 'true'
-    img.src = getFileUrl(post.media_url, post.id)
-    img.style.opacity = '1'
-  } else {
-    // 如果原图也加载失败，或者是视频（视频封面还没生成），则变暗显示破图图标/占位图
-    img.style.opacity = '0.3'
-  }
+const handleImageError = (event: Event, post: Post) => {
+  handleMediaCardImageError(event, post, {
+    requireThumbnailForOriginalFallback: true,
+  })
 }
 
 onMounted(() => {
   void loadConfig()
-  window.addEventListener('resize', updateViewportMode)
-})
-
-watch(
-  layoutContentRef,
-  (container, previousContainer) => {
-    previousContainer?.removeEventListener('scroll', handleScroll)
-    container?.addEventListener('scroll', handleScroll)
-  },
-  { immediate: true }
-)
-
-onUnmounted(() => {
-  layoutContentRef.value?.removeEventListener('scroll', handleScroll)
-  window.removeEventListener('resize', updateViewportMode)
 })
 
 watch(
@@ -644,8 +397,7 @@ watch(
     }
 
     if (nextType === 'submissions') {
-      currentQueryVersion += 1
-      resetPaginationState()
+      clearBrowserState()
       return
     }
 
@@ -659,6 +411,15 @@ watch(selectedTaskType, () => {
     return
   }
   void loadPosts(true)
+})
+
+watch(isMobile, (nextIsMobile, previousIsMobile) => {
+  if (nextIsMobile === previousIsMobile) {
+    return
+  }
+  if (filterType.value === 'favorite') {
+    void loadPosts(true)
+  }
 })
 </script>
 
@@ -736,18 +497,18 @@ watch(selectedTaskType, () => {
             loading="lazy" 
           />
           <div v-else class="absolute inset-0 flex items-center justify-center text-slate-400">
-            <ImageIcon v-if="!isVideoFile(post.media_url, post.media_type)" :size="24" />
+            <ImageIcon v-if="!post.cardIsVideo" :size="24" />
             <Video v-else :size="24" />
           </div>
           
           <!-- Type Badge -->
           <div class="absolute top-2 right-2 bg-black/60 backdrop-blur-sm rounded-full p-1.5 shadow-sm border border-white/10">
-            <ImageIcon v-if="!isVideoFile(post.media_url, post.media_type)" :size="14" class="text-cyan-400" />
+            <ImageIcon v-if="!post.cardIsVideo" :size="14" class="text-cyan-400" />
             <Video v-else :size="14" class="text-indigo-400" />
           </div>
           
           <!-- Play Icon Overlay for Videos -->
-          <div v-if="isVideoFile(post.media_url, post.media_type)" class="absolute inset-0 flex items-center justify-center pointer-events-none opacity-80 group-hover:opacity-0 transition-opacity duration-300">
+          <div v-if="post.cardIsVideo" class="absolute inset-0 flex items-center justify-center pointer-events-none opacity-80 group-hover:opacity-0 transition-opacity duration-300">
             <div class="w-12 h-12 bg-black/50 backdrop-blur-md rounded-full flex items-center justify-center border border-white/20 shadow-lg">
               <Play :size="24" class="text-white ml-1" />
             </div>
@@ -807,44 +568,27 @@ watch(selectedTaskType, () => {
       :bodyStyle="isMobile ? { padding: 0, height: '100%', backgroundColor: '#0f172a' } : { padding: 0, backgroundColor: 'transparent' }"
       destroyOnClose
     >
-      <div v-if="currentPost" class="flex flex-col lg:flex-row bg-[#0f172a] sm:rounded-2xl overflow-hidden sm:border border-slate-400/50 sm:shadow-2xl w-full min-h-full sm:min-h-0 relative">
-        
-        <!-- Mobile Header (Visible only on mobile) -->
-        <div class="lg:hidden flex items-center justify-between px-4 h-14 shrink-0 bg-[#0f172a]/90 backdrop-blur-md sticky top-0 z-50 border-b border-slate-800">
-          <div class="flex items-center gap-3">
-            <button @click="detailVisible = false" class="text-slate-200 hover:text-white p-1 -ml-1">
-              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
-            </button>
-            <div class="flex items-center gap-2">
-              <span class="text-slate-200 font-medium text-sm">{{ t('gallery.modal.title') }}</span>
-            </div>
-          </div>
-        </div>
+      <DetailModalShell
+        v-if="currentPost"
+        info-content-class="p-4 lg:p-6 flex-1 flex flex-col overflow-y-auto scrollbar-thin scrollbar-thumb-slate-600 scrollbar-track-transparent"
+        desktop-close-button-class="z-10"
+        @close="detailVisible = false"
+      >
+        <template #mobile-header>
+          <span class="text-slate-200 font-medium text-sm">{{ t('gallery.modal.title') }}</span>
+        </template>
 
-        <!-- Media Area -->
-        <div class="w-full lg:w-2/3 bg-black flex items-center justify-center relative group/media">
-          <template v-if="currentPost.media_url">
-            <img v-if="!isVideoFile(currentPost.media_url, currentPost.media_type)" :src="getFileUrl(currentPost.media_url, currentPost.id)" class="w-full h-auto max-h-[65vh] object-contain lg:max-w-full lg:max-h-[80vh]" />
-            <video v-else :src="getFileUrl(currentPost.media_url, currentPost.id)" :poster="getFileUrl(currentPost.thumbnail_url, currentPost.id)" class="w-full h-auto max-h-[65vh] object-contain lg:max-w-full lg:max-h-[80vh]" controls autoplay loop playsinline></video>
-          </template>
-          
-          <!-- Navigation Arrows -->
-          <button v-if="hasPrev" @click.stop="goPrev" class="absolute left-2 top-1/2 -translate-y-1/2 w-10 h-10 sm:w-12 sm:h-12 bg-black/40 hover:bg-black/60 rounded-full flex items-center justify-center text-white/80 hover:text-white transition-all z-20 border border-white/10 backdrop-blur-sm opacity-100 lg:opacity-0 lg:group-hover/media:opacity-100">
-            <ChevronLeft :size="24" />
-          </button>
-          <button v-if="hasNext" @click.stop="goNext" class="absolute right-2 top-1/2 -translate-y-1/2 w-10 h-10 sm:w-12 sm:h-12 bg-black/40 hover:bg-black/60 rounded-full flex items-center justify-center text-white/80 hover:text-white transition-all z-20 border border-white/10 backdrop-blur-sm opacity-100 lg:opacity-0 lg:group-hover/media:opacity-100">
-            <ChevronRight :size="24" />
-          </button>
-        </div>
-        
-        <!-- Info Area -->
-        <div class="w-full lg:w-1/3 flex flex-col bg-[#0f172a] lg:bg-slate-500/80 lg:backdrop-blur-xl relative pb-[80px] lg:pb-0">
-          <!-- Desktop Close button -->
-          <button @click="detailVisible = false" class="hidden lg:block absolute top-4 right-4 text-slate-400 hover:text-white transition-colors z-10">
-            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-          </button>
-          
-          <div class="p-4 lg:p-6 flex-1 flex flex-col overflow-y-auto scrollbar-thin scrollbar-thumb-slate-600 scrollbar-track-transparent">
+        <template #media>
+          <DetailMediaPreview
+            :media="currentDetailMedia"
+            :has-prev="hasPrev"
+            :has-next="hasNext"
+            @prev="goPrev"
+            @next="goNext"
+          />
+        </template>
+
+        <template #info>
             <!-- Desktop Title -->
             <h3 class="hidden lg:flex text-xl font-bold text-slate-100 mb-2 items-center">
               <span class="bg-gradient-to-r from-cyan-400 to-indigo-400 bg-clip-text text-transparent">{{ t('gallery.modal.title') }}</span>
@@ -897,94 +641,45 @@ watch(selectedTaskType, () => {
             
 
             <!-- Comments Section -->
-            <div class="mt-6 flex flex-col min-h-[200px] lg:flex-1 lg:max-h-none lg:overflow-hidden">
-              <div class="flex items-center justify-between mb-4 shrink-0">
-                <h3 class="text-slate-200 font-medium flex items-center gap-2">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-message-circle"><path d="m3 21 1.9-5.7a8.5 8.5 0 1 1 3.8 3.8z"/></svg>
-                  {{ t('gallery.comments.section_title', { count: commentsTotal }) }}
-                </h3>
-              </div>
-              <div
-                :class="isMobile
-                  ? 'pr-0'
-                  : 'flex-1 overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-slate-600 scrollbar-track-transparent'"
-              >
-                <div v-if="commentsLoading && commentsPage === 1" class="py-8 text-center">
-                  <div class="inline-block w-6 h-6 border-2 border-cyan-500/30 border-t-cyan-500 rounded-full animate-spin"></div>
-                </div>
-                <div v-else-if="commentsError && comments.length === 0" class="py-8 text-center text-sm">
-                  <p class="text-rose-300">{{ commentsError }}</p>
-                  <button
-                    @click="currentPost && loadComments(currentPost.id, { page: 1, append: false })"
-                    class="mt-3 text-cyan-400 hover:text-cyan-300 transition-colors"
-                  >
-                    {{ t('gallery.comments.retry') }}
-                  </button>
-                </div>
-                <div v-else-if="comments.length === 0" class="py-8 text-center text-slate-500 text-sm">
-                  {{ t('gallery.comments.empty') }}
-                </div>
-                <div v-else class="space-y-4 pb-24 lg:pb-4">
-                  <div v-if="commentsError" class="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
-                    <span>{{ commentsError }}</span>
-                    <button
-                      @click="loadMoreComments"
-                      class="ml-3 text-cyan-300 hover:text-cyan-200 transition-colors"
-                    >
-                      {{ t('gallery.comments.retry') }}
-                    </button>
-                  </div>
-                  <div v-for="comment in comments" :key="comment.id" class="flex gap-3">
-                    <div class="w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center shrink-0 border border-slate-600">
-                      <span class="text-slate-300 text-xs font-medium">{{ comment.user.author_name.charAt(0).toUpperCase() }}</span>
-                    </div>
-                    <div class="flex-1 min-w-0">
-                      <div class="flex items-center gap-2 mb-1">
-                        <span class="text-sm font-medium text-slate-300 truncate">{{ comment.user.author_name }}</span>
-                        <span class="text-xs text-slate-500">{{ dayjs(comment.created_at).format('MM-DD HH:mm') }}</span>
-                      </div>
-                      <p class="text-sm text-slate-300 break-words whitespace-pre-wrap">{{ comment.content }}</p>
-                    </div>
-                  </div>
-                  <div v-if="commentsHasMore" class="pt-2 pb-4 text-center">
-                    <button 
-                      @click="loadMoreComments" 
-                      :disabled="commentsLoading"
-                      class="text-xs text-cyan-400 hover:text-cyan-300 transition-colors disabled:opacity-50"
-                    >
-                      {{ commentsLoading ? t('gallery.comments.loading_more') : t('gallery.comments.load_more') }}
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-            <div class="hidden lg:block mt-auto space-y-4 pt-4">
-              <button
-                v-if="currentPost.prompt?.trim()"
-                @click="copyPrompt(currentPost)"
-                class="w-full py-3 rounded-xl bg-slate-500 hover:bg-slate-400 text-white font-medium shadow-sm transition-all flex items-center justify-center border border-slate-400"
-              >
-                <Copy :size="18" class="mr-2" />
-                {{ t('my_posts.copy_prompt') }}
-              </button>
-              <button 
-                @click="handleApply" 
-                :disabled="applying"
-                class="w-full py-4 rounded-xl bg-gradient-to-r from-cyan-600 to-indigo-600 hover:from-cyan-500 hover:to-indigo-500 text-white font-bold text-lg shadow-[0_0_20px_rgba(56,189,248,0.4)] transition-all transform hover:scale-[1.02] flex items-center justify-center relative overflow-hidden group"
-              >
-                <div class="absolute inset-0 bg-white/20 translate-y-full group-hover:translate-y-0 transition-transform duration-300"></div>
-                <Wand2 v-if="!applying" :size="22" class="mr-2 relative z-10" />
-                <div v-else class="inline-block w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin mr-2 relative z-10"></div>
-                <span class="relative z-10">{{ applying ? t('my_notes.applying_template') : t('gallery.modal.apply_btn') }}</span>
-              </button>
-              <p class="text-center text-xs text-slate-500 mt-3">{{ t('gallery.modal.apply_hint') }}</p>
-            </div>
-          </div>
-        </div>
+            <DetailCommentsSection
+              :comments="comments"
+              :comments-loading="commentsLoading"
+              :comments-error="commentsError"
+              :comments-page="commentsPage"
+              :comments-total="commentsTotal"
+              :comments-has-more="commentsHasMore"
+              :is-mobile="isMobile"
+              @retry-initial="currentPost && loadComments(currentPost.id, { page: 1, append: false })"
+              @retry-more="loadMoreComments"
+              @load-more="loadMoreComments"
+            />
+            <DetailDesktopActions container-class="mt-auto" bottom-class="space-y-4 pt-4">
+              <template #bottom>
+                <button
+                  v-if="currentPost.prompt?.trim()"
+                  @click="copyPrompt(currentPost)"
+                  class="w-full py-3 rounded-xl bg-slate-500 hover:bg-slate-400 text-white font-medium shadow-sm transition-all flex items-center justify-center border border-slate-400"
+                >
+                  <Copy :size="18" class="mr-2" />
+                  {{ t('my_posts.copy_prompt') }}
+                </button>
+                <button 
+                  @click="handleApply" 
+                  :disabled="applying"
+                  class="w-full py-4 rounded-xl bg-gradient-to-r from-cyan-600 to-indigo-600 hover:from-cyan-500 hover:to-indigo-500 text-white font-bold text-lg shadow-[0_0_20px_rgba(56,189,248,0.4)] transition-all transform hover:scale-[1.02] flex items-center justify-center relative overflow-hidden group"
+                >
+                  <div class="absolute inset-0 bg-white/20 translate-y-full group-hover:translate-y-0 transition-transform duration-300"></div>
+                  <Wand2 v-if="!applying" :size="22" class="mr-2 relative z-10" />
+                  <div v-else class="inline-block w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin mr-2 relative z-10"></div>
+                  <span class="relative z-10">{{ applying ? t('my_notes.applying_template') : t('gallery.modal.apply_btn') }}</span>
+                </button>
+                <p class="text-center text-xs text-slate-500 mt-3">{{ t('gallery.modal.apply_hint') }}</p>
+              </template>
+            </DetailDesktopActions>
+        </template>
 
-        <!-- Mobile Bottom Interaction Bar -->
-        <div class="lg:hidden fixed bottom-0 left-0 right-0 bg-[#0f172a]/95 backdrop-blur-lg border-t border-slate-800 px-4 py-3 flex items-center justify-between z-50 safe-area-bottom">
-          <div class="flex items-center gap-6">
+        <DetailMobileBottomBar>
+          <template #left>
             <template v-if="filterType !== 'favorite'">
               <button @click="handleInteract(currentPost, 'like')" class="flex items-center gap-1.5 transition-all" :class="currentPost.has_liked ? 'text-pink-500' : 'text-slate-300'">
                 <Heart :size="22" :class="{'fill-pink-500': currentPost.has_liked}" />
@@ -995,36 +690,37 @@ watch(selectedTaskType, () => {
                 <span class="text-sm font-medium">{{ currentPost.dislikes_count }}</span>
               </button>
               <button @click="showCommentInput = true" class="flex items-center gap-1.5 transition-all text-slate-300">
-                <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-message-circle"><path d="m3 21 1.9-5.7a8.5 8.5 0 1 1 3.8 3.8z"/></svg>
+                <MessageCircle :size="22" />
                 <span class="text-sm font-medium">{{ currentPost.comments_count || 0 }}</span>
               </button>
             </template>
-            <template v-if="filterType === 'favorite'">
+            <template v-else>
               <button @click="handleUnfavorite(currentPost)" class="flex items-center gap-1.5 transition-all text-red-400">
                 <Trash2 :size="22" />
                 <span class="text-sm font-medium">{{ t('my_notes.unfavorite_button') }}</span>
               </button>
               <button @click="showCommentInput = true" class="flex items-center gap-1.5 transition-all text-slate-300">
-                <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-message-circle"><path d="m3 21 1.9-5.7a8.5 8.5 0 1 1 3.8 3.8z"/></svg>
+                <MessageCircle :size="22" />
                 <span class="text-sm font-medium">{{ currentPost.comments_count || 0 }}</span>
               </button>
             </template>
             <button v-if="currentPost.prompt?.trim()" @click="copyPrompt(currentPost)" class="flex items-center gap-1.5 transition-all text-slate-300">
               <Copy :size="22" />
             </button>
-          </div>
-          <button 
-            @click="handleApply" 
-            :disabled="applying"
-            class="px-6 py-2 rounded-full bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-sm shadow-lg flex items-center"
-          >
-            <Wand2 v-if="!applying" :size="16" class="mr-1.5" />
-            <div v-else class="inline-block w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin mr-1.5"></div>
-            {{ applying ? '...' : t('gallery.modal.apply_btn') }}
-          </button>
-        </div>
-
-      </div>
+          </template>
+          <template #right>
+            <button 
+              @click="handleApply" 
+              :disabled="applying"
+              class="px-6 py-2 rounded-full bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-sm shadow-lg flex items-center"
+            >
+              <Wand2 v-if="!applying" :size="16" class="mr-1.5" />
+              <div v-else class="inline-block w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin mr-1.5"></div>
+              {{ applying ? '...' : t('gallery.modal.apply_btn') }}
+            </button>
+          </template>
+        </DetailMobileBottomBar>
+      </DetailModalShell>
     </a-modal>
     <!-- Comment Input Modal -->
     <a-modal

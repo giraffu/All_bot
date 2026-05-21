@@ -369,7 +369,7 @@ async def receive_reference_image(
     # Often the template is just prepended to images or replaced.
     # If it's an I2V task, the template is the image. But here the user provides a NEW image.
     # So we just use the NEW image and the OLD prompt/lora.
-    from src.handlers.fsm.edit_image_fsm import get_lora_default_strength
+    from src.lora_catalog import get_lora_default_strength
 
     lora_strength = get_lora_default_strength(lora_name)
 

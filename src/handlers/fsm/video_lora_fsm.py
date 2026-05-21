@@ -21,6 +21,7 @@ from src.constants import (
 )
 from src.handlers.conversation_states import VideoLoraState
 from src.handlers.prompt_router import is_global_menu_command
+from src.lora_catalog import VIDEO_LORA_MODELS
 from src.services.permission_service import permission_service
 from src.services.task_service import TaskService
 from src.utils import create_background_task, robust_edit_text, robust_reply_text
@@ -30,18 +31,8 @@ from src.filters.i18n_filter import I18nFilter
 
 logger = logging.getLogger("fsm.video_lora")
 
-LORA_MODELS = {
-    "BreastGrow": "巨乳膨胀",
-    "BreastInsertion": "乳交",
-    "Cum": "颜射",
-    "Cunilingus": "舔阴",
-    "Flatchested": "平胸",
-    "Footjob": "足交",
-    "Insertion": "插入优化",
-}
 
-
-def _cleanup_context(context: ContextTypes.DEFAULT_TYPE, user_id: int):
+def _cleanup_context(context: ContextTypes.DEFAULT_TYPE, _user_id: int):
     context.user_data.pop("in_conversation", None)
     pending_files = context.user_data.pop("video_lora_data", {})
     path = pending_files.get("image_path")
@@ -86,7 +77,7 @@ async def start_video_lora(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
     buttons = [
         InlineKeyboardButton(zh_name, callback_data=f"lora_select_{backend_name}")
-        for backend_name, zh_name in LORA_MODELS.items()
+        for backend_name, zh_name in VIDEO_LORA_MODELS.items()
     ]
     keyboard = [buttons[i : i + 2] for i in range(0, len(buttons), 2)]
 
@@ -110,7 +101,7 @@ async def handle_lora_selection(
         return VideoLoraState.WAIT_LORA_SELECTION
 
     lora_name = data.replace("lora_select_", "")
-    zh_name = LORA_MODELS.get(lora_name, lora_name)
+    zh_name = VIDEO_LORA_MODELS.get(lora_name, lora_name)
 
     fsm_data = context.user_data.get("video_lora_data", {})
     if not fsm_data:
@@ -170,7 +161,7 @@ async def receive_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     multiplier = DURATION_MULTIPLIER.get(dur, 1.0)
     cost = int(base_cost * multiplier)
 
-    zh_name = LORA_MODELS.get(fsm_data["lora_name"], fsm_data["lora_name"])
+    zh_name = VIDEO_LORA_MODELS.get(fsm_data["lora_name"], fsm_data["lora_name"])
 
     msg_text = f"⚙️ 当前画质：{res} | 时长：{dur} | 消耗灵石：{cost}\n已选模型：**{zh_name}**\n\n请在下方选择您需要的画质和时长（部分画质和时长需要高境界或VIP身份解锁）：\n\n*提示：画质越高、时长越长，消耗灵石越多。注意：1024p 和 10s 无法同时选择。*\n\n【第三步】**请直接发送提示词 (Text)** 开始生成。"
 
@@ -229,7 +220,7 @@ async def process_settings(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     multiplier = DURATION_MULTIPLIER.get(dur, 1.0)
     cost = int(base_cost * multiplier)
 
-    zh_name = LORA_MODELS.get(fsm_data["lora_name"], fsm_data["lora_name"])
+    zh_name = VIDEO_LORA_MODELS.get(fsm_data["lora_name"], fsm_data["lora_name"])
 
     msg_text = f"⚙️ 当前画质：{res} | 时长：{dur} | 消耗灵石：{cost}\n已选模型：**{zh_name}**\n\n请在下方选择您需要的画质和时长（部分画质和时长需要高境界或VIP身份解锁）：\n\n*提示：画质越高、时长越长，消耗灵石越多。注意：1024p 和 10s 无法同时选择。*\n\n【第三步】**请直接发送提示词 (Text)** 开始生成。"
 

@@ -14,10 +14,12 @@ from src.core.auth_core import (
 )
 from src.services.permission_service import permission_service
 from src.web_api.core.security import create_access_token
+from src.web_api.presenters.user_presenter import (
+    build_token_user_payload,
+    build_user_response_from_auth_stats,
+)
 from src.web_api.schemas.auth_schema import (
-    InvitationRechargeStats,
     TelegramLoginRequest,
-    UserResponse,
     UserLoginRequest,
     UserBindPasswordRequest,
 )
@@ -56,35 +58,11 @@ async def login_telegram(req: TelegramLoginRequest):
         access_token = create_access_token(
             subject=user.id, pwd_ver=user.password_version
         )
-        current_identity = stats.get("identity", user.current_identity)
-
-        user_response_data = UserResponse(
-            id=user.id,
-            telegram_id=user.telegram_id,
-            username=user.username,
-            full_name=user.full_name,
-            language_code=user.language_code,
-            credits=stats.get("credits", user.credits),
-            user_group=stats.get("group", user.user_group),
-            current_identity=current_identity,
-            priority=stats.get("priority", 0),
-            identity_expire_at=stats.get("identity_expire_at"),
-            total_contributions=stats.get("total_contributions", 0),
-            generation_count=stats.get("generations", 0),
-            checkin_count=stats.get("checkins", 0),
-            invitation_count=stats.get("invitations", 0),
-            invitation_recharge=InvitationRechargeStats(
-                **stats.get("invitation_recharge", {})
-            )
-            if stats.get("invitation_recharge")
-            else None,
+        user_response_data = build_user_response_from_auth_stats(user, stats)
+        return build_token_user_payload(
+            access_token=access_token,
+            user_response=user_response_data,
         )
-
-        return {
-            "access_token": access_token,
-            "token_type": "bearer",
-            "user": user_response_data.model_dump(),
-        }
     except InvalidSignatureError as e:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(e))
     except HTTPException:
@@ -118,35 +96,11 @@ async def login_with_password(req: UserLoginRequest, request: Request):
         access_token = create_access_token(
             subject=user.id, pwd_ver=user.password_version, channel="password"
         )
-        current_identity = stats.get("identity", user.current_identity)
-
-        user_response_data = UserResponse(
-            id=user.id,
-            telegram_id=user.telegram_id,
-            username=user.username,
-            full_name=user.full_name,
-            language_code=user.language_code,
-            credits=stats.get("credits", user.credits),
-            user_group=stats.get("group", user.user_group),
-            current_identity=current_identity,
-            priority=stats.get("priority", 0),
-            identity_expire_at=stats.get("identity_expire_at"),
-            total_contributions=stats.get("total_contributions", 0),
-            generation_count=stats.get("generations", 0),
-            checkin_count=stats.get("checkins", 0),
-            invitation_count=stats.get("invitations", 0),
-            invitation_recharge=InvitationRechargeStats(
-                **stats.get("invitation_recharge", {})
-            )
-            if stats.get("invitation_recharge")
-            else None,
+        user_response_data = build_user_response_from_auth_stats(user, stats)
+        return build_token_user_payload(
+            access_token=access_token,
+            user_response=user_response_data,
         )
-
-        return {
-            "access_token": access_token,
-            "token_type": "bearer",
-            "user": user_response_data.model_dump(),
-        }
     except InvalidCredentialsError as e:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(e))
     except RateLimitError as e:

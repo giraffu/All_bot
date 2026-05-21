@@ -1,4 +1,4 @@
-from src.config_mapping import extract_prompt_lora_name, resolve_lora_name_from_tag
+from src.lora_mapping import extract_prompt_lora_name, resolve_lora_name_from_tag
 
 
 def test_extract_prompt_lora_name_maps_display_name_to_model_name():

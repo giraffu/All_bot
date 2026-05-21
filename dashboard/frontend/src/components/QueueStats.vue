@@ -11,50 +11,19 @@ import {
   ClearOutlined,
   LockOutlined
 } from '@ant-design/icons-vue'
-import { ref, onMounted, onUnmounted, computed } from 'vue'
-import { fetchSystemStatus, fetchSystemWorkers, cleanZombieTasks, fetchConcurrencyStats, syncUserConcurrency } from '../api/api'
 import { message, Modal } from 'ant-design-vue'
+import { useQueueStatsMonitor } from '../composables/useQueueStatsMonitor'
 
-const status = ref({
-  queue_size: 0,
-  queue_by_type: {},
-  active_workers: 0,
-  comfy_online: false
-})
-
-const workers = ref([])
-const concurrencyStats = ref([])
-
-const loading = ref(false)
-const cleaning = ref(false)
-const syncing = ref({})
-let timer = null
-let tick = 0
-
-const updateQueue = async () => {
-  try {
-    const data = await fetchSystemStatus()
-    if (data) {
-      status.value = data
-    }
-    
-    const workersData = await fetchSystemWorkers()
-    if (workersData && workersData.workers) {
-      workers.value = workersData.workers
-    }
-    
-    // 每5秒更新一次并发锁数据
-    if (tick % 5 === 0) {
-      const concurrencyData = await fetchConcurrencyStats()
-      if (concurrencyData && concurrencyData.data) {
-        concurrencyStats.value = concurrencyData.data
-      }
-    }
-    tick++
-  } catch (err) {
-    console.error('Error fetching system status:', err)
-  }
-}
+const {
+  status,
+  workers,
+  concurrencyStats,
+  cleaning,
+  syncing,
+  queueByTypeDisplay,
+  cleanZombies,
+  syncLock,
+} = useQueueStatsMonitor()
 
 const handleCleanZombies = () => {
   Modal.confirm({
@@ -64,34 +33,20 @@ const handleCleanZombies = () => {
     cancelText: '取消',
     okType: 'danger',
     onOk: async () => {
-      cleaning.value = true
       try {
-        const res = await cleanZombieTasks()
+        const res = await cleanZombies()
         if (res.status === 'success') {
           message.success(`清理成功！共清除了 ${res.removed} 个卡死任务。`)
-          updateQueue()
         } else {
           message.error('清理失败: ' + res.message)
         }
       } catch (err) {
         console.error(err)
         message.error('清理过程中发生错误')
-      } finally {
-        cleaning.value = false
       }
     }
   })
 }
-
-const queueByTypeDisplay = computed(() => {
-  if (!status.value.queue_by_type || Object.keys(status.value.queue_by_type).length === 0) {
-    return []
-  }
-  return Object.entries(status.value.queue_by_type).map(([type, count]) => ({
-    type,
-    count
-  }))
-})
 
 const formatDuration = (timestamp) => {
   if (!timestamp) return '-'
@@ -104,35 +59,18 @@ const formatDuration = (timestamp) => {
 }
 
 const handleSyncLock = async (userId) => {
-  syncing.value[userId] = true
   try {
-    const res = await syncUserConcurrency(userId)
+    const res = await syncLock(userId)
     if (res.status === 'success') {
       message.success(res.message)
-      // Force update
-      const concurrencyData = await fetchConcurrencyStats()
-      if (concurrencyData && concurrencyData.data) {
-        concurrencyStats.value = concurrencyData.data
-      }
     } else {
       message.info(res.message)
     }
   } catch (err) {
     console.error(err)
     message.error('同步并发锁失败')
-  } finally {
-    syncing.value[userId] = false
   }
 }
-
-onMounted(() => {
-  updateQueue()
-  timer = setInterval(updateQueue, 1000)
-})
-
-onUnmounted(() => {
-  if (timer) clearInterval(timer)
-})
 </script>
 
 <template>

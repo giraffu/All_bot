@@ -3,7 +3,7 @@ import { ref, onMounted, computed, h, watch } from 'vue'
 import { message, Modal } from 'ant-design-vue'
 import { ExclamationCircleOutlined, PictureOutlined, PlayCircleOutlined, CheckCircleOutlined, CloseCircleOutlined, CopyOutlined } from '@ant-design/icons-vue'
 import { fetchGalleryPosts, updateGalleryPost, deleteGalleryPost, fetchGalleryComments, updateGalleryComment, apiBaseUrl } from '../api/api'
-import { formatDate } from '../utils/helpers'
+import { copyTextWithFallback, formatDate } from '../utils/helpers'
 
 const loading = ref(false)
 const posts = ref([])
@@ -15,43 +15,12 @@ const pagination = ref({
 
 const copyToClipboard = async (text) => {
   if (!text) return
-  
-  // 1. 尝试使用现代 Clipboard API (仅在 HTTPS 或 localhost 下可用)
-  if (navigator.clipboard && window.isSecureContext) {
-    try {
-      await navigator.clipboard.writeText(text)
-      message.success('提示词已复制')
-      return
-    } catch (err) {
-      console.error('Clipboard API failed: ', err)
-      // 如果失败，继续走下面的降级方案
-    }
-  }
-  
-  // 2. 降级方案：使用传统 execCommand，兼容 HTTP 环境 (如局域网 IP 访问)
-  try {
-    const textArea = document.createElement('textarea')
-    textArea.value = text
-    // 隐藏文本框，防止页面滚动闪烁
-    textArea.style.position = 'fixed'
-    textArea.style.left = '-999999px'
-    textArea.style.top = '-999999px'
-    
-    document.body.appendChild(textArea)
-    textArea.focus()
-    textArea.select()
-    
-    const successful = document.execCommand('copy')
-    document.body.removeChild(textArea)
-    
-    if (successful) {
-      message.success('提示词已复制')
-    } else {
-      message.error('复制失败，浏览器可能拦截了该操作')
-    }
-  } catch (err) {
-    message.error('复制失败')
-    console.error('Fallback copy failed: ', err)
+
+  const copied = await copyTextWithFallback(text)
+  if (copied) {
+    message.success('提示词已复制')
+  } else {
+    message.error('复制失败，浏览器可能拦截了该操作')
   }
 }
 

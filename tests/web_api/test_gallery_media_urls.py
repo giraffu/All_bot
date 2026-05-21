@@ -5,6 +5,7 @@ import pytest
 
 from src.core.media_paths import MINIO_BUCKET
 from src.database.models import GalleryPost, History, User
+from src.web_api.presenters import media_presenter
 from src.web_api.routers import gallery as gallery_router
 
 
@@ -67,13 +68,18 @@ async def test_build_post_responses_used_by_my_posts_generates_minio_urls_for_un
         ]
     )
 
-    monkeypatch.setattr(gallery_router.storage, "get_r2_public_url", MagicMock(return_value=""))
+    monkeypatch.setattr(media_presenter.storage, "get_r2_public_url", MagicMock(return_value=""))
     monkeypatch.setattr(
-        gallery_router.storage,
+        media_presenter.storage,
         "async_r2_object_exists",
         AsyncMock(return_value=False),
     )
-    monkeypatch.setattr(gallery_router.storage, "get_presigned_url", presign_mock)
+    monkeypatch.setattr(media_presenter.storage, "get_presigned_url", presign_mock)
+    monkeypatch.setattr(
+        media_presenter.storage,
+        "async_object_exists",
+        AsyncMock(return_value=True),
+    )
 
     items = await gallery_router._build_post_responses(
         session,

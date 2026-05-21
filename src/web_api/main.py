@@ -15,7 +15,7 @@ from src.core.exceptions import (
 )
 
 from src.database.core import engine
-from src.web_api.routers import auth, gallery, storage, tasks, users, utils, payment
+from src.web_api.routers import auth, gallery, storage, tasks, users, payment
 
 # Configure logging
 logging.basicConfig(
@@ -136,7 +136,6 @@ app.include_router(tasks.router, prefix="/api/tasks", tags=["Tasks"])
 app.include_router(users.router, prefix="/api/users", tags=["Users"])
 app.include_router(gallery.router, prefix="/api/gallery", tags=["Gallery"])
 app.include_router(payment.router, prefix="/api/payment", tags=["Payment"])
-app.include_router(utils.router, prefix="/api/utils", tags=["Utils"])
 
 
 @app.get("/api/health", tags=["Health"])

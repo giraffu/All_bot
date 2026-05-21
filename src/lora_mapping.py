@@ -1,11 +1,10 @@
 import re
-from typing import List
 
-from src.handlers.fsm.edit_image_fsm import LORA_MODELS as IMAGE_LORA_MODELS
-from src.handlers.fsm.video_lora_fsm import LORA_MODELS as VIDEO_LORA_MODELS
+from src.lora_catalog import ALL_LORA_MODELS
 
-ALL_LORA_MODELS = {**VIDEO_LORA_MODELS, **IMAGE_LORA_MODELS}
-REVERSE_LORA_MODELS = {display_name: model_name for model_name, display_name in ALL_LORA_MODELS.items()}
+REVERSE_LORA_MODELS = {
+    display_name: model_name for model_name, display_name in ALL_LORA_MODELS.items()
+}
 
 # 历史 prompt 中可能残留手写/旧展示名，这里统一兜底到模型文件名。
 REVERSE_LORA_MODELS.update(
@@ -19,8 +18,8 @@ REVERSE_LORA_MODELS.update(
 )
 
 
-def translate_tags(tags_list: List[str]) -> List[str]:
-    """Translate model IDs to human-readable tags based on ALL_LORA_MODELS mapping."""
+def translate_tags(tags_list: list[str]) -> list[str]:
+    """Translate model IDs to human-readable tags based on the LoRA catalog."""
     translated_tags = []
     for tag in tags_list:
         raw_tag = tag.strip("#")

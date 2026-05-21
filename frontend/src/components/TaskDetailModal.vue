@@ -16,7 +16,10 @@ const { formatDate, getTypeLabel, getFileUrl, isVideoFile } = useTaskFormat()
 const detailVisible = computed({
   get: () => tasksStore.detailModalVisible,
   set: (val) => {
-    tasksStore.detailModalVisible = val
+    if (val) {
+      return
+    }
+    tasksStore.closeDetailModal()
   }
 })
 

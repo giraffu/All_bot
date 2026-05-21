@@ -2,6 +2,7 @@
 import { ref, onMounted } from 'vue'
 import { fetchHistoryAll, fetchWorkerList } from '../api/api'
 import { getFileUrl, formatDate } from '../utils/helpers'
+import { getTaskTypeLabel, TASK_TYPE_OPTIONS } from '../constants/taskTypes'
 import MediaItem from './MediaItem.vue'
 import { 
   UserOutlined,
@@ -21,67 +22,7 @@ const selectedPublic = ref(null)
 const selectedWorker = ref(null)
 const workerOptions = ref([{ label: '全部节点', value: null }])
 
-const typeMapping = {
-  'undress': '快速脱衣',
-  'video_undress': '视频脱衣',
-  'face_swap': '快速换脸',
-  'faceswap_step1': '快速换脸',
-  'faceswap_step2': '快速换脸',
-  'random_faceswap': '随机换脸',
-  'face_show': '动图露奶',
-  'face_tongue': '动图吐舌',
-  'fuck': '动图做爱',
-  'penetration': '快速抽插',
-  'penetration_step1': '快速抽插',
-  'penetration_step2': '快速抽插',
-  'perfect_video_insert': '动图传教士',
-  'doggy_style': '动图后入',
-  'blowjob': '口交黑人',
-  'masturbation': '快速自慰',
-  'image': '自由P图',
-  'edit': '自由P图',
-  'video': '视频生成',
-  'video_pro': '专业视频',
-  'custom_video': '自定义视频',
-  'face_video_step1': '视频换脸',
-  'face_video_step2': '视频换脸',
-  'template_contribute': '模板共建',
-  'undress_tongue': '脱衣吐舌',
-  'closeup_blowjob': '特写口交',
-  'text_to_image': '文生图',
-  'i2i_pro': '幻想换脸',
-  'i2i_draw': '局部重绘',
-  'img2img_lora': '图生图(附加模型)',
-  'ltx_video': '高级图生视频',
-};
-
-const typeOptions = [
-  { label: '自定义视频', value: 'custom_video' },
-  { label: '高级图生视频', value: 'ltx_video' },
-  { label: '视频换脸', value: 'face_video_step1' },
-  { label: '自由P图', value: 'image,edit' },
-  { label: '快速换脸', value: 'face_swap' },
-  { label: '快速脱衣', value: 'undress' },
-  { label: '动图传教士', value: 'perfect_video_insert' },
-  { label: '快速自慰', value: 'masturbation' },
-  { label: '特写口交', value: 'closeup_blowjob' },
-  { label: '动图后入', value: 'doggy_style' },
-  { label: '口交黑人', value: 'blowjob' },
-  { label: '脱衣吐舌', value: 'undress_tongue' },
-  { label: '快速抽插', value: 'penetration' },
-  { label: '文生图', value: 'text_to_image' },
-  { label: '动图做爱', value: 'fuck' },
-  { label: '动图露奶', value: 'face_show' },
-  { label: '动图吐舌', value: 'face_tongue' },
-  { label: '专业视频', value: 'video_pro' },
-  { label: '视频脱衣', value: 'video_undress' },
-  { label: '随机换脸', value: 'random_faceswap' },
-  { label: '视频生成', value: 'video' },
-  { label: '模板共建', value: 'template_contribute' },
-  { label: '幻想换脸', value: 'i2i_pro' },
-  { label: '局部重绘', value: 'i2i_draw' },
-  { label: '图生图(附加模型)', value: 'img2img_lora' }
-];
+const typeOptions = TASK_TYPE_OPTIONS
 
 const ratingOptions = [
   { label: '全部评价', value: null },
@@ -343,7 +284,7 @@ onMounted(() => {
         <!-- Type -->
         <template v-else-if="column.key === 'type'">
           <a-tag :color="record.type === 'image' ? 'blue' : 'orange'">
-            {{ typeMapping[record.type] || record.type }}
+            {{ getTaskTypeLabel(record.type) }}
           </a-tag>
         </template>
 

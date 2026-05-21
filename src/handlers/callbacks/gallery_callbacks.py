@@ -14,6 +14,7 @@ from src.core.user_core import get_or_create_user_by_telegram
 from src.database.core import AsyncSessionLocal
 from src.database.models import GalleryPost, History
 from src.handlers.callback_router import register_callback
+from src.lora_mapping import translate_tags
 from src.services.storage import storage
 from src.utils import (
     create_background_task,
@@ -482,8 +483,6 @@ async def gallery_sort_page_callback(
                 tags = json.loads(post.tags)
             except Exception:
                 tags = []
-
-            from src.config_mapping import translate_tags
 
             translated_tags = translate_tags(tags)
 

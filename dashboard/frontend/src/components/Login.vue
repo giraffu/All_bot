@@ -2,8 +2,7 @@
 import { ref } from 'vue'
 import { login } from '../api/api'
 import { UserOutlined, LockOutlined } from '@ant-design/icons-vue'
-
-const emit = defineEmits(['login-success'])
+import { setAuthToken } from '../composables/useDashboardAuth'
 
 const username = ref('')
 const password = ref('')
@@ -22,8 +21,7 @@ const handleLogin = async () => {
   try {
     const res = await login(username.value, password.value)
     if (res.access_token) {
-      localStorage.setItem('token', res.access_token)
-      emit('login-success')
+      setAuthToken(res.access_token)
     }
   } catch (err) {
     error.value = '用户名或密码错误'

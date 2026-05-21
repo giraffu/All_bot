@@ -5,6 +5,7 @@ from fastapi import HTTPException
 
 from src.database.models import History
 from src.core.media_paths import MINIO_BUCKET
+from src.web_api.presenters import media_presenter
 from src.web_api.routers import tasks as tasks_router
 
 
@@ -79,7 +80,7 @@ async def test_get_task_result_uses_resolved_storage_object_for_bucket_prefixed_
         output_file="bot-data/history/task-1/output.png",
     )
     presign_mock = MagicMock(return_value="https://cdn.example/task-1.png")
-    monkeypatch.setattr(tasks_router.storage, "get_presigned_url", presign_mock)
+    monkeypatch.setattr(media_presenter.storage, "get_presigned_url", presign_mock)
 
     response = await tasks_router.get_task_result(
         "task-1",
@@ -113,7 +114,7 @@ async def test_get_task_result_uses_primary_bucket_for_unprefixed_history_video_
         output_file="123/output_images/task-1.mp4",
     )
     presign_mock = MagicMock(return_value="https://cdn.example/task-1.mp4")
-    monkeypatch.setattr(tasks_router.storage, "get_presigned_url", presign_mock)
+    monkeypatch.setattr(media_presenter.storage, "get_presigned_url", presign_mock)
 
     response = await tasks_router.get_task_result(
         "task-1",
