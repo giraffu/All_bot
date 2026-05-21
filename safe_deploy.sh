@@ -5,6 +5,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT_DIR"
 
 DEPLOY_SUCCEEDED=0
+PROD_ENV_FILE="$ROOT_DIR/.env"
 
 remove_maintenance_markers() {
     local containers=(
@@ -34,6 +35,15 @@ cleanup_on_exit() {
 }
 
 trap cleanup_on_exit EXIT
+
+if [ ! -f "$PROD_ENV_FILE" ]; then
+    echo "❌ 未找到 $PROD_ENV_FILE，请先补齐生产环境配置。"
+    exit 1
+fi
+
+set -a
+source "$PROD_ENV_FILE"
+set +a
 
 wait_for_http_ready() {
     local service_name=$1

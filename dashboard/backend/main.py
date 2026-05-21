@@ -51,6 +51,19 @@ app.include_router(referrals.router)
 background_tasks = set()
 
 
+def _build_auth_error_response(request: Request, detail: str):
+    response = fastapi.responses.JSONResponse(
+        status_code=401,
+        content={"detail": detail},
+    )
+    origin = request.headers.get("origin")
+    if origin:
+        response.headers["Access-Control-Allow-Origin"] = "*"
+        response.headers["Access-Control-Allow-Methods"] = "*"
+        response.headers["Access-Control-Allow-Headers"] = "*"
+    return response
+
+
 @app.on_event("startup")
 async def startup_event():
     FastAPICache.init(InMemoryBackend(), prefix="fastapi-cache")
@@ -74,7 +87,7 @@ async def startup_event():
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -82,21 +95,21 @@ app.add_middleware(
 
 @app.middleware("http")
 async def check_auth_header(request: Request, call_next):
+    if request.method == "OPTIONS":
+        return await call_next(request)
+
     if request.url.path.startswith("/api/"):
         public_paths = ["/api/auth/login", "/api/health", "/api/status"]
         if request.url.path not in public_paths:
             try:
                 auth_header = request.headers.get("Authorization")
                 if not auth_header or not auth_header.startswith("Bearer "):
-                    return fastapi.responses.JSONResponse(
-                        status_code=401, content={"detail": "Not authenticated"}
-                    )
+                    return _build_auth_error_response(request, "Not authenticated")
                 token = auth_header.split(" ")[1]
                 await get_current_user(token)
             except Exception:
-                return fastapi.responses.JSONResponse(
-                    status_code=401,
-                    content={"detail": "Could not validate credentials"},
+                return _build_auth_error_response(
+                    request, "Could not validate credentials"
                 )
     return await call_next(request)
 

@@ -30,7 +30,7 @@ services:
       - COMFY_OUTPUT_DIR=/tmp/output
       - MINIO_INPUT_BUCKET=${MINIO_BUCKET:-bot-data}
       - MINIO_ENDPOINT=host.docker.internal:9000
-      - MINIO_RESULT_BUCKET=comfyui-temp
+      - MINIO_RESULT_BUCKET=${MINIO_RESULT_BUCKET:-comfyui-temp}
 
   comfy-agent-test-2:
     <<: *worker-base-test
@@ -47,7 +47,7 @@ services:
       - COMFY_OUTPUT_DIR=/tmp/output
       - MINIO_INPUT_BUCKET=${MINIO_BUCKET:-bot-data}
       - MINIO_ENDPOINT=host.docker.internal:9000
-      - MINIO_RESULT_BUCKET=comfyui-temp
+      - MINIO_RESULT_BUCKET=${MINIO_RESULT_BUCKET:-comfyui-temp}
 
   comfy-agent-test-3:
     <<: *worker-base-test
@@ -64,7 +64,7 @@ services:
       - COMFY_OUTPUT_DIR=/tmp/output
       - MINIO_INPUT_BUCKET=${MINIO_BUCKET:-bot-data}
       - MINIO_ENDPOINT=host.docker.internal:9000
-      - MINIO_RESULT_BUCKET=comfyui-temp
+      - MINIO_RESULT_BUCKET=${MINIO_RESULT_BUCKET:-comfyui-temp}
 
   comfy-agent-test-4:
     <<: *worker-base-test
@@ -81,7 +81,7 @@ services:
       - COMFY_OUTPUT_DIR=/tmp/output
       - MINIO_INPUT_BUCKET=${MINIO_BUCKET:-bot-data}
       - MINIO_ENDPOINT=host.docker.internal:9000
-      - MINIO_RESULT_BUCKET=comfyui-temp
+      - MINIO_RESULT_BUCKET=${MINIO_RESULT_BUCKET:-comfyui-temp}
 
   comfy-agent-test-5:
     <<: *worker-base-test
@@ -98,7 +98,7 @@ services:
       - COMFY_OUTPUT_DIR=/tmp/output
       - MINIO_INPUT_BUCKET=${MINIO_BUCKET:-bot-data}
       - MINIO_ENDPOINT=host.docker.internal:9000
-      - MINIO_RESULT_BUCKET=comfyui-temp
+      - MINIO_RESULT_BUCKET=${MINIO_RESULT_BUCKET:-comfyui-temp}
 
   comfy-agent-test-6:
     <<: *worker-base-test
@@ -115,7 +115,7 @@ services:
       - COMFY_OUTPUT_DIR=/tmp/output
       - MINIO_INPUT_BUCKET=${MINIO_BUCKET:-bot-data}
       - MINIO_ENDPOINT=host.docker.internal:9000
-      - MINIO_RESULT_BUCKET=comfyui-temp
+      - MINIO_RESULT_BUCKET=${MINIO_RESULT_BUCKET:-comfyui-temp}
 
   comfy-agent-test-7:
     <<: *worker-base-test
@@ -132,4 +132,4 @@ services:
       - COMFY_OUTPUT_DIR=/tmp/output
       - MINIO_INPUT_BUCKET=${MINIO_BUCKET:-bot-data}
       - MINIO_ENDPOINT=host.docker.internal:9000
-      - MINIO_RESULT_BUCKET=comfyui-temp
+      - MINIO_RESULT_BUCKET=${MINIO_RESULT_BUCKET:-comfyui-temp}

@@ -121,7 +121,8 @@ async def get_media_url(
         if public_url and await storage.async_r2_object_exists(object_key):
             return public_url
 
-    return output_file
+    bucket_name, object_name = resolve_storage_object(output_file)
+    return storage.get_presigned_url(object_name, bucket=bucket_name)
 
 
 async def generate_thumbnail_url(

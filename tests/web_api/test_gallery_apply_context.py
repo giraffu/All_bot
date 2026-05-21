@@ -484,7 +484,7 @@ async def test_pick_gallery_media_urls_falls_back_to_legacy_keys_when_history_ke
 
 
 @pytest.mark.asyncio
-async def test_pick_gallery_media_urls_falls_back_to_storage_paths_when_r2_missing(
+async def test_pick_gallery_media_urls_falls_back_to_presigned_storage_urls_when_r2_missing(
     monkeypatch,
 ):
     monkeypatch.setattr(
@@ -494,6 +494,13 @@ async def test_pick_gallery_media_urls_falls_back_to_storage_paths_when_r2_missi
     )
     async_exists_mock = AsyncMock(return_value=False)
     monkeypatch.setattr(gallery_router.storage, "async_r2_object_exists", async_exists_mock)
+    presign_mock = MagicMock(
+        side_effect=[
+            "https://minio.example/original.png",
+            "https://minio.example/thumb.webp",
+        ]
+    )
+    monkeypatch.setattr(gallery_router.storage, "get_presigned_url", presign_mock)
 
     media_url, thumbnail_url = await gallery_router._pick_gallery_media_urls(
         task_id="task-1",
@@ -501,9 +508,10 @@ async def test_pick_gallery_media_urls_falls_back_to_storage_paths_when_r2_missi
         media_type="image",
     )
 
-    assert media_url == "123/output_images/task-1.png"
-    assert thumbnail_url == "123/output_images/task-1_thumb.webp"
+    assert media_url == "https://minio.example/original.png"
+    assert thumbnail_url == "https://minio.example/thumb.webp"
     assert async_exists_mock.await_count == 4
+    assert presign_mock.call_count == 2
 
 
 @pytest.mark.asyncio

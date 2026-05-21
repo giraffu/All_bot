@@ -6,10 +6,7 @@ import {
   useMainLayoutContentRef,
   useWorkbenchScrollLock
 } from '@/composables/useWorkbenchScrollLock'
-import {
-  confirmTemplateApplyClose,
-  useTemplateApplyStore
-} from '@/stores/templateApply'
+import { useTemplateApplyStore } from '@/stores/templateApply'
 import type { CloseTrigger } from '@/types/templateApply'
 
 const TemplateImagePromptPanel = defineAsyncComponent(
@@ -54,13 +51,6 @@ const handleCloseAttempt = async (trigger: CloseTrigger) => {
   const result = await templateApplyStore.requestClose(trigger)
   if (result.status === 'blocked') {
     return
-  }
-
-  if (result.status === 'confirm_required') {
-    const confirmed = await confirmTemplateApplyClose(result.confirmReason)
-    if (!confirmed) {
-      return
-    }
   }
 
   await templateApplyStore.confirmCloseAndCleanup(trigger)

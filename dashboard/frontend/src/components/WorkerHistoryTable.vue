@@ -66,6 +66,7 @@ import { ref, onMounted } from 'vue'
 import { message } from 'ant-design-vue'
 import { SyncOutlined } from '@ant-design/icons-vue'
 import dayjs from 'dayjs'
+import { api } from '../api/client'
 
 const loading = ref(false)
 const historyData = ref([])
@@ -93,12 +94,7 @@ const columns = [
 
 const fetchWorkerList = async () => {
   try {
-    const token = localStorage.getItem('token')
-    const response = await fetch('/api/workers/list', {
-      headers: { 'Authorization': `Bearer ${token}` }
-    })
-    if (!response.ok) throw new Error('Failed to fetch worker list')
-    const data = await response.json()
+    const { data } = await api.get('/api/workers/list')
     workerList.value = data.workers || []
   } catch (error) {
     console.error('Error fetching worker list:', error)
@@ -108,19 +104,19 @@ const fetchWorkerList = async () => {
 const fetchHistory = async () => {
   loading.value = true
   try {
-    const token = localStorage.getItem('token')
-    let url = `/api/workers/history?page=${pagination.value.current}&size=${pagination.value.pageSize}`
-    if (selectedWorker.value) {
-      url += `&worker_id=${selectedWorker.value}`
+    const params = {
+      page: pagination.value.current,
+      size: pagination.value.pageSize
     }
-    
-    const response = await fetch(url, {
-      headers: { 'Authorization': `Bearer ${token}` }
+
+    if (selectedWorker.value) {
+      params.worker_id = selectedWorker.value
+    }
+
+    const { data } = await api.get('/api/workers/history', {
+      params
     })
-    
-    if (!response.ok) throw new Error('Failed to fetch worker history')
-    
-    const data = await response.json()
+
     historyData.value = data.data
     pagination.value.total = data.total
   } catch (error) {

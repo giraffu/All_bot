@@ -14,10 +14,10 @@ services:
       - MINIO_SECRET_KEY=@Cv1347968277
       - MINIO_BUCKET=bot-data
       - MINIO_INPUT_BUCKET=comfyui-input
-      - MINIO_RESULT_BUCKET=comfyui-temp
+      - MINIO_RESULT_BUCKET=${MINIO_RESULT_BUCKET:-comfyui-temp}
       - MINIO_TEMPLATE_BUCKET=bot-template
       - MINIO_SECURE=false
-      - AGENT_SECRET_TOKEN=super_secret_agent_token_2026
+      - AGENT_SECRET_TOKEN=${AGENT_SECRET_TOKEN:-super_secret_agent_token_2026}
     volumes:
       - ./workflows:/app/workflows
       - ./app:/app/app

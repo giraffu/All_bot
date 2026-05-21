@@ -110,6 +110,10 @@ if [ ! -f "$TEST_ENV_FILE" ]; then
     exit 1
 fi
 
+set -a
+source "$TEST_ENV_FILE"
+set +a
+
 echo "🚀 开始 All_Bot 测试环境安全更新与重建流程..."
 echo "ℹ️ 本脚本只处理测试环境与测试调度栈，正式 Dashboard 保持不动；测试 Dashboard 会一并重建。"
 

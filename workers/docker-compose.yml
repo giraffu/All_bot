@@ -25,14 +25,14 @@ services:
       - AGENT_ID=worker_local_01
       - SUPPORTED_TASK_TYPES=face_swap,i2i_pro,i2i_draw,face_video,video_edit
       - MASTER_API_URL=http://127.0.0.1:8003
-      - AGENT_SECRET_TOKEN=super_secret_agent_token_2026
+      - AGENT_SECRET_TOKEN=${AGENT_SECRET_TOKEN:-super_secret_agent_token_2026}
       - COMFY_API_URL=http://192.168.1.226:8188
       - COMFY_WS_URL=ws://192.168.1.226:8188/ws
       - COMFY_INPUT_DIR=/tmp/input
       - COMFY_OUTPUT_DIR=/tmp/output
       - MINIO_INPUT_BUCKET=${MINIO_BUCKET:-bot-data}
       - MINIO_ENDPOINT=host.docker.internal:9000
-      - MINIO_RESULT_BUCKET=comfyui-temp
+      - MINIO_RESULT_BUCKET=${MINIO_RESULT_BUCKET:-comfyui-temp}
 
   # Agent 2 (192.168.1.177:8188)
   comfy-agent-2:
@@ -43,14 +43,14 @@ services:
       - AGENT_ID=worker_local_02
       - SUPPORTED_TASK_TYPES=video_insert,video_edit
       - MASTER_API_URL=http://127.0.0.1:8003
-      - AGENT_SECRET_TOKEN=super_secret_agent_token_2026
+      - AGENT_SECRET_TOKEN=${AGENT_SECRET_TOKEN:-super_secret_agent_token_2026}
       - COMFY_API_URL=http://192.168.1.177:8188
       - COMFY_WS_URL=ws://192.168.1.177:8188/ws
       - COMFY_INPUT_DIR=/tmp/input
       - COMFY_OUTPUT_DIR=/tmp/output
       - MINIO_INPUT_BUCKET=${MINIO_BUCKET:-bot-data}
       - MINIO_ENDPOINT=host.docker.internal:9000
-      - MINIO_RESULT_BUCKET=comfyui-temp
+      - MINIO_RESULT_BUCKET=${MINIO_RESULT_BUCKET:-comfyui-temp}
 
   # Agent 3 (192.168.1.177:8189)
   comfy-agent-3:
@@ -61,14 +61,14 @@ services:
       - AGENT_ID=worker_local_03
       - SUPPORTED_TASK_TYPES=ltx_video
       - MASTER_API_URL=http://127.0.0.1:8003
-      - AGENT_SECRET_TOKEN=super_secret_agent_token_2026
+      - AGENT_SECRET_TOKEN=${AGENT_SECRET_TOKEN:-super_secret_agent_token_2026}
       - COMFY_API_URL=http://192.168.1.177:8189
       - COMFY_WS_URL=ws://192.168.1.177:8189/ws
       - COMFY_INPUT_DIR=/tmp/input
       - COMFY_OUTPUT_DIR=/tmp/output
       - MINIO_INPUT_BUCKET=${MINIO_BUCKET:-bot-data}
       - MINIO_ENDPOINT=host.docker.internal:9000
-      - MINIO_RESULT_BUCKET=comfyui-temp
+      - MINIO_RESULT_BUCKET=${MINIO_RESULT_BUCKET:-comfyui-temp}
 
   # Agent 4 (192.168.1.252:8188)
   comfy-agent-4:
@@ -79,14 +79,14 @@ services:
       - AGENT_ID=worker_local_04
       - SUPPORTED_TASK_TYPES=img2img,img2img_lora
       - MASTER_API_URL=http://127.0.0.1:8003
-      - AGENT_SECRET_TOKEN=super_secret_agent_token_2026
+      - AGENT_SECRET_TOKEN=${AGENT_SECRET_TOKEN:-super_secret_agent_token_2026}
       - COMFY_API_URL=http://192.168.1.252:8188
       - COMFY_WS_URL=ws://192.168.1.252:8188/ws
       - COMFY_INPUT_DIR=/tmp/input
       - COMFY_OUTPUT_DIR=/tmp/output
       - MINIO_INPUT_BUCKET=${MINIO_BUCKET:-bot-data}
       - MINIO_ENDPOINT=host.docker.internal:9000
-      - MINIO_RESULT_BUCKET=comfyui-temp
+      - MINIO_RESULT_BUCKET=${MINIO_RESULT_BUCKET:-comfyui-temp}
 
   # Agent 5 (192.168.1.252:8189)
   comfy-agent-5:
@@ -97,14 +97,14 @@ services:
       - AGENT_ID=worker_local_05
       - SUPPORTED_TASK_TYPES=video_insert,video_edit
       - MASTER_API_URL=http://127.0.0.1:8003
-      - AGENT_SECRET_TOKEN=super_secret_agent_token_2026
+      - AGENT_SECRET_TOKEN=${AGENT_SECRET_TOKEN:-super_secret_agent_token_2026}
       - COMFY_API_URL=http://192.168.1.252:8189
       - COMFY_WS_URL=ws://192.168.1.252:8189/ws
       - COMFY_INPUT_DIR=/tmp/input
       - COMFY_OUTPUT_DIR=/tmp/output
       - MINIO_INPUT_BUCKET=${MINIO_BUCKET:-bot-data}
       - MINIO_ENDPOINT=host.docker.internal:9000
-      - MINIO_RESULT_BUCKET=comfyui-temp
+      - MINIO_RESULT_BUCKET=${MINIO_RESULT_BUCKET:-comfyui-temp}
 
   # Agent 6 (192.168.1.2:8188)
   comfy-agent-6:
@@ -115,14 +115,14 @@ services:
       - AGENT_ID=worker_local_06
       - SUPPORTED_TASK_TYPES=img2img,img2img_lora
       - MASTER_API_URL=http://127.0.0.1:8003
-      - AGENT_SECRET_TOKEN=super_secret_agent_token_2026
+      - AGENT_SECRET_TOKEN=${AGENT_SECRET_TOKEN:-super_secret_agent_token_2026}
       - COMFY_API_URL=http://192.168.1.2:8188
       - COMFY_WS_URL=ws://192.168.1.2:8188/ws
       - COMFY_INPUT_DIR=/tmp/input
       - COMFY_OUTPUT_DIR=/tmp/output
       - MINIO_INPUT_BUCKET=${MINIO_BUCKET:-bot-data}
       - MINIO_ENDPOINT=host.docker.internal:9000
-      - MINIO_RESULT_BUCKET=comfyui-temp
+      - MINIO_RESULT_BUCKET=${MINIO_RESULT_BUCKET:-comfyui-temp}
 
   # Agent 7 (192.168.1.2:8189)
   comfy-agent-7:
@@ -133,11 +133,11 @@ services:
       - AGENT_ID=worker_local_07
       - SUPPORTED_TASK_TYPES=video_insert,video_edit
       - MASTER_API_URL=http://127.0.0.1:8003
-      - AGENT_SECRET_TOKEN=super_secret_agent_token_2026
+      - AGENT_SECRET_TOKEN=${AGENT_SECRET_TOKEN:-super_secret_agent_token_2026}
       - COMFY_API_URL=http://192.168.1.2:8189
       - COMFY_WS_URL=ws://192.168.1.2:8189/ws
       - COMFY_INPUT_DIR=/tmp/input
       - COMFY_OUTPUT_DIR=/tmp/output
       - MINIO_INPUT_BUCKET=${MINIO_BUCKET:-bot-data}
       - MINIO_ENDPOINT=host.docker.internal:9000
-      - MINIO_RESULT_BUCKET=comfyui-temp
+      - MINIO_RESULT_BUCKET=${MINIO_RESULT_BUCKET:-comfyui-temp}
