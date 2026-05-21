@@ -172,8 +172,9 @@ async def process_message(message, r_worker, r_bot):
                 )
 
     except json.JSONDecodeError:
-        print(
-            f"!!! [WORKER_LISTENER] Failed to parse event data: {message.get('data')}"
+        logger.error(
+            "!!! [WORKER_LISTENER] Failed to parse event data: %s",
+            message.get("data"),
         )
-    except Exception as e:
-        print(f"!!! [WORKER_LISTENER] Error processing task event: {e}")
+    except Exception:
+        logger.exception("!!! [WORKER_LISTENER] Error processing task event")

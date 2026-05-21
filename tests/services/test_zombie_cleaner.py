@@ -1,18 +1,67 @@
 import pytest
 from unittest.mock import AsyncMock, patch
+
 from src.services.zombie_cleaner_service import clean_zombies
 
 
 @pytest.mark.asyncio
 async def test_clean_zombies_lock_self_healing():
-    with patch("src.services.zombie_cleaner_service.redis_client") as mock_redis:
+    with (
+        patch("src.services.zombie_cleaner_service.redis_client") as mock_redis,
+        patch(
+            "src.services.zombie_cleaner_service.sync_user_concurrency",
+            new_callable=AsyncMock,
+        ) as sync_user_concurrency,
+    ):
         # Mock active tasks: empty
         mock_redis.get_active_tasks = AsyncMock(return_value={})
         # Mock user concurrencies: user 123 has 1 lock
         mock_redis.get_all_user_concurrencies = AsyncMock(return_value={123: 1})
-        mock_redis.decrement_user_concurrency = AsyncMock()
 
         await clean_zombies()
 
-        # Verify it noticed the deadlock and decremented the lock
-        mock_redis.decrement_user_concurrency.assert_called_once_with(123)
+        # Verify it noticed the deadlock and used the core sync helper
+        sync_user_concurrency.assert_awaited_once_with(123, 0)
+
+
+@pytest.mark.asyncio
+async def test_clean_zombies_uses_finalize_task_failure_for_stale_task():
+    stale_task = {
+        "task-1": {
+            "user_id": 123,
+            "username": "tester",
+            "cost": 5,
+            "backend_task_id": "backend-1",
+            "chat_id": 456,
+            "created_at": 0,
+        }
+    }
+
+    with (
+        patch("src.services.zombie_cleaner_service.time.time", return_value=8000),
+        patch("src.services.zombie_cleaner_service.redis_client") as mock_redis,
+        patch("src.services.zombie_cleaner_service.finalize_task_failure", new_callable=AsyncMock) as mock_finalize,
+        patch("src.services.zombie_cleaner_service.api_client.cancel_task", new_callable=AsyncMock) as mock_cancel,
+        patch("src.utils.robust_send_message", new_callable=AsyncMock) as mock_send,
+    ):
+        mock_redis.get_active_tasks = AsyncMock(return_value=stale_task)
+        mock_redis.get_all_user_concurrencies = AsyncMock(return_value={})
+
+        bot = object()
+        await clean_zombies(bot=bot)
+
+        mock_finalize.assert_awaited_once_with(
+            internal_user_id=123,
+            username="tester",
+            cost=5,
+            should_refund=True,
+            registry_task_id="task-1",
+            refund_task_type="refund_zombie_cleanup",
+            explicit_user_message="您的任务由于等待/执行时间过长，已被系统自动清理。 预扣的 5 灵石已退回。",
+        )
+        mock_cancel.assert_awaited_once_with("backend-1")
+        mock_send.assert_awaited_once_with(
+            bot,
+            456,
+            "❌ 您的任务由于等待/执行时间过长，已被系统自动清理。 预扣的 5 灵石已退回。",
+        )

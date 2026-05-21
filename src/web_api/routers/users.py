@@ -16,6 +16,7 @@ from src.core.media_paths import (
     resolve_storage_object,
 )
 from src.core.media_urls import (
+    build_storage_presigned_url,
     build_r2_media_key_candidates,
     build_r2_thumbnail_info,
 )
@@ -23,12 +24,13 @@ from src.core.media_processor import (
     extract_media_metadata_from_storage,
     generate_and_upload_thumbnail,
 )
+from src.config_mapping import extract_prompt_lora_name
 from src.core.video_billing import (
-    extract_video_prompt_prefix,
-    infer_legacy_video_requested_duration,
     infer_billing_resolution_from_dimensions,
     is_video_billing_task_type,
     normalize_requested_billing_resolution,
+    resolve_apply_prompt_and_requested_duration,
+    resolve_legacy_requested_duration,
 )
 from src.services.storage import storage
 from src.services.affiliate_redeem_service import (
@@ -57,6 +59,11 @@ from src.web_api.schemas.gallery_schema import (
     PaginatedGalleryResponse,
     ApplyContextResponse,
     GalleryPostResponse,
+)
+from src.web_api.routers.utils import (
+    build_apply_context_response,
+    probe_apply_context_media_metadata,
+    resolve_apply_context_media_metadata,
 )
 from fastapi import HTTPException, BackgroundTasks
 from pydantic import BaseModel
@@ -147,27 +154,6 @@ async def _pick_favorite_media_urls(
         thumbnail_url = storage.get_presigned_url(thumb_object_name, bucket=bucket_name)
 
     return media_url, thumbnail_url
-
-
-def _resolve_apply_prompt_and_requested_duration(history: History) -> tuple[str, int | None]:
-    prompt = history.prompt or ""
-    requested_duration = history.requested_duration
-
-    if history.type == "ltx_video":
-        _, _, clean_prompt = extract_video_prompt_prefix(prompt)
-        prompt = clean_prompt
-
-    return prompt, requested_duration
-
-
-def _resolve_legacy_requested_duration(
-    *,
-    history: History,
-    duration: int | None,
-) -> int | None:
-    if history.requested_duration is not None:
-        return history.requested_duration
-    return infer_legacy_video_requested_duration(history.type, duration)
 
 
 async def _pick_history_media_urls(
@@ -814,7 +800,6 @@ async def get_favorite_apply_context(
     current_user: CurrentUserDep,
     db: DbSessionDep,
 ):
-    from src.config_mapping import ALL_LORA_MODELS
     user_id = current_user.id
 
     stmt = select(History).where(
@@ -833,79 +818,55 @@ async def get_favorite_apply_context(
 
     input_file_url = None
     if history.input_file:
-        from src.services.storage import storage
-
-        bucket_name, object_name = resolve_storage_object(history.input_file)
-        input_file_url = storage.get_presigned_url(
-            object_name, bucket=bucket_name
+        input_file_url = build_storage_presigned_url(
+            history.input_file,
+            lambda object_name, bucket_name: storage.get_presigned_url(
+                object_name, bucket=bucket_name
+            ),
         )
 
-    prompt, requested_duration = _resolve_apply_prompt_and_requested_duration(history)
-    lora_name = None
-    match = re.search(r"\[模型:\s*(.*?)\]\s*(.*)", prompt, re.DOTALL)
-    if match:
-        lora_tag = match.group(1).strip()
-        prompt = match.group(2).strip()
+    prompt, requested_duration = resolve_apply_prompt_and_requested_duration(
+        history.type,
+        history.prompt,
+        history.requested_duration,
+    )
+    prompt, lora_name = extract_prompt_lora_name(prompt)
 
-        reverse_lora_models = {v: k for k, v in ALL_LORA_MODELS.items()}
-        reverse_lora_models["逼真"] = "qwen/YARN_1.0.safetensors"
-        reverse_lora_models["菊花+内凹穴"] = "qwen/adjust_pussy_anus.safetensors"
-        reverse_lora_models["真实质感"] = "qwen/realistic_texture.safetensors"
-        reverse_lora_models["平胸/无毛穴"] = "qwen/flat_chest_hairless.safetensors"
-        reverse_lora_models["扶他(阴茎)"] = "qwen/penis.safetensors"
-
-        if lora_tag in reverse_lora_models:
-            lora_name = reverse_lora_models[lora_tag]
-        else:
-            lora_name = lora_tag
-
-    media_type = "image"
-    if history.type and "video" in history.type.lower():
-        media_type = "video"
-
-    width = history.width
-    height = history.height
-    # Keep `duration` as probed media metadata. Canonical request duration is exposed
-    # separately via `requested_duration`.
-    duration = history.duration
+    media_type, width, height, duration = resolve_apply_context_media_metadata(
+        task_type=history.type,
+        primary_width=history.width,
+        primary_height=history.height,
+        primary_duration=history.duration,
+        fallback_width=gallery_post.width if gallery_post else None,
+        fallback_height=gallery_post.height if gallery_post else None,
+        fallback_duration=gallery_post.duration if gallery_post else None,
+    )
     billing_resolution = _resolve_history_billing_resolution(
         history, gallery_post=gallery_post
     )
 
-    if width is None and gallery_post:
-        width = gallery_post.width
-    if height is None and gallery_post:
-        height = gallery_post.height
-    if duration is None and gallery_post:
-        duration = gallery_post.duration
+    width, height, duration, billing_resolution = (
+        await probe_apply_context_media_metadata(
+            output_file=history.output_file,
+            media_type=media_type,
+            width=width,
+            height=height,
+            duration=duration,
+            billing_resolution=billing_resolution,
+            task_type=history.type,
+            task_id=history.task_id,
+            probe_media_metadata=extract_media_metadata_from_storage,
+            logger=logger,
+        )
+    )
 
-    if history.output_file and (
-        width is None or height is None or (media_type == "video" and duration is None)
-    ):
-        try:
-            probed_width, probed_height, probed_duration = await extract_media_metadata_from_storage(
-                history.output_file, media_type
-            )
-            width = probed_width if probed_width is not None else width
-            height = probed_height if probed_height is not None else height
-            duration = probed_duration if probed_duration is not None else duration
-            if billing_resolution is None:
-                billing_resolution = infer_billing_resolution_from_dimensions(
-                    width, height, history.type
-                )
-        except Exception as exc:
-            logger.warning(
-                "Failed to probe media metadata for task %s: %s",
-                history.task_id,
-                exc,
-            )
-
-    requested_duration = _resolve_legacy_requested_duration(
-        history=history,
+    requested_duration = resolve_legacy_requested_duration(
+        task_type=history.type,
+        requested_duration=history.requested_duration,
         duration=duration,
     )
 
-    return ApplyContextResponse(
+    return build_apply_context_response(
         post_id=gallery_post.id if gallery_post else history.id,
         source_post_id=gallery_post.id if gallery_post else None,
         billing_resolution=billing_resolution,

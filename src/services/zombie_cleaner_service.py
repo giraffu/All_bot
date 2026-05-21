@@ -3,9 +3,8 @@ import logging
 import time
 
 from src.api_client import api_client
-from src.services.permission_service import permission_service
+from src.core.task_core import finalize_task_failure, sync_user_concurrency
 from src.services.redis_client import redis_client
-from src.services.task_registry import TaskRegistry
 
 logger = logging.getLogger("bot.zombie_cleaner")
 
@@ -44,42 +43,34 @@ async def clean_zombies(bot=None):
                     f"🧟 Detected zombie task {task_id} for user {user_id} (age: {age_seconds:.0f}s). Initiating cleanup."
                 )
 
-                # 1. 退还灵石
-                if cost > 0 and user_id:
-                    try:
-                        await permission_service.refund_quota(
-                            user_id,
-                            credits=cost,
-                            username=username,
-                            task_type="refund_zombie_cleanup",
-                        )
-                        logger.info(
-                            f"💰 Refunded {cost} credits to user {user_id} for zombie task {task_id}."
-                        )
-                    except Exception as e:
-                        logger.error(
-                            f"Error refunding during zombie cleanup for user {user_id}: {e}"
-                        )
-
-                # 2. 解除用户并发锁
+                # 1. 统一执行退款 + 运行态清理
                 if user_id:
                     try:
-                        await redis_client.decrement_user_concurrency(user_id)
+                        result = await finalize_task_failure(
+                            internal_user_id=user_id,
+                            username=username,
+                            cost=cost,
+                            should_refund=cost > 0,
+                            registry_task_id=task_id,
+                            refund_task_type="refund_zombie_cleanup",
+                            explicit_user_message=(
+                                f"您的任务由于等待/执行时间过长，已被系统自动清理。"
+                                + (f" 预扣的 {cost} 灵石已退回。" if cost > 0 else "")
+                            ),
+                        )
+                        if result.refunded:
+                            logger.info(
+                                f"💰 Refunded {cost} credits to user {user_id} for zombie task {task_id}."
+                            )
                         logger.info(
-                            f"🔓 Decremented concurrency lock for user {user_id}."
+                            f"🔓 Cleaned runtime state for zombie task {task_id} user {user_id}."
                         )
                     except Exception as e:
                         logger.error(
-                            f"Error decrementing concurrency for user {user_id}: {e}"
+                            f"Error finalizing zombie task {task_id} for user {user_id}: {e}"
                         )
 
-                # 3. 从 Bot 侧的任务注册表中移除
-                try:
-                    await TaskRegistry.remove_task(task_id)
-                except Exception as e:
-                    logger.error(f"Error removing task {task_id} from registry: {e}")
-
-                # 4. 通知中控 API 取消任务（双向剔除）
+                # 2. 通知中控 API 取消任务（双向剔除）
                 if backend_task_id:
                     try:
                         # 假设中控 API 有一个取消任务的 DELETE 接口
@@ -93,7 +84,7 @@ async def clean_zombies(bot=None):
                             f"Error cancelling backend task {backend_task_id} at Central API: {e}"
                         )
 
-                # 5. 发送 Telegram 提醒给用户
+                # 3. 发送 Telegram 提醒给用户
                 chat_id = task.get("chat_id")
                 if bot and chat_id:
                     try:
@@ -132,9 +123,7 @@ async def clean_zombies(bot=None):
                     logger.warning(
                         f"🔓 Detected leaked concurrency lock for user {uid} (lock_count={lock_count}, active_tasks=0). Resetting..."
                     )
-                    # 强制重置锁
-                    for _ in range(lock_count):
-                        await redis_client.decrement_user_concurrency(uid)
+                    await sync_user_concurrency(uid, 0)
                     logger.info(f"✅ Reset concurrency lock for user {uid}.")
         except Exception as e:
             logger.error(f"Error fixing leaked concurrency locks: {e}")

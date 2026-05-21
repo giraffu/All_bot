@@ -5,16 +5,13 @@
 Web API 应直接调用 `src/core/task_core.py` 提供的业务门面 (Facade)。
 """
 
-import asyncio
 import logging
 import os
 from typing import List, Optional, Tuple
 
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram import InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
 
-from config import ENABLE_PUBLIC_SHARE
-from src.core.media_processor import extract_media_metadata_from_bytes_best_effort
 from src.core.video_billing import (
     normalize_requested_billing_resolution,
     normalize_requested_duration_seconds,
@@ -24,40 +21,218 @@ from src.constants import (
     MODE_CLOSEUP_BLOWJOB,
     MODE_CUSTOM_VIDEO,
     MODE_DOGGY_STYLE,
-    MODE_EDIT,
     MODE_FACE_VIDEO_STEP1,
-    MODE_FACESWAP_STEP1,
-    MODE_I2I_PRO,
-    MODE_LTX_VIDEO,
-    MODE_MASTURBATION,
-    MODE_NAME_MAP,
-    MODE_PENETRATION_STEP1,
     MODE_PERFECT_VIDEO_INSERT,
-    MODE_UNDRESS,
     MODE_UNDRESS_TONGUE,
-    MODE_VIDEO_LORA,
     TMP_DIR,
 )
 from src.handlers.utils import MockMessage
 from src.logger import UserLogger
 from src.services.image_service import image_service
 from src.services.permission_service import permission_service
-from src.services.task_registry import TaskRegistry
+from src.services.tg_task_runtime import (
+    build_result_reply_markup,
+    cleanup_completion_status_message,
+    monitor_task_progress,
+    record_result_message_meta,
+    resolve_result_mode_name,
+    send_result_media,
+)
 from src.utils import (
     load_prompts,
-    robust_delete_message,
     robust_edit_text,
     robust_reply_text,
     robust_send_message,
-    robust_send_photo,
-    robust_send_video,
 )
-import contextlib
 
 logger = logging.getLogger(__name__)
 
 
 class TaskService:
+    @staticmethod
+    def _build_result_reply_markup(task_type, task_id, allow_contribute, reply_markup):
+        return build_result_reply_markup(
+            task_type=task_type,
+            task_id=task_id,
+            allow_contribute=allow_contribute,
+            reply_markup=reply_markup,
+        )
+
+    @staticmethod
+    def _resolve_result_mode_name(task_type):
+        return resolve_result_mode_name(task_type)
+
+    @staticmethod
+    def _record_result_message_meta(context, sent_msg, task_type, prompt, task_id):
+        record_result_message_meta(context, sent_msg, task_type, prompt, task_id)
+
+    @staticmethod
+    async def _send_result_media(
+        *,
+        context,
+        chat_id,
+        media_bytes,
+        is_video,
+        caption,
+        task_type,
+        task_id,
+        allow_contribute,
+        reply_markup,
+        prompt,
+    ):
+        return await send_result_media(
+            context=context,
+            chat_id=chat_id,
+            media_bytes=media_bytes,
+            is_video=is_video,
+            caption=caption,
+            task_type=task_type,
+            task_id=task_id,
+            allow_contribute=allow_contribute,
+            reply_markup=reply_markup,
+            prompt=prompt,
+        )
+
+    @staticmethod
+    async def _cleanup_completion_status_message(*, status_msg, delete_status, send_result):
+        await cleanup_completion_status_message(
+            status_msg=status_msg,
+            delete_status=delete_status,
+            send_result=send_result,
+        )
+
+    @staticmethod
+    async def _finalize_cancelled_task_for_bot(
+        *,
+        status_msg,
+        internal_user_id,
+        username,
+        cost,
+        task_submitted,
+        registry_task_id,
+        explicit_user_message,
+    ):
+        from src.core.task_core import finalize_task_cancellation
+
+        cancellation_result = await finalize_task_cancellation(
+            internal_user_id=internal_user_id,
+            username=username,
+            cost=cost,
+            task_submitted=task_submitted,
+            registry_task_id=registry_task_id,
+            release_lock=task_submitted,
+            explicit_user_message=explicit_user_message,
+        )
+        if status_msg:
+            await robust_edit_text(status_msg, f"✅ {cancellation_result.user_message}")
+        return cancellation_result
+
+    @staticmethod
+    async def _finalize_failed_task_for_bot(
+        *,
+        context,
+        chat_id,
+        status_msg,
+        internal_user_id,
+        username,
+        cost,
+        should_refund,
+        registry_task_id,
+        release_lock,
+        message_prefix="❌",
+        prefer_edit_status=False,
+        fallback_to_send_message=True,
+        explicit_user_message=None,
+        error=None,
+        generic_error_prefix=None,
+        refund_suffix_mode="if_refunded",
+    ):
+        from src.core.task_core import finalize_task_failure
+
+        failure_result = await finalize_task_failure(
+            internal_user_id=internal_user_id,
+            username=username,
+            cost=cost,
+            should_refund=should_refund,
+            registry_task_id=registry_task_id,
+            release_lock=release_lock,
+            explicit_user_message=explicit_user_message,
+            error=error,
+            generic_error_prefix=generic_error_prefix,
+            refund_suffix_mode=refund_suffix_mode,
+        )
+        if prefer_edit_status and status_msg:
+            await robust_edit_text(status_msg, f"{message_prefix} {failure_result.user_message}")
+        elif fallback_to_send_message:
+            await robust_send_message(
+                context.bot,
+                chat_id,
+                f"{message_prefix} {failure_result.user_message}",
+            )
+        return failure_result
+
+    @staticmethod
+    async def _cleanup_runtime_state_if_needed(
+        *,
+        internal_user_id,
+        registry_task_id,
+        release_lock,
+        terminal_state_finalized,
+    ):
+        if terminal_state_finalized or not (release_lock or registry_task_id):
+            return
+
+        import asyncio
+
+        from src.core.task_core import cleanup_task_runtime_state
+
+        await asyncio.shield(
+            cleanup_task_runtime_state(
+                internal_user_id=internal_user_id,
+                registry_task_id=registry_task_id,
+                release_lock=release_lock,
+            )
+        )
+
+    @staticmethod
+    async def _download_and_log_task_output(
+        *,
+        internal_user_id,
+        username,
+        prompt,
+        task_type,
+        task_id,
+        saved_input_images,
+        is_video,
+        allow_contribute,
+        billing_resolution: Optional[str],
+        requested_duration: Optional[int],
+    ):
+        from src.core.task_core import persist_successful_task_result
+
+        persistence_result = await persist_successful_task_result(
+            backend_task_id=task_id,
+            registry_task_id=task_id,
+            internal_user_id=internal_user_id,
+            username=username,
+            prompt=prompt,
+            task_type=task_type,
+            input_images=saved_input_images,
+            allow_contribute=allow_contribute,
+            is_video=is_video,
+            billing_resolution=billing_resolution,
+            requested_duration=requested_duration,
+            source="bot",
+            refresh_user_group_after_log=True,
+        )
+        return (
+            persistence_result.media_bytes,
+            persistence_result.output_file,
+            persistence_result.width,
+            persistence_result.height,
+            persistence_result.duration,
+        )
+
     @staticmethod
     async def process_ltx_video_task(
         update: Update,
@@ -68,15 +243,12 @@ class TaskService:
         allow_contribute: bool = True,
         source_post_id: Optional[int] = None,
     ):
-        import asyncio
         import uuid
 
         from asgi_correlation_id import correlation_id
 
         from src.core.billing_core import (
             get_user_priority_and_identity,
-            refund_credits,
-            release_concurrency_lock,
         )
         from src.core.task_core import (
             ConcurrencyLimitError,
@@ -103,6 +275,7 @@ class TaskService:
         registry_task_id = None
         cost = 0
         task_submitted = False
+        terminal_state_finalized = False
 
         try:
             task_id = str(uuid.uuid4())
@@ -137,7 +310,7 @@ class TaskService:
                 msg, "⏳ 正在生成高级视频，可能需要数分钟，请耐心等待..."
             )
 
-            priority, identity_str, user_group = await get_user_priority_and_identity(
+            _priority, identity_str, user_group = await get_user_priority_and_identity(
                 internal_user_id
             )
             final_info = await TaskService._monitor_task_progress(
@@ -172,11 +345,18 @@ class TaskService:
                     requested_duration=normalize_requested_duration_seconds(duration),
                 )
             else:
-                await asyncio.shield(
-                    refund_credits(internal_user_id, cost, "refund", username)
+                failure_result = await finalize_task_failure(
+                    internal_user_id=internal_user_id,
+                    username=username,
+                    cost=cost,
+                    should_refund=True,
+                    registry_task_id=registry_task_id,
+                    release_lock=task_submitted,
+                    explicit_user_message="生成完成但未获取到文件路径，已退还灵石",
                 )
+                terminal_state_finalized = True
                 await robust_send_message(
-                    context.bot, chat_id, "❌ 生成完成但未获取到文件路径，已退还灵石"
+                    context.bot, chat_id, f"❌ {failure_result.user_message}"
                 )
                 return None, None
 
@@ -188,11 +368,17 @@ class TaskService:
             return None, None
         except CoreDomainError as e:
             if str(e) == "cancelled":
-                if task_submitted and cost > 0:
-                    await asyncio.shield(
-                        refund_credits(internal_user_id, cost, "refund_user_cancel", username)
-                    )
-                await robust_edit_text(msg, f"✅ 任务已撤销，预扣的 {cost} 灵石已全额退回。")
+                cancellation_result = await finalize_task_cancellation(
+                    internal_user_id=internal_user_id,
+                    username=username,
+                    cost=cost,
+                    task_submitted=task_submitted,
+                    registry_task_id=registry_task_id,
+                    release_lock=task_submitted,
+                    explicit_user_message=f"任务已撤销，预扣的 {cost} 灵石已全额退回。",
+                )
+                terminal_state_finalized = True
+                await robust_edit_text(msg, f"✅ {cancellation_result.user_message}")
                 return None, None
             await robust_send_message(context.bot, chat_id, f"❌ {e}")
             return None, None
@@ -201,34 +387,31 @@ class TaskService:
                 f"Error in ltx video task for user {internal_user_id}: {e}",
                 exc_info=True,
             )
-            error_msg = str(e)
-            if any(
-                kw in error_msg
-                for kw in [
-                    "Circuit is open",
-                    "All connection attempts failed",
-                    "Connection refused",
-                    "timeout",
-                    "ConnectError",
-                ]
-            ) or "CircuitBreaker" in str(type(e)):
-                user_msg = "当前服务器繁忙，请稍后再试"
-            else:
-                user_msg = f"出错了：{error_msg}"
+            failure_result = await finalize_task_failure(
+                internal_user_id=internal_user_id,
+                username=username,
+                cost=cost,
+                should_refund=task_submitted and cost > 0,
+                registry_task_id=registry_task_id,
+                release_lock=task_submitted,
+                error=e,
+                generic_error_prefix="出错了",
+            )
+            terminal_state_finalized = True
 
-            if task_submitted and cost > 0:
-                await asyncio.shield(
-                    refund_credits(internal_user_id, cost, "refund", username)
-                )
-                user_msg += "，已退还灵石"
-
-            await robust_send_message(context.bot, chat_id, f"❌ {user_msg}")
+            await robust_send_message(
+                context.bot, chat_id, f"❌ {failure_result.user_message}"
+            )
             return None, None
         finally:
-            if registry_task_id:
-                await asyncio.shield(TaskRegistry.remove_task(registry_task_id))
-            if task_submitted:
-                await asyncio.shield(release_concurrency_lock(internal_user_id))
+            if not terminal_state_finalized and (task_submitted or registry_task_id):
+                await asyncio.shield(
+                    cleanup_task_runtime_state(
+                        internal_user_id=internal_user_id,
+                        registry_task_id=registry_task_id,
+                        release_lock=task_submitted,
+                    )
+                )
             if cleanup and image_path:
                 TaskService._cleanup_files([image_path])
 
@@ -254,8 +437,6 @@ class TaskService:
 
         from src.core.billing_core import (
             get_user_priority_and_identity,
-            refund_credits,
-            release_concurrency_lock,
         )
         from src.core.task_core import (
             ConcurrencyLimitError,
@@ -273,6 +454,7 @@ class TaskService:
         registry_task_id = None
         task_submitted = False
         actual_cost = cost
+        terminal_state_finalized = False
 
         try:
             task_id = str(uuid.uuid4())
@@ -308,7 +490,7 @@ class TaskService:
                 context, chat_id, message_id, msg_text
             )
 
-            priority, identity_str, user_group = await get_user_priority_and_identity(
+            _priority, identity_str, user_group = await get_user_priority_and_identity(
                 internal_user_id
             )
             final_info = await TaskService._monitor_task_progress(
@@ -341,10 +523,17 @@ class TaskService:
                     ),
                 )
             else:
-                await asyncio.shield(
-                    refund_credits(internal_user_id, actual_cost, "refund", username)
+                failure_result = await finalize_task_failure(
+                    internal_user_id=internal_user_id,
+                    username=username,
+                    cost=actual_cost,
+                    should_refund=True,
+                    registry_task_id=registry_task_id,
+                    release_lock=task_submitted,
+                    explicit_user_message="生成失败或超时，已退还灵石。",
                 )
-                await robust_edit_text(status_msg, "⚠️ 生成失败或超时，已退还灵石。")
+                terminal_state_finalized = True
+                await robust_edit_text(status_msg, f"⚠️ {failure_result.user_message}")
                 return None, None
 
         except ConcurrencyLimitError as e:
@@ -355,12 +544,20 @@ class TaskService:
             return None, None
         except CoreDomainError as e:
             if str(e) == "cancelled":
-                if task_submitted and actual_cost > 0:
-                    await asyncio.shield(
-                        refund_credits(internal_user_id, actual_cost, "refund_user_cancel", username)
-                    )
+                cancellation_result = await finalize_task_cancellation(
+                    internal_user_id=internal_user_id,
+                    username=username,
+                    cost=actual_cost,
+                    task_submitted=task_submitted,
+                    registry_task_id=registry_task_id,
+                    release_lock=task_submitted,
+                    explicit_user_message=f"任务已撤销，预扣的 {actual_cost} 灵石已全额退回。",
+                )
+                terminal_state_finalized = True
                 if "status_msg" in locals():
-                    await robust_edit_text(status_msg, f"✅ 任务已撤销，预扣的 {actual_cost} 灵石已全额退回。")
+                    await robust_edit_text(
+                        status_msg, f"✅ {cancellation_result.user_message}"
+                    )
                 return None, None
             await robust_send_message(context.bot, chat_id, f"❌ {e}")
             return None, None
@@ -369,38 +566,35 @@ class TaskService:
                 f"Error processing face video task for {internal_user_id}: {e}",
                 exc_info=True,
             )
-            error_msg = str(e)
-            if any(
-                kw in error_msg
-                for kw in [
-                    "Circuit is open",
-                    "All connection attempts failed",
-                    "Connection refused",
-                    "timeout",
-                    "ConnectError",
-                ]
-            ) or "CircuitBreaker" in str(type(e)):
-                user_msg = "当前服务器繁忙，请稍后再试"
-            else:
-                user_msg = f"系统错误：{error_msg}"
-
-            if task_submitted and actual_cost > 0:
-                await asyncio.shield(
-                    refund_credits(internal_user_id, actual_cost, "refund", username)
-                )
-                user_msg += "，已退还灵石"
+            failure_result = await finalize_task_failure(
+                internal_user_id=internal_user_id,
+                username=username,
+                cost=actual_cost,
+                should_refund=task_submitted and actual_cost > 0,
+                registry_task_id=registry_task_id,
+                release_lock=task_submitted,
+                error=e,
+                generic_error_prefix="系统错误",
+            )
+            terminal_state_finalized = True
 
             # status_msg might not be defined if exception occurs early
             if "status_msg" in locals():
-                await robust_edit_text(status_msg, f"❌ {user_msg}")
+                await robust_edit_text(status_msg, f"❌ {failure_result.user_message}")
             else:
-                await robust_send_message(context.bot, chat_id, f"❌ {user_msg}")
+                await robust_send_message(
+                    context.bot, chat_id, f"❌ {failure_result.user_message}"
+                )
             return None, None
         finally:
-            if registry_task_id:
-                await asyncio.shield(TaskRegistry.remove_task(registry_task_id))
-            if task_submitted:
-                await asyncio.shield(release_concurrency_lock(internal_user_id))
+            if not terminal_state_finalized and (task_submitted or registry_task_id):
+                await asyncio.shield(
+                    cleanup_task_runtime_state(
+                        internal_user_id=internal_user_id,
+                        registry_task_id=registry_task_id,
+                        release_lock=task_submitted,
+                    )
+                )
             if cleanup:
                 TaskService._cleanup_files([face_image_path, video_path])
 
@@ -426,7 +620,6 @@ class TaskService:
         source_post_id: Optional[int] = None,
     ) -> Tuple[Optional[bytes], Optional[str]]:
         """Common generation logic for generic tasks."""
-        import asyncio
         import uuid
 
         from asgi_correlation_id import correlation_id
@@ -434,8 +627,6 @@ class TaskService:
         from src.constants import DEFAULT_DURATION, DEFAULT_RESOLUTION
         from src.core.billing_core import (
             get_user_priority_and_identity,
-            refund_credits,
-            release_concurrency_lock,
         )
         from src.core.task_core import (
             ConcurrencyLimitError,
@@ -500,6 +691,7 @@ class TaskService:
         registry_task_id = None
         task_submitted = False
         actual_cost = 0
+        terminal_state_finalized = False
 
         try:
             task_id = str(uuid.uuid4())
@@ -538,7 +730,7 @@ class TaskService:
             )
             await robust_edit_text(status_msg, updated_msg_text)
 
-            priority, identity_str, user_group = await get_user_priority_and_identity(
+            _priority, identity_str, user_group = await get_user_priority_and_identity(
                 internal_user_id
             )
             user_logger = UserLogger(internal_user_id, username)
@@ -595,15 +787,19 @@ class TaskService:
                     ),
                 )
             else:
-                if deduct_quota:
-                    await asyncio.shield(
-                        refund_credits(
-                            internal_user_id, actual_cost, "refund", username
-                        )
-                    )
-                await robust_send_message(
-                    context.bot, chat_id, "❌ 生成完成但未获取到文件路径，已退还灵石"
+                await TaskService._finalize_failed_task_for_bot(
+                    context=context,
+                    chat_id=chat_id,
+                    status_msg=None,
+                    internal_user_id=internal_user_id,
+                    username=username,
+                    cost=actual_cost,
+                    should_refund=deduct_quota,
+                    registry_task_id=registry_task_id,
+                    release_lock=task_submitted,
+                    explicit_user_message="生成完成但未获取到文件路径，已退还灵石",
                 )
+                terminal_state_finalized = True
 
         except ConcurrencyLimitError as e:
             await robust_send_message(context.bot, chat_id, f"⚠️ {e}")
@@ -611,12 +807,16 @@ class TaskService:
             await robust_send_message(context.bot, chat_id, f"⚠️ {e}")
         except CoreDomainError as e:
             if str(e) == "cancelled":
-                if deduct_quota and task_submitted and actual_cost > 0:
-                    await asyncio.shield(
-                        refund_credits(internal_user_id, actual_cost, "refund_user_cancel", username)
-                    )
-                if "status_msg" in locals():
-                    await robust_edit_text(status_msg, f"✅ 任务已撤销，预扣的 {actual_cost} 灵石已全额退回。")
+                await TaskService._finalize_cancelled_task_for_bot(
+                    status_msg=status_msg if "status_msg" in locals() else None,
+                    internal_user_id=internal_user_id,
+                    username=username,
+                    cost=actual_cost,
+                    task_submitted=deduct_quota and task_submitted,
+                    registry_task_id=registry_task_id,
+                    explicit_user_message=f"任务已撤销，预扣的 {actual_cost} 灵石已全额退回。",
+                )
+                terminal_state_finalized = True
                 return None, None
             await robust_send_message(context.bot, chat_id, f"❌ {e}")
         except Exception as e:
@@ -624,32 +824,28 @@ class TaskService:
                 f"Error in process_generation_task for user {internal_user_id}: {e}",
                 exc_info=True,
             )
-            error_msg = str(e)
-            if any(
-                kw in error_msg
-                for kw in [
-                    "Circuit is open",
-                    "All connection attempts failed",
-                    "Connection refused",
-                    "timeout",
-                    "ConnectError",
-                ]
-            ) or "CircuitBreaker" in str(type(e)):
-                user_msg = "当前服务器繁忙，请稍后再试"
-            else:
-                user_msg = f"出错了：{error_msg}"
-
-            if deduct_quota and task_submitted:
-                await asyncio.shield(
-                    refund_credits(internal_user_id, actual_cost, "refund", username)
-                )
-            await robust_send_message(context.bot, chat_id, f"❌ {user_msg}")
+            await TaskService._finalize_failed_task_for_bot(
+                context=context,
+                chat_id=chat_id,
+                status_msg=None,
+                internal_user_id=internal_user_id,
+                username=username,
+                cost=actual_cost,
+                should_refund=deduct_quota and task_submitted,
+                registry_task_id=registry_task_id,
+                release_lock=task_submitted,
+                error=e,
+                generic_error_prefix="出错了",
+            )
+            terminal_state_finalized = True
 
         finally:
-            if registry_task_id:
-                await asyncio.shield(TaskRegistry.remove_task(registry_task_id))
-            if task_submitted:
-                await asyncio.shield(release_concurrency_lock(internal_user_id))
+            await TaskService._cleanup_runtime_state_if_needed(
+                internal_user_id=internal_user_id,
+                registry_task_id=registry_task_id,
+                release_lock=task_submitted,
+                terminal_state_finalized=terminal_state_finalized,
+            )
             if cleanup:
                 TaskService._cleanup_files(images)
 
@@ -670,15 +866,12 @@ class TaskService:
         """
         Generic handler for video generation tasks to reduce code duplication.
         """
-        import asyncio
         import uuid
 
         from asgi_correlation_id import correlation_id
 
         from src.core.billing_core import (
             get_user_priority_and_identity,
-            refund_credits,
-            release_concurrency_lock,
         )
         from src.core.task_core import (
             ConcurrencyLimitError,
@@ -723,6 +916,7 @@ class TaskService:
         registry_task_id = None
         task_submitted = False
         actual_cost = 0
+        terminal_state_finalized = False
         media_bytes = None
         full_output_path = None
 
@@ -757,7 +951,7 @@ class TaskService:
             msg = await robust_reply_text(update.effective_message, msg_text)
             await robust_edit_text(msg, "⏳ 正在生成视频，请耐心等待...")
 
-            priority, identity_str, user_group = await get_user_priority_and_identity(
+            _priority, identity_str, user_group = await get_user_priority_and_identity(
                 internal_user_id
             )
             final_info = await TaskService._monitor_task_progress(
@@ -795,12 +989,19 @@ class TaskService:
                     requested_duration=duration,
                 )
             else:
-                await asyncio.shield(
-                    refund_credits(internal_user_id, actual_cost, "refund", username)
+                await TaskService._finalize_failed_task_for_bot(
+                    context=context,
+                    chat_id=chat_id,
+                    status_msg=None,
+                    internal_user_id=internal_user_id,
+                    username=username,
+                    cost=actual_cost,
+                    should_refund=True,
+                    registry_task_id=registry_task_id,
+                    release_lock=task_submitted,
+                    explicit_user_message="生成完成但未获取到任务信息，已退还灵石",
                 )
-                await robust_send_message(
-                    context.bot, chat_id, "❌ 生成完成但未获取到任务信息，已退还灵石"
-                )
+                terminal_state_finalized = True
 
         except ConcurrencyLimitError as e:
             await robust_send_message(context.bot, chat_id, f"⚠️ {e}")
@@ -808,45 +1009,43 @@ class TaskService:
             await robust_send_message(context.bot, chat_id, f"⚠️ {e}")
         except CoreDomainError as e:
             if str(e) == "cancelled":
-                if task_submitted and actual_cost > 0:
-                    await asyncio.shield(
-                        refund_credits(internal_user_id, actual_cost, "refund_user_cancel", username)
-                    )
-                if "msg" in locals():
-                    await robust_edit_text(msg, f"✅ 任务已撤销，预扣的 {actual_cost} 灵石已全额退回。")
+                await TaskService._finalize_cancelled_task_for_bot(
+                    status_msg=msg if "msg" in locals() else None,
+                    internal_user_id=internal_user_id,
+                    username=username,
+                    cost=actual_cost,
+                    task_submitted=task_submitted,
+                    registry_task_id=registry_task_id,
+                    explicit_user_message=f"任务已撤销，预扣的 {actual_cost} 灵石已全额退回。",
+                )
+                terminal_state_finalized = True
                 return None, None
             await robust_send_message(context.bot, chat_id, f"❌ {e}")
         except Exception as e:
             logger.error(
                 f"Error in {mode} task for user {internal_user_id}: {e}", exc_info=True
             )
-            error_msg = str(e)
-            if any(
-                kw in error_msg
-                for kw in [
-                    "Circuit is open",
-                    "All connection attempts failed",
-                    "Connection refused",
-                    "timeout",
-                    "ConnectError",
-                ]
-            ) or "CircuitBreaker" in str(type(e)):
-                user_msg = "当前服务器繁忙，请稍后再试"
-            else:
-                user_msg = f"出错了：{error_msg}"
-
-            if task_submitted and actual_cost > 0:
-                await asyncio.shield(
-                    refund_credits(internal_user_id, actual_cost, "refund", username)
-                )
-                user_msg += "，已退还灵石"
-
-            await robust_send_message(context.bot, chat_id, f"❌ {user_msg}")
+            await TaskService._finalize_failed_task_for_bot(
+                context=context,
+                chat_id=chat_id,
+                status_msg=None,
+                internal_user_id=internal_user_id,
+                username=username,
+                cost=actual_cost,
+                should_refund=task_submitted and actual_cost > 0,
+                registry_task_id=registry_task_id,
+                release_lock=task_submitted,
+                error=e,
+                generic_error_prefix="出错了",
+            )
+            terminal_state_finalized = True
         finally:
-            if registry_task_id:
-                await asyncio.shield(TaskRegistry.remove_task(registry_task_id))
-            if task_submitted:
-                await asyncio.shield(release_concurrency_lock(internal_user_id))
+            await TaskService._cleanup_runtime_state_if_needed(
+                internal_user_id=internal_user_id,
+                registry_task_id=registry_task_id,
+                release_lock=task_submitted,
+                terminal_state_finalized=terminal_state_finalized,
+            )
             if cleanup and image_path:
                 TaskService._cleanup_files([image_path])
 
@@ -958,15 +1157,12 @@ class TaskService:
         cleanup: bool = True,
         source_post_id: Optional[int] = None,
     ):
-        import asyncio
         import uuid
 
         from asgi_correlation_id import correlation_id
 
         from src.core.billing_core import (
             get_user_priority_and_identity,
-            refund_credits,
-            release_concurrency_lock,
         )
         from src.core.task_core import (
             ConcurrencyLimitError,
@@ -1006,6 +1202,7 @@ class TaskService:
         registry_task_id = None
         task_submitted = False
         actual_cost = 0
+        terminal_state_finalized = False
 
         try:
             task_id = str(uuid.uuid4())
@@ -1038,7 +1235,7 @@ class TaskService:
                 f"🚀 正在处理自定义视频生成任务 (画质:{resolution}, 时长:{duration}, 消耗{actual_cost}灵石)...{notice}\n⏳ 正在生成自定义视频，请耐心等待...",
             )
 
-            priority, identity_str, user_group = await get_user_priority_and_identity(
+            _priority, identity_str, user_group = await get_user_priority_and_identity(
                 internal_user_id
             )
             user_logger = UserLogger(internal_user_id, username)
@@ -1074,12 +1271,19 @@ class TaskService:
                     requested_duration=normalize_requested_duration_seconds(duration),
                 )
             else:
-                await asyncio.shield(
-                    refund_credits(internal_user_id, actual_cost, "refund", username)
+                await TaskService._finalize_failed_task_for_bot(
+                    context=context,
+                    chat_id=chat_id,
+                    status_msg=None,
+                    internal_user_id=internal_user_id,
+                    username=username,
+                    cost=actual_cost,
+                    should_refund=True,
+                    registry_task_id=registry_task_id,
+                    release_lock=task_submitted,
+                    explicit_user_message="生成完成但未获取到文件路径，已退还灵石",
                 )
-                await robust_send_message(
-                    context.bot, chat_id, "❌ 生成完成但未获取到文件路径，已退还灵石"
-                )
+                terminal_state_finalized = True
                 return None, None
 
         except ConcurrencyLimitError as e:
@@ -1090,12 +1294,16 @@ class TaskService:
             return None, None
         except CoreDomainError as e:
             if str(e) == "cancelled":
-                if task_submitted and actual_cost > 0:
-                    await asyncio.shield(
-                        refund_credits(internal_user_id, actual_cost, "refund_user_cancel", username)
-                    )
-                if "msg" in locals():
-                    await robust_edit_text(msg, f"✅ 任务已撤销，预扣的 {actual_cost} 灵石已全额退回。")
+                await TaskService._finalize_cancelled_task_for_bot(
+                    status_msg=msg if "msg" in locals() else None,
+                    internal_user_id=internal_user_id,
+                    username=username,
+                    cost=actual_cost,
+                    task_submitted=task_submitted,
+                    registry_task_id=registry_task_id,
+                    explicit_user_message=f"任务已撤销，预扣的 {actual_cost} 灵石已全额退回。",
+                )
+                terminal_state_finalized = True
                 return None, None
             await robust_send_message(context.bot, chat_id, f"❌ {e}")
             return None, None
@@ -1104,31 +1312,29 @@ class TaskService:
                 f"Error in custom video task for user {internal_user_id}: {e}",
                 exc_info=True,
             )
-            if task_submitted:
-                await asyncio.shield(
-                    refund_credits(internal_user_id, actual_cost, "refund", username)
-                )
-            error_msg = str(e)
-            if any(
-                kw in error_msg
-                for kw in [
-                    "Circuit is open",
-                    "All connection attempts failed",
-                    "Connection refused",
-                    "timeout",
-                    "ConnectError",
-                ]
-            ) or "CircuitBreaker" in str(type(e)):
-                user_msg = "当前服务器繁忙，请稍后再试"
-            else:
-                user_msg = f"出错了：{error_msg}"
-            await robust_send_message(context.bot, chat_id, f"❌ {user_msg}")
+            await TaskService._finalize_failed_task_for_bot(
+                context=context,
+                chat_id=chat_id,
+                status_msg=None,
+                internal_user_id=internal_user_id,
+                username=username,
+                cost=actual_cost,
+                should_refund=task_submitted,
+                registry_task_id=registry_task_id,
+                release_lock=task_submitted,
+                error=e,
+                generic_error_prefix="出错了",
+                refund_suffix_mode="never",
+            )
+            terminal_state_finalized = True
             return None, None
         finally:
-            if registry_task_id:
-                await asyncio.shield(TaskRegistry.remove_task(registry_task_id))
-            if task_submitted:
-                await asyncio.shield(release_concurrency_lock(internal_user_id))
+            await TaskService._cleanup_runtime_state_if_needed(
+                internal_user_id=internal_user_id,
+                registry_task_id=registry_task_id,
+                release_lock=task_submitted,
+                terminal_state_finalized=terminal_state_finalized,
+            )
             if cleanup and image_path:
                 TaskService._cleanup_files([image_path])
 
@@ -1146,7 +1352,6 @@ class TaskService:
         source_post_id: Optional[int] = None,
     ):
         """Handle MODE_I2I_PRO requests"""
-        import asyncio
         import uuid
 
         from asgi_correlation_id import correlation_id
@@ -1154,8 +1359,6 @@ class TaskService:
         from src.constants import MODE_I2I_PRO
         from src.core.billing_core import (
             get_user_priority_and_identity,
-            refund_credits,
-            release_concurrency_lock,
         )
         from src.core.task_core import (
             ConcurrencyLimitError,
@@ -1214,7 +1417,7 @@ class TaskService:
                 msg, f"🚀 正在处理幻想换脸任务 (消耗{actual_cost}灵石)...{notice}"
             )
 
-            priority, identity_str, user_group = await get_user_priority_and_identity(
+            _priority, identity_str, user_group = await get_user_priority_and_identity(
                 internal_user_id
             )
             user_logger = UserLogger(internal_user_id, username)
@@ -1247,12 +1450,19 @@ class TaskService:
                     allow_contribute=allow_contribute,
                 )
             else:
-                await asyncio.shield(
-                    refund_credits(internal_user_id, actual_cost, "refund", username)
+                await TaskService._finalize_failed_task_for_bot(
+                    context=context,
+                    chat_id=chat_id,
+                    status_msg=None,
+                    internal_user_id=internal_user_id,
+                    username=username,
+                    cost=actual_cost,
+                    should_refund=True,
+                    registry_task_id=registry_task_id,
+                    release_lock=task_submitted,
+                    explicit_user_message="生成完成但未获取到文件路径，已退还灵石",
                 )
-                await robust_send_message(
-                    context.bot, chat_id, "❌ 生成完成但未获取到文件路径，已退还灵石"
-                )
+                terminal_state_finalized = True
                 return None, None
 
         except ConcurrencyLimitError as e:
@@ -1263,12 +1473,16 @@ class TaskService:
             return None, None
         except CoreDomainError as e:
             if str(e) == "cancelled":
-                if task_submitted and actual_cost > 0:
-                    await asyncio.shield(
-                        refund_credits(internal_user_id, actual_cost, "refund_user_cancel", username)
-                    )
-                if "msg" in locals():
-                    await robust_edit_text(msg, f"✅ 任务已撤销，预扣的 {actual_cost} 灵石已全额退回。")
+                await TaskService._finalize_cancelled_task_for_bot(
+                    status_msg=msg if "msg" in locals() else None,
+                    internal_user_id=internal_user_id,
+                    username=username,
+                    cost=actual_cost,
+                    task_submitted=task_submitted,
+                    registry_task_id=registry_task_id,
+                    explicit_user_message=f"任务已撤销，预扣的 {actual_cost} 灵石已全额退回。",
+                )
+                terminal_state_finalized = True
                 return None, None
             await robust_send_message(context.bot, chat_id, f"❌ {e}")
             return None, None
@@ -1277,33 +1491,29 @@ class TaskService:
                 f"Error in process_i2i_pro_task for user {internal_user_id}: {e}",
                 exc_info=True,
             )
-            if task_submitted:
-                await asyncio.shield(
-                    refund_credits(internal_user_id, actual_cost, "refund", username)
-                )
-            error_msg = str(e)
-            if any(
-                kw in error_msg
-                for kw in [
-                    "Circuit is open",
-                    "All connection attempts failed",
-                    "Connection refused",
-                    "timeout",
-                    "ConnectError",
-                ]
-            ) or "CircuitBreaker" in str(type(e)):
-                user_msg = "当前服务器繁忙，请稍后再试"
-            else:
-                user_msg = f"出错了：{error_msg}"
-            await robust_send_message(
-                context.bot, chat_id, f"❌ {user_msg}，已退还灵石"
+            await TaskService._finalize_failed_task_for_bot(
+                context=context,
+                chat_id=chat_id,
+                status_msg=None,
+                internal_user_id=internal_user_id,
+                username=username,
+                cost=actual_cost,
+                should_refund=task_submitted,
+                registry_task_id=registry_task_id,
+                release_lock=task_submitted,
+                error=e,
+                generic_error_prefix="出错了",
+                refund_suffix_mode="always",
             )
+            terminal_state_finalized = True
             return None, None
         finally:
-            if registry_task_id:
-                await asyncio.shield(TaskRegistry.remove_task(registry_task_id))
-            if task_submitted:
-                await asyncio.shield(release_concurrency_lock(internal_user_id))
+            await TaskService._cleanup_runtime_state_if_needed(
+                internal_user_id=internal_user_id,
+                registry_task_id=registry_task_id,
+                release_lock=task_submitted,
+                terminal_state_finalized=terminal_state_finalized,
+            )
             TaskService._cleanup_files(images)
 
     @staticmethod
@@ -1317,23 +1527,6 @@ class TaskService:
             except Exception:
                 pass
         return await robust_send_message(context.bot, chat_id, text)
-
-    @staticmethod
-    async def _submit_generic_task(
-        task_type, prompt, images, negative_prompt, is_video, priority=0
-    ):
-        if task_type == "face_swap" and len(images) >= 2:
-            return await image_service.submit_face_swap_task(
-                face_image_path=images[1], body_image_path=images[0], priority=priority
-            )
-        elif is_video:
-            return await image_service.submit_perfect_video_edit(
-                prompt, images[0], priority=priority
-            )
-        else:
-            return await image_service.submit_task(
-                prompt, images, negative_prompt, priority=priority
-            )
 
     @staticmethod
     async def monitor_task_progress(
@@ -1352,108 +1545,22 @@ class TaskService:
     async def _monitor_task_progress(
         task_id, status_msg, is_video, monitor_func, identity_str=None, user_group=None
     ):
-        last_progress = 0
-        last_status = None
-        last_queue_pos = None
-        final_info = None
+        from src.core.task_core import CoreDomainError
 
-        from telegram import InlineKeyboardMarkup, InlineKeyboardButton
-        cancel_markup = InlineKeyboardMarkup([[
-            InlineKeyboardButton("❌ 撤销任务", callback_data=f"cancel_task_{task_id}")
-        ]])
+        def _raise_cancelled():
+            raise CoreDomainError("cancelled")
 
-        async def update_status_message(text, **kwargs):
-            try:
-                if "排队中" in text:
-                    kwargs["reply_markup"] = cancel_markup
-                else:
-                    kwargs["reply_markup"] = None
-                await robust_edit_text(status_msg, text, **kwargs)
-                return True
-            except Exception as exc:
-                logger.warning(
-                    f"Failed to update status message for task {task_id}: {exc}"
-                )
-                return False
-
-        # Build VIP/Group suffix if applicable
-        vip_suffix = ""
-        privileges = []
-        if identity_str and identity_str not in [
-            "外门弟子",
-            "凡人",
-            "练气期",
-            "筑基期",
-            "金丹期",
-            "元婴期",
-            "default",
-        ]:
-            privileges.append(identity_str)
-        if user_group and user_group in ["元婴期", "金丹期", "筑基期"]:
-            privileges.append(user_group)
-
-        if privileges:
-            privilege_str = " + ".join(privileges)
-            vip_suffix = f"\n🚀 _已为您开启 [{privilege_str}] 极速通道_"
-
-        async for info in monitor_func(task_id, is_video=is_video):
-            status = info.get("status")
-            progress = info.get("progress", 0)
-
-            if status == "done":
-                final_info = info
-                if not is_video and last_progress != 100:
-                    await update_status_message("⏳ 生成中... 100%")
-                break
-
-            if status in ["error", "failed", "cancelled"]:
-                if status == "cancelled":
-                    logger.warning(f"Task {task_id} was cancelled.")
-                    from src.core.task_core import CoreDomainError
-                    raise CoreDomainError("cancelled")
-                else:
-                    error_msg = info.get("error", "Unknown error")
-                    logger.error(f"Task {task_id} failed: {error_msg}")
-                    raise RuntimeError(error_msg)
-
-            if status == "pending":
-                raw_pos = info.get("queue_pos")
-                queue_pos = None
-
-                if raw_pos is not None:
-                    try:
-                        queue_pos = int(raw_pos) + 1
-                    except (ValueError, TypeError):
-                        queue_pos = raw_pos
-                else:
-                    queue_pos = info.get("queue_remaining")
-
-                logger.debug(
-                    f"Task {task_id} pending. Info queue_pos: {raw_pos}, queue_remaining: {info.get('queue_remaining')}"
-                )
-
-                if queue_pos is not None:
-                    if queue_pos != last_queue_pos or last_status != "pending":
-                        if await update_status_message(
-                            f"⏳ 排队中... (第 {queue_pos} 位){vip_suffix}",
-                            parse_mode="Markdown",
-                        ):
-                            last_queue_pos = queue_pos
-                            last_status = "pending"
-                else:
-                    if last_status != "pending":
-                        if await update_status_message(
-                            f"⏳ 排队中...{vip_suffix}", parse_mode="Markdown"
-                        ):
-                            last_status = "pending"
-                continue
-
-            if progress != last_progress or last_status == "pending":
-                msg = "⏳ 正在生成视频..." if is_video else f"⏳ 生成中... {progress}%"
-                if await update_status_message(msg):
-                    last_progress = progress
-                    last_status = status
-
+        final_info = await monitor_task_progress(
+            task_id=task_id,
+            status_msg=status_msg,
+            is_video=is_video,
+            monitor_func=monitor_func,
+            identity_str=identity_str,
+            user_group=user_group,
+            on_cancelled=_raise_cancelled,
+        )
+        if final_info is None:
+            raise CoreDomainError("cancelled")
         return final_info
 
     @staticmethod
@@ -1516,240 +1623,40 @@ class TaskService:
         billing_resolution: Optional[str] = None,
         requested_duration: Optional[int] = None,
     ):
-        full_output_path = None
-        media_bytes = None
-
-        if is_video:
-            media_bytes = await image_service.download_video_result(task_id)
-            width, height, duration = await asyncio.to_thread(
-                extract_media_metadata_from_bytes_best_effort,
-                media_bytes,
-                "video",
-                "mp4",
-            )
-            saved_output_image = user_logger.save_output_image(
-                media_bytes, task_id, extension="mp4"
-            )
-            full_output_path = saved_output_image
-            await user_logger.log_task(
-                prompt,
-                saved_input_images,
-                saved_output_image,
+        media_bytes, full_output_path, _width, _height, _duration = (
+            await TaskService._download_and_log_task_output(
+                internal_user_id=internal_user_id,
+                username=user_logger.username,
+                prompt=prompt,
+                task_type=task_type,
                 task_id=task_id,
-                type=task_type,
+                saved_input_images=saved_input_images,
+                is_video=is_video,
                 allow_contribute=allow_contribute,
                 billing_resolution=billing_resolution,
-                width=width,
-                height=height,
-                duration=duration,
                 requested_duration=requested_duration,
             )
-            await permission_service.refresh_user_group(internal_user_id)
+        )
 
-            if send_result:
-                from src.constants import MODE_IMG2IMG_LORA
-
-                allowed_gallery_types = [
-                    MODE_I2I_PRO,
-                    MODE_EDIT,
-                    MODE_CUSTOM_VIDEO,
-                    MODE_VIDEO_LORA,
-                    MODE_LTX_VIDEO,
-                    MODE_IMG2IMG_LORA,
-                ]
-                show_gallery_btn = (
-                    task_type in allowed_gallery_types and allow_contribute
-                )
-
-                keyboard = []
-                if show_gallery_btn:
-                    keyboard.append(
-                        [
-                            InlineKeyboardButton(
-                                "🚀 一键投稿至广场",
-                                callback_data=f"submit_gallery_{task_id}",
-                            )
-                        ]
-                    )
-
-                keyboard.append(
-                    [
-                        InlineKeyboardButton("👍", callback_data="rate_like"),
-                        InlineKeyboardButton("👎", callback_data="rate_dislike"),
-                    ]
-                )
-
-                if ENABLE_PUBLIC_SHARE:
-                    keyboard.insert(
-                        0,
-                        [
-                            InlineKeyboardButton(
-                                "公开", callback_data="public_share_request"
-                            )
-                        ],
-                    )
-                default_markup = InlineKeyboardMarkup(keyboard)
-
-                final_markup = reply_markup or default_markup
-                if reply_markup and show_gallery_btn:
-                    # Inject gallery submit button into custom reply_markup if not present
-                    has_gallery = any(
-                        btn.callback_data
-                        and btn.callback_data.startswith("submit_gallery_")
-                        for row in final_markup.inline_keyboard
-                        for btn in row
-                    )
-                    if not has_gallery:
-                        new_keyboard = [
-                            list(row) for row in final_markup.inline_keyboard
-                        ]
-                        new_keyboard.insert(
-                            0,
-                            [
-                                InlineKeyboardButton(
-                                    "🚀 一键投稿至广场",
-                                    callback_data=f"submit_gallery_{task_id}",
-                                )
-                            ],
-                        )
-                        final_markup = InlineKeyboardMarkup(new_keyboard)
-
-                sent_msg = await robust_send_video(
-                    context.bot,
-                    chat_id,
-                    video=media_bytes,
-                    caption=caption or "✅ 视频生成完成",
-                    reply_markup=final_markup,
-                )
-                if sent_msg:
-                    mode_name = MODE_NAME_MAP.get(task_type, task_type)
-                    context.bot_data[f"msg_meta_{sent_msg.message_id}"] = {
-                        "mode_name": mode_name,
-                        "prompt": prompt,
-                        "task_id": task_id,
-                    }
-        else:
-            media_bytes = await image_service.download_result(task_id)
-            width, height, duration = await asyncio.to_thread(
-                extract_media_metadata_from_bytes_best_effort,
-                media_bytes,
-                "image",
-                "png",
-            )
-            saved_output_image = user_logger.save_output_image(media_bytes, task_id)
-            full_output_path = saved_output_image
-            await user_logger.log_task(
-                prompt,
-                saved_input_images,
-                saved_output_image,
+        if send_result:
+            await TaskService._send_result_media(
+                context=context,
+                chat_id=chat_id,
+                media_bytes=media_bytes,
+                is_video=is_video,
+                caption=caption,
+                task_type=task_type,
                 task_id=task_id,
-                type=task_type,
                 allow_contribute=allow_contribute,
-                billing_resolution=billing_resolution,
-                width=width,
-                height=height,
-                duration=duration,
-                requested_duration=requested_duration,
+                reply_markup=reply_markup,
+                prompt=prompt,
             )
-            await permission_service.refresh_user_group(internal_user_id)
 
-            if send_result:
-                from src.constants import MODE_IMG2IMG_LORA
-
-                allowed_gallery_types = [
-                    MODE_I2I_PRO,
-                    MODE_EDIT,
-                    MODE_CUSTOM_VIDEO,
-                    MODE_VIDEO_LORA,
-                    MODE_LTX_VIDEO,
-                    MODE_IMG2IMG_LORA,
-                ]
-                show_gallery_btn = (
-                    task_type in allowed_gallery_types and allow_contribute
-                )
-
-                keyboard = []
-                if show_gallery_btn:
-                    keyboard.append(
-                        [
-                            InlineKeyboardButton(
-                                "🚀 一键投稿至广场",
-                                callback_data=f"submit_gallery_{task_id}",
-                            )
-                        ]
-                    )
-
-                keyboard.append(
-                    [
-                        InlineKeyboardButton("👍", callback_data="rate_like"),
-                        InlineKeyboardButton("👎", callback_data="rate_dislike"),
-                    ]
-                )
-
-                if ENABLE_PUBLIC_SHARE:
-                    keyboard.insert(
-                        0,
-                        [
-                            InlineKeyboardButton(
-                                "公开", callback_data="public_share_request"
-                            )
-                        ],
-                    )
-                default_markup = InlineKeyboardMarkup(keyboard)
-
-                final_markup = reply_markup or default_markup
-                if reply_markup and show_gallery_btn:
-                    # Inject gallery submit button into custom reply_markup if not present
-                    has_gallery = any(
-                        btn.callback_data
-                        and btn.callback_data.startswith("submit_gallery_")
-                        for row in final_markup.inline_keyboard
-                        for btn in row
-                    )
-                    if not has_gallery:
-                        new_keyboard = [
-                            list(row) for row in final_markup.inline_keyboard
-                        ]
-                        new_keyboard.insert(
-                            0,
-                            [
-                                InlineKeyboardButton(
-                                    "🚀 一键投稿至广场",
-                                    callback_data=f"submit_gallery_{task_id}",
-                                )
-                            ],
-                        )
-                        final_markup = InlineKeyboardMarkup(new_keyboard)
-
-                sent_msg = await robust_send_photo(
-                    context.bot,
-                    chat_id,
-                    photo=media_bytes,
-                    caption=caption or "✅ 图片生成完成",
-                    reply_markup=final_markup,
-                )
-                if sent_msg:
-                    mode_name = MODE_NAME_MAP.get(task_type, task_type)
-                    if task_type == "face_swap":
-                        mode_name = MODE_NAME_MAP.get(MODE_FACESWAP_STEP1)
-                    elif task_type == "penetration":
-                        mode_name = MODE_NAME_MAP.get(MODE_PENETRATION_STEP1)
-                    elif task_type == "undress":
-                        mode_name = MODE_NAME_MAP.get(MODE_UNDRESS)
-                    elif task_type == "masturbation":
-                        mode_name = MODE_NAME_MAP.get(MODE_MASTURBATION)
-
-                    context.bot_data[f"msg_meta_{sent_msg.message_id}"] = {
-                        "mode_name": mode_name,
-                        "prompt": prompt,
-                        "task_id": task_id,
-                    }
-
-        try:
-            if delete_status and send_result:
-                await robust_delete_message(status_msg)
-        except Exception:
-            pass
+        await TaskService._cleanup_completion_status_message(
+            status_msg=status_msg,
+            delete_status=delete_status,
+            send_result=send_result,
+        )
 
         return media_bytes, full_output_path
 

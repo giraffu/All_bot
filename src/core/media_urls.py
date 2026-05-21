@@ -2,6 +2,7 @@ from src.core.media_paths import (
     build_history_r2_media_key,
     build_history_r2_thumbnail_key,
     build_legacy_r2_key,
+    resolve_storage_object,
 )
 
 
@@ -75,3 +76,14 @@ def build_public_r2_url(
         if url:
             return url
     return output_file
+
+
+def build_storage_presigned_url(
+    output_file: str | None,
+    presigned_url_builder,
+) -> str | None:
+    if not output_file:
+        return None
+
+    bucket_name, object_name = resolve_storage_object(output_file)
+    return presigned_url_builder(object_name, bucket_name)

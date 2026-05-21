@@ -18,7 +18,7 @@
   - 重建 central api
   - 重建主服务群
   - 重建 dashboard
-  - 重建测试环境
+- `safe_deploy.sh` 到此结束，不会顺带重建测试环境。
 - 若仅更新隔离测试栈，可执行 `bash safe_deploy_test.sh`；它只处理 `.env.test`、测试数据库迁移、测试 workers、测试 central api 与测试入口服务，不会重建生产服务，也不会重建正式 Dashboard。
 
 ## 2.1 当前默认发布策略

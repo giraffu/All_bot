@@ -1,37 +1,32 @@
+import argparse
 import asyncio
 import logging
-import time
-import sys
 import os
+import sys
+import time
 
 # 确保能找到 src 包
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
+from src.core.task_core import (
+    finalize_terminated_task,
+    get_system_task_stats,
+    sync_user_concurrency,
+)
 from src.services.redis_client import redis_client
-from src.services.permission_service import permission_service
-from src.services.task_registry import TaskRegistry
-from config import REDIS_PREFIX
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("fix_locks")
+DEFAULT_TIMEOUT_SECONDS = 7200
 
 
-async def reset_user_concurrency(user_id: int):
-    """强制重置用户的并发锁为 0"""
-    key = f"{REDIS_PREFIX}user_concurrency:{user_id}"
-    try:
-        await redis_client.redis.set(key, 0)
-        logger.info(f"✅ 已强制重置用户 {user_id} 的并发锁为 0。")
-    except Exception as e:
-        logger.error(f"❌ 重置用户 {user_id} 并发锁失败: {e}")
-
-
-async def clean_stuck_tasks_and_reset_locks(timeout_seconds=300):
+async def clean_stuck_tasks_and_reset_locks(timeout_seconds: int = DEFAULT_TIMEOUT_SECONDS):
     """
-    清理超时（默认 5 分钟）的任务，退还灵石，并重置这些用户的并发锁。
+    清理超时任务，统一走 core helper 做终止、退款和运行态清理。
+    之后按用户真实活跃任务数对齐并发锁，避免遗留历史脏锁。
     """
     try:
-        tasks = await redis_client.get_active_tasks()
+        tasks, _ = await get_system_task_stats()
         if not tasks:
             logger.info("没有找到活跃的排队/生成中任务。")
             return
@@ -54,37 +49,36 @@ async def clean_stuck_tasks_and_reset_locks(timeout_seconds=300):
                     f"🧟 发现卡死的任务 {task_id} (用户: {user_id}, 已卡住: {age_seconds:.0f}秒)"
                 )
 
-                # 1. 退还灵石
-                if cost > 0 and user_id:
-                    try:
-                        await permission_service.refund_quota(
-                            user_id,
-                            credits=cost,
-                            username=username,
-                            task_type="refund_admin_force_script",
-                        )
-                        logger.info(f"💰 已为用户 {user_id} 退还 {cost} 灵石。")
-                    except Exception as e:
-                        logger.error(f"退还用户 {user_id} 灵石失败: {e}")
-
-                # 2. 从 Bot 的活跃任务和注册表中移除
                 try:
-                    await redis_client.remove_active_task(task_id)
-                    await TaskRegistry.remove_task(task_id)
-                    logger.info(f"🗑️ 已移除卡死任务 {task_id}")
+                    result = await finalize_terminated_task(
+                        registry_task_id=task_id,
+                        user_id=user_id,
+                        username=username,
+                        cost=cost,
+                        should_refund=cost > 0,
+                        refund_task_type="refund_admin_force_script",
+                    )
+                    if result.refunded:
+                        logger.info(f"💰 已为用户 {user_id} 退还 {cost} 灵石。")
+                    logger.info(f"🗑️ 已统一收口卡死任务 {task_id}")
                 except Exception as e:
-                    logger.error(f"移除任务 {task_id} 失败: {e}")
+                    logger.error(f"收口卡死任务 {task_id} 失败: {e}")
+                    continue
 
                 if user_id:
                     affected_users.add(user_id)
                 removed_count += 1
 
-        # 3. 强制重置所有受影响用户的并发锁
+        refreshed_tasks, _ = await get_system_task_stats()
         for user_id in affected_users:
-            await reset_user_concurrency(user_id)
+            actual_count = sum(
+                1 for task in refreshed_tasks.values() if task.get("user_id") == user_id
+            )
+            await sync_user_concurrency(user_id, actual_count)
+            logger.info(f"✅ 已将用户 {user_id} 的并发锁对齐为 {actual_count}。")
 
         logger.info(
-            f"🎉 清理完成！共移除了 {removed_count} 个卡死任务，并重置了 {len(affected_users)} 个用户的并发锁。"
+            f"🎉 清理完成！共收口了 {removed_count} 个卡死任务，并同步了 {len(affected_users)} 个用户的并发锁。"
         )
 
     except Exception as e:
@@ -93,12 +87,19 @@ async def clean_stuck_tasks_and_reset_locks(timeout_seconds=300):
         await redis_client.close()
 
 
-if __name__ == "__main__":
-    # 如果想直接清理所有任务（不看时间），可以把 timeout_seconds 设为 0
-    # 或者如果你只想要清理卡了超过 5 分钟的，就保持 300
-    timeout_str = input(
-        "请输入要清理卡死任务的超时时间（秒，默认 300，直接按回车即可）："
+def _parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="统一收口超时任务，复用 task_core 的终止/退款/清理 helper。"
     )
-    timeout = 300 if not timeout_str.strip() else int(timeout_str.strip())
+    parser.add_argument(
+        "--timeout-seconds",
+        type=int,
+        default=DEFAULT_TIMEOUT_SECONDS,
+        help=f"判定为卡死任务的超时阈值，默认 {DEFAULT_TIMEOUT_SECONDS} 秒。",
+    )
+    return parser.parse_args()
 
-    asyncio.run(clean_stuck_tasks_and_reset_locks(timeout))
+
+if __name__ == "__main__":
+    args = _parse_args()
+    asyncio.run(clean_stuck_tasks_and_reset_locks(args.timeout_seconds))

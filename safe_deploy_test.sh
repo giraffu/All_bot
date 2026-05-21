@@ -11,12 +11,16 @@ TEST_ENTRY_CONTAINERS=(
     "payment-api-test"
     "web-api-test"
     "web-frontend-test"
+    "dashboard-backend-test"
+    "dashboard-frontend-test"
 )
 TEST_ENTRY_SERVICES=(
     "bot-test"
     "payment-api-test"
     "web-api-test"
     "web-frontend-test"
+    "dashboard-backend-test"
+    "dashboard-frontend-test"
 )
 
 remove_container_if_exists() {
@@ -107,7 +111,7 @@ if [ ! -f "$TEST_ENV_FILE" ]; then
 fi
 
 echo "🚀 开始 All_Bot 测试环境安全更新与重建流程..."
-echo "ℹ️ 本脚本只处理测试环境与测试调度栈，正式 Dashboard 保持不动。"
+echo "ℹ️ 本脚本只处理测试环境与测试调度栈，正式 Dashboard 保持不动；测试 Dashboard 会一并重建。"
 
 # ==============================================================================
 # 第一步：开启测试环境维护模式
@@ -259,11 +263,13 @@ echo "✅ 测试中控 API 重建完成。"
 # ==============================================================================
 # 第七步：重建测试入口服务群
 # ==============================================================================
-echo "7️⃣ 重建并重启测试环境服务群（含 Web 测试前端）..."
+echo "7️⃣ 重建并重启测试环境服务群（含 Web 与 Dashboard 测试前后端）..."
 cleanup_test_entry_service_containers
 docker-compose -f deploy/docker-compose-test.yml up -d --build
 wait_for_http_ready "测试 Web API" "http://127.0.0.1:8001/api/health"
 wait_for_http_ready "测试 Web 前端" "http://127.0.0.1:5173" 60 5
+wait_for_http_ready "测试 Dashboard 后端" "http://127.0.0.1:8044/api/health"
+wait_for_http_ready "测试 Dashboard 前端" "http://127.0.0.1:5174" 60 5
 echo "✅ 测试环境服务群重建完成。"
 
 DEPLOY_SUCCEEDED=1
@@ -272,4 +278,8 @@ echo "🎉 测试环境更新与重建已成功完成！"
 echo "ℹ️ 正式 Dashboard 未参与本次部署，继续使用现有生产实例。"
 echo "👉 可执行 'docker logs -f tg-bot-test' 查看测试 Bot 启动日志。"
 echo "👉 可执行 'docker logs -f web-frontend-test' 查看测试前端启动日志。"
+echo "👉 可执行 'docker logs -f dashboard-backend-test' 查看测试 Dashboard 后端日志。"
+echo "👉 可执行 'docker logs -f dashboard-frontend-test' 查看测试 Dashboard 前端日志。"
 echo "👉 测试前端默认监听 5173 端口，可通过 http://<宿主机IP>:5173 访问。"
+echo "👉 测试 Dashboard 后端监听 8044 端口，可通过 http://<宿主机IP>:8044/api/health 自检。"
+echo "👉 测试 Dashboard 前端默认监听 5174 端口，可通过 http://<宿主机IP>:5174 访问。"

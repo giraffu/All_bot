@@ -1,4 +1,5 @@
 import logging
+import time
 
 import httpx
 from fastapi import APIRouter, HTTPException
@@ -7,7 +8,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 
 from config import API_BASE, STATUS_ENDPOINT
-from src.core.task_core import force_terminate_task, get_system_task_stats
+from src.core.task_core import finalize_terminated_task, get_system_task_stats
 from src.core.task_core import sync_user_concurrency as core_sync_user_concurrency
 from src.database.models import User
 from src.services.image_service import image_service
@@ -32,8 +33,6 @@ def _count_tasks_by_type(tasks: dict) -> dict[str, int]:
 async def refund_bot_task(req: RefundTaskRequest):
     """Force terminate a stuck task, refund credits and release concurrency lock."""
     try:
-        from src.services.permission_service import permission_service
-
         task_id = req.task_id
         tasks, _ = await get_system_task_stats()
         if not tasks or task_id not in tasks:
@@ -46,21 +45,22 @@ async def refund_bot_task(req: RefundTaskRequest):
         username = task.get("username", "Unknown")
         cost = task.get("cost", 0)
 
-        # 1. Refund
-        if cost > 0 and user_id:
-            await permission_service.refund_quota(
-                user_id,
-                credits=cost,
-                username=username,
-                task_type="refund_admin_force",
-            )
-
-        # 2. Release lock and remove task via Core API
-        await force_terminate_task(task_id, user_id=user_id)
+        result = await finalize_terminated_task(
+            registry_task_id=task_id,
+            user_id=user_id,
+            username=username,
+            cost=cost,
+            should_refund=cost > 0,
+            refund_task_type="refund_admin_force",
+        )
 
         return {
             "status": "success",
-            "message": f"Task {task_id} terminated and {cost} credits refunded.",
+            "message": (
+                f"Task {task_id} terminated and {cost} credits refunded."
+                if result.refunded
+                else f"Task {task_id} terminated."
+            ),
         }
     except HTTPException:
         raise
@@ -73,10 +73,6 @@ async def refund_bot_task(req: RefundTaskRequest):
 async def clean_zombie_tasks():
     """Force clean all tasks older than 10 minutes (600s) and refund."""
     try:
-        import time
-
-        from src.services.permission_service import permission_service
-
         tasks, _ = await get_system_task_stats()
         if not tasks:
             return {
@@ -95,20 +91,14 @@ async def clean_zombie_tasks():
                 username = task.get("username", "Unknown")
                 cost = task.get("cost", 0)
 
-                if cost > 0 and user_id:
-                    try:
-                        await permission_service.refund_quota(
-                            user_id,
-                            credits=cost,
-                            username=username,
-                            task_type="refund_admin_force_cleanup",
-                        )
-                    except Exception as e:
-                        logger.error(
-                            f"Error refunding during cleanup for user {user_id}: {e}"
-                        )
-
-                await force_terminate_task(task_id, user_id=user_id)
+                await finalize_terminated_task(
+                    registry_task_id=task_id,
+                    user_id=user_id,
+                    username=username,
+                    cost=cost,
+                    should_refund=cost > 0,
+                    refund_task_type="refund_admin_force_cleanup",
+                )
                 removed += 1
 
         return {

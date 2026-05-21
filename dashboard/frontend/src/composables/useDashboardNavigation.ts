@@ -11,7 +11,6 @@ import {
   PayCircleOutlined,
   PictureOutlined,
   RobotOutlined,
-  SettingOutlined,
   UserOutlined,
 } from '@ant-design/icons-vue'
 
@@ -28,7 +27,6 @@ export function useDashboardNavigation(activeTab: { value: string[] }) {
     { key: 'templates', label: '模板共建', icon: PictureOutlined },
     { key: 'gallery', label: '广场内容管理', icon: AppstoreOutlined },
     { key: 'referrals', label: '邀请奖励', icon: GiftOutlined },
-    { key: 'settings', label: '系统设置', icon: SettingOutlined, disabled: true },
   ]
 
   const scrollableTabKeys = [

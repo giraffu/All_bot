@@ -271,7 +271,6 @@ const fetchPostsPage = async (
     if (requestVersion !== currentQueryVersion) return false
 
     const newItems = res.data.items.map((p: Post) => {
-      // 兼容后端还没重启的情况：如果后端下发的 thumbnail_url 还是原视频 (.mp4)，前端自己算出 _thumb.jpg
       const isVideo = isVideoFile(p.media_url, p.media_type)
       const thumbUrl = normalizeGalleryThumbnailPath(p.thumbnail_url, isVideo)
 

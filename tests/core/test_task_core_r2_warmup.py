@@ -71,6 +71,50 @@ async def test_monitor_task_and_release_lock_schedules_web_history_r2_warmup(mon
 
 
 @pytest.mark.asyncio
+async def test_monitor_task_and_release_lock_uses_cancellation_finalize_for_cancelled(
+    monkeypatch,
+):
+    async def _monitor_progress(_task_id, _is_video):
+        yield {"status": "cancelled"}
+
+    finalize_cancel = AsyncMock()
+    finalize_failure = AsyncMock()
+
+    monkeypatch.setattr(task_core.image_service, "monitor_progress", _monitor_progress)
+    monkeypatch.setattr(task_core, "finalize_task_cancellation", finalize_cancel)
+    monkeypatch.setattr(task_core, "finalize_task_failure", finalize_failure)
+
+    submission_context = task_core.TaskSubmissionContext(
+        task_type="image",
+        is_video_task=False,
+        user_logger=MagicMock(),
+        prompt="cancel me",
+        saved_inputs=[],
+        metadata={},
+        allow_contribute=True,
+        final_priority=0,
+    )
+
+    await task_core.monitor_task_and_release_lock(
+        backend_task_id="task-cancelled",
+        internal_user_id=123,
+        username="tester",
+        registry_task_id="registry-cancelled",
+        submission_context=submission_context,
+        cost=5,
+    )
+
+    finalize_cancel.assert_awaited_once_with(
+        internal_user_id=123,
+        username="tester",
+        cost=5,
+        task_submitted=True,
+        registry_task_id="registry-cancelled",
+    )
+    finalize_failure.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_schedule_web_history_r2_warmup_still_prunes_when_copy_fails(monkeypatch):
     original_create_task = asyncio.create_task
     scheduled_tasks = []
@@ -174,3 +218,54 @@ async def test_process_and_submit_task_passes_requested_duration_to_web_monitor(
     submission_context = monitor_mock.call_args.kwargs["submission_context"]
     assert submission_context.requested_duration == 20
     assert submission_context.output_duration == 20
+
+
+@pytest.mark.asyncio
+async def test_persist_successful_task_result_reuses_core_path_for_bot(monkeypatch):
+    fake_user_logger = MagicMock()
+    fake_user_logger.save_output_image.return_value = "456/output_images/task-2.png"
+    fake_user_logger.log_task = AsyncMock()
+    refresh_mock = AsyncMock()
+    warmup_mock = MagicMock()
+
+    monkeypatch.setattr(
+        task_core.image_service,
+        "download_result",
+        AsyncMock(return_value=b"image-bytes"),
+    )
+    monkeypatch.setattr(
+        task_core,
+        "extract_media_metadata_from_bytes_best_effort",
+        lambda *_args, **_kwargs: (768, 1024, None),
+    )
+    monkeypatch.setattr(task_core, "UserLogger", lambda *_args, **_kwargs: fake_user_logger)
+    monkeypatch.setattr(task_core, "schedule_web_history_r2_warmup", warmup_mock)
+    monkeypatch.setattr(
+        "src.services.permission_service.permission_service.refresh_user_group",
+        refresh_mock,
+    )
+
+    result = await task_core.persist_successful_task_result(
+        backend_task_id="task-2",
+        registry_task_id="task-2",
+        internal_user_id=456,
+        username="tester",
+        prompt="hello",
+        task_type="image",
+        input_images=["input.png"],
+        allow_contribute=True,
+        is_video=False,
+        billing_resolution="1024",
+        requested_duration=None,
+        source="bot",
+        refresh_user_group_after_log=True,
+    )
+
+    assert result.media_bytes == b"image-bytes"
+    assert result.output_file == "456/output_images/task-2.png"
+    assert result.width == 768
+    assert result.height == 1024
+    assert result.duration is None
+    fake_user_logger.log_task.assert_awaited_once()
+    refresh_mock.assert_awaited_once_with(456)
+    warmup_mock.assert_not_called()

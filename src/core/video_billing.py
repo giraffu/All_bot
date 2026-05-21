@@ -127,6 +127,27 @@ def infer_legacy_video_requested_duration(
     return None
 
 
+def resolve_legacy_requested_duration(
+    task_type: str | None,
+    requested_duration: Any,
+    duration: Any,
+) -> int | None:
+    if requested_duration is not None:
+        return requested_duration
+    return infer_legacy_video_requested_duration(task_type, duration)
+
+
+def resolve_apply_prompt_and_requested_duration(
+    task_type: str | None,
+    prompt: str | None,
+    requested_duration: Any,
+) -> tuple[str, int | None]:
+    resolved_prompt = prompt or ""
+    if task_type == "ltx_video":
+        _, _, resolved_prompt = extract_video_prompt_prefix(resolved_prompt)
+    return resolved_prompt, requested_duration
+
+
 def extract_video_prompt_prefix(
     prompt: str | None,
 ) -> tuple[str | None, int | None, str]:

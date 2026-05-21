@@ -38,7 +38,7 @@ bash safe_deploy.sh
 
 ## 🔄 正式环境脚本执行流程解析 (Step-by-Step)
 
-`safe_deploy.sh` 当前分为 9 个自动化步骤，全程无需人工干预：
+`safe_deploy.sh` 当前分为 8 个自动化步骤，全程无需人工干预：
 
 ### 1️⃣ 开启系统维护模式
 - **原理**：在主机器人容器 (`tg-bot`) 内部创建一个 `/app/MAINTENANCE` 文件。
@@ -66,15 +66,11 @@ bash safe_deploy.sh
 
 ### 7️⃣ 重建主服务群
 - **原理**：基于 `deploy/docker-compose.yml`，删除并重新构建 `tg-bot` (主机器人)、`payment-api` (支付回调服务) 和 `web-api` (前端接口服务)。
-- **效果**：正式环境的核心业务逻辑更新。*(容器重启后，维护模式文件自动消失，服务恢复接收新任务)*。
+- **效果**：正式环境的核心业务逻辑更新。脚本退出时会通过 `trap cleanup_on_exit` 自动清理维护模式标记，服务恢复接收新任务。
 
 ### 8️⃣ 重建 Dashboard 服务
 - **原理**：进入 `dashboard/` 目录，删除并重新构建前后端管理面板。
 - **效果**：更新管理员控制台。
-
-### 9️⃣ 重建测试环境服务群
-- **原理**：基于 `deploy/docker-compose-test.yml` 重建测试机器人及测试环境相关接口。
-- **效果**：同步更新测试环境逻辑。
 
 ## 🧪 测试环境脚本执行流程解析
 
@@ -86,6 +82,7 @@ bash safe_deploy.sh
 - 测试入口服务群重建
 
 它不会重建生产服务，也不会重建正式 Dashboard。
+生产脚本 `safe_deploy.sh` 也不会顺带重建测试环境；测试栈仅由 `safe_deploy_test.sh` 负责。
 
 ---
 
