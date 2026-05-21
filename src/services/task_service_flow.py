@@ -10,6 +10,7 @@ from src.core.task_core import (
     InsufficientCreditsError,
     process_and_submit_task,
 )
+from src.logger import UserLogger
 from src.services.image_service import image_service
 from src.services.task_service_completion import (
     complete_monitored_bot_task,
@@ -59,12 +60,10 @@ async def submit_bot_task(
     source_post_id=None,
     deduct_quota=True,
 ) -> tuple[str, list[str]]:
-    from src.core import task_core as compat_task_core
-
     task_id = str(uuid.uuid4())
     correlation_id.set(task_id)
 
-    result = await compat_task_core.process_and_submit_task(
+    result = await process_and_submit_task(
         user_id=internal_user_id,
         username=username,
         task_type=task_type,
@@ -209,8 +208,6 @@ async def run_bot_task_flow(
     handle_bot_unexpected_exception_func=None,
     cleanup_runtime_state_if_needed_func=None,
 ) -> tuple[bytes | None, str | None]:
-    from src.services import task_service as compat_task_service
-
     media_bytes = None
     full_output_path = None
     prepare_and_submit_bot_task_func = (
@@ -275,7 +272,7 @@ async def run_bot_task_flow(
             runtime_state=runtime_state,
             internal_user_id=internal_user_id,
             username=username,
-            user_logger=compat_task_service.UserLogger(internal_user_id, username),
+            user_logger=UserLogger(internal_user_id, username),
             prompt=prompt,
             task_type=task_type,
             task_id=task_id,

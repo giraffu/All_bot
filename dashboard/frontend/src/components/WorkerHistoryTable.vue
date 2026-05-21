@@ -66,7 +66,10 @@ import { ref, onMounted } from 'vue'
 import { message } from 'ant-design-vue'
 import { SyncOutlined } from '@ant-design/icons-vue'
 import dayjs from 'dayjs'
-import { api } from '../api/client'
+import {
+  fetchWorkerHistory as fetchWorkerHistoryApi,
+  fetchWorkerList as fetchWorkerListApi
+} from '../api/api'
 
 const loading = ref(false)
 const historyData = ref([])
@@ -94,7 +97,7 @@ const columns = [
 
 const fetchWorkerList = async () => {
   try {
-    const { data } = await api.get('/api/workers/list')
+    const data = await fetchWorkerListApi()
     workerList.value = data.workers || []
   } catch (error) {
     console.error('Error fetching worker list:', error)
@@ -113,8 +116,10 @@ const fetchHistory = async () => {
       params.worker_id = selectedWorker.value
     }
 
-    const { data } = await api.get('/api/workers/history', {
-      params
+    const data = await fetchWorkerHistoryApi({
+      page: params.page,
+      size: params.size,
+      workerId: selectedWorker.value || null
     })
 
     historyData.value = data.data

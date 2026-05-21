@@ -110,6 +110,108 @@ async def verify_token(credentials: HTTPAuthorizationCredentials = Depends(secur
     return credentials.credentials
 
 
+def _split_task_request(request_model):
+    params = request_model.dict()
+    task_id = params.pop("task_id")
+    priority = params.pop("priority", 0)
+    return task_id, priority, params
+
+
+async def _enqueue_task_from_request(
+    *,
+    request_model,
+    task_type: TaskType,
+    queue_manager: QueueManager,
+) -> TaskResponse:
+    task_id, priority, params = _split_task_request(request_model)
+    await queue_manager.enqueue_task(task_type, params, priority, task_id)
+    return TaskResponse(task_id=task_id)
+
+
+def _build_result_url(result_path: str) -> str:
+    protocol = "https" if settings.minio_secure else "http"
+    return (
+        f"{protocol}://{settings.minio_endpoint}/"
+        f"{settings.minio_result_bucket}/{result_path}"
+    )
+
+
+async def _build_task_status_response(
+    *,
+    task_id: str,
+    queue_manager: QueueManager,
+    include_image_url: bool = False,
+    include_task_type: bool = False,
+) -> TaskStatusResponse:
+    task = await queue_manager.get_task_status(task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    status = task.get("status")
+    queue_pos = None
+    queue_remaining = None
+    if status == "pending":
+        queue_pos = await queue_manager.get_queue_position(task_id)
+        queue_remaining = queue_pos if queue_pos is not None else 0
+
+    result_path = task.get("result_path")
+    response_kwargs = {
+        "status": status,
+        "queue_pos": queue_pos,
+        "queue_remaining": queue_remaining,
+        "progress": float(task.get("progress", 0.0)),
+        "error": task.get("error_msg"),
+        "result_path": result_path,
+        "cancel_requested": queue_manager._as_bool(task.get("cancel_requested")),
+        "cancel_requested_at": (
+            float(task["cancel_requested_at"])
+            if task.get("cancel_requested_at")
+            else None
+        ),
+    }
+    if include_image_url and status == "done" and result_path:
+        response_kwargs["image_url"] = _build_result_url(result_path)
+    if include_task_type:
+        response_kwargs["task_type"] = task.get("type")
+    return TaskStatusResponse(**response_kwargs)
+
+
+async def _serve_task_result_file(
+    *,
+    task_id: str,
+    ready_error_detail: str,
+    queue_manager: QueueManager,
+    minio_client: Optional[Minio],
+) -> FileResponse:
+    task = await queue_manager.get_task_status(task_id)
+    if not task or task.get("status") != "done":
+        raise HTTPException(status_code=404, detail=ready_error_detail)
+
+    result_path = task.get("result_path")
+    if not result_path:
+        raise HTTPException(status_code=404, detail="Result path missing")
+    if not minio_client:
+        raise HTTPException(status_code=500, detail="MinIO client not initialized")
+
+    import tempfile
+
+    try:
+        logger.info(
+            "Fetching %s from MinIO bucket %s",
+            result_path,
+            settings.minio_result_bucket,
+        )
+        fd, temp_path = tempfile.mkstemp()
+        os.close(fd)
+        minio_client.fget_object(settings.minio_result_bucket, result_path, temp_path)
+        background_tasks = BackgroundTasks()
+        background_tasks.add_task(os.remove, temp_path)
+        return FileResponse(temp_path, background=background_tasks)
+    except Exception as e:
+        logger.error(f"MinIO download failed: {e}")
+        raise HTTPException(status_code=404, detail="File not found in storage")
+
+
 @app.get("/health")
 async def health_check():
     return {"status": "ok", "service": "central-api"}
@@ -121,11 +223,11 @@ async def create_img2img_task(  # vulture: ignore
     queue_manager: QueueManager = Depends(get_queue_manager),
     token: str = Depends(verify_token),
 ):
-    params = request.dict()
-    task_id = params.pop("task_id")
-    priority = params.pop("priority", 0)
-    await queue_manager.enqueue_task(TaskType.IMG2IMG, params, priority, task_id)
-    return TaskResponse(task_id=task_id)
+    return await _enqueue_task_from_request(
+        request_model=request,
+        task_type=TaskType.IMG2IMG,
+        queue_manager=queue_manager,
+    )
 
 
 @app.post("/comfy_img2img_lora", response_model=TaskResponse)
@@ -134,11 +236,11 @@ async def create_img2img_lora_task(  # vulture: ignore
     queue_manager: QueueManager = Depends(get_queue_manager),
     token: str = Depends(verify_token),
 ):
-    params = request.dict()
-    task_id = params.pop("task_id")
-    priority = params.pop("priority", 0)
-    await queue_manager.enqueue_task(TaskType.IMG2IMG_LORA, params, priority, task_id)
-    return TaskResponse(task_id=task_id)
+    return await _enqueue_task_from_request(
+        request_model=request,
+        task_type=TaskType.IMG2IMG_LORA,
+        queue_manager=queue_manager,
+    )
 
 
 @app.post("/face_swap", response_model=TaskResponse)
@@ -147,11 +249,11 @@ async def create_face_swap_task(  # vulture: ignore
     queue_manager: QueueManager = Depends(get_queue_manager),
     token: str = Depends(verify_token),
 ):
-    params = request.dict()
-    task_id = params.pop("task_id")
-    priority = params.pop("priority", 0)
-    await queue_manager.enqueue_task(TaskType.FACE_SWAP, params, priority, task_id)
-    return TaskResponse(task_id=task_id)
+    return await _enqueue_task_from_request(
+        request_model=request,
+        task_type=TaskType.FACE_SWAP,
+        queue_manager=queue_manager,
+    )
 
 
 @app.post("/perfect_video_insert", response_model=TaskResponse)
@@ -160,11 +262,11 @@ async def create_video_insert_task(  # vulture: ignore
     queue_manager: QueueManager = Depends(get_queue_manager),
     token: str = Depends(verify_token),
 ):
-    params = request.dict()
-    task_id = params.pop("task_id")
-    priority = params.pop("priority", 0)
-    await queue_manager.enqueue_task(TaskType.VIDEO_INSERT, params, priority, task_id)
-    return TaskResponse(task_id=task_id)
+    return await _enqueue_task_from_request(
+        request_model=request,
+        task_type=TaskType.VIDEO_INSERT,
+        queue_manager=queue_manager,
+    )
 
 
 @app.post("/perfect_video_edit", response_model=TaskResponse)
@@ -173,11 +275,11 @@ async def create_video_edit_task(  # vulture: ignore
     queue_manager: QueueManager = Depends(get_queue_manager),
     token: str = Depends(verify_token),
 ):
-    params = request.dict()
-    task_id = params.pop("task_id")
-    priority = params.pop("priority", 0)
-    await queue_manager.enqueue_task(TaskType.VIDEO_EDIT, params, priority, task_id)
-    return TaskResponse(task_id=task_id)
+    return await _enqueue_task_from_request(
+        request_model=request,
+        task_type=TaskType.VIDEO_EDIT,
+        queue_manager=queue_manager,
+    )
 
 
 @app.post("/perfect_video_lora", response_model=TaskResponse)
@@ -186,13 +288,13 @@ async def create_video_lora_task(  # vulture: ignore
     queue_manager: QueueManager = Depends(get_queue_manager),
     token: str = Depends(verify_token),
 ):
-    params = request.dict()
-    task_id = params.pop("task_id")
-    priority = params.pop("priority", 0)
     # Reusing VIDEO_EDIT task type so existing workers can pick it up.
     # The lora_name param will be dynamically injected by the worker's patch_workflow.
-    await queue_manager.enqueue_task(TaskType.VIDEO_EDIT, params, priority, task_id)
-    return TaskResponse(task_id=task_id)
+    return await _enqueue_task_from_request(
+        request_model=request,
+        task_type=TaskType.VIDEO_EDIT,
+        queue_manager=queue_manager,
+    )
 
 
 @app.post("/face_video", response_model=TaskResponse)
@@ -201,11 +303,11 @@ async def create_face_video_task(  # vulture: ignore
     queue_manager: QueueManager = Depends(get_queue_manager),
     token: str = Depends(verify_token),
 ):
-    params = request.dict()
-    task_id = params.pop("task_id")
-    priority = params.pop("priority", 0)
-    await queue_manager.enqueue_task(TaskType.FACE_VIDEO, params, priority, task_id)
-    return TaskResponse(task_id=task_id)
+    return await _enqueue_task_from_request(
+        request_model=request,
+        task_type=TaskType.FACE_VIDEO,
+        queue_manager=queue_manager,
+    )
 
 
 @app.post("/i2i_pro", response_model=TaskResponse)
@@ -214,11 +316,11 @@ async def create_i2i_pro_task(
     queue_manager: QueueManager = Depends(get_queue_manager),
     token: str = Depends(verify_token),
 ):
-    params = request.dict()
-    task_id = params.pop("task_id")
-    priority = params.pop("priority", 0)
-    await queue_manager.enqueue_task(TaskType.I2I_PRO, params, priority, task_id)
-    return TaskResponse(task_id=task_id)
+    return await _enqueue_task_from_request(
+        request_model=request,
+        task_type=TaskType.I2I_PRO,
+        queue_manager=queue_manager,
+    )
 
 
 @app.post("/i2i_draw", response_model=TaskResponse)
@@ -227,11 +329,11 @@ async def create_i2i_draw_task(
     queue_manager: QueueManager = Depends(get_queue_manager),
     token: str = Depends(verify_token),
 ):
-    params = request.dict()
-    task_id = params.pop("task_id")
-    priority = params.pop("priority", 0)
-    await queue_manager.enqueue_task(TaskType.I2I_DRAW, params, priority, task_id)
-    return TaskResponse(task_id=task_id)
+    return await _enqueue_task_from_request(
+        request_model=request,
+        task_type=TaskType.I2I_DRAW,
+        queue_manager=queue_manager,
+    )
 
 
 @app.post("/api/v1/ltx_video", response_model=TaskResponse)
@@ -240,11 +342,11 @@ async def create_ltx_video_task(
     queue_manager: QueueManager = Depends(get_queue_manager),
     token: str = Depends(verify_token),
 ):
-    params = request.dict()
-    task_id = params.pop("task_id")
-    priority = params.pop("priority", 0)
-    await queue_manager.enqueue_task(TaskType.LTX_VIDEO, params, priority, task_id)
-    return TaskResponse(task_id=task_id)
+    return await _enqueue_task_from_request(
+        request_model=request,
+        task_type=TaskType.LTX_VIDEO,
+        queue_manager=queue_manager,
+    )
 
 
 @app.post("/api/v1/workflows/t2i-pornmaster-turbo", response_model=T2ITaskResponse)
@@ -374,36 +476,10 @@ async def cancel_task(
 async def get_task_status_v1(
     task_id: str, queue_manager: QueueManager = Depends(get_queue_manager)
 ):
-    task = await queue_manager.get_task_status(task_id)
-    if not task:
-        raise HTTPException(status_code=404, detail="Task not found")
-
-    status = task.get("status")
-    queue_pos = None
-    queue_remaining = None
-
-    if status == "pending":
-        queue_pos = await queue_manager.get_queue_position(task_id)
-        queue_remaining = queue_pos if queue_pos is not None else 0
-
-    result_path = task.get("result_path")
-    image_url = None
-    if status == "done" and result_path:
-        protocol = "https" if settings.minio_secure else "http"
-        image_url = f"{protocol}://{settings.minio_endpoint}/{settings.minio_result_bucket}/{result_path}"
-
-    return TaskStatusResponse(
-        status=status,
-        queue_pos=queue_pos,
-        queue_remaining=queue_remaining,
-        progress=float(task.get("progress", 0.0)),
-        error=task.get("error_msg"),
-        result_path=result_path,
-        image_url=image_url,
-        cancel_requested=queue_manager._as_bool(task.get("cancel_requested")),
-        cancel_requested_at=float(task["cancel_requested_at"])
-        if task.get("cancel_requested_at")
-        else None,
+    return await _build_task_status_response(
+        task_id=task_id,
+        queue_manager=queue_manager,
+        include_image_url=True,
     )
 
 
@@ -411,31 +487,10 @@ async def get_task_status_v1(
 async def get_task_status(
     task_id: str, queue_manager: QueueManager = Depends(get_queue_manager)
 ):
-    task = await queue_manager.get_task_status(task_id)
-    if not task:
-        raise HTTPException(status_code=404, detail="Task not found")
-
-    status = task.get("status")
-    queue_pos = None
-    queue_remaining = None
-
-    if status == "pending":
-        queue_pos = await queue_manager.get_queue_position(task_id)
-        # Usually rank 0 is the head.
-        queue_remaining = queue_pos if queue_pos is not None else 0
-
-    return TaskStatusResponse(
-        status=status,
-        queue_pos=queue_pos,
-        queue_remaining=queue_remaining,
-        progress=float(task.get("progress", 0.0)),
-        error=task.get("error_msg"),
-        result_path=task.get("result_path"),
-        task_type=task.get("type"),
-        cancel_requested=queue_manager._as_bool(task.get("cancel_requested")),
-        cancel_requested_at=float(task["cancel_requested_at"])
-        if task.get("cancel_requested_at")
-        else None,
+    return await _build_task_status_response(
+        task_id=task_id,
+        queue_manager=queue_manager,
+        include_task_type=True,
     )
 
 
@@ -445,38 +500,12 @@ async def get_task_image(
     queue_manager: QueueManager = Depends(get_queue_manager),
     minio_client: Optional[Minio] = Depends(get_minio_client),
 ):
-    task = await queue_manager.get_task_status(task_id)
-    if not task or task.get("status") != "done":
-        raise HTTPException(status_code=404, detail="Image not ready")
-
-    result_path = task.get("result_path")
-    if not result_path:
-        raise HTTPException(status_code=404, detail="Result path missing")
-
-    # We no longer read from local disk, everything is served directly via MinIO URL or frontend handles MinIO URLs.
-    # However, to preserve API compatibility, we will fetch from MinIO and return.
-    import tempfile
-
-    if not minio_client:
-        raise HTTPException(status_code=500, detail="MinIO client not initialized")
-
-    try:
-        logger.info(
-            f"Fetching {result_path} from MinIO bucket {settings.minio_result_bucket}"
-        )
-        # Create a temporary file to send back
-        fd, temp_path = tempfile.mkstemp()
-        os.close(fd)
-
-        minio_client.fget_object(settings.minio_result_bucket, result_path, temp_path)
-        background_tasks = BackgroundTasks()
-        background_tasks.add_task(os.remove, temp_path)
-        return FileResponse(
-            temp_path, background=background_tasks
-        )
-    except Exception as e:
-        logger.error(f"MinIO download failed: {e}")
-        raise HTTPException(status_code=404, detail="File not found in storage")
+    return await _serve_task_result_file(
+        task_id=task_id,
+        ready_error_detail="Image not ready",
+        queue_manager=queue_manager,
+        minio_client=minio_client,
+    )
 
 
 @app.get("/video/{task_id}")
@@ -485,36 +514,12 @@ async def get_task_video(
     queue_manager: QueueManager = Depends(get_queue_manager),
     minio_client: Optional[Minio] = Depends(get_minio_client),
 ):
-    task = await queue_manager.get_task_status(task_id)
-    if not task or task.get("status") != "done":
-        raise HTTPException(status_code=404, detail="Video not ready")
-
-    result_path = task.get("result_path")
-    if not result_path:
-        raise HTTPException(status_code=404, detail="Result path missing")
-
-    import tempfile
-
-    if not minio_client:
-        raise HTTPException(status_code=500, detail="MinIO client not initialized")
-
-    try:
-        logger.info(
-            f"Fetching {result_path} from MinIO bucket {settings.minio_result_bucket}"
-        )
-        # Create a temporary file to send back
-        fd, temp_path = tempfile.mkstemp()
-        os.close(fd)
-
-        minio_client.fget_object(settings.minio_result_bucket, result_path, temp_path)
-        background_tasks = BackgroundTasks()
-        background_tasks.add_task(os.remove, temp_path)
-        return FileResponse(
-            temp_path, background=background_tasks
-        )
-    except Exception as e:
-        logger.error(f"MinIO download failed: {e}")
-        raise HTTPException(status_code=404, detail="File not found in storage")
+    return await _serve_task_result_file(
+        task_id=task_id,
+        ready_error_detail="Video not ready",
+        queue_manager=queue_manager,
+        minio_client=minio_client,
+    )
 
 
 @app.get("/system/workers", response_model=SystemWorkersResponse)

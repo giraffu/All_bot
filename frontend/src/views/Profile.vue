@@ -1,8 +1,6 @@
 <script setup lang="ts">
-import { ref, onMounted, reactive, computed } from 'vue'
+import { onMounted, computed } from 'vue'
 import { useAuthStore } from '@/stores/auth'
-import api from '@/api'
-import { message } from 'ant-design-vue'
 import { 
   Wallet,
   Activity,
@@ -21,328 +19,71 @@ import {
 import dayjs from 'dayjs'
 import { useViewport } from '@/composables/useViewport'
 import { useTelegram } from '@/composables/useTelegram'
-import { watch, onBeforeUnmount } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useQueueStatus } from '@/composables/useQueueStatus'
+import { useBindPassword } from '@/composables/useBindPassword'
+import { useAffiliateRedeem } from '@/composables/useAffiliateRedeem'
+import { useProfileLanguage } from '@/composables/useProfileLanguage'
+import { useDailyCheckin } from '@/composables/useDailyCheckin'
 
 const authStore = useAuthStore()
 const { isMobile } = useViewport()
 const { showMainButton, hideMainButton, hapticFeedback, isTMA } = useTelegram()
 const { t, locale } = useI18n()
-const loading = ref(true)
+const { queueStatus, fetchQueueStatus } = useQueueStatus()
+const { toggleLanguage } = useProfileLanguage(locale as { value: string })
 
-const queueStatus = ref({
-  loading: false,
-  isFirstLoad: true,
-  data: {
-    comfy_online: false,
-    queue_size: 0,
-    queue_by_type: {} as Record<string, number>
-  }
-})
-
-const fetchQueueStatus = async () => {
-  queueStatus.value.loading = true
-  try {
-    const res = await api.get('/tasks/queue-status')
-    queueStatus.value.data = res.data
-  } catch (error) {
-    console.error('Failed to fetch queue status', error)
-  } finally {
-    queueStatus.value.loading = false
-    queueStatus.value.isFirstLoad = false
-  }
-}
-
-const toggleLanguage = async () => {
-  const newLang = locale.value === 'zh' ? 'en' : 'zh'
-  locale.value = newLang
-  
-  // Persist language to backend
-  try {
-    await api.patch('/users/preferences', { language_code: newLang })
-  } catch (error) {
-    console.error('Failed to save language preference', error)
-  }
-}
-
-const bindFormState = reactive({
-  username: '',
-  password: ''
-})
-const bindingLoading = ref(false)
-const showBindModal = ref(false)
-
-const handleBindPasswordModalOpen = () => {
-  showBindModal.value = true
-  if (authStore.user?.username) {
-    bindFormState.username = authStore.user.username
-  } else {
-    bindFormState.username = ''
-  }
-  bindFormState.password = ''
-
-  if (isMobile.value) {
-    hapticFeedback('medium')
-    showMainButton('确认结契', handleBindPassword)
-  }
-}
-
-watch(showBindModal, (newVal) => {
-  if (!newVal) {
-    hideMainButton(handleBindPassword)
-  }
-})
-
-onBeforeUnmount(() => {
-  hideMainButton(handleBindPassword)
-})
-
-const handleBindPassword = async () => {
-  if (!bindFormState.username || !bindFormState.password) {
-    message.warning('请填写道号与密咒')
-    return
-  }
-  
-  if (bindFormState.password.length < 6) {
-    message.warning('密咒长度不能少于 6 位')
-    return
-  }
-  
-  bindingLoading.value = true
-  try {
-    await api.post('/auth/bind-password', bindFormState)
-    message.success('密咒设置成功！之后可以使用该道号与密咒破界登录。')
-    
-    // Update local user data
+const {
+  bindFormState,
+  bindingLoading,
+  showBindModal,
+  handleBindPassword,
+  handleBindPasswordModalOpen
+} = useBindPassword({
+  isMobile,
+  user: computed(() => authStore.user),
+  onUserBound: (username) => {
     if (authStore.user) {
-      authStore.user.username = bindFormState.username
+      authStore.user.username = username
       authStore.setAuth(authStore.token!, authStore.user)
     }
-    
-    showBindModal.value = false
-    bindFormState.password = '' // Clear password
-  } catch (error: any) {
-    console.error('Bind password error:', error)
-    
-    let errorMsg = '密咒设置失败'
-    const detail = error.response?.data?.detail
-    
-    if (detail) {
-      if (Array.isArray(detail)) {
-         // Handle Pydantic Validation Error array
-         errorMsg = detail.map(err => {
-            if (err.loc && err.loc.includes('username')) return '道号格式不正确：' + err.msg
-            if (err.loc && err.loc.includes('password')) return '密咒格式不正确：' + err.msg
-            return err.msg
-         }).join('; ')
-      } else if (typeof detail === 'string') {
-         errorMsg = detail
-      }
-    }
-    
-    message.error(errorMsg)
-  } finally {
-    bindingLoading.value = false
-  }
-}
+  },
+  showMainButton,
+  hideMainButton,
+  hapticFeedback
+})
 
 const formatDate = (dateString?: string | null) => {
   if (!dateString) return '永久有效'
   return dayjs(dateString).format('YYYY-MM-DD HH:mm')
 }
 
-const checkinLoading = ref(false)
-const redeemCreditsLoading = ref(false)
-const redeemMembershipLoading = ref(false)
-const showRedeemCreditsModal = ref(false)
-const showRedeemMembershipModal = ref(false)
-const redeemCreditsForm = reactive({
-  amountUsdt: '1.0000'
+const { checkinLoading, handleCheckin } = useDailyCheckin({
+  refreshUser: authStore.fetchUser
 })
-const redeemCreditsPackages = [
-  {
-    amountUsdt: '1.0000',
-    credits: 130,
-    description: '1 USDT = 130 灵石'
-  },
-  {
-    amountUsdt: '3.0000',
-    credits: 390,
-    description: '3 USDT = 390 灵石'
-  },
-  {
-    amountUsdt: '6.0000',
-    credits: 780,
-    description: '6 USDT = 780 灵石'
-  },
-  {
-    amountUsdt: '10.0000',
-    credits: 1800,
-    description: '10 USDT = 1800 灵石'
-  },
-  {
-    amountUsdt: '15.0000',
-    credits: 2700,
-    description: '15 USDT = 2700 灵石'
-  },
-  {
-    amountUsdt: '20.0000',
-    credits: 4000,
-    description: '20 USDT = 4000 灵石'
-  }
-] as const
-const redeemMembershipForm = reactive({
-  optionKey: 'inner_30d'
+const {
+  redeemCreditsLoading,
+  redeemMembershipLoading,
+  showRedeemCreditsModal,
+  showRedeemMembershipModal,
+  redeemCreditsForm,
+  redeemMembershipForm,
+  redeemCreditsPackages,
+  membershipRedeemOptions,
+  availableCommissionUsdt,
+  totalCommissionUsdt,
+  spentCommissionUsdt,
+  openRedeemCreditsModal,
+  openRedeemMembershipModal,
+  handleRedeemCredits,
+  handleRedeemMembership
+} = useAffiliateRedeem({
+  user: computed(() => authStore.user),
+  refreshUser: authStore.fetchUser
 })
-const membershipRedeemOptions = [
-  {
-    key: 'inner_30d',
-    label: '内门弟子 30 天',
-    amountUsdt: '4.4118',
-    bonusCredits: 400,
-    description: '兑换后附加 400 灵石'
-  },
-  {
-    key: 'core_30d',
-    label: '核心弟子 30 天',
-    amountUsdt: '10.2941',
-    bonusCredits: 1200,
-    description: '兑换后附加 1200 灵石'
-  },
-  {
-    key: 'true_30d',
-    label: '真传弟子 30 天',
-    amountUsdt: '17.6471',
-    bonusCredits: 3000,
-    description: '兑换后附加 3000 灵石'
-  }
-] as const
-const availableCommissionUsdt = computed(() => {
-  const raw =
-    authStore.user?.invitation_recharge?.available_balance_usdt ??
-    authStore.user?.invitation_recharge?.commission_usdt
-  const parsed = Number(raw ?? 0)
-  return Number.isFinite(parsed) ? parsed.toFixed(4) : '0.0000'
-})
-
-const totalCommissionUsdt = computed(() => {
-  const raw =
-    authStore.user?.invitation_recharge?.total_commission_usdt ??
-    authStore.user?.invitation_recharge?.commission_usdt
-  const parsed = Number(raw ?? 0)
-  return Number.isFinite(parsed) ? parsed.toFixed(2) : '0.00'
-})
-
-const spentCommissionUsdt = computed(() => {
-  const raw = authStore.user?.invitation_recharge?.spent_commission_usdt
-  const parsed = Number(raw ?? 0)
-  return Number.isFinite(parsed) ? parsed.toFixed(2) : '0.00'
-})
-
-const buildIdempotencyKey = (prefix: string) => {
-  const randomPart =
-    typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
-      ? crypto.randomUUID()
-      : `${Date.now()}_${Math.random().toString(16).slice(2)}`
-  return `${prefix}_${randomPart}`
-}
-
-const openRedeemCreditsModal = () => {
-  showRedeemCreditsModal.value = true
-}
-
-const openRedeemMembershipModal = () => {
-  showRedeemMembershipModal.value = true
-}
-
-const handleRedeemCredits = async () => {
-  redeemCreditsLoading.value = true
-  try {
-    const selectedPackage = redeemCreditsPackages.find(
-      item => item.amountUsdt === redeemCreditsForm.amountUsdt
-    )
-    await api.post('/users/me/affiliate/redeem-credits', {
-      amount_usdt: redeemCreditsForm.amountUsdt,
-      idempotency_key: buildIdempotencyKey('credits_redeem')
-    })
-    await authStore.fetchUser()
-    message.success(
-      selectedPackage
-        ? `返佣兑换灵石成功：${selectedPackage.amountUsdt} USDT -> ${selectedPackage.credits} 灵石`
-        : '返佣兑换灵石成功，灵石与返佣余额已更新'
-    )
-    showRedeemCreditsModal.value = false
-  } catch (error: any) {
-    console.error('Redeem credits error:', error)
-    const detail = error.response?.data?.detail
-    if (typeof detail === 'string') {
-      message.error(detail)
-    } else if (detail?.message) {
-      message.error(detail.message)
-    } else {
-      message.error('返佣兑换灵石失败，请稍后重试')
-    }
-  } finally {
-    redeemCreditsLoading.value = false
-  }
-}
-
-const handleRedeemMembership = async () => {
-  redeemMembershipLoading.value = true
-  try {
-    const selectedOption = membershipRedeemOptions.find(
-      option => option.key === redeemMembershipForm.optionKey
-    )
-    await api.post('/users/me/affiliate/redeem-membership', {
-      option_key: redeemMembershipForm.optionKey,
-      idempotency_key: buildIdempotencyKey('membership_redeem')
-    })
-    await authStore.fetchUser()
-    message.success(
-      `返佣兑换身份成功${selectedOption ? `：${selectedOption.label}，附加 ${selectedOption.bonusCredits} 灵石` : ''}`
-    )
-    showRedeemMembershipModal.value = false
-  } catch (error: any) {
-    console.error('Redeem membership error:', error)
-    const detail = error.response?.data?.detail
-    if (typeof detail === 'string') {
-      message.error(detail)
-    } else if (detail?.message) {
-      message.error(detail.message)
-    } else {
-      message.error('返佣兑换身份失败，请稍后重试')
-    }
-  } finally {
-    redeemMembershipLoading.value = false
-  }
-}
-
-const handleCheckin = async () => {
-  checkinLoading.value = true
-  try {
-    const response = await api.post('/users/checkin')
-    const data = response.data
-    if (data.success) {
-      message.success(`签到成功！获得 ${data.reward} 灵石`)
-      await authStore.fetchUser() // Refresh user stats
-    } else {
-      if (data.error_msg) {
-        message.warning(data.error_msg)
-      } else {
-        message.warning('今日已领取灵石，请明天再来吧！')
-      }
-    }
-  } catch (error: any) {
-    console.error('Checkin error:', error)
-    message.error('签到失败，请稍后重试')
-  } finally {
-    checkinLoading.value = false
-  }
-}
 
 onMounted(async () => {
   await authStore.fetchUser()
-  loading.value = false
   fetchQueueStatus()
 })
 </script>

@@ -1,6 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, onMounted, watch } from 'vue'
 import { message } from 'ant-design-vue'
 import { useI18n } from 'vue-i18n'
 import { useGalleryComments } from '@/composables/useGalleryComments'
@@ -11,19 +10,21 @@ import 'vue-waterfall-plugin-next/dist/style.css'
 import api from '@/api'
 import { useMainLayoutContentRef } from '@/composables/useWorkbenchScrollLock'
 import {
-  confirmTemplateApplyClose,
   useTemplateApplyStore
 } from '@/stores/templateApply'
-import {
-  buildLegacyTemplateRoute,
-  resolveTemplateApplyEntry
-} from '@/utils/templateApplyEntry'
 import { useGalleryApplyContext } from '@/composables/useGalleryApplyContext'
 import { useGalleryPostInteractions } from '@/composables/useGalleryPostInteractions'
 import { useScrollPrefetch } from '@/composables/useScrollPrefetch'
 import { getFileUrl } from '@/utils/mediaFiles'
 import { handleMediaCardImageError } from '@/utils/mediaCardFallback'
-import { resolveMediaCardView, resolveMediaDetailView } from '@/utils/mediaCardView'
+import { resolveMediaCardView } from '@/utils/mediaCardView'
+import { useCurrentDetailMedia } from '@/composables/useCurrentDetailMedia'
+import {
+  formatGalleryTag,
+  resolveGalleryTaskTypeLabel
+} from '@/utils/galleryPresentation'
+import { useGalleryConfig } from '@/composables/useGalleryConfig'
+import { useGalleryFilters } from '@/composables/useGalleryFilters'
 import dayjs from 'dayjs'
 import { useViewport } from '@/composables/useViewport'
 import LazyVideo from '@/components/LazyVideo.vue'
@@ -34,6 +35,9 @@ import DetailModalShell from '@/components/DetailModalShell.vue'
 import DetailCommentsSection from '@/components/DetailCommentsSection.vue'
 import DetailDesktopActions from '@/components/DetailDesktopActions.vue'
 import DetailMobileBottomBar from '@/components/DetailMobileBottomBar.vue'
+import { usePagedScrollNavigation } from '@/composables/usePagedScrollNavigation'
+import { useGalleryTemplateApply } from '@/composables/useGalleryTemplateApply'
+import { useRenderSettling } from '@/composables/useRenderSettling'
 
 interface Post {
   id: number
@@ -61,7 +65,6 @@ interface Post {
 
 
 
-const router = useRouter()
 const { t } = useI18n()
 const { isMobile } = useViewport()
 const templateApplyStore = useTemplateApplyStore()
@@ -78,19 +81,16 @@ const breakpoints = {
 
 const pageSize = computed(() => (isMobile.value ? 10 : 20))
 
-const mediaType = ref('all')
-const taskType = ref('all')
-const loraModel = ref('all')
-const sortBy = ref('latest')
-const timeRange = ref('all')
-
-const allowedTypes = ref<{id: string, name: string}[]>([])
-const videoLoraModels = ref<{id: string, name: string}[]>([])
-const img2imgLoraModels = ref<{id: string, name: string}[]>([])
-
-const currentLoraModels = computed(() => {
-  if (taskType.value === 'img2img_lora') return img2imgLoraModels.value
-  return videoLoraModels.value
+const {
+  allowedTypes,
+  videoLoraModels,
+  img2imgLoraModels,
+  loadConfig,
+} = useGalleryConfig({
+  includeLoraModels: true,
+  onError: (error) => {
+    console.error('Failed to load gallery config:', error)
+  },
 })
 const {
   posts,
@@ -143,11 +143,6 @@ const {
     message.error('获取广场数据失败')
   },
 })
-let applyRequestToken = 0
-let pendingApplyAbortController: AbortController | null = null
-let isGalleryUnmounted = false
-let renderSettleTimer: ReturnType<typeof setTimeout> | null = null
-
 const {
   comments,
   commentsLoading,
@@ -163,8 +158,15 @@ const {
   submitComment
 } = useGalleryComments(currentPost, posts, detailVisible)
 
-const applying = ref(false)
-const renderSettling = ref(false)
+const {
+  renderSettling,
+  startRenderSettling,
+  handleRenderSettled,
+} = useRenderSettling({
+  loadingRef: browserLoading,
+  itemsRef: posts,
+  fallbackDelayMs: 3000,
+})
 const loading = computed(() => browserLoading.value || renderSettling.value)
 const { handleInteract } = useGalleryPostInteractions<Post>({
   resolveSuccessMessage: (action, state) => {
@@ -177,208 +179,57 @@ const { handleInteract } = useGalleryPostInteractions<Post>({
     console.error(error)
   },
 })
-
-const currentDetailMedia = computed(() => {
-  if (!currentPost.value) {
-    return null
-  }
-
-  return resolveMediaDetailView(currentPost.value, {
-    normalizeGalleryThumbnail: true,
-  })
+const { applying, handleApply, cancelPendingApply } = useGalleryTemplateApply<Post>({
+  currentPost,
+  detailVisible,
+  templateApplyStore,
+  saveApplyContext,
+  t,
 })
 
-const formatTag = (tag: string) => {
-  if (tag.startsWith('#task.')) {
-    const key = tag.substring(1)
-    return '#' + t(key)
-  }
-  if (tag.startsWith('task.')) {
-    return t(tag)
-  }
-  return tag
-}
+const currentDetailMedia = useCurrentDetailMedia(currentPost, {
+  normalizeGalleryThumbnail: true,
+})
 
-let configPromise: Promise<void> | null = null
+const formatTag = (tag: string) => formatGalleryTag(tag, t)
 
-const loadConfig = async () => {
-  if (configPromise) return configPromise
-  
-  configPromise = (async () => {
-    try {
-      const res = await api.get('/gallery/config')
-      allowedTypes.value = res.data.allowed_types
-      videoLoraModels.value = res.data.lora_models || []
-      img2imgLoraModels.value = res.data.img2img_lora_models || []
-    } catch (error) {
-      console.error('Failed to load gallery config:', error)
-    } finally {
-      configPromise = null
-    }
-  })()
-  
-  return configPromise
-}
-
-const scrollToTop = async () => {
-  await nextTick()
-  layoutContentRef.value?.scrollTo({
-    top: 0,
-    behavior: 'smooth'
-  })
-}
+const { navigateToPage } = usePagedScrollNavigation({
+  contentRef: layoutContentRef,
+  goToPage: browserGoToPage,
+  afterPageChange: prefetchNextPage
+})
+const {
+  mediaType,
+  taskType,
+  loraModel,
+  sortBy,
+  timeRange,
+  isLoraTaskType,
+  currentLoraModels,
+  handleTaskTypeChange,
+  handleTimeRangeChange,
+  handleSortChange,
+  handleLoraModelChange,
+} = useGalleryFilters({
+  videoLoraModels,
+  img2imgLoraModels,
+  onFiltersChange: () => {
+    void loadPosts(true)
+  },
+})
 
 const goToPage = async (pageNumber: number) => {
-  const changed = await browserGoToPage(pageNumber)
-  if (!changed) return
-
-  await scrollToTop()
-  prefetchNextPage()
+  await navigateToPage(pageNumber)
 }
 
 const loadPosts = async (reset = false) => {
   if (reset) {
-    renderSettling.value = true
+    startRenderSettling()
   }
   await loadBrowserPosts(reset)
 }
-
-const handleTaskTypeChange = (type: string) => {
-  taskType.value = type
-  if (type !== 'video_lora' && type !== 'img2img_lora') {
-    loraModel.value = 'all'
-  }
-  loadPosts(true)
-}
-
-const invalidatePendingApplyContext = () => {
-  applyRequestToken += 1
-  pendingApplyAbortController?.abort()
-  pendingApplyAbortController = null
-  applying.value = false
-}
-
-const handleLegacyFallback = async (params: {
-  rawContext: any
-  entryEntityId: number | string | null
-}) => {
-  const resolvedEntry = resolveTemplateApplyEntry({
-    rawContext: params.rawContext,
-    source: 'gallery',
-    entryEntityId: params.entryEntityId,
-    preferredMode: 'legacy'
-  })
-
-  if (resolvedEntry.status === 'invalid') {
-    message.error(t('template_apply.invalid_context'))
-    return false
-  }
-
-  if (resolvedEntry.status === 'unknown_task_type') {
-    message.warning(t('template_apply.unknown_task_type'))
-    return false
-  }
-
-  saveApplyContext(params.rawContext)
-  detailVisible.value = false
-  message.success(t('template_apply.legacy_loaded'))
-  await router.push(buildLegacyTemplateRoute(resolvedEntry, t))
-  return true
-}
-
-const openTemplateWorkbench = async (
-  rawContext: any,
-  snapshot: { entryEntityId: number | string | null }
-): Promise<boolean> => {
-  const result = await templateApplyStore.openFromRawContext({
-    source: 'gallery',
-    entryEntityId: snapshot.entryEntityId,
-    rawContext
-  })
-
-  if (result.status === 'opened') {
-    detailVisible.value = false
-    message.success(t('template_apply.open_success'))
-    return true
-  }
-
-  if (result.status === 'legacy_fallback') {
-    if (result.fallbackKind === 'legacy_supported' && result.context && result.meta) {
-      saveApplyContext(rawContext)
-      detailVisible.value = false
-      message.success(t('template_apply.legacy_loaded'))
-      await router.push(buildLegacyTemplateRoute({
-        status: 'legacy_supported',
-        context: result.context,
-        meta: result.meta
-      }, t))
-      return true
-    }
-
-    return handleLegacyFallback({
-      rawContext,
-      entryEntityId: snapshot.entryEntityId
-    })
-  }
-
-  if (result.status === 'invalid') {
-    message.error(result.message)
-    return false
-  }
-
-  if (result.status === 'confirm_required') {
-    const confirmed = await confirmTemplateApplyClose(result.confirmReason)
-    if (!confirmed) {
-      return false
-    }
-    await templateApplyStore.confirmCloseAndCleanup('open_replace')
-    return openTemplateWorkbench(rawContext, snapshot)
-  }
-
-  return false
-}
-
-const handleApply = async () => {
-  if (!currentPost.value || applying.value) return
-  const snapshot = {
-    postId: currentPost.value.id,
-    entryEntityId: currentPost.value.id
-  }
-  const requestToken = ++applyRequestToken
-  pendingApplyAbortController?.abort()
-  const abortController = new AbortController()
-  pendingApplyAbortController = abortController
-  applying.value = true
-  
-  try {
-    const res = await api.get(`/gallery/posts/${snapshot.postId}/apply-context`, {
-      signal: abortController.signal
-    })
-    if (
-      applyRequestToken !== requestToken
-      || pendingApplyAbortController !== abortController
-      || isGalleryUnmounted
-      || !detailVisible.value
-      || currentPost.value?.id !== snapshot.postId
-    ) {
-      return
-    }
-    await openTemplateWorkbench(res.data, snapshot)
-  } catch (error: any) {
-    if (error?.name === 'CanceledError' || error?.code === 'ERR_CANCELED') {
-      return
-    }
-    console.error(error)
-    message.error(t('my_notes.template_load_failed'))
-  } finally {
-    if (pendingApplyAbortController === abortController) {
-      pendingApplyAbortController = null
-    }
-    if (applyRequestToken === requestToken) {
-      applying.value = false
-    }
-  }
-}
+const resolveTaskTypeLabel = (taskTypeId: string) =>
+  resolveGalleryTaskTypeLabel(taskTypeId, t)
 
 useScrollPrefetch(layoutContentRef, prefetchNextPage, {
   isEnabled: () => !templateApplyStore.visible,
@@ -388,30 +239,8 @@ const handleImageError = (event: Event, post: Post) => {
   handleMediaCardImageError(event, post)
 }
 
-const clearRenderSettleTimer = () => {
-  if (renderSettleTimer) {
-    clearTimeout(renderSettleTimer)
-    renderSettleTimer = null
-  }
-}
-
-const releaseRenderSettling = () => {
-  clearRenderSettleTimer()
-  renderSettling.value = false
-}
-
-const scheduleRenderSettlingFallback = () => {
-  clearRenderSettleTimer()
-  renderSettleTimer = setTimeout(() => {
-    renderSettling.value = false
-  }, 3000)
-}
-
 const handleWaterfallAfterRender = () => {
-  if (!renderSettling.value) {
-    return
-  }
-  releaseRenderSettling()
+  handleRenderSettled()
 }
 
 onMounted(() => {
@@ -426,37 +255,14 @@ watch(pageSize, (nextSize, previousSize) => {
 })
 
 watch(
-  [browserLoading, posts],
-  ([isLoading, currentPosts]) => {
-    if (isLoading) {
-      return
-    }
-    if (currentPosts.length === 0) {
-      releaseRenderSettling()
-      return
-    }
-    if (renderSettling.value) {
-      scheduleRenderSettlingFallback()
-    }
-  },
-  { immediate: true }
-)
-
-watch(
   detailVisible,
   (visible, previousVisible) => {
     if (!visible && previousVisible) {
-      invalidatePendingApplyContext()
+      cancelPendingApply()
     }
   },
   { flush: 'sync' }
 )
-
-onUnmounted(() => {
-  isGalleryUnmounted = true
-  invalidatePendingApplyContext()
-  clearRenderSettleTimer()
-})
 </script>
 
 <template>
@@ -483,7 +289,7 @@ onUnmounted(() => {
             class="px-3 py-1 sm:px-4 sm:py-1.5 rounded-lg transition-all font-medium text-xs sm:text-sm whitespace-nowrap shrink-0"
             :class="taskType === tab.id ? 'bg-cyan-500/20 text-cyan-400 shadow-[0_0_10px_rgba(56,189,248,0.2)]' : 'hover:text-cyan-300 text-slate-400'"
           >
-            {{ $t(`gallery.tabs.${tab.id.replace('i2i_pro', 'face_swap').replace('edit', 'custom_edit').replace('img2img_lora', 'img2img').replace('custom_video', 'custom_video').replace('video_lora', 'img2video').replace('ltx_video', 'high_res_video')}`) }}
+            {{ resolveTaskTypeLabel(tab.id) }}
           </button>
         </OverflowScrollRail>
         
@@ -496,7 +302,7 @@ onUnmounted(() => {
             <button 
               v-for="time in [{k:'all', n: $t('gallery.filters.all')}, {k:'today', n: $t('gallery.filters.today')}, {k:'week', n: $t('gallery.filters.this_week')}, {k:'month', n: $t('gallery.filters.this_month')}]" 
               :key="time.k"
-              @click="timeRange = time.k; loadPosts(true)"
+              @click="handleTimeRangeChange(time.k)"
               class="px-2 py-1 sm:px-3 sm:py-1.5 rounded-lg transition-all font-medium text-xs sm:text-sm whitespace-nowrap shrink-0"
               :class="timeRange === time.k ? 'bg-indigo-500/20 text-indigo-400 shadow-[0_0_10px_rgba(129,140,248,0.2)]' : 'hover:text-indigo-300 text-slate-400'"
             >
@@ -509,7 +315,7 @@ onUnmounted(() => {
             <button 
               v-for="sort in [{k:'latest', n: $t('gallery.filters.latest'), i: Clock}, {k:'likes', n: $t('gallery.filters.most_liked'), i: Heart}, {k:'applied', n: $t('gallery.filters.most_used'), i: Flame}]" 
               :key="sort.k"
-              @click="sortBy = sort.k; loadPosts(true)"
+              @click="handleSortChange(sort.k)"
               class="px-2 py-1 sm:px-3 sm:py-1.5 rounded-lg transition-all font-medium text-xs sm:text-sm flex items-center whitespace-nowrap shrink-0"
               :class="sortBy === sort.k ? 'bg-indigo-500/20 text-indigo-400 shadow-[0_0_10px_rgba(129,140,248,0.2)]' : 'hover:text-indigo-300 text-slate-400'"
             >
@@ -522,14 +328,14 @@ onUnmounted(() => {
       
       <!-- Secondary Filter for LoRA Models -->
       <OverflowScrollRail
-        v-if="taskType === 'video_lora' || taskType === 'img2img_lora'"
+        v-if="isLoraTaskType"
         container-class="w-full shrink-0 px-1 rounded-2xl border border-slate-700/50 bg-slate-950/55 py-2 shadow-[0_6px_18px_rgba(2,6,23,0.25)]"
         content-class="flex items-center gap-2"
       >
         <span class="text-xs sm:text-sm text-slate-400 whitespace-nowrap shrink-0">{{ $t('gallery.choose_addon') }}</span>
         <div class="flex gap-2 shrink-0">
           <button 
-            @click="loraModel = 'all'; loadPosts(true)"
+            @click="handleLoraModelChange('all')"
             class="px-2 py-0.5 sm:px-3 sm:py-1 rounded-lg text-xs transition-all border whitespace-nowrap shrink-0"
             :class="loraModel === 'all' ? 'bg-pink-500/20 border-pink-500/50 text-pink-400' : 'border-slate-400 hover:border-slate-500 text-slate-400'"
           >
@@ -538,7 +344,7 @@ onUnmounted(() => {
           <button 
             v-for="lora in currentLoraModels" 
             :key="lora.id"
-            @click="loraModel = lora.id; loadPosts(true)"
+            @click="handleLoraModelChange(lora.id)"
             class="px-2 py-0.5 sm:px-3 sm:py-1 rounded-lg text-xs transition-all border whitespace-nowrap shrink-0"
             :class="loraModel === lora.id ? 'bg-pink-500/20 border-pink-500/50 text-pink-400' : 'border-slate-400 hover:border-slate-500 text-slate-400'"
           >

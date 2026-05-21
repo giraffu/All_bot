@@ -9,6 +9,7 @@ import boto3
 from botocore.config import Config as BotoConfig
 from botocore.exceptions import ClientError
 from minio import Minio
+from minio.error import S3Error
 from sqlalchemy import select
 import urllib3
 

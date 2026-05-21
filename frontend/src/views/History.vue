@@ -1,20 +1,12 @@
 <script setup lang="ts">
-import { ref, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import api from '@/api'
-import { message, Modal } from 'ant-design-vue'
-import { useI18n } from 'vue-i18n'
-import LazyVideo from '@/components/LazyVideo.vue'
-import { Image as ImageIcon, Video, Clock, Download, Compass, Star, Trash2, Upload } from 'lucide-vue-next'
-import dayjs from 'dayjs'
-import { useViewport } from '@/composables/useViewport'
+import { Image as ImageIcon, Video, Clock, Compass, Trash2 } from 'lucide-vue-next'
 import { useTasksStore } from '@/stores/tasks'
 import { useTaskFormat } from '@/composables/useTaskFormat'
+import { useHistoryRecords } from '@/composables/useHistoryRecords'
 
-const { t } = useI18n()
 const route = useRoute()
 const router = useRouter()
-const { isMobile } = useViewport()
 const tasksStore = useTasksStore()
 const { getTypeLabel, getFileUrl, isVideoFile } = useTaskFormat()
 
@@ -45,91 +37,16 @@ const handleImageError = (e: Event, record: any) => {
   }
 }
 
-const data = ref<any[]>([])
-const loading = ref(false)
-
-const pagination = ref({
-  current: 1,
-  pageSize: 8,
-  total: 0,
-  hideOnSinglePage: true // Hide pagination since we only ever show max 8 items now
-})
-
-const openDetail = (record: any) => {
-  tasksStore.showDetailRecord(record)
-}
-
-const fetchHistory = async (page = 1) => {
-  loading.value = true
-  try {
-    const res = await api.get('/users/history', {
-      params: { page, size: pagination.value.pageSize }
-    })
-    data.value = res.data.items
-    pagination.value.total = res.data.total
-    pagination.value.current = res.data.page
-    
-    // Check if we need to auto-open a specific task detail
-    if (route.query.task_id) {
-      const targetId = route.query.task_id as string
-      const targetRecord = data.value.find(item => item.task_id === targetId)
-      if (targetRecord) {
-        openDetail(targetRecord)
-      } else if (page === 1) {
-        // If not found on first page, just call store to fetch and open
-        tasksStore.openDetailModal(targetId)
-      }
-      // Remove query param so it doesn't reopen on refresh
-      router.replace({ query: {} })
-    }
-  } catch (error) {
-    console.error('Failed to fetch history:', error)
-  } finally {
-    loading.value = false
-  }
-}
-
-const handleDelete = async (record: any, event?: Event) => {
-  if (event) event.stopPropagation()
-  
-  Modal.confirm({
-    title: '确认删除',
-    content: '确认删除该记录吗？（若已发布至广场也将同步下架）',
-    okText: '确认',
-    okType: 'danger',
-    cancelText: '取消',
-    onOk: async () => {
-      try {
-        await api.delete(`/users/history/${record.id}`)
-        message.success('删除成功')
-        data.value = data.value.filter(item => item.id !== record.id)
-        if (tasksStore.detailModalVisible && tasksStore.currentDetailRecord?.id === record.id) {
-          tasksStore.closeDetailModal()
-        }
-      } catch (error: any) {
-        console.error(error)
-        message.error(error.response?.data?.detail || '删除失败，请稍后再试')
-      }
-    }
-  })
-}
-
-onMounted(() => {
-  fetchHistory()
-})
-
-watch(() => route.query.task_id, (newTaskId) => {
-  if (newTaskId) {
-    const targetRecord = data.value.find(item => item.task_id === newTaskId)
-    if (targetRecord) {
-      openDetail(targetRecord)
-      router.replace({ query: {} })
-    } else {
-      // If not in current data, use store action to fetch
-      tasksStore.openDetailModal(newTaskId as string)
-      router.replace({ query: {} })
-    }
-  }
+const {
+  data,
+  loading,
+  openDetail,
+  fetchHistory,
+  handleDelete,
+} = useHistoryRecords({
+  route,
+  router,
+  tasksStore,
 })
 </script>
 

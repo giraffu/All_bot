@@ -120,6 +120,13 @@ export const deleteTemplateContribution = async (id) =>
 
 export const fetchWorkerList = async () => get('/api/workers/list')
 
+export const fetchWorkerHistory = async ({ page = 1, size = 20, workerId = null } = {}) =>
+  get(withQuery('/api/workers/history', params => {
+    appendQueryParam(params, 'page', page)
+    appendQueryParam(params, 'size', size)
+    appendQueryParam(params, 'worker_id', workerId)
+  }))
+
 export const fetchSystemStatus = async () => get('/api/system/status')
 
 export const fetchSystemWorkers = async () => get('/api/system/workers')

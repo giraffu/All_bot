@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onUnmounted, computed, watch, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { UploadOutlined, InboxOutlined, DownloadOutlined, CloseCircleOutlined } from '@ant-design/icons-vue'
 import { message } from 'ant-design-vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -7,6 +7,7 @@ import { useUpload } from '@/composables/useUpload'
 import { useTaskStream } from '@/composables/useTaskStream'
 import { useTaskResult } from '@/composables/useTaskResult'
 import { useGalleryApplyContext } from '@/composables/useGalleryApplyContext'
+import { useSingleFileUploadPreview } from '@/composables/useSingleFileUploadPreview'
 
 const route = useRoute()
 const router = useRouter()
@@ -19,10 +20,15 @@ const taskCost = computed(() => Number(route.query.cost) || 1)
 const { uploading, progress: uploadProgress, uploadFile } = useUpload()
 const { isSubmitting, submitTask } = useTaskStream()
 const { currentTask, setSubmittedTaskId, isVideoUrl, isImageUrl, downloadResult } = useTaskResult()
-
-const fileList = ref<any[]>([])
-const objectKey = ref<string | null>(null)
-const filePreview = ref<string | null>(null)
+const {
+  fileList,
+  objectKey,
+  filePreview,
+  beforeUpload,
+  handleRemove,
+} = useSingleFileUploadPreview({
+  uploadFile
+})
 const isTemplateApplied = ref(false)
 const templateSourcePostId = ref<number | null>(null)
 
@@ -37,29 +43,6 @@ onMounted(() => {
     }
   }
 })
-
-watch(fileList, (newVal) => {
-  if (newVal.length > 0 && newVal[0].originFileObj) {
-    filePreview.value = URL.createObjectURL(newVal[0].originFileObj)
-  } else if (newVal.length > 0 && newVal[0] instanceof File) {
-    filePreview.value = URL.createObjectURL(newVal[0])
-  } else {
-    if (filePreview.value) URL.revokeObjectURL(filePreview.value)
-    filePreview.value = null
-  }
-})
-
-const beforeUpload = async (file: any) => {
-  fileList.value = [file]
-  const key = await uploadFile(file)
-  if (key) objectKey.value = key
-  return false
-}
-
-const handleRemove = () => {
-  fileList.value = []
-  objectKey.value = null
-}
 
 const handleGenerate = async () => {
   if (!objectKey.value) {

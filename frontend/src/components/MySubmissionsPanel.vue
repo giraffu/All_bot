@@ -1,6 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { ref, watch } from 'vue'
 import { message } from 'ant-design-vue'
 import { useI18n } from 'vue-i18n'
 import {
@@ -23,14 +22,14 @@ import { useGalleryComments } from '@/composables/useGalleryComments'
 import { usePagedPostBrowser } from '@/composables/usePagedPostBrowser'
 import { useGalleryPostInteractions } from '@/composables/useGalleryPostInteractions'
 import { useScrollPrefetch } from '@/composables/useScrollPrefetch'
-import {
-  buildLegacyTemplateRoute,
-  resolveTemplateApplyEntry
-} from '@/utils/templateApplyEntry'
 import { useGalleryApplyContext } from '@/composables/useGalleryApplyContext'
-import { copyTextWithFallback } from '@/utils/clipboard'
 import { handleMediaCardImageError } from '@/utils/mediaCardFallback'
-import { resolveMediaCardView, resolveMediaDetailView } from '@/utils/mediaCardView'
+import { resolveMediaCardView } from '@/utils/mediaCardView'
+import { useLegacyTemplateApply } from '@/composables/useLegacyTemplateApply'
+import { usePostPromptCopy } from '@/composables/usePostPromptCopy'
+import { usePagedScrollNavigation } from '@/composables/usePagedScrollNavigation'
+import { useCurrentDetailMedia } from '@/composables/useCurrentDetailMedia'
+import { formatGalleryTag } from '@/utils/galleryPresentation'
 import PagedNavigation from '@/components/PagedNavigation.vue'
 import DetailMediaPreview from '@/components/DetailMediaPreview.vue'
 import DetailModalShell from '@/components/DetailModalShell.vue'
@@ -72,7 +71,6 @@ const props = withDefaults(
 )
 const { saveApplyContext } = useGalleryApplyContext()
 
-const router = useRouter()
 const { isMobile } = useViewport()
 const { t } = useI18n()
 const layoutContentRef = useMainLayoutContentRef()
@@ -136,7 +134,6 @@ const {
   loadMoreComments,
   submitComment
 } = useGalleryComments(currentPost, posts, detailVisible)
-const applying = ref(false)
 const { handleInteract } = useGalleryPostInteractions<Post>({
   resolveSuccessMessage: (action, state) => {
     if (action === 'like') {
@@ -148,38 +145,26 @@ const { handleInteract } = useGalleryPostInteractions<Post>({
     console.error(error)
   },
 })
-const currentDetailMedia = computed(() => {
-  if (!currentPost.value) {
-    return null
-  }
-
-  return resolveMediaDetailView(currentPost.value)
+const currentDetailMedia = useCurrentDetailMedia(currentPost)
+const { copyPrompt } = usePostPromptCopy(t)
+const { applying, applyFromCurrentPost } = useLegacyTemplateApply<Post>({
+  currentPost,
+  closeDetail: () => {
+    detailVisible.value = false
+  },
+  saveApplyContext,
+  t
 })
 
-const formatTag = (tag: string) => {
-  if (tag.startsWith('#task.')) {
-    const key = tag.substring(1)
-    return '#' + t(key)
-  }
-  if (tag.startsWith('task.')) {
-    return t(tag)
-  }
-  return tag
-}
+const formatTag = (tag: string) => formatGalleryTag(tag, t)
 
-const scrollToTop = async () => {
-  await nextTick()
-  layoutContentRef.value?.scrollTo({
-    top: 0,
-    behavior: 'smooth'
-  })
-}
+const { navigateToPage } = usePagedScrollNavigation({
+  contentRef: layoutContentRef,
+  goToPage: browserGoToPage
+})
 
 const goToPage = async (pageNumber: number) => {
-  const changed = await browserGoToPage(pageNumber)
-  if (!changed) return
-
-  await scrollToTop()
+  await navigateToPage(pageNumber)
 }
 
 const toggleStatus = async (post: Post) => {
@@ -218,56 +203,11 @@ const deletePost = async (post: Post) => {
   }
 }
 
-const copyPrompt = (post: Post) => {
-  const prompt = post.prompt?.trim()
-  if (!prompt) {
-    message.warning(t('my_notes.prompt_empty'))
-    return
-  }
-
-  void copyTextWithFallback(prompt).then((successful) => {
-    if (successful) {
-      message.success(t('my_notes.prompt_copied'))
-    } else {
-      message.error(t('my_notes.copy_failed'))
-    }
-  })
-}
-
 const handleApply = async () => {
-  if (!currentPost.value || applying.value) return
-  applying.value = true
-
-  try {
-    const res = await api.get(`/gallery/posts/${currentPost.value.id}/apply-context`)
-    const rawContext = res.data
-    const resolvedEntry = resolveTemplateApplyEntry({
-      rawContext,
-      source: 'submissions',
-      entryEntityId: currentPost.value.id,
-      preferredMode: 'legacy'
-    })
-
-    if (resolvedEntry.status === 'invalid') {
-      message.error(t('my_notes.template_load_failed'))
-      return
-    }
-
-    if (resolvedEntry.status === 'unknown_task_type') {
-      message.warning(t('template_apply.unknown_task_type'))
-      return
-    }
-
-    detailVisible.value = false
-    saveApplyContext(rawContext)
-    message.success(t('my_notes.template_loaded_with_upload_hint'))
-    void router.push(buildLegacyTemplateRoute(resolvedEntry, t))
-  } catch (error) {
-    console.error(error)
-    message.error(t('my_notes.template_load_failed'))
-  } finally {
-    applying.value = false
-  }
+  await applyFromCurrentPost({
+    endpoint: (post) => `/gallery/posts/${post.id}/apply-context`,
+    source: 'submissions'
+  })
 }
 
 useScrollPrefetch(layoutContentRef, prefetchNextPage)

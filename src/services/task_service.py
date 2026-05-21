@@ -23,7 +23,6 @@ from src.constants import (
     MODE_UNDRESS_TONGUE,
     TMP_DIR,
 )
-from src.handlers.utils import MockMessage
 from src.logger import UserLogger
 from src.services.image_service import image_service
 from src.services.permission_service import permission_service
@@ -54,6 +53,7 @@ from src.services.task_service_flow import (
 )
 from src.services.task_service_types import BotTaskMessageSpec, BotTaskRuntimeState
 from src.services.tg_task_runtime import (
+    TelegramMessageAdapter,
     build_vip_suffix,
     build_result_reply_markup,
     cleanup_completion_status_message,
@@ -901,7 +901,7 @@ class TaskService:
                 await context.bot.edit_message_text(
                     chat_id=chat_id, message_id=status_msg_id, text=text
                 )
-                return MockMessage(context.bot, chat_id, status_msg_id)
+                return TelegramMessageAdapter(context.bot, chat_id, status_msg_id)
             except Exception:
                 pass
         return await robust_send_message(context.bot, chat_id, text)

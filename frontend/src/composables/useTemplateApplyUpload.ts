@@ -1,9 +1,12 @@
 import { computed, ref, toValue, type MaybeRefOrGetter } from 'vue'
 import { message } from 'ant-design-vue'
-import api from '@/api'
 import i18n from '@/i18n'
 import { useTemplateApplyStore } from '@/stores/templateApply'
 import { useTemplateApplyUploadStore } from '@/stores/templateApplyUpload'
+import {
+  requestPresignedUpload,
+  uploadFileToPresignedUrl
+} from '@/utils/presignedUpload'
 
 const MAX_UPLOAD_SIZE = 20 * 1024 * 1024
 const t = (key: string, params?: Record<string, unknown>) =>
@@ -105,11 +108,7 @@ export function useTemplateApplyUpload(sessionIdSource: MaybeRefOrGetter<string>
         }
       }
 
-      const { data } = await api.get('/storage/presigned-url', {
-        params: {
-          filename: file.name,
-          content_type: file.type || 'application/octet-stream'
-        },
+      const payload = await requestPresignedUpload(file, {
         signal: presignController.signal
       })
 
@@ -122,7 +121,6 @@ export function useTemplateApplyUpload(sessionIdSource: MaybeRefOrGetter<string>
       }
 
       const xhr = new XMLHttpRequest()
-      const { upload_url, object_key } = data
 
       uploadStore.updateHandleTransport(uploadId, {
         xhr,
@@ -130,16 +128,16 @@ export function useTemplateApplyUpload(sessionIdSource: MaybeRefOrGetter<string>
       })
       uploadStore.updateStatus(uploadId, 'pending')
 
-      const objectKey = await new Promise<string | null>((resolve, reject) => {
-        if (!uploadStore.isUploadStillActive(uploadId, sessionId, slot) || !isSessionAlive()) {
-          resolve(null)
-          return
-        }
-
-        xhr.open('PUT', upload_url, true)
-        uploadStore.updateStatus(uploadId, 'uploading')
-
-        xhr.upload.onprogress = (event) => {
+      const objectKey = await uploadFileToPresignedUrl(file, payload, {
+        xhr,
+        beforeSend: () => {
+          if (!uploadStore.isUploadStillActive(uploadId, sessionId, slot) || !isSessionAlive()) {
+            return false
+          }
+          uploadStore.updateStatus(uploadId, 'uploading')
+          return true
+        },
+        onProgress: (event) => {
           if (!event.lengthComputable || !isCurrentSlotUpload(slot, uploadId)) {
             return
           }
@@ -148,34 +146,25 @@ export function useTemplateApplyUpload(sessionIdSource: MaybeRefOrGetter<string>
             ...progressBySlot.value,
             [slot]: Math.round((event.loaded * 100) / event.total)
           }
+        },
+        onAbort: () => {
+          uploadStore.updateStatus(uploadId, 'aborted')
         }
-
-        xhr.onload = () => {
-          if (xhr.status < 200 || xhr.status >= 300) {
-            reject(new Error(`Upload failed with status ${xhr.status}`))
-            return
-          }
-
-          if (!uploadStore.isUploadStillActive(uploadId, sessionId, slot) || !isSessionAlive()) {
-            resolve(null)
-            return
-          }
-
-          uploadStore.updateStatus(uploadId, 'done')
-          resolve(object_key)
-        }
-
-        xhr.onabort = () => {
-          resolve(null)
-        }
-
-        xhr.onerror = () => {
-          reject(new Error('Network error during upload'))
-        }
-
-        const blobToUpload = new Blob([file], { type: '' })
-        xhr.send(blobToUpload)
       })
+
+      if (
+        objectKey &&
+        (!uploadStore.isUploadStillActive(uploadId, sessionId, slot) || !isSessionAlive())
+      ) {
+        return {
+          uploadId,
+          objectKey: null
+        }
+      }
+
+      if (objectKey) {
+        uploadStore.updateStatus(uploadId, 'done')
+      }
 
       if (objectKey) {
         message.success(t('template_apply.common.upload_success'))

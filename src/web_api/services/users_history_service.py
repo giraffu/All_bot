@@ -7,7 +7,9 @@ from sqlalchemy import desc, func, select
 
 from src.core.media_paths import get_media_type_from_history
 from src.database.models import GalleryPost, History
-from src.web_api.routers.utils import build_history_apply_context_response
+from src.web_api.services.apply_context_service import (
+    build_history_apply_context_response,
+)
 from src.web_api.schemas.gallery_schema import GalleryPostResponse, PaginatedGalleryResponse
 from src.web_api.schemas.user_schema import HistoryItem, PaginatedHistory
 

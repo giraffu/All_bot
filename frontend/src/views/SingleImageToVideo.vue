@@ -8,6 +8,7 @@ import { useTaskStream } from '@/composables/useTaskStream'
 import { useTaskResult } from '@/composables/useTaskResult'
 import { useGalleryApplyContext } from '@/composables/useGalleryApplyContext'
 import { resolveTemplateVideoApplyState } from '@/utils/templateVideoApplyState'
+import { useSingleFileUploadPreview } from '@/composables/useSingleFileUploadPreview'
 
 const route = useRoute()
 const { loadApplyContext } = useGalleryApplyContext()
@@ -21,9 +22,15 @@ const isLtxVideo = computed(() => taskType.value === 'ltx_video')
 const { uploading, progress: uploadProgress, uploadFile } = useUpload()
 const { isSubmitting, submitTask } = useTaskStream()
 const { currentTask, setSubmittedTaskId, isImageUrl, downloadResult } = useTaskResult()
-
-const fileList = ref<any[]>([])
-const objectKey = ref<string | null>(null)
+const {
+  fileList,
+  objectKey,
+  filePreview,
+  beforeUpload,
+  handleRemove,
+} = useSingleFileUploadPreview({
+  uploadFile
+})
 const resolution = ref('512')
 const duration = ref('5')
 const templateSourcePostId = ref<number | null>(null)
@@ -55,7 +62,6 @@ const taskCost = computed(() => {
 const prompt = ref('')
 const loraName = ref('BreastGrow')
 
-const filePreview = ref<string | null>(null)
 const isTemplateApplied = ref(false)
 const isTemplateVideoSettingsLocked = ref(false)
 const isTemplatePromptLocked = ref(false)
@@ -113,17 +119,6 @@ onMounted(() => {
   }
 })
 
-watch(fileList, (newVal) => {
-  if (newVal.length > 0 && newVal[0].originFileObj) {
-    filePreview.value = URL.createObjectURL(newVal[0].originFileObj)
-  } else if (newVal.length > 0 && newVal[0] instanceof File) {
-    filePreview.value = URL.createObjectURL(newVal[0])
-  } else {
-    if (filePreview.value) URL.revokeObjectURL(filePreview.value)
-    filePreview.value = null
-  }
-})
-
 watch(resolution, (val) => {
   if (val === '1024' && duration.value === '10') {
     duration.value = '8'
@@ -135,18 +130,6 @@ watch(duration, (val) => {
     resolution.value = '720'
   }
 })
-
-const beforeUpload = async (file: any) => {
-  fileList.value = [file]
-  const key = await uploadFile(file)
-  if (key) objectKey.value = key
-  return false
-}
-
-const handleRemove = () => {
-  fileList.value = []
-  objectKey.value = null
-}
 
 const handleGenerate = async () => {
   if (!objectKey.value) {

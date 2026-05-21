@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
@@ -30,14 +30,19 @@ import { useGalleryComments } from '@/composables/useGalleryComments'
 import { useGalleryPostInteractions } from '@/composables/useGalleryPostInteractions'
 import { useScrollPrefetch } from '@/composables/useScrollPrefetch'
 import { useViewport } from '@/composables/useViewport'
-import { copyTextWithFallback } from '@/utils/clipboard'
 import { handleMediaCardImageError } from '@/utils/mediaCardFallback'
-import { resolveMediaCardView, resolveMediaDetailView } from '@/utils/mediaCardView'
-import {
-  buildLegacyTemplateRoute,
-  resolveTemplateApplyEntry
-} from '@/utils/templateApplyEntry'
+import { resolveMediaCardView } from '@/utils/mediaCardView'
 import { useGalleryApplyContext } from '@/composables/useGalleryApplyContext'
+import { useLegacyTemplateApply } from '@/composables/useLegacyTemplateApply'
+import { usePostPromptCopy } from '@/composables/usePostPromptCopy'
+import { usePagedScrollNavigation } from '@/composables/usePagedScrollNavigation'
+import { useCurrentDetailMedia } from '@/composables/useCurrentDetailMedia'
+import { useGalleryConfig } from '@/composables/useGalleryConfig'
+import { useMyFavoritesFilters } from '@/composables/useMyFavoritesFilters'
+import {
+  formatGalleryTag,
+  resolveGalleryTaskTypeLabel
+} from '@/utils/galleryPresentation'
 
 interface Post {
   id: number
@@ -63,32 +68,18 @@ interface Post {
   cardPoster?: string
 }
 
-type FilterTab = 'favorite' | 'like' | 'apply' | 'submissions'
-interface TaskTypeOption {
-  id: string
-  name: string
-}
-
 const route = useRoute()
 const router = useRouter()
 const { t } = useI18n()
 const layoutContentRef = useMainLayoutContentRef()
 const { saveApplyContext } = useGalleryApplyContext()
 
-function normalizeFilterType(tabValue: unknown): FilterTab {
-  const value = typeof tabValue === 'string' ? tabValue : ''
-  if (value === 'like' || value === 'apply' || value === 'submissions') {
-    return value
-  }
-  return 'favorite'
-}
-
 const { isMobile } = useViewport()
-
-const filterType = ref<FilterTab>(normalizeFilterType(route.query.tab))
-const selectedTaskType = ref('all')
-const allowedTypes = ref<TaskTypeOption[]>([])
-let configPromise: Promise<void> | null = null
+const { allowedTypes, loadConfig } = useGalleryConfig({
+  onError: (error) => {
+    console.error('Failed to load note filters config:', error)
+  }
+})
 const pageSize = computed(() => {
   if (filterType.value === 'favorite' && isMobile.value) {
     return 5
@@ -161,7 +152,6 @@ const {
   loadMoreComments,
   submitComment
 } = useGalleryComments(currentPost, posts, detailVisible)
-const applying = ref(false)
 const { handleInteract } = useGalleryPostInteractions<Post>({
   resolveSuccessMessage: (action, state) => {
     if (action === 'like') {
@@ -174,114 +164,65 @@ const { handleInteract } = useGalleryPostInteractions<Post>({
     console.error(error)
   },
 })
-
-const isSubmissionTab = computed(() => filterType.value === 'submissions')
-const filterTabs = computed(() => [
-  { id: 'favorite' as const, name: t('my_notes.tabs.favorite') },
-  { id: 'like' as const, name: t('my_notes.tabs.like') },
-  { id: 'apply' as const, name: t('my_notes.tabs.apply') },
-  { id: 'submissions' as const, name: t('my_notes.tabs.submissions') },
-])
-const taskTypeTabs = computed(() => [
-  { id: 'all', name: t('gallery.tabs.all') },
-  ...allowedTypes.value,
-])
-const emptyStateText = computed(() => {
-  if (filterType.value === 'like') return t('my_notes.empty_like')
-  if (filterType.value === 'apply') return t('my_notes.empty_apply')
-  return t('my_notes.empty_favorite')
+const {
+  filterType,
+  selectedTaskType,
+  isSubmissionTab,
+  filterTabs,
+  taskTypeTabs,
+  emptyStateText,
+  handleFilterTypeChange,
+  handleTaskTypeChange,
+} = useMyFavoritesFilters({
+  route,
+  router,
+  allowedTypes,
+  isMobile,
+  t,
+  clearBrowserState,
+  reloadPosts: () => {
+    void loadPosts(true)
+  },
 })
-const currentDetailMedia = computed(() => {
-  if (!currentPost.value) {
-    return null
-  }
-
-  return resolveMediaDetailView(currentPost.value)
+const currentDetailMedia = useCurrentDetailMedia(currentPost)
+const { copyPrompt } = usePostPromptCopy(t)
+const { applying, applyFromCurrentPost } = useLegacyTemplateApply<Post>({
+  currentPost,
+  closeDetail: () => {
+    detailVisible.value = false
+  },
+  saveApplyContext,
+  t
 })
 
-const resolveTaskTypeLabel = (taskTypeId: string) => {
-  if (taskTypeId === 'all') {
-    return t('gallery.tabs.all')
-  }
+const resolveTaskTypeLabel = (taskTypeId: string) =>
+  resolveGalleryTaskTypeLabel(taskTypeId, t)
 
-  const translationKey = taskTypeId
-    .replace('i2i_pro', 'face_swap')
-    .replace('edit', 'custom_edit')
-    .replace('img2img_lora', 'img2img')
-    .replace('custom_video', 'custom_video')
-    .replace('video_lora', 'img2video')
-    .replace('ltx_video', 'high_res_video')
+const formatTag = (tag: string) => formatGalleryTag(tag, t)
 
-  return t(`gallery.tabs.${translationKey}`)
-}
-
-const formatTag = (tag: string) => {
-  if (tag.startsWith('#task.')) {
-    const key = tag.substring(1)
-    return '#' + t(key)
-  }
-  if (tag.startsWith('task.')) {
-    return t(tag)
-  }
-  return tag
-}
-
-const loadConfig = async () => {
-  if (configPromise) return configPromise
-
-  configPromise = (async () => {
-    try {
-      const res = await api.get('/gallery/config')
-      allowedTypes.value = res.data.allowed_types || []
-    } catch (error) {
-      console.error('Failed to load note filters config:', error)
-    } finally {
-      configPromise = null
-    }
-  })()
-
-  return configPromise
-}
-
-const scrollToTop = async () => {
-  await nextTick()
-  layoutContentRef.value?.scrollTo({
-    top: 0,
-    behavior: 'smooth'
-  })
-}
 const prefetchNextPage = () => {
   if (isSubmissionTab.value) {
     return
   }
   prefetchBrowserNextPage()
 }
+const { navigateToPage } = usePagedScrollNavigation({
+  contentRef: layoutContentRef,
+  goToPage: async (pageNumber) => {
+    if (isSubmissionTab.value) {
+      return false
+    }
+    return browserGoToPage(pageNumber)
+  },
+  afterPageChange: prefetchNextPage
+})
 
 const goToPage = async (pageNumber: number) => {
-  if (isSubmissionTab.value) {
-    return
-  }
-
-  const changed = await browserGoToPage(pageNumber)
-  if (!changed) return
-
-  await scrollToTop()
-  prefetchNextPage()
+  await navigateToPage(pageNumber)
 }
 const loadPosts = async (reset = false) => {
   if (isSubmissionTab.value) return
   await loadBrowserPosts(reset)
-}
-
-const handleFilterTypeChange = (type: string) => {
-  const nextType = normalizeFilterType(type)
-  if (nextType === filterType.value) return
-  filterType.value = nextType
-}
-
-const handleTaskTypeChange = (taskType: string) => {
-  if (taskType === selectedTaskType.value) return
-  selectedTaskType.value = taskType
 }
 
 const handleUnfavorite = async (post: Post) => {
@@ -301,63 +242,17 @@ const handleUnfavorite = async (post: Post) => {
   }
 }
 
-const copyPrompt = (post: Post) => {
-  const prompt = post.prompt?.trim()
-  if (!prompt) {
-    message.warning(t('my_notes.prompt_empty'))
-    return
-  }
-
-  void copyTextWithFallback(prompt).then((successful) => {
-    if (successful) {
-      message.success(t('my_notes.prompt_copied'))
-    } else {
-      message.error(t('my_notes.copy_failed'))
-    }
-  })
-}
-
 const handleApply = async () => {
-  if (!currentPost.value || applying.value) return
-  applying.value = true
-  
-  try {
-    const applyEndpoint = filterType.value === 'favorite'
-      ? `/users/history/${currentPost.value.task_id}/apply-context`
-      : `/gallery/posts/${currentPost.value.id}/apply-context`
-    const res = await api.get(applyEndpoint)
-    const rawContext = res.data
-    const resolvedEntry = resolveTemplateApplyEntry({
-      rawContext,
-      source: filterType.value === 'favorite' ? 'favorites' : 'gallery',
-      entryEntityId: currentPost.value.id,
-      preferredMode: 'legacy'
-    })
-
-    if (resolvedEntry.status === 'invalid') {
-      message.error(t('my_notes.template_load_failed'))
-      return
-    }
-
-    if (resolvedEntry.status === 'unknown_task_type') {
-      message.warning(t('template_apply.unknown_task_type'))
-      return
-    }
-
-    detailVisible.value = false
-    saveApplyContext(rawContext)
-    message.success(t('my_notes.template_loaded_with_upload_hint'))
-    void router.push(buildLegacyTemplateRoute(resolvedEntry, t))
-    
-  } catch (error: any) {
-    if (error.response?.status === 404) {
-      return
-    }
-    console.error(error)
-    message.error(t('my_notes.template_load_failed'))
-  } finally {
-    applying.value = false
-  }
+  await applyFromCurrentPost({
+    endpoint: (post) => (
+      filterType.value === 'favorite'
+        ? `/users/history/${post.task_id}/apply-context`
+        : `/gallery/posts/${post.id}/apply-context`
+    ),
+    source: filterType.value === 'favorite' ? 'favorites' : 'gallery',
+    entryEntityId: (post) => post.id,
+    ignoreNotFound: true
+  })
 }
 
 useScrollPrefetch(layoutContentRef, prefetchNextPage)
@@ -370,56 +265,6 @@ const handleImageError = (event: Event, post: Post) => {
 
 onMounted(() => {
   void loadConfig()
-})
-
-watch(
-  () => route.query.tab,
-  (tabValue) => {
-    const nextType = normalizeFilterType(tabValue)
-    if (nextType !== filterType.value) {
-      filterType.value = nextType
-    }
-  },
-)
-
-watch(
-  filterType,
-  (nextType) => {
-    const currentTab = typeof route.query.tab === 'string' ? route.query.tab : undefined
-    if (currentTab !== nextType) {
-      void router.replace({
-        name: 'MyFavorites',
-        query: {
-          ...route.query,
-          tab: nextType,
-        },
-      })
-    }
-
-    if (nextType === 'submissions') {
-      clearBrowserState()
-      return
-    }
-
-    void loadPosts(true)
-  },
-  { immediate: true },
-)
-
-watch(selectedTaskType, () => {
-  if (isSubmissionTab.value) {
-    return
-  }
-  void loadPosts(true)
-})
-
-watch(isMobile, (nextIsMobile, previousIsMobile) => {
-  if (nextIsMobile === previousIsMobile) {
-    return
-  }
-  if (filterType.value === 'favorite') {
-    void loadPosts(true)
-  }
 })
 </script>
 
