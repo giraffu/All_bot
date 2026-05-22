@@ -303,9 +303,11 @@ watch(() => route.name, (newName) => {
         'm-2 p-3 md:m-6 md:p-6 bg-slate-500/20 backdrop-blur-sm rounded-2xl shadow-[0_8px_32px_rgba(0,0,0,0.4)] border border-slate-400/50 relative overflow-y-auto overflow-x-hidden flex flex-col flex-grow',
         { 'mb-20': isMobile }
       ]">
-        <router-view v-slot="{ Component }">
+        <router-view v-slot="{ Component, route: currentRoute }">
           <transition name="fade" mode="out-in">
-            <component :is="Component" class="flex-grow w-full" />
+            <div :key="currentRoute.fullPath" class="flex-grow w-full">
+              <component :is="Component" />
+            </div>
           </transition>
         </router-view>
       </a-layout-content>

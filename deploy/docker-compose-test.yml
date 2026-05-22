@@ -169,7 +169,7 @@ services:
       [
         "sh",
         "-c",
-        "npm config set registry https://registry.npmmirror.com && npm install --no-fund --no-audit && npm run dev -- --host 0.0.0.0 --port 5174 --strictPort",
+        "chmod +x ./scripts/start-dev-test.sh && ./scripts/start-dev-test.sh",
       ]
     healthcheck:
       test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:5174 || exit 1"]

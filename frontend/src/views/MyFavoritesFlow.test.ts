@@ -180,7 +180,10 @@ const primeFavoritesApi = (options?: { empty?: boolean; submissionsEmpty?: boole
     if (url === '/gallery/config') {
       return Promise.resolve({
         data: {
-          allowed_types: [],
+          allowed_types: [
+            { id: 'i2i_pro', name: 'task_mode_i2i_pro' },
+            { id: 'img2img_lora', name: 'task_mode_img2img_lora' },
+          ],
           lora_models: [],
           img2img_lora_models: []
         }
@@ -342,6 +345,19 @@ describe('MyFavorites workbench flow', () => {
     expect(wrapper.text()).not.toContain('您还没有收藏过任何作品')
     expect(wrapper.text()).toContain('已上架')
     expect(wrapper.findAll('.group.cursor-pointer')).toHaveLength(1)
+  })
+
+  it('renders translated task type tabs instead of raw task mode keys', async () => {
+    primeFavoritesApi()
+
+    const wrapper = mountHarness()
+    await flushPromises()
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('幻想换脸')
+    expect(wrapper.text()).toContain('图生图(附加模型)')
+    expect(wrapper.text()).not.toContain('task_mode_i2i_pro')
+    expect(wrapper.text()).not.toContain('task_mode_img2img_lora')
   })
 
   it('keeps the shared detail modal and template workbench path working after switching to submissions', async () => {

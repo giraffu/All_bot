@@ -151,6 +151,7 @@ async def build_gallery_thumbnail_url(
     resolve_thumbnail_url_fn,
     resolve_storage_object_fn,
     build_thumbnail_object_name_fn,
+    async_object_exists_fn,
     get_presigned_url_fn,
 ) -> str:
     thumbnail_url = await resolve_thumbnail_url_fn(
@@ -166,6 +167,8 @@ async def build_gallery_thumbnail_url(
 
     bucket_name, object_name = resolve_storage_object_fn(output_file)
     thumb_object_name = build_thumbnail_object_name_fn(object_name, media_type)
+    if not await async_object_exists_fn(bucket_name, thumb_object_name):
+        return ""
     return get_presigned_url_fn(thumb_object_name, bucket=bucket_name) or ""
 
 
@@ -212,6 +215,7 @@ async def resolve_gallery_post_media_urls(
             resolve_thumbnail_url_fn=resolve_thumbnail_url,
             resolve_storage_object_fn=resolve_storage_object,
             build_thumbnail_object_name_fn=build_thumbnail_object_name,
+            async_object_exists_fn=storage.async_object_exists,
             get_presigned_url_fn=storage.get_presigned_url,
         ),
         logger=logger,

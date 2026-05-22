@@ -7,6 +7,24 @@ cd "$ROOT_DIR"
 DEPLOY_SUCCEEDED=0
 PROD_ENV_FILE="$ROOT_DIR/.env"
 
+remove_container_if_exists() {
+    local container_name=$1
+
+    if [ -n "$(docker ps -aq -f name=^${container_name}$)" ]; then
+        docker rm -f "${container_name}" >/dev/null 2>&1 || true
+    fi
+}
+
+remove_compose_service_containers() {
+    local service_name=$1
+    local container_ids
+
+    container_ids=$(docker ps -aq -f "label=com.docker.compose.service=${service_name}")
+    if [ -n "$container_ids" ]; then
+        docker rm -f $container_ids >/dev/null 2>&1 || true
+    fi
+}
+
 remove_maintenance_markers() {
     local containers=(
         "tg-bot"
@@ -66,6 +84,26 @@ wait_for_http_ready() {
     echo "   ❌ ${service_name} 在等待窗口内未就绪，停止部署。"
     return 1
 }
+
+restart_prod_dashboard_frontend_only() {
+    echo "🔁 单独重建生产 Dashboard 前端..."
+    remove_compose_service_containers "dashboard-frontend"
+    cd "$ROOT_DIR/dashboard"
+    docker-compose up -d --no-deps --build dashboard-frontend
+    cd "$ROOT_DIR"
+    wait_for_http_ready "Dashboard Frontend" "http://127.0.0.1:8085" 60 5
+    echo "✅ 生产 Dashboard 前端已单独重建完成。"
+}
+
+if [ "${1:-}" = "--dashboard-frontend-only" ]; then
+    echo "🚀 开始单独重建生产 Dashboard 前端..."
+    echo "ℹ️ 本次仅处理 dashboard-frontend，不重建其他正式服务。"
+    restart_prod_dashboard_frontend_only
+    DEPLOY_SUCCEEDED=1
+    echo "👉 可执行 'docker logs -f \$(docker ps -q -f label=com.docker.compose.service=dashboard-frontend)' 查看生产 Dashboard 前端日志。"
+    echo "👉 生产 Dashboard 前端默认监听 8085 端口，可通过 http://<宿主机IP>:8085 访问。"
+    exit 0
+fi
 
 echo "🚀 开始 All_Bot 生产环境安全更新与重建流程 (带队列监控)..."
 
@@ -210,7 +248,7 @@ echo "✅ Agent 集群重建完成。"
 # ==============================================================================
 echo "6️⃣ 重建并重启中控 API..."
 cd "$ROOT_DIR/backend"
-docker rm -f backend_api_1 || true 
+remove_compose_service_containers "api"
 docker-compose up -d --build
 cd "$ROOT_DIR"
 wait_for_http_ready "生产中控 API" "http://127.0.0.1:8003/health"
@@ -231,7 +269,8 @@ echo "✅ 主服务群重建完成。"
 # ==============================================================================
 echo "8️⃣ 重建并重启 Dashboard 服务 (前端与后端)..."
 cd "$ROOT_DIR/dashboard"
-docker rm -f dashboard_dashboard-backend_1 dashboard_dashboard-frontend_1 || true
+remove_compose_service_containers "dashboard-backend"
+remove_compose_service_containers "dashboard-frontend"
 docker-compose up -d --build
 cd "$ROOT_DIR"
 wait_for_http_ready "Dashboard Backend" "http://127.0.0.1:8043/api/health"

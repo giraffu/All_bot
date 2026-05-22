@@ -29,7 +29,7 @@ import { useDailyCheckin } from '@/composables/useDailyCheckin'
 const authStore = useAuthStore()
 const { isMobile } = useViewport()
 const { showMainButton, hideMainButton, hapticFeedback, isTMA } = useTelegram()
-const { t, locale } = useI18n()
+const { t, te, locale } = useI18n()
 const { queueStatus, fetchQueueStatus } = useQueueStatus()
 const { toggleLanguage } = useProfileLanguage(locale as { value: string })
 
@@ -56,6 +56,21 @@ const {
 const formatDate = (dateString?: string | null) => {
   if (!dateString) return '永久有效'
   return dayjs(dateString).format('YYYY-MM-DD HH:mm')
+}
+
+const resolveQueueTaskTypeLabel = (type: string | number) => {
+  const normalizedType = String(type).replace(/-/g, '_')
+  const taskTypeKey = `task_type.${normalizedType}`
+  if (te(taskTypeKey)) {
+    return t(taskTypeKey)
+  }
+
+  const taskKey = `task.${normalizedType}`
+  if (te(taskKey)) {
+    return t(taskKey)
+  }
+
+  return normalizedType
 }
 
 const { checkinLoading, handleCheckin } = useDailyCheckin({
@@ -219,7 +234,7 @@ onMounted(async () => {
         <div v-if="Object.keys(queueStatus.data.queue_by_type || {}).length > 0" class="grid grid-cols-2 gap-2 mt-2">
           <div v-for="(count, type) in queueStatus.data.queue_by_type" :key="type"
                class="flex flex-col bg-slate-800/30 p-2.5 rounded-lg border border-slate-700/50">
-            <span class="text-xs text-slate-400 mb-1 truncate">{{ t(`task_type.${type}`, String(type)) }}</span>
+            <span class="text-xs text-slate-400 mb-1 truncate">{{ resolveQueueTaskTypeLabel(type) }}</span>
             <span class="text-sm font-bold text-slate-200">{{ count }} {{ t('profile.tasks_unit', '个') }}</span>
           </div>
         </div>

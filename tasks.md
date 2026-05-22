@@ -362,24 +362,6 @@
   - `tests/core/test_auth_core.py`
   - `tests/web_api/test_dependencies.py`
 
-### P2-3 Web 权限链路去 Telegram 依赖
-- [ ] 任务目标
-  - 让 Web 权限检查不再通过 `user.telegram_id` 回查动态权限。
-- [ ] 涉及文件
-  - `src/web_api/dependencies.py`
-  - `src/services/permission_service.py`
-  - 相关 presenter / auth service
-- [ ] 执行动作
-  - 为权限服务新增基于内部用户 ID 的查询入口。
-  - Web 依赖层统一调用内部身份接口。
-  - 逐步移除 `telegram_id` 作为 Web 权限桥接字段的直接使用。
-- [ ] 验收标准
-  - Web 用户、TG 用户、混合身份用户共用同一权限检查入口。
-  - 权限判断结果保持不变。
-- [ ] 建议回归
-  - `tests/web_api/test_dependencies.py`
-  - 用户权限/偏好相关 API tests
-
 ### P2-4 `permission_service` 拆分
 - [ ] 任务目标
   - 将横切胖服务拆成职责清晰的子域模块。

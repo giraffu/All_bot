@@ -1,6 +1,7 @@
 import { computed, ref, watch, type Ref } from 'vue'
 import type { RouteLocationNormalizedLoaded, Router } from 'vue-router'
 import type { GalleryTaskTypeOption } from '@/composables/useGalleryConfig'
+import { resolveGalleryTaskTypeLabel } from '@/utils/galleryPresentation'
 
 export type FavoriteFilterTab = 'favorite' | 'like' | 'apply' | 'submissions'
 
@@ -36,7 +37,10 @@ export function useMyFavoritesFilters(options: UseMyFavoritesFiltersOptions) {
 
   const taskTypeTabs = computed(() => [
     { id: 'all', name: options.t('gallery.tabs.all') },
-    ...options.allowedTypes.value,
+    ...options.allowedTypes.value.map((taskType) => ({
+      ...taskType,
+      name: resolveGalleryTaskTypeLabel(taskType.id, options.t),
+    })),
   ])
 
   const emptyStateText = computed(() => {

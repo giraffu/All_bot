@@ -492,6 +492,11 @@ async def test_pick_gallery_media_urls_falls_back_to_presigned_storage_urls_when
     )
     async_exists_mock = AsyncMock(return_value=False)
     monkeypatch.setattr(gallery_service.storage, "async_r2_object_exists", async_exists_mock)
+    monkeypatch.setattr(
+        gallery_service.storage,
+        "async_object_exists",
+        AsyncMock(return_value=True),
+    )
     presign_mock = MagicMock(
         side_effect=[
             "https://minio.example/original.png",

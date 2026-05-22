@@ -56,6 +56,7 @@
   },
   "profile": {
     "queue_status_title": "Furnace Status",
+    "refresh_queue": "Refresh",
     "online": "Online",
     "offline": "Offline",
     "total_queue": "Total Queue",

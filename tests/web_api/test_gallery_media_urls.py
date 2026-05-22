@@ -6,7 +6,7 @@ import pytest
 from src.core.media_paths import MINIO_BUCKET
 from src.database.models import GalleryPost, History, User
 from src.web_api.presenters import media_presenter
-from src.web_api.routers import gallery as gallery_router
+from src.web_api.services import gallery_service
 
 
 class _FakeScalarResult:
@@ -81,9 +81,9 @@ async def test_build_post_responses_used_by_my_posts_generates_minio_urls_for_un
         AsyncMock(return_value=True),
     )
 
-    items = await gallery_router._build_post_responses(
-        session,
-        [post],
+    items = await gallery_service.build_gallery_post_responses(
+        session=session,
+        posts=[post],
         current_user=type("User", (), {"id": 123})(),
     )
 

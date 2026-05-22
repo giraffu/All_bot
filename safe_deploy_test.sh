@@ -105,6 +105,15 @@ wait_for_http_ready() {
     return 1
 }
 
+restart_test_dashboard_frontend_only() {
+    echo "🔁 单独重建测试 Dashboard 前端..."
+    remove_container_if_exists "dashboard-frontend-test"
+    remove_compose_service_containers "dashboard-frontend-test"
+    docker-compose -f deploy/docker-compose-test.yml up -d --no-deps dashboard-frontend-test
+    wait_for_http_ready "测试 Dashboard 前端" "http://127.0.0.1:5174" 60 5
+    echo "✅ 测试 Dashboard 前端已单独重建完成。"
+}
+
 if [ ! -f "$TEST_ENV_FILE" ]; then
     echo "❌ 未找到 $TEST_ENV_FILE，请先补齐测试环境配置。"
     exit 1
@@ -113,6 +122,16 @@ fi
 set -a
 source "$TEST_ENV_FILE"
 set +a
+
+if [ "${1:-}" = "--dashboard-frontend-only" ]; then
+    echo "🚀 开始单独重建测试 Dashboard 前端..."
+    echo "ℹ️ 本次仅处理 dashboard-frontend-test，不重建其他测试服务。"
+    restart_test_dashboard_frontend_only
+    DEPLOY_SUCCEEDED=1
+    echo "👉 可执行 'docker logs -f dashboard-frontend-test' 查看测试 Dashboard 前端日志。"
+    echo "👉 测试 Dashboard 前端默认监听 5174 端口，可通过 http://<宿主机IP>:5174 访问。"
+    exit 0
+fi
 
 echo "🚀 开始 All_Bot 测试环境安全更新与重建流程..."
 echo "ℹ️ 本脚本只处理测试环境与测试调度栈，正式 Dashboard 保持不动；测试 Dashboard 会一并重建。"

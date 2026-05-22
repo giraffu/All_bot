@@ -56,6 +56,7 @@
   },
   "profile": {
     "queue_status_title": "炼丹炉状态",
+    "refresh_queue": "刷新",
     "online": "运行中",
     "offline": "休息中",
     "total_queue": "总排队任务",
