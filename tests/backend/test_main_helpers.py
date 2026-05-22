@@ -1,3 +1,5 @@
+from unittest.mock import AsyncMock
+
 import pytest
 from fastapi import HTTPException
 
@@ -140,6 +142,87 @@ async def test_optional_t2i_task_subscription_subscribes_and_closes(monkeypatch)
         ("body", "pubsub-1", "channel-1"),
         ("close", "pubsub-1", "channel-1"),
     ]
+
+
+@pytest.mark.asyncio
+async def test_submit_t2i_task_request_returns_async_response_without_wait(monkeypatch):
+    enqueue_task = AsyncMock()
+    wait_for_sync_result = AsyncMock()
+    events = []
+
+    class _AsyncSubscription:
+        async def __aenter__(self):
+            events.append("enter")
+            return (None, None)
+
+        async def __aexit__(self, exc_type, exc, tb):
+            events.append("exit")
+            return False
+
+    monkeypatch.setattr(backend_main, "_optional_t2i_task_subscription", lambda **kwargs: _AsyncSubscription())
+    monkeypatch.setattr(backend_main, "_enqueue_t2i_task", enqueue_task)
+    monkeypatch.setattr(backend_main, "_wait_for_t2i_sync_result", wait_for_sync_result)
+
+    response = await backend_main._submit_t2i_task_request(
+        async_mode=True,
+        queue_manager="qm",
+        task_id="task-1",
+        params={"prompt": "dragon"},
+        task_priority=3,
+        request_id="req-1",
+    )
+
+    assert response.task_id == "task-1"
+    assert events == ["enter", "exit"]
+    enqueue_task.assert_awaited_once()
+    wait_for_sync_result.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_submit_t2i_task_request_waits_for_sync_result(monkeypatch):
+    enqueue_task = AsyncMock()
+    wait_for_sync_result = AsyncMock(
+        return_value=backend_main.T2ITaskResponse(
+            task_id="task-1",
+            image_url="https://example.com/a.png",
+        )
+    )
+
+    class _SyncSubscription:
+        async def __aenter__(self):
+            return ("pubsub-1", "channel-1")
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+    monkeypatch.setattr(backend_main, "_optional_t2i_task_subscription", lambda **kwargs: _SyncSubscription())
+    monkeypatch.setattr(backend_main, "_enqueue_t2i_task", enqueue_task)
+    monkeypatch.setattr(backend_main, "_wait_for_t2i_sync_result", wait_for_sync_result)
+
+    response = await backend_main._submit_t2i_task_request(
+        async_mode=False,
+        queue_manager="qm",
+        task_id="task-1",
+        params={"prompt": "dragon"},
+        task_priority=3,
+        request_id="req-1",
+    )
+
+    assert response.task_id == "task-1"
+    assert response.image_url == "https://example.com/a.png"
+    enqueue_task.assert_awaited_once_with(
+        queue_manager="qm",
+        task_id="task-1",
+        params={"prompt": "dragon"},
+        priority=3,
+        request_id="req-1",
+    )
+    wait_for_sync_result.assert_awaited_once_with(
+        pubsub="pubsub-1",
+        task_id="task-1",
+        request_id="req-1",
+        queue_manager="qm",
+    )
 
 
 def test_simple_task_type_map_keeps_video_lora_compatibility():

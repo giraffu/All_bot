@@ -3,6 +3,7 @@ import pytest
 from src.web_api.routers import gallery as gallery_router
 from src.web_api.routers import users as users_router
 from src.web_api.schemas.gallery_schema import GalleryPostResponse
+from src.web_api.services import gallery_service
 
 
 class _ScalarResult:
@@ -70,7 +71,7 @@ async def test_get_my_gallery_posts_applies_task_type_filter(monkeypatch):
         _ScalarResult(0),
         _ItemsResult([]),
     ])
-    monkeypatch.setattr(gallery_router, "AsyncSessionLocal", lambda: session)
+    monkeypatch.setattr(gallery_service, "AsyncSessionLocal", lambda: session)
 
     response = await gallery_router.get_my_gallery_posts(
         page=1,
@@ -92,7 +93,7 @@ async def test_get_my_favorite_posts_applies_task_type_filter(monkeypatch):
         _ScalarResult(0),
         _ItemsResult([]),
     ])
-    monkeypatch.setattr(gallery_router, "AsyncSessionLocal", lambda: session)
+    monkeypatch.setattr(gallery_service, "AsyncSessionLocal", lambda: session)
 
     response = await gallery_router.get_my_favorite_posts(
         page=1,
@@ -132,7 +133,7 @@ async def test_get_my_favorites_applies_task_type_filter():
 
 
 @pytest.mark.asyncio
-async def test_get_gallery_posts_normalizes_all_filters_and_builds_response(monkeypatch):
+async def test_get_gallery_posts_normalizes_all_filters_and_builds_response():
     fetch_calls = {}
     build_calls = {}
     db = _NoopSession()
@@ -142,10 +143,10 @@ async def test_get_gallery_posts_normalizes_all_filters_and_builds_response(monk
         fetch_calls.update(kwargs)
         return ["post-1"], 21
 
-    async def fake_build_post_responses(session, posts, user):
+    async def fake_build_post_responses(*, session, posts, current_user):
         build_calls["session"] = session
         build_calls["posts"] = posts
-        build_calls["user"] = user
+        build_calls["user"] = current_user
         return [
             GalleryPostResponse(
                 id=1,
@@ -168,10 +169,7 @@ async def test_get_gallery_posts_normalizes_all_filters_and_builds_response(monk
             )
         ]
 
-    monkeypatch.setattr(gallery_router, "get_gallery_feed", fake_get_gallery_feed)
-    monkeypatch.setattr(gallery_router, "_build_post_responses", fake_build_post_responses)
-
-    response = await gallery_router.get_gallery_posts(
+    response = await gallery_service.get_gallery_posts_payload(
         page=2,
         size=10,
         media_type="all",
@@ -181,6 +179,8 @@ async def test_get_gallery_posts_normalizes_all_filters_and_builds_response(monk
         time_range="week",
         current_user=current_user,
         db=db,
+        fetch_gallery_feed=fake_get_gallery_feed,
+        build_post_responses_fn=fake_build_post_responses,
     )
 
     assert len(response.items) == 1

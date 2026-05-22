@@ -1,17 +1,26 @@
 import asyncio
 import re
 from datetime import datetime
+import logging
 
 from fastapi import HTTPException
 from sqlalchemy import desc, func, select
 
 from src.core.media_paths import get_media_type_from_history
+from src.core.media_processor import extract_media_metadata_from_storage
 from src.database.models import GalleryPost, History
+from src.web_api.presenters.media_presenter import resolve_history_media_urls
+from src.web_api.routers.utils import (
+    build_storage_input_file_url,
+    resolve_history_billing_resolution,
+)
 from src.web_api.services.apply_context_service import (
     build_history_apply_context_response,
 )
 from src.web_api.schemas.gallery_schema import GalleryPostResponse, PaginatedGalleryResponse
 from src.web_api.schemas.user_schema import HistoryItem, PaginatedHistory
+
+logger = logging.getLogger(__name__)
 
 
 async def pick_history_media_urls(
@@ -68,7 +77,7 @@ async def get_user_history_payload(
     *,
     current_user,
     db,
-    resolve_history_media_urls,
+    resolve_history_media_urls=resolve_history_media_urls,
     limit: int = 8,
 ) -> PaginatedHistory:
     subq = (
@@ -145,15 +154,33 @@ async def get_user_history_payload(
     )
 
 
+async def get_default_user_history_payload(
+    *,
+    current_user,
+    db,
+    resolve_history_media_urls=resolve_history_media_urls,
+) -> PaginatedHistory:
+    return await get_user_history_payload(
+        current_user=current_user,
+        db=db,
+        resolve_history_media_urls=resolve_history_media_urls,
+        limit=8,
+    )
+
+
 async def get_history_apply_context_payload(
     *,
     task_id: str,
     user_id: int,
     db,
-    build_input_file_url,
-    probe_media_metadata,
-    logger,
+    build_input_file_url=None,
+    probe_media_metadata=None,
+    logger=None,
 ) -> object:
+    build_input_file_url = build_input_file_url or build_storage_input_file_url
+    probe_media_metadata = probe_media_metadata or extract_media_metadata_from_storage
+    logger = logger or globals()["logger"]
+
     stmt = select(History).where(History.task_id == task_id, History.user_id == user_id)
     result = await db.execute(stmt)
     history = result.scalar_one_or_none()
@@ -184,6 +211,25 @@ async def get_history_apply_context_payload(
     )
 
 
+async def get_history_apply_context_for_current_user(
+    *,
+    task_id: str,
+    current_user,
+    db,
+    build_input_file_url=None,
+    probe_media_metadata=None,
+    logger=None,
+) -> object:
+    return await get_history_apply_context_payload(
+        task_id=task_id,
+        user_id=current_user.id,
+        db=db,
+        build_input_file_url=build_input_file_url,
+        probe_media_metadata=probe_media_metadata,
+        logger=logger,
+    )
+
+
 def _extract_history_tags(prompt: str | None) -> list[str]:
     tags: list[str] = []
     if prompt:
@@ -200,8 +246,8 @@ async def get_my_favorites_payload(
     task_type: str | None,
     current_user,
     db,
-    resolve_history_media_urls,
-    resolve_history_billing_resolution,
+    resolve_history_media_urls=resolve_history_media_urls,
+    resolve_history_billing_resolution=resolve_history_billing_resolution,
 ) -> PaginatedGalleryResponse:
     stmt = (
         select(History)

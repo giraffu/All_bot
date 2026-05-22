@@ -26,3 +26,19 @@ async def update_user_language_preference(
         )
 
     return {"status": "success", "language_code": language_code}
+
+
+async def update_current_user_preferences_payload(
+    *,
+    prefs,
+    current_user,
+    db: AsyncSession,
+    service_fn=None,
+) -> dict[str, str]:
+    if service_fn is None:
+        service_fn = update_user_language_preference
+    return await service_fn(
+        db=db,
+        user_id=current_user.id,
+        language_code=prefs.language_code,
+    )

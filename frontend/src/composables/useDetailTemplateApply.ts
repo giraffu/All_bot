@@ -3,34 +3,41 @@ import { useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import api from '@/api'
 import { confirmTemplateApplyClose } from '@/stores/templateApply'
+import type { TemplateApplySource } from '@/types/templateApply'
 import {
   buildLegacyTemplateRoute,
   resolveTemplateApplyEntry
 } from '@/utils/templateApplyEntry'
 
-interface GalleryApplyPost {
+interface DetailApplyTarget {
   id: number
 }
 
 interface TemplateApplyStoreLike {
   openFromRawContext: (params: {
-    source: 'gallery'
+    source: TemplateApplySource
     entryEntityId: number | string | null
     rawContext: any
   }) => Promise<any>
   confirmCloseAndCleanup: (trigger: 'open_replace') => Promise<void>
 }
 
-interface UseGalleryTemplateApplyOptions<TPost extends GalleryApplyPost> {
+interface UseDetailTemplateApplyOptions<TPost extends DetailApplyTarget> {
   currentPost: Ref<TPost | null>
   detailVisible: Ref<boolean>
+  endpoint: (post: TPost) => string
+  source: TemplateApplySource | ((post: TPost) => TemplateApplySource)
+  entryEntityId?: (post: TPost) => number | string | null
   templateApplyStore: TemplateApplyStoreLike
   saveApplyContext: (rawContext: any) => void
   t: (key: string) => string
+  successMessageKey?: string
+  errorMessageKey?: string
+  ignoreNotFound?: boolean
 }
 
-export function useGalleryTemplateApply<TPost extends GalleryApplyPost>(
-  options: UseGalleryTemplateApplyOptions<TPost>
+export function useDetailTemplateApply<TPost extends DetailApplyTarget>(
+  options: UseDetailTemplateApplyOptions<TPost>
 ) {
   const router = useRouter()
   const applying = ref(false)
@@ -48,11 +55,12 @@ export function useGalleryTemplateApply<TPost extends GalleryApplyPost>(
 
   const handleLegacyFallback = async (params: {
     rawContext: any
+    source: TemplateApplySource
     entryEntityId: number | string | null
   }) => {
     const resolvedEntry = resolveTemplateApplyEntry({
       rawContext: params.rawContext,
-      source: 'gallery',
+      source: params.source,
       entryEntityId: params.entryEntityId,
       preferredMode: 'legacy'
     })
@@ -76,17 +84,20 @@ export function useGalleryTemplateApply<TPost extends GalleryApplyPost>(
 
   const openTemplateWorkbench = async (
     rawContext: any,
-    snapshot: { entryEntityId: number | string | null }
+    snapshot: {
+      source: TemplateApplySource
+      entryEntityId: number | string | null
+    }
   ): Promise<boolean> => {
     const result = await options.templateApplyStore.openFromRawContext({
-      source: 'gallery',
+      source: snapshot.source,
       entryEntityId: snapshot.entryEntityId,
       rawContext
     })
 
     if (result.status === 'opened') {
       options.detailVisible.value = false
-      message.success(options.t('template_apply.open_success'))
+      message.success(options.t(options.successMessageKey || 'template_apply.open_success'))
       return true
     }
 
@@ -105,6 +116,7 @@ export function useGalleryTemplateApply<TPost extends GalleryApplyPost>(
 
       return handleLegacyFallback({
         rawContext,
+        source: snapshot.source,
         entryEntityId: snapshot.entryEntityId
       })
     }
@@ -127,11 +139,16 @@ export function useGalleryTemplateApply<TPost extends GalleryApplyPost>(
   }
 
   const handleApply = async () => {
-    if (!options.currentPost.value || applying.value) return
+    const post = options.currentPost.value
+    if (!post || applying.value) {
+      return
+    }
 
     const snapshot = {
-      postId: options.currentPost.value.id,
-      entryEntityId: options.currentPost.value.id
+      postId: post.id,
+      source: typeof options.source === 'function' ? options.source(post) : options.source,
+      entryEntityId: options.entryEntityId?.(post) ?? post.id,
+      endpoint: options.endpoint(post)
     }
 
     const requestToken = ++applyRequestToken
@@ -141,7 +158,7 @@ export function useGalleryTemplateApply<TPost extends GalleryApplyPost>(
     applying.value = true
 
     try {
-      const res = await api.get(`/gallery/posts/${snapshot.postId}/apply-context`, {
+      const res = await api.get(snapshot.endpoint, {
         signal: abortController.signal
       })
 
@@ -160,8 +177,11 @@ export function useGalleryTemplateApply<TPost extends GalleryApplyPost>(
       if (error?.name === 'CanceledError' || error?.code === 'ERR_CANCELED') {
         return
       }
+      if (options.ignoreNotFound && error?.response?.status === 404) {
+        return
+      }
       console.error(error)
-      message.error(options.t('my_notes.template_load_failed'))
+      message.error(options.t(options.errorMessageKey || 'my_notes.template_load_failed'))
     } finally {
       if (pendingApplyAbortController === abortController) {
         pendingApplyAbortController = null

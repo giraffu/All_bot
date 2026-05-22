@@ -4,7 +4,7 @@ import { message } from 'ant-design-vue'
 import { useI18n } from 'vue-i18n'
 import { useGalleryComments } from '@/composables/useGalleryComments'
 import { usePagedPostBrowser } from '@/composables/usePagedPostBrowser'
-import { Heart, ThumbsDown, Wand2, Flame, Clock, MessageCircle } from 'lucide-vue-next'
+import { Heart, Flame, Clock } from 'lucide-vue-next'
 import { Waterfall } from 'vue-waterfall-plugin-next'
 import 'vue-waterfall-plugin-next/dist/style.css'
 import api from '@/api'
@@ -15,6 +15,7 @@ import {
 import { useGalleryApplyContext } from '@/composables/useGalleryApplyContext'
 import { useGalleryPostInteractions } from '@/composables/useGalleryPostInteractions'
 import { useScrollPrefetch } from '@/composables/useScrollPrefetch'
+import { useGalleryDetailModalAdapter } from '@/composables/useGalleryDetailModalAdapter'
 import { getFileUrl } from '@/utils/mediaFiles'
 import { handleMediaCardImageError } from '@/utils/mediaCardFallback'
 import { resolveMediaCardView } from '@/utils/mediaCardView'
@@ -28,15 +29,16 @@ import { useGalleryFilters } from '@/composables/useGalleryFilters'
 import { useViewport } from '@/composables/useViewport'
 import LazyVideo from '@/components/LazyVideo.vue'
 import OverflowScrollRail from '@/components/OverflowScrollRail.vue'
-import DetailDesktopActions from '@/components/DetailDesktopActions.vue'
 import GalleryDetailModal from '@/components/GalleryDetailModal.vue'
 import GalleryMediaCard from '@/components/GalleryMediaCard.vue'
 import HeaderPaginationBar from '@/components/HeaderPaginationBar.vue'
-import ListStateBlock from '@/components/ListStateBlock.vue'
+import PostCardMetricsBar from '@/components/PostCardMetricsBar.vue'
+import PostBrowserShell from '@/components/PostBrowserShell.vue'
+import PostTagPreview from '@/components/PostTagPreview.vue'
 import SegmentedTabsRail from '@/components/SegmentedTabsRail.vue'
 import StickyHeaderSection from '@/components/StickyHeaderSection.vue'
 import { usePagedScrollNavigation } from '@/composables/usePagedScrollNavigation'
-import { useGalleryTemplateApply } from '@/composables/useGalleryTemplateApply'
+import { useDetailTemplateApply } from '@/composables/useDetailTemplateApply'
 import { useRenderSettling } from '@/composables/useRenderSettling'
 
 interface Post {
@@ -95,6 +97,7 @@ const {
 const {
   posts,
   loading: browserLoading,
+  errorMessage,
   currentPage,
   totalPages,
   detailVisible,
@@ -142,6 +145,7 @@ const {
     console.error(error)
     message.error('获取广场数据失败')
   },
+  getFetchErrorMessage: () => t('my_notes.load_failed'),
 })
 const {
   comments,
@@ -179,9 +183,11 @@ const { handleInteract } = useGalleryPostInteractions<Post>({
     console.error(error)
   },
 })
-const { applying, handleApply, cancelPendingApply } = useGalleryTemplateApply<Post>({
+const { applying, handleApply, cancelPendingApply } = useDetailTemplateApply<Post>({
   currentPost,
   detailVisible,
+  endpoint: (post) => `/gallery/posts/${post.id}/apply-context`,
+  source: 'gallery',
   templateApplyStore,
   saveApplyContext,
   t,
@@ -190,8 +196,62 @@ const { applying, handleApply, cancelPendingApply } = useGalleryTemplateApply<Po
 const currentDetailMedia = useCurrentDetailMedia(currentPost, {
   normalizeGalleryThumbnail: true,
 })
-
 const formatTag = (tag: string) => formatGalleryTag(tag, t)
+const galleryDetailStandardActions = computed(() => ({
+  showDesktopReaction: true,
+  showDesktopApply: true,
+  showMobileReaction: true,
+  showMobileApply: true,
+  desktopApplyPlacement: 'before' as const,
+  applyLabel: t('gallery.modal.apply_btn'),
+  applyLoading: applying.value,
+  applyHint: t('gallery.modal.apply_hint'),
+  onLike: () => {
+    if (currentPost.value) {
+      void handleInteract(currentPost.value, 'like')
+    }
+  },
+  onDislike: () => {
+    if (currentPost.value) {
+      void handleInteract(currentPost.value, 'dislike')
+    }
+  },
+  onComment: () => {
+    showCommentInput.value = true
+  },
+  onApply: () => {
+    void handleApply()
+  },
+}))
+const {
+  detailModalBindings: galleryDetailModalBindings,
+  detailModalListeners: galleryDetailModalListeners,
+} = useGalleryDetailModalAdapter({
+  open: detailVisible,
+  commentInputOpen: showCommentInput,
+  newComment,
+  currentPost,
+  currentDetailMedia,
+  hasPrev,
+  hasNext,
+  isMobile,
+  title: () => t('gallery.modal.title'),
+  noTagsText: () => t('my_notes.no_tags'),
+  formatTag,
+  comments,
+  commentsLoading,
+  commentsError,
+  commentsPage,
+  commentsTotal,
+  commentsHasMore,
+  submittingComment,
+  standardActions: galleryDetailStandardActions,
+  loadComments,
+  loadMoreComments,
+  submitComment,
+  goPrev,
+  goNext,
+})
 
 const { navigateToPage } = usePagedScrollNavigation({
   contentRef: layoutContentRef,
@@ -266,98 +326,102 @@ watch(
 </script>
 
 <template>
-  <div class="gallery-container text-slate-200">
-    <!-- Header Controls -->
-    <StickyHeaderSection class-name="-mx-4 px-4 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
-      <div class="flex flex-col xl:flex-row justify-between xl:items-center gap-4">
-        <!-- Task Types -->
-        <SegmentedTabsRail
-          :items="[{ id: 'all', name: $t('gallery.tabs.all') }, ...allowedTypes.map((tab) => ({ id: tab.id, name: resolveTaskTypeLabel(tab.id) }))]"
-          :selected-id="taskType"
-          container-class="w-full xl:w-auto shrink-0"
-          @select="handleTaskTypeChange"
-        />
-        
+  <PostBrowserShell
+    :loading="loading"
+    :error-text="posts.length === 0 ? errorMessage : ''"
+    :show-retry="posts.length === 0 && !!errorMessage"
+    :empty="posts.length === 0"
+    :empty-text="$t('gallery.no_posts')"
+    :retry-text="$t('gallery.comments.retry')"
+    @retry="loadPosts(true)"
+  >
+    <template #header>
+      <StickyHeaderSection class-name="-mx-4 px-4 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
+        <div class="flex flex-col xl:flex-row justify-between xl:items-center gap-4">
+          <SegmentedTabsRail
+            :items="[{ id: 'all', name: $t('gallery.tabs.all') }, ...allowedTypes.map((tab) => ({ id: tab.id, name: resolveTaskTypeLabel(tab.id) }))]"
+            :selected-id="taskType"
+            container-class="w-full xl:w-auto shrink-0"
+            @select="handleTaskTypeChange"
+          />
+
+          <OverflowScrollRail
+            container-class="w-full xl:w-auto shrink-0 rounded-2xl border border-slate-700/50 bg-slate-950/55 px-2 py-2 shadow-[0_6px_18px_rgba(2,6,23,0.25)]"
+            content-class="flex items-center gap-3"
+          >
+            <div class="flex bg-slate-500/50 p-1 rounded-xl border border-slate-400/50 shrink-0">
+              <button
+                v-for="time in [{k:'all', n: $t('gallery.filters.all')}, {k:'today', n: $t('gallery.filters.today')}, {k:'week', n: $t('gallery.filters.this_week')}, {k:'month', n: $t('gallery.filters.this_month')}]"
+                :key="time.k"
+                @click="handleTimeRangeChange(time.k)"
+                class="px-2 py-1 sm:px-3 sm:py-1.5 rounded-lg transition-all font-medium text-xs sm:text-sm whitespace-nowrap shrink-0"
+                :class="timeRange === time.k ? 'bg-indigo-500/20 text-indigo-400 shadow-[0_0_10px_rgba(129,140,248,0.2)]' : 'hover:text-indigo-300 text-slate-400'"
+              >
+                {{ time.n }}
+              </button>
+            </div>
+
+            <div class="flex bg-slate-500/50 p-1 rounded-xl border border-slate-400/50 shrink-0">
+              <button
+                v-for="sort in [{k:'latest', n: $t('gallery.filters.latest'), i: Clock}, {k:'likes', n: $t('gallery.filters.most_liked'), i: Heart}, {k:'applied', n: $t('gallery.filters.most_used'), i: Flame}]"
+                :key="sort.k"
+                @click="handleSortChange(sort.k)"
+                class="px-2 py-1 sm:px-3 sm:py-1.5 rounded-lg transition-all font-medium text-xs sm:text-sm flex items-center whitespace-nowrap shrink-0"
+                :class="sortBy === sort.k ? 'bg-indigo-500/20 text-indigo-400 shadow-[0_0_10px_rgba(129,140,248,0.2)]' : 'hover:text-indigo-300 text-slate-400'"
+              >
+                <component :is="sort.i" :size="14" class="mr-1.5 hidden sm:block" />
+                {{ sort.n }}
+              </button>
+            </div>
+          </OverflowScrollRail>
+        </div>
+
         <OverflowScrollRail
-          container-class="w-full xl:w-auto shrink-0 rounded-2xl border border-slate-700/50 bg-slate-950/55 px-2 py-2 shadow-[0_6px_18px_rgba(2,6,23,0.25)]"
-          content-class="flex items-center gap-3"
+          v-if="isLoraTaskType"
+          container-class="w-full shrink-0 px-1 rounded-2xl border border-slate-700/50 bg-slate-950/55 py-2 shadow-[0_6px_18px_rgba(2,6,23,0.25)]"
+          content-class="flex items-center gap-2"
         >
-          <!-- Time Range -->
-          <div class="flex bg-slate-500/50 p-1 rounded-xl border border-slate-400/50 shrink-0">
-            <button 
-              v-for="time in [{k:'all', n: $t('gallery.filters.all')}, {k:'today', n: $t('gallery.filters.today')}, {k:'week', n: $t('gallery.filters.this_week')}, {k:'month', n: $t('gallery.filters.this_month')}]" 
-              :key="time.k"
-              @click="handleTimeRangeChange(time.k)"
-              class="px-2 py-1 sm:px-3 sm:py-1.5 rounded-lg transition-all font-medium text-xs sm:text-sm whitespace-nowrap shrink-0"
-              :class="timeRange === time.k ? 'bg-indigo-500/20 text-indigo-400 shadow-[0_0_10px_rgba(129,140,248,0.2)]' : 'hover:text-indigo-300 text-slate-400'"
+          <span class="text-xs sm:text-sm text-slate-400 whitespace-nowrap shrink-0">{{ $t('gallery.choose_addon') }}</span>
+          <div class="flex gap-2 shrink-0">
+            <button
+              @click="handleLoraModelChange('all')"
+              class="px-2 py-0.5 sm:px-3 sm:py-1 rounded-lg text-xs transition-all border whitespace-nowrap shrink-0"
+              :class="loraModel === 'all' ? 'bg-pink-500/20 border-pink-500/50 text-pink-400' : 'border-slate-400 hover:border-slate-500 text-slate-400'"
             >
-              {{ time.n }}
+              {{ $t('gallery.all_models') }}
             </button>
-          </div>
-          
-          <!-- Sort By -->
-          <div class="flex bg-slate-500/50 p-1 rounded-xl border border-slate-400/50 shrink-0">
-            <button 
-              v-for="sort in [{k:'latest', n: $t('gallery.filters.latest'), i: Clock}, {k:'likes', n: $t('gallery.filters.most_liked'), i: Heart}, {k:'applied', n: $t('gallery.filters.most_used'), i: Flame}]" 
-              :key="sort.k"
-              @click="handleSortChange(sort.k)"
-              class="px-2 py-1 sm:px-3 sm:py-1.5 rounded-lg transition-all font-medium text-xs sm:text-sm flex items-center whitespace-nowrap shrink-0"
-              :class="sortBy === sort.k ? 'bg-indigo-500/20 text-indigo-400 shadow-[0_0_10px_rgba(129,140,248,0.2)]' : 'hover:text-indigo-300 text-slate-400'"
+            <button
+              v-for="lora in currentLoraModels"
+              :key="lora.id"
+              @click="handleLoraModelChange(lora.id)"
+              class="px-2 py-0.5 sm:px-3 sm:py-1 rounded-lg text-xs transition-all border whitespace-nowrap shrink-0"
+              :class="loraModel === lora.id ? 'bg-pink-500/20 border-pink-500/50 text-pink-400' : 'border-slate-400 hover:border-slate-500 text-slate-400'"
             >
-              <component :is="sort.i" :size="14" class="mr-1.5 hidden sm:block" />
-              {{ sort.n }}
+              {{ lora.name }}
             </button>
           </div>
         </OverflowScrollRail>
-      </div>
-      
-      <!-- Secondary Filter for LoRA Models -->
-      <OverflowScrollRail
-        v-if="isLoraTaskType"
-        container-class="w-full shrink-0 px-1 rounded-2xl border border-slate-700/50 bg-slate-950/55 py-2 shadow-[0_6px_18px_rgba(2,6,23,0.25)]"
-        content-class="flex items-center gap-2"
-      >
-        <span class="text-xs sm:text-sm text-slate-400 whitespace-nowrap shrink-0">{{ $t('gallery.choose_addon') }}</span>
-        <div class="flex gap-2 shrink-0">
-          <button 
-            @click="handleLoraModelChange('all')"
-            class="px-2 py-0.5 sm:px-3 sm:py-1 rounded-lg text-xs transition-all border whitespace-nowrap shrink-0"
-            :class="loraModel === 'all' ? 'bg-pink-500/20 border-pink-500/50 text-pink-400' : 'border-slate-400 hover:border-slate-500 text-slate-400'"
-          >
-            {{ $t('gallery.all_models') }}
-          </button>
-          <button 
-            v-for="lora in currentLoraModels" 
-            :key="lora.id"
-            @click="handleLoraModelChange(lora.id)"
-            class="px-2 py-0.5 sm:px-3 sm:py-1 rounded-lg text-xs transition-all border whitespace-nowrap shrink-0"
-            :class="loraModel === lora.id ? 'bg-pink-500/20 border-pink-500/50 text-pink-400' : 'border-slate-400 hover:border-slate-500 text-slate-400'"
-          >
-            {{ lora.name }}
-          </button>
-        </div>
-      </OverflowScrollRail>
 
-      <HeaderPaginationBar
-        wrapper-class="-mt-1 flex justify-center"
-        :current-page="currentPage"
-        :total-pages="totalPages"
-        :disabled="loading"
-        :compact="isMobile"
-        @change="goToPage"
-      />
-    </StickyHeaderSection>
+        <HeaderPaginationBar
+          wrapper-class="-mt-1 flex justify-center"
+          :current-page="currentPage"
+          :total-pages="totalPages"
+          :disabled="loading"
+          :compact="isMobile"
+          @change="goToPage"
+        />
+      </StickyHeaderSection>
+    </template>
 
-    <!-- Masonry Grid -->
-    <Waterfall 
-      :list="posts" 
+    <Waterfall
+      :list="posts"
       rowKey="id"
-      :breakpoints="breakpoints" 
-      :gutter="isMobile ? 12 : 24" 
+      :breakpoints="breakpoints"
+      :gutter="isMobile ? 12 : 24"
       :animationDuration="400"
       backgroundColor="transparent"
-      @afterRender="handleWaterfallAfterRender"
       :hasAroundGutter="false"
+      @afterRender="handleWaterfallAfterRender"
     >
       <template #default="{ item: post }">
         <GalleryMediaCard
@@ -383,71 +447,31 @@ watch(
           </template>
           <template #overlay>
             <div class="flex flex-col justify-end h-full">
-              <div class="flex flex-wrap gap-1.5 mb-8">
-                <span v-for="tag in post.tags.slice(0, 4)" :key="tag" class="text-[10px] bg-cyan-500/20 border border-cyan-500/30 text-cyan-100 px-2 py-0.5 rounded-full backdrop-blur-md">
-                  {{ formatTag(tag) }}
-                </span>
-                <span v-if="post.tags.length > 4" class="text-[10px] text-slate-300 px-1">...</span>
-              </div>
+              <PostTagPreview :tags="post.tags" :format-tag="formatTag" />
             </div>
           </template>
           <template #bottom>
-            <div class="absolute bottom-0 left-0 right-0 p-3 bg-black/60 backdrop-blur-md border-t border-white/10 flex justify-between items-center z-10 translate-y-0">
-              <div class="flex items-center space-x-3">
-                <div class="flex items-center text-slate-300 hover:text-pink-400 transition-colors" @click.stop="handleInteract(post, 'like')">
-                  <Heart :size="14" class="mr-1" :class="{'fill-pink-500 text-pink-500': post.has_liked}" />
-                  <span class="text-xs font-medium">{{ post.likes_count }}</span>
-                </div>
-                <div class="flex items-center text-slate-300 hover:text-slate-100 transition-colors" @click.stop="handleInteract(post, 'dislike')">
-                  <ThumbsDown :size="14" class="mr-1" :class="{'fill-slate-400 text-slate-400': post.has_disliked}" />
-                  <span class="text-xs font-medium">{{ post.dislikes_count }}</span>
-                </div>
-                <div class="flex items-center text-slate-300 hover:text-blue-400 transition-colors" @click.stop="openDetail(post)">
-                  <MessageCircle :size="14" class="mr-1" />
-                  <span class="text-xs font-medium">{{ post.comments_count }}</span>
-                </div>
-              </div>
-              <div class="flex items-center text-indigo-300">
-                <Wand2 :size="14" class="mr-1" />
-                <span class="text-xs font-medium">{{ post.applied_count }}</span>
-              </div>
-            </div>
+            <PostCardMetricsBar
+              :likes-count="post.likes_count"
+              :dislikes-count="post.dislikes_count"
+              :applied-count="post.applied_count"
+              :comments-count="post.comments_count"
+              :has-liked="post.has_liked"
+              :has-disliked="post.has_disliked"
+              show-comments
+              @like="handleInteract(post, 'like')"
+              @dislike="handleInteract(post, 'dislike')"
+              @comment="openDetail(post)"
+            />
           </template>
         </GalleryMediaCard>
       </template>
     </Waterfall>
-    
-    <ListStateBlock
-      :loading="loading"
-      :empty="posts.length === 0"
-      :empty-text="$t('gallery.no_posts')"
-    />
+  </PostBrowserShell>
 
     <GalleryDetailModal
-      v-model:open="detailVisible"
-      v-model:comment-input-open="showCommentInput"
-      v-model:new-comment="newComment"
-      :current-post="currentPost"
-      :current-detail-media="currentDetailMedia"
-      :has-prev="hasPrev"
-      :has-next="hasNext"
-      :is-mobile="isMobile"
-      :title="$t('gallery.modal.title')"
-      :no-tags-text="t('my_notes.no_tags')"
-      :format-tag="formatTag"
-      :comments="comments"
-      :comments-loading="commentsLoading"
-      :comments-error="commentsError"
-      :comments-page="commentsPage"
-      :comments-total="commentsTotal"
-      :comments-has-more="commentsHasMore"
-      :submitting-comment="submittingComment"
-      @prev="goPrev"
-      @next="goNext"
-      @retry-initial="currentPost && loadComments(currentPost.id, { page: 1, append: false })"
-      @retry-more="loadMoreComments"
-      @load-more="loadMoreComments"
-      @submit-comment="submitComment"
+      v-bind="galleryDetailModalBindings"
+      v-on="galleryDetailModalListeners"
     >
       <template #mobile-header="{ post }">
         <div class="w-7 h-7 rounded-full bg-gradient-to-br from-cyan-500 to-indigo-500 flex items-center justify-center text-white font-bold text-xs">
@@ -455,69 +479,7 @@ watch(
         </div>
         <span class="text-slate-200 font-medium text-sm">{{ post.author_name || '匿名修士' }}</span>
       </template>
-
-      <template #before-comments="{ post, openCommentInput }">
-        <DetailDesktopActions top-class="space-x-2 mb-4 pt-4" bottom-class="mt-8">
-          <template #top>
-            <div class="flex space-x-2">
-              <button @click="handleInteract(post, 'like')" class="flex-1 py-3 rounded-xl border border-slate-400 bg-slate-500/50 hover:bg-slate-500 transition-all flex items-center justify-center group">
-                <Heart :size="20" class="mr-2 transition-transform group-hover:scale-110" :class="post.has_liked ? 'fill-pink-500 text-pink-500' : 'text-slate-400 group-hover:text-pink-400'" />
-                <span class="font-medium" :class="post.has_liked ? 'text-pink-400' : 'text-slate-300'">{{ post.likes_count }}</span>
-              </button>
-              <button @click="handleInteract(post, 'dislike')" class="flex-1 py-3 rounded-xl border border-slate-400 bg-slate-500/50 hover:bg-slate-500 transition-all flex items-center justify-center group">
-                <ThumbsDown :size="20" class="mr-2 transition-transform group-hover:scale-110" :class="post.has_disliked ? 'fill-slate-400 text-slate-400' : 'text-slate-400 group-hover:text-slate-200'" />
-                <span class="font-medium" :class="post.has_disliked ? 'text-slate-400' : 'text-slate-300'">{{ post.dislikes_count }}</span>
-              </button>
-              <button @click="openCommentInput()" class="flex-1 py-3 rounded-xl border border-slate-400 bg-slate-500/50 hover:bg-slate-500 transition-all flex items-center justify-center group">
-                <MessageCircle :size="20" class="mr-2 transition-transform group-hover:scale-110 text-slate-400 group-hover:text-blue-400" />
-                <span class="font-medium text-slate-300">{{ post.comments_count }}</span>
-              </button>
-            </div>
-          </template>
-          <template #bottom>
-            <button
-              @click="handleApply"
-              :disabled="applying"
-              class="w-full py-4 rounded-xl bg-gradient-to-r from-cyan-600 to-indigo-600 hover:from-cyan-500 hover:to-indigo-500 text-white font-bold text-lg shadow-[0_0_20px_rgba(56,189,248,0.4)] transition-all transform hover:scale-[1.02] flex items-center justify-center relative overflow-hidden group"
-            >
-              <div class="absolute inset-0 bg-white/20 translate-y-full group-hover:translate-y-0 transition-transform duration-300"></div>
-              <Wand2 v-if="!applying" :size="22" class="mr-2 relative z-10" />
-              <div v-else class="inline-block w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin mr-2 relative z-10"></div>
-              <span class="relative z-10">{{ applying ? '...' : $t('gallery.modal.apply_btn') }}</span>
-            </button>
-            <p class="text-center text-xs text-slate-500 mt-3">{{ $t('gallery.modal.apply_hint') }}</p>
-          </template>
-        </DetailDesktopActions>
-      </template>
-
-      <template #mobile-left="{ post, openCommentInput }">
-        <button @click="handleInteract(post, 'like')" class="flex items-center gap-1.5 transition-all" :class="post.has_liked ? 'text-pink-500' : 'text-slate-300'">
-          <Heart :size="22" :class="{'fill-pink-500': post.has_liked}" />
-          <span class="text-sm font-medium">{{ post.likes_count }}</span>
-        </button>
-        <button @click="handleInteract(post, 'dislike')" class="flex items-center gap-1.5 transition-all" :class="post.has_disliked ? 'text-slate-400' : 'text-slate-300'">
-          <ThumbsDown :size="22" :class="{'fill-slate-400': post.has_disliked}" />
-          <span class="text-sm font-medium">{{ post.dislikes_count }}</span>
-        </button>
-        <button @click="openCommentInput()" class="flex items-center gap-1.5 transition-all text-slate-300">
-          <MessageCircle :size="22" />
-          <span class="text-sm font-medium">{{ post.comments_count }}</span>
-        </button>
-      </template>
-
-      <template #mobile-right>
-        <button
-          @click="handleApply"
-          :disabled="applying"
-          class="px-6 py-2 rounded-full bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-sm shadow-lg flex items-center"
-        >
-          <Wand2 v-if="!applying" :size="16" class="mr-1.5" />
-          <div v-else class="inline-block w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin mr-1.5"></div>
-          {{ applying ? '...' : $t('gallery.modal.apply_btn') }}
-        </button>
-      </template>
     </GalleryDetailModal>
-  </div>
 </template>
 
 <style>

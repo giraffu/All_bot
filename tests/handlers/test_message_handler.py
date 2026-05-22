@@ -123,38 +123,16 @@ async def test_handle_prompt_route_uses_edited_message_reply_target(
 async def test_handle_share_displays_affiliate_balance_semantics(monkeypatch):
     reply_mock = AsyncMock()
 
-    monkeypatch.setattr(
-        "src.i18n.keyboards.get_main_menu_keyboard",
-        lambda _lang: "fake-main-keyboard",
-    )
     monkeypatch.setattr(message_handler, "robust_reply_text", reply_mock)
-
-    fake_dto = SimpleNamespace(
-        first_name="Tester",
-        current_group="练气期",
-        current_identity="外门弟子",
-        identity_expire_at=None,
-        current_priority=3,
-        credits=88,
-        invitations=2,
-        checkins=5,
-        generations=11,
-        invitation_recharge={
-            "recharged_invitees_count": 3,
-            "total_recharge_count": 4,
-            "total_ton": 1.23,
-            "total_rmb": 45.67,
-            "total_stars": 89,
-            "commission_usdt": 9.99,
-            "total_commission_usdt": 9.99,
-            "spent_commission_usdt": 1.11,
-            "available_balance_usdt": 8.88,
-        },
-        is_unlocked=False,
-    )
     monkeypatch.setattr(
-        "src.core.user_facade.get_user_dashboard_info",
-        AsyncMock(return_value=fake_dto),
+        message_handler,
+        "build_share_reply",
+        AsyncMock(
+            return_value=(
+                "历史累计返佣：*$ 9.99 USDT*\n已兑换返佣：*$ 1.11 USDT*\n当前可兑换余额：*$ 8.88 USDT*\n返佣说明：历史累计返佣用于展示成绩；当前可兑换余额才会随兑换减少",
+                "share-keyboard",
+            )
+        ),
     )
 
     update = _build_profile_update()
@@ -164,8 +142,126 @@ async def test_handle_share_displays_affiliate_balance_semantics(monkeypatch):
     await message_handler.handle_share(update, context, text="分享赚灵石")
 
     reply_mock.assert_awaited_once()
+    message_handler.build_share_reply.assert_awaited_once_with(
+        context=context,
+        user=update.effective_user,
+    )
     sent_text = reply_mock.await_args.args[1]
     assert "历史累计返佣：*$ 9.99 USDT*" in sent_text
     assert "已兑换返佣：*$ 1.11 USDT*" in sent_text
     assert "当前可兑换余额：*$ 8.88 USDT*" in sent_text
     assert "返佣说明：历史累计返佣用于展示成绩；当前可兑换余额才会随兑换减少" in sent_text
+    assert reply_mock.await_args.kwargs["reply_markup"] == "share-keyboard"
+
+
+@pytest.mark.asyncio
+async def test_handle_share_delegates_to_reply_with_async_payload(monkeypatch):
+    reply_with_payload = AsyncMock(return_value=None)
+    update = _build_profile_update()
+    context = _build_context()
+
+    monkeypatch.setattr(message_handler, "reply_with_async_payload", reply_with_payload)
+
+    await message_handler.handle_share(update, context, text="分享赚灵石")
+
+    reply_with_payload.assert_awaited_once_with(
+        update,
+        reply_text=message_handler.robust_reply_text,
+        build_payload=message_handler.build_share_reply,
+        context=context,
+        user=update.effective_user,
+    )
+
+
+@pytest.mark.asyncio
+async def test_handle_personal_center_uses_runtime_reply_builder(monkeypatch):
+    reply_with_payload = AsyncMock(return_value=None)
+
+    monkeypatch.setattr(message_handler, "reply_with_async_payload", reply_with_payload)
+
+    update = _build_profile_update()
+    context = _build_context()
+
+    await message_handler.handle_personal_center(update, context, text="个人中心")
+
+    reply_with_payload.assert_awaited_once_with(
+        update,
+        reply_text=message_handler.robust_reply_text,
+        build_payload=message_handler.build_personal_center_reply,
+        context=context,
+        user=update.effective_user,
+        invite_link="https://t.me/AiVisionAV",
+        web_url="https://web.aivison.it.com/",
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("handler_name", "build_payload_name", "text"),
+    [
+        ("handle_video_edit_menu", "build_video_edit_payload", "视频编辑"),
+        ("handle_gallery_menu", "build_gallery_payload", "画廊"),
+        ("handle_back_to_main_menu", "build_back_to_main_payload", "主菜单"),
+        ("handle_recharge_menu", "build_recharge_payload", "充值"),
+    ],
+)
+async def test_menu_handlers_delegate_to_reply_with_built_payload(
+    monkeypatch, handler_name, build_payload_name, text
+):
+    reply_with_payload = AsyncMock(return_value=None)
+    update = _build_private_update_with_edited_message(text=text)
+    context = _build_context()
+
+    monkeypatch.setattr(message_handler, "reply_with_built_payload", reply_with_payload)
+
+    await getattr(message_handler, handler_name)(update, context, text=text)
+
+    reply_with_payload.assert_awaited_once_with(
+        update,
+        reply_text=message_handler.robust_reply_text,
+        build_payload=getattr(message_handler, build_payload_name),
+        **({"context": context} if build_payload_name in {"build_video_edit_payload", "build_back_to_main_payload"} else {}),
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("handler_name", "build_payload_name", "extra_kwargs"),
+    [
+        (
+            "handle_switch_lang",
+            "toggle_user_language",
+            {"parse_mode": None, "context": "CTX", "user": "USER"},
+        ),
+        (
+            "handle_queue_status",
+            "get_queue_status_reply",
+            {
+                "context": "CTX",
+                "task_type_display_names": message_handler.TASK_TYPE_DISPLAY_NAMES,
+            },
+        ),
+    ],
+)
+async def test_async_menu_like_handlers_delegate_to_reply_with_async_payload(
+    monkeypatch, handler_name, build_payload_name, extra_kwargs
+):
+    reply_with_payload = AsyncMock(return_value=None)
+    update = _build_private_update_with_edited_message(text="noop")
+    context = _build_context()
+
+    monkeypatch.setattr(message_handler, "reply_with_async_payload", reply_with_payload)
+    if handler_name == "handle_switch_lang":
+        update.effective_user = "USER"
+        context = "CTX"
+    elif handler_name == "handle_queue_status":
+        context = "CTX"
+
+    await getattr(message_handler, handler_name)(update, context, text="noop")
+
+    reply_with_payload.assert_awaited_once_with(
+        update,
+        reply_text=message_handler.robust_reply_text,
+        build_payload=getattr(message_handler, build_payload_name),
+        **extra_kwargs,
+    )

@@ -65,3 +65,24 @@ async def test_send_history_record_to_telegram_delegates_delivery_pipeline(monke
     load_history.assert_awaited_once()
     download_bytes.assert_awaited_once_with("bot-data/history/task-1/output.png")
     post_upload.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_send_current_user_history_record_to_telegram_routes_to_delivery_service():
+    service_fn = AsyncMock(return_value={"status": "success"})
+    current_user = SimpleNamespace(id=1, telegram_id=10001)
+    db = SimpleNamespace()
+
+    result = await history_delivery_service.send_current_user_history_record_to_telegram(
+        task_id="task-1",
+        current_user=current_user,
+        db=db,
+        service_fn=service_fn,
+    )
+
+    assert result == {"status": "success"}
+    service_fn.assert_awaited_once_with(
+        task_id="task-1",
+        current_user=current_user,
+        db=db,
+    )

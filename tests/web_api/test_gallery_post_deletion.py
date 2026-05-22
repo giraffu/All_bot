@@ -4,6 +4,7 @@ import pytest
 
 from src.database.models import GalleryPost, History, User
 from src.web_api.routers import gallery as gallery_router
+from src.web_api.services import gallery_service
 
 
 class _FakeScalarResult:
@@ -61,8 +62,8 @@ async def test_delete_post_hard_deletes_record_and_cleans_r2_cache(monkeypatch):
     )
     cleanup_mock = AsyncMock(return_value=4)
 
-    monkeypatch.setattr(gallery_router, "AsyncSessionLocal", lambda: session)
-    monkeypatch.setattr(gallery_router.storage, "async_delete_r2_objects", cleanup_mock)
+    monkeypatch.setattr(gallery_service, "AsyncSessionLocal", lambda: session)
+    monkeypatch.setattr(gallery_service.storage, "async_delete_r2_objects", cleanup_mock)
 
     response = await gallery_router.delete_post(
         7,
@@ -104,8 +105,8 @@ async def test_delete_post_without_history_cache_still_returns_success(monkeypat
     )
     cleanup_mock = AsyncMock()
 
-    monkeypatch.setattr(gallery_router, "AsyncSessionLocal", lambda: session)
-    monkeypatch.setattr(gallery_router.storage, "async_delete_r2_objects", cleanup_mock)
+    monkeypatch.setattr(gallery_service, "AsyncSessionLocal", lambda: session)
+    monkeypatch.setattr(gallery_service.storage, "async_delete_r2_objects", cleanup_mock)
 
     response = await gallery_router.delete_post(
         8,

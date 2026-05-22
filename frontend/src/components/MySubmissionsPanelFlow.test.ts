@@ -31,11 +31,15 @@ vi.mock('@/api', () => ({
   }
 }))
 
-vi.mock('vue-router', () => ({
-  useRouter: () => ({
-    push: routerPushMock
-  })
-}))
+vi.mock('vue-router', async () => {
+  const actual = await vi.importActual<typeof import('vue-router')>('vue-router')
+  return {
+    ...actual,
+    useRouter: () => ({
+      push: routerPushMock
+    })
+  }
+})
 
 vi.mock('ant-design-vue', async () => {
   const actual = await vi.importActual<object>('ant-design-vue')
@@ -239,10 +243,14 @@ describe('MySubmissionsPanel workbench flow', () => {
     messageWarningMock.mockReset()
   })
 
-  it('keeps legacy template apply for submissions without opening the shared workbench host', async () => {
+  it('opens the shared template workbench host from submissions details', async () => {
     primeSubmissionsApi()
 
     const { wrapper, applyButton } = await openDetailAndFindApplyButton()
+
+    expect(wrapper.text()).toContain('删除')
+    expect(wrapper.text()).toContain('下架')
+
     await applyButton.trigger('click')
     await flushPromises()
     await flushPromises()
@@ -250,23 +258,14 @@ describe('MySubmissionsPanel workbench flow', () => {
     const templateApplyStore = useTemplateApplyStore()
     const hostModal = wrapper
       .findAll('.a-modal-stub')
-      .find(node => node.attributes('data-title') === '模板工作台')
+      .find(node => node.attributes('data-title') === '快速换脸')
 
-    expect(sessionStorage.getItem(GALLERY_APPLY_CONTEXT_STORAGE_KEY)).toBe(
-      JSON.stringify(faceSwapContext)
-    )
-    expect(routerPushMock).toHaveBeenCalledWith({
-      name: 'FaceSwap',
-      query: {
-        apply: 'true',
-        type: 'face_swap',
-        title: '快速换脸',
-        cost: '1'
-      }
-    })
-    expect(messageSuccessMock).toHaveBeenCalledWith('已载入模板，请上传您的参考图')
-    expect(templateApplyStore.visible).toBe(false)
-    expect(hostModal?.attributes('data-open')).toBe('false')
+    expect(sessionStorage.getItem(GALLERY_APPLY_CONTEXT_STORAGE_KEY)).toBeNull()
+    expect(routerPushMock).not.toHaveBeenCalled()
+    expect(messageSuccessMock).toHaveBeenCalledWith('已载入模板工作台')
+    expect(templateApplyStore.visible).toBe(true)
+    expect(templateApplyStore.panelKind).toBe('faceSwap')
+    expect(hostModal?.attributes('data-open')).toBe('true')
   })
 
   it('renders the shared empty state block when the submissions list is empty', async () => {
@@ -279,5 +278,38 @@ describe('MySubmissionsPanel workbench flow', () => {
     expect(wrapper.text()).toContain('您还没有投稿任何作品')
     expect(wrapper.findAll('.group.cursor-pointer')).toHaveLength(0)
     expect(useTemplateApplyStore().visible).toBe(false)
+  })
+
+  it('renders the shared error state and retries loading when the submissions list request fails', async () => {
+    apiGetMock.mockImplementation((url: string) => {
+      if (url === '/gallery/my-posts') {
+        throw new Error('submissions list failed')
+      }
+
+      throw new Error(`Unexpected GET request: ${url}`)
+    })
+
+    const wrapper = mountHarness()
+    await flushPromises()
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('获取内容失败')
+    expect(wrapper.findAll('.group.cursor-pointer')).toHaveLength(0)
+    expect(messageErrorMock).toHaveBeenCalledWith('获取内容失败')
+
+    primeSubmissionsApi()
+
+    const retryButton = wrapper
+      .findAll('button')
+      .find(button => button.text().includes('重试'))
+
+    expect(retryButton).toBeTruthy()
+
+    await retryButton!.trigger('click')
+    await flushPromises()
+    await flushPromises()
+
+    expect(wrapper.text()).not.toContain('获取内容失败')
+    expect(wrapper.findAll('.group.cursor-pointer')).toHaveLength(1)
   })
 })

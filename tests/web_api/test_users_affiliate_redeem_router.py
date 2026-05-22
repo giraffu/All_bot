@@ -37,17 +37,16 @@ async def test_redeem_current_user_affiliate_credits_routes_to_service():
     )
 
     with patch(
-        "src.web_api.routers.users.redeem_user_affiliate_credits_payload",
+        "src.web_api.routers.users.redeem_current_user_affiliate_credits_payload",
         new=AsyncMock(return_value=expected),
     ) as mock_service:
         response = await redeem_current_user_affiliate_credits(payload, current_user, db)
 
     assert response == expected
     mock_service.assert_awaited_once_with(
+        payload=payload,
+        current_user=current_user,
         db=db,
-        user_id=current_user.id,
-        amount_usdt=payload.amount_usdt,
-        idempotency_key=payload.idempotency_key,
     )
 
 
@@ -79,7 +78,7 @@ async def test_redeem_current_user_affiliate_membership_routes_to_service():
     )
 
     with patch(
-        "src.web_api.routers.users.redeem_user_affiliate_membership_payload",
+        "src.web_api.routers.users.redeem_current_user_affiliate_membership_payload",
         new=AsyncMock(return_value=expected),
     ) as mock_service:
         response = await redeem_current_user_affiliate_membership(
@@ -90,8 +89,7 @@ async def test_redeem_current_user_affiliate_membership_routes_to_service():
 
     assert response == expected
     mock_service.assert_awaited_once_with(
+        payload=payload,
+        current_user=current_user,
         db=db,
-        user_id=current_user.id,
-        option_key=payload.option_key,
-        idempotency_key=payload.idempotency_key,
     )

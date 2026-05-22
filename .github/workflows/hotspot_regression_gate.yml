@@ -22,10 +22,15 @@ on:
       - 'frontend/src/views/Gallery.vue'
       - 'frontend/src/views/Gallery.test.ts'
       - 'frontend/src/views/GalleryWorkbenchFlow.test.ts'
+      - 'frontend/src/views/MyFavorites.vue'
+      - 'frontend/src/views/MyFavoritesFlow.test.ts'
+      - 'frontend/src/components/MySubmissionsPanel.vue'
+      - 'frontend/src/components/MySubmissionsPanelFlow.test.ts'
       - 'frontend/src/components/ListStateBlock.vue'
       - 'frontend/src/components/ListStateBlock.test.ts'
       - 'frontend/src/components/template-apply/TemplateApplyWorkbenchHost.vue'
       - 'frontend/src/components/template-apply/TemplateApplyWorkbenchHost.test.ts'
+      - 'frontend/src/composables/useDetailTemplateApply.ts'
       - 'frontend/src/router/index.ts'
       - 'frontend/src/router/index.test.ts'
       - 'frontend/src/stores/tasksRuntime.test.ts'
@@ -65,10 +70,15 @@ on:
       - 'frontend/src/views/Gallery.vue'
       - 'frontend/src/views/Gallery.test.ts'
       - 'frontend/src/views/GalleryWorkbenchFlow.test.ts'
+      - 'frontend/src/views/MyFavorites.vue'
+      - 'frontend/src/views/MyFavoritesFlow.test.ts'
+      - 'frontend/src/components/MySubmissionsPanel.vue'
+      - 'frontend/src/components/MySubmissionsPanelFlow.test.ts'
       - 'frontend/src/components/ListStateBlock.vue'
       - 'frontend/src/components/ListStateBlock.test.ts'
       - 'frontend/src/components/template-apply/TemplateApplyWorkbenchHost.vue'
       - 'frontend/src/components/template-apply/TemplateApplyWorkbenchHost.test.ts'
+      - 'frontend/src/composables/useDetailTemplateApply.ts'
       - 'frontend/src/router/index.ts'
       - 'frontend/src/router/index.test.ts'
       - 'frontend/src/stores/tasksRuntime.test.ts'
@@ -208,7 +218,7 @@ jobs:
                   src/handlers/message_handler.py|src/handlers/message_handler_common.py|src/handlers/message_handler_profile.py|src/handlers/message_handler_media.py|src/handlers/message_handler_menu.py|tests/handlers/test_message_handler*.py)
                     add_group "python" "message-handler"
                     ;;
-                  frontend/src/views/Gallery.vue|frontend/src/views/Gallery.test.ts|frontend/src/views/GalleryWorkbenchFlow.test.ts|frontend/src/components/ListStateBlock.vue|frontend/src/components/ListStateBlock.test.ts|frontend/src/components/template-apply/TemplateApplyWorkbenchHost.vue|frontend/src/components/template-apply/TemplateApplyWorkbenchHost.test.ts|frontend/src/router/index.ts|frontend/src/router/index.test.ts|frontend/src/stores/tasksRuntime.test.ts|frontend/src/stores/taskResultState.test.ts|frontend/src/stores/templateApply.test.ts|frontend/src/composables/useTemplateApplyUpload.test.ts|frontend/src/utils/normalizeTemplateApplyContext.test.ts)
+                  frontend/src/views/Gallery.vue|frontend/src/views/Gallery.test.ts|frontend/src/views/GalleryWorkbenchFlow.test.ts|frontend/src/views/MyFavorites.vue|frontend/src/views/MyFavoritesFlow.test.ts|frontend/src/components/MySubmissionsPanel.vue|frontend/src/components/MySubmissionsPanelFlow.test.ts|frontend/src/components/ListStateBlock.vue|frontend/src/components/ListStateBlock.test.ts|frontend/src/components/template-apply/TemplateApplyWorkbenchHost.vue|frontend/src/components/template-apply/TemplateApplyWorkbenchHost.test.ts|frontend/src/composables/useDetailTemplateApply.ts|frontend/src/router/index.ts|frontend/src/router/index.test.ts|frontend/src/stores/tasksRuntime.test.ts|frontend/src/stores/taskResultState.test.ts|frontend/src/stores/templateApply.test.ts|frontend/src/composables/useTemplateApplyUpload.test.ts|frontend/src/utils/normalizeTemplateApplyContext.test.ts)
                     add_group "frontend" "frontend-shared"
                     ;;
                   scripts/run_hotspot_regression.sh|.github/workflows/hotspot_regression_gate.yml)

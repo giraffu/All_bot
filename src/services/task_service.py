@@ -688,84 +688,6 @@ class TaskService:
         message_spec: BotTaskMessageSpec,
         missing_output_should_refund: bool = True,
     ) -> Tuple[Optional[bytes], Optional[str]]:
-        return await TaskService._complete_monitored_bot_task_with_current_seams(
-            context=context,
-            chat_id=chat_id,
-            status_msg=status_msg,
-            runtime_state=runtime_state,
-            internal_user_id=internal_user_id,
-            username=username,
-            user_logger=user_logger,
-            prompt=prompt,
-            task_type=task_type,
-            task_id=task_id,
-            saved_input_images=saved_input_images,
-            final_info=final_info,
-            is_video=is_video,
-            send_result=send_result,
-            reply_markup=reply_markup,
-            delete_status=delete_status,
-            caption=caption,
-            allow_contribute=allow_contribute,
-            billing_resolution=billing_resolution,
-            requested_duration=requested_duration,
-            message_spec=message_spec,
-            missing_output_should_refund=missing_output_should_refund,
-        )
-
-    @staticmethod
-    async def _download_and_log_task_output(
-        *,
-        internal_user_id,
-        username,
-        prompt,
-        task_type,
-        task_id,
-        saved_input_images,
-        is_video,
-        allow_contribute,
-        billing_resolution: Optional[str],
-        requested_duration: Optional[int],
-    ):
-        return await download_and_log_task_output(
-            internal_user_id=internal_user_id,
-            username=username,
-            prompt=prompt,
-            task_type=task_type,
-            task_id=task_id,
-            saved_input_images=saved_input_images,
-            is_video=is_video,
-            allow_contribute=allow_contribute,
-            billing_resolution=billing_resolution,
-            requested_duration=requested_duration,
-        )
-
-    @staticmethod
-    async def _complete_monitored_bot_task_with_current_seams(
-        *,
-        context,
-        chat_id,
-        status_msg,
-        runtime_state,
-        internal_user_id,
-        username,
-        user_logger,
-        prompt,
-        task_type,
-        task_id,
-        saved_input_images,
-        final_info,
-        is_video,
-        send_result=True,
-        reply_markup=None,
-        delete_status=True,
-        caption=None,
-        allow_contribute=True,
-        billing_resolution: Optional[str] = None,
-        requested_duration: Optional[int] = None,
-        message_spec: BotTaskMessageSpec,
-        missing_output_should_refund: bool = True,
-    ) -> Tuple[Optional[bytes], Optional[str]]:
         return await complete_monitored_bot_task(
             context=context,
             chat_id=chat_id,
@@ -796,47 +718,30 @@ class TaskService:
         )
 
     @staticmethod
-    async def _handle_task_completion_with_current_seams(
+    async def _download_and_log_task_output(
         *,
-        context,
-        chat_id,
         internal_user_id,
+        username,
         prompt,
         task_type,
         task_id,
         saved_input_images,
-        user_logger,
         is_video,
-        send_result,
-        reply_markup,
-        status_msg,
-        delete_status,
-        caption=None,
-        allow_contribute=True,
-        billing_resolution: Optional[str] = None,
-        requested_duration: Optional[int] = None,
+        allow_contribute,
+        billing_resolution: Optional[str],
+        requested_duration: Optional[int],
     ):
-        return await handle_task_completion(
-            context=context,
-            chat_id=chat_id,
+        return await download_and_log_task_output(
             internal_user_id=internal_user_id,
+            username=username,
             prompt=prompt,
             task_type=task_type,
             task_id=task_id,
             saved_input_images=saved_input_images,
-            user_logger=user_logger,
             is_video=is_video,
-            send_result=send_result,
-            reply_markup=reply_markup,
-            status_msg=status_msg,
-            delete_status=delete_status,
-            caption=caption,
             allow_contribute=allow_contribute,
             billing_resolution=billing_resolution,
             requested_duration=requested_duration,
-            send_result_media_func=TaskService._send_result_media,
-            cleanup_completion_status_message_func=TaskService._cleanup_completion_status_message,
-            download_and_log_task_output_func=TaskService._download_and_log_task_output,
         )
 
     @staticmethod
@@ -1191,7 +1096,7 @@ class TaskService:
         billing_resolution: Optional[str] = None,
         requested_duration: Optional[int] = None,
     ):
-        return await TaskService._handle_task_completion_with_current_seams(
+        return await handle_task_completion(
             context=context,
             chat_id=chat_id,
             internal_user_id=internal_user_id,
@@ -1209,6 +1114,9 @@ class TaskService:
             allow_contribute=allow_contribute,
             billing_resolution=billing_resolution,
             requested_duration=requested_duration,
+            send_result_media_func=TaskService._send_result_media,
+            cleanup_completion_status_message_func=TaskService._cleanup_completion_status_message,
+            download_and_log_task_output_func=TaskService._download_and_log_task_output,
         )
 
     @staticmethod

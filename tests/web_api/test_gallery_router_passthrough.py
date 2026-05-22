@@ -112,5 +112,51 @@ async def test_submit_to_gallery_routes_to_service():
         background_tasks=background_tasks,
         request=request,
         current_user=current_user,
-        process_submit_to_gallery_fn=gallery_router.process_submit_to_gallery,
+    )
+
+
+@pytest.mark.asyncio
+async def test_update_post_status_routes_to_api_wrapper():
+    current_user = _build_current_user()
+    db = object()
+
+    with patch(
+        "src.web_api.routers.gallery.update_gallery_post_status_api_payload",
+        new=AsyncMock(return_value={"status": "success"}),
+    ) as mock_service:
+        response = await gallery_router.update_post_status(
+            11,
+            current_user=current_user,
+            db=db,
+            is_active=True,
+        )
+
+    assert response == {"status": "success"}
+    mock_service.assert_awaited_once_with(
+        post_id=11,
+        current_user=current_user,
+        db=db,
+        is_active=True,
+    )
+
+
+@pytest.mark.asyncio
+async def test_interact_with_post_routes_to_api_wrapper():
+    current_user = _build_current_user()
+
+    with patch(
+        "src.web_api.routers.gallery.interact_with_gallery_post_api_payload",
+        new=AsyncMock(return_value={"status": "success"}),
+    ) as mock_service:
+        response = await gallery_router.interact_with_post(
+            9,
+            action="like",
+            current_user=current_user,
+        )
+
+    assert response == {"status": "success"}
+    mock_service.assert_awaited_once_with(
+        post_id=9,
+        action="like",
+        current_user=current_user,
     )

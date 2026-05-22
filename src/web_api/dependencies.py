@@ -5,6 +5,7 @@ from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.core.auth_core_password_version import is_password_version_blacklisted
 from src.database.core import AsyncSessionLocal
 from src.database.models import User
 from src.web_api.core.security import verify_token
@@ -86,8 +87,11 @@ async def _get_current_user_from_session(db: AsyncSession, token: str) -> User:
         from src.services.redis_client import redis_client
 
         redis = redis_client.redis
-        blacklist_key = f"allbot:auth:blacklist:{user.id}:{token_pwd_ver}"
-        if await redis.get(blacklist_key):
+        if await is_password_version_blacklisted(
+            redis=redis,
+            user_id=user.id,
+            password_version=token_pwd_ver,
+        ):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="密咒已变更，当前结界已失效，请重新登录。",

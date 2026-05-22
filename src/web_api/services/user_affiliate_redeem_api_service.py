@@ -112,6 +112,23 @@ async def redeem_user_affiliate_credits_payload(
     )
 
 
+async def redeem_current_user_affiliate_credits_payload(
+    *,
+    payload,
+    current_user,
+    db,
+    service_fn=None,
+) -> AffiliateCreditsRedeemResponse:
+    if service_fn is None:
+        service_fn = redeem_user_affiliate_credits_payload
+    return await service_fn(
+        db=db,
+        user_id=current_user.id,
+        amount_usdt=payload.amount_usdt,
+        idempotency_key=payload.idempotency_key,
+    )
+
+
 async def redeem_user_affiliate_membership_payload(
     *,
     db,
@@ -141,3 +158,20 @@ async def redeem_user_affiliate_membership_payload(
         committed_here=committed_here,
     )
     return build_affiliate_membership_redeem_response(result)
+
+
+async def redeem_current_user_affiliate_membership_payload(
+    *,
+    payload,
+    current_user,
+    db,
+    service_fn=None,
+) -> AffiliateMembershipRedeemResponse:
+    if service_fn is None:
+        service_fn = redeem_user_affiliate_membership_payload
+    return await service_fn(
+        db=db,
+        user_id=current_user.id,
+        option_key=payload.option_key,
+        idempotency_key=payload.idempotency_key,
+    )

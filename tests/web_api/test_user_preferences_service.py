@@ -1,4 +1,5 @@
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -65,3 +66,25 @@ async def test_update_user_language_preference_skips_redis_when_unavailable(monk
     assert len(db.executed) == 1
     assert db.committed is True
     assert response == {"status": "success", "language_code": "zh"}
+
+
+@pytest.mark.asyncio
+async def test_update_current_user_preferences_payload_extracts_current_user_and_prefs():
+    service_fn = AsyncMock(return_value={"status": "success", "language_code": "ja"})
+    current_user = SimpleNamespace(id=321)
+    prefs = SimpleNamespace(language_code="ja")
+    db = _FakeDbSession()
+
+    response = await user_preferences_service.update_current_user_preferences_payload(
+        prefs=prefs,
+        current_user=current_user,
+        db=db,
+        service_fn=service_fn,
+    )
+
+    assert response == {"status": "success", "language_code": "ja"}
+    service_fn.assert_awaited_once_with(
+        db=db,
+        user_id=321,
+        language_code="ja",
+    )

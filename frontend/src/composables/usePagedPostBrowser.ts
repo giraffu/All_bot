@@ -15,6 +15,7 @@ interface UsePagedPostBrowserOptions<T extends { id: number | string }> {
   pageSize: Ref<number>
   fetchPageData: (pageNumber: number) => Promise<PagedResult<T>>
   onFetchError?: (error: unknown) => void
+  getFetchErrorMessage?: (error: unknown) => string | undefined
 }
 
 export const usePagedPostBrowser = <T extends { id: number | string }>(
@@ -26,6 +27,7 @@ export const usePagedPostBrowser = <T extends { id: number | string }>(
   const pageCache = ref<Record<number, T[]>>({})
   const total = ref(0)
   const totalPages = ref(0)
+  const errorMessage = ref('')
   const detailVisible = ref(false)
   const currentPost = ref<T | null>(null)
   const pendingPages = new Set<number>()
@@ -51,6 +53,7 @@ export const usePagedPostBrowser = <T extends { id: number | string }>(
     pageCache.value = {}
     total.value = 0
     totalPages.value = 0
+    errorMessage.value = ''
     loading.value = false
   }
 
@@ -104,6 +107,7 @@ export const usePagedPostBrowser = <T extends { id: number | string }>(
       }
 
       syncPageResult(pageNumber, result)
+      errorMessage.value = ''
       if (activate && visibleRequestId === currentVisibleRequestId) {
         currentPage.value = pageNumber
         posts.value = result.items
@@ -113,6 +117,7 @@ export const usePagedPostBrowser = <T extends { id: number | string }>(
       if (requestVersion !== currentQueryVersion) {
         return false
       }
+      errorMessage.value = options.getFetchErrorMessage?.(error) ?? ''
       options.onFetchError?.(error)
       return false
     } finally {
@@ -201,6 +206,7 @@ export const usePagedPostBrowser = <T extends { id: number | string }>(
     currentPage,
     total,
     totalPages,
+    errorMessage,
     detailVisible,
     currentPost,
     currentIndex,

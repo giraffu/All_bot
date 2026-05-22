@@ -6,6 +6,7 @@ import pytest
 from src.database import core as db_core
 from src.database.models import GalleryPost, History
 from src.web_api.routers import users as users_router
+from src.web_api.services import users_history_service
 
 
 class _FakeResult:
@@ -64,7 +65,7 @@ def test_pick_preferred_gallery_post_prefers_active_and_newer_post():
         created_at=now + timedelta(minutes=1),
     )
 
-    preferred = users_router._pick_preferred_gallery_post(
+    preferred = users_history_service.pick_preferred_gallery_post(
         [inactive_newest, active_oldest, active_newest]
     )
 
@@ -94,7 +95,7 @@ async def test_get_favorite_apply_context_probes_media_after_session_closes(
         return (1024, 1024, 8)
 
     monkeypatch.setattr(db_core, "AsyncSessionLocal", lambda: session)
-    monkeypatch.setattr(users_router, "extract_media_metadata_from_storage", _probe)
+    monkeypatch.setattr(users_history_service, "extract_media_metadata_from_storage", _probe)
 
     response = await users_router.get_favorite_apply_context(
         "task-1",

@@ -358,4 +358,74 @@ describe('Gallery workbench flow', () => {
     expect(wrapper.find('.waterfall-stub').text()).toBe('')
     expect(useTemplateApplyStore().visible).toBe(false)
   })
+
+  it('renders the shared error state and retries loading when the gallery list request fails', async () => {
+    apiGetMock.mockImplementation((url: string) => {
+      if (url === '/gallery/config') {
+        return Promise.resolve({
+          data: {
+            allowed_types: [],
+            lora_models: [],
+            img2img_lora_models: []
+          }
+        })
+      }
+
+      if (url === '/gallery/posts') {
+        throw new Error('gallery list failed')
+      }
+
+      throw new Error(`Unexpected GET request: ${url}`)
+    })
+
+    const wrapper = mountHarness()
+    await flushPromises()
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('获取内容失败')
+    expect(wrapper.find('.waterfall-stub').text()).toBe('')
+    expect(messageErrorMock).toHaveBeenCalledWith('获取广场数据失败')
+
+    apiGetMock.mockImplementation((url: string) => {
+      if (url === '/gallery/config') {
+        return Promise.resolve({
+          data: {
+            allowed_types: [],
+            lora_models: [],
+            img2img_lora_models: []
+          }
+        })
+      }
+
+      if (url === '/gallery/posts') {
+        return Promise.resolve({
+          data: {
+            items: [samplePost],
+            total: 1,
+            page: 1,
+            pages: 1
+          }
+        })
+      }
+
+      if (url === `/gallery/posts/${samplePost.id}/apply-context`) {
+        return Promise.resolve({ data: faceSwapContext })
+      }
+
+      throw new Error(`Unexpected GET request: ${url}`)
+    })
+
+    const retryButton = wrapper
+      .findAll('button')
+      .find(button => button.text().includes('重试'))
+
+    expect(retryButton).toBeTruthy()
+
+    await retryButton!.trigger('click')
+    await flushPromises()
+    await flushPromises()
+
+    expect(wrapper.text()).not.toContain('获取内容失败')
+    expect(wrapper.findAll('.group.cursor-pointer')).toHaveLength(1)
+  })
 })

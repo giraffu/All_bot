@@ -1,12 +1,37 @@
 <script setup lang="ts">
 import dayjs from 'dayjs'
 import type { GalleryComment } from '@/composables/useGalleryComments'
+import DetailApplyActions from '@/components/DetailApplyActions.vue'
+import DetailReactionBar from '@/components/DetailReactionBar.vue'
 import DetailMediaPreview from '@/components/DetailMediaPreview.vue'
 import DetailModalShell from '@/components/DetailModalShell.vue'
 import DetailCommentsSection from '@/components/DetailCommentsSection.vue'
 import DetailMobileBottomBar from '@/components/DetailMobileBottomBar.vue'
+import DetailDesktopActions from '@/components/DetailDesktopActions.vue'
+import PromptCopyButton from '@/components/PromptCopyButton.vue'
 
 type DetailPost = any
+
+interface DetailStandardActions {
+  showDesktopReaction?: boolean
+  showDesktopApply?: boolean
+  showDesktopCopy?: boolean
+  showMobileReaction?: boolean
+  showMobileApply?: boolean
+  showMobileCopy?: boolean
+  desktopApplyPlacement?: 'before' | 'after'
+  desktopApplyInline?: boolean
+  applyLabel?: string
+  applyLoading?: boolean
+  applyLoadingLabel?: string
+  applyHint?: string
+  copyLabel?: string
+  onLike?: () => void
+  onDislike?: () => void
+  onComment?: () => void
+  onApply?: () => void
+  onCopy?: () => void
+}
 
 const props = withDefaults(
   defineProps<{
@@ -33,6 +58,7 @@ const props = withDefaults(
     commentsSectionClass?: string
     mobileLeftClass?: string
     mobileRightClass?: string
+    standardActions?: DetailStandardActions | null
   }>(),
   {
     infoContentClass:
@@ -41,6 +67,7 @@ const props = withDefaults(
     commentsSectionClass: '',
     mobileLeftClass: 'flex items-center gap-6',
     mobileRightClass: '',
+    standardActions: null,
   },
 )
 
@@ -144,6 +171,42 @@ const handleNewCommentInput = (event: Event) => {
           name="before-comments"
           :post="currentPost"
           :open-comment-input="openCommentInput"
+        >
+          <DetailDesktopActions
+            v-if="standardActions && (standardActions.showDesktopReaction || (standardActions.showDesktopApply && standardActions.desktopApplyPlacement === 'before'))"
+            top-class="space-x-2 mb-4 pt-4"
+            bottom-class="mt-8"
+          >
+            <template v-if="standardActions.showDesktopReaction" #top>
+              <DetailReactionBar
+                :likes-count="currentPost.likes_count || 0"
+                :dislikes-count="currentPost.dislikes_count || 0"
+                :comments-count="currentPost.comments_count || 0"
+                :has-liked="currentPost.has_liked"
+                :has-disliked="currentPost.has_disliked"
+                @like="standardActions.onLike?.()"
+                @dislike="standardActions.onDislike?.()"
+                @comment="standardActions.onComment?.()"
+              />
+            </template>
+            <template
+              v-if="standardActions.showDesktopApply && standardActions.desktopApplyPlacement === 'before'"
+              #bottom
+            >
+              <DetailApplyActions
+                :apply-label="standardActions.applyLabel || title"
+                :apply-loading="standardActions.applyLoading"
+                :apply-loading-label="standardActions.applyLoadingLabel"
+                :hint-text="standardActions.applyHint"
+                @apply="standardActions.onApply?.()"
+              />
+            </template>
+          </DetailDesktopActions>
+        </slot>
+        <slot
+          name="before-comments-extra"
+          :post="currentPost"
+          :open-comment-input="openCommentInput"
         />
 
         <DetailCommentsSection
@@ -164,6 +227,31 @@ const handleNewCommentInput = (event: Event) => {
           name="after-comments"
           :post="currentPost"
           :open-comment-input="openCommentInput"
+        >
+          <DetailDesktopActions
+            v-if="standardActions?.showDesktopApply && standardActions.desktopApplyPlacement !== 'before'"
+            container-class="mt-auto"
+            :bottom-class="standardActions.desktopApplyInline ? 'pt-4 border-t border-slate-700 lg:border-slate-400/30' : 'space-y-4 pt-4'"
+          >
+            <template #bottom>
+              <DetailApplyActions
+                :inline="standardActions.desktopApplyInline"
+                :show-copy="standardActions.showDesktopCopy && !!currentPost.prompt?.trim()"
+                :copy-label="standardActions.copyLabel || ''"
+                :apply-label="standardActions.applyLabel || title"
+                :apply-loading="standardActions.applyLoading"
+                :apply-loading-label="standardActions.applyLoadingLabel"
+                :hint-text="standardActions.applyHint"
+                @copy="standardActions.onCopy?.()"
+                @apply="standardActions.onApply?.()"
+              />
+            </template>
+          </DetailDesktopActions>
+        </slot>
+        <slot
+          name="after-comments-extra"
+          :post="currentPost"
+          :open-comment-input="openCommentInput"
         />
       </template>
 
@@ -176,11 +264,52 @@ const handleNewCommentInput = (event: Event) => {
             name="mobile-left"
             :post="currentPost"
             :open-comment-input="openCommentInput"
+          >
+            <template v-if="standardActions && (standardActions.showMobileReaction || (standardActions.showMobileCopy && !!currentPost.prompt?.trim()))">
+              <DetailReactionBar
+                v-if="standardActions.showMobileReaction"
+                compact
+                :likes-count="currentPost.likes_count || 0"
+                :dislikes-count="currentPost.dislikes_count || 0"
+                :comments-count="currentPost.comments_count || 0"
+                :has-liked="currentPost.has_liked"
+                :has-disliked="currentPost.has_disliked"
+                @like="standardActions.onLike?.()"
+                @dislike="standardActions.onDislike?.()"
+                @comment="standardActions.onComment?.()"
+              />
+              <PromptCopyButton
+                v-if="standardActions.showMobileCopy && !!currentPost.prompt?.trim()"
+                compact
+                :label="standardActions.copyLabel || ''"
+                @click="standardActions.onCopy?.()"
+              />
+            </template>
+          </slot>
+          <slot
+            name="mobile-left-extra"
+            :post="currentPost"
+            :open-comment-input="openCommentInput"
           />
         </template>
         <template #right>
           <slot
             name="mobile-right"
+            :post="currentPost"
+            :open-comment-input="openCommentInput"
+          >
+            <DetailApplyActions
+              v-if="standardActions?.showMobileApply"
+              inline
+              compact-apply
+              :apply-label="standardActions.applyLabel || title"
+              :apply-loading="standardActions.applyLoading"
+              :apply-loading-label="standardActions.applyLoadingLabel"
+              @apply="standardActions.onApply?.()"
+            />
+          </slot>
+          <slot
+            name="mobile-right-extra"
             :post="currentPost"
             :open-comment-input="openCommentInput"
           />

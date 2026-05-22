@@ -8,6 +8,7 @@ from sqlalchemy.exc import IntegrityError
 from src.database.models import GalleryComment, GalleryPost, History, User
 from src.services import redis_client as redis_module
 from src.web_api.routers import gallery as gallery_router
+from src.web_api.services import gallery_service
 from src.web_api.schemas.gallery_schema import CommentCreate
 
 
@@ -124,13 +125,12 @@ async def test_build_post_responses_defaults_missing_comments_count_to_zero(monk
     )
     session = _BuildPostResponseSession([history])
 
-    monkeypatch.setattr(
-        gallery_router,
-        "_pick_gallery_media_urls",
-        AsyncMock(return_value=("media-url", "thumb-url")),
+    responses = await gallery_service.build_gallery_post_responses(
+        session=session,
+        posts=[post],
+        current_user=None,
+        pick_gallery_media_urls=AsyncMock(return_value=("media-url", "thumb-url")),
     )
-
-    responses = await gallery_router._build_post_responses(session, [post], None)
 
     assert len(responses) == 1
     assert responses[0].comments_count == 0
@@ -142,7 +142,7 @@ async def test_create_gallery_comment_trims_content_and_updates_count(monkeypatc
     session = _CreateCommentSession(post)
     current_user = User(id=123, username="tester")
 
-    monkeypatch.setattr(gallery_router, "AsyncSessionLocal", lambda: session)
+    monkeypatch.setattr(gallery_service, "AsyncSessionLocal", lambda: session)
     monkeypatch.setattr(
         redis_module.redis_client,
         "set_comment_lock",
@@ -168,7 +168,7 @@ async def test_create_gallery_comment_returns_429_when_rate_limited(monkeypatch)
     post = GalleryPost(id=1, task_id="task-1", media_type="image", is_active=True)
     session = _CreateCommentSession(post)
 
-    monkeypatch.setattr(gallery_router, "AsyncSessionLocal", lambda: session)
+    monkeypatch.setattr(gallery_service, "AsyncSessionLocal", lambda: session)
     monkeypatch.setattr(
         redis_module.redis_client,
         "set_comment_lock",
@@ -194,7 +194,7 @@ async def test_create_gallery_comment_does_not_consume_lock_for_missing_post(mon
         return None
 
     session.get = fake_get
-    monkeypatch.setattr(gallery_router, "AsyncSessionLocal", lambda: session)
+    monkeypatch.setattr(gallery_service, "AsyncSessionLocal", lambda: session)
     monkeypatch.setattr(redis_module.redis_client, "set_comment_lock", lock_mock)
 
     with pytest.raises(HTTPException) as exc_info:
@@ -214,7 +214,7 @@ async def test_create_gallery_comment_releases_lock_when_db_write_fails(monkeypa
     session = _CreateCommentSession(post, flush_error=RuntimeError("db down"))
     delete_lock_mock = AsyncMock()
 
-    monkeypatch.setattr(gallery_router, "AsyncSessionLocal", lambda: session)
+    monkeypatch.setattr(gallery_service, "AsyncSessionLocal", lambda: session)
     monkeypatch.setattr(
         redis_module.redis_client,
         "set_comment_lock",
@@ -244,7 +244,7 @@ async def test_create_gallery_comment_rolls_back_when_post_becomes_inactive(monk
     session = _CreateCommentSession(post, execute_rowcount=0)
     delete_lock_mock = AsyncMock()
 
-    monkeypatch.setattr(gallery_router, "AsyncSessionLocal", lambda: session)
+    monkeypatch.setattr(gallery_service, "AsyncSessionLocal", lambda: session)
     monkeypatch.setattr(
         redis_module.redis_client,
         "set_comment_lock",
@@ -279,7 +279,7 @@ async def test_create_gallery_comment_maps_integrity_error_to_not_found(monkeypa
     )
     delete_lock_mock = AsyncMock()
 
-    monkeypatch.setattr(gallery_router, "AsyncSessionLocal", lambda: session)
+    monkeypatch.setattr(gallery_service, "AsyncSessionLocal", lambda: session)
     monkeypatch.setattr(
         redis_module.redis_client,
         "set_comment_lock",
@@ -319,7 +319,7 @@ async def test_get_gallery_comments_filters_active_and_formats_author_name(monke
     comment.user = User(id=123, full_name="测试用户")
     session = _ListCommentsSession(post=post, comments=[comment], total=1)
 
-    monkeypatch.setattr(gallery_router, "AsyncSessionLocal", lambda: session)
+    monkeypatch.setattr(gallery_service, "AsyncSessionLocal", lambda: session)
 
     response = await gallery_router.get_gallery_comments(1, page=1, size=20)
 

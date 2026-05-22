@@ -6,9 +6,24 @@ import urllib.parse
 import asyncio
 import bcrypt
 from typing import Optional, Tuple
-from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError
 
+from src.core.auth_core_password_binding import bind_password_to_user, get_bindable_user
+from src.core.auth_core_password_login import authenticate_password_credentials
+from src.core.auth_core_telegram_auth import build_telegram_auth_profile
+from src.core.auth_core_telegram_verify import (
+    build_telegram_data_check_string,
+    get_telegram_tokens_to_try,
+    is_telegram_auth_date_fresh,
+)
+from src.core.auth_core_password_version import blacklist_password_version
+from src.core.auth_core_rate_limit import (
+    build_bind_rate_limit_keys,
+    build_login_rate_limit_keys,
+    clear_rate_limit,
+    increment_rate_limit,
+    is_rate_limited,
+)
 from src.database.core import AsyncSessionLocal
 from src.core.user_core import get_or_create_user_by_telegram
 from src.database.models import User
@@ -94,20 +109,22 @@ def verify_telegram_authorization(data: dict) -> bool:
     if not received_hash:
         return False
 
-    import time
-
     auth_date = data.get("auth_date")
-    if not auth_date or time.time() - int(auth_date) > 900:
-        logger.error(
-            "Telegram auth_date is too old or missing (Replay attack prevention)."
-        )
+    if not is_telegram_auth_date_fresh(
+        auth_date,
+        stale_log_message="Telegram auth_date is too old or missing (Replay attack prevention).",
+        logger=logger,
+    ):
         return False
 
-    data_check_string = "\n".join([f"{k}={v}" for k, v in sorted(data.items())])
+    data_check_string = build_telegram_data_check_string(data)
 
-    tokens_to_try = [t for t in [BOT_TOKEN, BOT_TOKEN_TEST] if t]
+    tokens_to_try = get_telegram_tokens_to_try(
+        bot_token=BOT_TOKEN,
+        bot_token_test=BOT_TOKEN_TEST,
+        logger=logger,
+    )
     if not tokens_to_try:
-        logger.error("No BOT_TOKEN or BOT_TOKEN_TEST configured!")
         return False
 
     for token in tokens_to_try:
@@ -132,18 +149,22 @@ def verify_telegram_webapp_initdata(init_data: str) -> Optional[dict]:
     if not received_hash:
         return None
 
-    import time
-
     auth_date = params.get("auth_date")
-    if not auth_date or time.time() - int(auth_date) > 900:
-        logger.error("Telegram WebApp auth_date is too old or missing.")
+    if not is_telegram_auth_date_fresh(
+        auth_date,
+        stale_log_message="Telegram WebApp auth_date is too old or missing.",
+        logger=logger,
+    ):
         return None
 
-    data_check_string = "\n".join([f"{k}={v}" for k, v in sorted(params.items())])
+    data_check_string = build_telegram_data_check_string(params)
 
-    tokens_to_try = [t for t in [BOT_TOKEN, BOT_TOKEN_TEST] if t]
+    tokens_to_try = get_telegram_tokens_to_try(
+        bot_token=BOT_TOKEN,
+        bot_token_test=BOT_TOKEN_TEST,
+        logger=logger,
+    )
     if not tokens_to_try:
-        logger.error("No BOT_TOKEN or BOT_TOKEN_TEST configured!")
         return None
 
     is_valid = False
@@ -184,16 +205,7 @@ async def authenticate_and_get_user(
             raise InvalidSignatureError(
                 "Invalid Telegram WebApp authentication signature."
             )
-
-        tg_id = user_data.get("id")
-        first_name = user_data.get("first_name", "")
-        last_name = user_data.get("last_name", "")
-        username = user_data.get("username", "")
-
-        full_name = first_name
-        if last_name:
-            full_name += f" {last_name}"
-        full_name = full_name.strip()
+        profile = build_telegram_auth_profile(user_data)
     elif widget_data:
         if (
             not widget_data.get("id")
@@ -206,28 +218,15 @@ async def authenticate_and_get_user(
 
         if not verify_telegram_authorization(widget_data):
             raise InvalidSignatureError("Invalid Telegram authentication signature.")
-
-        tg_id = widget_data.get("id")
-        first_name = widget_data.get("first_name", "")
-        last_name = widget_data.get("last_name", "")
-        username = widget_data.get("username", "")
-
-        full_name = first_name
-        if last_name:
-            full_name += f" {last_name}"
-        full_name = full_name.strip()
+        profile = build_telegram_auth_profile(widget_data)
     else:
         raise InvalidSignatureError("No authentication data provided.")
 
-    # Initialize language_code
-    language_code = None
-    if init_data:
-        language_code = user_data.get("language_code")
-    elif widget_data:
-        language_code = widget_data.get("language_code")
-
     user, _is_new = await get_or_create_user_by_telegram(
-        tg_id=tg_id, username=username, full_name=full_name, language_code=language_code
+        tg_id=profile.tg_id,
+        username=profile.username,
+        full_name=profile.full_name,
+        language_code=profile.language_code,
     )
 
     stats = await permission_service.get_user_detailed_stats(user.telegram_id)
@@ -240,46 +239,46 @@ async def authenticate_user_by_password(
 ) -> Tuple[User, dict]:
     redis = redis_client.redis
 
-    # 1. Rate limiting check via Lua script
-    ip_key = f"allbot:ratelimit:login:ip:{client_ip}"
-    user_key = f"allbot:ratelimit:login:user:{username.lower()}"
+    ip_key, user_key = build_login_rate_limit_keys(
+        client_ip=client_ip,
+        username=username,
+    )
 
-    is_locked = await redis.eval(CHECK_RATE_LIMIT_SCRIPT, 2, ip_key, user_key, 5)
-    if is_locked == 1:
+    if await is_rate_limited(
+        redis=redis,
+        ip_key=ip_key,
+        user_key=user_key,
+        max_attempts=5,
+        check_script=CHECK_RATE_LIMIT_SCRIPT,
+    ):
         raise RateLimitError("请求过于频繁，请稍后再试。")
 
     async with AsyncSessionLocal() as session:
-        # 2. Find user
-        stmt = (
-            select(User)
-            .where(text("lower(username) = :uname"))
-            .params(uname=username.lower())
-        )
-        result = await session.execute(stmt)
-        user = result.scalar_one_or_none()
-
-        # Dummy hash to prevent timing attacks
-        dummy_hash = "$2b$12$xGzN6R9UuP.BvA8aH3/1/.P7f1k4uX8q9Pz7vR5n3yO1l6t9uV2.O"
-        hashed_password = (
-            user.hashed_password if user and user.hashed_password else dummy_hash
+        login_attempt = await authenticate_password_credentials(
+            session=session,
+            username=username,
+            password=password,
+            verify_password_func=verify_password,
         )
 
-        # 3. Verify password
-        is_valid = await verify_password(password, hashed_password)
-
-        if not user or not user.hashed_password or not is_valid:
-            # Increment rate limits via Lua script (atomic)
-            await redis.eval(INCR_RATE_LIMIT_SCRIPT, 2, ip_key, user_key, 900)
+        if not login_attempt.is_valid or login_attempt.user is None:
+            await increment_rate_limit(
+                redis=redis,
+                ip_key=ip_key,
+                user_key=user_key,
+                expire_seconds=900,
+                incr_script=INCR_RATE_LIMIT_SCRIPT,
+            )
             raise InvalidCredentialsError("道号或密咒错误，或尝试次数过多。")
 
         # 4. Check web access
+        user = login_attempt.user
         if not await permission_service.check_web_access(user.id):
             raise InsufficientPermissionError(
                 "权限不足：只有练气期及以上境界，或内门及以上身份的弟子才能登录 Web 端"
             )
 
-        # 5. Success: clear rate limits
-        await redis.delete(ip_key, user_key)
+        await clear_rate_limit(redis=redis, ip_key=ip_key, user_key=user_key)
 
         stats = await permission_service.get_user_detailed_stats(user.telegram_id)
         return user, stats
@@ -290,45 +289,56 @@ async def bind_user_password(
 ) -> None:
     redis = redis_client.redis
 
-    # 1. Rate limiting check via Lua script
-    ip_key = f"allbot:ratelimit:bind:ip:{client_ip}"
-    user_key = f"allbot:ratelimit:bind:user:{user_id}"
+    ip_key, user_key = build_bind_rate_limit_keys(
+        client_ip=client_ip,
+        user_id=user_id,
+    )
 
-    is_locked = await redis.eval(CHECK_RATE_LIMIT_SCRIPT, 2, ip_key, user_key, 5)
-    if is_locked == 1:
+    if await is_rate_limited(
+        redis=redis,
+        ip_key=ip_key,
+        user_key=user_key,
+        max_attempts=5,
+        check_script=CHECK_RATE_LIMIT_SCRIPT,
+    ):
         raise RateLimitError("操作过于频繁，请稍后再试。")
 
     async with AsyncSessionLocal() as session:
-        user = await session.get(User, user_id)
-        if not user:
-            raise AuthCoreError("用户不存在。")
-
-        if not await permission_service.check_web_access(user.id):
-            raise InsufficientPermissionError(
+        user = await get_bindable_user(
+            session=session,
+            user_id=user_id,
+            check_web_access_func=permission_service.check_web_access,
+            user_not_found_error_factory=lambda: AuthCoreError("用户不存在。"),
+            insufficient_permission_error_factory=lambda: InsufficientPermissionError(
                 "权限不足：只有练气期及以上境界，或内门及以上身份的弟子才能绑定 Web 端账号"
-            )
-
-        # Hash password
-        hashed = await get_password_hash(password)
+            ),
+        )
 
         try:
-            user.username = username
-            user.hashed_password = hashed
-            user.password_version += 1
-            session.add(user)
-            await session.flush()  # flush to catch IntegrityError before commit
+            previous_password_version = await bind_password_to_user(
+                session=session,
+                user=user,
+                username=username,
+                password=password,
+                get_password_hash_func=get_password_hash,
+            )
         except IntegrityError:
             await session.rollback()
-            # Increment rate limits on failure
-            await redis.eval(INCR_RATE_LIMIT_SCRIPT, 2, ip_key, user_key, 900)
+            await increment_rate_limit(
+                redis=redis,
+                ip_key=ip_key,
+                user_key=user_key,
+                expire_seconds=900,
+                incr_script=INCR_RATE_LIMIT_SCRIPT,
+            )
             raise AuthCoreError("道号已被其他道友占用，请重新选择。")
 
         await session.commit()
 
-        # Success: clear rate limits
-        await redis.delete(ip_key, user_key)
+        await clear_rate_limit(redis=redis, ip_key=ip_key, user_key=user_key)
 
-        # Optional: session invalidation via Redis blacklisting could be added here
-        # block old version
-        blacklist_key = f"allbot:auth:blacklist:{user.id}:{user.password_version - 1}"
-        await redis.setex(blacklist_key, 604800, "1")  # 7 days
+        await blacklist_password_version(
+            redis=redis,
+            user_id=user.id,
+            password_version=previous_password_version,
+        )

@@ -128,3 +128,19 @@ async def send_history_record_to_telegram(*, task_id: str, current_user, db):
     await _post_telegram_upload(url, payload, files)
 
     return {"status": "success", "message": "已发送至您的 Telegram 私聊"}
+
+
+async def send_current_user_history_record_to_telegram(
+    *,
+    task_id: str,
+    current_user,
+    db,
+    service_fn=None,
+):
+    if service_fn is None:
+        service_fn = send_history_record_to_telegram
+    return await service_fn(
+        task_id=task_id,
+        current_user=current_user,
+        db=db,
+    )

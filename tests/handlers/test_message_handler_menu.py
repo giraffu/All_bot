@@ -1,4 +1,7 @@
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
+
+import pytest
 
 from src.handlers import message_handler_menu
 
@@ -64,3 +67,93 @@ def test_build_queue_status_message_includes_known_and_unknown_types():
     assert "T:task.img2img：`2` 个" in text
     assert "T:task.video_edit：`0` 个" in text
     assert "❓ 其他 (custom\\_x)：`1` 个" in text
+
+
+@pytest.mark.asyncio
+async def test_reply_with_built_payload_uses_message_and_optional_reply_markup():
+    reply_text = AsyncMock()
+    message = SimpleNamespace()
+    update = SimpleNamespace(effective_message=message, message=None, edited_message=None)
+
+    await message_handler_menu.reply_with_built_payload(
+        update,
+        reply_text=reply_text,
+        build_payload=lambda: ("hello", None),
+    )
+
+    reply_text.assert_awaited_once_with(
+        message,
+        "hello",
+        parse_mode="Markdown",
+    )
+
+
+@pytest.mark.asyncio
+async def test_reply_with_built_payload_supports_context_builder_and_reply_markup():
+    reply_text = AsyncMock()
+    message = SimpleNamespace()
+    update = SimpleNamespace(effective_message=message, message=None, edited_message=None)
+    context = _build_context()
+
+    await message_handler_menu.reply_with_built_payload(
+        update,
+        reply_text=reply_text,
+        build_payload=lambda ctx: (ctx.t("system.video_edit_hint"), "keyboard"),
+        context=context,
+    )
+
+    reply_text.assert_awaited_once_with(
+        message,
+        "translated:system.video_edit_hint",
+        parse_mode="Markdown",
+        reply_markup="keyboard",
+    )
+
+
+@pytest.mark.asyncio
+async def test_reply_with_async_payload_supports_tuple_payload_and_no_parse_mode():
+    reply_text = AsyncMock()
+    message = SimpleNamespace()
+    update = SimpleNamespace(effective_message=message, message=None, edited_message=None)
+
+    async def build_payload(*, context, user):
+        return (f"{context.lang}:{user.id}", "keyboard")
+
+    await message_handler_menu.reply_with_async_payload(
+        update,
+        reply_text=reply_text,
+        build_payload=build_payload,
+        parse_mode=None,
+        context=SimpleNamespace(lang="zh"),
+        user=SimpleNamespace(id=7),
+    )
+
+    reply_text.assert_awaited_once_with(
+        message,
+        "zh:7",
+        reply_markup="keyboard",
+    )
+
+
+@pytest.mark.asyncio
+async def test_reply_with_async_payload_supports_plain_text_payload():
+    reply_text = AsyncMock()
+    message = SimpleNamespace()
+    update = SimpleNamespace(effective_message=message, message=None, edited_message=None)
+
+    async def build_payload(*, context, task_type_display_names):
+        return f"{context.lang}:{sorted(task_type_display_names)}"
+
+    await message_handler_menu.reply_with_async_payload(
+        update,
+        reply_text=reply_text,
+        build_payload=build_payload,
+        context=SimpleNamespace(lang="en"),
+        task_type_display_names={"img2img": "task.img2img"},
+    )
+
+    reply_text.assert_awaited_once_with(
+        message,
+        "en:['img2img']",
+        parse_mode="Markdown",
+    )

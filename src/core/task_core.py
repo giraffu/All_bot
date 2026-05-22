@@ -1,9 +1,13 @@
 import asyncio
 import logging
-import os
 from typing import Optional
 
 from config import MINIO_BUCKET
+from src.core.task_core_input_preparation import (
+    prepare_task_submission_payload as _prepare_task_submission_payload_impl,
+    process_input_path as _process_input_path_impl,
+    validate_local_input_paths as _validate_local_input_paths_impl,
+)
 from src.core.media_paths import resolve_storage_object
 from src.core.media_processor import (
     extract_media_metadata_from_bytes_best_effort,
@@ -11,22 +15,27 @@ from src.core.media_processor import (
     generate_and_upload_thumbnail,
 )
 from src.core.task_core_finalization import (
-    finalize_task_cancellation,
-    finalize_task_failure,
-    finalize_terminated_task,
-    handle_failed_task_exception,
-    refund_cancelled_task,
-    refund_failed_task,
+    finalize_task_cancellation as _finalize_task_cancellation_impl,
+    finalize_task_failure as _finalize_task_failure_impl,
+    finalize_terminated_task as _finalize_terminated_task_impl,
+    handle_failed_task_exception as _handle_failed_task_exception_impl,
+    refund_cancelled_task as _refund_cancelled_task_impl,
+    refund_failed_task as _refund_failed_task_impl,
 )
 from src.core.task_core_persistence import (
-    _persist_successful_web_history,
-    persist_successful_task_result,
-    schedule_web_history_r2_warmup,
+    _persist_successful_web_history as _persist_successful_web_history_impl,
+    persist_successful_task_result as _persist_successful_task_result_impl,
+)
+from src.core.task_core_submission import (
+    compensate_failed_submission as _compensate_failed_submission_impl,
+    dispatch_registered_task as _dispatch_registered_task_impl,
+    execute_task_submission_saga as _execute_task_submission_saga_impl,
+    register_task_submission as _register_task_submission_impl,
 )
 from src.core.task_core_runtime import (
     cancel_user_task,
-    cleanup_task_runtime_state,
-    force_terminate_task,
+    cleanup_task_runtime_state as _cleanup_task_runtime_state_impl,
+    force_terminate_task as _force_terminate_task_impl,
     get_system_task_stats,
     sync_user_concurrency,
 )
@@ -47,6 +56,16 @@ from src.core.task_core_types import (
     infer_requested_output_metadata,
     is_task_backend_busy_error,
     normalize_terminal_status,
+)
+from src.core.task_core_web_monitor import (
+    attach_web_task_monitor as _attach_web_task_monitor_impl,
+    finalize_monitored_web_task_cancellation as _finalize_monitored_web_task_cancellation_impl,
+    finalize_monitored_web_task_failure as _finalize_monitored_web_task_failure_impl,
+    finalize_monitored_web_task_success as _finalize_monitored_web_task_success_impl,
+    monitor_task_and_release_lock as _monitor_task_and_release_lock_impl,
+)
+from src.core.task_core_web_history_warmup import (
+    schedule_web_history_r2_warmup as _schedule_web_history_r2_warmup_impl,
 )
 from src.logger import UserLogger
 from src.services.image_service import image_service
@@ -95,31 +114,277 @@ _infer_requested_output_metadata = infer_requested_output_metadata
 _infer_requested_billing_resolution = infer_requested_billing_resolution
 
 
-async def _process_input_path(user_logger: UserLogger, path: str) -> str:
-    if not path:
-        return ""
-    if path.startswith("template:"):
-        return path
-    if path.startswith(f"{MINIO_BUCKET}/"):
-        return path.replace(f"{MINIO_BUCKET}/", "", 1)
+def schedule_web_history_r2_warmup(
+    *,
+    user_id: int,
+    task_id: str,
+    output_file: str,
+    media_type: str,
+    source: str,
+):
+    return _schedule_web_history_r2_warmup_impl(
+        user_id=user_id,
+        task_id=task_id,
+        output_file=output_file,
+        media_type=media_type,
+        source=source,
+        resolve_storage_object_func=resolve_storage_object,
+        copy_to_r2_func=storage.async_copy_to_r2,
+        generate_and_upload_thumbnail_func=generate_and_upload_thumbnail,
+        prune_user_web_history_r2_cache_func=storage.async_prune_user_web_history_r2_cache,
+        logger=logger,
+        create_task_func=asyncio.create_task,
+    )
 
-    # Existing history records may already store a plain object key without bucket prefix.
-    # Only treat the value as a local file when it is an absolute path or actually exists on disk.
-    is_local_file = os.path.isabs(path) or os.path.exists(path)
-    if not is_local_file:
-        return path
 
-    if not os.path.exists(path):
-        raise CoreDomainError(f"本地输入文件不存在，无法继续派发任务: {path}")
+async def cleanup_task_runtime_state(
+    *,
+    internal_user_id: int,
+    registry_task_id: str | None,
+    release_lock: bool = True,
+):
+    return await _cleanup_task_runtime_state_impl(
+        internal_user_id=internal_user_id,
+        registry_task_id=registry_task_id,
+        release_lock=release_lock,
+        release_concurrency_lock_func=release_concurrency_lock,
+        remove_task_func=TaskRegistry.remove_task,
+    )
 
-    # Upload local files to MinIO before dispatching to workers.
-    import asyncio
 
-    processed = await asyncio.to_thread(user_logger.save_input_image, path)
-    if processed:
-        return processed
+async def force_terminate_task(task_id: str, user_id: int | None = None):
+    return await _force_terminate_task_impl(
+        task_id,
+        user_id=user_id,
+        cleanup_task_runtime_state_func=cleanup_task_runtime_state,
+    )
 
-    raise CoreDomainError(f"本地输入文件上传失败，无法继续派发任务: {path}")
+
+async def persist_successful_task_result(
+    *,
+    backend_task_id: str,
+    registry_task_id: str,
+    internal_user_id: int,
+    username: str,
+    prompt: str,
+    task_type: str,
+    input_images: list[str],
+    allow_contribute: bool,
+    is_video: bool,
+    billing_resolution: str | None,
+    requested_duration: int | None,
+    output_width: int | None = None,
+    output_height: int | None = None,
+    output_duration: int | None = None,
+    result_path: str | None = None,
+    source: str = "bot",
+    refresh_user_group_after_log: bool = False,
+    warmup_web_history: bool = False,
+) -> TaskSuccessPersistenceResult:
+    return await _persist_successful_task_result_impl(
+        backend_task_id=backend_task_id,
+        registry_task_id=registry_task_id,
+        internal_user_id=internal_user_id,
+        username=username,
+        prompt=prompt,
+        task_type=task_type,
+        input_images=input_images,
+        allow_contribute=allow_contribute,
+        is_video=is_video,
+        billing_resolution=billing_resolution,
+        requested_duration=requested_duration,
+        output_width=output_width,
+        output_height=output_height,
+        output_duration=output_duration,
+        result_path=result_path,
+        source=source,
+        refresh_user_group_after_log=refresh_user_group_after_log,
+        warmup_web_history=warmup_web_history,
+        user_logger_factory=UserLogger,
+        extract_media_metadata_from_bytes_best_effort_func=extract_media_metadata_from_bytes_best_effort,
+        extract_media_metadata_from_storage_best_effort_func=extract_media_metadata_from_storage_best_effort,
+        schedule_web_history_r2_warmup_func=schedule_web_history_r2_warmup,
+        refresh_user_group_func=None,
+    )
+
+
+async def _persist_successful_web_history(
+    *,
+    backend_task_id: str,
+    registry_task_id: str,
+    internal_user_id: int,
+    username: str,
+    prompt: str,
+    task_type: str,
+    input_images: list[str],
+    allow_contribute: bool,
+    is_video: bool,
+    result_path: str,
+    billing_resolution: str | None,
+    output_width: int | None,
+    output_height: int | None,
+    output_duration: int | None,
+    requested_duration: int | None,
+):
+    return await _persist_successful_web_history_impl(
+        backend_task_id=backend_task_id,
+        registry_task_id=registry_task_id,
+        internal_user_id=internal_user_id,
+        username=username,
+        prompt=prompt,
+        task_type=task_type,
+        input_images=input_images,
+        allow_contribute=allow_contribute,
+        is_video=is_video,
+        result_path=result_path,
+        billing_resolution=billing_resolution,
+        output_width=output_width,
+        output_height=output_height,
+        output_duration=output_duration,
+        requested_duration=requested_duration,
+        persist_successful_task_result_func=persist_successful_task_result,
+    )
+
+
+async def refund_cancelled_task(
+    *,
+    internal_user_id: int,
+    username: str,
+    cost: int,
+    task_submitted: bool,
+) -> bool:
+    return await _refund_cancelled_task_impl(
+        internal_user_id=internal_user_id,
+        username=username,
+        cost=cost,
+        task_submitted=task_submitted,
+        refund_credits_func=refund_credits,
+    )
+
+
+async def refund_failed_task(
+    *,
+    internal_user_id: int,
+    username: str,
+    cost: int,
+    should_refund: bool,
+) -> bool:
+    return await _refund_failed_task_impl(
+        internal_user_id=internal_user_id,
+        username=username,
+        cost=cost,
+        should_refund=should_refund,
+        refund_credits_func=refund_credits,
+    )
+
+
+async def handle_failed_task_exception(
+    *,
+    internal_user_id: int,
+    username: str,
+    cost: int,
+    should_refund: bool,
+    error: Exception,
+    generic_error_prefix: str,
+    refund_suffix_mode: str = "if_refunded",
+) -> str:
+    return await _handle_failed_task_exception_impl(
+        internal_user_id=internal_user_id,
+        username=username,
+        cost=cost,
+        should_refund=should_refund,
+        error=error,
+        generic_error_prefix=generic_error_prefix,
+        refund_suffix_mode=refund_suffix_mode,
+        refund_credits_func=refund_credits,
+    )
+
+
+async def finalize_task_failure(
+    *,
+    internal_user_id: int,
+    username: str,
+    cost: int,
+    should_refund: bool,
+    registry_task_id: str | None,
+    release_lock: bool = True,
+    refund_task_type: str = "refund",
+    error: Exception | None = None,
+    generic_error_prefix: str | None = None,
+    explicit_user_message: str | None = None,
+    refund_suffix_mode: str = "if_refunded",
+) -> TaskFailureFinalizationResult:
+    return await _finalize_task_failure_impl(
+        internal_user_id=internal_user_id,
+        username=username,
+        cost=cost,
+        should_refund=should_refund,
+        registry_task_id=registry_task_id,
+        release_lock=release_lock,
+        refund_task_type=refund_task_type,
+        error=error,
+        generic_error_prefix=generic_error_prefix,
+        explicit_user_message=explicit_user_message,
+        refund_suffix_mode=refund_suffix_mode,
+        refund_credits_func=refund_credits,
+        cleanup_task_runtime_state_func=cleanup_task_runtime_state,
+    )
+
+
+async def finalize_task_cancellation(
+    *,
+    internal_user_id: int,
+    username: str,
+    cost: int,
+    task_submitted: bool,
+    registry_task_id: str | None,
+    release_lock: bool = True,
+    explicit_user_message: str | None = None,
+) -> TaskCancellationFinalizationResult:
+    return await _finalize_task_cancellation_impl(
+        internal_user_id=internal_user_id,
+        username=username,
+        cost=cost,
+        task_submitted=task_submitted,
+        registry_task_id=registry_task_id,
+        release_lock=release_lock,
+        explicit_user_message=explicit_user_message,
+        refund_cancelled_task_func=refund_cancelled_task,
+        cleanup_task_runtime_state_func=cleanup_task_runtime_state,
+    )
+
+
+async def finalize_terminated_task(
+    *,
+    registry_task_id: str,
+    user_id: int | None,
+    username: str,
+    cost: int,
+    should_refund: bool,
+    refund_task_type: str,
+) -> TaskTerminationFinalizationResult:
+    return await _finalize_terminated_task_impl(
+        registry_task_id=registry_task_id,
+        user_id=user_id,
+        username=username,
+        cost=cost,
+        should_refund=should_refund,
+        refund_task_type=refund_task_type,
+        force_terminate_task_func=force_terminate_task,
+        refund_credits_func=refund_credits,
+    )
+
+
+async def _process_input_path(
+    user_logger: UserLogger,
+    path: str,
+    bucket_name: str = MINIO_BUCKET,
+) -> str:
+    return await _process_input_path_impl(
+        user_logger=user_logger,
+        path=path,
+        bucket_name=bucket_name,
+    )
 
 
 from src.core.billing_core import (
@@ -131,17 +396,15 @@ from src.core.billing_core import (
 )
 from src.core.task_dispatcher import StrategyFactory, dispatch_to_worker
 from src.utils import load_prompts
-import contextlib
 
-def _validate_local_input_paths(paths_to_upload: list[str]):
-    for path in paths_to_upload:
-        if not path:
-            continue
-        if path.startswith("template:") or path.startswith(f"{MINIO_BUCKET}/"):
-            continue
-        is_local_file = os.path.isabs(path) or os.path.exists(path)
-        if is_local_file and not os.path.exists(path):
-            raise CoreDomainError(f"本地输入文件不存在，无法继续派发任务: {path}")
+def _validate_local_input_paths(
+    paths_to_upload: list[str],
+    bucket_name: str = MINIO_BUCKET,
+):
+    _validate_local_input_paths_impl(
+        paths_to_upload=paths_to_upload,
+        bucket_name=bucket_name,
+    )
 
 
 async def _prepare_task_submission_payload(
@@ -156,40 +419,36 @@ async def _prepare_task_submission_payload(
     is_video_task: bool,
     video_request: VideoTaskRequest,
 ) -> TaskSubmissionContext:
-    user_logger = UserLogger(user_id, username)
-    paths_to_upload = strategy.get_file_paths_to_upload(inputs)
-    _validate_local_input_paths(paths_to_upload)
+    def _validate_local_input_paths_adapter(*, paths_to_upload: list[str], bucket_name: str):
+        _ = bucket_name
+        _validate_local_input_paths(paths_to_upload)
 
-    priority, _, _ = await get_user_priority_and_identity(user_id)
-    final_priority = min(base_priority + priority, 100)
+    async def _process_input_path_adapter(
+        *,
+        user_logger: UserLogger,
+        path: str,
+        bucket_name: str,
+    ) -> str:
+        _ = bucket_name
+        return await _process_input_path(user_logger, path)
 
-    prompts_config = load_prompts()
-    prompt = inputs.get("prompt")
-    if not prompt or prompt.strip() == "":
-        prompt = prompts_config.get(task_type, task_type)
-
-    saved_inputs = []
-    for path in paths_to_upload:
-        processed_img = await _process_input_path(user_logger, path)
-        if processed_img:
-            saved_inputs.append(processed_img)
-
-    allow_contribute = not is_template
-    submission_context = TaskSubmissionContext(
+    return await _prepare_task_submission_payload_impl(
+        user_id=user_id,
+        username=username,
         task_type=task_type,
+        inputs=inputs,
+        strategy=strategy,
+        base_priority=base_priority,
+        is_template=is_template,
         is_video_task=is_video_task,
-        user_logger=user_logger,
-        prompt=prompt,
-        saved_inputs=saved_inputs,
-        metadata={},
-        allow_contribute=allow_contribute,
-        final_priority=final_priority,
         video_request=video_request,
+        user_logger_factory=UserLogger,
+        validate_local_input_paths_func=_validate_local_input_paths_adapter,
+        get_user_priority_and_identity_func=get_user_priority_and_identity,
+        load_prompts_func=load_prompts,
+        process_input_path_func=_process_input_path_adapter,
+        bucket_name=MINIO_BUCKET,
     )
-    submission_context.apply_to_inputs(inputs)
-    metadata = strategy.get_metadata(inputs)
-    submission_context.metadata = metadata
-    return submission_context
 
 
 async def _register_task_submission(
@@ -200,18 +459,13 @@ async def _register_task_submission(
     cost: int,
     submission_context: TaskSubmissionContext,
 ) -> str:
-    return await TaskRegistry.add_task(
-        task_id=registry_task_id,
+    return await _register_task_submission_impl(
+        registry_task_id=registry_task_id,
         user_id=user_id,
         username=username,
         cost=cost,
-        task_type=submission_context.task_type,
-        prompt=submission_context.log_prompt,
-        saved_input_images=submission_context.registry_saved_inputs(),
-        is_video=submission_context.is_video_task,
-        priority=submission_context.final_priority,
-        allow_contribute=submission_context.allow_contribute,
-        metadata=submission_context.metadata,
+        submission_context=submission_context,
+        add_task_func=TaskRegistry.add_task,
     )
 
 
@@ -222,24 +476,17 @@ async def _dispatch_registered_task(
     inputs: dict,
     final_priority: int,
 ) -> str:
-    try:
-        backend_task_id = await dispatch_to_worker(
-            registry_task_id, task_type, inputs, final_priority
-        )
-        if registry_task_id and backend_task_id:
-            await TaskRegistry.update_backend_task_id(registry_task_id, backend_task_id)
-        if not backend_task_id:
-            raise Exception("Failed to submit task to backend API.")
-        return backend_task_id
-    except Exception as e:
-        logger.error(f"Dispatch to worker failed: {e}", exc_info=True)
-        if registry_task_id:
-            with contextlib.suppress(Exception):
-                await TaskRegistry.mark_task_status(registry_task_id, "failed")
-        error_msg = str(e)
-        if is_task_backend_busy_error(error_msg):
-            raise CoreDomainError("当前服务器繁忙，请稍后再试") from e
-        raise CoreDomainError(f"System error: {error_msg}") from e
+    return await _dispatch_registered_task_impl(
+        registry_task_id=registry_task_id,
+        task_type=task_type,
+        inputs=inputs,
+        final_priority=final_priority,
+        dispatch_to_worker_func=dispatch_to_worker,
+        update_backend_task_id_func=TaskRegistry.update_backend_task_id,
+        mark_task_status_func=TaskRegistry.mark_task_status,
+        is_task_backend_busy_error_func=is_task_backend_busy_error,
+        logger=logger,
+    )
 
 
 async def _execute_task_submission_saga(
@@ -250,25 +497,14 @@ async def _execute_task_submission_saga(
     cost: int,
     submission_context: TaskSubmissionContext,
 ) -> TaskSubmissionExecutionResult:
-    registry_task_id = await _register_task_submission(
-        registry_task_id=registry_task_id,
-        user_id=submission_context.user_logger.user_id,
-        username=submission_context.user_logger.username,
-        cost=cost,
-        submission_context=submission_context,
-    )
-
-    backend_task_id = await _dispatch_registered_task(
-        registry_task_id=registry_task_id,
+    return await _execute_task_submission_saga_impl(
         task_type=task_type,
         inputs=inputs,
-        final_priority=submission_context.final_priority,
-    )
-
-    return TaskSubmissionExecutionResult(
         registry_task_id=registry_task_id,
-        backend_task_id=backend_task_id,
+        cost=cost,
         submission_context=submission_context,
+        register_task_submission_func=_register_task_submission,
+        dispatch_registered_task_func=_dispatch_registered_task,
     )
 
 
@@ -281,28 +517,20 @@ async def _compensate_failed_submission(
     credits_deducted: bool,
     registry_task_id: str,
 ):
-    if credits_deducted:
-        try:
-            await asyncio.shield(
-                refund_credits(
-                    user_id,
-                    cost,
-                    task_type="refund_saga_failed",
-                    username=username,
-                )
-            )
-        except Exception as refund_err:
-            logger.critical(
-                f"REFUND FAILED! Log to Outbox. User: {user_id}, Amount: {cost}, Error: {refund_err}"
-            )
-            from src.services.redis_client import redis_client
+    from src.services.redis_client import redis_client
 
-            await redis_client.add_pending_refund(
-                user_id, cost, f"Task Failed: {str(error)}", username
-            )
-
-    with contextlib.suppress(Exception):
-        await asyncio.shield(TaskRegistry.remove_task(registry_task_id))
+    await _compensate_failed_submission_impl(
+        user_id=user_id,
+        username=username,
+        cost=cost,
+        error=error,
+        credits_deducted=credits_deducted,
+        registry_task_id=registry_task_id,
+        refund_credits_func=refund_credits,
+        add_pending_refund_func=redis_client.add_pending_refund,
+        remove_task_func=TaskRegistry.remove_task,
+        logger=logger,
+    )
 
 
 def _attach_web_task_monitor(
@@ -314,15 +542,14 @@ def _attach_web_task_monitor(
     submission_context: TaskSubmissionContext,
     cost: int,
 ):
-    asyncio.create_task(
-        monitor_task_and_release_lock(
-            backend_task_id=backend_task_id,
-            internal_user_id=internal_user_id,
-            username=username,
-            registry_task_id=registry_task_id,
-            submission_context=submission_context,
-            cost=cost,
-        )
+    _attach_web_task_monitor_impl(
+        backend_task_id=backend_task_id,
+        internal_user_id=internal_user_id,
+        username=username,
+        registry_task_id=registry_task_id,
+        submission_context=submission_context,
+        cost=cost,
+        monitor_web_task_func=monitor_task_and_release_lock,
     )
 
 
@@ -370,31 +597,16 @@ async def _finalize_monitored_web_task_success(
     submission_context: TaskSubmissionContext,
     result_path: str,
 ):
-    try:
-        await _persist_successful_web_history(
-            backend_task_id=backend_task_id,
-            registry_task_id=registry_task_id,
-            internal_user_id=internal_user_id,
-            username=username,
-            prompt=submission_context.log_prompt,
-            task_type=submission_context.task_type,
-            input_images=submission_context.saved_inputs,
-            allow_contribute=submission_context.allow_contribute,
-            is_video=submission_context.is_video_task,
-            result_path=result_path,
-            billing_resolution=submission_context.billing_resolution,
-            output_width=submission_context.output_width,
-            output_height=submission_context.output_height,
-            output_duration=submission_context.output_duration,
-            requested_duration=submission_context.requested_duration,
-        )
-    except Exception as log_err:
-        logger.error(
-            f"Failed to log task history for {registry_task_id}: {log_err}"
-        )
-    await cleanup_task_runtime_state(
+    await _finalize_monitored_web_task_success_impl(
+        backend_task_id=backend_task_id,
         internal_user_id=internal_user_id,
+        username=username,
         registry_task_id=registry_task_id,
+        submission_context=submission_context,
+        result_path=result_path,
+        persist_successful_web_history_func=_persist_successful_web_history,
+        cleanup_task_runtime_state_func=cleanup_task_runtime_state,
+        logger=logger,
     )
 
 
@@ -405,18 +617,14 @@ async def _finalize_monitored_web_task_cancellation(
     cost: int,
     registry_task_id: str,
 ):
-    try:
-        await finalize_task_cancellation(
-            internal_user_id=internal_user_id,
-            username=username,
-            cost=cost,
-            task_submitted=True,
-            registry_task_id=registry_task_id,
-        )
-    except Exception as refund_err:
-        logger.critical(
-            f"Async cancellation finalize failed for user {internal_user_id}: {refund_err}"
-        )
+    await _finalize_monitored_web_task_cancellation_impl(
+        internal_user_id=internal_user_id,
+        username=username,
+        cost=cost,
+        registry_task_id=registry_task_id,
+        finalize_task_cancellation_func=finalize_task_cancellation,
+        logger=logger,
+    )
 
 
 async def _finalize_monitored_web_task_failure(
@@ -427,19 +635,15 @@ async def _finalize_monitored_web_task_failure(
     registry_task_id: str,
     final_status: str | None,
 ):
-    try:
-        await finalize_task_failure(
-            internal_user_id=internal_user_id,
-            username=username,
-            cost=cost,
-            should_refund=cost > 0,
-            registry_task_id=registry_task_id,
-            refund_task_type=f"refund_async_failed_{final_status}",
-        )
-    except Exception as refund_err:
-        logger.critical(
-            f"Async refund failed for user {internal_user_id}: {refund_err}"
-        )
+    await _finalize_monitored_web_task_failure_impl(
+        internal_user_id=internal_user_id,
+        username=username,
+        cost=cost,
+        registry_task_id=registry_task_id,
+        final_status=final_status,
+        finalize_task_failure_func=finalize_task_failure,
+        logger=logger,
+    )
 
 async def monitor_task_and_release_lock(
     backend_task_id: str,
@@ -452,54 +656,20 @@ async def monitor_task_and_release_lock(
     """
     Background task to monitor progress and release concurrency lock.
     """
-    import asyncio
-
-    final_status = None
-    result_path = None
-    try:
-        async for progress in image_service.monitor_progress(
-            backend_task_id, submission_context.is_video_task
-        ):
-            normalized_status = normalize_terminal_status(progress.get("status"))
-            if normalized_status in [
-                "done",
-                "error",
-                "cancelled",
-            ]:
-                final_status = normalized_status
-                result_path = progress.get("result_path")
-                break
-    except asyncio.CancelledError:
-        logger.error(f"Task monitor {backend_task_id} cancelled.")
-        final_status = "cancelled"
-    except Exception as e:
-        logger.error(f"Background monitoring error for task {backend_task_id}: {e}")
-        final_status = "error"
-    finally:
-        if final_status == "done" and result_path:
-            await _finalize_monitored_web_task_success(
-                backend_task_id=backend_task_id,
-                internal_user_id=internal_user_id,
-                username=username,
-                registry_task_id=registry_task_id,
-                submission_context=submission_context,
-                result_path=result_path,
-            )
-        elif final_status == "cancelled":
-            await _finalize_monitored_web_task_cancellation(
-                internal_user_id=internal_user_id,
-                username=username,
-                cost=cost,
-                registry_task_id=registry_task_id,
-            )
-        else:
-            await _finalize_monitored_web_task_failure(
-                internal_user_id=internal_user_id,
-                username=username,
-                cost=cost,
-                registry_task_id=registry_task_id,
-                final_status=final_status,
-            )
+    await _monitor_task_and_release_lock_impl(
+        backend_task_id=backend_task_id,
+        internal_user_id=internal_user_id,
+        username=username,
+        registry_task_id=registry_task_id,
+        submission_context=submission_context,
+        cost=cost,
+        monitor_progress_func=image_service.monitor_progress,
+        normalize_terminal_status_func=normalize_terminal_status,
+        finalize_success_func=_finalize_monitored_web_task_success,
+        finalize_cancellation_func=_finalize_monitored_web_task_cancellation,
+        finalize_failure_func=_finalize_monitored_web_task_failure,
+        logger=logger,
+    )
 
 
 async def process_and_submit_task(

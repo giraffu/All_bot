@@ -75,6 +75,82 @@ async def test_handle_media_message_routes_by_mode():
 
 
 @pytest.mark.asyncio
+async def test_handle_media_entry_short_circuits_when_not_mentioned():
+    is_mentioned = MagicMock(return_value=False)
+    ensure_access = AsyncMock(return_value=True)
+    handle_media = AsyncMock()
+
+    result = await message_handler_media.handle_media_entry(
+        SimpleNamespace(message=SimpleNamespace()),
+        SimpleNamespace(user_data={}),
+        is_mentioned=is_mentioned,
+        ensure_access_and_reward=ensure_access,
+        on_template_contribution=AsyncMock(),
+        on_photo_idle=AsyncMock(),
+        handle_media_message_fn=handle_media,
+    )
+
+    assert result is None
+    is_mentioned.assert_called_once()
+    ensure_access.assert_not_awaited()
+    handle_media.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_handle_media_entry_short_circuits_when_access_denied():
+    is_mentioned = MagicMock(return_value=True)
+    ensure_access = AsyncMock(return_value=False)
+    handle_media = AsyncMock()
+    update = SimpleNamespace(message=SimpleNamespace())
+    context = SimpleNamespace(user_data={})
+
+    result = await message_handler_media.handle_media_entry(
+        update,
+        context,
+        is_mentioned=is_mentioned,
+        ensure_access_and_reward=ensure_access,
+        on_template_contribution=AsyncMock(),
+        on_photo_idle=AsyncMock(),
+        handle_media_message_fn=handle_media,
+    )
+
+    assert result is None
+    ensure_access.assert_awaited_once_with(update, context)
+    handle_media.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_handle_media_entry_forwards_unsupported_message_and_handlers():
+    is_mentioned = MagicMock(return_value=True)
+    ensure_access = AsyncMock(return_value=True)
+    template_handler = AsyncMock()
+    photo_idle_handler = AsyncMock()
+    handle_media = AsyncMock(return_value="handled")
+    update = SimpleNamespace(message=SimpleNamespace())
+    context = SimpleNamespace(user_data={})
+
+    result = await message_handler_media.handle_media_entry(
+        update,
+        context,
+        unsupported_message="unsupported",
+        is_mentioned=is_mentioned,
+        ensure_access_and_reward=ensure_access,
+        on_template_contribution=template_handler,
+        on_photo_idle=photo_idle_handler,
+        handle_media_message_fn=handle_media,
+    )
+
+    assert result == "handled"
+    handle_media.assert_awaited_once_with(
+        update,
+        context,
+        unsupported_message="unsupported",
+        on_template_contribution=template_handler,
+        on_photo_idle=photo_idle_handler,
+    )
+
+
+@pytest.mark.asyncio
 async def test_handle_template_contribution_saves_upload_and_updates_counter(monkeypatch):
     reply_mock = AsyncMock()
     upload_mock = MagicMock()

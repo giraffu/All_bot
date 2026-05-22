@@ -1,11 +1,4 @@
-import logging
-
 from fastapi import APIRouter, Query
-
-from src.database.models import GalleryPost
-from src.core.media_processor import (
-    extract_media_metadata_from_storage,
-)
 from src.web_api.dependencies import (
     CurrentUserDep,
     DbSessionDep,
@@ -26,31 +19,25 @@ from src.web_api.schemas.gallery_schema import (
     PaginatedGalleryResponse,
     ApplyContextResponse,
 )
-from src.web_api.routers.utils import (
-    build_storage_input_file_url,
-    resolve_history_billing_resolution,
-)
-from src.web_api.presenters.media_presenter import resolve_history_media_urls
 from fastapi import BackgroundTasks
-from src.web_api.services.history_delivery_service import send_history_record_to_telegram
+from src.web_api.services.history_delivery_service import (
+    send_current_user_history_record_to_telegram,
+)
 from src.web_api.services.users_history_service import (
-    build_gallery_post_map as service_build_gallery_post_map,
-    get_history_apply_context_payload,
+    get_default_user_history_payload,
+    get_history_apply_context_for_current_user,
     get_my_favorites_payload,
-    get_user_history_payload,
-    pick_history_media_urls as service_pick_history_media_urls,
-    pick_preferred_gallery_post as service_pick_preferred_gallery_post,
 )
 from src.web_api.services.user_preferences_service import (
-    update_user_language_preference,
+    update_current_user_preferences_payload,
 )
 from src.web_api.services.user_profile_service import (
     get_current_user_profile_payload,
     perform_user_checkin,
 )
 from src.web_api.services.user_affiliate_redeem_api_service import (
-    redeem_user_affiliate_credits_payload,
-    redeem_user_affiliate_membership_payload,
+    redeem_current_user_affiliate_credits_payload,
+    redeem_current_user_affiliate_membership_payload,
 )
 from src.web_api.services.users_history_mutation_service import (
     favorite_user_history,
@@ -59,34 +46,6 @@ from src.web_api.services.users_history_mutation_service import (
 )
 
 router = APIRouter()
-logger = logging.getLogger(__name__)
-
-
-# Backward-compatible test seam for focused users_* router tests.
-async def _pick_history_media_urls(
-    *,
-    task_id: str | None,
-    output_file: str | None,
-    history_type: str | None,
-) -> tuple[str, str]:  # pyright: ignore[reportUnusedFunction]
-    return await service_pick_history_media_urls(
-        resolve_history_media_urls=resolve_history_media_urls,
-        task_id=task_id,
-        output_file=output_file,
-        history_type=history_type,
-    )
-
-
-def _pick_preferred_gallery_post(
-    posts: list[GalleryPost] | tuple[GalleryPost, ...],
-) -> GalleryPost | None:  # pyright: ignore[reportUnusedFunction]
-    return service_pick_preferred_gallery_post(posts)
-
-
-def _build_gallery_post_map(
-    posts: list[GalleryPost],
-) -> dict[str, GalleryPost]:  # pyright: ignore[reportUnusedFunction]
-    return service_build_gallery_post_map(posts)
 
 
 @router.get("/me", response_model=UserResponse)
@@ -106,11 +65,10 @@ async def redeem_current_user_affiliate_credits(
     current_user: CurrentUserDep,
     db: DbSessionDep,
 ) -> AffiliateCreditsRedeemResponse:
-    return await redeem_user_affiliate_credits_payload(
+    return await redeem_current_user_affiliate_credits_payload(
+        payload=payload,
+        current_user=current_user,
         db=db,
-        user_id=current_user.id,
-        amount_usdt=payload.amount_usdt,
-        idempotency_key=payload.idempotency_key,
     )
 
 
@@ -123,11 +81,10 @@ async def redeem_current_user_affiliate_membership(
     current_user: CurrentUserDep,
     db: DbSessionDep,
 ) -> AffiliateMembershipRedeemResponse:
-    return await redeem_user_affiliate_membership_payload(
+    return await redeem_current_user_affiliate_membership_payload(
+        payload=payload,
+        current_user=current_user,
         db=db,
-        user_id=current_user.id,
-        option_key=payload.option_key,
-        idempotency_key=payload.idempotency_key,
     )
 
 
@@ -140,10 +97,10 @@ async def update_user_preferences(
     """
     Update user preferences like language_code.
     """
-    return await update_user_language_preference(
+    return await update_current_user_preferences_payload(
+        prefs=prefs,
+        current_user=current_user,
         db=db,
-        user_id=current_user.id,
-        language_code=prefs.language_code,
     )
 
 
@@ -156,12 +113,7 @@ async def get_user_history(
     Get generation history for the current user, limited to the 8 most recent items
     to save VPS bandwidth, reduce CDN caching pressure, and protect privacy.
     """
-    return await get_user_history_payload(
-        current_user=current_user,
-        db=db,
-        resolve_history_media_urls=resolve_history_media_urls,
-        limit=8,
-    )
+    return await get_default_user_history_payload(current_user=current_user, db=db)
 
 
 @router.post("/checkin", response_model=CheckinResponse)
@@ -227,8 +179,6 @@ async def get_my_favorites(
         task_type=task_type,
         current_user=current_user,
         db=db,
-        resolve_history_media_urls=resolve_history_media_urls,
-        resolve_history_billing_resolution=resolve_history_billing_resolution,
     )
 
 
@@ -238,13 +188,10 @@ async def get_favorite_apply_context(
     current_user: CurrentUserDep,
     db: DbSessionDep,
 ):
-    return await get_history_apply_context_payload(
+    return await get_history_apply_context_for_current_user(
         task_id=task_id,
-        user_id=current_user.id,
+        current_user=current_user,
         db=db,
-        build_input_file_url=build_storage_input_file_url,
-        probe_media_metadata=extract_media_metadata_from_storage,
-        logger=logger,
     )
 
 
@@ -254,7 +201,7 @@ async def send_history_to_bot(
     current_user: CurrentUserDep,
     db: DbSessionDep,
 ):
-    return await send_history_record_to_telegram(
+    return await send_current_user_history_record_to_telegram(
         task_id=task_id,
         current_user=current_user,
         db=db,

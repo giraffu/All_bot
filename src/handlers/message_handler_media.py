@@ -28,6 +28,32 @@ async def handle_media_message(
     return await on_photo_idle(update, context)
 
 
+async def handle_media_entry(
+    update: Update,
+    context,
+    *,
+    unsupported_message: str | None = None,
+    is_mentioned,
+    ensure_access_and_reward,
+    on_template_contribution,
+    on_photo_idle,
+    handle_media_message_fn=None,
+):
+    if handle_media_message_fn is None:
+        handle_media_message_fn = handle_media_message
+    if not is_mentioned(update, context):
+        return None
+    if not await ensure_access_and_reward(update, context):
+        return None
+    return await handle_media_message_fn(
+        update,
+        context,
+        unsupported_message=unsupported_message,
+        on_template_contribution=on_template_contribution,
+        on_photo_idle=on_photo_idle,
+    )
+
+
 async def handle_photo_idle(update: Update, context):
     now = time.time()
     last_reminder = context.user_data.get("last_reminder_time", 0)

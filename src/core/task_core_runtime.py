@@ -2,6 +2,7 @@ import logging
 
 import httpx
 
+from src.core.billing_core import release_concurrency_lock
 from src.core.task_core_types import CoreDomainError
 from src.services.task_registry import TaskRegistry
 
@@ -13,12 +14,12 @@ async def cleanup_task_runtime_state(
     internal_user_id: int,
     registry_task_id: str | None,
     release_lock: bool = True,
+    release_concurrency_lock_func=release_concurrency_lock,
+    remove_task_func=TaskRegistry.remove_task,
 ):
-    from src.core import task_core as compat_task_core
-
     if release_lock:
         try:
-            await compat_task_core.release_concurrency_lock(internal_user_id)
+            await release_concurrency_lock_func(internal_user_id)
         except Exception as e:
             logger.error(
                 f"Failed to release concurrency lock for {internal_user_id}: {e}"
@@ -26,7 +27,7 @@ async def cleanup_task_runtime_state(
 
     if registry_task_id:
         try:
-            await TaskRegistry.remove_task(registry_task_id)
+            await remove_task_func(registry_task_id)
         except Exception as e:
             logger.error(f"Failed to remove registry task {registry_task_id}: {e}")
 
@@ -43,7 +44,11 @@ async def get_system_task_stats() -> tuple[dict, dict]:
     return active_tasks, user_concurrencies
 
 
-async def force_terminate_task(task_id: str, user_id: int | None = None):
+async def force_terminate_task(
+    task_id: str,
+    user_id: int | None = None,
+    cleanup_task_runtime_state_func=cleanup_task_runtime_state,
+):
     """
     强制终止一个活跃任务并释放对应的用户锁。
 
@@ -79,9 +84,7 @@ async def force_terminate_task(task_id: str, user_id: int | None = None):
             )
             raise
 
-    from src.core import task_core as compat_task_core
-
-    await compat_task_core.cleanup_task_runtime_state(
+    await cleanup_task_runtime_state_func(
         internal_user_id=user_id or 0,
         registry_task_id=task_id,
         release_lock=user_id is not None,

@@ -370,6 +370,47 @@ async def test_complete_monitored_bot_task_preserves_supplied_user_logger(monkey
 
 
 @pytest.mark.asyncio
+async def test_complete_monitored_bot_task_delegates_to_completion_helper(monkeypatch):
+    complete_helper = AsyncMock(return_value=(b"video-bytes", "output.mp4"))
+    monkeypatch.setattr("src.services.task_service.complete_monitored_bot_task", complete_helper)
+
+    user_logger = SimpleNamespace(username="tester")
+    runtime_state = SimpleNamespace(actual_cost=9, registry_task_id="reg-1", task_submitted=True)
+    message_spec = SimpleNamespace(
+        completion_caption="done",
+        missing_output_message="missing",
+    )
+
+    result = await TaskService._complete_monitored_bot_task(
+        context=SimpleNamespace(bot=MagicMock(), bot_data={}),
+        chat_id=123,
+        status_msg=MagicMock(),
+        runtime_state=runtime_state,
+        internal_user_id=456,
+        username="tester",
+        user_logger=user_logger,
+        prompt="prompt",
+        task_type="custom_video",
+        task_id="task-complete",
+        saved_input_images=["input.png"],
+        final_info={"status": "done"},
+        is_video=True,
+        send_result=True,
+        reply_markup=None,
+        delete_status=True,
+        caption=None,
+        allow_contribute=True,
+        message_spec=message_spec,
+    )
+
+    assert result == (b"video-bytes", "output.mp4")
+    kwargs = complete_helper.await_args.kwargs
+    assert kwargs["user_logger"] is user_logger
+    assert kwargs["handle_task_completion_func"] is TaskService._handle_task_completion
+    assert kwargs["finalize_failed_task_for_bot_func"] is TaskService._finalize_failed_task_for_bot
+
+
+@pytest.mark.asyncio
 async def test_finalize_cancelled_task_for_bot_uses_task_service_edit_seam(monkeypatch):
     finalize_cancel = AsyncMock(
         return_value=TaskCancellationFinalizationResult(

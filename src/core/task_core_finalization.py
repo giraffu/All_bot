@@ -21,13 +21,12 @@ async def _refund_task_with_type(
     cost: int,
     should_refund: bool,
     refund_task_type: str,
+    refund_credits_func=refund_credits,
 ) -> bool:
-    from src.core import task_core as compat_task_core
-
     if not should_refund or cost <= 0:
         return False
     await asyncio.shield(
-        compat_task_core.refund_credits(
+        refund_credits_func(
             internal_user_id,
             cost,
             task_type=refund_task_type,
@@ -43,6 +42,7 @@ async def refund_cancelled_task(
     username: str,
     cost: int,
     task_submitted: bool,
+    refund_credits_func=refund_credits,
 ) -> bool:
     return await _refund_task_with_type(
         internal_user_id=internal_user_id,
@@ -50,6 +50,7 @@ async def refund_cancelled_task(
         cost=cost,
         should_refund=task_submitted,
         refund_task_type="refund_user_cancel",
+        refund_credits_func=refund_credits_func,
     )
 
 
@@ -59,6 +60,7 @@ async def refund_failed_task(
     username: str,
     cost: int,
     should_refund: bool,
+    refund_credits_func=refund_credits,
 ) -> bool:
     return await _refund_task_with_type(
         internal_user_id=internal_user_id,
@@ -66,6 +68,7 @@ async def refund_failed_task(
         cost=cost,
         should_refund=should_refund,
         refund_task_type="refund",
+        refund_credits_func=refund_credits_func,
     )
 
 
@@ -78,12 +81,14 @@ async def handle_failed_task_exception(
     error: Exception,
     generic_error_prefix: str,
     refund_suffix_mode: str = "if_refunded",
+    refund_credits_func=refund_credits,
 ) -> str:
     refunded = await refund_failed_task(
         internal_user_id=internal_user_id,
         username=username,
         cost=cost,
         should_refund=should_refund,
+        refund_credits_func=refund_credits_func,
     )
     return build_failed_task_user_message(
         error=error,
@@ -93,10 +98,12 @@ async def handle_failed_task_exception(
     )
 
 
-async def _cleanup_after_finalization(context: TaskFinalizationContext):
-    from src.core import task_core as compat_task_core
-
-    await compat_task_core.cleanup_task_runtime_state(
+async def _cleanup_after_finalization(
+    context: TaskFinalizationContext,
+    *,
+    cleanup_task_runtime_state_func=cleanup_task_runtime_state,
+):
+    await cleanup_task_runtime_state_func(
         internal_user_id=context.internal_user_id,
         registry_task_id=context.registry_task_id,
         release_lock=context.release_lock,
@@ -124,6 +131,7 @@ async def _refund_terminated_task_best_effort(
     should_refund: bool,
     refund_task_type: str,
     registry_task_id: str,
+    refund_credits_func=refund_credits,
 ) -> bool:
     if user_id is None:
         return False
@@ -135,6 +143,7 @@ async def _refund_terminated_task_best_effort(
             cost=cost,
             should_refund=should_refund,
             refund_task_type=refund_task_type,
+            refund_credits_func=refund_credits_func,
         )
     except Exception:
         logger.exception(
@@ -158,6 +167,8 @@ async def finalize_task_failure(
     generic_error_prefix: str | None = None,
     explicit_user_message: str | None = None,
     refund_suffix_mode: str = "if_refunded",
+    refund_credits_func=refund_credits,
+    cleanup_task_runtime_state_func=cleanup_task_runtime_state,
 ) -> TaskFailureFinalizationResult:
     context = TaskFinalizationContext(
         internal_user_id=internal_user_id,
@@ -172,6 +183,7 @@ async def finalize_task_failure(
         cost=context.cost,
         should_refund=should_refund,
         refund_task_type=refund_task_type,
+        refund_credits_func=refund_credits_func,
     )
 
     user_message = explicit_user_message
@@ -183,7 +195,10 @@ async def finalize_task_failure(
             refund_suffix_mode=refund_suffix_mode,
         )
 
-    await _cleanup_after_finalization(context)
+    await _cleanup_after_finalization(
+        context,
+        cleanup_task_runtime_state_func=cleanup_task_runtime_state_func,
+    )
 
     return TaskFailureFinalizationResult(
         refunded=refunded,
@@ -200,9 +215,9 @@ async def finalize_task_cancellation(
     registry_task_id: str | None,
     release_lock: bool = True,
     explicit_user_message: str | None = None,
+    refund_cancelled_task_func=refund_cancelled_task,
+    cleanup_task_runtime_state_func=cleanup_task_runtime_state,
 ) -> TaskCancellationFinalizationResult:
-    from src.core import task_core as compat_task_core
-
     context = TaskFinalizationContext(
         internal_user_id=internal_user_id,
         username=username,
@@ -210,14 +225,17 @@ async def finalize_task_cancellation(
         registry_task_id=registry_task_id,
         release_lock=release_lock,
     )
-    refunded = await compat_task_core.refund_cancelled_task(
+    refunded = await refund_cancelled_task_func(
         internal_user_id=context.internal_user_id,
         username=context.username,
         cost=context.cost,
         task_submitted=task_submitted,
     )
 
-    await _cleanup_after_finalization(context)
+    await _cleanup_after_finalization(
+        context,
+        cleanup_task_runtime_state_func=cleanup_task_runtime_state_func,
+    )
 
     user_message = _build_cancelled_task_user_message(
         cost=context.cost,
@@ -239,10 +257,10 @@ async def finalize_terminated_task(
     cost: int,
     should_refund: bool,
     refund_task_type: str,
+    force_terminate_task_func=force_terminate_task,
+    refund_credits_func=refund_credits,
 ) -> TaskTerminationFinalizationResult:
-    from src.core import task_core as compat_task_core
-
-    await compat_task_core.force_terminate_task(registry_task_id, user_id=user_id)
+    await force_terminate_task_func(registry_task_id, user_id=user_id)
 
     refunded = await _refund_terminated_task_best_effort(
         user_id=user_id,
@@ -251,6 +269,7 @@ async def finalize_terminated_task(
         should_refund=should_refund,
         refund_task_type=refund_task_type,
         registry_task_id=registry_task_id,
+        refund_credits_func=refund_credits_func,
     )
 
     return TaskTerminationFinalizationResult(

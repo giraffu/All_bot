@@ -39,13 +39,17 @@ vi.mock('@/api', () => ({
   }
 }))
 
-vi.mock('vue-router', () => ({
-  useRoute: () => routeMock,
-  useRouter: () => ({
-    push: routerPushMock,
-    replace: routerReplaceMock
-  })
-}))
+vi.mock('vue-router', async () => {
+  const actual = await vi.importActual<typeof import('vue-router')>('vue-router')
+  return {
+    ...actual,
+    useRoute: () => routeMock,
+    useRouter: () => ({
+      push: routerPushMock,
+      replace: routerReplaceMock
+    })
+  }
+})
 
 vi.mock('ant-design-vue', async () => {
   const actual = await vi.importActual<object>('ant-design-vue')
@@ -273,7 +277,7 @@ describe('MyFavorites workbench flow', () => {
     messageWarningMock.mockReset()
   })
 
-  it('keeps legacy template apply for favorite details without opening the shared workbench host', async () => {
+  it('opens the shared template workbench host from favorite details', async () => {
     primeFavoritesApi()
 
     const { wrapper, applyButton } = await openDetailAndFindApplyButton()
@@ -284,23 +288,14 @@ describe('MyFavorites workbench flow', () => {
     const templateApplyStore = useTemplateApplyStore()
     const hostModal = wrapper
       .findAll('.a-modal-stub')
-      .find(node => node.attributes('data-title') === '模板工作台')
+      .find(node => node.attributes('data-title') === '快速换脸')
 
-    expect(sessionStorage.getItem(GALLERY_APPLY_CONTEXT_STORAGE_KEY)).toBe(
-      JSON.stringify(faceSwapContext)
-    )
-    expect(routerPushMock).toHaveBeenCalledWith({
-      name: 'FaceSwap',
-      query: {
-        apply: 'true',
-        type: 'face_swap',
-        title: '快速换脸',
-        cost: '1'
-      }
-    })
-    expect(messageSuccessMock).toHaveBeenCalledWith('已载入模板，请上传您的参考图')
-    expect(templateApplyStore.visible).toBe(false)
-    expect(hostModal?.attributes('data-open')).toBe('false')
+    expect(sessionStorage.getItem(GALLERY_APPLY_CONTEXT_STORAGE_KEY)).toBeNull()
+    expect(routerPushMock).not.toHaveBeenCalled()
+    expect(messageSuccessMock).toHaveBeenCalledWith('已载入模板工作台')
+    expect(templateApplyStore.visible).toBe(true)
+    expect(templateApplyStore.panelKind).toBe('faceSwap')
+    expect(hostModal?.attributes('data-open')).toBe('true')
   })
 
   it('renders the shared empty state block when the favorites list is empty', async () => {
@@ -349,6 +344,49 @@ describe('MyFavorites workbench flow', () => {
     }))
     expect(wrapper.text()).not.toContain('您还没有收藏过任何作品')
     expect(wrapper.text()).toContain('已上架')
+    expect(wrapper.findAll('.group.cursor-pointer')).toHaveLength(1)
+  })
+
+  it('renders the shared error state and retries loading when the favorites list request fails', async () => {
+    apiGetMock.mockImplementation((url: string) => {
+      if (url === '/gallery/config') {
+        return Promise.resolve({
+          data: {
+            allowed_types: [],
+            lora_models: [],
+            img2img_lora_models: []
+          }
+        })
+      }
+
+      if (url === '/users/my-favorites') {
+        throw new Error('favorites list failed')
+      }
+
+      throw new Error(`Unexpected GET request: ${url}`)
+    })
+
+    const wrapper = mountHarness()
+    await flushPromises()
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('获取内容失败')
+    expect(wrapper.findAll('.group.cursor-pointer')).toHaveLength(0)
+    expect(messageErrorMock).toHaveBeenCalledWith('获取内容失败')
+
+    primeFavoritesApi()
+
+    const retryButton = wrapper
+      .findAll('button')
+      .find(button => button.text().includes('重试'))
+
+    expect(retryButton).toBeTruthy()
+
+    await retryButton!.trigger('click')
+    await flushPromises()
+    await flushPromises()
+
+    expect(wrapper.text()).not.toContain('获取内容失败')
     expect(wrapper.findAll('.group.cursor-pointer')).toHaveLength(1)
   })
 })

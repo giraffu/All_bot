@@ -4,6 +4,10 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from src.core import task_core
+from src.core.task_core_persistence_postprocess import (
+    postprocess_successful_task_persistence,
+)
+from src.core.task_core_types import TaskSuccessPersistenceResult
 
 
 @pytest.mark.asyncio
@@ -314,3 +318,165 @@ async def test_persist_successful_task_result_reuses_core_path_for_bot(monkeypat
     fake_user_logger.log_task.assert_awaited_once()
     refresh_mock.assert_awaited_once_with(456)
     warmup_mock.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_persist_successful_task_result_uses_storage_metadata_when_bytes_missing(
+    monkeypatch,
+):
+    fake_user_logger = MagicMock()
+    fake_user_logger.log_task = AsyncMock()
+    warmup_mock = MagicMock()
+    extract_from_storage_mock = AsyncMock(return_value=(640, 480, 12))
+
+    monkeypatch.setattr(
+        task_core.image_service,
+        "download_video_result",
+        AsyncMock(return_value=None),
+    )
+    monkeypatch.setattr(task_core, "UserLogger", lambda *_args, **_kwargs: fake_user_logger)
+    monkeypatch.setattr(
+        task_core,
+        "extract_media_metadata_from_storage_best_effort",
+        extract_from_storage_mock,
+    )
+    monkeypatch.setattr(task_core, "schedule_web_history_r2_warmup", warmup_mock)
+
+    result = await task_core.persist_successful_task_result(
+        backend_task_id="task-3",
+        registry_task_id="task-3",
+        internal_user_id=789,
+        username="tester",
+        prompt="video prompt",
+        task_type="ltx_video",
+        input_images=["input.png"],
+        allow_contribute=False,
+        is_video=True,
+        billing_resolution="720p",
+        requested_duration=12,
+        result_path="bot-data/worker/task-3.mp4",
+        source="web",
+        warmup_web_history=True,
+    )
+
+    assert result.media_bytes is None
+    assert result.output_file == "bot-data/worker/task-3.mp4"
+    assert result.width == 640
+    assert result.height == 480
+    assert result.duration == 12
+    fake_user_logger.save_output_image.assert_not_called()
+    extract_from_storage_mock.assert_awaited_once_with(
+        "bot-data/worker/task-3.mp4",
+        "video",
+        (None, None, None),
+    )
+    fake_user_logger.log_task.assert_awaited_once()
+    warmup_mock.assert_called_once_with(
+        user_id=789,
+        task_id="task-3",
+        output_file="bot-data/worker/task-3.mp4",
+        media_type="video",
+        source="web",
+    )
+
+
+@pytest.mark.asyncio
+async def test_postprocess_successful_task_persistence_logs_refreshes_and_warms_up():
+    fake_user_logger = MagicMock()
+    fake_user_logger.log_task = AsyncMock()
+    refresh_mock = AsyncMock()
+    warmup_mock = MagicMock()
+
+    persistence_result = TaskSuccessPersistenceResult(
+        media_bytes=b"image-bytes",
+        output_file="123/output_images/task-4.png",
+        width=512,
+        height=512,
+        duration=None,
+    )
+
+    await postprocess_successful_task_persistence(
+        user_logger=fake_user_logger,
+        persistence_result=persistence_result,
+        registry_task_id="task-4",
+        internal_user_id=123,
+        prompt="prompt",
+        task_type="image",
+        input_images=["input.png"],
+        allow_contribute=True,
+        source="web",
+        billing_resolution="512",
+        requested_duration=None,
+        media_type="image",
+        refresh_user_group_after_log=True,
+        warmup_web_history=True,
+        refresh_user_group_func=refresh_mock,
+        schedule_web_history_r2_warmup_func=warmup_mock,
+    )
+
+    fake_user_logger.log_task.assert_awaited_once_with(
+        "prompt",
+        ["input.png"],
+        "123/output_images/task-4.png",
+        task_id="task-4",
+        type="image",
+        allow_contribute=True,
+        source="web",
+        billing_resolution="512",
+        width=512,
+        height=512,
+        duration=None,
+        requested_duration=None,
+    )
+    refresh_mock.assert_awaited_once_with(123)
+    warmup_mock.assert_called_once_with(
+        user_id=123,
+        task_id="task-4",
+        output_file="123/output_images/task-4.png",
+        media_type="image",
+        source="web",
+    )
+
+
+@pytest.mark.asyncio
+async def test_persist_successful_web_history_routes_through_task_core_facade(monkeypatch):
+    persist_mock = AsyncMock()
+    monkeypatch.setattr(task_core, "persist_successful_task_result", persist_mock)
+
+    await task_core._persist_successful_web_history(
+        backend_task_id="backend-1",
+        registry_task_id="registry-1",
+        internal_user_id=123,
+        username="tester",
+        prompt="prompt",
+        task_type="image",
+        input_images=["input.png"],
+        allow_contribute=True,
+        is_video=False,
+        result_path="bot-data/worker/task-1.png",
+        billing_resolution="1024",
+        output_width=1024,
+        output_height=1024,
+        output_duration=None,
+        requested_duration=None,
+    )
+
+    persist_mock.assert_awaited_once_with(
+        backend_task_id="backend-1",
+        registry_task_id="registry-1",
+        internal_user_id=123,
+        username="tester",
+        prompt="prompt",
+        task_type="image",
+        input_images=["input.png"],
+        allow_contribute=True,
+        is_video=False,
+        result_path="bot-data/worker/task-1.png",
+        billing_resolution="1024",
+        output_width=1024,
+        output_height=1024,
+        output_duration=None,
+        requested_duration=None,
+        source="web",
+        warmup_web_history=True,
+    )

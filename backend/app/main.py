@@ -457,6 +457,40 @@ async def _wait_for_t2i_sync_result(
         raise HTTPException(status_code=504, detail="Task execution timed out") from e
 
 
+async def _submit_t2i_task_request(
+    *,
+    async_mode: bool,
+    queue_manager: QueueManager,
+    task_id: str,
+    params: dict[str, str],
+    task_priority: int,
+    request_id: str,
+) -> T2ITaskResponse:
+    async with _optional_t2i_task_subscription(
+        async_mode=async_mode,
+        queue_manager=queue_manager,
+        task_id=task_id,
+    ) as (pubsub, _channel):
+        await _enqueue_t2i_task(
+            queue_manager=queue_manager,
+            task_id=task_id,
+            params=params,
+            priority=task_priority,
+            request_id=request_id,
+        )
+
+        if not async_mode:
+            logger.info(f"[{request_id}] Sync mode: waiting for task {task_id}")
+            return await _wait_for_t2i_sync_result(
+                pubsub=pubsub,
+                task_id=task_id,
+                request_id=request_id,
+                queue_manager=queue_manager,
+            )
+
+    return T2ITaskResponse(task_id=task_id)
+
+
 async def _build_task_status_response(
     *,
     task_id: str,
@@ -595,29 +629,14 @@ async def create_t2i_pornmaster_turbo_task(
         logger.error(f"[{request_id}] Invalid prompt: {request.get('prompt')}")
         raise
 
-    async with _optional_t2i_task_subscription(
+    return await _submit_t2i_task_request(
         async_mode=async_mode,
         queue_manager=queue_manager,
         task_id=task_id,
-    ) as (pubsub, _channel):
-        await _enqueue_t2i_task(
-            queue_manager=queue_manager,
-            task_id=task_id,
-            params=params,
-            priority=task_priority,
-            request_id=request_id,
-        )
-
-        if not async_mode:
-            logger.info(f"[{request_id}] Sync mode: waiting for task {task_id}")
-            return await _wait_for_t2i_sync_result(
-                pubsub=pubsub,
-                task_id=task_id,
-                request_id=request_id,
-                queue_manager=queue_manager,
-            )
-
-    return T2ITaskResponse(task_id=task_id)
+        params=params,
+        task_priority=task_priority,
+        request_id=request_id,
+    )
 
 
 @app.delete("/api/tasks/{task_id}")

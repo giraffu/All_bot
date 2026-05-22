@@ -1,6 +1,7 @@
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 
 from config import WEBAPP_URL
+from src.handlers.message_handler_common import get_reply_message
 
 
 def build_photo_edit_payload(context) -> tuple[str, object]:
@@ -94,3 +95,61 @@ def build_queue_status_message(queue_size: int, queue_by_type: dict, context, ta
             msg_lines.append(f"❓ 其他 ({safe_task_type})：`{count}` 个")
 
     return "\n".join(msg_lines)
+
+
+async def reply_with_built_payload(
+    update,
+    *,
+    reply_text,
+    build_payload,
+    context=None,
+    parse_mode: str | None = "Markdown",
+):
+    message = get_reply_message(update)
+    if not message:
+        return None
+
+    if context is None:
+        msg, reply_markup = build_payload()
+    else:
+        msg, reply_markup = build_payload(context)
+
+    reply_kwargs = {}
+    if parse_mode is not None:
+        reply_kwargs["parse_mode"] = parse_mode
+    if reply_markup is not None:
+        reply_kwargs["reply_markup"] = reply_markup
+
+    await reply_text(message, msg, **reply_kwargs)
+    return None
+
+
+async def reply_with_async_payload(
+    update,
+    *,
+    reply_text,
+    build_payload,
+    parse_mode: str | None = "Markdown",
+    **build_kwargs,
+):
+    message = get_reply_message(update)
+    if not message:
+        return None
+
+    payload = await build_payload(**build_kwargs)
+    if payload is None:
+        return None
+
+    if isinstance(payload, tuple):
+        msg, reply_markup = payload
+    else:
+        msg, reply_markup = payload, None
+
+    reply_kwargs = {}
+    if parse_mode is not None:
+        reply_kwargs["parse_mode"] = parse_mode
+    if reply_markup is not None:
+        reply_kwargs["reply_markup"] = reply_markup
+
+    await reply_text(message, msg, **reply_kwargs)
+    return None
