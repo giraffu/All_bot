@@ -22,6 +22,16 @@ from src.core.task_core_finalization import (
     refund_cancelled_task as _refund_cancelled_task_impl,
     refund_failed_task as _refund_failed_task_impl,
 )
+from src.core.task_core_dependencies import (
+    TaskCoreFinalizationDependencies,
+    TaskCoreMonitorDependencies,
+    TaskCorePersistenceDependencies,
+    TaskCoreProcessDependencies,
+    TaskCoreRuntimeDependencies,
+    TaskCoreSideEffectDependencies,
+    TaskCoreSubmissionDependencies,
+    TaskCoreWarmupDependencies,
+)
 from src.core.task_core_persistence import (
     _persist_successful_web_history as _persist_successful_web_history_impl,
     persist_successful_task_result as _persist_successful_task_result_impl,
@@ -114,6 +124,103 @@ _infer_requested_output_metadata = infer_requested_output_metadata
 _infer_requested_billing_resolution = infer_requested_billing_resolution
 
 
+def _build_task_core_warmup_dependencies() -> TaskCoreWarmupDependencies:
+    return TaskCoreWarmupDependencies(
+        resolve_storage_object_func=resolve_storage_object,
+        copy_to_r2_func=storage.async_copy_to_r2,
+        generate_and_upload_thumbnail_func=generate_and_upload_thumbnail,
+        prune_user_web_history_r2_cache_func=storage.async_prune_user_web_history_r2_cache,
+        create_task_func=asyncio.create_task,
+        logger=logger,
+    )
+
+
+def _build_task_core_runtime_dependencies() -> TaskCoreRuntimeDependencies:
+    return TaskCoreRuntimeDependencies(
+        release_concurrency_lock_func=release_concurrency_lock,
+        remove_task_func=TaskRegistry.remove_task,
+    )
+
+
+def _build_task_core_submission_dependencies() -> TaskCoreSubmissionDependencies:
+    from src.services.redis_client import redis_client
+
+    return TaskCoreSubmissionDependencies(
+        add_task_func=TaskRegistry.add_task,
+        update_backend_task_id_func=TaskRegistry.update_backend_task_id,
+        mark_task_status_func=TaskRegistry.mark_task_status,
+        remove_task_func=TaskRegistry.remove_task,
+        add_pending_refund_func=redis_client.add_pending_refund,
+        dispatch_to_worker_func=dispatch_to_worker,
+        is_task_backend_busy_error_func=is_task_backend_busy_error,
+        logger=logger,
+    )
+
+
+def _build_task_core_process_dependencies() -> TaskCoreProcessDependencies:
+    from src.constants import VIDEO_TASK_TYPES
+
+    return TaskCoreProcessDependencies(
+        get_strategy_func=StrategyFactory.get_strategy,
+        video_task_types=set(VIDEO_TASK_TYPES),
+        build_video_task_request_func=build_video_task_request,
+        check_concurrency_lock_func=check_concurrency_lock,
+        prepare_task_submission_payload_func=_prepare_task_submission_payload,
+        check_and_deduct_credits_func=check_and_deduct_credits,
+        execute_task_submission_saga_func=_execute_task_submission_saga,
+        attach_submission_side_effects_func=_attach_submission_side_effects,
+        compensate_failed_submission_func=_compensate_failed_submission,
+        release_concurrency_lock_func=release_concurrency_lock,
+        shield_func=asyncio.shield,
+        logger=logger,
+    )
+
+
+def _build_task_core_persistence_dependencies() -> TaskCorePersistenceDependencies:
+    return TaskCorePersistenceDependencies(
+        user_logger_factory=UserLogger,
+        extract_media_metadata_from_bytes_best_effort_func=(
+            extract_media_metadata_from_bytes_best_effort
+        ),
+        extract_media_metadata_from_storage_best_effort_func=(
+            extract_media_metadata_from_storage_best_effort
+        ),
+        schedule_web_history_r2_warmup_func=schedule_web_history_r2_warmup,
+        refresh_user_group_func=None,
+    )
+
+
+def _build_task_core_monitor_dependencies() -> TaskCoreMonitorDependencies:
+    return TaskCoreMonitorDependencies(
+        monitor_progress_func=image_service.monitor_progress,
+        normalize_terminal_status_func=normalize_terminal_status,
+        finalize_success_func=_finalize_monitored_web_task_success,
+        finalize_cancellation_func=_finalize_monitored_web_task_cancellation,
+        finalize_failure_func=_finalize_monitored_web_task_failure,
+        logger=logger,
+    )
+
+
+def _build_task_core_finalization_dependencies() -> TaskCoreFinalizationDependencies:
+    return TaskCoreFinalizationDependencies(
+        refund_credits_func=refund_credits,
+        cleanup_task_runtime_state_func=cleanup_task_runtime_state,
+        refund_cancelled_task_func=refund_cancelled_task,
+        force_terminate_task_func=force_terminate_task,
+    )
+
+
+def _build_task_core_side_effect_dependencies() -> TaskCoreSideEffectDependencies:
+    from src.core.gallery_core import record_apply_interaction
+
+    return TaskCoreSideEffectDependencies(
+        attach_web_task_monitor_func=_attach_web_task_monitor_impl,
+        monitor_web_task_func=monitor_task_and_release_lock,
+        record_apply_interaction_func=record_apply_interaction,
+        create_task_func=asyncio.create_task,
+    )
+
+
 def schedule_web_history_r2_warmup(
     *,
     user_id: int,
@@ -122,18 +229,23 @@ def schedule_web_history_r2_warmup(
     media_type: str,
     source: str,
 ):
+    dependencies = _build_task_core_warmup_dependencies()
     return _schedule_web_history_r2_warmup_impl(
         user_id=user_id,
         task_id=task_id,
         output_file=output_file,
         media_type=media_type,
         source=source,
-        resolve_storage_object_func=resolve_storage_object,
-        copy_to_r2_func=storage.async_copy_to_r2,
-        generate_and_upload_thumbnail_func=generate_and_upload_thumbnail,
-        prune_user_web_history_r2_cache_func=storage.async_prune_user_web_history_r2_cache,
-        logger=logger,
-        create_task_func=asyncio.create_task,
+        resolve_storage_object_func=dependencies.resolve_storage_object_func,
+        copy_to_r2_func=dependencies.copy_to_r2_func,
+        generate_and_upload_thumbnail_func=(
+            dependencies.generate_and_upload_thumbnail_func
+        ),
+        prune_user_web_history_r2_cache_func=(
+            dependencies.prune_user_web_history_r2_cache_func
+        ),
+        logger=dependencies.logger,
+        create_task_func=dependencies.create_task_func,
     )
 
 
@@ -143,12 +255,13 @@ async def cleanup_task_runtime_state(
     registry_task_id: str | None,
     release_lock: bool = True,
 ):
+    dependencies = _build_task_core_runtime_dependencies()
     return await _cleanup_task_runtime_state_impl(
         internal_user_id=internal_user_id,
         registry_task_id=registry_task_id,
         release_lock=release_lock,
-        release_concurrency_lock_func=release_concurrency_lock,
-        remove_task_func=TaskRegistry.remove_task,
+        release_concurrency_lock_func=dependencies.release_concurrency_lock_func,
+        remove_task_func=dependencies.remove_task_func,
     )
 
 
@@ -181,6 +294,7 @@ async def persist_successful_task_result(
     refresh_user_group_after_log: bool = False,
     warmup_web_history: bool = False,
 ) -> TaskSuccessPersistenceResult:
+    dependencies = _build_task_core_persistence_dependencies()
     return await _persist_successful_task_result_impl(
         backend_task_id=backend_task_id,
         registry_task_id=registry_task_id,
@@ -200,11 +314,17 @@ async def persist_successful_task_result(
         source=source,
         refresh_user_group_after_log=refresh_user_group_after_log,
         warmup_web_history=warmup_web_history,
-        user_logger_factory=UserLogger,
-        extract_media_metadata_from_bytes_best_effort_func=extract_media_metadata_from_bytes_best_effort,
-        extract_media_metadata_from_storage_best_effort_func=extract_media_metadata_from_storage_best_effort,
-        schedule_web_history_r2_warmup_func=schedule_web_history_r2_warmup,
-        refresh_user_group_func=None,
+        user_logger_factory=dependencies.user_logger_factory,
+        extract_media_metadata_from_bytes_best_effort_func=(
+            dependencies.extract_media_metadata_from_bytes_best_effort_func
+        ),
+        extract_media_metadata_from_storage_best_effort_func=(
+            dependencies.extract_media_metadata_from_storage_best_effort_func
+        ),
+        schedule_web_history_r2_warmup_func=(
+            dependencies.schedule_web_history_r2_warmup_func
+        ),
+        refresh_user_group_func=dependencies.refresh_user_group_func,
     )
 
 
@@ -253,12 +373,13 @@ async def refund_cancelled_task(
     cost: int,
     task_submitted: bool,
 ) -> bool:
+    dependencies = _build_task_core_finalization_dependencies()
     return await _refund_cancelled_task_impl(
         internal_user_id=internal_user_id,
         username=username,
         cost=cost,
         task_submitted=task_submitted,
-        refund_credits_func=refund_credits,
+        refund_credits_func=dependencies.refund_credits_func,
     )
 
 
@@ -269,12 +390,13 @@ async def refund_failed_task(
     cost: int,
     should_refund: bool,
 ) -> bool:
+    dependencies = _build_task_core_finalization_dependencies()
     return await _refund_failed_task_impl(
         internal_user_id=internal_user_id,
         username=username,
         cost=cost,
         should_refund=should_refund,
-        refund_credits_func=refund_credits,
+        refund_credits_func=dependencies.refund_credits_func,
     )
 
 
@@ -288,6 +410,7 @@ async def handle_failed_task_exception(
     generic_error_prefix: str,
     refund_suffix_mode: str = "if_refunded",
 ) -> str:
+    dependencies = _build_task_core_finalization_dependencies()
     return await _handle_failed_task_exception_impl(
         internal_user_id=internal_user_id,
         username=username,
@@ -296,7 +419,7 @@ async def handle_failed_task_exception(
         error=error,
         generic_error_prefix=generic_error_prefix,
         refund_suffix_mode=refund_suffix_mode,
-        refund_credits_func=refund_credits,
+        refund_credits_func=dependencies.refund_credits_func,
     )
 
 
@@ -314,6 +437,7 @@ async def finalize_task_failure(
     explicit_user_message: str | None = None,
     refund_suffix_mode: str = "if_refunded",
 ) -> TaskFailureFinalizationResult:
+    dependencies = _build_task_core_finalization_dependencies()
     return await _finalize_task_failure_impl(
         internal_user_id=internal_user_id,
         username=username,
@@ -326,8 +450,8 @@ async def finalize_task_failure(
         generic_error_prefix=generic_error_prefix,
         explicit_user_message=explicit_user_message,
         refund_suffix_mode=refund_suffix_mode,
-        refund_credits_func=refund_credits,
-        cleanup_task_runtime_state_func=cleanup_task_runtime_state,
+        refund_credits_func=dependencies.refund_credits_func,
+        cleanup_task_runtime_state_func=dependencies.cleanup_task_runtime_state_func,
     )
 
 
@@ -341,6 +465,7 @@ async def finalize_task_cancellation(
     release_lock: bool = True,
     explicit_user_message: str | None = None,
 ) -> TaskCancellationFinalizationResult:
+    dependencies = _build_task_core_finalization_dependencies()
     return await _finalize_task_cancellation_impl(
         internal_user_id=internal_user_id,
         username=username,
@@ -349,8 +474,8 @@ async def finalize_task_cancellation(
         registry_task_id=registry_task_id,
         release_lock=release_lock,
         explicit_user_message=explicit_user_message,
-        refund_cancelled_task_func=refund_cancelled_task,
-        cleanup_task_runtime_state_func=cleanup_task_runtime_state,
+        refund_cancelled_task_func=dependencies.refund_cancelled_task_func,
+        cleanup_task_runtime_state_func=dependencies.cleanup_task_runtime_state_func,
     )
 
 
@@ -363,6 +488,7 @@ async def finalize_terminated_task(
     should_refund: bool,
     refund_task_type: str,
 ) -> TaskTerminationFinalizationResult:
+    dependencies = _build_task_core_finalization_dependencies()
     return await _finalize_terminated_task_impl(
         registry_task_id=registry_task_id,
         user_id=user_id,
@@ -370,8 +496,8 @@ async def finalize_terminated_task(
         cost=cost,
         should_refund=should_refund,
         refund_task_type=refund_task_type,
-        force_terminate_task_func=force_terminate_task,
-        refund_credits_func=refund_credits,
+        force_terminate_task_func=dependencies.force_terminate_task_func,
+        refund_credits_func=dependencies.refund_credits_func,
     )
 
 
@@ -459,13 +585,14 @@ async def _register_task_submission(
     cost: int,
     submission_context: TaskSubmissionContext,
 ) -> str:
+    dependencies = _build_task_core_submission_dependencies()
     return await _register_task_submission_impl(
         registry_task_id=registry_task_id,
         user_id=user_id,
         username=username,
         cost=cost,
         submission_context=submission_context,
-        add_task_func=TaskRegistry.add_task,
+        add_task_func=dependencies.add_task_func,
     )
 
 
@@ -476,16 +603,17 @@ async def _dispatch_registered_task(
     inputs: dict,
     final_priority: int,
 ) -> str:
+    dependencies = _build_task_core_submission_dependencies()
     return await _dispatch_registered_task_impl(
         registry_task_id=registry_task_id,
         task_type=task_type,
         inputs=inputs,
         final_priority=final_priority,
-        dispatch_to_worker_func=dispatch_to_worker,
-        update_backend_task_id_func=TaskRegistry.update_backend_task_id,
-        mark_task_status_func=TaskRegistry.mark_task_status,
-        is_task_backend_busy_error_func=is_task_backend_busy_error,
-        logger=logger,
+        dispatch_to_worker_func=dependencies.dispatch_to_worker_func,
+        update_backend_task_id_func=dependencies.update_backend_task_id_func,
+        mark_task_status_func=dependencies.mark_task_status_func,
+        is_task_backend_busy_error_func=dependencies.is_task_backend_busy_error_func,
+        logger=dependencies.logger,
     )
 
 
@@ -517,8 +645,7 @@ async def _compensate_failed_submission(
     credits_deducted: bool,
     registry_task_id: str,
 ):
-    from src.services.redis_client import redis_client
-
+    dependencies = _build_task_core_submission_dependencies()
     await _compensate_failed_submission_impl(
         user_id=user_id,
         username=username,
@@ -527,9 +654,9 @@ async def _compensate_failed_submission(
         credits_deducted=credits_deducted,
         registry_task_id=registry_task_id,
         refund_credits_func=refund_credits,
-        add_pending_refund_func=redis_client.add_pending_refund,
-        remove_task_func=TaskRegistry.remove_task,
-        logger=logger,
+        add_pending_refund_func=dependencies.add_pending_refund_func,
+        remove_task_func=dependencies.remove_task_func,
+        logger=dependencies.logger,
     )
 
 
@@ -542,23 +669,25 @@ def _attach_web_task_monitor(
     submission_context: TaskSubmissionContext,
     cost: int,
 ):
-    _attach_web_task_monitor_impl(
+    dependencies = _build_task_core_side_effect_dependencies()
+    dependencies.attach_web_task_monitor_func(
         backend_task_id=backend_task_id,
         internal_user_id=internal_user_id,
         username=username,
         registry_task_id=registry_task_id,
         submission_context=submission_context,
         cost=cost,
-        monitor_web_task_func=monitor_task_and_release_lock,
+        monitor_web_task_func=dependencies.monitor_web_task_func,
     )
 
 
 def _schedule_apply_interaction(user_id: int, source_post_id: Optional[int]):
     if not source_post_id:
         return
-    from src.core.gallery_core import record_apply_interaction
-
-    asyncio.create_task(record_apply_interaction(user_id, source_post_id))
+    dependencies = _build_task_core_side_effect_dependencies()
+    dependencies.create_task_func(
+        dependencies.record_apply_interaction_func(user_id, source_post_id)
+    )
 
 
 def _attach_submission_side_effects(
@@ -653,6 +782,7 @@ async def monitor_task_and_release_lock(
     submission_context: TaskSubmissionContext,
     cost: int = 0,
 ):
+    dependencies = _build_task_core_monitor_dependencies()
     """
     Background task to monitor progress and release concurrency lock.
     """
@@ -663,12 +793,12 @@ async def monitor_task_and_release_lock(
         registry_task_id=registry_task_id,
         submission_context=submission_context,
         cost=cost,
-        monitor_progress_func=image_service.monitor_progress,
-        normalize_terminal_status_func=normalize_terminal_status,
-        finalize_success_func=_finalize_monitored_web_task_success,
-        finalize_cancellation_func=_finalize_monitored_web_task_cancellation,
-        finalize_failure_func=_finalize_monitored_web_task_failure,
-        logger=logger,
+        monitor_progress_func=dependencies.monitor_progress_func,
+        normalize_terminal_status_func=dependencies.normalize_terminal_status_func,
+        finalize_success_func=dependencies.finalize_success_func,
+        finalize_cancellation_func=dependencies.finalize_cancellation_func,
+        finalize_failure_func=dependencies.finalize_failure_func,
+        logger=dependencies.logger,
     )
 
 
@@ -685,22 +815,19 @@ async def process_and_submit_task(
     check_lock: bool = True,
     source_post_id: Optional[int] = None,
 ) -> dict:
-    import asyncio
-
-    strategy = StrategyFactory.get_strategy(task_type)
+    dependencies = _build_task_core_process_dependencies()
+    strategy = dependencies.get_strategy_func(task_type)
     cost = strategy.get_cost(inputs)
-    from src.constants import VIDEO_TASK_TYPES
-
-    is_video_task = task_type in VIDEO_TASK_TYPES
+    is_video_task = task_type in dependencies.video_task_types
 
     video_request = (
-        build_video_task_request(task_type, inputs)
+        dependencies.build_video_task_request_func(task_type, inputs)
         if is_video_task
         else VideoTaskRequest()
     )
 
     if check_lock:
-        can_run, err = await check_concurrency_lock(user_id)
+        can_run, err = await dependencies.check_concurrency_lock_func(user_id)
         if not can_run:
             raise ConcurrencyLimitError(err)
 
@@ -709,7 +836,7 @@ async def process_and_submit_task(
     registry_task_id = task_id
 
     try:
-        submission_context = await _prepare_task_submission_payload(
+        submission_context = await dependencies.prepare_task_submission_payload_func(
             user_id=user_id,
             username=username,
             task_type=task_type,
@@ -722,7 +849,7 @@ async def process_and_submit_task(
         )
 
         if deduct_quota:
-            success, err = await check_and_deduct_credits(
+            success, err = await dependencies.check_and_deduct_credits_func(
                 user_id, cost, task_type, username
             )
             if not success:
@@ -730,7 +857,7 @@ async def process_and_submit_task(
             credits_deducted = True
 
         try:
-            execution_result = await _execute_task_submission_saga(
+            execution_result = await dependencies.execute_task_submission_saga_func(
                 task_type=task_type,
                 inputs=inputs,
                 registry_task_id=registry_task_id,
@@ -738,7 +865,7 @@ async def process_and_submit_task(
                 submission_context=submission_context,
             )
             registry_task_id = execution_result.registry_task_id
-            _attach_submission_side_effects(
+            dependencies.attach_submission_side_effects_func(
                 client_type=client_type,
                 backend_task_id=execution_result.backend_task_id,
                 internal_user_id=user_id,
@@ -760,8 +887,8 @@ async def process_and_submit_task(
             }
 
         except Exception as e:
-            logger.error(f"Saga Execute Failed: {e}")
-            await _compensate_failed_submission(
+            dependencies.logger.error(f"Saga Execute Failed: {e}")
+            await dependencies.compensate_failed_submission_func(
                 user_id=user_id,
                 username=username,
                 cost=cost,
@@ -774,4 +901,6 @@ async def process_and_submit_task(
     finally:
         # 兜底保障：确保并发锁释放
         if check_lock and not task_submitted_successfully:
-            await asyncio.shield(release_concurrency_lock(user_id))
+            await dependencies.shield_func(
+                dependencies.release_concurrency_lock_func(user_id)
+            )

@@ -26,7 +26,7 @@
 - 阶段 2：主体完成，`Gallery`、`MyFavorites`、`MySubmissions` 与生成页工作台公共结构已收口
 - 阶段 3：基本完成，`message_handler.py`、`users.py`、`gallery.py`、`tasks.py` 已完成主要薄控制器收口
 - 阶段 4：本轮完成收口，`task_service.py`、`backend/app/main.py`、`backend/app/queue_manager.py` 已通过完整阶段 4 回归
-- 阶段 7：当前进入第一批，目标是把热点文件门禁、回归触发规则与最小治理约束文档化
+- 阶段 7：第二批完成，已补齐共享详情弹层/工作台壳层 focused 回归、`MyFavorites` 组合流回归，以及 dashboard App 热点基线与独立门禁分组
 
 ## 3. 热点文件
 
@@ -63,9 +63,15 @@
 ### 3.3 前端公共壳层
 
 - `frontend/src/views/Gallery.vue`
+- `frontend/src/views/MyFavorites.vue`
+- `frontend/src/components/GalleryDetailModal.vue`
+- `frontend/src/components/DetailModalShell.vue`
 - `frontend/src/components/MySubmissionsPanel.vue`
+- `frontend/src/components/PostBrowserShell.vue`
 - `frontend/src/components/ListStateBlock.vue`
+- `frontend/src/components/GenerationWorkbenchShell.vue`
 - `frontend/src/components/template-apply/TemplateApplyWorkbenchHost.vue`
+- `frontend/src/composables/useGalleryDetailModalAdapter.ts`
 - `frontend/src/router/index.ts`
 - `dashboard/frontend/src/App.vue`
 
@@ -208,9 +214,15 @@ pytest \
 适用文件：
 
 - `frontend/src/views/Gallery.vue`
+- `frontend/src/views/MyFavorites.vue`
+- `frontend/src/components/GalleryDetailModal.vue`
+- `frontend/src/components/DetailModalShell.vue`
 - `frontend/src/components/MySubmissionsPanel.vue`
+- `frontend/src/components/PostBrowserShell.vue`
 - `frontend/src/components/ListStateBlock.vue`
+- `frontend/src/components/GenerationWorkbenchShell.vue`
 - `frontend/src/components/template-apply/TemplateApplyWorkbenchHost.vue`
+- `frontend/src/composables/useGalleryDetailModalAdapter.ts`
 - `frontend/src/router/index.ts`
 
 至少执行：
@@ -218,8 +230,15 @@ pytest \
 ```bash
 cd frontend && pnpm vitest run \
   src/views/Gallery.test.ts \
+  src/views/MyFavoritesFlow.test.ts \
+  src/components/GalleryDetailModal.test.ts \
+  src/components/DetailModalShell.test.ts \
+  src/components/MySubmissionsPanelFlow.test.ts \
+  src/components/PostBrowserShell.test.ts \
   src/components/ListStateBlock.test.ts \
+  src/components/GenerationWorkbenchShell.test.ts \
   src/components/template-apply/TemplateApplyWorkbenchHost.test.ts \
+  src/composables/useGalleryDetailModalAdapter.test.ts \
   src/router/index.test.ts
 ```
 
@@ -232,6 +251,19 @@ cd frontend && pnpm vitest run \
   src/stores/templateApply.test.ts \
   src/composables/useTemplateApplyUpload.test.ts \
   src/utils/normalizeTemplateApplyContext.test.ts
+```
+
+### 4.8 修改 dashboard App 壳层
+
+适用文件：
+
+- `dashboard/frontend/src/App.vue`
+
+至少执行：
+
+```bash
+cd dashboard/frontend && npm exec -- vitest run \
+  src/App.test.js
 ```
 
 ## 5. 热点文件修改约束
@@ -252,17 +284,16 @@ cd frontend && pnpm vitest run \
 `hotspot_regression_gate.yml` 的行为约束如下：
 
 - 对热点文件变更的 `pull_request` 和 `main` 分支 `push` 自动触发
-- 支持 `workflow_dispatch` 手动指定分组，例如 `task-min frontend-shared`
-- 根据改动路径自动推导 Python 分组与 Frontend 分组
+- 支持 `workflow_dispatch` 手动指定分组，例如 `task-min frontend-shared dashboard-frontend`
+- 根据改动路径自动推导 Python、主站 Frontend 与 Dashboard Frontend 分组
 - 当命中 `task-full` 时，自动去重并跳过被其覆盖的 `task-facade`、`task-min`、`tasks-web`
 - 若本次没有识别到热点分组，则以 no-op job 结束，避免 workflow 悬空
 - `Hotspot Gate Result` 聚合 job 提供稳定检查名，供 branch protection 配置 required check
 
 ## 7. 当前缺口
 
-- `dashboard/frontend/src/App.vue` 已列入热点文件，但当前尚无对应的高价值回归基线
-- 前端页面家族已有基础测试，但“详情弹层 + 模板应用 + 列表态切换”的跨页组合回归仍偏少
-- 当前门禁已收口到统一脚本和 GitHub Actions workflow，但还没有继续细化到更细粒度的 CI matrix 或强制 branch protection 配置说明
+- 当前热点门禁已补齐 dashboard App 独立分组，但 branch protection 的 required checks 清单仍需在仓库设置侧正式固化
+- 页面家族已补到“列表切换 + 详情弹层 + 模板工作台”关键组合流，但仍未覆盖更重的跨页面端到端场景
 
 ## 8. 阶段 7 第一批收尾标志
 
@@ -273,9 +304,18 @@ cd frontend && pnpm vitest run \
 - 已把任务主链路回归与非任务热点回归区分开
 - 已明确当前仍未覆盖的治理缺口，供下一批继续处理
 
-## 9. 下一批建议
+## 9. 阶段 7 第二批收尾标志
 
-阶段 7 第二批建议只做两件事：
+满足以下条件时，可认为阶段 7 第二批完成：
 
-1. 为前端公共页面家族补 1 组更高价值的跨组件回归
-2. 把当前 CI workflow 继续细化为更稳的 branch protection / matrix / cache 策略
+- 共享详情弹层、页面壳层与工作台壳层已进入 focused tests 与热点门禁
+- 至少存在 1 组“列表切换 + 详情弹层 + 模板工作台”的组合回归
+- `dashboard/frontend/src/App.vue` 已具备最小可用回归基线
+- workflow 已按 Python、主站 Frontend、Dashboard Frontend 拆分热点执行入口
+
+## 10. 下一批建议
+
+阶段 7 完成后，后续治理建议只保留两类长期项：
+
+1. 在仓库设置里固化 required checks / branch protection
+2. 视风险再补更重的跨页面端到端回归，而不是继续堆 focused tests 数量

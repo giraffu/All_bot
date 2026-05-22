@@ -24,13 +24,23 @@ on:
       - 'frontend/src/views/GalleryWorkbenchFlow.test.ts'
       - 'frontend/src/views/MyFavorites.vue'
       - 'frontend/src/views/MyFavoritesFlow.test.ts'
+      - 'frontend/src/components/GalleryDetailModal.vue'
+      - 'frontend/src/components/GalleryDetailModal.test.ts'
+      - 'frontend/src/components/DetailModalShell.vue'
+      - 'frontend/src/components/DetailModalShell.test.ts'
       - 'frontend/src/components/MySubmissionsPanel.vue'
       - 'frontend/src/components/MySubmissionsPanelFlow.test.ts'
+      - 'frontend/src/components/PostBrowserShell.vue'
+      - 'frontend/src/components/PostBrowserShell.test.ts'
       - 'frontend/src/components/ListStateBlock.vue'
       - 'frontend/src/components/ListStateBlock.test.ts'
+      - 'frontend/src/components/GenerationWorkbenchShell.vue'
+      - 'frontend/src/components/GenerationWorkbenchShell.test.ts'
       - 'frontend/src/components/template-apply/TemplateApplyWorkbenchHost.vue'
       - 'frontend/src/components/template-apply/TemplateApplyWorkbenchHost.test.ts'
       - 'frontend/src/composables/useDetailTemplateApply.ts'
+      - 'frontend/src/composables/useGalleryDetailModalAdapter.ts'
+      - 'frontend/src/composables/useGalleryDetailModalAdapter.test.ts'
       - 'frontend/src/router/index.ts'
       - 'frontend/src/router/index.test.ts'
       - 'frontend/src/stores/tasksRuntime.test.ts'
@@ -38,6 +48,10 @@ on:
       - 'frontend/src/stores/templateApply.test.ts'
       - 'frontend/src/composables/useTemplateApplyUpload.test.ts'
       - 'frontend/src/utils/normalizeTemplateApplyContext.test.ts'
+      - 'dashboard/frontend/src/App.vue'
+      - 'dashboard/frontend/src/App.test.js'
+      - 'dashboard/frontend/package.json'
+      - 'dashboard/frontend/vitest.config.js'
       - 'tests/backend/test_main_helpers.py'
       - 'tests/backend/test_queue_manager.py'
       - 'tests/integration/test_saga_and_queue.py'
@@ -72,13 +86,23 @@ on:
       - 'frontend/src/views/GalleryWorkbenchFlow.test.ts'
       - 'frontend/src/views/MyFavorites.vue'
       - 'frontend/src/views/MyFavoritesFlow.test.ts'
+      - 'frontend/src/components/GalleryDetailModal.vue'
+      - 'frontend/src/components/GalleryDetailModal.test.ts'
+      - 'frontend/src/components/DetailModalShell.vue'
+      - 'frontend/src/components/DetailModalShell.test.ts'
       - 'frontend/src/components/MySubmissionsPanel.vue'
       - 'frontend/src/components/MySubmissionsPanelFlow.test.ts'
+      - 'frontend/src/components/PostBrowserShell.vue'
+      - 'frontend/src/components/PostBrowserShell.test.ts'
       - 'frontend/src/components/ListStateBlock.vue'
       - 'frontend/src/components/ListStateBlock.test.ts'
+      - 'frontend/src/components/GenerationWorkbenchShell.vue'
+      - 'frontend/src/components/GenerationWorkbenchShell.test.ts'
       - 'frontend/src/components/template-apply/TemplateApplyWorkbenchHost.vue'
       - 'frontend/src/components/template-apply/TemplateApplyWorkbenchHost.test.ts'
       - 'frontend/src/composables/useDetailTemplateApply.ts'
+      - 'frontend/src/composables/useGalleryDetailModalAdapter.ts'
+      - 'frontend/src/composables/useGalleryDetailModalAdapter.test.ts'
       - 'frontend/src/router/index.ts'
       - 'frontend/src/router/index.test.ts'
       - 'frontend/src/stores/tasksRuntime.test.ts'
@@ -86,6 +110,10 @@ on:
       - 'frontend/src/stores/templateApply.test.ts'
       - 'frontend/src/composables/useTemplateApplyUpload.test.ts'
       - 'frontend/src/utils/normalizeTemplateApplyContext.test.ts'
+      - 'dashboard/frontend/src/App.vue'
+      - 'dashboard/frontend/src/App.test.js'
+      - 'dashboard/frontend/package.json'
+      - 'dashboard/frontend/vitest.config.js'
       - 'tests/backend/test_main_helpers.py'
       - 'tests/backend/test_queue_manager.py'
       - 'tests/integration/test_saga_and_queue.py'
@@ -102,7 +130,7 @@ on:
   workflow_dispatch:
     inputs:
       groups:
-        description: '空格分隔的热点回归分组，如: task-min frontend-shared'
+        description: '空格分隔的热点回归分组，如: task-min frontend-shared dashboard-frontend'
         required: false
         default: ''
 
@@ -116,6 +144,7 @@ jobs:
     outputs:
       python_groups: ${{ steps.detect.outputs.python_groups }}
       frontend_groups: ${{ steps.detect.outputs.frontend_groups }}
+      dashboard_groups: ${{ steps.detect.outputs.dashboard_groups }}
       has_groups: ${{ steps.detect.outputs.has_groups }}
     steps:
       - name: Checkout code
@@ -138,6 +167,7 @@ jobs:
 
           declare -a PYTHON_GROUPS=()
           declare -a FRONTEND_GROUPS=()
+          declare -a DASHBOARD_GROUPS=()
           declare -A SEEN_GROUPS=()
 
           add_group() {
@@ -150,6 +180,8 @@ jobs:
             SEEN_GROUPS["$key"]=1
             if [[ "$kind" == "python" ]]; then
               PYTHON_GROUPS+=("$group")
+            elif [[ "$kind" == "dashboard" ]]; then
+              DASHBOARD_GROUPS+=("$group")
             else
               FRONTEND_GROUPS+=("$group")
             fi
@@ -162,6 +194,9 @@ jobs:
                 ;;
               frontend-shared)
                 add_group "frontend" "$1"
+                ;;
+              dashboard-frontend)
+                add_group "dashboard" "$1"
                 ;;
               *)
                 echo "::error::Unknown hotspot regression group: $1"
@@ -218,12 +253,16 @@ jobs:
                   src/handlers/message_handler.py|src/handlers/message_handler_common.py|src/handlers/message_handler_profile.py|src/handlers/message_handler_media.py|src/handlers/message_handler_menu.py|tests/handlers/test_message_handler*.py)
                     add_group "python" "message-handler"
                     ;;
-                  frontend/src/views/Gallery.vue|frontend/src/views/Gallery.test.ts|frontend/src/views/GalleryWorkbenchFlow.test.ts|frontend/src/views/MyFavorites.vue|frontend/src/views/MyFavoritesFlow.test.ts|frontend/src/components/MySubmissionsPanel.vue|frontend/src/components/MySubmissionsPanelFlow.test.ts|frontend/src/components/ListStateBlock.vue|frontend/src/components/ListStateBlock.test.ts|frontend/src/components/template-apply/TemplateApplyWorkbenchHost.vue|frontend/src/components/template-apply/TemplateApplyWorkbenchHost.test.ts|frontend/src/composables/useDetailTemplateApply.ts|frontend/src/router/index.ts|frontend/src/router/index.test.ts|frontend/src/stores/tasksRuntime.test.ts|frontend/src/stores/taskResultState.test.ts|frontend/src/stores/templateApply.test.ts|frontend/src/composables/useTemplateApplyUpload.test.ts|frontend/src/utils/normalizeTemplateApplyContext.test.ts)
+                  frontend/src/views/Gallery.vue|frontend/src/views/Gallery.test.ts|frontend/src/views/GalleryWorkbenchFlow.test.ts|frontend/src/views/MyFavorites.vue|frontend/src/views/MyFavoritesFlow.test.ts|frontend/src/components/GalleryDetailModal.vue|frontend/src/components/GalleryDetailModal.test.ts|frontend/src/components/DetailModalShell.vue|frontend/src/components/DetailModalShell.test.ts|frontend/src/components/MySubmissionsPanel.vue|frontend/src/components/MySubmissionsPanelFlow.test.ts|frontend/src/components/PostBrowserShell.vue|frontend/src/components/PostBrowserShell.test.ts|frontend/src/components/ListStateBlock.vue|frontend/src/components/ListStateBlock.test.ts|frontend/src/components/GenerationWorkbenchShell.vue|frontend/src/components/GenerationWorkbenchShell.test.ts|frontend/src/components/template-apply/TemplateApplyWorkbenchHost.vue|frontend/src/components/template-apply/TemplateApplyWorkbenchHost.test.ts|frontend/src/composables/useDetailTemplateApply.ts|frontend/src/composables/useGalleryDetailModalAdapter.ts|frontend/src/composables/useGalleryDetailModalAdapter.test.ts|frontend/src/router/index.ts|frontend/src/router/index.test.ts|frontend/src/stores/tasksRuntime.test.ts|frontend/src/stores/taskResultState.test.ts|frontend/src/stores/templateApply.test.ts|frontend/src/composables/useTemplateApplyUpload.test.ts|frontend/src/utils/normalizeTemplateApplyContext.test.ts)
                     add_group "frontend" "frontend-shared"
+                    ;;
+                  dashboard/frontend/src/App.vue|dashboard/frontend/src/App.test.js|dashboard/frontend/package.json|dashboard/frontend/vitest.config.js)
+                    add_group "dashboard" "dashboard-frontend"
                     ;;
                   scripts/run_hotspot_regression.sh|.github/workflows/hotspot_regression_gate.yml)
                     add_group "python" "task-min"
                     add_group "frontend" "frontend-shared"
+                    add_group "dashboard" "dashboard-frontend"
                     ;;
                 esac
               done < <(git diff --name-only "${DIFF_RANGE}")
@@ -247,8 +286,9 @@ jobs:
 
           PYTHON_GROUPS_STR="${PYTHON_GROUPS[*]}"
           FRONTEND_GROUPS_STR="${FRONTEND_GROUPS[*]}"
+          DASHBOARD_GROUPS_STR="${DASHBOARD_GROUPS[*]}"
 
-          if [[ -n "${PYTHON_GROUPS_STR}" || -n "${FRONTEND_GROUPS_STR}" ]]; then
+          if [[ -n "${PYTHON_GROUPS_STR}" || -n "${FRONTEND_GROUPS_STR}" || -n "${DASHBOARD_GROUPS_STR}" ]]; then
             HAS_GROUPS="true"
           else
             HAS_GROUPS="false"
@@ -257,6 +297,7 @@ jobs:
           {
             echo "python_groups=${PYTHON_GROUPS_STR}"
             echo "frontend_groups=${FRONTEND_GROUPS_STR}"
+            echo "dashboard_groups=${DASHBOARD_GROUPS_STR}"
             echo "has_groups=${HAS_GROUPS}"
           } >> "${GITHUB_OUTPUT}"
 
@@ -265,6 +306,7 @@ jobs:
             echo ""
             echo "- Python: \`${PYTHON_GROUPS_STR:-<none>}\`"
             echo "- Frontend: \`${FRONTEND_GROUPS_STR:-<none>}\`"
+            echo "- Dashboard: \`${DASHBOARD_GROUPS_STR:-<none>}\`"
           } >> "${GITHUB_STEP_SUMMARY}"
 
   no-op:
@@ -314,6 +356,8 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend/package.json
 
       - name: Install frontend dependencies
         working-directory: frontend
@@ -324,6 +368,31 @@ jobs:
           chmod +x scripts/run_hotspot_regression.sh
           ./scripts/run_hotspot_regression.sh ${{ needs.detect-groups.outputs.frontend_groups }}
 
+  dashboard-hotspot-gate:
+    name: Dashboard Hotspot Gate
+    needs: detect-groups
+    if: needs.detect-groups.outputs.dashboard_groups != ''
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: dashboard/frontend/package.json
+
+      - name: Install dashboard frontend dependencies
+        working-directory: dashboard/frontend
+        run: npm install --no-fund --no-audit
+
+      - name: Run dashboard hotspot regressions
+        run: |
+          chmod +x scripts/run_hotspot_regression.sh
+          ./scripts/run_hotspot_regression.sh ${{ needs.detect-groups.outputs.dashboard_groups }}
+
   gate-result:
     name: Hotspot Gate Result
     needs:
@@ -331,6 +400,7 @@ jobs:
       - no-op
       - python-hotspot-gate
       - frontend-hotspot-gate
+      - dashboard-hotspot-gate
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -339,9 +409,11 @@ jobs:
           HAS_GROUPS: ${{ needs.detect-groups.outputs.has_groups }}
           PYTHON_GROUPS: ${{ needs.detect-groups.outputs.python_groups }}
           FRONTEND_GROUPS: ${{ needs.detect-groups.outputs.frontend_groups }}
+          DASHBOARD_GROUPS: ${{ needs.detect-groups.outputs.dashboard_groups }}
           NO_OP_RESULT: ${{ needs.no-op.result }}
           PYTHON_RESULT: ${{ needs.python-hotspot-gate.result }}
           FRONTEND_RESULT: ${{ needs.frontend-hotspot-gate.result }}
+          DASHBOARD_RESULT: ${{ needs.dashboard-hotspot-gate.result }}
         shell: bash
         run: |
           set -euo pipefail
@@ -352,9 +424,11 @@ jobs:
             echo "- Has groups: \`${HAS_GROUPS}\`"
             echo "- Python groups: \`${PYTHON_GROUPS:-<none>}\`"
             echo "- Frontend groups: \`${FRONTEND_GROUPS:-<none>}\`"
+            echo "- Dashboard groups: \`${DASHBOARD_GROUPS:-<none>}\`"
             echo "- No-op job: \`${NO_OP_RESULT}\`"
             echo "- Python gate: \`${PYTHON_RESULT}\`"
             echo "- Frontend gate: \`${FRONTEND_RESULT}\`"
+            echo "- Dashboard gate: \`${DASHBOARD_RESULT}\`"
           } >> "${GITHUB_STEP_SUMMARY}"
 
           if [[ "${PYTHON_RESULT}" == "failure" || "${PYTHON_RESULT}" == "cancelled" ]]; then
@@ -364,6 +438,11 @@ jobs:
 
           if [[ "${FRONTEND_RESULT}" == "failure" || "${FRONTEND_RESULT}" == "cancelled" ]]; then
             echo "::error::Frontend hotspot gate did not pass."
+            exit 1
+          fi
+
+          if [[ "${DASHBOARD_RESULT}" == "failure" || "${DASHBOARD_RESULT}" == "cancelled" ]]; then
+            echo "::error::Dashboard hotspot gate did not pass."
             exit 1
           fi
 

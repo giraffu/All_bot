@@ -19,6 +19,7 @@ usage() {
   gallery-web     gallery Web API 回归
   message-handler Telegram message_handler 回归
   frontend-shared 前端公共壳层 / 模板应用 / 列表态回归
+  dashboard-frontend Dashboard App 壳层与编排回归
   help            显示帮助
 
 示例:
@@ -137,15 +138,28 @@ for group in "$@"; do
         src/views/Gallery.test.ts \
         src/views/GalleryWorkbenchFlow.test.ts \
         src/views/MyFavoritesFlow.test.ts \
+        src/components/GalleryDetailModal.test.ts \
+        src/components/DetailModalShell.test.ts \
         src/components/MySubmissionsPanelFlow.test.ts \
+        src/components/PostBrowserShell.test.ts \
         src/components/ListStateBlock.test.ts \
+        src/components/GenerationWorkbenchShell.test.ts \
         src/components/template-apply/TemplateApplyWorkbenchHost.test.ts \
+        src/composables/useGalleryDetailModalAdapter.test.ts \
         src/router/index.test.ts \
         src/stores/tasksRuntime.test.ts \
         src/stores/taskResultState.test.ts \
         src/stores/templateApply.test.ts \
         src/composables/useTemplateApplyUpload.test.ts \
         src/utils/normalizeTemplateApplyContext.test.ts
+      ;;
+    dashboard-frontend)
+      echo ""
+      echo "==> Running dashboard-frontend"
+      (
+        cd "${ROOT_DIR}/dashboard/frontend"
+        npm exec -- vitest run src/App.test.js
+      )
       ;;
     *)
       echo "未知分组: ${group}" >&2

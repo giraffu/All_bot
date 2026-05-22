@@ -2,6 +2,7 @@ import logging
 from typing import Optional, Tuple
 
 from config import BOT_TOKEN, BOT_TOKEN_TEST
+from src.core.auth_core_dependencies import build_auth_core_dependencies
 from src.core.auth_core_flows import (
     authenticate_and_get_user_flow,
     authenticate_user_by_password_flow,
@@ -31,11 +32,7 @@ from src.core.auth_core_rate_limit import (
     increment_rate_limit,
     is_rate_limited,
 )
-from src.database.core import AsyncSessionLocal
-from src.core.user_core import get_or_create_user_by_telegram
 from src.database.models import User
-from src.services.permission_service import permission_service
-from src.services.redis_client import redis_client
 
 logger = logging.getLogger(__name__)
 
@@ -125,14 +122,17 @@ def verify_telegram_webapp_initdata(init_data: str) -> Optional[dict]:
 async def authenticate_and_get_user(
     init_data: Optional[str] = None, widget_data: Optional[dict] = None
 ) -> Tuple[User, dict]:
+    dependencies = build_auth_core_dependencies()
     return await authenticate_and_get_user_flow(
         init_data=init_data,
         widget_data=widget_data,
         verify_telegram_webapp_initdata_func=verify_telegram_webapp_initdata,
         verify_telegram_authorization_func=verify_telegram_authorization,
         build_telegram_auth_profile_func=build_telegram_auth_profile,
-        get_or_create_user_by_telegram_func=get_or_create_user_by_telegram,
-        get_user_detailed_stats_func=permission_service.get_user_detailed_stats,
+        get_or_create_user_by_telegram_func=(
+            dependencies.get_or_create_user_by_telegram_func
+        ),
+        get_user_detailed_stats_func=dependencies.get_user_detailed_stats_func,
         invalid_signature_error_factory=InvalidSignatureError,
     )
 
@@ -140,20 +140,21 @@ async def authenticate_and_get_user(
 async def authenticate_user_by_password(
     username: str, password: str, client_ip: str
 ) -> Tuple[User, dict]:
+    dependencies = build_auth_core_dependencies()
     return await authenticate_user_by_password_flow(
         username=username,
         password=password,
         client_ip=client_ip,
-        redis=redis_client.redis,
-        session_factory=AsyncSessionLocal,
+        redis=dependencies.redis,
+        session_factory=dependencies.session_factory,
         build_login_rate_limit_keys_func=build_login_rate_limit_keys,
         is_rate_limited_func=is_rate_limited,
         authenticate_password_credentials_func=authenticate_password_credentials,
         verify_password_func=verify_password,
         increment_rate_limit_func=increment_rate_limit,
-        check_web_access_func=permission_service.check_web_access,
+        check_web_access_func=dependencies.check_web_access_func,
         clear_rate_limit_func=clear_rate_limit,
-        get_user_detailed_stats_func=permission_service.get_user_detailed_stats,
+        get_user_detailed_stats_func=dependencies.get_user_detailed_stats_func,
         rate_limit_error_factory=RateLimitError,
         invalid_credentials_error_factory=InvalidCredentialsError,
         insufficient_permission_error_factory=InsufficientPermissionError,
@@ -165,17 +166,18 @@ async def authenticate_user_by_password(
 async def bind_user_password(
     user_id: int, username: str, password: str, client_ip: str
 ) -> None:
+    dependencies = build_auth_core_dependencies()
     return await bind_user_password_flow(
         user_id=user_id,
         username=username,
         password=password,
         client_ip=client_ip,
-        redis=redis_client.redis,
-        session_factory=AsyncSessionLocal,
+        redis=dependencies.redis,
+        session_factory=dependencies.session_factory,
         build_bind_rate_limit_keys_func=build_bind_rate_limit_keys,
         is_rate_limited_func=is_rate_limited,
         get_bindable_user_func=get_bindable_user,
-        check_web_access_func=permission_service.check_web_access,
+        check_web_access_func=dependencies.check_web_access_func,
         bind_password_to_user_func=bind_password_to_user,
         get_password_hash_func=get_password_hash,
         increment_rate_limit_func=increment_rate_limit,

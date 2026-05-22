@@ -213,6 +213,10 @@ const primeFavoritesApi = (options?: { empty?: boolean; submissionsEmpty?: boole
       return Promise.resolve({ data: faceSwapContext })
     }
 
+    if (url === `/gallery/posts/${samplePost.id}/apply-context`) {
+      return Promise.resolve({ data: faceSwapContext })
+    }
+
     throw new Error(`Unexpected GET request: ${url}`)
   })
 }
@@ -338,6 +342,56 @@ describe('MyFavorites workbench flow', () => {
     expect(wrapper.text()).not.toContain('您还没有收藏过任何作品')
     expect(wrapper.text()).toContain('已上架')
     expect(wrapper.findAll('.group.cursor-pointer')).toHaveLength(1)
+  })
+
+  it('keeps the shared detail modal and template workbench path working after switching to submissions', async () => {
+    primeFavoritesApi({ empty: true })
+
+    const wrapper = mountHarness()
+    await flushPromises()
+    await flushPromises()
+
+    const submissionsTab = wrapper
+      .findAll('button')
+      .find(button => button.text().trim() === '我的投稿')
+
+    expect(submissionsTab).toBeTruthy()
+
+    await submissionsTab!.trigger('click')
+    await flushPromises()
+    await flushPromises()
+
+    expect(wrapper.findAll('.group.cursor-pointer')).toHaveLength(1)
+
+    await wrapper.get('.group.cursor-pointer').trigger('click')
+    await flushPromises()
+    await flushPromises()
+
+    const applyButton = wrapper
+      .findAll('button')
+      .find(button => button.text().includes('一键应用'))
+
+    expect(applyButton).toBeTruthy()
+
+    await applyButton!.trigger('click')
+    await flushPromises()
+    await flushPromises()
+
+    const templateApplyStore = useTemplateApplyStore()
+    const hostModal = wrapper
+      .findAll('.a-modal-stub')
+      .find(node => node.attributes('data-title') === '快速换脸')
+
+    expect(routerReplaceMock).toHaveBeenCalledWith({
+      name: 'MyFavorites',
+      query: {
+        tab: 'submissions'
+      }
+    })
+    expect(messageSuccessMock).toHaveBeenCalledWith('已载入模板工作台')
+    expect(templateApplyStore.visible).toBe(true)
+    expect(templateApplyStore.panelKind).toBe('faceSwap')
+    expect(hostModal?.attributes('data-open')).toBe('true')
   })
 
   it('renders the shared error state and retries loading when the favorites list request fails', async () => {

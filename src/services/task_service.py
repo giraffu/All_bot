@@ -499,12 +499,21 @@ class TaskService:
 
     @staticmethod
     async def _complete_monitored_bot_task(**kwargs) -> Tuple[Optional[bytes], Optional[str]]:
+        kwargs.setdefault("send_result_media_func", TaskService._send_result_media)
+        kwargs.setdefault(
+            "cleanup_completion_status_message_func",
+            TaskService._cleanup_completion_status_message,
+        )
+        kwargs.setdefault(
+            "handle_task_completion_func",
+            TaskService._handle_task_completion,
+        )
+        kwargs.setdefault(
+            "finalize_failed_task_for_bot_func",
+            TaskService._finalize_failed_task_for_bot,
+        )
         return await complete_monitored_bot_task(
             **kwargs,
-            send_result_media_func=TaskService._send_result_media,
-            cleanup_completion_status_message_func=TaskService._cleanup_completion_status_message,
-            handle_task_completion_func=TaskService._handle_task_completion,
-            finalize_failed_task_for_bot_func=TaskService._finalize_failed_task_for_bot,
         )
 
     _download_and_log_task_output = staticmethod(download_and_log_task_output_seam)

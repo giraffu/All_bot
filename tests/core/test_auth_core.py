@@ -9,6 +9,7 @@ import pytest
 from sqlalchemy.exc import IntegrityError
 
 from src.core import auth_core
+from src.core.auth_core_dependencies import AuthCoreDependencies
 from src.core.auth_core_password_hash import (
     get_password_hash as get_password_hash_helper,
     verify_password as verify_password_helper,
@@ -67,6 +68,25 @@ class _FakeSession:
 
     async def __aexit__(self, exc_type, exc, tb):
         return False
+
+
+def _build_auth_core_dependencies(
+    *,
+    redis,
+    session_factory,
+    get_or_create_user_by_telegram_func=None,
+    get_user_detailed_stats_func=None,
+    check_web_access_func=None,
+):
+    return AuthCoreDependencies(
+        redis=redis,
+        session_factory=session_factory,
+        get_or_create_user_by_telegram_func=(
+            get_or_create_user_by_telegram_func or AsyncMock()
+        ),
+        get_user_detailed_stats_func=get_user_detailed_stats_func or AsyncMock(),
+        check_web_access_func=check_web_access_func or AsyncMock(return_value=True),
+    )
 
 
 @pytest.mark.asyncio
@@ -196,11 +216,15 @@ async def test_authenticate_and_get_user_uses_widget_profile_for_user_creation(m
 
     monkeypatch.setattr(auth_core, "verify_telegram_authorization", lambda _data: True)
     get_or_create_user = AsyncMock(return_value=(user, False))
-    monkeypatch.setattr(auth_core, "get_or_create_user_by_telegram", get_or_create_user)
     monkeypatch.setattr(
-        auth_core.permission_service,
-        "get_user_detailed_stats",
-        AsyncMock(return_value=stats),
+        auth_core,
+        "build_auth_core_dependencies",
+        lambda: _build_auth_core_dependencies(
+            redis=SimpleNamespace(),
+            session_factory=lambda: None,
+            get_or_create_user_by_telegram_func=get_or_create_user,
+            get_user_detailed_stats_func=AsyncMock(return_value=stats),
+        ),
     )
 
     result_user, result_stats = await auth_core.authenticate_and_get_user(
@@ -396,8 +420,14 @@ async def test_authenticate_user_by_password_raises_rate_limit_before_db(monkeyp
     redis = SimpleNamespace(eval=AsyncMock(return_value=1), delete=AsyncMock())
     session_factory = MagicMock()
 
-    monkeypatch.setattr(auth_core.redis_client, "redis", redis)
-    monkeypatch.setattr(auth_core, "AsyncSessionLocal", session_factory)
+    monkeypatch.setattr(
+        auth_core,
+        "build_auth_core_dependencies",
+        lambda: _build_auth_core_dependencies(
+            redis=redis,
+            session_factory=session_factory,
+        ),
+    )
 
     with pytest.raises(auth_core.RateLimitError):
         await auth_core.authenticate_user_by_password("tester", "secret", "127.0.0.1")
@@ -413,8 +443,14 @@ async def test_authenticate_user_by_password_increments_rate_limit_on_invalid_cr
     redis = SimpleNamespace(eval=AsyncMock(side_effect=[0, 1]), delete=AsyncMock())
     session = _FakeSession(execute_result=_FakeResult(None))
 
-    monkeypatch.setattr(auth_core.redis_client, "redis", redis)
-    monkeypatch.setattr(auth_core, "AsyncSessionLocal", lambda: session)
+    monkeypatch.setattr(
+        auth_core,
+        "build_auth_core_dependencies",
+        lambda: _build_auth_core_dependencies(
+            redis=redis,
+            session_factory=lambda: session,
+        ),
+    )
     monkeypatch.setattr(auth_core, "verify_password", AsyncMock(return_value=False))
 
     with pytest.raises(auth_core.InvalidCredentialsError):
@@ -434,19 +470,17 @@ async def test_authenticate_user_by_password_returns_stats_and_clears_rate_limit
     redis = SimpleNamespace(eval=AsyncMock(return_value=0), delete=AsyncMock())
     session = _FakeSession(execute_result=_FakeResult(user))
 
-    monkeypatch.setattr(auth_core.redis_client, "redis", redis)
-    monkeypatch.setattr(auth_core, "AsyncSessionLocal", lambda: session)
+    monkeypatch.setattr(
+        auth_core,
+        "build_auth_core_dependencies",
+        lambda: _build_auth_core_dependencies(
+            redis=redis,
+            session_factory=lambda: session,
+            get_user_detailed_stats_func=AsyncMock(return_value=stats),
+            check_web_access_func=AsyncMock(return_value=True),
+        ),
+    )
     monkeypatch.setattr(auth_core, "verify_password", AsyncMock(return_value=True))
-    monkeypatch.setattr(
-        auth_core.permission_service,
-        "check_web_access",
-        AsyncMock(return_value=True),
-    )
-    monkeypatch.setattr(
-        auth_core.permission_service,
-        "get_user_detailed_stats",
-        AsyncMock(return_value=stats),
-    )
 
     result_user, result_stats = await auth_core.authenticate_user_by_password(
         "tester", "secret", "127.0.0.1"
@@ -471,12 +505,14 @@ async def test_bind_user_password_rolls_back_and_increments_rate_limit_on_integr
         flush_side_effect=IntegrityError("duplicate", {}, None),
     )
 
-    monkeypatch.setattr(auth_core.redis_client, "redis", redis)
-    monkeypatch.setattr(auth_core, "AsyncSessionLocal", lambda: session)
     monkeypatch.setattr(
-        auth_core.permission_service,
-        "check_web_access",
-        AsyncMock(return_value=True),
+        auth_core,
+        "build_auth_core_dependencies",
+        lambda: _build_auth_core_dependencies(
+            redis=redis,
+            session_factory=lambda: session,
+            check_web_access_func=AsyncMock(return_value=True),
+        ),
     )
     monkeypatch.setattr(auth_core, "get_password_hash", AsyncMock(return_value="new-hash"))
 
@@ -499,12 +535,14 @@ async def test_bind_user_password_commits_and_blacklists_previous_password_versi
     redis = SimpleNamespace(eval=AsyncMock(return_value=0), delete=AsyncMock(), setex=AsyncMock())
     session = _FakeSession(get_result=user)
 
-    monkeypatch.setattr(auth_core.redis_client, "redis", redis)
-    monkeypatch.setattr(auth_core, "AsyncSessionLocal", lambda: session)
     monkeypatch.setattr(
-        auth_core.permission_service,
-        "check_web_access",
-        AsyncMock(return_value=True),
+        auth_core,
+        "build_auth_core_dependencies",
+        lambda: _build_auth_core_dependencies(
+            redis=redis,
+            session_factory=lambda: session,
+            check_web_access_func=AsyncMock(return_value=True),
+        ),
     )
     monkeypatch.setattr(auth_core, "get_password_hash", AsyncMock(return_value="new-hash"))
 
