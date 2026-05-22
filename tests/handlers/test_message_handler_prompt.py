@@ -1,0 +1,76 @@
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock
+
+import pytest
+
+from src.handlers.message_handler_prompt import handle_prompt_impl
+
+
+@pytest.mark.asyncio
+async def test_handle_prompt_impl_delegates_to_route_dispatch(monkeypatch):
+    ensure_access = AsyncMock()
+    extract_message = MagicMock(return_value=("msg", "主菜单"))
+    dispatch_route = AsyncMock(return_value=(True, "routed"))
+    reply_fallback = AsyncMock()
+    logger = SimpleNamespace(info=MagicMock())
+    update = SimpleNamespace(effective_user=SimpleNamespace(id=1))
+    context = SimpleNamespace(lang="zh")
+
+    monkeypatch.setattr(
+        "src.handlers.prompt_router.GLOBAL_REVERSE_MAP",
+        {"主菜单": "menu.main_menu"},
+        raising=False,
+    )
+
+    result = await handle_prompt_impl(
+        update,
+        context,
+        prompt_routes={"menu.main_menu": object()},
+        ensure_user_access_reward=ensure_access,
+        extract_prompt_message_text=extract_message,
+        dispatch_prompt_route=dispatch_route,
+        reply_private_prompt_fallback=reply_fallback,
+        reply_text="reply-text",
+        logger=logger,
+    )
+
+    assert result == "routed"
+    ensure_access.assert_awaited_once_with(context, update.effective_user)
+    dispatch_route.assert_awaited_once()
+    reply_fallback.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_handle_prompt_impl_falls_back_for_unmatched_private_prompt(monkeypatch):
+    ensure_access = AsyncMock()
+    extract_message = MagicMock(return_value=("msg", "unknown"))
+    dispatch_route = AsyncMock(return_value=(False, None))
+    reply_fallback = AsyncMock(return_value=None)
+    logger = SimpleNamespace(info=MagicMock())
+    update = SimpleNamespace(effective_user=SimpleNamespace(id=1))
+    context = SimpleNamespace(lang="zh")
+
+    monkeypatch.setattr(
+        "src.handlers.prompt_router.GLOBAL_REVERSE_MAP",
+        {},
+        raising=False,
+    )
+
+    result = await handle_prompt_impl(
+        update,
+        context,
+        prompt_routes={},
+        ensure_user_access_reward=ensure_access,
+        extract_prompt_message_text=extract_message,
+        dispatch_prompt_route=dispatch_route,
+        reply_private_prompt_fallback=reply_fallback,
+        reply_text="reply-text",
+        logger=logger,
+    )
+
+    assert result is None
+    reply_fallback.assert_awaited_once_with(
+        "msg",
+        lang="zh",
+        reply_text="reply-text",
+    )

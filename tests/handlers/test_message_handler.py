@@ -196,9 +196,36 @@ async def test_handle_personal_center_uses_runtime_reply_builder(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_handle_checkin_replies_gate_payload_before_building_checkin(monkeypatch):
+    reply_mock = AsyncMock()
+    update = _build_profile_update()
+    context = _build_context()
+
+    monkeypatch.setattr(message_handler, "robust_reply_text", reply_mock)
+    monkeypatch.setattr(
+        message_handler,
+        "get_checkin_gate_reply",
+        AsyncMock(return_value=("gate-text", "gate-keyboard")),
+    )
+    build_checkin_reply = AsyncMock(return_value="should-not-run")
+    monkeypatch.setattr(message_handler, "build_checkin_reply", build_checkin_reply)
+
+    await message_handler.handle_checkin(update, context, text="签到")
+
+    reply_mock.assert_awaited_once_with(
+        update.message,
+        "gate-text",
+        parse_mode="Markdown",
+        reply_markup="gate-keyboard",
+    )
+    build_checkin_reply.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("handler_name", "build_payload_name", "text"),
     [
+        ("handle_photo_edit_menu", "build_photo_edit_payload", "懒人P图"),
         ("handle_video_edit_menu", "build_video_edit_payload", "视频编辑"),
         ("handle_gallery_menu", "build_gallery_payload", "画廊"),
         ("handle_back_to_main_menu", "build_back_to_main_payload", "主菜单"),
@@ -213,6 +240,8 @@ async def test_menu_handlers_delegate_to_reply_with_built_payload(
     context = _build_context()
 
     monkeypatch.setattr(message_handler, "reply_with_built_payload", reply_with_payload)
+    if handler_name == "handle_photo_edit_menu":
+        monkeypatch.setattr(message_handler, "ensure_user_access_reward", AsyncMock())
 
     await getattr(message_handler, handler_name)(update, context, text=text)
 
@@ -220,7 +249,123 @@ async def test_menu_handlers_delegate_to_reply_with_built_payload(
         update,
         reply_text=message_handler.robust_reply_text,
         build_payload=getattr(message_handler, build_payload_name),
-        **({"context": context} if build_payload_name in {"build_video_edit_payload", "build_back_to_main_payload"} else {}),
+        **(
+            {"context": context}
+            if build_payload_name in {
+                "build_photo_edit_payload",
+                "build_video_edit_payload",
+                "build_back_to_main_payload",
+            }
+            else {}
+        ),
+    )
+
+
+@pytest.mark.asyncio
+async def test_dispatch_built_menu_handler_rewards_user_before_reply(monkeypatch):
+    reply_with_payload = AsyncMock(return_value=None)
+    ensure_reward = AsyncMock(return_value=None)
+    update = _build_profile_update()
+    context = _build_context()
+
+    monkeypatch.setattr(message_handler, "reply_with_built_payload", reply_with_payload)
+    monkeypatch.setattr(message_handler, "ensure_user_access_reward", ensure_reward)
+
+    result = await message_handler._dispatch_built_menu_handler(
+        update,
+        context,
+        build_payload=message_handler.build_photo_edit_payload,
+        include_context=True,
+        ensure_reward=True,
+    )
+
+    assert result is None
+    ensure_reward.assert_awaited_once_with(context, update.effective_user)
+    reply_with_payload.assert_awaited_once_with(
+        update,
+        reply_text=message_handler.robust_reply_text,
+        build_payload=message_handler.build_photo_edit_payload,
+        context=context,
+    )
+
+
+@pytest.mark.asyncio
+async def test_dispatch_built_menu_handler_short_circuits_when_reward_user_missing(monkeypatch):
+    reply_with_payload = AsyncMock(return_value=None)
+    ensure_reward = AsyncMock(return_value=None)
+    update = _build_private_update_with_edited_message(text="懒人P图")
+    update.effective_user = None
+    context = _build_context()
+
+    monkeypatch.setattr(message_handler, "reply_with_built_payload", reply_with_payload)
+    monkeypatch.setattr(message_handler, "ensure_user_access_reward", ensure_reward)
+
+    result = await message_handler._dispatch_built_menu_handler(
+        update,
+        context,
+        build_payload=message_handler.build_photo_edit_payload,
+        include_context=True,
+        ensure_reward=True,
+    )
+
+    assert result is None
+    ensure_reward.assert_not_awaited()
+    reply_with_payload.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_dispatch_async_menu_handler_passes_common_reply_dependencies():
+    impl = AsyncMock(return_value=None)
+    update = _build_private_update_with_edited_message(text="noop")
+    context = _build_context()
+
+    result = await message_handler._dispatch_async_menu_handler(
+        update,
+        context,
+        impl=impl,
+        build_payload=message_handler.build_share_reply,
+        user="USER",
+    )
+
+    assert result is None
+    impl.assert_awaited_once_with(
+        update,
+        context=context,
+        build_payload=message_handler.build_share_reply,
+        reply_with_async_payload=message_handler.reply_with_async_payload,
+        reply_text=message_handler.robust_reply_text,
+        user="USER",
+    )
+
+
+@pytest.mark.asyncio
+async def test_async_menu_builder_keeps_queue_extra_kwargs():
+    impl = AsyncMock(return_value=None)
+    update = _build_private_update_with_edited_message(text="排队")
+    context = _build_context()
+    handler = message_handler._build_async_menu_handler(
+        handler_name="handle_queue_status",
+        route_keys=("menu.queue",),
+        impl_ref=lambda: message_handler.handle_queue_status_impl,
+        build_payload_ref=lambda: message_handler.get_queue_status_reply,
+        task_type_display_names=message_handler.TASK_TYPE_DISPLAY_NAMES,
+    )
+
+    original_impl = message_handler.handle_queue_status_impl
+    try:
+        message_handler.handle_queue_status_impl = impl
+        result = await handler(update, context, text="排队")
+    finally:
+        message_handler.handle_queue_status_impl = original_impl
+
+    assert result is None
+    impl.assert_awaited_once_with(
+        update,
+        context=context,
+        build_payload=message_handler.get_queue_status_reply,
+        reply_with_async_payload=message_handler.reply_with_async_payload,
+        reply_text=message_handler.robust_reply_text,
+        task_type_display_names=message_handler.TASK_TYPE_DISPLAY_NAMES,
     )
 
 
@@ -264,4 +409,59 @@ async def test_async_menu_like_handlers_delegate_to_reply_with_async_payload(
         reply_text=message_handler.robust_reply_text,
         build_payload=getattr(message_handler, build_payload_name),
         **extra_kwargs,
+    )
+
+
+def _build_media_update():
+    chat = SimpleNamespace(type="private", id=10001)
+    message = SimpleNamespace(
+        chat=chat,
+        chat_id=chat.id,
+        photo=["photo"],
+        video="video",
+        document="document",
+    )
+    user = SimpleNamespace(id=20001, username="tester", full_name="Test User")
+    return SimpleNamespace(
+        message=message,
+        edited_message=None,
+        effective_user=user,
+        effective_chat=chat,
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("handler_name", "unsupported_message"),
+    [
+        ("handle_photo", None),
+        ("handle_video", message_handler.UNSUPPORTED_VIDEO_MESSAGE),
+        ("handle_document", message_handler.UNSUPPORTED_DOCUMENT_MESSAGE),
+    ],
+)
+async def test_media_handlers_delegate_with_expected_unsupported_message(
+    monkeypatch, handler_name, unsupported_message
+):
+    handle_media_update_impl = AsyncMock(return_value="handled")
+    update = _build_media_update()
+    context = _build_context()
+
+    monkeypatch.setattr(
+        "src.handlers.message_handler_media_entry.handle_media_update_impl",
+        handle_media_update_impl,
+    )
+
+    result = await getattr(message_handler, handler_name)(update, context)
+
+    assert result == "handled"
+    handle_media_update_impl.assert_awaited_once_with(
+        update,
+        context,
+        handle_media_entry=message_handler.handle_media_entry,
+        unsupported_message=unsupported_message,
+        is_mentioned=message_handler._is_mentioned,
+        ensure_access_and_reward=message_handler.ensure_access_and_reward,
+        on_template_contribution=message_handler._handle_template_contribution,
+        on_photo_idle=message_handler._handle_photo_idle,
+        handle_media_message_fn=message_handler.handle_media_message,
     )

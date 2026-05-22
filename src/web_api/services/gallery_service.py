@@ -40,6 +40,16 @@ from src.web_api.schemas.gallery_schema import (
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_GALLERY_ALLOWED_TYPE_CONFIGS = [
+    ("i2i_pro", "task.mode_i2i_pro"),
+    ("i2i_draw", "task.mode_i2i_draw"),
+    ("edit", "task.mode_edit"),
+    ("img2img_lora", "task.mode_img2img_lora"),
+    ("custom_video", "task.mode_custom_video"),
+    ("video_lora", "task.mode_video_lora"),
+    ("ltx_video", "task.mode_ltx_video"),
+]
+
 APPLY_CONTEXT_ALLOW_INPUT_REUSE_TASK_TYPES = {
     "face_swap",
     "face_video",
@@ -379,6 +389,21 @@ async def build_gallery_post_responses(
     )
 
 
+async def call_gallery_service_with_optional_db(
+    *,
+    db,
+    service_fn,
+    session_factory=None,
+    **kwargs,
+):
+    return await call_with_optional_db(
+        db=db,
+        service_fn=service_fn,
+        session_factory=session_factory or AsyncSessionLocal,
+        **kwargs,
+    )
+
+
 async def get_my_gallery_posts_payload(
     *,
     current_user,
@@ -435,13 +460,9 @@ async def get_my_gallery_posts_api_payload(
     session_factory=None,
     service_fn=None,
 ) -> PaginatedGalleryResponse:
-    if session_factory is None:
-        session_factory = AsyncSessionLocal
-    if service_fn is None:
-        service_fn = get_my_gallery_posts_payload
-    return await call_with_optional_db(
+    return await call_gallery_service_with_optional_db(
         db=db,
-        service_fn=service_fn,
+        service_fn=service_fn or get_my_gallery_posts_payload,
         session_factory=session_factory,
         current_user=current_user,
         page=page,
@@ -516,13 +537,9 @@ async def get_my_favorite_posts_api_payload(
     session_factory=None,
     service_fn=None,
 ) -> PaginatedGalleryResponse:
-    if session_factory is None:
-        session_factory = AsyncSessionLocal
-    if service_fn is None:
-        service_fn = get_my_favorite_posts_payload
-    return await call_with_optional_db(
+    return await call_gallery_service_with_optional_db(
         db=db,
-        service_fn=service_fn,
+        service_fn=service_fn or get_my_favorite_posts_payload,
         session_factory=session_factory,
         current_user=current_user,
         page=page,
@@ -591,13 +608,9 @@ async def get_gallery_posts_api_payload(
     session_factory=None,
     service_fn=None,
 ) -> PaginatedGalleryResponse:
-    if session_factory is None:
-        session_factory = AsyncSessionLocal
-    if service_fn is None:
-        service_fn = get_gallery_posts_payload
-    return await call_with_optional_db(
+    return await call_gallery_service_with_optional_db(
         db=db,
-        service_fn=service_fn,
+        service_fn=service_fn or get_gallery_posts_payload,
         session_factory=session_factory,
         page=page,
         size=size,
@@ -675,13 +688,9 @@ async def get_gallery_apply_context_api_payload(
     service_fn=None,
 ) -> ApplyContextResponse:
     _ = current_user
-    if session_factory is None:
-        session_factory = AsyncSessionLocal
-    if service_fn is None:
-        service_fn = get_gallery_apply_context_payload
-    return await call_with_optional_db(
+    return await call_gallery_service_with_optional_db(
         db=db,
-        service_fn=service_fn,
+        service_fn=service_fn or get_gallery_apply_context_payload,
         session_factory=session_factory,
         post_id=post_id,
     )
@@ -822,13 +831,9 @@ async def delete_gallery_post_api_payload(
     session_factory=None,
     service_fn=None,
 ) -> dict:
-    if session_factory is None:
-        session_factory = AsyncSessionLocal
-    if service_fn is None:
-        service_fn = delete_gallery_post
-    return await call_with_optional_db(
+    return await call_gallery_service_with_optional_db(
         db=db,
-        service_fn=service_fn,
+        service_fn=service_fn or delete_gallery_post,
         session_factory=session_factory,
         post_id=post_id,
         current_user=current_user,
@@ -973,13 +978,9 @@ async def create_gallery_comment_api_payload(
     session_factory=None,
     service_fn=None,
 ) -> GalleryCommentResponse:
-    if session_factory is None:
-        session_factory = AsyncSessionLocal
-    if service_fn is None:
-        service_fn = create_gallery_comment_payload
-    return await call_with_optional_db(
+    return await call_gallery_service_with_optional_db(
         db=db,
-        service_fn=service_fn,
+        service_fn=service_fn or create_gallery_comment_payload,
         session_factory=session_factory,
         post_id=post_id,
         comment=comment,
@@ -1052,13 +1053,9 @@ async def get_gallery_comments_api_payload(
     session_factory=None,
     service_fn=None,
 ) -> PaginatedCommentResponse:
-    if session_factory is None:
-        session_factory = AsyncSessionLocal
-    if service_fn is None:
-        service_fn = get_gallery_comments_payload
-    return await call_with_optional_db(
+    return await call_gallery_service_with_optional_db(
         db=db,
-        service_fn=service_fn,
+        service_fn=service_fn or get_gallery_comments_payload,
         session_factory=session_factory,
         post_id=post_id,
         page=page,

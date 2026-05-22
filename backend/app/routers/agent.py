@@ -1,31 +1,25 @@
 import logging
-from typing import Optional
+from typing import Annotated, Optional
 
-# Instead of importing from main.py, we redefine the dependency here
-# or just import the Redis/Settings to avoid circular imports.
+from app.agent_router_helpers import (
+    check_task_payload,
+    complete_task_payload,
+    heartbeat_payload,
+    pop_task_payload,
+    task_heartbeat_payload,
+    update_status_payload,
+    verify_agent_token,
+)
 from app.config import settings
+from app.dependencies import get_queue_manager
 from app.queue_manager import QueueManager
-from fastapi import APIRouter, Depends, Header, HTTPException, status
+from fastapi import APIRouter, Depends, Header
 from pydantic import BaseModel
-from redis.asyncio import Redis
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/agent/task", tags=["agent"])
-
-
-# Dependency for Redis (duplicated from main.py to avoid circular import)
-async def get_redis():
-    redis = Redis.from_url(settings.redis_url)
-    try:
-        yield redis
-    finally:
-        await redis.close()
-
-
-# Dependency for QueueManager
-async def get_queue_manager(redis: Redis = Depends(get_redis)):
-    return QueueManager(redis)
+QueueManagerDep = Annotated[QueueManager, Depends(get_queue_manager)]
 
 
 class StatusUpdateRequest(BaseModel):
@@ -49,98 +43,47 @@ class HeartbeatRequest(BaseModel):
 
 
 def verify_token(authorization: Optional[str] = Header(None)):
-    agent_token = getattr(settings, "agent_secret_token", None)
-    if not agent_token:
-        logger.error("AGENT_SECRET_TOKEN is not configured")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Agent authentication is not configured",
-        )
-    if not authorization or authorization != f"Bearer {agent_token}":
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or missing agent token",
-        )
-    return True
+    return verify_agent_token(
+        authorization=authorization,
+        agent_token=getattr(settings, "agent_secret_token", None),
+        logger=logger,
+    )
 
 
 @router.get("/pop")
 async def pop_task(
     types: Optional[str] = None,
     _authorized: bool = Depends(verify_token),
-    queue_manager: QueueManager = Depends(get_queue_manager),
+    queue_manager: QueueManagerDep = None,
 ):
-    allowed_types = None
-    if types:
-        allowed_types = [t.strip() for t in types.split(",")]
-
-    task_data = await queue_manager.dequeue_task(allowed_types=allowed_types)
-    if not task_data:
-        return {"task": None, "message": "No pending tasks"}
-
-    task_id, _ = task_data
-    task_details = await queue_manager.get_task_status(task_id)
-
-    if not task_details:
-        return {"task": None, "message": "Task details not found"}
-
-    return {"task": task_details}
+    return await pop_task_payload(types=types, queue_manager=queue_manager)
 
 
 @router.get("/check/{task_id}")
 async def check_task(
     task_id: str,
     _authorized: bool = Depends(verify_token),
-    queue_manager: QueueManager = Depends(get_queue_manager),
+    queue_manager: QueueManagerDep = None,
 ):
-    task_details = await queue_manager.get_task_status(task_id)
-    if not task_details:
-        raise HTTPException(status_code=404, detail="Task not found")
-    return {
-        "status": task_details.get("status"),
-        "cancel_requested": queue_manager._as_bool(
-            task_details.get("cancel_requested")
-        ),
-    }
+    return await check_task_payload(task_id=task_id, queue_manager=queue_manager)
 
 
 @router.post("/status")
 async def update_status(
     req: StatusUpdateRequest,
     _authorized: bool = Depends(verify_token),
-    queue_manager: QueueManager = Depends(get_queue_manager),
+    queue_manager: QueueManagerDep = None,
 ):
-    await queue_manager.redis.hset(
-        f"comfy:task:{req.task_id}", "worker_id", req.agent_id
-    )
-    await queue_manager.redis.hset(
-        f"comfy:agent:heartbeat:{req.agent_id}", "current_task_id", req.task_id
-    )
-    await queue_manager.update_task_heartbeat(req.task_id)
-
-    if req.status == "running":
-        if req.progress > 0:
-            await queue_manager.update_progress(req.task_id, req.progress)
-    elif req.status == "failed":
-        await queue_manager.redis.hdel(
-            f"comfy:agent:heartbeat:{req.agent_id}", "current_task_id"
-        )
-        await queue_manager.fail_task(req.task_id, req.error)
-
-    return {"status": "ok"}
+    return await update_status_payload(req=req, queue_manager=queue_manager)
 
 
 @router.post("/complete")
 async def complete_task(
     req: CompleteRequest,
     _authorized: bool = Depends(verify_token),
-    queue_manager: QueueManager = Depends(get_queue_manager),
+    queue_manager: QueueManagerDep = None,
 ):
-    await queue_manager.redis.hdel(
-        f"comfy:agent:heartbeat:{req.agent_id}", "current_task_id"
-    )
-    await queue_manager.complete_task(req.task_id, req.result)
-    return {"status": "ok"}
+    return await complete_task_payload(req=req, queue_manager=queue_manager)
 
 
 class TaskHeartbeatRequest(BaseModel):
@@ -152,24 +95,15 @@ class TaskHeartbeatRequest(BaseModel):
 async def task_heartbeat(
     req: TaskHeartbeatRequest,
     _authorized: bool = Depends(verify_token),
-    queue_manager: QueueManager = Depends(get_queue_manager),
+    queue_manager: QueueManagerDep = None,
 ):
-    await queue_manager.update_task_heartbeat(req.task_id)
-    if req.agent_id:
-        await queue_manager.redis.hset(
-            f"comfy:task:{req.task_id}", "worker_id", req.agent_id
-        )
-        await queue_manager.redis.hset(
-            f"comfy:agent:heartbeat:{req.agent_id}", "current_task_id", req.task_id
-        )
-    return {"status": "ok"}
+    return await task_heartbeat_payload(req=req, queue_manager=queue_manager)
 
 
 @router.post("/heartbeat")
 async def heartbeat(
     req: HeartbeatRequest,
     _authorized: bool = Depends(verify_token),
-    queue_manager: QueueManager = Depends(get_queue_manager),
+    queue_manager: QueueManagerDep = None,
 ):
-    await queue_manager.update_agent_heartbeat(req.agent_id, req.types, req.status)
-    return {"status": "ok"}
+    return await heartbeat_payload(req=req, queue_manager=queue_manager)

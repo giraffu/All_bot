@@ -9,11 +9,9 @@ import MyFavorites from '@/views/MyFavorites.vue'
 import TemplateApplyWorkbenchHost from '@/components/template-apply/TemplateApplyWorkbenchHost.vue'
 import { mainLayoutContentRefKey } from '@/composables/useWorkbenchScrollLock'
 import { useTemplateApplyStore } from '@/stores/templateApply'
-import { GALLERY_APPLY_CONTEXT_STORAGE_KEY } from '@/utils/galleryApplyContext'
 
 const {
   apiGetMock,
-  routerPushMock,
   routerReplaceMock,
   messageSuccessMock,
   messageErrorMock,
@@ -21,7 +19,6 @@ const {
   routeMock
 } = vi.hoisted(() => ({
   apiGetMock: vi.fn(),
-  routerPushMock: vi.fn(),
   routerReplaceMock: vi.fn(),
   messageSuccessMock: vi.fn(),
   messageErrorMock: vi.fn(),
@@ -45,7 +42,6 @@ vi.mock('vue-router', async () => {
     ...actual,
     useRoute: () => routeMock,
     useRouter: () => ({
-      push: routerPushMock,
       replace: routerReplaceMock
     })
   }
@@ -270,7 +266,6 @@ describe('MyFavorites workbench flow', () => {
     routeMock.query.tab = 'favorite'
     sessionStorage.clear()
     apiGetMock.mockReset()
-    routerPushMock.mockReset()
     routerReplaceMock.mockReset()
     messageSuccessMock.mockReset()
     messageErrorMock.mockReset()
@@ -290,8 +285,6 @@ describe('MyFavorites workbench flow', () => {
       .findAll('.a-modal-stub')
       .find(node => node.attributes('data-title') === '快速换脸')
 
-    expect(sessionStorage.getItem(GALLERY_APPLY_CONTEXT_STORAGE_KEY)).toBeNull()
-    expect(routerPushMock).not.toHaveBeenCalled()
     expect(messageSuccessMock).toHaveBeenCalledWith('已载入模板工作台')
     expect(templateApplyStore.visible).toBe(true)
     expect(templateApplyStore.panelKind).toBe('faceSwap')

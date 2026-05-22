@@ -32,13 +32,6 @@ from src.logger import UserLogger
 from src.services.image_service import image_service
 from src.services.permission_service import permission_service
 from src.services.task_registry import TaskRegistry
-from src.services.task_service_completion import (
-    complete_monitored_bot_task,
-    download_and_log_task_output,
-    handle_task_completion,
-    monitor_submitted_bot_task,
-    monitor_bot_task_progress,
-)
 from src.services.task_service_entrypoints import (
     process_custom_video_task as process_custom_video_task_entrypoint,
     process_face_video_task as process_face_video_task_entrypoint,
@@ -54,20 +47,27 @@ from src.services.task_service_entrypoint_support import (
     build_unexpected_error_log_message,
     resolve_video_billing_args,
 )
+from src.services.task_service_facade_seams import (
+    cleanup_completion_status_message_seam,
+    cleanup_runtime_state_if_needed_seam,
+    complete_monitored_bot_task_seam as complete_monitored_bot_task_facade,
+    download_and_log_task_output_seam,
+    finalize_cancelled_task_for_bot_seam,
+    finalize_failed_task_for_bot_seam,
+    monitor_submitted_bot_task_seam,
+    monitor_task_progress_seam,
+    prepare_and_submit_bot_task_seam,
+    run_bot_task_flow_seam,
+    send_bot_domain_error_seam,
+    send_initial_task_status_seam,
+    send_bot_warning_seam,
+    send_result_media_seam,
+    submit_bot_task_seam,
+    handle_task_completion_seam,
+    update_submitted_task_status_seam,
+)
 from src.services.task_service_finalize import (
     build_bot_cancellation_message,
-    cleanup_runtime_state_if_needed,
-    finalize_cancelled_task_for_bot,
-    finalize_failed_task_for_bot,
-    send_bot_domain_error,
-    send_bot_warning,
-)
-from src.services.task_service_flow import (
-    prepare_and_submit_bot_task,
-    run_bot_task_flow,
-    send_initial_task_status,
-    submit_bot_task,
-    update_submitted_task_status,
 )
 from src.services.task_service_message_support import (
     build_message_spec,
@@ -80,11 +80,9 @@ from src.services.task_service_message_support import (
 from src.services.task_service_types import BotTaskMessageSpec, BotTaskRuntimeState
 from src.services.tg_task_runtime import (
     build_result_reply_markup,
-    cleanup_completion_status_message,
     get_or_send_status_message,
     record_result_message_meta,
     resolve_result_mode_name,
-    send_result_media,
 )
 from src.utils import robust_edit_text, robust_reply_text, robust_send_message
 
@@ -92,20 +90,17 @@ logger = logging.getLogger(__name__)
 
 # Compatibility exports for older tests and monkeypatch targets.
 _COMPAT_TEST_EXPORTS = (UserLogger, image_service, TaskRegistry)
+complete_monitored_bot_task = complete_monitored_bot_task_facade
 
 
 class TaskService:
-    @staticmethod
-    def _create_runtime_state(**kwargs) -> BotTaskRuntimeState:
-        return BotTaskRuntimeState(**kwargs)
-
-    @staticmethod
-    def _normalize_custom_video_resolution_value(resolution: str) -> int:
-        return normalize_custom_video_resolution_value(resolution)
-
-    @staticmethod
-    def _normalize_custom_video_duration_value(duration: str) -> int:
-        return normalize_custom_video_duration_value(duration)
+    _create_runtime_state = staticmethod(BotTaskRuntimeState)
+    _normalize_custom_video_resolution_value = staticmethod(
+        normalize_custom_video_resolution_value
+    )
+    _normalize_custom_video_duration_value = staticmethod(
+        normalize_custom_video_duration_value
+    )
 
     @staticmethod
     async def _resolve_custom_video_settings(
@@ -121,36 +116,9 @@ class TaskService:
             reply_text_func=robust_reply_text,
         )
 
-    @staticmethod
-    def _build_message_spec(
-        *,
-        initial_status_text: str,
-        submitted_status_text: Optional[str] = None,
-        progress_wait_text: Optional[str] = None,
-        completion_caption: Optional[str] = None,
-        missing_output_message: str = "生成完成但未获取到文件路径，已退还灵石",
-        cancellation_message_template: str = "任务已撤销，预扣的 {cost} 灵石已全额退回。",
-    ) -> BotTaskMessageSpec:
-        return build_message_spec(
-            initial_status_text=initial_status_text,
-            submitted_status_text=submitted_status_text,
-            progress_wait_text=progress_wait_text,
-            completion_caption=completion_caption,
-            missing_output_message=missing_output_message,
-            cancellation_message_template=cancellation_message_template,
-        )
-
-    @staticmethod
-    def _with_submitted_status(
-        spec: BotTaskMessageSpec, submitted_status_text: str
-    ) -> BotTaskMessageSpec:
-        return with_submitted_status(spec, submitted_status_text)
-
-    @staticmethod
-    def _with_completion_caption(
-        spec: BotTaskMessageSpec, completion_caption: str
-    ) -> BotTaskMessageSpec:
-        return with_completion_caption(spec, completion_caption)
+    _build_message_spec = staticmethod(build_message_spec)
+    _with_submitted_status = staticmethod(with_submitted_status)
+    _with_completion_caption = staticmethod(with_completion_caption)
 
     @staticmethod
     def _resolve_display_mode_name(task_type: str, context) -> str:
@@ -243,9 +211,7 @@ class TaskService:
             lora_task_types=lora_task_types,
         )
 
-    @staticmethod
-    def _build_cleanup_paths(paths):
-        return build_cleanup_paths(paths)
+    _build_cleanup_paths = staticmethod(build_cleanup_paths)
 
     @staticmethod
     def _build_unexpected_error_log_message(task_label: str, *, verb: str = "in") -> str:
@@ -260,122 +226,32 @@ class TaskService:
             reply_markup=reply_markup,
         )
 
-    @staticmethod
-    def _resolve_result_mode_name(task_type):
-        return resolve_result_mode_name(task_type)
+    _resolve_result_mode_name = staticmethod(resolve_result_mode_name)
+    _record_result_message_meta = staticmethod(record_result_message_meta)
+
+    _send_result_media = staticmethod(send_result_media_seam)
+    _cleanup_completion_status_message = staticmethod(
+        cleanup_completion_status_message_seam
+    )
 
     @staticmethod
-    def _record_result_message_meta(context, sent_msg, task_type, prompt, task_id):
-        record_result_message_meta(context, sent_msg, task_type, prompt, task_id)
-
-    @staticmethod
-    async def _send_result_media(
-        *,
-        context,
-        chat_id,
-        media_bytes,
-        is_video,
-        caption,
-        task_type,
-        task_id,
-        allow_contribute,
-        reply_markup,
-        prompt,
-    ):
-        return await send_result_media(
-            context=context,
-            chat_id=chat_id,
-            media_bytes=media_bytes,
-            is_video=is_video,
-            caption=caption,
-            task_type=task_type,
-            task_id=task_id,
-            allow_contribute=allow_contribute,
-            reply_markup=reply_markup,
-            prompt=prompt,
-        )
-
-    @staticmethod
-    async def _cleanup_completion_status_message(*, status_msg, delete_status, send_result):
-        await cleanup_completion_status_message(
-            status_msg=status_msg,
-            delete_status=delete_status,
-            send_result=send_result,
-        )
-
-    @staticmethod
-    async def _finalize_cancelled_task_for_bot(
-        *,
-        status_msg,
-        internal_user_id,
-        username,
-        cost,
-        task_submitted,
-        registry_task_id,
-        explicit_user_message,
-    ):
-        from src.core.task_core import finalize_task_cancellation
-
-        cancellation_result = await finalize_cancelled_task_for_bot(
-            status_msg=status_msg,
-            internal_user_id=internal_user_id,
-            username=username,
-            cost=cost,
-            task_submitted=task_submitted,
-            registry_task_id=registry_task_id,
-            explicit_user_message=explicit_user_message,
-            finalize_task_cancellation_func=finalize_task_cancellation,
+    async def _finalize_cancelled_task_for_bot(**kwargs):
+        return await finalize_cancelled_task_for_bot_seam(
+            **kwargs,
             edit_text_func=robust_edit_text,
         )
-        return cancellation_result
 
     @staticmethod
-    async def _finalize_failed_task_for_bot(
-        *,
-        context,
-        chat_id,
-        status_msg,
-        internal_user_id,
-        username,
-        cost,
-        should_refund,
-        registry_task_id,
-        release_lock,
-        message_prefix="❌",
-        prefer_edit_status=False,
-        fallback_to_send_message=True,
-        explicit_user_message=None,
-        error=None,
-        generic_error_prefix=None,
-        refund_suffix_mode="if_refunded",
-    ):
-        from src.core.task_core import finalize_task_failure
-
-        return await finalize_failed_task_for_bot(
-            context=context,
-            chat_id=chat_id,
-            status_msg=status_msg,
-            internal_user_id=internal_user_id,
-            username=username,
-            cost=cost,
-            should_refund=should_refund,
-            registry_task_id=registry_task_id,
-            release_lock=release_lock,
-            message_prefix=message_prefix,
-            prefer_edit_status=prefer_edit_status,
-            fallback_to_send_message=fallback_to_send_message,
-            explicit_user_message=explicit_user_message,
-            error=error,
-            generic_error_prefix=generic_error_prefix,
-            refund_suffix_mode=refund_suffix_mode,
-            finalize_task_failure_func=finalize_task_failure,
+    async def _finalize_failed_task_for_bot(**kwargs):
+        return await finalize_failed_task_for_bot_seam(
+            **kwargs,
             edit_text_func=robust_edit_text,
             send_message_func=robust_send_message,
         )
 
     @staticmethod
     async def _send_bot_warning(context, chat_id, error):
-        await send_bot_warning(
+        await send_bot_warning_seam(
             context,
             chat_id,
             error,
@@ -384,7 +260,7 @@ class TaskService:
 
     @staticmethod
     async def _send_bot_domain_error(context, chat_id, error):
-        await send_bot_domain_error(
+        await send_bot_domain_error_seam(
             context,
             chat_id,
             error,
@@ -450,51 +326,13 @@ class TaskService:
         runtime_state.terminal_state_finalized = True
         return None, None
 
-    @staticmethod
-    async def _cleanup_runtime_state_if_needed(
-        *,
-        internal_user_id,
-        registry_task_id,
-        release_lock,
-        terminal_state_finalized,
-    ):
-        from src.core.task_core import cleanup_task_runtime_state
+    _cleanup_runtime_state_if_needed = staticmethod(
+        cleanup_runtime_state_if_needed_seam
+    )
 
-        await cleanup_runtime_state_if_needed(
-            internal_user_id=internal_user_id,
-            registry_task_id=registry_task_id,
-            release_lock=release_lock,
-            terminal_state_finalized=terminal_state_finalized,
-            cleanup_task_runtime_state_func=cleanup_task_runtime_state,
-        )
+    _submit_bot_task = staticmethod(submit_bot_task_seam)
 
-    @staticmethod
-    async def _submit_bot_task(
-        *,
-        runtime_state,
-        internal_user_id,
-        username,
-        task_type,
-        inputs,
-        source_post_id=None,
-        deduct_quota=True,
-    ) -> tuple[str, list[str]]:
-        from src.core.task_core import process_and_submit_task
-
-        return await submit_bot_task(
-            runtime_state=runtime_state,
-            internal_user_id=internal_user_id,
-            username=username,
-            task_type=task_type,
-            inputs=inputs,
-            source_post_id=source_post_id,
-            deduct_quota=deduct_quota,
-            process_and_submit_task_func=process_and_submit_task,
-        )
-
-    @staticmethod
-    def _build_bot_cancellation_message(cost: int, spec: BotTaskMessageSpec) -> str:
-        return build_bot_cancellation_message(cost, spec)
+    _build_bot_cancellation_message = staticmethod(build_bot_cancellation_message)
 
     @staticmethod
     async def _send_initial_task_status(
@@ -505,7 +343,7 @@ class TaskService:
         status_msg_id,
         message_spec: BotTaskMessageSpec,
     ):
-        return await send_initial_task_status(
+        return await send_initial_task_status_seam(
             context=context,
             update=update,
             chat_id=chat_id,
@@ -517,7 +355,7 @@ class TaskService:
 
     @staticmethod
     async def _update_submitted_task_status(*, status_msg, message_spec: BotTaskMessageSpec):
-        await update_submitted_task_status(
+        await update_submitted_task_status_seam(
             status_msg=status_msg,
             message_spec=message_spec,
             edit_text_func=robust_edit_text,
@@ -540,7 +378,7 @@ class TaskService:
         source_post_id=None,
         deduct_quota=True,
     ):
-        return await prepare_and_submit_bot_task(
+        return await prepare_and_submit_bot_task_seam(
             context=context,
             update=update,
             chat_id=chat_id,
@@ -596,7 +434,7 @@ class TaskService:
         cleanup_paths: Optional[list[str]] = None,
         cleanup_enabled: bool = True,
     ) -> Tuple[Optional[bytes], Optional[str]]:
-        return await run_bot_task_flow(
+        return await run_bot_task_flow_seam(
             context=context,
             chat_id=chat_id,
             runtime_state=runtime_state,
@@ -650,99 +488,26 @@ class TaskService:
         internal_user_id,
         monitor_func,
     ):
-        from src.core.billing_core import get_user_priority_and_identity
-
-        return await monitor_submitted_bot_task(
+        return await monitor_submitted_bot_task_seam(
             task_id=task_id,
             status_msg=status_msg,
             is_video=is_video,
             internal_user_id=internal_user_id,
             monitor_func=monitor_func,
-            get_user_priority_and_identity_func=get_user_priority_and_identity,
             monitor_bot_task_progress_func=TaskService._monitor_task_progress,
         )
 
     @staticmethod
-    async def _complete_monitored_bot_task(
-        *,
-        context,
-        chat_id,
-        status_msg,
-        runtime_state,
-        internal_user_id,
-        username,
-        prompt,
-        task_type,
-        task_id,
-        saved_input_images,
-        user_logger,
-        final_info,
-        is_video,
-        send_result=True,
-        reply_markup=None,
-        delete_status=True,
-        caption=None,
-        allow_contribute=True,
-        billing_resolution: Optional[str] = None,
-        requested_duration: Optional[int] = None,
-        message_spec: BotTaskMessageSpec,
-        missing_output_should_refund: bool = True,
-    ) -> Tuple[Optional[bytes], Optional[str]]:
+    async def _complete_monitored_bot_task(**kwargs) -> Tuple[Optional[bytes], Optional[str]]:
         return await complete_monitored_bot_task(
-            context=context,
-            chat_id=chat_id,
-            status_msg=status_msg,
-            runtime_state=runtime_state,
-            internal_user_id=internal_user_id,
-            username=username,
-            user_logger=user_logger,
-            prompt=prompt,
-            task_type=task_type,
-            task_id=task_id,
-            saved_input_images=saved_input_images,
-            final_info=final_info,
-            is_video=is_video,
-            send_result=send_result,
-            reply_markup=reply_markup,
-            delete_status=delete_status,
-            caption=caption,
-            allow_contribute=allow_contribute,
-            billing_resolution=billing_resolution,
-            requested_duration=requested_duration,
-            message_spec=message_spec,
-            missing_output_should_refund=missing_output_should_refund,
+            **kwargs,
             send_result_media_func=TaskService._send_result_media,
             cleanup_completion_status_message_func=TaskService._cleanup_completion_status_message,
             handle_task_completion_func=TaskService._handle_task_completion,
             finalize_failed_task_for_bot_func=TaskService._finalize_failed_task_for_bot,
         )
 
-    @staticmethod
-    async def _download_and_log_task_output(
-        *,
-        internal_user_id,
-        username,
-        prompt,
-        task_type,
-        task_id,
-        saved_input_images,
-        is_video,
-        allow_contribute,
-        billing_resolution: Optional[str],
-        requested_duration: Optional[int],
-    ):
-        return await download_and_log_task_output(
-            internal_user_id=internal_user_id,
-            username=username,
-            prompt=prompt,
-            task_type=task_type,
-            task_id=task_id,
-            saved_input_images=saved_input_images,
-            is_video=is_video,
-            allow_contribute=allow_contribute,
-            billing_resolution=billing_resolution,
-            requested_duration=requested_duration,
-        )
+    _download_and_log_task_output = staticmethod(download_and_log_task_output_seam)
 
     @staticmethod
     async def process_ltx_video_task(
@@ -1005,9 +770,7 @@ class TaskService:
             source_post_id=source_post_id,
         )
 
-    @staticmethod
-    async def _get_or_send_status_msg(context, chat_id, status_msg_id, text):
-        return await get_or_send_status_message(context, chat_id, status_msg_id, text)
+    _get_or_send_status_msg = staticmethod(get_or_send_status_message)
 
     @staticmethod
     async def monitor_task_progress(
@@ -1026,7 +789,7 @@ class TaskService:
     async def _monitor_task_progress(
         task_id, status_msg, is_video, monitor_func, identity_str=None, user_group=None
     ):
-        return await monitor_bot_task_progress(
+        return await monitor_task_progress_seam(
             task_id,
             status_msg,
             is_video=is_video,
@@ -1096,7 +859,7 @@ class TaskService:
         billing_resolution: Optional[str] = None,
         requested_duration: Optional[int] = None,
     ):
-        return await handle_task_completion(
+        return await handle_task_completion_seam(
             context=context,
             chat_id=chat_id,
             internal_user_id=internal_user_id,

@@ -1,0 +1,74 @@
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock
+
+import pytest
+from fastapi import HTTPException
+
+from app.main_bootstrap import (
+    check_zombie_tasks_loop,
+    get_minio_client,
+    lifespan,
+    verify_token,
+)
+
+
+def test_verify_token_accepts_matching_credential():
+    credentials = SimpleNamespace(credentials="secret")
+    assert verify_token(credentials=credentials, expected_token="secret") == "secret"
+
+
+def test_verify_token_rejects_invalid_credential():
+    credentials = SimpleNamespace(credentials="wrong")
+    with pytest.raises(HTTPException) as exc_info:
+        verify_token(credentials=credentials, expected_token="secret")
+    assert exc_info.value.status_code == 401
+    assert exc_info.value.detail == "Invalid token"
+
+
+@pytest.mark.asyncio
+async def test_check_zombie_tasks_loop_runs_single_iteration_then_stops():
+    redis = SimpleNamespace(close=AsyncMock())
+    queue_manager = SimpleNamespace(check_zombie_tasks=AsyncMock())
+    logger = MagicMock()
+
+    def queue_manager_cls(passed_redis):
+        assert passed_redis is redis
+        return queue_manager
+
+    async def stop_sleep(_seconds):
+        raise RuntimeError("stop-loop")
+
+    with pytest.raises(RuntimeError, match="stop-loop"):
+        await check_zombie_tasks_loop(
+            settings=SimpleNamespace(redis_url="redis://example"),
+            queue_manager_cls=queue_manager_cls,
+            logger=logger,
+            sleep_func=stop_sleep,
+            redis_from_url=lambda url: redis,
+        )
+
+    queue_manager.check_zombie_tasks.assert_awaited_once()
+    redis.close.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_lifespan_sets_minio_client_on_app_state():
+    app = SimpleNamespace(state=SimpleNamespace())
+    logger = MagicMock()
+
+    async def noop_loop():
+        return None
+
+    async with lifespan(
+        fastapi_app=app,
+        settings=SimpleNamespace(
+            minio_endpoint="minio:9000",
+            minio_access_key="key",
+            minio_secret_key="secret",
+            minio_secure=False,
+        ),
+        logger=logger,
+        check_zombie_tasks_loop_func=noop_loop,
+    ):
+        assert hasattr(app.state, "minio_client")
+        assert get_minio_client(SimpleNamespace(app=app)) is app.state.minio_client

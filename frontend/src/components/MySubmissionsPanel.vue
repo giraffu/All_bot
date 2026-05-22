@@ -16,7 +16,6 @@ import { useGalleryComments } from '@/composables/useGalleryComments'
 import { usePagedPostBrowser } from '@/composables/usePagedPostBrowser'
 import { useGalleryPostInteractions } from '@/composables/useGalleryPostInteractions'
 import { useScrollPrefetch } from '@/composables/useScrollPrefetch'
-import { useGalleryApplyContext } from '@/composables/useGalleryApplyContext'
 import { handleMediaCardImageError } from '@/utils/mediaCardFallback'
 import { resolveMediaCardView } from '@/utils/mediaCardView'
 import { useDetailTemplateApply } from '@/composables/useDetailTemplateApply'
@@ -66,7 +65,6 @@ const props = withDefaults(
     taskType: 'all',
   },
 )
-const { saveApplyContext } = useGalleryApplyContext()
 const templateApplyStore = useTemplateApplyStore()
 
 const { isMobile } = useViewport()
@@ -154,7 +152,6 @@ const { applying, handleApply, cancelPendingApply } = useDetailTemplateApply<Pos
   endpoint: (post) => `/gallery/posts/${post.id}/apply-context`,
   source: 'submissions',
   templateApplyStore,
-  saveApplyContext,
   t
 })
 const submissionDetailStandardActions = computed(() => ({

@@ -9,17 +9,14 @@ import MySubmissionsPanel from '@/components/MySubmissionsPanel.vue'
 import TemplateApplyWorkbenchHost from '@/components/template-apply/TemplateApplyWorkbenchHost.vue'
 import { mainLayoutContentRefKey } from '@/composables/useWorkbenchScrollLock'
 import { useTemplateApplyStore } from '@/stores/templateApply'
-import { GALLERY_APPLY_CONTEXT_STORAGE_KEY } from '@/utils/galleryApplyContext'
 
 const {
   apiGetMock,
-  routerPushMock,
   messageSuccessMock,
   messageErrorMock,
   messageWarningMock
 } = vi.hoisted(() => ({
   apiGetMock: vi.fn(),
-  routerPushMock: vi.fn(),
   messageSuccessMock: vi.fn(),
   messageErrorMock: vi.fn(),
   messageWarningMock: vi.fn()
@@ -36,7 +33,7 @@ vi.mock('vue-router', async () => {
   return {
     ...actual,
     useRouter: () => ({
-      push: routerPushMock
+      push: vi.fn()
     })
   }
 })
@@ -237,7 +234,6 @@ describe('MySubmissionsPanel workbench flow', () => {
     i18n.global.locale.value = 'zh'
     sessionStorage.clear()
     apiGetMock.mockReset()
-    routerPushMock.mockReset()
     messageSuccessMock.mockReset()
     messageErrorMock.mockReset()
     messageWarningMock.mockReset()
@@ -260,8 +256,6 @@ describe('MySubmissionsPanel workbench flow', () => {
       .findAll('.a-modal-stub')
       .find(node => node.attributes('data-title') === '快速换脸')
 
-    expect(sessionStorage.getItem(GALLERY_APPLY_CONTEXT_STORAGE_KEY)).toBeNull()
-    expect(routerPushMock).not.toHaveBeenCalled()
     expect(messageSuccessMock).toHaveBeenCalledWith('已载入模板工作台')
     expect(templateApplyStore.visible).toBe(true)
     expect(templateApplyStore.panelKind).toBe('faceSwap')

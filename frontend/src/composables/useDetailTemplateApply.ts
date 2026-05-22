@@ -1,13 +1,8 @@
 import { onBeforeUnmount, ref, type Ref } from 'vue'
-import { useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import api from '@/api'
 import { confirmTemplateApplyClose } from '@/stores/templateApply'
 import type { TemplateApplySource } from '@/types/templateApply'
-import {
-  buildLegacyTemplateRoute,
-  resolveTemplateApplyEntry
-} from '@/utils/templateApplyEntry'
 
 interface DetailApplyTarget {
   id: number
@@ -29,7 +24,6 @@ interface UseDetailTemplateApplyOptions<TPost extends DetailApplyTarget> {
   source: TemplateApplySource | ((post: TPost) => TemplateApplySource)
   entryEntityId?: (post: TPost) => number | string | null
   templateApplyStore: TemplateApplyStoreLike
-  saveApplyContext: (rawContext: any) => void
   t: (key: string) => string
   successMessageKey?: string
   errorMessageKey?: string
@@ -39,7 +33,6 @@ interface UseDetailTemplateApplyOptions<TPost extends DetailApplyTarget> {
 export function useDetailTemplateApply<TPost extends DetailApplyTarget>(
   options: UseDetailTemplateApplyOptions<TPost>
 ) {
-  const router = useRouter()
   const applying = ref(false)
 
   let applyRequestToken = 0
@@ -51,35 +44,6 @@ export function useDetailTemplateApply<TPost extends DetailApplyTarget>(
     pendingApplyAbortController?.abort()
     pendingApplyAbortController = null
     applying.value = false
-  }
-
-  const handleLegacyFallback = async (params: {
-    rawContext: any
-    source: TemplateApplySource
-    entryEntityId: number | string | null
-  }) => {
-    const resolvedEntry = resolveTemplateApplyEntry({
-      rawContext: params.rawContext,
-      source: params.source,
-      entryEntityId: params.entryEntityId,
-      preferredMode: 'legacy'
-    })
-
-    if (resolvedEntry.status === 'invalid') {
-      message.error(options.t('template_apply.invalid_context'))
-      return false
-    }
-
-    if (resolvedEntry.status === 'unknown_task_type') {
-      message.warning(options.t('template_apply.unknown_task_type'))
-      return false
-    }
-
-    options.saveApplyContext(params.rawContext)
-    options.detailVisible.value = false
-    message.success(options.t('template_apply.legacy_loaded'))
-    await router.push(buildLegacyTemplateRoute(resolvedEntry, options.t))
-    return true
   }
 
   const openTemplateWorkbench = async (
@@ -102,23 +66,12 @@ export function useDetailTemplateApply<TPost extends DetailApplyTarget>(
     }
 
     if (result.status === 'legacy_fallback') {
-      if (result.fallbackKind === 'legacy_supported' && result.context && result.meta) {
-        options.saveApplyContext(rawContext)
-        options.detailVisible.value = false
-        message.success(options.t('template_apply.legacy_loaded'))
-        await router.push(buildLegacyTemplateRoute({
-          status: 'legacy_supported',
-          context: result.context,
-          meta: result.meta
-        }, options.t))
-        return true
+      if (result.fallbackKind === 'unknown_task_type') {
+        message.warning(options.t('template_apply.unknown_task_type'))
+      } else {
+        message.error(options.t('template_apply.open_failed'))
       }
-
-      return handleLegacyFallback({
-        rawContext,
-        source: snapshot.source,
-        entryEntityId: snapshot.entryEntityId
-      })
+      return false
     }
 
     if (result.status === 'invalid') {

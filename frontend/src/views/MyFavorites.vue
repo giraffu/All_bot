@@ -23,7 +23,6 @@ import { useScrollPrefetch } from '@/composables/useScrollPrefetch'
 import { useViewport } from '@/composables/useViewport'
 import { handleMediaCardImageError } from '@/utils/mediaCardFallback'
 import { resolveMediaCardView } from '@/utils/mediaCardView'
-import { useGalleryApplyContext } from '@/composables/useGalleryApplyContext'
 import { useDetailTemplateApply } from '@/composables/useDetailTemplateApply'
 import { useGalleryDetailModalAdapter } from '@/composables/useGalleryDetailModalAdapter'
 import { usePostPromptCopy } from '@/composables/usePostPromptCopy'
@@ -64,7 +63,6 @@ const router = useRouter()
 const { t } = useI18n()
 const layoutContentRef = useMainLayoutContentRef()
 const templateApplyStore = useTemplateApplyStore()
-const { saveApplyContext } = useGalleryApplyContext()
 
 const { isMobile } = useViewport()
 const { allowedTypes, loadConfig } = useGalleryConfig({
@@ -192,7 +190,6 @@ const { applying, handleApply, cancelPendingApply } = useDetailTemplateApply<Pos
   source: () => (filterType.value === 'favorite' ? 'favorites' : 'gallery'),
   entryEntityId: (post) => post.id,
   templateApplyStore,
-  saveApplyContext,
   t,
   ignoreNotFound: true
 })

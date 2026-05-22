@@ -12,7 +12,6 @@ import { useMainLayoutContentRef } from '@/composables/useWorkbenchScrollLock'
 import {
   useTemplateApplyStore
 } from '@/stores/templateApply'
-import { useGalleryApplyContext } from '@/composables/useGalleryApplyContext'
 import { useGalleryPostInteractions } from '@/composables/useGalleryPostInteractions'
 import { useScrollPrefetch } from '@/composables/useScrollPrefetch'
 import { useGalleryDetailModalAdapter } from '@/composables/useGalleryDetailModalAdapter'
@@ -71,7 +70,6 @@ const { t } = useI18n()
 const { isMobile } = useViewport()
 const templateApplyStore = useTemplateApplyStore()
 const layoutContentRef = useMainLayoutContentRef()
-const { saveApplyContext } = useGalleryApplyContext()
 
 const breakpoints = {
   99999: { rowPerView: 6 },
@@ -189,7 +187,6 @@ const { applying, handleApply, cancelPendingApply } = useDetailTemplateApply<Pos
   endpoint: (post) => `/gallery/posts/${post.id}/apply-context`,
   source: 'gallery',
   templateApplyStore,
-  saveApplyContext,
   t,
 })
 

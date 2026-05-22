@@ -3,22 +3,17 @@ from typing import Optional
 from fastapi import APIRouter, BackgroundTasks, Depends, Query
 
 from src.constants import (
-    MODE_CUSTOM_VIDEO,
-    MODE_EDIT,
-    MODE_I2I_PRO,
-    MODE_I2I_DRAW,
-    MODE_LTX_VIDEO,
     MODE_NAME_MAP,
-    MODE_VIDEO_LORA,
 )
-from src.lora_catalog import IMAGE_LORA_MODELS, VIDEO_LORA_MODELS
 from src.database.models import User
+from src.lora_catalog import IMAGE_LORA_MODELS, VIDEO_LORA_MODELS
 from src.web_api.dependencies import (
     CurrentUserDep,
     DbSessionDep,
     get_current_user,
 )
 from src.web_api.services.gallery_service import (
+    DEFAULT_GALLERY_ALLOWED_TYPE_CONFIGS,
     build_gallery_config_payload,
     create_gallery_comment_api_payload,
     delete_gallery_post_api_payload,
@@ -42,19 +37,10 @@ from src.web_api.schemas.gallery_schema import (
 
 router = APIRouter()
 
-GALLERY_ALLOWED_TYPE_CONFIGS = [
-    (MODE_I2I_PRO, "task.mode_i2i_pro"),
-    (MODE_I2I_DRAW, "task.mode_i2i_draw"),
-    (MODE_EDIT, "task.mode_edit"),
-    ("img2img_lora", "task.mode_img2img_lora"),
-    (MODE_CUSTOM_VIDEO, "task.mode_custom_video"),
-    (MODE_VIDEO_LORA, "task.mode_video_lora"),
-    (MODE_LTX_VIDEO, "task.mode_ltx_video"),
-]
 @router.get("/config")
 async def get_gallery_config():
     return build_gallery_config_payload(
-        allowed_type_configs=GALLERY_ALLOWED_TYPE_CONFIGS,
+        allowed_type_configs=DEFAULT_GALLERY_ALLOWED_TYPE_CONFIGS,
         mode_name_map=MODE_NAME_MAP,
         video_lora_models=VIDEO_LORA_MODELS,
         image_lora_models=IMAGE_LORA_MODELS,
@@ -147,8 +133,8 @@ async def delete_post(post_id: int, current_user: CurrentUserDep, db: DbSessionD
 @router.post("/posts/{post_id}/interact")
 async def interact_with_post(
     post_id: int,
+    current_user: CurrentUserDep,
     action: str = Query(..., pattern="^(like|dislike)$"),
-    current_user: User = Depends(get_current_user),
 ):
     return await interact_with_gallery_post_api_payload(
         post_id=post_id,

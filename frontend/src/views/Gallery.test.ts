@@ -8,7 +8,6 @@ import Gallery from '@/views/Gallery.vue'
 
 const {
   apiGetMock,
-  routerPushMock,
   messageSuccessMock,
   messageErrorMock,
   messageWarningMock,
@@ -16,7 +15,6 @@ const {
   confirmTemplateApplyCloseMock
 } = vi.hoisted(() => ({
   apiGetMock: vi.fn(),
-  routerPushMock: vi.fn(),
   messageSuccessMock: vi.fn(),
   messageErrorMock: vi.fn(),
   messageWarningMock: vi.fn(),
@@ -32,12 +30,6 @@ vi.mock('@/api', () => ({
   default: {
     get: apiGetMock
   }
-}))
-
-vi.mock('vue-router', () => ({
-  useRouter: () => ({
-    push: routerPushMock
-  })
 }))
 
 vi.mock('ant-design-vue', async () => {
@@ -257,7 +249,6 @@ describe('Gallery template apply integration', () => {
     sessionStorage.clear()
 
     apiGetMock.mockReset()
-    routerPushMock.mockReset()
     messageSuccessMock.mockReset()
     messageErrorMock.mockReset()
     messageWarningMock.mockReset()
@@ -287,7 +278,6 @@ describe('Gallery template apply integration', () => {
       entryEntityId: samplePost.id,
       rawContext: faceSwapContext
     })
-    expect(routerPushMock).not.toHaveBeenCalled()
     expect(messageSuccessMock).toHaveBeenCalledWith('已载入模板工作台')
   })
 
@@ -318,7 +308,7 @@ describe('Gallery template apply integration', () => {
     expect(wrapper.html()).not.toContain(samplePost.media_url)
   })
 
-  it('falls back to the legacy page with the normalized query when workbench fallback is returned', async () => {
+  it('keeps detail apply on the shared path when workbench fallback is returned', async () => {
     templateApplyStoreMock.openFromRawContext.mockResolvedValue({
       status: 'legacy_fallback',
       fallbackKind: 'legacy_supported',
@@ -330,17 +320,8 @@ describe('Gallery template apply integration', () => {
     await applyButton.trigger('click')
     await flushPromises()
 
-    expect(sessionStorage.getItem('galleryApplyContext')).toBe(JSON.stringify(faceSwapContext))
-    expect(routerPushMock).toHaveBeenCalledWith({
-      name: 'FaceSwap',
-      query: {
-        apply: 'true',
-        type: 'face_swap',
-        title: '快速换脸',
-        cost: '1'
-      }
-    })
-    expect(messageSuccessMock).toHaveBeenCalledWith('已载入模板，请上传您的参考图')
+    expect(messageErrorMock).toHaveBeenCalledWith('模板工作台打开失败，请稍后重试。')
+    expect(messageSuccessMock).not.toHaveBeenCalled()
   })
 
   it('runs replace-close confirmation and retries opening when the current session must be replaced', async () => {
@@ -363,7 +344,6 @@ describe('Gallery template apply integration', () => {
     expect(confirmTemplateApplyCloseMock).toHaveBeenCalledWith('dirty')
     expect(templateApplyStoreMock.confirmCloseAndCleanup).toHaveBeenCalledWith('open_replace')
     expect(templateApplyStoreMock.openFromRawContext).toHaveBeenCalledTimes(2)
-    expect(routerPushMock).not.toHaveBeenCalled()
     expect(messageSuccessMock).toHaveBeenCalledWith('已载入模板工作台')
   })
 
@@ -413,7 +393,6 @@ describe('Gallery template apply integration', () => {
     await flushPromises()
 
     expect(templateApplyStoreMock.openFromRawContext).not.toHaveBeenCalled()
-    expect(routerPushMock).not.toHaveBeenCalled()
     expect(messageSuccessMock).not.toHaveBeenCalledWith('已载入模板工作台')
   })
 
@@ -465,7 +444,6 @@ describe('Gallery template apply integration', () => {
     await flushPromises()
 
     expect(templateApplyStoreMock.openFromRawContext).not.toHaveBeenCalled()
-    expect(routerPushMock).not.toHaveBeenCalled()
     expect(messageSuccessMock).not.toHaveBeenCalledWith('已载入模板工作台')
   })
 
@@ -515,7 +493,6 @@ describe('Gallery template apply integration', () => {
     await flushPromises()
 
     expect(templateApplyStoreMock.openFromRawContext).not.toHaveBeenCalled()
-    expect(routerPushMock).not.toHaveBeenCalled()
     expect(messageSuccessMock).not.toHaveBeenCalledWith('已载入模板工作台')
   })
 })

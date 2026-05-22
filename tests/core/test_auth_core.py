@@ -1,3 +1,7 @@
+import hashlib
+import hmac
+import json
+import urllib.parse
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
@@ -5,6 +9,10 @@ import pytest
 from sqlalchemy.exc import IntegrityError
 
 from src.core import auth_core
+from src.core.auth_core_password_hash import (
+    get_password_hash as get_password_hash_helper,
+    verify_password as verify_password_helper,
+)
 from src.core.auth_core_password_binding import bind_password_to_user, get_bindable_user
 from src.core.auth_core_password_login import (
     DUMMY_PASSWORD_HASH,
@@ -15,6 +23,10 @@ from src.core.auth_core_telegram_verify import (
     build_telegram_data_check_string,
     get_telegram_tokens_to_try,
     is_telegram_auth_date_fresh,
+)
+from src.core.auth_core_telegram_validation import (
+    verify_telegram_authorization as verify_telegram_authorization_helper,
+    verify_telegram_webapp_initdata as verify_telegram_webapp_initdata_helper,
 )
 from src.core.auth_core_password_version import (
     blacklist_password_version,
@@ -99,6 +111,64 @@ async def test_telegram_verify_helpers_validate_auth_date_and_tokens():
     assert logger.error.call_args_list[-1].args == (
         "No BOT_TOKEN or BOT_TOKEN_TEST configured!",
     )
+
+
+@pytest.mark.asyncio
+async def test_password_hash_helpers_round_trip():
+    hashed_password = await get_password_hash_helper("secret")
+
+    assert hashed_password != "secret"
+    assert await verify_password_helper("secret", hashed_password) is True
+    assert await verify_password_helper("wrong", hashed_password) is False
+
+
+def test_telegram_validation_helpers_accept_valid_widget_and_webapp_payloads():
+    logger = MagicMock()
+    token = "prod-token"
+    auth_date_checker = lambda *_args, **_kwargs: True
+
+    widget_payload = {
+        "id": "42",
+        "auth_date": "1700000000",
+        "first_name": "Test",
+    }
+    widget_hash = hmac.new(
+        hashlib.sha256(token.encode()).digest(),
+        build_telegram_data_check_string(widget_payload).encode(),
+        hashlib.sha256,
+    ).hexdigest()
+
+    assert (
+        verify_telegram_authorization_helper(
+            {**widget_payload, "hash": widget_hash},
+            bot_token=token,
+            bot_token_test=None,
+            logger=logger,
+            is_auth_date_fresh_func=auth_date_checker,
+        )
+        is True
+    )
+
+    webapp_user = {"id": 42, "first_name": "Test"}
+    webapp_payload = {
+        "auth_date": "1700000000",
+        "query_id": "query-1",
+        "user": json.dumps(webapp_user, separators=(",", ":")),
+    }
+    webapp_hash = hmac.new(
+        hmac.new(b"WebAppData", token.encode(), hashlib.sha256).digest(),
+        build_telegram_data_check_string(webapp_payload).encode(),
+        hashlib.sha256,
+    ).hexdigest()
+    init_data = urllib.parse.urlencode({**webapp_payload, "hash": webapp_hash})
+
+    assert verify_telegram_webapp_initdata_helper(
+        init_data,
+        bot_token=token,
+        bot_token_test=None,
+        logger=logger,
+        is_auth_date_fresh_func=auth_date_checker,
+    ) == webapp_user
 
 
 @pytest.mark.asyncio
