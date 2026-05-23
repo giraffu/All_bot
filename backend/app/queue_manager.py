@@ -310,7 +310,6 @@ class QueueManager:
             zrem_func=lambda task_id: self.redis.zrem(self.pending_key, task_id),
             cancel_pending_task_func=self._cancel_pending_task,
             sismember_func=lambda task_id: self.redis.sismember(self.running_key, task_id),
-            request_running_task_cancellation_func=self._request_running_task_cancellation,
             get_task_status_func=self.get_task_status,
             build_cancel_result_func=self._build_cancel_result,
             cancelled_status=TaskStatus.CANCELLED,

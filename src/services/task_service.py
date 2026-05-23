@@ -827,6 +827,9 @@ class TaskService:
         allow_contribute=True,
         billing_resolution: Optional[str] = None,
         requested_duration: Optional[int] = None,
+        send_result_media_func=None,
+        cleanup_completion_status_message_func=None,
+        download_and_log_task_output_func=None,
     ):
         return await TaskService._handle_task_completion(
             context=context,
@@ -846,6 +849,9 @@ class TaskService:
             allow_contribute=allow_contribute,
             billing_resolution=billing_resolution,
             requested_duration=requested_duration,
+            send_result_media_func=send_result_media_func,
+            cleanup_completion_status_message_func=cleanup_completion_status_message_func,
+            download_and_log_task_output_func=download_and_log_task_output_func,
         )
 
     @staticmethod
@@ -867,7 +873,19 @@ class TaskService:
         allow_contribute=True,
         billing_resolution: Optional[str] = None,
         requested_duration: Optional[int] = None,
+        send_result_media_func=None,
+        cleanup_completion_status_message_func=None,
+        download_and_log_task_output_func=None,
     ):
+        send_result_media_func = send_result_media_func or TaskService._send_result_media
+        cleanup_completion_status_message_func = (
+            cleanup_completion_status_message_func
+            or TaskService._cleanup_completion_status_message
+        )
+        download_and_log_task_output_func = (
+            download_and_log_task_output_func
+            or TaskService._download_and_log_task_output
+        )
         return await handle_task_completion_seam(
             context=context,
             chat_id=chat_id,
@@ -886,9 +904,9 @@ class TaskService:
             allow_contribute=allow_contribute,
             billing_resolution=billing_resolution,
             requested_duration=requested_duration,
-            send_result_media_func=TaskService._send_result_media,
-            cleanup_completion_status_message_func=TaskService._cleanup_completion_status_message,
-            download_and_log_task_output_func=TaskService._download_and_log_task_output,
+            send_result_media_func=send_result_media_func,
+            cleanup_completion_status_message_func=cleanup_completion_status_message_func,
+            download_and_log_task_output_func=download_and_log_task_output_func,
         )
 
     @staticmethod

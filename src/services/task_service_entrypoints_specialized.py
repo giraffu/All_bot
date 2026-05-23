@@ -31,7 +31,7 @@ async def process_ltx_video_task(
     duration = context.user_data.get("ltx_video_duration", "5s")
 
     runtime_state = service._create_runtime_state()
-    notice = await service._get_acceleration_notice(user_id)
+    notice = await service._get_acceleration_notice(internal_user_id)
     message_spec = service._build_message_spec(
         initial_status_text=service._build_status_message(
             f"🚀 正在处理高级图生视频任务 (画质:{resolution}, 时长:{duration})",
@@ -67,7 +67,7 @@ async def process_ltx_video_task(
         is_video=True,
         message_spec=message_spec,
         submitted_status_builder=service._build_cost_status_builder(
-            f"🚀 正在处理高级图生视频任务 (画质:{resolution}, 时长:{duration}, 消耗{{actual_cost}}灵石)",
+            f"⏳ 任务已提交，正在排队调度高级图生视频任务 (画质:{resolution}, 时长:{duration}, 消耗{{actual_cost}}灵石)",
             notice=notice,
         ),
         source_post_id=source_post_id,
@@ -105,7 +105,7 @@ async def process_face_video_task(
 
     mode = MODE_FACE_VIDEO_STEP1
     runtime_state = service._create_runtime_state(actual_cost=cost)
-    notice = await service._get_acceleration_notice(user_id)
+    notice = await service._get_acceleration_notice(internal_user_id)
     message_spec = service._build_message_spec(
         initial_status_text=service._build_status_message(
             f"🚀 正在处理视频换脸任务 (画质:{resolution}p)",
@@ -141,7 +141,7 @@ async def process_face_video_task(
         is_video=True,
         message_spec=message_spec,
         submitted_status_builder=service._build_cost_status_builder(
-            f"🚀 正在处理视频换脸任务 (画质:{resolution}p, 消耗{{actual_cost}}灵石)",
+            f"⏳ 任务已提交，正在排队调度视频换脸任务 (画质:{resolution}p, 消耗{{actual_cost}}灵石)",
             notice=notice,
         ),
         source_post_id=source_post_id,

@@ -38,7 +38,7 @@ async def process_video_task_template(
 
     display_mode_name = service._resolve_display_mode_name(mode, context)
     runtime_state = service._create_runtime_state()
-    notice = await service._get_acceleration_notice(user_id)
+    notice = await service._get_acceleration_notice(internal_user_id)
     message_spec = service._build_message_spec(
         initial_status_text=service._build_status_message(
             f"🚀 正在处理{display_mode_name}生成任务 (画质:{resolution}, 时长:{duration_str})",
@@ -78,7 +78,7 @@ async def process_video_task_template(
         is_video=True,
         message_spec=message_spec,
         submitted_status_builder=service._build_cost_status_builder(
-            f"🚀 正在处理{display_mode_name}生成任务 (画质:{resolution}, 时长:{duration_str}, 消耗{{actual_cost}}灵石)",
+            f"⏳ 任务已提交，正在排队调度{display_mode_name}生成任务 (画质:{resolution}, 时长:{duration_str}, 消耗{{actual_cost}}灵石)",
             notice=notice,
         ),
         source_post_id=source_post_id,
@@ -119,7 +119,7 @@ async def process_custom_video_task(
     )
 
     runtime_state = service._create_runtime_state()
-    notice = await service._get_acceleration_notice(user_id)
+    notice = await service._get_acceleration_notice(internal_user_id)
     message_spec = service._build_message_spec(
         initial_status_text=service._build_status_message(
             f"🚀 正在处理自定义视频生成任务 (画质:{resolution}, 时长:{duration})",
@@ -159,7 +159,7 @@ async def process_custom_video_task(
         is_video=True,
         message_spec=message_spec,
         submitted_status_builder=service._build_cost_status_builder(
-            f"🚀 正在处理自定义视频生成任务 (画质:{resolution}, 时长:{duration}, 消耗{{actual_cost}}灵石)",
+            f"⏳ 任务已提交，正在排队调度自定义视频生成任务 (画质:{resolution}, 时长:{duration}, 消耗{{actual_cost}}灵石)",
             notice=notice,
             wait_text="⏳ 正在生成自定义视频，请耐心等待...",
         ),

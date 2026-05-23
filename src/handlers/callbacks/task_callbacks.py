@@ -13,15 +13,20 @@ logger = logging.getLogger(__name__)
 async def cancel_task_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     task_id = query.data.replace("cancel_task_", "")
-    
+
     internal_user, _ = await get_or_create_user_by_telegram(
         update.effective_user.id,
         update.effective_user.username
     )
-    
+
     try:
-        await cancel_user_task(task_id, internal_user.id)
-        await query.answer("撤销指令已发送，正在处理...", show_alert=False)
+        cancel_result = await cancel_user_task(task_id, internal_user.id)
+        cancel_state = cancel_result.get("state")
+        cancel_message = cancel_result.get("message", "撤销请求失败，请稍后重试")
+        await query.answer(
+            cancel_message,
+            show_alert=cancel_state == "not_cancellable",
+        )
     except CoreDomainError as e:
         await query.answer(str(e), show_alert=True)
     except Exception as e:

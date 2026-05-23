@@ -41,7 +41,7 @@ async def process_generation_task(
         _, _, resolution, duration = await service._resolve_custom_video_settings(context)
 
     runtime_state = service._create_runtime_state()
-    notice = await service._get_acceleration_notice(user_id)
+    notice = await service._get_acceleration_notice(internal_user_id)
     inputs = service._build_task_inputs(
         prompt=prompt,
         images=images,
@@ -95,9 +95,9 @@ async def process_generation_task(
         is_video=is_video,
         message_spec=message_spec,
         submitted_status_builder=service._build_cost_status_builder(
-            "🚀 正在处理视频生成任务 (消耗{actual_cost}灵石)"
+            "⏳ 任务已提交，正在排队调度视频生成任务 (消耗{actual_cost}灵石)"
             if is_video
-            else f"🚀 正在处理 {len(images)} 张图片 (消耗{{actual_cost}}灵石)",
+            else f"⏳ 任务已提交，正在排队调度 {len(images)} 张图片 (消耗{{actual_cost}}灵石)",
             notice=notice,
         ),
         source_post_id=source_post_id,
@@ -138,7 +138,7 @@ async def process_i2i_pro_task(
 
     image_path = images[0]
     runtime_state = service._create_runtime_state()
-    notice = await service._get_acceleration_notice(user_id)
+    notice = await service._get_acceleration_notice(internal_user_id)
     message_spec = service._build_message_spec(
         initial_status_text=service._build_status_message(
             "🚀 正在处理幻想换脸任务",
@@ -166,7 +166,7 @@ async def process_i2i_pro_task(
         is_video=False,
         message_spec=message_spec,
         submitted_status_builder=service._build_cost_status_builder(
-            "🚀 正在处理幻想换脸任务 (消耗{actual_cost}灵石)",
+            "⏳ 任务已提交，正在排队调度幻想换脸任务 (消耗{actual_cost}灵石)",
             notice=notice,
         ),
         source_post_id=source_post_id,
