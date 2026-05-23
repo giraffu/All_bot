@@ -294,7 +294,7 @@ def main():
     from src.handlers.fsm.ltx_video_fsm import get_ltx_video_fsm_handler
     from src.handlers.fsm.quick_image_fsm import get_quick_image_fsm_handler
     from src.handlers.fsm.quick_video_fsm import get_quick_video_fsm_handler
-    from src.handlers.fsm.video_lora_fsm import get_video_lora_fsm_handler
+    from src.handlers.fsm.image_to_video_fsm import get_image_to_video_fsm_handler
     from src.handlers.payment_handler import (
         precheckout_callback,
         successful_payment_callback,
@@ -309,7 +309,7 @@ def main():
     app.add_handler(get_edit_image_fsm_handler())
     app.add_handler(get_custom_video_fsm_handler())
     app.add_handler(get_ltx_video_fsm_handler())
-    app.add_handler(get_video_lora_fsm_handler())
+    app.add_handler(get_image_to_video_fsm_handler())
     app.add_handler(get_quick_image_fsm_handler())
     app.add_handler(get_quick_video_fsm_handler())
 

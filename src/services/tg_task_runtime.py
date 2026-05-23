@@ -6,6 +6,7 @@ from src.constants import (
     MODE_CUSTOM_VIDEO,
     MODE_EDIT,
     MODE_FACESWAP_STEP1,
+    MODE_IMAGE_TO_VIDEO,
     MODE_I2I_PRO,
     MODE_IMG2IMG_LORA,
     MODE_LTX_VIDEO,
@@ -13,7 +14,6 @@ from src.constants import (
     MODE_NAME_MAP,
     MODE_PENETRATION_STEP1,
     MODE_UNDRESS,
-    MODE_VIDEO_LORA,
 )
 from src.utils import (
     robust_delete_message,
@@ -80,7 +80,7 @@ def build_result_reply_markup(task_type, task_id, allow_contribute, reply_markup
         MODE_I2I_PRO,
         MODE_EDIT,
         MODE_CUSTOM_VIDEO,
-        MODE_VIDEO_LORA,
+        MODE_IMAGE_TO_VIDEO,
         MODE_LTX_VIDEO,
         MODE_IMG2IMG_LORA,
     ]

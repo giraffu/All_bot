@@ -33,8 +33,8 @@
     "face_video": "🎬 视频换脸",
     "i2i_pro": "🌟 幻想换脸",
     "free_edit": "🎨 自由P图",
-    "video_lora": "🎬 图生视频(附加模型)",
-    "custom_video": "🎬 自定义图生视频",
+    "video_lora": "🎬 图生视频",
+    "custom_video": "🎬 图生视频",
     "ltx_video": "🎬 高级图生视频",
     "cancel": "取消",
     "exit": "退出",
@@ -105,7 +105,7 @@
     "i2i_draw": "局部重绘",
     "face_swap": "快速换脸",
     "video_insert": "视频生成",
-    "video_lora": "图生视频(附加模型)",
+    "video_lora": "图生视频",
     "face_video": "视频换脸"
   },
   "api": {
@@ -252,8 +252,8 @@
       "prompt_required": "请输入提示词"
     },
     "image_to_video": {
-      "title_custom_video": "自定义图生视频",
-      "title_video_lora": "图生视频(附加模型)",
+      "title_custom_video": "图生视频",
+      "title_video_lora": "图生视频",
       "title_ltx_video": "高级图生视频",
       "current_page_desc": "上传基础图片，在当前页直接完成模板回填与视频提交。",
       "template_notice_complete": "已加载一键应用模板，原作品的提示词、分辨率与时长等参数已自动填入，您只需上传基础图片即可生成同款大片。",
@@ -382,8 +382,8 @@
     "face_video": "🎬 视频换脸",
     "ltx_video": "🎬 高级图生视频",
     "t2i_pornmaster_turbo": "🎨 文本生图",
-    "custom_video": "🎬 自定义图生视频",
-    "video_lora": "🎬 图生视频(附加模型)",
+    "custom_video": "🎬 图生视频",
+    "video_lora": "🎬 图生视频",
     "cancel_success_refreshing_balance": "任务已撤销，余额刷新中",
     "mode_edit": "自由P图",
     "mode_i2i_pro": "幻想换脸",
@@ -403,9 +403,9 @@
     "mode_blowjob": "口交黑人",
     "mode_undress_tongue": "脱衣吐舌",
     "mode_closeup_blowjob": "特写口交",
-    "mode_custom_video": "自定义图生视频",
+    "mode_custom_video": "图生视频",
     "mode_ltx_video": "高级图生视频",
-    "mode_video_lora": "图生视频(附加模型)",
+    "mode_video_lora": "图生视频",
     "mode_template_contribute": "模板共建",
     "mode_none": "无模式"
   }

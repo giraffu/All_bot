@@ -9,12 +9,14 @@ from src.services import task_service_support
 def test_normalize_custom_video_resolution_value_maps_known_options():
     assert task_service_support.normalize_custom_video_resolution_value("1024p") == 1024
     assert task_service_support.normalize_custom_video_resolution_value("720p") == 720
+    assert task_service_support.normalize_custom_video_resolution_value(720) == 720
     assert task_service_support.normalize_custom_video_resolution_value("anything-else") == 512
 
 
 def test_normalize_custom_video_duration_value_maps_known_options():
     assert task_service_support.normalize_custom_video_duration_value("10s") == 10
     assert task_service_support.normalize_custom_video_duration_value("8s") == 8
+    assert task_service_support.normalize_custom_video_duration_value(8) == 8
     assert task_service_support.normalize_custom_video_duration_value("anything-else") == 5
 
 
@@ -53,6 +55,28 @@ async def test_resolve_custom_video_settings_keeps_defaults_without_warning():
     )
 
     assert result == ("512p", "5s", 512, 5)
+    reply_text.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_resolve_custom_video_settings_prefers_explicit_values_over_context():
+    reply_text = AsyncMock()
+    context = SimpleNamespace(
+        user_data={
+            "custom_video_resolution": "1024p",
+            "custom_video_duration": "10s",
+        }
+    )
+
+    result = await task_service_support.resolve_custom_video_settings(
+        context,
+        resolution="720p",
+        duration="8s",
+        warn_invalid_combo=True,
+        reply_text_func=reply_text,
+    )
+
+    assert result == ("720p", "8s", 720, 8)
     reply_text.assert_not_awaited()
 
 

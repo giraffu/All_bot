@@ -1,16 +1,18 @@
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 from telegram.ext import ConversationHandler
 
+from src.constants import MODE_CUSTOM_VIDEO, MODE_IMAGE_TO_VIDEO
+from src.handlers.conversation_states import ImageToVideoState
 from src.handlers.fsm import (
     custom_video_fsm,
     edit_image_fsm,
     faceswap_fsm,
+    image_to_video_fsm,
     ltx_video_fsm,
     quick_video_fsm,
-    video_lora_fsm,
 )
 
 
@@ -29,14 +31,34 @@ def _build_message(text: str = "test prompt"):
     )
 
 
+def _build_update_with_message(*, text: str = "test prompt"):
+    user = _build_user()
+    return SimpleNamespace(
+        effective_user=user,
+        effective_chat=SimpleNamespace(id=10001),
+        message=_build_message(text=text),
+    )
+
+
+def test_deprecated_video_lora_fsm_module_reexports_unified_handler():
+    from src.handlers.fsm import video_lora_fsm
+
+    assert (
+        image_to_video_fsm.get_image_to_video_fsm_handler
+        is video_lora_fsm.get_image_to_video_fsm_handler
+    )
+    handler = image_to_video_fsm.get_image_to_video_fsm_handler()
+    assert handler.name == "image_to_video_fsm"
+
+
 @pytest.mark.asyncio
 async def test_custom_video_state_expired_before_quota_check(monkeypatch):
     reply_mock = AsyncMock()
     quota_mock = AsyncMock()
 
-    monkeypatch.setattr(custom_video_fsm, "is_global_menu_command", lambda _text: False)
-    monkeypatch.setattr(custom_video_fsm, "robust_reply_text", reply_mock)
-    monkeypatch.setattr(custom_video_fsm.permission_service, "check_quota", quota_mock)
+    monkeypatch.setattr(image_to_video_fsm, "is_global_menu_command", lambda _text: False)
+    monkeypatch.setattr(image_to_video_fsm, "robust_reply_text", reply_mock)
+    monkeypatch.setattr(image_to_video_fsm.permission_service, "check_quota", quota_mock)
 
     update = SimpleNamespace(
         effective_user=_build_user(),
@@ -47,9 +69,10 @@ async def test_custom_video_state_expired_before_quota_check(monkeypatch):
         bot=SimpleNamespace(),
         user_data={
             "in_conversation": "CUSTOM_VIDEO",
-            "custom_video_data": {
+            "image_to_video_data": {
                 "resolution": "512p",
                 "duration": "5s",
+                "lora_name": "",
                 "image_path": None,
             }
         },
@@ -62,7 +85,8 @@ async def test_custom_video_state_expired_before_quota_check(monkeypatch):
     reply_mock.assert_awaited_once()
     assert "任务状态已过期" in reply_mock.await_args.args[1]
     assert "in_conversation" not in context.user_data
-    assert "custom_video_data" not in context.user_data
+    assert "video_lora_data" not in context.user_data
+    assert "image_to_video_data" not in context.user_data
 
 
 @pytest.mark.asyncio
@@ -150,9 +174,9 @@ async def test_video_lora_state_expired_before_quota_check(monkeypatch):
     reply_mock = AsyncMock()
     quota_mock = AsyncMock()
 
-    monkeypatch.setattr(video_lora_fsm, "is_global_menu_command", lambda _text: False)
-    monkeypatch.setattr(video_lora_fsm, "robust_reply_text", reply_mock)
-    monkeypatch.setattr(video_lora_fsm.permission_service, "check_quota", quota_mock)
+    monkeypatch.setattr(image_to_video_fsm, "is_global_menu_command", lambda _text: False)
+    monkeypatch.setattr(image_to_video_fsm, "robust_reply_text", reply_mock)
+    monkeypatch.setattr(image_to_video_fsm.permission_service, "check_quota", quota_mock)
 
     update = SimpleNamespace(
         effective_user=_build_user(),
@@ -163,7 +187,7 @@ async def test_video_lora_state_expired_before_quota_check(monkeypatch):
         bot=SimpleNamespace(),
         user_data={
             "in_conversation": "VIDEO_LORA",
-            "video_lora_data": {
+            "image_to_video_data": {
                 "resolution": "512p",
                 "duration": "5s",
                 "lora_name": "test-lora",
@@ -172,7 +196,7 @@ async def test_video_lora_state_expired_before_quota_check(monkeypatch):
         },
     )
 
-    result = await video_lora_fsm.receive_prompt(update, context)
+    result = await image_to_video_fsm.receive_prompt(update, context)
 
     assert result == ConversationHandler.END
     quota_mock.assert_not_awaited()
@@ -180,6 +204,92 @@ async def test_video_lora_state_expired_before_quota_check(monkeypatch):
     assert "任务状态已过期" in reply_mock.await_args.args[1]
     assert "in_conversation" not in context.user_data
     assert "video_lora_data" not in context.user_data
+    assert "image_to_video_data" not in context.user_data
+
+
+@pytest.mark.asyncio
+async def test_image_to_video_legacy_video_lora_data_fallback(monkeypatch):
+    edit_mock = AsyncMock()
+    monkeypatch.setattr(image_to_video_fsm, "robust_edit_text", edit_mock)
+
+    query = SimpleNamespace(
+        data="lora_select_",
+        answer=AsyncMock(),
+        message=SimpleNamespace(),
+    )
+    update = SimpleNamespace(callback_query=query)
+    context = SimpleNamespace(
+        user_data={
+            "video_lora_data": {
+                "resolution": "512p",
+                "duration": "5s",
+                "lora_name": None,
+                "image_path": None,
+            }
+        }
+    )
+
+    result = await image_to_video_fsm.handle_lora_selection(update, context)
+
+    assert result == ImageToVideoState.WAIT_IMAGE
+    query.answer.assert_awaited_once()
+    assert context.user_data["video_lora_data"]["lora_name"] == ""
+    edit_mock.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("conversation_tag", "lora_name", "expected_task_type"),
+    [
+        ("VIDEO_LORA", "BreastGrow", MODE_IMAGE_TO_VIDEO),
+        ("CUSTOM_VIDEO", "", MODE_CUSTOM_VIDEO),
+    ],
+)
+async def test_image_to_video_receive_prompt_uses_unified_image_to_video_service(
+    monkeypatch, conversation_tag, lora_name, expected_task_type
+):
+    reply_mock = AsyncMock()
+    quota_mock = AsyncMock()
+    create_background_task_mock = Mock()
+
+    monkeypatch.setattr(image_to_video_fsm, "is_global_menu_command", lambda _text: False)
+    monkeypatch.setattr(image_to_video_fsm, "robust_reply_text", reply_mock)
+    monkeypatch.setattr(image_to_video_fsm.permission_service, "check_quota", quota_mock)
+    monkeypatch.setattr(image_to_video_fsm, "create_background_task", create_background_task_mock)
+    monkeypatch.setattr(
+        image_to_video_fsm.TaskService,
+        "process_image_to_video_task",
+        lambda **kwargs: ("bg-task", kwargs),
+    )
+
+    update = _build_update_with_message()
+    context = SimpleNamespace(
+        bot=SimpleNamespace(),
+        user_data={
+            "in_conversation": conversation_tag,
+            "image_to_video_data": {
+                "resolution": "720p",
+                "duration": "8s",
+                "lora_name": lora_name,
+                "image_path": "/tmp/demo.png",
+            },
+        },
+    )
+
+    result = await image_to_video_fsm.receive_prompt(update, context)
+
+    assert result == ConversationHandler.END
+    quota_mock.assert_awaited_once()
+    create_background_task_mock.assert_called_once()
+    service_call = create_background_task_mock.call_args.args[1]
+    assert service_call[0] == "bg-task"
+    assert service_call[1]["task_type"] == expected_task_type
+    assert service_call[1]["resolution"] == "720p"
+    assert service_call[1]["duration"] == "8s"
+    assert service_call[1]["lora_name"] == lora_name
+    assert "in_conversation" not in context.user_data
+    assert "video_lora_data" not in context.user_data
+    assert "image_to_video_data" not in context.user_data
 
 
 @pytest.mark.asyncio

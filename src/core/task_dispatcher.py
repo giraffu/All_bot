@@ -6,6 +6,7 @@ from src.constants import (
     LTX_DURATION_MULTIPLIER,
     LTX_RESOLUTION_COST,
     MODE_FACESWAP_STEP1,
+    MODE_IMAGE_TO_VIDEO,
     MODE_I2I_PRO,
     MODE_I2I_DRAW,
     RESOLUTION_COST,
@@ -139,8 +140,20 @@ class FaceSwapStrategy(BaseTaskStrategy):
 
 
 class BaseVideoStrategy(BaseTaskStrategy):
+    VIDEO_LORA_ENDPOINT_COMPAT_MODES = {
+        MODE_IMAGE_TO_VIDEO,
+        "custom_video",
+        "video_edit",
+        "perfect_video_edit",
+    }
+
     def __init__(self, mode: str):
         self.mode = mode
+
+    def _should_submit_perfect_video_lora(self, inputs: Dict[str, Any]) -> bool:
+        return self.mode in self.VIDEO_LORA_ENDPOINT_COMPAT_MODES and bool(
+            inputs.get("lora_name")
+        )
 
     def get_cost(self, inputs: Dict[str, Any]) -> int:
         resolution = inputs.get("resolution", 512)
@@ -220,7 +233,7 @@ class BaseVideoStrategy(BaseTaskStrategy):
                 length=frame_length,
                 priority=priority,
             )
-        elif self.mode == "video_lora" and inputs.get("lora_name"):
+        elif self._should_submit_perfect_video_lora(inputs):
             return await image_service.submit_perfect_video_lora(
                 task_id,
                 prompt=prompt,

@@ -33,8 +33,8 @@
     "face_video": "🎬 Face Video",
     "i2i_pro": "🌟 Face Swap Pro",
     "free_edit": "🎨 Free Edit",
-    "video_lora": "🎬 Video (LoRA)",
-    "custom_video": "🎬 Custom Video",
+    "video_lora": "🎬 Img2Video",
+    "custom_video": "🎬 Img2Video",
     "ltx_video": "🎬 Pro Video",
     "cancel": "Cancel",
     "exit": "Exit",
@@ -105,7 +105,7 @@
     "i2i_draw": "Inpaint",
     "face_swap": "FaceSwap",
     "video_insert": "Video Gen",
-    "video_lora": "Video Gen (LoRA)",
+    "video_lora": "Img2Video",
     "face_video": "Video FaceSwap"
   },
   "api": {
@@ -252,8 +252,8 @@
       "prompt_required": "Please enter a prompt"
     },
     "image_to_video": {
-      "title_custom_video": "Custom Img2Video",
-      "title_video_lora": "Img2Video (Addon)",
+      "title_custom_video": "Img2Video",
+      "title_video_lora": "Img2Video",
       "title_ltx_video": "High-Res Video",
       "current_page_desc": "Upload a base image and complete template fill-in plus video submission on this page.",
       "template_notice_complete": "The original prompt, resolution, and duration have been restored from the template. You only need to upload the base image.",
@@ -382,8 +382,8 @@
     "face_video": "🎬 Video Face Swap",
     "ltx_video": "🎬 High-Res Video",
     "t2i_pornmaster_turbo": "🎨 Text2Img",
-    "custom_video": "🎬 Custom Img2Video",
-    "video_lora": "🎬 Img2Video (Addon)",
+    "custom_video": "🎬 Img2Video",
+    "video_lora": "🎬 Img2Video",
     "cancel_success_refreshing_balance": "Task canceled, refreshing balance",
     "mode_edit": "Custom Edit",
     "mode_i2i_pro": "Pro Face Swap",
@@ -402,9 +402,9 @@
     "mode_blowjob": "Blowjob",
     "mode_undress_tongue": "Undress Tongue",
     "mode_closeup_blowjob": "Closeup Blowjob",
-    "mode_custom_video": "Custom Img2Video",
+    "mode_custom_video": "Img2Video",
     "mode_ltx_video": "High-Res Video",
-    "mode_video_lora": "Img2Video (Addon)",
+    "mode_video_lora": "Img2Video",
     "mode_template_contribute": "Template Contribute",
     "mode_none": "No Mode"
   }

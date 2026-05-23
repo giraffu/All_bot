@@ -37,8 +37,8 @@ def build_global_menu_filter():
         "menu.face_video",  # 🎬 视频换脸
         "menu.i2i_pro",  # 🌟 幻想换脸
         "menu.free_edit",  # 🎨 自由P图
-        "menu.video_lora",  # 🎬 图生视频(附加模型)
-        "menu.custom_video",  # 🎬 自定义图生视频
+        "menu.video_lora",  # 🎬 图生视频
+        "menu.custom_video",  # 🎬 图生视频(兼容入口)
         "menu.ltx_video",  # 🎬 高级图生视频
         # 图片编辑子菜单 FSM 入口
         "menu.photo_edit_undress",

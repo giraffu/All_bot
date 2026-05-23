@@ -8,6 +8,7 @@ IMAGE_LORA_MODELS = {
 }
 
 VIDEO_LORA_MODELS = {
+    "": "无",
     "BreastGrow": "巨乳膨胀",
     "BreastInsertion": "乳交",
     "Cum": "颜射",

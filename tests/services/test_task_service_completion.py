@@ -10,7 +10,12 @@ from src.core.task_core import (
     TaskFailureFinalizationResult,
     TaskSuccessPersistenceResult,
 )
-from src.constants import MODE_FACESWAP_STEP1, MODE_NAME_MAP
+from src.constants import (
+    MODE_CUSTOM_VIDEO,
+    MODE_FACESWAP_STEP1,
+    MODE_IMAGE_TO_VIDEO,
+    MODE_NAME_MAP,
+)
 from src.services.task_service import TaskService
 
 
@@ -857,6 +862,103 @@ async def test_process_video_task_template_uses_internal_user_id_for_notice_and_
     acceleration_notice.assert_awaited_once_with(456)
     submitted_status_builder = run_bot_task_flow.await_args.kwargs["submitted_status_builder"]
     assert "任务已提交，正在排队调度" in submitted_status_builder(6)
+
+
+@pytest.mark.asyncio
+async def test_process_generation_task_delegates_video_modes_to_image_to_video_entrypoint(
+    monkeypatch,
+):
+    image_to_video_entry = AsyncMock(return_value=(b"video-bytes", "task-image-to-video"))
+    monkeypatch.setattr(
+        "src.services.task_service_entrypoints_generation.process_image_to_video_task",
+        image_to_video_entry,
+    )
+
+    context = SimpleNamespace(user_data={}, bot=MagicMock())
+    result = await TaskService.process_generation_task(
+        context=context,
+        chat_id=123,
+        user_id=789,
+        username="tester",
+        prompt="prompt",
+        images=["input.png"],
+        is_video=True,
+        task_type=MODE_IMAGE_TO_VIDEO,
+        resolution="720p",
+        duration="8s",
+        lora_name="BreastGrow",
+    )
+
+    assert result == (b"video-bytes", "task-image-to-video")
+    image_to_video_entry.assert_awaited_once_with(
+        service=TaskService,
+        context=context,
+        chat_id=123,
+        user_id=789,
+        username="tester",
+        prompt="prompt",
+        images=["input.png"],
+        resolution="720p",
+        duration="8s",
+        status_msg_id=None,
+        delete_status=True,
+        task_type=MODE_IMAGE_TO_VIDEO,
+        cleanup=True,
+        send_result=True,
+        deduct_quota=True,
+        reply_markup=None,
+        lora_name="BreastGrow",
+        lora_strength=1.0,
+        allow_contribute=True,
+        source_post_id=None,
+    )
+
+
+@pytest.mark.asyncio
+async def test_process_custom_video_task_delegates_to_image_to_video_entrypoint(
+    monkeypatch,
+):
+    image_to_video_entry = AsyncMock(return_value=(b"video-bytes", "task-custom-video"))
+    monkeypatch.setattr(
+        "src.services.task_service_entrypoints_video.process_image_to_video_task",
+        image_to_video_entry,
+    )
+    monkeypatch.setattr(
+        "src.services.task_service.TaskService._resolve_custom_video_settings",
+        AsyncMock(return_value=("720p", "8s", 720, 8)),
+    )
+
+    update = SimpleNamespace(
+        effective_chat=SimpleNamespace(id=123),
+        effective_user=SimpleNamespace(id=789, username="tester"),
+        effective_message=SimpleNamespace(),
+    )
+    context = SimpleNamespace(user_data={}, bot=MagicMock())
+
+    result = await TaskService.process_custom_video_task(
+        update=update,
+        context=context,
+        prompt="custom prompt",
+        image_path="input.png",
+        cleanup=False,
+        source_post_id=42,
+    )
+
+    assert result == (b"video-bytes", "task-custom-video")
+    image_to_video_entry.assert_awaited_once_with(
+        service=TaskService,
+        context=context,
+        chat_id=123,
+        user_id=789,
+        username="tester",
+        prompt="custom prompt",
+        images=["input.png"],
+        resolution="720p",
+        duration="8s",
+        task_type=MODE_CUSTOM_VIDEO,
+        cleanup=False,
+        source_post_id=42,
+    )
 
 
 @pytest.mark.asyncio

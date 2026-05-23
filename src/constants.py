@@ -27,6 +27,9 @@ MODE_UNDRESS_TONGUE = "undress_tongue"
 MODE_CLOSEUP_BLOWJOB = "closeup_blowjob"
 MODE_CUSTOM_VIDEO = "custom_video"
 MODE_VIDEO_LORA = "video_lora"
+# Neutral semantic alias for the unified image-to-video capability.
+# Keep the underlying value on the legacy video_lora string during the compat phase.
+MODE_IMAGE_TO_VIDEO = MODE_VIDEO_LORA
 MODE_LTX_VIDEO = "ltx_video"
 MODE_I2I_PRO = "i2i_pro"
 MODE_I2I_DRAW = "i2i_draw"

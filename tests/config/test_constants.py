@@ -1,4 +1,4 @@
-from src.constants import VIDEO_TASK_TYPES, DYNAMIC_PRIORITY_RULES
+from src.constants import MODE_IMAGE_TO_VIDEO, VIDEO_TASK_TYPES, DYNAMIC_PRIORITY_RULES
 
 
 def test_video_task_types_constant():
@@ -17,6 +17,11 @@ def test_video_task_types_constant():
     ]
     for mode in expected_modes:
         assert mode in VIDEO_TASK_TYPES
+
+
+def test_mode_image_to_video_alias_keeps_legacy_value():
+    assert MODE_IMAGE_TO_VIDEO == "video_lora"
+    assert MODE_IMAGE_TO_VIDEO in VIDEO_TASK_TYPES
 
 
 def test_dynamic_priority_rules_structure():
