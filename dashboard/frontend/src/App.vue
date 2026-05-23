@@ -14,6 +14,7 @@ import { useDashboardTabView } from './composables/useDashboardTabView'
 
 const { isAuthenticated, clearAuthToken } = useDashboardAuth()
 const activeTab = ref(['home'])
+const galleryCommentsPostId = ref(undefined)
 const collapsed = ref(false)
 const {
   stats,
@@ -46,10 +47,19 @@ const {
   viewHistory,
   closeModal
 } = useDashboardUserHistory()
+const openGalleryCommentsTab = (postId) => {
+  galleryCommentsPostId.value = typeof postId === 'number' ? postId : undefined
+  activeTab.value = ['gallery_comments']
+}
+
 const { menuItems, scrollableTabKeys, currentTabTitle, logoutIcon } =
   useDashboardNavigation(activeTab)
 const { currentTabView } = useDashboardTabView(
   activeTab,
+  {
+    selectedPostId: galleryCommentsPostId,
+    openCommentsTab: openGalleryCommentsTab,
+  },
   {
     stats,
     statsHistory,
@@ -60,7 +70,7 @@ const { currentTabView } = useDashboardTabView(
   },
   {
     viewHistory,
-  }
+  },
 )
 
 // Auto refresh when switching tabs

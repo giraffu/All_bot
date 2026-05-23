@@ -1,9 +1,16 @@
 <script setup>
-import { ref, onMounted, computed, h, watch } from 'vue'
+import { ref, onMounted, h } from 'vue'
 import { message, Modal } from 'ant-design-vue'
 import { ExclamationCircleOutlined, PictureOutlined, PlayCircleOutlined, CheckCircleOutlined, CloseCircleOutlined, CopyOutlined } from '@ant-design/icons-vue'
-import { fetchGalleryPosts, updateGalleryPost, deleteGalleryPost, fetchGalleryComments, updateGalleryComment, apiBaseUrl } from '../api/api'
-import { copyTextWithFallback, formatDate } from '../utils/helpers'
+import { fetchGalleryPosts, updateGalleryPost, deleteGalleryPost, apiBaseUrl } from '../api/api'
+import { copyTextWithFallback } from '../utils/helpers'
+
+const props = defineProps({
+  onOpenCommentsTab: {
+    type: Function,
+    default: undefined
+  }
+})
 
 const loading = ref(false)
 const posts = ref([])
@@ -72,25 +79,6 @@ const submitLoading = ref(false)
 // Preview Modal
 const previewVisible = ref(false)
 const previewMedia = ref(null)
-
-// Comments Manager Modal
-const commentsModalVisible = ref(false)
-const commentsPost = ref(null)
-const comments = ref([])
-const commentsLoading = ref(false)
-const commentsActiveTotal = ref(0)
-const commentsPagination = ref({
-  current: 1,
-  pageSize: 10,
-  total: 0
-})
-const commentActionLoading = ref({})
-let currentCommentsRequestId = 0
-
-const invalidateCommentsRequests = () => {
-  currentCommentsRequestId += 1
-  commentsLoading.value = false
-}
 
 const getTaskTypeName = (type) => {
   const option = taskTypeOptions.find(opt => opt.value === type)
@@ -230,109 +218,9 @@ const handleEditSubmit = async () => {
   }
 }
 
-const syncManagedPostCommentsCount = (count) => {
-  if (!commentsPost.value) return
-  commentsPost.value.comments_count = count
-  const postInList = posts.value.find(post => post.id === commentsPost.value.id)
-  if (postInList && postInList !== commentsPost.value) {
-    postInList.comments_count = count
-  }
-}
-
-const loadComments = async (page = commentsPagination.value.current) => {
-  if (!commentsPost.value) return
-
-  const postId = commentsPost.value.id
-  const requestId = ++currentCommentsRequestId
-  try {
-    commentsLoading.value = true
-    const res = await fetchGalleryComments({
-      post_id: postId,
-      page,
-      page_size: commentsPagination.value.pageSize
-    })
-    if (
-      requestId !== currentCommentsRequestId ||
-      !commentsModalVisible.value ||
-      commentsPost.value?.id !== postId
-    ) {
-      return
-    }
-    comments.value = res.items
-    commentsActiveTotal.value = res.active_total ?? commentsPost.value?.comments_count ?? 0
-    commentsPagination.value = {
-      ...commentsPagination.value,
-      current: res.page,
-      pageSize: res.page_size,
-      total: res.total
-    }
-  } catch (error) {
-    message.error('加载评论失败: ' + (error.response?.data?.detail || error.message))
-  } finally {
-    if (requestId === currentCommentsRequestId) {
-      commentsLoading.value = false
-    }
-  }
-}
-
 const openCommentsManager = (record) => {
-  invalidateCommentsRequests()
-  commentsPost.value = record
-  commentsActiveTotal.value = record.comments_count || 0
-  commentsPagination.value = {
-    ...commentsPagination.value,
-    current: 1,
-    total: 0
-  }
-  comments.value = []
-  commentsModalVisible.value = true
-  loadComments(1)
+  props.onOpenCommentsTab?.(record.id)
 }
-
-const handleCommentsPageChange = (page, pageSize) => {
-  commentsPagination.value = {
-    ...commentsPagination.value,
-    current: page,
-    pageSize
-  }
-  loadComments(page)
-}
-
-const toggleCommentStatus = async (comment) => {
-  const nextStatus = !comment.is_active
-  try {
-    commentActionLoading.value[comment.id] = true
-    const response = await updateGalleryComment(comment.id, { is_active: nextStatus })
-    if (response.message === 'No change needed') {
-      message.info('评论状态已被其他管理员更新，正在刷新')
-      await loadComments(commentsPagination.value.current)
-      return
-    }
-
-    comment.is_active = nextStatus
-
-    if (commentsPost.value) {
-      const nextCount = Math.max((commentsPost.value.comments_count || 0) + (nextStatus ? 1 : -1), 0)
-      syncManagedPostCommentsCount(nextCount)
-      commentsActiveTotal.value = nextCount
-    }
-
-    message.success(nextStatus ? '评论已恢复' : '评论已软删除')
-  } catch (error) {
-    message.error('更新评论失败: ' + (error.response?.data?.detail || error.message))
-  } finally {
-    commentActionLoading.value[comment.id] = false
-  }
-}
-
-watch(commentsModalVisible, (visible) => {
-  if (!visible) {
-    invalidateCommentsRequests()
-    commentsPost.value = null
-    comments.value = []
-    commentsActiveTotal.value = 0
-  }
-})
 
 const confirmDelete = (record) => {
   Modal.confirm({
@@ -588,71 +476,6 @@ onMounted(() => {
           loop 
           class="max-w-full max-h-[60vh] rounded shadow-sm"
         />
-      </div>
-    </a-modal>
-
-    <a-modal
-      v-model:open="commentsModalVisible"
-      :title="commentsPost ? `评论管理 - 帖子 #${commentsPost.id}` : '评论管理'"
-      :footer="null"
-      width="860px"
-      destroyOnClose
-    >
-      <div class="space-y-4">
-        <div v-if="commentsPost" class="flex items-center justify-between rounded border bg-gray-50 px-4 py-3">
-          <div class="text-sm text-gray-600">
-            显示中: <span class="font-semibold text-gray-900">{{ commentsActiveTotal }}</span>
-            <span class="mx-2 text-gray-300">/</span>
-            全部: <span class="font-semibold text-gray-900">{{ commentsPagination.total }}</span>
-          </div>
-          <a-button size="small" @click="loadComments(1)" :loading="commentsLoading">刷新评论</a-button>
-        </div>
-
-        <div v-if="commentsLoading && comments.length === 0" class="py-12 text-center text-gray-400">
-          加载评论中...
-        </div>
-
-        <div v-else-if="comments.length === 0" class="py-12 text-center text-gray-400">
-          暂无评论
-        </div>
-
-        <div v-else class="space-y-3">
-          <div
-            v-for="comment in comments"
-            :key="comment.id"
-            class="rounded-lg border border-gray-200 bg-white p-4"
-          >
-            <div class="mb-2 flex items-center justify-between gap-3">
-              <div class="flex items-center gap-3">
-                <span class="font-medium text-gray-900">{{ comment.author_name }}</span>
-                <a-tag :color="comment.is_active ? 'success' : 'default'">
-                  {{ comment.is_active ? '显示中' : '已软删' }}
-                </a-tag>
-              </div>
-              <div class="flex items-center gap-3">
-                <span class="text-xs text-gray-400">{{ formatDate(comment.created_at) }}</span>
-                <a-button
-                  size="small"
-                  :loading="commentActionLoading[comment.id]"
-                  @click="toggleCommentStatus(comment)"
-                >
-                  {{ comment.is_active ? '软删除' : '恢复' }}
-                </a-button>
-              </div>
-            </div>
-            <div class="text-sm leading-6 text-gray-700 whitespace-pre-wrap break-words">{{ comment.content }}</div>
-          </div>
-        </div>
-
-        <div class="flex justify-end">
-          <a-pagination
-            :current="commentsPagination.current"
-            :page-size="commentsPagination.pageSize"
-            :total="commentsPagination.total"
-            :show-size-changer="false"
-            @change="handleCommentsPageChange"
-          />
-        </div>
       </div>
     </a-modal>
   </div>

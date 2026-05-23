@@ -15,6 +15,26 @@ router = APIRouter(prefix="/api/gallery", tags=["gallery"])
 logger = logging.getLogger("dashboard.gallery")
 
 
+def _build_dashboard_comment_item(comment: GalleryComment) -> dict:
+    return {
+        "id": comment.id,
+        "post_id": comment.post_id,
+        "post_task_id": comment.post.task_id if comment.post else None,
+        "post_is_active": comment.post.is_active if comment.post else None,
+        "user_id": comment.user_id,
+        "author_name": (
+            comment.user.full_name
+            or comment.user.username
+            or f"User {comment.user_id}"
+        )
+        if comment.user
+        else f"User {comment.user_id}",
+        "content": comment.content,
+        "is_active": comment.is_active,
+        "created_at": comment.created_at.isoformat() if comment.created_at else None,
+    }
+
+
 class GalleryPostUpdate(BaseModel):
     is_active: Optional[bool] = None
     likes_count: Optional[int] = Field(default=None, ge=0)
@@ -158,6 +178,53 @@ class CommentUpdate(BaseModel):
     is_active: bool
 
 
+@router.get("/comments/all")
+async def get_all_gallery_comments(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    post_id: Optional[int] = Query(None, ge=1),
+    is_active: Optional[bool] = None,
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        filters = []
+        if post_id is not None:
+            filters.append(GalleryComment.post_id == post_id)
+        if is_active is not None:
+            filters.append(GalleryComment.is_active.is_(is_active))
+
+        total_stmt = select(func.count(GalleryComment.id))
+        if filters:
+            total_stmt = total_stmt.where(*filters)
+        total = await db.scalar(total_stmt) or 0
+
+        stmt = (
+            select(GalleryComment)
+            .options(
+                joinedload(GalleryComment.user),
+                joinedload(GalleryComment.post),
+            )
+            .order_by(desc(GalleryComment.created_at), desc(GalleryComment.id))
+            .offset((page - 1) * page_size)
+            .limit(page_size)
+        )
+        if filters:
+            stmt = stmt.where(*filters)
+
+        result = await db.execute(stmt)
+        comments = result.scalars().all()
+
+        return {
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+            "items": [_build_dashboard_comment_item(comment) for comment in comments],
+        }
+    except Exception as e:
+        logger.error(f"Failed to get all gallery comments: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get("/comments")
 async def get_gallery_comments(
     post_id: int = Query(..., ge=1),
@@ -196,26 +263,7 @@ async def get_gallery_comments(
             "active_total": active_total,
             "page": page,
             "page_size": page_size,
-            "items": [
-                {
-                    "id": comment.id,
-                    "post_id": comment.post_id,
-                    "user_id": comment.user_id,
-                    "author_name": (
-                        comment.user.full_name
-                        or comment.user.username
-                        or f"User {comment.user_id}"
-                    )
-                    if comment.user
-                    else f"User {comment.user_id}",
-                    "content": comment.content,
-                    "is_active": comment.is_active,
-                    "created_at": (
-                        comment.created_at.isoformat() if comment.created_at else None
-                    ),
-                }
-                for comment in comments
-            ],
+            "items": [_build_dashboard_comment_item(comment) for comment in comments],
         }
     except HTTPException:
         raise

@@ -197,6 +197,9 @@ export const updateGalleryPost = async (postId, data) => put(`/api/gallery/${pos
 
 export const fetchGalleryComments = async (params) => get('/api/gallery/comments', { params })
 
+export const fetchAllGalleryComments = async (params) =>
+  get('/api/gallery/comments/all', { params })
+
 export const updateGalleryComment = async (commentId, data) =>
   put(`/api/gallery/comments/${commentId}`, data)
 

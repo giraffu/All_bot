@@ -2,6 +2,7 @@ import { computed } from 'vue'
 import {
   AppstoreOutlined,
   BankOutlined,
+  MessageOutlined,
   DashboardOutlined,
   FileTextOutlined,
   GiftOutlined,
@@ -26,6 +27,7 @@ export function useDashboardNavigation(activeTab: { value: string[] }) {
     { key: 'recharge', label: '充值系统', icon: PayCircleOutlined },
     { key: 'templates', label: '模板共建', icon: PictureOutlined },
     { key: 'gallery', label: '广场内容管理', icon: AppstoreOutlined },
+    { key: 'gallery_comments', label: '评论管理', icon: MessageOutlined },
     { key: 'referrals', label: '邀请奖励', icon: GiftOutlined },
   ]
 

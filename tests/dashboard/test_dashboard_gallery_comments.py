@@ -4,7 +4,7 @@ import pytest
 from fastapi import HTTPException
 
 from dashboard.backend.routers import gallery as dashboard_gallery_router
-from src.database.models import GalleryComment, GalleryPost
+from src.database.models import GalleryComment, GalleryPost, User
 
 
 class _ScalarResult:
@@ -153,4 +153,31 @@ async def test_get_gallery_comments_uses_stable_ordering():
     list_stmt = next(
         stmt for stmt in db.executed_stmts if "FROM gallery_comments" in stmt and "ORDER BY" in stmt
     )
+    assert "gallery_comments.created_at DESC, gallery_comments.id DESC" in list_stmt
+
+
+@pytest.mark.asyncio
+async def test_get_all_gallery_comments_supports_filters_and_post_metadata():
+    post = GalleryPost(id=7, task_id="task-7", media_type="image", is_active=True)
+    comment = GalleryComment(id=10, post_id=7, user_id=123, content="hello", is_active=True)
+    comment.user = User(id=123, username="tester")
+    comment.post = post
+    db = _DashboardCommentsListDB(post=None, comments=[comment], total=1, active_total=0)
+
+    response = await dashboard_gallery_router.get_all_gallery_comments(
+        page=1,
+        page_size=20,
+        post_id=7,
+        is_active=True,
+        db=db,
+    )
+
+    assert response["total"] == 1
+    assert response["items"][0]["post_task_id"] == "task-7"
+    assert response["items"][0]["author_name"] == "tester"
+    list_stmt = next(
+        stmt for stmt in db.executed_stmts if "FROM gallery_comments" in stmt and "ORDER BY" in stmt
+    )
+    assert "gallery_comments.post_id = :post_id_1" in list_stmt
+    assert "gallery_comments.is_active IS true" in list_stmt
     assert "gallery_comments.created_at DESC, gallery_comments.id DESC" in list_stmt

@@ -1,6 +1,7 @@
 import { computed, markRaw, type Component, type Ref } from 'vue'
 
 import DashboardMonitorView from '../components/DashboardMonitorView.vue'
+import GalleryCommentsTable from '../components/GalleryCommentsTable.vue'
 import FinanceDashboard from '../components/FinanceDashboard.vue'
 import GalleryTable from '../components/GalleryTable.vue'
 import HistoryTable from '../components/HistoryTable.vue'
@@ -29,6 +30,11 @@ interface DashboardOverviewState {
   loadHistory: () => Promise<void> | void
 }
 
+interface DashboardGalleryCommentsState {
+  selectedPostId: Ref<number | undefined>
+  openCommentsTab: (postId?: number) => void
+}
+
 interface DashboardUserHistoryState {
   viewHistory: (user: unknown) => void
 }
@@ -48,11 +54,13 @@ const TAB_COMPONENTS = {
   recharge: markRaw(RechargeSystem),
   templates: markRaw(TemplateManager),
   gallery: markRaw(GalleryTable),
+  gallery_comments: markRaw(GalleryCommentsTable),
   referrals: markRaw(ReferralTable),
 } satisfies Record<string, Component>
 
 export function useDashboardTabView(
   activeTab: Ref<string[]>,
+  galleryComments: DashboardGalleryCommentsState,
   overview: DashboardOverviewState,
   userHistory: DashboardUserHistoryState
 ) {
@@ -126,7 +134,16 @@ export function useDashboardTabView(
     gallery: {
       component: TAB_COMPONENTS.gallery,
       containerClass: PANEL_CONTAINER_CLASS,
-      bindings: {},
+      bindings: {
+        onOpenCommentsTab: galleryComments.openCommentsTab,
+      },
+    },
+    gallery_comments: {
+      component: TAB_COMPONENTS.gallery_comments,
+      containerClass: PANEL_CONTAINER_CLASS,
+      bindings: {
+        selectedPostId: galleryComments.selectedPostId.value,
+      },
     },
     referrals: {
       component: TAB_COMPONENTS.referrals,
