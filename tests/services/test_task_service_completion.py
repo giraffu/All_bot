@@ -16,7 +16,10 @@ from src.constants import (
     MODE_IMAGE_TO_VIDEO,
     MODE_NAME_MAP,
 )
+from src.services import task_service_completion as completion_helpers
 from src.services import task_service_finalize as support
+from src.services import task_service as task_service_module
+from src.services import tg_task_runtime as tg_runtime_helpers
 from src.services.task_service import TaskService
 
 
@@ -48,7 +51,7 @@ async def test_handle_task_completion_keeps_success_flow_when_metadata_probe_fai
 
     user_logger = SimpleNamespace(username="tester")
 
-    media_bytes, output_path = await TaskService._handle_task_completion(
+    media_bytes, output_path = await completion_helpers.handle_task_completion(
         context=SimpleNamespace(bot=MagicMock(), bot_data={}),
         chat_id=123,
         internal_user_id=456,
@@ -64,6 +67,8 @@ async def test_handle_task_completion_keeps_success_flow_when_metadata_probe_fai
         delete_status=True,
         caption="done",
         allow_contribute=True,
+        send_result_media_func=TaskService._send_result_media,
+        cleanup_completion_status_message_func=TaskService._cleanup_completion_status_message,
     )
 
     assert media_bytes == b"video-bytes"
@@ -78,20 +83,23 @@ async def test_handle_task_completion_keeps_success_flow_when_metadata_probe_fai
 
 
 @pytest.mark.asyncio
-async def test_handle_task_completion_uses_task_service_download_seam(monkeypatch):
+async def test_handle_task_completion_uses_helper_download_default(monkeypatch):
     download_output = AsyncMock(
         return_value=(b"image-bytes", "saved-output.png", 768, 1024, None)
     )
     send_result_media = AsyncMock()
     cleanup_status = AsyncMock()
-    monkeypatch.setattr(TaskService, "_download_and_log_task_output", download_output)
+    monkeypatch.setattr(
+        "src.services.task_service_completion.download_and_log_task_output",
+        download_output,
+    )
     monkeypatch.setattr(TaskService, "_send_result_media", send_result_media)
     monkeypatch.setattr(TaskService, "_cleanup_completion_status_message", cleanup_status)
 
     user_logger = SimpleNamespace(username="tester")
     status_msg = MagicMock()
 
-    media_bytes, output_path = await TaskService._handle_task_completion(
+    media_bytes, output_path = await completion_helpers.handle_task_completion(
         context=SimpleNamespace(bot=MagicMock(), bot_data={}),
         chat_id=123,
         internal_user_id=456,
@@ -107,6 +115,8 @@ async def test_handle_task_completion_uses_task_service_download_seam(monkeypatc
         delete_status=True,
         caption="done",
         allow_contribute=False,
+        send_result_media_func=TaskService._send_result_media,
+        cleanup_completion_status_message_func=TaskService._cleanup_completion_status_message,
     )
 
     assert media_bytes == b"image-bytes"
@@ -127,14 +137,17 @@ async def test_handle_task_completion_accepts_explicit_completion_seams(monkeypa
     )
     send_result_media = AsyncMock()
     cleanup_status = AsyncMock()
-    monkeypatch.setattr(TaskService, "_download_and_log_task_output", AsyncMock())
+    monkeypatch.setattr(
+        "src.services.task_service_completion.download_and_log_task_output",
+        AsyncMock(),
+    )
     monkeypatch.setattr(TaskService, "_send_result_media", AsyncMock())
     monkeypatch.setattr(TaskService, "_cleanup_completion_status_message", AsyncMock())
 
     status_msg = MagicMock()
     user_logger = SimpleNamespace(username="tester")
 
-    media_bytes, output_path = await TaskService._handle_task_completion(
+    media_bytes, output_path = await completion_helpers.handle_task_completion(
         context=SimpleNamespace(bot=MagicMock(), bot_data={}),
         chat_id=123,
         internal_user_id=456,
@@ -183,7 +196,7 @@ async def test_download_and_log_task_output_handles_image_branch(monkeypatch):
     )
 
     media_bytes, output_path, width, height, duration = (
-        await TaskService._download_and_log_task_output(
+        await completion_helpers.download_and_log_task_output(
             internal_user_id=456,
             username="tester",
             prompt="prompt",
@@ -214,7 +227,7 @@ def test_build_result_reply_markup_injects_gallery_button_when_missing():
         [[InlineKeyboardButton("自定义", callback_data="custom_action")]]
     )
 
-    final_markup = TaskService._build_result_reply_markup(
+    final_markup = tg_runtime_helpers.build_result_reply_markup(
         task_type="custom_video",
         task_id="task-3",
         allow_contribute=True,
@@ -229,7 +242,7 @@ def test_record_result_message_meta_uses_special_mode_mapping_for_face_swap():
     context = SimpleNamespace(bot_data={})
     sent_msg = SimpleNamespace(message_id=42)
 
-    TaskService._record_result_message_meta(
+    tg_runtime_helpers.record_result_message_meta(
         context=context,
         sent_msg=sent_msg,
         task_type="face_swap",
@@ -356,20 +369,24 @@ async def test_cleanup_completion_status_message_only_deletes_when_enabled(
 
 
 @pytest.mark.asyncio
-async def test_monitor_submitted_bot_task_uses_task_service_monitor_seam(monkeypatch):
+async def test_monitor_submitted_bot_task_uses_helper_monitor_seam(monkeypatch):
     monitor_progress = AsyncMock(return_value={"status": "done"})
     monkeypatch.setattr(
         "src.core.billing_core.get_user_priority_and_identity",
         AsyncMock(return_value=(5, "外门弟子", "金丹期")),
     )
-    monkeypatch.setattr(TaskService, "_monitor_task_progress", monitor_progress)
+    monkeypatch.setattr(
+        "src.services.task_service_completion.monitor_bot_task_progress",
+        monitor_progress,
+    )
 
-    result = await TaskService._monitor_submitted_bot_task(
+    result = await completion_helpers.monitor_submitted_bot_task(
         task_id="task-monitor",
         status_msg="status-msg",
         is_video=True,
         internal_user_id=456,
         monitor_func="monitor-func",
+        edit_status_text_func=task_service_module.robust_edit_text,
     )
 
     assert result == {"status": "done"}
@@ -380,13 +397,17 @@ async def test_monitor_submitted_bot_task_uses_task_service_monitor_seam(monkeyp
         monitor_func="monitor-func",
         identity_str="外门弟子",
         user_group="金丹期",
+        edit_status_text_func=task_service_module.robust_edit_text,
     )
 
 
 @pytest.mark.asyncio
 async def test_complete_monitored_bot_task_preserves_supplied_user_logger(monkeypatch):
     handle_task_completion = AsyncMock(return_value=(b"video-bytes", "output.mp4"))
-    monkeypatch.setattr(TaskService, "_handle_task_completion", handle_task_completion)
+    monkeypatch.setattr(
+        "src.services.task_service_completion.handle_task_completion",
+        handle_task_completion,
+    )
 
     user_logger = SimpleNamespace(username="tester")
     runtime_state = SimpleNamespace(actual_cost=9, registry_task_id="reg-1", task_submitted=True)
@@ -424,7 +445,10 @@ async def test_complete_monitored_bot_task_preserves_supplied_user_logger(monkey
 @pytest.mark.asyncio
 async def test_complete_monitored_bot_task_delegates_to_completion_helper(monkeypatch):
     complete_helper = AsyncMock(return_value=(b"video-bytes", "output.mp4"))
-    monkeypatch.setattr("src.services.task_service.complete_monitored_bot_task", complete_helper)
+    monkeypatch.setattr(
+        "src.services.task_service_completion.complete_monitored_bot_task",
+        complete_helper,
+    )
 
     user_logger = SimpleNamespace(username="tester")
     runtime_state = SimpleNamespace(actual_cost=9, registry_task_id="reg-1", task_submitted=True)
@@ -458,14 +482,17 @@ async def test_complete_monitored_bot_task_delegates_to_completion_helper(monkey
     assert result == (b"video-bytes", "output.mp4")
     kwargs = complete_helper.await_args.kwargs
     assert kwargs["user_logger"] is user_logger
-    assert kwargs["handle_task_completion_func"] is TaskService._handle_task_completion
+    assert kwargs["handle_task_completion_func"] is completion_helpers.handle_task_completion
     assert kwargs["finalize_failed_task_for_bot_func"] is TaskService._finalize_failed_task_for_bot
 
 
 @pytest.mark.asyncio
 async def test_complete_monitored_bot_task_preserves_explicit_completion_seams(monkeypatch):
     complete_helper = AsyncMock(return_value=(b"video-bytes", "output.mp4"))
-    monkeypatch.setattr("src.services.task_service.complete_monitored_bot_task", complete_helper)
+    monkeypatch.setattr(
+        "src.services.task_service_completion.complete_monitored_bot_task",
+        complete_helper,
+    )
 
     explicit_send_result_media = AsyncMock()
     explicit_cleanup_status = AsyncMock()
@@ -689,7 +716,7 @@ async def test_process_generation_task_uses_finalize_task_cancellation(monkeypat
         AsyncMock(return_value=(0, "user", "外门弟子")),
     )
     monkeypatch.setattr(
-        "src.services.task_service.TaskService._monitor_task_progress",
+        "src.services.task_service_completion.monitor_bot_task_progress",
         AsyncMock(side_effect=CoreDomainError("cancelled")),
     )
     monkeypatch.setattr(
@@ -759,7 +786,7 @@ async def test_process_generation_task_uses_finalize_task_failure(monkeypatch):
         AsyncMock(return_value=(0, "user", "外门弟子")),
     )
     monkeypatch.setattr(
-        "src.services.task_service.TaskService._monitor_task_progress",
+        "src.services.task_service_completion.monitor_bot_task_progress",
         AsyncMock(side_effect=RuntimeError("boom")),
     )
     monkeypatch.setattr(
@@ -818,7 +845,7 @@ async def test_process_ltx_video_task_uses_finalize_task_cancellation(monkeypatc
     monkeypatch.setattr("src.services.task_service.robust_reply_text", AsyncMock(return_value=msg))
     monkeypatch.setattr("src.services.task_service.robust_edit_text", AsyncMock())
     monkeypatch.setattr(
-        "src.services.task_service.TaskService._monitor_submitted_bot_task",
+        "src.services.task_service_completion.monitor_submitted_bot_task",
         AsyncMock(side_effect=CoreDomainError("cancelled")),
     )
     monkeypatch.setattr(
@@ -1034,7 +1061,7 @@ async def test_process_face_video_task_uses_finalize_task_failure(monkeypatch):
         AsyncMock(return_value=status_msg),
     )
     monkeypatch.setattr(
-        "src.services.task_service.TaskService._monitor_submitted_bot_task",
+        "src.services.task_service_completion.monitor_submitted_bot_task",
         AsyncMock(side_effect=RuntimeError("boom")),
     )
     monkeypatch.setattr(

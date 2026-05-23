@@ -7,7 +7,7 @@ from src.core import auth_core_dependencies
 
 
 @pytest.mark.asyncio
-async def test_build_auth_core_dependencies_exposes_wrapped_runtime_dependencies(
+async def test_build_auth_core_dependencies_exposes_runtime_dependencies(
     monkeypatch,
 ):
     redis = SimpleNamespace()
@@ -23,19 +23,17 @@ async def test_build_auth_core_dependencies_exposes_wrapped_runtime_dependencies
         get_or_create_user,
     )
     monkeypatch.setattr(
-        auth_core_dependencies.redis_client,
-        "redis",
-        redis,
+        auth_core_dependencies,
+        "_load_redis_client",
+        lambda: SimpleNamespace(redis=redis),
     )
     monkeypatch.setattr(
-        auth_core_dependencies.permission_service,
-        "get_user_detailed_stats",
-        get_user_detailed_stats,
-    )
-    monkeypatch.setattr(
-        auth_core_dependencies.permission_service,
-        "check_web_access",
-        check_web_access,
+        auth_core_dependencies,
+        "_load_permission_service",
+        lambda: SimpleNamespace(
+            get_user_detailed_stats=get_user_detailed_stats,
+            check_web_access=check_web_access,
+        ),
     )
 
     dependencies = auth_core_dependencies.build_auth_core_dependencies()

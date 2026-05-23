@@ -134,3 +134,42 @@ async def test_update_submitted_task_status_uses_injected_edit_text_func():
     )
 
     injected_edit.assert_awaited_once_with(status_msg, "请稍候")
+
+
+@pytest.mark.asyncio
+async def test_prepare_and_submit_bot_task_passes_reply_and_edit_seams():
+    injected_reply = AsyncMock(return_value="status-msg")
+    injected_edit = AsyncMock()
+    submit_bot_task = AsyncMock(return_value=("task-1", ["input.png"]))
+    runtime_state = SimpleNamespace(actual_cost=0)
+    update = SimpleNamespace(effective_message=object())
+    spec = BotTaskMessageSpec(
+        initial_status_text="正在提交",
+        submitted_status_text="已提交",
+        progress_wait_text="请稍候",
+    )
+
+    status_msg, task_id, saved_inputs, returned_spec = (
+        await task_service_flow.prepare_and_submit_bot_task(
+            context=object(),
+            update=update,
+            chat_id=123,
+            message_spec=spec,
+            runtime_state=runtime_state,
+            internal_user_id=456,
+            username="tester",
+            task_type="image",
+            inputs={"prompt": "hello"},
+            get_or_send_status_msg_func=AsyncMock(),
+            submit_bot_task_func=submit_bot_task,
+            reply_text_func=injected_reply,
+            edit_text_func=injected_edit,
+        )
+    )
+
+    assert status_msg == "status-msg"
+    assert task_id == "task-1"
+    assert saved_inputs == ["input.png"]
+    assert returned_spec is spec
+    injected_reply.assert_awaited_once_with(update.effective_message, "正在提交")
+    injected_edit.assert_awaited_once_with("status-msg", "已提交")

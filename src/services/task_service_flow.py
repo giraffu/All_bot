@@ -130,6 +130,8 @@ async def prepare_and_submit_bot_task(
     send_initial_task_status_func=None,
     submit_bot_task_func=None,
     update_submitted_task_status_func=None,
+    reply_text_func=None,
+    edit_text_func=None,
 ):
     send_initial_task_status_func = (
         send_initial_task_status_func or send_initial_task_status
@@ -138,6 +140,7 @@ async def prepare_and_submit_bot_task(
     update_submitted_task_status_func = (
         update_submitted_task_status_func or update_submitted_task_status
     )
+    with_submitted_status_func = with_submitted_status_func or (lambda spec, text: spec)
 
     status_msg = await _call_async_with_supported_kwargs(
         send_initial_task_status_func,
@@ -147,6 +150,7 @@ async def prepare_and_submit_bot_task(
         status_msg_id=status_msg_id,
         message_spec=message_spec,
         get_or_send_status_msg_func=get_or_send_status_msg_func,
+        reply_text_func=reply_text_func,
     )
     task_id, saved_inputs = await _call_async_with_supported_kwargs(
         submit_bot_task_func,
@@ -167,6 +171,7 @@ async def prepare_and_submit_bot_task(
         update_submitted_task_status_func,
         status_msg=status_msg,
         message_spec=message_spec,
+        edit_text_func=edit_text_func,
     )
     return status_msg, task_id, saved_inputs, message_spec
 
@@ -208,7 +213,15 @@ async def run_bot_task_flow(
     cleanup_completion_status_message_func=None,
     cleanup_files_func=None,
     prepare_and_submit_bot_task_func=None,
+    send_initial_task_status_func=None,
+    submit_bot_task_func=None,
+    update_submitted_task_status_func=None,
+    reply_text_func=None,
+    edit_text_func=None,
     monitor_submitted_bot_task_func=None,
+    get_user_priority_and_identity_func=None,
+    monitor_bot_task_progress_func=None,
+    edit_status_text_func=None,
     complete_monitored_bot_task_func=None,
     send_bot_warning_func=None,
     send_bot_domain_error_func=None,
@@ -258,18 +271,24 @@ async def run_bot_task_flow(
                 deduct_quota=deduct_quota,
                 with_submitted_status_func=with_submitted_status_func,
                 get_or_send_status_msg_func=get_or_send_status_msg_func,
-                send_initial_task_status_func=send_initial_task_status,
-                submit_bot_task_func=submit_bot_task,
-                update_submitted_task_status_func=update_submitted_task_status,
+                send_initial_task_status_func=send_initial_task_status_func,
+                submit_bot_task_func=submit_bot_task_func,
+                update_submitted_task_status_func=update_submitted_task_status_func,
+                reply_text_func=reply_text_func,
+                edit_text_func=edit_text_func,
             )
         )
 
-        final_info = await monitor_submitted_bot_task_func(
+        final_info = await _call_async_with_supported_kwargs(
+            monitor_submitted_bot_task_func,
             task_id=task_id,
             status_msg=status_msg,
             is_video=is_video,
             internal_user_id=internal_user_id,
             monitor_func=image_service.monitor_progress,
+            get_user_priority_and_identity_func=get_user_priority_and_identity_func,
+            monitor_bot_task_progress_func=monitor_bot_task_progress_func,
+            edit_status_text_func=edit_status_text_func,
         )
 
         media_bytes, full_output_path = await _call_async_with_supported_kwargs(

@@ -6,6 +6,18 @@ from telegram.ext import ContextTypes
 from src.constants import MODE_FACE_VIDEO_STEP1
 from src.core.video_billing import normalize_requested_duration_seconds
 from src.services.task_service_entrypoints_common import resolve_internal_user_id
+from src.services.task_service_entrypoint_support import (
+    build_cleanup_paths,
+    build_task_inputs,
+    build_unexpected_error_log_message,
+    resolve_video_billing_args,
+)
+from src.services.task_service_message_support import (
+    build_cost_status_builder,
+    build_message_spec,
+    build_status_message,
+)
+from src.services.task_service_types import BotTaskRuntimeState
 
 
 async def process_ltx_video_task(
@@ -30,23 +42,23 @@ async def process_ltx_video_task(
     resolution = context.user_data.get("ltx_video_resolution", "1280x704")
     duration = context.user_data.get("ltx_video_duration", "5s")
 
-    runtime_state = service._create_runtime_state()
+    runtime_state = BotTaskRuntimeState()
     notice = await service._get_acceleration_notice(internal_user_id)
-    message_spec = service._build_message_spec(
-        initial_status_text=service._build_status_message(
+    message_spec = build_message_spec(
+        initial_status_text=build_status_message(
             f"🚀 正在处理高级图生视频任务 (画质:{resolution}, 时长:{duration})",
             notice=notice,
         ),
         progress_wait_text="⏳ 正在生成高级视频，可能需要数分钟，请耐心等待...",
         completion_caption="✅ 高级图生视频生成完成",
     )
-    inputs = service._build_task_inputs(
+    inputs = build_task_inputs(
         prompt=prompt,
         images=[image_path] if image_path else [],
         resolution=resolution,
         duration=duration,
     )
-    billing_args = service._resolve_video_billing_args(
+    billing_args = resolve_video_billing_args(
         is_video=True,
         resolution=resolution,
         task_type=mode,
@@ -66,7 +78,7 @@ async def process_ltx_video_task(
         prompt=prompt,
         is_video=True,
         message_spec=message_spec,
-        submitted_status_builder=service._build_cost_status_builder(
+        submitted_status_builder=build_cost_status_builder(
             f"⏳ 任务已提交，正在排队调度高级图生视频任务 (画质:{resolution}, 时长:{duration}, 消耗{{actual_cost}}灵石)",
             notice=notice,
         ),
@@ -76,11 +88,11 @@ async def process_ltx_video_task(
         requested_duration=billing_args["requested_duration"],
         unexpected_should_refund=lambda state: state.task_submitted
         and state.actual_cost > 0,
-        unexpected_error_log_message=service._build_unexpected_error_log_message(
+        unexpected_error_log_message=build_unexpected_error_log_message(
             "ltx video task"
         ),
         unexpected_error_prefix="出错了",
-        cleanup_paths=service._build_cleanup_paths([image_path]),
+        cleanup_paths=build_cleanup_paths([image_path]),
         cleanup_enabled=cleanup,
     )
 
@@ -104,23 +116,23 @@ async def process_face_video_task(
     internal_user_id = await resolve_internal_user_id(user_id, username)
 
     mode = MODE_FACE_VIDEO_STEP1
-    runtime_state = service._create_runtime_state(actual_cost=cost)
+    runtime_state = BotTaskRuntimeState(actual_cost=cost)
     notice = await service._get_acceleration_notice(internal_user_id)
-    message_spec = service._build_message_spec(
-        initial_status_text=service._build_status_message(
+    message_spec = build_message_spec(
+        initial_status_text=build_status_message(
             f"🚀 正在处理视频换脸任务 (画质:{resolution}p)",
             notice=notice,
         ),
         completion_caption="✅ 视频换脸完成",
         missing_output_message="生成失败或超时，已退还灵石。",
     )
-    inputs = service._build_task_inputs(
+    inputs = build_task_inputs(
         prompt="Video Face Swap",
         images=[face_image_path, video_path] if face_image_path and video_path else [],
         resolution=resolution,
         duration=duration,
     )
-    billing_args = service._resolve_video_billing_args(
+    billing_args = resolve_video_billing_args(
         is_video=True,
         resolution=resolution,
         task_type=mode,
@@ -140,7 +152,7 @@ async def process_face_video_task(
         prompt="face video",
         is_video=True,
         message_spec=message_spec,
-        submitted_status_builder=service._build_cost_status_builder(
+        submitted_status_builder=build_cost_status_builder(
             f"⏳ 任务已提交，正在排队调度视频换脸任务 (画质:{resolution}p, 消耗{{actual_cost}}灵石)",
             notice=notice,
         ),
@@ -149,11 +161,11 @@ async def process_face_video_task(
         prefer_edit_status=True,
         unexpected_should_refund=lambda state: state.task_submitted
         and state.actual_cost > 0,
-        unexpected_error_log_message=service._build_unexpected_error_log_message(
+        unexpected_error_log_message=build_unexpected_error_log_message(
             "face video task",
             verb="processing",
         ),
         unexpected_error_prefix="系统错误",
-        cleanup_paths=service._build_cleanup_paths([face_image_path, video_path]),
+        cleanup_paths=build_cleanup_paths([face_image_path, video_path]),
         cleanup_enabled=cleanup,
     )

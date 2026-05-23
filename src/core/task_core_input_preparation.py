@@ -1,10 +1,27 @@
 import asyncio
+import inspect
 import os
 from collections.abc import Awaitable, Callable
 from typing import Any
 
 from src.core.task_core_types import CoreDomainError, TaskSubmissionContext, VideoTaskRequest
 from src.logger import UserLogger
+
+
+def _call_with_supported_kwargs(func, **kwargs):
+    signature = inspect.signature(func)
+    if any(
+        parameter.kind == inspect.Parameter.VAR_KEYWORD
+        for parameter in signature.parameters.values()
+    ):
+        return func(**kwargs)
+
+    supported_kwargs = {
+        key: value
+        for key, value in kwargs.items()
+        if key in signature.parameters
+    }
+    return func(**supported_kwargs)
 
 
 async def process_input_path(
@@ -67,7 +84,11 @@ async def prepare_task_submission_payload(
 ) -> TaskSubmissionContext:
     user_logger = user_logger_factory(user_id, username)
     paths_to_upload = strategy.get_file_paths_to_upload(inputs)
-    validate_local_input_paths_func(paths_to_upload=paths_to_upload, bucket_name=bucket_name)
+    _call_with_supported_kwargs(
+        validate_local_input_paths_func,
+        paths_to_upload=paths_to_upload,
+        bucket_name=bucket_name,
+    )
 
     priority, _, _ = await get_user_priority_and_identity_func(user_id)
     final_priority = min(base_priority + priority, 100)
@@ -79,7 +100,8 @@ async def prepare_task_submission_payload(
 
     saved_inputs = []
     for path in paths_to_upload:
-        processed_img = await process_input_path_func(
+        processed_img = await _call_with_supported_kwargs(
+            process_input_path_func,
             user_logger=user_logger,
             path=path,
             bucket_name=bucket_name,

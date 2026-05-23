@@ -7,8 +7,24 @@ from src.constants import (
     MODE_CUSTOM_VIDEO,
     MODE_I2I_PRO,
     MODE_IMAGE_TO_VIDEO,
+    MODE_NAME_MAP,
 )
 from src.services.task_service_entrypoints_common import resolve_internal_user_id
+from src.services.task_service_entrypoint_support import (
+    build_cleanup_paths,
+    build_log_prompt,
+    build_task_inputs,
+    build_unexpected_error_log_message,
+    resolve_video_billing_args,
+)
+from src.services.task_service_message_support import (
+    build_cost_status_builder,
+    build_message_spec,
+    build_status_message,
+    resolve_display_mode_name,
+    with_completion_caption,
+)
+from src.services.task_service_types import BotTaskRuntimeState
 from src.utils import robust_send_message
 
 
@@ -44,10 +60,14 @@ async def process_image_to_video_task(
         )
     )
 
-    runtime_state = service._create_runtime_state()
+    runtime_state = BotTaskRuntimeState()
     notice = await service._get_acceleration_notice(internal_user_id)
-    display_mode_name = service._resolve_display_mode_name(task_type, context)
-    inputs = service._build_task_inputs(
+    display_mode_name = resolve_display_mode_name(
+        task_type,
+        context=context,
+        mode_name_map=MODE_NAME_MAP,
+    )
+    inputs = build_task_inputs(
         prompt=prompt,
         images=images,
         resolution=resolution_value,
@@ -55,8 +75,8 @@ async def process_image_to_video_task(
         lora_name=lora_name,
         lora_strength=lora_strength,
     )
-    message_spec = service._build_message_spec(
-        initial_status_text=service._build_status_message(
+    message_spec = build_message_spec(
+        initial_status_text=build_status_message(
             f"🚀 正在处理{display_mode_name}生成任务 (画质:{resolution_text}, 时长:{duration_text})",
             notice=notice,
         ),
@@ -64,7 +84,7 @@ async def process_image_to_video_task(
         completion_caption=f"✅ {display_mode_name} 生成完成",
         missing_output_message="生成完成但未获取到文件路径，已退还灵石",
     )
-    log_prompt = service._build_log_prompt(
+    log_prompt = build_log_prompt(
         prompt,
         resolution=resolution_text,
         duration=duration_text,
@@ -72,7 +92,7 @@ async def process_image_to_video_task(
         task_type=task_type,
         lora_task_types=(MODE_IMAGE_TO_VIDEO, "img2img_lora"),
     )
-    billing_args = service._resolve_video_billing_args(
+    billing_args = resolve_video_billing_args(
         is_video=True,
         resolution=resolution_value,
         task_type=task_type,
@@ -93,7 +113,7 @@ async def process_image_to_video_task(
         prompt=log_prompt,
         is_video=True,
         message_spec=message_spec,
-        submitted_status_builder=service._build_cost_status_builder(
+        submitted_status_builder=build_cost_status_builder(
             f"⏳ 任务已提交，正在排队调度{display_mode_name}生成任务 (画质:{resolution_text}, 时长:{duration_text}, 消耗{{actual_cost}}灵石)",
             notice=notice,
             wait_text="⏳ 正在生成视频，请耐心等待...",
@@ -107,11 +127,11 @@ async def process_image_to_video_task(
         billing_resolution=billing_args["billing_resolution"],
         requested_duration=billing_args["requested_duration"],
         missing_output_should_refund=deduct_quota,
-        unexpected_error_log_message=service._build_unexpected_error_log_message(
+        unexpected_error_log_message=build_unexpected_error_log_message(
             "process_image_to_video_task"
         ),
         unexpected_error_prefix="出错了",
-        cleanup_paths=service._build_cleanup_paths(images),
+        cleanup_paths=build_cleanup_paths(images),
         cleanup_enabled=cleanup,
     )
 
@@ -172,9 +192,9 @@ async def process_generation_task(
     resolution = 512
     duration = 5
 
-    runtime_state = service._create_runtime_state()
+    runtime_state = BotTaskRuntimeState()
     notice = await service._get_acceleration_notice(internal_user_id)
-    inputs = service._build_task_inputs(
+    inputs = build_task_inputs(
         prompt=prompt,
         images=images,
         resolution=resolution,
@@ -182,8 +202,8 @@ async def process_generation_task(
         lora_name=lora_name,
         lora_strength=lora_strength,
     )
-    message_spec = service._build_message_spec(
-        initial_status_text=service._build_status_message(
+    message_spec = build_message_spec(
+        initial_status_text=build_status_message(
             "🚀 正在处理视频生成任务"
             if is_video
             else f"🚀 正在处理 {len(images)} 张图片",
@@ -192,20 +212,24 @@ async def process_generation_task(
         missing_output_message="生成完成但未获取到文件路径，已退还灵石",
     )
 
-    log_prompt = service._build_log_prompt(
+    log_prompt = build_log_prompt(
         prompt,
         lora_name=lora_name,
         task_type=task_type,
         lora_task_types=("video_lora", "img2img_lora"),
     )
 
-    display_mode_name = service._resolve_display_mode_name(task_type, context)
-    message_spec = service._with_completion_caption(
+    display_mode_name = resolve_display_mode_name(
+        task_type,
+        context=context,
+        mode_name_map=MODE_NAME_MAP,
+    )
+    message_spec = with_completion_caption(
         message_spec,
         f"✅ {display_mode_name} 生成完成",
     )
 
-    billing_args = service._resolve_video_billing_args(
+    billing_args = resolve_video_billing_args(
         is_video=is_video,
         resolution=resolution,
         task_type=task_type,
@@ -226,7 +250,7 @@ async def process_generation_task(
         prompt=log_prompt,
         is_video=is_video,
         message_spec=message_spec,
-        submitted_status_builder=service._build_cost_status_builder(
+        submitted_status_builder=build_cost_status_builder(
             "⏳ 任务已提交，正在排队调度视频生成任务 (消耗{actual_cost}灵石)"
             if is_video
             else f"⏳ 任务已提交，正在排队调度 {len(images)} 张图片 (消耗{{actual_cost}}灵石)",
@@ -241,11 +265,11 @@ async def process_generation_task(
         billing_resolution=billing_args["billing_resolution"],
         requested_duration=billing_args["requested_duration"],
         missing_output_should_refund=deduct_quota,
-        unexpected_error_log_message=service._build_unexpected_error_log_message(
+        unexpected_error_log_message=build_unexpected_error_log_message(
             "process_generation_task"
         ),
         unexpected_error_prefix="出错了",
-        cleanup_paths=service._build_cleanup_paths(images),
+        cleanup_paths=build_cleanup_paths(images),
         cleanup_enabled=cleanup,
     )
 
@@ -269,16 +293,16 @@ async def process_i2i_pro_task(
         return None, None
 
     image_path = images[0]
-    runtime_state = service._create_runtime_state()
+    runtime_state = BotTaskRuntimeState()
     notice = await service._get_acceleration_notice(internal_user_id)
-    message_spec = service._build_message_spec(
-        initial_status_text=service._build_status_message(
+    message_spec = build_message_spec(
+        initial_status_text=build_status_message(
             "🚀 正在处理幻想换脸任务",
             notice=notice,
         ),
         completion_caption="🌟 幻想换脸生成完成",
     )
-    inputs = service._build_task_inputs(
+    inputs = build_task_inputs(
         prompt=prompt,
         images=[image_path],
         resolution=512,
@@ -297,7 +321,7 @@ async def process_i2i_pro_task(
         prompt=prompt,
         is_video=False,
         message_spec=message_spec,
-        submitted_status_builder=service._build_cost_status_builder(
+        submitted_status_builder=build_cost_status_builder(
             "⏳ 任务已提交，正在排队调度幻想换脸任务 (消耗{actual_cost}灵石)",
             notice=notice,
         ),
@@ -305,9 +329,9 @@ async def process_i2i_pro_task(
         allow_contribute=allow_contribute,
         refund_suffix_mode="always",
         unexpected_should_refund=lambda state: state.task_submitted,
-        unexpected_error_log_message=service._build_unexpected_error_log_message(
+        unexpected_error_log_message=build_unexpected_error_log_message(
             "process_i2i_pro_task"
         ),
         unexpected_error_prefix="出错了",
-        cleanup_paths=service._build_cleanup_paths(images),
+        cleanup_paths=build_cleanup_paths(images),
     )

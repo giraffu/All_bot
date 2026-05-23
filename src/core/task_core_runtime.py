@@ -8,14 +8,6 @@ from src.core.task_core_types import CoreDomainError
 logger = logging.getLogger(__name__)
 
 
-class _CompatServiceProxy:
-    def __init__(self, loader):
-        self._loader = loader
-
-    def __getattr__(self, name):
-        return getattr(self._loader(), name)
-
-
 def _load_task_registry():
     from src.services.task_registry import TaskRegistry as task_registry_impl
 
@@ -26,9 +18,6 @@ def _get_runtime_redis_client():
     from src.services.redis_client import redis_client
 
     return redis_client
-
-
-TaskRegistry = _CompatServiceProxy(_load_task_registry)
 
 
 async def cleanup_task_runtime_state(
@@ -42,7 +31,7 @@ async def cleanup_task_runtime_state(
     if release_concurrency_lock_func is None:
         release_concurrency_lock_func = release_concurrency_lock
     if remove_task_func is None:
-        remove_task_func = TaskRegistry.remove_task
+        remove_task_func = _load_task_registry().remove_task
 
     if release_lock:
         try:
@@ -175,10 +164,11 @@ async def sync_user_concurrency(user_id: int, actual_count: int):
 
 async def cancel_user_task(task_id: str, user_id: int):
     """供用户主动调用的任务撤销逻辑"""
-    task = await TaskRegistry.get_task(task_id)
+    task_registry = _load_task_registry()
+    task = await task_registry.get_task(task_id)
     registry_task_id = task_id
     if not task:
-        registry_task_id, task = await TaskRegistry.find_task_by_backend_task_id(task_id)
+        registry_task_id, task = await task_registry.find_task_by_backend_task_id(task_id)
 
     if not task or not registry_task_id:
         raise CoreDomainError("任务不存在或已脱离排队阶段")

@@ -380,9 +380,9 @@ async def test_cleanup_task_runtime_state_uses_runtime_default_bindings(monkeypa
         release_lock,
     )
     monkeypatch.setattr(
-        task_core_runtime.TaskRegistry,
-        "remove_task",
-        remove_task,
+        task_core_runtime,
+        "_load_task_registry",
+        lambda: SimpleNamespace(remove_task=remove_task),
     )
 
     await task_core_runtime.cleanup_task_runtime_state(

@@ -635,16 +635,6 @@ from src.core.billing_core import (
 from src.core.task_dispatcher import StrategyFactory, dispatch_to_worker
 from src.utils import load_prompts
 
-def _validate_local_input_paths(
-    paths_to_upload: list[str],
-    bucket_name: str = MINIO_BUCKET,
-):
-    _validate_local_input_paths_impl(
-        paths_to_upload=paths_to_upload,
-        bucket_name=bucket_name,
-    )
-
-
 async def _prepare_task_submission_payload(
     *,
     user_id: int,
@@ -657,19 +647,6 @@ async def _prepare_task_submission_payload(
     is_video_task: bool,
     video_request: VideoTaskRequest,
 ) -> TaskSubmissionContext:
-    def _validate_local_input_paths_adapter(*, paths_to_upload: list[str], bucket_name: str):
-        _ = bucket_name
-        _validate_local_input_paths(paths_to_upload)
-
-    async def _process_input_path_adapter(
-        *,
-        user_logger: UserLogger,
-        path: str,
-        bucket_name: str,
-    ) -> str:
-        _ = bucket_name
-        return await _process_input_path(user_logger, path)
-
     return await _prepare_task_submission_payload_impl(
         user_id=user_id,
         username=username,
@@ -681,10 +658,10 @@ async def _prepare_task_submission_payload(
         is_video_task=is_video_task,
         video_request=video_request,
         user_logger_factory=UserLogger,
-        validate_local_input_paths_func=_validate_local_input_paths_adapter,
+        validate_local_input_paths_func=_validate_local_input_paths_impl,
         get_user_priority_and_identity_func=get_user_priority_and_identity,
         load_prompts_func=load_prompts,
-        process_input_path_func=_process_input_path_adapter,
+        process_input_path_func=_process_input_path,
         bucket_name=MINIO_BUCKET,
     )
 

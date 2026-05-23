@@ -15,6 +15,7 @@ async def monitor_submitted_bot_task(
     monitor_func,
     get_user_priority_and_identity_func=None,
     monitor_bot_task_progress_func=None,
+    edit_status_text_func=None,
 ):
     from src.core.billing_core import get_user_priority_and_identity
 
@@ -34,6 +35,7 @@ async def monitor_submitted_bot_task(
         monitor_func=monitor_func,
         identity_str=identity_str,
         user_group=user_group,
+        edit_status_text_func=edit_status_text_func,
     )
 
 

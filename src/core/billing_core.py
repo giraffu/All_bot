@@ -19,14 +19,6 @@ logger = logging.getLogger(__name__)
 _quota_manager_impl = QuotaManager()
 
 
-class _CompatServiceProxy:
-    def __init__(self, loader):
-        self._loader = loader
-
-    def __getattr__(self, name):
-        return getattr(self._loader(), name)
-
-
 def _load_permission_service():
     from src.services.permission_service import permission_service as permission_service_impl
 
@@ -42,10 +34,6 @@ def _load_redis_client():
 def _load_quota_manager():
     return _quota_manager_impl
 
-
-permission_service = _CompatServiceProxy(_load_permission_service)
-redis_client = _CompatServiceProxy(_load_redis_client)
-quota_manager = _CompatServiceProxy(_load_quota_manager)
 
 __all__ = [
     "BillingCoreDependencies",

@@ -14,21 +14,10 @@ from src.core.task_core_types import TaskSuccessPersistenceResult
 from src.logger import UserLogger
 
 
-class _CompatServiceProxy:
-    def __init__(self, loader):
-        self._loader = loader
-
-    def __getattr__(self, name):
-        return getattr(self._loader(), name)
-
-
 def _load_image_service():
     from src.services.image_service import image_service as image_service_impl
 
     return image_service_impl
-
-
-image_service = _CompatServiceProxy(_load_image_service)
 
 
 @dataclass(frozen=True)

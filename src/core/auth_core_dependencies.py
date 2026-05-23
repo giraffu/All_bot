@@ -6,14 +6,6 @@ from src.core.user_core import get_or_create_user_by_telegram
 from src.database.core import AsyncSessionLocal
 
 
-class _CompatServiceProxy:
-    def __init__(self, loader):
-        self._loader = loader
-
-    def __getattr__(self, name):
-        return getattr(self._loader(), name)
-
-
 def _load_permission_service():
     from src.services.permission_service import permission_service as permission_service_impl
 
@@ -26,10 +18,6 @@ def _load_redis_client():
     return redis_client_impl
 
 
-permission_service = _CompatServiceProxy(_load_permission_service)
-redis_client = _CompatServiceProxy(_load_redis_client)
-
-
 @dataclass(frozen=True)
 class AuthCoreDependencies:
     redis: Any
@@ -40,11 +28,11 @@ class AuthCoreDependencies:
 
 
 def _get_auth_core_redis():
-    return redis_client.redis
+    return _load_redis_client().redis
 
 
 def _get_auth_core_permission_service():
-    return permission_service
+    return _load_permission_service()
 
 
 def _get_auth_core_session_factory():
