@@ -4,8 +4,12 @@ from unittest.mock import AsyncMock, Mock
 import pytest
 from telegram.ext import ConversationHandler
 
-from src.constants import MODE_CUSTOM_VIDEO, MODE_IMAGE_TO_VIDEO
-from src.handlers.conversation_states import ImageToVideoState
+from src.constants import (
+    MODE_CUSTOM_VIDEO,
+    MODE_EDIT,
+    MODE_IMAGE_TO_VIDEO,
+    MODE_IMG2IMG_LORA,
+)
 from src.handlers.fsm import (
     custom_video_fsm,
     edit_image_fsm,
@@ -49,6 +53,34 @@ def test_deprecated_video_lora_fsm_module_reexports_unified_handler():
     )
     handler = image_to_video_fsm.get_image_to_video_fsm_handler()
     assert handler.name == "image_to_video_fsm"
+
+
+def test_video_lora_fsm_module_keeps_only_minimal_compat_exports():
+    from src.handlers.fsm import video_lora_fsm
+
+    assert video_lora_fsm.__all__ == [
+        "VideoLoraState",
+        "get_image_to_video_fsm_handler",
+        "get_video_lora_fsm_handler",
+        "start_video_lora",
+    ]
+    assert video_lora_fsm.start_video_lora is image_to_video_fsm.start_video_lora
+    assert video_lora_fsm.get_video_lora_fsm_handler is image_to_video_fsm.get_video_lora_fsm_handler
+
+
+def test_image_to_video_private_video_lora_aliases_are_removed():
+    assert not hasattr(image_to_video_fsm, "_initialize_video_lora_context")
+    assert not hasattr(image_to_video_fsm, "_start_video_lora_flow")
+
+
+def test_custom_video_fsm_handler_reuses_unified_state_graph():
+    custom_handler = custom_video_fsm.get_custom_video_fsm_handler()
+    unified_handler = image_to_video_fsm.get_image_to_video_fsm_handler()
+
+    assert custom_handler.name == "custom_video_fsm"
+    assert len(custom_handler.entry_points) == 3
+    assert set(custom_handler.states) == set(unified_handler.states)
+    assert custom_handler.fallbacks[0].callback is image_to_video_fsm.cancel_conversation
 
 
 @pytest.mark.asyncio
@@ -124,6 +156,212 @@ async def test_edit_image_empty_images_before_quota_check(monkeypatch):
     assert "任务已提交或状态已失效" in reply_mock.await_args.args[1]
     assert "in_conversation" not in context.user_data
     assert "edit_image_data" not in context.user_data
+
+
+@pytest.mark.asyncio
+async def test_start_edit_image_routes_free_edit_to_lora_selection(monkeypatch):
+    reply_mock = AsyncMock()
+
+    monkeypatch.setattr("src.utils.is_maintenance_mode", lambda: False)
+    monkeypatch.setattr(edit_image_fsm, "robust_reply_text", reply_mock)
+
+    update = _build_update_with_message(text="自由P图")
+    context = SimpleNamespace(
+        user_data={},
+    )
+
+    monkeypatch.setitem(
+        __import__("src.handlers.prompt_router", fromlist=["GLOBAL_REVERSE_MAP"]).GLOBAL_REVERSE_MAP,
+        "自由P图",
+        "menu.free_edit",
+    )
+
+    result = await edit_image_fsm.start_edit_image(update, context)
+
+    assert result == edit_image_fsm.EditImageState.WAIT_LORA_SELECTION
+    assert context.user_data["edit_image_data"]["mode"] == MODE_EDIT
+    reply_mock.assert_awaited_once()
+    assert "已进入【自由P图】模式" in reply_mock.await_args.args[1]
+    assert reply_mock.await_args.kwargs["reply_markup"] is not None
+
+
+@pytest.mark.asyncio
+async def test_start_edit_image_routes_i2i_pro_to_reference_image(monkeypatch):
+    reply_mock = AsyncMock()
+
+    monkeypatch.setattr("src.utils.is_maintenance_mode", lambda: False)
+    monkeypatch.setattr(edit_image_fsm, "robust_reply_text", reply_mock)
+
+    update = _build_update_with_message(text="幻想换脸")
+    context = SimpleNamespace(
+        user_data={},
+    )
+
+    monkeypatch.setitem(
+        __import__("src.handlers.prompt_router", fromlist=["GLOBAL_REVERSE_MAP"]).GLOBAL_REVERSE_MAP,
+        "幻想换脸",
+        "menu.i2i_pro",
+    )
+
+    result = await edit_image_fsm.start_edit_image(update, context)
+
+    assert result == edit_image_fsm.EditImageState.WAIT_REFERENCE_IMAGES
+    assert context.user_data["edit_image_data"]["mode"] == "i2i_pro"
+    reply_mock.assert_awaited_once()
+    assert "已进入【幻想换脸】模式" in reply_mock.await_args.args[1]
+    assert reply_mock.await_args.kwargs["reply_markup"] is None
+
+
+@pytest.mark.asyncio
+async def test_edit_image_lora_selection_switches_to_img2img_lora(monkeypatch):
+    edit_mock = AsyncMock()
+    monkeypatch.setattr(edit_image_fsm, "robust_edit_text", edit_mock)
+
+    query = SimpleNamespace(
+        data="editlora_select_test-lora",
+        answer=AsyncMock(),
+        message=SimpleNamespace(),
+    )
+    update = SimpleNamespace(callback_query=query)
+    context = SimpleNamespace(
+        user_data={"edit_image_data": {"mode": MODE_EDIT, "cost": 2, "images": []}}
+    )
+
+    result = await edit_image_fsm.handle_lora_selection(update, context)
+
+    assert result == edit_image_fsm.EditImageState.WAIT_REFERENCE_IMAGES
+    query.answer.assert_awaited_once()
+    assert context.user_data["edit_image_data"]["lora_name"] == "test-lora"
+    assert context.user_data["edit_image_data"]["mode"] == MODE_IMG2IMG_LORA
+    assert context.user_data["edit_image_data"]["cost"] == 2
+    edit_mock.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_edit_image_second_reference_image_updates_fusion_cost(monkeypatch):
+    reply_mock = AsyncMock()
+    download_mock = AsyncMock()
+    get_file_mock = AsyncMock(
+        return_value=SimpleNamespace(download_to_drive=download_mock)
+    )
+
+    monkeypatch.setattr(edit_image_fsm, "robust_reply_text", reply_mock)
+
+    update = SimpleNamespace(
+        effective_user=_build_user(),
+        effective_chat=SimpleNamespace(id=10001),
+        message=SimpleNamespace(
+            document=None,
+            photo=[SimpleNamespace(file_id="new-photo-file-id")],
+            chat_id=10001,
+        ),
+    )
+    context = SimpleNamespace(
+        bot=SimpleNamespace(get_file=get_file_mock),
+        user_data={
+            "edit_image_data": {
+                "mode": MODE_EDIT,
+                "cost": 2,
+                "images": ["/tmp/first.png"],
+                "lora_name": "",
+            }
+        },
+    )
+
+    result = await edit_image_fsm.receive_reference_image(update, context)
+
+    assert result == edit_image_fsm.EditImageState.WAIT_PROMPT
+    get_file_mock.assert_awaited_once_with("new-photo-file-id")
+    download_mock.assert_awaited_once()
+    assert len(context.user_data["edit_image_data"]["images"]) == 2
+    assert context.user_data["edit_image_data"]["cost"] == 6
+    reply_mock.assert_awaited_once()
+    assert "已收到 2 张参考图" in reply_mock.await_args.args[1]
+    assert "双图融合将消耗 6 灵石" in reply_mock.await_args.args[1]
+
+
+@pytest.mark.asyncio
+async def test_edit_image_global_menu_command_exits_current_flow(monkeypatch):
+    reply_mock = AsyncMock()
+    quota_mock = AsyncMock()
+
+    monkeypatch.setattr(edit_image_fsm, "is_global_menu_command", lambda _text: True)
+    monkeypatch.setattr(edit_image_fsm, "robust_reply_text", reply_mock)
+    monkeypatch.setattr(edit_image_fsm.permission_service, "check_quota", quota_mock)
+
+    update = SimpleNamespace(
+        effective_user=_build_user(),
+        effective_chat=SimpleNamespace(id=10001),
+        message=_build_message(text="主菜单"),
+    )
+    context = SimpleNamespace(
+        bot=SimpleNamespace(),
+        t=lambda key: {
+            "system.fsm_exit_hint": "已退出当前流程",
+            "system.fsm_in_progress_hint": "流程进行中",
+        }[key],
+        user_data={
+            "in_conversation": "EDIT_IMAGE",
+            "edit_image_data": {
+                "mode": MODE_EDIT,
+                "cost": 2,
+                "images": ["/tmp/demo.png"],
+                "lora_name": "",
+            },
+        },
+    )
+
+    result = await edit_image_fsm.receive_prompt(update, context)
+
+    assert result == ConversationHandler.END
+    quota_mock.assert_not_awaited()
+    reply_mock.assert_awaited_once_with(update.message, "已退出当前流程")
+    assert "in_conversation" not in context.user_data
+    assert "edit_image_data" not in context.user_data
+
+
+@pytest.mark.asyncio
+async def test_edit_image_special_lora_normalizes_prompt_before_submit(monkeypatch):
+    reply_mock = AsyncMock()
+    quota_mock = AsyncMock()
+    create_background_task_mock = Mock()
+
+    monkeypatch.setattr(edit_image_fsm, "is_global_menu_command", lambda _text: False)
+    monkeypatch.setattr(edit_image_fsm, "robust_reply_text", reply_mock)
+    monkeypatch.setattr(edit_image_fsm.permission_service, "check_quota", quota_mock)
+    monkeypatch.setattr(edit_image_fsm, "create_background_task", create_background_task_mock)
+    monkeypatch.setattr(
+        edit_image_fsm.TaskService,
+        "process_generation_task",
+        lambda *args, **kwargs: ("bg-task", args, kwargs),
+    )
+
+    update = SimpleNamespace(
+        effective_user=_build_user(),
+        effective_chat=SimpleNamespace(id=10001),
+        message=_build_message(text="make it better"),
+    )
+    context = SimpleNamespace(
+        bot=SimpleNamespace(),
+        user_data={
+            "in_conversation": "EDIT_IMAGE",
+            "edit_image_data": {
+                "mode": MODE_IMG2IMG_LORA,
+                "cost": 2,
+                "images": ["/tmp/demo.png"],
+                "lora_name": "qwen/adjust_pussy_anus.safetensors",
+            },
+        },
+    )
+
+    result = await edit_image_fsm.receive_prompt(update, context)
+
+    assert result == ConversationHandler.END
+    quota_mock.assert_awaited_once()
+    create_background_task_mock.assert_called_once()
+    service_call = create_background_task_mock.call_args.args[1]
+    assert service_call[0] == "bg-task"
+    assert service_call[1][4] == "adjust her pussy and anus, make it better"
 
 
 @pytest.mark.asyncio
@@ -208,13 +446,11 @@ async def test_video_lora_state_expired_before_quota_check(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_image_to_video_legacy_video_lora_data_fallback(monkeypatch):
-    edit_mock = AsyncMock()
-    monkeypatch.setattr(image_to_video_fsm, "robust_edit_text", edit_mock)
-
+async def test_image_to_video_legacy_video_lora_data_no_longer_used():
     query = SimpleNamespace(
         data="lora_select_",
         answer=AsyncMock(),
+        edit_message_text=AsyncMock(),
         message=SimpleNamespace(),
     )
     update = SimpleNamespace(callback_query=query)
@@ -231,10 +467,10 @@ async def test_image_to_video_legacy_video_lora_data_fallback(monkeypatch):
 
     result = await image_to_video_fsm.handle_lora_selection(update, context)
 
-    assert result == ImageToVideoState.WAIT_IMAGE
+    assert result == ConversationHandler.END
     query.answer.assert_awaited_once()
-    assert context.user_data["video_lora_data"]["lora_name"] == ""
-    edit_mock.assert_awaited_once()
+    query.edit_message_text.assert_awaited_once_with("交互已失效，请重新开始。")
+    assert "video_lora_data" in context.user_data
 
 
 @pytest.mark.asyncio

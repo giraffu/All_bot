@@ -37,12 +37,6 @@ class LtxVideoState(IntEnum):
     WAIT_CONFIRMATION = auto()
 
 
-class Img2ImgLoraState(IntEnum):
-    WAIT_LORA_SELECTION = auto()
-    WAIT_IMAGE = auto()
-    WAIT_PROMPT = auto()
-
-
 class ImageToVideoState(IntEnum):
     """统一图生视频流程的状态枚举"""
 

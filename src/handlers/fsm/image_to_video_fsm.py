@@ -34,16 +34,11 @@ from src.filters.i18n_filter import I18nFilter
 logger = logging.getLogger("fsm.image_to_video")
 
 IMAGE_TO_VIDEO_DATA_KEY = "image_to_video_data"
-# Deprecated compatibility key. Read and cleanup only; do not write new runtime state.
-LEGACY_VIDEO_LORA_DATA_KEY = "video_lora_data"
 
 
 def _get_image_to_video_data(context: ContextTypes.DEFAULT_TYPE) -> dict | None:
-    """Return unified FSM state, with legacy fallback during migration."""
-    data = context.user_data.get(IMAGE_TO_VIDEO_DATA_KEY)
-    if data is None:
-        data = context.user_data.get(LEGACY_VIDEO_LORA_DATA_KEY)
-    return data
+    """Return unified image-to-video FSM state."""
+    return context.user_data.get(IMAGE_TO_VIDEO_DATA_KEY)
 
 
 def _set_image_to_video_data(
@@ -53,10 +48,8 @@ def _set_image_to_video_data(
 
 
 def _pop_image_to_video_data(context: ContextTypes.DEFAULT_TYPE) -> dict:
-    """Pop unified FSM state and also clear deprecated legacy state if present."""
-    data = context.user_data.pop(IMAGE_TO_VIDEO_DATA_KEY, None)
-    legacy = context.user_data.pop(LEGACY_VIDEO_LORA_DATA_KEY, None)
-    return data or legacy or {}
+    """Pop unified image-to-video FSM state."""
+    return context.user_data.pop(IMAGE_TO_VIDEO_DATA_KEY, {}) or {}
 
 
 def _cleanup_context(context: ContextTypes.DEFAULT_TYPE, _user_id: int):
@@ -522,15 +515,13 @@ async def unexpected_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     return None
 
 
-def get_image_to_video_fsm_handler() -> ConversationHandler:
+def _build_image_to_video_fsm_handler(
+    *,
+    entry_points: list,
+    handler_name: str,
+) -> ConversationHandler:
     return ConversationHandler(
-        entry_points=[
-            CommandHandler("video_lora", start_image_to_video),
-            MessageHandler(I18nFilter("menu.video_lora"), start_image_to_video),
-            CallbackQueryHandler(
-                start_image_to_video, pattern="^fsm_start_video_lora$"
-            ),
-        ],
+        entry_points=entry_points,
         states={
             ImageToVideoState.WAIT_LORA_SELECTION: [
                 CallbackQueryHandler(handle_lora_selection, pattern="^lora_select_"),
@@ -562,8 +553,21 @@ def get_image_to_video_fsm_handler() -> ConversationHandler:
         },
         fallbacks=[CommandHandler("cancel", cancel_conversation)],
         conversation_timeout=300,
-        name="image_to_video_fsm",
+        name=handler_name,
         persistent=False,
+    )
+
+
+def get_image_to_video_fsm_handler() -> ConversationHandler:
+    return _build_image_to_video_fsm_handler(
+        entry_points=[
+            CommandHandler("video_lora", start_image_to_video),
+            MessageHandler(I18nFilter("menu.video_lora"), start_image_to_video),
+            CallbackQueryHandler(
+                start_image_to_video, pattern="^fsm_start_video_lora$"
+            ),
+        ],
+        handler_name="image_to_video_fsm",
     )
 
 
@@ -577,5 +581,3 @@ def get_video_lora_fsm_handler() -> ConversationHandler:
 # Keep new call sites on `image_to_video_*` symbols and `ImageToVideoState`.
 # ---------------------------------------------------------------------------
 VideoLoraState = ImageToVideoState
-_initialize_video_lora_context = _initialize_image_to_video_context
-_start_video_lora_flow = _start_image_to_video_flow

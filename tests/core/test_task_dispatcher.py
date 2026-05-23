@@ -9,7 +9,7 @@ from src.core.task_dispatcher import (
     BaseVideoStrategy,
     LtxVideoStrategy,
 )
-from src.constants import MODE_I2I_PRO, MODE_IMAGE_TO_VIDEO
+from src.constants import MODE_I2I_PRO, MODE_IMAGE_TO_VIDEO, MODE_IMG2IMG_LORA
 
 
 def test_strategy_factory_returns_correct_strategy():
@@ -37,6 +37,28 @@ def test_strategy_factory_returns_correct_strategy():
     assert strategy.mode == "unknown_mode"
 
 
+def test_base_video_strategy_normalizes_legacy_image_to_video_mode():
+    strategy = BaseVideoStrategy("MODE_IMAGE_TO_VIDEO")
+
+    assert strategy.mode == MODE_IMAGE_TO_VIDEO
+
+
+@pytest.mark.parametrize(
+    ("legacy_task_type", "expected_mode"),
+    [
+        ("MODE_I2I_PRO", MODE_I2I_PRO),
+        ("MODE_IMG2IMG_LORA", MODE_IMG2IMG_LORA),
+    ],
+)
+def test_strategy_factory_normalizes_legacy_string_task_types(
+    legacy_task_type, expected_mode
+):
+    strategy = StrategyFactory.get_strategy(legacy_task_type)
+
+    assert isinstance(strategy, DefaultImageStrategy)
+    assert strategy.mode == expected_mode
+
+
 def test_video_strategy_cost_calculation():
     strategy = StrategyFactory.get_strategy("doggy_style")
     # Base doggy style cost is 6, 512p multiplier is 1.0, 5s multiplier is 1.0
@@ -50,6 +72,48 @@ def test_video_strategy_cost_calculation():
     # 720p base is 18, 8s multiplier is 2.0
     cost = strategy.get_cost({"resolution": "720p", "duration": "8s"})
     assert cost == 36
+
+
+def test_base_video_strategy_face_video_upload_paths_accept_step_modes():
+    strategy = BaseVideoStrategy("face_video_step1")
+
+    file_paths = strategy.get_file_paths_to_upload(
+        {"face_image": "face.png", "target_video": "target.mp4"}
+    )
+
+    assert file_paths == ["face.png", "target.mp4"]
+
+
+@pytest.mark.asyncio
+async def test_default_image_strategy_normalizes_legacy_lora_mode_before_submit(
+    monkeypatch,
+):
+    strategy = DefaultImageStrategy("MODE_IMG2IMG_LORA")
+    submit_mock = AsyncMock(return_value="backend-task-id")
+    monkeypatch.setattr(
+        "src.core.task_dispatcher.image_service.submit_img2img_lora_task", submit_mock
+    )
+
+    result = await strategy.submit_task(
+        "task-1",
+        {
+            "prompt": "merge styles",
+            "saved_input_images": ["demo/input.png"],
+            "lora_name": "test-lora",
+        },
+        priority=2,
+    )
+
+    assert result == "backend-task-id"
+    submit_mock.assert_awaited_once_with(
+        "task-1",
+        prompt="merge styles",
+        image_paths=["demo/input.png"],
+        lora_name="test-lora",
+        negative_prompt=" ",
+        priority=2,
+        lora_strength=1.0,
+    )
 
 
 @pytest.mark.asyncio
