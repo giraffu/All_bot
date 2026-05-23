@@ -4,6 +4,8 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from src.core import task_core
+from src.core import task_core_web_history_warmup
+from src.core import task_core_web_monitor
 from src.core.task_core_persistence_postprocess import (
     postprocess_successful_task_persistence,
 )
@@ -216,6 +218,78 @@ async def test_schedule_web_history_r2_warmup_still_prunes_when_copy_fails(monke
     )
     prune_mock.assert_awaited_once_with(123)
     warning_mock.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_schedule_web_history_r2_warmup_uses_runtime_default_create_task_binding(
+    monkeypatch,
+):
+    scheduled_coroutines = []
+    copy_mock = AsyncMock(return_value=None)
+    thumb_mock = AsyncMock(return_value=None)
+    prune_mock = AsyncMock(return_value=None)
+
+    def _capture_create_task(coro):
+        scheduled_coroutines.append(coro)
+        return None
+
+    monkeypatch.setattr(
+        task_core_web_history_warmup.asyncio,
+        "create_task",
+        _capture_create_task,
+    )
+
+    task_core_web_history_warmup.schedule_web_history_r2_warmup(
+        user_id=123,
+        task_id="task-runtime",
+        output_file="123/output_images/task-runtime.png",
+        media_type="image",
+        source="web",
+        resolve_storage_object_func=lambda _output_file: (
+            "bot-data",
+            "123/output_images/task-runtime.png",
+        ),
+        copy_to_r2_func=copy_mock,
+        generate_and_upload_thumbnail_func=thumb_mock,
+        prune_user_web_history_r2_cache_func=prune_mock,
+        logger=MagicMock(),
+    )
+
+    assert len(scheduled_coroutines) == 1
+    await scheduled_coroutines[0]
+    copy_mock.assert_awaited_once()
+    thumb_mock.assert_awaited_once()
+    prune_mock.assert_awaited_once_with(123)
+
+
+def test_attach_web_task_monitor_uses_runtime_default_create_task_binding(monkeypatch):
+    create_task = MagicMock()
+    monitor_web_task = AsyncMock()
+    submission_context = MagicMock()
+
+    monkeypatch.setattr(task_core_web_monitor.asyncio, "create_task", create_task)
+
+    task_core_web_monitor.attach_web_task_monitor(
+        backend_task_id="backend-1",
+        internal_user_id=123,
+        username="tester",
+        registry_task_id="registry-1",
+        submission_context=submission_context,
+        cost=5,
+        monitor_web_task_func=monitor_web_task,
+    )
+
+    create_task.assert_called_once()
+    scheduled_coro = create_task.call_args.args[0]
+    scheduled_coro.close()
+    monitor_web_task.assert_called_once_with(
+        backend_task_id="backend-1",
+        internal_user_id=123,
+        username="tester",
+        registry_task_id="registry-1",
+        submission_context=submission_context,
+        cost=5,
+    )
 
 
 @pytest.mark.asyncio

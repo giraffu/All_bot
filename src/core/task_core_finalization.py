@@ -21,8 +21,11 @@ async def _refund_task_with_type(
     cost: int,
     should_refund: bool,
     refund_task_type: str,
-    refund_credits_func=refund_credits,
+    refund_credits_func=None,
 ) -> bool:
+    if refund_credits_func is None:
+        refund_credits_func = refund_credits
+
     if not should_refund or cost <= 0:
         return False
     await asyncio.shield(
@@ -42,7 +45,7 @@ async def refund_cancelled_task(
     username: str,
     cost: int,
     task_submitted: bool,
-    refund_credits_func=refund_credits,
+    refund_credits_func=None,
 ) -> bool:
     return await _refund_task_with_type(
         internal_user_id=internal_user_id,
@@ -60,7 +63,7 @@ async def refund_failed_task(
     username: str,
     cost: int,
     should_refund: bool,
-    refund_credits_func=refund_credits,
+    refund_credits_func=None,
 ) -> bool:
     return await _refund_task_with_type(
         internal_user_id=internal_user_id,
@@ -81,7 +84,7 @@ async def handle_failed_task_exception(
     error: Exception,
     generic_error_prefix: str,
     refund_suffix_mode: str = "if_refunded",
-    refund_credits_func=refund_credits,
+    refund_credits_func=None,
 ) -> str:
     refunded = await refund_failed_task(
         internal_user_id=internal_user_id,
@@ -119,8 +122,11 @@ async def send_task_finalization_notice_best_effort(
 async def _cleanup_after_finalization(
     context: TaskFinalizationContext,
     *,
-    cleanup_task_runtime_state_func=cleanup_task_runtime_state,
+    cleanup_task_runtime_state_func=None,
 ):
+    if cleanup_task_runtime_state_func is None:
+        cleanup_task_runtime_state_func = cleanup_task_runtime_state
+
     await cleanup_task_runtime_state_func(
         internal_user_id=context.internal_user_id,
         registry_task_id=context.registry_task_id,
@@ -149,8 +155,11 @@ async def _refund_terminated_task_best_effort(
     should_refund: bool,
     refund_task_type: str,
     registry_task_id: str,
-    refund_credits_func=refund_credits,
+    refund_credits_func=None,
 ) -> bool:
+    if refund_credits_func is None:
+        refund_credits_func = refund_credits
+
     if user_id is None:
         return False
 
@@ -185,8 +194,8 @@ async def finalize_task_failure(
     generic_error_prefix: str | None = None,
     explicit_user_message: str | None = None,
     refund_suffix_mode: str = "if_refunded",
-    refund_credits_func=refund_credits,
-    cleanup_task_runtime_state_func=cleanup_task_runtime_state,
+    refund_credits_func=None,
+    cleanup_task_runtime_state_func=None,
 ) -> TaskFailureFinalizationResult:
     context = TaskFinalizationContext(
         internal_user_id=internal_user_id,
@@ -241,8 +250,11 @@ async def finalize_task_failure_with_notice(
     notice_message: str | None = None,
     logger_override=logger,
     notice_failure_log_message: str = "Failed to send task finalization notice",
-    finalize_task_failure_func=finalize_task_failure,
+    finalize_task_failure_func=None,
 ) -> TaskFailureFinalizationResult:
+    if finalize_task_failure_func is None:
+        finalize_task_failure_func = finalize_task_failure
+
     result = await finalize_task_failure_func(
         internal_user_id=internal_user_id,
         username=username,
@@ -275,9 +287,12 @@ async def finalize_task_cancellation(
     registry_task_id: str | None,
     release_lock: bool = True,
     explicit_user_message: str | None = None,
-    refund_cancelled_task_func=refund_cancelled_task,
-    cleanup_task_runtime_state_func=cleanup_task_runtime_state,
+    refund_cancelled_task_func=None,
+    cleanup_task_runtime_state_func=None,
 ) -> TaskCancellationFinalizationResult:
+    if refund_cancelled_task_func is None:
+        refund_cancelled_task_func = refund_cancelled_task
+
     context = TaskFinalizationContext(
         internal_user_id=internal_user_id,
         username=username,
@@ -317,9 +332,12 @@ async def finalize_terminated_task(
     cost: int,
     should_refund: bool,
     refund_task_type: str,
-    force_terminate_task_func=force_terminate_task,
-    refund_credits_func=refund_credits,
+    force_terminate_task_func=None,
+    refund_credits_func=None,
 ) -> TaskTerminationFinalizationResult:
+    if force_terminate_task_func is None:
+        force_terminate_task_func = force_terminate_task
+
     await force_terminate_task_func(registry_task_id, user_id=user_id)
 
     refunded = await _refund_terminated_task_best_effort(

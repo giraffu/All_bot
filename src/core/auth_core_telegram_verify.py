@@ -10,9 +10,12 @@ def is_telegram_auth_date_fresh(
     *,
     stale_log_message: str,
     logger,
-    time_func=time.time,
+    time_func=None,
     max_age_seconds: int = 900,
 ) -> bool:
+    if time_func is None:
+        time_func = time.time
+
     if not auth_date or time_func() - int(auth_date) > max_age_seconds:
         logger.error(stale_log_message)
         return False

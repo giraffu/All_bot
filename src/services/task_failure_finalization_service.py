@@ -2,6 +2,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
 from src.core.task_core import finalize_task_failure_with_notice
+from src.core.task_core_runtime import cancel_backend_task_best_effort
 
 
 @dataclass(frozen=True, slots=True)
@@ -65,8 +66,11 @@ async def finalize_task_failure_for_task_record(
     policy: TaskFailureFinalizationPolicy,
     bot=None,
     logger_override,
-    finalize_task_failure_with_notice_func=finalize_task_failure_with_notice,
+    finalize_task_failure_with_notice_func=None,
 ):
+    if finalize_task_failure_with_notice_func is None:
+        finalize_task_failure_with_notice_func = finalize_task_failure_with_notice
+
     chat_id = task_data.get("chat_id")
     return await finalize_task_failure_with_notice_func(
         internal_user_id=task_data.get("user_id"),
@@ -82,4 +86,91 @@ async def finalize_task_failure_for_task_record(
         ),
         logger_override=logger_override,
         notice_failure_log_message=policy.notice_failure_log_message,
+    )
+
+
+async def _finalize_task_record_with_policy(
+    *,
+    registry_task_id: str,
+    task_data: dict,
+    policy: TaskFailureFinalizationPolicy,
+    bot=None,
+    logger_override,
+    backend_task_id: str | None = None,
+    finalize_task_failure_for_task_record_func=None,
+    cancel_backend_task_best_effort_func=None,
+):
+    if finalize_task_failure_for_task_record_func is None:
+        finalize_task_failure_for_task_record_func = finalize_task_failure_for_task_record
+
+    result = await finalize_task_failure_for_task_record_func(
+        registry_task_id=registry_task_id,
+        task_data=task_data,
+        policy=policy,
+        bot=bot,
+        logger_override=logger_override,
+    )
+    if backend_task_id is None:
+        return result
+
+    if cancel_backend_task_best_effort_func is None:
+        cancel_backend_task_best_effort_func = cancel_backend_task_best_effort
+
+    cancelled = await cancel_backend_task_best_effort_func(
+        backend_task_id=backend_task_id,
+        registry_task_id=registry_task_id,
+        logger_override=logger_override,
+    )
+    return result, cancelled
+
+
+async def finalize_recovery_failure_for_task_record(
+    *,
+    registry_task_id: str,
+    task_data: dict,
+    reason: str,
+    bot=None,
+    logger_override,
+    finalize_task_failure_for_task_record_func=None,
+):
+    policy = build_recovery_failure_policy(
+        reason=reason,
+        chat_id=task_data.get("chat_id"),
+    )
+    return await _finalize_task_record_with_policy(
+        registry_task_id=registry_task_id,
+        task_data=task_data,
+        policy=policy,
+        bot=bot,
+        logger_override=logger_override,
+        finalize_task_failure_for_task_record_func=(
+            finalize_task_failure_for_task_record_func
+        ),
+    )
+
+
+async def finalize_zombie_cleanup_for_task_record(
+    *,
+    registry_task_id: str,
+    task_data: dict,
+    bot=None,
+    logger_override,
+    finalize_task_failure_for_task_record_func=None,
+    cancel_backend_task_best_effort_func=None,
+):
+    policy = build_zombie_cleanup_failure_policy(
+        cost=task_data.get("cost", 0),
+        chat_id=task_data.get("chat_id"),
+    )
+    return await _finalize_task_record_with_policy(
+        registry_task_id=registry_task_id,
+        task_data=task_data,
+        policy=policy,
+        bot=bot,
+        logger_override=logger_override,
+        backend_task_id=task_data.get("backend_task_id"),
+        finalize_task_failure_for_task_record_func=(
+            finalize_task_failure_for_task_record_func
+        ),
+        cancel_backend_task_best_effort_func=cancel_backend_task_best_effort_func,
     )

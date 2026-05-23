@@ -38,6 +38,7 @@ async def test_recover_single_task_success_uses_cleanup_runtime(monkeypatch):
     cleanup_runtime.assert_awaited_once_with(
         internal_user_id=123,
         registry_task_id="registry-1",
+        release_lock=True,
     )
     finalize_failure.assert_not_awaited()
 
@@ -116,7 +117,7 @@ async def test_finalize_recovery_failure_uses_core_finalize_and_notice(monkeypat
     finalize_failure = AsyncMock()
     monkeypatch.setattr(
         recovery_service,
-        "finalize_task_failure_for_task_record",
+        "finalize_recovery_failure_for_task_record",
         finalize_failure,
     )
 
@@ -142,8 +143,5 @@ async def test_finalize_recovery_failure_uses_core_finalize_and_notice(monkeypat
         "cost": 9,
         "chat_id": 321,
     }
-    policy = kwargs["policy"]
-    assert policy.refund_task_type == "refund_restart"
-    assert policy.explicit_user_message == "❌ 任务恢复失败，已退还灵石"
-    assert policy.notice_failure_log_message == "Failed to send refund notice to 321"
+    assert kwargs["reason"] == "❌ 任务恢复失败，已退还灵石"
     assert kwargs["bot"] is application.bot

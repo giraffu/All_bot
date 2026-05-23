@@ -17,11 +17,18 @@ def verify_telegram_authorization(
     bot_token,
     bot_token_test,
     logger,
-    build_data_check_string_func=build_telegram_data_check_string,
-    get_tokens_to_try_func=get_telegram_tokens_to_try,
-    is_auth_date_fresh_func=is_telegram_auth_date_fresh,
+    build_data_check_string_func=None,
+    get_tokens_to_try_func=None,
+    is_auth_date_fresh_func=None,
 ) -> bool:
     """Verify the hash of the Telegram auth data (Widget format)."""
+    if build_data_check_string_func is None:
+        build_data_check_string_func = build_telegram_data_check_string
+    if get_tokens_to_try_func is None:
+        get_tokens_to_try_func = get_telegram_tokens_to_try
+    if is_auth_date_fresh_func is None:
+        is_auth_date_fresh_func = is_telegram_auth_date_fresh
+
     received_hash = data.pop("hash", None)
     if not received_hash:
         return False
@@ -63,14 +70,21 @@ def verify_telegram_webapp_initdata(
     bot_token,
     bot_token_test,
     logger,
-    build_data_check_string_func=build_telegram_data_check_string,
-    get_tokens_to_try_func=get_telegram_tokens_to_try,
-    is_auth_date_fresh_func=is_telegram_auth_date_fresh,
+    build_data_check_string_func=None,
+    get_tokens_to_try_func=None,
+    is_auth_date_fresh_func=None,
 ) -> Optional[dict]:
     """
     Verify the initData string passed from Telegram Mini App.
     Returns parsed user dict if valid, else None.
     """
+    if build_data_check_string_func is None:
+        build_data_check_string_func = build_telegram_data_check_string
+    if get_tokens_to_try_func is None:
+        get_tokens_to_try_func = get_telegram_tokens_to_try
+    if is_auth_date_fresh_func is None:
+        is_auth_date_fresh_func = is_telegram_auth_date_fresh
+
     params = dict(urllib.parse.parse_qsl(init_data))
     received_hash = params.pop("hash", None)
     if not received_hash:

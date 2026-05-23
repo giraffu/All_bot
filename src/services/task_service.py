@@ -50,13 +50,11 @@ from src.services.task_service_entrypoint_support import (
     resolve_video_billing_args,
 )
 from src.services.task_service_completion import (
+    complete_monitored_bot_task as complete_monitored_bot_task_impl,
     download_and_log_task_output,
     handle_task_completion,
     monitor_bot_task_progress,
     monitor_submitted_bot_task,
-)
-from src.services.task_service_facade_seams import (
-    complete_monitored_bot_task_seam as complete_monitored_bot_task_facade,
 )
 from src.services.task_service_finalize import (
     build_bot_cancellation_message,
@@ -96,7 +94,7 @@ logger = logging.getLogger(__name__)
 
 # Compatibility exports for older tests and monkeypatch targets.
 _COMPAT_TEST_EXPORTS = (UserLogger, image_service, TaskRegistry)
-complete_monitored_bot_task = complete_monitored_bot_task_facade
+complete_monitored_bot_task = complete_monitored_bot_task_impl
 
 
 class TaskService:

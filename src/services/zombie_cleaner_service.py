@@ -2,12 +2,11 @@ import asyncio
 import logging
 import time
 
-from src.api_client import api_client
 from src.core.task_core import sync_user_concurrency
+from src.core.task_core_runtime import cancel_backend_task_best_effort
 from src.services.redis_client import redis_client
 from src.services.task_failure_finalization_service import (
-    build_zombie_cleanup_failure_policy,
-    finalize_task_failure_for_task_record,
+    finalize_zombie_cleanup_for_task_record,
 )
 
 logger = logging.getLogger("bot.zombie_cleaner")
@@ -49,14 +48,9 @@ async def clean_zombies(bot=None):
                 # 1. 统一执行退款 + 运行态清理
                 if user_id:
                     try:
-                        policy = build_zombie_cleanup_failure_policy(
-                            cost=cost,
-                            chat_id=task.get("chat_id"),
-                        )
-                        result = await finalize_task_failure_for_task_record(
+                        result, cancelled = await finalize_zombie_cleanup_for_task_record(
                             registry_task_id=task_id,
                             task_data=task,
-                            policy=policy,
                             bot=bot,
                             logger_override=logger,
                         )
@@ -67,23 +61,27 @@ async def clean_zombies(bot=None):
                         logger.info(
                             f"🔓 Cleaned runtime state for zombie task {task_id} user {user_id}."
                         )
+                        if cancelled:
+                            logger.info(
+                                f"🛑 Sent cancellation request to Central API for backend task {backend_task_id}."
+                            )
                     except Exception as e:
                         logger.error(
                             f"Error finalizing zombie task {task_id} for user {user_id}: {e}"
                         )
-
-                # 2. 通知中控 API 取消任务（双向剔除）
-                if backend_task_id:
-                    try:
-                        # 假设中控 API 有一个取消任务的 DELETE 接口
-                        # 从之前的分析中得知路径为 /api/tasks/{task_id}
-                        await api_client.cancel_task(backend_task_id)
+                elif backend_task_id:
+                    logger.warning(
+                        "Zombie task %s has no user_id; skipping refund finalization and only cancelling backend task.",
+                        task_id,
+                    )
+                    cancelled = await cancel_backend_task_best_effort(
+                        backend_task_id=backend_task_id,
+                        registry_task_id=task_id,
+                        logger_override=logger,
+                    )
+                    if cancelled:
                         logger.info(
                             f"🛑 Sent cancellation request to Central API for backend task {backend_task_id}."
-                        )
-                    except Exception as e:
-                        logger.error(
-                            f"Error cancelling backend task {backend_task_id} at Central API: {e}"
                         )
 
                 removed_count += 1

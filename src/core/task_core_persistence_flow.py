@@ -34,22 +34,16 @@ async def persist_successful_task_result_flow(
     source: str = "bot",
     refresh_user_group_after_log: bool = False,
     warmup_web_history: bool = False,
-    user_logger_factory=UserLogger,
+    user_logger_factory=None,
     download_result_func=None,
     download_video_result_func=None,
-    extract_media_metadata_from_bytes_best_effort_func=(
-        extract_media_metadata_from_bytes_best_effort
-    ),
-    extract_media_metadata_from_storage_best_effort_func=(
-        extract_media_metadata_from_storage_best_effort
-    ),
+    extract_media_metadata_from_bytes_best_effort_func=None,
+    extract_media_metadata_from_storage_best_effort_func=None,
     schedule_web_history_r2_warmup_func=None,
-    materialize_successful_task_output_func=_materialize_successful_task_output_impl,
+    materialize_successful_task_output_func=None,
     refresh_user_group_func=None,
-    to_thread_func=asyncio.to_thread,
-    postprocess_successful_task_persistence_func=(
-        _postprocess_successful_task_persistence_impl
-    ),
+    to_thread_func=None,
+    postprocess_successful_task_persistence_func=None,
 ) -> TaskSuccessPersistenceResult:
     materialize_successful_task_output_func = (
         materialize_successful_task_output_func
@@ -59,6 +53,18 @@ async def persist_successful_task_result_flow(
         postprocess_successful_task_persistence_func
         or _postprocess_successful_task_persistence_impl
     )
+    if user_logger_factory is None:
+        user_logger_factory = UserLogger
+    if extract_media_metadata_from_bytes_best_effort_func is None:
+        extract_media_metadata_from_bytes_best_effort_func = (
+            extract_media_metadata_from_bytes_best_effort
+        )
+    if extract_media_metadata_from_storage_best_effort_func is None:
+        extract_media_metadata_from_storage_best_effort_func = (
+            extract_media_metadata_from_storage_best_effort
+        )
+    if to_thread_func is None:
+        to_thread_func = asyncio.to_thread
 
     user_logger = user_logger_factory(internal_user_id, username)
     persistence_result = await materialize_successful_task_output_func(

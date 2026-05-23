@@ -9,6 +9,9 @@ import pytest
 from sqlalchemy.exc import IntegrityError
 
 from src.core import auth_core
+from src.core import auth_core_password_hash
+from src.core import auth_core_telegram_validation
+from src.core import auth_core_telegram_verify
 from src.core.auth_core_dependencies import AuthCoreDependencies
 from src.core.auth_core_password_hash import (
     get_password_hash as get_password_hash_helper,
@@ -133,6 +136,24 @@ async def test_telegram_verify_helpers_validate_auth_date_and_tokens():
     )
 
 
+def test_telegram_verify_helper_uses_runtime_default_time_binding(monkeypatch):
+    logger = MagicMock()
+    runtime_time = MagicMock(return_value=1001)
+
+    monkeypatch.setattr(auth_core_telegram_verify.time, "time", runtime_time)
+
+    assert (
+        auth_core_telegram_verify.is_telegram_auth_date_fresh(
+            "100",
+            stale_log_message="stale",
+            logger=logger,
+        )
+        is False
+    )
+    runtime_time.assert_called_once_with()
+    logger.error.assert_called_once_with("stale")
+
+
 @pytest.mark.asyncio
 async def test_password_hash_helpers_round_trip():
     hashed_password = await get_password_hash_helper("secret")
@@ -140,6 +161,46 @@ async def test_password_hash_helpers_round_trip():
     assert hashed_password != "secret"
     assert await verify_password_helper("secret", hashed_password) is True
     assert await verify_password_helper("wrong", hashed_password) is False
+
+
+@pytest.mark.asyncio
+async def test_password_hash_helpers_use_runtime_default_bindings(monkeypatch):
+    runtime_to_thread = AsyncMock(return_value="hashed-value")
+    runtime_get_password_hash_sync = MagicMock(return_value="ignored")
+
+    monkeypatch.setattr(auth_core_password_hash.asyncio, "to_thread", runtime_to_thread)
+    monkeypatch.setattr(
+        auth_core_password_hash,
+        "get_password_hash_sync",
+        runtime_get_password_hash_sync,
+    )
+
+    result = await auth_core_password_hash.get_password_hash("secret")
+
+    assert result == "hashed-value"
+    runtime_to_thread.assert_awaited_once_with(runtime_get_password_hash_sync, "secret")
+
+
+@pytest.mark.asyncio
+async def test_verify_password_helper_uses_runtime_default_bindings(monkeypatch):
+    runtime_to_thread = AsyncMock(return_value=True)
+    runtime_verify_password_sync = MagicMock(return_value=True)
+
+    monkeypatch.setattr(auth_core_password_hash.asyncio, "to_thread", runtime_to_thread)
+    monkeypatch.setattr(
+        auth_core_password_hash,
+        "verify_password_sync",
+        runtime_verify_password_sync,
+    )
+
+    result = await auth_core_password_hash.verify_password("secret", "hashed")
+
+    assert result is True
+    runtime_to_thread.assert_awaited_once_with(
+        runtime_verify_password_sync,
+        "secret",
+        "hashed",
+    )
 
 
 def test_telegram_validation_helpers_accept_valid_widget_and_webapp_payloads():
@@ -189,6 +250,101 @@ def test_telegram_validation_helpers_accept_valid_widget_and_webapp_payloads():
         logger=logger,
         is_auth_date_fresh_func=auth_date_checker,
     ) == webapp_user
+
+
+def test_telegram_validation_helpers_use_runtime_default_bindings(monkeypatch):
+    logger = MagicMock()
+    runtime_build_data_check_string = MagicMock(return_value="payload")
+    runtime_get_tokens_to_try = MagicMock(return_value=["prod-token"])
+    runtime_is_auth_date_fresh = MagicMock(return_value=True)
+
+    monkeypatch.setattr(
+        auth_core_telegram_validation,
+        "build_telegram_data_check_string",
+        runtime_build_data_check_string,
+    )
+    monkeypatch.setattr(
+        auth_core_telegram_validation,
+        "get_telegram_tokens_to_try",
+        runtime_get_tokens_to_try,
+    )
+    monkeypatch.setattr(
+        auth_core_telegram_validation,
+        "is_telegram_auth_date_fresh",
+        runtime_is_auth_date_fresh,
+    )
+    monkeypatch.setattr(
+        auth_core_telegram_validation.hmac,
+        "compare_digest",
+        lambda *_args, **_kwargs: True,
+    )
+
+    assert auth_core_telegram_validation.verify_telegram_authorization(
+        {
+            "id": "42",
+            "auth_date": "1700000000",
+            "first_name": "Test",
+            "hash": "valid-signature",
+        },
+        bot_token="prod-token",
+        bot_token_test=None,
+        logger=logger,
+    )
+
+    runtime_is_auth_date_fresh.assert_called_once()
+    runtime_build_data_check_string.assert_called_once()
+    runtime_get_tokens_to_try.assert_called_once()
+
+
+def test_telegram_webapp_validation_helper_uses_runtime_default_bindings(monkeypatch):
+    logger = MagicMock()
+    runtime_build_data_check_string = MagicMock(return_value="payload")
+    runtime_get_tokens_to_try = MagicMock(return_value=["prod-token"])
+    runtime_is_auth_date_fresh = MagicMock(return_value=True)
+    webapp_user = {"id": 42}
+    init_data = urllib.parse.urlencode(
+        {
+            "auth_date": "1700000000",
+            "query_id": "query-1",
+            "user": json.dumps(webapp_user, separators=(",", ":")),
+            "hash": "valid-signature",
+        }
+    )
+
+    monkeypatch.setattr(
+        auth_core_telegram_validation,
+        "build_telegram_data_check_string",
+        runtime_build_data_check_string,
+    )
+    monkeypatch.setattr(
+        auth_core_telegram_validation,
+        "get_telegram_tokens_to_try",
+        runtime_get_tokens_to_try,
+    )
+    monkeypatch.setattr(
+        auth_core_telegram_validation,
+        "is_telegram_auth_date_fresh",
+        runtime_is_auth_date_fresh,
+    )
+    monkeypatch.setattr(
+        auth_core_telegram_validation.hmac,
+        "compare_digest",
+        lambda *_args, **_kwargs: True,
+    )
+
+    assert (
+        auth_core_telegram_validation.verify_telegram_webapp_initdata(
+            init_data,
+            bot_token="prod-token",
+            bot_token_test=None,
+            logger=logger,
+        )
+        == webapp_user
+    )
+
+    runtime_is_auth_date_fresh.assert_called_once()
+    runtime_build_data_check_string.assert_called_once()
+    runtime_get_tokens_to_try.assert_called_once()
 
 
 @pytest.mark.asyncio

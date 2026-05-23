@@ -111,10 +111,14 @@ async def compensate_failed_submission(
     add_pending_refund_func: Callable[..., Awaitable[None]],
     remove_task_func: Callable[..., Awaitable[None]],
     logger: logging.Logger,
+    shield_func=None,
 ):
+    if shield_func is None:
+        shield_func = asyncio.shield
+
     if credits_deducted:
         try:
-            await asyncio.shield(
+            await shield_func(
                 refund_credits_func(
                     user_id,
                     cost,
@@ -137,4 +141,4 @@ async def compensate_failed_submission(
             )
 
     with contextlib.suppress(Exception):
-        await asyncio.shield(remove_task_func(registry_task_id))
+        await shield_func(remove_task_func(registry_task_id))

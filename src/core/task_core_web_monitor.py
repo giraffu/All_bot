@@ -15,8 +15,12 @@ def attach_web_task_monitor(
     submission_context: TaskSubmissionContext,
     cost: int,
     monitor_web_task_func: Callable[..., Awaitable[None]],
+    create_task_func=None,
 ):
-    asyncio.create_task(
+    if create_task_func is None:
+        create_task_func = asyncio.create_task
+
+    create_task_func(
         monitor_web_task_func(
             backend_task_id=backend_task_id,
             internal_user_id=internal_user_id,

@@ -1,10 +1,13 @@
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
+import httpx
 import pytest
 from config import REDIS_PREFIX
 
 from src.core import task_core
+from src.core import task_core_finalization
+from src.core import task_core_runtime
 
 
 @pytest.mark.asyncio
@@ -339,6 +342,152 @@ async def test_force_terminate_task_reuses_cleanup_runtime_state_without_user_lo
         internal_user_id=0,
         registry_task_id="registry-task-9",
         release_lock=False,
+    )
+
+
+@pytest.mark.asyncio
+async def test_cancel_backend_task_best_effort_treats_missing_backend_as_cleaned(
+    monkeypatch,
+):
+    request = SimpleNamespace()
+    response = SimpleNamespace(status_code=404)
+    cancel_task = AsyncMock(
+        side_effect=httpx.HTTPStatusError(
+            "missing",
+            request=request,
+            response=response,
+        )
+    )
+
+    monkeypatch.setattr("src.api_client.api_client.cancel_task", cancel_task)
+
+    cancelled = await task_core_runtime.cancel_backend_task_best_effort(
+        backend_task_id="backend-task-404",
+        registry_task_id="registry-task-404",
+    )
+
+    assert cancelled is False
+    cancel_task.assert_awaited_once_with("backend-task-404")
+
+
+@pytest.mark.asyncio
+async def test_cleanup_task_runtime_state_uses_runtime_default_bindings(monkeypatch):
+    release_lock = AsyncMock()
+    remove_task = AsyncMock()
+    monkeypatch.setattr(
+        task_core_runtime,
+        "release_concurrency_lock",
+        release_lock,
+    )
+    monkeypatch.setattr(
+        task_core_runtime.TaskRegistry,
+        "remove_task",
+        remove_task,
+    )
+
+    await task_core_runtime.cleanup_task_runtime_state(
+        internal_user_id=9,
+        registry_task_id="registry-9",
+    )
+
+    release_lock.assert_awaited_once_with(9)
+    remove_task.assert_awaited_once_with("registry-9")
+
+
+@pytest.mark.asyncio
+async def test_force_terminate_task_uses_runtime_default_bindings(monkeypatch):
+    cancel_backend = AsyncMock()
+    cleanup_runtime = AsyncMock()
+    monkeypatch.setattr(
+        "src.services.redis_client.redis_client",
+        SimpleNamespace(
+            get_active_tasks=AsyncMock(
+                return_value={
+                    "registry-task-10": {
+                        "user_id": 10,
+                        "backend_task_id": "backend-task-10",
+                    }
+                }
+            )
+        ),
+    )
+    monkeypatch.setattr(
+        task_core_runtime,
+        "cancel_backend_task_best_effort",
+        cancel_backend,
+    )
+    monkeypatch.setattr(
+        task_core_runtime,
+        "cleanup_task_runtime_state",
+        cleanup_runtime,
+    )
+
+    await task_core_runtime.force_terminate_task("registry-task-10")
+
+    cancel_backend.assert_awaited_once_with(
+        backend_task_id="backend-task-10",
+        registry_task_id="registry-task-10",
+        raise_on_error=True,
+    )
+    cleanup_runtime.assert_awaited_once_with(
+        internal_user_id=10,
+        registry_task_id="registry-task-10",
+        release_lock=True,
+    )
+
+
+@pytest.mark.asyncio
+async def test_finalize_task_failure_with_notice_uses_runtime_default_binding(
+    monkeypatch,
+):
+    finalize_failure = AsyncMock(return_value=SimpleNamespace(user_message="hello"))
+    monkeypatch.setattr(
+        task_core_finalization,
+        "finalize_task_failure",
+        finalize_failure,
+    )
+
+    result = await task_core_finalization.finalize_task_failure_with_notice(
+        internal_user_id=1,
+        username="tester",
+        cost=2,
+        should_refund=True,
+        registry_task_id="reg-1",
+    )
+
+    assert result.user_message == "hello"
+    finalize_failure.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_finalize_task_cancellation_uses_runtime_default_bindings(monkeypatch):
+    refund_cancelled = AsyncMock(return_value=True)
+    cleanup_runtime = AsyncMock()
+    monkeypatch.setattr(
+        task_core_finalization,
+        "refund_cancelled_task",
+        refund_cancelled,
+    )
+    monkeypatch.setattr(
+        task_core_finalization,
+        "cleanup_task_runtime_state",
+        cleanup_runtime,
+    )
+
+    result = await task_core_finalization.finalize_task_cancellation(
+        internal_user_id=2,
+        username="tester",
+        cost=3,
+        task_submitted=True,
+        registry_task_id="reg-2",
+    )
+
+    assert result.refunded is True
+    refund_cancelled.assert_awaited_once()
+    cleanup_runtime.assert_awaited_once_with(
+        internal_user_id=2,
+        registry_task_id="reg-2",
+        release_lock=True,
     )
 
 

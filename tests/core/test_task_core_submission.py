@@ -1,8 +1,9 @@
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from src.core import task_core_submission
 from src.core.task_core_submission import (
     compensate_failed_submission,
     dispatch_registered_task,
@@ -97,3 +98,38 @@ async def test_compensate_failed_submission_logs_pending_refund_when_refund_fail
         "tester",
     )
     remove_task.assert_awaited_once_with("registry-3")
+
+
+@pytest.mark.asyncio
+async def test_compensate_failed_submission_uses_runtime_default_shield_binding(
+    monkeypatch,
+):
+    refund_credits = AsyncMock()
+    add_pending_refund = AsyncMock()
+    remove_task = AsyncMock()
+    shield = MagicMock(side_effect=lambda coro: coro)
+
+    monkeypatch.setattr(task_core_submission.asyncio, "shield", shield)
+
+    await compensate_failed_submission(
+        user_id=123,
+        username="tester",
+        cost=20,
+        error=RuntimeError("dispatch boom"),
+        credits_deducted=True,
+        registry_task_id="registry-4",
+        refund_credits_func=refund_credits,
+        add_pending_refund_func=add_pending_refund,
+        remove_task_func=remove_task,
+        logger=SimpleNamespace(critical=lambda *args, **kwargs: None),
+    )
+
+    assert shield.call_count == 2
+    refund_credits.assert_awaited_once_with(
+        123,
+        20,
+        task_type="refund_saga_failed",
+        username="tester",
+    )
+    add_pending_refund.assert_not_awaited()
+    remove_task.assert_awaited_once_with("registry-4")

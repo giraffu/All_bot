@@ -93,12 +93,8 @@ def _build_billing_core_providers() -> BillingCoreProviders:
         get_system_status_func=get_system_status,
         get_permission_service_func=_load_permission_service,
         get_redis_client_func=_load_redis_client,
-        get_quota_manager_func=_get_billing_quota_manager,
+        get_quota_manager_func=_load_quota_manager,
     )
-
-
-def _get_billing_quota_manager():
-    return quota_manager
 
 
 def _build_billing_core_dependencies() -> BillingCoreDependencies:

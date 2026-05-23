@@ -17,8 +17,11 @@ def schedule_web_history_r2_warmup(
     generate_and_upload_thumbnail_func: Callable[[str, str, str], Awaitable[object]],
     prune_user_web_history_r2_cache_func: Callable[[int], Awaitable[object]],
     logger: logging.Logger,
-    create_task_func: Callable[[Awaitable[None]], object] = asyncio.create_task,
+    create_task_func: Callable[[Awaitable[None]], object] | None = None,
 ):
+    if create_task_func is None:
+        create_task_func = asyncio.create_task
+
     if source != "web" or not user_id or not task_id or not output_file:
         return
 

@@ -165,8 +165,6 @@ __all__ = [
 
 _infer_requested_output_metadata = infer_requested_output_metadata
 _infer_requested_billing_resolution = infer_requested_billing_resolution
-
-
 def _get_image_service():
     return image_service
 

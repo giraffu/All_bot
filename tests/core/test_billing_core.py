@@ -123,13 +123,13 @@ def test_build_billing_core_dependencies_resolves_runtime_providers(monkeypatch)
 async def test_check_and_deduct_credits_uses_atomic_deduct_without_precheck():
     with (
         patch.object(
-            billing_core.quota_manager, "deduct_credits", new=AsyncMock()
+            billing_core._quota_manager_impl, "deduct_credits", new=AsyncMock()
         ) as mock_deduct,
         patch.object(
-            billing_core.quota_manager, "check_credits", new=AsyncMock()
+            billing_core._quota_manager_impl, "check_credits", new=AsyncMock()
         ) as mock_check,
         patch.object(
-            billing_core.quota_manager, "get_credits", new=AsyncMock()
+            billing_core._quota_manager_impl, "get_credits", new=AsyncMock()
         ) as mock_get,
     ):
         success, message = await billing_core.check_and_deduct_credits(
@@ -149,17 +149,17 @@ async def test_check_and_deduct_credits_uses_atomic_deduct_without_precheck():
 async def test_check_and_deduct_credits_returns_atomic_insufficient_message():
     with (
         patch.object(
-            billing_core.quota_manager,
+            billing_core._quota_manager_impl,
             "deduct_credits",
             new=AsyncMock(
                 side_effect=InsufficientCreditsError(current=3, cost=5)
             ),
         ) as mock_deduct,
         patch.object(
-            billing_core.quota_manager, "check_credits", new=AsyncMock()
+            billing_core._quota_manager_impl, "check_credits", new=AsyncMock()
         ) as mock_check,
         patch.object(
-            billing_core.quota_manager, "get_credits", new=AsyncMock()
+            billing_core._quota_manager_impl, "get_credits", new=AsyncMock()
         ) as mock_get,
     ):
         success, message = await billing_core.check_and_deduct_credits(
@@ -177,7 +177,7 @@ async def test_check_and_deduct_credits_returns_atomic_insufficient_message():
 @pytest.mark.asyncio
 async def test_refund_credits_uses_explicit_add_credits():
     with patch.object(
-        billing_core.quota_manager, "add_credits", new=AsyncMock()
+        billing_core._quota_manager_impl, "add_credits", new=AsyncMock()
     ) as mock_add:
         await billing_core.refund_credits(
             123, 5, task_type="refund_case", username="tester"

@@ -36,9 +36,14 @@ async def cleanup_task_runtime_state(
     internal_user_id: int,
     registry_task_id: str | None,
     release_lock: bool = True,
-    release_concurrency_lock_func=release_concurrency_lock,
-    remove_task_func=TaskRegistry.remove_task,
+    release_concurrency_lock_func=None,
+    remove_task_func=None,
 ):
+    if release_concurrency_lock_func is None:
+        release_concurrency_lock_func = release_concurrency_lock
+    if remove_task_func is None:
+        remove_task_func = TaskRegistry.remove_task
+
     if release_lock:
         try:
             await release_concurrency_lock_func(internal_user_id)
@@ -65,10 +70,59 @@ async def get_system_task_stats() -> tuple[dict, dict]:
     return active_tasks, user_concurrencies
 
 
+async def cancel_backend_task_best_effort(
+    *,
+    backend_task_id: str | None,
+    registry_task_id: str,
+    raise_on_error: bool = False,
+    cancel_task_func=None,
+    logger_override=logger,
+) -> bool:
+    """Best-effort backend cancellation shared by runtime cleanup call sites."""
+    if not backend_task_id:
+        return False
+
+    if cancel_task_func is None:
+        from src.api_client import api_client
+
+        cancel_task_func = api_client.cancel_task
+
+    try:
+        await cancel_task_func(backend_task_id)
+        return True
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code == 404:
+            logger_override.info(
+                "Backend task %s already missing during cleanup of %s.",
+                backend_task_id,
+                registry_task_id,
+            )
+            return False
+
+        logger_override.exception(
+            "Failed to cancel backend task %s for registry task %s.",
+            backend_task_id,
+            registry_task_id,
+        )
+        if raise_on_error:
+            raise
+        return False
+    except Exception:
+        logger_override.exception(
+            "Failed to cancel backend task %s for registry task %s.",
+            backend_task_id,
+            registry_task_id,
+        )
+        if raise_on_error:
+            raise
+        return False
+
+
 async def force_terminate_task(
     task_id: str,
     user_id: int | None = None,
-    cleanup_task_runtime_state_func=cleanup_task_runtime_state,
+    cleanup_task_runtime_state_func=None,
+    cancel_backend_task_best_effort_func=None,
 ):
     """
     强制终止一个活跃任务并释放对应的用户锁。
@@ -76,7 +130,10 @@ async def force_terminate_task(
     这里的 ``task_id`` 是 Bot 侧注册表中的任务 ID；真正提交给中控的
     任务 ID 可能保存在 ``backend_task_id`` 中，因此终止时需要双向剔除。
     """
-    from src.api_client import api_client
+    if cleanup_task_runtime_state_func is None:
+        cleanup_task_runtime_state_func = cleanup_task_runtime_state
+    if cancel_backend_task_best_effort_func is None:
+        cancel_backend_task_best_effort_func = cancel_backend_task_best_effort
 
     redis_client = _get_runtime_redis_client()
     tasks = await redis_client.get_active_tasks()
@@ -87,23 +144,11 @@ async def force_terminate_task(
         user_id = task_data.get("user_id")
 
     if backend_task_id:
-        try:
-            await api_client.cancel_task(backend_task_id)
-        except httpx.HTTPStatusError as exc:
-            if exc.response.status_code != 404:
-                raise
-            logger.info(
-                "Backend task %s already missing during force terminate of %s.",
-                backend_task_id,
-                task_id,
-            )
-        except Exception:
-            logger.exception(
-                "Failed to cancel backend task %s for registry task %s.",
-                backend_task_id,
-                task_id,
-            )
-            raise
+        await cancel_backend_task_best_effort_func(
+            backend_task_id=backend_task_id,
+            registry_task_id=task_id,
+            raise_on_error=True,
+        )
 
     await cleanup_task_runtime_state_func(
         internal_user_id=user_id or 0,
