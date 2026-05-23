@@ -1,10 +1,10 @@
 import asyncio
+from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
+from typing import Any
 
-from src.core.task_core_output_materialization import (
-    materialize_successful_task_output as _materialize_successful_task_output_impl,
-)
-from src.core.task_core_persistence_postprocess import (
-    postprocess_successful_task_persistence as _postprocess_successful_task_persistence_impl,
+from src.core.task_core_persistence_flow import (
+    persist_successful_task_result_flow as _persist_successful_task_result_flow_impl,
 )
 from src.core.media_processor import (
     extract_media_metadata_from_bytes_best_effort,
@@ -12,7 +12,50 @@ from src.core.media_processor import (
 )
 from src.core.task_core_types import TaskSuccessPersistenceResult
 from src.logger import UserLogger
-from src.services.image_service import image_service
+
+
+class _CompatServiceProxy:
+    def __init__(self, loader):
+        self._loader = loader
+
+    def __getattr__(self, name):
+        return getattr(self._loader(), name)
+
+
+def _load_image_service():
+    from src.services.image_service import image_service as image_service_impl
+
+    return image_service_impl
+
+
+image_service = _CompatServiceProxy(_load_image_service)
+
+
+@dataclass(frozen=True)
+class TaskCorePersistenceMaterializationDependencies:
+    download_result_func: Callable[..., Awaitable[Any]]
+    download_video_result_func: Callable[..., Awaitable[Any]]
+    to_thread_func: Callable[..., Awaitable[Any]]
+
+
+def _build_task_core_persistence_materialization_dependencies(
+    *,
+    download_result_func=None,
+    download_video_result_func=None,
+    to_thread_func=asyncio.to_thread,
+) -> TaskCorePersistenceMaterializationDependencies:
+    image_service_impl = _get_task_core_persistence_image_service()
+    return TaskCorePersistenceMaterializationDependencies(
+        download_result_func=download_result_func or image_service_impl.download_result,
+        download_video_result_func=(
+            download_video_result_func or image_service_impl.download_video_result
+        ),
+        to_thread_func=to_thread_func,
+    )
+
+
+def _get_task_core_persistence_image_service():
+    return image_service
 
 
 async def _persist_successful_web_history(
@@ -79,53 +122,60 @@ async def persist_successful_task_result(
     refresh_user_group_after_log: bool = False,
     warmup_web_history: bool = False,
     user_logger_factory=UserLogger,
+    download_result_func=None,
+    download_video_result_func=None,
     extract_media_metadata_from_bytes_best_effort_func=extract_media_metadata_from_bytes_best_effort,
     extract_media_metadata_from_storage_best_effort_func=extract_media_metadata_from_storage_best_effort,
     schedule_web_history_r2_warmup_func=None,
-    materialize_successful_task_output_func=_materialize_successful_task_output_impl,
+    materialize_successful_task_result_flow_func=_persist_successful_task_result_flow_impl,
+    materialize_successful_task_output_func=None,
     refresh_user_group_func=None,
-    postprocess_successful_task_persistence_func=_postprocess_successful_task_persistence_impl,
+    postprocess_successful_task_persistence_func=None,
 ) -> TaskSuccessPersistenceResult:
-    if refresh_user_group_func is None and refresh_user_group_after_log:
-        from src.services.permission_service import permission_service
+    materialization_dependencies = (
+        _build_task_core_persistence_materialization_dependencies(
+            download_result_func=download_result_func,
+            download_video_result_func=download_video_result_func,
+        )
+    )
 
-        refresh_user_group_func = permission_service.refresh_user_group
-
-    user_logger = user_logger_factory(internal_user_id, username)
-    persistence_result = await materialize_successful_task_output_func(
+    return await materialize_successful_task_result_flow_func(
         backend_task_id=backend_task_id,
         registry_task_id=registry_task_id,
-        user_logger=user_logger,
-        is_video=is_video,
-        result_path=result_path,
-        output_width=output_width,
-        output_height=output_height,
-        output_duration=output_duration,
-        download_result_func=image_service.download_result,
-        download_video_result_func=image_service.download_video_result,
-        extract_media_metadata_from_bytes_best_effort_func=extract_media_metadata_from_bytes_best_effort_func,
-        extract_media_metadata_from_storage_best_effort_func=extract_media_metadata_from_storage_best_effort_func,
-        to_thread_func=asyncio.to_thread,
-    )
-    media_kind = "video" if is_video else "image"
-
-    await postprocess_successful_task_persistence_func(
-        user_logger=user_logger,
-        persistence_result=persistence_result,
-        registry_task_id=registry_task_id,
         internal_user_id=internal_user_id,
+        username=username,
         prompt=prompt,
         task_type=task_type,
         input_images=input_images,
         allow_contribute=allow_contribute,
+        is_video=is_video,
         source=source,
         billing_resolution=billing_resolution,
         requested_duration=requested_duration,
-        media_type=media_kind,
+        output_width=output_width,
+        output_height=output_height,
+        output_duration=output_duration,
+        result_path=result_path,
         refresh_user_group_after_log=refresh_user_group_after_log,
         warmup_web_history=warmup_web_history,
-        refresh_user_group_func=refresh_user_group_func,
         schedule_web_history_r2_warmup_func=schedule_web_history_r2_warmup_func,
+        user_logger_factory=user_logger_factory,
+        download_result_func=materialization_dependencies.download_result_func,
+        download_video_result_func=(
+            materialization_dependencies.download_video_result_func
+        ),
+        extract_media_metadata_from_bytes_best_effort_func=(
+            extract_media_metadata_from_bytes_best_effort_func
+        ),
+        extract_media_metadata_from_storage_best_effort_func=(
+            extract_media_metadata_from_storage_best_effort_func
+        ),
+        materialize_successful_task_output_func=(
+            materialize_successful_task_output_func
+        ),
+        refresh_user_group_func=refresh_user_group_func,
+        to_thread_func=materialization_dependencies.to_thread_func,
+        postprocess_successful_task_persistence_func=(
+            postprocess_successful_task_persistence_func
+        ),
     )
-
-    return persistence_result

@@ -22,8 +22,14 @@ async def test_build_task_core_warmup_dependencies_bind_current_runtime_services
     monkeypatch.setattr(
         task_core, "resolve_storage_object", lambda path: ("bucket", path)
     )
-    monkeypatch.setattr(task_core.storage, "async_copy_to_r2", copy_to_r2)
-    monkeypatch.setattr(task_core.storage, "async_prune_user_web_history_r2_cache", prune_cache)
+    monkeypatch.setattr(
+        task_core,
+        "_get_storage_service",
+        lambda: SimpleNamespace(
+            async_copy_to_r2=copy_to_r2,
+            async_prune_user_web_history_r2_cache=prune_cache,
+        ),
+    )
     monkeypatch.setattr(task_core, "generate_and_upload_thumbnail", thumbnail)
     monkeypatch.setattr(task_core.asyncio, "create_task", create_task)
     monkeypatch.setattr(task_core, "logger", logger)
@@ -52,17 +58,22 @@ async def test_build_task_core_runtime_and_submission_dependencies_bind_current_
     logger = MagicMock()
 
     monkeypatch.setattr(task_core, "release_concurrency_lock", release_lock)
-    monkeypatch.setattr(task_core.TaskRegistry, "add_task", add_task)
-    monkeypatch.setattr(task_core.TaskRegistry, "remove_task", remove_task)
     monkeypatch.setattr(
-        task_core.TaskRegistry, "update_backend_task_id", update_backend_task_id
+        task_core,
+        "_get_task_registry",
+        lambda: SimpleNamespace(
+            add_task=add_task,
+            remove_task=remove_task,
+            update_backend_task_id=update_backend_task_id,
+            mark_task_status=mark_task_status,
+        ),
     )
-    monkeypatch.setattr(task_core.TaskRegistry, "mark_task_status", mark_task_status)
     monkeypatch.setattr(task_core, "dispatch_to_worker", dispatch_to_worker)
     monkeypatch.setattr(task_core, "logger", logger)
     monkeypatch.setattr(
-        "src.services.redis_client.redis_client",
-        SimpleNamespace(add_pending_refund=add_pending_refund),
+        task_core,
+        "_get_submission_outbox",
+        lambda: SimpleNamespace(add_pending_refund=add_pending_refund),
     )
 
     runtime_dependencies = task_core._build_task_core_runtime_dependencies()
@@ -133,6 +144,9 @@ async def test_build_task_core_persistence_and_monitor_dependencies_bind_current
     monkeypatch,
 ):
     user_logger_factory = MagicMock()
+    download_result = AsyncMock()
+    download_video_result = AsyncMock()
+    refresh_user_group = AsyncMock()
     extract_from_bytes = MagicMock()
     extract_from_storage = AsyncMock()
     warmup = MagicMock()
@@ -145,6 +159,15 @@ async def test_build_task_core_persistence_and_monitor_dependencies_bind_current
     monkeypatch.setattr(task_core, "UserLogger", user_logger_factory)
     monkeypatch.setattr(
         task_core,
+        "_get_image_service",
+        lambda: SimpleNamespace(
+            download_result=download_result,
+            download_video_result=download_video_result,
+            monitor_progress=monitor_progress,
+        ),
+    )
+    monkeypatch.setattr(
+        task_core,
         "extract_media_metadata_from_bytes_best_effort",
         extract_from_bytes,
     )
@@ -154,7 +177,11 @@ async def test_build_task_core_persistence_and_monitor_dependencies_bind_current
         extract_from_storage,
     )
     monkeypatch.setattr(task_core, "schedule_web_history_r2_warmup", warmup)
-    monkeypatch.setattr(task_core.image_service, "monitor_progress", monitor_progress)
+    monkeypatch.setattr(
+        task_core,
+        "_get_permission_service",
+        lambda: SimpleNamespace(refresh_user_group=refresh_user_group),
+    )
     monkeypatch.setattr(task_core, "_finalize_monitored_web_task_success", finalize_success)
     monkeypatch.setattr(
         task_core,
@@ -168,6 +195,8 @@ async def test_build_task_core_persistence_and_monitor_dependencies_bind_current
     monitor_dependencies = task_core._build_task_core_monitor_dependencies()
 
     assert persistence_dependencies.user_logger_factory is user_logger_factory
+    assert persistence_dependencies.download_result_func is download_result
+    assert persistence_dependencies.download_video_result_func is download_video_result
     assert (
         persistence_dependencies.extract_media_metadata_from_bytes_best_effort_func
         is extract_from_bytes
@@ -177,7 +206,7 @@ async def test_build_task_core_persistence_and_monitor_dependencies_bind_current
         is extract_from_storage
     )
     assert persistence_dependencies.schedule_web_history_r2_warmup_func is warmup
-    assert persistence_dependencies.refresh_user_group_func is None
+    assert persistence_dependencies.refresh_user_group_func is refresh_user_group
 
     assert monitor_dependencies.monitor_progress_func is monitor_progress
     assert (
@@ -324,10 +353,12 @@ async def test_persist_successful_task_result_and_monitor_task_use_dependency_bu
     fake_monitor_impl = AsyncMock(return_value=None)
     persistence_dependencies = SimpleNamespace(
         user_logger_factory=MagicMock(),
+        download_result_func=AsyncMock(),
+        download_video_result_func=AsyncMock(),
         extract_media_metadata_from_bytes_best_effort_func=MagicMock(),
         extract_media_metadata_from_storage_best_effort_func=AsyncMock(),
         schedule_web_history_r2_warmup_func=MagicMock(),
-        refresh_user_group_func=None,
+        refresh_user_group_func=AsyncMock(),
     )
     monitor_dependencies = SimpleNamespace(
         monitor_progress_func=AsyncMock(),
@@ -375,6 +406,11 @@ async def test_persist_successful_task_result_and_monitor_task_use_dependency_bu
 
     persistence_kwargs = fake_persistence_impl.await_args.kwargs
     assert persistence_kwargs["user_logger_factory"] is persistence_dependencies.user_logger_factory
+    assert persistence_kwargs["download_result_func"] is persistence_dependencies.download_result_func
+    assert (
+        persistence_kwargs["download_video_result_func"]
+        is persistence_dependencies.download_video_result_func
+    )
     assert (
         persistence_kwargs["extract_media_metadata_from_bytes_best_effort_func"]
         is persistence_dependencies.extract_media_metadata_from_bytes_best_effort_func
@@ -387,7 +423,10 @@ async def test_persist_successful_task_result_and_monitor_task_use_dependency_bu
         persistence_kwargs["schedule_web_history_r2_warmup_func"]
         is persistence_dependencies.schedule_web_history_r2_warmup_func
     )
-    assert persistence_kwargs["refresh_user_group_func"] is None
+    assert (
+        persistence_kwargs["refresh_user_group_func"]
+        is persistence_dependencies.refresh_user_group_func
+    )
 
     monitor_kwargs = fake_monitor_impl.await_args.kwargs
     assert monitor_kwargs["monitor_progress_func"] is monitor_dependencies.monitor_progress_func

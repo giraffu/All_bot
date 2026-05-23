@@ -17,6 +17,7 @@ from src.core.media_processor import (
 from src.core.task_core_finalization import (
     finalize_task_cancellation as _finalize_task_cancellation_impl,
     finalize_task_failure as _finalize_task_failure_impl,
+    finalize_task_failure_with_notice as _finalize_task_failure_with_notice_impl,
     finalize_terminated_task as _finalize_terminated_task_impl,
     handle_failed_task_exception as _handle_failed_task_exception_impl,
     refund_cancelled_task as _refund_cancelled_task_impl,
@@ -78,11 +79,53 @@ from src.core.task_core_web_history_warmup import (
     schedule_web_history_r2_warmup as _schedule_web_history_r2_warmup_impl,
 )
 from src.logger import UserLogger
-from src.services.image_service import image_service
-from src.services.storage import storage
-from src.services.task_registry import TaskRegistry
 
 logger = logging.getLogger(__name__)
+
+
+class _CompatServiceProxy:
+    def __init__(self, loader):
+        self._loader = loader
+
+    def __getattr__(self, name):
+        return getattr(self._loader(), name)
+
+
+def _load_image_service():
+    from src.services.image_service import image_service as image_service_impl
+
+    return image_service_impl
+
+
+def _load_storage():
+    from src.services.storage import storage as storage_impl
+
+    return storage_impl
+
+
+def _load_task_registry():
+    from src.services.task_registry import TaskRegistry as task_registry_impl
+
+    return task_registry_impl
+
+
+def _load_permission_service():
+    from src.services.permission_service import permission_service as permission_service_impl
+
+    return permission_service_impl
+
+
+def _load_redis_client():
+    from src.services.redis_client import redis_client as redis_client_impl
+
+    return redis_client_impl
+
+
+image_service = _CompatServiceProxy(_load_image_service)
+storage = _CompatServiceProxy(_load_storage)
+TaskRegistry = _CompatServiceProxy(_load_task_registry)
+permission_service = _CompatServiceProxy(_load_permission_service)
+redis_client = _CompatServiceProxy(_load_redis_client)
 
 __all__ = [
     "ConcurrencyLimitError",
@@ -104,6 +147,7 @@ __all__ = [
     "extract_media_metadata_from_storage_best_effort",
     "finalize_task_cancellation",
     "finalize_task_failure",
+    "finalize_task_failure_with_notice",
     "finalize_terminated_task",
     "force_terminate_task",
     "generate_and_upload_thumbnail",
@@ -116,7 +160,6 @@ __all__ = [
     "refund_failed_task",
     "resolve_storage_object",
     "schedule_web_history_r2_warmup",
-    "storage",
     "sync_user_concurrency",
 ]
 
@@ -124,33 +167,58 @@ _infer_requested_output_metadata = infer_requested_output_metadata
 _infer_requested_billing_resolution = infer_requested_billing_resolution
 
 
+def _get_image_service():
+    return image_service
+
+
+def _get_storage_service():
+    return storage
+
+
+def _get_task_registry():
+    return TaskRegistry
+
+
+def _get_permission_service():
+    return permission_service
+
+
+def _get_submission_outbox():
+    return redis_client
+
+
 def _build_task_core_warmup_dependencies() -> TaskCoreWarmupDependencies:
+    storage_service = _get_storage_service()
     return TaskCoreWarmupDependencies(
         resolve_storage_object_func=resolve_storage_object,
-        copy_to_r2_func=storage.async_copy_to_r2,
+        copy_to_r2_func=storage_service.async_copy_to_r2,
         generate_and_upload_thumbnail_func=generate_and_upload_thumbnail,
-        prune_user_web_history_r2_cache_func=storage.async_prune_user_web_history_r2_cache,
+        prune_user_web_history_r2_cache_func=(
+            storage_service.async_prune_user_web_history_r2_cache
+        ),
         create_task_func=asyncio.create_task,
         logger=logger,
     )
 
 
 def _build_task_core_runtime_dependencies() -> TaskCoreRuntimeDependencies:
+    task_registry = _get_task_registry()
     return TaskCoreRuntimeDependencies(
         release_concurrency_lock_func=release_concurrency_lock,
-        remove_task_func=TaskRegistry.remove_task,
+        remove_task_func=task_registry.remove_task,
     )
 
 
 def _build_task_core_submission_dependencies() -> TaskCoreSubmissionDependencies:
-    from src.services.redis_client import redis_client
+    task_registry = _get_task_registry()
+    submission_outbox = _get_submission_outbox()
 
     return TaskCoreSubmissionDependencies(
-        add_task_func=TaskRegistry.add_task,
-        update_backend_task_id_func=TaskRegistry.update_backend_task_id,
-        mark_task_status_func=TaskRegistry.mark_task_status,
-        remove_task_func=TaskRegistry.remove_task,
-        add_pending_refund_func=redis_client.add_pending_refund,
+        add_task_func=task_registry.add_task,
+        update_backend_task_id_func=task_registry.update_backend_task_id,
+        mark_task_status_func=task_registry.mark_task_status,
+        remove_task_func=task_registry.remove_task,
+        add_pending_refund_func=submission_outbox.add_pending_refund,
         dispatch_to_worker_func=dispatch_to_worker,
         is_task_backend_busy_error_func=is_task_backend_busy_error,
         logger=logger,
@@ -177,8 +245,13 @@ def _build_task_core_process_dependencies() -> TaskCoreProcessDependencies:
 
 
 def _build_task_core_persistence_dependencies() -> TaskCorePersistenceDependencies:
+    image_service_impl = _get_image_service()
+    permission_service_impl = _get_permission_service()
+
     return TaskCorePersistenceDependencies(
         user_logger_factory=UserLogger,
+        download_result_func=image_service_impl.download_result,
+        download_video_result_func=image_service_impl.download_video_result,
         extract_media_metadata_from_bytes_best_effort_func=(
             extract_media_metadata_from_bytes_best_effort
         ),
@@ -186,13 +259,14 @@ def _build_task_core_persistence_dependencies() -> TaskCorePersistenceDependenci
             extract_media_metadata_from_storage_best_effort
         ),
         schedule_web_history_r2_warmup_func=schedule_web_history_r2_warmup,
-        refresh_user_group_func=None,
+        refresh_user_group_func=permission_service_impl.refresh_user_group,
     )
 
 
 def _build_task_core_monitor_dependencies() -> TaskCoreMonitorDependencies:
+    image_service_impl = _get_image_service()
     return TaskCoreMonitorDependencies(
-        monitor_progress_func=image_service.monitor_progress,
+        monitor_progress_func=image_service_impl.monitor_progress,
         normalize_terminal_status_func=normalize_terminal_status,
         finalize_success_func=_finalize_monitored_web_task_success,
         finalize_cancellation_func=_finalize_monitored_web_task_cancellation,
@@ -315,6 +389,8 @@ async def persist_successful_task_result(
         refresh_user_group_after_log=refresh_user_group_after_log,
         warmup_web_history=warmup_web_history,
         user_logger_factory=dependencies.user_logger_factory,
+        download_result_func=dependencies.download_result_func,
+        download_video_result_func=dependencies.download_video_result_func,
         extract_media_metadata_from_bytes_best_effort_func=(
             dependencies.extract_media_metadata_from_bytes_best_effort_func
         ),
@@ -452,6 +528,44 @@ async def finalize_task_failure(
         refund_suffix_mode=refund_suffix_mode,
         refund_credits_func=dependencies.refund_credits_func,
         cleanup_task_runtime_state_func=dependencies.cleanup_task_runtime_state_func,
+    )
+
+
+async def finalize_task_failure_with_notice(
+    *,
+    internal_user_id: int,
+    username: str,
+    cost: int,
+    should_refund: bool,
+    registry_task_id: str | None,
+    release_lock: bool = True,
+    refund_task_type: str = "refund",
+    error: Exception | None = None,
+    generic_error_prefix: str | None = None,
+    explicit_user_message: str | None = None,
+    refund_suffix_mode: str = "if_refunded",
+    send_user_notice_func=None,
+    notice_message: str | None = None,
+    logger_override=logger,
+    notice_failure_log_message: str = "Failed to send task finalization notice",
+) -> TaskFailureFinalizationResult:
+    return await _finalize_task_failure_with_notice_impl(
+        internal_user_id=internal_user_id,
+        username=username,
+        cost=cost,
+        should_refund=should_refund,
+        registry_task_id=registry_task_id,
+        release_lock=release_lock,
+        refund_task_type=refund_task_type,
+        error=error,
+        generic_error_prefix=generic_error_prefix,
+        explicit_user_message=explicit_user_message,
+        refund_suffix_mode=refund_suffix_mode,
+        send_user_notice_func=send_user_notice_func,
+        notice_message=notice_message,
+        logger_override=logger_override,
+        notice_failure_log_message=notice_failure_log_message,
+        finalize_task_failure_func=finalize_task_failure,
     )
 
 

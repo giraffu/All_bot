@@ -6,6 +6,17 @@ prompt_routes = {}
 GLOBAL_REVERSE_MAP: Dict[str, str] = {}
 
 
+def _get_nested_translation_value(translations: dict, key: str):
+    parts = key.split(".")
+    curr = translations
+    for p in parts:
+        if isinstance(curr, dict) and p in curr:
+            curr = curr[p]
+        else:
+            return None
+    return curr
+
+
 def prompt_route(i18n_key: str):
     """
     Register a handler for a specific i18n menu key.
@@ -57,18 +68,17 @@ def build_global_menu_filter():
     # 遍历所有支持的语种，将翻译结果反向映射回 key
     for lang, translations in locales.items():
         for key in all_keys:
-            # Simple nested value getter for the key
-            parts = key.split(".")
-            curr = translations
-            for p in parts:
-                if isinstance(curr, dict) and p in curr:
-                    curr = curr[p]
-                else:
-                    curr = None
-                    break
-
+            curr = _get_nested_translation_value(translations, key)
             if curr and isinstance(curr, str):
                 GLOBAL_REVERSE_MAP[curr] = key
+
+    # 文案层已把 `menu.video_lora` 与 `menu.custom_video` 统一显示成“图生视频”。
+    # 这里必须强制把冲突文案优先回写到统一主入口，否则会被兼容入口覆盖，
+    # 导致点击“图生视频”后直接跳过附加模型选择。
+    for translations in locales.values():
+        video_lora_text = _get_nested_translation_value(translations, "menu.video_lora")
+        if video_lora_text and isinstance(video_lora_text, str):
+            GLOBAL_REVERSE_MAP[video_lora_text] = "menu.video_lora"
 
     # 增加硬编码向后兼容映射：支持老用户点击旧键盘的按钮
     hardcoded_backward_map = {
@@ -76,6 +86,8 @@ def build_global_menu_filter():
         "💰 个人中心": "menu.profile",
         "👤 个人中心": "menu.profile",
         "🎬 懒人动图": "menu.video_edit",
+        "🎬 自定义图生视频": "menu.custom_video",
+        "自定义图生视频": "menu.custom_video",
     }
     for old_text, key in hardcoded_backward_map.items():
         if old_text not in GLOBAL_REVERSE_MAP:

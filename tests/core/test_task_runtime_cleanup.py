@@ -2,6 +2,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
+from config import REDIS_PREFIX
 
 from src.core import task_core
 
@@ -226,6 +227,32 @@ async def test_finalize_task_failure_refunds_builds_message_and_cleans_up(monkey
 
 
 @pytest.mark.asyncio
+async def test_finalize_task_failure_with_notice_uses_finalize_result_message(monkeypatch):
+    finalize_failure = AsyncMock(
+        return_value=SimpleNamespace(
+            refunded=True,
+            user_message="终态消息",
+        )
+    )
+    send_notice = AsyncMock()
+
+    monkeypatch.setattr(task_core, "finalize_task_failure", finalize_failure)
+
+    result = await task_core.finalize_task_failure_with_notice(
+        internal_user_id=10,
+        username="u10",
+        cost=8,
+        should_refund=True,
+        registry_task_id="task-10",
+        send_user_notice_func=send_notice,
+    )
+
+    assert result.user_message == "终态消息"
+    finalize_failure.assert_awaited_once()
+    send_notice.assert_awaited_once_with("终态消息")
+
+
+@pytest.mark.asyncio
 async def test_finalize_task_cancellation_refunds_and_cleans_up(monkeypatch):
     cleanup_calls = []
 
@@ -313,3 +340,41 @@ async def test_force_terminate_task_reuses_cleanup_runtime_state_without_user_lo
         registry_task_id="registry-task-9",
         release_lock=False,
     )
+
+
+@pytest.mark.asyncio
+async def test_get_system_task_stats_uses_runtime_redis_provider(monkeypatch):
+    active_tasks = {"task-1": {"user_id": 1}}
+    user_concurrencies = {1: 1}
+    redis_client = SimpleNamespace(
+        get_active_tasks=AsyncMock(return_value=active_tasks),
+        get_all_user_concurrencies=AsyncMock(return_value=user_concurrencies),
+    )
+
+    monkeypatch.setattr("src.services.redis_client.redis_client", redis_client)
+
+    result = await task_core.get_system_task_stats()
+
+    assert result == (active_tasks, user_concurrencies)
+    redis_client.get_active_tasks.assert_awaited_once()
+    redis_client.get_all_user_concurrencies.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_sync_user_concurrency_uses_runtime_redis_provider(monkeypatch):
+    redis = SimpleNamespace(
+        set=AsyncMock(),
+        expire=AsyncMock(),
+        delete=AsyncMock(),
+    )
+    redis_client = SimpleNamespace(redis=redis)
+
+    monkeypatch.setattr("src.services.redis_client.redis_client", redis_client)
+
+    await task_core.sync_user_concurrency(123, 2)
+    await task_core.sync_user_concurrency(123, 0)
+
+    key = f"{REDIS_PREFIX}user_concurrency:123"
+    redis.set.assert_awaited_once_with(key, 2)
+    redis.expire.assert_awaited_once_with(key, 3600)
+    redis.delete.assert_awaited_once_with(key)

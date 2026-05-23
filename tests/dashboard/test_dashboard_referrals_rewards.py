@@ -75,6 +75,7 @@ async def test_referrals_rewards_route_preserves_commission_sum_precision(monkey
                 (order_2, inviter, invitee),
             ],
             [(1, 1)],
+            [(1, Decimal("0.0"))],
         ]
     )
 

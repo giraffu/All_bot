@@ -18,3 +18,10 @@ class BotTaskMessageSpec:
     completion_caption: Optional[str] = None
     missing_output_message: str = "生成完成但未获取到文件路径，已退还灵石"
     cancellation_message_template: str = "任务已撤销，预扣的 {cost} 灵石已全额退回。"
+
+
+@dataclass(frozen=True)
+class BotFinalizationPresentationPolicy:
+    message_prefix: str
+    prefer_edit_status: bool = False
+    fallback_to_send_message: bool = True

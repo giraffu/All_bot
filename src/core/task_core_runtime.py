@@ -4,9 +4,31 @@ import httpx
 
 from src.core.billing_core import release_concurrency_lock
 from src.core.task_core_types import CoreDomainError
-from src.services.task_registry import TaskRegistry
 
 logger = logging.getLogger(__name__)
+
+
+class _CompatServiceProxy:
+    def __init__(self, loader):
+        self._loader = loader
+
+    def __getattr__(self, name):
+        return getattr(self._loader(), name)
+
+
+def _load_task_registry():
+    from src.services.task_registry import TaskRegistry as task_registry_impl
+
+    return task_registry_impl
+
+
+def _get_runtime_redis_client():
+    from src.services.redis_client import redis_client
+
+    return redis_client
+
+
+TaskRegistry = _CompatServiceProxy(_load_task_registry)
 
 
 async def cleanup_task_runtime_state(
@@ -37,8 +59,7 @@ async def get_system_task_stats() -> tuple[dict, dict]:
     获取全系统任务统计信息。
     返回 (active_tasks, user_concurrencies)
     """
-    from src.services.redis_client import redis_client
-
+    redis_client = _get_runtime_redis_client()
     active_tasks = await redis_client.get_active_tasks()
     user_concurrencies = await redis_client.get_all_user_concurrencies()
     return active_tasks, user_concurrencies
@@ -56,8 +77,8 @@ async def force_terminate_task(
     任务 ID 可能保存在 ``backend_task_id`` 中，因此终止时需要双向剔除。
     """
     from src.api_client import api_client
-    from src.services.redis_client import redis_client
 
+    redis_client = _get_runtime_redis_client()
     tasks = await redis_client.get_active_tasks()
     task_data = tasks.get(task_id, {}) if tasks else {}
     backend_task_id = task_data.get("backend_task_id")
@@ -96,8 +117,8 @@ async def sync_user_concurrency(user_id: int, actual_count: int):
     同步用户并发锁到指定数量，当 actual_count 为 0 时删除锁
     """
     from config import REDIS_PREFIX
-    from src.services.redis_client import redis_client
 
+    redis_client = _get_runtime_redis_client()
     key = f"{REDIS_PREFIX}user_concurrency:{user_id}"
 
     if actual_count > 0:

@@ -1,11 +1,11 @@
 import logging
-from datetime import datetime
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 
 from dashboard.backend.schemas import LogListResponse
-from src.services.log_service import LogService
+from dashboard.backend.routers.utils import run_dashboard_route
+from dashboard.backend.services.log_admin_service import get_logs_payload
 
 router = APIRouter(prefix="/api/logs", tags=["logs"])
 logger = logging.getLogger("dashboard.logs")
@@ -24,31 +24,15 @@ async def get_logs(
     Get user operation logs with filtering and pagination.
     Dates should be in YYYY-MM-DD format.
     """
-    try:
-        start_dt = None
-        if start_date:
-            try:
-                start_dt = datetime.strptime(start_date, "%Y-%m-%d")
-            except ValueError:
-                pass
-
-        end_dt = None
-        if end_date:
-            try:
-                end_dt = datetime.strptime(end_date, "%Y-%m-%d")
-                end_dt = end_dt.replace(hour=23, minute=59, second=59)
-            except ValueError:
-                pass
-
-        result = await LogService.get_logs(
+    return await run_dashboard_route(
+        lambda: get_logs_payload(
             user_id=user_id,
             operation_type=operation_type,
-            start_date=start_dt,
-            end_date=end_dt,
+            start_date=start_date,
+            end_date=end_date,
             page=page,
             page_size=page_size,
-        )
-        return result
-    except Exception as e:
-        logger.error(f"Error getting logs: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        ),
+        logger=logger,
+        error_message="Error getting logs",
+    )

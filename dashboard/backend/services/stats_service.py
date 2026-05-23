@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from logging import Logger
 
 from sqlalchemy import Float, case, func, select
@@ -66,6 +66,163 @@ def _build_hourly_distribution(rows) -> dict[str, int]:
         hour_str = str(int(row.hour)).zfill(2) if row.hour is not None else "00"
         hourly_distribution[hour_str] = row.count
     return hourly_distribution
+
+
+def parse_stats_target_date(date_str: str | None) -> date:
+    if date_str:
+        return datetime.strptime(date_str, "%Y-%m-%d").date()
+    return date.today()
+
+
+def _build_finance_hourly_distribution(rows) -> dict[str, dict[str, int]]:
+    hourly_data = {
+        str(h).zfill(2): {
+            "recharged_credits": 0,
+            "inner_disciples": 0,
+            "core_disciples": 0,
+            "true_disciples": 0,
+        }
+        for h in range(24)
+    }
+    for row in rows:
+        hour_str = str(int(row.hour)).zfill(2) if row.hour is not None else "00"
+        hourly_data[hour_str]["recharged_credits"] += int(row.recharged_credits)
+        hourly_data[hour_str]["inner_disciples"] += int(row.inner_disciples)
+        hourly_data[hour_str]["core_disciples"] += int(row.core_disciples)
+        hourly_data[hour_str]["true_disciples"] += int(row.true_disciples)
+    return hourly_data
+
+
+async def load_finance_hourly_stats(*, db: AsyncSession, target_date: date) -> dict:
+    dialect = db.bind.dialect.name
+    order_paid_expr = func.coalesce(Order.paid_at, Order.created_at)
+    hour_expr = get_hour_expr(order_paid_expr, dialect)
+    order_stmt = (
+        select(
+            hour_expr.label("hour"),
+            func.coalesce(func.sum(MembershipPlan.reward_credits), 0).label("recharged_credits"),
+            func.coalesce(
+                func.sum(case((MembershipPlan.identity_name.like("%内门%"), 1), else_=0)),
+                0,
+            ).label("inner_disciples"),
+            func.coalesce(
+                func.sum(case((MembershipPlan.identity_name.like("%核心%"), 1), else_=0)),
+                0,
+            ).label("core_disciples"),
+            func.coalesce(
+                func.sum(case((MembershipPlan.identity_name.like("%真传%"), 1), else_=0)),
+                0,
+            ).label("true_disciples"),
+        )
+        .join(MembershipPlan, Order.plan_id == MembershipPlan.id)
+        .where(Order.status == "SUCCESS", func.date(order_paid_expr) == target_date)
+        .group_by(hour_expr)
+    )
+    rows = await db.execute(order_stmt)
+    return _build_finance_hourly_distribution(rows)
+
+
+async def load_finance_hourly_stats_by_date_str(
+    *, db: AsyncSession, date_str: str | None
+) -> dict:
+    return await load_finance_hourly_stats(
+        db=db,
+        target_date=parse_stats_target_date(date_str),
+    )
+
+
+async def load_cumulative_finance_hourly_stats(*, db: AsyncSession, days: int) -> dict:
+    start_date = date.today() - timedelta(days=days - 1)
+    dialect = db.bind.dialect.name
+    order_paid_expr = func.coalesce(Order.paid_at, Order.created_at)
+    hour_expr = get_hour_expr(order_paid_expr, dialect)
+    order_stmt = (
+        select(
+            hour_expr.label("hour"),
+            func.coalesce(func.sum(MembershipPlan.reward_credits), 0).label("recharged_credits"),
+            func.coalesce(
+                func.sum(case((MembershipPlan.identity_name.like("%内门%"), 1), else_=0)),
+                0,
+            ).label("inner_disciples"),
+            func.coalesce(
+                func.sum(case((MembershipPlan.identity_name.like("%核心%"), 1), else_=0)),
+                0,
+            ).label("core_disciples"),
+            func.coalesce(
+                func.sum(case((MembershipPlan.identity_name.like("%真传%"), 1), else_=0)),
+                0,
+            ).label("true_disciples"),
+        )
+        .join(MembershipPlan, Order.plan_id == MembershipPlan.id)
+        .where(Order.status == "SUCCESS", func.date(order_paid_expr) >= start_date)
+        .group_by(hour_expr)
+    )
+    rows = await db.execute(order_stmt)
+    return _build_finance_hourly_distribution(rows)
+
+
+async def load_hourly_generation_stats(*, db: AsyncSession, target_date: date) -> dict[str, int]:
+    dialect = db.bind.dialect.name
+    hour_expr = get_hour_expr(History.created_at, dialect)
+    hourly_stmt = (
+        select(hour_expr.label("hour"), func.count(History.id).label("count"))
+        .where(func.date(History.created_at) == target_date)
+        .group_by(hour_expr)
+        .order_by(hour_expr)
+    )
+    rows = await db.execute(hourly_stmt)
+    return _build_hourly_distribution(rows)
+
+
+async def load_hourly_generation_stats_by_date_str(
+    *, db: AsyncSession, date_str: str | None
+) -> dict[str, int]:
+    return await load_hourly_generation_stats(
+        db=db,
+        target_date=parse_stats_target_date(date_str),
+    )
+
+
+async def load_cumulative_hourly_generation_stats(*, db: AsyncSession, days: int) -> dict[str, int]:
+    start_date = date.today() - timedelta(days=days - 1)
+    dialect = db.bind.dialect.name
+    hour_expr = get_hour_expr(History.created_at, dialect)
+    hourly_stmt = (
+        select(hour_expr.label("hour"), func.count(History.id).label("count"))
+        .where(func.date(History.created_at) >= start_date)
+        .group_by(hour_expr)
+        .order_by(hour_expr)
+    )
+    rows = await db.execute(hourly_stmt)
+    return _build_hourly_distribution(rows)
+
+
+async def load_type_distribution_stats(*, db: AsyncSession, target_date: date) -> dict[str, int]:
+    rows = await db.execute(
+        select(History.type, func.count(History.id))
+        .where(func.date(History.created_at) == target_date)
+        .group_by(History.type)
+    )
+    return {row.type or "unknown": row.count for row in rows}
+
+
+async def load_type_distribution_stats_by_date_str(
+    *, db: AsyncSession, date_str: str | None
+) -> dict[str, int]:
+    return await load_type_distribution_stats(
+        db=db,
+        target_date=parse_stats_target_date(date_str),
+    )
+
+
+async def load_cumulative_type_distribution_stats(*, db: AsyncSession, days: int) -> dict[str, int]:
+    start_date = date.today() - timedelta(days=days - 1)
+    rows = await db.execute(
+        select(History.type, func.count(History.id))
+        .where(func.date(History.created_at) >= start_date)
+        .group_by(History.type)
+    )
+    return {row.type or "unknown": row.count for row in rows}
 
 
 async def load_dashboard_stats(*, db: AsyncSession, logger: Logger) -> dict:
@@ -470,6 +627,7 @@ async def load_dashboard_stats(*, db: AsyncSession, logger: Logger) -> dict:
 async def load_dashboard_stats_history(
     *, db: AsyncSession, days: int, logger: Logger
 ) -> list[dict]:
+    _ = logger
     video_cost_case = case((History.type.in_(VIDEO_TYPES), 6), else_=2)
     start_date = date.today() - timedelta(days=days - 1)
 

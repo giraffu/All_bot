@@ -114,13 +114,11 @@ async def test_recover_single_task_failed_recovery_uses_finalize_helper(monkeypa
 @pytest.mark.asyncio
 async def test_finalize_recovery_failure_uses_core_finalize_and_notice(monkeypatch):
     finalize_failure = AsyncMock()
-    send_message = AsyncMock()
     monkeypatch.setattr(
         recovery_service,
-        "finalize_task_failure",
+        "finalize_task_failure_for_task_record",
         finalize_failure,
     )
-    monkeypatch.setattr("src.utils.robust_send_message", send_message)
 
     application = SimpleNamespace(bot=SimpleNamespace())
     await recovery_service._finalize_recovery_failure(
@@ -135,17 +133,17 @@ async def test_finalize_recovery_failure_uses_core_finalize_and_notice(monkeypat
         "❌ 任务恢复失败，已退还灵石",
     )
 
-    finalize_failure.assert_awaited_once_with(
-        internal_user_id=789,
-        username="tester",
-        cost=9,
-        should_refund=True,
-        registry_task_id="registry-3",
-        refund_task_type="refund_restart",
-        explicit_user_message="❌ 任务恢复失败，已退还灵石",
-    )
-    send_message.assert_awaited_once_with(
-        application.bot,
-        321,
-        "❌ 任务恢复失败，已退还灵石",
-    )
+    finalize_failure.assert_awaited_once()
+    kwargs = finalize_failure.await_args.kwargs
+    assert kwargs["registry_task_id"] == "registry-3"
+    assert kwargs["task_data"] == {
+        "user_id": 789,
+        "username": "tester",
+        "cost": 9,
+        "chat_id": 321,
+    }
+    policy = kwargs["policy"]
+    assert policy.refund_task_type == "refund_restart"
+    assert policy.explicit_user_message == "❌ 任务恢复失败，已退还灵石"
+    assert policy.notice_failure_log_message == "Failed to send refund notice to 321"
+    assert kwargs["bot"] is application.bot

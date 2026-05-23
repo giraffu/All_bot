@@ -9,7 +9,7 @@ from fastapi import HTTPException
 from src.database.models import History
 from src.database import core as db_core
 from src.web_api.routers import tasks as tasks_router
-from src.web_api.services import task_stream_api_service
+from src.web_api.services import task_runtime_api_service, task_stream_api_service
 
 
 class _FakeResult:
@@ -231,11 +231,9 @@ async def test_build_task_stream_response_payload_rejects_unowned_task(monkeypat
 async def test_task_status_stream_routes_to_service(monkeypatch):
     expected = object()
     service_mock = AsyncMock(return_value=expected)
-    monkeypatch.setattr(db_core, "AsyncSessionLocal", _FakeAuthSession)
-    monkeypatch.setattr(tasks_router.redis_client, "redis", _FakeRedis(_FakePubSub()))
     monkeypatch.setattr(
         tasks_router,
-        "build_task_stream_response_payload",
+        "build_task_status_stream_response_for_user",
         service_mock,
     )
 
@@ -246,6 +244,41 @@ async def test_task_status_stream_routes_to_service(monkeypatch):
 
     assert response is expected
     service_mock.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_build_task_status_stream_response_for_user_uses_default_runtime_dependencies(
+    monkeypatch,
+):
+    expected = object()
+    redis = _FakeRedis(_FakePubSub())
+    service_mock = AsyncMock(return_value=expected)
+
+    monkeypatch.setattr(db_core, "AsyncSessionLocal", _FakeAuthSession)
+    monkeypatch.setattr(task_runtime_api_service, "AsyncSessionLocal", _FakeAuthSession)
+    monkeypatch.setattr(task_runtime_api_service.redis_client, "redis", redis)
+    monkeypatch.setattr(
+        task_runtime_api_service,
+        "build_task_stream_response_payload",
+        service_mock,
+    )
+
+    response = await task_runtime_api_service.build_task_status_stream_response_for_user(
+        task_id="task-1",
+        user_id=123,
+        logger_override=tasks_router.logger,
+    )
+
+    assert response is expected
+    service_mock.assert_awaited_once_with(
+        task_id="task-1",
+        user_id=123,
+        session_factory=_FakeAuthSession,
+        redis=redis,
+        api_base=task_runtime_api_service.API_BASE,
+        httpx_async_client_factory=httpx.AsyncClient,
+        logger=tasks_router.logger,
+    )
 
 
 @pytest.mark.asyncio
@@ -366,7 +399,7 @@ async def test_task_status_stream_emits_failed_once_and_stops_when_queue_poll_la
     ("status_responses", "case_name"),
     [
         ([_FakeStatusResponse(500)], "5xx"),
-        ([tasks_router.httpx.ReadTimeout("backend timeout")], "timeout"),
+        ([httpx.ReadTimeout("backend timeout")], "timeout"),
     ],
 )
 async def test_task_status_stream_does_not_emit_not_found_terminal_event_for_transient_backend_failures(
@@ -432,7 +465,7 @@ async def test_task_status_stream_does_not_emit_not_found_terminal_event_for_tra
         (
             [
                 _FakeStatusResponse(200, {"status": "pending", "queue_pos": 3}),
-                tasks_router.httpx.ReadTimeout("backend timeout"),
+                httpx.ReadTimeout("backend timeout"),
             ],
             "timeout",
         ),

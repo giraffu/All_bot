@@ -50,6 +50,8 @@ class TaskCoreProcessDependencies:
 @dataclass(frozen=True)
 class TaskCorePersistenceDependencies:
     user_logger_factory: Callable[..., Any]
+    download_result_func: Callable[..., Awaitable[Any]]
+    download_video_result_func: Callable[..., Awaitable[Any]]
     extract_media_metadata_from_bytes_best_effort_func: Callable[..., Any]
     extract_media_metadata_from_storage_best_effort_func: Callable[..., Awaitable[Any]] | Callable[..., Any]
     schedule_web_history_r2_warmup_func: Callable[..., Any]

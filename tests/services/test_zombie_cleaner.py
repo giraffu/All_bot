@@ -40,9 +40,14 @@ async def test_clean_zombies_uses_finalize_task_failure_for_stale_task():
     with (
         patch("src.services.zombie_cleaner_service.time.time", return_value=8000),
         patch("src.services.zombie_cleaner_service.redis_client") as mock_redis,
-        patch("src.services.zombie_cleaner_service.finalize_task_failure", new_callable=AsyncMock) as mock_finalize,
-        patch("src.services.zombie_cleaner_service.api_client.cancel_task", new_callable=AsyncMock) as mock_cancel,
-        patch("src.utils.robust_send_message", new_callable=AsyncMock) as mock_send,
+        patch(
+            "src.services.zombie_cleaner_service.finalize_task_failure_for_task_record",
+            new_callable=AsyncMock,
+        ) as mock_finalize,
+        patch(
+            "src.services.zombie_cleaner_service.api_client.cancel_task",
+            new_callable=AsyncMock,
+        ) as mock_cancel,
     ):
         mock_redis.get_active_tasks = AsyncMock(return_value=stale_task)
         mock_redis.get_all_user_concurrencies = AsyncMock(return_value={})
@@ -50,18 +55,19 @@ async def test_clean_zombies_uses_finalize_task_failure_for_stale_task():
         bot = object()
         await clean_zombies(bot=bot)
 
-        mock_finalize.assert_awaited_once_with(
-            internal_user_id=123,
-            username="tester",
-            cost=5,
-            should_refund=True,
-            registry_task_id="task-1",
-            refund_task_type="refund_zombie_cleanup",
-            explicit_user_message="您的任务由于等待/执行时间过长，已被系统自动清理。 预扣的 5 灵石已退回。",
+        mock_finalize.assert_awaited_once()
+        kwargs = mock_finalize.await_args.kwargs
+        assert kwargs["registry_task_id"] == "task-1"
+        assert kwargs["task_data"] == stale_task["task-1"]
+        policy = kwargs["policy"]
+        assert policy.refund_task_type == "refund_zombie_cleanup"
+        assert (
+            policy.explicit_user_message
+            == "您的任务由于等待/执行时间过长，已被系统自动清理。 预扣的 5 灵石已退回。"
         )
+        assert (
+            policy.notice_failure_log_message
+            == "Failed to send zombie cleanup notice to 456"
+        )
+        assert kwargs["bot"] is bot
         mock_cancel.assert_awaited_once_with("backend-1")
-        mock_send.assert_awaited_once_with(
-            bot,
-            456,
-            "❌ 您的任务由于等待/执行时间过长，已被系统自动清理。 预扣的 5 灵石已退回。",
-        )

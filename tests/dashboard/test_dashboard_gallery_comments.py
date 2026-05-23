@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock
 import pytest
 from fastapi import HTTPException
 
-from dashboard.backend.routers import gallery as dashboard_gallery_router
+from dashboard.backend.services import gallery_admin_service
 from src.database.models import GalleryComment, GalleryPost, User
 
 
@@ -77,9 +77,9 @@ async def test_update_gallery_comment_soft_delete_decrements_comments_count():
     comment = GalleryComment(id=10, post_id=7, user_id=123, content="hello", is_active=True)
     db = _FakeDashboardDB(comment, update_post_id=7)
 
-    response = await dashboard_gallery_router.update_gallery_comment(
-        10,
-        dashboard_gallery_router.CommentUpdate(is_active=False),
+    response = await gallery_admin_service.update_gallery_comment_payload(
+        comment_id=10,
+        update_data=type("CommentUpdate", (), {"is_active": False})(),
         db=db,
     )
 
@@ -97,9 +97,9 @@ async def test_update_gallery_comment_restore_increments_comments_count():
     comment = GalleryComment(id=11, post_id=8, user_id=123, content="hello", is_active=False)
     db = _FakeDashboardDB(comment, update_post_id=8)
 
-    response = await dashboard_gallery_router.update_gallery_comment(
-        11,
-        dashboard_gallery_router.CommentUpdate(is_active=True),
+    response = await gallery_admin_service.update_gallery_comment_payload(
+        comment_id=11,
+        update_data=type("CommentUpdate", (), {"is_active": True})(),
         db=db,
     )
 
@@ -116,9 +116,9 @@ async def test_update_gallery_comment_skips_count_update_when_status_unchanged()
     comment = GalleryComment(id=12, post_id=9, user_id=123, content="hello", is_active=True)
     db = _FakeDashboardDB(comment, update_post_id=None)
 
-    response = await dashboard_gallery_router.update_gallery_comment(
-        12,
-        dashboard_gallery_router.CommentUpdate(is_active=True),
+    response = await gallery_admin_service.update_gallery_comment_payload(
+        comment_id=12,
+        update_data=type("CommentUpdate", (), {"is_active": True})(),
         db=db,
     )
 
@@ -134,9 +134,9 @@ async def test_update_gallery_comment_returns_404_when_comment_missing():
     db = _FakeDashboardDB(comment=None)
 
     with pytest.raises(HTTPException) as exc_info:
-        await dashboard_gallery_router.update_gallery_comment(
-            999,
-            dashboard_gallery_router.CommentUpdate(is_active=False),
+        await gallery_admin_service.update_gallery_comment_payload(
+            comment_id=999,
+            update_data=type("CommentUpdate", (), {"is_active": False})(),
             db=db,
         )
 
@@ -148,7 +148,9 @@ async def test_get_gallery_comments_uses_stable_ordering():
     post = GalleryPost(id=7, task_id="task-7", media_type="image", is_active=True)
     db = _DashboardCommentsListDB(post=post, comments=[], total=0, active_total=0)
 
-    await dashboard_gallery_router.get_gallery_comments(post_id=7, page=1, page_size=20, db=db)
+    await gallery_admin_service.get_gallery_comments_payload(
+        post_id=7, page=1, page_size=20, db=db
+    )
 
     list_stmt = next(
         stmt for stmt in db.executed_stmts if "FROM gallery_comments" in stmt and "ORDER BY" in stmt
@@ -164,7 +166,7 @@ async def test_get_all_gallery_comments_supports_filters_and_post_metadata():
     comment.post = post
     db = _DashboardCommentsListDB(post=None, comments=[comment], total=1, active_total=0)
 
-    response = await dashboard_gallery_router.get_all_gallery_comments(
+    response = await gallery_admin_service.get_all_gallery_comments_payload(
         page=1,
         page_size=20,
         post_id=7,

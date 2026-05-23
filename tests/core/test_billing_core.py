@@ -1,10 +1,122 @@
 from datetime import datetime, timedelta
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import pytest
 
 from src.core import billing_core
 from src.core.exceptions import InsufficientCreditsError
+
+
+@pytest.mark.asyncio
+async def test_check_concurrency_lock_uses_dependency_builder(monkeypatch):
+    get_identity = AsyncMock(return_value="外门弟子")
+    get_group = AsyncMock(return_value="凡人")
+    get_system_status = AsyncMock(return_value={"queue_size": 201})
+    increment_concurrency = AsyncMock(return_value=1)
+    decrement_concurrency = AsyncMock()
+
+    monkeypatch.setattr(
+        billing_core,
+        "_build_billing_core_dependencies",
+        lambda: SimpleNamespace(
+            get_system_status_func=get_system_status,
+            get_user_identity_func=get_identity,
+            get_user_group_func=get_group,
+            calculate_user_priority_func=AsyncMock(),
+            increment_user_concurrency_func=increment_concurrency,
+            decrement_user_concurrency_func=decrement_concurrency,
+            deduct_credits_func=AsyncMock(),
+            add_credits_func=AsyncMock(),
+        ),
+    )
+
+    allowed, message = await billing_core.check_concurrency_lock(123)
+
+    assert allowed is False
+    assert "服务器繁忙" in message
+    get_identity.assert_awaited_once_with(123)
+    get_group.assert_awaited_once_with(123)
+    get_system_status.assert_awaited_once()
+    increment_concurrency.assert_not_awaited()
+    decrement_concurrency.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_get_user_priority_and_identity_uses_dependency_builder(monkeypatch):
+    calculate_priority = AsyncMock(return_value=7)
+    get_identity = AsyncMock(return_value="核心弟子")
+    get_group = AsyncMock(return_value="筑基期")
+
+    monkeypatch.setattr(
+        billing_core,
+        "_build_billing_core_dependencies",
+        lambda: SimpleNamespace(
+            get_system_status_func=AsyncMock(),
+            get_user_identity_func=get_identity,
+            get_user_group_func=get_group,
+            calculate_user_priority_func=calculate_priority,
+            increment_user_concurrency_func=AsyncMock(),
+            decrement_user_concurrency_func=AsyncMock(),
+            deduct_credits_func=AsyncMock(),
+            add_credits_func=AsyncMock(),
+        ),
+    )
+
+    result = await billing_core.get_user_priority_and_identity(123)
+
+    assert result == (7, "核心弟子", "筑基期")
+    calculate_priority.assert_awaited_once_with(123)
+    get_identity.assert_awaited_once_with(123)
+    get_group.assert_awaited_once_with(123)
+
+
+def test_build_billing_core_dependencies_resolves_runtime_providers(monkeypatch):
+    permission_service = SimpleNamespace(
+        get_user_identity=AsyncMock(),
+        get_user_group=AsyncMock(),
+        calculate_user_priority=AsyncMock(),
+    )
+    redis_client = SimpleNamespace(
+        increment_user_concurrency=AsyncMock(),
+        decrement_user_concurrency=AsyncMock(),
+    )
+    quota_manager = SimpleNamespace(
+        deduct_credits=AsyncMock(),
+        add_credits=AsyncMock(),
+    )
+    get_system_status = AsyncMock()
+
+    monkeypatch.setattr(
+        billing_core,
+        "_build_billing_core_providers",
+        lambda: billing_core.BillingCoreProviders(
+            get_system_status_func=get_system_status,
+            get_permission_service_func=lambda: permission_service,
+            get_redis_client_func=lambda: redis_client,
+            get_quota_manager_func=lambda: quota_manager,
+        ),
+    )
+
+    dependencies = billing_core._build_billing_core_dependencies()
+
+    assert dependencies.get_system_status_func is get_system_status
+    assert dependencies.get_user_identity_func is permission_service.get_user_identity
+    assert dependencies.get_user_group_func is permission_service.get_user_group
+    assert (
+        dependencies.calculate_user_priority_func
+        is permission_service.calculate_user_priority
+    )
+    assert (
+        dependencies.increment_user_concurrency_func
+        is redis_client.increment_user_concurrency
+    )
+    assert (
+        dependencies.decrement_user_concurrency_func
+        is redis_client.decrement_user_concurrency
+    )
+    assert dependencies.deduct_credits_func is quota_manager.deduct_credits
+    assert dependencies.add_credits_func is quota_manager.add_credits
 
 
 @pytest.mark.asyncio

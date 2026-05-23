@@ -1,6 +1,12 @@
 import logging
 
-from src.core.task_core import cleanup_task_runtime_state, finalize_task_failure
+from src.core.task_core import (
+    cleanup_task_runtime_state,
+)
+from src.services.task_failure_finalization_service import (
+    build_recovery_failure_policy,
+    finalize_task_failure_for_task_record,
+)
 from src.services.task_recovery_runtime import run_recovered_task
 from src.services.task_registry import TaskRegistry
 from src.utils import create_background_task
@@ -76,25 +82,14 @@ async def _recover_single_task(registry_task_id, task_data, application):
 
 
 async def _finalize_recovery_failure(_registry_task_id, task_data, application, reason):
-    user_id = task_data.get("user_id")
-    username = task_data.get("username")
-    cost = task_data.get("cost", 0)
-    chat_id = task_data.get("chat_id")
-
-    await finalize_task_failure(
-        internal_user_id=user_id,
-        username=username,
-        cost=cost,
-        should_refund=cost > 0,
-        registry_task_id=_registry_task_id,
-        refund_task_type="refund_restart",
-        explicit_user_message=reason,
+    policy = build_recovery_failure_policy(
+        reason=reason,
+        chat_id=task_data.get("chat_id"),
     )
-
-    if chat_id:
-        try:
-            from src.utils import robust_send_message
-
-            await robust_send_message(application.bot, chat_id, reason)
-        except Exception as e:
-            logger.error(f"Failed to send refund notice to {chat_id}: {e}")
+    await finalize_task_failure_for_task_record(
+        registry_task_id=_registry_task_id,
+        task_data=task_data,
+        policy=policy,
+        bot=application.bot,
+        logger_override=logger,
+    )

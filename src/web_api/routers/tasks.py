@@ -1,12 +1,9 @@
 import logging
 
-import httpx
 from fastapi import APIRouter, Depends
 
 from src.database.models import User
 from src.quota import QuotaManager
-from src.services.redis_client import redis_client
-from src.services.image_service import image_service
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.web_api.dependencies import get_current_user, get_current_user_once, get_db
 from src.web_api.schemas.task_schema import TaskGenerateRequest, TaskGenerateResponse, TaskResultResponse
@@ -15,8 +12,9 @@ from src.web_api.services.task_action_api_service import (
     cancel_pending_task_payload,
     submit_generation_task_payload,
 )
-from src.web_api.services.task_stream_api_service import (
-    build_task_stream_response_payload,
+from src.web_api.services.task_runtime_api_service import (
+    build_task_status_stream_response_for_user,
+    get_queue_status_payload,
 )
 
 router = APIRouter()
@@ -69,24 +67,14 @@ async def task_status_stream(
     Listens to Redis Pub/Sub channel: comfy:task_events:{task_id}
     Also periodically sends queue position while pending.
     """
-    from src.database.core import AsyncSessionLocal
-    from config import API_BASE
-
-    return await build_task_stream_response_payload(
+    return await build_task_status_stream_response_for_user(
         task_id=task_id,
         user_id=current_user.id,
-        session_factory=AsyncSessionLocal,
-        redis=redis_client.redis,
-        api_base=API_BASE,
-        httpx_async_client_factory=httpx.AsyncClient,
-        logger=logger,
+        logger_override=logger,
     )
 
 
 @router.get("/queue-status")
 async def get_queue_status(_current_user: User = Depends(get_current_user)) -> dict:
     """获取当前系统的排队宏观大盘数据"""
-    status = await image_service.get_queue_info()
-    if not status:
-        return {"comfy_online": False, "queue_size": 0, "queue_by_type": {}}
-    return status
+    return await get_queue_status_payload()

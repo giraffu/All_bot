@@ -16,6 +16,7 @@ from src.constants import (
     MODE_IMAGE_TO_VIDEO,
     MODE_NAME_MAP,
 )
+from src.services import task_service_finalize as support
 from src.services.task_service import TaskService
 
 
@@ -537,6 +538,31 @@ async def test_finalize_cancelled_task_for_bot_uses_task_service_edit_seam(monke
 
 
 @pytest.mark.asyncio
+async def test_deliver_bot_finalization_message_prefers_edit_status(monkeypatch):
+    edit_text = AsyncMock()
+    send_message = AsyncMock()
+    monkeypatch.setattr("src.services.task_service_finalize.robust_edit_text", edit_text)
+    monkeypatch.setattr("src.services.task_service_finalize.robust_send_message", send_message)
+
+    await support.deliver_bot_finalization_message(
+        context=SimpleNamespace(bot=MagicMock()),
+        chat_id=123,
+        status_msg="status-msg",
+        finalization_result=TaskFailureFinalizationResult(
+            refunded=True,
+            user_message="失败消息",
+        ),
+        policy=support.build_bot_failure_presentation_policy(
+            prefer_edit_status=True,
+            fallback_to_send_message=False,
+        ),
+    )
+
+    edit_text.assert_awaited_once_with("status-msg", "❌ 失败消息")
+    send_message.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_finalize_failed_task_for_bot_uses_task_service_send_message_seam(monkeypatch):
     finalize_failure = AsyncMock(
         return_value=TaskFailureFinalizationResult(
@@ -569,6 +595,18 @@ async def test_finalize_failed_task_for_bot_uses_task_service_send_message_seam(
         123,
         f"❌ {result.user_message}",
     )
+
+
+def test_build_bot_failure_presentation_policy_keeps_display_contract():
+    policy = support.build_bot_failure_presentation_policy(
+        message_prefix="⚠️",
+        prefer_edit_status=True,
+        fallback_to_send_message=False,
+    )
+
+    assert policy.message_prefix == "⚠️"
+    assert policy.prefer_edit_status is True
+    assert policy.fallback_to_send_message is False
 
 
 @pytest.mark.asyncio

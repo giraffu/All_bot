@@ -65,3 +65,41 @@ async def test_build_auth_core_dependencies_exposes_wrapped_runtime_dependencies
     )
     get_user_detailed_stats.assert_awaited_once_with(42)
     check_web_access.assert_awaited_once_with(9)
+
+
+def test_build_auth_core_dependencies_uses_composition_root_getters(monkeypatch):
+    redis = SimpleNamespace()
+    session_factory = lambda: "session"
+    get_or_create_user = AsyncMock()
+    permission_service = SimpleNamespace(
+        get_user_detailed_stats=AsyncMock(),
+        check_web_access=AsyncMock(),
+    )
+
+    monkeypatch.setattr(auth_core_dependencies, "_get_auth_core_redis", lambda: redis)
+    monkeypatch.setattr(
+        auth_core_dependencies,
+        "_get_auth_core_session_factory",
+        lambda: session_factory,
+    )
+    monkeypatch.setattr(
+        auth_core_dependencies,
+        "_get_auth_core_permission_service",
+        lambda: permission_service,
+    )
+    monkeypatch.setattr(
+        auth_core_dependencies,
+        "_get_auth_core_get_or_create_user_by_telegram_func",
+        lambda: get_or_create_user,
+    )
+
+    dependencies = auth_core_dependencies.build_auth_core_dependencies()
+
+    assert dependencies.redis is redis
+    assert dependencies.session_factory is session_factory
+    assert dependencies.get_or_create_user_by_telegram_func is get_or_create_user
+    assert (
+        dependencies.get_user_detailed_stats_func
+        is permission_service.get_user_detailed_stats
+    )
+    assert dependencies.check_web_access_func is permission_service.check_web_access

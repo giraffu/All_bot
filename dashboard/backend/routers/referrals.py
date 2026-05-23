@@ -1,13 +1,14 @@
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.database.core import get_db
-from src.services.referral_stats_service import (
-    query_affiliate_redeem_records,
-    query_referral_rewards,
+from dashboard.backend.routers.utils import run_dashboard_route
+from dashboard.backend.services.referral_admin_service import (
+    get_affiliate_redeem_records_payload,
+    get_referral_rewards_payload,
 )
+from src.database.core import get_db
 
 router = APIRouter(prefix="/api/referrals", tags=["referrals"])
 logger = logging.getLogger("dashboard.referrals")
@@ -15,12 +16,11 @@ logger = logging.getLogger("dashboard.referrals")
 
 @router.get("/rewards")
 async def get_referral_rewards(db: AsyncSession = Depends(get_db)):
-    try:
-        return await query_referral_rewards(db)
-
-    except Exception as e:
-        logger.error(f"Error getting referral rewards: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    return await run_dashboard_route(
+        lambda: get_referral_rewards_payload(db=db),
+        logger=logger,
+        error_message="Error getting referral rewards",
+    )
 
 
 @router.get("/redeems")
@@ -31,14 +31,14 @@ async def get_affiliate_redeem_records(
     redeem_type: str | None = None,
     db: AsyncSession = Depends(get_db),
 ):
-    try:
-        return await query_affiliate_redeem_records(
-            db,
+    return await run_dashboard_route(
+        lambda: get_affiliate_redeem_records_payload(
             page=page,
             page_size=page_size,
             query=query,
             redeem_type=redeem_type,
-        )
-    except Exception as e:
-        logger.error(f"Error getting affiliate redeem records: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+            db=db,
+        ),
+        logger=logger,
+        error_message="Error getting affiliate redeem records",
+    )

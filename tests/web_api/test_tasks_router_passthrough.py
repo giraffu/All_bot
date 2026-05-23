@@ -48,3 +48,38 @@ async def test_create_generation_task_routes_to_service():
 
     assert response == expected
     mock_service.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_task_status_stream_routes_to_runtime_service():
+    expected = object()
+
+    with patch(
+        "src.web_api.routers.tasks.build_task_status_stream_response_for_user",
+        new=AsyncMock(return_value=expected),
+    ) as mock_service:
+        response = await tasks_router.task_status_stream(
+            "task-1",
+            current_user=type("User", (), {"id": 123})(),
+        )
+
+    assert response is expected
+    mock_service.assert_awaited_once_with(
+        task_id="task-1",
+        user_id=123,
+        logger_override=tasks_router.logger,
+    )
+
+
+@pytest.mark.asyncio
+async def test_get_queue_status_routes_to_runtime_service():
+    expected = {"comfy_online": True, "queue_size": 3, "queue_by_type": {"image": 2}}
+
+    with patch(
+        "src.web_api.routers.tasks.get_queue_status_payload",
+        new=AsyncMock(return_value=expected),
+    ) as mock_service:
+        response = await tasks_router.get_queue_status(_build_current_user())
+
+    assert response == expected
+    mock_service.assert_awaited_once_with()

@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from src.web_api.routers import payment as payment_router
+from src.web_api.services import payment_api_service
 
 
 class _ScalarResult:
@@ -13,6 +14,14 @@ class _ScalarResult:
 
     def scalar_one_or_none(self):
         return self._value
+
+    def scalars(self):
+        return self
+
+    def all(self):
+        if isinstance(self._value, list):
+            return self._value
+        return [self._value]
 
 
 class _FakeSession:
@@ -44,18 +53,35 @@ def _build_plan():
 
 
 @pytest.mark.asyncio
+async def test_get_plans_preserves_frontend_contract_fields():
+    db = _FakeSession([[_build_plan()]])
+
+    result = await payment_router.get_plans(db=db)
+
+    assert result["code"] == 0
+    assert result["message"] == "success"
+    assert "ton_receiver_address" in result["data"]
+    assert len(result["data"]["plans"]) == 1
+    assert result["data"]["plans"][0]["id"] == 1
+    assert result["data"]["plans"][0]["price_rmb"] == 19.9
+    assert result["data"]["plans"][0]["price_ton"] == 1.1
+    assert result["data"]["plans"][0]["credits_granted"] == 100
+    assert result["data"]["plans"][0]["type"] == "monthly"
+
+
+@pytest.mark.asyncio
 async def test_create_order_dual_writes_business_order_id(monkeypatch):
     db = _FakeSession([_build_plan()])
     request = SimpleNamespace(headers={"origin": "https://test.example"})
     current_user = SimpleNamespace(id=2002)
 
     monkeypatch.setattr(
-        payment_router.RMBPaymentService,
+        payment_api_service.RMBPaymentService,
         "create_payment_url",
         AsyncMock(return_value={"code": 1, "payurl": "https://pay.example"}),
     )
     monkeypatch.setattr(
-        payment_router, "generate_business_order_id", lambda: "bo_test_1"
+        payment_api_service, "generate_business_order_id", lambda: "bo_test_1"
     )
 
     result = await payment_router.create_order(
@@ -71,7 +97,7 @@ async def test_create_order_dual_writes_business_order_id(monkeypatch):
     assert created_order.settlement_snapshot["plan_id"] == 1
     assert result["data"]["order_id"] == "bo_test_1"
     assert result["data"]["legacy_order_id"].startswith("WEB_")
-    payment_router.RMBPaymentService.create_payment_url.assert_awaited_once()
+    payment_api_service.RMBPaymentService.create_payment_url.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -101,9 +127,9 @@ async def test_create_ton_order_returns_order_v2_comment_when_enabled(monkeypatc
     current_user = SimpleNamespace(id=2002, telegram_id=12345)
 
     monkeypatch.setattr(
-        payment_router, "generate_business_order_id", lambda: "bo_ton_1"
+        payment_api_service, "generate_business_order_id", lambda: "bo_ton_1"
     )
-    monkeypatch.setattr(payment_router, "is_order_v2_enabled", lambda: True)
+    monkeypatch.setattr(payment_api_service, "is_order_v2_enabled", lambda: True)
 
     result = await payment_router.create_ton_order(
         payment_router.CreateTonOrderRequest(plan_id=1),

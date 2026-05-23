@@ -1,6 +1,8 @@
 import asyncio
 import logging
 
+from src.core.task_core_types import TaskFinalizationResult
+from src.services.task_service_types import BotFinalizationPresentationPolicy
 from src.services.task_service_types import BotTaskMessageSpec
 from src.utils import robust_edit_text, robust_send_message
 
@@ -9,6 +11,49 @@ logger = logging.getLogger(__name__)
 
 def build_bot_cancellation_message(cost: int, spec: BotTaskMessageSpec) -> str:
     return spec.cancellation_message_template.format(cost=cost)
+
+
+def build_bot_cancellation_presentation_policy() -> BotFinalizationPresentationPolicy:
+    return BotFinalizationPresentationPolicy(
+        message_prefix="✅",
+        prefer_edit_status=True,
+        fallback_to_send_message=False,
+    )
+
+
+def build_bot_failure_presentation_policy(
+    *,
+    message_prefix: str = "❌",
+    prefer_edit_status: bool = False,
+    fallback_to_send_message: bool = True,
+) -> BotFinalizationPresentationPolicy:
+    return BotFinalizationPresentationPolicy(
+        message_prefix=message_prefix,
+        prefer_edit_status=prefer_edit_status,
+        fallback_to_send_message=fallback_to_send_message,
+    )
+
+
+async def deliver_bot_finalization_message(
+    *,
+    context,
+    chat_id,
+    status_msg,
+    finalization_result: TaskFinalizationResult,
+    policy: BotFinalizationPresentationPolicy,
+    edit_text_func=None,
+    send_message_func=None,
+):
+    edit_text_func = edit_text_func or robust_edit_text
+    send_message_func = send_message_func or robust_send_message
+    if finalization_result.user_message is None:
+        return
+    rendered_message = f"{policy.message_prefix} {finalization_result.user_message}"
+    if policy.prefer_edit_status and status_msg:
+        await edit_text_func(status_msg, rendered_message)
+        return
+    if policy.fallback_to_send_message:
+        await send_message_func(context.bot, chat_id, rendered_message)
 
 
 async def finalize_cancelled_task_for_bot(
@@ -28,7 +73,6 @@ async def finalize_cancelled_task_for_bot(
     finalize_task_cancellation_func = (
         finalize_task_cancellation_func or finalize_task_cancellation
     )
-    edit_text_func = edit_text_func or robust_edit_text
     cancellation_result = await finalize_task_cancellation_func(
         internal_user_id=internal_user_id,
         username=username,
@@ -38,8 +82,14 @@ async def finalize_cancelled_task_for_bot(
         release_lock=task_submitted,
         explicit_user_message=explicit_user_message,
     )
-    if status_msg:
-        await edit_text_func(status_msg, f"✅ {cancellation_result.user_message}")
+    await deliver_bot_finalization_message(
+        context=None,
+        chat_id=None,
+        status_msg=status_msg,
+        finalization_result=cancellation_result,
+        policy=build_bot_cancellation_presentation_policy(),
+        edit_text_func=edit_text_func,
+    )
     return cancellation_result
 
 
@@ -68,8 +118,6 @@ async def finalize_failed_task_for_bot(
     from src.core.task_core import finalize_task_failure
 
     finalize_task_failure_func = finalize_task_failure_func or finalize_task_failure
-    edit_text_func = edit_text_func or robust_edit_text
-    send_message_func = send_message_func or robust_send_message
     failure_result = await finalize_task_failure_func(
         internal_user_id=internal_user_id,
         username=username,
@@ -82,14 +130,19 @@ async def finalize_failed_task_for_bot(
         generic_error_prefix=generic_error_prefix,
         refund_suffix_mode=refund_suffix_mode,
     )
-    if prefer_edit_status and status_msg:
-        await edit_text_func(status_msg, f"{message_prefix} {failure_result.user_message}")
-    elif fallback_to_send_message:
-        await send_message_func(
-            context.bot,
-            chat_id,
-            f"{message_prefix} {failure_result.user_message}",
-        )
+    await deliver_bot_finalization_message(
+        context=context,
+        chat_id=chat_id,
+        status_msg=status_msg,
+        finalization_result=failure_result,
+        policy=build_bot_failure_presentation_policy(
+            message_prefix=message_prefix,
+            prefer_edit_status=prefer_edit_status,
+            fallback_to_send_message=fallback_to_send_message,
+        ),
+        edit_text_func=edit_text_func,
+        send_message_func=send_message_func,
+    )
     return failure_result
 
 

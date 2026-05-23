@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class UpdateCreditsRequest(BaseModel):
@@ -87,6 +87,25 @@ class OrderListResponse(BaseModel):
     total: int
 
 
+class WorkerHistoryItemResponse(BaseModel):
+    id: int
+    worker_id: Optional[str] = None
+    task_id: Optional[str] = None
+    task_type: Optional[str] = None
+    status: Optional[str] = None
+    start_time: Optional[str] = None
+    end_time: Optional[str] = None
+    duration: Optional[float] = None
+    error_message: Optional[str] = None
+
+
+class WorkerHistoryListResponse(BaseModel):
+    total: int
+    page: int
+    size: int
+    data: List[WorkerHistoryItemResponse]
+
+
 class HistoryResponse(BaseModel):
     id: int
     user_id: int
@@ -147,3 +166,24 @@ class LogListResponse(BaseModel):
 
 class OrderRefundRequest(BaseModel):
     task_id: str
+
+
+class RefundTaskRequest(BaseModel):
+    task_id: str
+
+
+class SyncLockRequest(BaseModel):
+    user_id: int
+
+
+class GalleryPostUpdate(BaseModel):
+    is_active: Optional[bool] = None
+    likes_count: Optional[int] = Field(default=None, ge=0)
+    dislikes_count: Optional[int] = Field(default=None, ge=0)
+    applied_count: Optional[int] = Field(default=None, ge=0)
+    comments_count: Optional[int] = Field(default=None, ge=0)
+    tags: Optional[str] = None
+
+
+class CommentUpdate(BaseModel):
+    is_active: bool

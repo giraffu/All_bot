@@ -290,7 +290,8 @@ async def test_persist_successful_task_result_reuses_core_path_for_bot(monkeypat
     monkeypatch.setattr(task_core, "UserLogger", lambda *_args, **_kwargs: fake_user_logger)
     monkeypatch.setattr(task_core, "schedule_web_history_r2_warmup", warmup_mock)
     monkeypatch.setattr(
-        "src.services.permission_service.permission_service.refresh_user_group",
+        task_core.permission_service,
+        "refresh_user_group",
         refresh_mock,
     )
 

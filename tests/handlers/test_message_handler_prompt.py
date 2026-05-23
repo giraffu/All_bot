@@ -3,6 +3,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from src.handlers import prompt_router
 from src.handlers.message_handler_prompt import handle_prompt_impl
 
 
@@ -74,3 +75,33 @@ async def test_handle_prompt_impl_falls_back_for_unmatched_private_prompt(monkey
         lang="zh",
         reply_text="reply-text",
     )
+
+
+def test_build_global_menu_filter_prefers_video_lora_for_shared_image_to_video_label(
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        prompt_router,
+        "load_locales",
+        lambda: {
+            "zh": {
+                "menu": {
+                    "video_lora": "🎬 图生视频",
+                    "custom_video": "🎬 图生视频",
+                }
+            }
+        },
+    )
+    monkeypatch.setattr(prompt_router, "prompt_routes", {}, raising=False)
+
+    prompt_router.build_global_menu_filter()
+
+    assert prompt_router.GLOBAL_REVERSE_MAP["🎬 图生视频"] == "menu.video_lora"
+
+
+def test_build_global_menu_filter_keeps_legacy_custom_video_text():
+    prompt_router.GLOBAL_REVERSE_MAP.clear()
+
+    prompt_router.build_global_menu_filter()
+
+    assert prompt_router.GLOBAL_REVERSE_MAP["🎬 自定义图生视频"] == "menu.custom_video"

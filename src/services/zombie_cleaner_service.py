@@ -3,8 +3,12 @@ import logging
 import time
 
 from src.api_client import api_client
-from src.core.task_core import finalize_task_failure, sync_user_concurrency
+from src.core.task_core import sync_user_concurrency
 from src.services.redis_client import redis_client
+from src.services.task_failure_finalization_service import (
+    build_zombie_cleanup_failure_policy,
+    finalize_task_failure_for_task_record,
+)
 
 logger = logging.getLogger("bot.zombie_cleaner")
 
@@ -35,7 +39,6 @@ async def clean_zombies(bot=None):
             # 如果任务驻留超过 2 小时 (7200秒)，判定为僵尸任务
             if age_seconds > 7200:
                 user_id = task.get("user_id")
-                username = task.get("username", "Unknown")
                 cost = task.get("cost", 0)
                 backend_task_id = task.get("backend_task_id")
 
@@ -46,17 +49,16 @@ async def clean_zombies(bot=None):
                 # 1. 统一执行退款 + 运行态清理
                 if user_id:
                     try:
-                        result = await finalize_task_failure(
-                            internal_user_id=user_id,
-                            username=username,
+                        policy = build_zombie_cleanup_failure_policy(
                             cost=cost,
-                            should_refund=cost > 0,
+                            chat_id=task.get("chat_id"),
+                        )
+                        result = await finalize_task_failure_for_task_record(
                             registry_task_id=task_id,
-                            refund_task_type="refund_zombie_cleanup",
-                            explicit_user_message=(
-                                f"您的任务由于等待/执行时间过长，已被系统自动清理。"
-                                + (f" 预扣的 {cost} 灵石已退回。" if cost > 0 else "")
-                            ),
+                            task_data=task,
+                            policy=policy,
+                            bot=bot,
+                            logger_override=logger,
                         )
                         if result.refunded:
                             logger.info(
@@ -82,24 +84,6 @@ async def clean_zombies(bot=None):
                     except Exception as e:
                         logger.error(
                             f"Error cancelling backend task {backend_task_id} at Central API: {e}"
-                        )
-
-                # 3. 发送 Telegram 提醒给用户
-                chat_id = task.get("chat_id")
-                if bot and chat_id:
-                    try:
-                        from src.utils import robust_send_message
-
-                        msg = "❌ 您的任务由于等待/执行时间过长，已被系统自动清理。"
-                        if cost > 0:
-                            msg += f" 预扣的 {cost} 灵石已退回。"
-                        await robust_send_message(bot, chat_id, msg)
-                        logger.info(
-                            f"📩 Sent zombie cleanup notification to chat_id {chat_id}."
-                        )
-                    except Exception as e:
-                        logger.error(
-                            f"Failed to send zombie cleanup notice to {chat_id}: {e}"
                         )
 
                 removed_count += 1

@@ -98,6 +98,24 @@ async def handle_failed_task_exception(
     )
 
 
+async def send_task_finalization_notice_best_effort(
+    *,
+    message: str | None,
+    send_user_notice_func=None,
+    logger_override=logger,
+    notice_failure_log_message: str = "Failed to send task finalization notice",
+) -> bool:
+    if not message or send_user_notice_func is None:
+        return False
+
+    try:
+        await send_user_notice_func(message)
+        return True
+    except Exception as exc:
+        logger_override.error("%s: %s", notice_failure_log_message, exc)
+        return False
+
+
 async def _cleanup_after_finalization(
     context: TaskFinalizationContext,
     *,
@@ -204,6 +222,48 @@ async def finalize_task_failure(
         refunded=refunded,
         user_message=user_message,
     )
+
+
+async def finalize_task_failure_with_notice(
+    *,
+    internal_user_id: int,
+    username: str,
+    cost: int,
+    should_refund: bool,
+    registry_task_id: str | None,
+    release_lock: bool = True,
+    refund_task_type: str = "refund",
+    error: Exception | None = None,
+    generic_error_prefix: str | None = None,
+    explicit_user_message: str | None = None,
+    refund_suffix_mode: str = "if_refunded",
+    send_user_notice_func=None,
+    notice_message: str | None = None,
+    logger_override=logger,
+    notice_failure_log_message: str = "Failed to send task finalization notice",
+    finalize_task_failure_func=finalize_task_failure,
+) -> TaskFailureFinalizationResult:
+    result = await finalize_task_failure_func(
+        internal_user_id=internal_user_id,
+        username=username,
+        cost=cost,
+        should_refund=should_refund,
+        registry_task_id=registry_task_id,
+        release_lock=release_lock,
+        refund_task_type=refund_task_type,
+        error=error,
+        generic_error_prefix=generic_error_prefix,
+        explicit_user_message=explicit_user_message,
+        refund_suffix_mode=refund_suffix_mode,
+    )
+
+    await send_task_finalization_notice_best_effort(
+        message=notice_message or result.user_message,
+        send_user_notice_func=send_user_notice_func,
+        logger_override=logger_override,
+        notice_failure_log_message=notice_failure_log_message,
+    )
+    return result
 
 
 async def finalize_task_cancellation(

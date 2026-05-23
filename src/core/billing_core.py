@@ -1,16 +1,122 @@
 import logging
-import math
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from datetime import datetime, timedelta
-from typing import Tuple
+from typing import Any, Tuple
 
 from src.constants import MAX_CONCURRENT_TASKS
+from src.core.billing_core_membership import DEFAULT_IDENTITY
+from src.core.billing_core_membership import IDENTITY_PRIORITY
+from src.core.billing_core_membership import IDENTITY_RATIO
+from src.core.billing_core_membership import MembershipSettlementResult
+from src.core.billing_core_membership import calculate_identity_conversion
+from src.core.billing_core_membership import calculate_identity_manual_conversion
+from src.core.billing_core_membership import calculate_membership_settlement
 from src.core.exceptions import InsufficientCreditsError
+from src.core.billing_core_membership import normalize_membership_identity
 from src.quota import QuotaManager
-from src.services.redis_client import redis_client
 
 logger = logging.getLogger(__name__)
-quota_manager = QuotaManager()
+_quota_manager_impl = QuotaManager()
+
+
+class _CompatServiceProxy:
+    def __init__(self, loader):
+        self._loader = loader
+
+    def __getattr__(self, name):
+        return getattr(self._loader(), name)
+
+
+def _load_permission_service():
+    from src.services.permission_service import permission_service as permission_service_impl
+
+    return permission_service_impl
+
+
+def _load_redis_client():
+    from src.services.redis_client import redis_client as redis_client_impl
+
+    return redis_client_impl
+
+
+def _load_quota_manager():
+    return _quota_manager_impl
+
+
+permission_service = _CompatServiceProxy(_load_permission_service)
+redis_client = _CompatServiceProxy(_load_redis_client)
+quota_manager = _CompatServiceProxy(_load_quota_manager)
+
+__all__ = [
+    "BillingCoreDependencies",
+    "BillingCoreProviders",
+    "DEFAULT_IDENTITY",
+    "IDENTITY_PRIORITY",
+    "IDENTITY_RATIO",
+    "MembershipSettlementResult",
+    "calculate_identity_conversion",
+    "calculate_identity_manual_conversion",
+    "calculate_membership_settlement",
+    "check_and_deduct_credits",
+    "check_concurrency_lock",
+    "get_user_priority_and_identity",
+    "normalize_membership_identity",
+    "refund_credits",
+    "release_concurrency_lock",
+]
+
+
+@dataclass(frozen=True)
+class BillingCoreDependencies:
+    get_system_status_func: Callable[[], Awaitable[dict[str, Any] | None]]
+    get_user_identity_func: Callable[[int], Awaitable[str]]
+    get_user_group_func: Callable[[int], Awaitable[str]]
+    calculate_user_priority_func: Callable[[int], Awaitable[int]]
+    increment_user_concurrency_func: Callable[[int], Awaitable[int]]
+    decrement_user_concurrency_func: Callable[[int], Awaitable[int]]
+    deduct_credits_func: Callable[..., Awaitable[Any]]
+    add_credits_func: Callable[..., Awaitable[Any]]
+
+
+@dataclass(frozen=True)
+class BillingCoreProviders:
+    get_system_status_func: Callable[[], Awaitable[dict[str, Any] | None]]
+    get_permission_service_func: Callable[[], Any]
+    get_redis_client_func: Callable[[], Any]
+    get_quota_manager_func: Callable[[], Any]
+
+
+def _build_billing_core_providers() -> BillingCoreProviders:
+    from src.api_client import get_system_status
+
+    return BillingCoreProviders(
+        get_system_status_func=get_system_status,
+        get_permission_service_func=_load_permission_service,
+        get_redis_client_func=_load_redis_client,
+        get_quota_manager_func=_get_billing_quota_manager,
+    )
+
+
+def _get_billing_quota_manager():
+    return quota_manager
+
+
+def _build_billing_core_dependencies() -> BillingCoreDependencies:
+    providers = _build_billing_core_providers()
+    permission_service_impl = providers.get_permission_service_func()
+    redis_client_impl = providers.get_redis_client_func()
+    quota_manager_impl = providers.get_quota_manager_func()
+
+    return BillingCoreDependencies(
+        get_system_status_func=providers.get_system_status_func,
+        get_user_identity_func=permission_service_impl.get_user_identity,
+        get_user_group_func=permission_service_impl.get_user_group,
+        calculate_user_priority_func=permission_service_impl.calculate_user_priority,
+        increment_user_concurrency_func=redis_client_impl.increment_user_concurrency,
+        decrement_user_concurrency_func=redis_client_impl.decrement_user_concurrency,
+        deduct_credits_func=quota_manager_impl.deduct_credits,
+        add_credits_func=quota_manager_impl.add_credits,
+    )
 
 
 async def check_concurrency_lock(internal_user_id: int) -> Tuple[bool, str]:
@@ -18,16 +124,15 @@ async def check_concurrency_lock(internal_user_id: int) -> Tuple[bool, str]:
     检查用户并发锁及队列限制。
     返回 (是否允许执行, 错误信息)
     """
-    from src.api_client import get_system_status
-    from src.services.permission_service import permission_service
+    dependencies = _build_billing_core_dependencies()
 
     # 1. 检查队列长度与身份
-    identity_str = await permission_service.get_user_identity(internal_user_id)
+    identity_str = await dependencies.get_user_identity_func(internal_user_id)
     if identity_str == "外门弟子":
         # 补充检查修为境界：凡人、练气期不可突破排队限制，筑基期及以上可以
-        user_group = await permission_service.get_user_group(internal_user_id)
+        user_group = await dependencies.get_user_group_func(internal_user_id)
         if user_group in ["凡人", "练气期"]:
-            sys_status = await get_system_status()
+            sys_status = await dependencies.get_system_status_func()
             if sys_status and sys_status.get("queue_size", 0) > 200:
                 return (
                     False,
@@ -35,9 +140,9 @@ async def check_concurrency_lock(internal_user_id: int) -> Tuple[bool, str]:
                 )
 
     # 2. 原有并发锁检查
-    active_tasks = await redis_client.increment_user_concurrency(internal_user_id)
+    active_tasks = await dependencies.increment_user_concurrency_func(internal_user_id)
     if active_tasks > MAX_CONCURRENT_TASKS:
-        await redis_client.decrement_user_concurrency(internal_user_id)
+        await dependencies.decrement_user_concurrency_func(internal_user_id)
         return (
             False,
             f"您当前已有 {MAX_CONCURRENT_TASKS} 个任务正在处理中，请等待其中一个完成后再试！",
@@ -47,7 +152,8 @@ async def check_concurrency_lock(internal_user_id: int) -> Tuple[bool, str]:
 
 async def release_concurrency_lock(internal_user_id: int):
     """释放用户并发锁"""
-    await redis_client.decrement_user_concurrency(internal_user_id)
+    dependencies = _build_billing_core_dependencies()
+    await dependencies.decrement_user_concurrency_func(internal_user_id)
 
 
 async def check_and_deduct_credits(
@@ -60,8 +166,9 @@ async def check_and_deduct_credits(
     if cost <= 0:
         return True, ""
 
+    dependencies = _build_billing_core_dependencies()
     try:
-        await quota_manager.deduct_credits(
+        await dependencies.deduct_credits_func(
             internal_user_id, cost, username=username, task_type=task_type
         )
         return True, ""
@@ -80,7 +187,8 @@ async def refund_credits(
 ):
     """退还灵石"""
     if cost > 0:
-        await quota_manager.add_credits(
+        dependencies = _build_billing_core_dependencies()
+        await dependencies.add_credits_func(
             internal_user_id, cost, username=username, task_type=task_type
         )
 
@@ -89,188 +197,9 @@ async def get_user_priority_and_identity(internal_user_id: int) -> Tuple[int, st
     """
     获取用户的优先级、身份和组。
     """
-    from src.services.permission_service import permission_service
+    dependencies = _build_billing_core_dependencies()
 
-    priority = await permission_service.calculate_user_priority(internal_user_id)
-    identity_str = await permission_service.get_user_identity(internal_user_id)
-    user_group = await permission_service.get_user_group(internal_user_id)
+    priority = await dependencies.calculate_user_priority_func(internal_user_id)
+    identity_str = await dependencies.get_user_identity_func(internal_user_id)
+    user_group = await dependencies.get_user_group_func(internal_user_id)
     return priority, identity_str, user_group
-
-DEFAULT_IDENTITY = "外门弟子"
-IDENTITY_PRIORITY = {
-    "外门弟子": 0,
-    "内门弟子": 1,
-    "核心弟子": 2,
-    "真传弟子": 3,
-}
-IDENTITY_RATIO = {
-    "外门弟子": 1,
-    "内门弟子": 2,
-    "核心弟子": 5,
-    "真传弟子": 10,
-}
-
-
-@dataclass(frozen=True)
-class MembershipSettlementResult:
-    final_identity: str
-    final_expire_at: datetime | None
-    credits_to_grant: int
-    converted_days: int
-    settlement_reason: str
-    is_pure_credit_plan: bool
-    kept_current_identity: bool
-    is_upgrade: bool
-    is_downgrade: bool
-    is_same_identity_renewal: bool
-
-
-def normalize_membership_identity(identity: str | None) -> str:
-    return identity if identity in IDENTITY_PRIORITY else DEFAULT_IDENTITY
-
-
-def calculate_membership_settlement(
-    current_identity: str,
-    current_expire_at: datetime | None,
-    target_identity: str,
-    duration_days: int,
-    reward_credits: int,
-    grant_reward_credits: bool,
-    now: datetime,
-) -> MembershipSettlementResult:
-    current_identity = normalize_membership_identity(current_identity)
-    target_identity = normalize_membership_identity(target_identity)
-    credits_to_grant = int(reward_credits or 0) if grant_reward_credits else 0
-
-    if duration_days < 0:
-        raise ValueError("duration_days must be non-negative")
-
-    if duration_days == 0:
-        return MembershipSettlementResult(
-            final_identity=current_identity,
-            final_expire_at=current_expire_at,
-            credits_to_grant=credits_to_grant,
-            converted_days=0,
-            settlement_reason="PURE_CREDIT_PLAN",
-            is_pure_credit_plan=True,
-            kept_current_identity=True,
-            is_upgrade=False,
-            is_downgrade=False,
-            is_same_identity_renewal=False,
-        )
-
-    current_priority = IDENTITY_PRIORITY[current_identity]
-    target_priority = IDENTITY_PRIORITY[target_identity]
-    has_active_membership = current_expire_at is not None and current_expire_at > now
-
-    if has_active_membership:
-        if current_identity == target_identity:
-            return MembershipSettlementResult(
-                final_identity=target_identity,
-                final_expire_at=current_expire_at + timedelta(days=duration_days),
-                credits_to_grant=credits_to_grant,
-                converted_days=0,
-                settlement_reason="RENEWAL",
-                is_pure_credit_plan=False,
-                kept_current_identity=False,
-                is_upgrade=False,
-                is_downgrade=False,
-                is_same_identity_renewal=True,
-            )
-
-        if target_priority > current_priority:
-            remaining_days = (current_expire_at - now).total_seconds() / 86400.0
-            converted_days = math.ceil(
-                (remaining_days * IDENTITY_RATIO[current_identity])
-                / IDENTITY_RATIO[target_identity]
-            )
-            return MembershipSettlementResult(
-                final_identity=target_identity,
-                final_expire_at=now + timedelta(days=duration_days + converted_days),
-                credits_to_grant=credits_to_grant,
-                converted_days=converted_days,
-                settlement_reason="UPGRADE_CONVERSION",
-                is_pure_credit_plan=False,
-                kept_current_identity=False,
-                is_upgrade=True,
-                is_downgrade=False,
-                is_same_identity_renewal=False,
-            )
-
-        converted_days = math.ceil(
-            (duration_days * IDENTITY_RATIO[target_identity])
-            / IDENTITY_RATIO[current_identity]
-        )
-        return MembershipSettlementResult(
-            final_identity=current_identity,
-            final_expire_at=current_expire_at + timedelta(days=converted_days),
-            credits_to_grant=credits_to_grant,
-            converted_days=converted_days,
-            settlement_reason="DOWNGRADE_EXTENSION",
-            is_pure_credit_plan=False,
-            kept_current_identity=True,
-            is_upgrade=False,
-            is_downgrade=True,
-            is_same_identity_renewal=False,
-        )
-
-    settlement_reason = "NEW_PURCHASE"
-    if current_expire_at is not None and current_expire_at <= now:
-        settlement_reason = "EXPIRED_REPLACE"
-    return MembershipSettlementResult(
-        final_identity=target_identity,
-        final_expire_at=now + timedelta(days=duration_days),
-        credits_to_grant=credits_to_grant,
-        converted_days=0,
-        settlement_reason=settlement_reason,
-        is_pure_credit_plan=False,
-        kept_current_identity=False,
-        is_upgrade=False,
-        is_downgrade=False,
-        is_same_identity_renewal=False,
-    )
-
-
-def calculate_identity_conversion(
-    current_identity: str,
-    current_expire_at: datetime | None,
-    new_identity: str,
-    duration_days: int,
-) -> Tuple[str, datetime | None]:
-    """
-    兼容旧接口：内部转调统一会员结算 primitive。
-    返回 (最终身份, 最终过期时间)
-    """
-    result = calculate_membership_settlement(
-        current_identity=current_identity,
-        current_expire_at=current_expire_at,
-        target_identity=new_identity,
-        duration_days=duration_days,
-        reward_credits=0,
-        grant_reward_credits=False,
-        now=datetime.now(),
-    )
-    return result.final_identity, result.final_expire_at
-
-
-def calculate_identity_manual_conversion(
-    current_identity: str, current_expire_at: datetime | None, new_identity: str
-) -> datetime | None:
-    """
-    手动修改身份时的残值折算逻辑。
-    返回折算后的过期时间。
-    """
-    now = datetime.now()
-    current_identity = normalize_membership_identity(current_identity)
-    new_identity = normalize_membership_identity(new_identity)
-
-    if not current_expire_at or current_expire_at <= now or current_identity == new_identity:
-        return current_expire_at
-
-    remaining_days = (current_expire_at - now).total_seconds() / 86400.0
-    old_ratio = IDENTITY_RATIO.get(current_identity, 1)
-    new_ratio = IDENTITY_RATIO.get(new_identity, 1)
-
-    # 残值 = 剩余天数 * 旧比例，折算天数 = 残值 / 新比例
-    converted_days = math.ceil((remaining_days * old_ratio) / new_ratio)
-    return now + timedelta(days=converted_days)
