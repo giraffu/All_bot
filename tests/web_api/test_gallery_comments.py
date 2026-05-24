@@ -7,9 +7,12 @@ from sqlalchemy.exc import IntegrityError
 
 from src.database.models import GalleryComment, GalleryPost, History, User
 from src.services import redis_client as redis_module
-from src.web_api.routers import gallery as gallery_router
-from src.web_api.services import gallery_service
 from src.web_api.schemas.gallery_schema import CommentCreate
+from src.web_api.services.gallery_service_comments import (
+    create_gallery_comment_payload,
+    get_gallery_comments_payload,
+)
+from src.web_api.services.gallery_service_support import build_gallery_post_responses
 
 
 class _FakeResult:
@@ -125,7 +128,7 @@ async def test_build_post_responses_defaults_missing_comments_count_to_zero(monk
     )
     session = _BuildPostResponseSession([history])
 
-    responses = await gallery_service.build_gallery_post_responses(
+    responses = await build_gallery_post_responses(
         session=session,
         posts=[post],
         current_user=None,
@@ -142,17 +145,18 @@ async def test_create_gallery_comment_trims_content_and_updates_count(monkeypatc
     session = _CreateCommentSession(post)
     current_user = User(id=123, username="tester")
 
-    monkeypatch.setattr(gallery_service, "AsyncSessionLocal", lambda: session)
     monkeypatch.setattr(
         redis_module.redis_client,
         "set_comment_lock",
         AsyncMock(return_value=True),
     )
 
-    response = await gallery_router.create_gallery_comment(
-        1,
-        CommentCreate(content="  修仙成功  "),
+    response = await create_gallery_comment_payload(
+        post_id=1,
+        comment=CommentCreate(content="  修仙成功  "),
         current_user=current_user,
+        db=session,
+        redis_client=redis_module.redis_client,
     )
 
     assert session.added
@@ -168,7 +172,6 @@ async def test_create_gallery_comment_returns_429_when_rate_limited(monkeypatch)
     post = GalleryPost(id=1, task_id="task-1", media_type="image", is_active=True)
     session = _CreateCommentSession(post)
 
-    monkeypatch.setattr(gallery_service, "AsyncSessionLocal", lambda: session)
     monkeypatch.setattr(
         redis_module.redis_client,
         "set_comment_lock",
@@ -176,10 +179,12 @@ async def test_create_gallery_comment_returns_429_when_rate_limited(monkeypatch)
     )
 
     with pytest.raises(HTTPException) as exc_info:
-        await gallery_router.create_gallery_comment(
-            1,
-            CommentCreate(content="test"),
+        await create_gallery_comment_payload(
+            post_id=1,
+            comment=CommentCreate(content="test"),
             current_user=User(id=123, username="tester"),
+            db=session,
+            redis_client=redis_module.redis_client,
         )
 
     assert exc_info.value.status_code == 429
@@ -194,14 +199,15 @@ async def test_create_gallery_comment_does_not_consume_lock_for_missing_post(mon
         return None
 
     session.get = fake_get
-    monkeypatch.setattr(gallery_service, "AsyncSessionLocal", lambda: session)
     monkeypatch.setattr(redis_module.redis_client, "set_comment_lock", lock_mock)
 
     with pytest.raises(HTTPException) as exc_info:
-        await gallery_router.create_gallery_comment(
-            999,
-            CommentCreate(content="test"),
+        await create_gallery_comment_payload(
+            post_id=999,
+            comment=CommentCreate(content="test"),
             current_user=User(id=123, username="tester"),
+            db=session,
+            redis_client=redis_module.redis_client,
         )
 
     assert exc_info.value.status_code == 404
@@ -214,7 +220,6 @@ async def test_create_gallery_comment_releases_lock_when_db_write_fails(monkeypa
     session = _CreateCommentSession(post, flush_error=RuntimeError("db down"))
     delete_lock_mock = AsyncMock()
 
-    monkeypatch.setattr(gallery_service, "AsyncSessionLocal", lambda: session)
     monkeypatch.setattr(
         redis_module.redis_client,
         "set_comment_lock",
@@ -227,10 +232,12 @@ async def test_create_gallery_comment_releases_lock_when_db_write_fails(monkeypa
     )
 
     with pytest.raises(HTTPException) as exc_info:
-        await gallery_router.create_gallery_comment(
-            1,
-            CommentCreate(content="test"),
+        await create_gallery_comment_payload(
+            post_id=1,
+            comment=CommentCreate(content="test"),
             current_user=User(id=123, username="tester"),
+            db=session,
+            redis_client=redis_module.redis_client,
         )
 
     assert exc_info.value.status_code == 500
@@ -244,7 +251,6 @@ async def test_create_gallery_comment_rolls_back_when_post_becomes_inactive(monk
     session = _CreateCommentSession(post, execute_rowcount=0)
     delete_lock_mock = AsyncMock()
 
-    monkeypatch.setattr(gallery_service, "AsyncSessionLocal", lambda: session)
     monkeypatch.setattr(
         redis_module.redis_client,
         "set_comment_lock",
@@ -257,10 +263,12 @@ async def test_create_gallery_comment_rolls_back_when_post_becomes_inactive(monk
     )
 
     with pytest.raises(HTTPException) as exc_info:
-        await gallery_router.create_gallery_comment(
-            1,
-            CommentCreate(content="test"),
+        await create_gallery_comment_payload(
+            post_id=1,
+            comment=CommentCreate(content="test"),
             current_user=User(id=123, username="tester"),
+            db=session,
+            redis_client=redis_module.redis_client,
         )
 
     assert exc_info.value.status_code == 404
@@ -279,7 +287,6 @@ async def test_create_gallery_comment_maps_integrity_error_to_not_found(monkeypa
     )
     delete_lock_mock = AsyncMock()
 
-    monkeypatch.setattr(gallery_service, "AsyncSessionLocal", lambda: session)
     monkeypatch.setattr(
         redis_module.redis_client,
         "set_comment_lock",
@@ -292,10 +299,12 @@ async def test_create_gallery_comment_maps_integrity_error_to_not_found(monkeypa
     )
 
     with pytest.raises(HTTPException) as exc_info:
-        await gallery_router.create_gallery_comment(
-            1,
-            CommentCreate(content="test"),
+        await create_gallery_comment_payload(
+            post_id=1,
+            comment=CommentCreate(content="test"),
             current_user=User(id=123, username="tester"),
+            db=session,
+            redis_client=redis_module.redis_client,
         )
 
     assert exc_info.value.status_code == 404
@@ -319,9 +328,7 @@ async def test_get_gallery_comments_filters_active_and_formats_author_name(monke
     comment.user = User(id=123, full_name="测试用户")
     session = _ListCommentsSession(post=post, comments=[comment], total=1)
 
-    monkeypatch.setattr(gallery_service, "AsyncSessionLocal", lambda: session)
-
-    response = await gallery_router.get_gallery_comments(1, page=1, size=20)
+    response = await get_gallery_comments_payload(post_id=1, page=1, size=20, db=session)
 
     assert response.total == 1
     assert response.items[0].user.author_name == "测试用户"

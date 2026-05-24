@@ -3,20 +3,24 @@ import logging
 import os
 from typing import Any, Dict, Optional
 
+from src.workflow_mapping_validation import (
+    load_workflow_mappings,
+    resolve_workflow_filename,
+    validate_workflow_directory,
+)
+
 logger = logging.getLogger(__name__)
 
 
 class WorkflowPatcher:
     def __init__(self, workflows_dir: str):
         self.workflows_dir = workflows_dir
-        self.mappings = self.load_mappings()
+        self.mappings = self.load_mappings(validate=True)
 
-    def load_mappings(self) -> Dict[str, Any]:
-        mapping_path = os.path.join(self.workflows_dir, "mappings.json")
-        if os.path.exists(mapping_path):
-            with open(mapping_path, "r", encoding="utf-8") as f:
-                return json.load(f)
-        return {}
+    def load_mappings(self, *, validate: bool = False) -> Dict[str, Any]:
+        if validate:
+            return validate_workflow_directory(self.workflows_dir)
+        return load_workflow_mappings(self.workflows_dir)
 
     def strip_meta(self, data: Any) -> Any:
         if isinstance(data, dict):
@@ -29,28 +33,7 @@ class WorkflowPatcher:
         return data
 
     def load_workflow(self, task_type: str) -> Optional[Dict[str, Any]]:
-        filename = f"{task_type}.json"
-        # Map task types to filenames (matching backend worker.py logic)
-        if task_type == "img2img":
-            filename = "Qwen-Rapid-AIO.json"
-        elif task_type == "face_swap":
-            filename = "face_swap.json"
-        elif task_type == "video_insert":
-            filename = "perfect_video_insert.json"
-        elif task_type == "video_edit":
-            filename = "perfect_video_edit.json"
-        elif task_type == "face_video":
-            filename = "face_video.json"
-        elif task_type == "t2i-pornmaster-turbo":
-            filename = "Pornmaster Z-Image Turbo_t2i_Double checkpoints & realism enhancer_V1_2026_01_24.json"
-        elif task_type == "i2i_pro":
-            filename = "i2i_pro.json"
-        elif task_type == "i2i_draw":
-            filename = "I2I_draw.json"
-        elif task_type == "img2img_lora":
-            filename = "Qwen-Rapid-AIO.json"
-        elif task_type == "ltx_video":
-            filename = "LTX 2.3 I2V.json"
+        filename = resolve_workflow_filename(task_type)
 
         path = os.path.join(self.workflows_dir, filename)
         if not os.path.exists(path):
@@ -86,7 +69,7 @@ class WorkflowPatcher:
             params["seed"] = random.randint(1, 1125899906842624)
 
         # Reload mappings to ensure it's up to date
-        self.mappings = self.load_mappings()
+        self.mappings = self.load_mappings(validate=False)
 
         # If we have mappings, use them
         mapping = self.mappings.get(task_type, {})

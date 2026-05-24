@@ -76,6 +76,7 @@ from fastapi import (
 from fastapi.responses import FileResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from minio import Minio
+from src.workflow_mapping_validation import validate_workflow_directory
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -89,6 +90,7 @@ async def lifespan(fastapi_app: FastAPI):
         settings=settings,
         logger=logger,
         check_zombie_tasks_loop_func=check_zombie_tasks_loop,
+        validate_workflows_func=validate_workflow_directory,
     ):
         yield
 

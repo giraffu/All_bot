@@ -1,9 +1,12 @@
 import pytest
 
-from src.web_api.routers import gallery as gallery_router
 from src.web_api.routers import users as users_router
 from src.web_api.schemas.gallery_schema import GalleryPostResponse
-from src.web_api.services import gallery_service
+from src.web_api.services.gallery_service_queries import (
+    get_gallery_posts_payload,
+    get_my_favorite_posts_payload,
+    get_my_gallery_posts_payload,
+)
 
 
 class _ScalarResult:
@@ -66,18 +69,18 @@ def _statement_contains_task_type_filter(stmt, expected_task_type: str) -> bool:
 
 
 @pytest.mark.asyncio
-async def test_get_my_gallery_posts_applies_task_type_filter(monkeypatch):
+async def test_get_my_gallery_posts_applies_task_type_filter():
     session = _AsyncSessionContext([
         _ScalarResult(0),
         _ItemsResult([]),
     ])
-    monkeypatch.setattr(gallery_service, "AsyncSessionLocal", lambda: session)
 
-    response = await gallery_router.get_my_gallery_posts(
+    response = await get_my_gallery_posts_payload(
         page=1,
         size=20,
         task_type="edit",
         current_user=type("User", (), {"id": 123})(),
+        db=session,
     )
 
     assert response.total == 0
@@ -88,19 +91,19 @@ async def test_get_my_gallery_posts_applies_task_type_filter(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_get_my_favorite_posts_applies_task_type_filter(monkeypatch):
+async def test_get_my_favorite_posts_applies_task_type_filter():
     session = _AsyncSessionContext([
         _ScalarResult(0),
         _ItemsResult([]),
     ])
-    monkeypatch.setattr(gallery_service, "AsyncSessionLocal", lambda: session)
 
-    response = await gallery_router.get_my_favorite_posts(
+    response = await get_my_favorite_posts_payload(
         page=1,
         size=20,
         filter_type="apply",
         task_type="custom_video",
         current_user=type("User", (), {"id": 123})(),
+        db=session,
     )
 
     assert response.total == 0
@@ -169,7 +172,7 @@ async def test_get_gallery_posts_normalizes_all_filters_and_builds_response():
             )
         ]
 
-    response = await gallery_service.get_gallery_posts_payload(
+    response = await get_gallery_posts_payload(
         page=2,
         size=10,
         media_type="all",

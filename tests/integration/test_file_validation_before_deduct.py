@@ -6,15 +6,61 @@
 
 修复后：文件校验前置，在扣费前先检查本地文件是否存在。
 """
-from unittest.mock import AsyncMock, patch
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 
-from src.core.task_core import process_and_submit_task, CoreDomainError
+from src.core import task_core
+from src.core.task_core import CoreDomainError, process_and_submit_task
+from src.core.task_core_dependencies import TaskCoreProcessDependencies
+from src.core.task_core_types import TaskSubmissionExecutionResult
+
+
+def _patch_process_dependencies(
+    monkeypatch,
+    *,
+    prepare_payload,
+    deduct_result=(True, ""),
+    dispatch_backend_task_id="backend-task",
+):
+    check_lock = AsyncMock(return_value=(True, ""))
+    deduct_credits = AsyncMock(return_value=deduct_result)
+    compensate_failed = AsyncMock()
+    release_lock = AsyncMock()
+
+    async def execute_saga(**kwargs):
+        return TaskSubmissionExecutionResult(
+            registry_task_id=kwargs["registry_task_id"],
+            backend_task_id=dispatch_backend_task_id,
+            submission_context=kwargs["submission_context"],
+        )
+
+    monkeypatch.setattr(
+        task_core,
+        "_build_task_core_process_dependencies_impl",
+        lambda **_kwargs: TaskCoreProcessDependencies(
+            get_strategy_func=lambda _task_type: task_core.StrategyFactory.get_strategy(
+                _task_type
+            ),
+            video_task_types={"custom_video", "ltx_video"},
+            build_video_task_request_func=task_core.build_video_task_request,
+            check_concurrency_lock_func=check_lock,
+            prepare_task_submission_payload_func=prepare_payload,
+            check_and_deduct_credits_func=deduct_credits,
+            execute_task_submission_saga_func=execute_saga,
+            attach_submission_side_effects_func=lambda **_kwargs: None,
+            compensate_failed_submission_func=compensate_failed,
+            release_concurrency_lock_func=release_lock,
+            shield_func=lambda coro: coro,
+            logger=task_core.logger,
+        ),
+    )
+    return check_lock, deduct_credits, compensate_failed, release_lock
 
 
 @pytest.mark.asyncio
-async def test_local_file_missing_should_not_deduct_credits():
+async def test_local_file_missing_should_not_deduct_credits(monkeypatch):
     """
     验证：当本地输入文件不存在时，不应扣费，直接抛出 CoreDomainError
     """
@@ -27,38 +73,23 @@ async def test_local_file_missing_should_not_deduct_credits():
         "images": ["/tmp/this-file-definitely-does-not-exist-12345.png"]
     }
 
-    with (
-        patch(
-            "src.core.task_core.check_concurrency_lock", new_callable=AsyncMock
-        ) as mock_lock,
-        patch(
-            "src.core.task_core.check_and_deduct_credits", new_callable=AsyncMock
-        ) as mock_deduct,
-        patch(
-            "src.core.task_core.get_user_priority_and_identity", new_callable=AsyncMock
-        ) as mock_identity,
-        patch(
-            "src.core.task_core.dispatch_to_worker", new_callable=AsyncMock
-        ) as mock_dispatch,
-        patch(
-            "src.core.task_core.refund_credits", new_callable=AsyncMock
-        ) as mock_refund,
-    ):
-        mock_lock.return_value = (True, "")
-        mock_identity.return_value = (0, "user", "title")
+    async def prepare_payload(**_kwargs):
+        raise CoreDomainError("本地输入文件不存在")
 
-        with pytest.raises(CoreDomainError, match="本地输入文件不存在"):
-            await process_and_submit_task(
-                user_id, username, task_type, inputs, task_id
-            )
+    _check_lock, deduct_credits, compensate_failed, _release_lock = _patch_process_dependencies(
+        monkeypatch,
+        prepare_payload=prepare_payload,
+    )
 
-        mock_deduct.assert_not_called()
-        mock_dispatch.assert_not_called()
-        mock_refund.assert_not_called()
+    with pytest.raises(CoreDomainError, match="本地输入文件不存在"):
+        await process_and_submit_task(user_id, username, task_type, inputs, task_id)
+
+    deduct_credits.assert_not_called()
+    compensate_failed.assert_not_called()
 
 
 @pytest.mark.asyncio
-async def test_minio_object_path_should_not_trigger_validation():
+async def test_minio_object_path_should_not_trigger_validation(monkeypatch):
     """
     验证：MinIO 对象路径（template: 或 minio://）不应触发本地文件校验
     """
@@ -71,54 +102,32 @@ async def test_minio_object_path_should_not_trigger_validation():
         "images": ["minio://bucket/image.png"]
     }
 
-    with (
-        patch(
-            "src.core.task_core.check_concurrency_lock", new_callable=AsyncMock
-        ) as mock_lock,
-        patch(
-            "src.core.task_core.check_and_deduct_credits", new_callable=AsyncMock
-        ) as mock_deduct,
-        patch(
-            "src.core.task_core.get_user_priority_and_identity", new_callable=AsyncMock
-        ) as mock_identity,
-        patch(
-            "src.core.task_core.dispatch_to_worker", new_callable=AsyncMock
-        ) as mock_dispatch,
-        patch(
-            "src.core.task_core._process_input_path", new_callable=AsyncMock
-        ) as mock_process,
-        patch("src.core.task_core.TaskRegistry.add_task", new_callable=AsyncMock) as mock_add_task,
-        patch(
-            "src.core.task_core.TaskRegistry.update_backend_task_id",
-            new_callable=AsyncMock,
-        ) as mock_update_backend_task_id,
-    ):
-        mock_lock.return_value = (True, "")
-        mock_deduct.return_value = (True, "")
-        mock_identity.return_value = (0, "user", "title")
-        mock_dispatch.return_value = "backend-task-minio"
-        mock_process.return_value = "processed/path/image.png"
-        mock_add_task.return_value = task_id
+    async def prepare_payload(**_kwargs):
+        return SimpleNamespace(saved_inputs=["processed/path/image.png"])
 
-        result = await process_and_submit_task(
-            user_id,
-            username,
-            task_type,
-            inputs,
-            task_id,
-            deduct_quota=True,
-            client_type="bot",
-        )
+    _check_lock, deduct_credits, _compensate_failed, _release_lock = _patch_process_dependencies(
+        monkeypatch,
+        prepare_payload=prepare_payload,
+        dispatch_backend_task_id="backend-task-minio",
+    )
 
-        assert result is not None
-        mock_deduct.assert_called_once()
-        mock_update_backend_task_id.assert_awaited_once_with(
-            task_id, "backend-task-minio"
-        )
+    result = await process_and_submit_task(
+        user_id,
+        username,
+        task_type,
+        inputs,
+        task_id,
+        deduct_quota=True,
+        client_type="bot",
+    )
+
+    assert result is not None
+    deduct_credits.assert_awaited_once()
+    assert result["backend_task_id"] == "backend-task-minio"
 
 
 @pytest.mark.asyncio
-async def test_template_path_should_not_trigger_validation():
+async def test_template_path_should_not_trigger_validation(monkeypatch):
     """
     验证：模板路径（template:）不应触发本地文件校验
     """
@@ -131,54 +140,32 @@ async def test_template_path_should_not_trigger_validation():
         "template_id": "template:template_001"
     }
 
-    with (
-        patch(
-            "src.core.task_core.check_concurrency_lock", new_callable=AsyncMock
-        ) as mock_lock,
-        patch(
-            "src.core.task_core.check_and_deduct_credits", new_callable=AsyncMock
-        ) as mock_deduct,
-        patch(
-            "src.core.task_core.get_user_priority_and_identity", new_callable=AsyncMock
-        ) as mock_identity,
-        patch(
-            "src.core.task_core.dispatch_to_worker", new_callable=AsyncMock
-        ) as mock_dispatch,
-        patch(
-            "src.core.task_core._process_input_path", new_callable=AsyncMock
-        ) as mock_process,
-        patch("src.core.task_core.TaskRegistry.add_task", new_callable=AsyncMock) as mock_add_task,
-        patch(
-            "src.core.task_core.TaskRegistry.update_backend_task_id",
-            new_callable=AsyncMock,
-        ) as mock_update_backend_task_id,
-    ):
-        mock_lock.return_value = (True, "")
-        mock_deduct.return_value = (True, "")
-        mock_identity.return_value = (0, "user", "title")
-        mock_dispatch.return_value = "backend-task-template"
-        mock_process.return_value = "template:template_001"
-        mock_add_task.return_value = task_id
+    async def prepare_payload(**_kwargs):
+        return SimpleNamespace(saved_inputs=["template:template_001"])
 
-        result = await process_and_submit_task(
-            user_id,
-            username,
-            task_type,
-            inputs,
-            task_id,
-            deduct_quota=True,
-            client_type="bot",
-        )
+    _check_lock, deduct_credits, _compensate_failed, _release_lock = _patch_process_dependencies(
+        monkeypatch,
+        prepare_payload=prepare_payload,
+        dispatch_backend_task_id="backend-task-template",
+    )
 
-        assert result is not None
-        mock_deduct.assert_called_once()
-        mock_update_backend_task_id.assert_awaited_once_with(
-            task_id, "backend-task-template"
-        )
+    result = await process_and_submit_task(
+        user_id,
+        username,
+        task_type,
+        inputs,
+        task_id,
+        deduct_quota=True,
+        client_type="bot",
+    )
+
+    assert result is not None
+    deduct_credits.assert_awaited_once()
+    assert result["backend_task_id"] == "backend-task-template"
 
 
 @pytest.mark.asyncio
-async def test_normal_flow_deducts_credits_after_file_validation():
+async def test_normal_flow_deducts_credits_after_file_validation(monkeypatch):
     """
     验证：正常流程中，文件校验通过后才扣费
     """
@@ -194,58 +181,38 @@ async def test_normal_flow_deducts_credits_after_file_validation():
 
     call_order = []
 
+    async def prepare_payload(**_kwargs):
+        call_order.append("prepare_payload")
+        return SimpleNamespace(saved_inputs=["processed/video.png"])
+
     async def _record_deduct(*_args, **_kwargs):
         call_order.append("deduct_credits")
         return (True, "")
 
-    with (
-        patch(
-            "src.core.task_core.check_concurrency_lock", new_callable=AsyncMock
-        ) as mock_lock,
-        patch(
-            "src.core.task_core.check_and_deduct_credits", new_callable=AsyncMock
-        ) as mock_deduct,
-        patch(
-            "src.core.task_core.get_user_priority_and_identity", new_callable=AsyncMock
-        ) as mock_identity,
-        patch(
-            "src.core.task_core.dispatch_to_worker", new_callable=AsyncMock
-        ) as mock_dispatch,
-        patch(
-            "src.core.task_core._process_input_path", new_callable=AsyncMock
-        ) as mock_process,
-        patch("src.core.task_core.TaskRegistry.add_task", new_callable=AsyncMock) as mock_add_task,
-        patch(
-            "src.core.task_core.TaskRegistry.update_backend_task_id",
-            new_callable=AsyncMock,
-        ) as mock_update_backend_task_id,
-    ):
-        mock_lock.return_value = (True, "")
-        mock_identity.return_value = (0, "user", "title")
-        mock_deduct.side_effect = _record_deduct
-        mock_dispatch.return_value = "backend-task-normal"
-        mock_process.return_value = "processed/video.png"
-        mock_add_task.return_value = task_id
+    _check_lock, deduct_credits, _compensate_failed, _release_lock = _patch_process_dependencies(
+        monkeypatch,
+        prepare_payload=prepare_payload,
+        dispatch_backend_task_id="backend-task-normal",
+    )
+    deduct_credits.side_effect = _record_deduct
 
-        result = await process_and_submit_task(
-            user_id,
-            username,
-            task_type,
-            inputs,
-            task_id,
-            deduct_quota=True,
-            client_type="bot",
-        )
+    result = await process_and_submit_task(
+        user_id,
+        username,
+        task_type,
+        inputs,
+        task_id,
+        deduct_quota=True,
+        client_type="bot",
+    )
 
-        assert result is not None
-        assert "deduct_credits" in call_order
-        mock_update_backend_task_id.assert_awaited_once_with(
-            task_id, "backend-task-normal"
-        )
+    assert result is not None
+    assert call_order == ["prepare_payload", "deduct_credits"]
+    assert result["backend_task_id"] == "backend-task-normal"
 
 
 @pytest.mark.asyncio
-async def test_concurrency_lock_released_when_file_missing():
+async def test_concurrency_lock_released_when_file_missing(monkeypatch):
     """
     验证：当文件不存在抛出 CoreDomainError 时，并发锁会被正确释放
 
@@ -260,42 +227,24 @@ async def test_concurrency_lock_released_when_file_missing():
         "images": ["/tmp/definitely-nonexistent-file-xyz123.png"]
     }
 
-    release_called = False
+    async def prepare_payload(**_kwargs):
+        raise CoreDomainError("本地输入文件不存在")
 
-    async def mock_release_lock(uid):
-        nonlocal release_called
-        release_called = True
-        assert uid == user_id, "释放锁时应传入正确的 user_id"
+    _check_lock, deduct_credits, compensate_failed, release_lock = _patch_process_dependencies(
+        monkeypatch,
+        prepare_payload=prepare_payload,
+    )
 
-    with (
-        patch(
-            "src.core.task_core.check_concurrency_lock", new_callable=AsyncMock
-        ) as mock_lock,
-        patch(
-            "src.core.task_core.release_concurrency_lock", new_callable=AsyncMock
-        ) as mock_release,
-        patch(
-            "src.core.task_core.check_and_deduct_credits", new_callable=AsyncMock
-        ) as mock_deduct,
-        patch(
-            "src.core.task_core.refund_credits", new_callable=AsyncMock
-        ) as mock_refund,
-    ):
-        mock_lock.return_value = (True, "")
-        mock_release.side_effect = mock_release_lock
+    with pytest.raises(CoreDomainError, match="本地输入文件不存在"):
+        await process_and_submit_task(user_id, username, task_type, inputs, task_id)
 
-        with pytest.raises(CoreDomainError, match="本地输入文件不存在"):
-            await process_and_submit_task(
-                user_id, username, task_type, inputs, task_id
-            )
-
-        mock_deduct.assert_not_called()
-        mock_refund.assert_not_called()
-        assert release_called, "文件不存在时应该释放并发锁，避免锁泄漏"
+    deduct_credits.assert_not_called()
+    compensate_failed.assert_not_called()
+    release_lock.assert_awaited_once_with(user_id)
 
 
 @pytest.mark.asyncio
-async def test_file_validation_before_credit_deduction_order():
+async def test_file_validation_before_credit_deduction_order(monkeypatch):
     """
     验证：文件校验确实在扣费之前执行
 
@@ -312,31 +261,24 @@ async def test_file_validation_before_credit_deduction_order():
 
     call_sequence = []
 
-    async def mock_check_lock(_uid):
-        call_sequence.append("check_concurrency_lock")
-        return (True, "")
+    async def prepare_payload(**_kwargs):
+        call_sequence.append("prepare_payload")
+        raise CoreDomainError("本地输入文件不存在")
 
     async def record_deduct(*_args, **_kwargs):
         call_sequence.append("check_and_deduct_credits")
         return (True, "")
 
-    with (
-        patch(
-            "src.core.task_core.check_concurrency_lock", new_callable=AsyncMock
-        ) as mock_lock,
-        patch("src.core.task_core.release_concurrency_lock", new_callable=AsyncMock),
-        patch(
-            "src.core.task_core.check_and_deduct_credits", new_callable=AsyncMock
-        ) as mock_deduct,
-        patch("src.core.task_core.refund_credits", new_callable=AsyncMock),
-    ):
-        mock_lock.side_effect = mock_check_lock
-        mock_deduct.side_effect = record_deduct
+    check_lock, deduct_credits, _compensate_failed, _release_lock = _patch_process_dependencies(
+        monkeypatch,
+        prepare_payload=prepare_payload,
+    )
+    check_lock.side_effect = lambda _uid: call_sequence.append("check_concurrency_lock") or (True, "")
+    deduct_credits.side_effect = record_deduct
 
-        with pytest.raises(CoreDomainError):
-            await process_and_submit_task(
-                user_id, username, task_type, inputs, task_id
-            )
+    with pytest.raises(CoreDomainError):
+        await process_and_submit_task(user_id, username, task_type, inputs, task_id)
 
-        assert call_sequence == ["check_concurrency_lock"], \
-            "仅 check_concurrency_lock 被调用，文件校验在其后失败，扣费未执行"
+    assert call_sequence == ["check_concurrency_lock", "prepare_payload"], (
+        "文件校验在扣费前失败，扣费未执行"
+    )

@@ -1,56 +1,82 @@
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
+
 import pytest
-from unittest.mock import patch, AsyncMock
-from src.core.task_core import process_and_submit_task, CoreDomainError
+
+from src.core import task_core
+from src.core.task_core import process_and_submit_task
+from src.core.task_core_dependencies import TaskCoreProcessDependencies
+from src.core.task_core_types import CoreDomainError, TaskSubmissionContext, VideoTaskRequest
 
 
 # Dummy test for Saga Compensation to verify asyncio.shield logic
 @pytest.mark.asyncio
-async def test_saga_compensation_refunds_credits_and_releases_lock():
+async def test_saga_compensation_refunds_credits_and_releases_lock(monkeypatch):
     user_id = 123
     username = "test_user"
     task_type = "face_swap"
     inputs = {"face_image": "face.png", "target_image": "body.png"}
+    mock_lock = AsyncMock(return_value=(True, ""))
+    mock_deduct = AsyncMock(return_value=(True, ""))
+    mock_refund = AsyncMock()
+    mock_release = AsyncMock()
 
-    with (
-        patch(
-            "src.core.task_core.check_concurrency_lock", new_callable=AsyncMock
-        ) as mock_lock,
-        patch(
-            "src.core.task_core.check_and_deduct_credits", new_callable=AsyncMock
-        ) as mock_deduct,
-        patch(
-            "src.core.task_core.dispatch_to_worker", new_callable=AsyncMock
-        ) as mock_submit,
-        patch(
-            "src.core.task_core.refund_credits", new_callable=AsyncMock
-        ) as mock_refund,
-        patch(
-            "src.core.task_core.release_concurrency_lock", new_callable=AsyncMock
-        ) as mock_release,
-        patch(
-            "src.core.task_core.get_user_priority_and_identity", new_callable=AsyncMock
-        ) as mock_identity,
-        patch(
-            "src.core.task_core._process_input_path", new_callable=AsyncMock
-        ) as mock_process,
-    ):
-        # Setup mocks
-        mock_lock.return_value = (True, "")
-        mock_deduct.return_value = (True, "")
-        mock_identity.return_value = (0, "user", "title")
-        mock_process.return_value = "processed.png"
+    async def prepare_payload(**kwargs):
+        return TaskSubmissionContext(
+            task_type=kwargs["task_type"],
+            is_video_task=False,
+            user_logger=SimpleNamespace(user_id=user_id, username=username),
+            prompt="prompt",
+            saved_inputs=["processed.png"],
+            metadata={},
+            allow_contribute=True,
+            final_priority=0,
+            video_request=VideoTaskRequest(),
+        )
 
-        # Simulate external service failure
-        mock_submit.side_effect = Exception("API refused connection")
+    async def execute_saga(**_kwargs):
+        raise Exception("API refused connection")
 
-        with pytest.raises(CoreDomainError, match="系统派发失败，灵石已全额退还"):
-            await process_and_submit_task(
-                user_id, username, task_type, inputs, "test_task_id"
-            )
+    async def compensate_failed_submission(**kwargs):
+        await mock_refund(
+            kwargs["user_id"],
+            kwargs["cost"],
+            task_type="refund_saga_failed",
+            username=kwargs["username"],
+        )
 
-        # Assert Saga compensation occurred
-        mock_refund.assert_called_once()
-        mock_release.assert_called_once_with(user_id)
+    monkeypatch.setattr(
+        task_core,
+        "_build_task_core_process_dependencies_impl",
+        lambda **_kwargs: TaskCoreProcessDependencies(
+            get_strategy_func=lambda _task_type: SimpleNamespace(
+                get_cost=lambda _inputs: 1
+            ),
+            video_task_types={"custom_video", "ltx_video"},
+            build_video_task_request_func=task_core.build_video_task_request,
+            check_concurrency_lock_func=mock_lock,
+            prepare_task_submission_payload_func=prepare_payload,
+            check_and_deduct_credits_func=mock_deduct,
+            execute_task_submission_saga_func=execute_saga,
+            attach_submission_side_effects_func=lambda **_kwargs: None,
+            compensate_failed_submission_func=compensate_failed_submission,
+            release_concurrency_lock_func=mock_release,
+            shield_func=lambda coro: coro,
+            logger=task_core.logger,
+        ),
+    )
+
+    with pytest.raises(CoreDomainError, match="系统派发失败，灵石已全额退还"):
+        await process_and_submit_task(user_id, username, task_type, inputs, "test_task_id")
+
+    mock_deduct.assert_awaited_once()
+    mock_refund.assert_awaited_once_with(
+        user_id,
+        1,
+        task_type="refund_saga_failed",
+        username=username,
+    )
+    mock_release.assert_awaited_once_with(user_id)
 
 
 @pytest.mark.asyncio

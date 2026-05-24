@@ -33,6 +33,16 @@ from src.core.task_core_dependencies import (
     TaskCoreSubmissionDependencies,
     TaskCoreWarmupDependencies,
 )
+from src.core.task_core_dependency_builders import (
+    build_task_core_finalization_dependencies as _build_task_core_finalization_dependencies_impl,
+    build_task_core_monitor_dependencies as _build_task_core_monitor_dependencies_impl,
+    build_task_core_persistence_dependencies as _build_task_core_persistence_dependencies_impl,
+    build_task_core_process_dependencies as _build_task_core_process_dependencies_impl,
+    build_task_core_runtime_dependencies as _build_task_core_runtime_dependencies_impl,
+    build_task_core_side_effect_dependencies as _build_task_core_side_effect_dependencies_impl,
+    build_task_core_submission_dependencies as _build_task_core_submission_dependencies_impl,
+    build_task_core_warmup_dependencies as _build_task_core_warmup_dependencies_impl,
+)
 from src.core.task_core_persistence import (
     _persist_successful_web_history as _persist_successful_web_history_impl,
     persist_successful_task_result as _persist_successful_task_result_impl,
@@ -63,8 +73,6 @@ from src.core.task_core_types import (
     VideoTaskRequest,
     build_failed_task_user_message,
     build_video_task_request,
-    infer_requested_billing_resolution,
-    infer_requested_output_metadata,
     is_task_backend_busy_error,
     normalize_terminal_status,
 )
@@ -78,54 +86,12 @@ from src.core.task_core_web_monitor import (
 from src.core.task_core_web_history_warmup import (
     schedule_web_history_r2_warmup as _schedule_web_history_r2_warmup_impl,
 )
+from src.core.task_core_service_providers import (
+    build_task_core_service_providers as _build_task_core_service_providers_impl,
+)
 from src.logger import UserLogger
 
 logger = logging.getLogger(__name__)
-
-
-class _CompatServiceProxy:
-    def __init__(self, loader):
-        self._loader = loader
-
-    def __getattr__(self, name):
-        return getattr(self._loader(), name)
-
-
-def _load_image_service():
-    from src.services.image_service import image_service as image_service_impl
-
-    return image_service_impl
-
-
-def _load_storage():
-    from src.services.storage import storage as storage_impl
-
-    return storage_impl
-
-
-def _load_task_registry():
-    from src.services.task_registry import TaskRegistry as task_registry_impl
-
-    return task_registry_impl
-
-
-def _load_permission_service():
-    from src.services.permission_service import permission_service as permission_service_impl
-
-    return permission_service_impl
-
-
-def _load_redis_client():
-    from src.services.redis_client import redis_client as redis_client_impl
-
-    return redis_client_impl
-
-
-image_service = _CompatServiceProxy(_load_image_service)
-storage = _CompatServiceProxy(_load_storage)
-TaskRegistry = _CompatServiceProxy(_load_task_registry)
-permission_service = _CompatServiceProxy(_load_permission_service)
-redis_client = _CompatServiceProxy(_load_redis_client)
 
 __all__ = [
     "ConcurrencyLimitError",
@@ -139,8 +105,6 @@ __all__ = [
     "TaskTerminationFinalizationResult",
     "VideoTaskRequest",
     "build_failed_task_user_message",
-    "_infer_requested_billing_resolution",
-    "_infer_requested_output_metadata",
     "cancel_user_task",
     "cleanup_task_runtime_state",
     "extract_media_metadata_from_bytes_best_effort",
@@ -163,60 +127,48 @@ __all__ = [
     "sync_user_concurrency",
 ]
 
-_infer_requested_output_metadata = infer_requested_output_metadata
-_infer_requested_billing_resolution = infer_requested_billing_resolution
+
 def _get_image_service():
-    return image_service
+    return _build_task_core_service_providers_impl().get_image_service()
 
 
 def _get_storage_service():
-    return storage
+    return _build_task_core_service_providers_impl().get_storage_service()
 
 
 def _get_task_registry():
-    return TaskRegistry
+    return _build_task_core_service_providers_impl().get_task_registry()
 
 
 def _get_permission_service():
-    return permission_service
+    return _build_task_core_service_providers_impl().get_permission_service()
 
 
 def _get_submission_outbox():
-    return redis_client
+    return _build_task_core_service_providers_impl().get_submission_outbox()
 
 
 def _build_task_core_warmup_dependencies() -> TaskCoreWarmupDependencies:
-    storage_service = _get_storage_service()
-    return TaskCoreWarmupDependencies(
+    return _build_task_core_warmup_dependencies_impl(
+        get_storage_service=_get_storage_service,
         resolve_storage_object_func=resolve_storage_object,
-        copy_to_r2_func=storage_service.async_copy_to_r2,
         generate_and_upload_thumbnail_func=generate_and_upload_thumbnail,
-        prune_user_web_history_r2_cache_func=(
-            storage_service.async_prune_user_web_history_r2_cache
-        ),
         create_task_func=asyncio.create_task,
         logger=logger,
     )
 
 
 def _build_task_core_runtime_dependencies() -> TaskCoreRuntimeDependencies:
-    task_registry = _get_task_registry()
-    return TaskCoreRuntimeDependencies(
+    return _build_task_core_runtime_dependencies_impl(
+        get_task_registry=_get_task_registry,
         release_concurrency_lock_func=release_concurrency_lock,
-        remove_task_func=task_registry.remove_task,
     )
 
 
 def _build_task_core_submission_dependencies() -> TaskCoreSubmissionDependencies:
-    task_registry = _get_task_registry()
-    submission_outbox = _get_submission_outbox()
-
-    return TaskCoreSubmissionDependencies(
-        add_task_func=task_registry.add_task,
-        update_backend_task_id_func=task_registry.update_backend_task_id,
-        mark_task_status_func=task_registry.mark_task_status,
-        remove_task_func=task_registry.remove_task,
-        add_pending_refund_func=submission_outbox.add_pending_refund,
+    return _build_task_core_submission_dependencies_impl(
+        get_task_registry=_get_task_registry,
+        get_submission_outbox=_get_submission_outbox,
         dispatch_to_worker_func=dispatch_to_worker,
         is_task_backend_busy_error_func=is_task_backend_busy_error,
         logger=logger,
@@ -226,12 +178,31 @@ def _build_task_core_submission_dependencies() -> TaskCoreSubmissionDependencies
 def _build_task_core_process_dependencies() -> TaskCoreProcessDependencies:
     from src.constants import VIDEO_TASK_TYPES
 
-    return TaskCoreProcessDependencies(
+    async def prepare_task_submission_payload(**kwargs) -> TaskSubmissionContext:
+        return await _prepare_task_submission_payload_impl(
+            user_id=kwargs["user_id"],
+            username=kwargs["username"],
+            task_type=kwargs["task_type"],
+            inputs=kwargs["inputs"],
+            strategy=kwargs["strategy"],
+            base_priority=kwargs["base_priority"],
+            is_template=kwargs["is_template"],
+            is_video_task=kwargs["is_video_task"],
+            video_request=kwargs["video_request"],
+            user_logger_factory=UserLogger,
+            validate_local_input_paths_func=_validate_local_input_paths_impl,
+            get_user_priority_and_identity_func=get_user_priority_and_identity,
+            load_prompts_func=load_prompts,
+            process_input_path_func=_process_input_path_impl,
+            bucket_name=MINIO_BUCKET,
+        )
+
+    return _build_task_core_process_dependencies_impl(
         get_strategy_func=StrategyFactory.get_strategy,
-        video_task_types=set(VIDEO_TASK_TYPES),
+        video_task_types=VIDEO_TASK_TYPES,
         build_video_task_request_func=build_video_task_request,
         check_concurrency_lock_func=check_concurrency_lock,
-        prepare_task_submission_payload_func=_prepare_task_submission_payload,
+        prepare_task_submission_payload_func=prepare_task_submission_payload,
         check_and_deduct_credits_func=check_and_deduct_credits,
         execute_task_submission_saga_func=_execute_task_submission_saga,
         attach_submission_side_effects_func=_attach_submission_side_effects,
@@ -243,13 +214,10 @@ def _build_task_core_process_dependencies() -> TaskCoreProcessDependencies:
 
 
 def _build_task_core_persistence_dependencies() -> TaskCorePersistenceDependencies:
-    image_service_impl = _get_image_service()
-    permission_service_impl = _get_permission_service()
-
-    return TaskCorePersistenceDependencies(
+    return _build_task_core_persistence_dependencies_impl(
+        get_image_service=_get_image_service,
+        get_permission_service=_get_permission_service,
         user_logger_factory=UserLogger,
-        download_result_func=image_service_impl.download_result,
-        download_video_result_func=image_service_impl.download_video_result,
         extract_media_metadata_from_bytes_best_effort_func=(
             extract_media_metadata_from_bytes_best_effort
         ),
@@ -257,14 +225,12 @@ def _build_task_core_persistence_dependencies() -> TaskCorePersistenceDependenci
             extract_media_metadata_from_storage_best_effort
         ),
         schedule_web_history_r2_warmup_func=schedule_web_history_r2_warmup,
-        refresh_user_group_func=permission_service_impl.refresh_user_group,
     )
 
 
 def _build_task_core_monitor_dependencies() -> TaskCoreMonitorDependencies:
-    image_service_impl = _get_image_service()
-    return TaskCoreMonitorDependencies(
-        monitor_progress_func=image_service_impl.monitor_progress,
+    return _build_task_core_monitor_dependencies_impl(
+        get_image_service=_get_image_service,
         normalize_terminal_status_func=normalize_terminal_status,
         finalize_success_func=_finalize_monitored_web_task_success,
         finalize_cancellation_func=_finalize_monitored_web_task_cancellation,
@@ -274,7 +240,7 @@ def _build_task_core_monitor_dependencies() -> TaskCoreMonitorDependencies:
 
 
 def _build_task_core_finalization_dependencies() -> TaskCoreFinalizationDependencies:
-    return TaskCoreFinalizationDependencies(
+    return _build_task_core_finalization_dependencies_impl(
         refund_credits_func=refund_credits,
         cleanup_task_runtime_state_func=cleanup_task_runtime_state,
         refund_cancelled_task_func=refund_cancelled_task,
@@ -285,7 +251,7 @@ def _build_task_core_finalization_dependencies() -> TaskCoreFinalizationDependen
 def _build_task_core_side_effect_dependencies() -> TaskCoreSideEffectDependencies:
     from src.core.gallery_core import record_apply_interaction
 
-    return TaskCoreSideEffectDependencies(
+    return _build_task_core_side_effect_dependencies_impl(
         attach_web_task_monitor_func=_attach_web_task_monitor_impl,
         monitor_web_task_func=monitor_task_and_release_lock,
         record_apply_interaction_func=record_apply_interaction,
@@ -613,18 +579,6 @@ async def finalize_terminated_task(
     )
 
 
-async def _process_input_path(
-    user_logger: UserLogger,
-    path: str,
-    bucket_name: str = MINIO_BUCKET,
-) -> str:
-    return await _process_input_path_impl(
-        user_logger=user_logger,
-        path=path,
-        bucket_name=bucket_name,
-    )
-
-
 from src.core.billing_core import (
     check_and_deduct_credits,
     check_concurrency_lock,
@@ -634,36 +588,6 @@ from src.core.billing_core import (
 )
 from src.core.task_dispatcher import StrategyFactory, dispatch_to_worker
 from src.utils import load_prompts
-
-async def _prepare_task_submission_payload(
-    *,
-    user_id: int,
-    username: str,
-    task_type: str,
-    inputs: dict,
-    strategy,
-    base_priority: int,
-    is_template: bool,
-    is_video_task: bool,
-    video_request: VideoTaskRequest,
-) -> TaskSubmissionContext:
-    return await _prepare_task_submission_payload_impl(
-        user_id=user_id,
-        username=username,
-        task_type=task_type,
-        inputs=inputs,
-        strategy=strategy,
-        base_priority=base_priority,
-        is_template=is_template,
-        is_video_task=is_video_task,
-        video_request=video_request,
-        user_logger_factory=UserLogger,
-        validate_local_input_paths_func=_validate_local_input_paths_impl,
-        get_user_priority_and_identity_func=get_user_priority_and_identity,
-        load_prompts_func=load_prompts,
-        process_input_path_func=_process_input_path,
-        bucket_name=MINIO_BUCKET,
-    )
 
 
 async def _register_task_submission(

@@ -12,19 +12,25 @@ from src.web_api.dependencies import (
     DbSessionDep,
     get_current_user,
 )
-from src.web_api.services.gallery_service import (
-    DEFAULT_GALLERY_ALLOWED_TYPE_CONFIGS,
-    build_gallery_config_payload,
+from src.web_api.services.gallery_service_comments import (
     create_gallery_comment_api_payload,
-    delete_gallery_post_api_payload,
     get_gallery_comments_api_payload,
+)
+from src.web_api.services.gallery_service_mutations import (
+    delete_gallery_post_api_payload,
+    interact_with_gallery_post_api_payload,
+    update_gallery_post_status_api_payload,
+)
+from src.web_api.services.gallery_service_queries import (
     get_gallery_apply_context_api_payload,
     get_gallery_posts_api_payload,
     get_my_favorite_posts_api_payload,
     get_my_gallery_posts_api_payload,
-    interact_with_gallery_post_api_payload,
+)
+from src.web_api.services.gallery_service_support import (
+    DEFAULT_GALLERY_ALLOWED_TYPE_CONFIGS,
+    build_gallery_config_payload,
     submit_gallery_post_payload,
-    update_gallery_post_status_api_payload,
 )
 from src.web_api.schemas.gallery_schema import (
     ApplyContextResponse,

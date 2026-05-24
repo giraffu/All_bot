@@ -8,6 +8,7 @@ from config import REDIS_PREFIX
 from src.core import task_core
 from src.core import task_core_finalization
 from src.core import task_core_runtime
+from src.services import task_registry as task_registry_module
 
 
 @pytest.mark.asyncio
@@ -21,7 +22,7 @@ async def test_cleanup_task_runtime_state_releases_lock_and_removes_registry(mon
         calls.append(("remove", task_id))
 
     monkeypatch.setattr(task_core, "release_concurrency_lock", fake_release)
-    monkeypatch.setattr(task_core.TaskRegistry, "remove_task", fake_remove)
+    monkeypatch.setattr(task_registry_module.TaskRegistry, "remove_task", fake_remove)
 
     await task_core.cleanup_task_runtime_state(
         internal_user_id=123,
@@ -42,7 +43,7 @@ async def test_cleanup_task_runtime_state_can_skip_lock_release(monkeypatch):
         calls.append(("remove", task_id))
 
     monkeypatch.setattr(task_core, "release_concurrency_lock", fake_release)
-    monkeypatch.setattr(task_core.TaskRegistry, "remove_task", fake_remove)
+    monkeypatch.setattr(task_registry_module.TaskRegistry, "remove_task", fake_remove)
 
     await task_core.cleanup_task_runtime_state(
         internal_user_id=456,

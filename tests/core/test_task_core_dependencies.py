@@ -1,40 +1,32 @@
-from types import SimpleNamespace
 import inspect
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from src.core import task_core
+from src.core import task_core_dependency_builders as dependency_builders
 from src.core.task_core_dependencies import TaskCoreProcessDependencies
 from src.core.task_core_types import TaskSubmissionExecutionResult, VideoTaskRequest
 
 
-@pytest.mark.asyncio
-async def test_build_task_core_warmup_dependencies_bind_current_runtime_services(
-    monkeypatch,
-):
+def test_build_task_core_warmup_dependencies_binds_explicit_services():
     copy_to_r2 = AsyncMock()
     prune_cache = AsyncMock()
     thumbnail = AsyncMock()
     create_task = MagicMock()
     logger = MagicMock()
 
-    monkeypatch.setattr(
-        task_core, "resolve_storage_object", lambda path: ("bucket", path)
-    )
-    monkeypatch.setattr(
-        task_core,
-        "_get_storage_service",
-        lambda: SimpleNamespace(
+    dependencies = dependency_builders.build_task_core_warmup_dependencies(
+        get_storage_service=lambda: SimpleNamespace(
             async_copy_to_r2=copy_to_r2,
             async_prune_user_web_history_r2_cache=prune_cache,
         ),
+        resolve_storage_object_func=lambda path: ("bucket", path),
+        generate_and_upload_thumbnail_func=thumbnail,
+        create_task_func=create_task,
+        logger=logger,
     )
-    monkeypatch.setattr(task_core, "generate_and_upload_thumbnail", thumbnail)
-    monkeypatch.setattr(task_core.asyncio, "create_task", create_task)
-    monkeypatch.setattr(task_core, "logger", logger)
-
-    dependencies = task_core._build_task_core_warmup_dependencies()
 
     assert dependencies.resolve_storage_object_func("foo") == ("bucket", "foo")
     assert dependencies.copy_to_r2_func is copy_to_r2
@@ -44,10 +36,7 @@ async def test_build_task_core_warmup_dependencies_bind_current_runtime_services
     assert dependencies.logger is logger
 
 
-@pytest.mark.asyncio
-async def test_build_task_core_runtime_and_submission_dependencies_bind_current_adapters(
-    monkeypatch,
-):
+def test_build_task_core_runtime_and_submission_dependencies_bind_explicit_adapters():
     release_lock = AsyncMock()
     add_task = AsyncMock()
     remove_task = AsyncMock()
@@ -57,27 +46,24 @@ async def test_build_task_core_runtime_and_submission_dependencies_bind_current_
     dispatch_to_worker = AsyncMock()
     logger = MagicMock()
 
-    monkeypatch.setattr(task_core, "release_concurrency_lock", release_lock)
-    monkeypatch.setattr(
-        task_core,
-        "_get_task_registry",
-        lambda: SimpleNamespace(
+    runtime_dependencies = dependency_builders.build_task_core_runtime_dependencies(
+        get_task_registry=lambda: SimpleNamespace(remove_task=remove_task),
+        release_concurrency_lock_func=release_lock,
+    )
+    submission_dependencies = dependency_builders.build_task_core_submission_dependencies(
+        get_task_registry=lambda: SimpleNamespace(
             add_task=add_task,
             remove_task=remove_task,
             update_backend_task_id=update_backend_task_id,
             mark_task_status=mark_task_status,
         ),
+        get_submission_outbox=lambda: SimpleNamespace(
+            add_pending_refund=add_pending_refund
+        ),
+        dispatch_to_worker_func=dispatch_to_worker,
+        is_task_backend_busy_error_func=task_core.is_task_backend_busy_error,
+        logger=logger,
     )
-    monkeypatch.setattr(task_core, "dispatch_to_worker", dispatch_to_worker)
-    monkeypatch.setattr(task_core, "logger", logger)
-    monkeypatch.setattr(
-        task_core,
-        "_get_submission_outbox",
-        lambda: SimpleNamespace(add_pending_refund=add_pending_refund),
-    )
-
-    runtime_dependencies = task_core._build_task_core_runtime_dependencies()
-    submission_dependencies = task_core._build_task_core_submission_dependencies()
 
     assert runtime_dependencies.release_concurrency_lock_func is release_lock
     assert runtime_dependencies.remove_task_func is remove_task
@@ -87,14 +73,14 @@ async def test_build_task_core_runtime_and_submission_dependencies_bind_current_
     assert submission_dependencies.remove_task_func is remove_task
     assert submission_dependencies.add_pending_refund_func is add_pending_refund
     assert submission_dependencies.dispatch_to_worker_func is dispatch_to_worker
-    assert submission_dependencies.is_task_backend_busy_error_func is task_core.is_task_backend_busy_error
+    assert (
+        submission_dependencies.is_task_backend_busy_error_func
+        is task_core.is_task_backend_busy_error
+    )
     assert submission_dependencies.logger is logger
 
 
-@pytest.mark.asyncio
-async def test_build_task_core_process_dependencies_bind_current_runtime_services(
-    monkeypatch,
-):
+def test_build_task_core_process_dependencies_bind_explicit_services():
     get_strategy = MagicMock()
     check_lock = AsyncMock()
     prepare_payload = AsyncMock()
@@ -105,21 +91,22 @@ async def test_build_task_core_process_dependencies_bind_current_runtime_service
     release_lock = AsyncMock()
     shield = AsyncMock()
     logger = MagicMock()
+    build_video_task_request = MagicMock(return_value=("video", "custom_video", {"foo": "bar"}))
 
-    monkeypatch.setattr(task_core.StrategyFactory, "get_strategy", get_strategy)
-    monkeypatch.setattr(task_core, "build_video_task_request", lambda t, i: ("video", t, i))
-    monkeypatch.setattr(task_core, "check_concurrency_lock", check_lock)
-    monkeypatch.setattr(task_core, "_prepare_task_submission_payload", prepare_payload)
-    monkeypatch.setattr(task_core, "check_and_deduct_credits", deduct_credits)
-    monkeypatch.setattr(task_core, "_execute_task_submission_saga", execute_saga)
-    monkeypatch.setattr(task_core, "_attach_submission_side_effects", attach_side_effects)
-    monkeypatch.setattr(task_core, "_compensate_failed_submission", compensate_failed)
-    monkeypatch.setattr(task_core, "release_concurrency_lock", release_lock)
-    monkeypatch.setattr(task_core.asyncio, "shield", shield)
-    monkeypatch.setattr(task_core, "logger", logger)
-    monkeypatch.setattr("src.constants.VIDEO_TASK_TYPES", {"custom_video"})
-
-    dependencies = task_core._build_task_core_process_dependencies()
+    dependencies = dependency_builders.build_task_core_process_dependencies(
+        get_strategy_func=get_strategy,
+        video_task_types={"custom_video"},
+        build_video_task_request_func=build_video_task_request,
+        check_concurrency_lock_func=check_lock,
+        prepare_task_submission_payload_func=prepare_payload,
+        check_and_deduct_credits_func=deduct_credits,
+        execute_task_submission_saga_func=execute_saga,
+        attach_submission_side_effects_func=attach_side_effects,
+        compensate_failed_submission_func=compensate_failed,
+        release_concurrency_lock_func=release_lock,
+        shield_func=shield,
+        logger=logger,
+    )
 
     assert dependencies.get_strategy_func is get_strategy
     assert dependencies.video_task_types == {"custom_video"}
@@ -139,10 +126,7 @@ async def test_build_task_core_process_dependencies_bind_current_runtime_service
     assert dependencies.logger is logger
 
 
-@pytest.mark.asyncio
-async def test_build_task_core_persistence_and_monitor_dependencies_bind_current_services(
-    monkeypatch,
-):
+def test_build_task_core_persistence_and_monitor_dependencies_bind_explicit_services():
     user_logger_factory = MagicMock()
     download_result = AsyncMock()
     download_video_result = AsyncMock()
@@ -156,43 +140,27 @@ async def test_build_task_core_persistence_and_monitor_dependencies_bind_current
     finalize_failure = AsyncMock()
     logger = MagicMock()
 
-    monkeypatch.setattr(task_core, "UserLogger", user_logger_factory)
-    monkeypatch.setattr(
-        task_core,
-        "_get_image_service",
-        lambda: SimpleNamespace(
+    persistence_dependencies = dependency_builders.build_task_core_persistence_dependencies(
+        get_image_service=lambda: SimpleNamespace(
             download_result=download_result,
             download_video_result=download_video_result,
-            monitor_progress=monitor_progress,
         ),
+        get_permission_service=lambda: SimpleNamespace(
+            refresh_user_group=refresh_user_group
+        ),
+        user_logger_factory=user_logger_factory,
+        extract_media_metadata_from_bytes_best_effort_func=extract_from_bytes,
+        extract_media_metadata_from_storage_best_effort_func=extract_from_storage,
+        schedule_web_history_r2_warmup_func=warmup,
     )
-    monkeypatch.setattr(
-        task_core,
-        "extract_media_metadata_from_bytes_best_effort",
-        extract_from_bytes,
+    monitor_dependencies = dependency_builders.build_task_core_monitor_dependencies(
+        get_image_service=lambda: SimpleNamespace(monitor_progress=monitor_progress),
+        normalize_terminal_status_func=task_core.normalize_terminal_status,
+        finalize_success_func=finalize_success,
+        finalize_cancellation_func=finalize_cancellation,
+        finalize_failure_func=finalize_failure,
+        logger=logger,
     )
-    monkeypatch.setattr(
-        task_core,
-        "extract_media_metadata_from_storage_best_effort",
-        extract_from_storage,
-    )
-    monkeypatch.setattr(task_core, "schedule_web_history_r2_warmup", warmup)
-    monkeypatch.setattr(
-        task_core,
-        "_get_permission_service",
-        lambda: SimpleNamespace(refresh_user_group=refresh_user_group),
-    )
-    monkeypatch.setattr(task_core, "_finalize_monitored_web_task_success", finalize_success)
-    monkeypatch.setattr(
-        task_core,
-        "_finalize_monitored_web_task_cancellation",
-        finalize_cancellation,
-    )
-    monkeypatch.setattr(task_core, "_finalize_monitored_web_task_failure", finalize_failure)
-    monkeypatch.setattr(task_core, "logger", logger)
-
-    persistence_dependencies = task_core._build_task_core_persistence_dependencies()
-    monitor_dependencies = task_core._build_task_core_monitor_dependencies()
 
     assert persistence_dependencies.user_logger_factory is user_logger_factory
     assert persistence_dependencies.download_result_func is download_result
@@ -219,21 +187,18 @@ async def test_build_task_core_persistence_and_monitor_dependencies_bind_current
     assert monitor_dependencies.logger is logger
 
 
-@pytest.mark.asyncio
-async def test_build_task_core_finalization_dependencies_bind_current_services(
-    monkeypatch,
-):
+def test_build_task_core_finalization_dependencies_bind_explicit_services():
     refund_credits = AsyncMock()
     cleanup_runtime = AsyncMock()
     refund_cancelled = AsyncMock()
     force_terminate = AsyncMock()
 
-    monkeypatch.setattr(task_core, "refund_credits", refund_credits)
-    monkeypatch.setattr(task_core, "cleanup_task_runtime_state", cleanup_runtime)
-    monkeypatch.setattr(task_core, "refund_cancelled_task", refund_cancelled)
-    monkeypatch.setattr(task_core, "force_terminate_task", force_terminate)
-
-    dependencies = task_core._build_task_core_finalization_dependencies()
+    dependencies = dependency_builders.build_task_core_finalization_dependencies(
+        refund_credits_func=refund_credits,
+        cleanup_task_runtime_state_func=cleanup_runtime,
+        refund_cancelled_task_func=refund_cancelled,
+        force_terminate_task_func=force_terminate,
+    )
 
     assert dependencies.refund_credits_func is refund_credits
     assert dependencies.cleanup_task_runtime_state_func is cleanup_runtime
@@ -241,24 +206,18 @@ async def test_build_task_core_finalization_dependencies_bind_current_services(
     assert dependencies.force_terminate_task_func is force_terminate
 
 
-@pytest.mark.asyncio
-async def test_build_task_core_side_effect_dependencies_bind_current_services(
-    monkeypatch,
-):
+def test_build_task_core_side_effect_dependencies_bind_explicit_services():
     attach_web_task_monitor = MagicMock()
     create_task = MagicMock()
     monitor_web_task = AsyncMock()
     record_apply_interaction = AsyncMock()
 
-    monkeypatch.setattr(task_core, "_attach_web_task_monitor_impl", attach_web_task_monitor)
-    monkeypatch.setattr(task_core, "monitor_task_and_release_lock", monitor_web_task)
-    monkeypatch.setattr(task_core.asyncio, "create_task", create_task)
-    monkeypatch.setattr(
-        "src.core.gallery_core.record_apply_interaction",
-        record_apply_interaction,
+    dependencies = dependency_builders.build_task_core_side_effect_dependencies(
+        attach_web_task_monitor_func=attach_web_task_monitor,
+        monitor_web_task_func=monitor_web_task,
+        record_apply_interaction_func=record_apply_interaction,
+        create_task_func=create_task,
     )
-
-    dependencies = task_core._build_task_core_side_effect_dependencies()
 
     assert dependencies.attach_web_task_monitor_func is attach_web_task_monitor
     assert dependencies.monitor_web_task_func is monitor_web_task
@@ -295,8 +254,8 @@ async def test_process_and_submit_task_uses_process_dependencies_builder(monkeyp
 
     monkeypatch.setattr(
         task_core,
-        "_build_task_core_process_dependencies",
-        lambda: TaskCoreProcessDependencies(
+        "_build_task_core_process_dependencies_impl",
+        lambda **_kwargs: TaskCoreProcessDependencies(
             get_strategy_func=MagicMock(return_value=strategy),
             video_task_types={"custom_video"},
             build_video_task_request_func=build_video_task_request,
@@ -373,13 +332,13 @@ async def test_persist_successful_task_result_and_monitor_task_use_dependency_bu
     monkeypatch.setattr(task_core, "_monitor_task_and_release_lock_impl", fake_monitor_impl)
     monkeypatch.setattr(
         task_core,
-        "_build_task_core_persistence_dependencies",
-        lambda: persistence_dependencies,
+        "_build_task_core_persistence_dependencies_impl",
+        lambda **_kwargs: persistence_dependencies,
     )
     monkeypatch.setattr(
         task_core,
-        "_build_task_core_monitor_dependencies",
-        lambda: monitor_dependencies,
+        "_build_task_core_monitor_dependencies_impl",
+        lambda **_kwargs: monitor_dependencies,
     )
 
     await task_core.persist_successful_task_result(
@@ -474,8 +433,8 @@ async def test_finalization_wrappers_use_finalization_dependency_builder(monkeyp
     )
     monkeypatch.setattr(
         task_core,
-        "_build_task_core_finalization_dependencies",
-        lambda: dependencies,
+        "_build_task_core_finalization_dependencies_impl",
+        lambda **_kwargs: dependencies,
     )
 
     await task_core.refund_cancelled_task(
@@ -576,8 +535,8 @@ async def test_side_effect_wrappers_use_side_effect_dependency_builder(monkeypat
 
     monkeypatch.setattr(
         task_core,
-        "_build_task_core_side_effect_dependencies",
-        lambda: dependencies,
+        "_build_task_core_side_effect_dependencies_impl",
+        lambda **_kwargs: dependencies,
     )
 
     task_core._attach_web_task_monitor(

@@ -1,23 +1,28 @@
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
 
-from src.core.task_core import (
-    CoreDomainError,
-    _prepare_task_submission_payload,
-    _infer_requested_billing_resolution,
-    _infer_requested_output_metadata,
-    _process_input_path,
+from src.core.task_core_input_preparation import (
+    prepare_task_submission_payload,
+    process_input_path,
 )
-from src.core.task_core_types import VideoTaskRequest
+from src.core.task_core_types import (
+    CoreDomainError,
+    VideoTaskRequest,
+    infer_requested_billing_resolution,
+    infer_requested_output_metadata,
+)
 
 
 @pytest.mark.asyncio
 async def test_process_input_path_keeps_plain_object_key():
     user_logger = MagicMock()
 
-    result = await _process_input_path(
-        user_logger, "123456/input_images/example.png"
+    result = await process_input_path(
+        user_logger=user_logger,
+        path="123456/input_images/example.png",
+        bucket_name="bot-data",
     )
 
     assert result == "123456/input_images/example.png"
@@ -30,7 +35,11 @@ async def test_process_input_path_rejects_missing_absolute_local_file():
     missing_path = "/tmp/does-not-exist-custom-video.png"
 
     with pytest.raises(CoreDomainError, match="本地输入文件不存在"):
-        await _process_input_path(user_logger, missing_path)
+        await process_input_path(
+            user_logger=user_logger,
+            path=missing_path,
+            bucket_name="bot-data",
+        )
 
     user_logger.save_input_image.assert_not_called()
 
@@ -43,30 +52,34 @@ async def test_process_input_path_rejects_failed_local_upload(tmp_path):
     user_logger.save_input_image.return_value = ""
 
     with pytest.raises(CoreDomainError, match="本地输入文件上传失败"):
-        await _process_input_path(user_logger, str(local_file))
+        await process_input_path(
+            user_logger=user_logger,
+            path=str(local_file),
+            bucket_name="bot-data",
+        )
 
     user_logger.save_input_image.assert_called_once_with(str(local_file))
 
 
 def test_infer_requested_output_metadata_keeps_unknown_height_for_tier_based_video():
-    assert _infer_requested_output_metadata(
+    assert infer_requested_output_metadata(
         {"resolution": 1024, "duration": 8}
     ) == (1024, None, 8)
 
 
 def test_infer_requested_output_metadata_parses_explicit_ltx_resolution():
-    assert _infer_requested_output_metadata(
+    assert infer_requested_output_metadata(
         {"resolution": "1280x704", "duration": "10s"}
     ) == (1280, 704, 10)
 
 
 def test_infer_requested_billing_resolution_keeps_requested_tier():
-    assert _infer_requested_billing_resolution({"resolution": 720}, "custom_video") == "720"
+    assert infer_requested_billing_resolution({"resolution": 720}, "custom_video") == "720"
 
 
 def test_infer_requested_billing_resolution_keeps_ltx_resolution_pair():
     assert (
-        _infer_requested_billing_resolution(
+        infer_requested_billing_resolution(
             {"resolution": "1280x704"}, "ltx_video"
         )
         == "1280x704"
@@ -74,9 +87,7 @@ def test_infer_requested_billing_resolution_keeps_ltx_resolution_pair():
 
 
 @pytest.mark.asyncio
-async def test_prepare_task_submission_payload_uses_default_prompt_and_applies_saved_inputs(
-    monkeypatch,
-):
+async def test_prepare_task_submission_payload_uses_default_prompt_and_applies_saved_inputs():
     strategy = MagicMock()
     strategy.get_file_paths_to_upload.return_value = ["local/a.png", ""]
     strategy.get_metadata.return_value = {"style": "demo"}
@@ -91,21 +102,8 @@ async def test_prepare_task_submission_payload_uses_default_prompt_and_applies_s
         processed_paths.append((user_logger.user_id, user_logger.username, path))
         return f"processed:{path}" if path else ""
 
-    monkeypatch.setattr(
-        "src.core.task_core.get_user_priority_and_identity",
-        fake_get_priority,
-    )
-    monkeypatch.setattr(
-        "src.core.task_core._process_input_path",
-        fake_process_input_path,
-    )
-    monkeypatch.setattr(
-        "src.core.task_core.load_prompts",
-        lambda: {"face_swap": "默认提示词"},
-    )
-
     inputs = {"target_image": "body.png", "prompt": "   "}
-    result = await _prepare_task_submission_payload(
+    result = await prepare_task_submission_payload(
         user_id=9,
         username="tester",
         task_type="face_swap",
@@ -115,6 +113,14 @@ async def test_prepare_task_submission_payload_uses_default_prompt_and_applies_s
         is_template=False,
         is_video_task=False,
         video_request=VideoTaskRequest(),
+        user_logger_factory=lambda user_id, username: SimpleNamespace(
+            user_id=user_id, username=username
+        ),
+        validate_local_input_paths_func=lambda **_kwargs: None,
+        get_user_priority_and_identity_func=fake_get_priority,
+        load_prompts_func=lambda: {"face_swap": "默认提示词"},
+        process_input_path_func=fake_process_input_path,
+        bucket_name="bot-data",
     )
 
     assert result.prompt == "默认提示词"
@@ -128,7 +134,7 @@ async def test_prepare_task_submission_payload_uses_default_prompt_and_applies_s
 
 
 @pytest.mark.asyncio
-async def test_prepare_task_submission_payload_caps_priority_at_100(monkeypatch):
+async def test_prepare_task_submission_payload_caps_priority_at_100():
     strategy = MagicMock()
     strategy.get_file_paths_to_upload.return_value = []
     strategy.get_metadata.return_value = {}
@@ -139,17 +145,7 @@ async def test_prepare_task_submission_payload_caps_priority_at_100(monkeypatch)
     async def fake_process_input_path(_user_logger, _path: str):
         return ""
 
-    monkeypatch.setattr(
-        "src.core.task_core.get_user_priority_and_identity",
-        fake_get_priority,
-    )
-    monkeypatch.setattr(
-        "src.core.task_core._process_input_path",
-        fake_process_input_path,
-    )
-    monkeypatch.setattr("src.core.task_core.load_prompts", lambda: {})
-
-    result = await _prepare_task_submission_payload(
+    result = await prepare_task_submission_payload(
         user_id=5,
         username="tester",
         task_type="custom_video",
@@ -159,6 +155,14 @@ async def test_prepare_task_submission_payload_caps_priority_at_100(monkeypatch)
         is_template=True,
         is_video_task=True,
         video_request=VideoTaskRequest(),
+        user_logger_factory=lambda user_id, username: SimpleNamespace(
+            user_id=user_id, username=username
+        ),
+        validate_local_input_paths_func=lambda **_kwargs: None,
+        get_user_priority_and_identity_func=fake_get_priority,
+        load_prompts_func=lambda: {},
+        process_input_path_func=fake_process_input_path,
+        bucket_name="bot-data",
     )
 
     assert result.final_priority == 100

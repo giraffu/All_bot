@@ -5,9 +5,16 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from src.database.models import GalleryPost, History
-from src.web_api.routers import gallery as gallery_router
-from src.web_api.services import gallery_service
 from src.core import gallery_core
+from src.services import storage as storage_module
+from src.web_api.services.gallery_service_queries import get_gallery_apply_context_payload
+from src.web_api.services.gallery_service_support import (
+    build_gallery_post_responses,
+    logger as gallery_support_logger,
+    pick_gallery_media_urls,
+    presenter_resolve_gallery_media_urls,
+    resolve_gallery_post_media_urls,
+)
 
 
 class _FakeResult:
@@ -76,7 +83,7 @@ async def test_build_post_responses_includes_billing_resolution_for_gallery_list
     )
     session = _FakeSession([_FakeResult(many=[history])])
 
-    responses = await gallery_service.build_gallery_post_responses(
+    responses = await build_gallery_post_responses(
         session=session,
         posts=[post],
         current_user=None,
@@ -90,9 +97,7 @@ async def test_build_post_responses_includes_billing_resolution_for_gallery_list
 
 
 @pytest.mark.asyncio
-async def test_get_apply_context_backfills_missing_video_billing_resolution_from_short_side(
-    monkeypatch,
-):
+async def test_get_apply_context_backfills_missing_video_billing_resolution_from_short_side():
     history = History(
         id=11,
         user_id=123,
@@ -118,12 +123,7 @@ async def test_get_apply_context_backfills_missing_video_billing_resolution_from
         ]
     )
 
-    monkeypatch.setattr(gallery_service, "AsyncSessionLocal", lambda: session)
-
-    response = await gallery_router.get_apply_context(
-        2,
-        current_user=type("User", (), {"id": 123})(),
-    )
+    response = await get_gallery_apply_context_payload(post_id=2, db=session)
 
     assert response.post_id == 2
     assert response.source_post_id == 2
@@ -137,7 +137,7 @@ async def test_get_apply_context_backfills_missing_video_billing_resolution_from
 
 
 @pytest.mark.asyncio
-async def test_get_apply_context_clears_non_video_billing_resolution(monkeypatch):
+async def test_get_apply_context_clears_non_video_billing_resolution():
     history = History(
         id=11,
         user_id=123,
@@ -163,12 +163,7 @@ async def test_get_apply_context_clears_non_video_billing_resolution(monkeypatch
         ]
     )
 
-    monkeypatch.setattr(gallery_service, "AsyncSessionLocal", lambda: session)
-
-    response = await gallery_router.get_apply_context(
-        2,
-        current_user=type("User", (), {"id": 123})(),
-    )
+    response = await get_gallery_apply_context_payload(post_id=2, db=session)
 
     assert response.billing_resolution is None
     assert history.billing_resolution == "720"
@@ -176,9 +171,7 @@ async def test_get_apply_context_clears_non_video_billing_resolution(monkeypatch
 
 
 @pytest.mark.asyncio
-async def test_get_apply_context_prefers_requested_duration_and_strips_ltx_prefix(
-    monkeypatch,
-):
+async def test_get_apply_context_prefers_requested_duration_and_strips_ltx_prefix():
     history = History(
         id=11,
         user_id=123,
@@ -206,12 +199,7 @@ async def test_get_apply_context_prefers_requested_duration_and_strips_ltx_prefi
         ]
     )
 
-    monkeypatch.setattr(gallery_service, "AsyncSessionLocal", lambda: session)
-
-    response = await gallery_router.get_apply_context(
-        2,
-        current_user=type("User", (), {"id": 123})(),
-    )
+    response = await get_gallery_apply_context_payload(post_id=2, db=session)
 
     assert response.prompt == "wide cinematic dolly shot"
     assert response.duration == 1
@@ -220,9 +208,7 @@ async def test_get_apply_context_prefers_requested_duration_and_strips_ltx_prefi
 
 
 @pytest.mark.asyncio
-async def test_get_apply_context_strips_ltx_prefix_without_promoting_it_to_requested_duration(
-    monkeypatch,
-):
+async def test_get_apply_context_strips_ltx_prefix_without_promoting_it_to_requested_duration():
     history = History(
         id=11,
         user_id=123,
@@ -250,12 +236,7 @@ async def test_get_apply_context_strips_ltx_prefix_without_promoting_it_to_reque
         ]
     )
 
-    monkeypatch.setattr(gallery_service, "AsyncSessionLocal", lambda: session)
-
-    response = await gallery_router.get_apply_context(
-        2,
-        current_user=type("User", (), {"id": 123})(),
-    )
+    response = await get_gallery_apply_context_payload(post_id=2, db=session)
 
     assert response.prompt == "wide cinematic dolly shot"
     assert response.duration == 1
@@ -264,9 +245,7 @@ async def test_get_apply_context_strips_ltx_prefix_without_promoting_it_to_reque
 
 
 @pytest.mark.asyncio
-async def test_get_apply_context_maps_legacy_ltx_media_duration_to_requested_duration(
-    monkeypatch,
-):
+async def test_get_apply_context_maps_legacy_ltx_media_duration_to_requested_duration():
     history = History(
         id=11,
         user_id=123,
@@ -294,12 +273,7 @@ async def test_get_apply_context_maps_legacy_ltx_media_duration_to_requested_dur
         ]
     )
 
-    monkeypatch.setattr(gallery_service, "AsyncSessionLocal", lambda: session)
-
-    response = await gallery_router.get_apply_context(
-        2,
-        current_user=type("User", (), {"id": 123})(),
-    )
+    response = await get_gallery_apply_context_payload(post_id=2, db=session)
 
     assert response.duration == 21
     assert response.requested_duration == 20
@@ -307,9 +281,7 @@ async def test_get_apply_context_maps_legacy_ltx_media_duration_to_requested_dur
 
 
 @pytest.mark.asyncio
-async def test_get_apply_context_maps_legacy_ltx_media_duration_16_to_15(
-    monkeypatch,
-):
+async def test_get_apply_context_maps_legacy_ltx_media_duration_16_to_15():
     history = History(
         id=11,
         user_id=123,
@@ -337,12 +309,7 @@ async def test_get_apply_context_maps_legacy_ltx_media_duration_16_to_15(
         ]
     )
 
-    monkeypatch.setattr(gallery_service, "AsyncSessionLocal", lambda: session)
-
-    response = await gallery_router.get_apply_context(
-        2,
-        current_user=type("User", (), {"id": 123})(),
-    )
+    response = await get_gallery_apply_context_payload(post_id=2, db=session)
 
     assert response.duration == 16
     assert response.requested_duration == 15
@@ -350,9 +317,7 @@ async def test_get_apply_context_maps_legacy_ltx_media_duration_16_to_15(
 
 
 @pytest.mark.asyncio
-async def test_get_apply_context_maps_legacy_custom_video_duration_9_to_8(
-    monkeypatch,
-):
+async def test_get_apply_context_maps_legacy_custom_video_duration_9_to_8():
     history = History(
         id=11,
         user_id=123,
@@ -380,12 +345,7 @@ async def test_get_apply_context_maps_legacy_custom_video_duration_9_to_8(
         ]
     )
 
-    monkeypatch.setattr(gallery_service, "AsyncSessionLocal", lambda: session)
-
-    response = await gallery_router.get_apply_context(
-        2,
-        current_user=type("User", (), {"id": 123})(),
-    )
+    response = await get_gallery_apply_context_payload(post_id=2, db=session)
 
     assert response.duration == 9
     assert response.requested_duration == 8
@@ -393,9 +353,7 @@ async def test_get_apply_context_maps_legacy_custom_video_duration_9_to_8(
 
 
 @pytest.mark.asyncio
-async def test_get_apply_context_maps_legacy_video_lora_duration_11_to_10(
-    monkeypatch,
-):
+async def test_get_apply_context_maps_legacy_video_lora_duration_11_to_10():
     history = History(
         id=11,
         user_id=123,
@@ -423,12 +381,7 @@ async def test_get_apply_context_maps_legacy_video_lora_duration_11_to_10(
         ]
     )
 
-    monkeypatch.setattr(gallery_service, "AsyncSessionLocal", lambda: session)
-
-    response = await gallery_router.get_apply_context(
-        2,
-        current_user=type("User", (), {"id": 123})(),
-    )
+    response = await get_gallery_apply_context_payload(post_id=2, db=session)
 
     assert response.duration == 11
     assert response.requested_duration == 10
@@ -440,14 +393,14 @@ async def test_pick_gallery_media_urls_prefers_existing_history_task_key(
     monkeypatch,
 ):
     monkeypatch.setattr(
-        gallery_service.storage,
+        storage_module.storage,
         "get_r2_public_url",
         lambda key: f"https://cdn.example/{key}",
     )
     async_exists_mock = AsyncMock(side_effect=[True, True])
-    monkeypatch.setattr(gallery_service.storage, "async_r2_object_exists", async_exists_mock)
+    monkeypatch.setattr(storage_module.storage, "async_r2_object_exists", async_exists_mock)
 
-    media_url, thumbnail_url = await gallery_service.resolve_gallery_post_media_urls(
+    media_url, thumbnail_url = await resolve_gallery_post_media_urls(
         task_id="task-1",
         output_file="123/output_images/task-1.png",
         media_type="image",
@@ -463,14 +416,14 @@ async def test_pick_gallery_media_urls_falls_back_to_legacy_keys_when_history_ke
     monkeypatch,
 ):
     monkeypatch.setattr(
-        gallery_service.storage,
+        storage_module.storage,
         "get_r2_public_url",
         lambda key: f"https://cdn.example/{key}",
     )
     async_exists_mock = AsyncMock(side_effect=[False, True, False, True])
-    monkeypatch.setattr(gallery_service.storage, "async_r2_object_exists", async_exists_mock)
+    monkeypatch.setattr(storage_module.storage, "async_r2_object_exists", async_exists_mock)
 
-    media_url, thumbnail_url = await gallery_service.resolve_gallery_post_media_urls(
+    media_url, thumbnail_url = await resolve_gallery_post_media_urls(
         task_id="task-1",
         output_file="123/output_images/task-1.png",
         media_type="image",
@@ -486,14 +439,14 @@ async def test_pick_gallery_media_urls_falls_back_to_presigned_storage_urls_when
     monkeypatch,
 ):
     monkeypatch.setattr(
-        gallery_service.storage,
+        storage_module.storage,
         "get_r2_public_url",
         lambda key: f"https://cdn.example/{key}",
     )
     async_exists_mock = AsyncMock(return_value=False)
-    monkeypatch.setattr(gallery_service.storage, "async_r2_object_exists", async_exists_mock)
+    monkeypatch.setattr(storage_module.storage, "async_r2_object_exists", async_exists_mock)
     monkeypatch.setattr(
-        gallery_service.storage,
+        storage_module.storage,
         "async_object_exists",
         AsyncMock(return_value=True),
     )
@@ -503,9 +456,9 @@ async def test_pick_gallery_media_urls_falls_back_to_presigned_storage_urls_when
             "https://minio.example/thumb.webp",
         ]
     )
-    monkeypatch.setattr(gallery_service.storage, "get_presigned_url", presign_mock)
+    monkeypatch.setattr(storage_module.storage, "get_presigned_url", presign_mock)
 
-    media_url, thumbnail_url = await gallery_service.resolve_gallery_post_media_urls(
+    media_url, thumbnail_url = await resolve_gallery_post_media_urls(
         task_id="task-1",
         output_file="123/output_images/task-1.png",
         media_type="image",
@@ -546,17 +499,17 @@ async def test_build_post_responses_uses_r2_fallback_chain(monkeypatch):
     session = _FakeSession([_FakeResult(many=[history])])
 
     monkeypatch.setattr(
-        gallery_service.storage,
+        storage_module.storage,
         "get_r2_public_url",
         lambda key: f"https://cdn.example/{key}",
     )
     monkeypatch.setattr(
-        gallery_service.storage,
+        storage_module.storage,
         "async_r2_object_exists",
         AsyncMock(side_effect=[False, True, False, True]),
     )
 
-    responses = await gallery_service.build_gallery_post_responses(
+    responses = await build_gallery_post_responses(
         session=session,
         posts=[post],
         current_user=None,
@@ -620,7 +573,7 @@ async def test_build_post_responses_preserves_post_order_with_concurrent_url_tas
         await asyncio.sleep(0.001)
         return "media-2", "thumb-2"
 
-    responses = await gallery_service.build_gallery_post_responses(
+    responses = await build_gallery_post_responses(
         session=session,
         posts=posts,
         current_user=None,
@@ -683,7 +636,7 @@ async def test_build_post_responses_degrades_single_url_task_exception():
             return "media-1", "thumb-1"
         raise RuntimeError("r2 probe failed")
 
-    responses = await gallery_service.build_gallery_post_responses(
+    responses = await build_gallery_post_responses(
         session=session,
         posts=posts,
         current_user=None,
@@ -761,7 +714,7 @@ async def test_build_post_responses_runs_url_tasks_concurrently():
         second_started.set()
         return "media-2", "thumb-2"
 
-    responses = await gallery_service.build_gallery_post_responses(
+    responses = await build_gallery_post_responses(
         session=session,
         posts=posts,
         current_user=None,
@@ -774,14 +727,14 @@ async def test_build_post_responses_runs_url_tasks_concurrently():
 
 @pytest.mark.asyncio
 async def test_pick_gallery_media_urls_best_effort_when_inner_probes_raise():
-    media_url, thumbnail_url = await gallery_service.pick_gallery_media_urls(
+    media_url, thumbnail_url = await pick_gallery_media_urls(
         task_id="task-1",
         output_file="bot-data/history/task-1/output.png",
         media_type="image",
-        resolve_gallery_media_urls_fn=gallery_service.presenter_resolve_gallery_media_urls,
+        resolve_gallery_media_urls_fn=presenter_resolve_gallery_media_urls,
         build_media_url_fn=AsyncMock(side_effect=RuntimeError("media failed")),
         build_thumbnail_url_fn=AsyncMock(side_effect=RuntimeError("thumb failed")),
-        logger=gallery_service.logger,
+        logger=gallery_support_logger,
     )
 
     assert media_url == "bot-data/history/task-1/output.png"

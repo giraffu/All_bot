@@ -3,8 +3,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from src.database.models import GalleryPost, History, User
-from src.web_api.routers import gallery as gallery_router
-from src.web_api.services import gallery_service
+from src.web_api.services.gallery_service_mutations import delete_gallery_post
 
 
 class _FakeScalarResult:
@@ -33,7 +32,7 @@ class _DeletePostSession:
 
 
 @pytest.mark.asyncio
-async def test_delete_post_hard_deletes_record_and_cleans_r2_cache(monkeypatch):
+async def test_delete_post_hard_deletes_record_and_cleans_r2_cache():
     post = GalleryPost(
         id=7,
         task_id="task-1",
@@ -62,12 +61,11 @@ async def test_delete_post_hard_deletes_record_and_cleans_r2_cache(monkeypatch):
     )
     cleanup_mock = AsyncMock(return_value=4)
 
-    monkeypatch.setattr(gallery_service, "AsyncSessionLocal", lambda: session)
-    monkeypatch.setattr(gallery_service.storage, "async_delete_r2_objects", cleanup_mock)
-
-    response = await gallery_router.delete_post(
-        7,
+    response = await delete_gallery_post(
+        post_id=7,
         current_user=type("User", (), {"id": 123})(),
+        db=session,
+        storage_service=type("Storage", (), {"async_delete_r2_objects": cleanup_mock})(),
     )
 
     assert response == {"status": "success", "message": "删除成功"}
@@ -87,7 +85,7 @@ async def test_delete_post_hard_deletes_record_and_cleans_r2_cache(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_delete_post_without_history_cache_still_returns_success(monkeypatch):
+async def test_delete_post_without_history_cache_still_returns_success():
     post = GalleryPost(
         id=8,
         task_id=None,
@@ -105,12 +103,11 @@ async def test_delete_post_without_history_cache_still_returns_success(monkeypat
     )
     cleanup_mock = AsyncMock()
 
-    monkeypatch.setattr(gallery_service, "AsyncSessionLocal", lambda: session)
-    monkeypatch.setattr(gallery_service.storage, "async_delete_r2_objects", cleanup_mock)
-
-    response = await gallery_router.delete_post(
-        8,
+    response = await delete_gallery_post(
+        post_id=8,
         current_user=type("User", (), {"id": 123})(),
+        db=session,
+        storage_service=type("Storage", (), {"async_delete_r2_objects": cleanup_mock})(),
     )
 
     assert response == {"status": "success", "message": "删除成功"}

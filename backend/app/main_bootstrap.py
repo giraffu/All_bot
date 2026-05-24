@@ -57,7 +57,10 @@ async def lifespan(
     settings,
     logger,
     check_zombie_tasks_loop_func,
+    validate_workflows_func=None,
 ):
+    if validate_workflows_func is not None:
+        validate_workflows_func(settings.workflows_dir)
     asyncio.create_task(check_zombie_tasks_loop_func())
     fastapi_app.state.minio_client = init_minio_client(settings=settings, logger=logger)
     yield

@@ -3,6 +3,8 @@ from unittest.mock import AsyncMock
 import pytest
 
 from src.core import task_core
+from src.core.task_core_dependencies import TaskCoreProcessDependencies
+from src.core.task_core_types import TaskSubmissionExecutionResult
 from src.database import core as db_core
 from src.database.models import History
 from src.web_api.routers import tasks as tasks_router
@@ -45,48 +47,67 @@ class _FakeSession:
         return False
 
 
-def _capture_background_task(coro):
-    coro.close()
-    return None
-
-
 def _build_current_user():
     return type("User", (), {"id": 123, "username": "tester"})()
 
 
 def _patch_web_generate_dependencies(monkeypatch, *, expected_balance=888):
-    monitor_mock = AsyncMock()
+    monitor_calls = []
+    check_lock = AsyncMock(return_value=(True, ""))
+    deduct_credits = AsyncMock(return_value=(True, ""))
+
+    async def prepare_payload(**kwargs):
+        inputs = kwargs["inputs"]
+        video_request = task_core.build_video_task_request(kwargs["task_type"], inputs)
+        return task_core.TaskSubmissionContext(
+            task_type=kwargs["task_type"],
+            is_video_task=True,
+            user_logger=type("Logger", (), {"user_id": 123, "username": "tester"})(),
+            prompt=inputs.get("prompt", ""),
+            saved_inputs=list(inputs.get("images", [])),
+            metadata={},
+            allow_contribute=True,
+            final_priority=0,
+            video_request=video_request,
+        )
+
+    async def execute_saga(**kwargs):
+        return TaskSubmissionExecutionResult(
+            registry_task_id=kwargs["registry_task_id"],
+            backend_task_id="backend-task-1",
+            submission_context=kwargs["submission_context"],
+        )
+
+    def attach_side_effects(**kwargs):
+        monitor_calls.append(kwargs)
 
     monkeypatch.setattr(
-        task_core, "check_concurrency_lock", AsyncMock(return_value=(True, ""))
-    )
-    monkeypatch.setattr(
-        task_core, "check_and_deduct_credits", AsyncMock(return_value=(True, ""))
-    )
-    monkeypatch.setattr(
         task_core,
-        "get_user_priority_and_identity",
-        AsyncMock(return_value=(0, "tester", "外门弟子")),
+        "_build_task_core_process_dependencies_impl",
+        lambda **_kwargs: TaskCoreProcessDependencies(
+            get_strategy_func=lambda _task_type: task_core.StrategyFactory.get_strategy(
+                _task_type
+            ),
+            video_task_types={"custom_video", "video_lora"},
+            build_video_task_request_func=task_core.build_video_task_request,
+            check_concurrency_lock_func=check_lock,
+            prepare_task_submission_payload_func=prepare_payload,
+            check_and_deduct_credits_func=deduct_credits,
+            execute_task_submission_saga_func=execute_saga,
+            attach_submission_side_effects_func=attach_side_effects,
+            compensate_failed_submission_func=AsyncMock(),
+            release_concurrency_lock_func=AsyncMock(),
+            shield_func=lambda coro: coro,
+            logger=task_core.logger,
+        ),
     )
-    monkeypatch.setattr(task_core, "load_prompts", lambda: {})
-    monkeypatch.setattr(
-        task_core.TaskRegistry, "add_task", AsyncMock(return_value="reg-1")
-    )
-    monkeypatch.setattr(
-        task_core.TaskRegistry, "update_backend_task_id", AsyncMock(return_value=None)
-    )
-    monkeypatch.setattr(
-        task_core, "dispatch_to_worker", AsyncMock(return_value="backend-task-1")
-    )
-    monkeypatch.setattr(task_core, "monitor_task_and_release_lock", monitor_mock)
-    monkeypatch.setattr(task_core.asyncio, "create_task", _capture_background_task)
     monkeypatch.setattr(
         tasks_router.quota_manager,
         "get_credits",
         AsyncMock(return_value=expected_balance),
     )
 
-    return monitor_mock
+    return monitor_calls, deduct_credits
 
 
 @pytest.mark.asyncio
@@ -119,7 +140,7 @@ async def test_web_apply_submit_cost_for_custom_video(monkeypatch):
     assert apply_context.duration == 8
     assert apply_context.prompt == "cinematic action shot"
 
-    monitor_mock = _patch_web_generate_dependencies(monkeypatch)
+    monitor_calls, deduct_credits = _patch_web_generate_dependencies(monkeypatch)
 
     request = TaskGenerateRequest(
         task_type="custom_video",
@@ -139,9 +160,10 @@ async def test_web_apply_submit_cost_for_custom_video(monkeypatch):
 
     assert response.cost == 36
     assert response.balance_remaining == 888
-    monitor_mock.assert_called_once()
-    assert monitor_mock.call_args.kwargs["cost"] == 36
-    submission_context = monitor_mock.call_args.kwargs["submission_context"]
+    deduct_credits.assert_awaited_once()
+    assert len(monitor_calls) == 1
+    assert monitor_calls[0]["cost"] == 36
+    submission_context = monitor_calls[0]["submission_context"]
     assert submission_context.billing_resolution == "720"
     assert submission_context.requested_duration == 8
 
@@ -177,7 +199,7 @@ async def test_web_apply_submit_cost_for_video_lora(monkeypatch):
     assert apply_context.prompt == "glowing neon city"
     assert apply_context.lora_name == "BreastGrow"
 
-    monitor_mock = _patch_web_generate_dependencies(monkeypatch)
+    monitor_calls, deduct_credits = _patch_web_generate_dependencies(monkeypatch)
 
     request = TaskGenerateRequest(
         task_type="video_lora",
@@ -198,8 +220,9 @@ async def test_web_apply_submit_cost_for_video_lora(monkeypatch):
 
     assert response.cost == 72
     assert response.balance_remaining == 888
-    monitor_mock.assert_called_once()
-    assert monitor_mock.call_args.kwargs["cost"] == 72
-    submission_context = monitor_mock.call_args.kwargs["submission_context"]
+    deduct_credits.assert_awaited_once()
+    assert len(monitor_calls) == 1
+    assert monitor_calls[0]["cost"] == 72
+    submission_context = monitor_calls[0]["submission_context"]
     assert submission_context.billing_resolution == "1024"
     assert submission_context.requested_duration == 8
