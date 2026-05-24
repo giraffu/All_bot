@@ -44,7 +44,6 @@ def _build_order(**overrides):
     base = {
         "id": 1,
         "order_id": "order-1",
-        "telegram_id": 123,
         "internal_user_id": 123,
         "plan_id": 5,
         "original_price": 10.0,
@@ -94,9 +93,9 @@ async def test_get_orders_payload_applies_filters_and_flattens_items():
     assert result["items"][0]["plan_name"] == "月卡"
     list_stmt = db.executed_stmts[1]
     assert "orders.status = :status_1" in list_stmt
-    assert "orders.telegram_id =" in list_stmt
+    assert "orders.internal_user_id =" in list_stmt
     assert "users.username" in list_stmt
-    assert ":telegram_id_1" in list_stmt or ":internal_user_id_1" in list_stmt
+    assert ":internal_user_id_1" in list_stmt
     assert "username_1" in list_stmt
 
 

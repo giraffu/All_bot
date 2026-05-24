@@ -13,6 +13,7 @@ x-worker-base-test: &worker-base-test
   volumes:
     - ../logs/workers-test:/app/logs
     - ./comfy_agent/workflows:/app/worker/workflows
+    - ../src:/app/src
 
 services:
   comfy-agent-test-1:
