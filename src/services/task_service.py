@@ -22,7 +22,6 @@ from src.constants import (
     MODE_UNDRESS_TONGUE,
     TMP_DIR,
 )
-from src.services import task_service_completion as task_service_completion_helpers
 from src.services.task_service_support import (
     get_acceleration_notice,
 )
@@ -36,37 +35,23 @@ from src.services.task_service_entrypoints import (
     process_ltx_video_task as process_ltx_video_task_entrypoint,
     process_video_task_template as process_video_task_template_entrypoint,
 )
-from src.services.task_service_finalize import (
-    cleanup_runtime_state_if_needed,
-    finalize_failed_task_for_bot,
-    handle_bot_cancelled_exception,
-    handle_bot_unexpected_exception,
-    send_bot_domain_error,
-    send_bot_warning,
-)
-from src.services.task_service_flow import (
-    prepare_and_submit_bot_task,
-    run_bot_task_flow,
-    send_initial_task_status,
-    submit_bot_task,
-    update_submitted_task_status,
-)
+from src.services.task_service_flow import run_bot_task_flow
 from src.services.task_service_message_support import (
     with_submitted_status,
 )
 from src.services.task_service_types import BotTaskMessageSpec, BotTaskRuntimeState
 from src.services.tg_task_runtime import (
     cleanup_completion_status_message,
-    get_or_send_status_message,
     send_result_media,
 )
-from src.utils import robust_edit_text, robust_reply_text
+from src.utils import robust_edit_text
 
 logger = logging.getLogger(__name__)
 
 
 class TaskService:
     _with_submitted_status = staticmethod(with_submitted_status)
+    _edit_status_text = staticmethod(robust_edit_text)
     _send_result_media = staticmethod(send_result_media)
     _cleanup_completion_status_message = staticmethod(cleanup_completion_status_message)
 
@@ -105,8 +90,6 @@ class TaskService:
         cleanup_paths: Optional[list[str]] = None,
         cleanup_enabled: bool = True,
     ) -> Tuple[Optional[bytes], Optional[str]]:
-        from src.core.billing_core import get_user_priority_and_identity
-
         return await run_bot_task_flow(
             context=context,
             chat_id=chat_id,
@@ -137,29 +120,8 @@ class TaskService:
             unexpected_error_prefix=unexpected_error_prefix,
             cleanup_paths=cleanup_paths,
             cleanup_enabled=cleanup_enabled,
-            send_result_media_func=TaskService._send_result_media,
-            cleanup_completion_status_message_func=TaskService._cleanup_completion_status_message,
-            cleanup_files_func=TaskService._cleanup_files,
-            prepare_and_submit_bot_task_func=prepare_and_submit_bot_task,
             with_submitted_status_func=TaskService._with_submitted_status,
-            get_or_send_status_msg_func=get_or_send_status_message,
-            send_initial_task_status_func=send_initial_task_status,
-            submit_bot_task_func=submit_bot_task,
-            update_submitted_task_status_func=update_submitted_task_status,
-            reply_text_func=robust_reply_text,
-            edit_text_func=robust_edit_text,
-            monitor_submitted_bot_task_func=task_service_completion_helpers.monitor_submitted_bot_task,
-            get_user_priority_and_identity_func=get_user_priority_and_identity,
-            monitor_bot_task_progress_func=task_service_completion_helpers.monitor_bot_task_progress,
-            edit_status_text_func=robust_edit_text,
-            complete_monitored_bot_task_func=task_service_completion_helpers.complete_monitored_bot_task,
-            handle_task_completion_func=task_service_completion_helpers.handle_task_completion,
-            finalize_failed_task_for_bot_func=finalize_failed_task_for_bot,
-            send_bot_warning_func=send_bot_warning,
-            send_bot_domain_error_func=send_bot_domain_error,
-            handle_bot_cancelled_exception_func=handle_bot_cancelled_exception,
-            handle_bot_unexpected_exception_func=handle_bot_unexpected_exception,
-            cleanup_runtime_state_if_needed_func=cleanup_runtime_state_if_needed,
+            cleanup_files_func=TaskService._cleanup_files,
         )
 
     @staticmethod

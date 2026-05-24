@@ -1,8 +1,6 @@
 import logging
 
-from src.core.task_core import (
-    cleanup_task_runtime_state,
-)
+from src.core.task_core_runtime import cleanup_task_runtime_state
 from src.services.task_failure_finalization_service import (
     finalize_recovery_failure_for_task_record,
 )

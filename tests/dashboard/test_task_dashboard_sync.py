@@ -12,7 +12,7 @@ from dashboard.backend.routers.system import (
     refund_bot_task,
     sync_user_concurrency,
 )
-from src.core.task_core import force_terminate_task
+from src.core.task_core_runtime import force_terminate_task
 
 
 @pytest.mark.asyncio
@@ -30,11 +30,18 @@ async def test_force_terminate_task_cancels_backend_and_clears_registry(monkeypa
     api_client = SimpleNamespace(cancel_task=AsyncMock())
     cleanup_runtime = AsyncMock()
 
-    monkeypatch.setattr("src.services.redis_client.redis_client", redis_client)
-    monkeypatch.setattr("src.api_client.api_client", api_client)
-    monkeypatch.setattr("src.core.task_core.cleanup_task_runtime_state", cleanup_runtime)
+    async def cancel_backend(*, backend_task_id: str, registry_task_id: str, raise_on_error: bool):
+        assert registry_task_id == "registry-task-1"
+        assert raise_on_error is True
+        await api_client.cancel_task(backend_task_id)
+        return True
 
-    await force_terminate_task("registry-task-1")
+    await force_terminate_task(
+        "registry-task-1",
+        submission_outbox=redis_client,
+        cleanup_task_runtime_state_func=cleanup_runtime,
+        cancel_backend_task_best_effort_func=cancel_backend,
+    )
 
     api_client.cancel_task.assert_awaited_once_with("backend-task-1")
     cleanup_runtime.assert_awaited_once_with(
@@ -69,11 +76,21 @@ async def test_force_terminate_task_treats_missing_backend_task_as_already_cance
     )
     cleanup_runtime = AsyncMock()
 
-    monkeypatch.setattr("src.services.redis_client.redis_client", redis_client)
-    monkeypatch.setattr("src.api_client.api_client", api_client)
-    monkeypatch.setattr("src.core.task_core.cleanup_task_runtime_state", cleanup_runtime)
+    async def cancel_backend(*, backend_task_id: str, registry_task_id: str, raise_on_error: bool):
+        assert registry_task_id == "registry-task-1"
+        assert raise_on_error is True
+        try:
+            return await api_client.cancel_task(backend_task_id)
+        except httpx.HTTPStatusError as exc:
+            assert exc.response.status_code == 404
+            return False
 
-    await force_terminate_task("registry-task-1")
+    await force_terminate_task(
+        "registry-task-1",
+        submission_outbox=redis_client,
+        cleanup_task_runtime_state_func=cleanup_runtime,
+        cancel_backend_task_best_effort_func=cancel_backend,
+    )
 
     cleanup_runtime.assert_awaited_once_with(
         internal_user_id=123,

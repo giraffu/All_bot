@@ -16,11 +16,7 @@ from src.core.media_processor import (
 from src.core.task_core_finalization import (
     finalize_task_cancellation as _finalize_task_cancellation_impl,
     finalize_task_failure as _finalize_task_failure_impl,
-    finalize_task_failure_with_notice as _finalize_task_failure_with_notice_impl,
-    finalize_terminated_task as _finalize_terminated_task_impl,
-    handle_failed_task_exception as _handle_failed_task_exception_impl,
     refund_cancelled_task as _refund_cancelled_task_impl,
-    refund_failed_task as _refund_failed_task_impl,
 )
 from src.core.task_core_dependencies import (
     TaskCoreProcessDependencies,
@@ -69,11 +65,13 @@ from src.core.task_core_types import (
     normalize_terminal_status,
 )
 from src.core.task_core_web_monitor import (
+    attach_submission_side_effects as _attach_submission_side_effects_impl,
     attach_web_task_monitor as _attach_web_task_monitor_impl,
     finalize_monitored_web_task_cancellation as _finalize_monitored_web_task_cancellation_impl,
     finalize_monitored_web_task_failure as _finalize_monitored_web_task_failure_impl,
     finalize_monitored_web_task_success as _finalize_monitored_web_task_success_impl,
     monitor_task_and_release_lock as _monitor_task_and_release_lock_impl,
+    schedule_apply_interaction as _schedule_apply_interaction_impl,
 )
 from src.core.task_core_web_history_warmup import (
     schedule_web_history_r2_warmup as _schedule_web_history_r2_warmup_impl,
@@ -95,24 +93,15 @@ __all__ = [
     "VideoTaskRequest",
     "build_failed_task_user_message",
     "cancel_user_task",
-    "cleanup_task_runtime_state",
     "extract_media_metadata_from_bytes_best_effort",
     "extract_media_metadata_from_storage_best_effort",
-    "finalize_task_cancellation",
-    "finalize_task_failure",
-    "finalize_task_failure_with_notice",
-    "finalize_terminated_task",
     "force_terminate_task",
     "generate_and_upload_thumbnail",
     "get_system_task_stats",
-    "handle_failed_task_exception",
     "is_task_backend_busy_error",
     "persist_successful_task_result",
     "process_and_submit_task",
-    "refund_cancelled_task",
-    "refund_failed_task",
     "resolve_storage_object",
-    "schedule_web_history_r2_warmup",
     "sync_user_concurrency",
 ]
 
@@ -140,7 +129,7 @@ def _build_task_core_process_dependencies() -> TaskCoreProcessDependencies:
     )
 
 
-def schedule_web_history_r2_warmup(
+def _schedule_web_history_r2_warmup_default(
     *,
     user_id: int,
     task_id: str,
@@ -173,7 +162,7 @@ def schedule_web_history_r2_warmup(
     )
 
 
-async def cleanup_task_runtime_state(
+async def _cleanup_task_runtime_state_default(
     *,
     internal_user_id: int,
     registry_task_id: str | None,
@@ -195,7 +184,7 @@ async def force_terminate_task(task_id: str, user_id: int | None = None):
     return await _force_terminate_task_impl(
         task_id,
         user_id=user_id,
-        cleanup_task_runtime_state_func=cleanup_task_runtime_state,
+        cleanup_task_runtime_state_func=_cleanup_task_runtime_state_default,
     )
 
 
@@ -221,7 +210,7 @@ async def persist_successful_task_result(
     warmup_web_history: bool = False,
 ) -> TaskSuccessPersistenceResult:
     dependencies = build_default_task_core_persistence_dependencies(
-        schedule_web_history_r2_warmup_func=schedule_web_history_r2_warmup,
+        schedule_web_history_r2_warmup_func=_schedule_web_history_r2_warmup_default,
         user_logger_factory=UserLogger,
         extract_media_metadata_from_bytes_best_effort_func=(
             extract_media_metadata_from_bytes_best_effort
@@ -303,7 +292,7 @@ async def _persist_successful_web_history(
     )
 
 
-async def refund_cancelled_task(
+async def _refund_cancelled_task_default(
     *,
     internal_user_id: int,
     username: str,
@@ -312,8 +301,8 @@ async def refund_cancelled_task(
 ) -> bool:
     dependencies = build_default_task_core_finalization_dependencies(
         refund_credits_func=refund_credits,
-        cleanup_task_runtime_state_func=cleanup_task_runtime_state,
-        refund_cancelled_task_func=refund_cancelled_task,
+        cleanup_task_runtime_state_func=_cleanup_task_runtime_state_default,
+        refund_cancelled_task_func=_refund_cancelled_task_default,
         force_terminate_task_func=force_terminate_task,
     )
     return await _refund_cancelled_task_impl(
@@ -325,57 +314,7 @@ async def refund_cancelled_task(
     )
 
 
-async def refund_failed_task(
-    *,
-    internal_user_id: int,
-    username: str,
-    cost: int,
-    should_refund: bool,
-) -> bool:
-    dependencies = build_default_task_core_finalization_dependencies(
-        refund_credits_func=refund_credits,
-        cleanup_task_runtime_state_func=cleanup_task_runtime_state,
-        refund_cancelled_task_func=refund_cancelled_task,
-        force_terminate_task_func=force_terminate_task,
-    )
-    return await _refund_failed_task_impl(
-        internal_user_id=internal_user_id,
-        username=username,
-        cost=cost,
-        should_refund=should_refund,
-        refund_credits_func=dependencies.refund_credits_func,
-    )
-
-
-async def handle_failed_task_exception(
-    *,
-    internal_user_id: int,
-    username: str,
-    cost: int,
-    should_refund: bool,
-    error: Exception,
-    generic_error_prefix: str,
-    refund_suffix_mode: str = "if_refunded",
-) -> str:
-    dependencies = build_default_task_core_finalization_dependencies(
-        refund_credits_func=refund_credits,
-        cleanup_task_runtime_state_func=cleanup_task_runtime_state,
-        refund_cancelled_task_func=refund_cancelled_task,
-        force_terminate_task_func=force_terminate_task,
-    )
-    return await _handle_failed_task_exception_impl(
-        internal_user_id=internal_user_id,
-        username=username,
-        cost=cost,
-        should_refund=should_refund,
-        error=error,
-        generic_error_prefix=generic_error_prefix,
-        refund_suffix_mode=refund_suffix_mode,
-        refund_credits_func=dependencies.refund_credits_func,
-    )
-
-
-async def finalize_task_failure(
+async def _finalize_task_failure_default(
     *,
     internal_user_id: int,
     username: str,
@@ -391,8 +330,8 @@ async def finalize_task_failure(
 ) -> TaskFailureFinalizationResult:
     dependencies = build_default_task_core_finalization_dependencies(
         refund_credits_func=refund_credits,
-        cleanup_task_runtime_state_func=cleanup_task_runtime_state,
-        refund_cancelled_task_func=refund_cancelled_task,
+        cleanup_task_runtime_state_func=_cleanup_task_runtime_state_default,
+        refund_cancelled_task_func=_refund_cancelled_task_default,
         force_terminate_task_func=force_terminate_task,
     )
     return await _finalize_task_failure_impl(
@@ -412,45 +351,7 @@ async def finalize_task_failure(
     )
 
 
-async def finalize_task_failure_with_notice(
-    *,
-    internal_user_id: int,
-    username: str,
-    cost: int,
-    should_refund: bool,
-    registry_task_id: str | None,
-    release_lock: bool = True,
-    refund_task_type: str = "refund",
-    error: Exception | None = None,
-    generic_error_prefix: str | None = None,
-    explicit_user_message: str | None = None,
-    refund_suffix_mode: str = "if_refunded",
-    send_user_notice_func=None,
-    notice_message: str | None = None,
-    logger_override=logger,
-    notice_failure_log_message: str = "Failed to send task finalization notice",
-) -> TaskFailureFinalizationResult:
-    return await _finalize_task_failure_with_notice_impl(
-        internal_user_id=internal_user_id,
-        username=username,
-        cost=cost,
-        should_refund=should_refund,
-        registry_task_id=registry_task_id,
-        release_lock=release_lock,
-        refund_task_type=refund_task_type,
-        error=error,
-        generic_error_prefix=generic_error_prefix,
-        explicit_user_message=explicit_user_message,
-        refund_suffix_mode=refund_suffix_mode,
-        send_user_notice_func=send_user_notice_func,
-        notice_message=notice_message,
-        logger_override=logger_override,
-        notice_failure_log_message=notice_failure_log_message,
-        finalize_task_failure_func=finalize_task_failure,
-    )
-
-
-async def finalize_task_cancellation(
+async def _finalize_task_cancellation_default(
     *,
     internal_user_id: int,
     username: str,
@@ -462,8 +363,8 @@ async def finalize_task_cancellation(
 ) -> TaskCancellationFinalizationResult:
     dependencies = build_default_task_core_finalization_dependencies(
         refund_credits_func=refund_credits,
-        cleanup_task_runtime_state_func=cleanup_task_runtime_state,
-        refund_cancelled_task_func=refund_cancelled_task,
+        cleanup_task_runtime_state_func=_cleanup_task_runtime_state_default,
+        refund_cancelled_task_func=_refund_cancelled_task_default,
         force_terminate_task_func=force_terminate_task,
     )
     return await _finalize_task_cancellation_impl(
@@ -476,33 +377,6 @@ async def finalize_task_cancellation(
         explicit_user_message=explicit_user_message,
         refund_cancelled_task_func=dependencies.refund_cancelled_task_func,
         cleanup_task_runtime_state_func=dependencies.cleanup_task_runtime_state_func,
-    )
-
-
-async def finalize_terminated_task(
-    *,
-    registry_task_id: str,
-    user_id: int | None,
-    username: str,
-    cost: int,
-    should_refund: bool,
-    refund_task_type: str,
-) -> TaskTerminationFinalizationResult:
-    dependencies = build_default_task_core_finalization_dependencies(
-        refund_credits_func=refund_credits,
-        cleanup_task_runtime_state_func=cleanup_task_runtime_state,
-        refund_cancelled_task_func=refund_cancelled_task,
-        force_terminate_task_func=force_terminate_task,
-    )
-    return await _finalize_terminated_task_impl(
-        registry_task_id=registry_task_id,
-        user_id=user_id,
-        username=username,
-        cost=cost,
-        should_refund=should_refund,
-        refund_task_type=refund_task_type,
-        force_terminate_task_func=dependencies.force_terminate_task_func,
-        refund_credits_func=dependencies.refund_credits_func,
     )
 
 
@@ -612,7 +486,7 @@ async def _compensate_failed_submission(
     )
 
 
-def _attach_web_task_monitor(
+def _attach_web_task_monitor_default(
     *,
     backend_task_id: str,
     internal_user_id: int,
@@ -625,7 +499,7 @@ def _attach_web_task_monitor(
 
     dependencies = build_default_task_core_side_effect_dependencies(
         attach_web_task_monitor_func=_attach_web_task_monitor_impl,
-        monitor_web_task_func=monitor_task_and_release_lock,
+        monitor_web_task_func=_monitor_task_and_release_lock_default,
         record_apply_interaction_func=record_apply_interaction,
         create_task_func=asyncio.create_task,
     )
@@ -640,19 +514,20 @@ def _attach_web_task_monitor(
     )
 
 
-def _schedule_apply_interaction(user_id: int, source_post_id: Optional[int]):
-    if not source_post_id:
-        return
+def _schedule_apply_interaction_default(user_id: int, source_post_id: Optional[int]):
     from src.core.gallery_core import record_apply_interaction
 
     dependencies = build_default_task_core_side_effect_dependencies(
         attach_web_task_monitor_func=_attach_web_task_monitor_impl,
-        monitor_web_task_func=monitor_task_and_release_lock,
+        monitor_web_task_func=_monitor_task_and_release_lock_default,
         record_apply_interaction_func=record_apply_interaction,
         create_task_func=asyncio.create_task,
     )
-    dependencies.create_task_func(
-        dependencies.record_apply_interaction_func(user_id, source_post_id)
+    _schedule_apply_interaction_impl(
+        user_id,
+        source_post_id,
+        record_apply_interaction_func=dependencies.record_apply_interaction_func,
+        create_task_func=dependencies.create_task_func,
     )
 
 
@@ -667,20 +542,19 @@ def _attach_submission_side_effects(
     cost: int,
     source_post_id: Optional[int],
 ):
-    if client_type == "web":
-        try:
-            _attach_web_task_monitor(
-                backend_task_id=backend_task_id,
-                internal_user_id=internal_user_id,
-                username=username,
-                registry_task_id=registry_task_id,
-                submission_context=submission_context,
-                cost=cost,
-            )
-        except Exception as e:
-            raise CoreDomainError(f"后台监控挂载失败: {e}")
-
-    _schedule_apply_interaction(internal_user_id, source_post_id)
+    _attach_submission_side_effects_impl(
+        client_type=client_type,
+        backend_task_id=backend_task_id,
+        internal_user_id=internal_user_id,
+        username=username,
+        registry_task_id=registry_task_id,
+        submission_context=submission_context,
+        cost=cost,
+        source_post_id=source_post_id,
+        attach_web_task_monitor_func=_attach_web_task_monitor_default,
+        schedule_apply_interaction_func=_schedule_apply_interaction_default,
+        core_domain_error_cls=CoreDomainError,
+    )
 
 
 async def _finalize_monitored_web_task_success(
@@ -700,7 +574,7 @@ async def _finalize_monitored_web_task_success(
         submission_context=submission_context,
         result_path=result_path,
         persist_successful_web_history_func=_persist_successful_web_history,
-        cleanup_task_runtime_state_func=cleanup_task_runtime_state,
+        cleanup_task_runtime_state_func=_cleanup_task_runtime_state_default,
         logger=logger,
     )
 
@@ -717,7 +591,7 @@ async def _finalize_monitored_web_task_cancellation(
         username=username,
         cost=cost,
         registry_task_id=registry_task_id,
-        finalize_task_cancellation_func=finalize_task_cancellation,
+        finalize_task_cancellation_func=_finalize_task_cancellation_default,
         logger=logger,
     )
 
@@ -736,11 +610,11 @@ async def _finalize_monitored_web_task_failure(
         cost=cost,
         registry_task_id=registry_task_id,
         final_status=final_status,
-        finalize_task_failure_func=finalize_task_failure,
+        finalize_task_failure_func=_finalize_task_failure_default,
         logger=logger,
     )
 
-async def monitor_task_and_release_lock(
+async def _monitor_task_and_release_lock_default(
     backend_task_id: str,
     internal_user_id: int,
     username: str,

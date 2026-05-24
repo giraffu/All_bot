@@ -44,51 +44,62 @@ class TaskCoreImageCapabilities:
     monitor_progress_func: Any
 
 
-def _load_image_service():
-    from src.services.image_service import image_service as image_service_impl
-
-    return image_service_impl
-
-
-def _load_storage():
-    from src.services.storage import storage as storage_impl
-
-    return storage_impl
-
-
-def _load_task_registry():
-    from src.services.task_registry import TaskRegistry as task_registry_impl
-
-    return task_registry_impl
-
-
-def _load_permission_service():
-    from src.services.permission_service import permission_service as permission_service_impl
-
-    return permission_service_impl
-
-
-def _load_redis_client():
-    from src.services.redis_client import redis_client as redis_client_impl
-
-    return redis_client_impl
-
-
-def _load_api_client():
-    from src.api_client import api_client as api_client_impl
-
-    return api_client_impl
-
-
 @lru_cache(maxsize=1)
-def build_task_core_service_providers() -> TaskCoreServiceProviders:
+def _build_default_task_core_service_providers() -> TaskCoreServiceProviders:
     return TaskCoreServiceProviders(
-        get_image_service=_load_image_service,
-        get_storage_service=_load_storage,
-        get_task_registry=_load_task_registry,
-        get_permission_service=_load_permission_service,
-        get_submission_outbox=_load_redis_client,
-        get_api_client=_load_api_client,
+        get_image_service=lambda: __import__(
+            "src.services.image_service", fromlist=["image_service"]
+        ).image_service,
+        get_storage_service=lambda: __import__(
+            "src.services.storage", fromlist=["storage"]
+        ).storage,
+        get_task_registry=lambda: __import__(
+            "src.services.task_registry", fromlist=["TaskRegistry"]
+        ).TaskRegistry,
+        get_permission_service=lambda: __import__(
+            "src.services.permission_service", fromlist=["permission_service"]
+        ).permission_service,
+        get_submission_outbox=lambda: __import__(
+            "src.services.redis_client", fromlist=["redis_client"]
+        ).redis_client,
+        get_api_client=lambda: __import__("src.api_client", fromlist=["api_client"]).api_client,
+    )
+
+
+def build_task_core_service_providers(
+    *,
+    get_image_service: Callable[[], Any] | None = None,
+    get_storage_service: Callable[[], Any] | None = None,
+    get_task_registry: Callable[[], Any] | None = None,
+    get_permission_service: Callable[[], Any] | None = None,
+    get_submission_outbox: Callable[[], Any] | None = None,
+    get_api_client: Callable[[], Any] | None = None,
+) -> TaskCoreServiceProviders:
+    if all(
+        provider is None
+        for provider in (
+            get_image_service,
+            get_storage_service,
+            get_task_registry,
+            get_permission_service,
+            get_submission_outbox,
+            get_api_client,
+        )
+    ):
+        return _build_default_task_core_service_providers()
+
+    default_providers = _build_default_task_core_service_providers()
+    return TaskCoreServiceProviders(
+        get_image_service=get_image_service or default_providers.get_image_service,
+        get_storage_service=get_storage_service or default_providers.get_storage_service,
+        get_task_registry=get_task_registry or default_providers.get_task_registry,
+        get_permission_service=(
+            get_permission_service or default_providers.get_permission_service
+        ),
+        get_submission_outbox=(
+            get_submission_outbox or default_providers.get_submission_outbox
+        ),
+        get_api_client=get_api_client or default_providers.get_api_client,
     )
 
 

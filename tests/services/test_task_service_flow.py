@@ -70,31 +70,10 @@ async def test_send_initial_task_status_uses_reply_text_when_update_present(monk
         chat_id=123,
         status_msg_id=None,
         message_spec=spec,
-        get_or_send_status_msg_func=AsyncMock(),
     )
 
     assert result == "sent"
     reply_text.assert_awaited_once_with(update.effective_message, "正在提交")
-
-
-@pytest.mark.asyncio
-async def test_send_initial_task_status_uses_injected_reply_text_func():
-    injected_reply = AsyncMock(return_value="compat-sent")
-    update = SimpleNamespace(effective_message=object())
-    spec = BotTaskMessageSpec(initial_status_text="正在提交")
-
-    result = await task_service_flow.send_initial_task_status(
-        context=object(),
-        update=update,
-        chat_id=123,
-        status_msg_id=None,
-        message_spec=spec,
-        get_or_send_status_msg_func=AsyncMock(),
-        reply_text_func=injected_reply,
-    )
-
-    assert result == "compat-sent"
-    injected_reply.assert_awaited_once_with(update.effective_message, "正在提交")
 
 
 @pytest.mark.asyncio
@@ -118,41 +97,29 @@ async def test_update_submitted_task_status_prefers_submitted_text(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_update_submitted_task_status_uses_injected_edit_text_func():
-    injected_edit = AsyncMock()
-    status_msg = object()
-    spec = BotTaskMessageSpec(
-        initial_status_text="正在提交",
-        submitted_status_text=None,
-        progress_wait_text="请稍候",
-    )
-
-    await task_service_flow.update_submitted_task_status(
-        status_msg=status_msg,
-        message_spec=spec,
-        edit_text_func=injected_edit,
-    )
-
-    injected_edit.assert_awaited_once_with(status_msg, "请稍候")
-
-
-@pytest.mark.asyncio
-async def test_prepare_and_submit_bot_task_passes_reply_and_edit_seams():
-    injected_reply = AsyncMock(return_value="status-msg")
-    injected_edit = AsyncMock()
+async def test_prepare_and_submit_bot_task_updates_status_through_helpers(monkeypatch):
+    send_initial = AsyncMock(return_value="status-msg")
     submit_bot_task = AsyncMock(return_value=("task-1", ["input.png"]))
-    runtime_state = SimpleNamespace(actual_cost=0)
-    update = SimpleNamespace(effective_message=object())
+    update_submitted = AsyncMock()
+    runtime_state = SimpleNamespace(actual_cost=18)
     spec = BotTaskMessageSpec(
         initial_status_text="正在提交",
         submitted_status_text="已提交",
         progress_wait_text="请稍候",
     )
 
+    monkeypatch.setattr(task_service_flow, "send_initial_task_status", send_initial)
+    monkeypatch.setattr(task_service_flow, "submit_bot_task", submit_bot_task)
+    monkeypatch.setattr(
+        task_service_flow,
+        "update_submitted_task_status",
+        update_submitted,
+    )
+
     status_msg, task_id, saved_inputs, returned_spec = (
         await task_service_flow.prepare_and_submit_bot_task(
             context=object(),
-            update=update,
+            update=None,
             chat_id=123,
             message_spec=spec,
             runtime_state=runtime_state,
@@ -160,10 +127,6 @@ async def test_prepare_and_submit_bot_task_passes_reply_and_edit_seams():
             username="tester",
             task_type="image",
             inputs={"prompt": "hello"},
-            get_or_send_status_msg_func=AsyncMock(),
-            submit_bot_task_func=submit_bot_task,
-            reply_text_func=injected_reply,
-            edit_text_func=injected_edit,
         )
     )
 
@@ -171,5 +134,17 @@ async def test_prepare_and_submit_bot_task_passes_reply_and_edit_seams():
     assert task_id == "task-1"
     assert saved_inputs == ["input.png"]
     assert returned_spec is spec
-    injected_reply.assert_awaited_once_with(update.effective_message, "正在提交")
-    injected_edit.assert_awaited_once_with("status-msg", "已提交")
+    send_initial.assert_awaited_once()
+    submit_bot_task.assert_awaited_once_with(
+        runtime_state=runtime_state,
+        internal_user_id=456,
+        username="tester",
+        task_type="image",
+        inputs={"prompt": "hello"},
+        source_post_id=None,
+        deduct_quota=True,
+    )
+    update_submitted.assert_awaited_once_with(
+        status_msg="status-msg",
+        message_spec=spec,
+    )

@@ -6,6 +6,7 @@ from app.models import (
     Img2ImgLoraRequest,
     Img2ImgRequest,
     LtxVideoRequest,
+    TaskResponse,
     TaskType,
     VideoEditRequest,
     VideoInsertRequest,
@@ -57,6 +58,41 @@ SIMPLE_TASK_ROUTE_SPECS = (
     ("/i2i_draw", I2IDrawRequest, "i2i_draw", "create_i2i_draw_task"),
     ("/api/v1/ltx_video", LtxVideoRequest, "ltx_video", "create_ltx_video_task"),
 )
+
+
+def split_task_request(request_model):
+    params = request_model.dict()
+    task_id = params.pop("task_id")
+    priority = params.pop("priority", 0)
+    return task_id, priority, params
+
+
+async def enqueue_task_from_request(
+    *,
+    request_model,
+    task_type: TaskType,
+    queue_manager,
+) -> TaskResponse:
+    task_id, priority, params = split_task_request(request_model)
+    await queue_manager.enqueue_task(task_type, params, priority, task_id)
+    return TaskResponse(task_id=task_id)
+
+
+async def enqueue_configured_task(
+    *,
+    request_model,
+    task_key: str,
+    queue_manager,
+    enqueue_task_from_request_func=None,
+) -> TaskResponse:
+    enqueue_task_from_request_func = (
+        enqueue_task_from_request_func or enqueue_task_from_request
+    )
+    return await enqueue_task_from_request_func(
+        request_model=request_model,
+        task_type=SIMPLE_TASK_TYPE_MAP[task_key],
+        queue_manager=queue_manager,
+    )
 
 
 def register_simple_task_route(

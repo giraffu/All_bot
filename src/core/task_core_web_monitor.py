@@ -32,6 +32,50 @@ def attach_web_task_monitor(
     )
 
 
+def schedule_apply_interaction(
+    user_id: int,
+    source_post_id: int | None,
+    *,
+    record_apply_interaction_func,
+    create_task_func=None,
+):
+    if not source_post_id:
+        return
+    if create_task_func is None:
+        create_task_func = asyncio.create_task
+    create_task_func(record_apply_interaction_func(user_id, source_post_id))
+
+
+def attach_submission_side_effects(
+    *,
+    client_type: str,
+    backend_task_id: str,
+    internal_user_id: int,
+    username: str,
+    registry_task_id: str,
+    submission_context: TaskSubmissionContext,
+    cost: int,
+    source_post_id: int | None,
+    attach_web_task_monitor_func,
+    schedule_apply_interaction_func,
+    core_domain_error_cls,
+):
+    if client_type == "web":
+        try:
+            attach_web_task_monitor_func(
+                backend_task_id=backend_task_id,
+                internal_user_id=internal_user_id,
+                username=username,
+                registry_task_id=registry_task_id,
+                submission_context=submission_context,
+                cost=cost,
+            )
+        except Exception as exc:
+            raise core_domain_error_cls(f"后台监控挂载失败: {exc}")
+
+    schedule_apply_interaction_func(internal_user_id, source_post_id)
+
+
 async def finalize_monitored_web_task_success(
     *,
     backend_task_id: str,

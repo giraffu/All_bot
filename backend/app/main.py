@@ -1,6 +1,7 @@
 import logging
 import uuid
 from contextlib import asynccontextmanager
+from functools import partial
 from typing import Annotated, Optional
 
 from app.config import settings
@@ -46,6 +47,7 @@ from app.main_t2i_helpers import (
 from app.main_simple_task_routes import (
     SIMPLE_TASK_ROUTE_SPECS as SIMPLE_TASK_ROUTE_SPECS_HELPER,
     SIMPLE_TASK_TYPE_MAP as SIMPLE_TASK_TYPE_MAP_HELPER,
+    enqueue_configured_task as enqueue_configured_task_helper,
     register_simple_task_routes,
 )
 from app.main_status_result_routes import (
@@ -64,7 +66,6 @@ from fastapi import (
     Query,
     Request,
 )
-from fastapi.responses import FileResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from minio import Minio
 from src.workflow_mapping_validation import validate_workflow_directory
@@ -119,261 +120,55 @@ SIMPLE_TASK_TYPE_MAP = SIMPLE_TASK_TYPE_MAP_HELPER
 TASK_STATUS_ROUTE_SPECS = TASK_STATUS_ROUTE_SPECS_HELPER
 TASK_RESULT_ROUTE_SPECS = TASK_RESULT_ROUTE_SPECS_HELPER
 
-
-def _split_task_request(request_model):
-    params = request_model.dict()
-    task_id = params.pop("task_id")
-    priority = params.pop("priority", 0)
-    return task_id, priority, params
-
-
-async def _enqueue_task_from_request(
-    *,
-    request_model,
-    task_type: TaskType,
-    queue_manager: QueueManager,
-) -> TaskResponse:
-    task_id, priority, params = _split_task_request(request_model)
-    await queue_manager.enqueue_task(task_type, params, priority, task_id)
-    return TaskResponse(task_id=task_id)
-
-
-async def _enqueue_configured_task(
-    *,
-    request_model,
-    task_key: str,
-    queue_manager: QueueManager,
-) -> TaskResponse:
-    return await _enqueue_task_from_request(
-        request_model=request_model,
-        task_type=SIMPLE_TASK_TYPE_MAP[task_key],
-        queue_manager=queue_manager,
-    )
-
-
 def _build_result_url(result_path: str) -> str:
     return build_result_url_helper(
         result_path=result_path,
         settings=settings,
     )
 
-
-def _build_task_event_channel(task_id: str) -> str:
-    return build_task_event_channel_helper(task_id)
-
-
-def _validate_t2i_prompt(prompt: object) -> str:
-    return validate_t2i_prompt_helper(prompt)
-
-
-def _resolve_t2i_priority(request_body: dict, default_priority: int) -> int:
-    return resolve_t2i_priority_helper(request_body, default_priority)
-
-
-def _prepare_t2i_request_payload(
-    request_body: dict,
-    *,
-    default_priority: int,
-) -> tuple[str, int, dict[str, str]]:
-    return prepare_t2i_request_payload_helper(
-        request_body,
-        default_priority=default_priority,
-        uuid_factory=uuid.uuid4,
-        validate_prompt_func=_validate_t2i_prompt,
-        resolve_priority_func=_resolve_t2i_priority,
-    )
-
-
-def _build_t2i_terminal_response(
-    *,
-    task_id: str,
-    status: str | None,
-    result_path: str | None,
-    error_msg: str | None,
-    request_id: str,
-) -> T2ITaskResponse | None:
-    return build_t2i_terminal_response_helper(
-        task_id=task_id,
-        status=status,
-        result_path=result_path,
-        error_msg=error_msg,
-        request_id=request_id,
-        response_cls=T2ITaskResponse,
-        build_result_url_func=_build_result_url,
-        logger=logger,
-    )
-
-
-def _decode_t2i_pubsub_message(data: str | bytes) -> dict | None:
-    return decode_t2i_pubsub_message_helper(data)
-
-
-async def _wait_for_t2i_terminal_response(
-    *,
-    pubsub,
-    task_id: str,
-    request_id: str,
-    timeout: int,
-) -> T2ITaskResponse:
-    return await wait_for_t2i_terminal_response_helper(
-        pubsub=pubsub,
-        task_id=task_id,
-        request_id=request_id,
-        timeout=timeout,
-        decode_message_func=_decode_t2i_pubsub_message,
-        build_terminal_response_func=_build_t2i_terminal_response,
-    )
-
-
-async def _subscribe_task_events(queue_manager: QueueManager, task_id: str):
-    return await subscribe_task_events_helper(
-        queue_manager=queue_manager,
-        task_id=task_id,
-        build_channel_func=_build_task_event_channel,
-    )
-
-
-async def _close_task_event_subscription(*, pubsub, channel: str) -> None:
-    await close_task_event_subscription_helper(pubsub=pubsub, channel=channel)
-
-
-@asynccontextmanager
-async def _optional_t2i_task_subscription(
-    *,
-    async_mode: bool,
-    queue_manager: QueueManager,
-    task_id: str,
-):
-    async with optional_t2i_task_subscription_helper(
-        async_mode=async_mode,
-        queue_manager=queue_manager,
-        task_id=task_id,
-        subscribe_task_events_func=_subscribe_task_events,
-        close_task_event_subscription_func=_close_task_event_subscription,
-    ) as subscription:
-        yield subscription
-
-
-async def _enqueue_t2i_task(
-    *,
-    queue_manager: QueueManager,
-    task_id: str,
-    params: dict,
-    priority: int,
-    request_id: str,
-) -> None:
-    await enqueue_t2i_task_helper(
-        queue_manager=queue_manager,
-        task_type=TaskType.T2I_PORNMASTER_TURBO,
-        task_id=task_id,
-        params=params,
-        priority=priority,
-        request_id=request_id,
-        logger=logger,
-    )
-
-
-async def _get_immediate_t2i_terminal_response(
-    *,
-    queue_manager: QueueManager,
-    task_id: str,
-    request_id: str,
-) -> T2ITaskResponse | None:
-    return await get_immediate_t2i_terminal_response_helper(
-        queue_manager=queue_manager,
-        task_id=task_id,
-        request_id=request_id,
-        build_terminal_response_func=_build_t2i_terminal_response,
-    )
-
-
-async def _wait_for_t2i_sync_result(
-    *,
-    pubsub,
-    task_id: str,
-    request_id: str,
-    queue_manager: QueueManager,
-    timeout: int = 60,
-) -> T2ITaskResponse:
-    return await wait_for_t2i_sync_result_helper(
-        pubsub=pubsub,
-        task_id=task_id,
-        request_id=request_id,
-        queue_manager=queue_manager,
-        timeout=timeout,
-        logger=logger,
-        get_immediate_response_func=_get_immediate_t2i_terminal_response,
-        wait_for_terminal_response_func=_wait_for_t2i_terminal_response,
-    )
-
-
-async def _submit_t2i_task_request(
-    *,
-    async_mode: bool,
-    queue_manager: QueueManager,
-    task_id: str,
-    params: dict[str, str],
-    task_priority: int,
-    request_id: str,
-) -> T2ITaskResponse:
-    return await submit_t2i_task_request_helper(
-        async_mode=async_mode,
-        queue_manager=queue_manager,
-        task_id=task_id,
-        params=params,
-        task_priority=task_priority,
-        request_id=request_id,
-        response_cls=T2ITaskResponse,
-        optional_subscription_func=_optional_t2i_task_subscription,
-        enqueue_t2i_task_func=_enqueue_t2i_task,
-        wait_for_sync_result_func=_wait_for_t2i_sync_result,
-        logger=logger,
-    )
-
-
-async def _build_task_status_response(
-    *,
-    task_id: str,
-    queue_manager: QueueManager,
-    include_image_url: bool = False,
-    include_task_type: bool = False,
-) -> TaskStatusResponse:
-    return await build_task_status_response_helper(
-        task_id=task_id,
-        queue_manager=queue_manager,
-        include_image_url=include_image_url,
-        include_task_type=include_task_type,
-        build_result_url_func=_build_result_url,
-    )
-
-
-async def _serve_task_result_file(
-    *,
-    task_id: str,
-    ready_error_detail: str,
-    queue_manager: QueueManager,
-    minio_client: Optional[Minio],
-) -> FileResponse:
-    return await serve_task_result_file_helper(
-        task_id=task_id,
-        ready_error_detail=ready_error_detail,
-        queue_manager=queue_manager,
-        minio_client=minio_client,
-        settings=settings,
-        logger=logger,
-    )
-
-
-async def _build_system_workers_response(queue_manager: QueueManager) -> SystemWorkersResponse:
-    return await build_system_workers_response_helper(queue_manager)
-
-
-async def _build_system_status_response(queue_manager: QueueManager) -> SystemStatusResponse:
-    return await build_system_status_response_helper(queue_manager)
-
-
-async def _cancel_task_or_404(queue_manager: QueueManager, task_id: str):
-    return await cancel_task_or_404_helper(queue_manager, task_id)
+_build_t2i_terminal_response_func = partial(
+    build_t2i_terminal_response_helper,
+    response_cls=T2ITaskResponse,
+    build_result_url_func=_build_result_url,
+    logger=logger,
+)
+_wait_for_t2i_terminal_response_func = partial(
+    wait_for_t2i_terminal_response_helper,
+    decode_message_func=decode_t2i_pubsub_message_helper,
+    build_terminal_response_func=_build_t2i_terminal_response_func,
+)
+_subscribe_task_events_func = partial(
+    subscribe_task_events_helper,
+    build_channel_func=build_task_event_channel_helper,
+)
+_optional_t2i_task_subscription_func = partial(
+    optional_t2i_task_subscription_helper,
+    subscribe_task_events_func=_subscribe_task_events_func,
+    close_task_event_subscription_func=close_task_event_subscription_helper,
+)
+_enqueue_t2i_task_func = partial(
+    enqueue_t2i_task_helper,
+    task_type=TaskType.T2I_PORNMASTER_TURBO,
+    logger=logger,
+)
+_get_immediate_t2i_terminal_response_func = partial(
+    get_immediate_t2i_terminal_response_helper,
+    build_terminal_response_func=_build_t2i_terminal_response_func,
+)
+_wait_for_t2i_sync_result_func = partial(
+    wait_for_t2i_sync_result_helper,
+    logger=logger,
+    get_immediate_response_func=_get_immediate_t2i_terminal_response_func,
+    wait_for_terminal_response_func=_wait_for_t2i_terminal_response_func,
+)
+_submit_t2i_task_request_func = partial(
+    submit_t2i_task_request_helper,
+    response_cls=T2ITaskResponse,
+    optional_subscription_func=_optional_t2i_task_subscription_func,
+    enqueue_t2i_task_func=_enqueue_t2i_task_func,
+    wait_for_sync_result_func=_wait_for_t2i_sync_result_func,
+    logger=logger,
+)
 
 
 @app.get("/health")
@@ -386,7 +181,7 @@ register_simple_task_routes(
     task_response_model=TaskResponse,
     queue_manager_dep=QueueManagerDep,
     auth_token_dep=AuthTokenDep,
-    enqueue_configured_task_func=_enqueue_configured_task,
+    enqueue_configured_task_func=enqueue_configured_task_helper,
 )
 
 
@@ -402,15 +197,18 @@ async def create_t2i_pornmaster_turbo_task(
     logger.info(f"[{request_id}] Received T2I task request: {request}")
 
     try:
-        task_id, task_priority, params = _prepare_t2i_request_payload(
+        task_id, task_priority, params = prepare_t2i_request_payload_helper(
             request,
             default_priority=priority,
+            uuid_factory=uuid.uuid4,
+            validate_prompt_func=validate_t2i_prompt_helper,
+            resolve_priority_func=resolve_t2i_priority_helper,
         )
     except HTTPException:
         logger.error(f"[{request_id}] Invalid prompt: {request.get('prompt')}")
         raise
 
-    return await _submit_t2i_task_request(
+    return await _submit_t2i_task_request_func(
         async_mode=async_mode,
         queue_manager=queue_manager,
         task_id=task_id,
@@ -426,29 +224,36 @@ async def cancel_task(
     queue_manager: QueueManagerDep,
     _token: AuthTokenDep,
 ):
-    return await _cancel_task_or_404(queue_manager, task_id)
+    return await cancel_task_or_404_helper(queue_manager, task_id)
 
 
 register_task_status_routes(
     app=app,
     task_status_response_model=TaskStatusResponse,
     queue_manager_dep=QueueManagerDep,
-    build_task_status_response_func=_build_task_status_response,
+    build_task_status_response_func=partial(
+        build_task_status_response_helper,
+        build_result_url_func=_build_result_url,
+    ),
 )
 
 register_task_result_routes(
     app=app,
     queue_manager_dep=QueueManagerDep,
     minio_client_dep=MinioClientDep,
-    serve_task_result_file_func=_serve_task_result_file,
+    serve_task_result_file_func=partial(
+        serve_task_result_file_helper,
+        settings=settings,
+        logger=logger,
+    ),
 )
 
 
 @app.get("/system/workers", response_model=SystemWorkersResponse)
 async def get_system_workers(queue_manager: QueueManagerDep):
-    return await _build_system_workers_response(queue_manager)
+    return await build_system_workers_response_helper(queue_manager)
 
 
 @app.get("/system/status", response_model=SystemStatusResponse)
 async def get_system_status(queue_manager: QueueManagerDep):
-    return await _build_system_status_response(queue_manager)
+    return await build_system_status_response_helper(queue_manager)

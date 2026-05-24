@@ -1,7 +1,7 @@
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
-from src.core.task_core import finalize_task_failure_with_notice
+from src.core.task_core_finalization import finalize_task_failure_with_notice
 from src.core.task_core_runtime import cancel_backend_task_best_effort
 
 

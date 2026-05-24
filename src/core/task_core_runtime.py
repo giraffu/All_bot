@@ -41,12 +41,12 @@ async def cleanup_task_runtime_state(
             logger.error(f"Failed to remove registry task {registry_task_id}: {e}")
 
 
-async def get_system_task_stats() -> tuple[dict, dict]:
+async def get_system_task_stats(*, submission_outbox=None) -> tuple[dict, dict]:
     """
     获取全系统任务统计信息。
     返回 (active_tasks, user_concurrencies)
     """
-    redis_client = get_task_core_submission_outbox()
+    redis_client = submission_outbox or get_task_core_submission_outbox()
     active_tasks = await redis_client.get_active_tasks()
     user_concurrencies = await redis_client.get_all_user_concurrencies()
     return active_tasks, user_concurrencies
@@ -101,6 +101,7 @@ async def cancel_backend_task_best_effort(
 async def force_terminate_task(
     task_id: str,
     user_id: int | None = None,
+    submission_outbox=None,
     cleanup_task_runtime_state_func=None,
     cancel_backend_task_best_effort_func=None,
 ):
@@ -115,7 +116,7 @@ async def force_terminate_task(
     if cancel_backend_task_best_effort_func is None:
         cancel_backend_task_best_effort_func = cancel_backend_task_best_effort
 
-    redis_client = get_task_core_submission_outbox()
+    redis_client = submission_outbox or get_task_core_submission_outbox()
     tasks = await redis_client.get_active_tasks()
     task_data = tasks.get(task_id, {}) if tasks else {}
     backend_task_id = task_data.get("backend_task_id")
@@ -137,13 +138,18 @@ async def force_terminate_task(
     )
 
 
-async def sync_user_concurrency(user_id: int, actual_count: int):
+async def sync_user_concurrency(
+    user_id: int,
+    actual_count: int,
+    *,
+    submission_outbox=None,
+):
     """
     同步用户并发锁到指定数量，当 actual_count 为 0 时删除锁
     """
     from config import REDIS_PREFIX
 
-    redis_client = get_task_core_submission_outbox()
+    redis_client = submission_outbox or get_task_core_submission_outbox()
     key = f"{REDIS_PREFIX}user_concurrency:{user_id}"
 
     if actual_count > 0:
@@ -153,9 +159,15 @@ async def sync_user_concurrency(user_id: int, actual_count: int):
         await redis_client.redis.delete(key)
 
 
-async def cancel_user_task(task_id: str, user_id: int):
+async def cancel_user_task(
+    task_id: str,
+    user_id: int,
+    *,
+    task_registry=None,
+    cancel_task_func=None,
+):
     """供用户主动调用的任务撤销逻辑"""
-    task_registry = get_task_core_task_registry()
+    task_registry = task_registry or get_task_core_task_registry()
     task = await task_registry.get_task(task_id)
     registry_task_id = task_id
     if not task:
@@ -169,7 +181,8 @@ async def cancel_user_task(task_id: str, user_id: int):
 
     backend_task_id = task.get("backend_task_id") or registry_task_id
     try:
-        cancel_result = await get_task_core_api_client().cancel_task(backend_task_id)
+        cancel_task_func = cancel_task_func or get_task_core_api_client().cancel_task
+        cancel_result = await cancel_task_func(backend_task_id)
     except httpx.HTTPStatusError as e:
         if e.response.status_code == 404:
             raise CoreDomainError("任务不存在或已结束，当前无法取消")

@@ -1,9 +1,8 @@
 import datetime
+from collections.abc import Awaitable, Callable
 from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel
-
-from src.services.permission_service import permission_service
 
 
 class BreakthroughConditionDTO(BaseModel):
@@ -30,8 +29,22 @@ class UserDashboardDTO(BaseModel):
     identity_expire_at: Optional[datetime.datetime]
 
 
-async def get_user_dashboard_info(tg_id: int, first_name: str) -> UserDashboardDTO:
-    stats = await permission_service.get_user_detailed_stats(tg_id)
+def _get_user_detailed_stats_func() -> Callable[[int], Awaitable[dict]]:
+    from src.services.permission_service import permission_service
+
+    return permission_service.get_user_detailed_stats
+
+
+async def get_user_dashboard_info(
+    tg_id: int,
+    first_name: str,
+    *,
+    get_user_detailed_stats_func: Optional[Callable[[int], Awaitable[dict]]] = None,
+) -> UserDashboardDTO:
+    get_user_detailed_stats_func = (
+        get_user_detailed_stats_func or _get_user_detailed_stats_func()
+    )
+    stats = await get_user_detailed_stats_func(tg_id)
 
     current_group = stats["group"]
     current_identity = stats.get("identity", "外门弟子")

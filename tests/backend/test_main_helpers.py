@@ -4,12 +4,14 @@ import pytest
 from fastapi import HTTPException
 
 from app import main as backend_main
+from app import main_response_helpers
+from app import main_simple_task_routes
 from app import main_t2i_helpers as t2i_helpers
 from app.models import TaskType
 
 
 def test_validate_t2i_prompt_accepts_valid_prompt():
-    prompt = backend_main._validate_t2i_prompt("draw a dragon")
+    prompt = t2i_helpers.validate_t2i_prompt("draw a dragon")
 
     assert prompt == "draw a dragon"
 
@@ -17,23 +19,26 @@ def test_validate_t2i_prompt_accepts_valid_prompt():
 @pytest.mark.parametrize("prompt", [None, "", 123, "x" * 513])
 def test_validate_t2i_prompt_rejects_invalid_values(prompt):
     with pytest.raises(HTTPException) as exc_info:
-        backend_main._validate_t2i_prompt(prompt)
+        t2i_helpers.validate_t2i_prompt(prompt)
 
     assert exc_info.value.status_code == 400
     assert exc_info.value.detail == "prompt is required and length must be 1-512"
 
 
 def test_resolve_t2i_priority_prefers_body_value():
-    assert backend_main._resolve_t2i_priority({"priority": 9}, 3) == 9
-    assert backend_main._resolve_t2i_priority({}, 3) == 3
+    assert t2i_helpers.resolve_t2i_priority({"priority": 9}, 3) == 9
+    assert t2i_helpers.resolve_t2i_priority({}, 3) == 3
 
 
 def test_prepare_t2i_request_payload_validates_prompt_and_builds_params(monkeypatch):
     monkeypatch.setattr(backend_main.uuid, "uuid4", lambda: "task-123")
 
-    task_id, task_priority, params = backend_main._prepare_t2i_request_payload(
+    task_id, task_priority, params = t2i_helpers.prepare_t2i_request_payload(
         {"prompt": "draw a dragon", "priority": 9},
         default_priority=3,
+        uuid_factory=backend_main.uuid.uuid4,
+        validate_prompt_func=t2i_helpers.validate_t2i_prompt,
+        resolve_priority_func=t2i_helpers.resolve_t2i_priority,
     )
 
     assert task_id == "task-123"
@@ -42,12 +47,15 @@ def test_prepare_t2i_request_payload_validates_prompt_and_builds_params(monkeypa
 
 
 def test_build_t2i_terminal_response_returns_done_payload():
-    response = backend_main._build_t2i_terminal_response(
+    response = t2i_helpers.build_t2i_terminal_response(
         task_id="task-1",
         status="done",
         result_path="foo/bar.png",
         error_msg=None,
         request_id="req-1",
+        response_cls=backend_main.T2ITaskResponse,
+        build_result_url_func=backend_main._build_result_url,
+        logger=backend_main.logger,
     )
 
     assert response.task_id == "task-1"
@@ -56,12 +64,15 @@ def test_build_t2i_terminal_response_returns_done_payload():
 
 def test_build_t2i_terminal_response_raises_for_error_status():
     with pytest.raises(HTTPException) as exc_info:
-        backend_main._build_t2i_terminal_response(
+        t2i_helpers.build_t2i_terminal_response(
             task_id="task-2",
             status="error",
             result_path=None,
             error_msg="worker failed",
             request_id="req-2",
+            response_cls=backend_main.T2ITaskResponse,
+            build_result_url_func=backend_main._build_result_url,
+            logger=backend_main.logger,
         )
 
     assert exc_info.value.status_code == 500
@@ -69,10 +80,10 @@ def test_build_t2i_terminal_response_raises_for_error_status():
 
 
 def test_decode_t2i_pubsub_message_ignores_invalid_json():
-    assert backend_main._decode_t2i_pubsub_message(b'{"status":"done"}') == {
+    assert t2i_helpers.decode_t2i_pubsub_message(b'{"status":"done"}') == {
         "status": "done"
     }
-    assert backend_main._decode_t2i_pubsub_message("not-json") is None
+    assert t2i_helpers.decode_t2i_pubsub_message("not-json") is None
 
 
 @pytest.mark.asyncio
@@ -86,7 +97,7 @@ async def test_get_immediate_t2i_terminal_response_returns_done_payload():
         queue_manager=FakeQueueManager(),
         task_id="task-1",
         request_id="req-1",
-        build_terminal_response_func=backend_main._build_t2i_terminal_response,
+        build_terminal_response_func=backend_main._build_t2i_terminal_response_func,
     )
 
     assert response is not None
@@ -304,12 +315,12 @@ async def test_enqueue_configured_task_uses_registered_task_type(monkeypatch):
         return "queued"
 
     monkeypatch.setattr(
-        backend_main,
-        "_enqueue_task_from_request",
+        main_simple_task_routes,
+        "enqueue_task_from_request",
         fake_enqueue_task_from_request,
     )
 
-    response = await backend_main._enqueue_configured_task(
+    response = await main_simple_task_routes.enqueue_configured_task(
         request_model={"task_id": "x"},
         task_key="face_swap",
         queue_manager="qm",
@@ -342,7 +353,9 @@ async def test_build_system_workers_response_counts_workers():
                 },
             ]
 
-    response = await backend_main._build_system_workers_response(FakeQueueManager())
+    response = await main_response_helpers.build_system_workers_response(
+        FakeQueueManager()
+    )
 
     assert response.count == 2
     assert response.workers[0].agent_id == "agent-1"
@@ -361,7 +374,9 @@ async def test_build_system_status_response_uses_queue_metrics_and_worker_count(
         async def get_queue_metrics_by_type(self):
             return {"ltx_video": 2, "i2i_pro": 1}
 
-    response = await backend_main._build_system_status_response(FakeQueueManager())
+    response = await main_response_helpers.build_system_status_response(
+        FakeQueueManager()
+    )
 
     assert response.queue_size == 3
     assert response.active_workers == 2
@@ -376,7 +391,10 @@ async def test_cancel_task_or_404_returns_cancel_result():
             assert task_id == "task-1"
             return {"state": "cancelled", "task_id": task_id}
 
-    result = await backend_main._cancel_task_or_404(FakeQueueManager(), "task-1")
+    result = await main_response_helpers.cancel_task_or_404(
+        FakeQueueManager(),
+        "task-1",
+    )
 
     assert result == {"state": "cancelled", "task_id": "task-1"}
 
@@ -389,7 +407,10 @@ async def test_cancel_task_or_404_raises_not_found():
             return None
 
     with pytest.raises(HTTPException) as exc_info:
-        await backend_main._cancel_task_or_404(FakeQueueManager(), "missing-task")
+        await main_response_helpers.cancel_task_or_404(
+            FakeQueueManager(),
+            "missing-task",
+        )
 
     assert exc_info.value.status_code == 404
     assert exc_info.value.detail == "Task not found"

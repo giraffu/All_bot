@@ -8,7 +8,8 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 
 from config import API_BASE, STATUS_ENDPOINT
-from src.core.task_core import finalize_terminated_task, get_system_task_stats
+from src.core.task_core import get_system_task_stats
+from src.core.task_core_finalization import finalize_terminated_task
 from src.core.task_core import sync_user_concurrency as core_sync_user_concurrency
 from src.database.models import User
 from src.services.image_service import image_service

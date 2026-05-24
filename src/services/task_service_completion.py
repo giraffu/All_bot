@@ -3,7 +3,11 @@ from typing import Optional
 from src.logger import UserLogger
 from src.services.task_service_finalize import finalize_failed_task_for_bot
 from src.services.task_service_types import BotTaskMessageSpec
-from src.services.tg_task_runtime import monitor_task_progress
+from src.services.tg_task_runtime import (
+    cleanup_completion_status_message,
+    monitor_task_progress,
+    send_result_media,
+)
 
 
 async def monitor_submitted_bot_task(
@@ -94,16 +98,14 @@ async def complete_monitored_bot_task(
     missing_output_should_refund: bool = True,
     send_result_media_func=None,
     cleanup_completion_status_message_func=None,
-    handle_task_completion_func=None,
-    finalize_failed_task_for_bot_func=None,
 ):
-    handle_task_completion_func = handle_task_completion_func or handle_task_completion
-    finalize_failed_task_for_bot_func = (
-        finalize_failed_task_for_bot_func or finalize_failed_task_for_bot
+    send_result_media_func = send_result_media_func or send_result_media
+    cleanup_completion_status_message_func = (
+        cleanup_completion_status_message_func or cleanup_completion_status_message
     )
     user_logger = user_logger or UserLogger(internal_user_id, username)
     if final_info:
-        return await handle_task_completion_func(
+        return await handle_task_completion(
             context=context,
             chat_id=chat_id,
             internal_user_id=internal_user_id,
@@ -121,11 +123,9 @@ async def complete_monitored_bot_task(
             allow_contribute=allow_contribute,
             billing_resolution=billing_resolution,
             requested_duration=requested_duration,
-            send_result_media_func=send_result_media_func,
-            cleanup_completion_status_message_func=cleanup_completion_status_message_func,
         )
 
-    await finalize_failed_task_for_bot_func(
+    await finalize_failed_task_for_bot(
         context=context,
         chat_id=chat_id,
         status_msg=None,
@@ -199,15 +199,15 @@ async def handle_task_completion(
     allow_contribute=True,
     billing_resolution: Optional[str] = None,
     requested_duration: Optional[int] = None,
-    send_result_media_func,
-    cleanup_completion_status_message_func,
-    download_and_log_task_output_func=None,
+    send_result_media_func=None,
+    cleanup_completion_status_message_func=None,
 ):
-    download_and_log_task_output_func = (
-        download_and_log_task_output_func or download_and_log_task_output
+    send_result_media_func = send_result_media_func or send_result_media
+    cleanup_completion_status_message_func = (
+        cleanup_completion_status_message_func or cleanup_completion_status_message
     )
     media_bytes, full_output_path, _width, _height, _duration = (
-        await download_and_log_task_output_func(
+        await download_and_log_task_output(
             internal_user_id=internal_user_id,
             username=user_logger.username,
             prompt=prompt,

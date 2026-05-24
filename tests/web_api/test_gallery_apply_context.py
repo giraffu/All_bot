@@ -1,5 +1,6 @@
 import asyncio
 from datetime import datetime
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -742,7 +743,7 @@ async def test_pick_gallery_media_urls_best_effort_when_inner_probes_raise():
 
 
 @pytest.mark.asyncio
-async def test_process_submit_to_gallery_result_builds_expected_outcome(monkeypatch):
+async def test_process_submit_to_gallery_result_builds_expected_outcome():
     history = History(
         id=11,
         user_id=123,
@@ -758,21 +759,16 @@ async def test_process_submit_to_gallery_result_builds_expected_outcome(monkeypa
     history_result = _FakeResult(many=[history])
     user_result = _FakeResult(single=user)
     session = _FakeSession([existing_result, history_result, user_result])
-    monkeypatch.setattr(gallery_core, "AsyncSessionLocal", lambda: session)
-    monkeypatch.setattr(
-        gallery_core.redis_client,
-        "check_gallery_submit_limit",
-        AsyncMock(return_value=True),
-    )
-    monkeypatch.setattr(
-        gallery_core.redis_client,
-        "increment_gallery_submit",
-        AsyncMock(),
+    gallery_submission_outbox = SimpleNamespace(
+        check_gallery_submit_limit=AsyncMock(return_value=True),
+        increment_gallery_submit=AsyncMock(),
     )
 
     outcome = await gallery_core.process_submit_to_gallery_result(
         user_id=123,
         task_id="task-1",
+        session_factory=lambda: session,
+        gallery_submission_outbox=gallery_submission_outbox,
     )
 
     assert outcome.payload["status"] == "success"
@@ -788,19 +784,27 @@ async def test_process_submit_to_gallery_result_builds_expected_outcome(monkeypa
     assert thumb_args[0] == "123/output_images/task-1.png"
     assert thumb_args[1] == "image"
     assert thumb_args[2] == "history/task-1/thumb.webp"
+    gallery_submission_outbox.check_gallery_submit_limit.assert_awaited_once_with(
+        123, limit=10
+    )
+    gallery_submission_outbox.increment_gallery_submit.assert_awaited_once_with(123)
 
 
 def test_build_gallery_submit_side_effects_returns_copy_and_thumbnail_jobs():
+    copy_job = AsyncMock()
+    thumbnail_job = AsyncMock()
     side_effects = gallery_core.build_gallery_submit_side_effects(
         task_id="task-1",
         output_file="123/output_images/task-1.png",
         media_type="image",
+        copy_to_r2_background_func=copy_job,
+        generate_thumbnail_func=thumbnail_job,
     )
 
     assert len(side_effects) == 2
 
     copy_func, copy_args = side_effects[0]
-    assert copy_func is gallery_core.async_copy_to_r2_background
+    assert copy_func is copy_job
     assert copy_args == (
         "bot-data",
         "123/output_images/task-1.png",
@@ -808,5 +812,5 @@ def test_build_gallery_submit_side_effects_returns_copy_and_thumbnail_jobs():
     )
 
     thumb_func, thumb_args = side_effects[1]
-    assert thumb_func is gallery_core.generate_and_upload_thumbnail
+    assert thumb_func is thumbnail_job
     assert thumb_args == ("123/output_images/task-1.png", "image", "history/task-1/thumb.webp")

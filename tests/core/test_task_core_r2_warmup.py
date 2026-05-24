@@ -27,7 +27,6 @@ async def test_monitor_task_and_release_lock_schedules_web_history_r2_warmup(mon
 
     warmup_mock = MagicMock()
 
-    monkeypatch.setattr(image_service_module.image_service, "monitor_progress", _monitor_progress)
     monkeypatch.setattr(
         image_service_module.image_service,
         "download_result",
@@ -39,7 +38,7 @@ async def test_monitor_task_and_release_lock_schedules_web_history_r2_warmup(mon
         lambda *_args, **_kwargs: (1024, 1024, None),
     )
     monkeypatch.setattr(task_core, "UserLogger", lambda *_args, **_kwargs: fake_user_logger)
-    monkeypatch.setattr(task_core, "schedule_web_history_r2_warmup", warmup_mock)
+    monkeypatch.setattr(task_core, "_schedule_web_history_r2_warmup_default", warmup_mock)
     monkeypatch.setattr(task_core, "release_concurrency_lock", AsyncMock())
     monkeypatch.setattr(task_registry_module.TaskRegistry, "remove_task", AsyncMock())
     monkeypatch.setattr(task_core, "refund_credits", AsyncMock())
@@ -60,13 +59,19 @@ async def test_monitor_task_and_release_lock_schedules_web_history_r2_warmup(mon
         ),
     )
 
-    await task_core.monitor_task_and_release_lock(
+    await task_core_web_monitor.monitor_task_and_release_lock(
         backend_task_id="task-1",
         internal_user_id=123,
         username="tester",
         registry_task_id="registry-1",
         submission_context=submission_context,
         cost=1,
+        monitor_progress_func=_monitor_progress,
+        normalize_terminal_status_func=task_core.normalize_terminal_status,
+        finalize_success_func=task_core._finalize_monitored_web_task_success,
+        finalize_cancellation_func=AsyncMock(),
+        finalize_failure_func=AsyncMock(),
+        logger=task_core.logger,
     )
 
     fake_user_logger.log_task.assert_awaited_once()
@@ -81,18 +86,12 @@ async def test_monitor_task_and_release_lock_schedules_web_history_r2_warmup(mon
 
 
 @pytest.mark.asyncio
-async def test_monitor_task_and_release_lock_uses_cancellation_finalize_for_cancelled(
-    monkeypatch,
-):
+async def test_monitor_task_and_release_lock_uses_cancellation_finalize_for_cancelled():
     async def _monitor_progress(_task_id, _is_video):
         yield {"status": "cancelled"}
 
     finalize_cancel = AsyncMock()
     finalize_failure = AsyncMock()
-
-    monkeypatch.setattr(image_service_module.image_service, "monitor_progress", _monitor_progress)
-    monkeypatch.setattr(task_core, "finalize_task_cancellation", finalize_cancel)
-    monkeypatch.setattr(task_core, "finalize_task_failure", finalize_failure)
 
     submission_context = task_core.TaskSubmissionContext(
         task_type="image",
@@ -105,38 +104,37 @@ async def test_monitor_task_and_release_lock_uses_cancellation_finalize_for_canc
         final_priority=0,
     )
 
-    await task_core.monitor_task_and_release_lock(
+    await task_core_web_monitor.monitor_task_and_release_lock(
         backend_task_id="task-cancelled",
         internal_user_id=123,
         username="tester",
         registry_task_id="registry-cancelled",
         submission_context=submission_context,
         cost=5,
+        monitor_progress_func=_monitor_progress,
+        normalize_terminal_status_func=task_core.normalize_terminal_status,
+        finalize_success_func=AsyncMock(),
+        finalize_cancellation_func=finalize_cancel,
+        finalize_failure_func=finalize_failure,
+        logger=MagicMock(),
     )
 
     finalize_cancel.assert_awaited_once_with(
         internal_user_id=123,
         username="tester",
         cost=5,
-        task_submitted=True,
         registry_task_id="registry-cancelled",
     )
     finalize_failure.assert_not_awaited()
 
 
 @pytest.mark.asyncio
-async def test_monitor_task_and_release_lock_uses_failure_finalize_for_error(
-    monkeypatch,
-):
+async def test_monitor_task_and_release_lock_uses_failure_finalize_for_error():
     async def _monitor_progress(_task_id, _is_video):
         yield {"status": "error"}
 
     finalize_cancel = AsyncMock()
     finalize_failure = AsyncMock()
-
-    monkeypatch.setattr(image_service_module.image_service, "monitor_progress", _monitor_progress)
-    monkeypatch.setattr(task_core, "finalize_task_cancellation", finalize_cancel)
-    monkeypatch.setattr(task_core, "finalize_task_failure", finalize_failure)
 
     submission_context = task_core.TaskSubmissionContext(
         task_type="image",
@@ -149,13 +147,19 @@ async def test_monitor_task_and_release_lock_uses_failure_finalize_for_error(
         final_priority=0,
     )
 
-    await task_core.monitor_task_and_release_lock(
+    await task_core_web_monitor.monitor_task_and_release_lock(
         backend_task_id="task-error",
         internal_user_id=321,
         username="tester",
         registry_task_id="registry-error",
         submission_context=submission_context,
         cost=7,
+        monitor_progress_func=_monitor_progress,
+        normalize_terminal_status_func=task_core.normalize_terminal_status,
+        finalize_success_func=AsyncMock(),
+        finalize_cancellation_func=finalize_cancel,
+        finalize_failure_func=finalize_failure,
+        logger=MagicMock(),
     )
 
     finalize_cancel.assert_not_awaited()
@@ -163,9 +167,8 @@ async def test_monitor_task_and_release_lock_uses_failure_finalize_for_error(
         internal_user_id=321,
         username="tester",
         cost=7,
-        should_refund=True,
         registry_task_id="registry-error",
-        refund_task_type="refund_async_failed_error",
+        final_status="error",
     )
 
 
@@ -199,12 +202,20 @@ async def test_schedule_web_history_r2_warmup_still_prunes_when_copy_fails(monke
     )
     monkeypatch.setattr(task_core.logger, "warning", warning_mock)
 
-    task_core.schedule_web_history_r2_warmup(
+    task_core_web_history_warmup.schedule_web_history_r2_warmup(
         user_id=123,
         task_id="task-1",
         output_file="123/output_images/task-1.png",
         media_type="image",
         source="web",
+        resolve_storage_object_func=task_core.resolve_storage_object,
+        copy_to_r2_func=storage_module.storage.async_copy_to_r2,
+        generate_and_upload_thumbnail_func=task_core.generate_and_upload_thumbnail,
+        prune_user_web_history_r2_cache_func=(
+            storage_module.storage.async_prune_user_web_history_r2_cache
+        ),
+        logger=task_core.logger,
+        create_task_func=task_core.asyncio.create_task,
     )
 
     assert len(scheduled_tasks) == 1
@@ -323,7 +334,7 @@ async def test_process_and_submit_task_passes_requested_duration_to_web_monitor(
     monkeypatch.setattr(
         task_core, "dispatch_to_worker", AsyncMock(return_value="backend-task-1")
     )
-    monkeypatch.setattr(task_core, "monitor_task_and_release_lock", monitor_mock)
+    monkeypatch.setattr(task_core, "_monitor_task_and_release_lock_default", monitor_mock)
     monkeypatch.setattr(task_core.asyncio, "create_task", _capture_background_task)
 
     result = await task_core.process_and_submit_task(
@@ -366,7 +377,7 @@ async def test_persist_successful_task_result_reuses_core_path_for_bot(monkeypat
         lambda *_args, **_kwargs: (768, 1024, None),
     )
     monkeypatch.setattr(task_core, "UserLogger", lambda *_args, **_kwargs: fake_user_logger)
-    monkeypatch.setattr(task_core, "schedule_web_history_r2_warmup", warmup_mock)
+    monkeypatch.setattr(task_core, "_schedule_web_history_r2_warmup_default", warmup_mock)
     monkeypatch.setattr(
         permission_service_module.permission_service,
         "refresh_user_group",
@@ -419,7 +430,7 @@ async def test_persist_successful_task_result_uses_storage_metadata_when_bytes_m
         "extract_media_metadata_from_storage_best_effort",
         extract_from_storage_mock,
     )
-    monkeypatch.setattr(task_core, "schedule_web_history_r2_warmup", warmup_mock)
+    monkeypatch.setattr(task_core, "_schedule_web_history_r2_warmup_default", warmup_mock)
 
     result = await task_core.persist_successful_task_result(
         backend_task_id="task-3",

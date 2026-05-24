@@ -21,10 +21,10 @@ async def test_cleanup_task_runtime_state_releases_lock_and_removes_registry(mon
     async def fake_remove(task_id: str):
         calls.append(("remove", task_id))
 
-    monkeypatch.setattr(task_core, "release_concurrency_lock", fake_release)
+    monkeypatch.setattr(task_core_runtime, "release_concurrency_lock", fake_release)
     monkeypatch.setattr(task_registry_module.TaskRegistry, "remove_task", fake_remove)
 
-    await task_core.cleanup_task_runtime_state(
+    await task_core_runtime.cleanup_task_runtime_state(
         internal_user_id=123,
         registry_task_id="task-1",
     )
@@ -42,10 +42,10 @@ async def test_cleanup_task_runtime_state_can_skip_lock_release(monkeypatch):
     async def fake_remove(task_id: str):
         calls.append(("remove", task_id))
 
-    monkeypatch.setattr(task_core, "release_concurrency_lock", fake_release)
+    monkeypatch.setattr(task_core_runtime, "release_concurrency_lock", fake_release)
     monkeypatch.setattr(task_registry_module.TaskRegistry, "remove_task", fake_remove)
 
-    await task_core.cleanup_task_runtime_state(
+    await task_core_runtime.cleanup_task_runtime_state(
         internal_user_id=456,
         registry_task_id="task-2",
         release_lock=False,
@@ -61,9 +61,9 @@ async def test_refund_cancelled_task_refunds_when_submitted_and_cost_positive(mo
     async def fake_refund(user_id: int, amount: int, task_type: str, username: str):
         calls.append((user_id, amount, task_type, username))
 
-    monkeypatch.setattr(task_core, "refund_credits", fake_refund)
+    monkeypatch.setattr(task_core_finalization, "refund_credits", fake_refund)
 
-    refunded = await task_core.refund_cancelled_task(
+    refunded = await task_core_finalization.refund_cancelled_task(
         internal_user_id=123,
         username="u1",
         cost=20,
@@ -81,15 +81,15 @@ async def test_refund_cancelled_task_skips_when_not_submitted_or_non_positive_co
     async def fake_refund(user_id: int, amount: int, task_type: str, username: str):
         calls.append((user_id, amount, task_type, username))
 
-    monkeypatch.setattr(task_core, "refund_credits", fake_refund)
+    monkeypatch.setattr(task_core_finalization, "refund_credits", fake_refund)
 
-    refunded_not_submitted = await task_core.refund_cancelled_task(
+    refunded_not_submitted = await task_core_finalization.refund_cancelled_task(
         internal_user_id=123,
         username="u1",
         cost=20,
         task_submitted=False,
     )
-    refunded_zero_cost = await task_core.refund_cancelled_task(
+    refunded_zero_cost = await task_core_finalization.refund_cancelled_task(
         internal_user_id=123,
         username="u1",
         cost=0,
@@ -108,9 +108,9 @@ async def test_refund_failed_task_refunds_when_requested(monkeypatch):
     async def fake_refund(user_id: int, amount: int, task_type: str, username: str):
         calls.append((user_id, amount, task_type, username))
 
-    monkeypatch.setattr(task_core, "refund_credits", fake_refund)
+    monkeypatch.setattr(task_core_finalization, "refund_credits", fake_refund)
 
-    refunded = await task_core.refund_failed_task(
+    refunded = await task_core_finalization.refund_failed_task(
         internal_user_id=789,
         username="u2",
         cost=15,
@@ -128,9 +128,9 @@ async def test_refund_failed_task_skips_when_not_requested(monkeypatch):
     async def fake_refund(user_id: int, amount: int, task_type: str, username: str):
         calls.append((user_id, amount, task_type, username))
 
-    monkeypatch.setattr(task_core, "refund_credits", fake_refund)
+    monkeypatch.setattr(task_core_finalization, "refund_credits", fake_refund)
 
-    refunded = await task_core.refund_failed_task(
+    refunded = await task_core_finalization.refund_failed_task(
         internal_user_id=789,
         username="u2",
         cost=15,
@@ -174,9 +174,9 @@ async def test_handle_failed_task_exception_builds_busy_message_and_optional_suf
     async def fake_refund(user_id: int, amount: int, task_type: str, username: str):
         calls.append((user_id, amount, task_type, username))
 
-    monkeypatch.setattr(task_core, "refund_credits", fake_refund)
+    monkeypatch.setattr(task_core_finalization, "refund_credits", fake_refund)
 
-    busy_message = await task_core.handle_failed_task_exception(
+    busy_message = await task_core_finalization.handle_failed_task_exception(
         internal_user_id=1,
         username="u",
         cost=10,
@@ -184,7 +184,7 @@ async def test_handle_failed_task_exception_builds_busy_message_and_optional_suf
         error=RuntimeError("Connection refused"),
         generic_error_prefix="出错了",
     )
-    normal_message = await task_core.handle_failed_task_exception(
+    normal_message = await task_core_finalization.handle_failed_task_exception(
         internal_user_id=1,
         username="u",
         cost=10,
@@ -210,10 +210,10 @@ async def test_finalize_task_failure_refunds_builds_message_and_cleans_up(monkey
     async def fake_cleanup(*, internal_user_id: int, registry_task_id: str | None, release_lock: bool = True):
         cleanup_calls.append((internal_user_id, registry_task_id, release_lock))
 
-    monkeypatch.setattr(task_core, "refund_credits", fake_refund)
-    monkeypatch.setattr(task_core, "cleanup_task_runtime_state", fake_cleanup)
+    monkeypatch.setattr(task_core_finalization, "refund_credits", fake_refund)
+    monkeypatch.setattr(task_core_finalization, "cleanup_task_runtime_state", fake_cleanup)
 
-    result = await task_core.finalize_task_failure(
+    result = await task_core_finalization.finalize_task_failure(
         internal_user_id=10,
         username="u10",
         cost=8,
@@ -240,9 +240,9 @@ async def test_finalize_task_failure_with_notice_uses_finalize_result_message(mo
     )
     send_notice = AsyncMock()
 
-    monkeypatch.setattr(task_core, "finalize_task_failure", finalize_failure)
+    monkeypatch.setattr(task_core_finalization, "finalize_task_failure", finalize_failure)
 
-    result = await task_core.finalize_task_failure_with_notice(
+    result = await task_core_finalization.finalize_task_failure_with_notice(
         internal_user_id=10,
         username="u10",
         cost=8,
@@ -263,14 +263,14 @@ async def test_finalize_task_cancellation_refunds_and_cleans_up(monkeypatch):
     async def fake_cleanup(*, internal_user_id: int, registry_task_id: str | None, release_lock: bool = True):
         cleanup_calls.append((internal_user_id, registry_task_id, release_lock))
 
-    monkeypatch.setattr(task_core, "cleanup_task_runtime_state", fake_cleanup)
+    monkeypatch.setattr(task_core_finalization, "cleanup_task_runtime_state", fake_cleanup)
     monkeypatch.setattr(
-        task_core,
+        task_core_finalization,
         "refund_cancelled_task",
         AsyncMock(return_value=True),
     )
 
-    result = await task_core.finalize_task_cancellation(
+    result = await task_core_finalization.finalize_task_cancellation(
         internal_user_id=20,
         username="u20",
         cost=12,
@@ -294,10 +294,10 @@ async def test_finalize_terminated_task_terminates_before_refund(monkeypatch):
     async def fake_refund(user_id: int, amount: int, task_type: str, username: str):
         call_order.append(("refund", user_id, amount, task_type, username))
 
-    monkeypatch.setattr(task_core, "force_terminate_task", fake_force_terminate)
-    monkeypatch.setattr(task_core, "refund_credits", fake_refund)
+    monkeypatch.setattr(task_core_finalization, "force_terminate_task", fake_force_terminate)
+    monkeypatch.setattr(task_core_finalization, "refund_credits", fake_refund)
 
-    result = await task_core.finalize_terminated_task(
+    result = await task_core_finalization.finalize_terminated_task(
         registry_task_id="task-30",
         user_id=30,
         username="u30",
@@ -320,27 +320,28 @@ async def test_force_terminate_task_reuses_cleanup_runtime_state_without_user_lo
 ):
     cancel_task = AsyncMock()
     cleanup_runtime = AsyncMock()
-
-    monkeypatch.setattr(
-        "src.services.redis_client.redis_client",
-        SimpleNamespace(
-            get_active_tasks=AsyncMock(
-                return_value={
-                    "registry-task-9": {
-                        "backend_task_id": "backend-task-9",
-                    }
+    submission_outbox = SimpleNamespace(
+        get_active_tasks=AsyncMock(
+            return_value={
+                "registry-task-9": {
+                    "backend_task_id": "backend-task-9",
                 }
-            )
-        ),
+            }
+        )
     )
-    monkeypatch.setattr(
-        task_core_runtime,
-        "get_task_core_api_client",
-        lambda: SimpleNamespace(cancel_task=cancel_task),
-    )
-    monkeypatch.setattr(task_core, "cleanup_task_runtime_state", cleanup_runtime)
 
-    await task_core.force_terminate_task("registry-task-9")
+    async def cancel_backend(*, backend_task_id: str, registry_task_id: str, raise_on_error: bool):
+        assert registry_task_id == "registry-task-9"
+        assert raise_on_error is True
+        await cancel_task(backend_task_id)
+        return True
+
+    await task_core_runtime.force_terminate_task(
+        "registry-task-9",
+        submission_outbox=submission_outbox,
+        cleanup_task_runtime_state_func=cleanup_runtime,
+        cancel_backend_task_best_effort_func=cancel_backend,
+    )
 
     cancel_task.assert_awaited_once_with("backend-task-9")
     cleanup_runtime.assert_awaited_once_with(
@@ -351,9 +352,7 @@ async def test_force_terminate_task_reuses_cleanup_runtime_state_without_user_lo
 
 
 @pytest.mark.asyncio
-async def test_cancel_backend_task_best_effort_treats_missing_backend_as_cleaned(
-    monkeypatch,
-):
+async def test_cancel_backend_task_best_effort_treats_missing_backend_as_cleaned():
     request = SimpleNamespace()
     response = SimpleNamespace(status_code=404)
     cancel_task = AsyncMock(
@@ -364,15 +363,10 @@ async def test_cancel_backend_task_best_effort_treats_missing_backend_as_cleaned
         )
     )
 
-    monkeypatch.setattr(
-        task_core_runtime,
-        "get_task_core_api_client",
-        lambda: SimpleNamespace(cancel_task=cancel_task),
-    )
-
     cancelled = await task_core_runtime.cancel_backend_task_best_effort(
         backend_task_id="backend-task-404",
         registry_task_id="registry-task-404",
+        cancel_task_func=cancel_task,
     )
 
     assert cancelled is False
@@ -380,23 +374,15 @@ async def test_cancel_backend_task_best_effort_treats_missing_backend_as_cleaned
 
 
 @pytest.mark.asyncio
-async def test_cleanup_task_runtime_state_uses_runtime_default_bindings(monkeypatch):
+async def test_cleanup_task_runtime_state_uses_runtime_default_bindings():
     release_lock = AsyncMock()
     remove_task = AsyncMock()
-    monkeypatch.setattr(
-        task_core_runtime,
-        "release_concurrency_lock",
-        release_lock,
-    )
-    monkeypatch.setattr(
-        task_core_runtime,
-        "get_task_core_task_registry",
-        lambda: SimpleNamespace(remove_task=remove_task),
-    )
 
     await task_core_runtime.cleanup_task_runtime_state(
         internal_user_id=9,
         registry_task_id="registry-9",
+        release_concurrency_lock_func=release_lock,
+        remove_task_func=remove_task,
     )
 
     release_lock.assert_awaited_once_with(9)
@@ -419,11 +405,6 @@ async def test_force_terminate_task_uses_runtime_default_bindings(monkeypatch):
     )
     monkeypatch.setattr(
         task_core_runtime,
-        "get_task_core_submission_outbox",
-        lambda: redis_client,
-    )
-    monkeypatch.setattr(
-        task_core_runtime,
         "cancel_backend_task_best_effort",
         cancel_backend,
     )
@@ -433,7 +414,10 @@ async def test_force_terminate_task_uses_runtime_default_bindings(monkeypatch):
         cleanup_runtime,
     )
 
-    await task_core_runtime.force_terminate_task("registry-task-10")
+    await task_core_runtime.force_terminate_task(
+        "registry-task-10",
+        submission_outbox=redis_client,
+    )
 
     cancel_backend.assert_awaited_once_with(
         backend_task_id="backend-task-10",
@@ -503,7 +487,7 @@ async def test_finalize_task_cancellation_uses_runtime_default_bindings(monkeypa
 
 
 @pytest.mark.asyncio
-async def test_get_system_task_stats_uses_runtime_redis_provider(monkeypatch):
+async def test_get_system_task_stats_uses_runtime_redis_provider():
     active_tasks = {"task-1": {"user_id": 1}}
     user_concurrencies = {1: 1}
     redis_client = SimpleNamespace(
@@ -511,13 +495,7 @@ async def test_get_system_task_stats_uses_runtime_redis_provider(monkeypatch):
         get_all_user_concurrencies=AsyncMock(return_value=user_concurrencies),
     )
 
-    monkeypatch.setattr(
-        task_core_runtime,
-        "get_task_core_submission_outbox",
-        lambda: redis_client,
-    )
-
-    result = await task_core.get_system_task_stats()
+    result = await task_core.get_system_task_stats(submission_outbox=redis_client)
 
     assert result == (active_tasks, user_concurrencies)
     redis_client.get_active_tasks.assert_awaited_once()
@@ -525,7 +503,7 @@ async def test_get_system_task_stats_uses_runtime_redis_provider(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_sync_user_concurrency_uses_runtime_redis_provider(monkeypatch):
+async def test_sync_user_concurrency_uses_runtime_redis_provider():
     redis = SimpleNamespace(
         set=AsyncMock(),
         expire=AsyncMock(),
@@ -533,14 +511,8 @@ async def test_sync_user_concurrency_uses_runtime_redis_provider(monkeypatch):
     )
     redis_client = SimpleNamespace(redis=redis)
 
-    monkeypatch.setattr(
-        task_core_runtime,
-        "get_task_core_submission_outbox",
-        lambda: redis_client,
-    )
-
-    await task_core.sync_user_concurrency(123, 2)
-    await task_core.sync_user_concurrency(123, 0)
+    await task_core.sync_user_concurrency(123, 2, submission_outbox=redis_client)
+    await task_core.sync_user_concurrency(123, 0, submission_outbox=redis_client)
 
     key = f"{REDIS_PREFIX}user_concurrency:123"
     redis.set.assert_awaited_once_with(key, 2)

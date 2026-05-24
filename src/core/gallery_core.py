@@ -2,15 +2,14 @@ from dataclasses import dataclass
 import json
 import logging
 import re
+from typing import Any, Callable
 
 from sqlalchemy import desc, func, select
 from sqlalchemy.orm import selectinload
 
 from src.database.core import AsyncSessionLocal
 from src.database.models import GalleryPost, History, User, UserInteraction
-from src.services.redis_client import redis_client
 from src.constants import MODE_NAME_MAP
-from src.services.storage import storage
 from src.core.media_processor import generate_and_upload_thumbnail
 from src.core.media_paths import (
     build_history_r2_media_key,
@@ -45,12 +44,36 @@ class GallerySubmitOutcome:
     side_effects: list[tuple[object, tuple[object, ...]]]
 
 
+def _get_gallery_storage_service():
+    from src.services.storage import storage as storage_impl
+
+    return storage_impl
+
+
+def _get_gallery_submission_outbox():
+    from src.services.redis_client import redis_client as redis_client_impl
+
+    return redis_client_impl
+
+
+def _get_gallery_session_factory():
+    return AsyncSessionLocal
+
+
 async def async_copy_to_r2_background(
-    bucket_name: str, object_name: str, r2_object_name: str
+    bucket_name: str,
+    object_name: str,
+    r2_object_name: str,
+    *,
+    copy_to_r2_func=None,
+    storage_service=None,
 ):
     """Background task to copy file to R2."""
+    if copy_to_r2_func is None:
+        storage_service = storage_service or _get_gallery_storage_service()
+        copy_to_r2_func = storage_service.async_copy_to_r2
     try:
-        await storage.async_copy_to_r2(bucket_name, object_name, r2_object_name)
+        await copy_to_r2_func(bucket_name, object_name, r2_object_name)
     except Exception as e:
         logger.error(f"Background task failed to copy {object_name} to R2: {e}")
 
@@ -60,17 +83,27 @@ def build_gallery_submit_side_effects(
     task_id: str,
     output_file: str,
     media_type: str,
+    copy_to_r2_background_func=None,
+    generate_thumbnail_func=None,
+    resolve_storage_object_func=None,
 ) -> list[tuple[object, tuple[object, ...]]]:
-    bucket_name, object_name = resolve_storage_object(output_file)
+    copy_to_r2_background_func = (
+        copy_to_r2_background_func or async_copy_to_r2_background
+    )
+    generate_thumbnail_func = (
+        generate_thumbnail_func or generate_and_upload_thumbnail
+    )
+    resolve_storage_object_func = resolve_storage_object_func or resolve_storage_object
+    bucket_name, object_name = resolve_storage_object_func(output_file)
     r2_object_name = build_history_r2_media_key(task_id, output_file)
     thumbnail_key = build_history_r2_thumbnail_key(task_id, media_type)
     return [
         (
-            async_copy_to_r2_background,
+            copy_to_r2_background_func,
             (bucket_name, object_name, r2_object_name),
         ),
         (
-            generate_and_upload_thumbnail,
+            generate_thumbnail_func,
             (output_file, media_type, thumbnail_key),
         ),
     ]
@@ -82,14 +115,33 @@ async def process_submit_to_gallery_result(
     width: int = None,
     height: int = None,
     duration: int = None,
+    session_factory: Callable[[], Any] | None = None,
+    gallery_submission_outbox=None,
+    check_gallery_submit_limit_func=None,
+    increment_gallery_submit_func=None,
+    build_gallery_submit_side_effects_func=None,
 ) -> GallerySubmitOutcome:
     """Core logic for submitting a task to the gallery."""
+    session_factory = session_factory or _get_gallery_session_factory()
+    gallery_submission_outbox = (
+        gallery_submission_outbox or _get_gallery_submission_outbox()
+    )
+    check_gallery_submit_limit_func = (
+        check_gallery_submit_limit_func
+        or gallery_submission_outbox.check_gallery_submit_limit
+    )
+    increment_gallery_submit_func = (
+        increment_gallery_submit_func or gallery_submission_outbox.increment_gallery_submit
+    )
+    build_gallery_submit_side_effects_func = (
+        build_gallery_submit_side_effects_func or build_gallery_submit_side_effects
+    )
     # Check limit
-    can_submit = await redis_client.check_gallery_submit_limit(user_id, limit=10)
+    can_submit = await check_gallery_submit_limit_func(user_id, limit=10)
     if not can_submit:
         raise GalleryCoreError("您今日的投稿次数已达 10 次上限，请明日再来~")
 
-    async with AsyncSessionLocal() as session:
+    async with session_factory() as session:
         # Check existing
         existing_res = await session.execute(
             select(GalleryPost).where(GalleryPost.task_id == task_id)
@@ -191,13 +243,13 @@ async def process_submit_to_gallery_result(
 
         await session.commit()
 
-        side_effects = build_gallery_submit_side_effects(
+        side_effects = build_gallery_submit_side_effects_func(
             task_id=task_id,
             output_file=history.output_file,
             media_type=media_type,
         )
 
-        await redis_client.increment_gallery_submit(user_id)
+        await increment_gallery_submit_func(user_id)
 
         tags_str = " ".join(tags)
         return GallerySubmitOutcome(
@@ -210,12 +262,19 @@ async def process_submit_to_gallery_result(
         )
 
 
-async def toggle_like(user_id: int, post_id: int, action: str) -> dict:
+async def toggle_like(
+    user_id: int,
+    post_id: int,
+    action: str,
+    *,
+    session_factory: Callable[[], Any] | None = None,
+) -> dict:
     """Core logic for toggling like/dislike on a gallery post."""
+    session_factory = session_factory or _get_gallery_session_factory()
     if action not in ["like", "dislike"]:
         raise GalleryCoreError("无效的操作类型")
 
-    async with AsyncSessionLocal() as session:
+    async with session_factory() as session:
         post = await session.get(GalleryPost, post_id)
         if not post:
             raise GalleryCoreError("帖子不存在")
@@ -353,14 +412,21 @@ async def toggle_like(user_id: int, post_id: int, action: str) -> dict:
         }
 
 
-async def record_apply_interaction(user_id: int, post_id: int):
+async def record_apply_interaction(
+    user_id: int,
+    post_id: int,
+    *,
+    session_factory: Callable[[], Any] | None = None,
+):
     """
     Record an apply action for a gallery post when a task is actually generated.
     """
     from sqlalchemy.dialects.postgresql import insert
     from sqlalchemy import update
 
-    async with AsyncSessionLocal() as session:
+    session_factory = session_factory or _get_gallery_session_factory()
+
+    async with session_factory() as session:
         try:
             stmt_insert = (
                 insert(UserInteraction)
@@ -393,12 +459,15 @@ async def get_gallery_feed(
     user_id: int = None,
     category: str = None,
     is_active: bool = True,
+    session_factory: Callable[[], Any] | None = None,
 ) -> tuple[list, int]:
     """
     Core logic to fetch paginated gallery feed.
     Returns (posts, total_count).
     """
-    async with AsyncSessionLocal() as session:
+    session_factory = session_factory or _get_gallery_session_factory()
+
+    async with session_factory() as session:
         query = select(GalleryPost)
         if is_active is True:
             query = query.where(GalleryPost.is_active == True)

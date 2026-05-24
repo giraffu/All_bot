@@ -68,7 +68,7 @@ async def finalize_cancelled_task_for_bot(
     finalize_task_cancellation_func=None,
     edit_text_func=None,
 ):
-    from src.core.task_core import finalize_task_cancellation
+    from src.core.task_core_finalization import finalize_task_cancellation
 
     finalize_task_cancellation_func = (
         finalize_task_cancellation_func or finalize_task_cancellation
@@ -115,7 +115,7 @@ async def finalize_failed_task_for_bot(
     edit_text_func=None,
     send_message_func=None,
 ):
-    from src.core.task_core import finalize_task_failure
+    from src.core.task_core_finalization import finalize_task_failure
 
     finalize_task_failure_func = finalize_task_failure_func or finalize_task_failure
     failure_result = await finalize_task_failure_func(
@@ -226,7 +226,7 @@ async def cleanup_runtime_state_if_needed(
     if terminal_state_finalized or not (release_lock or registry_task_id):
         return
 
-    from src.core.task_core import cleanup_task_runtime_state
+    from src.core.task_core_runtime import cleanup_task_runtime_state
 
     cleanup_task_runtime_state_func = (
         cleanup_task_runtime_state_func or cleanup_task_runtime_state
