@@ -3,21 +3,14 @@ import logging
 import httpx
 
 from src.core.billing_core import release_concurrency_lock
+from src.core.task_core_service_providers import (
+    get_task_core_api_client,
+    get_task_core_submission_outbox,
+    get_task_core_task_registry,
+)
 from src.core.task_core_types import CoreDomainError
 
 logger = logging.getLogger(__name__)
-
-
-def _load_task_registry():
-    from src.services.task_registry import TaskRegistry as task_registry_impl
-
-    return task_registry_impl
-
-
-def _get_runtime_redis_client():
-    from src.services.redis_client import redis_client
-
-    return redis_client
 
 
 async def cleanup_task_runtime_state(
@@ -31,7 +24,7 @@ async def cleanup_task_runtime_state(
     if release_concurrency_lock_func is None:
         release_concurrency_lock_func = release_concurrency_lock
     if remove_task_func is None:
-        remove_task_func = _load_task_registry().remove_task
+        remove_task_func = get_task_core_task_registry().remove_task
 
     if release_lock:
         try:
@@ -53,7 +46,7 @@ async def get_system_task_stats() -> tuple[dict, dict]:
     获取全系统任务统计信息。
     返回 (active_tasks, user_concurrencies)
     """
-    redis_client = _get_runtime_redis_client()
+    redis_client = get_task_core_submission_outbox()
     active_tasks = await redis_client.get_active_tasks()
     user_concurrencies = await redis_client.get_all_user_concurrencies()
     return active_tasks, user_concurrencies
@@ -72,9 +65,7 @@ async def cancel_backend_task_best_effort(
         return False
 
     if cancel_task_func is None:
-        from src.api_client import api_client
-
-        cancel_task_func = api_client.cancel_task
+        cancel_task_func = get_task_core_api_client().cancel_task
 
     try:
         await cancel_task_func(backend_task_id)
@@ -124,7 +115,7 @@ async def force_terminate_task(
     if cancel_backend_task_best_effort_func is None:
         cancel_backend_task_best_effort_func = cancel_backend_task_best_effort
 
-    redis_client = _get_runtime_redis_client()
+    redis_client = get_task_core_submission_outbox()
     tasks = await redis_client.get_active_tasks()
     task_data = tasks.get(task_id, {}) if tasks else {}
     backend_task_id = task_data.get("backend_task_id")
@@ -152,7 +143,7 @@ async def sync_user_concurrency(user_id: int, actual_count: int):
     """
     from config import REDIS_PREFIX
 
-    redis_client = _get_runtime_redis_client()
+    redis_client = get_task_core_submission_outbox()
     key = f"{REDIS_PREFIX}user_concurrency:{user_id}"
 
     if actual_count > 0:
@@ -164,7 +155,7 @@ async def sync_user_concurrency(user_id: int, actual_count: int):
 
 async def cancel_user_task(task_id: str, user_id: int):
     """供用户主动调用的任务撤销逻辑"""
-    task_registry = _load_task_registry()
+    task_registry = get_task_core_task_registry()
     task = await task_registry.get_task(task_id)
     registry_task_id = task_id
     if not task:
@@ -176,11 +167,9 @@ async def cancel_user_task(task_id: str, user_id: int):
     if task.get("user_id") != user_id:
         raise CoreDomainError("无权撤销该任务")
 
-    from src.api_client import api_client
-
     backend_task_id = task.get("backend_task_id") or registry_task_id
     try:
-        cancel_result = await api_client.cancel_task(backend_task_id)
+        cancel_result = await get_task_core_api_client().cancel_task(backend_task_id)
     except httpx.HTTPStatusError as e:
         if e.response.status_code == 404:
             raise CoreDomainError("任务不存在或已结束，当前无法取消")

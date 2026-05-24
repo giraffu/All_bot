@@ -17,6 +17,7 @@ from src.services.task_service_entrypoint_support import (
     build_unexpected_error_log_message,
     resolve_video_billing_args,
 )
+from src.services.task_service_support import resolve_custom_video_settings
 from src.services.task_service_message_support import (
     build_cost_status_builder,
     build_message_spec,
@@ -53,7 +54,7 @@ async def process_image_to_video_task(
 ) -> Tuple[Optional[bytes], Optional[str]]:
     internal_user_id = await resolve_internal_user_id(user_id, username)
     resolution_text, duration_text, resolution_value, duration_value = (
-        await service._resolve_custom_video_settings(
+        await resolve_custom_video_settings(
             context,
             resolution=resolution,
             duration=duration,

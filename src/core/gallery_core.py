@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 import json
 import logging
 import re
@@ -38,6 +39,12 @@ class DuplicateInteractionError(GalleryCoreError):
     pass
 
 
+@dataclass(slots=True)
+class GallerySubmitOutcome:
+    payload: dict
+    side_effects: list[tuple[object, tuple[object, ...]]]
+
+
 async def async_copy_to_r2_background(
     bucket_name: str, object_name: str, r2_object_name: str
 ):
@@ -48,14 +55,34 @@ async def async_copy_to_r2_background(
         logger.error(f"Background task failed to copy {object_name} to R2: {e}")
 
 
-async def process_submit_to_gallery(
+def build_gallery_submit_side_effects(
+    *,
+    task_id: str,
+    output_file: str,
+    media_type: str,
+) -> list[tuple[object, tuple[object, ...]]]:
+    bucket_name, object_name = resolve_storage_object(output_file)
+    r2_object_name = build_history_r2_media_key(task_id, output_file)
+    thumbnail_key = build_history_r2_thumbnail_key(task_id, media_type)
+    return [
+        (
+            async_copy_to_r2_background,
+            (bucket_name, object_name, r2_object_name),
+        ),
+        (
+            generate_and_upload_thumbnail,
+            (output_file, media_type, thumbnail_key),
+        ),
+    ]
+
+
+async def process_submit_to_gallery_result(
     user_id: int,
     task_id: str,
-    background_tasks,
     width: int = None,
     height: int = None,
     duration: int = None,
-) -> dict:
+) -> GallerySubmitOutcome:
     """Core logic for submitting a task to the gallery."""
     # Check limit
     can_submit = await redis_client.check_gallery_submit_limit(user_id, limit=10)
@@ -88,11 +115,14 @@ async def process_submit_to_gallery(
                 if history:
                     history.is_public = True
                 await session.commit()
-                return {
-                    "status": "success",
-                    "message": "已为您重新上架该作品！",
-                    "tags": [],
-                }
+                return GallerySubmitOutcome(
+                    payload={
+                        "status": "success",
+                        "message": "已为您重新上架该作品！",
+                        "tags": [],
+                    },
+                    side_effects=[],
+                )
 
         # Get History
         hist_res = await session.execute(
@@ -161,31 +191,23 @@ async def process_submit_to_gallery(
 
         await session.commit()
 
-        # R2 copy logic
-        bucket_name, object_name = resolve_storage_object(history.output_file)
-        r2_object_name = build_history_r2_media_key(task_id, history.output_file)
-
-        # Add R2 copy to BackgroundTasks instead of awaiting it directly
-        background_tasks.add_task(
-            async_copy_to_r2_background, bucket_name, object_name, r2_object_name
-        )
-        
-        # Add Thumbnail Generation to BackgroundTasks
-        background_tasks.add_task(
-            generate_and_upload_thumbnail,
-            history.output_file,
-            media_type,
-            build_history_r2_thumbnail_key(task_id, media_type),
+        side_effects = build_gallery_submit_side_effects(
+            task_id=task_id,
+            output_file=history.output_file,
+            media_type=media_type,
         )
 
         await redis_client.increment_gallery_submit(user_id)
 
         tags_str = " ".join(tags)
-        return {
-            "status": "success",
-            "message": f"投稿成功！已自动添加标签：{tags_str}",
-            "tags": tags,
-        }
+        return GallerySubmitOutcome(
+            payload={
+                "status": "success",
+                "message": f"投稿成功！已自动添加标签：{tags_str}",
+                "tags": tags,
+            },
+            side_effects=side_effects,
+        )
 
 
 async def toggle_like(user_id: int, post_id: int, action: str) -> dict:

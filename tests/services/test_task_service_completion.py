@@ -19,6 +19,7 @@ from src.constants import (
 from src.services import task_service_completion as completion_helpers
 from src.services import task_service_finalize as support
 from src.services import task_service as task_service_module
+from src.services import task_service_entrypoints_video as video_entrypoints
 from src.services import tg_task_runtime as tg_runtime_helpers
 from src.services.task_service import TaskService
 
@@ -258,54 +259,6 @@ def test_record_result_message_meta_uses_special_mode_mapping_for_face_swap():
 
 
 @pytest.mark.asyncio
-async def test_resolve_custom_video_settings_warns_and_downgrades_invalid_combo(
-    monkeypatch,
-):
-    reply_text = AsyncMock()
-    monkeypatch.setattr("src.services.task_service.robust_reply_text", reply_text)
-
-    update = SimpleNamespace(effective_message=SimpleNamespace())
-    context = SimpleNamespace(
-        user_data={
-            "custom_video_resolution": "1024p",
-            "custom_video_duration": "10s",
-        }
-    )
-
-    result = await TaskService._resolve_custom_video_settings(
-        context,
-        update=update,
-        warn_invalid_combo=True,
-    )
-
-    assert result == ("720p", "10s", 720, 10)
-    assert context.user_data["custom_video_resolution"] == "720p"
-    reply_text.assert_awaited_once()
-
-
-@pytest.mark.asyncio
-async def test_resolve_custom_video_settings_can_downgrade_silently(monkeypatch):
-    reply_text = AsyncMock()
-    monkeypatch.setattr("src.services.task_service.robust_reply_text", reply_text)
-
-    context = SimpleNamespace(
-        user_data={
-            "custom_video_resolution": "1024p",
-            "custom_video_duration": "10s",
-        }
-    )
-
-    result = await TaskService._resolve_custom_video_settings(
-        context,
-        warn_invalid_combo=False,
-    )
-
-    assert result == ("720p", "10s", 720, 10)
-    assert context.user_data["custom_video_resolution"] == "720p"
-    reply_text.assert_not_awaited()
-
-
-@pytest.mark.asyncio
 async def test_send_result_media_uses_photo_sender_and_records_meta(monkeypatch):
     sent_msg = SimpleNamespace(message_id=99)
     send_photo = AsyncMock(return_value=sent_msg)
@@ -416,7 +369,7 @@ async def test_complete_monitored_bot_task_preserves_supplied_user_logger(monkey
         missing_output_message="missing",
     )
 
-    result = await TaskService._complete_monitored_bot_task(
+    result = await completion_helpers.complete_monitored_bot_task(
         context=SimpleNamespace(bot=MagicMock(), bot_data={}),
         chat_id=123,
         status_msg=MagicMock(),
@@ -436,6 +389,8 @@ async def test_complete_monitored_bot_task_preserves_supplied_user_logger(monkey
         caption=None,
         allow_contribute=True,
         message_spec=message_spec,
+        send_result_media_func=TaskService._send_result_media,
+        cleanup_completion_status_message_func=TaskService._cleanup_completion_status_message,
     )
 
     assert result == (b"video-bytes", "output.mp4")
@@ -443,11 +398,11 @@ async def test_complete_monitored_bot_task_preserves_supplied_user_logger(monkey
 
 
 @pytest.mark.asyncio
-async def test_complete_monitored_bot_task_delegates_to_completion_helper(monkeypatch):
-    complete_helper = AsyncMock(return_value=(b"video-bytes", "output.mp4"))
+async def test_complete_monitored_bot_task_uses_default_handle_completion(monkeypatch):
+    handle_task_completion = AsyncMock(return_value=(b"video-bytes", "output.mp4"))
     monkeypatch.setattr(
-        "src.services.task_service_completion.complete_monitored_bot_task",
-        complete_helper,
+        "src.services.task_service_completion.handle_task_completion",
+        handle_task_completion,
     )
 
     user_logger = SimpleNamespace(username="tester")
@@ -457,7 +412,7 @@ async def test_complete_monitored_bot_task_delegates_to_completion_helper(monkey
         missing_output_message="missing",
     )
 
-    result = await TaskService._complete_monitored_bot_task(
+    result = await completion_helpers.complete_monitored_bot_task(
         context=SimpleNamespace(bot=MagicMock(), bot_data={}),
         chat_id=123,
         status_msg=MagicMock(),
@@ -477,26 +432,20 @@ async def test_complete_monitored_bot_task_delegates_to_completion_helper(monkey
         caption=None,
         allow_contribute=True,
         message_spec=message_spec,
+        send_result_media_func=TaskService._send_result_media,
+        cleanup_completion_status_message_func=TaskService._cleanup_completion_status_message,
     )
 
     assert result == (b"video-bytes", "output.mp4")
-    kwargs = complete_helper.await_args.kwargs
+    kwargs = handle_task_completion.await_args.kwargs
     assert kwargs["user_logger"] is user_logger
-    assert kwargs["handle_task_completion_func"] is completion_helpers.handle_task_completion
-    assert kwargs["finalize_failed_task_for_bot_func"] is TaskService._finalize_failed_task_for_bot
 
 
 @pytest.mark.asyncio
-async def test_complete_monitored_bot_task_preserves_explicit_completion_seams(monkeypatch):
-    complete_helper = AsyncMock(return_value=(b"video-bytes", "output.mp4"))
-    monkeypatch.setattr(
-        "src.services.task_service_completion.complete_monitored_bot_task",
-        complete_helper,
-    )
-
+async def test_complete_monitored_bot_task_preserves_explicit_completion_seams():
     explicit_send_result_media = AsyncMock()
     explicit_cleanup_status = AsyncMock()
-    explicit_handle_completion = AsyncMock()
+    explicit_handle_completion = AsyncMock(return_value=(b"video-bytes", "output.mp4"))
     explicit_finalize_failed = AsyncMock()
     runtime_state = SimpleNamespace(actual_cost=9, registry_task_id="reg-1", task_submitted=True)
     message_spec = SimpleNamespace(
@@ -504,7 +453,7 @@ async def test_complete_monitored_bot_task_preserves_explicit_completion_seams(m
         missing_output_message="missing",
     )
 
-    result = await TaskService._complete_monitored_bot_task(
+    result = await completion_helpers.complete_monitored_bot_task(
         context=SimpleNamespace(bot=MagicMock(), bot_data={}),
         chat_id=123,
         status_msg=MagicMock(),
@@ -531,11 +480,10 @@ async def test_complete_monitored_bot_task_preserves_explicit_completion_seams(m
     )
 
     assert result == (b"video-bytes", "output.mp4")
-    kwargs = complete_helper.await_args.kwargs
+    kwargs = explicit_handle_completion.await_args.kwargs
     assert kwargs["send_result_media_func"] is explicit_send_result_media
     assert kwargs["cleanup_completion_status_message_func"] is explicit_cleanup_status
-    assert kwargs["handle_task_completion_func"] is explicit_handle_completion
-    assert kwargs["finalize_failed_task_for_bot_func"] is explicit_finalize_failed
+    explicit_finalize_failed.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -548,9 +496,9 @@ async def test_finalize_cancelled_task_for_bot_uses_task_service_edit_seam(monke
     )
     edit_text = AsyncMock()
     monkeypatch.setattr("src.core.task_core.finalize_task_cancellation", finalize_cancel)
-    monkeypatch.setattr("src.services.task_service.robust_edit_text", edit_text)
+    monkeypatch.setattr("src.services.task_service_finalize.robust_edit_text", edit_text)
 
-    result = await TaskService._finalize_cancelled_task_for_bot(
+    result = await support.finalize_cancelled_task_for_bot(
         status_msg="status-msg",
         internal_user_id=456,
         username="tester",
@@ -599,10 +547,10 @@ async def test_finalize_failed_task_for_bot_uses_task_service_send_message_seam(
     )
     send_message = AsyncMock()
     monkeypatch.setattr("src.core.task_core.finalize_task_failure", finalize_failure)
-    monkeypatch.setattr("src.services.task_service.robust_send_message", send_message)
+    monkeypatch.setattr("src.services.task_service_finalize.robust_send_message", send_message)
 
     context = SimpleNamespace(bot=MagicMock())
-    result = await TaskService._finalize_failed_task_for_bot(
+    result = await support.finalize_failed_task_for_bot(
         context=context,
         chat_id=123,
         status_msg=None,
@@ -639,10 +587,10 @@ def test_build_bot_failure_presentation_policy_keeps_display_contract():
 @pytest.mark.asyncio
 async def test_send_bot_warning_uses_task_service_send_message_seam(monkeypatch):
     send_message = AsyncMock()
-    monkeypatch.setattr("src.services.task_service.robust_send_message", send_message)
+    monkeypatch.setattr("src.services.task_service_finalize.robust_send_message", send_message)
 
     context = SimpleNamespace(bot=MagicMock())
-    await TaskService._send_bot_warning(context, 123, "warn")
+    await support.send_bot_warning(context, 123, "warn")
 
     send_message.assert_awaited_once_with(context.bot, 123, "⚠️ warn")
 
@@ -650,10 +598,10 @@ async def test_send_bot_warning_uses_task_service_send_message_seam(monkeypatch)
 @pytest.mark.asyncio
 async def test_send_bot_domain_error_uses_task_service_send_message_seam(monkeypatch):
     send_message = AsyncMock()
-    monkeypatch.setattr("src.services.task_service.robust_send_message", send_message)
+    monkeypatch.setattr("src.services.task_service_finalize.robust_send_message", send_message)
 
     context = SimpleNamespace(bot=MagicMock())
-    await TaskService._send_bot_domain_error(context, 123, "bad")
+    await support.send_bot_domain_error(context, 123, "bad")
 
     send_message.assert_awaited_once_with(context.bot, 123, "❌ bad")
 
@@ -663,7 +611,7 @@ async def test_cleanup_runtime_state_if_needed_uses_core_cleanup_seam(monkeypatc
     cleanup_runtime = AsyncMock()
     monkeypatch.setattr("src.core.task_core.cleanup_task_runtime_state", cleanup_runtime)
 
-    await TaskService._cleanup_runtime_state_if_needed(
+    await support.cleanup_runtime_state_if_needed(
         internal_user_id=456,
         registry_task_id="reg-cleanup",
         release_lock=True,
@@ -702,7 +650,7 @@ async def test_process_generation_task_uses_finalize_task_cancellation(monkeypat
         AsyncMock(return_value=(SimpleNamespace(id=456), False)),
     )
     monkeypatch.setattr(
-        "src.core.task_core.process_and_submit_task",
+        "src.services.task_service_flow.process_and_submit_task",
         AsyncMock(
             return_value={
                 "cost": 5,
@@ -727,8 +675,8 @@ async def test_process_generation_task_uses_finalize_task_cancellation(monkeypat
         "src.core.task_core.cleanup_task_runtime_state",
         cleanup_runtime,
     )
-    monkeypatch.setattr("src.services.task_service.robust_edit_text", AsyncMock())
-    monkeypatch.setattr("src.services.task_service.robust_send_message", AsyncMock())
+    monkeypatch.setattr("src.services.task_service_finalize.robust_edit_text", AsyncMock())
+    monkeypatch.setattr("src.services.task_service_finalize.robust_send_message", AsyncMock())
 
     context = SimpleNamespace(user_data={}, bot=MagicMock())
     result = await TaskService.process_generation_task(
@@ -772,7 +720,7 @@ async def test_process_generation_task_uses_finalize_task_failure(monkeypatch):
         AsyncMock(return_value=(SimpleNamespace(id=456), False)),
     )
     monkeypatch.setattr(
-        "src.core.task_core.process_and_submit_task",
+        "src.services.task_service_flow.process_and_submit_task",
         AsyncMock(
             return_value={
                 "cost": 5,
@@ -797,8 +745,8 @@ async def test_process_generation_task_uses_finalize_task_failure(monkeypatch):
         "src.core.task_core.cleanup_task_runtime_state",
         cleanup_runtime,
     )
-    monkeypatch.setattr("src.services.task_service.robust_edit_text", AsyncMock())
-    monkeypatch.setattr("src.services.task_service.robust_send_message", send_message)
+    monkeypatch.setattr("src.services.task_service_finalize.robust_edit_text", AsyncMock())
+    monkeypatch.setattr("src.services.task_service_finalize.robust_send_message", send_message)
 
     context = SimpleNamespace(user_data={}, bot=MagicMock())
     result = await TaskService.process_generation_task(
@@ -835,7 +783,7 @@ async def test_process_ltx_video_task_uses_finalize_task_cancellation(monkeypatc
         AsyncMock(return_value=(SimpleNamespace(id=456), False)),
     )
     monkeypatch.setattr(
-        "src.services.task_service.TaskService._submit_bot_task",
+        "src.services.task_service.submit_bot_task",
         AsyncMock(side_effect=fake_submit),
     )
     monkeypatch.setattr(
@@ -843,20 +791,20 @@ async def test_process_ltx_video_task_uses_finalize_task_cancellation(monkeypatc
         acceleration_notice,
     )
     monkeypatch.setattr("src.services.task_service.robust_reply_text", AsyncMock(return_value=msg))
-    monkeypatch.setattr("src.services.task_service.robust_edit_text", AsyncMock())
+    monkeypatch.setattr("src.services.task_service_finalize.robust_edit_text", AsyncMock())
     monkeypatch.setattr(
         "src.services.task_service_completion.monitor_submitted_bot_task",
         AsyncMock(side_effect=CoreDomainError("cancelled")),
     )
     monkeypatch.setattr(
-        "src.services.task_service.TaskService._finalize_cancelled_task_for_bot",
+        "src.services.task_service_finalize.finalize_cancelled_task_for_bot",
         finalize_cancel,
     )
     monkeypatch.setattr(
-        "src.services.task_service.TaskService._cleanup_runtime_state_if_needed",
+        "src.services.task_service.cleanup_runtime_state_if_needed",
         cleanup_runtime,
     )
-    monkeypatch.setattr("src.services.task_service.robust_send_message", AsyncMock())
+    monkeypatch.setattr("src.services.task_service_finalize.robust_send_message", AsyncMock())
 
     update = SimpleNamespace(
         effective_chat=SimpleNamespace(id=123),
@@ -880,7 +828,7 @@ async def test_process_ltx_video_task_uses_finalize_task_cancellation(monkeypatc
 
 
 @pytest.mark.asyncio
-async def test_process_video_task_template_uses_internal_user_id_for_notice_and_queue_text(
+async def test_process_video_task_template_entrypoint_uses_internal_user_id_for_notice_and_queue_text(
     monkeypatch,
 ):
     acceleration_notice = AsyncMock(return_value="")
@@ -891,7 +839,7 @@ async def test_process_video_task_template_uses_internal_user_id_for_notice_and_
         AsyncMock(return_value=(SimpleNamespace(id=456), False)),
     )
     monkeypatch.setattr(
-        "src.services.task_service.TaskService._resolve_custom_video_settings",
+        "src.services.task_service_entrypoints_video.resolve_custom_video_settings",
         AsyncMock(return_value=("512p", "5s", 512, 5)),
     )
     monkeypatch.setattr(
@@ -914,7 +862,8 @@ async def test_process_video_task_template_uses_internal_user_id_for_notice_and_
     )
     context = SimpleNamespace(user_data={}, bot=MagicMock(), t=lambda value: value)
 
-    result = await TaskService._process_video_task_template(
+    result = await video_entrypoints.process_video_task_template(
+        service=TaskService,
         update=update,
         context=context,
         image_path="input.png",
@@ -934,6 +883,10 @@ async def test_process_generation_task_delegates_video_modes_to_image_to_video_e
     monkeypatch,
 ):
     image_to_video_entry = AsyncMock(return_value=(b"video-bytes", "task-image-to-video"))
+    monkeypatch.setattr(
+        "src.core.user_core.get_or_create_user_by_telegram",
+        AsyncMock(return_value=(SimpleNamespace(id=456), False)),
+    )
     monkeypatch.setattr(
         "src.services.task_service_entrypoints_generation.process_image_to_video_task",
         image_to_video_entry,
@@ -989,7 +942,7 @@ async def test_process_custom_video_task_delegates_to_image_to_video_entrypoint(
         image_to_video_entry,
     )
     monkeypatch.setattr(
-        "src.services.task_service.TaskService._resolve_custom_video_settings",
+        "src.services.task_service_entrypoints_video.resolve_custom_video_settings",
         AsyncMock(return_value=("720p", "8s", 720, 8)),
     )
 
@@ -1049,7 +1002,7 @@ async def test_process_face_video_task_uses_finalize_task_failure(monkeypatch):
         AsyncMock(return_value=(SimpleNamespace(id=456), False)),
     )
     monkeypatch.setattr(
-        "src.services.task_service.TaskService._submit_bot_task",
+        "src.services.task_service.submit_bot_task",
         AsyncMock(side_effect=fake_submit),
     )
     monkeypatch.setattr(
@@ -1065,14 +1018,14 @@ async def test_process_face_video_task_uses_finalize_task_failure(monkeypatch):
         AsyncMock(side_effect=RuntimeError("boom")),
     )
     monkeypatch.setattr(
-        "src.services.task_service.TaskService._finalize_failed_task_for_bot",
+        "src.services.task_service_finalize.finalize_failed_task_for_bot",
         finalize_failure,
     )
     monkeypatch.setattr(
-        "src.services.task_service.TaskService._cleanup_runtime_state_if_needed",
+        "src.services.task_service.cleanup_runtime_state_if_needed",
         cleanup_runtime,
     )
-    monkeypatch.setattr("src.services.task_service.robust_send_message", AsyncMock())
+    monkeypatch.setattr("src.services.task_service_finalize.robust_send_message", AsyncMock())
 
     context = SimpleNamespace(user_data={}, bot=MagicMock())
     result = await TaskService.process_face_video_task(

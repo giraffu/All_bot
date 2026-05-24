@@ -2,6 +2,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 from fastapi import BackgroundTasks, HTTPException
+from types import SimpleNamespace
 
 from src.web_api.routers import gallery as gallery_router
 from src.web_api.schemas.gallery_schema import GallerySubmitRequest
@@ -44,7 +45,7 @@ async def test_submit_gallery_post_payload_extracts_request_dimensions():
 
     response = await submit_gallery_post_payload(
         task_id="task-1",
-        background_tasks=BackgroundTasks(),
+        schedule_background_task=BackgroundTasks().add_task,
         request=request,
         current_user=_build_current_user(),
         process_submit_to_gallery_fn=process_submit,
@@ -52,10 +53,39 @@ async def test_submit_gallery_post_payload_extracts_request_dimensions():
 
     assert response == {"status": "success"}
     process_submit.assert_awaited_once()
-    assert process_submit.await_args.args[0] == 123
-    assert process_submit.await_args.args[1] == "task-1"
-    assert isinstance(process_submit.await_args.args[2], BackgroundTasks)
-    assert process_submit.await_args.args[3:] == (1024, 768, 5)
+    assert process_submit.await_args.kwargs["user_id"] == 123
+    assert process_submit.await_args.kwargs["task_id"] == "task-1"
+    assert process_submit.await_args.kwargs["width"] == 1024
+    assert process_submit.await_args.kwargs["height"] == 768
+    assert process_submit.await_args.kwargs["duration"] == 5
+
+
+@pytest.mark.asyncio
+async def test_submit_gallery_post_payload_schedules_side_effects_from_outcome():
+    background_tasks = BackgroundTasks()
+    scheduled_calls = []
+
+    def _fake_add_task(func, *args):
+        scheduled_calls.append((func, args))
+
+    background_tasks.add_task = _fake_add_task
+    effect_func = AsyncMock()
+    outcome = SimpleNamespace(
+        payload={"status": "success", "message": "ok"},
+        side_effects=[(effect_func, ("a", "b"))],
+    )
+    process_submit = AsyncMock(return_value=outcome)
+
+    response = await submit_gallery_post_payload(
+        task_id="task-1",
+        schedule_background_task=background_tasks.add_task,
+        request=GallerySubmitRequest(width=1024, height=768, duration=5),
+        current_user=_build_current_user(),
+        process_submit_to_gallery_fn=process_submit,
+    )
+
+    assert response == {"status": "success", "message": "ok"}
+    assert scheduled_calls == [(effect_func, ("a", "b"))]
 
 
 @pytest.mark.asyncio
@@ -68,7 +98,7 @@ async def test_submit_gallery_post_payload_maps_gallery_core_error_to_400():
     with pytest.raises(HTTPException) as exc_info:
         await submit_gallery_post_payload(
             task_id="task-1",
-            background_tasks=BackgroundTasks(),
+            schedule_background_task=BackgroundTasks().add_task,
             request=None,
             current_user=_build_current_user(),
             process_submit_to_gallery_fn=process_submit,
@@ -112,7 +142,7 @@ async def test_submit_to_gallery_routes_to_service():
     assert response == {"status": "success"}
     mock_service.assert_awaited_once_with(
         task_id="task-1",
-        background_tasks=background_tasks,
+        schedule_background_task=background_tasks.add_task,
         request=request,
         current_user=current_user,
     )

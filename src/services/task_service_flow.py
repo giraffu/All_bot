@@ -223,6 +223,8 @@ async def run_bot_task_flow(
     monitor_bot_task_progress_func=None,
     edit_status_text_func=None,
     complete_monitored_bot_task_func=None,
+    handle_task_completion_func=None,
+    finalize_failed_task_for_bot_func=None,
     send_bot_warning_func=None,
     send_bot_domain_error_func=None,
     handle_bot_cancelled_exception_func=None,
@@ -316,6 +318,8 @@ async def run_bot_task_flow(
             missing_output_should_refund=missing_output_should_refund,
             send_result_media_func=send_result_media_func,
             cleanup_completion_status_message_func=cleanup_completion_status_message_func,
+            handle_task_completion_func=handle_task_completion_func,
+            finalize_failed_task_for_bot_func=finalize_failed_task_for_bot_func,
         )
 
     except ConcurrencyLimitError as e:

@@ -9,11 +9,11 @@ from sqlalchemy import desc, func, select
 from src.core.media_paths import get_media_type_from_history
 from src.core.media_processor import extract_media_metadata_from_storage
 from src.database.models import GalleryPost, History
-from src.web_api.presenters.media_presenter import resolve_history_media_urls
-from src.web_api.routers.utils import (
+from src.web_api.common.utils import (
     build_storage_input_file_url,
     resolve_history_billing_resolution,
 )
+from src.web_api.presenters.media_presenter import resolve_history_media_urls
 from src.web_api.services.apply_context_service import (
     build_history_apply_context_response,
 )

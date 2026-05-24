@@ -4,6 +4,7 @@ import pytest
 from fastapi import HTTPException
 
 from app import main as backend_main
+from app import main_t2i_helpers as t2i_helpers
 from app.models import TaskType
 
 
@@ -81,10 +82,11 @@ async def test_get_immediate_t2i_terminal_response_returns_done_payload():
             assert task_id == "task-1"
             return {"status": "done", "result_path": "foo/bar.png", "error_msg": None}
 
-    response = await backend_main._get_immediate_t2i_terminal_response(
+    response = await t2i_helpers.get_immediate_t2i_terminal_response(
         queue_manager=FakeQueueManager(),
         task_id="task-1",
         request_id="req-1",
+        build_terminal_response_func=backend_main._build_t2i_terminal_response,
     )
 
     assert response is not None
@@ -99,12 +101,14 @@ async def test_enqueue_t2i_task_wraps_unexpected_errors():
             raise RuntimeError("boom")
 
     with pytest.raises(HTTPException) as exc_info:
-        await backend_main._enqueue_t2i_task(
+        await t2i_helpers.enqueue_t2i_task(
             queue_manager=FakeQueueManager(),
+            task_type=TaskType.T2I_PORNMASTER_TURBO,
             task_id="task-1",
             params={"prompt": "dragon"},
             priority=3,
             request_id="req-1",
+            logger=backend_main.logger,
         )
 
     assert exc_info.value.status_code == 500
@@ -112,7 +116,7 @@ async def test_enqueue_t2i_task_wraps_unexpected_errors():
 
 
 @pytest.mark.asyncio
-async def test_optional_t2i_task_subscription_subscribes_and_closes(monkeypatch):
+async def test_optional_t2i_task_subscription_subscribes_and_closes():
     events = []
 
     async def fake_subscribe_task_events(queue_manager, task_id):
@@ -122,17 +126,12 @@ async def test_optional_t2i_task_subscription_subscribes_and_closes(monkeypatch)
     async def fake_close_task_event_subscription(*, pubsub, channel):
         events.append(("close", pubsub, channel))
 
-    monkeypatch.setattr(backend_main, "_subscribe_task_events", fake_subscribe_task_events)
-    monkeypatch.setattr(
-        backend_main,
-        "_close_task_event_subscription",
-        fake_close_task_event_subscription,
-    )
-
-    async with backend_main._optional_t2i_task_subscription(
+    async with t2i_helpers.optional_t2i_task_subscription(
         async_mode=False,
         queue_manager="qm",
         task_id="task-1",
+        subscribe_task_events_func=fake_subscribe_task_events,
+        close_task_event_subscription_func=fake_close_task_event_subscription,
     ) as (pubsub, channel):
         assert (pubsub, channel) == ("pubsub-1", "channel-1")
         events.append(("body", pubsub, channel))
@@ -145,7 +144,7 @@ async def test_optional_t2i_task_subscription_subscribes_and_closes(monkeypatch)
 
 
 @pytest.mark.asyncio
-async def test_submit_t2i_task_request_returns_async_response_without_wait(monkeypatch):
+async def test_submit_t2i_task_request_returns_async_response_without_wait():
     enqueue_task = AsyncMock()
     wait_for_sync_result = AsyncMock()
     events = []
@@ -159,17 +158,18 @@ async def test_submit_t2i_task_request_returns_async_response_without_wait(monke
             events.append("exit")
             return False
 
-    monkeypatch.setattr(backend_main, "_optional_t2i_task_subscription", lambda **kwargs: _AsyncSubscription())
-    monkeypatch.setattr(backend_main, "_enqueue_t2i_task", enqueue_task)
-    monkeypatch.setattr(backend_main, "_wait_for_t2i_sync_result", wait_for_sync_result)
-
-    response = await backend_main._submit_t2i_task_request(
+    response = await t2i_helpers.submit_t2i_task_request(
         async_mode=True,
         queue_manager="qm",
         task_id="task-1",
         params={"prompt": "dragon"},
         task_priority=3,
         request_id="req-1",
+        response_cls=backend_main.T2ITaskResponse,
+        optional_subscription_func=lambda **kwargs: _AsyncSubscription(),
+        enqueue_t2i_task_func=enqueue_task,
+        wait_for_sync_result_func=wait_for_sync_result,
+        logger=backend_main.logger,
     )
 
     assert response.task_id == "task-1"
@@ -179,7 +179,7 @@ async def test_submit_t2i_task_request_returns_async_response_without_wait(monke
 
 
 @pytest.mark.asyncio
-async def test_submit_t2i_task_request_waits_for_sync_result(monkeypatch):
+async def test_submit_t2i_task_request_waits_for_sync_result():
     enqueue_task = AsyncMock()
     wait_for_sync_result = AsyncMock(
         return_value=backend_main.T2ITaskResponse(
@@ -195,17 +195,18 @@ async def test_submit_t2i_task_request_waits_for_sync_result(monkeypatch):
         async def __aexit__(self, exc_type, exc, tb):
             return False
 
-    monkeypatch.setattr(backend_main, "_optional_t2i_task_subscription", lambda **kwargs: _SyncSubscription())
-    monkeypatch.setattr(backend_main, "_enqueue_t2i_task", enqueue_task)
-    monkeypatch.setattr(backend_main, "_wait_for_t2i_sync_result", wait_for_sync_result)
-
-    response = await backend_main._submit_t2i_task_request(
+    response = await t2i_helpers.submit_t2i_task_request(
         async_mode=False,
         queue_manager="qm",
         task_id="task-1",
         params={"prompt": "dragon"},
         task_priority=3,
         request_id="req-1",
+        response_cls=backend_main.T2ITaskResponse,
+        optional_subscription_func=lambda **kwargs: _SyncSubscription(),
+        enqueue_t2i_task_func=enqueue_task,
+        wait_for_sync_result_func=wait_for_sync_result,
+        logger=backend_main.logger,
     )
 
     assert response.task_id == "task-1"

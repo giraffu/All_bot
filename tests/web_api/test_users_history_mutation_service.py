@@ -47,7 +47,7 @@ async def test_favorite_user_history_is_idempotent_when_already_favorited():
         task_id="task-1",
         current_user=current_user,
         db=db,
-        background_tasks=background_tasks,
+        schedule_background_task=background_tasks.add_task,
     )
 
     assert response == {"status": "success", "message": "收藏成功"}
@@ -139,7 +139,7 @@ async def test_favorite_user_history_raises_when_task_not_found():
             task_id="missing-task",
             current_user=current_user,
             db=db,
-            background_tasks=background_tasks,
+            schedule_background_task=background_tasks.add_task,
         )
 
     assert exc_info.value.status_code == 404

@@ -9,14 +9,14 @@ from src.core.media_paths import build_thumbnail_object_name, resolve_storage_ob
 from src.database.models import History, User, UserInteraction
 from src.lora_mapping import translate_tags
 from src.services.storage import storage
+from src.web_api.common.utils import (
+    call_with_optional_db,
+    resolve_history_billing_resolution,
+)
 from src.web_api.presenters.media_presenter import (
     resolve_gallery_media_urls as presenter_resolve_gallery_media_urls,
 )
 from src.web_api.presenters.media_presenter import resolve_media_url, resolve_thumbnail_url
-from src.web_api.routers.utils import (
-    call_with_optional_db,
-    resolve_history_billing_resolution,
-)
 from src.web_api.schemas.gallery_schema import GalleryPostResponse
 
 logger = logging.getLogger(__name__)
@@ -61,27 +61,32 @@ def build_gallery_config_payload(
 async def submit_gallery_post_payload(
     *,
     task_id: str,
-    background_tasks,
+    schedule_background_task=None,
     request,
     current_user,
     process_submit_to_gallery_fn=None,
 ) -> dict:
     try:
         if process_submit_to_gallery_fn is None:
-            from src.core.gallery_core import process_submit_to_gallery
+            from src.core.gallery_core import process_submit_to_gallery_result
 
-            process_submit_to_gallery_fn = process_submit_to_gallery
+            process_submit_to_gallery_fn = process_submit_to_gallery_result
         width = request.width if request else None
         height = request.height if request else None
         duration = request.duration if request else None
-        return await process_submit_to_gallery_fn(
-            current_user.id,
-            task_id,
-            background_tasks,
-            width,
-            height,
-            duration,
+        outcome = await process_submit_to_gallery_fn(
+            user_id=current_user.id,
+            task_id=task_id,
+            width=width,
+            height=height,
+            duration=duration,
         )
+        if isinstance(outcome, dict):
+            return outcome
+        if schedule_background_task is not None:
+            for effect_func, effect_args in outcome.side_effects:
+                schedule_background_task(effect_func, *effect_args)
+        return outcome.payload
     except HTTPException:
         raise
     except Exception as exc:

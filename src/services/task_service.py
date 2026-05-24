@@ -25,7 +25,6 @@ from src.constants import (
 from src.services import task_service_completion as task_service_completion_helpers
 from src.services.task_service_support import (
     get_acceleration_notice,
-    resolve_custom_video_settings,
 )
 from src.services.permission_service import permission_service
 from src.services.task_service_entrypoints import (
@@ -38,10 +37,10 @@ from src.services.task_service_entrypoints import (
     process_video_task_template as process_video_task_template_entrypoint,
 )
 from src.services.task_service_finalize import (
-    build_bot_cancellation_message,
     cleanup_runtime_state_if_needed,
-    finalize_cancelled_task_for_bot,
     finalize_failed_task_for_bot,
+    handle_bot_cancelled_exception,
+    handle_bot_unexpected_exception,
     send_bot_domain_error,
     send_bot_warning,
 )
@@ -61,152 +60,15 @@ from src.services.tg_task_runtime import (
     get_or_send_status_message,
     send_result_media,
 )
-from src.utils import robust_edit_text, robust_reply_text, robust_send_message
+from src.utils import robust_edit_text, robust_reply_text
 
 logger = logging.getLogger(__name__)
 
 
 class TaskService:
-    @staticmethod
-    async def _resolve_custom_video_settings(
-        context,
-        *,
-        update: Optional[Update] = None,
-        warn_invalid_combo: bool = False,
-        resolution=None,
-        duration=None,
-    ) -> Tuple[str, str, int, int]:
-        return await resolve_custom_video_settings(
-            context,
-            update=update,
-            warn_invalid_combo=warn_invalid_combo,
-            reply_text_func=robust_reply_text,
-            resolution=resolution,
-            duration=duration,
-        )
-
     _with_submitted_status = staticmethod(with_submitted_status)
     _send_result_media = staticmethod(send_result_media)
     _cleanup_completion_status_message = staticmethod(cleanup_completion_status_message)
-
-    @staticmethod
-    async def _finalize_cancelled_task_for_bot(**kwargs):
-        return await finalize_cancelled_task_for_bot(
-            **kwargs,
-            edit_text_func=robust_edit_text,
-        )
-
-    @staticmethod
-    async def _finalize_failed_task_for_bot(**kwargs):
-        return await finalize_failed_task_for_bot(
-            **kwargs,
-            edit_text_func=robust_edit_text,
-            send_message_func=robust_send_message,
-        )
-
-    @staticmethod
-    async def _send_bot_warning(context, chat_id, error):
-        await send_bot_warning(
-            context,
-            chat_id,
-            error,
-            send_message_func=robust_send_message,
-        )
-
-    @staticmethod
-    async def _send_bot_domain_error(context, chat_id, error):
-        await send_bot_domain_error(
-            context,
-            chat_id,
-            error,
-            send_message_func=robust_send_message,
-        )
-
-    @staticmethod
-    async def _handle_bot_cancelled_exception(
-        *,
-        status_msg,
-        runtime_state,
-        internal_user_id,
-        username,
-        message_spec,
-        deduct_quota=True,
-    ):
-        await TaskService._finalize_cancelled_task_for_bot(
-            status_msg=status_msg,
-            internal_user_id=internal_user_id,
-            username=username,
-            cost=runtime_state.actual_cost,
-            task_submitted=deduct_quota and runtime_state.task_submitted,
-            registry_task_id=runtime_state.registry_task_id,
-            explicit_user_message=build_bot_cancellation_message(
-                runtime_state.actual_cost,
-                message_spec,
-            ),
-        )
-        runtime_state.terminal_state_finalized = True
-        return None, None
-
-    @staticmethod
-    async def _handle_bot_unexpected_exception(
-        *,
-        context,
-        chat_id,
-        status_msg,
-        runtime_state,
-        internal_user_id,
-        username,
-        error,
-        log_message,
-        should_refund,
-        generic_error_prefix,
-        prefer_edit_status=False,
-        refund_suffix_mode="if_refunded",
-    ):
-        logger.error(log_message, exc_info=True)
-        await TaskService._finalize_failed_task_for_bot(
-            context=context,
-            chat_id=chat_id,
-            status_msg=status_msg,
-            internal_user_id=internal_user_id,
-            username=username,
-            cost=runtime_state.actual_cost,
-            should_refund=should_refund,
-            registry_task_id=runtime_state.registry_task_id,
-            release_lock=runtime_state.task_submitted,
-            error=error,
-            generic_error_prefix=generic_error_prefix,
-            prefer_edit_status=prefer_edit_status,
-            refund_suffix_mode=refund_suffix_mode,
-        )
-        runtime_state.terminal_state_finalized = True
-        return None, None
-
-    _cleanup_runtime_state_if_needed = staticmethod(cleanup_runtime_state_if_needed)
-
-    @staticmethod
-    async def _submit_bot_task(
-        *,
-        runtime_state,
-        internal_user_id,
-        username,
-        task_type,
-        inputs,
-        source_post_id=None,
-        deduct_quota=True,
-    ):
-        from src.core.task_core import process_and_submit_task
-
-        return await submit_bot_task(
-            runtime_state=runtime_state,
-            internal_user_id=internal_user_id,
-            username=username,
-            task_type=task_type,
-            inputs=inputs,
-            source_post_id=source_post_id,
-            deduct_quota=deduct_quota,
-            process_and_submit_task_func=process_and_submit_task,
-        )
 
     @staticmethod
     async def _run_bot_task_flow(
@@ -282,7 +144,7 @@ class TaskService:
             with_submitted_status_func=TaskService._with_submitted_status,
             get_or_send_status_msg_func=TaskService._get_or_send_status_msg,
             send_initial_task_status_func=send_initial_task_status,
-            submit_bot_task_func=TaskService._submit_bot_task,
+            submit_bot_task_func=submit_bot_task,
             update_submitted_task_status_func=update_submitted_task_status,
             reply_text_func=robust_reply_text,
             edit_text_func=robust_edit_text,
@@ -290,31 +152,14 @@ class TaskService:
             get_user_priority_and_identity_func=get_user_priority_and_identity,
             monitor_bot_task_progress_func=task_service_completion_helpers.monitor_bot_task_progress,
             edit_status_text_func=robust_edit_text,
-            complete_monitored_bot_task_func=TaskService._complete_monitored_bot_task,
-            send_bot_warning_func=TaskService._send_bot_warning,
-            send_bot_domain_error_func=TaskService._send_bot_domain_error,
-            handle_bot_cancelled_exception_func=TaskService._handle_bot_cancelled_exception,
-            handle_bot_unexpected_exception_func=TaskService._handle_bot_unexpected_exception,
-            cleanup_runtime_state_if_needed_func=TaskService._cleanup_runtime_state_if_needed,
-        )
-
-    @staticmethod
-    async def _complete_monitored_bot_task(**kwargs) -> Tuple[Optional[bytes], Optional[str]]:
-        kwargs.setdefault("send_result_media_func", TaskService._send_result_media)
-        kwargs.setdefault(
-            "cleanup_completion_status_message_func",
-            TaskService._cleanup_completion_status_message,
-        )
-        kwargs.setdefault(
-            "handle_task_completion_func",
-            task_service_completion_helpers.handle_task_completion,
-        )
-        kwargs.setdefault(
-            "finalize_failed_task_for_bot_func",
-            TaskService._finalize_failed_task_for_bot,
-        )
-        return await task_service_completion_helpers.complete_monitored_bot_task(
-            **kwargs,
+            complete_monitored_bot_task_func=task_service_completion_helpers.complete_monitored_bot_task,
+            handle_task_completion_func=task_service_completion_helpers.handle_task_completion,
+            finalize_failed_task_for_bot_func=finalize_failed_task_for_bot,
+            send_bot_warning_func=send_bot_warning,
+            send_bot_domain_error_func=send_bot_domain_error,
+            handle_bot_cancelled_exception_func=handle_bot_cancelled_exception,
+            handle_bot_unexpected_exception_func=handle_bot_unexpected_exception,
+            cleanup_runtime_state_if_needed_func=cleanup_runtime_state_if_needed,
         )
 
     @staticmethod
@@ -462,33 +307,6 @@ class TaskService:
         )
 
     @staticmethod
-    async def _process_video_task_template(
-        update: Update,
-        context: ContextTypes.DEFAULT_TYPE,
-        image_path: str,
-        mode: str,
-        default_prompt_key: str,
-        default_prompt_text: str,
-        cleanup: bool = True,
-        allow_contribute: bool = True,
-        source_post_id: Optional[int] = None,
-    ) -> Tuple[Optional[bytes], Optional[str]]:
-        return await process_video_task_template_entrypoint(
-            service=TaskService,
-            update=update,
-            context=context,
-            image_path=image_path,
-            mode=mode,
-            default_prompt_key=default_prompt_key,
-            default_prompt_text=default_prompt_text,
-            cleanup=cleanup,
-            allow_contribute=allow_contribute,
-            source_post_id=source_post_id,
-        )
-
-    # Public Methods mapped to the generic template
-
-    @staticmethod
     async def process_blowjob_task(
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
@@ -496,14 +314,15 @@ class TaskService:
         cleanup: bool = True,
         allow_contribute: bool = True,
     ):
-        return await TaskService._process_video_task_template(
-            update,
-            context,
-            image_path,
-            MODE_BLOWJOB,
-            "blowjob",
-            "undress blowjob",
-            cleanup,
+        return await process_video_task_template_entrypoint(
+            service=TaskService,
+            update=update,
+            context=context,
+            image_path=image_path,
+            mode=MODE_BLOWJOB,
+            default_prompt_key="blowjob",
+            default_prompt_text="undress blowjob",
+            cleanup=cleanup,
             allow_contribute=allow_contribute,
         )
 
@@ -515,14 +334,15 @@ class TaskService:
         cleanup: bool = True,
         allow_contribute: bool = True,
     ):
-        return await TaskService._process_video_task_template(
-            update,
-            context,
-            image_path,
-            MODE_UNDRESS_TONGUE,
-            "undress_tongue",
-            "undress and show tongue",
-            cleanup,
+        return await process_video_task_template_entrypoint(
+            service=TaskService,
+            update=update,
+            context=context,
+            image_path=image_path,
+            mode=MODE_UNDRESS_TONGUE,
+            default_prompt_key="undress_tongue",
+            default_prompt_text="undress and show tongue",
+            cleanup=cleanup,
             allow_contribute=allow_contribute,
         )
 
@@ -534,14 +354,15 @@ class TaskService:
         cleanup: bool = True,
         allow_contribute: bool = True,
     ):
-        return await TaskService._process_video_task_template(
-            update,
-            context,
-            image_path,
-            MODE_DOGGY_STYLE,
-            "doggy_style",
-            "doggy style sex",
-            cleanup,
+        return await process_video_task_template_entrypoint(
+            service=TaskService,
+            update=update,
+            context=context,
+            image_path=image_path,
+            mode=MODE_DOGGY_STYLE,
+            default_prompt_key="doggy_style",
+            default_prompt_text="doggy style sex",
+            cleanup=cleanup,
             allow_contribute=allow_contribute,
         )
 
@@ -553,14 +374,15 @@ class TaskService:
         cleanup: bool = True,
         allow_contribute: bool = True,
     ):
-        return await TaskService._process_video_task_template(
-            update,
-            context,
-            image_path,
-            MODE_CLOSEUP_BLOWJOB,
-            "closeup_blowjob",
-            "closeup blowjob sex",
-            cleanup,
+        return await process_video_task_template_entrypoint(
+            service=TaskService,
+            update=update,
+            context=context,
+            image_path=image_path,
+            mode=MODE_CLOSEUP_BLOWJOB,
+            default_prompt_key="closeup_blowjob",
+            default_prompt_text="closeup blowjob sex",
+            cleanup=cleanup,
             allow_contribute=allow_contribute,
         )
 
@@ -572,14 +394,15 @@ class TaskService:
         cleanup: bool = True,
         allow_contribute: bool = True,
     ):
-        return await TaskService._process_video_task_template(
-            update,
-            context,
-            image_path,
-            MODE_PERFECT_VIDEO_INSERT,
-            "perfect_video_insert",
-            "missionary sex",
-            cleanup,
+        return await process_video_task_template_entrypoint(
+            service=TaskService,
+            update=update,
+            context=context,
+            image_path=image_path,
+            mode=MODE_PERFECT_VIDEO_INSERT,
+            default_prompt_key="perfect_video_insert",
+            default_prompt_text="missionary sex",
+            cleanup=cleanup,
             allow_contribute=allow_contribute,
         )
 

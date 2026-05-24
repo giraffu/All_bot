@@ -13,6 +13,7 @@ from src.services.task_service_entrypoint_support import (
     build_unexpected_error_log_message,
     resolve_video_billing_args,
 )
+from src.services.task_service_support import resolve_custom_video_settings
 from src.services.task_service_message_support import (
     build_cost_status_builder,
     build_message_spec,
@@ -41,7 +42,7 @@ async def process_video_task_template(
     username = update.effective_user.username
     internal_user_id = await resolve_internal_user_id(user_id, username)
 
-    resolution, duration_str, res_val, duration = await service._resolve_custom_video_settings(
+    resolution, duration_str, res_val, duration = await resolve_custom_video_settings(
         context,
         update=update,
         warn_invalid_combo=True,
@@ -127,7 +128,7 @@ async def process_custom_video_task(
     chat_id = update.effective_chat.id
     user_id = update.effective_user.id
     username = update.effective_user.username
-    resolution, duration, _res_val, _duration_val = await service._resolve_custom_video_settings(
+    resolution, duration, _res_val, _duration_val = await resolve_custom_video_settings(
         context,
         update=update,
         warn_invalid_combo=True,

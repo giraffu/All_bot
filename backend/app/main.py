@@ -27,17 +27,8 @@ from app.main_response_helpers import (
     cancel_task_or_404 as cancel_task_or_404_helper,
     serve_task_result_file as serve_task_result_file_helper,
 )
-from app.main_t2i_facade_seams import (
-    create_t2i_pornmaster_turbo_task_seam,
-    enqueue_t2i_task_seam,
-    get_immediate_t2i_terminal_response_seam,
-    optional_t2i_task_subscription_seam,
-    submit_t2i_task_request_seam,
-    wait_for_t2i_sync_result_seam,
-)
 from app.main_t2i_helpers import (
     build_t2i_terminal_response as build_t2i_terminal_response_helper,
-    build_t2i_success_response as build_t2i_success_response_helper,
     build_task_event_channel as build_task_event_channel_helper,
     close_task_event_subscription as close_task_event_subscription_helper,
     decode_t2i_pubsub_message as decode_t2i_pubsub_message_helper,
@@ -193,15 +184,6 @@ def _prepare_t2i_request_payload(
     )
 
 
-def _build_t2i_success_response(*, task_id: str, result_path: str) -> T2ITaskResponse:
-    return build_t2i_success_response_helper(
-        task_id=task_id,
-        result_path=result_path,
-        response_cls=T2ITaskResponse,
-        build_result_url_func=_build_result_url,
-    )
-
-
 def _build_t2i_terminal_response(
     *,
     task_id: str,
@@ -262,11 +244,10 @@ async def _optional_t2i_task_subscription(
     queue_manager: QueueManager,
     task_id: str,
 ):
-    async with optional_t2i_task_subscription_seam(
+    async with optional_t2i_task_subscription_helper(
         async_mode=async_mode,
         queue_manager=queue_manager,
         task_id=task_id,
-        optional_t2i_task_subscription_helper=optional_t2i_task_subscription_helper,
         subscribe_task_events_func=_subscribe_task_events,
         close_task_event_subscription_func=_close_task_event_subscription,
     ) as subscription:
@@ -281,14 +262,14 @@ async def _enqueue_t2i_task(
     priority: int,
     request_id: str,
 ) -> None:
-    await enqueue_t2i_task_seam(
+    await enqueue_t2i_task_helper(
         queue_manager=queue_manager,
+        task_type=TaskType.T2I_PORNMASTER_TURBO,
         task_id=task_id,
         params=params,
         priority=priority,
         request_id=request_id,
         logger=logger,
-        enqueue_t2i_task_helper=enqueue_t2i_task_helper,
     )
 
 
@@ -298,11 +279,10 @@ async def _get_immediate_t2i_terminal_response(
     task_id: str,
     request_id: str,
 ) -> T2ITaskResponse | None:
-    return await get_immediate_t2i_terminal_response_seam(
+    return await get_immediate_t2i_terminal_response_helper(
         queue_manager=queue_manager,
         task_id=task_id,
         request_id=request_id,
-        get_immediate_t2i_terminal_response_helper=get_immediate_t2i_terminal_response_helper,
         build_terminal_response_func=_build_t2i_terminal_response,
     )
 
@@ -315,14 +295,13 @@ async def _wait_for_t2i_sync_result(
     queue_manager: QueueManager,
     timeout: int = 60,
 ) -> T2ITaskResponse:
-    return await wait_for_t2i_sync_result_seam(
+    return await wait_for_t2i_sync_result_helper(
         pubsub=pubsub,
         task_id=task_id,
         request_id=request_id,
         queue_manager=queue_manager,
         timeout=timeout,
         logger=logger,
-        wait_for_t2i_sync_result_helper=wait_for_t2i_sync_result_helper,
         get_immediate_response_func=_get_immediate_t2i_terminal_response,
         wait_for_terminal_response_func=_wait_for_t2i_terminal_response,
     )
@@ -337,7 +316,7 @@ async def _submit_t2i_task_request(
     task_priority: int,
     request_id: str,
 ) -> T2ITaskResponse:
-    return await submit_t2i_task_request_seam(
+    return await submit_t2i_task_request_helper(
         async_mode=async_mode,
         queue_manager=queue_manager,
         task_id=task_id,
@@ -345,11 +324,10 @@ async def _submit_t2i_task_request(
         task_priority=task_priority,
         request_id=request_id,
         response_cls=T2ITaskResponse,
-        logger=logger,
-        submit_t2i_task_request_helper=submit_t2i_task_request_helper,
         optional_subscription_func=_optional_t2i_task_subscription,
         enqueue_t2i_task_func=_enqueue_t2i_task,
         wait_for_sync_result_func=_wait_for_t2i_sync_result,
+        logger=logger,
     )
 
 
@@ -420,15 +398,25 @@ async def create_t2i_pornmaster_turbo_task(
     async_mode: Annotated[bool, Query(alias="async")] = True,
     priority: Annotated[int, Query()] = 0,
 ):
-    return await create_t2i_pornmaster_turbo_task_seam(
-        request=request,
-        queue_manager=queue_manager,
+    request_id = str(uuid.uuid4())
+    logger.info(f"[{request_id}] Received T2I task request: {request}")
+
+    try:
+        task_id, task_priority, params = _prepare_t2i_request_payload(
+            request,
+            default_priority=priority,
+        )
+    except HTTPException:
+        logger.error(f"[{request_id}] Invalid prompt: {request.get('prompt')}")
+        raise
+
+    return await _submit_t2i_task_request(
         async_mode=async_mode,
-        priority=priority,
-        request_id=str(uuid.uuid4()),
-        logger=logger,
-        prepare_t2i_request_payload_func=_prepare_t2i_request_payload,
-        submit_t2i_task_request_func=_submit_t2i_task_request,
+        queue_manager=queue_manager,
+        task_id=task_id,
+        params=params,
+        task_priority=task_priority,
+        request_id=request_id,
     )
 
 

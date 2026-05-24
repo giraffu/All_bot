@@ -298,7 +298,7 @@ from src.core.gallery_core import (
     DuplicateInteractionError,
     GalleryCoreError,
     get_gallery_feed,
-    process_submit_to_gallery,
+    process_submit_to_gallery_result,
     toggle_like,
 )
 
@@ -333,14 +333,16 @@ async def submit_gallery_callback(update: Update, context: ContextTypes.DEFAULT_
 
         bg_tasks = DummyBackgroundTasks(context)
         try:
-            result = await process_submit_to_gallery(
+            outcome = await process_submit_to_gallery_result(
                 user_id=internal_user.id,
                 task_id=task_id,
-                background_tasks=bg_tasks,
                 width=width,
                 height=height,
                 duration=duration,
             )
+            for effect_func, effect_args in outcome.side_effects:
+                bg_tasks.add_task(effect_func, *effect_args)
+            result = outcome.payload
             await safe_answer_query(
                 query, text=f"🎉 {result['message']}", show_alert=True
             )

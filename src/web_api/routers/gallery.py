@@ -200,7 +200,7 @@ async def submit_to_gallery(
 ):
     return await submit_gallery_post_payload(
         task_id=task_id,
-        background_tasks=background_tasks,
+        schedule_background_task=getattr(background_tasks, "add_task", None),
         request=request,
         current_user=current_user,
     )

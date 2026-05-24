@@ -32,7 +32,7 @@ def test_build_task_core_persistence_materialization_dependencies_uses_image_ser
 
     monkeypatch.setattr(
         task_core_persistence,
-        "_load_image_service",
+        "get_task_core_image_service",
         lambda: type(
             "_ImageService",
             (),

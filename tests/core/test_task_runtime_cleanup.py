@@ -333,7 +333,11 @@ async def test_force_terminate_task_reuses_cleanup_runtime_state_without_user_lo
             )
         ),
     )
-    monkeypatch.setattr("src.api_client.api_client.cancel_task", cancel_task)
+    monkeypatch.setattr(
+        task_core_runtime,
+        "get_task_core_api_client",
+        lambda: SimpleNamespace(cancel_task=cancel_task),
+    )
     monkeypatch.setattr(task_core, "cleanup_task_runtime_state", cleanup_runtime)
 
     await task_core.force_terminate_task("registry-task-9")
@@ -360,7 +364,11 @@ async def test_cancel_backend_task_best_effort_treats_missing_backend_as_cleaned
         )
     )
 
-    monkeypatch.setattr("src.api_client.api_client.cancel_task", cancel_task)
+    monkeypatch.setattr(
+        task_core_runtime,
+        "get_task_core_api_client",
+        lambda: SimpleNamespace(cancel_task=cancel_task),
+    )
 
     cancelled = await task_core_runtime.cancel_backend_task_best_effort(
         backend_task_id="backend-task-404",
@@ -382,7 +390,7 @@ async def test_cleanup_task_runtime_state_uses_runtime_default_bindings(monkeypa
     )
     monkeypatch.setattr(
         task_core_runtime,
-        "_load_task_registry",
+        "get_task_core_task_registry",
         lambda: SimpleNamespace(remove_task=remove_task),
     )
 
@@ -399,18 +407,20 @@ async def test_cleanup_task_runtime_state_uses_runtime_default_bindings(monkeypa
 async def test_force_terminate_task_uses_runtime_default_bindings(monkeypatch):
     cancel_backend = AsyncMock()
     cleanup_runtime = AsyncMock()
-    monkeypatch.setattr(
-        "src.services.redis_client.redis_client",
-        SimpleNamespace(
-            get_active_tasks=AsyncMock(
-                return_value={
-                    "registry-task-10": {
-                        "user_id": 10,
-                        "backend_task_id": "backend-task-10",
-                    }
+    redis_client = SimpleNamespace(
+        get_active_tasks=AsyncMock(
+            return_value={
+                "registry-task-10": {
+                    "user_id": 10,
+                    "backend_task_id": "backend-task-10",
                 }
-            )
-        ),
+            }
+        )
+    )
+    monkeypatch.setattr(
+        task_core_runtime,
+        "get_task_core_submission_outbox",
+        lambda: redis_client,
     )
     monkeypatch.setattr(
         task_core_runtime,
@@ -501,7 +511,11 @@ async def test_get_system_task_stats_uses_runtime_redis_provider(monkeypatch):
         get_all_user_concurrencies=AsyncMock(return_value=user_concurrencies),
     )
 
-    monkeypatch.setattr("src.services.redis_client.redis_client", redis_client)
+    monkeypatch.setattr(
+        task_core_runtime,
+        "get_task_core_submission_outbox",
+        lambda: redis_client,
+    )
 
     result = await task_core.get_system_task_stats()
 
@@ -519,7 +533,11 @@ async def test_sync_user_concurrency_uses_runtime_redis_provider(monkeypatch):
     )
     redis_client = SimpleNamespace(redis=redis)
 
-    monkeypatch.setattr("src.services.redis_client.redis_client", redis_client)
+    monkeypatch.setattr(
+        task_core_runtime,
+        "get_task_core_submission_outbox",
+        lambda: redis_client,
+    )
 
     await task_core.sync_user_concurrency(123, 2)
     await task_core.sync_user_concurrency(123, 0)

@@ -135,7 +135,7 @@ async def favorite_history(
         task_id=task_id,
         current_user=current_user,
         db=db,
-        background_tasks=background_tasks,
+        schedule_background_task=getattr(background_tasks, "add_task", None),
     )
 
 

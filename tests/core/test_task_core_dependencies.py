@@ -10,7 +10,7 @@ from src.core.task_core_dependencies import TaskCoreProcessDependencies
 from src.core.task_core_types import TaskSubmissionExecutionResult, VideoTaskRequest
 
 
-def test_build_task_core_warmup_dependencies_binds_explicit_services():
+def test_build_task_core_warmup_dependencies_binds_explicit_capabilities():
     copy_to_r2 = AsyncMock()
     prune_cache = AsyncMock()
     thumbnail = AsyncMock()
@@ -18,10 +18,8 @@ def test_build_task_core_warmup_dependencies_binds_explicit_services():
     logger = MagicMock()
 
     dependencies = dependency_builders.build_task_core_warmup_dependencies(
-        get_storage_service=lambda: SimpleNamespace(
-            async_copy_to_r2=copy_to_r2,
-            async_prune_user_web_history_r2_cache=prune_cache,
-        ),
+        copy_to_r2_func=copy_to_r2,
+        prune_user_web_history_r2_cache_func=prune_cache,
         resolve_storage_object_func=lambda path: ("bucket", path),
         generate_and_upload_thumbnail_func=thumbnail,
         create_task_func=create_task,
@@ -36,7 +34,7 @@ def test_build_task_core_warmup_dependencies_binds_explicit_services():
     assert dependencies.logger is logger
 
 
-def test_build_task_core_runtime_and_submission_dependencies_bind_explicit_adapters():
+def test_build_task_core_runtime_and_submission_dependencies_bind_explicit_capabilities():
     release_lock = AsyncMock()
     add_task = AsyncMock()
     remove_task = AsyncMock()
@@ -47,19 +45,15 @@ def test_build_task_core_runtime_and_submission_dependencies_bind_explicit_adapt
     logger = MagicMock()
 
     runtime_dependencies = dependency_builders.build_task_core_runtime_dependencies(
-        get_task_registry=lambda: SimpleNamespace(remove_task=remove_task),
+        remove_task_func=remove_task,
         release_concurrency_lock_func=release_lock,
     )
     submission_dependencies = dependency_builders.build_task_core_submission_dependencies(
-        get_task_registry=lambda: SimpleNamespace(
-            add_task=add_task,
-            remove_task=remove_task,
-            update_backend_task_id=update_backend_task_id,
-            mark_task_status=mark_task_status,
-        ),
-        get_submission_outbox=lambda: SimpleNamespace(
-            add_pending_refund=add_pending_refund
-        ),
+        add_task_func=add_task,
+        update_backend_task_id_func=update_backend_task_id,
+        mark_task_status_func=mark_task_status,
+        remove_task_func=remove_task,
+        add_pending_refund_func=add_pending_refund,
         dispatch_to_worker_func=dispatch_to_worker,
         is_task_backend_busy_error_func=task_core.is_task_backend_busy_error,
         logger=logger,
@@ -126,7 +120,7 @@ def test_build_task_core_process_dependencies_bind_explicit_services():
     assert dependencies.logger is logger
 
 
-def test_build_task_core_persistence_and_monitor_dependencies_bind_explicit_services():
+def test_build_task_core_persistence_and_monitor_dependencies_bind_explicit_capabilities():
     user_logger_factory = MagicMock()
     download_result = AsyncMock()
     download_video_result = AsyncMock()
@@ -141,20 +135,16 @@ def test_build_task_core_persistence_and_monitor_dependencies_bind_explicit_serv
     logger = MagicMock()
 
     persistence_dependencies = dependency_builders.build_task_core_persistence_dependencies(
-        get_image_service=lambda: SimpleNamespace(
-            download_result=download_result,
-            download_video_result=download_video_result,
-        ),
-        get_permission_service=lambda: SimpleNamespace(
-            refresh_user_group=refresh_user_group
-        ),
+        download_result_func=download_result,
+        download_video_result_func=download_video_result,
+        refresh_user_group_func=refresh_user_group,
         user_logger_factory=user_logger_factory,
         extract_media_metadata_from_bytes_best_effort_func=extract_from_bytes,
         extract_media_metadata_from_storage_best_effort_func=extract_from_storage,
         schedule_web_history_r2_warmup_func=warmup,
     )
     monitor_dependencies = dependency_builders.build_task_core_monitor_dependencies(
-        get_image_service=lambda: SimpleNamespace(monitor_progress=monitor_progress),
+        monitor_progress_func=monitor_progress,
         normalize_terminal_status_func=task_core.normalize_terminal_status,
         finalize_success_func=finalize_success,
         finalize_cancellation_func=finalize_cancellation,
@@ -299,227 +289,6 @@ async def test_process_and_submit_task_uses_process_dependencies_builder(monkeyp
 
 
 @pytest.mark.asyncio
-async def test_persist_successful_task_result_and_monitor_task_use_dependency_builders(
-    monkeypatch,
-):
-    fake_persistence_impl = AsyncMock(
-        return_value=TaskSubmissionExecutionResult(
-            registry_task_id="ignored",
-            backend_task_id="ignored",
-            submission_context=SimpleNamespace(),
-        )
-    )
-    fake_monitor_impl = AsyncMock(return_value=None)
-    persistence_dependencies = SimpleNamespace(
-        user_logger_factory=MagicMock(),
-        download_result_func=AsyncMock(),
-        download_video_result_func=AsyncMock(),
-        extract_media_metadata_from_bytes_best_effort_func=MagicMock(),
-        extract_media_metadata_from_storage_best_effort_func=AsyncMock(),
-        schedule_web_history_r2_warmup_func=MagicMock(),
-        refresh_user_group_func=AsyncMock(),
-    )
-    monitor_dependencies = SimpleNamespace(
-        monitor_progress_func=AsyncMock(),
-        normalize_terminal_status_func=MagicMock(),
-        finalize_success_func=AsyncMock(),
-        finalize_cancellation_func=AsyncMock(),
-        finalize_failure_func=AsyncMock(),
-        logger=MagicMock(),
-    )
-
-    monkeypatch.setattr(task_core, "_persist_successful_task_result_impl", fake_persistence_impl)
-    monkeypatch.setattr(task_core, "_monitor_task_and_release_lock_impl", fake_monitor_impl)
-    monkeypatch.setattr(
-        task_core,
-        "_build_task_core_persistence_dependencies_impl",
-        lambda **_kwargs: persistence_dependencies,
-    )
-    monkeypatch.setattr(
-        task_core,
-        "_build_task_core_monitor_dependencies_impl",
-        lambda **_kwargs: monitor_dependencies,
-    )
-
-    await task_core.persist_successful_task_result(
-        backend_task_id="backend-1",
-        registry_task_id="registry-1",
-        internal_user_id=123,
-        username="tester",
-        prompt="hello",
-        task_type="image",
-        input_images=["input.png"],
-        allow_contribute=True,
-        is_video=False,
-        billing_resolution="1024",
-        requested_duration=None,
-    )
-    await task_core.monitor_task_and_release_lock(
-        backend_task_id="backend-2",
-        internal_user_id=456,
-        username="tester",
-        registry_task_id="registry-2",
-        submission_context=SimpleNamespace(is_video_task=False),
-        cost=8,
-    )
-
-    persistence_kwargs = fake_persistence_impl.await_args.kwargs
-    assert persistence_kwargs["user_logger_factory"] is persistence_dependencies.user_logger_factory
-    assert persistence_kwargs["download_result_func"] is persistence_dependencies.download_result_func
-    assert (
-        persistence_kwargs["download_video_result_func"]
-        is persistence_dependencies.download_video_result_func
-    )
-    assert (
-        persistence_kwargs["extract_media_metadata_from_bytes_best_effort_func"]
-        is persistence_dependencies.extract_media_metadata_from_bytes_best_effort_func
-    )
-    assert (
-        persistence_kwargs["extract_media_metadata_from_storage_best_effort_func"]
-        is persistence_dependencies.extract_media_metadata_from_storage_best_effort_func
-    )
-    assert (
-        persistence_kwargs["schedule_web_history_r2_warmup_func"]
-        is persistence_dependencies.schedule_web_history_r2_warmup_func
-    )
-    assert (
-        persistence_kwargs["refresh_user_group_func"]
-        is persistence_dependencies.refresh_user_group_func
-    )
-
-    monitor_kwargs = fake_monitor_impl.await_args.kwargs
-    assert monitor_kwargs["monitor_progress_func"] is monitor_dependencies.monitor_progress_func
-    assert (
-        monitor_kwargs["normalize_terminal_status_func"]
-        is monitor_dependencies.normalize_terminal_status_func
-    )
-    assert monitor_kwargs["finalize_success_func"] is monitor_dependencies.finalize_success_func
-    assert (
-        monitor_kwargs["finalize_cancellation_func"]
-        is monitor_dependencies.finalize_cancellation_func
-    )
-    assert monitor_kwargs["finalize_failure_func"] is monitor_dependencies.finalize_failure_func
-    assert monitor_kwargs["logger"] is monitor_dependencies.logger
-
-
-@pytest.mark.asyncio
-async def test_finalization_wrappers_use_finalization_dependency_builder(monkeypatch):
-    refund_cancelled_impl = AsyncMock(return_value=True)
-    refund_failed_impl = AsyncMock(return_value=True)
-    handle_failed_impl = AsyncMock(return_value="handled")
-    finalize_failure_impl = AsyncMock(return_value=SimpleNamespace(refunded=True))
-    finalize_cancellation_impl = AsyncMock(return_value=SimpleNamespace(refunded=True))
-    finalize_terminated_impl = AsyncMock(return_value=SimpleNamespace(refunded=True))
-    dependencies = SimpleNamespace(
-        refund_credits_func=AsyncMock(),
-        cleanup_task_runtime_state_func=AsyncMock(),
-        refund_cancelled_task_func=AsyncMock(),
-        force_terminate_task_func=AsyncMock(),
-    )
-
-    monkeypatch.setattr(task_core, "_refund_cancelled_task_impl", refund_cancelled_impl)
-    monkeypatch.setattr(task_core, "_refund_failed_task_impl", refund_failed_impl)
-    monkeypatch.setattr(task_core, "_handle_failed_task_exception_impl", handle_failed_impl)
-    monkeypatch.setattr(task_core, "_finalize_task_failure_impl", finalize_failure_impl)
-    monkeypatch.setattr(
-        task_core,
-        "_finalize_task_cancellation_impl",
-        finalize_cancellation_impl,
-    )
-    monkeypatch.setattr(
-        task_core,
-        "_finalize_terminated_task_impl",
-        finalize_terminated_impl,
-    )
-    monkeypatch.setattr(
-        task_core,
-        "_build_task_core_finalization_dependencies_impl",
-        lambda **_kwargs: dependencies,
-    )
-
-    await task_core.refund_cancelled_task(
-        internal_user_id=1,
-        username="u1",
-        cost=2,
-        task_submitted=True,
-    )
-    await task_core.refund_failed_task(
-        internal_user_id=1,
-        username="u1",
-        cost=2,
-        should_refund=True,
-    )
-    result_message = await task_core.handle_failed_task_exception(
-        internal_user_id=1,
-        username="u1",
-        cost=2,
-        should_refund=True,
-        error=RuntimeError("boom"),
-        generic_error_prefix="错误",
-    )
-    await task_core.finalize_task_failure(
-        internal_user_id=1,
-        username="u1",
-        cost=2,
-        should_refund=True,
-        registry_task_id="reg-1",
-    )
-    await task_core.finalize_task_cancellation(
-        internal_user_id=1,
-        username="u1",
-        cost=2,
-        task_submitted=True,
-        registry_task_id="reg-1",
-    )
-    await task_core.finalize_terminated_task(
-        registry_task_id="reg-1",
-        user_id=1,
-        username="u1",
-        cost=2,
-        should_refund=True,
-        refund_task_type="refund_admin_force",
-    )
-
-    assert result_message == "handled"
-    assert (
-        refund_cancelled_impl.await_args.kwargs["refund_credits_func"]
-        is dependencies.refund_credits_func
-    )
-    assert (
-        refund_failed_impl.await_args.kwargs["refund_credits_func"]
-        is dependencies.refund_credits_func
-    )
-    assert (
-        handle_failed_impl.await_args.kwargs["refund_credits_func"]
-        is dependencies.refund_credits_func
-    )
-    assert (
-        finalize_failure_impl.await_args.kwargs["refund_credits_func"]
-        is dependencies.refund_credits_func
-    )
-    assert (
-        finalize_failure_impl.await_args.kwargs["cleanup_task_runtime_state_func"]
-        is dependencies.cleanup_task_runtime_state_func
-    )
-    assert (
-        finalize_cancellation_impl.await_args.kwargs["refund_cancelled_task_func"]
-        is dependencies.refund_cancelled_task_func
-    )
-    assert (
-        finalize_cancellation_impl.await_args.kwargs["cleanup_task_runtime_state_func"]
-        is dependencies.cleanup_task_runtime_state_func
-    )
-    assert (
-        finalize_terminated_impl.await_args.kwargs["force_terminate_task_func"]
-        is dependencies.force_terminate_task_func
-    )
-    assert (
-        finalize_terminated_impl.await_args.kwargs["refund_credits_func"]
-        is dependencies.refund_credits_func
-    )
-
-
-@pytest.mark.asyncio
 async def test_side_effect_wrappers_use_side_effect_dependency_builder(monkeypatch):
     attach_web_task_monitor_impl = MagicMock()
     monitor_web_task = AsyncMock()
@@ -535,7 +304,7 @@ async def test_side_effect_wrappers_use_side_effect_dependency_builder(monkeypat
 
     monkeypatch.setattr(
         task_core,
-        "_build_task_core_side_effect_dependencies_impl",
+        "build_default_task_core_side_effect_dependencies",
         lambda **_kwargs: dependencies,
     )
 

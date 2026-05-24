@@ -6,18 +6,13 @@ from typing import Any
 from src.core.task_core_persistence_flow import (
     persist_successful_task_result_flow as _persist_successful_task_result_flow_impl,
 )
+from src.core.task_core_service_providers import get_task_core_image_service
 from src.core.media_processor import (
     extract_media_metadata_from_bytes_best_effort,
     extract_media_metadata_from_storage_best_effort,
 )
 from src.core.task_core_types import TaskSuccessPersistenceResult
 from src.logger import UserLogger
-
-
-def _load_image_service():
-    from src.services.image_service import image_service as image_service_impl
-
-    return image_service_impl
 
 
 @dataclass(frozen=True)
@@ -36,7 +31,7 @@ def _build_task_core_persistence_materialization_dependencies(
     if to_thread_func is None:
         to_thread_func = asyncio.to_thread
 
-    image_service_impl = _load_image_service()
+    image_service_impl = get_task_core_image_service()
     return TaskCorePersistenceMaterializationDependencies(
         download_result_func=download_result_func or image_service_impl.download_result,
         download_video_result_func=(

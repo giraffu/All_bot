@@ -3,7 +3,7 @@ from sqlalchemy import desc, func, select
 
 from src.database.core import AsyncSessionLocal
 from src.database.models import GalleryPost, History, UserInteraction
-from src.web_api.routers.utils import (
+from src.web_api.common.utils import (
     build_history_apply_context_response,
     build_storage_input_file_url,
 )

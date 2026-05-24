@@ -1,4 +1,4 @@
-from fastapi import BackgroundTasks, HTTPException
+from fastapi import HTTPException
 from sqlalchemy import select, update
 
 from src.core.gallery_core import async_copy_to_r2_background
@@ -35,7 +35,7 @@ async def favorite_user_history(
     task_id: str,
     current_user,
     db,
-    background_tasks: BackgroundTasks,
+    schedule_background_task=None,
 ) -> dict[str, str]:
     history = await _load_owned_history_by_task_id(
         db=db,
@@ -57,18 +57,19 @@ async def favorite_user_history(
             history.output_file,
         )
 
-        background_tasks.add_task(
-            async_copy_to_r2_background,
-            bucket_name,
-            object_name,
-            r2_object_name,
-        )
-        background_tasks.add_task(
-            generate_and_upload_thumbnail,
-            history.output_file,
-            media_type,
-            build_history_r2_thumbnail_key(history.task_id, media_type),
-        )
+        if schedule_background_task is not None:
+            schedule_background_task(
+                async_copy_to_r2_background,
+                bucket_name,
+                object_name,
+                r2_object_name,
+            )
+            schedule_background_task(
+                generate_and_upload_thumbnail,
+                history.output_file,
+                media_type,
+                build_history_r2_thumbnail_key(history.task_id, media_type),
+            )
 
     return {"status": "success", "message": "收藏成功"}
 
