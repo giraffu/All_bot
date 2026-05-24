@@ -16,7 +16,7 @@ from src.constants import MODE_FACESWAP_STEP1, TASK_COSTS
 from src.handlers.conversation_states import FaceSwapState
 from src.handlers.prompt_router import is_global_menu_command
 from src.services.permission_service import permission_service
-from src.services.task_service import TaskService
+from src.services.bot_task_service import TaskService
 from src.utils import (
     create_background_task,
     load_prompts,

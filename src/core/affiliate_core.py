@@ -84,7 +84,7 @@ async def calculate_and_set_commission_for_paid_order(
     referral = (
         await session.execute(
             select(Referral)
-            .where(Referral.invitee_id == order.telegram_id)
+            .where(Referral.invitee_id == order.internal_user_id)
             .with_for_update()
         )
     ).scalar_one_or_none()
@@ -98,7 +98,7 @@ async def calculate_and_set_commission_for_paid_order(
         await session.execute(
             select(Order.id)
             .where(
-                Order.telegram_id == order.telegram_id,
+                Order.internal_user_id == order.internal_user_id,
                 Order.status == "SUCCESS",
                 Order.payment_channel.in_(VALID_PAYMENT_CHANNELS),
                 Order.final_price > 0,
@@ -148,10 +148,10 @@ async def record_affiliate_commission_transaction(
     commission_amount = Decimal(str(order.commission_usdt or 0))
     if order.status != "SUCCESS" or commission_amount <= 0:
         return False
-    if referral.invitee_id != order.telegram_id:
+    if referral.invitee_id != order.internal_user_id:
         raise ValueError(
             "referral invitee mismatch for affiliate commission transaction: "
-            f"order.telegram_id={order.telegram_id}, "
+            f"order.internal_user_id={order.internal_user_id}, "
             f"referral.invitee_id={referral.invitee_id}"
         )
 
@@ -168,7 +168,7 @@ async def record_affiliate_commission_transaction(
             "order_pk": order.id,
             "order_id": str(order.order_id or ""),
             "tx_hash": order.tx_hash,
-            "invitee_user_id": order.telegram_id,
+            "invitee_user_id": order.internal_user_id,
             "inviter_id": referral.inviter_id,
             "payment_channel": order.payment_channel,
             "commission_usdt": str(commission_amount),

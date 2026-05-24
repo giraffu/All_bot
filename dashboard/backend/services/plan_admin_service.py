@@ -87,6 +87,7 @@ async def get_orders_payload(
     page: int,
     page_size: int,
     status: str | None,
+    internal_user_id: int | None,
     telegram_id: int | None,
     username: str | None,
     db,
@@ -97,15 +98,18 @@ async def get_orders_payload(
         offset = (page - 1) * page_size
         stmt = (
             select(Order, User.username, MembershipPlan.name.label("plan_name"))
-            .outerjoin(User, Order.telegram_id == User.id)
+            .outerjoin(User, Order.internal_user_id == User.id)
             .outerjoin(MembershipPlan, Order.plan_id == MembershipPlan.id)
             .order_by(desc(Order.created_at))
         )
 
         if status and status != "ALL":
             stmt = stmt.where(Order.status == status)
-        if telegram_id:
-            stmt = stmt.where(Order.telegram_id == telegram_id)
+        target_internal_user_id = (
+            internal_user_id if internal_user_id is not None else telegram_id
+        )
+        if target_internal_user_id:
+            stmt = stmt.where(Order.internal_user_id == target_internal_user_id)
         if username:
             stmt = stmt.where(User.username.ilike(f"%{username}%"))
 

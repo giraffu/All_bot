@@ -26,7 +26,7 @@ const ordersLoading = ref(false)
 const currentOrderPage = ref(1)
 const orderPageSize = ref(10)
 const orderStatusFilter = ref('ALL')
-const searchTelegramId = ref('')
+const searchInternalUserId = ref('')
 const searchUsername = ref('')
 
 const planColumns = [
@@ -43,7 +43,7 @@ const planColumns = [
 
 const orderColumns = [
   { title: '订单号', dataIndex: 'order_id', key: 'order_id', ellipsis: true },
-  { title: '用户ID', dataIndex: 'telegram_id', key: 'telegram_id' },
+  { title: '内部用户ID', dataIndex: 'internal_user_id', key: 'internal_user_id' },
   { title: '用户名', dataIndex: 'username', key: 'username' },
   { title: '套餐', dataIndex: 'plan_name', key: 'plan_name' },
   { title: '支付金额', dataIndex: 'final_price', key: 'final_price' },
@@ -70,7 +70,7 @@ const loadOrders = async (page = 1) => {
       page, 
       orderPageSize.value, 
       orderStatusFilter.value,
-      searchTelegramId.value || null,
+      searchInternalUserId.value || null,
       searchUsername.value || null
     )
     orders.value = res.items
@@ -181,7 +181,7 @@ onMounted(() => {
         <div class="flex justify-between mb-4 items-center">
           <h2 class="text-lg font-bold">订单列表</h2>
           <div class="flex gap-2">
-            <a-input v-model:value="searchTelegramId" placeholder="搜索用户ID" style="width: 150px" @pressEnter="loadOrders(1)" allow-clear />
+            <a-input v-model:value="searchInternalUserId" placeholder="搜索内部用户ID" style="width: 150px" @pressEnter="loadOrders(1)" allow-clear />
             <a-input v-model:value="searchUsername" placeholder="搜索用户名" style="width: 150px" @pressEnter="loadOrders(1)" allow-clear />
             <a-select v-model:value="orderStatusFilter" style="width: 120px" @change="loadOrders(1)">
               <a-select-option value="ALL">全部状态</a-select-option>

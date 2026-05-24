@@ -30,7 +30,7 @@ class _FakeSession:
         self.added = []
         self.commit = AsyncMock()
 
-    async def execute(self, stmt):
+    async def execute(self, _stmt):
         if not self.execute_results:
             raise AssertionError("unexpected execute call")
         return _ScalarResult(self.execute_results.pop(0))
@@ -93,6 +93,7 @@ async def test_create_order_dual_writes_business_order_id(monkeypatch):
 
     created_order = db.added[0]
     assert created_order.business_order_id == "bo_test_1"
+    assert created_order.internal_user_id == 2002
     assert created_order.settlement_schema_version == "order_plan_v1"
     assert created_order.settlement_snapshot["plan_id"] == 1
     assert result["data"]["order_id"] == "bo_test_1"
@@ -101,11 +102,12 @@ async def test_create_order_dual_writes_business_order_id(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_get_order_status_supports_business_order_id(monkeypatch):
+async def test_get_order_status_supports_business_order_id():
     order = SimpleNamespace(
         order_id="WEB_legacy",
         business_order_id="bo_status_1",
         telegram_id=2002,
+        internal_user_id=2002,
         status="PENDING",
     )
     db = _FakeSession([order])
@@ -139,6 +141,7 @@ async def test_create_ton_order_returns_order_v2_comment_when_enabled(monkeypatc
 
     created_order = db.added[0]
     assert created_order.business_order_id == "bo_ton_1"
+    assert created_order.internal_user_id == 2002
     assert created_order.payment_channel == "TON"
     assert result["data"]["order_id"] == "bo_ton_1"
     assert result["data"]["ton_comment"] == "ORDER_V2:bo_ton_1"

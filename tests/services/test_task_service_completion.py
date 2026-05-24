@@ -37,7 +37,7 @@ async def test_handle_task_completion_keeps_success_flow_when_metadata_probe_fai
         )
     )
     monkeypatch.setattr(
-        "src.core.task_core.persist_successful_task_result",
+        "src.core.task_core_persistence.persist_successful_task_result",
         persist_mock,
     )
     monkeypatch.setattr(
@@ -196,7 +196,7 @@ async def test_download_and_log_task_output_handles_image_branch(monkeypatch):
         )
     )
     monkeypatch.setattr(
-        "src.core.task_core.persist_successful_task_result",
+        "src.core.task_core_persistence.persist_successful_task_result",
         persist_mock,
     )
 

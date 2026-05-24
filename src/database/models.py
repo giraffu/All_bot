@@ -17,7 +17,7 @@ from sqlalchemy import (
     func,
     text,
 )
-from sqlalchemy.orm import declarative_base, relationship
+from sqlalchemy.orm import declarative_base, relationship, synonym
 
 Base = declarative_base()
 
@@ -192,6 +192,9 @@ class Order(Base):
     order_id = Column(String(64), index=True)  # Unique payload for TON transaction
     business_order_id = Column(String(64), nullable=True, unique=True, index=True)
     telegram_id = Column(BigInteger, ForeignKey("users.id"), nullable=False, index=True)
+    # Preferred semantic alias for the internal user FK. The underlying column name
+    # stays as telegram_id during the compat phase to avoid a risky schema rename.
+    internal_user_id = synonym("telegram_id")
     plan_id = Column(Integer, ForeignKey("membership_plans.id"), nullable=False)
     original_price = Column(DECIMAL(10, 2), nullable=False)
     final_price = Column(DECIMAL(10, 2), nullable=False)

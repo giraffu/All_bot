@@ -2,7 +2,9 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
+from starlette.requests import Request
 
+from dashboard.backend.routers import system as system_router
 from dashboard.backend.services import system_service
 from src.core.task_core import TaskTerminationFinalizationResult
 
@@ -218,3 +220,52 @@ async def test_get_active_bot_tasks_payload_merges_user_and_backend_status():
     assert result["tasks"]["task-1"]["queue_position"] == 4
     assert result["tasks"]["task-2"]["user_group"] == "未知"
     assert result["tasks"]["task-2"]["execution_status"] == "submitting"
+
+
+@pytest.mark.asyncio
+async def test_dashboard_health_check_returns_503_when_database_init_failed():
+    scope = {
+        "type": "http",
+        "method": "GET",
+        "path": "/api/health",
+        "headers": [],
+        "app": SimpleNamespace(
+            state=SimpleNamespace(
+                dashboard_health={
+                    "database_ready": False,
+                    "startup_complete": True,
+                    "database_error": "db unavailable",
+                }
+            )
+        ),
+    }
+
+    response = await system_router.health_check(Request(scope))
+
+    assert response.status_code == 503
+    assert b'"status":"degraded"' in response.body
+    assert b'"database_error":"db unavailable"' in response.body
+
+
+@pytest.mark.asyncio
+async def test_dashboard_health_check_returns_ok_when_startup_completed():
+    scope = {
+        "type": "http",
+        "method": "GET",
+        "path": "/api/health",
+        "headers": [],
+        "app": SimpleNamespace(
+            state=SimpleNamespace(
+                dashboard_health={
+                    "database_ready": True,
+                    "startup_complete": True,
+                    "database_error": None,
+                }
+            )
+        ),
+    }
+
+    response = await system_router.health_check(Request(scope))
+
+    assert response.status_code == 200
+    assert b'"status":"ok"' in response.body

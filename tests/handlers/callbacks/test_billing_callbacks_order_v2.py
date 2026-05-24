@@ -82,6 +82,7 @@ async def test_buy_star_plan_callback_creates_pending_order_with_order_v2_payloa
 
     created_order = session.added[0]
     assert created_order.business_order_id == "bo_stars_1"
+    assert created_order.internal_user_id == 2002
     assert created_order.status == "PENDING"
     context.bot.send_invoice.assert_awaited_once()
     assert (

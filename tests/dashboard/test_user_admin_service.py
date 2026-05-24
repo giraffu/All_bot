@@ -135,6 +135,7 @@ async def test_admin_gift_plan_payload_uses_unified_membership_settlement_when_e
     settle_mock.assert_awaited_once()
     db.flush.assert_awaited_once()
     db.commit.assert_awaited_once()
+    assert db.added[0].internal_user_id == 2002
     assert result["status"] == "ok"
 
 

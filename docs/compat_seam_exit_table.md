@@ -37,6 +37,10 @@
 | `billing_core` 私有 `_build_*` 测试 seam | `tests/core/test_billing_core.py` patch 私有 builder | `BillingCoreDependencies` 显式注入 | 已迁移，公开函数支持显式 dependencies，测试不再绑定私有 builder |
 | `task_core_persistence` 模块内 materialization builder seam | `src/core/task_core_persistence.py` | `persist_successful_task_result(...)` + `task_core_persistence_flow.py` | 已收口，下载/`to_thread` 默认绑定回到公开 persistence 边界与 flow |
 | `affiliate_redeem_service` membership 账本/结算混排 | `src/services/affiliate_redeem_service.py` | `_create_membership_redeem_ledger_entry(...)`、`_apply_affiliate_membership_settlement(...)` | 已拆开，主 service 继续保留事务/幂等编排，账本与结算边界更清晰 |
+| `gallery_core.py` feed 查询拼装 | `src/core/gallery_core.py` | `src/core/gallery_feed_queries.py` | 已下沉，category/media_type/sort/time_range/page/count 查询拼装不再堆在主文件 |
+| `storage.py` MinIO object IO facade | `src/services/storage.py` | `src/services/storage_minio_objects.py` | 已下沉，upload/list/download/object exists 回到独立 helper，主类保留薄代理与兼容签名 |
+| `gallery_core.py` 投稿 / 互动主链 | `src/core/gallery_core.py` | `src/core/gallery_submission_core.py`、`src/core/gallery_interactions_core.py`、`src/core/gallery_core_errors.py` | 已下沉，投稿/点赞/apply 计数与错误类型退出主文件，`gallery_core.py` 主要保留 outcome + facade |
+| `storage.py` R2 copy / public URL facade | `src/services/storage.py` | `src/services/storage_r2_transfer.py` | 已下沉，MinIO->R2 copy 与 public URL 规则回到独立 helper，主类只保留薄包装 |
 
 ## 仍保留的 compat / seam
 
@@ -44,6 +48,8 @@
 | --- | --- | --- | --- | --- |
 | `src/handlers/fsm/custom_video_fsm.py:start_custom_video` | `/custom_video` 旧入口别名，对外保持稳定命令名 | Telegram 菜单与 callback `fsm_start_custom_video` | 明确 `/custom_video` 是否长期保留为独立产品入口；若仅是图生视频变体，可与统一入口继续收口 | `D2` 后续轮次 |
 | `src/constants.py:MODE_IMAGE_TO_VIDEO = MODE_VIDEO_LORA` | 兼容历史任务类型值，避免旧记录/旧 payload 失配 | 历史任务类型、旧 apply-context、统计与计费链路 | 当前主链已统一补上 `image_to_video` 新主名：dispatcher、API client、image service、backend `/image_to_video` 路由与 FSM 新入口已切到中性命名；旧 `video_lora` 仅保留入口 alias、兼容路由与历史值锚点，后续在数据迁移完成后退出该值别名 | 已压缩到外层兼容 |
+| `src/database/models.py:Order.telegram_id` | 历史数据库列名，实际关联 `users.id` 内部用户主键 | 支付下单/履约、Dashboard 订单筛选、affiliate 返佣统计 SQL、旧 schema 字段名 | 当前 Python 侧已新增 `Order.internal_user_id` 语义别名，最新又覆盖履约、Stars/TON 回调、affiliate 核心与 referral stats 查询，并把 Dashboard 订单 API/schema/前端过滤主口径切到 `internal_user_id`；旧 `telegram_id` 仅作为少量兼容入参/回包别名保留，待 Alembic 迁移方案统一后再考虑 schema 改名 | `P1/P2` |
+| `src/services/task_service.py` 导入路径 | 历史 TG 任务 facade 路径，仍挂在 `services` 命名空间 | 旧 TG handlers、相邻 tests 与文档 | 当前已新增 `src/services/bot_task_service.py` 作为新语义入口，handlers 开始改从该模块导入；待旧导入面继续收缩后再评估是否重命名/迁目录 | `P1/P2` |
 
 ## 删除原则
 

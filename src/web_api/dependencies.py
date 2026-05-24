@@ -101,7 +101,7 @@ async def _get_current_user_from_session(db: AsyncSession, token: str) -> User:
     # Check dynamic permission (Persistent Privilege Check)
     from src.services.permission_service import permission_service
 
-    stats = await permission_service.get_user_detailed_stats(user.telegram_id)
+    stats = await permission_service.get_user_detailed_stats_by_user_id(user.id)
     current_identity = stats.get("identity", user.current_identity)
     current_group = stats.get("group", user.user_group)
 

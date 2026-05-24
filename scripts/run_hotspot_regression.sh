@@ -68,23 +68,19 @@ for group in "$@"; do
         tests/services/test_task_service_completion.py \
         tests/services/test_task_service_support.py \
         tests/services/test_task_service_message_support.py \
-        tests/services/test_task_service_entrypoint_support.py \
-        src/tests/test_task_service_refactored.py \
-        src/tests/test_queue_logic.py
+        tests/services/test_task_service_entrypoint_support.py
       ;;
     task-min)
       run_pytest_group "task-min" \
         tests/backend/test_main_helpers.py \
         tests/backend/test_queue_manager.py \
         tests/web_api/test_tasks_action_api_service.py \
-        tests/web_api/test_tasks_router_passthrough.py \
+        tests/web_api/test_tasks_generate.py \
         tests/web_api/test_tasks_stream.py \
         tests/services/test_task_service_completion.py \
         tests/services/test_task_service_support.py \
         tests/services/test_task_service_message_support.py \
-        tests/services/test_task_service_entrypoint_support.py \
-        src/tests/test_task_service_refactored.py \
-        src/tests/test_queue_logic.py
+        tests/services/test_task_service_entrypoint_support.py
       ;;
     task-full)
       run_pytest_group "task-full" \
@@ -92,20 +88,18 @@ for group in "$@"; do
         tests/backend/test_main_helpers.py \
         tests/backend/test_queue_manager.py \
         tests/web_api/test_tasks_action_api_service.py \
-        tests/web_api/test_tasks_router_passthrough.py \
+        tests/web_api/test_tasks_generate.py \
         tests/web_api/test_tasks_stream.py \
         tests/services/test_task_service_completion.py \
         tests/services/test_task_service_flow.py \
         tests/services/test_task_service_support.py \
         tests/services/test_task_service_message_support.py \
-        tests/services/test_task_service_entrypoint_support.py \
-        src/tests/test_task_service_refactored.py \
-        src/tests/test_queue_logic.py
+        tests/services/test_task_service_entrypoint_support.py
       ;;
     tasks-web)
       run_pytest_group "tasks-web" \
         tests/web_api/test_tasks_action_api_service.py \
-        tests/web_api/test_tasks_router_passthrough.py \
+        tests/web_api/test_tasks_generate.py \
         tests/web_api/test_tasks_stream.py
       ;;
     users-web)

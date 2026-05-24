@@ -72,11 +72,11 @@ async def fulfill_order(
 
             # 3. 查找用户
             user_res = await session.execute(
-                select(User).where(User.id == order.telegram_id).with_for_update()
+                select(User).where(User.id == order.internal_user_id).with_for_update()
             )
             user = user_res.scalar_one_or_none()
             if not user:
-                logger.error(f"User not found: {order.telegram_id}")
+                logger.error(f"User not found: {order.internal_user_id}")
                 return False
 
             now = datetime.now()

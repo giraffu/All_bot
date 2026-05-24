@@ -47,3 +47,32 @@ async def test_get_current_user_from_session_rejects_blacklisted_password_versio
         await dependencies._get_current_user_from_session(session, "token")
 
     redis.get.assert_awaited_once_with("allbot:auth:blacklist:9:3")
+
+
+@pytest.mark.asyncio
+async def test_get_current_user_from_session_checks_permission_by_internal_user_id(
+    monkeypatch,
+):
+    user = SimpleNamespace(
+        id=9,
+        telegram_id=42,
+        current_identity="outer",
+        user_group="outer",
+    )
+    session = _FakeSession(execute_result=_FakeResult(user))
+    stats_mock = AsyncMock(return_value={"identity": "核心弟子", "group": "练气期"})
+
+    monkeypatch.setattr(
+        dependencies,
+        "verify_token",
+        lambda _token: {"sub": "9"},
+    )
+    monkeypatch.setattr(
+        "src.services.permission_service.permission_service.get_user_detailed_stats_by_user_id",
+        stats_mock,
+    )
+
+    result = await dependencies._get_current_user_from_session(session, "token")
+
+    assert result is user
+    stats_mock.assert_awaited_once_with(9)

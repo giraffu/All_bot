@@ -51,6 +51,7 @@ def _build_order(status="PENDING"):
         id=321,
         order_id="RMB-ORDER-1",
         telegram_id=2002,
+        internal_user_id=2002,
         plan_id=1,
         final_price=Decimal("10.00"),
         status=status,

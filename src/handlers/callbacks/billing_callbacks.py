@@ -239,7 +239,7 @@ async def buy_rmb_plan_callback(update: Update, context: ContextTypes.DEFAULT_TY
         new_order = Order(
             order_id=out_trade_no,
             business_order_id=generate_business_order_id(),
-            telegram_id=internal_user_id,
+            internal_user_id=internal_user_id,
             plan_id=plan_id,
             original_price=plan.price_rmb,
             final_price=plan.price_rmb,
@@ -358,7 +358,7 @@ async def buy_star_plan_callback(update: Update, context: ContextTypes.DEFAULT_T
             pending_order = Order(
                 order_id=payload[:64],
                 business_order_id=business_order_id,
-                telegram_id=internal_user.id,
+                internal_user_id=internal_user.id,
                 plan_id=plan.id,
                 original_price=plan.price_stars,
                 final_price=plan.price_stars,

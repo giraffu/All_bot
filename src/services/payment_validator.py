@@ -208,7 +208,7 @@ class TonPaymentValidator:
                             )
                             return True
                         plan_id = existing_pending_order.plan_id
-                        internal_user_id = existing_pending_order.telegram_id
+                        internal_user_id = existing_pending_order.internal_user_id
                         tg_user_id = internal_user_id
                         plan = (
                             await db.execute(
@@ -220,7 +220,7 @@ class TonPaymentValidator:
                         user = (
                             await db.execute(
                                 select(User)
-                                .where(User.id == existing_pending_order.telegram_id)
+                                .where(User.id == existing_pending_order.internal_user_id)
                                 .with_for_update()
                             )
                         ).scalar_one_or_none()
@@ -299,7 +299,7 @@ class TonPaymentValidator:
                                 insert(Order)
                                 .values(
                                     order_id=order_id,
-                                    telegram_id=internal_user_id,
+                                    internal_user_id=internal_user_id,
                                     plan_id=plan_id,
                                     original_price=plan.price_ton,
                                     final_price=Decimal(amount_nanotons)

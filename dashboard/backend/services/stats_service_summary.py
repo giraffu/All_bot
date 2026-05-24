@@ -100,7 +100,7 @@ async def load_dashboard_stats_impl(
                 0,
             ).label("ton_sum"),
         )
-        .join(Referral, Referral.invitee_id == Order.telegram_id)
+        .join(Referral, Referral.invitee_id == Order.internal_user_id)
         .where(Order.status == "SUCCESS")
     )
     invitation_row = (await db.execute(invitation_stmt)).first()

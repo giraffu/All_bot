@@ -68,6 +68,7 @@ def test_build_order_item_payload_flattens_username_and_plan_name():
     assert payload["username"] == "tester"
     assert payload["plan_name"] == "月卡"
     assert payload["order_id"] == "order-1"
+    assert payload["internal_user_id"] == 123
 
 
 @pytest.mark.asyncio
@@ -82,6 +83,7 @@ async def test_get_orders_payload_applies_filters_and_flattens_items():
         page=2,
         page_size=10,
         status="SUCCESS",
+        internal_user_id=123,
         telegram_id=123,
         username="test",
         db=db,
@@ -92,8 +94,9 @@ async def test_get_orders_payload_applies_filters_and_flattens_items():
     assert result["items"][0]["plan_name"] == "月卡"
     list_stmt = db.executed_stmts[1]
     assert "orders.status = :status_1" in list_stmt
-    assert "orders.telegram_id = :telegram_id_1" in list_stmt
+    assert "orders.telegram_id =" in list_stmt
     assert "users.username" in list_stmt
+    assert ":telegram_id_1" in list_stmt or ":internal_user_id_1" in list_stmt
     assert "username_1" in list_stmt
 
 
@@ -108,6 +111,7 @@ async def test_get_orders_router_routes_to_service(monkeypatch):
         page=1,
         page_size=20,
         status="ALL",
+        internal_user_id=123,
         telegram_id=123,
         username="tester",
         db=db,
@@ -118,8 +122,31 @@ async def test_get_orders_router_routes_to_service(monkeypatch):
         page=1,
         page_size=20,
         status="ALL",
+        internal_user_id=123,
         telegram_id=123,
         username="tester",
         db=db,
         logger_override=plans_router.logger,
     )
+
+
+@pytest.mark.asyncio
+async def test_get_orders_payload_keeps_legacy_telegram_id_filter_as_alias():
+    order = _build_order()
+    db = _FakePlansDb([
+        _ScalarResult(1),
+        _RowsResult([(order, "tester", "月卡")]),
+    ])
+
+    await plan_admin_service.get_orders_payload(
+        page=1,
+        page_size=10,
+        status="SUCCESS",
+        internal_user_id=None,
+        telegram_id=123,
+        username=None,
+        db=db,
+    )
+
+    list_stmt = db.executed_stmts[1]
+    assert "orders.telegram_id = :telegram_id_1" in list_stmt

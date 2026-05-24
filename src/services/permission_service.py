@@ -8,6 +8,31 @@ class PermissionService:
     def __init__(self):
         self.quota_manager = QuotaManager()
 
+    async def _build_user_detailed_stats(self, internal_user_id: int) -> dict:
+        stats = await self.quota_manager.get_user_stats(internal_user_id)
+        group = await self.get_user_group(internal_user_id)
+        identity = await self.get_user_identity(internal_user_id)
+        priority = await self.calculate_user_priority(internal_user_id)
+        credits = await self.quota_manager.get_credits(internal_user_id)
+
+        invitation_recharge_stats = await self.get_invitation_recharge_stats(
+            internal_user_id
+        )
+
+        return {
+            "group": group,
+            "identity": identity,
+            "identity_expire_at": stats.get("identity_expire_at"),
+            "priority": priority,
+            "credits": credits,
+            "invitations": stats.get("invitation_count", 0),
+            "checkins": stats.get("checkin_count", 0),
+            "generations": stats.get("generation_count", 0),
+            "total_contributions": stats.get("total_contributions", 0),
+            "approved_contributions": stats.get("approved_contributions", 0),
+            "invitation_recharge": invitation_recharge_stats,
+        }
+
     async def calculate_user_priority(self, user_id: int) -> int:
         """
         Calculate dynamic priority based on user group (修为), identity (身份), and daily usage.
@@ -302,32 +327,11 @@ class PermissionService:
         from src.core.user_core import get_or_create_user_by_telegram
 
         internal_user, _ = await get_or_create_user_by_telegram(tg_id)
-        internal_user_id = internal_user.id
+        return await self._build_user_detailed_stats(internal_user.id)
 
-        stats = await self.quota_manager.get_user_stats(internal_user_id)
-        group = await self.get_user_group(internal_user_id)
-        identity = await self.get_user_identity(internal_user_id)
-        priority = await self.calculate_user_priority(internal_user_id)
-        credits = await self.quota_manager.get_credits(internal_user_id)
-
-        # 获取邀请人的充值数据
-        invitation_recharge_stats = await self.get_invitation_recharge_stats(
-            internal_user_id
-        )
-
-        return {
-            "group": group,
-            "identity": identity,
-            "identity_expire_at": stats.get("identity_expire_at"),
-            "priority": priority,
-            "credits": credits,
-            "invitations": stats.get("invitation_count", 0),
-            "checkins": stats.get("checkin_count", 0),
-            "generations": stats.get("generation_count", 0),
-            "total_contributions": stats.get("total_contributions", 0),
-            "approved_contributions": stats.get("approved_contributions", 0),
-            "invitation_recharge": invitation_recharge_stats,
-        }
+    async def get_user_detailed_stats_by_user_id(self, user_id: int) -> dict:
+        """Get comprehensive stats for a user profile by internal user id."""
+        return await self._build_user_detailed_stats(user_id)
 
     async def get_invitation_recharge_stats(self, user_id: int) -> dict:
         """

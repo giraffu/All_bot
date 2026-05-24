@@ -25,7 +25,7 @@ from src.handlers.conversation_states import ImageToVideoState
 from src.handlers.prompt_router import is_global_menu_command
 from src.lora_catalog import VIDEO_LORA_MODELS
 from src.services.permission_service import permission_service
-from src.services.task_service import TaskService
+from src.services.bot_task_service import TaskService
 from src.utils import create_background_task, robust_edit_text, robust_reply_text
 import contextlib
 

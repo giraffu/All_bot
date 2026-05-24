@@ -61,7 +61,7 @@ from src.handlers.utils import (
     with_db_logging_context,
     ensure_access_and_reward,
 )
-from src.services.task_service import task_service
+from src.services.bot_task_service import task_service
 from src.utils import (
     robust_reply_text,
 )

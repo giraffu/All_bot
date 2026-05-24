@@ -50,6 +50,11 @@ app.include_router(gallery.router)
 app.include_router(referrals.router)
 
 background_tasks = set()
+app.state.dashboard_health = {
+    "database_ready": False,
+    "startup_complete": False,
+    "database_error": None,
+}
 
 
 def _build_auth_error_response(request: Request, detail: str):
@@ -71,8 +76,12 @@ async def startup_event():
     try:
         await init_db()
         logger.info("Database initialized successfully")
+        app.state.dashboard_health["database_ready"] = True
+        app.state.dashboard_health["database_error"] = None
     except Exception as e:
         logger.error(f"Failed to initialize database: {e}")
+        app.state.dashboard_health["database_ready"] = False
+        app.state.dashboard_health["database_error"] = str(e)
 
     # Start background worker listener and keep a strong reference
     task = asyncio.create_task(start_worker_listener())
@@ -83,6 +92,7 @@ async def startup_event():
     balance_task = asyncio.create_task(update_external_balances())
     background_tasks.add(balance_task)
     balance_task.add_done_callback(background_tasks.discard)
+    app.state.dashboard_health["startup_complete"] = True
 
 
 app.add_middleware(

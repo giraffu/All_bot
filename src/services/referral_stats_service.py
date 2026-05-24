@@ -24,12 +24,12 @@ async def query_invitation_recharge_stats(
 ) -> dict:
     stmt = (
         select(
-            Order.telegram_id,
+            Order.internal_user_id,
             Order.final_price,
             Order.payment_channel,
             Order.commission_usdt,
         )
-        .join(Referral, Referral.invitee_id == Order.telegram_id)
+        .join(Referral, Referral.invitee_id == Order.internal_user_id)
         .where(
             and_(
                 Referral.inviter_id == inviter_id,
@@ -141,7 +141,7 @@ async def query_referral_rewards(session: AsyncSession) -> list[dict]:
             User,  # Inviter
             Invitee,  # Invitee
         )
-        .join(Referral, Referral.invitee_id == Order.telegram_id)
+        .join(Referral, Referral.invitee_id == Order.internal_user_id)
         .join(User, User.id == Referral.inviter_id)
         .join(Invitee, Invitee.id == Referral.invitee_id)
         .where(

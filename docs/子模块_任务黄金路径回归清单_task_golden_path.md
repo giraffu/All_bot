@@ -51,14 +51,12 @@ pytest \
   tests/backend/test_main_helpers.py \
   tests/backend/test_queue_manager.py \
   tests/web_api/test_tasks_action_api_service.py \
-  tests/web_api/test_tasks_router_passthrough.py \
+  tests/web_api/test_tasks_generate.py \
   tests/web_api/test_tasks_stream.py \
   tests/services/test_task_service_completion.py \
   tests/services/test_task_service_support.py \
   tests/services/test_task_service_message_support.py \
-  tests/services/test_task_service_entrypoint_support.py \
-  src/tests/test_task_service_refactored.py \
-  src/tests/test_queue_logic.py
+  tests/services/test_task_service_entrypoint_support.py
 ```
 
 ## 5. 完整黄金路径集
@@ -71,14 +69,12 @@ pytest \
   tests/backend/test_main_helpers.py \
   tests/backend/test_queue_manager.py \
   tests/web_api/test_tasks_action_api_service.py \
-  tests/web_api/test_tasks_router_passthrough.py \
+  tests/web_api/test_tasks_generate.py \
   tests/web_api/test_tasks_stream.py \
   tests/services/test_task_service_completion.py \
   tests/services/test_task_service_support.py \
   tests/services/test_task_service_message_support.py \
-  tests/services/test_task_service_entrypoint_support.py \
-  src/tests/test_task_service_refactored.py \
-  src/tests/test_queue_logic.py
+  tests/services/test_task_service_entrypoint_support.py
 ```
 
 ## 6. 检查项
@@ -135,7 +131,7 @@ pytest \
 对应测试：
 
 - `tests/web_api/test_tasks_action_api_service.py`
-- `tests/web_api/test_tasks_router_passthrough.py`
+- `tests/web_api/test_tasks_generate.py`
 
 ### 6.5 SSE 与历史兜底
 
@@ -163,8 +159,6 @@ pytest \
 - `tests/services/test_task_service_support.py`
 - `tests/services/test_task_service_message_support.py`
 - `tests/services/test_task_service_entrypoint_support.py`
-- `src/tests/test_task_service_refactored.py`
-- `src/tests/test_queue_logic.py`
 
 ## 7. 手工抽查点
 

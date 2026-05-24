@@ -20,7 +20,7 @@ from src.constants import (
 from src.handlers.conversation_states import LtxVideoState
 from src.handlers.prompt_router import is_global_menu_command
 from src.services.permission_service import permission_service
-from src.services.task_service import TaskService
+from src.services.bot_task_service import TaskService
 from src.utils import (
     create_background_task,
     robust_edit_text,

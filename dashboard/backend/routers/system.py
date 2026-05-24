@@ -1,4 +1,5 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
+from fastapi.responses import JSONResponse
 
 from dashboard.backend.schemas import RefundTaskRequest, SyncLockRequest
 from dashboard.backend.services.system_service import (
@@ -31,8 +32,19 @@ async def clean_zombie_tasks():
 
 
 @router.get("/health")
-async def health_check():
-    return {"status": "ok"}
+async def health_check(request: Request):
+    health_state = getattr(request.app.state, "dashboard_health", {})
+    database_ready = bool(health_state.get("database_ready"))
+    startup_complete = bool(health_state.get("startup_complete"))
+
+    payload = {
+        "status": "ok" if database_ready and startup_complete else "degraded",
+        "database_ready": database_ready,
+        "startup_complete": startup_complete,
+        "database_error": health_state.get("database_error"),
+    }
+    status_code = 200 if payload["status"] == "ok" else 503
+    return JSONResponse(status_code=status_code, content=payload)
 
 
 @router.post("/system/sync_user_concurrency")

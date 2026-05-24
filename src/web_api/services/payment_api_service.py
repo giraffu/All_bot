@@ -54,7 +54,7 @@ async def create_rmb_order_payload(
     new_order = Order(
         order_id=legacy_order_id,
         business_order_id=generate_business_order_id(),
-        telegram_id=current_user.id,
+        internal_user_id=current_user.id,
         plan_id=plan.id,
         original_price=plan.price_rmb,
         final_price=plan.price_rmb,
@@ -109,7 +109,7 @@ async def create_ton_order_payload(
     new_order = Order(
         order_id=legacy_order_id,
         business_order_id=business_order_id,
-        telegram_id=current_user.id,
+        internal_user_id=current_user.id,
         plan_id=plan.id,
         original_price=plan.price_ton,
         final_price=plan.price_ton,
@@ -146,6 +146,6 @@ async def get_payment_order_status_payload(
 ) -> dict:
     order_res = await db.execute(build_order_public_lookup_stmt(order_id))
     order = order_res.scalar_one_or_none()
-    if not order or order.telegram_id != current_user.id:
+    if not order or order.internal_user_id != current_user.id:
         raise HTTPException(status_code=404, detail="Order not found")
     return build_order_status_payload(order)

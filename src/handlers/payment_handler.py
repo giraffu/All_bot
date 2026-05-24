@@ -41,7 +41,7 @@ async def precheckout_callback(update: Update, context: ContextTypes.DEFAULT_TYP
             ).scalar_one_or_none()
             if (
                 order
-                and order.telegram_id == internal_user.id
+                and order.internal_user_id == internal_user.id
                 and order.status == "PENDING"
             ):
                 plan = (
@@ -112,12 +112,17 @@ async def successful_payment_callback(
                     return
                 user = (
                     await session.execute(
-                        select(User).where(User.id == new_order.telegram_id).with_for_update()
+                        select(User)
+                        .where(User.id == new_order.internal_user_id)
+                        .with_for_update()
                     )
                 ).scalar_one_or_none()
-                user_id = new_order.telegram_id
+                user_id = new_order.internal_user_id
                 if not user:
-                    logger.error("User %s not found during stars v2 payment", new_order.telegram_id)
+                    logger.error(
+                        "User %s not found during stars v2 payment",
+                        new_order.internal_user_id,
+                    )
                     return
                 plan = (
                     await session.execute(
@@ -181,7 +186,7 @@ async def successful_payment_callback(
                         insert(Order)
                         .values(
                             order_id=payload[:64],
-                            telegram_id=user.id,
+                            internal_user_id=user.id,
                             plan_id=plan_id,
                             original_price=successful_payment.total_amount,
                             final_price=successful_payment.total_amount,

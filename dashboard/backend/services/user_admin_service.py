@@ -126,7 +126,7 @@ async def get_user_stats_payload(*, user_id: int, db, logger_override: logging.L
             )
             .where(Order.status == "SUCCESS")
             .where(Order.tx_hash.notlike("manual_%"))
-            .where(Order.telegram_id == user_id)
+            .where(Order.internal_user_id == user_id)
         )
         recharge_result = await db.execute(recharge_stmt)
         row = recharge_result.one_or_none()
@@ -310,7 +310,7 @@ async def admin_gift_plan_payload(
 
         new_order = Order(
             order_id=order_id,
-            telegram_id=user_id,
+            internal_user_id=user_id,
             plan_id=plan.id,
             original_price=0,
             final_price=0,

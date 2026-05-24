@@ -1,10 +1,8 @@
 import asyncio
-import io
 import logging
 
 import boto3
 from botocore.config import Config as BotoConfig
-from minio.error import S3Error
 import urllib3
 
 from config import (
@@ -43,6 +41,20 @@ from src.services.storage_minio_client import (
 from src.services.storage_presign import (
     generate_presigned_get_url,
     generate_presigned_put_url,
+)
+from src.services.storage_minio_objects import (
+    async_object_exists as async_object_exists_impl,
+    download_file as download_file_impl,
+    get_file_bytes as get_file_bytes_impl,
+    list_objects as list_objects_impl,
+    object_exists as object_exists_impl,
+    upload_bytes as upload_bytes_impl,
+    upload_file as upload_file_impl,
+)
+from src.services.storage_r2_transfer import (
+    async_copy_to_r2 as async_copy_to_r2_impl,
+    get_r2_public_url as get_r2_public_url_impl,
+    sync_upload_to_r2 as sync_upload_to_r2_impl,
 )
 from src.services.storage_r2_exists import (
     async_r2_object_exists as async_r2_object_exists_impl,
@@ -203,50 +215,23 @@ class StorageService:
     def _sync_upload_to_r2(
         self, bucket_name: str, object_name: str, r2_object_name: str = None
     ):
-        """Sync function to copy from MinIO to R2, meant to run in a thread"""
-        if not self.r2_client:
-            logger.error("R2 client not initialized")
-            return False
-
-        r2_key = r2_object_name or object_name.split("/")[-1]
-
-        try:
-            # Get object from MinIO
-            response = self.client.get_object(bucket_name, object_name)
-            content_type = response.headers.get(
-                "Content-Type", "application/octet-stream"
-            )
-
-            # Stream the MinIO response to R2 to avoid loading large media files fully into memory.
-            extra_args = {"ContentType": content_type} if content_type else None
-            self.r2_client.upload_fileobj(
-                response,
-                self.r2_bucket,
-                r2_key,
-                ExtraArgs=extra_args,
-            )
-            self.mark_r2_object_exists(r2_key)
-            logger.info(
-                f"Successfully copied {object_name} to R2 bucket {self.r2_bucket} as {r2_key}"
-            )
-            return True
-        except Exception as e:
-            self.invalidate_r2_exists_cache(r2_key)
-            logger.error(f"Failed to copy {object_name} to R2: {e}")
-            return False
-        finally:
-            if "response" in locals():
-                response.close()
-                response.release_conn()
+        return sync_upload_to_r2_impl(
+            self,
+            bucket_name=bucket_name,
+            object_name=object_name,
+            r2_object_name=r2_object_name,
+            logger=logger,
+        )
 
     async def async_copy_to_r2(
         self, bucket_name: str, object_name: str, r2_object_name: str = None
     ):
-        """Async wrapper to copy from MinIO to R2 without blocking"""
-        if not self.r2_client:
-            return False
-        return await asyncio.to_thread(
-            self._sync_upload_to_r2, bucket_name, object_name, r2_object_name
+        return await async_copy_to_r2_impl(
+            self,
+            bucket_name=bucket_name,
+            object_name=object_name,
+            r2_object_name=r2_object_name,
+            logger=logger,
         )
 
     def _sync_delete_r2_object(self, object_name: str) -> bool:
@@ -273,19 +258,23 @@ class StorageService:
             ),
         )
 
-    def upload_file(self, file_path: str, object_name: str, bucket_name: str = None) -> bool:
-        """Upload a local file to MinIO"""
-        bucket = bucket_name or MINIO_BUCKET
-        if not self.client:
-            logger.error("MinIO client not initialized")
-            return False
-
-        try:
-            self.client.fput_object(bucket, object_name, file_path)
-            return True
-        except Exception as e:
-            logger.error(f"Failed to upload file {file_path} to {bucket}/{object_name}: {e}")
-            return False
+    def upload_file(
+        self,
+        file_path: str,
+        object_name: str,
+        bucket_name: str = None,
+        *,
+        bucket: str = None,
+    ) -> bool:
+        """Upload a local file to MinIO."""
+        return upload_file_impl(
+            self,
+            file_path=file_path,
+            object_name=object_name,
+            bucket_name=bucket_name,
+            bucket=bucket,
+            logger=logger,
+        )
 
     def upload_bytes(
         self,
@@ -294,85 +283,50 @@ class StorageService:
         content_type: str = "application/octet-stream",
         bucket: str = None,
     ) -> str:
-        """Upload bytes to MinIO"""
-        bucket = bucket or MINIO_BUCKET
-        if not self.client:
-            logger.error("MinIO client not initialized")
-            return ""
-
-        try:
-            self.client.put_object(
-                bucket,
-                object_name,
-                io.BytesIO(data),
-                len(data),
-                content_type=content_type,
-            )
-            return object_name
-        except Exception as e:
-            logger.error(f"Failed to upload bytes to {object_name} in {bucket}: {e}")
-            return ""
+        """Upload bytes to MinIO."""
+        return upload_bytes_impl(
+            self,
+            data=data,
+            object_name=object_name,
+            content_type=content_type,
+            bucket=bucket,
+            logger=logger,
+        )
 
     def get_file_bytes(self, object_name: str, bucket: str = None) -> bytes:
-        """Download file content as bytes"""
-        bucket = bucket or MINIO_BUCKET
-        if not self.client:
-            logger.error("MinIO client not initialized")
-            return None
-
-        try:
-            response = self.client.get_object(bucket, object_name)
-            data = response.read()
-            response.close()
-            response.release_conn()
-            return data
-        except Exception as e:
-            logger.error(f"Failed to download {object_name} from {bucket}: {e}")
-            return None
+        """Download file content as bytes."""
+        return get_file_bytes_impl(
+            self,
+            object_name=object_name,
+            bucket=bucket,
+            logger=logger,
+        )
 
     def list_objects(self, prefix: str, bucket: str = None) -> list:
-        """List objects in a bucket with a specific prefix"""
-        bucket = bucket or MINIO_BUCKET
-        if not self.client:
-            logger.error("MinIO client not initialized")
-            return []
-
-        try:
-            objects = self.client.list_objects(bucket, prefix=prefix, recursive=True)
-            return [obj.object_name for obj in objects if not obj.is_dir]
-        except Exception as e:
-            logger.error(
-                f"Failed to list objects in {bucket} with prefix {prefix}: {e}"
-            )
-            return []
+        """List objects in a bucket with a specific prefix."""
+        return list_objects_impl(
+            self,
+            prefix=prefix,
+            bucket=bucket,
+            logger=logger,
+        )
 
     def object_exists(self, bucket_name: str, object_name: str) -> bool:
-        """检查对象是否存在"""
-        try:
-            self.client.stat_object(bucket_name, object_name)
-            return True
-        except S3Error as exc:
-            code = getattr(exc, "code", "")
-            if code in {"NoSuchKey", "NoSuchObject", "NoSuchBucket"}:
-                return False
-            logger.warning(
-                "MinIO stat_object failed for %s/%s: %s",
-                bucket_name,
-                object_name,
-                exc,
-            )
-            return False
-        except Exception as exc:
-            logger.warning(
-                "Unexpected object_exists failure for %s/%s: %s",
-                bucket_name,
-                object_name,
-                exc,
-            )
-            return False
+        """检查对象是否存在."""
+        return object_exists_impl(
+            self,
+            bucket_name=bucket_name,
+            object_name=object_name,
+            logger=logger,
+        )
 
     async def async_object_exists(self, bucket_name: str, object_name: str) -> bool:
-        return await asyncio.to_thread(self.object_exists, bucket_name, object_name)
+        return await async_object_exists_impl(
+            self,
+            bucket_name=bucket_name,
+            object_name=object_name,
+            logger=logger,
+        )
 
     def _r2_object_exists_with_cache_hint(self, object_name: str) -> tuple[bool, bool]:
         return r2_object_exists_with_cache_hint_impl(self, object_name, logger=logger)
@@ -390,14 +344,19 @@ class StorageService:
         return await async_r2_object_exists_impl(self, object_name, logger=logger)
 
     def get_r2_public_url(self, object_name: str) -> str:
-        if not R2_PUBLIC_DOMAIN or not object_name:
-            return ""
-        base_url = R2_PUBLIC_DOMAIN.rstrip("/")
-        return f"{base_url}/{object_name.lstrip('/')}"
+        return get_r2_public_url_impl(
+            object_name=object_name,
+            public_domain=R2_PUBLIC_DOMAIN,
+        )
             
     def download_file(self, bucket_name: str, object_name: str, file_path: str):
-        """将对象下载到本地文件"""
-        self.client.fget_object(bucket_name, object_name, file_path)
+        """将对象下载到本地文件."""
+        download_file_impl(
+            self,
+            bucket_name=bucket_name,
+            object_name=object_name,
+            file_path=file_path,
+        )
 
     def get_presigned_url(
         self,

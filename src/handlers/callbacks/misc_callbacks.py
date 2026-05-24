@@ -10,7 +10,7 @@ from src.core.user_core import get_or_create_user_by_telegram
 from src.handlers.callback_router import register_callback
 from src.services.permission_service import permission_service
 from src.services.storage import storage
-from src.services.task_service import TaskService
+from src.services.bot_task_service import TaskService
 from src.utils import (
     create_background_task,
     is_maintenance_mode,
