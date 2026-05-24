@@ -174,7 +174,7 @@ graph TB
 
 ### 1. 交互与核心层 (Telegram Bot + Task Core)
 - **状态机流转 (FSM)**: 图生图的业务入口由 `edit_image_fsm.py` 控制。使用 `ConversationHandler` 严格规范了“选模型 -> 传图 -> 传词”的收集顺序。
-- **资源隔离**: 图片首先被下载到 Bot 的本地 `/tmp/bot_fsm_tmp` 目录中。收集完毕后，FSM 调用 `task_service.py` 将控制权移交给系统核心层。
+- **资源隔离**: 图片首先被下载到 Bot 的本地 `/tmp/bot_fsm_tmp` 目录中。收集完毕后，FSM 调用 `bot_task_service.py` 将控制权移交给系统核心层。
 - **计费与并发锁**: 在 `task_core.py` 中，执行 `check_concurrency_lock` 和 `check_and_deduct_credits`，利用 Redis 的原子性保证灵石不被超扣，同时限制用户最大并发数（目前 MAX_CONCURRENT_TASKS = 3）。
 
 ### 2. 网关与调度层 (FastAPI + Redis Queue)

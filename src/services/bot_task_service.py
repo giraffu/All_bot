@@ -1,9 +1,8 @@
 """
 Telegram Bot task facade.
 
-This is the preferred semantic import path for Telegram-only task submission
-entrypoints. Legacy callers may still import `src.services.task_service`,
-which now re-exports this module for compatibility.
+This module is the canonical import path for Telegram-only task submission
+entrypoints.
 """
 
 import contextlib

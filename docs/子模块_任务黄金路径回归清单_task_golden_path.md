@@ -4,7 +4,7 @@
 
 本清单用于保护 AllBot 任务主链路在重构期间的外部行为不漂移，覆盖以下高风险区域：
 
-- `src/services/task_service.py` 及其 facade/support/entrypoint 子模块
+- `src/services/bot_task_service.py` 及其 facade/support/entrypoint 子模块
 - `backend/app/main.py` 的中控任务创建与同步等待入口
 - `backend/app/queue_manager.py` 的排队、取消、zombie 清理与 worker 视图
 - `src/web_api/routers/tasks.py` 及对应 API service / SSE stream 路径
@@ -30,7 +30,7 @@
 
 ## 3. 热点文件
 
-- `src/services/task_service.py`
+- `src/services/bot_task_service.py`
 - `src/services/task_service_completion.py`
 - `src/services/task_service_support.py`
 - `src/services/task_service_message_support.py`

@@ -25,14 +25,14 @@
 - 阶段 1：基本完成，重复胶水、最薄公共状态组件、后端 fallback/session 样板已完成一轮清理
 - 阶段 2：主体完成，`Gallery`、`MyFavorites`、`MySubmissions` 与生成页工作台公共结构已收口
 - 阶段 3：基本完成，`message_handler.py`、`users.py`、`gallery.py`、`tasks.py` 已完成主要薄控制器收口
-- 阶段 4：本轮完成收口，`task_service.py`、`backend/app/main.py`、`backend/app/queue_manager.py` 已通过完整阶段 4 回归
+- 阶段 4：本轮完成收口，`bot_task_service.py`、`backend/app/main.py`、`backend/app/queue_manager.py` 已通过完整阶段 4 回归
 - 阶段 7：第二批完成，已补齐共享详情弹层/工作台壳层 focused 回归、`MyFavorites` 组合流回归，以及 dashboard App 热点基线与独立门禁分组
 
 ## 3. 热点文件
 
 ### 3.1 任务主链路
 
-- `src/services/task_service.py`
+- `src/services/bot_task_service.py`
 - `src/services/task_service_flow.py`
 - `src/services/task_service_completion.py`
 - `src/services/task_service_finalize.py`
@@ -81,7 +81,7 @@
 
 适用文件：
 
-- `task_service.py`
+- `bot_task_service.py`
 - `task_service_flow.py`
 - `task_service_completion.py`
 - `task_service_finalize.py`
