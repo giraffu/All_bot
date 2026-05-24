@@ -209,7 +209,7 @@ async def _get_or_create_paid_order(
             insert(Order)
             .values(
                 order_id=order_id,
-                telegram_id=invitee.id,
+                internal_user_id=invitee.id,
                 plan_id=plan.id,
                 original_price=final_price,
                 final_price=final_price,

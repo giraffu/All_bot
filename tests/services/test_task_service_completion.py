@@ -20,7 +20,7 @@ from src.services import task_service_completion as completion_helpers
 from src.services import task_service_finalize as support
 from src.services import task_service_entrypoints_video as video_entrypoints
 from src.services import tg_task_runtime as tg_runtime_helpers
-from src.services.task_service import TaskService
+from src.services.bot_task_service import TaskService
 
 
 @pytest.mark.asyncio

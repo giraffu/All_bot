@@ -73,7 +73,7 @@ def _classify_candidate(
     return BackfillCandidate(
         order_pk=order.id,
         order_id=str(order.order_id or ""),
-        invitee_user_id=order.telegram_id,
+        invitee_user_id=order.internal_user_id,
         inviter_id=referral.inviter_id if referral else None,
         referral_id=referral.id if referral else None,
         commission_usdt=Decimal(str(order.commission_usdt or 0)),
@@ -150,7 +150,7 @@ async def collect_backfill_candidates(
     )
     stmt = (
         select(Order, Referral, existing_transaction_id)
-        .outerjoin(Referral, Referral.invitee_id == Order.telegram_id)
+        .outerjoin(Referral, Referral.invitee_id == Order.internal_user_id)
         .where(
             Order.status == "SUCCESS",
             Order.commission_usdt > 0,

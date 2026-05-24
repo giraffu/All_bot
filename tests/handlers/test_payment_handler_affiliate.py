@@ -92,7 +92,6 @@ def _build_inserted_order():
     return SimpleNamespace(
         id=321,
         order_id="ORDER:12345:1:999",
-        telegram_id=2002,
         internal_user_id=2002,
         plan_id=1,
         original_price=100,
@@ -379,7 +378,6 @@ async def test_precheckout_callback_accepts_order_v2_after_strong_validation(
         [
             SimpleNamespace(
                 business_order_id="bo_123",
-                telegram_id=2002,
                 internal_user_id=2002,
                 status="PENDING",
                 plan_id=1,
@@ -411,7 +409,6 @@ async def test_successful_payment_callback_updates_pending_order_for_order_v2(
         id=321,
         order_id="ORDER:12345:1:999",
         business_order_id="bo_123",
-        telegram_id=2002,
         internal_user_id=2002,
         plan_id=1,
         original_price=100,

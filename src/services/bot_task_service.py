@@ -1,10 +1,336 @@
 """
-Preferred semantic import path for the Telegram Bot task facade.
+Telegram Bot task facade.
 
-This module keeps `src.services.task_service` stable for compat while giving new
-callers a less misleading entrypoint name.
+This is the preferred semantic import path for Telegram-only task submission
+entrypoints. Legacy callers may still import `src.services.task_service`,
+which now re-exports this module for compatibility.
 """
 
-from src.services.task_service import TaskService, task_service
+import contextlib
+import os
+from typing import List, Optional, Tuple
+
+from telegram import InlineKeyboardMarkup, Update
+from telegram.ext import ContextTypes
+
+from src.constants import (
+    MODE_BLOWJOB,
+    MODE_CLOSEUP_BLOWJOB,
+    MODE_DOGGY_STYLE,
+    MODE_IMAGE_TO_VIDEO,
+    MODE_PERFECT_VIDEO_INSERT,
+    MODE_UNDRESS_TONGUE,
+    TMP_DIR,
+)
+from src.services.task_service_entrypoints import (
+    process_custom_video_task as process_custom_video_task_entrypoint,
+    process_face_video_task as process_face_video_task_entrypoint,
+    process_generation_task as process_generation_task_entrypoint,
+    process_image_to_video_task as process_image_to_video_task_entrypoint,
+    process_i2i_pro_task as process_i2i_pro_task_entrypoint,
+    process_ltx_video_task as process_ltx_video_task_entrypoint,
+    process_video_task_template as process_video_task_template_entrypoint,
+)
+from src.services.task_service_message_support import with_submitted_status
+
+
+class TaskService:
+    _with_submitted_status = staticmethod(with_submitted_status)
+
+    @staticmethod
+    async def process_ltx_video_task(
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        prompt: str,
+        image_path: str,
+        cleanup: bool = True,
+        allow_contribute: bool = True,
+        source_post_id: Optional[int] = None,
+    ):
+        return await process_ltx_video_task_entrypoint(
+            service=TaskService,
+            update=update,
+            context=context,
+            prompt=prompt,
+            image_path=image_path,
+            cleanup=cleanup,
+            allow_contribute=allow_contribute,
+            source_post_id=source_post_id,
+        )
+
+    @staticmethod
+    async def process_face_video_task(
+        context: ContextTypes.DEFAULT_TYPE,
+        chat_id: int,
+        user_id: int,
+        username: str,
+        face_image_path: str,
+        video_path: str,
+        resolution: int,
+        duration: int,
+        cost: int,
+        message_id: int = None,
+        cleanup: bool = True,
+        source_post_id: Optional[int] = None,
+    ):
+        return await process_face_video_task_entrypoint(
+            service=TaskService,
+            context=context,
+            chat_id=chat_id,
+            user_id=user_id,
+            username=username,
+            face_image_path=face_image_path,
+            video_path=video_path,
+            resolution=resolution,
+            duration=duration,
+            cost=cost,
+            message_id=message_id,
+            cleanup=cleanup,
+            source_post_id=source_post_id,
+        )
+
+    @staticmethod
+    async def process_generation_task(
+        context: ContextTypes.DEFAULT_TYPE,
+        chat_id: int,
+        user_id: int,
+        username: str,
+        prompt: str,
+        images: list[str],
+        is_video: bool = False,
+        status_msg_id: int = None,
+        delete_status: bool = True,
+        task_type: str = None,
+        cleanup: bool = True,
+        send_result: bool = True,
+        deduct_quota: bool = True,
+        reply_markup: InlineKeyboardMarkup = None,
+        lora_name: str = None,
+        lora_strength: float = 1.0,
+        allow_contribute: bool = True,
+        source_post_id: Optional[int] = None,
+        resolution=None,
+        duration=None,
+    ) -> Tuple[Optional[bytes], Optional[str]]:
+        return await process_generation_task_entrypoint(
+            service=TaskService,
+            context=context,
+            chat_id=chat_id,
+            user_id=user_id,
+            username=username,
+            prompt=prompt,
+            images=images,
+            is_video=is_video,
+            status_msg_id=status_msg_id,
+            delete_status=delete_status,
+            task_type=task_type,
+            cleanup=cleanup,
+            send_result=send_result,
+            deduct_quota=deduct_quota,
+            reply_markup=reply_markup,
+            lora_name=lora_name,
+            lora_strength=lora_strength,
+            allow_contribute=allow_contribute,
+            source_post_id=source_post_id,
+            resolution=resolution,
+            duration=duration,
+        )
+
+    @staticmethod
+    async def process_image_to_video_task(
+        context: ContextTypes.DEFAULT_TYPE,
+        chat_id: int,
+        user_id: int,
+        username: str,
+        prompt: str,
+        images: list[str],
+        resolution=None,
+        duration=None,
+        status_msg_id: int = None,
+        delete_status: bool = True,
+        task_type: str = MODE_IMAGE_TO_VIDEO,
+        cleanup: bool = True,
+        send_result: bool = True,
+        deduct_quota: bool = True,
+        reply_markup: InlineKeyboardMarkup = None,
+        lora_name: str = None,
+        lora_strength: float = 1.0,
+        allow_contribute: bool = True,
+        source_post_id: Optional[int] = None,
+    ) -> Tuple[Optional[bytes], Optional[str]]:
+        return await process_image_to_video_task_entrypoint(
+            service=TaskService,
+            context=context,
+            chat_id=chat_id,
+            user_id=user_id,
+            username=username,
+            prompt=prompt,
+            images=images,
+            resolution=resolution,
+            duration=duration,
+            status_msg_id=status_msg_id,
+            delete_status=delete_status,
+            task_type=task_type,
+            cleanup=cleanup,
+            send_result=send_result,
+            deduct_quota=deduct_quota,
+            reply_markup=reply_markup,
+            lora_name=lora_name,
+            lora_strength=lora_strength,
+            allow_contribute=allow_contribute,
+            source_post_id=source_post_id,
+        )
+
+    @staticmethod
+    async def process_blowjob_task(
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        image_path: str,
+        cleanup: bool = True,
+        allow_contribute: bool = True,
+    ):
+        return await process_video_task_template_entrypoint(
+            service=TaskService,
+            update=update,
+            context=context,
+            image_path=image_path,
+            mode=MODE_BLOWJOB,
+            default_prompt_key="blowjob",
+            default_prompt_text="undress blowjob",
+            cleanup=cleanup,
+            allow_contribute=allow_contribute,
+        )
+
+    @staticmethod
+    async def process_undress_tongue_task(
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        image_path: str,
+        cleanup: bool = True,
+        allow_contribute: bool = True,
+    ):
+        return await process_video_task_template_entrypoint(
+            service=TaskService,
+            update=update,
+            context=context,
+            image_path=image_path,
+            mode=MODE_UNDRESS_TONGUE,
+            default_prompt_key="undress_tongue",
+            default_prompt_text="undress and show tongue",
+            cleanup=cleanup,
+            allow_contribute=allow_contribute,
+        )
+
+    @staticmethod
+    async def process_doggy_style_task(
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        image_path: str,
+        cleanup: bool = True,
+        allow_contribute: bool = True,
+    ):
+        return await process_video_task_template_entrypoint(
+            service=TaskService,
+            update=update,
+            context=context,
+            image_path=image_path,
+            mode=MODE_DOGGY_STYLE,
+            default_prompt_key="doggy_style",
+            default_prompt_text="doggy style sex",
+            cleanup=cleanup,
+            allow_contribute=allow_contribute,
+        )
+
+    @staticmethod
+    async def process_closeup_blowjob_task(
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        image_path: str,
+        cleanup: bool = True,
+        allow_contribute: bool = True,
+    ):
+        return await process_video_task_template_entrypoint(
+            service=TaskService,
+            update=update,
+            context=context,
+            image_path=image_path,
+            mode=MODE_CLOSEUP_BLOWJOB,
+            default_prompt_key="closeup_blowjob",
+            default_prompt_text="closeup blowjob sex",
+            cleanup=cleanup,
+            allow_contribute=allow_contribute,
+        )
+
+    @staticmethod
+    async def process_perfect_video_insert_task(
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        image_path: str,
+        cleanup: bool = True,
+        allow_contribute: bool = True,
+    ):
+        return await process_video_task_template_entrypoint(
+            service=TaskService,
+            update=update,
+            context=context,
+            image_path=image_path,
+            mode=MODE_PERFECT_VIDEO_INSERT,
+            default_prompt_key="perfect_video_insert",
+            default_prompt_text="missionary sex",
+            cleanup=cleanup,
+            allow_contribute=allow_contribute,
+        )
+
+    @staticmethod
+    async def process_custom_video_task(
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        prompt: str,
+        image_path: str,
+        cleanup: bool = True,
+        source_post_id: Optional[int] = None,
+    ):
+        return await process_custom_video_task_entrypoint(
+            service=TaskService,
+            update=update,
+            context=context,
+            prompt=prompt,
+            image_path=image_path,
+            cleanup=cleanup,
+            source_post_id=source_post_id,
+        )
+
+    @staticmethod
+    async def process_i2i_pro_task(
+        context: ContextTypes.DEFAULT_TYPE,
+        chat_id: int,
+        user_id: int,
+        username: str,
+        prompt: str,
+        images: list[str],
+        allow_contribute: bool = True,
+        source_post_id: Optional[int] = None,
+    ):
+        return await process_i2i_pro_task_entrypoint(
+            service=TaskService,
+            context=context,
+            chat_id=chat_id,
+            user_id=user_id,
+            username=username,
+            prompt=prompt,
+            images=images,
+            allow_contribute=allow_contribute,
+            source_post_id=source_post_id,
+        )
+
+    @staticmethod
+    def _cleanup_files(paths: List[str]):
+        for path in paths:
+            if path.startswith(TMP_DIR) and os.path.exists(path):
+                with contextlib.suppress(OSError):
+                    os.remove(path)
+
+
+task_service = TaskService()
 
 __all__ = ["TaskService", "task_service"]

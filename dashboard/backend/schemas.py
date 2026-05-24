@@ -69,7 +69,6 @@ class OrderResponse(BaseModel):
     id: int
     order_id: str
     internal_user_id: int
-    telegram_id: Optional[int] = None
     plan_id: int
     original_price: float
     final_price: float

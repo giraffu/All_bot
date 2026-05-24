@@ -106,7 +106,6 @@ async def test_get_order_status_supports_business_order_id():
     order = SimpleNamespace(
         order_id="WEB_legacy",
         business_order_id="bo_status_1",
-        telegram_id=2002,
         internal_user_id=2002,
         status="PENDING",
     )

@@ -45,6 +45,7 @@ def _build_order(**overrides):
         "id": 1,
         "order_id": "order-1",
         "telegram_id": 123,
+        "internal_user_id": 123,
         "plan_id": 5,
         "original_price": 10.0,
         "final_price": 8.0,
@@ -84,7 +85,6 @@ async def test_get_orders_payload_applies_filters_and_flattens_items():
         page_size=10,
         status="SUCCESS",
         internal_user_id=123,
-        telegram_id=123,
         username="test",
         db=db,
     )
@@ -112,7 +112,6 @@ async def test_get_orders_router_routes_to_service(monkeypatch):
         page_size=20,
         status="ALL",
         internal_user_id=123,
-        telegram_id=123,
         username="tester",
         db=db,
     )
@@ -123,30 +122,7 @@ async def test_get_orders_router_routes_to_service(monkeypatch):
         page_size=20,
         status="ALL",
         internal_user_id=123,
-        telegram_id=123,
         username="tester",
         db=db,
         logger_override=plans_router.logger,
     )
-
-
-@pytest.mark.asyncio
-async def test_get_orders_payload_keeps_legacy_telegram_id_filter_as_alias():
-    order = _build_order()
-    db = _FakePlansDb([
-        _ScalarResult(1),
-        _RowsResult([(order, "tester", "月卡")]),
-    ])
-
-    await plan_admin_service.get_orders_payload(
-        page=1,
-        page_size=10,
-        status="SUCCESS",
-        internal_user_id=None,
-        telegram_id=123,
-        username=None,
-        db=db,
-    )
-
-    list_stmt = db.executed_stmts[1]
-    assert "orders.telegram_id = :telegram_id_1" in list_stmt

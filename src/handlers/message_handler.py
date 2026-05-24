@@ -61,15 +61,11 @@ from src.handlers.utils import (
     with_db_logging_context,
     ensure_access_and_reward,
 )
-from src.services.bot_task_service import task_service
 from src.utils import (
     robust_reply_text,
 )
 from src.handlers.error_handlers import with_unified_error_handler
 from src.logger import logger
-
-# Re-exporting for compatibility if needed, but preferred to import from constants/utils
-process_generation_task = task_service.process_generation_task
 
 os.makedirs(TMP_DIR, exist_ok=True)
 os.makedirs(TEMPLATE_DIR_PENETRATION, exist_ok=True)

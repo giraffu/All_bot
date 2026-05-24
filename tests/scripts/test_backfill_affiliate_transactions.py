@@ -61,7 +61,7 @@ def _build_order(
     return SimpleNamespace(
         id=order_pk,
         order_id=order_id,
-        telegram_id=invitee_user_id,
+        internal_user_id=invitee_user_id,
         commission_usdt=Decimal(commission_usdt),
     )
 

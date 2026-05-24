@@ -88,7 +88,6 @@ async def get_orders_payload(
     page_size: int,
     status: str | None,
     internal_user_id: int | None,
-    telegram_id: int | None,
     username: str | None,
     db,
     logger_override: logging.Logger | None = None,
@@ -105,11 +104,8 @@ async def get_orders_payload(
 
         if status and status != "ALL":
             stmt = stmt.where(Order.status == status)
-        target_internal_user_id = (
-            internal_user_id if internal_user_id is not None else telegram_id
-        )
-        if target_internal_user_id:
-            stmt = stmt.where(Order.internal_user_id == target_internal_user_id)
+        if internal_user_id:
+            stmt = stmt.where(Order.internal_user_id == internal_user_id)
         if username:
             stmt = stmt.where(User.username.ilike(f"%{username}%"))
 

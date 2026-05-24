@@ -191,10 +191,16 @@ class Order(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     order_id = Column(String(64), index=True)  # Unique payload for TON transaction
     business_order_id = Column(String(64), nullable=True, unique=True, index=True)
-    telegram_id = Column(BigInteger, ForeignKey("users.id"), nullable=False, index=True)
-    # Preferred semantic alias for the internal user FK. The underlying column name
-    # stays as telegram_id during the compat phase to avoid a risky schema rename.
-    internal_user_id = synonym("telegram_id")
+    internal_user_id = Column(
+        "telegram_id",
+        BigInteger,
+        ForeignKey("users.id"),
+        nullable=False,
+        index=True,
+    )
+    # Temporary compatibility alias while the Alembic rename is rolled out across
+    # environments. Business code should use `internal_user_id`.
+    telegram_id = synonym("internal_user_id")
     plan_id = Column(Integer, ForeignKey("membership_plans.id"), nullable=False)
     original_price = Column(DECIMAL(10, 2), nullable=False)
     final_price = Column(DECIMAL(10, 2), nullable=False)

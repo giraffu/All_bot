@@ -56,3 +56,5 @@
 - `TaskService._monitor_submitted_bot_task` 已删除；`_run_bot_task_flow` 现在直接把 `get_user_priority_and_identity`、`monitor_bot_task_progress` 与 `robust_edit_text` seam 注给 `task_service_completion.monitor_submitted_bot_task(...)`
 - `TaskService._prepare_and_submit_bot_task` 已删除；`_run_bot_task_flow` 现在直接把 `with_submitted_status`、`get_or_send_status_msg`、`send_initial_task_status`、`submit_bot_task`、`update_submitted_task_status` 以及 `robust_reply_text/robust_edit_text` seam 注给 `task_service_flow.prepare_and_submit_bot_task(...)`
 - 当前 `TaskService` 仍建议暂保留 `_run_bot_task_flow`，因为它仍是多个 entrypoint focused tests 的稳定 patch 面，继续硬拆收益暂时低于风险
+- `src/services/bot_task_service.py` 现已反转为 Telegram Bot task facade 的主实现模块，`src/services/task_service.py` 仅保留 compat re-export 壳；新代码与 focused tests 开始改贴 `bot_task_service` 入口
+- `src/handlers/message_handler.py` 内仅作历史表象的 `process_generation_task = task_service.process_generation_task` 模块级别名已删除，减少主路径的旧命名回流

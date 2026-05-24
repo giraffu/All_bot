@@ -76,7 +76,6 @@ def _build_inserted_order():
     return SimpleNamespace(
         id=321,
         order_id="ORDER:12345:1:999",
-        telegram_id=9001,
         internal_user_id=9001,
         plan_id=1,
         original_price=Decimal("1.00"),
@@ -329,7 +328,6 @@ async def test_process_order_supports_order_v2_pending_order(monkeypatch):
         id=321,
         order_id="ORDER:12345:1:999",
         business_order_id="bo_ton_1",
-        telegram_id=9001,
         internal_user_id=9001,
         plan_id=1,
         original_price=Decimal("1.00"),

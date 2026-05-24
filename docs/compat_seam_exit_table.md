@@ -48,8 +48,8 @@
 | --- | --- | --- | --- | --- |
 | `src/handlers/fsm/custom_video_fsm.py:start_custom_video` | `/custom_video` 旧入口别名，对外保持稳定命令名 | Telegram 菜单与 callback `fsm_start_custom_video` | 明确 `/custom_video` 是否长期保留为独立产品入口；若仅是图生视频变体，可与统一入口继续收口 | `D2` 后续轮次 |
 | `src/constants.py:MODE_IMAGE_TO_VIDEO = MODE_VIDEO_LORA` | 兼容历史任务类型值，避免旧记录/旧 payload 失配 | 历史任务类型、旧 apply-context、统计与计费链路 | 当前主链已统一补上 `image_to_video` 新主名：dispatcher、API client、image service、backend `/image_to_video` 路由与 FSM 新入口已切到中性命名；旧 `video_lora` 仅保留入口 alias、兼容路由与历史值锚点，后续在数据迁移完成后退出该值别名 | 已压缩到外层兼容 |
-| `src/database/models.py:Order.telegram_id` | 历史数据库列名，实际关联 `users.id` 内部用户主键 | 支付下单/履约、Dashboard 订单筛选、affiliate 返佣统计 SQL、旧 schema 字段名 | 当前 Python 侧已新增 `Order.internal_user_id` 语义别名，最新又覆盖履约、Stars/TON 回调、affiliate 核心与 referral stats 查询，并把 Dashboard 订单 API/schema/前端过滤主口径切到 `internal_user_id`；旧 `telegram_id` 仅作为少量兼容入参/回包别名保留，待 Alembic 迁移方案统一后再考虑 schema 改名 | `P1/P2` |
-| `src/services/task_service.py` 导入路径 | 历史 TG 任务 facade 路径，仍挂在 `services` 命名空间 | 旧 TG handlers、相邻 tests 与文档 | 当前已新增 `src/services/bot_task_service.py` 作为新语义入口，handlers 开始改从该模块导入；待旧导入面继续收缩后再评估是否重命名/迁目录 | `P1/P2` |
+| `src/database/models.py:Order.telegram_id` | 历史数据库列名，实际关联 `users.id` 内部用户主键 | 支付下单/履约、Dashboard 订单筛选、affiliate 返佣统计 SQL、旧 schema 字段名 | 当前已新增 Alembic `7c0a4d5e6f71` 准备将 `orders.telegram_id` 正式改名为 `internal_user_id`；运行时代码与 Dashboard API/schema 已优先使用 `internal_user_id`，但 ORM 暂仍映射到底层 `"telegram_id"` 以兼容未升级环境，待环境完成迁移后再删除 alias | `P1/P2` |
+| `src/services/task_service.py` 导入路径 | 历史 TG 任务 facade 路径，仍挂在 `services` 命名空间 | 旧 TG handlers、相邻 tests 与文档 | 当前 `src/services/bot_task_service.py` 已反转为主实现模块，`src/services/task_service.py` 只保留 compat re-export；待旧文档与残余 tests 继续收缩后再评估是否彻底删除旧壳 | `P1/P2` |
 
 ## 删除原则
 

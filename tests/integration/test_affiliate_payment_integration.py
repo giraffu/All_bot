@@ -146,7 +146,7 @@ async def _create_affiliate_fixture(
         if with_orders:
             order_1 = Order(
                 order_id=f"{prefix}-order-1",
-                telegram_id=invitee.id,
+                internal_user_id=invitee.id,
                 plan_id=plan.id,
                 original_price=Decimal("10.00"),
                 final_price=Decimal("10.00"),
@@ -154,7 +154,7 @@ async def _create_affiliate_fixture(
             )
             order_2 = Order(
                 order_id=f"{prefix}-order-2",
-                telegram_id=invitee.id,
+                internal_user_id=invitee.id,
                 plan_id=plan.id,
                 original_price=Decimal("10.00"),
                 final_price=Decimal("10.00"),
@@ -315,7 +315,7 @@ async def _create_backfill_fixture(prefix: str) -> dict:
         paid_at = datetime(2026, 5, 18, 12, 0, 0)
         order_should_insert = Order(
             order_id=f"{prefix}-should-insert",
-            telegram_id=invitee_should_insert.id,
+            internal_user_id=invitee_should_insert.id,
             plan_id=plan.id,
             original_price=Decimal("10.00"),
             final_price=Decimal("10.00"),
@@ -326,7 +326,7 @@ async def _create_backfill_fixture(prefix: str) -> dict:
         )
         order_already_exists = Order(
             order_id=f"{prefix}-already-exists",
-            telegram_id=invitee_already_exists.id,
+            internal_user_id=invitee_already_exists.id,
             plan_id=plan.id,
             original_price=Decimal("10.00"),
             final_price=Decimal("10.00"),
@@ -337,7 +337,7 @@ async def _create_backfill_fixture(prefix: str) -> dict:
         )
         order_missing_referral = Order(
             order_id=f"{prefix}-missing-referral",
-            telegram_id=invitee_missing_referral.id,
+            internal_user_id=invitee_missing_referral.id,
             plan_id=plan.id,
             original_price=Decimal("10.00"),
             final_price=Decimal("10.00"),
@@ -348,7 +348,7 @@ async def _create_backfill_fixture(prefix: str) -> dict:
         )
         order_historical_anomaly = Order(
             order_id=f"{prefix}-historical-anomaly",
-            telegram_id=invitee_historical_anomaly.id,
+            internal_user_id=invitee_historical_anomaly.id,
             plan_id=plan.id,
             original_price=Decimal("0.00"),
             final_price=Decimal("0.00"),
