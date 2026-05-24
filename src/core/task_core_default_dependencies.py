@@ -1,6 +1,8 @@
 import asyncio
 import logging
+from functools import lru_cache
 
+from src.core.async_side_effect_runner import get_default_async_side_effect_runner
 from src.core.billing_core import release_concurrency_lock
 from src.core.media_paths import resolve_storage_object
 from src.core.media_processor import (
@@ -45,14 +47,21 @@ from src.logger import UserLogger
 logger = logging.getLogger("src.core.task_core")
 
 
+@lru_cache(maxsize=1)
+def get_default_task_core_async_runner():
+    return get_default_async_side_effect_runner()
+
+
 def build_default_task_core_warmup_dependencies(
     *,
-    create_task_func=asyncio.create_task,
+    create_task_func=None,
     resolve_storage_object_func=resolve_storage_object,
     generate_and_upload_thumbnail_func=generate_and_upload_thumbnail,
     logger_override=logger,
 ) -> TaskCoreWarmupDependencies:
     storage_capabilities = build_task_core_storage_capabilities()
+    if create_task_func is None:
+        create_task_func = get_default_task_core_async_runner().schedule
     return build_task_core_warmup_dependencies(
         copy_to_r2_func=storage_capabilities.copy_to_r2_func,
         prune_user_web_history_r2_cache_func=(
@@ -162,8 +171,10 @@ def build_default_task_core_side_effect_dependencies(
     attach_web_task_monitor_func,
     monitor_web_task_func,
     record_apply_interaction_func,
-    create_task_func=asyncio.create_task,
+    create_task_func=None,
 ) -> TaskCoreSideEffectDependencies:
+    if create_task_func is None:
+        create_task_func = get_default_task_core_async_runner().schedule
     return build_task_core_side_effect_dependencies(
         attach_web_task_monitor_func=attach_web_task_monitor_func,
         monitor_web_task_func=monitor_web_task_func,

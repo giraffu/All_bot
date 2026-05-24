@@ -1,26 +1,41 @@
-import asyncio
-import re
-from datetime import datetime
 import logging
 
 from fastapi import HTTPException
-from sqlalchemy import desc, func, select
 
-from src.core.media_paths import get_media_type_from_history
 from src.core.media_processor import extract_media_metadata_from_storage
-from src.database.models import GalleryPost, History
-from src.web_api.common.utils import (
-    build_storage_input_file_url,
-    resolve_history_billing_resolution,
-)
+from src.web_api.common.utils import build_storage_input_file_url
 from src.web_api.presenters.media_presenter import resolve_history_media_urls
+from src.web_api.schemas.gallery_schema import PaginatedGalleryResponse
+from src.web_api.schemas.user_schema import PaginatedHistory
 from src.web_api.services.apply_context_service import (
     build_history_apply_context_response,
 )
-from src.web_api.schemas.gallery_schema import GalleryPostResponse, PaginatedGalleryResponse
-from src.web_api.schemas.user_schema import HistoryItem, PaginatedHistory
+from src.web_api.services.history_query_service import (
+    build_gallery_post_map,
+    fetch_active_public_gallery_task_ids,
+    fetch_favorite_gallery_histories,
+    fetch_gallery_posts_for_task_ids,
+    fetch_history_apply_context_entities,
+    fetch_recent_user_history,
+    pick_preferred_gallery_post,
+)
+from src.web_api.services.history_response_builder import (
+    build_favorite_gallery_payload,
+    build_user_history_payload,
+)
 
 logger = logging.getLogger(__name__)
+
+__all__ = [
+    "pick_history_media_urls",
+    "pick_preferred_gallery_post",
+    "build_gallery_post_map",
+    "get_user_history_payload",
+    "get_default_user_history_payload",
+    "get_history_apply_context_payload",
+    "get_history_apply_context_for_current_user",
+    "get_my_favorites_payload",
+]
 
 
 async def pick_history_media_urls(
@@ -37,42 +52,6 @@ async def pick_history_media_urls(
     )
 
 
-def gallery_post_sort_key(post: GalleryPost) -> tuple[int, datetime, int]:
-    created_at = getattr(post, "created_at", None) or datetime.min
-    return (
-        1 if getattr(post, "is_active", False) else 0,
-        created_at,
-        getattr(post, "id", 0) or 0,
-    )
-
-
-def pick_preferred_gallery_post(
-    posts: list[GalleryPost] | tuple[GalleryPost, ...],
-) -> GalleryPost | None:
-    preferred: GalleryPost | None = None
-    for post in posts:
-        if post is None:
-            continue
-        if preferred is None or gallery_post_sort_key(post) > gallery_post_sort_key(
-            preferred
-        ):
-            preferred = post
-    return preferred
-
-
-def build_gallery_post_map(posts: list[GalleryPost]) -> dict[str, GalleryPost]:
-    post_map: dict[str, GalleryPost] = {}
-    for post in posts:
-        if not post or not post.task_id:
-            continue
-        current = post_map.get(post.task_id)
-        if current is None or gallery_post_sort_key(post) > gallery_post_sort_key(
-            current
-        ):
-            post_map[post.task_id] = post
-    return post_map
-
-
 async def get_user_history_payload(
     *,
     current_user,
@@ -80,72 +59,17 @@ async def get_user_history_payload(
     resolve_history_media_urls=resolve_history_media_urls,
     limit: int = 8,
 ) -> PaginatedHistory:
-    subq = (
-        select(History.id)
-        .where(History.user_id == current_user.id)
-        .order_by(History.created_at.desc())
-        .limit(limit)
-        .subquery()
+    histories, task_ids = await fetch_recent_user_history(
+        db=db,
+        current_user_id=current_user.id,
+        limit=limit,
     )
-
-    stmt = (
-        select(History)
-        .where(History.id.in_(select(subq.c.id)))
-        .where(History.is_visible.is_not(False))
-        .order_by(History.created_at.desc())
+    active_task_ids = await fetch_active_public_gallery_task_ids(db=db, task_ids=task_ids)
+    response_items = await build_user_history_payload(
+        histories=histories,
+        gallery_task_ids=active_task_ids,
+        resolve_history_media_urls_func=resolve_history_media_urls,
     )
-    result = await db.execute(stmt)
-    items = result.scalars().all()
-
-    task_ids_to_check = [item.task_id for item in items if item.is_public and item.task_id]
-    active_task_ids = set()
-    if task_ids_to_check:
-        gp_stmt = select(GalleryPost.task_id).where(
-            GalleryPost.task_id.in_(task_ids_to_check), GalleryPost.is_active == True
-        )
-        gp_result = await db.execute(gp_stmt)
-        active_task_ids = set(gp_result.scalars().all())
-
-    url_pairs = await asyncio.gather(
-        *[
-            pick_history_media_urls(
-                resolve_history_media_urls=resolve_history_media_urls,
-                task_id=item.task_id,
-                output_file=item.output_file,
-                history_type=item.type,
-            )
-            for item in items
-        ]
-    )
-
-    response_items = []
-    for item, (output_file_url, thumbnail_url) in zip(items, url_pairs):
-        is_public = bool(item.is_public)
-        if is_public and item.task_id and item.task_id not in active_task_ids:
-            is_public = False
-
-        response_items.append(
-            HistoryItem(
-                id=item.id,
-                task_id=item.task_id,
-                type=item.type,
-                prompt=item.prompt,
-                input_file=item.input_file,
-                output_file=item.output_file,
-                billing_resolution=item.billing_resolution,
-                width=item.width,
-                height=item.height,
-                duration=item.duration,
-                output_file_url=output_file_url,
-                thumbnail_url=thumbnail_url,
-                created_at=item.created_at,
-                allow_contribute=item.allow_contribute,
-                source=item.source,
-                is_public=is_public,
-                is_favorited=item.is_favorited,
-            )
-        )
-
     return PaginatedHistory(
         items=response_items,
         total=len(response_items),
@@ -181,17 +105,13 @@ async def get_history_apply_context_payload(
     probe_media_metadata = probe_media_metadata or extract_media_metadata_from_storage
     logger = logger or globals()["logger"]
 
-    stmt = select(History).where(History.task_id == task_id, History.user_id == user_id)
-    result = await db.execute(stmt)
-    history = result.scalar_one_or_none()
-
+    history, gallery_post = await fetch_history_apply_context_entities(
+        db=db,
+        task_id=task_id,
+        current_user_id=user_id,
+    )
     if not history:
         raise HTTPException(status_code=404, detail="未找到原任务详情")
-
-    gallery_posts = (
-        await db.execute(select(GalleryPost).where(GalleryPost.task_id == history.task_id))
-    ).scalars().all()
-    gallery_post = pick_preferred_gallery_post(gallery_posts)
 
     return await build_history_apply_context_response(
         history=history,
@@ -230,15 +150,6 @@ async def get_history_apply_context_for_current_user(
     )
 
 
-def _extract_history_tags(prompt: str | None) -> list[str]:
-    tags: list[str] = []
-    if prompt:
-        match = re.search(r"\[模型:\s*(.*?)\]", prompt)
-        if match:
-            tags.append(f"#{match.group(1).strip()}")
-    return tags
-
-
 async def get_my_favorites_payload(
     *,
     page: int,
@@ -247,85 +158,25 @@ async def get_my_favorites_payload(
     current_user,
     db,
     resolve_history_media_urls=resolve_history_media_urls,
-    resolve_history_billing_resolution=resolve_history_billing_resolution,
+    resolve_history_billing_resolution=None,
 ) -> PaginatedGalleryResponse:
-    stmt = (
-        select(History)
-        .where(
-            History.user_id == current_user.id,
-            History.is_favorited == True,
-            History.is_visible.is_not(False),
-        )
-        .order_by(desc(History.created_at))
+    _ = resolve_history_billing_resolution
+    histories, total = await fetch_favorite_gallery_histories(
+        db=db,
+        current_user_id=current_user.id,
+        page=page,
+        size=size,
+        task_type=task_type,
     )
-
-    if task_type:
-        stmt = stmt.where(History.type == task_type)
-
-    total_query = select(func.count()).select_from(stmt.subquery())
-    total = (await db.execute(total_query)).scalar()
-
-    offset = (page - 1) * size
-    stmt = stmt.offset(offset).limit(size)
-    result = await db.execute(stmt)
-    histories = result.scalars().all()
-
-    task_ids = [history.task_id for history in histories if history.task_id]
-    gallery_post_map: dict[str, GalleryPost] = {}
-    if task_ids:
-        gallery_posts = (
-            await db.execute(select(GalleryPost).where(GalleryPost.task_id.in_(task_ids)))
-        ).scalars().all()
-        gallery_post_map = build_gallery_post_map(gallery_posts)
-
-    url_pairs = await asyncio.gather(
-        *[
-            pick_history_media_urls(
-                resolve_history_media_urls=resolve_history_media_urls,
-                task_id=history.task_id,
-                output_file=history.output_file,
-                history_type=history.type,
-            )
-            for history in histories
-        ]
+    gallery_post_map = await fetch_gallery_posts_for_task_ids(
+        db=db,
+        task_ids=[history.task_id for history in histories if history.task_id],
     )
-
-    response_items = []
-    for history, (media_url, thumbnail_url) in zip(histories, url_pairs):
-        gallery_post = gallery_post_map.get(history.task_id)
-        media_type = get_media_type_from_history(history.type)
-        response_items.append(
-            GalleryPostResponse(
-                id=history.id,
-                task_id=history.task_id,
-                media_type=media_type,
-                billing_resolution=resolve_history_billing_resolution(
-                    history, gallery_post=gallery_post
-                ),
-                width=history.width
-                if history.width is not None
-                else (gallery_post.width if gallery_post else None),
-                height=history.height
-                if history.height is not None
-                else (gallery_post.height if gallery_post else None),
-                duration=history.duration
-                if history.duration is not None
-                else (gallery_post.duration if gallery_post else None),
-                tags=_extract_history_tags(history.prompt),
-                likes_count=0,
-                dislikes_count=0,
-                applied_count=0,
-                thumbnail_url=thumbnail_url,
-                media_url=media_url,
-                created_at=history.created_at,
-                is_active=True,
-                prompt=history.prompt,
-                task_type=history.type,
-                has_liked=False,
-                has_disliked=False,
-            )
-        )
-
+    response_items = await build_favorite_gallery_payload(
+        histories=histories,
+        gallery_post_map=gallery_post_map,
+        resolve_history_media_urls_func=resolve_history_media_urls,
+    )
     pages = (total + size - 1) // size
     return PaginatedGalleryResponse(
         items=response_items,

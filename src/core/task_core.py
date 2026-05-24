@@ -88,9 +88,14 @@ __all__ = [
     "is_task_backend_busy_error",
     "persist_successful_task_result",
     "process_and_submit_task",
+    "get_default_task_core_process_dependencies",
     "resolve_storage_object",
     "sync_user_concurrency",
 ]
+
+def get_default_task_core_process_dependencies() -> TaskCoreProcessDependencies:
+    return _build_task_core_process_dependencies()
+
 
 def _build_task_core_process_dependencies() -> TaskCoreProcessDependencies:
     from src.constants import VIDEO_TASK_TYPES
@@ -215,8 +220,9 @@ async def process_and_submit_task(
     deduct_quota: bool = True,
     check_lock: bool = True,
     source_post_id: Optional[int] = None,
+    dependencies: TaskCoreProcessDependencies | None = None,
 ) -> dict:
-    dependencies = _build_task_core_process_dependencies()
+    dependencies = dependencies or get_default_task_core_process_dependencies()
     strategy = dependencies.get_strategy_func(task_type)
     cost = strategy.get_cost(inputs)
     is_video_task = task_type in dependencies.video_task_types

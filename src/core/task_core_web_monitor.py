@@ -17,6 +17,26 @@ from src.core.task_core_types import CoreDomainError, normalize_terminal_status
 from src.core.task_core_runtime import cleanup_task_runtime_state
 
 
+def get_default_task_core_monitor_dependencies():
+    return build_default_task_core_monitor_dependencies(
+        normalize_terminal_status_func=normalize_terminal_status,
+        finalize_success_func=finalize_monitored_web_task_success_default,
+        finalize_cancellation_func=finalize_monitored_web_task_cancellation_default,
+        finalize_failure_func=finalize_monitored_web_task_failure_default,
+        logger_override=logging.getLogger(__name__),
+    )
+
+
+def get_default_task_core_side_effect_dependencies():
+    from src.core.gallery_core import record_apply_interaction
+
+    return build_default_task_core_side_effect_dependencies(
+        attach_web_task_monitor_func=attach_web_task_monitor,
+        monitor_web_task_func=monitor_task_and_release_lock_default,
+        record_apply_interaction_func=record_apply_interaction,
+    )
+
+
 def attach_web_task_monitor(
     *,
     backend_task_id: str,
@@ -31,16 +51,18 @@ def attach_web_task_monitor(
     if create_task_func is None:
         create_task_func = asyncio.create_task
 
-    create_task_func(
-        monitor_web_task_func(
-            backend_task_id=backend_task_id,
-            internal_user_id=internal_user_id,
-            username=username,
-            registry_task_id=registry_task_id,
-            submission_context=submission_context,
-            cost=cost,
-        )
+    monitor_coro = monitor_web_task_func(
+        backend_task_id=backend_task_id,
+        internal_user_id=internal_user_id,
+        username=username,
+        registry_task_id=registry_task_id,
+        submission_context=submission_context,
+        cost=cost,
     )
+    try:
+        create_task_func(monitor_coro, name="task-core-web-monitor")
+    except TypeError:
+        create_task_func(monitor_coro)
 
 
 def schedule_apply_interaction(
@@ -54,7 +76,11 @@ def schedule_apply_interaction(
         return
     if create_task_func is None:
         create_task_func = asyncio.create_task
-    create_task_func(record_apply_interaction_func(user_id, source_post_id))
+    interaction_coro = record_apply_interaction_func(user_id, source_post_id)
+    try:
+        create_task_func(interaction_coro, name="task-core-apply-interaction")
+    except TypeError:
+        create_task_func(interaction_coro)
 
 
 def attach_submission_side_effects(
@@ -254,40 +280,29 @@ def attach_web_task_monitor_default(
     submission_context: TaskSubmissionContext,
     cost: int,
     monitor_web_task_func=None,
+    dependencies=None,
 ):
+    side_effect_dependencies = dependencies or get_default_task_core_side_effect_dependencies()
     if monitor_web_task_func is None:
-        monitor_web_task_func = monitor_task_and_release_lock_default
-    from src.core.gallery_core import record_apply_interaction
-
-    dependencies = build_default_task_core_side_effect_dependencies(
-        attach_web_task_monitor_func=attach_web_task_monitor,
-        monitor_web_task_func=monitor_web_task_func,
-        record_apply_interaction_func=record_apply_interaction,
-        create_task_func=asyncio.create_task,
-    )
-    dependencies.attach_web_task_monitor_func(
+        monitor_web_task_func = side_effect_dependencies.monitor_web_task_func
+    side_effect_dependencies.attach_web_task_monitor_func(
         backend_task_id=backend_task_id,
         internal_user_id=internal_user_id,
         username=username,
         registry_task_id=registry_task_id,
         submission_context=submission_context,
         cost=cost,
-        monitor_web_task_func=dependencies.monitor_web_task_func,
+        monitor_web_task_func=monitor_web_task_func,
+        create_task_func=side_effect_dependencies.create_task_func,
     )
 
 
 def schedule_apply_interaction_default(
     user_id: int,
     source_post_id: int | None,
+    dependencies=None,
 ):
-    from src.core.gallery_core import record_apply_interaction
-
-    dependencies = build_default_task_core_side_effect_dependencies(
-        attach_web_task_monitor_func=attach_web_task_monitor,
-        monitor_web_task_func=monitor_task_and_release_lock_default,
-        record_apply_interaction_func=record_apply_interaction,
-        create_task_func=asyncio.create_task,
-    )
+    dependencies = dependencies or get_default_task_core_side_effect_dependencies()
     schedule_apply_interaction(
         user_id,
         source_post_id,
@@ -309,7 +324,9 @@ def attach_submission_side_effects_default(
     attach_web_task_monitor_func=None,
     schedule_apply_interaction_func=None,
     core_domain_error_cls=None,
+    dependencies=None,
 ):
+    side_effect_dependencies = dependencies or get_default_task_core_side_effect_dependencies()
     attach_submission_side_effects(
         client_type=client_type,
         backend_task_id=backend_task_id,
@@ -320,10 +337,23 @@ def attach_submission_side_effects_default(
         cost=cost,
         source_post_id=source_post_id,
         attach_web_task_monitor_func=(
-            attach_web_task_monitor_func or attach_web_task_monitor_default
+            attach_web_task_monitor_func
+            or (
+                lambda **kwargs: attach_web_task_monitor_default(
+                    dependencies=side_effect_dependencies,
+                    **kwargs,
+                )
+            )
         ),
         schedule_apply_interaction_func=(
-            schedule_apply_interaction_func or schedule_apply_interaction_default
+            schedule_apply_interaction_func
+            or (
+                lambda user_id, source_post_id: schedule_apply_interaction_default(
+                    user_id,
+                    source_post_id,
+                    dependencies=side_effect_dependencies,
+                )
+            )
         ),
         core_domain_error_cls=core_domain_error_cls or CoreDomainError,
     )
@@ -398,14 +428,18 @@ async def monitor_task_and_release_lock_default(
     submission_context: TaskSubmissionContext,
     cost: int = 0,
     logger_override: logging.Logger | None = None,
+    dependencies=None,
 ):
-    dependencies = build_default_task_core_monitor_dependencies(
-        normalize_terminal_status_func=normalize_terminal_status,
-        finalize_success_func=finalize_monitored_web_task_success_default,
-        finalize_cancellation_func=finalize_monitored_web_task_cancellation_default,
-        finalize_failure_func=finalize_monitored_web_task_failure_default,
-        logger_override=logger_override or logging.getLogger(__name__),
-    )
+    if dependencies is None and logger_override is not None:
+        dependencies = build_default_task_core_monitor_dependencies(
+            normalize_terminal_status_func=normalize_terminal_status,
+            finalize_success_func=finalize_monitored_web_task_success_default,
+            finalize_cancellation_func=finalize_monitored_web_task_cancellation_default,
+            finalize_failure_func=finalize_monitored_web_task_failure_default,
+            logger_override=logger_override,
+        )
+    else:
+        dependencies = dependencies or get_default_task_core_monitor_dependencies()
     await monitor_task_and_release_lock(
         backend_task_id=backend_task_id,
         internal_user_id=internal_user_id,

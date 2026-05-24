@@ -107,10 +107,12 @@ async def _get_current_user_from_session(db: AsyncSession, token: str) -> User:
 
     from src.constants import WEB_ACCESS_ALLOWED_IDENTITIES, WEB_ACCESS_ALLOWED_GROUPS
 
-    is_allowed_identity = current_identity in WEB_ACCESS_ALLOWED_IDENTITIES
-    is_allowed_group = current_group in WEB_ACCESS_ALLOWED_GROUPS
+    has_web_access = (
+        current_identity in WEB_ACCESS_ALLOWED_IDENTITIES
+        or current_group in WEB_ACCESS_ALLOWED_GROUPS
+    )
 
-    if not (is_allowed_identity or is_allowed_group):
+    if not has_web_access:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="您的权限已变更：目前境界或身份已不满足访问 Web 端的要求",

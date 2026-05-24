@@ -65,7 +65,11 @@ def schedule_web_history_r2_warmup(
                 exc,
             )
 
-    create_task_func(_runner())
+    warmup_coro = _runner()
+    try:
+        create_task_func(warmup_coro, name="task-core-web-history-warmup")
+    except TypeError:
+        create_task_func(warmup_coro)
 
 
 def schedule_web_history_r2_warmup_default(

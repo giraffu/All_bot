@@ -1,13 +1,16 @@
 from fastapi import HTTPException
-from sqlalchemy import desc, func, select
 
 from src.database.core import AsyncSessionLocal
-from src.database.models import GalleryPost, History, UserInteraction
 from src.web_api.common.utils import (
     build_history_apply_context_response,
     build_storage_input_file_url,
 )
 from src.web_api.schemas.gallery_schema import ApplyContextResponse, PaginatedGalleryResponse
+from src.web_api.services.gallery_query_service import (
+    fetch_gallery_apply_context_entities,
+    fetch_my_favorite_posts_page,
+    fetch_my_gallery_posts_page,
+)
 from src.web_api.services.gallery_service_support import (
     build_gallery_post_responses,
     call_gallery_service_with_optional_db,
@@ -24,35 +27,18 @@ async def get_my_gallery_posts_payload(
     task_type: str | None,
     build_post_responses_fn=build_gallery_post_responses,
 ) -> PaginatedGalleryResponse:
-    query = (
-        select(GalleryPost)
-        .outerjoin(History, GalleryPost.task_id == History.task_id)
-        .where(
-            GalleryPost.user_id == current_user.id, History.is_visible.is_not(False)
-        )
-        .distinct()
+    posts, total = await fetch_my_gallery_posts_page(
+        db=db,
+        current_user_id=current_user.id,
+        page=page,
+        size=size,
+        task_type=task_type,
     )
-
-    if task_type:
-        query = query.where(History.type == task_type)
-
-    query = query.order_by(desc(GalleryPost.id))
-
-    total_query = select(func.count()).select_from(query.subquery())
-    total = (await db.execute(total_query)).scalar()
-
-    offset = (page - 1) * size
-    query = query.offset(offset).limit(size)
-
-    result = await db.execute(query)
-    posts = result.scalars().all()
-
     response_items = await build_post_responses_fn(
         session=db,
         posts=posts,
         current_user=current_user,
     )
-
     pages = (total + size - 1) // size
     return PaginatedGalleryResponse(
         items=response_items, total=total, page=page, size=size, pages=pages
@@ -90,43 +76,19 @@ async def get_my_favorite_posts_payload(
     task_type: str | None,
     build_post_responses_fn=build_gallery_post_responses,
 ) -> PaginatedGalleryResponse:
-    action_types = ["like", "apply"]
-    if filter_type == "like":
-        action_types = ["like"]
-    elif filter_type == "apply":
-        action_types = ["apply"]
-
-    query = (
-        select(GalleryPost)
-        .join(UserInteraction, GalleryPost.id == UserInteraction.post_id)
-        .outerjoin(History, GalleryPost.task_id == History.task_id)
-        .where(
-            UserInteraction.user_id == current_user.id,
-            UserInteraction.action_type.in_(action_types),
-            GalleryPost.is_active == True,
-        )
-        .distinct()
-        .order_by(desc(GalleryPost.id))
+    posts, total = await fetch_my_favorite_posts_page(
+        db=db,
+        current_user_id=current_user.id,
+        page=page,
+        size=size,
+        filter_type=filter_type,
+        task_type=task_type,
     )
-
-    if task_type:
-        query = query.where(History.type == task_type)
-
-    total_query = select(func.count()).select_from(query.subquery())
-    total = (await db.execute(total_query)).scalar()
-
-    offset = (page - 1) * size
-    query = query.offset(offset).limit(size)
-
-    result = await db.execute(query)
-    posts = result.scalars().all()
-
     response_items = await build_post_responses_fn(
         session=db,
         posts=posts,
         current_user=current_user,
     )
-
     pages = (total + size - 1) // size
     return PaginatedGalleryResponse(
         items=response_items, total=total, page=page, size=size, pages=pages
@@ -236,17 +198,9 @@ async def build_apply_context_payload(
     should_return_apply_input_file,
     build_input_file_url,
 ) -> ApplyContextResponse:
-    post = (
-        await db.execute(select(GalleryPost).where(GalleryPost.id == post_id))
-    ).scalar_one_or_none()
+    post, history = await fetch_gallery_apply_context_entities(db=db, post_id=post_id)
     if not post or post.is_active is False:
         raise HTTPException(status_code=404, detail="帖子不存在或已失效")
-
-    hist_res = await db.execute(
-        select(History).where(History.task_id == post.task_id)
-    )
-    history = hist_res.scalars().first()
-
     if not history:
         raise HTTPException(status_code=404, detail="未找到原任务详情")
 
