@@ -2,9 +2,10 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from fastapi import HTTPException
+from fastapi import HTTPException, Request
 
 from app.main_bootstrap import (
+    build_request_state_getter,
     check_zombie_tasks_loop,
     get_minio_client,
     lifespan,
@@ -23,6 +24,12 @@ def test_verify_token_rejects_invalid_credential():
         verify_token(credentials=credentials, expected_token="secret")
     assert exc_info.value.status_code == 401
     assert exc_info.value.detail == "Invalid token"
+
+
+def test_build_request_state_getter_marks_request_as_fastapi_request():
+    dependency = build_request_state_getter(attr_name="minio_client")
+    annotations = dependency.__annotations__
+    assert annotations["request"] is Request
 
 
 @pytest.mark.asyncio

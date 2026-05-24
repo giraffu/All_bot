@@ -1,9 +1,8 @@
 import asyncio
 from contextlib import asynccontextmanager
 
-from fastapi import Depends, HTTPException
+from fastapi import Depends, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials
-from minio import Minio
 from redis.asyncio import Redis
 from src.services.storage_minio_client import (
     build_configured_bucket_names,
@@ -27,12 +26,12 @@ def init_minio_client(*, settings, logger):
         return None
 
 
-def get_minio_client(request):
+def get_minio_client(request: Request):
     return getattr(request.app.state, "minio_client", None)
 
 
 def build_request_state_getter(*, attr_name: str, default=None):
-    def _get_request_state_value(request):
+    def _get_request_state_value(request: Request):
         return getattr(request.app.state, attr_name, default)
 
     return _get_request_state_value
