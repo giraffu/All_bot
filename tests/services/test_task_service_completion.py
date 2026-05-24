@@ -642,7 +642,7 @@ async def test_process_generation_task_uses_finalize_task_cancellation(monkeypat
         acceleration_notice,
     )
     monkeypatch.setattr(
-        "src.services.task_service.TaskService._get_or_send_status_msg",
+        "src.services.task_service.get_or_send_status_message",
         AsyncMock(return_value=status_msg),
     )
     monkeypatch.setattr(
@@ -712,7 +712,7 @@ async def test_process_generation_task_uses_finalize_task_failure(monkeypatch):
         AsyncMock(return_value=""),
     )
     monkeypatch.setattr(
-        "src.services.task_service.TaskService._get_or_send_status_msg",
+        "src.services.task_service.get_or_send_status_message",
         AsyncMock(return_value=status_msg),
     )
     monkeypatch.setattr(
@@ -1010,7 +1010,7 @@ async def test_process_face_video_task_uses_finalize_task_failure(monkeypatch):
         acceleration_notice,
     )
     monkeypatch.setattr(
-        "src.services.task_service.TaskService._get_or_send_status_msg",
+        "src.services.task_service.get_or_send_status_message",
         AsyncMock(return_value=status_msg),
     )
     monkeypatch.setattr(

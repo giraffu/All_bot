@@ -142,7 +142,7 @@ class TaskService:
             cleanup_files_func=TaskService._cleanup_files,
             prepare_and_submit_bot_task_func=prepare_and_submit_bot_task,
             with_submitted_status_func=TaskService._with_submitted_status,
-            get_or_send_status_msg_func=TaskService._get_or_send_status_msg,
+            get_or_send_status_msg_func=get_or_send_status_message,
             send_initial_task_status_func=send_initial_task_status,
             submit_bot_task_func=submit_bot_task,
             update_submitted_task_status_func=update_submitted_task_status,
@@ -449,8 +449,6 @@ class TaskService:
             allow_contribute=allow_contribute,
             source_post_id=source_post_id,
         )
-
-    _get_or_send_status_msg = staticmethod(get_or_send_status_message)
 
     @staticmethod
     def _cleanup_files(paths: List[str]):

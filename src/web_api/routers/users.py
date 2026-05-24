@@ -39,6 +39,9 @@ from src.web_api.services.user_affiliate_redeem_api_service import (
     redeem_current_user_affiliate_credits_payload,
     redeem_current_user_affiliate_membership_payload,
 )
+from src.services.affiliate_redeem_service import (
+    invalidate_affiliate_redeem_cache_after_commit,
+)
 from src.web_api.services.users_history_mutation_service import (
     favorite_user_history,
     soft_delete_user_history,
@@ -46,6 +49,7 @@ from src.web_api.services.users_history_mutation_service import (
 )
 
 router = APIRouter()
+__all__ = ["router", "invalidate_affiliate_redeem_cache_after_commit"]
 
 
 @router.get("/me", response_model=UserResponse)

@@ -10,7 +10,6 @@ from botocore.config import Config as BotoConfig
 from botocore.exceptions import ClientError
 from minio import Minio
 from minio.error import S3Error
-from sqlalchemy import select
 import urllib3
 
 from config import (
@@ -33,16 +32,13 @@ from config import (
     R2_PUBLIC_DOMAIN,
     R2_SECRET_KEY,
 )
-from src.core.media_paths import (
-    build_history_r2_media_key,
-    build_history_r2_thumbnail_key,
-    build_legacy_r2_key,
-    build_thumbnail_object_name,
-    get_media_type_from_history,
-    resolve_storage_object,
-)
 from src.database.core import AsyncSessionLocal
-from src.database.models import History
+from src.services.storage_r2_cleanup import (
+    async_delete_r2_objects as async_delete_r2_objects_impl,
+    async_prune_user_web_history_r2_cache as async_prune_user_web_history_r2_cache_impl,
+    build_history_r2_cleanup_keys as build_history_r2_cleanup_keys_impl,
+    sync_delete_r2_object as sync_delete_r2_object_impl,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -330,115 +326,27 @@ class StorageService:
         )
 
     def _sync_delete_r2_object(self, object_name: str) -> bool:
-        if not self.r2_client or not self.r2_bucket or not object_name:
-            return False
-
-        try:
-            self.r2_client.delete_object(Bucket=self.r2_bucket, Key=object_name)
-            self.invalidate_r2_exists_cache(object_name)
-            logger.info("Deleted R2 object: %s", object_name)
-            return True
-        except ClientError as exc:
-            error = exc.response.get("Error", {}) if exc.response else {}
-            code = str(error.get("Code", ""))
-            status_code = (
-                exc.response.get("ResponseMetadata", {}).get("HTTPStatusCode")
-                if exc.response
-                else None
-            )
-            if code in {"404", "NoSuchKey", "NotFound"} or status_code == 404:
-                self.invalidate_r2_exists_cache(object_name)
-                logger.info("R2 object already absent, skip delete: %s", object_name)
-                return True
-
-            logger.warning("Failed to delete R2 object %s: %s", object_name, exc)
-            return False
-        except Exception as exc:
-            logger.warning("Failed to delete R2 object %s: %s", object_name, exc)
-            return False
+        return sync_delete_r2_object_impl(self, object_name)
 
     async def async_delete_r2_objects(self, object_names: list[str]) -> int:
-        if not object_names or not self.r2_client or not self.r2_bucket:
-            return 0
-
-        deleted_count = 0
-        seen = set()
-        for object_name in object_names:
-            if not object_name or object_name in seen:
-                continue
-            seen.add(object_name)
-            if await asyncio.to_thread(self._sync_delete_r2_object, object_name):
-                deleted_count += 1
-        return deleted_count
+        return await async_delete_r2_objects_impl(self, object_names)
 
     def _build_history_r2_cleanup_keys(
         self, task_id: str, output_file: str, history_type: str | None
     ) -> set[str]:
-        if not task_id or not output_file:
-            return set()
-
-        media_type = get_media_type_from_history(history_type)
-        _, object_name = resolve_storage_object(output_file)
-        thumb_object_name = build_thumbnail_object_name(object_name, media_type)
-
-        return {
-            key
-            for key in {
-                build_history_r2_media_key(task_id, output_file),
-                build_history_r2_thumbnail_key(task_id, media_type),
-                build_legacy_r2_key(object_name),
-                build_legacy_r2_key(thumb_object_name),
-            }
-            if key
-        }
+        return build_history_r2_cleanup_keys_impl(task_id, output_file, history_type)
 
     async def async_prune_user_web_history_r2_cache(
         self, user_id: int, keep_recent: int = 8
     ) -> None:
-        if not self.r2_client or not self.r2_bucket or not user_id:
-            return
-
-        async with AsyncSessionLocal() as session:
-            overflow_stmt = (
-                select(
-                    History.task_id,
-                    History.output_file,
-                    History.type,
-                )
-                .where(
-                    History.user_id == user_id,
-                    History.source == "web",
-                    History.is_favorited.is_(False),
-                    History.is_public.is_(False),
-                    History.task_id.is_not(None),
-                    History.output_file.is_not(None),
-                )
-                .order_by(History.created_at.desc())
-                .offset(keep_recent)
-                .limit(1)
-            )
-            overflow_row = (await session.execute(overflow_stmt)).first()
-
-        if not overflow_row:
-            logger.info(
-                "Incremental prune skipped for user %s: no overflow web history beyond %s",
-                user_id,
-                keep_recent,
-            )
-            return
-
-        task_id, output_file, history_type = overflow_row
-        delete_keys = self._build_history_r2_cleanup_keys(
-            task_id, output_file, history_type
-        )
-
-        deleted_count = await self.async_delete_r2_objects(list(delete_keys))
-        logger.info(
-            "Incrementally pruned user %s web history R2 cache: overflow_task=%s delete_keys=%s deleted=%s",
+        await async_prune_user_web_history_r2_cache_impl(
+            self,
             user_id,
-            task_id,
-            len(delete_keys),
-            deleted_count,
+            keep_recent,
+            async_session_factory=AsyncSessionLocal,
+            async_delete_r2_objects_func=lambda service, object_names: service.async_delete_r2_objects(
+                object_names
+            ),
         )
 
     def upload_file(self, file_path: str, object_name: str, bucket_name: str = None) -> bool:
