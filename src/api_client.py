@@ -11,6 +11,7 @@ from config import (
     API_TOKEN,
     FACE_SWAP_ENDPOINT,
     FACE_VIDEO_ENDPOINT,
+    IMAGE_TO_VIDEO_ENDPOINT,
     I2I_PRO_ENDPOINT,
     I2I_DRAW_ENDPOINT,
     IMAGE_ENDPOINT,
@@ -19,7 +20,6 @@ from config import (
     LTX_VIDEO_ENDPOINT,
     PERFECT_VIDEO_EDIT_ENDPOINT,
     PERFECT_VIDEO_INSERT_ENDPOINT,
-    PERFECT_VIDEO_LORA_ENDPOINT,
     POLL_INTERVAL,
     STATUS_ENDPOINT,
     VIDEO_ENDPOINT,
@@ -135,7 +135,7 @@ class APIClient:
         return r.json()["task_id"]
 
     @async_retry(max_retries=3)
-    async def submit_perfect_video_lora(
+    async def submit_image_to_video_task(
         self,
         task_id: str,
         prompt: str,
@@ -147,7 +147,7 @@ class APIClient:
         priority: int = 0,
     ) -> str:
         """
-        Submit perfect_video_lora task.
+        Submit image_to_video task.
         image_path: MinIO Object Key
         lora_name: Name of the LoRA to inject
         """
@@ -162,8 +162,32 @@ class APIClient:
             "priority": priority,
         }
 
-        r = await self._request("POST", PERFECT_VIDEO_LORA_ENDPOINT, json=data)
+        r = await self._request("POST", IMAGE_TO_VIDEO_ENDPOINT, json=data)
         return r.json()["task_id"]
+
+    @async_retry(max_retries=3)
+    async def submit_perfect_video_lora(
+        self,
+        task_id: str,
+        prompt: str,
+        image_path: str,
+        lora_name: str,
+        width: int = 512,
+        height: int = 512,
+        length: int = 81,
+        priority: int = 0,
+    ) -> str:
+        """Compat wrapper for the legacy perfect_video_lora endpoint name."""
+        return await self.submit_image_to_video_task(
+            task_id=task_id,
+            prompt=prompt,
+            image_path=image_path,
+            lora_name=lora_name,
+            width=width,
+            height=height,
+            length=length,
+            priority=priority,
+        )
 
     @async_retry(max_retries=3)
     async def submit_img2img(
@@ -551,6 +575,7 @@ api_client = APIClient()
 # Export functions to maintain compatibility with existing imports
 # These wrappers call the singleton instance methods
 submit_perfect_video_insert = api_client.submit_perfect_video_insert
+submit_image_to_video_task = api_client.submit_image_to_video_task
 submit_perfect_video_edit = api_client.submit_perfect_video_edit
 submit_perfect_video_lora = api_client.submit_perfect_video_lora
 submit_img2img = api_client.submit_img2img

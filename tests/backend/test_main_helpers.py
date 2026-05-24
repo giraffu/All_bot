@@ -279,7 +279,11 @@ async def test_create_t2i_pornmaster_turbo_task_reraises_prompt_http_error(monke
     assert exc_info.value is invalid_prompt_error
 
 
-def test_simple_task_type_map_keeps_video_lora_compatibility():
+def test_simple_task_type_map_keeps_image_to_video_and_video_lora_compatibility():
+    assert (
+        main_simple_task_routes.SIMPLE_TASK_TYPE_MAP["image_to_video"]
+        == TaskType.VIDEO_EDIT
+    )
     assert main_simple_task_routes.SIMPLE_TASK_TYPE_MAP["video_lora"] == TaskType.VIDEO_EDIT
     assert main_simple_task_routes.SIMPLE_TASK_TYPE_MAP["img2img"] == TaskType.IMG2IMG
 
@@ -291,6 +295,10 @@ def test_simple_task_route_specs_cover_expected_paths_and_handlers():
     }
 
     assert specs_by_path["/comfy_img2img"][1:] == ("img2img", "create_img2img_task")
+    assert specs_by_path["/image_to_video"][1:] == (
+        "image_to_video",
+        "create_image_to_video_task",
+    )
     assert specs_by_path["/perfect_video_lora"][1:] == (
         "video_lora",
         "create_video_lora_task",
@@ -309,6 +317,7 @@ def test_simple_task_routes_are_registered_with_stable_endpoint_names():
     }
 
     assert routes_by_path["/comfy_img2img"] == "create_img2img_task"
+    assert routes_by_path["/image_to_video"] == "create_image_to_video_task"
     assert routes_by_path["/perfect_video_lora"] == "create_video_lora_task"
     assert routes_by_path["/api/v1/ltx_video"] == "create_ltx_video_task"
 

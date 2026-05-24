@@ -9,6 +9,7 @@ from telegram.ext import ContextTypes
 
 from config import ENABLE_PUBLIC_SHARE, REQUIRED_CHANNEL_ID
 from src.constants import FORBIDDEN_WORDS, MODE_NAME_MAP, MODE_RANDOM_FACESWAP
+from src.handlers.callback_router import register_callback
 from src.core.gallery_core import (
     DuplicateInteractionError,
     GalleryCoreError,
@@ -475,3 +476,31 @@ async def handle_rate_action(
     except Exception as e:
         logger.error(f"Error updating rating: {e}")
         await safe_answer_query(query, text="❌ 评价失败，请稍后再试", show_alert=True)
+
+
+@register_callback("public_share")
+async def public_share_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await handle_public_share_callback(update, context)
+
+
+@register_callback("rate_like")
+async def rate_like_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await handle_rate_action(update, context, 1)
+
+
+@register_callback("rate_dislike")
+async def rate_dislike_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await handle_rate_action(update, context, -1)
+
+
+@register_callback("submit_gallery_")
+async def submit_gallery_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await handle_submit_gallery_callback(update, context)
+
+
+@register_callback("gallery_like_")
+@register_callback("gallery_dislike_")
+async def gallery_like_dislike_callback(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+):
+    await handle_gallery_like_dislike_callback(update, context)

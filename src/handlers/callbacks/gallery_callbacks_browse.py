@@ -8,6 +8,7 @@ from sqlalchemy import select
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
 
+from src.handlers.callback_router import register_callback
 from src.core.gallery_core import get_gallery_feed
 from src.core.user_core import get_or_create_user_by_telegram
 from src.database.core import AsyncSessionLocal
@@ -15,6 +16,7 @@ from src.database.models import GalleryPost, History
 from src.lora_mapping import translate_tags
 from src.services.storage import storage
 from src.utils import (
+    robust_edit_reply_markup,
     robust_delete_message,
     robust_send_message,
     robust_send_photo,
@@ -34,6 +36,16 @@ _SUPPORTED_GALLERY_CATEGORIES = {
     "imglora",
 }
 
+GALLERY_CATEGORY_OPTIONS = (
+    ("all", "🌈 全部"),
+    ("ltxvid", "💎 高级图生视频"),
+    ("i2ipro", "🎭 幻想换脸"),
+    ("edit", "🖼️ 自由P图"),
+    ("imglora", "🎨 图生图(附加模型)"),
+    ("custvid", "🎬 自定义图生视频"),
+    ("vidlora", "🌟 图生视频（附加模型）"),
+)
+
 
 def parse_gallery_browse_callback_data(data: str) -> tuple[str, str, int]:
     parts = data.split("_")
@@ -45,6 +57,19 @@ def parse_gallery_browse_callback_data(data: str) -> tuple[str, str, int]:
         category = "all"
         page = int(parts[3]) if len(parts) > 3 else 0
     return sort_type, category, page
+
+
+def build_gallery_category_menu(sort_type: str) -> InlineKeyboardMarkup:
+    keyboard = [
+        [
+            InlineKeyboardButton(
+                label,
+                callback_data=f"gallery_sort_{sort_type}_{category}",
+            )
+        ]
+        for category, label in GALLERY_CATEGORY_OPTIONS
+    ]
+    return InlineKeyboardMarkup(keyboard)
 
 
 async def _resolve_gallery_viewer_id(update: Update, sort_type: str) -> int | None:
@@ -307,3 +332,28 @@ async def display_gallery_sort_page(
     )
     if sent_msg:
         await robust_delete_message(query.message)
+
+
+@register_callback("gallery_catmenu_")
+async def gallery_catmenu_callback(update: Update, _context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    sort_type = query.data.split("_")[2]
+    await robust_edit_reply_markup(
+        query.message,
+        reply_markup=build_gallery_category_menu(sort_type),
+    )
+    await safe_answer_query(query)
+
+
+@register_callback("gallery_sort_")
+@register_callback("gallery_page_")
+async def gallery_sort_page_callback(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+):
+    try:
+        await display_gallery_sort_page(update, context)
+    except Exception as exc:
+        logger.error(f"Error displaying gallery: {exc}")
+        await safe_answer_query(
+            update.callback_query, text="❌ 加载失败，请稍后再试", show_alert=True
+        )

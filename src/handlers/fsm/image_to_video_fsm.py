@@ -34,6 +34,7 @@ from src.filters.i18n_filter import I18nFilter
 logger = logging.getLogger("fsm.image_to_video")
 
 IMAGE_TO_VIDEO_DATA_KEY = "image_to_video_data"
+IMAGE_TO_VIDEO_CONVERSATION_TAG = "IMAGE_TO_VIDEO"
 
 
 def _get_image_to_video_data(context: ContextTypes.DEFAULT_TYPE) -> dict | None:
@@ -164,7 +165,7 @@ async def _start_image_to_video_flow(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
     *,
-    conversation_tag: str = "VIDEO_LORA",
+    conversation_tag: str = IMAGE_TO_VIDEO_CONVERSATION_TAG,
     preset_lora_name: str | None = None,
     skip_lora_selection: bool = False,
 ) -> int:
@@ -227,7 +228,7 @@ async def start_image_to_video(update: Update, context: ContextTypes.DEFAULT_TYP
     return await _start_image_to_video_flow(
         update,
         context,
-        conversation_tag="VIDEO_LORA",
+        conversation_tag=IMAGE_TO_VIDEO_CONVERSATION_TAG,
     )
 
 
@@ -556,8 +557,12 @@ def _build_image_to_video_fsm_handler(
 def get_image_to_video_fsm_handler() -> ConversationHandler:
     return _build_image_to_video_fsm_handler(
         entry_points=[
+            CommandHandler("image_to_video", start_image_to_video),
             CommandHandler("video_lora", start_image_to_video),
             MessageHandler(I18nFilter("menu.video_lora"), start_image_to_video),
+            CallbackQueryHandler(
+                start_image_to_video, pattern="^fsm_start_image_to_video$"
+            ),
             CallbackQueryHandler(
                 start_image_to_video, pattern="^fsm_start_video_lora$"
             ),

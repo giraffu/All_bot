@@ -196,7 +196,7 @@ class FaceSwapStrategy(BaseTaskStrategy):
 
 
 class BaseVideoStrategy(BaseTaskStrategy):
-    VIDEO_LORA_ENDPOINT_COMPAT_MODES = {
+    IMAGE_TO_VIDEO_LORA_ENDPOINT_COMPAT_TASK_TYPES = {
         MODE_IMAGE_TO_VIDEO,
         "custom_video",
         "video_edit",
@@ -206,8 +206,8 @@ class BaseVideoStrategy(BaseTaskStrategy):
     def __init__(self, mode: str):
         self.mode = _normalize_task_type(mode)
 
-    def _should_submit_perfect_video_lora(self, inputs: Dict[str, Any]) -> bool:
-        return self.mode in self.VIDEO_LORA_ENDPOINT_COMPAT_MODES and bool(
+    def _should_use_image_to_video_lora_endpoint(self, inputs: Dict[str, Any]) -> bool:
+        return self.mode in self.IMAGE_TO_VIDEO_LORA_ENDPOINT_COMPAT_TASK_TYPES and bool(
             inputs.get("lora_name")
         )
 
@@ -263,8 +263,8 @@ class BaseVideoStrategy(BaseTaskStrategy):
                 length=frame_length,
                 priority=priority,
             )
-        elif self._should_submit_perfect_video_lora(inputs):
-            return await image_service.submit_perfect_video_lora(
+        elif self._should_use_image_to_video_lora_endpoint(inputs):
+            return await image_service.submit_image_to_video_task(
                 task_id,
                 prompt=prompt,
                 image_path=image_path,

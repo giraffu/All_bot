@@ -5,6 +5,7 @@ from src.api_client import (
     download_video,
     get_system_status,
     listen_for_progress,
+    submit_image_to_video_task,
     submit_face_swap,
     submit_face_video,
     submit_i2i_pro,
@@ -14,7 +15,6 @@ from src.api_client import (
     submit_ltx_video,
     submit_perfect_video_edit,
     submit_perfect_video_insert,
-    submit_perfect_video_lora,
 )
 
 
@@ -153,8 +153,31 @@ class ImageService:
         length: int = 81,
         priority: int = 0,
     ) -> str:
-        """Submit perfect video lora task"""
-        return await submit_perfect_video_lora(
+        """Compat wrapper for the legacy perfect video lora task"""
+        return await self.submit_image_to_video_task(
+            task_id=task_id,
+            prompt=prompt,
+            image_path=image_path,
+            lora_name=lora_name,
+            width=width,
+            height=height,
+            length=length,
+            priority=priority,
+        )
+
+    async def submit_image_to_video_task(
+        self,
+        task_id: str,
+        prompt: str,
+        image_path: str,
+        lora_name: str,
+        width: int = 512,
+        height: int = 512,
+        length: int = 81,
+        priority: int = 0,
+    ) -> str:
+        """Submit unified image_to_video task"""
+        return await submit_image_to_video_task(
             task_id,
             prompt,
             image_path,

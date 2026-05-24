@@ -10,6 +10,7 @@ from src.core.billing_core import calculate_membership_settlement
 from src.database.models import AffiliateRedeem, AffiliateTransaction, User
 from src.quota import QuotaManager
 from src.services.affiliate_redeem_rules import (
+    AFFILIATE_CREDITS_REDEEM_ALLOWED_AMOUNTS_TEXT,
     AFFILIATE_MEMBERSHIP_REDEEM_OPTIONS,
     AFFILIATE_REDEEM_ROUNDING_MODE,
     AFFILIATE_REDEEM_SUCCESS,
@@ -46,6 +47,7 @@ quota_manager = QuotaManager()
 logger = logging.getLogger(__name__)
 
 __all__ = [
+    "AFFILIATE_CREDITS_REDEEM_ALLOWED_AMOUNTS_TEXT",
     "AFFILIATE_MEMBERSHIP_REDEEM_OPTIONS",
     "AffiliateCreditsRedeemResult",
     "AffiliateMembershipRedeemResult",

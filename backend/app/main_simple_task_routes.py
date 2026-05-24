@@ -19,6 +19,7 @@ SIMPLE_TASK_TYPE_MAP = {
     "face_swap": TaskType.FACE_SWAP,
     "video_insert": TaskType.VIDEO_INSERT,
     "video_edit": TaskType.VIDEO_EDIT,
+    "image_to_video": TaskType.VIDEO_EDIT,
     "video_lora": TaskType.VIDEO_EDIT,
     "face_video": TaskType.FACE_VIDEO,
     "i2i_pro": TaskType.I2I_PRO,
@@ -46,6 +47,12 @@ SIMPLE_TASK_ROUTE_SPECS = (
         VideoEditRequest,
         "video_edit",
         "create_video_edit_task",
+    ),
+    (
+        "/image_to_video",
+        VideoLoraRequest,
+        "image_to_video",
+        "create_image_to_video_task",
     ),
     (
         "/perfect_video_lora",

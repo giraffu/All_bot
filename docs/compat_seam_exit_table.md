@@ -20,13 +20,13 @@
 | task_core finalization 默认 wrapper | `src/core/task_core.py` | `src/core/task_core_finalization.py` | 已下沉，失败/取消默认依赖由子模块自装配 |
 | task_core web monitor 默认 wrapper | `src/core/task_core.py` | `src/core/task_core_web_monitor.py` | 已下沉，`task_core.py` 仅保留兼容导出符号 |
 | task_core warmup/persistence 默认 wrapper | `src/core/task_core.py` | `src/core/task_core_web_history_warmup.py`、`src/core/task_core_persistence.py` | 已下沉，web history warmup 与成功持久化默认绑定不再堆在 facade |
-| TG gallery browse 链路 | `src/handlers/callbacks/gallery_callbacks.py` | `src/handlers/callbacks/gallery_callbacks_browse.py` | 已拆出浏览/渲染/媒体发送主链，callback 文件回归薄入口 |
+| TG gallery browse 链路 | `src/handlers/callbacks/gallery_callbacks.py` | `src/handlers/callbacks/gallery_callbacks_browse.py` | 已继续收口，分类菜单、`gallery_sort_`、`gallery_page_` 已直接在 browse 子模块注册，旧壳文件已删除 |
 | 旧单图页与模板工作台 payload 组装 | 多个 `.vue` 页面内联 | `frontend/src/features/generation/buildGenerationTaskPayload.ts` | 已统一，旧单图页与 A4 工作台共用提交 payload builder |
 | swap 双文件页 payload 组装 | `FaceSwap.vue`、`VideoSwap.vue` 与模板面板内联 | `frontend/src/features/generation/buildSwapTaskPayload.ts` | 已统一，页面与模板面板共用 `face_swap/face_video` payload builder |
 | swap 双文件页提交 controller | `FaceSwap.vue`、`VideoSwap.vue` 与模板面板各自内联提交 | `frontend/src/composables/useSwapTaskSubmit.ts` | 已统一，四处入口共用校验 + payload + submit + taskId 回写主链 |
 | `gallery_core` 默认 provider / side effects | `src/core/gallery_core.py` | `src/core/gallery_core_dependencies.py`、`src/core/gallery_submission_effects.py` | 已下沉，默认装配与投稿 side effects 不再堆在主文件顶部 |
 | `TaskService._run_bot_task_flow(...)` | `src/services/task_service.py` | `src/services/task_service_flow.py` | 已删除，entrypoint 直接调用共享 flow，tests 改贴 `run_bot_task_flow` |
-| TG gallery 投稿 / 点赞主链 | `src/handlers/callbacks/gallery_callbacks.py` | `src/handlers/callbacks/gallery_callbacks_interactions.py` | 已下沉，主文件进一步退回注册入口与分类菜单 |
+| TG gallery 投稿 / 点赞主链 | `src/handlers/callbacks/gallery_callbacks.py` | `src/handlers/callbacks/gallery_callbacks_interactions.py` | 已继续收口，`public_share`、`rate_*`、`submit_gallery_`、`gallery_like_/gallery_dislike_` 已直接在 interactions 子模块注册，旧壳文件已删除 |
 | `Profile.vue` metric 组装 | `frontend/src/views/Profile.vue` | `frontend/src/composables/useProfileMetrics.ts` | 已下沉，统计与返佣卡片数据组装不再堆在页面脚本 |
 | `storage.py` R2 exists/cache runtime 细节 | `src/services/storage.py` | `src/services/storage_r2_exists.py` | 已下沉，`StorageService` 主要保留公开方法与薄包装 |
 | swap 旧路由 apply 初始化 | `FaceSwap.vue`、`VideoSwap.vue` 页面内联 | `frontend/src/composables/useLegacySwapApply.ts` | 已统一，旧页只保留 route 兼容入口与页面壳 |
@@ -43,7 +43,7 @@
 | 对象 | 当前用途 | 依赖它的调用方或测试 | 删除前置条件 | 预计删除阶段 |
 | --- | --- | --- | --- | --- |
 | `src/handlers/fsm/custom_video_fsm.py:start_custom_video` | `/custom_video` 旧入口别名，对外保持稳定命令名 | Telegram 菜单与 callback `fsm_start_custom_video` | 明确 `/custom_video` 是否长期保留为独立产品入口；若仅是图生视频变体，可与统一入口继续收口 | `D2` 后续轮次 |
-| `src/constants.py:MODE_IMAGE_TO_VIDEO = MODE_VIDEO_LORA` | 兼容历史任务类型值，避免旧记录/旧 payload 失配 | 历史任务类型、旧 apply-context、统计与计费链路 | 当前已开始收口散落的 `"video_lora"` 字面量与重复 alias 判断；后续仍需在历史数据/旧 payload 兼容迁移完成后退出该值别名 | `B4` 后续轮次 |
+| `src/constants.py:MODE_IMAGE_TO_VIDEO = MODE_VIDEO_LORA` | 兼容历史任务类型值，避免旧记录/旧 payload 失配 | 历史任务类型、旧 apply-context、统计与计费链路 | 当前主链已统一补上 `image_to_video` 新主名：dispatcher、API client、image service、backend `/image_to_video` 路由与 FSM 新入口已切到中性命名；旧 `video_lora` 仅保留入口 alias、兼容路由与历史值锚点，后续在数据迁移完成后退出该值别名 | 已压缩到外层兼容 |
 
 ## 删除原则
 

@@ -47,6 +47,7 @@ def _build_update_with_message(*, text: str = "test prompt"):
 def test_image_to_video_fsm_exposes_unified_handler():
     handler = image_to_video_fsm.get_image_to_video_fsm_handler()
     assert handler.name == "image_to_video_fsm"
+    assert len(handler.entry_points) == 5
 
 
 def test_legacy_video_lora_exports_are_removed():
@@ -401,7 +402,7 @@ async def test_ltx_video_state_expired_before_quota_check(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_video_lora_state_expired_before_quota_check(monkeypatch):
+async def test_image_to_video_state_expired_before_quota_check(monkeypatch):
     reply_mock = AsyncMock()
     quota_mock = AsyncMock()
 
@@ -417,7 +418,7 @@ async def test_video_lora_state_expired_before_quota_check(monkeypatch):
     context = SimpleNamespace(
         bot=SimpleNamespace(),
         user_data={
-            "in_conversation": "VIDEO_LORA",
+            "in_conversation": image_to_video_fsm.IMAGE_TO_VIDEO_CONVERSATION_TAG,
             "image_to_video_data": {
                 "resolution": "512p",
                 "duration": "5s",
@@ -470,7 +471,7 @@ async def test_image_to_video_legacy_video_lora_data_no_longer_used():
 @pytest.mark.parametrize(
     ("conversation_tag", "lora_name", "expected_task_type"),
     [
-        ("VIDEO_LORA", "BreastGrow", MODE_IMAGE_TO_VIDEO),
+        (image_to_video_fsm.IMAGE_TO_VIDEO_CONVERSATION_TAG, "BreastGrow", MODE_IMAGE_TO_VIDEO),
         ("CUSTOM_VIDEO", "", MODE_CUSTOM_VIDEO),
     ],
 )

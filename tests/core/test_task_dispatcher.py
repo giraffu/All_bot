@@ -172,7 +172,7 @@ async def test_base_video_strategy_routes_image_to_video_modes_by_lora_name(
     submit_lora_mock = AsyncMock(return_value="backend-lora")
     submit_edit_mock = AsyncMock(return_value="backend-edit")
     monkeypatch.setattr(
-        "src.core.task_dispatcher.image_service.submit_perfect_video_lora",
+        "src.core.task_dispatcher.image_service.submit_image_to_video_task",
         submit_lora_mock,
     )
     monkeypatch.setattr(
@@ -230,7 +230,7 @@ async def test_base_video_strategy_keeps_special_video_modes_ahead_of_lora_branc
         submit_insert_mock,
     )
     monkeypatch.setattr(
-        "src.core.task_dispatcher.image_service.submit_perfect_video_lora",
+        "src.core.task_dispatcher.image_service.submit_image_to_video_task",
         submit_lora_mock,
     )
 

@@ -8,7 +8,8 @@ import src.handlers.callback_router as router
 # 导入拆分后的子模块，触发装饰器注册路由
 import src.handlers.callbacks.affiliate_callbacks  # noqa: F401
 import src.handlers.callbacks.billing_callbacks  # noqa: F401
-import src.handlers.callbacks.gallery_callbacks  # noqa: F401
+import src.handlers.callbacks.gallery_callbacks_browse  # noqa: F401
+import src.handlers.callbacks.gallery_callbacks_interactions  # noqa: F401
 import src.handlers.callbacks.misc_callbacks  # noqa: F401
 import src.handlers.callbacks.task_callbacks  # noqa: F401
 

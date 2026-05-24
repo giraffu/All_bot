@@ -91,6 +91,7 @@ STATUS_ENDPOINT = f"{API_BASE}/status"
 IMAGE_ENDPOINT = f"{API_BASE}/image"
 VIDEO_ENDPOINT = f"{API_BASE}/video"
 PERFECT_VIDEO_EDIT_ENDPOINT = f"{API_BASE}/perfect_video_edit"  # Unified endpoint
+IMAGE_TO_VIDEO_ENDPOINT = f"{API_BASE}/image_to_video"
 PERFECT_VIDEO_LORA_ENDPOINT = f"{API_BASE}/perfect_video_lora"
 PERFECT_VIDEO_INSERT_ENDPOINT = f"{API_BASE}/perfect_video_insert"
 FACE_SWAP_ENDPOINT = f"{API_BASE}/face_swap"

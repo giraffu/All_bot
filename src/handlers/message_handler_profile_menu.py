@@ -1,3 +1,4 @@
+from src.constants import MODE_IMAGE_TO_VIDEO
 from src.logger import logger
 
 
@@ -12,7 +13,7 @@ TASK_TYPE_DISPLAY_NAMES = {
     "ltx_video": "task.ltx_video",
     "t2i-pornmaster-turbo": "task.t2i_pornmaster_turbo",
     "custom_video": "task.custom_video",
-    "video_lora": "task.video_lora",
+    MODE_IMAGE_TO_VIDEO: "task.video_lora",
 }
 
 
