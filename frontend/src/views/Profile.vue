@@ -8,27 +8,31 @@ import {
   Zap,
   Award,
   User,
-  Clock,
   Lock,
   Bookmark,
   Star,
-  Globe,
-  Server,
-  RefreshCw
 } from 'lucide-vue-next'
-import dayjs from 'dayjs'
+import { useRouter } from 'vue-router'
 import { useViewport } from '@/composables/useViewport'
 import { useTelegram } from '@/composables/useTelegram'
 import { useI18n } from 'vue-i18n'
 import { useQueueStatus } from '@/composables/useQueueStatus'
 import { useBindPassword } from '@/composables/useBindPassword'
 import { useAffiliateRedeem } from '@/composables/useAffiliateRedeem'
+import { useProfileMetrics } from '@/composables/useProfileMetrics'
 import { useProfileLanguage } from '@/composables/useProfileLanguage'
+import { useProfileQuickActions } from '@/composables/useProfileQuickActions'
+import { useProfileWelcomeSummary } from '@/composables/useProfileWelcomeSummary'
 import { useDailyCheckin } from '@/composables/useDailyCheckin'
 import ProfilePasswordOverlay from '@/components/profile/ProfilePasswordOverlay.vue'
+import ProfileMetricCards from '@/components/profile/ProfileMetricCards.vue'
+import ProfileQuickActionsPanel from '@/components/profile/ProfileQuickActionsPanel.vue'
+import ProfileQueueStatusPanel from '@/components/profile/ProfileQueueStatusPanel.vue'
 import ProfileRedeemOverlays from '@/components/profile/ProfileRedeemOverlays.vue'
+import ProfileWelcomeBanner from '@/components/profile/ProfileWelcomeBanner.vue'
 
 const authStore = useAuthStore()
+const router = useRouter()
 const { isMobile } = useViewport()
 const { showMainButton, hideMainButton, hapticFeedback, isTMA } = useTelegram()
 const { t, te, locale } = useI18n()
@@ -55,10 +59,11 @@ const {
   hapticFeedback
 })
 
-const formatDate = (dateString?: string | null) => {
-  if (!dateString) return '永久有效'
-  return dayjs(dateString).format('YYYY-MM-DD HH:mm')
-}
+const currentUser = computed(() => authStore.user)
+const { identityExpireText, userGroupLabel, identityLabel } = useProfileWelcomeSummary({
+  user: currentUser,
+  t,
+})
 
 const resolveQueueTaskTypeLabel = (type: string | number) => {
   const normalizedType = String(type).replace(/-/g, '_')
@@ -95,8 +100,41 @@ const {
   handleRedeemCredits,
   handleRedeemMembership
 } = useAffiliateRedeem({
-  user: computed(() => authStore.user),
+  user: currentUser,
   refreshUser: authStore.fetchUser
+})
+
+const { statsCards, promotionCards } = useProfileMetrics({
+  user: currentUser,
+  t,
+  totalCommissionUsdt,
+  spentCommissionUsdt,
+  availableCommissionUsdt,
+  icons: {
+    User,
+    Zap,
+    CalendarCheck,
+    Award,
+    Activity,
+    Wallet
+  }
+})
+
+const { quickActions } = useProfileQuickActions({
+  user: currentUser,
+  t,
+  router,
+  openRedeemCreditsModal,
+  openRedeemMembershipModal,
+  handleBindPasswordModalOpen,
+  icons: {
+    Zap,
+    Bookmark,
+    Star,
+    Wallet,
+    Award,
+    Lock,
+  },
 })
 
 onMounted(async () => {
@@ -107,141 +145,30 @@ onMounted(async () => {
 
 <template>
   <div class="profile-container space-y-6">
-    <div class="welcome-banner bg-gradient-to-r from-indigo-500 via-purple-500 to-cyan-500 rounded-xl p-5 md:p-8 text-white shadow-lg relative overflow-hidden border border-indigo-400/50">
-      <div class="relative z-10 flex flex-col md:flex-row justify-between items-start md:items-center">
-        <!-- Left Section -->
-        <div class="w-full md:w-auto">
-          <h1 class="text-xl md:text-3xl font-bold mb-3 md:mb-2 drop-shadow-sm text-slate-100">
-            {{ $t('profile.welcome_back', { name: authStore.user?.full_name || authStore.user?.username }) }}
-          </h1>
-          
-          <div class="flex flex-wrap items-center gap-2 mb-3 md:mb-2 text-sm md:text-lg text-slate-300">
-            <div class="flex items-center bg-white/5 backdrop-blur-sm border border-white/10 rounded px-2.5 py-1">
-              <span class="mr-1.5 text-slate-400">{{ $t('profile.group') }}:</span> 
-              <span class="font-bold text-cyan-300 drop-shadow-sm">{{ authStore.user?.user_group ? $t(`group.${authStore.user.user_group}`) : $t('group.凡人') }}</span>
-            </div>
-            <div class="flex items-center bg-white/5 backdrop-blur-sm border border-white/10 rounded px-2.5 py-1">
-              <span class="mr-1.5 text-slate-400">{{ $t('profile.identity') }}:</span>
-              <span class="font-bold text-cyan-300 drop-shadow-sm">{{ authStore.user?.current_identity ? $t(`identity.${authStore.user.current_identity}`) : $t('identity.外门弟子') }}</span>
-            </div>
-            <!-- Language Switcher -->
-            <button @click="toggleLanguage" class="flex items-center bg-cyan-500/10 hover:bg-cyan-500/20 backdrop-blur-sm border border-cyan-500/30 hover:border-cyan-500/50 rounded px-2.5 py-1 cursor-pointer transition-all">
-              <Globe :size="16" class="mr-1.5 text-cyan-400" />
-              <span class="font-bold text-cyan-300 drop-shadow-sm text-sm">{{ locale === 'zh' ? 'English' : '中文' }}</span>
-            </button>
-          </div>
+    <ProfileWelcomeBanner
+      :full-name="authStore.user?.full_name"
+      :username="authStore.user?.username"
+      :user-group-label="userGroupLabel"
+      :identity-label="identityLabel"
+      :identity-expire-text="identityExpireText"
+      :credits="authStore.user?.credits || 0"
+      :locale-value="locale"
+      :checkin-loading="checkinLoading"
+      :on-toggle-language="toggleLanguage"
+      :on-checkin="handleCheckin"
+    />
 
-          <div class="text-xs md:text-sm text-slate-400 flex items-center drop-shadow-sm">
-            <Clock :size="14" class="mr-1.5 text-slate-500" />
-            <span v-if="authStore.user?.current_identity === '外门弟子' || !authStore.user?.identity_expire_at">{{ $t('profile.valid_forever') }}</span>
-            <span v-else>{{ $t('profile.valid_until') }}{{ formatDate(authStore.user?.identity_expire_at) }}</span>
-          </div>
-        </div>
-        
-        <!-- Right Section -->
-        <div class="mt-5 md:mt-0 w-full md:w-auto flex flex-col items-end gap-3 border-t border-white/20 md:border-0 pt-4 md:pt-0">
-          <div class="flex items-center bg-white/20 backdrop-blur-md px-4 py-2 md:px-5 md:py-3 rounded-lg border border-white/30 shadow-inner w-full md:w-auto justify-between md:justify-start">
-            <div class="flex items-center">
-              <Wallet :size="20" class="mr-2 md:mr-3 text-cyan-200 drop-shadow-[0_0_8px_rgba(255,255,255,0.5)]" />
-              <div class="flex flex-col">
-                <span class="text-[10px] md:text-xs text-slate-400 font-medium leading-none mb-1">{{ $t('profile.credits') }}</span>
-                <span class="text-lg md:text-2xl font-bold leading-none drop-shadow-sm text-slate-100">{{ authStore.user?.credits || 0 }}</span>
-              </div>
-            </div>
-          </div>
-          <a-button type="primary" @click="handleCheckin" :loading="checkinLoading" class="bg-gradient-to-r from-indigo-500 to-cyan-600 hover:from-indigo-400 hover:to-cyan-500 border-none text-white font-bold px-6 w-full shadow-lg hover:shadow-cyan-500/20 transition-all transform hover:-translate-y-0.5 h-10 md:h-auto z-50 pointer-events-auto">
-            {{ $t('profile.checkin_btn') }}
-          </a-button>
-        </div>
-      </div>
-      
-      <!-- Decorative circles -->
-      <div class="absolute -top-24 -right-24 w-64 h-64 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none"></div>
-      <div class="absolute -bottom-24 right-12 w-48 h-48 bg-cyan-500/10 rounded-full blur-2xl pointer-events-none"></div>
-    </div>
-    
-    <!-- Breakthrough Conditions Section Removed -->
+    <ProfileQuickActionsPanel
+      :title="$t('profile.quick_guide')"
+      :description="$t('profile.quick_guide_desc')"
+      :actions="quickActions"
+    />
 
-    <div class="bg-slate-500/50 backdrop-blur-md rounded-xl p-6 border border-slate-400/50 shadow-[0_4px_12px_rgba(0,0,0,0.2)]">
-      <h3 class="text-lg font-bold text-slate-200 mb-2 flex items-center drop-shadow-sm">
-        <Activity :size="20" class="mr-2 text-cyan-400 drop-shadow-[0_0_5px_rgba(56,189,248,0.5)]" /> {{ $t('profile.quick_guide') }}
-      </h3>
-      <p class="text-slate-400 mb-4">{{ $t('profile.quick_guide_desc') }}</p>
-      <div class="flex flex-wrap gap-3">
-        <a-button type="primary" @click="$router.push('/custom-features')" class="bg-gradient-to-r from-indigo-600 to-cyan-700 border-none hover:from-indigo-500 hover:to-cyan-600 shadow-md">
-          <Zap :size="16" class="mr-1 inline" /> {{ $t('profile.go_to_lab') }}
-        </a-button>
-        <a-button type="default" @click="$router.push('/my-submissions')" class="bg-slate-500 text-cyan-300 border-cyan-500/30 hover:text-cyan-200 hover:border-cyan-400 shadow-md">
-          <Bookmark :size="16" class="mr-1 inline" /> {{ $t('menu.my_submissions') }}
-        </a-button>
-        <a-button type="default" @click="$router.push('/my-favorites')" class="bg-slate-500 text-amber-300 border-amber-500/30 hover:text-amber-200 hover:border-amber-400 shadow-md">
-          <Star :size="16" class="mr-1 inline" /> {{ $t('menu.my_favorites') }}
-        </a-button>
-        <a-button type="default" @click="openRedeemCreditsModal" class="bg-slate-500 text-emerald-300 border-emerald-500/30 hover:text-emerald-200 hover:border-emerald-400 shadow-md">
-          <Wallet :size="16" class="mr-1 inline" /> 返佣兑灵石
-        </a-button>
-        <a-button type="default" @click="openRedeemMembershipModal" class="bg-slate-500 text-violet-300 border-violet-500/30 hover:text-violet-200 hover:border-violet-400 shadow-md">
-          <Award :size="16" class="mr-1 inline" /> 返佣兑身份
-        </a-button>
-        <a-button type="default" @click="handleBindPasswordModalOpen" class="bg-slate-500 text-indigo-300 border-indigo-500/30 hover:text-indigo-200 hover:border-indigo-400 shadow-md">
-          <Lock :size="16" class="mr-1 inline" /> {{ authStore.user?.username ? $t('profile.change_password') : $t('profile.set_password') }}
-        </a-button>
-      </div>
-    </div>
-
-    <!-- 宗门炼丹炉状态 (Queue Status) -->
-    <div class="bg-slate-500/40 rounded-xl p-5 border border-slate-400/50 mt-4 backdrop-blur-md shadow-[0_4px_16px_rgba(0,0,0,0.2)]">
-      <div class="flex items-center gap-3 mb-4">
-        <div class="p-2 bg-cyan-500/20 rounded-xl border border-cyan-500/30">
-          <Server class="w-5 h-5 text-cyan-400 drop-shadow-[0_0_5px_rgba(56,189,248,0.5)]" />
-        </div>
-        <h3 class="text-lg font-bold text-slate-200 drop-shadow-sm">{{ t('profile.queue_status_title', '炼丹炉状态') }}</h3>
-        
-        <div class="ml-auto flex items-center gap-2">
-          <!-- 刷新按钮 -->
-          <button @click="fetchQueueStatus" 
-                  class="p-1.5 rounded-lg text-cyan-400 hover:bg-cyan-500/20 transition-all border border-transparent hover:border-cyan-500/30 flex items-center justify-center cursor-pointer"
-                  :disabled="queueStatus.loading"
-                  :title="t('profile.refresh_queue', '刷新')">
-            <RefreshCw class="w-4 h-4" :class="{ 'animate-spin': queueStatus.loading }" />
-          </button>
-          
-          <!-- 在线状态指示器 -->
-          <div class="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border"
-               :class="queueStatus.data.comfy_online ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 'bg-rose-500/10 text-rose-400 border-rose-500/20'">
-            <div class="w-1.5 h-1.5 rounded-full" :class="queueStatus.data.comfy_online ? 'bg-emerald-400 animate-pulse shadow-[0_0_5px_rgba(16,185,129,0.8)]' : 'bg-rose-400'"></div>
-            {{ queueStatus.data.comfy_online ? t('profile.online', '运行中') : t('profile.offline', '休息中') }}
-          </div>
-        </div>
-      </div>
-
-      <!-- 加载状态 -->
-      <div v-if="queueStatus.isFirstLoad && queueStatus.loading" class="flex justify-center py-6">
-        <svg class="animate-spin h-6 w-6 text-cyan-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-        </svg>
-      </div>
-      
-      <div v-else class="space-y-3">
-        <div class="flex justify-between items-center bg-slate-800/50 p-3 rounded-xl border border-slate-600/50">
-          <div class="flex items-center gap-2 text-slate-300">
-            <Activity class="w-4 h-4 text-indigo-400" />
-            <span class="text-sm font-medium">{{ t('profile.total_queue', '总排队任务') }}</span>
-          </div>
-          <span class="text-lg font-bold text-slate-100">{{ queueStatus.data.queue_size }} <span class="text-xs text-slate-400 font-normal">{{ t('profile.tasks_unit', '个') }}</span></span>
-        </div>
-
-        <!-- 任务类型分布 -->
-        <div v-if="Object.keys(queueStatus.data.queue_by_type || {}).length > 0" class="grid grid-cols-2 gap-2 mt-2">
-          <div v-for="(count, type) in queueStatus.data.queue_by_type" :key="type"
-               class="flex flex-col bg-slate-800/30 p-2.5 rounded-lg border border-slate-700/50">
-            <span class="text-xs text-slate-400 mb-1 truncate">{{ resolveQueueTaskTypeLabel(type) }}</span>
-            <span class="text-sm font-bold text-slate-200">{{ count }} {{ t('profile.tasks_unit', '个') }}</span>
-          </div>
-        </div>
-      </div>
-    </div>
+    <ProfileQueueStatusPanel
+      :queue-status="queueStatus"
+      :resolve-queue-task-type-label="resolveQueueTaskTypeLabel"
+      :fetch-queue-status="fetchQueueStatus"
+    />
 
     <div>
       <h2 class="text-xl font-bold text-slate-200 mb-4 flex items-center drop-shadow-sm">
@@ -249,55 +176,7 @@ onMounted(async () => {
         {{ $t('profile.stats') }}
       </h2>
       
-      <div class="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
-        <a-card hoverable class="rounded-xl border border-slate-400/50 bg-slate-500/40 backdrop-blur-md shadow-[0_4px_16px_rgba(0,0,0,0.2)] hover:border-cyan-500/30 hover:shadow-[0_8px_24px_rgba(56,189,248,0.1)] transition-all group">
-          <div class="flex items-center flex-col md:flex-row text-center md:text-left">
-            <div class="w-10 h-10 md:w-12 md:h-12 bg-slate-500/50 border border-slate-400 text-cyan-400 rounded-full flex items-center justify-center mb-2 md:mb-0 md:mr-4 group-hover:scale-110 transition-transform group-hover:shadow-[0_0_12px_rgba(56,189,248,0.4)]">
-              <User :size="isMobile ? 20 : 24" />
-            </div>
-            <div>
-              <p class="text-slate-400 text-xs md:text-sm mb-1">{{ $t('profile.system_id') }}</p>
-              <h3 class="text-lg md:text-xl font-bold text-slate-100 drop-shadow-sm">{{ authStore.user?.telegram_id || authStore.user?.id || '---' }}</h3>
-            </div>
-          </div>
-        </a-card>
-
-        <a-card hoverable class="rounded-xl border border-slate-400/50 bg-slate-500/40 backdrop-blur-md shadow-[0_4px_16px_rgba(0,0,0,0.2)] hover:border-indigo-500/30 hover:shadow-[0_8px_24px_rgba(99,102,241,0.1)] transition-all group">
-          <div class="flex items-center flex-col md:flex-row text-center md:text-left">
-            <div class="w-10 h-10 md:w-12 md:h-12 bg-slate-500/50 border border-slate-400 text-indigo-400 rounded-full flex items-center justify-center mb-2 md:mb-0 md:mr-4 group-hover:scale-110 transition-transform group-hover:shadow-[0_0_12px_rgba(99,102,241,0.4)]">
-              <Zap :size="isMobile ? 20 : 24" />
-            </div>
-            <div>
-              <p class="text-slate-400 text-xs md:text-sm mb-1">{{ $t('profile.generations') }}</p>
-              <h3 class="text-lg md:text-xl font-bold text-slate-100 drop-shadow-sm">{{ authStore.user?.generation_count || 0 }} {{ $t('profile.times_unit') }}</h3>
-            </div>
-          </div>
-        </a-card>
-
-        <a-card hoverable class="rounded-xl border border-slate-400/50 bg-slate-500/40 backdrop-blur-md shadow-[0_4px_16px_rgba(0,0,0,0.2)] hover:border-emerald-500/30 hover:shadow-[0_8px_24px_rgba(16,185,129,0.1)] transition-all group">
-          <div class="flex items-center flex-col md:flex-row text-center md:text-left">
-            <div class="w-10 h-10 md:w-12 md:h-12 bg-slate-500/50 border border-slate-400 text-emerald-400 rounded-full flex items-center justify-center mb-2 md:mb-0 md:mr-4 group-hover:scale-110 transition-transform group-hover:shadow-[0_0_12px_rgba(16,185,129,0.4)]">
-              <CalendarCheck :size="isMobile ? 20 : 24" />
-            </div>
-            <div>
-              <p class="text-slate-400 text-xs md:text-sm mb-1">{{ $t('profile.checkins') }}</p>
-              <h3 class="text-lg md:text-xl font-bold text-slate-100 drop-shadow-sm">{{ authStore.user?.checkin_count || 0 }} {{ $t('profile.days_unit') }}</h3>
-            </div>
-          </div>
-        </a-card>
-
-        <a-card hoverable class="rounded-xl border border-slate-400/50 bg-slate-500/40 backdrop-blur-md shadow-[0_4px_16px_rgba(0,0,0,0.2)] hover:border-amber-500/30 hover:shadow-[0_8px_24px_rgba(245,158,11,0.1)] transition-all group">
-          <div class="flex items-center flex-col md:flex-row text-center md:text-left">
-            <div class="w-10 h-10 md:w-12 md:h-12 bg-slate-500/50 border border-slate-400 text-amber-400 rounded-full flex items-center justify-center mb-2 md:mb-0 md:mr-4 group-hover:scale-110 transition-transform group-hover:shadow-[0_0_12px_rgba(245,158,11,0.4)]">
-              <Award :size="isMobile ? 20 : 24" />
-            </div>
-            <div>
-              <p class="text-slate-400 text-xs md:text-sm mb-1">{{ $t('profile.priority') }}</p>
-              <h3 class="text-lg md:text-xl font-bold text-slate-100 drop-shadow-sm">{{ authStore.user?.priority || 0 }}</h3>
-            </div>
-          </div>
-        </a-card>
-      </div>
+      <ProfileMetricCards :items="statsCards" :icon-size="isMobile ? 20 : 24" />
     </div>
     
     <div class="mt-8">
@@ -306,92 +185,7 @@ onMounted(async () => {
         {{ $t('profile.promotion_details') }}
       </h2>
       
-      <div class="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-5 gap-3 md:gap-4">
-        <a-card hoverable class="rounded-xl border border-slate-400/50 bg-slate-500/40 backdrop-blur-md shadow-[0_4px_16px_rgba(0,0,0,0.2)] hover:border-cyan-500/30 hover:shadow-[0_8px_24px_rgba(56,189,248,0.1)] transition-all group">
-          <div class="flex items-center flex-col md:flex-row text-center md:text-left">
-            <div class="w-10 h-10 md:w-12 md:h-12 bg-slate-500/50 border border-slate-400 text-cyan-400 rounded-full flex items-center justify-center mb-2 md:mb-0 md:mr-4 group-hover:scale-110 transition-transform group-hover:shadow-[0_0_12px_rgba(56,189,248,0.4)]">
-              <User :size="isMobile ? 20 : 24" />
-            </div>
-            <div>
-              <p class="text-slate-400 text-xs md:text-sm mb-1">{{ $t('profile.invitations') }}</p>
-              <h3 class="text-lg md:text-xl font-bold text-slate-100 drop-shadow-sm">{{ authStore.user?.invitation_count || 0 }} {{ $t('profile.people_unit') }}</h3>
-            </div>
-          </div>
-        </a-card>
-
-        <a-card hoverable class="rounded-xl border border-slate-400/50 bg-slate-500/40 backdrop-blur-md shadow-[0_4px_16px_rgba(0,0,0,0.2)] hover:border-indigo-500/30 hover:shadow-[0_8px_24px_rgba(99,102,241,0.1)] transition-all group">
-          <div class="flex items-center flex-col md:flex-row text-center md:text-left">
-            <div class="w-10 h-10 md:w-12 md:h-12 bg-slate-500/50 border border-slate-400 text-indigo-400 rounded-full flex items-center justify-center mb-2 md:mb-0 md:mr-4 group-hover:scale-110 transition-transform group-hover:shadow-[0_0_12px_rgba(99,102,241,0.4)]">
-              <Activity :size="isMobile ? 20 : 24" />
-            </div>
-            <div>
-              <p class="text-slate-400 text-xs md:text-sm mb-1">{{ $t('profile.invited_recharge_ton') }}</p>
-              <h3 class="text-lg md:text-xl font-bold text-slate-100 drop-shadow-sm">{{ authStore.user?.invitation_recharge?.total_ton || 0 }} TON</h3>
-            </div>
-          </div>
-        </a-card>
-
-        <a-card hoverable class="rounded-xl border border-slate-400/50 bg-slate-500/40 backdrop-blur-md shadow-[0_4px_16px_rgba(0,0,0,0.2)] hover:border-emerald-500/30 hover:shadow-[0_8px_24px_rgba(16,185,129,0.1)] transition-all group">
-          <div class="flex items-center flex-col md:flex-row text-center md:text-left">
-            <div class="w-10 h-10 md:w-12 md:h-12 bg-slate-500/50 border border-slate-400 text-emerald-400 rounded-full flex items-center justify-center mb-2 md:mb-0 md:mr-4 group-hover:scale-110 transition-transform group-hover:shadow-[0_0_12px_rgba(16,185,129,0.4)]">
-              <Wallet :size="isMobile ? 20 : 24" />
-            </div>
-            <div>
-              <p class="text-slate-400 text-xs md:text-sm mb-1">{{ $t('profile.invited_recharge_cny') }}</p>
-              <h3 class="text-lg md:text-xl font-bold text-slate-100 drop-shadow-sm">¥ {{ authStore.user?.invitation_recharge?.total_rmb || 0 }}</h3>
-            </div>
-          </div>
-        </a-card>
-
-        <a-card hoverable class="rounded-xl border border-slate-400/50 bg-slate-500/40 backdrop-blur-md shadow-[0_4px_16px_rgba(0,0,0,0.2)] hover:border-amber-500/30 hover:shadow-[0_8px_24px_rgba(245,158,11,0.1)] transition-all group">
-          <div class="flex items-center flex-col md:flex-row text-center md:text-left">
-            <div class="w-10 h-10 md:w-12 md:h-12 bg-slate-500/50 border border-slate-400 text-amber-400 rounded-full flex items-center justify-center mb-2 md:mb-0 md:mr-4 group-hover:scale-110 transition-transform group-hover:shadow-[0_0_12px_rgba(245,158,11,0.4)]">
-              <Zap :size="isMobile ? 20 : 24" />
-            </div>
-            <div>
-              <p class="text-slate-400 text-xs md:text-sm mb-1">{{ $t('profile.invited_recharge_stars') }}</p>
-              <h3 class="text-lg md:text-xl font-bold text-slate-100 drop-shadow-sm">{{ authStore.user?.invitation_recharge?.total_stars || 0 }} ⭐</h3>
-            </div>
-          </div>
-        </a-card>
-
-        <a-card hoverable class="col-span-2 sm:col-span-2 lg:col-span-1 rounded-xl border border-slate-400/50 bg-slate-500/40 backdrop-blur-md shadow-[0_4px_16px_rgba(0,0,0,0.2)] hover:border-rose-500/30 hover:shadow-[0_8px_24px_rgba(244,63,94,0.1)] transition-all group relative overflow-hidden">
-          <div class="absolute top-0 right-0 -mr-2 -mt-2 w-16 h-16 bg-gradient-to-br from-rose-400 to-orange-500 rounded-full opacity-20 blur-xl"></div>
-          <div class="flex items-center flex-col md:flex-row text-center md:text-left relative z-10">
-            <div class="w-10 h-10 md:w-12 md:h-12 bg-rose-500/20 border border-rose-500/50 text-rose-400 rounded-full flex items-center justify-center mb-2 md:mb-0 md:mr-4 group-hover:scale-110 transition-transform group-hover:shadow-[0_0_15px_rgba(244,63,94,0.5)]">
-              <span class="font-bold text-xl">$</span>
-            </div>
-            <div>
-              <p class="text-rose-300 font-medium text-xs md:text-sm mb-1 drop-shadow-sm">历史累计返佣</p>
-              <h3 class="text-lg md:text-xl font-bold text-rose-100 drop-shadow-md">$ {{ totalCommissionUsdt }} USDT</h3>
-            </div>
-          </div>
-        </a-card>
-
-        <a-card hoverable class="col-span-2 sm:col-span-1 lg:col-span-1 rounded-xl border border-slate-400/50 bg-slate-500/40 backdrop-blur-md shadow-[0_4px_16px_rgba(0,0,0,0.2)] hover:border-amber-500/30 hover:shadow-[0_8px_24px_rgba(245,158,11,0.1)] transition-all group">
-          <div class="flex items-center flex-col md:flex-row text-center md:text-left">
-            <div class="w-10 h-10 md:w-12 md:h-12 bg-amber-500/20 border border-amber-500/50 text-amber-400 rounded-full flex items-center justify-center mb-2 md:mb-0 md:mr-4 group-hover:scale-110 transition-transform group-hover:shadow-[0_0_12px_rgba(245,158,11,0.4)]">
-              <Wallet :size="isMobile ? 20 : 24" />
-            </div>
-            <div>
-              <p class="text-slate-400 text-xs md:text-sm mb-1">已兑换返佣</p>
-              <h3 class="text-lg md:text-xl font-bold text-slate-100 drop-shadow-sm">$ {{ spentCommissionUsdt }} USDT</h3>
-            </div>
-          </div>
-        </a-card>
-
-        <a-card hoverable class="col-span-2 sm:col-span-1 lg:col-span-1 rounded-xl border border-slate-400/50 bg-slate-500/40 backdrop-blur-md shadow-[0_4px_16px_rgba(0,0,0,0.2)] hover:border-emerald-500/30 hover:shadow-[0_8px_24px_rgba(16,185,129,0.1)] transition-all group">
-          <div class="flex items-center flex-col md:flex-row text-center md:text-left">
-            <div class="w-10 h-10 md:w-12 md:h-12 bg-emerald-500/20 border border-emerald-500/50 text-emerald-400 rounded-full flex items-center justify-center mb-2 md:mb-0 md:mr-4 group-hover:scale-110 transition-transform group-hover:shadow-[0_0_12px_rgba(16,185,129,0.4)]">
-              <Wallet :size="isMobile ? 20 : 24" />
-            </div>
-            <div>
-              <p class="text-slate-400 text-xs md:text-sm mb-1">当前可兑换返佣</p>
-              <h3 class="text-lg md:text-xl font-bold text-slate-100 drop-shadow-sm">$ {{ availableCommissionUsdt }} USDT</h3>
-            </div>
-          </div>
-        </a-card>
-      </div>
+      <ProfileMetricCards :items="promotionCards" :icon-size="isMobile ? 20 : 24" />
     </div>
 
     <ProfileRedeemOverlays

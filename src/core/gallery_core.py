@@ -7,27 +7,31 @@ from typing import Any, Callable
 from sqlalchemy import desc, func, select
 from sqlalchemy.orm import selectinload
 
-from src.database.core import AsyncSessionLocal
 from src.database.models import GalleryPost, History, User, UserInteraction
-from src.constants import MODE_NAME_MAP
-from src.core.media_processor import generate_and_upload_thumbnail
-from src.core.media_paths import (
-    build_history_r2_media_key,
-    build_history_r2_thumbnail_key,
-    resolve_storage_object,
+from src.constants import MODE_IMAGE_TO_VIDEO, MODE_NAME_MAP
+from src.core.gallery_core_dependencies import (
+    get_gallery_session_factory,
+    get_gallery_submission_outbox,
+)
+from src.core.gallery_submission_effects import (
+    build_gallery_submit_side_effects,
 )
 
 logger = logging.getLogger(__name__)
 
-ALLOWED_WEB_SUBMIT_TYPES = [
-    "i2i_pro",
-    "i2i_draw",
-    "custom_video",
-    "video_lora",
-    "ltx_video",
-    "edit",
-    "img2img_lora",
-]
+ALLOWED_WEB_SUBMIT_TYPES = list(
+    dict.fromkeys(
+        [
+            "i2i_pro",
+            "i2i_draw",
+            "custom_video",
+            MODE_IMAGE_TO_VIDEO,
+            "ltx_video",
+            "edit",
+            "img2img_lora",
+        ]
+    )
+)
 
 
 class GalleryCoreError(Exception):
@@ -43,72 +47,6 @@ class GallerySubmitOutcome:
     payload: dict
     side_effects: list[tuple[object, tuple[object, ...]]]
 
-
-def _get_gallery_storage_service():
-    from src.services.storage import storage as storage_impl
-
-    return storage_impl
-
-
-def _get_gallery_submission_outbox():
-    from src.services.redis_client import redis_client as redis_client_impl
-
-    return redis_client_impl
-
-
-def _get_gallery_session_factory():
-    return AsyncSessionLocal
-
-
-async def async_copy_to_r2_background(
-    bucket_name: str,
-    object_name: str,
-    r2_object_name: str,
-    *,
-    copy_to_r2_func=None,
-    storage_service=None,
-):
-    """Background task to copy file to R2."""
-    if copy_to_r2_func is None:
-        storage_service = storage_service or _get_gallery_storage_service()
-        copy_to_r2_func = storage_service.async_copy_to_r2
-    try:
-        await copy_to_r2_func(bucket_name, object_name, r2_object_name)
-    except Exception as e:
-        logger.error(f"Background task failed to copy {object_name} to R2: {e}")
-
-
-def build_gallery_submit_side_effects(
-    *,
-    task_id: str,
-    output_file: str,
-    media_type: str,
-    copy_to_r2_background_func=None,
-    generate_thumbnail_func=None,
-    resolve_storage_object_func=None,
-) -> list[tuple[object, tuple[object, ...]]]:
-    copy_to_r2_background_func = (
-        copy_to_r2_background_func or async_copy_to_r2_background
-    )
-    generate_thumbnail_func = (
-        generate_thumbnail_func or generate_and_upload_thumbnail
-    )
-    resolve_storage_object_func = resolve_storage_object_func or resolve_storage_object
-    bucket_name, object_name = resolve_storage_object_func(output_file)
-    r2_object_name = build_history_r2_media_key(task_id, output_file)
-    thumbnail_key = build_history_r2_thumbnail_key(task_id, media_type)
-    return [
-        (
-            copy_to_r2_background_func,
-            (bucket_name, object_name, r2_object_name),
-        ),
-        (
-            generate_thumbnail_func,
-            (output_file, media_type, thumbnail_key),
-        ),
-    ]
-
-
 async def process_submit_to_gallery_result(
     user_id: int,
     task_id: str,
@@ -122,9 +60,9 @@ async def process_submit_to_gallery_result(
     build_gallery_submit_side_effects_func=None,
 ) -> GallerySubmitOutcome:
     """Core logic for submitting a task to the gallery."""
-    session_factory = session_factory or _get_gallery_session_factory()
+    session_factory = session_factory or get_gallery_session_factory()
     gallery_submission_outbox = (
-        gallery_submission_outbox or _get_gallery_submission_outbox()
+        gallery_submission_outbox or get_gallery_submission_outbox()
     )
     check_gallery_submit_limit_func = (
         check_gallery_submit_limit_func
@@ -270,7 +208,7 @@ async def toggle_like(
     session_factory: Callable[[], Any] | None = None,
 ) -> dict:
     """Core logic for toggling like/dislike on a gallery post."""
-    session_factory = session_factory or _get_gallery_session_factory()
+    session_factory = session_factory or get_gallery_session_factory()
     if action not in ["like", "dislike"]:
         raise GalleryCoreError("无效的操作类型")
 
@@ -424,7 +362,7 @@ async def record_apply_interaction(
     from sqlalchemy.dialects.postgresql import insert
     from sqlalchemy import update
 
-    session_factory = session_factory or _get_gallery_session_factory()
+    session_factory = session_factory or get_gallery_session_factory()
 
     async with session_factory() as session:
         try:
@@ -465,7 +403,7 @@ async def get_gallery_feed(
     Core logic to fetch paginated gallery feed.
     Returns (posts, total_count).
     """
-    session_factory = session_factory or _get_gallery_session_factory()
+    session_factory = session_factory or get_gallery_session_factory()
 
     async with session_factory() as session:
         query = select(GalleryPost)
@@ -491,7 +429,7 @@ async def get_gallery_feed(
             elif category == "custvid":
                 query = query.where(History.type == "custom_video")
             elif category == "vidlora":
-                query = query.where(History.type == "video_lora")
+                query = query.where(History.type == MODE_IMAGE_TO_VIDEO)
             elif category == "ltxvid":
                 query = query.where(History.type == "ltx_video")
 

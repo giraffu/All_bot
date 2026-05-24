@@ -5,6 +5,7 @@ from telegram.ext import ContextTypes
 
 from src.constants import MODE_FACE_VIDEO_STEP1
 from src.core.video_billing import normalize_requested_duration_seconds
+from src.services.permission_service import permission_service
 from src.services.task_service_entrypoints_common import resolve_internal_user_id
 from src.services.task_service_entrypoint_support import (
     build_cleanup_paths,
@@ -17,6 +18,8 @@ from src.services.task_service_message_support import (
     build_message_spec,
     build_status_message,
 )
+from src.services.task_service_flow import run_bot_task_flow
+from src.services.task_service_support import get_acceleration_notice
 from src.services.task_service_types import BotTaskRuntimeState
 
 
@@ -43,7 +46,10 @@ async def process_ltx_video_task(
     duration = context.user_data.get("ltx_video_duration", "5s")
 
     runtime_state = BotTaskRuntimeState()
-    notice = await service._get_acceleration_notice(internal_user_id)
+    notice = await get_acceleration_notice(
+        internal_user_id,
+        quota_manager=permission_service.quota_manager,
+    )
     message_spec = build_message_spec(
         initial_status_text=build_status_message(
             f"🚀 正在处理高级图生视频任务 (画质:{resolution}, 时长:{duration})",
@@ -66,7 +72,7 @@ async def process_ltx_video_task(
         duration_transform=normalize_requested_duration_seconds,
     )
 
-    return await service._run_bot_task_flow(
+    return await run_bot_task_flow(
         context=context,
         update=update,
         chat_id=chat_id,
@@ -94,6 +100,7 @@ async def process_ltx_video_task(
         unexpected_error_prefix="出错了",
         cleanup_paths=build_cleanup_paths([image_path]),
         cleanup_enabled=cleanup,
+        cleanup_files_func=service._cleanup_files,
     )
 
 
@@ -117,7 +124,10 @@ async def process_face_video_task(
 
     mode = MODE_FACE_VIDEO_STEP1
     runtime_state = BotTaskRuntimeState(actual_cost=cost)
-    notice = await service._get_acceleration_notice(internal_user_id)
+    notice = await get_acceleration_notice(
+        internal_user_id,
+        quota_manager=permission_service.quota_manager,
+    )
     message_spec = build_message_spec(
         initial_status_text=build_status_message(
             f"🚀 正在处理视频换脸任务 (画质:{resolution}p)",
@@ -139,9 +149,8 @@ async def process_face_video_task(
         include_requested_duration=False,
     )
 
-    return await service._run_bot_task_flow(
+    return await run_bot_task_flow(
         context=context,
-        update=None,
         chat_id=chat_id,
         status_msg_id=message_id,
         runtime_state=runtime_state,
@@ -168,4 +177,6 @@ async def process_face_video_task(
         unexpected_error_prefix="系统错误",
         cleanup_paths=build_cleanup_paths([face_image_path, video_path]),
         cleanup_enabled=cleanup,
+        cleanup_files_func=service._cleanup_files,
+        update=None,
     )

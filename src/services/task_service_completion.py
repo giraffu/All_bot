@@ -148,7 +148,7 @@ async def download_and_log_task_output(
     billing_resolution: Optional[str],
     requested_duration: Optional[int],
 ):
-    from src.core.task_core import persist_successful_task_result
+    from src.core.task_core_persistence import persist_successful_task_result
 
     persistence_result = await persist_successful_task_result(
         backend_task_id=task_id,

@@ -1,3 +1,4 @@
+from functools import partial
 from unittest.mock import AsyncMock
 
 import pytest
@@ -6,6 +7,7 @@ from fastapi import HTTPException
 from app import main as backend_main
 from app import main_response_helpers
 from app import main_simple_task_routes
+from app import main_status_result_routes
 from app import main_t2i_helpers as t2i_helpers
 from app.models import TaskType
 
@@ -47,6 +49,10 @@ def test_prepare_t2i_request_payload_validates_prompt_and_builds_params(monkeypa
 
 
 def test_build_t2i_terminal_response_returns_done_payload():
+    build_result_url = lambda result_path: main_response_helpers.build_result_url(
+        result_path=result_path,
+        settings=backend_main.settings,
+    )
     response = t2i_helpers.build_t2i_terminal_response(
         task_id="task-1",
         status="done",
@@ -54,15 +60,19 @@ def test_build_t2i_terminal_response_returns_done_payload():
         error_msg=None,
         request_id="req-1",
         response_cls=backend_main.T2ITaskResponse,
-        build_result_url_func=backend_main._build_result_url,
+        build_result_url_func=build_result_url,
         logger=backend_main.logger,
     )
 
     assert response.task_id == "task-1"
-    assert response.image_url == backend_main._build_result_url("foo/bar.png")
+    assert response.image_url == build_result_url("foo/bar.png")
 
 
 def test_build_t2i_terminal_response_raises_for_error_status():
+    build_result_url = lambda result_path: main_response_helpers.build_result_url(
+        result_path=result_path,
+        settings=backend_main.settings,
+    )
     with pytest.raises(HTTPException) as exc_info:
         t2i_helpers.build_t2i_terminal_response(
             task_id="task-2",
@@ -71,7 +81,7 @@ def test_build_t2i_terminal_response_raises_for_error_status():
             error_msg="worker failed",
             request_id="req-2",
             response_cls=backend_main.T2ITaskResponse,
-            build_result_url_func=backend_main._build_result_url,
+            build_result_url_func=build_result_url,
             logger=backend_main.logger,
         )
 
@@ -88,6 +98,17 @@ def test_decode_t2i_pubsub_message_ignores_invalid_json():
 
 @pytest.mark.asyncio
 async def test_get_immediate_t2i_terminal_response_returns_done_payload():
+    build_result_url = lambda result_path: main_response_helpers.build_result_url(
+        result_path=result_path,
+        settings=backend_main.settings,
+    )
+    build_terminal_response = partial(
+        t2i_helpers.build_t2i_terminal_response,
+        response_cls=backend_main.T2ITaskResponse,
+        build_result_url_func=build_result_url,
+        logger=backend_main.logger,
+    )
+
     class FakeQueueManager:
         async def get_task_status(self, task_id):
             assert task_id == "task-1"
@@ -97,12 +118,12 @@ async def test_get_immediate_t2i_terminal_response_returns_done_payload():
         queue_manager=FakeQueueManager(),
         task_id="task-1",
         request_id="req-1",
-        build_terminal_response_func=backend_main._build_t2i_terminal_response_func,
+        build_terminal_response_func=build_terminal_response,
     )
 
     assert response is not None
     assert response.task_id == "task-1"
-    assert response.image_url == backend_main._build_result_url("foo/bar.png")
+    assert response.image_url == build_result_url("foo/bar.png")
 
 
 @pytest.mark.asyncio
@@ -237,15 +258,36 @@ async def test_submit_t2i_task_request_waits_for_sync_result():
     )
 
 
+@pytest.mark.asyncio
+async def test_create_t2i_pornmaster_turbo_task_reraises_prompt_http_error(monkeypatch):
+    invalid_prompt_error = HTTPException(status_code=400, detail="bad prompt")
+    queue_manager = object()
+
+    monkeypatch.setattr(
+        backend_main,
+        "prepare_t2i_request_payload_helper",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(invalid_prompt_error),
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        await backend_main.create_t2i_pornmaster_turbo_task(
+            request={"prompt": ""},
+            queue_manager=queue_manager,
+            _token="token",
+        )
+
+    assert exc_info.value is invalid_prompt_error
+
+
 def test_simple_task_type_map_keeps_video_lora_compatibility():
-    assert backend_main.SIMPLE_TASK_TYPE_MAP["video_lora"] == TaskType.VIDEO_EDIT
-    assert backend_main.SIMPLE_TASK_TYPE_MAP["img2img"] == TaskType.IMG2IMG
+    assert main_simple_task_routes.SIMPLE_TASK_TYPE_MAP["video_lora"] == TaskType.VIDEO_EDIT
+    assert main_simple_task_routes.SIMPLE_TASK_TYPE_MAP["img2img"] == TaskType.IMG2IMG
 
 
 def test_simple_task_route_specs_cover_expected_paths_and_handlers():
     specs_by_path = {
         path: (request_model_cls, task_key, handler_name)
-        for path, request_model_cls, task_key, handler_name in backend_main.SIMPLE_TASK_ROUTE_SPECS
+        for path, request_model_cls, task_key, handler_name in main_simple_task_routes.SIMPLE_TASK_ROUTE_SPECS
     }
 
     assert specs_by_path["/comfy_img2img"][1:] == ("img2img", "create_img2img_task")
@@ -263,7 +305,7 @@ def test_simple_task_routes_are_registered_with_stable_endpoint_names():
     routes_by_path = {
         route.path: route.endpoint.__name__
         for route in backend_main.app.routes
-        if route.path in {path for path, *_rest in backend_main.SIMPLE_TASK_ROUTE_SPECS}
+        if route.path in {path for path, *_rest in main_simple_task_routes.SIMPLE_TASK_ROUTE_SPECS}
     }
 
     assert routes_by_path["/comfy_img2img"] == "create_img2img_task"
@@ -274,11 +316,11 @@ def test_simple_task_routes_are_registered_with_stable_endpoint_names():
 def test_task_status_and_result_route_specs_cover_expected_handlers():
     status_specs = {
         path: (include_image_url, include_task_type, handler_name)
-        for path, include_image_url, include_task_type, handler_name in backend_main.TASK_STATUS_ROUTE_SPECS
+        for path, include_image_url, include_task_type, handler_name in main_status_result_routes.TASK_STATUS_ROUTE_SPECS
     }
     result_specs = {
         path: (ready_error_detail, handler_name)
-        for path, ready_error_detail, handler_name in backend_main.TASK_RESULT_ROUTE_SPECS
+        for path, ready_error_detail, handler_name in main_status_result_routes.TASK_RESULT_ROUTE_SPECS
     }
 
     assert status_specs["/api/v1/tasks/{task_id}"] == (True, False, "get_task_status_v1")
@@ -289,8 +331,8 @@ def test_task_status_and_result_route_specs_cover_expected_handlers():
 
 def test_task_status_and_result_routes_keep_stable_endpoint_names():
     expected_paths = {
-        *(path for path, *_rest in backend_main.TASK_STATUS_ROUTE_SPECS),
-        *(path for path, *_rest in backend_main.TASK_RESULT_ROUTE_SPECS),
+        *(path for path, *_rest in main_status_result_routes.TASK_STATUS_ROUTE_SPECS),
+        *(path for path, *_rest in main_status_result_routes.TASK_RESULT_ROUTE_SPECS),
     }
     routes_by_path = {
         route.path: route.endpoint.__name__

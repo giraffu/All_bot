@@ -8,7 +8,7 @@ Web API 应直接调用 `src/core/task_core.py` 提供的业务门面 (Facade)�
 import contextlib
 import logging
 import os
-from typing import Callable, List, Optional, Tuple
+from typing import List, Optional, Tuple
 
 from telegram import InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
@@ -22,10 +22,6 @@ from src.constants import (
     MODE_UNDRESS_TONGUE,
     TMP_DIR,
 )
-from src.services.task_service_support import (
-    get_acceleration_notice,
-)
-from src.services.permission_service import permission_service
 from src.services.task_service_entrypoints import (
     process_custom_video_task as process_custom_video_task_entrypoint,
     process_face_video_task as process_face_video_task_entrypoint,
@@ -35,85 +31,15 @@ from src.services.task_service_entrypoints import (
     process_ltx_video_task as process_ltx_video_task_entrypoint,
     process_video_task_template as process_video_task_template_entrypoint,
 )
-from src.services.task_service_flow import run_bot_task_flow
 from src.services.task_service_message_support import (
     with_submitted_status,
 )
-from src.services.task_service_types import BotTaskMessageSpec, BotTaskRuntimeState
 
 logger = logging.getLogger(__name__)
 
 
 class TaskService:
     _with_submitted_status = staticmethod(with_submitted_status)
-
-    @staticmethod
-    async def _run_bot_task_flow(
-        *,
-        context,
-        chat_id,
-        runtime_state,
-        internal_user_id,
-        username,
-        task_type,
-        inputs,
-        prompt,
-        is_video,
-        message_spec: BotTaskMessageSpec,
-        update=None,
-        status_msg_id=None,
-        submitted_status_builder: Optional[Callable[[int], str]] = None,
-        source_post_id=None,
-        deduct_quota=True,
-        send_result=True,
-        reply_markup=None,
-        delete_status=True,
-        allow_contribute=True,
-        billing_resolution: Optional[str] = None,
-        requested_duration: Optional[int] = None,
-        missing_output_should_refund: bool = True,
-        prefer_edit_status=False,
-        refund_suffix_mode="if_refunded",
-        unexpected_should_refund: Optional[
-            Callable[[BotTaskRuntimeState], bool]
-        ] = None,
-        unexpected_error_log_message: str,
-        unexpected_error_prefix: str,
-        cleanup_paths: Optional[list[str]] = None,
-        cleanup_enabled: bool = True,
-    ) -> Tuple[Optional[bytes], Optional[str]]:
-        return await run_bot_task_flow(
-            context=context,
-            chat_id=chat_id,
-            runtime_state=runtime_state,
-            internal_user_id=internal_user_id,
-            username=username,
-            task_type=task_type,
-            inputs=inputs,
-            prompt=prompt,
-            is_video=is_video,
-            message_spec=message_spec,
-            update=update,
-            status_msg_id=status_msg_id,
-            submitted_status_builder=submitted_status_builder,
-            source_post_id=source_post_id,
-            deduct_quota=deduct_quota,
-            send_result=send_result,
-            reply_markup=reply_markup,
-            delete_status=delete_status,
-            allow_contribute=allow_contribute,
-            billing_resolution=billing_resolution,
-            requested_duration=requested_duration,
-            missing_output_should_refund=missing_output_should_refund,
-            prefer_edit_status=prefer_edit_status,
-            refund_suffix_mode=refund_suffix_mode,
-            unexpected_should_refund=unexpected_should_refund,
-            unexpected_error_log_message=unexpected_error_log_message,
-            unexpected_error_prefix=unexpected_error_prefix,
-            cleanup_paths=cleanup_paths,
-            cleanup_enabled=cleanup_enabled,
-            cleanup_files_func=TaskService._cleanup_files,
-        )
 
     @staticmethod
     async def process_ltx_video_task(
@@ -409,13 +335,5 @@ class TaskService:
             if path.startswith(TMP_DIR) and os.path.exists(path):
                 with contextlib.suppress(OSError):
                     os.remove(path)
-
-    @staticmethod
-    async def _get_acceleration_notice(user_id: int) -> str:
-        return await get_acceleration_notice(
-            user_id,
-            quota_manager=permission_service.quota_manager,
-        )
-
 
 task_service = TaskService()

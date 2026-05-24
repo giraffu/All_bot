@@ -650,7 +650,7 @@ async def test_process_generation_task_uses_finalize_task_cancellation(monkeypat
     cleanup_runtime = AsyncMock()
 
     monkeypatch.setattr(
-        "src.services.task_service.TaskService._get_acceleration_notice",
+        "src.services.task_service_entrypoints_generation.get_acceleration_notice",
         acceleration_notice,
     )
     monkeypatch.setattr(
@@ -702,7 +702,7 @@ async def test_process_generation_task_uses_finalize_task_cancellation(monkeypat
     )
 
     assert result == (None, None)
-    acceleration_notice.assert_awaited_once_with(456)
+    acceleration_notice.assert_awaited_once_with(456, quota_manager=ANY)
     finalize_cancel.assert_awaited_once()
     cleanup_runtime.assert_not_awaited()
 
@@ -720,7 +720,7 @@ async def test_process_generation_task_uses_finalize_task_failure(monkeypatch):
     send_message = AsyncMock()
 
     monkeypatch.setattr(
-        "src.services.task_service.TaskService._get_acceleration_notice",
+        "src.services.task_service_entrypoints_generation.get_acceleration_notice",
         AsyncMock(return_value=""),
     )
     monkeypatch.setattr(
@@ -799,7 +799,7 @@ async def test_process_ltx_video_task_uses_finalize_task_cancellation(monkeypatc
         AsyncMock(side_effect=fake_submit),
     )
     monkeypatch.setattr(
-        "src.services.task_service.TaskService._get_acceleration_notice",
+        "src.services.task_service_entrypoints_specialized.get_acceleration_notice",
         acceleration_notice,
     )
     monkeypatch.setattr(
@@ -837,7 +837,7 @@ async def test_process_ltx_video_task_uses_finalize_task_cancellation(monkeypatc
     )
 
     assert result == (None, None)
-    acceleration_notice.assert_awaited_once_with(456)
+    acceleration_notice.assert_awaited_once_with(456, quota_manager=ANY)
     finalize_cancel.assert_awaited_once()
     cleanup_runtime.assert_awaited_once()
 
@@ -858,11 +858,11 @@ async def test_process_video_task_template_entrypoint_uses_internal_user_id_for_
         AsyncMock(return_value=("512p", "5s", 512, 5)),
     )
     monkeypatch.setattr(
-        "src.services.task_service.TaskService._get_acceleration_notice",
+        "src.services.task_service_entrypoints_video.get_acceleration_notice",
         acceleration_notice,
     )
     monkeypatch.setattr(
-        "src.services.task_service.TaskService._run_bot_task_flow",
+        "src.services.task_service_entrypoints_video.run_bot_task_flow",
         run_bot_task_flow,
     )
     monkeypatch.setattr(
@@ -888,7 +888,7 @@ async def test_process_video_task_template_entrypoint_uses_internal_user_id_for_
     )
 
     assert result == (b"video-bytes", "task-video-template")
-    acceleration_notice.assert_awaited_once_with(456)
+    acceleration_notice.assert_awaited_once_with(456, quota_manager=ANY)
     submitted_status_builder = run_bot_task_flow.await_args.kwargs["submitted_status_builder"]
     assert "任务已提交，正在排队调度" in submitted_status_builder(6)
 
@@ -1021,7 +1021,7 @@ async def test_process_face_video_task_uses_finalize_task_failure(monkeypatch):
         AsyncMock(side_effect=fake_submit),
     )
     monkeypatch.setattr(
-        "src.services.task_service.TaskService._get_acceleration_notice",
+        "src.services.task_service_entrypoints_specialized.get_acceleration_notice",
         acceleration_notice,
     )
     monkeypatch.setattr(
@@ -1057,6 +1057,6 @@ async def test_process_face_video_task_uses_finalize_task_failure(monkeypatch):
     )
 
     assert result == (None, None)
-    acceleration_notice.assert_awaited_once_with(456)
+    acceleration_notice.assert_awaited_once_with(456, quota_manager=ANY)
     finalize_failure.assert_awaited_once()
     cleanup_runtime.assert_awaited_once()

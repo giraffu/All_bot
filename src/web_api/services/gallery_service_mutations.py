@@ -3,16 +3,9 @@ import logging
 from fastapi import HTTPException
 from sqlalchemy import delete, select, update
 
-from src.core.media_paths import (
-    build_history_r2_media_key,
-    build_history_r2_thumbnail_key,
-    build_legacy_r2_key,
-    build_thumbnail_object_name,
-    get_media_type_from_history,
-    resolve_storage_object,
-)
 from src.database.core import AsyncSessionLocal
 from src.database.models import GalleryComment, GalleryPost, History, User, UserInteraction
+from src.services.storage_r2_cleanup import build_history_r2_cleanup_keys
 from src.services.storage import storage
 from src.web_api.services.gallery_service_support import (
     call_gallery_service_with_optional_db,
@@ -103,19 +96,11 @@ async def delete_gallery_post(
     if history:
         history.is_public = False
         if history.output_file:
-            media_type = get_media_type_from_history(history.type)
-            _, object_name = resolve_storage_object(history.output_file)
-            thumb_object_name = build_thumbnail_object_name(object_name, media_type)
-            r2_cleanup_keys = {
-                key
-                for key in {
-                    build_history_r2_media_key(post.task_id, history.output_file),
-                    build_history_r2_thumbnail_key(post.task_id, media_type),
-                    build_legacy_r2_key(object_name),
-                    build_legacy_r2_key(thumb_object_name),
-                }
-                if key
-            }
+            r2_cleanup_keys = build_history_r2_cleanup_keys(
+                post.task_id,
+                history.output_file,
+                history.type,
+            )
     elif post.task_id:
         await db.execute(
             update(History)

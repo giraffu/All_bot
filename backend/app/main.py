@@ -7,10 +7,10 @@ from typing import Annotated, Optional
 from app.config import settings
 from app.dependencies import get_queue_manager
 from app.main_bootstrap import (
-    check_zombie_tasks_loop as check_zombie_tasks_loop_helper,
-    get_minio_client as get_minio_client_helper,
+    build_request_state_getter,
+    build_verify_token_dependency,
+    build_zombie_tasks_loop_runner,
     lifespan as lifespan_helper,
-    verify_token as verify_token_helper,
 )
 from app.models import (
     SystemStatusResponse,
@@ -45,14 +45,10 @@ from app.main_t2i_helpers import (
     wait_for_t2i_terminal_response as wait_for_t2i_terminal_response_helper,
 )
 from app.main_simple_task_routes import (
-    SIMPLE_TASK_ROUTE_SPECS as SIMPLE_TASK_ROUTE_SPECS_HELPER,
-    SIMPLE_TASK_TYPE_MAP as SIMPLE_TASK_TYPE_MAP_HELPER,
     enqueue_configured_task as enqueue_configured_task_helper,
     register_simple_task_routes,
 )
 from app.main_status_result_routes import (
-    TASK_RESULT_ROUTE_SPECS as TASK_RESULT_ROUTE_SPECS_HELPER,
-    TASK_STATUS_ROUTE_SPECS as TASK_STATUS_ROUTE_SPECS_HELPER,
     register_task_result_routes,
     register_task_status_routes,
 )
@@ -63,6 +59,7 @@ from fastapi import (
     Body,
     Depends,
     FastAPI,
+    HTTPException,
     Query,
     Request,
 )
@@ -81,7 +78,7 @@ async def lifespan(fastapi_app: FastAPI):
         fastapi_app=fastapi_app,
         settings=settings,
         logger=logger,
-        check_zombie_tasks_loop_func=check_zombie_tasks_loop,
+        check_zombie_tasks_loop_func=_check_zombie_tasks_loop,
         validate_workflows_func=validate_workflow_directory,
     ):
         yield
@@ -91,34 +88,21 @@ app = FastAPI(title="ComfyUI Middleware", lifespan=lifespan)
 app.add_middleware(CorrelationIdMiddleware, header_name="X-Trace-ID")
 app.include_router(agent.router)
 security = HTTPBearer()
-
-
-def get_minio_client(request: Request) -> Optional[Minio]:
-    return get_minio_client_helper(request)
-
-
-async def check_zombie_tasks_loop():
-    await check_zombie_tasks_loop_helper(
-        settings=settings,
-        queue_manager_cls=QueueManager,
-        logger=logger,
-    )
-
-
-async def verify_token(credentials: HTTPAuthorizationCredentials = Depends(security)):
-    return verify_token_helper(
-        credentials=credentials,
-        expected_token=settings.auth_token,
-    )
+get_minio_client = build_request_state_getter(attr_name="minio_client")
+_check_zombie_tasks_loop = build_zombie_tasks_loop_runner(
+    settings=settings,
+    queue_manager_cls=QueueManager,
+    logger=logger,
+)
+verify_token = build_verify_token_dependency(
+    expected_token=settings.auth_token,
+    security=security,
+)
 
 
 QueueManagerDep = Annotated[QueueManager, Depends(get_queue_manager)]
 AuthTokenDep = Annotated[str, Depends(verify_token)]
 MinioClientDep = Annotated[Optional[Minio], Depends(get_minio_client)]
-SIMPLE_TASK_ROUTE_SPECS = SIMPLE_TASK_ROUTE_SPECS_HELPER
-SIMPLE_TASK_TYPE_MAP = SIMPLE_TASK_TYPE_MAP_HELPER
-TASK_STATUS_ROUTE_SPECS = TASK_STATUS_ROUTE_SPECS_HELPER
-TASK_RESULT_ROUTE_SPECS = TASK_RESULT_ROUTE_SPECS_HELPER
 
 def _build_result_url(result_path: str) -> str:
     return build_result_url_helper(

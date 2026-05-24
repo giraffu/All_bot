@@ -231,6 +231,10 @@ async def _record_commission_with_user_lock(
 async def _load_membership_redeem_state(user_id: int) -> dict:
     async with DBSessionLocal() as session:
         user = await session.get(User, user_id)
+        available_balance = await affiliate_redeem_service.query_affiliate_available_balance(
+            session,
+            user_id,
+        )
         redeem_count = (
             await session.execute(
                 select(func.count(AffiliateRedeem.id)).where(
@@ -252,6 +256,7 @@ async def _load_membership_redeem_state(user_id: int) -> dict:
         return {
             "credits": int(user.credits or 0) if user else None,
             "identity": user.current_identity if user else None,
+            "available_balance_usdt": available_balance,
             "redeem_count": redeem_count,
             "out_count": out_count,
         }
@@ -514,7 +519,7 @@ async def test_affiliate_redeem_api_succeeds_with_real_auth_session_chain(monkey
         AsyncMock(return_value={"identity": "内门弟子", "group": "练气期"}),
     )
     monkeypatch.setattr(
-        "src.web_api.routers.users.invalidate_affiliate_redeem_cache_after_commit",
+        "src.web_api.services.user_affiliate_redeem_api_service.invalidate_affiliate_redeem_cache_after_commit",
         invalidate_mock,
     )
     monkeypatch.setattr(
@@ -589,6 +594,7 @@ async def test_affiliate_membership_redeem_succeeds_and_updates_identity(monkeyp
         assert state == {
             "credits": 400,
             "identity": "内门弟子",
+            "available_balance_usdt": Decimal("95.5882"),
             "redeem_count": 1,
             "out_count": 1,
         }
@@ -667,6 +673,43 @@ async def test_affiliate_membership_redeem_same_idempotency_different_option_con
         await _cleanup_redeem_fixture(user_id=fixture["user_id"])
 
 
+async def test_affiliate_membership_redeem_rolls_back_when_settlement_fails(
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        affiliate_redeem_service,
+        "invalidate_invitation_recharge_cache",
+        AsyncMock(),
+    )
+    monkeypatch.setattr("src.services.log_service.LogService.log_action", AsyncMock())
+    monkeypatch.setattr(
+        affiliate_redeem_service,
+        "apply_membership_settlement_in_session",
+        AsyncMock(side_effect=RuntimeError("settlement failed")),
+    )
+
+    fixture = await _create_redeem_fixture(_unique_suffix(), Decimal("100.0000"))
+
+    try:
+        with pytest.raises(RuntimeError, match="settlement failed"):
+            await _run_membership_redeem(
+                user_id=fixture["user_id"],
+                option_key="inner_30d",
+                idempotency_key="membership-rollback",
+            )
+
+        state = await _load_membership_redeem_state(fixture["user_id"])
+        assert state == {
+            "credits": 0,
+            "identity": "外门弟子",
+            "available_balance_usdt": Decimal("100.0000"),
+            "redeem_count": 0,
+            "out_count": 0,
+        }
+    finally:
+        await _cleanup_redeem_fixture(user_id=fixture["user_id"])
+
+
 async def test_affiliate_membership_redeem_api_succeeds_with_feature_flags(
     monkeypatch,
 ):
@@ -685,7 +728,7 @@ async def test_affiliate_membership_redeem_api_succeeds_with_feature_flags(
         AsyncMock(return_value={"identity": "内门弟子", "group": "练气期"}),
     )
     monkeypatch.setattr(
-        "src.web_api.routers.users.invalidate_affiliate_redeem_cache_after_commit",
+        "src.web_api.services.user_affiliate_redeem_api_service.invalidate_affiliate_redeem_cache_after_commit",
         invalidate_mock,
     )
     monkeypatch.setattr(
@@ -727,6 +770,7 @@ async def test_affiliate_membership_redeem_api_succeeds_with_feature_flags(
         assert state == {
             "credits": 400,
             "identity": "内门弟子",
+            "available_balance_usdt": Decimal("95.5882"),
             "redeem_count": 1,
             "out_count": 1,
         }

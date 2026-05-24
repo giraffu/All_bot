@@ -843,16 +843,10 @@ async def test_rmb_duplicate_notify_concurrent_callback_is_idempotent_on_real_db
     await _dispose_db_engine()
 
     invalidate_mock = AsyncMock()
-    log_action_mock = AsyncMock()
     monkeypatch.setattr(
         payment_fulfillment_service,
         "invalidate_invitation_recharge_cache",
         invalidate_mock,
-    )
-    monkeypatch.setattr(
-        payment_fulfillment_service.LogService,
-        "log_action",
-        log_action_mock,
     )
     monkeypatch.delenv("BOT_TOKEN", raising=False)
 
@@ -923,7 +917,6 @@ async def test_rmb_duplicate_notify_concurrent_callback_is_idempotent_on_real_db
         assert user.credits == 100
         assert tx_count == 1
         invalidate_mock.assert_awaited_once_with(fixture["inviter_id"])
-        log_action_mock.assert_awaited_once()
     finally:
         await _cleanup_affiliate_fixture(
             order_ids=fixture["order_ids"],

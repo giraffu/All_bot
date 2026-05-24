@@ -9,6 +9,7 @@ import { useTaskResult } from '@/composables/useTaskResult'
 import { useGalleryApplyContext } from '@/composables/useGalleryApplyContext'
 import { resolveTemplateVideoApplyState } from '@/utils/templateVideoApplyState'
 import { useSingleFileUploadPreview } from '@/composables/useSingleFileUploadPreview'
+import { buildGenerationTaskPayload } from '@/features/generation/buildGenerationTaskPayload'
 import GenerationActionBar from '@/components/GenerationActionBar.vue'
 import GenerationUploadCard from '@/components/GenerationUploadCard.vue'
 import GenerationWorkbenchShell from '@/components/GenerationWorkbenchShell.vue'
@@ -113,6 +114,9 @@ onMounted(() => {
         }
         if (templateState.resolution) resolution.value = templateState.resolution
         if (templateState.duration) duration.value = templateState.duration
+        if (!isLtxVideo.value && resolution.value === '1024' && duration.value === '10') {
+          resolution.value = '720'
+        }
 
         templateSettingsWarning.value = templateState.templateSettingsWarning
         isTemplateApplied.value = templateState.isTemplateApplied
@@ -146,19 +150,17 @@ const handleGenerate = async () => {
     return
   }
 
-  const payload = {
-    task_type: taskType.value,
-    inputs: {
-      images: [objectKey.value],
-      resolution: isLtxVideo.value ? resolution.value : Number(resolution.value),
-      duration: Number(duration.value),
-      ...((isCustomVideo.value || isVideoLora.value || isLtxVideo.value) && prompt.value ? { prompt: prompt.value } : {}),
-      ...(isVideoLora.value ? { lora_name: loraName.value } : {})
-    },
-    priority: 0,
-    is_template: isTemplateApplied.value,
-    ...(templateSourcePostId.value != null ? { source_post_id: templateSourcePostId.value } : {})
-  }
+  const payload = buildGenerationTaskPayload({
+    taskType: taskType.value,
+    images: [objectKey.value],
+    resolution: isLtxVideo.value ? resolution.value : Number(resolution.value),
+    duration: Number(duration.value),
+    prompt: (isCustomVideo.value || isVideoLora.value || isLtxVideo.value) ? prompt.value : undefined,
+    promptTarget: 'inputs',
+    loraName: isVideoLora.value ? loraName.value : undefined,
+    isTemplate: isTemplateApplied.value,
+    sourcePostId: templateSourcePostId.value,
+  })
 
   const taskId = await submitTask(payload, taskTitle.value)
   if (taskId) {

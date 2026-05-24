@@ -11,6 +11,7 @@ import { useI18n } from 'vue-i18n'
 import { useTemplateApplyUpload } from '@/composables/useTemplateApplyUpload'
 import { useTaskResult } from '@/composables/useTaskResult'
 import { useTaskStream } from '@/composables/useTaskStream'
+import { buildGenerationTaskPayload } from '@/features/generation/buildGenerationTaskPayload'
 import { useTemplateApplyStore } from '@/stores/templateApply'
 import type { TemplateApplyContext } from '@/types/templateApply'
 import { resolveTemplateVideoApplyState } from '@/utils/templateVideoApplyState'
@@ -144,6 +145,9 @@ const initializeFromContext = () => {
     }
     if (templateState.resolution) resolution.value = templateState.resolution
     if (templateState.duration) duration.value = templateState.duration
+    if (!isLtxVideo.value && resolution.value === '1024' && duration.value === '10') {
+      resolution.value = '720'
+    }
 
     templateSettingsWarning.value = templateState.templateSettingsWarning
     templateApplyNotice.value = templateState.templateApplyNotice
@@ -198,24 +202,17 @@ const handleGenerate = async () => {
     return
   }
 
-  const payload: Record<string, any> = {
-    task_type: taskType.value,
-    inputs: {
-      images: [objectKey.value],
-      resolution: isLtxVideo.value ? resolution.value : Number(resolution.value),
-      duration: Number(duration.value),
-      ...((isCustomVideo.value || isVideoLora.value || isLtxVideo.value) && prompt.value
-        ? { prompt: prompt.value }
-        : {}),
-      ...(isVideoLora.value ? { lora_name: loraName.value } : {})
-    },
-    priority: 0,
-    is_template: isTemplateApplied.value
-  }
-
-  if (templateSourcePostId.value != null) {
-    payload.source_post_id = templateSourcePostId.value
-  }
+  const payload = buildGenerationTaskPayload({
+    taskType: taskType.value,
+    images: [objectKey.value],
+    resolution: isLtxVideo.value ? resolution.value : Number(resolution.value),
+    duration: Number(duration.value),
+    prompt: (isCustomVideo.value || isVideoLora.value || isLtxVideo.value) ? prompt.value : undefined,
+    promptTarget: 'inputs',
+    loraName: isVideoLora.value ? loraName.value : undefined,
+    isTemplate: isTemplateApplied.value,
+    sourcePostId: templateSourcePostId.value,
+  })
 
   const taskId = await submitTask(payload, taskTitle.value)
   if (taskId) {

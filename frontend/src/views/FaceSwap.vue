@@ -1,12 +1,14 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { InboxOutlined, SwapOutlined, DownloadOutlined, CloseCircleOutlined } from '@ant-design/icons-vue'
-import { message } from 'ant-design-vue'
 import { useUpload } from '@/composables/useUpload'
 import { useTaskStream } from '@/composables/useTaskStream'
 import { useTaskResult } from '@/composables/useTaskResult'
 import { useGalleryApplyContext } from '@/composables/useGalleryApplyContext'
 import { useDualFileUploadPreview } from '@/composables/useDualFileUploadPreview'
+import { useLegacySwapApply } from '@/composables/useLegacySwapApply'
+import { useSwapResetController } from '@/composables/useSwapResetController'
+import { useSwapTaskSubmit } from '@/composables/useSwapTaskSubmit'
 import { useRoute } from 'vue-router'
 import { onMounted } from 'vue'
 import GenerationActionBar from '@/components/GenerationActionBar.vue'
@@ -38,49 +40,44 @@ const {
 const isTemplateApplied = ref(false)
 const templateSourcePostId = ref<number | null>(null)
 
-onMounted(() => {
-  if (route.query.apply === 'true') {
-    const ctx = loadApplyContext()
-    if (ctx && ctx.task_type === 'face_swap' && ctx.input_file) {
-      applySecondaryTemplateTarget({
-        objectKey: ctx.input_file,
-        previewUrl: ctx.input_file_url || null,
-      })
-      if (ctx.source_post_id != null) {
-        templateSourcePostId.value = Number(ctx.source_post_id)
-      }
-      isTemplateApplied.value = true
-    }
-  }
+const { initializeLegacySwapApply } = useLegacySwapApply({
+  routeApplyEnabled: route.query.apply === 'true',
+  loadApplyContext,
+  expectedTaskType: 'face_swap',
+  applySecondaryTemplateTarget,
+  setTemplateApplied: (value) => {
+    isTemplateApplied.value = value
+  },
+  setSourcePostId: (value) => {
+    templateSourcePostId.value = value
+  },
 })
 
-const handleGenerate = async () => {
-  if (!faceObjectKey.value || !bodyObjectKey.value) {
-    message.warning('请先上传人脸和目标图片！')
-    return
-  }
+onMounted(() => {
+  initializeLegacySwapApply()
+})
 
-  const payload = {
-    task_type: 'face_swap',
-    inputs: {
-      face_image: faceObjectKey.value,
-      target_image: bodyObjectKey.value
-    },
-    priority: 0,
-    is_template: isTemplateApplied.value,
-    ...(templateSourcePostId.value != null ? { source_post_id: templateSourcePostId.value } : {})
-  }
+const { handleGenerate } = useSwapTaskSubmit({
+  taskType: 'face_swap',
+  taskTitle: '快速换脸',
+  targetField: 'target_image',
+  getFaceAssetKey: () => faceObjectKey.value,
+  getTargetAssetKey: () => bodyObjectKey.value,
+  getIsTemplateApplied: () => isTemplateApplied.value,
+  getSourcePostId: () => templateSourcePostId.value,
+  warningMessage: '请先上传人脸和目标图片！',
+  submitTask,
+  setSubmittedTaskId,
+})
 
-  const taskId = await submitTask(payload, '快速换脸')
-  if (taskId) {
-    setSubmittedTaskId(taskId)
-  }
-}
-
-const resetForm = () => {
-  resetAll()
-  setSubmittedTaskId(null)
-}
+const { resetSwapState: resetForm } = useSwapResetController({
+  resetUploads: resetAll,
+  clearSubmittedTask: () => setSubmittedTaskId(null),
+  clearTemplateState: () => {
+    isTemplateApplied.value = false
+    templateSourcePostId.value = null
+  },
+})
 </script>
 
 <template>

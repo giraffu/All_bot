@@ -1,7 +1,7 @@
 import re
 from typing import Any
 
-from src.constants import VIDEO_TASK_TYPES
+from src.constants import MODE_IMAGE_TO_VIDEO, VIDEO_TASK_TYPES
 
 
 VIDEO_BILLING_TASK_TYPES = frozenset(VIDEO_TASK_TYPES)
@@ -9,6 +9,7 @@ LTX_ALLOWED_DURATIONS = (5, 10, 15, 20)
 MAX_LEGACY_LTX_DURATION_DRIFT = 2
 TIER_VIDEO_ALLOWED_DURATIONS = (5, 8, 10)
 MAX_LEGACY_TIER_VIDEO_DURATION_DRIFT = 2
+LEGACY_TIER_VIDEO_TASK_TYPES = frozenset({"custom_video", MODE_IMAGE_TO_VIDEO})
 
 
 def _normalize_tier_from_video_side(side: int | None) -> str | None:
@@ -122,7 +123,7 @@ def infer_legacy_video_requested_duration(
 ) -> int | None:
     if task_type == "ltx_video":
         return infer_legacy_ltx_requested_duration(duration)
-    if task_type in {"custom_video", "video_lora"}:
+    if task_type in LEGACY_TIER_VIDEO_TASK_TYPES:
         return infer_legacy_tier_video_requested_duration(duration)
     return None
 

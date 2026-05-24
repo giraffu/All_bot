@@ -7,6 +7,7 @@ import { useUpload } from '@/composables/useUpload'
 import { useTaskStream } from '@/composables/useTaskStream'
 import { useTaskResult } from '@/composables/useTaskResult'
 import { useGalleryApplyContext } from '@/composables/useGalleryApplyContext'
+import { buildGenerationTaskPayload } from '@/features/generation/buildGenerationTaskPayload'
 import GenerationActionBar from '@/components/GenerationActionBar.vue'
 import GenerationWorkbenchShell from '@/components/GenerationWorkbenchShell.vue'
 import TaskResultPreviewPanel from '@/components/TaskResultPreviewPanel.vue'
@@ -26,7 +27,7 @@ const taskCost = computed(() => {
 
 const { uploading, progress: uploadProgress, uploadFile } = useUpload()
 const { isSubmitting, submitTask } = useTaskStream()
-const { currentTask, setSubmittedTaskId, isVideoUrl, isImageUrl, downloadResult } = useTaskResult()
+const { currentTask, setSubmittedTaskId, isImageUrl, downloadResult } = useTaskResult()
 
 const uploadedImages = ref<{key: string, preview: string}[]>([])
 const pendingUploads = ref(0)
@@ -126,21 +127,17 @@ const handleGenerate = async () => {
     return
   }
 
-  const payload: any = {
-    task_type: taskType.value === 'edit' && selectedLora.value ? 'img2img_lora' : taskType.value,
-    inputs: {
-      images: uploadedImages.value.map(img => img.key)
-    },
-    prompt: prompt.value.trim(),
-    priority: 0,
-    is_template: isTemplateApplied.value,
-    ...(templateSourcePostId.value != null ? { source_post_id: templateSourcePostId.value } : {})
-  }
-
-  if (payload.task_type === 'img2img_lora') {
-    payload.inputs.lora_name = selectedLora.value
-    payload.inputs.lora_strength = Number(customLoraStrength.value)
-  }
+  const payload = buildGenerationTaskPayload({
+    taskType: taskType.value,
+    images: uploadedImages.value.map(img => img.key),
+    prompt: prompt.value,
+    promptTarget: 'topLevel',
+    loraName: selectedLora.value || undefined,
+    loraStrength: selectedLora.value ? Number(customLoraStrength.value) : undefined,
+    isTemplate: isTemplateApplied.value,
+    sourcePostId: templateSourcePostId.value,
+    normalizeEditLoraTask: true,
+  })
 
   const taskId = await submitTask(payload, taskTitle.value)
   if (taskId) {
@@ -291,7 +288,6 @@ const resetForm = () => {
               </div>
             </div>
           </div>
-      </div>
     </template>
 
     <template #left-footer>

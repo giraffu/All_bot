@@ -281,3 +281,71 @@ async def test_redeem_user_affiliate_membership_payload_returns_404_when_feature
 
     assert exc_info.value.status_code == 404
     assert exc_info.value.detail == "返佣兑换身份功能未开启"
+
+
+@pytest.mark.asyncio
+async def test_redeem_user_affiliate_membership_payload_invalidates_cache_after_commit():
+    payload = AffiliateMembershipRedeemRequest(
+        option_key="inner_30d",
+        idempotency_key="idem-membership-after-commit",
+    )
+    db = AsyncMock()
+    db.in_transaction.return_value = True
+    events: list[str] = []
+
+    async def _commit():
+        events.append("commit")
+
+    async def _invalidate(user_id: int):
+        assert user_id == 123
+        events.append("invalidate")
+
+    db.commit.side_effect = _commit
+
+    with (
+        patch(
+            "src.web_api.services.user_affiliate_redeem_api_service.is_membership_settlement_v2_enabled",
+            return_value=True,
+        ),
+        patch(
+            "src.web_api.services.user_affiliate_redeem_api_service.is_affiliate_membership_redeem_enabled",
+            return_value=True,
+        ),
+        patch(
+            "src.web_api.services.user_affiliate_redeem_api_service.redeem_affiliate_balance_to_membership",
+            new=AsyncMock(
+                return_value=AffiliateMembershipRedeemResult(
+                    redeem_id=11,
+                    redeem_type="MEMBERSHIP",
+                    option_key="inner_30d",
+                    target_plan_id=1,
+                    target_identity="内门弟子",
+                    duration_days=30,
+                    amount_usdt=Decimal("4.4118"),
+                    credits_granted=0,
+                    status="SUCCESS",
+                    idempotency_key=payload.idempotency_key,
+                    available_balance_usdt=Decimal("95.5882"),
+                    current_identity="内门弟子",
+                    identity_expire_at=None,
+                    current_credits=400,
+                    converted_days=30,
+                    settlement_reason="AFFILIATE_REDEEM",
+                )
+            ),
+        ),
+        patch(
+            "src.web_api.services.user_affiliate_redeem_api_service.invalidate_affiliate_redeem_cache_after_commit",
+            new=AsyncMock(side_effect=_invalidate),
+        ),
+    ):
+        response = await redeem_user_affiliate_membership_payload(
+            db=db,
+            user_id=123,
+            option_key=payload.option_key,
+            idempotency_key=payload.idempotency_key,
+        )
+
+    assert response.redeem_id == 11
+    assert response.status == "SUCCESS"
+    assert events == ["commit", "invalidate"]

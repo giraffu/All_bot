@@ -121,6 +121,26 @@ async def invalidate_affiliate_redeem_cache_after_commit(user_id: int) -> None:
         )
 
 
+async def _run_affiliate_redeem_transaction(
+    session: AsyncSession,
+    *,
+    user_id: int,
+    redeem_runner,
+):
+    owns_transaction = not session.in_transaction()
+
+    if not owns_transaction:
+        redeem_result, should_invalidate_cache = await redeem_runner()
+    else:
+        async with session.begin():
+            redeem_result, should_invalidate_cache = await redeem_runner()
+
+    if owns_transaction and should_invalidate_cache:
+        await invalidate_affiliate_redeem_cache_after_commit(user_id)
+
+    return redeem_result
+
+
 async def _redeem_affiliate_balance_to_credits_in_transaction(
     session: AsyncSession,
     *,
@@ -274,13 +294,8 @@ async def redeem_affiliate_balance_to_credits(
     amount_usdt, credits_granted = get_affiliate_credits_redeem_package(amount_usdt)
     exchange_rate_snapshot = build_exchange_rate_snapshot(amount_usdt, credits_granted)
 
-    should_invalidate_cache = False
-    owns_transaction = not session.in_transaction()
-
-    # Reuse an already-open request transaction (e.g. opened by auth dependency),
-    # otherwise create an explicit write transaction boundary here.
-    if not owns_transaction:
-        redeem_result, _, should_invalidate_cache = (
+    async def _run_credits_redeem():
+        redeem_result, _audit_payload, should_invalidate_cache = (
             await _redeem_affiliate_balance_to_credits_in_transaction(
                 session,
                 user_id=user_id,
@@ -290,23 +305,13 @@ async def redeem_affiliate_balance_to_credits(
                 exchange_rate_snapshot=exchange_rate_snapshot,
             )
         )
-    else:
-        async with session.begin():
-            redeem_result, _, should_invalidate_cache = (
-                await _redeem_affiliate_balance_to_credits_in_transaction(
-                    session,
-                    user_id=user_id,
-                    amount_usdt=amount_usdt,
-                    idempotency_key=idempotency_key,
-                    credits_granted=credits_granted,
-                    exchange_rate_snapshot=exchange_rate_snapshot,
-                )
-            )
+        return redeem_result, should_invalidate_cache
 
-    if owns_transaction and should_invalidate_cache:
-        await invalidate_affiliate_redeem_cache_after_commit(user_id)
-
-    return redeem_result
+    return await _run_affiliate_redeem_transaction(
+        session,
+        user_id=user_id,
+        redeem_runner=_run_credits_redeem,
+    )
 
 
 async def _redeem_affiliate_balance_to_membership_in_transaction(
@@ -402,45 +407,22 @@ async def _redeem_affiliate_balance_to_membership_in_transaction(
     session.add(redeem)
     await session.flush()
 
-    ledger_stmt = (
-        insert(AffiliateTransaction)
-        .values(
-            user_id=user_id,
-            amount_usdt=amount_usdt,
-            transaction_type="MEMBERSHIP_REDEEM",
-            direction="OUT",
-            reference_type="AFFILIATE_REDEEM",
-            reference_id=str(redeem.id),
-            idempotency_key=f"affiliate:redeem:membership:{redeem.id}",
-            status="SUCCESS",
-            details={
-                "redeem_id": redeem.id,
-                "option_key": option_key,
-                "amount_usdt": f"{amount_usdt:.4f}",
-                "target_identity": option["target_identity"],
-                "duration_days": int(option["duration_days"]),
-            },
-        )
-        .on_conflict_do_nothing(index_elements=["idempotency_key"])
-        .returning(AffiliateTransaction.id)
+    await _create_membership_redeem_ledger_entry(
+        session,
+        user_id=user_id,
+        redeem=redeem,
+        option_key=option_key,
+        option=option,
+        amount_usdt=amount_usdt,
     )
-    ledger_id = (await session.execute(ledger_stmt)).scalar_one_or_none()
-    if ledger_id is None:
-        raise AffiliateRedeemError(
-            "failed to persist affiliate membership redeem ledger transaction"
-        )
 
-    applied_snapshot = await apply_membership_settlement_in_session(
-        locked_user=user,
-        settlement_snapshot=snapshot,
+    applied_snapshot = await _apply_affiliate_membership_settlement(
+        session,
+        user=user,
+        redeem=redeem,
+        option_key=option_key,
+        snapshot=snapshot,
         settlement_result=settlement_result,
-        audit_source=MembershipSettlementAuditSource(
-            source="affiliate_membership_redeem",
-            source_channel="AFFILIATE",
-            source_order_id=str(redeem.id),
-            option_key=option_key,
-        ),
-        session=session,
     )
 
     available_after_redeem = (available_balance_usdt - amount_usdt).quantize(
@@ -479,6 +461,67 @@ async def _redeem_affiliate_balance_to_membership_in_transaction(
     )
 
 
+async def _create_membership_redeem_ledger_entry(
+    session: AsyncSession,
+    *,
+    user_id: int,
+    redeem: AffiliateRedeem,
+    option_key: str,
+    option: dict,
+    amount_usdt: Decimal,
+) -> None:
+    ledger_stmt = (
+        insert(AffiliateTransaction)
+        .values(
+            user_id=user_id,
+            amount_usdt=amount_usdt,
+            transaction_type="MEMBERSHIP_REDEEM",
+            direction="OUT",
+            reference_type="AFFILIATE_REDEEM",
+            reference_id=str(redeem.id),
+            idempotency_key=f"affiliate:redeem:membership:{redeem.id}",
+            status="SUCCESS",
+            details={
+                "redeem_id": redeem.id,
+                "option_key": option_key,
+                "amount_usdt": f"{amount_usdt:.4f}",
+                "target_identity": option["target_identity"],
+                "duration_days": int(option["duration_days"]),
+            },
+        )
+        .on_conflict_do_nothing(index_elements=["idempotency_key"])
+        .returning(AffiliateTransaction.id)
+    )
+    ledger_id = (await session.execute(ledger_stmt)).scalar_one_or_none()
+    if ledger_id is None:
+        raise AffiliateRedeemError(
+            "failed to persist affiliate membership redeem ledger transaction"
+        )
+
+
+async def _apply_affiliate_membership_settlement(
+    session: AsyncSession,
+    *,
+    user: User,
+    redeem: AffiliateRedeem,
+    option_key: str,
+    snapshot: dict,
+    settlement_result,
+) -> dict:
+    return await apply_membership_settlement_in_session(
+        locked_user=user,
+        settlement_snapshot=snapshot,
+        settlement_result=settlement_result,
+        audit_source=MembershipSettlementAuditSource(
+            source="affiliate_membership_redeem",
+            source_channel="AFFILIATE",
+            source_order_id=str(redeem.id),
+            option_key=option_key,
+        ),
+        session=session,
+    )
+
+
 async def redeem_affiliate_balance_to_membership(
     session: AsyncSession,
     *,
@@ -486,30 +529,16 @@ async def redeem_affiliate_balance_to_membership(
     option_key: str,
     idempotency_key: str,
 ) -> AffiliateMembershipRedeemResult:
-    should_invalidate_cache = False
-    owns_transaction = not session.in_transaction()
-
-    if not owns_transaction:
-        redeem_result, should_invalidate_cache = (
-            await _redeem_affiliate_balance_to_membership_in_transaction(
-                session,
-                user_id=user_id,
-                option_key=option_key,
-                idempotency_key=idempotency_key,
-            )
+    async def _run_membership_redeem():
+        return await _redeem_affiliate_balance_to_membership_in_transaction(
+            session,
+            user_id=user_id,
+            option_key=option_key,
+            idempotency_key=idempotency_key,
         )
-    else:
-        async with session.begin():
-            redeem_result, should_invalidate_cache = (
-                await _redeem_affiliate_balance_to_membership_in_transaction(
-                    session,
-                    user_id=user_id,
-                    option_key=option_key,
-                    idempotency_key=idempotency_key,
-                )
-            )
 
-    if owns_transaction and should_invalidate_cache:
-        await invalidate_affiliate_redeem_cache_after_commit(user_id)
-
-    return redeem_result
+    return await _run_affiliate_redeem_transaction(
+        session,
+        user_id=user_id,
+        redeem_runner=_run_membership_redeem,
+    )

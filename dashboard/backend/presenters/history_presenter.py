@@ -1,4 +1,5 @@
 from config import MINIO_TEMPLATE_BUCKET
+from dashboard.backend.presenters.storage_presenter_utils import build_storage_url
 
 
 def build_history_input_file_url(*, input_file: str | None, storage_service) -> str | None:
@@ -10,13 +11,19 @@ def build_history_input_file_url(*, input_file: str | None, storage_service) -> 
         if file_name.startswith("template:"):
             template_path = file_name[9:]
             urls.append(
-                storage_service.get_presigned_url(
-                    template_path,
+                build_storage_url(
+                    storage_service=storage_service,
+                    object_name=template_path,
                     bucket=MINIO_TEMPLATE_BUCKET,
                 )
             )
         else:
-            urls.append(storage_service.get_presigned_url(file_name))
+            urls.append(
+                build_storage_url(
+                    storage_service=storage_service,
+                    object_name=file_name,
+                )
+            )
     return "|".join(urls)
 
 
@@ -24,8 +31,12 @@ def build_history_output_file_url(*, output_file: str | None, storage_service) -
     if not output_file:
         return None
     if "/" not in output_file:
-        return storage_service.get_presigned_url(output_file, bucket="comfyui-temp")
-    return storage_service.get_presigned_url(output_file)
+        return build_storage_url(
+            storage_service=storage_service,
+            object_name=output_file,
+            bucket="comfyui-temp",
+        )
+    return build_storage_url(storage_service=storage_service, object_name=output_file)
 
 
 def build_history_item_payload(

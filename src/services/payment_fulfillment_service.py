@@ -13,7 +13,6 @@ from src.core.affiliate_core import (
     invalidate_invitation_recharge_cache,
     record_affiliate_commission_transaction,
 )
-from src.services.log_service import LogService  # Backward-compatible test patch target.
 from src.services.affiliate_redeem_service import is_membership_settlement_v2_enabled
 from src.services.membership_settlement_service import (
     MembershipSettlementAuditSource,

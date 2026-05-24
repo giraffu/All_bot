@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from src.core import task_core
+from src.core import task_core_persistence
 from src.core import task_core_web_history_warmup
 from src.core import task_core_web_monitor
 from src.core.task_core_persistence_postprocess import (
@@ -33,12 +34,20 @@ async def test_monitor_task_and_release_lock_schedules_web_history_r2_warmup(mon
         AsyncMock(return_value=b"fake-image-bytes"),
     )
     monkeypatch.setattr(
-        task_core,
+        task_core_persistence,
         "extract_media_metadata_from_bytes_best_effort",
         lambda *_args, **_kwargs: (1024, 1024, None),
     )
-    monkeypatch.setattr(task_core, "UserLogger", lambda *_args, **_kwargs: fake_user_logger)
-    monkeypatch.setattr(task_core, "_schedule_web_history_r2_warmup_default", warmup_mock)
+    monkeypatch.setattr(
+        task_core_persistence,
+        "UserLogger",
+        lambda *_args, **_kwargs: fake_user_logger,
+    )
+    monkeypatch.setattr(
+        task_core_persistence,
+        "schedule_web_history_r2_warmup_default",
+        warmup_mock,
+    )
     monkeypatch.setattr(task_core, "release_concurrency_lock", AsyncMock())
     monkeypatch.setattr(task_registry_module.TaskRegistry, "remove_task", AsyncMock())
     monkeypatch.setattr(task_core, "refund_credits", AsyncMock())
@@ -68,7 +77,7 @@ async def test_monitor_task_and_release_lock_schedules_web_history_r2_warmup(mon
         cost=1,
         monitor_progress_func=_monitor_progress,
         normalize_terminal_status_func=task_core.normalize_terminal_status,
-        finalize_success_func=task_core._finalize_monitored_web_task_success,
+        finalize_success_func=task_core_web_monitor.finalize_monitored_web_task_success_default,
         finalize_cancellation_func=AsyncMock(),
         finalize_failure_func=AsyncMock(),
         logger=task_core.logger,
@@ -334,7 +343,11 @@ async def test_process_and_submit_task_passes_requested_duration_to_web_monitor(
     monkeypatch.setattr(
         task_core, "dispatch_to_worker", AsyncMock(return_value="backend-task-1")
     )
-    monkeypatch.setattr(task_core, "_monitor_task_and_release_lock_default", monitor_mock)
+    monkeypatch.setattr(
+        task_core_web_monitor,
+        "monitor_task_and_release_lock_default",
+        monitor_mock,
+    )
     monkeypatch.setattr(task_core.asyncio, "create_task", _capture_background_task)
 
     result = await task_core.process_and_submit_task(
@@ -372,12 +385,20 @@ async def test_persist_successful_task_result_reuses_core_path_for_bot(monkeypat
         AsyncMock(return_value=b"image-bytes"),
     )
     monkeypatch.setattr(
-        task_core,
+        task_core_persistence,
         "extract_media_metadata_from_bytes_best_effort",
         lambda *_args, **_kwargs: (768, 1024, None),
     )
-    monkeypatch.setattr(task_core, "UserLogger", lambda *_args, **_kwargs: fake_user_logger)
-    monkeypatch.setattr(task_core, "_schedule_web_history_r2_warmup_default", warmup_mock)
+    monkeypatch.setattr(
+        task_core_persistence,
+        "UserLogger",
+        lambda *_args, **_kwargs: fake_user_logger,
+    )
+    monkeypatch.setattr(
+        task_core_persistence,
+        "schedule_web_history_r2_warmup_default",
+        warmup_mock,
+    )
     monkeypatch.setattr(
         permission_service_module.permission_service,
         "refresh_user_group",
@@ -424,13 +445,21 @@ async def test_persist_successful_task_result_uses_storage_metadata_when_bytes_m
         "download_video_result",
         AsyncMock(return_value=None),
     )
-    monkeypatch.setattr(task_core, "UserLogger", lambda *_args, **_kwargs: fake_user_logger)
     monkeypatch.setattr(
-        task_core,
+        task_core_persistence,
+        "UserLogger",
+        lambda *_args, **_kwargs: fake_user_logger,
+    )
+    monkeypatch.setattr(
+        task_core_persistence,
         "extract_media_metadata_from_storage_best_effort",
         extract_from_storage_mock,
     )
-    monkeypatch.setattr(task_core, "_schedule_web_history_r2_warmup_default", warmup_mock)
+    monkeypatch.setattr(
+        task_core_persistence,
+        "schedule_web_history_r2_warmup_default",
+        warmup_mock,
+    )
 
     result = await task_core.persist_successful_task_result(
         backend_task_id="task-3",

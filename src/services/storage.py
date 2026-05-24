@@ -1,14 +1,9 @@
 import asyncio
 import io
 import logging
-import threading
-import time
-from datetime import timedelta
 
 import boto3
 from botocore.config import Config as BotoConfig
-from botocore.exceptions import ClientError
-from minio import Minio
 from minio.error import S3Error
 import urllib3
 
@@ -39,6 +34,32 @@ from src.services.storage_r2_cleanup import (
     build_history_r2_cleanup_keys as build_history_r2_cleanup_keys_impl,
     sync_delete_r2_object as sync_delete_r2_object_impl,
 )
+from src.services.storage_minio_client import (
+    build_configured_bucket_names,
+    build_minio_client,
+    build_public_minio_client,
+    ensure_bucket_exists,
+)
+from src.services.storage_presign import (
+    generate_presigned_get_url,
+    generate_presigned_put_url,
+)
+from src.services.storage_r2_exists import (
+    async_r2_object_exists as async_r2_object_exists_impl,
+    async_r2_object_exists_uncached as async_r2_object_exists_uncached_impl,
+    attach_r2_inflight_cleanup as attach_r2_inflight_cleanup_impl,
+    ensure_r2_async_primitives as ensure_r2_async_primitives_impl,
+    get_r2_exists_cache as get_r2_exists_cache_impl,
+    get_r2_exists_cache_entry_locked as get_r2_exists_cache_entry_locked_impl,
+    has_newer_positive_r2_exists_cache as has_newer_positive_r2_exists_cache_impl,
+    init_r2_runtime_state as init_r2_runtime_state_impl,
+    invalidate_r2_exists_cache as invalidate_r2_exists_cache_impl,
+    mark_r2_object_exists as mark_r2_object_exists_impl,
+    remove_r2_inflight_task as remove_r2_inflight_task_impl,
+    r2_object_exists_with_cache_hint as r2_object_exists_with_cache_hint_impl,
+    set_r2_exists_cache as set_r2_exists_cache_impl,
+    trim_r2_exists_cache_locked as trim_r2_exists_cache_locked_impl,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -53,121 +74,49 @@ class StorageService:
         return cls._instance
 
     def _init_r2_runtime_state(self):
-        self._r2_exists_cache = {}
-        self._r2_exists_cache_lock = threading.Lock()
-        self._r2_exists_positive_ttl = max(1, R2_EXISTS_POSITIVE_TTL_SECONDS)
-        self._r2_exists_negative_ttl = max(1, R2_EXISTS_NEGATIVE_TTL_SECONDS)
-        self._r2_exists_cache_max_entries = max(100, R2_EXISTS_CACHE_MAX_ENTRIES)
-        self._r2_head_semaphore_limit = max(1, R2_HEAD_SEMAPHORE_LIMIT)
-        self._r2_head_semaphore = None
-        self._r2_exists_inflight_lock = None
-        self._r2_exists_inflight = {}
-        self._r2_async_primitives_loop = None
+        init_r2_runtime_state_impl(
+            self,
+            positive_ttl=R2_EXISTS_POSITIVE_TTL_SECONDS,
+            negative_ttl=R2_EXISTS_NEGATIVE_TTL_SECONDS,
+            max_entries=R2_EXISTS_CACHE_MAX_ENTRIES,
+            semaphore_limit=R2_HEAD_SEMAPHORE_LIMIT,
+        )
 
     def _ensure_r2_async_primitives(self):
-        loop = asyncio.get_running_loop()
-        if self._r2_async_primitives_loop is loop:
-            return
-
-        self._r2_async_primitives_loop = loop
-        self._r2_head_semaphore = asyncio.Semaphore(self._r2_head_semaphore_limit)
-        self._r2_exists_inflight_lock = asyncio.Lock()
-        self._r2_exists_inflight = {}
+        ensure_r2_async_primitives_impl(self)
 
     def _trim_r2_exists_cache_locked(self):
-        if len(self._r2_exists_cache) <= self._r2_exists_cache_max_entries:
-            return
-
-        now = time.monotonic()
-        expired_keys = [
-            key
-            for key, (_, expires_at, _) in self._r2_exists_cache.items()
-            if expires_at <= now
-        ]
-        for key in expired_keys:
-            self._r2_exists_cache.pop(key, None)
-
-        while len(self._r2_exists_cache) > self._r2_exists_cache_max_entries:
-            oldest_key = next(iter(self._r2_exists_cache))
-            self._r2_exists_cache.pop(oldest_key, None)
+        trim_r2_exists_cache_locked_impl(self)
 
     def _get_r2_exists_cache_entry_locked(
         self, object_name: str, now: float
     ) -> tuple[bool, float, float] | None:
-        entry = self._r2_exists_cache.get(object_name)
-        if not entry:
-            return None
-
-        exists, expires_at, updated_at = entry
-        if expires_at <= now:
-            self._r2_exists_cache.pop(object_name, None)
-            return None
-
-        return exists, expires_at, updated_at
+        return get_r2_exists_cache_entry_locked_impl(self, object_name, now)
 
     def _get_r2_exists_cache(self, object_name: str):
-        if not object_name:
-            return None
-
-        now = time.monotonic()
-        with self._r2_exists_cache_lock:
-            entry = self._get_r2_exists_cache_entry_locked(object_name, now)
-            if not entry:
-                return None
-            return entry[0]
+        return get_r2_exists_cache_impl(self, object_name)
 
     def _set_r2_exists_cache(self, object_name: str, exists: bool):
-        if not object_name:
-            return
-
-        ttl = (
-            self._r2_exists_positive_ttl
-            if exists
-            else self._r2_exists_negative_ttl
-        )
-        updated_at = time.monotonic()
-        expires_at = updated_at + ttl
-        with self._r2_exists_cache_lock:
-            self._r2_exists_cache[object_name] = (exists, expires_at, updated_at)
-            self._trim_r2_exists_cache_locked()
+        set_r2_exists_cache_impl(self, object_name, exists)
 
     def _has_newer_positive_r2_exists_cache(
         self, object_name: str, probe_started_at: float
     ) -> bool:
-        now = time.monotonic()
-        with self._r2_exists_cache_lock:
-            entry = self._get_r2_exists_cache_entry_locked(object_name, now)
-            if not entry:
-                return False
-
-            exists, _, updated_at = entry
-            return exists is True and updated_at > probe_started_at
+        return has_newer_positive_r2_exists_cache_impl(
+            self, object_name, probe_started_at
+        )
 
     def invalidate_r2_exists_cache(self, object_name: str):
-        if not object_name:
-            return
-        with self._r2_exists_cache_lock:
-            self._r2_exists_cache.pop(object_name, None)
+        invalidate_r2_exists_cache_impl(self, object_name)
 
     def mark_r2_object_exists(self, object_name: str):
-        self._set_r2_exists_cache(object_name, True)
+        mark_r2_object_exists_impl(self, object_name)
 
     async def _remove_r2_inflight_task(self, object_name: str, task: asyncio.Task):
-        if self._r2_exists_inflight_lock is None:
-            return
-
-        async with self._r2_exists_inflight_lock:
-            if self._r2_exists_inflight.get(object_name) is task:
-                self._r2_exists_inflight.pop(object_name, None)
+        await remove_r2_inflight_task_impl(self, object_name, task)
 
     def _attach_r2_inflight_cleanup(self, object_name: str, task: asyncio.Task):
-        def _cleanup(done_task: asyncio.Task):
-            loop = done_task.get_loop()
-            if loop.is_closed():
-                return
-            loop.create_task(self._remove_r2_inflight_task(object_name, done_task))
-
-        task.add_done_callback(_cleanup)
+        attach_r2_inflight_cleanup_impl(self, object_name, task)
 
     def _init_client(self):
         self._init_r2_runtime_state()
@@ -177,79 +126,54 @@ class StorageService:
                 num_pools=100,
                 retries=False,
             )
-            self.client = Minio(
-                MINIO_ENDPOINT,
+            configured_buckets = build_configured_bucket_names(
+                MINIO_BUCKET,
+                MINIO_TEMPLATE_BUCKET,
+                MINIO_RESULT_BUCKET,
+            )
+            self.client = build_minio_client(
+                endpoint=MINIO_ENDPOINT,
                 access_key=MINIO_ACCESS_KEY,
                 secret_key=MINIO_SECRET_KEY,
                 secure=MINIO_SECURE,
+                bucket_names=configured_buckets,
                 http_client=self._minio_http_client,
             )
 
-            # CRITICAL FIX: Inject region mapping to prevent synchronous `?location=` network calls
-            # from blocking the event loop when MinIO is slow or overloaded.
-            self.client._region_map[MINIO_BUCKET] = "us-east-1"
-            if MINIO_TEMPLATE_BUCKET:
-                self.client._region_map[MINIO_TEMPLATE_BUCKET] = "us-east-1"
-            if MINIO_RESULT_BUCKET:
-                self.client._region_map[MINIO_RESULT_BUCKET] = "us-east-1"
-            
-            # 必须补充新增的桶映射，防止签名时触发同步网络阻塞
-            self.client._region_map["comfyui-temp"] = "us-east-1"
-            self.client._region_map["bot-data"] = "us-east-1"
-
             if MINIO_PUBLIC_URL:
-                public_host = MINIO_PUBLIC_URL.replace("https://", "").replace("http://", "")
-                secure = MINIO_PUBLIC_URL.startswith("https")
-                self.public_client = Minio(
-                    public_host,
+                self.public_client = build_public_minio_client(
+                    public_url=MINIO_PUBLIC_URL,
                     access_key=MINIO_ACCESS_KEY,
                     secret_key=MINIO_SECRET_KEY,
-                    secure=secure,
-                    region="us-east-1",
+                    bucket_names=configured_buckets,
                     http_client=self._minio_http_client,
                 )
-                self.public_client._region_map[MINIO_BUCKET] = "us-east-1"
-                if MINIO_TEMPLATE_BUCKET:
-                    self.public_client._region_map[MINIO_TEMPLATE_BUCKET] = "us-east-1"
-                if MINIO_RESULT_BUCKET:
-                    self.public_client._region_map[MINIO_RESULT_BUCKET] = "us-east-1"
-                self.public_client._region_map["comfyui-temp"] = "us-east-1"
-                self.public_client._region_map["bot-data"] = "us-east-1"
             else:
                 self.public_client = None
 
-            # Check main bucket
-            if not self.client.bucket_exists(MINIO_BUCKET):
-                try:
-                    self.client.make_bucket(MINIO_BUCKET)
-                    logger.info(f"Created MinIO bucket: {MINIO_BUCKET}")
-                except Exception as e:
-                    logger.error(f"Failed to create bucket {MINIO_BUCKET}: {e}")
-
-            # Check template bucket
-            if not self.client.bucket_exists(MINIO_TEMPLATE_BUCKET):
-                try:
-                    self.client.make_bucket(MINIO_TEMPLATE_BUCKET)
-                    logger.info(
-                        f"Created MinIO template bucket: {MINIO_TEMPLATE_BUCKET}"
-                    )
-                except Exception as e:
-                    logger.error(
-                        f"Failed to create template bucket {MINIO_TEMPLATE_BUCKET}: {e}"
-                    )
-
-            if MINIO_RESULT_BUCKET and not self.client.bucket_exists(MINIO_RESULT_BUCKET):
-                try:
-                    self.client.make_bucket(MINIO_RESULT_BUCKET)
-                    logger.info(f"Created MinIO result bucket: {MINIO_RESULT_BUCKET}")
-                except Exception as e:
-                    logger.error(
-                        f"Failed to create result bucket {MINIO_RESULT_BUCKET}: {e}"
-                    )
+            ensure_bucket_exists(
+                self.client,
+                bucket_name=MINIO_BUCKET,
+                logger=logger,
+                label="main",
+            )
+            ensure_bucket_exists(
+                self.client,
+                bucket_name=MINIO_TEMPLATE_BUCKET,
+                logger=logger,
+                label="template",
+            )
+            ensure_bucket_exists(
+                self.client,
+                bucket_name=MINIO_RESULT_BUCKET,
+                logger=logger,
+                label="result",
+            )
 
         except Exception as e:
             logger.error(f"Failed to initialize MinIO client: {e}")
             self.client = None
+            self.public_client = None
 
         # Initialize Cloudflare R2 client
         try:
@@ -451,83 +375,19 @@ class StorageService:
         return await asyncio.to_thread(self.object_exists, bucket_name, object_name)
 
     def _r2_object_exists_with_cache_hint(self, object_name: str) -> tuple[bool, bool]:
-        if not self.r2_client or not self.r2_bucket:
-            return False, False
-        try:
-            self.r2_client.head_object(Bucket=self.r2_bucket, Key=object_name)
-            return True, True
-        except ClientError as exc:
-            error = exc.response.get("Error", {}) if exc.response else {}
-            code = str(error.get("Code", ""))
-            status_code = (
-                exc.response.get("ResponseMetadata", {}).get("HTTPStatusCode")
-                if exc.response
-                else None
-            )
-            if code in {"404", "NoSuchKey", "NotFound"} or status_code == 404:
-                return False, True
-
-            logger.warning(
-                "R2 head_object failed for %s with cache skipped: code=%s status=%s",
-                object_name,
-                code or "unknown",
-                status_code,
-            )
-            return False, False
-        except Exception as exc:
-            logger.warning(
-                "R2 head_object raised transient error for %s, skip negative cache: %s",
-                object_name,
-                exc,
-            )
-            return False, False
+        return r2_object_exists_with_cache_hint_impl(self, object_name, logger=logger)
 
     def r2_object_exists(self, object_name: str) -> bool:
         exists, _ = self._r2_object_exists_with_cache_hint(object_name)
         return exists
 
     async def _async_r2_object_exists_uncached(self, object_name: str) -> bool:
-        probe_started_at = time.monotonic()
-        async with self._r2_head_semaphore:
-            exists, cacheable = await asyncio.to_thread(
-                self._r2_object_exists_with_cache_hint, object_name
-            )
-        if cacheable:
-            # Preserve the latest write-after-copy state when an older HEAD result
-            # returns after the object has already been uploaded successfully.
-            if not exists and self._has_newer_positive_r2_exists_cache(
-                object_name, probe_started_at
-            ):
-                return True
-            self._set_r2_exists_cache(object_name, exists)
-        return exists
+        return await async_r2_object_exists_uncached_impl(
+            self, object_name, logger=logger
+        )
 
     async def async_r2_object_exists(self, object_name: str) -> bool:
-        if not object_name:
-            return False
-
-        cached = self._get_r2_exists_cache(object_name)
-        if cached is not None:
-            return cached
-
-        if not self.r2_client or not self.r2_bucket:
-            return False
-
-        self._ensure_r2_async_primitives()
-
-        async with self._r2_exists_inflight_lock:
-            cached = self._get_r2_exists_cache(object_name)
-            if cached is not None:
-                return cached
-
-            inflight_task = self._r2_exists_inflight.get(object_name)
-            if inflight_task is None:
-                inflight_task = asyncio.create_task(
-                    self._async_r2_object_exists_uncached(object_name)
-                )
-                self._r2_exists_inflight[object_name] = inflight_task
-                self._attach_r2_inflight_cleanup(object_name, inflight_task)
-        return await asyncio.shield(inflight_task)
+        return await async_r2_object_exists_impl(self, object_name, logger=logger)
 
     def get_r2_public_url(self, object_name: str) -> str:
         if not R2_PUBLIC_DOMAIN or not object_name:
@@ -553,36 +413,13 @@ class StorageService:
             return ""
 
         try:
-            response_headers = {}
-            if download:
-                filename = object_name.split("/")[-1]
-                response_headers["response-content-disposition"] = (
-                    f'attachment; filename="{filename}"'
-                )
-
-            from datetime import timedelta
-            # 兼容：原来的 expires_hours 表示小时，现在我们在 media_processor 里其实传入的是秒，
-            # 为了防止冲突，我们可以做个简单的判断，如果传入的值 > 24，我们认为它是秒，否则是小时
-            if expires_hours > 24:
-                expire_time = timedelta(seconds=float(expires_hours))
-            else:
-                expire_time = timedelta(hours=float(expires_hours))
-
-            if hasattr(self, 'public_client') and self.public_client:
-                url = self.public_client.presigned_get_object(
-                    bucket_name,
-                    object_name,
-                    expires=expire_time,
-                    response_headers=response_headers,
-                )
-            else:
-                url = self.client.presigned_get_object(
-                    bucket_name,
-                    object_name,
-                    expires=expire_time,
-                    response_headers=response_headers,
-                )
-            return url
+            return generate_presigned_get_url(
+                self,
+                bucket_name=bucket_name,
+                object_name=object_name,
+                expires_hours=expires_hours,
+                download=download,
+            )
         except Exception as e:
             logger.error(f"Failed to generate presigned URL for {object_name} in {bucket_name}: {e}")
             return ""
@@ -601,26 +438,12 @@ class StorageService:
 
         try:
             _ = content_type
-            # The Ultimate Fix for 403 SignatureDoesNotMatch with MinIO behind Cloudflare/Nginx:
-            # 1. The signature MUST be calculated using the EXACT Host header the browser will send.
-            # 2. We MUST initialize a temporary Minio client with the public URL to sign it correctly.
-            # 3. We MUST avoid using `region` or other params that trigger network calls in older SDKs.
-
-            if hasattr(self, 'public_client') and self.public_client:
-                # Ensure expires_minutes is a float to avoid TypeError with string from config
-                url = self.public_client.presigned_put_object(
-                    bucket_name=bucket,
-                    object_name=object_name,
-                    expires=timedelta(minutes=float(expires_minutes)),
-                )
-            else:
-                url = self.client.presigned_put_object(
-                    bucket_name=bucket,
-                    object_name=object_name,
-                    expires=timedelta(minutes=float(expires_minutes)),
-                )
-
-            return url
+            return generate_presigned_put_url(
+                self,
+                bucket_name=bucket,
+                object_name=object_name,
+                expires_minutes=expires_minutes,
+            )
         except Exception as e:
             logger.error(
                 f"Failed to generate presigned PUT URL for {object_name} in {bucket}: {e}"

@@ -72,6 +72,8 @@ async def test_lifespan_sets_minio_client_on_app_state():
     ):
         assert hasattr(app.state, "minio_client")
         assert get_minio_client(SimpleNamespace(app=app)) is app.state.minio_client
+        assert app.state.minio_client._region_map["comfyui-temp"] == "us-east-1"
+        assert app.state.minio_client._region_map["bot-data"] == "us-east-1"
 
 
 @pytest.mark.asyncio

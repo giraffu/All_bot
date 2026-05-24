@@ -8,6 +8,7 @@ import { useTaskStream } from '@/composables/useTaskStream'
 import { useTaskResult } from '@/composables/useTaskResult'
 import { useGalleryApplyContext } from '@/composables/useGalleryApplyContext'
 import { useSingleFileUploadPreview } from '@/composables/useSingleFileUploadPreview'
+import { buildGenerationTaskPayload } from '@/features/generation/buildGenerationTaskPayload'
 import GenerationActionBar from '@/components/GenerationActionBar.vue'
 import GenerationUploadCard from '@/components/GenerationUploadCard.vue'
 import GenerationWorkbenchShell from '@/components/GenerationWorkbenchShell.vue'
@@ -53,15 +54,12 @@ const handleGenerate = async () => {
     return
   }
 
-  const payload = {
-    task_type: taskType.value,
-    inputs: {
-      images: [objectKey.value]
-    },
-    priority: 0,
-    is_template: isTemplateApplied.value,
-    ...(templateSourcePostId.value != null ? { source_post_id: templateSourcePostId.value } : {})
-  }
+  const payload = buildGenerationTaskPayload({
+    taskType: taskType.value,
+    images: [objectKey.value],
+    isTemplate: isTemplateApplied.value,
+    sourcePostId: templateSourcePostId.value,
+  })
 
   const taskId = await submitTask(payload, taskTitle.value)
   if (taskId) {

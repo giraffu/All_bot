@@ -9,16 +9,41 @@
 | `src/handlers/fsm/video_lora_fsm.py` | 旧 `video_lora_fsm` 模块的 compat re-export | 仅剩兼容测试 | 调用方与测试退出旧模块路径 | 已删除，统一改走 `image_to_video_fsm.py` |
 | `conversation_states.VideoLoraState` | 旧图生视频状态别名 | 仅剩兼容测试 | 所有调用方改用 `ImageToVideoState` | 已删除 |
 | `image_to_video_fsm.start_video_lora` / `get_video_lora_fsm_handler` | 旧命名入口别名 | 仅剩兼容测试 | 统一入口改用 `start_image_to_video` / `get_image_to_video_fsm_handler` | 已删除 |
+| `src/web_api/routers/users.py:invalidate_affiliate_redeem_cache_after_commit` | 仅为旧 patch 路径保留的 re-export | 旧集成测试 / service patch 习惯 | 相邻测试统一 patch `user_affiliate_redeem_api_service.py` | 已删除，router 不再保留该 re-export |
+| `src/services/payment_fulfillment_service.py:LogService` 导入注释 | backward-compatible test patch target | 旧支付履约测试 | 相邻测试改贴 `src.services.log_service.LogService.log_action` | 已删除，支付履约文件不再暴露 compat patch target |
+
+## 已在本轮下沉的默认装配
+
+| 对象 | 原位置 | 新位置 | 当前状态 |
+| --- | --- | --- | --- |
+| task_core submission 默认 wrapper | `src/core/task_core.py` | `src/core/task_core_submission.py` | 已下沉，`task_core.py` 仅保留 facade 绑定 |
+| task_core finalization 默认 wrapper | `src/core/task_core.py` | `src/core/task_core_finalization.py` | 已下沉，失败/取消默认依赖由子模块自装配 |
+| task_core web monitor 默认 wrapper | `src/core/task_core.py` | `src/core/task_core_web_monitor.py` | 已下沉，`task_core.py` 仅保留兼容导出符号 |
+| task_core warmup/persistence 默认 wrapper | `src/core/task_core.py` | `src/core/task_core_web_history_warmup.py`、`src/core/task_core_persistence.py` | 已下沉，web history warmup 与成功持久化默认绑定不再堆在 facade |
+| TG gallery browse 链路 | `src/handlers/callbacks/gallery_callbacks.py` | `src/handlers/callbacks/gallery_callbacks_browse.py` | 已拆出浏览/渲染/媒体发送主链，callback 文件回归薄入口 |
+| 旧单图页与模板工作台 payload 组装 | 多个 `.vue` 页面内联 | `frontend/src/features/generation/buildGenerationTaskPayload.ts` | 已统一，旧单图页与 A4 工作台共用提交 payload builder |
+| swap 双文件页 payload 组装 | `FaceSwap.vue`、`VideoSwap.vue` 与模板面板内联 | `frontend/src/features/generation/buildSwapTaskPayload.ts` | 已统一，页面与模板面板共用 `face_swap/face_video` payload builder |
+| swap 双文件页提交 controller | `FaceSwap.vue`、`VideoSwap.vue` 与模板面板各自内联提交 | `frontend/src/composables/useSwapTaskSubmit.ts` | 已统一，四处入口共用校验 + payload + submit + taskId 回写主链 |
+| `gallery_core` 默认 provider / side effects | `src/core/gallery_core.py` | `src/core/gallery_core_dependencies.py`、`src/core/gallery_submission_effects.py` | 已下沉，默认装配与投稿 side effects 不再堆在主文件顶部 |
+| `TaskService._run_bot_task_flow(...)` | `src/services/task_service.py` | `src/services/task_service_flow.py` | 已删除，entrypoint 直接调用共享 flow，tests 改贴 `run_bot_task_flow` |
+| TG gallery 投稿 / 点赞主链 | `src/handlers/callbacks/gallery_callbacks.py` | `src/handlers/callbacks/gallery_callbacks_interactions.py` | 已下沉，主文件进一步退回注册入口与分类菜单 |
+| `Profile.vue` metric 组装 | `frontend/src/views/Profile.vue` | `frontend/src/composables/useProfileMetrics.ts` | 已下沉，统计与返佣卡片数据组装不再堆在页面脚本 |
+| `storage.py` R2 exists/cache runtime 细节 | `src/services/storage.py` | `src/services/storage_r2_exists.py` | 已下沉，`StorageService` 主要保留公开方法与薄包装 |
+| swap 旧路由 apply 初始化 | `FaceSwap.vue`、`VideoSwap.vue` 页面内联 | `frontend/src/composables/useLegacySwapApply.ts` | 已统一，旧页只保留 route 兼容入口与页面壳 |
+| `Profile.vue` 队列状态块 | `frontend/src/views/Profile.vue` | `frontend/src/components/profile/ProfileQueueStatusPanel.vue` | 已下沉，页面继续回到区块装配层 |
+| `storage.py` MinIO bootstrap / presign 细节 | `src/services/storage.py` | `src/services/storage_minio_client.py`、`src/services/storage_presign.py` | 已下沉，bucket name/public client/bucket ensure 与 presign get/put/expiry 不再堆在主文件 |
+| `Profile.vue` 欢迎区摘要 / 快捷入口装配 | `frontend/src/views/Profile.vue` | `frontend/src/composables/useProfileWelcomeSummary.ts`、`frontend/src/composables/useProfileQuickActions.ts` | 已下沉，欢迎区与快捷入口的数据/行为编排进一步退出页面脚本 |
+| swap 双文件页结果重置 controller | `FaceSwap.vue`、`VideoSwap.vue` 页面内联 | `frontend/src/composables/useSwapResetController.ts` | 已统一，reset 会同步清上传态、taskId、分辨率与模板态/sourcePostId |
+| `billing_core` 私有 `_build_*` 测试 seam | `tests/core/test_billing_core.py` patch 私有 builder | `BillingCoreDependencies` 显式注入 | 已迁移，公开函数支持显式 dependencies，测试不再绑定私有 builder |
+| `task_core_persistence` 模块内 materialization builder seam | `src/core/task_core_persistence.py` | `persist_successful_task_result(...)` + `task_core_persistence_flow.py` | 已收口，下载/`to_thread` 默认绑定回到公开 persistence 边界与 flow |
+| `affiliate_redeem_service` membership 账本/结算混排 | `src/services/affiliate_redeem_service.py` | `_create_membership_redeem_ledger_entry(...)`、`_apply_affiliate_membership_settlement(...)` | 已拆开，主 service 继续保留事务/幂等编排，账本与结算边界更清晰 |
 
 ## 仍保留的 compat / seam
 
 | 对象 | 当前用途 | 依赖它的调用方或测试 | 删除前置条件 | 预计删除阶段 |
 | --- | --- | --- | --- | --- |
-| `src/handlers/fsm/image_to_video_fsm.py:start_custom_video_compat` | 承接 `custom_video_fsm` 的 legacy 命名入口 | `src/handlers/fsm/custom_video_fsm.py` | `custom_video_fsm` 入口统一改为新的 flow 命名，不再导出 compat 名 | `D2` 后续轮次 |
 | `src/handlers/fsm/custom_video_fsm.py:start_custom_video` | `/custom_video` 旧入口别名，对外保持稳定命令名 | Telegram 菜单与 callback `fsm_start_custom_video` | 明确 `/custom_video` 是否长期保留为独立产品入口；若仅是图生视频变体，可与统一入口继续收口 | `D2` 后续轮次 |
-| `src/web_api/routers/users.py:invalidate_affiliate_redeem_cache_after_commit` | 仅为旧 patch 路径保留的 re-export | 旧集成测试 / service patch 习惯 | 相邻测试统一 patch `user_affiliate_redeem_api_service.py` 或 `affiliate_redeem_service.py` | `A3` + `D2` |
-| `src/services/payment_fulfillment_service.py:LogService` 导入注释 | backward-compatible test patch target，便于旧支付/affiliate 测试稳定 patch | 相邻支付履约测试 | 测试改贴 `log_service` 或更稳定的 service/helper 边界 | `A3` + `D2` |
-| `src/constants.py:MODE_IMAGE_TO_VIDEO = MODE_VIDEO_LORA` | 兼容历史任务类型值，避免旧记录/旧 payload 失配 | 历史任务类型、旧 apply-context、统计与计费链路 | 核对任务历史、gallery apply-context、计费与展示层对旧 `video_lora` 值的容忍度后，再做数据兼容迁移 | `B4` 之后单独评估 |
+| `src/constants.py:MODE_IMAGE_TO_VIDEO = MODE_VIDEO_LORA` | 兼容历史任务类型值，避免旧记录/旧 payload 失配 | 历史任务类型、旧 apply-context、统计与计费链路 | 当前已开始收口散落的 `"video_lora"` 字面量与重复 alias 判断；后续仍需在历史数据/旧 payload 兼容迁移完成后退出该值别名 | `B4` 后续轮次 |
 
 ## 删除原则
 

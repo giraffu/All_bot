@@ -1,7 +1,7 @@
 from fastapi import HTTPException
 from sqlalchemy import select, update
 
-from src.core.gallery_core import async_copy_to_r2_background
+from src.core.gallery_submission_effects import async_copy_to_r2_background
 from src.core.media_paths import (
     build_history_r2_media_key,
     build_history_r2_thumbnail_key,

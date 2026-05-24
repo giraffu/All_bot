@@ -2,6 +2,7 @@ import os
 
 from config import MINIO_TEMPLATE_BUCKET
 from dashboard.backend.schemas import TemplateContributionResponse
+from dashboard.backend.presenters.storage_presenter_utils import build_storage_url
 
 
 def build_template_preview_object_name(*, contribution) -> str:
@@ -15,8 +16,9 @@ def build_template_preview_object_name(*, contribution) -> str:
 
 def build_template_preview_url(*, contribution, storage_service) -> str:
     object_name = build_template_preview_object_name(contribution=contribution)
-    return storage_service.get_presigned_url(
-        object_name,
+    return build_storage_url(
+        storage_service=storage_service,
+        object_name=object_name,
         bucket=MINIO_TEMPLATE_BUCKET,
     )
 

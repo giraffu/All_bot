@@ -93,7 +93,6 @@ async def test_fulfill_order_records_affiliate_transaction_on_success(monkeypatc
     calculate_mock = AsyncMock(side_effect=lambda _s, current_order: setattr(current_order, "commission_usdt", Decimal("1.2500")) or referral)
     record_mock = AsyncMock(return_value=True)
     invalidate_mock = AsyncMock()
-    log_action_mock = AsyncMock()
 
     monkeypatch.setattr(
         payment_fulfillment_service, "AsyncSessionLocal", lambda: _SessionContext(session)
@@ -117,9 +116,6 @@ async def test_fulfill_order_records_affiliate_transaction_on_success(monkeypatc
         payment_fulfillment_service,
         "invalidate_invitation_recharge_cache",
         invalidate_mock,
-    )
-    monkeypatch.setattr(
-        payment_fulfillment_service.LogService, "log_action", log_action_mock
     )
     monkeypatch.delenv("BOT_TOKEN", raising=False)
 
@@ -164,7 +160,6 @@ async def test_fulfill_order_accepts_string_paid_amount(monkeypatch):
     )
     record_mock = AsyncMock(return_value=True)
     invalidate_mock = AsyncMock()
-    log_action_mock = AsyncMock()
 
     monkeypatch.setattr(
         payment_fulfillment_service, "AsyncSessionLocal", lambda: _SessionContext(session)
@@ -188,9 +183,6 @@ async def test_fulfill_order_accepts_string_paid_amount(monkeypatch):
         payment_fulfillment_service,
         "invalidate_invitation_recharge_cache",
         invalidate_mock,
-    )
-    monkeypatch.setattr(
-        payment_fulfillment_service.LogService, "log_action", log_action_mock
     )
     monkeypatch.delenv("BOT_TOKEN", raising=False)
 
@@ -263,7 +255,6 @@ async def test_fulfill_order_logs_warning_when_affiliate_ledger_insert_is_skippe
     )
     record_mock = AsyncMock(return_value=False)
     invalidate_mock = AsyncMock()
-    log_action_mock = AsyncMock()
     warning_mock = Mock()
 
     monkeypatch.setattr(
@@ -288,9 +279,6 @@ async def test_fulfill_order_logs_warning_when_affiliate_ledger_insert_is_skippe
         payment_fulfillment_service,
         "invalidate_invitation_recharge_cache",
         invalidate_mock,
-    )
-    monkeypatch.setattr(
-        payment_fulfillment_service.LogService, "log_action", log_action_mock
     )
     monkeypatch.setattr(payment_fulfillment_service.logger, "warning", warning_mock)
     monkeypatch.delenv("BOT_TOKEN", raising=False)

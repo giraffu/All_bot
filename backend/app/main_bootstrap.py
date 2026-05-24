@@ -1,18 +1,24 @@
 import asyncio
 from contextlib import asynccontextmanager
 
-from fastapi import HTTPException
+from fastapi import Depends, HTTPException
+from fastapi.security import HTTPAuthorizationCredentials
 from minio import Minio
 from redis.asyncio import Redis
+from src.services.storage_minio_client import (
+    build_configured_bucket_names,
+    build_minio_client,
+)
 
 
 def init_minio_client(*, settings, logger):
     try:
-        minio_client = Minio(
-            settings.minio_endpoint,
+        minio_client = build_minio_client(
+            endpoint=settings.minio_endpoint,
             access_key=settings.minio_access_key,
             secret_key=settings.minio_secret_key,
             secure=settings.minio_secure,
+            bucket_names=build_configured_bucket_names(),
         )
         logger.info(f"MinIO client initialized: {settings.minio_endpoint}")
         return minio_client
@@ -23,6 +29,13 @@ def init_minio_client(*, settings, logger):
 
 def get_minio_client(request):
     return getattr(request.app.state, "minio_client", None)
+
+
+def build_request_state_getter(*, attr_name: str, default=None):
+    def _get_request_state_value(request):
+        return getattr(request.app.state, attr_name, default)
+
+    return _get_request_state_value
 
 
 async def check_zombie_tasks_loop(
@@ -44,10 +57,35 @@ async def check_zombie_tasks_loop(
         await sleep_func(60)
 
 
+def build_zombie_tasks_loop_runner(
+    *,
+    settings,
+    queue_manager_cls,
+    logger,
+):
+    async def _runner():
+        await check_zombie_tasks_loop(
+            settings=settings,
+            queue_manager_cls=queue_manager_cls,
+            logger=logger,
+        )
+
+    return _runner
+
+
 def verify_token(*, credentials, expected_token: str):
     if credentials.credentials != expected_token:
         raise HTTPException(status_code=401, detail="Invalid token")
     return credentials.credentials
+
+
+def build_verify_token_dependency(*, expected_token: str, security):
+    async def _verify_token(
+        credentials: HTTPAuthorizationCredentials = Depends(security),
+    ):
+        return verify_token(credentials=credentials, expected_token=expected_token)
+
+    return _verify_token
 
 
 @asynccontextmanager

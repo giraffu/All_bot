@@ -6,6 +6,7 @@ import { useI18n } from 'vue-i18n'
 import { useTemplateApplyUpload } from '@/composables/useTemplateApplyUpload'
 import { useTaskResult } from '@/composables/useTaskResult'
 import { useTaskStream } from '@/composables/useTaskStream'
+import { buildGenerationTaskPayload } from '@/features/generation/buildGenerationTaskPayload'
 import { useTemplateApplyStore } from '@/stores/templateApply'
 import type { TemplateApplyContext } from '@/types/templateApply'
 
@@ -224,24 +225,17 @@ const handleGenerate = async () => {
     return
   }
 
-  const payload: Record<string, any> = {
-    task_type: taskType.value === 'edit' && selectedLora.value ? 'img2img_lora' : taskType.value,
-    inputs: {
-      images: uploadedImages.value.map(item => item.key)
-    },
-    prompt: prompt.value.trim(),
-    priority: 0,
-    is_template: isTemplateApplied.value
-  }
-
-  if (templateSourcePostId.value != null) {
-    payload.source_post_id = templateSourcePostId.value
-  }
-
-  if (payload.task_type === 'img2img_lora') {
-    payload.inputs.lora_name = selectedLora.value
-    payload.inputs.lora_strength = Number(customLoraStrength.value)
-  }
+  const payload = buildGenerationTaskPayload({
+    taskType: taskType.value,
+    images: uploadedImages.value.map(item => item.key),
+    prompt: prompt.value,
+    promptTarget: 'topLevel',
+    loraName: selectedLora.value || undefined,
+    loraStrength: selectedLora.value ? Number(customLoraStrength.value) : undefined,
+    isTemplate: isTemplateApplied.value,
+    sourcePostId: templateSourcePostId.value,
+    normalizeEditLoraTask: true,
+  })
 
   const taskId = await submitTask(payload, taskTitle.value)
   if (taskId) {

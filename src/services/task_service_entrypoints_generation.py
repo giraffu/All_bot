@@ -9,6 +9,7 @@ from src.constants import (
     MODE_IMAGE_TO_VIDEO,
     MODE_NAME_MAP,
 )
+from src.services.permission_service import permission_service
 from src.services.task_service_entrypoints_common import resolve_internal_user_id
 from src.services.task_service_entrypoint_support import (
     build_cleanup_paths,
@@ -17,7 +18,10 @@ from src.services.task_service_entrypoint_support import (
     build_unexpected_error_log_message,
     resolve_video_billing_args,
 )
-from src.services.task_service_support import resolve_custom_video_settings
+from src.services.task_service_support import (
+    get_acceleration_notice,
+    resolve_custom_video_settings,
+)
 from src.services.task_service_message_support import (
     build_cost_status_builder,
     build_message_spec,
@@ -25,6 +29,7 @@ from src.services.task_service_message_support import (
     resolve_display_mode_name,
     with_completion_caption,
 )
+from src.services.task_service_flow import run_bot_task_flow
 from src.services.task_service_types import BotTaskRuntimeState
 from src.utils import robust_send_message
 
@@ -62,7 +67,10 @@ async def process_image_to_video_task(
     )
 
     runtime_state = BotTaskRuntimeState()
-    notice = await service._get_acceleration_notice(internal_user_id)
+    notice = await get_acceleration_notice(
+        internal_user_id,
+        quota_manager=permission_service.quota_manager,
+    )
     display_mode_name = resolve_display_mode_name(
         task_type,
         context=context,
@@ -101,9 +109,8 @@ async def process_image_to_video_task(
         allowed_task_types=(MODE_CUSTOM_VIDEO, MODE_IMAGE_TO_VIDEO),
     )
 
-    return await service._run_bot_task_flow(
+    return await run_bot_task_flow(
         context=context,
-        update=None,
         chat_id=chat_id,
         status_msg_id=status_msg_id,
         runtime_state=runtime_state,
@@ -134,6 +141,8 @@ async def process_image_to_video_task(
         unexpected_error_prefix="出错了",
         cleanup_paths=build_cleanup_paths(images),
         cleanup_enabled=cleanup,
+        cleanup_files_func=service._cleanup_files,
+        update=None,
     )
 
 
@@ -194,7 +203,10 @@ async def process_generation_task(
     duration = 5
 
     runtime_state = BotTaskRuntimeState()
-    notice = await service._get_acceleration_notice(internal_user_id)
+    notice = await get_acceleration_notice(
+        internal_user_id,
+        quota_manager=permission_service.quota_manager,
+    )
     inputs = build_task_inputs(
         prompt=prompt,
         images=images,
@@ -217,7 +229,7 @@ async def process_generation_task(
         prompt,
         lora_name=lora_name,
         task_type=task_type,
-        lora_task_types=("video_lora", "img2img_lora"),
+        lora_task_types=(MODE_IMAGE_TO_VIDEO, "img2img_lora"),
     )
 
     display_mode_name = resolve_display_mode_name(
@@ -238,9 +250,8 @@ async def process_generation_task(
         allowed_task_types=(MODE_CUSTOM_VIDEO, MODE_IMAGE_TO_VIDEO),
     )
 
-    return await service._run_bot_task_flow(
+    return await run_bot_task_flow(
         context=context,
-        update=None,
         chat_id=chat_id,
         status_msg_id=status_msg_id,
         runtime_state=runtime_state,
@@ -272,6 +283,8 @@ async def process_generation_task(
         unexpected_error_prefix="出错了",
         cleanup_paths=build_cleanup_paths(images),
         cleanup_enabled=cleanup,
+        cleanup_files_func=service._cleanup_files,
+        update=None,
     )
 
 
@@ -295,7 +308,10 @@ async def process_i2i_pro_task(
 
     image_path = images[0]
     runtime_state = BotTaskRuntimeState()
-    notice = await service._get_acceleration_notice(internal_user_id)
+    notice = await get_acceleration_notice(
+        internal_user_id,
+        quota_manager=permission_service.quota_manager,
+    )
     message_spec = build_message_spec(
         initial_status_text=build_status_message(
             "🚀 正在处理幻想换脸任务",
@@ -310,9 +326,8 @@ async def process_i2i_pro_task(
         duration=5,
     )
 
-    return await service._run_bot_task_flow(
+    return await run_bot_task_flow(
         context=context,
-        update=None,
         chat_id=chat_id,
         runtime_state=runtime_state,
         internal_user_id=internal_user_id,
@@ -335,4 +350,6 @@ async def process_i2i_pro_task(
         ),
         unexpected_error_prefix="出错了",
         cleanup_paths=build_cleanup_paths(images),
+        cleanup_files_func=service._cleanup_files,
+        update=None,
     )

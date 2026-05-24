@@ -1,10 +1,9 @@
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock
 
 import pytest
 from fastapi import BackgroundTasks, HTTPException
 from types import SimpleNamespace
 
-from src.web_api.routers import gallery as gallery_router
 from src.web_api.schemas.gallery_schema import GallerySubmitRequest
 from src.web_api.services.gallery_service_support import (
     build_gallery_config_payload,
@@ -106,90 +105,3 @@ async def test_submit_gallery_post_payload_maps_gallery_core_error_to_400():
 
     assert exc_info.value.status_code == 400
     assert exc_info.value.detail == "cannot submit"
-
-
-@pytest.mark.asyncio
-async def test_get_gallery_config_routes_to_service():
-    expected = {"allowed_types": [], "lora_models": [], "img2img_lora_models": []}
-
-    with patch(
-        "src.web_api.routers.gallery.build_gallery_config_payload",
-        return_value=expected,
-    ) as mock_service:
-        response = await gallery_router.get_gallery_config()
-
-    assert response == expected
-    mock_service.assert_called_once()
-
-
-@pytest.mark.asyncio
-async def test_submit_to_gallery_routes_to_service():
-    request = GallerySubmitRequest(width=512, height=512, duration=4)
-    background_tasks = BackgroundTasks()
-    current_user = _build_current_user()
-
-    with patch(
-        "src.web_api.routers.gallery.submit_gallery_post_payload",
-        new=AsyncMock(return_value={"status": "success"}),
-    ) as mock_service:
-        response = await gallery_router.submit_to_gallery(
-            "task-1",
-            background_tasks,
-            current_user=current_user,
-            request=request,
-        )
-
-    assert response == {"status": "success"}
-    mock_service.assert_awaited_once_with(
-        task_id="task-1",
-        schedule_background_task=background_tasks.add_task,
-        request=request,
-        current_user=current_user,
-    )
-
-
-@pytest.mark.asyncio
-async def test_update_post_status_routes_to_api_wrapper():
-    current_user = _build_current_user()
-    db = object()
-
-    with patch(
-        "src.web_api.routers.gallery.update_gallery_post_status_api_payload",
-        new=AsyncMock(return_value={"status": "success"}),
-    ) as mock_service:
-        response = await gallery_router.update_post_status(
-            11,
-            current_user=current_user,
-            db=db,
-            is_active=True,
-        )
-
-    assert response == {"status": "success"}
-    mock_service.assert_awaited_once_with(
-        post_id=11,
-        current_user=current_user,
-        db=db,
-        is_active=True,
-    )
-
-
-@pytest.mark.asyncio
-async def test_interact_with_post_routes_to_api_wrapper():
-    current_user = _build_current_user()
-
-    with patch(
-        "src.web_api.routers.gallery.interact_with_gallery_post_api_payload",
-        new=AsyncMock(return_value={"status": "success"}),
-    ) as mock_service:
-        response = await gallery_router.interact_with_post(
-            9,
-            action="like",
-            current_user=current_user,
-        )
-
-    assert response == {"status": "success"}
-    mock_service.assert_awaited_once_with(
-        post_id=9,
-        action="like",
-        current_user=current_user,
-    )

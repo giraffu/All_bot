@@ -42,6 +42,9 @@ __all__ = [
     "IDENTITY_PRIORITY",
     "IDENTITY_RATIO",
     "MembershipSettlementResult",
+    "build_default_billing_core_dependencies",
+    "build_default_billing_core_providers",
+    "get_default_billing_core_dependencies",
     "calculate_identity_conversion",
     "calculate_identity_manual_conversion",
     "calculate_membership_settlement",
@@ -74,19 +77,42 @@ class BillingCoreProviders:
     get_quota_manager_func: Callable[[], Any]
 
 
-def _build_billing_core_providers() -> BillingCoreProviders:
+def get_default_billing_core_providers() -> BillingCoreProviders:
     from src.api_client import get_system_status
 
-    return BillingCoreProviders(
+    return build_default_billing_core_providers(
         get_system_status_func=get_system_status,
-        get_permission_service_func=_load_permission_service,
-        get_redis_client_func=_load_redis_client,
-        get_quota_manager_func=_load_quota_manager,
     )
 
 
-def _build_billing_core_dependencies() -> BillingCoreDependencies:
-    providers = _build_billing_core_providers()
+def build_default_billing_core_providers(
+    *,
+    get_system_status_func,
+    get_permission_service_func=_load_permission_service,
+    get_redis_client_func=_load_redis_client,
+    get_quota_manager_func=_load_quota_manager,
+) -> BillingCoreProviders:
+    return BillingCoreProviders(
+        get_system_status_func=get_system_status_func,
+        get_permission_service_func=get_permission_service_func,
+        get_redis_client_func=get_redis_client_func,
+        get_quota_manager_func=get_quota_manager_func,
+    )
+
+
+def get_default_billing_core_dependencies(
+    *,
+    providers: BillingCoreProviders | None = None,
+) -> BillingCoreDependencies:
+    return build_default_billing_core_dependencies(
+        providers=providers or get_default_billing_core_providers()
+    )
+
+
+def build_default_billing_core_dependencies(
+    *,
+    providers: BillingCoreProviders,
+) -> BillingCoreDependencies:
     permission_service_impl = providers.get_permission_service_func()
     redis_client_impl = providers.get_redis_client_func()
     quota_manager_impl = providers.get_quota_manager_func()
@@ -103,12 +129,16 @@ def _build_billing_core_dependencies() -> BillingCoreDependencies:
     )
 
 
-async def check_concurrency_lock(internal_user_id: int) -> Tuple[bool, str]:
+async def check_concurrency_lock(
+    internal_user_id: int,
+    *,
+    dependencies: BillingCoreDependencies | None = None,
+) -> Tuple[bool, str]:
     """
     检查用户并发锁及队列限制。
     返回 (是否允许执行, 错误信息)
     """
-    dependencies = _build_billing_core_dependencies()
+    dependencies = dependencies or get_default_billing_core_dependencies()
 
     # 1. 检查队列长度与身份
     identity_str = await dependencies.get_user_identity_func(internal_user_id)
@@ -134,14 +164,23 @@ async def check_concurrency_lock(internal_user_id: int) -> Tuple[bool, str]:
     return True, ""
 
 
-async def release_concurrency_lock(internal_user_id: int):
+async def release_concurrency_lock(
+    internal_user_id: int,
+    *,
+    dependencies: BillingCoreDependencies | None = None,
+):
     """释放用户并发锁"""
-    dependencies = _build_billing_core_dependencies()
+    dependencies = dependencies or get_default_billing_core_dependencies()
     await dependencies.decrement_user_concurrency_func(internal_user_id)
 
 
 async def check_and_deduct_credits(
-    internal_user_id: int, cost: int, task_type: str, username: str = None
+    internal_user_id: int,
+    cost: int,
+    task_type: str,
+    username: str = None,
+    *,
+    dependencies: BillingCoreDependencies | None = None,
 ) -> Tuple[bool, str]:
     """
     检查灵石余额并扣除。
@@ -150,7 +189,7 @@ async def check_and_deduct_credits(
     if cost <= 0:
         return True, ""
 
-    dependencies = _build_billing_core_dependencies()
+    dependencies = dependencies or get_default_billing_core_dependencies()
     try:
         await dependencies.deduct_credits_func(
             internal_user_id, cost, username=username, task_type=task_type
@@ -167,21 +206,30 @@ async def check_and_deduct_credits(
 
 
 async def refund_credits(
-    internal_user_id: int, cost: int, task_type: str = "refund", username: str = None
+    internal_user_id: int,
+    cost: int,
+    task_type: str = "refund",
+    username: str = None,
+    *,
+    dependencies: BillingCoreDependencies | None = None,
 ):
     """退还灵石"""
     if cost > 0:
-        dependencies = _build_billing_core_dependencies()
+        dependencies = dependencies or get_default_billing_core_dependencies()
         await dependencies.add_credits_func(
             internal_user_id, cost, username=username, task_type=task_type
         )
 
 
-async def get_user_priority_and_identity(internal_user_id: int) -> Tuple[int, str, str]:
+async def get_user_priority_and_identity(
+    internal_user_id: int,
+    *,
+    dependencies: BillingCoreDependencies | None = None,
+) -> Tuple[int, str, str]:
     """
     获取用户的优先级、身份和组。
     """
-    dependencies = _build_billing_core_dependencies()
+    dependencies = dependencies or get_default_billing_core_dependencies()
 
     priority = await dependencies.calculate_user_priority_func(internal_user_id)
     identity_str = await dependencies.get_user_identity_func(internal_user_id)

@@ -3,11 +3,17 @@ import contextlib
 import logging
 from collections.abc import Awaitable, Callable
 
+from src.core.billing_core import refund_credits
+from src.core.task_core_default_dependencies import (
+    build_default_task_core_submission_dependencies,
+)
 from src.core.task_core_types import (
     CoreDomainError,
     TaskSubmissionContext,
     TaskSubmissionExecutionResult,
+    is_task_backend_busy_error,
 )
+from src.core.task_dispatcher import dispatch_to_worker
 
 
 async def register_task_submission(
@@ -142,3 +148,108 @@ async def compensate_failed_submission(
 
     with contextlib.suppress(Exception):
         await shield_func(remove_task_func(registry_task_id))
+
+
+async def register_task_submission_default(
+    *,
+    registry_task_id: str,
+    user_id: int,
+    username: str,
+    cost: int,
+    submission_context: TaskSubmissionContext,
+    logger_override: logging.Logger | None = None,
+) -> str:
+    dependencies = build_default_task_core_submission_dependencies(
+        dispatch_to_worker_func=dispatch_to_worker,
+        is_task_backend_busy_error_func=lambda _message: False,
+        logger_override=logger_override or logging.getLogger(__name__),
+    )
+    return await register_task_submission(
+        registry_task_id=registry_task_id,
+        user_id=user_id,
+        username=username,
+        cost=cost,
+        submission_context=submission_context,
+        add_task_func=dependencies.add_task_func,
+    )
+
+
+async def dispatch_registered_task_default(
+    *,
+    registry_task_id: str,
+    task_type: str,
+    inputs: dict,
+    final_priority: int,
+    is_task_backend_busy_error_func=is_task_backend_busy_error,
+    logger_override: logging.Logger | None = None,
+) -> str:
+    dependencies = build_default_task_core_submission_dependencies(
+        dispatch_to_worker_func=dispatch_to_worker,
+        is_task_backend_busy_error_func=is_task_backend_busy_error_func,
+        logger_override=logger_override or logging.getLogger(__name__),
+    )
+    return await dispatch_registered_task(
+        registry_task_id=registry_task_id,
+        task_type=task_type,
+        inputs=inputs,
+        final_priority=final_priority,
+        dispatch_to_worker_func=dependencies.dispatch_to_worker_func,
+        update_backend_task_id_func=dependencies.update_backend_task_id_func,
+        mark_task_status_func=dependencies.mark_task_status_func,
+        is_task_backend_busy_error_func=dependencies.is_task_backend_busy_error_func,
+        logger=dependencies.logger,
+    )
+
+
+async def execute_task_submission_saga_default(
+    *,
+    task_type: str,
+    inputs: dict,
+    registry_task_id: str,
+    cost: int,
+    submission_context: TaskSubmissionContext,
+    is_task_backend_busy_error_func=is_task_backend_busy_error,
+    logger_override: logging.Logger | None = None,
+) -> TaskSubmissionExecutionResult:
+    return await execute_task_submission_saga(
+        task_type=task_type,
+        inputs=inputs,
+        registry_task_id=registry_task_id,
+        cost=cost,
+        submission_context=submission_context,
+        register_task_submission_func=register_task_submission_default,
+        dispatch_registered_task_func=lambda **kwargs: dispatch_registered_task_default(
+            **kwargs,
+            is_task_backend_busy_error_func=is_task_backend_busy_error_func,
+            logger_override=logger_override,
+        ),
+    )
+
+
+async def compensate_failed_submission_default(
+    *,
+    user_id: int,
+    username: str,
+    cost: int,
+    error: Exception,
+    credits_deducted: bool,
+    registry_task_id: str,
+    logger_override: logging.Logger | None = None,
+):
+    dependencies = build_default_task_core_submission_dependencies(
+        dispatch_to_worker_func=dispatch_to_worker,
+        is_task_backend_busy_error_func=lambda _message: False,
+        logger_override=logger_override or logging.getLogger(__name__),
+    )
+    await compensate_failed_submission(
+        user_id=user_id,
+        username=username,
+        cost=cost,
+        error=error,
+        credits_deducted=credits_deducted,
+        registry_task_id=registry_task_id,
+        refund_credits_func=refund_credits,
+        add_pending_refund_func=dependencies.add_pending_refund_func,
+        remove_task_func=dependencies.remove_task_func,
+        logger=dependencies.logger,
+    )

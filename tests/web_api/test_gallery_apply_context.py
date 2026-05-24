@@ -7,6 +7,7 @@ import pytest
 
 from src.database.models import GalleryPost, History
 from src.core import gallery_core
+from src.core import gallery_submission_effects
 from src.services import storage as storage_module
 from src.web_api.services.gallery_service_queries import get_gallery_apply_context_payload
 from src.web_api.services.gallery_service_support import (
@@ -775,12 +776,12 @@ async def test_process_submit_to_gallery_result_builds_expected_outcome():
     assert len(outcome.side_effects) == 2
 
     copy_func, copy_args = outcome.side_effects[0]
-    assert copy_func is gallery_core.async_copy_to_r2_background
+    assert copy_func is gallery_submission_effects.async_copy_to_r2_background
     assert copy_args[1] == "123/output_images/task-1.png"
     assert copy_args[2] == "history/task-1/original.png"
 
     thumb_func, thumb_args = outcome.side_effects[1]
-    assert thumb_func is gallery_core.generate_and_upload_thumbnail
+    assert thumb_func is gallery_submission_effects.generate_and_upload_thumbnail
     assert thumb_args[0] == "123/output_images/task-1.png"
     assert thumb_args[1] == "image"
     assert thumb_args[2] == "history/task-1/thumb.webp"
@@ -793,7 +794,7 @@ async def test_process_submit_to_gallery_result_builds_expected_outcome():
 def test_build_gallery_submit_side_effects_returns_copy_and_thumbnail_jobs():
     copy_job = AsyncMock()
     thumbnail_job = AsyncMock()
-    side_effects = gallery_core.build_gallery_submit_side_effects(
+    side_effects = gallery_submission_effects.build_gallery_submit_side_effects(
         task_id="task-1",
         output_file="123/output_images/task-1.png",
         media_type="image",

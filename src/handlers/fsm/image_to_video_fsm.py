@@ -231,10 +231,10 @@ async def start_image_to_video(update: Update, context: ContextTypes.DEFAULT_TYP
     )
 
 
-async def start_custom_video_compat(
+async def start_custom_video(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> int:
-    """Compatibility entry point for the legacy /custom_video flow."""
+    """Legacy /custom_video entry point backed by the unified image-to-video flow."""
     return await _start_image_to_video_flow(
         update,
         context,

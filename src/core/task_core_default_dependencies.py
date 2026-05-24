@@ -123,7 +123,6 @@ def build_default_task_core_persistence_dependencies(
         schedule_web_history_r2_warmup_func=schedule_web_history_r2_warmup_func,
     )
 
-
 def build_default_task_core_monitor_dependencies(
     *,
     normalize_terminal_status_func,

@@ -6,81 +6,12 @@ from src.core import task_core_persistence_flow
 from src.core.task_core_types import TaskSuccessPersistenceResult
 
 
-def test_build_task_core_persistence_materialization_dependencies_prefers_explicit_funcs():
-    download_result = AsyncMock()
-    download_video_result = AsyncMock()
-    to_thread = AsyncMock()
-
-    dependencies = (
-        task_core_persistence._build_task_core_persistence_materialization_dependencies(
-            download_result_func=download_result,
-            download_video_result_func=download_video_result,
-            to_thread_func=to_thread,
-        )
-    )
-
-    assert dependencies.download_result_func is download_result
-    assert dependencies.download_video_result_func is download_video_result
-    assert dependencies.to_thread_func is to_thread
-
-
-def test_build_task_core_persistence_materialization_dependencies_uses_image_service_getter(
-    monkeypatch,
-):
-    download_result = AsyncMock()
-    download_video_result = AsyncMock()
-
-    monkeypatch.setattr(
-        task_core_persistence,
-        "get_task_core_image_service",
-        lambda: type(
-            "_ImageService",
-            (),
-            {
-                "download_result": download_result,
-                "download_video_result": download_video_result,
-            },
-        )(),
-    )
-
-    dependencies = (
-        task_core_persistence._build_task_core_persistence_materialization_dependencies()
-    )
-
-    assert dependencies.download_result_func is download_result
-    assert dependencies.download_video_result_func is download_video_result
-
-
-def test_build_task_core_persistence_materialization_dependencies_uses_runtime_default_to_thread_binding(
-    monkeypatch,
-):
-    runtime_to_thread = AsyncMock()
-
-    monkeypatch.setattr(task_core_persistence.asyncio, "to_thread", runtime_to_thread)
-
-    dependencies = (
-        task_core_persistence._build_task_core_persistence_materialization_dependencies()
-    )
-
-    assert dependencies.to_thread_func is runtime_to_thread
-
-
 @pytest.mark.asyncio
 async def test_persist_successful_task_result_routes_through_flow(monkeypatch):
     download_result = AsyncMock()
     download_video_result = AsyncMock()
     to_thread = AsyncMock()
     flow = AsyncMock(return_value="done")
-
-    monkeypatch.setattr(
-        task_core_persistence,
-        "_build_task_core_persistence_materialization_dependencies",
-        lambda **_: task_core_persistence.TaskCorePersistenceMaterializationDependencies(
-            download_result_func=download_result,
-            download_video_result_func=download_video_result,
-            to_thread_func=to_thread,
-        ),
-    )
 
     result = await task_core_persistence.persist_successful_task_result(
         backend_task_id="backend-1",
@@ -94,6 +25,9 @@ async def test_persist_successful_task_result_routes_through_flow(monkeypatch):
         is_video=False,
         billing_resolution="1024",
         requested_duration=None,
+        download_result_func=download_result,
+        download_video_result_func=download_video_result,
+        to_thread_func=to_thread,
         materialize_successful_task_result_flow_func=flow,
     )
 
@@ -111,8 +45,11 @@ async def test_persist_successful_task_result_uses_runtime_default_flow_binding(
 ):
     flow = AsyncMock(return_value="runtime-bound")
     runtime_user_logger_factory = Mock()
+    runtime_download_result = AsyncMock()
+    runtime_download_video_result = AsyncMock()
     runtime_extract_from_bytes = AsyncMock()
     runtime_extract_from_storage = AsyncMock()
+    runtime_to_thread = AsyncMock()
 
     monkeypatch.setattr(
         task_core_persistence,
@@ -133,6 +70,23 @@ async def test_persist_successful_task_result_uses_runtime_default_flow_binding(
         task_core_persistence,
         "extract_media_metadata_from_storage_best_effort",
         runtime_extract_from_storage,
+    )
+    monkeypatch.setattr(
+        task_core_persistence.asyncio,
+        "to_thread",
+        runtime_to_thread,
+    )
+    monkeypatch.setattr(
+        task_core_persistence,
+        "get_task_core_image_service",
+        lambda: type(
+            "_ImageService",
+            (),
+            {
+                "download_result": runtime_download_result,
+                "download_video_result": runtime_download_video_result,
+            },
+        )(),
     )
 
     result = await task_core_persistence.persist_successful_task_result(
@@ -161,6 +115,9 @@ async def test_persist_successful_task_result_uses_runtime_default_flow_binding(
         flow_kwargs["extract_media_metadata_from_storage_best_effort_func"]
         is runtime_extract_from_storage
     )
+    assert flow_kwargs["download_result_func"] is runtime_download_result
+    assert flow_kwargs["download_video_result_func"] is runtime_download_video_result
+    assert flow_kwargs["to_thread_func"] is runtime_to_thread
 
 
 @pytest.mark.asyncio

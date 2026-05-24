@@ -2,6 +2,9 @@ import asyncio
 import logging
 
 from src.core.billing_core import refund_credits
+from src.core.task_core_default_dependencies import (
+    build_default_task_core_finalization_dependencies,
+)
 from src.core.task_core_runtime import cleanup_task_runtime_state, force_terminate_task
 from src.core.task_core_types import (
     TaskCancellationFinalizationResult,
@@ -352,4 +355,92 @@ async def finalize_terminated_task(
 
     return TaskTerminationFinalizationResult(
         refunded=refunded,
+    )
+
+
+async def refund_cancelled_task_default(
+    *,
+    internal_user_id: int,
+    username: str,
+    cost: int,
+    task_submitted: bool,
+) -> bool:
+    dependencies = build_default_task_core_finalization_dependencies(
+        refund_credits_func=refund_credits,
+        cleanup_task_runtime_state_func=cleanup_task_runtime_state,
+        refund_cancelled_task_func=refund_cancelled_task_default,
+        force_terminate_task_func=force_terminate_task,
+    )
+    return await refund_cancelled_task(
+        internal_user_id=internal_user_id,
+        username=username,
+        cost=cost,
+        task_submitted=task_submitted,
+        refund_credits_func=dependencies.refund_credits_func,
+    )
+
+
+async def finalize_task_failure_default(
+    *,
+    internal_user_id: int,
+    username: str,
+    cost: int,
+    should_refund: bool,
+    registry_task_id: str | None,
+    release_lock: bool = True,
+    refund_task_type: str = "refund",
+    error: Exception | None = None,
+    generic_error_prefix: str | None = None,
+    explicit_user_message: str | None = None,
+    refund_suffix_mode: str = "if_refunded",
+) -> TaskFailureFinalizationResult:
+    dependencies = build_default_task_core_finalization_dependencies(
+        refund_credits_func=refund_credits,
+        cleanup_task_runtime_state_func=cleanup_task_runtime_state,
+        refund_cancelled_task_func=refund_cancelled_task_default,
+        force_terminate_task_func=force_terminate_task,
+    )
+    return await finalize_task_failure(
+        internal_user_id=internal_user_id,
+        username=username,
+        cost=cost,
+        should_refund=should_refund,
+        registry_task_id=registry_task_id,
+        release_lock=release_lock,
+        refund_task_type=refund_task_type,
+        error=error,
+        generic_error_prefix=generic_error_prefix,
+        explicit_user_message=explicit_user_message,
+        refund_suffix_mode=refund_suffix_mode,
+        refund_credits_func=dependencies.refund_credits_func,
+        cleanup_task_runtime_state_func=dependencies.cleanup_task_runtime_state_func,
+    )
+
+
+async def finalize_task_cancellation_default(
+    *,
+    internal_user_id: int,
+    username: str,
+    cost: int,
+    task_submitted: bool,
+    registry_task_id: str | None,
+    release_lock: bool = True,
+    explicit_user_message: str | None = None,
+) -> TaskCancellationFinalizationResult:
+    dependencies = build_default_task_core_finalization_dependencies(
+        refund_credits_func=refund_credits,
+        cleanup_task_runtime_state_func=cleanup_task_runtime_state,
+        refund_cancelled_task_func=refund_cancelled_task_default,
+        force_terminate_task_func=force_terminate_task,
+    )
+    return await finalize_task_cancellation(
+        internal_user_id=internal_user_id,
+        username=username,
+        cost=cost,
+        task_submitted=task_submitted,
+        registry_task_id=registry_task_id,
+        release_lock=release_lock,
+        explicit_user_message=explicit_user_message,
+        refund_cancelled_task_func=dependencies.refund_cancelled_task_func,
+        cleanup_task_runtime_state_func=dependencies.cleanup_task_runtime_state_func,
     )

@@ -11,6 +11,7 @@ import { useI18n } from 'vue-i18n'
 import { useTemplateApplyUpload } from '@/composables/useTemplateApplyUpload'
 import { useTaskResult } from '@/composables/useTaskResult'
 import { useTaskStream } from '@/composables/useTaskStream'
+import { useSwapTaskSubmit } from '@/composables/useSwapTaskSubmit'
 import { useTemplateApplyStore } from '@/stores/templateApply'
 import type { TemplateApplyContext } from '@/types/templateApply'
 
@@ -134,31 +135,18 @@ const handleRemoveTarget = () => {
   updateAsset(targetAsset, null, null)
 }
 
-const handleGenerate = async () => {
-  if (!faceAsset.value.key || !targetAsset.value.key) {
-    message.warning(t('template_apply.face_swap.upload_required'))
-    return
-  }
-
-  const payload: Record<string, any> = {
-    task_type: 'face_swap',
-    inputs: {
-      face_image: faceAsset.value.key,
-      target_image: targetAsset.value.key
-    },
-    priority: 0,
-    is_template: isTemplateApplied.value
-  }
-
-  if (templateSourcePostId.value != null) {
-    payload.source_post_id = templateSourcePostId.value
-  }
-
-  const taskId = await submitTask(payload, t('template_apply.face_swap.title'))
-  if (taskId) {
-    setSubmittedTaskId(taskId)
-  }
-}
+const { handleGenerate } = useSwapTaskSubmit({
+  taskType: 'face_swap',
+  taskTitle: t('template_apply.face_swap.title'),
+  targetField: 'target_image',
+  getFaceAssetKey: () => faceAsset.value.key,
+  getTargetAssetKey: () => targetAsset.value.key,
+  getIsTemplateApplied: () => isTemplateApplied.value,
+  getSourcePostId: () => templateSourcePostId.value,
+  warningMessage: t('template_apply.face_swap.upload_required'),
+  submitTask,
+  setSubmittedTaskId,
+})
 
 onMounted(() => {
   initializeFromContext()

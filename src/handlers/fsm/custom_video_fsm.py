@@ -8,15 +8,10 @@ from src.handlers.fsm.image_to_video_fsm import (
     process_settings,
     receive_image,
     receive_prompt,
-    start_custom_video_compat,
+    start_custom_video,
     timeout_conversation,
     unexpected_input,
 )
-
-
-async def start_custom_video(update, context) -> int:
-    """Legacy alias that now reuses the unified image-to-video flow."""
-    return await start_custom_video_compat(update, context)
 
 
 def get_custom_video_fsm_handler():
@@ -40,7 +35,6 @@ __all__ = [
     "receive_image",
     "receive_prompt",
     "start_custom_video",
-    "start_custom_video_compat",
     "timeout_conversation",
     "unexpected_input",
 ]

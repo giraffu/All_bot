@@ -5,6 +5,7 @@ import logging
 from fastapi import HTTPException
 from sqlalchemy import select
 
+from src.constants import MODE_VIDEO_LORA
 from src.core.media_paths import build_thumbnail_object_name, resolve_storage_object
 from src.database.models import History, User, UserInteraction
 from src.lora_mapping import translate_tags
@@ -27,7 +28,7 @@ DEFAULT_GALLERY_ALLOWED_TYPE_CONFIGS = [
     ("edit", "task.mode_edit"),
     ("img2img_lora", "task.mode_img2img_lora"),
     ("custom_video", "task.mode_custom_video"),
-    ("video_lora", "task.mode_video_lora"),
+    (MODE_VIDEO_LORA, "task.mode_video_lora"),
     ("ltx_video", "task.mode_ltx_video"),
 ]
 

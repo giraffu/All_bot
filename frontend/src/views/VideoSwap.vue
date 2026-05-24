@@ -1,12 +1,14 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { VideoCameraOutlined, InboxOutlined, DownloadOutlined, CloseCircleOutlined, HistoryOutlined } from '@ant-design/icons-vue'
-import { message } from 'ant-design-vue'
 import { useUpload } from '@/composables/useUpload'
 import { useTaskStream } from '@/composables/useTaskStream'
 import { useTaskResult } from '@/composables/useTaskResult'
 import { useGalleryApplyContext } from '@/composables/useGalleryApplyContext'
 import { useDualFileUploadPreview } from '@/composables/useDualFileUploadPreview'
+import { useLegacySwapApply } from '@/composables/useLegacySwapApply'
+import { useSwapResetController } from '@/composables/useSwapResetController'
+import { useSwapTaskSubmit } from '@/composables/useSwapTaskSubmit'
 import { useRoute } from 'vue-router'
 import { onMounted } from 'vue'
 import GenerationActionBar from '@/components/GenerationActionBar.vue'
@@ -46,46 +48,54 @@ const taskCost = computed(() => {
 const isTemplateApplied = ref(false)
 const templateSourcePostId = ref<number | null>(null)
 
-onMounted(() => {
-  if (route.query.apply === 'true') {
-    const ctx = loadApplyContext()
-    if (ctx && ctx.task_type === 'face_video' && ctx.input_file) {
-      applySecondaryTemplateTarget({
-        objectKey: ctx.input_file,
-        previewUrl: ctx.input_file_url || null,
-      })
-      if (ctx.width) resolution.value = ctx.width.toString()
-      if (ctx.source_post_id != null) {
-        templateSourcePostId.value = Number(ctx.source_post_id)
-      }
-      isTemplateApplied.value = true
-    }
-  }
+const { initializeLegacySwapApply } = useLegacySwapApply({
+  routeApplyEnabled: route.query.apply === 'true',
+  loadApplyContext,
+  expectedTaskType: 'face_video',
+  applySecondaryTemplateTarget,
+  setTemplateApplied: (value) => {
+    isTemplateApplied.value = value
+  },
+  setSourcePostId: (value) => {
+    templateSourcePostId.value = value
+  },
+  setResolution: (value) => {
+    resolution.value = value
+  },
 })
 
-const handleGenerate = async () => {
-  if (!faceObjectKey.value || !bodyObjectKey.value) {
-    message.warning('请确保已上传人脸图片和目标视频！')
-    return
-  }
+onMounted(() => {
+  initializeLegacySwapApply()
+})
 
-  const payload = {
-    task_type: 'face_video',
-    inputs: {
-      face_image: faceObjectKey.value,
-      target_video: bodyObjectKey.value,
-      resolution: Number(resolution.value)
-    },
-    priority: 0,
-    is_template: isTemplateApplied.value,
-    ...(templateSourcePostId.value != null ? { source_post_id: templateSourcePostId.value } : {})
-  }
+const { handleGenerate } = useSwapTaskSubmit({
+  taskType: 'face_video',
+  taskTitle: '视频换脸',
+  targetField: 'target_video',
+  getFaceAssetKey: () => faceObjectKey.value,
+  getTargetAssetKey: () => bodyObjectKey.value,
+  getResolution: () => Number(resolution.value),
+  getIsTemplateApplied: () => isTemplateApplied.value,
+  getSourcePostId: () => templateSourcePostId.value,
+  warningMessage: '请确保已上传人脸图片和目标视频！',
+  submitTask,
+  setSubmittedTaskId,
+})
 
-  const taskId = await submitTask(payload, '视频换脸')
-  if (taskId) {
-    setSubmittedTaskId(taskId)
-  }
-}
+const { resetSwapState } = useSwapResetController({
+  resetUploads: () => {
+    handleRemoveFace()
+    handleRemoveBody()
+  },
+  clearSubmittedTask: () => setSubmittedTaskId(null),
+  resetResolution: () => {
+    resolution.value = '720'
+  },
+  clearTemplateState: () => {
+    isTemplateApplied.value = false
+    templateSourcePostId.value = null
+  },
+})
 
 </script>
 
@@ -178,6 +188,7 @@ const handleGenerate = async () => {
         content-class="flex-grow flex items-center justify-center p-6 min-h-0 bg-black/20"
         pending-label="AI 正在为您生成大片..."
         @download="downloadResult"
+        @reset="resetSwapState"
       >
         <template #header>
           <h3 class="text-lg font-bold p-4 border-b border-slate-400/50 text-slate-200 bg-slate-500/50 flex items-center shrink-0">
@@ -216,6 +227,9 @@ const handleGenerate = async () => {
           <div class="flex gap-3 mt-4 w-full justify-center">
             <a-button type="primary" ghost @click="downloadResult(task.resultUrl, task.title)" class="flex items-center px-6 rounded-lg">
               <download-outlined class="mr-1" /> 保存到本地
+            </a-button>
+            <a-button type="default" @click="resetSwapState" class="flex items-center px-6 rounded-lg border-slate-400 text-slate-300 hover:text-white hover:border-slate-400 bg-slate-500/50">
+              继续生成
             </a-button>
             <a-button type="default" @click="$router.push('/history')" class="flex items-center px-6 rounded-lg border-slate-400 text-slate-300 hover:text-white hover:border-slate-400 bg-slate-500/50">
               <history-outlined class="mr-1" /> 查看历史

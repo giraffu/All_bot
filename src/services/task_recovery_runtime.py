@@ -1,6 +1,6 @@
 import logging
 
-from src.core.task_core import persist_successful_task_result
+from src.core.task_core_persistence import persist_successful_task_result
 from src.services.image_service import image_service
 from src.services.permission_service import permission_service
 from src.services.tg_task_runtime import (

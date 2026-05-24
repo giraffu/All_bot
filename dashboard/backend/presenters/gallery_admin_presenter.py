@@ -1,3 +1,6 @@
+from dashboard.backend.presenters.storage_presenter_utils import build_storage_url
+
+
 def build_dashboard_comment_item(comment) -> dict:
     return {
         "id": comment.id,
@@ -19,16 +22,11 @@ def build_dashboard_comment_item(comment) -> dict:
 
 
 def build_gallery_media_url(*, output_file: str | None, task_id: str, storage_service) -> str | None:
-    if not output_file:
-        return None
-
-    if hasattr(storage_service, "get_file_url"):
-        return storage_service.get_file_url(output_file)
-    if hasattr(storage_service, "get_presigned_url"):
-        return storage_service.get_presigned_url(output_file)
-    if hasattr(storage_service, "get_presigned_download_url"):
-        return storage_service.get_presigned_download_url(output_file)
-    return f"/api/history/media/{task_id}"
+    return build_storage_url(
+        storage_service=storage_service,
+        object_name=output_file,
+        fallback_url=f"/api/history/media/{task_id}" if output_file else None,
+    )
 
 
 def build_gallery_post_item(*, post, storage_service) -> dict:

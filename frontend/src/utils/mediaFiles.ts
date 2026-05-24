@@ -1,3 +1,5 @@
+import { buildStorageFileUrl } from '@/utils/storageUrl'
+
 export const isVideoFile = (path: string, mediaType?: string): boolean => {
   if (mediaType) {
     return mediaType === 'video'
@@ -26,19 +28,7 @@ export const getFileUrl = (path: string, postId?: number | string): string => {
     return ''
   }
 
-  let url = path
-  if (!path.startsWith('http')) {
-    const storageUrl = import.meta.env.VITE_STORAGE_URL || ''
-    const base = storageUrl.endsWith('/') ? storageUrl.slice(0, -1) : storageUrl
-
-    if (!path.startsWith('bot-data/') && !path.startsWith('comfyui-temp/')) {
-      url = !path.includes('/')
-        ? `${base}/comfyui-temp/${path}`
-        : `${base}/bot-data/${path}`
-    } else {
-      url = `${base}/${path}`
-    }
-  }
+  const url = buildStorageFileUrl(path)
 
   if (!postId || url.includes('X-Amz-Signature') || /[?&]v=/.test(url)) {
     return url

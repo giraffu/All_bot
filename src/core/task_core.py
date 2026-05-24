@@ -14,37 +14,28 @@ from src.core.media_processor import (
     generate_and_upload_thumbnail,
 )
 from src.core.task_core_finalization import (
-    finalize_task_cancellation as _finalize_task_cancellation_impl,
-    finalize_task_failure as _finalize_task_failure_impl,
-    refund_cancelled_task as _refund_cancelled_task_impl,
+    finalize_task_cancellation_default as _finalize_task_cancellation_default,
+    finalize_task_failure_default as _finalize_task_failure_default,
+    refund_cancelled_task_default as _refund_cancelled_task_default,
 )
 from src.core.task_core_dependencies import (
     TaskCoreProcessDependencies,
 )
 from src.core.task_core_default_dependencies import (
-    build_default_task_core_finalization_dependencies,
-    build_default_task_core_monitor_dependencies,
     build_default_task_core_persistence_dependencies,
     build_default_task_core_process_dependencies as _build_task_core_process_dependencies_impl,
-    build_default_task_core_runtime_dependencies,
-    build_default_task_core_side_effect_dependencies,
-    build_default_task_core_submission_dependencies,
-    build_default_task_core_warmup_dependencies,
 )
 from src.core.task_core_persistence import (
     _persist_successful_web_history as _persist_successful_web_history_impl,
-    persist_successful_task_result as _persist_successful_task_result_impl,
+    persist_successful_task_result_default as _persist_successful_task_result_default,
 )
 from src.core.task_core_submission import (
-    compensate_failed_submission as _compensate_failed_submission_impl,
-    dispatch_registered_task as _dispatch_registered_task_impl,
-    execute_task_submission_saga as _execute_task_submission_saga_impl,
-    register_task_submission as _register_task_submission_impl,
+    compensate_failed_submission_default as _compensate_failed_submission,
+    execute_task_submission_saga_default as _execute_task_submission_saga,
 )
 from src.core.task_core_runtime import (
     cancel_user_task,
-    cleanup_task_runtime_state as _cleanup_task_runtime_state_impl,
-    force_terminate_task as _force_terminate_task_impl,
+    force_terminate_task,
     get_system_task_stats,
     sync_user_concurrency,
 )
@@ -65,16 +56,12 @@ from src.core.task_core_types import (
     normalize_terminal_status,
 )
 from src.core.task_core_web_monitor import (
-    attach_submission_side_effects as _attach_submission_side_effects_impl,
-    attach_web_task_monitor as _attach_web_task_monitor_impl,
-    finalize_monitored_web_task_cancellation as _finalize_monitored_web_task_cancellation_impl,
-    finalize_monitored_web_task_failure as _finalize_monitored_web_task_failure_impl,
-    finalize_monitored_web_task_success as _finalize_monitored_web_task_success_impl,
-    monitor_task_and_release_lock as _monitor_task_and_release_lock_impl,
-    schedule_apply_interaction as _schedule_apply_interaction_impl,
+    attach_submission_side_effects_default as _attach_submission_side_effects,
+    finalize_monitored_web_task_success_default as _finalize_monitored_web_task_success,
+    monitor_task_and_release_lock_default as _monitor_task_and_release_lock_default,
 )
 from src.core.task_core_web_history_warmup import (
-    schedule_web_history_r2_warmup as _schedule_web_history_r2_warmup_impl,
+    schedule_web_history_r2_warmup_default as _schedule_web_history_r2_warmup_default,
 )
 from src.logger import UserLogger
 
@@ -127,67 +114,6 @@ def _build_task_core_process_dependencies() -> TaskCoreProcessDependencies:
         shield_func=asyncio.shield,
         logger_override=logger,
     )
-
-
-def _schedule_web_history_r2_warmup_default(
-    *,
-    user_id: int,
-    task_id: str,
-    output_file: str,
-    media_type: str,
-    source: str,
-):
-    dependencies = build_default_task_core_warmup_dependencies(
-        create_task_func=asyncio.create_task,
-        resolve_storage_object_func=resolve_storage_object,
-        generate_and_upload_thumbnail_func=generate_and_upload_thumbnail,
-        logger_override=logger,
-    )
-    return _schedule_web_history_r2_warmup_impl(
-        user_id=user_id,
-        task_id=task_id,
-        output_file=output_file,
-        media_type=media_type,
-        source=source,
-        resolve_storage_object_func=dependencies.resolve_storage_object_func,
-        copy_to_r2_func=dependencies.copy_to_r2_func,
-        generate_and_upload_thumbnail_func=(
-            dependencies.generate_and_upload_thumbnail_func
-        ),
-        prune_user_web_history_r2_cache_func=(
-            dependencies.prune_user_web_history_r2_cache_func
-        ),
-        logger=dependencies.logger,
-        create_task_func=dependencies.create_task_func,
-    )
-
-
-async def _cleanup_task_runtime_state_default(
-    *,
-    internal_user_id: int,
-    registry_task_id: str | None,
-    release_lock: bool = True,
-):
-    dependencies = build_default_task_core_runtime_dependencies(
-        release_concurrency_lock_func=release_concurrency_lock
-    )
-    return await _cleanup_task_runtime_state_impl(
-        internal_user_id=internal_user_id,
-        registry_task_id=registry_task_id,
-        release_lock=release_lock,
-        release_concurrency_lock_func=dependencies.release_concurrency_lock_func,
-        remove_task_func=dependencies.remove_task_func,
-    )
-
-
-async def force_terminate_task(task_id: str, user_id: int | None = None):
-    return await _force_terminate_task_impl(
-        task_id,
-        user_id=user_id,
-        cleanup_task_runtime_state_func=_cleanup_task_runtime_state_default,
-    )
-
-
 async def persist_successful_task_result(
     *,
     backend_task_id: str,
@@ -209,17 +135,7 @@ async def persist_successful_task_result(
     refresh_user_group_after_log: bool = False,
     warmup_web_history: bool = False,
 ) -> TaskSuccessPersistenceResult:
-    dependencies = build_default_task_core_persistence_dependencies(
-        schedule_web_history_r2_warmup_func=_schedule_web_history_r2_warmup_default,
-        user_logger_factory=UserLogger,
-        extract_media_metadata_from_bytes_best_effort_func=(
-            extract_media_metadata_from_bytes_best_effort
-        ),
-        extract_media_metadata_from_storage_best_effort_func=(
-            extract_media_metadata_from_storage_best_effort
-        ),
-    )
-    return await _persist_successful_task_result_impl(
+    return await _persist_successful_task_result_default(
         backend_task_id=backend_task_id,
         registry_task_id=registry_task_id,
         internal_user_id=internal_user_id,
@@ -238,19 +154,6 @@ async def persist_successful_task_result(
         source=source,
         refresh_user_group_after_log=refresh_user_group_after_log,
         warmup_web_history=warmup_web_history,
-        user_logger_factory=dependencies.user_logger_factory,
-        download_result_func=dependencies.download_result_func,
-        download_video_result_func=dependencies.download_video_result_func,
-        extract_media_metadata_from_bytes_best_effort_func=(
-            dependencies.extract_media_metadata_from_bytes_best_effort_func
-        ),
-        extract_media_metadata_from_storage_best_effort_func=(
-            dependencies.extract_media_metadata_from_storage_best_effort_func
-        ),
-        schedule_web_history_r2_warmup_func=(
-            dependencies.schedule_web_history_r2_warmup_func
-        ),
-        refresh_user_group_func=dependencies.refresh_user_group_func,
     )
 
 
@@ -291,95 +194,6 @@ async def _persist_successful_web_history(
         persist_successful_task_result_func=persist_successful_task_result,
     )
 
-
-async def _refund_cancelled_task_default(
-    *,
-    internal_user_id: int,
-    username: str,
-    cost: int,
-    task_submitted: bool,
-) -> bool:
-    dependencies = build_default_task_core_finalization_dependencies(
-        refund_credits_func=refund_credits,
-        cleanup_task_runtime_state_func=_cleanup_task_runtime_state_default,
-        refund_cancelled_task_func=_refund_cancelled_task_default,
-        force_terminate_task_func=force_terminate_task,
-    )
-    return await _refund_cancelled_task_impl(
-        internal_user_id=internal_user_id,
-        username=username,
-        cost=cost,
-        task_submitted=task_submitted,
-        refund_credits_func=dependencies.refund_credits_func,
-    )
-
-
-async def _finalize_task_failure_default(
-    *,
-    internal_user_id: int,
-    username: str,
-    cost: int,
-    should_refund: bool,
-    registry_task_id: str | None,
-    release_lock: bool = True,
-    refund_task_type: str = "refund",
-    error: Exception | None = None,
-    generic_error_prefix: str | None = None,
-    explicit_user_message: str | None = None,
-    refund_suffix_mode: str = "if_refunded",
-) -> TaskFailureFinalizationResult:
-    dependencies = build_default_task_core_finalization_dependencies(
-        refund_credits_func=refund_credits,
-        cleanup_task_runtime_state_func=_cleanup_task_runtime_state_default,
-        refund_cancelled_task_func=_refund_cancelled_task_default,
-        force_terminate_task_func=force_terminate_task,
-    )
-    return await _finalize_task_failure_impl(
-        internal_user_id=internal_user_id,
-        username=username,
-        cost=cost,
-        should_refund=should_refund,
-        registry_task_id=registry_task_id,
-        release_lock=release_lock,
-        refund_task_type=refund_task_type,
-        error=error,
-        generic_error_prefix=generic_error_prefix,
-        explicit_user_message=explicit_user_message,
-        refund_suffix_mode=refund_suffix_mode,
-        refund_credits_func=dependencies.refund_credits_func,
-        cleanup_task_runtime_state_func=dependencies.cleanup_task_runtime_state_func,
-    )
-
-
-async def _finalize_task_cancellation_default(
-    *,
-    internal_user_id: int,
-    username: str,
-    cost: int,
-    task_submitted: bool,
-    registry_task_id: str | None,
-    release_lock: bool = True,
-    explicit_user_message: str | None = None,
-) -> TaskCancellationFinalizationResult:
-    dependencies = build_default_task_core_finalization_dependencies(
-        refund_credits_func=refund_credits,
-        cleanup_task_runtime_state_func=_cleanup_task_runtime_state_default,
-        refund_cancelled_task_func=_refund_cancelled_task_default,
-        force_terminate_task_func=force_terminate_task,
-    )
-    return await _finalize_task_cancellation_impl(
-        internal_user_id=internal_user_id,
-        username=username,
-        cost=cost,
-        task_submitted=task_submitted,
-        registry_task_id=registry_task_id,
-        release_lock=release_lock,
-        explicit_user_message=explicit_user_message,
-        refund_cancelled_task_func=dependencies.refund_cancelled_task_func,
-        cleanup_task_runtime_state_func=dependencies.cleanup_task_runtime_state_func,
-    )
-
-
 from src.core.billing_core import (
     check_and_deduct_credits,
     check_concurrency_lock,
@@ -389,265 +203,6 @@ from src.core.billing_core import (
 )
 from src.core.task_dispatcher import StrategyFactory, dispatch_to_worker
 from src.utils import load_prompts
-
-
-async def _register_task_submission(
-    *,
-    registry_task_id: str,
-    user_id: int,
-    username: str,
-    cost: int,
-    submission_context: TaskSubmissionContext,
-) -> str:
-    dependencies = build_default_task_core_submission_dependencies(
-        dispatch_to_worker_func=dispatch_to_worker,
-        is_task_backend_busy_error_func=is_task_backend_busy_error,
-        logger_override=logger,
-    )
-    return await _register_task_submission_impl(
-        registry_task_id=registry_task_id,
-        user_id=user_id,
-        username=username,
-        cost=cost,
-        submission_context=submission_context,
-        add_task_func=dependencies.add_task_func,
-    )
-
-
-async def _dispatch_registered_task(
-    *,
-    registry_task_id: str,
-    task_type: str,
-    inputs: dict,
-    final_priority: int,
-) -> str:
-    dependencies = build_default_task_core_submission_dependencies(
-        dispatch_to_worker_func=dispatch_to_worker,
-        is_task_backend_busy_error_func=is_task_backend_busy_error,
-        logger_override=logger,
-    )
-    return await _dispatch_registered_task_impl(
-        registry_task_id=registry_task_id,
-        task_type=task_type,
-        inputs=inputs,
-        final_priority=final_priority,
-        dispatch_to_worker_func=dependencies.dispatch_to_worker_func,
-        update_backend_task_id_func=dependencies.update_backend_task_id_func,
-        mark_task_status_func=dependencies.mark_task_status_func,
-        is_task_backend_busy_error_func=dependencies.is_task_backend_busy_error_func,
-        logger=dependencies.logger,
-    )
-
-
-async def _execute_task_submission_saga(
-    *,
-    task_type: str,
-    inputs: dict,
-    registry_task_id: str,
-    cost: int,
-    submission_context: TaskSubmissionContext,
-) -> TaskSubmissionExecutionResult:
-    return await _execute_task_submission_saga_impl(
-        task_type=task_type,
-        inputs=inputs,
-        registry_task_id=registry_task_id,
-        cost=cost,
-        submission_context=submission_context,
-        register_task_submission_func=_register_task_submission,
-        dispatch_registered_task_func=_dispatch_registered_task,
-    )
-
-
-async def _compensate_failed_submission(
-    *,
-    user_id: int,
-    username: str,
-    cost: int,
-    error: Exception,
-    credits_deducted: bool,
-    registry_task_id: str,
-):
-    dependencies = build_default_task_core_submission_dependencies(
-        dispatch_to_worker_func=dispatch_to_worker,
-        is_task_backend_busy_error_func=is_task_backend_busy_error,
-        logger_override=logger,
-    )
-    await _compensate_failed_submission_impl(
-        user_id=user_id,
-        username=username,
-        cost=cost,
-        error=error,
-        credits_deducted=credits_deducted,
-        registry_task_id=registry_task_id,
-        refund_credits_func=refund_credits,
-        add_pending_refund_func=dependencies.add_pending_refund_func,
-        remove_task_func=dependencies.remove_task_func,
-        logger=dependencies.logger,
-    )
-
-
-def _attach_web_task_monitor_default(
-    *,
-    backend_task_id: str,
-    internal_user_id: int,
-    username: str,
-    registry_task_id: str,
-    submission_context: TaskSubmissionContext,
-    cost: int,
-):
-    from src.core.gallery_core import record_apply_interaction
-
-    dependencies = build_default_task_core_side_effect_dependencies(
-        attach_web_task_monitor_func=_attach_web_task_monitor_impl,
-        monitor_web_task_func=_monitor_task_and_release_lock_default,
-        record_apply_interaction_func=record_apply_interaction,
-        create_task_func=asyncio.create_task,
-    )
-    dependencies.attach_web_task_monitor_func(
-        backend_task_id=backend_task_id,
-        internal_user_id=internal_user_id,
-        username=username,
-        registry_task_id=registry_task_id,
-        submission_context=submission_context,
-        cost=cost,
-        monitor_web_task_func=dependencies.monitor_web_task_func,
-    )
-
-
-def _schedule_apply_interaction_default(user_id: int, source_post_id: Optional[int]):
-    from src.core.gallery_core import record_apply_interaction
-
-    dependencies = build_default_task_core_side_effect_dependencies(
-        attach_web_task_monitor_func=_attach_web_task_monitor_impl,
-        monitor_web_task_func=_monitor_task_and_release_lock_default,
-        record_apply_interaction_func=record_apply_interaction,
-        create_task_func=asyncio.create_task,
-    )
-    _schedule_apply_interaction_impl(
-        user_id,
-        source_post_id,
-        record_apply_interaction_func=dependencies.record_apply_interaction_func,
-        create_task_func=dependencies.create_task_func,
-    )
-
-
-def _attach_submission_side_effects(
-    *,
-    client_type: str,
-    backend_task_id: str,
-    internal_user_id: int,
-    username: str,
-    registry_task_id: str,
-    submission_context: TaskSubmissionContext,
-    cost: int,
-    source_post_id: Optional[int],
-):
-    _attach_submission_side_effects_impl(
-        client_type=client_type,
-        backend_task_id=backend_task_id,
-        internal_user_id=internal_user_id,
-        username=username,
-        registry_task_id=registry_task_id,
-        submission_context=submission_context,
-        cost=cost,
-        source_post_id=source_post_id,
-        attach_web_task_monitor_func=_attach_web_task_monitor_default,
-        schedule_apply_interaction_func=_schedule_apply_interaction_default,
-        core_domain_error_cls=CoreDomainError,
-    )
-
-
-async def _finalize_monitored_web_task_success(
-    *,
-    backend_task_id: str,
-    internal_user_id: int,
-    username: str,
-    registry_task_id: str,
-    submission_context: TaskSubmissionContext,
-    result_path: str,
-):
-    await _finalize_monitored_web_task_success_impl(
-        backend_task_id=backend_task_id,
-        internal_user_id=internal_user_id,
-        username=username,
-        registry_task_id=registry_task_id,
-        submission_context=submission_context,
-        result_path=result_path,
-        persist_successful_web_history_func=_persist_successful_web_history,
-        cleanup_task_runtime_state_func=_cleanup_task_runtime_state_default,
-        logger=logger,
-    )
-
-
-async def _finalize_monitored_web_task_cancellation(
-    *,
-    internal_user_id: int,
-    username: str,
-    cost: int,
-    registry_task_id: str,
-):
-    await _finalize_monitored_web_task_cancellation_impl(
-        internal_user_id=internal_user_id,
-        username=username,
-        cost=cost,
-        registry_task_id=registry_task_id,
-        finalize_task_cancellation_func=_finalize_task_cancellation_default,
-        logger=logger,
-    )
-
-
-async def _finalize_monitored_web_task_failure(
-    *,
-    internal_user_id: int,
-    username: str,
-    cost: int,
-    registry_task_id: str,
-    final_status: str | None,
-):
-    await _finalize_monitored_web_task_failure_impl(
-        internal_user_id=internal_user_id,
-        username=username,
-        cost=cost,
-        registry_task_id=registry_task_id,
-        final_status=final_status,
-        finalize_task_failure_func=_finalize_task_failure_default,
-        logger=logger,
-    )
-
-async def _monitor_task_and_release_lock_default(
-    backend_task_id: str,
-    internal_user_id: int,
-    username: str,
-    registry_task_id: str,
-    submission_context: TaskSubmissionContext,
-    cost: int = 0,
-):
-    dependencies = build_default_task_core_monitor_dependencies(
-        normalize_terminal_status_func=normalize_terminal_status,
-        finalize_success_func=_finalize_monitored_web_task_success,
-        finalize_cancellation_func=_finalize_monitored_web_task_cancellation,
-        finalize_failure_func=_finalize_monitored_web_task_failure,
-        logger_override=logger,
-    )
-    """
-    Background task to monitor progress and release concurrency lock.
-    """
-    await _monitor_task_and_release_lock_impl(
-        backend_task_id=backend_task_id,
-        internal_user_id=internal_user_id,
-        username=username,
-        registry_task_id=registry_task_id,
-        submission_context=submission_context,
-        cost=cost,
-        monitor_progress_func=dependencies.monitor_progress_func,
-        normalize_terminal_status_func=dependencies.normalize_terminal_status_func,
-        finalize_success_func=dependencies.finalize_success_func,
-        finalize_cancellation_func=dependencies.finalize_cancellation_func,
-        finalize_failure_func=dependencies.finalize_failure_func,
-        logger=dependencies.logger,
-    )
-
-
 async def process_and_submit_task(
     user_id: int,
     username: str,

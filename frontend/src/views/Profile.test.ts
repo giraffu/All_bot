@@ -6,7 +6,7 @@ import { defineComponent } from 'vue'
 import i18n from '@/i18n'
 import Profile from '@/views/Profile.vue'
 
-const { authStoreMock, apiGetMock } = vi.hoisted(() => ({
+const { authStoreMock, apiGetMock, routerPushMock } = vi.hoisted(() => ({
   authStoreMock: {
     token: 'token',
     user: {
@@ -39,11 +39,22 @@ const { authStoreMock, apiGetMock } = vi.hoisted(() => ({
     setAuth: vi.fn(),
   },
   apiGetMock: vi.fn(),
+  routerPushMock: vi.fn(),
 }))
 
 vi.mock('@/stores/auth', () => ({
   useAuthStore: () => authStoreMock,
 }))
+
+vi.mock('vue-router', async () => {
+  const actual = await vi.importActual<typeof import('vue-router')>('vue-router')
+  return {
+    ...actual,
+    useRouter: () => ({
+      push: routerPushMock,
+    }),
+  }
+})
 
 vi.mock('@/api', () => ({
   default: {
@@ -93,6 +104,7 @@ describe('Profile affiliate commission display', () => {
   beforeEach(() => {
     authStoreMock.fetchUser.mockClear()
     apiGetMock.mockReset()
+    routerPushMock.mockReset()
     apiGetMock.mockResolvedValue({
       data: {
         comfy_online: true,
@@ -106,11 +118,6 @@ describe('Profile affiliate commission display', () => {
     const wrapper = mount(Profile, {
       global: {
         plugins: [i18n],
-        mocks: {
-          $router: {
-            push: vi.fn(),
-          },
-        },
         stubs: {
           'a-card': slotStub('ACardStub'),
           'a-button': slotStub('AButtonStub'),
@@ -127,9 +134,6 @@ describe('Profile affiliate commission display', () => {
           Lock: true,
           Bookmark: true,
           Star: true,
-          Globe: true,
-          Server: true,
-          RefreshCw: true,
         },
         renderStubDefaultSlot: true,
       },
@@ -145,5 +149,42 @@ describe('Profile affiliate commission display', () => {
     expect(text).toContain('$ 67.65 USDT')
     expect(text).toContain('当前可兑换返佣')
     expect(text).toContain('$ 232.3500 USDT')
+  })
+
+  it('routes submissions quick action to MyFavorites submissions tab', async () => {
+    const wrapper = mount(Profile, {
+      global: {
+        plugins: [i18n],
+        stubs: {
+          'a-card': slotStub('ACardStub'),
+          'a-button': slotStub('AButtonStub'),
+          'a-modal': slotStub('AModalStub'),
+          'a-radio-group': slotStub('ARadioGroupStub'),
+          'a-radio': slotStub('ARadioStub'),
+          Wallet: true,
+          Activity: true,
+          CalendarCheck: true,
+          Zap: true,
+          Award: true,
+          User: true,
+          Lock: true,
+          Bookmark: true,
+          Star: true,
+        },
+        renderStubDefaultSlot: true,
+      },
+    })
+
+    await flushPromises()
+
+    const submissionsAction = wrapper.find('[data-testid="quick-action-submissions"]')
+    expect(submissionsAction.exists()).toBe(true)
+
+    await submissionsAction.trigger('click')
+
+    expect(routerPushMock).toHaveBeenCalledWith({
+      name: 'MyFavorites',
+      query: { tab: 'submissions' },
+    })
   })
 })
