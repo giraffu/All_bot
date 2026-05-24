@@ -1,5 +1,4 @@
 import logging
-from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
 
@@ -12,7 +11,6 @@ from src.database.models import AffiliateRedeem, AffiliateTransaction, User
 from src.quota import QuotaManager
 from src.services.affiliate_redeem_rules import (
     AFFILIATE_MEMBERSHIP_REDEEM_OPTIONS,
-    AFFILIATE_REDEEM_OPTION_FLEXIBLE_USDT,
     AFFILIATE_REDEEM_ROUNDING_MODE,
     AFFILIATE_REDEEM_SUCCESS,
     AFFILIATE_REDEEM_TYPE_CREDITS,
@@ -26,6 +24,18 @@ from src.services.affiliate_redeem_rules import (
     is_membership_settlement_v2_enabled,
     list_affiliate_credits_redeem_packages,
     normalize_redeem_amount_usdt,
+)
+from src.services.affiliate_redeem_results import (
+    AffiliateCreditsRedeemResult,
+    AffiliateMembershipRedeemResult,
+    build_membership_snapshot,
+    build_redeem_option_key,
+    existing_redeem_matches_request,
+    get_redeem_available_balance_snapshot,
+    get_redeem_current_credits_snapshot,
+    serialize_datetime,
+    to_credits_redeem_result,
+    to_membership_redeem_result,
 )
 from src.services.membership_settlement_service import (
     MembershipSettlementAuditSource,
@@ -70,41 +80,6 @@ class AffiliateRedeemInsufficientBalanceError(AffiliateRedeemError):
         self.requested_amount_usdt = requested_amount_usdt
         super().__init__("insufficient affiliate balance")
 
-
-@dataclass(frozen=True)
-class AffiliateCreditsRedeemResult:
-    redeem_id: int
-    redeem_type: str
-    amount_usdt: Decimal
-    credits_granted: int
-    status: str
-    idempotency_key: str
-    available_balance_usdt: Decimal
-    current_credits: int
-    exchange_rate_snapshot: str
-    rounding_mode: str
-
-
-@dataclass(frozen=True)
-class AffiliateMembershipRedeemResult:
-    redeem_id: int
-    redeem_type: str
-    option_key: str
-    target_plan_id: int
-    target_identity: str
-    duration_days: int
-    amount_usdt: Decimal
-    credits_granted: int
-    status: str
-    idempotency_key: str
-    available_balance_usdt: Decimal
-    current_identity: str
-    identity_expire_at: str | None
-    current_credits: int
-    converted_days: int
-    settlement_reason: str
-
-
 async def query_affiliate_available_balance(
     session: AsyncSession, user_id: int
 ) -> Decimal:
@@ -134,125 +109,6 @@ async def query_affiliate_available_balance(
     ).where(AffiliateTransaction.user_id == user_id)
     balance = (await session.execute(stmt)).scalar_one()
     return Decimal(str(balance or 0)).quantize(REDEEM_USDT_QUANT)
-
-
-def _build_redeem_option_key(amount_usdt: Decimal) -> str:
-    return f"{AFFILIATE_REDEEM_OPTION_FLEXIBLE_USDT}:{amount_usdt:.4f}"
-
-
-def _existing_redeem_matches_request(
-    redeem: AffiliateRedeem, amount_usdt: Decimal, credits_granted: int
-) -> bool:
-    return (
-        redeem.redeem_type == AFFILIATE_REDEEM_TYPE_CREDITS
-        and Decimal(str(redeem.requested_amount_usdt)).quantize(REDEEM_USDT_QUANT)
-        == amount_usdt
-        and Decimal(str(redeem.amount_usdt)).quantize(REDEEM_USDT_QUANT) == amount_usdt
-        and int(redeem.credits_granted) == credits_granted
-    )
-
-
-def _to_result(
-    *,
-    redeem: AffiliateRedeem,
-    available_balance_usdt: Decimal,
-    current_credits: int,
-) -> AffiliateCreditsRedeemResult:
-    return AffiliateCreditsRedeemResult(
-        redeem_id=int(redeem.id),
-        redeem_type=redeem.redeem_type,
-        amount_usdt=Decimal(str(redeem.amount_usdt)).quantize(REDEEM_USDT_QUANT),
-        credits_granted=int(redeem.credits_granted),
-        status=redeem.status,
-        idempotency_key=redeem.idempotency_key,
-        available_balance_usdt=available_balance_usdt.quantize(REDEEM_USDT_QUANT),
-        current_credits=current_credits,
-        exchange_rate_snapshot=redeem.exchange_rate_snapshot,
-        rounding_mode=redeem.rounding_mode,
-    )
-
-
-def _get_redeem_current_credits_snapshot(
-    redeem: AffiliateRedeem, fallback_current_credits: int
-) -> int:
-    details = redeem.details if isinstance(redeem.details, dict) else {}
-    snapshot = details.get("current_credits")
-    if snapshot is None:
-        return fallback_current_credits
-    return int(snapshot)
-
-
-def _get_redeem_available_balance_snapshot(
-    redeem: AffiliateRedeem, fallback_available_balance_usdt: Decimal
-) -> Decimal:
-    details = redeem.details if isinstance(redeem.details, dict) else {}
-    snapshot = details.get("available_balance_usdt")
-    if snapshot is None:
-        return fallback_available_balance_usdt.quantize(REDEEM_USDT_QUANT)
-    return Decimal(str(snapshot)).quantize(REDEEM_USDT_QUANT)
-
-
-def _serialize_datetime(value: datetime | None) -> str | None:
-    if value is None:
-        return None
-    return value.isoformat()
-
-
-def _build_membership_snapshot(option_key: str, option: dict) -> dict:
-    return {
-        "schema_version": option["schema_version"],
-        "requested_option_key": option_key,
-        "redeem_option_key": option_key,
-        "target_plan_id": int(option["plan_id"]),
-        "target_plan_name": option["plan_name"],
-        "target_display_name": option["display_name"],
-        "target_identity": option["target_identity"],
-        "duration_days": int(option["duration_days"]),
-        "reward_credits": int(option["reward_credits"]),
-        "grant_reward_credits": bool(option["grant_reward_credits"]),
-        "credits_granted": 0,
-        "amount_usdt": f"{Decimal(str(option['redeem_amount_usdt'])).quantize(REDEEM_USDT_QUANT):.4f}",
-        "converted_days": 0,
-        "settlement_reason": "",
-        "allow_pure_credit_plan": bool(option["allow_pure_credit_plan"]),
-    }
-
-
-def _to_membership_result(
-    *,
-    redeem: AffiliateRedeem,
-    user: User,
-    fallback_available_balance_usdt: Decimal,
-) -> AffiliateMembershipRedeemResult:
-    details = redeem.details if isinstance(redeem.details, dict) else {}
-    amount_usdt = Decimal(
-        str(details.get("amount_usdt", redeem.amount_usdt))
-    ).quantize(REDEEM_USDT_QUANT)
-    available_balance_usdt = Decimal(
-        str(details.get("available_balance_usdt", fallback_available_balance_usdt))
-    ).quantize(REDEEM_USDT_QUANT)
-    current_credits = int(details.get("current_credits", int(user.credits or 0)))
-    return AffiliateMembershipRedeemResult(
-        redeem_id=int(redeem.id),
-        redeem_type=redeem.redeem_type,
-        option_key=str(details.get("redeem_option_key", redeem.redeem_option_key)),
-        target_plan_id=int(details.get("target_plan_id", redeem.target_plan_id or 0)),
-        target_identity=str(details.get("target_identity", redeem.target_identity or "")),
-        duration_days=int(details.get("duration_days", redeem.duration_days or 0)),
-        amount_usdt=amount_usdt,
-        credits_granted=int(details.get("credits_granted", redeem.credits_granted)),
-        status=redeem.status,
-        idempotency_key=redeem.idempotency_key,
-        available_balance_usdt=available_balance_usdt,
-        current_identity=str(details.get("final_identity", user.current_identity or "")),
-        identity_expire_at=details.get(
-            "final_expire_at", _serialize_datetime(user.identity_expire_at)
-        ),
-        current_credits=current_credits,
-        converted_days=int(details.get("converted_days", 0)),
-        settlement_reason=str(details.get("settlement_reason", redeem.settlement_reason or "")),
-    )
-
 
 async def invalidate_affiliate_redeem_cache_after_commit(user_id: int) -> None:
     try:
@@ -291,7 +147,7 @@ async def _redeem_affiliate_balance_to_credits_in_transaction(
         )
     ).scalar_one_or_none()
     if existing_redeem:
-        if not _existing_redeem_matches_request(
+        if not existing_redeem_matches_request(
             existing_redeem, amount_usdt, credits_granted
         ):
             raise AffiliateRedeemConflictError(
@@ -302,12 +158,12 @@ async def _redeem_affiliate_balance_to_credits_in_transaction(
             session, user_id
         )
         return (
-            _to_result(
+            to_credits_redeem_result(
                 redeem=existing_redeem,
-                available_balance_usdt=_get_redeem_available_balance_snapshot(
+                available_balance_usdt=get_redeem_available_balance_snapshot(
                     existing_redeem, current_available_balance_usdt
                 ),
-                current_credits=_get_redeem_current_credits_snapshot(
+                current_credits=get_redeem_current_credits_snapshot(
                     existing_redeem,
                     fallback_current_credits=int(user.credits or 0),
                 ),
@@ -326,7 +182,7 @@ async def _redeem_affiliate_balance_to_credits_in_transaction(
     redeem = AffiliateRedeem(
         user_id=user_id,
         redeem_type=AFFILIATE_REDEEM_TYPE_CREDITS,
-        redeem_option_key=_build_redeem_option_key(amount_usdt),
+        redeem_option_key=build_redeem_option_key(amount_usdt),
         requested_amount_usdt=amount_usdt,
         amount_usdt=amount_usdt,
         credits_granted=credits_granted,
@@ -391,7 +247,7 @@ async def _redeem_affiliate_balance_to_credits_in_transaction(
     }
     await session.flush()
     return (
-        _to_result(
+        to_credits_redeem_result(
             redeem=redeem,
             available_balance_usdt=available_after_redeem,
             current_credits=credit_change.new_balance,
@@ -494,7 +350,7 @@ async def _redeem_affiliate_balance_to_membership_in_transaction(
             session, user_id
         )
         return (
-            _to_membership_result(
+            to_membership_redeem_result(
                 redeem=existing_redeem,
                 user=user,
                 fallback_available_balance_usdt=current_available_balance_usdt,
@@ -523,7 +379,7 @@ async def _redeem_affiliate_balance_to_membership_in_transaction(
         grant_reward_credits=bool(option["grant_reward_credits"]),
         now=datetime.now(),
     )
-    snapshot = _build_membership_snapshot(option_key, option)
+    snapshot = build_membership_snapshot(option_key, option)
 
     redeem = AffiliateRedeem(
         user_id=user_id,
@@ -606,7 +462,7 @@ async def _redeem_affiliate_balance_to_membership_in_transaction(
         "available_balance_usdt": f"{available_after_redeem:.4f}",
         "current_credits": int(applied_snapshot["current_credits"]),
         "final_identity": settlement_result.final_identity,
-        "final_expire_at": _serialize_datetime(settlement_result.final_expire_at),
+        "final_expire_at": serialize_datetime(settlement_result.final_expire_at),
         "converted_days": settlement_result.converted_days,
         "settlement_reason": settlement_result.settlement_reason,
     }
@@ -614,7 +470,7 @@ async def _redeem_affiliate_balance_to_membership_in_transaction(
     await session.flush()
 
     return (
-        _to_membership_result(
+        to_membership_redeem_result(
             redeem=redeem,
             user=user,
             fallback_available_balance_usdt=available_after_redeem,

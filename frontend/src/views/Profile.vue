@@ -25,6 +25,8 @@ import { useBindPassword } from '@/composables/useBindPassword'
 import { useAffiliateRedeem } from '@/composables/useAffiliateRedeem'
 import { useProfileLanguage } from '@/composables/useProfileLanguage'
 import { useDailyCheckin } from '@/composables/useDailyCheckin'
+import ProfilePasswordOverlay from '@/components/profile/ProfilePasswordOverlay.vue'
+import ProfileRedeemOverlays from '@/components/profile/ProfileRedeemOverlays.vue'
 
 const authStore = useAuthStore()
 const { isMobile } = useViewport()
@@ -392,230 +394,30 @@ onMounted(async () => {
       </div>
     </div>
 
-    <a-modal
-      v-if="!isMobile"
-      v-model:open="showRedeemCreditsModal"
-      title="返佣兑换灵石"
-      :confirmLoading="redeemCreditsLoading"
-      @ok="handleRedeemCredits"
-      okText="确认兑换"
-      cancelText="取消"
-      :okButtonProps="{ class: 'bg-emerald-600 hover:bg-emerald-500 border-none shadow-lg shadow-emerald-600/30' }"
-      class="dark-modal"
-    >
-      <div class="py-4 space-y-4">
-        <p class="text-slate-300 text-sm">当前可兑换返佣：<span class="font-bold text-emerald-300">{{ availableCommissionUsdt }} USDT</span></p>
-        <p class="text-slate-400 text-sm">仅支持固定套餐：1 / 3 / 6 / 10 / 15 / 20 USDT。</p>
-        <div>
-          <label class="block text-slate-300 mb-2 text-sm">选择兑换套餐</label>
-          <a-radio-group v-model:value="redeemCreditsForm.amountUsdt" class="w-full space-y-2">
-            <div
-              v-for="item in redeemCreditsPackages"
-              :key="item.amountUsdt"
-              class="rounded-lg border border-slate-600 bg-slate-800/50 px-3 py-3"
-            >
-              <a-radio :value="item.amountUsdt">
-                <span class="text-slate-100 font-medium">{{ item.amountUsdt }} USDT</span>
-                <span class="ml-2 text-emerald-300">{{ item.credits }} 灵石</span>
-              </a-radio>
-              <p class="mt-2 text-xs text-slate-400">{{ item.description }}</p>
-            </div>
-          </a-radio-group>
-        </div>
-      </div>
-    </a-modal>
+    <ProfileRedeemOverlays
+      :is-mobile="isMobile"
+      v-model:show-redeem-credits-modal="showRedeemCreditsModal"
+      v-model:show-redeem-membership-modal="showRedeemMembershipModal"
+      :redeem-credits-loading="redeemCreditsLoading"
+      :redeem-membership-loading="redeemMembershipLoading"
+      :redeem-credits-form="redeemCreditsForm"
+      :redeem-membership-form="redeemMembershipForm"
+      :redeem-credits-packages="redeemCreditsPackages"
+      :membership-redeem-options="membershipRedeemOptions"
+      :available-commission-usdt="availableCommissionUsdt"
+      :handle-redeem-credits="handleRedeemCredits"
+      :handle-redeem-membership="handleRedeemMembership"
+    />
 
-    <a-modal
-      v-if="!isMobile"
-      v-model:open="showRedeemMembershipModal"
-      title="返佣兑换身份"
-      :confirmLoading="redeemMembershipLoading"
-      @ok="handleRedeemMembership"
-      okText="确认兑换"
-      cancelText="取消"
-      :okButtonProps="{ class: 'bg-violet-600 hover:bg-violet-500 border-none shadow-lg shadow-violet-600/30' }"
-      class="dark-modal"
-    >
-      <div class="py-4 space-y-4">
-        <p class="text-slate-300 text-sm">当前可兑换返佣：<span class="font-bold text-violet-300">{{ availableCommissionUsdt }} USDT</span></p>
-        <div>
-          <label class="block text-slate-300 mb-2 text-sm">选择兑换档位</label>
-          <a-radio-group v-model:value="redeemMembershipForm.optionKey" class="w-full space-y-2">
-            <div
-              v-for="option in membershipRedeemOptions"
-              :key="option.key"
-              class="rounded-lg border border-slate-600 bg-slate-800/50 px-3 py-3"
-            >
-              <a-radio :value="option.key">
-                <span class="text-slate-100 font-medium">{{ option.label }}</span>
-                <span class="ml-2 text-cyan-300">{{ option.amountUsdt }} USDT</span>
-              </a-radio>
-              <p class="mt-2 text-xs text-slate-400">{{ option.description }}</p>
-            </div>
-          </a-radio-group>
-        </div>
-      </div>
-    </a-modal>
-
-    <a-drawer
-      v-if="isMobile"
-      v-model:open="showRedeemCreditsModal"
-      placement="bottom"
-      :height="'auto'"
-      title="返佣兑换灵石"
-      class="dark-drawer"
-      :bodyStyle="{ background: '#1e293b' }"
-      :headerStyle="{ background: '#1e293b', borderBottom: '1px solid #334155', color: '#f1f5f9' }"
-    >
-      <div class="py-4 space-y-4 px-2 pb-10">
-        <p class="text-slate-300 text-sm">当前可兑换返佣：<span class="font-bold text-emerald-300">{{ availableCommissionUsdt }} USDT</span></p>
-        <p class="text-slate-400 text-sm">仅支持固定套餐：1 / 3 / 6 / 10 / 15 / 20 USDT。</p>
-        <a-radio-group v-model:value="redeemCreditsForm.amountUsdt" class="w-full space-y-2">
-          <div
-            v-for="item in redeemCreditsPackages"
-            :key="item.amountUsdt"
-            class="rounded-lg border border-slate-600 bg-slate-800/50 px-3 py-3"
-          >
-            <a-radio :value="item.amountUsdt">
-              <span class="text-slate-100 font-medium">{{ item.amountUsdt }} USDT</span>
-              <span class="ml-2 text-emerald-300">{{ item.credits }} 灵石</span>
-            </a-radio>
-            <p class="mt-2 text-xs text-slate-400">{{ item.description }}</p>
-          </div>
-        </a-radio-group>
-        <a-button
-          type="primary"
-          block
-          :loading="redeemCreditsLoading"
-          @click="handleRedeemCredits"
-          class="bg-emerald-600 hover:bg-emerald-500 border-none"
-        >
-          确认兑换
-        </a-button>
-      </div>
-    </a-drawer>
-
-    <a-drawer
-      v-if="isMobile"
-      v-model:open="showRedeemMembershipModal"
-      placement="bottom"
-      :height="'auto'"
-      title="返佣兑换身份"
-      class="dark-drawer"
-      :bodyStyle="{ background: '#1e293b' }"
-      :headerStyle="{ background: '#1e293b', borderBottom: '1px solid #334155', color: '#f1f5f9' }"
-    >
-      <div class="py-4 space-y-4 px-2 pb-10">
-        <p class="text-slate-300 text-sm">当前可兑换返佣：<span class="font-bold text-violet-300">{{ availableCommissionUsdt }} USDT</span></p>
-        <a-radio-group v-model:value="redeemMembershipForm.optionKey" class="w-full space-y-2">
-          <div
-            v-for="option in membershipRedeemOptions"
-            :key="option.key"
-            class="rounded-lg border border-slate-600 bg-slate-800/50 px-3 py-3"
-          >
-            <a-radio :value="option.key">
-              <span class="text-slate-100 font-medium">{{ option.label }}</span>
-              <span class="ml-2 text-cyan-300">{{ option.amountUsdt }} USDT</span>
-            </a-radio>
-            <p class="mt-2 text-xs text-slate-400">{{ option.description }}</p>
-          </div>
-        </a-radio-group>
-        <a-button
-          type="primary"
-          block
-          :loading="redeemMembershipLoading"
-          @click="handleRedeemMembership"
-          class="bg-violet-600 hover:bg-violet-500 border-none"
-        >
-          确认兑换
-        </a-button>
-      </div>
-    </a-drawer>
-
-    <!-- 绑定/修改密码弹窗 (桌面端) -->
-    <a-modal
-      v-if="!isMobile"
-      v-model:open="showBindModal"
-      :title="authStore.user?.username ? $t('profile.change_password') : $t('profile.set_password')"
-      :confirmLoading="bindingLoading"
-      @ok="handleBindPassword"
-      okText="确认"
-      cancelText="取消"
-      :okButtonProps="{ class: 'bg-indigo-600 hover:bg-indigo-500 border-none shadow-lg shadow-indigo-600/30' }"
-      class="dark-modal"
-    >
-      <div class="py-4 space-y-4">
-        <p class="text-slate-400 text-sm mb-4">
-          设置道号与密咒后，你可以在 Web 端直接破界登录，无需依赖 Telegram 客户端。
-        </p>
-        
-        <div>
-          <label class="block text-slate-300 mb-1 text-sm">道号 (账号)</label>
-          <a-input 
-            v-model:value="bindFormState.username" 
-            placeholder="请输入 3-20 位的道号" 
-            class="bg-slate-500/50 border-slate-400 text-white placeholder-slate-500 focus:border-indigo-500"
-          />
-          <p class="text-slate-500 text-xs mt-1">如果你是首次结契，你可以自定义你喜欢的道号。一旦设置后，以后修改密咒时道号不可更改（需保持一致）。</p>
-        </div>
-        
-        <div>
-          <label class="block text-slate-300 mb-1 text-sm">密咒 (密码)</label>
-          <a-input-password 
-            v-model:value="bindFormState.password" 
-            placeholder="请输入至少 6 位的密咒" 
-            class="bg-slate-500/50 border-slate-400 text-white placeholder-slate-500 focus:border-indigo-500"
-          />
-        </div>
-      </div>
-    </a-modal>
-
-    <!-- 绑定/修改密码底部抽屉 (移动端) -->
-    <a-drawer
-      v-else
-      v-model:open="showBindModal"
-      placement="bottom"
-      :height="'auto'"
-      :title="authStore.user?.username ? '修改密咒' : '设置道号与密咒'"
-      class="dark-drawer"
-      :bodyStyle="{ background: '#1e293b' }"
-      :headerStyle="{ background: '#1e293b', borderBottom: '1px solid #334155', color: '#f1f5f9' }"
-    >
-      <div class="py-4 space-y-4 px-2 pb-10">
-        <p class="text-slate-400 text-sm mb-4">
-          设置道号与密咒后，你可以在 Web 端直接破界登录，无需依赖 Telegram 客户端。
-        </p>
-        
-        <div>
-          <label class="block text-slate-300 mb-1 text-sm">道号 (账号)</label>
-          <a-input 
-            v-model:value="bindFormState.username" 
-            placeholder="请输入 3-20 位的道号" 
-            class="bg-slate-500/50 border-slate-400 text-white placeholder-slate-500 focus:border-indigo-500 h-10"
-          />
-          <p class="text-slate-500 text-xs mt-1">如果你是首次结契，你可以自定义你喜欢的道号。一旦设置后，以后修改密咒时道号不可更改（需保持一致）。</p>
-        </div>
-        
-        <div>
-          <label class="block text-slate-300 mb-1 text-sm">密咒 (密码)</label>
-          <a-input-password 
-            v-model:value="bindFormState.password" 
-            placeholder="请输入至少 6 位的密咒" 
-            class="bg-slate-500/50 border-slate-400 text-white placeholder-slate-500 focus:border-indigo-500 h-10"
-          />
-        </div>
-
-        <a-button 
-          v-if="!isTMA"
-          type="primary" 
-          @click="handleBindPassword" 
-          :loading="bindingLoading"
-          class="w-full mt-4 h-12 bg-indigo-600 hover:bg-indigo-500 border-none shadow-lg shadow-indigo-600/30 text-lg font-bold"
-        >
-          确认结契
-        </a-button>
-      </div>
-    </a-drawer>
+    <ProfilePasswordOverlay
+      :is-mobile="isMobile"
+      :is-t-m-a="isTMA"
+      v-model:show-bind-modal="showBindModal"
+      :binding-loading="bindingLoading"
+      :username="authStore.user?.username"
+      :bind-form-state="bindFormState"
+      :handle-bind-password="handleBindPassword"
+    />
   </div>
 </template>
 

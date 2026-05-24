@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { ref, watch, computed } from 'vue'
+import { ref, computed } from 'vue'
 import { VideoCameraOutlined, InboxOutlined, DownloadOutlined, CloseCircleOutlined, HistoryOutlined } from '@ant-design/icons-vue'
 import { message } from 'ant-design-vue'
 import { useUpload } from '@/composables/useUpload'
 import { useTaskStream } from '@/composables/useTaskStream'
 import { useTaskResult } from '@/composables/useTaskResult'
 import { useGalleryApplyContext } from '@/composables/useGalleryApplyContext'
+import { useDualFileUploadPreview } from '@/composables/useDualFileUploadPreview'
 import { useRoute } from 'vue-router'
 import { onMounted } from 'vue'
 import GenerationActionBar from '@/components/GenerationActionBar.vue'
@@ -18,11 +19,21 @@ const { isSubmitting, submitTask } = useTaskStream()
 const { currentTask, setSubmittedTaskId, isImageUrl, downloadResult } = useTaskResult()
 const { loadApplyContext } = useGalleryApplyContext()
 const route = useRoute()
-
-const faceFileList = ref<any[]>([])
-const bodyFileList = ref<any[]>([])
-const faceObjectKey = ref<string | null>(null)
-const bodyObjectKey = ref<string | null>(null)
+const {
+  primaryFileList: faceFileList,
+  secondaryFileList: bodyFileList,
+  primaryObjectKey: faceObjectKey,
+  secondaryObjectKey: bodyObjectKey,
+  primaryPreviewUrl: facePreview,
+  secondaryPreviewUrl: bodyPreview,
+  beforeUploadPrimary: beforeUploadFace,
+  beforeUploadSecondary: beforeUploadBody,
+  removePrimary: handleRemoveFace,
+  removeSecondary: handleRemoveBody,
+  applySecondaryTemplateTarget,
+} = useDualFileUploadPreview({
+  uploadFile,
+})
 const resolution = ref('720')
 
 const taskCost = computed(() => {
@@ -32,8 +43,6 @@ const taskCost = computed(() => {
   return 18; // default fallback for 720p
 })
 
-const facePreview = ref<string | null>(null)
-const bodyPreview = ref<string | null>(null)
 const isTemplateApplied = ref(false)
 const templateSourcePostId = ref<number | null>(null)
 
@@ -41,9 +50,10 @@ onMounted(() => {
   if (route.query.apply === 'true') {
     const ctx = loadApplyContext()
     if (ctx && ctx.task_type === 'face_video' && ctx.input_file) {
-      // prefill target video
-      bodyObjectKey.value = ctx.input_file
-      bodyPreview.value = ctx.input_file_url || null
+      applySecondaryTemplateTarget({
+        objectKey: ctx.input_file,
+        previewUrl: ctx.input_file_url || null,
+      })
       if (ctx.width) resolution.value = ctx.width.toString()
       if (ctx.source_post_id != null) {
         templateSourcePostId.value = Number(ctx.source_post_id)
@@ -52,52 +62,6 @@ onMounted(() => {
     }
   }
 })
-
-watch(faceFileList, (newVal) => {
-  if (newVal.length > 0 && newVal[0].originFileObj) {
-    facePreview.value = URL.createObjectURL(newVal[0].originFileObj)
-  } else if (newVal.length > 0 && newVal[0] instanceof File) {
-    facePreview.value = URL.createObjectURL(newVal[0])
-  } else {
-    if (facePreview.value) URL.revokeObjectURL(facePreview.value)
-    facePreview.value = null
-  }
-})
-
-watch(bodyFileList, (newVal) => {
-  if (newVal.length > 0 && newVal[0].originFileObj) {
-    bodyPreview.value = URL.createObjectURL(newVal[0].originFileObj)
-  } else if (newVal.length > 0 && newVal[0] instanceof File) {
-    bodyPreview.value = URL.createObjectURL(newVal[0])
-  } else {
-    if (bodyPreview.value) URL.revokeObjectURL(bodyPreview.value)
-    bodyPreview.value = null
-  }
-})
-
-const beforeUploadFace = async (file: any) => {
-  faceFileList.value = [file]
-  const key = await uploadFile(file)
-  if (key) faceObjectKey.value = key
-  return false
-}
-
-const beforeUploadBody = async (file: any) => {
-  bodyFileList.value = [file]
-  const key = await uploadFile(file)
-  if (key) bodyObjectKey.value = key
-  return false
-}
-
-const handleRemoveFace = () => {
-  faceFileList.value = []
-  faceObjectKey.value = null
-}
-
-const handleRemoveBody = () => {
-  bodyFileList.value = []
-  bodyObjectKey.value = null
-}
 
 const handleGenerate = async () => {
   if (!faceObjectKey.value || !bodyObjectKey.value) {

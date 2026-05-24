@@ -56,7 +56,7 @@
 - 将上述两个文件放置到 ComfyUI 宿主机映射的对应 LoRA 模型目录中（如 `models/loras/`）。
 
 ### 2. Bot 层：更新用户交互菜单 (UI & FSM)
-- **文件定位**：`src/handlers/fsm/video_lora_fsm.py`
+- **文件定位**：`src/handlers/fsm/image_to_video_fsm.py`
 - **实施步骤**：
   - 找到存储模型映射的常量字典 `LORA_MODELS`。
   - 在字典中追加新模型配置：将**模型前缀名**（即上述的 `{lora_name}`，如 `"Dance"`）作为键，映射到用户可见的**中文按钮标签**（如 `"跳舞"`）。

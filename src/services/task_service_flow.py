@@ -1,5 +1,4 @@
 import uuid
-import inspect
 from typing import Callable, Optional
 
 from asgi_correlation_id import correlation_id
@@ -15,25 +14,10 @@ from src.logger import UserLogger
 from src.services.image_service import image_service
 from src.services import task_service_completion as task_service_completion_helpers
 from src.services import task_service_finalize as task_service_finalize_helpers
+from src.services.task_service_message_support import with_submitted_status
 from src.services.task_service_types import BotTaskMessageSpec
 from src.services.tg_task_runtime import get_or_send_status_message
 from src.utils import robust_edit_text, robust_reply_text
-
-
-async def _call_async_with_supported_kwargs(func, **kwargs):
-    signature = inspect.signature(func)
-    if any(
-        parameter.kind == inspect.Parameter.VAR_KEYWORD
-        for parameter in signature.parameters.values()
-    ):
-        return await func(**kwargs)
-
-    supported_kwargs = {
-        key: value
-        for key, value in kwargs.items()
-        if key in signature.parameters
-    }
-    return await func(**supported_kwargs)
 
 
 def mark_task_submission_succeeded(runtime_state, result: dict) -> list[str]:
@@ -52,13 +36,11 @@ async def submit_bot_task(
     inputs,
     source_post_id=None,
     deduct_quota=True,
-    process_and_submit_task_func=None,
 ) -> tuple[str, list[str]]:
     task_id = str(uuid.uuid4())
     correlation_id.set(task_id)
-    process_and_submit_task_func = process_and_submit_task_func or process_and_submit_task
 
-    result = await process_and_submit_task_func(
+    result = await process_and_submit_task(
         user_id=internal_user_id,
         username=username,
         task_type=task_type,
@@ -79,17 +61,13 @@ async def send_initial_task_status(
     chat_id,
     status_msg_id,
     message_spec: BotTaskMessageSpec,
-    get_or_send_status_msg_func=None,
 ):
-    get_or_send_status_msg_func = (
-        get_or_send_status_msg_func or get_or_send_status_message
-    )
     if update is not None:
         return await robust_reply_text(
             update.effective_message,
             message_spec.initial_status_text,
         )
-    return await get_or_send_status_msg_func(
+    return await get_or_send_status_message(
         context, chat_id, status_msg_id, message_spec.initial_status_text
     )
 
@@ -120,10 +98,7 @@ async def prepare_and_submit_bot_task(
     inputs=None,
     source_post_id=None,
     deduct_quota=True,
-    with_submitted_status_func=None,
 ):
-    with_submitted_status_func = with_submitted_status_func or (lambda spec, text: spec)
-
     status_msg = await send_initial_task_status(
         context=context,
         update=update,
@@ -141,7 +116,7 @@ async def prepare_and_submit_bot_task(
         deduct_quota=deduct_quota,
     )
     if submitted_status_builder is not None:
-        message_spec = with_submitted_status_func(
+        message_spec = with_submitted_status(
             message_spec,
             submitted_status_builder(runtime_state.actual_cost),
         )
@@ -183,7 +158,6 @@ async def run_bot_task_flow(
     unexpected_error_prefix: str = "出错了",
     cleanup_paths: Optional[list[str]] = None,
     cleanup_enabled: bool = True,
-    with_submitted_status_func=None,
     cleanup_files_func=None,
 ) -> tuple[bytes | None, str | None]:
     media_bytes = None
@@ -205,12 +179,10 @@ async def run_bot_task_flow(
                 inputs=inputs,
                 source_post_id=source_post_id,
                 deduct_quota=deduct_quota,
-                with_submitted_status_func=with_submitted_status_func,
             )
         )
 
-        final_info = await _call_async_with_supported_kwargs(
-            task_service_completion_helpers.monitor_submitted_bot_task,
+        final_info = await task_service_completion_helpers.monitor_submitted_bot_task(
             task_id=task_id,
             status_msg=status_msg,
             is_video=is_video,
@@ -220,11 +192,10 @@ async def run_bot_task_flow(
             monitor_bot_task_progress_func=(
                 task_service_completion_helpers.monitor_bot_task_progress
             ),
-            edit_status_text_func=robust_edit_text,
         )
 
-        media_bytes, full_output_path = await _call_async_with_supported_kwargs(
-            task_service_completion_helpers.complete_monitored_bot_task,
+        media_bytes, full_output_path = (
+            await task_service_completion_helpers.complete_monitored_bot_task(
             context=context,
             chat_id=chat_id,
             status_msg=status_msg,
@@ -246,6 +217,7 @@ async def run_bot_task_flow(
             requested_duration=requested_duration,
             message_spec=message_spec,
             missing_output_should_refund=missing_output_should_refund,
+            )
         )
 
     except ConcurrencyLimitError as e:

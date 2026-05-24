@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { ref } from 'vue'
 import { InboxOutlined, SwapOutlined, DownloadOutlined, CloseCircleOutlined } from '@ant-design/icons-vue'
 import { message } from 'ant-design-vue'
 import { useUpload } from '@/composables/useUpload'
 import { useTaskStream } from '@/composables/useTaskStream'
 import { useTaskResult } from '@/composables/useTaskResult'
 import { useGalleryApplyContext } from '@/composables/useGalleryApplyContext'
+import { useDualFileUploadPreview } from '@/composables/useDualFileUploadPreview'
 import { useRoute } from 'vue-router'
 import { onMounted } from 'vue'
 import GenerationActionBar from '@/components/GenerationActionBar.vue'
@@ -18,15 +19,22 @@ const { isSubmitting, submitTask } = useTaskStream()
 const { currentTask, setSubmittedTaskId, isImageUrl, downloadResult } = useTaskResult()
 const { loadApplyContext } = useGalleryApplyContext()
 const route = useRoute()
-
-const faceFileList = ref<any[]>([])
-const bodyFileList = ref<any[]>([])
-
-const faceObjectKey = ref<string | null>(null)
-const bodyObjectKey = ref<string | null>(null)
-
-const facePreview = ref<string | null>(null)
-const bodyPreview = ref<string | null>(null)
+const {
+  primaryFileList: faceFileList,
+  secondaryFileList: bodyFileList,
+  primaryObjectKey: faceObjectKey,
+  secondaryObjectKey: bodyObjectKey,
+  primaryPreviewUrl: facePreview,
+  secondaryPreviewUrl: bodyPreview,
+  beforeUploadPrimary: beforeUploadFace,
+  beforeUploadSecondary: beforeUploadBody,
+  removePrimary: handleRemoveFace,
+  removeSecondary: handleRemoveBody,
+  applySecondaryTemplateTarget,
+  resetAll,
+} = useDualFileUploadPreview({
+  uploadFile,
+})
 const isTemplateApplied = ref(false)
 const templateSourcePostId = ref<number | null>(null)
 
@@ -34,9 +42,10 @@ onMounted(() => {
   if (route.query.apply === 'true') {
     const ctx = loadApplyContext()
     if (ctx && ctx.task_type === 'face_swap' && ctx.input_file) {
-      // prefill target image
-      bodyObjectKey.value = ctx.input_file
-      bodyPreview.value = ctx.input_file_url || null
+      applySecondaryTemplateTarget({
+        objectKey: ctx.input_file,
+        previewUrl: ctx.input_file_url || null,
+      })
       if (ctx.source_post_id != null) {
         templateSourcePostId.value = Number(ctx.source_post_id)
       }
@@ -44,53 +53,6 @@ onMounted(() => {
     }
   }
 })
-
-watch(faceFileList, (newVal) => {
-  if (newVal.length > 0 && newVal[0].originFileObj) {
-    facePreview.value = URL.createObjectURL(newVal[0].originFileObj)
-  } else if (newVal.length > 0 && newVal[0] instanceof File) {
-    facePreview.value = URL.createObjectURL(newVal[0])
-  } else {
-    if (facePreview.value) URL.revokeObjectURL(facePreview.value)
-    facePreview.value = null
-  }
-})
-
-watch(bodyFileList, (newVal) => {
-  if (newVal.length > 0 && newVal[0].originFileObj) {
-    bodyPreview.value = URL.createObjectURL(newVal[0].originFileObj)
-  } else if (newVal.length > 0 && newVal[0] instanceof File) {
-    bodyPreview.value = URL.createObjectURL(newVal[0])
-  } else {
-    if (bodyPreview.value) URL.revokeObjectURL(bodyPreview.value)
-    bodyPreview.value = null
-  }
-})
-
-// Before upload intercepts default AntD behavior
-const beforeUploadFace = async (file: any) => {
-  faceFileList.value = [file]
-  const key = await uploadFile(file)
-  if (key) faceObjectKey.value = key
-  return false // Prevent default upload
-}
-
-const beforeUploadBody = async (file: any) => {
-  bodyFileList.value = [file]
-  const key = await uploadFile(file)
-  if (key) bodyObjectKey.value = key
-  return false
-}
-
-const handleRemoveFace = () => {
-  faceFileList.value = []
-  faceObjectKey.value = null
-}
-
-const handleRemoveBody = () => {
-  bodyFileList.value = []
-  bodyObjectKey.value = null
-}
 
 const handleGenerate = async () => {
   if (!faceObjectKey.value || !bodyObjectKey.value) {
@@ -116,8 +78,7 @@ const handleGenerate = async () => {
 }
 
 const resetForm = () => {
-  handleRemoveFace()
-  handleRemoveBody()
+  resetAll()
   setSubmittedTaskId(null)
 }
 </script>

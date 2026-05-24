@@ -231,11 +231,6 @@ async def start_image_to_video(update: Update, context: ContextTypes.DEFAULT_TYP
     )
 
 
-async def start_video_lora(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Deprecated compatibility alias for the unified image-to-video entry point."""
-    return await start_image_to_video(update, context)
-
-
 async def start_custom_video_compat(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> int:
@@ -569,15 +564,3 @@ def get_image_to_video_fsm_handler() -> ConversationHandler:
         ],
         handler_name="image_to_video_fsm",
     )
-
-
-def get_video_lora_fsm_handler() -> ConversationHandler:
-    """Deprecated compatibility alias for the unified image-to-video FSM handler."""
-    return get_image_to_video_fsm_handler()
-
-
-# ---------------------------------------------------------------------------
-# Deprecated compatibility aliases
-# Keep new call sites on `image_to_video_*` symbols and `ImageToVideoState`.
-# ---------------------------------------------------------------------------
-VideoLoraState = ImageToVideoState

@@ -18,7 +18,6 @@ from src.constants import (
 )
 from src.services import task_service_completion as completion_helpers
 from src.services import task_service_finalize as support
-from src.services import task_service as task_service_module
 from src.services import task_service_entrypoints_video as video_entrypoints
 from src.services import tg_task_runtime as tg_runtime_helpers
 from src.services.task_service import TaskService
@@ -68,8 +67,6 @@ async def test_handle_task_completion_keeps_success_flow_when_metadata_probe_fai
         delete_status=True,
         caption="done",
         allow_contribute=True,
-        send_result_media_func=TaskService._send_result_media,
-        cleanup_completion_status_message_func=TaskService._cleanup_completion_status_message,
     )
 
     assert media_bytes == b"video-bytes"
@@ -94,8 +91,14 @@ async def test_handle_task_completion_uses_helper_download_default(monkeypatch):
         "src.services.task_service_completion.download_and_log_task_output",
         download_output,
     )
-    monkeypatch.setattr(TaskService, "_send_result_media", send_result_media)
-    monkeypatch.setattr(TaskService, "_cleanup_completion_status_message", cleanup_status)
+    monkeypatch.setattr(
+        "src.services.task_service_completion.send_result_media",
+        send_result_media,
+    )
+    monkeypatch.setattr(
+        "src.services.task_service_completion.cleanup_completion_status_message",
+        cleanup_status,
+    )
 
     user_logger = SimpleNamespace(username="tester")
     status_msg = MagicMock()
@@ -116,8 +119,6 @@ async def test_handle_task_completion_uses_helper_download_default(monkeypatch):
         delete_status=True,
         caption="done",
         allow_contribute=False,
-        send_result_media_func=TaskService._send_result_media,
-        cleanup_completion_status_message_func=TaskService._cleanup_completion_status_message,
     )
 
     assert media_bytes == b"image-bytes"
@@ -271,7 +272,7 @@ async def test_send_result_media_uses_photo_sender_and_records_meta(monkeypatch)
 
     context = SimpleNamespace(bot=MagicMock(), bot_data={})
 
-    result = await TaskService._send_result_media(
+    result = await tg_runtime_helpers.send_result_media(
         context=context,
         chat_id=123,
         media_bytes=b"image-bytes",
@@ -304,19 +305,19 @@ async def test_cleanup_completion_status_message_only_deletes_when_enabled(
     )
     status_msg = MagicMock()
 
-    await TaskService._cleanup_completion_status_message(
+    await tg_runtime_helpers.cleanup_completion_status_message(
         status_msg=status_msg,
         delete_status=False,
         send_result=True,
     )
-    await TaskService._cleanup_completion_status_message(
+    await tg_runtime_helpers.cleanup_completion_status_message(
         status_msg=status_msg,
         delete_status=True,
         send_result=False,
     )
     delete_message.assert_not_awaited()
 
-    await TaskService._cleanup_completion_status_message(
+    await tg_runtime_helpers.cleanup_completion_status_message(
         status_msg=status_msg,
         delete_status=True,
         send_result=True,
@@ -327,6 +328,7 @@ async def test_cleanup_completion_status_message_only_deletes_when_enabled(
 @pytest.mark.asyncio
 async def test_monitor_submitted_bot_task_uses_helper_monitor_seam(monkeypatch):
     monitor_progress = AsyncMock(return_value={"status": "done"})
+    edit_status_text = AsyncMock()
     monkeypatch.setattr(
         "src.core.billing_core.get_user_priority_and_identity",
         AsyncMock(return_value=(5, "外门弟子", "金丹期")),
@@ -342,7 +344,7 @@ async def test_monitor_submitted_bot_task_uses_helper_monitor_seam(monkeypatch):
         is_video=True,
         internal_user_id=456,
         monitor_func="monitor-func",
-        edit_status_text_func=task_service_module.robust_edit_text,
+        edit_status_text_func=edit_status_text,
     )
 
     assert result == {"status": "done"}
@@ -353,7 +355,7 @@ async def test_monitor_submitted_bot_task_uses_helper_monitor_seam(monkeypatch):
         monitor_func="monitor-func",
         identity_str="外门弟子",
         user_group="金丹期",
-        edit_status_text_func=task_service_module.robust_edit_text,
+        edit_status_text_func=edit_status_text,
     )
 
 
@@ -392,8 +394,6 @@ async def test_complete_monitored_bot_task_preserves_supplied_user_logger(monkey
         caption=None,
         allow_contribute=True,
         message_spec=message_spec,
-        send_result_media_func=TaskService._send_result_media,
-        cleanup_completion_status_message_func=TaskService._cleanup_completion_status_message,
     )
 
     assert result == (b"video-bytes", "output.mp4")
@@ -435,8 +435,6 @@ async def test_complete_monitored_bot_task_uses_default_handle_completion(monkey
         caption=None,
         allow_contribute=True,
         message_spec=message_spec,
-        send_result_media_func=TaskService._send_result_media,
-        cleanup_completion_status_message_func=TaskService._cleanup_completion_status_message,
     )
 
     assert result == (b"video-bytes", "output.mp4")

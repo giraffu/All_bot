@@ -44,11 +44,6 @@ class ImageToVideoState(IntEnum):
     WAIT_IMAGE = auto()
     WAIT_SETTINGS_AND_PROMPT = auto()
 
-
-# Deprecated compatibility alias retained for legacy imports.
-VideoLoraState = ImageToVideoState
-
-
 class QuickImageState(IntEnum):
     """懒人P图 (脱衣/自慰/随机换脸) 状态枚举"""
 

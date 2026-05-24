@@ -40,20 +40,12 @@ from src.services.task_service_message_support import (
     with_submitted_status,
 )
 from src.services.task_service_types import BotTaskMessageSpec, BotTaskRuntimeState
-from src.services.tg_task_runtime import (
-    cleanup_completion_status_message,
-    send_result_media,
-)
-from src.utils import robust_edit_text
 
 logger = logging.getLogger(__name__)
 
 
 class TaskService:
     _with_submitted_status = staticmethod(with_submitted_status)
-    _edit_status_text = staticmethod(robust_edit_text)
-    _send_result_media = staticmethod(send_result_media)
-    _cleanup_completion_status_message = staticmethod(cleanup_completion_status_message)
 
     @staticmethod
     async def _run_bot_task_flow(
@@ -120,7 +112,6 @@ class TaskService:
             unexpected_error_prefix=unexpected_error_prefix,
             cleanup_paths=cleanup_paths,
             cleanup_enabled=cleanup_enabled,
-            with_submitted_status_func=TaskService._with_submitted_status,
             cleanup_files_func=TaskService._cleanup_files,
         )
 

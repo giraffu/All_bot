@@ -96,13 +96,7 @@ async def complete_monitored_bot_task(
     requested_duration: Optional[int] = None,
     message_spec: BotTaskMessageSpec,
     missing_output_should_refund: bool = True,
-    send_result_media_func=None,
-    cleanup_completion_status_message_func=None,
 ):
-    send_result_media_func = send_result_media_func or send_result_media
-    cleanup_completion_status_message_func = (
-        cleanup_completion_status_message_func or cleanup_completion_status_message
-    )
     user_logger = user_logger or UserLogger(internal_user_id, username)
     if final_info:
         return await handle_task_completion(
@@ -199,13 +193,7 @@ async def handle_task_completion(
     allow_contribute=True,
     billing_resolution: Optional[str] = None,
     requested_duration: Optional[int] = None,
-    send_result_media_func=None,
-    cleanup_completion_status_message_func=None,
 ):
-    send_result_media_func = send_result_media_func or send_result_media
-    cleanup_completion_status_message_func = (
-        cleanup_completion_status_message_func or cleanup_completion_status_message
-    )
     media_bytes, full_output_path, _width, _height, _duration = (
         await download_and_log_task_output(
             internal_user_id=internal_user_id,
@@ -222,7 +210,7 @@ async def handle_task_completion(
     )
 
     if send_result:
-        await send_result_media_func(
+        await send_result_media(
             context=context,
             chat_id=chat_id,
             media_bytes=media_bytes,
@@ -235,7 +223,7 @@ async def handle_task_completion(
             prompt=prompt,
         )
 
-    await cleanup_completion_status_message_func(
+    await cleanup_completion_status_message(
         status_msg=status_msg,
         delete_status=delete_status,
         send_result=send_result,

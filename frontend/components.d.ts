@@ -62,6 +62,8 @@ declare module 'vue' {
     PostBrowserShell: typeof import('./src/components/PostBrowserShell.vue')['default']
     PostCardMetricsBar: typeof import('./src/components/PostCardMetricsBar.vue')['default']
     PostTagPreview: typeof import('./src/components/PostTagPreview.vue')['default']
+    ProfilePasswordOverlay: typeof import('./src/components/profile/ProfilePasswordOverlay.vue')['default']
+    ProfileRedeemOverlays: typeof import('./src/components/profile/ProfileRedeemOverlays.vue')['default']
     PromptCopyButton: typeof import('./src/components/PromptCopyButton.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']

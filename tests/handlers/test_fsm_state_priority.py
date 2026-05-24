@@ -44,33 +44,26 @@ def _build_update_with_message(*, text: str = "test prompt"):
     )
 
 
-def test_deprecated_video_lora_fsm_module_reexports_unified_handler():
-    from src.handlers.fsm import video_lora_fsm
-
-    assert (
-        image_to_video_fsm.get_image_to_video_fsm_handler
-        is video_lora_fsm.get_image_to_video_fsm_handler
-    )
+def test_image_to_video_fsm_exposes_unified_handler():
     handler = image_to_video_fsm.get_image_to_video_fsm_handler()
     assert handler.name == "image_to_video_fsm"
 
 
-def test_video_lora_fsm_module_keeps_only_minimal_compat_exports():
-    from src.handlers.fsm import video_lora_fsm
-
-    assert video_lora_fsm.__all__ == [
-        "VideoLoraState",
-        "get_image_to_video_fsm_handler",
-        "get_video_lora_fsm_handler",
-        "start_video_lora",
-    ]
-    assert video_lora_fsm.start_video_lora is image_to_video_fsm.start_video_lora
-    assert video_lora_fsm.get_video_lora_fsm_handler is image_to_video_fsm.get_video_lora_fsm_handler
+def test_legacy_video_lora_exports_are_removed():
+    assert not hasattr(image_to_video_fsm, "start_video_lora")
+    assert not hasattr(image_to_video_fsm, "get_video_lora_fsm_handler")
 
 
 def test_image_to_video_private_video_lora_aliases_are_removed():
     assert not hasattr(image_to_video_fsm, "_initialize_video_lora_context")
     assert not hasattr(image_to_video_fsm, "_start_video_lora_flow")
+
+
+def test_conversation_states_uses_only_image_to_video_state():
+    from src.handlers import conversation_states
+
+    assert conversation_states.ImageToVideoState is image_to_video_fsm.ImageToVideoState
+    assert not hasattr(conversation_states, "VideoLoraState")
 
 
 def test_custom_video_fsm_handler_reuses_unified_state_graph():
