@@ -1,5 +1,6 @@
 import asyncio
 import logging
+from dataclasses import dataclass
 
 import httpx
 from fastapi import HTTPException
@@ -12,6 +13,15 @@ from src.services.redis_client import redis_client
 from src.services.storage import storage
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class HistoryDeliveryDependencies:
+    acquire_rate_limit_func: object
+    load_history_record_func: object
+    download_history_bytes_func: object
+    build_upload_request_func: object
+    post_upload_func: object
 
 
 async def _acquire_send_to_bot_rate_limit(user_id: int):
@@ -107,7 +117,23 @@ async def _post_telegram_upload(url: str, payload: dict[str, str], files: dict):
             raise HTTPException(status_code=500, detail="发送失败，网络连接异常")
 
 
-async def send_history_record_to_telegram(*, task_id: str, current_user, db):
+def get_default_history_delivery_dependencies() -> HistoryDeliveryDependencies:
+    return HistoryDeliveryDependencies(
+        acquire_rate_limit_func=_acquire_send_to_bot_rate_limit,
+        load_history_record_func=_load_owned_history_record,
+        download_history_bytes_func=_download_history_bytes,
+        build_upload_request_func=_build_telegram_upload_request,
+        post_upload_func=_post_telegram_upload,
+    )
+
+
+async def send_history_record_to_telegram(
+    *,
+    task_id: str,
+    current_user,
+    db,
+    dependencies: HistoryDeliveryDependencies | None = None,
+):
     telegram_id = current_user.telegram_id
     if not telegram_id:
         raise HTTPException(
@@ -115,17 +141,21 @@ async def send_history_record_to_telegram(*, task_id: str, current_user, db):
             detail="您尚未绑定 Telegram 账号，无法发送至私聊",
         )
 
-    await _acquire_send_to_bot_rate_limit(current_user.id)
-    history = await _load_owned_history_record(task_id, current_user.id, db)
-    object_name, file_bytes = await _download_history_bytes(history.output_file)
-    url, payload, files = _build_telegram_upload_request(
+    dependencies = dependencies or get_default_history_delivery_dependencies()
+
+    await dependencies.acquire_rate_limit_func(current_user.id)
+    history = await dependencies.load_history_record_func(task_id, current_user.id, db)
+    object_name, file_bytes = await dependencies.download_history_bytes_func(
+        history.output_file
+    )
+    url, payload, files = dependencies.build_upload_request_func(
         telegram_id=telegram_id,
         history_type=history.type,
         history_prompt=history.prompt,
         object_name=object_name,
         file_bytes=file_bytes,
     )
-    await _post_telegram_upload(url, payload, files)
+    await dependencies.post_upload_func(url, payload, files)
 
     return {"status": "success", "message": "已发送至您的 Telegram 私聊"}
 

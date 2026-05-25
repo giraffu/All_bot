@@ -117,27 +117,40 @@ async def persist_successful_task_result(
         materialize_successful_task_result_flow_func = (
             _persist_successful_task_result_flow_impl
         )
-    dependencies = dependencies or get_default_task_core_persistence_dependencies()
-    if user_logger_factory is None:
-        user_logger_factory = dependencies.user_logger_factory
-    if download_result_func is None:
-        download_result_func = dependencies.download_result_func
-    if download_video_result_func is None:
-        download_video_result_func = dependencies.download_video_result_func
-    if extract_media_metadata_from_bytes_best_effort_func is None:
-        extract_media_metadata_from_bytes_best_effort_func = (
-            dependencies.extract_media_metadata_from_bytes_best_effort_func
+    needs_default_dependencies = any(
+        value is None
+        for value in (
+            user_logger_factory,
+            download_result_func,
+            download_video_result_func,
+            extract_media_metadata_from_bytes_best_effort_func,
+            extract_media_metadata_from_storage_best_effort_func,
+            schedule_web_history_r2_warmup_func,
+            refresh_user_group_func,
         )
-    if extract_media_metadata_from_storage_best_effort_func is None:
-        extract_media_metadata_from_storage_best_effort_func = (
-            dependencies.extract_media_metadata_from_storage_best_effort_func
-        )
-    if schedule_web_history_r2_warmup_func is None:
-        schedule_web_history_r2_warmup_func = (
-            dependencies.schedule_web_history_r2_warmup_func
-        )
-    if refresh_user_group_func is None:
-        refresh_user_group_func = dependencies.refresh_user_group_func
+    )
+    if needs_default_dependencies:
+        dependencies = dependencies or get_default_task_core_persistence_dependencies()
+        if user_logger_factory is None:
+            user_logger_factory = dependencies.user_logger_factory
+        if download_result_func is None:
+            download_result_func = dependencies.download_result_func
+        if download_video_result_func is None:
+            download_video_result_func = dependencies.download_video_result_func
+        if extract_media_metadata_from_bytes_best_effort_func is None:
+            extract_media_metadata_from_bytes_best_effort_func = (
+                dependencies.extract_media_metadata_from_bytes_best_effort_func
+            )
+        if extract_media_metadata_from_storage_best_effort_func is None:
+            extract_media_metadata_from_storage_best_effort_func = (
+                dependencies.extract_media_metadata_from_storage_best_effort_func
+            )
+        if schedule_web_history_r2_warmup_func is None:
+            schedule_web_history_r2_warmup_func = (
+                dependencies.schedule_web_history_r2_warmup_func
+            )
+        if refresh_user_group_func is None:
+            refresh_user_group_func = dependencies.refresh_user_group_func
     if to_thread_func is None:
         to_thread_func = asyncio.to_thread
     if postprocess_plan is None:
@@ -209,8 +222,9 @@ async def persist_successful_task_result_default(
     refresh_user_group_after_log: bool = False,
     warmup_web_history: bool = False,
     postprocess_plan: TaskPersistencePostprocessPlan | None = None,
+    dependencies=None,
 ) -> TaskSuccessPersistenceResult:
-    dependencies = get_default_task_core_persistence_dependencies()
+    dependencies = dependencies or get_default_task_core_persistence_dependencies()
     return await persist_successful_task_result(
         backend_task_id=backend_task_id,
         registry_task_id=registry_task_id,

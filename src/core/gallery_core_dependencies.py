@@ -1,16 +1,14 @@
 from src.database.core import AsyncSessionLocal
+from src.core.billing_core import get_default_billing_core_providers
+from src.core.task_core_service_providers import get_task_core_storage_service
 
 
 def get_gallery_storage_service():
-    from src.services.storage import storage as storage_impl
-
-    return storage_impl
+    return get_task_core_storage_service()
 
 
 def get_gallery_submission_outbox():
-    from src.services.redis_client import redis_client as redis_client_impl
-
-    return redis_client_impl
+    return get_default_billing_core_providers().get_redis_client_func()
 
 
 def get_gallery_session_factory():

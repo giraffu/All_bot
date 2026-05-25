@@ -8,9 +8,9 @@ from config import MINIO_TEMPLATE_BUCKET
 from src.constants import MODE_RANDOM_FACESWAP, TASK_COSTS
 from src.core.user_core import get_or_create_user_by_telegram
 from src.handlers.callback_router import register_callback
+from src.services.bot_task_service import process_generation_task
 from src.services.permission_service import permission_service
 from src.services.storage import storage
-from src.services.bot_task_service import TaskService
 from src.utils import (
     create_background_task,
     is_maintenance_mode,
@@ -131,7 +131,7 @@ async def random_faceswap_again_callback(
 
         create_background_task(
             context,
-            TaskService.process_generation_task(
+            process_generation_task(
                 context,
                 chat_id,
                 user_id,

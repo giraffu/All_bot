@@ -9,6 +9,7 @@ from app import main_response_helpers
 from app import main_simple_task_routes
 from app import main_status_result_routes
 from app import main_t2i_helpers as t2i_helpers
+from app.main_t2i_wiring import T2IWiring
 from app.models import TaskType
 
 
@@ -265,8 +266,19 @@ async def test_create_t2i_pornmaster_turbo_task_reraises_prompt_http_error(monke
 
     monkeypatch.setattr(
         backend_main,
-        "prepare_t2i_request_payload_helper",
-        lambda *_args, **_kwargs: (_ for _ in ()).throw(invalid_prompt_error),
+        "_t2i_wiring",
+        T2IWiring(
+            prepare_task_request_func=lambda *_args, **_kwargs: (_ for _ in ()).throw(
+                invalid_prompt_error
+            ),
+            submit_task_request_func=backend_main._t2i_wiring.submit_task_request_func,
+            build_task_status_response_func=(
+                backend_main._t2i_wiring.build_task_status_response_func
+            ),
+            serve_task_result_file_func=(
+                backend_main._t2i_wiring.serve_task_result_file_func
+            ),
+        ),
     )
 
     with pytest.raises(HTTPException) as exc_info:

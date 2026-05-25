@@ -14,7 +14,7 @@ from src.constants import (
     RESOLUTION_COST,
     TASK_COSTS,
 )
-from src.services.image_service import image_service
+from src.core.task_core_service_providers import get_task_core_image_service
 
 
 LEGACY_TASK_TYPE_ALIASES = {
@@ -78,6 +78,10 @@ def _resolve_video_dimensions(resolution: Any) -> tuple[int, int, int]:
     return resolved_resolution, width, height
 
 
+def _get_dispatch_image_service():
+    return get_task_core_image_service()
+
+
 class BaseTaskStrategy(ABC):
     @abstractmethod
     def get_cost(self, inputs: Dict[str, Any]) -> int:
@@ -125,6 +129,7 @@ class DefaultImageStrategy(BaseTaskStrategy):
     async def submit_task(
         self, task_id: str, inputs: Dict[str, Any], priority: int
     ) -> str:
+        image_service = _get_dispatch_image_service()
         if self.mode == MODE_I2I_PRO:
             import random
 
@@ -186,6 +191,7 @@ class FaceSwapStrategy(BaseTaskStrategy):
     async def submit_task(
         self, task_id: str, inputs: Dict[str, Any], priority: int
     ) -> str:
+        image_service = _get_dispatch_image_service()
         saved_images = _get_saved_input_images(inputs)
         return await image_service.submit_face_swap_task(
             task_id,
@@ -244,6 +250,7 @@ class BaseVideoStrategy(BaseTaskStrategy):
     async def submit_task(
         self, task_id: str, inputs: Dict[str, Any], priority: int
     ) -> str:
+        image_service = _get_dispatch_image_service()
         duration = inputs.get("duration", 5)
         frame_length = _resolve_video_frame_length(duration)
         resolution, width, height = _resolve_video_dimensions(
@@ -328,6 +335,7 @@ class LtxVideoStrategy(BaseTaskStrategy):
     async def submit_task(
         self, task_id: str, inputs: Dict[str, Any], priority: int
     ) -> str:
+        image_service = _get_dispatch_image_service()
         resolution = inputs.get("resolution", 512)
         duration = inputs.get("duration", 5)
 

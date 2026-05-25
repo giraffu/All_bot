@@ -2,6 +2,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any
 
+from src.core.billing_core import get_default_billing_core_providers
 from src.core.user_core import get_or_create_user_by_telegram
 from src.database.core import AsyncSessionLocal
 
@@ -23,16 +24,14 @@ def build_auth_core_dependencies(
 ) -> AuthCoreDependencies:
     """受控 composition root：集中装配 auth_core 运行时依赖。"""
     if permission_service is None:
-        from src.services.permission_service import (
-            permission_service as permission_service_impl,
+        permission_service_impl = (
+            get_default_billing_core_providers().get_permission_service_func()
         )
     else:
         permission_service_impl = permission_service
 
     if redis is None:
-        from src.services.redis_client import redis_client as redis_client_impl
-
-        redis = redis_client_impl.redis
+        redis = get_default_billing_core_providers().get_redis_client_func().redis
 
     if session_factory is None:
         session_factory = AsyncSessionLocal

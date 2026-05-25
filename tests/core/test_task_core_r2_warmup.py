@@ -4,6 +4,10 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from src.core import task_core
+from src.core.task_core_dependencies import (
+    TaskCorePersistenceDependencies,
+    TaskCoreProcessDependencies,
+)
 from src.core import task_core_persistence
 from src.core import task_core_web_history_warmup
 from src.core import task_core_web_monitor
@@ -14,46 +18,63 @@ from src.core.task_core_types import (
     TaskPersistencePostprocessPlan,
     TaskSuccessPersistenceResult,
 )
-from src.services import image_service as image_service_module
-from src.services import permission_service as permission_service_module
 from src.services import storage as storage_module
-from src.services import task_registry as task_registry_module
 
 
 @pytest.mark.asyncio
-async def test_monitor_task_and_release_lock_schedules_web_history_r2_warmup(monkeypatch):
+async def test_monitor_task_and_release_lock_schedules_web_history_r2_warmup():
     async def _monitor_progress(_task_id, _is_video):
         yield {"status": "done", "result_path": "bot-data/worker/task-1.png"}
 
     fake_user_logger = MagicMock()
     fake_user_logger.save_output_image.return_value = "123/output_images/task-1.png"
     fake_user_logger.log_task = AsyncMock()
-
+    download_result = AsyncMock(return_value=b"fake-image-bytes")
+    cleanup_runtime = AsyncMock()
     warmup_mock = MagicMock()
+    persistence_dependencies = TaskCorePersistenceDependencies(
+        user_logger_factory=lambda *_args, **_kwargs: fake_user_logger,
+        download_result_func=download_result,
+        download_video_result_func=AsyncMock(),
+        extract_media_metadata_from_bytes_best_effort_func=(
+            lambda *_args, **_kwargs: (1024, 1024, None)
+        ),
+        extract_media_metadata_from_storage_best_effort_func=AsyncMock(),
+        schedule_web_history_r2_warmup_func=warmup_mock,
+        refresh_user_group_func=None,
+    )
 
-    monkeypatch.setattr(
-        image_service_module.image_service,
-        "download_result",
-        AsyncMock(return_value=b"fake-image-bytes"),
-    )
-    monkeypatch.setattr(
-        task_core_persistence,
-        "extract_media_metadata_from_bytes_best_effort",
-        lambda *_args, **_kwargs: (1024, 1024, None),
-    )
-    monkeypatch.setattr(
-        task_core_persistence,
-        "UserLogger",
-        lambda *_args, **_kwargs: fake_user_logger,
-    )
-    monkeypatch.setattr(
-        task_core_persistence,
-        "schedule_web_history_r2_warmup_default",
-        warmup_mock,
-    )
-    monkeypatch.setattr(task_core, "release_concurrency_lock", AsyncMock())
-    monkeypatch.setattr(task_registry_module.TaskRegistry, "remove_task", AsyncMock())
-    monkeypatch.setattr(task_core, "refund_credits", AsyncMock())
+    async def _persist_successful_web_history(**kwargs):
+        await task_core_persistence.persist_successful_task_result(
+            backend_task_id=kwargs["backend_task_id"],
+            registry_task_id=kwargs["registry_task_id"],
+            internal_user_id=kwargs["internal_user_id"],
+            username=kwargs["username"],
+            prompt=kwargs["prompt"],
+            task_type=kwargs["task_type"],
+            input_images=kwargs["input_images"],
+            allow_contribute=kwargs["allow_contribute"],
+            is_video=kwargs["is_video"],
+            result_path=kwargs["result_path"],
+            billing_resolution=kwargs["billing_resolution"],
+            output_width=kwargs["output_width"],
+            output_height=kwargs["output_height"],
+            output_duration=kwargs["output_duration"],
+            requested_duration=kwargs["requested_duration"],
+            postprocess_plan=TaskPersistencePostprocessPlan(
+                source="web",
+                warmup_web_history=True,
+            ),
+            dependencies=persistence_dependencies,
+        )
+
+    async def _finalize_success(**kwargs):
+        await task_core_web_monitor.finalize_monitored_web_task_success(
+            **kwargs,
+            persist_successful_web_history_func=_persist_successful_web_history,
+            cleanup_task_runtime_state_func=cleanup_runtime,
+            logger=task_core.logger,
+        )
 
     submission_context = task_core.TaskSubmissionContext(
         task_type="image",
@@ -80,7 +101,7 @@ async def test_monitor_task_and_release_lock_schedules_web_history_r2_warmup(mon
         cost=1,
         monitor_progress_func=_monitor_progress,
         normalize_terminal_status_func=task_core.normalize_terminal_status,
-        finalize_success_func=task_core_web_monitor.finalize_monitored_web_task_success_default,
+        finalize_success_func=_finalize_success,
         finalize_cancellation_func=AsyncMock(),
         finalize_failure_func=AsyncMock(),
         logger=task_core.logger,
@@ -320,38 +341,71 @@ def test_attach_web_task_monitor_uses_runtime_default_create_task_binding(monkey
 
 
 @pytest.mark.asyncio
-async def test_process_and_submit_task_passes_requested_duration_to_web_monitor(monkeypatch):
-    monitor_mock = AsyncMock()
+async def test_process_and_submit_task_passes_requested_duration_to_web_monitor():
+    strategy = MagicMock()
+    strategy.get_cost.return_value = 6
+    captured_monitor_calls = []
+    submission_context = task_core.TaskSubmissionContext(
+        task_type="ltx_video",
+        is_video_task=True,
+        user_logger=MagicMock(),
+        prompt="wide cinematic dolly shot",
+        saved_inputs=[],
+        metadata={},
+        allow_contribute=True,
+        final_priority=0,
+        video_request=task_core.VideoTaskRequest(
+            requested_duration=20,
+            output_duration=20,
+            output_width=1280,
+            output_height=704,
+        ),
+    )
 
-    def _capture_background_task(coro):
-        coro.close()
-        return None
+    def _capture_monitor(**kwargs):
+        captured_monitor_calls.append(kwargs)
 
-    monkeypatch.setattr(
-        task_core, "check_concurrency_lock", AsyncMock(return_value=(True, ""))
+    def _attach_side_effects(**kwargs):
+        task_core_web_monitor.attach_submission_side_effects(
+            backend_task_id=kwargs["backend_task_id"],
+            internal_user_id=kwargs["internal_user_id"],
+            username=kwargs["username"],
+            registry_task_id=kwargs["registry_task_id"],
+            submission_context=kwargs["submission_context"],
+            cost=kwargs["cost"],
+            submission_side_effect_plan=kwargs["submission_side_effect_plan"],
+            attach_web_task_monitor_func=_capture_monitor,
+            schedule_apply_interaction_func=lambda *_args, **_kwargs: None,
+            core_domain_error_cls=task_core.CoreDomainError,
+        )
+
+    dependencies = TaskCoreProcessDependencies(
+        get_strategy_func=MagicMock(return_value=strategy),
+        video_task_types={"ltx_video"},
+        build_video_task_request_func=MagicMock(
+            return_value=task_core.VideoTaskRequest(
+                requested_duration=20,
+                output_duration=20,
+                output_width=1280,
+                output_height=704,
+            )
+        ),
+        check_concurrency_lock_func=AsyncMock(return_value=(True, "")),
+        prepare_task_submission_payload_func=AsyncMock(return_value=submission_context),
+        check_and_deduct_credits_func=AsyncMock(return_value=(True, "")),
+        execute_task_submission_saga_func=AsyncMock(
+            return_value=task_core.TaskSubmissionExecutionResult(
+                registry_task_id="reg-1",
+                backend_task_id="backend-task-1",
+                submission_context=submission_context,
+            )
+        ),
+        attach_submission_side_effects_func=_attach_side_effects,
+        compensate_failed_submission_func=AsyncMock(),
+        release_concurrency_lock_func=AsyncMock(),
+        shield_func=AsyncMock(),
+        logger=MagicMock(),
     )
-    monkeypatch.setattr(
-        task_core, "check_and_deduct_credits", AsyncMock(return_value=(True, ""))
-    )
-    monkeypatch.setattr(
-        task_core,
-        "get_user_priority_and_identity",
-        AsyncMock(return_value=(0, "user", "外门弟子")),
-    )
-    monkeypatch.setattr(task_core, "load_prompts", lambda: {})
-    monkeypatch.setattr(task_registry_module.TaskRegistry, "add_task", AsyncMock(return_value="reg-1"))
-    monkeypatch.setattr(
-        task_registry_module.TaskRegistry, "update_backend_task_id", AsyncMock(return_value=None)
-    )
-    monkeypatch.setattr(
-        task_core, "dispatch_to_worker", AsyncMock(return_value="backend-task-1")
-    )
-    monkeypatch.setattr(
-        task_core_web_monitor,
-        "monitor_task_and_release_lock_default",
-        monitor_mock,
-    )
-    monkeypatch.setattr(task_core.asyncio, "create_task", _capture_background_task)
 
     result = await task_core.process_and_submit_task(
         user_id=123,
@@ -367,47 +421,33 @@ async def test_process_and_submit_task_passes_requested_duration_to_web_monitor(
         submission_side_effect_plan=task_core.TaskSubmissionSideEffectPlan(
             attach_web_monitor=True
         ),
+        dependencies=dependencies,
     )
 
     assert result["task_id"] == "reg-1"
-    monitor_mock.assert_called_once()
-    submission_context = monitor_mock.call_args.kwargs["submission_context"]
-    assert submission_context.requested_duration == 20
-    assert submission_context.output_duration == 20
+    assert len(captured_monitor_calls) == 1
+    captured_submission_context = captured_monitor_calls[0]["submission_context"]
+    assert captured_submission_context.requested_duration == 20
+    assert captured_submission_context.output_duration == 20
 
 
 @pytest.mark.asyncio
-async def test_persist_successful_task_result_reuses_core_path_for_bot(monkeypatch):
+async def test_persist_successful_task_result_reuses_core_path_for_bot():
     fake_user_logger = MagicMock()
     fake_user_logger.save_output_image.return_value = "456/output_images/task-2.png"
     fake_user_logger.log_task = AsyncMock()
     refresh_mock = AsyncMock()
     warmup_mock = MagicMock()
-
-    monkeypatch.setattr(
-        image_service_module.image_service,
-        "download_result",
-        AsyncMock(return_value=b"image-bytes"),
-    )
-    monkeypatch.setattr(
-        task_core_persistence,
-        "extract_media_metadata_from_bytes_best_effort",
-        lambda *_args, **_kwargs: (768, 1024, None),
-    )
-    monkeypatch.setattr(
-        task_core_persistence,
-        "UserLogger",
-        lambda *_args, **_kwargs: fake_user_logger,
-    )
-    monkeypatch.setattr(
-        task_core_persistence,
-        "schedule_web_history_r2_warmup_default",
-        warmup_mock,
-    )
-    monkeypatch.setattr(
-        permission_service_module.permission_service,
-        "refresh_user_group",
-        refresh_mock,
+    dependencies = TaskCorePersistenceDependencies(
+        user_logger_factory=lambda *_args, **_kwargs: fake_user_logger,
+        download_result_func=AsyncMock(return_value=b"image-bytes"),
+        download_video_result_func=AsyncMock(),
+        extract_media_metadata_from_bytes_best_effort_func=(
+            lambda *_args, **_kwargs: (768, 1024, None)
+        ),
+        extract_media_metadata_from_storage_best_effort_func=AsyncMock(),
+        schedule_web_history_r2_warmup_func=warmup_mock,
+        refresh_user_group_func=refresh_mock,
     )
 
     result = await task_core.persist_successful_task_result(
@@ -424,6 +464,7 @@ async def test_persist_successful_task_result_reuses_core_path_for_bot(monkeypat
         requested_duration=None,
         source="bot",
         refresh_user_group_after_log=True,
+        dependencies=dependencies,
     )
 
     assert result.media_bytes == b"image-bytes"
@@ -437,33 +478,19 @@ async def test_persist_successful_task_result_reuses_core_path_for_bot(monkeypat
 
 
 @pytest.mark.asyncio
-async def test_persist_successful_task_result_uses_storage_metadata_when_bytes_missing(
-    monkeypatch,
-):
+async def test_persist_successful_task_result_uses_storage_metadata_when_bytes_missing():
     fake_user_logger = MagicMock()
     fake_user_logger.log_task = AsyncMock()
     warmup_mock = MagicMock()
     extract_from_storage_mock = AsyncMock(return_value=(640, 480, 12))
-
-    monkeypatch.setattr(
-        image_service_module.image_service,
-        "download_video_result",
-        AsyncMock(return_value=None),
-    )
-    monkeypatch.setattr(
-        task_core_persistence,
-        "UserLogger",
-        lambda *_args, **_kwargs: fake_user_logger,
-    )
-    monkeypatch.setattr(
-        task_core_persistence,
-        "extract_media_metadata_from_storage_best_effort",
-        extract_from_storage_mock,
-    )
-    monkeypatch.setattr(
-        task_core_persistence,
-        "schedule_web_history_r2_warmup_default",
-        warmup_mock,
+    dependencies = TaskCorePersistenceDependencies(
+        user_logger_factory=lambda *_args, **_kwargs: fake_user_logger,
+        download_result_func=AsyncMock(),
+        download_video_result_func=AsyncMock(return_value=None),
+        extract_media_metadata_from_bytes_best_effort_func=MagicMock(),
+        extract_media_metadata_from_storage_best_effort_func=extract_from_storage_mock,
+        schedule_web_history_r2_warmup_func=warmup_mock,
+        refresh_user_group_func=None,
     )
 
     result = await task_core.persist_successful_task_result(
@@ -483,6 +510,7 @@ async def test_persist_successful_task_result_uses_storage_metadata_when_bytes_m
             source="web",
             warmup_web_history=True,
         ),
+        dependencies=dependencies,
     )
 
     assert result.media_bytes is None

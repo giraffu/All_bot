@@ -33,31 +33,19 @@ async def test_send_history_record_to_telegram_delegates_delivery_pipeline(monke
     download_bytes = AsyncMock(return_value=("task-1/output.png", b"image-bytes"))
     post_upload = AsyncMock()
 
-    monkeypatch.setattr(
-        history_delivery_service,
-        "_acquire_send_to_bot_rate_limit",
-        acquire_rate_limit,
-    )
-    monkeypatch.setattr(
-        history_delivery_service,
-        "_load_owned_history_record",
-        load_history,
-    )
-    monkeypatch.setattr(
-        history_delivery_service,
-        "_download_history_bytes",
-        download_bytes,
-    )
-    monkeypatch.setattr(
-        history_delivery_service,
-        "_post_telegram_upload",
-        post_upload,
+    dependencies = history_delivery_service.HistoryDeliveryDependencies(
+        acquire_rate_limit_func=acquire_rate_limit,
+        load_history_record_func=load_history,
+        download_history_bytes_func=download_bytes,
+        build_upload_request_func=history_delivery_service._build_telegram_upload_request,
+        post_upload_func=post_upload,
     )
 
     result = await history_delivery_service.send_history_record_to_telegram(
         task_id="task-1",
         current_user=SimpleNamespace(id=1, telegram_id=10001),
         db=SimpleNamespace(),
+        dependencies=dependencies,
     )
 
     assert result == {"status": "success", "message": "已发送至您的 Telegram 私聊"}

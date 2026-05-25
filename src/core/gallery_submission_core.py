@@ -66,16 +66,20 @@ async def process_submit_to_gallery_result_impl(
     build_gallery_submit_side_effects_func=None,
 ):
     session_factory = session_factory or get_gallery_session_factory()
-    gallery_submission_outbox = (
-        gallery_submission_outbox or get_gallery_submission_outbox()
-    )
-    check_gallery_submit_limit_func = (
-        check_gallery_submit_limit_func
-        or gallery_submission_outbox.check_gallery_submit_limit
-    )
-    increment_gallery_submit_func = (
-        increment_gallery_submit_func or gallery_submission_outbox.increment_gallery_submit
-    )
+    if (
+        gallery_submission_outbox is None
+        and (
+            check_gallery_submit_limit_func is None
+            or increment_gallery_submit_func is None
+        )
+    ):
+        gallery_submission_outbox = get_gallery_submission_outbox()
+    if check_gallery_submit_limit_func is None:
+        check_gallery_submit_limit_func = (
+            gallery_submission_outbox.check_gallery_submit_limit
+        )
+    if increment_gallery_submit_func is None:
+        increment_gallery_submit_func = gallery_submission_outbox.increment_gallery_submit
     build_gallery_submit_side_effects_func = (
         build_gallery_submit_side_effects_func or build_gallery_submit_side_effects
     )

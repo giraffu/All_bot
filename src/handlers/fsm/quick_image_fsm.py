@@ -19,8 +19,8 @@ from src.constants import (
 )
 from src.handlers.conversation_states import QuickImageState
 from src.handlers.prompt_router import is_global_menu_command
+from src.services.bot_task_service import process_generation_task
 from src.services.permission_service import permission_service
-from src.services.bot_task_service import TaskService
 from src.services.fsm_temp_file_service import (
     cleanup_fsm_temp_files,
     download_telegram_file_to_fsm_temp,
@@ -231,7 +231,7 @@ async def receive_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
 
             create_background_task(
                 context,
-                TaskService.process_generation_task(
+                process_generation_task(
                     context,
                     message.chat_id,
                     user_id,
@@ -252,7 +252,7 @@ async def receive_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         prompt = prompts_config.get(mode, mode)
         create_background_task(
             context,
-            TaskService.process_generation_task(
+            process_generation_task(
                 context,
                 message.chat_id,
                 user_id,

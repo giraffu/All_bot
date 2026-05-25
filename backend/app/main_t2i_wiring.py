@@ -1,3 +1,4 @@
+import uuid
 from dataclasses import dataclass
 from functools import partial
 from typing import Any, Callable
@@ -8,6 +9,7 @@ from app.main_response_helpers import (
     serve_task_result_file as serve_task_result_file_helper,
 )
 from app.main_t2i_helpers import (
+    prepare_t2i_request_payload as prepare_t2i_request_payload_helper,
     build_t2i_terminal_response as build_t2i_terminal_response_helper,
     build_task_event_channel as build_task_event_channel_helper,
     close_task_event_subscription as close_task_event_subscription_helper,
@@ -15,8 +17,10 @@ from app.main_t2i_helpers import (
     enqueue_t2i_task as enqueue_t2i_task_helper,
     get_immediate_t2i_terminal_response as get_immediate_t2i_terminal_response_helper,
     optional_t2i_task_subscription as optional_t2i_task_subscription_helper,
+    resolve_t2i_priority as resolve_t2i_priority_helper,
     submit_t2i_task_request as submit_t2i_task_request_helper,
     subscribe_task_events as subscribe_task_events_helper,
+    validate_t2i_prompt as validate_t2i_prompt_helper,
     wait_for_t2i_sync_result as wait_for_t2i_sync_result_helper,
     wait_for_t2i_terminal_response as wait_for_t2i_terminal_response_helper,
 )
@@ -24,6 +28,7 @@ from app.main_t2i_helpers import (
 
 @dataclass(frozen=True)
 class T2IWiring:
+    prepare_task_request_func: Callable[..., Any]
     submit_task_request_func: Callable[..., Any]
     build_task_status_response_func: Callable[..., Any]
     serve_task_result_file_func: Callable[..., Any]
@@ -79,6 +84,12 @@ def build_t2i_wiring(
     )
 
     return T2IWiring(
+        prepare_task_request_func=partial(
+            prepare_t2i_request_payload_helper,
+            uuid_factory=uuid.uuid4,
+            validate_prompt_func=validate_t2i_prompt_helper,
+            resolve_priority_func=resolve_t2i_priority_helper,
+        ),
         submit_task_request_func=partial(
             submit_t2i_task_request_helper,
             response_cls=response_cls,

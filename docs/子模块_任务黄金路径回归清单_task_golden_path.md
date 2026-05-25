@@ -150,12 +150,13 @@ pytest \
 
 - `tests/web_api/test_tasks_stream.py`
 
-### 6.6 Telegram TaskService 主链路
+### 6.6 Telegram Bot Task 主链路
 
 - [ ] completion 阶段在 metadata 探测失败时仍不破坏成功链路
 - [ ] 下载与落库后仍保留 width/height/duration 等回写口径
 - [ ] 结果 reply markup 仍会注入投稿按钮
 - [ ] 自定义视频非法分辨率/时长组合仍按既有规则降级
+- [ ] `run_bot_task_application(...)` 的 request/presentation/billing/failure/cleanup 五段式上下文装配不漂移
 - [ ] 状态消息、caption、display mode、entrypoint inputs 等 support helper 输出不漂移
 
 对应测试：

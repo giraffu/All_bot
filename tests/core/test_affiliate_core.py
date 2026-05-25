@@ -65,7 +65,7 @@ def _build_order(**overrides):
     payload = {
         "id": 123,
         "order_id": "ORD-123",
-        "telegram_id": 2002,
+        "internal_user_id": 2002,
         "plan_id": 1,
         "original_price": Decimal("10.00"),
         "final_price": Decimal("10.00"),
@@ -87,6 +87,18 @@ def _build_referral(**overrides):
     }
     payload.update(overrides)
     return Referral(**payload)
+
+
+@pytest.fixture(autouse=True)
+def _stub_affiliate_balance_lock(monkeypatch):
+    async def _fake_lock_affiliate_balance_owner(_session, inviter_id: int):
+        return {"inviter_id": inviter_id}
+
+    monkeypatch.setattr(
+        affiliate_core,
+        "lock_affiliate_balance_owner",
+        _fake_lock_affiliate_balance_owner,
+    )
 
 
 @pytest.mark.asyncio

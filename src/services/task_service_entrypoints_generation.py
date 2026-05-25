@@ -10,6 +10,7 @@ from src.constants import (
     MODE_NAME_MAP,
 )
 from src.services.permission_service import permission_service
+from src.services.task_service_cleanup import cleanup_task_files
 from src.services.task_service_entrypoints_common import resolve_internal_user_id
 from src.services.task_service_entrypoint_support import (
     build_cleanup_paths,
@@ -30,13 +31,20 @@ from src.services.task_service_message_support import (
     with_completion_caption,
 )
 from src.services.task_service_flow import run_bot_task_application
-from src.services.task_service_types import BotTaskFlowContext, BotTaskRuntimeState
+from src.services.task_service_types import (
+    BotTaskBillingContext,
+    BotTaskCleanupPolicy,
+    BotTaskFailurePolicy,
+    BotTaskFlowContext,
+    BotTaskPresentationContext,
+    BotTaskRequestContext,
+    BotTaskRuntimeState,
+)
 from src.utils import robust_send_message
 
 
 async def process_image_to_video_task(
     *,
-    service,
     context: ContextTypes.DEFAULT_TYPE,
     chat_id: int,
     user_id: int,
@@ -111,45 +119,54 @@ async def process_image_to_video_task(
 
     return await run_bot_task_application(
         flow=BotTaskFlowContext(
-            context=context,
-            chat_id=chat_id,
-            status_msg_id=status_msg_id,
             runtime_state=runtime_state,
-            internal_user_id=internal_user_id,
-            username=username,
-            task_type=task_type,
-            inputs=inputs,
-            prompt=log_prompt,
-            is_video=True,
-            message_spec=message_spec,
-            submitted_status_builder=build_cost_status_builder(
-                f"⏳ 任务已提交，正在排队调度{display_mode_name}生成任务 (画质:{resolution_text}, 时长:{duration_text}, 消耗{{actual_cost}}灵石)",
-                notice=notice,
-                wait_text="⏳ 正在生成视频，请耐心等待...",
+            request=BotTaskRequestContext(
+                context=context,
+                chat_id=chat_id,
+                status_msg_id=status_msg_id,
+                internal_user_id=internal_user_id,
+                username=username,
+                task_type=task_type,
+                inputs=inputs,
+                prompt=log_prompt,
+                is_video=True,
+                source_post_id=source_post_id,
+                deduct_quota=deduct_quota,
             ),
-            source_post_id=source_post_id,
-            deduct_quota=deduct_quota,
-            send_result=send_result,
-            reply_markup=reply_markup,
-            delete_status=delete_status,
-            allow_contribute=allow_contribute,
-            billing_resolution=billing_args["billing_resolution"],
-            requested_duration=billing_args["requested_duration"],
-            missing_output_should_refund=deduct_quota,
-            unexpected_error_log_message=build_unexpected_error_log_message(
-                "process_image_to_video_task"
+            presentation=BotTaskPresentationContext(
+                message_spec=message_spec,
+                submitted_status_builder=build_cost_status_builder(
+                    f"⏳ 任务已提交，正在排队调度{display_mode_name}生成任务 (画质:{resolution_text}, 时长:{duration_text}, 消耗{{actual_cost}}灵石)",
+                    notice=notice,
+                    wait_text="⏳ 正在生成视频，请耐心等待...",
+                ),
+                send_result=send_result,
+                reply_markup=reply_markup,
+                delete_status=delete_status,
+                allow_contribute=allow_contribute,
             ),
-            unexpected_error_prefix="出错了",
-            cleanup_paths=build_cleanup_paths(images),
-            cleanup_enabled=cleanup,
-            cleanup_files_func=service._cleanup_files,
+            billing=BotTaskBillingContext(
+                billing_resolution=billing_args["billing_resolution"],
+                requested_duration=billing_args["requested_duration"],
+                missing_output_should_refund=deduct_quota,
+            ),
+            failure_policy=BotTaskFailurePolicy(
+                unexpected_error_log_message=build_unexpected_error_log_message(
+                    "process_image_to_video_task"
+                ),
+                unexpected_error_prefix="出错了",
+            ),
+            cleanup_policy=BotTaskCleanupPolicy(
+                cleanup_paths=build_cleanup_paths(images),
+                cleanup_enabled=cleanup,
+                cleanup_files_func=cleanup_task_files,
+            ),
         )
     )
 
 
 async def process_generation_task(
     *,
-    service,
     context: ContextTypes.DEFAULT_TYPE,
     chat_id: int,
     user_id: int,
@@ -178,7 +195,6 @@ async def process_generation_task(
 
     if is_video and task_type in [MODE_CUSTOM_VIDEO, MODE_IMAGE_TO_VIDEO]:
         return await process_image_to_video_task(
-            service=service,
             context=context,
             chat_id=chat_id,
             user_id=user_id,
@@ -253,46 +269,55 @@ async def process_generation_task(
 
     return await run_bot_task_application(
         flow=BotTaskFlowContext(
-            context=context,
-            chat_id=chat_id,
-            status_msg_id=status_msg_id,
             runtime_state=runtime_state,
-            internal_user_id=internal_user_id,
-            username=username,
-            task_type=task_type,
-            inputs=inputs,
-            prompt=log_prompt,
-            is_video=is_video,
-            message_spec=message_spec,
-            submitted_status_builder=build_cost_status_builder(
-                "⏳ 任务已提交，正在排队调度视频生成任务 (消耗{actual_cost}灵石)"
-                if is_video
-                else f"⏳ 任务已提交，正在排队调度 {len(images)} 张图片 (消耗{{actual_cost}}灵石)",
-                notice=notice,
+            request=BotTaskRequestContext(
+                context=context,
+                chat_id=chat_id,
+                status_msg_id=status_msg_id,
+                internal_user_id=internal_user_id,
+                username=username,
+                task_type=task_type,
+                inputs=inputs,
+                prompt=log_prompt,
+                is_video=is_video,
+                source_post_id=source_post_id,
+                deduct_quota=deduct_quota,
             ),
-            source_post_id=source_post_id,
-            deduct_quota=deduct_quota,
-            send_result=send_result,
-            reply_markup=reply_markup,
-            delete_status=delete_status,
-            allow_contribute=allow_contribute,
-            billing_resolution=billing_args["billing_resolution"],
-            requested_duration=billing_args["requested_duration"],
-            missing_output_should_refund=deduct_quota,
-            unexpected_error_log_message=build_unexpected_error_log_message(
-                "process_generation_task"
+            presentation=BotTaskPresentationContext(
+                message_spec=message_spec,
+                submitted_status_builder=build_cost_status_builder(
+                    "⏳ 任务已提交，正在排队调度视频生成任务 (消耗{actual_cost}灵石)"
+                    if is_video
+                    else f"⏳ 任务已提交，正在排队调度 {len(images)} 张图片 (消耗{{actual_cost}}灵石)",
+                    notice=notice,
+                ),
+                send_result=send_result,
+                reply_markup=reply_markup,
+                delete_status=delete_status,
+                allow_contribute=allow_contribute,
             ),
-            unexpected_error_prefix="出错了",
-            cleanup_paths=build_cleanup_paths(images),
-            cleanup_enabled=cleanup,
-            cleanup_files_func=service._cleanup_files,
+            billing=BotTaskBillingContext(
+                billing_resolution=billing_args["billing_resolution"],
+                requested_duration=billing_args["requested_duration"],
+                missing_output_should_refund=deduct_quota,
+            ),
+            failure_policy=BotTaskFailurePolicy(
+                unexpected_error_log_message=build_unexpected_error_log_message(
+                    "process_generation_task"
+                ),
+                unexpected_error_prefix="出错了",
+            ),
+            cleanup_policy=BotTaskCleanupPolicy(
+                cleanup_paths=build_cleanup_paths(images),
+                cleanup_enabled=cleanup,
+                cleanup_files_func=cleanup_task_files,
+            ),
         )
     )
 
 
 async def process_i2i_pro_task(
     *,
-    service,
     context: ContextTypes.DEFAULT_TYPE,
     chat_id: int,
     user_id: int,
@@ -330,29 +355,37 @@ async def process_i2i_pro_task(
 
     return await run_bot_task_application(
         flow=BotTaskFlowContext(
-            context=context,
-            chat_id=chat_id,
             runtime_state=runtime_state,
-            internal_user_id=internal_user_id,
-            username=username,
-            task_type=MODE_I2I_PRO,
-            inputs=inputs,
-            prompt=prompt,
-            is_video=False,
-            message_spec=message_spec,
-            submitted_status_builder=build_cost_status_builder(
-                "⏳ 任务已提交，正在排队调度幻想换脸任务 (消耗{actual_cost}灵石)",
-                notice=notice,
+            request=BotTaskRequestContext(
+                context=context,
+                chat_id=chat_id,
+                internal_user_id=internal_user_id,
+                username=username,
+                task_type=MODE_I2I_PRO,
+                inputs=inputs,
+                prompt=prompt,
+                is_video=False,
+                source_post_id=source_post_id,
             ),
-            source_post_id=source_post_id,
-            allow_contribute=allow_contribute,
-            refund_suffix_mode="always",
-            unexpected_should_refund=lambda state: state.task_submitted,
-            unexpected_error_log_message=build_unexpected_error_log_message(
-                "process_i2i_pro_task"
+            presentation=BotTaskPresentationContext(
+                message_spec=message_spec,
+                submitted_status_builder=build_cost_status_builder(
+                    "⏳ 任务已提交，正在排队调度幻想换脸任务 (消耗{actual_cost}灵石)",
+                    notice=notice,
+                ),
+                allow_contribute=allow_contribute,
             ),
-            unexpected_error_prefix="出错了",
-            cleanup_paths=build_cleanup_paths(images),
-            cleanup_files_func=service._cleanup_files,
+            failure_policy=BotTaskFailurePolicy(
+                unexpected_should_refund=lambda state: state.task_submitted,
+                unexpected_error_log_message=build_unexpected_error_log_message(
+                    "process_i2i_pro_task"
+                ),
+                unexpected_error_prefix="出错了",
+                refund_suffix_mode="always",
+            ),
+            cleanup_policy=BotTaskCleanupPolicy(
+                cleanup_paths=build_cleanup_paths(images),
+                cleanup_files_func=cleanup_task_files,
+            ),
         )
     )

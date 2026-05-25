@@ -16,6 +16,7 @@ from src.services import task_service_completion as task_service_completion_help
 from src.services import task_service_finalize as task_service_finalize_helpers
 from src.services.task_service_message_support import with_submitted_status
 from src.services.task_service_types import (
+    BotTaskCancelled,
     BotTaskCompletionContext,
     BotTaskFlowContext,
     BotTaskMessageSpec,
@@ -240,175 +241,113 @@ async def run_bot_task_application(
 ) -> tuple[bytes | None, str | None]:
     media_bytes = None
     full_output_path = None
+    request = flow.request
+    presentation = flow.presentation
+    billing = flow.billing
+    failure_policy = flow.failure_policy
+    cleanup_policy = flow.cleanup_policy
     submission = BotTaskSubmissionContext(
         runtime_state=flow.runtime_state,
-        internal_user_id=flow.internal_user_id,
-        username=flow.username,
-        task_type=flow.task_type,
-        inputs=flow.inputs,
-        source_post_id=flow.source_post_id,
-        deduct_quota=flow.deduct_quota,
+        internal_user_id=request.internal_user_id,
+        username=request.username,
+        task_type=request.task_type,
+        inputs=request.inputs,
+        source_post_id=request.source_post_id,
+        deduct_quota=request.deduct_quota,
     )
 
     try:
         status_msg, task_id, saved_inputs, message_spec = await run_bot_task_submission_stage(
-            context=flow.context,
-            update=flow.update,
-            chat_id=flow.chat_id,
-            status_msg_id=flow.status_msg_id,
-            message_spec=flow.message_spec,
-            submitted_status_builder=flow.submitted_status_builder,
+            context=request.context,
+            update=request.update,
+            chat_id=request.chat_id,
+            status_msg_id=request.status_msg_id,
+            message_spec=presentation.message_spec,
+            submitted_status_builder=presentation.submitted_status_builder,
             submission=submission,
         )
 
         final_info = await run_bot_task_monitor_stage(
             task_id=task_id,
             status_msg=status_msg,
-            is_video=flow.is_video,
-            internal_user_id=flow.internal_user_id,
+            is_video=request.is_video,
+            internal_user_id=request.internal_user_id,
         )
 
         media_bytes, full_output_path = await run_bot_task_completion_stage(
-            context=flow.context,
-            chat_id=flow.chat_id,
+            context=request.context,
+            chat_id=request.chat_id,
             status_msg=status_msg,
             runtime_state=flow.runtime_state,
-            internal_user_id=flow.internal_user_id,
-            username=flow.username,
-            prompt=flow.prompt,
-            task_type=flow.task_type,
+            internal_user_id=request.internal_user_id,
+            username=request.username,
+            prompt=request.prompt,
+            task_type=request.task_type,
             task_id=task_id,
             saved_inputs=saved_inputs,
             final_info=final_info,
-            is_video=flow.is_video,
+            is_video=request.is_video,
             message_spec=message_spec,
-            send_result=flow.send_result,
-            reply_markup=flow.reply_markup,
-            delete_status=flow.delete_status,
-            allow_contribute=flow.allow_contribute,
-            billing_resolution=flow.billing_resolution,
-            requested_duration=flow.requested_duration,
-            missing_output_should_refund=flow.missing_output_should_refund,
+            send_result=presentation.send_result,
+            reply_markup=presentation.reply_markup,
+            delete_status=presentation.delete_status,
+            allow_contribute=presentation.allow_contribute,
+            billing_resolution=billing.billing_resolution,
+            requested_duration=billing.requested_duration,
+            missing_output_should_refund=billing.missing_output_should_refund,
         )
 
     except ConcurrencyLimitError as e:
-        await task_service_finalize_helpers.send_bot_warning(flow.context, flow.chat_id, e)
+        await task_service_finalize_helpers.send_bot_warning(request.context, request.chat_id, e)
         return None, None
     except InsufficientCreditsError as e:
-        await task_service_finalize_helpers.send_bot_warning(flow.context, flow.chat_id, e)
+        await task_service_finalize_helpers.send_bot_warning(request.context, request.chat_id, e)
         return None, None
+    except BotTaskCancelled:
+        return await task_service_finalize_helpers.handle_bot_cancelled_exception(
+            status_msg=locals().get("status_msg"),
+            runtime_state=flow.runtime_state,
+            internal_user_id=request.internal_user_id,
+            username=request.username,
+            message_spec=locals().get("message_spec", presentation.message_spec),
+            deduct_quota=request.deduct_quota,
+        )
     except CoreDomainError as e:
-        if str(e) == "cancelled":
-            return await task_service_finalize_helpers.handle_bot_cancelled_exception(
-                status_msg=locals().get("status_msg"),
-                runtime_state=flow.runtime_state,
-                internal_user_id=flow.internal_user_id,
-                username=flow.username,
-                message_spec=locals().get("message_spec", flow.message_spec),
-                deduct_quota=flow.deduct_quota,
-            )
         await task_service_finalize_helpers.send_bot_domain_error(
-            flow.context, flow.chat_id, e
+            request.context, request.chat_id, e
         )
         return None, None
     except Exception as e:
         return await task_service_finalize_helpers.handle_bot_unexpected_exception(
-            context=flow.context,
-            chat_id=flow.chat_id,
-            status_msg=locals().get("status_msg") if flow.prefer_edit_status else None,
+            context=request.context,
+            chat_id=request.chat_id,
+            status_msg=(
+                locals().get("status_msg") if presentation.prefer_edit_status else None
+            ),
             runtime_state=flow.runtime_state,
-            internal_user_id=flow.internal_user_id,
-            username=flow.username,
+            internal_user_id=request.internal_user_id,
+            username=request.username,
             error=e,
-            log_message=flow.unexpected_error_log_message.format(
-                internal_user_id=flow.internal_user_id,
+            log_message=failure_policy.unexpected_error_log_message.format(
+                internal_user_id=request.internal_user_id,
                 error=e,
             ),
             should_refund=should_refund_for_unexpected_bot_error(
                 runtime_state=flow.runtime_state,
-                deduct_quota=flow.deduct_quota,
-                unexpected_should_refund=flow.unexpected_should_refund,
+                deduct_quota=request.deduct_quota,
+                unexpected_should_refund=failure_policy.unexpected_should_refund,
             ),
-            generic_error_prefix=flow.unexpected_error_prefix,
-            prefer_edit_status=flow.prefer_edit_status,
-            refund_suffix_mode=flow.refund_suffix_mode,
+            generic_error_prefix=failure_policy.unexpected_error_prefix,
+            prefer_edit_status=presentation.prefer_edit_status,
+            refund_suffix_mode=failure_policy.refund_suffix_mode,
         )
     finally:
         await cleanup_bot_task_flow(
-            internal_user_id=flow.internal_user_id,
+            internal_user_id=request.internal_user_id,
             runtime_state=flow.runtime_state,
-            cleanup_enabled=flow.cleanup_enabled,
-            cleanup_paths=flow.cleanup_paths,
-            cleanup_files_func=flow.cleanup_files_func,
+            cleanup_enabled=cleanup_policy.cleanup_enabled,
+            cleanup_paths=cleanup_policy.cleanup_paths,
+            cleanup_files_func=cleanup_policy.cleanup_files_func,
         )
 
     return media_bytes, full_output_path
-
-
-async def run_bot_task_flow(
-    *,
-    context,
-    chat_id,
-    runtime_state,
-    internal_user_id,
-    username,
-    task_type,
-    inputs,
-    prompt,
-    is_video,
-    message_spec: BotTaskMessageSpec,
-    update=None,
-    status_msg_id=None,
-    submitted_status_builder: Optional[Callable[[int], str]] = None,
-    source_post_id=None,
-    deduct_quota=True,
-    send_result=True,
-    reply_markup=None,
-    delete_status=True,
-    allow_contribute=True,
-    billing_resolution: Optional[str] = None,
-    requested_duration: Optional[int] = None,
-    missing_output_should_refund: bool = True,
-    prefer_edit_status=False,
-    refund_suffix_mode="if_refunded",
-    unexpected_should_refund: Optional[Callable] = None,
-    unexpected_error_log_message: str = "",
-    unexpected_error_prefix: str = "出错了",
-    cleanup_paths: Optional[list[str]] = None,
-    cleanup_enabled: bool = True,
-    cleanup_files_func=None,
-) -> tuple[bytes | None, str | None]:
-    return await run_bot_task_application(
-        flow=BotTaskFlowContext(
-            context=context,
-            chat_id=chat_id,
-            runtime_state=runtime_state,
-            internal_user_id=internal_user_id,
-            username=username,
-            task_type=task_type,
-            inputs=inputs,
-            prompt=prompt,
-            is_video=is_video,
-            message_spec=message_spec,
-            update=update,
-            status_msg_id=status_msg_id,
-            submitted_status_builder=submitted_status_builder,
-            source_post_id=source_post_id,
-            deduct_quota=deduct_quota,
-            send_result=send_result,
-            reply_markup=reply_markup,
-            delete_status=delete_status,
-            allow_contribute=allow_contribute,
-            billing_resolution=billing_resolution,
-            requested_duration=requested_duration,
-            missing_output_should_refund=missing_output_should_refund,
-            prefer_edit_status=prefer_edit_status,
-            refund_suffix_mode=refund_suffix_mode,
-            unexpected_should_refund=unexpected_should_refund,
-            unexpected_error_log_message=unexpected_error_log_message,
-            unexpected_error_prefix=unexpected_error_prefix,
-            cleanup_paths=cleanup_paths,
-            cleanup_enabled=cleanup_enabled,
-            cleanup_files_func=cleanup_files_func,
-        )
-    )

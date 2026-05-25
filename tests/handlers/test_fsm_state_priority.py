@@ -327,7 +327,7 @@ async def test_edit_image_special_lora_normalizes_prompt_before_submit(monkeypat
     monkeypatch.setattr(edit_image_fsm.permission_service, "check_quota", quota_mock)
     monkeypatch.setattr(edit_image_fsm, "create_background_task", create_background_task_mock)
     monkeypatch.setattr(
-        edit_image_fsm.TaskService,
+        edit_image_fsm,
         "process_generation_task",
         lambda *args, **kwargs: ("bg-task", args, kwargs),
     )
@@ -489,7 +489,7 @@ async def test_image_to_video_receive_prompt_uses_unified_image_to_video_service
     monkeypatch.setattr(image_to_video_fsm.permission_service, "check_quota", quota_mock)
     monkeypatch.setattr(image_to_video_fsm, "create_background_task", create_background_task_mock)
     monkeypatch.setattr(
-        image_to_video_fsm.TaskService,
+        image_to_video_fsm,
         "process_image_to_video_task",
         lambda **kwargs: ("bg-task", kwargs),
     )

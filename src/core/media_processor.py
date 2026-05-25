@@ -9,9 +9,13 @@ from io import BytesIO
 from PIL import Image, ImageOps
 
 from src.core.media_paths import build_legacy_r2_key, resolve_storage_object
-from src.services.storage import storage
+from src.core.task_core_service_providers import get_task_core_storage_service
 
 logger = logging.getLogger(__name__)
+
+
+def _get_media_storage_service():
+    return get_task_core_storage_service()
 
 
 def _extract_image_metadata_from_file(file_path: str) -> tuple[int | None, int | None, None]:
@@ -97,10 +101,11 @@ async def extract_media_metadata_from_storage(
 
     normalized_media_type = "video" if media_type == "video" else "image"
     bucket_name, object_name = resolve_storage_object(output_file)
+    storage_service = _get_media_storage_service()
 
     if normalized_media_type == "video":
         input_url = await asyncio.to_thread(
-            storage.get_presigned_url, object_name, 1.0, bucket_name
+            storage_service.get_presigned_url, object_name, 1.0, bucket_name
         )
         return await asyncio.to_thread(_extract_video_metadata_with_ffprobe, input_url)
 
@@ -108,7 +113,9 @@ async def extract_media_metadata_from_storage(
     try:
         original_ext = object_name.rsplit(".", 1)[-1] if "." in object_name else "png"
         local_path = os.path.join(temp_dir, f"media.{original_ext}")
-        await asyncio.to_thread(storage.download_file, bucket_name, object_name, local_path)
+        await asyncio.to_thread(
+            storage_service.download_file, bucket_name, object_name, local_path
+        )
         return await asyncio.to_thread(_extract_image_metadata_from_file, local_path)
     finally:
         shutil.rmtree(temp_dir, ignore_errors=True)
@@ -138,6 +145,7 @@ async def generate_and_upload_thumbnail(
         return
 
     bucket_name, object_name = resolve_storage_object(output_file)
+    storage_service = _get_media_storage_service()
 
     base_path = object_name.rsplit(".", 1)[0]
 
@@ -151,12 +159,12 @@ async def generate_and_upload_thumbnail(
     # If the thumbnail already exists in MinIO, skip regeneration but still补齐 R2 同步。
     try:
         thumb_exists, r2_exists = await asyncio.gather(
-            storage.async_object_exists(bucket_name, thumb_object_name),
-            storage.async_r2_object_exists(target_r2_key),
+            storage_service.async_object_exists(bucket_name, thumb_object_name),
+            storage_service.async_r2_object_exists(target_r2_key),
         )
         if thumb_exists:
             if not r2_exists:
-                await storage.async_copy_to_r2(
+                await storage_service.async_copy_to_r2(
                     bucket_name, thumb_object_name, target_r2_key
                 )
             logger.info(
@@ -175,7 +183,9 @@ async def generate_and_upload_thumbnail(
             # For video, use FFmpeg with presigned URL (HTTP Range support)
             # Fallback to synchronous get_presigned_url
             # 兼容：storage.get_presigned_url 的签名是 (object_name, expires_hours, bucket)
-            input_url = await asyncio.to_thread(storage.get_presigned_url, object_name, 1.0, bucket_name)
+            input_url = await asyncio.to_thread(
+                storage_service.get_presigned_url, object_name, 1.0, bucket_name
+            )
             
             # Run FFmpeg in a separate thread to prevent event loop blocking
             # Fast seek (-ss 00:00:00.000) before -i is crucial for performance on large files
@@ -205,7 +215,12 @@ async def generate_and_upload_thumbnail(
             
             logger.info(f"Downloading {object_name} for image thumbnail generation")
             # Fallback to synchronous download_file
-            await asyncio.to_thread(storage.download_file, bucket_name, object_name, original_local_path)
+            await asyncio.to_thread(
+                storage_service.download_file,
+                bucket_name,
+                object_name,
+                original_local_path,
+            )
             
             def process_image(src_path: str, dest_path: str):
                 with Image.open(src_path) as img:
@@ -232,11 +247,16 @@ async def generate_and_upload_thumbnail(
         # Upload the generated thumbnail back to MinIO
         logger.info(f"Uploading thumbnail to {bucket_name}/{thumb_object_name}")
         # Fallback to synchronous upload_file
-        await asyncio.to_thread(storage.upload_file, thumb_local_path, thumb_object_name, bucket_name)
+        await asyncio.to_thread(
+            storage_service.upload_file,
+            thumb_local_path,
+            thumb_object_name,
+            bucket_name,
+        )
         
         # Also sync to R2
         try:
-            await storage.async_copy_to_r2(
+            await storage_service.async_copy_to_r2(
                 bucket_name, thumb_object_name, target_r2_key
             )
         except Exception as e:

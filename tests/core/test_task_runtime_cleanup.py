@@ -12,7 +12,7 @@ from src.services import task_registry as task_registry_module
 
 
 @pytest.mark.asyncio
-async def test_cleanup_task_runtime_state_releases_lock_and_removes_registry(monkeypatch):
+async def test_cleanup_task_runtime_state_releases_lock_and_removes_registry():
     calls = []
 
     async def fake_release(user_id: int):
@@ -21,19 +21,18 @@ async def test_cleanup_task_runtime_state_releases_lock_and_removes_registry(mon
     async def fake_remove(task_id: str):
         calls.append(("remove", task_id))
 
-    monkeypatch.setattr(task_core_runtime, "release_concurrency_lock", fake_release)
-    monkeypatch.setattr(task_registry_module.TaskRegistry, "remove_task", fake_remove)
-
     await task_core_runtime.cleanup_task_runtime_state(
         internal_user_id=123,
         registry_task_id="task-1",
+        release_concurrency_lock_func=fake_release,
+        remove_task_func=fake_remove,
     )
 
     assert calls == [("release", 123), ("remove", "task-1")]
 
 
 @pytest.mark.asyncio
-async def test_cleanup_task_runtime_state_can_skip_lock_release(monkeypatch):
+async def test_cleanup_task_runtime_state_can_skip_lock_release():
     calls = []
 
     async def fake_release(_user_id: int):
@@ -42,13 +41,12 @@ async def test_cleanup_task_runtime_state_can_skip_lock_release(monkeypatch):
     async def fake_remove(task_id: str):
         calls.append(("remove", task_id))
 
-    monkeypatch.setattr(task_core_runtime, "release_concurrency_lock", fake_release)
-    monkeypatch.setattr(task_registry_module.TaskRegistry, "remove_task", fake_remove)
-
     await task_core_runtime.cleanup_task_runtime_state(
         internal_user_id=456,
         registry_task_id="task-2",
         release_lock=False,
+        release_concurrency_lock_func=fake_release,
+        remove_task_func=fake_remove,
     )
 
     assert calls == [("remove", "task-2")]

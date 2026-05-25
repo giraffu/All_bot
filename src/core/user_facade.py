@@ -3,6 +3,7 @@ from collections.abc import Awaitable, Callable
 from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel
+from src.core.billing_core import get_default_billing_core_providers
 
 
 class BreakthroughConditionDTO(BaseModel):
@@ -30,9 +31,7 @@ class UserDashboardDTO(BaseModel):
 
 
 def _get_user_detailed_stats_func() -> Callable[[int], Awaitable[dict]]:
-    from src.services.permission_service import permission_service
-
-    return permission_service.get_user_detailed_stats
+    return get_default_billing_core_providers().get_permission_service_func().get_user_detailed_stats
 
 
 async def get_user_dashboard_info(

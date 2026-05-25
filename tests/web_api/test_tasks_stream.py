@@ -202,15 +202,18 @@ async def test_build_not_found_progress_payload_returns_failed_when_history_miss
 
 @pytest.mark.asyncio
 async def test_build_task_stream_response_payload_rejects_unowned_task(monkeypatch):
-    monkeypatch.setattr(
-        task_stream_api_service,
-        "get_owned_active_task",
-        AsyncMock(return_value=None),
-    )
-    monkeypatch.setattr(
-        task_stream_api_service,
-        "get_user_history_record",
-        AsyncMock(return_value=None),
+    dependencies = task_stream_api_service.TaskStreamResponseDependencies(
+        get_owned_active_task_func=AsyncMock(return_value=None),
+        get_user_history_record_func=AsyncMock(return_value=None),
+        build_not_found_progress_payload_func=(
+            task_stream_api_service.build_not_found_progress_payload
+        ),
+        build_terminal_progress_payload_func=(
+            task_stream_api_service.build_terminal_progress_payload
+        ),
+        build_task_status_stream_response_func=(
+            task_stream_api_service.build_task_status_stream_response
+        ),
     )
 
     with pytest.raises(HTTPException) as exc_info:
@@ -222,6 +225,7 @@ async def test_build_task_stream_response_payload_rejects_unowned_task(monkeypat
             api_base="http://127.0.0.1:8003",
             httpx_async_client_factory=lambda: _FakeAsyncClient([], []),
             logger=tasks_router.logger,
+            dependencies=dependencies,
         )
 
     assert exc_info.value.status_code == 404
@@ -299,15 +303,20 @@ async def test_task_status_stream_emits_success_once_and_stops_when_initial_stat
     async def fake_get_user_history_record(_task_id, _user_id, _session_factory):
         return history
 
-    monkeypatch.setattr(
-        task_stream_api_service,
-        "get_owned_active_task",
-        AsyncMock(return_value={"task_id": "task-1", "user_id": 123}),
-    )
-    monkeypatch.setattr(
-        task_stream_api_service,
-        "get_user_history_record",
-        fake_get_user_history_record,
+    dependencies = task_stream_api_service.TaskStreamResponseDependencies(
+        get_owned_active_task_func=AsyncMock(
+            return_value={"task_id": "task-1", "user_id": 123}
+        ),
+        get_user_history_record_func=fake_get_user_history_record,
+        build_not_found_progress_payload_func=(
+            task_stream_api_service.build_not_found_progress_payload
+        ),
+        build_terminal_progress_payload_func=(
+            task_stream_api_service.build_terminal_progress_payload
+        ),
+        build_task_status_stream_response_func=(
+            task_stream_api_service.build_task_status_stream_response
+        ),
     )
 
     response = await task_stream_api_service.build_task_stream_response_payload(
@@ -318,6 +327,7 @@ async def test_task_status_stream_emits_success_once_and_stops_when_initial_stat
         api_base="http://127.0.0.1:8003",
         httpx_async_client_factory=lambda: _FakeAsyncClient(status_responses, status_calls),
         logger=tasks_router.logger,
+        dependencies=dependencies,
     )
     events = await _collect_stream_events(response)
 
@@ -352,15 +362,20 @@ async def test_task_status_stream_emits_failed_once_and_stops_when_queue_poll_la
     async def fake_get_user_history_record(_task_id, _user_id, _session_factory):
         return None
 
-    monkeypatch.setattr(
-        task_stream_api_service,
-        "get_owned_active_task",
-        AsyncMock(return_value={"task_id": "task-1", "user_id": 123}),
-    )
-    monkeypatch.setattr(
-        task_stream_api_service,
-        "get_user_history_record",
-        fake_get_user_history_record,
+    dependencies = task_stream_api_service.TaskStreamResponseDependencies(
+        get_owned_active_task_func=AsyncMock(
+            return_value={"task_id": "task-1", "user_id": 123}
+        ),
+        get_user_history_record_func=fake_get_user_history_record,
+        build_not_found_progress_payload_func=(
+            task_stream_api_service.build_not_found_progress_payload
+        ),
+        build_terminal_progress_payload_func=(
+            task_stream_api_service.build_terminal_progress_payload
+        ),
+        build_task_status_stream_response_func=(
+            task_stream_api_service.build_task_status_stream_response
+        ),
     )
 
     response = await task_stream_api_service.build_task_stream_response_payload(
@@ -371,6 +386,7 @@ async def test_task_status_stream_emits_failed_once_and_stops_when_queue_poll_la
         api_base="http://127.0.0.1:8003",
         httpx_async_client_factory=lambda: _FakeAsyncClient(status_responses, status_calls),
         logger=tasks_router.logger,
+        dependencies=dependencies,
     )
     events = await _collect_stream_events(response)
 
@@ -415,15 +431,20 @@ async def test_task_status_stream_does_not_emit_not_found_terminal_event_for_tra
         history_lookup_calls.append((_task_id, _user_id))
         return None
 
-    monkeypatch.setattr(
-        task_stream_api_service,
-        "get_owned_active_task",
-        AsyncMock(return_value={"task_id": "task-1", "user_id": 123}),
-    )
-    monkeypatch.setattr(
-        task_stream_api_service,
-        "get_user_history_record",
-        fake_get_user_history_record,
+    dependencies = task_stream_api_service.TaskStreamResponseDependencies(
+        get_owned_active_task_func=AsyncMock(
+            return_value={"task_id": "task-1", "user_id": 123}
+        ),
+        get_user_history_record_func=fake_get_user_history_record,
+        build_not_found_progress_payload_func=(
+            task_stream_api_service.build_not_found_progress_payload
+        ),
+        build_terminal_progress_payload_func=(
+            task_stream_api_service.build_terminal_progress_payload
+        ),
+        build_task_status_stream_response_func=(
+            task_stream_api_service.build_task_status_stream_response
+        ),
     )
 
     response = await task_stream_api_service.build_task_stream_response_payload(
@@ -434,6 +455,7 @@ async def test_task_status_stream_does_not_emit_not_found_terminal_event_for_tra
         api_base="http://127.0.0.1:8003",
         httpx_async_client_factory=lambda: _FakeAsyncClient(list(status_responses), status_calls),
         logger=tasks_router.logger,
+        dependencies=dependencies,
     )
     events = await _collect_stream_events(response)
 
@@ -484,15 +506,20 @@ async def test_task_status_stream_does_not_emit_terminal_event_when_queue_poll_h
         history_lookup_calls.append((_task_id, _user_id))
         return None
 
-    monkeypatch.setattr(
-        task_stream_api_service,
-        "get_owned_active_task",
-        AsyncMock(return_value={"task_id": "task-1", "user_id": 123}),
-    )
-    monkeypatch.setattr(
-        task_stream_api_service,
-        "get_user_history_record",
-        fake_get_user_history_record,
+    dependencies = task_stream_api_service.TaskStreamResponseDependencies(
+        get_owned_active_task_func=AsyncMock(
+            return_value={"task_id": "task-1", "user_id": 123}
+        ),
+        get_user_history_record_func=fake_get_user_history_record,
+        build_not_found_progress_payload_func=(
+            task_stream_api_service.build_not_found_progress_payload
+        ),
+        build_terminal_progress_payload_func=(
+            task_stream_api_service.build_terminal_progress_payload
+        ),
+        build_task_status_stream_response_func=(
+            task_stream_api_service.build_task_status_stream_response
+        ),
     )
 
     response = await task_stream_api_service.build_task_stream_response_payload(
@@ -503,6 +530,7 @@ async def test_task_status_stream_does_not_emit_terminal_event_when_queue_poll_h
         api_base="http://127.0.0.1:8003",
         httpx_async_client_factory=lambda: _FakeAsyncClient(list(status_responses), status_calls),
         logger=tasks_router.logger,
+        dependencies=dependencies,
     )
     events = await _collect_stream_events(response)
 

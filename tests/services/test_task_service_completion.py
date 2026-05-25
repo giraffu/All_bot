@@ -11,8 +11,11 @@ from src.core.task_core import (
     TaskPersistencePostprocessPlan,
     TaskSuccessPersistenceResult,
 )
-from src.services.task_service_types import BotTaskCompletionContext
-from src.services.task_service_types import BotTaskFailureContext
+from src.services.task_service_types import (
+    BotTaskCancelled,
+    BotTaskCompletionContext,
+    BotTaskFailureContext,
+)
 from src.constants import (
     MODE_CUSTOM_VIDEO,
     MODE_FACESWAP_STEP1,
@@ -687,12 +690,12 @@ async def test_process_generation_task_uses_finalize_task_cancellation(monkeypat
         ),
     )
     monkeypatch.setattr(
-        "src.core.billing_core.get_user_priority_and_identity",
+        "src.services.task_service_flow.get_user_priority_and_identity",
         AsyncMock(return_value=(0, "user", "外门弟子")),
     )
     monkeypatch.setattr(
         "src.services.task_service_completion.monitor_bot_task_progress",
-        AsyncMock(side_effect=CoreDomainError("cancelled")),
+        AsyncMock(side_effect=BotTaskCancelled()),
     )
     monkeypatch.setattr(
         "src.core.task_core_finalization.finalize_task_cancellation",
@@ -757,7 +760,7 @@ async def test_process_generation_task_uses_finalize_task_failure(monkeypatch):
         ),
     )
     monkeypatch.setattr(
-        "src.core.billing_core.get_user_priority_and_identity",
+        "src.services.task_service_flow.get_user_priority_and_identity",
         AsyncMock(return_value=(0, "user", "外门弟子")),
     )
     monkeypatch.setattr(
@@ -824,7 +827,7 @@ async def test_process_ltx_video_task_uses_finalize_task_cancellation(monkeypatc
     monkeypatch.setattr("src.services.task_service_finalize.robust_edit_text", AsyncMock())
     monkeypatch.setattr(
         "src.services.task_service_completion.monitor_submitted_bot_task",
-        AsyncMock(side_effect=CoreDomainError("cancelled")),
+        AsyncMock(side_effect=BotTaskCancelled()),
     )
     monkeypatch.setattr(
         "src.services.task_service_finalize.finalize_cancelled_task_for_bot",
@@ -862,7 +865,9 @@ async def test_process_video_task_template_entrypoint_uses_internal_user_id_for_
     monkeypatch,
 ):
     acceleration_notice = AsyncMock(return_value="")
-    run_bot_task_flow = AsyncMock(return_value=(b"video-bytes", "task-video-template"))
+    run_bot_task_application = AsyncMock(
+        return_value=(b"video-bytes", "task-video-template")
+    )
 
     monkeypatch.setattr(
         "src.core.user_core.get_or_create_user_by_telegram",
@@ -877,8 +882,8 @@ async def test_process_video_task_template_entrypoint_uses_internal_user_id_for_
         acceleration_notice,
     )
     monkeypatch.setattr(
-        "src.services.task_service_entrypoints_video.run_bot_task_flow",
-        run_bot_task_flow,
+        "src.services.task_service_entrypoints_video.run_bot_task_application",
+        run_bot_task_application,
     )
     monkeypatch.setattr(
         "src.services.task_service_entrypoints_video.load_prompts",
@@ -893,7 +898,6 @@ async def test_process_video_task_template_entrypoint_uses_internal_user_id_for_
     context = SimpleNamespace(user_data={}, bot=MagicMock(), t=lambda value: value)
 
     result = await video_entrypoints.process_video_task_template(
-        service=TaskService,
         update=update,
         context=context,
         image_path="input.png",
@@ -904,7 +908,8 @@ async def test_process_video_task_template_entrypoint_uses_internal_user_id_for_
 
     assert result == (b"video-bytes", "task-video-template")
     acceleration_notice.assert_awaited_once_with(456, quota_manager=ANY)
-    submitted_status_builder = run_bot_task_flow.await_args.kwargs["submitted_status_builder"]
+    flow = run_bot_task_application.await_args.kwargs["flow"]
+    submitted_status_builder = flow.presentation.submitted_status_builder
     assert "任务已提交，正在排队调度" in submitted_status_builder(6)
 
 
@@ -939,7 +944,6 @@ async def test_process_generation_task_delegates_video_modes_to_image_to_video_e
 
     assert result == (b"video-bytes", "task-image-to-video")
     image_to_video_entry.assert_awaited_once_with(
-        service=TaskService,
         context=context,
         chat_id=123,
         user_id=789,
@@ -994,7 +998,6 @@ async def test_process_custom_video_task_delegates_to_image_to_video_entrypoint(
 
     assert result == (b"video-bytes", "task-custom-video")
     image_to_video_entry.assert_awaited_once_with(
-        service=TaskService,
         context=context,
         chat_id=123,
         user_id=789,

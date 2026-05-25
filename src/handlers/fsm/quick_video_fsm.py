@@ -25,7 +25,7 @@ from src.constants import (
 from src.handlers.conversation_states import QuickVideoState
 from src.handlers.prompt_router import is_global_menu_command
 from src.services.permission_service import permission_service
-from src.services.bot_task_service import task_service
+from src.services.bot_task_service import process_video_task_template
 from src.services.fsm_temp_file_service import (
     cleanup_fsm_temp_files,
     download_telegram_file_to_fsm_temp,
@@ -264,7 +264,7 @@ async def start_generation(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     multiplier = DURATION_MULTIPLIER.get(dur, 1.0)
     cost = int(base_cost * multiplier)
 
-    # Need to save these globally temporarily for the old task_service methods
+    # Keep the selected settings in context so the background task can resolve them.
     # until they are refactored to take params directly
     context.user_data["custom_video_resolution"] = res
     context.user_data["custom_video_duration"] = dur
@@ -297,53 +297,31 @@ async def start_generation(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         query.message, f"🚀 正在提交视频任务，预计消耗 {cost} 灵石，请耐心等待..."
     )
 
-    # Map to old task_service methods
     video_modes = {
-        MODE_PERFECT_VIDEO_INSERT: task_service.process_perfect_video_insert_task,
-        MODE_DOGGY_STYLE: task_service.process_doggy_style_task,
-        MODE_BLOWJOB: task_service.process_blowjob_task,
-        MODE_UNDRESS_TONGUE: task_service.process_undress_tongue_task,
-        MODE_CLOSEUP_BLOWJOB: task_service.process_closeup_blowjob_task,
+        MODE_PERFECT_VIDEO_INSERT: ("perfect_video_insert", "missionary sex"),
+        MODE_DOGGY_STYLE: ("doggy_style", "doggy style sex"),
+        MODE_BLOWJOB: ("blowjob", "undress blowjob"),
+        MODE_UNDRESS_TONGUE: ("undress_tongue", "undress and show tongue"),
+        MODE_CLOSEUP_BLOWJOB: ("closeup_blowjob", "closeup blowjob sex"),
     }
 
-    # Execute
     if mode in video_modes:
-        # Note: the old methods use update.message, so we mock it with query.message
-        # and preserve effective_user to prevent crashes in the underlying service
-        class MockChat:
-            def __init__(self, chat_id):
-                self.id = chat_id
-
-        class MockMessage:
-            def __init__(self, msg):
-                self._msg = msg
-                self.chat_id = msg.chat_id
-                self.message_id = msg.message_id
-
-            async def reply_text(self, *args, **kwargs):
-                return await self._msg.reply_text(*args, **kwargs)
-
-            async def edit_text(self, *args, **kwargs):
-                return await self._msg.edit_text(*args, **kwargs)
-
-        class MockUpdate:
-            def __init__(self, query, eff_user):
-                self.message = MockMessage(query.message)
-                self.effective_user = eff_user
-                self._chat = MockChat(query.message.chat_id)
-
-            @property
-            def effective_chat(self):
-                return self._chat
-
-            @property
-            def effective_message(self):
-                return self.message
-
-        mock_update = MockUpdate(query, update.effective_user)
-
+        default_prompt_key, default_prompt_text = video_modes[mode]
         create_background_task(
-            context, video_modes[mode](mock_update, context, image_path)
+            context,
+            process_video_task_template(
+                context=context,
+                mode=mode,
+                default_prompt_key=default_prompt_key,
+                default_prompt_text=default_prompt_text,
+                image_path=image_path,
+                cleanup=True,
+                allow_contribute=True,
+                chat_id=query.message.chat_id,
+                user_id=user_id,
+                username=update.effective_user.username,
+                status_msg_id=query.message.message_id,
+            ),
         )
 
     _cleanup_context(context, user_id)

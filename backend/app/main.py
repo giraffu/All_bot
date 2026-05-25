@@ -24,11 +24,6 @@ from app.main_response_helpers import (
     build_system_workers_response as build_system_workers_response_helper,
     cancel_task_or_404 as cancel_task_or_404_helper,
 )
-from app.main_t2i_helpers import (
-    prepare_t2i_request_payload as prepare_t2i_request_payload_helper,
-    resolve_t2i_priority as resolve_t2i_priority_helper,
-    validate_t2i_prompt as validate_t2i_prompt_helper,
-)
 from app.main_t2i_wiring import build_t2i_wiring
 from app.main_simple_task_routes import (
     enqueue_configured_task as enqueue_configured_task_helper,
@@ -122,12 +117,9 @@ async def create_t2i_pornmaster_turbo_task(
     logger.info(f"[{request_id}] Received T2I task request: {request}")
 
     try:
-        task_id, task_priority, params = prepare_t2i_request_payload_helper(
+        task_id, task_priority, params = _t2i_wiring.prepare_task_request_func(
             request,
             default_priority=priority,
-            uuid_factory=uuid.uuid4,
-            validate_prompt_func=validate_t2i_prompt_helper,
-            resolve_priority_func=resolve_t2i_priority_helper,
         )
     except HTTPException:
         logger.error(f"[{request_id}] Invalid prompt: {request.get('prompt')}")

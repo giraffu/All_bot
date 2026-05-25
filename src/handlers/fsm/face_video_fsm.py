@@ -13,8 +13,8 @@ from telegram.ext import (
 from src.constants import RESOLUTION_COST
 from src.handlers.conversation_states import FaceVideoState
 from src.handlers.prompt_router import is_global_menu_command
+from src.services.bot_task_service import process_face_video_task
 from src.services.permission_service import permission_service
-from src.services.bot_task_service import TaskService
 from src.services.fsm_temp_file_service import (
     cleanup_fsm_temp_files,
     download_telegram_file_to_fsm_temp,
@@ -243,10 +243,9 @@ async def process_resolution_selection(
         f"🚀 正在提交视频换脸任务 ({resolution}p)，预计消耗 {cost} 灵石，请耐心等待...",
     )
 
-    # Spawn task via TaskService (assuming it cleans up files afterwards)
     create_background_task(
         context,
-        TaskService.process_face_video_task(
+        process_face_video_task(
             context,
             query.message.chat_id,
             user_id,

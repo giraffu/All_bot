@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Optional
 
 
@@ -58,37 +58,67 @@ class BotTaskCompletionContext:
 
 
 @dataclass(frozen=True)
-class BotTaskFlowContext:
+class BotTaskRequestContext:
     context: Any
     chat_id: int
-    runtime_state: BotTaskRuntimeState
     internal_user_id: int
     username: str
     task_type: str
     inputs: dict
     prompt: str
     is_video: bool
-    message_spec: BotTaskMessageSpec
     update: Any = None
     status_msg_id: Optional[int] = None
-    submitted_status_builder: Any = None
     source_post_id: Optional[int] = None
     deduct_quota: bool = True
+
+
+@dataclass(frozen=True)
+class BotTaskPresentationContext:
+    message_spec: BotTaskMessageSpec
+    submitted_status_builder: Any = None
     send_result: bool = True
     reply_markup: Any = None
     delete_status: bool = True
     allow_contribute: bool = True
     billing_resolution: Optional[str] = None
+    prefer_edit_status: bool = False
+
+
+@dataclass(frozen=True)
+class BotTaskBillingContext:
+    billing_resolution: Optional[str] = None
     requested_duration: Optional[int] = None
     missing_output_should_refund: bool = True
-    prefer_edit_status: bool = False
-    refund_suffix_mode: str = "if_refunded"
+
+
+@dataclass(frozen=True)
+class BotTaskFailurePolicy:
     unexpected_should_refund: Any = None
-    unexpected_error_log_message: str = ""
+    unexpected_error_log_message: str = "Bot task failed: {error}"
     unexpected_error_prefix: str = "出错了"
+    refund_suffix_mode: str = "if_refunded"
+
+
+@dataclass(frozen=True)
+class BotTaskCleanupPolicy:
     cleanup_paths: Optional[list[str]] = None
     cleanup_enabled: bool = True
     cleanup_files_func: Any = None
+
+
+@dataclass(frozen=True)
+class BotTaskFlowContext:
+    runtime_state: BotTaskRuntimeState
+    request: BotTaskRequestContext
+    presentation: BotTaskPresentationContext
+    billing: BotTaskBillingContext = field(default_factory=BotTaskBillingContext)
+    failure_policy: BotTaskFailurePolicy = field(default_factory=BotTaskFailurePolicy)
+    cleanup_policy: BotTaskCleanupPolicy = field(default_factory=BotTaskCleanupPolicy)
+
+
+class BotTaskCancelled(CoreDomainError if False else Exception):
+    """Dedicated bot-task cancellation signal used across monitor/finalize stages."""
 
 
 @dataclass(frozen=True)

@@ -6,6 +6,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.constants import COMMISSION_RATE
+from src.core.billing_core import get_default_billing_core_providers
 from src.database.models import AffiliateTransaction, Order, Referral, User
 from src.exchange_rates import get_exchange_rates
 
@@ -39,7 +40,7 @@ async def invalidate_invitation_recharge_cache(inviter_id: int | None) -> None:
     if inviter_id is None:
         return
 
-    from src.services.redis_client import redis_client
+    redis_client = get_default_billing_core_providers().get_redis_client_func()
 
     if redis_client and redis_client.redis:
         try:

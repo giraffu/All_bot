@@ -12,6 +12,15 @@ from src.core.task_dispatcher import (
 from src.constants import MODE_I2I_PRO, MODE_IMAGE_TO_VIDEO, MODE_IMG2IMG_LORA
 
 
+def _patch_dispatch_image_service(monkeypatch, **methods):
+    fake_service = type("FakeImageService", (), methods)()
+    monkeypatch.setattr(
+        "src.core.task_dispatcher._get_dispatch_image_service",
+        lambda: fake_service,
+    )
+    return fake_service
+
+
 def test_strategy_factory_returns_correct_strategy():
     # Face swap
     strategy = StrategyFactory.get_strategy("face_swap")
@@ -90,8 +99,9 @@ async def test_default_image_strategy_normalizes_legacy_lora_mode_before_submit(
 ):
     strategy = DefaultImageStrategy("MODE_IMG2IMG_LORA")
     submit_mock = AsyncMock(return_value="backend-task-id")
-    monkeypatch.setattr(
-        "src.core.task_dispatcher.image_service.submit_img2img_lora_task", submit_mock
+    _patch_dispatch_image_service(
+        monkeypatch,
+        submit_img2img_lora_task=submit_mock,
     )
 
     result = await strategy.submit_task(
@@ -126,8 +136,9 @@ async def test_ltx_video_submit_task_passes_seconds_to_workflow_slider(
 ):
     strategy = StrategyFactory.get_strategy("ltx_video")
     submit_mock = AsyncMock(return_value="backend-task-id")
-    monkeypatch.setattr(
-        "src.core.task_dispatcher.image_service.submit_ltx_video_task", submit_mock
+    _patch_dispatch_image_service(
+        monkeypatch,
+        submit_ltx_video_task=submit_mock,
     )
 
     result = await strategy.submit_task(
@@ -171,13 +182,10 @@ async def test_base_video_strategy_routes_image_to_video_modes_by_lora_name(
     strategy = StrategyFactory.get_strategy(mode)
     submit_lora_mock = AsyncMock(return_value="backend-lora")
     submit_edit_mock = AsyncMock(return_value="backend-edit")
-    monkeypatch.setattr(
-        "src.core.task_dispatcher.image_service.submit_image_to_video_task",
-        submit_lora_mock,
-    )
-    monkeypatch.setattr(
-        "src.core.task_dispatcher.image_service.submit_perfect_video_edit",
-        submit_edit_mock,
+    _patch_dispatch_image_service(
+        monkeypatch,
+        submit_image_to_video_task=submit_lora_mock,
+        submit_perfect_video_edit=submit_edit_mock,
     )
 
     result = await strategy.submit_task(
@@ -225,13 +233,10 @@ async def test_base_video_strategy_keeps_special_video_modes_ahead_of_lora_branc
     strategy = StrategyFactory.get_strategy("doggy_style")
     submit_insert_mock = AsyncMock(return_value="backend-insert")
     submit_lora_mock = AsyncMock(return_value="backend-lora")
-    monkeypatch.setattr(
-        "src.core.task_dispatcher.image_service.submit_perfect_video_insert_task",
-        submit_insert_mock,
-    )
-    monkeypatch.setattr(
-        "src.core.task_dispatcher.image_service.submit_image_to_video_task",
-        submit_lora_mock,
+    _patch_dispatch_image_service(
+        monkeypatch,
+        submit_perfect_video_insert_task=submit_insert_mock,
+        submit_image_to_video_task=submit_lora_mock,
     )
 
     result = await strategy.submit_task(

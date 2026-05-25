@@ -18,16 +18,10 @@ from src.core.media_processor import (
     extract_media_metadata_from_storage_best_effort,
     generate_and_upload_thumbnail,
 )
-from src.core.task_core_finalization import (
-    finalize_task_cancellation_default as _finalize_task_cancellation_default,
-    finalize_task_failure_default as _finalize_task_failure_default,
-    refund_cancelled_task_default as _refund_cancelled_task_default,
-)
 from src.core.task_core_dependencies import (
     TaskCoreProcessDependencies,
 )
 from src.core.task_core_default_dependencies import (
-    build_default_task_core_persistence_dependencies,
     build_default_task_core_process_dependencies as _build_task_core_process_dependencies_impl,
 )
 from src.core.task_core_persistence import (
@@ -60,12 +54,7 @@ from src.core.task_core_types import (
 from src.core.task_core_video_request import build_video_task_request
 from src.core.task_core_web_monitor import (
     attach_submission_side_effects_default as _attach_submission_side_effects,
-    finalize_monitored_web_task_success_default as _finalize_monitored_web_task_success,
-    monitor_task_and_release_lock_default as _monitor_task_and_release_lock_default,
     normalize_submission_side_effect_plan as _normalize_submission_side_effect_plan,
-)
-from src.core.task_core_web_history_warmup import (
-    schedule_web_history_r2_warmup_default as _schedule_web_history_r2_warmup_default,
 )
 from src.logger import UserLogger
 
@@ -92,6 +81,7 @@ __all__ = [
     "generate_and_upload_thumbnail",
     "get_system_task_stats",
     "is_task_backend_busy_error",
+    "normalize_terminal_status",
     "persist_successful_task_result",
     "process_and_submit_task",
     "get_default_task_core_process_dependencies",
@@ -148,6 +138,7 @@ async def persist_successful_task_result(
     refresh_user_group_after_log: bool = False,
     warmup_web_history: bool = False,
     postprocess_plan: TaskPersistencePostprocessPlan | None = None,
+    dependencies=None,
 ) -> TaskSuccessPersistenceResult:
     return await _persist_successful_task_result_default(
         backend_task_id=backend_task_id,
@@ -169,16 +160,16 @@ async def persist_successful_task_result(
         refresh_user_group_after_log=refresh_user_group_after_log,
         warmup_web_history=warmup_web_history,
         postprocess_plan=postprocess_plan,
+        dependencies=dependencies,
     )
 
 from src.core.billing_core import (
     check_and_deduct_credits,
     check_concurrency_lock,
     get_user_priority_and_identity,
-    refund_credits,
     release_concurrency_lock,
 )
-from src.core.task_dispatcher import StrategyFactory, dispatch_to_worker
+from src.core.task_dispatcher import StrategyFactory
 from src.utils import load_prompts
 async def process_and_submit_task(
     user_id: int,

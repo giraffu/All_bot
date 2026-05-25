@@ -13,8 +13,8 @@ from telegram.ext import (
 from src.constants import MODE_FACESWAP_STEP1, TASK_COSTS
 from src.handlers.conversation_states import FaceSwapState
 from src.handlers.prompt_router import is_global_menu_command
+from src.services.bot_task_service import process_generation_task
 from src.services.permission_service import permission_service
-from src.services.bot_task_service import TaskService
 from src.services.fsm_temp_file_service import (
     cleanup_fsm_temp_files,
     download_telegram_file_to_fsm_temp,
@@ -199,7 +199,7 @@ async def receive_body_image(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     create_background_task(
         context,
-        TaskService.process_generation_task(
+        process_generation_task(
             context,
             message.chat_id,
             user_id,

@@ -2,7 +2,11 @@ from typing import Optional
 
 from src.logger import UserLogger
 from src.services.task_service_finalize import finalize_failed_task_for_bot
-from src.services.task_service_types import BotTaskCompletionContext, BotTaskFailureContext
+from src.services.task_service_types import (
+    BotTaskCancelled,
+    BotTaskCompletionContext,
+    BotTaskFailureContext,
+)
 from src.services.tg_task_runtime import (
     cleanup_completion_status_message,
     monitor_task_progress,
@@ -52,10 +56,8 @@ async def monitor_bot_task_progress(
     user_group=None,
     edit_status_text_func=None,
 ):
-    from src.core.task_core import CoreDomainError
-
     def _raise_cancelled():
-        raise CoreDomainError("cancelled")
+        raise BotTaskCancelled()
 
     final_info = await monitor_task_progress(
         task_id=task_id,
@@ -68,7 +70,7 @@ async def monitor_bot_task_progress(
         edit_status_text_func=edit_status_text_func,
     )
     if final_info is None:
-        raise CoreDomainError("cancelled")
+        raise BotTaskCancelled()
     return final_info
 
 

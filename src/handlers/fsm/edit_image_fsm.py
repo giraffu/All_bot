@@ -14,8 +14,11 @@ from src.constants import MODE_EDIT, MODE_I2I_PRO, MODE_IMG2IMG_LORA, TASK_COSTS
 from src.handlers.conversation_states import EditImageState
 from src.handlers.prompt_router import is_global_menu_command
 from src.lora_catalog import IMAGE_LORA_MODELS, get_lora_default_strength
+from src.services.bot_task_service import (
+    process_generation_task,
+    process_i2i_pro_task,
+)
 from src.services.permission_service import permission_service
-from src.services.bot_task_service import TaskService
 from src.services.fsm_temp_file_service import (
     cleanup_fsm_temp_files,
     download_telegram_file_to_fsm_temp,
@@ -130,7 +133,7 @@ def _submit_edit_image_task(
     if mode == MODE_I2I_PRO:
         create_background_task(
             context,
-            TaskService.process_i2i_pro_task(
+            process_i2i_pro_task(
                 context,
                 chat_id,
                 user_id,
@@ -143,7 +146,7 @@ def _submit_edit_image_task(
 
     create_background_task(
         context,
-        TaskService.process_generation_task(
+        process_generation_task(
             context,
             chat_id,
             user_id,

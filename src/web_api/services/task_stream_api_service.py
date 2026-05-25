@@ -1,4 +1,5 @@
 import logging
+from dataclasses import dataclass
 from typing import Any
 
 from fastapi import HTTPException
@@ -7,6 +8,15 @@ from sqlalchemy import select
 from src.database.models import History
 from src.services.redis_client import redis_client
 from src.web_api.services.task_stream_service import build_task_status_stream_response
+
+
+@dataclass(frozen=True)
+class TaskStreamResponseDependencies:
+    get_owned_active_task_func: Any
+    get_user_history_record_func: Any
+    build_not_found_progress_payload_func: Any
+    build_terminal_progress_payload_func: Any
+    build_task_status_stream_response_func: Any
 
 
 def build_terminal_progress_payload(
@@ -94,13 +104,23 @@ async def build_task_stream_response_payload(
     api_base: str,
     httpx_async_client_factory,
     logger: logging.Logger,
+    dependencies: TaskStreamResponseDependencies | None = None,
 ):
-    owned_active_task = await get_owned_active_task(task_id, user_id)
-    owned_history = await get_user_history_record(task_id, user_id, session_factory)
+    dependencies = dependencies or TaskStreamResponseDependencies(
+        get_owned_active_task_func=get_owned_active_task,
+        get_user_history_record_func=get_user_history_record,
+        build_not_found_progress_payload_func=build_not_found_progress_payload,
+        build_terminal_progress_payload_func=build_terminal_progress_payload,
+        build_task_status_stream_response_func=build_task_status_stream_response,
+    )
+    owned_active_task = await dependencies.get_owned_active_task_func(task_id, user_id)
+    owned_history = await dependencies.get_user_history_record_func(
+        task_id, user_id, session_factory
+    )
     if not owned_active_task and not owned_history:
         raise HTTPException(status_code=404, detail="任务不存在或无权限")
 
-    return build_task_status_stream_response(
+    return dependencies.build_task_status_stream_response_func(
         task_id=task_id,
         user_id=user_id,
         session_factory=session_factory,
@@ -108,6 +128,10 @@ async def build_task_stream_response_payload(
         api_base=api_base,
         httpx_async_client_factory=httpx_async_client_factory,
         logger=logger,
-        build_not_found_progress_payload=build_not_found_progress_payload,
-        build_terminal_progress_payload=build_terminal_progress_payload,
+        build_not_found_progress_payload=(
+            dependencies.build_not_found_progress_payload_func
+        ),
+        build_terminal_progress_payload=(
+            dependencies.build_terminal_progress_payload_func
+        ),
     )

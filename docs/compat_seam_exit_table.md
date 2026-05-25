@@ -11,6 +11,8 @@
 | `image_to_video_fsm.start_video_lora` / `get_video_lora_fsm_handler` | 旧命名入口别名 | 仅剩兼容测试 | 统一入口改用 `start_image_to_video` / `get_image_to_video_fsm_handler` | 已删除 |
 | `src/web_api/routers/users.py:invalidate_affiliate_redeem_cache_after_commit` | 仅为旧 patch 路径保留的 re-export | 旧集成测试 / service patch 习惯 | 相邻测试统一 patch `user_affiliate_redeem_api_service.py` | 已删除，router 不再保留该 re-export |
 | `src/services/payment_fulfillment_service.py:LogService` 导入注释 | backward-compatible test patch target | 旧支付履约测试 | 相邻测试改贴 `src.services.log_service.LogService.log_action` | 已删除，支付履约文件不再暴露 compat patch target |
+| `src/services/task_service_generation_entrypoints.py` | `TaskService` 到 generation entrypoints 的纯转发壳 | `bot_task_service.py` 旧 facade 调用面 | `bot_task_service.py` 改为直接导入真实 entrypoint，focused tests 改贴公开函数/flow | 已删除，生成/I2I 入口不再经过 compat-only 转发文件 |
+| `src/services/task_service_entrypoints.py` | 仅聚合导出 TG task entrypoints 的 compat 壳 | `bot_task_service.py` 旧 facade 调用面 | `bot_task_service.py` 改为直接导入分域 entrypoint 模块 | 已删除，聚合 re-export 不再保留 |
 
 ## 已在本轮下沉的默认装配
 
@@ -25,7 +27,7 @@
 | swap 双文件页 payload 组装 | `FaceSwap.vue`、`VideoSwap.vue` 与模板面板内联 | `frontend/src/features/generation/buildSwapTaskPayload.ts` | 已统一，页面与模板面板共用 `face_swap/face_video` payload builder |
 | swap 双文件页提交 controller | `FaceSwap.vue`、`VideoSwap.vue` 与模板面板各自内联提交 | `frontend/src/composables/useSwapTaskSubmit.ts` | 已统一，四处入口共用校验 + payload + submit + taskId 回写主链 |
 | `gallery_core` 默认 provider / side effects | `src/core/gallery_core.py` | `src/core/gallery_core_dependencies.py`、`src/core/gallery_submission_effects.py` | 已下沉，默认装配与投稿 side effects 不再堆在主文件顶部 |
-| `TaskService._run_bot_task_flow(...)` | `src/services/bot_task_service.py` | `src/services/task_service_flow.py` | 已删除，entrypoint 直接调用共享 flow，tests 改贴 `run_bot_task_flow` |
+| `run_bot_task_flow(...)` | `src/services/task_service_flow.py` | `run_bot_task_application(...)` | 已删除，Bot entrypoints 现直接构造 `BotTaskFlowContext(request/presentation/billing/failure/cleanup)` 后调用单一真实入口 |
 | TG gallery 投稿 / 点赞主链 | `src/handlers/callbacks/gallery_callbacks.py` | `src/handlers/callbacks/gallery_callbacks_interactions.py` | 已继续收口，`public_share`、`rate_*`、`submit_gallery_`、`gallery_like_/gallery_dislike_` 已直接在 interactions 子模块注册，旧壳文件已删除 |
 | `Profile.vue` metric 组装 | `frontend/src/views/Profile.vue` | `frontend/src/composables/useProfileMetrics.ts` | 已下沉，统计与返佣卡片数据组装不再堆在页面脚本 |
 | `storage.py` R2 exists/cache runtime 细节 | `src/services/storage.py` | `src/services/storage_r2_exists.py` | 已下沉，`StorageService` 主要保留公开方法与薄包装 |

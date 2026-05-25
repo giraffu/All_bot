@@ -14,8 +14,20 @@ from src.core.task_core_types import (
 async def test_persist_successful_task_result_routes_through_flow(monkeypatch):
     download_result = AsyncMock()
     download_video_result = AsyncMock()
+    extract_from_bytes = AsyncMock()
+    extract_from_storage = AsyncMock()
+    warmup = Mock()
     to_thread = AsyncMock()
     flow = AsyncMock(return_value="done")
+    dependencies = TaskCorePersistenceDependencies(
+        user_logger_factory=Mock(),
+        download_result_func=download_result,
+        download_video_result_func=download_video_result,
+        extract_media_metadata_from_bytes_best_effort_func=extract_from_bytes,
+        extract_media_metadata_from_storage_best_effort_func=extract_from_storage,
+        schedule_web_history_r2_warmup_func=warmup,
+        refresh_user_group_func=None,
+    )
 
     result = await task_core_persistence.persist_successful_task_result(
         backend_task_id="backend-1",
@@ -33,6 +45,7 @@ async def test_persist_successful_task_result_routes_through_flow(monkeypatch):
         download_video_result_func=download_video_result,
         to_thread_func=to_thread,
         materialize_successful_task_result_flow_func=flow,
+        dependencies=dependencies,
     )
 
     assert result == "done"

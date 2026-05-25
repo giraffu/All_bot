@@ -22,8 +22,8 @@ from src.constants import (
 from src.handlers.conversation_states import ImageToVideoState
 from src.handlers.prompt_router import is_global_menu_command
 from src.lora_catalog import VIDEO_LORA_MODELS
+from src.services.bot_task_service import process_image_to_video_task
 from src.services.permission_service import permission_service
-from src.services.bot_task_service import TaskService
 from src.services.fsm_temp_file_service import (
     cleanup_fsm_temp_files,
     download_telegram_file_to_fsm_temp,
@@ -109,12 +109,50 @@ def _build_submit_message(lora_name: str | None, cost: int) -> str:
     return f"🚀 正在提交{task_name}，预计消耗 {cost} 灵石，请耐心等待..."
 
 
+def _compute_video_generation_cost(resolution: str, duration: str) -> int:
+    base_cost = RESOLUTION_COST.get(resolution, 6)
+    multiplier = DURATION_MULTIPLIER.get(duration, 1.0)
+    return int(base_cost * multiplier)
+
+
 def _resolve_image_to_video_task_type(context: ContextTypes.DEFAULT_TYPE) -> str:
     return (
         MODE_CUSTOM_VIDEO
         if context.user_data.get("in_conversation") == "CUSTOM_VIDEO"
         else MODE_IMAGE_TO_VIDEO
     )
+
+
+async def _load_video_generation_access_profile(
+    *,
+    user_id: int,
+) -> tuple[int, str, str]:
+    from src.core.user_core import get_or_create_user_by_telegram
+
+    internal_user, _ = await get_or_create_user_by_telegram(user_id)
+    internal_user_id = internal_user.id
+    user_group = await permission_service.get_user_group(internal_user_id)
+    user_identity = await permission_service.get_user_identity(internal_user_id)
+    return internal_user_id, user_group, user_identity
+
+
+async def _build_video_settings_view_model(
+    *,
+    context: ContextTypes.DEFAULT_TYPE,
+    user_id: int,
+    fsm_data: dict[str, object],
+) -> tuple[InlineKeyboardMarkup, int, str]:
+    _internal_user_id, user_group, user_identity = (
+        await _load_video_generation_access_profile(user_id=user_id)
+    )
+    resolution = str(fsm_data["resolution"])
+    duration = str(fsm_data["duration"])
+    reply_markup = get_video_settings_keyboard(
+        user_group, user_identity, resolution, duration, context.lang
+    )
+    cost = _compute_video_generation_cost(resolution, duration)
+    msg_text = _build_settings_message(fsm_data, cost)
+    return reply_markup, cost, msg_text
 
 
 async def _send_start_message(
@@ -299,26 +337,11 @@ async def receive_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         await robust_reply_text(message, "❌ 下载图片失败，请重试或发送 /cancel 退出。")
         return ImageToVideoState.WAIT_IMAGE
 
-    # Send settings keyboard
-    from src.core.user_core import get_or_create_user_by_telegram
-
-    internal_user, _ = await get_or_create_user_by_telegram(user_id)
-    internal_user_id = internal_user.id
-
-    user_group = await permission_service.get_user_group(internal_user_id)
-    user_identity = await permission_service.get_user_identity(internal_user_id)
-
-    res = fsm_data["resolution"]
-    dur = fsm_data["duration"]
-    reply_markup = get_video_settings_keyboard(
-        user_group, user_identity, res, dur, context.lang
+    reply_markup, _cost, msg_text = await _build_video_settings_view_model(
+        context=context,
+        user_id=user_id,
+        fsm_data=fsm_data,
     )
-
-    base_cost = RESOLUTION_COST.get(res, 6)
-    multiplier = DURATION_MULTIPLIER.get(dur, 1.0)
-    cost = int(base_cost * multiplier)
-
-    msg_text = _build_settings_message(fsm_data, cost)
 
     await robust_reply_text(
         message, msg_text, reply_markup=reply_markup, parse_mode="Markdown"
@@ -357,25 +380,11 @@ async def process_settings(update: Update, context: ContextTypes.DEFAULT_TYPE) -
                 )
         fsm_data["duration"] = new_dur
 
-    res = fsm_data["resolution"]
-    dur = fsm_data["duration"]
-
-    from src.core.user_core import get_or_create_user_by_telegram
-
-    internal_user, _ = await get_or_create_user_by_telegram(user_id)
-    internal_user_id = internal_user.id
-
-    user_group = await permission_service.get_user_group(internal_user_id)
-    user_identity = await permission_service.get_user_identity(internal_user_id)
-    reply_markup = get_video_settings_keyboard(
-        user_group, user_identity, res, dur, context.lang
+    reply_markup, _cost, msg_text = await _build_video_settings_view_model(
+        context=context,
+        user_id=user_id,
+        fsm_data=fsm_data,
     )
-
-    base_cost = RESOLUTION_COST.get(res, 6)
-    multiplier = DURATION_MULTIPLIER.get(dur, 1.0)
-    cost = int(base_cost * multiplier)
-
-    msg_text = _build_settings_message(fsm_data, cost)
 
     with contextlib.suppress(Exception):
         await robust_edit_text(
@@ -407,9 +416,7 @@ async def receive_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         res = "720p"
         fsm_data["resolution"] = "720p"
 
-    base_cost = RESOLUTION_COST.get(res, 6)
-    multiplier = DURATION_MULTIPLIER.get(dur, 1.0)
-    cost = int(base_cost * multiplier)
+    cost = _compute_video_generation_cost(res, dur)
 
     image_path = fsm_data.get("image_path")
     if not image_path:
@@ -456,7 +463,7 @@ async def receive_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     task_type = _resolve_image_to_video_task_type(context)
     create_background_task(
         context,
-        TaskService.process_image_to_video_task(
+        process_image_to_video_task(
             context=context,
             chat_id=message.chat_id,
             user_id=user_id,
