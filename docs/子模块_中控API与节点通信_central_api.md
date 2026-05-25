@@ -1,121 +1,84 @@
 # 子模块: 中控 API 与节点通信 (Central API & Worker Communication)
 
 ## 1. 目标与范围
-本模块是系统底层的“任务分发器 (Dispatcher)”。作为独立部署在 `/backend` 目录下的微服务（8003端口），它在前端（Tg Bot / Web API）与后端（多开隔离的 ComfyUI Workers）之间建立起解耦的缓冲层。
-中控 API 负责轮询 Redis `DB 2` 中的排队任务，解析并验证 JSON 工作流，随后将具体的计算指令派发给空闲的 Worker 节点；同时，它也监听 Worker 的心跳以维持系统的算力大盘监控，并支持在前端放弃任务时执行双向剔除（Delete Task）。对于同步等待任务，中控 API 全面采用 **Redis Pub/Sub** 机制替代传统的 while 轮询，实现零延迟的任务状态通知。
+本模块是系统底层执行面的一部分，负责承接已经由上游 `task core facade` 派发完成的 backend 任务，把 workflow/payload 分发给可用 Worker，并支持运行态取消与节点视图维护。
 
-## 2. 架构图与流向
+当前知识口径下，Central API 不是“客户端直接主入口”；主业务流入口在：
+- Telegram Bot / FSM / Bot entrypoints
+- Web API / tasks generate
+- `task_core.py` facade
+- `task_dispatcher.py` / submission 链
+
+Central API 负责的是执行面，不是上游业务编排面。
+
+## 2. 当前架构图
 
 ```mermaid
 sequenceDiagram
     autonumber
-    participant Client as 客户端 (Bot/Web)
-    participant Redis2 as Redis DB2 (Pending Queue / PubSub)
-    participant CAPI as 中控 API (Backend 8003)
-    participant Worker as ComfyUI 算力节点 1..N
-    
-    Client->>CAPI: 1. POST /api/tasks (同步模式)
-    CAPI->>CAPI: 2. 预生成 task_id
-    CAPI->>Redis2: 3. 订阅 comfy:task_events:{task_id}
-    CAPI->>Redis2: 4. 将任务推入 Queue
-    
-    loop 轮询队列
-        CAPI->>Redis2: 5. BLPOP comfy:queue:pending
-        Redis2-->>CAPI: 6. 提取出 Task ID 与 Workflow JSON
-    end
-    
-    CAPI->>CAPI: 7. 解析 JSON，检查节点空闲状态
-    CAPI->>Worker: 8. POST /prompt (下发给指定的 ComfyUI 实例)
-    Worker-->>CAPI: 9. 200 OK (开始计算)
-    
-    Worker->>Redis2: 10. 推理完成，发布事件到 Pub/Sub
-    Redis2-->>CAPI: 11. 触发订阅回调 (asyncio.wait_for)
-    CAPI-->>Client: 12. 立即返回结果
+    participant Entry as Bot / Web / task core facade
+    participant Core as dispatcher / submission
+    participant CAPI as Central API
+    participant Queue as QueueManager / Pending Queue
+    participant Worker as Comfy Worker
+
+    Entry->>Core: 1. 提交生成请求
+    Core->>Queue: 2. 写入待执行任务与 backend_task_id
+    Core->>CAPI: 3. 进入执行面调度链路
+    CAPI->>Worker: 4. 选择可用节点并下发 workflow
+    Worker-->>CAPI: 5. 回传运行态 / 终态
+    CAPI-->>Core: 6. 支持状态同步与 best-effort cancel
 ```
 
-## 3. 核心代码片段
+## 3. 当前职责边界
+### 3.1 Central API 负责什么
+- 接收待执行任务并选择合适 Worker
+- 承接运行态下发与取消语义
+- 维护节点心跳、基础 worker 视图与执行面状态同步
+- 在终止场景下执行 backend 侧 best-effort cancel
 
-### 任务派发与动态路由 (backend/app/main.py)
-*（模拟中控调度核心逻辑）*
-[`main.py:L100-L130`](file:///home/hfy/APP/All_bot/backend/app/main.py#L100)
-```python
-async def poll_and_dispatch():
-    """
-    中控调度器后台任务：
-    从 Redis 的 DB2 (comfy:queue:pending) 阻塞提取任务，
-    通过轮询可用 Worker 的心跳池，将任务下发到最空闲的 ComfyUI 端口。
-    """
-    import json
-    
-    while True:
-        # 1. 阻塞获取队列
-        result = await redis_client.db2.blpop("comfy:queue:pending", timeout=5)
-        if not result:
-            continue
-            
-        task_data = json.loads(result[1])
-        task_id = task_data['task_id']
-        workflow = task_data['workflow']
-        
-        # 2. 选取空闲节点 (通过检查 comfy:agent:heartbeat)
-        worker_url = await get_idle_worker()
-        if not worker_url:
-            # 无空闲节点，将任务推回队列首部
-            await redis_client.db2.lpush("comfy:queue:pending", result[1])
-            await asyncio.sleep(2)
-            continue
-            
-        # 3. 派发给 ComfyUI
-        # 注意：需将 task_data 中的 trace_id 提取出并注入 HTTP Headers 中 (X-Trace-ID)
-        headers = {"X-Trace-ID": task_data.get("trace_id", "")}
-        async with httpx.AsyncClient() as client:
-            resp = await client.post(f"{worker_url}/prompt", json={"prompt": workflow}, headers=headers)
-            if resp.status_code == 200:
-                await redis_client.db2.set(f"comfy:task_node:{task_id}", worker_url)
-```
+### 3.2 Central API 不负责什么
+- 不作为 Web/Bot 的主业务入口文档口径
+- 不承担上游计费、并发锁、历史持久化或 Bot 展示语义
+- 不把“Redis DB2 + Pub/Sub 等待结果”描述成全站唯一主链
 
-## 4. 接口定义 (OpenAPI 3.0)
+## 4. 与 task core 的关系
+当前更准确的任务主链应表述为：
+- `Entry(Bot/Web) -> task core facade -> provider/dependencies -> submission/dispatcher -> Central API -> Worker`
 
-```yaml
-openapi: 3.0.3
-info:
-  title: Central API
-  version: 1.0.0
-paths:
-  /api/tasks/{task_id}:
-    delete:
-      summary: 双向剔除取消任务
-      description: 当 Bot 侧触发僵尸任务清理时调用。不仅从 Redis 清理，还向关联的 Worker 发起中断指令。
-      parameters:
-        - in: path
-          name: task_id
-          required: true
-          schema:
-            type: string
-      responses:
-        '200':
-          description: 任务已从底层节点成功终止
-        '404':
-          description: 未找到对应的运行节点
-```
+这意味着：
+- 上游生成 `registry_task_id`
+- 提交阶段派发 `backend_task_id`
+- Central API 主要围绕 backend 执行态工作
+- 取消、恢复与清理时需显式区分 `registry_task_id` 与 `backend_task_id`
 
-## 5. 单元与集成测试要求
-- **核心用例**：
-  1. `test_dispatch_to_idle_worker`：模拟一个空闲节点的心跳，向 DB2 推入一个测试任务，断言中控 API 在 5 秒内提取任务并正确通过 `POST /prompt` 下发给该节点。
-  2. `test_requeue_on_busy`：模拟所有节点均离线或繁忙，断言中控 API 在尝试下发失败后，将任务以 `LPUSH` 的方式退回队列，且不丢失数据。
-  3. `test_interrupt_zombie_task`：向中控 API 发送 `DELETE /api/tasks/{task_id}`，断言中控 API 能从 Redis 取出对应节点的 URL，并向其发出终止信号（中断生成，防止幽灵显存占用）。
+## 5. 接口语义
+### 5.1 任务取消
+- `DELETE /api/tasks/{task_id}` 仍可视为 backend 执行面的终止入口
+- 它的职责是：
+  - 根据 backend 运行态定位任务
+  - 向关联 Worker 发起 best-effort cancel
+  - 返回成功、未找到或失败结果
+- 上游仍需自行完成 registry cleanup、锁释放、退款与终态收口
 
-## 6. 部署与回滚步骤
-- **部署服务**：
-  在项目根目录下的 `/backend` 文件夹中执行独立构建，该容器默认监听 8003 端口。
-  `cd backend && docker-compose up -d --build api`
-- **故障回滚**：
-  如果中控分发逻辑存在 Bug 导致任务堆积：
-  1. 重启 `api` 容器：`docker restart backend_api_1`。
-  2. 队列任务存储在持久化的 Redis 中，因此中控 API 的重启或短暂离线**绝对不会**导致任务丢失，重启后将自动继续处理 `pending` 队列。
+### 5.2 节点通信
+- Worker 心跳、可用性与执行中状态是 Central API / Queue 视图的一部分
+- 文档不再固化 Redis DB 编号与具体低层队列命名为稳定架构事实
 
-## 7. 监控告警规则 (SLI/SLO)
-- **SLI**：Worker 节点的心跳存活率；队列任务的 Dispatch (下发) 延迟。
-- **SLO**：任务下发延迟（非队列满时）< 2秒；至少保留 1 个存活 Worker 节点。
-- **告警策略**：
-  - **Warning**：如果 DB2 中的 `comfy:agent:heartbeat` 键全部过期消失，意味着底层算力阵列全军覆没（如断电或 ComfyUI 崩溃），中控将立刻向研发发出“算力池归零”的最高级告警，避免前端持续接单导致严重客诉。
+## 6. 测试要求
+- 覆盖任务成功下发到可用 Worker
+- 覆盖无可用 Worker 时的重试或回退语义
+- 覆盖 `DELETE /api/tasks/{task_id}` 的 best-effort cancel
+- 覆盖 worker 心跳与节点视图
+
+## 7. 部署与回滚
+- Central API 是独立部署的 backend 执行面服务。
+- 若分发逻辑异常导致任务堆积，应先检查：
+  - worker 心跳是否正常
+  - queue 是否持续堆积
+  - 上游 task core submission 是否仍在正常写入任务
+- 队列中的待执行任务通常具有可恢复性，重启执行面服务不应被表述为必然丢任务。
+
+## 8. 维护原则
+- 中控文档要以“执行面”而不是“业务主入口”来描述 Central API。
+- 不再把客户端直连中控、Redis DB2、固定 Pub/Sub 同步等待写成全局主叙事。

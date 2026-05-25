@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Optional, List
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 import re
 
 
@@ -60,6 +60,8 @@ class BreakthroughConditionDTO(BaseModel):
 
 
 class UserResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     telegram_id: Optional[int] = None
     username: Optional[str] = None
@@ -76,6 +78,3 @@ class UserResponse(BaseModel):
     invitation_recharge: Optional[InvitationRechargeStats] = None
     breakthrough_conditions: List[BreakthroughConditionDTO] = []
     is_unlocked: bool = False
-
-    class Config:
-        from_attributes = True

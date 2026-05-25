@@ -11,7 +11,7 @@
 
 ## 1. 系统架构总览
 
-AllBot 当前采用“多入口接入 + 核心领域下沉 + 异步任务调度 + 分级存储 + 独立运维/客服侧车”的整体架构。相较早期版本，当前系统已经明显从“Telegram Bot 驱动的单体生成工具”演进为一个覆盖 Telegram、Web、Dashboard、支付网关与社群客服的复合平台。
+AllBot 当前采用“多入口接入 + 核心领域下沉 + 异步任务调度 + 分级存储 + 独立运维/客服侧车”的整体架构。系统已经从早期的 Telegram Bot 驱动单体，演进为覆盖 Telegram、Web、Dashboard、支付与客服的复合平台。
 
 ### 1.1 当前架构图
 
@@ -21,7 +21,7 @@ graph TD
         TG[Telegram 用户]
         WEB[Web 工作台]
         DASH[Dashboard]
-        PAY[RMB 网关 / Telegram Stars / TON 链上交易]
+        PAY[RMB 网关 / Telegram Stars / TON]
         GROUP[官方群聊用户]
     end
 
@@ -29,7 +29,7 @@ graph TD
         NGINX[Web 边缘 Nginx]
         TGAPI[Telegram Local API / 文件服务]
         TUNNEL[Cloudflare Tunnel / FRP]
-        VLAN[Tailscale 组网]
+        VLAN[Tailscale]
     end
 
     subgraph Gateway[接入与应用层]
@@ -42,9 +42,10 @@ graph TD
 
     subgraph Core[核心领域与调度]
         AUTH[Auth / Permission]
-        TASK[Task Core / Dispatcher]
+        TASK[Task Core Facade]
+        TASKSUB[Task Submission / Monitor / Runtime]
         BILL[Billing / Payment Fulfillment]
-        AFF[Affiliate Ledger / Redeem]
+        AFF[Affiliate / Redeem / Membership]
         GAL[Gallery / Apply Context]
         CENTRAL[Central API]
         WORKERS[ComfyUI Workers]
@@ -68,14 +69,15 @@ graph TD
     BOT --> TASK
     API --> AUTH
     API --> TASK
+    TASK --> TASKSUB
     API --> GAL
     API --> AFF
     PAYAPI --> BILL
     DBACK --> PG
     CS --> LLM
 
-    TASK --> REDIS
-    TASK --> CENTRAL --> WORKERS
+    TASKSUB --> REDIS
+    TASKSUB --> CENTRAL --> WORKERS
     WORKERS --> MINIO
     GAL --> MINIO
     GAL --> R2
@@ -89,29 +91,21 @@ graph TD
 
 ### 1.2 当前分层说明
 - **客户端与外部系统**
-  - Telegram 仍是核心用户入口。
-  - Web 工作台已成为生成、历史管理、广场浏览与模板应用的主入口之一。
-  - Dashboard 已是独立的后台系统，不再只是简单的管理面板。
-  - 支付侧不是单一渠道，当前实际并存 RMB、Telegram Stars、TON 三条履约路径。
-  - `cs_bot` 面向官方群聊，是独立客服服务，不与主 Bot 共用同一条请求链路。
-- **边缘与网络层**
-  - Web 前端通过海外边缘 Nginx 承接静态资源与反向代理。
-  - Telegram 大文件通过 Local API / 文件服务补齐官方体积限制。
-  - Cloudflare Tunnel / FRP / Tailscale 仍承担公网暴露与内网互通职责。
+  - Telegram 仍是核心入口之一。
+  - Web 工作台已成为生成、历史管理、广场浏览与模板应用的主路径。
+  - Dashboard、支付 API、CS Bot 都是独立边界，不再是 Bot 的附属模块。
 - **接入与应用层**
-  - `tg-bot` 负责 Telegram 交互、FSM 与支付回执通知。
-  - `web-api` 同时承载认证、任务提交、历史、广场、用户中心、返佣兑换等主 Web 能力。
-  - `payment-api` 主要负责 RMB 回调入口；Stars 与 TON 各有自己的履约入口，不应再笼统视作统一 Webhook。
-  - `dashboard-backend` 有自己的后台接口与能力边界。
-  - `cs_bot` 是独立 LangGraph 客服应用。
+  - `tg-bot` 负责 Telegram 交互、FSM、结果消息与支付通知。
+  - `web-api` 承担认证、任务提交、任务运行态、历史、广场、用户中心、返佣兑换等主能力。
+  - `payment-api` 负责 RMB 回调；Stars 与 TON 各有对应履约入口。
 - **核心领域与调度**
-  - 认证权限、任务调度、计费支付、返佣、社区广场都已形成相对清晰的领域边界。
-  - 任务执行继续由 `Central API + ComfyUI Workers` 负责。
-  - 文本客服推理不走 ComfyUI，而是直接走 `LM Studio + LangGraph`。
+  - `task_core.py` 当前是稳定 facade，不再承担所有细节逻辑。
+  - 真实默认装配已下沉到 provider/dependencies、submission、web-monitor、runtime 等子模块。
+  - 任务执行仍由 `Central API + ComfyUI Workers` 完成。
 - **基础设施层**
-  - PostgreSQL 承载订单、用户、历史、广场、返佣等业务主数据。
-  - Redis 同时服务于队列、并发锁、登录限流、评论限频、旧 token 黑名单等场景。
-  - MinIO 是主存储；R2 面向社区公开资源的高频分发。
+  - PostgreSQL 保存主数据与业务账本。
+  - Redis 同时承载队列、并发锁、登录限流、任务运行态与黑名单等能力。
+  - MinIO 是主存储；R2 用于公开分发与读路径优化。
 
 ---
 
@@ -123,123 +117,56 @@ graph TD
 sequenceDiagram
     autonumber
     actor U as 用户
-    participant Entry as Bot/Web
-    participant Auth as Auth/Permission
-    participant Task as Task Core
-    participant Redis as Redis
+    participant Entry as Bot / Web
+    participant Auth as Auth / Permission
+    participant Facade as task_core facade
+    participant Deps as provider / dependencies
     participant Central as Central API
     participant Worker as ComfyUI Worker
-    participant Store as MinIO/R2
+    participant Store as MinIO / R2
     participant PG as PostgreSQL
 
     U->>Entry: 提交生成请求
     Entry->>Auth: 校验身份/境界/登录态
-    Entry->>Task: 组装 inputs 与任务上下文
-    Task->>Redis: 申请并发锁 / 写 pending
-    Task->>PG: 扣费、写历史/状态
-    Central->>Redis: 提取任务
-    Central->>Worker: 下发工作流
+    Entry->>Facade: 调用统一提交入口
+    Facade->>Deps: 组装默认依赖或使用显式注入依赖
+    Facade->>PG: 计费、历史、状态写入
+    Facade->>Central: 派发 backend_task_id
     Worker->>Store: 写产物
-    Worker->>Redis: 发布完成事件
-    Task->>PG: 更新历史、释放锁、写结果
-    Entry-->>U: SSE/轮询/Telegram 消息通知结果
+    alt Web
+        Facade->>Facade: 异步挂载 side-effect monitor
+        Facade->>PG: 成功持久化/失败退款/释放锁
+    else Bot
+        Entry->>Entry: run_bot_task_application 前台监控
+        Entry->>PG: 完成/取消/失败终态与消息回传
+    end
+    Entry-->>U: SSE / 结果查询 / Telegram 消息
 ```
 
 当前关键事实：
-- Web 生成接口主路径已是 `/api/tasks/generate`，请求体以 `inputs` 为主，而不是旧文档里的 `params`。
-- 广场模板应用会把 `source_post_id`、`requested_duration`、`billing_resolution` 等语义字段带入任务链路。
-- 任务结果除运行态 SSE 外，还存在历史结果查询与老任务恢复兜底逻辑。
+- Web 主入口是 `/api/tasks/generate`，请求体以 `inputs` 为主。
+- 任务链路显式区分 `registry_task_id` 与 `backend_task_id`。
+- Web 运行态依赖 `task_core_web_monitor.py`；Bot 则由 `run_bot_task_application(...)` 前台监控。
+- 任务结果除了运行态 stream 外，还有 history fallback 与结果查询兜底。
 
 ### 2.2 认证与会话闭环
-
-```mermaid
-sequenceDiagram
-    autonumber
-    actor U as Web 用户
-    participant API as auth router
-    participant Core as auth_core
-    participant Redis as Redis
-    participant PG as PostgreSQL
-    participant JWT as security.py
-    participant Perm as PermissionService
-
-    alt Telegram 登录
-        U->>API: /api/auth/telegram
-        API->>Core: initData / Login Widget 验签
-    else 密码登录
-        U->>API: /api/auth/login
-        API->>Redis: Lua 限流检查
-        API->>Core: bcrypt(SHA256(password)) 校验
-    end
-
-    Core->>PG: 查人或静默注册
-    API->>Perm: check_web_access
-    API->>JWT: create_access_token(subject, pwd_ver)
-    API-->>U: access_token + 用户聚合态
-
-    U->>API: 后续 Bearer 请求
-    API->>JWT: verify_token
-    API->>Redis: password_version 黑名单检查
-    API->>Perm: 动态权限复核
-    API-->>U: 放行或拒绝
-```
-
-当前关键事实：
-- Web 认证已经是双入口模型：Telegram 验签登录 + 用户名密码登录。
-- JWT 使用 `SECRET_KEY` 签发，`BOT_TOKEN` 仅用于 Telegram 验签。
-- 改密会导致旧会话失效，权限变更也会影响既有 Web 会话可用性。
+- Web 认证当前是双入口：Telegram 验签登录 + 用户名密码登录。
+- JWT 以 `SECRET_KEY` 签发，并携带 `pwd_ver` / `channel` 等语义 claim。
+- 改密会导致旧 token 失效；权限变化会触发动态复核。
 
 ### 2.3 支付、返佣与资产闭环
-
-```mermaid
-sequenceDiagram
-    autonumber
-    actor U as 用户
-    participant Entry as Bot/Web
-    participant Pay as 支付通道
-    participant Fulfill as 支付履约
-    participant Aff as Affiliate
-    participant PG as PostgreSQL
-
-    U->>Entry: 发起充值或购买套餐
-    Entry->>PG: 预建本地订单或等待链上支付
-    alt RMB
-        Pay->>Fulfill: payment-api 回调
-    else Stars
-        Pay->>Fulfill: Telegram 官方支付回调
-    else TON
-        Pay->>Fulfill: 链上轮询识别交易
-    end
-
-    Fulfill->>PG: 幂等更新订单与用户资产
-    Fulfill->>Aff: 计算首单返佣并写 affiliate_transactions
-    Aff->>PG: 失效邀请充值缓存
-
-    U->>Entry: 发起返佣兑换灵石
-    Entry->>Aff: redeem_affiliate_balance_to_credits
-    Aff->>PG: 写 affiliate_redeems + OUT 账本 + user_logs
-    Aff-->>U: 返回兑换快照
-```
-
-当前关键事实：
-- 支付域已从“单一充值发货”升级为“支付履约 + 返佣入账 + 返佣兑换灵石”的复合域。
-- `affiliate_transactions` 是返佣主账本，`affiliate_redeems` 是返佣兑换记录，二者都已上线。
-- 返佣兑换灵石当前已落地；返佣兑换会员身份和提现仍未上线。
+- 支付域已经从单一充值升级为“支付履约 + 返佣入账 + affiliate 兑换灵石/会员”的复合域。
+- RMB 履约当前走 membership settlement 主路径，并保留 legacy fallback。
+- affiliate 已不仅是返佣台账，还承担兑换与审计语义。
 
 ### 2.4 社区广场闭环
-
-当前关键事实：
-- 广场不再只是投稿与点赞，还包含评论、我的收藏、我的投稿、Web apply-context。
-- `apply-context` 已经是 Web workbench 模板应用主入口。
-- R2 公开 URL 与缩略图优先策略已成为广场读路径的一部分。
-- Telegram 端 `gallery_apply_fsm` 仅应视为兼容链路，不再是主产品路径。
+- 广场当前包含投稿、点赞、评论、收藏、我的投稿、我的收藏与 Web apply-context。
+- `apply-context` 已成为 Web workbench 主路径。
+- Telegram 端 `gallery_apply_fsm` 仅应视作兼容链路，不再是主产品路径。
 
 ### 2.5 CS Bot 闭环
-
-当前关键事实：
-- `cs_bot` 通过 `LangGraph + SkillManager + ChatOpenAI(LM Studio兼容接口)` 运行。
-- 当前记忆机制是进程内 `MemorySaver()`，不是 Redis 持久化记忆树。
-- 图片消息与文本消息使用不同 `thread_id` 做上下文隔离。
+- `cs_bot` 当前通过 `LangGraph + SkillManager + ChatOpenAI(LM Studio 兼容接口)` 运行。
+- 当前记忆是进程内 `MemorySaver()`，不是 Redis 持久化记忆树。
 
 ---
 
@@ -249,7 +176,7 @@ sequenceDiagram
 - **01 AI 创作与生成**
   - 负责多模态生成、任务提交、排队、结果回传与模板应用。
 - **02 商业化与会员资产**
-  - 负责充值、身份月卡、订单履约、返佣账本与返佣兑换灵石。
+  - 负责充值、身份月卡、订单履约、返佣账本与 affiliate 兑换。
 - **03 社区广场与社交互动**
   - 负责投稿、互动、评论、收藏、apply-context 与公开资源分发。
 - **04 用户修为与身份权限**
@@ -257,38 +184,38 @@ sequenceDiagram
 
 ### 3.2 支撑板块
 - **任务调度与节点通信**
-  - Redis 队列、Central API、ComfyUI Worker 集群。
-- **对象存储与边缘媒体分发**
-  - MinIO 热桶、R2 分发、历史回溯 URL 组装。
-- **后台运营与观测**
-  - Dashboard、Worker Logs、返佣榜、评论管理、日志与运维排障。
-- **社群客服与本地大模型**
-  - `cs_bot`、LM Studio、LangGraph、技能工具绑定。
+  - task core facade、provider/capability、Web monitor、runtime cleanup、QueueManager、Central API、Workers。
+- **对象存储与媒体交付**
+  - MinIO 热桶、R2 公开读路径、结果 URL 生命周期。
+- **交互状态机与回调路由**
+  - Telegram FSM、全局菜单黑盒退出、callback prefix 路由、临时文件服务。
 
 ---
 
 ## 4. 关键设计决策
 
-1. **核心层隔离平台对象**
-   - `src/core/` 维持对 Telegram `Update` 与 Web `Request` 的隔离，统一围绕内部用户标识与领域对象编排。
-2. **支付与返佣使用显式幂等锚点**
-   - 订单号、`tx_hash`、`idempotency_key` 共同构成资产链路的防重复基线。
-3. **认证从一次性授权升级为持久权限检查**
-   - 通过 `password_version` 黑名单与动态权限复核，避免“旧 token 长期有效”的安全问题。
-4. **社区广场主路径前移到 Web**
-   - `apply-context`、收藏、评论等能力都围绕 Web workbench 收敛，Telegram 侧只保留兼容入口。
-5. **客服能力独立于生成算力栈**
-   - ComfyUI 负责图像/视频，LM Studio 负责客服文本推理，避免资源争抢与架构混杂。
-6. **部署以 `safe_deploy.sh` 为基线**
-   - 当前标准部署流程已把维护模式、僵尸清理、Alembic 多 head 检查、宿主机迁移与分阶段重建串联起来。
+### 4.1 Core 只消费 capability/provider
+- `core` 目录禁止直接 import 基础设施实现。
+- facade 层只暴露稳定语义，真实逻辑优先下沉到 provider/dependencies、submission、monitor、runtime 子模块。
+
+### 4.2 双 ID 运行态模型
+- 本地注册与历史链路使用 `registry_task_id`。
+- 后端执行与 best-effort cancel 使用 `backend_task_id`。
+- 取消、恢复、僵尸清理、强制终止都必须显式区分两者。
+
+### 4.3 Web 与 Bot 监控分流
+- Web 提交成功后异步挂载 side-effect monitor。
+- Bot 进入 `run_bot_task_application(...)` 前台监控与展示链路。
+- 两条路径共享 task core，但不共享同一表示层职责。
+
+### 4.4 测试 seam 前移
+- 新测试优先通过 `dependencies` / `*_func` seam 注入能力。
+- 不再鼓励依赖旧的模块级 patch 点。
 
 ---
 
 ## 5. 当前架构口径与维护约束
-
-- 不要再把系统描述成“Telegram Bot + Web 辅助页”的结构，当前已经是多入口平台。
-- 不要再把支付描述成单一 `/api/payment/notify` 回调模型；那只覆盖 RMB 子链路。
-- 不要再把认证描述成“仅 Telegram WebApp 登录”；密码登录、改密失效旧会话已是现行能力。
-- 不要再把广场描述成“投稿 + 点赞”；评论、收藏、apply-context、R2 URL 优先都已进入主流程。
-- 不要再把 `cs_bot` 写成 Redis 持久化记忆型智能体；当前是 `MemorySaver()` 进程内记忆。
-- 不要再把数据库迁移写成“容器启动自动执行”；当前标准流程是 `safe_deploy.sh` 在宿主机先检查多 head，再执行 `alembic upgrade head`。
+- 文档中的入口函数、异常类型、超时值、双 ID 语义必须与代码保持一致。
+- `src/bot_test.py` 是 Telegram Bot shared entrypoint，不只是测试入口。
+- 若修改 task core facade、provider/dependencies、submission、web-monitor、runtime、Bot 五段式上下文或 stream fallback，必须同步更新知识库。
+- 若技能文档与代码入口冲突，应先更新 skill / docs，再继续开发。

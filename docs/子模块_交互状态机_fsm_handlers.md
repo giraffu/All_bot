@@ -1,108 +1,87 @@
 # 子模块: 交互状态机与回调路由 (FSM & Callback Handlers)
 
 ## 1. 目标与范围
-本模块包含所有通过 Python-Telegram-Bot (PTB) 实现的有限状态机逻辑（如高级图生视频、自由P图、视频换脸、各类一键懒人动图/P图等）以及**基于装饰器的回调路由体系 (`callback_router.py`)**。
-FSM 负责在 Telegram 客户端收集用户的图像、分辨率、时长等分步参数，期间处理菜单按钮的意外中断拦截（防死锁）；回调路由负责拆分庞大的 Callback 处理逻辑（拆分为 `billing`, `gallery`, `misc` 等子模块），实现单一职责原则（SRP）。
+本模块包含所有通过 Python-Telegram-Bot (PTB) 实现的有限状态机逻辑，以及基于装饰器注册的 callback 路由体系。
 
-## 2. 架构图与调用链
+当前职责边界：
+- FSM 负责分步收集图片、视频设置、提示词与确认信息。
+- 全局菜单打断依赖统一黑盒路由，而不是散落的硬编码菜单判断。
+- callback 路由负责把充值、广场、杂项等回调拆分到独立模块。
+- 文件下载、临时目录创建与清理由服务层承接，不应在各 FSM 内重复实现。
+
+## 2. 当前架构图
 
 ```mermaid
 stateDiagram-v2
-    [*] --> START_LTX_VIDEO : 点击“高级图生视频”
-    
-    START_LTX_VIDEO --> WAITING_IMAGE : 发送图片要求
-    
+    [*] --> START : 点击某个 FSM 入口
+    START --> WAITING_IMAGE : 发送图片要求
     WAITING_IMAGE --> WAITING_SETTINGS : 上传图片
-    WAITING_IMAGE --> CANCEL : 输入 /cancel 或点击菜单
-    
-    WAITING_SETTINGS --> WAITING_PROMPT : 选择分辨率与时长
-    WAITING_SETTINGS --> CANCEL : 意外输入
-    
-    WAITING_PROMPT --> WAITING_CONFIRMATION : 输入文字或点击优化
-    WAITING_PROMPT --> WAITING_CONFIRMATION : (提示词优化拦截)
-    
-    WAITING_CONFIRMATION --> 提交任务 : 确认消耗与开始生成
+    WAITING_IMAGE --> CANCEL : 主菜单打断 / /cancel
+    WAITING_SETTINGS --> WAITING_PROMPT : 选择分辨率/时长/模型
+    WAITING_SETTINGS --> CANCEL : 主菜单打断 / 超时
+    WAITING_PROMPT --> WAITING_CONFIRMATION : 输入提示词 / 优化提示词
+    WAITING_PROMPT --> CANCEL : 主菜单打断 / 超时
+    WAITING_CONFIRMATION --> SUBMIT : 确认生成
     WAITING_CONFIRMATION --> CANCEL : 放弃生成
-    
-    提交任务 --> [*] : 释放 FSM，进入 Pending
-    CANCEL --> [*] : 清理 Context 数据
+    SUBMIT --> [*] : 释放 FSM，移交 Bot task flow
+    CANCEL --> [*] : 清理 user_data 与临时文件
 ```
 
-## 3. 核心代码片段
+## 3. 当前主链路
+### 3.1 FSM 到 Bot 任务流
+当前主链为：
+- FSM / message handler
+- `bot_task_service.py` 薄 facade 或分域 entrypoints
+- `task_service_entrypoints_generation.py`
+- `task_service_entrypoints_specialized.py`
+- `task_service_entrypoints_video.py`
+- `run_bot_task_application(...)`
 
-### 菜单拦截与上下文清理 (src/handlers/fsm/ltx_video_fsm.py)
-[`ltx_video_fsm.py:L292-L315`](file:///home/hfy/APP/All_bot/src/handlers/fsm/ltx_video_fsm.py#L292)
-```python
-async def unexpected_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """
-    当处于等待输入状态时，如果用户点击了主菜单或其他无关按钮，
-    必须通过正则捕获并自动退出当前 FSM，释放用户操作锁。
-    """
-    _cleanup_context(context, update.effective_user.id)
-    await update.message.reply_text("已取消当前操作。请继续使用菜单。")
-    return ConversationHandler.END
+Bot flow 当前采用五段式上下文：
+- `request`
+- `presentation`
+- `billing`
+- `failure`
+- `cleanup`
 
-def get_ltx_video_fsm_handler() -> ConversationHandler:
-    return ConversationHandler(
-        entry_points=[MessageHandler(I18nFilter('menu.ltx_video'), start_ltx_video)],
-        states={
-            # ... 其它状态
-            WAITING_PROMPT: [
-                MessageHandler(I18nFilter(['menu.cancel', 'menu.exit']), cancel_conversation),
-                MessageHandler(filters.TEXT & ~filters.COMMAND, receive_prompt),
-                CallbackQueryHandler(optimize_prompt_handler, pattern='^optimize_prompt$')
-            ],
-        },
-        fallbacks=[
-            CommandHandler('cancel', cancel_conversation),
-            MessageHandler(I18nFilter('menu.main_menu'), unexpected_input)
-        ],
-        conversation_timeout=600 # 10分钟超时
-    )
-```
+取消态使用 `BotTaskCancelled`，不再使用字符串 sentinel。
 
-## 4. 接口定义与回调路由机制 (Routing & OpenAPI)
+### 3.2 全局菜单黑盒退出
+FSM 入口与过程中，当前推荐组合为：
+- `I18nFilter(...)`
+- `GLOBAL_REVERSE_MAP`
+- `is_global_menu_command(...)`
 
-*注：本模块完全基于 Telegram 长连接，属于内部的异步回调路由体系，不暴露 HTTP API。其触发条件如下：*
+在任意文字输入 handler 内，应优先判断 `is_global_menu_command(...)`，决定是否强制退出当前 FSM。
 
-### 4.1 装饰器回调路由 (`src/handlers/callback_router.py`)
-采用 `@register_callback("prefix")` 动态注册各个业务线的回调逻辑，核心模块被划分为：
-- `billing_callbacks.py`: 充值与签到相关回调。
-- `gallery_callbacks.py`: 广场作品的点赞、应用与公开分享。
-- `misc_callbacks.py`: 通用帮助与菜单回调。
+### 3.3 Callback 路由
+当前 callback 体系依赖：
+- `@register_callback("prefix")` 前缀注册
+- 按前缀长度降序匹配
+- 主入口导入子模块以触发注册
+- 未命中时统一 `safe_answer_query(...)` 兜底
 
-### 4.2 状态机触发条件 (FSM) 与多语言 (i18n) 路由
-采用 O(1) 的精确匹配多语言路由架构，彻底废弃硬编码的中文字符串正则。
+## 4. 关键实现约束
+### 4.1 FSM 超时
+当前主 FSM 普遍采用：
+- `conversation_timeout=300`
 
-*   **多语言拦截器 (`I18nFilter`)**: 
-    在 FSM 的 `entry_points` 中，使用 `I18nFilter(['menu.ltx_video', 'menu.custom_video'])` 替代原有的正则。它通过读取系统启动时构建的 `GLOBAL_REVERSE_MAP`，实现 O(1) 复杂度的双语按键精准拦截。
-*   **按键定义**: 所有 FSM 的入口 key（如 `menu.photo_edit_undress`）必须注册在 `prompt_router.py` 的 `additional_menu_keys` 中，以便被反向映射字典正确收录。
+若后续调整超时值，必须同步更新：
+- FSM 文档
+- 相关 focused tests
+- 若有对应 skill 文档，也需同步更新
 
-```yaml
-telegram_webhook:
-  - Event: Message (Text)
-    Filter: I18nFilter("menu.ltx_video")
-    Action: 触发 START_LTX_VIDEO 状态，提示用户上传基础图像
-  - Event: Message (Photo)
-    State: WAITING_IMAGE
-    Action: 验证分辨率，存入 context.user_data['ltx_image_path']，进入 WAITING_SETTINGS
-```
+### 4.2 临时文件服务
+常规 FSM 文件下载与清理应优先复用 `fsm_temp_file_service.py`，避免各 FSM 自己拼装。
 
-## 5. 单元与集成测试要求
-- **覆盖率基准**：交互状态机的各分支与容错覆盖率要求 **≥80%**。
-- **核心用例**：
-  1. `test_fsm_timeout_cleanup`：启动 FSM 后等待超过 `conversation_timeout`，断言 `timeout_conversation` 触发且清理掉 `user_data` 中的临时文件与状态。
-  2. `test_fsm_unexpected_menu_click`：在 `WAITING_PROMPT` 状态下模拟收到包含主菜单表情符号的文本消息，断言 `unexpected_input` 触发，返回 `ConversationHandler.END` 并终止。
-  3. `test_fsm_normal_flow_submission`：模拟用户连贯完成图片、设置、提示词和确认四个步骤，断言最终调用了 `TaskService.process_ltx_video_task()` 且参数齐全。
+### 4.3 语言切换
+语言切换当前不只是菜单文案变更，还涉及：
+- 数据库语言字段更新
+- Redis 缓存同步
+- translator 运行时状态刷新
 
-## 6. 部署与回滚步骤
-- **部署**：
-  该模块随着主 Bot 容器一并启动（`tg-bot`）。重启容器即可使新的 FSM 状态机逻辑生效。
-- **回滚**：
-  如果有死循环或捕获异常，回退代码。由于 `user_data` 通常在内存中（若未配置持久化），重启 Bot 容器将强行重置所有用户正在进行的 FSM 对话状态。
-
-## 7. 监控告警规则 (SLI/SLO)
-- **SLI**：FSM 异常抛出率与用户未完成率（Dropout Rate）。
-- **SLO**：每 100 次 FSM 发起中，未完成率应控制在 30% 以下，避免过多的 600s 超时堆积内存。
-- **告警策略**：
-  - **Warning**：如果在某个状态节点捕获到大量 `KeyError` 或 `TypeError`，意味着上下文 `user_data` 的键值校验存在缺陷，需记录 Log 并输出到 Sentry/ELK。
+## 5. 测试要求
+- 覆盖 FSM 超时与主菜单打断
+- 覆盖完整参数收集后进入对应 Bot entrypoint 或 `run_bot_task_application(...)`
+- 覆盖 callback prefix 路由与统一兜底
+- 若 PTB 某些配置会触发已知 warning，测试需显式说明它是“预期行为”还是“应修复行为”

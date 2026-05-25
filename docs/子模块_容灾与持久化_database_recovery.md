@@ -1,109 +1,88 @@
 # 子模块: 容灾与持久化 (Database & Recovery)
 
 ## 1. 目标与范围
-本模块负责两项基础职能：数据库的声明式 ORM 与 Alembic 迁移脚本的自动执行（`src/database/core.py`）；以及在系统容器重启后，对之前正在执行或排队的“中断任务”的扫描与断点续传/自愈处理（`src/services/recovery_service.py`）。其核心目的是保证系统在发生非预期崩溃或滚动更新时，用户的任务和资产状态能恢复到安全的一致性基准。
+本模块负责两项底座能力：
+- 数据库 ORM / Alembic 迁移与初始化
+- 容器重启后的任务恢复、自愈与安全终态清理
 
-## 2. 架构图与调用链
+目标是在系统异常退出、滚动更新或服务重启后，让任务、锁、退款与历史状态回到一致性的安全基准。
+
+## 2. 当前恢复主链
 
 ```mermaid
 sequenceDiagram
     autonumber
-    participant Bot as 主应用启动 (bot_test.py)
+    participant App as 应用启动
     participant DB as init_db()
-    participant Alembic as stamp_alembic_head()
+    participant Alembic as alembic head
     participant RS as RecoveryService
-    participant Redis as Redis (DB1 & DB2)
+    participant Registry as TaskRegistry
+    participant Runtime as task runtime / monitor
 
-    Bot->>DB: 1. 执行数据库初始化
-    DB->>Alembic: 2. 自动检查 Schema 迁移
-    Alembic-->>DB: 3. 更新到最新版本 (Head)
-    Bot->>RS: 4. recover_active_tasks()
-    RS->>Redis: 5. 扫描 ActiveTasksTable (中断的任务)
-    loop 每一个活跃任务
-        RS->>RS: 6. 检查其超时时间和重试次数
-        alt 超时或异常
-            RS->>RS: 7. _refund_and_cleanup()
-        else 正常等待中
-            RS->>RS: 8. _recover_single_task() 重新挂载监控
+    App->>DB: 初始化数据库
+    DB->>Alembic: 升级到 head
+    App->>RS: recover_active_tasks(application)
+    RS->>Registry: TaskRegistry.get_all_tasks()
+    loop 每个活跃任务
+        alt 可恢复运行态
+            RS->>Runtime: 重新挂载恢复逻辑
+        else 缺少关键字段或恢复失败
+            RS->>Runtime: 失败终态 / 退款 / 清理
         end
     end
 ```
 
-## 3. 核心代码片段
+## 3. 当前关键事实
+- 恢复链路不再直接扫描旧的 `ActiveTasksTable` 字符串表名口径；当前统一通过 `TaskRegistry.get_all_tasks()` 获取活跃任务视图。
+- 恢复逻辑以 `registry_task_id` 为本地恢复锚点；若存在 `backend_task_id`，则继续尝试恢复监控或执行 best-effort terminate。
+- 若缺少关键运行态字段、任务已严重超时或恢复失败，应走失败终态、退款与 cleanup，而不是继续悬挂为“待恢复”。
 
-### 自动数据库迁移与初始化 (src/database/core.py)
-[`core.py:L27-L49`](file:///home/hfy/APP/All_bot/src/database/core.py#L27)
-```python
-async def init_db():
-    """
-    异步初始化数据库引擎，使用 Alembic 自动生成并应用表结构变更。
-    严禁使用原生 SQL ALTER TABLE，必须通过此入口或 alembic revision 迁移。
-    """
-    try:
-        # 这里通过 _run_sync 封装 alembic.command.upgrade('head')
-        # ...
-        await stamp_alembic_head()
-        logger.info("Database initialized and migrations applied successfully.")
-    except Exception as e:
-        logger.error(f"Failed to initialize database: {e}")
-        raise
-```
+## 4. 数据库初始化
+### 4.1 初始化原则
+- 表结构变更必须走 Alembic，不允许绕过迁移体系直接手工改线上 schema。
+- 启动期数据库初始化失败属于阻断问题，应直接让服务启动失败并触发运维告警。
 
-### 容器重启后的任务断点恢复 (src/services/recovery_service.py)
-[`recovery_service.py:L42-L68`](file:///home/hfy/APP/All_bot/src/services/recovery_service.py#L42)
-```python
-async def recover_active_tasks(application):
-    """
-    当 Telegram Bot 重启时（例如重新发布代码），
-    恢复所有挂载在 Redis 上的中断任务的监控（或执行退款）。
-    """
-    from src.services.redis_client import redis_client
-    
-    tasks = await redis_client.db1.hgetall("ActiveTasksTable")
-    if not tasks:
-        return
-        
-    for task_id, task_data_json in tasks.items():
-        try:
-            task_data = json.loads(task_data_json)
-            # 重新为任务挂载进度监听器（Pub/Sub）或清理超时的冗余任务
-            await _recover_single_task(task_id, task_data, application)
-        except Exception as e:
-            # 执行异常退款处理
-            await _refund_and_cleanup(task_id, task_data, None, "恢复任务失败")
-```
+### 4.2 部署约束
+- 测试优先：默认先通过测试栈验证迁移与恢复路径。
+- 生产执行前必须确认迁移脚本、启动初始化与恢复逻辑在测试环境已通过。
 
-## 4. 接口定义 (OpenAPI 3.0)
+## 5. 恢复与终止策略
+### 5.1 可恢复路径
+满足以下条件时，任务可继续恢复：
+- registry 中存在合法任务记录
+- 关键上下文字段仍可用
+- 任务仍具有恢复价值
 
-*本模块为内部框架底座支撑，随程序启动钩子执行，无对外 API。*
+### 5.2 不可恢复路径
+出现以下任一情况时，应直接进入失败终态 / 清理：
+- 任务数据损坏
+- backend 运行态已丢失且无法恢复
+- 任务超时过久
+- 恢复过程中再次抛错
 
-```yaml
-Internal_Hook:
-  on_startup:
-    - Task: Database Initialization
-      Action: "alembic upgrade head"
-    - Task: Task Recovery
-      Action: "recover_active_tasks(application)"
-```
+此时应优先保证：
+- 锁释放
+- registry 清理
+- 必要退款或 pending refund
+- 对用户可见状态收口
 
-## 5. 单元与集成测试要求
-- **覆盖率基准**：核心恢复与迁移脚本逻辑要求 **≥85%**。
-- **核心用例**：
-  1. `test_alembic_migration_idempotent`：连续调用两次 `init_db()`，断言第二次不会报错且 Schema 保持最新。
-  2. `test_recover_single_task_success`：伪造一个 Redis 中的合法 Pending 任务，启动服务，断言其状态监控器被重新创建且最终顺利完结。
-  3. `test_refund_and_cleanup_on_recovery`：伪造一个损坏的 JSON 格式或严重超时的任务记录，断言服务在启动时捕获异常并为用户执行了灵石退还和锁释放。
+## 6. 与 Web 历史/运行态的关系
+恢复链路需要避免把“已不可恢复任务”重新伪装为运行态，否则会污染：
+- Web stream not-found fallback
+- 历史结果回查
+- 本地 `active_tasks` 生命周期
 
-## 6. 部署与回滚步骤
-- **部署**：
-  在代码修改（尤其是 `src/database/models.py` 表结构变更）后，需要在宿主机执行 `alembic revision --autogenerate -m "..."`。随后重启 `docker-compose` 容器，`init_db` 将自动应用。
-- **回滚**：
-  如果数据库升级引发雪崩：
-  1. 停止新容器。
-  2. 执行 `alembic downgrade -1` 撤销最后一次表结构变更。
-  3. 启动旧镜像容器。
+因此，恢复失败后应尽快把任务推进到明确终态，避免 history 与 runtime 语义混淆。
 
-## 7. 监控告警规则 (SLI/SLO)
-- **SLI**：系统启动初始化失败率、任务恢复成功率。
-- **SLO**：启动迁移 100% 成功，活跃任务 99% 成功恢复监听。
-- **告警策略**：
-  - **Critical**：若启动期间 `init_db()` 抛出 `ProgrammingError`（通常是锁表或字段冲突），服务直接崩溃并退出容器，需通过运维探针告警“Bot 容器无限重启”。
+## 7. 测试要求
+- 覆盖数据库初始化幂等。
+- 覆盖存在活跃任务时的恢复路径。
+- 覆盖损坏任务数据、缺少 backend 信息、恢复异常时的退款与 cleanup。
+- 若修改 `recovery_service.py`、`task_registry.py`、`task_core_runtime.py`，需同步复核 Web stream/history fallback 行为。
+
+## 8. 运维与回滚
+- 回滚数据库相关改动时，除了回滚 Alembic 版本，还要确认对应版本的恢复逻辑是否仍兼容当前 registry/task 数据。
+- 若出现启动期迁移失败或恢复失败激增，应优先检查：
+  - Alembic 迁移是否与目标代码版本匹配
+  - registry 数据结构是否发生不兼容变化
+  - runtime cleanup 是否因 provider/dependencies 改动而失效

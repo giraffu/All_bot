@@ -1,8 +1,10 @@
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
+import warnings
 
 import pytest
 from telegram.ext import ConversationHandler
+from telegram.warnings import PTBUserWarning
 
 from src.constants import (
     MODE_CUSTOM_VIDEO,
@@ -44,7 +46,9 @@ def _build_update_with_message(*, text: str = "test prompt"):
 
 
 def test_image_to_video_fsm_exposes_unified_handler():
-    handler = image_to_video_fsm.get_image_to_video_fsm_handler()
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", category=PTBUserWarning)
+        handler = image_to_video_fsm.get_image_to_video_fsm_handler()
     assert handler.name == "image_to_video_fsm"
     assert len(handler.entry_points) == 8
 
@@ -67,7 +71,9 @@ def test_conversation_states_uses_only_image_to_video_state():
 
 
 def test_custom_video_fsm_handler_reuses_unified_state_graph():
-    unified_handler = image_to_video_fsm.get_image_to_video_fsm_handler()
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", category=PTBUserWarning)
+        unified_handler = image_to_video_fsm.get_image_to_video_fsm_handler()
     custom_entry_callbacks = [
         handler.callback
         for handler in unified_handler.entry_points

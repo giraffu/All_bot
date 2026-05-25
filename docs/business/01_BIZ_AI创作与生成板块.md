@@ -1,93 +1,91 @@
 # 01_BIZ_AI创作与生成板块
 
 ## 1. 业务需求说明书 (BRD)
-**目标定位**：提供多模态（文生图、图生视频、面部替换等）的一键式 AI 创作工具。旨在降低非技术用户使用高端 ComfyUI 模型的门槛，将复杂的节点连线转化为所见即所得的参数调节（时长、分辨率等）。
-**商业价值**：作为系统的“现金牛”业务，通过每次生成扣减“灵石”直接变现；并通过高质量的生成结果吸引用户将其发布至“社区广场”，形成内容生态的飞轮效应。
+**目标定位**：提供多模态（文生图、图生视频、换脸等）的一站式 AI 创作能力，把复杂的 ComfyUI 工作流转化为用户可理解的参数与模板操作。
+
+**商业价值**：作为系统的核心变现板块，通过任务生成消耗灵石，并把高质量结果沉淀到社区广场与模板应用链路，形成内容与消费飞轮。
 
 ## 2. 功能规格说明书 (FSD)
 本板块包含以下核心能力：
-*   **图像创作 (Image Generation)**：
-    *   `i2i_pro` (幻想换脸): 高级图生图换脸（支持将参考图中的人物换脸到幻想的场景人物中）。
-    *   `edit_image` (自由P图): 支持附加特定 LoRA 模型的图像编辑（如真实质感、特定 NSFW 标签等）。
-    *   `face_swap`: 图像面部替换。
-    *   `quick_image` (懒人P图): 提供一键式的 NSFW 图像处理，包含快速脱衣、快速自慰、随机换脸等预设模式。
-*   **视频创作 (Video Generation)**：
-    *   `custom_video` / `ltx_video`: 高级图生视频（支持动态计费：512p/720p/1024p 与 5s/10s 时长调节）。
-    *   `video_lora`: 带特效标签（如 `#BreastGrow`）的视频生成。
-    *   `face_video` (视频换脸): 提取用户提供的人脸图像并无缝替换到目标视频中。
-    *   `quick_video` (懒人动图): 提供一键式的特定 NSFW 动作视频生成（如动图传教士、动图后入、口交黑人、脱衣吐舌、特写口交）。
-*   **AI 提示词助理 (Prompt Optimizer)**：
-    *   提供基于上传参考图和简短中文，通过本地 LLM 扩写为丰富英文结构化 Prompt 的能力。
+- **图像创作**：`i2i_pro`、`edit_image`、`face_swap`、`quick_image`
+- **视频创作**：`custom_video`、`ltx_video`、`face_video`、`quick_video`
+- **AI 提示词助理**：基于参考图和简短描述扩写 Prompt
 
-**前置依赖**：用户必须具有足够的灵石，且单人同一时刻只能有 1 个任务排队或运行中（并发锁防刷）。
+**前置依赖**：用户必须具备足够灵石，且同一时刻受并发锁约束。
 
-## 3. 业务流程图 (Flow)
+## 3. 当前业务主链
 
 ```mermaid
 sequenceDiagram
     autonumber
     actor User as 用户 (Bot/Web)
-    participant Core as Task/Billing Core
-    participant Redis as Redis (队列 & 锁)
-    participant Worker as ComfyUI 节点
-    participant MinIO as 对象存储
+    participant Entry as Bot entrypoints / Web API
+    participant Facade as task core facade
+    participant Deps as provider / dependencies
+    participant Backend as Central API / Worker
+    participant Store as MinIO / R2
 
-    User->>Core: 1. 提交生成请求 (类型, 参数, 媒体文件)
-    Core->>Redis: 2. 获取单用户并发锁
-    alt 有进行中任务
-        Core-->>User: 返回“请等待当前任务完成”
+    User->>Entry: 1. 提交生成请求
+    Entry->>Facade: 2. 调用统一提交入口
+    Facade->>Deps: 3. 检查并发、扣费、准备提交依赖
+    Facade->>Facade: 4. 写 registry_task_id，派发 backend_task_id
+    Facade->>Backend: 5. 下发 workflow / payload
+    Backend->>Store: 6. 上传生成结果
+    alt Web
+        Facade->>Facade: 7. side-effect monitor 持久化/退款/cleanup
+    else Bot
+        Entry->>Entry: 7. run_bot_task_application(...) 前台监控与结果展示
     end
-    Core->>PG: 3. (Saga短事务) 扣除灵石与流水
-    Core->>Core: 4. 封装参数与动态注入 JSON 工作流
-    Core->>Redis: 5. (Pub/Sub) 预生成 UUID，订阅完成事件
-    Core->>Redis: 6. 将 Task ID 与 JSON 推入 Pending 队列
-    Worker->>Redis: 7. 提取任务并执行推理
-    Worker->>MinIO: 8. 推理完成，直传媒体至热数据桶
-    Worker->>Redis: 9. Pub/Sub 广播 Task Completed
-    Redis-->>Core: 10. 触发完成回调
-    Core->>PG: 11. (finally块) 写入历史记录 & 释放锁 (若失败则退款)
-    Core-->>User: 12. SSE 流式推送或 Telegram 消息返回结果
+    Entry-->>User: 8. SSE / 结果查询 / Telegram 消息返回结果
 ```
 
-## 4. 关键接口与数据契约 (API/Data)
-### Web BFF 接口：`POST /api/tasks/generation`
-*   **请求体 (Request Body)**：
-    ```json
-    {
-      "task_type": "custom_video",
-      "params": {
-        "prompt": "A beautiful fairy flying in the sky",
-        "resolution": "1280x704",
-        "duration_multiplier": 2.0, // 对应 10s
-        "image_url": "bot-data/user_uploads/123/img.jpg"
-      }
-    }
-    ```
-*   **计费契约**：视频生成的成本为 `基础分辨率价格 * 时长倍数`。例如 720p 基础为 18 灵石，时长 10s (2.0x)，则总扣减 36 灵石。
+## 4. 当前接口与数据契约
+### 4.1 Web 任务入口
+当前 Web 主入口统一为：
+- `POST /api/tasks/generate`
 
-## 5. ComfyUI 工作流参数注入原则 (Workflow Patcher Redlines)
-本板块中所有底层推理均依赖 ComfyUI 的 JSON 工作流，其参数动态注入必须严格遵守以下红线：
-*   **禁止启发式匹配 (No Heuristic Matching)**：在处理带有多个图像输入的工作流（如 `face_swap`）时，绝对禁止使用启发式遍历来盲目覆盖图片节点，这会导致参数错乱并触发 ComfyUI HTTP 400 错误。
-*   **必须使用 `mappings.json` 精确绑定**：所有需要动态修改的节点参数，必须在 Worker 节点的 `mappings.json` 中明确声明映射关系。例如：视频工作流中的尺寸调整必须映射给 `FindPerfectResolution` 节点，时长控制映射给 `PainterI2V` 节点。
-*   **类型安全转换**：在 Python 字典与 JSON 转换时，需特别注意 `None` 与 JSON `null` 的转换，尤其是在处理 `seed` 等整数型参数时，防止类型错误导致节点执行失败。
+请求体以 `inputs` 为主，例如：
 
-## 6. 用户操作手册 (Manual)
-### 5.1 Telegram 端操作
-1.  在 Bot 主菜单点击 `🎬 懒人动图`。
-2.  选择 `高级图生视频 (LTX)`。
-3.  按提示发送一张作为起点的照片。
-4.  在底部内联键盘选择视频分辨率与生成时长。
-5.  输入您想要的画面描述（或点击“智能优化”交由 AI 扩写）。
-6.  确认消耗灵石，等待 Bot 下发生成的 MP4 文件（约需 2-5 分钟）。
+```json
+{
+  "task_type": "custom_video",
+  "inputs": {
+    "prompt": "A beautiful fairy flying in the sky",
+    "resolution": "1280x704",
+    "duration": "10s",
+    "image_url": "bot-data/user_uploads/123/img.jpg"
+  },
+  "source_post_id": 123
+}
+```
 
-### 5.2 Web 端操作
-1.  进入工作台主页，点击左侧导航栏的 `动态视频`。
-2.  在右侧参数面板上传您的参考图（大于 100MB 视频将自动启用 MinIO 直传提速）。
-3.  通过滑块和下拉框调节分辨率、时长和 Lora 权重。
-4.  点击底部的 `立即生成`。
-5.  页面将切换至任务详情弹窗，通过 SSE 实时展示“排队中 -> 生成中 -> 完成”的进度。
+### 4.2 计费契约
+- 视频成本通常由分辨率与时长组合计算。
+- 具体倍率与 guardrail 以当前服务实现为准，不在业务文档中固化旧常量值。
 
----
-*版本历史：*
-* *v1.1.0 - 加入了 LTX 高级图生视频支持，新增了分辨率与时长的动态计费逻辑。*
-* *v1.0.0 - 初版上线，支持基础文生图与一键换脸。*
+### 4.3 双 ID 语义
+- `registry_task_id`：本地任务注册与历史/清理语义
+- `backend_task_id`：后端执行面运行态语义
+
+## 5. 当前实现红线
+- 任务主链不再按“单体 Task/Billing Core + finally 写历史释放锁”的旧口径理解。
+- `task_core.py` 当前是 facade；真实默认装配在 provider/dependencies、submission、web-monitor、runtime 子模块。
+- Bot 主链当前以分域 entrypoints 和 `run_bot_task_application(...)` 为真实入口，不再依赖历史兼容层作为业务主入口。
+- Web 结果除了 stream 外，还存在 history fallback 与结果查询链路。
+
+## 6. 用户操作手册
+### 6.1 Telegram 端
+1. 选择对应创作入口。
+2. 通过 FSM 收集图片、视频设置、提示词等参数。
+3. 确认消耗后提交任务。
+4. 等待 Bot 前台进度通知与结果回传。
+
+### 6.2 Web 端
+1. 进入工作台对应创作页面。
+2. 上传参考素材并设置参数。
+3. 点击立即生成。
+4. 通过任务详情、stream 与历史记录查看运行态和结果。
+
+## 7. 维护原则
+- 若修改 Bot entrypoints、`run_bot_task_application(...)`、`task_core facade`、`task_stream/history fallback`，需同步更新本业务文档。
+- 若新增模板应用、视频成本模型或结果回传语义，应同步补 focused tests 与黄金路径回归清单。

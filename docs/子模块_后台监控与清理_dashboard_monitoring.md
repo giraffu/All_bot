@@ -1,136 +1,78 @@
 # 子模块: 后台监控与清理 (Dashboard & Monitoring)
 
 ## 1. 目标与范围
-本模块包含面向管理员的 Vue3/FastAPI 数据看板（Dashboard）和自动化运行的幽灵任务自愈协程（Zombie Cleaner）。其目标是提供全系统数据可视化（包含用户统计、服务器节点存活状态、Gallery 广场管理、历史任务回溯），并在出现 Worker 节点宕机或并发锁死锁时，主动释放用户锁定资源并退还灵石，保障整个生成集群的高可用性。
+本模块包含面向管理员的 Dashboard 视图与显式管理动作，用于查看系统任务统计、Worker/Queue 运行态、用户与内容大盘，并在异常情况下通过统一 core/runtime 入口执行任务终止与清理。
 
-## 2. 架构图与调用链
+当前知识口径下，Dashboard 不是“僵尸任务主处理器”；真正的任务运行态治理已收口到：
+- `task_core` facade
+- `task_core_runtime.py`
+- `QueueManager`
+- `TaskRegistry`
+- `force_terminate_task(...)` / runtime cleanup
+
+## 2. 当前架构图
 
 ```mermaid
 sequenceDiagram
     autonumber
     participant Admin as 管理员
-    participant DB as Dashboard FastAPI
-    participant Redis as Redis (DB1 & DB2)
-    participant ZC as 僵尸清理协程 (zombie_cleaner_service)
+    participant Dash as Dashboard API
+    participant Core as task core / runtime
+    participant Queue as QueueManager / Worker 视图
+    participant Registry as TaskRegistry
     participant PG as PostgreSQL
 
-    Admin->>DB: 1. GET /api/stats (请求监控数据)
-    DB->>Redis: 2. DB2 扫描 active workers & queue size
-    DB->>PG: 3. 统计今日新用户与消耗 (通过SQL聚合)
-    DB-->>Admin: 4. 返回可视化图表数据
-    
-    loop 余额监控与统计轮询 (balance_monitor.py)
-        BM->>TG_API: 异步增量拉取 Stars 流水
-        BM->>TON_API: 异步查询 TON/USDT 余额
-        BM->>Redis: 缓存外部余额与 last_tx_id
-    end
+    Admin->>Dash: 1. 请求系统统计与任务视图
+    Dash->>Core: 2. 获取系统任务统计 / 管理动作能力
+    Dash->>Queue: 3. 获取 queue / worker 聚合视图
+    Dash->>PG: 4. 获取用户/内容大盘统计
+    Dash-->>Admin: 5. 返回管理控制台数据
 
-    loop 后台定时巡检 (每 1 分钟)
-        ZC->>Redis: 5. DB1 提取所有 active_tasks (状态=running/pending)
-        ZC->>Redis: 6. 检查 task_id 是否已超时 (>10分钟)
-        alt 发现僵尸任务
-            ZC->>PG: 7. 执行退还灵石 (refund_credits)
-            ZC->>Redis: 8. 删除 DB1 user_lock 和 active_tasks 记录
-            ZC->>DB: 9. (可选) 通知中控 API 双向删除任务防止幽灵算力
-        end
-    end
+    Admin->>Dash: 6. 发起强制终止 / 清理动作
+    Dash->>Core: 7. 调用 force terminate / runtime cleanup
+    Core->>Registry: 8. 清理 registry_task_id
+    Core->>Queue: 9. backend_task_id best-effort cancel
+    Core-->>Dash: 10. 返回终态 / 补偿结果
 ```
 
-## 3. 核心代码片段
+## 3. 当前职责边界
+### 3.1 Dashboard 负责什么
+- 系统大盘与管理视图
+- task stats、worker/queue 状态聚合
+- 管理员显式触发的终止、清理与只读查询
+- 管理接口鉴权与审计
 
-### 核心层隔离与 Dashboard API (dashboard/backend/routers/system.py)
-[`system.py`](file:///home/hfy/APP/All_bot/dashboard/backend/routers/system.py)
-```python
-@router.post("/system/refund_bot_task")
-async def refund_bot_task(req: RefundTaskRequest, db: AsyncSession = Depends(get_db)):
-    """Force terminate a stuck task, refund credits and release concurrency lock."""
-    # 遵循 Core Isolation，Dashboard 不再直连 Redis 或手动修改锁，而是调用 Core 层统一接口
-    from src.core.task_core import get_system_task_stats, force_terminate_task
-    from src.services.permission_service import permission_service
-    
-    tasks, _ = await get_system_task_stats()
-    task = tasks[req.task_id]
-    
-    # 1. Refund
-    await permission_service.increment_quota(user_id, cost=-cost, username=username, task_type="refund_admin_force")
-        
-    # 2. Release lock and remove task via Core API
-    await force_terminate_task(req.task_id, user_id=user_id)
-    
-    return {"status": "success"}
-```
+### 3.2 Dashboard 不负责什么
+- 不定义任务补偿主链
+- 不直接把 Redis 手工删键当作标准治理方式
+- 不以 `zombie_cleaner_service`、`active_tasks` 哈希、固定 10 分钟阈值作为主文档口径
 
-### Dashboard 接口鉴权 (dashboard/backend/main.py)
-[`main.py:L62-L80`](file:///home/hfy/APP/All_bot/dashboard/backend/main.py#L62)
-```python
-@app.middleware("http")
-async def check_auth_header(request: Request, call_next):
-    """
-    后台 Dashboard 的基础认证中间件。
-    检查 HTTP 请求头中的 ADMIN_SECRET 是否与环境变量匹配。
-    """
-    # 排除不需要鉴权的路由
-    if request.url.path in ["/api/health", "/docs", "/openapi.json"]:
-        return await call_next(request)
-        
-    admin_secret = request.headers.get("Authorization")
-    if not admin_secret or admin_secret.replace("Bearer ", "") != os.getenv("ADMIN_SECRET"):
-        return JSONResponse(status_code=401, content={"detail": "Unauthorized"})
-        
-    return await call_next(request)
-```
+## 4. 推荐接口语义
+### 4.1 系统统计
+- 读取聚合后的系统任务统计
+- 补充 worker / queue 视图
+- 不把旧字段名固定成唯一契约
 
-## 4. 接口定义 (OpenAPI 3.0)
+### 4.2 强制终止
+- Dashboard 应优先调用 core 暴露的系统任务管理入口，如 `force_terminate_task(...)`
+- 退款、锁释放、runtime cleanup 与双 ID 清理由 core/runtime 统一完成
 
-```yaml
-openapi: 3.0.3
-info:
-  title: Dashboard API
-  version: 1.0.0
-paths:
-  /api/stats:
-    get:
-      summary: 获取系统大盘监控数据
-      security:
-        - bearerAuth: []
-      responses:
-        '200':
-          description: 返回在线节点数、排队长度和用户统计
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  active_workers:
-                    type: integer
-                  queue_size:
-                    type: integer
-                  today_new_users:
-                    type: integer
-```
+## 5. 测试要求
+- 覆盖 Dashboard 鉴权中间件
+- 覆盖系统统计接口的基础返回
+- 覆盖管理员强制终止时的：
+  - `registry_task_id` 清理
+  - `backend_task_id` best-effort cancel
+  - runtime cleanup / 锁释放
+- 覆盖 worker / queue 视图补齐与异常场景
 
-## 5. 单元与集成测试要求
-- **覆盖率基准**：自愈与清退逻辑要求 **≥90%** 覆盖率。
-- **核心用例**：
-  1. `test_zombie_cleaner_refunds_correctly`：在 Redis 中伪造一个耗时 601 秒且带有 cost=10 的任务，运行 `clean_zombies`，断言用户的灵石增加了 10，且 Redis 锁被删除。
-  2. `test_zombie_cleaner_ignores_fresh_tasks`：伪造一个耗时 30 秒的任务，运行巡检，断言没有任何清理操作发生。
-  3. `test_dashboard_auth_middleware`：发送未携带 `ADMIN_SECRET` 的请求到 `/api/stats`，断言被中间件 401 拦截。
+## 6. 部署与运维
+- Dashboard 随部署脚本更新，但不应被文档描述为“僵尸任务自动自愈中心”。
+- 若出现 stuck task，应优先通过 Dashboard 管理动作或 core 暴露的终止入口处理。
+- Redis 手工删键只作为极端故障兜底，不作为标准 SOP。
 
-## 6. 部署与回滚步骤
-- **部署**：
-  建议使用根目录下的 `safe_deploy.sh` 脚本进行安全平滑部署，它会自动重建 Dashboard 服务。
-  如需手动部署，可运行：
-  ```bash
-  cd dashboard
-  docker-compose up -d --build
-  ```
-  *注意*：后台依赖宿主机网络，通常配置为 `network_mode: "host"`，通过 FRP 将 8001 端口穿透至公网供管理员访问。
-- **环境要求**：必须在 `.env` 中正确配置复杂的 `ADMIN_SECRET`，并确保前后端保持一致。
-- **回滚**：
-  无数据库结构变更，拉取上一版本直接重启容器。
-
-## 7. 监控告警规则 (SLI/SLO)
-- **SLI**：僵尸任务清理的触发频率与成功率，Dashboard 接口平均响应时间。
-- **SLO**：每分钟不超过 5 个僵尸任务。
-- **告警策略**：
-  - **Critical**：当 1 小时内触发的 `clean_zombies` 次数超过总排队任务数的 5%，意味着底层的 ComfyUI Worker 出现系统性瘫痪（可能因 OOM 宕机），系统必须立刻发送最高级别 P0 告警给研发团队。
+## 7. 告警建议
+- 任务终态异常率
+- runtime cleanup 失败率
+- worker 存活率与 queue 堆积
+- 恢复失败率与 force terminate 失败率

@@ -1,10 +1,12 @@
 from datetime import datetime
 from typing import List, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 
 class HistoryItem(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     task_id: Optional[str]
     type: Optional[str]
@@ -23,9 +25,6 @@ class HistoryItem(BaseModel):
     source: Optional[str] = "bot"
     is_public: Optional[bool] = False
     is_favorited: Optional[bool] = False
-
-    class Config:
-        from_attributes = True
 
 
 class PaginatedHistory(BaseModel):

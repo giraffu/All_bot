@@ -1,9 +1,21 @@
 from typing import Any, Dict, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class TaskGenerateRequest(BaseModel):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "task_type": "face_swap",
+                "inputs": {
+                    "face_image": "bot-data/web_uploads/...",
+                    "target_image": "bot-data/web_uploads/...",
+                },
+            }
+        }
+    )
+
     task_type: str = Field(
         ..., description="The type of the task: face_swap, face_video, txt2img, etc."
     )
@@ -19,17 +31,6 @@ class TaskGenerateRequest(BaseModel):
     source_post_id: Optional[int] = Field(
         None, description="The ID of the gallery post being applied"
     )
-
-    class Config:
-        json_schema_extra = {
-            "example": {
-                "task_type": "face_swap",
-                "inputs": {
-                    "face_image": "bot-data/web_uploads/...",
-                    "target_image": "bot-data/web_uploads/...",
-                },
-            }
-        }
 
 
 class TaskGenerateResponse(BaseModel):
