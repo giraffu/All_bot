@@ -16,12 +16,15 @@ import {
   touchTaskActivity
 } from './tasksRuntime'
 
+export type TaskStatus = 'pending' | 'running' | 'success' | 'failed' | 'cancelled'
+export type TaskRefundStatus = 'pending' | 'refunded' | 'unconfirmed'
+
 export interface Task {
   id: string
   type: string
   title: string
   progress: number
-  status: 'pending' | 'running' | 'success' | 'failed'
+  status: TaskStatus
   queuePos?: number
   resultUrl?: string
   error?: string
@@ -29,6 +32,11 @@ export interface Task {
   retryCount?: number
   awaitingResult?: boolean
   updatedAt?: number
+  cancelRequested?: boolean
+  cancelMessage?: string
+  cancelCreditBaseline?: number | null
+  refundStatus?: TaskRefundStatus
+  refundMessage?: string
 }
 
 export const useTasksStore = defineStore('tasks', () => {
@@ -48,15 +56,30 @@ export const useTasksStore = defineStore('tasks', () => {
 
   const refreshBalanceAfterCancel = async (previousCredits: number | null) => {
     const retryDelays = [300, 800, 1500]
+    let latestCredits = authStore.user?.credits ?? null
 
     for (const delayMs of retryDelays) {
       await new Promise(resolve => setTimeout(resolve, delayMs))
       await authStore.fetchUser()
 
-      const latestCredits = authStore.user?.credits ?? null
+      latestCredits = authStore.user?.credits ?? null
       if (previousCredits === null || latestCredits === null || latestCredits !== previousCredits) {
-        return
+        return {
+          latestCredits,
+          refundedCredits: previousCredits !== null && latestCredits !== null
+            ? Math.max(latestCredits - previousCredits, 0)
+            : null,
+          changed: previousCredits !== null && latestCredits !== null && latestCredits !== previousCredits
+        }
       }
+    }
+
+    return {
+      latestCredits,
+      refundedCredits: previousCredits !== null && latestCredits !== null
+        ? Math.max(latestCredits - previousCredits, 0)
+        : null,
+      changed: false
     }
   }
 
@@ -131,6 +154,42 @@ export const useTasksStore = defineStore('tasks', () => {
     }
   }
 
+  const finalizeCancelledTask = async (task: Task, cancelMessage?: string) => {
+    closeTaskStream(task)
+    task.status = 'cancelled'
+    task.awaitingResult = false
+    task.cancelRequested = false
+    task.queuePos = undefined
+    task.error = undefined
+    task.cancelMessage = cancelMessage || task.cancelMessage || '任务已取消'
+    touchTaskActivity(task)
+
+    if (task.refundStatus === 'pending' || task.refundStatus === 'refunded' || task.refundStatus === 'unconfirmed') {
+      return
+    }
+
+    task.refundStatus = 'pending'
+    task.refundMessage = '正在刷新灵石余额...'
+    touchTaskActivity(task)
+
+    const balance = await refreshBalanceAfterCancel(task.cancelCreditBaseline ?? authStore.user?.credits ?? null)
+    const currentTask = activeTasks.value.find(t => t.id === task.id)
+    if (!currentTask) {
+      return
+    }
+
+    if (balance.refundedCredits && balance.refundedCredits > 0) {
+      currentTask.refundStatus = 'refunded'
+      currentTask.refundMessage = `已退回 ${balance.refundedCredits} 灵石`
+      message.success(`任务 [${currentTask.title}] 已取消，已退回 ${balance.refundedCredits} 灵石`)
+    } else {
+      currentTask.refundStatus = 'unconfirmed'
+      currentTask.refundMessage = '任务已取消，灵石将自动退回，请稍后在余额中查看'
+      message.success(`任务 [${currentTask.title}] 已取消`)
+    }
+    touchTaskActivity(currentTask)
+  }
+
   const handleTaskProgressPayload = (task: Task, payload: Record<string, any>) => {
     if (payload.status === 'pending' && payload.queue_pos != null) {
       task.queuePos = payload.queue_pos
@@ -139,18 +198,32 @@ export const useTasksStore = defineStore('tasks', () => {
 
     if (payload.progress !== undefined) {
       task.progress = payload.progress
-      task.status = 'running'
+      if (task.status !== 'cancelled') {
+        task.status = 'running'
+      }
       touchTaskActivity(task)
     }
 
     if (payload.status === 'success') {
       task.progress = 99
+      task.cancelRequested = false
+      task.refundStatus = undefined
+      task.refundMessage = undefined
       task.awaitingResult = true
       touchTaskActivity(task)
       closeTaskStream(task)
       void pollForResult(task)
+    } else if (
+      payload.status === 'cancelled'
+      || (payload.status === 'failed' && task.cancelRequested && String(payload.error || '').includes('取消'))
+    ) {
+      task.cancelMessage = payload.message || payload.error || '任务已取消'
+      void finalizeCancelledTask(task, task.cancelMessage)
     } else if (payload.status === 'failed') {
       task.status = 'failed'
+      task.cancelRequested = false
+      task.refundStatus = undefined
+      task.refundMessage = undefined
       task.error = payload.error || '未知错误'
       touchTaskActivity(task)
       message.error(`任务 [${task.title}] 生成失败: ${task.error}`)
@@ -323,7 +396,13 @@ export const useTasksStore = defineStore('tasks', () => {
     if (existingTask) {
       existingTask.type = type
       existingTask.title = title
-      existingTask.status = existingTask.status === 'failed' ? 'pending' : existingTask.status
+      existingTask.status = existingTask.status === 'failed' || existingTask.status === 'cancelled'
+        ? 'pending'
+        : existingTask.status
+      existingTask.cancelRequested = false
+      existingTask.cancelMessage = undefined
+      existingTask.refundStatus = undefined
+      existingTask.refundMessage = undefined
       touchTaskActivity(existingTask)
       if (!existingTask.awaitingResult && (existingTask.status === 'pending' || existingTask.status === 'running')) {
         startListening(existingTask)
@@ -361,7 +440,9 @@ export const useTasksStore = defineStore('tasks', () => {
   }
 
   const clearCompleted = () => {
-    const toRemove = activeTasks.value.filter(t => t.status === 'success' || t.status === 'failed')
+    const toRemove = activeTasks.value.filter(
+      t => t.status === 'success' || t.status === 'failed' || t.status === 'cancelled'
+    )
     toRemove.forEach(t => removeTask(t.id))
   }
 
@@ -369,9 +450,26 @@ export const useTasksStore = defineStore('tasks', () => {
     try {
       const previousCredits = authStore.user?.credits ?? null
       const response = await api.delete(`/tasks/cancel/${taskId}`)
-      removeTask(taskId)
-      message.success(response.data?.message || i18n.global.t('task.cancel_success_refreshing_balance'))
-      await refreshBalanceAfterCancel(previousCredits)
+      const task = activeTasks.value.find(item => item.id === taskId)
+      if (task) {
+        task.cancelCreditBaseline = previousCredits
+        task.cancelMessage = response.data?.message || i18n.global.t('task.cancel_success_refreshing_balance')
+        task.error = undefined
+        task.queuePos = undefined
+
+        if (response.data?.cancel_state === 'cancelled') {
+          await finalizeCancelledTask(task, task.cancelMessage)
+        } else {
+          task.cancelRequested = true
+          task.refundStatus = 'pending'
+          task.refundMessage = '等待执行端确认后自动退回灵石'
+          touchTaskActivity(task)
+          message.success(task.cancelMessage)
+        }
+      } else {
+        message.success(response.data?.message || i18n.global.t('task.cancel_success_refreshing_balance'))
+        await refreshBalanceAfterCancel(previousCredits)
+      }
       return true
     } catch (e: any) {
       const errorMsg = e.response?.data?.detail || '撤销请求失败'

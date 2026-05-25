@@ -6,6 +6,7 @@ from app.queue_manager_flow_helpers import (
     build_worker_info_flow,
     build_enqueued_task_payload,
     build_cancel_result,
+    cancel_running_task_flow,
     check_zombie_tasks_flow,
     cancel_pending_task_flow,
     complete_task_flow,
@@ -110,6 +111,14 @@ class QueueManager:
             task_id=task_id,
             persist_task_update_func=self._persist_task_update,
             build_cancel_result_func=self._build_cancel_result,
+        )
+
+    async def _cancel_running_task(self, task_id: str) -> Dict[str, Any]:
+        return await cancel_running_task_flow(
+            task_id=task_id,
+            persist_task_update_func=self._persist_task_update,
+            build_cancel_result_func=self._build_cancel_result,
+            cancelled_status=TaskStatus.CANCELLED,
         )
 
     async def _pop_next_pending_task(self) -> Optional[Tuple[str, float]]:
@@ -317,6 +326,9 @@ class QueueManager:
             build_cancel_result_func=self._build_cancel_result,
             cancelled_status=TaskStatus.CANCELLED,
         )
+
+    async def cancel_running_task(self, task_id: str) -> Dict[str, Any]:
+        return await self._cancel_running_task(task_id)
 
     async def get_queue_position(self, task_id: str) -> Optional[int]:
         return await self.redis.zrank(self.pending_key, task_id)

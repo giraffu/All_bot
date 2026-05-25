@@ -277,6 +277,26 @@ async def cancel_pending_task_flow(
     return build_cancel_result_func("cancelled", task_id, "任务已从排队队列移除")
 
 
+async def cancel_running_task_flow(
+    *,
+    task_id: str,
+    persist_task_update_func,
+    build_cancel_result_func,
+    cancelled_status,
+) -> dict[str, Any]:
+    await persist_task_update_func(
+        task_id,
+        task_mapping={
+            "status": cancelled_status,
+            "cancel_requested": 0,
+            "cancel_requested_at": "",
+        },
+        event_payload={"status": "cancelled"},
+        remove_from_running=True,
+    )
+    return build_cancel_result_func("cancelled", task_id, "任务已取消")
+
+
 async def request_running_task_cancellation_flow(
     *,
     task_id: str,

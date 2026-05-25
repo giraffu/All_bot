@@ -236,11 +236,11 @@ async def monitor_task_progress(
         [[InlineKeyboardButton("❌ 撤销任务", callback_data=f"cancel_task_{task_id}")]]
     )
 
-    async def update_status_message(text, **kwargs):
+    async def update_status_message(text, *, show_cancel_button=False, **kwargs):
         if not status_msg:
             return False
         try:
-            kwargs["reply_markup"] = cancel_markup if "排队中" in text else None
+            kwargs["reply_markup"] = cancel_markup if show_cancel_button else None
             await edit_status_text_func(status_msg, text, **kwargs)
             return True
         except Exception as exc:
@@ -284,6 +284,7 @@ async def monitor_task_progress(
                 if queue_pos != last_queue_pos or last_status != "pending":
                     if await update_status_message(
                         f"⏳ 排队中... (第 {queue_pos} 位){vip_suffix}",
+                        show_cancel_button=True,
                         parse_mode="Markdown",
                     ):
                         last_queue_pos = queue_pos
@@ -291,7 +292,9 @@ async def monitor_task_progress(
             else:
                 if last_status != "pending":
                     if await update_status_message(
-                        f"⏳ 排队中...{vip_suffix}", parse_mode="Markdown"
+                        f"⏳ 排队中...{vip_suffix}",
+                        show_cancel_button=True,
+                        parse_mode="Markdown",
                     ):
                         last_status = "pending"
             continue

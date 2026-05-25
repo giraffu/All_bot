@@ -10,6 +10,9 @@ def test_agent_main_websocket_error_handling():
 
     # Check if JSON dictionary check is in the code
     assert "if not isinstance(data, dict):" in content
+    assert "def _coerce_first_mapping(" in content
+    assert "def _extract_ws_data_content(" in content
+    assert "Failed to parse WS message type=%s: %s" in content
 
     # Verify it compiles valid Python
     ast.parse(content)
@@ -33,4 +36,5 @@ def test_agent_main_extracts_history_result_resolution_helpers():
     assert "def _pick_first_output_asset(" in content
     assert "def _build_safe_result_object_name(" in content
     assert "def _resolve_history_result_asset(" in content
+    assert "if not isinstance(outputs, dict):" in content
     ast.parse(content)

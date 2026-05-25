@@ -156,9 +156,9 @@ def test_build_terminal_progress_payload_maps_backend_terminal_states():
         "error": "worker failed",
     }
     assert cancelled_payload == {
-        "status": "failed",
+        "status": "cancelled",
         "task_id": "task-1",
-        "error": "任务已取消",
+        "message": "任务已取消",
     }
 
 

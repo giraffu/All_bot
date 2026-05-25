@@ -9,7 +9,7 @@ export interface TaskResultDecision {
 }
 
 export interface ResumableTaskLike {
-  status: 'pending' | 'running' | 'success' | 'failed'
+  status: 'pending' | 'running' | 'success' | 'failed' | 'cancelled'
   resultUrl?: string
 }
 

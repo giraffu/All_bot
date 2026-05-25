@@ -371,6 +371,36 @@ async def test_monitor_submitted_bot_task_uses_helper_monitor_seam(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_monitor_bot_task_progress_shows_cancel_button_only_while_pending():
+    edit_status_text = AsyncMock()
+
+    async def monitor_func(*_args, **_kwargs):
+        yield {"status": "pending", "queue_pos": 0}
+        yield {"status": "running", "progress": 42}
+        yield {"status": "done", "progress": 100}
+
+    result = await tg_runtime_helpers.monitor_task_progress(
+        task_id="task-pending",
+        status_msg="status-msg",
+        is_video=False,
+        monitor_func=monitor_func,
+        edit_status_text_func=edit_status_text,
+    )
+
+    assert result == {"status": "done", "progress": 100}
+    first_call = edit_status_text.await_args_list[0]
+    second_call = edit_status_text.await_args_list[1]
+    assert first_call.args == ("status-msg", "⏳ 排队中... (第 1 位)")
+    assert isinstance(first_call.kwargs["reply_markup"], InlineKeyboardMarkup)
+    assert (
+        first_call.kwargs["reply_markup"].inline_keyboard[0][0].callback_data
+        == "cancel_task_task-pending"
+    )
+    assert second_call.args == ("status-msg", "⏳ 生成中... 42%")
+    assert second_call.kwargs["reply_markup"] is None
+
+
+@pytest.mark.asyncio
 async def test_complete_monitored_bot_task_preserves_supplied_user_logger(monkeypatch):
     handle_task_completion = AsyncMock(return_value=(b"video-bytes", "output.mp4"))
     monkeypatch.setattr(

@@ -78,8 +78,26 @@ logger = logging.getLogger("agent_main")
 RESULT_ASSET_KEYS = ("images", "gifs", "videos")
 
 
-def _pick_first_output_asset(outputs: dict[str, Any]) -> dict[str, Any] | None:
+def _coerce_first_mapping(value: Any) -> dict[str, Any]:
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, list):
+        for item in value:
+            if isinstance(item, dict):
+                return item
+    return {}
+
+
+def _extract_ws_data_content(data: dict[str, Any]) -> dict[str, Any]:
+    return _coerce_first_mapping(data.get("data", {}))
+
+
+def _pick_first_output_asset(outputs: Any) -> dict[str, Any] | None:
+    if not isinstance(outputs, dict):
+        return None
     for node_output in outputs.values():
+        if not isinstance(node_output, dict):
+            continue
         for asset_key in RESULT_ASSET_KEYS:
             assets = node_output.get(asset_key, [])
             if assets:
@@ -302,6 +320,9 @@ class ComfyAgent:
         except Exception as e:
             logger.error(f"Failed to report completion for task {task_id}: {e}")
 
+    async def report_cancelled(self, task_id: str):
+        await self.report_status(task_id, "cancelled")
+
     async def ws_listener_loop(self):
         client_id = f"agent_{AGENT_ID}"
         uri = f"{COMFY_WS_URL}?clientId={client_id}"
@@ -339,63 +360,74 @@ class ComfyAgent:
 
                         if not isinstance(data, dict):
                             continue
-                        msg_type = data.get("type")
-                        data_content = data.get("data", {})
+                        try:
+                            msg_type = data.get("type")
+                            data_content = _extract_ws_data_content(data)
+                            prompt_id = data_content.get("prompt_id")
 
-                        prompt_id = data_content.get("prompt_id")
+                            if not prompt_id or prompt_id != self.current_prompt_id:
+                                continue
 
-                        if not prompt_id or prompt_id != self.current_prompt_id:
-                            continue
+                            if msg_type == "execution_start":
+                                logger.info(f"Execution started for prompt {prompt_id}")
+                                if self.current_task_id:
+                                    await self.report_status(
+                                        self.current_task_id, "running"
+                                    )
 
-                        if msg_type == "execution_start":
-                            logger.info(f"Execution started for prompt {prompt_id}")
-                            if self.current_task_id:
-                                await self.report_status(
-                                    self.current_task_id, "running"
-                                )
+                            elif msg_type == "progress":
+                                value = data_content.get("value", 0)
+                                max_val = data_content.get("max", 1)
+                                if max_val > 0 and self.current_task_id:
+                                    progress = value / max_val
+                                    await self.report_status(
+                                        self.current_task_id,
+                                        "running",
+                                        progress=progress,
+                                    )
 
-                        elif msg_type == "progress":
-                            value = data_content.get("value", 0)
-                            max_val = data_content.get("max", 1)
-                            if max_val > 0 and self.current_task_id:
-                                progress = value / max_val
-                                await self.report_status(
-                                    self.current_task_id, "running", progress=progress
-                                )
+                            elif msg_type == "executing":
+                                node = data_content.get("node")
+                                if node is None:
+                                    logger.info(
+                                        f"Execution fully completed for prompt {prompt_id}"
+                                    )
+                                    self.task_completed_event.set()
 
-                        elif msg_type == "executing":
-                            node = data_content.get("node")
-                            if node is None:
+                            elif msg_type == "execution_success":
                                 logger.info(
-                                    f"Execution fully completed for prompt {prompt_id}"
+                                    f"Execution success received for prompt {prompt_id}"
                                 )
                                 self.task_completed_event.set()
 
-                        elif msg_type == "execution_success":
-                            logger.info(
-                                f"Execution success received for prompt {prompt_id}"
-                            )
-                            self.task_completed_event.set()
+                            elif msg_type == "executed":
+                                logger.info(f"Node executed for prompt {prompt_id}")
+                                output = data_content.get("output") or {}
+                                asset = _pick_first_output_asset(output)
+                                if asset and self.current_task_id:
+                                    self.task_result = _build_safe_result_object_name(
+                                        self.current_task_id, asset
+                                    )
+                                    # Wait for execution completion to finalize upload/report.
 
-                        elif msg_type == "executed":
-                            logger.info(f"Node executed for prompt {prompt_id}")
-                            output = data_content.get("output") or {}
-                            asset = _pick_first_output_asset(output)
-                            if asset and self.current_task_id:
-                                self.task_result = _build_safe_result_object_name(
-                                    self.current_task_id, asset
+                            elif msg_type == "execution_error":
+                                error_msg = str(
+                                    data_content.get(
+                                        "exception_message", "Unknown error"
+                                    )
                                 )
-                                # We now wait for executing node=None to set the completion event
-
-                        elif msg_type == "execution_error":
-                            error_msg = str(
-                                data_content.get("exception_message", "Unknown error")
+                                logger.error(
+                                    f"Execution error for prompt {prompt_id}: {error_msg}"
+                                )
+                                self.task_error = error_msg
+                                self.task_completed_event.set()
+                        except Exception as message_error:
+                            logger.warning(
+                                "Failed to parse WS message type=%s: %s",
+                                data.get("type"),
+                                message_error,
                             )
-                            logger.error(
-                                f"Execution error for prompt {prompt_id}: {error_msg}"
-                            )
-                            self.task_error = error_msg
-                            self.task_completed_event.set()
+                            continue
 
             except Exception as e:
                 logger.error(f"WebSocket connection error: {e}")
@@ -476,6 +508,7 @@ class ComfyAgent:
         try:
             if await self.check_task_cancelled(task_id):
                 logger.info(f"Task {task_id} was cancelled before processing.")
+                await self.report_cancelled(task_id)
                 return
 
             await self._prepare_task_inputs(
@@ -502,13 +535,33 @@ class ComfyAgent:
             await self.report_status(task_id, "running")
 
             # 4. Wait for completion (via WS listener)
-            # Timeout after 10 minutes to avoid hanging forever
-            try:
-                await asyncio.wait_for(self.task_completed_event.wait(), timeout=600.0)
-            except asyncio.TimeoutError:
-                logger.warning(
-                    f"Task execution timed out for {task_id}, will attempt to fetch result from history."
-                )
+            # Timeout after 10 minutes to avoid hanging forever.
+            # While waiting, periodically poll the master so cancellation
+            # requests can be finalized instead of lingering at running=1%.
+            loop = asyncio.get_running_loop()
+            deadline = loop.time() + 600.0
+            while not self.task_completed_event.is_set():
+                if await self.check_task_cancelled(task_id):
+                    logger.info(
+                        f"Task {task_id} was cancelled during execution wait."
+                    )
+                    await self.report_cancelled(task_id)
+                    return
+
+                remaining = deadline - loop.time()
+                if remaining <= 0:
+                    logger.warning(
+                        f"Task execution timed out for {task_id}, will attempt to fetch result from history."
+                    )
+                    break
+
+                try:
+                    await asyncio.wait_for(
+                        self.task_completed_event.wait(),
+                        timeout=min(2.0, remaining),
+                    )
+                except asyncio.TimeoutError:
+                    continue
 
             if self.task_error:
                 raise Exception(self.task_error)
@@ -538,6 +591,7 @@ class ComfyAgent:
                 logger.info(
                     f"Task {task_id} was cancelled during execution, skipping upload."
                 )
+                await self.report_cancelled(task_id)
                 return
 
             # 5. Fetch result from ComfyUI API and Upload to MinIO

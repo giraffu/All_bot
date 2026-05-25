@@ -71,6 +71,7 @@ async def create_gallery_comment_payload(
         )
 
         await db.commit()
+        await redis_client.delete_comment_lock(current_user.id)
         return response_data
     except HTTPException:
         raise

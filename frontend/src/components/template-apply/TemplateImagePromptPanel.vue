@@ -413,13 +413,34 @@ onBeforeUnmount(() => {
           <div class="rounded-xl border border-slate-700 bg-slate-800/70 p-4">
             <div class="flex items-center justify-between text-sm text-slate-300">
               <span>{{ currentTask.title }}</span>
-              <span>{{ currentTask.status }}</span>
+              <span>
+                {{
+                  currentTask.status === 'cancelled'
+                    ? '已取消'
+                    : currentTask.cancelRequested
+                      ? '撤销确认中'
+                      : currentTask.status
+                }}
+              </span>
             </div>
             <a-progress
               class="mt-3"
-              :percent="currentTask.progress"
-              :status="currentTask.status === 'failed' ? 'exception' : 'active'"
+              :percent="currentTask.status === 'cancelled' ? 100 : currentTask.progress"
+              :status="currentTask.cancelRequested || currentTask.status === 'cancelled'
+                ? 'normal'
+                : currentTask.status === 'failed'
+                  ? 'exception'
+                  : 'active'"
             />
+            <div v-if="currentTask.cancelRequested" class="mt-3 text-sm text-amber-300">
+              {{ currentTask.cancelMessage || '已提交撤销请求，等待执行端确认。' }}
+            </div>
+            <div
+              v-if="currentTask.cancelRequested || currentTask.status === 'cancelled'"
+              class="mt-1 text-xs text-slate-400"
+            >
+              {{ currentTask.refundMessage || '确认后将自动退回灵石。' }}
+            </div>
             <div v-if="currentTask.error" class="mt-3 text-sm text-rose-300">
               {{ currentTask.error }}
             </div>

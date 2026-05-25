@@ -7,6 +7,9 @@ from src.database import core as db_core
 from src.database.models import GalleryPost, History
 from src.web_api.routers import users as users_router
 from src.web_api.services import users_history_service
+from src.web_api.services.history_response_builder import (
+    build_favorite_gallery_payload,
+)
 
 
 class _FakeResult:
@@ -70,6 +73,103 @@ def test_pick_preferred_gallery_post_prefers_active_and_newer_post():
     )
 
     assert preferred is active_newest
+
+
+@pytest.mark.asyncio
+async def test_get_user_history_payload_resolves_media_urls_with_keyword_arguments(
+    monkeypatch,
+):
+    history = History(
+        id=11,
+        user_id=123,
+        task_id="task-1",
+        type="image",
+        prompt="prompt",
+        output_file="bot-data/history/task-1/output.png",
+        created_at=datetime.now(),
+    )
+
+    async def _fake_fetch_recent_user_history(*, db, current_user_id, limit):
+        assert current_user_id == 123
+        assert limit == 8
+        return [history], ["task-1"]
+
+    async def _fake_fetch_active_public_gallery_task_ids(*, db, task_ids):
+        assert task_ids == ["task-1"]
+        return {"task-1"}
+
+    async def _fake_resolve_history_media_urls(
+        *,
+        task_id: str | None,
+        output_file: str | None,
+        history_type: str | None,
+        fallback_to_storage_path: bool = False,
+    ):
+        assert task_id == "task-1"
+        assert output_file == "bot-data/history/task-1/output.png"
+        assert history_type == "image"
+        assert fallback_to_storage_path is False
+        return ("https://example.com/output.png", "https://example.com/thumb.png")
+
+    monkeypatch.setattr(
+        users_history_service,
+        "fetch_recent_user_history",
+        _fake_fetch_recent_user_history,
+    )
+    monkeypatch.setattr(
+        users_history_service,
+        "fetch_active_public_gallery_task_ids",
+        _fake_fetch_active_public_gallery_task_ids,
+    )
+
+    response = await users_history_service.get_user_history_payload(
+        current_user=type("User", (), {"id": 123})(),
+        db=object(),
+        resolve_history_media_urls=_fake_resolve_history_media_urls,
+    )
+
+    assert response.total == 1
+    assert response.items[0].task_id == "task-1"
+    assert response.items[0].output_file_url == "https://example.com/output.png"
+    assert response.items[0].thumbnail_url == "https://example.com/thumb.png"
+    assert response.items[0].is_public is True
+
+
+@pytest.mark.asyncio
+async def test_build_favorite_gallery_payload_resolves_media_urls_with_keyword_arguments():
+    history = History(
+        id=11,
+        user_id=123,
+        task_id="task-1",
+        type="image",
+        prompt="prompt",
+        output_file="bot-data/history/task-1/output.png",
+        created_at=datetime.now(),
+    )
+
+    async def _fake_resolve_history_media_urls(
+        *,
+        task_id: str | None,
+        output_file: str | None,
+        history_type: str | None,
+        fallback_to_storage_path: bool = False,
+    ):
+        assert task_id == "task-1"
+        assert output_file == "bot-data/history/task-1/output.png"
+        assert history_type == "image"
+        assert fallback_to_storage_path is False
+        return ("https://example.com/output.png", "https://example.com/thumb.png")
+
+    response_items = await build_favorite_gallery_payload(
+        histories=[history],
+        gallery_post_map={},
+        resolve_history_media_urls_func=_fake_resolve_history_media_urls,
+    )
+
+    assert len(response_items) == 1
+    assert response_items[0].task_id == "task-1"
+    assert response_items[0].media_url == "https://example.com/output.png"
+    assert response_items[0].thumbnail_url == "https://example.com/thumb.png"
 
 
 @pytest.mark.asyncio

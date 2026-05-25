@@ -68,6 +68,32 @@ async def test_update_status_payload_clears_current_task_and_fails_task():
 
 
 @pytest.mark.asyncio
+async def test_update_status_payload_clears_current_task_and_cancels_task():
+    queue_manager = SimpleNamespace(
+        bind_agent_task=AsyncMock(),
+        clear_agent_current_task=AsyncMock(),
+        update_task_heartbeat=AsyncMock(),
+        update_progress=AsyncMock(),
+        fail_task=AsyncMock(),
+        cancel_running_task=AsyncMock(),
+    )
+    payload = await update_status_payload(
+        task_id="task-1",
+        agent_id="agent-1",
+        status="cancelled",
+        progress=0.0,
+        error="",
+        queue_manager=queue_manager,
+    )
+
+    assert payload == {"status": "ok"}
+    queue_manager.bind_agent_task.assert_awaited_once_with("task-1", "agent-1")
+    queue_manager.clear_agent_current_task.assert_awaited_once_with("agent-1")
+    queue_manager.cancel_running_task.assert_awaited_once_with("task-1")
+    queue_manager.fail_task.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_task_heartbeat_payload_binds_agent_when_present():
     queue_manager = SimpleNamespace(
         bind_agent_task=AsyncMock(),

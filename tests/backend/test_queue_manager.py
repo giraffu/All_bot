@@ -270,6 +270,40 @@ async def test_cancel_task_requests_running_task_cancellation():
 
 
 @pytest.mark.asyncio
+async def test_cancel_running_task_marks_cancelled_removes_running_and_publishes_event():
+    redis = _FakeRedis()
+    manager = QueueManager(redis)
+    task_key = f"{manager.task_prefix}task-running-cancelled"
+
+    await redis.hset(
+        task_key,
+        mapping={
+            "status": TaskStatus.RUNNING,
+            "type": TaskType.IMG2IMG,
+            "cancel_requested": 1,
+            "cancel_requested_at": "123.0",
+        },
+    )
+    await redis.sadd(manager.running_key, "task-running-cancelled")
+
+    result = await manager.cancel_running_task("task-running-cancelled")
+
+    assert result == {
+        "state": "cancelled",
+        "task_id": "task-running-cancelled",
+        "message": "任务已取消",
+    }
+    assert redis.hashes[task_key]["status"] == TaskStatus.CANCELLED
+    assert redis.hashes[task_key]["cancel_requested"] == 0
+    assert redis.hashes[task_key]["cancel_requested_at"] == ""
+    assert "task-running-cancelled" not in redis.sets[manager.running_key]
+    assert (
+        "comfy:task_events:task-running-cancelled",
+        json.dumps({"status": "cancelled"}),
+    ) in redis.published
+
+
+@pytest.mark.asyncio
 async def test_cancel_task_returns_terminal_state_for_done_task():
     redis = _FakeRedis()
     manager = QueueManager(redis)

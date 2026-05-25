@@ -23,7 +23,11 @@ async def build_user_history_payload(
 ):
     items = []
     for history in histories:
-        media_url, thumbnail_url = await resolve_history_media_urls_func(history)
+        media_url, thumbnail_url = await resolve_history_media_urls_func(
+            task_id=history.task_id,
+            output_file=history.output_file,
+            history_type=history.type,
+        )
         items.append(
             HistoryItem(
                 task_id=history.task_id,
@@ -57,7 +61,11 @@ async def build_favorite_gallery_payload(
     items = []
     for history in histories:
         gallery_post = gallery_post_map.get(history.task_id)
-        media_url, thumbnail_url = await resolve_history_media_urls_func(history)
+        media_url, thumbnail_url = await resolve_history_media_urls_func(
+            task_id=history.task_id,
+            output_file=history.output_file,
+            history_type=history.type,
+        )
         items.append(
             GalleryPostResponse(
                 id=gallery_post.id if gallery_post else 0,

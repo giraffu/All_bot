@@ -40,9 +40,9 @@ def build_terminal_progress_payload(
         return payload
 
     if status_val == "cancelled":
-        payload["status"] = "failed"
+        payload["status"] = "cancelled"
         payload["task_id"] = task_id
-        payload["error"] = payload.get("error_msg") or "任务已取消"
+        payload["message"] = payload.get("error_msg") or "任务已取消"
         payload.pop("error_msg", None)
         return payload
 

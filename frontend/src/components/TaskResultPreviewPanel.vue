@@ -58,7 +58,7 @@ const emit = defineEmits<{
 
     <div v-else :class="contentClass">
       <div
-        v-if="currentTask.status === 'pending' || currentTask.status === 'running'"
+        v-if="(currentTask.status === 'pending' || currentTask.status === 'running') && !currentTask.cancelRequested"
         class="flex flex-col items-center justify-center py-8 w-full flex-grow"
       >
         <slot name="pending" :task="currentTask">
@@ -79,6 +79,18 @@ const emit = defineEmits<{
             class="w-full max-w-md mt-4"
           />
         </slot>
+      </div>
+
+      <div
+        v-else-if="currentTask.cancelRequested"
+        class="flex flex-col items-center justify-center py-8 w-full flex-grow"
+      >
+        <a-spin size="large" />
+        <p class="mt-4 text-amber-300 font-medium text-lg">撤销确认中</p>
+        <p class="text-slate-400 mt-2">{{ currentTask.cancelMessage || '已提交撤销请求，等待执行端确认。' }}</p>
+        <p class="text-slate-500 mt-1 text-sm">
+          {{ currentTask.refundMessage || '执行端确认后将自动退回灵石。' }}
+        </p>
       </div>
 
       <div
@@ -118,6 +130,18 @@ const emit = defineEmits<{
             </a-button>
           </slot>
         </div>
+      </div>
+
+      <div
+        v-else-if="currentTask.status === 'cancelled'"
+        class="flex flex-col items-center py-8 w-full flex-grow justify-center"
+      >
+        <p class="text-amber-300 font-medium text-lg">任务已取消</p>
+        <p class="text-slate-400 mt-2">{{ currentTask.cancelMessage || '撤销已确认。' }}</p>
+        <p class="text-slate-500 mt-1">{{ currentTask.refundMessage || '灵石将自动退回，请稍后查看余额。' }}</p>
+        <a-button class="mt-6 rounded-xl" @click="emit('reset')">
+          {{ continueText }}
+        </a-button>
       </div>
 
       <div

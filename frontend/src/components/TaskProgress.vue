@@ -9,8 +9,22 @@ const tasksStore = useTasksStore()
 const router = useRouter()
 const expandedTaskId = ref<string | null>(null)
 
+const isTaskInProgress = (task: any) =>
+  task.status === 'pending' || task.status === 'running'
+
+const getProgressStatus = (task: any) => {
+  if (task.cancelRequested || task.status === 'cancelled') {
+    return 'normal'
+  }
+  return 'active'
+}
+
 const handleClose = (task: any) => {
   tasksStore.removeTask(task.id)
+  if (task.status === 'cancelled') {
+    message.info(task.refundMessage || '任务已取消')
+    return
+  }
   message.info('任务进入后台，完成后可在闪回瓶查看')
 }
 
@@ -53,7 +67,7 @@ const doCancelTask = async (taskId: string) => {
         >
           <!-- 环形进度条 -->
           <div
-            v-if="task.status === 'pending' || task.status === 'running'"
+            v-if="isTaskInProgress(task)"
             class="absolute inset-0 flex items-center justify-center"
           >
             <a-progress 
@@ -61,7 +75,7 @@ const doCancelTask = async (taskId: string) => {
               :percent="task.progress" 
               :size="42"
               :show-info="false" 
-              status="active" 
+              :status="getProgressStatus(task)" 
               strokeColor="#06b6d4" 
               trailColor="rgba(255,255,255,0.1)" 
               :strokeWidth="5" 
@@ -81,8 +95,14 @@ const doCancelTask = async (taskId: string) => {
                 </template>
               </span>
             </template>
+            <template v-else-if="task.cancelRequested">
+              <loading-outlined class="text-amber-400 text-lg" />
+            </template>
             <template v-else-if="task.status === 'running'">
               <span class="text-[11px] text-cyan-400 font-medium font-mono">{{ task.progress }}%</span>
+            </template>
+            <template v-else-if="task.status === 'cancelled'">
+              <close-outlined class="text-amber-400 text-xl" />
             </template>
             <template v-else-if="task.status === 'success'">
               <check-outlined class="text-emerald-400 text-2xl" />

@@ -144,11 +144,17 @@ async def test_create_gallery_comment_trims_content_and_updates_count(monkeypatc
     post = GalleryPost(id=1, task_id="task-1", media_type="image", is_active=True)
     session = _CreateCommentSession(post)
     current_user = User(id=123, username="tester")
+    delete_lock_mock = AsyncMock()
 
     monkeypatch.setattr(
         redis_module.redis_client,
         "set_comment_lock",
         AsyncMock(return_value=True),
+    )
+    monkeypatch.setattr(
+        redis_module.redis_client,
+        "delete_comment_lock",
+        delete_lock_mock,
     )
 
     response = await create_gallery_comment_payload(
@@ -163,6 +169,7 @@ async def test_create_gallery_comment_trims_content_and_updates_count(monkeypatc
     assert session.added[0].content == "修仙成功"
     assert session.execute.await_count == 1
     session.commit.assert_awaited_once()
+    delete_lock_mock.assert_awaited_once_with(123)
     assert response.content == "修仙成功"
     assert response.user.author_name == "tester"
 

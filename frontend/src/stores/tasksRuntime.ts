@@ -8,7 +8,7 @@ export interface RuntimeTaskLike {
   id: string
   title: string
   progress: number
-  status: 'pending' | 'running' | 'success' | 'failed'
+  status: 'pending' | 'running' | 'success' | 'failed' | 'cancelled'
   resultUrl?: string
   error?: string
   awaitingResult?: boolean

@@ -1,6 +1,7 @@
 import { ref, computed, watch, type Ref } from 'vue'
 import { message } from 'ant-design-vue'
 import { useI18n } from 'vue-i18n'
+import api from '@/api'
 import { getGalleryCommentsPage } from '@/api/gallery'
 import type { GalleryPost } from '@/types/gallery'
 

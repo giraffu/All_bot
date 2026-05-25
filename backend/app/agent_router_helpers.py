@@ -66,6 +66,12 @@ async def update_status_payload(
 
     if status == "running" and progress > 0:
         await queue_manager.update_progress(task_id, progress)
+    elif status == "cancelled":
+        await clear_agent_current_task(
+            queue_manager=queue_manager,
+            agent_id=agent_id,
+        )
+        await queue_manager.cancel_running_task(task_id)
     elif status == "failed":
         await clear_agent_current_task(
             queue_manager=queue_manager,
