@@ -391,6 +391,76 @@ async def test_get_apply_context_maps_legacy_video_lora_duration_11_to_10():
 
 
 @pytest.mark.asyncio
+async def test_get_apply_context_restores_lora_strength_from_new_prompt_format():
+    history = History(
+        id=11,
+        user_id=123,
+        task_id="task-1",
+        type="img2img_lora",
+        prompt="[模型: qwen/YARN_1.0.safetensors] [强度: 0.35] cinematic portrait",
+        output_file="bot-data/history/task-1/output.png",
+        width=1024,
+        height=1024,
+    )
+    post = GalleryPost(
+        id=2,
+        task_id="task-1",
+        media_type="image",
+        width=1024,
+        height=1024,
+        duration=None,
+    )
+    session = _FakeSession(
+        [
+            _FakeResult(single=post),
+            _FakeResult(many=[history]),
+        ]
+    )
+
+    response = await get_gallery_apply_context_payload(post_id=2, db=session)
+
+    assert response.prompt == "cinematic portrait"
+    assert response.lora_name == "qwen/YARN_1.0.safetensors"
+    assert response.lora_strength == 0.35
+    session.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_get_apply_context_keeps_legacy_lora_prompt_without_strength():
+    history = History(
+        id=11,
+        user_id=123,
+        task_id="task-1",
+        type="img2img_lora",
+        prompt="[模型: 真实质感] cinematic portrait",
+        output_file="bot-data/history/task-1/output.png",
+        width=1024,
+        height=1024,
+    )
+    post = GalleryPost(
+        id=2,
+        task_id="task-1",
+        media_type="image",
+        width=1024,
+        height=1024,
+        duration=None,
+    )
+    session = _FakeSession(
+        [
+            _FakeResult(single=post),
+            _FakeResult(many=[history]),
+        ]
+    )
+
+    response = await get_gallery_apply_context_payload(post_id=2, db=session)
+
+    assert response.prompt == "cinematic portrait"
+    assert response.lora_name == "qwen/realistic_texture.safetensors"
+    assert response.lora_strength is None
+    session.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_pick_gallery_media_urls_prefers_existing_history_task_key(
     monkeypatch,
 ):

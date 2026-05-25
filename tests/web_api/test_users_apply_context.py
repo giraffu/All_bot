@@ -568,6 +568,74 @@ async def test_get_favorite_apply_context_maps_legacy_video_lora_duration_11_to_
 
 
 @pytest.mark.asyncio
+async def test_get_favorite_apply_context_restores_lora_strength_from_new_prompt_format(
+    monkeypatch,
+):
+    history = History(
+        id=11,
+        user_id=123,
+        task_id="task-1",
+        type="img2img_lora",
+        prompt="[模型: qwen/YARN_1.0.safetensors] [强度: 0.35] cinematic portrait",
+        output_file="bot-data/history/task-1/output.png",
+        width=1024,
+        height=1024,
+    )
+    session = _FakeSession(
+        [
+            _FakeResult(single=history),
+            _FakeResult(many=[]),
+        ]
+    )
+
+    monkeypatch.setattr(db_core, "AsyncSessionLocal", lambda: session)
+    response = await users_router.get_favorite_apply_context(
+        "task-1",
+        current_user=type("User", (), {"id": 123})(),
+        db=session,
+    )
+
+    assert response.prompt == "cinematic portrait"
+    assert response.lora_name == "qwen/YARN_1.0.safetensors"
+    assert response.lora_strength == 0.35
+    session.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_get_favorite_apply_context_keeps_legacy_lora_prompt_without_strength(
+    monkeypatch,
+):
+    history = History(
+        id=11,
+        user_id=123,
+        task_id="task-1",
+        type="img2img_lora",
+        prompt="[模型: 真实质感] cinematic portrait",
+        output_file="bot-data/history/task-1/output.png",
+        width=1024,
+        height=1024,
+    )
+    session = _FakeSession(
+        [
+            _FakeResult(single=history),
+            _FakeResult(many=[]),
+        ]
+    )
+
+    monkeypatch.setattr(db_core, "AsyncSessionLocal", lambda: session)
+    response = await users_router.get_favorite_apply_context(
+        "task-1",
+        current_user=type("User", (), {"id": 123})(),
+        db=session,
+    )
+
+    assert response.prompt == "cinematic portrait"
+    assert response.lora_name == "qwen/realistic_texture.safetensors"
+    assert response.lora_strength is None
+    session.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_get_favorite_apply_context_keeps_non_video_billing_resolution_read_only(
     monkeypatch,
 ):

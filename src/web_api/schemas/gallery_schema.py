@@ -81,6 +81,7 @@ class ApplyContextResponse(BaseModel):
     media_type: str
     prompt: Optional[str]
     lora_name: Optional[str] = None
+    lora_strength: Optional[float] = None
     input_file: Optional[str]
     input_file_url: Optional[str]
     width: Optional[int]

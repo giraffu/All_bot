@@ -306,10 +306,10 @@
       "fast_face_swap_desc": "Rapid face replacement, suitable for standard fast processing.",
       "video_face_swap_title": "Video Face Swap",
       "video_face_swap_desc": "Upload a face and a video, AI will swap the face frame by frame...",
-      "custom_video_title": "Custom Img2Video",
-      "custom_video_desc": "Upload an image, AI will transform it into a vivid video clip.",
-      "img2video_title": "Img2Video (Addon)",
-      "img2video_desc": "Upload an image, enter prompt and specify action model to generate video.",
+      "custom_video_title": "Img2Video",
+      "custom_video_desc": "Upload an image, choose an action model or None, and generate the matching video.",
+      "img2video_title": "Img2Video",
+      "img2video_desc": "Upload an image, choose an action model or None, and generate the matching video.",
       "high_res_video_title": "High-Res Video",
       "high_res_video_desc": "Upload image and prompt, use state-of-the-art models to generate high-res video."
     }

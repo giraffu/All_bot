@@ -53,6 +53,35 @@ def test_base_video_strategy_normalizes_legacy_image_to_video_mode():
 
 
 @pytest.mark.parametrize(
+    ("strategy", "inputs"),
+    [
+        (
+            DefaultImageStrategy(MODE_IMG2IMG_LORA),
+            {
+                "saved_input_images": ["demo/input.png"],
+                "lora_name": "qwen/YARN_1.0.safetensors",
+                "lora_strength": 0.3,
+            },
+        ),
+        (
+            BaseVideoStrategy("video_lora"),
+            {
+                "saved_input_images": ["demo/input.png"],
+                "lora_name": "BreastGrow",
+                "lora_strength": 0.8,
+            },
+        ),
+    ],
+)
+def test_strategy_metadata_keeps_lora_context(strategy, inputs):
+    metadata = strategy.get_metadata(inputs)
+
+    assert metadata["saved_inputs"] == ["demo/input.png"]
+    assert metadata["lora_name"] == inputs["lora_name"]
+    assert metadata["lora_strength"] == inputs["lora_strength"]
+
+
+@pytest.mark.parametrize(
     ("legacy_task_type", "expected_mode"),
     [
         ("MODE_I2I_PRO", MODE_I2I_PRO),

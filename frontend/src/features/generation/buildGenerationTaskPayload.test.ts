@@ -49,7 +49,7 @@ describe('buildGenerationTaskPayload', () => {
   it('builds image to video payload with prompt inside inputs', () => {
     expect(
       buildGenerationTaskPayload({
-        taskType: 'video_lora',
+        taskType: 'custom_video',
         images: ['img-1'],
         resolution: 720,
         duration: 8,
@@ -58,7 +58,7 @@ describe('buildGenerationTaskPayload', () => {
         loraName: 'BreastGrow',
       }),
     ).toEqual({
-      task_type: 'video_lora',
+      task_type: 'custom_video',
       inputs: {
         images: ['img-1'],
         resolution: 720,

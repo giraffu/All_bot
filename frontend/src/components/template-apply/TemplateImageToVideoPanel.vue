@@ -12,6 +12,14 @@ import { useTemplateApplyUpload } from '@/composables/useTemplateApplyUpload'
 import { useTaskResult } from '@/composables/useTaskResult'
 import { useTaskStream } from '@/composables/useTaskStream'
 import { buildGenerationTaskPayload } from '@/features/generation/buildGenerationTaskPayload'
+import {
+  getDefaultImageToVideoLoraSelection,
+  getImageToVideoPayloadLoraName,
+  getImageToVideoRequestTaskType,
+  IMAGE_TO_VIDEO_LORA_OPTIONS,
+  isUnifiedImageToVideoTaskType,
+  normalizeImageToVideoLoraSelection
+} from '@/features/generation/imageToVideo'
 import { useTemplateApplyStore } from '@/stores/templateApply'
 import type { TemplateApplyContext } from '@/types/templateApply'
 import { resolveTemplateVideoApplyState } from '@/utils/templateVideoApplyState'
@@ -29,11 +37,9 @@ const sessionIdRef = computed(() => props.sessionId)
 const { uploadFile, uploadingSlots, progressBySlot, hasPendingUploads } = useTemplateApplyUpload(sessionIdRef)
 
 const taskType = computed(() => props.context.taskType ?? 'custom_video')
-const isCustomVideo = computed(() => taskType.value === 'custom_video')
-const isVideoLora = computed(() => taskType.value === 'video_lora')
+const isUnifiedImageToVideo = computed(() => isUnifiedImageToVideoTaskType(taskType.value))
 const isLtxVideo = computed(() => taskType.value === 'ltx_video')
 const taskTitle = computed(() => {
-  if (isVideoLora.value) return t('template_apply.image_to_video.title_video_lora')
   if (isLtxVideo.value) return t('template_apply.image_to_video.title_ltx_video')
   return t('template_apply.image_to_video.title_custom_video')
 })
@@ -43,7 +49,8 @@ const filePreview = ref<string | null>(null)
 const resolution = ref('512')
 const duration = ref('5')
 const prompt = ref('')
-const loraName = ref('BreastGrow')
+const loraSelection = ref(getDefaultImageToVideoLoraSelection(taskType.value))
+const loraName = computed(() => getImageToVideoPayloadLoraName(taskType.value, loraSelection.value))
 const templateSourcePostId = ref<number | null>(null)
 const isTemplateApplied = ref(false)
 const isTemplateVideoSettingsLocked = ref(false)
@@ -55,7 +62,7 @@ const initialObjectKey = ref<string | null>(null)
 const initialResolution = ref('512')
 const initialDuration = ref('5')
 const initialPrompt = ref('')
-const initialLoraName = ref('BreastGrow')
+const initialLoraSelection = ref(getDefaultImageToVideoLoraSelection(taskType.value))
 
 const taskCost = computed(() => {
   if (isLtxVideo.value) {
@@ -91,14 +98,14 @@ watch(
 )
 
 watch(
-  [objectKey, resolution, duration, prompt, loraName],
+  [objectKey, resolution, duration, prompt, loraSelection],
   () => {
     const isDirty =
       objectKey.value !== initialObjectKey.value
       || resolution.value !== initialResolution.value
       || duration.value !== initialDuration.value
       || prompt.value.trim() !== initialPrompt.value
-      || loraName.value !== initialLoraName.value
+      || loraSelection.value !== initialLoraSelection.value
     templateApplyStore.setDirtyState(isDirty)
   },
   { immediate: true }
@@ -139,7 +146,7 @@ const initializeFromContext = () => {
 
   if (templateState) {
     if (templateState.prompt) prompt.value = templateState.prompt
-    if (templateState.loraName) loraName.value = templateState.loraName
+    loraSelection.value = normalizeImageToVideoLoraSelection(templateState.loraName)
     if (templateState.sourcePostId != null) {
       templateSourcePostId.value = templateState.sourcePostId
     }
@@ -160,7 +167,7 @@ const initializeFromContext = () => {
   initialResolution.value = resolution.value
   initialDuration.value = duration.value
   initialPrompt.value = prompt.value.trim()
-  initialLoraName.value = loraName.value
+  initialLoraSelection.value = loraSelection.value
 }
 
 const beforeUpload = async (rawFile: File | { originFileObj?: File }) => {
@@ -197,19 +204,14 @@ const handleGenerate = async () => {
     return
   }
 
-  if (isVideoLora.value && !loraName.value) {
-    message.warning(t('template_apply.image_to_video.addon_required'))
-    return
-  }
-
   const payload = buildGenerationTaskPayload({
-    taskType: taskType.value,
+    taskType: getImageToVideoRequestTaskType(taskType.value, loraSelection.value),
     images: [objectKey.value],
     resolution: isLtxVideo.value ? resolution.value : Number(resolution.value),
     duration: Number(duration.value),
-    prompt: (isCustomVideo.value || isVideoLora.value || isLtxVideo.value) ? prompt.value : undefined,
+    prompt: (isUnifiedImageToVideo.value || isLtxVideo.value) ? prompt.value : undefined,
     promptTarget: 'inputs',
-    loraName: isVideoLora.value ? loraName.value : undefined,
+    loraName: loraName.value,
     isTemplate: isTemplateApplied.value,
     sourcePostId: templateSourcePostId.value,
   })
@@ -303,7 +305,7 @@ onBeforeUnmount(() => {
 
         <div class="mt-6 rounded-xl border border-slate-700 bg-slate-800/70 p-4">
           <div class="text-sm font-semibold text-slate-200 mb-3">
-            {{ isVideoLora ? t('template_apply.image_to_video.action_and_model') : t('template_apply.image_to_video.desc_and_params') }}
+            {{ isUnifiedImageToVideo ? t('template_apply.image_to_video.action_and_model') : t('template_apply.image_to_video.desc_and_params') }}
           </div>
 
           <div v-if="isTemplatePromptLocked" class="rounded-xl border border-slate-700 bg-slate-900/70 px-4 py-6 text-center text-sm text-slate-300">
@@ -311,25 +313,25 @@ onBeforeUnmount(() => {
             <div class="mt-2 text-xs text-slate-400">{{ t('template_apply.common.prompt_locked_video_hint') }}</div>
           </div>
           <template v-else>
-            <div v-if="isVideoLora" class="mb-3">
+            <div v-if="isUnifiedImageToVideo" class="mb-3">
               <a-select
-                v-model:value="loraName"
+                v-model:value="loraSelection"
                 :placeholder="t('template_apply.image_to_video.select_addon')"
                 class="w-full"
               >
-                <a-select-option value="BreastGrow">巨乳膨胀</a-select-option>
-                <a-select-option value="BreastInsertion">乳交</a-select-option>
-                <a-select-option value="Cum">颜射</a-select-option>
-                <a-select-option value="Cunilingus">舔阴</a-select-option>
-                <a-select-option value="Flatchested">平胸</a-select-option>
-                <a-select-option value="Footjob">足交</a-select-option>
-                <a-select-option value="Insertion">插入优化</a-select-option>
+                <a-select-option
+                  v-for="option in IMAGE_TO_VIDEO_LORA_OPTIONS"
+                  :key="option.value"
+                  :value="option.value"
+                >
+                  {{ option.label }}
+                </a-select-option>
               </a-select>
             </div>
             <a-textarea
               v-model:value="prompt"
               :rows="6"
-              :placeholder="isVideoLora ? t('template_apply.image_to_video.prompt_placeholder_video_lora') : t('template_apply.image_to_video.prompt_placeholder_custom')"
+              :placeholder="isUnifiedImageToVideo ? t('template_apply.image_to_video.prompt_placeholder_video_lora') : t('template_apply.image_to_video.prompt_placeholder_custom')"
             />
           </template>
         </div>

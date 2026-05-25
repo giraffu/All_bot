@@ -24,7 +24,7 @@ export function resolveGalleryTaskTypeLabel(
     .replace('i2i_pro', 'face_swap')
     .replace('edit', 'custom_edit')
     .replace('img2img_lora', 'img2img')
-    .replace('custom_video', 'custom_video')
+    .replace('custom_video', 'img2video')
     .replace('video_lora', 'img2video')
     .replace('ltx_video', 'high_res_video')
 

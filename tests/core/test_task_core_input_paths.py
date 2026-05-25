@@ -13,6 +13,7 @@ from src.core.task_core_video_request import (
 )
 from src.core.task_core_types import (
     CoreDomainError,
+    TaskSubmissionContext,
     VideoTaskRequest,
 )
 
@@ -170,3 +171,30 @@ async def test_prepare_task_submission_payload_caps_priority_at_100():
     assert result.final_priority == 100
     assert result.prompt == "keep me"
     assert result.allow_contribute is False
+
+
+def test_task_submission_context_log_prompt_embeds_lora_context_for_history():
+    submission_context = SimpleNamespace(
+        user_id=9,
+        username="tester",
+    )
+    context = TaskSubmissionContext(
+        task_type="img2img_lora",
+        is_video_task=False,
+        user_logger=submission_context,
+        prompt="cinematic portrait",
+        saved_inputs=["demo/input.png"],
+        metadata={
+            "saved_inputs": ["demo/input.png"],
+            "lora_name": "qwen/YARN_1.0.safetensors",
+            "lora_strength": 0.35,
+        },
+        allow_contribute=True,
+        final_priority=7,
+        video_request=VideoTaskRequest(),
+    )
+
+    assert (
+        context.log_prompt
+        == "[模型: qwen/YARN_1.0.safetensors] [强度: 0.35] cinematic portrait"
+    )

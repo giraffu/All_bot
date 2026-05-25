@@ -10,7 +10,7 @@ from src.core.video_billing import (
     resolve_legacy_requested_duration,
 )
 from src.database.models import GalleryPost, History
-from src.lora_mapping import extract_prompt_lora_name
+from src.lora_mapping import extract_prompt_lora_context
 from src.web_api.schemas.gallery_schema import ApplyContextResponse
 
 
@@ -31,6 +31,7 @@ def build_apply_context_response(
     media_type: str,
     prompt: str | None,
     lora_name: str | None,
+    lora_strength: float | None,
     input_file: str | None,
     input_file_url: str | None,
     width: int | None,
@@ -47,6 +48,7 @@ def build_apply_context_response(
         media_type=media_type,
         prompt=prompt,
         lora_name=lora_name,
+        lora_strength=lora_strength,
         input_file=input_file,
         input_file_url=input_file_url,
         width=width,
@@ -138,7 +140,7 @@ async def build_history_apply_context_response(
         history.prompt,
         history.requested_duration,
     )
-    prompt, lora_name = extract_prompt_lora_name(prompt)
+    prompt, lora_name, lora_strength = extract_prompt_lora_context(prompt)
 
     media_type, width, height, duration = resolve_apply_context_media_metadata(
         task_type=history.type,
@@ -188,6 +190,7 @@ async def build_history_apply_context_response(
         media_type=media_type,
         prompt=prompt,
         lora_name=lora_name,
+        lora_strength=lora_strength,
         input_file=input_file,
         input_file_url=input_file_url,
         width=width,

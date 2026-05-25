@@ -71,15 +71,6 @@ const features = [
     route: 'SingleImageToVideo'
   },
   {
-    key: 'video_lora',
-    title: 'lab.cards.img2video_title',
-    description: 'lab.cards.img2video_desc',
-    icon: Video,
-    color: 'bg-emerald-100 text-emerald-600',
-    cost: 6,
-    route: 'SingleImageToVideo'
-  },
-  {
     key: 'ltx_video',
     title: 'lab.cards.high_res_video_title',
     description: 'lab.cards.high_res_video_desc',

@@ -1,10 +1,14 @@
 import re
+from typing import Any
 
 from src.lora_catalog import ALL_LORA_MODELS
 
 REVERSE_LORA_MODELS = {
     display_name: model_name for model_name, display_name in ALL_LORA_MODELS.items()
 }
+
+MODEL_TAG_PATTERN = re.compile(r"^\[模型:\s*(.*?)\]")
+STRENGTH_TAG_PATTERN = re.compile(r"^\[强度:\s*([0-9]*\.?[0-9]+)\]")
 
 # 历史 prompt 中可能残留手写/旧展示名，这里统一兜底到模型文件名。
 REVERSE_LORA_MODELS.update(
@@ -39,14 +43,57 @@ def resolve_lora_name_from_tag(tag: str | None) -> str | None:
     return REVERSE_LORA_MODELS.get(normalized_tag, normalized_tag)
 
 
+def _normalize_lora_strength(value: Any) -> float | None:
+    if value is None:
+        return None
+    try:
+        normalized = float(value)
+    except (TypeError, ValueError):
+        return None
+    return normalized if normalized >= 0 else None
+
+
+def extract_prompt_lora_context(
+    prompt: str | None,
+) -> tuple[str, str | None, float | None]:
+    raw_prompt = (prompt or "").strip()
+    model_match = MODEL_TAG_PATTERN.match(raw_prompt)
+    if not model_match:
+        return raw_prompt, None, None
+
+    lora_tag = model_match.group(1).strip()
+    clean_prompt = raw_prompt[model_match.end() :].lstrip()
+    strength_match = STRENGTH_TAG_PATTERN.match(clean_prompt)
+    lora_strength = None
+    if strength_match:
+        lora_strength = _normalize_lora_strength(strength_match.group(1))
+        clean_prompt = clean_prompt[strength_match.end() :].lstrip()
+
+    return clean_prompt, resolve_lora_name_from_tag(lora_tag), lora_strength
+
+
 def extract_prompt_lora_name(
     prompt: str | None,
 ) -> tuple[str, str | None]:
-    raw_prompt = (prompt or "").strip()
-    match = re.search(r"\[模型:\s*(.*?)\]\s*(.*)", raw_prompt, re.DOTALL)
-    if not match:
-        return raw_prompt, None
+    clean_prompt, lora_name, _ = extract_prompt_lora_context(prompt)
+    return clean_prompt, lora_name
 
-    lora_tag = match.group(1).strip()
-    clean_prompt = match.group(2).strip()
-    return clean_prompt, resolve_lora_name_from_tag(lora_tag)
+
+def decorate_prompt_with_lora_context(
+    prompt: str | None,
+    *,
+    lora_name: str | None,
+    lora_strength: Any = None,
+) -> str:
+    raw_prompt = (prompt or "").strip()
+    if not lora_name:
+        return raw_prompt
+
+    clean_prompt, _, _ = extract_prompt_lora_context(raw_prompt)
+    parts = [f"[模型: {lora_name}]"]
+    normalized_strength = _normalize_lora_strength(lora_strength)
+    if normalized_strength is not None:
+        parts.append(f"[强度: {normalized_strength:.2f}]")
+    if clean_prompt:
+        parts.append(clean_prompt)
+    return " ".join(parts)

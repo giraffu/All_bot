@@ -358,7 +358,7 @@ describe('TemplateImageToVideoPanel', () => {
     expect(uploadFileMock).toHaveBeenCalledWith(file, { slot: 'base_image' })
     expect(submitTaskMock).toHaveBeenCalledTimes(1)
     expect(submitTaskMock.mock.calls[0]?.[0]).toEqual({
-      task_type: 'video_lora',
+      task_type: 'custom_video',
       inputs: {
         images: ['uploads/base.png'],
         resolution: 1024,
@@ -481,7 +481,7 @@ describe('TemplateImageToVideoPanel', () => {
 
     expect(submitTaskMock).toHaveBeenCalledTimes(1)
     expect(submitTaskMock.mock.calls[0]?.[0]).toEqual({
-      task_type: 'video_lora',
+      task_type: 'custom_video',
       inputs: {
         images: ['uploads/base.png'],
         resolution: 720,
@@ -492,6 +492,65 @@ describe('TemplateImageToVideoPanel', () => {
       priority: 0,
       is_template: true,
       source_post_id: 121
+    })
+  })
+
+  it('normalizes empty template lora selection to custom_video without lora_name', async () => {
+    const wrapper = mountPanel({
+      raw: {
+        post_id: 6,
+        source_post_id: 122,
+        task_id: 'task-template-video-lora-none',
+        media_type: 'video',
+        task_type: 'video_lora',
+        prompt: 'gentle motion',
+        lora_name: '',
+        width: 720,
+        height: 1280,
+        duration: 8,
+        billing_resolution: '720'
+      },
+      rawEntityId: 6,
+      rawTaskType: 'video_lora',
+      taskType: 'video_lora',
+      sourcePostId: 122,
+      prompt: 'gentle motion',
+      loraName: null,
+      width: 720,
+      height: 1280,
+      duration: 8,
+      billingResolution: '720'
+    })
+    await nextTick()
+
+    const file = new File(['base'], 'base.png', { type: 'image/png' })
+    const uploader = wrapper.findComponent(UploadDraggerStub)
+    await uploader.props('beforeUpload')(file)
+    await flushPromises()
+
+    const generateButton = wrapper
+      .findAllComponents(ButtonStub)
+      .find(button => button.text().includes('生成视频'))
+
+    if (!generateButton) {
+      throw new Error('Expected generate button to exist')
+    }
+
+    await generateButton.trigger('click')
+    await flushPromises()
+
+    expect(submitTaskMock).toHaveBeenCalledTimes(1)
+    expect(submitTaskMock.mock.calls[0]?.[0]).toEqual({
+      task_type: 'custom_video',
+      inputs: {
+        images: ['uploads/base.png'],
+        resolution: 720,
+        duration: 8,
+        prompt: 'gentle motion'
+      },
+      priority: 0,
+      is_template: true,
+      source_post_id: 122
     })
   })
 

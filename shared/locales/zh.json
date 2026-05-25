@@ -306,10 +306,10 @@
       "fast_face_swap_desc": "极速人脸替换体验，适合标准场景的快速处理。",
       "video_face_swap_title": "视频换脸",
       "video_face_swap_desc": "上传人脸和一段视频，AI 将逐帧替换视频中的人脸，生成自然流畅的换脸视...",
-      "custom_video_title": "自定义图生视频",
-      "custom_video_desc": "上传图像，AI 将其转化为生动的视频片段。",
-      "img2video_title": "图生视频 (附加模型)",
-      "img2video_desc": "上传图像，输入提示词并指定动作模型，生成定制动作视频。",
+      "custom_video_title": "图生视频",
+      "custom_video_desc": "上传图像，选择动作模型或“无”，即可生成对应的图生视频。",
+      "img2video_title": "图生视频",
+      "img2video_desc": "上传图像，选择动作模型或“无”，即可生成对应的图生视频。",
       "high_res_video_title": "高级图生视频",
       "high_res_video_desc": "上传图像与提示词，使用最先进的模型生成高分辨率、更长时长的视频。"
     }

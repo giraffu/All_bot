@@ -88,7 +88,7 @@ export const TEMPLATE_TASK_META_MAP: Record<TemplateApplyTaskType, TemplateTaskM
     supportMode: 'workbench',
     panelKind: 'imageToVideo',
     legacyRouteName: 'SingleImageToVideo',
-    legacyTitleKey: 'lab.cards.img2video_title',
+    legacyTitleKey: 'lab.cards.custom_video_title',
     legacyCost: 6
   }),
   ltx_video: createMeta({

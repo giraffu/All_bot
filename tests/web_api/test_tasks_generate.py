@@ -66,7 +66,11 @@ def _patch_web_generate_dependencies(monkeypatch, *, expected_balance=888):
             user_logger=type("Logger", (), {"user_id": 123, "username": "tester"})(),
             prompt=inputs.get("prompt", ""),
             saved_inputs=list(inputs.get("images", [])),
-            metadata={},
+            metadata={
+                key: inputs[key]
+                for key in ("lora_name", "lora_strength")
+                if inputs.get(key) is not None
+            },
             allow_contribute=True,
             final_priority=0,
             video_request=video_request,
@@ -184,7 +188,7 @@ async def test_web_apply_submit_cost_for_video_lora(monkeypatch):
         user_id=123,
         task_id="task-2",
         type="video_lora",
-        prompt="[模型: BreastGrow] glowing neon city",
+        prompt="[模型: BreastGrow] [强度: 0.80] glowing neon city",
         billing_resolution="1024",
         width=1024,
         height=1024,
@@ -207,6 +211,7 @@ async def test_web_apply_submit_cost_for_video_lora(monkeypatch):
     assert apply_context.duration == 8
     assert apply_context.prompt == "glowing neon city"
     assert apply_context.lora_name == "BreastGrow"
+    assert apply_context.lora_strength == 0.8
 
     monitor_calls, deduct_credits = _patch_web_generate_dependencies(monkeypatch)
 
@@ -218,6 +223,7 @@ async def test_web_apply_submit_cost_for_video_lora(monkeypatch):
             "duration": apply_context.requested_duration or apply_context.duration,
             "prompt": apply_context.prompt,
             "lora_name": apply_context.lora_name,
+            "lora_strength": apply_context.lora_strength,
         },
         is_template=True,
         source_post_id=apply_context.source_post_id,
@@ -235,3 +241,4 @@ async def test_web_apply_submit_cost_for_video_lora(monkeypatch):
     submission_context = monitor_calls[0]["submission_context"]
     assert submission_context.billing_resolution == "1024"
     assert submission_context.requested_duration == 8
+    assert submission_context.log_prompt == "[模型: BreastGrow] [强度: 0.80] glowing neon city"

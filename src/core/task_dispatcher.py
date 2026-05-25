@@ -42,6 +42,15 @@ def _get_primary_saved_input(inputs: Dict[str, Any]) -> str:
     return saved_images[0] if saved_images else ""
 
 
+def _append_lora_metadata(metadata: Dict[str, Any], inputs: Dict[str, Any]) -> Dict[str, Any]:
+    lora_name = inputs.get("lora_name")
+    if lora_name:
+        metadata["lora_name"] = lora_name
+    if inputs.get("lora_strength") is not None:
+        metadata["lora_strength"] = inputs.get("lora_strength")
+    return metadata
+
+
 def _resolve_video_frame_length(duration: Any) -> int:
     if isinstance(duration, str):
         duration = int(duration.replace("s", ""))
@@ -121,7 +130,10 @@ class DefaultImageStrategy(BaseTaskStrategy):
         return inputs
 
     def get_metadata(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
-        return {"saved_inputs": inputs.get("saved_input_images", [])}
+        return _append_lora_metadata(
+            {"saved_inputs": inputs.get("saved_input_images", [])},
+            inputs,
+        )
 
     def get_file_paths_to_upload(self, inputs: Dict[str, Any]) -> list[str]:
         return inputs.get("images", [])
@@ -180,7 +192,10 @@ class FaceSwapStrategy(BaseTaskStrategy):
         return inputs
 
     def get_metadata(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
-        return {"saved_inputs": _get_saved_input_images(inputs)}
+        return _append_lora_metadata(
+            {"saved_inputs": _get_saved_input_images(inputs)},
+            inputs,
+        )
 
     def get_file_paths_to_upload(self, inputs: Dict[str, Any]) -> list[str]:
         # 按照原来的逻辑：先是 body_img (target_image)，再是 face_img (face_image)
@@ -236,7 +251,10 @@ class BaseVideoStrategy(BaseTaskStrategy):
         return inputs
 
     def get_metadata(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
-        return {"saved_inputs": _get_saved_input_images(inputs)}
+        return _append_lora_metadata(
+            {"saved_inputs": _get_saved_input_images(inputs)},
+            inputs,
+        )
 
     def get_file_paths_to_upload(self, inputs: Dict[str, Any]) -> list[str]:
         if self.mode in FACE_VIDEO_TASK_TYPES:
@@ -327,7 +345,10 @@ class LtxVideoStrategy(BaseTaskStrategy):
         return inputs
 
     def get_metadata(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
-        return {"saved_inputs": _get_saved_input_images(inputs)}
+        return _append_lora_metadata(
+            {"saved_inputs": _get_saved_input_images(inputs)},
+            inputs,
+        )
 
     def get_file_paths_to_upload(self, inputs: Dict[str, Any]) -> list[str]:
         return inputs.get("images", [])

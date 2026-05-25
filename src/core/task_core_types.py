@@ -2,6 +2,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from src.logger import UserLogger
+from src.lora_mapping import decorate_prompt_with_lora_context
 
 
 @dataclass(frozen=True, slots=True)
@@ -27,7 +28,11 @@ class TaskSubmissionContext:
 
     @property
     def log_prompt(self) -> str:
-        return self.prompt
+        return decorate_prompt_with_lora_context(
+            self.prompt,
+            lora_name=self.metadata.get("lora_name"),
+            lora_strength=self.metadata.get("lora_strength"),
+        )
 
     @property
     def billing_resolution(self) -> str | None:
