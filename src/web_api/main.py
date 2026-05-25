@@ -13,6 +13,8 @@ from src.core.exceptions import (
     InsufficientCreditsError,
     AccessDeniedError,
 )
+from src.billing_core_provider_setup import ensure_billing_core_providers_registered
+from src.task_core_provider_setup import ensure_task_core_service_providers_registered
 
 from src.database.core import engine
 from src.web_api.routers import auth, gallery, storage, tasks, users, payment
@@ -43,6 +45,8 @@ class MaintenanceMiddleware(BaseHTTPMiddleware):
 async def lifespan(fastapi_app: FastAPI):
     # Startup: setup resources if needed
     logger.info("Web BFF API is starting up...")
+    ensure_task_core_service_providers_registered()
+    ensure_billing_core_providers_registered()
     yield
     # Shutdown: cleanup resources
     logger.info("Web BFF API is shutting down...")

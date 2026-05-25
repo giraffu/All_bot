@@ -14,7 +14,7 @@ from src.core.task_core_types import (
 
 
 @pytest.mark.asyncio
-async def test_process_and_submit_task_uses_process_dependencies_builder(monkeypatch):
+async def test_process_and_submit_task_uses_explicit_process_dependencies():
     strategy = MagicMock()
     strategy.get_cost.return_value = 18
     check_lock = AsyncMock(return_value=(True, ""))
@@ -40,23 +40,19 @@ async def test_process_and_submit_task_uses_process_dependencies_builder(monkeyp
     logger = MagicMock()
     build_video_task_request = MagicMock(return_value=VideoTaskRequest())
 
-    monkeypatch.setattr(
-        task_core,
-        "_build_task_core_process_dependencies_impl",
-        lambda **_kwargs: TaskCoreProcessDependencies(
-            get_strategy_func=MagicMock(return_value=strategy),
-            video_task_types={"custom_video"},
-            build_video_task_request_func=build_video_task_request,
-            check_concurrency_lock_func=check_lock,
-            prepare_task_submission_payload_func=prepare_payload,
-            check_and_deduct_credits_func=deduct_credits,
-            execute_task_submission_saga_func=execute_saga,
-            attach_submission_side_effects_func=attach_side_effects,
-            compensate_failed_submission_func=compensate_failed,
-            release_concurrency_lock_func=release_lock,
-            shield_func=shield,
-            logger=logger,
-        ),
+    dependencies = TaskCoreProcessDependencies(
+        get_strategy_func=MagicMock(return_value=strategy),
+        video_task_types={"custom_video"},
+        build_video_task_request_func=build_video_task_request,
+        check_concurrency_lock_func=check_lock,
+        prepare_task_submission_payload_func=prepare_payload,
+        check_and_deduct_credits_func=deduct_credits,
+        execute_task_submission_saga_func=execute_saga,
+        attach_submission_side_effects_func=attach_side_effects,
+        compensate_failed_submission_func=compensate_failed,
+        release_concurrency_lock_func=release_lock,
+        shield_func=shield,
+        logger=logger,
     )
 
     result = await task_core.process_and_submit_task(
@@ -65,6 +61,7 @@ async def test_process_and_submit_task_uses_process_dependencies_builder(monkeyp
         task_type="custom_video",
         inputs={"prompt": "hello"},
         task_id="registry-1",
+        dependencies=dependencies,
     )
 
     assert result == {

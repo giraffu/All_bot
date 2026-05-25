@@ -82,9 +82,11 @@ File.download_to_drive = custom_download_to_drive
 
 import asyncio
 
+from src.billing_core_provider_setup import ensure_billing_core_providers_registered
 from src.services.payment_validator import TonPaymentValidator
 from src.services.recovery_service import recover_active_tasks
 from src.services.task_registry import TaskRegistry
+from src.task_core_provider_setup import ensure_task_core_service_providers_registered
 
 
 async def clean_zombies_loop(bot=None):
@@ -157,6 +159,8 @@ async def post_init(application):
     from src.handlers.prompt_router import build_global_menu_filter
 
     build_global_menu_filter()
+    ensure_task_core_service_providers_registered()
+    ensure_billing_core_providers_registered()
 
     await init_db()
     await setup_commands(application)

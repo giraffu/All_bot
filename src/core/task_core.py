@@ -68,11 +68,8 @@ from src.core.task_core_web_history_warmup import (
     schedule_web_history_r2_warmup_default as _schedule_web_history_r2_warmup_default,
 )
 from src.logger import UserLogger
-from src.task_core_provider_setup import ensure_task_core_service_providers_registered
 
 logger = logging.getLogger(__name__)
-
-ensure_task_core_service_providers_registered()
 
 __all__ = [
     "ConcurrencyLimitError",

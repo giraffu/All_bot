@@ -1,7 +1,6 @@
 import logging
 import uuid
 from contextlib import asynccontextmanager
-from functools import partial
 from typing import Annotated, Optional
 
 from app.config import settings
@@ -21,29 +20,16 @@ from app.models import (
     TaskType,
 )
 from app.main_response_helpers import (
-    build_result_url as build_result_url_helper,
     build_system_status_response as build_system_status_response_helper,
     build_system_workers_response as build_system_workers_response_helper,
-    build_task_status_response as build_task_status_response_helper,
     cancel_task_or_404 as cancel_task_or_404_helper,
-    serve_task_result_file as serve_task_result_file_helper,
 )
 from app.main_t2i_helpers import (
-    build_t2i_terminal_response as build_t2i_terminal_response_helper,
-    build_task_event_channel as build_task_event_channel_helper,
-    close_task_event_subscription as close_task_event_subscription_helper,
-    decode_t2i_pubsub_message as decode_t2i_pubsub_message_helper,
-    enqueue_t2i_task as enqueue_t2i_task_helper,
-    get_immediate_t2i_terminal_response as get_immediate_t2i_terminal_response_helper,
-    optional_t2i_task_subscription as optional_t2i_task_subscription_helper,
     prepare_t2i_request_payload as prepare_t2i_request_payload_helper,
     resolve_t2i_priority as resolve_t2i_priority_helper,
-    submit_t2i_task_request as submit_t2i_task_request_helper,
-    subscribe_task_events as subscribe_task_events_helper,
     validate_t2i_prompt as validate_t2i_prompt_helper,
-    wait_for_t2i_sync_result as wait_for_t2i_sync_result_helper,
-    wait_for_t2i_terminal_response as wait_for_t2i_terminal_response_helper,
 )
+from app.main_t2i_wiring import build_t2i_wiring
 from app.main_simple_task_routes import (
     enqueue_configured_task as enqueue_configured_task_helper,
     register_simple_task_routes,
@@ -61,9 +47,8 @@ from fastapi import (
     FastAPI,
     HTTPException,
     Query,
-    Request,
 )
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from fastapi.security import HTTPBearer
 from minio import Minio
 from src.workflow_mapping_validation import validate_workflow_directory
 
@@ -103,54 +88,10 @@ verify_token = build_verify_token_dependency(
 QueueManagerDep = Annotated[QueueManager, Depends(get_queue_manager)]
 AuthTokenDep = Annotated[str, Depends(verify_token)]
 MinioClientDep = Annotated[Optional[Minio], Depends(get_minio_client)]
-
-def _build_result_url(result_path: str) -> str:
-    return build_result_url_helper(
-        result_path=result_path,
-        settings=settings,
-    )
-
-_build_t2i_terminal_response_func = partial(
-    build_t2i_terminal_response_helper,
+_t2i_wiring = build_t2i_wiring(
     response_cls=T2ITaskResponse,
-    build_result_url_func=_build_result_url,
-    logger=logger,
-)
-_wait_for_t2i_terminal_response_func = partial(
-    wait_for_t2i_terminal_response_helper,
-    decode_message_func=decode_t2i_pubsub_message_helper,
-    build_terminal_response_func=_build_t2i_terminal_response_func,
-)
-_subscribe_task_events_func = partial(
-    subscribe_task_events_helper,
-    build_channel_func=build_task_event_channel_helper,
-)
-_optional_t2i_task_subscription_func = partial(
-    optional_t2i_task_subscription_helper,
-    subscribe_task_events_func=_subscribe_task_events_func,
-    close_task_event_subscription_func=close_task_event_subscription_helper,
-)
-_enqueue_t2i_task_func = partial(
-    enqueue_t2i_task_helper,
     task_type=TaskType.T2I_PORNMASTER_TURBO,
-    logger=logger,
-)
-_get_immediate_t2i_terminal_response_func = partial(
-    get_immediate_t2i_terminal_response_helper,
-    build_terminal_response_func=_build_t2i_terminal_response_func,
-)
-_wait_for_t2i_sync_result_func = partial(
-    wait_for_t2i_sync_result_helper,
-    logger=logger,
-    get_immediate_response_func=_get_immediate_t2i_terminal_response_func,
-    wait_for_terminal_response_func=_wait_for_t2i_terminal_response_func,
-)
-_submit_t2i_task_request_func = partial(
-    submit_t2i_task_request_helper,
-    response_cls=T2ITaskResponse,
-    optional_subscription_func=_optional_t2i_task_subscription_func,
-    enqueue_t2i_task_func=_enqueue_t2i_task_func,
-    wait_for_sync_result_func=_wait_for_t2i_sync_result_func,
+    settings=settings,
     logger=logger,
 )
 
@@ -192,7 +133,7 @@ async def create_t2i_pornmaster_turbo_task(
         logger.error(f"[{request_id}] Invalid prompt: {request.get('prompt')}")
         raise
 
-    return await _submit_t2i_task_request_func(
+    return await _t2i_wiring.submit_task_request_func(
         async_mode=async_mode,
         queue_manager=queue_manager,
         task_id=task_id,
@@ -215,21 +156,14 @@ register_task_status_routes(
     app=app,
     task_status_response_model=TaskStatusResponse,
     queue_manager_dep=QueueManagerDep,
-    build_task_status_response_func=partial(
-        build_task_status_response_helper,
-        build_result_url_func=_build_result_url,
-    ),
+    build_task_status_response_func=_t2i_wiring.build_task_status_response_func,
 )
 
 register_task_result_routes(
     app=app,
     queue_manager_dep=QueueManagerDep,
     minio_client_dep=MinioClientDep,
-    serve_task_result_file_func=partial(
-        serve_task_result_file_helper,
-        settings=settings,
-        logger=logger,
-    ),
+    serve_task_result_file_func=_t2i_wiring.serve_task_result_file_func,
 )
 
 

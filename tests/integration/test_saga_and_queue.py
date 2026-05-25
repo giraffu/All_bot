@@ -11,7 +11,7 @@ from src.core.task_core_types import CoreDomainError, TaskSubmissionContext, Vid
 
 # Dummy test for Saga Compensation to verify asyncio.shield logic
 @pytest.mark.asyncio
-async def test_saga_compensation_refunds_credits_and_releases_lock(monkeypatch):
+async def test_saga_compensation_refunds_credits_and_releases_lock():
     user_id = 123
     username = "test_user"
     task_type = "face_swap"
@@ -45,29 +45,32 @@ async def test_saga_compensation_refunds_credits_and_releases_lock(monkeypatch):
             username=kwargs["username"],
         )
 
-    monkeypatch.setattr(
-        task_core,
-        "_build_task_core_process_dependencies_impl",
-        lambda **_kwargs: TaskCoreProcessDependencies(
-            get_strategy_func=lambda _task_type: SimpleNamespace(
-                get_cost=lambda _inputs: 1
-            ),
-            video_task_types={"custom_video", "ltx_video"},
-            build_video_task_request_func=task_core.build_video_task_request,
-            check_concurrency_lock_func=mock_lock,
-            prepare_task_submission_payload_func=prepare_payload,
-            check_and_deduct_credits_func=mock_deduct,
-            execute_task_submission_saga_func=execute_saga,
-            attach_submission_side_effects_func=lambda **_kwargs: None,
-            compensate_failed_submission_func=compensate_failed_submission,
-            release_concurrency_lock_func=mock_release,
-            shield_func=lambda coro: coro,
-            logger=task_core.logger,
+    dependencies = TaskCoreProcessDependencies(
+        get_strategy_func=lambda _task_type: SimpleNamespace(
+            get_cost=lambda _inputs: 1
         ),
+        video_task_types={"custom_video", "ltx_video"},
+        build_video_task_request_func=task_core.build_video_task_request,
+        check_concurrency_lock_func=mock_lock,
+        prepare_task_submission_payload_func=prepare_payload,
+        check_and_deduct_credits_func=mock_deduct,
+        execute_task_submission_saga_func=execute_saga,
+        attach_submission_side_effects_func=lambda **_kwargs: None,
+        compensate_failed_submission_func=compensate_failed_submission,
+        release_concurrency_lock_func=mock_release,
+        shield_func=lambda coro: coro,
+        logger=task_core.logger,
     )
 
     with pytest.raises(CoreDomainError, match="系统派发失败，灵石已全额退还"):
-        await process_and_submit_task(user_id, username, task_type, inputs, "test_task_id")
+        await process_and_submit_task(
+            user_id,
+            username,
+            task_type,
+            inputs,
+            "test_task_id",
+            dependencies=dependencies,
+        )
 
     mock_deduct.assert_awaited_once()
     mock_refund.assert_awaited_once_with(

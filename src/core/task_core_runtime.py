@@ -9,11 +9,8 @@ from src.core.task_core_service_providers import (
     get_task_core_task_registry,
 )
 from src.core.task_core_types import CoreDomainError
-from src.task_core_provider_setup import ensure_task_core_service_providers_registered
 
 logger = logging.getLogger(__name__)
-
-ensure_task_core_service_providers_registered()
 
 
 async def cleanup_task_runtime_state(

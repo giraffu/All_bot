@@ -13,26 +13,9 @@ from src.core.billing_core_membership import calculate_identity_manual_conversio
 from src.core.billing_core_membership import calculate_membership_settlement
 from src.core.exceptions import InsufficientCreditsError
 from src.core.billing_core_membership import normalize_membership_identity
-from src.quota import QuotaManager
 
 logger = logging.getLogger(__name__)
-_quota_manager_impl = QuotaManager()
-
-
-def _load_permission_service():
-    from src.services.permission_service import permission_service as permission_service_impl
-
-    return permission_service_impl
-
-
-def _load_redis_client():
-    from src.services.redis_client import redis_client as redis_client_impl
-
-    return redis_client_impl
-
-
-def _load_quota_manager():
-    return _quota_manager_impl
+_configured_billing_core_providers = None
 
 
 __all__ = [
@@ -44,7 +27,9 @@ __all__ = [
     "MembershipSettlementResult",
     "build_default_billing_core_dependencies",
     "build_default_billing_core_providers",
+    "configure_billing_core_providers",
     "get_default_billing_core_dependencies",
+    "get_configured_billing_core_providers",
     "calculate_identity_conversion",
     "calculate_identity_manual_conversion",
     "calculate_membership_settlement",
@@ -77,20 +62,33 @@ class BillingCoreProviders:
     get_quota_manager_func: Callable[[], Any]
 
 
-def get_default_billing_core_providers() -> BillingCoreProviders:
-    from src.api_client import get_system_status
+def configure_billing_core_providers(
+    providers: BillingCoreProviders,
+) -> BillingCoreProviders:
+    global _configured_billing_core_providers
+    _configured_billing_core_providers = providers
+    return providers
 
-    return build_default_billing_core_providers(
-        get_system_status_func=get_system_status,
-    )
+
+def get_configured_billing_core_providers() -> BillingCoreProviders | None:
+    return _configured_billing_core_providers
+
+
+def get_default_billing_core_providers() -> BillingCoreProviders:
+    providers = get_configured_billing_core_providers()
+    if providers is None:
+        raise RuntimeError(
+            "Billing core providers 未注册，请先在应用入口调用 configure_billing_core_providers(...)。"
+        )
+    return providers
 
 
 def build_default_billing_core_providers(
     *,
     get_system_status_func,
-    get_permission_service_func=_load_permission_service,
-    get_redis_client_func=_load_redis_client,
-    get_quota_manager_func=_load_quota_manager,
+    get_permission_service_func,
+    get_redis_client_func,
+    get_quota_manager_func,
 ) -> BillingCoreProviders:
     return BillingCoreProviders(
         get_system_status_func=get_system_status_func,

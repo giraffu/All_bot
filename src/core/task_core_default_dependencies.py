@@ -43,11 +43,8 @@ from src.core.task_core_service_providers import (
 from src.core.task_core_error_helpers import is_task_backend_busy_error
 from src.core.task_dispatcher import dispatch_to_worker
 from src.logger import UserLogger
-from src.task_core_provider_setup import ensure_task_core_service_providers_registered
 
 logger = logging.getLogger("src.core.task_core")
-
-ensure_task_core_service_providers_registered()
 
 
 @lru_cache(maxsize=1)

@@ -10,6 +10,7 @@ from src.database.models import History
 from src.web_api.routers import tasks as tasks_router
 from src.web_api.routers import users as users_router
 from src.web_api.schemas.task_schema import TaskGenerateRequest
+from src.web_api.services import task_submission_service
 
 
 class _FakeResult:
@@ -81,25 +82,33 @@ def _patch_web_generate_dependencies(monkeypatch, *, expected_balance=888):
     def attach_side_effects(**kwargs):
         monitor_calls.append(kwargs)
 
-    monkeypatch.setattr(
-        task_core,
-        "_build_task_core_process_dependencies_impl",
-        lambda **_kwargs: TaskCoreProcessDependencies(
-            get_strategy_func=lambda _task_type: task_core.StrategyFactory.get_strategy(
-                _task_type
-            ),
-            video_task_types={"custom_video", "video_lora"},
-            build_video_task_request_func=task_core.build_video_task_request,
-            check_concurrency_lock_func=check_lock,
-            prepare_task_submission_payload_func=prepare_payload,
-            check_and_deduct_credits_func=deduct_credits,
-            execute_task_submission_saga_func=execute_saga,
-            attach_submission_side_effects_func=attach_side_effects,
-            compensate_failed_submission_func=AsyncMock(),
-            release_concurrency_lock_func=AsyncMock(),
-            shield_func=lambda coro: coro,
-            logger=task_core.logger,
+    dependencies = TaskCoreProcessDependencies(
+        get_strategy_func=lambda _task_type: task_core.StrategyFactory.get_strategy(
+            _task_type
         ),
+        video_task_types={"custom_video", "video_lora"},
+        build_video_task_request_func=task_core.build_video_task_request,
+        check_concurrency_lock_func=check_lock,
+        prepare_task_submission_payload_func=prepare_payload,
+        check_and_deduct_credits_func=deduct_credits,
+        execute_task_submission_saga_func=execute_saga,
+        attach_submission_side_effects_func=attach_side_effects,
+        compensate_failed_submission_func=AsyncMock(),
+        release_concurrency_lock_func=AsyncMock(),
+        shield_func=lambda coro: coro,
+        logger=task_core.logger,
+    )
+
+    async def process_and_submit_task_with_dependencies(**kwargs):
+        return await task_core.process_and_submit_task(
+            **kwargs,
+            dependencies=dependencies,
+        )
+
+    monkeypatch.setattr(
+        task_submission_service,
+        "process_and_submit_task",
+        process_and_submit_task_with_dependencies,
     )
     monkeypatch.setattr(
         tasks_router.quota_manager,

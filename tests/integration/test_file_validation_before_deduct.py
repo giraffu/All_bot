@@ -18,7 +18,6 @@ from src.core.task_core_types import TaskSubmissionExecutionResult
 
 
 def _patch_process_dependencies(
-    monkeypatch,
     *,
     prepare_payload,
     deduct_result=(True, ""),
@@ -36,31 +35,27 @@ def _patch_process_dependencies(
             submission_context=kwargs["submission_context"],
         )
 
-    monkeypatch.setattr(
-        task_core,
-        "_build_task_core_process_dependencies_impl",
-        lambda **_kwargs: TaskCoreProcessDependencies(
-            get_strategy_func=lambda _task_type: task_core.StrategyFactory.get_strategy(
-                _task_type
-            ),
-            video_task_types={"custom_video", "ltx_video"},
-            build_video_task_request_func=task_core.build_video_task_request,
-            check_concurrency_lock_func=check_lock,
-            prepare_task_submission_payload_func=prepare_payload,
-            check_and_deduct_credits_func=deduct_credits,
-            execute_task_submission_saga_func=execute_saga,
-            attach_submission_side_effects_func=lambda **_kwargs: None,
-            compensate_failed_submission_func=compensate_failed,
-            release_concurrency_lock_func=release_lock,
-            shield_func=lambda coro: coro,
-            logger=task_core.logger,
+    dependencies = TaskCoreProcessDependencies(
+        get_strategy_func=lambda _task_type: task_core.StrategyFactory.get_strategy(
+            _task_type
         ),
+        video_task_types={"custom_video", "ltx_video"},
+        build_video_task_request_func=task_core.build_video_task_request,
+        check_concurrency_lock_func=check_lock,
+        prepare_task_submission_payload_func=prepare_payload,
+        check_and_deduct_credits_func=deduct_credits,
+        execute_task_submission_saga_func=execute_saga,
+        attach_submission_side_effects_func=lambda **_kwargs: None,
+        compensate_failed_submission_func=compensate_failed,
+        release_concurrency_lock_func=release_lock,
+        shield_func=lambda coro: coro,
+        logger=task_core.logger,
     )
-    return check_lock, deduct_credits, compensate_failed, release_lock
+    return dependencies, check_lock, deduct_credits, compensate_failed, release_lock
 
 
 @pytest.mark.asyncio
-async def test_local_file_missing_should_not_deduct_credits(monkeypatch):
+async def test_local_file_missing_should_not_deduct_credits():
     """
     验证：当本地输入文件不存在时，不应扣费，直接抛出 CoreDomainError
     """
@@ -76,20 +71,32 @@ async def test_local_file_missing_should_not_deduct_credits(monkeypatch):
     async def prepare_payload(**_kwargs):
         raise CoreDomainError("本地输入文件不存在")
 
-    _check_lock, deduct_credits, compensate_failed, _release_lock = _patch_process_dependencies(
-        monkeypatch,
+    (
+        dependencies,
+        _check_lock,
+        deduct_credits,
+        compensate_failed,
+        _release_lock,
+    ) = _patch_process_dependencies(
         prepare_payload=prepare_payload,
     )
 
     with pytest.raises(CoreDomainError, match="本地输入文件不存在"):
-        await process_and_submit_task(user_id, username, task_type, inputs, task_id)
+        await process_and_submit_task(
+            user_id,
+            username,
+            task_type,
+            inputs,
+            task_id,
+            dependencies=dependencies,
+        )
 
     deduct_credits.assert_not_called()
     compensate_failed.assert_not_called()
 
 
 @pytest.mark.asyncio
-async def test_minio_object_path_should_not_trigger_validation(monkeypatch):
+async def test_minio_object_path_should_not_trigger_validation():
     """
     验证：MinIO 对象路径（template: 或 minio://）不应触发本地文件校验
     """
@@ -105,8 +112,13 @@ async def test_minio_object_path_should_not_trigger_validation(monkeypatch):
     async def prepare_payload(**_kwargs):
         return SimpleNamespace(saved_inputs=["processed/path/image.png"])
 
-    _check_lock, deduct_credits, _compensate_failed, _release_lock = _patch_process_dependencies(
-        monkeypatch,
+    (
+        dependencies,
+        _check_lock,
+        deduct_credits,
+        _compensate_failed,
+        _release_lock,
+    ) = _patch_process_dependencies(
         prepare_payload=prepare_payload,
         dispatch_backend_task_id="backend-task-minio",
     )
@@ -119,6 +131,7 @@ async def test_minio_object_path_should_not_trigger_validation(monkeypatch):
         task_id,
         deduct_quota=True,
         client_type="bot",
+        dependencies=dependencies,
     )
 
     assert result is not None
@@ -127,7 +140,7 @@ async def test_minio_object_path_should_not_trigger_validation(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_template_path_should_not_trigger_validation(monkeypatch):
+async def test_template_path_should_not_trigger_validation():
     """
     验证：模板路径（template:）不应触发本地文件校验
     """
@@ -143,8 +156,13 @@ async def test_template_path_should_not_trigger_validation(monkeypatch):
     async def prepare_payload(**_kwargs):
         return SimpleNamespace(saved_inputs=["template:template_001"])
 
-    _check_lock, deduct_credits, _compensate_failed, _release_lock = _patch_process_dependencies(
-        monkeypatch,
+    (
+        dependencies,
+        _check_lock,
+        deduct_credits,
+        _compensate_failed,
+        _release_lock,
+    ) = _patch_process_dependencies(
         prepare_payload=prepare_payload,
         dispatch_backend_task_id="backend-task-template",
     )
@@ -157,6 +175,7 @@ async def test_template_path_should_not_trigger_validation(monkeypatch):
         task_id,
         deduct_quota=True,
         client_type="bot",
+        dependencies=dependencies,
     )
 
     assert result is not None
@@ -165,7 +184,7 @@ async def test_template_path_should_not_trigger_validation(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_normal_flow_deducts_credits_after_file_validation(monkeypatch):
+async def test_normal_flow_deducts_credits_after_file_validation():
     """
     验证：正常流程中，文件校验通过后才扣费
     """
@@ -189,8 +208,13 @@ async def test_normal_flow_deducts_credits_after_file_validation(monkeypatch):
         call_order.append("deduct_credits")
         return (True, "")
 
-    _check_lock, deduct_credits, _compensate_failed, _release_lock = _patch_process_dependencies(
-        monkeypatch,
+    (
+        dependencies,
+        _check_lock,
+        deduct_credits,
+        _compensate_failed,
+        _release_lock,
+    ) = _patch_process_dependencies(
         prepare_payload=prepare_payload,
         dispatch_backend_task_id="backend-task-normal",
     )
@@ -204,6 +228,7 @@ async def test_normal_flow_deducts_credits_after_file_validation(monkeypatch):
         task_id,
         deduct_quota=True,
         client_type="bot",
+        dependencies=dependencies,
     )
 
     assert result is not None
@@ -212,7 +237,7 @@ async def test_normal_flow_deducts_credits_after_file_validation(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_concurrency_lock_released_when_file_missing(monkeypatch):
+async def test_concurrency_lock_released_when_file_missing():
     """
     验证：当文件不存在抛出 CoreDomainError 时，并发锁会被正确释放
 
@@ -230,13 +255,25 @@ async def test_concurrency_lock_released_when_file_missing(monkeypatch):
     async def prepare_payload(**_kwargs):
         raise CoreDomainError("本地输入文件不存在")
 
-    _check_lock, deduct_credits, compensate_failed, release_lock = _patch_process_dependencies(
-        monkeypatch,
+    (
+        dependencies,
+        _check_lock,
+        deduct_credits,
+        compensate_failed,
+        release_lock,
+    ) = _patch_process_dependencies(
         prepare_payload=prepare_payload,
     )
 
     with pytest.raises(CoreDomainError, match="本地输入文件不存在"):
-        await process_and_submit_task(user_id, username, task_type, inputs, task_id)
+        await process_and_submit_task(
+            user_id,
+            username,
+            task_type,
+            inputs,
+            task_id,
+            dependencies=dependencies,
+        )
 
     deduct_credits.assert_not_called()
     compensate_failed.assert_not_called()
@@ -244,7 +281,7 @@ async def test_concurrency_lock_released_when_file_missing(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_file_validation_before_credit_deduction_order(monkeypatch):
+async def test_file_validation_before_credit_deduction_order():
     """
     验证：文件校验确实在扣费之前执行
 
@@ -269,15 +306,27 @@ async def test_file_validation_before_credit_deduction_order(monkeypatch):
         call_sequence.append("check_and_deduct_credits")
         return (True, "")
 
-    check_lock, deduct_credits, _compensate_failed, _release_lock = _patch_process_dependencies(
-        monkeypatch,
+    (
+        dependencies,
+        check_lock,
+        deduct_credits,
+        _compensate_failed,
+        _release_lock,
+    ) = _patch_process_dependencies(
         prepare_payload=prepare_payload,
     )
     check_lock.side_effect = lambda _uid: call_sequence.append("check_concurrency_lock") or (True, "")
     deduct_credits.side_effect = record_deduct
 
     with pytest.raises(CoreDomainError):
-        await process_and_submit_task(user_id, username, task_type, inputs, task_id)
+        await process_and_submit_task(
+            user_id,
+            username,
+            task_type,
+            inputs,
+            task_id,
+            dependencies=dependencies,
+        )
 
     assert call_sequence == ["check_concurrency_lock", "prepare_payload"], (
         "文件校验在扣费前失败，扣费未执行"
