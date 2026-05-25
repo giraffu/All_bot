@@ -199,6 +199,7 @@ def main():
     # NOTE:
     # `src/bot_test.py` is the shared Telegram bot entrypoint for both PROD and TEST.
     # The name is historical. Runtime mode is selected by `BOT_TYPE`, not by filename.
+    # See also: `docs/测试与入口命名约定.md`.
     #
     # Current deployment mapping:
     # - prod container `tg-bot` also starts this file

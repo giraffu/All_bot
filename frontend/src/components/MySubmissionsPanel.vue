@@ -9,6 +9,7 @@ import {
   Video,
 } from 'lucide-vue-next'
 import api from '@/api'
+import { getMyLibraryPosts } from '@/api/gallery'
 import { useViewport } from '@/composables/useViewport'
 import { useMainLayoutContentRef } from '@/composables/useWorkbenchScrollLock'
 import { useTemplateApplyStore } from '@/stores/templateApply'
@@ -32,30 +33,7 @@ import PostBrowserShell from '@/components/PostBrowserShell.vue'
 import PostTagPreview from '@/components/PostTagPreview.vue'
 import SubmissionManageButtons from '@/components/SubmissionManageButtons.vue'
 import StickyHeaderSection from '@/components/StickyHeaderSection.vue'
-
-interface Post {
-  id: number
-  task_id: string
-  media_type: string
-  width: number
-  height: number
-  duration: number
-  tags: string[]
-  likes_count: number
-  dislikes_count: number
-  applied_count: number
-  comments_count: number
-  thumbnail_url: string
-  media_url: string
-  created_at: string
-  has_liked: boolean
-  has_disliked: boolean
-  is_active: boolean
-  prompt: string
-  src?: string
-  cardIsVideo?: boolean
-  cardPoster?: string
-}
+import type { GalleryPost as Post } from '@/types/gallery'
 
 const props = withDefaults(
   defineProps<{
@@ -90,15 +68,14 @@ const {
 } = usePagedPostBrowser<Post>({
   pageSize: size,
   fetchPageData: async (pageNumber) => {
-    const res = await api.get('/gallery/my-posts', {
-      params: {
-        page: pageNumber,
-        size: size.value,
-        task_type: props.taskType === 'all' ? undefined : props.taskType,
-      },
+    const data = await getMyLibraryPosts({
+      scope: 'submissions',
+      page: pageNumber,
+      size: size.value,
+      taskType: props.taskType,
     })
     return {
-      items: res.data.items.map((post: Post) => {
+      items: data.items.map((post: Post) => {
         const cardView = resolveMediaCardView(post)
         return {
           ...post,
@@ -107,8 +84,8 @@ const {
           cardPoster: cardView.posterSrc,
         }
       }),
-      total: res.data.total,
-      pages: res.data.pages,
+      total: data.total,
+      pages: data.pages,
     }
   },
   onFetchError: (error) => {
@@ -149,7 +126,7 @@ const { copyPrompt } = usePostPromptCopy(t)
 const { applying, handleApply } = useDetailTemplateApply<Post>({
   currentPost,
   detailVisible,
-  endpoint: (post) => `/gallery/posts/${post.id}/apply-context`,
+  itemId: (post) => post.id,
   source: 'submissions',
   templateApplyStore,
   t

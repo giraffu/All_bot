@@ -212,11 +212,11 @@ const primeFavoritesApi = (options?: { empty?: boolean; submissionsEmpty?: boole
       })
     }
 
-    if (url === `/users/history/${samplePost.task_id}/apply-context`) {
+    if (url === `/gallery/items/${samplePost.task_id}/apply-context`) {
       return Promise.resolve({ data: faceSwapContext })
     }
 
-    if (url === `/gallery/posts/${samplePost.id}/apply-context`) {
+    if (url === `/gallery/items/${samplePost.id}/apply-context`) {
       return Promise.resolve({ data: faceSwapContext })
     }
 

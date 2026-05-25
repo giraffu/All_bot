@@ -1,6 +1,6 @@
 import { onBeforeUnmount, ref, watch, type Ref } from 'vue'
 import { message } from 'ant-design-vue'
-import api from '@/api'
+import { getUnifiedApplyContext } from '@/api/gallery'
 import { useTemplateApplyReplaceProtocol } from '@/composables/useTemplateApplyCloseProtocol'
 import type { TemplateApplySource } from '@/types/templateApply'
 
@@ -20,7 +20,7 @@ interface TemplateApplyStoreLike {
 interface UseDetailTemplateApplyOptions<TPost extends DetailApplyTarget> {
   currentPost: Ref<TPost | null>
   detailVisible: Ref<boolean>
-  endpoint: (post: TPost) => string
+  itemId: (post: TPost) => number | string
   source: TemplateApplySource | ((post: TPost) => TemplateApplySource)
   entryEntityId?: (post: TPost) => number | string | null
   templateApplyStore: TemplateApplyStoreLike
@@ -95,7 +95,7 @@ export function useDetailTemplateApply<TPost extends DetailApplyTarget>(
       postId: post.id,
       source: typeof options.source === 'function' ? options.source(post) : options.source,
       entryEntityId: options.entryEntityId?.(post) ?? post.id,
-      endpoint: options.endpoint(post)
+      itemId: options.itemId(post),
     }
 
     const requestToken = ++applyRequestToken
@@ -105,8 +105,10 @@ export function useDetailTemplateApply<TPost extends DetailApplyTarget>(
     applying.value = true
 
     try {
-      const res = await api.get(snapshot.endpoint, {
-        signal: abortController.signal
+      const rawContext = await getUnifiedApplyContext({
+        source: snapshot.source,
+        itemId: snapshot.itemId,
+        signal: abortController.signal,
       })
 
       if (
@@ -119,7 +121,7 @@ export function useDetailTemplateApply<TPost extends DetailApplyTarget>(
         return
       }
 
-      await openTemplateWorkbench(res.data, snapshot)
+      await openTemplateWorkbench(rawContext, snapshot)
     } catch (error: any) {
       if (error?.name === 'CanceledError' || error?.code === 'ERR_CANCELED') {
         return

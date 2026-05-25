@@ -204,7 +204,7 @@ const primeGalleryApi = (options?: { paged?: boolean }) => {
       })
     }
 
-    if (url === `/gallery/posts/${samplePost.id}/apply-context`) {
+    if (url === `/gallery/items/${samplePost.id}/apply-context`) {
       return Promise.resolve({ data: faceSwapContext })
     }
 
@@ -370,7 +370,7 @@ describe('Gallery template apply integration', () => {
         })
       }
 
-      if (url === `/gallery/posts/${samplePost.id}/apply-context`) {
+      if (url === `/gallery/items/${samplePost.id}/apply-context`) {
         return new Promise<{ data: typeof faceSwapContext }>(resolve => {
           settleApplyContext = resolve
         })
@@ -419,7 +419,7 @@ describe('Gallery template apply integration', () => {
         })
       }
 
-      if (url === `/gallery/posts/${samplePost.id}/apply-context`) {
+      if (url === `/gallery/items/${samplePost.id}/apply-context`) {
         return new Promise<{ data: typeof faceSwapContext }>(resolve => {
           settleApplyContext = resolve
         })
@@ -470,7 +470,7 @@ describe('Gallery template apply integration', () => {
         })
       }
 
-      if (url === `/gallery/posts/${samplePost.id}/apply-context`) {
+      if (url === `/gallery/items/${samplePost.id}/apply-context`) {
         return new Promise<{ data: typeof faceSwapContext }>(resolve => {
           settleApplyContext = resolve
         })

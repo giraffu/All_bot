@@ -2,9 +2,7 @@ import contextlib
 import html
 import json
 import logging
-import os
 
-from sqlalchemy import select
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
 
@@ -12,15 +10,16 @@ from src.handlers.callback_router import register_callback
 from src.core.gallery_core import get_gallery_feed
 from src.core.user_core import get_or_create_user_by_telegram
 from src.database.core import AsyncSessionLocal
-from src.database.models import GalleryPost, History
 from src.lora_mapping import translate_tags
+from src.services.gallery_browse_service import (
+    get_history_for_gallery_post,
+    resolve_gallery_media_source,
+    send_gallery_media_message,
+)
 from src.services.storage import storage
 from src.utils import (
     robust_edit_reply_markup,
     robust_delete_message,
-    robust_send_message,
-    robust_send_photo,
-    robust_send_video,
     safe_answer_query,
 )
 
@@ -144,120 +143,6 @@ def _build_gallery_reply_markup(
     )
 
 
-def _resolve_gallery_media_source(
-    *,
-    post,
-    history,
-    storage_service,
-) -> tuple[str | None, bytes | None, str | None]:
-    is_test_bot = os.getenv("BOT_TYPE") == "TEST"
-    cached_file_id = getattr(post, "telegram_file_id", None)
-    if is_test_bot:
-        cached_file_id = None
-
-    output_file = history.output_file if history else None
-    media_bytes = None
-    if not cached_file_id and output_file:
-        media_bytes = storage_service.get_file_bytes(output_file)
-    return cached_file_id, media_bytes, output_file
-
-
-async def _send_gallery_media_message(
-    *,
-    context: ContextTypes.DEFAULT_TYPE,
-    query,
-    post,
-    caption: str,
-    reply_markup: InlineKeyboardMarkup,
-    cached_file_id: str | None,
-    media_bytes: bytes | None,
-    output_file: str | None,
-    storage_service,
-    session_factory=AsyncSessionLocal,
-):
-    if not cached_file_id and not media_bytes:
-        await robust_send_message(
-            context.bot,
-            query.message.chat_id,
-            "❌ 抱歉，该文件已失效或被删除。",
-        )
-        return None
-
-    sent_msg = None
-    try:
-        if post.media_type == "video":
-            sent_msg = await robust_send_video(
-                context.bot,
-                query.message.chat_id,
-                video=cached_file_id or media_bytes,
-                caption=caption,
-                reply_markup=reply_markup,
-                parse_mode="HTML",
-            )
-        else:
-            sent_msg = await robust_send_photo(
-                context.bot,
-                query.message.chat_id,
-                photo=cached_file_id or media_bytes,
-                caption=caption,
-                reply_markup=reply_markup,
-                parse_mode="HTML",
-            )
-    except Exception as exc:
-        if cached_file_id and "wrong file identifier" in str(exc).lower():
-            logger.warning("Cached file_id invalid, falling back to MinIO download...")
-            media_bytes = storage_service.get_file_bytes(output_file) if output_file else None
-            if not media_bytes:
-                await robust_send_message(
-                    context.bot,
-                    query.message.chat_id,
-                    "❌ 抱歉，该文件已失效或被删除。",
-                )
-                return None
-            if post.media_type == "video":
-                sent_msg = await robust_send_video(
-                    context.bot,
-                    query.message.chat_id,
-                    video=media_bytes,
-                    caption=caption,
-                    reply_markup=reply_markup,
-                    parse_mode="HTML",
-                )
-            else:
-                sent_msg = await robust_send_photo(
-                    context.bot,
-                    query.message.chat_id,
-                    photo=media_bytes,
-                    caption=caption,
-                    reply_markup=reply_markup,
-                    parse_mode="HTML",
-                )
-            cached_file_id = None
-        else:
-            raise
-
-    is_test_bot = os.getenv("BOT_TYPE") == "TEST"
-    if sent_msg and not cached_file_id and not is_test_bot:
-        new_file_id = None
-        if post.media_type == "video" and sent_msg.video:
-            new_file_id = sent_msg.video.file_id
-        elif post.media_type != "video" and sent_msg.photo:
-            new_file_id = sent_msg.photo[-1].file_id
-
-        if new_file_id:
-            async with session_factory() as session:
-                update_post = (
-                    await session.execute(
-                        select(GalleryPost).where(GalleryPost.id == post.id)
-                    )
-                ).scalar_one_or_none()
-                if update_post:
-                    update_post.telegram_file_id = new_file_id
-                    await session.commit()
-
-    return sent_msg
-
-
 async def display_gallery_sort_page(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
@@ -293,9 +178,7 @@ async def display_gallery_sort_page(
     has_next = len(posts) > 1
 
     async with session_factory() as session:
-        history = (
-            await session.execute(select(History).where(History.task_id == post.task_id))
-        ).scalars().first()
+        history = await get_history_for_gallery_post(post=post, session=session)
         try:
             tags = json.loads(post.tags)
         except Exception:
@@ -313,20 +196,18 @@ async def display_gallery_sort_page(
     )
 
     await safe_answer_query(query, text="正在加载中...")
-    cached_file_id, media_bytes, output_file = _resolve_gallery_media_source(
+    media_source = resolve_gallery_media_source(
         post=post,
         history=history,
         storage_service=storage_service,
     )
-    sent_msg = await _send_gallery_media_message(
+    sent_msg = await send_gallery_media_message(
         context=context,
-        query=query,
+        chat_id=query.message.chat_id,
         post=post,
         caption=caption,
         reply_markup=reply_markup,
-        cached_file_id=cached_file_id,
-        media_bytes=media_bytes,
-        output_file=output_file,
+        media_source=media_source,
         storage_service=storage_service,
         session_factory=session_factory,
     )

@@ -179,7 +179,7 @@ const primeSubmissionsApi = (options?: { empty?: boolean }) => {
       })
     }
 
-    if (url === `/gallery/posts/${samplePost.id}/apply-context`) {
+    if (url === `/gallery/items/${samplePost.id}/apply-context`) {
       return Promise.resolve({ data: faceSwapContext })
     }
 

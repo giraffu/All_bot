@@ -1,6 +1,6 @@
 from typing import Optional
 
-from fastapi import APIRouter, BackgroundTasks, Depends, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 
 from src.constants import (
     MODE_NAME_MAP,
@@ -26,6 +26,9 @@ from src.web_api.services.gallery_service_queries import (
     get_gallery_posts_api_payload,
     get_my_favorite_posts_api_payload,
     get_my_gallery_posts_api_payload,
+)
+from src.web_api.services.users_history_service import (
+    get_history_apply_context_for_current_user,
 )
 from src.web_api.services.gallery_service_support import (
     DEFAULT_GALLERY_ALLOWED_TYPE_CONFIGS,
@@ -184,6 +187,32 @@ async def get_apply_context(
     current_user: CurrentUserDep,
     db: DbSessionDep = None,
 ):
+    return await get_gallery_apply_context_api_payload(
+        post_id=post_id,
+        current_user=current_user,
+        db=db,
+    )
+
+
+@router.get("/items/{item_id}/apply-context", response_model=ApplyContextResponse)
+async def get_item_apply_context(
+    item_id: str,
+    current_user: CurrentUserDep,
+    db: DbSessionDep = None,
+    source: str = Query(default="gallery", pattern="^(gallery|favorites|submissions)$"),
+):
+    if source == "favorites":
+        return await get_history_apply_context_for_current_user(
+            task_id=item_id,
+            current_user=current_user,
+            db=db,
+        )
+
+    try:
+        post_id = int(item_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="无效的作品标识") from exc
+
     return await get_gallery_apply_context_api_payload(
         post_id=post_id,
         current_user=current_user,

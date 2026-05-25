@@ -2,6 +2,8 @@ import { onMounted, ref, watch } from 'vue'
 import type { RouteLocationNormalizedLoaded, Router } from 'vue-router'
 import { message, Modal } from 'ant-design-vue'
 import api from '@/api'
+import { getRecentHistory } from '@/api/gallery'
+import type { HistoryItem } from '@/types/gallery'
 
 interface TasksStoreLike {
   detailModalVisible: boolean
@@ -18,7 +20,7 @@ interface UseHistoryRecordsOptions {
 }
 
 export function useHistoryRecords(options: UseHistoryRecordsOptions) {
-  const data = ref<any[]>([])
+  const data = ref<HistoryItem[]>([])
   const loading = ref(false)
 
   const pagination = ref({
@@ -55,12 +57,10 @@ export function useHistoryRecords(options: UseHistoryRecordsOptions) {
   const fetchHistory = async (page = 1) => {
     loading.value = true
     try {
-      const res = await api.get('/users/history', {
-        params: { page, size: pagination.value.pageSize }
-      })
-      data.value = res.data.items
-      pagination.value.total = res.data.total
-      pagination.value.current = res.data.page
+      const recentHistory = await getRecentHistory()
+      data.value = recentHistory.items
+      pagination.value.total = recentHistory.total
+      pagination.value.current = recentHistory.page
       await tryOpenTaskFromQuery(page)
     } catch (error) {
       console.error('Failed to fetch history:', error)

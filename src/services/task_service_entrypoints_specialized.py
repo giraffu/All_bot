@@ -18,9 +18,9 @@ from src.services.task_service_message_support import (
     build_message_spec,
     build_status_message,
 )
-from src.services.task_service_flow import run_bot_task_flow
+from src.services.task_service_flow import run_bot_task_application
 from src.services.task_service_support import get_acceleration_notice
-from src.services.task_service_types import BotTaskRuntimeState
+from src.services.task_service_types import BotTaskFlowContext, BotTaskRuntimeState
 
 
 async def process_ltx_video_task(
@@ -72,35 +72,37 @@ async def process_ltx_video_task(
         duration_transform=normalize_requested_duration_seconds,
     )
 
-    return await run_bot_task_flow(
-        context=context,
-        update=update,
-        chat_id=chat_id,
-        runtime_state=runtime_state,
-        internal_user_id=internal_user_id,
-        username=username,
-        task_type=mode,
-        inputs=inputs,
-        prompt=prompt,
-        is_video=True,
-        message_spec=message_spec,
-        submitted_status_builder=build_cost_status_builder(
-            f"⏳ 任务已提交，正在排队调度高级图生视频任务 (画质:{resolution}, 时长:{duration}, 消耗{{actual_cost}}灵石)",
-            notice=notice,
-        ),
-        source_post_id=source_post_id,
-        allow_contribute=allow_contribute,
-        billing_resolution=billing_args["billing_resolution"],
-        requested_duration=billing_args["requested_duration"],
-        unexpected_should_refund=lambda state: state.task_submitted
-        and state.actual_cost > 0,
-        unexpected_error_log_message=build_unexpected_error_log_message(
-            "ltx video task"
-        ),
-        unexpected_error_prefix="出错了",
-        cleanup_paths=build_cleanup_paths([image_path]),
-        cleanup_enabled=cleanup,
-        cleanup_files_func=service._cleanup_files,
+    return await run_bot_task_application(
+        flow=BotTaskFlowContext(
+            context=context,
+            update=update,
+            chat_id=chat_id,
+            runtime_state=runtime_state,
+            internal_user_id=internal_user_id,
+            username=username,
+            task_type=mode,
+            inputs=inputs,
+            prompt=prompt,
+            is_video=True,
+            message_spec=message_spec,
+            submitted_status_builder=build_cost_status_builder(
+                f"⏳ 任务已提交，正在排队调度高级图生视频任务 (画质:{resolution}, 时长:{duration}, 消耗{{actual_cost}}灵石)",
+                notice=notice,
+            ),
+            source_post_id=source_post_id,
+            allow_contribute=allow_contribute,
+            billing_resolution=billing_args["billing_resolution"],
+            requested_duration=billing_args["requested_duration"],
+            unexpected_should_refund=lambda state: state.task_submitted
+            and state.actual_cost > 0,
+            unexpected_error_log_message=build_unexpected_error_log_message(
+                "ltx video task"
+            ),
+            unexpected_error_prefix="出错了",
+            cleanup_paths=build_cleanup_paths([image_path]),
+            cleanup_enabled=cleanup,
+            cleanup_files_func=service._cleanup_files,
+        )
     )
 
 
@@ -149,34 +151,35 @@ async def process_face_video_task(
         include_requested_duration=False,
     )
 
-    return await run_bot_task_flow(
-        context=context,
-        chat_id=chat_id,
-        status_msg_id=message_id,
-        runtime_state=runtime_state,
-        internal_user_id=internal_user_id,
-        username=username,
-        task_type=mode,
-        inputs=inputs,
-        prompt="face video",
-        is_video=True,
-        message_spec=message_spec,
-        submitted_status_builder=build_cost_status_builder(
-            f"⏳ 任务已提交，正在排队调度视频换脸任务 (画质:{resolution}p, 消耗{{actual_cost}}灵石)",
-            notice=notice,
-        ),
-        source_post_id=source_post_id,
-        billing_resolution=billing_args["billing_resolution"],
-        prefer_edit_status=True,
-        unexpected_should_refund=lambda state: state.task_submitted
-        and state.actual_cost > 0,
-        unexpected_error_log_message=build_unexpected_error_log_message(
-            "face video task",
-            verb="processing",
-        ),
-        unexpected_error_prefix="系统错误",
-        cleanup_paths=build_cleanup_paths([face_image_path, video_path]),
-        cleanup_enabled=cleanup,
-        cleanup_files_func=service._cleanup_files,
-        update=None,
+    return await run_bot_task_application(
+        flow=BotTaskFlowContext(
+            context=context,
+            chat_id=chat_id,
+            status_msg_id=message_id,
+            runtime_state=runtime_state,
+            internal_user_id=internal_user_id,
+            username=username,
+            task_type=mode,
+            inputs=inputs,
+            prompt="face video",
+            is_video=True,
+            message_spec=message_spec,
+            submitted_status_builder=build_cost_status_builder(
+                f"⏳ 任务已提交，正在排队调度视频换脸任务 (画质:{resolution}p, 消耗{{actual_cost}}灵石)",
+                notice=notice,
+            ),
+            source_post_id=source_post_id,
+            billing_resolution=billing_args["billing_resolution"],
+            prefer_edit_status=True,
+            unexpected_should_refund=lambda state: state.task_submitted
+            and state.actual_cost > 0,
+            unexpected_error_log_message=build_unexpected_error_log_message(
+                "face video task",
+                verb="processing",
+            ),
+            unexpected_error_prefix="系统错误",
+            cleanup_paths=build_cleanup_paths([face_image_path, video_path]),
+            cleanup_enabled=cleanup,
+            cleanup_files_func=service._cleanup_files,
+        )
     )

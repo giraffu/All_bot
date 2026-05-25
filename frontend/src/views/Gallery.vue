@@ -39,30 +39,7 @@ import StickyHeaderSection from '@/components/StickyHeaderSection.vue'
 import { usePagedScrollNavigation } from '@/composables/usePagedScrollNavigation'
 import { useDetailTemplateApply } from '@/composables/useDetailTemplateApply'
 import { useRenderSettling } from '@/composables/useRenderSettling'
-
-interface Post {
-  id: number
-  task_id: string
-  media_type: string
-  width: number
-  height: number
-  duration: number
-  tags: string[]
-  likes_count: number
-  dislikes_count: number
-  applied_count: number
-  comments_count: number
-  thumbnail_url: string
-  media_url: string
-  created_at: string
-  has_liked: boolean
-  has_disliked: boolean
-  author_name?: string
-  src?: string
-  cardIsVideo?: boolean
-  cardPoster?: string
-  imgLoaded?: boolean
-}
+import type { GalleryPost as Post } from '@/types/gallery'
 
 
 
@@ -184,7 +161,7 @@ const { handleInteract } = useGalleryPostInteractions<Post>({
 const { applying, handleApply } = useDetailTemplateApply<Post>({
   currentPost,
   detailVisible,
-  endpoint: (post) => `/gallery/posts/${post.id}/apply-context`,
+  itemId: (post) => post.id,
   source: 'gallery',
   templateApplyStore,
   t,

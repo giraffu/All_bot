@@ -58,6 +58,40 @@ class BotTaskCompletionContext:
 
 
 @dataclass(frozen=True)
+class BotTaskFlowContext:
+    context: Any
+    chat_id: int
+    runtime_state: BotTaskRuntimeState
+    internal_user_id: int
+    username: str
+    task_type: str
+    inputs: dict
+    prompt: str
+    is_video: bool
+    message_spec: BotTaskMessageSpec
+    update: Any = None
+    status_msg_id: Optional[int] = None
+    submitted_status_builder: Any = None
+    source_post_id: Optional[int] = None
+    deduct_quota: bool = True
+    send_result: bool = True
+    reply_markup: Any = None
+    delete_status: bool = True
+    allow_contribute: bool = True
+    billing_resolution: Optional[str] = None
+    requested_duration: Optional[int] = None
+    missing_output_should_refund: bool = True
+    prefer_edit_status: bool = False
+    refund_suffix_mode: str = "if_refunded"
+    unexpected_should_refund: Any = None
+    unexpected_error_log_message: str = ""
+    unexpected_error_prefix: str = "出错了"
+    cleanup_paths: Optional[list[str]] = None
+    cleanup_enabled: bool = True
+    cleanup_files_func: Any = None
+
+
+@dataclass(frozen=True)
 class BotFinalizationPresentationPolicy:
     message_prefix: str
     prefer_edit_status: bool = False

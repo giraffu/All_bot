@@ -165,9 +165,11 @@
   - `src/web_api/services/task_action_api_service.py`
   - `src/web_api/services/task_submission_service.py`
   - `src/core/task_core.py`
-  - `src/services/task_service.py`
+  - `src/services/bot_task_service.py`
   - `src/services/task_service_flow.py`
-  - `src/services/task_service_facade_seams.py`
+  - `src/services/task_service_entrypoints.py`
+  - `src/services/task_service_entrypoints_generation.py`
+  - `src/services/task_service_entrypoints_specialized.py`
 - [ ] 执行动作
   - 画出 Web 提交链路。
   - 画出 Bot 提交链路。
@@ -213,23 +215,25 @@
 
 ### P1-3 收口 Bot 提交链路
 - [ ] 任务目标
-  - 压缩 `_run_bot_task_flow -> seam -> flow` 的深层转发结构。
+  - 压缩 `bot adapter -> entrypoint -> application flow` 的深层转发结构。
 - [ ] 涉及文件
-  - `src/services/task_service.py`
+  - `src/services/bot_task_service.py`
   - `src/services/task_service_flow.py`
-  - `src/services/task_service_facade_seams.py`
+  - `src/services/task_service_entrypoints.py`
+  - `src/services/task_service_entrypoints_generation.py`
+  - `src/services/task_service_entrypoints_specialized.py`
   - `src/services/task_service_completion.py`
   - `src/services/task_service_finalize.py`
 - [ ] 执行动作
-  - 删除纯参数平移的 seam。
-  - 保留有真实分层价值的 flow/helper。
-  - 让 `TaskService` 只保留表示层和少量 patch 点。
+  - 删除纯参数平移的旧 seam 认知。
+  - 保留有真实分层价值的 entrypoint/application/helper。
+  - 让 `bot_task_service.py` 只保留 Telegram 表示层 facade 和少量 patch 点。
 - [ ] 非目标
   - 不改消息发送语义。
   - 不改回调按钮、状态消息更新时机。
 - [ ] 验收标准
   - 主链路跳转层级下降。
-  - `TaskService` 不再承担隐藏式多层转发。
+  - `bot_task_service.py` 不再承担隐藏式多层转发。
 - [ ] 建议回归
   - `tests/services/test_task_service_flow.py`
   - `tests/services/test_task_service_completion.py`
@@ -297,7 +301,7 @@
 - [ ] 涉及文件
   - `src/web_api/routers/tasks.py`
   - `src/web_api/services/task_action_api_service.py`
-  - `src/services/task_service.py`
+  - `src/services/bot_task_service.py`
   - `src/core/task_core.py`
 - [ ] 执行动作
   - 盘点当前异常类型和翻译位置。
@@ -464,7 +468,21 @@
 ### 工单 B: 任务链路调用图与 seam 清单
 - [ ] 输出 Web 提交链路图
 - [ ] 输出 Bot 提交链路图
-- [ ] 标注纯 passthrough seam
+- [ ] 标注纯 passthrough seam / 旧 facade 认知
+
+---
+
+## 10. 测试与入口命名约定
+
+- `tests/` 是当前主测试目录：
+  - 新增 focused tests、回归测试、集成测试统一放这里。
+- `src/tests/` 归类为历史遗留/本地辅助测试区：
+  - 仅保留旧 smoke/system/import 用例，除非迁移，不再新增。
+  - 后续若继续维护，应逐步迁入 `tests/` 并补齐与生产入口一致的 fixture。
+- `src/bot_test.py` 是共享 Telegram Bot 入口：
+  - 文件名是历史遗留，不代表“只给测试环境用”。
+  - 实际运行环境由 `BOT_TYPE`、容器编排和 token 注入决定。
+  - 新文档、脚本和说明应统一称其为“Telegram Bot shared entrypoint (`src/bot_test.py`)”。
 
 ### 工单 C: 身份字段边界表
 - [ ] 输出字段边界表

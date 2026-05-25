@@ -1,6 +1,4 @@
 import logging
-import os
-import uuid
 
 from telegram import Update
 from telegram.ext import (
@@ -17,6 +15,10 @@ from src.handlers.conversation_states import FaceSwapState
 from src.handlers.prompt_router import is_global_menu_command
 from src.services.permission_service import permission_service
 from src.services.bot_task_service import TaskService
+from src.services.fsm_temp_file_service import (
+    cleanup_fsm_temp_files,
+    download_telegram_file_to_fsm_temp,
+)
 from src.utils import (
     create_background_task,
     load_prompts,
@@ -30,16 +32,12 @@ from src.filters.i18n_filter import I18nFilter
 logger = logging.getLogger("fsm.faceswap")
 
 
-def _cleanup_context(context: ContextTypes.DEFAULT_TYPE, user_id: int):
+def _cleanup_context(context: ContextTypes.DEFAULT_TYPE, _user_id: int):
     context.user_data.pop("in_conversation", None)
     pending_files = context.user_data.pop("faceswap_data", {})
-    for key in ["face_image_path", "body_image_path"]:
-        path = pending_files.get(key)
-        if path and os.path.exists(path):
-            try:
-                os.remove(path)
-            except Exception as e:
-                logger.error(f"Failed to remove {path}: {e}")
+    cleanup_fsm_temp_files(
+        [pending_files.get("face_image_path"), pending_files.get("body_image_path")]
+    )
 
 
 async def start_faceswap(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -104,9 +102,11 @@ async def receive_face_image(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     try:
         new_file = await context.bot.get_file(file_id)
-        os.makedirs("/tmp/bot_fsm_tmp", exist_ok=True)
-        local_path = f"/tmp/bot_fsm_tmp/{uuid.uuid4()}_face.png"
-        await new_file.download_to_drive(local_path)
+        local_path = await download_telegram_file_to_fsm_temp(
+            telegram_file=new_file,
+            suffix=".png",
+            name_hint="faceswap_face",
+        )
         context.user_data["faceswap_data"]["face_image_path"] = local_path
     except Exception as e:
         logger.error(f"Error downloading face image for FSM user {user_id}: {e}")
@@ -169,8 +169,11 @@ async def receive_body_image(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     try:
         new_file = await context.bot.get_file(file_id)
-        local_path = f"/tmp/bot_fsm_tmp/{uuid.uuid4()}_body.png"
-        await new_file.download_to_drive(local_path)
+        local_path = await download_telegram_file_to_fsm_temp(
+            telegram_file=new_file,
+            suffix=".png",
+            name_hint="faceswap_body",
+        )
         fsm_data["body_image_path"] = local_path
     except Exception as e:
         logger.error(f"Error downloading body image for FSM user {user_id}: {e}")

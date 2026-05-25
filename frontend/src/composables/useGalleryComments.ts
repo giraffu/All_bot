@@ -1,7 +1,8 @@
 import { ref, computed, watch, type Ref } from 'vue'
 import { message } from 'ant-design-vue'
 import { useI18n } from 'vue-i18n'
-import api from '@/api'
+import { getGalleryCommentsPage } from '@/api/gallery'
+import type { GalleryPost } from '@/types/gallery'
 
 export interface CommentUser {
   id: number
@@ -17,7 +18,7 @@ export interface GalleryComment {
 
 export function useGalleryComments(
   currentPost: Ref<any | null>,
-  posts: Ref<any[]>,
+  posts: Ref<GalleryPost[]>,
   detailVisible?: Ref<boolean>
 ) {
   const { t } = useI18n()
@@ -81,17 +82,19 @@ export function useGalleryComments(
     commentsLoading.value = true
 
     try {
-      const res = await api.get(`/gallery/posts/${postId}/comments`, {
-        params: { page: pageToLoad, size: 20 }
+      const data = await getGalleryCommentsPage({
+        postId,
+        page: pageToLoad,
+        size: 20,
       })
 
       if (requestId !== currentCommentsRequestId || currentPost.value?.id !== postId) {
         return false
       }
 
-      commentsPage.value = res.data.page
-      commentsTotal.value = res.data.total
-      comments.value = mergeComments(res.data.items, append)
+      commentsPage.value = data.page
+      commentsTotal.value = data.total
+      comments.value = mergeComments(data.items as GalleryComment[], append)
       return true
     } catch (error) {
       console.error('Failed to load comments:', error)

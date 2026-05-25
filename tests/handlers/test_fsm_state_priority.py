@@ -46,7 +46,7 @@ def _build_update_with_message(*, text: str = "test prompt"):
 def test_image_to_video_fsm_exposes_unified_handler():
     handler = image_to_video_fsm.get_image_to_video_fsm_handler()
     assert handler.name == "image_to_video_fsm"
-    assert len(handler.entry_points) == 5
+    assert len(handler.entry_points) == 8
 
 
 def test_legacy_video_lora_exports_are_removed():

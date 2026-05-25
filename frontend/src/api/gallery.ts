@@ -1,0 +1,111 @@
+import api from '@/api'
+import type {
+  ApplyContextSource,
+  GalleryPost,
+  LibraryCollectionScope,
+  PaginatedGalleryResponse,
+  RecentHistoryResponse,
+} from '@/types/gallery'
+import type { RawApplyContextResponse } from '@/types/templateApply'
+
+interface MyLibraryPostsParams {
+  scope: LibraryCollectionScope
+  page: number
+  size: number
+  taskType?: string
+}
+
+interface GalleryCommentsPage {
+  items: unknown[]
+  total: number
+  page: number
+  size: number
+  pages: number
+}
+
+export async function getRecentHistory(): Promise<RecentHistoryResponse> {
+  const response = await api.get<RecentHistoryResponse>('/users/history')
+  return response.data
+}
+
+export async function getMyLibraryPosts(
+  params: MyLibraryPostsParams
+): Promise<PaginatedGalleryResponse<GalleryPost>> {
+  const { scope, page, size, taskType } = params
+
+  if (scope === 'submissions') {
+    const response = await api.get<PaginatedGalleryResponse<GalleryPost>>('/gallery/my-posts', {
+      params: {
+        page,
+        size,
+        task_type: taskType === 'all' ? undefined : taskType,
+      },
+    })
+    return response.data
+  }
+
+  if (scope === 'favorite') {
+    const response = await api.get<PaginatedGalleryResponse<GalleryPost>>('/users/my-favorites', {
+      params: {
+        page,
+        size,
+        task_type: taskType === 'all' ? undefined : taskType,
+      },
+    })
+    return response.data
+  }
+
+  const response = await api.get<PaginatedGalleryResponse<GalleryPost>>('/gallery/my-favorites', {
+    params: {
+      page,
+      size,
+      filter_type: scope,
+      task_type: taskType === 'all' ? undefined : taskType,
+    },
+  })
+  return response.data
+}
+
+export async function getUnifiedApplyContext(params: {
+  source: ApplyContextSource
+  itemId: number | string
+  signal?: AbortSignal
+}): Promise<RawApplyContextResponse> {
+  const response = await api.get<RawApplyContextResponse>(
+    `/gallery/items/${params.itemId}/apply-context`,
+    {
+      params: {
+        source: params.source,
+      },
+      signal: params.signal,
+    }
+  )
+  return response.data
+}
+
+export async function getGalleryCommentsPage(params: {
+  postId: number
+  page: number
+  size: number
+}): Promise<GalleryCommentsPage> {
+  try {
+    const response = await api.get<GalleryCommentsPage>(`/gallery/posts/${params.postId}/comments`, {
+      params: {
+        page: params.page,
+        size: params.size,
+      },
+    })
+    return response.data
+  } catch (error: any) {
+    if (error?.response?.status === 404) {
+      return {
+        items: [],
+        total: 0,
+        page: params.page,
+        size: params.size,
+        pages: 0,
+      }
+    }
+    throw error
+  }
+}

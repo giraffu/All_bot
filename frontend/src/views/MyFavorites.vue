@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
 import api from '@/api'
+import { getMyLibraryPosts } from '@/api/gallery'
 import MySubmissionsPanel from '@/components/MySubmissionsPanel.vue'
 import FavoriteDetailActions from '@/components/FavoriteDetailActions.vue'
 import GalleryDetailModal from '@/components/GalleryDetailModal.vue'
@@ -33,30 +34,7 @@ import { useMyFavoritesFilters } from '@/composables/useMyFavoritesFilters'
 import {
   formatGalleryTag,
 } from '@/utils/galleryPresentation'
-
-interface Post {
-  id: number
-  task_id: string
-  media_type: string
-  width: number
-  height: number
-  duration: number
-  tags: string[]
-  likes_count: number
-  dislikes_count: number
-  applied_count: number
-  comments_count: number
-  thumbnail_url: string
-  media_url: string
-  created_at: string
-  has_liked: boolean
-  has_disliked: boolean
-  is_active: boolean
-  prompt: string
-  src?: string
-  cardIsVideo?: boolean
-  cardPoster?: string
-}
+import type { GalleryPost as Post } from '@/types/gallery'
 
 const route = useRoute()
 const router = useRouter()
@@ -97,18 +75,15 @@ const {
 } = usePagedPostBrowser<Post>({
   pageSize,
   fetchPageData: async (pageNumber) => {
-    const endpoint = filterType.value === 'favorite' ? '/users/my-favorites' : '/gallery/my-favorites'
-    const res = await api.get(endpoint, {
-      params: {
-        page: pageNumber,
-        size: pageSize.value,
-        filter_type: filterType.value === 'favorite' ? 'all' : filterType.value,
-        task_type: selectedTaskType.value === 'all' ? undefined : selectedTaskType.value,
-      }
+    const data = await getMyLibraryPosts({
+      scope: filterType.value === 'favorite' ? 'favorite' : filterType.value,
+      page: pageNumber,
+      size: pageSize.value,
+      taskType: selectedTaskType.value,
     })
 
     return {
-      items: res.data.items.map((post: Post) => {
+      items: data.items.map((post: Post) => {
         const cardView = resolveMediaCardView(post, {
           fallbackToOriginalWithoutThumbnail: filterType.value !== 'favorite',
         })
@@ -119,8 +94,8 @@ const {
           cardPoster: cardView.posterSrc,
         }
       }),
-      total: res.data.total,
-      pages: res.data.pages,
+      total: data.total,
+      pages: data.pages,
     }
   },
   onFetchError: (error) => {
@@ -182,11 +157,7 @@ const { copyPrompt } = usePostPromptCopy(t)
 const { applying, handleApply } = useDetailTemplateApply<Post>({
   currentPost,
   detailVisible,
-  endpoint: (post) => (
-    filterType.value === 'favorite'
-      ? `/users/history/${post.task_id}/apply-context`
-      : `/gallery/posts/${post.id}/apply-context`
-  ),
+  itemId: (post) => (filterType.value === 'favorite' ? post.task_id : post.id),
   source: () => (filterType.value === 'favorite' ? 'favorites' : 'gallery'),
   entryEntityId: (post) => post.id,
   templateApplyStore,

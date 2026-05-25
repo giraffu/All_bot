@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { ref, watch } from 'vue'
 import { message } from 'ant-design-vue'
 import api from '@/api'
+import { getRecentHistory } from '@/api/gallery'
 import i18n from '@/i18n'
 import router from '@/router'
 import { useAuthStore } from '@/stores/auth'
@@ -62,9 +63,8 @@ export const useTasksStore = defineStore('tasks', () => {
   const openDetailModal = async (taskId: string, fallbackRecord?: any) => {
     const hide = message.loading('正在加载详情...', 0)
     try {
-      // 静默拉取最新历史记录（通常第一页即可覆盖最新生成的任务）
-      const res = await api.get('/users/history', { params: { page: 1, size: 100 } })
-      const record = res.data.items.find((item: any) => item.task_id === taskId)
+      const recentHistory = await getRecentHistory()
+      const record = recentHistory.items.find((item: any) => item.task_id === taskId)
       
       if (record) {
         showDetailRecord(record)

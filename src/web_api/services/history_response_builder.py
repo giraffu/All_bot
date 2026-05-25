@@ -72,7 +72,7 @@ async def build_favorite_gallery_payload(
                 width=gallery_post.width if gallery_post else history.width,
                 height=gallery_post.height if gallery_post else history.height,
                 duration=gallery_post.duration if gallery_post else history.duration,
-                tags=extract_history_tags(history),
+                tags=extract_history_tags(history.prompt),
                 likes_count=gallery_post.likes_count if gallery_post else 0,
                 dislikes_count=gallery_post.dislikes_count if gallery_post else 0,
                 applied_count=gallery_post.applied_count if gallery_post else 0,

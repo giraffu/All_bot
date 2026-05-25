@@ -1,6 +1,4 @@
 import logging
-import os
-import uuid
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import (
@@ -26,6 +24,10 @@ from src.handlers.prompt_router import is_global_menu_command
 from src.lora_catalog import VIDEO_LORA_MODELS
 from src.services.permission_service import permission_service
 from src.services.bot_task_service import TaskService
+from src.services.fsm_temp_file_service import (
+    cleanup_fsm_temp_files,
+    download_telegram_file_to_fsm_temp,
+)
 from src.utils import create_background_task, robust_edit_text, robust_reply_text
 import contextlib
 
@@ -56,12 +58,7 @@ def _pop_image_to_video_data(context: ContextTypes.DEFAULT_TYPE) -> dict:
 def _cleanup_context(context: ContextTypes.DEFAULT_TYPE, _user_id: int):
     context.user_data.pop("in_conversation", None)
     pending_files = _pop_image_to_video_data(context)
-    path = pending_files.get("image_path")
-    if path and os.path.exists(path):
-        try:
-            os.remove(path)
-        except Exception as e:
-            logger.error(f"Failed to remove {path}: {e}")
+    cleanup_fsm_temp_files([pending_files.get("image_path")])
 
 
 def _get_lora_display_name(lora_name: str | None) -> str:
@@ -291,9 +288,11 @@ async def receive_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
 
     try:
         new_file = await context.bot.get_file(file_id)
-        os.makedirs("/tmp/bot_fsm_tmp", exist_ok=True)
-        local_path = f"/tmp/bot_fsm_tmp/{uuid.uuid4()}_image_to_video.png"
-        await new_file.download_to_drive(local_path)
+        local_path = await download_telegram_file_to_fsm_temp(
+            telegram_file=new_file,
+            suffix=".png",
+            name_hint="image_to_video",
+        )
         fsm_data["image_path"] = local_path
     except Exception as e:
         logger.error(f"Error downloading image for FSM user {user_id}: {e}")

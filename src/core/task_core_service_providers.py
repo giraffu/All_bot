@@ -1,5 +1,4 @@
 from dataclasses import dataclass
-from functools import lru_cache
 from typing import Any, Callable
 
 
@@ -44,26 +43,39 @@ class TaskCoreImageCapabilities:
     monitor_progress_func: Any
 
 
-@lru_cache(maxsize=1)
-def _build_default_task_core_service_providers() -> TaskCoreServiceProviders:
+_configured_task_core_service_providers: TaskCoreServiceProviders | None = None
+
+
+def _missing_provider(name: str) -> Callable[[], Any]:
+    def _raise_missing_provider() -> Any:
+        raise RuntimeError(
+            f"Task core service provider '{name}' 未注册，请先调用 configure_task_core_service_providers(...)。"
+        )
+
+    return _raise_missing_provider
+
+
+def get_placeholder_task_core_service_providers() -> TaskCoreServiceProviders:
     return TaskCoreServiceProviders(
-        get_image_service=lambda: __import__(
-            "src.services.image_service", fromlist=["image_service"]
-        ).image_service,
-        get_storage_service=lambda: __import__(
-            "src.services.storage", fromlist=["storage"]
-        ).storage,
-        get_task_registry=lambda: __import__(
-            "src.services.task_registry", fromlist=["TaskRegistry"]
-        ).TaskRegistry,
-        get_permission_service=lambda: __import__(
-            "src.services.permission_service", fromlist=["permission_service"]
-        ).permission_service,
-        get_submission_outbox=lambda: __import__(
-            "src.services.redis_client", fromlist=["redis_client"]
-        ).redis_client,
-        get_api_client=lambda: __import__("src.api_client", fromlist=["api_client"]).api_client,
+        get_image_service=_missing_provider("image_service"),
+        get_storage_service=_missing_provider("storage"),
+        get_task_registry=_missing_provider("TaskRegistry"),
+        get_permission_service=_missing_provider("permission_service"),
+        get_submission_outbox=_missing_provider("redis_client"),
+        get_api_client=_missing_provider("api_client"),
     )
+
+
+def configure_task_core_service_providers(
+    providers: TaskCoreServiceProviders,
+) -> TaskCoreServiceProviders:
+    global _configured_task_core_service_providers
+    _configured_task_core_service_providers = providers
+    return providers
+
+
+def get_configured_task_core_service_providers() -> TaskCoreServiceProviders | None:
+    return _configured_task_core_service_providers
 
 
 def build_task_core_service_providers(
@@ -75,20 +87,10 @@ def build_task_core_service_providers(
     get_submission_outbox: Callable[[], Any] | None = None,
     get_api_client: Callable[[], Any] | None = None,
 ) -> TaskCoreServiceProviders:
-    if all(
-        provider is None
-        for provider in (
-            get_image_service,
-            get_storage_service,
-            get_task_registry,
-            get_permission_service,
-            get_submission_outbox,
-            get_api_client,
-        )
-    ):
-        return _build_default_task_core_service_providers()
-
-    default_providers = _build_default_task_core_service_providers()
+    default_providers = (
+        get_configured_task_core_service_providers()
+        or get_placeholder_task_core_service_providers()
+    )
     return TaskCoreServiceProviders(
         get_image_service=get_image_service or default_providers.get_image_service,
         get_storage_service=get_storage_service or default_providers.get_storage_service,

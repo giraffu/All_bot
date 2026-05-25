@@ -1,5 +1,4 @@
 import logging
-import os
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import (
@@ -16,6 +15,10 @@ from src.handlers.conversation_states import FaceVideoState
 from src.handlers.prompt_router import is_global_menu_command
 from src.services.permission_service import permission_service
 from src.services.bot_task_service import TaskService
+from src.services.fsm_temp_file_service import (
+    cleanup_fsm_temp_files,
+    download_telegram_file_to_fsm_temp,
+)
 from src.utils import create_background_task, robust_edit_text, robust_reply_text
 import contextlib
 
@@ -25,26 +28,16 @@ logger = logging.getLogger("fsm.face_video")
 
 
 # --- Helpers ---
-def _cleanup_context(context: ContextTypes.DEFAULT_TYPE, user_id: int):
+def _cleanup_context(context: ContextTypes.DEFAULT_TYPE, _user_id: int):
     """Clean up user data upon exit to prevent memory leaks and reset conversation locks."""
     # Remove conversation lock
     context.user_data.pop("in_conversation", None)
 
     # Clean up downloaded files to avoid disk leaks
     pending_files = context.user_data.pop("face_video_data", {})
-    face_img = pending_files.get("face_image_path")
-    video = pending_files.get("video_path")
-
-    if face_img and os.path.exists(face_img):
-        try:
-            os.remove(face_img)
-        except Exception as e:
-            logger.error(f"Failed to remove {face_img}: {e}")
-    if video and os.path.exists(video):
-        try:
-            os.remove(video)
-        except Exception as e:
-            logger.error(f"Failed to remove {video}: {e}")
+    cleanup_fsm_temp_files(
+        [pending_files.get("face_image_path"), pending_files.get("video_path")]
+    )
 
 
 # --- Entry Point ---
@@ -115,10 +108,11 @@ async def receive_face_image(update: Update, context: ContextTypes.DEFAULT_TYPE)
     # Download file
     try:
         new_file = await context.bot.get_file(file_id)
-        # Using a fixed tmp dir; ensure it exists
-        os.makedirs("/tmp/bot_fsm_tmp", exist_ok=True)
-        local_path = f"/tmp/bot_fsm_tmp/{file_id}_face.png"
-        await new_file.download_to_drive(local_path)
+        local_path = await download_telegram_file_to_fsm_temp(
+            telegram_file=new_file,
+            suffix=".png",
+            name_hint="face_video_face",
+        )
 
         # Save to FSM isolated data
         context.user_data["face_video_data"]["face_image_path"] = local_path
@@ -157,8 +151,11 @@ async def receive_video(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     # Download file
     try:
         new_file = await context.bot.get_file(file_id)
-        local_path = f"/tmp/bot_fsm_tmp/{file_id}_video.mp4"
-        await new_file.download_to_drive(local_path)
+        local_path = await download_telegram_file_to_fsm_temp(
+            telegram_file=new_file,
+            suffix=".mp4",
+            name_hint="face_video_video",
+        )
 
         context.user_data["face_video_data"]["video_path"] = local_path
     except Exception as e:
