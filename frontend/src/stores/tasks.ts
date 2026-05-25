@@ -15,6 +15,11 @@ import {
   serializeTasksForStorage,
   touchTaskActivity
 } from './tasksRuntime'
+import {
+  countBlockingFloatingTasks,
+  getOldestTerminalFloatingTaskIdsForNewTask,
+  MAX_FLOATING_TASKS,
+} from './taskFloatingSlots'
 
 export type TaskStatus = 'pending' | 'running' | 'success' | 'failed' | 'cancelled'
 export type TaskRefundStatus = 'pending' | 'refunded' | 'unconfirmed'
@@ -152,6 +157,23 @@ export const useTasksStore = defineStore('tasks', () => {
       task.eventSource.close()
       task.eventSource = undefined
     }
+  }
+
+  const getBlockingTaskCount = () => countBlockingFloatingTasks(activeTasks.value)
+
+  const makeRoomForNewTask = (notify = false) => {
+    const taskIdsToRemove = getOldestTerminalFloatingTaskIdsForNewTask(activeTasks.value)
+    if (taskIdsToRemove.length === 0) {
+      return activeTasks.value.length < MAX_FLOATING_TASKS
+    }
+
+    taskIdsToRemove.forEach(taskId => removeTask(taskId))
+
+    if (notify) {
+      message.info('已自动收起最早完成的任务圆球，为新任务腾出位置')
+    }
+
+    return activeTasks.value.length < MAX_FLOATING_TASKS
   }
 
   const finalizeCancelledTask = async (task: Task, cancelMessage?: string) => {
@@ -410,8 +432,8 @@ export const useTasksStore = defineStore('tasks', () => {
       return true
     }
 
-    if (activeTasks.value.length >= 3) {
-      message.warning('最多只能同时进行 3 个任务')
+    if (activeTasks.value.length >= MAX_FLOATING_TASKS && !makeRoomForNewTask(true)) {
+      message.warning(`最多只能同时进行 ${MAX_FLOATING_TASKS} 个任务`)
       return false
     }
     
@@ -482,6 +504,7 @@ export const useTasksStore = defineStore('tasks', () => {
     activeTasks,
     detailModalVisible,
     currentDetailRecord,
+    getBlockingTaskCount,
     addTask,
     removeTask,
     clearCompleted,

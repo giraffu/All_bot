@@ -90,3 +90,62 @@ async def test_fetch_gallery_feed_page_uses_media_type_only_without_category_or_
     assert "video" in compiled.params.values()
     assert 321 in compiled.params.values()
     assert '%"#model-a"%' in compiled.params.values()
+
+
+@pytest.mark.asyncio
+async def test_fetch_gallery_feed_page_supports_edit_group_none_filter():
+    session = _FakeSession([_ScalarResult(0), _ItemsResult([])])
+
+    await fetch_gallery_feed_page(
+        session=session,
+        page=1,
+        size=20,
+        media_type=None,
+        task_type="edit_group",
+        lora_model="__none__",
+        sort_by="latest",
+        time_range="all",
+        user_id=None,
+        category=None,
+        is_active=True,
+    )
+
+    compiled = session.executed_statements[1].compile()
+    sql = str(compiled).lower()
+    task_types = next(
+        value for value in compiled.params.values() if isinstance(value, list)
+    )
+
+    assert "history.type" in sql
+    assert task_types == ["edit", "quick_image", "img2img_lora"]
+    assert '%"#qwen/YARN_1.0.safetensors"%' in compiled.params.values()
+    assert '%"#__none__"%' not in compiled.params.values()
+
+
+@pytest.mark.asyncio
+async def test_fetch_gallery_feed_page_supports_img2video_group_model_filter():
+    session = _FakeSession([_ScalarResult(0), _ItemsResult([])])
+
+    await fetch_gallery_feed_page(
+        session=session,
+        page=1,
+        size=20,
+        media_type=None,
+        task_type="img2video_group",
+        lora_model="motion-a",
+        sort_by="latest",
+        time_range="all",
+        user_id=None,
+        category=None,
+        is_active=True,
+    )
+
+    compiled = session.executed_statements[1].compile()
+    sql = str(compiled).lower()
+    task_types = next(
+        value for value in compiled.params.values() if isinstance(value, list)
+    )
+
+    assert "history.type" in sql
+    assert task_types == ["custom_video", "video_lora"]
+    assert '%"#motion-a"%' in compiled.params.values()

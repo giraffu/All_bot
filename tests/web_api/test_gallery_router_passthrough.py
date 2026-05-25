@@ -16,14 +16,14 @@ def _build_current_user():
 
 
 @pytest.mark.asyncio
-async def test_build_gallery_config_payload_uses_mode_names_and_filters_empty_img2img_lora():
+async def test_build_gallery_config_payload_uses_mode_names_and_filters_empty_lora_entries():
     payload = build_gallery_config_payload(
         allowed_type_configs=[
             ("mode_a", "task.mode_a"),
             ("mode_b", "task.mode_b"),
         ],
         mode_name_map={"mode_a": "显示名称A"},
-        video_lora_models={"video-1": "视频模型"},
+        video_lora_models={"": "ignore", "video-1": "视频模型"},
         image_lora_models={"": "ignore", "img-1": "图片模型"},
     )
 

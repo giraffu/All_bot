@@ -145,9 +145,11 @@
       "all": "全部",
       "face_swap": "幻想换脸",
       "i2i_draw": "局部重绘",
+      "edit_group": "自由P图",
       "custom_edit": "自由P图",
       "img2img": "图生图(附加模型)",
       "custom_video": "自定义图生视频",
+      "img2video_group": "图生视频",
       "img2video": "图生视频(附加模型)",
       "high_res_video": "高级图生视频"
     },
@@ -161,6 +163,7 @@
       "most_used": "最多应用"
     },
     "choose_addon": "选择附加模型：",
+    "no_addon": "无",
     "all_models": "所有模型",
     "no_posts": "暂无道友分享作品",
     "modal": {

@@ -67,7 +67,11 @@ def build_gallery_config_payload(
             {"id": task_type, "name": mode_name_map.get(task_type, fallback_name)}
             for task_type, fallback_name in allowed_type_configs
         ],
-        "lora_models": [{"id": key, "name": value} for key, value in video_lora_models.items()],
+        "lora_models": [
+            {"id": key, "name": value}
+            for key, value in video_lora_models.items()
+            if key
+        ],
         "img2img_lora_models": [
             {"id": key, "name": value}
             for key, value in image_lora_models.items()

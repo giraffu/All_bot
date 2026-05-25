@@ -27,8 +27,12 @@ export function useGalleryConfig(options: UseGalleryConfigOptions = {}) {
         allowedTypes.value = res.data.allowed_types || []
 
         if (options.includeLoraModels) {
-          videoLoraModels.value = res.data.lora_models || []
-          img2imgLoraModels.value = res.data.img2img_lora_models || []
+          videoLoraModels.value = (res.data.lora_models || []).filter(
+            (item: GalleryTaskTypeOption) => Boolean(item?.id)
+          )
+          img2imgLoraModels.value = (res.data.img2img_lora_models || []).filter(
+            (item: GalleryTaskTypeOption) => Boolean(item?.id)
+          )
         }
       } catch (error) {
         options.onError?.(error)

@@ -23,6 +23,10 @@ import {
   formatGalleryTag,
   resolveGalleryTaskTypeLabel
 } from '@/utils/galleryPresentation'
+import {
+  buildGalleryTaskTypeTabs,
+  GALLERY_LORA_MODEL_NONE,
+} from '@/utils/galleryTaskTypeFilters'
 import { useGalleryConfig } from '@/composables/useGalleryConfig'
 import { useGalleryFilters } from '@/composables/useGalleryFilters'
 import { useViewport } from '@/composables/useViewport'
@@ -94,7 +98,7 @@ const {
         size: pageSize.value,
         media_type: mediaType.value,
         task_type: taskType.value,
-        lora_model: loraModel.value === 'all' ? undefined : loraModel.value,
+        lora_model: requestLoraModel.value,
         sort_by: sortBy.value,
         time_range: timeRange.value
       }
@@ -238,8 +242,9 @@ const {
   loraModel,
   sortBy,
   timeRange,
-  isLoraTaskType,
+  hasAddonSubfilters,
   currentLoraModels,
+  requestLoraModel,
   handleTaskTypeChange,
   handleTimeRangeChange,
   handleSortChange,
@@ -264,6 +269,13 @@ const loadPosts = async (reset = false) => {
 }
 const resolveTaskTypeLabel = (taskTypeId: string) =>
   resolveGalleryTaskTypeLabel(taskTypeId, t)
+const taskTypeTabs = computed(() => [
+  { id: 'all', name: t('gallery.tabs.all') },
+  ...buildGalleryTaskTypeTabs(allowedTypes.value).map((tab) => ({
+    id: tab.id,
+    name: resolveTaskTypeLabel(tab.id),
+  })),
+])
 
 useScrollPrefetch(layoutContentRef, prefetchNextPage, {
   isEnabled: () => !templateApplyStore.visible,
@@ -304,7 +316,7 @@ watch(pageSize, (nextSize, previousSize) => {
       <StickyHeaderSection class-name="-mx-4 px-4 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
         <div class="flex flex-col xl:flex-row justify-between xl:items-center gap-4">
           <SegmentedTabsRail
-            :items="[{ id: 'all', name: $t('gallery.tabs.all') }, ...allowedTypes.map((tab) => ({ id: tab.id, name: resolveTaskTypeLabel(tab.id) }))]"
+            :items="taskTypeTabs"
             :selected-id="taskType"
             container-class="w-full xl:w-auto shrink-0"
             @select="handleTaskTypeChange"
@@ -342,7 +354,7 @@ watch(pageSize, (nextSize, previousSize) => {
         </div>
 
         <OverflowScrollRail
-          v-if="isLoraTaskType"
+          v-if="hasAddonSubfilters"
           container-class="w-full shrink-0 px-1 rounded-2xl border border-slate-700/50 bg-slate-950/55 py-2 shadow-[0_6px_18px_rgba(2,6,23,0.25)]"
           content-class="flex items-center gap-2"
         >
@@ -353,7 +365,14 @@ watch(pageSize, (nextSize, previousSize) => {
               class="px-2 py-0.5 sm:px-3 sm:py-1 rounded-lg text-xs transition-all border whitespace-nowrap shrink-0"
               :class="loraModel === 'all' ? 'bg-pink-500/20 border-pink-500/50 text-pink-400' : 'border-slate-400 hover:border-slate-500 text-slate-400'"
             >
-              {{ $t('gallery.all_models') }}
+              {{ $t('gallery.filters.all') }}
+            </button>
+            <button
+              @click="handleLoraModelChange(GALLERY_LORA_MODEL_NONE)"
+              class="px-2 py-0.5 sm:px-3 sm:py-1 rounded-lg text-xs transition-all border whitespace-nowrap shrink-0"
+              :class="loraModel === GALLERY_LORA_MODEL_NONE ? 'bg-pink-500/20 border-pink-500/50 text-pink-400' : 'border-slate-400 hover:border-slate-500 text-slate-400'"
+            >
+              {{ $t('gallery.no_addon') }}
             </button>
             <button
               v-for="lora in currentLoraModels"

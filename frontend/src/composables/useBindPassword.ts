@@ -6,7 +6,7 @@ import type { User } from '@/stores/auth'
 interface UseBindPasswordOptions {
   isMobile: Ref<boolean>
   user: Ref<User | null | undefined>
-  onUserBound: (username: string) => void
+  onPasswordBound: () => void | Promise<void>
   showMainButton: (text: string, handler: () => void | Promise<void>) => void
   hideMainButton: (handler?: () => void | Promise<void>) => void
   hapticFeedback: (type?: 'light' | 'medium' | 'heavy') => void
@@ -34,10 +34,10 @@ export function useBindPassword(options: UseBindPasswordOptions) {
     bindingLoading.value = true
     try {
       await api.post('/auth/bind-password', bindFormState)
-      message.success('密咒设置成功！之后可以使用该道号与密咒破界登录。')
-      options.onUserBound(bindFormState.username)
       showBindModal.value = false
       bindFormState.password = ''
+      message.success('密咒设置成功，请使用新密咒重新登录。')
+      await options.onPasswordBound()
     } catch (error: any) {
       console.error('Bind password error:', error)
 

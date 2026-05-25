@@ -2,11 +2,37 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 
-from sqlalchemy import desc, func, select
+from sqlalchemy import desc, func, not_, or_, select
 from sqlalchemy.orm import selectinload
 
 from src.constants import MODE_IMAGE_TO_VIDEO
 from src.database.models import GalleryPost, History
+from src.lora_catalog import IMAGE_LORA_MODELS, VIDEO_LORA_MODELS
+
+GALLERY_LORA_MODEL_NONE = "__none__"
+
+GALLERY_GROUPED_TASK_TYPE_FAMILIES = {
+    "edit_group": ("edit", "quick_image", "img2img_lora"),
+    "img2video_group": ("custom_video", MODE_IMAGE_TO_VIDEO),
+}
+
+GALLERY_GROUPED_TASK_TYPE_LORA_MODELS = {
+    "edit_group": tuple(model for model in IMAGE_LORA_MODELS if model),
+    "img2video_group": tuple(model for model in VIDEO_LORA_MODELS if model),
+}
+
+
+def _resolve_grouped_task_type_values(
+    *, task_type: str | None, lora_model: str | None
+):
+    if not task_type or task_type == "all":
+        return None
+
+    grouped_values = GALLERY_GROUPED_TASK_TYPE_FAMILIES.get(task_type)
+    if grouped_values is None:
+        return (task_type,)
+
+    return grouped_values
 
 
 def _apply_active_filter(query, *, is_active: bool | None):
@@ -22,13 +48,17 @@ def _apply_task_type_or_category_filter(
     *,
     task_type: str | None,
     category: str | None,
+    lora_model: str | None,
 ):
-    if task_type and task_type != "all":
-        return (
-            query.join(History, GalleryPost.task_id == History.task_id).where(
-                History.type == task_type
-            )
-        )
+    task_type_values = _resolve_grouped_task_type_values(
+        task_type=task_type,
+        lora_model=lora_model,
+    )
+    if task_type_values:
+        query = query.join(History, GalleryPost.task_id == History.task_id)
+        if len(task_type_values) == 1:
+            return query.where(History.type == task_type_values[0])
+        return query.where(History.type.in_(task_type_values))
 
     if not category or category == "all":
         return query
@@ -64,7 +94,24 @@ def _apply_media_filters(
     if media_type and media_type != "all" and not task_type and not category:
         query = query.where(GalleryPost.media_type == media_type)
 
-    if lora_model:
+    grouped_lora_models = GALLERY_GROUPED_TASK_TYPE_LORA_MODELS.get(task_type or "")
+    if (
+        lora_model == GALLERY_LORA_MODEL_NONE
+        and grouped_lora_models
+    ):
+        addon_tag_filters = [
+            GalleryPost.tags.like(f'%"{f"#{model_name}"}"%')
+            for model_name in grouped_lora_models
+        ]
+        if addon_tag_filters:
+            query = query.where(
+                or_(
+                    GalleryPost.tags.is_(None),
+                    not_(or_(*addon_tag_filters)),
+                )
+            )
+
+    if lora_model and lora_model not in {"all", GALLERY_LORA_MODEL_NONE}:
         lora_tag = f'"#{lora_model}"'
         query = query.where(GalleryPost.tags.like(f"%{lora_tag}%"))
 
@@ -127,6 +174,7 @@ def build_gallery_feed_query(
         query,
         task_type=task_type,
         category=category,
+        lora_model=lora_model,
     )
     query = _apply_media_filters(
         query,

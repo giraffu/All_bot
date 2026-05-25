@@ -1,5 +1,11 @@
 import { computed, ref, type Ref } from 'vue'
 import type { GalleryTaskTypeOption } from '@/composables/useGalleryConfig'
+import {
+  GALLERY_EDIT_GROUP_TASK_TYPE,
+  GALLERY_IMG2VIDEO_GROUP_TASK_TYPE,
+  GALLERY_LORA_MODEL_NONE,
+  isGalleryGroupedTaskType,
+} from '@/utils/galleryTaskTypeFilters'
 
 interface UseGalleryFiltersOptions {
   videoLoraModels: Ref<GalleryTaskTypeOption[]>
@@ -14,15 +20,26 @@ export function useGalleryFilters(options: UseGalleryFiltersOptions) {
   const sortBy = ref('latest')
   const timeRange = ref('all')
 
-  const isLoraTaskType = computed(
-    () => taskType.value === 'video_lora' || taskType.value === 'img2img_lora'
-  )
+  const hasAddonSubfilters = computed(() => isGalleryGroupedTaskType(taskType.value))
 
   const currentLoraModels = computed(() => {
-    if (taskType.value === 'img2img_lora') {
+    if (taskType.value === GALLERY_EDIT_GROUP_TASK_TYPE) {
       return options.img2imgLoraModels.value
     }
-    return options.videoLoraModels.value
+    if (taskType.value === GALLERY_IMG2VIDEO_GROUP_TASK_TYPE) {
+      return options.videoLoraModels.value
+    }
+    return []
+  })
+
+  const requestLoraModel = computed(() => {
+    if (!hasAddonSubfilters.value || loraModel.value === 'all') {
+      return undefined
+    }
+    if (loraModel.value === GALLERY_LORA_MODEL_NONE) {
+      return GALLERY_LORA_MODEL_NONE
+    }
+    return loraModel.value
   })
 
   const triggerReload = () => {
@@ -35,9 +52,7 @@ export function useGalleryFilters(options: UseGalleryFiltersOptions) {
     }
 
     taskType.value = type
-    if (!isLoraTaskType.value) {
-      loraModel.value = 'all'
-    }
+    loraModel.value = 'all'
     triggerReload()
   }
 
@@ -71,8 +86,9 @@ export function useGalleryFilters(options: UseGalleryFiltersOptions) {
     loraModel,
     sortBy,
     timeRange,
-    isLoraTaskType,
+    hasAddonSubfilters,
     currentLoraModels,
+    requestLoraModel,
     handleTaskTypeChange,
     handleTimeRangeChange,
     handleSortChange,

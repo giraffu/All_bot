@@ -1,0 +1,40 @@
+import type { GalleryTaskTypeOption } from '@/composables/useGalleryConfig'
+
+export const GALLERY_EDIT_GROUP_TASK_TYPE = 'edit_group'
+export const GALLERY_IMG2VIDEO_GROUP_TASK_TYPE = 'img2video_group'
+export const GALLERY_LORA_MODEL_NONE = '__none__'
+
+const GALLERY_GROUPED_TASK_TYPE_ALIASES: Record<string, string> = {
+  edit: GALLERY_EDIT_GROUP_TASK_TYPE,
+  img2img_lora: GALLERY_EDIT_GROUP_TASK_TYPE,
+  custom_video: GALLERY_IMG2VIDEO_GROUP_TASK_TYPE,
+  video_lora: GALLERY_IMG2VIDEO_GROUP_TASK_TYPE,
+}
+
+export function isGalleryGroupedTaskType(taskType: string): boolean {
+  return (
+    taskType === GALLERY_EDIT_GROUP_TASK_TYPE
+    || taskType === GALLERY_IMG2VIDEO_GROUP_TASK_TYPE
+  )
+}
+
+export function buildGalleryTaskTypeTabs(
+  allowedTypes: GalleryTaskTypeOption[]
+): GalleryTaskTypeOption[] {
+  const dedupedTabs: GalleryTaskTypeOption[] = []
+  const seen = new Set<string>()
+
+  allowedTypes.forEach((taskType) => {
+    const normalizedId = GALLERY_GROUPED_TASK_TYPE_ALIASES[taskType.id] || taskType.id
+    if (seen.has(normalizedId)) {
+      return
+    }
+    seen.add(normalizedId)
+    dedupedTabs.push({
+      ...taskType,
+      id: normalizedId,
+    })
+  })
+
+  return dedupedTabs
+}

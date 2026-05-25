@@ -48,11 +48,9 @@ const {
 } = useBindPassword({
   isMobile,
   user: computed(() => authStore.user),
-  onUserBound: (username) => {
-    if (authStore.user) {
-      authStore.user.username = username
-      authStore.setAuth(authStore.token!, authStore.user)
-    }
+  onPasswordBound: async () => {
+    authStore.logout()
+    await router.push('/login')
   },
   showMainButton,
   hideMainButton,

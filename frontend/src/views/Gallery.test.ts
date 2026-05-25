@@ -169,14 +169,21 @@ const faceSwapContext = {
   prompt: 'demo prompt'
 }
 
-const primeGalleryApi = (options?: { paged?: boolean }) => {
+const primeGalleryApi = (options?: {
+  paged?: boolean
+  config?: {
+    allowed_types?: Array<{ id: string, name: string }>
+    lora_models?: Array<{ id: string, name: string }>
+    img2img_lora_models?: Array<{ id: string, name: string }>
+  }
+}) => {
   apiGetMock.mockImplementation((url: string, config?: { params?: Record<string, unknown> }) => {
     if (url === '/gallery/config') {
       return Promise.resolve({
         data: {
-          allowed_types: [],
-          lora_models: [],
-          img2img_lora_models: []
+          allowed_types: options?.config?.allowed_types || [],
+          lora_models: options?.config?.lora_models || [],
+          img2img_lora_models: options?.config?.img2img_lora_models || []
         }
       })
     }
@@ -306,6 +313,78 @@ describe('Gallery template apply integration', () => {
 
     expect(wrapper.html()).toContain(samplePostTwo.media_url)
     expect(wrapper.html()).not.toContain(samplePost.media_url)
+  })
+
+  it('merges duplicate gallery task tabs and maps grouped addon filters to request params', async () => {
+    primeGalleryApi({
+      config: {
+        allowed_types: [
+          { id: 'i2i_pro', name: '幻想换脸' },
+          { id: 'edit', name: '自由P图' },
+          { id: 'img2img_lora', name: '图生图(附加模型)' },
+          { id: 'custom_video', name: '图生视频' },
+          { id: 'video_lora', name: '图生视频(附加模型)' },
+          { id: 'ltx_video', name: '高级图生视频' },
+        ],
+        lora_models: [
+          { id: '', name: '无' },
+          { id: 'motion-a', name: '动作A' },
+        ],
+        img2img_lora_models: [
+          { id: 'style-a', name: '写真A' },
+        ],
+      },
+    })
+
+    const wrapper = mountGallery()
+    await flushPromises()
+    await flushPromises()
+
+    const findButtonsByText = (text: string) =>
+      wrapper.findAll('button').filter(button => button.text().trim() === text)
+    const getLastGalleryPostsParams = () => {
+      const galleryCalls = apiGetMock.mock.calls.filter(([url]) => url === '/gallery/posts')
+      const lastCall = galleryCalls.at(-1)
+      return lastCall?.[1]?.params as Record<string, unknown> | undefined
+    }
+
+    expect(findButtonsByText('自由P图')).toHaveLength(1)
+    expect(findButtonsByText('图生视频')).toHaveLength(1)
+    expect(findButtonsByText('图生图(附加模型)')).toHaveLength(0)
+    expect(findButtonsByText('图生视频(附加模型)')).toHaveLength(0)
+
+    await findButtonsByText('自由P图')[0]!.trigger('click')
+    await flushPromises()
+    await flushPromises()
+    expect(findButtonsByText('无')).toHaveLength(1)
+    expect(getLastGalleryPostsParams()).toEqual(expect.objectContaining({
+      task_type: 'edit_group',
+      lora_model: undefined,
+    }))
+
+    await findButtonsByText('无')[0]!.trigger('click')
+    await flushPromises()
+    await flushPromises()
+    expect(getLastGalleryPostsParams()).toEqual(expect.objectContaining({
+      task_type: 'edit_group',
+      lora_model: '__none__',
+    }))
+
+    await findButtonsByText('写真A')[0]!.trigger('click')
+    await flushPromises()
+    await flushPromises()
+    expect(getLastGalleryPostsParams()).toEqual(expect.objectContaining({
+      task_type: 'edit_group',
+      lora_model: 'style-a',
+    }))
+
+    await findButtonsByText('图生视频')[0]!.trigger('click')
+    await flushPromises()
+    await flushPromises()
+    expect(getLastGalleryPostsParams()).toEqual(expect.objectContaining({
+      task_type: 'img2video_group',
+      lora_model: undefined,
+    }))
   })
 
   it('keeps detail apply on the shared path when workbench fallback is returned', async () => {

@@ -3,6 +3,7 @@ import api from '@/api'
 import { message } from 'ant-design-vue'
 import { useTasksStore } from '@/stores/tasks'
 import { useAuthStore } from '@/stores/auth'
+import { MAX_FLOATING_TASKS } from '@/stores/taskFloatingSlots'
 
 export function useTaskStream() {
   const isSubmitting = ref(false)
@@ -10,8 +11,8 @@ export function useTaskStream() {
   const authStore = useAuthStore()
 
   const submitTask = async (payload: any, taskTitle: string): Promise<string | null> => {
-    if (tasksStore.activeTasks.length >= 3) {
-      message.warning('您当前已有 3 个任务正在进行中，请等待完成后再提交新任务。')
+    if (tasksStore.getBlockingTaskCount() >= MAX_FLOATING_TASKS) {
+      message.warning(`您当前已有 ${MAX_FLOATING_TASKS} 个任务正在进行中，请等待完成后再提交新任务。`)
       return null
     }
 

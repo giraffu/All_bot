@@ -145,9 +145,11 @@
       "all": "All",
       "face_swap": "Face Swap",
       "i2i_draw": "Inpaint",
+      "edit_group": "Custom Edit",
       "custom_edit": "Custom Edit",
       "img2img": "Img2Img (Addon)",
       "custom_video": "Custom Img2Video",
+      "img2video_group": "Img2Video",
       "img2video": "Img2Video (Addon)",
       "high_res_video": "High-Res Video"
     },
@@ -161,6 +163,7 @@
       "most_used": "Most Used"
     },
     "choose_addon": "Select Model:",
+    "no_addon": "None",
     "all_models": "All Models",
     "no_posts": "No posts shared yet",
     "modal": {

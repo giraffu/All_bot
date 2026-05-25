@@ -20,13 +20,17 @@ export function resolveGalleryTaskTypeLabel(
     return t('gallery.tabs.all')
   }
 
-  const translationKey = taskTypeId
-    .replace('i2i_pro', 'face_swap')
-    .replace('edit', 'custom_edit')
-    .replace('img2img_lora', 'img2img')
-    .replace('custom_video', 'img2video')
-    .replace('video_lora', 'img2video')
-    .replace('ltx_video', 'high_res_video')
+  const translationKeyMap: Record<string, string> = {
+    i2i_pro: 'face_swap',
+    edit: 'custom_edit',
+    edit_group: 'edit_group',
+    img2img_lora: 'img2img',
+    custom_video: 'img2video',
+    video_lora: 'img2video',
+    img2video_group: 'img2video_group',
+    ltx_video: 'high_res_video',
+  }
+  const translationKey = translationKeyMap[taskTypeId] || taskTypeId
 
   return t(`gallery.tabs.${translationKey}`)
 }
