@@ -10,7 +10,10 @@ from src.core import task_core_web_monitor
 from src.core.task_core_persistence_postprocess import (
     postprocess_successful_task_persistence,
 )
-from src.core.task_core_types import TaskSuccessPersistenceResult
+from src.core.task_core_types import (
+    TaskPersistencePostprocessPlan,
+    TaskSuccessPersistenceResult,
+)
 from src.services import image_service as image_service_module
 from src.services import permission_service as permission_service_module
 from src.services import storage as storage_module
@@ -361,7 +364,9 @@ async def test_process_and_submit_task_passes_requested_duration_to_web_monitor(
             "duration": "20s",
         },
         task_id="task-1",
-        client_type="web",
+        submission_side_effect_plan=task_core.TaskSubmissionSideEffectPlan(
+            attach_web_monitor=True
+        ),
     )
 
     assert result["task_id"] == "reg-1"
@@ -474,8 +479,10 @@ async def test_persist_successful_task_result_uses_storage_metadata_when_bytes_m
         billing_resolution="720p",
         requested_duration=12,
         result_path="bot-data/worker/task-3.mp4",
-        source="web",
-        warmup_web_history=True,
+        postprocess_plan=TaskPersistencePostprocessPlan(
+            source="web",
+            warmup_web_history=True,
+        ),
     )
 
     assert result.media_bytes is None
@@ -558,11 +565,13 @@ async def test_postprocess_successful_task_persistence_logs_refreshes_and_warms_
 
 
 @pytest.mark.asyncio
-async def test_persist_successful_web_history_routes_through_task_core_facade(monkeypatch):
+async def test_persist_successful_web_history_routes_through_persistence_boundary(monkeypatch):
     persist_mock = AsyncMock()
-    monkeypatch.setattr(task_core, "persist_successful_task_result", persist_mock)
+    monkeypatch.setattr(
+        task_core_persistence, "persist_successful_task_result", persist_mock
+    )
 
-    await task_core._persist_successful_web_history(
+    await task_core_persistence._persist_successful_web_history(
         backend_task_id="backend-1",
         registry_task_id="registry-1",
         internal_user_id=123,
@@ -596,6 +605,8 @@ async def test_persist_successful_web_history_routes_through_task_core_facade(mo
         output_height=1024,
         output_duration=None,
         requested_duration=None,
-        source="web",
-        warmup_web_history=True,
+        postprocess_plan=TaskPersistencePostprocessPlan(
+            source="web",
+            warmup_web_history=True,
+        ),
     )

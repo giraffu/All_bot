@@ -77,6 +77,7 @@ for group in "$@"; do
         tests/web_api/test_tasks_action_api_service.py \
         tests/web_api/test_tasks_generate.py \
         tests/web_api/test_tasks_stream.py \
+        tests/web_api/test_task_runtime_api_service.py \
         tests/services/test_task_service_completion.py \
         tests/services/test_task_service_support.py \
         tests/services/test_task_service_message_support.py \
@@ -90,6 +91,7 @@ for group in "$@"; do
         tests/web_api/test_tasks_action_api_service.py \
         tests/web_api/test_tasks_generate.py \
         tests/web_api/test_tasks_stream.py \
+        tests/web_api/test_task_runtime_api_service.py \
         tests/services/test_task_service_completion.py \
         tests/services/test_task_service_flow.py \
         tests/services/test_task_service_support.py \
@@ -100,7 +102,8 @@ for group in "$@"; do
       run_pytest_group "tasks-web" \
         tests/web_api/test_tasks_action_api_service.py \
         tests/web_api/test_tasks_generate.py \
-        tests/web_api/test_tasks_stream.py
+        tests/web_api/test_tasks_stream.py \
+        tests/web_api/test_task_runtime_api_service.py
       ;;
     users-web)
       run_pytest_group "users-web" \

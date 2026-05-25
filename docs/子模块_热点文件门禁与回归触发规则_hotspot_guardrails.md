@@ -26,13 +26,15 @@
 - 阶段 2：主体完成，`Gallery`、`MyFavorites`、`MySubmissions` 与生成页工作台公共结构已收口
 - 阶段 3：基本完成，`message_handler.py`、`users.py`、`gallery.py`、`tasks.py` 已完成主要薄控制器收口
 - 阶段 4：本轮完成收口，`bot_task_service.py`、`backend/app/main.py`、`backend/app/queue_manager.py` 已通过完整阶段 4 回归
-- 阶段 7：第二批完成，已补齐共享详情弹层/工作台壳层 focused 回归、`MyFavorites` 组合流回归，以及 dashboard App 热点基线与独立门禁分组
+- 阶段 7：第二批主体完成，已补齐共享详情弹层/工作台壳层 focused 回归、`MyFavorites` 组合流回归，以及 dashboard App 热点基线与独立门禁分组；但 router guard 仍未完全并入共享关闭协议，workflow 对部分新热点文件的 path 触发也仍有缺口
 
 ## 3. 热点文件
 
 ### 3.1 任务主链路
 
 - `src/services/bot_task_service.py`
+- `src/services/task_service_entrypoints.py`
+- `src/services/task_service_entrypoints_generation.py`
 - `src/services/task_service_flow.py`
 - `src/services/task_service_completion.py`
 - `src/services/task_service_finalize.py`
@@ -43,6 +45,9 @@
 - `backend/app/queue_manager.py`
 - `src/core/task_core.py`
 - `src/web_api/routers/tasks.py`
+- `src/web_api/services/task_submission_service.py`
+- `src/web_api/services/task_runtime_api_service.py`
+- `src/web_api/services/task_result_service.py`
 - `src/web_api/services/task_stream_api_service.py`
 - `src/web_api/services/task_action_api_service.py`
 
@@ -53,12 +58,19 @@
 - `src/web_api/services/users_history_mutation_service.py`
 - `src/web_api/services/user_profile_service.py`
 - `src/web_api/routers/gallery.py`
-- `src/web_api/services/gallery_service.py`
+- `src/web_api/services/gallery_service_queries.py`
+- `src/web_api/services/gallery_service_mutations.py`
+- `src/web_api/services/gallery_service_comments.py`
+- `src/web_api/services/gallery_service_support.py`
 - `src/handlers/message_handler.py`
 - `src/handlers/message_handler_common.py`
 - `src/handlers/message_handler_profile.py`
+- `src/handlers/message_handler_profile_menu.py`
 - `src/handlers/message_handler_media.py`
+- `src/handlers/message_handler_media_entry.py`
 - `src/handlers/message_handler_menu.py`
+- `src/handlers/message_handler_runtime.py`
+- `src/handlers/message_handler_prompt.py`
 
 ### 3.3 前端公共壳层
 
@@ -71,6 +83,8 @@
 - `frontend/src/components/ListStateBlock.vue`
 - `frontend/src/components/GenerationWorkbenchShell.vue`
 - `frontend/src/components/template-apply/TemplateApplyWorkbenchHost.vue`
+- `frontend/src/composables/useDetailTemplateApply.ts`
+- `frontend/src/composables/useTemplateApplyCloseProtocol.ts`
 - `frontend/src/composables/useGalleryDetailModalAdapter.ts`
 - `frontend/src/router/index.ts`
 - `dashboard/frontend/src/App.vue`
@@ -82,6 +96,8 @@
 适用文件：
 
 - `bot_task_service.py`
+- `task_service_entrypoints.py`
+- `task_service_entrypoints_generation.py`
 - `task_service_flow.py`
 - `task_service_completion.py`
 - `task_service_finalize.py`
@@ -131,6 +147,9 @@ pytest \
 适用文件：
 
 - `src/web_api/routers/tasks.py`
+- `src/web_api/services/task_submission_service.py`
+- `src/web_api/services/task_runtime_api_service.py`
+- `src/web_api/services/task_result_service.py`
 - `src/web_api/services/task_stream_api_service.py`
 - `src/web_api/services/task_action_api_service.py`
 
@@ -140,7 +159,8 @@ pytest \
 pytest \
   tests/web_api/test_tasks_action_api_service.py \
   tests/web_api/test_tasks_generate.py \
-  tests/web_api/test_tasks_stream.py
+  tests/web_api/test_tasks_stream.py \
+  tests/web_api/test_task_runtime_api_service.py
 ```
 
 如果改动同时触及任务状态字段、terminal payload 或历史兜底，补跑“任务黄金路径最小必跑集”。
@@ -170,7 +190,10 @@ pytest \
 适用文件：
 
 - `src/web_api/routers/gallery.py`
-- `src/web_api/services/gallery_service.py`
+- `src/web_api/services/gallery_service_queries.py`
+- `src/web_api/services/gallery_service_mutations.py`
+- `src/web_api/services/gallery_service_comments.py`
+- `src/web_api/services/gallery_service_support.py`
 
 至少执行：
 
@@ -191,8 +214,12 @@ pytest \
 - `src/handlers/message_handler.py`
 - `src/handlers/message_handler_common.py`
 - `src/handlers/message_handler_profile.py`
+- `src/handlers/message_handler_profile_menu.py`
 - `src/handlers/message_handler_media.py`
+- `src/handlers/message_handler_media_entry.py`
 - `src/handlers/message_handler_menu.py`
+- `src/handlers/message_handler_runtime.py`
+- `src/handlers/message_handler_prompt.py`
 
 至少执行：
 
@@ -202,7 +229,10 @@ pytest \
   tests/handlers/test_message_handler_common.py \
   tests/handlers/test_message_handler_profile.py \
   tests/handlers/test_message_handler_media.py \
-  tests/handlers/test_message_handler_menu.py
+  tests/handlers/test_message_handler_menu.py \
+  tests/handlers/test_message_handler_media_entry.py \
+  tests/handlers/test_message_handler_runtime.py \
+  tests/handlers/test_message_handler_prompt.py
 ```
 
 ### 4.7 修改前端公共壳层
@@ -218,6 +248,8 @@ pytest \
 - `frontend/src/components/ListStateBlock.vue`
 - `frontend/src/components/GenerationWorkbenchShell.vue`
 - `frontend/src/components/template-apply/TemplateApplyWorkbenchHost.vue`
+- `frontend/src/composables/useDetailTemplateApply.ts`
+- `frontend/src/composables/useTemplateApplyCloseProtocol.ts`
 - `frontend/src/composables/useGalleryDetailModalAdapter.ts`
 - `frontend/src/router/index.ts`
 
@@ -235,19 +267,18 @@ cd frontend && pnpm vitest run \
   src/components/GenerationWorkbenchShell.test.ts \
   src/components/template-apply/TemplateApplyWorkbenchHost.test.ts \
   src/composables/useGalleryDetailModalAdapter.test.ts \
-  src/router/index.test.ts
-```
-
-如果改动涉及模板应用或生成工作台状态流，再补：
-
-```bash
-cd frontend && pnpm vitest run \
+  src/router/index.test.ts \
   src/stores/tasksRuntime.test.ts \
   src/stores/taskResultState.test.ts \
   src/stores/templateApply.test.ts \
   src/composables/useTemplateApplyUpload.test.ts \
   src/utils/normalizeTemplateApplyContext.test.ts
 ```
+
+说明：
+
+- `frontend-shared` 分组当前默认就包含模板应用与生成工作台状态流相关测试，不再区分“基础壳层必跑”与“涉及时再补跑”两档
+- `useTemplateApplyCloseProtocol.ts` 已属于应纳入同组门禁的共享协议文件；在 workflow path 规则补齐前，修改该文件时应手动执行 `frontend-shared`
 
 ### 4.8 修改 dashboard App 壳层
 
@@ -286,10 +317,16 @@ cd dashboard/frontend && npm exec -- vitest run \
 - 若本次没有识别到热点分组，则以 no-op job 结束，避免 workflow 悬空
 - `Hotspot Gate Result` 聚合 job 提供稳定检查名，供 branch protection 配置 required check
 
+说明：
+
+- 本文的“热点文件清单”以当前代码结构为准；workflow 的 `paths` 配置若仍使用粗粒度 glob 或旧文件名，应视为待同步项，而不是反向收窄文档口径
+
 ## 7. 当前缺口
 
 - 当前热点门禁已补齐 dashboard App 独立分组，但 branch protection 的 required checks 清单仍需在仓库设置侧正式固化
 - 页面家族已补到“列表切换 + 详情弹层 + 模板工作台”关键组合流，但仍未覆盖更重的跨页面端到端场景
+- workflow `paths` 仍有几处与当前代码结构不一致：`bot_task_service.py` 与 gallery 拆分 service 尚未全部具备稳定路径触发；修改这些文件时不能只依赖自动门禁
+- `frontend-shared` 当前实际已默认执行模板应用状态流测试，但文档早先的“两段式补跑”口径已不再适用，后续应统一按单一分组理解
 
 ## 8. 阶段 7 第一批收尾标志
 
@@ -304,14 +341,16 @@ cd dashboard/frontend && npm exec -- vitest run \
 
 满足以下条件时，可认为阶段 7 第二批完成：
 
-- 共享详情弹层、页面壳层与工作台壳层已进入 focused tests 与热点门禁
+- 共享详情弹层、页面壳层与工作台壳层已进入 focused tests，且大部分已进入热点门禁
 - 至少存在 1 组“列表切换 + 详情弹层 + 模板工作台”的组合回归
 - `dashboard/frontend/src/App.vue` 已具备最小可用回归基线
 - workflow 已按 Python、主站 Frontend、Dashboard Frontend 拆分热点执行入口
+- 与模板应用关闭共享协议、gallery 拆分 service 对应的 path 触发缺口已被明确记录，未再混入“已完成”口径
 
 ## 10. 下一批建议
 
-阶段 7 完成后，后续治理建议只保留两类长期项：
+阶段 7 主体完成后，后续治理建议保留三类长期项：
 
 1. 在仓库设置里固化 required checks / branch protection
-2. 视风险再补更重的跨页面端到端回归，而不是继续堆 focused tests 数量
+2. 继续补齐 workflow `paths` 与热点清单之间的剩余缺口，尤其是 `bot_task_service.py` 与 gallery 拆分 service
+3. 视风险再补更重的跨页面端到端回归，而不是继续堆 focused tests 数量

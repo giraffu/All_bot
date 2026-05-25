@@ -5,7 +5,7 @@ import pytest
 from asgi_correlation_id import correlation_id
 
 from src.services import task_service_flow
-from src.services.task_service_types import BotTaskMessageSpec
+from src.services.task_service_types import BotTaskMessageSpec, BotTaskSubmissionContext
 
 
 @pytest.mark.asyncio
@@ -27,13 +27,15 @@ async def test_submit_bot_task_sets_runtime_state_and_returns_saved_inputs(monke
     token = correlation_id.set(None)
     try:
         task_id, saved_inputs = await task_service_flow.submit_bot_task(
-            runtime_state=runtime_state,
-            internal_user_id=456,
-            username="tester",
-            task_type="ltx_video",
-            inputs={"prompt": "hello"},
-            source_post_id=9,
-            deduct_quota=False,
+            submission=BotTaskSubmissionContext(
+                runtime_state=runtime_state,
+                internal_user_id=456,
+                username="tester",
+                task_type="ltx_video",
+                inputs={"prompt": "hello"},
+                source_post_id=9,
+                deduct_quota=False,
+            ),
         )
         assert correlation_id.get() == task_id
     finally:
@@ -122,11 +124,13 @@ async def test_prepare_and_submit_bot_task_updates_status_through_helpers(monkey
             update=None,
             chat_id=123,
             message_spec=spec,
-            runtime_state=runtime_state,
-            internal_user_id=456,
-            username="tester",
-            task_type="image",
-            inputs={"prompt": "hello"},
+            submission=BotTaskSubmissionContext(
+                runtime_state=runtime_state,
+                internal_user_id=456,
+                username="tester",
+                task_type="image",
+                inputs={"prompt": "hello"},
+            ),
         )
     )
 
@@ -136,13 +140,13 @@ async def test_prepare_and_submit_bot_task_updates_status_through_helpers(monkey
     assert returned_spec is spec
     send_initial.assert_awaited_once()
     submit_bot_task.assert_awaited_once_with(
-        runtime_state=runtime_state,
-        internal_user_id=456,
-        username="tester",
-        task_type="image",
-        inputs={"prompt": "hello"},
-        source_post_id=None,
-        deduct_quota=True,
+        submission=BotTaskSubmissionContext(
+            runtime_state=runtime_state,
+            internal_user_id=456,
+            username="tester",
+            task_type="image",
+            inputs={"prompt": "hello"},
+        ),
     )
     update_submitted.assert_awaited_once_with(
         status_msg="status-msg",

@@ -181,7 +181,7 @@ const { handleInteract } = useGalleryPostInteractions<Post>({
     console.error(error)
   },
 })
-const { applying, handleApply, cancelPendingApply } = useDetailTemplateApply<Post>({
+const { applying, handleApply } = useDetailTemplateApply<Post>({
   currentPost,
   detailVisible,
   endpoint: (post) => `/gallery/posts/${post.id}/apply-context`,
@@ -311,15 +311,6 @@ watch(pageSize, (nextSize, previousSize) => {
   }
 })
 
-watch(
-  detailVisible,
-  (visible, previousVisible) => {
-    if (!visible && previousVisible) {
-      cancelPendingApply()
-    }
-  },
-  { flush: 'sync' }
-)
 </script>
 
 <template>

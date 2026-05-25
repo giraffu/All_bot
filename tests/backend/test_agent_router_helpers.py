@@ -45,58 +45,43 @@ async def test_check_task_payload_raises_when_task_missing():
 
 @pytest.mark.asyncio
 async def test_update_status_payload_clears_current_task_and_fails_task():
-    redis = SimpleNamespace(
-        hset=AsyncMock(),
-        hdel=AsyncMock(),
-    )
     queue_manager = SimpleNamespace(
-        redis=redis,
+        bind_agent_task=AsyncMock(),
+        clear_agent_current_task=AsyncMock(),
         update_task_heartbeat=AsyncMock(),
         update_progress=AsyncMock(),
         fail_task=AsyncMock(),
     )
-    req = SimpleNamespace(
+    payload = await update_status_payload(
         task_id="task-1",
         agent_id="agent-1",
         status="failed",
         progress=0.0,
         error="boom",
+        queue_manager=queue_manager,
     )
-
-    payload = await update_status_payload(req=req, queue_manager=queue_manager)
 
     assert payload == {"status": "ok"}
-    redis.hset.assert_any_await("comfy:task:task-1", "worker_id", "agent-1")
-    redis.hset.assert_any_await(
-        "comfy:agent:heartbeat:agent-1", "current_task_id", "task-1"
-    )
-    redis.hdel.assert_awaited_once_with(
-        "comfy:agent:heartbeat:agent-1",
-        "current_task_id",
-    )
+    queue_manager.bind_agent_task.assert_awaited_once_with("task-1", "agent-1")
+    queue_manager.clear_agent_current_task.assert_awaited_once_with("agent-1")
     queue_manager.fail_task.assert_awaited_once_with("task-1", "boom")
 
 
 @pytest.mark.asyncio
 async def test_task_heartbeat_payload_binds_agent_when_present():
-    redis = SimpleNamespace(
-        hset=AsyncMock(),
-        hdel=AsyncMock(),
-    )
     queue_manager = SimpleNamespace(
-        redis=redis,
+        bind_agent_task=AsyncMock(),
         update_task_heartbeat=AsyncMock(),
     )
-    req = SimpleNamespace(task_id="task-1", agent_id="agent-1")
-
-    payload = await task_heartbeat_payload(req=req, queue_manager=queue_manager)
+    payload = await task_heartbeat_payload(
+        task_id="task-1",
+        agent_id="agent-1",
+        queue_manager=queue_manager,
+    )
 
     assert payload == {"status": "ok"}
     queue_manager.update_task_heartbeat.assert_awaited_once_with("task-1")
-    redis.hset.assert_any_await("comfy:task:task-1", "worker_id", "agent-1")
-    redis.hset.assert_any_await(
-        "comfy:agent:heartbeat:agent-1", "current_task_id", "task-1"
-    )
+    queue_manager.bind_agent_task.assert_awaited_once_with("task-1", "agent-1")
 
 
 def test_verify_agent_token_checks_configuration_and_bearer_value():

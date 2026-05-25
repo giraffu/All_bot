@@ -1,7 +1,7 @@
-import { onBeforeUnmount, ref, type Ref } from 'vue'
+import { onBeforeUnmount, ref, watch, type Ref } from 'vue'
 import { message } from 'ant-design-vue'
 import api from '@/api'
-import { confirmTemplateApplyClose } from '@/stores/templateApply'
+import { useTemplateApplyReplaceProtocol } from '@/composables/useTemplateApplyCloseProtocol'
 import type { TemplateApplySource } from '@/types/templateApply'
 
 interface DetailApplyTarget {
@@ -34,6 +34,9 @@ export function useDetailTemplateApply<TPost extends DetailApplyTarget>(
   options: UseDetailTemplateApplyOptions<TPost>
 ) {
   const applying = ref(false)
+  const { openTemplateApplyWithReplaceConfirm } = useTemplateApplyReplaceProtocol(
+    options.templateApplyStore
+  )
 
   let applyRequestToken = 0
   let pendingApplyAbortController: AbortController | null = null
@@ -53,7 +56,7 @@ export function useDetailTemplateApply<TPost extends DetailApplyTarget>(
       entryEntityId: number | string | null
     }
   ): Promise<boolean> => {
-    const result = await options.templateApplyStore.openFromRawContext({
+    const result = await openTemplateApplyWithReplaceConfirm({
       source: snapshot.source,
       entryEntityId: snapshot.entryEntityId,
       rawContext
@@ -77,15 +80,6 @@ export function useDetailTemplateApply<TPost extends DetailApplyTarget>(
     if (result.status === 'invalid') {
       message.error(result.message)
       return false
-    }
-
-    if (result.status === 'confirm_required') {
-      const confirmed = await confirmTemplateApplyClose(result.confirmReason)
-      if (!confirmed) {
-        return false
-      }
-      await options.templateApplyStore.confirmCloseAndCleanup('open_replace')
-      return openTemplateWorkbench(rawContext, snapshot)
     }
 
     return false
@@ -149,6 +143,16 @@ export function useDetailTemplateApply<TPost extends DetailApplyTarget>(
     isUnmounted = true
     cancelPendingApply()
   })
+
+  watch(
+    options.detailVisible,
+    (visible, previousVisible) => {
+      if (!visible && previousVisible) {
+        cancelPendingApply()
+      }
+    },
+    { flush: 'sync' }
+  )
 
   return {
     applying,

@@ -146,7 +146,7 @@ const { handleInteract } = useGalleryPostInteractions<Post>({
 const currentDetailMedia = useCurrentDetailMedia(currentPost)
 const formatTag = (tag: string) => formatGalleryTag(tag, t)
 const { copyPrompt } = usePostPromptCopy(t)
-const { applying, handleApply, cancelPendingApply } = useDetailTemplateApply<Post>({
+const { applying, handleApply } = useDetailTemplateApply<Post>({
   currentPost,
   detailVisible,
   endpoint: (post) => `/gallery/posts/${post.id}/apply-context`,
@@ -282,16 +282,6 @@ watch(
     void loadPosts(true)
   },
   { immediate: true },
-)
-
-watch(
-  detailVisible,
-  (visible, previousVisible) => {
-    if (!visible && previousVisible) {
-      cancelPendingApply()
-    }
-  },
-  { flush: 'sync' }
 )
 
 </script>

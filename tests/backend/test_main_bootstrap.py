@@ -1,3 +1,4 @@
+import asyncio
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
@@ -62,9 +63,10 @@ async def test_check_zombie_tasks_loop_runs_single_iteration_then_stops():
 async def test_lifespan_sets_minio_client_on_app_state():
     app = SimpleNamespace(state=SimpleNamespace())
     logger = MagicMock()
+    zombie_task = None
 
     async def noop_loop():
-        return None
+        await asyncio.Event().wait()
 
     async with lifespan(
         fastapi_app=app,
@@ -78,9 +80,13 @@ async def test_lifespan_sets_minio_client_on_app_state():
         check_zombie_tasks_loop_func=noop_loop,
     ):
         assert hasattr(app.state, "minio_client")
+        zombie_task = app.state.zombie_tasks_loop_task
+        assert zombie_task is not None
+        assert zombie_task.done() is False
         assert get_minio_client(SimpleNamespace(app=app)) is app.state.minio_client
         assert app.state.minio_client._region_map["comfyui-temp"] == "us-east-1"
         assert app.state.minio_client._region_map["bot-data"] == "us-east-1"
+    assert zombie_task.cancelled() is True
 
 
 @pytest.mark.asyncio

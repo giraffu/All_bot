@@ -7,11 +7,11 @@ from src.quota import QuotaManager
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.web_api.dependencies import get_current_user, get_current_user_once, get_db
 from src.web_api.schemas.task_schema import TaskGenerateRequest, TaskGenerateResponse, TaskResultResponse
-from src.web_api.services.task_result_service import get_task_result_payload
 from src.web_api.services.task_action_api_service import (
     cancel_pending_task_payload,
-    submit_generation_task_payload,
 )
+from src.web_api.services.task_result_service import get_task_result_payload
+from src.web_api.services.task_submission_service import submit_generation_task
 from src.web_api.services.task_runtime_api_service import (
     build_task_status_stream_response_for_user,
     get_queue_status_payload,
@@ -33,7 +33,7 @@ async def create_generation_task(
     """
     Submit a generation task (image/video).
     """
-    return await submit_generation_task_payload(
+    return await submit_generation_task(
         req=req,
         current_user=current_user,
         get_balance=quota_manager.get_credits,

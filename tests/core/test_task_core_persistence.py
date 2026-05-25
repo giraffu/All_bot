@@ -3,7 +3,11 @@ from unittest.mock import AsyncMock, Mock
 import pytest
 from src.core import task_core_persistence
 from src.core import task_core_persistence_flow
-from src.core.task_core_types import TaskSuccessPersistenceResult
+from src.core.task_core_dependencies import TaskCorePersistenceDependencies
+from src.core.task_core_types import (
+    TaskPersistencePostprocessPlan,
+    TaskSuccessPersistenceResult,
+)
 
 
 @pytest.mark.asyncio
@@ -37,6 +41,7 @@ async def test_persist_successful_task_result_routes_through_flow(monkeypatch):
     assert kwargs["download_result_func"] is download_result
     assert kwargs["download_video_result_func"] is download_video_result
     assert kwargs["to_thread_func"] is to_thread
+    assert kwargs["postprocess_plan"] == TaskPersistencePostprocessPlan()
 
 
 @pytest.mark.asyncio
@@ -78,15 +83,16 @@ async def test_persist_successful_task_result_uses_runtime_default_flow_binding(
     )
     monkeypatch.setattr(
         task_core_persistence,
-        "get_task_core_image_service",
-        lambda: type(
-            "_ImageService",
-            (),
-            {
-                "download_result": runtime_download_result,
-                "download_video_result": runtime_download_video_result,
-            },
-        )(),
+        "get_default_task_core_persistence_dependencies",
+        lambda: TaskCorePersistenceDependencies(
+            user_logger_factory=runtime_user_logger_factory,
+            download_result_func=runtime_download_result,
+            download_video_result_func=runtime_download_video_result,
+            extract_media_metadata_from_bytes_best_effort_func=runtime_extract_from_bytes,
+            extract_media_metadata_from_storage_best_effort_func=runtime_extract_from_storage,
+            schedule_web_history_r2_warmup_func=Mock(),
+            refresh_user_group_func=None,
+        ),
     )
 
     result = await task_core_persistence.persist_successful_task_result(

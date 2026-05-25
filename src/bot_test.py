@@ -286,7 +286,6 @@ def main():
             .build()
         )
 
-    from src.handlers.fsm.custom_video_fsm import get_custom_video_fsm_handler
     from src.handlers.fsm.affiliate_redeem_fsm import get_affiliate_redeem_fsm_handler
     from src.handlers.fsm.edit_image_fsm import get_edit_image_fsm_handler
     from src.handlers.fsm.face_video_fsm import get_face_video_fsm_handler
@@ -307,7 +306,6 @@ def main():
     app.add_handler(get_face_video_fsm_handler())
     app.add_handler(get_faceswap_fsm_handler())
     app.add_handler(get_edit_image_fsm_handler())
-    app.add_handler(get_custom_video_fsm_handler())
     app.add_handler(get_ltx_video_fsm_handler())
     app.add_handler(get_image_to_video_fsm_handler())
     app.add_handler(get_quick_image_fsm_handler())

@@ -7,9 +7,7 @@ from src.database.core import AsyncSessionLocal
 from src.database.models import GalleryComment, GalleryPost, History, User, UserInteraction
 from src.services.storage_r2_cleanup import build_history_r2_cleanup_keys
 from src.services.storage import storage
-from src.web_api.services.gallery_service_support import (
-    call_gallery_service_with_optional_db,
-)
+from src.web_api.common.utils import call_with_optional_db
 
 logger = logging.getLogger(__name__)
 
@@ -141,7 +139,7 @@ async def delete_gallery_post_api_payload(
     session_factory=None,
     service_fn=None,
 ) -> dict:
-    return await call_gallery_service_with_optional_db(
+    return await call_with_optional_db(
         db=db,
         service_fn=service_fn or delete_gallery_post,
         session_factory=session_factory or AsyncSessionLocal,

@@ -75,6 +75,51 @@ logging.basicConfig(level=logging.INFO, handlers=handlers)
 logger = logging.getLogger("agent_main")
 
 
+RESULT_ASSET_KEYS = ("images", "gifs", "videos")
+
+
+def _pick_first_output_asset(outputs: dict[str, Any]) -> dict[str, Any] | None:
+    for node_output in outputs.values():
+        for asset_key in RESULT_ASSET_KEYS:
+            assets = node_output.get(asset_key, [])
+            if assets:
+                return assets[0]
+    return None
+
+
+def _build_safe_result_object_name(task_id: str, asset: dict[str, Any]) -> str:
+    return (
+        f"{task_id}_{asset.get('subfolder', '')}_{asset.get('filename')}"
+        .replace("/", "_")
+        .lstrip("_")
+    )
+
+
+def _resolve_history_result_asset(
+    history: dict[str, Any] | None,
+    *,
+    prompt_id: str | None,
+    task_id: str | None,
+) -> dict[str, str] | None:
+    if not history or not prompt_id or not task_id or prompt_id not in history:
+        return None
+
+    outputs = history[prompt_id].get("outputs", {})
+    asset = _pick_first_output_asset(outputs)
+    if not asset:
+        return None
+
+    original_filename = asset.get("filename", "")
+    if not original_filename:
+        return None
+
+    return {
+        "safe_name": _build_safe_result_object_name(task_id, asset),
+        "filename": original_filename,
+        "subfolder": asset.get("subfolder", ""),
+    }
+
+
 class ComfyAgent:
     def __init__(self):
         self.comfy_client = ComfyClient(base_url=COMFY_API_URL)
@@ -106,6 +151,104 @@ class ComfyAgent:
         self.task_result: Optional[str] = None
         self.task_error: Optional[str] = None
         self.running = False
+
+    async def _process_single_input_asset(
+        self,
+        *,
+        params: dict[str, Any],
+        downloaded_input_paths: list[str],
+        img_filename: str,
+        param_key: str,
+    ) -> None:
+        local_safe_filename = img_filename.replace("/", "_").replace("template:", "")
+        local_img_path = os.path.join(COMFY_INPUT_DIR, local_safe_filename)
+        try:
+            await asyncio.to_thread(
+                self.download_input_from_minio, img_filename, local_img_path
+            )
+            logger.info(f"Downloaded {param_key} to {local_img_path}")
+            if local_img_path not in downloaded_input_paths:
+                downloaded_input_paths.append(local_img_path)
+            try:
+                with open(local_img_path, "rb") as f:
+                    img_data = f.read()
+                await self.comfy_client.upload_image(img_data, local_safe_filename)
+                logger.info(f"Uploaded {local_safe_filename} to ComfyUI via API")
+            except Exception as upload_err:
+                logger.error(
+                    f"Failed to upload {local_safe_filename} to ComfyUI via API: {upload_err}"
+                )
+                raise RuntimeError(
+                    f"Failed to upload prepared input '{img_filename}' to ComfyUI"
+                ) from upload_err
+            params[param_key] = local_safe_filename
+        except Exception as e:
+            logger.error(f"Failed to process {param_key} {img_filename}: {e}")
+            raise RuntimeError(
+                f"Failed to prepare {param_key} input '{img_filename}'"
+            ) from e
+
+    async def _prepare_task_inputs(
+        self,
+        *,
+        params: dict[str, Any],
+        downloaded_input_paths: list[str],
+    ) -> None:
+        if (
+            "images" in params
+            and isinstance(params["images"], list)
+            and len(params["images"]) > 0
+        ):
+            images_list = params["images"]
+            tasks = []
+            keys = ["image", "image2", "image3"]
+            for i, img_filename in enumerate(images_list[:3]):
+                tasks.append(
+                    self._process_single_input_asset(
+                        params=params,
+                        downloaded_input_paths=downloaded_input_paths,
+                        img_filename=img_filename,
+                        param_key=keys[i],
+                    )
+                )
+            if tasks:
+                await asyncio.gather(*tasks)
+        else:
+            legacy_tasks = []
+            if "image" in params and params["image"]:
+                legacy_tasks.append(
+                    self._process_single_input_asset(
+                        params=params,
+                        downloaded_input_paths=downloaded_input_paths,
+                        img_filename=params["image"],
+                        param_key="image",
+                    )
+                )
+            if "image2" in params and params["image2"]:
+                legacy_tasks.append(
+                    self._process_single_input_asset(
+                        params=params,
+                        downloaded_input_paths=downloaded_input_paths,
+                        img_filename=params["image2"],
+                        param_key="image2",
+                    )
+                )
+            if legacy_tasks:
+                await asyncio.gather(*legacy_tasks)
+
+        other_tasks = []
+        for key in ["face_image", "body_image", "video"]:
+            if key in params and params[key]:
+                other_tasks.append(
+                    self._process_single_input_asset(
+                        params=params,
+                        downloaded_input_paths=downloaded_input_paths,
+                        img_filename=params[key],
+                        param_key=key,
+                    )
+                )
+        if other_tasks:
+            await asyncio.gather(*other_tasks)
 
     async def report_heartbeat(self):
         try:
@@ -237,29 +380,11 @@ class ComfyAgent:
                         elif msg_type == "executed":
                             logger.info(f"Node executed for prompt {prompt_id}")
                             output = data_content.get("output") or {}
-                            images = output.get("images", [])
-                            gifs = output.get("gifs", [])
-                            videos = output.get("videos", [])
-
-                            result_path = ""
-                            if images:
-                                img = images[0]
-                                result_path = f"{self.current_task_id}_{img.get('subfolder', '')}_{img.get('filename')}".replace(
-                                    "/", "_"
-                                ).lstrip("_")
-                            elif gifs:
-                                gif = gifs[0]
-                                result_path = f"{self.current_task_id}_{gif.get('subfolder', '')}_{gif.get('filename')}".replace(
-                                    "/", "_"
-                                ).lstrip("_")
-                            elif videos:
-                                video = videos[0]
-                                result_path = f"{self.current_task_id}_{video.get('subfolder', '')}_{video.get('filename')}".replace(
-                                    "/", "_"
-                                ).lstrip("_")
-
-                            if result_path:
-                                self.task_result = result_path
+                            asset = _pick_first_output_asset(output)
+                            if asset and self.current_task_id:
+                                self.task_result = _build_safe_result_object_name(
+                                    self.current_task_id, asset
+                                )
                                 # We now wait for executing node=None to set the completion event
 
                         elif msg_type == "execution_error":
@@ -353,74 +478,10 @@ class ComfyAgent:
                 logger.info(f"Task {task_id} was cancelled before processing.")
                 return
 
-            # Helper for downloading and uploading single image
-            async def process_single_image(img_filename: str, param_key: str):
-                local_safe_filename = img_filename.replace("/", "_").replace(
-                    "template:", ""
-                )
-                local_img_path = os.path.join(COMFY_INPUT_DIR, local_safe_filename)
-                try:
-                    await asyncio.to_thread(
-                        self.download_input_from_minio, img_filename, local_img_path
-                    )
-                    logger.info(f"Downloaded {param_key} to {local_img_path}")
-                    if local_img_path not in downloaded_input_paths:
-                        downloaded_input_paths.append(local_img_path)
-                    try:
-                        with open(local_img_path, "rb") as f:
-                            img_data = f.read()
-                        await self.comfy_client.upload_image(
-                            img_data, local_safe_filename
-                        )
-                        logger.info(
-                            f"Uploaded {local_safe_filename} to ComfyUI via API"
-                        )
-                    except Exception as upload_err:
-                        logger.error(
-                            f"Failed to upload {local_safe_filename} to ComfyUI via API: {upload_err}"
-                        )
-                        raise RuntimeError(
-                            f"Failed to upload prepared input '{img_filename}' to ComfyUI"
-                        ) from upload_err
-                    params[param_key] = local_safe_filename
-                except Exception as e:
-                    logger.error(f"Failed to process {param_key} {img_filename}: {e}")
-                    raise RuntimeError(
-                        f"Failed to prepare {param_key} input '{img_filename}'"
-                    ) from e
-
-            # 1. Handle multi-image concurrent download if `images` list is provided
-            if (
-                "images" in params
-                and isinstance(params["images"], list)
-                and len(params["images"]) > 0
-            ):
-                images_list = params["images"]
-                tasks = []
-                keys = ["image", "image2", "image3"]
-                for i, img_filename in enumerate(images_list[:3]):
-                    tasks.append(process_single_image(img_filename, keys[i]))
-                if tasks:
-                    await asyncio.gather(*tasks)
-            else:
-                # Fallback to legacy single image keys
-                legacy_tasks = []
-                if "image" in params and params["image"]:
-                    legacy_tasks.append(process_single_image(params["image"], "image"))
-                if "image2" in params and params["image2"]:
-                    legacy_tasks.append(
-                        process_single_image(params["image2"], "image2")
-                    )
-                if legacy_tasks:
-                    await asyncio.gather(*legacy_tasks)
-
-            # Also check for other potential image inputs (like face_image, body_image, video)
-            other_tasks = []
-            for key in ["face_image", "body_image", "video"]:
-                if key in params and params[key]:
-                    other_tasks.append(process_single_image(params[key], key))
-            if other_tasks:
-                await asyncio.gather(*other_tasks)
+            await self._prepare_task_inputs(
+                params=params,
+                downloaded_input_paths=downloaded_input_paths,
+            )
 
             # 2. Load and patch workflow
             workflow = self.patcher.load_workflow(task_type)
@@ -460,31 +521,13 @@ class ComfyAgent:
                     history = await self.comfy_client.get_history(
                         self.current_prompt_id
                     )
-                    if history and self.current_prompt_id in history:
-                        outputs = history[self.current_prompt_id].get("outputs", {})
-                        for node_id, node_output in outputs.items():
-                            images = node_output.get("images", [])
-                            gifs = node_output.get("gifs", [])
-                            videos = node_output.get("videos", [])
-
-                            if images:
-                                img = images[0]
-                                self.task_result = f"{self.current_task_id}_{img.get('subfolder', '')}_{img.get('filename')}".replace(
-                                    "/", "_"
-                                ).lstrip("_")
-                                break
-                            elif gifs:
-                                gif = gifs[0]
-                                self.task_result = f"{self.current_task_id}_{gif.get('subfolder', '')}_{gif.get('filename')}".replace(
-                                    "/", "_"
-                                ).lstrip("_")
-                                break
-                            elif videos:
-                                video = videos[0]
-                                self.task_result = f"{self.current_task_id}_{video.get('subfolder', '')}_{video.get('filename')}".replace(
-                                    "/", "_"
-                                ).lstrip("_")
-                                break
+                    history_result = _resolve_history_result_asset(
+                        history,
+                        prompt_id=self.current_prompt_id,
+                        task_id=self.current_task_id,
+                    )
+                    if history_result:
+                        self.task_result = history_result["safe_name"]
                 except Exception as e:
                     logger.warning(f"Failed to fetch history: {e}")
 
@@ -510,32 +553,18 @@ class ComfyAgent:
 
                 # 为了不改变 ComfyUI 的请求逻辑，我们需要从 ComfyUI 的历史记录中重新提取原始 filename 和 subfolder
                 history = await self.comfy_client.get_history(self.current_prompt_id)
-                original_filename = ""
-                original_subfolder = ""
-                if history and self.current_prompt_id in history:
-                    outputs = history[self.current_prompt_id].get("outputs", {})
-                    for node_id, node_output in outputs.items():
-                        images = node_output.get("images", [])
-                        gifs = node_output.get("gifs", [])
-                        videos = node_output.get("videos", [])
+                history_result = _resolve_history_result_asset(
+                    history,
+                    prompt_id=self.current_prompt_id,
+                    task_id=self.current_task_id,
+                )
 
-                        if images:
-                            original_filename = images[0].get("filename", "")
-                            original_subfolder = images[0].get("subfolder", "")
-                            break
-                        elif gifs:
-                            original_filename = gifs[0].get("filename", "")
-                            original_subfolder = gifs[0].get("subfolder", "")
-                            break
-                        elif videos:
-                            original_filename = videos[0].get("filename", "")
-                            original_subfolder = videos[0].get("subfolder", "")
-                            break
-
-                if not original_filename:
+                if not history_result:
                     raise Exception(
                         "Could not retrieve original filename from ComfyUI history"
                     )
+                original_filename = history_result["filename"]
+                original_subfolder = history_result["subfolder"]
 
                 view_type = "temp" if "temp" in original_filename.lower() else "output"
 

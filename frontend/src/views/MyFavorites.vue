@@ -179,7 +179,7 @@ const {
 const currentDetailMedia = useCurrentDetailMedia(currentPost)
 const formatTag = (tag: string) => formatGalleryTag(tag, t)
 const { copyPrompt } = usePostPromptCopy(t)
-const { applying, handleApply, cancelPendingApply } = useDetailTemplateApply<Post>({
+const { applying, handleApply } = useDetailTemplateApply<Post>({
   currentPost,
   detailVisible,
   endpoint: (post) => (
@@ -316,15 +316,6 @@ onMounted(() => {
   void loadPosts(true)
 })
 
-watch(
-  detailVisible,
-  (visible, previousVisible) => {
-    if (!visible && previousVisible) {
-      cancelPendingApply()
-    }
-  },
-  { flush: 'sync' }
-)
 </script>
 
 <template>

@@ -74,7 +74,14 @@ async def update_status(
     _authorized: bool = Depends(verify_token),
     queue_manager: QueueManagerDep = None,
 ):
-    return await update_status_payload(req=req, queue_manager=queue_manager)
+    return await update_status_payload(
+        task_id=req.task_id,
+        agent_id=req.agent_id,
+        status=req.status,
+        progress=req.progress,
+        error=req.error,
+        queue_manager=queue_manager,
+    )
 
 
 @router.post("/complete")
@@ -83,7 +90,12 @@ async def complete_task(
     _authorized: bool = Depends(verify_token),
     queue_manager: QueueManagerDep = None,
 ):
-    return await complete_task_payload(req=req, queue_manager=queue_manager)
+    return await complete_task_payload(
+        task_id=req.task_id,
+        agent_id=req.agent_id,
+        result=req.result,
+        queue_manager=queue_manager,
+    )
 
 
 class TaskHeartbeatRequest(BaseModel):
@@ -97,7 +109,11 @@ async def task_heartbeat(
     _authorized: bool = Depends(verify_token),
     queue_manager: QueueManagerDep = None,
 ):
-    return await task_heartbeat_payload(req=req, queue_manager=queue_manager)
+    return await task_heartbeat_payload(
+        task_id=req.task_id,
+        agent_id=req.agent_id,
+        queue_manager=queue_manager,
+    )
 
 
 @router.post("/heartbeat")
@@ -106,4 +122,9 @@ async def heartbeat(
     _authorized: bool = Depends(verify_token),
     queue_manager: QueueManagerDep = None,
 ):
-    return await heartbeat_payload(req=req, queue_manager=queue_manager)
+    return await heartbeat_payload(
+        agent_id=req.agent_id,
+        types=req.types,
+        status=req.status,
+        queue_manager=queue_manager,
+    )

@@ -46,7 +46,7 @@
 
 | 对象 | 当前用途 | 依赖它的调用方或测试 | 删除前置条件 | 预计删除阶段 |
 | --- | --- | --- | --- | --- |
-| `src/handlers/fsm/custom_video_fsm.py:start_custom_video` | `/custom_video` 旧入口别名，对外保持稳定命令名 | Telegram 菜单与 callback `fsm_start_custom_video` | 明确 `/custom_video` 是否长期保留为独立产品入口；若仅是图生视频变体，可与统一入口继续收口 | `D2` 后续轮次 |
+| `src/handlers/fsm/image_to_video_fsm.py:start_custom_video` | `/custom_video` 旧入口别名，对外保持稳定命令名 | `/custom_video` 命令、`menu.custom_video` 与 callback `fsm_start_custom_video` | 明确 `/custom_video` 是否长期保留为独立产品入口；若仅是图生视频变体，可与统一入口继续收口 | `D2` 后续轮次 |
 | `src/constants.py:MODE_IMAGE_TO_VIDEO = MODE_VIDEO_LORA` | 兼容历史任务类型值，避免旧记录/旧 payload 失配 | 历史任务类型、旧 apply-context、统计与计费链路 | 当前主链已统一补上 `image_to_video` 新主名：dispatcher、API client、image service、backend `/image_to_video` 路由与 FSM 新入口已切到中性命名；旧 `video_lora` 仅保留入口 alias、兼容路由与历史值锚点，后续在数据迁移完成后退出该值别名 | 已压缩到外层兼容 |
 | `src/database/models.py:Order.telegram_id` | 历史数据库列名，实际关联 `users.id` 内部用户主键 | 正式环境尚未执行迁移时的遗留 schema 名称 | 测试环境已实际执行 Alembic `7c0a4d5e6f71`，`orders` 物理列已切到 `internal_user_id`，ORM 也已删除 `telegram_id` alias；后续只需在生产切换窗口按同一 migration 执行正式环境升级 | `测试已完成 / 生产待执行` |
 

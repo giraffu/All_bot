@@ -11,9 +11,13 @@ from src.core.task_core_finalization import (
     finalize_task_cancellation_default,
     finalize_task_failure_default,
 )
+from src.core.task_core_error_helpers import normalize_terminal_status
 from src.core.task_core_persistence import persist_successful_web_history_default
 from src.core.task_core_types import TaskSubmissionContext
-from src.core.task_core_types import CoreDomainError, normalize_terminal_status
+from src.core.task_core_types import (
+    CoreDomainError,
+    TaskSubmissionSideEffectPlan,
+)
 from src.core.task_core_runtime import cleanup_task_runtime_state
 
 
@@ -83,21 +87,41 @@ def schedule_apply_interaction(
         create_task_func(interaction_coro)
 
 
+def normalize_submission_side_effect_plan(
+    *,
+    submission_side_effect_plan: TaskSubmissionSideEffectPlan | None,
+    client_type: str | None,
+    source_post_id: int | None,
+) -> TaskSubmissionSideEffectPlan:
+    if submission_side_effect_plan is not None:
+        return submission_side_effect_plan
+    return TaskSubmissionSideEffectPlan(
+        attach_web_monitor=client_type == "web",
+        source_post_id=source_post_id,
+    )
+
+
 def attach_submission_side_effects(
     *,
-    client_type: str,
+    client_type: str | None = None,
     backend_task_id: str,
     internal_user_id: int,
     username: str,
     registry_task_id: str,
     submission_context: TaskSubmissionContext,
     cost: int,
-    source_post_id: int | None,
+    source_post_id: int | None = None,
+    submission_side_effect_plan: TaskSubmissionSideEffectPlan | None = None,
     attach_web_task_monitor_func,
     schedule_apply_interaction_func,
     core_domain_error_cls,
 ):
-    if client_type == "web":
+    submission_side_effect_plan = normalize_submission_side_effect_plan(
+        submission_side_effect_plan=submission_side_effect_plan,
+        client_type=client_type,
+        source_post_id=source_post_id,
+    )
+    if submission_side_effect_plan.attach_web_monitor:
         try:
             attach_web_task_monitor_func(
                 backend_task_id=backend_task_id,
@@ -110,7 +134,9 @@ def attach_submission_side_effects(
         except Exception as exc:
             raise core_domain_error_cls(f"后台监控挂载失败: {exc}")
 
-    schedule_apply_interaction_func(internal_user_id, source_post_id)
+    schedule_apply_interaction_func(
+        internal_user_id, submission_side_effect_plan.source_post_id
+    )
 
 
 async def finalize_monitored_web_task_success(
@@ -313,14 +339,15 @@ def schedule_apply_interaction_default(
 
 def attach_submission_side_effects_default(
     *,
-    client_type: str,
+    client_type: str | None = None,
     backend_task_id: str,
     internal_user_id: int,
     username: str,
     registry_task_id: str,
     submission_context: TaskSubmissionContext,
     cost: int,
-    source_post_id: int | None,
+    source_post_id: int | None = None,
+    submission_side_effect_plan: TaskSubmissionSideEffectPlan | None = None,
     attach_web_task_monitor_func=None,
     schedule_apply_interaction_func=None,
     core_domain_error_cls=None,
@@ -336,6 +363,7 @@ def attach_submission_side_effects_default(
         submission_context=submission_context,
         cost=cost,
         source_post_id=source_post_id,
+        submission_side_effect_plan=submission_side_effect_plan,
         attach_web_task_monitor_func=(
             attach_web_task_monitor_func
             or (

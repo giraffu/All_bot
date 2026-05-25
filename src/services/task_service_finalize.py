@@ -3,6 +3,7 @@ import logging
 
 from src.core.task_core_types import TaskFinalizationResult
 from src.services.task_service_types import BotFinalizationPresentationPolicy
+from src.services.task_service_types import BotTaskFailureContext
 from src.services.task_service_types import BotTaskMessageSpec
 from src.utils import robust_edit_text, robust_send_message
 
@@ -98,19 +99,10 @@ async def finalize_failed_task_for_bot(
     context,
     chat_id,
     status_msg,
-    internal_user_id,
-    username,
-    cost,
-    should_refund,
-    registry_task_id,
-    release_lock,
+    failure: BotTaskFailureContext,
     message_prefix="❌",
     prefer_edit_status=False,
     fallback_to_send_message=True,
-    explicit_user_message=None,
-    error=None,
-    generic_error_prefix=None,
-    refund_suffix_mode="if_refunded",
     finalize_task_failure_func=None,
     edit_text_func=None,
     send_message_func=None,
@@ -119,16 +111,16 @@ async def finalize_failed_task_for_bot(
 
     finalize_task_failure_func = finalize_task_failure_func or finalize_task_failure
     failure_result = await finalize_task_failure_func(
-        internal_user_id=internal_user_id,
-        username=username,
-        cost=cost,
-        should_refund=should_refund,
-        registry_task_id=registry_task_id,
-        release_lock=release_lock,
-        explicit_user_message=explicit_user_message,
-        error=error,
-        generic_error_prefix=generic_error_prefix,
-        refund_suffix_mode=refund_suffix_mode,
+        internal_user_id=failure.internal_user_id,
+        username=failure.username,
+        cost=failure.cost,
+        should_refund=failure.should_refund,
+        registry_task_id=failure.registry_task_id,
+        release_lock=failure.release_lock,
+        explicit_user_message=failure.explicit_user_message,
+        error=failure.error,
+        generic_error_prefix=failure.generic_error_prefix,
+        refund_suffix_mode=failure.refund_suffix_mode,
     )
     await deliver_bot_finalization_message(
         context=context,
@@ -200,16 +192,18 @@ async def handle_bot_unexpected_exception(
         context=context,
         chat_id=chat_id,
         status_msg=status_msg,
-        internal_user_id=internal_user_id,
-        username=username,
-        cost=runtime_state.actual_cost,
-        should_refund=should_refund,
-        registry_task_id=runtime_state.registry_task_id,
-        release_lock=runtime_state.task_submitted,
-        error=error,
-        generic_error_prefix=generic_error_prefix,
+        failure=BotTaskFailureContext(
+            internal_user_id=internal_user_id,
+            username=username,
+            cost=runtime_state.actual_cost,
+            should_refund=should_refund,
+            registry_task_id=runtime_state.registry_task_id,
+            release_lock=runtime_state.task_submitted,
+            error=error,
+            generic_error_prefix=generic_error_prefix,
+            refund_suffix_mode=refund_suffix_mode,
+        ),
         prefer_edit_status=prefer_edit_status,
-        refund_suffix_mode=refund_suffix_mode,
     )
     runtime_state.terminal_state_finalized = True
     return None, None

@@ -6,7 +6,11 @@ import pytest
 from src.core import task_core
 from src.core import task_core_web_monitor
 from src.core.task_core_dependencies import TaskCoreProcessDependencies
-from src.core.task_core_types import TaskSubmissionExecutionResult, VideoTaskRequest
+from src.core.task_core_types import (
+    TaskSubmissionExecutionResult,
+    TaskSubmissionSideEffectPlan,
+    VideoTaskRequest,
+)
 
 
 @pytest.mark.asyncio
@@ -77,6 +81,8 @@ async def test_process_and_submit_task_uses_process_dependencies_builder(monkeyp
     deduct_credits.assert_awaited_once_with(123, 18, "custom_video", "tester")
     execute_saga.assert_awaited_once()
     attach_side_effects.assert_called_once()
+    side_effect_plan = attach_side_effects.call_args.kwargs["submission_side_effect_plan"]
+    assert side_effect_plan == TaskSubmissionSideEffectPlan(attach_web_monitor=True)
     compensate_failed.assert_not_called()
     release_lock.assert_not_called()
     shield.assert_not_called()
@@ -88,14 +94,16 @@ async def test_attach_submission_side_effects_raises_domain_error_when_monitor_a
 
     with pytest.raises(task_core.CoreDomainError, match="后台监控挂载失败: boom"):
         task_core_web_monitor.attach_submission_side_effects(
-            client_type="web",
             backend_task_id="backend-1",
             internal_user_id=1,
             username="tester",
             registry_task_id="reg-1",
             submission_context=SimpleNamespace(),
             cost=8,
-            source_post_id=9,
+            submission_side_effect_plan=TaskSubmissionSideEffectPlan(
+                attach_web_monitor=True,
+                source_post_id=9,
+            ),
             attach_web_task_monitor_func=MagicMock(side_effect=RuntimeError("boom")),
             schedule_apply_interaction_func=schedule_apply,
             core_domain_error_cls=task_core.CoreDomainError,

@@ -13,6 +13,8 @@ on:
       - 'src/core/task_core*.py'
       - 'src/web_api/routers/tasks.py'
       - 'src/web_api/services/task_*api_service.py'
+      - 'src/web_api/services/task_submission_service.py'
+      - 'src/web_api/services/task_result_service.py'
       - 'src/web_api/routers/users.py'
       - 'src/web_api/services/users_history*.py'
       - 'src/web_api/services/user_profile_service.py'
@@ -39,6 +41,7 @@ on:
       - 'frontend/src/components/template-apply/TemplateApplyWorkbenchHost.vue'
       - 'frontend/src/components/template-apply/TemplateApplyWorkbenchHost.test.ts'
       - 'frontend/src/composables/useDetailTemplateApply.ts'
+      - 'frontend/src/composables/useTemplateApplyCloseProtocol.ts'
       - 'frontend/src/composables/useGalleryDetailModalAdapter.ts'
       - 'frontend/src/composables/useGalleryDetailModalAdapter.test.ts'
       - 'frontend/src/router/index.ts'
@@ -57,6 +60,7 @@ on:
       - 'tests/integration/test_saga_and_queue.py'
       - 'tests/services/test_task_service*.py'
       - 'tests/web_api/test_tasks*.py'
+      - 'tests/web_api/test_task_runtime_api_service.py'
       - 'tests/web_api/test_users*.py'
       - 'tests/web_api/test_gallery*.py'
       - 'tests/handlers/test_message_handler*.py'
@@ -75,6 +79,8 @@ on:
       - 'src/core/task_core*.py'
       - 'src/web_api/routers/tasks.py'
       - 'src/web_api/services/task_*api_service.py'
+      - 'src/web_api/services/task_submission_service.py'
+      - 'src/web_api/services/task_result_service.py'
       - 'src/web_api/routers/users.py'
       - 'src/web_api/services/users_history*.py'
       - 'src/web_api/services/user_profile_service.py'
@@ -101,6 +107,7 @@ on:
       - 'frontend/src/components/template-apply/TemplateApplyWorkbenchHost.vue'
       - 'frontend/src/components/template-apply/TemplateApplyWorkbenchHost.test.ts'
       - 'frontend/src/composables/useDetailTemplateApply.ts'
+      - 'frontend/src/composables/useTemplateApplyCloseProtocol.ts'
       - 'frontend/src/composables/useGalleryDetailModalAdapter.ts'
       - 'frontend/src/composables/useGalleryDetailModalAdapter.test.ts'
       - 'frontend/src/router/index.ts'
@@ -119,6 +126,7 @@ on:
       - 'tests/integration/test_saga_and_queue.py'
       - 'tests/services/test_task_service*.py'
       - 'tests/web_api/test_tasks*.py'
+      - 'tests/web_api/test_task_runtime_api_service.py'
       - 'tests/web_api/test_users*.py'
       - 'tests/web_api/test_gallery*.py'
       - 'tests/handlers/test_message_handler*.py'
@@ -241,7 +249,7 @@ jobs:
                     add_group "python" "task-facade"
                     add_group "python" "task-min"
                     ;;
-                  src/web_api/routers/tasks.py|src/web_api/services/task_stream_api_service.py|src/web_api/services/task_action_api_service.py|tests/web_api/test_tasks*.py)
+                  src/web_api/routers/tasks.py|src/web_api/services/task_stream_api_service.py|src/web_api/services/task_action_api_service.py|src/web_api/services/task_runtime_api_service.py|src/web_api/services/task_submission_service.py|src/web_api/services/task_result_service.py|tests/web_api/test_tasks*.py|tests/web_api/test_task_runtime_api_service.py)
                     add_group "python" "tasks-web"
                     ;;
                   src/web_api/routers/users.py|src/web_api/services/users_history*.py|src/web_api/services/user_profile_service.py|tests/web_api/test_users*.py)
@@ -253,7 +261,7 @@ jobs:
                   src/handlers/message_handler.py|src/handlers/message_handler_common.py|src/handlers/message_handler_profile.py|src/handlers/message_handler_media.py|src/handlers/message_handler_menu.py|tests/handlers/test_message_handler*.py)
                     add_group "python" "message-handler"
                     ;;
-                  frontend/src/views/Gallery.vue|frontend/src/views/Gallery.test.ts|frontend/src/views/GalleryWorkbenchFlow.test.ts|frontend/src/views/MyFavorites.vue|frontend/src/views/MyFavoritesFlow.test.ts|frontend/src/components/GalleryDetailModal.vue|frontend/src/components/GalleryDetailModal.test.ts|frontend/src/components/DetailModalShell.vue|frontend/src/components/DetailModalShell.test.ts|frontend/src/components/MySubmissionsPanel.vue|frontend/src/components/MySubmissionsPanelFlow.test.ts|frontend/src/components/PostBrowserShell.vue|frontend/src/components/PostBrowserShell.test.ts|frontend/src/components/ListStateBlock.vue|frontend/src/components/ListStateBlock.test.ts|frontend/src/components/GenerationWorkbenchShell.vue|frontend/src/components/GenerationWorkbenchShell.test.ts|frontend/src/components/template-apply/TemplateApplyWorkbenchHost.vue|frontend/src/components/template-apply/TemplateApplyWorkbenchHost.test.ts|frontend/src/composables/useDetailTemplateApply.ts|frontend/src/composables/useGalleryDetailModalAdapter.ts|frontend/src/composables/useGalleryDetailModalAdapter.test.ts|frontend/src/router/index.ts|frontend/src/router/index.test.ts|frontend/src/stores/tasksRuntime.test.ts|frontend/src/stores/taskResultState.test.ts|frontend/src/stores/templateApply.test.ts|frontend/src/composables/useTemplateApplyUpload.test.ts|frontend/src/utils/normalizeTemplateApplyContext.test.ts)
+                  frontend/src/views/Gallery.vue|frontend/src/views/Gallery.test.ts|frontend/src/views/GalleryWorkbenchFlow.test.ts|frontend/src/views/MyFavorites.vue|frontend/src/views/MyFavoritesFlow.test.ts|frontend/src/components/GalleryDetailModal.vue|frontend/src/components/GalleryDetailModal.test.ts|frontend/src/components/DetailModalShell.vue|frontend/src/components/DetailModalShell.test.ts|frontend/src/components/MySubmissionsPanel.vue|frontend/src/components/MySubmissionsPanelFlow.test.ts|frontend/src/components/PostBrowserShell.vue|frontend/src/components/PostBrowserShell.test.ts|frontend/src/components/ListStateBlock.vue|frontend/src/components/ListStateBlock.test.ts|frontend/src/components/GenerationWorkbenchShell.vue|frontend/src/components/GenerationWorkbenchShell.test.ts|frontend/src/components/template-apply/TemplateApplyWorkbenchHost.vue|frontend/src/components/template-apply/TemplateApplyWorkbenchHost.test.ts|frontend/src/composables/useDetailTemplateApply.ts|frontend/src/composables/useTemplateApplyCloseProtocol.ts|frontend/src/composables/useGalleryDetailModalAdapter.ts|frontend/src/composables/useGalleryDetailModalAdapter.test.ts|frontend/src/router/index.ts|frontend/src/router/index.test.ts|frontend/src/stores/tasksRuntime.test.ts|frontend/src/stores/taskResultState.test.ts|frontend/src/stores/templateApply.test.ts|frontend/src/composables/useTemplateApplyUpload.test.ts|frontend/src/utils/normalizeTemplateApplyContext.test.ts)
                     add_group "frontend" "frontend-shared"
                     ;;
                   dashboard/frontend/src/App.vue|dashboard/frontend/src/App.test.js|dashboard/frontend/package.json|dashboard/frontend/vitest.config.js)

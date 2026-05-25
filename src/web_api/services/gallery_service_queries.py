@@ -1,6 +1,7 @@
 from fastapi import HTTPException
 
 from src.database.core import AsyncSessionLocal
+from src.web_api.common.utils import call_with_optional_db
 from src.web_api.common.utils import (
     build_history_apply_context_response,
     build_storage_input_file_url,
@@ -13,7 +14,6 @@ from src.web_api.services.gallery_query_service import (
 )
 from src.web_api.services.gallery_service_support import (
     build_gallery_post_responses,
-    call_gallery_service_with_optional_db,
     default_should_return_gallery_apply_input_file,
 )
 
@@ -55,7 +55,7 @@ async def get_my_gallery_posts_api_payload(
     session_factory=None,
     service_fn=None,
 ) -> PaginatedGalleryResponse:
-    return await call_gallery_service_with_optional_db(
+    return await call_with_optional_db(
         db=db,
         service_fn=service_fn or get_my_gallery_posts_payload,
         session_factory=session_factory or AsyncSessionLocal,
@@ -106,7 +106,7 @@ async def get_my_favorite_posts_api_payload(
     session_factory=None,
     service_fn=None,
 ) -> PaginatedGalleryResponse:
-    return await call_gallery_service_with_optional_db(
+    return await call_with_optional_db(
         db=db,
         service_fn=service_fn or get_my_favorite_posts_payload,
         session_factory=session_factory or AsyncSessionLocal,
@@ -175,7 +175,7 @@ async def get_gallery_posts_api_payload(
     session_factory=None,
     service_fn=None,
 ) -> PaginatedGalleryResponse:
-    return await call_gallery_service_with_optional_db(
+    return await call_with_optional_db(
         db=db,
         service_fn=service_fn or get_gallery_posts_payload,
         session_factory=session_factory or AsyncSessionLocal,
@@ -247,7 +247,7 @@ async def get_gallery_apply_context_api_payload(
     service_fn=None,
 ) -> ApplyContextResponse:
     _ = current_user
-    return await call_gallery_service_with_optional_db(
+    return await call_with_optional_db(
         db=db,
         service_fn=service_fn or get_gallery_apply_context_payload,
         session_factory=session_factory or AsyncSessionLocal,

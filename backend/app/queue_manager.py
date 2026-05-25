@@ -309,6 +309,9 @@ class QueueManager:
             exists_func=self.redis.exists,
             zrem_func=lambda task_id: self.redis.zrem(self.pending_key, task_id),
             cancel_pending_task_func=self._cancel_pending_task,
+            request_running_task_cancellation_func=(
+                self._request_running_task_cancellation
+            ),
             sismember_func=lambda task_id: self.redis.sismember(self.running_key, task_id),
             get_task_status_func=self.get_task_status,
             build_cancel_result_func=self._build_cancel_result,
@@ -353,6 +356,20 @@ class QueueManager:
             agent_heartbeat_key_func=self._agent_heartbeat_key,
             hset_func=self.redis.hset,
             expire_func=self.redis.expire,
+        )
+
+    async def bind_agent_task(self, task_id: str, agent_id: str):
+        await self.redis.hset(self._task_key(task_id), "worker_id", agent_id)
+        await self.redis.hset(
+            self._agent_heartbeat_key(agent_id),
+            "current_task_id",
+            task_id,
+        )
+
+    async def clear_agent_current_task(self, agent_id: str):
+        await self.redis.hdel(
+            self._agent_heartbeat_key(agent_id),
+            "current_task_id",
         )
 
     async def get_queue_metrics_by_type(self) -> Dict[str, int]:

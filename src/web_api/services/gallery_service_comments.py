@@ -5,13 +5,13 @@ from sqlalchemy.orm import joinedload
 
 from src.database.core import AsyncSessionLocal
 from src.database.models import GalleryComment, GalleryPost
+from src.web_api.common.utils import call_with_optional_db
 from src.web_api.schemas.gallery_schema import (
     CommentUserResponse,
     GalleryCommentResponse,
     PaginatedCommentResponse,
 )
 from src.web_api.services.gallery_service_support import (
-    call_gallery_service_with_optional_db,
     resolve_gallery_author_name,
 )
 
@@ -93,7 +93,7 @@ async def create_gallery_comment_api_payload(
     session_factory=None,
     service_fn=None,
 ) -> GalleryCommentResponse:
-    return await call_gallery_service_with_optional_db(
+    return await call_with_optional_db(
         db=db,
         service_fn=service_fn or create_gallery_comment_payload,
         session_factory=session_factory or AsyncSessionLocal,
@@ -170,7 +170,7 @@ async def get_gallery_comments_api_payload(
     session_factory=None,
     service_fn=None,
 ) -> PaginatedCommentResponse:
-    return await call_gallery_service_with_optional_db(
+    return await call_with_optional_db(
         db=db,
         service_fn=service_fn or get_gallery_comments_payload,
         session_factory=session_factory or AsyncSessionLocal,

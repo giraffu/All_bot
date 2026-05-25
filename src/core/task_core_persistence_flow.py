@@ -10,7 +10,10 @@ from src.core.task_core_output_materialization import (
 from src.core.task_core_persistence_postprocess import (
     postprocess_successful_task_persistence as _postprocess_successful_task_persistence_impl,
 )
-from src.core.task_core_types import TaskSuccessPersistenceResult
+from src.core.task_core_types import (
+    TaskPersistencePostprocessPlan,
+    TaskSuccessPersistenceResult,
+)
 from src.logger import UserLogger
 
 
@@ -34,6 +37,7 @@ async def persist_successful_task_result_flow(
     source: str = "bot",
     refresh_user_group_after_log: bool = False,
     warmup_web_history: bool = False,
+    postprocess_plan: TaskPersistencePostprocessPlan | None = None,
     user_logger_factory=None,
     download_result_func=None,
     download_video_result_func=None,
@@ -65,6 +69,12 @@ async def persist_successful_task_result_flow(
         )
     if to_thread_func is None:
         to_thread_func = asyncio.to_thread
+    if postprocess_plan is None:
+        postprocess_plan = TaskPersistencePostprocessPlan(
+            source=source,
+            refresh_user_group_after_log=refresh_user_group_after_log,
+            warmup_web_history=warmup_web_history,
+        )
 
     user_logger = user_logger_factory(internal_user_id, username)
     persistence_result = await materialize_successful_task_output_func(
@@ -97,12 +107,12 @@ async def persist_successful_task_result_flow(
         task_type=task_type,
         input_images=input_images,
         allow_contribute=allow_contribute,
-        source=source,
+        source=postprocess_plan.source,
         billing_resolution=billing_resolution,
         requested_duration=requested_duration,
         media_type=media_kind,
-        refresh_user_group_after_log=refresh_user_group_after_log,
-        warmup_web_history=warmup_web_history,
+        refresh_user_group_after_log=postprocess_plan.refresh_user_group_after_log,
+        warmup_web_history=postprocess_plan.warmup_web_history,
         refresh_user_group_func=refresh_user_group_func,
         schedule_web_history_r2_warmup_func=schedule_web_history_r2_warmup_func,
     )

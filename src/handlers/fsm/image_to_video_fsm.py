@@ -559,12 +559,17 @@ def get_image_to_video_fsm_handler() -> ConversationHandler:
         entry_points=[
             CommandHandler("image_to_video", start_image_to_video),
             CommandHandler("video_lora", start_image_to_video),
+            CommandHandler("custom_video", start_custom_video),
             MessageHandler(I18nFilter("menu.video_lora"), start_image_to_video),
+            MessageHandler(I18nFilter("menu.custom_video"), start_custom_video),
             CallbackQueryHandler(
                 start_image_to_video, pattern="^fsm_start_image_to_video$"
             ),
             CallbackQueryHandler(
                 start_image_to_video, pattern="^fsm_start_video_lora$"
+            ),
+            CallbackQueryHandler(
+                start_custom_video, pattern="^fsm_start_custom_video$"
             ),
         ],
         handler_name="image_to_video_fsm",

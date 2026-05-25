@@ -17,7 +17,7 @@
 出现以下任一场景时，至少执行一次“最小必跑集”：
 
 - 修改 `task_service`、`task_core`、`queue_manager`、`backend/app/main.py`
-- 修改 `src/web_api/routers/tasks.py`、`task_stream_api_service.py`、`task_action_api_service.py`
+- 修改 `src/web_api/routers/tasks.py`、`task_submission_service.py`、`task_runtime_api_service.py`、`task_result_service.py`、`task_stream_api_service.py`、`task_action_api_service.py`
 - 修改任务状态字段、Pub/Sub 事件格式、取消语义、排队语义
 - 修改 Telegram 任务完成消息、结果发送、cleanup 或 caption 组装逻辑
 
@@ -38,6 +38,9 @@
 - `backend/app/main.py`
 - `backend/app/queue_manager.py`
 - `src/web_api/routers/tasks.py`
+- `src/web_api/services/task_submission_service.py`
+- `src/web_api/services/task_runtime_api_service.py`
+- `src/web_api/services/task_result_service.py`
 - `src/web_api/services/task_stream_api_service.py`
 - `src/web_api/services/task_action_api_service.py`
 - `src/core/task_core.py`
@@ -53,6 +56,7 @@ pytest \
   tests/web_api/test_tasks_action_api_service.py \
   tests/web_api/test_tasks_generate.py \
   tests/web_api/test_tasks_stream.py \
+  tests/web_api/test_task_runtime_api_service.py \
   tests/services/test_task_service_completion.py \
   tests/services/test_task_service_support.py \
   tests/services/test_task_service_message_support.py \
@@ -71,6 +75,7 @@ pytest \
   tests/web_api/test_tasks_action_api_service.py \
   tests/web_api/test_tasks_generate.py \
   tests/web_api/test_tasks_stream.py \
+  tests/web_api/test_task_runtime_api_service.py \
   tests/services/test_task_service_completion.py \
   tests/services/test_task_service_support.py \
   tests/services/test_task_service_message_support.py \

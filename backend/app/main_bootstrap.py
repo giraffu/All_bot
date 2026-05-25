@@ -96,8 +96,21 @@ async def lifespan(
     check_zombie_tasks_loop_func,
     validate_workflows_func=None,
 ):
+    zombie_task = None
     if validate_workflows_func is not None:
         validate_workflows_func(settings.workflows_dir)
-    asyncio.create_task(check_zombie_tasks_loop_func())
+    zombie_task = asyncio.create_task(
+        check_zombie_tasks_loop_func(),
+        name="backend-check-zombie-tasks",
+    )
+    fastapi_app.state.zombie_tasks_loop_task = zombie_task
     fastapi_app.state.minio_client = init_minio_client(settings=settings, logger=logger)
-    yield
+    try:
+        yield
+    finally:
+        if zombie_task is not None:
+            zombie_task.cancel()
+            try:
+                await zombie_task
+            except asyncio.CancelledError:
+                pass

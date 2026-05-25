@@ -12,6 +12,7 @@ import TemplateApplyWorkbenchHost from '@/components/template-apply/TemplateAppl
 const {
   isMobileRef,
   templateApplyStoreMock,
+  confirmTemplateApplyCloseMock,
   useWorkbenchScrollLockMock
 } = vi.hoisted(() => ({
   isMobileRef: { value: false },
@@ -28,6 +29,7 @@ const {
     requestClose: vi.fn(),
     confirmCloseAndCleanup: vi.fn()
   },
+  confirmTemplateApplyCloseMock: vi.fn(),
   useWorkbenchScrollLockMock: vi.fn()
 }))
 
@@ -48,7 +50,8 @@ vi.mock('@/composables/useWorkbenchScrollLock', async () => {
 })
 
 vi.mock('@/stores/templateApply', () => ({
-  useTemplateApplyStore: () => templateApplyStoreMock
+  useTemplateApplyStore: () => templateApplyStoreMock,
+  confirmTemplateApplyClose: confirmTemplateApplyCloseMock
 }))
 
 vi.mock('@/components/template-apply/TemplateImagePromptPanel.vue', async () => {
@@ -168,6 +171,7 @@ describe('TemplateApplyWorkbenchHost', () => {
     templateApplyStoreMock.requestClose.mockReset()
     templateApplyStoreMock.confirmCloseAndCleanup.mockReset()
     templateApplyStoreMock.confirmCloseAndCleanup.mockResolvedValue(undefined)
+    confirmTemplateApplyCloseMock.mockReset()
 
     useWorkbenchScrollLockMock.mockReset()
   })
@@ -187,12 +191,13 @@ describe('TemplateApplyWorkbenchHost', () => {
     expect(wrapper.findComponent(ModalStub).exists()).toBe(true)
   })
 
-  it('closes immediately from the desktop cancel entry without asking for confirmation', async () => {
+  it('asks confirmation from the desktop cancel entry before cleanup', async () => {
     templateApplyStoreMock.requestClose.mockResolvedValue({
       status: 'confirm_required',
       trigger: 'user_close',
       confirmReason: 'dirty'
     })
+    confirmTemplateApplyCloseMock.mockResolvedValue(true)
 
     const wrapper = mountHost()
     wrapper.findComponent(ModalStub).vm.$emit('cancel')
@@ -200,16 +205,18 @@ describe('TemplateApplyWorkbenchHost', () => {
     await flushPromises()
 
     expect(templateApplyStoreMock.requestClose).toHaveBeenCalledWith('user_close')
+    expect(confirmTemplateApplyCloseMock).toHaveBeenCalledWith('dirty')
     expect(templateApplyStoreMock.confirmCloseAndCleanup).toHaveBeenCalledWith('user_close')
   })
 
-  it('closes immediately from the mobile drawer close entry without asking for confirmation', async () => {
+  it('asks confirmation from the mobile drawer close entry before cleanup', async () => {
     isMobileRef.value = true
     templateApplyStoreMock.requestClose.mockResolvedValue({
       status: 'confirm_required',
       trigger: 'gesture_close',
       confirmReason: 'uploading'
     })
+    confirmTemplateApplyCloseMock.mockResolvedValue(true)
 
     const wrapper = mountHost()
     wrapper.findComponent(DrawerStub).vm.$emit('close')
@@ -217,6 +224,7 @@ describe('TemplateApplyWorkbenchHost', () => {
     await flushPromises()
 
     expect(templateApplyStoreMock.requestClose).toHaveBeenCalledWith('gesture_close')
+    expect(confirmTemplateApplyCloseMock).toHaveBeenCalledWith('uploading')
     expect(templateApplyStoreMock.confirmCloseAndCleanup).toHaveBeenCalledWith('gesture_close')
   })
 

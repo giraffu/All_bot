@@ -3,7 +3,10 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from src.core.task_core import TaskSuccessPersistenceResult
+from src.core.task_core import (
+    TaskPersistencePostprocessPlan,
+    TaskSuccessPersistenceResult,
+)
 from src.services import task_recovery_runtime
 
 
@@ -60,6 +63,12 @@ async def test_handle_recovered_task_completion_uses_core_helper_and_records_met
 
     assert result.output_file == "saved-output.png"
     persist_mock.assert_awaited_once()
+    assert persist_mock.await_args.kwargs["postprocess_plan"] == (
+        TaskPersistencePostprocessPlan(
+            source="bot",
+            refresh_user_group_after_log=True,
+        )
+    )
     send_photo.assert_awaited_once()
     delete_message.assert_awaited_once_with(status_msg)
     assert context.bot_data["msg_meta_88"]["task_id"] == "task-1"

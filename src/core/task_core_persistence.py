@@ -10,7 +10,10 @@ from src.core.media_processor import (
     extract_media_metadata_from_bytes_best_effort,
     extract_media_metadata_from_storage_best_effort,
 )
-from src.core.task_core_types import TaskSuccessPersistenceResult
+from src.core.task_core_types import (
+    TaskPersistencePostprocessPlan,
+    TaskSuccessPersistenceResult,
+)
 from src.core.task_core_web_history_warmup import schedule_web_history_r2_warmup_default
 from src.logger import UserLogger
 
@@ -46,9 +49,15 @@ async def _persist_successful_web_history(
     output_duration: int | None,
     requested_duration: int | None,
     persist_successful_task_result_func=None,
+    postprocess_plan: TaskPersistencePostprocessPlan | None = None,
 ):
     if persist_successful_task_result_func is None:
         persist_successful_task_result_func = persist_successful_task_result
+    if postprocess_plan is None:
+        postprocess_plan = TaskPersistencePostprocessPlan(
+            source="web",
+            warmup_web_history=True,
+        )
 
     await persist_successful_task_result_func(
         backend_task_id=backend_task_id,
@@ -66,8 +75,7 @@ async def _persist_successful_web_history(
         output_height=output_height,
         output_duration=output_duration,
         requested_duration=requested_duration,
-        source="web",
-        warmup_web_history=True,
+        postprocess_plan=postprocess_plan,
     )
 
 
@@ -102,6 +110,7 @@ async def persist_successful_task_result(
     to_thread_func=None,
     refresh_user_group_func=None,
     postprocess_successful_task_persistence_func=None,
+    postprocess_plan: TaskPersistencePostprocessPlan | None = None,
     dependencies=None,
 ) -> TaskSuccessPersistenceResult:
     if materialize_successful_task_result_flow_func is None:
@@ -131,6 +140,12 @@ async def persist_successful_task_result(
         refresh_user_group_func = dependencies.refresh_user_group_func
     if to_thread_func is None:
         to_thread_func = asyncio.to_thread
+    if postprocess_plan is None:
+        postprocess_plan = TaskPersistencePostprocessPlan(
+            source=source,
+            refresh_user_group_after_log=refresh_user_group_after_log,
+            warmup_web_history=warmup_web_history,
+        )
 
     return await materialize_successful_task_result_flow_func(
         backend_task_id=backend_task_id,
@@ -151,6 +166,7 @@ async def persist_successful_task_result(
         result_path=result_path,
         refresh_user_group_after_log=refresh_user_group_after_log,
         warmup_web_history=warmup_web_history,
+        postprocess_plan=postprocess_plan,
         schedule_web_history_r2_warmup_func=schedule_web_history_r2_warmup_func,
         user_logger_factory=user_logger_factory,
         download_result_func=download_result_func,
@@ -192,6 +208,7 @@ async def persist_successful_task_result_default(
     source: str = "bot",
     refresh_user_group_after_log: bool = False,
     warmup_web_history: bool = False,
+    postprocess_plan: TaskPersistencePostprocessPlan | None = None,
 ) -> TaskSuccessPersistenceResult:
     dependencies = get_default_task_core_persistence_dependencies()
     return await persist_successful_task_result(
@@ -213,6 +230,7 @@ async def persist_successful_task_result_default(
         source=source,
         refresh_user_group_after_log=refresh_user_group_after_log,
         warmup_web_history=warmup_web_history,
+        postprocess_plan=postprocess_plan,
         dependencies=dependencies,
     )
 

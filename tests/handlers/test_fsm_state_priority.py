@@ -11,7 +11,6 @@ from src.constants import (
     MODE_IMG2IMG_LORA,
 )
 from src.handlers.fsm import (
-    custom_video_fsm,
     edit_image_fsm,
     faceswap_fsm,
     image_to_video_fsm,
@@ -68,13 +67,16 @@ def test_conversation_states_uses_only_image_to_video_state():
 
 
 def test_custom_video_fsm_handler_reuses_unified_state_graph():
-    custom_handler = custom_video_fsm.get_custom_video_fsm_handler()
     unified_handler = image_to_video_fsm.get_image_to_video_fsm_handler()
+    custom_entry_callbacks = [
+        handler.callback
+        for handler in unified_handler.entry_points
+        if getattr(handler, "callback", None) is image_to_video_fsm.start_custom_video
+    ]
 
-    assert custom_handler.name == "custom_video_fsm"
-    assert len(custom_handler.entry_points) == 3
-    assert set(custom_handler.states) == set(unified_handler.states)
-    assert custom_handler.fallbacks[0].callback is image_to_video_fsm.cancel_conversation
+    assert len(custom_entry_callbacks) == 3
+    assert unified_handler.name == "image_to_video_fsm"
+    assert unified_handler.fallbacks[0].callback is image_to_video_fsm.cancel_conversation
 
 
 @pytest.mark.asyncio
@@ -104,7 +106,7 @@ async def test_custom_video_state_expired_before_quota_check(monkeypatch):
         },
     )
 
-    result = await custom_video_fsm.receive_prompt(update, context)
+    result = await image_to_video_fsm.receive_prompt(update, context)
 
     assert result == ConversationHandler.END
     quota_mock.assert_not_awaited()

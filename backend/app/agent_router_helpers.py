@@ -13,10 +13,7 @@ async def bind_agent_task(
     task_id: str,
     agent_id: str,
 ) -> None:
-    await queue_manager.redis.hset(f"comfy:task:{task_id}", "worker_id", agent_id)
-    await queue_manager.redis.hset(
-        f"comfy:agent:heartbeat:{agent_id}", "current_task_id", task_id
-    )
+    await queue_manager.bind_agent_task(task_id, agent_id)
 
 
 async def clear_agent_current_task(
@@ -24,10 +21,7 @@ async def clear_agent_current_task(
     queue_manager,
     agent_id: str,
 ) -> None:
-    await queue_manager.redis.hdel(
-        f"comfy:agent:heartbeat:{agent_id}",
-        "current_task_id",
-    )
+    await queue_manager.clear_agent_current_task(agent_id)
 
 
 async def pop_task_payload(*, types: str | None, queue_manager) -> dict:
@@ -54,48 +48,56 @@ async def check_task_payload(*, task_id: str, queue_manager) -> dict:
     }
 
 
-async def update_status_payload(*, req, queue_manager) -> dict:
+async def update_status_payload(
+    *,
+    task_id: str,
+    agent_id: str,
+    status: str,
+    progress: float,
+    error: str,
+    queue_manager,
+) -> dict:
     await bind_agent_task(
         queue_manager=queue_manager,
-        task_id=req.task_id,
-        agent_id=req.agent_id,
+        task_id=task_id,
+        agent_id=agent_id,
     )
-    await queue_manager.update_task_heartbeat(req.task_id)
+    await queue_manager.update_task_heartbeat(task_id)
 
-    if req.status == "running" and req.progress > 0:
-        await queue_manager.update_progress(req.task_id, req.progress)
-    elif req.status == "failed":
+    if status == "running" and progress > 0:
+        await queue_manager.update_progress(task_id, progress)
+    elif status == "failed":
         await clear_agent_current_task(
             queue_manager=queue_manager,
-            agent_id=req.agent_id,
+            agent_id=agent_id,
         )
-        await queue_manager.fail_task(req.task_id, req.error)
+        await queue_manager.fail_task(task_id, error)
 
     return {"status": "ok"}
 
 
-async def complete_task_payload(*, req, queue_manager) -> dict:
+async def complete_task_payload(*, task_id: str, agent_id: str, result: str, queue_manager) -> dict:
     await clear_agent_current_task(
         queue_manager=queue_manager,
-        agent_id=req.agent_id,
+        agent_id=agent_id,
     )
-    await queue_manager.complete_task(req.task_id, req.result)
+    await queue_manager.complete_task(task_id, result)
     return {"status": "ok"}
 
 
-async def task_heartbeat_payload(*, req, queue_manager) -> dict:
-    await queue_manager.update_task_heartbeat(req.task_id)
-    if req.agent_id:
+async def task_heartbeat_payload(*, task_id: str, agent_id: str | None, queue_manager) -> dict:
+    await queue_manager.update_task_heartbeat(task_id)
+    if agent_id:
         await bind_agent_task(
             queue_manager=queue_manager,
-            task_id=req.task_id,
-            agent_id=req.agent_id,
+            task_id=task_id,
+            agent_id=agent_id,
         )
     return {"status": "ok"}
 
 
-async def heartbeat_payload(*, req, queue_manager) -> dict:
-    await queue_manager.update_agent_heartbeat(req.agent_id, req.types, req.status)
+async def heartbeat_payload(*, agent_id: str, types: str, status: str, queue_manager) -> dict:
+    await queue_manager.update_agent_heartbeat(agent_id, types, status)
     return {"status": "ok"}
 
 

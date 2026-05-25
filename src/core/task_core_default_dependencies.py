@@ -40,7 +40,7 @@ from src.core.task_core_service_providers import (
     build_task_core_submission_outbox_capabilities,
     build_task_core_task_registry_capabilities,
 )
-from src.core.task_core_types import is_task_backend_busy_error
+from src.core.task_core_error_helpers import is_task_backend_busy_error
 from src.core.task_dispatcher import dispatch_to_worker
 from src.logger import UserLogger
 

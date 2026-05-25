@@ -15,7 +15,11 @@ from src.services.image_service import image_service
 from src.services import task_service_completion as task_service_completion_helpers
 from src.services import task_service_finalize as task_service_finalize_helpers
 from src.services.task_service_message_support import with_submitted_status
-from src.services.task_service_types import BotTaskMessageSpec
+from src.services.task_service_types import (
+    BotTaskCompletionContext,
+    BotTaskMessageSpec,
+    BotTaskSubmissionContext,
+)
 from src.services.tg_task_runtime import get_or_send_status_message
 from src.utils import robust_edit_text, robust_reply_text
 
@@ -29,28 +33,22 @@ def mark_task_submission_succeeded(runtime_state, result: dict) -> list[str]:
 
 async def submit_bot_task(
     *,
-    runtime_state,
-    internal_user_id,
-    username,
-    task_type,
-    inputs,
-    source_post_id=None,
-    deduct_quota=True,
+    submission: BotTaskSubmissionContext,
 ) -> tuple[str, list[str]]:
     task_id = str(uuid.uuid4())
     correlation_id.set(task_id)
 
     result = await process_and_submit_task(
-        user_id=internal_user_id,
-        username=username,
-        task_type=task_type,
-        inputs=inputs,
+        user_id=submission.internal_user_id,
+        username=submission.username,
+        task_type=submission.task_type,
+        inputs=submission.inputs,
         task_id=task_id,
         client_type="bot",
-        source_post_id=source_post_id,
-        deduct_quota=deduct_quota,
+        source_post_id=submission.source_post_id,
+        deduct_quota=submission.deduct_quota,
     )
-    saved_inputs = mark_task_submission_succeeded(runtime_state, result)
+    saved_inputs = mark_task_submission_succeeded(submission.runtime_state, result)
     return task_id, saved_inputs
 
 
@@ -91,13 +89,7 @@ async def prepare_and_submit_bot_task(
     status_msg_id=None,
     message_spec: BotTaskMessageSpec,
     submitted_status_builder: Optional[Callable[[int], str]] = None,
-    runtime_state=None,
-    internal_user_id=None,
-    username=None,
-    task_type=None,
-    inputs=None,
-    source_post_id=None,
-    deduct_quota=True,
+    submission: BotTaskSubmissionContext,
 ):
     status_msg = await send_initial_task_status(
         context=context,
@@ -107,18 +99,12 @@ async def prepare_and_submit_bot_task(
         message_spec=message_spec,
     )
     task_id, saved_inputs = await submit_bot_task(
-        runtime_state=runtime_state,
-        internal_user_id=internal_user_id,
-        username=username,
-        task_type=task_type,
-        inputs=inputs,
-        source_post_id=source_post_id,
-        deduct_quota=deduct_quota,
+        submission=submission,
     )
     if submitted_status_builder is not None:
         message_spec = with_submitted_status(
             message_spec,
-            submitted_status_builder(runtime_state.actual_cost),
+            submitted_status_builder(submission.runtime_state.actual_cost),
         )
     await update_submitted_task_status(
         status_msg=status_msg,
@@ -162,6 +148,15 @@ async def run_bot_task_flow(
 ) -> tuple[bytes | None, str | None]:
     media_bytes = None
     full_output_path = None
+    submission = BotTaskSubmissionContext(
+        runtime_state=runtime_state,
+        internal_user_id=internal_user_id,
+        username=username,
+        task_type=task_type,
+        inputs=inputs,
+        source_post_id=source_post_id,
+        deduct_quota=deduct_quota,
+    )
 
     try:
         status_msg, task_id, saved_inputs, message_spec = (
@@ -172,13 +167,7 @@ async def run_bot_task_flow(
                 status_msg_id=status_msg_id,
                 message_spec=message_spec,
                 submitted_status_builder=submitted_status_builder,
-                runtime_state=runtime_state,
-                internal_user_id=internal_user_id,
-                username=username,
-                task_type=task_type,
-                inputs=inputs,
-                source_post_id=source_post_id,
-                deduct_quota=deduct_quota,
+                submission=submission,
             )
         )
 
@@ -196,27 +185,29 @@ async def run_bot_task_flow(
 
         media_bytes, full_output_path = (
             await task_service_completion_helpers.complete_monitored_bot_task(
-            context=context,
-            chat_id=chat_id,
-            status_msg=status_msg,
-            runtime_state=runtime_state,
-            internal_user_id=internal_user_id,
-            username=username,
-            user_logger=UserLogger(internal_user_id, username),
-            prompt=prompt,
-            task_type=task_type,
-            task_id=task_id,
-            saved_input_images=saved_inputs,
-            final_info=final_info,
-            is_video=is_video,
-            send_result=send_result,
-            reply_markup=reply_markup,
-            delete_status=delete_status,
-            allow_contribute=allow_contribute,
-            billing_resolution=billing_resolution,
-            requested_duration=requested_duration,
-            message_spec=message_spec,
-            missing_output_should_refund=missing_output_should_refund,
+                completion=BotTaskCompletionContext(
+                    context=context,
+                    chat_id=chat_id,
+                    status_msg=status_msg,
+                    runtime_state=runtime_state,
+                    internal_user_id=internal_user_id,
+                    username=username,
+                    prompt=prompt,
+                    task_type=task_type,
+                    task_id=task_id,
+                    saved_input_images=saved_inputs,
+                    final_info=final_info,
+                    is_video=is_video,
+                    message_spec=message_spec,
+                    user_logger=UserLogger(internal_user_id, username),
+                    send_result=send_result,
+                    reply_markup=reply_markup,
+                    delete_status=delete_status,
+                    allow_contribute=allow_contribute,
+                    billing_resolution=billing_resolution,
+                    requested_duration=requested_duration,
+                    missing_output_should_refund=missing_output_should_refund,
+                ),
             )
         )
 

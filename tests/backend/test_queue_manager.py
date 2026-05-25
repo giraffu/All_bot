@@ -241,7 +241,7 @@ async def test_cancel_task_cancels_pending_task_and_publishes_event():
 
 
 @pytest.mark.asyncio
-async def test_cancel_task_rejects_running_task_cancellation():
+async def test_cancel_task_requests_running_task_cancellation():
     redis = _FakeRedis()
     manager = QueueManager(redis)
     task_key = f"{manager.task_prefix}task-2"
@@ -252,12 +252,21 @@ async def test_cancel_task_rejects_running_task_cancellation():
     result = await manager.cancel_task("task-2")
 
     assert result == {
-        "state": "not_cancellable",
+        "state": "cancellation_requested",
         "task_id": "task-2",
-        "message": "任务已进入生成，撤销失败",
+        "message": "任务已请求取消，等待执行端确认",
+        "cancel_requested": True,
+        "cancel_requested_at": result["cancel_requested_at"],
     }
     assert redis.hashes[task_key]["status"] == TaskStatus.RUNNING
-    assert redis.published == []
+    assert redis.hashes[task_key]["cancel_requested"] == 1
+    assert redis.hashes[task_key]["cancel_requested_at"]
+    payload = json.loads(redis.published[-1][1])
+    assert payload == {
+        "status": "running",
+        "cancel_requested": True,
+        "message": "已请求取消，等待执行端确认",
+    }
 
 
 @pytest.mark.asyncio

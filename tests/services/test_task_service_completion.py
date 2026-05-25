@@ -8,8 +8,11 @@ from src.core.task_core import (
     CoreDomainError,
     TaskCancellationFinalizationResult,
     TaskFailureFinalizationResult,
+    TaskPersistencePostprocessPlan,
     TaskSuccessPersistenceResult,
 )
+from src.services.task_service_types import BotTaskCompletionContext
+from src.services.task_service_types import BotTaskFailureContext
 from src.constants import (
     MODE_CUSTOM_VIDEO,
     MODE_FACESWAP_STEP1,
@@ -73,8 +76,10 @@ async def test_handle_task_completion_keeps_success_flow_when_metadata_probe_fai
     assert output_path == "saved-output.mp4"
     persist_mock.assert_awaited_once()
     kwargs = persist_mock.await_args.kwargs
-    assert kwargs["source"] == "bot"
-    assert kwargs["refresh_user_group_after_log"] is True
+    assert kwargs["postprocess_plan"] == TaskPersistencePostprocessPlan(
+        source="bot",
+        refresh_user_group_after_log=True,
+    )
     assert kwargs["billing_resolution"] is None
     assert kwargs["backend_task_id"] == "task-1"
     assert kwargs["registry_task_id"] == "task-1"
@@ -224,7 +229,10 @@ async def test_download_and_log_task_output_handles_image_branch(monkeypatch):
     kwargs = persist_mock.await_args.kwargs
     assert kwargs["username"] == "tester"
     assert kwargs["task_type"] == "image"
-    assert kwargs["source"] == "bot"
+    assert kwargs["postprocess_plan"] == TaskPersistencePostprocessPlan(
+        source="bot",
+        refresh_user_group_after_log=True,
+    )
 
 
 def test_build_result_reply_markup_injects_gallery_button_when_missing():
@@ -375,25 +383,26 @@ async def test_complete_monitored_bot_task_preserves_supplied_user_logger(monkey
     )
 
     result = await completion_helpers.complete_monitored_bot_task(
-        context=SimpleNamespace(bot=MagicMock(), bot_data={}),
-        chat_id=123,
-        status_msg=MagicMock(),
-        runtime_state=runtime_state,
-        internal_user_id=456,
-        username="tester",
-        user_logger=user_logger,
-        prompt="prompt",
-        task_type="custom_video",
-        task_id="task-complete",
-        saved_input_images=["input.png"],
-        final_info={"status": "done"},
-        is_video=True,
-        send_result=True,
-        reply_markup=None,
-        delete_status=True,
-        caption=None,
-        allow_contribute=True,
-        message_spec=message_spec,
+        completion=BotTaskCompletionContext(
+            context=SimpleNamespace(bot=MagicMock(), bot_data={}),
+            chat_id=123,
+            status_msg=MagicMock(),
+            runtime_state=runtime_state,
+            internal_user_id=456,
+            username="tester",
+            prompt="prompt",
+            task_type="custom_video",
+            task_id="task-complete",
+            saved_input_images=["input.png"],
+            final_info={"status": "done"},
+            is_video=True,
+            message_spec=message_spec,
+            user_logger=user_logger,
+            send_result=True,
+            reply_markup=None,
+            delete_status=True,
+            allow_contribute=True,
+        ),
     )
 
     assert result == (b"video-bytes", "output.mp4")
@@ -416,25 +425,26 @@ async def test_complete_monitored_bot_task_uses_default_handle_completion(monkey
     )
 
     result = await completion_helpers.complete_monitored_bot_task(
-        context=SimpleNamespace(bot=MagicMock(), bot_data={}),
-        chat_id=123,
-        status_msg=MagicMock(),
-        runtime_state=runtime_state,
-        internal_user_id=456,
-        username="tester",
-        user_logger=user_logger,
-        prompt="prompt",
-        task_type="custom_video",
-        task_id="task-complete",
-        saved_input_images=["input.png"],
-        final_info={"status": "done"},
-        is_video=True,
-        send_result=True,
-        reply_markup=None,
-        delete_status=True,
-        caption=None,
-        allow_contribute=True,
-        message_spec=message_spec,
+        completion=BotTaskCompletionContext(
+            context=SimpleNamespace(bot=MagicMock(), bot_data={}),
+            chat_id=123,
+            status_msg=MagicMock(),
+            runtime_state=runtime_state,
+            internal_user_id=456,
+            username="tester",
+            prompt="prompt",
+            task_type="custom_video",
+            task_id="task-complete",
+            saved_input_images=["input.png"],
+            final_info={"status": "done"},
+            is_video=True,
+            message_spec=message_spec,
+            user_logger=user_logger,
+            send_result=True,
+            reply_markup=None,
+            delete_status=True,
+            allow_contribute=True,
+        ),
     )
 
     assert result == (b"video-bytes", "output.mp4")
@@ -456,25 +466,26 @@ async def test_complete_monitored_bot_task_uses_default_finalize_failed(monkeypa
     )
 
     result = await completion_helpers.complete_monitored_bot_task(
-        context=SimpleNamespace(bot=MagicMock(), bot_data={}),
-        chat_id=123,
-        status_msg=MagicMock(),
-        runtime_state=runtime_state,
-        internal_user_id=456,
-        username="tester",
-        user_logger=SimpleNamespace(username="tester"),
-        prompt="prompt",
-        task_type="custom_video",
-        task_id="task-complete",
-        saved_input_images=["input.png"],
-        final_info=None,
-        is_video=True,
-        send_result=True,
-        reply_markup=None,
-        delete_status=True,
-        caption=None,
-        allow_contribute=True,
-        message_spec=message_spec,
+        completion=BotTaskCompletionContext(
+            context=SimpleNamespace(bot=MagicMock(), bot_data={}),
+            chat_id=123,
+            status_msg=MagicMock(),
+            runtime_state=runtime_state,
+            internal_user_id=456,
+            username="tester",
+            prompt="prompt",
+            task_type="custom_video",
+            task_id="task-complete",
+            saved_input_images=["input.png"],
+            final_info=None,
+            is_video=True,
+            message_spec=message_spec,
+            user_logger=SimpleNamespace(username="tester"),
+            send_result=True,
+            reply_markup=None,
+            delete_status=True,
+            allow_contribute=True,
+        ),
     )
 
     assert result == (None, None)
@@ -482,13 +493,15 @@ async def test_complete_monitored_bot_task_uses_default_finalize_failed(monkeypa
         context=ANY,
         chat_id=123,
         status_msg=None,
-        internal_user_id=456,
-        username="tester",
-        cost=9,
-        should_refund=True,
-        registry_task_id="reg-1",
-        release_lock=True,
-        explicit_user_message="missing",
+        failure=BotTaskFailureContext(
+            internal_user_id=456,
+            username="tester",
+            cost=9,
+            should_refund=True,
+            registry_task_id="reg-1",
+            release_lock=True,
+            explicit_user_message="missing",
+        ),
     )
 
 
@@ -564,14 +577,16 @@ async def test_finalize_failed_task_for_bot_uses_task_service_send_message_seam(
         context=context,
         chat_id=123,
         status_msg=None,
-        internal_user_id=456,
-        username="tester",
-        cost=5,
-        should_refund=True,
-        registry_task_id="reg-2",
-        release_lock=True,
-        error=RuntimeError("boom"),
-        generic_error_prefix="系统错误",
+        failure=BotTaskFailureContext(
+            internal_user_id=456,
+            username="tester",
+            cost=5,
+            should_refund=True,
+            registry_task_id="reg-2",
+            release_lock=True,
+            error=RuntimeError("boom"),
+            generic_error_prefix="系统错误",
+        ),
     )
 
     assert "系统错误" in result.user_message
@@ -784,10 +799,10 @@ async def test_process_ltx_video_task_uses_finalize_task_cancellation(monkeypatc
     finalize_cancel = AsyncMock()
     cleanup_runtime = AsyncMock()
 
-    async def fake_submit(*, runtime_state, **_kwargs):
-        runtime_state.task_submitted = True
-        runtime_state.actual_cost = 12
-        runtime_state.registry_task_id = "task-ltx"
+    async def fake_submit(*, submission, **_kwargs):
+        submission.runtime_state.task_submitted = True
+        submission.runtime_state.actual_cost = 12
+        submission.runtime_state.registry_task_id = "task-ltx"
         return "task-ltx", ["input.png"]
 
     monkeypatch.setattr(
@@ -1006,10 +1021,10 @@ async def test_process_face_video_task_uses_finalize_task_failure(monkeypatch):
     )
     cleanup_runtime = AsyncMock()
 
-    async def fake_submit(*, runtime_state, **_kwargs):
-        runtime_state.task_submitted = True
-        runtime_state.actual_cost = 9
-        runtime_state.registry_task_id = "task-face-video"
+    async def fake_submit(*, submission, **_kwargs):
+        submission.runtime_state.task_submitted = True
+        submission.runtime_state.actual_cost = 9
+        submission.runtime_state.registry_task_id = "task-face-video"
         return "task-face-video", ["face.png", "video.mp4"]
 
     monkeypatch.setattr(

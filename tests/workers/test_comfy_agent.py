@@ -22,3 +22,15 @@ def test_agent_main_fail_fast_on_input_prepare_errors():
     assert "Failed to upload prepared input" in content
     assert "Failed to prepare {param_key} input" in content
     assert "raise RuntimeError(" in content
+    assert "async def _process_single_input_asset(" in content
+    assert "async def _prepare_task_inputs(" in content
+
+
+def test_agent_main_extracts_history_result_resolution_helpers():
+    with open("workers/comfy_agent/agent_main.py", "r", encoding="utf-8") as f:
+        content = f.read()
+
+    assert "def _pick_first_output_asset(" in content
+    assert "def _build_safe_result_object_name(" in content
+    assert "def _resolve_history_result_asset(" in content
+    ast.parse(content)

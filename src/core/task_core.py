@@ -7,6 +7,11 @@ from src.core.task_core_input_preparation import (
     process_input_path as _process_input_path_impl,
     validate_local_input_paths as _validate_local_input_paths_impl,
 )
+from src.core.task_core_error_helpers import (
+    build_failed_task_user_message,
+    is_task_backend_busy_error,
+    normalize_terminal_status,
+)
 from src.core.media_paths import resolve_storage_object
 from src.core.media_processor import (
     extract_media_metadata_from_bytes_best_effort,
@@ -26,7 +31,6 @@ from src.core.task_core_default_dependencies import (
     build_default_task_core_process_dependencies as _build_task_core_process_dependencies_impl,
 )
 from src.core.task_core_persistence import (
-    _persist_successful_web_history as _persist_successful_web_history_impl,
     persist_successful_task_result_default as _persist_successful_task_result_default,
 )
 from src.core.task_core_submission import (
@@ -44,21 +48,21 @@ from src.core.task_core_types import (
     CoreDomainError,
     InsufficientCreditsError,
     TaskCancellationFinalizationResult,
+    TaskPersistencePostprocessPlan,
+    TaskSubmissionSideEffectPlan,
     TaskFailureFinalizationResult,
     TaskSubmissionContext,
     TaskSubmissionExecutionResult,
     TaskSuccessPersistenceResult,
     TaskTerminationFinalizationResult,
     VideoTaskRequest,
-    build_failed_task_user_message,
-    build_video_task_request,
-    is_task_backend_busy_error,
-    normalize_terminal_status,
 )
+from src.core.task_core_video_request import build_video_task_request
 from src.core.task_core_web_monitor import (
     attach_submission_side_effects_default as _attach_submission_side_effects,
     finalize_monitored_web_task_success_default as _finalize_monitored_web_task_success,
     monitor_task_and_release_lock_default as _monitor_task_and_release_lock_default,
+    normalize_submission_side_effect_plan as _normalize_submission_side_effect_plan,
 )
 from src.core.task_core_web_history_warmup import (
     schedule_web_history_r2_warmup_default as _schedule_web_history_r2_warmup_default,
@@ -73,8 +77,10 @@ __all__ = [
     "InsufficientCreditsError",
     "TaskCancellationFinalizationResult",
     "TaskFailureFinalizationResult",
+    "TaskPersistencePostprocessPlan",
     "TaskSubmissionContext",
     "TaskSubmissionExecutionResult",
+    "TaskSubmissionSideEffectPlan",
     "TaskSuccessPersistenceResult",
     "TaskTerminationFinalizationResult",
     "VideoTaskRequest",
@@ -119,6 +125,8 @@ def _build_task_core_process_dependencies() -> TaskCoreProcessDependencies:
         shield_func=asyncio.shield,
         logger_override=logger,
     )
+
+
 async def persist_successful_task_result(
     *,
     backend_task_id: str,
@@ -139,6 +147,7 @@ async def persist_successful_task_result(
     source: str = "bot",
     refresh_user_group_after_log: bool = False,
     warmup_web_history: bool = False,
+    postprocess_plan: TaskPersistencePostprocessPlan | None = None,
 ) -> TaskSuccessPersistenceResult:
     return await _persist_successful_task_result_default(
         backend_task_id=backend_task_id,
@@ -159,44 +168,7 @@ async def persist_successful_task_result(
         source=source,
         refresh_user_group_after_log=refresh_user_group_after_log,
         warmup_web_history=warmup_web_history,
-    )
-
-
-async def _persist_successful_web_history(
-    *,
-    backend_task_id: str,
-    registry_task_id: str,
-    internal_user_id: int,
-    username: str,
-    prompt: str,
-    task_type: str,
-    input_images: list[str],
-    allow_contribute: bool,
-    is_video: bool,
-    result_path: str,
-    billing_resolution: str | None,
-    output_width: int | None,
-    output_height: int | None,
-    output_duration: int | None,
-    requested_duration: int | None,
-):
-    return await _persist_successful_web_history_impl(
-        backend_task_id=backend_task_id,
-        registry_task_id=registry_task_id,
-        internal_user_id=internal_user_id,
-        username=username,
-        prompt=prompt,
-        task_type=task_type,
-        input_images=input_images,
-        allow_contribute=allow_contribute,
-        is_video=is_video,
-        result_path=result_path,
-        billing_resolution=billing_resolution,
-        output_width=output_width,
-        output_height=output_height,
-        output_duration=output_duration,
-        requested_duration=requested_duration,
-        persist_successful_task_result_func=persist_successful_task_result,
+        postprocess_plan=postprocess_plan,
     )
 
 from src.core.billing_core import (
@@ -220,9 +192,15 @@ async def process_and_submit_task(
     deduct_quota: bool = True,
     check_lock: bool = True,
     source_post_id: Optional[int] = None,
+    submission_side_effect_plan: TaskSubmissionSideEffectPlan | None = None,
     dependencies: TaskCoreProcessDependencies | None = None,
 ) -> dict:
     dependencies = dependencies or get_default_task_core_process_dependencies()
+    submission_side_effect_plan = _normalize_submission_side_effect_plan(
+        submission_side_effect_plan=submission_side_effect_plan,
+        client_type=client_type,
+        source_post_id=source_post_id,
+    )
     strategy = dependencies.get_strategy_func(task_type)
     cost = strategy.get_cost(inputs)
     is_video_task = task_type in dependencies.video_task_types
@@ -273,14 +251,13 @@ async def process_and_submit_task(
             )
             registry_task_id = execution_result.registry_task_id
             dependencies.attach_submission_side_effects_func(
-                client_type=client_type,
                 backend_task_id=execution_result.backend_task_id,
                 internal_user_id=user_id,
                 username=username,
                 registry_task_id=registry_task_id,
                 submission_context=execution_result.submission_context,
                 cost=cost if deduct_quota else 0,
-                source_post_id=source_post_id,
+                submission_side_effect_plan=submission_side_effect_plan,
             )
 
             task_submitted_successfully = True

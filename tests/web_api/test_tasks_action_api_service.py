@@ -11,8 +11,8 @@ from src.core.task_core import (
 from src.web_api.schemas.task_schema import TaskGenerateRequest, TaskGenerateResponse
 from src.web_api.services.task_action_api_service import (
     cancel_pending_task_payload,
-    submit_generation_task_payload,
 )
+from src.web_api.services.task_submission_service import submit_generation_task
 
 
 @pytest.mark.asyncio
@@ -44,7 +44,7 @@ async def test_cancel_pending_task_payload_maps_domain_error_to_400():
 
 
 @pytest.mark.asyncio
-async def test_submit_generation_task_payload_returns_submission_result():
+async def test_submit_generation_task_returns_submission_result():
     request = TaskGenerateRequest(task_type="image", inputs={"prompt": "foo"})
     current_user = type("User", (), {"id": 123, "username": "tester"})()
     expected = TaskGenerateResponse(
@@ -56,18 +56,26 @@ async def test_submit_generation_task_payload_returns_submission_result():
     )
 
     with patch(
-        "src.web_api.services.task_action_api_service.submit_generation_task",
-        new=AsyncMock(return_value=expected),
-    ) as mock_submit:
-        result = await submit_generation_task_payload(
+        "src.web_api.services.task_submission_service.process_and_submit_task",
+        new=AsyncMock(return_value={"task_id": "task-1", "cost": 5}),
+    ), patch(
+        "src.web_api.services.task_submission_service.uuid.uuid4",
+        return_value="task-1",
+    ):
+        result = await submit_generation_task(
             req=request,
             current_user=current_user,
-            get_balance=AsyncMock(return_value=100),
+            get_balance=AsyncMock(return_value=95),
             logger=MagicMock(),
         )
 
-    assert result == expected
-    mock_submit.assert_awaited_once()
+    assert result == TaskGenerateResponse(
+        task_id="task-1",
+        status="pending",
+        message="Task submitted successfully",
+        cost=5,
+        balance_remaining=95,
+    )
 
 
 @pytest.mark.asyncio
@@ -79,7 +87,7 @@ async def test_submit_generation_task_payload_returns_submission_result():
         (CoreDomainError("参数错误"), 400, "参数错误"),
     ],
 )
-async def test_submit_generation_task_payload_maps_domain_errors(
+async def test_submit_generation_task_maps_domain_errors(
     side_effect,
     status_code,
     detail,
@@ -88,11 +96,11 @@ async def test_submit_generation_task_payload_maps_domain_errors(
     current_user = type("User", (), {"id": 123, "username": "tester"})()
 
     with patch(
-        "src.web_api.services.task_action_api_service.submit_generation_task",
+        "src.web_api.services.task_submission_service.process_and_submit_task",
         new=AsyncMock(side_effect=side_effect),
     ):
         with pytest.raises(HTTPException) as exc_info:
-            await submit_generation_task_payload(
+            await submit_generation_task(
                 req=request,
                 current_user=current_user,
                 get_balance=AsyncMock(return_value=100),
@@ -104,17 +112,17 @@ async def test_submit_generation_task_payload_maps_domain_errors(
 
 
 @pytest.mark.asyncio
-async def test_submit_generation_task_payload_maps_unexpected_error_to_500_and_logs():
+async def test_submit_generation_task_maps_unexpected_error_to_500_and_logs():
     request = TaskGenerateRequest(task_type="image", inputs={"prompt": "foo"})
     current_user = type("User", (), {"id": 123, "username": "tester"})()
     logger = MagicMock()
 
     with patch(
-        "src.web_api.services.task_action_api_service.submit_generation_task",
+        "src.web_api.services.task_submission_service.process_and_submit_task",
         new=AsyncMock(side_effect=RuntimeError("boom")),
     ):
         with pytest.raises(HTTPException) as exc_info:
-            await submit_generation_task_payload(
+            await submit_generation_task(
                 req=request,
                 current_user=current_user,
                 get_balance=AsyncMock(return_value=100),

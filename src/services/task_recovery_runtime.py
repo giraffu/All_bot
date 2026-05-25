@@ -1,5 +1,6 @@
 import logging
 
+from src.core.task_core import TaskPersistencePostprocessPlan
 from src.core.task_core_persistence import persist_successful_task_result
 from src.services.image_service import image_service
 from src.services.permission_service import permission_service
@@ -64,8 +65,10 @@ async def _handle_recovered_task_completion(
         is_video=is_video,
         billing_resolution=billing_resolution,
         requested_duration=requested_duration,
-        source="bot",
-        refresh_user_group_after_log=True,
+        postprocess_plan=TaskPersistencePostprocessPlan(
+            source="bot",
+            refresh_user_group_after_log=True,
+        ),
     )
 
     if send_result and persistence_result.media_bytes:

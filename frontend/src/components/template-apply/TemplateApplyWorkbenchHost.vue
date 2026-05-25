@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent } from 'vue'
+import { useTemplateApplyCloseProtocol } from '@/composables/useTemplateApplyCloseProtocol'
 import { useI18n } from 'vue-i18n'
 import { useViewport } from '@/composables/useViewport'
 import {
@@ -25,6 +26,7 @@ const TemplateVideoSwapPanel = defineAsyncComponent(
 const templateApplyStore = useTemplateApplyStore()
 const { t } = useI18n()
 const { isMobile } = useViewport()
+const { attemptTemplateApplyClose } = useTemplateApplyCloseProtocol(templateApplyStore)
 
 const contentRef = useMainLayoutContentRef()
 const isWorkbenchVisible = computed(() => templateApplyStore.visible)
@@ -48,12 +50,7 @@ const resolvedPanel = computed(() => {
 })
 
 const handleCloseAttempt = async (trigger: CloseTrigger) => {
-  const result = await templateApplyStore.requestClose(trigger)
-  if (result.status === 'blocked') {
-    return
-  }
-
-  await templateApplyStore.confirmCloseAndCleanup(trigger)
+  await attemptTemplateApplyClose(trigger)
 }
 
 useWorkbenchScrollLock(contentRef, isWorkbenchVisible)

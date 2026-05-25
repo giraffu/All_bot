@@ -2,6 +2,7 @@ import asyncio
 import logging
 
 from src.core.billing_core import refund_credits
+from src.core.task_core_error_helpers import build_failed_task_user_message
 from src.core.task_core_default_dependencies import (
     build_default_task_core_finalization_dependencies,
 )
@@ -11,7 +12,6 @@ from src.core.task_core_types import (
     TaskFailureFinalizationResult,
     TaskFinalizationContext,
     TaskTerminationFinalizationResult,
-    build_failed_task_user_message,
 )
 
 logger = logging.getLogger(__name__)

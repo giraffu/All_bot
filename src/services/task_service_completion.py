@@ -2,7 +2,7 @@ from typing import Optional
 
 from src.logger import UserLogger
 from src.services.task_service_finalize import finalize_failed_task_for_bot
-from src.services.task_service_types import BotTaskMessageSpec
+from src.services.task_service_types import BotTaskCompletionContext, BotTaskFailureContext
 from src.services.tg_task_runtime import (
     cleanup_completion_status_message,
     monitor_task_progress,
@@ -74,64 +74,47 @@ async def monitor_bot_task_progress(
 
 async def complete_monitored_bot_task(
     *,
-    context,
-    chat_id,
-    status_msg,
-    runtime_state,
-    internal_user_id,
-    username,
-    user_logger=None,
-    prompt,
-    task_type,
-    task_id,
-    saved_input_images,
-    final_info,
-    is_video,
-    send_result=True,
-    reply_markup=None,
-    delete_status=True,
-    caption=None,
-    allow_contribute=True,
-    billing_resolution: Optional[str] = None,
-    requested_duration: Optional[int] = None,
-    message_spec: BotTaskMessageSpec,
-    missing_output_should_refund: bool = True,
+    completion: BotTaskCompletionContext,
 ):
-    user_logger = user_logger or UserLogger(internal_user_id, username)
-    if final_info:
+    user_logger = completion.user_logger or UserLogger(
+        completion.internal_user_id, completion.username
+    )
+    if completion.final_info:
         return await handle_task_completion(
-            context=context,
-            chat_id=chat_id,
-            internal_user_id=internal_user_id,
-            prompt=prompt,
-            task_type=task_type,
-            task_id=task_id,
-            saved_input_images=saved_input_images,
+            context=completion.context,
+            chat_id=completion.chat_id,
+            internal_user_id=completion.internal_user_id,
+            prompt=completion.prompt,
+            task_type=completion.task_type,
+            task_id=completion.task_id,
+            saved_input_images=completion.saved_input_images,
             user_logger=user_logger,
-            is_video=is_video,
-            send_result=send_result,
-            reply_markup=reply_markup,
-            status_msg=status_msg,
-            delete_status=delete_status,
-            caption=caption or message_spec.completion_caption,
-            allow_contribute=allow_contribute,
-            billing_resolution=billing_resolution,
-            requested_duration=requested_duration,
+            is_video=completion.is_video,
+            send_result=completion.send_result,
+            reply_markup=completion.reply_markup,
+            status_msg=completion.status_msg,
+            delete_status=completion.delete_status,
+            caption=completion.caption or completion.message_spec.completion_caption,
+            allow_contribute=completion.allow_contribute,
+            billing_resolution=completion.billing_resolution,
+            requested_duration=completion.requested_duration,
         )
 
     await finalize_failed_task_for_bot(
-        context=context,
-        chat_id=chat_id,
+        context=completion.context,
+        chat_id=completion.chat_id,
         status_msg=None,
-        internal_user_id=internal_user_id,
-        username=username,
-        cost=runtime_state.actual_cost,
-        should_refund=missing_output_should_refund,
-        registry_task_id=runtime_state.registry_task_id,
-        release_lock=runtime_state.task_submitted,
-        explicit_user_message=message_spec.missing_output_message,
+        failure=BotTaskFailureContext(
+            internal_user_id=completion.internal_user_id,
+            username=completion.username,
+            cost=completion.runtime_state.actual_cost,
+            should_refund=completion.missing_output_should_refund,
+            registry_task_id=completion.runtime_state.registry_task_id,
+            release_lock=completion.runtime_state.task_submitted,
+            explicit_user_message=completion.message_spec.missing_output_message,
+        ),
     )
-    runtime_state.terminal_state_finalized = True
+    completion.runtime_state.terminal_state_finalized = True
     return None, None
 
 
@@ -148,6 +131,7 @@ async def download_and_log_task_output(
     billing_resolution: Optional[str],
     requested_duration: Optional[int],
 ):
+    from src.core.task_core import TaskPersistencePostprocessPlan
     from src.core.task_core_persistence import persist_successful_task_result
 
     persistence_result = await persist_successful_task_result(
@@ -162,8 +146,10 @@ async def download_and_log_task_output(
         is_video=is_video,
         billing_resolution=billing_resolution,
         requested_duration=requested_duration,
-        source="bot",
-        refresh_user_group_after_log=True,
+        postprocess_plan=TaskPersistencePostprocessPlan(
+            source="bot",
+            refresh_user_group_after_log=True,
+        ),
     )
     return (
         persistence_result.media_bytes,

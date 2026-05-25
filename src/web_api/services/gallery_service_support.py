@@ -4,7 +4,6 @@ from fastapi import HTTPException
 
 from src.constants import MODE_VIDEO_LORA
 from src.database.models import History
-from src.web_api.common.utils import call_with_optional_db
 from src.web_api.presenters.media_presenter import (
     resolve_gallery_media_urls as presenter_resolve_gallery_media_urls,
 )
@@ -132,19 +131,4 @@ def default_should_return_gallery_apply_input_file(history: History) -> bool:
     return should_return_gallery_apply_input_file(
         history,
         allow_input_reuse_task_types=APPLY_CONTEXT_ALLOW_INPUT_REUSE_TASK_TYPES,
-    )
-
-
-async def call_gallery_service_with_optional_db(
-    *,
-    db,
-    service_fn,
-    session_factory,
-    **kwargs,
-):
-    return await call_with_optional_db(
-        db=db,
-        service_fn=service_fn,
-        session_factory=session_factory,
-        **kwargs,
     )

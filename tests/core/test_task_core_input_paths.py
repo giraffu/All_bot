@@ -7,11 +7,13 @@ from src.core.task_core_input_preparation import (
     prepare_task_submission_payload,
     process_input_path,
 )
+from src.core.task_core_video_request import (
+    infer_requested_billing_resolution,
+    infer_requested_output_metadata,
+)
 from src.core.task_core_types import (
     CoreDomainError,
     VideoTaskRequest,
-    infer_requested_billing_resolution,
-    infer_requested_output_metadata,
 )
 
 

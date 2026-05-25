@@ -216,6 +216,7 @@ async def cancel_task_flow(
     exists_func,
     zrem_func,
     cancel_pending_task_func,
+    request_running_task_cancellation_func,
     sismember_func,
     get_task_status_func,
     build_cancel_result_func,
@@ -230,20 +231,12 @@ async def cancel_task_flow(
 
     is_running = bool(await sismember_func(task_id))
     if is_running:
-        return build_cancel_result_func(
-            "not_cancellable",
-            task_id,
-            "任务已进入生成，撤销失败",
-        )
+        return await request_running_task_cancellation_func(task_id)
 
     task_data = await get_task_status_func(task_id)
     status = task_data.get("status") if task_data else None
     if status == "running":
-        return build_cancel_result_func(
-            "not_cancellable",
-            task_id,
-            "任务已进入生成，撤销失败",
-        )
+        return await request_running_task_cancellation_func(task_id)
     if status == cancelled_status:
         return build_cancel_result_func("already_cancelled", task_id, "任务已取消")
 
