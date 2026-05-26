@@ -18,7 +18,7 @@ from src.constants import (
     TASK_COSTS,
 )
 from src.handlers.conversation_states import QuickImageState
-from src.handlers.prompt_router import is_global_menu_command
+from src.handlers.prompt_router import GLOBAL_REVERSE_MAP, is_global_menu_command
 from src.services.bot_task_service import process_generation_task
 from src.services.permission_service import permission_service
 from src.services.fsm_temp_file_service import (
@@ -33,6 +33,7 @@ from src.utils import (
 )
 
 from src.filters.i18n_filter import I18nFilter
+from src.i18n.translator import get_text
 
 logger = logging.getLogger("fsm.quick_image")
 
@@ -42,6 +43,16 @@ QUICK_MODES = {
     "menu.photo_edit_masturbation": MODE_MASTURBATION,
     "menu.photo_edit_random_faceswap": MODE_RANDOM_FACESWAP,
 }
+
+
+def _t(context: ContextTypes.DEFAULT_TYPE, key: str, **kwargs) -> str:
+    translator = getattr(context, "t", None)
+    if callable(translator):
+        return translator(key, **kwargs)
+    lang = getattr(context, "lang", None)
+    if not lang and getattr(context, "user_data", None):
+        lang = context.user_data.get("language_code")
+    return get_text(key, lang or "zh", **kwargs)
 
 
 def _cleanup_context(context: ContextTypes.DEFAULT_TYPE, user_id: int):
@@ -62,7 +73,7 @@ async def start_quick_image(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     from src.utils import is_maintenance_mode
 
     if is_maintenance_mode():
-        msg = "⚠️ 🛠️ **系统正在维护升级中**\n\n为了提供更好的服务，当前生图/生视频节点正在维护，暂不接受新任务。\n\n您的灵石和会员权益不受影响，请稍后再试！"
+        msg = _t(context, "fsm.common.maintenance")
         if update.callback_query:
             await robust_edit_text(
                 update.callback_query.message, msg, parse_mode="Markdown"
@@ -72,13 +83,11 @@ async def start_quick_image(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         return ConversationHandler.END
 
     if context.user_data.get("in_conversation"):
-        msg = "⚠️ 您当前有未完成的交互流程，请先发送 /cancel 退出当前流程后再试。"
+        msg = _t(context, "fsm.common.conflict")
         await robust_reply_text(update.message, msg)
         return ConversationHandler.END
 
     mode = None
-    from src.handlers.prompt_router import GLOBAL_REVERSE_MAP
-
     route_key = GLOBAL_REVERSE_MAP.get(text)
     if route_key:
         mode = QUICK_MODES.get(route_key)
@@ -96,11 +105,11 @@ async def start_quick_image(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     }
 
     if mode == MODE_UNDRESS:
-        msg = f"💃 **已切换到【快速脱衣】模式** (消耗 {cost} 灵石)。\n\n请发送一张包含人物的图片，我将自动处理。\n\n随时可以发送 /cancel 退出流程。"
+        msg = _t(context, "fsm.quick_image.undress_start", cost=cost)
     elif mode == MODE_MASTURBATION:
-        msg = f"🥵 **已切换到【快速自慰】模式** (消耗 {cost} 灵石)。\n\n请发送一张包含人物的图片，我将自动处理。\n\n随时可以发送 /cancel 退出流程。"
+        msg = _t(context, "fsm.quick_image.masturbation_start", cost=cost)
     elif mode == MODE_RANDOM_FACESWAP:
-        msg = f"🎭 **已切换到【随机换脸】模式** (消耗 {cost} 灵石)。\n\n请发送一张【正脸】图片，我将自动匹配模板处理。\n\n随时可以发送 /cancel 退出流程。"
+        msg = _t(context, "fsm.quick_image.random_faceswap_start", cost=cost)
 
     await robust_reply_text(update.message, msg, parse_mode="Markdown")
     return QuickImageState.WAIT_IMAGE
@@ -115,13 +124,13 @@ async def receive_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
 
     if message.document:
         if not message.document.mime_type.startswith("image/"):
-            await robust_reply_text(message, "❌ 格式错误！请发送图片。")
+            await robust_reply_text(message, _t(context, "fsm.common.invalid_image"))
             return QuickImageState.WAIT_IMAGE
         file_id = message.document.file_id
     elif message.photo:
         file_id = message.photo[-1].file_id
     else:
-        await robust_reply_text(message, "❌ 无法识别。请发送图片！")
+        await robust_reply_text(message, _t(context, "fsm.common.invalid_image"))
         return QuickImageState.WAIT_IMAGE
 
     # Check Priority & Quota
@@ -132,7 +141,7 @@ async def receive_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     if priority <= 0:
         await robust_reply_text(
             message,
-            "⚠️ 您的排队优先级已耗尽（或修为不足），今日已无法再凝聚灵力，请明日再来！",
+            _t(context, "fsm.quick_image.priority_exhausted"),
         )
         _cleanup_context(context, user_id)
         return ConversationHandler.END
@@ -149,7 +158,12 @@ async def receive_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
 
         if isinstance(e, InsufficientCreditsError):
             chat_id = update.effective_chat.id
-            msg = f"🚫 **灵石不足**\n\n道友当前余额: `{e.current}` 灵石\n本次修炼需要: `{e.cost}` 灵石\n请联系管理员获取更多灵石。"
+            msg = _t(
+                context,
+                "fsm.common.insufficient_credits",
+                current=e.current,
+                cost=e.cost,
+            )
             from src.utils import robust_send_message
 
             await robust_send_message(context.bot, chat_id, msg, parse_mode="Markdown")
@@ -167,7 +181,7 @@ async def receive_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         fsm_data["image_path"] = local_path
     except Exception as e:
         logger.error(f"Error downloading image for FSM user {user_id}: {e}")
-        await robust_reply_text(message, "❌ 下载图片失败，请重试或发送 /cancel 退出。")
+        await robust_reply_text(message, _t(context, "fsm.common.download_image_failed"))
         return QuickImageState.WAIT_IMAGE
 
     image_path = fsm_data.pop("image_path", None)
@@ -175,7 +189,7 @@ async def receive_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         return ConversationHandler.END  # Prevent double submit
 
     await robust_reply_text(
-        message, f"🚀 正在提交生成任务，预计消耗 {cost} 灵石，请耐心等待..."
+        message, _t(context, "fsm.quick_image.submit", cost=cost)
     )
 
     prompts_config = load_prompts()
@@ -195,7 +209,7 @@ async def receive_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
             ]
             if not template_files:
                 await robust_reply_text(
-                    message, "❌ 系统错误：未找到身体模板。请联系管理员添加图片。"
+                    message, _t(context, "fsm.quick_image.no_template")
                 )
                 _cleanup_context(context, user_id)
                 return ConversationHandler.END
@@ -209,7 +223,8 @@ async def receive_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
             keyboard = [
                 [
                     InlineKeyboardButton(
-                        "🔄 再来一张", callback_data="random_faceswap_again"
+                        _t(context, "fsm.quick_image.again_button"),
+                        callback_data="random_faceswap_again",
                     )
                 ],
                 [
@@ -221,7 +236,8 @@ async def receive_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
                 keyboard[0].insert(
                     0,
                     InlineKeyboardButton(
-                        "🌐 公开", callback_data="public_share_request"
+                        _t(context, "fsm.quick_image.public_button"),
+                        callback_data="public_share_request",
                     ),
                 )
             reply_markup = InlineKeyboardMarkup(keyboard)
@@ -245,7 +261,9 @@ async def receive_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
             )
         except Exception as e:
             logger.error(f"Error in random faceswap FSM: {e}", exc_info=True)
-            await robust_reply_text(message, f"❌ 系统错误：{str(e)}")
+            await robust_reply_text(
+                message, _t(context, "fsm.quick_image.system_error", error_msg=str(e))
+            )
 
     else:
         # Undress or Masturbation
@@ -272,7 +290,7 @@ async def cancel_conversation(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> int:
     user_id = update.effective_user.id
-    msg = "🚫 流程已取消。已清空历史上传内容。"
+    msg = _t(context, "fsm.common.cancelled")
     await robust_reply_text(update.message, msg)
     _cleanup_context(context, user_id)
     return ConversationHandler.END
@@ -285,7 +303,7 @@ async def timeout_conversation(
     if update and update.message:
         await robust_reply_text(
             update.message,
-            "⏰ 操作超时，为节省系统资源，本次流程已自动取消。您可以随时重新开始。",
+            _t(context, "fsm.common.timeout"),
         )
     _cleanup_context(context, user_id)
     return ConversationHandler.END
@@ -294,12 +312,23 @@ async def timeout_conversation(
 async def unexpected_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     text = update.message.text if update.message else ""
     if text and is_global_menu_command(text):
+        route_key = GLOBAL_REVERSE_MAP.get(text)
         user_id = update.effective_user.id if update.effective_user else "Unknown"
         _cleanup_context(context, user_id)
-        await robust_reply_text(update.message, context.t("system.fsm_exit_hint"))
+        if route_key == "menu.switch_lang" and update.effective_user:
+            from src.handlers.message_handler_runtime import toggle_user_language
+
+            reply_text, reply_markup = await toggle_user_language(
+                context, update.effective_user
+            )
+            await robust_reply_text(
+                update.message, reply_text, reply_markup=reply_markup
+            )
+            return ConversationHandler.END
+        await robust_reply_text(update.message, _t(context, "system.fsm_exit_hint"))
         return ConversationHandler.END
 
-    await robust_reply_text(update.message, context.t("system.fsm_in_progress_hint"))
+    await robust_reply_text(update.message, _t(context, "system.fsm_in_progress_hint"))
     return None
 
 

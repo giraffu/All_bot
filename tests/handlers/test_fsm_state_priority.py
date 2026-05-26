@@ -213,6 +213,31 @@ async def test_start_edit_image_english_lora_buttons(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_start_quick_image_uses_english_locale(monkeypatch):
+    reply_mock = AsyncMock()
+
+    monkeypatch.setattr("src.utils.is_maintenance_mode", lambda: False)
+    monkeypatch.setattr("src.handlers.fsm.quick_image_fsm.robust_reply_text", reply_mock)
+
+    from src.handlers.fsm import quick_image_fsm
+
+    update = _build_update_with_message(text="💃 Quick Undress")
+    context = SimpleNamespace(user_data={}, lang="en")
+
+    monkeypatch.setitem(
+        __import__("src.handlers.prompt_router", fromlist=["GLOBAL_REVERSE_MAP"]).GLOBAL_REVERSE_MAP,
+        "💃 Quick Undress",
+        "menu.photo_edit_undress",
+    )
+
+    result = await quick_image_fsm.start_quick_image(update, context)
+
+    assert result == quick_image_fsm.QuickImageState.WAIT_IMAGE
+    reply_mock.assert_awaited_once()
+    assert "Entered Quick Undress mode" in reply_mock.await_args.args[1]
+
+
+@pytest.mark.asyncio
 async def test_start_edit_image_routes_i2i_pro_to_reference_image(monkeypatch):
     reply_mock = AsyncMock()
 
@@ -613,6 +638,47 @@ async def test_start_image_to_video_english_lora_buttons(monkeypatch):
     keyboard = reply_mock.await_args.kwargs["reply_markup"]
     assert keyboard.inline_keyboard[0][0].text == "None"
     assert keyboard.inline_keyboard[0][1].text == "Breast Growth"
+
+
+@pytest.mark.asyncio
+async def test_start_quick_video_uses_english_locale(monkeypatch):
+    reply_mock = AsyncMock()
+
+    monkeypatch.setattr("src.utils.is_maintenance_mode", lambda: False)
+    monkeypatch.setattr("src.handlers.fsm.quick_video_fsm.robust_reply_text", reply_mock)
+
+    update = _build_update_with_message(text="🛏️ GIF Missionary")
+    context = SimpleNamespace(user_data={}, lang="en")
+
+    monkeypatch.setitem(
+        __import__("src.handlers.prompt_router", fromlist=["GLOBAL_REVERSE_MAP"]).GLOBAL_REVERSE_MAP,
+        "🛏️ GIF Missionary",
+        "menu.video_edit_missionary",
+    )
+
+    result = await quick_video_fsm.start_quick_video(update, context)
+
+    assert result == quick_video_fsm.QuickVideoState.WAIT_IMAGE
+    reply_mock.assert_awaited_once()
+    assert "Entered" in reply_mock.await_args.args[1]
+    assert "mode" in reply_mock.await_args.args[1]
+
+
+@pytest.mark.asyncio
+async def test_start_faceswap_uses_english_locale(monkeypatch):
+    reply_mock = AsyncMock()
+
+    monkeypatch.setattr("src.utils.is_maintenance_mode", lambda: False)
+    monkeypatch.setattr(faceswap_fsm, "robust_reply_text", reply_mock)
+
+    update = _build_update_with_message(text="🎭 Quick Faceswap")
+    context = SimpleNamespace(user_data={}, lang="en")
+
+    result = await faceswap_fsm.start_faceswap(update, context)
+
+    assert result == faceswap_fsm.FaceSwapState.WAIT_FACE_IMAGE
+    reply_mock.assert_awaited_once()
+    assert "Welcome to Two-Person Face Swap" in reply_mock.await_args.args[1]
 
 
 @pytest.mark.asyncio

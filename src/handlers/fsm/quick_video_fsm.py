@@ -23,7 +23,7 @@ from src.constants import (
     get_video_settings_keyboard,
 )
 from src.handlers.conversation_states import QuickVideoState
-from src.handlers.prompt_router import is_global_menu_command
+from src.handlers.prompt_router import GLOBAL_REVERSE_MAP, is_global_menu_command
 from src.services.permission_service import permission_service
 from src.services.bot_task_service import process_video_task_template
 from src.services.fsm_temp_file_service import (
@@ -34,6 +34,7 @@ from src.utils import create_background_task, robust_edit_text, robust_reply_tex
 import contextlib
 
 from src.filters.i18n_filter import I18nFilter
+from src.i18n.translator import get_text
 
 logger = logging.getLogger("fsm.quick_video")
 
@@ -46,7 +47,17 @@ QUICK_VIDEO_MODES = {
 }
 
 
-def _cleanup_context(context: ContextTypes.DEFAULT_TYPE, user_id: int):
+def _t(context: ContextTypes.DEFAULT_TYPE, key: str, **kwargs) -> str:
+    translator = getattr(context, "t", None)
+    if callable(translator):
+        return translator(key, **kwargs)
+    lang = getattr(context, "lang", None)
+    if not lang and getattr(context, "user_data", None):
+        lang = context.user_data.get("language_code")
+    return get_text(key, lang or "zh", **kwargs)
+
+
+def _cleanup_context(context: ContextTypes.DEFAULT_TYPE, _user_id: int):
     context.user_data.pop("in_conversation", None)
     fsm_data = context.user_data.pop("quick_video_data", {})
     cleanup_fsm_temp_files([fsm_data.get("image_path")])
@@ -60,7 +71,7 @@ async def start_quick_video(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     from src.utils import is_maintenance_mode
 
     if is_maintenance_mode():
-        msg = "⚠️ 🛠️ **系统正在维护升级中**\n\n为了提供更好的服务，当前生图/生视频节点正在维护，暂不接受新任务。\n\n您的灵石和会员权益不受影响，请稍后再试！"
+        msg = _t(context, "fsm.common.maintenance")
         if update.callback_query:
             await robust_edit_text(
                 update.callback_query.message, msg, parse_mode="Markdown"
@@ -70,13 +81,11 @@ async def start_quick_video(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         return ConversationHandler.END
 
     if context.user_data.get("in_conversation"):
-        msg = "⚠️ 您当前有未完成的交互流程，请先发送 /cancel 退出当前流程后再试。"
+        msg = _t(context, "fsm.common.conflict")
         await robust_reply_text(update.message, msg)
         return ConversationHandler.END
 
     mode = None
-    from src.handlers.prompt_router import GLOBAL_REVERSE_MAP
-
     route_key = GLOBAL_REVERSE_MAP.get(text)
     if route_key:
         mode = QUICK_VIDEO_MODES.get(route_key)
@@ -93,7 +102,7 @@ async def start_quick_video(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     }
 
     mode_name = text[2:] if len(text) > 2 else text
-    msg = f"🎬 **已切换到【{mode_name}】模式**。\n\n请发送一张【正面清晰图片】，我将自动处理。\n\n随时可以发送 /cancel 退出流程。"
+    msg = _t(context, "fsm.quick_video.start", mode_name=mode_name)
     await robust_reply_text(update.message, msg, parse_mode="Markdown")
     return QuickVideoState.WAIT_IMAGE
 
@@ -105,13 +114,13 @@ async def receive_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
 
     if message.document:
         if not message.document.mime_type.startswith("image/"):
-            await robust_reply_text(message, "❌ 格式错误！请发送图片。")
+            await robust_reply_text(message, _t(context, "fsm.common.invalid_image"))
             return QuickVideoState.WAIT_IMAGE
         file_id = message.document.file_id
     elif message.photo:
         file_id = message.photo[-1].file_id
     else:
-        await robust_reply_text(message, "❌ 无法识别。请发送图片！")
+        await robust_reply_text(message, _t(context, "fsm.common.invalid_image"))
         return QuickVideoState.WAIT_IMAGE
 
     try:
@@ -124,7 +133,7 @@ async def receive_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         fsm_data["image_path"] = local_path
     except Exception as e:
         logger.error(f"Error downloading image for FSM user {user_id}: {e}")
-        await robust_reply_text(message, "❌ 下载图片失败，请重试或发送 /cancel 退出。")
+        await robust_reply_text(message, _t(context, "fsm.common.download_image_failed"))
         return QuickVideoState.WAIT_IMAGE
 
     # Send settings keyboard
@@ -146,12 +155,20 @@ async def receive_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     multiplier = DURATION_MULTIPLIER.get(dur, 1.0)
     cost = int(base_cost * multiplier)
 
-    msg_text = f"⚙️ 当前视频画质：{res} | 时长：{dur} | 消耗灵石：{cost}\n\n请在下方选择您需要的画质和时长（部分画质和时长需要高境界或VIP身份解锁）：\n\n*提示：画质越高、时长越长，消耗灵石越多。注意：1024p 和 10s 无法同时选择。*\n\n【最后一步】**点击“🚀 开始生成”** 按钮提交任务。"
+    start_button_text = _t(context, "fsm.quick_video.start_button")
+    msg_text = _t(
+        context,
+        "fsm.quick_video.settings_text",
+        resolution=res,
+        duration=dur,
+        cost=cost,
+        start_button=start_button_text,
+    )
 
     # Add a "Start Generation" button
     keyboard = list(reply_markup.inline_keyboard)
     keyboard.append(
-        [InlineKeyboardButton("🚀 开始生成", callback_data="qvid_start_generation")]
+        [InlineKeyboardButton(start_button_text, callback_data="qvid_start_generation")]
     )
     reply_markup = InlineKeyboardMarkup(keyboard)
 
@@ -169,11 +186,11 @@ async def process_settings(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     fsm_data = context.user_data.get("quick_video_data", {})
     if not fsm_data:
         with contextlib.suppress(Exception):
-            await query.answer("交互已失效或任务已提交，请重新开始", show_alert=True)
+            await query.answer(_t(context, "fsm.quick_video.expired_alert"), show_alert=True)
         return ConversationHandler.END
 
     if data == "qvid_start_generation":
-        await query.answer(text="⏳ 任务初始化中...", cache_time=2)
+        await query.answer(text=_t(context, "fsm.common.task_initializing"), cache_time=2)
         return await start_generation(update, context)
 
     if data.startswith("set_res_"):
@@ -182,7 +199,7 @@ async def process_settings(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             fsm_data["duration"] = "8s"
             with contextlib.suppress(Exception):
                 await query.answer(
-                    "1024p和10s无法同时选择，已自动将时长调为8s", show_alert=True
+                    _t(context, "fsm.quick_video.res_dur_conflict"), show_alert=True
                 )
         fsm_data["resolution"] = new_res
     elif data.startswith("set_dur_"):
@@ -191,7 +208,7 @@ async def process_settings(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             fsm_data["resolution"] = "720p"
             with contextlib.suppress(Exception):
                 await query.answer(
-                    "1024p和10s无法同时选择，已自动将画质调为720p", show_alert=True
+                    _t(context, "fsm.quick_video.dur_res_conflict"), show_alert=True
                 )
         fsm_data["duration"] = new_dur
 
@@ -213,11 +230,19 @@ async def process_settings(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     multiplier = DURATION_MULTIPLIER.get(dur, 1.0)
     cost = int(base_cost * multiplier)
 
-    msg_text = f"⚙️ 当前视频画质：{res} | 时长：{dur} | 消耗灵石：{cost}\n\n请在下方选择您需要的画质和时长（部分画质和时长需要高境界或VIP身份解锁）：\n\n*提示：画质越高、时长越长，消耗灵石越多。注意：1024p 和 10s 无法同时选择。*\n\n【最后一步】**点击“🚀 开始生成”** 按钮提交任务。"
+    start_button_text = _t(context, "fsm.quick_video.start_button")
+    msg_text = _t(
+        context,
+        "fsm.quick_video.settings_text",
+        resolution=res,
+        duration=dur,
+        cost=cost,
+        start_button=start_button_text,
+    )
 
     keyboard = list(reply_markup.inline_keyboard)
     keyboard.append(
-        [InlineKeyboardButton("🚀 开始生成", callback_data="qvid_start_generation")]
+        [InlineKeyboardButton(start_button_text, callback_data="qvid_start_generation")]
     )
     reply_markup = InlineKeyboardMarkup(keyboard)
 
@@ -226,7 +251,7 @@ async def process_settings(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             query.message, msg_text, reply_markup=reply_markup, parse_mode="Markdown"
         )
 
-    await query.answer(text="⏳ 任务初始化中...", cache_time=2)
+    await query.answer(text=_t(context, "fsm.common.task_initializing"), cache_time=2)
     return QuickVideoState.WAIT_SETTINGS
 
 
@@ -235,7 +260,7 @@ async def start_generation(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     if query:
         from src.utils import safe_answer_query
 
-        await safe_answer_query(query, text="⏳ 任务初始化中...", cache_time=2)
+        await safe_answer_query(query, text=_t(context, "fsm.common.task_initializing"), cache_time=2)
     user_id = query.from_user.id
 
     fsm_data = context.user_data.get("quick_video_data", {})
@@ -248,7 +273,7 @@ async def start_generation(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             f"user={user_id} image_path missing or already consumed in quick_video"
         )
         with contextlib.suppress(Exception):
-            await query.answer("⚠️ 任务已提交或状态已失效，请勿重复操作。", show_alert=True)
+            await query.answer(_t(context, "fsm.quick_video.already_submitted"), show_alert=True)
         _cleanup_context(context, user_id)
         return ConversationHandler.END
 
@@ -282,7 +307,12 @@ async def start_generation(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
         if isinstance(e, InsufficientCreditsError):
             chat_id = update.effective_chat.id
-            msg = f"🚫 **灵石不足**\n\n道友当前余额: `{e.current}` 灵石\n本次修炼需要: `{e.cost}` 灵石\n请联系管理员获取更多灵石。"
+            msg = _t(
+                context,
+                "fsm.common.insufficient_credits",
+                current=e.current,
+                cost=e.cost,
+            )
             from src.utils import robust_send_message
 
             await robust_send_message(context.bot, chat_id, msg, parse_mode="Markdown")
@@ -294,7 +324,7 @@ async def start_generation(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         raise e
 
     await robust_edit_text(
-        query.message, f"🚀 正在提交视频任务，预计消耗 {cost} 灵石，请耐心等待..."
+        query.message, _t(context, "fsm.quick_video.submit", cost=cost)
     )
 
     video_modes = {
@@ -332,7 +362,7 @@ async def cancel_conversation(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> int:
     user_id = update.effective_user.id
-    msg = "🚫 流程已取消。已清空历史上传内容。"
+    msg = _t(context, "fsm.common.cancelled")
     if update.callback_query:
         await robust_edit_text(update.callback_query.message, msg)
     else:
@@ -348,7 +378,7 @@ async def timeout_conversation(
     if update and update.message:
         await robust_reply_text(
             update.message,
-            "⏰ 操作超时，为节省系统资源，本次流程已自动取消。您可以随时重新开始。",
+            _t(context, "fsm.common.timeout"),
         )
     _cleanup_context(context, user_id)
     return ConversationHandler.END
@@ -357,12 +387,23 @@ async def timeout_conversation(
 async def unexpected_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     text = update.message.text if update.message else ""
     if text and is_global_menu_command(text):
+        route_key = GLOBAL_REVERSE_MAP.get(text)
         user_id = update.effective_user.id if update.effective_user else "Unknown"
         _cleanup_context(context, user_id)
-        await robust_reply_text(update.message, context.t("system.fsm_exit_hint"))
+        if route_key == "menu.switch_lang" and update.effective_user:
+            from src.handlers.message_handler_runtime import toggle_user_language
+
+            reply_text, reply_markup = await toggle_user_language(
+                context, update.effective_user
+            )
+            await robust_reply_text(
+                update.message, reply_text, reply_markup=reply_markup
+            )
+            return ConversationHandler.END
+        await robust_reply_text(update.message, _t(context, "system.fsm_exit_hint"))
         return ConversationHandler.END
 
-    await robust_reply_text(update.message, context.t("system.fsm_in_progress_hint"))
+    await robust_reply_text(update.message, _t(context, "system.fsm_in_progress_hint"))
     return None
 
 

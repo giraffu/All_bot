@@ -521,6 +521,33 @@
       "confirm_text": "📝 **Your prompt**:\n`{prompt}`\n\nIf everything looks correct, tap **Confirm Generation**.",
       "missing_image_resend": "⚠️ The task state expired. Please send the image and prompt again.",
       "submit": "🚀 Submitting the Pro Video task. Estimated cost: {cost} credits. Please wait..."
+    },
+    "quick_image": {
+      "undress_start": "💃 **Entered Quick Undress mode** (cost: {cost} credits).\n\nSend one image containing a person and I will process it automatically.\n\nYou can send /cancel anytime to exit.",
+      "masturbation_start": "🥵 **Entered Quick Masturbation mode** (cost: {cost} credits).\n\nSend one image containing a person and I will process it automatically.\n\nYou can send /cancel anytime to exit.",
+      "random_faceswap_start": "🎭 **Entered Random Faceswap mode** (cost: {cost} credits).\n\nSend one **front-face** image and I will automatically match a template for it.\n\nYou can send /cancel anytime to exit.",
+      "priority_exhausted": "⚠️ Your queue priority is exhausted (or your realm is too low). Please come back tomorrow.",
+      "submit": "🚀 Submitting the generation task. Estimated cost: {cost} credits. Please wait...",
+      "no_template": "❌ System error: no body template was found. Please contact the admin to add one.",
+      "again_button": "🔄 Try Another",
+      "public_button": "🌐 Share Publicly",
+      "system_error": "❌ System error: {error_msg}"
+    },
+    "quick_video": {
+      "start": "🎬 **Entered {mode_name} mode.**\n\nSend one **clear front-facing image** and I will process it automatically.\n\nYou can send /cancel anytime to exit.",
+      "settings_text": "⚙️ Current video quality: {resolution} | Duration: {duration} | Cost: {cost} credits\n\nChoose the quality and duration you want below (some settings require a higher realm or membership):\n\n*Hint: higher quality and longer duration cost more credits. 1024p and 10s cannot be selected together.*\n\n**Final step:** tap **{start_button}** to submit the task.",
+      "start_button": "🚀 Start Generation",
+      "expired_alert": "The interaction expired or the task was submitted. Please start again.",
+      "res_dur_conflict": "1024p and 10s cannot be selected together, so duration was adjusted to 8s automatically.",
+      "dur_res_conflict": "1024p and 10s cannot be selected together, so quality was adjusted to 720p automatically.",
+      "already_submitted": "⚠️ This task was already submitted or the state is no longer valid. Please do not repeat the action.",
+      "submit": "🚀 Submitting the video task. Estimated cost: {cost} credits. Please wait..."
+    },
+    "faceswap": {
+      "start": "🎭 **Welcome to Two-Person Face Swap!**\n\n**Step 1:** Send one image with a **clear front face** (this is the face provider).\n\nYou can send /cancel anytime to exit.",
+      "face_received": "✅ **Face image received!**\n\n**Step 2:** Send one **target body image** (the image you want the face to be swapped onto).\n\nYou can send /cancel anytime to exit.",
+      "missing_face_resend": "⚠️ The task state expired. Please send the image again.",
+      "submit": "🚀 Submitting the two-person face swap task. Estimated cost: {cost} credits. Please wait..."
     }
   },
   "profile_extra": {

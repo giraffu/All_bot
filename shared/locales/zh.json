@@ -522,6 +522,33 @@
       "confirm_text": "📝 **您的提示词**:\n`{prompt}`\n\n确认无误后请点击【确定生成】。",
       "missing_image_resend": "⚠️ 任务状态已过期，请重新发送图片和提示词。",
       "submit": "🚀 正在提交高级视频任务，预计消耗 {cost} 灵石，请耐心等待..."
+    },
+    "quick_image": {
+      "undress_start": "💃 **已切换到【快速脱衣】模式** (消耗 {cost} 灵石)。\n\n请发送一张包含人物的图片，我将自动处理。\n\n随时可以发送 /cancel 退出流程。",
+      "masturbation_start": "🥵 **已切换到【快速自慰】模式** (消耗 {cost} 灵石)。\n\n请发送一张包含人物的图片，我将自动处理。\n\n随时可以发送 /cancel 退出流程。",
+      "random_faceswap_start": "🎭 **已切换到【随机换脸】模式** (消耗 {cost} 灵石)。\n\n请发送一张【正脸】图片，我将自动匹配模板处理。\n\n随时可以发送 /cancel 退出流程。",
+      "priority_exhausted": "⚠️ 您的排队优先级已耗尽（或修为不足），今日已无法再凝聚灵力，请明日再来！",
+      "submit": "🚀 正在提交生成任务，预计消耗 {cost} 灵石，请耐心等待...",
+      "no_template": "❌ 系统错误：未找到身体模板。请联系管理员添加图片。",
+      "again_button": "🔄 再来一张",
+      "public_button": "🌐 公开",
+      "system_error": "❌ 系统错误：{error_msg}"
+    },
+    "quick_video": {
+      "start": "🎬 **已切换到【{mode_name}】模式**。\n\n请发送一张【正面清晰图片】，我将自动处理。\n\n随时可以发送 /cancel 退出流程。",
+      "settings_text": "⚙️ 当前视频画质：{resolution} | 时长：{duration} | 消耗灵石：{cost}\n\n请在下方选择您需要的画质和时长（部分画质和时长需要高境界或VIP身份解锁）：\n\n*提示：画质越高、时长越长，消耗灵石越多。注意：1024p 和 10s 无法同时选择。*\n\n【最后一步】**点击“{start_button}”** 按钮提交任务。",
+      "start_button": "🚀 开始生成",
+      "expired_alert": "交互已失效或任务已提交，请重新开始",
+      "res_dur_conflict": "1024p和10s无法同时选择，已自动将时长调为8s",
+      "dur_res_conflict": "1024p和10s无法同时选择，已自动将画质调为720p",
+      "already_submitted": "⚠️ 任务已提交或状态已失效，请勿重复操作。",
+      "submit": "🚀 正在提交视频任务，预计消耗 {cost} 灵石，请耐心等待..."
+    },
+    "faceswap": {
+      "start": "🎭 **欢迎使用双人换脸功能！**\n\n【第一步】请发送一张包含**清晰正脸**的图片（作为人脸提供者）。\n\n随时可以发送 /cancel 退出流程。",
+      "face_received": "✅ **人脸图片已收到！**\n\n【第二步】请发送一张**目标身体图片**（即你想把脸换到哪张图上）。\n\n随时可以发送 /cancel 退出流程。",
+      "missing_face_resend": "⚠️ 任务状态已过期，请重新发送图片。",
+      "submit": "🚀 正在提交双人换脸任务，预计消耗 {cost} 灵石，请耐心等待..."
     }
   },
   "profile_extra": {

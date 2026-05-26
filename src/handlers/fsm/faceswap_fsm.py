@@ -12,7 +12,7 @@ from telegram.ext import (
 
 from src.constants import MODE_FACESWAP_STEP1, TASK_COSTS
 from src.handlers.conversation_states import FaceSwapState
-from src.handlers.prompt_router import is_global_menu_command
+from src.handlers.prompt_router import GLOBAL_REVERSE_MAP, is_global_menu_command
 from src.services.bot_task_service import process_generation_task
 from src.services.permission_service import permission_service
 from src.services.fsm_temp_file_service import (
@@ -28,8 +28,19 @@ from src.utils import (
 import contextlib
 
 from src.filters.i18n_filter import I18nFilter
+from src.i18n.translator import get_text
 
 logger = logging.getLogger("fsm.faceswap")
+
+
+def _t(context: ContextTypes.DEFAULT_TYPE, key: str, **kwargs) -> str:
+    translator = getattr(context, "t", None)
+    if callable(translator):
+        return translator(key, **kwargs)
+    lang = getattr(context, "lang", None)
+    if not lang and getattr(context, "user_data", None):
+        lang = context.user_data.get("language_code")
+    return get_text(key, lang or "zh", **kwargs)
 
 
 def _cleanup_context(context: ContextTypes.DEFAULT_TYPE, _user_id: int):
@@ -45,7 +56,7 @@ async def start_faceswap(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     query = update.callback_query
     if query:
         with contextlib.suppress(Exception):
-            await query.answer(text="⏳ 任务初始化中...", cache_time=2)
+            await query.answer(text=_t(context, "fsm.common.task_initializing"), cache_time=2)
     user_id = update.effective_user.id
     logger.info(
         f"User {user_id} triggered start_faceswap with text: {update.message.text if update.message else 'None'}"
@@ -54,7 +65,7 @@ async def start_faceswap(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     from src.utils import is_maintenance_mode
 
     if is_maintenance_mode():
-        msg = "⚠️ 🛠️ **系统正在维护升级中**\n\n为了提供更好的服务，当前生图/生视频节点正在维护，暂不接受新任务。\n\n您的灵石和会员权益不受影响，请稍后再试！"
+        msg = _t(context, "fsm.common.maintenance")
         if update.callback_query:
             await robust_edit_text(
                 update.callback_query.message, msg, parse_mode="Markdown"
@@ -64,7 +75,7 @@ async def start_faceswap(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         return ConversationHandler.END
 
     if context.user_data.get("in_conversation"):
-        msg = "⚠️ 您当前有未完成的交互流程，请先发送 /cancel 退出当前流程后再试。"
+        msg = _t(context, "fsm.common.conflict")
         if update.callback_query:
             await robust_edit_text(update.callback_query.message, msg)
         else:
@@ -74,7 +85,7 @@ async def start_faceswap(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     context.user_data["in_conversation"] = "FACESWAP"
     context.user_data["faceswap_data"] = {}
 
-    msg = "🎭 **欢迎使用双人换脸功能！**\n\n【第一步】请发送一张包含**清晰正脸**的图片（作为人脸提供者）。\n\n随时可以发送 /cancel 退出流程。"
+    msg = _t(context, "fsm.faceswap.start")
     if update.callback_query:
         await robust_edit_text(
             update.callback_query.message, msg, parse_mode="Markdown"
@@ -91,13 +102,13 @@ async def receive_face_image(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     if message.document:
         if not message.document.mime_type.startswith("image/"):
-            await robust_reply_text(message, "❌ 格式错误！请发送图片。")
+            await robust_reply_text(message, _t(context, "fsm.common.invalid_image"))
             return FaceSwapState.WAIT_FACE_IMAGE
         file_id = message.document.file_id
     elif message.photo:
         file_id = message.photo[-1].file_id
     else:
-        await robust_reply_text(message, "❌ 无法识别。请发送图片！")
+        await robust_reply_text(message, _t(context, "fsm.common.invalid_image"))
         return FaceSwapState.WAIT_FACE_IMAGE
 
     try:
@@ -110,12 +121,12 @@ async def receive_face_image(update: Update, context: ContextTypes.DEFAULT_TYPE)
         context.user_data["faceswap_data"]["face_image_path"] = local_path
     except Exception as e:
         logger.error(f"Error downloading face image for FSM user {user_id}: {e}")
-        await robust_reply_text(message, "❌ 下载图片失败，请重试或发送 /cancel 退出。")
+        await robust_reply_text(message, _t(context, "fsm.common.download_image_failed"))
         return FaceSwapState.WAIT_FACE_IMAGE
 
     await robust_reply_text(
         message,
-        "✅ **人脸图片已收到！**\n\n【第二步】请发送一张**目标身体图片**（即你想把脸换到哪张图上）。\n\n随时可以发送 /cancel 退出流程。",
+        _t(context, "fsm.faceswap.face_received"),
         parse_mode="Markdown",
     )
     return FaceSwapState.WAIT_BODY_IMAGE
@@ -127,13 +138,13 @@ async def receive_body_image(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     if message.document:
         if not message.document.mime_type.startswith("image/"):
-            await robust_reply_text(message, "❌ 格式错误！请发送图片。")
+            await robust_reply_text(message, _t(context, "fsm.common.invalid_image"))
             return FaceSwapState.WAIT_BODY_IMAGE
         file_id = message.document.file_id
     elif message.photo:
         file_id = message.photo[-1].file_id
     else:
-        await robust_reply_text(message, "❌ 无法识别。请发送图片！")
+        await robust_reply_text(message, _t(context, "fsm.common.invalid_image"))
         return FaceSwapState.WAIT_BODY_IMAGE
 
     fsm_data = context.user_data.get("faceswap_data")
@@ -142,7 +153,7 @@ async def receive_body_image(update: Update, context: ContextTypes.DEFAULT_TYPE)
         logger.warning(
             f"user={user_id} face_path missing before quota check in faceswap"
         )
-        await robust_reply_text(message, "⚠️ 任务状态已过期，请重新发送图片。")
+        await robust_reply_text(message, _t(context, "fsm.faceswap.missing_face_resend"))
         _cleanup_context(context, user_id)
         return ConversationHandler.END
 
@@ -159,7 +170,12 @@ async def receive_body_image(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
         if isinstance(e, InsufficientCreditsError):
             chat_id = update.effective_chat.id
-            msg = f"🚫 **灵石不足**\n\n道友当前余额: `{e.current}` 灵石\n本次修炼需要: `{e.cost}` 灵石\n请联系管理员获取更多灵石。"
+            msg = _t(
+                context,
+                "fsm.common.insufficient_credits",
+                current=e.current,
+                cost=e.cost,
+            )
             from src.utils import robust_send_message
 
             await robust_send_message(context.bot, chat_id, msg, parse_mode="Markdown")
@@ -177,7 +193,7 @@ async def receive_body_image(update: Update, context: ContextTypes.DEFAULT_TYPE)
         fsm_data["body_image_path"] = local_path
     except Exception as e:
         logger.error(f"Error downloading body image for FSM user {user_id}: {e}")
-        await robust_reply_text(message, "❌ 下载图片失败，请重试或发送 /cancel 退出。")
+        await robust_reply_text(message, _t(context, "fsm.common.download_image_failed"))
         return FaceSwapState.WAIT_BODY_IMAGE
 
     face_path = fsm_data.pop("face_image_path", None)
@@ -185,12 +201,12 @@ async def receive_body_image(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     if not face_path or not body_path:
         logger.warning(f"user={user_id} face_path or body_path missing before submit in faceswap")
-        await robust_reply_text(message, "⚠️ 任务状态已过期，请重新发送图片。")
+        await robust_reply_text(message, _t(context, "fsm.faceswap.missing_face_resend"))
         _cleanup_context(context, user_id)
         return ConversationHandler.END
 
     await robust_reply_text(
-        message, f"🚀 正在提交双人换脸任务，预计消耗 {cost} 灵石，请耐心等待..."
+        message, _t(context, "fsm.faceswap.submit", cost=cost)
     )
 
     prompts_config = load_prompts()
@@ -219,7 +235,7 @@ async def cancel_conversation(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> int:
     user_id = update.effective_user.id
-    msg = "🚫 流程已取消。已清空历史上传内容。"
+    msg = _t(context, "fsm.common.cancelled")
     if update.callback_query:
         await robust_edit_text(update.callback_query.message, msg)
     else:
@@ -235,7 +251,7 @@ async def timeout_conversation(
     if update and update.message:
         await robust_reply_text(
             update.message,
-            "⏰ 操作超时，为节省系统资源，本次流程已自动取消。您可以随时重新开始。",
+            _t(context, "fsm.common.timeout"),
         )
     _cleanup_context(context, user_id)
     return ConversationHandler.END
@@ -244,12 +260,23 @@ async def timeout_conversation(
 async def unexpected_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     text = update.message.text if update.message else ""
     if text and is_global_menu_command(text):
+        route_key = GLOBAL_REVERSE_MAP.get(text)
         user_id = update.effective_user.id if update.effective_user else "Unknown"
         _cleanup_context(context, user_id)
-        await robust_reply_text(update.message, context.t("system.fsm_exit_hint"))
+        if route_key == "menu.switch_lang" and update.effective_user:
+            from src.handlers.message_handler_runtime import toggle_user_language
+
+            reply_text, reply_markup = await toggle_user_language(
+                context, update.effective_user
+            )
+            await robust_reply_text(
+                update.message, reply_text, reply_markup=reply_markup
+            )
+            return ConversationHandler.END
+        await robust_reply_text(update.message, _t(context, "system.fsm_exit_hint"))
         return ConversationHandler.END
 
-    await robust_reply_text(update.message, context.t("system.fsm_in_progress_hint"))
+    await robust_reply_text(update.message, _t(context, "system.fsm_in_progress_hint"))
     return None
 
 
