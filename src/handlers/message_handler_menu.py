@@ -16,61 +16,51 @@ def build_video_edit_payload(context) -> tuple[str, object]:
     return context.t("system.video_edit_hint"), get_video_edit_keyboard(context.lang)
 
 
-def build_gallery_payload() -> tuple[str, None]:
-    return (
-        "浏览器进入 `https://web.aivison.it.com/` 或点击web按钮，查看市集内容哦",
-        None,
-    )
+def build_gallery_payload(context) -> tuple[str, None]:
+    return (context.t("system.gallery_web_hint"), None)
 
 
 def build_back_to_main_payload(context) -> tuple[str, object]:
     from src.i18n.keyboards import get_main_menu_keyboard
 
-    return "🏠 **已返回主菜单**", get_main_menu_keyboard(context.lang)
+    return context.t("system.back_to_main"), get_main_menu_keyboard(context.lang)
 
 
-def build_recharge_payload() -> tuple[str, InlineKeyboardMarkup]:
+def build_recharge_payload(context) -> tuple[str, InlineKeyboardMarkup]:
     webapp_url = WEBAPP_URL or "https://pay.aivison.it.com/"
     keyboard = [
-        [InlineKeyboardButton("💎 TON月卡套餐", web_app=WebAppInfo(url=webapp_url))],
-        [InlineKeyboardButton("⭐️ Star月卡套餐", callback_data="recharge_stars_menu")],
         [
             InlineKeyboardButton(
-                "⭐️ Star直充灵石",
+                context.t("billing.ton_monthly_plan_btn"),
+                web_app=WebAppInfo(url=webapp_url),
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                context.t("billing.stars_monthly_plan_btn"),
+                callback_data="recharge_stars_menu",
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                context.t("billing.stars_credit_btn"),
                 callback_data="recharge_stars_credit_menu",
             )
         ],
-        [InlineKeyboardButton("¥ 人民币充值月卡", callback_data="recharge_rmb_menu")],
         [
             InlineKeyboardButton(
-                "¥ 人民币直充灵石",
+                context.t("billing.rmb_monthly_plan_btn"),
+                callback_data="recharge_rmb_menu",
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                context.t("billing.rmb_credit_btn"),
                 callback_data="recharge_rmb_credit_menu",
             )
         ],
     ]
-    msg = (
-        "📜 **【合欢宗账房】灵石充值与身份晋升**\n\n"
-        "欢迎来到合欢宗账房！灵石乃修仙界之硬通货，可用以驱动阵法（生成图像与视频）。\n\n"
-        "🔰 **【内门弟子】** 1.99 TON / ¥ 30.00\n"
-        "   └ 🎁 直接获得 `400` 灵石\n"
-        "   └ 📅 每日签到额外 `+30` 灵石\n"
-        "   └ 🔓 解锁特权 `720p` 画质，最长 `8s` 视频\n"
-        "   └ ⚡ 排队优先级 `+20`\n\n"
-        "💠 **【核心弟子】** 4.99 TON / ¥ 70.00\n"
-        "   └ 🎁 直接获得 `1200` 灵石\n"
-        "   └ 📅 每日签到额外 `+40` 灵石\n"
-        "   └ 🔓 解锁特权 `1024p` 画质，最长 `10s` 视频\n"
-        "   └ ⚡ 排队优先级 `+30`\n\n"
-        "👑 **【真传弟子】** 9.99 TON / ¥ 120.00\n"
-        "   └ 🎁 直接获得 `3000` 灵石\n"
-        "   └ 📅 每日签到额外 `+50` 灵石\n"
-        "   └ 🔓 解锁特权 `1024p` 画质，最长 `10s` 视频\n"
-        "   └ 🚀 排队优先级 `+45` (极速)\n\n"
-        "⚠️ **注意事项**：\n"
-        "1. 充值所获灵石与身份特权，一经交付，不可退换。\n\n"
-        "👇 **请选择您的支付法门**："
-    )
-    return msg, InlineKeyboardMarkup(keyboard)
+    return context.t("billing.recharge_intro"), InlineKeyboardMarkup(keyboard)
 
 
 def build_switch_lang_message(new_lang: str) -> str:

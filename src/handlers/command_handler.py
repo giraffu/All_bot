@@ -61,7 +61,7 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reply_markup = get_main_menu_keyboard(context.lang)
 
     await update.message.reply_text(
-        "🚫 **已强制取消当前所有流程。**\n\n您可以重新选择菜单中的功能开始新任务。",
+        context.t("command.force_cancel"),
         reply_markup=reply_markup,
         parse_mode="Markdown",
     )
@@ -140,16 +140,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reply_markup = get_main_menu_keyboard(context.lang)
 
     await update.message.reply_text(
-        "⛩️ **欢迎来到宗门灵境**\n\n"
-        "请选择您的修炼方式：\n\n"
-        "💎 **充值灵石**：在合欢宗账房换取极品灵石与身份特权。\n"
-        "📅 **每日签到**：每日吐纳，根据修为(基础10-20)和身份(额外+30~50)领取丰厚灵石。\n"
-        "🤝 **分享赚灵石**：邀请道友入宗，无限领灵石！\n"
-        "🌟 **幻想换脸**：以图生图，发挥无限想象。\n"
-        "🎨 **自由P图**：施展随心所欲的炼金术。\n"
-        "🎬 **自定义视频**：赋予画卷生命，生成演武视频。\n"
-        "👤 **个人中心**：查看当前境界、灵石余额及突破规则。\n\n"
-        "⚠️ **使用说明**：请仅上传您有权使用的素材，并确保生成内容符合法律法规与平台规则；严禁用于未成年人、偷拍、侵权、非自愿或其他违规场景。",
+        context.t("command.start_intro"),
         reply_markup=reply_markup,
         parse_mode="Markdown",
     )
@@ -161,14 +152,16 @@ async def toggle_maintenance(update: Update, context: ContextTypes.DEFAULT_TYPE)
     user = update.effective_user
     if user.id not in ADMIN_USERS:
         await robust_send_message(
-            context.bot, update.message.chat_id, "🚫 您没有权限执行此操作。"
+            context.bot,
+            update.message.chat_id,
+            context.t("command.maintenance_no_permission"),
         )
         return
 
     args = context.args
     if not args or args[0].lower() not in ["on", "off"]:
         await robust_send_message(
-            context.bot, update.message.chat_id, "用法: /maintenance on|off"
+            context.bot, update.message.chat_id, context.t("command.maintenance_usage")
         )
         return
 
@@ -180,11 +173,13 @@ async def toggle_maintenance(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await robust_send_message(
             context.bot,
             update.message.chat_id,
-            "✅ 维护模式已开启，已暂停所有生成服务。",
+            context.t("command.maintenance_on"),
         )
     else:
         if os.path.exists(MAINTENANCE_FILE):
             os.remove(MAINTENANCE_FILE)
         await robust_send_message(
-            context.bot, update.message.chat_id, "✅ 维护模式已关闭，生成服务恢复正常。"
+            context.bot,
+            update.message.chat_id,
+            context.t("command.maintenance_off"),
         )

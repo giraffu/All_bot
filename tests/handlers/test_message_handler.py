@@ -86,7 +86,7 @@ async def test_handle_prompt_uses_edited_message_for_private_fallback(monkeypatc
 @pytest.mark.parametrize(
     ("text", "route_key", "keyboard_attr", "expected_text"),
     [
-        ("主菜单", "menu.main_menu", "get_main_menu_keyboard", "已返回主菜单"),
+        ("主菜单", "menu.main_menu", "get_main_menu_keyboard", "system.back_to_main"),
         ("懒人P图", "menu.photo_edit", "get_photo_edit_keyboard", "system.photo_edit_hint"),
     ],
 )
@@ -255,6 +255,8 @@ async def test_menu_handlers_delegate_to_reply_with_built_payload(
                 "build_photo_edit_payload",
                 "build_video_edit_payload",
                 "build_back_to_main_payload",
+                "build_gallery_payload",
+                "build_recharge_payload",
             }
             else {}
         ),

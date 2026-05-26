@@ -70,6 +70,7 @@ async def test_toggle_user_language_persists_context_db_and_redis(monkeypatch):
     assert msg == "🌐 Language switched to English."
     assert reply_markup == "keyboard:en"
     assert context.user_data["language_code"] == "en"
+    assert context.lang == "en"
     assert context.t == "translator:en"
     assert fake_db_user.language_code == "en"
     fake_session.commit.assert_awaited_once()
@@ -105,7 +106,7 @@ async def test_get_queue_status_reply_handles_success_and_unavailable(monkeypatc
     assert "总排队任务：`2` 个" in text
     assert "T:task.img2img：`1` 个" in text
     assert "❓ 其他 (custom\\_x)：`1` 个" in text
-    assert unavailable == "⚠️ 无法获取实时排队数据，请稍后再试。"
+    assert unavailable == "T:system.queue_unavailable"
 
 
 @pytest.mark.asyncio
@@ -113,7 +114,8 @@ async def test_get_checkin_gate_reply_returns_refuge_payload_for_non_members():
     context = SimpleNamespace(
         bot=SimpleNamespace(
             get_chat_member=AsyncMock(return_value=SimpleNamespace(status="left"))
-        )
+        ),
+        lang="zh",
     )
     update = SimpleNamespace(effective_user=SimpleNamespace(id=123))
 
@@ -132,7 +134,7 @@ async def test_get_checkin_gate_reply_returns_refuge_payload_for_non_members():
 async def test_build_checkin_reply_handles_success_repeat_and_error(monkeypatch):
     fake_internal_user = SimpleNamespace(id=321)
     user = SimpleNamespace(id=123, username="dao", full_name="道友")
-    context = SimpleNamespace(bot="bot")
+    context = SimpleNamespace(bot="bot", lang="zh")
     reward_coro = object()
     background_task_mock = MagicMock()
 
@@ -206,7 +208,7 @@ async def test_build_personal_center_reply_syncs_status_and_builds_payload(monke
         first_name="Tester",
         language_code="zh",
     )
-    context = SimpleNamespace(bot="bot")
+    context = SimpleNamespace(bot="bot", lang="zh")
     fake_dto = SimpleNamespace(current_group="练气期")
     monkeypatch.setattr(
         message_handler_runtime,
@@ -230,8 +232,8 @@ async def test_build_personal_center_reply_syncs_status_and_builds_payload(monke
     monkeypatch.setattr(
         message_handler_runtime,
         "build_personal_center_payload",
-        lambda dto, *, invite_link, web_url: (
-            f"profile:{dto.current_group}:{invite_link}:{web_url}",
+        lambda dto, *, invite_link, web_url, lang: (
+            f"profile:{dto.current_group}:{invite_link}:{web_url}:{lang}",
             "profile-keyboard",
         ),
     )
@@ -243,13 +245,13 @@ async def test_build_personal_center_reply_syncs_status_and_builds_payload(monke
         web_url="https://web.example",
     )
 
-    assert msg == "profile:练气期:https://invite.example:https://web.example"
+    assert msg == "profile:练气期:https://invite.example:https://web.example:zh"
     assert reply_markup == "profile-keyboard"
 
 
 @pytest.mark.asyncio
 async def test_build_share_reply_prefers_cached_bot_username_and_builds_payload(monkeypatch):
-    context = SimpleNamespace(bot=SimpleNamespace(username="aivision666_bot"))
+    context = SimpleNamespace(bot=SimpleNamespace(username="aivision666_bot"), lang="zh")
     user = SimpleNamespace(id=123, first_name="Tester")
     fake_dto = SimpleNamespace(invitations=2)
 
@@ -260,12 +262,15 @@ async def test_build_share_reply_prefers_cached_bot_username_and_builds_payload(
     monkeypatch.setattr(
         message_handler_runtime,
         "build_share_payload",
-        lambda dto, *, invite_link: (f"share:{dto.invitations}:{invite_link}", "share-keyboard"),
+        lambda dto, *, invite_link, lang: (
+            f"share:{dto.invitations}:{invite_link}:{lang}",
+            "share-keyboard",
+        ),
     )
 
     msg, reply_markup = await message_handler_runtime.build_share_reply(context, user)
 
-    assert msg == "share:2:https://t.me/aivision666_bot?start=123"
+    assert msg == "share:2:https://t.me/aivision666_bot?start=123:zh"
     assert reply_markup == "share-keyboard"
 
 
@@ -275,7 +280,8 @@ async def test_build_share_reply_falls_back_to_get_me_when_username_missing(monk
         bot=SimpleNamespace(
             username=None,
             get_me=AsyncMock(return_value=SimpleNamespace(username="fallback_bot")),
-        )
+        ),
+        lang="zh",
     )
     user = SimpleNamespace(id=456, first_name="Tester")
 
@@ -286,11 +292,11 @@ async def test_build_share_reply_falls_back_to_get_me_when_username_missing(monk
     monkeypatch.setattr(
         message_handler_runtime,
         "build_share_payload",
-        lambda dto, *, invite_link: (invite_link, "share-keyboard"),
+        lambda dto, *, invite_link, lang: (f"{invite_link}:{lang}", "share-keyboard"),
     )
 
     msg, reply_markup = await message_handler_runtime.build_share_reply(context, user)
 
-    assert msg == "https://t.me/fallback_bot?start=456"
+    assert msg == "https://t.me/fallback_bot?start=456:zh"
     assert reply_markup == "share-keyboard"
     context.bot.get_me.assert_awaited_once()

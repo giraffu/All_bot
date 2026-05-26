@@ -185,6 +185,7 @@ handle_video_edit_menu = _build_built_menu_handler(
 handle_gallery_menu = _build_built_menu_handler(
     handler_name="handle_gallery_menu",
     build_payload_ref=lambda: build_gallery_payload,
+    include_context=True,
     decorators=(prompt_route("menu.gallery"),),
 )
 
@@ -198,6 +199,7 @@ handle_back_to_main_menu = _build_built_menu_handler(
 handle_recharge_menu = _build_built_menu_handler(
     handler_name="handle_recharge_menu",
     build_payload_ref=lambda: build_recharge_payload,
+    include_context=True,
     decorators=(prompt_route("menu.recharge"),),
 )
 

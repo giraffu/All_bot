@@ -35,22 +35,29 @@ def test_build_photo_and_video_edit_payload_use_context_translation(monkeypatch)
 
 def test_build_back_main_and_recharge_payload():
     message, keyboard = message_handler_menu.build_back_to_main_payload(_build_context())
-    recharge_message, recharge_keyboard = message_handler_menu.build_recharge_payload()
+    recharge_message, recharge_keyboard = message_handler_menu.build_recharge_payload(
+        _build_context()
+    )
 
-    assert "已返回主菜单" in message
+    assert message == "translated:system.back_to_main"
     assert keyboard is not None
-    assert "合欢宗账房" in recharge_message
-    assert recharge_keyboard.inline_keyboard[0][0].text == "💎 TON月卡套餐"
+    assert recharge_message == "translated:billing.recharge_intro"
+    assert (
+        recharge_keyboard.inline_keyboard[0][0].text
+        == "translated:billing.ton_monthly_plan_btn"
+    )
 
 
 def test_build_switch_lang_message_and_gallery_payload():
     zh_text = message_handler_menu.build_switch_lang_message("zh")
     en_text = message_handler_menu.build_switch_lang_message("en")
-    gallery_message, reply_markup = message_handler_menu.build_gallery_payload()
+    gallery_message, reply_markup = message_handler_menu.build_gallery_payload(
+        _build_context()
+    )
 
     assert "语言已切换为中文" in zh_text
     assert "Language switched to English" in en_text
-    assert "web.aivison.it.com" in gallery_message
+    assert gallery_message == "translated:system.gallery_web_hint"
     assert reply_markup is None
 
 

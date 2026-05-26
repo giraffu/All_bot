@@ -23,6 +23,7 @@ from src.services.order_v2_service import (
     is_order_v2_enabled,
 )
 from src.services.rmb_payment_service import RMBPaymentService
+from src.i18n.translator import get_text
 from src.utils import safe_answer_query
 import contextlib
 
@@ -34,6 +35,13 @@ async def _get_active_plans(session, is_rmb: bool, is_subscription: bool):
         )
     )
     return result.scalars().all()
+
+
+def _t(context, key: str, **kwargs) -> str:
+    translator = getattr(context, "t", None)
+    if translator is None:
+        return get_text(key, "zh", **kwargs)
+    return translator(key, **kwargs)
 
 
 @register_callback("recharge_stars_menu")
@@ -50,14 +58,25 @@ async def recharge_stars_menu_callback(
             keyboard.append(
                 [
                     InlineKeyboardButton(
-                        f"⭐️ {plan.price_stars} - {plan.name} ({plan.identity_name})",
+                        _t(
+                            context,
+                            "billing.stars_membership_option",
+                            price=plan.price_stars,
+                            plan_name=plan.name,
+                            identity_name=plan.identity_name,
+                        ),
                         callback_data=f"buy_star_plan_{plan.id}",
                     )
                 ]
             )
 
     keyboard.append(
-        [InlineKeyboardButton("🔙 返回支付方式", callback_data="recharge_back")]
+        [
+            InlineKeyboardButton(
+                _t(context, "billing.back_payment_methods"),
+                callback_data="recharge_back",
+            )
+        ]
     )
     reply_markup = InlineKeyboardMarkup(keyboard)
     with contextlib.suppress(Exception):
@@ -78,14 +97,24 @@ async def recharge_stars_credit_menu_callback(
             keyboard.append(
                 [
                     InlineKeyboardButton(
-                        f"⭐️ {plan.price_stars} Star 直购 {plan.reward_credits} 灵石",
+                        _t(
+                            context,
+                            "billing.stars_credit_option",
+                            price=plan.price_stars,
+                            credits=plan.reward_credits,
+                        ),
                         callback_data=f"buy_star_plan_{plan.id}",
                     )
                 ]
             )
 
     keyboard.append(
-        [InlineKeyboardButton("🔙 返回支付方式", callback_data="recharge_back")]
+        [
+            InlineKeyboardButton(
+                _t(context, "billing.back_payment_methods"),
+                callback_data="recharge_back",
+            )
+        ]
     )
     reply_markup = InlineKeyboardMarkup(keyboard)
     with contextlib.suppress(Exception):
@@ -103,17 +132,34 @@ async def recharge_back_callback(update: Update, context: ContextTypes.DEFAULT_T
         else "https://pay.aivison.it.com/"
     )
     keyboard = [
-        [InlineKeyboardButton("💎 TON月卡套餐", web_app=WebAppInfo(url=webapp_url))],
-        [InlineKeyboardButton("⭐️ Star月卡套餐", callback_data="recharge_stars_menu")],
         [
             InlineKeyboardButton(
-                "⭐️ Star直充灵石", callback_data="recharge_stars_credit_menu"
+                _t(context, "billing.ton_monthly_plan_btn"),
+                web_app=WebAppInfo(url=webapp_url),
             )
         ],
-        [InlineKeyboardButton("¥ 人民币充值月卡", callback_data="recharge_rmb_menu")],
         [
             InlineKeyboardButton(
-                "¥ 人民币直充灵石", callback_data="recharge_rmb_credit_menu"
+                _t(context, "billing.stars_monthly_plan_btn"),
+                callback_data="recharge_stars_menu",
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                _t(context, "billing.stars_credit_btn"),
+                callback_data="recharge_stars_credit_menu",
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                _t(context, "billing.rmb_monthly_plan_btn"),
+                callback_data="recharge_rmb_menu",
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                _t(context, "billing.rmb_credit_btn"),
+                callback_data="recharge_rmb_credit_menu",
             )
         ],
     ]
@@ -136,14 +182,25 @@ async def recharge_rmb_menu_callback(
             keyboard.append(
                 [
                     InlineKeyboardButton(
-                        f"¥ {plan.price_rmb} - {plan.name} ({plan.identity_name})",
+                        _t(
+                            context,
+                            "billing.rmb_membership_option",
+                            price=plan.price_rmb,
+                            plan_name=plan.name,
+                            identity_name=plan.identity_name,
+                        ),
                         callback_data=f"select_rmb_plan_{plan.id}",
                     )
                 ]
             )
 
     keyboard.append(
-        [InlineKeyboardButton("🔙 返回支付方式", callback_data="recharge_back")]
+        [
+            InlineKeyboardButton(
+                _t(context, "billing.back_payment_methods"),
+                callback_data="recharge_back",
+            )
+        ]
     )
     reply_markup = InlineKeyboardMarkup(keyboard)
     with contextlib.suppress(Exception):
@@ -164,14 +221,24 @@ async def recharge_rmb_credit_menu_callback(
             keyboard.append(
                 [
                     InlineKeyboardButton(
-                        f"¥ {plan.price_rmb} 直购 {plan.reward_credits} 灵石",
+                        _t(
+                            context,
+                            "billing.rmb_credit_option",
+                            price=plan.price_rmb,
+                            credits=plan.reward_credits,
+                        ),
                         callback_data=f"select_rmb_plan_{plan.id}",
                     )
                 ]
             )
 
     keyboard.append(
-        [InlineKeyboardButton("🔙 返回支付方式", callback_data="recharge_back")]
+        [
+            InlineKeyboardButton(
+                _t(context, "billing.back_payment_methods"),
+                callback_data="recharge_back",
+            )
+        ]
     )
     reply_markup = InlineKeyboardMarkup(keyboard)
     with contextlib.suppress(Exception):
@@ -187,13 +254,19 @@ async def select_rmb_plan_callback(update: Update, context: ContextTypes.DEFAULT
     keyboard = [
         [
             InlineKeyboardButton(
-                "🟦 支付宝付款 (便利)", callback_data=f"buy_rmb_plan_{plan_id}_alipay"
+                _t(context, "billing.alipay"),
+                callback_data=f"buy_rmb_plan_{plan_id}_alipay",
             ),
             InlineKeyboardButton(
-                "🟩 微信付款", callback_data=f"buy_rmb_plan_{plan_id}_wxpay"
+                _t(context, "billing.wxpay"), callback_data=f"buy_rmb_plan_{plan_id}_wxpay"
             ),
         ],
-        [InlineKeyboardButton("🔙 返回套餐列表", callback_data="recharge_rmb_menu")],
+        [
+            InlineKeyboardButton(
+                _t(context, "billing.back_plan_list"),
+                callback_data="recharge_rmb_menu",
+            )
+        ],
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     with contextlib.suppress(Exception):
@@ -220,15 +293,16 @@ async def buy_rmb_plan_callback(update: Update, context: ContextTypes.DEFAULT_TY
         plan = result.scalar_one_or_none()
 
         if not plan or getattr(plan, "price_rmb", 0) <= 0:
-            await safe_answer_query(query, text="❌ 找不到该套餐", show_alert=True)
+            await safe_answer_query(
+                query, text=_t(context, "billing.plan_not_found"), show_alert=True
+            )
             return
 
-        await safe_answer_query(query, text="⏳ 正在为您生成支付链接...")
+        await safe_answer_query(query, text=_t(context, "billing.generating_payment_link"))
 
         with contextlib.suppress(Exception):
             await query.message.edit_text(
-                text="⏳ **正在与支付网关建立安全连接，获取专属收银台链接，请稍候...**\n"
-                "_(这通常需要 1~3 秒)_",
+                text=_t(context, "billing.gateway_connecting"),
                 parse_mode="Markdown",
                 reply_markup=None,
             )
@@ -255,9 +329,18 @@ async def buy_rmb_plan_callback(update: Update, context: ContextTypes.DEFAULT_TY
         public_order_id = get_order_public_id(new_order)
 
         if plan.duration_days == 0:
-            display_name = f"{plan.reward_credits} 灵石直充"
+            display_name = _t(
+                context,
+                "billing.display_name_direct_credits",
+                credits=plan.reward_credits,
+            )
         else:
-            display_name = f"{plan.identity_name} ({plan.duration_days}天)"
+            display_name = _t(
+                context,
+                "billing.display_name_membership",
+                identity_name=plan.identity_name,
+                days=plan.duration_days,
+            )
 
         pay_resp = await RMBPaymentService.create_payment_url(
             out_trade_no=out_trade_no,
@@ -288,10 +371,11 @@ async def buy_rmb_plan_callback(update: Update, context: ContextTypes.DEFAULT_TY
             )
 
             keyboard = [
-                [InlineKeyboardButton("👉 点击前往付款", url=pay_url)],
+                [InlineKeyboardButton(_t(context, "billing.pay_button"), url=pay_url)],
                 [
                     InlineKeyboardButton(
-                        "🔙 返回充值菜单", callback_data="recharge_back"
+                        _t(context, "billing.back_recharge_menu"),
+                        callback_data="recharge_back",
                     )
                 ],
             ]
@@ -299,18 +383,19 @@ async def buy_rmb_plan_callback(update: Update, context: ContextTypes.DEFAULT_TY
 
             try:
                 pay_method_text = (
-                    "🟦 支付宝 (Alipay)"
+                    _t(context, "billing.pay_method_alipay")
                     if pay_type == "alipay"
-                    else "🟩 微信支付 (WeChat Pay)"
+                    else _t(context, "billing.pay_method_wxpay")
                 )
                 await query.message.edit_text(
-                    text=f"💎 **合欢宗账房 - {display_name}**\n\n"
-                    f"📝 **订单号**：`{public_order_id}`\n"
-                    f"💰 **支付金额**：`¥{plan.price_rmb}`\n"
-                    f"💳 **支付方式**：{pay_method_text}\n\n"
-                    f"⚠️ **注意事项**：\n"
-                    f"• 请点击下方按钮前往安全收银台付款。\n"
-                    f"• 支付完成后，大约需要 10-30 秒处理，系统会自动发送到账通知，无需刷新本页面。",
+                    text=_t(
+                        context,
+                        "billing.payment_summary",
+                        display_name=display_name,
+                        order_id=public_order_id,
+                        amount=plan.price_rmb,
+                        pay_method=pay_method_text,
+                    ),
                     parse_mode="Markdown",
                     reply_markup=reply_markup,
                 )
@@ -319,7 +404,9 @@ async def buy_rmb_plan_callback(update: Update, context: ContextTypes.DEFAULT_TY
         else:
             error_msg = pay_resp.get("msg", "未知错误") if pay_resp else "请求无响应"
             await safe_answer_query(
-                query, text=f"❌ 获取支付链接失败：{error_msg}", show_alert=True
+                query,
+                text=_t(context, "billing.link_failed", error_msg=error_msg),
+                show_alert=True,
             )
 
 
@@ -339,7 +426,9 @@ async def buy_star_plan_callback(update: Update, context: ContextTypes.DEFAULT_T
         plan = result.scalar_one_or_none()
 
     if not plan or getattr(plan, "price_stars", 0) <= 0:
-        await safe_answer_query(query, text="❌ 找不到该套餐", show_alert=True)
+        await safe_answer_query(
+            query, text=_t(context, "billing.plan_not_found"), show_alert=True
+        )
         return
 
     await safe_answer_query(query)  # Acknowledge
@@ -372,8 +461,19 @@ async def buy_star_plan_callback(update: Update, context: ContextTypes.DEFAULT_T
             await session.commit()
         payload = build_order_v2_payload(business_order_id)
 
-    title = f"💎 合欢宗账房 - {plan.name} ({plan.identity_name})"
-    description = f"{plan.duration_days}天 | 赠 {plan.reward_credits} 永久灵石 | 身份：{plan.identity_name}"
+    title = _t(
+        context,
+        "billing.invoice_title",
+        plan_name=plan.name,
+        identity_name=plan.identity_name,
+    )
+    description = _t(
+        context,
+        "billing.invoice_description",
+        days=plan.duration_days,
+        credits=plan.reward_credits,
+        identity_name=plan.identity_name,
+    )
     currency = "XTR"
     prices = [LabeledPrice(f"{plan.name}", plan.price_stars)]
 
@@ -388,4 +488,8 @@ async def buy_star_plan_callback(update: Update, context: ContextTypes.DEFAULT_T
             prices=prices,
         )
     except Exception as e:
-        await safe_answer_query(query, text=f"❌ 发送账单失败：{e}", show_alert=True)
+        await safe_answer_query(
+            query,
+            text=_t(context, "billing.invoice_failed", error_msg=e),
+            show_alert=True,
+        )

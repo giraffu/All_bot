@@ -28,6 +28,7 @@ async def toggle_user_language(context, user) -> tuple[str, object]:
         cached_language_code=context.user_data.get("language_code"),
     )
     context.user_data["language_code"] = result.new_lang
+    context.lang = result.new_lang
     context.t = result.translator
     return result.reply_text, result.reply_markup
 
@@ -36,8 +37,9 @@ async def get_queue_status_reply(
     context,
     task_type_display_names: dict[str, str],
     *,
-    unavailable_message: str = "⚠️ 无法获取实时排队数据，请稍后再试。",
+    unavailable_message: str | None = None,
 ) -> str:
+    unavailable_message = unavailable_message or context.t("system.queue_unavailable")
     status = await image_service.get_queue_info()
     if not status:
         return unavailable_message
@@ -68,7 +70,7 @@ async def get_checkin_gate_reply(update, context, refuge_group_id) -> tuple[str,
             user_id=update.effective_user.id,
         )
         if member.status in ["left", "kicked", "banned"]:
-            return build_refuge_checkin_payload()
+            return build_refuge_checkin_payload(context.lang)
     except Exception as exc:
         return ("__warning__", exc)
     return None
@@ -112,6 +114,7 @@ async def build_checkin_reply(update, context) -> str:
             total_days=total_days,
             reward=reward,
             current_credits=current_credits,
+            lang=context.lang,
         )
     if error_msg:
         return error_msg
@@ -119,6 +122,7 @@ async def build_checkin_reply(update, context) -> str:
         user_group=user_group,
         user_identity=user_identity,
         total_days=total_days,
+        lang=context.lang,
     )
 
 
@@ -146,6 +150,7 @@ async def build_personal_center_reply(
         dto,
         invite_link=invite_link,
         web_url=web_url,
+        lang=context.lang,
     )
 
 
@@ -158,4 +163,4 @@ async def build_share_reply(context, user) -> tuple[str, object]:
 
     invite_link = f"https://t.me/{bot_username}?start={user.id}"
     dto = await get_user_dashboard_info(user.id, user.first_name)
-    return build_share_payload(dto, invite_link=invite_link)
+    return build_share_payload(dto, invite_link=invite_link, lang=context.lang)

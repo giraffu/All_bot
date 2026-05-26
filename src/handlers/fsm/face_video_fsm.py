@@ -12,7 +12,7 @@ from telegram.ext import (
 
 from src.constants import RESOLUTION_COST
 from src.handlers.conversation_states import FaceVideoState
-from src.handlers.prompt_router import is_global_menu_command
+from src.handlers.prompt_router import GLOBAL_REVERSE_MAP, is_global_menu_command
 from src.services.bot_task_service import process_face_video_task
 from src.services.permission_service import permission_service
 from src.services.fsm_temp_file_service import (
@@ -23,8 +23,19 @@ from src.utils import create_background_task, robust_edit_text, robust_reply_tex
 import contextlib
 
 from src.filters.i18n_filter import I18nFilter
+from src.i18n.translator import get_text
 
 logger = logging.getLogger("fsm.face_video")
+
+
+def _t(context: ContextTypes.DEFAULT_TYPE, key: str, **kwargs) -> str:
+    translator = getattr(context, "t", None)
+    if callable(translator):
+        return translator(key, **kwargs)
+    lang = getattr(context, "lang", None)
+    if not lang and getattr(context, "user_data", None):
+        lang = context.user_data.get("language_code")
+    return get_text(key, lang or "zh", **kwargs)
 
 
 # --- Helpers ---
@@ -46,12 +57,12 @@ async def start_face_video(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     query = update.callback_query
     if query:
         with contextlib.suppress(Exception):
-            await query.answer(text="⏳ 任务初始化中...", cache_time=2)
+            await query.answer(text=_t(context, "fsm.common.task_initializing"), cache_time=2)
 
     from src.utils import is_maintenance_mode
 
     if is_maintenance_mode():
-        msg = "⚠️ 🛠️ **系统正在维护升级中**\n\n为了提供更好的服务，当前生图/生视频节点正在维护，暂不接受新任务。\n\n您的灵石和会员权益不受影响，请稍后再试！"
+        msg = _t(context, "fsm.common.maintenance")
         if update.callback_query:
             await robust_edit_text(
                 update.callback_query.message, msg, parse_mode="Markdown"
@@ -62,7 +73,7 @@ async def start_face_video(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
     # 1. Concurrency Check (User Data Lock)
     if context.user_data.get("in_conversation"):
-        msg = "⚠️ 您当前有未完成的交互流程，请先发送 /cancel 退出当前流程后再试。"
+        msg = _t(context, "fsm.common.conflict")
         if update.callback_query:
             await robust_edit_text(update.callback_query.message, msg)
         else:
@@ -74,7 +85,7 @@ async def start_face_video(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     # Initialize isolated data storage
     context.user_data["face_video_data"] = {}
 
-    msg = "🎥 **欢迎使用视频换脸功能！**\n\n【第一步】请发送一张包含**清晰正脸**的图片（支持作为文件或图片发送）。\n\n随时可以发送 /cancel 退出流程。"
+    msg = _t(context, "fsm.face_video.start")
     if update.callback_query:
         await robust_edit_text(
             update.callback_query.message, msg, parse_mode="Markdown"
@@ -95,14 +106,14 @@ async def receive_face_image(update: Update, context: ContextTypes.DEFAULT_TYPE)
     if message.document:
         if not message.document.mime_type.startswith("image/"):
             await robust_reply_text(
-                message, "❌ 格式错误！请发送一张图片文件 (PNG/JPG)，而不是其他文档。"
+                message, _t(context, "fsm.common.invalid_image_file")
             )
             return FaceVideoState.WAIT_FACE_IMAGE
         file_id = message.document.file_id
     elif message.photo:
         file_id = message.photo[-1].file_id
     else:
-        await robust_reply_text(message, "❌ 无法识别。请发送图片！")
+        await robust_reply_text(message, _t(context, "fsm.common.invalid_image"))
         return FaceVideoState.WAIT_FACE_IMAGE
 
     # Download file
@@ -118,12 +129,12 @@ async def receive_face_image(update: Update, context: ContextTypes.DEFAULT_TYPE)
         context.user_data["face_video_data"]["face_image_path"] = local_path
     except Exception as e:
         logger.error(f"Error downloading face image for FSM user {user_id}: {e}")
-        await robust_reply_text(message, "❌ 下载图片失败，请重试或发送 /cancel 退出。")
+        await robust_reply_text(message, _t(context, "fsm.common.download_image_failed"))
         return FaceVideoState.WAIT_FACE_IMAGE
 
     await robust_reply_text(
         message,
-        "✅ **人脸图片已收到！**\n\n【第二步】请发送一个您想替换人脸的**目标视频** (不超过 20MB)。\n\n随时可以发送 /cancel 退出流程。",
+        _t(context, "fsm.face_video.face_received"),
         parse_mode="Markdown",
     )
     return FaceVideoState.WAIT_VIDEO
@@ -138,14 +149,14 @@ async def receive_video(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     if message.document:
         if not message.document.mime_type.startswith("video/"):
             await robust_reply_text(
-                message, "❌ 格式错误！请发送视频文件 (.mp4, .mov, .avi)。"
+                message, _t(context, "fsm.common.invalid_video_file")
             )
             return FaceVideoState.WAIT_VIDEO
         file_id = message.document.file_id
     elif message.video:
         file_id = message.video.file_id
     else:
-        await robust_reply_text(message, "❌ 无法识别。请发送视频文件！")
+        await robust_reply_text(message, _t(context, "fsm.common.invalid_video"))
         return FaceVideoState.WAIT_VIDEO
 
     # Download file
@@ -161,7 +172,7 @@ async def receive_video(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     except Exception as e:
         logger.error(f"Error downloading video for FSM user {user_id}: {e}")
         await robust_reply_text(
-            message, "❌ 下载视频失败，可能是文件过大，请重试或发送 /cancel 退出。"
+            message, _t(context, "fsm.common.download_video_failed")
         )
         return FaceVideoState.WAIT_VIDEO
 
@@ -169,21 +180,29 @@ async def receive_video(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     keyboard = [
         [
             InlineKeyboardButton(
-                f"高清 720p ({RESOLUTION_COST.get('720p', 18)} 灵石)",
+                _t(
+                    context,
+                    "fsm.face_video.resolution_720",
+                    cost=RESOLUTION_COST.get("720p", 18),
+                ),
                 callback_data="fsm_fv_res_720",
             ),
             InlineKeyboardButton(
-                f"超清 1024p ({RESOLUTION_COST.get('1024p', 36)} 灵石)",
+                _t(
+                    context,
+                    "fsm.face_video.resolution_1024",
+                    cost=RESOLUTION_COST.get("1024p", 36),
+                ),
                 callback_data="fsm_fv_res_1024",
             ),
         ],
-        [InlineKeyboardButton("❌ 取消", callback_data="fsm_fv_cancel")],
+        [InlineKeyboardButton(_t(context, "fsm.face_video.cancel_button"), callback_data="fsm_fv_cancel")],
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
     await robust_reply_text(
         message,
-        "✅ **视频已收到！**\n\n【第三步】请选择要生成的画质。高画质会消耗更多灵石并增加排队时间。",
+        _t(context, "fsm.face_video.video_received"),
         reply_markup=reply_markup,
         parse_mode="Markdown",
     )
@@ -199,10 +218,10 @@ async def process_resolution_selection(
     user_id = query.from_user.id
     data = query.data
 
-    await query.answer(text="⏳ 任务初始化中...", cache_time=2)
+    await query.answer(text=_t(context, "fsm.common.task_initializing"), cache_time=2)
 
     if data == "fsm_fv_cancel":
-        await robust_edit_text(query.message, "🚫 您已取消视频换脸操作。")
+        await robust_edit_text(query.message, _t(context, "fsm.face_video.cancelled_short"))
         _cleanup_context(context, user_id)
         return ConversationHandler.END
 
@@ -220,7 +239,7 @@ async def process_resolution_selection(
     if priority <= 0:
         await robust_edit_text(
             query.message,
-            "⚠️ 您的排队优先级已耗尽（或修为不足），今日已无法再凝聚灵力，请明日再来！",
+            _t(context, "fsm.face_video.priority_exhausted"),
         )
         _cleanup_context(context, user_id)
         return ConversationHandler.END
@@ -228,7 +247,7 @@ async def process_resolution_selection(
     fsm_data = context.user_data.get("face_video_data", {})
     if not fsm_data:
         with contextlib.suppress(Exception):
-            await query.answer("交互已失效或任务已提交，请重新开始", show_alert=True)
+            await query.answer(_t(context, "fsm.face_video.expired_alert"), show_alert=True)
         return ConversationHandler.END
 
     face_path = fsm_data.pop("face_image_path", None)
@@ -240,7 +259,7 @@ async def process_resolution_selection(
     # Update message
     await robust_edit_text(
         query.message,
-        f"🚀 正在提交视频换脸任务 ({resolution}p)，预计消耗 {cost} 灵石，请耐心等待...",
+        _t(context, "fsm.face_video.submitting", resolution=resolution, cost=cost),
     )
 
     create_background_task(
@@ -271,7 +290,7 @@ async def cancel_conversation(
 ) -> int:
     """User invoked /cancel during the FSM."""
     user_id = update.effective_user.id
-    msg = "🚫 流程已取消。已清空历史上传内容。"
+    msg = _t(context, "fsm.common.cancelled")
 
     if update.callback_query:
         await robust_edit_text(update.callback_query.message, msg)
@@ -294,7 +313,7 @@ async def timeout_conversation(
     if update and update.message:
         await robust_reply_text(
             update.message,
-            "⏰ 操作超时，为节省系统资源，本次流程已自动取消。您可以随时重新开始。",
+            _t(context, "fsm.common.timeout"),
         )
 
     _cleanup_context(context, user_id)
@@ -304,12 +323,23 @@ async def timeout_conversation(
 async def unexpected_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     text = update.message.text if update.message else ""
     if text and is_global_menu_command(text):
+        route_key = GLOBAL_REVERSE_MAP.get(text)
         user_id = update.effective_user.id if update.effective_user else "Unknown"
         _cleanup_context(context, user_id)
-        await robust_reply_text(update.message, context.t("system.fsm_exit_hint"))
+        if route_key == "menu.switch_lang" and update.effective_user:
+            from src.handlers.message_handler_runtime import toggle_user_language
+
+            reply_text, reply_markup = await toggle_user_language(
+                context, update.effective_user
+            )
+            await robust_reply_text(
+                update.message, reply_text, reply_markup=reply_markup
+            )
+            return ConversationHandler.END
+        await robust_reply_text(update.message, _t(context, "system.fsm_exit_hint"))
         return ConversationHandler.END
 
-    await robust_reply_text(update.message, context.t("system.fsm_in_progress_hint"))
+    await robust_reply_text(update.message, _t(context, "system.fsm_in_progress_hint"))
     return None  # Return None keeps the state unchanged in PTB
 
 

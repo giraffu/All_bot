@@ -16,7 +16,7 @@ from src.constants import (
     get_ltx_video_settings_keyboard,
 )
 from src.handlers.conversation_states import LtxVideoState
-from src.handlers.prompt_router import is_global_menu_command
+from src.handlers.prompt_router import GLOBAL_REVERSE_MAP, is_global_menu_command
 from src.services.bot_task_service import process_ltx_video_task
 from src.services.permission_service import permission_service
 from src.services.fsm_temp_file_service import (
@@ -31,11 +31,44 @@ from src.utils import (
 import contextlib
 
 from src.filters.i18n_filter import I18nFilter
+from src.i18n.translator import get_text
 
 logger = logging.getLogger("fsm.ltx_video")
 
 
-def _cleanup_context(context: ContextTypes.DEFAULT_TYPE, user_id: int):
+def _t(context: ContextTypes.DEFAULT_TYPE, key: str, **kwargs) -> str:
+    translator = getattr(context, "t", None)
+    if callable(translator):
+        return translator(key, **kwargs)
+    lang = getattr(context, "lang", None)
+    if not lang and getattr(context, "user_data", None):
+        lang = context.user_data.get("language_code")
+    return get_text(key, lang or "zh", **kwargs)
+
+
+def _build_settings_message(
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    resolution: str,
+    duration: str,
+    cost: int,
+    english_prompt_only: bool = False,
+) -> str:
+    key = (
+        "fsm.ltx_video.settings_text_english_prompt"
+        if english_prompt_only
+        else "fsm.ltx_video.settings_text"
+    )
+    return _t(
+        context,
+        key,
+        resolution=resolution,
+        duration=duration,
+        cost=cost,
+    )
+
+
+def _cleanup_context(context: ContextTypes.DEFAULT_TYPE):
     context.user_data.pop("in_conversation", None)
     pending_files = context.user_data.pop("ltx_video_data", {})
     cleanup_fsm_temp_files([pending_files.get("image_path")])
@@ -46,12 +79,12 @@ async def start_ltx_video(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     query = update.callback_query
     if query:
         with contextlib.suppress(Exception):
-            await query.answer(text="⏳ 任务初始化中...", cache_time=2)
+            await query.answer(text=_t(context, "fsm.common.task_initializing"), cache_time=2)
 
     from src.utils import is_maintenance_mode
 
     if is_maintenance_mode():
-        msg = "⚠️ 🛠️ **系统正在维护升级中**\n\n为了提供更好的服务，当前生图/生视频节点正在维护，暂不接受新任务。\n\n您的灵石和会员权益不受影响，请稍后再试！"
+        msg = _t(context, "fsm.common.maintenance")
         if update.callback_query:
             await robust_edit_text(
                 update.callback_query.message, msg, parse_mode="Markdown"
@@ -61,7 +94,7 @@ async def start_ltx_video(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         return ConversationHandler.END
 
     if context.user_data.get("in_conversation"):
-        msg = "⚠️ 您当前有未完成的交互流程，请先发送 /cancel 退出当前流程后再试。"
+        msg = _t(context, "fsm.common.conflict")
         await robust_reply_text(update.message, msg)
         return ConversationHandler.END
 
@@ -72,25 +105,24 @@ async def start_ltx_video(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         "image_path": None,
     }
 
-    msg = "🎬 **已切换到【高级图生视频】模式。**\n\n【第一步】请发送一张【起始图片】。\n(注意：为避免画面被裁剪，建议上传比例接近 9:16 的竖屏图片)\n\n随时可以发送 /cancel 退出流程。"
+    msg = _t(context, "fsm.ltx_video.start")
     await robust_reply_text(update.message, msg, parse_mode="Markdown")
     return LtxVideoState.WAIT_IMAGE
 
 
 async def receive_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    user_id = update.effective_user.id
     message = update.message
     fsm_data = context.user_data["ltx_video_data"]
 
     if message.document:
         if not message.document.mime_type.startswith("image/"):
-            await robust_reply_text(message, "❌ 格式错误！请发送图片。")
+            await robust_reply_text(message, _t(context, "fsm.common.invalid_image"))
             return LtxVideoState.WAIT_IMAGE
         file_id = message.document.file_id
     elif message.photo:
         file_id = message.photo[-1].file_id
     else:
-        await robust_reply_text(message, "❌ 无法识别。请发送图片！")
+        await robust_reply_text(message, _t(context, "fsm.common.invalid_image"))
         return LtxVideoState.WAIT_IMAGE
 
     try:
@@ -102,8 +134,12 @@ async def receive_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         )
         fsm_data["image_path"] = local_path
     except Exception as e:
-        logger.error(f"Error downloading image for FSM user {user_id}: {e}")
-        await robust_reply_text(message, "❌ 下载图片失败，请重试或发送 /cancel 退出。")
+        logger.error(
+            "Error downloading image for FSM user %s: %s",
+            update.effective_user.id if update.effective_user else "Unknown",
+            e,
+        )
+        await robust_reply_text(message, _t(context, "fsm.common.download_image_failed"))
         return LtxVideoState.WAIT_IMAGE
 
     # Send settings keyboard
@@ -118,30 +154,19 @@ async def receive_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     res = fsm_data["resolution"]
     dur = fsm_data["duration"]
     reply_markup = get_ltx_video_settings_keyboard(
-        user_group, user_identity, res, dur, context.lang
+        user_group, user_identity, res, dur, getattr(context, "lang", "zh")
     )
 
     base_cost = LTX_RESOLUTION_COST.get(res, 10)
     multiplier = LTX_DURATION_MULTIPLIER.get(dur, 1.0)
     cost = int(base_cost * multiplier)
 
-    msg_text = f"""⚙️ 当前高级视频画质：{res} | 时长：{dur} | 消耗灵石：{cost}
-
-请在下方选择您需要的时长：
-*提示：时长越长，消耗灵石越多。*
-
-【第二步】**请直接发送提示词 (Text)** 开始生成。
-💡 **提示词撰写指南**：
-1. 格式：`[风格], [动作], [具体描述]`
-2. **可选风格** (选填)：`3D`, `Real Video`, `Amateur`
-3. **特定动作触发词** (如需特定动作，请**务必**在开头添加对应英文)：
-   - 传教士(女下男上)：`m15510n4ry`
-   - 口交：`bl0wj0b`
-   - 双人口交：`d0ubl3_bj`
-   - 反向女上位：`c0wg1rl`
-   - 后入/狗狗式：`d0gg1e`
-4. **具体描述**：详细描述人物特征、穿着、动作细节和背景环境。
-*(例如：Real Video, m15510n4ry, A close-up view of a single petite woman...)*"""
+    msg_text = _build_settings_message(
+        context,
+        resolution=res,
+        duration=dur,
+        cost=cost,
+    )
 
     await robust_reply_text(
         message, msg_text, reply_markup=reply_markup, parse_mode="Markdown"
@@ -158,7 +183,7 @@ async def process_settings(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     fsm_data = context.user_data.get("ltx_video_data", {})
     if not fsm_data:
         with contextlib.suppress(Exception):
-            await query.answer("交互已失效或任务已提交，请重新开始", show_alert=True)
+            await query.answer(_t(context, "fsm.ltx_video.expired_alert"), show_alert=True)
         return ConversationHandler.END
 
     if data.startswith("set_ltxres_"):
@@ -177,37 +202,27 @@ async def process_settings(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     user_group = await permission_service.get_user_group(internal_user_id)
     user_identity = await permission_service.get_user_identity(internal_user_id)
     reply_markup = get_ltx_video_settings_keyboard(
-        user_group, user_identity, res, dur, context.lang
+        user_group, user_identity, res, dur, getattr(context, "lang", "zh")
     )
 
     base_cost = LTX_RESOLUTION_COST.get(res, 10)
     multiplier = LTX_DURATION_MULTIPLIER.get(dur, 1.0)
     cost = int(base_cost * multiplier)
 
-    msg_text = f"""⚙️ 当前高级视频画质：{res} | 时长：{dur} | 消耗灵石：{cost}
-
-请在下方选择您需要的时长：
-*提示：时长越长，消耗灵石越多。*
-
-【第二步】**请直接发送纯英文提示词 (Text)** 开始生成。
-💡 **提示词撰写指南**：
-1. 格式：`[风格], [动作], [具体描述]`
-2. **可选风格** (选填)：`3D`, `Real Video`, `Amateur`
-3. **特定动作触发词** (如需特定动作，请**务必**在开头添加对应英文)：
-   - 传教士(女下男上)：`m15510n4ry`
-   - 口交：`bl0wj0b`
-   - 双人口交：`d0ubl3_bj`
-   - 反向女上位：`c0wg1rl`
-   - 后入/狗狗式：`d0gg1e`
-4. **具体描述**：详细描述人物特征、穿着、动作细节和背景环境。
-*(例如：Real Video, m15510n4ry, A close-up view of a single petite woman...)*"""
+    msg_text = _build_settings_message(
+        context,
+        resolution=res,
+        duration=dur,
+        cost=cost,
+        english_prompt_only=True,
+    )
 
     with contextlib.suppress(Exception):
         await robust_edit_text(
             query.message, msg_text, reply_markup=reply_markup, parse_mode="Markdown"
         )
 
-    await query.answer(text="⏳ 任务初始化中...", cache_time=2)
+    await query.answer(text=_t(context, "fsm.common.task_initializing"), cache_time=2)
     return LtxVideoState.WAIT_SETTINGS_AND_PROMPT
 
 
@@ -220,15 +235,15 @@ async def receive_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     fsm_data = context.user_data.get("ltx_video_data")
     if not fsm_data:
-        await robust_reply_text(message, "⚠️ 任务已提交或已过期，请勿重复操作。")
+        await robust_reply_text(message, _t(context, "fsm.common.already_submitted"))
         return ConversationHandler.END
 
     fsm_data["prompt"] = prompt
 
     reply_markup = InlineKeyboardMarkup(
-        [[InlineKeyboardButton("✅ 确定生成", callback_data="confirm_ltx_video")]]
+        [[InlineKeyboardButton(_t(context, "fsm.ltx_video.confirm_button"), callback_data="confirm_ltx_video")]]
     )
-    msg_text = f"📝 **您的提示词**:\n`{prompt}`\n\n确认无误后请点击【确定生成】。"
+    msg_text = _t(context, "fsm.ltx_video.confirm_text", prompt=prompt)
 
     await robust_reply_text(
         message, msg_text, reply_markup=reply_markup, parse_mode="Markdown"
@@ -241,13 +256,13 @@ async def confirm_generation(update: Update, context: ContextTypes.DEFAULT_TYPE)
     if query:
         from src.utils import safe_answer_query
 
-        await safe_answer_query(query, text="⏳ 任务初始化中...", cache_time=2)
+        await safe_answer_query(query, text=_t(context, "fsm.common.task_initializing"), cache_time=2)
     user_id = query.from_user.id
 
     fsm_data = context.user_data.get("ltx_video_data")
     if not fsm_data:
         with contextlib.suppress(Exception):
-            await query.answer("⚠️ 任务已提交或已过期，请勿重复操作。", show_alert=True)
+            await query.answer(_t(context, "fsm.common.already_submitted"), show_alert=True)
         return ConversationHandler.END
 
     res = fsm_data["resolution"]
@@ -262,8 +277,8 @@ async def confirm_generation(update: Update, context: ContextTypes.DEFAULT_TYPE)
     if not image_path:
         logger.warning(f"user={user_id} image_path missing before submit in ltx_video")
         with contextlib.suppress(Exception):
-            await query.answer("⚠️ 任务状态已过期，请重新发送图片和提示词。", show_alert=True)
-        _cleanup_context(context, user_id)
+            await query.answer(_t(context, "fsm.ltx_video.missing_image_resend"), show_alert=True)
+        _cleanup_context(context)
         return ConversationHandler.END
 
     if not update.effective_user:
@@ -278,11 +293,16 @@ async def confirm_generation(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
         if isinstance(e, InsufficientCreditsError):
             chat_id = update.effective_chat.id
-            msg = f"🚫 **灵石不足**\n\n道友当前余额: `{e.current}` 灵石\n本次修炼需要: `{e.cost}` 灵石\n请联系管理员获取更多灵石。"
+            msg = _t(
+                context,
+                "fsm.common.insufficient_credits",
+                current=e.current,
+                cost=e.cost,
+            )
             from src.utils import robust_send_message
 
             await robust_send_message(context.bot, chat_id, msg, parse_mode="Markdown")
-            _cleanup_context(context, user_id)
+            _cleanup_context(context)
             return ConversationHandler.END
         raise e
 
@@ -292,14 +312,14 @@ async def confirm_generation(update: Update, context: ContextTypes.DEFAULT_TYPE)
             f"user={user_id} image_path consumed by another request before submit in ltx_video"
         )
         with contextlib.suppress(Exception):
-            await query.answer("⚠️ 任务已提交或状态已失效，请勿重复操作。", show_alert=True)
-        _cleanup_context(context, user_id)
+            await query.answer(_t(context, "fsm.common.already_submitted"), show_alert=True)
+        _cleanup_context(context)
         return ConversationHandler.END
 
     with contextlib.suppress(Exception):
         await robust_edit_text(
             query.message,
-            f"🚀 正在提交高级视频任务，预计消耗 {cost} 灵石，请耐心等待...",
+            _t(context, "fsm.ltx_video.submit", cost=cost),
         )
 
     context.user_data["ltx_video_resolution"] = res
@@ -316,43 +336,51 @@ async def confirm_generation(update: Update, context: ContextTypes.DEFAULT_TYPE)
         ),
     )
 
-    _cleanup_context(context, user_id)
-    await query.answer(text="⏳ 任务初始化中...", cache_time=2)
+    _cleanup_context(context)
+    await query.answer(text=_t(context, "fsm.common.task_initializing"), cache_time=2)
     return ConversationHandler.END
 
 
 async def cancel_conversation(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> int:
-    user_id = update.effective_user.id
-    msg = "🚫 流程已取消。已清空历史上传内容。"
+    msg = _t(context, "fsm.common.cancelled")
     await robust_reply_text(update.message, msg)
-    _cleanup_context(context, user_id)
+    _cleanup_context(context)
     return ConversationHandler.END
 
 
 async def timeout_conversation(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> int:
-    user_id = update.effective_user.id if update.effective_user else "Unknown"
     if update and update.message:
         await robust_reply_text(
             update.message,
-            "⏰ 操作超时，为节省系统资源，本次流程已自动取消。您可以随时重新开始。",
+            _t(context, "fsm.common.timeout"),
         )
-    _cleanup_context(context, user_id)
+    _cleanup_context(context)
     return ConversationHandler.END
 
 
 async def unexpected_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     text = update.message.text if update.message else ""
     if text and is_global_menu_command(text):
-        user_id = update.effective_user.id if update.effective_user else "Unknown"
-        _cleanup_context(context, user_id)
-        await robust_reply_text(update.message, context.t("system.fsm_exit_hint"))
+        route_key = GLOBAL_REVERSE_MAP.get(text)
+        _cleanup_context(context)
+        if route_key == "menu.switch_lang" and update.effective_user:
+            from src.handlers.message_handler_runtime import toggle_user_language
+
+            reply_text, reply_markup = await toggle_user_language(
+                context, update.effective_user
+            )
+            await robust_reply_text(
+                update.message, reply_text, reply_markup=reply_markup
+            )
+            return ConversationHandler.END
+        await robust_reply_text(update.message, _t(context, "system.fsm_exit_hint"))
         return ConversationHandler.END
 
-    await robust_reply_text(update.message, context.t("system.fsm_in_progress_hint"))
+    await robust_reply_text(update.message, _t(context, "system.fsm_in_progress_hint"))
     return None
 
 

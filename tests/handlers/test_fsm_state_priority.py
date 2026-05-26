@@ -42,6 +42,7 @@ def _build_update_with_message(*, text: str = "test prompt"):
         effective_user=user,
         effective_chat=SimpleNamespace(id=10001),
         message=_build_message(text=text),
+        callback_query=None,
     )
 
 
@@ -185,6 +186,30 @@ async def test_start_edit_image_routes_free_edit_to_lora_selection(monkeypatch):
     reply_mock.assert_awaited_once()
     assert "已进入【自由P图】模式" in reply_mock.await_args.args[1]
     assert reply_mock.await_args.kwargs["reply_markup"] is not None
+
+
+@pytest.mark.asyncio
+async def test_start_edit_image_english_lora_buttons(monkeypatch):
+    reply_mock = AsyncMock()
+
+    monkeypatch.setattr("src.utils.is_maintenance_mode", lambda: False)
+    monkeypatch.setattr(edit_image_fsm, "robust_reply_text", reply_mock)
+
+    update = _build_update_with_message(text="🎨 Free Edit")
+    context = SimpleNamespace(user_data={}, lang="en")
+
+    monkeypatch.setitem(
+        __import__("src.handlers.prompt_router", fromlist=["GLOBAL_REVERSE_MAP"]).GLOBAL_REVERSE_MAP,
+        "🎨 Free Edit",
+        "menu.free_edit",
+    )
+
+    result = await edit_image_fsm.start_edit_image(update, context)
+
+    assert result == edit_image_fsm.EditImageState.WAIT_LORA_SELECTION
+    keyboard = reply_mock.await_args.kwargs["reply_markup"]
+    assert keyboard.inline_keyboard[0][0].text == "None"
+    assert keyboard.inline_keyboard[0][1].text == "Realistic"
 
 
 @pytest.mark.asyncio
@@ -410,6 +435,60 @@ async def test_ltx_video_state_expired_before_quota_check(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_start_ltx_video_uses_english_locale(monkeypatch):
+    reply_mock = AsyncMock()
+
+    monkeypatch.setattr("src.utils.is_maintenance_mode", lambda: False)
+    monkeypatch.setattr(ltx_video_fsm, "robust_reply_text", reply_mock)
+
+    update = _build_update_with_message(text="🎬 Pro Video")
+    context = SimpleNamespace(user_data={}, lang="en", t=lambda key, **kwargs: f"T:{key}")
+
+    result = await ltx_video_fsm.start_ltx_video(update, context)
+
+    assert result == ltx_video_fsm.LtxVideoState.WAIT_IMAGE
+    reply_mock.assert_awaited_once()
+    assert reply_mock.await_args.args[1] == "T:fsm.ltx_video.start"
+
+
+@pytest.mark.asyncio
+async def test_ltx_video_unexpected_input_switch_lang_exits_and_switches_immediately(
+    monkeypatch,
+):
+    reply_mock = AsyncMock()
+    toggle_mock = AsyncMock(return_value=("切到中文", "zh-keyboard"))
+    monkeypatch.setattr(ltx_video_fsm, "robust_reply_text", reply_mock)
+    monkeypatch.setattr(ltx_video_fsm, "is_global_menu_command", lambda _text: True)
+    monkeypatch.setitem(
+        __import__("src.handlers.prompt_router", fromlist=["GLOBAL_REVERSE_MAP"]).GLOBAL_REVERSE_MAP,
+        "🌐 中文",
+        "menu.switch_lang",
+    )
+    monkeypatch.setattr(
+        "src.handlers.message_handler_runtime.toggle_user_language",
+        toggle_mock,
+    )
+
+    update = _build_update_with_message(text="🌐 中文")
+    context = SimpleNamespace(
+        user_data={
+            "in_conversation": "LTX_VIDEO",
+            "ltx_video_data": {"image_path": None},
+        }
+    )
+
+    result = await ltx_video_fsm.unexpected_input(update, context)
+
+    assert result == ConversationHandler.END
+    toggle_mock.assert_awaited_once_with(context, update.effective_user)
+    reply_mock.assert_awaited_once_with(
+        update.message, "切到中文", reply_markup="zh-keyboard"
+    )
+    assert "in_conversation" not in context.user_data
+    assert "ltx_video_data" not in context.user_data
+
+
+@pytest.mark.asyncio
 async def test_image_to_video_state_expired_before_quota_check(monkeypatch):
     reply_mock = AsyncMock()
     quota_mock = AsyncMock()
@@ -471,8 +550,69 @@ async def test_image_to_video_legacy_video_lora_data_no_longer_used():
 
     assert result == ConversationHandler.END
     query.answer.assert_awaited_once()
-    query.edit_message_text.assert_awaited_once_with("交互已失效，请重新开始。")
+    query.edit_message_text.assert_awaited_once_with("交互已失效或任务已提交，请重新开始")
     assert "video_lora_data" in context.user_data
+
+
+@pytest.mark.asyncio
+async def test_image_to_video_unexpected_input_switch_lang_exits_and_switches_immediately(
+    monkeypatch,
+):
+    reply_mock = AsyncMock()
+    toggle_mock = AsyncMock(return_value=("切到中文", "zh-keyboard"))
+    monkeypatch.setattr(image_to_video_fsm, "robust_reply_text", reply_mock)
+    monkeypatch.setattr(image_to_video_fsm, "is_global_menu_command", lambda _text: True)
+    monkeypatch.setitem(
+        __import__("src.handlers.prompt_router", fromlist=["GLOBAL_REVERSE_MAP"]).GLOBAL_REVERSE_MAP,
+        "🌐 中文",
+        "menu.switch_lang",
+    )
+    monkeypatch.setattr(
+        "src.handlers.message_handler_runtime.toggle_user_language",
+        toggle_mock,
+    )
+
+    update = _build_update_with_message(text="🌐 中文")
+    context = SimpleNamespace(
+        user_data={
+            "in_conversation": image_to_video_fsm.IMAGE_TO_VIDEO_CONVERSATION_TAG,
+            "image_to_video_data": {"image_path": None},
+        }
+    )
+
+    result = await image_to_video_fsm.unexpected_input(update, context)
+
+    assert result == ConversationHandler.END
+    toggle_mock.assert_awaited_once_with(context, update.effective_user)
+    reply_mock.assert_awaited_once_with(
+        update.message, "切到中文", reply_markup="zh-keyboard"
+    )
+    assert "in_conversation" not in context.user_data
+    assert "image_to_video_data" not in context.user_data
+
+
+@pytest.mark.asyncio
+async def test_start_image_to_video_english_lora_buttons(monkeypatch):
+    reply_mock = AsyncMock()
+
+    monkeypatch.setattr("src.utils.is_maintenance_mode", lambda: False)
+    monkeypatch.setattr(image_to_video_fsm, "robust_reply_text", reply_mock)
+
+    update = _build_update_with_message(text="🎬 Img2Video")
+    context = SimpleNamespace(user_data={}, lang="en")
+
+    monkeypatch.setitem(
+        __import__("src.handlers.prompt_router", fromlist=["GLOBAL_REVERSE_MAP"]).GLOBAL_REVERSE_MAP,
+        "🎬 Img2Video",
+        "menu.video_lora",
+    )
+
+    result = await image_to_video_fsm.start_image_to_video(update, context)
+
+    assert result == image_to_video_fsm.ImageToVideoState.WAIT_LORA_SELECTION
+    keyboard = reply_mock.await_args.kwargs["reply_markup"]
+    assert keyboard.inline_keyboard[0][0].text == "None"
+    assert keyboard.inline_keyboard[0][1].text == "Breast Growth"
 
 
 @pytest.mark.asyncio

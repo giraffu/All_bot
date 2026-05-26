@@ -124,6 +124,8 @@ async def global_middleware(update: Update, context):
                         f"allbot:user_lang:tg:{tg_user.id}"
                     )
                     if cached_lang:
+                        if isinstance(cached_lang, bytes):
+                            cached_lang = cached_lang.decode("utf-8")
                         lang = cached_lang
                 except Exception as e:
                     core_logger.warning(f"Failed to get lang from redis: {e}")

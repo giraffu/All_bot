@@ -27,6 +27,40 @@ IMAGE_LORA_DEFAULT_STRENGTHS = {
 
 ALL_LORA_MODELS = {**VIDEO_LORA_MODELS, **IMAGE_LORA_MODELS}
 
+IMAGE_LORA_LABELS_EN = {
+    "": "None",
+    "qwen/YARN_1.0.safetensors": "Realistic",
+    "qwen/adjust_pussy_anus.safetensors": "Pussy + Inner Anus",
+    "qwen/realistic_texture.safetensors": "Realistic Texture",
+    "qwen/flat_chest_hairless.safetensors": "Flat Chest / Hairless",
+    "qwen/penis.safetensors": "Futanari (Penis)",
+}
+
+VIDEO_LORA_LABELS_EN = {
+    "": "None",
+    "BreastGrow": "Breast Growth",
+    "BreastInsertion": "Breast Insertion",
+    "Cum": "Cumshot",
+    "Cunilingus": "Cunnilingus",
+    "Flatchested": "Flat Chest",
+    "Footjob": "Footjob",
+    "Insertion": "Insertion Boost",
+}
+
+
+def get_image_lora_display_name(lora_name: str, lang: str = "zh") -> str:
+    normalized_name = lora_name or ""
+    if lang == "en":
+        return IMAGE_LORA_LABELS_EN.get(normalized_name, normalized_name or "None")
+    return IMAGE_LORA_MODELS.get(normalized_name, normalized_name or "无")
+
+
+def get_video_lora_display_name(lora_name: str, lang: str = "zh") -> str:
+    normalized_name = lora_name or ""
+    if lang == "en":
+        return VIDEO_LORA_LABELS_EN.get(normalized_name, normalized_name or "None")
+    return VIDEO_LORA_MODELS.get(normalized_name, normalized_name or "无")
+
 
 def get_lora_default_strength(lora_name: str) -> float:
     return IMAGE_LORA_DEFAULT_STRENGTHS.get(lora_name, 1.0)

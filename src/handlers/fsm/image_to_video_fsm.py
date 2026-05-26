@@ -20,8 +20,8 @@ from src.constants import (
     get_video_settings_keyboard,
 )
 from src.handlers.conversation_states import ImageToVideoState
-from src.handlers.prompt_router import is_global_menu_command
-from src.lora_catalog import VIDEO_LORA_MODELS
+from src.handlers.prompt_router import GLOBAL_REVERSE_MAP, is_global_menu_command
+from src.lora_catalog import VIDEO_LORA_MODELS, get_video_lora_display_name
 from src.services.bot_task_service import process_image_to_video_task
 from src.services.permission_service import permission_service
 from src.services.fsm_temp_file_service import (
@@ -32,11 +32,22 @@ from src.utils import create_background_task, robust_edit_text, robust_reply_tex
 import contextlib
 
 from src.filters.i18n_filter import I18nFilter
+from src.i18n.translator import get_text
 
 logger = logging.getLogger("fsm.image_to_video")
 
 IMAGE_TO_VIDEO_DATA_KEY = "image_to_video_data"
 IMAGE_TO_VIDEO_CONVERSATION_TAG = "IMAGE_TO_VIDEO"
+
+
+def _t(context: ContextTypes.DEFAULT_TYPE, key: str, **kwargs) -> str:
+    translator = getattr(context, "t", None)
+    if callable(translator):
+        return translator(key, **kwargs)
+    lang = getattr(context, "lang", None)
+    if not lang and getattr(context, "user_data", None):
+        lang = context.user_data.get("language_code")
+    return get_text(key, lang or "zh", **kwargs)
 
 
 def _get_image_to_video_data(context: ContextTypes.DEFAULT_TYPE) -> dict | None:
@@ -61,52 +72,66 @@ def _cleanup_context(context: ContextTypes.DEFAULT_TYPE, _user_id: int):
     cleanup_fsm_temp_files([pending_files.get("image_path")])
 
 
-def _get_lora_display_name(lora_name: str | None) -> str:
+def _get_lora_display_name(lora_name: str | None, *, lang: str = "zh") -> str:
     normalized_name = lora_name or ""
-    return VIDEO_LORA_MODELS.get(normalized_name, normalized_name or "无")
+    return get_video_lora_display_name(normalized_name, lang)
 
 
-def _build_lora_selection_keyboard() -> InlineKeyboardMarkup:
+def _build_lora_selection_keyboard(lang: str = "zh") -> InlineKeyboardMarkup:
     buttons = [
-        InlineKeyboardButton(zh_name, callback_data=f"lora_select_{backend_name}")
-        for backend_name, zh_name in VIDEO_LORA_MODELS.items()
+        InlineKeyboardButton(
+            get_video_lora_display_name(backend_name, lang),
+            callback_data=f"lora_select_{backend_name}",
+        )
+        for backend_name in VIDEO_LORA_MODELS.keys()
     ]
     keyboard = [buttons[i : i + 2] for i in range(0, len(buttons), 2)]
     return InlineKeyboardMarkup(keyboard)
 
 
-def _build_image_request_text(lora_name: str | None, *, from_compat_alias: bool) -> str:
-    lora_display_name = _get_lora_display_name(lora_name)
-    header = "🎬 **已切换到【图生视频】模式。**"
+def _build_image_request_text(
+    lora_name: str | None, *, from_compat_alias: bool, lang: str = "zh"
+) -> str:
+    lora_display_name = get_video_lora_display_name(lora_name or "", lang)
+    from src.i18n.translator import get_text
+
+    header = get_text("fsm.image_to_video.mode_header", lang)
     if from_compat_alias:
-        header = "🎬 **已通过兼容入口切换到【图生视频】模式。**"
+        header = get_text("fsm.image_to_video.compat_mode_header", lang)
 
     return (
         f"{header}\n\n"
-        f"当前附加模型：**{lora_display_name}**\n\n"
-        "【下一步】请发送一张【起始图片】。\n"
-        "(注意：该模式生成视频，请确保后续提示词动作逻辑合理)\n\n"
+        f"{get_text('fsm.image_to_video.current_lora', lang, model_name=lora_display_name)}\n\n"
+        f"{get_text('fsm.image_to_video.send_image', lang)}\n"
+        f"{get_text('fsm.image_to_video.image_note', lang)}\n\n"
         "随时可以发送 /cancel 退出流程。"
     )
 
 
-def _build_settings_message(fsm_data: dict[str, object], cost: int) -> str:
+def _build_settings_message(
+    fsm_data: dict[str, object], cost: int, *, lang: str = "zh"
+) -> str:
     resolution = fsm_data["resolution"]
     duration = fsm_data["duration"]
-    lora_display_name = _get_lora_display_name(fsm_data.get("lora_name"))
+    lora_display_name = _get_lora_display_name(fsm_data.get("lora_name"), lang=lang)
 
-    return (
-        f"⚙️ 当前画质：{resolution} | 时长：{duration} | 消耗灵石：{cost}\n"
-        f"附加模型：**{lora_display_name}**\n\n"
-        "请在下方选择您需要的画质和时长（部分画质和时长需要高境界或VIP身份解锁）：\n\n"
-        "*提示：画质越高、时长越长，消耗灵石越多。注意：1024p 和 10s 无法同时选择。*\n\n"
-        "【下一步】**请直接发送提示词 (Text)** 开始生成。"
+    from src.i18n.translator import get_text
+
+    return get_text(
+        "fsm.image_to_video.settings_text",
+        lang,
+        resolution=resolution,
+        duration=duration,
+        cost=cost,
+        model_name=lora_display_name,
     )
 
 
-def _build_submit_message(lora_name: str | None, cost: int) -> str:
-    task_name = "图生视频任务" if not lora_name else "附加模型视频任务"
-    return f"🚀 正在提交{task_name}，预计消耗 {cost} 灵石，请耐心等待..."
+def _build_submit_message(lora_name: str | None, cost: int, *, lang: str = "zh") -> str:
+    from src.i18n.translator import get_text
+
+    key = "fsm.image_to_video.submit_plain" if not lora_name else "fsm.image_to_video.submit_lora"
+    return get_text(key, lang, cost=cost)
 
 
 def _compute_video_generation_cost(resolution: str, duration: str) -> int:
@@ -148,10 +173,12 @@ async def _build_video_settings_view_model(
     resolution = str(fsm_data["resolution"])
     duration = str(fsm_data["duration"])
     reply_markup = get_video_settings_keyboard(
-        user_group, user_identity, resolution, duration, context.lang
+        user_group, user_identity, resolution, duration, getattr(context, "lang", "zh")
     )
     cost = _compute_video_generation_cost(resolution, duration)
-    msg_text = _build_settings_message(fsm_data, cost)
+    msg_text = _build_settings_message(
+        fsm_data, cost, lang=getattr(context, "lang", "zh")
+    )
     return reply_markup, cost, msg_text
 
 
@@ -207,12 +234,12 @@ async def _start_image_to_video_flow(
     query = update.callback_query
     if query:
         with contextlib.suppress(Exception):
-            await query.answer(text="⏳ 任务初始化中...", cache_time=2)
+            await query.answer(text=_t(context, "fsm.common.task_initializing"), cache_time=2)
 
     from src.utils import is_maintenance_mode
 
     if is_maintenance_mode():
-        msg = "⚠️ 🛠️ **系统正在维护升级中**\n\n为了提供更好的服务，当前生图/生视频节点正在维护，暂不接受新任务。\n\n您的灵石和会员权益不受影响，请稍后再试！"
+        msg = _t(context, "fsm.common.maintenance")
         if update.callback_query:
             await robust_edit_text(
                 update.callback_query.message, msg, parse_mode="Markdown"
@@ -222,7 +249,7 @@ async def _start_image_to_video_flow(
         return ConversationHandler.END
 
     if context.user_data.get("in_conversation"):
-        msg = "⚠️ 您当前有未完成的交互流程，请先发送 /cancel 退出当前流程后再试。"
+        msg = _t(context, "fsm.common.conflict")
         if update.message:
             await robust_reply_text(update.message, msg)
         elif update.callback_query:
@@ -239,21 +266,18 @@ async def _start_image_to_video_flow(
         await _send_start_message(
             update,
             _build_image_request_text(
-                preset_lora_name, from_compat_alias=conversation_tag == "CUSTOM_VIDEO"
+                preset_lora_name,
+                from_compat_alias=conversation_tag == "CUSTOM_VIDEO",
+                lang=getattr(context, "lang", "zh"),
             ),
         )
         return ImageToVideoState.WAIT_IMAGE
 
-    msg = (
-        "🎬 **已切换到【图生视频】模式。**\n\n"
-        "【第一步】请选择附加模型（可选）：\n"
-        "选择“无”时将退化为普通图生视频。\n\n"
-        "随时可以发送 /cancel 退出流程。"
-    )
+    msg = _t(context, "fsm.image_to_video.select_lora")
     await _send_start_message(
         update,
         msg,
-        reply_markup=_build_lora_selection_keyboard(),
+        reply_markup=_build_lora_selection_keyboard(getattr(context, "lang", "zh")),
     )
     return ImageToVideoState.WAIT_LORA_SELECTION
 
@@ -284,7 +308,7 @@ async def handle_lora_selection(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> int:
     query = update.callback_query
-    await query.answer(text="⏳ 任务初始化中...", cache_time=2)
+    await query.answer(text=_t(context, "fsm.common.task_initializing"), cache_time=2)
     data = query.data
 
     if not data.startswith("lora_select_"):
@@ -293,12 +317,14 @@ async def handle_lora_selection(
     lora_name = data.replace("lora_select_", "")
     fsm_data = _get_image_to_video_data(context) or {}
     if not fsm_data:
-        await query.edit_message_text("交互已失效，请重新开始。")
+        await query.edit_message_text(_t(context, "fsm.image_to_video.expired_alert"))
         return ConversationHandler.END
 
     fsm_data["lora_name"] = lora_name
 
-    msg = _build_image_request_text(lora_name, from_compat_alias=False)
+    msg = _build_image_request_text(
+        lora_name, from_compat_alias=False, lang=getattr(context, "lang", "zh")
+    )
     await robust_edit_text(query.message, msg, parse_mode="Markdown")
     return ImageToVideoState.WAIT_IMAGE
 
@@ -309,19 +335,19 @@ async def receive_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     fsm_data = _get_image_to_video_data(context)
     if not fsm_data:
         await robust_reply_text(
-            message, "⚠️ 状态已失效或清理，请发送 /cancel 退出并重新发起任务。"
+            message, _t(context, "fsm.common.expired_cleaned")
         )
         return ConversationHandler.END
 
     if message.document:
         if not message.document.mime_type.startswith("image/"):
-            await robust_reply_text(message, "❌ 格式错误！请发送图片。")
+            await robust_reply_text(message, _t(context, "fsm.common.invalid_image"))
             return ImageToVideoState.WAIT_IMAGE
         file_id = message.document.file_id
     elif message.photo:
         file_id = message.photo[-1].file_id
     else:
-        await robust_reply_text(message, "❌ 无法识别。请发送图片！")
+        await robust_reply_text(message, _t(context, "fsm.common.invalid_image"))
         return ImageToVideoState.WAIT_IMAGE
 
     try:
@@ -334,7 +360,7 @@ async def receive_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         fsm_data["image_path"] = local_path
     except Exception as e:
         logger.error(f"Error downloading image for FSM user {user_id}: {e}")
-        await robust_reply_text(message, "❌ 下载图片失败，请重试或发送 /cancel 退出。")
+        await robust_reply_text(message, _t(context, "fsm.common.download_image_failed"))
         return ImageToVideoState.WAIT_IMAGE
 
     reply_markup, _cost, msg_text = await _build_video_settings_view_model(
@@ -358,7 +384,7 @@ async def process_settings(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     fsm_data = _get_image_to_video_data(context) or {}
     if not fsm_data:
         with contextlib.suppress(Exception):
-            await query.answer("交互已失效或任务已提交，请重新开始", show_alert=True)
+            await query.answer(_t(context, "fsm.image_to_video.expired_alert"), show_alert=True)
         return ConversationHandler.END
 
     if data.startswith("set_res_"):
@@ -367,7 +393,7 @@ async def process_settings(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             fsm_data["duration"] = "8s"
             with contextlib.suppress(Exception):
                 await query.answer(
-                    "1024p和10s无法同时选择，已自动将时长调为8s", show_alert=True
+                    _t(context, "fsm.image_to_video.res_dur_conflict"), show_alert=True
                 )
         fsm_data["resolution"] = new_res
     elif data.startswith("set_dur_"):
@@ -376,7 +402,7 @@ async def process_settings(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             fsm_data["resolution"] = "720p"
             with contextlib.suppress(Exception):
                 await query.answer(
-                    "1024p和10s无法同时选择，已自动将画质调为720p", show_alert=True
+                    _t(context, "fsm.image_to_video.dur_res_conflict"), show_alert=True
                 )
         fsm_data["duration"] = new_dur
 
@@ -405,7 +431,7 @@ async def receive_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     fsm_data = _get_image_to_video_data(context)
     if not fsm_data:
-        await robust_reply_text(message, "⚠️ 任务已提交或已过期，请勿重复操作。")
+        await robust_reply_text(message, _t(context, "fsm.common.already_submitted"))
         return ConversationHandler.END
 
     res = fsm_data["resolution"]
@@ -423,7 +449,7 @@ async def receive_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         logger.warning(
             f"user={user_id} image_path missing before submit in image_to_video"
         )
-        await robust_reply_text(message, "⚠️ 任务状态已过期，请重新发送图片和提示词。")
+        await robust_reply_text(message, _t(context, "fsm.common.missing_image_resend"))
         _cleanup_context(context, user_id)
         return ConversationHandler.END
 
@@ -439,7 +465,10 @@ async def receive_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
         if isinstance(e, InsufficientCreditsError):
             chat_id = update.effective_chat.id
-            msg = f"🚫 **灵石不足**\n\n道友当前余额: `{e.current}` 灵石\n本次修炼需要: `{e.cost}` 灵石\n请联系管理员获取更多灵石。"
+            msg = _t(
+                context,
+                "fsm.common.insufficient_credits", current=e.current, cost=e.cost
+            )
             from src.utils import robust_send_message
 
             await robust_send_message(context.bot, chat_id, msg, parse_mode="Markdown")
@@ -452,12 +481,12 @@ async def receive_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         logger.warning(
             f"user={user_id} image_path consumed by another request before submit in image_to_video"
         )
-        await robust_reply_text(message, "⚠️ 任务已提交或状态已失效，请勿重复操作。")
+        await robust_reply_text(message, _t(context, "fsm.common.already_submitted"))
         _cleanup_context(context, user_id)
         return ConversationHandler.END
 
     await robust_reply_text(
-        message, _build_submit_message(lora_name, cost)
+        message, _build_submit_message(lora_name, cost, lang=getattr(context, "lang", "zh"))
     )
 
     task_type = _resolve_image_to_video_task_type(context)
@@ -486,7 +515,7 @@ async def cancel_conversation(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> int:
     user_id = update.effective_user.id
-    msg = "🚫 流程已取消。已清空历史上传内容。"
+    msg = _t(context, "fsm.common.cancelled")
     await robust_reply_text(update.message, msg)
     _cleanup_context(context, user_id)
     return ConversationHandler.END
@@ -499,7 +528,7 @@ async def timeout_conversation(
     if update and update.message:
         await robust_reply_text(
             update.message,
-            "⏰ 操作超时，为节省系统资源，本次流程已自动取消。您可以随时重新开始。",
+            _t(context, "fsm.common.timeout"),
         )
     _cleanup_context(context, user_id)
     return ConversationHandler.END
@@ -508,12 +537,23 @@ async def timeout_conversation(
 async def unexpected_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     text = update.message.text if update.message else ""
     if text and is_global_menu_command(text):
+        route_key = GLOBAL_REVERSE_MAP.get(text)
         user_id = update.effective_user.id if update.effective_user else "Unknown"
         _cleanup_context(context, user_id)
-        await robust_reply_text(update.message, context.t("system.fsm_exit_hint"))
+        if route_key == "menu.switch_lang" and update.effective_user:
+            from src.handlers.message_handler_runtime import toggle_user_language
+
+            reply_text, reply_markup = await toggle_user_language(
+                context, update.effective_user
+            )
+            await robust_reply_text(
+                update.message, reply_text, reply_markup=reply_markup
+            )
+            return ConversationHandler.END
+        await robust_reply_text(update.message, _t(context, "system.fsm_exit_hint"))
         return ConversationHandler.END
 
-    await robust_reply_text(update.message, context.t("system.fsm_in_progress_hint"))
+    await robust_reply_text(update.message, _t(context, "system.fsm_in_progress_hint"))
     return None
 
 

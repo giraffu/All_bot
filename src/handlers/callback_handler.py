@@ -46,4 +46,4 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
     # 兜底机制 (Fallback)
     logger.warning(f"Unmatched callback data: {query.data}")
     await safe_answer_query(query)
-    await query.message.reply_text("该按钮已过期或系统升级中，请重新发送指令。")
+    await query.message.reply_text(context.t("system.callback_expired"))
