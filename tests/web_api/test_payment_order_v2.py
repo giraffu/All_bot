@@ -102,6 +102,42 @@ async def test_create_order_dual_writes_business_order_id(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_create_order_supports_nested_gateway_payurl_payload(monkeypatch):
+    db = _FakeSession([_build_plan()])
+    request = SimpleNamespace(headers={"origin": "https://test.example"})
+    current_user = SimpleNamespace(id=2002)
+
+    monkeypatch.setattr(
+        payment_api_service.RMBPaymentService,
+        "create_payment_url",
+        AsyncMock(
+            return_value={
+                "code": 1,
+                "data": {
+                    "payurl": "https://pay.example/submit.php?foo=bar baz&biz=value"
+                },
+            }
+        ),
+    )
+    monkeypatch.setattr(
+        payment_api_service, "generate_business_order_id", lambda: "bo_nested_1"
+    )
+
+    result = await payment_router.create_order(
+        payment_router.CreateOrderRequest(plan_id=1, pay_type="alipay"),
+        request=request,
+        current_user=current_user,
+        db=db,
+    )
+
+    assert result["data"]["order_id"] == "bo_nested_1"
+    assert (
+        result["data"]["pay_url"]
+        == "https://pay.example/submit.php?foo=bar+baz&biz=value"
+    )
+
+
+@pytest.mark.asyncio
 async def test_get_order_status_supports_business_order_id():
     order = SimpleNamespace(
         order_id="WEB_legacy",

@@ -61,6 +61,7 @@ const pageTitle = computed(() => {
     CustomFeatures: t('menu.custom_features'),
     History: t('menu.history'),
     MyFavorites: t('menu.my_favorites'),
+    Billing: t('menu.recharge'),
   }
   return titleMap[route.name as string] || ''
 })

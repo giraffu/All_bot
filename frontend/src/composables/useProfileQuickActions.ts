@@ -36,6 +36,14 @@ export function useProfileQuickActions(options: {
       onClick: () => options.router.push('/custom-features'),
     },
     {
+      key: 'billing',
+      label: options.t('menu.recharge'),
+      className:
+        'bg-slate-500 text-amber-300 border-amber-500/30 hover:text-amber-200 hover:border-amber-400 shadow-md',
+      icon: options.icons.Wallet,
+      onClick: () => options.router.push('/billing'),
+    },
+    {
       key: 'submissions',
       label: options.t('menu.my_submissions'),
       className:

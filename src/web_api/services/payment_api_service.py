@@ -1,4 +1,5 @@
 import uuid
+import urllib.parse
 from datetime import datetime
 
 from fastapi import HTTPException
@@ -24,6 +25,35 @@ from src.web_api.presenters.payment_presenter import (
     build_rmb_order_payload,
     build_ton_order_payload,
 )
+
+
+def _extract_normalized_pay_url(pay_result: dict | None) -> str | None:
+    if not pay_result:
+        return None
+
+    raw_pay_url = pay_result.get("payurl")
+    if not raw_pay_url and isinstance(pay_result.get("data"), dict):
+        raw_pay_url = pay_result["data"].get("payurl")
+
+    if not raw_pay_url:
+        return None
+
+    parsed = urllib.parse.urlparse(str(raw_pay_url))
+    if not parsed.scheme or not parsed.netloc:
+        return None
+
+    query_dict = urllib.parse.parse_qs(parsed.query)
+    encoded_query = urllib.parse.urlencode(query_dict, doseq=True)
+    return urllib.parse.urlunparse(
+        (
+            parsed.scheme,
+            parsed.netloc,
+            parsed.path,
+            parsed.params,
+            encoded_query,
+            parsed.fragment,
+        )
+    )
 
 
 async def get_payment_plans_payload(*, db) -> dict:
@@ -80,8 +110,9 @@ async def create_rmb_order_payload(
         return_url=return_url,
     )
 
-    if pay_result and pay_result.get("code") == 1:
-        return build_rmb_order_payload(new_order, pay_result.get("payurl"))
+    pay_url = _extract_normalized_pay_url(pay_result)
+    if pay_result and pay_result.get("code") == 1 and pay_url:
+        return build_rmb_order_payload(new_order, pay_url)
 
     raise HTTPException(
         status_code=500,

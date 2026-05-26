@@ -5,7 +5,7 @@ import { useRoute } from 'vue-router'
 import api from '@/api'
 import { useAuthStore } from '@/stores/auth'
 
-type PayMethod = 'rmb' | 'ton'
+type PayMethod = 'alipay' | 'wxpay' | 'ton'
 type OrderStatus = 'PENDING' | 'SUCCESS' | 'FAILED' | 'TIMEOUT'
 
 const DEFAULT_TON_RECEIVER = 'UQC2q_W2d061mO_g3zB-hK12v0p2u44-nI5z9F82L1j88g7b'
@@ -18,7 +18,7 @@ export function useBillingPayments() {
   const loadingPlans = ref(true)
   const plans = ref<any[]>([])
   const selectedPlan = ref<any>(null)
-  const payMethod = ref<PayMethod>('rmb')
+  const payMethod = ref<PayMethod>('alipay')
   const isPaying = ref(false)
 
   const rmbPollingTimer = ref<ReturnType<typeof setTimeout> | null>(null)
@@ -135,26 +135,30 @@ export function useBillingPayments() {
 
     isPaying.value = true
     const newWin = window.open('about:blank', '_blank')
+    const payType = payMethod.value === 'wxpay' ? 'wxpay' : 'alipay'
 
     try {
       const res = await api.post('/payment/orders', {
         plan_id: selectedPlan.value.id,
-        pay_type: 'alipay'
+        pay_type: payType
       })
 
-      if (res.data?.data?.pay_url) {
-        const { order_id, pay_url } = res.data.data
-        if (newWin) {
-          newWin.location.href = pay_url
-        } else {
-          window.location.href = pay_url
-          return
-        }
-
-        showPaymentModal.value = true
-        orderStatus.value = 'PENDING'
-        startRmbPolling(order_id)
+      const { order_id, pay_url } = res.data?.data ?? {}
+      if (!pay_url) {
+        throw new Error('missing pay_url')
       }
+
+      new URL(pay_url)
+      if (newWin) {
+        newWin.location.href = pay_url
+      } else {
+        window.location.href = pay_url
+        return
+      }
+
+      showPaymentModal.value = true
+      orderStatus.value = 'PENDING'
+      startRmbPolling(order_id)
     } catch (error) {
       console.error('Create order error', error)
       message.error('创建订单失败，请稍后重试')
