@@ -9,6 +9,7 @@ from src.core.gallery_interactions_core import (
     toggle_like_impl,
 )
 from src.core.gallery_submission_core import (
+    ALLOWED_WEB_SUBMIT_TYPES,
     _build_gallery_tags,
     process_submit_to_gallery_result_impl,
 )
@@ -105,6 +106,10 @@ def test_build_gallery_tags_extracts_mode_and_lora():
     )
 
     assert _build_gallery_tags(history) == ["#task.mode_i2i_pro", "#Foo Bar"]
+
+
+def test_allowed_web_submit_types_include_txt2img():
+    assert "txt2img" in ALLOWED_WEB_SUBMIT_TYPES
 
 
 @pytest.mark.asyncio

@@ -17,6 +17,15 @@ const loading = ref(true)
 
 const features = [
   {
+    key: 'txt2img',
+    title: 'lab.cards.txt2img_title',
+    description: 'lab.cards.txt2img_desc',
+    icon: Sparkles,
+    color: 'bg-fuchsia-100 text-fuchsia-600',
+    cost: 2,
+    route: 'TextToImage'
+  },
+  {
     key: 'i2i_pro',
     title: 'lab.cards.face_swap_title',
     description: 'lab.cards.face_swap_desc',

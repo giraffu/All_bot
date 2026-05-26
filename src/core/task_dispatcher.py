@@ -13,6 +13,7 @@ from src.constants import (
     MODE_I2I_DRAW,
     RESOLUTION_COST,
     TASK_COSTS,
+    MODE_TXT2IMG,
 )
 from src.core.task_core_service_providers import get_task_core_image_service
 
@@ -23,6 +24,7 @@ LEGACY_TASK_TYPE_ALIASES = {
     "MODE_I2I_PRO": MODE_I2I_PRO,
     "MODE_I2I_DRAW": MODE_I2I_DRAW,
     "MODE_IMG2IMG_LORA": MODE_IMG2IMG_LORA,
+    "t2i-pornmaster-turbo": MODE_TXT2IMG,
 }
 
 EDIT_LIKE_TASK_TYPES = {MODE_EDIT, MODE_IMG2IMG_LORA}
@@ -173,6 +175,11 @@ class DefaultImageStrategy(BaseTaskStrategy):
                 negative_prompt=inputs.get("negative_prompt", " "),
                 priority=priority,
                 lora_strength=inputs.get("lora_strength", 1.0),
+            )
+        elif self.mode == MODE_TXT2IMG:
+            return await image_service.submit_txt2img_task(
+                prompt=inputs.get("prompt"),
+                priority=priority,
             )
         else:
             return await image_service.submit_task(

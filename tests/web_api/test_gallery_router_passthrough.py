@@ -6,6 +6,7 @@ from types import SimpleNamespace
 
 from src.web_api.schemas.gallery_schema import GallerySubmitRequest
 from src.web_api.services.gallery_service_support import (
+    DEFAULT_GALLERY_ALLOWED_TYPE_CONFIGS,
     build_gallery_config_payload,
     submit_gallery_post_payload,
 )
@@ -35,6 +36,10 @@ async def test_build_gallery_config_payload_uses_mode_names_and_filters_empty_lo
         "lora_models": [{"id": "video-1", "name": "视频模型"}],
         "img2img_lora_models": [{"id": "img-1", "name": "图片模型"}],
     }
+
+
+def test_default_gallery_allowed_type_configs_include_txt2img():
+    assert ("txt2img", "task.mode_txt2img") in DEFAULT_GALLERY_ALLOWED_TYPE_CONFIGS
 
 
 @pytest.mark.asyncio

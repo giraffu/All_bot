@@ -58,19 +58,37 @@ const emit = defineEmits<{
 
     <div v-else :class="contentClass">
       <div
-        v-if="(currentTask.status === 'pending' || currentTask.status === 'running') && !currentTask.cancelRequested"
+        v-if="currentTask.status === 'pending' && !currentTask.cancelRequested"
+        class="flex flex-col items-center justify-center py-8 w-full flex-grow"
+      >
+        <slot name="pending" :task="currentTask">
+          <a-spin size="large" />
+          <p class="mt-4 text-slate-300 font-medium">
+            正在排队中...
+          </p>
+          <p
+            v-if="currentTask.queuePos != null"
+            class="text-sm text-slate-500 mt-1"
+          >
+            前面还有 {{ currentTask.queuePos }} 人排队
+          </p>
+          <p
+            v-else
+            class="text-sm text-slate-500 mt-1"
+          >
+            等待执行节点接单
+          </p>
+        </slot>
+      </div>
+
+      <div
+        v-else-if="currentTask.status === 'running' && !currentTask.cancelRequested"
         class="flex flex-col items-center justify-center py-8 w-full flex-grow"
       >
         <slot name="pending" :task="currentTask">
           <a-spin size="large" />
           <p class="mt-4 text-slate-400 font-medium">
             {{ pendingLabel }} {{ currentTask.progress }}%
-          </p>
-          <p
-            v-if="currentTask.queuePos"
-            class="text-sm text-slate-500 mt-1"
-          >
-            前面还有 {{ currentTask.queuePos }} 人排队
           </p>
           <a-progress
             :percent="currentTask.progress"

@@ -173,6 +173,71 @@ async def test_build_favorite_gallery_payload_resolves_media_urls_with_keyword_a
 
 
 @pytest.mark.asyncio
+async def test_get_my_favorites_payload_returns_favorited_txt2img_history(
+    monkeypatch,
+):
+    history = History(
+        id=21,
+        user_id=123,
+        task_id="task-txt2img-1",
+        type="txt2img",
+        prompt="prompt",
+        output_file="bot-data/history/task-txt2img-1/output.png",
+        created_at=datetime.now(),
+        is_favorited=True,
+    )
+
+    async def _fake_fetch_favorite_gallery_histories(*, db, current_user_id, page, size, task_type):
+        assert current_user_id == 123
+        assert page == 1
+        assert size == 20
+        assert task_type == "txt2img"
+        return [history], 1
+
+    async def _fake_fetch_gallery_posts_for_task_ids(*, db, task_ids):
+        assert task_ids == ["task-txt2img-1"]
+        return {}
+
+    async def _fake_resolve_history_media_urls(
+        *,
+        task_id: str | None,
+        output_file: str | None,
+        history_type: str | None,
+        fallback_to_storage_path: bool = False,
+    ):
+        assert task_id == "task-txt2img-1"
+        assert output_file == "bot-data/history/task-txt2img-1/output.png"
+        assert history_type == "txt2img"
+        assert fallback_to_storage_path is False
+        return ("https://example.com/output.png", "https://example.com/thumb.png")
+
+    monkeypatch.setattr(
+        users_history_service,
+        "fetch_favorite_gallery_histories",
+        _fake_fetch_favorite_gallery_histories,
+    )
+    monkeypatch.setattr(
+        users_history_service,
+        "fetch_gallery_posts_for_task_ids",
+        _fake_fetch_gallery_posts_for_task_ids,
+    )
+
+    response = await users_history_service.get_my_favorites_payload(
+        page=1,
+        size=20,
+        task_type="txt2img",
+        current_user=type("User", (), {"id": 123})(),
+        db=object(),
+        resolve_history_media_urls=_fake_resolve_history_media_urls,
+    )
+
+    assert response.total == 1
+    assert response.items[0].task_id == "task-txt2img-1"
+    assert response.items[0].task_type == "txt2img"
+    assert response.items[0].media_url == "https://example.com/output.png"
+
+
+@pytest.mark.asyncio
 async def test_get_favorite_apply_context_probes_media_after_session_closes(
     monkeypatch,
 ):

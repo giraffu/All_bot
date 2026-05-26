@@ -149,6 +149,11 @@ sequenceDiagram
 - Web 运行态依赖 `task_core_web_monitor.py`；Bot 则由 `run_bot_task_application(...)` 前台监控。
 - 任务结果除了运行态 stream 外，还有 history fallback 与结果查询兜底。
 
+延伸阅读：
+- 生成任务全链路专题文档：`/docs/子模块_生成任务全链路_task_full_chain.md`
+- 任务调度专题文档：`/docs/子模块_任务调度_task_scheduler.md`
+- 执行面与节点通信专题文档：`/docs/子模块_中控API与节点通信_central_api.md`
+
 ### 2.2 认证与会话闭环
 - Web 认证当前是双入口：Telegram 验签登录 + 用户名密码登录。
 - JWT 以 `SECRET_KEY` 签发，并携带 `pwd_ver` / `channel` 等语义 claim。

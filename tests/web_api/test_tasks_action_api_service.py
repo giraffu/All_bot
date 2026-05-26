@@ -79,6 +79,33 @@ async def test_submit_generation_task_returns_submission_result():
 
 
 @pytest.mark.asyncio
+async def test_submit_generation_task_copies_top_level_prompt_into_txt2img_inputs():
+    request = TaskGenerateRequest(task_type="txt2img", inputs={"images": []}, prompt="sky city")
+    current_user = type("User", (), {"id": 123, "username": "tester"})()
+
+    with patch(
+        "src.web_api.services.task_submission_service.process_and_submit_task",
+        new=AsyncMock(return_value={"task_id": "task-1", "cost": 2}),
+    ) as process_mock, patch(
+        "src.web_api.services.task_submission_service.uuid.uuid4",
+        return_value="task-1",
+    ):
+        await submit_generation_task(
+            req=request,
+            current_user=current_user,
+            get_balance=AsyncMock(return_value=98),
+            logger=MagicMock(),
+        )
+
+    process_mock.assert_awaited_once()
+    assert process_mock.await_args.kwargs["task_type"] == "txt2img"
+    assert process_mock.await_args.kwargs["inputs"] == {
+        "images": [],
+        "prompt": "sky city",
+    }
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("side_effect", "status_code", "detail"),
     [

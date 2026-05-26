@@ -77,6 +77,7 @@ def _extract_message_payload(message_data: Any) -> str:
 def build_task_status_stream_response(
     *,
     task_id: str,
+    runtime_task_id: str | None,
     user_id: int,
     session_factory,
     redis,
@@ -88,14 +89,15 @@ def build_task_status_stream_response(
 ) -> EventSourceResponse:
     async def event_generator():
         pubsub = redis.pubsub()
-        channel = f"comfy:task_events:{task_id}"
+        runtime_task_id_val = runtime_task_id or task_id
+        channel = f"comfy:task_events:{runtime_task_id_val}"
         await pubsub.subscribe(channel)
 
         try:
             yield _build_connected_event(task_id)
 
             initial_status = await _fetch_task_status_full(
-                task_id=task_id,
+                task_id=runtime_task_id_val,
                 api_base=api_base,
                 httpx_async_client_factory=httpx_async_client_factory,
                 logger=logger,
@@ -159,7 +161,7 @@ def build_task_status_stream_response(
                     current_time = asyncio.get_event_loop().time()
                     if current_time - last_queue_check > 5.0:
                         status_data = await _fetch_task_status_full(
-                            task_id=task_id,
+                            task_id=runtime_task_id_val,
                             api_base=api_base,
                             httpx_async_client_factory=httpx_async_client_factory,
                             logger=logger,

@@ -59,6 +59,11 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/views/ImageAndPrompt.vue')
       },
       {
+        path: 'text-to-image',
+        name: 'TextToImage',
+        component: () => import('@/views/TextToImage.vue')
+      },
+      {
         path: 'single-image-video',
         name: 'SingleImageToVideo',
         component: () => import('@/views/SingleImageToVideo.vue')

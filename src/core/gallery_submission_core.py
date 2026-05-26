@@ -16,6 +16,7 @@ from src.core.gallery_submission_effects import build_gallery_submit_side_effect
 ALLOWED_WEB_SUBMIT_TYPES = list(
     dict.fromkeys(
         [
+            "txt2img",
             "i2i_pro",
             "i2i_draw",
             "custom_video",

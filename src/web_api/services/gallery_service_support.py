@@ -40,6 +40,7 @@ __all__ = [
 ]
 
 DEFAULT_GALLERY_ALLOWED_TYPE_CONFIGS = [
+    ("txt2img", "task.mode_txt2img"),
     ("i2i_pro", "task.mode_i2i_pro"),
     ("i2i_draw", "task.mode_i2i_draw"),
     ("edit", "task.mode_edit"),

@@ -117,11 +117,17 @@ async def build_task_stream_response_payload(
     owned_history = await dependencies.get_user_history_record_func(
         task_id, user_id, session_factory
     )
+    runtime_task_id = (
+        owned_active_task.get("backend_task_id")
+        if owned_active_task and owned_active_task.get("backend_task_id")
+        else task_id
+    )
     if not owned_active_task and not owned_history:
         raise HTTPException(status_code=404, detail="任务不存在或无权限")
 
     return dependencies.build_task_status_stream_response_func(
         task_id=task_id,
+        runtime_task_id=runtime_task_id,
         user_id=user_id,
         session_factory=session_factory,
         redis=redis,

@@ -98,6 +98,7 @@ FACE_SWAP_ENDPOINT = f"{API_BASE}/face_swap"
 FACE_VIDEO_ENDPOINT = f"{API_BASE}/face_video"
 I2I_PRO_ENDPOINT = f"{API_BASE}/i2i_pro"
 I2I_DRAW_ENDPOINT = f"{API_BASE}/i2i_draw"
+TXT2IMG_ENDPOINT = f"{API_BASE}/api/v1/workflows/t2i-pornmaster-turbo"
 LTX_VIDEO_ENDPOINT = f"{API_BASE}/api/v1/ltx_video"
 
 # --- LLM Configuration ---

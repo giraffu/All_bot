@@ -2,7 +2,7 @@ from datetime import datetime
 
 from sqlalchemy import desc, func, select
 
-from src.database.models import GalleryPost, History, UserInteraction
+from src.database.models import GalleryPost, History
 
 
 def gallery_post_sort_key(post):
@@ -88,17 +88,11 @@ async def fetch_favorite_gallery_histories(
 ):
     query = (
         select(History)
-        .join(GalleryPost, GalleryPost.task_id == History.task_id)
-        .join(
-            UserInteraction,
-            (UserInteraction.post_id == GalleryPost.id)
-            & (UserInteraction.action_type.in_(["like", "apply"])),
-        )
         .where(
-            UserInteraction.user_id == current_user_id,
-            GalleryPost.is_active == True,
+            History.user_id == current_user_id,
+            History.is_favorited == True,
+            History.is_visible == True,
         )
-        .distinct()
         .order_by(desc(History.id))
     )
 

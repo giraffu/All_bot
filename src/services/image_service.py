@@ -15,6 +15,7 @@ from src.api_client import (
     submit_ltx_video,
     submit_perfect_video_edit,
     submit_perfect_video_insert,
+    submit_txt2img,
 )
 
 
@@ -99,6 +100,10 @@ class ImageService:
         return await submit_i2i_draw(
             task_id, prompt, image_path, seed, priority=priority
         )
+
+    async def submit_txt2img_task(self, prompt: str, priority: int = 0) -> str:
+        """Submit txt2img task"""
+        return await submit_txt2img(prompt, priority=priority)
 
     async def submit_img2img_lora_task(
         self,

@@ -107,6 +107,7 @@
   },
   "task_type": {
     "img2img": "图生图",
+    "txt2img": "文生图",
     "ltx_video": "高级视频生成",
     "i2i_pro": "幻想换脸",
     "i2i_draw": "局部重绘",
@@ -152,6 +153,7 @@
   "gallery": {
     "tabs": {
       "all": "全部",
+      "txt2img": "文生图",
       "face_swap": "幻想换脸",
       "i2i_draw": "局部重绘",
       "edit_group": "自由P图",
@@ -306,6 +308,8 @@
   "lab": {
     "title": "练功房",
     "cards": {
+      "txt2img_title": "文生图",
+      "txt2img_desc": "直接输入提示词发起生成，无需上传底图，适合快速出图。",
       "i2i_pro_title": "幻想换脸",
       "i2i_pro_desc": "上传一张人物图片并使用模板提示词，快速生成同风格的人像效果。",
       "face_swap_title": "幻想换脸",
@@ -400,6 +404,7 @@
     "video_lora": "🎬 图生视频",
     "cancel_success_refreshing_balance": "任务已撤销，余额刷新中",
     "mode_edit": "自由P图",
+    "mode_txt2img": "文生图",
     "mode_i2i_pro": "幻想换脸",
     "mode_i2i_draw": "局部重绘",
     "mode_img2img_lora": "图生图(附加模型)",

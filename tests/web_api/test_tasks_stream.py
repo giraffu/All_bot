@@ -1,6 +1,6 @@
 import asyncio
 import json
-from unittest.mock import AsyncMock
+from unittest.mock import ANY, AsyncMock, Mock
 
 import httpx
 import pytest
@@ -286,6 +286,54 @@ async def test_build_task_status_stream_response_for_user_uses_default_runtime_d
 
 
 @pytest.mark.asyncio
+async def test_build_task_stream_response_payload_uses_backend_task_id_for_runtime_stream():
+    expected = object()
+    service_mock = Mock(return_value=expected)
+    dependencies = task_stream_api_service.TaskStreamResponseDependencies(
+        get_owned_active_task_func=AsyncMock(
+            return_value={
+                "task_id": "task-1",
+                "user_id": 123,
+                "backend_task_id": "backend-1",
+            }
+        ),
+        get_user_history_record_func=AsyncMock(return_value=None),
+        build_not_found_progress_payload_func=(
+            task_stream_api_service.build_not_found_progress_payload
+        ),
+        build_terminal_progress_payload_func=(
+            task_stream_api_service.build_terminal_progress_payload
+        ),
+        build_task_status_stream_response_func=service_mock,
+    )
+
+    response = await task_stream_api_service.build_task_stream_response_payload(
+        task_id="task-1",
+        user_id=123,
+        session_factory=_session_factory(None),
+        redis=_FakeRedis(_FakePubSub()),
+        api_base="http://127.0.0.1:8003",
+        httpx_async_client_factory=lambda: _FakeAsyncClient([], []),
+        logger=tasks_router.logger,
+        dependencies=dependencies,
+    )
+
+    assert response is expected
+    service_mock.assert_called_once_with(
+        task_id="task-1",
+        runtime_task_id="backend-1",
+        user_id=123,
+        session_factory=ANY,
+        redis=ANY,
+        api_base="http://127.0.0.1:8003",
+        httpx_async_client_factory=ANY,
+        logger=tasks_router.logger,
+        build_not_found_progress_payload=ANY,
+        build_terminal_progress_payload=ANY,
+    )
+
+
+@pytest.mark.asyncio
 async def test_task_status_stream_emits_success_once_and_stops_when_initial_status_is_not_found_with_history(
     monkeypatch,
 ):
@@ -346,6 +394,41 @@ async def test_task_status_stream_emits_success_once_and_stops_when_initial_stat
     assert pubsub.subscribed == ["comfy:task_events:task-1"]
     assert pubsub.unsubscribed == ["comfy:task_events:task-1"]
     assert pubsub.closed is True
+
+
+@pytest.mark.asyncio
+async def test_task_status_stream_uses_runtime_task_id_for_status_poll_and_pubsub():
+    status_calls = []
+    status_responses = [_FakeStatusResponse(200, {"status": "done", "task_type": "txt2img"})]
+    pubsub = _FakePubSub()
+
+    response = task_stream_api_service.build_task_status_stream_response(
+        task_id="task-1",
+        runtime_task_id="backend-1",
+        user_id=123,
+        session_factory=_session_factory(None),
+        redis=_FakeRedis(pubsub),
+        api_base="http://127.0.0.1:8003",
+        httpx_async_client_factory=lambda: _FakeAsyncClient(status_responses, status_calls),
+        logger=tasks_router.logger,
+        build_not_found_progress_payload=(
+            task_stream_api_service.build_not_found_progress_payload
+        ),
+        build_terminal_progress_payload=(
+            task_stream_api_service.build_terminal_progress_payload
+        ),
+    )
+    events = await _collect_stream_events(response)
+
+    assert status_calls == [("http://127.0.0.1:8003/status/backend-1", 2.0)]
+    assert pubsub.subscribed == ["comfy:task_events:backend-1"]
+    assert pubsub.unsubscribed == ["comfy:task_events:backend-1"]
+    assert pubsub.closed is True
+    assert json.loads(events[1]["data"]) == {
+        "status": "success",
+        "task_id": "task-1",
+        "task_type": "txt2img",
+    }
 
 
 @pytest.mark.asyncio

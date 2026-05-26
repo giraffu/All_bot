@@ -116,7 +116,7 @@ const {
           <div class="hidden lg:flex mt-auto flex-col space-y-3 pt-6">
             <template v-if="currentRecord.output_file">
               <a-button
-                v-if="['i2i_pro', 'i2i_draw', 'edit', 'custom_video', 'video_lora', 'img2img_lora', 'ltx_video'].includes(currentRecord.type) && currentRecord.allow_contribute !== false"
+                v-if="['txt2img', 'i2i_pro', 'i2i_draw', 'edit', 'custom_video', 'video_lora', 'img2img_lora', 'ltx_video'].includes(currentRecord.type) && currentRecord.allow_contribute !== false"
                 type="primary"
                 :disabled="currentRecord.is_public"
                 class="w-full h-12 border-none rounded-xl text-base font-medium flex items-center justify-center"
@@ -203,7 +203,7 @@ const {
           </div>
           
           <button 
-            v-if="['i2i_pro', 'i2i_draw', 'edit', 'custom_video', 'video_lora', 'img2img_lora', 'ltx_video'].includes(currentRecord.type) && currentRecord.allow_contribute !== false"
+            v-if="['txt2img', 'i2i_pro', 'i2i_draw', 'edit', 'custom_video', 'video_lora', 'img2img_lora', 'ltx_video'].includes(currentRecord.type) && currentRecord.allow_contribute !== false"
             @click="!currentRecord.is_public && submitToGallery(currentRecord)"
             :disabled="currentRecord.is_public || submittingTasks[currentRecord.task_id]"
             class="px-5 py-2 rounded-full font-medium text-sm transition-all flex items-center justify-center min-w-[100px]"

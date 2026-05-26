@@ -1,4 +1,4 @@
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from fastapi import HTTPException
@@ -7,6 +7,7 @@ from src.database.models import History
 from src.core.media_paths import MINIO_BUCKET
 from src.web_api.presenters import media_presenter
 from src.web_api.routers import tasks as tasks_router
+from src.web_api.services import task_result_service
 
 
 class _FakeResult:
@@ -134,6 +135,73 @@ async def test_get_task_result_uses_primary_bucket_for_unprefixed_history_video_
         expires_hours=24,
         bucket=MINIO_BUCKET,
     )
+
+
+@pytest.mark.asyncio
+async def test_get_task_result_prefers_public_r2_url_for_web_history(
+    monkeypatch,
+):
+    history = History(
+        id=11,
+        user_id=123,
+        task_id="task-1",
+        type="txt2img",
+        output_file="123/output_images/task-1.png",
+        source="web",
+    )
+    r2_mock = AsyncMock(return_value="https://r2-test.aivison.it.com/history/task-1/original.png")
+    presign_mock = MagicMock(return_value="http://192.168.1.115:9000/internal.png")
+    monkeypatch.setattr(task_result_service, "get_first_r2_url_if_exists", r2_mock)
+    monkeypatch.setattr(media_presenter.storage, "get_presigned_url", presign_mock)
+
+    response = await tasks_router.get_task_result(
+        "task-1",
+        current_user=type("User", (), {"id": 123})(),
+        db=_FakeDB([_FakeResult(single=history)]),
+    )
+
+    assert response == {
+        "status": "success",
+        "task_id": "task-1",
+        "task_type": "txt2img",
+        "media_type": "image",
+        "result_url": "https://r2-test.aivison.it.com/history/task-1/original.png",
+    }
+    presign_mock.assert_not_called()
+    r2_mock.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_get_task_result_keeps_polling_when_web_history_public_url_not_ready(
+    monkeypatch,
+):
+    history = History(
+        id=11,
+        user_id=123,
+        task_id="task-1",
+        type="txt2img",
+        output_file="123/output_images/task-1.png",
+        source="web",
+    )
+    r2_mock = AsyncMock(return_value="")
+    presign_mock = MagicMock(return_value="http://192.168.1.115:9000/internal.png")
+    monkeypatch.setattr(task_result_service, "get_first_r2_url_if_exists", r2_mock)
+    monkeypatch.setattr(media_presenter.storage, "get_presigned_url", presign_mock)
+
+    response = await tasks_router.get_task_result(
+        "task-1",
+        current_user=type("User", (), {"id": 123})(),
+        db=_FakeDB([_FakeResult(single=history)]),
+    )
+
+    assert response == {
+        "status": "pending_result",
+        "task_id": "task-1",
+        "task_type": "txt2img",
+        "media_type": "image",
+    }
+    presign_mock.assert_not_called()
+    r2_mock.assert_awaited_once()
 
 
 @pytest.mark.asyncio

@@ -107,6 +107,7 @@
   },
   "task_type": {
     "img2img": "Img2Img",
+    "txt2img": "Text2Img",
     "ltx_video": "Advanced Video",
     "i2i_pro": "Fantasy FaceSwap",
     "i2i_draw": "Inpaint",
@@ -152,6 +153,7 @@
   "gallery": {
     "tabs": {
       "all": "All",
+      "txt2img": "Text2Img",
       "face_swap": "Face Swap",
       "i2i_draw": "Inpaint",
       "edit_group": "Custom Edit",
@@ -306,6 +308,8 @@
   "lab": {
     "title": "Laboratory",
     "cards": {
+      "txt2img_title": "Text2Img",
+      "txt2img_desc": "Start from prompt only with no base image upload for rapid generation.",
       "i2i_pro_title": "Face Swap Pro",
       "i2i_pro_desc": "Upload a portrait and reuse the template prompt to quickly recreate the same style.",
       "face_swap_title": "Face Swap",
@@ -400,6 +404,7 @@
     "video_lora": "🎬 Img2Video",
     "cancel_success_refreshing_balance": "Task canceled, refreshing balance",
     "mode_edit": "Custom Edit",
+    "mode_txt2img": "Text2Img",
     "mode_i2i_pro": "Pro Face Swap",
     "mode_img2img_lora": "Img2Img (Addon)",
     "mode_undress": "Fast Undress",

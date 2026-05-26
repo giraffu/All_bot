@@ -9,7 +9,12 @@ from src.core.task_dispatcher import (
     BaseVideoStrategy,
     LtxVideoStrategy,
 )
-from src.constants import MODE_I2I_PRO, MODE_IMAGE_TO_VIDEO, MODE_IMG2IMG_LORA
+from src.constants import (
+    MODE_I2I_PRO,
+    MODE_IMAGE_TO_VIDEO,
+    MODE_IMG2IMG_LORA,
+    MODE_TXT2IMG,
+)
 
 
 def _patch_dispatch_image_service(monkeypatch, **methods):
@@ -86,6 +91,7 @@ def test_strategy_metadata_keeps_lora_context(strategy, inputs):
     [
         ("MODE_I2I_PRO", MODE_I2I_PRO),
         ("MODE_IMG2IMG_LORA", MODE_IMG2IMG_LORA),
+        ("t2i-pornmaster-turbo", MODE_TXT2IMG),
     ],
 )
 def test_strategy_factory_normalizes_legacy_string_task_types(
@@ -152,6 +158,33 @@ async def test_default_image_strategy_normalizes_legacy_lora_mode_before_submit(
         negative_prompt=" ",
         priority=2,
         lora_strength=1.0,
+    )
+
+
+@pytest.mark.asyncio
+async def test_default_image_strategy_routes_txt2img_to_legacy_t2i_endpoint(
+    monkeypatch,
+):
+    strategy = DefaultImageStrategy(MODE_TXT2IMG)
+    submit_mock = AsyncMock(return_value="backend-task-id")
+    _patch_dispatch_image_service(
+        monkeypatch,
+        submit_txt2img_task=submit_mock,
+    )
+
+    result = await strategy.submit_task(
+        "task-1",
+        {
+            "prompt": "moonlit courtyard",
+            "saved_input_images": [],
+        },
+        priority=4,
+    )
+
+    assert result == "backend-task-id"
+    submit_mock.assert_awaited_once_with(
+        prompt="moonlit courtyard",
+        priority=4,
     )
 
 

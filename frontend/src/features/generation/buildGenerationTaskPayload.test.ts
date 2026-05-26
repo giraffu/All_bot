@@ -70,4 +70,23 @@ describe('buildGenerationTaskPayload', () => {
       is_template: false,
     })
   })
+
+  it('builds text to image payload without source images', () => {
+    expect(
+      buildGenerationTaskPayload({
+        taskType: 'txt2img',
+        images: [],
+        prompt: '  moonlit garden  ',
+        promptTarget: 'topLevel',
+      }),
+    ).toEqual({
+      task_type: 'txt2img',
+      inputs: {
+        images: [],
+      },
+      prompt: 'moonlit garden',
+      priority: 0,
+      is_template: false,
+    })
+  })
 })
