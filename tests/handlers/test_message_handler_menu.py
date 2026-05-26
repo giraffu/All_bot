@@ -70,10 +70,10 @@ def test_build_queue_status_message_includes_known_and_unknown_types():
         {"img2img": "task.img2img", "video_edit": "task.video_edit"},
     )
 
-    assert "总排队任务：`3` 个" in text
-    assert "T:task.img2img：`2` 个" in text
-    assert "T:task.video_edit：`0` 个" in text
-    assert "❓ 其他 (custom\\_x)：`1` 个" in text
+    assert "T:profile.total_queue：`3` T:profile.tasks_unit" in text
+    assert "T:task.img2img：`2` T:profile.tasks_unit" in text
+    assert "T:task.video_edit：`0` T:profile.tasks_unit" in text
+    assert "❓ T:profile.other_types (custom\\_x)：`1` T:profile.tasks_unit" in text
 
 
 @pytest.mark.asyncio

@@ -12,7 +12,7 @@ export interface PresignedUploadRequestOptions {
 export interface DirectUploadOptions {
   xhr?: XMLHttpRequest
   beforeSend?: () => boolean | void
-  onProgress?: (event: ProgressEvent<XMLHttpRequestEventTarget>) => void
+  onProgress?: (event: ProgressEvent<EventTarget>) => void
   onAbort?: () => void
 }
 

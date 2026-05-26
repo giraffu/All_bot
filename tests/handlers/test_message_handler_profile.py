@@ -72,6 +72,23 @@ def test_build_checkin_messages_keep_disclaimer_and_stats():
     assert "累计签到统计始于3月5日" in repeat_text
 
 
+def test_build_checkin_messages_translate_group_and_identity_in_english():
+    success_text = message_handler_profile.build_checkin_success_message(
+        user_group="练气期",
+        user_identity="真传弟子",
+        total_days=4,
+        reward=60,
+        current_credits=13468,
+        lang="en",
+    )
+
+    assert "Check-in successful" in success_text
+    assert "Qi Condensation" in success_text
+    assert "True Disciple" in success_text
+    assert "练气期" not in success_text
+    assert "真传弟子" not in success_text
+
+
 def test_build_share_payload_keeps_affiliate_actions():
     dto = SimpleNamespace(
         current_group="练气期",
@@ -94,6 +111,36 @@ def test_build_share_payload_keeps_affiliate_actions():
     )
 
     assert "分享赚灵石" in msg
-    assert "历史累计返佣：*$ 9.99 USDT*" in msg
+    assert "历史累计返佣：`USDT 9.99`" in msg
     assert reply_markup.inline_keyboard[0][0].callback_data == "affiliate_redeem_credits_menu"
     assert reply_markup.inline_keyboard[0][1].callback_data == "affiliate_redeem_membership_menu"
+
+
+def test_build_share_payload_translates_group_and_stats_in_english():
+    dto = SimpleNamespace(
+        current_group="练气期",
+        invitations=0,
+        invitation_recharge={
+            "recharged_invitees_count": 0,
+            "total_recharge_count": 0,
+            "total_ton": 0.0,
+            "total_rmb": 0.0,
+            "total_stars": 0,
+            "total_commission_usdt": 300.0,
+            "spent_commission_usdt": 105.94,
+            "available_balance_usdt": 194.06,
+        },
+    )
+
+    msg, _reply_markup = message_handler_profile.build_share_payload(
+        dto,
+        invite_link="https://t.me/aivision666_bot?start=123",
+        lang="en",
+    )
+
+    assert "Share for Credits" in msg
+    assert "Qi Condensation" in msg
+    assert "Invitation stats" in msg
+    assert "Historical commission: `USDT 300.00`" in msg
+    assert "练气期" not in msg
+    assert "邀请数据" not in msg

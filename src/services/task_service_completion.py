@@ -2,6 +2,7 @@ from typing import Optional
 
 from src.logger import UserLogger
 from src.services.task_service_finalize import finalize_failed_task_for_bot
+from src.services.task_service_message_support import resolve_context_lang
 from src.services.task_service_types import (
     BotTaskCancelled,
     BotTaskCompletionContext,
@@ -24,6 +25,7 @@ async def monitor_submitted_bot_task(
     get_user_priority_and_identity_func=None,
     monitor_bot_task_progress_func=None,
     edit_status_text_func=None,
+    lang: str = "zh",
 ):
     from src.core.billing_core import get_user_priority_and_identity
 
@@ -44,6 +46,7 @@ async def monitor_submitted_bot_task(
         identity_str=identity_str,
         user_group=user_group,
         edit_status_text_func=edit_status_text_func,
+        lang=lang,
     )
 
 
@@ -55,6 +58,7 @@ async def monitor_bot_task_progress(
     identity_str=None,
     user_group=None,
     edit_status_text_func=None,
+    lang: str = "zh",
 ):
     def _raise_cancelled():
         raise BotTaskCancelled()
@@ -66,6 +70,7 @@ async def monitor_bot_task_progress(
         monitor_func=monitor_func,
         identity_str=identity_str,
         user_group=user_group,
+        lang=lang,
         on_cancelled=_raise_cancelled,
         edit_status_text_func=edit_status_text_func,
     )
@@ -100,6 +105,7 @@ async def complete_monitored_bot_task(
             allow_contribute=completion.allow_contribute,
             billing_resolution=completion.billing_resolution,
             requested_duration=completion.requested_duration,
+            lang=resolve_context_lang(completion.context),
         )
 
     await finalize_failed_task_for_bot(
@@ -181,6 +187,7 @@ async def handle_task_completion(
     allow_contribute=True,
     billing_resolution: Optional[str] = None,
     requested_duration: Optional[int] = None,
+    lang: str = "zh",
 ):
     media_bytes, full_output_path, _width, _height, _duration = (
         await download_and_log_task_output(
@@ -209,6 +216,7 @@ async def handle_task_completion(
             allow_contribute=allow_contribute,
             reply_markup=reply_markup,
             prompt=prompt,
+            lang=lang,
         )
 
     await cleanup_completion_status_message(

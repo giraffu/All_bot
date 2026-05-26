@@ -103,9 +103,9 @@ async def test_get_queue_status_reply_handles_success_and_unavailable(monkeypatc
         {"img2img": "task.img2img"},
     )
 
-    assert "总排队任务：`2` 个" in text
-    assert "T:task.img2img：`1` 个" in text
-    assert "❓ 其他 (custom\\_x)：`1` 个" in text
+    assert "T:profile.total_queue：`2` T:profile.tasks_unit" in text
+    assert "T:task.img2img：`1` T:profile.tasks_unit" in text
+    assert "❓ T:profile.other_types (custom\\_x)：`1` T:profile.tasks_unit" in text
     assert unavailable == "T:system.queue_unavailable"
 
 

@@ -88,6 +88,7 @@
     "title": "道友信息",
     "group": "境界",
     "identity": "身份",
+    "other_types": "其他",
     "priority": "排队加速",
     "credits": "灵石",
     "stats": "修仙数据总览",
@@ -136,9 +137,13 @@
   },
   "identity": {
     "外门弟子": "外门弟子",
-    "内门弟子": "内门弟子",
-    "核心弟子": "核心弟子",
-    "真传弟子": "真传弟子"
+  "内门弟子": "内门弟子",
+  "核心弟子": "核心弟子",
+  "真传弟子": "真传弟子",
+  "基础月卡": "基础月卡",
+  "高级月卡": "高级月卡",
+  "至尊月卡": "至尊月卡",
+  "纯灵石": "纯灵石"
   },
   "app": {
     "name": "合欢密宗",
@@ -416,7 +421,33 @@
     "mode_ltx_video": "高级图生视频",
     "mode_video_lora": "图生视频",
     "mode_template_contribute": "模板共建",
-    "mode_none": "无模式"
+    "mode_none": "无模式",
+    "status_processing_mode": "🚀 正在处理{mode_name}任务",
+    "status_processing_mode_with_resolution": "🚀 正在处理{mode_name}任务 (画质:{resolution})",
+    "status_processing_mode_with_settings": "🚀 正在处理{mode_name}任务 (画质:{resolution}, 时长:{duration})",
+    "status_processing_images": "🚀 正在处理 {image_count} 张图片",
+    "status_processing_video": "🚀 正在处理视频生成任务",
+    "status_wait_generating": "⏳ 正在生成，请耐心等待...",
+    "status_wait_generating_video": "⏳ 正在生成视频，请耐心等待...",
+    "status_wait_generating_high_res_video": "⏳ 正在生成高级视频，可能需要数分钟，请耐心等待...",
+    "status_submitted_mode": "⏳ 任务已提交，正在排队调度{mode_name}任务 (消耗{actual_cost}灵石)",
+    "status_submitted_mode_with_resolution": "⏳ 任务已提交，正在排队调度{mode_name}任务 (画质:{resolution}, 消耗{actual_cost}灵石)",
+    "status_submitted_mode_with_settings": "⏳ 任务已提交，正在排队调度{mode_name}任务 (画质:{resolution}, 时长:{duration}, 消耗{actual_cost}灵石)",
+    "status_submitted_images": "⏳ 任务已提交，正在排队调度 {image_count} 张图片 (消耗{actual_cost}灵石)",
+    "status_submitted_video": "⏳ 任务已提交，正在排队调度视频生成任务 (消耗{actual_cost}灵石)",
+    "status_completion_mode": "✅ {mode_name}生成完成",
+    "status_completion_image": "✅ 图片生成完成",
+    "status_completion_video": "✅ 视频生成完成",
+    "status_missing_output_refunded": "生成完成但未获取到文件路径，已退还灵石",
+    "status_missing_task_info_refunded": "生成完成但未获取到任务信息，已退还灵石",
+    "status_generation_failed_refunded": "生成失败或超时，已退还灵石。",
+    "status_cancelled_refunded": "任务已撤销，预扣的 {cost} 灵石已全额退回。",
+    "status_cancel_button": "❌ 撤销任务",
+    "status_pending_position": "⏳ 排队中... (第 {queue_pos} 位)",
+    "status_pending": "⏳ 排队中...",
+    "status_generating_progress": "⏳ 生成中... {progress}%",
+    "status_generating_video": "⏳ 正在生成视频...",
+    "status_vip_suffix": "\n🚀 _已为您开启 [{privileges}] 极速通道_"
   },
   "command": {
     "force_cancel": "🚫 **已强制取消当前所有流程。**\n\n您可以重新选择菜单中的功能开始新任务。",
@@ -571,6 +602,7 @@
     "checkin_repeat": "📅 **今日已领取灵石**\n\n👤 当前境界：`{group}`\n🪪 当前身份：`{identity}`\n📅 累计签到：`{total_days}` 天\n\n请明天再来领取奖励吧！{disclaimer}",
     "share_panel": "🤝 **分享赚灵石**\n\n👤 **当前等级**：`{group}`\n🔗 **您的专属链接**：\n`{invite_link}`\n\n📈 **邀请统计**：\n👥 已邀请人数：`{invitations}` 人\n\n{invitation_stats}\n\n💡 **规则**：\n每成功邀请一位**新道友**使用机器人，您将自动获得 **5 灵石**奖励！\n**新道友**加入宗门，您将自动获得 **10 灵石**奖励！\n",
     "redeem_credits_btn": "返佣兑灵石",
-    "redeem_membership_btn": "返佣兑身份"
+    "redeem_membership_btn": "返佣兑身份",
+    "invitation_stats_block": "🤝 **邀请数据**：\n- 邀请充值：已有 `{recharged_invitees_count}` 位道友完成 `{total_recharge_count}` 次充值\n- 累积充值：`{total_ton}` TON\n- 累积充值：`¥ {total_rmb}`\n- 累积贡献：`{total_stars}` Stars\n- 历史累计返佣：`USDT {total_commission}`\n- 已兑换返佣：`USDT {spent_commission}`\n- 当前可兑换余额：`USDT {available_balance}`\n- 返佣说明：历史累计返佣用于展示成绩；当前可兑换余额才会随兑换减少"
   }
 }

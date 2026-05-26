@@ -14,7 +14,10 @@ from src.logger import UserLogger
 from src.services.image_service import image_service
 from src.services import task_service_completion as task_service_completion_helpers
 from src.services import task_service_finalize as task_service_finalize_helpers
-from src.services.task_service_message_support import with_submitted_status
+from src.services.task_service_message_support import (
+    resolve_context_lang,
+    with_submitted_status,
+)
 from src.services.task_service_types import (
     BotTaskCancelled,
     BotTaskCompletionContext,
@@ -142,6 +145,7 @@ async def run_bot_task_monitor_stage(
     status_msg,
     is_video: bool,
     internal_user_id: int,
+    lang: str = "zh",
 ):
     return await task_service_completion_helpers.monitor_submitted_bot_task(
         task_id=task_id,
@@ -153,6 +157,7 @@ async def run_bot_task_monitor_stage(
         monitor_bot_task_progress_func=(
             task_service_completion_helpers.monitor_bot_task_progress
         ),
+        lang=lang,
     )
 
 
@@ -272,6 +277,7 @@ async def run_bot_task_application(
             status_msg=status_msg,
             is_video=request.is_video,
             internal_user_id=request.internal_user_id,
+            lang=resolve_context_lang(request.context),
         )
 
         media_bytes, full_output_path = await run_bot_task_completion_stage(

@@ -24,10 +24,11 @@ from src.services.task_service_support import (
     resolve_custom_video_settings,
 )
 from src.services.task_service_message_support import (
-    build_cost_status_builder,
+    build_translated_cost_status_builder,
     build_message_spec,
     build_status_message,
     resolve_display_mode_name,
+    translate_context_text,
     with_completion_caption,
 )
 from src.services.task_service_flow import run_bot_task_application
@@ -94,12 +95,27 @@ async def process_image_to_video_task(
     )
     message_spec = build_message_spec(
         initial_status_text=build_status_message(
-            f"🚀 正在处理{display_mode_name}生成任务 (画质:{resolution_text}, 时长:{duration_text})",
+            translate_context_text(
+                context,
+                "task.status_processing_mode_with_settings",
+                mode_name=display_mode_name,
+                resolution=resolution_text,
+                duration=duration_text,
+            ),
             notice=notice,
         ),
-        progress_wait_text="⏳ 正在生成视频，请耐心等待...",
-        completion_caption=f"✅ {display_mode_name} 生成完成",
-        missing_output_message="生成完成但未获取到文件路径，已退还灵石",
+        progress_wait_text=translate_context_text(
+            context, "task.status_wait_generating_video"
+        ),
+        completion_caption=translate_context_text(
+            context, "task.status_completion_mode", mode_name=display_mode_name
+        ),
+        missing_output_message=translate_context_text(
+            context, "task.status_missing_output_refunded"
+        ),
+        cancellation_message_template=translate_context_text(
+            context, "task.status_cancelled_refunded", cost="{cost}"
+        ),
     )
     log_prompt = build_log_prompt(
         prompt,
@@ -135,10 +151,14 @@ async def process_image_to_video_task(
             ),
             presentation=BotTaskPresentationContext(
                 message_spec=message_spec,
-                submitted_status_builder=build_cost_status_builder(
-                    f"⏳ 任务已提交，正在排队调度{display_mode_name}生成任务 (画质:{resolution_text}, 时长:{duration_text}, 消耗{{actual_cost}}灵石)",
+                submitted_status_builder=build_translated_cost_status_builder(
+                    context,
+                    "task.status_submitted_mode_with_settings",
                     notice=notice,
-                    wait_text="⏳ 正在生成视频，请耐心等待...",
+                    wait_key="task.status_wait_generating_video",
+                    mode_name=display_mode_name,
+                    resolution=resolution_text,
+                    duration=duration_text,
                 ),
                 send_result=send_result,
                 reply_markup=reply_markup,
@@ -234,12 +254,19 @@ async def process_generation_task(
     )
     message_spec = build_message_spec(
         initial_status_text=build_status_message(
-            "🚀 正在处理视频生成任务"
+            translate_context_text(context, "task.status_processing_video")
             if is_video
-            else f"🚀 正在处理 {len(images)} 张图片",
+            else translate_context_text(
+                context, "task.status_processing_images", image_count=len(images)
+            ),
             notice=notice,
         ),
-        missing_output_message="生成完成但未获取到文件路径，已退还灵石",
+        missing_output_message=translate_context_text(
+            context, "task.status_missing_output_refunded"
+        ),
+        cancellation_message_template=translate_context_text(
+            context, "task.status_cancelled_refunded", cost="{cost}"
+        ),
     )
 
     log_prompt = build_log_prompt(
@@ -256,7 +283,7 @@ async def process_generation_task(
     )
     message_spec = with_completion_caption(
         message_spec,
-        f"✅ {display_mode_name} 生成完成",
+        translate_context_text(context, "task.status_completion_mode", mode_name=display_mode_name),
     )
 
     billing_args = resolve_video_billing_args(
@@ -285,11 +312,13 @@ async def process_generation_task(
             ),
             presentation=BotTaskPresentationContext(
                 message_spec=message_spec,
-                submitted_status_builder=build_cost_status_builder(
-                    "⏳ 任务已提交，正在排队调度视频生成任务 (消耗{actual_cost}灵石)"
+                submitted_status_builder=build_translated_cost_status_builder(
+                    context,
+                    "task.status_submitted_video"
                     if is_video
-                    else f"⏳ 任务已提交，正在排队调度 {len(images)} 张图片 (消耗{{actual_cost}}灵石)",
+                    else "task.status_submitted_images",
                     notice=notice,
+                    image_count=len(images),
                 ),
                 send_result=send_result,
                 reply_markup=reply_markup,
@@ -341,10 +370,22 @@ async def process_i2i_pro_task(
     )
     message_spec = build_message_spec(
         initial_status_text=build_status_message(
-            "🚀 正在处理幻想换脸任务",
+            translate_context_text(
+                context, "task.status_processing_mode", mode_name=translate_context_text(context, "task.mode_i2i_pro")
+            ),
             notice=notice,
         ),
-        completion_caption="🌟 幻想换脸生成完成",
+        completion_caption=translate_context_text(
+            context,
+            "task.status_completion_mode",
+            mode_name=translate_context_text(context, "task.mode_i2i_pro"),
+        ),
+        missing_output_message=translate_context_text(
+            context, "task.status_missing_output_refunded"
+        ),
+        cancellation_message_template=translate_context_text(
+            context, "task.status_cancelled_refunded", cost="{cost}"
+        ),
     )
     inputs = build_task_inputs(
         prompt=prompt,
@@ -369,9 +410,11 @@ async def process_i2i_pro_task(
             ),
             presentation=BotTaskPresentationContext(
                 message_spec=message_spec,
-                submitted_status_builder=build_cost_status_builder(
-                    "⏳ 任务已提交，正在排队调度幻想换脸任务 (消耗{actual_cost}灵石)",
+                submitted_status_builder=build_translated_cost_status_builder(
+                    context,
+                    "task.status_submitted_mode",
                     notice=notice,
+                    mode_name=translate_context_text(context, "task.mode_i2i_pro"),
                 ),
                 allow_contribute=allow_contribute,
             ),

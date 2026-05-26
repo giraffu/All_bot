@@ -88,6 +88,7 @@
     "title": "User Profile",
     "group": "Level",
     "identity": "Identity",
+    "other_types": "Other",
     "priority": "Priority",
     "credits": "Credits",
     "stats": "Cultivation Stats",
@@ -136,9 +137,13 @@
   },
   "identity": {
     "外门弟子": "Outer Disciple",
-    "内门弟子": "Inner Disciple",
-    "核心弟子": "Core Disciple",
-    "真传弟子": "True Disciple"
+  "内门弟子": "Inner Disciple",
+  "核心弟子": "Core Disciple",
+  "真传弟子": "True Disciple",
+  "基础月卡": "Basic Monthly Plan",
+  "高级月卡": "Advanced Monthly Plan",
+  "至尊月卡": "Supreme Monthly Plan",
+  "纯灵石": "Credits Only"
   },
   "app": {
     "name": "Hehuan Sect",
@@ -415,7 +420,33 @@
     "mode_ltx_video": "High-Res Video",
     "mode_video_lora": "Img2Video",
     "mode_template_contribute": "Template Contribute",
-    "mode_none": "No Mode"
+    "mode_none": "No Mode",
+    "status_processing_mode": "🚀 Processing the {mode_name} task",
+    "status_processing_mode_with_resolution": "🚀 Processing the {mode_name} task (Quality: {resolution})",
+    "status_processing_mode_with_settings": "🚀 Processing the {mode_name} task (Quality: {resolution}, Duration: {duration})",
+    "status_processing_images": "🚀 Processing {image_count} image(s)",
+    "status_processing_video": "🚀 Processing the video generation task",
+    "status_wait_generating": "⏳ Generating. Please wait...",
+    "status_wait_generating_video": "⏳ Generating the video. Please wait...",
+    "status_wait_generating_high_res_video": "⏳ Generating the high-res video. This may take a few minutes...",
+    "status_submitted_mode": "⏳ Task submitted. Queueing the {mode_name} task (Cost: {actual_cost} credits)",
+    "status_submitted_mode_with_resolution": "⏳ Task submitted. Queueing the {mode_name} task (Quality: {resolution}, Cost: {actual_cost} credits)",
+    "status_submitted_mode_with_settings": "⏳ Task submitted. Queueing the {mode_name} task (Quality: {resolution}, Duration: {duration}, Cost: {actual_cost} credits)",
+    "status_submitted_images": "⏳ Task submitted. Queueing {image_count} image(s) (Cost: {actual_cost} credits)",
+    "status_submitted_video": "⏳ Task submitted. Queueing the video generation task (Cost: {actual_cost} credits)",
+    "status_completion_mode": "✅ {mode_name} completed",
+    "status_completion_image": "✅ Image generation completed",
+    "status_completion_video": "✅ Video generation completed",
+    "status_missing_output_refunded": "Generation finished but no output file was received. Credits were refunded.",
+    "status_missing_task_info_refunded": "Generation finished but task metadata was missing. Credits were refunded.",
+    "status_generation_failed_refunded": "Generation failed or timed out. Credits were refunded.",
+    "status_cancelled_refunded": "Task cancelled. The reserved {cost} credits were fully refunded.",
+    "status_cancel_button": "❌ Cancel Task",
+    "status_pending_position": "⏳ In queue... (Position {queue_pos})",
+    "status_pending": "⏳ In queue...",
+    "status_generating_progress": "⏳ Generating... {progress}%",
+    "status_generating_video": "⏳ Generating video...",
+    "status_vip_suffix": "\n🚀 _Fast lane enabled for [{privileges}]_"
   },
   "command": {
     "force_cancel": "🚫 **All current flows have been cancelled.**\n\nYou can pick a menu item again to start a new task.",
@@ -570,6 +601,7 @@
     "checkin_repeat": "📅 **Today's reward has already been claimed**\n\n👤 Realm: `{group}`\n🪪 Identity: `{identity}`\n📅 Total check-ins: `{total_days}` days\n\nPlease come back tomorrow.{disclaimer}",
     "share_panel": "🤝 **Share for Credits**\n\n👤 **Current level**: `{group}`\n🔗 **Your referral link**:\n`{invite_link}`\n\n📈 **Invitation stats**:\n👥 Invited users: `{invitations}`\n\n{invitation_stats}\n\n💡 **Rules**:\nInvite a **new user** to use the bot and you receive **5 credits** automatically.\nIf the **new user** joins the sect, you receive **10 credits** automatically.\n",
     "redeem_credits_btn": "Redeem Credits",
-    "redeem_membership_btn": "Redeem Membership"
+    "redeem_membership_btn": "Redeem Membership",
+    "invitation_stats_block": "🤝 **Invitation stats**:\n- Recharge invitees: `{recharged_invitees_count}` users completed `{total_recharge_count}` top-ups\n- Total top-up: `{total_ton}` TON\n- Total top-up: `¥ {total_rmb}`\n- Total contribution: `{total_stars}` Stars\n- Historical commission: `USDT {total_commission}`\n- Redeemed commission: `USDT {spent_commission}`\n- Available balance: `USDT {available_balance}`\n- Commission note: historical commission is for overall performance display; only the currently available balance decreases after redemption"
   }
 }

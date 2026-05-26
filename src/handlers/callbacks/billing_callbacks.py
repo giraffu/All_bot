@@ -40,8 +40,28 @@ async def _get_active_plans(session, is_rmb: bool, is_subscription: bool):
 def _t(context, key: str, **kwargs) -> str:
     translator = getattr(context, "t", None)
     if translator is None:
-        return get_text(key, "zh", **kwargs)
+        return get_text(key, _get_lang(context), **kwargs)
     return translator(key, **kwargs)
+
+
+def _get_lang(context) -> str:
+    lang = getattr(context, "lang", None)
+    if lang:
+        return lang
+    user_data = getattr(context, "user_data", None)
+    if isinstance(user_data, dict):
+        return user_data.get("language_code", "zh")
+    return "zh"
+
+
+def _translate_dynamic_label(context, raw_text: str | None) -> str:
+    if not raw_text:
+        return ""
+    lang = _get_lang(context)
+    translated = get_text(f"identity.{raw_text}", lang)
+    if translated != f"identity.{raw_text}":
+        return translated
+    return get_text(raw_text, lang)
 
 
 @register_callback("recharge_stars_menu")
@@ -55,6 +75,10 @@ async def recharge_stars_menu_callback(
     async with AsyncSessionLocal() as session:
         plans = await _get_active_plans(session, is_rmb=False, is_subscription=True)
         for plan in plans:
+            translated_plan_name = _translate_dynamic_label(context, plan.name)
+            translated_identity_name = _translate_dynamic_label(
+                context, plan.identity_name
+            )
             keyboard.append(
                 [
                     InlineKeyboardButton(
@@ -62,8 +86,8 @@ async def recharge_stars_menu_callback(
                             context,
                             "billing.stars_membership_option",
                             price=plan.price_stars,
-                            plan_name=plan.name,
-                            identity_name=plan.identity_name,
+                            plan_name=translated_plan_name,
+                            identity_name=translated_identity_name,
                         ),
                         callback_data=f"buy_star_plan_{plan.id}",
                     )
@@ -179,6 +203,10 @@ async def recharge_rmb_menu_callback(
     async with AsyncSessionLocal() as session:
         plans = await _get_active_plans(session, is_rmb=True, is_subscription=True)
         for plan in plans:
+            translated_plan_name = _translate_dynamic_label(context, plan.name)
+            translated_identity_name = _translate_dynamic_label(
+                context, plan.identity_name
+            )
             keyboard.append(
                 [
                     InlineKeyboardButton(
@@ -186,8 +214,8 @@ async def recharge_rmb_menu_callback(
                             context,
                             "billing.rmb_membership_option",
                             price=plan.price_rmb,
-                            plan_name=plan.name,
-                            identity_name=plan.identity_name,
+                            plan_name=translated_plan_name,
+                            identity_name=translated_identity_name,
                         ),
                         callback_data=f"select_rmb_plan_{plan.id}",
                     )
@@ -338,7 +366,7 @@ async def buy_rmb_plan_callback(update: Update, context: ContextTypes.DEFAULT_TY
             display_name = _t(
                 context,
                 "billing.display_name_membership",
-                identity_name=plan.identity_name,
+                identity_name=_translate_dynamic_label(context, plan.identity_name),
                 days=plan.duration_days,
             )
 
@@ -464,18 +492,18 @@ async def buy_star_plan_callback(update: Update, context: ContextTypes.DEFAULT_T
     title = _t(
         context,
         "billing.invoice_title",
-        plan_name=plan.name,
-        identity_name=plan.identity_name,
+        plan_name=_translate_dynamic_label(context, plan.name),
+        identity_name=_translate_dynamic_label(context, plan.identity_name),
     )
     description = _t(
         context,
         "billing.invoice_description",
         days=plan.duration_days,
         credits=plan.reward_credits,
-        identity_name=plan.identity_name,
+        identity_name=_translate_dynamic_label(context, plan.identity_name),
     )
     currency = "XTR"
-    prices = [LabeledPrice(f"{plan.name}", plan.price_stars)]
+    prices = [LabeledPrice(_translate_dynamic_label(context, plan.name), plan.price_stars)]
 
     try:
         await context.bot.send_invoice(

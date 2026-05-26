@@ -15,6 +15,7 @@ from src.constants import (
     MODE_PENETRATION_STEP1,
     MODE_UNDRESS,
 )
+from src.i18n.translator import get_text
 from src.utils import (
     robust_delete_message,
     robust_edit_text,
@@ -59,6 +60,10 @@ class TelegramBotContextAdapter:
     def __init__(self, application):
         self.bot = application.bot
         self.bot_data = getattr(application, "bot_data", {})
+
+
+def _translate(lang: str, key: str, **kwargs) -> str:
+    return get_text(key, lang or "zh", **kwargs)
 
 
 async def get_or_send_status_message(context, chat_id, status_msg_id, text):
@@ -168,6 +173,7 @@ async def send_result_media(
     allow_contribute,
     reply_markup,
     prompt,
+    lang: str = "zh",
 ):
     final_markup = build_result_reply_markup(
         task_type=task_type,
@@ -177,7 +183,10 @@ async def send_result_media(
     )
     sender = robust_send_video if is_video else robust_send_photo
     media_key = "video" if is_video else "photo"
-    default_caption = "✅ 视频生成完成" if is_video else "✅ 图片生成完成"
+    default_caption = _translate(
+        lang,
+        "task.status_completion_video" if is_video else "task.status_completion_image",
+    )
     send_kwargs = {
         media_key: media_bytes,
         "caption": caption or default_caption,
@@ -197,7 +206,16 @@ async def cleanup_completion_status_message(*, status_msg, delete_status, send_r
         logger.debug("Cleanup completion status failed: %s", exc)
 
 
-def build_vip_suffix(identity_str=None, user_group=None):
+def _translate_dynamic_name(lang: str, *, prefix: str, raw_value: str | None) -> str:
+    if not raw_value:
+        return ""
+    translated = get_text(f"{prefix}.{raw_value}", lang)
+    if translated != f"{prefix}.{raw_value}":
+        return translated
+    return raw_value
+
+
+def build_vip_suffix(identity_str=None, user_group=None, *, lang: str = "zh"):
     privileges = []
     if identity_str and identity_str not in [
         "外门弟子",
@@ -208,12 +226,14 @@ def build_vip_suffix(identity_str=None, user_group=None):
         "元婴期",
         "default",
     ]:
-        privileges.append(identity_str)
+        privileges.append(
+            _translate_dynamic_name(lang, prefix="identity", raw_value=identity_str)
+        )
     if user_group and user_group in ["元婴期", "金丹期", "筑基期"]:
-        privileges.append(user_group)
+        privileges.append(_translate_dynamic_name(lang, prefix="group", raw_value=user_group))
     if not privileges:
         return ""
-    return f"\n🚀 _已为您开启 [{' + '.join(privileges)}] 极速通道_"
+    return get_text("task.status_vip_suffix", lang, privileges=" + ".join(privileges))
 
 
 async def monitor_task_progress(
@@ -224,6 +244,7 @@ async def monitor_task_progress(
     monitor_func,
     identity_str=None,
     user_group=None,
+    lang: str = "zh",
     on_cancelled: Callable[[], Awaitable[None] | None] | None = None,
     edit_status_text_func=None,
 ):
@@ -233,7 +254,12 @@ async def monitor_task_progress(
     last_queue_pos = None
     final_info = None
     cancel_markup = InlineKeyboardMarkup(
-        [[InlineKeyboardButton("❌ 撤销任务", callback_data=f"cancel_task_{task_id}")]]
+        [[
+            InlineKeyboardButton(
+                _translate(lang, "task.status_cancel_button"),
+                callback_data=f"cancel_task_{task_id}",
+            )
+        ]]
     )
 
     async def update_status_message(text, *, show_cancel_button=False, **kwargs):
@@ -247,7 +273,7 @@ async def monitor_task_progress(
             logger.warning("Failed to update status message for task %s: %s", task_id, exc)
             return False
 
-    vip_suffix = build_vip_suffix(identity_str=identity_str, user_group=user_group)
+    vip_suffix = build_vip_suffix(identity_str=identity_str, user_group=user_group, lang=lang)
 
     async for info in monitor_func(task_id, is_video=is_video):
         status = info.get("status")
@@ -256,7 +282,9 @@ async def monitor_task_progress(
         if status == "done":
             final_info = info
             if not is_video and last_progress != 100:
-                await update_status_message("⏳ 生成中... 100%")
+                await update_status_message(
+                    _translate(lang, "task.status_generating_progress", progress=100)
+                )
             break
 
         if status in ["error", "failed", "cancelled"]:
@@ -283,7 +311,7 @@ async def monitor_task_progress(
             if queue_pos is not None:
                 if queue_pos != last_queue_pos or last_status != "pending":
                     if await update_status_message(
-                        f"⏳ 排队中... (第 {queue_pos} 位){vip_suffix}",
+                        f"{_translate(lang, 'task.status_pending_position', queue_pos=queue_pos)}{vip_suffix}",
                         show_cancel_button=True,
                         parse_mode="Markdown",
                     ):
@@ -292,7 +320,7 @@ async def monitor_task_progress(
             else:
                 if last_status != "pending":
                     if await update_status_message(
-                        f"⏳ 排队中...{vip_suffix}",
+                        f"{_translate(lang, 'task.status_pending')}{vip_suffix}",
                         show_cancel_button=True,
                         parse_mode="Markdown",
                     ):
@@ -300,7 +328,11 @@ async def monitor_task_progress(
             continue
 
         if progress != last_progress or last_status == "pending":
-            text = "⏳ 正在生成视频..." if is_video else f"⏳ 生成中... {progress}%"
+            text = (
+                _translate(lang, "task.status_generating_video")
+                if is_video
+                else _translate(lang, "task.status_generating_progress", progress=progress)
+            )
             if await update_status_message(text):
                 last_progress = progress
                 last_status = status

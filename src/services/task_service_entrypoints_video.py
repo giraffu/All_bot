@@ -20,10 +20,11 @@ from src.services.task_service_support import (
     resolve_custom_video_settings,
 )
 from src.services.task_service_message_support import (
-    build_cost_status_builder,
+    build_translated_cost_status_builder,
     build_message_spec,
     build_status_message,
     resolve_display_mode_name,
+    translate_context_text,
 )
 from src.services.task_service_flow import run_bot_task_application
 from src.services.task_service_types import (
@@ -83,12 +84,27 @@ async def process_video_task_template(
     )
     message_spec = build_message_spec(
         initial_status_text=build_status_message(
-            f"🚀 正在处理{display_mode_name}生成任务 (画质:{resolution}, 时长:{duration_str})",
+            translate_context_text(
+                context,
+                "task.status_processing_mode_with_settings",
+                mode_name=display_mode_name,
+                resolution=resolution,
+                duration=duration_str,
+            ),
             notice=notice,
         ),
-        progress_wait_text="⏳ 正在生成视频，请耐心等待...",
-        completion_caption=f"✅ {display_mode_name} 生成完成",
-        missing_output_message="生成完成但未获取到任务信息，已退还灵石",
+        progress_wait_text=translate_context_text(
+            context, "task.status_wait_generating_video"
+        ),
+        completion_caption=translate_context_text(
+            context, "task.status_completion_mode", mode_name=display_mode_name
+        ),
+        missing_output_message=translate_context_text(
+            context, "task.status_missing_task_info_refunded"
+        ),
+        cancellation_message_template=translate_context_text(
+            context, "task.status_cancelled_refunded", cost="{cost}"
+        ),
     )
     inputs = build_task_inputs(
         prompt=base_prompt,
@@ -125,9 +141,13 @@ async def process_video_task_template(
             ),
             presentation=BotTaskPresentationContext(
                 message_spec=message_spec,
-                submitted_status_builder=build_cost_status_builder(
-                    f"⏳ 任务已提交，正在排队调度{display_mode_name}生成任务 (画质:{resolution}, 时长:{duration_str}, 消耗{{actual_cost}}灵石)",
+                submitted_status_builder=build_translated_cost_status_builder(
+                    context,
+                    "task.status_submitted_mode_with_settings",
                     notice=notice,
+                    mode_name=display_mode_name,
+                    resolution=resolution,
+                    duration=duration_str,
                 ),
                 allow_contribute=allow_contribute,
             ),

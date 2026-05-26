@@ -2,19 +2,22 @@ import { onBeforeUnmount, ref, watch, type Ref } from 'vue'
 import { message } from 'ant-design-vue'
 import { getUnifiedApplyContext } from '@/api/gallery'
 import { useTemplateApplyReplaceProtocol } from '@/composables/useTemplateApplyCloseProtocol'
-import type { TemplateApplySource } from '@/types/templateApply'
+import type {
+  CloseTrigger,
+  OpenTemplateApplyParams,
+  OpenTemplateApplyResult,
+  RequestCloseResult,
+  TemplateApplySource,
+} from '@/types/templateApply'
 
 interface DetailApplyTarget {
   id: number
 }
 
 interface TemplateApplyStoreLike {
-  openFromRawContext: (params: {
-    source: TemplateApplySource
-    entryEntityId: number | string | null
-    rawContext: any
-  }) => Promise<any>
-  confirmCloseAndCleanup: (trigger: 'open_replace') => Promise<void>
+  requestClose: (trigger: CloseTrigger) => Promise<RequestCloseResult>
+  openFromRawContext: (params: OpenTemplateApplyParams) => Promise<OpenTemplateApplyResult>
+  confirmCloseAndCleanup: (trigger: CloseTrigger) => Promise<void>
 }
 
 interface UseDetailTemplateApplyOptions<TPost extends DetailApplyTarget> {

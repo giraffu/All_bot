@@ -67,6 +67,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "https://web.aivison.it.com",
+        "https://web-test.aivison.it.com",
         "http://localhost:8085",
         "http://localhost:5173",
         "http://localhost:5174",

@@ -14,6 +14,10 @@ class _ScalarResult:
     def scalar_one_or_none(self):
         return self._value
 
+    def scalars(self):
+        values = self._value
+        return SimpleNamespace(all=lambda: values)
+
 
 class _FakeSession:
     def __init__(self, execute_results):
@@ -39,6 +43,39 @@ class _SessionContext:
 
     async def __aexit__(self, exc_type, exc, tb):
         return False
+
+
+@pytest.mark.asyncio
+async def test_recharge_rmb_menu_callback_translates_membership_option_labels(
+    monkeypatch,
+):
+    plans = [
+        SimpleNamespace(
+            id=1,
+            name="基础月卡",
+            identity_name="内门弟子",
+            price_rmb="30.00",
+        )
+    ]
+    session = _FakeSession([plans])
+    message = SimpleNamespace(edit_reply_markup=AsyncMock())
+    query = SimpleNamespace(message=message)
+    update = SimpleNamespace(callback_query=query)
+    context = SimpleNamespace(lang="en")
+
+    monkeypatch.setattr(
+        billing_callbacks, "AsyncSessionLocal", lambda: _SessionContext(session)
+    )
+    monkeypatch.setattr(billing_callbacks, "safe_answer_query", AsyncMock())
+
+    await billing_callbacks.recharge_rmb_menu_callback(update, context)
+
+    reply_markup = message.edit_reply_markup.await_args.kwargs["reply_markup"]
+    assert (
+        reply_markup.inline_keyboard[0][0].text
+        == "¥ 30.00 - Basic Monthly Plan (Inner Disciple)"
+    )
+    assert reply_markup.inline_keyboard[1][0].text == "🔙 Back to payment methods"
 
 
 @pytest.mark.asyncio
@@ -78,6 +115,7 @@ async def test_buy_star_plan_callback_creates_pending_order_with_order_v2_payloa
         billing_callbacks, "generate_business_order_id", lambda: "bo_stars_1"
     )
 
+    context.lang = "en"
     await billing_callbacks.buy_star_plan_callback(update, context)
 
     created_order = session.added[0]
@@ -87,4 +125,8 @@ async def test_buy_star_plan_callback_creates_pending_order_with_order_v2_payloa
     context.bot.send_invoice.assert_awaited_once()
     assert (
         context.bot.send_invoice.await_args.kwargs["payload"] == "ORDER_V2:bo_stars_1"
+    )
+    assert (
+        context.bot.send_invoice.await_args.kwargs["title"]
+        == "💎 Sect Treasury - Stars Plan (Inner Disciple)"
     )

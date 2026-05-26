@@ -367,6 +367,7 @@ async def test_monitor_submitted_bot_task_uses_helper_monitor_seam(monkeypatch):
         identity_str="外门弟子",
         user_group="金丹期",
         edit_status_text_func=edit_status_text,
+        lang="zh",
     )
 
 
@@ -874,7 +875,11 @@ async def test_process_ltx_video_task_uses_finalize_task_cancellation(monkeypatc
         effective_user=SimpleNamespace(id=789, username="tester"),
         effective_message=SimpleNamespace(),
     )
-    context = SimpleNamespace(user_data={}, bot=MagicMock(), t=lambda value: value)
+    context = SimpleNamespace(
+        user_data={},
+        bot=MagicMock(),
+        t=lambda value, **_kwargs: value,
+    )
 
     result = await TaskService.process_ltx_video_task(
         update=update,
@@ -925,7 +930,11 @@ async def test_process_video_task_template_entrypoint_uses_internal_user_id_for_
         effective_user=SimpleNamespace(id=789, username="tester"),
         effective_message=SimpleNamespace(),
     )
-    context = SimpleNamespace(user_data={}, bot=MagicMock(), t=lambda value: value)
+    context = SimpleNamespace(
+        user_data={},
+        bot=MagicMock(),
+        t=lambda value, **_kwargs: value,
+    )
 
     result = await video_entrypoints.process_video_task_template(
         update=update,

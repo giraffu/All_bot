@@ -72,17 +72,24 @@ def build_switch_lang_message(new_lang: str) -> str:
 
 
 def build_queue_status_message(queue_size: int, queue_by_type: dict, context, task_type_display_names: dict) -> str:
-    msg_lines = ["📊 **宗门灵气损耗现状**\n", f"👥 总排队任务：`{queue_size}` 个"]
+    total_queue_label = context.t("profile.total_queue")
+    tasks_unit = context.t("profile.tasks_unit")
+    msg_lines = [
+        f"📊 **{context.t('profile.queue_status_title')}**\n",
+        f"👥 {total_queue_label}：`{queue_size}` {tasks_unit}",
+    ]
 
     for task_type, i18n_key in task_type_display_names.items():
         count = queue_by_type.get(task_type, 0)
         display_name = context.t(i18n_key)
-        msg_lines.append(f"{display_name}：`{count}` 个")
+        msg_lines.append(f"{display_name}：`{count}` {tasks_unit}")
 
     for task_type, count in queue_by_type.items():
         if task_type not in task_type_display_names and count > 0:
             safe_task_type = task_type.replace("_", "\\_")
-            msg_lines.append(f"❓ 其他 ({safe_task_type})：`{count}` 个")
+            msg_lines.append(
+                f"❓ {context.t('profile.other_types')} ({safe_task_type})：`{count}` {tasks_unit}"
+            )
 
     return "\n".join(msg_lines)
 

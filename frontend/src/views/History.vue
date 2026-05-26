@@ -120,7 +120,7 @@ const {
                       :class="record.type === 'face_video' ? 'bg-blue-500/40 text-blue-100' : (record.type === 'face_swap' ? 'bg-purple-500/40 text-purple-100' : 'bg-cyan-500/40 text-cyan-100')">
                   <Video v-if="record.type === 'face_video'" :size="12" class="mr-1 text-blue-300" />
                   <ImageIcon v-else :size="12" class="mr-1 text-cyan-300" />
-                  {{ getTypeLabel(record.type) }}
+                  {{ getTypeLabel(record.type || '') }}
                 </span>
                 <span class="text-[10px] px-2 py-0.5 rounded-md backdrop-blur-md border border-white/10 shadow-sm"
                       :class="record.source === 'web' ? 'bg-green-500/40 text-green-100' : 'bg-orange-500/40 text-orange-100'">
@@ -130,7 +130,7 @@ const {
               </div>
               
               <!-- 投稿状态 -->
-              <span v-if="['i2i_pro', 'i2i_draw', 'edit', 'custom_video', 'video_lora', 'img2img_lora', 'ltx_video'].includes(record.type) && record.allow_contribute !== false"
+              <span v-if="['i2i_pro', 'i2i_draw', 'edit', 'custom_video', 'video_lora', 'img2img_lora', 'ltx_video'].includes(record.type || '') && record.allow_contribute !== false"
                     class="text-[10px] px-2 py-0.5 rounded-full backdrop-blur-md border border-white/20 shadow-sm whitespace-nowrap ml-1"
                     :class="record.is_public ? 'bg-indigo-500/40 text-indigo-100' : 'bg-slate-500/40 text-slate-200'">
                 {{ record.is_public ? '已投稿' : '未投稿' }}

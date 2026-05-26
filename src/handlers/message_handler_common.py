@@ -1,5 +1,6 @@
 from telegram import Update
 
+from src.i18n.translator import get_text
 from src.services.permission_service import permission_service
 from src.utils import (
     create_background_task,
@@ -16,20 +17,21 @@ def get_reply_message(update: Update):
     )
 
 
-def format_invitation_stats(invitation_recharge: dict) -> str:
+def format_invitation_stats(invitation_recharge: dict, *, lang: str = "zh") -> str:
     total_commission = invitation_recharge.get(
         "total_commission_usdt", invitation_recharge.get("commission_usdt", 0.0)
     )
-    return (
-        "🤝 **邀请数据**：\n"
-        f"  - 邀请充值：已有 `{invitation_recharge['recharged_invitees_count']}` 位道友完成 `{invitation_recharge['total_recharge_count']}` 次充值\n"
-        f"  - 累积充值：`{invitation_recharge['total_ton']:.2f}` TON\n"
-        f"  - 累积充值：`¥ {invitation_recharge['total_rmb']:.2f}`\n"
-        f"  - 累积贡献：`{invitation_recharge['total_stars']}` Stars\n"
-        f"  - 历史累计返佣：*$ {float(total_commission):.2f} USDT*\n"
-        f"  - 已兑换返佣：*$ {invitation_recharge.get('spent_commission_usdt', 0.0):.2f} USDT*\n"
-        f"  - 当前可兑换余额：*$ {invitation_recharge.get('available_balance_usdt', 0.0):.2f} USDT*\n"
-        "  - 返佣说明：历史累计返佣用于展示成绩；当前可兑换余额才会随兑换减少"
+    return get_text(
+        "profile_extra.invitation_stats_block",
+        lang,
+        recharged_invitees_count=invitation_recharge["recharged_invitees_count"],
+        total_recharge_count=invitation_recharge["total_recharge_count"],
+        total_ton=f"{invitation_recharge['total_ton']:.2f}",
+        total_rmb=f"{invitation_recharge['total_rmb']:.2f}",
+        total_stars=invitation_recharge["total_stars"],
+        total_commission=f"{float(total_commission):.2f}",
+        spent_commission=f"{float(invitation_recharge.get('spent_commission_usdt', 0.0)):.2f}",
+        available_balance=f"{float(invitation_recharge.get('available_balance_usdt', 0.0)):.2f}",
     )
 
 

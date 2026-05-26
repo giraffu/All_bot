@@ -45,6 +45,13 @@
 2. **语法检查**：必须执行 `nginx -t`。
 3. **平滑重载**：若检查通过，执行 `nginx -s reload`。现有的传输连接将继续被老 Worker 处理直至完成，新请求由新 Worker 接收。
 
+### 5.1 测试 Web 边缘发布
+- 测试静态站推荐独立子域名 `web-test.aivison.it.com`，与正式 `web.aivison.it.com` 共用边缘 VPS，但必须使用独立静态目录 `/root/dist-test`。
+- 推荐先使用仓库内 [all_bot_nginx_web_test.conf](file:///home/hfy/APP/All_bot/all_bot_nginx_web_test.conf) 作为 HTTP 初始配置，再在边缘 VPS 上执行 `certbot --nginx -d web-test.aivison.it.com` 生成 HTTPS 配置。
+- 测试站 `/api/` 必须回源到测试 Web API `100.99.254.53:8001`，不要误指到正式 `8000`。
+- 前端测试静态资源可通过 `frontend` 下的 `npm run deploy:edge-test` 发布到边缘 VPS 的 `/root/dist-test`。
+- 若测试 Web 需要启用 Telegram Widget/Mini App，需额外确认前端测试构建使用测试 bot 的用户名，而不是正式 bot。
+
 ## 6. 与其他子模块的关系
 - 前端项目自动部署见 [运维指南与容器管理](./子模块_运维指南与容器管理_ops_deployment.md) 中的 `npm run deploy` 章节。
 - 更多网络穿透原理与前端架构见 [网络暴露与代理穿透](./子模块_网络暴露与代理穿透_network_proxy.md)。

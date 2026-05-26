@@ -15,9 +15,10 @@ from src.services.task_service_entrypoint_support import (
     resolve_video_billing_args,
 )
 from src.services.task_service_message_support import (
-    build_cost_status_builder,
+    build_translated_cost_status_builder,
     build_message_spec,
     build_status_message,
+    translate_context_text,
 )
 from src.services.task_service_flow import run_bot_task_application
 from src.services.task_service_support import get_acceleration_notice
@@ -60,11 +61,29 @@ async def process_ltx_video_task(
     )
     message_spec = build_message_spec(
         initial_status_text=build_status_message(
-            f"🚀 正在处理高级图生视频任务 (画质:{resolution}, 时长:{duration})",
+            translate_context_text(
+                context,
+                "task.status_processing_mode_with_settings",
+                mode_name=translate_context_text(context, "task.mode_ltx_video"),
+                resolution=resolution,
+                duration=duration,
+            ),
             notice=notice,
         ),
-        progress_wait_text="⏳ 正在生成高级视频，可能需要数分钟，请耐心等待...",
-        completion_caption="✅ 高级图生视频生成完成",
+        progress_wait_text=translate_context_text(
+            context, "task.status_wait_generating_high_res_video"
+        ),
+        completion_caption=translate_context_text(
+            context,
+            "task.status_completion_mode",
+            mode_name=translate_context_text(context, "task.mode_ltx_video"),
+        ),
+        missing_output_message=translate_context_text(
+            context, "task.status_missing_output_refunded"
+        ),
+        cancellation_message_template=translate_context_text(
+            context, "task.status_cancelled_refunded", cost="{cost}"
+        ),
     )
     inputs = build_task_inputs(
         prompt=prompt,
@@ -97,9 +116,13 @@ async def process_ltx_video_task(
             ),
             presentation=BotTaskPresentationContext(
                 message_spec=message_spec,
-                submitted_status_builder=build_cost_status_builder(
-                    f"⏳ 任务已提交，正在排队调度高级图生视频任务 (画质:{resolution}, 时长:{duration}, 消耗{{actual_cost}}灵石)",
+                submitted_status_builder=build_translated_cost_status_builder(
+                    context,
+                    "task.status_submitted_mode_with_settings",
                     notice=notice,
+                    mode_name=translate_context_text(context, "task.mode_ltx_video"),
+                    resolution=resolution,
+                    duration=duration,
                 ),
                 allow_contribute=allow_contribute,
             ),
@@ -149,11 +172,25 @@ async def process_face_video_task(
     )
     message_spec = build_message_spec(
         initial_status_text=build_status_message(
-            f"🚀 正在处理视频换脸任务 (画质:{resolution}p)",
+            translate_context_text(
+                context,
+                "task.status_processing_mode_with_resolution",
+                mode_name=translate_context_text(context, "task.mode_face_video_step1"),
+                resolution=f"{resolution}p",
+            ),
             notice=notice,
         ),
-        completion_caption="✅ 视频换脸完成",
-        missing_output_message="生成失败或超时，已退还灵石。",
+        completion_caption=translate_context_text(
+            context,
+            "task.status_completion_mode",
+            mode_name=translate_context_text(context, "task.mode_face_video_step1"),
+        ),
+        missing_output_message=translate_context_text(
+            context, "task.status_generation_failed_refunded"
+        ),
+        cancellation_message_template=translate_context_text(
+            context, "task.status_cancelled_refunded", cost="{cost}"
+        ),
     )
     inputs = build_task_inputs(
         prompt="Video Face Swap",
@@ -185,9 +222,12 @@ async def process_face_video_task(
             ),
             presentation=BotTaskPresentationContext(
                 message_spec=message_spec,
-                submitted_status_builder=build_cost_status_builder(
-                    f"⏳ 任务已提交，正在排队调度视频换脸任务 (画质:{resolution}p, 消耗{{actual_cost}}灵石)",
+                submitted_status_builder=build_translated_cost_status_builder(
+                    context,
+                    "task.status_submitted_mode_with_resolution",
                     notice=notice,
+                    mode_name=translate_context_text(context, "task.mode_face_video_step1"),
+                    resolution=f"{resolution}p",
                 ),
                 prefer_edit_status=True,
             ),

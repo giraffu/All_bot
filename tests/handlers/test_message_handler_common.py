@@ -123,9 +123,29 @@ def test_format_invitation_stats_uses_balance_semantics():
         }
     )
 
-    assert "历史累计返佣：*$ 9.99 USDT*" in text
-    assert "已兑换返佣：*$ 1.11 USDT*" in text
-    assert "当前可兑换余额：*$ 8.88 USDT*" in text
+    assert "历史累计返佣：`USDT 9.99`" in text
+    assert "已兑换返佣：`USDT 1.11`" in text
+    assert "当前可兑换余额：`USDT 8.88`" in text
+
+
+def test_format_invitation_stats_supports_english_locale():
+    text = message_handler_common.format_invitation_stats(
+        {
+            "recharged_invitees_count": 3,
+            "total_recharge_count": 4,
+            "total_ton": 1.23,
+            "total_rmb": 45.67,
+            "total_stars": 89,
+            "total_commission_usdt": 9.99,
+            "spent_commission_usdt": 1.11,
+            "available_balance_usdt": 8.88,
+        },
+        lang="en",
+    )
+
+    assert "Invitation stats" in text
+    assert "Historical commission: `USDT 9.99`" in text
+    assert "Available balance: `USDT 8.88`" in text
 
 
 @pytest.mark.asyncio

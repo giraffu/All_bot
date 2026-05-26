@@ -1,6 +1,7 @@
 from dataclasses import replace
 from typing import Callable, Optional
 
+from src.i18n.translator import get_text
 from src.services.task_service_types import BotTaskMessageSpec
 
 
@@ -35,9 +36,36 @@ def with_completion_caption(
     return replace(spec, completion_caption=completion_caption)
 
 
+def resolve_context_lang(context) -> str:
+    lang = getattr(context, "lang", None)
+    if lang:
+        return lang
+    user_data = getattr(context, "user_data", None)
+    if isinstance(user_data, dict):
+        return user_data.get("language_code", "zh")
+    return "zh"
+
+
+def translate_context_text(context, key: str, **kwargs) -> str:
+    translator = getattr(context, "t", None)
+    if callable(translator):
+        translated = None
+        if kwargs:
+            try:
+                translated = translator(key, **kwargs)
+            except TypeError:
+                # Keep test doubles and legacy single-arg translators working.
+                pass
+        if translated is None:
+            translated = translator(key)
+        if translated != key:
+            return translated
+    return get_text(key, resolve_context_lang(context), **kwargs)
+
+
 def resolve_display_mode_name(task_type: str, *, context, mode_name_map: dict[str, str]) -> str:
     mode_name = mode_name_map.get(task_type, task_type)
-    return context.t(mode_name) if hasattr(context, "t") else mode_name
+    return translate_context_text(context, mode_name)
 
 
 def build_status_message(
@@ -61,6 +89,30 @@ def build_cost_status_builder(
     def _builder(actual_cost: int) -> str:
         return build_status_message(
             headline_template.format(actual_cost=actual_cost),
+            notice=notice,
+            wait_text=wait_text,
+        )
+
+    return _builder
+
+
+def build_translated_cost_status_builder(
+    context,
+    headline_key: str,
+    *,
+    notice: str = "",
+    wait_key: Optional[str] = None,
+    **kwargs,
+) -> Callable[[int], str]:
+    def _builder(actual_cost: int) -> str:
+        wait_text = translate_context_text(context, wait_key, **kwargs) if wait_key else None
+        return build_status_message(
+            translate_context_text(
+                context,
+                headline_key,
+                actual_cost=actual_cost,
+                **kwargs,
+            ),
             notice=notice,
             wait_text=wait_text,
         )

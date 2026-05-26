@@ -7,6 +7,16 @@ from src.handlers.message_handler_common import format_invitation_stats
 from src.i18n.translator import get_text
 
 
+def _translate_group(group: str, *, lang: str = "zh") -> str:
+    translated = get_text(f"group.{group}", lang)
+    return translated if translated != f"group.{group}" else group
+
+
+def _translate_identity(identity: str, *, lang: str = "zh") -> str:
+    translated = get_text(f"identity.{identity}", lang)
+    return translated if translated != f"identity.{identity}" else identity
+
+
 def build_breakthrough_message(dto, invite_link: str, *, lang: str = "zh") -> str:
     if dto.current_group == "凡人":
         return get_text(
@@ -57,7 +67,7 @@ def build_identity_display(
     now: datetime | None = None,
     lang: str = "zh",
 ) -> str:
-    identity_display = f"`{current_identity}`"
+    identity_display = f"`{_translate_identity(current_identity, lang=lang)}`"
     if current_identity == "外门弟子" or not identity_expire_at:
         return identity_display
 
@@ -99,7 +109,7 @@ def build_personal_center_payload(
         "profile_extra.personal_center",
         lang,
         name=dto.first_name,
-        group=dto.current_group,
+        group=_translate_group(dto.current_group, lang=lang),
         identity_display=identity_display,
         priority=dto.current_priority,
         credits=dto.credits,
@@ -147,8 +157,8 @@ def build_checkin_success_message(
     return get_text(
         "profile_extra.checkin_success",
         lang,
-        group=user_group,
-        identity=user_identity,
+        group=_translate_group(user_group, lang=lang),
+        identity=_translate_identity(user_identity, lang=lang),
         total_days=total_days,
         reward=reward,
         current_credits=current_credits,
@@ -167,8 +177,8 @@ def build_checkin_repeat_message(
     return get_text(
         "profile_extra.checkin_repeat",
         lang,
-        group=user_group,
-        identity=user_identity,
+        group=_translate_group(user_group, lang=lang),
+        identity=_translate_identity(user_identity, lang=lang),
         total_days=total_days,
         disclaimer=disclaimer,
     )
@@ -180,10 +190,10 @@ def build_share_payload(
     msg = get_text(
         "profile_extra.share_panel",
         lang,
-        group=dto.current_group,
+        group=_translate_group(dto.current_group, lang=lang),
         invite_link=invite_link,
         invitations=dto.invitations,
-        invitation_stats=format_invitation_stats(dto.invitation_recharge),
+        invitation_stats=format_invitation_stats(dto.invitation_recharge, lang=lang),
     )
     reply_markup = InlineKeyboardMarkup(
         [
