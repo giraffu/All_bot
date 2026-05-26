@@ -10,10 +10,16 @@ import {
 } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import { useBillingPayments } from '@/composables/useBillingPayments'
+import { useProfileWelcomeSummary } from '@/composables/useProfileWelcomeSummary'
 import { useAuthStore } from '@/stores/auth'
 
 const { t } = useI18n()
 const authStore = useAuthStore()
+const currentUser = computed(() => authStore.user)
+const { identityExpireText } = useProfileWelcomeSummary({
+  user: currentUser,
+  t,
+})
 const {
   loadingPlans,
   plans,
@@ -133,14 +139,13 @@ const displayPlans = computed<BillingPlanDisplay[]>(() => {
         </h1>
         <p class="text-slate-400 text-sm mt-1">获取更多灵石，突破更高境界</p>
       </div>
-      <div class="mt-4 md:mt-0 flex items-center bg-slate-800/50 px-4 py-2 rounded-lg border border-slate-600/50">
-        <div class="mr-4">
-          <span class="text-xs text-slate-400 block">{{ t('profile.credits', '当前灵石') }}</span>
-          <span class="text-xl font-bold text-cyan-300">{{ authStore.user?.credits || 0 }}</span>
-        </div>
-        <div class="pl-4 border-l border-slate-600/50">
-          <span class="text-xs text-slate-400 block">{{ t('profile.identity', '当前身份') }}</span>
-          <span class="text-lg font-bold text-indigo-300">{{ authStore.user?.current_identity || '外门弟子' }}</span>
+      <div class="mt-4 md:mt-0 bg-slate-800/50 px-4 py-2 rounded-lg border border-slate-600/50">
+        <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+          <span class="text-slate-400">{{ t('profile.identity', '当前身份') }}</span>
+          <span class="font-bold text-indigo-300">{{ authStore.user?.current_identity || '外门弟子' }}</span>
+          <span class="text-slate-500">|</span>
+          <span class="text-slate-400">身份到期</span>
+          <span class="font-medium text-cyan-300">{{ identityExpireText }}</span>
         </div>
       </div>
     </div>

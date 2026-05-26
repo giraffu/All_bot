@@ -3,6 +3,9 @@ import { message } from 'ant-design-vue'
 import api from '@/api'
 import type { User } from '@/stores/auth'
 
+const FORCE_PASSWORD_LOGIN_KEY = 'force_password_login'
+const PREFERRED_LOGIN_USERNAME_KEY = 'preferred_login_username'
+
 interface UseBindPasswordOptions {
   isMobile: Ref<boolean>
   user: Ref<User | null | undefined>
@@ -35,8 +38,10 @@ export function useBindPassword(options: UseBindPasswordOptions) {
     try {
       await api.post('/auth/bind-password', bindFormState)
       showBindModal.value = false
+      sessionStorage.setItem(FORCE_PASSWORD_LOGIN_KEY, '1')
+      sessionStorage.setItem(PREFERRED_LOGIN_USERNAME_KEY, bindFormState.username)
       bindFormState.password = ''
-      message.success('密咒设置成功，请使用新密咒重新登录。')
+      message.success('密咒设置成功，请使用刚设置的道号与密咒重新登录。')
       await options.onPasswordBound()
     } catch (error: any) {
       console.error('Bind password error:', error)

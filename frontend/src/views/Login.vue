@@ -1,19 +1,42 @@
 <script setup lang="ts">
-import { onMounted, ref, reactive } from 'vue'
-import { useRouter } from 'vue-router'
+import { nextTick, onMounted, reactive, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore, checkWebAccess } from '@/stores/auth'
 import api from '@/api'
 import { message } from 'ant-design-vue'
 import { LockOutlined, UserOutlined } from '@ant-design/icons-vue'
 
+const FORCE_PASSWORD_LOGIN_KEY = 'force_password_login'
+const PREFERRED_LOGIN_USERNAME_KEY = 'preferred_login_username'
+
 const router = useRouter()
+const route = useRoute()
 const authStore = useAuthStore()
 const loading = ref(false)
+const usernameInputRef = ref<{ focus?: () => void } | null>(null)
 
 const pwdFormState = reactive({
   username: '',
   password: ''
 })
+
+const shouldPreferPasswordLogin = () =>
+  route.query.mode === 'password'
+  || sessionStorage.getItem(FORCE_PASSWORD_LOGIN_KEY) === '1'
+
+const restorePreferredPasswordLogin = async () => {
+  const preferredUsername = sessionStorage.getItem(PREFERRED_LOGIN_USERNAME_KEY)
+  if (preferredUsername && !pwdFormState.username) {
+    pwdFormState.username = preferredUsername
+  }
+
+  sessionStorage.removeItem(FORCE_PASSWORD_LOGIN_KEY)
+  sessionStorage.removeItem(PREFERRED_LOGIN_USERNAME_KEY)
+
+  message.info('请使用刚设置的道号与密咒登录。')
+  await nextTick()
+  usernameInputRef.value?.focus?.()
+}
 
 const handlePasswordLogin = async () => {
   if (!pwdFormState.username || !pwdFormState.password) {
@@ -137,6 +160,12 @@ const handleForgotPassword = () => {
 }
 
 onMounted(async () => {
+  if (shouldPreferPasswordLogin()) {
+    await restorePreferredPasswordLogin()
+    renderTelegramWidget()
+    return
+  }
+
   // Try WebApp auto-login first
   const isWebAppLogged = await checkWebAppLogin()
   
@@ -175,6 +204,7 @@ onMounted(async () => {
           <!-- 账号密码登录区域 -->
           <div class="space-y-4">
             <a-input 
+              ref="usernameInputRef"
               v-model:value="pwdFormState.username" 
               size="large" 
               placeholder="道号" 

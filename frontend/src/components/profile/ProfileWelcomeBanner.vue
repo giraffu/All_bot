@@ -20,7 +20,7 @@ defineProps<{
     <div class="relative z-10 flex flex-col md:flex-row justify-between items-start md:items-center">
       <div class="w-full md:w-auto">
         <h1 class="text-xl md:text-3xl font-bold mb-3 md:mb-2 drop-shadow-sm text-slate-100">
-          {{ $t('profile.welcome_back', { name: fullName || username }) }}
+          {{ $t('profile.welcome_back', { name: username || fullName || '道友' }) }}
         </h1>
 
         <div class="flex flex-wrap items-center gap-2 mb-3 md:mb-2 text-sm md:text-lg text-slate-300">

@@ -31,12 +31,76 @@ export function useBillingPayments() {
   const tonWalletAddress = ref<string | null>(null)
   const systemTonReceiver = ref<string>(DEFAULT_TON_RECEIVER)
   const currentTonOrderId = ref<string | null>(null)
+  const pendingTonPayAfterConnect = ref(false)
+  const isSubmittingTonPayment = ref(false)
   let tonBeginCell: ((typeof import('@ton/core'))['beginCell']) | null = null
+
+  const resetTonConnectIntent = () => {
+    pendingTonPayAfterConnect.value = false
+  }
+
+  const submitTonPayment = async (tonUI: TonConnectUI) => {
+    if (!selectedPlan.value) return
+    if (isSubmittingTonPayment.value) return
+
+    isSubmittingTonPayment.value = true
+    isPaying.value = true
+
+    try {
+      const res = await api.post('/payment/ton-orders', {
+        plan_id: selectedPlan.value.id
+      })
+      const tonOrder = res.data?.data
+      if (!tonOrder?.ton_comment || !tonOrder?.amount_nanotons) {
+        throw new Error('invalid TON order response')
+      }
+
+      const textCellHex = await stringToCellHex(tonOrder.ton_comment)
+      currentTonOrderId.value = tonOrder.order_id
+
+      const transaction = {
+        validUntil: Math.floor(Date.now() / 1000) + 600,
+        messages: [
+          {
+            address: tonOrder.ton_receiver_address || systemTonReceiver.value,
+            amount: tonOrder.amount_nanotons,
+            payload: textCellHex
+          }
+        ]
+      }
+
+      const result = await tonUI.sendTransaction(transaction)
+      if (result) {
+        showPaymentModal.value = true
+        orderStatus.value = 'PENDING'
+        startTonPolling(currentTonOrderId.value)
+      }
+    } catch (error) {
+      console.error('TON transaction error:', error)
+      message.error('支付已取消或发生错误')
+    } finally {
+      resetTonConnectIntent()
+      isSubmittingTonPayment.value = false
+      isPaying.value = false
+    }
+  }
 
   const handleTonWalletStatusChange = (
     wallet: { account: { address: string } } | null
   ) => {
     tonWalletAddress.value = wallet ? wallet.account.address : null
+
+    if (!wallet) {
+      resetTonConnectIntent()
+      return
+    }
+
+    if (!pendingTonPayAfterConnect.value || payMethod.value !== 'ton' || !selectedPlan.value) {
+      return
+    }
+
+    tonConnectUI.value?.closeModal('wallet-selected')
+    void submitTonPayment(tonConnectUI.value!)
   }
 
   const ensureTonModules = async () => {
@@ -222,9 +286,11 @@ export function useBillingPayments() {
 
   const openTonConnectModal = async () => {
     try {
+      pendingTonPayAfterConnect.value = true
       const tonUI = await ensureTonModules()
       tonUI?.openModal()
     } catch (error) {
+      resetTonConnectIntent()
       console.error('TON Connect modal open error:', error)
       message.error('TON 钱包组件加载失败，请稍后重试')
     }
@@ -232,6 +298,7 @@ export function useBillingPayments() {
 
   const disconnectTonWallet = async () => {
     try {
+      resetTonConnectIntent()
       const tonUI = await ensureTonModules()
       await tonUI?.disconnect()
     } catch (error) {
@@ -259,46 +326,12 @@ export function useBillingPayments() {
 
     if (!tonUI.connected) {
       message.warning('请先连接 TON 钱包')
+      pendingTonPayAfterConnect.value = true
       tonUI.openModal()
       return
     }
 
-    isPaying.value = true
-    try {
-      const res = await api.post('/payment/ton-orders', {
-        plan_id: selectedPlan.value.id
-      })
-      const tonOrder = res.data?.data
-      if (!tonOrder?.ton_comment || !tonOrder?.amount_nanotons) {
-        throw new Error('invalid TON order response')
-      }
-
-      const textCellHex = await stringToCellHex(tonOrder.ton_comment)
-      currentTonOrderId.value = tonOrder.order_id
-
-      const transaction = {
-        validUntil: Math.floor(Date.now() / 1000) + 600,
-        messages: [
-          {
-            address: tonOrder.ton_receiver_address || systemTonReceiver.value,
-            amount: tonOrder.amount_nanotons,
-            payload: textCellHex
-          }
-        ]
-      }
-
-      const result = await tonUI.sendTransaction(transaction)
-      if (result) {
-        showPaymentModal.value = true
-        orderStatus.value = 'PENDING'
-        startTonPolling(currentTonOrderId.value)
-      }
-    } catch (error) {
-      console.error('TON transaction error:', error)
-      message.error('支付已取消或发生错误')
-    } finally {
-      isPaying.value = false
-    }
+    await submitTonPayment(tonUI)
   }
 
   onMounted(async () => {
@@ -317,6 +350,7 @@ export function useBillingPayments() {
 
   watch(payMethod, async (method) => {
     if (method !== 'ton') {
+      resetTonConnectIntent()
       return
     }
 

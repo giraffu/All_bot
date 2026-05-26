@@ -9,8 +9,6 @@ import {
   Award,
   User,
   Lock,
-  Bookmark,
-  Star,
 } from 'lucide-vue-next'
 import { useRouter } from 'vue-router'
 import { useViewport } from '@/composables/useViewport'
@@ -50,7 +48,10 @@ const {
   user: computed(() => authStore.user),
   onPasswordBound: async () => {
     authStore.logout()
-    await router.push('/login')
+    await router.push({
+      path: '/login',
+      query: { mode: 'password', from: 'bind-password' }
+    })
   },
   showMainButton,
   hideMainButton,
@@ -126,9 +127,6 @@ const { quickActions } = useProfileQuickActions({
   openRedeemMembershipModal,
   handleBindPasswordModalOpen,
   icons: {
-    Zap,
-    Bookmark,
-    Star,
     Wallet,
     Award,
     Lock,

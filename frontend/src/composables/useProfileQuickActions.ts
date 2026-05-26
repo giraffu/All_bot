@@ -18,9 +18,6 @@ export function useProfileQuickActions(options: {
   openRedeemMembershipModal: () => void
   handleBindPasswordModalOpen: () => void
   icons: {
-    Zap: unknown
-    Bookmark: unknown
-    Star: unknown
     Wallet: unknown
     Award: unknown
     Lock: unknown
@@ -28,37 +25,12 @@ export function useProfileQuickActions(options: {
 }) {
   const quickActions = computed(() => [
     {
-      key: 'lab',
-      label: options.t('profile.go_to_lab'),
-      className:
-        'bg-gradient-to-r from-indigo-600 to-cyan-700 border-none hover:from-indigo-500 hover:to-cyan-600 shadow-md',
-      icon: options.icons.Zap,
-      onClick: () => options.router.push('/custom-features'),
-    },
-    {
       key: 'billing',
       label: options.t('menu.recharge'),
       className:
         'bg-slate-500 text-amber-300 border-amber-500/30 hover:text-amber-200 hover:border-amber-400 shadow-md',
       icon: options.icons.Wallet,
       onClick: () => options.router.push('/billing'),
-    },
-    {
-      key: 'submissions',
-      label: options.t('menu.my_submissions'),
-      className:
-        'bg-slate-500 text-cyan-300 border-cyan-500/30 hover:text-cyan-200 hover:border-cyan-400 shadow-md',
-      icon: options.icons.Bookmark,
-      onClick: () =>
-        options.router.push({ name: 'MyFavorites', query: { tab: 'submissions' } }),
-    },
-    {
-      key: 'favorites',
-      label: options.t('menu.my_favorites'),
-      className:
-        'bg-slate-500 text-amber-300 border-amber-500/30 hover:text-amber-200 hover:border-amber-400 shadow-md',
-      icon: options.icons.Star,
-      onClick: () => options.router.push('/my-favorites'),
     },
     {
       key: 'redeem-credits',
