@@ -13,8 +13,10 @@ import { buildGenerationTaskPayload } from '@/features/generation/buildGeneratio
 import {
   getDefaultImageToVideoLoraSelection,
   getImageToVideoPayloadLoraName,
+  getImageToVideoPayloadLoraStrength,
   getImageToVideoRequestTaskType,
   IMAGE_TO_VIDEO_LORA_OPTIONS,
+  LTX_VIDEO_LORA_OPTIONS,
   isUnifiedImageToVideoTaskType,
   normalizeImageToVideoLoraSelection
 } from '@/features/generation/imageToVideo'
@@ -74,6 +76,7 @@ const taskCost = computed(() => {
 const prompt = ref('')
 const loraSelection = ref(getDefaultImageToVideoLoraSelection(taskType.value))
 const loraName = computed(() => getImageToVideoPayloadLoraName(taskType.value, loraSelection.value))
+const loraStrength = computed(() => getImageToVideoPayloadLoraStrength(taskType.value, loraSelection.value))
 
 const isTemplateApplied = ref(false)
 const isTemplateVideoSettingsLocked = ref(false)
@@ -162,6 +165,7 @@ const handleGenerate = async () => {
     prompt: (isUnifiedImageToVideo.value || isLtxVideo.value) ? prompt.value : undefined,
     promptTarget: 'inputs',
     loraName: loraName.value,
+    loraStrength: loraStrength.value,
     isTemplate: isTemplateApplied.value,
     sourcePostId: templateSourcePostId.value,
   })
@@ -197,7 +201,7 @@ const resetForm = () => {
     <template #left-content>
       <div class="flex flex-col gap-6 mb-6">
             <div
-              v-if="isUnifiedImageToVideo"
+              v-if="isUnifiedImageToVideo || isLtxVideo"
               class="w-full bg-slate-500/60 rounded-xl p-4 border border-slate-400/50 shrink-0"
             >
               <h3 class="text-sm font-bold mb-3 text-slate-200 flex items-center">
@@ -209,7 +213,7 @@ const resetForm = () => {
                 class="video-lora-group w-full"
               >
                 <a-radio-button
-                  v-for="option in IMAGE_TO_VIDEO_LORA_OPTIONS"
+                  v-for="option in (isLtxVideo ? LTX_VIDEO_LORA_OPTIONS : IMAGE_TO_VIDEO_LORA_OPTIONS)"
                   :key="option.value"
                   :value="option.value"
                   class="text-center"
@@ -217,6 +221,9 @@ const resetForm = () => {
                   {{ option.label }}
                 </a-radio-button>
               </a-radio-group>
+              <p v-if="isLtxVideo && loraName && loraStrength != null" class="mt-3 text-xs text-slate-400">
+                默认强度：{{ loraStrength }}
+              </p>
             </div>
 
             <!-- Row for Upload & Prompt -->

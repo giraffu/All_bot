@@ -12,6 +12,11 @@ from src.workflow_mapping_validation import (
 logger = logging.getLogger(__name__)
 
 
+LTX_VIDEO_ADDITIONAL_LORA_NODE_IDS = ("256",)
+LTX_VIDEO_FIRST_PASS_MODEL_NODE_ID = "191"
+LTX_VIDEO_FIRST_PASS_CLIP_NODE_ID = "189"
+
+
 class WorkflowPatcher:
     def __init__(self, workflows_dir: str):
         self.workflows_dir = workflows_dir
@@ -176,7 +181,56 @@ class WorkflowPatcher:
                             f"ltx_video_{unique_id}_{node_id}"
                         )
 
+            lora_name = str(params.get("lora_name") or "").strip()
+            if lora_name:
+                lora_strength = params.get("lora_strength")
+                if lora_strength is None:
+                    try:
+                        from src.lora_catalog import get_ltx_video_lora_default_strength
+
+                        lora_strength = get_ltx_video_lora_default_strength(lora_name)
+                    except Exception:
+                        lora_strength = 1.0
+
+                self._patch_ltx_video_lora(
+                    wf,
+                    lora_name=lora_name,
+                    lora_strength=float(lora_strength),
+                )
+            else:
+                self._strip_ltx_video_lora_nodes(wf)
+
         return wf
+
+    def _patch_ltx_video_lora(
+        self,
+        workflow: Dict[str, Any],
+        *,
+        lora_name: str,
+        lora_strength: float,
+    ) -> None:
+        for node_id in LTX_VIDEO_ADDITIONAL_LORA_NODE_IDS:
+            node = workflow.get(node_id)
+            if not isinstance(node, dict):
+                continue
+            inputs = node.setdefault("inputs", {})
+            inputs["lora_1"] = {
+                "on": True,
+                "lora": lora_name,
+                "strength": lora_strength,
+            }
+            inputs["model"] = [LTX_VIDEO_FIRST_PASS_MODEL_NODE_ID, 0]
+            inputs["clip"] = [LTX_VIDEO_FIRST_PASS_CLIP_NODE_ID, 0]
+
+    def _strip_ltx_video_lora_nodes(self, workflow: Dict[str, Any]) -> None:
+        for node_id in LTX_VIDEO_ADDITIONAL_LORA_NODE_IDS:
+            workflow.pop(node_id, None)
+
+        model_node = workflow.get("8")
+        if isinstance(model_node, dict):
+            inputs = model_node.get("inputs")
+            if isinstance(inputs, dict):
+                inputs["model"] = [LTX_VIDEO_FIRST_PASS_MODEL_NODE_ID, 0]
 
     def heuristic_patch(self, workflow: Dict[str, Any], key: str, value: Any):
         # This is a best-effort patcher for API format workflows

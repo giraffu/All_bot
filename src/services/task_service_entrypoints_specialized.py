@@ -39,6 +39,8 @@ async def process_ltx_video_task(
     context: ContextTypes.DEFAULT_TYPE,
     prompt: str,
     image_path: str,
+    lora_name: str | None = None,
+    lora_strength: float | None = None,
     cleanup: bool = True,
     allow_contribute: bool = True,
     source_post_id: Optional[int] = None,
@@ -90,6 +92,8 @@ async def process_ltx_video_task(
         images=[image_path] if image_path else [],
         resolution=resolution,
         duration=duration,
+        lora_name=lora_name,
+        lora_strength=lora_strength,
     )
     billing_args = resolve_video_billing_args(
         is_video=True,

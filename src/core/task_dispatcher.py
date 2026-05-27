@@ -385,6 +385,8 @@ class LtxVideoStrategy(BaseTaskStrategy):
             task_id,
             prompt=inputs.get("prompt", "ltx video"),
             image_path=image_path,
+            lora_name=inputs.get("lora_name"),
+            lora_strength=inputs.get("lora_strength"),
             width=width,
             height=height,
             length=requested_seconds,

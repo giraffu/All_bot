@@ -17,6 +17,12 @@ from src.constants import (
 )
 from src.handlers.conversation_states import LtxVideoState
 from src.handlers.prompt_router import GLOBAL_REVERSE_MAP, is_global_menu_command
+from src.lora_catalog import (
+    LTX_VIDEO_LORA_OPTIONS,
+    get_ltx_video_lora_default_strength,
+    get_ltx_video_lora_display_name,
+    resolve_ltx_video_lora_name,
+)
 from src.services.bot_task_service import process_ltx_video_task
 from src.services.permission_service import permission_service
 from src.services.fsm_temp_file_service import (
@@ -52,6 +58,7 @@ def _build_settings_message(
     resolution: str,
     duration: str,
     cost: int,
+    lora_name: str | None = None,
     english_prompt_only: bool = False,
 ) -> str:
     key = (
@@ -59,12 +66,45 @@ def _build_settings_message(
         if english_prompt_only
         else "fsm.ltx_video.settings_text"
     )
-    return _t(
+    message = _t(
         context,
         key,
         resolution=resolution,
         duration=duration,
         cost=cost,
+    )
+    lora_text = _t(
+        context,
+        "fsm.image_to_video.current_lora",
+        model_name=get_ltx_video_lora_display_name(
+            lora_name or "", getattr(context, "lang", "zh")
+        ),
+    )
+    return f"{message}\n\n{lora_text}"
+
+
+def _build_ltx_lora_selection_keyboard(lang: str = "zh") -> InlineKeyboardMarkup:
+    buttons = [
+        InlineKeyboardButton(
+            get_ltx_video_lora_display_name(
+                resolve_ltx_video_lora_name(option_id), lang
+            ),
+            callback_data=f"ltx_lora_select_{option_id}",
+        )
+        for option_id in LTX_VIDEO_LORA_OPTIONS.keys()
+    ]
+    keyboard = [buttons[i : i + 2] for i in range(0, len(buttons), 2)]
+    return InlineKeyboardMarkup(keyboard)
+
+
+def _build_image_request_text(
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    lora_name: str | None,
+) -> str:
+    return (
+        f"{_t(context, 'fsm.image_to_video.current_lora', model_name=get_ltx_video_lora_display_name(lora_name or '', getattr(context, 'lang', 'zh')))}\n\n"
+        f"{_t(context, 'fsm.ltx_video.start')}"
     )
 
 
@@ -103,10 +143,43 @@ async def start_ltx_video(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         "resolution": "1280x704",
         "duration": "5s",
         "image_path": None,
+        "lora_name": "",
     }
 
-    msg = _t(context, "fsm.ltx_video.start")
-    await robust_reply_text(update.message, msg, parse_mode="Markdown")
+    msg = _t(context, "fsm.ltx_video.select_lora")
+    await robust_reply_text(
+        update.message,
+        msg,
+        reply_markup=_build_ltx_lora_selection_keyboard(getattr(context, "lang", "zh")),
+        parse_mode="Markdown",
+    )
+    return LtxVideoState.WAIT_LORA_SELECTION
+
+
+async def handle_lora_selection(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> int:
+    query = update.callback_query
+    await query.answer(text=_t(context, "fsm.common.task_initializing"), cache_time=2)
+    data = query.data or ""
+
+    if not data.startswith("ltx_lora_select_"):
+        return LtxVideoState.WAIT_LORA_SELECTION
+
+    selected_alias = data.replace("ltx_lora_select_", "", 1)
+    lora_name = resolve_ltx_video_lora_name(selected_alias)
+    fsm_data = context.user_data.get("ltx_video_data")
+    if not fsm_data:
+        with contextlib.suppress(Exception):
+            await query.answer(_t(context, "fsm.ltx_video.expired_alert"), show_alert=True)
+        return ConversationHandler.END
+
+    fsm_data["lora_name"] = lora_name
+    await robust_edit_text(
+        query.message,
+        _build_image_request_text(context, lora_name=lora_name),
+        parse_mode="Markdown",
+    )
     return LtxVideoState.WAIT_IMAGE
 
 
@@ -167,6 +240,7 @@ async def receive_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         resolution=res,
         duration=dur,
         cost=cost,
+        lora_name=str(fsm_data.get("lora_name") or ""),
     )
 
     await robust_reply_text(
@@ -215,6 +289,7 @@ async def process_settings(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         resolution=res,
         duration=dur,
         cost=cost,
+        lora_name=str(fsm_data.get("lora_name") or ""),
         english_prompt_only=True,
     )
 
@@ -269,6 +344,10 @@ async def confirm_generation(update: Update, context: ContextTypes.DEFAULT_TYPE)
     res = fsm_data["resolution"]
     dur = fsm_data["duration"]
     prompt = fsm_data.get("prompt", "")
+    lora_name = str(fsm_data.get("lora_name") or "")
+    lora_strength = (
+        get_ltx_video_lora_default_strength(lora_name) if lora_name else None
+    )
 
     base_cost = LTX_RESOLUTION_COST.get(res, 10)
     multiplier = LTX_DURATION_MULTIPLIER.get(dur, 1.0)
@@ -333,6 +412,8 @@ async def confirm_generation(update: Update, context: ContextTypes.DEFAULT_TYPE)
             context=context,
             prompt=prompt,
             image_path=image_path,
+            lora_name=lora_name,
+            lora_strength=lora_strength,
             cleanup=True,
         ),
     )
@@ -393,6 +474,15 @@ def get_ltx_video_fsm_handler() -> ConversationHandler:
             CallbackQueryHandler(start_ltx_video, pattern="^fsm_start_ltx_video$"),
         ],
         states={
+            LtxVideoState.WAIT_LORA_SELECTION: [
+                CallbackQueryHandler(
+                    handle_lora_selection, pattern="^ltx_lora_select_"
+                ),
+                MessageHandler(
+                    (filters.TEXT | filters.COMMAND) & ~filters.Regex(r"^/cancel$"),
+                    unexpected_input,
+                ),
+            ],
             LtxVideoState.WAIT_IMAGE: [
                 MessageHandler(filters.PHOTO | filters.Document.IMAGE, receive_image),
                 MessageHandler(

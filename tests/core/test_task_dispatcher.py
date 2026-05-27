@@ -219,10 +219,48 @@ async def test_ltx_video_submit_task_passes_seconds_to_workflow_slider(
         "task-1",
         prompt="cinematic motion",
         image_path="demo/input.png",
+        lora_name=None,
+        lora_strength=None,
         width=1280,
         height=704,
         length=expected_length,
         priority=3,
+    )
+
+
+@pytest.mark.asyncio
+async def test_ltx_video_submit_task_forwards_optional_lora_context(monkeypatch):
+    strategy = StrategyFactory.get_strategy("ltx_video")
+    submit_mock = AsyncMock(return_value="backend-task-id")
+    _patch_dispatch_image_service(
+        monkeypatch,
+        submit_ltx_video_task=submit_mock,
+    )
+
+    result = await strategy.submit_task(
+        "task-1",
+        {
+            "prompt": "cinematic motion",
+            "resolution": "1280x704",
+            "duration": "10s",
+            "lora_name": "ltx2.3/LTX2.3_reasoning_I2V_V3.safetensors",
+            "lora_strength": 0.8,
+            "saved_input_images": ["demo/input.png"],
+        },
+        priority=5,
+    )
+
+    assert result == "backend-task-id"
+    submit_mock.assert_awaited_once_with(
+        "task-1",
+        prompt="cinematic motion",
+        image_path="demo/input.png",
+        lora_name="ltx2.3/LTX2.3_reasoning_I2V_V3.safetensors",
+        lora_strength=0.8,
+        width=1280,
+        height=704,
+        length=10,
+        priority=5,
     )
 
 

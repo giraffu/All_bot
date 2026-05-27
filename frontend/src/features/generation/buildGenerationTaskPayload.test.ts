@@ -71,6 +71,33 @@ describe('buildGenerationTaskPayload', () => {
     })
   })
 
+  it('builds ltx video payload with optional lora inside inputs', () => {
+    expect(
+      buildGenerationTaskPayload({
+        taskType: 'ltx_video',
+        images: ['img-1'],
+        resolution: '1280x704',
+        duration: 10,
+        prompt: 'cinematic motion',
+        promptTarget: 'inputs',
+        loraName: 'ltx2.3/LTX2.3_reasoning_I2V_V3.safetensors',
+        loraStrength: 0.8,
+      }),
+    ).toEqual({
+      task_type: 'ltx_video',
+      inputs: {
+        images: ['img-1'],
+        resolution: '1280x704',
+        duration: 10,
+        prompt: 'cinematic motion',
+        lora_name: 'ltx2.3/LTX2.3_reasoning_I2V_V3.safetensors',
+        lora_strength: 0.8,
+      },
+      priority: 0,
+      is_template: false,
+    })
+  })
+
   it('builds text to image payload without source images', () => {
     expect(
       buildGenerationTaskPayload({

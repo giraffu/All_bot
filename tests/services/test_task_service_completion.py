@@ -906,6 +906,57 @@ async def test_process_ltx_video_task_uses_finalize_task_cancellation(monkeypatc
 
 
 @pytest.mark.asyncio
+async def test_process_ltx_video_task_includes_lora_context_in_inputs(monkeypatch):
+    captured_flow = {}
+
+    async def fake_run_bot_task_application(*, flow):
+        captured_flow["flow"] = flow
+        return (b"video-bytes", "task-ltx")
+
+    monkeypatch.setattr(
+        "src.core.user_core.get_or_create_user_by_telegram",
+        AsyncMock(return_value=(SimpleNamespace(id=456), False)),
+    )
+    monkeypatch.setattr(
+        "src.services.task_service_entrypoints_specialized.get_acceleration_notice",
+        AsyncMock(return_value=""),
+    )
+    monkeypatch.setattr(
+        "src.services.task_service_entrypoints_specialized.run_bot_task_application",
+        fake_run_bot_task_application,
+    )
+
+    update = SimpleNamespace(
+        effective_chat=SimpleNamespace(id=123),
+        effective_user=SimpleNamespace(id=789, username="tester"),
+        effective_message=SimpleNamespace(),
+    )
+    context = SimpleNamespace(
+        user_data={
+            "ltx_video_resolution": "1280x704",
+            "ltx_video_duration": "10s",
+        },
+        bot=MagicMock(),
+        t=lambda value, **_kwargs: value,
+    )
+
+    result = await TaskService.process_ltx_video_task(
+        update=update,
+        context=context,
+        prompt="prompt",
+        image_path="input.png",
+        lora_name="ltx2.3/LTX2.3_reasoning_I2V_V3.safetensors",
+        lora_strength=0.8,
+        cleanup=False,
+    )
+
+    assert result == (b"video-bytes", "task-ltx")
+    flow = captured_flow["flow"]
+    assert flow.request.inputs["lora_name"] == "ltx2.3/LTX2.3_reasoning_I2V_V3.safetensors"
+    assert flow.request.inputs["lora_strength"] == 0.8
+
+
+@pytest.mark.asyncio
 async def test_process_video_task_template_entrypoint_uses_internal_user_id_for_notice_and_queue_text(
     monkeypatch,
 ):

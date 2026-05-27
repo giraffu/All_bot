@@ -15,8 +15,10 @@ import { buildGenerationTaskPayload } from '@/features/generation/buildGeneratio
 import {
   getDefaultImageToVideoLoraSelection,
   getImageToVideoPayloadLoraName,
+  getImageToVideoPayloadLoraStrength,
   getImageToVideoRequestTaskType,
   IMAGE_TO_VIDEO_LORA_OPTIONS,
+  LTX_VIDEO_LORA_OPTIONS,
   isUnifiedImageToVideoTaskType,
   normalizeImageToVideoLoraSelection
 } from '@/features/generation/imageToVideo'
@@ -51,6 +53,7 @@ const duration = ref('5')
 const prompt = ref('')
 const loraSelection = ref(getDefaultImageToVideoLoraSelection(taskType.value))
 const loraName = computed(() => getImageToVideoPayloadLoraName(taskType.value, loraSelection.value))
+const loraStrength = computed(() => getImageToVideoPayloadLoraStrength(taskType.value, loraSelection.value))
 const templateSourcePostId = ref<number | null>(null)
 const isTemplateApplied = ref(false)
 const isTemplateVideoSettingsLocked = ref(false)
@@ -212,6 +215,7 @@ const handleGenerate = async () => {
     prompt: (isUnifiedImageToVideo.value || isLtxVideo.value) ? prompt.value : undefined,
     promptTarget: 'inputs',
     loraName: loraName.value,
+    loraStrength: loraStrength.value,
     isTemplate: isTemplateApplied.value,
     sourcePostId: templateSourcePostId.value,
   })
@@ -313,20 +317,23 @@ onBeforeUnmount(() => {
             <div class="mt-2 text-xs text-slate-400">{{ t('template_apply.common.prompt_locked_video_hint') }}</div>
           </div>
           <template v-else>
-            <div v-if="isUnifiedImageToVideo" class="mb-3">
+            <div v-if="isUnifiedImageToVideo || isLtxVideo" class="mb-3">
               <a-select
                 v-model:value="loraSelection"
                 :placeholder="t('template_apply.image_to_video.select_addon')"
                 class="w-full"
               >
                 <a-select-option
-                  v-for="option in IMAGE_TO_VIDEO_LORA_OPTIONS"
+                  v-for="option in (isLtxVideo ? LTX_VIDEO_LORA_OPTIONS : IMAGE_TO_VIDEO_LORA_OPTIONS)"
                   :key="option.value"
                   :value="option.value"
                 >
                   {{ option.label }}
                 </a-select-option>
               </a-select>
+              <p v-if="isLtxVideo && loraName && loraStrength != null" class="mt-2 text-xs text-slate-400">
+                默认强度：{{ loraStrength }}
+              </p>
             </div>
             <a-textarea
               v-model:value="prompt"

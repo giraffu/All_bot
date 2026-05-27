@@ -393,6 +393,8 @@ class APIClient:
         task_id: str,
         prompt: str,
         image_path: str,
+        lora_name: str | None = None,
+        lora_strength: float | None = None,
         width: int = 1280,
         height: int = 704,
         length: int = 5,
@@ -411,6 +413,10 @@ class APIClient:
             "length": length,
             "priority": priority,
         }
+        if lora_name:
+            data["lora_name"] = lora_name
+        if lora_strength is not None:
+            data["lora_strength"] = lora_strength
 
         logger.info(
             f"Submitting ltx_video task. Prompt: {prompt}, Priority: {priority}"

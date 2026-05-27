@@ -615,4 +615,67 @@ describe('TemplateImageToVideoPanel', () => {
       source_post_id: 99
     })
   })
+
+  it('submits ltx_video template payload with optional addon model', async () => {
+    const wrapper = mountPanel({
+      raw: {
+        post_id: 7,
+        source_post_id: 123,
+        task_id: 'task-template-ltx-lora',
+        media_type: 'video',
+        task_type: 'ltx_video',
+        prompt: 'wide cinematic dolly shot',
+        lora_name: 'ltx2.3/LTX2.3_reasoning_I2V_V3.safetensors',
+        width: 1280,
+        height: 704,
+        duration: 10,
+        requested_duration: 10,
+        billing_resolution: '1280x704'
+      },
+      rawEntityId: 7,
+      rawTaskType: 'ltx_video',
+      taskType: 'ltx_video',
+      sourcePostId: 123,
+      prompt: 'wide cinematic dolly shot',
+      loraName: 'ltx2.3/LTX2.3_reasoning_I2V_V3.safetensors',
+      width: 1280,
+      height: 704,
+      duration: 10,
+      requestedDuration: 10,
+      billingResolution: '1280x704'
+    })
+    await nextTick()
+
+    const file = new File(['base'], 'base.png', { type: 'image/png' })
+    const uploader = wrapper.findComponent(UploadDraggerStub)
+    await uploader.props('beforeUpload')(file)
+    await flushPromises()
+
+    const generateButton = wrapper
+      .findAllComponents(ButtonStub)
+      .find(button => button.text().includes('生成视频'))
+
+    if (!generateButton) {
+      throw new Error('Expected generate button to exist')
+    }
+
+    await generateButton.trigger('click')
+    await flushPromises()
+
+    expect(submitTaskMock).toHaveBeenCalledTimes(1)
+    expect(submitTaskMock.mock.calls[0]?.[0]).toEqual({
+      task_type: 'ltx_video',
+      inputs: {
+        images: ['uploads/base.png'],
+        resolution: '1280x704',
+        duration: 10,
+        prompt: 'wide cinematic dolly shot',
+        lora_name: 'ltx2.3/LTX2.3_reasoning_I2V_V3.safetensors',
+        lora_strength: 0.8
+      },
+      priority: 0,
+      is_template: true,
+      source_post_id: 123
+    })
+  })
 })

@@ -159,6 +159,7 @@ describe('templateVideoApplyState', () => {
       {
         task_type: 'ltx_video',
         prompt: 'wide cinematic dolly shot',
+        lora_name: 'ltx2.3/LTX2.3_reasoning_I2V_V3.safetensors',
         width: 1344,
         height: 768,
         duration: 5
@@ -168,6 +169,7 @@ describe('templateVideoApplyState', () => {
 
     expect(state?.resolution).toBe('1344x768')
     expect(state?.duration).toBe('5')
+    expect(state?.loraName).toBe('ltx2.3/LTX2.3_reasoning_I2V_V3.safetensors')
     expect(state?.isTemplateVideoSettingsLocked).toBe(true)
     expect(state?.isTemplatePromptLocked).toBe(true)
   })

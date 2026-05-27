@@ -165,6 +165,8 @@ class LtxVideoRequest(BaseModel):
     task_id: str
     image: str
     prompt: str
+    lora_name: Optional[str] = ""
+    lora_strength: Optional[float] = None
     length: int = 5
     width: int = 704
     height: int = 1280

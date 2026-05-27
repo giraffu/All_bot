@@ -48,6 +48,10 @@
 图生视频底层复用了 `video_edit`（自定义图生视频）的工作流和任务队列，通过动态注入 `lora_name` 参数来实现差异化。
 目前系统主要支持 LTX-2.3 和 Wan2.1 视频生成工作流。关于 LTX-2.3 工作流的具体 LoRA 使用与提示词规范，请参考项目根目录的 `LTX_LoRA_Guide.md`。
 
+### 0. 当前支持概览
+- **普通图生视频 / 自定义图生视频**：继续沿用 `video_edit` / `image_to_video` 体系，`lora_name` 为模型前缀名，由 `workflow_patcher.py` 按高噪/低噪双节点动态补入。
+- **高级图生视频 (`ltx_video`)**：现已支持可选 LoRA。Bot FSM、Web 单图视频页、模板应用面板都会把 `lora_name` 透传到 `/api/v1/ltx_video`；Worker 会基于 `LTX 2.3 I2V 6.1.json` 的可选 `Power Lora Loader (rgthree)` 节点进行动态注入或裁剪。
+
 ### 1. 模型文件部署 (Deployment)
 - **文件命名规范**：根据现有的探针逻辑，图生视频的 LoRA 模型在生成阶段分为高噪和低噪两个环节。新模型**必须**包含两个文件，并严格按照以下格式命名：
   - `{lora_name}_high_noise.safetensors`
@@ -80,3 +84,40 @@
 - 上传好 `.safetensors` 模型文件后，重启 Bot 进程（以重载 `LORA_MODELS` 字典）。
 - 在 Telegram 中唤起【图生视频(附加模型)】菜单，点击新添加的动作按钮。
 - 观察 Worker (Agent) 的控制台日志，确认 `workflow_patcher.py` 成功将 `{lora_name}_high_noise.safetensors` 和 `{lora_name}_low_noise.safetensors` 注入到了 `272` 和 `273` 节点中，且 ComfyUI 能够正常加载文件并启动推理。
+
+---
+
+## 三、 高级图生视频 (`ltx_video`) 附加模型实施方案
+
+### 1. 模型文件部署 (Deployment)
+- 将 LTX-2.3 LoRA 文件直接放到 ComfyUI LoRA 目录，并保持与工作流节点中一致的**相对路径**，例如 `ltx2.3/LTX2.3_reasoning_I2V_V3.safetensors`。
+- 与普通图生视频不同，`ltx_video` 当前走的是**单文件直接注入**，不再要求 `{name}_high_noise / {name}_low_noise` 双文件命名。
+
+### 2. Bot / Web 层：模型选单
+- **文件定位**：`src/lora_catalog.py`、`src/handlers/fsm/ltx_video_fsm.py`、`frontend/src/features/generation/imageToVideo.ts`
+- **实施步骤**：
+  - 在 `src/lora_catalog.py` 的 `LTX_VIDEO_LORA_OPTIONS` 中新增模型条目，维护：
+    - `path`：ComfyUI 可识别的相对路径
+    - `label_zh` / `label_en`：前后端展示名称
+    - `default_strength`：未显式传权重时的默认值
+  - Telegram 高级图生视频 FSM 会先进入附加模型选择，再进入上传图片与填写提示词流程。
+  - Web `SingleImageToVideo` 与模板应用面板也复用同一批 LTX LoRA 选项，提交时统一写入 `inputs.lora_name`。
+
+### 3. Backend 层：参数网关透传
+- **文件定位**：`backend/app/models.py`
+- **实施状态**：当前 `LtxVideoRequest` 已支持可选 `lora_name` 与 `lora_strength`。
+- **说明**：只要继续复用这两个字段，路由注册层无需增加新的 task type。
+
+### 4. Worker 层：工作流动态注入
+- **文件定位**：`workers/comfy_agent/workflow_patcher.py`、`workers/comfy_agent/workflows/LTX 2.3 I2V 6.1.json`
+- **当前约定**：
+  - 可选 LoRA 注入节点固定为 `256`（`Power Lora Loader (rgthree)`）。
+  - 当请求带 `lora_name` 时，patcher 会向该节点写入 `lora_1 = {on, lora, strength}`。
+  - 当请求未带 `lora_name` 时，patcher 会直接裁掉节点 `256`，并把 `8.inputs.model` 回接到 `191`，保持原始无附加模型拓扑可运行。
+  - `lora_strength` 为空时，会回落到 `src/lora_catalog.py` 中登记的默认强度。
+- > ⚠️ **节点硬编码警告**：若你重导出了 `LTX 2.3 I2V 6.1.json`，必须同步检查 `256`、`191`、`189`、`8` 这些节点 ID 是否仍满足当前补丁逻辑；否则需要同步修改 `workflow_patcher.py`。
+
+### 5. 验证建议
+- Telegram：进入【高级图生视频】后应先看到附加模型选择，再要求上传起始图。
+- Web：`ltx_video` 页面和模板应用面板都应能提交 `inputs.lora_name`。
+- Worker：分别验证“选 LoRA / 不选 LoRA”两种场景，确认有 LoRA 时注入成功，无 LoRA 时节点被裁剪后仍能正常出图出视频。
