@@ -1,5 +1,5 @@
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 from asgi_correlation_id import correlation_id
@@ -86,6 +86,13 @@ async def test_send_initial_task_status_uses_reply_text_when_update_present(monk
 async def test_update_submitted_task_status_prefers_submitted_text(monkeypatch):
     edit_text = AsyncMock()
     monkeypatch.setattr(task_service_flow, "robust_edit_text", edit_text)
+    cancel_markup = object()
+    build_cancel_markup = Mock(return_value=cancel_markup)
+    monkeypatch.setattr(
+        task_service_flow,
+        "build_cancel_task_markup",
+        build_cancel_markup,
+    )
 
     status_msg = object()
     spec = BotTaskMessageSpec(
@@ -97,9 +104,15 @@ async def test_update_submitted_task_status_prefers_submitted_text(monkeypatch):
     await task_service_flow.update_submitted_task_status(
         status_msg=status_msg,
         message_spec=spec,
+        registry_task_id="registry-1",
     )
 
-    edit_text.assert_awaited_once_with(status_msg, "已提交")
+    build_cancel_markup.assert_called_once_with("registry-1")
+    edit_text.assert_awaited_once_with(
+        status_msg,
+        "已提交",
+        reply_markup=cancel_markup,
+    )
 
 
 @pytest.mark.asyncio
@@ -156,11 +169,12 @@ async def test_prepare_and_submit_bot_task_updates_status_through_helpers(monkey
     update_submitted.assert_awaited_once_with(
         status_msg="status-msg",
         message_spec=spec,
+        registry_task_id="registry-1",
     )
 
 
 @pytest.mark.asyncio
-async def test_run_bot_task_application_monitors_with_backend_task_id_and_completes_with_registry_id(
+async def test_run_bot_task_application_monitors_with_backend_task_id_and_completes_with_split_ids(
     monkeypatch,
 ):
     submission_stage = AsyncMock(
@@ -250,4 +264,5 @@ async def test_run_bot_task_application_monitors_with_backend_task_id_and_comple
     monitor_stage.assert_awaited_once()
     assert monitor_stage.await_args.kwargs["backend_task_id"] == "backend-456"
     completion_stage.assert_awaited_once()
-    assert completion_stage.await_args.kwargs["task_id"] == "registry-123"
+    assert completion_stage.await_args.kwargs["registry_task_id"] == "registry-123"
+    assert completion_stage.await_args.kwargs["backend_task_id"] == "backend-456"

@@ -63,7 +63,8 @@ async def test_handle_task_completion_keeps_success_flow_when_metadata_probe_fai
         internal_user_id=456,
         prompt="prompt",
         task_type="custom_video",
-        task_id="task-1",
+        registry_task_id="registry-1",
+        backend_task_id="backend-1",
         saved_input_images=["input.png"],
         user_logger=user_logger,
         is_video=True,
@@ -84,8 +85,8 @@ async def test_handle_task_completion_keeps_success_flow_when_metadata_probe_fai
         refresh_user_group_after_log=True,
     )
     assert kwargs["billing_resolution"] is None
-    assert kwargs["backend_task_id"] == "task-1"
-    assert kwargs["registry_task_id"] == "task-1"
+    assert kwargs["backend_task_id"] == "backend-1"
+    assert kwargs["registry_task_id"] == "registry-1"
 
 
 @pytest.mark.asyncio
@@ -117,7 +118,8 @@ async def test_handle_task_completion_uses_helper_download_default(monkeypatch):
         internal_user_id=456,
         prompt="prompt",
         task_type="image",
-        task_id="task-seam",
+        registry_task_id="registry-seam",
+        backend_task_id="backend-seam",
         saved_input_images=["input.png"],
         user_logger=user_logger,
         is_video=False,
@@ -132,7 +134,10 @@ async def test_handle_task_completion_uses_helper_download_default(monkeypatch):
     assert media_bytes == b"image-bytes"
     assert output_path == "saved-output.png"
     download_output.assert_awaited_once()
+    assert download_output.await_args.kwargs["registry_task_id"] == "registry-seam"
+    assert download_output.await_args.kwargs["backend_task_id"] == "backend-seam"
     send_result_media.assert_awaited_once()
+    assert send_result_media.await_args.kwargs["task_id"] == "registry-seam"
     cleanup_status.assert_awaited_once_with(
         status_msg=status_msg,
         delete_status=True,
@@ -169,7 +174,8 @@ async def test_handle_task_completion_uses_module_default_completion_helpers(mon
         internal_user_id=456,
         prompt="prompt",
         task_type="custom_video",
-        task_id="task-explicit-seams",
+        registry_task_id="registry-explicit",
+        backend_task_id="backend-explicit",
         saved_input_images=["input.png"],
         user_logger=user_logger,
         is_video=True,
@@ -214,7 +220,8 @@ async def test_download_and_log_task_output_handles_image_branch(monkeypatch):
             username="tester",
             prompt="prompt",
             task_type="image",
-            task_id="task-2",
+            registry_task_id="registry-2",
+            backend_task_id="backend-2",
             saved_input_images=["input.png"],
             is_video=False,
             allow_contribute=True,
@@ -426,7 +433,8 @@ async def test_complete_monitored_bot_task_preserves_supplied_user_logger(monkey
             username="tester",
             prompt="prompt",
             task_type="custom_video",
-            task_id="task-complete",
+            registry_task_id="registry-complete",
+            backend_task_id="backend-complete",
             saved_input_images=["input.png"],
             final_info={"status": "done"},
             is_video=True,
@@ -468,7 +476,8 @@ async def test_complete_monitored_bot_task_uses_default_handle_completion(monkey
             username="tester",
             prompt="prompt",
             task_type="custom_video",
-            task_id="task-complete",
+            registry_task_id="registry-complete",
+            backend_task_id="backend-complete",
             saved_input_images=["input.png"],
             final_info={"status": "done"},
             is_video=True,
@@ -509,7 +518,8 @@ async def test_complete_monitored_bot_task_uses_default_finalize_failed(monkeypa
             username="tester",
             prompt="prompt",
             task_type="custom_video",
-            task_id="task-complete",
+            registry_task_id="registry-complete",
+            backend_task_id="backend-complete",
             saved_input_images=["input.png"],
             final_info=None,
             is_video=True,

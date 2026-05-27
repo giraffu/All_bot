@@ -135,7 +135,27 @@ def _resolve_history_result_asset(
         "safe_name": _build_safe_result_object_name(task_id, asset),
         "filename": original_filename,
         "subfolder": asset.get("subfolder", ""),
+        "type": asset.get("type", ""),
     }
+
+
+def _resolve_comfy_view_type(asset: dict[str, Any] | None) -> str:
+    if not asset:
+        return "output"
+
+    asset_type = str(asset.get("type", "") or "").strip().lower()
+    if asset_type in {"temp", "output", "input"}:
+        return asset_type
+
+    subfolder = str(asset.get("subfolder", "") or "").strip().lower()
+    if subfolder == "temp" or subfolder.startswith("temp/") or "/temp/" in f"/{subfolder}/":
+        return "temp"
+
+    filename = str(asset.get("filename", "") or "").strip().lower()
+    if "/temp/" in filename or filename.startswith("temp/"):
+        return "temp"
+
+    return "output"
 
 
 class ComfyAgent:
@@ -620,7 +640,7 @@ class ComfyAgent:
                 original_filename = history_result["filename"]
                 original_subfolder = history_result["subfolder"]
 
-                view_type = "temp" if "temp" in original_filename.lower() else "output"
+                view_type = _resolve_comfy_view_type(history_result)
 
                 logger.info(
                     f"Fetching result {original_filename} from ComfyUI API (subfolder: '{original_subfolder}', type: '{view_type}')"

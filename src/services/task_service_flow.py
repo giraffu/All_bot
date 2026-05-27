@@ -25,7 +25,10 @@ from src.services.task_service_types import (
     BotTaskMessageSpec,
     BotTaskSubmissionContext,
 )
-from src.services.tg_task_runtime import get_or_send_status_message
+from src.services.tg_task_runtime import (
+    get_or_send_status_message,
+    build_cancel_task_markup,
+)
 from src.utils import robust_edit_text, robust_reply_text
 
 
@@ -81,11 +84,23 @@ async def update_submitted_task_status(
     *,
     status_msg,
     message_spec: BotTaskMessageSpec,
+    registry_task_id: Optional[str] = None,
 ):
+    reply_markup = (
+        build_cancel_task_markup(registry_task_id) if registry_task_id else None
+    )
     if message_spec.submitted_status_text:
-        await robust_edit_text(status_msg, message_spec.submitted_status_text)
+        await robust_edit_text(
+            status_msg,
+            message_spec.submitted_status_text,
+            reply_markup=reply_markup,
+        )
     elif message_spec.progress_wait_text:
-        await robust_edit_text(status_msg, message_spec.progress_wait_text)
+        await robust_edit_text(
+            status_msg,
+            message_spec.progress_wait_text,
+            reply_markup=reply_markup,
+        )
 
 
 async def prepare_and_submit_bot_task(
@@ -121,6 +136,7 @@ async def prepare_and_submit_bot_task(
     await update_submitted_task_status(
         status_msg=status_msg,
         message_spec=message_spec,
+        registry_task_id=registry_task_id,
     )
     return status_msg, registry_task_id, backend_task_id, saved_inputs, message_spec
 
@@ -178,7 +194,8 @@ async def run_bot_task_completion_stage(
     username: str,
     prompt: str,
     task_type: str,
-    task_id: str,
+    registry_task_id: str,
+    backend_task_id: str,
     saved_inputs: list[str],
     final_info,
     is_video: bool,
@@ -201,7 +218,8 @@ async def run_bot_task_completion_stage(
             username=username,
             prompt=prompt,
             task_type=task_type,
-            task_id=task_id,
+            registry_task_id=registry_task_id,
+            backend_task_id=backend_task_id,
             saved_input_images=saved_inputs,
             final_info=final_info,
             is_video=is_video,
@@ -302,7 +320,8 @@ async def run_bot_task_application(
             username=request.username,
             prompt=request.prompt,
             task_type=request.task_type,
-            task_id=registry_task_id,
+            registry_task_id=registry_task_id,
+            backend_task_id=backend_task_id,
             saved_inputs=saved_inputs,
             final_info=final_info,
             is_video=request.is_video,

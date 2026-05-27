@@ -66,6 +66,23 @@ def _translate(lang: str, key: str, **kwargs) -> str:
     return get_text(key, lang or "zh", **kwargs)
 
 
+def build_cancel_task_markup(
+    task_id: str | None,
+    *,
+    lang: str = "zh",
+) -> InlineKeyboardMarkup | None:
+    if not task_id:
+        return None
+    return InlineKeyboardMarkup(
+        [[
+            InlineKeyboardButton(
+                _translate(lang, "task.status_cancel_button"),
+                callback_data=f"cancel_task_{task_id}",
+            )
+        ]]
+    )
+
+
 async def get_or_send_status_message(context, chat_id, status_msg_id, text):
     if status_msg_id:
         try:
@@ -253,14 +270,7 @@ async def monitor_task_progress(
     last_status = None
     last_queue_pos = None
     final_info = None
-    cancel_markup = InlineKeyboardMarkup(
-        [[
-            InlineKeyboardButton(
-                _translate(lang, "task.status_cancel_button"),
-                callback_data=f"cancel_task_{task_id}",
-            )
-        ]]
-    )
+    cancel_markup = build_cancel_task_markup(task_id, lang=lang)
 
     async def update_status_message(text, *, show_cancel_button=False, **kwargs):
         if not status_msg:

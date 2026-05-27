@@ -36,5 +36,9 @@ def test_agent_main_extracts_history_result_resolution_helpers():
     assert "def _pick_first_output_asset(" in content
     assert "def _build_safe_result_object_name(" in content
     assert "def _resolve_history_result_asset(" in content
+    assert "def _resolve_comfy_view_type(" in content
     assert "if not isinstance(outputs, dict):" in content
+    assert '"type": asset.get("type", "")' in content
+    assert 'view_type = _resolve_comfy_view_type(history_result)' in content
+    assert 'subfolder.startswith("temp/")' in content
     ast.parse(content)

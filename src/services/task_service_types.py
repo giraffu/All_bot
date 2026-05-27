@@ -42,7 +42,8 @@ class BotTaskCompletionContext:
     username: str
     prompt: str
     task_type: str
-    task_id: str
+    registry_task_id: str
+    backend_task_id: str
     saved_input_images: list[str]
     final_info: Any
     is_video: bool
