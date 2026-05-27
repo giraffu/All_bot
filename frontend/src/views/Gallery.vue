@@ -269,9 +269,12 @@ const loadPosts = async (reset = false) => {
 }
 const resolveTaskTypeLabel = (taskTypeId: string) =>
   resolveGalleryTaskTypeLabel(taskTypeId, t)
+const visibleAllowedTypes = computed(() =>
+  allowedTypes.value.filter((taskTypeOption) => taskTypeOption.id !== 'txt2img')
+)
 const taskTypeTabs = computed(() => [
   { id: 'all', name: t('gallery.tabs.all') },
-  ...buildGalleryTaskTypeTabs(allowedTypes.value).map((tab) => ({
+  ...buildGalleryTaskTypeTabs(visibleAllowedTypes.value).map((tab) => ({
     id: tab.id,
     name: resolveTaskTypeLabel(tab.id),
   })),

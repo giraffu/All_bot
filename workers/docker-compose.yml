@@ -14,6 +14,7 @@ x-worker-base: &worker-base
   volumes:
     - ../logs/workers:/app/logs
     - ./comfy_agent/workflows:/app/worker/workflows
+    - ../src:/app/src
 
 services:
   # Agent 1 (192.168.1.226:8188)

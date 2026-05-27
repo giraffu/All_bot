@@ -19,8 +19,9 @@ services:
       - MINIO_SECURE=false
       - AGENT_SECRET_TOKEN=${AGENT_SECRET_TOKEN:-super_secret_agent_token_2026}
     volumes:
-      - ./workflows:/app/workflows
+      - ../workers/comfy_agent/workflows:/app/workflows
       - ./app:/app/app
+      - ../src:/app/src
     extra_hosts:
       - "host.docker.internal:host-gateway"
     restart: always

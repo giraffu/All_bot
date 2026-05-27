@@ -319,6 +319,7 @@ describe('Gallery template apply integration', () => {
     primeGalleryApi({
       config: {
         allowed_types: [
+          { id: 'txt2img', name: '文生图' },
           { id: 'i2i_pro', name: '幻想换脸' },
           { id: 'edit', name: '自由P图' },
           { id: 'img2img_lora', name: '图生图(附加模型)' },
@@ -350,6 +351,8 @@ describe('Gallery template apply integration', () => {
 
     expect(findButtonsByText('自由P图')).toHaveLength(1)
     expect(findButtonsByText('图生视频')).toHaveLength(1)
+    expect(findButtonsByText('文生图')).toHaveLength(0)
+    expect(findButtonsByText('gallery.tabs.txt2img')).toHaveLength(0)
     expect(findButtonsByText('图生图(附加模型)')).toHaveLength(0)
     expect(findButtonsByText('图生视频(附加模型)')).toHaveLength(0)
 
