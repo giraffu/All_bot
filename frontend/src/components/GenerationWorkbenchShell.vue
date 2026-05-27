@@ -26,10 +26,10 @@ const props = withDefaults(
 <template>
   <div :class="containerClass">
     <div :class="innerClass">
-      <section :class="leftPanelClass">
+      <section :class="['generation-workbench-panel', leftPanelClass]">
         <div :class="leftBodyClass">
-          <h2 class="text-2xl font-bold mb-2 text-slate-100">{{ title }}</h2>
-          <p v-if="description" class="text-slate-400 mb-6 text-sm">
+          <h2 class="generation-workbench-title text-2xl font-bold mb-2">{{ title }}</h2>
+          <p v-if="description" class="generation-workbench-description mb-6 text-sm">
             {{ description }}
           </p>
 
@@ -40,9 +40,25 @@ const props = withDefaults(
         <slot name="left-footer" />
       </section>
 
-      <section :class="rightPanelClass">
+      <section :class="['generation-workbench-panel', rightPanelClass]">
         <slot name="right-panel" />
       </section>
     </div>
   </div>
 </template>
+
+<style scoped>
+.generation-workbench-panel {
+  background: var(--theme-card-bg) !important;
+  border: 1px solid var(--theme-border) !important;
+  box-shadow: var(--theme-shadow) !important;
+}
+
+.generation-workbench-title {
+  color: var(--theme-text-primary);
+}
+
+.generation-workbench-description {
+  color: var(--theme-text-secondary);
+}
+</style>

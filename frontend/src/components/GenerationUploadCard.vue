@@ -30,9 +30,9 @@ const props = withDefaults(
     wrapperClass:
       'upload-section flex flex-col w-full min-w-[160px] shrink-0 h-48 md:h-full',
     titleClass:
-      'text-sm font-bold mb-2 text-slate-200 flex items-center shrink-0',
+      'generation-upload-card__title text-sm font-bold mb-2 flex items-center shrink-0',
     previewClass:
-      'relative group rounded-xl overflow-hidden border border-slate-400/50 bg-slate-500/50 flex items-center justify-center flex-grow w-full',
+      'generation-upload-card__preview relative group rounded-xl overflow-hidden flex items-center justify-center flex-grow w-full',
     draggerClass: 'upload-dragger flex-grow flex items-center justify-center w-full',
     overlayButtonText: '重新上传',
     uploadText: '点击/拖拽',
@@ -51,7 +51,7 @@ const emit = defineEmits<{
 <template>
   <div :class="wrapperClass">
     <h3 :class="titleClass">
-      <span v-if="step" class="text-slate-500 mr-2">{{ step }}</span>
+      <span v-if="step" class="generation-upload-card__step mr-2">{{ step }}</span>
       {{ title }}
     </h3>
 
@@ -112,3 +112,35 @@ const emit = defineEmits<{
     </a-upload-dragger>
   </div>
 </template>
+
+<style scoped>
+.generation-upload-card__title {
+  color: var(--theme-text-primary);
+}
+
+.generation-upload-card__step {
+  color: var(--theme-text-secondary);
+}
+
+.generation-upload-card__preview {
+  border: 1px solid var(--theme-border);
+  background: var(--theme-card-strong-bg);
+}
+
+:deep(.ant-upload.ant-upload-drag) {
+  background: var(--theme-card-strong-bg) !important;
+  border-color: var(--theme-border) !important;
+}
+
+:deep(.ant-upload.ant-upload-drag:hover) {
+  border-color: var(--theme-border-strong) !important;
+}
+
+:deep(.ant-upload.ant-upload-drag .ant-upload-text) {
+  color: var(--theme-text-primary) !important;
+}
+
+:deep(.ant-upload.ant-upload-drag .ant-upload-hint) {
+  color: var(--theme-text-secondary) !important;
+}
+</style>

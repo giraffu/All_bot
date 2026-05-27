@@ -465,40 +465,43 @@ const resetForm = () => {
 
 <style scoped>
 :deep(.ant-select-selector) {
-  background-color: rgba(15, 23, 42, 0.4) !important;
-  color: #e2e8f0 !important;
-  border-color: rgba(71, 85, 105, 0.5) !important;
+  background-color: var(--theme-card-strong-bg) !important;
+  color: var(--theme-text-primary) !important;
+  border-color: var(--theme-border) !important;
 }
 :deep(.ant-select-selection-item) {
-  color: #e2e8f0 !important;
+  color: var(--theme-text-primary) !important;
+}
+:deep(.ant-select-selection-placeholder) {
+  color: var(--theme-text-muted) !important;
 }
 :deep(.ant-select-arrow) {
-  color: #94a3b8 !important;
+  color: var(--theme-text-secondary) !important;
 }
 :deep(.ant-input), :deep(.ant-input-affix-wrapper) {
-  background-color: rgba(15, 23, 42, 0.4) !important;
-  color: #e2e8f0 !important;
-  border-color: rgba(71, 85, 105, 0.5) !important;
+  background-color: var(--theme-card-strong-bg) !important;
+  color: var(--theme-text-primary) !important;
+  border-color: var(--theme-border) !important;
 }
 :deep(.ant-input::placeholder) {
-  color: #64748b !important;
+  color: var(--theme-text-muted) !important;
 }
 :deep(.ant-upload.ant-upload-drag) {
-  background: rgba(15, 23, 42, 0.4) !important;
-  border-color: rgba(71, 85, 105, 0.5) !important;
+  background: var(--theme-card-strong-bg) !important;
+  border-color: var(--theme-border) !important;
 }
 :deep(.ant-upload.ant-upload-drag:hover) {
-  border-color: #3b82f6 !important;
+  border-color: var(--theme-border-strong) !important;
 }
 :deep(.ant-upload.ant-upload-drag .ant-upload-text) {
-  color: #cbd5e1 !important;
+  color: var(--theme-text-primary) !important;
 }
 :deep(.ant-upload.ant-upload-drag .ant-upload-hint) {
-  color: #64748b !important;
+  color: var(--theme-text-secondary) !important;
 }
 
 .upload-dragger {
-  background: rgba(15, 23, 42, 0.4);
+  background: var(--theme-card-strong-bg);
   border-radius: 12px;
 }
 .video-lora-group {
@@ -516,9 +519,9 @@ const resetForm = () => {
   border-left-width: 1px !important;
 }
 :deep(.ant-radio-button-wrapper) {
-  background: rgba(15, 23, 42, 0.4) !important;
-  color: #94a3b8 !important;
-  border-color: rgba(71, 85, 105, 0.5) !important;
+  background: var(--theme-pill-bg) !important;
+  color: var(--theme-text-secondary) !important;
+  border-color: var(--theme-border) !important;
 }
 :deep(.ant-radio-button-wrapper-checked:not(.ant-radio-button-wrapper-disabled)) {
   background: #3b82f6 !important;
@@ -530,5 +533,15 @@ const resetForm = () => {
 }
 :deep(.compact-option-group .ant-radio-button-wrapper) {
   min-width: 0;
+}
+
+:deep(.text-slate-200),
+:deep(.text-slate-300) {
+  color: var(--theme-text-primary) !important;
+}
+
+:deep(.text-slate-400),
+:deep(.text-slate-500) {
+  color: var(--theme-text-secondary) !important;
 }
 </style>

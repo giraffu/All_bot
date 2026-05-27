@@ -330,49 +330,59 @@ const resetForm = () => {
 
 <style scoped>
 :deep(.ant-input), :deep(.ant-input-affix-wrapper) {
-  background-color: rgba(15, 23, 42, 0.4) !important;
-  color: #e2e8f0 !important;
-  border-color: rgba(71, 85, 105, 0.5) !important;
+  background-color: var(--theme-card-strong-bg) !important;
+  color: var(--theme-text-primary) !important;
+  border-color: var(--theme-border) !important;
 }
 :deep(.ant-input::placeholder) {
-  color: #64748b !important;
+  color: var(--theme-text-muted) !important;
 }
 :deep(.ant-upload.ant-upload-drag) {
-  background: rgba(15, 23, 42, 0.4) !important;
-  border-color: rgba(71, 85, 105, 0.5) !important;
+  background: var(--theme-card-strong-bg) !important;
+  border-color: var(--theme-border) !important;
 }
 :deep(.ant-upload.ant-upload-drag:hover) {
-  border-color: #3b82f6 !important;
+  border-color: var(--theme-border-strong) !important;
 }
 :deep(.ant-upload.ant-upload-drag .ant-upload-text) {
-  color: #cbd5e1 !important;
+  color: var(--theme-text-primary) !important;
 }
 :deep(.ant-upload.ant-upload-drag .ant-upload-hint) {
-  color: #64748b !important;
+  color: var(--theme-text-secondary) !important;
 }
 
 .upload-dragger {
-  background: rgba(15, 23, 42, 0.4);
+  background: var(--theme-card-strong-bg);
   border-radius: 12px;
 }
 
 :deep(.ant-input-number) {
-  background-color: rgba(15, 23, 42, 0.4) !important;
-  border-color: rgba(71, 85, 105, 0.5) !important;
-  color: #e2e8f0 !important;
+  background-color: var(--theme-card-strong-bg) !important;
+  border-color: var(--theme-border) !important;
+  color: var(--theme-text-primary) !important;
 }
 :deep(.ant-input-number-input) {
-  color: #e2e8f0 !important;
+  color: var(--theme-text-primary) !important;
 }
 :deep(.ant-input-number-handler-wrap) {
-  background-color: rgba(15, 23, 42, 0.6) !important;
-  border-color: rgba(71, 85, 105, 0.5) !important;
+  background-color: var(--theme-card-bg) !important;
+  border-color: var(--theme-border) !important;
 }
 :deep(.ant-input-number-handler) {
-  border-color: rgba(71, 85, 105, 0.5) !important;
+  border-color: var(--theme-border) !important;
 }
 :deep(.ant-input-number-handler-up-inner),
 :deep(.ant-input-number-handler-down-inner) {
-  color: #94a3b8 !important;
+  color: var(--theme-text-secondary) !important;
+}
+
+:deep(.text-slate-200),
+:deep(.text-slate-300) {
+  color: var(--theme-text-primary) !important;
+}
+
+:deep(.text-slate-400),
+:deep(.text-slate-500) {
+  color: var(--theme-text-secondary) !important;
 }
 </style>
