@@ -52,14 +52,14 @@ const {
     :style="isMobile ? { top: 0, padding: 0, margin: 0, maxWidth: '100%' } : { maxWidth: '1000px', top: '20px' }"
     :wrapClassName="isMobile ? 'mobile-full-modal' : ''"
     class="history-detail-modal"
-    :bodyStyle="isMobile ? { padding: 0, backgroundColor: '#0f172a', height: '100vh', overflowY: 'auto' } : { padding: 0, backgroundColor: 'transparent' }"
+    :bodyStyle="isMobile ? { padding: 0, backgroundColor: 'var(--task-detail-shell-bg)', height: '100vh', overflowY: 'auto' } : { padding: 0, backgroundColor: 'transparent' }"
     destroyOnClose
   >
-    <div v-if="currentRecord" class="flex flex-col lg:flex-row bg-[#0f172a] lg:rounded-2xl overflow-hidden border-none lg:border lg:border-slate-400/50 lg:shadow-2xl min-h-[100vh] lg:min-h-0">
+    <div v-if="currentRecord" class="task-detail-shell flex flex-col lg:flex-row lg:rounded-2xl overflow-hidden border-none lg:border min-h-[100vh] lg:min-h-0">
       
       <!-- Mobile Header (Back Button) -->
-      <div class="lg:hidden absolute top-0 left-0 right-0 z-50 p-4 flex justify-between items-center bg-gradient-to-b from-black/60 to-transparent pointer-events-none">
-        <button @click="detailVisible = false" class="text-white bg-black/40 backdrop-blur-md p-2 rounded-full flex items-center justify-center pointer-events-auto">
+      <div class="task-detail-mobile-header lg:hidden absolute top-0 left-0 right-0 z-50 p-4 flex justify-between items-center pointer-events-none">
+        <button @click="detailVisible = false" class="task-detail-mobile-close p-2 rounded-full flex items-center justify-center pointer-events-auto">
           <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
         </button>
       </div>
@@ -70,33 +70,33 @@ const {
           <video v-if="isVideoFile(currentRecord.output_file)" :src="currentRecord.output_file_url || getFileUrl(currentRecord.output_file)" class="w-full h-auto lg:max-w-full lg:max-h-[80vh] lg:object-contain object-cover" controls autoplay loop playsinline></video>
           <img v-else :src="currentRecord.output_file_url || getFileUrl(currentRecord.output_file)" class="w-full h-auto lg:max-w-full lg:max-h-[80vh] lg:object-contain object-cover" />
         </template>
-        <div v-else class="text-slate-500">无文件</div>
+        <div v-else class="task-detail-empty-file">无文件</div>
       </div>
 
       <!-- Info Area -->
-      <div class="w-full lg:w-1/3 flex flex-col bg-[#0f172a] lg:bg-slate-500/80 lg:backdrop-blur-xl relative pb-[120px] lg:pb-0">
+      <div class="task-detail-info-panel w-full lg:w-1/3 flex flex-col relative pb-[120px] lg:pb-0">
         <!-- Desktop Close button -->
-        <button @click="detailVisible = false" class="hidden lg:block absolute top-4 right-4 text-slate-400 hover:text-white transition-colors z-10">
+        <button @click="detailVisible = false" class="task-detail-desktop-close hidden lg:block absolute top-4 right-4 transition-colors z-10">
           <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
         </button>
 
         <div class="p-4 lg:p-6 flex-1 flex flex-col">
-          <h3 class="text-lg lg:text-xl font-bold text-slate-100 mb-4 flex items-center mt-0 lg:mt-2">
+          <h3 class="task-detail-title text-lg lg:text-xl font-bold mb-4 flex items-center mt-0 lg:mt-2">
             <span class="bg-gradient-to-r from-cyan-400 to-indigo-400 bg-clip-text text-transparent">作品详情</span>
           </h3>
 
           <div class="space-y-4 lg:space-y-6 mb-6 lg:mb-8">
             <!-- Labels -->
             <div>
-              <div class="text-[10px] lg:text-xs text-slate-400 mb-1.5 lg:mb-2 uppercase tracking-wider">类型标签</div>
+              <div class="task-detail-section-label text-[10px] lg:text-xs mb-1.5 lg:mb-2 uppercase tracking-wider">类型标签</div>
               <div class="flex flex-wrap gap-1.5 lg:gap-2">
-                <span class="text-xs px-2 py-0.5 lg:text-sm lg:px-3 lg:py-1 rounded-md border border-white/20 bg-black/40 text-white flex items-center shadow-sm">
+                <span class="task-detail-type-badge text-xs px-2 py-0.5 lg:text-sm lg:px-3 lg:py-1 rounded-md flex items-center shadow-sm">
                   <Video v-if="currentRecord.type === 'face_video'" :size="isMobile ? 12 : 14" class="mr-1 lg:mr-1.5 text-blue-400" />
                   <ImageIcon v-else :size="isMobile ? 12 : 14" class="mr-1 lg:mr-1.5 text-cyan-400" />
                   {{ getTypeLabel(currentRecord.type) }}
                 </span>
-                <span class="text-xs px-2 py-0.5 lg:text-sm lg:px-3 lg:py-1 rounded-md border border-white/10"
-                      :class="currentRecord.source === 'web' ? 'bg-green-500/30 text-green-100' : 'bg-orange-500/30 text-orange-100'">
+                <span class="task-detail-source-badge text-xs px-2 py-0.5 lg:text-sm lg:px-3 lg:py-1 rounded-md border"
+                      :class="currentRecord.source === 'web' ? 'is-web' : 'is-bot'">
                   {{ currentRecord.source === 'web' ? '🌐 ' + $t('history.web_creation') : '🤖 ' + $t('history.bot_creation') }}
                 </span>
               </div>
@@ -104,8 +104,8 @@ const {
 
             <!-- Time -->
             <div>
-              <div class="text-[10px] lg:text-xs text-slate-400 mb-1.5 lg:mb-2 uppercase tracking-wider">创建时间</div>
-              <div class="flex items-center text-slate-300 text-xs lg:text-sm bg-black/20 w-fit px-2 py-1 lg:px-3 lg:py-1.5 rounded-lg border border-slate-500/30">
+              <div class="task-detail-section-label text-[10px] lg:text-xs mb-1.5 lg:mb-2 uppercase tracking-wider">创建时间</div>
+              <div class="task-detail-time-badge flex items-center text-xs lg:text-sm w-fit px-2 py-1 lg:px-3 lg:py-1.5 rounded-lg">
                 <Clock :size="isMobile ? 14 : 16" class="mr-1.5 lg:mr-2 text-cyan-400" />
                 {{ formatDate(currentRecord.created_at) }}
               </div>
@@ -119,21 +119,21 @@ const {
                 v-if="['txt2img', 'i2i_pro', 'i2i_draw', 'edit', 'custom_video', 'video_lora', 'img2img_lora', 'ltx_video'].includes(currentRecord.type) && currentRecord.allow_contribute !== false"
                 type="primary"
                 :disabled="currentRecord.is_public"
-                class="w-full h-12 border-none rounded-xl text-base font-medium flex items-center justify-center"
-                :class="currentRecord.is_public ? 'bg-indigo-500/50 text-indigo-100 cursor-not-allowed' : 'bg-gradient-to-r from-cyan-600 to-indigo-600 shadow-[0_0_15px_rgba(56,189,248,0.3)] hover:scale-[1.02] transition-transform'"
+                class="task-detail-primary-btn w-full h-12 border-none rounded-xl text-base font-medium flex items-center justify-center"
+                :class="currentRecord.is_public ? 'is-disabled' : 'is-active'"
                 :loading="submittingTasks[currentRecord.task_id]"
                 @click="!currentRecord.is_public && submitToGallery(currentRecord)"
               >
                 {{ currentRecord.is_public ? '已投稿' : (submittingTasks[currentRecord.task_id] ? $t('history.submitting') : $t('history.submit')) }}
               </a-button>
-              <div v-else class="w-full h-12 bg-slate-600/30 border border-slate-500/30 rounded-xl text-slate-400 flex items-center justify-center text-sm">
+              <div v-else class="task-detail-disabled-box w-full h-12 rounded-xl flex items-center justify-center text-sm">
                 {{ $t('history.cannot_post') }}
               </div>
 
               <a-button
                 ghost
-                class="w-full h-12 border-slate-500/50 hover:bg-slate-500/30 transition-colors rounded-xl text-base font-medium !flex !items-center !justify-center"
-                :class="currentRecord.is_favorited ? 'text-slate-400 cursor-not-allowed' : 'text-amber-400 hover:text-amber-300 hover:border-amber-400/50'"
+                class="task-detail-secondary-btn task-detail-favorite-btn w-full h-12 transition-colors rounded-xl text-base font-medium !flex !items-center !justify-center"
+                :class="currentRecord.is_favorited ? 'is-disabled' : ''"
                 @click="!currentRecord.is_favorited && handleFavorite(currentRecord)"
               >
                 <span class="flex items-center justify-center">
@@ -144,7 +144,7 @@ const {
 
               <a-button
                 ghost
-                class="w-full h-12 text-cyan-400 border-cyan-500/50 hover:text-cyan-300 hover:border-cyan-400 hover:bg-cyan-500/10 transition-colors rounded-xl text-base font-medium !flex !items-center !justify-center"
+                class="task-detail-secondary-btn task-detail-download-btn w-full h-12 transition-colors rounded-xl text-base font-medium !flex !items-center !justify-center"
                 @click="handleDownload(currentRecord)"
               >
                 <span class="flex items-center justify-center">
@@ -155,7 +155,7 @@ const {
 
               <a-button
                 ghost
-                class="w-full h-12 text-indigo-400 border-indigo-500/50 hover:text-indigo-300 hover:border-indigo-400 hover:bg-indigo-500/10 transition-colors rounded-xl text-base font-medium !flex !items-center !justify-center"
+                class="task-detail-secondary-btn task-detail-bot-btn w-full h-12 transition-colors rounded-xl text-base font-medium !flex !items-center !justify-center"
                 @click="handleSendToBot(currentRecord)"
               >
                 <span class="flex items-center justify-center">
@@ -166,7 +166,7 @@ const {
 
               <a-button
                 ghost
-                class="w-full h-12 text-red-400 border-red-500/50 hover:text-red-300 hover:border-red-400 hover:bg-red-500/10 transition-colors rounded-xl text-base font-medium !flex !items-center !justify-center mt-3"
+                class="task-detail-secondary-btn task-detail-delete-btn w-full h-12 transition-colors rounded-xl text-base font-medium !flex !items-center !justify-center mt-3"
                 @click="handleDelete(currentRecord)"
               >
                 <span class="flex items-center justify-center">
@@ -175,28 +175,28 @@ const {
                 </span>
               </a-button>
             </template>
-            <div v-else class="text-center text-slate-500 italic py-4 border border-dashed border-slate-600 rounded-xl">暂无文件可操作</div>
+            <div v-else class="task-detail-empty-actions text-center italic py-4 border border-dashed rounded-xl">暂无文件可操作</div>
           </div>
         </div>
       </div>
 
       <!-- Mobile Bottom Interaction Bar -->
-      <div class="lg:hidden fixed bottom-0 left-0 right-0 bg-[#0f172a]/95 backdrop-blur-lg border-t border-slate-800 px-4 py-2 pb-6 flex items-center justify-between z-50 safe-area-bottom">
+      <div class="task-detail-mobile-bar lg:hidden fixed bottom-0 left-0 right-0 px-4 py-2 pb-6 flex items-center justify-between z-50 safe-area-bottom">
         <template v-if="currentRecord.output_file">
           <div class="flex gap-6">
-            <button class="flex flex-col items-center justify-center gap-1 transition-colors" :class="currentRecord.is_favorited ? 'text-amber-400' : 'text-slate-400 hover:text-slate-200'" @click="!currentRecord.is_favorited && handleFavorite(currentRecord)">
+            <button class="task-detail-mobile-action flex flex-col items-center justify-center gap-1 transition-colors" :class="currentRecord.is_favorited ? 'is-favorite' : ''" @click="!currentRecord.is_favorited && handleFavorite(currentRecord)">
               <Star :size="20" :class="{ 'fill-current': currentRecord.is_favorited }" />
               <span class="text-[10px]">{{ currentRecord.is_favorited ? '已收藏' : '收藏' }}</span>
             </button>
-            <button class="flex flex-col items-center justify-center gap-1 text-slate-400 hover:text-slate-200 transition-colors" @click="handleDownload(currentRecord)">
+            <button class="task-detail-mobile-action flex flex-col items-center justify-center gap-1 transition-colors" @click="handleDownload(currentRecord)">
               <Download :size="20" />
               <span class="text-[10px]">保存</span>
             </button>
-            <button class="flex flex-col items-center justify-center gap-1 text-indigo-400 hover:text-indigo-300 transition-colors" @click="handleSendToBot(currentRecord)">
+            <button class="task-detail-mobile-action task-detail-mobile-bot flex flex-col items-center justify-center gap-1 transition-colors" @click="handleSendToBot(currentRecord)">
               <Send :size="20" />
               <span class="text-[10px]">发私聊</span>
             </button>
-            <button class="flex flex-col items-center justify-center gap-1 text-slate-400 hover:text-red-400 transition-colors" @click="handleDelete(currentRecord)">
+            <button class="task-detail-mobile-action task-detail-mobile-delete flex flex-col items-center justify-center gap-1 transition-colors" @click="handleDelete(currentRecord)">
               <Trash2 :size="20" />
               <span class="text-[10px]">删除</span>
             </button>
@@ -206,15 +206,15 @@ const {
             v-if="['txt2img', 'i2i_pro', 'i2i_draw', 'edit', 'custom_video', 'video_lora', 'img2img_lora', 'ltx_video'].includes(currentRecord.type) && currentRecord.allow_contribute !== false"
             @click="!currentRecord.is_public && submitToGallery(currentRecord)"
             :disabled="currentRecord.is_public || submittingTasks[currentRecord.task_id]"
-            class="px-5 py-2 rounded-full font-medium text-sm transition-all flex items-center justify-center min-w-[100px]"
-            :class="currentRecord.is_public ? 'bg-indigo-500/30 text-indigo-200' : 'bg-gradient-to-r from-cyan-600 to-indigo-600 text-white shadow-lg hover:shadow-cyan-500/25'"
+            class="task-detail-mobile-submit px-5 py-2 rounded-full font-medium text-sm transition-all flex items-center justify-center min-w-[100px]"
+            :class="currentRecord.is_public ? 'is-disabled' : 'is-active'"
           >
             <div v-if="submittingTasks[currentRecord.task_id]" class="inline-block w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin mr-1.5"></div>
             <Upload v-else-if="!currentRecord.is_public" :size="16" class="mr-1.5" />
             <span>{{ currentRecord.is_public ? '已投稿' : (submittingTasks[currentRecord.task_id] ? '投稿中...' : '一键投稿') }}</span>
           </button>
         </template>
-        <div v-else class="w-full text-center text-slate-500 text-sm py-2">暂无文件可操作</div>
+        <div v-else class="task-detail-empty-actions w-full text-center text-sm py-2">暂无文件可操作</div>
       </div>
 
     </div>
@@ -222,6 +222,54 @@ const {
 </template>
 
 <style>
+.history-detail-modal {
+  --task-detail-shell-bg: #0f172a;
+  --task-detail-panel-bg: rgba(71, 85, 105, 0.8);
+  --task-detail-header-bg: linear-gradient(to bottom, rgba(2, 6, 23, 0.55), transparent);
+  --task-detail-mobile-close-bg: rgba(2, 6, 23, 0.4);
+  --task-detail-border: rgba(148, 163, 184, 0.34);
+  --task-detail-divider: rgba(51, 65, 85, 0.95);
+  --task-detail-shadow: 0 24px 60px rgba(2, 6, 23, 0.38);
+  --task-detail-text-primary: #f8fafc;
+  --task-detail-text-secondary: #cbd5e1;
+  --task-detail-text-muted: #94a3b8;
+  --task-detail-badge-bg: rgba(2, 6, 23, 0.42);
+  --task-detail-badge-border: rgba(255, 255, 255, 0.18);
+  --task-detail-badge-text: #ffffff;
+  --task-detail-time-bg: rgba(2, 6, 23, 0.2);
+  --task-detail-time-border: rgba(100, 116, 139, 0.3);
+  --task-detail-mobile-bar-bg: rgba(15, 23, 42, 0.95);
+  --task-detail-secondary-bg: rgba(100, 116, 139, 0.14);
+  --task-detail-secondary-hover: rgba(100, 116, 139, 0.24);
+  --task-detail-secondary-border: rgba(148, 163, 184, 0.36);
+  --task-detail-primary-gradient: linear-gradient(90deg, #0891b2, #4f46e5);
+  --task-detail-primary-gradient-hover: linear-gradient(90deg, #06b6d4, #6366f1);
+}
+
+html[data-theme='light'] .history-detail-modal {
+  --task-detail-shell-bg: #ffffff;
+  --task-detail-panel-bg: rgba(248, 250, 252, 0.97);
+  --task-detail-header-bg: linear-gradient(to bottom, rgba(255, 255, 255, 0.72), transparent);
+  --task-detail-mobile-close-bg: rgba(255, 255, 255, 0.74);
+  --task-detail-border: rgba(203, 213, 225, 0.92);
+  --task-detail-divider: rgba(226, 232, 240, 0.96);
+  --task-detail-shadow: 0 24px 60px rgba(15, 23, 42, 0.14);
+  --task-detail-text-primary: #0f172a;
+  --task-detail-text-secondary: #334155;
+  --task-detail-text-muted: #64748b;
+  --task-detail-badge-bg: rgba(241, 245, 249, 0.98);
+  --task-detail-badge-border: rgba(203, 213, 225, 0.95);
+  --task-detail-badge-text: #0f172a;
+  --task-detail-time-bg: rgba(241, 245, 249, 0.92);
+  --task-detail-time-border: rgba(203, 213, 225, 0.95);
+  --task-detail-mobile-bar-bg: rgba(255, 255, 255, 0.96);
+  --task-detail-secondary-bg: rgba(241, 245, 249, 0.98);
+  --task-detail-secondary-hover: rgba(226, 232, 240, 0.98);
+  --task-detail-secondary-border: rgba(148, 163, 184, 0.35);
+  --task-detail-primary-gradient: linear-gradient(90deg, #2563eb, #4f46e5);
+  --task-detail-primary-gradient-hover: linear-gradient(90deg, #1d4ed8, #4338ca);
+}
+
 .history-detail-modal .ant-modal-content {
   background-color: transparent !important;
   box-shadow: none !important;
@@ -229,6 +277,163 @@ const {
 .history-detail-modal .ant-modal-mask {
   background-color: rgba(0, 0, 0, 0.85) !important;
   backdrop-filter: blur(8px);
+}
+
+.task-detail-shell {
+  background: var(--task-detail-shell-bg);
+  border-color: var(--task-detail-border);
+  box-shadow: var(--task-detail-shadow);
+}
+
+.task-detail-mobile-header {
+  background: var(--task-detail-header-bg);
+}
+
+.task-detail-mobile-close {
+  color: var(--task-detail-text-primary);
+  background: var(--task-detail-mobile-close-bg);
+  backdrop-filter: blur(16px);
+}
+
+.task-detail-empty-file,
+.task-detail-empty-actions {
+  color: var(--task-detail-text-muted);
+}
+
+.task-detail-info-panel {
+  background: var(--task-detail-panel-bg);
+  color: var(--task-detail-text-primary);
+  backdrop-filter: blur(20px);
+}
+
+.task-detail-desktop-close {
+  color: var(--task-detail-text-muted);
+}
+
+.task-detail-desktop-close:hover {
+  color: var(--task-detail-text-primary);
+}
+
+.task-detail-title {
+  color: var(--task-detail-text-primary);
+}
+
+.task-detail-section-label {
+  color: var(--task-detail-text-muted);
+}
+
+.task-detail-type-badge {
+  border: 1px solid var(--task-detail-badge-border);
+  background: var(--task-detail-badge-bg);
+  color: var(--task-detail-badge-text);
+}
+
+.task-detail-source-badge.is-web {
+  border-color: rgba(34, 197, 94, 0.2);
+  background: rgba(34, 197, 94, 0.18);
+  color: #166534;
+}
+
+.task-detail-source-badge.is-bot {
+  border-color: rgba(249, 115, 22, 0.2);
+  background: rgba(249, 115, 22, 0.18);
+  color: #c2410c;
+}
+
+.history-detail-modal:not([data-theme='dark']) .task-detail-time-badge {
+  color: var(--task-detail-text-secondary);
+}
+
+.task-detail-time-badge {
+  background: var(--task-detail-time-bg);
+  border: 1px solid var(--task-detail-time-border);
+  color: var(--task-detail-text-secondary);
+}
+
+.task-detail-primary-btn.is-active,
+.task-detail-mobile-submit.is-active {
+  background: var(--task-detail-primary-gradient);
+  color: #ffffff !important;
+}
+
+.task-detail-primary-btn.is-active:hover,
+.task-detail-mobile-submit.is-active:hover {
+  background: var(--task-detail-primary-gradient-hover);
+}
+
+.task-detail-primary-btn.is-disabled,
+.task-detail-mobile-submit.is-disabled {
+  background: rgba(99, 102, 241, 0.24) !important;
+  color: rgba(224, 231, 255, 0.95) !important;
+}
+
+.task-detail-disabled-box {
+  background: var(--task-detail-secondary-bg);
+  border: 1px solid var(--task-detail-secondary-border);
+  color: var(--task-detail-text-muted);
+}
+
+.task-detail-secondary-btn {
+  background: var(--task-detail-secondary-bg);
+  border-color: var(--task-detail-secondary-border) !important;
+}
+
+.task-detail-secondary-btn:hover {
+  background: var(--task-detail-secondary-hover) !important;
+}
+
+.task-detail-favorite-btn {
+  color: #f59e0b !important;
+}
+
+.task-detail-favorite-btn.is-disabled {
+  color: var(--task-detail-text-muted) !important;
+  cursor: not-allowed;
+}
+
+.task-detail-download-btn {
+  color: #06b6d4 !important;
+  border-color: rgba(6, 182, 212, 0.35) !important;
+}
+
+.task-detail-bot-btn {
+  color: #6366f1 !important;
+  border-color: rgba(99, 102, 241, 0.35) !important;
+}
+
+.task-detail-delete-btn {
+  color: #f87171 !important;
+  border-color: rgba(248, 113, 113, 0.35) !important;
+}
+
+.task-detail-empty-actions {
+  border-color: var(--task-detail-secondary-border);
+}
+
+.task-detail-mobile-bar {
+  background: var(--task-detail-mobile-bar-bg);
+  backdrop-filter: blur(18px);
+  border-top: 1px solid var(--task-detail-divider);
+}
+
+.task-detail-mobile-action {
+  color: var(--task-detail-text-muted);
+}
+
+.task-detail-mobile-action:hover {
+  color: var(--task-detail-text-secondary);
+}
+
+.task-detail-mobile-action.is-favorite {
+  color: #f59e0b;
+}
+
+.task-detail-mobile-bot {
+  color: #6366f1;
+}
+
+.task-detail-mobile-delete:hover {
+  color: #f87171;
 }
 
 /* Mobile full screen modal override */
@@ -247,7 +452,7 @@ const {
   border-radius: 0 !important;
   height: 100vh !important;
   overflow-y: auto !important;
-  background-color: #0f172a !important;
+  background-color: var(--task-detail-shell-bg, var(--theme-card-strong-bg)) !important;
 }
 .mobile-full-modal .ant-modal-body {
   height: 100% !important;
