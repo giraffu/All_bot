@@ -555,7 +555,7 @@ async def test_start_ltx_video_uses_english_locale(monkeypatch):
     assert result == ltx_video_fsm.LtxVideoState.WAIT_LORA_SELECTION
     reply_mock.assert_awaited_once_with(
         update.message,
-        "T:fsm.ltx_video.select_lora\n\n当前附加模型: None\nYou can select up to 3 LoRAs and adjust each strength individually.",
+        "T:fsm.ltx_video.select_lora\n\n当前附加模型: None\nYou can select up to 3 LoRAs. Each one uses its default strength automatically.",
         reply_markup="ltx-lora-keyboard",
         parse_mode="Markdown",
     )
@@ -582,7 +582,7 @@ async def test_start_ltx_video_opens_lora_selection_first(monkeypatch):
     assert context.user_data["ltx_video_data"]["lora_items"] == []
     reply_mock.assert_awaited_once_with(
         update.message,
-        "T:fsm.ltx_video.select_lora\n\n当前附加模型: 无\n可多选，最多 3 个。选中后可继续调整单项强度。",
+        "T:fsm.ltx_video.select_lora\n\n当前附加模型: 无\n可多选，最多 3 个。提交时将自动使用各模型默认强度。",
         reply_markup="ltx-lora-keyboard",
         parse_mode="Markdown",
     )

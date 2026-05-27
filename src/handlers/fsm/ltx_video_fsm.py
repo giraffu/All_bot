@@ -21,7 +21,6 @@ from src.handlers.prompt_router import GLOBAL_REVERSE_MAP, is_global_menu_comman
 from src.lora_catalog import (
     LTX_VIDEO_LORA_OPTIONS,
     build_ltx_video_lora_item,
-    get_ltx_video_lora_default_strength,
     get_ltx_video_lora_display_name,
     normalize_ltx_video_lora_items,
     resolve_ltx_video_lora_name,
@@ -45,9 +44,6 @@ from src.i18n.translator import get_text
 logger = logging.getLogger("fsm.ltx_video")
 
 MAX_LTX_VIDEO_LORAS = 3
-LTX_VIDEO_STRENGTH_MIN = 0.1
-LTX_VIDEO_STRENGTH_MAX = 2.0
-LTX_VIDEO_STRENGTH_STEP = 0.1
 
 
 def _t(context: ContextTypes.DEFAULT_TYPE, key: str, **kwargs) -> str:
@@ -87,13 +83,6 @@ def _build_settings_message(
         empty_key="fsm.image_to_video.current_lora",
     )
     return f"{message}\n\n{lora_text}"
-
-
-def _normalize_strength_value(strength: float | None) -> float:
-    normalized = float(strength or 1.0)
-    normalized = max(LTX_VIDEO_STRENGTH_MIN, min(LTX_VIDEO_STRENGTH_MAX, normalized))
-    return round(normalized, 2)
-
 
 def _get_ltx_video_items(fsm_data: dict[str, Any]) -> list[dict[str, Any]]:
     return normalize_ltx_video_lora_items(
@@ -146,18 +135,6 @@ def _build_ltx_lora_selection_keyboard(
             )
         )
     keyboard = [buttons[i : i + 2] for i in range(0, len(buttons), 2)]
-    if lora_items:
-        keyboard.extend(
-            [
-                [
-                    InlineKeyboardButton(
-                        f"调强度: {get_ltx_video_lora_display_name(str(item['name']), lang)}",
-                        callback_data=f"edit_ltx_lora_{str(item['name'])}",
-                    )
-                ]
-                for item in lora_items
-            ]
-        )
     keyboard.append(
         [
             InlineKeyboardButton("完成选择", callback_data="done_ltx_lora_select"),
@@ -186,45 +163,11 @@ def _build_lora_selection_message(
     lora_items: list[dict[str, Any]],
 ) -> str:
     suffix = (
-        "可多选，最多 3 个。选中后可继续调整单项强度。"
+        "可多选，最多 3 个。提交时将自动使用各模型默认强度。"
         if getattr(context, "lang", "zh") != "en"
-        else "You can select up to 3 LoRAs and adjust each strength individually."
+        else "You can select up to 3 LoRAs. Each one uses its default strength automatically."
     )
     return f"{_t(context, 'fsm.ltx_video.select_lora')}\n\n{_build_lora_summary_text(context, lora_items)}\n{suffix}"
-
-
-def _build_lora_strength_keyboard(lora_name: str) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
-        [
-            [
-                InlineKeyboardButton("-0.10", callback_data=f"ltx_lora_strength_delta_{lora_name}_-10"),
-                InlineKeyboardButton("+0.10", callback_data=f"ltx_lora_strength_delta_{lora_name}_10"),
-            ],
-            [
-                InlineKeyboardButton("-0.05", callback_data=f"ltx_lora_strength_delta_{lora_name}_-5"),
-                InlineKeyboardButton("+0.05", callback_data=f"ltx_lora_strength_delta_{lora_name}_5"),
-            ],
-            [
-                InlineKeyboardButton("恢复默认", callback_data=f"ltx_lora_strength_reset_{lora_name}"),
-                InlineKeyboardButton("返回", callback_data="ltx_lora_strength_back"),
-            ],
-        ]
-    )
-
-
-def _build_lora_strength_message(
-    context: ContextTypes.DEFAULT_TYPE,
-    *,
-    lora_name: str,
-    strength: float,
-) -> str:
-    display_name = get_ltx_video_lora_display_name(lora_name, getattr(context, "lang", "zh"))
-    return (
-        f"调整附加模型强度\n\n"
-        f"模型: {display_name}\n"
-        f"当前强度: {strength:.2f}\n\n"
-        f"建议范围: {LTX_VIDEO_STRENGTH_MIN:.1f} - {LTX_VIDEO_STRENGTH_MAX:.1f}"
-    )
 
 
 def _cleanup_context(context: ContextTypes.DEFAULT_TYPE):
@@ -263,7 +206,6 @@ async def start_ltx_video(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         "duration": "5s",
         "image_path": None,
         "lora_items": [],
-        "editing_lora_name": "",
     }
 
     msg = _build_lora_selection_message(context, [])
@@ -328,27 +270,6 @@ async def handle_lora_selection(
             parse_mode="Markdown",
         )
         return LtxVideoState.WAIT_LORA_SELECTION
-
-    if data.startswith("edit_ltx_lora_"):
-        lora_name = resolve_ltx_video_lora_name(data.replace("edit_ltx_lora_", "", 1))
-        selected_item = next(
-            (item for item in current_items if str(item["name"]) == lora_name),
-            None,
-        )
-        if not selected_item:
-            await query.answer("请先选中这个模型", show_alert=True)
-            return LtxVideoState.WAIT_LORA_SELECTION
-        fsm_data["editing_lora_name"] = lora_name
-        await robust_edit_text(
-            query.message,
-            _build_lora_strength_message(
-                context,
-                lora_name=lora_name,
-                strength=float(selected_item["strength"]),
-            ),
-            reply_markup=_build_lora_strength_keyboard(lora_name),
-        )
-        return LtxVideoState.WAIT_LORA_STRENGTH_EDIT
 
     if not data.startswith("toggle_ltx_lora_"):
         return LtxVideoState.WAIT_LORA_SELECTION
@@ -446,72 +367,6 @@ async def receive_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         message, msg_text, reply_markup=reply_markup, parse_mode="Markdown"
     )
     return LtxVideoState.WAIT_SETTINGS_AND_PROMPT
-
-
-async def process_lora_strength(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    query = update.callback_query
-    if not query:
-        return ConversationHandler.END
-    data = query.data or ""
-    fsm_data = context.user_data.get("ltx_video_data", {})
-    current_items = _get_ltx_video_items(fsm_data)
-
-    if data == "ltx_lora_strength_back":
-        fsm_data["editing_lora_name"] = ""
-        await robust_edit_text(
-            query.message,
-            _build_lora_selection_message(context, current_items),
-            reply_markup=_build_ltx_lora_selection_keyboard(context, current_items),
-            parse_mode="Markdown",
-        )
-        await query.answer(text=_t(context, "fsm.common.task_initializing"), cache_time=2)
-        return LtxVideoState.WAIT_LORA_SELECTION
-
-    target_name = ""
-    if data.startswith("ltx_lora_strength_delta_"):
-        payload = data.replace("ltx_lora_strength_delta_", "", 1)
-        target_name, _, raw_delta = payload.rpartition("_")
-        delta = int(raw_delta) / 100
-    elif data.startswith("ltx_lora_strength_reset_"):
-        target_name = data.replace("ltx_lora_strength_reset_", "", 1)
-        delta = None
-    else:
-        return LtxVideoState.WAIT_LORA_STRENGTH_EDIT
-
-    updated_items: list[dict[str, Any]] = []
-    target_item: dict[str, Any] | None = None
-    for item in current_items:
-        if str(item["name"]) != target_name:
-            updated_items.append(item)
-            continue
-        next_strength = (
-            get_ltx_video_lora_default_strength(target_name)
-            if delta is None
-            else _normalize_strength_value(float(item["strength"]) + delta)
-        )
-        target_item = {
-            "name": target_name,
-            "strength": next_strength,
-        }
-        updated_items.append(target_item)
-
-    if target_item is None:
-        await query.answer("当前模型未选中", show_alert=True)
-        return LtxVideoState.WAIT_LORA_SELECTION
-
-    fsm_data["lora_items"] = updated_items
-    fsm_data["editing_lora_name"] = target_name
-    await robust_edit_text(
-        query.message,
-        _build_lora_strength_message(
-            context,
-            lora_name=target_name,
-            strength=float(target_item["strength"]),
-        ),
-        reply_markup=_build_lora_strength_keyboard(target_name),
-    )
-    await query.answer(text=_t(context, "fsm.common.task_initializing"), cache_time=2)
-    return LtxVideoState.WAIT_LORA_STRENGTH_EDIT
 
 
 async def process_settings(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -751,17 +606,7 @@ def get_ltx_video_fsm_handler() -> ConversationHandler:
             LtxVideoState.WAIT_LORA_SELECTION: [
                 CallbackQueryHandler(
                     handle_lora_selection,
-                    pattern="^(toggle_ltx_lora_|edit_ltx_lora_|done_ltx_lora_select$|clear_ltx_lora_select$|skip_ltx_lora_select$)",
-                ),
-                MessageHandler(
-                    (filters.TEXT | filters.COMMAND) & ~filters.Regex(r"^/cancel$"),
-                    unexpected_input,
-                ),
-            ],
-            LtxVideoState.WAIT_LORA_STRENGTH_EDIT: [
-                CallbackQueryHandler(
-                    process_lora_strength,
-                    pattern="^(ltx_lora_strength_delta_|ltx_lora_strength_reset_|ltx_lora_strength_back$)",
+                    pattern="^(toggle_ltx_lora_|done_ltx_lora_select$|clear_ltx_lora_select$|skip_ltx_lora_select$)",
                 ),
                 MessageHandler(
                     (filters.TEXT | filters.COMMAND) & ~filters.Regex(r"^/cancel$"),
