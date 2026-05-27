@@ -460,6 +460,80 @@ async def test_ltx_video_state_expired_before_quota_check(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_ltx_video_receive_image_returns_settings_keyboard(monkeypatch):
+    reply_mock = AsyncMock()
+    download_mock = AsyncMock(return_value="/tmp/ltx_video.png")
+    get_or_create_user_mock = AsyncMock(return_value=(SimpleNamespace(id=999), False))
+    get_user_group_mock = AsyncMock(return_value="pro")
+    get_user_identity_mock = AsyncMock(return_value="vip")
+
+    monkeypatch.setattr(ltx_video_fsm, "robust_reply_text", reply_mock)
+    monkeypatch.setattr(
+        ltx_video_fsm,
+        "download_telegram_file_to_fsm_temp",
+        download_mock,
+    )
+    monkeypatch.setattr(
+        "src.core.user_core.get_or_create_user_by_telegram",
+        get_or_create_user_mock,
+    )
+    monkeypatch.setattr(
+        ltx_video_fsm.permission_service,
+        "get_user_group",
+        get_user_group_mock,
+    )
+    monkeypatch.setattr(
+        ltx_video_fsm.permission_service,
+        "get_user_identity",
+        get_user_identity_mock,
+    )
+    monkeypatch.setattr(
+        ltx_video_fsm,
+        "get_ltx_video_settings_keyboard",
+        lambda *args, **kwargs: "ltx-keyboard",
+    )
+
+    message = SimpleNamespace(
+        document=None,
+        photo=[SimpleNamespace(file_id="photo-file-id")],
+        chat_id=10001,
+    )
+    update = SimpleNamespace(
+        effective_user=_build_user(),
+        effective_chat=SimpleNamespace(id=10001),
+        message=message,
+    )
+    context = SimpleNamespace(
+        bot=SimpleNamespace(get_file=AsyncMock(return_value=SimpleNamespace())),
+        user_data={
+            "ltx_video_data": {
+                "resolution": "1280x704",
+                "duration": "5s",
+                "image_path": None,
+            }
+        },
+        lang="zh",
+        t=lambda key, **kwargs: f"T:{key}",
+    )
+
+    result = await ltx_video_fsm.receive_image(update, context)
+
+    assert result == ltx_video_fsm.LtxVideoState.WAIT_SETTINGS_AND_PROMPT
+    context.bot.get_file.assert_awaited_once_with("photo-file-id")
+    download_mock.assert_awaited_once()
+    get_or_create_user_mock.assert_awaited_once_with(update.effective_user.id)
+    get_user_group_mock.assert_awaited_once_with(999)
+    get_user_identity_mock.assert_awaited_once_with(999)
+    assert context.user_data["ltx_video_data"]["image_path"] == "/tmp/ltx_video.png"
+    reply_mock.assert_awaited_once_with(
+        message,
+        "T:fsm.ltx_video.settings_text",
+        reply_markup="ltx-keyboard",
+        parse_mode="Markdown",
+    )
+
+
+@pytest.mark.asyncio
 async def test_start_ltx_video_uses_english_locale(monkeypatch):
     reply_mock = AsyncMock()
 

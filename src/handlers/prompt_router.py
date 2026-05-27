@@ -46,6 +46,7 @@ def build_global_menu_filter():
         "menu.main_menu",  # 🏠 主菜单
         "menu.back_main",  # 🔙 返回主菜单
         "menu.face_video",  # 🎬 视频换脸
+        "menu.txt2img",  # ✨ 文生图
         "menu.i2i_pro",  # 🌟 幻想换脸
         "menu.free_edit",  # 🎨 自由P图
         "menu.video_lora",  # 🎬 图生视频

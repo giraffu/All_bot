@@ -44,6 +44,13 @@ class ImageToVideoState(IntEnum):
     WAIT_IMAGE = auto()
     WAIT_SETTINGS_AND_PROMPT = auto()
 
+
+class Txt2ImgState(IntEnum):
+    """文生图流程状态枚举"""
+
+    WAIT_PROMPT = auto()
+
+
 class QuickImageState(IntEnum):
     """懒人P图 (脱衣/自慰/随机换脸) 状态枚举"""
 

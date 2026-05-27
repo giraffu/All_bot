@@ -5,6 +5,7 @@ from typing import Any, Optional
 @dataclass
 class BotTaskRuntimeState:
     registry_task_id: Optional[str] = None
+    backend_task_id: Optional[str] = None
     task_submitted: bool = False
     actual_cost: int = 0
     terminal_state_finalized: bool = False

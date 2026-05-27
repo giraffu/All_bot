@@ -25,7 +25,11 @@ def get_main_menu_keyboard(lang: str) -> ReplyKeyboardMarkup:
             get_text("menu.video_edit", lang),
             get_text("menu.face_video", lang),
         ],
-        [get_text("menu.i2i_pro", lang), get_text("menu.free_edit", lang)],
+        [
+            get_text("menu.txt2img", lang),
+            get_text("menu.i2i_pro", lang),
+            get_text("menu.free_edit", lang),
+        ],
         [
             get_text("menu.video_lora", lang),
             get_text("menu.ltx_video", lang),

@@ -14,6 +14,7 @@ async def test_submit_bot_task_sets_runtime_state_and_returns_saved_inputs(monke
         return_value={
             "cost": 18,
             "registry_task_id": "registry-1",
+            "backend_task_id": "backend-1",
             "saved_inputs": ["input-a.png"],
         }
     )
@@ -22,11 +23,12 @@ async def test_submit_bot_task_sets_runtime_state_and_returns_saved_inputs(monke
         task_submitted=False,
         actual_cost=0,
         registry_task_id=None,
+        backend_task_id=None,
     )
 
     token = correlation_id.set(None)
     try:
-        task_id, saved_inputs = await task_service_flow.submit_bot_task(
+        task_id, backend_task_id, saved_inputs = await task_service_flow.submit_bot_task(
             submission=BotTaskSubmissionContext(
                 runtime_state=runtime_state,
                 internal_user_id=456,
@@ -42,10 +44,12 @@ async def test_submit_bot_task_sets_runtime_state_and_returns_saved_inputs(monke
         correlation_id.reset(token)
 
     assert isinstance(task_id, str)
+    assert backend_task_id == "backend-1"
     assert saved_inputs == ["input-a.png"]
     assert runtime_state.task_submitted is True
     assert runtime_state.actual_cost == 18
     assert runtime_state.registry_task_id == "registry-1"
+    assert runtime_state.backend_task_id == "backend-1"
     process_submit.assert_awaited_once()
     kwargs = process_submit.await_args.kwargs
     assert kwargs["user_id"] == 456
@@ -101,7 +105,7 @@ async def test_update_submitted_task_status_prefers_submitted_text(monkeypatch):
 @pytest.mark.asyncio
 async def test_prepare_and_submit_bot_task_updates_status_through_helpers(monkeypatch):
     send_initial = AsyncMock(return_value="status-msg")
-    submit_bot_task = AsyncMock(return_value=("task-1", ["input.png"]))
+    submit_bot_task = AsyncMock(return_value=("registry-1", "backend-1", ["input.png"]))
     update_submitted = AsyncMock()
     runtime_state = SimpleNamespace(actual_cost=18)
     spec = BotTaskMessageSpec(
@@ -118,7 +122,7 @@ async def test_prepare_and_submit_bot_task_updates_status_through_helpers(monkey
         update_submitted,
     )
 
-    status_msg, task_id, saved_inputs, returned_spec = (
+    status_msg, registry_task_id, backend_task_id, saved_inputs, returned_spec = (
         await task_service_flow.prepare_and_submit_bot_task(
             context=object(),
             update=None,
@@ -135,7 +139,8 @@ async def test_prepare_and_submit_bot_task_updates_status_through_helpers(monkey
     )
 
     assert status_msg == "status-msg"
-    assert task_id == "task-1"
+    assert registry_task_id == "registry-1"
+    assert backend_task_id == "backend-1"
     assert saved_inputs == ["input.png"]
     assert returned_spec is spec
     send_initial.assert_awaited_once()
@@ -152,3 +157,97 @@ async def test_prepare_and_submit_bot_task_updates_status_through_helpers(monkey
         status_msg="status-msg",
         message_spec=spec,
     )
+
+
+@pytest.mark.asyncio
+async def test_run_bot_task_application_monitors_with_backend_task_id_and_completes_with_registry_id(
+    monkeypatch,
+):
+    submission_stage = AsyncMock(
+        return_value=(
+            "status-msg",
+            "registry-123",
+            "backend-456",
+            ["input.png"],
+            BotTaskMessageSpec(initial_status_text="提交中"),
+        )
+    )
+    monitor_stage = AsyncMock(return_value={"status": "done"})
+    completion_stage = AsyncMock(return_value=(b"media", "output.png"))
+
+    monkeypatch.setattr(
+        task_service_flow,
+        "run_bot_task_submission_stage",
+        submission_stage,
+    )
+    monkeypatch.setattr(
+        task_service_flow,
+        "run_bot_task_monitor_stage",
+        monitor_stage,
+    )
+    monkeypatch.setattr(
+        task_service_flow,
+        "run_bot_task_completion_stage",
+        completion_stage,
+    )
+    monkeypatch.setattr(
+        task_service_flow,
+        "cleanup_bot_task_flow",
+        AsyncMock(),
+    )
+
+    flow = SimpleNamespace(
+        runtime_state=SimpleNamespace(
+            registry_task_id="registry-123",
+            backend_task_id="backend-456",
+            task_submitted=True,
+            terminal_state_finalized=False,
+        ),
+        request=SimpleNamespace(
+            context=SimpleNamespace(),
+            update=None,
+            chat_id=100,
+            status_msg_id=None,
+            internal_user_id=200,
+            username="tester",
+            task_type="txt2img",
+            inputs={"prompt": "hello"},
+            prompt="hello",
+            is_video=False,
+            source_post_id=None,
+            deduct_quota=True,
+        ),
+        presentation=SimpleNamespace(
+            message_spec=BotTaskMessageSpec(initial_status_text="提交中"),
+            submitted_status_builder=None,
+            send_result=True,
+            reply_markup=None,
+            delete_status=True,
+            allow_contribute=True,
+            prefer_edit_status=False,
+        ),
+        billing=SimpleNamespace(
+            billing_resolution=None,
+            requested_duration=None,
+            missing_output_should_refund=True,
+        ),
+        failure_policy=SimpleNamespace(
+            unexpected_error_log_message="err {error}",
+            unexpected_error_prefix="出错了",
+            refund_suffix_mode="if_refunded",
+            unexpected_should_refund=None,
+        ),
+        cleanup_policy=SimpleNamespace(
+            cleanup_paths=[],
+            cleanup_enabled=False,
+            cleanup_files_func=lambda *_args, **_kwargs: None,
+        ),
+    )
+
+    result = await task_service_flow.run_bot_task_application(flow=flow)
+
+    assert result == (b"media", "output.png")
+    monitor_stage.assert_awaited_once()
+    assert monitor_stage.await_args.kwargs["backend_task_id"] == "backend-456"
+    completion_stage.assert_awaited_once()
+    assert completion_stage.await_args.kwargs["task_id"] == "registry-123"

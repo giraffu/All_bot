@@ -15,7 +15,7 @@ TASK_TYPE_WORKFLOW_FILENAMES = {
     "i2i_pro": "i2i_pro.json",
     "i2i_draw": "I2I_draw.json",
     "img2img_lora": "Qwen-Rapid-AIO.json",
-    "ltx_video": "LTX 2.3 I2V.json",
+    "ltx_video": "LTX 2.3 I2V 6.1.json",
 }
 
 

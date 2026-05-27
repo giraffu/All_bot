@@ -35,6 +35,7 @@
     "queue": "⏳ Queue Status",
     "switch_lang": "🌐 中文",
     "face_video": "🎬 Face Video",
+    "txt2img": "✨ Text2Img",
     "i2i_pro": "🌟 Face Swap Pro",
     "free_edit": "🎨 Free Edit",
     "video_lora": "🎬 Img2Video",
@@ -533,6 +534,12 @@
       "single_image_only": "⚠️ Face Swap Pro only needs 1 image. Please send the text prompt directly.",
       "max_two_images": "⚠️ Free Edit supports up to 2 input images. Extra images will be ignored. Please send the text prompt to continue.",
       "submitting": "🚀 Submitting the generation task. Estimated cost: {cost} credits. Please wait..."
+    },
+    "txt2img": {
+      "start": "✨ **Entered Text2Img mode** (cost: {cost} credits).\n\nSend the prompt text directly to start generation.\n\nNo base image is required. You can send /cancel anytime to exit.",
+      "prompt_only": "⚠️ Text2Img mode only accepts a text prompt. Please send text directly to continue.",
+      "empty_prompt": "⚠️ The prompt cannot be empty. Please send a text description of the image you want to generate.",
+      "submitting": "🚀 Submitting the Text2Img task. Estimated cost: {cost} credits. Please wait..."
     },
     "image_to_video": {
       "mode_header": "🎬 **Entered Img2Video mode.**",

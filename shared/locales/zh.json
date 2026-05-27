@@ -35,6 +35,7 @@
     "queue": "⏳ 排队状态",
     "switch_lang": "🌐 English",
     "face_video": "🎬 视频换脸",
+    "txt2img": "✨ 文生图",
     "i2i_pro": "🌟 幻想换脸",
     "free_edit": "🎨 自由P图",
     "video_lora": "🎬 图生视频",
@@ -534,6 +535,12 @@
       "single_image_only": "⚠️ 幻想换脸模式只需要 1 张图片，请直接发送文字提示词。",
       "max_two_images": "⚠️ 自由P图最多只支持 2 张图片融合，多余的图片将不生效，请直接发送文字提示词开始生成。",
       "submitting": "🚀 正在提交生成任务，预计消耗 {cost} 灵石，请耐心等待..."
+    },
+    "txt2img": {
+      "start": "✨ **已进入【文生图】模式** (消耗 {cost} 灵石)。\n\n请直接发送提示词 (Text) 开始生成。\n\n无需上传底图，随时可以发送 /cancel 退出流程。",
+      "prompt_only": "⚠️ 文生图模式只接收文字提示词，请直接发送 Text 开始生成。",
+      "empty_prompt": "⚠️ 提示词不能为空，请直接发送文字描述您想生成的画面。",
+      "submitting": "🚀 正在提交文生图任务，预计消耗 {cost} 灵石，请耐心等待..."
     },
     "image_to_video": {
       "mode_header": "🎬 **已切换到【图生视频】模式。**",

@@ -111,6 +111,7 @@ async def start_ltx_video(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
 
 async def receive_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    user_id = update.effective_user.id
     message = update.message
     fsm_data = context.user_data["ltx_video_data"]
 

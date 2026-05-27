@@ -33,13 +33,14 @@ def mark_task_submission_succeeded(runtime_state, result: dict) -> list[str]:
     runtime_state.task_submitted = True
     runtime_state.actual_cost = result["cost"]
     runtime_state.registry_task_id = result["registry_task_id"]
+    runtime_state.backend_task_id = result.get("backend_task_id") or result["registry_task_id"]
     return result["saved_inputs"]
 
 
 async def submit_bot_task(
     *,
     submission: BotTaskSubmissionContext,
-) -> tuple[str, list[str]]:
+) -> tuple[str, str, list[str]]:
     task_id = str(uuid.uuid4())
     correlation_id.set(task_id)
 
@@ -54,7 +55,8 @@ async def submit_bot_task(
         deduct_quota=submission.deduct_quota,
     )
     saved_inputs = mark_task_submission_succeeded(submission.runtime_state, result)
-    return task_id, saved_inputs
+    backend_task_id = submission.runtime_state.backend_task_id or task_id
+    return task_id, backend_task_id, saved_inputs
 
 
 async def send_initial_task_status(
@@ -103,9 +105,14 @@ async def prepare_and_submit_bot_task(
         status_msg_id=status_msg_id,
         message_spec=message_spec,
     )
-    task_id, saved_inputs = await submit_bot_task(
+    submission_result = await submit_bot_task(
         submission=submission,
     )
+    if len(submission_result) == 2:
+        registry_task_id, saved_inputs = submission_result
+        backend_task_id = registry_task_id
+    else:
+        registry_task_id, backend_task_id, saved_inputs = submission_result
     if submitted_status_builder is not None:
         message_spec = with_submitted_status(
             message_spec,
@@ -115,7 +122,7 @@ async def prepare_and_submit_bot_task(
         status_msg=status_msg,
         message_spec=message_spec,
     )
-    return status_msg, task_id, saved_inputs, message_spec
+    return status_msg, registry_task_id, backend_task_id, saved_inputs, message_spec
 
 
 async def run_bot_task_submission_stage(
@@ -141,14 +148,14 @@ async def run_bot_task_submission_stage(
 
 async def run_bot_task_monitor_stage(
     *,
-    task_id: str,
+    backend_task_id: str,
     status_msg,
     is_video: bool,
     internal_user_id: int,
     lang: str = "zh",
 ):
     return await task_service_completion_helpers.monitor_submitted_bot_task(
-        task_id=task_id,
+        task_id=backend_task_id,
         status_msg=status_msg,
         is_video=is_video,
         internal_user_id=internal_user_id,
@@ -262,7 +269,13 @@ async def run_bot_task_application(
     )
 
     try:
-        status_msg, task_id, saved_inputs, message_spec = await run_bot_task_submission_stage(
+        (
+            status_msg,
+            registry_task_id,
+            backend_task_id,
+            saved_inputs,
+            message_spec,
+        ) = await run_bot_task_submission_stage(
             context=request.context,
             update=request.update,
             chat_id=request.chat_id,
@@ -273,7 +286,7 @@ async def run_bot_task_application(
         )
 
         final_info = await run_bot_task_monitor_stage(
-            task_id=task_id,
+            backend_task_id=backend_task_id,
             status_msg=status_msg,
             is_video=request.is_video,
             internal_user_id=request.internal_user_id,
@@ -289,7 +302,7 @@ async def run_bot_task_application(
             username=request.username,
             prompt=request.prompt,
             task_type=request.task_type,
-            task_id=task_id,
+            task_id=registry_task_id,
             saved_inputs=saved_inputs,
             final_info=final_info,
             is_video=request.is_video,
