@@ -22,8 +22,8 @@ const emit = defineEmits<{
   <button
     type="button"
     :class="compact
-      ? 'flex items-center gap-1.5 transition-all text-slate-300'
-      : `${fullWidth ? 'w-full' : 'flex-1'} py-3 rounded-xl bg-slate-500 hover:bg-slate-400 text-white font-medium shadow-sm transition-all flex items-center justify-center border border-slate-400`
+      ? 'prompt-copy-button-compact flex items-center gap-1.5 transition-all'
+      : `prompt-copy-button ${fullWidth ? 'w-full' : 'flex-1'} py-3 rounded-xl font-medium shadow-sm transition-all flex items-center justify-center`
     "
     @click="emit('click')"
   >
@@ -31,3 +31,23 @@ const emit = defineEmits<{
     <span v-if="!compact">{{ label }}</span>
   </button>
 </template>
+
+<style scoped>
+.prompt-copy-button {
+  border: 1px solid var(--detail-modal-action-border);
+  background: var(--detail-modal-copy-button-bg);
+  color: var(--detail-modal-copy-button-text);
+}
+
+.prompt-copy-button:hover {
+  background: var(--detail-modal-copy-button-hover-bg);
+}
+
+.prompt-copy-button-compact {
+  color: var(--detail-modal-text-secondary);
+}
+
+.prompt-copy-button-compact:hover {
+  color: var(--detail-modal-text-primary);
+}
+</style>

@@ -54,6 +54,25 @@ cleanup_on_exit() {
 
 trap cleanup_on_exit EXIT
 
+has_running_container() {
+    local container_name=$1
+    [ -n "$(docker ps -q -f name=^${container_name}$)" ]
+}
+
+get_prod_runtime_gate_container() {
+    if has_running_container "tg-bot"; then
+        echo "tg-bot"
+        return 0
+    fi
+
+    if has_running_container "web-api"; then
+        echo "web-api"
+        return 0
+    fi
+
+    return 1
+}
+
 if [ ! -f "$PROD_ENV_FILE" ]; then
     echo "❌ 未找到 $PROD_ENV_FILE，请先补齐生产环境配置。"
     exit 1
@@ -111,12 +130,18 @@ echo "🚀 开始 All_Bot 生产环境安全更新与重建流程 (带队列监�
 # 第一步：开启生产环境维护模式，拦截新任务提交
 # ==============================================================================
 echo "1️⃣ 开启生产环境维护模式..."
-if [ -n "$(docker ps -q -f name=^tg-bot$)" ]; then
+if has_running_container "tg-bot"; then
     docker exec tg-bot touch /app/MAINTENANCE
+fi
+
+if has_running_container "web-api"; then
     docker exec web-api touch /app/MAINTENANCE 2>/dev/null || true
-    echo "✅ 已开启 tg-bot 与 web-api (生产环境) 维护模式，所有新任务提交将被拒绝。"
+fi
+
+if has_running_container "tg-bot" || has_running_container "web-api"; then
+    echo "✅ 已为当前运行中的生产入口服务开启维护模式，新任务提交将被拒绝。"
 else
-    echo "⚠️ tg-bot 容器未运行，跳过生产环境维护模式标记。"
+    echo "⚠️ tg-bot 与 web-api 均未运行，跳过生产环境维护模式标记。"
 fi
 
 # ==============================================================================
@@ -192,16 +217,23 @@ EOF
     fi
 }
 
-monitor_queue "tg-bot" "生产环境"
+RUNTIME_GATE_CONTAINER="$(get_prod_runtime_gate_container || true)"
+if [ -n "$RUNTIME_GATE_CONTAINER" ]; then
+    monitor_queue "$RUNTIME_GATE_CONTAINER" "生产环境"
+else
+    echo "   ⚠️ 未找到可用于运行态门禁检查的生产入口容器（tg-bot / web-api），跳过队列监控。"
+fi
 
 # ==============================================================================
 # 第三步：执行生产僵尸任务与并发锁清理 (确保并发状态一致)
 # ==============================================================================
 echo "3️⃣ 执行生产环境僵尸任务与 Redis 并发锁清理..."
-if [ -n "$(docker ps -q -f name=^tg-bot$)" ]; then
+if [ -n "${RUNTIME_GATE_CONTAINER:-}" ]; then
     # 由于上面的检测保证了活跃任务为 0，此时如果还有残留的锁，必定是死锁，这步脚本能完美将其清空
-    docker exec tg-bot python src/services/zombie_cleaner_service.py || echo "⚠️ 生产环境清理脚本执行警告，继续流程..."
+    docker exec "$RUNTIME_GATE_CONTAINER" python src/services/zombie_cleaner_service.py || echo "⚠️ 生产环境清理脚本执行警告，继续流程..."
     echo "✅ 生产环境 Redis 并发状态核对完成。"
+else
+    echo "⚠️ 未找到可用于运行态清理的生产入口容器，跳过僵尸任务与并发锁清理。"
 fi
 
 # ==============================================================================

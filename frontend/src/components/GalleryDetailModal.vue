@@ -109,7 +109,7 @@ const handleNewCommentInput = (event: Event) => {
     :style="isMobile ? { top: 0, padding: 0, margin: 0, maxWidth: '100%' } : { maxWidth: '1000px', top: '20px' }"
     :wrapClassName="isMobile ? 'mobile-full-modal' : ''"
     class="gallery-detail-modal"
-    :bodyStyle="isMobile ? { padding: 0, height: '100%', backgroundColor: '#0f172a' } : { padding: 0, backgroundColor: 'transparent' }"
+    :bodyStyle="isMobile ? { padding: 0, height: '100%', backgroundColor: 'var(--detail-modal-shell-bg)' } : { padding: 0, backgroundColor: 'transparent' }"
     destroyOnClose
     @update:open="emit('update:open', $event)"
   >
@@ -121,7 +121,7 @@ const handleNewCommentInput = (event: Event) => {
     >
       <template #mobile-header>
         <slot name="mobile-header" :post="currentPost">
-          <span class="text-slate-200 font-medium text-sm">{{ title }}</span>
+          <span class="detail-modal-mobile-title font-medium text-sm">{{ title }}</span>
         </slot>
       </template>
 
@@ -136,7 +136,7 @@ const handleNewCommentInput = (event: Event) => {
       </template>
 
       <template #info>
-        <h3 class="hidden lg:flex text-xl font-bold text-slate-100 mb-2 items-center">
+        <h3 class="detail-modal-title hidden lg:flex text-xl font-bold mb-2 items-center">
           <span class="bg-gradient-to-r from-cyan-400 to-indigo-400 bg-clip-text text-transparent">{{ title }}</span>
         </h3>
 
@@ -145,18 +145,18 @@ const handleNewCommentInput = (event: Event) => {
             <span
               v-for="tag in currentPost.tags || []"
               :key="tag"
-              class="text-xs bg-slate-800 lg:bg-slate-500 text-cyan-400 lg:text-cyan-200 border border-slate-700 lg:border-slate-400 px-2.5 py-1 rounded-full"
+              class="detail-modal-tag text-xs px-2.5 py-1 rounded-full"
             >
               {{ tag.startsWith('#') ? formatTag(tag) : '#' + formatTag(tag) }}
             </span>
             <span
               v-if="!currentPost.tags || currentPost.tags.length === 0"
-              class="text-sm text-slate-500 lg:text-slate-400"
+              class="detail-modal-empty-tag text-sm"
             >
               {{ noTagsText }}
             </span>
           </div>
-          <div class="text-xs text-slate-500 lg:text-slate-400 space-y-1">
+          <div class="detail-modal-meta text-xs space-y-1">
             <div v-if="currentPost.created_at">
               <span>{{ dayjs(currentPost.created_at).format('YYYY-MM-DD HH:mm') }}</span>
             </div>
@@ -328,27 +328,29 @@ const handleNewCommentInput = (event: Event) => {
     class="comment-modal"
     @update:open="emit('update:commentInputOpen', $event)"
   >
-    <div class="flex flex-col gap-4">
+    <div class="comment-modal-panel flex flex-col gap-4">
       <textarea
         :value="newComment"
         maxlength="500"
         :placeholder="$t('gallery.comments.placeholder')"
-        class="w-full h-32 p-3 rounded-xl bg-slate-800 border border-slate-600 text-slate-200 focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 outline-none resize-none"
+        class="comment-modal-textarea w-full h-32 p-3 rounded-xl outline-none resize-none"
         @input="handleNewCommentInput"
       ></textarea>
       <div class="flex justify-between items-center">
-        <span class="text-xs text-slate-500">{{ newComment.length }}/500</span>
+        <span class="comment-modal-counter text-xs">{{ newComment.length }}/500</span>
         <div class="flex gap-3">
           <button
+            type="button"
             @click="closeCommentInput"
-            class="px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-300 transition-colors text-sm font-medium"
+            class="comment-modal-secondary-btn px-4 py-2 rounded-lg transition-colors text-sm font-medium"
           >
             {{ $t('gallery.comments.cancel') }}
           </button>
           <button
+            type="button"
             @click="emit('submitComment')"
             :disabled="!newComment.trim() || submittingComment"
-            class="px-4 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 disabled:hover:bg-cyan-600 text-white transition-colors text-sm font-medium flex items-center"
+            class="comment-modal-primary-btn px-4 py-2 rounded-lg transition-colors text-sm font-medium flex items-center"
           >
             <div v-if="submittingComment" class="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin mr-2"></div>
             {{ $t('gallery.comments.submit') }}
@@ -360,6 +362,217 @@ const handleNewCommentInput = (event: Event) => {
 </template>
 
 <style>
+.gallery-detail-modal {
+  --detail-modal-shell-bg: #0f172a;
+  --detail-modal-header-bg: rgba(15, 23, 42, 0.9);
+  --detail-modal-panel-bg: rgba(71, 85, 105, 0.8);
+  --detail-modal-bottom-bar-bg: rgba(15, 23, 42, 0.95);
+  --detail-modal-border: rgba(148, 163, 184, 0.34);
+  --detail-modal-divider: rgba(51, 65, 85, 0.95);
+  --detail-modal-shadow: 0 24px 60px rgba(2, 6, 23, 0.38);
+  --detail-modal-text-primary: #f8fafc;
+  --detail-modal-text-secondary: #cbd5e1;
+  --detail-modal-text-muted: #94a3b8;
+  --detail-modal-link: #22d3ee;
+  --detail-modal-link-hover: #67e8f9;
+  --detail-modal-action-bg: rgba(100, 116, 139, 0.22);
+  --detail-modal-action-hover-bg: rgba(100, 116, 139, 0.34);
+  --detail-modal-action-border: rgba(148, 163, 184, 0.4);
+  --detail-modal-copy-button-bg: rgba(100, 116, 139, 0.9);
+  --detail-modal-copy-button-hover-bg: rgba(148, 163, 184, 0.92);
+  --detail-modal-copy-button-text: #ffffff;
+  --detail-modal-primary-gradient: linear-gradient(90deg, #0891b2, #4f46e5);
+  --detail-modal-primary-gradient-hover: linear-gradient(90deg, #06b6d4, #6366f1);
+  --detail-modal-primary-glow: 0 0 20px rgba(56, 189, 248, 0.32);
+  --detail-modal-primary-solid: #0891b2;
+  --detail-modal-primary-solid-hover: #06b6d4;
+  --detail-modal-avatar-bg: rgba(51, 65, 85, 0.92);
+  --detail-modal-avatar-border: rgba(100, 116, 139, 0.85);
+  --detail-modal-tag-bg: rgba(15, 23, 42, 0.72);
+  --detail-modal-tag-border: rgba(71, 85, 105, 0.92);
+  --detail-modal-tag-text: #22d3ee;
+}
+
+html[data-theme='light'] .gallery-detail-modal {
+  --detail-modal-shell-bg: #ffffff;
+  --detail-modal-header-bg: rgba(255, 255, 255, 0.92);
+  --detail-modal-panel-bg: rgba(248, 250, 252, 0.96);
+  --detail-modal-bottom-bar-bg: rgba(255, 255, 255, 0.96);
+  --detail-modal-border: rgba(203, 213, 225, 0.92);
+  --detail-modal-divider: rgba(226, 232, 240, 0.96);
+  --detail-modal-shadow: 0 24px 60px rgba(15, 23, 42, 0.14);
+  --detail-modal-text-primary: #0f172a;
+  --detail-modal-text-secondary: #334155;
+  --detail-modal-text-muted: #64748b;
+  --detail-modal-link: #2563eb;
+  --detail-modal-link-hover: #1d4ed8;
+  --detail-modal-action-bg: rgba(241, 245, 249, 0.98);
+  --detail-modal-action-hover-bg: rgba(226, 232, 240, 0.98);
+  --detail-modal-action-border: rgba(148, 163, 184, 0.35);
+  --detail-modal-copy-button-bg: rgba(226, 232, 240, 0.98);
+  --detail-modal-copy-button-hover-bg: rgba(203, 213, 225, 0.98);
+  --detail-modal-copy-button-text: #334155;
+  --detail-modal-primary-gradient: linear-gradient(90deg, #2563eb, #4f46e5);
+  --detail-modal-primary-gradient-hover: linear-gradient(90deg, #1d4ed8, #4338ca);
+  --detail-modal-primary-glow: 0 16px 30px rgba(59, 130, 246, 0.2);
+  --detail-modal-primary-solid: #2563eb;
+  --detail-modal-primary-solid-hover: #1d4ed8;
+  --detail-modal-avatar-bg: rgba(241, 245, 249, 0.95);
+  --detail-modal-avatar-border: rgba(203, 213, 225, 0.95);
+  --detail-modal-tag-bg: rgba(219, 234, 254, 0.8);
+  --detail-modal-tag-border: rgba(147, 197, 253, 0.6);
+  --detail-modal-tag-text: #1d4ed8;
+}
+
+.gallery-detail-modal .detail-modal-mobile-title,
+.gallery-detail-modal .detail-modal-title {
+  color: var(--detail-modal-text-primary);
+}
+
+.gallery-detail-modal .detail-modal-tag {
+  background: var(--detail-modal-tag-bg);
+  border: 1px solid var(--detail-modal-tag-border);
+  color: var(--detail-modal-tag-text);
+}
+
+.gallery-detail-modal .detail-modal-empty-tag,
+.gallery-detail-modal .detail-modal-meta {
+  color: var(--detail-modal-text-muted);
+}
+
+.comment-modal {
+  --comment-modal-surface: #0f172a;
+  --comment-modal-border: rgba(51, 65, 85, 0.95);
+  --comment-modal-title: #f8fafc;
+  --comment-modal-text: #e2e8f0;
+  --comment-modal-muted: #94a3b8;
+  --comment-modal-hover: rgba(51, 65, 85, 0.7);
+  --comment-modal-input-bg: #111827;
+  --comment-modal-input-border: rgba(100, 116, 139, 0.9);
+  --comment-modal-input-border-focus: #06b6d4;
+  --comment-modal-secondary-bg: #334155;
+  --comment-modal-secondary-hover: #475569;
+  --comment-modal-secondary-text: #e2e8f0;
+  --comment-modal-primary-bg: #0891b2;
+  --comment-modal-primary-hover: #06b6d4;
+  --comment-modal-primary-shadow: 0 12px 28px rgba(8, 145, 178, 0.24);
+}
+
+html[data-theme='light'] .comment-modal {
+  --comment-modal-surface: rgba(255, 255, 255, 0.98);
+  --comment-modal-border: rgba(203, 213, 225, 0.9);
+  --comment-modal-title: #0f172a;
+  --comment-modal-text: #0f172a;
+  --comment-modal-muted: #64748b;
+  --comment-modal-hover: rgba(226, 232, 240, 0.85);
+  --comment-modal-input-bg: #ffffff;
+  --comment-modal-input-border: rgba(148, 163, 184, 0.95);
+  --comment-modal-input-border-focus: #2563eb;
+  --comment-modal-secondary-bg: #e2e8f0;
+  --comment-modal-secondary-hover: #cbd5e1;
+  --comment-modal-secondary-text: #334155;
+  --comment-modal-primary-bg: #2563eb;
+  --comment-modal-primary-hover: #1d4ed8;
+  --comment-modal-primary-shadow: 0 12px 28px rgba(37, 99, 235, 0.18);
+}
+
+.comment-modal .ant-modal-content {
+  background-color: var(--comment-modal-surface) !important;
+  background-image: linear-gradient(var(--comment-modal-surface), var(--comment-modal-surface)) !important;
+  border: 1px solid var(--comment-modal-border) !important;
+  box-shadow: 0 18px 42px rgba(15, 23, 42, 0.18) !important;
+  color: var(--comment-modal-text) !important;
+}
+
+.comment-modal .ant-modal-header {
+  background: transparent !important;
+  border-bottom: none !important;
+}
+
+.comment-modal .ant-modal-title {
+  color: var(--comment-modal-title) !important;
+}
+
+.comment-modal .ant-modal-close {
+  color: var(--comment-modal-muted) !important;
+}
+
+.comment-modal .ant-modal-close:hover {
+  color: var(--comment-modal-title) !important;
+  background: var(--comment-modal-hover) !important;
+}
+
+.comment-modal-panel {
+  color: var(--comment-modal-text);
+  forced-color-adjust: none;
+}
+
+.comment-modal-textarea {
+  appearance: none;
+  -webkit-appearance: none;
+  background-color: var(--comment-modal-input-bg) !important;
+  background-image: linear-gradient(var(--comment-modal-input-bg), var(--comment-modal-input-bg)) !important;
+  border: 1px solid var(--comment-modal-input-border) !important;
+  color: var(--comment-modal-text) !important;
+  -webkit-text-fill-color: var(--comment-modal-text);
+  caret-color: var(--comment-modal-text);
+  box-shadow: none !important;
+  forced-color-adjust: none;
+}
+
+.comment-modal-textarea::placeholder {
+  color: var(--comment-modal-muted);
+  -webkit-text-fill-color: var(--comment-modal-muted);
+}
+
+.comment-modal-textarea:focus {
+  border-color: var(--comment-modal-input-border-focus) !important;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--comment-modal-input-border-focus) 16%, transparent) !important;
+}
+
+.comment-modal-counter {
+  color: var(--comment-modal-muted);
+}
+
+.comment-modal-secondary-btn,
+.comment-modal-primary-btn {
+  appearance: none;
+  -webkit-appearance: none;
+  border: 1px solid transparent;
+  background-clip: padding-box;
+  forced-color-adjust: none;
+}
+
+.comment-modal-secondary-btn {
+  background-color: var(--comment-modal-secondary-bg) !important;
+  background-image: linear-gradient(var(--comment-modal-secondary-bg), var(--comment-modal-secondary-bg)) !important;
+  color: var(--comment-modal-secondary-text) !important;
+  -webkit-text-fill-color: var(--comment-modal-secondary-text);
+}
+
+.comment-modal-secondary-btn:hover {
+  background-color: var(--comment-modal-secondary-hover) !important;
+  background-image: linear-gradient(var(--comment-modal-secondary-hover), var(--comment-modal-secondary-hover)) !important;
+}
+
+.comment-modal-primary-btn {
+  background-color: var(--comment-modal-primary-bg) !important;
+  background-image: linear-gradient(var(--comment-modal-primary-bg), var(--comment-modal-primary-bg)) !important;
+  color: #ffffff !important;
+  -webkit-text-fill-color: #ffffff;
+  box-shadow: var(--comment-modal-primary-shadow);
+}
+
+.comment-modal-primary-btn:hover:not(:disabled) {
+  background-color: var(--comment-modal-primary-hover) !important;
+  background-image: linear-gradient(var(--comment-modal-primary-hover), var(--comment-modal-primary-hover)) !important;
+}
+
+.comment-modal-primary-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
 .gallery-detail-modal .ant-modal-content {
   background-color: transparent !important;
   box-shadow: none !important;

@@ -51,9 +51,15 @@ const emit = defineEmits<{
     />
     <p
       v-if="hintText"
-      class="text-center text-xs text-slate-500 mt-3"
+      class="detail-apply-hint text-center text-xs mt-3"
     >
       {{ hintText }}
     </p>
   </div>
 </template>
+
+<style scoped>
+.detail-apply-hint {
+  color: var(--detail-modal-text-muted);
+}
+</style>

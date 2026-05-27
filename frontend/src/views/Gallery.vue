@@ -320,8 +320,8 @@ watch(pageSize, (nextSize, previousSize) => {
             :selected-id="taskType"
             container-class="w-full xl:w-auto shrink-0"
             content-class="flex gap-1 bg-[var(--theme-pill-bg)] p-1 rounded-xl border border-[var(--theme-border)]"
-            active-class="bg-[var(--theme-panel-bg)] text-[var(--theme-text-primary)] border border-[var(--theme-border-strong)] shadow-[0_0_10px_rgba(56,189,248,0.18)]"
-            inactive-class="text-[var(--theme-text-secondary)] hover:text-[var(--theme-text-primary)]"
+            active-class="bg-[var(--theme-tab-active-bg)] text-[var(--theme-tab-active-text)] border border-[var(--theme-tab-active-border)] shadow-[var(--theme-tab-active-shadow)]"
+            inactive-class="text-[var(--theme-text-secondary)] hover:text-[var(--theme-tab-hover-text)]"
             @select="handleTaskTypeChange"
           />
 
@@ -335,7 +335,7 @@ watch(pageSize, (nextSize, previousSize) => {
                 :key="time.k"
                 @click="handleTimeRangeChange(time.k)"
                 class="px-2 py-1 sm:px-3 sm:py-1.5 rounded-lg transition-all font-medium text-xs sm:text-sm whitespace-nowrap shrink-0"
-                :class="timeRange === time.k ? 'bg-[var(--theme-panel-bg)] text-indigo-500 border border-[var(--theme-border-strong)] shadow-[0_0_10px_rgba(129,140,248,0.16)]' : 'text-[var(--theme-text-secondary)] hover:text-indigo-500'"
+                :class="timeRange === time.k ? 'bg-[var(--theme-tab-active-bg)] text-[var(--theme-tab-active-text)] border border-[var(--theme-tab-active-border)] shadow-[var(--theme-tab-active-shadow)]' : 'text-[var(--theme-text-secondary)] hover:text-[var(--theme-tab-hover-text)]'"
               >
                 {{ time.n }}
               </button>
@@ -347,7 +347,7 @@ watch(pageSize, (nextSize, previousSize) => {
                 :key="sort.k"
                 @click="handleSortChange(sort.k)"
                 class="px-2 py-1 sm:px-3 sm:py-1.5 rounded-lg transition-all font-medium text-xs sm:text-sm flex items-center whitespace-nowrap shrink-0"
-                :class="sortBy === sort.k ? 'bg-[var(--theme-panel-bg)] text-indigo-500 border border-[var(--theme-border-strong)] shadow-[0_0_10px_rgba(129,140,248,0.16)]' : 'text-[var(--theme-text-secondary)] hover:text-indigo-500'"
+                :class="sortBy === sort.k ? 'bg-[var(--theme-tab-active-bg)] text-[var(--theme-tab-active-text)] border border-[var(--theme-tab-active-border)] shadow-[var(--theme-tab-active-shadow)]' : 'text-[var(--theme-text-secondary)] hover:text-[var(--theme-tab-hover-text)]'"
               >
                 <component :is="sort.i" :size="14" class="mr-1.5 hidden sm:block" />
                 {{ sort.n }}
@@ -496,7 +496,7 @@ watch(pageSize, (nextSize, previousSize) => {
   border-radius: 0 !important;
   height: 100vh !important;
   overflow-y: auto !important;
-  background-color: #0f172a !important;
+  background-color: var(--detail-modal-shell-bg, var(--theme-card-strong-bg)) !important;
 }
 .mobile-full-modal .ant-modal-body {
   height: 100% !important;

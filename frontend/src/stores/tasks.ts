@@ -60,11 +60,13 @@ export const useTasksStore = defineStore('tasks', () => {
   }
 
   const refreshBalanceAfterCancel = async (previousCredits: number | null) => {
-    const retryDelays = [300, 800, 1500]
+    const retryDelays = [0, 300, 800, 1500]
     let latestCredits = authStore.user?.credits ?? null
 
     for (const delayMs of retryDelays) {
-      await new Promise(resolve => setTimeout(resolve, delayMs))
+      if (delayMs > 0) {
+        await new Promise(resolve => setTimeout(resolve, delayMs))
+      }
       await authStore.fetchUser()
 
       latestCredits = authStore.user?.credits ?? null

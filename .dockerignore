@@ -10,6 +10,7 @@ __pycache__/
 logs/
 workers/
 frontend/
+dashboard/frontend/node_modules/
 frontend_old_react/
 templates/
 tg_tmp/

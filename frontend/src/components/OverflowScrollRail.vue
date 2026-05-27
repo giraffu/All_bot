@@ -183,10 +183,10 @@ onBeforeUnmount(() => {
       class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-1"
       :class="buttonOffsetClass"
     >
-      <div class="absolute inset-y-0 left-0 w-12 bg-gradient-to-r from-[#0f172a] via-[#0f172a]/90 to-transparent rounded-l-xl"></div>
+      <div class="scroll-fade-left absolute inset-y-0 left-0 w-12 rounded-l-xl"></div>
       <button
         type="button"
-        class="pointer-events-auto relative z-10 flex h-8 w-8 items-center justify-center rounded-full border border-cyan-400/30 bg-slate-900/85 text-cyan-300 shadow-[0_0_14px_rgba(34,211,238,0.2)] transition-all hover:border-cyan-300/60 hover:text-cyan-200"
+        class="scroll-button pointer-events-auto relative z-10 flex h-8 w-8 items-center justify-center rounded-full transition-all"
         @mousedown.prevent="startScroll('left')"
         @mouseup="stopScroll"
         @mouseleave="stopScroll"
@@ -204,10 +204,10 @@ onBeforeUnmount(() => {
       class="pointer-events-none absolute inset-y-0 right-0 flex items-center justify-end pr-1"
       :class="buttonOffsetClass"
     >
-      <div class="absolute inset-y-0 right-0 w-14 bg-gradient-to-l from-[#0f172a] via-[#0f172a]/90 to-transparent rounded-r-xl"></div>
+      <div class="scroll-fade-right absolute inset-y-0 right-0 w-14 rounded-r-xl"></div>
       <button
         type="button"
-        class="pointer-events-auto relative z-10 flex h-8 w-8 items-center justify-center rounded-full border border-cyan-400/30 bg-slate-900/85 text-cyan-300 shadow-[0_0_14px_rgba(34,211,238,0.2)] transition-all hover:border-cyan-300/60 hover:text-cyan-200"
+        class="scroll-button pointer-events-auto relative z-10 flex h-8 w-8 items-center justify-center rounded-full transition-all"
         @mousedown.prevent="startScroll('right')"
         @mouseup="stopScroll"
         @mouseleave="stopScroll"
@@ -230,5 +230,35 @@ onBeforeUnmount(() => {
 .scrollbar-hide {
   -ms-overflow-style: none;
   scrollbar-width: none;
+}
+
+.scroll-fade-left {
+  background: linear-gradient(
+    to right,
+    var(--theme-scroll-fade),
+    var(--theme-scroll-fade-soft),
+    transparent
+  );
+}
+
+.scroll-fade-right {
+  background: linear-gradient(
+    to left,
+    var(--theme-scroll-fade),
+    var(--theme-scroll-fade-soft),
+    transparent
+  );
+}
+
+.scroll-button {
+  border: 1px solid var(--theme-scroll-button-border);
+  background: var(--theme-scroll-button-bg);
+  color: var(--theme-scroll-button-text);
+  box-shadow: var(--theme-scroll-button-shadow);
+}
+
+.scroll-button:hover {
+  border-color: color-mix(in srgb, var(--theme-scroll-button-border) 35%, var(--theme-scroll-button-text));
+  color: color-mix(in srgb, var(--theme-scroll-button-text) 88%, white);
 }
 </style>

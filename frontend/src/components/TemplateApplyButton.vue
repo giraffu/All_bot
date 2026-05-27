@@ -27,8 +27,8 @@ const emit = defineEmits<{
     type="button"
     :disabled="loading"
     :class="compact
-      ? `px-5 py-2 rounded-full bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-sm shadow-lg flex items-center ${fullWidth ? 'w-full justify-center' : ''}`
-      : `rounded-xl bg-gradient-to-r from-cyan-600 to-indigo-600 hover:from-cyan-500 hover:to-indigo-500 text-white font-bold text-lg shadow-[0_0_20px_rgba(56,189,248,0.4)] transition-all transform hover:scale-[1.02] flex items-center justify-center relative overflow-hidden group ${fullWidth ? 'w-full py-4' : 'flex-1 py-4'}`
+      ? `template-apply-button-compact px-5 py-2 rounded-full font-bold text-sm shadow-lg flex items-center ${fullWidth ? 'w-full justify-center' : ''}`
+      : `template-apply-button rounded-xl font-bold text-lg transition-all transform hover:scale-[1.02] flex items-center justify-center relative overflow-hidden group ${fullWidth ? 'w-full py-4' : 'flex-1 py-4'}`
     "
     @click="emit('click')"
   >
@@ -52,3 +52,33 @@ const emit = defineEmits<{
     </span>
   </button>
 </template>
+
+<style scoped>
+.template-apply-button,
+.template-apply-button-compact {
+  color: #ffffff;
+}
+
+.template-apply-button {
+  background: var(--detail-modal-primary-gradient);
+  box-shadow: var(--detail-modal-primary-glow);
+}
+
+.template-apply-button:hover:not(:disabled) {
+  background: var(--detail-modal-primary-gradient-hover);
+}
+
+.template-apply-button-compact {
+  background: var(--detail-modal-primary-solid);
+}
+
+.template-apply-button-compact:hover:not(:disabled) {
+  background: var(--detail-modal-primary-solid-hover);
+}
+
+.template-apply-button:disabled,
+.template-apply-button-compact:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+</style>

@@ -2,12 +2,37 @@
 import { useTasksStore } from '@/stores/tasks'
 import { CloseOutlined, CheckOutlined, LoadingOutlined } from '@ant-design/icons-vue'
 import { message } from 'ant-design-vue'
-import { useRouter } from 'vue-router'
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 
 const tasksStore = useTasksStore()
-const router = useRouter()
 const expandedTaskId = ref<string | null>(null)
+
+const getTaskLabel = (task: any) => {
+  if (task.status === 'pending') {
+    return task.queuePos != null ? `第 ${task.queuePos + 1} 位` : '排队中'
+  }
+
+  if (task.cancelRequested) {
+    return '取消中'
+  }
+
+  if (task.status === 'running') {
+    return '生成中'
+  }
+
+  if (task.status === 'success') {
+    return '已完成'
+  }
+
+  if (task.status === 'cancelled') {
+    return '已取消'
+  }
+
+  return '失败'
+}
+
+const getProgressStrokeColor = computed(() => 'var(--task-fab-progress)')
+const getProgressTrailColor = computed(() => 'var(--task-fab-progress-trail)')
 
 const isTaskInProgress = (task: any) =>
   task.status === 'pending' || task.status === 'running'
@@ -62,8 +87,10 @@ const doCancelTask = async (taskId: string) => {
         <!-- 主圆球区域 -->
         <div 
           @click="handleTaskClick(task)"
-          class="w-14 h-14 rounded-full bg-slate-800/80 backdrop-blur-md shadow-[0_8px_32px_rgba(0,0,0,0.5)] border border-white/10 flex items-center justify-center relative cursor-pointer hover:bg-slate-700/80 transition-colors"
+          class="task-fab-shell"
           :class="{'cursor-default': task.status !== 'success'}"
+          :aria-label="getTaskLabel(task)"
+          :title="getTaskLabel(task)"
         >
           <!-- 环形进度条 -->
           <div
@@ -76,48 +103,68 @@ const doCancelTask = async (taskId: string) => {
               :size="42"
               :show-info="false" 
               :status="getProgressStatus(task)" 
-              strokeColor="#06b6d4" 
-              trailColor="rgba(255,255,255,0.1)" 
+              :strokeColor="getProgressStrokeColor"
+              :trailColor="getProgressTrailColor"
               :strokeWidth="5" 
             />
           </div>
           
           <!-- 中心状态指示 -->
-          <div class="z-10 flex h-10 w-10 items-center justify-center rounded-full bg-slate-900/95 border border-white/8 shadow-inner shadow-black/30">
+          <div class="task-fab-core">
             <div class="flex flex-col items-center justify-center leading-none">
             <template v-if="task.status === 'pending'">
-              <span class="text-[11px] text-cyan-400 font-medium font-mono">
-                <template v-if="task.queuePos != null">
-                  第<span class="text-[13px] mx-0.5">{{ task.queuePos + 1 }}</span>位
-                </template>
-                <template v-else>
-                  排队中
-                </template>
+              <span
+                v-if="task.queuePos != null"
+                class="task-fab-queue-number"
+              >
+                {{ task.queuePos + 1 }}
+              </span>
+              <span
+                v-else
+                class="task-fab-label"
+              >
+                排队中
+              </span>
+              <span
+                v-if="task.queuePos != null"
+                class="task-fab-label"
+              >
+                排队
               </span>
             </template>
             <template v-else-if="task.cancelRequested">
-              <loading-outlined class="text-amber-400 text-lg" />
+              <loading-outlined class="task-fab-icon task-fab-icon-warn" />
+              <span class="task-fab-label">取消中</span>
             </template>
             <template v-else-if="task.status === 'running'">
-              <span class="text-[11px] text-cyan-400 font-medium font-mono">{{ task.progress }}%</span>
+              <span class="task-fab-running-value">{{ task.progress }}%</span>
+              <span class="task-fab-label">生成中</span>
             </template>
             <template v-else-if="task.status === 'cancelled'">
-              <close-outlined class="text-amber-400 text-xl" />
+              <close-outlined class="task-fab-icon task-fab-icon-warn" />
             </template>
             <template v-else-if="task.status === 'success'">
-              <check-outlined class="text-emerald-400 text-2xl" />
+              <check-outlined class="task-fab-icon task-fab-icon-success" />
             </template>
             <template v-else-if="task.status === 'failed'">
-              <close-outlined class="text-red-400 text-xl" />
+              <close-outlined class="task-fab-icon task-fab-icon-danger" />
             </template>
             </div>
+          </div>
+
+          <div
+            v-if="task.status === 'pending' && task.queuePos != null"
+            class="task-fab-badge"
+          >
+            <span class="task-fab-badge-label">队列</span>
+            <span class="task-fab-badge-value">{{ task.queuePos + 1 }}</span>
           </div>
         </div>
 
         <!-- 右上角关闭按钮 -->
         <button 
           @click.stop="handleClose(task)" 
-          class="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-slate-600 border border-slate-500 text-white flex items-center justify-center hover:bg-red-500 hover:border-red-400 transition-colors z-20 shadow-md"
+          class="task-fab-close"
         >
           <close-outlined class="text-[10px]" />
         </button>
@@ -125,8 +172,15 @@ const doCancelTask = async (taskId: string) => {
         <!-- 悬浮撤销面板 -->
         <transition name="fade-slide">
           <div v-if="expandedTaskId === task.id && task.status === 'pending'"
-               class="absolute right-16 top-1/2 -translate-y-1/2 bg-slate-800 border border-slate-600 rounded-lg p-2 shadow-lg flex items-center whitespace-nowrap z-50">
-            <span class="text-xs text-slate-300 mr-3">任务排队中</span>
+               class="task-fab-popover">
+            <span class="task-fab-popover-text">
+                <template v-if="task.queuePos != null">
+                  当前排在第 {{ task.queuePos + 1 }} 位
+                </template>
+                <template v-else>
+                  排队中
+                </template>
+            </span>
             <a-button type="primary" danger size="small" @click.stop="doCancelTask(task.id)">
               撤销任务
             </a-button>
@@ -138,6 +192,160 @@ const doCancelTask = async (taskId: string) => {
 </template>
 
 <style scoped>
+.task-fab-shell {
+  position: relative;
+  display: flex;
+  height: 3.5rem;
+  width: 3.5rem;
+  cursor: pointer;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9999px;
+  border: 1px solid var(--task-fab-shell-border);
+  background: var(--task-fab-shell-bg);
+  box-shadow: var(--task-fab-shell-shadow);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  transition: background-color 0.2s ease, border-color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.task-fab-shell:hover {
+  background: var(--task-fab-shell-hover-bg);
+  border-color: var(--task-fab-shell-hover-border);
+  box-shadow: var(--task-fab-shell-hover-shadow);
+  transform: translateY(-1px);
+}
+
+.task-fab-core {
+  z-index: 10;
+  display: flex;
+  height: 2.45rem;
+  width: 2.45rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9999px;
+  border: 1px solid var(--task-fab-core-border);
+  background: var(--task-fab-core-bg);
+  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.08), inset 0 -6px 12px rgba(15, 23, 42, 0.16);
+}
+
+.task-fab-queue-number,
+.task-fab-running-value {
+  font-family: ui-monospace, SFMono-Regular, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 0.95rem;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--task-fab-accent);
+  text-shadow: 0 0 10px var(--task-fab-accent-glow);
+}
+
+.task-fab-label {
+  margin-top: 0.12rem;
+  font-size: 0.54rem;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0.04em;
+  color: var(--task-fab-label);
+}
+
+.task-fab-icon {
+  font-size: 1.1rem;
+}
+
+.task-fab-icon-success {
+  color: var(--task-fab-success);
+}
+
+.task-fab-icon-warn {
+  color: var(--task-fab-warn);
+}
+
+.task-fab-icon-danger {
+  color: var(--task-fab-danger);
+}
+
+.task-fab-badge {
+  position: absolute;
+  top: -0.45rem;
+  left: -0.45rem;
+  z-index: 15;
+  display: flex;
+  min-width: 1.8rem;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.02rem;
+  border-radius: 9999px;
+  border: 1px solid var(--task-fab-badge-border);
+  background: var(--task-fab-badge-bg);
+  padding: 0.24rem 0.42rem;
+  box-shadow: var(--task-fab-badge-shadow);
+}
+
+.task-fab-badge-label {
+  font-size: 0.46rem;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--task-fab-badge-label);
+}
+
+.task-fab-badge-value {
+  font-family: ui-monospace, SFMono-Regular, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 0.78rem;
+  font-weight: 800;
+  line-height: 1;
+  color: var(--task-fab-badge-value);
+}
+
+.task-fab-close {
+  position: absolute;
+  top: -0.18rem;
+  right: -0.18rem;
+  z-index: 20;
+  display: flex;
+  height: 1.25rem;
+  width: 1.25rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9999px;
+  border: 1px solid var(--task-fab-close-border);
+  background: var(--task-fab-close-bg);
+  color: var(--task-fab-close-text);
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.18);
+  transition: background-color 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
+}
+
+.task-fab-close:hover {
+  background: var(--task-fab-close-hover-bg);
+  border-color: var(--task-fab-close-hover-border);
+  transform: scale(1.06);
+}
+
+.task-fab-popover {
+  position: absolute;
+  top: 50%;
+  right: 4rem;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  white-space: nowrap;
+  border-radius: 0.8rem;
+  border: 1px solid var(--task-fab-popover-border);
+  background: var(--task-fab-popover-bg);
+  padding: 0.55rem 0.7rem;
+  box-shadow: var(--task-fab-popover-shadow);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  transform: translateY(-50%);
+}
+
+.task-fab-popover-text {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--task-fab-popover-text);
+}
+
 .task-list-enter-active,
 .task-list-leave-active {
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);

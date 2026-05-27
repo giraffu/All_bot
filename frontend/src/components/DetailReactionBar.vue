@@ -29,12 +29,12 @@ const emit = defineEmits<{
 <template>
   <div
     v-if="compact"
-    class="flex items-center gap-1.5"
+    class="detail-reaction-compact flex items-center gap-1.5"
   >
     <button
       type="button"
-      class="flex items-center gap-1.5 transition-all"
-      :class="hasLiked ? 'text-pink-500' : 'text-slate-300'"
+      class="detail-reaction-compact-button flex items-center gap-1.5 transition-all"
+      :class="hasLiked ? 'is-liked' : ''"
       @click="emit('like')"
     >
       <Heart :size="20" :class="{ 'fill-pink-500': hasLiked }" />
@@ -42,8 +42,8 @@ const emit = defineEmits<{
     </button>
     <button
       type="button"
-      class="flex items-center gap-1.5 transition-all"
-      :class="hasDisliked ? 'text-slate-400' : 'text-slate-300'"
+      class="detail-reaction-compact-button flex items-center gap-1.5 transition-all"
+      :class="hasDisliked ? 'is-disliked' : ''"
       @click="emit('dislike')"
     >
       <ThumbsDown :size="20" :class="{ 'fill-slate-400': hasDisliked }" />
@@ -51,7 +51,7 @@ const emit = defineEmits<{
     </button>
     <button
       type="button"
-      class="flex items-center gap-1.5 transition-all text-slate-300"
+      class="detail-reaction-compact-button flex items-center gap-1.5 transition-all"
       @click="emit('comment')"
     >
       <MessageCircle :size="20" />
@@ -66,42 +66,78 @@ const emit = defineEmits<{
 
   <div
     v-else
-    class="flex space-x-2"
+    class="detail-reaction-bar flex space-x-2"
   >
     <button
       type="button"
-      class="flex-1 py-3 rounded-xl border border-slate-400 bg-slate-500/50 hover:bg-slate-500 transition-all flex items-center justify-center group"
+      class="detail-reaction-action detail-reaction-action-like flex-1 py-3 rounded-xl transition-all flex items-center justify-center group"
       @click="emit('like')"
     >
       <Heart
         :size="20"
         class="mr-2 transition-transform group-hover:scale-110"
-        :class="hasLiked ? 'fill-pink-500 text-pink-500' : 'text-slate-400 group-hover:text-pink-400'"
+        :class="hasLiked ? 'fill-pink-500 text-pink-500' : 'detail-reaction-icon group-hover:text-pink-400'"
       />
-      <span class="font-medium" :class="hasLiked ? 'text-pink-400' : 'text-slate-300'">{{ likesCount }}</span>
+      <span class="font-medium" :class="hasLiked ? 'text-pink-400' : 'detail-reaction-count'">{{ likesCount }}</span>
     </button>
     <button
       type="button"
-      class="flex-1 py-3 rounded-xl border border-slate-400 bg-slate-500/50 hover:bg-slate-500 transition-all flex items-center justify-center group"
+      class="detail-reaction-action detail-reaction-action-dislike flex-1 py-3 rounded-xl transition-all flex items-center justify-center group"
       @click="emit('dislike')"
     >
       <ThumbsDown
         :size="20"
         class="mr-2 transition-transform group-hover:scale-110"
-        :class="hasDisliked ? 'fill-slate-400 text-slate-400' : 'text-slate-400 group-hover:text-slate-200'"
+        :class="hasDisliked ? 'fill-slate-400 text-slate-400' : 'detail-reaction-icon group-hover:text-[var(--detail-modal-text-primary)]'"
       />
-      <span class="font-medium" :class="hasDisliked ? 'text-slate-400' : 'text-slate-300'">{{ dislikesCount }}</span>
+      <span class="font-medium" :class="hasDisliked ? 'text-slate-400' : 'detail-reaction-count'">{{ dislikesCount }}</span>
     </button>
     <button
       type="button"
-      class="flex-1 py-3 rounded-xl border border-slate-400 bg-slate-500/50 hover:bg-slate-500 transition-all flex items-center justify-center group"
+      class="detail-reaction-action detail-reaction-action-comment flex-1 py-3 rounded-xl transition-all flex items-center justify-center group"
       @click="emit('comment')"
     >
       <MessageCircle
         :size="20"
-        class="mr-2 transition-transform group-hover:scale-110 text-slate-400 group-hover:text-blue-400"
+        class="detail-reaction-icon mr-2 transition-transform group-hover:scale-110 group-hover:text-blue-400"
       />
-      <span class="font-medium text-slate-300">{{ commentsCount }}</span>
+      <span class="detail-reaction-count font-medium">{{ commentsCount }}</span>
     </button>
   </div>
 </template>
+
+<style scoped>
+.detail-reaction-compact-button {
+  color: var(--detail-modal-text-secondary);
+}
+
+.detail-reaction-compact-button:hover,
+.detail-reaction-compact-button:focus-visible {
+  color: var(--detail-modal-text-primary);
+}
+
+.detail-reaction-compact-button.is-liked {
+  color: #ec4899;
+}
+
+.detail-reaction-compact-button.is-disliked {
+  color: var(--detail-modal-text-muted);
+}
+
+.detail-reaction-action {
+  border: 1px solid var(--detail-modal-action-border);
+  background: var(--detail-modal-action-bg);
+}
+
+.detail-reaction-action:hover {
+  background: var(--detail-modal-action-hover-bg);
+}
+
+.detail-reaction-icon {
+  color: var(--detail-modal-text-muted);
+}
+
+.detail-reaction-count {
+  color: var(--detail-modal-text-secondary);
+}
+</style>

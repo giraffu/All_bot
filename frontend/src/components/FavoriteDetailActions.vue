@@ -23,8 +23,8 @@ const emit = defineEmits<{
     <button
       type="button"
       :class="compact
-        ? 'flex items-center gap-1.5 transition-all text-red-400'
-        : 'flex-1 py-3 rounded-xl border border-red-500/30 bg-red-500/10 hover:bg-red-500/20 text-red-400 transition-all flex items-center justify-center group'
+        ? 'favorite-detail-action-compact favorite-detail-action-danger flex items-center gap-1.5 transition-all'
+        : 'favorite-detail-action favorite-detail-action-danger flex-1 py-3 rounded-xl transition-all flex items-center justify-center group'
       "
       @click="emit('unfavorite')"
     >
@@ -34,13 +34,53 @@ const emit = defineEmits<{
     <button
       type="button"
       :class="compact
-        ? 'flex items-center gap-1.5 transition-all text-slate-300'
-        : 'flex-1 py-3 rounded-xl border border-slate-400 bg-slate-500/50 hover:bg-slate-500 transition-all flex items-center justify-center group'
+        ? 'favorite-detail-action-compact favorite-detail-action-neutral flex items-center gap-1.5 transition-all'
+        : 'favorite-detail-action favorite-detail-action-neutral flex-1 py-3 rounded-xl transition-all flex items-center justify-center group'
       "
       @click="emit('comment')"
     >
-      <MessageCircle :size="compact ? 22 : 20" :class="compact ? '' : 'mr-2 transition-transform group-hover:scale-110 text-slate-400 group-hover:text-blue-400'" />
-      <span :class="compact ? 'text-sm font-medium' : 'font-medium text-slate-300'">{{ commentsCount }}</span>
+      <MessageCircle :size="compact ? 22 : 20" :class="compact ? '' : 'favorite-detail-action-icon mr-2 transition-transform group-hover:scale-110 group-hover:text-blue-400'" />
+      <span :class="compact ? 'text-sm font-medium' : 'favorite-detail-action-text font-medium'">{{ commentsCount }}</span>
     </button>
   </div>
 </template>
+
+<style scoped>
+.favorite-detail-action {
+  border: 1px solid var(--detail-modal-action-border);
+}
+
+.favorite-detail-action-neutral {
+  background: var(--detail-modal-action-bg);
+  color: var(--detail-modal-text-secondary);
+}
+
+.favorite-detail-action-neutral:hover {
+  background: var(--detail-modal-action-hover-bg);
+}
+
+.favorite-detail-action-compact.favorite-detail-action-neutral {
+  color: var(--detail-modal-text-secondary);
+}
+
+.favorite-detail-action-danger {
+  color: #f87171;
+}
+
+.favorite-detail-action.favorite-detail-action-danger {
+  border-color: rgba(239, 68, 68, 0.3);
+  background: rgba(239, 68, 68, 0.1);
+}
+
+.favorite-detail-action.favorite-detail-action-danger:hover {
+  background: rgba(239, 68, 68, 0.18);
+}
+
+.favorite-detail-action-icon {
+  color: var(--detail-modal-text-muted);
+}
+
+.favorite-detail-action-text {
+  color: var(--detail-modal-text-secondary);
+}
+</style>

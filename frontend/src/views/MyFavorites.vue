@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, watch } from 'vue'
+import { computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
@@ -309,8 +309,8 @@ onMounted(() => {
             container-class="pb-2 md:pb-0"
             content-class="flex items-center space-x-2"
             button-class="px-4 py-1.5 rounded-full text-sm font-medium transition-all whitespace-nowrap"
-            active-class="bg-[var(--theme-panel-bg)] text-[var(--theme-text-primary)] border border-[var(--theme-border-strong)] shadow-[0_0_10px_rgba(56,189,248,0.18)]"
-            inactive-class="bg-[var(--theme-pill-bg)] text-[var(--theme-text-secondary)] border border-[var(--theme-border)] hover:text-[var(--theme-text-primary)] hover:border-[var(--theme-border-strong)]"
+            active-class="bg-[var(--theme-tab-active-bg)] text-[var(--theme-tab-active-text)] border border-[var(--theme-tab-active-border)] shadow-[var(--theme-tab-active-shadow)]"
+            inactive-class="bg-[var(--theme-pill-bg)] text-[var(--theme-text-secondary)] border border-[var(--theme-border)] hover:text-[var(--theme-tab-hover-text)] hover:border-[var(--theme-tab-active-border)]"
             @select="handleFilterTypeChange"
           />
         </div>
@@ -321,8 +321,8 @@ onMounted(() => {
           :selected-id="selectedTaskType"
           container-class="mt-3 rounded-2xl border border-[var(--theme-border)] bg-[var(--theme-card-strong-bg)] px-2 py-2 shadow-[0_6px_18px_rgba(15,23,42,0.12)]"
           content-class="flex gap-1 bg-[var(--theme-pill-bg)] p-1 rounded-xl border border-[var(--theme-border)]"
-          active-class="bg-[var(--theme-panel-bg)] text-[var(--theme-text-primary)] border border-[var(--theme-border-strong)] shadow-[0_0_10px_rgba(56,189,248,0.18)]"
-          inactive-class="text-[var(--theme-text-secondary)] hover:text-[var(--theme-text-primary)]"
+          active-class="bg-[var(--theme-tab-active-bg)] text-[var(--theme-tab-active-text)] border border-[var(--theme-tab-active-border)] shadow-[var(--theme-tab-active-shadow)]"
+          inactive-class="text-[var(--theme-text-secondary)] hover:text-[var(--theme-tab-hover-text)]"
           @select="handleTaskTypeChange"
         />
 

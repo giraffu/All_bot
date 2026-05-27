@@ -12,7 +12,7 @@ const props = withDefaults(
 </script>
 
 <template>
-  <div class="lg:hidden fixed bottom-0 left-0 right-0 bg-[#0f172a]/95 backdrop-blur-lg border-t border-slate-800 px-4 py-3 flex items-center justify-between z-50 safe-area-bottom">
+  <div class="detail-mobile-bottom-bar lg:hidden fixed bottom-0 left-0 right-0 px-4 py-3 flex items-center justify-between z-50 safe-area-bottom">
     <div :class="leftClass">
       <slot name="left" />
     </div>
@@ -21,3 +21,11 @@ const props = withDefaults(
     </div>
   </div>
 </template>
+
+<style scoped>
+.detail-mobile-bottom-bar {
+  background: var(--detail-modal-bottom-bar-bg);
+  backdrop-filter: blur(18px);
+  border-top: 1px solid var(--detail-modal-divider);
+}
+</style>
