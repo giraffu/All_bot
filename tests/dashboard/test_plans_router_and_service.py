@@ -83,6 +83,7 @@ async def test_get_orders_payload_applies_filters_and_flattens_items():
         page=2,
         page_size=10,
         status="SUCCESS",
+        order_id="order",
         internal_user_id=123,
         username="test",
         db=db,
@@ -93,8 +94,10 @@ async def test_get_orders_payload_applies_filters_and_flattens_items():
     assert result["items"][0]["plan_name"] == "月卡"
     list_stmt = db.executed_stmts[1]
     assert "orders.status = :status_1" in list_stmt
+    assert "lower(orders.order_id) LIKE lower(:order_id_1)" in list_stmt
     assert "orders.internal_user_id =" in list_stmt
     assert "users.username" in list_stmt
+    assert "order_id_1" in list_stmt
     assert ":internal_user_id_1" in list_stmt
     assert "username_1" in list_stmt
 
@@ -110,6 +113,7 @@ async def test_get_orders_router_routes_to_service(monkeypatch):
         page=1,
         page_size=20,
         status="ALL",
+        order_id="RMB_123",
         internal_user_id=123,
         username="tester",
         db=db,
@@ -120,6 +124,7 @@ async def test_get_orders_router_routes_to_service(monkeypatch):
         page=1,
         page_size=20,
         status="ALL",
+        order_id="RMB_123",
         internal_user_id=123,
         username="tester",
         db=db,

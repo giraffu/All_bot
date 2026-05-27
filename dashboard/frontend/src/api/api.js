@@ -173,11 +173,19 @@ export const updatePlan = async (planId, planData) => put(`/api/plans/${planId}`
 
 export const deletePlan = async (planId) => del(`/api/plans/${planId}`)
 
-export const fetchOrders = async (page = 1, pageSize = 20, status = null, internalUserId = null, username = null) => {
+export const fetchOrders = async (
+  page = 1,
+  pageSize = 20,
+  status = null,
+  orderId = null,
+  internalUserId = null,
+  username = null
+) => {
   return get(withQuery('/api/orders', params => {
     appendQueryParam(params, 'page', page)
     appendQueryParam(params, 'page_size', pageSize)
     if (status && status !== 'ALL') appendQueryParam(params, 'status', status)
+    appendQueryParam(params, 'order_id', orderId)
     appendQueryParam(params, 'internal_user_id', internalUserId)
     appendQueryParam(params, 'username', username)
   }))

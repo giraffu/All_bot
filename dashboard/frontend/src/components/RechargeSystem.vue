@@ -26,6 +26,7 @@ const ordersLoading = ref(false)
 const currentOrderPage = ref(1)
 const orderPageSize = ref(10)
 const orderStatusFilter = ref('ALL')
+const searchOrderId = ref('')
 const searchInternalUserId = ref('')
 const searchUsername = ref('')
 
@@ -70,6 +71,7 @@ const loadOrders = async (page = 1) => {
       page, 
       orderPageSize.value, 
       orderStatusFilter.value,
+      searchOrderId.value || null,
       searchInternalUserId.value || null,
       searchUsername.value || null
     )
@@ -181,6 +183,7 @@ onMounted(() => {
         <div class="flex justify-between mb-4 items-center">
           <h2 class="text-lg font-bold">订单列表</h2>
           <div class="flex gap-2">
+            <a-input v-model:value="searchOrderId" placeholder="搜索订单号" style="width: 180px" @pressEnter="loadOrders(1)" allow-clear />
             <a-input v-model:value="searchInternalUserId" placeholder="搜索内部用户ID" style="width: 150px" @pressEnter="loadOrders(1)" allow-clear />
             <a-input v-model:value="searchUsername" placeholder="搜索用户名" style="width: 150px" @pressEnter="loadOrders(1)" allow-clear />
             <a-select v-model:value="orderStatusFilter" style="width: 120px" @change="loadOrders(1)">

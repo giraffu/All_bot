@@ -87,6 +87,7 @@ async def get_orders_payload(
     page: int,
     page_size: int,
     status: str | None,
+    order_id: str | None,
     internal_user_id: int | None,
     username: str | None,
     db,
@@ -104,6 +105,8 @@ async def get_orders_payload(
 
         if status and status != "ALL":
             stmt = stmt.where(Order.status == status)
+        if order_id:
+            stmt = stmt.where(Order.order_id.ilike(f"%{order_id}%"))
         if internal_user_id:
             stmt = stmt.where(Order.internal_user_id == internal_user_id)
         if username:
