@@ -16,6 +16,7 @@ from src.constants import (
     MODE_TXT2IMG,
 )
 from src.core.task_core_service_providers import get_task_core_image_service
+from src.lora_catalog import normalize_ltx_video_lora_items
 
 
 LEGACY_TASK_TYPE_ALIASES = {
@@ -45,6 +46,9 @@ def _get_primary_saved_input(inputs: Dict[str, Any]) -> str:
 
 
 def _append_lora_metadata(metadata: Dict[str, Any], inputs: Dict[str, Any]) -> Dict[str, Any]:
+    lora_items = inputs.get("lora_items")
+    if isinstance(lora_items, list) and lora_items:
+        metadata["lora_items"] = lora_items
     lora_name = inputs.get("lora_name")
     if lora_name:
         metadata["lora_name"] = lora_name
@@ -381,12 +385,17 @@ class LtxVideoStrategy(BaseTaskStrategy):
             requested_seconds = 5
 
         image_path = _get_primary_saved_input(inputs)
+        lora_items = normalize_ltx_video_lora_items(
+            inputs.get("lora_items"),
+            max_items=3,
+        )
         return await image_service.submit_ltx_video_task(
             task_id,
             prompt=inputs.get("prompt", "ltx video"),
             image_path=image_path,
             lora_name=inputs.get("lora_name"),
             lora_strength=inputs.get("lora_strength"),
+            lora_items=lora_items or None,
             width=width,
             height=height,
             length=requested_seconds,

@@ -33,6 +33,7 @@ class CustomVideoState(IntEnum):
 
 class LtxVideoState(IntEnum):
     WAIT_LORA_SELECTION = auto()
+    WAIT_LORA_STRENGTH_EDIT = auto()
     WAIT_IMAGE = auto()
     WAIT_SETTINGS_AND_PROMPT = auto()
     WAIT_CONFIRMATION = auto()

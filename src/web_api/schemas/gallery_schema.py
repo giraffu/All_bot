@@ -82,6 +82,7 @@ class ApplyContextResponse(BaseModel):
     prompt: Optional[str]
     lora_name: Optional[str] = None
     lora_strength: Optional[float] = None
+    lora_items: Optional[list[dict]] = None
     input_file: Optional[str]
     input_file_url: Optional[str]
     width: Optional[int]

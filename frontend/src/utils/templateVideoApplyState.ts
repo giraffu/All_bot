@@ -1,3 +1,4 @@
+import { normalizeLtxVideoLoraItems, type LtxVideoLoraItem } from '@/features/generation/imageToVideo'
 import {
   canLockTemplateVideoPromptControls,
   getTemplateVideoSettings,
@@ -18,6 +19,7 @@ export type TemplateVideoApplyContext = TemplateVideoContext & {
 export type ResolvedTemplateVideoApplyState = {
   prompt: string | null
   loraName: string | null
+  loraItems: LtxVideoLoraItem[]
   sourcePostId: number | null
   resolution: string | null
   duration: string | null
@@ -78,6 +80,20 @@ export const resolveTemplateVideoApplyState = (
   return {
     prompt: hasNonEmptyString(ctx.prompt) ? ctx.prompt : null,
     loraName: hasNonEmptyString(ctx.lora_name) ? ctx.lora_name : null,
+    loraItems: taskType === 'ltx_video'
+      ? normalizeLtxVideoLoraItems(
+          Array.isArray((ctx as { lora_items?: unknown }).lora_items)
+            ? ((ctx as { lora_items?: Array<{ name?: string; strength?: number }> }).lora_items ?? [])
+            : hasNonEmptyString((ctx as { lora_name?: unknown }).lora_name)
+              ? [{
+                  name: String((ctx as { lora_name?: unknown }).lora_name),
+                  strength: typeof (ctx as { lora_strength?: unknown }).lora_strength === 'number'
+                    ? (ctx as { lora_strength?: number }).lora_strength
+                    : undefined
+                }]
+              : []
+        )
+      : [],
     sourcePostId: toPositiveInteger(ctx.source_post_id),
     resolution: templateVideoSettings
       ? (isLtxVideo

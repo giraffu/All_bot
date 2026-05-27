@@ -167,6 +167,51 @@ def get_ltx_video_lora_default_strength(lora_name: str) -> float:
     return LTX_VIDEO_LORA_DEFAULT_STRENGTHS.get(normalized_name, 1.0)
 
 
+def build_ltx_video_lora_item(
+    lora_name: str | None,
+    *,
+    strength: float | None = None,
+) -> dict[str, float | str] | None:
+    normalized_name = resolve_ltx_video_lora_name(lora_name)
+    if not normalized_name:
+        return None
+    resolved_strength = (
+        get_ltx_video_lora_default_strength(normalized_name)
+        if strength is None
+        else float(strength)
+    )
+    return {
+        "name": normalized_name,
+        "strength": float(resolved_strength),
+    }
+
+
+def normalize_ltx_video_lora_items(
+    lora_items: list[dict[str, object]] | None,
+    *,
+    max_items: int | None = None,
+) -> list[dict[str, float | str]]:
+    normalized_items: list[dict[str, float | str]] = []
+    seen_names: set[str] = set()
+    for raw_item in lora_items or []:
+        if not isinstance(raw_item, dict):
+            continue
+        item = build_ltx_video_lora_item(
+            raw_item.get("name"),
+            strength=raw_item.get("strength"),  # type: ignore[arg-type]
+        )
+        if not item:
+            continue
+        item_name = str(item["name"])
+        if item_name in seen_names:
+            continue
+        seen_names.add(item_name)
+        normalized_items.append(item)
+        if max_items is not None and len(normalized_items) >= max_items:
+            break
+    return normalized_items
+
+
 def resolve_ltx_video_lora_name(alias_or_name: str | None) -> str:
     normalized_name = (alias_or_name or "").strip()
     if not normalized_name:

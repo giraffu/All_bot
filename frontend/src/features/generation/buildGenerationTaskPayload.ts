@@ -1,3 +1,5 @@
+import type { LtxVideoLoraItem } from './imageToVideo'
+
 export type PromptTarget = 'topLevel' | 'inputs'
 
 export type BuildGenerationTaskPayloadOptions = {
@@ -12,6 +14,7 @@ export type BuildGenerationTaskPayloadOptions = {
   duration?: number
   loraName?: string
   loraStrength?: number
+  loraItems?: LtxVideoLoraItem[]
   normalizeEditLoraTask?: boolean
 }
 
@@ -39,6 +42,7 @@ export function buildGenerationTaskPayload(
     duration,
     loraName,
     loraStrength,
+    loraItems,
     normalizeEditLoraTask = false,
   } = options
 
@@ -81,6 +85,10 @@ export function buildGenerationTaskPayload(
 
   if (loraStrength !== undefined) {
     payload.inputs.lora_strength = loraStrength
+  }
+
+  if (loraItems && loraItems.length > 0) {
+    payload.inputs.lora_items = loraItems
   }
 
   return payload

@@ -32,6 +32,7 @@ def build_apply_context_response(
     prompt: str | None,
     lora_name: str | None,
     lora_strength: float | None,
+    lora_items: list[dict] | None,
     input_file: str | None,
     input_file_url: str | None,
     width: int | None,
@@ -49,6 +50,7 @@ def build_apply_context_response(
         prompt=prompt,
         lora_name=lora_name,
         lora_strength=lora_strength,
+        lora_items=lora_items,
         input_file=input_file,
         input_file_url=input_file_url,
         width=width,
@@ -141,6 +143,9 @@ async def build_history_apply_context_response(
         history.requested_duration,
     )
     prompt, lora_name, lora_strength = extract_prompt_lora_context(prompt)
+    lora_items = None
+    if history.type == "ltx_video" and lora_name:
+        lora_items = [{"name": lora_name, "strength": lora_strength or 1.0}]
 
     media_type, width, height, duration = resolve_apply_context_media_metadata(
         task_type=history.type,
@@ -191,6 +196,7 @@ async def build_history_apply_context_response(
         prompt=prompt,
         lora_name=lora_name,
         lora_strength=lora_strength,
+        lora_items=lora_items,
         input_file=input_file,
         input_file_url=input_file_url,
         width=width,

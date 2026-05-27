@@ -555,7 +555,7 @@ async def test_start_ltx_video_uses_english_locale(monkeypatch):
     assert result == ltx_video_fsm.LtxVideoState.WAIT_LORA_SELECTION
     reply_mock.assert_awaited_once_with(
         update.message,
-        "T:fsm.ltx_video.select_lora",
+        "T:fsm.ltx_video.select_lora\n\n当前附加模型: None\nYou can select up to 3 LoRAs and adjust each strength individually.",
         reply_markup="ltx-lora-keyboard",
         parse_mode="Markdown",
     )
@@ -579,10 +579,10 @@ async def test_start_ltx_video_opens_lora_selection_first(monkeypatch):
     result = await ltx_video_fsm.start_ltx_video(update, context)
 
     assert result == ltx_video_fsm.LtxVideoState.WAIT_LORA_SELECTION
-    assert context.user_data["ltx_video_data"]["lora_name"] == ""
+    assert context.user_data["ltx_video_data"]["lora_items"] == []
     reply_mock.assert_awaited_once_with(
         update.message,
-        "T:fsm.ltx_video.select_lora",
+        "T:fsm.ltx_video.select_lora\n\n当前附加模型: 无\n可多选，最多 3 个。选中后可继续调整单项强度。",
         reply_markup="ltx-lora-keyboard",
         parse_mode="Markdown",
     )
@@ -605,7 +605,7 @@ async def test_ltx_video_lora_selection_sets_name_and_requests_image(monkeypatch
                 "resolution": "1280x704",
                 "duration": "5s",
                 "image_path": None,
-                "lora_name": "",
+                "lora_items": [],
             }
         },
         lang="zh",
@@ -615,10 +615,12 @@ async def test_ltx_video_lora_selection_sets_name_and_requests_image(monkeypatch
     result = await ltx_video_fsm.handle_lora_selection(update, context)
 
     assert result == ltx_video_fsm.LtxVideoState.WAIT_IMAGE
-    assert (
-        context.user_data["ltx_video_data"]["lora_name"]
-        == "ltx2.3/LTX2.3_reasoning_I2V_V3.safetensors"
-    )
+    assert context.user_data["ltx_video_data"]["lora_items"] == [
+        {
+            "name": "ltx2.3/LTX2.3_reasoning_I2V_V3.safetensors",
+            "strength": 0.8,
+        }
+    ]
     query.answer.assert_awaited_once()
     edit_mock.assert_awaited_once()
 
@@ -656,7 +658,12 @@ async def test_ltx_video_confirm_generation_forwards_selected_lora(monkeypatch):
                 "duration": "10s",
                 "prompt": "make video",
                 "image_path": "/tmp/ltx.png",
-                "lora_name": "ltx2.3/LTX2.3_reasoning_I2V_V3.safetensors",
+                "lora_items": [
+                    {
+                        "name": "ltx2.3/LTX2.3_reasoning_I2V_V3.safetensors",
+                        "strength": 0.8,
+                    }
+                ],
             }
         },
         t=lambda key, **kwargs: f"T:{key}",

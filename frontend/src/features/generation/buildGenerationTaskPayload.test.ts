@@ -98,6 +98,49 @@ describe('buildGenerationTaskPayload', () => {
     })
   })
 
+  it('builds ltx video payload with multi lora items', () => {
+    expect(
+      buildGenerationTaskPayload({
+        taskType: 'ltx_video',
+        images: ['img-1'],
+        resolution: '1280x704',
+        duration: 10,
+        prompt: 'cinematic motion',
+        promptTarget: 'inputs',
+        loraItems: [
+          {
+            name: 'ltx2.3/LTX2.3_reasoning_I2V_V3.safetensors',
+            strength: 0.8,
+          },
+          {
+            name: 'ltx2.3/SynthPussy_01_rank32.safetensors',
+            strength: 0.75,
+          },
+        ],
+      }),
+    ).toEqual({
+      task_type: 'ltx_video',
+      inputs: {
+        images: ['img-1'],
+        resolution: '1280x704',
+        duration: 10,
+        prompt: 'cinematic motion',
+        lora_items: [
+          {
+            name: 'ltx2.3/LTX2.3_reasoning_I2V_V3.safetensors',
+            strength: 0.8,
+          },
+          {
+            name: 'ltx2.3/SynthPussy_01_rank32.safetensors',
+            strength: 0.75,
+          },
+        ],
+      },
+      priority: 0,
+      is_template: false,
+    })
+  })
+
   it('builds text to image payload without source images', () => {
     expect(
       buildGenerationTaskPayload({

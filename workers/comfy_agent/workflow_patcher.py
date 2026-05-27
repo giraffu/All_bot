@@ -3,6 +3,7 @@ import logging
 import os
 from typing import Any, Dict, Optional
 
+from src.lora_catalog import normalize_ltx_video_lora_items
 from src.workflow_mapping_validation import (
     load_workflow_mappings,
     resolve_workflow_filename,
@@ -15,6 +16,7 @@ logger = logging.getLogger(__name__)
 LTX_VIDEO_ADDITIONAL_LORA_NODE_IDS = ("256",)
 LTX_VIDEO_FIRST_PASS_MODEL_NODE_ID = "191"
 LTX_VIDEO_FIRST_PASS_CLIP_NODE_ID = "189"
+LTX_VIDEO_MAX_LORA_SLOTS = 10
 
 
 class WorkflowPatcher:
@@ -181,22 +183,26 @@ class WorkflowPatcher:
                             f"ltx_video_{unique_id}_{node_id}"
                         )
 
-            lora_name = str(params.get("lora_name") or "").strip()
-            if lora_name:
-                lora_strength = params.get("lora_strength")
-                if lora_strength is None:
-                    try:
-                        from src.lora_catalog import get_ltx_video_lora_default_strength
+            lora_items = normalize_ltx_video_lora_items(
+                params.get("lora_items"),
+                max_items=3,
+            )
+            if not lora_items:
+                lora_name = str(params.get("lora_name") or "").strip()
+                if lora_name:
+                    lora_strength = params.get("lora_strength")
+                    lora_items = normalize_ltx_video_lora_items(
+                        [
+                            {
+                                "name": lora_name,
+                                "strength": lora_strength,
+                            }
+                        ],
+                        max_items=3,
+                    )
 
-                        lora_strength = get_ltx_video_lora_default_strength(lora_name)
-                    except Exception:
-                        lora_strength = 1.0
-
-                self._patch_ltx_video_lora(
-                    wf,
-                    lora_name=lora_name,
-                    lora_strength=float(lora_strength),
-                )
+            if lora_items:
+                self._patch_ltx_video_lora(wf, lora_items=lora_items)
             else:
                 self._strip_ltx_video_lora_nodes(wf)
 
@@ -206,19 +212,22 @@ class WorkflowPatcher:
         self,
         workflow: Dict[str, Any],
         *,
-        lora_name: str,
-        lora_strength: float,
+        lora_items: list[dict[str, Any]],
     ) -> None:
         for node_id in LTX_VIDEO_ADDITIONAL_LORA_NODE_IDS:
             node = workflow.get(node_id)
             if not isinstance(node, dict):
                 continue
             inputs = node.setdefault("inputs", {})
-            inputs["lora_1"] = {
-                "on": True,
-                "lora": lora_name,
-                "strength": lora_strength,
-            }
+            for slot_index in range(1, LTX_VIDEO_MAX_LORA_SLOTS + 1):
+                inputs.pop(f"lora_{slot_index}", None)
+
+            for index, item in enumerate(lora_items[:LTX_VIDEO_MAX_LORA_SLOTS], start=1):
+                inputs[f"lora_{index}"] = {
+                    "on": True,
+                    "lora": str(item["name"]),
+                    "strength": float(item["strength"]),
+                }
             inputs["model"] = [LTX_VIDEO_FIRST_PASS_MODEL_NODE_ID, 0]
             inputs["clip"] = [LTX_VIDEO_FIRST_PASS_CLIP_NODE_ID, 0]
 

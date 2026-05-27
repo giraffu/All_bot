@@ -2,7 +2,7 @@
 import asyncio
 import logging
 import uuid
-from typing import Optional
+from typing import Any, Optional
 
 import httpx
 
@@ -395,6 +395,7 @@ class APIClient:
         image_path: str,
         lora_name: str | None = None,
         lora_strength: float | None = None,
+        lora_items: list[dict[str, Any]] | None = None,
         width: int = 1280,
         height: int = 704,
         length: int = 5,
@@ -417,6 +418,8 @@ class APIClient:
             data["lora_name"] = lora_name
         if lora_strength is not None:
             data["lora_strength"] = lora_strength
+        if lora_items:
+            data["lora_items"] = lora_items
 
         logger.info(
             f"Submitting ltx_video task. Prompt: {prompt}, Priority: {priority}"

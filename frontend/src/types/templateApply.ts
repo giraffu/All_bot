@@ -30,6 +30,7 @@ export interface RawApplyContextResponse {
   prompt?: unknown
   lora_name?: unknown
   lora_strength?: unknown
+  lora_items?: unknown
   input_file?: unknown
   input_file_url?: unknown
   width?: unknown
@@ -55,6 +56,7 @@ export interface TemplateApplyContext {
   prompt: string | null
   loraName: string | null
   loraStrength: number | null
+  loraItems: Array<{ name: string; strength: number }>
   inputFile: string | null
   inputFileUrl: string | null
   width: number | null

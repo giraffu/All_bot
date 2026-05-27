@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Any, Optional
 
 from telegram import Update
 from telegram.ext import ContextTypes
@@ -41,6 +41,7 @@ async def process_ltx_video_task(
     image_path: str,
     lora_name: str | None = None,
     lora_strength: float | None = None,
+    lora_items: list[dict[str, Any]] | None = None,
     cleanup: bool = True,
     allow_contribute: bool = True,
     source_post_id: Optional[int] = None,
@@ -94,6 +95,7 @@ async def process_ltx_video_task(
         duration=duration,
         lora_name=lora_name,
         lora_strength=lora_strength,
+        lora_items=lora_items,
     )
     billing_args = resolve_video_billing_args(
         is_video=True,

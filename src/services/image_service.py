@@ -1,4 +1,4 @@
-from typing import AsyncGenerator
+from typing import Any, AsyncGenerator
 
 from src.api_client import (
     download_image,
@@ -27,6 +27,7 @@ class ImageService:
         image_path: str,
         lora_name: str | None = None,
         lora_strength: float | None = None,
+        lora_items: list[dict[str, Any]] | None = None,
         width: int = 1280,
         height: int = 704,
         length: int = 5,
@@ -39,6 +40,7 @@ class ImageService:
             image_path,
             lora_name=lora_name,
             lora_strength=lora_strength,
+            lora_items=lora_items,
             width=width,
             height=height,
             length=length,

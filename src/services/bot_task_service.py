@@ -5,7 +5,7 @@ Prefer importing the module-level async functions from this module directly.
 `TaskService` is kept only as a thin compatibility boundary for legacy callers.
 """
 
-from typing import Optional, Tuple
+from typing import Any, Optional, Tuple
 
 from telegram import InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
@@ -42,6 +42,7 @@ async def process_ltx_video_task(
     image_path: str,
     lora_name: str | None = None,
     lora_strength: float | None = None,
+    lora_items: list[dict[str, Any]] | None = None,
     cleanup: bool = True,
     allow_contribute: bool = True,
     source_post_id: Optional[int] = None,
@@ -53,6 +54,7 @@ async def process_ltx_video_task(
         image_path=image_path,
         lora_name=lora_name,
         lora_strength=lora_strength,
+        lora_items=lora_items,
         cleanup=cleanup,
         allow_contribute=allow_contribute,
         source_post_id=source_post_id,

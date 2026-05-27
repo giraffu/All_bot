@@ -13,14 +13,17 @@ import { useTaskResult } from '@/composables/useTaskResult'
 import { useTaskStream } from '@/composables/useTaskStream'
 import { buildGenerationTaskPayload } from '@/features/generation/buildGenerationTaskPayload'
 import {
+  buildDefaultLtxVideoLoraItem,
   getDefaultImageToVideoLoraSelection,
   getImageToVideoPayloadLoraName,
   getImageToVideoPayloadLoraStrength,
   getImageToVideoRequestTaskType,
   IMAGE_TO_VIDEO_LORA_OPTIONS,
   LTX_VIDEO_LORA_OPTIONS,
+  normalizeLtxVideoLoraItems,
   isUnifiedImageToVideoTaskType,
-  normalizeImageToVideoLoraSelection
+  normalizeImageToVideoLoraSelection,
+  type LtxVideoLoraItem
 } from '@/features/generation/imageToVideo'
 import { useTemplateApplyStore } from '@/stores/templateApply'
 import type { TemplateApplyContext } from '@/types/templateApply'
@@ -54,6 +57,8 @@ const prompt = ref('')
 const loraSelection = ref(getDefaultImageToVideoLoraSelection(taskType.value))
 const loraName = computed(() => getImageToVideoPayloadLoraName(taskType.value, loraSelection.value))
 const loraStrength = computed(() => getImageToVideoPayloadLoraStrength(taskType.value, loraSelection.value))
+const ltxLoraPicker = ref('')
+const ltxLoraItems = ref<LtxVideoLoraItem[]>([])
 const templateSourcePostId = ref<number | null>(null)
 const isTemplateApplied = ref(false)
 const isTemplateVideoSettingsLocked = ref(false)
@@ -66,6 +71,35 @@ const initialResolution = ref('512')
 const initialDuration = ref('5')
 const initialPrompt = ref('')
 const initialLoraSelection = ref(getDefaultImageToVideoLoraSelection(taskType.value))
+const initialLtxLoraItems = ref<LtxVideoLoraItem[]>([])
+
+const addLtxLoraItem = (value: string) => {
+  if (!isLtxVideo.value || !value || value === '__none__') return
+  if (ltxLoraItems.value.some(item => item.name === value)) {
+    ltxLoraPicker.value = ''
+    return
+  }
+  if (ltxLoraItems.value.length >= 3) {
+    message.warning('最多只能选择 3 个附加模型')
+    return
+  }
+  const item = buildDefaultLtxVideoLoraItem(value)
+  if (!item) return
+  ltxLoraItems.value = [...ltxLoraItems.value, item]
+  ltxLoraPicker.value = ''
+}
+
+const removeLtxLoraItem = (name: string) => {
+  ltxLoraItems.value = ltxLoraItems.value.filter(item => item.name !== name)
+}
+
+const updateLtxLoraStrength = (name: string, strength: number | null) => {
+  if (typeof strength !== 'number' || !Number.isFinite(strength)) return
+  const nextStrength = Math.min(2, Math.max(0.1, Number(strength.toFixed(2))))
+  ltxLoraItems.value = ltxLoraItems.value.map(item => (
+    item.name === name ? { ...item, strength: nextStrength } : item
+  ))
+}
 
 const taskCost = computed(() => {
   if (isLtxVideo.value) {
@@ -101,7 +135,7 @@ watch(
 )
 
 watch(
-  [objectKey, resolution, duration, prompt, loraSelection],
+  [objectKey, resolution, duration, prompt, loraSelection, ltxLoraItems],
   () => {
     const isDirty =
       objectKey.value !== initialObjectKey.value
@@ -109,6 +143,7 @@ watch(
       || duration.value !== initialDuration.value
       || prompt.value.trim() !== initialPrompt.value
       || loraSelection.value !== initialLoraSelection.value
+      || JSON.stringify(ltxLoraItems.value) !== JSON.stringify(initialLtxLoraItems.value)
     templateApplyStore.setDirtyState(isDirty)
   },
   { immediate: true }
@@ -125,6 +160,13 @@ watch(duration, (value) => {
     resolution.value = '720'
   }
 })
+
+watch(isLtxVideo, (value) => {
+  if (!value) {
+    ltxLoraItems.value = []
+    ltxLoraPicker.value = ''
+  }
+}, { immediate: true })
 
 const cleanup = async () => {
   if (filePreview.value?.startsWith('blob:')) {
@@ -150,6 +192,7 @@ const initializeFromContext = () => {
   if (templateState) {
     if (templateState.prompt) prompt.value = templateState.prompt
     loraSelection.value = normalizeImageToVideoLoraSelection(templateState.loraName)
+    ltxLoraItems.value = normalizeLtxVideoLoraItems(templateState.loraItems)
     if (templateState.sourcePostId != null) {
       templateSourcePostId.value = templateState.sourcePostId
     }
@@ -171,6 +214,7 @@ const initializeFromContext = () => {
   initialDuration.value = duration.value
   initialPrompt.value = prompt.value.trim()
   initialLoraSelection.value = loraSelection.value
+  initialLtxLoraItems.value = [...ltxLoraItems.value]
 }
 
 const beforeUpload = async (rawFile: File | { originFileObj?: File }) => {
@@ -216,6 +260,7 @@ const handleGenerate = async () => {
     promptTarget: 'inputs',
     loraName: loraName.value,
     loraStrength: loraStrength.value,
+    loraItems: isLtxVideo.value ? ltxLoraItems.value : undefined,
     isTemplate: isTemplateApplied.value,
     sourcePostId: templateSourcePostId.value,
   })
@@ -317,7 +362,7 @@ onBeforeUnmount(() => {
             <div class="mt-2 text-xs text-slate-400">{{ t('template_apply.common.prompt_locked_video_hint') }}</div>
           </div>
           <template v-else>
-            <div v-if="isUnifiedImageToVideo || isLtxVideo" class="mb-3">
+            <div v-if="isUnifiedImageToVideo && !isLtxVideo" class="mb-3">
               <a-select
                 v-model:value="loraSelection"
                 :placeholder="t('template_apply.image_to_video.select_addon')"
@@ -334,6 +379,57 @@ onBeforeUnmount(() => {
               <p v-if="isLtxVideo && loraName && loraStrength != null" class="mt-2 text-xs text-slate-400">
                 默认强度：{{ loraStrength }}
               </p>
+            </div>
+            <div v-else-if="isLtxVideo" class="mb-4 space-y-3">
+              <a-select
+                v-model:value="ltxLoraPicker"
+                placeholder="选择要叠加的附加模型"
+                class="w-full"
+                :disabled="ltxLoraItems.length >= 3"
+                @change="addLtxLoraItem"
+              >
+                <a-select-option
+                  v-for="option in LTX_VIDEO_LORA_OPTIONS.filter(item => item.value !== '__none__')"
+                  :key="option.value"
+                  :value="option.value"
+                  :disabled="ltxLoraItems.some(item => item.name === option.value)"
+                >
+                  {{ option.label }}
+                </a-select-option>
+              </a-select>
+              <p class="text-xs text-slate-400">最多可叠加 3 个附加模型，每个模型可单独调整强度。</p>
+              <div v-if="ltxLoraItems.length > 0" class="space-y-3">
+                <div
+                  v-for="item in ltxLoraItems"
+                  :key="item.name"
+                  class="rounded-xl border border-slate-700 bg-slate-900/70 px-3 py-3"
+                >
+                  <div class="flex items-center justify-between gap-3">
+                    <div class="text-sm text-slate-100">
+                      {{ LTX_VIDEO_LORA_OPTIONS.find(option => option.value === item.name)?.label ?? item.name }}
+                    </div>
+                    <a-button size="small" danger ghost @click="removeLtxLoraItem(item.name)">移除</a-button>
+                  </div>
+                  <div class="mt-3 flex items-center gap-3">
+                    <a-slider
+                      :min="0.1"
+                      :max="2"
+                      :step="0.05"
+                      :value="item.strength"
+                      class="flex-1"
+                      @update:value="updateLtxLoraStrength(item.name, $event as number)"
+                    />
+                    <a-input-number
+                      :min="0.1"
+                      :max="2"
+                      :step="0.05"
+                      :value="item.strength"
+                      size="small"
+                      @update:value="updateLtxLoraStrength(item.name, $event as number | null)"
+                    />
+                  </div>
+                </div>
+              </div>
             </div>
             <a-textarea
               v-model:value="prompt"

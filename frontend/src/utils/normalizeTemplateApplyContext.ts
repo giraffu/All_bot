@@ -2,6 +2,7 @@ import {
   getCanonicalTemplateTaskType,
   getTemplateTaskMeta
 } from '@/constants/templateTaskMeta'
+import { normalizeLtxVideoLoraItems } from '@/features/generation/imageToVideo'
 import type {
   NormalizeContextOptions,
   RawApplyContextResponse,
@@ -62,6 +63,7 @@ export const normalizeTemplateApplyContext = (
     prompt: rawContext.prompt ?? null,
     lora_name: rawContext.lora_name ?? null,
     lora_strength: rawContext.lora_strength ?? null,
+    lora_items: rawContext.lora_items ?? null,
     input_file: rawContext.input_file ?? null,
     input_file_url: rawContext.input_file_url ?? null,
     width: rawContext.width ?? null,
@@ -82,6 +84,9 @@ export const normalizeTemplateApplyContext = (
     prompt: asNonEmptyString(rawContext.prompt),
     loraName: asNonEmptyString(rawContext.lora_name),
     loraStrength: asNullableNumber(rawContext.lora_strength),
+    loraItems: normalizeLtxVideoLoraItems(
+      Array.isArray(rawContext.lora_items) ? rawContext.lora_items as Array<{ name?: string; strength?: number }> : [],
+    ),
     inputFile: asNonEmptyString(rawContext.input_file),
     inputFileUrl: asNonEmptyString(rawContext.input_file_url),
     width: asPositiveInteger(rawContext.width),

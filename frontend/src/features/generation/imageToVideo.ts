@@ -9,6 +9,11 @@ export type ImageToVideoLoraOption = {
   defaultStrength?: number
 }
 
+export type LtxVideoLoraItem = {
+  name: string
+  strength: number
+}
+
 export const IMAGE_TO_VIDEO_LORA_OPTIONS: ImageToVideoLoraOption[] = [
   { value: NO_IMAGE_TO_VIDEO_LORA, label: '无' },
   { value: 'BreastGrow', label: '巨乳膨胀' },
@@ -80,6 +85,49 @@ export const getImageToVideoPayloadLoraStrength = (
 
   const selectedOption = LTX_VIDEO_LORA_OPTIONS.find(option => option.value === loraSelection)
   return selectedOption?.defaultStrength
+}
+
+export const getLtxVideoLoraOption = (
+  loraName: string,
+): ImageToVideoLoraOption | undefined =>
+  LTX_VIDEO_LORA_OPTIONS.find(option => option.value === loraName)
+
+export const buildDefaultLtxVideoLoraItem = (
+  loraName: string,
+): LtxVideoLoraItem | null => {
+  const option = getLtxVideoLoraOption(loraName)
+  if (!option || option.value === NO_LTX_VIDEO_LORA) {
+    return null
+  }
+
+  return {
+    name: option.value,
+    strength: option.defaultStrength ?? 1.0,
+  }
+}
+
+export const normalizeLtxVideoLoraItems = (
+  loraItems: Array<Partial<LtxVideoLoraItem> | null | undefined> | null | undefined,
+): LtxVideoLoraItem[] => {
+  const normalized: LtxVideoLoraItem[] = []
+  const seen = new Set<string>()
+
+  for (const rawItem of loraItems ?? []) {
+    const rawName = typeof rawItem?.name === 'string' ? rawItem.name.trim() : ''
+    const item = buildDefaultLtxVideoLoraItem(rawName)
+    if (!item || seen.has(item.name)) {
+      continue
+    }
+
+    const rawStrength = typeof rawItem?.strength === 'number' ? rawItem.strength : item.strength
+    item.strength = Number.isFinite(rawStrength)
+      ? Math.min(2.0, Math.max(0.1, Number(rawStrength.toFixed(2))))
+      : item.strength
+    normalized.push(item)
+    seen.add(item.name)
+  }
+
+  return normalized.slice(0, 3)
 }
 
 export const getImageToVideoRequestTaskType = (

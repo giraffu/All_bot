@@ -11,14 +11,17 @@ import { resolveTemplateVideoApplyState } from '@/utils/templateVideoApplyState'
 import { useSingleFileUploadPreview } from '@/composables/useSingleFileUploadPreview'
 import { buildGenerationTaskPayload } from '@/features/generation/buildGenerationTaskPayload'
 import {
+  buildDefaultLtxVideoLoraItem,
   getDefaultImageToVideoLoraSelection,
   getImageToVideoPayloadLoraName,
   getImageToVideoPayloadLoraStrength,
   getImageToVideoRequestTaskType,
   IMAGE_TO_VIDEO_LORA_OPTIONS,
   LTX_VIDEO_LORA_OPTIONS,
+  normalizeLtxVideoLoraItems,
   isUnifiedImageToVideoTaskType,
-  normalizeImageToVideoLoraSelection
+  normalizeImageToVideoLoraSelection,
+  type LtxVideoLoraItem
 } from '@/features/generation/imageToVideo'
 import GenerationActionBar from '@/components/GenerationActionBar.vue'
 import GenerationUploadCard from '@/components/GenerationUploadCard.vue'
@@ -77,6 +80,44 @@ const prompt = ref('')
 const loraSelection = ref(getDefaultImageToVideoLoraSelection(taskType.value))
 const loraName = computed(() => getImageToVideoPayloadLoraName(taskType.value, loraSelection.value))
 const loraStrength = computed(() => getImageToVideoPayloadLoraStrength(taskType.value, loraSelection.value))
+const ltxLoraPicker = ref('')
+const ltxLoraItems = ref<LtxVideoLoraItem[]>([])
+
+const addLtxLoraItem = (value: string) => {
+  if (!isLtxVideo.value || !value || value === '__none__') {
+    return
+  }
+  if (ltxLoraItems.value.some(item => item.name === value)) {
+    ltxLoraPicker.value = ''
+    return
+  }
+  if (ltxLoraItems.value.length >= 3) {
+    message.warning('最多只能选择 3 个附加模型')
+    return
+  }
+  const item = buildDefaultLtxVideoLoraItem(value)
+  if (!item) {
+    return
+  }
+  ltxLoraItems.value = [...ltxLoraItems.value, item]
+  ltxLoraPicker.value = ''
+}
+
+const removeLtxLoraItem = (name: string) => {
+  ltxLoraItems.value = ltxLoraItems.value.filter(item => item.name !== name)
+}
+
+const updateLtxLoraStrength = (name: string, strength: number | null) => {
+  if (typeof strength !== 'number' || !Number.isFinite(strength)) {
+    return
+  }
+  const nextStrength = Math.min(2, Math.max(0.1, Number(strength.toFixed(2))))
+  ltxLoraItems.value = ltxLoraItems.value.map(item => (
+    item.name === name
+      ? { ...item, strength: nextStrength }
+      : item
+  ))
+}
 
 const isTemplateApplied = ref(false)
 const isTemplateVideoSettingsLocked = ref(false)
@@ -121,6 +162,7 @@ onMounted(() => {
       if (templateState) {
         if (templateState.prompt) prompt.value = templateState.prompt
         loraSelection.value = normalizeImageToVideoLoraSelection(templateState.loraName)
+        ltxLoraItems.value = normalizeLtxVideoLoraItems(templateState.loraItems)
         if (templateState.sourcePostId != null) {
           templateSourcePostId.value = templateState.sourcePostId
         }
@@ -138,6 +180,13 @@ onMounted(() => {
     }
   }
 })
+
+watch(isLtxVideo, (value) => {
+  if (!value) {
+    ltxLoraItems.value = []
+    ltxLoraPicker.value = ''
+  }
+}, { immediate: true })
 
 watch(resolution, (val) => {
   if (val === '1024' && duration.value === '10') {
@@ -166,6 +215,7 @@ const handleGenerate = async () => {
     promptTarget: 'inputs',
     loraName: loraName.value,
     loraStrength: loraStrength.value,
+    loraItems: isLtxVideo.value ? ltxLoraItems.value : undefined,
     isTemplate: isTemplateApplied.value,
     sourcePostId: templateSourcePostId.value,
   })
@@ -180,6 +230,8 @@ const resetForm = () => {
   handleRemove()
   prompt.value = ''
   loraSelection.value = getDefaultImageToVideoLoraSelection(taskType.value)
+  ltxLoraItems.value = []
+  ltxLoraPicker.value = ''
   setSubmittedTaskId(null)
 }
 </script>
@@ -208,6 +260,7 @@ const resetForm = () => {
                 <span class="text-slate-500 mr-2">0.</span> 附加模型 (LoRA)
               </h3>
               <a-radio-group
+                v-if="!isLtxVideo"
                 v-model:value="loraSelection"
                 button-style="solid"
                 class="video-lora-group w-full"
@@ -221,9 +274,57 @@ const resetForm = () => {
                   {{ option.label }}
                 </a-radio-button>
               </a-radio-group>
-              <p v-if="isLtxVideo && loraName && loraStrength != null" class="mt-3 text-xs text-slate-400">
-                默认强度：{{ loraStrength }}
-              </p>
+              <template v-else>
+                <a-select
+                  v-model:value="ltxLoraPicker"
+                  placeholder="选择要叠加的附加模型"
+                  class="w-full"
+                  :disabled="ltxLoraItems.length >= 3"
+                  @change="addLtxLoraItem"
+                >
+                  <a-select-option
+                    v-for="option in LTX_VIDEO_LORA_OPTIONS.filter(item => item.value !== '__none__')"
+                    :key="option.value"
+                    :value="option.value"
+                    :disabled="ltxLoraItems.some(item => item.name === option.value)"
+                  >
+                    {{ option.label }}
+                  </a-select-option>
+                </a-select>
+                <p class="mt-3 text-xs text-slate-400">最多可叠加 3 个附加模型，每个模型可单独调整强度。</p>
+                <div v-if="ltxLoraItems.length > 0" class="mt-4 space-y-3">
+                  <div
+                    v-for="item in ltxLoraItems"
+                    :key="item.name"
+                    class="rounded-xl border border-slate-400/40 bg-slate-900/30 p-3"
+                  >
+                    <div class="flex items-center justify-between gap-3">
+                      <div class="text-sm text-slate-100">
+                        {{ LTX_VIDEO_LORA_OPTIONS.find(option => option.value === item.name)?.label ?? item.name }}
+                      </div>
+                      <a-button size="small" danger ghost @click="removeLtxLoraItem(item.name)">移除</a-button>
+                    </div>
+                    <div class="mt-3 flex items-center gap-3">
+                      <a-slider
+                        :min="0.1"
+                        :max="2"
+                        :step="0.05"
+                        :value="item.strength"
+                        class="flex-1"
+                        @update:value="updateLtxLoraStrength(item.name, $event as number)"
+                      />
+                      <a-input-number
+                        :min="0.1"
+                        :max="2"
+                        :step="0.05"
+                        :value="item.strength"
+                        size="small"
+                        @update:value="updateLtxLoraStrength(item.name, $event as number | null)"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </template>
             </div>
 
             <!-- Row for Upload & Prompt -->
