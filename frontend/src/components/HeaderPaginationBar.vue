@@ -14,8 +14,7 @@ const props = withDefaults(
     disabled: false,
     compact: false,
     wrapperClass: 'flex justify-center',
-    innerClass:
-      'rounded-2xl border border-slate-700/50 bg-slate-950/55 px-3 py-2 shadow-[0_6px_18px_rgba(2,6,23,0.25)]',
+    innerClass: 'pagination-shell rounded-2xl px-3 py-2',
   },
 )
 
@@ -37,3 +36,11 @@ const emit = defineEmits<{
     </div>
   </div>
 </template>
+
+<style scoped>
+.pagination-shell {
+  border: 1px solid var(--theme-border);
+  background: var(--theme-card-strong-bg);
+  box-shadow: var(--theme-shadow);
+}
+</style>

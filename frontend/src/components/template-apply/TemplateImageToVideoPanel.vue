@@ -57,8 +57,9 @@ const prompt = ref('')
 const loraSelection = ref(getDefaultImageToVideoLoraSelection(taskType.value))
 const loraName = computed(() => getImageToVideoPayloadLoraName(taskType.value, loraSelection.value))
 const loraStrength = computed(() => getImageToVideoPayloadLoraStrength(taskType.value, loraSelection.value))
-const ltxLoraPicker = ref('')
 const ltxLoraItems = ref<LtxVideoLoraItem[]>([])
+const selectedLtxLoraNames = ref<string[]>([])
+const expandedLtxLoraEditors = ref<string[]>([])
 const templateSourcePostId = ref<number | null>(null)
 const isTemplateApplied = ref(false)
 const isTemplateVideoSettingsLocked = ref(false)
@@ -73,24 +74,23 @@ const initialPrompt = ref('')
 const initialLoraSelection = ref(getDefaultImageToVideoLoraSelection(taskType.value))
 const initialLtxLoraItems = ref<LtxVideoLoraItem[]>([])
 
-const addLtxLoraItem = (value: string) => {
-  if (!isLtxVideo.value || !value || value === '__none__') return
-  if (ltxLoraItems.value.some(item => item.name === value)) {
-    ltxLoraPicker.value = ''
-    return
-  }
-  if (ltxLoraItems.value.length >= 3) {
+const syncLtxLoraItems = (names: string[]) => {
+  const uniqueNames = Array.from(new Set(names.filter(value => value && value !== '__none__'))).slice(0, 3)
+  if (uniqueNames.length < names.length) {
     message.warning('最多只能选择 3 个附加模型')
-    return
   }
-  const item = buildDefaultLtxVideoLoraItem(value)
-  if (!item) return
-  ltxLoraItems.value = [...ltxLoraItems.value, item]
-  ltxLoraPicker.value = ''
+  selectedLtxLoraNames.value = uniqueNames
+  ltxLoraItems.value = uniqueNames
+    .map((name) => {
+      const existing = ltxLoraItems.value.find(item => item.name === name)
+      return existing ?? buildDefaultLtxVideoLoraItem(name)
+    })
+    .filter((item): item is LtxVideoLoraItem => Boolean(item))
+  expandedLtxLoraEditors.value = expandedLtxLoraEditors.value.filter(name => uniqueNames.includes(name))
 }
 
 const removeLtxLoraItem = (name: string) => {
-  ltxLoraItems.value = ltxLoraItems.value.filter(item => item.name !== name)
+  syncLtxLoraItems(selectedLtxLoraNames.value.filter(item => item !== name))
 }
 
 const updateLtxLoraStrength = (name: string, strength: number | null) => {
@@ -99,6 +99,12 @@ const updateLtxLoraStrength = (name: string, strength: number | null) => {
   ltxLoraItems.value = ltxLoraItems.value.map(item => (
     item.name === name ? { ...item, strength: nextStrength } : item
   ))
+}
+
+const toggleLtxLoraStrengthEditor = (name: string) => {
+  expandedLtxLoraEditors.value = expandedLtxLoraEditors.value.includes(name)
+    ? expandedLtxLoraEditors.value.filter(item => item !== name)
+    : [...expandedLtxLoraEditors.value, name]
 }
 
 const taskCost = computed(() => {
@@ -164,7 +170,8 @@ watch(duration, (value) => {
 watch(isLtxVideo, (value) => {
   if (!value) {
     ltxLoraItems.value = []
-    ltxLoraPicker.value = ''
+    selectedLtxLoraNames.value = []
+    expandedLtxLoraEditors.value = []
   }
 }, { immediate: true })
 
@@ -193,6 +200,7 @@ const initializeFromContext = () => {
     if (templateState.prompt) prompt.value = templateState.prompt
     loraSelection.value = normalizeImageToVideoLoraSelection(templateState.loraName)
     ltxLoraItems.value = normalizeLtxVideoLoraItems(templateState.loraItems)
+    selectedLtxLoraNames.value = ltxLoraItems.value.map(item => item.name)
     if (templateState.sourcePostId != null) {
       templateSourcePostId.value = templateState.sourcePostId
     }
@@ -382,17 +390,18 @@ onBeforeUnmount(() => {
             </div>
             <div v-else-if="isLtxVideo" class="mb-4 space-y-3">
               <a-select
-                v-model:value="ltxLoraPicker"
+                :value="selectedLtxLoraNames"
+                mode="multiple"
                 placeholder="选择要叠加的附加模型"
                 class="w-full"
-                :disabled="ltxLoraItems.length >= 3"
-                @change="addLtxLoraItem"
+                :max-tag-count="2"
+                :max-tag-placeholder="(omittedValues: Array<{ label: string; value: string }>) => `+${omittedValues.length}`"
+                @change="syncLtxLoraItems($event as string[])"
               >
                 <a-select-option
                   v-for="option in LTX_VIDEO_LORA_OPTIONS.filter(item => item.value !== '__none__')"
                   :key="option.value"
                   :value="option.value"
-                  :disabled="ltxLoraItems.some(item => item.name === option.value)"
                 >
                   {{ option.label }}
                 </a-select-option>
@@ -408,9 +417,15 @@ onBeforeUnmount(() => {
                     <div class="text-sm text-slate-100">
                       {{ LTX_VIDEO_LORA_OPTIONS.find(option => option.value === item.name)?.label ?? item.name }}
                     </div>
-                    <a-button size="small" danger ghost @click="removeLtxLoraItem(item.name)">移除</a-button>
+                    <div class="flex items-center gap-2">
+                      <span class="text-xs text-slate-400">默认/当前强度：{{ item.strength.toFixed(2) }}</span>
+                      <a-button size="small" @click="toggleLtxLoraStrengthEditor(item.name)">
+                        {{ expandedLtxLoraEditors.includes(item.name) ? '收起设置' : '设置强度' }}
+                      </a-button>
+                      <a-button size="small" danger ghost @click="removeLtxLoraItem(item.name)">移除</a-button>
+                    </div>
                   </div>
-                  <div class="mt-3 flex items-center gap-3">
+                  <div v-if="expandedLtxLoraEditors.includes(item.name)" class="mt-3 flex items-center gap-3">
                     <a-slider
                       :min="0.1"
                       :max="2"

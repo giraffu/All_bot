@@ -24,7 +24,7 @@ const handleNavigation = (key: string) => {
 </script>
 
 <template>
-  <div class="fixed bottom-0 left-0 right-0 z-50 bg-[#0b0e14]/90 backdrop-blur-lg border-t border-slate-400/50 pb-safe">
+  <div class="mobile-tabbar fixed bottom-0 left-0 right-0 z-50 pb-safe">
     <div class="flex items-center justify-around h-16 px-2">
       <button 
         v-for="item in navItems" 
@@ -33,13 +33,13 @@ const handleNavigation = (key: string) => {
         class="flex flex-col items-center justify-center w-full h-full transition-colors relative"
         :class="[
           item.key === 'CustomFeatures' ? 'z-10' : '',
-          currentRouteName === item.key && item.key !== 'CustomFeatures' ? 'text-cyan-400' : 'text-slate-500 hover:text-slate-300'
+          currentRouteName === item.key && item.key !== 'CustomFeatures' ? 'mobile-tabbar-item--active' : 'mobile-tabbar-item'
         ]"
       >
         <template v-if="item.key === 'CustomFeatures'">
           <!-- 悬浮凸起的加号按钮 (FAB) -->
           <div 
-            class="absolute -translate-y-4 w-14 h-14 rounded-full flex items-center justify-center bg-gradient-to-r from-indigo-500 to-cyan-500 shadow-lg shadow-cyan-500/30 border-4 border-[#0b0e14]"
+            class="mobile-tabbar-fab absolute -translate-y-4 w-14 h-14 rounded-full flex items-center justify-center bg-gradient-to-r from-indigo-500 to-cyan-500 shadow-lg shadow-cyan-500/30 border-4"
             :class="currentRouteName === item.key ? 'scale-110 shadow-cyan-500/50 transition-all' : 'transition-all hover:scale-105'"
           >
             <component :is="item.icon" :size="28" :stroke-width="2.5" class="text-white" />
@@ -61,6 +61,29 @@ const handleNavigation = (key: string) => {
 </template>
 
 <style scoped>
+.mobile-tabbar {
+  background: color-mix(in srgb, var(--theme-card-strong-bg) 92%, transparent);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  border-top: 1px solid var(--theme-border);
+}
+
+.mobile-tabbar-item {
+  color: var(--theme-text-muted);
+}
+
+.mobile-tabbar-item:hover {
+  color: var(--theme-text-secondary);
+}
+
+.mobile-tabbar-item--active {
+  color: #06b6d4;
+}
+
+.mobile-tabbar-fab {
+  border-color: var(--theme-shell-bg);
+}
+
 /* 适配 iOS 底部安全区 */
 .pb-safe {
   padding-bottom: env(safe-area-inset-bottom, 0px);

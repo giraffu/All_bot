@@ -149,7 +149,14 @@
   },
   "app": {
     "name": "合欢密宗",
-    "credits": "灵石"
+    "credits": "灵石",
+    "theme": "主题"
+  },
+  "theme": {
+    "system": "跟随系统",
+    "light": "浅色",
+    "dark": "深色",
+    "switcher_label": "主题切换"
   },
   "gallery": {
     "tabs": {

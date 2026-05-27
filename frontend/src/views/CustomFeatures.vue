@@ -111,7 +111,7 @@ onMounted(() => {
 <template>
   <div class="dashboard-container space-y-6">
     <div>
-      <h2 class="text-xl font-bold text-slate-200 mb-4 flex items-center drop-shadow-sm">
+      <h2 class="lab-section-title text-xl font-bold mb-4 flex items-center drop-shadow-sm">
         <span class="w-1.5 h-6 bg-cyan-500 rounded-full mr-2 shadow-[0_0_8px_rgba(56,189,248,0.5)]"></span>
         {{ $t('lab.title') }}
       </h2>
@@ -121,7 +121,7 @@ onMounted(() => {
           v-for="feature in features" 
           :key="feature.key"
           hoverable 
-          class="feature-card h-full flex flex-col overflow-hidden transition-all duration-300 border-slate-400/50 bg-slate-500/40 backdrop-blur-md shadow-[0_4px_16px_rgba(0,0,0,0.2)] hover:border-cyan-500/30 hover:shadow-[0_8px_24px_rgba(56,189,248,0.15)] hover:-translate-y-1 group"
+          class="feature-card h-full flex flex-col overflow-hidden transition-all duration-300 backdrop-blur-md group"
           :bodyStyle="{ padding: '0', height: '100%', display: 'flex', flexDirection: 'column' }"
           @click="handleFeatureClick(feature.route, feature)"
         >
@@ -130,19 +130,19 @@ onMounted(() => {
             <div class="absolute -top-10 -right-10 w-24 h-24 bg-cyan-500/10 rounded-full blur-xl opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
             
             <div class="flex justify-between items-start mb-2 sm:mb-3 relative z-10">
-              <div class="w-8 h-8 sm:w-10 sm:h-10 shrink-0 rounded-lg flex items-center justify-center bg-slate-500/50 border border-slate-400 text-cyan-400 group-hover:scale-110 transition-transform group-hover:shadow-[0_0_12px_rgba(56,189,248,0.4)]">
+              <div class="feature-icon-wrap w-8 h-8 sm:w-10 sm:h-10 shrink-0 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform">
                 <component :is="feature.icon" :size="16" class="sm:hidden" />
                 <component :is="feature.icon" :size="20" class="hidden sm:block" />
               </div>
-              <span class="bg-white/20 text-cyan-200 border border-cyan-300/30 px-1.5 sm:px-2 py-0.5 rounded-full text-[10px] sm:text-xs font-medium flex items-center shadow-inner whitespace-nowrap shrink-0 ml-1">
-                <Wallet :size="10" class="mr-1 text-cyan-200 sm:hidden"/>
-                <Wallet :size="12" class="mr-1 text-cyan-200 hidden sm:block"/>
+              <span class="feature-cost-badge px-1.5 sm:px-2 py-0.5 rounded-full text-[10px] sm:text-xs font-medium flex items-center whitespace-nowrap shrink-0 ml-1">
+                <Wallet :size="10" class="feature-cost-icon mr-1 sm:hidden"/>
+                <Wallet :size="12" class="feature-cost-icon mr-1 hidden sm:block"/>
                 {{ feature.cost }}
               </span>
             </div>
             <div class="flex flex-col flex-grow justify-start">
-              <h3 class="text-sm sm:text-base font-bold text-slate-100 mb-1 relative z-10 drop-shadow-sm truncate">{{ $t(feature.title) }}</h3>
-              <p class="text-slate-400 text-xs sm:text-sm line-clamp-2 relative z-10 leading-snug">{{ $t(feature.description) }}</p>
+              <h3 class="feature-title text-sm sm:text-base font-bold mb-1 relative z-10 truncate">{{ $t(feature.title) }}</h3>
+              <p class="feature-description text-xs sm:text-sm line-clamp-2 relative z-10 leading-snug">{{ $t(feature.description) }}</p>
             </div>
           </div>
         </a-card>
@@ -152,10 +152,53 @@ onMounted(() => {
 </template>
 
 <style scoped>
+.lab-section-title {
+  color: var(--theme-text-primary);
+}
+
 .feature-card {
   border-radius: 12px;
-  background: transparent !important;
+  background: var(--theme-card-bg) !important;
+  border: 1px solid var(--theme-border) !important;
+  box-shadow: var(--theme-shadow);
 }
+
+.feature-card:hover {
+  background: var(--theme-card-hover-bg) !important;
+  border-color: var(--theme-border-strong) !important;
+  box-shadow: 0 8px 24px rgba(56, 189, 248, 0.12);
+  transform: translateY(-0.25rem);
+}
+
+.feature-icon-wrap {
+  background: var(--theme-pill-bg);
+  border: 1px solid var(--theme-border);
+  color: #06b6d4;
+}
+
+.feature-card:hover .feature-icon-wrap {
+  box-shadow: 0 0 12px rgba(56, 189, 248, 0.28);
+}
+
+.feature-cost-badge {
+  background: var(--theme-panel-bg);
+  color: #0891b2;
+  border: 1px solid rgba(34, 211, 238, 0.24);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25);
+}
+
+.feature-cost-icon {
+  color: #06b6d4;
+}
+
+.feature-title {
+  color: var(--theme-text-primary);
+}
+
+.feature-description {
+  color: var(--theme-text-secondary);
+}
+
 :deep(.ant-card-body) {
   background: transparent;
 }

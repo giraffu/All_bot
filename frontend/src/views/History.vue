@@ -52,16 +52,16 @@ const {
 </script>
 
 <template>
-  <div class="history-container p-4 sm:p-6 rounded-xl text-slate-200">
+  <div class="history-container p-4 sm:p-6 rounded-xl">
     <div class="flex justify-between items-center mb-6">
-      <h2 class="text-2xl font-bold drop-shadow-sm">{{ $t('history.title') }}</h2>
-      <a-button class="bg-slate-500 text-cyan-200 border-cyan-500/30 hover:bg-slate-500 hover:text-white hover:border-cyan-400" @click="fetchHistory(1)">{{ $t('history.refresh') }}</a-button>
+      <h2 class="history-title text-2xl font-bold drop-shadow-sm">{{ $t('history.title') }}</h2>
+      <a-button class="history-refresh-btn" @click="fetchHistory(1)">{{ $t('history.refresh') }}</a-button>
     </div>
 
     <!-- Privacy and Convenience Notice -->
-    <div class="mb-6 bg-indigo-500/10 border border-indigo-500/20 rounded-xl p-4 flex items-start">
-      <div class="text-indigo-400 mr-3 mt-0.5"><Clock :size="18" /></div>
-      <div class="text-slate-300 text-sm leading-relaxed">
+    <div class="history-notice mb-6 rounded-xl p-4 flex items-start">
+      <div class="history-notice-icon mr-3 mt-0.5"><Clock :size="18" /></div>
+      <div class="history-notice-text text-sm leading-relaxed">
         {{ $t('history.warning', { max: 8 }) }}
       </div>
     </div>
@@ -78,14 +78,14 @@ const {
       <div
         v-for="record in data"
         :key="record.id"
-        class="mb-3 sm:mb-6 break-inside-avoid rounded-2xl overflow-hidden relative group cursor-pointer border border-slate-400/50 bg-slate-800 hover:border-cyan-500/40 transition-all duration-300 shadow-lg hover:shadow-[0_8px_30px_rgba(56,189,248,0.15)] hover:-translate-y-1"
+        class="history-card mb-3 sm:mb-6 break-inside-avoid rounded-2xl overflow-hidden relative group cursor-pointer transition-all duration-300"
         @click="openDetail(record)"
       >
         <!-- Media -->
-        <div class="relative w-full overflow-hidden aspect-auto min-h-[120px] flex items-center justify-center bg-slate-900">
+        <div class="history-card-media relative w-full overflow-hidden aspect-auto min-h-[120px] flex items-center justify-center">
           <!-- Delete Button (Top Left) -->
           <button
-            class="absolute top-2 left-2 bg-black/60 hover:bg-red-500/80 backdrop-blur-sm rounded-full p-1.5 shadow-sm border border-white/10 z-20 text-slate-300 hover:text-white transition-colors opacity-0 group-hover:opacity-100"
+            class="history-delete-btn absolute top-2 left-2 backdrop-blur-sm rounded-full p-1.5 shadow-sm z-20 transition-colors opacity-0 group-hover:opacity-100"
             @click="handleDelete(record, $event)"
             title="删除"
           >
@@ -105,10 +105,10 @@ const {
               </div>
             </div>
           </template>
-          <div v-else class="py-10 text-slate-500 italic text-sm">无文件</div>
+          <div v-else class="history-empty py-10 italic text-sm">无文件</div>
 
           <!-- Video Icon Badge (Top Right) -->
-          <div v-if="record.output_file && isVideoFile(record.output_file)" class="absolute top-2 right-2 bg-black/60 backdrop-blur-sm rounded-full p-1.5 shadow-sm border border-white/10 z-10">
+          <div v-if="record.output_file && isVideoFile(record.output_file)" class="history-video-badge absolute top-2 right-2 backdrop-blur-sm rounded-full p-1.5 shadow-sm z-10">
             <Video :size="14" class="text-indigo-400" />
           </div>
 
@@ -146,5 +146,68 @@ const {
 <style scoped>
 .history-container {
   min-height: 100%;
+  color: var(--theme-text-primary);
+}
+
+.history-title {
+  color: var(--theme-text-primary);
+}
+
+.history-refresh-btn {
+  background: var(--theme-pill-bg) !important;
+  color: var(--theme-text-primary) !important;
+  border-color: var(--theme-border-strong) !important;
+}
+
+.history-refresh-btn:hover,
+.history-refresh-btn:focus {
+  background: var(--theme-panel-bg) !important;
+  color: var(--theme-text-primary) !important;
+  border-color: var(--theme-border-strong) !important;
+}
+
+.history-notice {
+  background: color-mix(in srgb, var(--theme-panel-bg) 86%, #6366f1 14%);
+  border: 1px solid color-mix(in srgb, var(--theme-border) 70%, #818cf8 30%);
+}
+
+.history-notice-icon {
+  color: #6366f1;
+}
+
+.history-notice-text {
+  color: var(--theme-text-secondary);
+}
+
+.history-card {
+  border: 1px solid var(--theme-border);
+  background: var(--theme-card-bg);
+  box-shadow: var(--theme-shadow);
+}
+
+.history-card:hover {
+  border-color: var(--theme-border-strong);
+  box-shadow: 0 8px 30px rgba(56, 189, 248, 0.12);
+  transform: translateY(-0.25rem);
+}
+
+.history-card-media {
+  background: var(--theme-card-strong-bg);
+}
+
+.history-delete-btn,
+.history-video-badge {
+  background: rgba(15, 23, 42, 0.68);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #e2e8f0;
+}
+
+.history-delete-btn:hover {
+  background: rgba(239, 68, 68, 0.85);
+  color: #fff;
+}
+
+.history-empty {
+  color: var(--theme-text-muted);
 }
 </style>

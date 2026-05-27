@@ -101,7 +101,7 @@ export function useProfileMetrics(options: UseProfileMetricsOptions) {
       iconText: '$',
       accent: 'rose' as const,
       colSpanClass: 'col-span-2 sm:col-span-2 lg:col-span-1',
-      valueClass: 'text-lg md:text-xl font-bold text-rose-100 drop-shadow-md',
+      valueClass: 'text-lg md:text-xl font-bold metric-value metric-value--rose',
     },
     {
       key: 'commission-spent',

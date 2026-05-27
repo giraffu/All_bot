@@ -13,7 +13,7 @@ withDefaults(
     retryText?: string
   }>(),
   {
-    containerClass: 'gallery-container text-slate-200',
+    containerClass: 'gallery-container',
     showState: true,
     loading: false,
     errorText: '',
@@ -45,3 +45,9 @@ const emit = defineEmits<{
     />
   </div>
 </template>
+
+<style scoped>
+.gallery-container {
+  color: var(--theme-text-primary);
+}
+</style>

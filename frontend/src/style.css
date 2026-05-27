@@ -1,12 +1,55 @@
 @import "tailwindcss";
 
-:root {
+:root,
+html[data-theme='dark'] {
   --primary-color: #1890ff;
-  color-scheme: dark;
+  --theme-shell-bg: #0b0e14;
+  --theme-body-bg: #0f172a;
+  --theme-header-bg: rgba(71, 85, 105, 0.5);
+  --theme-panel-bg: rgba(71, 85, 105, 0.2);
+  --theme-panel-strong-bg: rgba(15, 23, 42, 0.56);
+  --theme-card-bg: rgba(30, 41, 59, 0.72);
+  --theme-card-strong-bg: rgba(15, 23, 42, 0.95);
+  --theme-card-hover-bg: rgba(30, 41, 59, 0.9);
+  --theme-border: rgba(148, 163, 184, 0.32);
+  --theme-border-strong: rgba(56, 189, 248, 0.22);
+  --theme-divider: rgba(51, 65, 85, 0.95);
+  --theme-pill-bg: rgba(30, 41, 59, 0.55);
+  --theme-overlay-bg: rgba(15, 23, 42, 0.96);
+  --theme-text-primary: #f8fafc;
+  --theme-text-secondary: #cbd5e1;
+  --theme-text-muted: #94a3b8;
+  --theme-shadow: 0 12px 36px rgba(2, 6, 23, 0.3);
+  --theme-canvas-bg: #0b0e14;
+  --theme-canvas-star: #e2e8f0;
+  color-scheme: only light;
+}
+
+html[data-theme='light'] {
+  --theme-shell-bg: #edf4ff;
+  --theme-body-bg: #eff6ff;
+  --theme-header-bg: rgba(255, 255, 255, 0.82);
+  --theme-panel-bg: rgba(255, 255, 255, 0.72);
+  --theme-panel-strong-bg: rgba(248, 250, 252, 0.94);
+  --theme-card-bg: rgba(255, 255, 255, 0.88);
+  --theme-card-strong-bg: rgba(255, 255, 255, 0.96);
+  --theme-card-hover-bg: rgba(255, 255, 255, 0.98);
+  --theme-border: rgba(148, 163, 184, 0.3);
+  --theme-border-strong: rgba(79, 70, 229, 0.18);
+  --theme-divider: rgba(203, 213, 225, 0.95);
+  --theme-pill-bg: rgba(255, 255, 255, 0.88);
+  --theme-overlay-bg: rgba(255, 255, 255, 0.97);
+  --theme-text-primary: #0f172a;
+  --theme-text-secondary: #334155;
+  --theme-text-muted: #64748b;
+  --theme-shadow: 0 12px 36px rgba(15, 23, 42, 0.08);
+  --theme-canvas-bg: #eff6ff;
+  --theme-canvas-star: #94a3b8;
 }
 
 /* 完美跨平台（兼容 iOS 和 MIUI）的防反色方案 */
-body, html {
+html,
+body {
   margin: 0;
   padding: 0;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial,
@@ -17,20 +60,78 @@ body, html {
    * 我们使用线性渐变（linear-gradient）来伪装成图片背景，这样 MIUI 就不会去反转它，
    * 同时这完全符合 W3C 标准，苹果 iOS 设备解析完全正常。
    */
-  background-color: #0f172a !important;
-  background-image: linear-gradient(#0f172a, #0f172a) !important;
-  color: #f1f5f9 !important;
+  background-color: var(--theme-body-bg) !important;
+  background-image: linear-gradient(var(--theme-body-bg), var(--theme-body-bg)) !important;
+  color: var(--theme-text-primary) !important;
 }
 
 #app {
   background-color: transparent !important;
-  background-image: linear-gradient(#0f172a, #0f172a) !important;
+  background-image: linear-gradient(var(--theme-body-bg), var(--theme-body-bg)) !important;
+  color: inherit !important;
   min-height: 100vh;
 }
 
 /* Ant Design 覆盖与调整 */
 .ant-layout {
   background: transparent !important;
+}
+
+.app-theme-overlay .ant-dropdown-menu,
+.app-theme-overlay .ant-select-dropdown,
+.app-theme-overlay.ant-select-dropdown {
+  background: var(--theme-overlay-bg) !important;
+  border: 1px solid var(--theme-border) !important;
+  box-shadow: var(--theme-shadow) !important;
+}
+
+.app-theme-overlay .ant-dropdown-menu-item,
+.app-theme-overlay .ant-dropdown-menu-submenu-title,
+.app-theme-overlay .ant-select-item {
+  color: var(--theme-text-primary) !important;
+}
+
+.app-theme-overlay.ant-select-dropdown .ant-select-item {
+  background: transparent !important;
+}
+
+.app-theme-overlay.ant-select-dropdown,
+.app-theme-overlay.ant-select-dropdown .ant-select-item-option,
+.app-theme-overlay.ant-select-dropdown .ant-select-item-option-content {
+  color: var(--theme-text-primary) !important;
+}
+
+.app-theme-overlay.ant-select-dropdown .ant-select-item-option-active:not(.ant-select-item-option-disabled),
+.app-theme-overlay.ant-select-dropdown .ant-select-item-option-selected:not(.ant-select-item-option-disabled) {
+  background: var(--theme-panel-bg) !important;
+  color: var(--theme-text-primary) !important;
+}
+
+.app-theme-overlay.ant-select-dropdown .ant-select-item-option-content,
+.app-theme-overlay.ant-select-dropdown .ant-select-item-empty,
+.app-theme-overlay.ant-select-dropdown .ant-empty-description {
+  color: var(--theme-text-primary) !important;
+}
+
+.app-theme-overlay.ant-select-dropdown .ant-select-item-option-state,
+.app-theme-overlay.ant-select-dropdown .ant-select-item-option-active .ant-select-item-option-state,
+.app-theme-overlay.ant-select-dropdown .ant-select-item-option-selected .ant-select-item-option-state {
+  color: var(--theme-text-muted) !important;
+}
+
+.app-theme-overlay .ant-dropdown-menu-item-disabled {
+  color: var(--theme-text-muted) !important;
+}
+
+.app-theme-overlay .ant-dropdown-menu-item:hover,
+.app-theme-overlay .ant-select-item-option-active,
+.app-theme-overlay .ant-select-item-option-selected {
+  background: var(--theme-panel-bg) !important;
+}
+
+.app-theme-overlay.ant-select-dropdown .ant-select-item-option-active:not(.ant-select-item-option-disabled),
+.app-theme-overlay.ant-select-dropdown .ant-select-item-option-selected:not(.ant-select-item-option-disabled) {
+  color: var(--theme-text-primary) !important;
 }
 
 /* Ant Design 覆盖：禁用的主要按钮，保持白色字体和微透的蓝色背景，避免变成黑色看不清 */
@@ -66,4 +167,3 @@ body::-webkit-scrollbar-thumb:hover,
 .ant-layout-content::-webkit-scrollbar-thumb:hover {
   background-color: rgba(100, 116, 139, 0.8);
 }
-

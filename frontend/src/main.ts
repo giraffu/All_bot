@@ -4,6 +4,7 @@ import './style.css'
 import App from './App.vue'
 import router from './router'
 import i18n from './i18n'
+import { useThemeStore } from './stores/theme'
 
 const CHUNK_RELOAD_MARKER_KEY = '__allbot_chunk_reload_marker__'
 const dynamicImportErrorPatterns = [
@@ -66,6 +67,9 @@ if (typeof window !== 'undefined') {
 
 const app = createApp(App)
 const pinia = createPinia()
+const themeStore = useThemeStore(pinia)
+
+themeStore.initTheme()
 
 app.use(pinia)
 app.use(router)

@@ -27,17 +27,17 @@ const queueByTypeEntries = computed(() =>
 </script>
 
 <template>
-  <div class="bg-slate-500/40 rounded-xl p-5 border border-slate-400/50 mt-4 backdrop-blur-md shadow-[0_4px_16px_rgba(0,0,0,0.2)]">
+  <div class="queue-panel rounded-xl p-5 mt-4 backdrop-blur-md">
     <div class="flex items-center gap-3 mb-4">
-      <div class="p-2 bg-cyan-500/20 rounded-xl border border-cyan-500/30">
+      <div class="queue-panel__icon-wrap p-2 rounded-xl">
         <Server class="w-5 h-5 text-cyan-400 drop-shadow-[0_0_5px_rgba(56,189,248,0.5)]" />
       </div>
-      <h3 class="text-lg font-bold text-slate-200 drop-shadow-sm">{{ t('profile.queue_status_title', '炼丹炉状态') }}</h3>
+      <h3 class="queue-panel__title text-lg font-bold drop-shadow-sm">{{ t('profile.queue_status_title', '炼丹炉状态') }}</h3>
 
       <div class="ml-auto flex items-center gap-2">
         <button
           :title="t('profile.refresh_queue', '刷新')"
-          class="p-1.5 rounded-lg text-cyan-400 hover:bg-cyan-500/20 transition-all border border-transparent hover:border-cyan-500/30 flex items-center justify-center cursor-pointer"
+          class="queue-panel__refresh p-1.5 rounded-lg text-cyan-400 transition-all border border-transparent flex items-center justify-center cursor-pointer"
           :disabled="queueStatus.loading"
           @click="fetchQueueStatus"
         >
@@ -65,24 +65,76 @@ const queueByTypeEntries = computed(() =>
     </div>
 
     <div v-else class="space-y-3">
-      <div class="flex justify-between items-center bg-slate-800/50 p-3 rounded-xl border border-slate-600/50">
-        <div class="flex items-center gap-2 text-slate-300">
+      <div class="queue-panel__summary flex justify-between items-center p-3 rounded-xl">
+        <div class="queue-panel__summary-label flex items-center gap-2">
           <Activity class="w-4 h-4 text-indigo-400" />
           <span class="text-sm font-medium">{{ t('profile.total_queue', '总排队任务') }}</span>
         </div>
-        <span class="text-lg font-bold text-slate-100">{{ queueStatus.data.queue_size }} <span class="text-xs text-slate-400 font-normal">{{ t('profile.tasks_unit', '个') }}</span></span>
+        <span class="queue-panel__summary-value text-lg font-bold">{{ queueStatus.data.queue_size }} <span class="queue-panel__summary-unit text-xs font-normal">{{ t('profile.tasks_unit', '个') }}</span></span>
       </div>
 
       <div v-if="queueByTypeEntries.length > 0" class="grid grid-cols-2 gap-2 mt-2">
         <div
           v-for="[type, count] in queueByTypeEntries"
           :key="type"
-          class="flex flex-col bg-slate-800/30 p-2.5 rounded-lg border border-slate-700/50"
+          class="queue-panel__task-card flex flex-col p-2.5 rounded-lg"
         >
-          <span class="text-xs text-slate-400 mb-1 truncate">{{ resolveQueueTaskTypeLabel(type) }}</span>
-          <span class="text-sm font-bold text-slate-200">{{ count }} {{ t('profile.tasks_unit', '个') }}</span>
+          <span class="queue-panel__task-label text-xs mb-1 truncate">{{ resolveQueueTaskTypeLabel(type) }}</span>
+          <span class="queue-panel__task-value text-sm font-bold">{{ count }} {{ t('profile.tasks_unit', '个') }}</span>
         </div>
       </div>
     </div>
   </div>
 </template>
+
+<style scoped>
+.queue-panel {
+  background: var(--theme-card-bg);
+  border: 1px solid var(--theme-border);
+  box-shadow: var(--theme-shadow);
+}
+
+.queue-panel__icon-wrap {
+  background: color-mix(in srgb, var(--theme-panel-bg) 82%, #06b6d4 18%);
+  border: 1px solid color-mix(in srgb, var(--theme-border) 72%, #22d3ee 28%);
+}
+
+.queue-panel__title {
+  color: var(--theme-text-primary);
+}
+
+.queue-panel__refresh:hover {
+  background: color-mix(in srgb, var(--theme-panel-bg) 78%, #06b6d4 22%);
+  border-color: color-mix(in srgb, var(--theme-border) 68%, #22d3ee 32%);
+}
+
+.queue-panel__summary {
+  background: var(--theme-card-strong-bg);
+  border: 1px solid var(--theme-border);
+}
+
+.queue-panel__summary-label {
+  color: var(--theme-text-secondary);
+}
+
+.queue-panel__summary-value {
+  color: var(--theme-text-primary);
+}
+
+.queue-panel__summary-unit {
+  color: var(--theme-text-muted);
+}
+
+.queue-panel__task-card {
+  background: var(--theme-panel-strong-bg);
+  border: 1px solid var(--theme-border);
+}
+
+.queue-panel__task-label {
+  color: var(--theme-text-secondary);
+}
+
+.queue-panel__task-value {
+  color: var(--theme-text-primary);
+}
+</style>

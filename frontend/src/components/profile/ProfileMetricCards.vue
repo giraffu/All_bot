@@ -29,34 +29,29 @@ const ACCENT_STYLES: Record<
   }
 > = {
   cyan: {
-    card: 'hover:border-cyan-500/30 hover:shadow-[0_8px_24px_rgba(56,189,248,0.1)]',
-    iconWrap:
-      'bg-slate-500/50 border border-slate-400 text-cyan-400 group-hover:shadow-[0_0_12px_rgba(56,189,248,0.4)]',
-    text: 'text-slate-100',
+    card: 'metric-card--cyan',
+    iconWrap: 'metric-icon metric-icon--cyan',
+    text: 'metric-value',
   },
   indigo: {
-    card: 'hover:border-indigo-500/30 hover:shadow-[0_8px_24px_rgba(99,102,241,0.1)]',
-    iconWrap:
-      'bg-slate-500/50 border border-slate-400 text-indigo-400 group-hover:shadow-[0_0_12px_rgba(99,102,241,0.4)]',
-    text: 'text-slate-100',
+    card: 'metric-card--indigo',
+    iconWrap: 'metric-icon metric-icon--indigo',
+    text: 'metric-value',
   },
   emerald: {
-    card: 'hover:border-emerald-500/30 hover:shadow-[0_8px_24px_rgba(16,185,129,0.1)]',
-    iconWrap:
-      'bg-slate-500/50 border border-slate-400 text-emerald-400 group-hover:shadow-[0_0_12px_rgba(16,185,129,0.4)]',
-    text: 'text-slate-100',
+    card: 'metric-card--emerald',
+    iconWrap: 'metric-icon metric-icon--emerald',
+    text: 'metric-value',
   },
   amber: {
-    card: 'hover:border-amber-500/30 hover:shadow-[0_8px_24px_rgba(245,158,11,0.1)]',
-    iconWrap:
-      'bg-slate-500/50 border border-slate-400 text-amber-400 group-hover:shadow-[0_0_12px_rgba(245,158,11,0.4)]',
-    text: 'text-slate-100',
+    card: 'metric-card--amber',
+    iconWrap: 'metric-icon metric-icon--amber',
+    text: 'metric-value',
   },
   rose: {
-    card: 'hover:border-rose-500/30 hover:shadow-[0_8px_24px_rgba(244,63,94,0.1)] relative overflow-hidden',
-    iconWrap:
-      'bg-rose-500/20 border border-rose-500/50 text-rose-400 group-hover:shadow-[0_0_15px_rgba(244,63,94,0.5)]',
-    text: 'text-rose-100 drop-shadow-md',
+    card: 'metric-card--rose relative overflow-hidden',
+    iconWrap: 'metric-icon metric-icon--rose',
+    text: 'metric-value metric-value--rose',
   },
 }
 
@@ -71,7 +66,7 @@ const getAccentStyles = (accent: ProfileMetricCardItem['accent']) => ACCENT_STYL
       hoverable
       :class="[
         item.colSpanClass,
-        'rounded-xl border border-slate-400/50 bg-slate-500/40 backdrop-blur-md shadow-[0_4px_16px_rgba(0,0,0,0.2)] transition-all group',
+        'metric-card rounded-xl backdrop-blur-md transition-all group',
         getAccentStyles(item.accent).card,
       ]"
     >
@@ -94,7 +89,7 @@ const getAccentStyles = (accent: ProfileMetricCardItem['accent']) => ACCENT_STYL
           <span v-else class="text-xl font-bold">{{ item.iconText ?? '$' }}</span>
         </div>
         <div>
-          <p class="mb-1 text-xs md:text-sm text-slate-400">{{ item.title }}</p>
+          <p class="metric-title mb-1 text-xs md:text-sm">{{ item.title }}</p>
           <h3 :class="['text-lg md:text-xl font-bold drop-shadow-sm', item.valueClass ?? getAccentStyles(item.accent).text]">
             {{ item.value }}
           </h3>
@@ -103,3 +98,75 @@ const getAccentStyles = (accent: ProfileMetricCardItem['accent']) => ACCENT_STYL
     </a-card>
   </div>
 </template>
+
+<style scoped>
+.metric-card {
+  background: var(--theme-card-bg);
+  border: 1px solid var(--theme-border);
+  box-shadow: var(--theme-shadow);
+}
+
+.metric-card--cyan:hover {
+  border-color: rgba(34, 211, 238, 0.35);
+  box-shadow: 0 8px 24px rgba(56, 189, 248, 0.12);
+}
+
+.metric-card--indigo:hover {
+  border-color: rgba(129, 140, 248, 0.35);
+  box-shadow: 0 8px 24px rgba(99, 102, 241, 0.12);
+}
+
+.metric-card--emerald:hover {
+  border-color: rgba(16, 185, 129, 0.35);
+  box-shadow: 0 8px 24px rgba(16, 185, 129, 0.12);
+}
+
+.metric-card--amber:hover {
+  border-color: rgba(245, 158, 11, 0.35);
+  box-shadow: 0 8px 24px rgba(245, 158, 11, 0.12);
+}
+
+.metric-card--rose:hover {
+  border-color: rgba(244, 63, 94, 0.35);
+  box-shadow: 0 8px 24px rgba(244, 63, 94, 0.12);
+}
+
+.metric-icon {
+  background: var(--theme-pill-bg);
+  border: 1px solid var(--theme-border);
+}
+
+.metric-icon--cyan {
+  color: #06b6d4;
+}
+
+.metric-icon--indigo {
+  color: #6366f1;
+}
+
+.metric-icon--emerald {
+  color: #10b981;
+}
+
+.metric-icon--amber {
+  color: #f59e0b;
+}
+
+.metric-icon--rose {
+  background: rgba(244, 63, 94, 0.12);
+  border-color: rgba(244, 63, 94, 0.28);
+  color: #f43f5e;
+}
+
+.metric-title {
+  color: var(--theme-text-secondary);
+}
+
+.metric-value {
+  color: var(--theme-text-primary);
+}
+
+.metric-value--rose {
+  color: #e11d48;
+}
+</style>

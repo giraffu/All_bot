@@ -149,7 +149,14 @@
   },
   "app": {
     "name": "Hehuan Sect",
-    "credits": "Credits"
+    "credits": "Credits",
+    "theme": "Theme"
+  },
+  "theme": {
+    "system": "System",
+    "light": "Light",
+    "dark": "Dark",
+    "switcher_label": "Theme switcher"
   },
   "gallery": {
     "tabs": {

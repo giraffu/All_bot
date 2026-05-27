@@ -171,6 +171,7 @@ const buildContext = (overrides: Record<string, unknown> = {}): TemplateApplyCon
   prompt: null,
   loraName: null,
   loraStrength: null,
+  loraItems: [],
   inputFile: 'history/demo/template-target.mp4',
   inputFileUrl: 'https://example.com/template-target.mp4',
   width: 640,

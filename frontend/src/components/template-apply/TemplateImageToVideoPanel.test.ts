@@ -191,6 +191,7 @@ const buildContext = (overrides: Record<string, unknown> = {}): TemplateApplyCon
   prompt: 'cinematic action shot',
   loraName: null,
   loraStrength: null,
+  loraItems: [],
   inputFile: null,
   inputFileUrl: null,
   width: 720,

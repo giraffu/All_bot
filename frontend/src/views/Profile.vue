@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted, computed } from 'vue'
 import { useAuthStore } from '@/stores/auth'
+import { useThemeStore, type ThemePreference } from '@/stores/theme'
 import { 
   Wallet,
   Activity,
@@ -30,12 +31,23 @@ import ProfileRedeemOverlays from '@/components/profile/ProfileRedeemOverlays.vu
 import ProfileWelcomeBanner from '@/components/profile/ProfileWelcomeBanner.vue'
 
 const authStore = useAuthStore()
+const themeStore = useThemeStore()
 const router = useRouter()
 const { isMobile } = useViewport()
 const { showMainButton, hideMainButton, hapticFeedback, isTMA } = useTelegram()
 const { t, te, locale } = useI18n()
 const { queueStatus, fetchQueueStatus } = useQueueStatus()
 const { toggleLanguage } = useProfileLanguage(locale as { value: string })
+const themeOptions = computed<{ label: string; value: ThemePreference }[]>(() => [
+  { label: t('theme.system'), value: 'system' },
+  { label: t('theme.light'), value: 'light' },
+  { label: t('theme.dark'), value: 'dark' },
+])
+
+const selectedTheme = computed<ThemePreference>({
+  get: () => themeStore.selectedTheme,
+  set: (value) => themeStore.setTheme(value),
+})
 
 const {
   bindFormState,
@@ -149,6 +161,8 @@ onMounted(async () => {
       :identity-expire-text="identityExpireText"
       :credits="authStore.user?.credits || 0"
       :locale-value="locale"
+      v-model:selected-theme="selectedTheme"
+      :theme-options="themeOptions"
       :checkin-loading="checkinLoading"
       :on-toggle-language="toggleLanguage"
       :on-checkin="handleCheckin"
@@ -167,7 +181,7 @@ onMounted(async () => {
     />
 
     <div>
-      <h2 class="text-xl font-bold text-slate-200 mb-4 flex items-center drop-shadow-sm">
+      <h2 class="profile-section-title text-xl font-bold mb-4 flex items-center drop-shadow-sm">
         <span class="w-1.5 h-6 bg-cyan-500 rounded-full mr-2 shadow-[0_0_8px_rgba(56,189,248,0.5)]"></span>
         {{ $t('profile.stats') }}
       </h2>
@@ -176,7 +190,7 @@ onMounted(async () => {
     </div>
     
     <div class="mt-8">
-      <h2 class="text-xl font-bold text-slate-200 mb-4 flex items-center drop-shadow-sm">
+      <h2 class="profile-section-title text-xl font-bold mb-4 flex items-center drop-shadow-sm">
         <span class="w-1.5 h-6 bg-indigo-500 rounded-full mr-2 shadow-[0_0_8px_rgba(99,102,241,0.5)]"></span>
         {{ $t('profile.promotion_details') }}
       </h2>
@@ -212,6 +226,10 @@ onMounted(async () => {
 </template>
 
 <style scoped>
+.profile-section-title {
+  color: var(--theme-text-primary);
+}
+
 .welcome-banner {
   background-size: cover;
   background-position: center;

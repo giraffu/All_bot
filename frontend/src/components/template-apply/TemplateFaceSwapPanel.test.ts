@@ -154,6 +154,7 @@ const buildContext = (overrides: Record<string, unknown> = {}): TemplateApplyCon
   prompt: 'demo',
   loraName: null,
   loraStrength: null,
+  loraItems: [],
   inputFile: 'history/demo/template-target.png',
   inputFileUrl: 'https://example.com/template-target.png',
   width: 512,

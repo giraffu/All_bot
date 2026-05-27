@@ -2,6 +2,7 @@
 import { computed, defineAsyncComponent, ref, onMounted, watch, onBeforeUnmount, provide } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
+import { useThemeStore } from '@/stores/theme'
 import { useTemplateApplyStore } from '@/stores/templateApply'
 import { useViewport } from '@/composables/useViewport'
 import { useI18n } from 'vue-i18n'
@@ -16,6 +17,7 @@ import TaskDetailModal from '@/components/TaskDetailModal.vue'
 const router = useRouter()
 const route = useRoute()
 const authStore = useAuthStore()
+const themeStore = useThemeStore()
 const templateApplyStore = useTemplateApplyStore()
 const { isMobile } = useViewport()
 const { t } = useI18n()
@@ -27,7 +29,11 @@ const collapsed = ref(false)
 const selectedKeys = ref<string[]>([route.name as string || 'Profile'])
 const canvasRef = ref<HTMLCanvasElement | null>(null)
 const layoutContentRef = ref<HTMLElement | { $el?: HTMLElement } | null>(null)
+const canvasBackground = ref('#0b0e14')
+const canvasStarColor = ref('#e2e8f0')
 let animationFrameId: number
+
+const resolvedTheme = computed(() => themeStore.resolvedTheme)
 
 const contentRef = computed<HTMLElement | null>(() => {
   if (layoutContentRef.value instanceof HTMLElement) {
@@ -65,6 +71,16 @@ const pageTitle = computed(() => {
   }
   return titleMap[route.name as string] || ''
 })
+
+const syncCanvasPalette = () => {
+  if (typeof window === 'undefined') {
+    return
+  }
+
+  const styles = window.getComputedStyle(document.documentElement)
+  canvasBackground.value = styles.getPropertyValue('--theme-canvas-bg').trim() || '#0b0e14'
+  canvasStarColor.value = styles.getPropertyValue('--theme-canvas-star').trim() || '#e2e8f0'
+}
 
 const initParticles = () => {
   const canvas = canvasRef.value
@@ -148,7 +164,7 @@ const initParticles = () => {
 
   const animate = () => {
     // Fill canvas with solid background color to remove particle trails while maintaining the dark theme
-    ctx.fillStyle = '#0b0e14'
+    ctx.fillStyle = canvasBackground.value
     ctx.fillRect(0, 0, width, height)
     
     // Draw stars
@@ -158,7 +174,7 @@ const initParticles = () => {
       if (star.alpha < 0) star.alpha = 0
       if (star.alpha > 1) star.alpha = 1
       ctx.globalAlpha = star.alpha * 0.5 // Keep stars subtle
-      ctx.fillStyle = '#e2e8f0' // Silver stars
+      ctx.fillStyle = canvasStarColor.value
       ctx.beginPath()
       ctx.arc(star.x, star.y, star.radius, 0, Math.PI * 2)
       ctx.fill()
@@ -208,6 +224,8 @@ const initParticles = () => {
 onMounted(() => {
   selectedKeys.value = [route.name as string || 'Profile']
   void authStore.fetchUser()
+  themeStore.initTheme()
+  syncCanvasPalette()
   initParticles()
 })
 
@@ -222,10 +240,14 @@ watch(() => route.name, (newName) => {
     selectedKeys.value = [newName as string]
   }
 })
+
+watch(resolvedTheme, () => {
+  syncCanvasPalette()
+})
 </script>
 
 <template>
-  <a-layout class="h-screen overflow-hidden bg-[#0b0e14] relative">
+  <a-layout class="app-shell h-screen overflow-hidden relative">
     <!-- 动态星空灵气背景 -->
     <canvas ref="canvasRef" class="absolute inset-0 z-0 pointer-events-none"></canvas>
     
@@ -269,22 +291,22 @@ watch(() => route.name, (newName) => {
       <a-layout class="flex flex-col h-screen overflow-hidden bg-transparent">
       <a-layout-header class="header-custom px-4 md:px-6 flex justify-between items-center shrink-0 z-10 sticky top-0">
         <div class="header-left flex items-center">
-          <h2 class="text-lg font-bold text-slate-200 tracking-wide m-0 drop-shadow-sm">{{ pageTitle }}</h2>
+          <h2 class="header-title text-lg font-bold tracking-wide m-0 drop-shadow-sm">{{ pageTitle }}</h2>
         </div>
-        <div class="header-right flex items-center space-x-4">
-          <div class="balance flex items-center bg-slate-500/40 backdrop-blur-md px-3 py-1 rounded-full border border-cyan-500/20 shadow-sm transition-all hover:shadow-[0_0_8px_rgba(56,189,248,0.3)] hover:scale-105">
+        <div class="header-right flex items-center gap-2 md:gap-3">
+          <div class="balance flex items-center backdrop-blur-md px-3 py-1 rounded-full shadow-sm transition-all hover:shadow-[0_0_8px_rgba(56,189,248,0.2)]">
             <Wallet :size="14" class="text-cyan-400 mr-1.5 drop-shadow-[0_0_3px_rgba(56,189,248,0.5)]" />
-            <span class="text-slate-200 font-bold tracking-wide text-sm">{{ authStore.user?.credits || 0 }} <span class="text-slate-400 text-xs font-normal">{{ $t('app.credits') }}</span></span>
+            <span class="balance-value font-bold tracking-wide text-sm">{{ authStore.user?.credits || 0 }} <span class="balance-unit text-xs font-normal">{{ $t('app.credits') }}</span></span>
           </div>
           
-          <a-dropdown placement="bottomRight">
-              <div class="user-profile flex items-center cursor-pointer hover:bg-white/5 p-1.5 rounded-lg transition-all border border-transparent hover:border-cyan-500/30">
+          <a-dropdown placement="bottomRight" overlayClassName="app-theme-overlay">
+              <div class="user-profile flex items-center cursor-pointer p-1.5 rounded-lg transition-all border border-transparent">
                 <a-avatar class="bg-gradient-to-br from-indigo-500 to-cyan-600 mr-2 shadow-[0_0_10px_rgba(56,189,248,0.2)] border border-white/10 text-white font-bold" :size="32">{{ authStore.user?.username?.charAt(0).toUpperCase() || 'U' }}</a-avatar>
-                <span class="font-medium text-slate-200">{{ authStore.user?.username || 'User' }}</span>
+                <span class="user-name font-medium">{{ authStore.user?.username || 'User' }}</span>
               </div>
               <template #overlay>
                 <a-menu>
-                  <a-menu-item class="text-gray-500" disabled>
+                  <a-menu-item class="menu-disabled-item" disabled>
                     {{ $t('profile.identity') }}: {{ authStore.user?.current_identity }}
                   </a-menu-item>
                   <a-menu-divider />
@@ -296,12 +318,12 @@ watch(() => route.name, (newName) => {
                   </a-menu-item>
                 </a-menu>
               </template>
-            </a-dropdown>
+          </a-dropdown>
         </div>
       </a-layout-header>
       
       <a-layout-content ref="layoutContentRef" :class="[
-        'm-2 p-3 md:m-6 md:p-6 bg-slate-500/20 backdrop-blur-sm rounded-2xl shadow-[0_8px_32px_rgba(0,0,0,0.4)] border border-slate-400/50 relative overflow-y-auto overflow-x-hidden flex flex-col flex-grow',
+        'content-shell m-2 p-3 md:m-6 md:p-6 backdrop-blur-sm rounded-2xl relative overflow-y-auto overflow-x-hidden flex flex-col flex-grow',
         { 'mb-20': isMobile }
       ]">
         <router-view v-slot="{ Component, route: currentRoute }">
@@ -321,6 +343,11 @@ watch(() => route.name, (newName) => {
 </template>
 
 <style scoped>
+.app-shell {
+  background: var(--theme-shell-bg) !important;
+  color: var(--theme-text-primary);
+}
+
 .sider-custom {
   background: rgba(15, 23, 42, 0.4) !important;
   backdrop-filter: blur(16px);
@@ -354,11 +381,41 @@ watch(() => route.name, (newName) => {
 }
 
 .header-custom {
-  background: rgba(100, 116, 139, 0.5) !important;
+  background: var(--theme-header-bg) !important;
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
-  border-bottom: 1px solid rgba(56, 189, 248, 0.15);
-  box-shadow: 0 4px 12px -1px rgba(0, 0, 0, 0.3), 0 2px 6px -1px rgba(0, 0, 0, 0.2);
+  border-bottom: 1px solid var(--theme-border-strong);
+  box-shadow: var(--theme-shadow);
+}
+
+.header-title {
+  color: var(--theme-text-primary);
+}
+
+.content-shell {
+  background: var(--theme-panel-bg);
+  border: 1px solid var(--theme-border);
+  box-shadow: var(--theme-shadow);
+}
+
+.balance {
+  background: var(--theme-pill-bg);
+  border: 1px solid var(--theme-border-strong);
+}
+
+.balance-value,
+.user-name {
+  color: var(--theme-text-primary);
+}
+
+.balance-unit,
+.menu-disabled-item {
+  color: var(--theme-text-muted);
+}
+
+.user-profile:hover {
+  background: var(--theme-panel-bg);
+  border-color: var(--theme-border-strong);
 }
 
 .fade-enter-active,

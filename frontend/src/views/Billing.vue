@@ -126,26 +126,26 @@ const displayPlans = computed<BillingPlanDisplay[]>(() => {
   <div class="billing-container space-y-6">
     <div
       v-if="selectedPlan"
-      class="fixed inset-0 z-30 bg-slate-950/35 backdrop-blur-[1px]"
+      class="billing-mask fixed inset-0 z-30 backdrop-blur-[1px]"
       @click="selectedPlan = null"
     ></div>
 
     <!-- Header -->
-    <div class="flex flex-col md:flex-row justify-between items-start md:items-center bg-slate-500/30 backdrop-blur-md rounded-xl p-5 border border-slate-400/50 shadow-lg">
+    <div class="billing-hero flex flex-col md:flex-row justify-between items-start md:items-center rounded-xl p-5 backdrop-blur-md">
       <div>
-        <h1 class="text-2xl font-bold text-slate-100 flex items-center drop-shadow-sm">
+        <h1 class="billing-title text-2xl font-bold flex items-center drop-shadow-sm">
           <Wallet class="mr-2 text-amber-400" :size="28" />
           {{ t('billing.title', '充值中心') }}
         </h1>
-        <p class="text-slate-400 text-sm mt-1">获取更多灵石，突破更高境界</p>
+        <p class="billing-subtitle text-sm mt-1">获取更多灵石，突破更高境界</p>
       </div>
-      <div class="mt-4 md:mt-0 bg-slate-800/50 px-4 py-2 rounded-lg border border-slate-600/50">
+      <div class="billing-identity-card mt-4 md:mt-0 px-4 py-2 rounded-lg">
         <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
-          <span class="text-slate-400">{{ t('profile.identity', '当前身份') }}</span>
-          <span class="font-bold text-indigo-300">{{ authStore.user?.current_identity || '外门弟子' }}</span>
-          <span class="text-slate-500">|</span>
-          <span class="text-slate-400">身份到期</span>
-          <span class="font-medium text-cyan-300">{{ identityExpireText }}</span>
+          <span class="billing-meta-label">{{ t('profile.identity', '当前身份') }}</span>
+          <span class="billing-meta-value billing-meta-value--identity font-bold">{{ authStore.user?.current_identity || '外门弟子' }}</span>
+          <span class="billing-divider">|</span>
+          <span class="billing-meta-label">身份到期</span>
+          <span class="billing-meta-value billing-meta-value--expire font-medium">{{ identityExpireText }}</span>
         </div>
       </div>
     </div>
@@ -156,39 +156,41 @@ const displayPlans = computed<BillingPlanDisplay[]>(() => {
     </div>
     
     <div v-else class="grid grid-cols-3 gap-2 md:gap-5">
-      <div 
-        v-for="plan in displayPlans" 
+      <div
+        v-for="plan in displayPlans"
         :key="plan.id"
         @click="selectedPlan = plan"
-        class="relative overflow-hidden cursor-pointer rounded-xl border-2 transition-all duration-300 bg-slate-800/60 backdrop-blur-sm min-h-[212px] md:min-h-[272px]"
-        :class="selectedPlan?.id === plan.id ? 'border-amber-400 shadow-[0_0_20px_rgba(251,191,36,0.3)] transform -translate-y-1' : 'border-slate-600/50 hover:border-slate-400 hover:shadow-lg'"
+        class="plan-card relative overflow-hidden cursor-pointer rounded-xl border-2 transition-all duration-300 backdrop-blur-sm min-h-[212px] md:min-h-[272px]"
+        :class="{ 'is-selected': selectedPlan?.id === plan.id }"
       >
-        <!-- Highlight badge for current identity -->
-        <div v-if="plan.duration_days > 0 && authStore.user?.current_identity === plan.identity_override" 
-             class="absolute top-0 right-0 bg-emerald-500 text-white text-xs font-bold px-3 py-1 rounded-bl-lg z-10">
-          当前身份
-        </div>
-        
         <div class="p-3 md:p-5 flex h-full flex-col">
-          <h3 class="text-sm md:text-lg font-bold text-slate-100 mb-1.5 md:mb-2 leading-5">{{ plan.displayName }}</h3>
-          <p class="text-slate-300 text-[11px] md:text-sm leading-4 md:leading-6 min-h-[32px] md:min-h-[48px] line-clamp-2 md:line-clamp-none">{{ plan.displayDescription }}</p>
+          <div class="flex items-start justify-between gap-2">
+            <h3 class="plan-title text-sm md:text-lg font-bold leading-5">{{ plan.displayName }}</h3>
+            <span
+              v-if="plan.duration_days > 0 && authStore.user?.current_identity === plan.identity_override"
+              class="shrink-0 rounded-full border border-emerald-400/40 bg-emerald-500/15 px-2 py-1 text-[10px] md:text-xs font-semibold leading-none text-emerald-300"
+            >
+              当前身份
+            </span>
+          </div>
+          <p class="plan-description mt-1.5 md:mt-2 text-[11px] md:text-sm leading-4 md:leading-6 min-h-[32px] md:min-h-[48px] line-clamp-2 md:line-clamp-none">{{ plan.displayDescription }}</p>
           
-          <div class="mt-2.5 md:mt-4 pt-2.5 md:pt-4 border-t border-slate-700">
+          <div class="plan-stats mt-2.5 md:mt-4 pt-2.5 md:pt-4">
             <div class="flex justify-between items-baseline mb-1">
-              <span class="text-slate-400 text-[10px] md:text-sm">灵石</span>
+              <span class="plan-key text-[10px] md:text-sm">灵石</span>
               <span class="text-sm md:text-base font-bold text-cyan-400">{{ plan.credits_granted }}</span>
             </div>
             <div class="flex justify-between items-baseline mb-1">
-              <span class="text-slate-400 text-[10px] md:text-sm">{{ plan.duration_days > 0 ? '有效期' : '到账' }}</span>
+              <span class="plan-key text-[10px] md:text-sm">{{ plan.duration_days > 0 ? '有效期' : '到账' }}</span>
               <span class="text-[11px] md:text-md font-medium text-indigo-300">{{ plan.durationLabel }}</span>
             </div>
           </div>
 
           <div class="mt-2.5 md:mt-4 space-y-1.5 md:space-y-2">
-            <p class="text-[10px] md:text-xs uppercase tracking-[0.1em] md:tracking-[0.2em] text-slate-500">
+            <p class="plan-section-label text-[10px] md:text-xs uppercase tracking-[0.1em] md:tracking-[0.2em]">
               {{ plan.duration_days > 0 ? '月卡福利' : '购买说明' }}
             </p>
-            <ul class="space-y-1 text-[11px] md:text-xs text-slate-300">
+            <ul class="plan-benefits space-y-1 text-[11px] md:text-xs">
               <li
                 v-for="benefit in plan.benefits"
                 :key="benefit"
@@ -202,7 +204,7 @@ const displayPlans = computed<BillingPlanDisplay[]>(() => {
           
           <div class="mt-auto pt-3 md:pt-4 flex items-end gap-1 md:gap-2">
             <span class="text-xl md:text-2xl font-extrabold text-amber-400">¥{{ plan.price_rmb }}</span>
-            <span class="hidden md:inline text-xs md:text-sm text-slate-500 mb-1 line-through" v-if="plan.price_ton">/ {{ plan.price_ton }} TON</span>
+            <span class="plan-price-note hidden md:inline text-xs md:text-sm mb-1 line-through" v-if="plan.price_ton">/ {{ plan.price_ton }} TON</span>
           </div>
         </div>
         
@@ -217,29 +219,29 @@ const displayPlans = computed<BillingPlanDisplay[]>(() => {
     <Transition name="slide-fade">
       <div
         v-if="selectedPlan"
-        class="fixed left-1/2 top-1/2 z-40 w-[520px] max-w-[calc(100vw-1.5rem)] md:max-w-[calc(100vw-6rem)] -translate-x-1/2 -translate-y-1/2 rounded-3xl border border-slate-400/50 bg-slate-900/95 p-4 md:p-6 shadow-[0_24px_70px_rgba(0,0,0,0.5)] backdrop-blur-xl"
+        class="payment-sheet fixed left-1/2 top-1/2 z-40 w-[520px] max-w-[calc(100vw-1.5rem)] md:max-w-[calc(100vw-6rem)] -translate-x-1/2 -translate-y-1/2 rounded-3xl p-4 md:p-6 backdrop-blur-xl"
       >
         <div class="mb-3 flex items-start justify-between gap-3">
           <div>
-            <p class="text-xs uppercase tracking-[0.18em] text-slate-500">已选套餐</p>
-            <h3 class="mt-1 text-base font-semibold text-slate-100">{{ selectedPlan.displayName }}</h3>
+            <p class="payment-kicker text-xs uppercase tracking-[0.18em]">已选套餐</p>
+            <h3 class="payment-title mt-1 text-base font-semibold">{{ selectedPlan.displayName }}</h3>
             <p class="mt-1 text-sm text-amber-300">¥{{ selectedPlan.price_rmb }}</p>
           </div>
           <button
             type="button"
-            class="rounded-full border border-slate-600 px-2.5 py-1 text-xs text-slate-300 transition hover:border-slate-400 hover:text-slate-100"
+            class="payment-close rounded-full px-2.5 py-1 text-xs transition"
             @click="selectedPlan = null"
           >
             收起
           </button>
         </div>
-        <h2 class="text-lg md:text-2xl font-bold text-slate-200 mb-3 md:mb-5">选择支付方式</h2>
+        <h2 class="payment-heading text-lg md:text-2xl font-bold mb-3 md:mb-5">选择支付方式</h2>
         
         <div class="grid grid-cols-3 gap-2 md:gap-4 mb-3 md:mb-6">
           <button 
             @click="payMethod = 'alipay'"
-            class="rounded-lg border-2 flex items-center justify-center transition-all px-2 py-2 md:px-5 md:py-3.5 text-xs md:text-base"
-            :class="payMethod === 'alipay' ? 'border-blue-500 bg-blue-500/20 text-blue-300' : 'border-slate-600 bg-slate-800/50 text-slate-400 hover:bg-slate-700'"
+            class="payment-option payment-option--blue rounded-lg border-2 flex items-center justify-center transition-all px-2 py-2 md:px-5 md:py-3.5 text-xs md:text-base"
+            :class="{ 'is-selected': payMethod === 'alipay' }"
           >
             <CreditCard class="mr-1 md:mr-2 shrink-0" :size="16" />
             <span class="truncate">支付宝</span>
@@ -247,8 +249,8 @@ const displayPlans = computed<BillingPlanDisplay[]>(() => {
 
           <button 
             @click="payMethod = 'wxpay'"
-            class="rounded-lg border-2 flex items-center justify-center transition-all px-2 py-2 md:px-5 md:py-3.5 text-xs md:text-base"
-            :class="payMethod === 'wxpay' ? 'border-emerald-500 bg-emerald-500/20 text-emerald-300' : 'border-slate-600 bg-slate-800/50 text-slate-400 hover:bg-slate-700'"
+            class="payment-option payment-option--green rounded-lg border-2 flex items-center justify-center transition-all px-2 py-2 md:px-5 md:py-3.5 text-xs md:text-base"
+            :class="{ 'is-selected': payMethod === 'wxpay' }"
           >
             <CreditCard class="mr-1 md:mr-2 shrink-0" :size="16" />
             <span class="truncate">微信</span>
@@ -256,8 +258,8 @@ const displayPlans = computed<BillingPlanDisplay[]>(() => {
           
           <button 
             @click="payMethod = 'ton'"
-            class="rounded-lg border-2 flex items-center justify-center transition-all px-2 py-2 md:px-5 md:py-3.5 text-xs md:text-base"
-            :class="payMethod === 'ton' ? 'border-cyan-500 bg-cyan-500/20 text-cyan-300' : 'border-slate-600 bg-slate-800/50 text-slate-400 hover:bg-slate-700'"
+            class="payment-option payment-option--cyan rounded-lg border-2 flex items-center justify-center transition-all px-2 py-2 md:px-5 md:py-3.5 text-xs md:text-base"
+            :class="{ 'is-selected': payMethod === 'ton' }"
           >
             <Zap class="mr-1 md:mr-2 shrink-0" :size="16" />
             <span class="truncate">TON</span>
@@ -266,7 +268,7 @@ const displayPlans = computed<BillingPlanDisplay[]>(() => {
         
         <!-- RMB Action -->
         <div v-if="payMethod === 'alipay' || payMethod === 'wxpay'" class="flex flex-col items-center">
-          <p class="text-slate-400 text-sm md:text-base mb-3 md:mb-4 text-center">
+          <p class="payment-hint text-sm md:text-base mb-3 md:mb-4 text-center">
             将前往易支付安全收银台完成{{ payMethod === 'wxpay' ? '微信支付' : '支付宝支付' }}
           </p>
           <a-button 
@@ -285,7 +287,7 @@ const displayPlans = computed<BillingPlanDisplay[]>(() => {
         
         <!-- TON Action -->
         <div v-if="payMethod === 'ton'" class="flex flex-col items-center">
-          <p class="text-slate-400 text-sm md:text-base mb-3 md:mb-4 text-center">连接钱包并发送 {{ selectedPlan.price_ton }} TON 即可自动发货</p>
+          <p class="payment-hint text-sm md:text-base mb-3 md:mb-4 text-center">连接钱包并发送 {{ selectedPlan.price_ton }} TON 即可自动发货</p>
           
           <a-button 
             v-if="!tonWalletAddress"
@@ -298,7 +300,7 @@ const displayPlans = computed<BillingPlanDisplay[]>(() => {
           </a-button>
           
           <div v-else class="w-full flex flex-col items-center">
-            <div class="bg-slate-800/50 border border-slate-600/50 rounded-lg px-4 py-2 mb-4 text-slate-300 text-sm flex items-center">
+            <div class="ton-wallet-card rounded-lg px-4 py-2 mb-4 text-sm flex items-center">
               已连接: {{ tonWalletAddress.slice(0, 4) }}...{{ tonWalletAddress.slice(-4) }}
               <a-button type="link" size="small" @click="disconnectTonWallet" class="ml-2 text-rose-400 hover:text-rose-300 p-0">断开</a-button>
             </div>
@@ -368,6 +370,118 @@ const displayPlans = computed<BillingPlanDisplay[]>(() => {
 </template>
 
 <style scoped>
+.billing-mask {
+  background: rgba(15, 23, 42, 0.38);
+}
+
+.billing-hero {
+  background: var(--theme-panel-bg);
+  border: 1px solid var(--theme-border);
+  box-shadow: var(--theme-shadow);
+}
+
+.billing-title,
+.plan-title,
+.payment-title,
+.payment-heading {
+  color: var(--theme-text-primary);
+}
+
+.billing-subtitle,
+.billing-meta-label,
+.plan-key,
+.plan-description,
+.plan-benefits,
+.payment-hint {
+  color: var(--theme-text-secondary);
+}
+
+.billing-identity-card,
+.ton-wallet-card {
+  background: var(--theme-panel-strong-bg);
+  border: 1px solid var(--theme-border);
+}
+
+.billing-meta-value--identity {
+  color: #818cf8;
+}
+
+.billing-meta-value--expire {
+  color: #67e8f9;
+}
+
+.billing-divider,
+.plan-price-note,
+.payment-kicker,
+.plan-section-label {
+  color: var(--theme-text-muted);
+}
+
+.plan-card {
+  background: var(--theme-card-bg);
+  border-color: var(--theme-border);
+}
+
+.plan-card:hover {
+  background: var(--theme-card-hover-bg);
+  border-color: var(--theme-border-strong);
+  box-shadow: var(--theme-shadow);
+}
+
+.plan-card.is-selected {
+  border-color: #fbbf24;
+  box-shadow: 0 0 20px rgba(251, 191, 36, 0.3);
+  transform: translateY(-0.25rem);
+}
+
+.plan-stats {
+  border-top: 1px solid var(--theme-divider);
+}
+
+.payment-sheet {
+  background: var(--theme-card-strong-bg);
+  border: 1px solid var(--theme-border);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.28);
+}
+
+.payment-close {
+  border: 1px solid var(--theme-border);
+  color: var(--theme-text-secondary);
+}
+
+.payment-close:hover {
+  border-color: var(--theme-border-strong);
+  color: var(--theme-text-primary);
+}
+
+.payment-option {
+  border-color: var(--theme-border);
+  background: var(--theme-card-bg);
+  color: var(--theme-text-secondary);
+}
+
+.payment-option:hover {
+  background: var(--theme-card-hover-bg);
+}
+
+.payment-option.is-selected.payment-option--blue {
+  border-color: #3b82f6;
+  background: rgba(59, 130, 246, 0.18);
+  color: #93c5fd;
+}
+
+.payment-option.is-selected.payment-option--green {
+  border-color: #10b981;
+  background: rgba(16, 185, 129, 0.18);
+  color: #6ee7b7;
+}
+
+.payment-option.is-selected.payment-option--cyan {
+  border-color: #06b6d4;
+  background: rgba(6, 182, 212, 0.18);
+  color: #67e8f9;
+}
+
 .slide-fade-enter-active {
   transition: all 0.3s ease-out;
 }
@@ -383,17 +497,17 @@ const displayPlans = computed<BillingPlanDisplay[]>(() => {
 }
 
 :deep(.dark-modal .ant-modal-content) {
-  background-color: #1e293b;
-  border: 1px solid #334155;
+  background-color: var(--theme-card-strong-bg);
+  border: 1px solid var(--theme-border);
 }
 :deep(.dark-modal .ant-modal-header) {
-  background-color: #1e293b;
-  border-bottom: 1px solid #334155;
+  background-color: var(--theme-card-strong-bg);
+  border-bottom: 1px solid var(--theme-border);
 }
 :deep(.dark-modal .ant-modal-title) {
-  color: #f1f5f9;
+  color: var(--theme-text-primary);
 }
 :deep(.dark-modal .ant-modal-close) {
-  color: #94a3b8;
+  color: var(--theme-text-muted);
 }
 </style>

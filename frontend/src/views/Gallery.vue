@@ -319,32 +319,35 @@ watch(pageSize, (nextSize, previousSize) => {
             :items="taskTypeTabs"
             :selected-id="taskType"
             container-class="w-full xl:w-auto shrink-0"
+            content-class="flex gap-1 bg-[var(--theme-pill-bg)] p-1 rounded-xl border border-[var(--theme-border)]"
+            active-class="bg-[var(--theme-panel-bg)] text-[var(--theme-text-primary)] border border-[var(--theme-border-strong)] shadow-[0_0_10px_rgba(56,189,248,0.18)]"
+            inactive-class="text-[var(--theme-text-secondary)] hover:text-[var(--theme-text-primary)]"
             @select="handleTaskTypeChange"
           />
 
           <OverflowScrollRail
-            container-class="w-full xl:w-auto shrink-0 rounded-2xl border border-slate-700/50 bg-slate-950/55 px-2 py-2 shadow-[0_6px_18px_rgba(2,6,23,0.25)]"
+            container-class="w-full xl:w-auto shrink-0 rounded-2xl border border-[var(--theme-border)] bg-[var(--theme-card-strong-bg)] px-2 py-2 shadow-[0_6px_18px_rgba(15,23,42,0.12)]"
             content-class="flex items-center gap-3"
           >
-            <div class="flex bg-slate-500/50 p-1 rounded-xl border border-slate-400/50 shrink-0">
+            <div class="flex bg-[var(--theme-pill-bg)] p-1 rounded-xl border border-[var(--theme-border)] shrink-0">
               <button
                 v-for="time in [{k:'all', n: $t('gallery.filters.all')}, {k:'today', n: $t('gallery.filters.today')}, {k:'week', n: $t('gallery.filters.this_week')}, {k:'month', n: $t('gallery.filters.this_month')}]"
                 :key="time.k"
                 @click="handleTimeRangeChange(time.k)"
                 class="px-2 py-1 sm:px-3 sm:py-1.5 rounded-lg transition-all font-medium text-xs sm:text-sm whitespace-nowrap shrink-0"
-                :class="timeRange === time.k ? 'bg-indigo-500/20 text-indigo-400 shadow-[0_0_10px_rgba(129,140,248,0.2)]' : 'hover:text-indigo-300 text-slate-400'"
+                :class="timeRange === time.k ? 'bg-[var(--theme-panel-bg)] text-indigo-500 border border-[var(--theme-border-strong)] shadow-[0_0_10px_rgba(129,140,248,0.16)]' : 'text-[var(--theme-text-secondary)] hover:text-indigo-500'"
               >
                 {{ time.n }}
               </button>
             </div>
 
-            <div class="flex bg-slate-500/50 p-1 rounded-xl border border-slate-400/50 shrink-0">
+            <div class="flex bg-[var(--theme-pill-bg)] p-1 rounded-xl border border-[var(--theme-border)] shrink-0">
               <button
                 v-for="sort in [{k:'latest', n: $t('gallery.filters.latest'), i: Clock}, {k:'likes', n: $t('gallery.filters.most_liked'), i: Heart}, {k:'applied', n: $t('gallery.filters.most_used'), i: Flame}]"
                 :key="sort.k"
                 @click="handleSortChange(sort.k)"
                 class="px-2 py-1 sm:px-3 sm:py-1.5 rounded-lg transition-all font-medium text-xs sm:text-sm flex items-center whitespace-nowrap shrink-0"
-                :class="sortBy === sort.k ? 'bg-indigo-500/20 text-indigo-400 shadow-[0_0_10px_rgba(129,140,248,0.2)]' : 'hover:text-indigo-300 text-slate-400'"
+                :class="sortBy === sort.k ? 'bg-[var(--theme-panel-bg)] text-indigo-500 border border-[var(--theme-border-strong)] shadow-[0_0_10px_rgba(129,140,248,0.16)]' : 'text-[var(--theme-text-secondary)] hover:text-indigo-500'"
               >
                 <component :is="sort.i" :size="14" class="mr-1.5 hidden sm:block" />
                 {{ sort.n }}
@@ -355,22 +358,22 @@ watch(pageSize, (nextSize, previousSize) => {
 
         <OverflowScrollRail
           v-if="hasAddonSubfilters"
-          container-class="w-full shrink-0 px-1 rounded-2xl border border-slate-700/50 bg-slate-950/55 py-2 shadow-[0_6px_18px_rgba(2,6,23,0.25)]"
+          container-class="w-full shrink-0 px-1 rounded-2xl border border-[var(--theme-border)] bg-[var(--theme-card-strong-bg)] py-2 shadow-[0_6px_18px_rgba(15,23,42,0.12)]"
           content-class="flex items-center gap-2"
         >
-          <span class="text-xs sm:text-sm text-slate-400 whitespace-nowrap shrink-0">{{ $t('gallery.choose_addon') }}</span>
+          <span class="text-xs sm:text-sm text-[var(--theme-text-secondary)] whitespace-nowrap shrink-0">{{ $t('gallery.choose_addon') }}</span>
           <div class="flex gap-2 shrink-0">
             <button
               @click="handleLoraModelChange('all')"
               class="px-2 py-0.5 sm:px-3 sm:py-1 rounded-lg text-xs transition-all border whitespace-nowrap shrink-0"
-              :class="loraModel === 'all' ? 'bg-pink-500/20 border-pink-500/50 text-pink-400' : 'border-slate-400 hover:border-slate-500 text-slate-400'"
+              :class="loraModel === 'all' ? 'bg-pink-500/20 border-pink-500/50 text-pink-500' : 'border-[var(--theme-border)] hover:border-pink-400 text-[var(--theme-text-secondary)]'"
             >
               {{ $t('gallery.filters.all') }}
             </button>
             <button
               @click="handleLoraModelChange(GALLERY_LORA_MODEL_NONE)"
               class="px-2 py-0.5 sm:px-3 sm:py-1 rounded-lg text-xs transition-all border whitespace-nowrap shrink-0"
-              :class="loraModel === GALLERY_LORA_MODEL_NONE ? 'bg-pink-500/20 border-pink-500/50 text-pink-400' : 'border-slate-400 hover:border-slate-500 text-slate-400'"
+              :class="loraModel === GALLERY_LORA_MODEL_NONE ? 'bg-pink-500/20 border-pink-500/50 text-pink-500' : 'border-[var(--theme-border)] hover:border-pink-400 text-[var(--theme-text-secondary)]'"
             >
               {{ $t('gallery.no_addon') }}
             </button>
@@ -379,7 +382,7 @@ watch(pageSize, (nextSize, previousSize) => {
               :key="lora.id"
               @click="handleLoraModelChange(lora.id)"
               class="px-2 py-0.5 sm:px-3 sm:py-1 rounded-lg text-xs transition-all border whitespace-nowrap shrink-0"
-              :class="loraModel === lora.id ? 'bg-pink-500/20 border-pink-500/50 text-pink-400' : 'border-slate-400 hover:border-slate-500 text-slate-400'"
+              :class="loraModel === lora.id ? 'bg-pink-500/20 border-pink-500/50 text-pink-500' : 'border-[var(--theme-border)] hover:border-pink-400 text-[var(--theme-text-secondary)]'"
             >
               {{ lora.name }}
             </button>
@@ -410,6 +413,7 @@ watch(pageSize, (nextSize, previousSize) => {
       <template #default="{ item: post }">
         <GalleryMediaCard
           :item="post"
+          media-container-class="gallery-media-pane relative w-full overflow-hidden"
           :media-container-style="post.width && post.height ? { aspectRatio: `${post.width}/${post.height}` } : { aspectRatio: '1/1' }"
           overlay-visibility-class="opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity duration-300"
           @card-click="openDetail(post)"
@@ -503,5 +507,11 @@ watch(pageSize, (nextSize, previousSize) => {
   .safe-area-bottom {
     padding-bottom: calc(0.75rem + env(safe-area-inset-bottom));
   }
+}
+</style>
+
+<style scoped>
+.gallery-media-pane {
+  background: var(--theme-card-strong-bg);
 }
 </style>

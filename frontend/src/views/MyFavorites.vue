@@ -309,8 +309,8 @@ onMounted(() => {
             container-class="pb-2 md:pb-0"
             content-class="flex items-center space-x-2"
             button-class="px-4 py-1.5 rounded-full text-sm font-medium transition-all whitespace-nowrap"
-            active-class="bg-cyan-500 text-white shadow-[0_0_10px_rgba(56,189,248,0.4)]"
-            inactive-class="bg-slate-500 text-slate-400 hover:bg-slate-500 hover:text-slate-200"
+            active-class="bg-[var(--theme-panel-bg)] text-[var(--theme-text-primary)] border border-[var(--theme-border-strong)] shadow-[0_0_10px_rgba(56,189,248,0.18)]"
+            inactive-class="bg-[var(--theme-pill-bg)] text-[var(--theme-text-secondary)] border border-[var(--theme-border)] hover:text-[var(--theme-text-primary)] hover:border-[var(--theme-border-strong)]"
             @select="handleFilterTypeChange"
           />
         </div>
@@ -319,7 +319,10 @@ onMounted(() => {
           v-if="taskTypeTabs.length > 1"
           :items="taskTypeTabs"
           :selected-id="selectedTaskType"
-          container-class="mt-3 rounded-2xl border border-slate-700/50 bg-slate-950/55 px-2 py-2 shadow-[0_6px_18px_rgba(2,6,23,0.25)]"
+          container-class="mt-3 rounded-2xl border border-[var(--theme-border)] bg-[var(--theme-card-strong-bg)] px-2 py-2 shadow-[0_6px_18px_rgba(15,23,42,0.12)]"
+          content-class="flex gap-1 bg-[var(--theme-pill-bg)] p-1 rounded-xl border border-[var(--theme-border)]"
+          active-class="bg-[var(--theme-panel-bg)] text-[var(--theme-text-primary)] border border-[var(--theme-border-strong)] shadow-[0_0_10px_rgba(56,189,248,0.18)]"
+          inactive-class="text-[var(--theme-text-secondary)] hover:text-[var(--theme-text-primary)]"
           @select="handleTaskTypeChange"
         />
 
@@ -343,7 +346,7 @@ onMounted(() => {
         :key="post.id"
         :item="post"
         class="mb-3 sm:mb-6 break-inside-avoid"
-        media-container-class="relative w-full overflow-hidden bg-slate-500 aspect-auto min-h-[100px]"
+        media-container-class="favorites-media-pane relative w-full overflow-hidden aspect-auto min-h-[100px]"
         :media-container-style="post.width && post.height ? { aspectRatio: `${post.width}/${post.height}` } : { aspectRatio: '1/1' }"
         @card-click="openDetail(post)"
         @image-error="handleImageError($event, post)"
@@ -395,3 +398,9 @@ onMounted(() => {
       </template>
     </GalleryDetailModal>
 </template>
+
+<style scoped>
+.favorites-media-pane {
+  background: var(--theme-card-strong-bg);
+}
+</style>

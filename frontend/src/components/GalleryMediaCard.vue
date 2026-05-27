@@ -11,7 +11,7 @@ const props = withDefaults(
   }>(),
   {
     mediaContainerStyle: () => ({ aspectRatio: '1/1' }),
-    mediaContainerClass: 'relative w-full overflow-hidden bg-slate-500',
+    mediaContainerClass: 'gallery-media-container relative w-full overflow-hidden',
     imageClass: 'w-full h-full object-cover transition-opacity duration-300 absolute inset-0',
     overlayVisibilityClass:
       'opacity-0 group-hover:opacity-100 transition-opacity duration-300',
@@ -26,7 +26,7 @@ const emit = defineEmits<{
 
 <template>
   <div
-    class="rounded-2xl overflow-hidden relative group cursor-pointer border border-slate-400/50 bg-slate-500/40 hover:border-cyan-500/40 transition-all duration-300 shadow-lg hover:shadow-[0_8px_30px_rgba(56,189,248,0.15)] hover:-translate-y-1"
+    class="gallery-media-card rounded-2xl overflow-hidden relative group cursor-pointer transition-all duration-300"
     @click="emit('cardClick')"
   >
     <div :class="mediaContainerClass" :style="mediaContainerStyle">
@@ -38,7 +38,7 @@ const emit = defineEmits<{
           loading="lazy"
           @error="emit('imageError', $event)"
         />
-        <div v-else class="absolute inset-0 flex items-center justify-center text-slate-400">
+        <div v-else class="absolute inset-0 flex items-center justify-center gallery-media-empty">
           <ImageIcon v-if="!item.cardIsVideo" :size="24" />
           <Video v-else :size="24" />
         </div>
@@ -75,3 +75,25 @@ const emit = defineEmits<{
     <slot name="bottom" :item="item" />
   </div>
 </template>
+
+<style scoped>
+.gallery-media-card {
+  border: 1px solid var(--theme-border);
+  background: var(--theme-card-bg);
+  box-shadow: var(--theme-shadow);
+}
+
+.gallery-media-card:hover {
+  border-color: var(--theme-border-strong);
+  box-shadow: 0 8px 30px rgba(56, 189, 248, 0.12);
+  transform: translateY(-0.25rem);
+}
+
+.gallery-media-container {
+  background: var(--theme-card-strong-bg);
+}
+
+.gallery-media-empty {
+  color: var(--theme-text-muted);
+}
+</style>
