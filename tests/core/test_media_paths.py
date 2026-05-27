@@ -35,3 +35,19 @@ def test_resolve_storage_object_keeps_directory_history_paths_on_primary_bucket(
         "bot-data",
         "123/output_images/task.mp4",
     )
+
+
+@pytest.mark.parametrize(
+    ("history_type", "expected"),
+    [
+        ("custom_video", "video"),
+        ("doggy_style", "video"),
+        ("txt2img", "image"),
+        (None, "image"),
+    ],
+)
+def test_get_media_type_from_history_supports_legacy_video_task_types(
+    history_type,
+    expected,
+):
+    assert media_paths.get_media_type_from_history(history_type) == expected

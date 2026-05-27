@@ -1,6 +1,10 @@
 from pathlib import Path
 
 from config import MINIO_BUCKET, MINIO_RESULT_BUCKET
+from src.constants import VIDEO_TASK_TYPES
+
+
+_VIDEO_TASK_TYPE_SET = {task_type.lower() for task_type in VIDEO_TASK_TYPES}
 
 
 def resolve_storage_object(
@@ -30,7 +34,14 @@ def resolve_storage_object(
 
 
 def get_media_type_from_history(history_type: str | None) -> str:
-    if history_type and "video" in history_type.lower():
+    if not history_type:
+        return "image"
+
+    normalized_history_type = history_type.lower()
+    if (
+        normalized_history_type in _VIDEO_TASK_TYPE_SET
+        or "video" in normalized_history_type
+    ):
         return "video"
     return "image"
 

@@ -1,5 +1,6 @@
 import re
 
+from src.core.media_paths import get_media_type_from_history
 from src.web_api.common.utils import resolve_history_billing_resolution
 from src.web_api.presenters.media_presenter import resolve_history_media_urls
 from src.web_api.schemas.gallery_schema import GalleryPostResponse
@@ -70,7 +71,11 @@ async def build_favorite_gallery_payload(
             GalleryPostResponse(
                 id=gallery_post.id if gallery_post else 0,
                 task_id=history.task_id,
-                media_type=(gallery_post.media_type if gallery_post else "image"),
+                media_type=(
+                    gallery_post.media_type
+                    if gallery_post
+                    else get_media_type_from_history(history.type)
+                ),
                 billing_resolution=resolve_history_billing_resolution(
                     history,
                     width=gallery_post.width if gallery_post else None,
