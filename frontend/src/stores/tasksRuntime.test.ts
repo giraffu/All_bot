@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'vitest'
 
 import {
+  probeDetachedTaskResult,
   pollTaskResult,
   restoreTasksFromStorage,
   serializeTasksForStorage,
@@ -255,6 +256,102 @@ test('pollTaskResult retries pending_result once and resolves on the next result
     awaitingResult: false,
     resultUrl: 'https://cdn.example/final.png',
     error: undefined,
+    updatedAt: undefined
+  })
+})
+
+test('probeDetachedTaskResult keeps the floating task pending until history result becomes available', async () => {
+  const activeTasks: RuntimeTaskLike[] = [
+    createTask({
+      status: 'pending',
+      progress: 0
+    })
+  ]
+
+  const responses = [
+    { data: { status: 'pending_result' } },
+    { data: { status: 'success', result_url: 'https://cdn.example/detached.png' } }
+  ]
+
+  let apiGetCalls = 0
+  let scheduledDelay: number | null = null
+  let scheduledCallback: (() => void) | null = null
+  let resolvedCalls = 0
+
+  await probeDetachedTaskResult(activeTasks[0], activeTasks, {
+    apiGet: async (url) => {
+      apiGetCalls += 1
+      assert.equal(url, '/tasks/task-1/result')
+      const next = responses.shift()
+      assert.ok(next)
+      return next
+    },
+    schedule: (callback, delayMs) => {
+      scheduledDelay = delayMs
+      scheduledCallback = callback
+    },
+    onResolved: (task) => {
+      resolvedCalls += 1
+      assert.equal(task.resultUrl, 'https://cdn.example/detached.png')
+    }
+  }, 0, 3, 5000)
+
+  assert.equal(apiGetCalls, 1)
+  assert.equal(scheduledDelay, 5000)
+  assert.equal(activeTasks[0].status, 'pending')
+  assert.equal(activeTasks[0].resultUrl, undefined)
+
+  if (!scheduledCallback) {
+    throw new Error('expected detached probe retry to be scheduled')
+  }
+  ;(scheduledCallback as () => void)()
+  await Promise.resolve()
+
+  assert.equal(apiGetCalls, 2)
+  assert.equal(resolvedCalls, 1)
+  assert.deepEqual({ ...activeTasks[0], updatedAt: undefined }, {
+    id: 'task-1',
+    title: '测试任务',
+    progress: 100,
+    status: 'success',
+    awaitingResult: false,
+    resultUrl: 'https://cdn.example/detached.png',
+    error: undefined,
+    updatedAt: undefined
+  })
+})
+
+test('probeDetachedTaskResult marks the floating task failed on forbidden result lookup', async () => {
+  const activeTasks: RuntimeTaskLike[] = [
+    createTask({
+      status: 'running',
+      progress: 42
+    })
+  ]
+
+  let forbiddenCalls = 0
+
+  await probeDetachedTaskResult(activeTasks[0], activeTasks, {
+    apiGet: async () => {
+      throw { response: { status: 403 } }
+    },
+    schedule: () => {
+      throw new Error('forbidden lookup should not schedule detached retries')
+    },
+    onForbidden: (task) => {
+      forbiddenCalls += 1
+      assert.equal(task.error, '任务不存在或无权限')
+    }
+  })
+
+  assert.equal(forbiddenCalls, 1)
+  assert.deepEqual({ ...activeTasks[0], updatedAt: undefined }, {
+    id: 'task-1',
+    title: '测试任务',
+    progress: 42,
+    status: 'failed',
+    awaitingResult: false,
+    error: '任务不存在或无权限',
     updatedAt: undefined
   })
 })

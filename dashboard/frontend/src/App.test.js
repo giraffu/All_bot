@@ -12,6 +12,9 @@ const dashboardMocks = vi.hoisted(() => ({
   closeSearchModalMock: vi.fn(),
   viewHistoryMock: vi.fn(),
   closeModalMock: vi.fn(),
+  viewFavoritesMock: vi.fn(),
+  closeFavoritesModalMock: vi.fn(),
+  changeFavoritesPageMock: vi.fn(),
   loadHistoryMock: vi.fn(),
   routeTitleMap: {
     home: '数据大盘',
@@ -60,6 +63,13 @@ const HistoryModalStub = defineComponent({
   template: '<div class="history-modal-stub" :data-open="String(show)" />',
 })
 
+const UserFavoritesModalStub = defineComponent({
+  name: 'UserFavoritesModalStub',
+  props: ['show', 'user', 'items', 'loading', 'page', 'pageSize', 'total'],
+  emits: ['close', 'pageChange'],
+  template: '<div class="favorites-modal-stub" :data-open="String(show)" />',
+})
+
 const DashboardTaskSearchModalStub = defineComponent({
   name: 'DashboardTaskSearchModalStub',
   props: ['visible', 'searchResult'],
@@ -87,6 +97,10 @@ vi.mock('./components/DashboardHeaderBar.vue', () => ({
 
 vi.mock('./components/HistoryModal.vue', () => ({
   default: HistoryModalStub,
+}))
+
+vi.mock('./components/UserFavoritesModal.vue', () => ({
+  default: UserFavoritesModalStub,
 }))
 
 vi.mock('./components/DashboardTaskSearchModal.vue', () => ({
@@ -153,6 +167,26 @@ vi.mock('./composables/useDashboardUserHistory', async () => {
       historyLoading: ref(false),
       viewHistory: dashboardMocks.viewHistoryMock,
       closeModal: dashboardMocks.closeModalMock,
+    }),
+  }
+})
+
+vi.mock('./composables/useDashboardUserFavorites', async () => {
+  const { ref } = await vi.importActual('vue')
+
+  return {
+    useDashboardUserFavorites: () => ({
+      showFavoritesModal: ref(false),
+      selectedFavoritesUser: ref(null),
+      favoriteItems: ref([]),
+      favoritesLoading: ref(false),
+      favoritesPage: ref(1),
+      favoritesPages: ref(0),
+      favoritesPageSize: ref(12),
+      favoritesTotal: ref(0),
+      viewFavorites: dashboardMocks.viewFavoritesMock,
+      changeFavoritesPage: dashboardMocks.changeFavoritesPageMock,
+      closeFavoritesModal: dashboardMocks.closeFavoritesModalMock,
     }),
   }
 })
@@ -227,6 +261,9 @@ describe('Dashboard App', () => {
     dashboardMocks.closeSearchModalMock.mockReset()
     dashboardMocks.viewHistoryMock.mockReset()
     dashboardMocks.closeModalMock.mockReset()
+    dashboardMocks.viewFavoritesMock.mockReset()
+    dashboardMocks.closeFavoritesModalMock.mockReset()
+    dashboardMocks.changeFavoritesPageMock.mockReset()
     dashboardMocks.loadHistoryMock.mockReset()
   })
 

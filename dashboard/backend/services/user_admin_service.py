@@ -2,6 +2,7 @@ import json
 import logging
 import uuid
 from datetime import datetime
+from types import SimpleNamespace
 
 from fastapi import HTTPException
 from sqlalchemy import case, delete, desc, func, select, update
@@ -25,6 +26,7 @@ from src.services.membership_settlement_service import (
     settle_membership_plan_in_session,
 )
 from src.services.storage import storage
+from src.web_api.services.users_history_service import get_my_favorites_payload
 
 logger = logging.getLogger("dashboard.users")
 
@@ -137,6 +139,36 @@ async def get_user_stats_payload(*, user_id: int, db, logger_override: logging.L
         }
     except Exception as exc:
         active_logger.error(f"Error getting user stats: {exc}")
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+async def get_user_favorites_payload(
+    *,
+    user_id: int,
+    page: int,
+    size: int,
+    task_type: str | None,
+    db,
+    logger_override: logging.Logger | None = None,
+):
+    active_logger = logger_override or logger
+    user = await _load_user(db, user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    try:
+        # Reuse the same favorites payload builder as the Web favorites page.
+        return await get_my_favorites_payload(
+            page=page,
+            size=size,
+            task_type=task_type,
+            current_user=SimpleNamespace(id=user_id),
+            db=db,
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        active_logger.error(f"Error getting user favorites for {user_id}: {exc}")
         raise HTTPException(status_code=500, detail=str(exc))
 
 

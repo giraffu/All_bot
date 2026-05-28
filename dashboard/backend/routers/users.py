@@ -1,6 +1,6 @@
 import logging
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from dashboard.backend.schemas import (
@@ -14,6 +14,7 @@ from dashboard.backend.services.user_admin_service import (
     admin_gift_plan_payload,
     clear_user_history_payload,
     delete_user_payload,
+    get_user_favorites_payload,
     get_user_stats_payload,
     get_users_payload,
     update_user_channel_member_payload,
@@ -22,6 +23,7 @@ from dashboard.backend.services.user_admin_service import (
     update_user_identity_payload,
 )
 from src.database.core import get_db
+from src.web_api.schemas.gallery_schema import PaginatedGalleryResponse
 
 router = APIRouter(prefix="/api/users", tags=["users"])
 logger = logging.getLogger("dashboard.users")
@@ -58,6 +60,25 @@ async def get_users(
 async def get_user_stats(user_id: int, db: AsyncSession = Depends(get_db)):
     """Get detailed heavy stats for a specific user"""
     return await get_user_stats_payload(user_id=user_id, db=db, logger_override=logger)
+
+
+@router.get("/{user_id}/favorites", response_model=PaginatedGalleryResponse)
+async def get_user_favorites(
+    user_id: int,
+    page: int = 1,
+    size: int = 12,
+    task_type: str | None = Query(default=None),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get a user's favorites using the same payload builder as the Web favorites page."""
+    return await get_user_favorites_payload(
+        user_id=user_id,
+        page=page,
+        size=size,
+        task_type=task_type,
+        db=db,
+        logger_override=logger,
+    )
 
 
 @router.delete("/{user_id}")

@@ -2,6 +2,7 @@
 import { ref, watch } from 'vue'
 import Login from './components/Login.vue'
 import HistoryModal from './components/HistoryModal.vue'
+import UserFavoritesModal from './components/UserFavoritesModal.vue'
 import DashboardSidebar from './components/DashboardSidebar.vue'
 import DashboardHeaderBar from './components/DashboardHeaderBar.vue'
 import DashboardTaskSearchModal from './components/DashboardTaskSearchModal.vue'
@@ -9,6 +10,7 @@ import { useDashboardAuth } from './composables/useDashboardAuth'
 import { useDashboardOverview } from './composables/useDashboardOverview'
 import { useDashboardTaskSearch } from './composables/useDashboardTaskSearch'
 import { useDashboardUserHistory } from './composables/useDashboardUserHistory'
+import { useDashboardUserFavorites } from './composables/useDashboardUserFavorites'
 import { useDashboardNavigation } from './composables/useDashboardNavigation'
 import { useDashboardTabView } from './composables/useDashboardTabView'
 
@@ -47,6 +49,19 @@ const {
   viewHistory,
   closeModal
 } = useDashboardUserHistory()
+const {
+  showFavoritesModal,
+  selectedFavoritesUser,
+  favoriteItems,
+  favoritesLoading,
+  favoritesPage,
+  favoritesPages,
+  favoritesPageSize,
+  favoritesTotal,
+  viewFavorites,
+  changeFavoritesPage,
+  closeFavoritesModal,
+} = useDashboardUserFavorites()
 const openGalleryCommentsTab = (postId) => {
   galleryCommentsPostId.value = typeof postId === 'number' ? postId : undefined
   activeTab.value = ['gallery_comments']
@@ -70,6 +85,7 @@ const { currentTabView } = useDashboardTabView(
   },
   {
     viewHistory,
+    viewFavorites,
   },
 )
 
@@ -140,6 +156,19 @@ const handleLogout = () => {
       :history="userHistory" 
       :loading="historyLoading" 
       @close="closeModal" 
+    />
+
+    <user-favorites-modal
+      :show="showFavoritesModal"
+      :user="selectedFavoritesUser"
+      :items="favoriteItems"
+      :loading="favoritesLoading"
+      :page="favoritesPage"
+      :pages="favoritesPages"
+      :page-size="favoritesPageSize"
+      :total="favoritesTotal"
+      @close="closeFavoritesModal"
+      @page-change="changeFavoritesPage"
     />
 
     <dashboard-task-search-modal

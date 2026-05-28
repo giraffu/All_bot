@@ -37,6 +37,7 @@ interface DashboardGalleryCommentsState {
 
 interface DashboardUserHistoryState {
   viewHistory: (user: unknown) => void
+  viewFavorites: (user: unknown) => void
 }
 
 const BASE_CONTAINER_CLASS = 'flex-1 flex flex-col min-h-0'
@@ -104,6 +105,7 @@ export function useDashboardTabView(
       containerClass: PANEL_CONTAINER_CLASS,
       bindings: {
         onViewHistory: userHistory.viewHistory,
+        onViewFavorites: userHistory.viewFavorites,
       },
     },
     history: {

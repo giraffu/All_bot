@@ -5,7 +5,7 @@ import UserTableToolbar from './UserTableToolbar.vue'
 import UserTableRowActions from './UserTableRowActions.vue'
 import UserTableDialogs from './UserTableDialogs.vue'
 
-const emit = defineEmits(['viewHistory'])
+const emit = defineEmits(['viewHistory', 'viewFavorites'])
 const {
   users,
   loading,
@@ -307,6 +307,7 @@ const columns = [
             @view-stats="handleViewStats"
             @gift-plan="handleGiftPlan"
             @view-history="$emit('viewHistory', $event)"
+            @view-favorites="$emit('viewFavorites', $event)"
             @edit-identity="handleEditIdentity"
             @edit-group="handleEditGroup"
             @edit-channel-member="handleEditChannelMember"

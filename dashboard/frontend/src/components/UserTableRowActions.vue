@@ -10,6 +10,7 @@ import {
   InfoCircleOutlined,
   TeamOutlined,
   DownOutlined,
+  BookOutlined,
 } from '@ant-design/icons-vue'
 
 defineProps({
@@ -23,6 +24,7 @@ const emit = defineEmits([
   'view-stats',
   'gift-plan',
   'view-history',
+  'view-favorites',
   'edit-identity',
   'edit-group',
   'edit-channel-member',
@@ -47,6 +49,11 @@ const emit = defineEmits([
     <a-button type="link" size="small" @click="emit('view-history', record)">
       <template #icon><eye-outlined /></template>
       历史
+    </a-button>
+
+    <a-button type="link" size="small" @click="emit('view-favorites', record)">
+      <template #icon><book-outlined /></template>
+      收藏
     </a-button>
 
     <a-dropdown :trigger="['click']">

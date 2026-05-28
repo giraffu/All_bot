@@ -10,6 +10,7 @@ import {
   shouldResumeTaskListening
 } from '@/stores/taskResultState'
 import {
+  probeDetachedTaskResult,
   pollTaskResult,
   restoreTasksFromStorage,
   serializeTasksForStorage,
@@ -49,6 +50,7 @@ export const useTasksStore = defineStore('tasks', () => {
   const detailModalVisible = ref(false)
   const currentDetailRecord = ref<any>(null)
   const authStore = useAuthStore()
+  const detachedResultProbeTaskIds = new Set<string>()
 
   const showDetailRecord = (record: any) => {
     currentDetailRecord.value = record
@@ -145,6 +147,45 @@ export const useTasksStore = defineStore('tasks', () => {
       },
       onRequestError: (err) => {
         console.error('Failed to fetch task result:', err)
+      }
+    }, retryCount)
+  }
+
+  const startDetachedResultProbe = async (task: Task, retryCount = 0) => {
+    if (retryCount === 0 && detachedResultProbeTaskIds.has(task.id)) {
+      return
+    }
+
+    detachedResultProbeTaskIds.add(task.id)
+    await probeDetachedTaskResult(task, activeTasks.value, {
+      apiGet: (url) => api.get(url),
+      schedule: (callback, delayMs) => {
+        setTimeout(callback, delayMs)
+      },
+      onResolved: (currentTask) => {
+        detachedResultProbeTaskIds.delete(currentTask.id)
+        currentTask.cancelRequested = false
+        currentTask.refundStatus = undefined
+        currentTask.refundMessage = undefined
+        currentTask.queuePos = undefined
+        touchTaskActivity(currentTask)
+        message.success(`任务 [${currentTask.title}] 生成完成！`)
+      },
+      onPending: (currentTask) => {
+        touchTaskActivity(currentTask)
+      },
+      onForbidden: (currentTask) => {
+        detachedResultProbeTaskIds.delete(currentTask.id)
+        touchTaskActivity(currentTask)
+        message.error(`获取任务 [${currentTask.title}] 结果失败: 任务不存在或无权限`)
+      },
+      onExhausted: (currentTask) => {
+        detachedResultProbeTaskIds.delete(currentTask.id)
+        touchTaskActivity(currentTask)
+        message.warning(`任务 [${currentTask.title}] 实时监听已断开，请稍后在历史记录中查看结果`)
+      },
+      onRequestError: (err) => {
+        console.error('Failed to probe detached task result:', err)
       }
     }, retryCount)
   }
@@ -386,7 +427,9 @@ export const useTasksStore = defineStore('tasks', () => {
             }
           }, 5000 * task.retryCount)
         } else {
-          message.warning(`网络不稳定，任务 [${task.title}] 监听已断开，请稍后刷新页面查看结果`)
+          touchTaskActivity(task)
+          message.warning(`网络不稳定，任务 [${task.title}] 实时监听已断开，正在后台检查结果`)
+          void startDetachedResultProbe(task)
         }
       }
     }

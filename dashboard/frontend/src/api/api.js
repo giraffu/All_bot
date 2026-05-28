@@ -75,6 +75,20 @@ export const fetchUserStats = async (userId) => get(`/api/users/${userId}/stats`
 
 export const fetchUserHistory = async (userId) => get(`/api/history/${userId}`)
 
+export const fetchUserFavorites = async (
+  userId,
+  {
+    page = 1,
+    size = 12,
+    taskType = null,
+  } = {}
+) =>
+  get(withQuery(`/api/users/${userId}/favorites`, params => {
+    appendQueryParam(params, 'page', page)
+    appendQueryParam(params, 'size', size)
+    appendQueryParam(params, 'task_type', taskType)
+  }))
+
 export const fetchHistoryAll = async (page = 1, pageSize = 20, type = null, rating = null, isPublic = null, workerId = null) => {
   return get(withQuery('/api/history/all', params => {
     appendQueryParam(params, 'page', page)
