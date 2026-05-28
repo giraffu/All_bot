@@ -31,6 +31,7 @@ from fastapi_cache.backends.inmemory import InMemoryBackend
 from dashboard.backend.services.worker_listener import start_worker_listener
 from dashboard.backend.services.balance_monitor import update_external_balances
 from src.database.core import init_db
+from src.task_core_provider_setup import ensure_task_core_service_providers_registered
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("dashboard")
@@ -73,6 +74,7 @@ def _build_auth_error_response(request: Request, detail: str):
 @app.on_event("startup")
 async def startup_event():
     FastAPICache.init(InMemoryBackend(), prefix="fastapi-cache")
+    ensure_task_core_service_providers_registered()
     try:
         await init_db()
         logger.info("Database initialized successfully")
