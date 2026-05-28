@@ -43,7 +43,8 @@ async def fetch_recent_user_history(*, db, current_user_id: int, limit: int):
         .order_by(desc(History.id))
         .limit(limit)
     )
-    histories = result.scalars().all()
+    # 闪回瓶容量按“最近 N 条原始记录”计算；已删除项只是不展示，不用更旧记录补位。
+    histories = [history for history in result.scalars().all() if history.is_visible]
     task_ids = [h.task_id for h in histories]
     return histories, task_ids
 

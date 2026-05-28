@@ -1,6 +1,7 @@
 from fastapi import HTTPException
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 
+from src.constants import DEFAULT_FAVORITE_LIMIT, FAVORITE_LIMITS_BY_IDENTITY
 from src.core.gallery_submission_effects import async_copy_to_r2_background
 from src.core.media_paths import (
     build_history_r2_media_key,
@@ -10,6 +11,36 @@ from src.core.media_paths import (
 )
 from src.core.media_processor import generate_and_upload_thumbnail
 from src.database.models import GalleryPost, History
+
+
+def _get_favorite_limit_for_identity(identity: str | None) -> int:
+    normalized_identity = identity or "外门弟子"
+    return FAVORITE_LIMITS_BY_IDENTITY.get(normalized_identity, DEFAULT_FAVORITE_LIMIT)
+
+
+async def _count_visible_favorites_for_user(*, db, user_id: int) -> int:
+    stmt = select(func.count(History.id)).where(
+        History.user_id == user_id,
+        History.is_favorited == True,
+        History.is_visible == True,
+    )
+    result = await db.execute(stmt)
+    return int(result.scalar() or 0)
+
+
+async def _assert_can_add_favorite(*, db, current_user) -> None:
+    identity = getattr(current_user, "current_identity", None)
+    favorite_limit = _get_favorite_limit_for_identity(identity)
+    favorite_count = await _count_visible_favorites_for_user(
+        db=db,
+        user_id=current_user.id,
+    )
+    if favorite_count >= favorite_limit:
+        identity_display = identity or "外门弟子"
+        raise HTTPException(
+            status_code=400,
+            detail=f"当前身份“{identity_display}”的收藏上限为 {favorite_limit}，请先取消部分收藏后再试",
+        )
 
 
 async def _load_owned_history_by_task_id(*, db, user_id: int, task_id: str) -> History:
@@ -47,6 +78,7 @@ async def favorite_user_history(
         raise HTTPException(status_code=400, detail="该任务没有生成文件")
 
     if not history.is_favorited:
+        await _assert_can_add_favorite(db=db, current_user=current_user)
         history.is_favorited = True
         await db.commit()
 

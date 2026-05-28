@@ -137,6 +137,15 @@ DURATION_PERMISSIONS = {
     "真传弟子": ["5s", "8s", "10s"],
 }
 
+FAVORITE_LIMITS_BY_IDENTITY = {
+    "外门弟子": 100,
+    "内门弟子": 300,
+    "核心弟子": 600,
+    "真传弟子": 1000,
+}
+
+DEFAULT_FAVORITE_LIMIT = FAVORITE_LIMITS_BY_IDENTITY["外门弟子"]
+
 # Forbidden words for public sharing
 FORBIDDEN_WORDS = [
     "小男孩",

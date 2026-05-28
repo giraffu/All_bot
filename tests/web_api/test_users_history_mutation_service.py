@@ -14,6 +14,9 @@ class _FakeResult:
     def scalar_one_or_none(self):
         return self._single
 
+    def scalar(self):
+        return self._single
+
 
 class _ExecuteResult:
     def __init__(self, rowcount: int = 1):
@@ -51,6 +54,70 @@ async def test_favorite_user_history_is_idempotent_when_already_favorited():
     )
 
     assert response == {"status": "success", "message": "收藏成功"}
+    db.commit.assert_not_awaited()
+    background_tasks.add_task.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_favorite_user_history_updates_flag_when_below_identity_limit():
+    history = History(
+        id=11,
+        user_id=123,
+        task_id="task-1",
+        type="image",
+        output_file="123/output_images/task-1.png",
+        is_favorited=False,
+        is_visible=True,
+    )
+    db = _FakeSession(
+        _FakeResult(single=history),
+        _FakeResult(single=99),
+    )
+    background_tasks = MagicMock(spec=BackgroundTasks)
+    current_user = type("User", (), {"id": 123, "current_identity": "外门弟子"})()
+
+    response = await mutation_service.favorite_user_history(
+        task_id="task-1",
+        current_user=current_user,
+        db=db,
+        schedule_background_task=background_tasks.add_task,
+    )
+
+    assert response == {"status": "success", "message": "收藏成功"}
+    assert history.is_favorited is True
+    db.commit.assert_awaited_once()
+    assert background_tasks.add_task.call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_favorite_user_history_raises_when_identity_limit_reached():
+    history = History(
+        id=11,
+        user_id=123,
+        task_id="task-1",
+        type="image",
+        output_file="123/output_images/task-1.png",
+        is_favorited=False,
+        is_visible=True,
+    )
+    db = _FakeSession(
+        _FakeResult(single=history),
+        _FakeResult(single=100),
+    )
+    background_tasks = MagicMock(spec=BackgroundTasks)
+    current_user = type("User", (), {"id": 123, "current_identity": "外门弟子"})()
+
+    with pytest.raises(HTTPException) as exc_info:
+        await mutation_service.favorite_user_history(
+            task_id="task-1",
+            current_user=current_user,
+            db=db,
+            schedule_background_task=background_tasks.add_task,
+        )
+
+    assert exc_info.value.status_code == 400
+    assert exc_info.value.detail == "当前身份“外门弟子”的收藏上限为 100，请先取消部分收藏后再试"
+    assert history.is_favorited is False
     db.commit.assert_not_awaited()
     background_tasks.add_task.assert_not_called()
 
