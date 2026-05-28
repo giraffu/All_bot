@@ -1,5 +1,7 @@
 # cspell: disable
 import os
+from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
+
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -37,6 +39,27 @@ VITE_MERCHANT_ADDRESS = _get_env_value(
     "VITE_MERCHANT_ADDRESS", "UQAluW2wxRCDsJIKGH59jB07xODgEbStdUPEj9AjI88d9l-s"
 )
 WEBAPP_URL = _get_env_value("WEBAPP_URL", "https://pay.aivison.it.com/")
+MINI_APP_URL = _get_env_value("MINI_APP_URL", "https://web.aivison.it.com/")
+MINI_APP_VERSION = _get_env_value("MINI_APP_VERSION")
+
+
+def append_version_query(base_url: str, version: str | None = None) -> str:
+    if not version:
+        return base_url
+
+    parsed = urlparse(base_url)
+    query_items = dict(parse_qsl(parsed.query, keep_blank_values=True))
+    query_items["v"] = version
+    return urlunparse(parsed._replace(query=urlencode(query_items)))
+
+
+def build_versioned_mini_app_url(
+    base_url: str | None = None,
+    version: str | None = None,
+) -> str:
+    resolved_base_url = base_url or MINI_APP_URL or "https://web.aivison.it.com/"
+    resolved_version = MINI_APP_VERSION if version is None else version
+    return append_version_query(resolved_base_url, resolved_version)
 
 # --- Database Configuration ---
 # Only PostgreSQL is supported

@@ -3,7 +3,11 @@ import os
 from telegram import Update
 from telegram.ext import ContextTypes
 
-from config import CHANNEL_INVITE_LINK, REFUGE_GROUP_ID
+from config import (
+    CHANNEL_INVITE_LINK,
+    REFUGE_GROUP_ID,
+    build_versioned_mini_app_url,
+)
 from src.constants import (
     TEMP_TEMPLATE_DIR,
     TEMPLATE_DIR_PENETRATION,
@@ -216,7 +220,7 @@ async def handle_personal_center(
         build_payload=build_personal_center_reply,
         reply_with_async_payload=reply_with_async_payload,
         invite_link=CHANNEL_INVITE_LINK or "https://t.me/AiVisionAV",
-        web_url="https://web.aivison.it.com/",
+        web_url=build_versioned_mini_app_url(),
     )
 
 

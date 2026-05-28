@@ -178,6 +178,11 @@ async def test_handle_personal_center_uses_runtime_reply_builder(monkeypatch):
     reply_with_payload = AsyncMock(return_value=None)
 
     monkeypatch.setattr(message_handler, "reply_with_async_payload", reply_with_payload)
+    monkeypatch.setattr(
+        message_handler,
+        "build_versioned_mini_app_url",
+        lambda: "https://web.aivison.it.com/?v=test-build",
+    )
 
     update = _build_profile_update()
     context = _build_context()
@@ -191,7 +196,7 @@ async def test_handle_personal_center_uses_runtime_reply_builder(monkeypatch):
         context=context,
         user=update.effective_user,
         invite_link="https://t.me/AiVisionAV",
-        web_url="https://web.aivison.it.com/",
+        web_url="https://web.aivison.it.com/?v=test-build",
     )
 
 
