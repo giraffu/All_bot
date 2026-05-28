@@ -121,6 +121,11 @@ async def process_submit_to_gallery_result_impl(
             existing.is_active = True
             if history:
                 history.is_public = True
+            user_obj = (
+                await session.execute(select(User).where(User.id == user_id))
+            ).scalar_one_or_none()
+            if user_obj:
+                user_obj.total_contributions = (user_obj.total_contributions or 0) + 1
             await session.commit()
             return gallery_submit_outcome_cls(
                 payload={

@@ -12,6 +12,38 @@ from src.web_api.common.utils import call_with_optional_db
 logger = logging.getLogger(__name__)
 
 
+async def _sync_gallery_history_public_flag(
+    *,
+    db,
+    task_id: str | None,
+    user_id: int,
+):
+    if not task_id:
+        return None
+
+    return (
+        await db.execute(
+            select(History).where(History.task_id == task_id, History.user_id == user_id)
+        )
+    ).scalar_one_or_none()
+
+
+async def _adjust_user_total_contributions(
+    *,
+    db,
+    user_id: int,
+    delta: int,
+):
+    if delta == 0:
+        return
+
+    user_obj = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
+    if not user_obj:
+        return
+
+    user_obj.total_contributions = max((user_obj.total_contributions or 0) + delta, 0)
+
+
 async def update_gallery_post_status(
     *,
     post_id: int,
@@ -27,11 +59,24 @@ async def update_gallery_post_status(
     if post.user_id != current_user.id:
         raise HTTPException(status_code=403, detail="无权操作此帖子")
 
-    await db.execute(
-        update(GalleryPost)
-        .where(GalleryPost.id == post_id)
-        .values(is_active=is_active)
+    state_changed = post.is_active != is_active
+    post.is_active = is_active
+
+    history = await _sync_gallery_history_public_flag(
+        db=db,
+        task_id=post.task_id,
+        user_id=current_user.id,
     )
+    if history:
+        history.is_public = is_active
+
+    if state_changed:
+        await _adjust_user_total_contributions(
+            db=db,
+            user_id=current_user.id,
+            delta=1 if is_active else -1,
+        )
+
     await db.commit()
     return {"status": "success", "message": f"已{'上架' if is_active else '下架'}"}
 

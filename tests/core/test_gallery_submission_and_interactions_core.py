@@ -77,10 +77,12 @@ class _GallerySubmitOutcome:
 async def test_process_submit_to_gallery_result_impl_reactivates_existing_post():
     existing_post = SimpleNamespace(user_id=123, is_active=False)
     history = SimpleNamespace(is_public=False)
+    user = SimpleNamespace(total_contributions=2)
     session = _FakeSession(
         [
             _FakeScalarResult(existing_post),
             _FakeScalarResult(history),
+            _FakeScalarResult(user),
         ]
     )
 
@@ -96,6 +98,7 @@ async def test_process_submit_to_gallery_result_impl_reactivates_existing_post()
     assert outcome.payload["message"] == "已为您重新上架该作品！"
     assert existing_post.is_active is True
     assert history.is_public is True
+    assert user.total_contributions == 3
     session.commit.assert_awaited_once()
 
 
