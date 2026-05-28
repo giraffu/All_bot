@@ -106,6 +106,26 @@
     "expire_at": "Expires at",
     "unlimited": "Permanent"
   },
+  "social": {
+    "my_following": "My Following",
+    "follow": "Follow",
+    "unfollow": "Unfollow",
+    "open_profile": "Open Profile",
+    "followers": "Followers",
+    "following": "Following",
+    "public_posts": "Public Posts",
+    "history_posts": "Post History",
+    "checkin_days": "Check-in Days",
+    "no_following": "You are not following anyone yet",
+    "no_public_posts": "This user has no public posts yet",
+    "no_media": "No content",
+    "anonymous_user": "Anonymous Cultivator",
+    "follow_success": "Followed successfully",
+    "unfollow_success": "Unfollowed successfully",
+    "follow_action_failed": "Follow action failed, please try again later",
+    "profile_load_failed": "Failed to load user profile",
+    "following_load_failed": "Failed to load following list"
+  },
   "task_type": {
     "img2img": "Img2Img",
     "txt2img": "Text2Img",

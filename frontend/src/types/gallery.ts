@@ -16,10 +16,13 @@ export interface GalleryPost {
   created_at: string
   has_liked: boolean
   has_disliked: boolean
+  author_id?: number | null
   is_active: boolean
   prompt: string | null
   task_type?: string | null
   author_name?: string | null
+  author_username?: string | null
+  is_following_author?: boolean
   src?: string
   cardIsVideo?: boolean
   cardPoster?: string

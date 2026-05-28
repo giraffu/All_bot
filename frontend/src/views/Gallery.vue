@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { computed, onMounted, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { message } from 'ant-design-vue'
 import { useI18n } from 'vue-i18n'
+import { followUser, unfollowUser } from '@/api/social'
 import { useGalleryComments } from '@/composables/useGalleryComments'
 import { usePagedPostBrowser } from '@/composables/usePagedPostBrowser'
 import { Heart, Flame, Clock } from 'lucide-vue-next'
@@ -40,6 +41,7 @@ import PostBrowserShell from '@/components/PostBrowserShell.vue'
 import PostTagPreview from '@/components/PostTagPreview.vue'
 import SegmentedTabsRail from '@/components/SegmentedTabsRail.vue'
 import StickyHeaderSection from '@/components/StickyHeaderSection.vue'
+import UserProfileModal from '@/components/UserProfileModal.vue'
 import { usePagedScrollNavigation } from '@/composables/usePagedScrollNavigation'
 import { useDetailTemplateApply } from '@/composables/useDetailTemplateApply'
 import { useRenderSettling } from '@/composables/useRenderSettling'
@@ -52,6 +54,9 @@ const { t } = useI18n()
 const { isMobile } = useViewport()
 const templateApplyStore = useTemplateApplyStore()
 const layoutContentRef = useMainLayoutContentRef()
+const userProfileVisible = ref(false)
+const activeProfileUserId = ref<number | null>(null)
+const followLoadingUserId = ref<number | null>(null)
 
 const breakpoints = {
   99999: { rowPerView: 6 },
@@ -297,6 +302,54 @@ const handleImageError = (event: Event, post: Post) => {
   handleMediaCardImageError(event, post)
 }
 
+const openUserProfile = (userId?: number | null) => {
+  if (!userId) {
+    return
+  }
+  activeProfileUserId.value = userId
+  userProfileVisible.value = true
+}
+
+const syncFollowStateForAuthor = (userId: number, isFollowing: boolean) => {
+  posts.value = posts.value.map((post) =>
+    post.author_id === userId
+      ? {
+          ...post,
+          is_following_author: isFollowing,
+        }
+      : post,
+  )
+
+  if (currentPost.value?.author_id === userId) {
+    currentPost.value = {
+      ...currentPost.value,
+      is_following_author: isFollowing,
+    }
+  }
+}
+
+const handleAuthorFollow = async (post: Post) => {
+  if (!post.author_id) {
+    return
+  }
+
+  followLoadingUserId.value = post.author_id
+  try {
+    const response = post.is_following_author
+      ? await unfollowUser(post.author_id)
+      : await followUser(post.author_id)
+    syncFollowStateForAuthor(post.author_id, response.is_following)
+    message.success(
+      response.is_following ? t('social.follow_success') : t('social.unfollow_success'),
+    )
+  } catch (error) {
+    console.error(error)
+    message.error(t('social.follow_action_failed'))
+  } finally {
+    followLoadingUserId.value = null
+  }
+}
+
 const handleWaterfallAfterRender = () => {
   handleRenderSettled()
 }
@@ -474,12 +527,72 @@ watch(pageSize, (nextSize, previousSize) => {
       v-on="galleryDetailModalListeners"
     >
       <template #mobile-header="{ post }">
-        <div class="w-7 h-7 rounded-full bg-gradient-to-br from-cyan-500 to-indigo-500 flex items-center justify-center text-white font-bold text-xs">
-          {{ post.author_name ? post.author_name.charAt(0).toUpperCase() : '修' }}
+        <div class="gallery-author-mobile flex items-center justify-between gap-3 w-full">
+          <button
+            type="button"
+            class="gallery-author-mobile__identity flex items-center gap-2 min-w-0"
+            @click.stop="openUserProfile(post.author_id)"
+          >
+            <div class="w-8 h-8 rounded-full bg-gradient-to-br from-cyan-500 to-indigo-500 flex items-center justify-center text-white font-bold text-xs shrink-0">
+              {{ post.author_name ? post.author_name.charAt(0).toUpperCase() : '修' }}
+            </div>
+            <span class="gallery-author-mobile__name font-semibold text-sm truncate">
+              {{ post.author_name || t('social.anonymous_user') }}
+            </span>
+          </button>
+          <a-button
+            v-if="post.author_id"
+            type="primary"
+            size="small"
+            class="gallery-author-mobile__follow-btn shrink-0"
+            :loading="followLoadingUserId === post.author_id"
+            @click.stop="handleAuthorFollow(post)"
+          >
+            {{ post.is_following_author ? t('social.unfollow') : t('social.follow') }}
+          </a-button>
         </div>
-        <span class="text-slate-200 font-medium text-sm">{{ post.author_name || '匿名修士' }}</span>
+      </template>
+
+      <template #before-comments-extra="{ post }">
+        <div class="gallery-author-card rounded-2xl p-4 mb-4">
+          <div class="flex items-center justify-between gap-3">
+            <button
+              type="button"
+              class="gallery-author-card__identity flex items-center gap-3 min-w-0"
+              @click.stop="openUserProfile(post.author_id)"
+            >
+              <div class="gallery-author-card__avatar w-11 h-11 rounded-2xl flex items-center justify-center text-white font-bold shrink-0">
+                {{ post.author_name ? post.author_name.charAt(0).toUpperCase() : '修' }}
+              </div>
+              <div class="min-w-0 text-left">
+                <div class="gallery-author-card__name text-sm font-semibold truncate">
+                  {{ post.author_name || t('social.anonymous_user') }}
+                </div>
+                <div v-if="post.author_username" class="gallery-author-card__meta text-xs truncate">
+                  @{{ post.author_username }}
+                </div>
+              </div>
+            </button>
+
+            <a-button
+              v-if="post.author_id"
+              type="primary"
+              class="gallery-author-card__follow-btn"
+              :loading="followLoadingUserId === post.author_id"
+              @click.stop="handleAuthorFollow(post)"
+            >
+              {{ post.is_following_author ? t('social.unfollow') : t('social.follow') }}
+            </a-button>
+          </div>
+        </div>
       </template>
     </GalleryDetailModal>
+
+    <UserProfileModal
+      v-model:open="userProfileVisible"
+      :user-id="activeProfileUserId"
+      @follow-updated="syncFollowStateForAuthor($event.userId, $event.isFollowing)"
+    />
 </template>
 
 <style>
@@ -525,5 +638,38 @@ watch(pageSize, (nextSize, previousSize) => {
 <style scoped>
 .gallery-media-pane {
   background: var(--theme-card-strong-bg);
+}
+
+.gallery-author-mobile__identity,
+.gallery-author-card__identity {
+  background: transparent;
+  border: none;
+  padding: 0;
+}
+
+.gallery-author-mobile__name,
+.gallery-author-card__name {
+  color: var(--theme-text-primary);
+}
+
+.gallery-author-card {
+  background: var(--theme-card-strong-bg);
+  border: 1px solid var(--theme-border);
+}
+
+.gallery-author-card__avatar {
+  background: linear-gradient(135deg, #06b6d4, #4f46e5);
+  box-shadow: 0 10px 20px rgba(79, 70, 229, 0.24);
+}
+
+.gallery-author-card__meta {
+  color: var(--theme-text-secondary);
+}
+
+.gallery-author-mobile__follow-btn,
+.gallery-author-card__follow-btn {
+  background: linear-gradient(90deg, #2563eb, #4f46e5) !important;
+  border: none !important;
+  box-shadow: 0 12px 24px rgba(37, 99, 235, 0.18);
 }
 </style>

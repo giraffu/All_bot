@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, computed } from 'vue'
+import { onMounted, computed, ref } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import { useThemeStore, type ThemePreference } from '@/stores/theme'
 import { 
@@ -10,6 +10,7 @@ import {
   Award,
   User,
   Lock,
+  Users,
 } from 'lucide-vue-next'
 import { useRouter } from 'vue-router'
 import { useViewport } from '@/composables/useViewport'
@@ -29,6 +30,7 @@ import ProfileQuickActionsPanel from '@/components/profile/ProfileQuickActionsPa
 import ProfileQueueStatusPanel from '@/components/profile/ProfileQueueStatusPanel.vue'
 import ProfileRedeemOverlays from '@/components/profile/ProfileRedeemOverlays.vue'
 import ProfileWelcomeBanner from '@/components/profile/ProfileWelcomeBanner.vue'
+import ProfileFollowingModal from '@/components/profile/ProfileFollowingModal.vue'
 
 const authStore = useAuthStore()
 const themeStore = useThemeStore()
@@ -43,6 +45,7 @@ const themeOptions = computed<{ label: string; value: ThemePreference }[]>(() =>
   { label: t('theme.light'), value: 'light' },
   { label: t('theme.dark'), value: 'dark' },
 ])
+const showFollowingModal = ref(false)
 
 const selectedTheme = computed<ThemePreference>({
   get: () => themeStore.selectedTheme,
@@ -138,10 +141,14 @@ const { quickActions } = useProfileQuickActions({
   openRedeemCreditsModal,
   openRedeemMembershipModal,
   handleBindPasswordModalOpen,
+  openFollowingModal: () => {
+    showFollowingModal.value = true
+  },
   icons: {
     Wallet,
     Award,
     Lock,
+    Users,
   },
 })
 
@@ -169,8 +176,6 @@ onMounted(async () => {
     />
 
     <ProfileQuickActionsPanel
-      :title="$t('profile.quick_guide')"
-      :description="$t('profile.quick_guide_desc')"
       :actions="quickActions"
     />
 
@@ -222,6 +227,8 @@ onMounted(async () => {
       :bind-form-state="bindFormState"
       :handle-bind-password="handleBindPassword"
     />
+
+    <ProfileFollowingModal v-model:open="showFollowingModal" />
   </div>
 </template>
 

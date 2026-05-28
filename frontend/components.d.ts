@@ -65,6 +65,7 @@ declare module 'vue' {
     PostBrowserShell: typeof import('./src/components/PostBrowserShell.vue')['default']
     PostCardMetricsBar: typeof import('./src/components/PostCardMetricsBar.vue')['default']
     PostTagPreview: typeof import('./src/components/PostTagPreview.vue')['default']
+    ProfileFollowingModal: typeof import('./src/components/profile/ProfileFollowingModal.vue')['default']
     ProfileMetricCards: typeof import('./src/components/profile/ProfileMetricCards.vue')['default']
     ProfilePasswordOverlay: typeof import('./src/components/profile/ProfilePasswordOverlay.vue')['default']
     ProfileQueueStatusPanel: typeof import('./src/components/profile/ProfileQueueStatusPanel.vue')['default']
@@ -88,5 +89,6 @@ declare module 'vue' {
     TemplateImagePromptPanel: typeof import('./src/components/template-apply/TemplateImagePromptPanel.vue')['default']
     TemplateImageToVideoPanel: typeof import('./src/components/template-apply/TemplateImageToVideoPanel.vue')['default']
     TemplateVideoSwapPanel: typeof import('./src/components/template-apply/TemplateVideoSwapPanel.vue')['default']
+    UserProfileModal: typeof import('./src/components/UserProfileModal.vue')['default']
   }
 }

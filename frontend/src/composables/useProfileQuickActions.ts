@@ -17,10 +17,12 @@ export function useProfileQuickActions(options: {
   openRedeemCreditsModal: () => void
   openRedeemMembershipModal: () => void
   handleBindPasswordModalOpen: () => void
+  openFollowingModal: () => void
   icons: {
     Wallet: unknown
     Award: unknown
     Lock: unknown
+    Users: unknown
   }
 }) {
   const quickActions = computed(() => [
@@ -44,6 +46,13 @@ export function useProfileQuickActions(options: {
       className: 'quick-action-btn--violet',
       icon: options.icons.Award,
       onClick: options.openRedeemMembershipModal,
+    },
+    {
+      key: 'following',
+      label: options.t('social.my_following'),
+      className: 'quick-action-btn--sky',
+      icon: options.icons.Users,
+      onClick: options.openFollowingModal,
     },
     {
       key: 'password',

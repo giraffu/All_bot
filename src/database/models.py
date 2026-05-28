@@ -98,6 +98,27 @@ class Referral(Base):
     )
 
 
+class UserFollow(Base):
+    __tablename__ = "user_follows"
+    __table_args__ = (
+        UniqueConstraint(
+            "follower_id", "followee_id", name="uq_user_follows_follower_followee"
+        ),
+        Index("ix_user_follows_follower_created_at", "follower_id", "created_at"),
+        Index("ix_user_follows_followee_created_at", "followee_id", "created_at"),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    follower_id = Column(BigInteger, ForeignKey("users.id"), nullable=False, index=True)
+    followee_id = Column(BigInteger, ForeignKey("users.id"), nullable=False, index=True)
+    created_at = Column(DateTime, default=datetime.now, nullable=False)
+
+    follower = relationship(
+        "User", foreign_keys=[follower_id], backref="following_links"
+    )
+    followee = relationship("User", foreign_keys=[followee_id], backref="follower_links")
+
+
 class History(Base):
     __tablename__ = "history"
     __table_args__ = (Index("idx_history_user_favorite", "user_id", "is_favorited"),)

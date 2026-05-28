@@ -10,18 +10,21 @@ type ActionItem = {
 }
 
 defineProps<{
-  title: string
-  description: string
+  title?: string
+  description?: string
   actions: ActionItem[]
 }>()
 </script>
 
 <template>
   <div class="quick-actions-panel backdrop-blur-md rounded-xl p-6">
-    <h3 class="quick-actions-panel__title text-lg font-bold mb-2 flex items-center drop-shadow-sm">
+    <h3
+      v-if="title"
+      class="quick-actions-panel__title text-lg font-bold mb-2 flex items-center drop-shadow-sm"
+    >
       <Activity :size="20" class="mr-2 text-cyan-400 drop-shadow-[0_0_5px_rgba(56,189,248,0.5)]" /> {{ title }}
     </h3>
-    <p class="quick-actions-panel__description mb-4">{{ description }}</p>
+    <p v-if="description" class="quick-actions-panel__description mb-4">{{ description }}</p>
     <div class="flex flex-wrap gap-3">
       <a-button
         v-for="action in actions"
@@ -107,5 +110,16 @@ defineProps<{
 :deep(.quick-action-btn--indigo:focus) {
   color: #3730a3 !important;
   border-color: rgba(99, 102, 241, 0.45) !important;
+}
+
+:deep(.quick-action-btn--sky) {
+  color: #0369a1 !important;
+  border-color: rgba(14, 165, 233, 0.35) !important;
+}
+
+:deep(.quick-action-btn--sky:hover),
+:deep(.quick-action-btn--sky:focus) {
+  color: #075985 !important;
+  border-color: rgba(14, 165, 233, 0.45) !important;
 }
 </style>

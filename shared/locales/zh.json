@@ -106,6 +106,26 @@
     "expire_at": "到期时间",
     "unlimited": "永久"
   },
+  "social": {
+    "my_following": "我的关注",
+    "follow": "关注",
+    "unfollow": "取消关注",
+    "open_profile": "打开主页",
+    "followers": "粉丝",
+    "following": "关注中",
+    "public_posts": "公开投稿",
+    "history_posts": "历史投稿内容",
+    "checkin_days": "签到天数",
+    "no_following": "你还没有关注任何用户",
+    "no_public_posts": "这个用户还没有公开投稿",
+    "no_media": "暂无内容",
+    "anonymous_user": "匿名修士",
+    "follow_success": "关注成功",
+    "unfollow_success": "已取消关注",
+    "follow_action_failed": "关注操作失败，请稍后再试",
+    "profile_load_failed": "加载用户主页失败，请稍后再试",
+    "following_load_failed": "加载关注列表失败，请稍后再试"
+  },
   "task_type": {
     "img2img": "图生图",
     "txt2img": "文生图",

@@ -4,7 +4,7 @@ import logging
 
 from sqlalchemy import select
 
-from src.database.models import History, User, UserInteraction
+from src.database.models import History, User, UserFollow, UserInteraction
 from src.lora_mapping import translate_tags
 from src.web_api.common.utils import resolve_history_billing_resolution
 from src.web_api.schemas.gallery_schema import GalleryPostResponse
@@ -44,6 +44,7 @@ async def build_post_responses(
 
     user_likes = set()
     user_dislikes = set()
+    following_user_ids = set()
     if current_user and post_ids:
         interactions = (
             (
@@ -81,7 +82,22 @@ async def build_post_responses(
             .all()
         )
         for user in users:
-            user_map[user.id] = resolve_author_name(user, user.id)
+            user_map[user.id] = user
+
+    if current_user and user_ids:
+        follow_links = (
+            (
+                await session.execute(
+                    select(UserFollow.followee_id).where(
+                        UserFollow.follower_id == current_user.id,
+                        UserFollow.followee_id.in_(user_ids),
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        following_user_ids = set(follow_links)
 
     tasks = []
     for post in posts:
@@ -153,9 +169,16 @@ async def build_post_responses(
                 task_type=task_type_from_history,
                 has_liked=post.id in user_likes,
                 has_disliked=post.id in user_dislikes,
-                author_name=user_map.get(post.user_id)
+                author_id=post.user_id,
+                author_name=resolve_author_name(user_map.get(post.user_id), post.user_id)
                 if post.user_id
                 else resolve_author_name(None),
+                author_username=user_map.get(post.user_id).username
+                if post.user_id and user_map.get(post.user_id)
+                else None,
+                is_following_author=post.user_id in following_user_ids
+                if post.user_id
+                else False,
             )
         )
     return response_items
