@@ -17,10 +17,15 @@ export interface GalleryComment {
   user: CommentUser
 }
 
+interface UseGalleryCommentsOptions {
+  resolvePostId?: (post: any | null) => number | null
+}
+
 export function useGalleryComments(
   currentPost: Ref<any | null>,
   posts: Ref<GalleryPost[]>,
-  detailVisible?: Ref<boolean>
+  detailVisible?: Ref<boolean>,
+  options: UseGalleryCommentsOptions = {}
 ) {
   const { t } = useI18n()
   const comments = ref<GalleryComment[]>([])
@@ -59,6 +64,19 @@ export function useGalleryComments(
   const resetCommentComposer = () => {
     showCommentInput.value = false
     newComment.value = ''
+  }
+
+  const resolvePostId = (post: any | null): number | null => {
+    if (!post) {
+      return null
+    }
+
+    if (options.resolvePostId) {
+      return options.resolvePostId(post)
+    }
+
+    const id = Number(post.id)
+    return Number.isFinite(id) && id > 0 ? id : null
   }
 
   const syncPostCommentsCount = (postId: number, nextCount: number) => {
@@ -111,15 +129,19 @@ export function useGalleryComments(
   }
 
   const loadMoreComments = async () => {
-    if (commentsHasMore.value && !commentsLoading.value && currentPost.value) {
+    const currentPostId = resolvePostId(currentPost.value)
+    if (commentsHasMore.value && !commentsLoading.value && currentPostId != null) {
       const nextPage = commentsPage.value + 1
-      await loadComments(currentPost.value.id, { page: nextPage, append: true })
+      await loadComments(currentPostId, { page: nextPage, append: true })
     }
   }
 
   const submitComment = async () => {
     if (!newComment.value.trim() || !currentPost.value) return
-    const submitPostId = currentPost.value.id
+    const submitPostId = resolvePostId(currentPost.value)
+    if (submitPostId == null) {
+      return
+    }
     const trimmedContent = newComment.value.trim()
     submittingComment.value = true
     try {
@@ -164,7 +186,10 @@ export function useGalleryComments(
       comments.value = []
       commentsPage.value = 1
       commentsTotal.value = 0
-      loadComments(newPost.id, { page: 1, append: false })
+      const postId = resolvePostId(newPost)
+      if (postId != null) {
+        void loadComments(postId, { page: 1, append: false })
+      }
     } else {
       invalidateCommentsRequests()
       commentsError.value = ''

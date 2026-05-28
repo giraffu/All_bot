@@ -59,6 +59,8 @@ const props = withDefaults(
     mobileLeftClass?: string
     mobileRightClass?: string
     standardActions?: DetailStandardActions | null
+    showCommentsSection?: boolean
+    showCommentComposer?: boolean
   }>(),
   {
     infoContentClass:
@@ -68,6 +70,8 @@ const props = withDefaults(
     mobileLeftClass: 'flex items-center gap-6',
     mobileRightClass: '',
     standardActions: null,
+    showCommentsSection: true,
+    showCommentComposer: true,
   },
 )
 
@@ -88,6 +92,9 @@ const closeModal = () => {
 }
 
 const openCommentInput = () => {
+  if (!props.showCommentComposer) {
+    return
+  }
   emit('update:commentInputOpen', true)
 }
 
@@ -210,6 +217,7 @@ const handleNewCommentInput = (event: Event) => {
         />
 
         <DetailCommentsSection
+          v-if="showCommentsSection"
           :comments="comments"
           :comments-loading="commentsLoading"
           :comments-error="commentsError"
@@ -319,6 +327,7 @@ const handleNewCommentInput = (event: Event) => {
   </a-modal>
 
   <a-modal
+    v-if="showCommentComposer"
     :open="commentInputOpen"
     :title="$t('gallery.comments.modal_title')"
     :footer="null"

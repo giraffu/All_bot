@@ -166,6 +166,17 @@ const samplePost = {
   prompt: 'demo prompt'
 }
 
+const legacyFavoritePost = {
+  ...samplePost,
+  id: 0,
+  task_id: 'legacy-task-1',
+  is_active: false,
+  media_type: 'video',
+  duration: 8,
+  thumbnail_url: 'https://example.com/legacy-thumb.jpg',
+  media_url: 'https://example.com/legacy-video.mp4',
+}
+
 const faceSwapContext = {
   post_id: 1,
   source_post_id: 1,
@@ -175,7 +186,11 @@ const faceSwapContext = {
   prompt: 'demo prompt'
 }
 
-const primeFavoritesApi = (options?: { empty?: boolean; submissionsEmpty?: boolean }) => {
+const primeFavoritesApi = (options?: {
+  empty?: boolean
+  submissionsEmpty?: boolean
+  favoriteItems?: typeof samplePost[]
+}) => {
   apiGetMock.mockImplementation((url: string) => {
     if (url === '/gallery/config') {
       return Promise.resolve({
@@ -191,10 +206,11 @@ const primeFavoritesApi = (options?: { empty?: boolean; submissionsEmpty?: boole
     }
 
     if (url === '/users/my-favorites') {
+      const favoriteItems = options?.favoriteItems ?? [samplePost]
       return Promise.resolve({
         data: {
-          items: options?.empty ? [] : [samplePost],
-          total: options?.empty ? 0 : 1,
+          items: options?.empty ? [] : favoriteItems,
+          total: options?.empty ? 0 : favoriteItems.length,
           page: 1,
           pages: 1
         }
@@ -213,6 +229,10 @@ const primeFavoritesApi = (options?: { empty?: boolean; submissionsEmpty?: boole
     }
 
     if (url === `/gallery/items/${samplePost.task_id}/apply-context`) {
+      return Promise.resolve({ data: faceSwapContext })
+    }
+
+    if (url === `/gallery/items/${legacyFavoritePost.task_id}/apply-context`) {
       return Promise.resolve({ data: faceSwapContext })
     }
 
@@ -296,6 +316,25 @@ describe('MyFavorites workbench flow', () => {
     expect(templateApplyStore.visible).toBe(true)
     expect(templateApplyStore.panelKind).toBe('faceSwap')
     expect(hostModal?.attributes('data-open')).toBe('true')
+  })
+
+  it('keeps legacy favorites playable while hiding post-only comment UI', async () => {
+    primeFavoritesApi({
+      favoriteItems: [legacyFavoritePost],
+    })
+
+    const { wrapper, applyButton } = await openDetailAndFindApplyButton()
+
+    expect(wrapper.text()).not.toContain('评论 (')
+    expect(wrapper.text()).not.toContain('暂无评论，来抢沙发吧～')
+    expect(wrapper.text()).toContain('取消收藏')
+
+    await applyButton.trigger('click')
+    await flushPromises()
+    await flushPromises()
+
+    expect(messageSuccessMock).toHaveBeenCalledWith('已载入模板工作台')
+    expect(messageErrorMock).not.toHaveBeenCalled()
   })
 
   it('renders the shared empty state block when the favorites list is empty', async () => {

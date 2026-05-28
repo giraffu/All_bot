@@ -6,9 +6,11 @@ withDefaults(
     commentsCount: number
     unfavoriteLabel: string
     compact?: boolean
+    showCommentButton?: boolean
   }>(),
   {
     compact: false,
+    showCommentButton: true,
   },
 )
 
@@ -32,6 +34,7 @@ const emit = defineEmits<{
       <span :class="compact ? 'text-sm font-medium' : 'font-medium'">{{ unfavoriteLabel }}</span>
     </button>
     <button
+      v-if="showCommentButton"
       type="button"
       :class="compact
         ? 'favorite-detail-action-compact favorite-detail-action-neutral flex items-center gap-1.5 transition-all'

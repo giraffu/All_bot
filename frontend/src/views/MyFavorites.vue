@@ -118,7 +118,24 @@ const {
   loadComments,
   loadMoreComments,
   submitComment
-} = useGalleryComments(currentPost, posts, detailVisible)
+} = useGalleryComments(currentPost, posts, detailVisible, {
+  resolvePostId: (post) => {
+    if (!post) {
+      return null
+    }
+
+    const postId = Number(post.id)
+    if (!Number.isFinite(postId) || postId <= 0) {
+      return null
+    }
+
+    if (filterType.value === 'favorite' && post.is_active === false) {
+      return null
+    }
+
+    return postId
+  }
+})
 const { handleInteract } = useGalleryPostInteractions<Post>({
   resolveSuccessMessage: (action, state) => {
     if (action === 'like') {
@@ -154,6 +171,18 @@ const {
 const currentDetailMedia = useCurrentDetailMedia(currentPost)
 const formatTag = (tag: string) => formatGalleryTag(tag, t)
 const { copyPrompt } = usePostPromptCopy(t)
+const favoriteSupportsPostDetail = computed(() => {
+  const post = currentPost.value
+  if (filterType.value !== 'favorite') {
+    return true
+  }
+
+  if (!post) {
+    return false
+  }
+
+  return Number(post.id) > 0 && post.is_active !== false
+})
 const { applying, handleApply } = useDetailTemplateApply<Post>({
   currentPost,
   detailVisible,
@@ -374,6 +403,8 @@ onMounted(() => {
 
     <GalleryDetailModal
       v-bind="favoritesDetailModalBindings"
+      :show-comments-section="favoriteSupportsPostDetail"
+      :show-comment-composer="favoriteSupportsPostDetail"
       v-on="favoritesDetailModalListeners"
     >
       <template v-if="filterType === 'favorite'" #before-comments-extra="{ post, openCommentInput }">
@@ -381,6 +412,7 @@ onMounted(() => {
           <FavoriteDetailActions
             :comments-count="post.comments_count || 0"
             :unfavorite-label="t('my_notes.unfavorite_button')"
+              :show-comment-button="favoriteSupportsPostDetail"
             @unfavorite="handleUnfavorite(post)"
             @comment="openCommentInput()"
           />
@@ -392,6 +424,7 @@ onMounted(() => {
             compact
             :comments-count="post.comments_count || 0"
             :unfavorite-label="t('my_notes.unfavorite_button')"
+            :show-comment-button="favoriteSupportsPostDetail"
             @unfavorite="handleUnfavorite(post)"
             @comment="openCommentInput()"
           />
