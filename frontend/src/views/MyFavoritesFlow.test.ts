@@ -205,7 +205,7 @@ const primeFavoritesApi = (options?: {
       })
     }
 
-    if (url === '/users/my-favorites') {
+    if (url === '/users/my-favorites' || url === '/gallery/my-favorites') {
       const favoriteItems = options?.favoriteItems ?? [samplePost]
       return Promise.resolve({
         data: {
@@ -297,6 +297,23 @@ describe('MyFavorites workbench flow', () => {
     messageSuccessMock.mockReset()
     messageErrorMock.mockReset()
     messageWarningMock.mockReset()
+  })
+
+  it('hides copy actions and masks prompt in liked notes tab', async () => {
+    routeMock.query.tab = 'like'
+    primeFavoritesApi()
+
+    const wrapper = mountHarness()
+    await flushPromises()
+    await flushPromises()
+
+    await wrapper.get('.group.cursor-pointer').trigger('click')
+    await flushPromises()
+    await flushPromises()
+
+    expect(wrapper.text()).not.toContain('复制提示词')
+    expect(wrapper.text()).toContain('demo ')
+    expect(/[•·◦*]/.test(wrapper.text())).toBe(true)
   })
 
   it('opens the shared template workbench host from favorite details', async () => {

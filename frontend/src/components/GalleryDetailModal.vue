@@ -21,6 +21,8 @@ interface DetailStandardActions {
   showMobileApply?: boolean
   showMobileCopy?: boolean
   showPromptPanelCopy?: boolean
+  maskPromptText?: boolean
+  promptVisibleRatio?: number
   desktopApplyPlacement?: 'before' | 'after'
   desktopApplyInline?: boolean
   applyLabel?: string
@@ -184,6 +186,8 @@ const handleNewCommentInput = (event: Event) => {
           :expand-label="$t('prompt_panel.expand')"
           :collapse-label="$t('prompt_panel.collapse')"
           :show-copy="!!standardActions?.showPromptPanelCopy"
+          :mask-text="!!standardActions?.maskPromptText"
+          :visible-ratio="standardActions?.promptVisibleRatio ?? 0.5"
           :copy-label="standardActions?.copyLabel || ''"
           @copy="standardActions?.onCopy?.()"
         />

@@ -43,4 +43,22 @@ describe('PromptPreviewPanel', () => {
 
     expect(wrapper.html()).toBe('<!--v-if-->')
   })
+
+  it('masks the trailing half of prompt text when enabled', () => {
+    const wrapper = mount(PromptPreviewPanel, {
+      props: {
+        title: '提示词预览',
+        prompt: 'abcdefghij',
+        expandLabel: '展开全文',
+        collapseLabel: '收起',
+        maskText: true,
+        visibleRatio: 0.5,
+      },
+    })
+
+    const contentText = wrapper.get('.prompt-preview-content').text()
+    expect(contentText.startsWith('abcde')).toBe(true)
+    expect(contentText).not.toContain('fghij')
+    expect(/[•·◦*]/.test(contentText)).toBe(true)
+  })
 })

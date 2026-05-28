@@ -149,7 +149,8 @@ const samplePost = {
   created_at: '2026-05-16T00:00:00Z',
   has_liked: false,
   has_disliked: false,
-  author_name: 'tester'
+  author_name: 'tester',
+  prompt: 'demo prompt',
 }
 
 const samplePostTwo = {
@@ -268,6 +269,19 @@ describe('Gallery template apply integration', () => {
     confirmTemplateApplyCloseMock.mockReset()
 
     primeGalleryApi()
+  })
+
+  it('hides copy actions and masks prompt in gallery detail', async () => {
+    const wrapper = mountGallery()
+    await flushPromises()
+    await flushPromises()
+
+    await wrapper.get('.group.cursor-pointer').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).not.toContain('复制提示词')
+    expect(wrapper.text()).toContain('demo ')
+    expect(/[•·◦*]/.test(wrapper.text())).toBe(true)
   })
 
   it('opens the template workbench in place without legacy navigation', async () => {

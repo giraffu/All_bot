@@ -12,6 +12,8 @@ const props = withDefaults(
     showCopy?: boolean
     collapsedLines?: number
     collapsedChars?: number
+    maskText?: boolean
+    visibleRatio?: number
   }>(),
   {
     prompt: '',
@@ -19,6 +21,8 @@ const props = withDefaults(
     showCopy: false,
     collapsedLines: 4,
     collapsedChars: 220,
+    maskText: false,
+    visibleRatio: 0.5,
   },
 )
 
@@ -27,11 +31,46 @@ const emit = defineEmits<{
 }>()
 
 const expanded = ref(false)
+const MASK_SYMBOLS = ['*', '•', '·', '◦']
 
 const normalizedPrompt = computed(() => props.prompt?.trim() ?? '')
-const lineCount = computed(() => normalizedPrompt.value.split(/\r?\n/).length)
+
+const maskPromptText = (prompt: string, visibleRatio: number) => {
+  if (!prompt) {
+    return ''
+  }
+
+  const safeRatio = Math.min(1, Math.max(0, visibleRatio))
+  const visibleChars = [...prompt].filter((char) => !/\s/.test(char)).length
+  const visibleTarget = Math.ceil(visibleChars * safeRatio)
+
+  let visibleCount = 0
+  let maskedCount = 0
+
+  return [...prompt]
+    .map((char) => {
+      if (/\s/.test(char)) {
+        return char
+      }
+      if (visibleCount < visibleTarget) {
+        visibleCount += 1
+        return char
+      }
+      const maskSymbol = MASK_SYMBOLS[maskedCount % MASK_SYMBOLS.length]
+      maskedCount += 1
+      return maskSymbol
+    })
+    .join('')
+}
+
+const displayPrompt = computed(() =>
+  props.maskText
+    ? maskPromptText(normalizedPrompt.value, props.visibleRatio)
+    : normalizedPrompt.value
+)
+const lineCount = computed(() => displayPrompt.value.split(/\r?\n/).length)
 const shouldCollapse = computed(() =>
-  normalizedPrompt.value.length > props.collapsedChars || lineCount.value > props.collapsedLines
+  displayPrompt.value.length > props.collapsedChars || lineCount.value > props.collapsedLines
 )
 const isCollapsed = computed(() => shouldCollapse.value && !expanded.value)
 const collapsedContentStyle = computed(() =>
@@ -51,7 +90,7 @@ watch(normalizedPrompt, () => {
           {{ title }}
         </div>
         <div class="prompt-preview-subtitle mt-1 text-xs">
-          {{ normalizedPrompt.length }} chars
+          {{ displayPrompt.length }} chars
         </div>
       </div>
       <button
@@ -70,7 +109,7 @@ watch(normalizedPrompt, () => {
       :class="{ 'is-collapsed': isCollapsed }"
       :style="collapsedContentStyle"
     >
-      {{ normalizedPrompt }}
+      {{ displayPrompt }}
     </p>
 
     <div v-if="shouldCollapse" class="mt-3 flex justify-end">

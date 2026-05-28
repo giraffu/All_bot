@@ -11,6 +11,8 @@ export interface GalleryDetailStandardActions {
   showMobileApply?: boolean
   showMobileCopy?: boolean
   showPromptPanelCopy?: boolean
+  maskPromptText?: boolean
+  promptVisibleRatio?: number
   desktopApplyPlacement?: 'before' | 'after'
   desktopApplyInline?: boolean
   applyLabel?: string
