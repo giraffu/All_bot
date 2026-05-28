@@ -1,17 +1,29 @@
 import logging
 import os
+from contextlib import asynccontextmanager
 
 import uvicorn
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, PlainTextResponse
 
+from src.billing_core_provider_setup import ensure_billing_core_providers_registered
 from src.services.payment_fulfillment_service import fulfill_order
 from src.services.rmb_payment_service import HUANYUY_KEY, RMBPaymentService
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("payment_api")
 
-app = FastAPI(title="RMB Payment Webhook API")
+async def register_payment_api_providers():
+    ensure_billing_core_providers_registered()
+
+
+@asynccontextmanager
+async def payment_api_lifespan(_app: FastAPI):
+    await register_payment_api_providers()
+    yield
+
+
+app = FastAPI(title="RMB Payment Webhook API", lifespan=payment_api_lifespan)
 
 
 @app.get("/api/pay/notify/huanyuy", response_class=PlainTextResponse)

@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import os
 from datetime import datetime
 from decimal import Decimal
 
@@ -53,11 +54,66 @@ def parse_payload_boc(boc_str: str) -> str:
 
 
 class TonPaymentValidator:
-    def __init__(self, bot_app, api_base: str = "https://toncenter.com/api/v2/jsonRPC"):
-        self.api_base = api_base
+    def __init__(
+        self,
+        bot_app,
+        api_base: str | None = None,
+        api_key: str | None = None,
+        poll_interval_seconds: int | None = None,
+        max_poll_interval_seconds: int | None = None,
+    ):
+        self.api_base = api_base or os.getenv(
+            "TONCENTER_API_BASE", "https://toncenter.com/api/v2/jsonRPC"
+        )
+        self.api_key = api_key if api_key is not None else os.getenv("TONCENTER_API_KEY")
         self.bot_app = bot_app
         self.merchant_address = VITE_MERCHANT_ADDRESS
         self.last_lt = 0  # Logical time of the last processed transaction
+        self.poll_interval_seconds = max(
+            1, int(poll_interval_seconds or os.getenv("TON_POLL_INTERVAL_SECONDS", "15"))
+        )
+        self.max_poll_interval_seconds = max(
+            self.poll_interval_seconds,
+            int(
+                max_poll_interval_seconds
+                or os.getenv("TON_POLL_BACKOFF_MAX_SECONDS", "120")
+            ),
+        )
+        self.current_poll_interval_seconds = self.poll_interval_seconds
+
+    def _reset_poll_interval(self) -> None:
+        self.current_poll_interval_seconds = self.poll_interval_seconds
+
+    def _increase_poll_interval(self) -> int:
+        self.current_poll_interval_seconds = min(
+            self.max_poll_interval_seconds,
+            max(self.poll_interval_seconds, self.current_poll_interval_seconds * 2),
+        )
+        return self.current_poll_interval_seconds
+
+    @staticmethod
+    def _extract_rate_limit_message(data) -> str | None:
+        candidates = []
+        if isinstance(data, dict):
+            candidates.extend(
+                [
+                    data.get("result"),
+                    data.get("message"),
+                    data.get("error"),
+                ]
+            )
+            error_obj = data.get("error")
+            if isinstance(error_obj, dict):
+                candidates.extend([error_obj.get("message"), error_obj.get("data")])
+        else:
+            candidates.append(data)
+
+        for candidate in candidates:
+            if isinstance(candidate, str):
+                lowered = candidate.lower()
+                if "ratelimit" in lowered or "rate limit" in lowered:
+                    return candidate
+        return None
 
     async def poll_transactions(self):
         """
@@ -73,10 +129,10 @@ class TonPaymentValidator:
             except Exception as e:
                 logger.error(f"Error in TON polling task: {e}")
 
-            # Sleep for 15 seconds before next poll
-            await asyncio.sleep(15)
+            await asyncio.sleep(self.current_poll_interval_seconds)
 
     async def _check_new_transactions(self):
+        headers = {"X-API-Key": self.api_key} if self.api_key else None
         async with aiohttp.ClientSession() as session:
             payload = {
                 "method": "getTransactions",
@@ -89,21 +145,50 @@ class TonPaymentValidator:
                 "jsonrpc": "2.0",
             }
 
-            async with session.post(self.api_base, json=payload) as resp:
+            async with session.post(self.api_base, json=payload, headers=headers) as resp:
+                if resp.status == 429:
+                    next_interval = self._increase_poll_interval()
+                    logger.warning(
+                        "TON API rate limited with HTTP 429, backing off polling to %ss",
+                        next_interval,
+                    )
+                    return
                 try:
                     data = await resp.json()
                 except Exception as e:
-                    logger.warning(f"Failed to decode JSON from TON API: {e}. Status: {resp.status}")
+                    logger.warning(
+                        f"Failed to decode JSON from TON API: {e}. Status: {resp.status}"
+                    )
                     return
 
                 if not isinstance(data, dict) or "result" not in data:
+                    rate_limit_message = self._extract_rate_limit_message(data)
+                    if rate_limit_message:
+                        next_interval = self._increase_poll_interval()
+                        logger.warning(
+                            "TON API rate limited: %s. Backing off polling to %ss",
+                            rate_limit_message,
+                            next_interval,
+                        )
+                        return
                     logger.error(f"Failed to fetch transactions or invalid format: {data}")
                     return
 
                 transactions = data["result"]
                 if not isinstance(transactions, list):
+                    rate_limit_message = self._extract_rate_limit_message(data)
+                    if rate_limit_message:
+                        next_interval = self._increase_poll_interval()
+                        logger.warning(
+                            "TON API rate limited: %s. Backing off polling to %ss",
+                            rate_limit_message,
+                            next_interval,
+                        )
+                        return
                     logger.error(f"Transactions is not a list: {transactions}")
                     return
+
+                self._reset_poll_interval()
 
                 # Process from oldest to newest in the current batch
                 for tx in reversed(transactions):
