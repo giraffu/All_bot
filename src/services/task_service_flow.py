@@ -191,7 +191,7 @@ async def run_bot_task_completion_stage(
     status_msg,
     runtime_state,
     internal_user_id: int,
-    username: str,
+    username: Optional[str],
     prompt: str,
     task_type: str,
     registry_task_id: str,

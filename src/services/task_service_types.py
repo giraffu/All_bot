@@ -15,7 +15,7 @@ class BotTaskRuntimeState:
 class BotTaskSubmissionContext:
     runtime_state: BotTaskRuntimeState
     internal_user_id: int
-    username: str
+    username: Optional[str]
     task_type: str
     inputs: dict
     source_post_id: Optional[int] = None
@@ -39,7 +39,7 @@ class BotTaskCompletionContext:
     status_msg: Any
     runtime_state: BotTaskRuntimeState
     internal_user_id: int
-    username: str
+    username: Optional[str]
     prompt: str
     task_type: str
     registry_task_id: str
@@ -64,7 +64,7 @@ class BotTaskRequestContext:
     context: Any
     chat_id: int
     internal_user_id: int
-    username: str
+    username: Optional[str]
     task_type: str
     inputs: dict
     prompt: str
@@ -133,7 +133,7 @@ class BotFinalizationPresentationPolicy:
 @dataclass(frozen=True)
 class BotTaskFailureContext:
     internal_user_id: int
-    username: str
+    username: Optional[str]
     cost: int
     should_refund: bool
     registry_task_id: Optional[str]

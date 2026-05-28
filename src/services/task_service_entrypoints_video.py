@@ -59,7 +59,7 @@ async def process_video_task_template(
         chat_id = update.effective_chat.id
         user_id = update.effective_user.id
         username = update.effective_user.username
-    if chat_id is None or user_id is None or username is None:
+    if chat_id is None or user_id is None:
         raise ValueError("process_video_task_template 缺少用户或聊天上下文")
     internal_user_id = await resolve_internal_user_id(user_id, username)
 

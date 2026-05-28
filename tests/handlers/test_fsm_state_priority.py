@@ -12,6 +12,7 @@ from src.constants import (
     MODE_IMAGE_TO_VIDEO,
     MODE_IMG2IMG_LORA,
 )
+from src.core.exceptions import InsufficientCreditsError
 from src.handlers.fsm import (
     edit_image_fsm,
     faceswap_fsm,
@@ -1011,5 +1012,54 @@ async def test_quick_video_missing_image_path_shows_alert(monkeypatch):
     query.answer.assert_awaited_once()
     assert query.answer.await_args.kwargs["show_alert"] is True
     assert "任务已提交或状态已失效" in query.answer.await_args.args[0]
+    assert "in_conversation" not in context.user_data
+    assert "quick_video_data" not in context.user_data
+
+
+@pytest.mark.asyncio
+async def test_quick_video_insufficient_credits_cleans_up_without_nameerror(monkeypatch):
+    safe_answer_mock = AsyncMock()
+    send_message_mock = AsyncMock()
+    remove_mock = Mock()
+    query = SimpleNamespace(
+        from_user=SimpleNamespace(id=12345),
+        message=SimpleNamespace(chat_id=10001, message_id=777),
+        answer=AsyncMock(),
+    )
+
+    monkeypatch.setattr("src.utils.safe_answer_query", safe_answer_mock)
+    monkeypatch.setattr("src.utils.robust_send_message", send_message_mock)
+    monkeypatch.setattr(
+        quick_video_fsm.permission_service,
+        "check_quota",
+        AsyncMock(side_effect=InsufficientCreditsError(current=1, cost=6)),
+    )
+    monkeypatch.setattr(quick_video_fsm.os.path, "exists", lambda path: True)
+    monkeypatch.setattr(quick_video_fsm.os, "remove", remove_mock)
+
+    update = SimpleNamespace(
+        callback_query=query,
+        effective_user=_build_user(),
+        effective_chat=SimpleNamespace(id=10001),
+    )
+    context = SimpleNamespace(
+        bot=SimpleNamespace(),
+        user_data={
+            "in_conversation": "QUICK_VIDEO_test",
+            "quick_video_data": {
+                "mode": "test-mode",
+                "resolution": "512p",
+                "duration": "5s",
+                "image_path": "/tmp/quick-video-input.png",
+            },
+        },
+    )
+
+    result = await quick_video_fsm.start_generation(update, context)
+
+    assert result == ConversationHandler.END
+    safe_answer_mock.assert_awaited_once()
+    send_message_mock.assert_awaited_once()
+    remove_mock.assert_called_once_with("/tmp/quick-video-input.png")
     assert "in_conversation" not in context.user_data
     assert "quick_video_data" not in context.user_data
