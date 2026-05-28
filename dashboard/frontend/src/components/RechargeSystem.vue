@@ -138,6 +138,30 @@ const formatDate = (dateStr) => {
   return new Date(dateStr).toLocaleString('zh-CN')
 }
 
+const formatOrderPrice = (record) => {
+  if (record.tx_hash && String(record.tx_hash).startsWith('manual_')) {
+    return '赠送 (0)'
+  }
+
+  if (record.final_price === undefined || record.final_price === null) {
+    return '-'
+  }
+
+  if (record.payment_channel === 'RMB') {
+    return `¥ ${record.final_price}`
+  }
+
+  if (record.payment_channel === 'XTR') {
+    return `${record.final_price} Stars`
+  }
+
+  if (record.payment_channel === 'TON') {
+    return `${record.final_price} TON`
+  }
+
+  return String(record.final_price)
+}
+
 onMounted(() => {
   loadPlans()
   loadOrders()
@@ -211,11 +235,7 @@ onMounted(() => {
               </a-tag>
             </template>
             <template v-else-if="column.key === 'final_price'">
-              <span v-if="record.tx_hash && String(record.tx_hash).startsWith('manual_')">赠送 (0)</span>
-              <span v-else-if="record.order_id && String(record.order_id).startsWith('RMB_')">¥ {{ record.final_price }}</span>
-              <span v-else-if="record.final_price >= 50">{{ record.final_price }} Stars</span>
-              <span v-else-if="record.final_price !== undefined">{{ record.final_price }} TON</span>
-              <span v-else>-</span>
+              <span>{{ formatOrderPrice(record) }}</span>
             </template>
             <template v-else-if="column.key === 'created_at'">
               {{ formatDate(record.created_at) }}

@@ -13,6 +13,21 @@ from src.database.models import WorkerLog
 logger = logging.getLogger("dashboard.worker_listener")
 
 
+def _build_task_info_from_event(event_data):
+    task_type = event_data.get("task_type") or event_data.get("type")
+    worker_id = event_data.get("worker_id")
+    created_at = event_data.get("created_at")
+
+    if not any(value not in (None, "") for value in (task_type, worker_id, created_at)):
+        return None
+
+    return {
+        "worker_id": worker_id or "unknown",
+        "type": task_type or "unknown",
+        "created_at": created_at,
+    }
+
+
 async def start_worker_listener():
     """Background task to listen for ComfyUI task events and record worker logs."""
     try:
@@ -67,9 +82,12 @@ async def process_message(message, r_worker, r_bot):
             if not acquired:
                 return
 
+            task_info = _build_task_info_from_event(event_data) or {}
+
             # 1. Fetch from worker DB
             task_key = f"comfy:task:{task_id}"
-            task_info = await r_worker.hgetall(task_key)
+            if not task_info:
+                task_info = await r_worker.hgetall(task_key)
 
             # 2. Try another pattern in worker DB just in case
             if not task_info:

@@ -72,6 +72,7 @@ class OrderResponse(BaseModel):
     plan_id: int
     original_price: float
     final_price: float
+    payment_channel: Optional[str] = None
     status: str
     tx_hash: Optional[str]
     created_at: datetime

@@ -82,10 +82,31 @@ class QueueManager:
         event_payload: Dict[str, Any],
         remove_from_running: bool = False,
     ) -> None:
+        existing_task_data = self._decode_redis_dict(
+            await self.redis.hgetall(self._task_key(task_id))
+        )
+        merged_task_data = {**existing_task_data, **task_mapping}
+        enriched_event_payload = dict(event_payload)
+        if enriched_event_payload.get("status") in {"done", "error"}:
+            task_type = merged_task_data.get("type")
+            if task_type and "task_type" not in enriched_event_payload:
+                enriched_event_payload["task_type"] = task_type
+
+            worker_id = merged_task_data.get("worker_id")
+            if worker_id and "worker_id" not in enriched_event_payload:
+                enriched_event_payload["worker_id"] = worker_id
+
+            created_at = merged_task_data.get("created_at")
+            if created_at not in (None, "") and "created_at" not in enriched_event_payload:
+                try:
+                    enriched_event_payload["created_at"] = float(created_at)
+                except (TypeError, ValueError):
+                    enriched_event_payload["created_at"] = created_at
+
         await self.redis.hset(self._task_key(task_id), mapping=task_mapping)
         if remove_from_running:
             await self.redis.srem(self.running_key, task_id)
-        await self._publish_task_event(task_id, event_payload)
+        await self._publish_task_event(task_id, enriched_event_payload)
 
     async def _get_task_type(self, task_id: str) -> Optional[str]:
         task_type_bytes = await self.redis.hget(self._task_key(task_id), "type")

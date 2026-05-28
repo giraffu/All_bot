@@ -82,6 +82,9 @@ sequenceDiagram
 - 取消时退款并终态清理
 - 失败时退款并终态清理
 
+补充约束：
+- backend 执行面在发布 `done/error` 的 `comfy:task_events:{backend_task_id}` 终态事件时，应随事件携带 `task_type`，并尽量附带 `worker_id`、`created_at` 等最小详情，避免 Dashboard/stream 消费端与 Web monitor runtime cleanup 争抢 Redis 临时详情键而产生观测竞态。
+
 ### 4.3 Bot 主链路
 Bot 不再走字符串取消协议，也不再依赖厚重 compat wrapper。当前主链为：
 

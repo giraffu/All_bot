@@ -334,10 +334,9 @@ async def test_check_zombie_tasks_fails_running_task_without_heartbeat():
     assert redis.hashes[task_key]["status"] == TaskStatus.ERROR
     assert redis.hashes[task_key]["error_msg"] == "Task execution timed out (Worker heartbeat lost)"
     payload = json.loads(redis.published[-1][1])
-    assert payload == {
-        "status": "error",
-        "error_msg": "Task execution timed out (Worker heartbeat lost)",
-    }
+    assert payload["status"] == "error"
+    assert payload["error_msg"] == "Task execution timed out (Worker heartbeat lost)"
+    assert payload["task_type"] == TaskType.VIDEO_EDIT
 
 
 @pytest.mark.asyncio
@@ -449,7 +448,15 @@ async def test_complete_task_marks_done_removes_running_and_publishes_task_type(
     manager = QueueManager(redis)
     task_key = f"{manager.task_prefix}task-done"
 
-    await redis.hset(task_key, mapping={"type": TaskType.LTX_VIDEO, "status": TaskStatus.RUNNING})
+    await redis.hset(
+        task_key,
+        mapping={
+            "type": TaskType.LTX_VIDEO,
+            "status": TaskStatus.RUNNING,
+            "worker_id": "worker-1",
+            "created_at": 123.0,
+        },
+    )
     await redis.sadd(manager.running_key, "task-done")
 
     await manager.complete_task("task-done", "outputs/result.mp4")
@@ -467,6 +474,8 @@ async def test_complete_task_marks_done_removes_running_and_publishes_task_type(
                 "result_path": "outputs/result.mp4",
                 "progress": 1.0,
                 "task_type": TaskType.LTX_VIDEO,
+                "worker_id": "worker-1",
+                "created_at": 123.0,
             }
         ),
     ) in redis.published
@@ -494,7 +503,16 @@ async def test_fail_task_marks_error_removes_running_and_publishes_error():
     manager = QueueManager(redis)
     task_key = f"{manager.task_prefix}task-error"
 
-    await redis.hset(task_key, mapping={"status": TaskStatus.RUNNING, "cancel_requested": 1})
+    await redis.hset(
+        task_key,
+        mapping={
+            "status": TaskStatus.RUNNING,
+            "cancel_requested": 1,
+            "type": TaskType.IMG2IMG,
+            "worker_id": "worker-2",
+            "created_at": 456.0,
+        },
+    )
     await redis.sadd(manager.running_key, "task-error")
 
     await manager.fail_task("task-error", "boom")
@@ -505,7 +523,15 @@ async def test_fail_task_marks_error_removes_running_and_publishes_error():
     assert "task-error" not in redis.sets[manager.running_key]
     assert (
         "comfy:task_events:task-error",
-        json.dumps({"status": "error", "error_msg": "boom"}),
+        json.dumps(
+            {
+                "status": "error",
+                "error_msg": "boom",
+                "task_type": TaskType.IMG2IMG,
+                "worker_id": "worker-2",
+                "created_at": 456.0,
+            }
+        ),
     ) in redis.published
 
 

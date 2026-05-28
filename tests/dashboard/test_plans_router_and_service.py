@@ -48,6 +48,7 @@ def _build_order(**overrides):
         "plan_id": 5,
         "original_price": 10.0,
         "final_price": 8.0,
+        "payment_channel": "RMB",
         "status": "SUCCESS",
         "tx_hash": "tx-1",
         "created_at": datetime(2026, 1, 1, 12, 0, 0),
@@ -69,6 +70,7 @@ def test_build_order_item_payload_flattens_username_and_plan_name():
     assert payload["plan_name"] == "月卡"
     assert payload["order_id"] == "order-1"
     assert payload["internal_user_id"] == 123
+    assert payload["payment_channel"] == "RMB"
 
 
 @pytest.mark.asyncio

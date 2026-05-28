@@ -218,6 +218,7 @@ Central API 是执行面，不是业务主入口。
 
 执行面负责：
 - 接收 backend 任务
+- 在 `comfy:task_events:{backend_task_id}` 发布运行态与终态事件；其中 `done/error` 终态事件应附带 `task_type`，并优先带上 `worker_id`、`created_at` 等最小详情，供 Dashboard / stream 消费端在上游 runtime cleanup 已发生时仍能完成观测落库
 - 写入 pending 队列
 - 维护 worker 心跳视图
 - 处理 agent `pop`
