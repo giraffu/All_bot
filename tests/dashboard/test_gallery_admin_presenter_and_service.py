@@ -1,5 +1,6 @@
 from datetime import datetime
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -106,3 +107,56 @@ def test_build_dashboard_comment_item_formats_author_name_and_post_metadata():
     assert result["post_task_id"] == "task-7"
     assert result["author_name"] == "tester"
     assert result["created_at"] == "2026-01-01T12:00:00"
+
+
+class _ScalarResult:
+    def __init__(self, value):
+        self.value = value
+
+    def scalar_one_or_none(self):
+        return self.value
+
+
+class _DeleteGalleryPostDB:
+    def __init__(self, results):
+        self._results = iter(results)
+        self.delete = AsyncMock()
+        self.commit = AsyncMock()
+
+    async def execute(self, stmt):
+        return next(self._results)
+
+
+@pytest.mark.asyncio
+async def test_delete_gallery_post_payload_cleans_r2_objects_from_history():
+    post = SimpleNamespace(id=7, task_id="task-1", user_id=123)
+    history = SimpleNamespace(
+        task_id="task-1",
+        user_id=123,
+        output_file="123/output_images/task-1.png",
+        type="image",
+        is_public=True,
+    )
+    db = _DeleteGalleryPostDB([
+        _ScalarResult(post),
+        _ScalarResult(history),
+    ])
+    cleanup_mock = AsyncMock(return_value=4)
+
+    response = await gallery_admin_service.delete_gallery_post_payload(
+        post_id=7,
+        db=db,
+        storage_service=SimpleNamespace(async_delete_r2_objects=cleanup_mock),
+    )
+
+    assert response == {"success": True, "message": "Post deleted successfully"}
+    assert history.is_public is False
+    db.delete.assert_awaited_once_with(post)
+    db.commit.assert_awaited_once()
+    cleanup_mock.assert_awaited_once()
+    assert set(cleanup_mock.await_args.args[0]) == {
+        "history/task-1/original.png",
+        "history/task-1/thumb.webp",
+        "task-1.png",
+        "task-1_thumb.webp",
+    }

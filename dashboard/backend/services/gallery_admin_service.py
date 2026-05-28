@@ -8,8 +8,9 @@ from dashboard.backend.presenters.gallery_admin_presenter import (
     build_dashboard_comment_item,
     build_gallery_post_item,
 )
-from src.database.models import GalleryComment, GalleryPost
+from src.database.models import GalleryComment, GalleryPost, History
 from src.services.storage import storage
+from src.services.storage_r2_cleanup import build_history_r2_cleanup_keys
 
 logger = logging.getLogger("dashboard.gallery")
 
@@ -98,16 +99,58 @@ async def delete_gallery_post_payload(
     *,
     post_id: int,
     db,
+    storage_service=storage,
     logger_override: logging.Logger | None = None,
 ) -> dict:
     active_logger = logger_override or logger
+    r2_cleanup_keys: set[str] = set()
     try:
         result = await db.execute(select(GalleryPost).where(GalleryPost.id == post_id))
         post = result.scalar_one_or_none()
         if not post:
             raise HTTPException(status_code=404, detail="Post not found")
+
+        history = None
+        if post.task_id:
+            history = (
+                await db.execute(
+                    select(History).where(
+                        History.task_id == post.task_id,
+                        History.user_id == post.user_id,
+                    )
+                )
+            ).scalar_one_or_none()
+            if history:
+                history.is_public = False
+                if history.output_file:
+                    r2_cleanup_keys = build_history_r2_cleanup_keys(
+                        post.task_id,
+                        history.output_file,
+                        history.type,
+                    )
+            else:
+                await db.execute(
+                    update(History)
+                    .where(
+                        History.task_id == post.task_id,
+                        History.user_id == post.user_id,
+                    )
+                    .values(is_public=False)
+                )
+
         await db.delete(post)
         await db.commit()
+
+        if r2_cleanup_keys:
+            try:
+                await storage_service.async_delete_r2_objects(list(r2_cleanup_keys))
+            except Exception:
+                active_logger.warning(
+                    "Failed to clean R2 cache after dashboard deleting gallery post %s",
+                    post_id,
+                    exc_info=True,
+                )
+
         return {"success": True, "message": "Post deleted successfully"}
     except HTTPException:
         raise
