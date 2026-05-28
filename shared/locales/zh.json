@@ -409,6 +409,11 @@
     "delete_success": "删除成功",
     "delete_failed": "删除失败"
   },
+  "prompt_panel": {
+    "title": "提示词预览",
+    "expand": "展开全文",
+    "collapse": "收起"
+  },
   "task": {
     "img2img": "🎨 懒人/自由P图",
     "img2img_lora": "🎨 图生图 (附加模型)",

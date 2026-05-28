@@ -130,6 +130,36 @@ const PromptCopyButtonStub = defineComponent({
   `,
 })
 
+const PromptPreviewPanelStub = defineComponent({
+  name: 'PromptPreviewPanelStub',
+  props: {
+    title: {
+      type: String,
+      default: '',
+    },
+    prompt: {
+      type: String,
+      default: '',
+    },
+    showCopy: {
+      type: Boolean,
+      default: false,
+    },
+    copyLabel: {
+      type: String,
+      default: '',
+    },
+  },
+  emits: ['copy'],
+  template: `
+    <div class="prompt-preview-panel-stub">
+      <span class="prompt-preview-title">{{ title }}</span>
+      <span class="prompt-preview-text">{{ prompt }}</span>
+      <button v-if="showCopy" class="prompt-preview-copy-btn" @click="$emit('copy')">{{ copyLabel }}</button>
+    </div>
+  `,
+})
+
 const baseProps = {
   open: true,
   currentPost: {
@@ -186,6 +216,7 @@ const mountModal = (props = {}, slots = {}) =>
         DetailReactionBar: DetailReactionBarStub,
         DetailApplyActions: DetailApplyActionsStub,
         PromptCopyButton: PromptCopyButtonStub,
+        PromptPreviewPanel: PromptPreviewPanelStub,
       },
     },
   })
@@ -206,6 +237,7 @@ describe('GalleryDetailModal', () => {
         showMobileReaction: true,
         showMobileApply: true,
         showMobileCopy: true,
+        showPromptPanelCopy: true,
         desktopApplyPlacement: 'after',
         desktopApplyInline: true,
         applyLabel: '一键应用',
@@ -221,6 +253,7 @@ describe('GalleryDetailModal', () => {
     expect(wrapper.findAll('.detail-reaction-bar-stub')).toHaveLength(2)
     expect(wrapper.findAll('.detail-apply-actions-stub')).toHaveLength(2)
     expect(wrapper.find('.prompt-copy-button-stub').text()).toContain('复制提示词')
+    expect(wrapper.find('.prompt-preview-panel-stub').text()).toContain('demo prompt')
     expect(wrapper.text()).toContain('一键应用')
 
     const likeButtons = wrapper.findAll('.like-btn')
@@ -232,6 +265,7 @@ describe('GalleryDetailModal', () => {
     await likeButtons[0].trigger('click')
     await dislikeButtons[0].trigger('click')
     await commentButtons[0].trigger('click')
+    await wrapper.get('.prompt-preview-copy-btn').trigger('click')
     await wrapper.get('.prompt-copy-button-stub').trigger('click')
     await copyButtons[0].trigger('click')
     await applyButtons[0].trigger('click')
@@ -239,7 +273,7 @@ describe('GalleryDetailModal', () => {
     expect(onLike).toHaveBeenCalledTimes(1)
     expect(onDislike).toHaveBeenCalledTimes(1)
     expect(onComment).toHaveBeenCalledTimes(1)
-    expect(onCopy).toHaveBeenCalledTimes(2)
+    expect(onCopy).toHaveBeenCalledTimes(3)
     expect(onApply).toHaveBeenCalledTimes(1)
   })
 

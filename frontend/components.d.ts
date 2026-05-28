@@ -72,6 +72,7 @@ declare module 'vue' {
     ProfileRedeemOverlays: typeof import('./src/components/profile/ProfileRedeemOverlays.vue')['default']
     ProfileWelcomeBanner: typeof import('./src/components/profile/ProfileWelcomeBanner.vue')['default']
     PromptCopyButton: typeof import('./src/components/PromptCopyButton.vue')['default']
+    PromptPreviewPanel: typeof import('./src/components/PromptPreviewPanel.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
     SegmentedTabsRail: typeof import('./src/components/SegmentedTabsRail.vue')['default']

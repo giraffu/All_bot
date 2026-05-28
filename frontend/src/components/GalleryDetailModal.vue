@@ -9,6 +9,7 @@ import DetailCommentsSection from '@/components/DetailCommentsSection.vue'
 import DetailMobileBottomBar from '@/components/DetailMobileBottomBar.vue'
 import DetailDesktopActions from '@/components/DetailDesktopActions.vue'
 import PromptCopyButton from '@/components/PromptCopyButton.vue'
+import PromptPreviewPanel from '@/components/PromptPreviewPanel.vue'
 
 type DetailPost = any
 
@@ -19,6 +20,7 @@ interface DetailStandardActions {
   showMobileReaction?: boolean
   showMobileApply?: boolean
   showMobileCopy?: boolean
+  showPromptPanelCopy?: boolean
   desktopApplyPlacement?: 'before' | 'after'
   desktopApplyInline?: boolean
   applyLabel?: string
@@ -173,6 +175,18 @@ const handleNewCommentInput = (event: Event) => {
             </div>
           </div>
         </div>
+
+        <PromptPreviewPanel
+          v-if="currentPost.prompt?.trim()"
+          class="mb-4 lg:mb-6"
+          :title="$t('prompt_panel.title')"
+          :prompt="currentPost.prompt"
+          :expand-label="$t('prompt_panel.expand')"
+          :collapse-label="$t('prompt_panel.collapse')"
+          :show-copy="!!standardActions?.showPromptPanelCopy"
+          :copy-label="standardActions?.copyLabel || ''"
+          @copy="standardActions?.onCopy?.()"
+        />
 
         <slot
           name="before-comments"
@@ -400,6 +414,16 @@ const handleNewCommentInput = (event: Event) => {
   --detail-modal-tag-bg: rgba(15, 23, 42, 0.72);
   --detail-modal-tag-border: rgba(71, 85, 105, 0.92);
   --detail-modal-tag-text: #22d3ee;
+  --prompt-preview-bg: rgba(15, 23, 42, 0.58);
+  --prompt-preview-border: rgba(71, 85, 105, 0.9);
+  --prompt-preview-shadow: inset 0 1px 0 rgba(148, 163, 184, 0.06);
+  --prompt-preview-title: #f8fafc;
+  --prompt-preview-text: #dbeafe;
+  --prompt-preview-muted: #94a3b8;
+  --prompt-preview-action-bg: rgba(15, 23, 42, 0.72);
+  --prompt-preview-action-hover: rgba(30, 41, 59, 0.88);
+  --prompt-preview-action-border: rgba(71, 85, 105, 0.95);
+  --prompt-preview-action-text: #f8fafc;
 }
 
 html[data-theme='light'] .gallery-detail-modal {
@@ -431,6 +455,16 @@ html[data-theme='light'] .gallery-detail-modal {
   --detail-modal-tag-bg: rgba(219, 234, 254, 0.8);
   --detail-modal-tag-border: rgba(147, 197, 253, 0.6);
   --detail-modal-tag-text: #1d4ed8;
+  --prompt-preview-bg: rgba(248, 250, 252, 0.96);
+  --prompt-preview-border: rgba(203, 213, 225, 0.92);
+  --prompt-preview-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.82);
+  --prompt-preview-title: #0f172a;
+  --prompt-preview-text: #334155;
+  --prompt-preview-muted: #64748b;
+  --prompt-preview-action-bg: rgba(241, 245, 249, 0.98);
+  --prompt-preview-action-hover: rgba(226, 232, 240, 0.98);
+  --prompt-preview-action-border: rgba(203, 213, 225, 0.95);
+  --prompt-preview-action-text: #1e293b;
 }
 
 .gallery-detail-modal .detail-modal-mobile-title,

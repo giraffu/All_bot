@@ -10,6 +10,7 @@ export interface GalleryDetailStandardActions {
   showMobileReaction?: boolean
   showMobileApply?: boolean
   showMobileCopy?: boolean
+  showPromptPanelCopy?: boolean
   desktopApplyPlacement?: 'before' | 'after'
   desktopApplyInline?: boolean
   applyLabel?: string

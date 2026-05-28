@@ -5,6 +5,8 @@ import { useViewport } from '@/composables/useViewport'
 import { useTasksStore } from '@/stores/tasks'
 import { useTaskFormat } from '@/composables/useTaskFormat'
 import { useTaskInteraction } from '@/composables/useTaskInteraction'
+import { usePostPromptCopy } from '@/composables/usePostPromptCopy'
+import PromptPreviewPanel from '@/components/PromptPreviewPanel.vue'
 import { useI18n } from 'vue-i18n'
 
 const { isMobile } = useViewport()
@@ -12,6 +14,7 @@ const { t } = useI18n()
 const tasksStore = useTasksStore()
 
 const { formatDate, getTypeLabel, getFileUrl, isVideoFile } = useTaskFormat()
+const { copyPrompt } = usePostPromptCopy(t)
 
 const detailVisible = computed({
   get: () => tasksStore.detailModalVisible,
@@ -110,6 +113,17 @@ const {
                 {{ formatDate(currentRecord.created_at) }}
               </div>
             </div>
+
+            <PromptPreviewPanel
+              v-if="currentRecord.prompt?.trim()"
+              :title="$t('prompt_panel.title')"
+              :prompt="currentRecord.prompt"
+              :expand-label="$t('prompt_panel.expand')"
+              :collapse-label="$t('prompt_panel.collapse')"
+              :show-copy="true"
+              :copy-label="$t('my_posts.copy_prompt')"
+              @copy="copyPrompt(currentRecord)"
+            />
           </div>
 
           <!-- Desktop Actions -->
@@ -244,6 +258,16 @@ const {
   --task-detail-secondary-border: rgba(148, 163, 184, 0.36);
   --task-detail-primary-gradient: linear-gradient(90deg, #0891b2, #4f46e5);
   --task-detail-primary-gradient-hover: linear-gradient(90deg, #06b6d4, #6366f1);
+  --prompt-preview-bg: rgba(2, 6, 23, 0.28);
+  --prompt-preview-border: rgba(100, 116, 139, 0.32);
+  --prompt-preview-shadow: inset 0 1px 0 rgba(148, 163, 184, 0.05);
+  --prompt-preview-title: #f8fafc;
+  --prompt-preview-text: #dbeafe;
+  --prompt-preview-muted: #94a3b8;
+  --prompt-preview-action-bg: rgba(15, 23, 42, 0.66);
+  --prompt-preview-action-hover: rgba(30, 41, 59, 0.84);
+  --prompt-preview-action-border: rgba(100, 116, 139, 0.5);
+  --prompt-preview-action-text: #f8fafc;
 }
 
 html[data-theme='light'] .history-detail-modal {
@@ -268,6 +292,16 @@ html[data-theme='light'] .history-detail-modal {
   --task-detail-secondary-border: rgba(148, 163, 184, 0.35);
   --task-detail-primary-gradient: linear-gradient(90deg, #2563eb, #4f46e5);
   --task-detail-primary-gradient-hover: linear-gradient(90deg, #1d4ed8, #4338ca);
+  --prompt-preview-bg: rgba(255, 255, 255, 0.88);
+  --prompt-preview-border: rgba(203, 213, 225, 0.95);
+  --prompt-preview-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.85);
+  --prompt-preview-title: #0f172a;
+  --prompt-preview-text: #334155;
+  --prompt-preview-muted: #64748b;
+  --prompt-preview-action-bg: rgba(241, 245, 249, 0.98);
+  --prompt-preview-action-hover: rgba(226, 232, 240, 0.98);
+  --prompt-preview-action-border: rgba(203, 213, 225, 0.95);
+  --prompt-preview-action-text: #1e293b;
 }
 
 .history-detail-modal .ant-modal-content {

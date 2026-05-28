@@ -409,6 +409,11 @@
     "delete_success": "Deleted successfully",
     "delete_failed": "Delete failed"
   },
+  "prompt_panel": {
+    "title": "Prompt Preview",
+    "expand": "Expand",
+    "collapse": "Collapse"
+  },
   "task": {
     "img2img": "🎨 Custom Edit",
     "img2img_lora": "🎨 Img2Img (Addon)",

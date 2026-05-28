@@ -43,6 +43,7 @@ import StickyHeaderSection from '@/components/StickyHeaderSection.vue'
 import { usePagedScrollNavigation } from '@/composables/usePagedScrollNavigation'
 import { useDetailTemplateApply } from '@/composables/useDetailTemplateApply'
 import { useRenderSettling } from '@/composables/useRenderSettling'
+import { usePostPromptCopy } from '@/composables/usePostPromptCopy'
 import type { GalleryPost as Post } from '@/types/gallery'
 
 
@@ -175,15 +176,18 @@ const currentDetailMedia = useCurrentDetailMedia(currentPost, {
   normalizeGalleryThumbnail: true,
 })
 const formatTag = (tag: string) => formatGalleryTag(tag, t)
+const { copyPrompt } = usePostPromptCopy(t)
 const galleryDetailStandardActions = computed(() => ({
   showDesktopReaction: true,
   showDesktopApply: true,
   showMobileReaction: true,
   showMobileApply: true,
+  showPromptPanelCopy: true,
   desktopApplyPlacement: 'before' as const,
   applyLabel: t('gallery.modal.apply_btn'),
   applyLoading: applying.value,
   applyHint: t('gallery.modal.apply_hint'),
+  copyLabel: t('my_posts.copy_prompt'),
   onLike: () => {
     if (currentPost.value) {
       void handleInteract(currentPost.value, 'like')
@@ -199,6 +203,11 @@ const galleryDetailStandardActions = computed(() => ({
   },
   onApply: () => {
     void handleApply()
+  },
+  onCopy: () => {
+    if (currentPost.value) {
+      copyPrompt(currentPost.value)
+    }
   },
 }))
 const {
