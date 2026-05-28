@@ -227,7 +227,8 @@ describe('TemplateFaceSwapPanel', () => {
     await nextTick()
 
     expect(wrapper.text()).toContain('已加载一键换脸模板')
-    expect(wrapper.html()).toContain('https://example.com/template-target.png')
+    expect(wrapper.text()).not.toContain('目标图')
+    expect(wrapper.findAllComponents(UploadDraggerStub)).toHaveLength(1)
     expect(setSubmittedTaskIdMock).toHaveBeenCalledWith(null)
     expect(templateApplyStoreMock.setDirtyState).toHaveBeenCalledWith(false)
     expect(templateApplyStoreMock.registerPanelController).toHaveBeenCalledWith(
@@ -238,21 +239,17 @@ describe('TemplateFaceSwapPanel', () => {
     )
   })
 
-  it('warns and blocks target upload when the template target is locked', async () => {
+  it('hides the locked target section for template apply', async () => {
     const wrapper = mountPanel({
       inputFileUrl: null
     })
     await nextTick()
 
-    const file = new File(['target'], 'target.png', { type: 'image/png' })
     const uploaders = wrapper.findAllComponents(UploadDraggerStub)
 
-    expect(uploaders).toHaveLength(2)
-
-    const result = await uploaders[1].props('beforeUpload')(file)
-
-    expect(result).toBe(false)
-    expect(messageWarningMock).toHaveBeenCalledWith('当前模板已锁定目标场景，请直接上传需要替换的人脸')
+    expect(uploaders).toHaveLength(1)
+    expect(wrapper.text()).not.toContain('目标图')
+    expect(messageWarningMock).not.toHaveBeenCalled()
     expect(uploadFileMock).not.toHaveBeenCalled()
   })
 

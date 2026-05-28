@@ -185,6 +185,22 @@ class MembershipPlan(Base):
     is_active = Column(Boolean, default=True)
 
 
+class SiteNotice(Base):
+    __tablename__ = "site_notices"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    title = Column(String(255), nullable=False, default="", server_default=text("''"))
+    content = Column(Text, nullable=False, default="")
+    is_active = Column(Boolean, nullable=False, default=False, server_default=text("false"))
+    is_pinned = Column(Boolean, nullable=False, default=False, server_default=text("false"))
+    target_groups = Column(JSON, nullable=False, default=list, server_default=text("'[]'::json"))
+    target_identities = Column(JSON, nullable=False, default=list, server_default=text("'[]'::json"))
+    published_at = Column(DateTime, nullable=True)
+    deleted_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+
 class Order(Base):
     __tablename__ = "orders"
 

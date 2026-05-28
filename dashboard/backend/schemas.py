@@ -28,6 +28,20 @@ class AdminGiftRequest(BaseModel):
     note: Optional[str] = "后台手动赠送"
 
 
+class TransferUserDataRequest(BaseModel):
+    target_user_id: int = Field(..., gt=0)
+    note: Optional[str] = "后台用户数据转移"
+
+
+class TransferUserDataResponse(BaseModel):
+    status: str = "ok"
+    message: str
+    source_user_id: int
+    target_user_id: int
+    moved_counts: Dict[str, int] = Field(default_factory=dict)
+    merged_profile: Dict[str, Any] = Field(default_factory=dict)
+
+
 class MembershipPlanCreate(BaseModel):
     name: str
     identity_name: str
@@ -188,3 +202,37 @@ class GalleryPostUpdate(BaseModel):
 
 class CommentUpdate(BaseModel):
     is_active: bool
+
+
+class SiteNoticeUpsertRequest(BaseModel):
+    title: str = Field(default="", max_length=255)
+    content: str = Field(default="", max_length=5000)
+    is_active: bool = False
+    is_pinned: bool = False
+    target_groups: List[str] = Field(default_factory=list)
+    target_identities: List[str] = Field(default_factory=list)
+
+
+class SiteNoticeUpdateRequest(SiteNoticeUpsertRequest):
+    pass
+
+
+class SiteNoticeCreateRequest(SiteNoticeUpsertRequest):
+    pass
+
+
+class SiteNoticeResponse(BaseModel):
+    id: Optional[int] = None
+    title: str = ""
+    content: str = Field(default="", max_length=5000)
+    is_active: bool = False
+    is_pinned: bool = False
+    target_groups: List[str] = Field(default_factory=list)
+    target_identities: List[str] = Field(default_factory=list)
+    published_at: Optional[datetime] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+
+class SiteNoticeListResponse(BaseModel):
+    items: List[SiteNoticeResponse] = Field(default_factory=list)

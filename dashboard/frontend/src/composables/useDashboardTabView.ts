@@ -9,6 +9,7 @@ import HomeDashboard from '../components/HomeDashboard.vue'
 import LogTable from '../components/LogTable.vue'
 import RechargeSystem from '../components/RechargeSystem.vue'
 import ReferralTable from '../components/ReferralTable.vue'
+import SiteNoticeSettings from '../components/SiteNoticeSettings.vue'
 import TemplateManager from '../components/TemplateManager.vue'
 import UserTable from '../components/UserTable.vue'
 import WorkerHistoryTable from '../components/WorkerHistoryTable.vue'
@@ -57,6 +58,7 @@ const TAB_COMPONENTS = {
   gallery: markRaw(GalleryTable),
   gallery_comments: markRaw(GalleryCommentsTable),
   referrals: markRaw(ReferralTable),
+  site_notice: markRaw(SiteNoticeSettings),
 } satisfies Record<string, Component>
 
 export function useDashboardTabView(
@@ -149,6 +151,11 @@ export function useDashboardTabView(
     },
     referrals: {
       component: TAB_COMPONENTS.referrals,
+      containerClass: BASE_CONTAINER_CLASS,
+      bindings: {},
+    },
+    site_notice: {
+      component: TAB_COMPONENTS.site_notice,
       containerClass: BASE_CONTAINER_CLASS,
       bindings: {},
     },

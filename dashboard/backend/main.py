@@ -20,6 +20,7 @@ from dashboard.backend.routers import (
     logs,
     plans,
     referrals,
+    site_notice,
     stats,
     system,
     templates,
@@ -49,6 +50,7 @@ app.include_router(logs.router)
 app.include_router(workers.router)
 app.include_router(gallery.router)
 app.include_router(referrals.router)
+app.include_router(site_notice.router)
 
 background_tasks = set()
 app.state.dashboard_health = {

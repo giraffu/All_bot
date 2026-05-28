@@ -66,6 +66,8 @@ const isTemplateVideoSettingsLocked = ref(false)
 const isTemplatePromptLocked = ref(false)
 const templateSettingsWarning = ref('')
 const templateApplyNotice = ref('')
+const showActionSection = computed(() => !isTemplatePromptLocked.value)
+const showOutputSettingsSection = computed(() => !isTemplateVideoSettingsLocked.value)
 
 const initialObjectKey = ref<string | null>(null)
 const initialResolution = ref('512')
@@ -360,106 +362,96 @@ onBeforeUnmount(() => {
           </div>
         </div>
 
-        <div class="mt-6 rounded-xl border border-slate-700 bg-slate-800/70 p-4">
+        <div v-if="showActionSection" class="mt-6 rounded-xl border border-slate-700 bg-slate-800/70 p-4">
           <div class="text-sm font-semibold text-slate-200 mb-3">
             {{ isUnifiedImageToVideo ? t('template_apply.image_to_video.action_and_model') : t('template_apply.image_to_video.desc_and_params') }}
           </div>
-
-          <div v-if="isTemplatePromptLocked" class="rounded-xl border border-slate-700 bg-slate-900/70 px-4 py-6 text-center text-sm text-slate-300">
-            <div class="font-medium text-slate-200">{{ t('template_apply.common.prompt_locked_title') }}</div>
-            <div class="mt-2 text-xs text-slate-400">{{ t('template_apply.common.prompt_locked_video_hint') }}</div>
+          <div v-if="isUnifiedImageToVideo && !isLtxVideo" class="mb-3">
+            <a-select
+              v-model:value="loraSelection"
+              :placeholder="t('template_apply.image_to_video.select_addon')"
+              class="w-full"
+            >
+              <a-select-option
+                v-for="option in (isLtxVideo ? LTX_VIDEO_LORA_OPTIONS : IMAGE_TO_VIDEO_LORA_OPTIONS)"
+                :key="option.value"
+                :value="option.value"
+              >
+                {{ option.label }}
+              </a-select-option>
+            </a-select>
+            <p v-if="isLtxVideo && loraName && loraStrength != null" class="mt-2 text-xs text-slate-400">
+              默认强度：{{ loraStrength }}
+            </p>
           </div>
-          <template v-else>
-            <div v-if="isUnifiedImageToVideo && !isLtxVideo" class="mb-3">
-              <a-select
-                v-model:value="loraSelection"
-                :placeholder="t('template_apply.image_to_video.select_addon')"
-                class="w-full"
+          <div v-else-if="isLtxVideo" class="mb-4 space-y-3">
+            <a-select
+              :value="selectedLtxLoraNames"
+              mode="multiple"
+              placeholder="选择要叠加的附加模型"
+              class="w-full"
+              :max-tag-count="2"
+              :max-tag-placeholder="(omittedValues: Array<{ label: string; value: string }>) => `+${omittedValues.length}`"
+              @change="syncLtxLoraItems($event as string[])"
+            >
+              <a-select-option
+                v-for="option in LTX_VIDEO_LORA_OPTIONS.filter(item => item.value !== '__none__')"
+                :key="option.value"
+                :value="option.value"
               >
-                <a-select-option
-                  v-for="option in (isLtxVideo ? LTX_VIDEO_LORA_OPTIONS : IMAGE_TO_VIDEO_LORA_OPTIONS)"
-                  :key="option.value"
-                  :value="option.value"
-                >
-                  {{ option.label }}
-                </a-select-option>
-              </a-select>
-              <p v-if="isLtxVideo && loraName && loraStrength != null" class="mt-2 text-xs text-slate-400">
-                默认强度：{{ loraStrength }}
-              </p>
-            </div>
-            <div v-else-if="isLtxVideo" class="mb-4 space-y-3">
-              <a-select
-                :value="selectedLtxLoraNames"
-                mode="multiple"
-                placeholder="选择要叠加的附加模型"
-                class="w-full"
-                :max-tag-count="2"
-                :max-tag-placeholder="(omittedValues: Array<{ label: string; value: string }>) => `+${omittedValues.length}`"
-                @change="syncLtxLoraItems($event as string[])"
+                {{ option.label }}
+              </a-select-option>
+            </a-select>
+            <p class="text-xs text-slate-400">最多可叠加 3 个附加模型，每个模型可单独调整强度。</p>
+            <div v-if="ltxLoraItems.length > 0" class="space-y-3">
+              <div
+                v-for="item in ltxLoraItems"
+                :key="item.name"
+                class="rounded-xl border border-slate-700 bg-slate-900/70 px-3 py-3"
               >
-                <a-select-option
-                  v-for="option in LTX_VIDEO_LORA_OPTIONS.filter(item => item.value !== '__none__')"
-                  :key="option.value"
-                  :value="option.value"
-                >
-                  {{ option.label }}
-                </a-select-option>
-              </a-select>
-              <p class="text-xs text-slate-400">最多可叠加 3 个附加模型，每个模型可单独调整强度。</p>
-              <div v-if="ltxLoraItems.length > 0" class="space-y-3">
-                <div
-                  v-for="item in ltxLoraItems"
-                  :key="item.name"
-                  class="rounded-xl border border-slate-700 bg-slate-900/70 px-3 py-3"
-                >
-                  <div class="flex items-center justify-between gap-3">
-                    <div class="text-sm text-slate-100">
-                      {{ LTX_VIDEO_LORA_OPTIONS.find(option => option.value === item.name)?.label ?? item.name }}
-                    </div>
-                    <div class="flex items-center gap-2">
-                      <span class="text-xs text-slate-400">默认/当前强度：{{ item.strength.toFixed(2) }}</span>
-                      <a-button size="small" @click="toggleLtxLoraStrengthEditor(item.name)">
-                        {{ expandedLtxLoraEditors.includes(item.name) ? '收起设置' : '设置强度' }}
-                      </a-button>
-                      <a-button size="small" danger ghost @click="removeLtxLoraItem(item.name)">移除</a-button>
-                    </div>
+                <div class="flex items-center justify-between gap-3">
+                  <div class="text-sm text-slate-100">
+                    {{ LTX_VIDEO_LORA_OPTIONS.find(option => option.value === item.name)?.label ?? item.name }}
                   </div>
-                  <div v-if="expandedLtxLoraEditors.includes(item.name)" class="mt-3 flex items-center gap-3">
-                    <a-slider
-                      :min="0.1"
-                      :max="2"
-                      :step="0.05"
-                      :value="item.strength"
-                      class="flex-1"
-                      @update:value="updateLtxLoraStrength(item.name, $event as number)"
-                    />
-                    <a-input-number
-                      :min="0.1"
-                      :max="2"
-                      :step="0.05"
-                      :value="item.strength"
-                      size="small"
-                      @update:value="updateLtxLoraStrength(item.name, $event as number | null)"
-                    />
+                  <div class="flex items-center gap-2">
+                    <span class="text-xs text-slate-400">默认/当前强度：{{ item.strength.toFixed(2) }}</span>
+                    <a-button size="small" @click="toggleLtxLoraStrengthEditor(item.name)">
+                      {{ expandedLtxLoraEditors.includes(item.name) ? '收起设置' : '设置强度' }}
+                    </a-button>
+                    <a-button size="small" danger ghost @click="removeLtxLoraItem(item.name)">移除</a-button>
                   </div>
+                </div>
+                <div v-if="expandedLtxLoraEditors.includes(item.name)" class="mt-3 flex items-center gap-3">
+                  <a-slider
+                    :min="0.1"
+                    :max="2"
+                    :step="0.05"
+                    :value="item.strength"
+                    class="flex-1"
+                    @update:value="updateLtxLoraStrength(item.name, $event as number)"
+                  />
+                  <a-input-number
+                    :min="0.1"
+                    :max="2"
+                    :step="0.05"
+                    :value="item.strength"
+                    size="small"
+                    @update:value="updateLtxLoraStrength(item.name, $event as number | null)"
+                  />
                 </div>
               </div>
             </div>
-            <a-textarea
-              v-model:value="prompt"
-              :rows="6"
-              :placeholder="isUnifiedImageToVideo ? t('template_apply.image_to_video.prompt_placeholder_video_lora') : t('template_apply.image_to_video.prompt_placeholder_custom')"
-            />
-          </template>
+          </div>
+          <a-textarea
+            v-model:value="prompt"
+            :rows="6"
+            :placeholder="isUnifiedImageToVideo ? t('template_apply.image_to_video.prompt_placeholder_video_lora') : t('template_apply.image_to_video.prompt_placeholder_custom')"
+          />
         </div>
 
-        <div class="mt-6 rounded-xl border border-slate-700 bg-slate-800/70 p-4">
+        <div v-if="showOutputSettingsSection" class="mt-6 rounded-xl border border-slate-700 bg-slate-800/70 p-4">
           <div class="text-sm font-semibold text-slate-200 mb-3">{{ t('template_apply.common.output_settings') }}</div>
-          <div v-if="isTemplateVideoSettingsLocked" class="rounded-xl border border-slate-700 bg-slate-900/70 px-4 py-6 text-center text-sm text-slate-300">
-            {{ t('template_apply.common.template_locked_settings') }}
-          </div>
-          <div v-else class="space-y-4">
+          <div class="space-y-4">
             <div>
               <label class="block text-xs font-medium text-slate-300 mb-2">{{ t('template_apply.common.resolution') }}</label>
               <a-radio-group

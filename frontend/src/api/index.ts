@@ -64,4 +64,9 @@ api.interceptors.response.use(
   }
 )
 
+export const fetchSiteNoticeCenter = async () => {
+  const response = await api.get('/app/site-notices')
+  return response.data
+}
+
 export default api

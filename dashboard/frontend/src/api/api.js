@@ -212,6 +212,15 @@ export const adminGiftPlan = async (userId, planId, note = "后台手动赠送")
   })
 }
 
+export const transferUserData = async (
+  sourceUserId,
+  targetUserId,
+  note = '后台用户数据转移'
+) => post(`/api/users/${sourceUserId}/transfer`, {
+  target_user_id: targetUserId,
+  note,
+})
+
 // Gallery API
 export const fetchGalleryPosts = async (params) => get('/api/gallery/all', { params })
 
@@ -228,6 +237,14 @@ export const updateGalleryComment = async (commentId, data) =>
 export const deleteGalleryPost = async (postId) => del(`/api/gallery/${postId}`)
 
 export const fetchReferralRewards = async () => get('/api/referrals/rewards')
+
+export const fetchSiteNotices = async () => get('/api/site-notices')
+
+export const createSiteNotice = async (payload) => post('/api/site-notices', payload)
+
+export const updateSiteNotice = async (noticeId, payload) => put(`/api/site-notices/${noticeId}`, payload)
+
+export const deleteSiteNotice = async (noticeId) => del(`/api/site-notices/${noticeId}`)
 
 export const fetchAffiliateRedeemRecords = async ({
   page = 1,

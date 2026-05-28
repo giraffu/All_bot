@@ -11,12 +11,14 @@ export {}
 /* prettier-ignore */
 declare module 'vue' {
   export interface GlobalComponents {
+    AAlert: typeof import('ant-design-vue/es')['Alert']
     AAvatar: typeof import('ant-design-vue/es')['Avatar']
     AButton: typeof import('ant-design-vue/es')['Button']
     ACard: typeof import('ant-design-vue/es')['Card']
     AConfigProvider: typeof import('ant-design-vue/es')['ConfigProvider']
     ADrawer: typeof import('ant-design-vue/es')['Drawer']
     ADropdown: typeof import('ant-design-vue/es')['Dropdown']
+    AEmpty: typeof import('ant-design-vue/es')['Empty']
     AImage: typeof import('ant-design-vue/es')['Image']
     AInput: typeof import('ant-design-vue/es')['Input']
     AInputNumber: typeof import('ant-design-vue/es')['InputNumber']
@@ -52,6 +54,7 @@ declare module 'vue' {
     GenerationActionBar: typeof import('./src/components/GenerationActionBar.vue')['default']
     GenerationUploadCard: typeof import('./src/components/GenerationUploadCard.vue')['default']
     GenerationWorkbenchShell: typeof import('./src/components/GenerationWorkbenchShell.vue')['default']
+    GlobalSiteNotice: typeof import('./src/components/GlobalSiteNotice.vue')['default']
     HeaderPaginationBar: typeof import('./src/components/HeaderPaginationBar.vue')['default']
     LazyVideo: typeof import('./src/components/LazyVideo.vue')['default']
     ListStateBlock: typeof import('./src/components/ListStateBlock.vue')['default']
@@ -72,6 +75,7 @@ declare module 'vue' {
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
     SegmentedTabsRail: typeof import('./src/components/SegmentedTabsRail.vue')['default']
+    SiteNoticeCenterModal: typeof import('./src/components/SiteNoticeCenterModal.vue')['default']
     StickyHeaderSection: typeof import('./src/components/StickyHeaderSection.vue')['default']
     SubmissionManageButtons: typeof import('./src/components/SubmissionManageButtons.vue')['default']
     TaskDetailModal: typeof import('./src/components/TaskDetailModal.vue')['default']

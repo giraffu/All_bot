@@ -63,6 +63,9 @@ const isPromptLocked = computed(() => isTemplateApplied.value)
 const isLoraLocked = computed(() =>
   isTemplateApplied.value && (taskType.value === 'edit' || taskType.value === 'img2img_lora')
 )
+const showLoraSection = computed(() =>
+  (taskType.value === 'edit' || taskType.value === 'img2img_lora') && !isLoraLocked.value
+)
 let uploadSlotCounter = 0
 
 const loraOptions = [
@@ -109,10 +112,6 @@ const templateNotice = computed(() => {
 
   return t('template_apply.image_prompt.template_notice_image')
 })
-
-const selectedLoraLabel = computed(() =>
-  loraOptions.find(option => option.value === selectedLora.value)?.label ?? '无'
-)
 
 watch(selectedLora, (newLora) => {
   if (isLoraLocked.value) {
@@ -275,48 +274,37 @@ onBeforeUnmount(() => {
         </div>
 
         <div
-          v-if="taskType === 'edit' || taskType === 'img2img_lora'"
+          v-if="showLoraSection"
           class="mb-6 rounded-xl border border-slate-700 bg-slate-800/70 p-4"
         >
           <div class="text-sm font-semibold text-slate-200 mb-3">{{ t('template_apply.common.addon_model') }}</div>
-          <div
-            v-if="isLoraLocked"
-            class="rounded-xl border border-slate-700 bg-slate-900/70 px-4 py-3 text-sm text-slate-300"
+          <a-radio-group
+            v-model:value="selectedLora"
+            button-style="solid"
+            class="w-full"
           >
-            <div>{{ t('template_apply.common.addon_model') }}: {{ selectedLoraLabel }}</div>
-            <div v-if="selectedLora" class="mt-1 text-xs text-slate-400">
-              {{ t('template_apply.common.model_strength') }}: {{ customLoraStrength.toFixed(2) }}
-            </div>
-          </div>
-          <template v-else>
-            <a-radio-group
-              v-model:value="selectedLora"
-              button-style="solid"
-              class="w-full"
+            <a-radio-button
+              v-for="option in loraOptions"
+              :key="option.value"
+              :value="option.value"
+              class="mb-2 mr-2"
             >
-              <a-radio-button
-                v-for="option in loraOptions"
-                :key="option.value"
-                :value="option.value"
-                class="mb-2 mr-2"
-              >
-                {{ option.label }}
-              </a-radio-button>
-            </a-radio-group>
+              {{ option.label }}
+            </a-radio-button>
+          </a-radio-group>
 
-            <div v-if="selectedLora" class="mt-4">
-              <div class="flex items-center justify-between text-xs text-slate-400 mb-2">
-                <span>{{ t('template_apply.common.model_strength') }}</span>
-                <span>{{ customLoraStrength.toFixed(2) }}</span>
-              </div>
-              <a-slider
-                v-model:value="customLoraStrength"
-                :min="0.1"
-                :max="2"
-                :step="0.05"
-              />
+          <div v-if="selectedLora" class="mt-4">
+            <div class="flex items-center justify-between text-xs text-slate-400 mb-2">
+              <span>{{ t('template_apply.common.model_strength') }}</span>
+              <span>{{ customLoraStrength.toFixed(2) }}</span>
             </div>
-          </template>
+            <a-slider
+              v-model:value="customLoraStrength"
+              :min="0.1"
+              :max="2"
+              :step="0.05"
+            />
+          </div>
         </div>
 
         <div class="mb-6">
@@ -366,17 +354,9 @@ onBeforeUnmount(() => {
           </div>
         </div>
 
-        <div class="rounded-xl border border-slate-700 bg-slate-800/70 p-4">
+        <div v-if="!isPromptLocked" class="rounded-xl border border-slate-700 bg-slate-800/70 p-4">
           <div class="text-sm font-semibold text-slate-200 mb-3">{{ t('template_apply.common.prompt') }}</div>
-          <div
-            v-if="isPromptLocked"
-            class="rounded-xl border border-slate-700 bg-slate-900/70 px-4 py-6 text-center text-sm text-slate-300"
-          >
-            <div class="font-medium text-slate-200">{{ t('template_apply.common.prompt_locked_title') }}</div>
-            <div class="mt-2 text-xs text-slate-400">{{ t('template_apply.common.prompt_locked_image_hint') }}</div>
-          </div>
           <a-textarea
-            v-else
             v-model:value="prompt"
             :rows="8"
             :placeholder="t('template_apply.image_prompt.prompt_placeholder')"

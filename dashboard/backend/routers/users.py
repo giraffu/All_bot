@@ -5,6 +5,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from dashboard.backend.schemas import (
     AdminGiftRequest,
+    TransferUserDataRequest,
+    TransferUserDataResponse,
     UpdateCreditsRequest,
     UpdateIdentityRequest,
     UpdateGroupRequest,
@@ -17,6 +19,7 @@ from dashboard.backend.services.user_admin_service import (
     get_user_favorites_payload,
     get_user_stats_payload,
     get_users_payload,
+    transfer_user_data_payload,
     update_user_channel_member_payload,
     update_user_credits_payload,
     update_user_group_payload,
@@ -112,6 +115,21 @@ async def admin_gift_plan(
 ):
     """Manually gift a membership plan to a user"""
     return await admin_gift_plan_payload(
+        user_id=user_id,
+        request=request,
+        db=db,
+        logger_override=logger,
+    )
+
+
+@router.post("/{user_id}/transfer", response_model=TransferUserDataResponse)
+async def transfer_user_data(
+    user_id: int,
+    request: TransferUserDataRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """Transfer one user's business data into another user and delete the source user."""
+    return await transfer_user_data_payload(
         user_id=user_id,
         request=request,
         db=db,

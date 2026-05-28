@@ -274,6 +274,8 @@ describe('TemplateImageToVideoPanel', () => {
     await nextTick()
 
     expect(wrapper.text()).toContain('已加载一键应用模板')
+    expect(wrapper.findComponent(TextareaStub).exists()).toBe(false)
+    expect(wrapper.findAllComponents(RadioGroupStub)).toHaveLength(0)
 
     const file = new File(['base'], 'base.png', { type: 'image/png' })
     const uploader = wrapper.findComponent(UploadDraggerStub)
@@ -672,7 +674,13 @@ describe('TemplateImageToVideoPanel', () => {
         duration: 10,
         prompt: 'wide cinematic dolly shot',
         lora_name: 'ltx2.3/LTX2.3_reasoning_I2V_V3.safetensors',
-        lora_strength: 0.8
+        lora_strength: 0.8,
+        lora_items: [
+          {
+            name: 'ltx2.3/LTX2.3_reasoning_I2V_V3.safetensors',
+            strength: 0.8
+          }
+        ]
       },
       priority: 0,
       is_template: true,

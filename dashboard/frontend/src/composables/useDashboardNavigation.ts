@@ -9,6 +9,7 @@ import {
   HistoryOutlined,
   HomeOutlined,
   LogoutOutlined,
+  NotificationOutlined,
   PayCircleOutlined,
   PictureOutlined,
   RobotOutlined,
@@ -29,6 +30,7 @@ export function useDashboardNavigation(activeTab: { value: string[] }) {
     { key: 'gallery', label: '广场内容管理', icon: AppstoreOutlined },
     { key: 'gallery_comments', label: '评论管理', icon: MessageOutlined },
     { key: 'referrals', label: '邀请奖励', icon: GiftOutlined },
+    { key: 'site_notice', label: '站点通知', icon: NotificationOutlined },
   ]
 
   const scrollableTabKeys = [
@@ -39,6 +41,7 @@ export function useDashboardNavigation(activeTab: { value: string[] }) {
     'logs',
     'recharge',
     'referrals',
+    'site_notice',
   ]
 
   const currentTabTitle = computed(() => {

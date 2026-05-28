@@ -13,6 +13,7 @@ import { User as UserIcon, Wand2, History as HistoryIcon, LogOut, Wallet, Compas
 import TaskProgress from '@/components/TaskProgress.vue'
 import MobileTabbar from '@/components/MobileTabbar.vue'
 import TaskDetailModal from '@/components/TaskDetailModal.vue'
+import GlobalSiteNotice from '@/components/GlobalSiteNotice.vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -321,6 +322,8 @@ watch(resolvedTheme, () => {
           </a-dropdown>
         </div>
       </a-layout-header>
+
+      <GlobalSiteNotice />
       
       <a-layout-content ref="layoutContentRef" :class="[
         'content-shell m-2 p-3 md:m-6 md:p-6 backdrop-blur-sm rounded-2xl relative overflow-y-auto overflow-x-hidden flex flex-col flex-grow',

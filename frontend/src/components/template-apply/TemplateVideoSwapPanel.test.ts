@@ -247,7 +247,8 @@ describe('TemplateVideoSwapPanel', () => {
     const wrapper = mountPanel()
     await nextTick()
 
-    expect(wrapper.html()).toContain('https://example.com/template-target.mp4')
+    expect(wrapper.findAllComponents(UploadDraggerStub)).toHaveLength(1)
+    expect(wrapper.html()).not.toContain('https://example.com/template-target.mp4')
 
     const file = new File(['face'], 'face.png', { type: 'image/png' })
     const uploaders = wrapper.findAllComponents(UploadDraggerStub)

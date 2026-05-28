@@ -4,6 +4,7 @@ import { useUserTableState } from '../composables/useUserTableState'
 import UserTableToolbar from './UserTableToolbar.vue'
 import UserTableRowActions from './UserTableRowActions.vue'
 import UserTableDialogs from './UserTableDialogs.vue'
+import UserTransferDialog from './UserTransferDialog.vue'
 
 const emit = defineEmits(['viewHistory', 'viewFavorites'])
 const {
@@ -47,6 +48,15 @@ const {
   updatingChannelMember,
   currentChannelMemberUser,
   newChannelMemberValue,
+  transferModalVisible,
+  transferringData,
+  transferSearchLoading,
+  currentTransferSourceUser,
+  transferTargetUserId,
+  transferTargetKeyword,
+  transferTargetOptions,
+  transferConfirmText,
+  transferNote,
   allIdentities,
   handleTableChange,
   onSearchInput,
@@ -61,6 +71,9 @@ const {
   saveIdentity,
   saveGroup,
   saveChannelMember,
+  searchTransferTargets,
+  handleTransferData,
+  submitTransfer,
   handleGiftPlan,
   submitGift,
 } = useUserTableState(formatDate)
@@ -312,6 +325,7 @@ const columns = [
             @edit-group="handleEditGroup"
             @edit-channel-member="handleEditChannelMember"
             @edit-credits="handleEditCredits"
+            @transfer-data="handleTransferData"
             @clear-history="handleClearHistory"
             @delete-user="handleDeleteUser"
           />
@@ -357,6 +371,19 @@ const columns = [
       :stats-loading="statsLoading"
       :current-user-stats="currentUserStats"
       :current-user="currentUser"
+    />
+
+    <user-transfer-dialog
+      v-model:visible="transferModalVisible"
+      v-model:target-user-id="transferTargetUserId"
+      v-model:confirm-text="transferConfirmText"
+      v-model:note="transferNote"
+      :loading="transferringData"
+      :search-loading="transferSearchLoading"
+      :source-user="currentTransferSourceUser"
+      :target-options="transferTargetOptions"
+      @search-targets="searchTransferTargets"
+      @submit="submitTransfer"
     />
   </a-card>
 </template>

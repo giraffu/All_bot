@@ -11,6 +11,7 @@ import {
   TeamOutlined,
   DownOutlined,
   BookOutlined,
+  SwapOutlined,
 } from '@ant-design/icons-vue'
 
 defineProps({
@@ -29,6 +30,7 @@ const emit = defineEmits([
   'edit-group',
   'edit-channel-member',
   'edit-credits',
+  'transfer-data',
   'clear-history',
   'delete-user',
 ])
@@ -84,6 +86,12 @@ const emit = defineEmits([
             <a-button type="text" size="small" class="w-full text-left" @click="emit('edit-credits', record)">
               <template #icon><edit-outlined /></template>
               修改数据
+            </a-button>
+          </a-menu-item>
+          <a-menu-item key="transfer">
+            <a-button type="text" size="small" danger class="w-full text-left" @click="emit('transfer-data', record)">
+              <template #icon><swap-outlined /></template>
+              转移数据
             </a-button>
           </a-menu-item>
           <a-menu-item key="clear">

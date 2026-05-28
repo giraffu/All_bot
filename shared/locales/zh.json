@@ -158,6 +158,17 @@
     "dark": "深色",
     "switcher_label": "主题切换"
   },
+  "site_notice": {
+    "label": "站点通知",
+    "center_title": "通知中心",
+    "history": "历史通知",
+    "open": "查看全部",
+    "open_history": "查看历史通知 ({count})",
+    "pinned": "置顶",
+    "published_at": "发布时间",
+    "empty": "暂无通知",
+    "unknown_time": "未知时间"
+  },
   "gallery": {
     "tabs": {
       "all": "全部",

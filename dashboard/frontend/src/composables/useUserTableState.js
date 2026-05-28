@@ -7,6 +7,7 @@ import {
   fetchPlans,
   fetchUserStats,
   fetchUsers,
+  transferUserData,
   updateUserChannelMember,
   updateUserCredits,
   updateUserGroup,
@@ -66,6 +67,16 @@ export function useUserTableState(formatDate) {
   const updatingChannelMember = ref(false)
   const currentChannelMemberUser = ref(null)
   const newChannelMemberValue = ref(false)
+  const transferModalVisible = ref(false)
+  const transferringData = ref(false)
+  const transferSearchLoading = ref(false)
+  const currentTransferSourceUser = ref(null)
+  const transferTargetUserId = ref(null)
+  const transferTargetKeyword = ref('')
+  const transferTargetOptions = ref([])
+  const transferConfirmText = ref('')
+  const transferNote = ref('后台用户数据转移')
+  let latestTransferSearchId = 0
 
   const allIdentities = [
     '外门弟子',
@@ -220,6 +231,83 @@ export function useUserTableState(formatDate) {
     editChannelMemberVisible.value = true
   }
 
+  const searchTransferTargets = async (keyword = '') => {
+    const sourceUserId = currentTransferSourceUser.value?.id
+    if (!sourceUserId) {
+      transferTargetOptions.value = []
+      return
+    }
+
+    const requestId = ++latestTransferSearchId
+    transferSearchLoading.value = true
+    transferTargetKeyword.value = keyword
+    try {
+      const res = await fetchUsers(1, 12, {
+        query: keyword || null,
+        query_partial: true,
+      })
+      if (requestId !== latestTransferSearchId) {
+        return
+      }
+      transferTargetOptions.value = (res.items || [])
+        .filter(user => user.id !== sourceUserId)
+        .map(user => ({
+          value: user.id,
+          label: `${user.full_name || '未知用户'} (@${user.username || 'n/a'}) [ID:${user.id}]`,
+          raw: user,
+        }))
+    } catch (err) {
+      if (requestId !== latestTransferSearchId) {
+        return
+      }
+      console.error('Failed to search transfer targets:', err)
+      message.error('加载目标用户失败')
+    } finally {
+      if (requestId === latestTransferSearchId) {
+        transferSearchLoading.value = false
+      }
+    }
+  }
+
+  const handleTransferData = async (record) => {
+    currentTransferSourceUser.value = record
+    transferTargetUserId.value = null
+    transferTargetKeyword.value = ''
+    transferTargetOptions.value = []
+    transferConfirmText.value = ''
+    transferNote.value = '后台用户数据转移'
+    transferModalVisible.value = true
+    await searchTransferTargets('')
+  }
+
+  const submitTransfer = async () => {
+    if (!currentTransferSourceUser.value) return
+    if (!transferTargetUserId.value) {
+      message.warning('请先选择目标用户')
+      return
+    }
+    if (String(transferConfirmText.value).trim() !== String(currentTransferSourceUser.value.id)) {
+      message.warning(`请输入源用户 ID ${currentTransferSourceUser.value.id} 以确认转移`)
+      return
+    }
+
+    transferringData.value = true
+    try {
+      const result = await transferUserData(
+        currentTransferSourceUser.value.id,
+        transferTargetUserId.value,
+        transferNote.value || '后台用户数据转移'
+      )
+      message.success(result.message || '用户数据转移成功')
+      transferModalVisible.value = false
+      await loadUsersData()
+    } catch (err) {
+      message.error('转移数据失败: ' + (err.response?.data?.detail || err.message))
+    } finally {
+      transferringData.value = false
+    }
+  }
+
   const saveIdentity = async () => {
     if (!currentIdentityUser.value) return
 
@@ -363,6 +451,15 @@ export function useUserTableState(formatDate) {
     updatingChannelMember,
     currentChannelMemberUser,
     newChannelMemberValue,
+    transferModalVisible,
+    transferringData,
+    transferSearchLoading,
+    currentTransferSourceUser,
+    transferTargetUserId,
+    transferTargetKeyword,
+    transferTargetOptions,
+    transferConfirmText,
+    transferNote,
     allIdentities,
     handleTableChange,
     onSearchInput,
@@ -377,6 +474,9 @@ export function useUserTableState(formatDate) {
     saveIdentity,
     saveGroup,
     saveChannelMember,
+    searchTransferTargets,
+    handleTransferData,
+    submitTransfer,
     handleGiftPlan,
     submitGift,
   }

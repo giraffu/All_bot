@@ -39,6 +39,7 @@ const initialTargetKey = ref<string | null>(null)
 const templateSourcePostId = ref<number | null>(null)
 const isTemplateApplied = ref(false)
 const isTargetLocked = computed(() => isTemplateApplied.value && !!initialTargetKey.value)
+const showTargetSection = computed(() => !isTargetLocked.value)
 
 const revokePreview = (preview: string | null) => {
   if (preview?.startsWith('blob:')) {
@@ -178,7 +179,10 @@ onBeforeUnmount(() => {
           {{ t('template_apply.face_swap.template_notice') }}
         </div>
 
-        <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div
+          class="grid gap-4"
+          :class="showTargetSection ? 'grid-cols-1 lg:grid-cols-2' : 'grid-cols-1'"
+        >
           <div class="rounded-xl border border-slate-700 bg-slate-800/70 p-4">
             <div class="text-sm font-semibold text-slate-200 mb-3">{{ t('template_apply.common.face_image') }}</div>
             <div v-if="faceAsset.preview" class="relative rounded-xl overflow-hidden border border-slate-700 bg-slate-950/80">
@@ -205,7 +209,7 @@ onBeforeUnmount(() => {
             </a-upload-dragger>
           </div>
 
-          <div class="rounded-xl border border-slate-700 bg-slate-800/70 p-4">
+          <div v-if="showTargetSection" class="rounded-xl border border-slate-700 bg-slate-800/70 p-4">
             <div class="text-sm font-semibold text-slate-200 mb-3">{{ t('template_apply.common.target_image') }}</div>
             <div v-if="targetAsset.preview" class="relative rounded-xl overflow-hidden border border-slate-700 bg-slate-950/80">
               <img :src="targetAsset.preview" class="h-56 w-full object-contain bg-slate-950/80" />

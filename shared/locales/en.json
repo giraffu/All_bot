@@ -158,6 +158,17 @@
     "dark": "Dark",
     "switcher_label": "Theme switcher"
   },
+  "site_notice": {
+    "label": "Site Notice",
+    "center_title": "Notice Center",
+    "history": "History",
+    "open": "View All",
+    "open_history": "View Notice History ({count})",
+    "pinned": "Pinned",
+    "published_at": "Published",
+    "empty": "No notices yet",
+    "unknown_time": "Unknown time"
+  },
   "gallery": {
     "tabs": {
       "all": "All",

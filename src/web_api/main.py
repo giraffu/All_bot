@@ -17,7 +17,7 @@ from src.billing_core_provider_setup import ensure_billing_core_providers_regist
 from src.task_core_provider_setup import ensure_task_core_service_providers_registered
 
 from src.database.core import engine
-from src.web_api.routers import auth, gallery, storage, tasks, users, payment
+from src.web_api.routers import auth, gallery, payment, site_notice, storage, tasks, users
 
 # Configure logging
 logging.basicConfig(
@@ -141,6 +141,7 @@ app.include_router(tasks.router, prefix="/api/tasks", tags=["Tasks"])
 app.include_router(users.router, prefix="/api/users", tags=["Users"])
 app.include_router(gallery.router, prefix="/api/gallery", tags=["Gallery"])
 app.include_router(payment.router, prefix="/api/payment", tags=["Payment"])
+app.include_router(site_notice.router)
 
 
 @app.get("/api/health", tags=["Health"])
