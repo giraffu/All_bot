@@ -34,7 +34,7 @@
   },
   "23": {
     "inputs": {
-      "image": "截屏2026-05-29 17.57.16.png"
+      "image": ""
     },
     "class_type": "LoadImage",
     "_meta": {
@@ -43,7 +43,7 @@
   },
   "24": {
     "inputs": {
-      "image": "example.png"
+      "image": ""
     },
     "class_type": "LoadImage",
     "_meta": {
@@ -77,7 +77,7 @@
         0
       ],
       "loop_count": 0,
-      "filename_prefix": "video/2026-05-29/181121",
+      "filename_prefix": "wan22_video_v2",
       "format": "video/h264-mp4",
       "pix_fmt": "yuv420p",
       "crf": 19,
@@ -97,7 +97,7 @@
   },
   "2368": {
     "inputs": {
-      "value": "严格100%完全还原参考原图中女生的所有面部细节和身体姿势：五官、脸型、眉形、眼形、鼻子形状、嘴唇形状、完整妆容、发型、耳环以及整体表情必须完全一模一样，零偏差，绝对禁止任何改动、变形或美化。原图女生慢慢跪起，四肢撑床，腰往下塌，屁股高高翘起。\n后面一个有着22厘米阴茎的8岁亚洲男孩跪好，双手紧紧抓住她的腰部和臀部，用力有节奏地用自己大阴茎猛烈后入抽插阴道。\n女生整个身体随着每一次猛烈撞击剧烈前后摇晃，臀部抖动，躯干猛烈前冲，胸部在文胸和制服里剧烈弹跳晃动，头发随动作剧烈飞舞甩动。两人身上都有自然闪烁的汗水，真实体液，极致性爱物理细节。\n女生脸上露出震惊与强烈快感交织的表情，眼睛睁大，嘴巴微张发出呻吟，但脸部五官、妆容、表情基础必须100%与原图完全一致。侧面镜头+特写，色情真实"
+      "value": ""
     },
     "class_type": "PrimitiveStringMultiline",
     "_meta": {
@@ -106,7 +106,7 @@
   },
   "2371": {
     "inputs": {
-      "value": "censored, mosaic censoring, bar censor, pixelated, glowing, bloom, blurry, out of focus, low detail, bad anatomy, ugly, overexposed, underexposed, distorted face, extra limbs, cartoonish, 3d render artifacts, duplicate people, unnatural lighting, bad composition, missing shadows, low resolution, poorly textured, glitch, noise, grain, static, motionless, still frame, stylized, artwork, painting, illustration, many people in background, three legs, walking backward, unnatural skin tone, discolored eyelid, red eyelids, closed eyes, poorly drawn hands, extra fingers, fused fingers, poorly drawn face, deformed, disfigured, malformed limbs, fog, mist, voluminous eyelashes,"
+      "value": ""
     },
     "class_type": "PrimitiveStringMultiline",
     "_meta": {
@@ -117,7 +117,11 @@
     "inputs": {
       "enabled": true,
       "trigger_on": "true → active",
-      "action": "bypass"
+      "action": "bypass",
+      "target_01": [
+        "2503",
+        0
+      ]
     },
     "class_type": "DaSiWa_NodeStatusSwitch",
     "_meta": {
@@ -131,7 +135,7 @@
         0
       ],
       "loop_count": 0,
-      "filename_prefix": "video/2026-05-29/181121MINIMEME",
+      "filename_prefix": "wan22_video_v2_mini",
       "format": "image/gif",
       "pingpong": false,
       "save_output": true
@@ -143,7 +147,11 @@
   },
   "2503": {
     "inputs": {
-      "filename_prefix": "video/2026-05-29/181121LASTFRAME"
+      "filename_prefix": "wan22_video_v2_last_frame",
+      "images": [
+        "2700",
+        0
+      ]
     },
     "class_type": "SaveImage",
     "_meta": {
@@ -1448,6 +1456,20 @@
     "class_type": "PrimitiveInt",
     "_meta": {
       "title": "整数"
+    }
+  },
+  "2700": {
+    "inputs": {
+      "batch_index": 16384,
+      "length": 1,
+      "image": [
+        "2575",
+        0
+      ]
+    },
+    "class_type": "ImageFromBatch",
+    "_meta": {
+      "title": "Extract Last Frame"
     }
   }
 }

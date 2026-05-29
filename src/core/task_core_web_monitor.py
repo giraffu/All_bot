@@ -147,6 +147,7 @@ async def finalize_monitored_web_task_success(
     registry_task_id: str,
     submission_context: TaskSubmissionContext,
     result_path: str,
+    extra_outputs: dict[str, object] | None,
     persist_successful_web_history_func: Callable[..., Awaitable[None]],
     cleanup_task_runtime_state_func: Callable[..., Awaitable[None]],
     logger: logging.Logger,
@@ -163,6 +164,7 @@ async def finalize_monitored_web_task_success(
             allow_contribute=submission_context.allow_contribute,
             is_video=submission_context.is_video_task,
             result_path=result_path,
+            extra_outputs=extra_outputs,
             billing_resolution=submission_context.billing_resolution,
             output_width=submission_context.output_width,
             output_height=submission_context.output_height,
@@ -250,6 +252,7 @@ async def monitor_task_and_release_lock(
 ):
     final_status = None
     result_path = None
+    extra_outputs = None
     try:
         async for progress in monitor_progress_func(
             backend_task_id,
@@ -259,6 +262,7 @@ async def monitor_task_and_release_lock(
             if normalized_status in ["done", "error", "cancelled"]:
                 final_status = normalized_status
                 result_path = progress.get("result_path")
+                extra_outputs = progress.get("extra_outputs")
                 break
     except asyncio.CancelledError:
         logger.error("Task monitor %s cancelled.", backend_task_id)
@@ -279,6 +283,7 @@ async def monitor_task_and_release_lock(
                 registry_task_id=registry_task_id,
                 submission_context=submission_context,
                 result_path=result_path,
+                extra_outputs=extra_outputs,
             )
         elif final_status == "cancelled":
             await finalize_cancellation_func(
@@ -395,6 +400,7 @@ async def finalize_monitored_web_task_success_default(
     registry_task_id: str,
     submission_context: TaskSubmissionContext,
     result_path: str,
+    extra_outputs: dict[str, object] | None = None,
     logger_override: logging.Logger | None = None,
 ):
     await finalize_monitored_web_task_success(
@@ -404,6 +410,7 @@ async def finalize_monitored_web_task_success_default(
         registry_task_id=registry_task_id,
         submission_context=submission_context,
         result_path=result_path,
+        extra_outputs=extra_outputs,
         persist_successful_web_history_func=persist_successful_web_history_default,
         cleanup_task_runtime_state_func=cleanup_task_runtime_state,
         logger=logger_override or logging.getLogger(__name__),

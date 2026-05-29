@@ -24,6 +24,7 @@ from config import (
     STATUS_ENDPOINT,
     TXT2IMG_ENDPOINT,
     VIDEO_ENDPOINT,
+    WAN22_VIDEO_V2_ENDPOINT,
 )
 from src.circuit_breaker import CircuitBreaker, CircuitBreakerOpenException
 from src.utils import async_retry
@@ -428,6 +429,48 @@ class APIClient:
         return r.json()["task_id"]
 
     @async_retry(max_retries=3)
+    async def submit_wan22_video_v2(
+        self,
+        task_id: str,
+        prompt: str,
+        image_path: str,
+        *,
+        end_image_path: str | None = None,
+        negative_prompt: str = " ",
+        use_end_frame: bool = False,
+        color_match: bool = False,
+        perfect_loop: bool = False,
+        upscale: bool = False,
+        extract_last_frame: bool = False,
+        length: int = 5,
+        priority: int = 0,
+    ) -> str:
+        data = {
+            "task_id": task_id,
+            "image": image_path,
+            "prompt": prompt,
+            "negative_prompt": negative_prompt,
+            "use_end_frame": use_end_frame,
+            "color_match": color_match,
+            "perfect_loop": perfect_loop,
+            "upscale": upscale,
+            "extract_last_frame": extract_last_frame,
+            "length": length,
+            "priority": priority,
+        }
+        if end_image_path:
+            data["end_image"] = end_image_path
+
+        logger.info(
+            "Submitting wan22_video_v2 task. Prompt: %s, Use end frame: %s, Priority: %s",
+            prompt,
+            use_end_frame,
+            priority,
+        )
+        r = await self._request("POST", WAN22_VIDEO_V2_ENDPOINT, json=data)
+        return r.json()["task_id"]
+
+    @async_retry(max_retries=3)
     async def cancel_task(self, task_id: str) -> dict:
         url = f"{API_BASE}/api/tasks/{task_id}"
         response = await self._request("DELETE", url)
@@ -610,6 +653,7 @@ submit_img2img_lora = api_client.submit_img2img_lora
 submit_face_swap = api_client.submit_face_swap
 submit_face_video = api_client.submit_face_video
 submit_ltx_video = api_client.submit_ltx_video
+submit_wan22_video_v2 = api_client.submit_wan22_video_v2
 submit_i2i_pro = api_client.submit_i2i_pro
 submit_i2i_draw = api_client.submit_i2i_draw
 submit_txt2img = api_client.submit_txt2img

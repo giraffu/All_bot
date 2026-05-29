@@ -3,17 +3,19 @@ from unittest.mock import AsyncMock
 import pytest
 
 from src.core.task_dispatcher import (
-    StrategyFactory,
+    BaseVideoStrategy,
     DefaultImageStrategy,
     FaceSwapStrategy,
-    BaseVideoStrategy,
     LtxVideoStrategy,
+    StrategyFactory,
+    Wan22VideoV2Strategy,
 )
 from src.constants import (
     MODE_I2I_PRO,
     MODE_IMAGE_TO_VIDEO,
     MODE_IMG2IMG_LORA,
     MODE_TXT2IMG,
+    MODE_WAN22_VIDEO_V2,
 )
 
 
@@ -34,6 +36,9 @@ def test_strategy_factory_returns_correct_strategy():
     # LTX Video
     strategy = StrategyFactory.get_strategy("ltx_video")
     assert isinstance(strategy, LtxVideoStrategy)
+
+    strategy = StrategyFactory.get_strategy(MODE_WAN22_VIDEO_V2)
+    assert isinstance(strategy, Wan22VideoV2Strategy)
 
     # Standard Video
     strategy = StrategyFactory.get_strategy("doggy_style")
@@ -221,6 +226,7 @@ async def test_ltx_video_submit_task_passes_seconds_to_workflow_slider(
         image_path="demo/input.png",
         lora_name=None,
         lora_strength=None,
+        lora_items=None,
         width=1280,
         height=704,
         length=expected_length,
@@ -257,6 +263,7 @@ async def test_ltx_video_submit_task_forwards_optional_lora_context(monkeypatch)
         image_path="demo/input.png",
         lora_name="ltx2.3/LTX2.3_reasoning_I2V_V3.safetensors",
         lora_strength=0.8,
+        lora_items=None,
         width=1280,
         height=704,
         length=10,
@@ -362,3 +369,80 @@ async def test_base_video_strategy_keeps_special_video_modes_ahead_of_lora_branc
         priority=3,
     )
     submit_lora_mock.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_wan22_video_v2_submit_task_normalizes_optional_end_frame(monkeypatch):
+    strategy = StrategyFactory.get_strategy(MODE_WAN22_VIDEO_V2)
+    submit_mock = AsyncMock(return_value="backend-task-id")
+    _patch_dispatch_image_service(
+        monkeypatch,
+        submit_wan22_video_v2_task=submit_mock,
+    )
+
+    result = await strategy.submit_task(
+        "task-1",
+        {
+            "prompt": "cinematic motion",
+            "negative_prompt": "blurry",
+            "saved_input_images": ["demo/start.png", "demo/end.png"],
+            "use_end_frame": True,
+            "color_match": True,
+            "perfect_loop": False,
+            "upscale": True,
+            "extract_last_frame": True,
+        },
+        priority=5,
+    )
+
+    assert result == "backend-task-id"
+    submit_mock.assert_awaited_once_with(
+        "task-1",
+        prompt="cinematic motion",
+        image_path="demo/start.png",
+        end_image_path="demo/end.png",
+        negative_prompt="blurry",
+        use_end_frame=True,
+        color_match=True,
+        perfect_loop=False,
+        upscale=True,
+        extract_last_frame=True,
+        length=5,
+        priority=5,
+    )
+
+
+@pytest.mark.asyncio
+async def test_wan22_video_v2_submit_task_falls_back_to_i2v_without_end_frame(monkeypatch):
+    strategy = StrategyFactory.get_strategy(MODE_WAN22_VIDEO_V2)
+    submit_mock = AsyncMock(return_value="backend-task-id")
+    _patch_dispatch_image_service(
+        monkeypatch,
+        submit_wan22_video_v2_task=submit_mock,
+    )
+
+    result = await strategy.submit_task(
+        "task-1",
+        {
+            "prompt": "cinematic motion",
+            "saved_input_images": ["demo/start.png"],
+            "use_end_frame": True,
+        },
+        priority=1,
+    )
+
+    assert result == "backend-task-id"
+    submit_mock.assert_awaited_once_with(
+        "task-1",
+        prompt="cinematic motion",
+        image_path="demo/start.png",
+        end_image_path=None,
+        negative_prompt=" ",
+        use_end_frame=False,
+        color_match=False,
+        perfect_loop=False,
+        upscale=False,
+        extract_last_frame=False,
+        length=5,
+        priority=1,
+    )

@@ -1,3 +1,11 @@
+export interface TaskExtraOutput {
+  path: string
+  media_type: string
+  url?: string | null
+}
+
+export type TaskExtraOutputs = Record<string, TaskExtraOutput>
+
 export interface GalleryPost {
   id: number
   task_id: string
@@ -43,6 +51,7 @@ export interface HistoryItem {
   requested_duration?: number | null
   output_file_url?: string | null
   thumbnail_url?: string | null
+  extra_outputs?: TaskExtraOutputs
   created_at: string
   allow_contribute?: boolean | null
   source?: string | null

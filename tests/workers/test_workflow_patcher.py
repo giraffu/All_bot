@@ -167,3 +167,272 @@ def test_workflow_patcher_injects_multiple_ltx_video_loras_from_lora_items(tmp_p
         "strength": 0.75,
     }
     assert "lora_9" not in patched["256"]["inputs"]
+
+
+def test_workflow_patcher_patches_wan22_video_v2_boolean_gates_and_prefixes(tmp_path):
+    workflow_dir = tmp_path / "workflows"
+    workflow_dir.mkdir()
+
+    _write_json(
+        workflow_dir / "mappings.json",
+        {
+            "wan22_video_v2": {
+                "image": "23",
+                "image_input": "image",
+                "end_image": "24",
+                "end_image_input": "image",
+                "prompt": "2368",
+                "prompt_input": "value",
+                "negative_prompt": "2371",
+                "negative_prompt_input": "value",
+                "length": "2586",
+                "length_input": "value",
+            }
+        },
+    )
+    _write_json(
+        workflow_dir / "WAN 2.2 i2v -AiO.json",
+        {
+            "9": {
+                "inputs": {
+                    "filenames": ["28", 0],
+                },
+                "class_type": "VHS_PruneOutputs",
+            },
+            "23": {"inputs": {"image": ""}},
+            "24": {"inputs": {"image": ""}},
+            "2368": {"inputs": {"value": ""}},
+            "2371": {"inputs": {"value": ""}},
+            "2542": {"inputs": {"clip_frames": ["2614", 0]}},
+            "2557": {"inputs": {"value": True}},
+            "2563": {"inputs": {"image": ["2574", 0]}},
+            "2564": {"inputs": {"values.a": ["2563", 0]}},
+            "2565": {"inputs": {"values.a": ["2563", 1]}},
+            "2573": {"inputs": {"enabled": True}},
+            "2574": {"inputs": {"original_images": ["2543", 1]}},
+            "2575": {"inputs": {"image": ["2574", 0]}},
+            "2584": {"inputs": {"enabled": True}},
+            "2581": {"inputs": {"expression": "( a - 1 ) / b"}},
+            "2586": {"inputs": {"value": 5}},
+            "2601": {"inputs": {"enabled": True}},
+            "2602": {"inputs": {"enabled": True}},
+            "2605": {"inputs": {"enabled": True}},
+            "2612": {"inputs": {"switch": ["2557", 0]}},
+            "2614": {"inputs": {"image_target": ["2612", 0]}},
+            "2615": {"inputs": {"enabled": True}},
+            "2700": {
+                "inputs": {
+                    "batch_index": 0,
+                    "length": 1,
+                    "image": ["2575", 0],
+                },
+                "class_type": "ImageFromBatch",
+            },
+            "28": {
+                "inputs": {
+                    "filename_prefix": "wan22_video_v2",
+                    "images": ["2575", 0],
+                },
+                "class_type": "VHS_VideoCombine",
+            },
+            "2501": {
+                "inputs": {
+                    "enabled": True,
+                    "target_01": ["2503", 0],
+                },
+                "class_type": "DaSiWa_NodeStatusSwitch",
+            },
+            "2502": {
+                "inputs": {
+                    "filename_prefix": "wan22_video_v2_mini",
+                },
+                "class_type": "VHS_VideoCombine",
+            },
+            "2503": {
+                "inputs": {
+                    "filename_prefix": "wan22_video_v2_last_frame",
+                    "images": ["2700", 0],
+                },
+                "class_type": "SaveImage",
+            },
+            "2547": {
+                "inputs": {
+                    "source": ["2552", 1],
+                },
+                "class_type": "PreviewAny",
+            },
+            "2548": {
+                "inputs": {
+                    "source": ["2549", 1],
+                },
+                "class_type": "PreviewAny",
+            },
+            "2587": {
+                "inputs": {
+                    "source": ["2580", 0],
+                },
+                "class_type": "PreviewAny",
+            },
+            "2589": {
+                "inputs": {
+                    "source": ["2581", 0],
+                },
+                "class_type": "PreviewAny",
+            },
+            "2623": {
+                "inputs": {
+                    "enabled": False,
+                    "action": "mute",
+                },
+                "class_type": "DaSiWa_NodeStatusSwitch",
+            },
+            "2624": {
+                "inputs": {
+                    "enabled": False,
+                    "action": "mute",
+                },
+                "class_type": "DaSiWa_NodeStatusSwitch",
+            },
+        },
+    )
+
+    patcher = WorkflowPatcher(str(workflow_dir))
+    workflow = patcher.load_workflow("wan22_video_v2")
+
+    patched = patcher.patch_workflow(
+        "wan22_video_v2",
+        workflow,
+        {
+            "image": "start.png",
+            "prompt": "demo",
+            "negative_prompt": "bad",
+            "use_end_frame": False,
+            "color_match": False,
+            "perfect_loop": False,
+            "upscale": False,
+            "extract_last_frame": True,
+            "length": 5,
+            "seed": 42,
+        },
+    )
+
+    assert patched["23"]["inputs"]["image"] == "start.png"
+    assert patched["24"]["inputs"]["image"] == "start.png"
+    assert "9" not in patched
+    assert "2501" not in patched
+    assert "2502" not in patched
+    assert "2547" not in patched
+    assert "2548" not in patched
+    assert "2573" not in patched
+    assert "2587" not in patched
+    assert "2589" not in patched
+    assert "2584" not in patched
+    assert "2601" not in patched
+    assert "2602" not in patched
+    assert "2605" not in patched
+    assert "2615" not in patched
+    assert "2623" not in patched
+    assert "2624" not in patched
+    assert patched["2368"]["inputs"]["value"] == "demo"
+    assert patched["2371"]["inputs"]["value"] == "bad"
+    assert patched["2557"]["inputs"]["value"] is True
+    assert patched["2581"]["inputs"]["expression"] == "max(1, round(( a - 1 ) / b))"
+    assert patched["2542"]["inputs"]["clip_frames"] == ["2612", 0]
+    assert patched["2563"]["inputs"]["image"] == ["2612", 0]
+    assert patched["2575"]["inputs"]["image"] == ["2612", 0]
+    assert patched["28"]["inputs"]["images"] == ["2612", 0]
+    assert patched["2700"]["inputs"]["image"] == ["2612", 0]
+    assert patched["28"]["inputs"]["filename_prefix"] == "wan22_video_v2_42_video"
+    assert patched["2503"]["inputs"]["filename_prefix"] == "wan22_video_v2_42_last_frame"
+
+
+def test_workflow_patcher_strips_wan22_video_v2_last_frame_branch_when_disabled(tmp_path):
+    workflow_dir = tmp_path / "workflows"
+    workflow_dir.mkdir()
+
+    _write_json(
+        workflow_dir / "mappings.json",
+        {
+            "wan22_video_v2": {
+                "image": "23",
+                "image_input": "image",
+                "end_image": "24",
+                "end_image_input": "image",
+                "prompt": "2368",
+                "prompt_input": "value",
+                "negative_prompt": "2371",
+                "negative_prompt_input": "value",
+                "length": "2586",
+                "length_input": "value",
+            }
+        },
+    )
+    _write_json(
+        workflow_dir / "WAN 2.2 i2v -AiO.json",
+        {
+            "23": {"inputs": {"image": ""}},
+            "24": {"inputs": {"image": ""}},
+            "2368": {"inputs": {"value": ""}},
+            "2371": {"inputs": {"value": ""}},
+            "2542": {"inputs": {"clip_frames": ["2614", 0]}},
+            "2557": {"inputs": {"value": True}},
+            "2563": {"inputs": {"image": ["2574", 0]}},
+            "2574": {"inputs": {"original_images": ["2543", 1]}},
+            "2575": {"inputs": {"image": ["2574", 0]}},
+            "2581": {"inputs": {"expression": "( a - 1 ) / b"}},
+            "2586": {"inputs": {"value": 5}},
+            "2612": {"inputs": {"switch": ["2557", 0]}},
+            "2614": {"inputs": {"image_target": ["2612", 0]}},
+            "28": {
+                "inputs": {
+                    "filename_prefix": "wan22_video_v2",
+                    "images": ["2575", 0],
+                },
+                "class_type": "VHS_VideoCombine",
+            },
+            "2503": {
+                "inputs": {
+                    "filename_prefix": "wan22_video_v2_last_frame",
+                    "images": ["2700", 0],
+                },
+                "class_type": "SaveImage",
+            },
+            "2700": {
+                "inputs": {
+                    "batch_index": 0,
+                    "length": 1,
+                    "image": ["2575", 0],
+                },
+                "class_type": "ImageFromBatch",
+            },
+        },
+    )
+
+    patcher = WorkflowPatcher(str(workflow_dir))
+    workflow = patcher.load_workflow("wan22_video_v2")
+
+    patched = patcher.patch_workflow(
+        "wan22_video_v2",
+        workflow,
+        {
+            "image": "start.png",
+            "end_image": "end.png",
+            "prompt": "demo",
+            "negative_prompt": "bad",
+            "use_end_frame": True,
+            "color_match": True,
+            "perfect_loop": True,
+            "upscale": True,
+            "extract_last_frame": False,
+            "length": 5,
+            "seed": 99,
+        },
+    )
+
+    assert patched["24"]["inputs"]["image"] == "end.png"
+    assert patched["2557"]["inputs"]["value"] is False
+    assert patched["2542"]["inputs"]["clip_frames"] == ["2614", 0]
+    assert patched["28"]["inputs"]["images"] == ["2575", 0]
+    assert patched["28"]["inputs"]["filename_prefix"] == "wan22_video_v2_99_video"
+    assert "2503" not in patched
+    assert "2700" not in patched

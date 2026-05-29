@@ -9,12 +9,14 @@ export type BuildGenerationTaskPayloadOptions = {
   isTemplate?: boolean
   sourcePostId?: number | null
   prompt?: string
+  negativePrompt?: string
   promptTarget?: PromptTarget
   resolution?: string | number
   duration?: number
   loraName?: string
   loraStrength?: number
   loraItems?: LtxVideoLoraItem[]
+  extraInputs?: Record<string, unknown>
   normalizeEditLoraTask?: boolean
 }
 
@@ -37,12 +39,14 @@ export function buildGenerationTaskPayload(
     isTemplate = false,
     sourcePostId,
     prompt,
+    negativePrompt,
     promptTarget,
     resolution,
     duration,
     loraName,
     loraStrength,
     loraItems,
+    extraInputs,
     normalizeEditLoraTask = false,
   } = options
 
@@ -71,6 +75,10 @@ export function buildGenerationTaskPayload(
     }
   }
 
+  if (negativePrompt?.trim()) {
+    payload.inputs.negative_prompt = negativePrompt.trim()
+  }
+
   if (resolution !== undefined) {
     payload.inputs.resolution = resolution
   }
@@ -89,6 +97,10 @@ export function buildGenerationTaskPayload(
 
   if (loraItems && loraItems.length > 0) {
     payload.inputs.lora_items = loraItems
+  }
+
+  if (extraInputs) {
+    Object.assign(payload.inputs, extraInputs)
   }
 
   return payload

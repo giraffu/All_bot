@@ -35,6 +35,7 @@ async def postprocess_successful_task_persistence(
         height=persistence_result.height,
         duration=persistence_result.duration,
         requested_duration=requested_duration,
+        extra_outputs=persistence_result.extra_outputs,
     )
 
     if refresh_user_group_after_log and refresh_user_group_func is not None:

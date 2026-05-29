@@ -27,6 +27,7 @@ def test_agent_main_fail_fast_on_input_prepare_errors():
     assert "raise RuntimeError(" in content
     assert "async def _process_single_input_asset(" in content
     assert "async def _prepare_task_inputs(" in content
+    assert 'for key in ["face_image", "body_image", "video", "end_image"]' in content
 
 
 def test_agent_main_extracts_history_result_resolution_helpers():
@@ -34,6 +35,7 @@ def test_agent_main_extracts_history_result_resolution_helpers():
         content = f.read()
 
     assert "def _pick_first_output_asset(" in content
+    assert 'return ("videos", "gifs")' in content
     assert "def _build_safe_result_object_name(" in content
     assert "def _resolve_history_result_asset(" in content
     assert "def _resolve_comfy_view_type(" in content

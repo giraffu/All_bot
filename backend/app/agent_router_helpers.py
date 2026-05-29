@@ -82,7 +82,14 @@ async def update_status_payload(
     return {"status": "ok"}
 
 
-async def complete_task_payload(*, task_id: str, agent_id: str, result: str, queue_manager) -> dict:
+async def complete_task_payload(
+    *,
+    task_id: str,
+    agent_id: str,
+    result: str,
+    extra_outputs: dict | None = None,
+    queue_manager,
+) -> dict:
     await bind_agent_task(
         queue_manager=queue_manager,
         task_id=task_id,
@@ -92,7 +99,7 @@ async def complete_task_payload(*, task_id: str, agent_id: str, result: str, que
         queue_manager=queue_manager,
         agent_id=agent_id,
     )
-    await queue_manager.complete_task(task_id, result)
+    await queue_manager.complete_task(task_id, result, extra_outputs=extra_outputs)
     return {"status": "ok"}
 
 

@@ -11,6 +11,7 @@ from src.constants import (
     MODE_IMG2IMG_LORA,
     MODE_I2I_PRO,
     MODE_I2I_DRAW,
+    MODE_WAN22_VIDEO_V2,
     RESOLUTION_COST,
     TASK_COSTS,
     MODE_TXT2IMG,
@@ -403,6 +404,48 @@ class LtxVideoStrategy(BaseTaskStrategy):
         )
 
 
+class Wan22VideoV2Strategy(BaseTaskStrategy):
+    def get_cost(self, inputs: Dict[str, Any]) -> int:
+        return TASK_COSTS.get(MODE_WAN22_VIDEO_V2, 10)
+
+    def build_payload(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
+        return inputs
+
+    def get_metadata(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
+        return {
+            "saved_inputs": _get_saved_input_images(inputs),
+            "requested_duration": 5,
+        }
+
+    def get_file_paths_to_upload(self, inputs: Dict[str, Any]) -> list[str]:
+        return inputs.get("images", [])
+
+    async def submit_task(
+        self, task_id: str, inputs: Dict[str, Any], priority: int
+    ) -> str:
+        image_service = _get_dispatch_image_service()
+        saved_images = _get_saved_input_images(inputs)
+        image_path = saved_images[0] if saved_images else ""
+
+        use_end_frame = bool(inputs.get("use_end_frame")) and len(saved_images) > 1
+        end_image_path = saved_images[1] if use_end_frame else None
+
+        return await image_service.submit_wan22_video_v2_task(
+            task_id,
+            prompt=inputs.get("prompt", "wan22 video"),
+            image_path=image_path,
+            end_image_path=end_image_path,
+            negative_prompt=inputs.get("negative_prompt", " "),
+            use_end_frame=use_end_frame,
+            color_match=bool(inputs.get("color_match")),
+            perfect_loop=bool(inputs.get("perfect_loop")),
+            upscale=bool(inputs.get("upscale")),
+            extract_last_frame=bool(inputs.get("extract_last_frame")),
+            length=5,
+            priority=priority,
+        )
+
+
 class StrategyFactory:
     @staticmethod
     def get_strategy(task_type: str) -> BaseTaskStrategy:
@@ -414,6 +457,8 @@ class StrategyFactory:
             return FaceSwapStrategy()
         elif task_type == "ltx_video":
             return LtxVideoStrategy()
+        elif task_type == MODE_WAN22_VIDEO_V2:
+            return Wan22VideoV2Strategy()
         elif task_type in VIDEO_TASK_TYPES:
             return BaseVideoStrategy(task_type)
         elif task_type in [MODE_I2I_PRO, MODE_I2I_DRAW]:

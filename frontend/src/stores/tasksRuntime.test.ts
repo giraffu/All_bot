@@ -255,6 +255,7 @@ test('pollTaskResult retries pending_result once and resolves on the next result
     status: 'success',
     awaitingResult: false,
     resultUrl: 'https://cdn.example/final.png',
+    extraOutputs: {},
     error: undefined,
     updatedAt: undefined
   })
@@ -316,6 +317,7 @@ test('probeDetachedTaskResult keeps the floating task pending until history resu
     status: 'success',
     awaitingResult: false,
     resultUrl: 'https://cdn.example/detached.png',
+    extraOutputs: {},
     error: undefined,
     updatedAt: undefined
   })

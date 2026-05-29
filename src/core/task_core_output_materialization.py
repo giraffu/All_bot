@@ -14,6 +14,7 @@ async def materialize_successful_task_output(
     output_width: int | None,
     output_height: int | None,
     output_duration: int | None,
+    extra_outputs: dict[str, object] | None,
     download_result_func: Callable[[str], Awaitable[bytes | None]],
     download_video_result_func: Callable[[str], Awaitable[bytes | None]],
     extract_media_metadata_from_bytes_best_effort_func: Callable[..., tuple[int | None, int | None, int | None]],
@@ -63,4 +64,5 @@ async def materialize_successful_task_output(
         width=width,
         height=height,
         duration=duration,
+        extra_outputs=extra_outputs if isinstance(extra_outputs, dict) else None,
     )

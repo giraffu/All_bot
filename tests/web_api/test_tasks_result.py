@@ -42,6 +42,7 @@ async def test_get_task_result_returns_pending_while_history_is_not_written():
         "task_id": "task-1",
         "task_type": None,
         "media_type": None,
+        "extra_outputs": {},
     }
 
 
@@ -66,6 +67,7 @@ async def test_get_task_result_returns_pending_when_output_file_is_not_ready():
         "task_id": "task-1",
         "task_type": "custom_video",
         "media_type": "video",
+        "extra_outputs": {},
     }
 
 
@@ -95,6 +97,7 @@ async def test_get_task_result_uses_resolved_storage_object_for_bucket_prefixed_
         "task_type": "image",
         "media_type": "image",
         "result_url": "https://cdn.example/task-1.png",
+        "extra_outputs": {},
     }
     presign_mock.assert_called_once_with(
         "history/task-1/output.png",
@@ -129,6 +132,7 @@ async def test_get_task_result_uses_primary_bucket_for_unprefixed_history_video_
         "task_type": "custom_video",
         "media_type": "video",
         "result_url": "https://cdn.example/task-1.mp4",
+        "extra_outputs": {},
     }
     presign_mock.assert_called_once_with(
         "123/output_images/task-1.mp4",
@@ -166,6 +170,7 @@ async def test_get_task_result_prefers_public_r2_url_for_web_history(
         "task_type": "txt2img",
         "media_type": "image",
         "result_url": "https://r2-test.aivison.it.com/history/task-1/original.png",
+        "extra_outputs": {},
     }
     presign_mock.assert_not_called()
     r2_mock.assert_awaited_once()
@@ -199,6 +204,7 @@ async def test_get_task_result_keeps_polling_when_web_history_public_url_not_rea
         "task_id": "task-1",
         "task_type": "txt2img",
         "media_type": "image",
+        "extra_outputs": {},
     }
     presign_mock.assert_not_called()
     r2_mock.assert_awaited_once()
@@ -222,3 +228,46 @@ async def test_get_task_result_rejects_history_owned_by_another_user():
         )
 
     assert exc_info.value.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_get_task_result_resolves_history_extra_outputs(monkeypatch):
+    history = History(
+        id=11,
+        user_id=123,
+        task_id="task-1",
+        type="wan22_video_v2",
+        output_file="123/output_images/task-1.mp4",
+        extra_outputs={
+            "last_frame": {
+                "path": "123/output_images/task-1_last_frame.png",
+                "media_type": "image",
+            }
+        },
+    )
+    presign_mock = MagicMock(side_effect=[
+        "https://cdn.example/task-1.mp4",
+        "https://cdn.example/task-1-last-frame.png",
+    ])
+    monkeypatch.setattr(media_presenter.storage, "get_presigned_url", presign_mock)
+
+    response = await tasks_router.get_task_result(
+        "task-1",
+        current_user=type("User", (), {"id": 123})(),
+        db=_FakeDB([_FakeResult(single=history)]),
+    )
+
+    assert response == {
+        "status": "success",
+        "task_id": "task-1",
+        "task_type": "wan22_video_v2",
+        "media_type": "video",
+        "result_url": "https://cdn.example/task-1.mp4",
+        "extra_outputs": {
+            "last_frame": {
+                "path": "123/output_images/task-1_last_frame.png",
+                "media_type": "image",
+                "url": "https://cdn.example/task-1-last-frame.png",
+            }
+        },
+    }

@@ -366,7 +366,9 @@
       "img2video_title": "Img2Video",
       "img2video_desc": "Upload an image, choose an action model or None, and generate the matching video.",
       "high_res_video_title": "High-Res Video",
-      "high_res_video_desc": "Upload image and prompt, use state-of-the-art models to generate high-res video."
+      "high_res_video_desc": "Upload image and prompt, use state-of-the-art models to generate high-res video.",
+      "wan22_video_v2_title": "Img2Video V2",
+      "wan22_video_v2_desc": "Supports positive and negative prompts, first/last frames, color match, perfect loop, fast 2x upscale, and last-frame extraction."
     }
   },
   "history": {
@@ -467,6 +469,7 @@
     "mode_closeup_blowjob": "Closeup Blowjob",
     "mode_custom_video": "Img2Video",
     "mode_ltx_video": "High-Res Video",
+    "mode_wan22_video_v2": "Img2Video V2",
     "mode_video_lora": "Img2Video",
     "mode_template_contribute": "Template Contribute",
     "mode_none": "No Mode",

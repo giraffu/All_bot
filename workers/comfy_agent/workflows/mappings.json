@@ -74,6 +74,18 @@
         "height": "181",
         "height_input": "Xi"
     },
+    "wan22_video_v2": {
+        "image": "23",
+        "image_input": "image",
+        "end_image": "24",
+        "end_image_input": "image",
+        "prompt": "2368",
+        "prompt_input": "value",
+        "negative_prompt": "2371",
+        "negative_prompt_input": "value",
+        "length": "2586",
+        "length_input": "value"
+    },
     "img2img_lora": {
         "image": "8",
         "image2": "20",

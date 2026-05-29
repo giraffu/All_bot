@@ -297,6 +297,10 @@ def test_simple_task_type_map_keeps_image_to_video_and_video_lora_compatibility(
         == TaskType.VIDEO_EDIT
     )
     assert main_simple_task_routes.SIMPLE_TASK_TYPE_MAP["video_lora"] == TaskType.VIDEO_EDIT
+    assert (
+        main_simple_task_routes.SIMPLE_TASK_TYPE_MAP["wan22_video_v2"]
+        == TaskType.WAN22_VIDEO_V2
+    )
     assert main_simple_task_routes.SIMPLE_TASK_TYPE_MAP["img2img"] == TaskType.IMG2IMG
 
 
@@ -319,6 +323,10 @@ def test_simple_task_route_specs_cover_expected_paths_and_handlers():
         "ltx_video",
         "create_ltx_video_task",
     )
+    assert specs_by_path["/api/v1/wan22_video_v2"][1:] == (
+        "wan22_video_v2",
+        "create_wan22_video_v2_task",
+    )
 
 
 def test_simple_task_routes_are_registered_with_stable_endpoint_names():
@@ -332,6 +340,7 @@ def test_simple_task_routes_are_registered_with_stable_endpoint_names():
     assert routes_by_path["/image_to_video"] == "create_image_to_video_task"
     assert routes_by_path["/perfect_video_lora"] == "create_video_lora_task"
     assert routes_by_path["/api/v1/ltx_video"] == "create_ltx_video_task"
+    assert routes_by_path["/api/v1/wan22_video_v2"] == "create_wan22_video_v2_task"
 
 
 def test_task_status_and_result_route_specs_cover_expected_handlers():

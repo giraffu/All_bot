@@ -9,6 +9,7 @@ import { useAuthStore } from '@/stores/auth'
 import {
   shouldResumeTaskListening
 } from '@/stores/taskResultState'
+import type { TaskExtraOutputs } from '@/types/gallery'
 import {
   probeDetachedTaskResult,
   pollTaskResult,
@@ -33,6 +34,7 @@ export interface Task {
   status: TaskStatus
   queuePos?: number
   resultUrl?: string
+  extraOutputs?: TaskExtraOutputs
   error?: string
   eventSource?: { close: () => void }
   retryCount?: number

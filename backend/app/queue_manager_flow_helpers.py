@@ -1,3 +1,4 @@
+import json
 import time
 from collections.abc import Awaitable, Callable
 from typing import Any
@@ -154,22 +155,28 @@ async def complete_task_flow(
     *,
     task_id: str,
     result_path: str,
+    extra_outputs: dict[str, Any] | None,
     get_task_type_func,
     persist_task_update_func,
     done_status,
 ) -> None:
     task_type = await get_task_type_func(task_id) or "edit"
+    serialized_extra_outputs = (
+        json.dumps(extra_outputs) if isinstance(extra_outputs, dict) else ""
+    )
     await persist_task_update_func(
         task_id,
         task_mapping={
             "status": done_status,
             "result_path": result_path,
+            "extra_outputs": serialized_extra_outputs,
             "progress": 1.0,
             "cancel_requested": 0,
         },
         event_payload={
             "status": "done",
             "result_path": result_path,
+            "extra_outputs": extra_outputs if isinstance(extra_outputs, dict) else None,
             "progress": 1.0,
             "task_type": task_type,
         },

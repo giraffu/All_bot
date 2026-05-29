@@ -1,4 +1,5 @@
 import asyncio
+from typing import Any
 
 from src.core.media_paths import get_media_type_from_history, resolve_storage_object
 from src.core.media_urls import build_r2_media_key_candidates, build_r2_thumbnail_info
@@ -181,3 +182,46 @@ async def resolve_history_media_urls(
         task_id=task_id,
         fallback_to_storage_path=fallback_to_storage_path,
     )
+
+
+def _infer_extra_output_media_type(item: dict[str, Any]) -> str:
+    media_type = item.get("media_type")
+    if media_type in {"image", "video"}:
+        return media_type
+
+    path = str(item.get("path") or "").lower()
+    if path.endswith((".mp4", ".mov", ".webm", ".mkv", ".avi")):
+        return "video"
+    return "image"
+
+
+async def resolve_history_extra_outputs(
+    *,
+    task_id: str | None,
+    extra_outputs: dict[str, Any] | None,
+    source: str | None,
+) -> dict[str, dict[str, Any]]:
+    if not isinstance(extra_outputs, dict):
+        return {}
+
+    resolved: dict[str, dict[str, Any]] = {}
+    for key, value in extra_outputs.items():
+        if not isinstance(value, dict):
+            continue
+        output_path = value.get("path")
+        if not isinstance(output_path, str) or not output_path:
+            continue
+        media_type = _infer_extra_output_media_type(value)
+        url = await resolve_media_url(
+            output_path,
+            task_id=task_id,
+            prefer_r2=(source == "web"),
+            expires_hours=None if source == "web" else 24,
+            fallback_to_storage_path=True,
+        )
+        resolved[key] = {
+            **value,
+            "media_type": media_type,
+            "url": url or output_path,
+        }
+    return resolved

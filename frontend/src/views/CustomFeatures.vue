@@ -87,6 +87,15 @@ const features = [
     color: 'bg-amber-100 text-amber-600',
     cost: 10,
     route: 'SingleImageToVideo'
+  },
+  {
+    key: 'wan22_video_v2',
+    title: 'lab.cards.wan22_video_v2_title',
+    description: 'lab.cards.wan22_video_v2_desc',
+    icon: Video,
+    color: 'bg-emerald-100 text-emerald-600',
+    cost: 10,
+    route: 'Wan22VideoV2'
   }
 ]
 

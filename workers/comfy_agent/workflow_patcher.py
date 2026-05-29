@@ -17,6 +17,23 @@ LTX_VIDEO_ADDITIONAL_LORA_NODE_IDS = ("256",)
 LTX_VIDEO_FIRST_PASS_MODEL_NODE_ID = "191"
 LTX_VIDEO_FIRST_PASS_CLIP_NODE_ID = "189"
 LTX_VIDEO_MAX_LORA_SLOTS = 10
+WAN22_VIDEO_V2_REMOVABLE_NODE_IDS = (
+    "9",  # VHS_PruneOutputs
+    "2502",  # mini preview gif output, not part of the product contract
+    "2501",  # UI-only DaSiWa output switch; API mode rewires extract-last-frame directly
+    "2547",  # PreviewAny
+    "2548",  # PreviewAny
+    "2573",  # UI-only DaSiWa output switch for upscale toggle
+    "2587",  # PreviewAny
+    "2589",  # PreviewAny
+    "2584",  # UI-only DaSiWa output switch for perfect-loop toggle
+    "2601",  # UI-only DaSiWa output switch for perf bypass
+    "2602",  # UI-only DaSiWa output switch for perf bypass
+    "2605",  # UI-only DaSiWa output switch for perf bypass
+    "2615",  # UI-only DaSiWa output switch for color-match toggle
+    "2623",  # no-op DaSiWa mute toggle
+    "2624",  # no-op DaSiWa mute toggle
+)
 
 
 class WorkflowPatcher:
@@ -205,8 +222,155 @@ class WorkflowPatcher:
                 self._patch_ltx_video_lora(wf, lora_items=lora_items)
             else:
                 self._strip_ltx_video_lora_nodes(wf)
+        elif task_type == "wan22_video_v2":
+            self._patch_wan22_video_v2(
+                wf,
+                params=params,
+                unique_id=params.get("seed"),
+            )
 
         return wf
+
+    def _set_node_input(
+        self,
+        workflow: Dict[str, Any],
+        *,
+        node_id: str,
+        input_name: str,
+        value: Any,
+    ) -> None:
+        node = workflow.get(node_id)
+        if not isinstance(node, dict):
+            return
+        inputs = node.setdefault("inputs", {})
+        inputs[input_name] = value
+
+    def _patch_wan22_video_v2(
+        self,
+        workflow: Dict[str, Any],
+        *,
+        params: Dict[str, Any],
+        unique_id: Any,
+    ) -> None:
+        # Strip API-irrelevant preview / utility output nodes so Comfy 0.22 focuses
+        # on the business outputs (`28` video and optional `2503` last frame).
+        for node_id in WAN22_VIDEO_V2_REMOVABLE_NODE_IDS:
+            workflow.pop(node_id, None)
+
+        # Keep the task contract fixed at 5 seconds for the v2 launch.
+        self._set_node_input(
+            workflow,
+            node_id="2586",
+            input_name="value",
+            value=5,
+        )
+        self._set_node_input(
+            workflow,
+            node_id="2581",
+            input_name="expression",
+            value="max(1, round(( a - 1 ) / b))",
+        )
+
+        use_end_frame = bool(params.get("use_end_frame")) and bool(params.get("end_image"))
+        color_match = bool(params.get("color_match"))
+        perfect_loop = bool(params.get("perfect_loop"))
+        upscale = bool(params.get("upscale"))
+        extract_last_frame = bool(params.get("extract_last_frame"))
+
+        # `I2V - FLF2V switch` is inverted:
+        # True -> I2V branch, False -> FLF2V branch.
+        self._set_node_input(
+            workflow,
+            node_id="2557",
+            input_name="value",
+            value=not use_end_frame,
+        )
+
+        start_image = params.get("image")
+        if not use_end_frame and start_image:
+            # API validation still touches the FLF2V branch, so keep its optional
+            # end-frame loader valid even when the branch is disabled.
+            self._set_node_input(
+                workflow,
+                node_id="24",
+                input_name="image",
+                value=start_image,
+            )
+
+        decoded_frames_ref = ["2614", 0] if color_match else ["2612", 0]
+        self._set_node_input(
+            workflow,
+            node_id="2542",
+            input_name="clip_frames",
+            value=decoded_frames_ref,
+        )
+
+        video_frames_ref = ["2574", 0] if perfect_loop else decoded_frames_ref
+        if not perfect_loop:
+            self._set_node_input(
+                workflow,
+                node_id="2563",
+                input_name="image",
+                value=video_frames_ref,
+            )
+            self._set_node_input(
+                workflow,
+                node_id="2575",
+                input_name="image",
+                value=video_frames_ref,
+            )
+
+        final_frames_ref = ["2575", 0] if upscale else video_frames_ref
+
+        # Rebuild and gate the last-frame extraction branch in API mode.
+        if extract_last_frame:
+            self._set_node_input(
+                workflow,
+                node_id="2700",
+                input_name="batch_index",
+                value=16384,
+            )
+            self._set_node_input(
+                workflow,
+                node_id="2700",
+                input_name="length",
+                value=1,
+            )
+            self._set_node_input(
+                workflow,
+                node_id="2700",
+                input_name="image",
+                value=final_frames_ref,
+            )
+            self._set_node_input(
+                workflow,
+                node_id="2503",
+                input_name="images",
+                value=["2700", 0],
+            )
+        else:
+            workflow.pop("2503", None)
+            workflow.pop("2700", None)
+
+        safe_unique_id = unique_id or "wan22"
+        self._set_node_input(
+            workflow,
+            node_id="28",
+            input_name="filename_prefix",
+            value=f"wan22_video_v2_{safe_unique_id}_video",
+        )
+        self._set_node_input(
+            workflow,
+            node_id="28",
+            input_name="images",
+            value=final_frames_ref,
+        )
+        self._set_node_input(
+            workflow,
+            node_id="2503",
+            input_name="filename_prefix",
+            value=f"wan22_video_v2_{safe_unique_id}_last_frame",
+        )
 
     def _patch_ltx_video_lora(
         self,

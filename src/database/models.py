@@ -132,6 +132,7 @@ class History(Base):
     prompt = Column(Text, nullable=True)
     input_file = Column(Text, nullable=True)
     output_file = Column(Text, nullable=True)
+    extra_outputs = Column(JSON, nullable=True)
     billing_resolution = Column(String(32), nullable=True)
     width = Column(Integer, nullable=True)
     height = Column(Integer, nullable=True)

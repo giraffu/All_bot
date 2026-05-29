@@ -1,7 +1,7 @@
 from datetime import datetime
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class HistoryItem(BaseModel):
@@ -20,6 +20,7 @@ class HistoryItem(BaseModel):
     requested_duration: Optional[int] = None
     output_file_url: Optional[str] = None
     thumbnail_url: Optional[str] = None
+    extra_outputs: Dict[str, Any] = Field(default_factory=dict)
     created_at: datetime
     allow_contribute: Optional[bool] = True
     source: Optional[str] = "bot"

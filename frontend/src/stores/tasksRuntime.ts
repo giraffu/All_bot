@@ -4,6 +4,7 @@ import {
   restorePersistedTask,
   type TaskResultResponsePayload
 } from './taskResultState.ts'
+import type { TaskExtraOutputs } from '@/types/gallery'
 
 export interface RuntimeTaskLike {
   id: string
@@ -11,6 +12,7 @@ export interface RuntimeTaskLike {
   progress: number
   status: 'pending' | 'running' | 'success' | 'failed' | 'cancelled'
   resultUrl?: string
+  extraOutputs?: TaskExtraOutputs
   error?: string
   awaitingResult?: boolean
   updatedAt?: number
@@ -207,6 +209,7 @@ export async function probeDetachedTaskResult<T extends RuntimeTaskLike>(
         progress: 100,
         status: 'success',
         resultUrl: payload.result_url,
+        extraOutputs: payload.extra_outputs ?? {},
         awaitingResult: false,
         error: undefined
       }))

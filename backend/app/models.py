@@ -1,5 +1,5 @@
 from enum import Enum
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel
 
@@ -23,6 +23,7 @@ class TaskType(str, Enum):
     I2I_PRO = "i2i_pro"
     I2I_DRAW = "i2i_draw"
     LTX_VIDEO = "ltx_video"
+    WAN22_VIDEO_V2 = "wan22_video_v2"
 
 
 class TaskResponse(BaseModel):
@@ -43,6 +44,7 @@ class TaskStatusResponse(BaseModel):
     result_path: Optional[str] = None  # Added for convenience
     image_url: Optional[str] = None
     task_type: Optional[str] = None
+    extra_outputs: Optional[Dict[str, Any]] = None
     cancel_requested: Optional[bool] = None
     cancel_requested_at: Optional[float] = None
 
@@ -176,4 +178,19 @@ class LtxVideoRequest(BaseModel):
     length: int = 5
     width: int = 704
     height: int = 1280
+    priority: int = 0
+
+
+class Wan22VideoV2Request(BaseModel):
+    task_id: str
+    image: str
+    prompt: str
+    end_image: Optional[str] = None
+    negative_prompt: Optional[str] = " "
+    use_end_frame: bool = False
+    color_match: bool = False
+    perfect_loop: bool = False
+    upscale: bool = False
+    extract_last_frame: bool = False
+    length: int = 5
     priority: int = 0

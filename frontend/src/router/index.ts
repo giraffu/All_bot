@@ -69,6 +69,11 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/views/SingleImageToVideo.vue')
       },
       {
+        path: 'wan22-video-v2',
+        name: 'Wan22VideoV2',
+        component: () => import('@/views/Wan22VideoV2.vue')
+      },
+      {
         path: 'history',
         name: 'History',
         component: () => import('@/views/History.vue')

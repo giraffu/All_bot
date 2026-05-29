@@ -72,6 +72,7 @@ class TaskSuccessPersistenceResult:
     width: int | None
     height: int | None
     duration: int | None
+    extra_outputs: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True, slots=True)

@@ -128,7 +128,34 @@ async def test_complete_task_payload_binds_agent_before_clearing_current_task():
     assert payload == {"status": "ok"}
     queue_manager.bind_agent_task.assert_awaited_once_with("task-1", "agent-1")
     queue_manager.clear_agent_current_task.assert_awaited_once_with("agent-1")
-    queue_manager.complete_task.assert_awaited_once_with("task-1", "/tmp/result.png")
+    queue_manager.complete_task.assert_awaited_once_with(
+        "task-1",
+        "/tmp/result.png",
+        extra_outputs=None,
+    )
+
+
+@pytest.mark.asyncio
+async def test_complete_task_payload_forwards_extra_outputs():
+    queue_manager = SimpleNamespace(
+        bind_agent_task=AsyncMock(),
+        clear_agent_current_task=AsyncMock(),
+        complete_task=AsyncMock(),
+    )
+    payload = await complete_task_payload(
+        task_id="task-1",
+        agent_id="agent-1",
+        result="/tmp/result.mp4",
+        extra_outputs={"last_frame": {"path": "/tmp/last_frame.png", "media_type": "image"}},
+        queue_manager=queue_manager,
+    )
+
+    assert payload == {"status": "ok"}
+    queue_manager.complete_task.assert_awaited_once_with(
+        "task-1",
+        "/tmp/result.mp4",
+        extra_outputs={"last_frame": {"path": "/tmp/last_frame.png", "media_type": "image"}},
+    )
 
 
 def test_verify_agent_token_checks_configuration_and_bearer_value():

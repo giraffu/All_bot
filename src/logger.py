@@ -136,6 +136,7 @@ class UserLogger:
         height: int | None = None,
         duration: int | None = None,
         requested_duration: int | None = None,
+        extra_outputs: dict | None = None,
     ):
         """
         Log task details to database (History table)
@@ -167,6 +168,7 @@ class UserLogger:
                 prompt=prompt,
                 input_file=input_file_str,
                 output_file=output_image,
+                extra_outputs=extra_outputs,
                 billing_resolution=billing_resolution,
                 width=width,
                 height=height,

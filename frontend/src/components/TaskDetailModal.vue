@@ -16,6 +16,20 @@ const tasksStore = useTasksStore()
 const { formatDate, getTypeLabel, getFileUrl, isVideoFile } = useTaskFormat()
 const { copyPrompt } = usePostPromptCopy(t)
 
+const downloadAuxOutput = (url?: string | null) => {
+  if (!url) {
+    return
+  }
+  const link = document.createElement('a')
+  link.href = url
+  link.target = '_blank'
+  link.rel = 'noopener'
+  link.download = ''
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+}
+
 const detailVisible = computed({
   get: () => tasksStore.detailModalVisible,
   set: (val) => {
@@ -124,13 +138,30 @@ const {
               :copy-label="$t('my_posts.copy_prompt')"
               @copy="copyPrompt(currentRecord)"
             />
+
+            <div
+              v-if="currentRecord.extra_outputs?.last_frame?.url"
+              class="rounded-xl border border-slate-400/20 p-3"
+            >
+              <div class="task-detail-section-label text-[10px] lg:text-xs mb-2 uppercase tracking-wider">
+                尾帧图片
+              </div>
+              <img
+                :src="currentRecord.extra_outputs.last_frame.url"
+                alt="last frame"
+                class="w-full rounded-lg object-cover border border-slate-400/20"
+              />
+              <a-button class="mt-3 w-full" @click="downloadAuxOutput(currentRecord.extra_outputs.last_frame.url)">
+                下载尾帧
+              </a-button>
+            </div>
           </div>
 
           <!-- Desktop Actions -->
           <div class="hidden lg:flex mt-auto flex-col space-y-3 pt-6">
             <template v-if="currentRecord.output_file">
               <a-button
-                v-if="['txt2img', 'i2i_pro', 'i2i_draw', 'edit', 'custom_video', 'video_lora', 'img2img_lora', 'ltx_video'].includes(currentRecord.type) && currentRecord.allow_contribute !== false"
+                v-if="['txt2img', 'i2i_pro', 'i2i_draw', 'edit', 'custom_video', 'video_lora', 'img2img_lora', 'ltx_video', 'wan22_video_v2'].includes(currentRecord.type) && currentRecord.allow_contribute !== false"
                 type="primary"
                 :disabled="currentRecord.is_public"
                 class="task-detail-primary-btn w-full h-12 border-none rounded-xl text-base font-medium flex items-center justify-center"
@@ -217,7 +248,7 @@ const {
           </div>
           
           <button 
-            v-if="['txt2img', 'i2i_pro', 'i2i_draw', 'edit', 'custom_video', 'video_lora', 'img2img_lora', 'ltx_video'].includes(currentRecord.type) && currentRecord.allow_contribute !== false"
+            v-if="['txt2img', 'i2i_pro', 'i2i_draw', 'edit', 'custom_video', 'video_lora', 'img2img_lora', 'ltx_video', 'wan22_video_v2'].includes(currentRecord.type) && currentRecord.allow_contribute !== false"
             @click="!currentRecord.is_public && submitToGallery(currentRecord)"
             :disabled="currentRecord.is_public || submittingTasks[currentRecord.task_id]"
             class="task-detail-mobile-submit px-5 py-2 rounded-full font-medium text-sm transition-all flex items-center justify-center min-w-[100px]"

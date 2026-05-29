@@ -32,6 +32,7 @@ export function useTaskFormat() {
       'video_lora': '图生视频',
       'img2img_lora': '图生图(附加模型)',
       'ltx_video': '高级图生视频',
+      'wan22_video_v2': '图生视频 v2',
       'template_contribute': '模板共建',
       'txt2img': '文生图'
     }

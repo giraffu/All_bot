@@ -56,6 +56,20 @@ class QueueManager:
             return value.lower() in {"1", "true", "yes", "on"}
         return bool(value)
 
+    @staticmethod
+    def _maybe_parse_json_dict(value: Any) -> dict[str, Any] | None:
+        if isinstance(value, dict):
+            return value
+        if not value:
+            return None
+        if not isinstance(value, str):
+            return None
+        try:
+            parsed = json.loads(value)
+        except (TypeError, ValueError):
+            return None
+        return parsed if isinstance(parsed, dict) else None
+
     def _task_key(self, task_id: str) -> str:
         return f"{self.task_prefix}{task_id}"
 
@@ -251,6 +265,7 @@ class QueueManager:
             "progress": 0.0,
             "error_msg": "",
             "result_path": "",
+            "extra_outputs": "",
             "trace_id": trace_id,
         }
 
@@ -308,10 +323,17 @@ class QueueManager:
         # Initialize heartbeat to prevent immediate zombie detection
         await self.update_task_heartbeat(task_id)
 
-    async def complete_task(self, task_id: str, result_path: str):
+    async def complete_task(
+        self,
+        task_id: str,
+        result_path: str,
+        *,
+        extra_outputs: dict[str, Any] | None = None,
+    ):
         await complete_task_flow(
             task_id=task_id,
             result_path=result_path,
+            extra_outputs=extra_outputs,
             get_task_type_func=self._get_task_type,
             persist_task_update_func=self._persist_task_update,
             done_status=TaskStatus.DONE,

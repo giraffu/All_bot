@@ -7,6 +7,7 @@ from src.database.models import History
 from src.web_api.presenters.media_presenter import (
     build_storage_media_url,
     get_first_r2_url_if_exists,
+    resolve_history_extra_outputs,
 )
 
 
@@ -52,6 +53,7 @@ async def get_task_result_payload(*, task_id: str, current_user, db) -> dict:
             "task_id": task_id,
             "task_type": None,
             "media_type": None,
+            "extra_outputs": {},
         }
 
     if hist.user_id != current_user.id:
@@ -68,13 +70,20 @@ async def get_task_result_payload(*, task_id: str, current_user, db) -> dict:
                 "task_id": task_id,
                 "task_type": hist.type,
                 "media_type": media_type,
+                "extra_outputs": {},
             }
+        extra_outputs = await resolve_history_extra_outputs(
+            task_id=hist.task_id,
+            extra_outputs=hist.extra_outputs,
+            source=hist.source,
+        )
         return {
             "status": "success",
             "task_id": task_id,
             "task_type": hist.type,
             "media_type": media_type,
             "result_url": result_url,
+            "extra_outputs": extra_outputs,
         }
 
     return {
@@ -82,4 +91,5 @@ async def get_task_result_payload(*, task_id: str, current_user, db) -> dict:
         "task_id": task_id,
         "task_type": hist.type,
         "media_type": media_type,
+        "extra_outputs": {},
     }

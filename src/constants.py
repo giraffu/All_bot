@@ -31,6 +31,7 @@ MODE_VIDEO_LORA = "video_lora"
 # Keep the underlying value on the legacy video_lora string during the compat phase.
 MODE_IMAGE_TO_VIDEO = MODE_VIDEO_LORA
 MODE_LTX_VIDEO = "ltx_video"
+MODE_WAN22_VIDEO_V2 = "wan22_video_v2"
 MODE_TXT2IMG = "txt2img"
 MODE_I2I_PRO = "i2i_pro"
 MODE_I2I_DRAW = "i2i_draw"
@@ -60,6 +61,7 @@ MODE_NAME_MAP = {
     MODE_CLOSEUP_BLOWJOB: "task.mode_closeup_blowjob",
     MODE_CUSTOM_VIDEO: "task.mode_custom_video",
     MODE_LTX_VIDEO: "task.mode_ltx_video",
+    MODE_WAN22_VIDEO_V2: "task.mode_wan22_video_v2",
     MODE_TXT2IMG: "task.mode_txt2img",
     MODE_IMAGE_TO_VIDEO: "task.mode_video_lora",
     MODE_TEMPLATE_CONTRIBUTE: "task.mode_template_contribute",
@@ -81,6 +83,7 @@ TASK_COSTS = {
     MODE_CLOSEUP_BLOWJOB: 6,
     MODE_CUSTOM_VIDEO: 6,
     MODE_LTX_VIDEO: 10,
+    MODE_WAN22_VIDEO_V2: 10,
     MODE_TXT2IMG: 2,
     MODE_IMAGE_TO_VIDEO: 6,
     MODE_I2I_PRO: 6,
@@ -316,6 +319,7 @@ GENERATION_TASK_TYPES = [
     MODE_EDIT,
     MODE_CUSTOM_VIDEO,
     MODE_LTX_VIDEO,
+    MODE_WAN22_VIDEO_V2,
     MODE_IMAGE_TO_VIDEO,
     MODE_PERFECT_VIDEO_INSERT,
     MODE_DOGGY_STYLE,
@@ -346,6 +350,7 @@ VIDEO_TASK_TYPES = [
     "face_video_step2",
     MODE_IMAGE_TO_VIDEO,
     "ltx_video",
+    MODE_WAN22_VIDEO_V2,
     "video_edit",
     "perfect_video_edit",
     "txt2video",

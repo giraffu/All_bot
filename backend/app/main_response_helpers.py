@@ -36,6 +36,7 @@ async def build_task_status_response(
         queue_remaining = queue_pos if queue_pos is not None else 0
 
     result_path = task.get("result_path")
+    extra_outputs = queue_manager._maybe_parse_json_dict(task.get("extra_outputs"))
     response_kwargs = {
         "status": status,
         "queue_pos": queue_pos,
@@ -43,6 +44,7 @@ async def build_task_status_response(
         "progress": float(task.get("progress", 0.0)),
         "error": task.get("error_msg"),
         "result_path": result_path,
+        "extra_outputs": extra_outputs,
         "cancel_requested": queue_manager._as_bool(task.get("cancel_requested")),
         "cancel_requested_at": (
             float(task["cancel_requested_at"])

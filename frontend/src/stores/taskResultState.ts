@@ -1,16 +1,21 @@
+import type { TaskExtraOutputs } from '@/types/gallery'
+
 export interface TaskResultResponsePayload {
   status?: string
   result_url?: string | null
+  extra_outputs?: TaskExtraOutputs | null
 }
 
 export interface TaskResultDecision {
   type: 'resolved' | 'retry' | 'timeout' | 'forbidden'
   resultUrl?: string
+  extraOutputs?: TaskExtraOutputs
 }
 
 export interface ResumableTaskLike {
   status: 'pending' | 'running' | 'success' | 'failed' | 'cancelled'
   resultUrl?: string
+  extraOutputs?: TaskExtraOutputs
 }
 
 export interface RecoverableTaskLike extends ResumableTaskLike {
@@ -36,7 +41,11 @@ export function decideTaskResultFromResponse(
   maxRetries: number
 ): TaskResultDecision {
   if (payload.status === 'success' && payload.result_url) {
-    return { type: 'resolved', resultUrl: payload.result_url }
+    return {
+      type: 'resolved',
+      resultUrl: payload.result_url,
+      extraOutputs: payload.extra_outputs ?? {}
+    }
   }
 
   if (payload.status === 'pending_result' && retryCount < maxRetries) {
@@ -110,6 +119,7 @@ export function applyTaskResultResponseToTask<T extends RecoverableTaskLike>(
         progress: 100,
         status: 'success',
         resultUrl: decision.resultUrl,
+        extraOutputs: decision.extraOutputs ?? {},
         awaitingResult: false,
         error: undefined
       }

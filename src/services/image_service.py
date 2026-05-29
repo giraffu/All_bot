@@ -16,6 +16,7 @@ from src.api_client import (
     submit_perfect_video_edit,
     submit_perfect_video_insert,
     submit_txt2img,
+    submit_wan22_video_v2,
 )
 
 
@@ -43,6 +44,37 @@ class ImageService:
             lora_items=lora_items,
             width=width,
             height=height,
+            length=length,
+            priority=priority,
+        )
+
+    async def submit_wan22_video_v2_task(
+        self,
+        task_id: str,
+        prompt: str,
+        image_path: str,
+        *,
+        end_image_path: str | None = None,
+        negative_prompt: str = " ",
+        use_end_frame: bool = False,
+        color_match: bool = False,
+        perfect_loop: bool = False,
+        upscale: bool = False,
+        extract_last_frame: bool = False,
+        length: int = 5,
+        priority: int = 0,
+    ) -> str:
+        return await submit_wan22_video_v2(
+            task_id,
+            prompt,
+            image_path,
+            end_image_path=end_image_path,
+            negative_prompt=negative_prompt,
+            use_end_frame=use_end_frame,
+            color_match=color_match,
+            perfect_loop=perfect_loop,
+            upscale=upscale,
+            extract_last_frame=extract_last_frame,
             length=length,
             priority=priority,
         )

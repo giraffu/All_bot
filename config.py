@@ -123,6 +123,7 @@ I2I_PRO_ENDPOINT = f"{API_BASE}/i2i_pro"
 I2I_DRAW_ENDPOINT = f"{API_BASE}/i2i_draw"
 TXT2IMG_ENDPOINT = f"{API_BASE}/api/v1/workflows/t2i-pornmaster-turbo"
 LTX_VIDEO_ENDPOINT = f"{API_BASE}/api/v1/ltx_video"
+WAN22_VIDEO_V2_ENDPOINT = f"{API_BASE}/api/v1/wan22_video_v2"
 
 # --- LLM Configuration ---
 LLM_API_URL = os.getenv("LLM_API_URL", "http://8.148.72.50:1234/v1/chat/completions")

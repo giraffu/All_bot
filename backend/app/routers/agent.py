@@ -1,5 +1,5 @@
 import logging
-from typing import Annotated, Optional
+from typing import Annotated, Any, Dict, Optional
 
 from app.agent_router_helpers import (
     check_task_payload,
@@ -34,6 +34,7 @@ class CompleteRequest(BaseModel):
     task_id: str
     agent_id: str
     result: str
+    extra_outputs: Optional[Dict[str, Any]] = None
 
 
 class HeartbeatRequest(BaseModel):
@@ -94,6 +95,7 @@ async def complete_task(
         task_id=req.task_id,
         agent_id=req.agent_id,
         result=req.result,
+        extra_outputs=req.extra_outputs,
         queue_manager=queue_manager,
     )
 
