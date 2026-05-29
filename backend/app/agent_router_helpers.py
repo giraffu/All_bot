@@ -83,6 +83,11 @@ async def update_status_payload(
 
 
 async def complete_task_payload(*, task_id: str, agent_id: str, result: str, queue_manager) -> dict:
+    await bind_agent_task(
+        queue_manager=queue_manager,
+        task_id=task_id,
+        agent_id=agent_id,
+    )
     await clear_agent_current_task(
         queue_manager=queue_manager,
         agent_id=agent_id,

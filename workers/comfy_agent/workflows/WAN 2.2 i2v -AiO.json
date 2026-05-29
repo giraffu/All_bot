@@ -1,0 +1,1453 @@
+{
+  "9": {
+    "inputs": {
+      "options": "Intermediate and Utility",
+      "filenames": [
+        "28",
+        0
+      ]
+    },
+    "class_type": "VHS_PruneOutputs",
+    "_meta": {
+      "title": "Prune Outputs 🎥🅥🅗🅢"
+    }
+  },
+  "18": {
+    "inputs": {
+      "PowerLoraLoaderHeaderWidget": {
+        "type": "PowerLoraLoaderHeaderWidget"
+      },
+      "➕ Add Lora": "",
+      "model": [
+        "2560",
+        0
+      ],
+      "clip": [
+        "2528",
+        0
+      ]
+    },
+    "class_type": "Power Lora Loader (rgthree)",
+    "_meta": {
+      "title": "WAN22: Lora's LOW"
+    }
+  },
+  "23": {
+    "inputs": {
+      "image": "截屏2026-05-29 17.57.16.png"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "First-Frame-Image"
+    }
+  },
+  "24": {
+    "inputs": {
+      "image": "example.png"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "Last-Frame-Image"
+    }
+  },
+  "26": {
+    "inputs": {
+      "PowerLoraLoaderHeaderWidget": {
+        "type": "PowerLoraLoaderHeaderWidget"
+      },
+      "➕ Add Lora": "",
+      "model": [
+        "2572",
+        0
+      ],
+      "clip": [
+        "2528",
+        0
+      ]
+    },
+    "class_type": "Power Lora Loader (rgthree)",
+    "_meta": {
+      "title": "WAN22: Lora's HIGH"
+    }
+  },
+  "28": {
+    "inputs": {
+      "frame_rate": [
+        "2581",
+        0
+      ],
+      "loop_count": 0,
+      "filename_prefix": "video/2026-05-29/181121",
+      "format": "video/h264-mp4",
+      "pix_fmt": "yuv420p",
+      "crf": 19,
+      "save_metadata": true,
+      "trim_to_audio": false,
+      "pingpong": false,
+      "save_output": true,
+      "images": [
+        "2575",
+        0
+      ]
+    },
+    "class_type": "VHS_VideoCombine",
+    "_meta": {
+      "title": "Video Combine 🎥🅥🅗🅢"
+    }
+  },
+  "2368": {
+    "inputs": {
+      "value": "严格100%完全还原参考原图中女生的所有面部细节和身体姿势：五官、脸型、眉形、眼形、鼻子形状、嘴唇形状、完整妆容、发型、耳环以及整体表情必须完全一模一样，零偏差，绝对禁止任何改动、变形或美化。原图女生慢慢跪起，四肢撑床，腰往下塌，屁股高高翘起。\n后面一个有着22厘米阴茎的8岁亚洲男孩跪好，双手紧紧抓住她的腰部和臀部，用力有节奏地用自己大阴茎猛烈后入抽插阴道。\n女生整个身体随着每一次猛烈撞击剧烈前后摇晃，臀部抖动，躯干猛烈前冲，胸部在文胸和制服里剧烈弹跳晃动，头发随动作剧烈飞舞甩动。两人身上都有自然闪烁的汗水，真实体液，极致性爱物理细节。\n女生脸上露出震惊与强烈快感交织的表情，眼睛睁大，嘴巴微张发出呻吟，但脸部五官、妆容、表情基础必须100%与原图完全一致。侧面镜头+特写，色情真实"
+    },
+    "class_type": "PrimitiveStringMultiline",
+    "_meta": {
+      "title": "WAN22 Video prompt positive"
+    }
+  },
+  "2371": {
+    "inputs": {
+      "value": "censored, mosaic censoring, bar censor, pixelated, glowing, bloom, blurry, out of focus, low detail, bad anatomy, ugly, overexposed, underexposed, distorted face, extra limbs, cartoonish, 3d render artifacts, duplicate people, unnatural lighting, bad composition, missing shadows, low resolution, poorly textured, glitch, noise, grain, static, motionless, still frame, stylized, artwork, painting, illustration, many people in background, three legs, walking backward, unnatural skin tone, discolored eyelid, red eyelids, closed eyes, poorly drawn hands, extra fingers, fused fingers, poorly drawn face, deformed, disfigured, malformed limbs, fog, mist, voluminous eyelashes,"
+    },
+    "class_type": "PrimitiveStringMultiline",
+    "_meta": {
+      "title": "WAN22 Video prompt negative"
+    }
+  },
+  "2501": {
+    "inputs": {
+      "enabled": true,
+      "trigger_on": "true → active",
+      "action": "bypass"
+    },
+    "class_type": "DaSiWa_NodeStatusSwitch",
+    "_meta": {
+      "title": "DaSiWa Node Status Switch"
+    }
+  },
+  "2502": {
+    "inputs": {
+      "frame_rate": [
+        "2581",
+        0
+      ],
+      "loop_count": 0,
+      "filename_prefix": "video/2026-05-29/181121MINIMEME",
+      "format": "image/gif",
+      "pingpong": false,
+      "save_output": true
+    },
+    "class_type": "VHS_VideoCombine",
+    "_meta": {
+      "title": "Video Combine 🎥🅥🅗🅢"
+    }
+  },
+  "2503": {
+    "inputs": {
+      "filename_prefix": "video/2026-05-29/181121LASTFRAME"
+    },
+    "class_type": "SaveImage",
+    "_meta": {
+      "title": "保存图像"
+    }
+  },
+  "2528": {
+    "inputs": {
+      "clip_name": "umt5_xxl_fp8_e4m3fn_scaled.safetensors",
+      "type": "wan",
+      "device": "default"
+    },
+    "class_type": "CLIPLoader",
+    "_meta": {
+      "title": "加载CLIP"
+    }
+  },
+  "2529": {
+    "inputs": {
+      "upscale_method": "lanczos",
+      "width": [
+        "2553",
+        0
+      ],
+      "height": [
+        "2553",
+        1
+      ],
+      "crop": "disabled",
+      "image": [
+        "24",
+        0
+      ]
+    },
+    "class_type": "ImageScale",
+    "_meta": {
+      "title": "缩放图像"
+    }
+  },
+  "2530": {
+    "inputs": {
+      "width": [
+        "2553",
+        0
+      ],
+      "height": [
+        "2553",
+        1
+      ],
+      "length": [
+        "2556",
+        1
+      ],
+      "batch_size": 1,
+      "positive": [
+        "2592",
+        0
+      ],
+      "negative": [
+        "2595",
+        0
+      ],
+      "vae": [
+        "2571",
+        0
+      ],
+      "start_image": [
+        "2561",
+        0
+      ],
+      "end_image": [
+        "2529",
+        0
+      ]
+    },
+    "class_type": "WanFirstLastFrameToVideo",
+    "_meta": {
+      "title": "Wan首尾帧视频"
+    }
+  },
+  "2531": {
+    "inputs": {
+      "add_noise": "enable",
+      "noise_seed": [
+        "2540",
+        0
+      ],
+      "steps": [
+        "2534",
+        0
+      ],
+      "cfg": [
+        "2534",
+        2
+      ],
+      "sampler_name": [
+        "2534",
+        3
+      ],
+      "scheduler": [
+        "2534",
+        4
+      ],
+      "start_at_step": 0,
+      "end_at_step": [
+        "2534",
+        1
+      ],
+      "return_with_leftover_noise": "enable",
+      "model": [
+        "2597",
+        0
+      ],
+      "positive": [
+        "2530",
+        0
+      ],
+      "negative": [
+        "2530",
+        1
+      ],
+      "latent_image": [
+        "2530",
+        2
+      ]
+    },
+    "class_type": "KSamplerAdvanced",
+    "_meta": {
+      "title": "K采样器（高级）"
+    }
+  },
+  "2532": {
+    "inputs": {
+      "ctx_01": [
+        "2554",
+        0
+      ],
+      "ctx_02": [
+        "2538",
+        0
+      ]
+    },
+    "class_type": "Context Switch (rgthree)",
+    "_meta": {
+      "title": "Context Switch (rgthree)"
+    }
+  },
+  "2533": {
+    "inputs": {
+      "model": [
+        "2566",
+        0
+      ]
+    },
+    "class_type": "Context (rgthree)",
+    "_meta": {
+      "title": "Context (safetensor high)"
+    }
+  },
+  "2534": {
+    "inputs": {
+      "steps_total": 4,
+      "refiner_step": 2,
+      "cfg": 1,
+      "sampler_name": "euler",
+      "scheduler": "linear_quadratic"
+    },
+    "class_type": "KSampler Config (rgthree)",
+    "_meta": {
+      "title": "Sampling"
+    }
+  },
+  "2536": {
+    "inputs": {},
+    "class_type": "Context (rgthree)",
+    "_meta": {
+      "title": "Context (gguf high)"
+    }
+  },
+  "2537": {
+    "inputs": {
+      "ctx_01": [
+        "2533",
+        0
+      ],
+      "ctx_02": [
+        "2536",
+        0
+      ]
+    },
+    "class_type": "Context Switch (rgthree)",
+    "_meta": {
+      "title": "Context Switch (rgthree)"
+    }
+  },
+  "2538": {
+    "inputs": {},
+    "class_type": "Context (rgthree)",
+    "_meta": {
+      "title": "Context (gguf low)"
+    }
+  },
+  "2539": {
+    "inputs": {
+      "add_noise": "enable",
+      "noise_seed": [
+        "2540",
+        0
+      ],
+      "steps": [
+        "2534",
+        0
+      ],
+      "cfg": [
+        "2534",
+        2
+      ],
+      "sampler_name": [
+        "2534",
+        3
+      ],
+      "scheduler": [
+        "2534",
+        4
+      ],
+      "start_at_step": 0,
+      "end_at_step": [
+        "2534",
+        1
+      ],
+      "return_with_leftover_noise": "enable",
+      "model": [
+        "2597",
+        0
+      ],
+      "positive": [
+        "2545",
+        0
+      ],
+      "negative": [
+        "2545",
+        1
+      ],
+      "latent_image": [
+        "2545",
+        2
+      ]
+    },
+    "class_type": "KSamplerAdvanced",
+    "_meta": {
+      "title": "KSampler (High)"
+    }
+  },
+  "2540": {
+    "inputs": {
+      "value": -1105540600110020
+    },
+    "class_type": "PrimitiveInt",
+    "_meta": {
+      "title": "Seed"
+    }
+  },
+  "2541": {
+    "inputs": {
+      "ckpt_name": "rife49.pth",
+      "scale_factor": 1,
+      "ensemble": true,
+      "multiplier": 4,
+      "use_first_two": true,
+      "use_last_two": true,
+      "use_global_median": true,
+      "calibrate_metric": "MSE",
+      "calibrate_iters": 12,
+      "t_min": 0,
+      "t_max": 0.96,
+      "auto_tmax": true,
+      "t_cap": 0.995,
+      "full_clip": [
+        "2543",
+        1
+      ]
+    },
+    "class_type": "RIFE_SeamTimingAnalyzer",
+    "_meta": {
+      "title": "🐇 RIFE Seam Timing Analyzer"
+    }
+  },
+  "2542": {
+    "inputs": {
+      "max_end_crop_frames": 8,
+      "include_first_step": true,
+      "include_last_step": true,
+      "include_global_median_step": true,
+      "seam_window_frames": 6,
+      "distance_metric": "MSE",
+      "score_in_8bit": false,
+      "use_ssim_similarity": true,
+      "use_exposure_guard": true,
+      "use_flow_guard": true,
+      "weight_step_size": 0.55,
+      "weight_similarity": 0.3,
+      "weight_exposure": 0.1,
+      "weight_flow": 0.05,
+      "ssim_downsample_scales": "1,2",
+      "accelerate_with_gpu": true,
+      "use_mixed_precision": true,
+      "clip_frames": [
+        "2614",
+        0
+      ]
+    },
+    "class_type": "AutocropToLoop",
+    "_meta": {
+      "title": "🐇 Autocrop to Loop"
+    }
+  },
+  "2543": {
+    "inputs": {
+      "images": [
+        "2542",
+        0
+      ]
+    },
+    "class_type": "PrepareLoopFrames",
+    "_meta": {
+      "title": "🐇 Prepare Loop Frames"
+    }
+  },
+  "2545": {
+    "inputs": {
+      "width": [
+        "2553",
+        0
+      ],
+      "height": [
+        "2553",
+        1
+      ],
+      "length": [
+        "2556",
+        1
+      ],
+      "batch_size": 1,
+      "positive": [
+        "2592",
+        0
+      ],
+      "negative": [
+        "2595",
+        0
+      ],
+      "vae": [
+        "2571",
+        0
+      ],
+      "start_image": [
+        "2561",
+        0
+      ]
+    },
+    "class_type": "WanImageToVideo",
+    "_meta": {
+      "title": "图像到视频（Wan）"
+    }
+  },
+  "2547": {
+    "inputs": {
+      "source": [
+        "2552",
+        1
+      ]
+    },
+    "class_type": "PreviewAny",
+    "_meta": {
+      "title": "Chunks"
+    }
+  },
+  "2548": {
+    "inputs": {
+      "source": [
+        "2549",
+        1
+      ]
+    },
+    "class_type": "PreviewAny",
+    "_meta": {
+      "title": "Chunks"
+    }
+  },
+  "2549": {
+    "inputs": {
+      "expression": "max(1, round(((a * b * c) / 120000000)**1.3 * 0.5 * d))",
+      "values.a": [
+        "2556",
+        1
+      ],
+      "values.b": [
+        "2553",
+        0
+      ],
+      "values.c": [
+        "2555",
+        0
+      ],
+      "values.d": [
+        "2626",
+        0
+      ]
+    },
+    "class_type": "ComfyMathExpression",
+    "_meta": {
+      "title": "Math Chunk calculation"
+    }
+  },
+  "2550": {
+    "inputs": {
+      "enable_fp16_accumulation": true,
+      "model": [
+        "2603",
+        0
+      ]
+    },
+    "class_type": "ModelPatchTorchSettings",
+    "_meta": {
+      "title": "Model Patch Torch Settings"
+    }
+  },
+  "2551": {
+    "inputs": {
+      "enable_fp16_accumulation": true,
+      "model": [
+        "2604",
+        0
+      ]
+    },
+    "class_type": "ModelPatchTorchSettings",
+    "_meta": {
+      "title": "Model Patch Torch Settings"
+    }
+  },
+  "2552": {
+    "inputs": {
+      "expression": "max(1, round(((a * b * c) / 120000000)**1.3 * 0.5 * d))",
+      "values.a": [
+        "2556",
+        1
+      ],
+      "values.b": [
+        "2553",
+        0
+      ],
+      "values.c": [
+        "2555",
+        0
+      ],
+      "values.d": [
+        "2626",
+        0
+      ]
+    },
+    "class_type": "ComfyMathExpression",
+    "_meta": {
+      "title": "Math Chunk calculation"
+    }
+  },
+  "2553": {
+    "inputs": {
+      "image": [
+        "2561",
+        0
+      ]
+    },
+    "class_type": "GetImageSize",
+    "_meta": {
+      "title": "获取图像尺寸"
+    }
+  },
+  "2554": {
+    "inputs": {
+      "model": [
+        "2567",
+        0
+      ]
+    },
+    "class_type": "Context (rgthree)",
+    "_meta": {
+      "title": "Context (safetensor low)"
+    }
+  },
+  "2555": {
+    "inputs": {
+      "value": 4
+    },
+    "class_type": "PrimitiveInt",
+    "_meta": {
+      "title": "Headroom"
+    }
+  },
+  "2556": {
+    "inputs": {
+      "expression": "(round((a * b) / 8) * 8) +1",
+      "values.a": [
+        "2586",
+        0
+      ],
+      "values.b": [
+        "2562",
+        0
+      ]
+    },
+    "class_type": "ComfyMathExpression",
+    "_meta": {
+      "title": "Math frames"
+    }
+  },
+  "2557": {
+    "inputs": {
+      "value": true
+    },
+    "class_type": "PrimitiveBoolean",
+    "_meta": {
+      "title": "布尔值"
+    }
+  },
+  "2558": {
+    "inputs": {
+      "ckpt_name": "rife49.pth",
+      "multiplier": [
+        "2541",
+        1
+      ],
+      "t_mode": "linear",
+      "t_gamma": 1,
+      "t_min": 0,
+      "t_max": 1,
+      "scale_factor": 1,
+      "ensemble": true,
+      "clear_cache_after_n_frames": 200,
+      "custom_t_list_csv": [
+        "2541",
+        0
+      ],
+      "frames": [
+        "2543",
+        0
+      ]
+    },
+    "class_type": "RIFE_VFI_Advanced",
+    "_meta": {
+      "title": "🐇 RIFE VFI Custom Timing"
+    }
+  },
+  "2560": {
+    "inputs": {
+      "shift": 5,
+      "model": [
+        "2599",
+        0
+      ]
+    },
+    "class_type": "ModelSamplingSD3",
+    "_meta": {
+      "title": "Sigma Shift Low"
+    }
+  },
+  "2561": {
+    "inputs": {
+      "upscale_method": "lanczos",
+      "width": [
+        "2621",
+        0
+      ],
+      "height": [
+        "2621",
+        1
+      ],
+      "crop": "disabled",
+      "image": [
+        "23",
+        0
+      ]
+    },
+    "class_type": "ImageScale",
+    "_meta": {
+      "title": "缩放图像"
+    }
+  },
+  "2562": {
+    "inputs": {
+      "value": 16
+    },
+    "class_type": "PrimitiveFloat",
+    "_meta": {
+      "title": "FPS"
+    }
+  },
+  "2563": {
+    "inputs": {
+      "image": [
+        "2574",
+        0
+      ]
+    },
+    "class_type": "GetImageSize",
+    "_meta": {
+      "title": "获取图像尺寸"
+    }
+  },
+  "2564": {
+    "inputs": {
+      "expression": "a * 2",
+      "values.a": [
+        "2563",
+        0
+      ]
+    },
+    "class_type": "ComfyMathExpression",
+    "_meta": {
+      "title": "Math width"
+    }
+  },
+  "2565": {
+    "inputs": {
+      "expression": "a * 2",
+      "values.a": [
+        "2563",
+        1
+      ]
+    },
+    "class_type": "ComfyMathExpression",
+    "_meta": {
+      "title": "Math height"
+    }
+  },
+  "2566": {
+    "inputs": {
+      "unet_name": "DasiwaWAN22I2V14BLightspeed_snatchkissHighV11.safetensors",
+      "weight_dtype": "default"
+    },
+    "class_type": "UNETLoader",
+    "_meta": {
+      "title": "UNet加载器"
+    }
+  },
+  "2567": {
+    "inputs": {
+      "unet_name": "DasiwaWAN22I2V14BLightspeed_snatchkissLowV11.safetensors",
+      "weight_dtype": "default"
+    },
+    "class_type": "UNETLoader",
+    "_meta": {
+      "title": "UNet加载器"
+    }
+  },
+  "2571": {
+    "inputs": {
+      "vae_name": "wan_2.1_vae.safetensors"
+    },
+    "class_type": "VAELoader",
+    "_meta": {
+      "title": "加载VAE"
+    }
+  },
+  "2572": {
+    "inputs": {
+      "shift": 5,
+      "model": [
+        "2600",
+        0
+      ]
+    },
+    "class_type": "ModelSamplingSD3",
+    "_meta": {
+      "title": "Sigma Shift High"
+    }
+  },
+  "2573": {
+    "inputs": {
+      "enabled": true,
+      "trigger_on": "true → active",
+      "action": "bypass",
+      "target_01": [
+        "2565",
+        1
+      ],
+      "target_02": [
+        "2564",
+        1
+      ],
+      "target_03": [
+        "2563",
+        0
+      ],
+      "target_04": [
+        "2575",
+        0
+      ]
+    },
+    "class_type": "DaSiWa_NodeStatusSwitch",
+    "_meta": {
+      "title": "DaSiWa Node Status Switch"
+    }
+  },
+  "2574": {
+    "inputs": {
+      "original_images": [
+        "2543",
+        1
+      ],
+      "interpolated_frames": [
+        "2558",
+        0
+      ]
+    },
+    "class_type": "AssembleLoopFrames",
+    "_meta": {
+      "title": "🐇 Assemble Loop Frames"
+    }
+  },
+  "2575": {
+    "inputs": {
+      "width": [
+        "2564",
+        1
+      ],
+      "height": [
+        "2565",
+        1
+      ],
+      "resize_mode": "Keep AR",
+      "divisible_by": 1,
+      "max_batch_size": 3,
+      "sinc_window": 3,
+      "pad_color": "0, 0, 0",
+      "crop_position": "center",
+      "precision": "fp32",
+      "image": [
+        "2574",
+        0
+      ]
+    },
+    "class_type": "BatchResizeWithLanczos",
+    "_meta": {
+      "title": "🐇 Batch Resize w/ Lanczos"
+    }
+  },
+  "2580": {
+    "inputs": {
+      "images": [
+        "2575",
+        0
+      ]
+    },
+    "class_type": "VHS_GetImageCount",
+    "_meta": {
+      "title": "Get Image Count 🎥🅥🅗🅢"
+    }
+  },
+  "2581": {
+    "inputs": {
+      "expression": "( a - 1 ) / b",
+      "values.a": [
+        "2580",
+        0
+      ],
+      "values.b": [
+        "2586",
+        0
+      ]
+    },
+    "class_type": "ComfyMathExpression",
+    "_meta": {
+      "title": "Math Expression FPS"
+    }
+  },
+  "2584": {
+    "inputs": {
+      "enabled": true,
+      "trigger_on": "true → active",
+      "action": "bypass",
+      "target_01": [
+        "2542",
+        0
+      ],
+      "target_02": [
+        "2543",
+        0
+      ],
+      "target_03": [
+        "2541",
+        0
+      ],
+      "target_04": [
+        "2558",
+        0
+      ],
+      "target_05": [
+        "2574",
+        0
+      ]
+    },
+    "class_type": "DaSiWa_NodeStatusSwitch",
+    "_meta": {
+      "title": "DaSiWa Node Status Switch"
+    }
+  },
+  "2586": {
+    "inputs": {
+      "value": 5
+    },
+    "class_type": "PrimitiveInt",
+    "_meta": {
+      "title": "Seconds"
+    }
+  },
+  "2587": {
+    "inputs": {
+      "source": [
+        "2580",
+        0
+      ]
+    },
+    "class_type": "PreviewAny",
+    "_meta": {
+      "title": "预览任意"
+    }
+  },
+  "2589": {
+    "inputs": {
+      "source": [
+        "2581",
+        0
+      ]
+    },
+    "class_type": "PreviewAny",
+    "_meta": {
+      "title": "预览任意"
+    }
+  },
+  "2592": {
+    "inputs": {
+      "text": [
+        "2368",
+        0
+      ],
+      "clip": [
+        "26",
+        1
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIP文本编码"
+    }
+  },
+  "2595": {
+    "inputs": {
+      "text": [
+        "2371",
+        0
+      ],
+      "clip": [
+        "26",
+        1
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIP文本编码"
+    }
+  },
+  "2597": {
+    "inputs": {
+      "nag_scale": 11,
+      "nag_alpha": 0.25,
+      "nag_tau": 2.37,
+      "model": [
+        "26",
+        0
+      ]
+    },
+    "class_type": "NAGuidance",
+    "_meta": {
+      "title": "Normalized Attention Guidance Low"
+    }
+  },
+  "2598": {
+    "inputs": {
+      "nag_scale": 11,
+      "nag_alpha": 0.25,
+      "nag_tau": 2.37,
+      "model": [
+        "18",
+        0
+      ]
+    },
+    "class_type": "NAGuidance",
+    "_meta": {
+      "title": "Normalized Attention Guidance High"
+    }
+  },
+  "2599": {
+    "inputs": {
+      "chunks": [
+        "2552",
+        1
+      ],
+      "dim_threshold": 4096,
+      "model": [
+        "2551",
+        0
+      ]
+    },
+    "class_type": "WanChunkFeedForward",
+    "_meta": {
+      "title": "Wan Chunk FeedForward"
+    }
+  },
+  "2600": {
+    "inputs": {
+      "chunks": [
+        "2549",
+        1
+      ],
+      "dim_threshold": 4096,
+      "model": [
+        "2550",
+        0
+      ]
+    },
+    "class_type": "WanChunkFeedForward",
+    "_meta": {
+      "title": "Wan Chunk FeedForward"
+    }
+  },
+  "2601": {
+    "inputs": {
+      "enabled": true,
+      "trigger_on": "true → active",
+      "action": "bypass",
+      "target_01": [
+        "2552",
+        1
+      ],
+      "target_02": [
+        "2599",
+        0
+      ],
+      "target_03": [
+        "2600",
+        0
+      ],
+      "target_04": [
+        "2549",
+        0
+      ]
+    },
+    "class_type": "DaSiWa_NodeStatusSwitch",
+    "_meta": {
+      "title": "DaSiWa Node Status Switch"
+    }
+  },
+  "2602": {
+    "inputs": {
+      "enabled": true,
+      "trigger_on": "true → active",
+      "action": "bypass",
+      "target_01": [
+        "2598",
+        0
+      ],
+      "target_02": [
+        "2597",
+        0
+      ]
+    },
+    "class_type": "DaSiWa_NodeStatusSwitch",
+    "_meta": {
+      "title": "DaSiWa Node Status Switch"
+    }
+  },
+  "2603": {
+    "inputs": {
+      "sage_attention": "auto",
+      "allow_compile": false,
+      "model": [
+        "2537",
+        1
+      ]
+    },
+    "class_type": "PathchSageAttentionKJ",
+    "_meta": {
+      "title": "Patch Sage Attention KJ"
+    }
+  },
+  "2604": {
+    "inputs": {
+      "sage_attention": "auto",
+      "allow_compile": false,
+      "model": [
+        "2532",
+        1
+      ]
+    },
+    "class_type": "PathchSageAttentionKJ",
+    "_meta": {
+      "title": "Patch Sage Attention KJ"
+    }
+  },
+  "2605": {
+    "inputs": {
+      "enabled": true,
+      "trigger_on": "true → active",
+      "action": "bypass",
+      "target_01": [
+        "2604",
+        0
+      ],
+      "target_02": [
+        "2603",
+        0
+      ]
+    },
+    "class_type": "DaSiWa_NodeStatusSwitch",
+    "_meta": {
+      "title": "DaSiWa Node Status Switch"
+    }
+  },
+  "2607": {
+    "inputs": {
+      "value": false
+    },
+    "class_type": "PrimitiveBoolean",
+    "_meta": {
+      "title": "Tiled VAE"
+    }
+  },
+  "2608": {
+    "inputs": {
+      "spatial_tiles": 4,
+      "spatial_overlap": 4,
+      "temporal_tile_length": 32,
+      "temporal_overlap": 8,
+      "last_frame_fix": false,
+      "working_device": "auto",
+      "working_dtype": "auto",
+      "vae": [
+        "2571",
+        0
+      ],
+      "latents": [
+        "2613",
+        0
+      ]
+    },
+    "class_type": "LTXVSpatioTemporalTiledVAEDecode",
+    "_meta": {
+      "title": "🅛🅣🅧 LTXV Spatio Temporal Tiled VAE Decode"
+    }
+  },
+  "2609": {
+    "inputs": {
+      "samples": [
+        "2613",
+        0
+      ],
+      "vae": [
+        "2571",
+        0
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "VAE解码"
+    }
+  },
+  "2610": {
+    "inputs": {
+      "add_noise": "disable",
+      "noise_seed": [
+        "2540",
+        0
+      ],
+      "steps": [
+        "2534",
+        0
+      ],
+      "cfg": [
+        "2534",
+        2
+      ],
+      "sampler_name": [
+        "2534",
+        3
+      ],
+      "scheduler": [
+        "2534",
+        4
+      ],
+      "start_at_step": [
+        "2534",
+        1
+      ],
+      "end_at_step": 10000,
+      "return_with_leftover_noise": "disable",
+      "model": [
+        "2598",
+        0
+      ],
+      "positive": [
+        "2545",
+        0
+      ],
+      "negative": [
+        "2545",
+        1
+      ],
+      "latent_image": [
+        "2539",
+        0
+      ]
+    },
+    "class_type": "KSamplerAdvanced",
+    "_meta": {
+      "title": "KSampler (Low)"
+    }
+  },
+  "2611": {
+    "inputs": {
+      "add_noise": "disable",
+      "noise_seed": [
+        "2540",
+        0
+      ],
+      "steps": [
+        "2534",
+        0
+      ],
+      "cfg": [
+        "2534",
+        2
+      ],
+      "sampler_name": [
+        "2534",
+        3
+      ],
+      "scheduler": [
+        "2534",
+        4
+      ],
+      "start_at_step": [
+        "2534",
+        1
+      ],
+      "end_at_step": 10000,
+      "return_with_leftover_noise": "disable",
+      "model": [
+        "2598",
+        0
+      ],
+      "positive": [
+        "2530",
+        0
+      ],
+      "negative": [
+        "2530",
+        1
+      ],
+      "latent_image": [
+        "2531",
+        0
+      ]
+    },
+    "class_type": "KSamplerAdvanced",
+    "_meta": {
+      "title": "K采样器（高级）"
+    }
+  },
+  "2612": {
+    "inputs": {
+      "switch": [
+        "2607",
+        0
+      ],
+      "on_false": [
+        "2609",
+        0
+      ],
+      "on_true": [
+        "2608",
+        0
+      ]
+    },
+    "class_type": "ComfySwitchNode",
+    "_meta": {
+      "title": "Switch VAE"
+    }
+  },
+  "2613": {
+    "inputs": {
+      "switch": [
+        "2557",
+        0
+      ],
+      "on_false": [
+        "2611",
+        0
+      ],
+      "on_true": [
+        "2610",
+        0
+      ]
+    },
+    "class_type": "ComfySwitchNode",
+    "_meta": {
+      "title": "I2V - FLF2V switch"
+    }
+  },
+  "2614": {
+    "inputs": {
+      "method": "reinhard_lab",
+      "source_stats": "per_frame",
+      "strength": 0.75,
+      "image_target": [
+        "2612",
+        0
+      ],
+      "image_ref": [
+        "2561",
+        0
+      ]
+    },
+    "class_type": "ColorTransfer",
+    "_meta": {
+      "title": "ColorTransfer"
+    }
+  },
+  "2615": {
+    "inputs": {
+      "enabled": true,
+      "trigger_on": "true → active",
+      "action": "bypass",
+      "target_01": [
+        "2614",
+        0
+      ]
+    },
+    "class_type": "DaSiWa_NodeStatusSwitch",
+    "_meta": {
+      "title": "DaSiWa Node Status Switch"
+    }
+  },
+  "2621": {
+    "inputs": {
+      "method": "Use Precision Presets",
+      "precision_presets": "0.65 MP - Balanced",
+      "resolution_presets": "1080p",
+      "no_scale": false,
+      "scale_from_image": true,
+      "aspect_preset": "9:16 - Social",
+      "swap_aspect": false,
+      "manual_aspect_width": 16,
+      "manual_aspect_height": 9,
+      "mode": "WAN/LTX (Div32)",
+      "custom_divisor": 8,
+      "image": [
+        "23",
+        0
+      ]
+    },
+    "class_type": "DaSiWa_ResolutionScaleCalculator",
+    "_meta": {
+      "title": "DaSiWa Resolution Scale Calculator"
+    }
+  },
+  "2623": {
+    "inputs": {
+      "enabled": false,
+      "trigger_on": "true → active",
+      "action": "mute"
+    },
+    "class_type": "DaSiWa_NodeStatusSwitch",
+    "_meta": {
+      "title": "DaSiWa Node Status Switch"
+    }
+  },
+  "2624": {
+    "inputs": {
+      "enabled": false,
+      "trigger_on": "true → active",
+      "action": "mute"
+    },
+    "class_type": "DaSiWa_NodeStatusSwitch",
+    "_meta": {
+      "title": "DaSiWa Node Status Switch"
+    }
+  },
+  "2626": {
+    "inputs": {
+      "value": 1
+    },
+    "class_type": "PrimitiveInt",
+    "_meta": {
+      "title": "整数"
+    }
+  }
+}
