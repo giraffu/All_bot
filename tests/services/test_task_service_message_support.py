@@ -42,7 +42,7 @@ def test_with_completion_caption_returns_updated_copy():
 
 def test_resolve_display_mode_name_uses_context_translator_when_available():
     class _Context:
-        def t(self, value: str) -> str:
+        def t(self, value: str, **_kwargs) -> str:
             return f"translated:{value}"
 
     display_name = support.resolve_display_mode_name(

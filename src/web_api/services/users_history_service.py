@@ -4,7 +4,6 @@ from fastapi import HTTPException
 
 from src.core.media_processor import extract_media_metadata_from_storage
 from src.web_api.common.utils import build_storage_input_file_url
-from src.web_api.presenters.media_presenter import resolve_history_media_urls
 from src.web_api.schemas.gallery_schema import PaginatedGalleryResponse
 from src.web_api.schemas.user_schema import PaginatedHistory
 from src.web_api.services.apply_context_service import (
@@ -41,7 +40,6 @@ async def get_user_history_payload(
     *,
     current_user,
     db,
-    resolve_history_media_urls=resolve_history_media_urls,
     limit: int = 8,
 ) -> PaginatedHistory:
     histories, task_ids = await fetch_recent_user_history(
@@ -53,7 +51,6 @@ async def get_user_history_payload(
     response_items = await build_user_history_payload(
         histories=histories,
         gallery_task_ids=active_task_ids,
-        resolve_history_media_urls_func=resolve_history_media_urls,
     )
     return PaginatedHistory(
         items=response_items,
@@ -67,12 +64,10 @@ async def get_default_user_history_payload(
     *,
     current_user,
     db,
-    resolve_history_media_urls=resolve_history_media_urls,
 ) -> PaginatedHistory:
     return await get_user_history_payload(
         current_user=current_user,
         db=db,
-        resolve_history_media_urls=resolve_history_media_urls,
         limit=8,
     )
 
@@ -82,14 +77,7 @@ async def get_history_apply_context_payload(
     task_id: str,
     user_id: int,
     db,
-    build_input_file_url=None,
-    probe_media_metadata=None,
-    logger=None,
 ) -> object:
-    build_input_file_url = build_input_file_url or build_storage_input_file_url
-    probe_media_metadata = probe_media_metadata or extract_media_metadata_from_storage
-    logger = logger or globals()["logger"]
-
     history, gallery_post = await fetch_history_apply_context_entities(
         db=db,
         task_id=task_id,
@@ -109,9 +97,9 @@ async def get_history_apply_context_payload(
         fallback_width=gallery_post.width if gallery_post else None,
         fallback_height=gallery_post.height if gallery_post else None,
         fallback_duration=gallery_post.duration if gallery_post else None,
-        build_input_file_url=build_input_file_url,
+        build_input_file_url=build_storage_input_file_url,
         probe_output_file=history.output_file,
-        probe_media_metadata=probe_media_metadata,
+        probe_media_metadata=extract_media_metadata_from_storage,
         logger=logger,
     )
 
@@ -121,17 +109,11 @@ async def get_history_apply_context_for_current_user(
     task_id: str,
     current_user,
     db,
-    build_input_file_url=None,
-    probe_media_metadata=None,
-    logger=None,
 ) -> object:
     return await get_history_apply_context_payload(
         task_id=task_id,
         user_id=current_user.id,
         db=db,
-        build_input_file_url=build_input_file_url,
-        probe_media_metadata=probe_media_metadata,
-        logger=logger,
     )
 
 
@@ -142,7 +124,6 @@ async def get_my_favorites_payload(
     task_type: str | None,
     current_user,
     db,
-    resolve_history_media_urls=resolve_history_media_urls,
 ) -> PaginatedGalleryResponse:
     histories, total = await fetch_favorite_gallery_histories(
         db=db,
@@ -158,7 +139,6 @@ async def get_my_favorites_payload(
     response_items = await build_favorite_gallery_payload(
         histories=histories,
         gallery_post_map=gallery_post_map,
-        resolve_history_media_urls_func=resolve_history_media_urls,
     )
     pages = (total + size - 1) // size
     return PaginatedGalleryResponse(

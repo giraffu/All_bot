@@ -6,6 +6,7 @@ import pytest
 from src.database import core as db_core
 from src.database.models import GalleryPost, History
 from src.web_api.routers import users as users_router
+from src.web_api.services import history_response_builder
 from src.web_api.services import users_history_service
 from src.web_api.services.history_response_builder import (
     build_favorite_gallery_payload,
@@ -121,11 +122,15 @@ async def test_get_user_history_payload_resolves_media_urls_with_keyword_argumen
         "fetch_active_public_gallery_task_ids",
         _fake_fetch_active_public_gallery_task_ids,
     )
+    monkeypatch.setattr(
+        history_response_builder,
+        "resolve_history_media_urls",
+        _fake_resolve_history_media_urls,
+    )
 
     response = await users_history_service.get_user_history_payload(
         current_user=type("User", (), {"id": 123})(),
         db=object(),
-        resolve_history_media_urls=_fake_resolve_history_media_urls,
     )
 
     assert response.total == 1
@@ -136,7 +141,9 @@ async def test_get_user_history_payload_resolves_media_urls_with_keyword_argumen
 
 
 @pytest.mark.asyncio
-async def test_build_favorite_gallery_payload_resolves_media_urls_with_keyword_arguments():
+async def test_build_favorite_gallery_payload_resolves_media_urls_with_keyword_arguments(
+    monkeypatch,
+):
     history = History(
         id=11,
         user_id=123,
@@ -160,10 +167,15 @@ async def test_build_favorite_gallery_payload_resolves_media_urls_with_keyword_a
         assert fallback_to_storage_path is False
         return ("https://example.com/output.png", "https://example.com/thumb.png")
 
+    monkeypatch.setattr(
+        history_response_builder,
+        "resolve_history_media_urls",
+        _fake_resolve_history_media_urls,
+    )
+
     response_items = await build_favorite_gallery_payload(
         histories=[history],
         gallery_post_map={},
-        resolve_history_media_urls_func=_fake_resolve_history_media_urls,
     )
 
     assert len(response_items) == 1
@@ -221,6 +233,11 @@ async def test_get_my_favorites_payload_returns_favorited_txt2img_history(
         "fetch_gallery_posts_for_task_ids",
         _fake_fetch_gallery_posts_for_task_ids,
     )
+    monkeypatch.setattr(
+        history_response_builder,
+        "resolve_history_media_urls",
+        _fake_resolve_history_media_urls,
+    )
 
     response = await users_history_service.get_my_favorites_payload(
         page=1,
@@ -228,7 +245,6 @@ async def test_get_my_favorites_payload_returns_favorited_txt2img_history(
         task_type="txt2img",
         current_user=type("User", (), {"id": 123})(),
         db=object(),
-        resolve_history_media_urls=_fake_resolve_history_media_urls,
     )
 
     assert response.total == 1

@@ -220,28 +220,8 @@ def get_task_core_task_registry_mark_task_status() -> Any:
     return build_task_core_task_registry_capabilities().mark_task_status_func
 
 
-def get_task_core_task_registry_remove_task() -> Any:
-    return build_task_core_task_registry_capabilities().remove_task_func
-
-
 def get_task_core_permission_refresh_user_group() -> Any:
     return build_task_core_permission_capabilities().refresh_user_group_func
-
-
-def get_task_core_submission_outbox_add_pending_refund() -> Any:
-    return build_task_core_submission_outbox_capabilities().add_pending_refund_func
-
-
-def get_task_core_image_download_result() -> Any:
-    return build_task_core_image_capabilities().download_result_func
-
-
-def get_task_core_image_download_video_result() -> Any:
-    return build_task_core_image_capabilities().download_video_result_func
-
-
-def get_task_core_image_monitor_progress() -> Any:
-    return build_task_core_image_capabilities().monitor_progress_func
 
 
 def resolve_task_core_service(name: str) -> Any:

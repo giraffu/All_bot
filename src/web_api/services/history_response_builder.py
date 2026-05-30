@@ -23,11 +23,10 @@ async def build_user_history_payload(
     *,
     histories,
     gallery_task_ids: set[str],
-    resolve_history_media_urls_func=resolve_history_media_urls,
 ):
     items = []
     for history in histories:
-        media_url, thumbnail_url = await resolve_history_media_urls_func(
+        media_url, thumbnail_url = await resolve_history_media_urls(
             task_id=history.task_id,
             output_file=history.output_file,
             history_type=history.type,
@@ -65,12 +64,11 @@ async def build_favorite_gallery_payload(
     *,
     histories,
     gallery_post_map: dict[str, object],
-    resolve_history_media_urls_func=resolve_history_media_urls,
 ):
     items = []
     for history in histories:
         gallery_post = gallery_post_map.get(history.task_id)
-        media_url, thumbnail_url = await resolve_history_media_urls_func(
+        media_url, thumbnail_url = await resolve_history_media_urls(
             task_id=history.task_id,
             output_file=history.output_file,
             history_type=history.type,

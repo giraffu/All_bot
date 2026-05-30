@@ -19,6 +19,12 @@
 | `src/web_api/services/users_history_service.py:pick_history_media_urls` | 仅测试引用的历史媒体 URL 转发 helper | `tests/web_api/test_users_history_urls.py` | 相邻测试直接覆盖 `media_presenter.resolve_history_media_urls(...)` | 已删除，用户历史 service 不再保留 test-only helper |
 | `frontend/src/utils/templateApplyEntry.ts:buildLegacyTemplateRoute` | 旧模板应用 legacy route builder | 无业务调用 | 主站模板应用已统一走 workbench / store 解析链 | 已删除，入口解析文件只保留真实主链 |
 | `frontend/src/components/SiteNoticeCenterModal.vue:previewContent` | 未使用的公告预览 helper | 无调用方 | 公告中心改为仅保留标题裁剪与正文全量展示 | 已删除，公告弹窗不再保留死代码 |
+| `src/services/task_service_message_support.py:translate_context_text` 的 `TypeError` 兼容分支 | 兼容旧单参 translator 与测试 double | `tests/services/test_task_service_message_support.py` 旧单参桩 | 测试桩与运行时 translator 统一成 `translator(key, **kwargs)` 协议 | 已删除，生产代码不再为测试 double 吞异常 |
+| `src/web_api/services/users_history_service.py` 的 `resolve_history_media_urls` / `build_input_file_url` / `probe_media_metadata` 注入参数 | 公开 service 为测试 patch 暴露的 seam | `tests/web_api/test_users_apply_context.py` | 相邻测试改贴 `history_response_builder` 与 module-level helper | 已删除，公开 service 只保留业务参数 |
+| `src/web_api/services/history_response_builder.py` 的 `resolve_history_media_urls_func` 注入参数 | 仅供测试替换媒体 URL resolver | `tests/web_api/test_history_response_builder.py`、`tests/web_api/test_users_apply_context.py` | 相邻测试直接 patch 模块级 `resolve_history_media_urls(...)` | 已删除，builder 不再暴露 test-only 注入参数 |
+| `src/web_api/common/__init__.py` | 纯 re-export 包壳 | 无业务引用 | 仓库内调用方均直接引用 `src.web_api.common.utils` | 已删除，`common` 包不再保留空壳入口 |
+| `src/core/task_core_service_providers.py` 中未调用的 getter wrapper | 历史 provider 细粒度透传符号 | 无业务引用 | 全仓确认无静态调用方 | 已删除，保留真实 capability builder 与运行时入口 |
+| `cs_bot/skill_manager.py:skill_manager` | 未使用的模块级单例 | 无业务引用 | `langgraph_client.py` 已自行实例化 `SkillManager` | 已删除，技能管理只保留真实构造路径 |
 
 ## 已在本轮下沉的默认装配
 
@@ -35,7 +41,7 @@
 | `gallery_core` 默认 provider / side effects | `src/core/gallery_core.py` | `src/core/gallery_core_dependencies.py`、`src/core/gallery_submission_effects.py` | 已下沉，默认装配与投稿 side effects 不再堆在主文件顶部 |
 | `user_core` 的默认持久化绑定 | `src/core/user_core.py` | `src/core/user_core_bindings.py` | 已下沉，`user_core.py` 仅保留稳定 facade 与 binding 解析 |
 | `gallery_submission_core` / `gallery_interactions_core` 的 repository 默认绑定 | `src/core/gallery_submission_core.py`、`src/core/gallery_interactions_core.py` | `src/core/gallery_core_dependencies.py` | 已下沉，投稿/互动主链改走显式 dependencies，不再在子模块顶部直连 repository |
-| task core runtime process 默认装配 | `src/core/task_core_default_dependencies.py` | `src/services/task_core_process_defaults.py` | 已下沉，runtime-specific billing / strategy / web side-effect 装配退出热点 core builder |
+| task core runtime process 默认装配 | `src/core/task_core_default_dependencies.py` | `src/task_core_process_defaults.py` | 已下沉，runtime-specific billing / strategy / web side-effect 装配退出热点 core builder |
 | `run_bot_task_flow(...)` | `src/services/task_service_flow.py` | `run_bot_task_application(...)` | 已删除，Bot entrypoints 现直接构造 `BotTaskFlowContext(request/presentation/billing/failure/cleanup)` 后调用单一真实入口 |
 | TG gallery 投稿 / 点赞主链 | `src/handlers/callbacks/gallery_callbacks.py` | `src/handlers/callbacks/gallery_callbacks_interactions.py` | 已继续收口，`public_share`、`rate_*`、`submit_gallery_`、`gallery_like_/gallery_dislike_` 已直接在 interactions 子模块注册，旧壳文件已删除 |
 | `Profile.vue` metric 组装 | `frontend/src/views/Profile.vue` | `frontend/src/composables/useProfileMetrics.ts` | 已下沉，统计与返佣卡片数据组装不再堆在页面脚本 |

@@ -49,15 +49,7 @@ def resolve_context_lang(context) -> str:
 def translate_context_text(context, key: str, **kwargs) -> str:
     translator = getattr(context, "t", None)
     if callable(translator):
-        translated = None
-        if kwargs:
-            try:
-                translated = translator(key, **kwargs)
-            except TypeError:
-                # Keep test doubles and legacy single-arg translators working.
-                pass
-        if translated is None:
-            translated = translator(key)
+        translated = translator(key, **kwargs)
         if translated != key:
             return translated
     return get_text(key, resolve_context_lang(context), **kwargs)

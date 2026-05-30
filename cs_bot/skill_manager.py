@@ -62,7 +62,3 @@ class SkillManager:
         返回所有动态加载的工具列表
         """
         return self.tools
-
-
-# 单例模式，供全局使用
-skill_manager = SkillManager()
