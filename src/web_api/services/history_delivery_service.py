@@ -1,11 +1,12 @@
 import asyncio
 import logging
+import os
 from dataclasses import dataclass
 
 import httpx
 from fastapi import HTTPException
 
-from config import BOT_TOKEN, TELEGRAM_API_BASE_URL
+from config import BOT_TOKEN, BOT_TOKEN_TEST, TELEGRAM_API_BASE_URL
 from src.core.media_paths import resolve_storage_object
 from src.database.models import History
 from src.services.redis_client import redis_client
@@ -66,6 +67,17 @@ async def _download_history_bytes(output_file: str) -> tuple[str, bytes]:
     return object_name, file_bytes
 
 
+def _resolve_delivery_bot_token() -> str:
+    bot_type = os.getenv("BOT_TYPE", "PROD").upper()
+    token = BOT_TOKEN_TEST if bot_type == "TEST" else BOT_TOKEN
+    if not token:
+        raise HTTPException(
+            status_code=500,
+            detail="发送失败：Telegram Bot 未配置，请联系管理员检查环境变量",
+        )
+    return token
+
+
 def _build_telegram_upload_request(
     *,
     telegram_id: int,
@@ -76,7 +88,8 @@ def _build_telegram_upload_request(
 ) -> tuple[str, dict[str, str], dict[str, tuple[str, bytes, str]]]:
     is_video = history_type and "video" in history_type.lower()
     method = "sendVideo" if is_video else "sendPhoto"
-    url = f"{TELEGRAM_API_BASE_URL}/bot{BOT_TOKEN}/{method}"
+    bot_token = _resolve_delivery_bot_token()
+    url = f"{TELEGRAM_API_BASE_URL}/bot{bot_token}/{method}"
     payload = {"chat_id": str(telegram_id)}
 
     if history_prompt:
@@ -101,8 +114,14 @@ async def _post_telegram_upload(url: str, payload: dict[str, str], files: dict):
             resp = await client.post(url, data=payload, files=files, timeout=60.0)
             resp.raise_for_status()
         except httpx.HTTPStatusError as exc:
+            error_msg = exc.response.text
+            if exc.response.status_code == 401:
+                logger.error("Telegram API Error (401): %s", error_msg)
+                raise HTTPException(
+                    status_code=500,
+                    detail="发送失败：Telegram Bot 配置无效，请联系管理员检查当前环境 Token",
+                )
             if exc.response.status_code in [400, 403]:
-                error_msg = exc.response.text
                 logger.error("Telegram API Error (400/403): %s", error_msg)
                 if (
                     "wrong file identifier" in error_msg

@@ -584,10 +584,6 @@ async def test_wan22_video_v2_submit_task_normalizes_optional_end_frame(monkeypa
             "negative_prompt": "blurry",
             "saved_input_images": ["demo/start.png", "demo/end.png"],
             "use_end_frame": True,
-            "color_match": True,
-            "perfect_loop": False,
-            "upscale": True,
-            "extract_last_frame": True,
         },
         priority=5,
     )
@@ -600,10 +596,6 @@ async def test_wan22_video_v2_submit_task_normalizes_optional_end_frame(monkeypa
         end_image_path="demo/end.png",
         negative_prompt="blurry",
         use_end_frame=True,
-        color_match=True,
-        perfect_loop=False,
-        upscale=True,
-        extract_last_frame=True,
         length=5,
         priority=5,
     )
@@ -636,10 +628,6 @@ async def test_wan22_video_v2_submit_task_falls_back_to_i2v_without_end_frame(mo
         end_image_path=None,
         negative_prompt=" ",
         use_end_frame=False,
-        color_match=False,
-        perfect_loop=False,
-        upscale=False,
-        extract_last_frame=False,
         length=5,
         priority=1,
     )
@@ -672,10 +660,6 @@ async def test_wan22_video_v2_submit_task_uses_default_context_when_optional_fie
         end_image_path=None,
         negative_prompt=" ",
         use_end_frame=False,
-        color_match=False,
-        perfect_loop=False,
-        upscale=False,
-        extract_last_frame=False,
         length=5,
         priority=9,
     )

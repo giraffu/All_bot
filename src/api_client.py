@@ -417,10 +417,6 @@ class APIClient:
         end_image_path: str | None = None,
         negative_prompt: str = " ",
         use_end_frame: bool = False,
-        color_match: bool = False,
-        perfect_loop: bool = False,
-        upscale: bool = False,
-        extract_last_frame: bool = False,
         length: int = 5,
         priority: int = 0,
     ) -> str:
@@ -430,10 +426,6 @@ class APIClient:
             "prompt": prompt,
             "negative_prompt": negative_prompt,
             "use_end_frame": use_end_frame,
-            "color_match": color_match,
-            "perfect_loop": perfect_loop,
-            "upscale": upscale,
-            "extract_last_frame": extract_last_frame,
             "length": length,
             "priority": priority,
         }

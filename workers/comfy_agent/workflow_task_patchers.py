@@ -159,11 +159,6 @@ def patch_wan22_video_v2_workflow(
     )
 
     use_end_frame = bool(params.get("use_end_frame")) and bool(params.get("end_image"))
-    color_match = bool(params.get("color_match"))
-    perfect_loop = bool(params.get("perfect_loop"))
-    upscale = bool(params.get("upscale"))
-    extract_last_frame = bool(params.get("extract_last_frame"))
-
     set_node_input(
         workflow,
         node_id="2557",
@@ -175,7 +170,7 @@ def patch_wan22_video_v2_workflow(
     if not use_end_frame and start_image:
         set_node_input(workflow, node_id="24", input_name="image", value=start_image)
 
-    decoded_frames_ref = ["2614", 0] if color_match else ["2612", 0]
+    decoded_frames_ref = ["2612", 0]
     set_node_input(
         workflow,
         node_id="2542",
@@ -183,46 +178,40 @@ def patch_wan22_video_v2_workflow(
         value=decoded_frames_ref,
     )
 
-    video_frames_ref = ["2574", 0] if perfect_loop else decoded_frames_ref
-    if not perfect_loop:
-        set_node_input(
-            workflow,
-            node_id="2563",
-            input_name="image",
-            value=video_frames_ref,
-        )
-        set_node_input(
-            workflow,
-            node_id="2575",
-            input_name="image",
-            value=video_frames_ref,
-        )
+    set_node_input(
+        workflow,
+        node_id="2563",
+        input_name="image",
+        value=decoded_frames_ref,
+    )
+    set_node_input(
+        workflow,
+        node_id="2575",
+        input_name="image",
+        value=decoded_frames_ref,
+    )
 
-    final_frames_ref = ["2575", 0] if upscale else video_frames_ref
+    final_frames_ref = decoded_frames_ref
 
-    if extract_last_frame:
-        set_node_input(
-            workflow,
-            node_id="2700",
-            input_name="batch_index",
-            value=16384,
-        )
-        set_node_input(workflow, node_id="2700", input_name="length", value=1)
-        set_node_input(
-            workflow,
-            node_id="2700",
-            input_name="image",
-            value=final_frames_ref,
-        )
-        set_node_input(
-            workflow,
-            node_id="2503",
-            input_name="images",
-            value=["2700", 0],
-        )
-    else:
-        workflow.pop("2503", None)
-        workflow.pop("2700", None)
+    set_node_input(
+        workflow,
+        node_id="2700",
+        input_name="batch_index",
+        value=16384,
+    )
+    set_node_input(workflow, node_id="2700", input_name="length", value=1)
+    set_node_input(
+        workflow,
+        node_id="2700",
+        input_name="image",
+        value=final_frames_ref,
+    )
+    set_node_input(
+        workflow,
+        node_id="2503",
+        input_name="images",
+        value=["2700", 0],
+    )
 
     safe_unique_id = unique_id or "wan22"
     set_node_input(

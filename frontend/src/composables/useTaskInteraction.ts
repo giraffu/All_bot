@@ -4,6 +4,19 @@ import api from '@/api'
 import dayjs from 'dayjs'
 import { useTaskFormat } from './useTaskFormat'
 
+export const resolveTaskDownloadUrl = (
+  record: { output_file?: string; output_file_url?: string },
+  getFileUrl: (path: string) => string
+) => {
+  if (record.output_file_url) {
+    return record.output_file_url
+  }
+  if (!record.output_file) {
+    return ''
+  }
+  return getFileUrl(record.output_file)
+}
+
 export function useTaskInteraction(options?: {
   onDeleteSuccess?: (record: any) => void
 }) {
@@ -78,7 +91,7 @@ export function useTaskInteraction(options?: {
 
   const handleDownload = async (record: any) => {
     if (!record.output_file) return
-    const url = getFileUrl(record.output_file)
+    const url = resolveTaskDownloadUrl(record, getFileUrl)
     const ext = record.output_file.split('.').pop()?.toLowerCase() || (isVideoFile(record.output_file) ? 'mp4' : 'png')
     const filename = `${record.type}_${dayjs(record.created_at).format('YYYYMMDD_HHmmss')}.${ext}`
     

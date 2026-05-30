@@ -1,6 +1,7 @@
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
+import httpx
 import pytest
 from fastapi import HTTPException
 
@@ -118,3 +119,69 @@ async def test_send_current_user_history_record_to_telegram_routes_to_delivery_s
         current_user=current_user,
         db=db,
     )
+
+
+def test_build_telegram_upload_request_uses_test_token_in_test_mode(monkeypatch):
+    monkeypatch.setenv("BOT_TYPE", "TEST")
+    monkeypatch.setattr(history_delivery_service, "BOT_TOKEN_TEST", "test-token")
+    monkeypatch.setattr(history_delivery_service, "BOT_TOKEN", "prod-token")
+    monkeypatch.setattr(
+        history_delivery_service,
+        "TELEGRAM_API_BASE_URL",
+        "https://telegram.example.com",
+    )
+
+    url, payload, files = history_delivery_service._build_telegram_upload_request(
+        telegram_id=10001,
+        history_type="wan22_video_v2",
+        history_prompt="prompt",
+        object_name="task-1/output.mp4",
+        file_bytes=b"video-bytes",
+    )
+
+    assert url == "https://telegram.example.com/bottest-token/sendVideo"
+    assert payload["chat_id"] == "10001"
+    assert files["video"][0] == "output.mp4"
+
+
+@pytest.mark.asyncio
+async def test_post_telegram_upload_returns_clear_error_for_invalid_token():
+    request = httpx.Request(
+        "POST", "https://telegram.example.com/botinvalid-token/sendPhoto"
+    )
+    response = httpx.Response(
+        401,
+        request=request,
+        text='{"ok":false,"error_code":401,"description":"Unauthorized: invalid token specified"}',
+    )
+
+    async def _raise(*args, **kwargs):
+        raise httpx.HTTPStatusError(
+            "Unauthorized: invalid token specified",
+            request=request,
+            response=response,
+        )
+
+    class _FakeClient:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        post = _raise
+
+    original_client = history_delivery_service.httpx.AsyncClient
+    history_delivery_service.httpx.AsyncClient = _FakeClient
+    try:
+        with pytest.raises(HTTPException) as exc_info:
+            await history_delivery_service._post_telegram_upload(
+                "https://telegram.example.com/botinvalid-token/sendPhoto",
+                {"chat_id": "10001"},
+                {"photo": ("output.png", b"image-bytes", "image/png")},
+            )
+    finally:
+        history_delivery_service.httpx.AsyncClient = original_client
+
+    assert exc_info.value.status_code == 500
+    assert "Token" in exc_info.value.detail

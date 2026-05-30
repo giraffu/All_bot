@@ -16,20 +16,6 @@ const tasksStore = useTasksStore()
 const { formatDate, getTypeLabel, getFileUrl, isVideoFile } = useTaskFormat()
 const { copyPrompt } = usePostPromptCopy(t)
 
-const downloadAuxOutput = (url?: string | null) => {
-  if (!url) {
-    return
-  }
-  const link = document.createElement('a')
-  link.href = url
-  link.target = '_blank'
-  link.rel = 'noopener'
-  link.download = ''
-  document.body.appendChild(link)
-  link.click()
-  document.body.removeChild(link)
-}
-
 const detailVisible = computed({
   get: () => tasksStore.detailModalVisible,
   set: (val) => {
@@ -139,22 +125,6 @@ const {
               @copy="copyPrompt(currentRecord)"
             />
 
-            <div
-              v-if="currentRecord.extra_outputs?.last_frame?.url"
-              class="rounded-xl border border-slate-400/20 p-3"
-            >
-              <div class="task-detail-section-label text-[10px] lg:text-xs mb-2 uppercase tracking-wider">
-                尾帧图片
-              </div>
-              <img
-                :src="currentRecord.extra_outputs.last_frame.url"
-                alt="last frame"
-                class="w-full rounded-lg object-cover border border-slate-400/20"
-              />
-              <a-button class="mt-3 w-full" @click="downloadAuxOutput(currentRecord.extra_outputs.last_frame.url)">
-                下载尾帧
-              </a-button>
-            </div>
           </div>
 
           <!-- Desktop Actions -->

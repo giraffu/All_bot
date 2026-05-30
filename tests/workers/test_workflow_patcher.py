@@ -307,10 +307,6 @@ def test_workflow_patcher_patches_wan22_video_v2_boolean_gates_and_prefixes(tmp_
             "prompt": "demo",
             "negative_prompt": "bad",
             "use_end_frame": False,
-            "color_match": False,
-            "perfect_loop": False,
-            "upscale": False,
-            "extract_last_frame": True,
             "length": 5,
             "seed": 42,
         },
@@ -420,10 +416,6 @@ def test_workflow_patcher_strips_wan22_video_v2_last_frame_branch_when_disabled(
             "prompt": "demo",
             "negative_prompt": "bad",
             "use_end_frame": True,
-            "color_match": True,
-            "perfect_loop": True,
-            "upscale": True,
-            "extract_last_frame": False,
             "length": 5,
             "seed": 99,
         },
@@ -431,8 +423,8 @@ def test_workflow_patcher_strips_wan22_video_v2_last_frame_branch_when_disabled(
 
     assert patched["24"]["inputs"]["image"] == "end.png"
     assert patched["2557"]["inputs"]["value"] is False
-    assert patched["2542"]["inputs"]["clip_frames"] == ["2614", 0]
-    assert patched["28"]["inputs"]["images"] == ["2575", 0]
+    assert patched["2542"]["inputs"]["clip_frames"] == ["2612", 0]
+    assert patched["28"]["inputs"]["images"] == ["2612", 0]
+    assert patched["2700"]["inputs"]["image"] == ["2612", 0]
     assert patched["28"]["inputs"]["filename_prefix"] == "wan22_video_v2_99_video"
-    assert "2503" not in patched
-    assert "2700" not in patched
+    assert patched["2503"]["inputs"]["images"] == ["2700", 0]

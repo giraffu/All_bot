@@ -37,14 +37,6 @@ WAN22_VIDEO_V2_DATA_KEY = "wan22_video_v2_data"
 WAN22_VIDEO_V2_CONVERSATION_TAG = "WAN22_VIDEO_V2"
 WAN22_VIDEO_V2_COST = TASK_COSTS.get(MODE_WAN22_VIDEO_V2, 10)
 
-TOGGLE_FIELDS = (
-    "color_match",
-    "perfect_loop",
-    "upscale",
-    "extract_last_frame",
-)
-
-
 _t = translate_fsm_text
 
 
@@ -98,43 +90,11 @@ def _build_end_frame_choice_keyboard(context: ContextTypes.DEFAULT_TYPE) -> Inli
     )
 
 
-def _toggle_label(context: ContextTypes.DEFAULT_TYPE, field: str, enabled: bool) -> str:
-    key = f"fsm.wan22_video_v2.toggle_{field}"
-    prefix = "✅" if enabled else "⬜"
-    return f"{prefix} {_t(context, key)}"
-
-
 def _build_settings_keyboard(
     context: ContextTypes.DEFAULT_TYPE, data: dict[str, object]
 ) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
-            [
-                InlineKeyboardButton(
-                    _toggle_label(context, "color_match", bool(data.get("color_match"))),
-                    callback_data="wan22v2_toggle_color_match",
-                ),
-                InlineKeyboardButton(
-                    _toggle_label(
-                        context, "perfect_loop", bool(data.get("perfect_loop"))
-                    ),
-                    callback_data="wan22v2_toggle_perfect_loop",
-                ),
-            ],
-            [
-                InlineKeyboardButton(
-                    _toggle_label(context, "upscale", bool(data.get("upscale"))),
-                    callback_data="wan22v2_toggle_upscale",
-                ),
-                InlineKeyboardButton(
-                    _toggle_label(
-                        context,
-                        "extract_last_frame",
-                        bool(data.get("extract_last_frame")),
-                    ),
-                    callback_data="wan22v2_toggle_extract_last_frame",
-                ),
-            ],
             [
                 InlineKeyboardButton(
                     _t(context, "fsm.wan22_video_v2.submit_button"),
@@ -175,12 +135,6 @@ def _build_settings_message(
             status_yes
             if (not data.get("use_end_frame") or data.get("end_image_path"))
             else status_no
-        ),
-        color_match=status_yes if data.get("color_match") else status_no,
-        perfect_loop=status_yes if data.get("perfect_loop") else status_no,
-        upscale=status_yes if data.get("upscale") else status_no,
-        extract_last_frame=(
-            status_yes if data.get("extract_last_frame") else status_no
         ),
         prompt=str(data.get("prompt") or "").strip() or "-",
         negative_prompt=negative_prompt or _default_negative_prompt_label(context),
@@ -286,10 +240,6 @@ async def start_wan22_video_v2(
             "use_end_frame": False,
             "prompt": "",
             "negative_prompt": "",
-            "color_match": False,
-            "perfect_loop": False,
-            "upscale": False,
-            "extract_last_frame": True,
         },
     )
     await _send_or_edit_message(update, _t(context, "fsm.wan22_video_v2.start"))
@@ -460,11 +410,6 @@ async def handle_settings_action(
     if callback_data == "wan22v2_submit":
         return await submit_generation(update, context)
 
-    for field in TOGGLE_FIELDS:
-        if callback_data == f"wan22v2_toggle_{field}":
-            data[field] = not bool(data.get(field))
-            break
-
     await robust_edit_text(
         query.message,
         _build_settings_message(context, data),
@@ -550,10 +495,6 @@ async def submit_generation(
             negative_prompt=str(data.get("negative_prompt") or "").strip(),
             images=images,
             use_end_frame=bool(data.get("use_end_frame")),
-            color_match=bool(data.get("color_match")),
-            perfect_loop=bool(data.get("perfect_loop")),
-            upscale=bool(data.get("upscale")),
-            extract_last_frame=bool(data.get("extract_last_frame")),
             cleanup=True,
         ),
     )
@@ -651,9 +592,7 @@ def get_wan22_video_v2_fsm_handler() -> ConversationHandler:
             Wan22VideoV2State.WAIT_SETTINGS: [
                 CallbackQueryHandler(
                     handle_settings_action,
-                    pattern=(
-                        r"^wan22v2_(toggle_(color_match|perfect_loop|upscale|extract_last_frame)|submit)$"
-                    ),
+                    pattern=r"^wan22v2_submit$",
                 ),
                 MessageHandler(
                     (filters.TEXT | filters.COMMAND) & ~filters.Regex(r"^/cancel$"),

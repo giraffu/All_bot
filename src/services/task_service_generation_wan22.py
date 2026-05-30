@@ -46,10 +46,6 @@ async def process_wan22_video_v2_generation_task(
     negative_prompt: str,
     images: list[str],
     use_end_frame: bool,
-    color_match: bool,
-    perfect_loop: bool,
-    upscale: bool,
-    extract_last_frame: bool,
     status_msg_id: int = None,
     delete_status: bool = True,
     task_type: str = MODE_WAN22_VIDEO_V2,
@@ -76,10 +72,8 @@ async def process_wan22_video_v2_generation_task(
         duration=5,
         negative_prompt=normalized_negative_prompt,
         use_end_frame=use_end_frame,
-        color_match=color_match,
-        perfect_loop=perfect_loop,
-        upscale=upscale,
-        extract_last_frame=extract_last_frame,
+        upscale=False,
+        extract_last_frame=True,
     )
     message_spec = build_generation_message_spec(
         context=context,

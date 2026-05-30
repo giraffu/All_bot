@@ -85,7 +85,7 @@ graph TD
 - `ltx_video_fsm.py`、`wan22_video_v2_fsm.py`、`image_to_video_fsm.py`、`quick_video_fsm.py` 等负责分步收集参数。
 - 全局菜单打断通过 `is_global_menu_command(...)` 统一识别。
 - 当前主 FSM 普遍使用 `conversation_timeout=300`。
-- `wan22_video_v2_fsm.py` 额外支持“起始帧 + 可选终止帧 + prompt/negative prompt + color_match/perfect_loop/upscale/extract_last_frame”组合输入。
+- `wan22_video_v2_fsm.py` 现已收口为“起始帧 + 可选终止帧 + prompt/negative prompt”输入；是否启用首尾帧由是否上传第二张图自动判断，尾帧提取固定开启且仅作存储，不再开放 `color_match`、`perfect_loop`、`upscale`、`extract_last_frame` 给用户。
 
 ### 3.2 Bot 任务流层
 - 视频任务入口主要位于：

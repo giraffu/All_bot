@@ -10,6 +10,7 @@ from src.core.media_urls import build_r2_media_key_candidates
 from src.database.models import History
 from src.web_api.presenters.media_presenter import (
     build_storage_media_url,
+    filter_user_visible_extra_outputs,
     get_first_r2_url_if_exists,
     resolve_history_extra_outputs,
 )
@@ -77,12 +78,16 @@ async def get_task_result_payload(*, task_id: str, current_user, db) -> dict:
             extra_outputs=hist.extra_outputs,
             source=hist.source,
         )
+        visible_extra_outputs = filter_user_visible_extra_outputs(
+            task_type=hist.type,
+            extra_outputs=extra_outputs,
+        )
         return build_result_success_payload(
             task_id=task_id,
             task_type=hist.type,
             media_type=media_type,
             result_url=result_url,
-            extra_outputs=extra_outputs,
+            extra_outputs=visible_extra_outputs,
         )
 
     return build_result_pending_payload(

@@ -225,3 +225,15 @@ async def resolve_history_extra_outputs(
             "url": url or output_path,
         }
     return resolved
+
+
+def filter_user_visible_extra_outputs(
+    *,
+    task_type: str | None,
+    extra_outputs: dict[str, dict[str, Any]] | None,
+) -> dict[str, dict[str, Any]]:
+    if not isinstance(extra_outputs, dict):
+        return {}
+    if task_type == "wan22_video_v2":
+        return {}
+    return extra_outputs

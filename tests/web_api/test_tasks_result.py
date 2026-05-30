@@ -263,11 +263,5 @@ async def test_get_task_result_resolves_history_extra_outputs(monkeypatch):
         "task_type": "wan22_video_v2",
         "media_type": "video",
         "result_url": "https://cdn.example/task-1.mp4",
-        "extra_outputs": {
-            "last_frame": {
-                "path": "123/output_images/task-1_last_frame.png",
-                "media_type": "image",
-                "url": "https://cdn.example/task-1-last-frame.png",
-            }
-        },
+        "extra_outputs": {},
     }

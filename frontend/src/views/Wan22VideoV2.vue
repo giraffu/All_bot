@@ -50,27 +50,16 @@ const {
 
 const prompt = ref('')
 const negativePrompt = ref(DEFAULT_WAN22_VIDEO_V2_NEGATIVE_PROMPT)
-const useEndFrame = ref(false)
-const colorMatch = ref(false)
-const perfectLoop = ref(false)
-const upscale = ref(false)
-const extractLastFrame = ref(true)
-
-const tailFrameUrl = computed(() => currentTask.value?.extraOutputs?.last_frame?.url ?? '')
+const hasEndFrame = computed(() => Boolean(endObjectKey.value))
 
 const handleGenerate = async () => {
   if (!startObjectKey.value) {
     message.warning('请先上传起始帧图片')
     return
   }
-  if (useEndFrame.value && !endObjectKey.value) {
-    message.warning('启用首尾帧模式后，请再上传终止帧图片')
-    return
-  }
-
   const payload = buildGenerationTaskPayload({
     taskType: 'wan22_video_v2',
-    images: useEndFrame.value && endObjectKey.value
+    images: hasEndFrame.value && endObjectKey.value
       ? [startObjectKey.value, endObjectKey.value]
       : [startObjectKey.value],
     duration: 5,
@@ -78,11 +67,7 @@ const handleGenerate = async () => {
     negativePrompt: negativePrompt.value,
     promptTarget: 'inputs',
     extraInputs: {
-      use_end_frame: useEndFrame.value,
-      color_match: colorMatch.value,
-      perfect_loop: perfectLoop.value,
-      upscale: upscale.value,
-      extract_last_frame: extractLastFrame.value,
+      use_end_frame: hasEndFrame.value,
     },
   })
 
@@ -97,11 +82,6 @@ const resetForm = () => {
   handleRemoveEnd()
   prompt.value = ''
   negativePrompt.value = DEFAULT_WAN22_VIDEO_V2_NEGATIVE_PROMPT
-  useEndFrame.value = false
-  colorMatch.value = false
-  perfectLoop.value = false
-  upscale.value = false
-  extractLastFrame.value = true
   setSubmittedTaskId(null)
 }
 </script>
@@ -135,7 +115,7 @@ const resetForm = () => {
 
           <div>
             <GenerationUploadCard
-              :title="useEndFrame ? '终止帧' : '终止帧（可选）'"
+              title="终止帧（可选）"
               step="2."
               :file-list="endFileList"
               :preview-url="endPreview"
@@ -186,37 +166,11 @@ const resetForm = () => {
             <div class="setting-card">
               <div>
                 <div class="setting-title">首尾帧模式</div>
-                <div class="setting-desc">开启后使用起始帧和终止帧共同生成</div>
+                <div class="setting-desc">
+                  {{ hasEndFrame ? '已自动启用，当前会同时使用起始帧和终止帧' : '上传终止帧后将自动启用' }}
+                </div>
               </div>
-              <a-switch v-model:checked="useEndFrame" />
-            </div>
-            <div class="setting-card">
-              <div>
-                <div class="setting-title">Color Match</div>
-                <div class="setting-desc">对齐首尾帧色彩风格</div>
-              </div>
-              <a-switch v-model:checked="colorMatch" />
-            </div>
-            <div class="setting-card">
-              <div>
-                <div class="setting-title">Perfect Loop</div>
-                <div class="setting-desc">尝试输出可循环衔接的视频</div>
-              </div>
-              <a-switch v-model:checked="perfectLoop" />
-            </div>
-            <div class="setting-card">
-              <div>
-                <div class="setting-title">Upscale Fast 2x</div>
-                <div class="setting-desc">启用快速 2x 放大链路</div>
-              </div>
-              <a-switch v-model:checked="upscale" />
-            </div>
-            <div class="setting-card">
-              <div>
-                <div class="setting-title">提取尾帧</div>
-                <div class="setting-desc">保留主视频，并额外输出最后一帧图片</div>
-              </div>
-              <a-switch v-model:checked="extractLastFrame" />
+              <a-switch :checked="hasEndFrame" disabled />
             </div>
             <div class="wan22-video-v2__fixed-card rounded-xl p-3 flex items-center justify-between">
               <div>
@@ -224,6 +178,13 @@ const resetForm = () => {
                 <div class="setting-desc">当前版本固定输出 5 秒</div>
               </div>
               <span class="wan22-video-v2__fixed-value text-sm font-semibold">5 秒</span>
+            </div>
+            <div class="wan22-video-v2__fixed-card rounded-xl p-3 flex items-center justify-between">
+              <div>
+                <div class="setting-title">尾帧提取</div>
+                <div class="setting-desc">默认提取并存储，当前不会直接展示给用户</div>
+              </div>
+              <span class="wan22-video-v2__fixed-value text-sm font-semibold">默认开启</span>
             </div>
           </div>
         </div>
@@ -234,7 +195,7 @@ const resetForm = () => {
       <GenerationActionBar
         :cost="taskCost"
         button-text="生成视频"
-        :disabled="!startObjectKey || (useEndFrame && !endObjectKey)"
+        :disabled="!startObjectKey"
         :loading="isSubmitting"
         button-class="bg-blue-600 hover:bg-blue-500 w-40 h-12 text-base font-bold tracking-wider rounded-xl shadow-md transition-all hover:shadow-lg border-none flex items-center justify-center text-white"
         @submit="handleGenerate"
@@ -257,13 +218,6 @@ const resetForm = () => {
               controls
               class="max-w-full max-h-[46vh] rounded-xl shadow-sm bg-black"
             />
-            <div
-              v-if="tailFrameUrl"
-              class="wan22-video-v2__tail-frame-card w-full rounded-xl p-4"
-            >
-              <div class="wan22-video-v2__section-title text-sm font-medium mb-3">尾帧图片</div>
-              <a-image :src="tailFrameUrl" class="max-h-[180px] object-contain rounded-lg" :preview="true" />
-            </div>
           </div>
         </template>
         <template #success-actions="{ task }">
@@ -276,14 +230,6 @@ const resetForm = () => {
             >
               <template #icon><DownloadOutlined /></template>
               下载视频
-            </a-button>
-            <a-button
-              v-if="tailFrameUrl"
-              size="large"
-              class="rounded-xl"
-              @click="downloadResult(tailFrameUrl, `${task.title}_last_frame`)"
-            >
-              下载尾帧
             </a-button>
             <a-button size="large" class="rounded-xl" @click="resetForm">
               继续生成
@@ -348,8 +294,7 @@ const resetForm = () => {
   color: var(--theme-text-secondary);
 }
 
-.wan22-video-v2__fixed-card,
-.wan22-video-v2__tail-frame-card {
+.wan22-video-v2__fixed-card {
   background: color-mix(in srgb, var(--theme-panel-bg) 86%, transparent);
   border: 1px solid var(--theme-border);
 }

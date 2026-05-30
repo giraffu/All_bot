@@ -56,7 +56,7 @@ async def test_start_wan22_video_v2_initializes_defaults(monkeypatch):
 
     assert result == wan22_video_v2_fsm.Wan22VideoV2State.WAIT_START_IMAGE
     assert context.user_data["in_conversation"] == wan22_video_v2_fsm.WAN22_VIDEO_V2_CONVERSATION_TAG
-    assert context.user_data["wan22_video_v2_data"]["extract_last_frame"] is True
+    assert context.user_data["wan22_video_v2_data"]["use_end_frame"] is False
     reply_mock.assert_awaited_once()
     assert "T:fsm.wan22_video_v2.start" in reply_mock.await_args.args[1]
 
@@ -137,10 +137,6 @@ async def test_submit_generation_forwards_wan22_payload(monkeypatch):
                 "use_end_frame": True,
                 "prompt": "positive",
                 "negative_prompt": "negative",
-                "color_match": True,
-                "perfect_loop": False,
-                "upscale": True,
-                "extract_last_frame": True,
             },
         },
         t=lambda key, **kwargs: f"T:{key}",
@@ -159,10 +155,6 @@ async def test_submit_generation_forwards_wan22_payload(monkeypatch):
         negative_prompt="negative",
         images=["/tmp/start.png", "/tmp/end.png"],
         use_end_frame=True,
-        color_match=True,
-        perfect_loop=False,
-        upscale=True,
-        extract_last_frame=True,
         cleanup=True,
     )
     create_background_task_mock.assert_called_once_with(context, ("bg-task",))

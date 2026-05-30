@@ -12,7 +12,6 @@ from src.services.tg_task_runtime import (
     cleanup_completion_status_message,
     monitor_task_progress,
     send_result_media,
-    send_wan22_video_v2_extra_outputs,
 )
 
 
@@ -195,13 +194,6 @@ async def present_completed_task_result(
             prompt=prompt,
             lang=lang,
         )
-        if task_type == "wan22_video_v2":
-            await send_wan22_video_v2_extra_outputs(
-                context=context,
-                chat_id=chat_id,
-                extra_outputs=persistence_result.extra_outputs,
-                lang=lang,
-            )
 
     await cleanup_completion_status_message(
         status_msg=status_msg,

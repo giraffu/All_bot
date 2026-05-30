@@ -1,4 +1,3 @@
-import asyncio
 import logging
 from collections.abc import Awaitable, Callable
 
@@ -133,42 +132,6 @@ async def send_result_media(
     sent_msg = await sender(context.bot, chat_id, **send_kwargs)
     record_result_message_meta(context, sent_msg, task_type, prompt, task_id)
     return sent_msg
-
-
-async def send_wan22_video_v2_extra_outputs(
-    *,
-    context,
-    chat_id,
-    extra_outputs,
-    lang: str = "zh",
-):
-    if not isinstance(extra_outputs, dict):
-        return None
-
-    last_frame = extra_outputs.get("last_frame")
-    if not isinstance(last_frame, dict):
-        return None
-
-    last_frame_path = last_frame.get("path")
-    if not isinstance(last_frame_path, str) or not last_frame_path:
-        return None
-
-    from src.core.media_paths import resolve_storage_object
-    from src.services.storage import storage
-
-    bucket_name, object_name = resolve_storage_object(last_frame_path)
-    photo_bytes = await asyncio.to_thread(
-        storage.get_file_bytes, object_name, bucket_name
-    )
-    if not photo_bytes:
-        return None
-
-    return await robust_send_photo(
-        context.bot,
-        chat_id,
-        photo=photo_bytes,
-        caption=_translate(lang, "fsm.wan22_video_v2.tail_frame_caption"),
-    )
 
 
 async def cleanup_completion_status_message(*, status_msg, delete_status, send_result):

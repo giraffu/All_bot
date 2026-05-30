@@ -626,19 +626,14 @@
       "send_prompt": "**Next:** send the **positive prompt**.",
       "send_negative_prompt": "**Next:** send the **negative prompt**.\n\nIf you do not need one, tap the button below to skip it.",
       "skip_negative_prompt": "Skip Negative Prompt",
-      "toggle_color_match": "Color Match",
-      "toggle_perfect_loop": "Perfect Loop",
-      "toggle_upscale": "Fast 2x",
-      "toggle_extract_last_frame": "Extract Last Frame",
       "submit_button": "Start Generation",
       "status_yes": "On",
       "status_no": "Off",
       "no_negative_prompt": "None",
-      "settings_text": "🎬 **Img2Video V2 Settings**\n\n- First/last frame mode: {use_end_frame}\n- End frame ready: {end_frame_ready}\n- Color match: {color_match}\n- Perfect loop: {perfect_loop}\n- Fast 2x: {upscale}\n- Extract last frame: {extract_last_frame}\n- Fixed duration: {duration}\n- Estimated cost: {cost} credits\n\n**Positive prompt**\n`{prompt}`\n\n**Negative prompt**\n`{negative_prompt}`\n\nUse the buttons below to adjust switches, then tap Start Generation when ready.",
+      "settings_text": "🎬 **Img2Video V2 Settings**\n\n- First/last frame mode: {use_end_frame}\n- End frame ready: {end_frame_ready}\n- Last-frame extraction: always on and stored only\n- Fixed duration: {duration}\n- Estimated cost: {cost} credits\n\n**Positive prompt**\n`{prompt}`\n\n**Negative prompt**\n`{negative_prompt}`\n\nTap Start Generation when ready.",
       "missing_end_image": "First/last frame mode is enabled. Please upload the end frame first.",
       "submitting": "🚀 Submitting the Img2Video V2 task (cost: {cost} credits). Please wait...",
-      "expired_alert": "The interaction expired or the task was submitted. Please start again.",
-      "tail_frame_caption": "🖼️ Last frame image returned as an extra output"
+      "expired_alert": "The interaction expired or the task was submitted. Please start again."
     },
     "quick_image": {
       "undress_start": "💃 **Entered Quick Undress mode** (cost: {cost} credits).\n\nSend one image containing a person and I will process it automatically.\n\nYou can send /cancel anytime to exit.",

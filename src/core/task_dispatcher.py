@@ -55,10 +55,8 @@ def _resolve_face_video_saved_inputs(saved_images: list[str]) -> tuple[str, str]
     return face_image_path, target_video_path
 
 
-def _resolve_wan22_end_frame(
-    saved_images: list[str], *, use_end_frame_requested: Any
-) -> tuple[bool, str | None]:
-    use_end_frame = bool(use_end_frame_requested) and len(saved_images) > 1
+def _resolve_wan22_end_frame(saved_images: list[str]) -> tuple[bool, str | None]:
+    use_end_frame = len(saved_images) > 1
     end_image_path = saved_images[1] if use_end_frame else None
     return use_end_frame, end_image_path
 
@@ -93,10 +91,6 @@ class _Wan22SubmissionContext:
     end_image_path: str | None
     use_end_frame: bool
     negative_prompt: str
-    color_match: bool
-    perfect_loop: bool
-    upscale: bool
-    extract_last_frame: bool
 
 
 @dataclass(frozen=True)
@@ -157,20 +151,13 @@ def _build_ltx_submission_context(inputs: Dict[str, Any]) -> _LtxSubmissionConte
 
 def _build_wan22_submission_context(inputs: Dict[str, Any]) -> _Wan22SubmissionContext:
     saved_images = _get_saved_input_images(inputs)
-    use_end_frame, end_image_path = _resolve_wan22_end_frame(
-        saved_images,
-        use_end_frame_requested=inputs.get("use_end_frame"),
-    )
+    use_end_frame, end_image_path = _resolve_wan22_end_frame(saved_images)
     return _Wan22SubmissionContext(
         prompt=_get_input_prompt(inputs, "wan22 video"),
         image_path=saved_images[0] if saved_images else "",
         end_image_path=end_image_path,
         use_end_frame=use_end_frame,
         negative_prompt=inputs.get("negative_prompt", " "),
-        color_match=bool(inputs.get("color_match")),
-        perfect_loop=bool(inputs.get("perfect_loop")),
-        upscale=bool(inputs.get("upscale")),
-        extract_last_frame=bool(inputs.get("extract_last_frame")),
     )
 
 
@@ -494,10 +481,6 @@ class Wan22VideoV2Strategy(BaseTaskStrategy):
             end_image_path=submission.end_image_path,
             negative_prompt=submission.negative_prompt,
             use_end_frame=submission.use_end_frame,
-            color_match=submission.color_match,
-            perfect_loop=submission.perfect_loop,
-            upscale=submission.upscale,
-            extract_last_frame=submission.extract_last_frame,
             length=5,
             priority=priority,
         )

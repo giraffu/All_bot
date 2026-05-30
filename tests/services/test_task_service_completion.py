@@ -111,7 +111,6 @@ async def test_handle_task_completion_uses_helper_download_default(monkeypatch):
         )
     )
     send_result_media = AsyncMock()
-    send_extra_outputs = AsyncMock()
     cleanup_status = AsyncMock()
     monkeypatch.setattr(
         "src.services.task_service_completion.download_and_log_task_output",
@@ -120,10 +119,6 @@ async def test_handle_task_completion_uses_helper_download_default(monkeypatch):
     monkeypatch.setattr(
         "src.services.task_service_completion.send_result_media",
         send_result_media,
-    )
-    monkeypatch.setattr(
-        "src.services.task_service_completion.send_wan22_video_v2_extra_outputs",
-        send_extra_outputs,
     )
     monkeypatch.setattr(
         "src.services.task_service_completion.cleanup_completion_status_message",
@@ -158,7 +153,6 @@ async def test_handle_task_completion_uses_helper_download_default(monkeypatch):
     assert download_output.await_args.kwargs["registry_task_id"] == "registry-seam"
     assert download_output.await_args.kwargs["backend_task_id"] == "backend-seam"
     send_result_media.assert_awaited_once()
-    send_extra_outputs.assert_not_awaited()
     assert send_result_media.await_args.kwargs["task_id"] == "registry-seam"
     cleanup_status.assert_awaited_once_with(
         status_msg=status_msg,
@@ -179,7 +173,6 @@ async def test_handle_task_completion_uses_module_default_completion_helpers(mon
         )
     )
     send_result_media = AsyncMock()
-    send_extra_outputs = AsyncMock()
     cleanup_status = AsyncMock()
     monkeypatch.setattr(
         "src.services.task_service_completion.download_and_log_task_output",
@@ -188,10 +181,6 @@ async def test_handle_task_completion_uses_module_default_completion_helpers(mon
     monkeypatch.setattr(
         "src.services.task_service_completion.send_result_media",
         send_result_media,
-    )
-    monkeypatch.setattr(
-        "src.services.task_service_completion.send_wan22_video_v2_extra_outputs",
-        send_extra_outputs,
     )
     monkeypatch.setattr(
         "src.services.task_service_completion.cleanup_completion_status_message",
@@ -224,7 +213,6 @@ async def test_handle_task_completion_uses_module_default_completion_helpers(mon
     assert output_path == "saved-output.mp4"
     download_output.assert_awaited_once()
     send_result_media.assert_awaited_once()
-    send_extra_outputs.assert_not_awaited()
     cleanup_status.assert_awaited_once_with(
         status_msg=status_msg,
         delete_status=True,
@@ -363,35 +351,6 @@ async def test_send_result_media_uses_photo_sender_and_records_meta(monkeypatch)
     assert kwargs["photo"] == b"image-bytes"
     assert kwargs["caption"] == "✅ 图片生成完成"
     assert context.bot_data["msg_meta_99"]["task_id"] == "task-5"
-
-
-@pytest.mark.asyncio
-async def test_send_wan22_video_v2_extra_outputs_downloads_last_frame(monkeypatch):
-    send_photo = AsyncMock(return_value="photo-msg")
-    monkeypatch.setattr("src.services.tg_task_runtime.robust_send_photo", send_photo)
-    monkeypatch.setattr(
-        "src.services.storage.storage.get_file_bytes",
-        MagicMock(return_value=b"last-frame-bytes"),
-    )
-
-    context = SimpleNamespace(bot=MagicMock(), bot_data={})
-
-    result = await tg_runtime_helpers.send_wan22_video_v2_extra_outputs(
-        context=context,
-        chat_id=123,
-        extra_outputs={
-            "last_frame": {
-                "path": "bot-data/result/demo_last_frame.png",
-                "media_type": "image",
-            }
-        },
-    )
-
-    assert result == "photo-msg"
-    send_photo.assert_awaited_once()
-    kwargs = send_photo.await_args.kwargs
-    assert kwargs["photo"] == b"last-frame-bytes"
-    assert "尾帧" in kwargs["caption"]
 
 
 @pytest.mark.asyncio
@@ -1179,10 +1138,6 @@ async def test_process_wan22_video_v2_task_builds_expected_inputs(monkeypatch):
         negative_prompt="negative",
         images=["start.png", "end.png"],
         use_end_frame=True,
-        color_match=True,
-        perfect_loop=False,
-        upscale=True,
-        extract_last_frame=True,
         cleanup=False,
     )
 
@@ -1192,7 +1147,8 @@ async def test_process_wan22_video_v2_task_builds_expected_inputs(monkeypatch):
     assert flow.request.inputs["images"] == ["start.png", "end.png"]
     assert flow.request.inputs["negative_prompt"] == "negative"
     assert flow.request.inputs["use_end_frame"] is True
-    assert flow.request.inputs["upscale"] is True
+    assert flow.request.inputs["upscale"] is False
+    assert flow.request.inputs["extract_last_frame"] is True
     assert flow.billing.requested_duration == 5
 
 

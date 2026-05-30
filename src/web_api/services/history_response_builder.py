@@ -3,6 +3,7 @@ import re
 from src.core.media_paths import get_media_type_from_history
 from src.web_api.common.utils import resolve_history_billing_resolution
 from src.web_api.presenters.media_presenter import (
+    filter_user_visible_extra_outputs,
     resolve_history_extra_outputs,
     resolve_history_media_urls,
 )
@@ -31,6 +32,11 @@ async def build_user_history_payload(
             output_file=history.output_file,
             history_type=history.type,
         )
+        resolved_extra_outputs = await resolve_history_extra_outputs(
+            task_id=history.task_id,
+            extra_outputs=getattr(history, "extra_outputs", None),
+            source=getattr(history, "source", None),
+        )
         items.append(
             HistoryItem(
                 task_id=history.task_id,
@@ -50,10 +56,9 @@ async def build_user_history_payload(
                 allow_contribute=history.allow_contribute,
                 source=history.source,
                 is_favorited=history.is_favorited,
-                extra_outputs=await resolve_history_extra_outputs(
-                    task_id=history.task_id,
-                    extra_outputs=getattr(history, "extra_outputs", None),
-                    source=getattr(history, "source", None),
+                extra_outputs=filter_user_visible_extra_outputs(
+                    task_type=history.type,
+                    extra_outputs=resolved_extra_outputs,
                 ),
             )
         )
