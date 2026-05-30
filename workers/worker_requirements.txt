@@ -4,3 +4,4 @@ minio
 python-dotenv
 asgi-correlation-id
 pydantic
+Pillow

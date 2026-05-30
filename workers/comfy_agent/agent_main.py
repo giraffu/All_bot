@@ -11,6 +11,7 @@ from asgi_correlation_id import correlation_id
 from comfy_client import ComfyClient
 from dotenv import load_dotenv
 from minio import Minio  # type: ignore
+from PIL import Image, ImageOps, UnidentifiedImageError
 from workflow_patcher import WorkflowPatcher
 
 # Load environment variables
@@ -53,6 +54,11 @@ MINIO_ACCESS_KEY = os.getenv("MINIO_ACCESS_KEY", "your_key")
 MINIO_SECRET_KEY = os.getenv("MINIO_SECRET_KEY", "your_secret")
 MINIO_INPUT_BUCKET = os.getenv("MINIO_INPUT_BUCKET", "comfyui-input")
 MINIO_RESULT_BUCKET = os.getenv("MINIO_RESULT_BUCKET", "comfyui-output")
+COMFY_READY_RETRY_ATTEMPTS = int(os.getenv("COMFY_READY_RETRY_ATTEMPTS", "5"))
+COMFY_READY_RETRY_DELAY_SECONDS = float(
+    os.getenv("COMFY_READY_RETRY_DELAY_SECONDS", "2")
+)
+COMFY_UPLOAD_RETRY_ATTEMPTS = int(os.getenv("COMFY_UPLOAD_RETRY_ATTEMPTS", "3"))
 
 log_format = (
     "%(asctime)s - %(name)s - %(levelname)s - [%(correlation_id)s] - %(message)s"
@@ -267,6 +273,87 @@ class ComfyAgent:
         self.task_result_priority: int = -1
         self.task_error: Optional[str] = None
         self.running = False
+        self._comfy_poll_paused = False
+
+    async def _probe_comfy_ready(self) -> bool:
+        try:
+            response = await self.comfy_client.client.get("/system_stats")
+            return response.status_code == 200
+        except Exception:
+            return False
+
+    async def _wait_for_comfy_ready(self, *, operation: str) -> None:
+        for attempt in range(1, COMFY_READY_RETRY_ATTEMPTS + 1):
+            if await self._probe_comfy_ready():
+                return
+            if attempt < COMFY_READY_RETRY_ATTEMPTS:
+                logger.warning(
+                    "ComfyUI unavailable before %s (attempt %s/%s), retrying in %.1fs",
+                    operation,
+                    attempt,
+                    COMFY_READY_RETRY_ATTEMPTS,
+                    COMFY_READY_RETRY_DELAY_SECONDS,
+                )
+                await asyncio.sleep(COMFY_READY_RETRY_DELAY_SECONDS)
+                continue
+            raise RuntimeError(f"ComfyUI unavailable before {operation}")
+
+    @staticmethod
+    def _should_normalize_image_input(param_key: str, object_name: str) -> bool:
+        if param_key == "video":
+            return False
+        lowered = object_name.lower()
+        return lowered.endswith((".png", ".jpg", ".jpeg", ".webp", ".bmp"))
+
+    @staticmethod
+    def _normalize_input_image_for_comfy(local_path: str) -> str:
+        normalized_path = f"{os.path.splitext(local_path)[0]}_normalized.png"
+        try:
+            with Image.open(local_path) as image:
+                image.load()
+                normalized = ImageOps.exif_transpose(image)
+                if normalized.mode not in ("RGB", "RGBA"):
+                    normalized = normalized.convert(
+                        "RGBA" if "A" in normalized.getbands() else "RGB"
+                    )
+                normalized.save(normalized_path, format="PNG")
+        except (UnidentifiedImageError, OSError, ValueError) as exc:
+            raise RuntimeError(f"Downloaded file is not a valid image: {local_path}") from exc
+        return normalized_path
+
+    async def _upload_prepared_input(
+        self,
+        *,
+        upload_path: str,
+        upload_name: str,
+        source_name: str,
+    ) -> None:
+        last_error: Exception | None = None
+        for attempt in range(1, COMFY_UPLOAD_RETRY_ATTEMPTS + 1):
+            await self._wait_for_comfy_ready(operation=f"uploading {upload_name}")
+            try:
+                with open(upload_path, "rb") as file_obj:
+                    file_content = file_obj.read()
+                await self.comfy_client.upload_image(file_content, upload_name)
+                logger.info(f"Uploaded {upload_name} to ComfyUI via API")
+                return
+            except Exception as upload_err:
+                last_error = upload_err
+                if attempt >= COMFY_UPLOAD_RETRY_ATTEMPTS:
+                    logger.error(
+                        f"Failed to upload {upload_name} to ComfyUI via API: {upload_err}"
+                    )
+                    break
+                logger.warning(
+                    "Upload attempt %s/%s failed for %s (%s), retrying in %.1fs",
+                    attempt,
+                    COMFY_UPLOAD_RETRY_ATTEMPTS,
+                    upload_name,
+                    upload_err,
+                    COMFY_READY_RETRY_DELAY_SECONDS,
+                )
+                await asyncio.sleep(COMFY_READY_RETRY_DELAY_SECONDS)
+        raise RuntimeError(f"Failed to upload prepared input '{source_name}' to ComfyUI") from last_error
 
     async def _process_single_input_asset(
         self,
@@ -285,19 +372,27 @@ class ComfyAgent:
             logger.info(f"Downloaded {param_key} to {local_img_path}")
             if local_img_path not in downloaded_input_paths:
                 downloaded_input_paths.append(local_img_path)
-            try:
-                with open(local_img_path, "rb") as f:
-                    img_data = f.read()
-                await self.comfy_client.upload_image(img_data, local_safe_filename)
-                logger.info(f"Uploaded {local_safe_filename} to ComfyUI via API")
-            except Exception as upload_err:
-                logger.error(
-                    f"Failed to upload {local_safe_filename} to ComfyUI via API: {upload_err}"
+            upload_path = local_img_path
+            upload_name = local_safe_filename
+            if self._should_normalize_image_input(param_key, img_filename):
+                upload_path = await asyncio.to_thread(
+                    self._normalize_input_image_for_comfy, local_img_path
                 )
-                raise RuntimeError(
-                    f"Failed to upload prepared input '{img_filename}' to ComfyUI"
-                ) from upload_err
-            params[param_key] = local_safe_filename
+                upload_name = os.path.basename(upload_path)
+                if upload_path not in downloaded_input_paths:
+                    downloaded_input_paths.append(upload_path)
+                logger.info(
+                    "Normalized %s input for ComfyUI: %s -> %s",
+                    param_key,
+                    local_img_path,
+                    upload_path,
+                )
+            await self._upload_prepared_input(
+                upload_path=upload_path,
+                upload_name=upload_name,
+                source_name=img_filename,
+            )
+            params[param_key] = upload_name
         except Exception as e:
             logger.error(f"Failed to process {param_key} {img_filename}: {e}")
             raise RuntimeError(
@@ -705,6 +800,7 @@ class ComfyAgent:
 
             # 3. Submit to ComfyUI
             client_id = f"agent_{AGENT_ID}"
+            await self._wait_for_comfy_ready(operation=f"submitting task {task_id}")
             self.current_prompt_id = await self.comfy_client.queue_prompt(
                 patched_workflow, client_id
             )
@@ -1027,6 +1123,18 @@ class ComfyAgent:
         )
         while getattr(self, "running", True):
             try:
+                if not await self._probe_comfy_ready():
+                    if not self._comfy_poll_paused:
+                        logger.warning(
+                            "ComfyUI is unavailable; pausing task polling until it recovers"
+                        )
+                        self._comfy_poll_paused = True
+                    await asyncio.sleep(COMFY_READY_RETRY_DELAY_SECONDS)
+                    continue
+                if self._comfy_poll_paused:
+                    logger.info("ComfyUI is reachable again; resuming task polling")
+                    self._comfy_poll_paused = False
+
                 # Poll for tasks with optional type filtering
                 params = {}
                 if SUPPORTED_TASK_TYPES:

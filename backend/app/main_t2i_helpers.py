@@ -10,11 +10,16 @@ def build_task_event_channel(task_id: str) -> str:
 
 
 def validate_t2i_prompt(prompt: object) -> str:
-    if not prompt or not isinstance(prompt, str) or len(prompt) < 1 or len(prompt) > 512:
+    if not isinstance(prompt, str):
         raise HTTPException(
-            status_code=400, detail="prompt is required and length must be 1-512"
+            status_code=400, detail="prompt is required and length must be 1-2048"
         )
-    return prompt
+    normalized_prompt = prompt.strip()
+    if len(normalized_prompt) < 1 or len(normalized_prompt) > 2048:
+        raise HTTPException(
+            status_code=400, detail="prompt is required and length must be 1-2048"
+        )
+    return normalized_prompt
 
 
 def resolve_t2i_priority(request_body: dict, default_priority: int) -> int:

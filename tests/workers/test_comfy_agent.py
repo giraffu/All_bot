@@ -24,10 +24,26 @@ def test_agent_main_fail_fast_on_input_prepare_errors():
 
     assert "Failed to upload prepared input" in content
     assert "Failed to prepare {param_key} input" in content
+    assert "def _normalize_input_image_for_comfy(" in content
+    assert "Downloaded file is not a valid image" in content
+    assert "Normalized %s input for ComfyUI" in content
+    assert "async def _upload_prepared_input(" in content
     assert "raise RuntimeError(" in content
     assert "async def _process_single_input_asset(" in content
     assert "async def _prepare_task_inputs(" in content
     assert 'for key in ["face_image", "body_image", "video", "end_image"]' in content
+
+
+def test_agent_main_pauses_polling_until_comfy_recovers():
+    with open("workers/comfy_agent/agent_main.py", "r", encoding="utf-8") as f:
+        content = f.read()
+
+    assert "async def _probe_comfy_ready(" in content
+    assert "async def _wait_for_comfy_ready(" in content
+    assert "ComfyUI is unavailable; pausing task polling until it recovers" in content
+    assert "ComfyUI is reachable again; resuming task polling" in content
+    assert "await self._wait_for_comfy_ready(operation=f\"submitting task {task_id}\")" in content
+    ast.parse(content)
 
 
 def test_agent_main_extracts_history_result_resolution_helpers():

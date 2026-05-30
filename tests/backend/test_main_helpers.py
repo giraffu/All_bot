@@ -19,13 +19,32 @@ def test_validate_t2i_prompt_accepts_valid_prompt():
     assert prompt == "draw a dragon"
 
 
-@pytest.mark.parametrize("prompt", [None, "", 123, "x" * 513])
+def test_validate_t2i_prompt_strips_surrounding_whitespace():
+    prompt = t2i_helpers.validate_t2i_prompt("  draw a dragon  ")
+
+    assert prompt == "draw a dragon"
+
+
+@pytest.mark.parametrize("prompt", [None, "", "   ", 123, "x" * 2049])
 def test_validate_t2i_prompt_rejects_invalid_values(prompt):
     with pytest.raises(HTTPException) as exc_info:
         t2i_helpers.validate_t2i_prompt(prompt)
 
     assert exc_info.value.status_code == 400
-    assert exc_info.value.detail == "prompt is required and length must be 1-512"
+    assert exc_info.value.detail == "prompt is required and length must be 1-2048"
+
+
+def test_validate_t2i_prompt_accepts_regression_prompt_shape():
+    prompt = (
+        "Ultra photorealistic RAW documentary 8K video, Sony A1 50mm f/1.4 "
+        "cinematic footage, 20 seconds smooth continuous motion at 24fps, "
+        "single unbroken shot with dynamic vertical tracking camera, warm "
+        "bathroom lighting with heavy steam, wet tiled floor, maximum physical "
+        "realism, stylize 0, raw film grain, (realism:1.9), (detail:1.95), "
+        "(luminous glowing skin:1.9)"
+    )
+
+    assert t2i_helpers.validate_t2i_prompt(prompt) == prompt
 
 
 def test_resolve_t2i_priority_prefers_body_value():
