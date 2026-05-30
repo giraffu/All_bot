@@ -22,6 +22,8 @@ from src.handlers.fsm.fsm_shared import (
 )
 from src.handlers.prompt_router import is_global_menu_command
 from src.services.task_service_generation_wan22 import (
+    build_wan22_video_v2_result_meta,
+    normalize_wan22_video_v2_chain_task_ids,
     process_wan22_video_v2_generation_task as process_wan22_video_v2_task,
 )
 from src.services.wan22_video_v2_config import (
@@ -35,6 +37,14 @@ from src.services.fsm_temp_file_service import (
     download_telegram_file_to_fsm_temp,
 )
 from src.services.permission_service import permission_service
+from src.services.wan22_video_v2_extension_service import (
+    Wan22VideoV2ExtensionError,
+    build_full_chain_task_ids,
+    download_last_frame_to_fsm_temp,
+    load_owned_wan22_history,
+    resolve_extension_chain_task_ids,
+    resolve_extension_resolution_preset,
+)
 from src.utils import create_background_task, robust_edit_text, robust_reply_text
 
 logger = logging.getLogger("fsm.wan22_video_v2")
@@ -193,12 +203,22 @@ async def _send_or_edit_message(
 ) -> None:
     query = update.callback_query
     if query:
-        await robust_edit_text(
-            query.message,
-            message_text,
-            reply_markup=reply_markup,
-            parse_mode="Markdown",
-        )
+        target_message = query.message
+        # Result callbacks can come from media messages; those cannot be edited as text.
+        if getattr(target_message, "text", None):
+            await robust_edit_text(
+                target_message,
+                message_text,
+                reply_markup=reply_markup,
+                parse_mode="Markdown",
+            )
+        else:
+            await robust_reply_text(
+                target_message,
+                message_text,
+                reply_markup=reply_markup,
+                parse_mode="Markdown",
+            )
         return
 
     if update.message:
@@ -287,6 +307,90 @@ async def start_wan22_video_v2(
     )
     await _send_or_edit_message(update, _t(context, "fsm.wan22_video_v2.start"))
     return Wan22VideoV2State.WAIT_START_IMAGE
+
+
+async def start_wan22_video_v2_extension(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+) -> int:
+    query = update.callback_query
+    if query:
+        with contextlib.suppress(Exception):
+            await query.answer(text=_t(context, "fsm.common.task_initializing"), cache_time=2)
+
+    if context.user_data.get("in_conversation"):
+        if query:
+            with contextlib.suppress(Exception):
+                await query.answer(_t(context, "fsm.common.conflict"), show_alert=True)
+        return ConversationHandler.END
+
+    meta = (
+        context.bot_data.get(f"msg_meta_{query.message.message_id}", {})
+        if query and query.message
+        else {}
+    )
+    base_task_id = str(meta.get("task_id") or "").strip()
+    if not base_task_id:
+        if query:
+            with contextlib.suppress(Exception):
+                await query.answer(_t(context, "fsm.wan22_video_v2.expired_alert"), show_alert=True)
+        return ConversationHandler.END
+    try:
+        history = await load_owned_wan22_history(
+            task_id=base_task_id,
+            telegram_user_id=update.effective_user.id,
+            username=update.effective_user.username,
+        )
+        start_image_path = await download_last_frame_to_fsm_temp(history=history)
+    except Wan22VideoV2ExtensionError as exc:
+        target_message = query.message if query else update.effective_message
+        if target_message:
+            with contextlib.suppress(Exception):
+                await robust_reply_text(target_message, f"❌ {exc}")
+        return ConversationHandler.END
+    except Exception as exc:
+        logger.error("prepare wan22_video_v2 extension failed: %s", exc)
+        target_message = query.message if query else update.effective_message
+        if target_message:
+            with contextlib.suppress(Exception):
+                await robust_reply_text(
+                    target_message,
+                    f"❌ {_t(context, 'fsm.common.download_image_failed')}",
+                )
+        return ConversationHandler.END
+
+    context.user_data["in_conversation"] = WAN22_VIDEO_V2_CONVERSATION_TAG
+    _set_data(
+        context,
+        {
+            "start_image_path": start_image_path,
+            "end_image_path": None,
+            "use_end_frame": False,
+            "resolution_preset": resolve_extension_resolution_preset(meta),
+            "prompt": "",
+            "negative_prompt": "",
+            "extension_prev_task_id": base_task_id,
+            "chain_task_ids": build_full_chain_task_ids(
+                chain_task_ids=resolve_extension_chain_task_ids(meta),
+                current_task_id=base_task_id,
+            ),
+        },
+    )
+    await _send_or_edit_message(
+        update,
+        _t(
+            context,
+            "fsm.wan22_video_v2.extension_start",
+            resolution_preset=get_wan22_video_v2_resolution_label(
+                str(
+                    context.user_data[WAN22_VIDEO_V2_DATA_KEY]["resolution_preset"]
+                ),
+                lang=getattr(context, "lang", "zh"),
+            ),
+        ),
+        reply_markup=_build_end_frame_choice_keyboard(context),
+    )
+    return Wan22VideoV2State.WAIT_END_FRAME_CHOICE
 
 
 async def receive_start_image(
@@ -549,6 +653,16 @@ async def submit_generation(
             images=images,
             use_end_frame=bool(data.get("use_end_frame")),
             resolution_preset=resolution_preset,
+            result_meta=(
+                {
+                    "wan22_prev_task_id": str(data["extension_prev_task_id"]),
+                    "wan22_chain_task_ids": normalize_wan22_video_v2_chain_task_ids(
+                        data.get("chain_task_ids")
+                    ),
+                }
+                if data.get("extension_prev_task_id")
+                else None
+            ),
             cleanup=True,
         ),
     )
@@ -597,6 +711,10 @@ def get_wan22_video_v2_fsm_handler() -> ConversationHandler:
             MessageHandler(I18nFilter("menu.wan22_video_v2"), start_wan22_video_v2),
             CallbackQueryHandler(
                 start_wan22_video_v2, pattern="^fsm_start_wan22_video_v2$"
+            ),
+            CallbackQueryHandler(
+                start_wan22_video_v2_extension,
+                pattern=r"^wan22v2_extend$",
             ),
         ],
         states={

@@ -625,6 +625,7 @@
       "end_image_received": "✅ End frame received.",
       "send_prompt": "**Next:** send the **positive prompt**.",
       "send_negative_prompt": "**Next:** send the **negative prompt**.\n\nIf you do not need one, tap the button below to skip it.",
+      "extension_start": "✨ The **last frame** from the previous video is loaded as the new start frame.\n\n- Resolution preset is kept as: {resolution_preset}\n- The positive/negative prompt flow stays the same\n\n**Next:** choose **single-frame** or **start/end-frame** mode for this segment.",
       "skip_negative_prompt": "Skip Negative Prompt",
       "resolution_fast": "Fast",
       "resolution_standard": "Standard",

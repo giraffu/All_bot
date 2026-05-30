@@ -54,6 +54,7 @@ class BotTaskCompletionContext:
     delete_status: bool = True
     caption: Optional[str] = None
     allow_contribute: bool = True
+    result_meta: dict[str, Any] | None = None
     billing_resolution: Optional[str] = None
     requested_duration: Optional[int] = None
     missing_output_should_refund: bool = True
@@ -81,6 +82,7 @@ class BotTaskPresentationContext:
     submitted_status_builder: Any = None
     send_result: bool = True
     reply_markup: Any = None
+    result_meta: dict[str, Any] | None = None
     delete_status: bool = True
     allow_contribute: bool = True
     billing_resolution: Optional[str] = None

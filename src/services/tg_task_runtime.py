@@ -110,6 +110,7 @@ async def send_result_media(
     allow_contribute,
     reply_markup,
     prompt,
+    result_meta: dict | None = None,
     lang: str = "zh",
 ):
     final_markup = build_result_reply_markup(
@@ -117,6 +118,7 @@ async def send_result_media(
         task_id=task_id,
         allow_contribute=allow_contribute,
         reply_markup=reply_markup,
+        result_meta=result_meta,
     )
     sender = robust_send_video if is_video else robust_send_photo
     media_key = "video" if is_video else "photo"
@@ -130,7 +132,14 @@ async def send_result_media(
         "reply_markup": final_markup,
     }
     sent_msg = await sender(context.bot, chat_id, **send_kwargs)
-    record_result_message_meta(context, sent_msg, task_type, prompt, task_id)
+    record_result_message_meta(
+        context,
+        sent_msg,
+        task_type,
+        prompt,
+        task_id,
+        result_meta=result_meta,
+    )
     return sent_msg
 
 

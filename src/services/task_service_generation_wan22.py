@@ -27,8 +27,10 @@ __all__ = [
     "DEFAULT_WAN22_VIDEO_V2_NEGATIVE_PROMPT",
     "WAN22_VIDEO_V2_DEFAULT_RESOLUTION_PRESET",
     "WAN22_VIDEO_V2_RESOLUTION_PRESETS",
+    "build_wan22_video_v2_result_meta",
     "get_wan22_video_v2_cost",
     "get_wan22_video_v2_resolution_label",
+    "normalize_wan22_video_v2_chain_task_ids",
     "normalize_wan22_video_v2_negative_prompt",
     "normalize_wan22_video_v2_resolution_preset",
     "process_wan22_video_v2_generation_task",
@@ -52,6 +54,45 @@ DEFAULT_WAN22_VIDEO_V2_NEGATIVE_PROMPT = (
 def normalize_wan22_video_v2_negative_prompt(negative_prompt: str | None) -> str:
     normalized = (negative_prompt or "").strip()
     return normalized or DEFAULT_WAN22_VIDEO_V2_NEGATIVE_PROMPT
+
+
+def normalize_wan22_video_v2_chain_task_ids(chain_task_ids: Any) -> list[str]:
+    if not isinstance(chain_task_ids, (list, tuple)):
+        return []
+    normalized: list[str] = []
+    for value in chain_task_ids:
+        task_id = str(value or "").strip()
+        if task_id:
+            normalized.append(task_id)
+    return normalized
+
+
+def build_wan22_video_v2_result_meta(
+    *,
+    resolution_preset: str | None,
+    negative_prompt: str | None,
+    use_end_frame: bool,
+    prev_task_id: str | None = None,
+    chain_task_ids: Any = None,
+) -> dict[str, Any]:
+    meta: dict[str, Any] = {
+        "wan22_resolution_preset": normalize_wan22_video_v2_resolution_preset(
+            resolution_preset
+        ),
+        "wan22_negative_prompt": normalize_wan22_video_v2_negative_prompt(
+            negative_prompt
+        ),
+        "wan22_use_end_frame": bool(use_end_frame),
+        "wan22_chain_task_ids": normalize_wan22_video_v2_chain_task_ids(
+            chain_task_ids
+        ),
+    }
+    prev_task_id = str(prev_task_id or "").strip()
+    if prev_task_id:
+        meta["wan22_prev_task_id"] = prev_task_id
+    return meta
+
+
 async def process_wan22_video_v2_generation_task(
     *,
     context: Any,
@@ -69,6 +110,7 @@ async def process_wan22_video_v2_generation_task(
     send_result: bool = True,
     deduct_quota: bool = True,
     reply_markup: Any = None,
+    result_meta: dict[str, Any] | None = None,
     allow_contribute: bool = True,
     source_post_id: Optional[int] = None,
     resolution_preset: str | None = None,
@@ -80,6 +122,13 @@ async def process_wan22_video_v2_generation_task(
     normalized_resolution_preset = normalize_wan22_video_v2_resolution_preset(
         resolution_preset
     )
+    final_result_meta = build_wan22_video_v2_result_meta(
+        resolution_preset=normalized_resolution_preset,
+        negative_prompt=normalized_negative_prompt,
+        use_end_frame=use_end_frame,
+    )
+    if isinstance(result_meta, dict):
+        final_result_meta.update(result_meta)
     notice = await get_acceleration_notice(
         internal_user_id,
         quota_manager=permission_service.quota_manager,
@@ -143,6 +192,7 @@ async def process_wan22_video_v2_generation_task(
             ),
             send_result=send_result,
             reply_markup=reply_markup,
+            result_meta=final_result_meta,
             delete_status=delete_status,
             allow_contribute=allow_contribute,
             billing_resolution=billing_args["billing_resolution"],

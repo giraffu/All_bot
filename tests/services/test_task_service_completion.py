@@ -95,6 +95,7 @@ async def test_handle_task_completion_keeps_success_flow_when_metadata_probe_fai
         refresh_user_group_after_log=True,
     )
     assert kwargs["billing_resolution"] is None
+    assert kwargs["extra_outputs"] is None
     assert kwargs["backend_task_id"] == "backend-1"
     assert kwargs["registry_task_id"] == "registry-1"
 
@@ -152,6 +153,7 @@ async def test_handle_task_completion_uses_helper_download_default(monkeypatch):
     download_output.assert_awaited_once()
     assert download_output.await_args.kwargs["registry_task_id"] == "registry-seam"
     assert download_output.await_args.kwargs["backend_task_id"] == "backend-seam"
+    assert download_output.await_args.kwargs["extra_outputs"] is None
     send_result_media.assert_awaited_once()
     assert send_result_media.await_args.kwargs["task_id"] == "registry-seam"
     cleanup_status.assert_awaited_once_with(
@@ -212,6 +214,7 @@ async def test_handle_task_completion_uses_module_default_completion_helpers(mon
     assert media_bytes == b"video-bytes"
     assert output_path == "saved-output.mp4"
     download_output.assert_awaited_once()
+    assert download_output.await_args.kwargs["extra_outputs"] is None
     send_result_media.assert_awaited_once()
     cleanup_status.assert_awaited_once_with(
         status_msg=status_msg,
@@ -246,6 +249,7 @@ async def test_download_and_log_task_output_handles_image_branch(monkeypatch):
         saved_input_images=["input.png"],
         is_video=False,
         allow_contribute=True,
+        extra_outputs={"last_frame": {"path": "last.png"}},
         billing_resolution="1024",
         requested_duration=None,
     )
@@ -259,6 +263,7 @@ async def test_download_and_log_task_output_handles_image_branch(monkeypatch):
     kwargs = persist_mock.await_args.kwargs
     assert kwargs["username"] == "tester"
     assert kwargs["task_type"] == "image"
+    assert kwargs["extra_outputs"] == {"last_frame": {"path": "last.png"}}
     assert kwargs["postprocess_plan"] == TaskPersistencePostprocessPlan(
         source="bot",
         refresh_user_group_after_log=True,
@@ -287,10 +292,35 @@ def test_build_result_reply_markup_supports_wan22_video_v2_gallery_button():
         task_id="task-wan22",
         allow_contribute=True,
         reply_markup=None,
+        result_meta={"wan22_resolution_preset": "hd"},
     )
 
     first_row = final_markup.inline_keyboard[0]
     assert first_row[0].callback_data == "submit_gallery_task-wan22"
+    assert first_row[1].callback_data == "wan22v2_extend"
+
+
+def test_build_result_reply_markup_supports_wan22_video_v2_non_first_segment_buttons():
+    final_markup = tg_runtime_helpers.build_result_reply_markup(
+        task_type=MODE_WAN22_VIDEO_V2,
+        task_id="task-wan22-2",
+        allow_contribute=True,
+        reply_markup=None,
+        result_meta={
+            "wan22_resolution_preset": "hd",
+            "wan22_prev_task_id": "task-wan22-1",
+            "wan22_chain_task_ids": ["task-wan22-1"],
+        },
+    )
+
+    first_row = final_markup.inline_keyboard[0]
+    second_row = final_markup.inline_keyboard[1]
+    assert [btn.callback_data for btn in first_row] == [
+        "submit_gallery_task-wan22-2",
+        "wan22v2_regenerate",
+        "wan22v2_extend",
+    ]
+    assert second_row[0].callback_data == "wan22v2_stitch_chain"
 
 
 def test_record_result_message_meta_uses_special_mode_mapping_for_face_swap():
@@ -310,6 +340,26 @@ def test_record_result_message_meta_uses_special_mode_mapping_for_face_swap():
     )
     assert context.bot_data["msg_meta_42"]["prompt"] == "prompt"
     assert context.bot_data["msg_meta_42"]["task_id"] == "task-4"
+
+
+def test_record_result_message_meta_merges_result_meta():
+    context = SimpleNamespace(bot_data={})
+    sent_msg = SimpleNamespace(message_id=77)
+
+    tg_runtime_helpers.record_result_message_meta(
+        context=context,
+        sent_msg=sent_msg,
+        task_type=MODE_WAN22_VIDEO_V2,
+        prompt="prompt",
+        task_id="task-77",
+        result_meta={
+            "wan22_resolution_preset": "standard",
+            "wan22_prev_task_id": "task-1",
+        },
+    )
+
+    assert context.bot_data["msg_meta_77"]["wan22_resolution_preset"] == "standard"
+    assert context.bot_data["msg_meta_77"]["wan22_prev_task_id"] == "task-1"
 
 
 def test_build_pending_status_text_uses_queue_remaining_fallback():
@@ -342,6 +392,7 @@ async def test_send_result_media_uses_photo_sender_and_records_meta(monkeypatch)
         allow_contribute=False,
         reply_markup=None,
         prompt="prompt-5",
+        result_meta={"wan22_resolution_preset": "fast"},
     )
 
     assert result is sent_msg
@@ -351,6 +402,7 @@ async def test_send_result_media_uses_photo_sender_and_records_meta(monkeypatch)
     assert kwargs["photo"] == b"image-bytes"
     assert kwargs["caption"] == "✅ 图片生成完成"
     assert context.bot_data["msg_meta_99"]["task_id"] == "task-5"
+    assert context.bot_data["msg_meta_99"]["wan22_resolution_preset"] == "fast"
 
 
 @pytest.mark.asyncio
@@ -477,7 +529,7 @@ async def test_complete_monitored_bot_task_preserves_supplied_user_logger(monkey
             registry_task_id="registry-complete",
             backend_task_id="backend-complete",
             saved_input_images=["input.png"],
-            final_info={"status": "done"},
+            final_info={"status": "done", "extra_outputs": {"last_frame": {"path": "x"}}},
             is_video=True,
             message_spec=message_spec,
             user_logger=user_logger,
@@ -520,7 +572,7 @@ async def test_complete_monitored_bot_task_uses_default_handle_completion(monkey
             registry_task_id="registry-complete",
             backend_task_id="backend-complete",
             saved_input_images=["input.png"],
-            final_info={"status": "done"},
+            final_info={"status": "done", "extra_outputs": {"last_frame": {"path": "x"}}},
             is_video=True,
             message_spec=message_spec,
             user_logger=user_logger,
@@ -528,12 +580,15 @@ async def test_complete_monitored_bot_task_uses_default_handle_completion(monkey
             reply_markup=None,
             delete_status=True,
             allow_contribute=True,
+            result_meta={"wan22_resolution_preset": "hd"},
         ),
     )
 
     assert result == (b"video-bytes", "output.mp4")
     kwargs = handle_task_completion.await_args.kwargs
     assert kwargs["user_logger"] is user_logger
+    assert kwargs["result_meta"] == {"wan22_resolution_preset": "hd"}
+    assert kwargs["extra_outputs"] == {"last_frame": {"path": "x"}}
 
 
 @pytest.mark.asyncio

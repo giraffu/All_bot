@@ -12,6 +12,7 @@ import src.handlers.callbacks.gallery_callbacks_browse  # noqa: F401
 import src.handlers.callbacks.gallery_callbacks_interactions  # noqa: F401
 import src.handlers.callbacks.misc_callbacks  # noqa: F401
 import src.handlers.callbacks.task_callbacks  # noqa: F401
+import src.handlers.callbacks.wan22_video_v2_callbacks  # noqa: F401
 
 from src.handlers.utils import with_db_logging_context
 from src.services.permission_service import permission_service

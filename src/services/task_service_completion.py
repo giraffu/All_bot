@@ -104,6 +104,10 @@ async def complete_monitored_bot_task(
             delete_status=completion.delete_status,
             caption=completion.caption or completion.message_spec.completion_caption,
             allow_contribute=completion.allow_contribute,
+            result_meta=completion.result_meta,
+            extra_outputs=completion.final_info.get("extra_outputs")
+            if isinstance(completion.final_info, dict)
+            else None,
             billing_resolution=completion.billing_resolution,
             requested_duration=completion.requested_duration,
             lang=resolve_context_lang(completion.context),
@@ -138,6 +142,7 @@ async def download_and_log_task_output(
     saved_input_images,
     is_video,
     allow_contribute,
+    extra_outputs: Optional[dict] = None,
     billing_resolution: Optional[str],
     requested_duration: Optional[int],
 ):
@@ -154,6 +159,7 @@ async def download_and_log_task_output(
         input_images=saved_input_images,
         allow_contribute=allow_contribute,
         is_video=is_video,
+        extra_outputs=extra_outputs,
         billing_resolution=billing_resolution,
         requested_duration=requested_duration,
         postprocess_plan=TaskPersistencePostprocessPlan(
@@ -178,6 +184,7 @@ async def present_completed_task_result(
     delete_status,
     caption=None,
     allow_contribute=True,
+    result_meta: dict | None = None,
     lang: str = "zh",
 ):
     if send_result:
@@ -192,6 +199,7 @@ async def present_completed_task_result(
             allow_contribute=allow_contribute,
             reply_markup=reply_markup,
             prompt=prompt,
+            result_meta=result_meta,
             lang=lang,
         )
 
@@ -222,6 +230,8 @@ async def handle_task_completion(
     delete_status,
     caption=None,
     allow_contribute=True,
+    result_meta: dict | None = None,
+    extra_outputs: dict | None = None,
     billing_resolution: Optional[str] = None,
     requested_duration: Optional[int] = None,
     lang: str = "zh",
@@ -236,6 +246,7 @@ async def handle_task_completion(
         saved_input_images=saved_input_images,
         is_video=is_video,
         allow_contribute=allow_contribute,
+        extra_outputs=extra_outputs,
         billing_resolution=billing_resolution,
         requested_duration=requested_duration,
     )
@@ -253,5 +264,6 @@ async def handle_task_completion(
         delete_status=delete_status,
         caption=caption,
         allow_contribute=allow_contribute,
+        result_meta=result_meta,
         lang=lang,
     )
