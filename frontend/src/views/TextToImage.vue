@@ -10,12 +10,14 @@ import TaskResultPreviewPanel from '@/components/TaskResultPreviewPanel.vue'
 import { useTaskResult } from '@/composables/useTaskResult'
 import { useTaskStream } from '@/composables/useTaskStream'
 import { buildGenerationTaskPayload } from '@/features/generation/buildGenerationTaskPayload'
+import { useGenerationRouteConfig } from '@/features/generation/generationRouteConfig'
 
 const route = useRoute()
-
-const taskType = computed(() => (route.query.type as string) || 'txt2img')
-const taskTitle = computed(() => (route.query.title as string) || '文生图')
-const taskCost = computed(() => Number(route.query.cost) || 2)
+const { taskType, taskTitle, taskCost } = useGenerationRouteConfig(route, {
+  taskType: 'txt2img',
+  title: '文生图',
+  cost: 2,
+})
 
 const prompt = ref('')
 

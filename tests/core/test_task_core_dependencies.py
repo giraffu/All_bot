@@ -10,7 +10,7 @@ from src.core.task_core_types import (
     TaskSubmissionSideEffectPlan,
     VideoTaskRequest,
 )
-from src.services import task_web_monitor
+from src.services import task_web_side_effects
 
 
 @pytest.mark.asyncio
@@ -90,7 +90,7 @@ async def test_attach_submission_side_effects_raises_domain_error_when_monitor_a
     schedule_apply = MagicMock()
 
     with pytest.raises(task_core.CoreDomainError, match="后台监控挂载失败: boom"):
-        await task_web_monitor.attach_submission_side_effects(
+        await task_web_side_effects.attach_submission_side_effects(
             backend_task_id="backend-1",
             internal_user_id=1,
             username="tester",

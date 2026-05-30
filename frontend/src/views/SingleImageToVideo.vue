@@ -10,6 +10,7 @@ import { useGalleryApplyContext } from '@/composables/useGalleryApplyContext'
 import { resolveTemplateVideoApplyState } from '@/utils/templateVideoApplyState'
 import { useSingleFileUploadPreview } from '@/composables/useSingleFileUploadPreview'
 import { buildGenerationTaskPayload } from '@/features/generation/buildGenerationTaskPayload'
+import { useGenerationRouteConfig } from '@/features/generation/generationRouteConfig'
 import {
   buildDefaultLtxVideoLoraItem,
   getDefaultImageToVideoLoraSelection,
@@ -30,9 +31,11 @@ import TaskResultPreviewPanel from '@/components/TaskResultPreviewPanel.vue'
 
 const route = useRoute()
 const { loadApplyContext } = useGalleryApplyContext()
-
-const taskType = computed(() => (route.query.type as string) || 'image2video')
-const taskTitle = computed(() => (route.query.title as string) || '动图生成')
+const { taskType, taskTitle, routeApplyEnabled } = useGenerationRouteConfig(route, {
+  taskType: 'image2video',
+  title: '动图生成',
+  cost: 6,
+})
 const isUnifiedImageToVideo = computed(() => isUnifiedImageToVideoTaskType(taskType.value))
 const isLtxVideo = computed(() => taskType.value === 'ltx_video')
 
@@ -151,7 +154,7 @@ onMounted(() => {
     resolution.value = '1280x704'
   }
   
-  if (route.query.apply === 'true') {
+  if (routeApplyEnabled.value) {
     const ctx = loadApplyContext()
     if (
       ctx

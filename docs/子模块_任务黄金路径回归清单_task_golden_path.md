@@ -3,7 +3,7 @@
 ## 1. 目标
 本清单用于保护 AllBot 任务主链路在重构期间的外部行为不漂移，覆盖以下高风险区域：
 
-- `src/services/bot_task_service.py` 及 Bot entrypoint / flow 子模块
+- Bot entrypoint / flow 子模块（已不再经过 `src/services/bot_task_service.py` compat 壳）
 - `backend/app/main.py` 与 `backend/app/main_t2i_wiring.py` 的中控任务创建入口
 - `backend/app/queue_manager.py` 的排队、取消、zombie 清理与 worker 视图
 - `src/web_api/routers/tasks.py` 及对应 API service / SSE stream 路径
@@ -14,8 +14,8 @@
 ## 2. 适用时机
 出现以下任一场景时，至少执行一次“最小必跑集”：
 
-- 修改 `task_service`、`bot_task_service`、`task_service_flow`、Bot entrypoint
-- 修改 `task_core.py`、`task_core_service_providers.py`、`task_core_default_dependencies.py`、`task_core_submission.py`、`src/services/task_web_monitor.py`、`task_core_runtime.py`
+- 修改 `task_service_flow`、Bot entrypoint
+- 修改 `task_core.py`、`task_core_service_providers.py`、`task_core_default_dependencies.py`、`task_core_submission.py`、`src/services/task_web_side_effects.py`、`src/services/task_web_lifecycle_monitor.py`、`src/services/task_web_terminal_finalization.py`、`task_core_runtime.py`
 - 修改 `backend/app/main.py`、`backend/app/main_t2i_wiring.py`、`queue_manager.py`
 - 修改 `src/web_api/routers/tasks.py`、`task_submission_service.py`、`task_runtime_api_service.py`、`task_result_service.py`、`task_stream_api_service.py`、`task_action_api_service.py`
 - 修改任务状态字段、not-found fallback、取消语义、排队语义、双 ID 语义
@@ -29,7 +29,7 @@
 - 调整 Bot `run_bot_task_application(...)` 五段式上下文契约
 
 ## 3. 热点文件
-- `src/services/bot_task_service.py`
+- `src/services/task_service_entrypoints_video.py`
 - `src/services/task_service_flow.py`
 - `src/services/task_service_completion.py`
 - `src/services/task_service_message_support.py`
@@ -50,7 +50,9 @@
 - `src/core/task_core_service_providers.py`
 - `src/core/task_core_default_dependencies.py`
 - `src/core/task_core_submission.py`
-- `src/services/task_web_monitor.py`
+- `src/services/task_web_side_effects.py`
+- `src/services/task_web_lifecycle_monitor.py`
+- `src/services/task_web_terminal_finalization.py`
 - `src/core/task_core_runtime.py`
 
 ## 4. 最小必跑集

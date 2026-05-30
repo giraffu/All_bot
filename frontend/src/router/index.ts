@@ -41,37 +41,44 @@ const routes: RouteRecordRaw[] = [
       {
         path: 'face-swap',
         name: 'FaceSwap',
-        component: () => import('@/views/FaceSwap.vue')
+        component: () => import('@/views/FaceSwap.vue'),
+        meta: { generation: { taskType: 'face_swap', title: '快速换脸', cost: 2 } }
       },
       {
         path: 'video-swap',
         name: 'VideoSwap',
-        component: () => import('@/views/VideoSwap.vue')
+        component: () => import('@/views/VideoSwap.vue'),
+        meta: { generation: { taskType: 'face_video', title: '视频换脸', cost: 18 } }
       },
       {
         path: 'single-image',
         name: 'SingleImage',
-        component: () => import('@/views/SingleImage.vue')
+        component: () => import('@/views/SingleImage.vue'),
+        meta: { generation: { taskType: 'random_faceswap', title: '单图生成', cost: 1 } }
       },
       {
         path: 'image-prompt',
         name: 'ImageAndPrompt',
-        component: () => import('@/views/ImageAndPrompt.vue')
+        component: () => import('@/views/ImageAndPrompt.vue'),
+        meta: { generation: { taskType: 'i2i_pro', title: '图片生成', cost: 3 } }
       },
       {
         path: 'text-to-image',
         name: 'TextToImage',
-        component: () => import('@/views/TextToImage.vue')
+        component: () => import('@/views/TextToImage.vue'),
+        meta: { generation: { taskType: 'txt2img', title: '文生图', cost: 2 } }
       },
       {
         path: 'single-image-video',
         name: 'SingleImageToVideo',
-        component: () => import('@/views/SingleImageToVideo.vue')
+        component: () => import('@/views/SingleImageToVideo.vue'),
+        meta: { generation: { taskType: 'image2video', title: '动图生成', cost: 6 } }
       },
       {
         path: 'wan22-video-v2',
         name: 'Wan22VideoV2',
-        component: () => import('@/views/Wan22VideoV2.vue')
+        component: () => import('@/views/Wan22VideoV2.vue'),
+        meta: { generation: { taskType: 'wan22_video_v2', title: '图生视频 v2', cost: 10 } }
       },
       {
         path: 'history',

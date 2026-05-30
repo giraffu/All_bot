@@ -9,7 +9,6 @@ import { useAuthStore } from '@/stores/auth'
 import {
   shouldResumeTaskListening
 } from '@/stores/taskResultState'
-import type { TaskExtraOutputs } from '@/types/gallery'
 import {
   probeDetachedTaskResult,
   pollTaskResult,
@@ -18,34 +17,24 @@ import {
   touchTaskActivity
 } from './tasksRuntime'
 import {
+  createPendingTask,
+  clearCompletedTaskSessions,
+  removeTaskSession,
+  resetExistingTaskSession,
+} from './taskSessionState'
+import {
+  closeTaskStream,
+  handleTaskProgressPayload as handleTaskProgressPayloadEvent,
+  startTaskStreamListening,
+} from './taskStreamTransport'
+import type { Task } from './taskStoreTypes'
+import {
   countBlockingFloatingTasks,
   getOldestTerminalFloatingTaskIdsForNewTask,
   MAX_FLOATING_TASKS,
 } from './taskFloatingSlots'
 
-export type TaskStatus = 'pending' | 'running' | 'success' | 'failed' | 'cancelled'
-export type TaskRefundStatus = 'pending' | 'refunded' | 'unconfirmed'
-
-export interface Task {
-  id: string
-  type: string
-  title: string
-  progress: number
-  status: TaskStatus
-  queuePos?: number
-  resultUrl?: string
-  extraOutputs?: TaskExtraOutputs
-  error?: string
-  eventSource?: { close: () => void }
-  retryCount?: number
-  awaitingResult?: boolean
-  updatedAt?: number
-  cancelRequested?: boolean
-  cancelMessage?: string
-  cancelCreditBaseline?: number | null
-  refundStatus?: TaskRefundStatus
-  refundMessage?: string
-}
+export type { Task } from './taskStoreTypes'
 
 export const useTasksStore = defineStore('tasks', () => {
   const activeTasks = ref<Task[]>([])
@@ -192,18 +181,6 @@ export const useTasksStore = defineStore('tasks', () => {
     }, retryCount)
   }
 
-  const buildTaskStreamUrl = (taskId: string) => {
-    const baseURL = String(api.defaults.baseURL || '/api').replace(/\/$/, '')
-    return `${baseURL}/tasks/${taskId}/stream`
-  }
-
-  const closeTaskStream = (task: Task) => {
-    if (task.eventSource) {
-      task.eventSource.close()
-      task.eventSource = undefined
-    }
-  }
-
   const getBlockingTaskCount = () => countBlockingFloatingTasks(activeTasks.value)
 
   const makeRoomForNewTask = (notify = false) => {
@@ -257,186 +234,46 @@ export const useTasksStore = defineStore('tasks', () => {
     touchTaskActivity(currentTask)
   }
 
-  const handleTaskProgressPayload = (task: Task, payload: Record<string, any>) => {
-    if (payload.status === 'pending' && payload.queue_pos != null) {
-      task.queuePos = payload.queue_pos
-      touchTaskActivity(task)
-    }
-
-    if (payload.progress !== undefined) {
-      task.progress = payload.progress
-      if (task.status !== 'cancelled') {
-        task.status = 'running'
-      }
-      touchTaskActivity(task)
-    }
-
-    if (payload.status === 'success') {
-      task.progress = 99
-      task.cancelRequested = false
-      task.refundStatus = undefined
-      task.refundMessage = undefined
-      task.awaitingResult = true
-      touchTaskActivity(task)
-      closeTaskStream(task)
-      void pollForResult(task)
-    } else if (
-      payload.status === 'cancelled'
-      || (payload.status === 'failed' && task.cancelRequested && String(payload.error || '').includes('取消'))
-    ) {
-      task.cancelMessage = payload.message || payload.error || '任务已取消'
-      void finalizeCancelledTask(task, task.cancelMessage)
-    } else if (payload.status === 'failed') {
-      task.status = 'failed'
-      task.cancelRequested = false
-      task.refundStatus = undefined
-      task.refundMessage = undefined
-      task.error = payload.error || '未知错误'
-      touchTaskActivity(task)
-      message.error(`任务 [${task.title}] 生成失败: ${task.error}`)
-      closeTaskStream(task)
-    }
-  }
-
   const startListening = (task: Task) => {
-    closeTaskStream(task)
-
-    const token = authStore.token || localStorage.getItem('token')
-    if (!token) {
-      message.error('登录状态已失效，请重新登录')
-      return
-    }
-
-    const controller = new AbortController()
-    const streamHandle = {
-      close: () => controller.abort()
-    }
-    task.eventSource = streamHandle
-    touchTaskActivity(task)
-
-    const consumeStream = async () => {
-      try {
-        const response = await fetch(buildTaskStreamUrl(task.id), {
-          method: 'GET',
-          headers: {
-            Accept: 'text/event-stream',
-            Authorization: `Bearer ${token}`
+    startTaskStreamListening(task, {
+      apiBaseURL: String(api.defaults.baseURL || '/api'),
+      getToken: () => authStore.token || localStorage.getItem('token'),
+      handleTaskProgressPayload: (currentTask, payload) => {
+        handleTaskProgressPayloadEvent(currentTask, payload, {
+          pollForResult: (pollTask) => {
+            void pollForResult(pollTask)
           },
-          signal: controller.signal,
-          credentials: 'same-origin'
+          finalizeCancelledTask: (cancelledTask, cancelMessage) => {
+            void finalizeCancelledTask(cancelledTask, cancelMessage)
+          },
+          closeTaskStream,
+          notifyTaskFailure: (failedTask) => {
+            message.error(`任务 [${failedTask.title}] 生成失败: ${failedTask.error}`)
+          },
         })
-
-        if (!response.ok) {
-          const error: Error & { status?: number } = new Error(`SSE request failed: ${response.status}`)
-          error.status = response.status
-          throw error
+      },
+      closeTaskStream,
+      touchTask: touchTaskActivity,
+      handleUnauthorized: () => {
+        authStore.logout()
+        if (router.currentRoute.value.path !== '/login') {
+          void router.push('/login')
         }
-
-        if (!response.body) {
-          throw new Error('SSE response body is empty')
-        }
-
-        const reader = response.body.getReader()
-        const decoder = new TextDecoder()
-        let buffer = ''
-
-        const processChunk = (chunk: string) => {
-          const normalizedChunk = chunk.trim()
-          if (!normalizedChunk) {
-            return
+        message.error('登录状态已失效，请重新登录')
+      },
+      scheduleRetry: (taskId, retryCount) => {
+        setTimeout(() => {
+          const currentTask = activeTasks.value.find(item => item.id === taskId)
+          if (currentTask && (currentTask.status === 'pending' || currentTask.status === 'running')) {
+            startListening(currentTask)
           }
-
-          let eventName = 'message'
-          const dataLines: string[] = []
-
-          normalizedChunk.split('\n').forEach((line) => {
-            if (line.startsWith('event:')) {
-              eventName = line.slice(6).trim()
-            } else if (line.startsWith('data:')) {
-              dataLines.push(line.slice(5).trimStart())
-            }
-          })
-
-          if (eventName !== 'progress') {
-            return
-          }
-
-          const eventData = dataLines.join('\n')
-          if (!eventData) {
-            return
-          }
-
-          try {
-            const payload = JSON.parse(eventData)
-            handleTaskProgressPayload(task, payload)
-          } catch (parseError) {
-            console.warn('Skipping malformed SSE payload', parseError, eventData)
-          }
-        }
-
-        while (true) {
-          const { value, done } = await reader.read()
-          if (done) {
-            break
-          }
-
-          buffer = (buffer + decoder.decode(value, { stream: true })).replace(/\r/g, '')
-          let boundaryIndex = buffer.indexOf('\n\n')
-          while (boundaryIndex !== -1) {
-            const chunk = buffer.slice(0, boundaryIndex)
-            buffer = buffer.slice(boundaryIndex + 2)
-            processChunk(chunk)
-            boundaryIndex = buffer.indexOf('\n\n')
-          }
-        }
-
-        if (buffer) {
-          processChunk(buffer)
-        }
-
-        if (
-          task.eventSource === streamHandle
-          && !controller.signal.aborted
-          && (task.status === 'pending' || task.status === 'running')
-        ) {
-          throw new Error('SSE connection closed unexpectedly')
-        }
-      } catch (err) {
-        if (controller.signal.aborted) {
-          return
-        }
-
-        console.error('Failed to parse SSE data', err)
-        closeTaskStream(task)
-
-        if ((err as { status?: number })?.status === 401) {
-          authStore.logout()
-          if (router.currentRoute.value.path !== '/login') {
-            void router.push('/login')
-          }
-          message.error('登录状态已失效，请重新登录')
-          return
-        }
-
-        if (!task.retryCount) task.retryCount = 0
-        if (task.retryCount < 3) {
-          task.retryCount++
-          touchTaskActivity(task)
-          setTimeout(() => {
-            const currentTask = activeTasks.value.find(t => t.id === task.id)
-            if (currentTask && (currentTask.status === 'pending' || currentTask.status === 'running')) {
-              startListening(currentTask)
-            }
-          }, 5000 * task.retryCount)
-        } else {
-          touchTaskActivity(task)
-          message.warning(`网络不稳定，任务 [${task.title}] 实时监听已断开，正在后台检查结果`)
-          void startDetachedResultProbe(task)
-        }
-      }
-    }
-
-    void consumeStream()
+        }, 5000 * retryCount)
+      },
+      handleRetryExhausted: (exhaustedTask) => {
+        message.warning(`网络不稳定，任务 [${exhaustedTask.title}] 实时监听已断开，正在后台检查结果`)
+        void startDetachedResultProbe(exhaustedTask)
+      },
+    })
   }
 
   // Load from localStorage on initialization
@@ -463,15 +300,7 @@ export const useTasksStore = defineStore('tasks', () => {
   const addTask = (taskId: string, type: string, title: string) => {
     const existingTask = activeTasks.value.find(task => task.id === taskId)
     if (existingTask) {
-      existingTask.type = type
-      existingTask.title = title
-      existingTask.status = existingTask.status === 'failed' || existingTask.status === 'cancelled'
-        ? 'pending'
-        : existingTask.status
-      existingTask.cancelRequested = false
-      existingTask.cancelMessage = undefined
-      existingTask.refundStatus = undefined
-      existingTask.refundMessage = undefined
+      resetExistingTaskSession(existingTask, type, title)
       touchTaskActivity(existingTask)
       if (!existingTask.awaitingResult && (existingTask.status === 'pending' || existingTask.status === 'running')) {
         startListening(existingTask)
@@ -483,16 +312,8 @@ export const useTasksStore = defineStore('tasks', () => {
       message.warning(`最多只能同时进行 ${MAX_FLOATING_TASKS} 个任务`)
       return false
     }
-    
-    const newTask: Task = {
-      id: taskId,
-      type,
-      title,
-      progress: 0,
-      status: 'pending',
-      updatedAt: Date.now()
-    }
-    
+
+    const newTask = createPendingTask(taskId, type, title)
     const newLength = activeTasks.value.push(newTask)
     const addedTask = activeTasks.value[newLength - 1]
     startListening(addedTask)
@@ -500,19 +321,11 @@ export const useTasksStore = defineStore('tasks', () => {
   }
 
   const removeTask = (taskId: string) => {
-    const index = activeTasks.value.findIndex(t => t.id === taskId)
-    if (index !== -1) {
-      const task = activeTasks.value[index]
-      closeTaskStream(task)
-      activeTasks.value.splice(index, 1)
-    }
+    removeTaskSession(activeTasks.value, taskId, closeTaskStream)
   }
 
   const clearCompleted = () => {
-    const toRemove = activeTasks.value.filter(
-      t => t.status === 'success' || t.status === 'failed' || t.status === 'cancelled'
-    )
-    toRemove.forEach(t => removeTask(t.id))
+    clearCompletedTaskSessions(activeTasks.value, removeTask)
   }
 
   const cancelActiveTask = async (taskId: string) => {

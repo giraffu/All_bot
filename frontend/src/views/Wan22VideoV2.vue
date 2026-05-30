@@ -13,9 +13,14 @@ import { useTaskResult } from '@/composables/useTaskResult'
 import { useTaskStream } from '@/composables/useTaskStream'
 import { useUpload } from '@/composables/useUpload'
 import { buildGenerationTaskPayload } from '@/features/generation/buildGenerationTaskPayload'
+import { useGenerationRouteConfig } from '@/features/generation/generationRouteConfig'
 
 const route = useRoute()
-const taskTitle = computed(() => (route.query.title as string) || '图生视频 v2')
+const { taskTitle, taskCost } = useGenerationRouteConfig(route, {
+  taskType: 'wan22_video_v2',
+  title: '图生视频 v2',
+  cost: 10,
+})
 
 const { uploadFile: uploadStartFile, uploading: startUploading, progress: startUploadProgress } = useUpload()
 const { uploadFile: uploadEndFile, uploading: endUploading, progress: endUploadProgress } = useUpload()
@@ -50,7 +55,6 @@ const perfectLoop = ref(false)
 const upscale = ref(false)
 const extractLastFrame = ref(true)
 
-const taskCost = computed(() => 10)
 const tailFrameUrl = computed(() => currentTask.value?.extraOutputs?.last_frame?.url ?? '')
 
 const handleGenerate = async () => {

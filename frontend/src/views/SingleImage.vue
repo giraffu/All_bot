@@ -9,6 +9,7 @@ import { useTaskResult } from '@/composables/useTaskResult'
 import { useGalleryApplyContext } from '@/composables/useGalleryApplyContext'
 import { useSingleFileUploadPreview } from '@/composables/useSingleFileUploadPreview'
 import { buildGenerationTaskPayload } from '@/features/generation/buildGenerationTaskPayload'
+import { useGenerationRouteConfig } from '@/features/generation/generationRouteConfig'
 import GenerationActionBar from '@/components/GenerationActionBar.vue'
 import GenerationUploadCard from '@/components/GenerationUploadCard.vue'
 import GenerationWorkbenchShell from '@/components/GenerationWorkbenchShell.vue'
@@ -16,10 +17,11 @@ import TaskResultPreviewPanel from '@/components/TaskResultPreviewPanel.vue'
 
 const route = useRoute()
 const { loadApplyContext } = useGalleryApplyContext()
-
-const taskType = computed(() => (route.query.type as string) || 'random_faceswap')
-const taskTitle = computed(() => (route.query.title as string) || '单图生成')
-const taskCost = computed(() => Number(route.query.cost) || 1)
+const { taskType, taskTitle, taskCost, routeApplyEnabled } = useGenerationRouteConfig(route, {
+  taskType: 'random_faceswap',
+  title: '单图生成',
+  cost: 1,
+})
 
 const { uploading, progress: uploadProgress, uploadFile } = useUpload()
 const { isSubmitting, submitTask } = useTaskStream()
@@ -37,7 +39,7 @@ const isTemplateApplied = ref(false)
 const templateSourcePostId = ref<number | null>(null)
 
 onMounted(() => {
-  if (route.query.apply === 'true') {
+  if (routeApplyEnabled.value) {
     const ctx = loadApplyContext()
     if (ctx && ctx.task_type === taskType.value) {
       if (ctx.source_post_id != null) {

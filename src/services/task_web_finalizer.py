@@ -12,7 +12,7 @@ from src.core.task_status_mapper import (
 from src.logger import UserLogger
 from src.services.image_service import image_service
 from src.services.redis_client import redis_client
-from src.services.task_web_monitor import (
+from src.services.task_web_terminal_finalization import (
     finalize_monitored_web_task_cancellation_default,
     finalize_monitored_web_task_failure_default,
     finalize_monitored_web_task_success_default,

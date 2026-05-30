@@ -11,6 +11,7 @@ import { useSwapResetController } from '@/composables/useSwapResetController'
 import { useSwapTaskSubmit } from '@/composables/useSwapTaskSubmit'
 import { useRoute } from 'vue-router'
 import { onMounted } from 'vue'
+import { useGenerationRouteConfig } from '@/features/generation/generationRouteConfig'
 import GenerationActionBar from '@/components/GenerationActionBar.vue'
 import GenerationUploadCard from '@/components/GenerationUploadCard.vue'
 import GenerationWorkbenchShell from '@/components/GenerationWorkbenchShell.vue'
@@ -21,6 +22,11 @@ const { isSubmitting, submitTask } = useTaskStream()
 const { currentTask, setSubmittedTaskId, isImageUrl, downloadResult } = useTaskResult()
 const { loadApplyContext } = useGalleryApplyContext()
 const route = useRoute()
+const { routeApplyEnabled } = useGenerationRouteConfig(route, {
+  taskType: 'face_video',
+  title: '视频换脸',
+  cost: 18,
+})
 const {
   primaryFileList: faceFileList,
   secondaryFileList: bodyFileList,
@@ -49,7 +55,7 @@ const isTemplateApplied = ref(false)
 const templateSourcePostId = ref<number | null>(null)
 
 const { initializeLegacySwapApply } = useLegacySwapApply({
-  routeApplyEnabled: route.query.apply === 'true',
+  routeApplyEnabled: routeApplyEnabled.value,
   loadApplyContext,
   expectedTaskType: 'face_video',
   applySecondaryTemplateTarget,

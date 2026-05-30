@@ -33,8 +33,9 @@
 
 | 字段 | 类型 | 当前语义 |
 | :--- | :--- | :--- |
-| `order_id` | `String` | 本地业务单号；RMB 回调与 TON 订单载荷都会使用。 |
-| `telegram_id` | `BigInt` | 实际关联内部 `users.id`，字段名沿用旧命名。 |
+| `order_id` | `String` | 本地历史单号/legacy order id；当前更多作为内部兼容锚点存在。 |
+| `business_order_id` | `String` | 对外主查询订单号；新链路优先围绕它做查询与展示。 |
+| `internal_user_id` | `BigInt` | 实际关联内部 `users.id`；测试环境 schema 已完成从旧 `telegram_id` 命名切换。 |
 | `plan_id` | `Integer` | 购买的套餐 ID。 |
 | `status` | `String` | `PENDING / SUCCESS / FAILED`。 |
 | `tx_hash` | `String` | 外部流水，TON 等链路的幂等锚点；唯一。 |

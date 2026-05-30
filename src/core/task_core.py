@@ -25,6 +25,17 @@ from src.core.task_core_default_dependencies import (
     build_default_task_core_attach_submission_side_effects_func,
     build_default_task_core_process_dependencies as _build_task_core_process_dependencies_impl,
 )
+from src.core.task_core_process_flow import (
+    build_prepared_task_submission_request,
+    build_submission_failure_error,
+    build_successful_submission_response,
+    compensate_failed_task_submission,
+    ensure_submission_concurrency_lock,
+    execute_task_submission_attempt,
+    maybe_deduct_submission_credits,
+    prepare_task_submission_context,
+    release_submission_lock_if_needed,
+)
 from src.core.task_core_persistence import (
     persist_successful_task_result_default as _persist_successful_task_result_default,
 )
@@ -196,90 +207,78 @@ async def process_and_submit_task(
         client_type=client_type,
         source_post_id=source_post_id,
     )
-    strategy = dependencies.get_strategy_func(task_type)
-    cost = strategy.get_cost(inputs)
-    is_video_task = task_type in dependencies.video_task_types
-
-    video_request = (
-        dependencies.build_video_task_request_func(task_type, inputs)
-        if is_video_task
-        else VideoTaskRequest()
+    request = build_prepared_task_submission_request(
+        task_type=task_type,
+        inputs=inputs,
+        dependencies=dependencies,
     )
-
-    if check_lock:
-        can_run, err = await dependencies.check_concurrency_lock_func(user_id)
-        if not can_run:
-            raise ConcurrencyLimitError(err)
+    await ensure_submission_concurrency_lock(
+        user_id=user_id,
+        check_lock=check_lock,
+        dependencies=dependencies,
+    )
 
     task_submitted_successfully = False
     credits_deducted = False
     registry_task_id = task_id
 
     try:
-        submission_context = await dependencies.prepare_task_submission_payload_func(
+        submission_context = await prepare_task_submission_context(
             user_id=user_id,
             username=username,
             task_type=task_type,
             inputs=inputs,
-            strategy=strategy,
             base_priority=base_priority,
             is_template=is_template,
-            is_video_task=is_video_task,
-            video_request=video_request,
+            request=request,
+            dependencies=dependencies,
         )
 
-        if deduct_quota:
-            success, err = await dependencies.check_and_deduct_credits_func(
-                user_id, cost, task_type, username
-            )
-            if not success:
-                raise InsufficientCreditsError(err)
-            credits_deducted = True
+        credits_deducted = await maybe_deduct_submission_credits(
+            user_id=user_id,
+            username=username,
+            task_type=task_type,
+            cost=request.cost,
+            deduct_quota=deduct_quota,
+            dependencies=dependencies,
+        )
 
         try:
-            execution_result = await dependencies.execute_task_submission_saga_func(
+            execution_result = await execute_task_submission_attempt(
+                user_id=user_id,
+                username=username,
                 task_type=task_type,
                 inputs=inputs,
                 registry_task_id=registry_task_id,
-                cost=cost,
+                cost=request.cost,
+                deduct_quota=deduct_quota,
                 submission_context=submission_context,
+                submission_side_effect_plan=submission_side_effect_plan,
+                dependencies=dependencies,
             )
             registry_task_id = execution_result.registry_task_id
-            await dependencies.attach_submission_side_effects_func(
-                backend_task_id=execution_result.backend_task_id,
-                internal_user_id=user_id,
-                username=username,
-                registry_task_id=registry_task_id,
-                submission_context=execution_result.submission_context,
-                cost=cost if deduct_quota else 0,
-                submission_side_effect_plan=submission_side_effect_plan,
+            task_submitted_successfully = True
+            return build_successful_submission_response(
+                execution_result=execution_result,
+                cost=request.cost,
             )
 
-            task_submitted_successfully = True
-
-            return {
-                "task_id": registry_task_id,
-                "registry_task_id": registry_task_id,
-                "backend_task_id": execution_result.backend_task_id,
-                "cost": cost,
-                "saved_inputs": execution_result.submission_context.saved_inputs,
-            }
-
         except Exception as e:
-            dependencies.logger.error(f"Saga Execute Failed: {e}")
-            await dependencies.compensate_failed_submission_func(
+            await compensate_failed_task_submission(
                 user_id=user_id,
                 username=username,
-                cost=cost,
+                cost=request.cost,
                 error=e,
                 credits_deducted=credits_deducted,
                 registry_task_id=registry_task_id,
+                dependencies=dependencies,
             )
-            raise CoreDomainError(f"系统派发失败，灵石已全额退还。错误: {str(e)}")
+            raise build_submission_failure_error(e)
 
     finally:
-        # 兜底保障：确保并发锁释放
-        if check_lock and not task_submitted_successfully:
-            await dependencies.shield_func(
-                dependencies.release_concurrency_lock_func(user_id)
-            )
+        await release_submission_lock_if_needed(
+            user_id=user_id,
+            check_lock=check_lock,
+            task_submitted_successfully=task_submitted_successfully,
+            dependencies=dependencies,
+        )

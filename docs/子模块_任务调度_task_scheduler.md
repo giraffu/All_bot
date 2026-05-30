@@ -9,7 +9,9 @@
 - `src/core/task_core_default_dependencies.py`：默认依赖装配层，把 facade 所需运行时能力拼装为 `TaskCore*Dependencies`
 - `src/core/task_core_submission.py`：提交 Saga、注册表写入、派发与补偿
 - `src/services/task_lifecycle_runner.py`：共享 lifecycle runner / terminal router，负责 monitor->route 骨架与 success/cancelled/failure 分流
-- `src/services/task_web_monitor.py`：Web 端 side-effect finalizer 的 application/service 实现，负责成功持久化、取消/失败终态、运行态清理
+- `src/services/task_web_side_effects.py`：Web 提交后的 side effect plan 归一化、pending finalizer 入队与 apply 互动记录
+- `src/services/task_web_lifecycle_monitor.py`：Web runtime monitor stage，负责 backend 轮询、终态 snapshot 构造与 terminal router 对接
+- `src/services/task_web_terminal_finalization.py`：Web terminal finalization，负责成功持久化、取消/失败收尾与 runtime cleanup
 - `src/services/task_web_finalizer.py`：持久化 Web finalizer 队列与恢复循环，负责在进程重启后继续收口未完成的 Web 终态
 - `src/core/task_core_runtime.py`：双 ID 终止、best-effort cancel、并发锁与 registry 清理
 - `src/core/task_dispatcher.py`：StrategyFactory + payload/workflow 注入
@@ -68,23 +70,24 @@ sequenceDiagram
 职责：
 
 - 基于 `TaskCoreProcessDependencies` 获取策略、输入准备与计费能力
+- `task_core.py` 仅保留 facade；具体步骤继续拆到 `task_core_process_flow.py` 的 `build_prepared_task_submission_request(...)`、`prepare_task_submission_context(...)`、`execute_task_submission_attempt(...)`、`release_submission_lock_if_needed(...)`
 - 进行并发锁检查与扣费
 - 执行提交 Saga，写入 `registry_task_id` 并派发 `backend_task_id`
-- 提交成功后根据 `TaskSubmissionSideEffectPlan` 写入持久化 Web finalizer 或其他 side effect；默认 Web side effect 装配由 dependency 层负责，facade 不直接 import `task_web_monitor`
+- 提交成功后根据 `TaskSubmissionSideEffectPlan` 写入持久化 Web finalizer 或其他 side effect；默认 Web side effect 装配由 dependency 层负责，facade 不直接 import Web application 层实现
 - 提交失败时执行补偿，并在未成功提交时释放并发锁
 
 ### 4.2 Web 监控门面
 当前 Web 异步收尾入口：
 
-- `src/services/task_web_monitor.py::monitor_task_and_release_lock_default(...)`
+- `src/services/task_web_lifecycle_monitor.py::monitor_task_and_release_lock_default(...)`
 - `src/services/task_web_finalizer.py::run_pending_web_finalizer_loop(...)`
 
 职责：
 
-- 轮询 backend 终态并恢复上次进程未完成的 finalizer
-- 成功时持久化历史、可选 R2 warmup、清理 registry/锁
-- 取消时退款并终态清理
-- 失败时退款并终态清理
+- `task_web_side_effects.py` 负责 side effect plan -> pending finalizer / apply interaction
+- `task_web_lifecycle_monitor.py` 负责轮询 backend 终态并构造 terminal snapshot
+- `task_web_terminal_finalization.py` 负责成功持久化、取消/失败退款与 runtime cleanup
+- `task_web_finalizer.py` 负责恢复上次进程未完成的 pending finalizer
 
 补充约束：
 - backend 执行面在发布 `done/error` 的 `comfy:task_events:{backend_task_id}` 终态事件时，应随事件携带 `task_type`，并尽量附带 `worker_id`、`created_at` 等最小详情，避免 Dashboard/stream 消费端与 Web monitor runtime cleanup 争抢 Redis 临时详情键而产生观测竞态。
@@ -113,8 +116,10 @@ Bot flow 已拆成五段式上下文：
 - `failure`
 - `cleanup`
 
+当前 `task_service_flow.py` 已直接内聚提交、monitor、terminal 与 cleanup 四段 helper，不再额外拆出仅单文件消费的 stage 壳。
+
 取消态改为专用异常 `BotTaskCancelled`，不再依赖字符串 sentinel `"cancelled"`。
-当前 Bot `task_service_flow.py` 与 Web `task_web_monitor.py` 已共享 `task_lifecycle_runner.py` 的 monitor->route 骨架；Web monitor 与 `task_web_finalizer.py` 进一步共享 backend terminal router，避免多处重复写 success/cancelled/failure 分流。
+当前 Bot `task_service_flow.py` 与 Web `task_web_lifecycle_monitor.py` 已共享 `task_lifecycle_runner.py` 的 monitor->route 骨架；Web monitor 与 `task_web_finalizer.py` 进一步共享 backend terminal router，避免多处重复写 success/cancelled/failure 分流。
 
 ## 5. API 口径
 当前 Web 任务入口以 `/api/tasks/generate` 为主，body 口径为：

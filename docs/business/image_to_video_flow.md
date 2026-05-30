@@ -97,13 +97,13 @@ graph TD
   - `task_service_generation_image.py`
   - `task_service_generation_video.py`
   - `task_service_generation_wan22.py`
-- 内部调用当前应优先直接进入分域 entrypoints；`bot_task_service.py` 仅保留模块级导出，不再作为默认调用入口。
+- 内部调用当前应优先直接进入分域 entrypoints；历史 `bot_task_service.py` compat 壳已删除，不再作为调用入口。
 - `process_wan22_video_v2_task(...)` 位于 generation entrypoints，`process_ltx_video_task(...)` 位于 specialized entrypoints；两者都已走统一提交与前台监控主链。
 
 ### 3.3 Core 提交与监控层
 - `task_core.py` 负责统一提交语义。
 - `task_dispatcher.py` 基于 strategy 生成 workflow / payload。
-- Web 任务完成后由 `src/services/task_web_monitor.py` 承接 side effect；Bot 则由 `run_bot_task_application(...)` 负责前台监控与展示。
+- Web 任务完成后由 `src/services/task_web_side_effects.py`、`task_web_lifecycle_monitor.py`、`task_web_terminal_finalization.py` 协同承接 side effect 与终态收口；Bot 则由 `run_bot_task_application(...)` 负责前台监控与展示。
 
 ## 四、 计费与资源约束
 - 视频任务计费是动态的，通常由分辨率与时长组合决定。

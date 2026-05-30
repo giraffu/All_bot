@@ -147,7 +147,7 @@ sequenceDiagram
 当前关键事实：
 - Web 主入口是 `/api/tasks/generate`，请求体以 `inputs` 为主。
 - 任务链路显式区分 `registry_task_id` 与 `backend_task_id`。
-- Web 运行态依赖 `src/services/task_web_monitor.py`；Bot 则由 `run_bot_task_application(...)` 前台监控。
+- Web 运行态依赖 `src/services/task_web_side_effects.py`、`task_web_lifecycle_monitor.py` 与 `task_web_terminal_finalization.py`；Bot 则由 `run_bot_task_application(...)` 前台监控。
 - 任务结果除了运行态 stream 外，还有 history fallback 与结果查询兜底。
 
 延伸阅读：

@@ -20,7 +20,7 @@
 | --- | --- | --- | --- |
 | task_core submission 默认 wrapper | `src/core/task_core.py` | `src/core/task_core_submission.py` | 已下沉，`task_core.py` 仅保留 facade 绑定 |
 | task_core finalization 默认 wrapper | `src/core/task_core.py` | `src/core/task_core_finalization.py` | 已下沉，失败/取消默认依赖由子模块自装配 |
-| task_core web monitor 默认 wrapper | `src/core/task_core.py` | `src/services/task_web_monitor.py` | 已下沉，`task_core.py` 直接绑定 application 层 monitor 实现 |
+| task_core web side-effect / monitor 默认装配 | `src/core/task_core.py` | `src/services/task_web_side_effects.py`、`task_web_lifecycle_monitor.py`、`task_web_terminal_finalization.py` | 已下沉，`task_core.py` 直接绑定 application 层 monitor 实现 |
 | task_core warmup/persistence 默认 wrapper | `src/core/task_core.py` | `src/core/task_core_web_history_warmup.py`、`src/core/task_core_persistence.py` | 已下沉，web history warmup 与成功持久化默认绑定不再堆在 facade |
 | TG gallery browse 链路 | `src/handlers/callbacks/gallery_callbacks.py` | `src/handlers/callbacks/gallery_callbacks_browse.py` | 已继续收口，分类菜单、`gallery_sort_`、`gallery_page_` 已直接在 browse 子模块注册，旧壳文件已删除 |
 | 旧单图页与模板工作台 payload 组装 | 多个 `.vue` 页面内联 | `frontend/src/features/generation/buildGenerationTaskPayload.ts` | 已统一，旧单图页与 A4 工作台共用提交 payload builder |
@@ -51,6 +51,8 @@
 | `src/handlers/fsm/image_to_video_fsm.py:start_custom_video` | `/custom_video` 旧入口别名，对外保持稳定命令名 | `/custom_video` 命令、`menu.custom_video` 与 callback `fsm_start_custom_video` | 明确 `/custom_video` 是否长期保留为独立产品入口；若仅是图生视频变体，可与统一入口继续收口 | `D2` 后续轮次 |
 | `src/constants.py:MODE_IMAGE_TO_VIDEO = MODE_VIDEO_LORA` | 兼容历史任务类型值，避免旧记录/旧 payload 失配 | 历史任务类型、旧 apply-context、统计与计费链路 | 当前主链已统一补上 `image_to_video` 新主名：dispatcher、API client、image service、backend `/image_to_video` 路由与 FSM 新入口已切到中性命名；旧 `video_lora` 仅保留入口 alias、兼容路由与历史值锚点，后续在数据迁移完成后退出该值别名 | 已压缩到外层兼容 |
 | `src/database/models.py:Order.telegram_id` | 历史数据库列名，实际关联 `users.id` 内部用户主键 | 正式环境尚未执行迁移时的遗留 schema 名称 | 测试环境已实际执行 Alembic `7c0a4d5e6f71`，`orders` 物理列已切到 `internal_user_id`，ORM 也已删除 `telegram_id` alias；后续只需在生产切换窗口按同一 migration 执行正式环境升级 | `测试已完成 / 生产待执行` |
+| `frontend/src/composables/useLegacySwapApply.ts` | 旧 swap 页 route apply 兼容壳，把旧 query + session apply context 转成双文件页初始化 | `FaceSwap.vue`、`VideoSwap.vue` 旧入口与旧模板应用跳转 | Gallery / 模板应用工作台确认不再写旧 swap route query，且旧收藏/历史入口无存量流量 | `D2` 后续轮次 |
+| `src/services/order_v2_service.py` 的 `ORDER:` / `ORDER_V2:` 双载荷兼容 | 兼容历史支付回调载荷格式与旧本地单号语义 | 旧支付链路、回调解析与 payment presenter 的 `legacy_order_id` 展示 | 对外查询全面切到 `business_order_id`，旧支付通道不再回传 `ORDER:` 载荷，Dashboard/Web 不再展示旧本地单号为主 ID | `待支付链路收口后` |
 
 ## 删除原则
 

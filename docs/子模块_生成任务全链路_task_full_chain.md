@@ -81,6 +81,9 @@ sequenceDiagram
 前端通常通过以下链路提交：
 - `frontend/src/composables/useTaskStream.ts`
 - `frontend/src/stores/tasks.ts`
+- `frontend/src/stores/taskSessionState.ts`
+- `frontend/src/stores/taskStreamTransport.ts`
+- `frontend/src/stores/tasksRuntime.ts`
 
 提交后会发生：
 1. `useTaskStream.submitTask(...)` 调用 `POST /tasks/generate`
@@ -143,6 +146,13 @@ Web 统一入口在：
 - 挂载 side effect
 - 在失败时退款并释放锁
 
+当前 `process_and_submit_task(...)` 内部已继续拆成稳定步骤：
+- `task_core_process_flow.build_prepared_task_submission_request(...)`
+- `task_core_process_flow.prepare_task_submission_context(...)`
+- `task_core_process_flow.maybe_deduct_submission_credits(...)`
+- `task_core_process_flow.execute_task_submission_attempt(...)`
+- `task_core_process_flow.release_submission_lock_if_needed(...)`
+
 ### 6.2 provider / dependency 边界
 当前 `task_core` 采用 facade + provider/dependencies 结构：
 - `src/core/task_core.py`
@@ -150,15 +160,19 @@ Web 统一入口在：
 - `src/core/task_core_default_dependencies.py`
 - `src/core/task_core_service_providers.py`
 - `src/core/task_core_submission.py`
+- `src/core/task_core_process_flow.py`
 - `src/services/task_lifecycle_runner.py`
-- `src/services/task_web_monitor.py`
+- `src/services/task_web_side_effects.py`
+- `src/services/task_web_lifecycle_monitor.py`
+- `src/services/task_web_terminal_finalization.py`
 - `src/core/task_core_runtime.py`
 
 关键规则：
 - `core` 内不应重新直连基础设施实现
-- `task_core.py` facade 不再直接 import `task_web_monitor`，Web side effect 默认装配已下沉到 `task_core_default_dependencies.py`
+- `task_core.py` facade 不再直接 import Web application 层实现，默认 side effect 装配已下沉到 `task_core_default_dependencies.py`
 - Bot / Web / stream 对 backend `done/error/cancelled` 终态判断应共享 `task_lifecycle_contract.py`
-- Bot `task_service_flow.py` 与 Web `task_web_monitor.py` 现共享 `task_lifecycle_runner.py` 的 monitor->route 骨架；Web runtime monitor 与 `task_web_finalizer.py` 共享 terminal router
+- Web 侧已按 `side effects -> lifecycle monitor -> terminal finalization` 三段拆开，入口分别位于 `task_web_side_effects.py`、`task_web_lifecycle_monitor.py`、`task_web_terminal_finalization.py`
+- Bot `task_service_flow.py` 与 Web lifecycle monitor 现共享 `task_lifecycle_runner.py` 的 monitor->route 骨架；Web runtime monitor 与 `task_web_finalizer.py` 共享 terminal router
 - 默认 provider 注册由应用入口承担，不由 `core` 模块导入时自动注册
 - 单测优先走显式 `dependencies` 或 `*_func` seam
 
@@ -335,16 +349,19 @@ Worker 上报的关键回调包括：
 
 ### 10.2 Web side-effect finalizer
 Web 任务提交成功后，真正负责“收尾”的是：
-- `src/services/task_web_monitor.py`
+- `src/services/task_web_side_effects.py`
+- `src/services/task_web_lifecycle_monitor.py`
+- `src/services/task_web_terminal_finalization.py`
 - `src/services/task_web_finalizer.py`
 
 当前口径是“持久化 finalizer + 恢复循环”：
-- 提交成功时先把收尾上下文写入 Redis `pending_web_finalizers`
+- 提交成功时先由 `task_web_side_effects.py` 把收尾上下文写入 Redis `pending_web_finalizers`
 - Web API 启动后持续运行 finalizer loop，按 `backend_task_id` 轮询终态
 - 即使 Web 进程重启，只要任务已成功提交，后续仍可恢复成功持久化 / 退款 / cleanup
 
 它负责把 backend 终态转为 Web 可消费的最终语义：
-- 成功时持久化历史
+- `task_web_lifecycle_monitor.py` 负责构造 terminal snapshot
+- `task_web_terminal_finalization.py` 成功时持久化历史
 - 必要时进行 R2 warmup
 - 失败时退款
 - 取消时退款
@@ -481,7 +498,7 @@ Web 端当前运行态与结果查询链路分成两层：
 - `src/web_api/services/task_result_service.py`
 - `src/core/task_core.py`
 - `src/core/task_core_submission.py`
-- `src/services/task_web_monitor.py`
+- `src/services/task_web_lifecycle_monitor.py`
 - `src/core/task_core_runtime.py`
 - `src/core/task_dispatcher.py`
 - `backend/app/main_simple_task_routes.py`

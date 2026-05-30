@@ -210,7 +210,7 @@ async def run_bot_task_completion_stage(
     saved_inputs: list[str],
     final_info,
     is_video: bool,
-    message_spec: BotTaskMessageSpec,
+    message_spec,
     send_result: bool,
     reply_markup,
     delete_status: bool,

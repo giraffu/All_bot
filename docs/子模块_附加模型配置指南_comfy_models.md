@@ -70,7 +70,7 @@
 - **文件定位**：`backend/app/models.py` 和 `backend/app/main.py`。
 - **实施状态**：**无需修改**。
   - 后端网关已经定义了 `VideoLoraRequest`。
-  - 在 `main.py` 中，接口 `/perfect_video_lora` 会接收该请求，并**将其转化为 `TaskType.VIDEO_EDIT`** 推入 Redis 队列，同时将 `lora_name` 携带在参数中透传给下游 Worker。
+  - 当前主 simple route 已是 `/image_to_video`；兼容入口 `/perfect_video_lora` 仍会接收该请求，并统一**转化为 `TaskType.VIDEO_EDIT`** 推入 Redis 队列，同时将 `lora_name` 携带在参数中透传给下游 Worker。
 
 ### 4. Worker 层：工作流动态注入 (Workflow Patcher)
 - **文件定位**：`workers/comfy_agent/workflow_patcher.py` 和 `workers/comfy_agent/workflows/perfect_video_edit.json`。

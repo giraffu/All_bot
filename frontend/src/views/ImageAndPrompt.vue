@@ -8,21 +8,24 @@ import { useTaskStream } from '@/composables/useTaskStream'
 import { useTaskResult } from '@/composables/useTaskResult'
 import { useGalleryApplyContext } from '@/composables/useGalleryApplyContext'
 import { buildGenerationTaskPayload } from '@/features/generation/buildGenerationTaskPayload'
+import { useGenerationRouteConfig } from '@/features/generation/generationRouteConfig'
 import GenerationActionBar from '@/components/GenerationActionBar.vue'
 import GenerationWorkbenchShell from '@/components/GenerationWorkbenchShell.vue'
 import TaskResultPreviewPanel from '@/components/TaskResultPreviewPanel.vue'
 
 const route = useRoute()
 const { loadApplyContext } = useGalleryApplyContext()
-
-const taskType = computed(() => (route.query.type as string) || 'i2i_pro')
-const taskTitle = computed(() => (route.query.title as string) || '图片生成')
+const { taskType, taskTitle, taskCost: baseTaskCost, routeApplyEnabled } = useGenerationRouteConfig(route, {
+  taskType: 'i2i_pro',
+  title: '图片生成',
+  cost: 3,
+})
 const maxImages = computed(() => ['i2i_pro', 'i2i_draw'].includes(taskType.value) ? 1 : 2)
 const taskCost = computed(() => {
   if (taskType.value === 'edit' || taskType.value === 'img2img_lora') {
     return uploadedImages.value.length === 2 ? 6 : 2
   }
-  return Number(route.query.cost) || 3
+  return baseTaskCost.value
 })
 
 const { uploading, progress: uploadProgress, uploadFile } = useUpload()
@@ -70,7 +73,7 @@ watch(taskType, () => {
 })
 
 onMounted(() => {
-  if (route.query.apply === 'true') {
+  if (routeApplyEnabled.value) {
     const ctx = loadApplyContext()
     if (ctx && ctx.task_type === taskType.value) {
       if (ctx.prompt) prompt.value = ctx.prompt

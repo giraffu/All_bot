@@ -188,7 +188,9 @@ def build_default_task_core_attach_submission_side_effects_func(
     core_domain_error_cls,
 ):
     async def _attach_submission_side_effects_func(**kwargs):
-        from src.services.task_web_monitor import attach_submission_side_effects_default
+        from src.services.task_web_side_effects import (
+            attach_submission_side_effects_default,
+        )
 
         return await attach_submission_side_effects_default(
             core_domain_error_cls=core_domain_error_cls,

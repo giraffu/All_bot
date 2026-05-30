@@ -107,8 +107,8 @@ async def test_points_system(setup_db):
     total = await qm.get_credits(user.id)
     assert total == credits + 10
 
-    # 4. Test points clearance (deprecated)
-    pass
+    # Deprecated clearance path has been removed from the runtime contract.
+    # Keep the regression focused on the active credit add/checkin/deduct chain.
 
 
 @pytest.mark.asyncio
