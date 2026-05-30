@@ -3,6 +3,7 @@ import json
 import logging
 import os
 import sys
+from dataclasses import dataclass, field
 from typing import Any, Dict, Optional
 
 import httpx
@@ -79,6 +80,17 @@ handlers.append(file_handler)
 
 logging.basicConfig(level=logging.INFO, handlers=handlers)
 logger = logging.getLogger("agent_main")
+
+
+@dataclass
+class TaskExecutionContext:
+    task_id: str
+    task_type: str
+    prompt_id: Optional[str] = None
+    task_result: Optional[str] = None
+    task_result_priority: int = -1
+    task_error: Optional[str] = None
+    completed_event: asyncio.Event = field(default_factory=asyncio.Event)
 
 
 RESULT_ASSET_KEYS = ("images", "gifs", "videos")
@@ -265,15 +277,56 @@ class ComfyAgent:
             logger.error(f"Failed to init MinIO: {e}")
             self.minio_client = None
 
-        self.current_task_id: Optional[str] = None
-        self.current_task_type: Optional[str] = None
-        self.current_prompt_id: Optional[str] = None
-        self.task_completed_event = asyncio.Event()
-        self.task_result: Optional[str] = None
-        self.task_result_priority: int = -1
-        self.task_error: Optional[str] = None
+        self.tasks = []
+        self._idle_completed_event = asyncio.Event()
+        self._active_execution: Optional[TaskExecutionContext] = None
         self.running = False
         self._comfy_poll_paused = False
+
+    @property
+    def current_task_id(self) -> Optional[str]:
+        return self._active_execution.task_id if self._active_execution else None
+
+    @property
+    def current_task_type(self) -> Optional[str]:
+        return self._active_execution.task_type if self._active_execution else None
+
+    @property
+    def current_prompt_id(self) -> Optional[str]:
+        return self._active_execution.prompt_id if self._active_execution else None
+
+    @property
+    def task_result(self) -> Optional[str]:
+        return self._active_execution.task_result if self._active_execution else None
+
+    @property
+    def task_result_priority(self) -> int:
+        return self._active_execution.task_result_priority if self._active_execution else -1
+
+    @property
+    def task_error(self) -> Optional[str]:
+        return self._active_execution.task_error if self._active_execution else None
+
+    @property
+    def task_completed_event(self) -> asyncio.Event:
+        if self._active_execution:
+            return self._active_execution.completed_event
+        return self._idle_completed_event
+
+    def _start_task_execution(
+        self, *, task_id: str, task_type: str
+    ) -> TaskExecutionContext:
+        execution = TaskExecutionContext(task_id=task_id, task_type=task_type)
+        self._active_execution = execution
+        return execution
+
+    def _clear_task_execution(
+        self, execution: TaskExecutionContext | None = None
+    ) -> None:
+        if execution is not None and self._active_execution is not execution:
+            return
+        self._active_execution = None
+        self._idle_completed_event.clear()
 
     async def _probe_comfy_ready(self) -> bool:
         try:
@@ -463,7 +516,8 @@ class ComfyAgent:
 
     async def report_heartbeat(self):
         try:
-            status = "running" if self.current_task_id else "idle"
+            active_execution = self._active_execution
+            status = "running" if active_execution else "idle"
             await self.master_client.post(
                 "/api/agent/task/heartbeat",
                 json={
@@ -472,11 +526,11 @@ class ComfyAgent:
                     "status": status,
                 },
             )
-            if self.current_task_id:
+            if active_execution:
                 # Add task heartbeat specifically
                 await self.master_client.post(
                     "/api/agent/task/task_heartbeat",
-                    json={"task_id": self.current_task_id},
+                    json={"task_id": active_execution.task_id},
                 )
         except Exception as e:
             logger.debug(f"Failed to report heartbeat: {e}")
@@ -568,24 +622,29 @@ class ComfyAgent:
                             msg_type = data.get("type")
                             data_content = _extract_ws_data_content(data)
                             prompt_id = data_content.get("prompt_id")
+                            execution = self._active_execution
 
-                            if not prompt_id or prompt_id != self.current_prompt_id:
+                            if (
+                                not execution
+                                or not prompt_id
+                                or prompt_id != execution.prompt_id
+                            ):
                                 continue
 
                             if msg_type == "execution_start":
                                 logger.info(f"Execution started for prompt {prompt_id}")
-                                if self.current_task_id:
+                                if execution.task_id:
                                     await self.report_status(
-                                        self.current_task_id, "running"
+                                        execution.task_id, "running"
                                     )
 
                             elif msg_type == "progress":
                                 value = data_content.get("value", 0)
                                 max_val = data_content.get("max", 1)
-                                if max_val > 0 and self.current_task_id:
+                                if max_val > 0 and execution.task_id:
                                     progress = value / max_val
                                     await self.report_status(
-                                        self.current_task_id,
+                                        execution.task_id,
                                         "running",
                                         progress=progress,
                                     )
@@ -596,90 +655,31 @@ class ComfyAgent:
                                     logger.info(
                                         f"Execution fully completed for prompt {prompt_id}"
                                     )
-                                    self.task_completed_event.set()
+                                    execution.completed_event.set()
 
                             elif msg_type == "execution_success":
                                 logger.info(
                                     f"Execution success received for prompt {prompt_id}"
                                 )
-                                self.task_completed_event.set()
+                                execution.completed_event.set()
 
                             elif msg_type == "executed":
                                 logger.info(f"Node executed for prompt {prompt_id}")
                                 output = data_content.get("output") or {}
                                 asset = _pick_first_output_asset(
                                     output,
-                                    task_type=self.current_task_type,
+                                    task_type=execution.task_type,
                                 )
-                                if (
-                                    self.current_task_type == "wan22_video_v2"
-                                    and self.current_task_id
-                                ):
-                                    # #region debug-point B:executed-asset-pick
-                                    try:
-                                        import json as _json, urllib.request
-
-                                        _p = ".dbg/wan22-video-output.env"
-                                        _u, _s = (
-                                            "http://127.0.0.1:7777/event",
-                                            "wan22-video-output",
-                                        )
-                                        exec(
-                                            "try:\n with open(_p) as f: c=f.read(); _u=next((l.split('=',1)[1] for l in c.split('\\n') if l.startswith('DEBUG_SERVER_URL=')),_u); _s=next((l.split('=',1)[1] for l in c.split('\\n') if l.startswith('DEBUG_SESSION_ID=')),_s)\nexcept: pass"
-                                        )
-                                        urllib.request.urlopen(
-                                            urllib.request.Request(
-                                                _u,
-                                                data=_json.dumps(
-                                                    {
-                                                        "sessionId": _s,
-                                                        "runId": "pre-fix",
-                                                        "hypothesisId": "B",
-                                                        "location": "workers/comfy_agent/agent_main.py:executed",
-                                                        "msg": "[DEBUG] wan22 executed asset pick",
-                                                        "data": {
-                                                            "task_id": self.current_task_id,
-                                                            "prompt_id": prompt_id,
-                                                            "output_keys": list(output.keys())
-                                                            if isinstance(output, dict)
-                                                            else [],
-                                                            "picked_filename": asset.get(
-                                                                "filename"
-                                                            )
-                                                            if isinstance(asset, dict)
-                                                            else None,
-                                                            "picked_type": asset.get("type")
-                                                            if isinstance(asset, dict)
-                                                            else None,
-                                                            "picked_subfolder": asset.get(
-                                                                "subfolder"
-                                                            )
-                                                            if isinstance(asset, dict)
-                                                            else None,
-                                                        },
-                                                        "ts": __import__("time").time_ns()
-                                                        // 1_000_000,
-                                                    }
-                                                ).encode(),
-                                                headers={
-                                                    "Content-Type": "application/json"
-                                                },
-                                            ),
-                                            timeout=0.35,
-                                        ).read()
-                                    except Exception:
-                                        pass
-                                    # #endregion
-                                if asset and self.current_task_id:
+                                if asset and execution.task_id:
                                     asset_priority = _result_asset_priority(
                                         asset,
-                                        task_type=self.current_task_type,
+                                        task_type=execution.task_type,
                                     )
-                                    if asset_priority >= self.task_result_priority:
-                                        self.task_result = _build_safe_result_object_name(
-                                            self.current_task_id, asset
+                                    if asset_priority >= execution.task_result_priority:
+                                        execution.task_result = _build_safe_result_object_name(
+                                            execution.task_id, asset
                                         )
-                                        self.task_result_priority = asset_priority
+                                        execution.task_result_priority = asset_priority
                                     # Wait for execution completion to finalize upload/report.
 
                             elif msg_type == "execution_error":
@@ -691,8 +691,8 @@ class ComfyAgent:
                                 logger.error(
                                     f"Execution error for prompt {prompt_id}: {error_msg}"
                                 )
-                                self.task_error = error_msg
-                                self.task_completed_event.set()
+                                execution.task_error = error_msg
+                                execution.completed_event.set()
                         except Exception as message_error:
                             logger.warning(
                                 "Failed to parse WS message type=%s: %s",
@@ -770,12 +770,7 @@ class ComfyAgent:
             params = params_str
 
         logger.info(f"Processing task {task_id} of type {task_type}")
-        self.current_task_id = task_id
-        self.current_task_type = task_type
-        self.task_completed_event.clear()
-        self.task_result = None
-        self.task_result_priority = -1
-        self.task_error = None
+        execution = self._start_task_execution(task_id=task_id, task_type=task_type)
         extra_outputs: dict[str, dict[str, Any]] = {}
 
         downloaded_input_paths = []
@@ -801,11 +796,11 @@ class ComfyAgent:
             # 3. Submit to ComfyUI
             client_id = f"agent_{AGENT_ID}"
             await self._wait_for_comfy_ready(operation=f"submitting task {task_id}")
-            self.current_prompt_id = await self.comfy_client.queue_prompt(
+            execution.prompt_id = await self.comfy_client.queue_prompt(
                 patched_workflow, client_id
             )
             logger.info(
-                f"Submitted task {task_id} to ComfyUI, prompt_id: {self.current_prompt_id}"
+                f"Submitted task {task_id} to ComfyUI, prompt_id: {execution.prompt_id}"
             )
 
             await self.report_status(task_id, "running")
@@ -816,7 +811,7 @@ class ComfyAgent:
             # requests can be finalized instead of lingering at running=1%.
             loop = asyncio.get_running_loop()
             deadline = loop.time() + 600.0
-            while not self.task_completed_event.is_set():
+            while not execution.completed_event.is_set():
                 if await self.check_task_cancelled(task_id):
                     logger.info(
                         f"Task {task_id} was cancelled during execution wait."
@@ -833,101 +828,43 @@ class ComfyAgent:
 
                 try:
                     await asyncio.wait_for(
-                        self.task_completed_event.wait(),
+                        execution.completed_event.wait(),
                         timeout=min(2.0, remaining),
                     )
                 except asyncio.TimeoutError:
                     continue
 
-            if self.task_error:
-                raise Exception(self.task_error)
+            if execution.task_error:
+                raise Exception(execution.task_error)
 
-            if not self.task_result:
+            if not execution.task_result:
                 logger.info(
-                    f"Task result not set via WS, checking history for prompt {self.current_prompt_id}"
+                    f"Task result not set via WS, checking history for prompt {execution.prompt_id}"
                 )
                 try:
-                    history = await self.comfy_client.get_history(
-                        self.current_prompt_id
-                    )
+                    history = await self.comfy_client.get_history(execution.prompt_id)
                     history_result = _resolve_history_result_asset(
                         history,
-                        prompt_id=self.current_prompt_id,
-                        task_id=self.current_task_id,
+                        prompt_id=execution.prompt_id,
+                        task_id=execution.task_id,
                         task_type=task_type,
                     )
                     if history_result:
-                        self.task_result = history_result["safe_name"]
-                        self.task_result_priority = _result_asset_priority(
+                        execution.task_result = history_result["safe_name"]
+                        execution.task_result_priority = _result_asset_priority(
                             history_result,
                             task_type=task_type,
                         )
                     extra_outputs = _resolve_history_extra_output_assets(
                         history,
-                        prompt_id=self.current_prompt_id,
-                        task_id=self.current_task_id,
+                        prompt_id=execution.prompt_id,
+                        task_id=execution.task_id,
                         task_type=task_type,
                     )
-                    if task_type == "wan22_video_v2":
-                        # #region debug-point A:history-asset-pick
-                        try:
-                            import json as _json, urllib.request
-
-                            _p = ".dbg/wan22-video-output.env"
-                            _u, _s = (
-                                "http://127.0.0.1:7777/event",
-                                "wan22-video-output",
-                            )
-                            exec(
-                                "try:\n with open(_p) as f: c=f.read(); _u=next((l.split('=',1)[1] for l in c.split('\\n') if l.startswith('DEBUG_SERVER_URL=')),_u); _s=next((l.split('=',1)[1] for l in c.split('\\n') if l.startswith('DEBUG_SESSION_ID=')),_s)\nexcept: pass"
-                            )
-                            urllib.request.urlopen(
-                                urllib.request.Request(
-                                    _u,
-                                    data=_json.dumps(
-                                        {
-                                            "sessionId": _s,
-                                            "runId": "pre-fix",
-                                            "hypothesisId": "A",
-                                            "location": "workers/comfy_agent/agent_main.py:history-fallback",
-                                            "msg": "[DEBUG] wan22 history asset resolution",
-                                            "data": {
-                                                "task_id": self.current_task_id,
-                                                "prompt_id": self.current_prompt_id,
-                                                "history_filename": history_result.get(
-                                                    "filename"
-                                                )
-                                                if isinstance(history_result, dict)
-                                                else None,
-                                                "history_type": history_result.get("type")
-                                                if isinstance(history_result, dict)
-                                                else None,
-                                                "history_subfolder": history_result.get(
-                                                    "subfolder"
-                                                )
-                                                if isinstance(history_result, dict)
-                                                else None,
-                                                "extra_output_keys": list(
-                                                    extra_outputs.keys()
-                                                )
-                                                if isinstance(extra_outputs, dict)
-                                                else [],
-                                            },
-                                            "ts": __import__("time").time_ns()
-                                            // 1_000_000,
-                                        }
-                                    ).encode(),
-                                    headers={"Content-Type": "application/json"},
-                                ),
-                                timeout=0.35,
-                            ).read()
-                        except Exception:
-                            pass
-                        # #endregion
                 except Exception as e:
                     logger.warning(f"Failed to fetch history: {e}")
 
-            if not self.task_result:
+            if not execution.task_result:
                 raise Exception("Task completed but no result path found")
 
             if await self.check_task_cancelled(task_id):
@@ -949,81 +886,26 @@ class ComfyAgent:
                 # 由于前面我们将 result 加上了 task_id 前缀，我们需要回溯原始数据
 
                 # 为了不改变 ComfyUI 的请求逻辑，我们需要从 ComfyUI 的历史记录中重新提取原始 filename 和 subfolder
-                history = await self.comfy_client.get_history(self.current_prompt_id)
+                history = await self.comfy_client.get_history(execution.prompt_id)
                 history_result = _resolve_history_result_asset(
                     history,
-                    prompt_id=self.current_prompt_id,
-                    task_id=self.current_task_id,
+                    prompt_id=execution.prompt_id,
+                    task_id=execution.task_id,
                     task_type=task_type,
                 )
                 extra_outputs = _resolve_history_extra_output_assets(
                     history,
-                    prompt_id=self.current_prompt_id,
-                    task_id=self.current_task_id,
+                    prompt_id=execution.prompt_id,
+                    task_id=execution.task_id,
                     task_type=task_type,
                 )
-                if task_type == "wan22_video_v2":
-                    # #region debug-point C:pre-upload-result
-                    try:
-                        import json as _json, urllib.request
-
-                        _p = ".dbg/wan22-video-output.env"
-                        _u, _s = (
-                            "http://127.0.0.1:7777/event",
-                            "wan22-video-output",
-                        )
-                        exec(
-                            "try:\n with open(_p) as f: c=f.read(); _u=next((l.split('=',1)[1] for l in c.split('\\n') if l.startswith('DEBUG_SERVER_URL=')),_u); _s=next((l.split('=',1)[1] for l in c.split('\\n') if l.startswith('DEBUG_SESSION_ID=')),_s)\nexcept: pass"
-                        )
-                        urllib.request.urlopen(
-                            urllib.request.Request(
-                                _u,
-                                data=_json.dumps(
-                                    {
-                                        "sessionId": _s,
-                                        "runId": "pre-fix",
-                                        "hypothesisId": "C",
-                                        "location": "workers/comfy_agent/agent_main.py:pre-upload",
-                                        "msg": "[DEBUG] wan22 pre-upload result snapshot",
-                                        "data": {
-                                            "task_id": self.current_task_id,
-                                            "task_result": self.task_result,
-                                            "history_filename": history_result.get(
-                                                "filename"
-                                            )
-                                            if isinstance(history_result, dict)
-                                            else None,
-                                            "history_type": history_result.get("type")
-                                            if isinstance(history_result, dict)
-                                            else None,
-                                            "extra_outputs": {
-                                                k: {
-                                                    "filename": v.get("filename"),
-                                                    "type": v.get("type"),
-                                                    "path": v.get("path"),
-                                                }
-                                                for k, v in (extra_outputs or {}).items()
-                                                if isinstance(v, dict)
-                                            },
-                                        },
-                                        "ts": __import__("time").time_ns() // 1_000_000,
-                                    }
-                                ).encode(),
-                                headers={"Content-Type": "application/json"},
-                            ),
-                            timeout=0.35,
-                        ).read()
-                    except Exception:
-                        pass
-                    # #endregion
-
                 if not history_result:
                     raise Exception(
                         "Could not retrieve original filename from ComfyUI history"
                     )
                 if task_type == "wan22_video_v2":
-                    self.task_result = history_result["safe_name"]
-                    self.task_result_priority = _result_asset_priority(
+                    execution.task_result = history_result["safe_name"]
+                    execution.task_result_priority = _result_asset_priority(
                         history_result,
                         task_type=task_type,
                     )
@@ -1054,12 +936,12 @@ class ComfyAgent:
                     content_type = "image/jpeg"
 
                 logger.info(
-                    f"Uploading result {self.task_result} to MinIO bucket {MINIO_RESULT_BUCKET}"
+                    f"Uploading result {execution.task_result} to MinIO bucket {MINIO_RESULT_BUCKET}"
                 )
                 await asyncio.to_thread(
                     self.minio_client.put_object,
                     MINIO_RESULT_BUCKET,
-                    self.task_result,
+                    execution.task_result,
                     io.BytesIO(file_data),
                     len(file_data),
                     content_type=content_type,
@@ -1096,7 +978,7 @@ class ComfyAgent:
             # 6. Report completion
             await self.report_complete(
                 task_id,
-                self.task_result,
+                execution.task_result,
                 extra_outputs=extra_outputs,
             )
             logger.info(f"Task {task_id} completed successfully")
@@ -1105,10 +987,7 @@ class ComfyAgent:
             logger.error(f"Task {task_id} failed: {e}")
             await self.report_status(task_id, "failed", error=str(e))
         finally:
-            self.current_task_id = None
-            self.current_task_type = None
-            self.current_prompt_id = None
-            self.task_result_priority = -1
+            self._clear_task_execution(execution)
             for path in downloaded_input_paths:
                 try:
                     if os.path.exists(path):
@@ -1181,13 +1060,14 @@ class ComfyAgent:
         self.running = False
 
         # If there is a task currently running, report it as failed/interrupted back to master
-        if self.current_task_id:
+        active_execution = self._active_execution
+        if active_execution:
             logger.info(
-                f"Returning task {self.current_task_id} to master due to shutdown"
+                f"Returning task {active_execution.task_id} to master due to shutdown"
             )
             try:
                 await self.report_status(
-                    self.current_task_id,
+                    active_execution.task_id,
                     "failed",
                     error="Agent was shut down while processing the task. Task should be retried.",
                 )
@@ -1195,7 +1075,7 @@ class ComfyAgent:
                 logger.error(f"Failed to report task failure during shutdown: {e}")
 
         # Cancel all running background loops
-        for task in self.tasks:
+        for task in list(getattr(self, "tasks", [])):
             task.cancel()
 
         # Close HTTP clients

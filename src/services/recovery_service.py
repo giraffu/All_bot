@@ -39,7 +39,11 @@ async def _recover_single_task(registry_task_id, task_data, application):
         return
 
     try:
-        recovered = await run_recovered_task(task_data, application)
+        recovered = await run_recovered_task(
+            registry_task_id=registry_task_id,
+            task_data=task_data,
+            application=application,
+        )
         if not recovered:
             await _finalize_recovery_failure(
                 registry_task_id, task_data, application, "❌ 任务恢复失败，已退还灵石"

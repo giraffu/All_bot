@@ -23,6 +23,7 @@ async def test_recover_single_task_success_uses_cleanup_runtime(monkeypatch):
         "_finalize_recovery_failure",
         finalize_failure,
     )
+    application = SimpleNamespace(bot=SimpleNamespace())
 
     await recovery_service._recover_single_task(
         "registry-1",
@@ -31,10 +32,18 @@ async def test_recover_single_task_success_uses_cleanup_runtime(monkeypatch):
             "backend_task_id": "backend-1",
             "username": "tester",
         },
-        SimpleNamespace(bot=SimpleNamespace()),
+        application,
     )
 
-    run_recovered.assert_awaited_once()
+    run_recovered.assert_awaited_once_with(
+        registry_task_id="registry-1",
+        task_data={
+            "user_id": 123,
+            "backend_task_id": "backend-1",
+            "username": "tester",
+        },
+        application=application,
+    )
     cleanup_runtime.assert_awaited_once_with(
         internal_user_id=123,
         registry_task_id="registry-1",
@@ -60,6 +69,7 @@ async def test_recover_single_task_fallback_cleanup_uses_core_helper(monkeypatch
         "_finalize_recovery_failure",
         finalize_failure,
     )
+    application = SimpleNamespace(bot=SimpleNamespace())
 
     await recovery_service._recover_single_task(
         "registry-1",
@@ -67,9 +77,17 @@ async def test_recover_single_task_fallback_cleanup_uses_core_helper(monkeypatch
             "backend_task_id": "backend-1",
             "username": "tester",
         },
-        SimpleNamespace(bot=SimpleNamespace()),
+        application,
     )
 
+    run_recovered.assert_awaited_once_with(
+        registry_task_id="registry-1",
+        task_data={
+            "backend_task_id": "backend-1",
+            "username": "tester",
+        },
+        application=application,
+    )
     cleanup_runtime.assert_awaited_once_with(
         internal_user_id=0,
         registry_task_id="registry-1",
@@ -95,6 +113,7 @@ async def test_recover_single_task_failed_recovery_uses_finalize_helper(monkeypa
         "_finalize_recovery_failure",
         finalize_failure,
     )
+    application = SimpleNamespace(bot=SimpleNamespace())
 
     await recovery_service._recover_single_task(
         "registry-2",
@@ -105,9 +124,20 @@ async def test_recover_single_task_failed_recovery_uses_finalize_helper(monkeypa
             "cost": 5,
             "chat_id": 100,
         },
-        SimpleNamespace(bot=SimpleNamespace()),
+        application,
     )
 
+    run_recovered.assert_awaited_once_with(
+        registry_task_id="registry-2",
+        task_data={
+            "user_id": 456,
+            "backend_task_id": "backend-2",
+            "username": "tester",
+            "cost": 5,
+            "chat_id": 100,
+        },
+        application=application,
+    )
     finalize_failure.assert_awaited_once()
     cleanup_runtime.assert_not_awaited()
 

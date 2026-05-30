@@ -26,6 +26,7 @@ from src.constants import (
 from src.services import task_service_completion as completion_helpers
 from src.services import task_service_finalize as support
 from src.services import task_service_entrypoints_video as video_entrypoints
+from src.services import tg_task_progress_presentation as tg_progress_helpers
 from src.services import tg_task_runtime as tg_runtime_helpers
 from src.services.bot_task_service import TaskService
 
@@ -93,7 +94,13 @@ async def test_handle_task_completion_keeps_success_flow_when_metadata_probe_fai
 @pytest.mark.asyncio
 async def test_handle_task_completion_uses_helper_download_default(monkeypatch):
     download_output = AsyncMock(
-        return_value=(b"image-bytes", "saved-output.png", 768, 1024, None, None)
+        return_value=TaskSuccessPersistenceResult(
+            media_bytes=b"image-bytes",
+            output_file="saved-output.png",
+            width=768,
+            height=1024,
+            duration=None,
+        )
     )
     send_result_media = AsyncMock()
     send_extra_outputs = AsyncMock()
@@ -155,7 +162,13 @@ async def test_handle_task_completion_uses_helper_download_default(monkeypatch):
 @pytest.mark.asyncio
 async def test_handle_task_completion_uses_module_default_completion_helpers(monkeypatch):
     download_output = AsyncMock(
-        return_value=(b"video-bytes", "saved-output.mp4", None, None, 5.0, None)
+        return_value=TaskSuccessPersistenceResult(
+            media_bytes=b"video-bytes",
+            output_file="saved-output.mp4",
+            width=None,
+            height=None,
+            duration=5,
+        )
     )
     send_result_media = AsyncMock()
     send_extra_outputs = AsyncMock()
@@ -227,28 +240,25 @@ async def test_download_and_log_task_output_handles_image_branch(monkeypatch):
         persist_mock,
     )
 
-    media_bytes, output_path, width, height, duration, extra_outputs = (
-        await completion_helpers.download_and_log_task_output(
-            internal_user_id=456,
-            username="tester",
-            prompt="prompt",
-            task_type="image",
-            registry_task_id="registry-2",
-            backend_task_id="backend-2",
-            saved_input_images=["input.png"],
-            is_video=False,
-            allow_contribute=True,
-            billing_resolution="1024",
-            requested_duration=None,
-        )
+    result = await completion_helpers.download_and_log_task_output(
+        internal_user_id=456,
+        username="tester",
+        prompt="prompt",
+        task_type="image",
+        registry_task_id="registry-2",
+        backend_task_id="backend-2",
+        saved_input_images=["input.png"],
+        is_video=False,
+        allow_contribute=True,
+        billing_resolution="1024",
+        requested_duration=None,
     )
-
-    assert media_bytes == b"image-bytes"
-    assert output_path == "saved-output.png"
-    assert width == 768
-    assert height == 1024
-    assert duration is None
-    assert extra_outputs is None
+    assert result.media_bytes == b"image-bytes"
+    assert result.output_file == "saved-output.png"
+    assert result.width == 768
+    assert result.height == 1024
+    assert result.duration is None
+    assert result.extra_outputs is None
     persist_mock.assert_awaited_once()
     kwargs = persist_mock.await_args.kwargs
     assert kwargs["username"] == "tester"
@@ -304,6 +314,15 @@ def test_record_result_message_meta_uses_special_mode_mapping_for_face_swap():
     )
     assert context.bot_data["msg_meta_42"]["prompt"] == "prompt"
     assert context.bot_data["msg_meta_42"]["task_id"] == "task-4"
+
+
+def test_build_pending_status_text_uses_queue_remaining_fallback():
+    text = tg_progress_helpers.build_pending_status_text(
+        info={"status": "pending", "queue_remaining": 3},
+        vip_suffix="",
+    )
+
+    assert text == "⏳ 排队中... (第 3 位)"
 
 
 @pytest.mark.asyncio

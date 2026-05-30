@@ -2,22 +2,17 @@ import asyncio
 import logging
 from collections.abc import Awaitable, Callable
 
-from config import ENABLE_PUBLIC_SHARE
-from src.constants import (
-    MODE_CUSTOM_VIDEO,
-    MODE_EDIT,
-    MODE_FACESWAP_STEP1,
-    MODE_IMAGE_TO_VIDEO,
-    MODE_I2I_PRO,
-    MODE_IMG2IMG_LORA,
-    MODE_LTX_VIDEO,
-    MODE_MASTURBATION,
-    MODE_NAME_MAP,
-    MODE_PENETRATION_STEP1,
-    MODE_UNDRESS,
-    MODE_WAN22_VIDEO_V2,
-)
 from src.i18n.translator import get_text
+from src.services.tg_task_progress_presentation import (
+    build_done_progress_text,
+    build_pending_status_text,
+    build_running_status_text,
+    normalize_pending_queue_position,
+)
+from src.services.tg_task_result_presentation import (
+    build_result_reply_markup,
+    record_result_message_meta,
+)
 from src.utils import (
     robust_delete_message,
     robust_edit_text,
@@ -97,88 +92,6 @@ async def get_or_send_status_message(context, chat_id, status_msg_id, text):
         except Exception:
             pass
     return await robust_send_message(context.bot, chat_id, text)
-
-
-def build_result_reply_markup(task_type, task_id, allow_contribute, reply_markup):
-    allowed_gallery_types = [
-        MODE_I2I_PRO,
-        MODE_EDIT,
-        MODE_CUSTOM_VIDEO,
-        MODE_IMAGE_TO_VIDEO,
-        MODE_LTX_VIDEO,
-        MODE_WAN22_VIDEO_V2,
-        MODE_IMG2IMG_LORA,
-    ]
-    show_gallery_btn = task_type in allowed_gallery_types and allow_contribute
-
-    keyboard = []
-    if show_gallery_btn:
-        keyboard.append(
-            [
-                InlineKeyboardButton(
-                    "🚀 一键投稿至广场",
-                    callback_data=f"submit_gallery_{task_id}",
-                )
-            ]
-        )
-
-    keyboard.append(
-        [
-            InlineKeyboardButton("👍", callback_data="rate_like"),
-            InlineKeyboardButton("👎", callback_data="rate_dislike"),
-        ]
-    )
-
-    if ENABLE_PUBLIC_SHARE:
-        keyboard.insert(
-            0,
-            [InlineKeyboardButton("公开", callback_data="public_share_request")],
-        )
-
-    final_markup = reply_markup or InlineKeyboardMarkup(keyboard)
-    if reply_markup and show_gallery_btn:
-        has_gallery = any(
-            btn.callback_data and btn.callback_data.startswith("submit_gallery_")
-            for row in final_markup.inline_keyboard
-            for btn in row
-        )
-        if not has_gallery:
-            new_keyboard = [list(row) for row in final_markup.inline_keyboard]
-            new_keyboard.insert(
-                0,
-                [
-                    InlineKeyboardButton(
-                        "🚀 一键投稿至广场",
-                        callback_data=f"submit_gallery_{task_id}",
-                    )
-                ],
-            )
-            final_markup = InlineKeyboardMarkup(new_keyboard)
-
-    return final_markup
-
-
-def resolve_result_mode_name(task_type):
-    mode_name = MODE_NAME_MAP.get(task_type, task_type)
-    if task_type == "face_swap":
-        return MODE_NAME_MAP.get(MODE_FACESWAP_STEP1)
-    if task_type == "penetration":
-        return MODE_NAME_MAP.get(MODE_PENETRATION_STEP1)
-    if task_type == "undress":
-        return MODE_NAME_MAP.get(MODE_UNDRESS)
-    if task_type == "masturbation":
-        return MODE_NAME_MAP.get(MODE_MASTURBATION)
-    return mode_name
-
-
-def record_result_message_meta(context, sent_msg, task_type, prompt, task_id):
-    if not sent_msg:
-        return
-    context.bot_data[f"msg_meta_{sent_msg.message_id}"] = {
-        "mode_name": resolve_result_mode_name(task_type),
-        "prompt": prompt,
-        "task_id": task_id,
-    }
 
 
 async def send_result_media(
@@ -331,9 +244,7 @@ async def monitor_task_progress(
         if status == "done":
             final_info = info
             if not is_video and last_progress != 100:
-                await update_status_message(
-                    _translate(lang, "task.status_generating_progress", progress=100)
-                )
+                await update_status_message(build_done_progress_text(lang=lang))
             break
 
         if status in ["error", "failed", "cancelled"]:
@@ -347,20 +258,16 @@ async def monitor_task_progress(
             raise RuntimeError(info.get("error", "Unknown error"))
 
         if status == "pending":
-            raw_pos = info.get("queue_pos")
-            queue_pos = None
-            if raw_pos is not None:
-                try:
-                    queue_pos = int(raw_pos) + 1
-                except (ValueError, TypeError):
-                    queue_pos = raw_pos
-            else:
-                queue_pos = info.get("queue_remaining")
+            queue_pos = normalize_pending_queue_position(info)
 
             if queue_pos is not None:
                 if queue_pos != last_queue_pos or last_status != "pending":
                     if await update_status_message(
-                        f"{_translate(lang, 'task.status_pending_position', queue_pos=queue_pos)}{vip_suffix}",
+                        build_pending_status_text(
+                            info=info,
+                            vip_suffix=vip_suffix,
+                            lang=lang,
+                        ),
                         show_cancel_button=True,
                         parse_mode="Markdown",
                     ):
@@ -369,7 +276,11 @@ async def monitor_task_progress(
             else:
                 if last_status != "pending":
                     if await update_status_message(
-                        f"{_translate(lang, 'task.status_pending')}{vip_suffix}",
+                        build_pending_status_text(
+                            info=info,
+                            vip_suffix=vip_suffix,
+                            lang=lang,
+                        ),
                         show_cancel_button=True,
                         parse_mode="Markdown",
                     ):
@@ -377,10 +288,10 @@ async def monitor_task_progress(
             continue
 
         if progress != last_progress or last_status == "pending":
-            text = (
-                _translate(lang, "task.status_generating_video")
-                if is_video
-                else _translate(lang, "task.status_generating_progress", progress=progress)
+            text = build_running_status_text(
+                is_video=is_video,
+                progress=progress,
+                lang=lang,
             )
             if await update_status_message(text):
                 last_progress = progress

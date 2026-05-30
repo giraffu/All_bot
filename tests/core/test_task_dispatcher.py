@@ -108,6 +108,13 @@ def test_strategy_factory_normalizes_legacy_string_task_types(
     assert strategy.mode == expected_mode
 
 
+def test_strategy_factory_normalizes_legacy_video_alias_into_video_fallback():
+    strategy = StrategyFactory.get_strategy("MODE_IMAGE_TO_VIDEO")
+
+    assert isinstance(strategy, BaseVideoStrategy)
+    assert strategy.mode == MODE_IMAGE_TO_VIDEO
+
+
 def test_video_strategy_cost_calculation():
     strategy = StrategyFactory.get_strategy("doggy_style")
     # Base doggy style cost is 6, 512p multiplier is 1.0, 5s multiplier is 1.0
@@ -131,6 +138,17 @@ def test_base_video_strategy_face_video_upload_paths_accept_step_modes():
     )
 
     assert file_paths == ["face.png", "target.mp4"]
+
+
+def test_wan22_strategy_inherits_default_payload_and_upload_paths():
+    strategy = Wan22VideoV2Strategy()
+    inputs = {"images": ["demo/start.png", "demo/end.png"]}
+
+    assert strategy.build_payload(inputs) is inputs
+    assert strategy.get_file_paths_to_upload(inputs) == [
+        "demo/start.png",
+        "demo/end.png",
+    ]
 
 
 @pytest.mark.asyncio
@@ -167,6 +185,37 @@ async def test_default_image_strategy_normalizes_legacy_lora_mode_before_submit(
 
 
 @pytest.mark.asyncio
+async def test_default_image_strategy_routes_i2i_pro_with_seeded_submission_context(
+    monkeypatch,
+):
+    strategy = DefaultImageStrategy(MODE_I2I_PRO)
+    submit_mock = AsyncMock(return_value="backend-task-id")
+    _patch_dispatch_image_service(
+        monkeypatch,
+        submit_i2i_pro_task=submit_mock,
+    )
+    monkeypatch.setattr("src.core.task_dispatcher._generate_dispatch_seed", lambda: 42)
+
+    result = await strategy.submit_task(
+        "task-1",
+        {
+            "prompt": "clean details",
+            "saved_input_images": ["demo/input.png"],
+        },
+        priority=8,
+    )
+
+    assert result == "backend-task-id"
+    submit_mock.assert_awaited_once_with(
+        "task-1",
+        prompt="clean details",
+        image_path="demo/input.png",
+        seed=42,
+        priority=8,
+    )
+
+
+@pytest.mark.asyncio
 async def test_default_image_strategy_routes_txt2img_to_legacy_t2i_endpoint(
     monkeypatch,
 ):
@@ -190,6 +239,38 @@ async def test_default_image_strategy_routes_txt2img_to_legacy_t2i_endpoint(
     submit_mock.assert_awaited_once_with(
         prompt="moonlit courtyard",
         priority=4,
+    )
+
+
+@pytest.mark.asyncio
+async def test_default_image_strategy_default_branch_uses_submission_context(
+    monkeypatch,
+):
+    strategy = DefaultImageStrategy("unknown_mode")
+    submit_mock = AsyncMock(return_value="backend-task-id")
+    _patch_dispatch_image_service(
+        monkeypatch,
+        submit_task=submit_mock,
+    )
+    monkeypatch.setattr("src.core.task_dispatcher._generate_dispatch_seed", lambda: 99)
+
+    result = await strategy.submit_task(
+        "task-1",
+        {
+            "prompt": "restore style",
+            "saved_input_images": ["demo/input.png"],
+            "negative_prompt": "blur",
+        },
+        priority=3,
+    )
+
+    assert result == "backend-task-id"
+    submit_mock.assert_awaited_once_with(
+        "task-1",
+        prompt="restore style",
+        image_paths=["demo/input.png"],
+        negative_prompt="blur",
+        priority=3,
     )
 
 
@@ -235,6 +316,77 @@ async def test_ltx_video_submit_task_passes_seconds_to_workflow_slider(
 
 
 @pytest.mark.asyncio
+async def test_ltx_video_submit_task_falls_back_to_default_duration_on_invalid_input(
+    monkeypatch,
+):
+    strategy = StrategyFactory.get_strategy("ltx_video")
+    submit_mock = AsyncMock(return_value="backend-task-id")
+    _patch_dispatch_image_service(
+        monkeypatch,
+        submit_ltx_video_task=submit_mock,
+    )
+
+    result = await strategy.submit_task(
+        "task-1",
+        {
+            "resolution": "1280x704",
+            "duration": "oops",
+            "saved_input_images": ["demo/input.png"],
+        },
+        priority=2,
+    )
+
+    assert result == "backend-task-id"
+    submit_mock.assert_awaited_once_with(
+        "task-1",
+        prompt="ltx video",
+        image_path="demo/input.png",
+        lora_name=None,
+        lora_strength=None,
+        lora_items=None,
+        width=1280,
+        height=704,
+        length=5,
+        priority=2,
+    )
+
+
+@pytest.mark.asyncio
+async def test_ltx_video_submit_task_falls_back_to_default_resolution_context(
+    monkeypatch,
+):
+    strategy = StrategyFactory.get_strategy("ltx_video")
+    submit_mock = AsyncMock(return_value="backend-task-id")
+    _patch_dispatch_image_service(
+        monkeypatch,
+        submit_ltx_video_task=submit_mock,
+    )
+
+    result = await strategy.submit_task(
+        "task-1",
+        {
+            "resolution": "bad-resolution",
+            "saved_input_images": ["demo/input.png"],
+        },
+        priority=7,
+    )
+
+    assert result == "backend-task-id"
+    submit_mock.assert_awaited_once_with(
+        "task-1",
+        prompt="ltx video",
+        image_path="demo/input.png",
+        lora_name=None,
+        lora_strength=None,
+        lora_items=None,
+        width=1280,
+        height=704,
+        length=5,
+        priority=7,
+    )
+
+
+@pytest.mark.asyncio
 async def test_ltx_video_submit_task_forwards_optional_lora_context(monkeypatch):
     strategy = StrategyFactory.get_strategy("ltx_video")
     submit_mock = AsyncMock(return_value="backend-task-id")
@@ -268,6 +420,68 @@ async def test_ltx_video_submit_task_forwards_optional_lora_context(monkeypatch)
         height=704,
         length=10,
         priority=5,
+    )
+
+
+@pytest.mark.asyncio
+async def test_base_video_strategy_face_video_coerces_duration_string(monkeypatch):
+    strategy = StrategyFactory.get_strategy("face_video_step1")
+    submit_mock = AsyncMock(return_value="backend-face-video")
+    _patch_dispatch_image_service(
+        monkeypatch,
+        submit_face_video=submit_mock,
+    )
+
+    result = await strategy.submit_task(
+        "task-1",
+        {
+            "duration": "10s",
+            "resolution": "720p",
+            "saved_input_images": ["demo/face.png", "demo/video.mp4"],
+        },
+        priority=4,
+    )
+
+    assert result == "backend-face-video"
+    submit_mock.assert_awaited_once_with(
+        "task-1",
+        face_image_path="demo/face.png",
+        video_path="demo/video.mp4",
+        resolution=720,
+        duration=161,
+        priority=4,
+    )
+
+
+@pytest.mark.asyncio
+async def test_base_video_strategy_edit_branch_uses_default_submission_context(
+    monkeypatch,
+):
+    strategy = StrategyFactory.get_strategy("video_edit")
+    submit_mock = AsyncMock(return_value="backend-edit")
+    _patch_dispatch_image_service(
+        monkeypatch,
+        submit_perfect_video_edit=submit_mock,
+    )
+
+    result = await strategy.submit_task(
+        "task-1",
+        {
+            "duration": "oops",
+            "saved_input_images": ["demo/input.png"],
+        },
+        priority=6,
+    )
+
+    assert result == "backend-edit"
+    submit_mock.assert_awaited_once_with(
+        "task-1",
+        prompt="video",
+        image_path="demo/input.png",
+        priority=6,
+        width=512,
+        height=512,
+        length=81,
     )
 
 
@@ -445,4 +659,40 @@ async def test_wan22_video_v2_submit_task_falls_back_to_i2v_without_end_frame(mo
         extract_last_frame=False,
         length=5,
         priority=1,
+    )
+
+
+@pytest.mark.asyncio
+async def test_wan22_video_v2_submit_task_uses_default_context_when_optional_fields_missing(
+    monkeypatch,
+):
+    strategy = StrategyFactory.get_strategy(MODE_WAN22_VIDEO_V2)
+    submit_mock = AsyncMock(return_value="backend-task-id")
+    _patch_dispatch_image_service(
+        monkeypatch,
+        submit_wan22_video_v2_task=submit_mock,
+    )
+
+    result = await strategy.submit_task(
+        "task-1",
+        {
+            "saved_input_images": ["demo/start.png"],
+        },
+        priority=9,
+    )
+
+    assert result == "backend-task-id"
+    submit_mock.assert_awaited_once_with(
+        "task-1",
+        prompt="wan22 video",
+        image_path="demo/start.png",
+        end_image_path=None,
+        negative_prompt=" ",
+        use_end_frame=False,
+        color_match=False,
+        perfect_loop=False,
+        upscale=False,
+        extract_last_frame=False,
+        length=5,
+        priority=9,
     )

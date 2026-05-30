@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from typing import Any, Dict
 
 from src.constants import (
@@ -46,6 +47,166 @@ def _get_primary_saved_input(inputs: Dict[str, Any]) -> str:
     return saved_images[0] if saved_images else ""
 
 
+def _get_input_prompt(inputs: Dict[str, Any], default: str) -> str:
+    return inputs.get("prompt", default)
+
+
+def _get_input_duration(inputs: Dict[str, Any], default: Any = 5) -> Any:
+    return inputs.get("duration", default)
+
+
+def _coerce_duration_seconds(duration: Any, default: int = 5) -> int:
+    try:
+        return int(str(duration).replace("s", ""))
+    except (TypeError, ValueError):
+        return default
+
+
+def _resolve_face_video_saved_inputs(saved_images: list[str]) -> tuple[str, str]:
+    face_image_path = saved_images[0] if len(saved_images) > 0 else ""
+    target_video_path = saved_images[1] if len(saved_images) > 1 else ""
+    return face_image_path, target_video_path
+
+
+def _resolve_wan22_end_frame(
+    saved_images: list[str], *, use_end_frame_requested: Any
+) -> tuple[bool, str | None]:
+    use_end_frame = bool(use_end_frame_requested) and len(saved_images) > 1
+    end_image_path = saved_images[1] if use_end_frame else None
+    return use_end_frame, end_image_path
+
+
+@dataclass(frozen=True)
+class _VideoSubmissionContext:
+    prompt: str
+    duration: Any
+    requested_duration_seconds: int
+    resolution: int
+    width: int
+    height: int
+    frame_length: int
+    saved_images: list[str]
+    image_path: str
+
+
+@dataclass(frozen=True)
+class _LtxSubmissionContext:
+    prompt: str
+    image_path: str
+    width: int
+    height: int
+    requested_seconds: int
+    lora_items: list[dict[str, Any]] | None
+
+
+@dataclass(frozen=True)
+class _Wan22SubmissionContext:
+    prompt: str
+    image_path: str
+    end_image_path: str | None
+    use_end_frame: bool
+    negative_prompt: str
+    color_match: bool
+    perfect_loop: bool
+    upscale: bool
+    extract_last_frame: bool
+
+
+@dataclass(frozen=True)
+class _DefaultImageSubmissionContext:
+    prompt: Any
+    image_path: str
+    image_paths: list[str]
+    negative_prompt: str
+    lora_name: str
+    lora_strength: float
+    seed: int
+
+
+def _build_video_submission_context(
+    inputs: Dict[str, Any],
+    *,
+    default_prompt: str = "video",
+) -> _VideoSubmissionContext:
+    duration = _get_input_duration(inputs)
+    resolution, width, height = _resolve_video_dimensions(
+        inputs.get("resolution", 512)
+    )
+    saved_images = _get_saved_input_images(inputs)
+    return _VideoSubmissionContext(
+        prompt=_get_input_prompt(inputs, default_prompt),
+        duration=duration,
+        requested_duration_seconds=_coerce_duration_seconds(duration),
+        resolution=resolution,
+        width=width,
+        height=height,
+        frame_length=_resolve_video_frame_length(duration),
+        saved_images=saved_images,
+        image_path=_get_primary_saved_input(inputs),
+    )
+
+
+def _build_ltx_submission_context(inputs: Dict[str, Any]) -> _LtxSubmissionContext:
+    resolution = inputs.get("resolution", 512)
+    res_str = str(resolution)
+    try:
+        width, height = map(int, res_str.split("x"))
+    except Exception:
+        width, height = 1280, 704
+
+    return _LtxSubmissionContext(
+        prompt=_get_input_prompt(inputs, "ltx video"),
+        image_path=_get_primary_saved_input(inputs),
+        width=width,
+        height=height,
+        requested_seconds=_coerce_duration_seconds(_get_input_duration(inputs)),
+        lora_items=normalize_ltx_video_lora_items(
+            inputs.get("lora_items"),
+            max_items=3,
+        )
+        or None,
+    )
+
+
+def _build_wan22_submission_context(inputs: Dict[str, Any]) -> _Wan22SubmissionContext:
+    saved_images = _get_saved_input_images(inputs)
+    use_end_frame, end_image_path = _resolve_wan22_end_frame(
+        saved_images,
+        use_end_frame_requested=inputs.get("use_end_frame"),
+    )
+    return _Wan22SubmissionContext(
+        prompt=_get_input_prompt(inputs, "wan22 video"),
+        image_path=saved_images[0] if saved_images else "",
+        end_image_path=end_image_path,
+        use_end_frame=use_end_frame,
+        negative_prompt=inputs.get("negative_prompt", " "),
+        color_match=bool(inputs.get("color_match")),
+        perfect_loop=bool(inputs.get("perfect_loop")),
+        upscale=bool(inputs.get("upscale")),
+        extract_last_frame=bool(inputs.get("extract_last_frame")),
+    )
+
+
+def _generate_dispatch_seed() -> int:
+    import random
+
+    return random.randint(1, 9007199254740991)
+
+
+def _build_default_image_submission_context(
+    inputs: Dict[str, Any],
+) -> _DefaultImageSubmissionContext:
+    return _DefaultImageSubmissionContext(
+        prompt=inputs.get("prompt"),
+        image_path=_get_primary_saved_input(inputs),
+        image_paths=_get_saved_input_images(inputs),
+        negative_prompt=inputs.get("negative_prompt", " "),
+        lora_name=inputs.get("lora_name", ""),
+        lora_strength=inputs.get("lora_strength", 1.0),
+        seed=_generate_dispatch_seed(),
+    )
+
+
 def _append_lora_metadata(metadata: Dict[str, Any], inputs: Dict[str, Any]) -> Dict[str, Any]:
     lora_items = inputs.get("lora_items")
     if isinstance(lora_items, list) and lora_items:
@@ -59,8 +220,7 @@ def _append_lora_metadata(metadata: Dict[str, Any], inputs: Dict[str, Any]) -> D
 
 
 def _resolve_video_frame_length(duration: Any) -> int:
-    if isinstance(duration, str):
-        duration = int(duration.replace("s", ""))
+    duration = _coerce_duration_seconds(duration)
 
     if duration >= 10:
         return 161
@@ -103,18 +263,18 @@ class BaseTaskStrategy(ABC):
     def get_cost(self, inputs: Dict[str, Any]) -> int:
         pass
 
-    @abstractmethod
     def build_payload(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
-        pass
+        return inputs
 
-    @abstractmethod
     def get_metadata(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
-        pass
+        return _append_lora_metadata(
+            {"saved_inputs": _get_saved_input_images(inputs)},
+            inputs,
+        )
 
-    @abstractmethod
     def get_file_paths_to_upload(self, inputs: Dict[str, Any]) -> list[str]:
         """返回需要上传到 MinIO 的文件路径列表"""
-        pass
+        return inputs.get("images", [])
 
     @abstractmethod
     async def submit_task(
@@ -133,65 +293,48 @@ class DefaultImageStrategy(BaseTaskStrategy):
             return 6 if len(inputs.get("images", [])) >= 2 else 2
         return TASK_COSTS.get(self.mode, 2)
 
-    def build_payload(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
-        return inputs
-
-    def get_metadata(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
-        return _append_lora_metadata(
-            {"saved_inputs": inputs.get("saved_input_images", [])},
-            inputs,
-        )
-
-    def get_file_paths_to_upload(self, inputs: Dict[str, Any]) -> list[str]:
-        return inputs.get("images", [])
-
     async def submit_task(
         self, task_id: str, inputs: Dict[str, Any], priority: int
     ) -> str:
         image_service = _get_dispatch_image_service()
+        submission = _build_default_image_submission_context(inputs)
         if self.mode == MODE_I2I_PRO:
-            import random
-
-            seed = random.randint(1, 9007199254740991)
             return await image_service.submit_i2i_pro_task(
                 task_id,
-                prompt=inputs.get("prompt"),
-                image_path=_get_primary_saved_input(inputs),
-                seed=seed,
+                prompt=submission.prompt,
+                image_path=submission.image_path,
+                seed=submission.seed,
                 priority=priority,
             )
         elif self.mode == MODE_I2I_DRAW:
-            import random
-
-            seed = random.randint(1, 9007199254740991)
             return await image_service.submit_i2i_draw_task(
                 task_id,
-                prompt=inputs.get("prompt"),
-                image_path=_get_primary_saved_input(inputs),
-                seed=seed,
+                prompt=submission.prompt,
+                image_path=submission.image_path,
+                seed=submission.seed,
                 priority=priority,
             )
         elif self.mode == MODE_IMG2IMG_LORA:
             return await image_service.submit_img2img_lora_task(
                 task_id,
-                prompt=inputs.get("prompt"),
-                image_paths=_get_saved_input_images(inputs),
-                lora_name=inputs.get("lora_name", ""),
-                negative_prompt=inputs.get("negative_prompt", " "),
+                prompt=submission.prompt,
+                image_paths=submission.image_paths,
+                lora_name=submission.lora_name,
+                negative_prompt=submission.negative_prompt,
                 priority=priority,
-                lora_strength=inputs.get("lora_strength", 1.0),
+                lora_strength=submission.lora_strength,
             )
         elif self.mode == MODE_TXT2IMG:
             return await image_service.submit_txt2img_task(
-                prompt=inputs.get("prompt"),
+                prompt=submission.prompt,
                 priority=priority,
             )
         else:
             return await image_service.submit_task(
                 task_id,
-                prompt=inputs.get("prompt"),
-                image_paths=_get_saved_input_images(inputs),
-                negative_prompt=inputs.get("negative_prompt", " "),
+                prompt=submission.prompt,
+                image_paths=submission.image_paths,
+                negative_prompt=submission.negative_prompt,
                 priority=priority,
             )
 
@@ -199,15 +342,6 @@ class DefaultImageStrategy(BaseTaskStrategy):
 class FaceSwapStrategy(BaseTaskStrategy):
     def get_cost(self, inputs: Dict[str, Any]) -> int:
         return TASK_COSTS.get(MODE_FACESWAP_STEP1, 6)
-
-    def build_payload(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
-        return inputs
-
-    def get_metadata(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
-        return _append_lora_metadata(
-            {"saved_inputs": _get_saved_input_images(inputs)},
-            inputs,
-        )
 
     def get_file_paths_to_upload(self, inputs: Dict[str, Any]) -> list[str]:
         # 按照原来的逻辑：先是 body_img (target_image)，再是 face_img (face_image)
@@ -259,15 +393,6 @@ class BaseVideoStrategy(BaseTaskStrategy):
         multiplier = DURATION_MULTIPLIER.get(dur_str, 1.0)
         return int(base_cost * multiplier)
 
-    def build_payload(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
-        return inputs
-
-    def get_metadata(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
-        return _append_lora_metadata(
-            {"saved_inputs": _get_saved_input_images(inputs)},
-            inputs,
-        )
-
     def get_file_paths_to_upload(self, inputs: Dict[str, Any]) -> list[str]:
         if self.mode in FACE_VIDEO_TASK_TYPES:
             if "images" in inputs and len(inputs.get("images", [])) >= 2:
@@ -281,69 +406,60 @@ class BaseVideoStrategy(BaseTaskStrategy):
         self, task_id: str, inputs: Dict[str, Any], priority: int
     ) -> str:
         image_service = _get_dispatch_image_service()
-        duration = inputs.get("duration", 5)
-        frame_length = _resolve_video_frame_length(duration)
-        resolution, width, height = _resolve_video_dimensions(
-            inputs.get("resolution", 512)
-        )
-        prompt = inputs.get("prompt", "video")
-        saved_images = _get_saved_input_images(inputs)
-        image_path = _get_primary_saved_input(inputs)
+        submission = _build_video_submission_context(inputs)
 
         if self.mode == "doggy_style":
             return await image_service.submit_perfect_video_insert_task(
                 task_id,
-                prompt=prompt,
-                image_path=image_path,
-                width=width,
-                height=height,
-                length=frame_length,
+                prompt=submission.prompt,
+                image_path=submission.image_path,
+                width=submission.width,
+                height=submission.height,
+                length=submission.frame_length,
                 priority=priority,
             )
         elif self._should_use_image_to_video_lora_endpoint(inputs):
             return await image_service.submit_image_to_video_task(
                 task_id,
-                prompt=prompt,
-                image_path=image_path,
+                prompt=submission.prompt,
+                image_path=submission.image_path,
                 lora_name=inputs.get("lora_name"),
                 priority=priority,
-                width=width,
-                height=height,
-                length=frame_length,
+                width=submission.width,
+                height=submission.height,
+                length=submission.frame_length,
             )
         elif self.mode in FACE_VIDEO_TASK_TYPES:
-            face_img = saved_images[0] if len(saved_images) > 0 else ""
-            video_path = saved_images[1] if len(saved_images) > 1 else ""
-            requested_duration = (
-                int(str(duration).replace("s", ""))
-                if isinstance(duration, str)
-                else duration
+            face_img, video_path = _resolve_face_video_saved_inputs(
+                submission.saved_images
             )
-            dur_frames = 161 if requested_duration >= 10 else 121
+            dur_frames = (
+                161 if submission.requested_duration_seconds >= 10 else 121
+            )
             return await image_service.submit_face_video(
                 task_id,
                 face_image_path=face_img,
                 video_path=video_path,
-                resolution=resolution,
+                resolution=submission.resolution,
                 duration=dur_frames,
                 priority=priority,
             )
         else:
             return await image_service.submit_perfect_video_edit(
                 task_id,
-                prompt=prompt,
-                image_path=image_path,
+                prompt=submission.prompt,
+                image_path=submission.image_path,
                 priority=priority,
-                width=width,
-                height=height,
-                length=frame_length,
+                width=submission.width,
+                height=submission.height,
+                length=submission.frame_length,
             )
 
 
 class LtxVideoStrategy(BaseTaskStrategy):
     def get_cost(self, inputs: Dict[str, Any]) -> int:
         resolution = inputs.get("resolution", 512)
-        duration = inputs.get("duration", 5)
+        duration = _get_input_duration(inputs)
 
         res_str = str(resolution)
         dur_str = f"{duration}s" if isinstance(duration, int) else str(duration)
@@ -353,53 +469,21 @@ class LtxVideoStrategy(BaseTaskStrategy):
         multiplier = LTX_DURATION_MULTIPLIER.get(dur_str, 1.0)
         return int(base_cost * multiplier)
 
-    def build_payload(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
-        return inputs
-
-    def get_metadata(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
-        return _append_lora_metadata(
-            {"saved_inputs": _get_saved_input_images(inputs)},
-            inputs,
-        )
-
-    def get_file_paths_to_upload(self, inputs: Dict[str, Any]) -> list[str]:
-        return inputs.get("images", [])
-
     async def submit_task(
         self, task_id: str, inputs: Dict[str, Any], priority: int
     ) -> str:
         image_service = _get_dispatch_image_service()
-        resolution = inputs.get("resolution", 512)
-        duration = inputs.get("duration", 5)
-
-        res_str = str(resolution)
-        try:
-            width, height = map(int, res_str.split("x"))
-        except Exception:
-            width, height = 1280, 704
-
-        # The LTX workflow expects `length` to be seconds on the mxSlider node,
-        # then converts it to frames internally via `a * 24 + 1`.
-        try:
-            requested_seconds = int(str(duration).replace("s", ""))
-        except (TypeError, ValueError):
-            requested_seconds = 5
-
-        image_path = _get_primary_saved_input(inputs)
-        lora_items = normalize_ltx_video_lora_items(
-            inputs.get("lora_items"),
-            max_items=3,
-        )
+        submission = _build_ltx_submission_context(inputs)
         return await image_service.submit_ltx_video_task(
             task_id,
-            prompt=inputs.get("prompt", "ltx video"),
-            image_path=image_path,
+            prompt=submission.prompt,
+            image_path=submission.image_path,
             lora_name=inputs.get("lora_name"),
             lora_strength=inputs.get("lora_strength"),
-            lora_items=lora_items or None,
-            width=width,
-            height=height,
-            length=requested_seconds,
+            lora_items=submission.lora_items,
+            width=submission.width,
+            height=submission.height,
+            length=submission.requested_seconds,
             priority=priority,
         )
 
@@ -408,42 +492,49 @@ class Wan22VideoV2Strategy(BaseTaskStrategy):
     def get_cost(self, inputs: Dict[str, Any]) -> int:
         return TASK_COSTS.get(MODE_WAN22_VIDEO_V2, 10)
 
-    def build_payload(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
-        return inputs
-
     def get_metadata(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
         return {
             "saved_inputs": _get_saved_input_images(inputs),
             "requested_duration": 5,
         }
 
-    def get_file_paths_to_upload(self, inputs: Dict[str, Any]) -> list[str]:
-        return inputs.get("images", [])
-
     async def submit_task(
         self, task_id: str, inputs: Dict[str, Any], priority: int
     ) -> str:
         image_service = _get_dispatch_image_service()
-        saved_images = _get_saved_input_images(inputs)
-        image_path = saved_images[0] if saved_images else ""
-
-        use_end_frame = bool(inputs.get("use_end_frame")) and len(saved_images) > 1
-        end_image_path = saved_images[1] if use_end_frame else None
+        submission = _build_wan22_submission_context(inputs)
 
         return await image_service.submit_wan22_video_v2_task(
             task_id,
-            prompt=inputs.get("prompt", "wan22 video"),
-            image_path=image_path,
-            end_image_path=end_image_path,
-            negative_prompt=inputs.get("negative_prompt", " "),
-            use_end_frame=use_end_frame,
-            color_match=bool(inputs.get("color_match")),
-            perfect_loop=bool(inputs.get("perfect_loop")),
-            upscale=bool(inputs.get("upscale")),
-            extract_last_frame=bool(inputs.get("extract_last_frame")),
+            prompt=submission.prompt,
+            image_path=submission.image_path,
+            end_image_path=submission.end_image_path,
+            negative_prompt=submission.negative_prompt,
+            use_end_frame=submission.use_end_frame,
+            color_match=submission.color_match,
+            perfect_loop=submission.perfect_loop,
+            upscale=submission.upscale,
+            extract_last_frame=submission.extract_last_frame,
             length=5,
             priority=priority,
         )
+
+
+def _build_default_image_strategy(task_type: str) -> BaseTaskStrategy:
+    return DefaultImageStrategy(task_type)
+
+
+def _build_video_strategy(task_type: str) -> BaseTaskStrategy:
+    return BaseVideoStrategy(task_type)
+
+
+STRATEGY_BUILDERS: dict[str, callable] = {
+    "face_swap": lambda _task_type: FaceSwapStrategy(),
+    "ltx_video": lambda _task_type: LtxVideoStrategy(),
+    MODE_WAN22_VIDEO_V2: lambda _task_type: Wan22VideoV2Strategy(),
+    MODE_I2I_PRO: _build_default_image_strategy,
+    MODE_I2I_DRAW: _build_default_image_strategy,
+}
 
 
 class StrategyFactory:
@@ -452,19 +543,12 @@ class StrategyFactory:
         from src.constants import VIDEO_TASK_TYPES
 
         task_type = _normalize_task_type(task_type)
-
-        if task_type == "face_swap":
-            return FaceSwapStrategy()
-        elif task_type == "ltx_video":
-            return LtxVideoStrategy()
-        elif task_type == MODE_WAN22_VIDEO_V2:
-            return Wan22VideoV2Strategy()
-        elif task_type in VIDEO_TASK_TYPES:
-            return BaseVideoStrategy(task_type)
-        elif task_type in [MODE_I2I_PRO, MODE_I2I_DRAW]:
-            return DefaultImageStrategy(task_type)
-        else:
-            return DefaultImageStrategy(task_type)
+        builder = STRATEGY_BUILDERS.get(task_type)
+        if builder is not None:
+            return builder(task_type)
+        if task_type in VIDEO_TASK_TYPES:
+            return _build_video_strategy(task_type)
+        return _build_default_image_strategy(task_type)
 
 
 async def dispatch_to_worker(

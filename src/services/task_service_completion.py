@@ -145,7 +145,7 @@ async def download_and_log_task_output(
     from src.core.task_core import TaskPersistencePostprocessPlan
     from src.core.task_core_persistence import persist_successful_task_result
 
-    persistence_result = await persist_successful_task_result(
+    return await persist_successful_task_result(
         backend_task_id=backend_task_id,
         registry_task_id=registry_task_id,
         internal_user_id=internal_user_id,
@@ -162,14 +162,54 @@ async def download_and_log_task_output(
             refresh_user_group_after_log=True,
         ),
     )
-    return (
-        persistence_result.media_bytes,
-        persistence_result.output_file,
-        persistence_result.width,
-        persistence_result.height,
-        persistence_result.duration,
-        persistence_result.extra_outputs,
+
+
+async def present_completed_task_result(
+    *,
+    context,
+    chat_id,
+    persistence_result,
+    prompt,
+    task_type,
+    task_id,
+    is_video,
+    send_result,
+    reply_markup,
+    status_msg,
+    delete_status,
+    caption=None,
+    allow_contribute=True,
+    lang: str = "zh",
+):
+    if send_result:
+        await send_result_media(
+            context=context,
+            chat_id=chat_id,
+            media_bytes=persistence_result.media_bytes,
+            is_video=is_video,
+            caption=caption,
+            task_type=task_type,
+            task_id=task_id,
+            allow_contribute=allow_contribute,
+            reply_markup=reply_markup,
+            prompt=prompt,
+            lang=lang,
+        )
+        if task_type == "wan22_video_v2":
+            await send_wan22_video_v2_extra_outputs(
+                context=context,
+                chat_id=chat_id,
+                extra_outputs=persistence_result.extra_outputs,
+                lang=lang,
+            )
+
+    await cleanup_completion_status_message(
+        status_msg=status_msg,
+        delete_status=delete_status,
+        send_result=send_result,
     )
+
+    return persistence_result.media_bytes, persistence_result.output_file
 
 
 async def handle_task_completion(
@@ -194,48 +234,32 @@ async def handle_task_completion(
     requested_duration: Optional[int] = None,
     lang: str = "zh",
 ):
-    media_bytes, full_output_path, _width, _height, _duration, extra_outputs = (
-        await download_and_log_task_output(
-            internal_user_id=internal_user_id,
-            username=user_logger.username,
-            prompt=prompt,
-            task_type=task_type,
-            registry_task_id=registry_task_id,
-            backend_task_id=backend_task_id,
-            saved_input_images=saved_input_images,
-            is_video=is_video,
-            allow_contribute=allow_contribute,
-            billing_resolution=billing_resolution,
-            requested_duration=requested_duration,
-        )
+    persistence_result = await download_and_log_task_output(
+        internal_user_id=internal_user_id,
+        username=user_logger.username,
+        prompt=prompt,
+        task_type=task_type,
+        registry_task_id=registry_task_id,
+        backend_task_id=backend_task_id,
+        saved_input_images=saved_input_images,
+        is_video=is_video,
+        allow_contribute=allow_contribute,
+        billing_resolution=billing_resolution,
+        requested_duration=requested_duration,
     )
-
-    if send_result:
-        await send_result_media(
-            context=context,
-            chat_id=chat_id,
-            media_bytes=media_bytes,
-            is_video=is_video,
-            caption=caption,
-            task_type=task_type,
-            task_id=registry_task_id,
-            allow_contribute=allow_contribute,
-            reply_markup=reply_markup,
-            prompt=prompt,
-            lang=lang,
-        )
-        if task_type == "wan22_video_v2":
-            await send_wan22_video_v2_extra_outputs(
-                context=context,
-                chat_id=chat_id,
-                extra_outputs=extra_outputs,
-                lang=lang,
-            )
-
-    await cleanup_completion_status_message(
+    return await present_completed_task_result(
+        context=context,
+        chat_id=chat_id,
+        persistence_result=persistence_result,
+        prompt=prompt,
+        task_type=task_type,
+        task_id=registry_task_id,
+        is_video=is_video,
+        send_result=send_result,
+        reply_markup=reply_markup,
         status_msg=status_msg,
         delete_status=delete_status,
-        send_result=send_result,
+        caption=caption,
+        allow_contribute=allow_contribute,
+        lang=lang,
     )
-
-    return media_bytes, full_output_path
