@@ -2,7 +2,7 @@ import logging
 
 from fastapi import HTTPException
 
-from src.constants import MODE_VIDEO_LORA
+from src.constants import MODE_VIDEO_LORA, MODE_WAN22_VIDEO_V2
 from src.database.models import History
 from src.web_api.presenters.media_presenter import (
     resolve_gallery_media_urls as presenter_resolve_gallery_media_urls,
@@ -39,6 +39,7 @@ DEFAULT_GALLERY_ALLOWED_TYPE_CONFIGS = [
     ("custom_video", "task.mode_custom_video"),
     (MODE_VIDEO_LORA, "task.mode_video_lora"),
     ("ltx_video", "task.mode_ltx_video"),
+    (MODE_WAN22_VIDEO_V2, "task.mode_wan22_video_v2"),
 ]
 
 APPLY_CONTEXT_ALLOW_INPUT_REUSE_TASK_TYPES = {

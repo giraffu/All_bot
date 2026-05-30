@@ -115,6 +115,10 @@ def test_allowed_web_submit_types_include_txt2img():
     assert "txt2img" in ALLOWED_WEB_SUBMIT_TYPES
 
 
+def test_allowed_web_submit_types_include_wan22_video_v2():
+    assert "wan22_video_v2" in ALLOWED_WEB_SUBMIT_TYPES
+
+
 @pytest.mark.asyncio
 async def test_toggle_like_impl_raises_duplicate_interaction_when_insert_conflicts():
     post = SimpleNamespace(likes_count=0, dislikes_count=0)

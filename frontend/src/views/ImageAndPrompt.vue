@@ -332,13 +332,19 @@ const resetForm = () => {
 
 
 <style scoped>
-:deep(.ant-input), :deep(.ant-input-affix-wrapper) {
+:deep(.ant-input),
+:deep(.ant-input-affix-wrapper),
+:deep(.ant-input-textarea textarea),
+:deep(textarea.ant-input) {
   background-color: var(--theme-card-strong-bg) !important;
   color: var(--theme-text-primary) !important;
   border-color: var(--theme-border) !important;
 }
-:deep(.ant-input::placeholder) {
-  color: var(--theme-text-muted) !important;
+:deep(.ant-input::placeholder),
+:deep(.ant-input-textarea textarea::placeholder),
+:deep(textarea.ant-input::placeholder) {
+  color: var(--theme-text-secondary) !important;
+  opacity: 1 !important;
 }
 :deep(.ant-upload.ant-upload-drag) {
   background: var(--theme-card-strong-bg) !important;

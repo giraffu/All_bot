@@ -60,6 +60,7 @@ bash safe_deploy.sh
 - 测试入口服务维护模式与运行态收口检查
 - 测试数据库迁移
 - 测试 workers / central API / 入口服务重建
+- 测试 Web 静态站发布到边缘 VPS（调用 `frontend/scripts/deploy-edge-test.sh`）
 
 它不会重建正式环境服务；`safe_deploy.sh` 也不会顺带更新测试环境。
 

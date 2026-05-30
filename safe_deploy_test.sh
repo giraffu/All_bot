@@ -105,6 +105,35 @@ wait_for_http_ready() {
     return 1
 }
 
+deploy_test_web_to_edge_vps() {
+    local frontend_dir="$ROOT_DIR/frontend"
+    local edge_test_web_url="${EDGE_TEST_WEB_URL:-https://web-test.aivison.it.com}"
+
+    if [ ! -d "$frontend_dir" ]; then
+        echo "❌ 未找到前端目录: $frontend_dir"
+        return 1
+    fi
+
+    if ! command -v npm >/dev/null 2>&1; then
+        echo "❌ 未找到 npm，无法执行边缘 VPS 测试 Web 发布。"
+        echo "👉 请先安装 Node.js/npm，或手动执行 frontend/scripts/deploy-edge-test.sh。"
+        return 1
+    fi
+
+    if [ ! -f "$frontend_dir/scripts/deploy-edge-test.sh" ]; then
+        echo "❌ 未找到前端边缘测试发布脚本: $frontend_dir/scripts/deploy-edge-test.sh"
+        return 1
+    fi
+
+    echo "8️⃣ 构建并发布测试 Web 静态站到边缘 VPS..."
+    (
+        cd "$frontend_dir"
+        npm run deploy:edge-test
+    )
+    wait_for_http_ready "边缘 VPS 测试 Web" "$edge_test_web_url" 24 5
+    echo "✅ 边缘 VPS 测试 Web 发布完成。"
+}
+
 restart_test_dashboard_frontend_only() {
     echo "🔁 单独重建测试 Dashboard 前端..."
     remove_container_if_exists "dashboard-frontend-test"
@@ -295,12 +324,15 @@ wait_for_http_ready "测试 Dashboard 后端" "http://127.0.0.1:8044/api/health"
 wait_for_http_ready "测试 Dashboard 前端" "http://127.0.0.1:5174" 60 5
 echo "✅ 测试环境服务群重建完成。"
 
+deploy_test_web_to_edge_vps
+
 DEPLOY_SUCCEEDED=1
 
 echo "🎉 测试环境更新与重建已成功完成！"
 echo "ℹ️ 正式 Dashboard 未参与本次部署，继续使用现有生产实例。"
 echo "👉 可执行 'docker logs -f tg-bot-test' 查看测试 Bot 启动日志。"
 echo "👉 可执行 'docker logs -f web-frontend-test' 查看测试前端启动日志。"
+echo "👉 边缘 VPS 测试 Web 默认域名: ${EDGE_TEST_WEB_URL:-https://web-test.aivison.it.com}"
 echo "👉 可执行 'docker logs -f dashboard-backend-test' 查看测试 Dashboard 后端日志。"
 echo "👉 可执行 'docker logs -f dashboard-frontend-test' 查看测试 Dashboard 前端日志。"
 echo "👉 测试前端默认监听 5173 端口，可通过 http://<宿主机IP>:5173 访问。"

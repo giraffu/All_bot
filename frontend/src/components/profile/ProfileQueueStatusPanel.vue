@@ -24,6 +24,10 @@ const { t } = useI18n()
 const queueByTypeEntries = computed(() =>
   Object.entries(props.queueStatus.data.queue_by_type || {})
 )
+
+const isQueueActive = computed(() =>
+  props.queueStatus.data.comfy_online || props.queueStatus.data.queue_size > 0
+)
 </script>
 
 <template>
@@ -46,13 +50,13 @@ const queueByTypeEntries = computed(() =>
 
         <div
           class="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border"
-          :class="queueStatus.data.comfy_online ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 'bg-rose-500/10 text-rose-400 border-rose-500/20'"
+          :class="isQueueActive ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 'bg-rose-500/10 text-rose-400 border-rose-500/20'"
         >
           <div
             class="w-1.5 h-1.5 rounded-full"
-            :class="queueStatus.data.comfy_online ? 'bg-emerald-400 animate-pulse shadow-[0_0_5px_rgba(16,185,129,0.8)]' : 'bg-rose-400'"
+            :class="isQueueActive ? 'bg-emerald-400 animate-pulse shadow-[0_0_5px_rgba(16,185,129,0.8)]' : 'bg-rose-400'"
           />
-          {{ queueStatus.data.comfy_online ? t('profile.online', '运行中') : t('profile.offline', '休息中') }}
+          {{ isQueueActive ? t('profile.online', '运行中') : t('profile.offline', '休息中') }}
         </div>
       </div>
     </div>

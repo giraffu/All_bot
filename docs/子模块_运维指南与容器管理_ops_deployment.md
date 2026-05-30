@@ -18,8 +18,9 @@
   - 重建 central api
   - 重建主服务群
   - 重建 dashboard
+  - 发布测试 Web 静态站到边缘 VPS
 - `safe_deploy.sh` 到此结束，不会顺带重建测试环境。
-- 若仅更新隔离测试栈，可执行 `bash safe_deploy_test.sh`；它只处理 `.env.test`、测试数据库迁移、测试 workers、测试 central api 与测试入口服务，不会重建生产服务，也不会重建正式 Dashboard。
+- 若仅更新隔离测试栈，可执行 `bash safe_deploy_test.sh`；它会处理 `.env.test`、测试数据库迁移、测试 workers、测试 central api、测试入口服务，以及 `frontend/scripts/deploy-edge-test.sh` 对应的边缘 VPS 测试站静态资源发布；不会重建生产服务，也不会重建正式 Dashboard。
 
 ## 2.1 当前默认发布策略
 - AI 在功能研发期间默认只能更新隔离测试环境，不得主动执行生产部署。
@@ -44,6 +45,7 @@
 - 若启用隔离测试栈，应使用独立的 `.env.test`、`backend/docker-compose-test.yml` 与 `workers/docker-compose-test.yml`，并让测试入口服务指向独立的 Central API 端口与独立 Redis 队列。
 - 隔离测试栈的最低要求是：测试 Bot/Web/Payment 使用测试库，Central API 使用独立 Redis DB 作为队列，测试 workers 连接测试 Central API；否则仍会与正式环境共用任务调度面。
 - `workers/docker-compose-test.yml` 中的 `${...}` 插值不会读取 `env_file: ../.env.test` 的值；重建测试 worker 时若宿主 shell 未显式导出 `AGENT_SECRET_TOKEN`、`MINIO_BUCKET`、`MINIO_RESULT_BUCKET`，compose 会退回默认值，可能导致 401 或写错桶。
+- `safe_deploy_test.sh` 里的测试 Web VPS 发布依赖宿主机可执行 `npm`，并通过 `frontend/scripts/deploy-edge-test.sh` 使用 SSH/SCP 把 `build:edge-test` 产物同步到边缘 VPS；若私钥缺失、`npm` 未安装或边缘域名不可达，脚本会中止而不是假装发布成功。
 
 ## 5. 常见问题与恢复约束
 - MinIO 503 / 上传假死

@@ -4,7 +4,7 @@ import json
 import re
 from typing import TYPE_CHECKING, Any, Callable
 
-from src.constants import MODE_IMAGE_TO_VIDEO, MODE_NAME_MAP
+from src.constants import MODE_IMAGE_TO_VIDEO, MODE_NAME_MAP, MODE_WAN22_VIDEO_V2
 from src.gallery_core_dependencies import (
     GallerySubmissionDependencies,
     get_default_gallery_submission_dependencies,
@@ -25,6 +25,7 @@ ALLOWED_WEB_SUBMIT_TYPES = list(
             "custom_video",
             MODE_IMAGE_TO_VIDEO,
             "ltx_video",
+            MODE_WAN22_VIDEO_V2,
             "edit",
             "img2img_lora",
         ]

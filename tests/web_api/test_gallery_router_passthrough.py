@@ -42,6 +42,10 @@ def test_default_gallery_allowed_type_configs_include_txt2img():
     assert ("txt2img", "task.mode_txt2img") in DEFAULT_GALLERY_ALLOWED_TYPE_CONFIGS
 
 
+def test_default_gallery_allowed_type_configs_include_wan22_video_v2():
+    assert ("wan22_video_v2", "task.mode_wan22_video_v2") in DEFAULT_GALLERY_ALLOWED_TYPE_CONFIGS
+
+
 @pytest.mark.asyncio
 async def test_submit_gallery_post_payload_extracts_request_dimensions():
     process_submit = AsyncMock(return_value={"status": "success"})

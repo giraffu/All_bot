@@ -4,7 +4,8 @@ import logging
 from src.core.task_core_default_dependencies import (
     build_default_task_core_process_dependencies,
 )
-from src.core.task_core_types import CoreDomainError, TaskCoreProcessDependencies
+from src.core.task_core_dependencies import TaskCoreProcessDependencies
+from src.core.task_core_types import CoreDomainError
 
 logger = logging.getLogger("src.core.task_core")
 
