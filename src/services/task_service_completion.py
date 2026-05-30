@@ -12,6 +12,7 @@ from src.services.tg_task_runtime import (
     cleanup_completion_status_message,
     monitor_task_progress,
     send_result_media,
+    send_wan22_video_v2_extra_outputs,
 )
 
 
@@ -167,6 +168,7 @@ async def download_and_log_task_output(
         persistence_result.width,
         persistence_result.height,
         persistence_result.duration,
+        persistence_result.extra_outputs,
     )
 
 
@@ -192,7 +194,7 @@ async def handle_task_completion(
     requested_duration: Optional[int] = None,
     lang: str = "zh",
 ):
-    media_bytes, full_output_path, _width, _height, _duration = (
+    media_bytes, full_output_path, _width, _height, _duration, extra_outputs = (
         await download_and_log_task_output(
             internal_user_id=internal_user_id,
             username=user_logger.username,
@@ -222,6 +224,13 @@ async def handle_task_completion(
             prompt=prompt,
             lang=lang,
         )
+        if task_type == "wan22_video_v2":
+            await send_wan22_video_v2_extra_outputs(
+                context=context,
+                chat_id=chat_id,
+                extra_outputs=extra_outputs,
+                lang=lang,
+            )
 
     await cleanup_completion_status_message(
         status_msg=status_msg,

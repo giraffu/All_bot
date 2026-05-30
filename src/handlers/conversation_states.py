@@ -46,6 +46,17 @@ class ImageToVideoState(IntEnum):
     WAIT_SETTINGS_AND_PROMPT = auto()
 
 
+class Wan22VideoV2State(IntEnum):
+    """图生视频 v2 流程状态枚举"""
+
+    WAIT_START_IMAGE = auto()
+    WAIT_END_FRAME_CHOICE = auto()
+    WAIT_END_IMAGE = auto()
+    WAIT_PROMPT = auto()
+    WAIT_NEGATIVE_PROMPT = auto()
+    WAIT_SETTINGS = auto()
+
+
 class Txt2ImgState(IntEnum):
     """文生图流程状态枚举"""
 

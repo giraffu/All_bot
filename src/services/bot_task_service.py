@@ -17,12 +17,14 @@ from src.constants import (
     MODE_IMAGE_TO_VIDEO,
     MODE_PERFECT_VIDEO_INSERT,
     MODE_UNDRESS_TONGUE,
+    MODE_WAN22_VIDEO_V2,
 )
 from src.services.task_service_cleanup import cleanup_task_files
 from src.services.task_service_entrypoints_generation import (
     process_generation_task as process_generation_task_impl,
     process_i2i_pro_task as process_i2i_pro_task_impl,
     process_image_to_video_task as process_image_to_video_task_impl,
+    process_wan22_video_v2_task as process_wan22_video_v2_task_impl,
 )
 from src.services.task_service_entrypoints_specialized import (
     process_face_video_task as process_face_video_task_impl,
@@ -174,6 +176,54 @@ async def process_image_to_video_task(
         reply_markup=reply_markup,
         lora_name=lora_name,
         lora_strength=lora_strength,
+        allow_contribute=allow_contribute,
+        source_post_id=source_post_id,
+    )
+
+
+async def process_wan22_video_v2_task(
+    context: ContextTypes.DEFAULT_TYPE,
+    chat_id: int,
+    user_id: int,
+    username: str,
+    prompt: str,
+    negative_prompt: str,
+    images: list[str],
+    use_end_frame: bool,
+    color_match: bool,
+    perfect_loop: bool,
+    upscale: bool,
+    extract_last_frame: bool,
+    status_msg_id: int = None,
+    delete_status: bool = True,
+    task_type: str = MODE_WAN22_VIDEO_V2,
+    cleanup: bool = True,
+    send_result: bool = True,
+    deduct_quota: bool = True,
+    reply_markup: InlineKeyboardMarkup = None,
+    allow_contribute: bool = True,
+    source_post_id: Optional[int] = None,
+) -> Tuple[Optional[bytes], Optional[str]]:
+    return await process_wan22_video_v2_task_impl(
+        context=context,
+        chat_id=chat_id,
+        user_id=user_id,
+        username=username,
+        prompt=prompt,
+        negative_prompt=negative_prompt,
+        images=images,
+        use_end_frame=use_end_frame,
+        color_match=color_match,
+        perfect_loop=perfect_loop,
+        upscale=upscale,
+        extract_last_frame=extract_last_frame,
+        status_msg_id=status_msg_id,
+        delete_status=delete_status,
+        task_type=task_type,
+        cleanup=cleanup,
+        send_result=send_result,
+        deduct_quota=deduct_quota,
+        reply_markup=reply_markup,
         allow_contribute=allow_contribute,
         source_post_id=source_post_id,
     )
@@ -348,6 +398,7 @@ class TaskService:
     process_face_video_task = staticmethod(process_face_video_task)
     process_generation_task = staticmethod(process_generation_task)
     process_image_to_video_task = staticmethod(process_image_to_video_task)
+    process_wan22_video_v2_task = staticmethod(process_wan22_video_v2_task)
     process_blowjob_task = staticmethod(process_blowjob_task)
     process_undress_tongue_task = staticmethod(process_undress_tongue_task)
     process_doggy_style_task = staticmethod(process_doggy_style_task)
@@ -371,6 +422,7 @@ __all__ = [
     "process_generation_task",
     "process_i2i_pro_task",
     "process_image_to_video_task",
+    "process_wan22_video_v2_task",
     "process_ltx_video_task",
     "process_perfect_video_insert_task",
     "process_video_task_template",

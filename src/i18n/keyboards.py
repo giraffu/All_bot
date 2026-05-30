@@ -33,6 +33,7 @@ def get_main_menu_keyboard(lang: str) -> ReplyKeyboardMarkup:
         [
             get_text("menu.video_lora", lang),
             get_text("menu.ltx_video", lang),
+            get_text("menu.wan22_video_v2", lang),
         ],
     ]
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)

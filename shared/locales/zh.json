@@ -41,6 +41,7 @@
     "video_lora": "🎬 图生视频",
     "custom_video": "🎬 图生视频",
     "ltx_video": "🎬 高级图生视频",
+    "wan22_video_v2": "🎬 图生视频v2",
     "cancel": "取消",
     "exit": "退出",
     "main_menu": "🏠 主菜单",
@@ -135,6 +136,7 @@
     "face_swap": "快速换脸",
     "video_insert": "视频生成",
     "video_lora": "图生视频",
+    "wan22_video_v2": "图生视频v2",
     "face_video": "视频换脸"
   },
   "api": {
@@ -612,6 +614,31 @@
       "confirm_text": "📝 **您的提示词**:\n`{prompt}`\n\n确认无误后请点击【确定生成】。",
       "missing_image_resend": "⚠️ 任务状态已过期，请重新发送图片和提示词。",
       "submit": "🚀 正在提交高级视频任务，预计消耗 {cost} 灵石，请耐心等待..."
+    },
+    "wan22_video_v2": {
+      "start": "🎬 **已进入 图生视频v2 模式**。\n\n【第一步】请发送 1 张起始帧图片。\n\n随后你可以选择是否继续上传终止帧，并填写正负提示词与生成开关。\n\n随时可以发送 /cancel 退出流程。",
+      "end_frame_choice": "【第二步】是否启用首尾帧模式？\n\n- 关闭：仅使用起始帧生成\n- 开启：还需要再上传 1 张终止帧",
+      "enable_end_frame": "开启首尾帧",
+      "disable_end_frame": "单图生成",
+      "send_end_image": "✅ 已开启首尾帧模式。\n\n【第三步】请发送 1 张终止帧图片。",
+      "single_frame_confirmed": "✅ 已切换为单图模式。",
+      "end_image_received": "✅ 已收到终止帧。",
+      "send_prompt": "【下一步】请发送**正面提示词**。",
+      "send_negative_prompt": "【下一步】请发送**负面提示词**。\n\n如果没有负面提示词，可以点击下方按钮跳过。",
+      "skip_negative_prompt": "跳过负面提示词",
+      "toggle_color_match": "色彩匹配",
+      "toggle_perfect_loop": "无缝循环",
+      "toggle_upscale": "快速 2x",
+      "toggle_extract_last_frame": "提取尾帧",
+      "submit_button": "开始生成",
+      "status_yes": "开启",
+      "status_no": "关闭",
+      "no_negative_prompt": "无",
+      "settings_text": "🎬 **图生视频v2 设置确认**\n\n- 首尾帧模式：{use_end_frame}\n- 终止帧就绪：{end_frame_ready}\n- 色彩匹配：{color_match}\n- 无缝循环：{perfect_loop}\n- 快速 2x：{upscale}\n- 提取尾帧：{extract_last_frame}\n- 固定时长：{duration}\n- 预计消耗：{cost} 灵石\n\n**正面提示词**\n`{prompt}`\n\n**负面提示词**\n`{negative_prompt}`\n\n可通过下方按钮继续调整开关，确认后点击“开始生成”。",
+      "missing_end_image": "已开启首尾帧模式，请先上传终止帧图片。",
+      "submitting": "🚀 正在提交图生视频v2任务 (消耗 {cost} 灵石)，请耐心等待...",
+      "expired_alert": "交互已失效或任务已提交，请重新开始",
+      "tail_frame_caption": "🖼️ 已附带返回尾帧图片"
     },
     "quick_image": {
       "undress_start": "💃 **已切换到【快速脱衣】模式** (消耗 {cost} 灵石)。\n\n请发送一张包含人物的图片，我将自动处理。\n\n随时可以发送 /cancel 退出流程。",

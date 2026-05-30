@@ -21,6 +21,7 @@ from src.constants import (
     MODE_FACESWAP_STEP1,
     MODE_IMAGE_TO_VIDEO,
     MODE_NAME_MAP,
+    MODE_WAN22_VIDEO_V2,
 )
 from src.services import task_service_completion as completion_helpers
 from src.services import task_service_finalize as support
@@ -92,9 +93,10 @@ async def test_handle_task_completion_keeps_success_flow_when_metadata_probe_fai
 @pytest.mark.asyncio
 async def test_handle_task_completion_uses_helper_download_default(monkeypatch):
     download_output = AsyncMock(
-        return_value=(b"image-bytes", "saved-output.png", 768, 1024, None)
+        return_value=(b"image-bytes", "saved-output.png", 768, 1024, None, None)
     )
     send_result_media = AsyncMock()
+    send_extra_outputs = AsyncMock()
     cleanup_status = AsyncMock()
     monkeypatch.setattr(
         "src.services.task_service_completion.download_and_log_task_output",
@@ -103,6 +105,10 @@ async def test_handle_task_completion_uses_helper_download_default(monkeypatch):
     monkeypatch.setattr(
         "src.services.task_service_completion.send_result_media",
         send_result_media,
+    )
+    monkeypatch.setattr(
+        "src.services.task_service_completion.send_wan22_video_v2_extra_outputs",
+        send_extra_outputs,
     )
     monkeypatch.setattr(
         "src.services.task_service_completion.cleanup_completion_status_message",
@@ -137,6 +143,7 @@ async def test_handle_task_completion_uses_helper_download_default(monkeypatch):
     assert download_output.await_args.kwargs["registry_task_id"] == "registry-seam"
     assert download_output.await_args.kwargs["backend_task_id"] == "backend-seam"
     send_result_media.assert_awaited_once()
+    send_extra_outputs.assert_not_awaited()
     assert send_result_media.await_args.kwargs["task_id"] == "registry-seam"
     cleanup_status.assert_awaited_once_with(
         status_msg=status_msg,
@@ -148,9 +155,10 @@ async def test_handle_task_completion_uses_helper_download_default(monkeypatch):
 @pytest.mark.asyncio
 async def test_handle_task_completion_uses_module_default_completion_helpers(monkeypatch):
     download_output = AsyncMock(
-        return_value=(b"video-bytes", "saved-output.mp4", None, None, 5.0)
+        return_value=(b"video-bytes", "saved-output.mp4", None, None, 5.0, None)
     )
     send_result_media = AsyncMock()
+    send_extra_outputs = AsyncMock()
     cleanup_status = AsyncMock()
     monkeypatch.setattr(
         "src.services.task_service_completion.download_and_log_task_output",
@@ -159,6 +167,10 @@ async def test_handle_task_completion_uses_module_default_completion_helpers(mon
     monkeypatch.setattr(
         "src.services.task_service_completion.send_result_media",
         send_result_media,
+    )
+    monkeypatch.setattr(
+        "src.services.task_service_completion.send_wan22_video_v2_extra_outputs",
+        send_extra_outputs,
     )
     monkeypatch.setattr(
         "src.services.task_service_completion.cleanup_completion_status_message",
@@ -191,6 +203,7 @@ async def test_handle_task_completion_uses_module_default_completion_helpers(mon
     assert output_path == "saved-output.mp4"
     download_output.assert_awaited_once()
     send_result_media.assert_awaited_once()
+    send_extra_outputs.assert_not_awaited()
     cleanup_status.assert_awaited_once_with(
         status_msg=status_msg,
         delete_status=True,
@@ -214,7 +227,7 @@ async def test_download_and_log_task_output_handles_image_branch(monkeypatch):
         persist_mock,
     )
 
-    media_bytes, output_path, width, height, duration = (
+    media_bytes, output_path, width, height, duration, extra_outputs = (
         await completion_helpers.download_and_log_task_output(
             internal_user_id=456,
             username="tester",
@@ -235,6 +248,7 @@ async def test_download_and_log_task_output_handles_image_branch(monkeypatch):
     assert width == 768
     assert height == 1024
     assert duration is None
+    assert extra_outputs is None
     persist_mock.assert_awaited_once()
     kwargs = persist_mock.await_args.kwargs
     assert kwargs["username"] == "tester"
@@ -259,6 +273,18 @@ def test_build_result_reply_markup_injects_gallery_button_when_missing():
 
     first_row = final_markup.inline_keyboard[0]
     assert first_row[0].callback_data == "submit_gallery_task-3"
+
+
+def test_build_result_reply_markup_supports_wan22_video_v2_gallery_button():
+    final_markup = tg_runtime_helpers.build_result_reply_markup(
+        task_type=MODE_WAN22_VIDEO_V2,
+        task_id="task-wan22",
+        allow_contribute=True,
+        reply_markup=None,
+    )
+
+    first_row = final_markup.inline_keyboard[0]
+    assert first_row[0].callback_data == "submit_gallery_task-wan22"
 
 
 def test_record_result_message_meta_uses_special_mode_mapping_for_face_swap():
@@ -310,6 +336,35 @@ async def test_send_result_media_uses_photo_sender_and_records_meta(monkeypatch)
     assert kwargs["photo"] == b"image-bytes"
     assert kwargs["caption"] == "✅ 图片生成完成"
     assert context.bot_data["msg_meta_99"]["task_id"] == "task-5"
+
+
+@pytest.mark.asyncio
+async def test_send_wan22_video_v2_extra_outputs_downloads_last_frame(monkeypatch):
+    send_photo = AsyncMock(return_value="photo-msg")
+    monkeypatch.setattr("src.services.tg_task_runtime.robust_send_photo", send_photo)
+    monkeypatch.setattr(
+        "src.services.storage.storage.get_file_bytes",
+        MagicMock(return_value=b"last-frame-bytes"),
+    )
+
+    context = SimpleNamespace(bot=MagicMock(), bot_data={})
+
+    result = await tg_runtime_helpers.send_wan22_video_v2_extra_outputs(
+        context=context,
+        chat_id=123,
+        extra_outputs={
+            "last_frame": {
+                "path": "bot-data/result/demo_last_frame.png",
+                "media_type": "image",
+            }
+        },
+    )
+
+    assert result == "photo-msg"
+    send_photo.assert_awaited_once()
+    kwargs = send_photo.await_args.kwargs
+    assert kwargs["photo"] == b"last-frame-bytes"
+    assert "尾帧" in kwargs["caption"]
 
 
 @pytest.mark.asyncio
@@ -1064,6 +1119,54 @@ async def test_process_generation_task_delegates_video_modes_to_image_to_video_e
         allow_contribute=True,
         source_post_id=None,
     )
+
+
+@pytest.mark.asyncio
+async def test_process_wan22_video_v2_task_builds_expected_inputs(monkeypatch):
+    captured_flow = {}
+
+    async def fake_run_bot_task_application(*, flow):
+        captured_flow["flow"] = flow
+        return (b"video-bytes", "task-wan22")
+
+    monkeypatch.setattr(
+        "src.services.task_service_entrypoints_generation.resolve_internal_user_id",
+        AsyncMock(return_value=456),
+    )
+    monkeypatch.setattr(
+        "src.services.task_service_entrypoints_generation.get_acceleration_notice",
+        AsyncMock(return_value=""),
+    )
+    monkeypatch.setattr(
+        "src.services.task_service_entrypoints_generation.run_bot_task_application",
+        fake_run_bot_task_application,
+    )
+
+    context = SimpleNamespace(user_data={}, bot=MagicMock(), t=lambda key, **kwargs: key)
+    result = await TaskService.process_wan22_video_v2_task(
+        context=context,
+        chat_id=123,
+        user_id=789,
+        username="tester",
+        prompt="positive",
+        negative_prompt="negative",
+        images=["start.png", "end.png"],
+        use_end_frame=True,
+        color_match=True,
+        perfect_loop=False,
+        upscale=True,
+        extract_last_frame=True,
+        cleanup=False,
+    )
+
+    assert result == (b"video-bytes", "task-wan22")
+    flow = captured_flow["flow"]
+    assert flow.request.task_type == MODE_WAN22_VIDEO_V2
+    assert flow.request.inputs["images"] == ["start.png", "end.png"]
+    assert flow.request.inputs["negative_prompt"] == "negative"
+    assert flow.request.inputs["use_end_frame"] is True
+    assert flow.request.inputs["upscale"] is True
+    assert flow.billing.requested_duration == 5
 
 
 @pytest.mark.asyncio

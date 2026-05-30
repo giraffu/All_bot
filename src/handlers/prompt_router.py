@@ -52,6 +52,7 @@ def build_global_menu_filter():
         "menu.video_lora",  # 🎬 图生视频
         "menu.custom_video",  # 🎬 图生视频(兼容入口)
         "menu.ltx_video",  # 🎬 高级图生视频
+        "menu.wan22_video_v2",  # 🎬 图生视频v2
         # 图片编辑子菜单 FSM 入口
         "menu.photo_edit_undress",
         "menu.photo_edit_faceswap",

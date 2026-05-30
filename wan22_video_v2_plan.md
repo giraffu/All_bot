@@ -17,7 +17,22 @@
 
 ## 2. 先决结论
 
-- 当前 API 工作流已经明确支持：
+### 2.1 当前状态总览
+
+- 状态：`wan22_video_v2` 主链已完成并已同步到当前仓库
+- 已落地范围：
+  - Web 独立入口与独立页面
+  - `/api/tasks/generate` 提交主链接入
+  - backend 简单任务路由与请求模型
+  - worker workflow patch 与 API 工作流接线
+  - 主视频 + 尾帧辅助输出聚合
+  - `History.extra_outputs` 持久化
+  - `/tasks/result` 与历史接口透出 `extra_outputs`
+  - Web 详情页与生成结果页显示尾帧
+
+### 2.2 已验证结论
+
+- 当前 API 工作流已经支持并已接入：
   - 正面提示词
   - 负面提示词
   - 起始帧
@@ -25,17 +40,26 @@
   - I2V / FLF2V 切换
   - color match
   - perfect loop
+  - upscale（快速 2x）
+  - extract_last_frame
   - 固定 5s
-- 当前 API 工作流对 `upscale=快速2x` 的支持，按节点拓扑判断可接，但必须在接入前做一次 API 实跑验证。
-- 当前 API 工作流对 `extract_last_frame` 不能直接判定为“已可接入”。
-  - UI 原工作流有该开关。
-  - 当前 API 导出文件里只看到 `SaveImage` 节点，没有看到稳定、完整的尾帧开关与连线语义。
-  - 因此必须先做一轮工作流重导出或节点确认，再进入编码。
-- 即使工作流最终能同时产出 `mp4 + png`，现有系统结果链路也只支持“单主结果”：
-  - `workers/comfy_agent/agent_main.py` 当前只选第一个输出资源
-  - `src/database/models.py` 的 `History` 只有 `output_file`
-  - `src/web_api/services/task_result_service.py` 当前只返回一个 `result_url`
-  - 因此 `extract_last_frame=true` 不能只改 workflow，必须同时改结果聚合和历史展示协议
+- 原先关于 `upscale` 与 `extract_last_frame` 的两个前置阻塞，现已解除：
+  - `upscale` 已确认可由当前 API 工作流稳定控制
+  - `extract_last_frame` 已确认可在 API 工作流中稳定产出，并已进入结果聚合链路
+- 结果协议已不再是“单主结果”：
+  - `workers/comfy_agent/agent_main.py` 已对 `wan22_video_v2` 强制主结果优先选 `videos`
+  - `src/database/models.py` 的 `History` 已新增 `extra_outputs`
+  - `src/web_api/services/task_result_service.py` 已返回 `extra_outputs`
+  - `frontend/src/components/TaskDetailModal.vue` 与 `frontend/src/views/Wan22VideoV2.vue` 已支持尾帧展示 / 下载
+
+### 2.3 与原计划不同的真实实现
+
+- `wan22_video_v2` 在 worker 侧的布尔控制，并非继续依赖 UI 工作流里的 `DaSiWa_NodeStatusSwitch enabled = !bool` 方式。
+- 当前真实实现是：
+  - 在 `workflow_patcher.py` 中移除一批 UI-only 的 `DaSiWa_NodeStatusSwitch` / preview 节点
+  - 直接重连 API 执行图，按用户开关改写最终使用的 frames 分支
+  - 对 `extract_last_frame` 直接重建尾帧提取支路，而不是依赖 UI 导出残留 gate
+- 因此，下文凡是仍写着“待确认”“接入前验证”“建议 patch enabled = !bool”的地方，都应以“当前真实实现”优先。
 
 ## 3. 推荐对外契约
 
@@ -115,11 +139,11 @@
 
 | 字段 | 推荐类型 | 用户语义 | 当前 API 节点 | 建议 patch 点 | 极性说明 | 备注 |
 | --- | --- | --- | --- | --- | --- | --- |
-| `use_end_frame` | `bool` | `false=I2V`，`true=FLF2V` | `2557 -> 2613` | 写 `2557.inputs.value = !use_end_frame` | 非直觉 | `2557` 当前默认 `true`，而 `2613` 标题为 `I2V - FLF2V switch` |
-| `color_match` | `bool` | 是否启用色彩匹配 | `2615 -> 2614` | 写 `2615.inputs.enabled = !color_match` | 反向 | `2615` 是 `DaSiWa_NodeStatusSwitch`，当前导出呈现为“默认旁路关闭功能” |
-| `perfect_loop` | `bool` | 是否启用完美循环 | `2584 -> 2542/2543/2541/2558/2574` | 写 `2584.inputs.enabled = !perfect_loop` | 反向 | 控制 loop 裁剪、补帧、拼装分支 |
-| `upscale` | `bool` | 是否启用“快速 2x” | `2573 -> 2563/2564/2565/2575` | 写 `2573.inputs.enabled = !upscale` | 反向 | 按拓扑判断该组节点即“快速 2x”链路，接入前要实跑验证 |
-| `extract_last_frame` | `bool` | 是否同时输出最后一帧图片 | `待补全` | `待补全` | `待确认` | UI 原工作流有该功能，但当前 API 导出未保留为稳定可接形态 |
+| `use_end_frame` | `bool` | `false=I2V`，`true=FLF2V` | `2557 -> 2613` | 实际仍写 `2557.inputs.value = !use_end_frame` | 非直觉 | 已落地并有单测；当未提供 `end_image` 时会自动回退 I2V |
+| `color_match` | `bool` | 是否启用色彩匹配 | `2614 / 2612` | 实际通过改写下游 `clip_frames` / `video_frames_ref` 引用来切换 | 非直接布尔写入 | 当前实现不再依赖 `2615.enabled`，而是移除 UI-only switch 后直接重连分支 |
+| `perfect_loop` | `bool` | 是否启用完美循环 | `2542/2574` 分支 | 实际通过 `video_frames_ref = ["2574", 0] or decoded_frames_ref` 切换 | 非直接布尔写入 | 当前实现不再依赖 `2584.enabled` |
+| `upscale` | `bool` | 是否启用“快速 2x” | `2563/2575` 分支 | 实际通过 `final_frames_ref = ["2575", 0] or video_frames_ref` 切换 | 非直接布尔写入 | 已完成 API 实跑验证并落地 |
+| `extract_last_frame` | `bool` | 是否同时输出最后一帧图片 | `2700 -> 2503` | `true` 时重建尾帧提取支路，`false` 时移除 `2503/2700` | 已确认 | 当前实现稳定，不再是“待补全” |
 
 ### 4.3 功能分支节点
 
@@ -131,34 +155,39 @@
 | 色彩匹配 | `2614` | `ColorTransfer` |
 | 完美循环链路 | `2542`、`2543`、`2541`、`2558`、`2574` | Loop 预处理、时序分析、插帧、组帧 |
 | 主视频输出 | `28` | `VHS_VideoCombine` |
-| 尾帧输出 | `2503` | `SaveImage`，但当前 API 文件内连线不可信，需重导出确认 |
+| 尾帧输出 | `2503` | `SaveImage`，现已通过 `2700 -> 2503` 支路稳定接入 |
 
 ## 5. 布尔极性红线
 
-以下节点不是普通布尔开关，而是 `DaSiWa_NodeStatusSwitch`：
+### 5.1 原始风险判断
+
+以下节点在 UI 工作流中属于 `DaSiWa_NodeStatusSwitch`：
 
 - `2573`
 - `2584`
 - `2615`
 
-当前 API 导出表现是：
+原始判断没有问题：它们在 UI 导出形态下很可能遵循 `enabled = true => bypass` 的反向语义。
 
-- `enabled = true`
-- `trigger_on = "true → active"`
-- `action = "bypass"`
+### 5.2 当前真实处理方式
 
-这意味着它们极大概率遵循以下语义：
+- 当前已落地实现没有继续在 API 运行图里依赖这些 UI-only switch。
+- `workflow_patcher.py` 的真实策略是：
+  - 直接移除这批 UI-only switch
+  - 直接改写最终视频帧引用链
+  - 让 `color_match`、`perfect_loop`、`upscale` 变成“分支重连”而不是“反向 enabled patch”
+- 因此，这里的红线需要调整为：
+  - 若未来再次依赖 UI 导出的 `DaSiWa_NodeStatusSwitch`，必须重新验证其极性
+  - 但在当前已提交实现里，主逻辑不再依赖这套极性
 
-- `enabled = true`：触发 bypass，功能关闭
-- `enabled = false`：不 bypass，功能开启
+### 5.3 当前测试覆盖
 
-所以 worker patch 层不能把用户布尔值原样写入，必须做反向转换：
-
-```text
-node.inputs.enabled = !user_bool
-```
-
-这部分必须加单测，不能靠肉眼判断。
+- `tests/workers/test_workflow_patcher.py` 已覆盖：
+  - `use_end_frame` 切换
+  - `color_match` 分支切换
+  - `perfect_loop` 分支切换
+  - `upscale` 分支切换
+  - `extract_last_frame` 开关不会破坏主视频输出
 
 ## 6. `extract_last_frame` 的正式要求
 
@@ -173,27 +202,27 @@ node.inputs.enabled = !user_bool
 
 ### 6.2 当前系统缺口
 
-现状是单输出协议：
+原始缺口已补齐，当前现状如下：
 
 - `workers/comfy_agent/agent_main.py`
-  - `RESULT_ASSET_KEYS = ("images", "gifs", "videos")`
-  - `_pick_first_output_asset(...)` 只取第一个资源
+  - 已对 `wan22_video_v2` 强制主结果优先取 `videos`
+  - 已新增尾帧辅助输出收集与上传逻辑
 - `src/database/models.py`
-  - `History` 只有 `output_file`
+  - `History` 已新增 `extra_outputs = Column(JSON, nullable=True)`
+- `migrations/versions/f2b4c6d8e9f0_add_extra_outputs_to_history.py`
+  - Alembic 迁移已存在
 - `src/web_api/services/task_result_service.py`
-  - 仅返回单个 `result_url`
+  - 已返回 `extra_outputs`
 - `src/web_api/schemas/user_schema.py`
-  - `HistoryItem` 仅暴露 `output_file` / `output_file_url`
+  - `HistoryItem` 已暴露 `extra_outputs`
 - `frontend/src/components/TaskDetailModal.vue`
-  - 仅渲染单个视频或单张图片
+  - 已渲染尾帧预览与下载按钮
 
-### 6.3 推荐协议
-
-建议新增“附加输出”字段，而不是覆盖主视频：
+### 6.3 当前已采用协议
 
 - `History.output_file`：继续存主视频
-- 新增 `History.extra_outputs_json` 或等价字段
-- 内容建议：
+- `History.extra_outputs`：保存附加输出
+- 当前数据结构与原建议一致，等价于此前提议的 `extra_outputs_json`：
 
 ```json
 {
@@ -204,13 +233,12 @@ node.inputs.enabled = !user_bool
 }
 ```
 
-### 6.4 结果优先级规则
+### 6.4 当前结果优先级规则
 
-对 `wan22_video_v2` 强制规定：
-
-- 主结果优先选 `videos`
-- 尾帧作为辅助结果收集进 `extra_outputs_json`
-- 绝对不能因为 `SaveImage` 比 `VideoCombine` 先被遍历到，就把整次任务识别成图片任务
+- 对 `wan22_video_v2` 已强制规定：
+  - 主结果优先选 `videos`
+  - 尾帧作为辅助结果收集进 `extra_outputs`
+  - 绝不会因为 `SaveImage` 先被遍历到，就把整次任务识别成图片任务
 
 ## 7. `upscale=快速 2x` 的正式要求
 
@@ -223,22 +251,22 @@ node.inputs.enabled = !user_bool
 
 因此本期不要把 `upscale` 设计成枚举，也不要做三选一；先收口成一个简单布尔。
 
-但编码前必须完成以下验证：
+当前状态：
 
-- 在 ComfyUI 本地用当前 API 工作流实跑一次
-- 验证 `2573` 这一组目标节点是否真的控制了快速 2x
-- 若验证失败，必须重新导出 API 工作流，确保快速 2x 的 gate 在 API 文件中可稳定访问
+- 上述验证已完成
+- 当前提交版本已按 API 图真实可用分支接入
+- 现实现不再依赖 `2573.enabled = !upscale` 这种 UI gate patch，而是直接切换最终输出帧链路
 
 ## 8. Phase 0：工作流预处理清单
 
-在进入代码开发前，先完成以下工作流层面的清理：
+状态：已完成。
 
-- 重新导出 `WAN 2.2 i2v -AiO.json`，确保是 API Format，而不是 UI Format
-- 清空模板里残留的示例图片名
-- 清空模板里残留的示例正负提示词
-- 确认 `extract_last_frame` 的 gate 在 API 文件中存在且可 patch
-- 确认 `upscale fast 2x` 的 gate 在 API 文件中存在且可 patch
-- 记录所有最终节点 ID，冻结为实现契约
+当前代码侧已反映以下结果：
+
+- `workers/comfy_agent/workflows/WAN 2.2 i2v -AiO.json` 已作为正式 API 运行文件接入
+- `workers/comfy_agent/workflows/mappings.json` 已冻结关键字段映射
+- `workflow_patcher.py` 已基于真实 API 可执行图完成 patch 逻辑
+- `extract_last_frame` 与 `upscale` 都已有稳定实现与测试覆盖
 
 建议导出后保留一份对照：
 
@@ -254,15 +282,18 @@ node.inputs.enabled = !user_bool
 #### 必改
 
 - `frontend/src/views/CustomFeatures.vue`
-  - 新增 `wan22_video_v2` 能力入口
-  - 卡片文案建议与 `ltx_video` 区分，避免用户误解
+  - 状态：已完成
+  - 已新增 `wan22_video_v2` 能力入口
+  - 卡片文案已与 `ltx_video` 区分
 - `frontend/src/router/index.ts`
-  - 方案 A：新增独立页面路由，例如 `Wan22VideoV2`
-  - 方案 B：复用现有 `SingleImageToVideo`，但会导致页面逻辑过于分叉，不推荐
+  - 状态：已完成
+  - 已采用方案 A，新增独立页面路由 `Wan22VideoV2`
 - 新增独立页面，建议文件：
   - `frontend/src/views/Wan22VideoV2.vue`
-  - 理由：当前 `SingleImageToVideo.vue` 只支持单图上传，不适合硬塞双图、负面词和多开关
+  - 状态：已完成
+  - 当前已实际落地为独立页面
 - 页面交互要求：
+  - 状态：已完成
   - 起始帧上传卡
   - 终止帧上传卡，可选
   - 正面提示词输入
@@ -272,66 +303,74 @@ node.inputs.enabled = !user_bool
   - `perfect_loop` 开关
   - `upscale` 开关
   - `extract_last_frame` 开关
-  - 时长只展示固定 `5 秒`，不允许修改
+  - 时长固定展示 `5 秒`
 
 #### 推荐复用或扩展
 
 - `frontend/src/features/generation/buildGenerationTaskPayload.ts`
-  - 如继续复用统一 payload builder，需要扩充：
-    - `negativePrompt`
-    - `boolean toggles`
-    - `images` 支持 2 张语义
+  - 状态：已完成
+  - 已支持 `negativePrompt`
+  - 已支持 `extraInputs` 布尔开关透传
+  - 已支持 `images` 双图语义
 - `frontend/src/features/generation/imageToVideo.ts`
-  - 新增任务类型识别
-  - 不要把 `wan22_video_v2` 折叠成 `custom_video`
+  - 状态：无需强依赖该文件完成主链；当前独立页已直接提交 `wan22_video_v2`
 - `frontend/src/composables/useTaskFormat.ts`
-  - 增加类型标签中文名
+  - 状态：已完成
+  - 已增加类型标签名
 - `frontend/src/utils/galleryTaskTypeFilters.ts`
-  - 若希望归到图生视频分组，需要增加 grouped alias
+  - 状态：本次提交未见专项改动，仍属可选优化项
 - `frontend/src/components/TaskDetailModal.vue`
-  - 支持展示辅助尾帧入口
+  - 状态：已完成
+  - 已支持展示与下载辅助尾帧
 
 #### 文案
 
 - `shared/locales/zh.json`
 - `shared/locales/en.json`
 
-至少补：
+状态：部分完成。
 
-- 新功能标题
-- 描述文案
-- 表单字段名
-- 开关提示文案
-- 尾帧说明文案
+- 已补：
+  - 新功能标题
+  - 功能描述文案
+  - 类型标签名
+- 仍可继续优化：
+  - 表单字段名 i18n
+  - 开关提示文案 i18n
+  - 尾帧说明文案 i18n
 
 ### 9.2 Core / 提交编排
 
 #### 必改
 
 - `src/constants.py`
-  - 新增 `MODE_WAN22_VIDEO_V2 = "wan22_video_v2"`
-  - 补 `MODE_NAME_MAP`
-  - 补 `TASK_COSTS`
-  - 补 `GENERATION_TASK_TYPES`
-  - 补 `VIDEO_TASK_TYPES`
+  - 状态：已完成
+  - 已新增 `MODE_WAN22_VIDEO_V2 = "wan22_video_v2"`
+  - 已补 `MODE_NAME_MAP`
+  - 已补 `TASK_COSTS`
+  - 已补 `GENERATION_TASK_TYPES`
+  - 已补 `VIDEO_TASK_TYPES`
 - `src/core/task_dispatcher.py`
-  - 新增 `Wan22VideoV2Strategy`
-  - 负责：
-    - 从 `inputs.images` 拆 `image` / `end_image`
-    - 归一化负面词
-    - 固定 `length = 5`
-    - 把布尔字段透传到执行面
+  - 状态：已完成
+  - 已新增 `Wan22VideoV2Strategy`
+  - 已从 `saved_input_images` 拆 `image` / `end_image`
+  - 已归一化负面词
+  - 已固定 `length = 5`
+  - 已透传所有布尔字段
+  - 已实现 `end_image` 缺失时自动回退 I2V
 - `src/services/image_service.py`
-  - 新增 `submit_wan22_video_v2_task(...)`
+  - 状态：已完成
+  - 已新增 `submit_wan22_video_v2_task(...)`
 - `src/api_client.py`
-  - 新增 `submit_wan22_video_v2(...)`
-  - 新增新执行面 endpoint 常量
+  - 状态：已完成
+  - 已新增 `submit_wan22_video_v2(...)`
+  - 已接入新执行面 endpoint 常量
 
 #### 推荐单测
 
 - `tests/core/test_task_dispatcher.py`
-  - 覆盖：
-    - 单图时 `use_end_frame=false`
+  - 状态：已完成
+  - 已覆盖：
     - 双图时 `use_end_frame=true`
     - `end_image` 缺失时自动回退 I2V
     - 固定 `length=5`
@@ -342,71 +381,63 @@ node.inputs.enabled = !user_bool
 #### 必改
 
 - `backend/app/models.py`
-  - 新增：
+  - 状态：已完成
+  - 已新增：
     - `TaskType.WAN22_VIDEO_V2`
     - `Wan22VideoV2Request`
-  - 字段至少包括：
-    - `task_id`
-    - `image`
-    - `end_image: Optional[str]`
-    - `prompt`
-    - `negative_prompt: Optional[str]`
-    - `use_end_frame: bool`
-    - `color_match: bool`
-    - `perfect_loop: bool`
-    - `upscale: bool`
-    - `extract_last_frame: bool`
-    - `length: int = 5`
-    - `priority: int = 0`
+  - 请求字段已齐全
 - `backend/app/main_simple_task_routes.py`
-  - 新增 `SIMPLE_TASK_TYPE_MAP` 映射
-  - 新增路由，例如：
-    - `/api/v1/wan22_video_v2`
+  - 状态：已完成
+  - 已新增 `SIMPLE_TASK_TYPE_MAP` 映射
+  - 已新增路由 `/api/v1/wan22_video_v2`
 - `backend/app/queue_manager.py`
-  - 确认新 `TaskType` 能正常入队、出队和统计
+  - 状态：主链已通
+  - 当前未见针对 `wan22_video_v2` 的专项分支改动，但由于 queue manager 按通用任务类型入队，现有主链已可正常工作
 
 #### 推荐单测
 
 - `tests/backend/test_queue_manager.py`
-  - 覆盖新任务类型排队与分发
+  - 状态：未见新增专项覆盖，仍可补充
+- `tests/backend/test_main_helpers.py`
+  - 状态：已新增路由映射与注册层面的覆盖
 
 ### 9.4 Worker / Workflow
 
 #### 必改
 
 - `src/workflow_mapping_validation.py`
-  - 新增：
-    - `"wan22_video_v2": "WAN 2.2 i2v -AiO.json"`
+  - 状态：已完成
+  - 已新增 `"wan22_video_v2": "WAN 2.2 i2v -AiO.json"`
 - `workers/comfy_agent/workflows/mappings.json`
-  - 补直连映射：
-    - `image -> 23.image`
-    - `end_image -> 24.image`
-    - `prompt -> 2368.value`
-    - `negative_prompt -> 2371.value`
-    - `length -> 2586.value`
-  - 不建议把布尔复杂逻辑全部塞进纯 mapping，布尔仍由 patcher 接管
+  - 状态：已完成
+  - 关键直连映射已补齐
+  - 布尔复杂逻辑仍由 patcher 接管
 - `workers/comfy_agent/workflow_patcher.py`
-  - 新增 `elif task_type == "wan22_video_v2":`
-  - 负责：
-    - 写 prompt / negative prompt
-    - 写起始帧 / 终止帧
+  - 状态：已完成
+  - 已新增 `elif task_type == "wan22_video_v2":`
+  - 已实现：
+    - prompt / negative prompt 写入
+    - 起始帧 / 终止帧写入
     - 固定 `length = 5`
-    - `use_end_frame -> 2557.value = !use_end_frame`
-    - `color_match -> 2615.enabled = !color_match`
-    - `perfect_loop -> 2584.enabled = !perfect_loop`
-    - `upscale -> 2573.enabled = !upscale`
-    - `extract_last_frame` 的最终节点 patch，前提是完成 API 重导出确认
-    - 为输出节点写唯一 `filename_prefix`
+    - `use_end_frame` 切换
+    - `color_match` 分支切换
+    - `perfect_loop` 分支切换
+    - `upscale` 分支切换
+    - `extract_last_frame` 支路重建与关闭时裁剪
+    - 输出节点唯一 `filename_prefix`
+  - 真实实现以“移除 UI-only switch + 直接重连 API 图”为主
 
 #### 强制单测
 
 - `tests/workers/test_workflow_patcher.py`
-  - 覆盖：
+  - 状态：已完成
+  - 已覆盖：
     - I2V / FLF2V 切换
-    - color match 极性
-    - perfect loop 极性
-    - upscale 极性
-    - `extract_last_frame` 打开时不会破坏主视频输出
+    - color match 分支切换
+    - perfect loop 分支切换
+    - upscale 分支切换
+    - `extract_last_frame` 打开与关闭时的行为
+    - 输出文件前缀与尾帧分支裁剪
 
 ### 9.5 Worker 结果聚合
 
@@ -415,14 +446,10 @@ node.inputs.enabled = !user_bool
 #### 必改
 
 - `workers/comfy_agent/agent_main.py`
-  - 为 `wan22_video_v2` 增加“多输出聚合”逻辑
-  - 不能继续复用 `_pick_first_output_asset(...)` 的单结果策略
-  - 新逻辑建议：
-    - 主结果优先取 `videos`
-    - 如果存在尾帧图片，则作为辅助输出一起上传
-    - 上传后返回：
-      - 主视频路径
-      - 尾帧路径
+  - 状态：已完成
+  - 已为 `wan22_video_v2` 增加多输出聚合逻辑
+  - 已对 `wan22_video_v2` 设定主结果优先选 `videos`
+  - 已将尾帧作为辅助输出上传并回传
 
 #### 推荐实现方式
 
@@ -442,49 +469,63 @@ node.inputs.enabled = !user_bool
   - 只上报主视频，把尾帧直接丢弃
   - 这会违背本期需求
 
+当前状态：已采用方案 A。
+
 ### 9.6 历史持久化与结果协议
 
 #### 必改
 
 - `src/database/models.py`
-  - `History` 需新增可选字段，例如：
-    - `extra_outputs_json = Column(Text, nullable=True)`
-  - 需要 Alembic 迁移
+  - 状态：已完成
+  - 实际实现为 `extra_outputs = Column(JSON, nullable=True)`
+  - Alembic 迁移已补
 - `src/web_api/services/task_result_service.py`
-  - 返回值需补：
-    - `extra_outputs`
+  - 状态：已完成
+  - 已返回 `extra_outputs`
 - `src/web_api/schemas/task_schema.py`
-  - `TaskResultResponse` 需扩展：
-    - `extra_outputs: Optional[dict]`
+  - 状态：已完成
+  - `TaskResultResponse` 已扩展 `extra_outputs`
 - `src/web_api/services/history_response_builder.py`
-  - `HistoryItem` 需透传辅助输出
+  - 状态：已完成
+  - 已透传辅助输出
 - `src/web_api/schemas/user_schema.py`
-  - `HistoryItem` 新增：
-    - `extra_outputs`
+  - 状态：已完成
+  - `HistoryItem` 已新增 `extra_outputs`
 - `src/web_api/services/apply_context_service.py`
-  - 若未来允许模板应用该能力，需要定义是否将 `use_end_frame/color_match/perfect_loop/upscale` 一起回填
+  - 状态：本次未见专项改动，仍属后续扩展项
 
 #### 推荐单测
 
 - `tests/web_api/test_tasks_result.py`
 - `tests/web_api/test_history_response_builder.py`
 
-重点覆盖：
+状态：部分完成。
 
-- `wan22_video_v2` 主结果是视频
-- 辅助结果包含尾帧图片
-- 无尾帧时 `extra_outputs` 为空
+- `tests/web_api/test_tasks_result.py` 已覆盖：
+  - `wan22_video_v2` 主结果是视频
+  - 辅助结果包含尾帧图片
+- `tests/web_api/test_history_response_builder.py`
+  - 当前未在本次同步清单中确认到专项新增覆盖，可继续补强
 
 ### 9.7 前端结果与历史展示
 
 #### 必改
 
 - `frontend/src/components/TaskDetailModal.vue`
-  - 在主视频预览之外，增加“尾帧预览 / 下载”区块
+  - 状态：已完成
+  - 已增加“尾帧预览 / 下载”区块
 - `frontend/src/views/History.vue`
-  - 如需要在列表卡片上标识“含尾帧”，可新增小标签
+  - 状态：未完成 / 非主链阻塞
+  - 当前未见“含尾帧”列表标签
 - `frontend/src/composables/useTaskResult.ts`
-  - 扩展结果数据结构，支持辅助输出
+  - 状态：已完成
+  - 结果数据结构已支持辅助输出
+- `frontend/src/stores/taskResultState.ts`
+  - 状态：已完成
+  - 已支持 `extra_outputs` 结果恢复与轮询收口
+- `frontend/src/stores/tasksRuntime.ts`
+  - 状态：已完成
+  - 已支持 `extraOutputs` 持久化恢复
 
 #### 推荐展示规则
 
@@ -493,6 +534,8 @@ node.inputs.enabled = !user_bool
   - 展示缩略图
   - 提供单独下载按钮
 - 不要把尾帧替代主视频封面逻辑，除非未来产品明确要求
+
+当前状态：已按该规则实现。
 
 ## 10. 必改文件 Top 20
 
@@ -543,27 +586,32 @@ node.inputs.enabled = !user_bool
 - 开关 payload 正确
 - 详情页正确展示主视频和尾帧
 
+当前状态补充：
+
+- `tests/core/test_task_dispatcher.py`：已覆盖核心提交归一化
+- `tests/workers/test_workflow_patcher.py`：已覆盖 worker 关键 patch 行为
+- `tests/web_api/test_tasks_result.py`：已覆盖主结果 + 尾帧协议
+- 前端状态层相关测试文件已在上次提交中同步，但页面级交互测试仍可继续补
+
 ## 12. 实施顺序建议
 
-按风险从高到低建议分 6 步：
+该实施顺序对应的主线工作已基本完成。
 
-1. 先重导出并冻结 `WAN 2.2` API 工作流
-2. 完成 worker patch 与本地单测
-3. 完成执行面和 task_dispatcher 接线
-4. 完成结果聚合与历史协议扩展
-5. 完成前端页面与结果展示
-6. 补回归测试和文案
+当前剩余更像“收尾优化项”：
+
+1. 补 `History.vue` 的“含尾帧”列表标签（如仍需要）
+2. 评估 `apply_context_service.py` 是否要回填 `wan22_video_v2` 专属开关
+3. 继续补页面级前端交互测试与 i18n 细化
 
 ## 13. 当前最关键阻塞
 
-在真正编码前，必须先解决这两个阻塞：
+原先两个关键阻塞均已解除：
 
-- 阻塞 1：确认 `extract_last_frame` 在 API 工作流中的稳定 gate 和连线
-- 阻塞 2：确认 `upscale` 对应的 API 节点确实是“快速 2x”而不是别的缩放链
+- 阻塞 1：`extract_last_frame` 在 API 工作流中的稳定支路与连线，已确认并已落地
+- 阻塞 2：`upscale` 对应的“快速 2x”链路，已确认并已落地
 
-如果这两个阻塞没有解决，直接编码会导致：
+当前不再属于“编码前阻塞”，而是“后续可选优化项”：
 
-- 开关逻辑反向
-- 尾帧开关失效
-- 主视频被尾帧覆盖
-- 结果页拿错资源
+- 优化 1：历史列表页是否增加“含尾帧”标签
+- 优化 2：`apply_context_service.py` 是否支持回填 `wan22_video_v2` 专属参数
+- 优化 3：继续补全前端页面级自动化测试与文案国际化
