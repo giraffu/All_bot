@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import { Waterfall } from 'vue-waterfall-plugin-next'
+import 'vue-waterfall-plugin-next/dist/style.css'
 import { message } from 'ant-design-vue'
 import { useI18n } from 'vue-i18n'
 import {
@@ -38,6 +40,12 @@ const props = withDefaults(
 const { isMobile } = useViewport()
 const { t } = useI18n()
 const layoutContentRef = useMainLayoutContentRef()
+const waterfallBreakpoints = {
+  99999: { rowPerView: 5 },
+  1024: { rowPerView: 4 },
+  768: { rowPerView: 3 },
+  640: { rowPerView: 2 },
+}
 const size = ref(20)
 const {
   posts,
@@ -242,69 +250,76 @@ watch(
       </StickyHeaderSection>
     </template>
 
-    <div class="columns-2 sm:columns-3 md:columns-4 lg:columns-5 gap-3 sm:gap-6 space-y-3 sm:space-y-6">
-      <GalleryMediaCard
-        v-for="post in posts"
-        :key="post.id"
-        :item="post"
-        class="break-inside-avoid"
-        media-container-class="relative w-full overflow-hidden bg-slate-500 aspect-auto min-h-[100px]"
-        image-class="w-full h-auto object-cover transition-opacity duration-300"
-        overlay-visibility-class="opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity duration-300"
-        @card-click="openDetail(post)"
-        @image-error="handleImageError($event, post)"
-      >
-        <template #play-overlay>
-          <div class="w-12 h-12 bg-black/50 backdrop-blur-md rounded-full flex items-center justify-center border border-white/20 shadow-lg">
-            <Video :size="24" class="text-white" />
-          </div>
-        </template>
-        <template #top-left>
-          <div class="absolute top-2 left-2 flex items-center gap-2">
-            <div
-              class="bg-black/60 backdrop-blur-sm rounded-full px-2 py-1 shadow-sm border border-white/10 text-xs font-bold"
-              :class="post.is_active ? 'text-green-400' : 'text-orange-400'"
-            >
-              {{ post.is_active ? t('my_posts.on_shelf') : t('my_posts.off_shelf') }}
+    <Waterfall
+      :list="posts"
+      row-key="id"
+      :breakpoints="waterfallBreakpoints"
+      :gutter="isMobile ? 12 : 24"
+      :animation-duration="400"
+      background-color="transparent"
+      :has-around-gutter="false"
+    >
+      <template #default="{ item: post }">
+        <GalleryMediaCard
+          :item="post"
+          media-container-class="relative w-full overflow-hidden bg-slate-500 aspect-auto min-h-[100px]"
+          :media-container-style="post.width && post.height ? { aspectRatio: `${post.width}/${post.height}` } : { aspectRatio: '1/1' }"
+          overlay-visibility-class="opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity duration-300"
+          @card-click="openDetail(post)"
+          @image-error="handleImageError($event, post)"
+        >
+          <template #play-overlay>
+            <div class="w-12 h-12 bg-black/50 backdrop-blur-md rounded-full flex items-center justify-center border border-white/20 shadow-lg">
+              <Video :size="24" class="text-white" />
             </div>
-          </div>
-        </template>
-        <template #overlay>
-          <div class="flex flex-col justify-between h-full">
-            <div class="flex justify-end gap-2">
-              <button
-                @click.stop="toggleStatus(post)"
-                class="p-2 rounded-full bg-black/50 hover:bg-black/80 text-white backdrop-blur-sm transition-all"
-                :title="post.is_active ? t('my_posts.put_off_shelf') : t('my_posts.put_on_shelf')"
+          </template>
+          <template #top-left>
+            <div class="absolute top-2 left-2 flex items-center gap-2">
+              <div
+                class="bg-black/60 backdrop-blur-sm rounded-full px-2 py-1 shadow-sm border border-white/10 text-xs font-bold"
+                :class="post.is_active ? 'text-green-400' : 'text-orange-400'"
               >
-                <Eye v-if="post.is_active" :size="16" class="text-green-400" />
-                <EyeOff v-else :size="16" class="text-orange-400" />
-              </button>
-              <button
-                @click.stop="deletePost(post)"
-                class="p-2 rounded-full bg-black/50 hover:bg-red-500/80 text-white backdrop-blur-sm transition-all"
-                :title="t('my_posts.delete')"
-              >
-                <Trash2 :size="16" />
-              </button>
+                {{ post.is_active ? t('my_posts.on_shelf') : t('my_posts.off_shelf') }}
+              </div>
             </div>
+          </template>
+          <template #overlay>
+            <div class="flex flex-col justify-between h-full">
+              <div class="flex justify-end gap-2">
+                <button
+                  @click.stop="toggleStatus(post)"
+                  class="p-2 rounded-full bg-black/50 hover:bg-black/80 text-white backdrop-blur-sm transition-all"
+                  :title="post.is_active ? t('my_posts.put_off_shelf') : t('my_posts.put_on_shelf')"
+                >
+                  <Eye v-if="post.is_active" :size="16" class="text-green-400" />
+                  <EyeOff v-else :size="16" class="text-orange-400" />
+                </button>
+                <button
+                  @click.stop="deletePost(post)"
+                  class="p-2 rounded-full bg-black/50 hover:bg-red-500/80 text-white backdrop-blur-sm transition-all"
+                  :title="t('my_posts.delete')"
+                >
+                  <Trash2 :size="16" />
+                </button>
+              </div>
 
-            <PostTagPreview :tags="post.tags" :format-tag="formatTag" />
-          </div>
-        </template>
-        <template #bottom>
-          <PostCardMetricsBar
-            :likes-count="post.likes_count"
-            :dislikes-count="post.dislikes_count"
-            :applied-count="post.applied_count"
-            :has-liked="post.has_liked"
-            :has-disliked="post.has_disliked"
-            @like="handleInteract(post, 'like')"
-            @dislike="handleInteract(post, 'dislike')"
-          />
-        </template>
-      </GalleryMediaCard>
-    </div>
+              <PostTagPreview :tags="post.tags" :format-tag="formatTag" />
+            </div>
+          </template>
+          <template #bottom>
+            <PostCardMetricsBar
+              :likes-count="post.likes_count"
+              :dislikes-count="post.dislikes_count"
+              :applied-count="post.applied_count"
+              :has-liked="post.has_liked"
+              :has-disliked="post.has_disliked"
+              @like="handleInteract(post, 'like')"
+              @dislike="handleInteract(post, 'dislike')"
+            />
+          </template>
+        </GalleryMediaCard>
+      </template>
+    </Waterfall>
   </PostBrowserShell>
 
     <GalleryDetailModal

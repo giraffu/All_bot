@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted } from 'vue'
+import { Waterfall } from 'vue-waterfall-plugin-next'
+import 'vue-waterfall-plugin-next/dist/style.css'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
@@ -31,6 +33,12 @@ const { t } = useI18n()
 const layoutContentRef = useMainLayoutContentRef()
 
 const { isMobile } = useViewport()
+const waterfallBreakpoints = {
+  99999: { rowPerView: 5 },
+  1024: { rowPerView: 4 },
+  768: { rowPerView: 3 },
+  640: { rowPerView: 2 },
+}
 const { allowedTypes, loadConfig } = useGalleryConfig({
   onError: (error) => {
     console.error('Failed to load note filters config:', error)
@@ -314,36 +322,44 @@ onMounted(() => {
 
     <MySubmissionsPanel v-if="isSubmissionTab" :task-type="selectedTaskType" />
 
-    <div v-else class="columns-2 sm:columns-3 md:columns-4 lg:columns-5 gap-3 sm:gap-6">
-      <GalleryMediaCard
-        v-for="post in posts"
-        :key="post.id"
-        :item="post"
-        class="mb-3 sm:mb-6 break-inside-avoid"
-        media-container-class="favorites-media-pane relative w-full overflow-hidden aspect-auto min-h-[100px]"
-        :media-container-style="post.width && post.height ? { aspectRatio: `${post.width}/${post.height}` } : { aspectRatio: '1/1' }"
-        @card-click="openDetail(post)"
-        @image-error="handleImageError($event, post)"
-      >
-        <template #overlay>
-          <div class="flex flex-col justify-between h-full">
-            <PostTagPreview :tags="post.tags" :format-tag="formatTag" />
-          </div>
-        </template>
-        <template #bottom>
-          <PostCardMetricsBar
-            v-if="filterType !== 'favorite'"
-            :likes-count="post.likes_count"
-            :dislikes-count="post.dislikes_count"
-            :applied-count="post.applied_count"
-            :has-liked="post.has_liked"
-            :has-disliked="post.has_disliked"
-            @like="handleInteract(post, 'like')"
-            @dislike="handleInteract(post, 'dislike')"
-          />
-        </template>
-      </GalleryMediaCard>
-    </div>
+    <Waterfall
+      v-else
+      :list="posts"
+      row-key="id"
+      :breakpoints="waterfallBreakpoints"
+      :gutter="isMobile ? 12 : 24"
+      :animation-duration="400"
+      background-color="transparent"
+      :has-around-gutter="false"
+    >
+      <template #default="{ item: post }">
+        <GalleryMediaCard
+          :item="post"
+          media-container-class="favorites-media-pane relative w-full overflow-hidden aspect-auto min-h-[100px]"
+          :media-container-style="post.width && post.height ? { aspectRatio: `${post.width}/${post.height}` } : { aspectRatio: '1/1' }"
+          @card-click="openDetail(post)"
+          @image-error="handleImageError($event, post)"
+        >
+          <template #overlay>
+            <div class="flex flex-col justify-between h-full">
+              <PostTagPreview :tags="post.tags" :format-tag="formatTag" />
+            </div>
+          </template>
+          <template #bottom>
+            <PostCardMetricsBar
+              v-if="filterType !== 'favorite'"
+              :likes-count="post.likes_count"
+              :dislikes-count="post.dislikes_count"
+              :applied-count="post.applied_count"
+              :has-liked="post.has_liked"
+              :has-disliked="post.has_disliked"
+              @like="handleInteract(post, 'like')"
+              @dislike="handleInteract(post, 'dislike')"
+            />
+          </template>
+        </GalleryMediaCard>
+      </template>
+    </Waterfall>
   </PostBrowserShell>
 
     <GalleryDetailModal

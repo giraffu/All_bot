@@ -340,6 +340,7 @@ describe('Gallery template apply integration', () => {
           { id: 'custom_video', name: '图生视频' },
           { id: 'video_lora', name: '图生视频(附加模型)' },
           { id: 'ltx_video', name: '高级图生视频' },
+          { id: 'wan22_video_v2', name: '图生视频 v2' },
         ],
         lora_models: [
           { id: '', name: '无' },
@@ -365,6 +366,7 @@ describe('Gallery template apply integration', () => {
 
     expect(findButtonsByText('自由P图')).toHaveLength(1)
     expect(findButtonsByText('图生视频')).toHaveLength(1)
+    expect(findButtonsByText('图生视频 v2')).toHaveLength(1)
     expect(findButtonsByText('文生图')).toHaveLength(0)
     expect(findButtonsByText('gallery.tabs.txt2img')).toHaveLength(0)
     expect(findButtonsByText('图生图(附加模型)')).toHaveLength(0)

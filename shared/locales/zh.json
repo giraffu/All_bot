@@ -203,7 +203,8 @@
       "custom_video": "自定义图生视频",
       "img2video_group": "图生视频",
       "img2video": "图生视频(附加模型)",
-      "high_res_video": "高级图生视频"
+      "high_res_video": "高级图生视频",
+      "wan22_video_v2": "图生视频 v2"
     },
     "filters": {
       "all": "所有",

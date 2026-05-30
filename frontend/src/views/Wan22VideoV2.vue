@@ -128,7 +128,7 @@ const resetForm = () => {
               </template>
             </GenerationUploadCard>
             <div v-if="startUploading" class="mt-2">
-              <span class="text-xs text-slate-400">正在上传起始帧...</span>
+              <span class="wan22-video-v2__progress-text text-xs">正在上传起始帧...</span>
               <a-progress :percent="startUploadProgress" status="active" strokeColor="#3b82f6" size="small" />
             </div>
           </div>
@@ -150,17 +150,17 @@ const resetForm = () => {
               </template>
             </GenerationUploadCard>
             <div v-if="endUploading" class="mt-2">
-              <span class="text-xs text-slate-400">正在上传终止帧...</span>
+              <span class="wan22-video-v2__progress-text text-xs">正在上传终止帧...</span>
               <a-progress :percent="endUploadProgress" status="active" strokeColor="#3b82f6" size="small" />
             </div>
           </div>
         </div>
 
-        <div class="rounded-xl bg-slate-500/40 border border-slate-400/40 p-4">
-          <h3 class="text-sm font-bold mb-3 text-slate-200">提示词</h3>
+        <div class="wan22-video-v2__section rounded-xl p-4">
+          <h3 class="wan22-video-v2__section-title text-sm font-bold mb-3">提示词</h3>
           <div class="grid grid-cols-1 gap-4">
             <div>
-              <label class="block text-xs font-medium text-slate-300 mb-2">正面提示词</label>
+              <label class="wan22-video-v2__field-label block text-xs font-medium mb-2">正面提示词</label>
               <a-textarea
                 v-model:value="prompt"
                 :rows="4"
@@ -169,7 +169,7 @@ const resetForm = () => {
               />
             </div>
             <div>
-              <label class="block text-xs font-medium text-slate-300 mb-2">负面提示词</label>
+              <label class="wan22-video-v2__field-label block text-xs font-medium mb-2">负面提示词</label>
               <a-textarea
                 v-model:value="negativePrompt"
                 :rows="3"
@@ -180,8 +180,8 @@ const resetForm = () => {
           </div>
         </div>
 
-        <div class="rounded-xl bg-slate-500/40 border border-slate-400/40 p-4">
-          <h3 class="text-sm font-bold mb-3 text-slate-200">生成设置</h3>
+        <div class="wan22-video-v2__section rounded-xl p-4">
+          <h3 class="wan22-video-v2__section-title text-sm font-bold mb-3">生成设置</h3>
           <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div class="setting-card">
               <div>
@@ -218,12 +218,12 @@ const resetForm = () => {
               </div>
               <a-switch v-model:checked="extractLastFrame" />
             </div>
-            <div class="rounded-xl bg-slate-900/20 border border-slate-400/30 p-3 flex items-center justify-between">
+            <div class="wan22-video-v2__fixed-card rounded-xl p-3 flex items-center justify-between">
               <div>
                 <div class="setting-title">生成时长</div>
                 <div class="setting-desc">当前版本固定输出 5 秒</div>
               </div>
-              <span class="text-sm font-semibold text-cyan-300">5 秒</span>
+              <span class="wan22-video-v2__fixed-value text-sm font-semibold">5 秒</span>
             </div>
           </div>
         </div>
@@ -259,9 +259,9 @@ const resetForm = () => {
             />
             <div
               v-if="tailFrameUrl"
-              class="w-full rounded-xl border border-slate-400/20 bg-slate-900/30 p-4"
+              class="wan22-video-v2__tail-frame-card w-full rounded-xl p-4"
             >
-              <div class="text-sm font-medium text-slate-200 mb-3">尾帧图片</div>
+              <div class="wan22-video-v2__section-title text-sm font-medium mb-3">尾帧图片</div>
               <a-image :src="tailFrameUrl" class="max-h-[180px] object-contain rounded-lg" :preview="true" />
             </div>
           </div>
@@ -312,13 +312,15 @@ const resetForm = () => {
 :deep(.ant-textarea) {
   background-color: var(--theme-card-strong-bg) !important;
   color: var(--theme-text-primary) !important;
+  -webkit-text-fill-color: var(--theme-text-primary) !important;
+  opacity: 1 !important;
   border-color: var(--theme-border) !important;
 }
 
 :deep(.ant-input::placeholder),
 :deep(.ant-input-number-input::placeholder),
 :deep(textarea::placeholder) {
-  color: var(--theme-text-muted) !important;
+  color: var(--theme-input-placeholder) !important;
 }
 
 .setting-card {
@@ -327,9 +329,33 @@ const resetForm = () => {
   justify-content: space-between;
   gap: 12px;
   border-radius: 12px;
-  border: 1px solid rgba(148, 163, 184, 0.2);
-  background: rgba(15, 23, 42, 0.2);
+  border: 1px solid var(--theme-border);
+  background: var(--theme-panel-bg);
   padding: 12px;
+}
+
+.wan22-video-v2__section {
+  background: var(--theme-card-strong-bg);
+  border: 1px solid var(--theme-border);
+}
+
+.wan22-video-v2__section-title {
+  color: var(--theme-text-primary);
+}
+
+.wan22-video-v2__field-label,
+.wan22-video-v2__progress-text {
+  color: var(--theme-text-secondary);
+}
+
+.wan22-video-v2__fixed-card,
+.wan22-video-v2__tail-frame-card {
+  background: color-mix(in srgb, var(--theme-panel-bg) 86%, transparent);
+  border: 1px solid var(--theme-border);
+}
+
+.wan22-video-v2__fixed-value {
+  color: color-mix(in srgb, var(--theme-text-primary) 72%, #06b6d4 28%);
 }
 
 .setting-title {

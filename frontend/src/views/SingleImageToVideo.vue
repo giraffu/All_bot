@@ -470,13 +470,15 @@ const resetForm = () => {
 :deep(.ant-select-selector) {
   background-color: var(--theme-card-strong-bg) !important;
   color: var(--theme-text-primary) !important;
+  -webkit-text-fill-color: var(--theme-text-primary) !important;
+  opacity: 1 !important;
   border-color: var(--theme-border) !important;
 }
 :deep(.ant-select-selection-item) {
   color: var(--theme-text-primary) !important;
 }
 :deep(.ant-select-selection-placeholder) {
-  color: var(--theme-text-muted) !important;
+  color: var(--theme-input-placeholder) !important;
 }
 :deep(.ant-select-arrow) {
   color: var(--theme-text-secondary) !important;

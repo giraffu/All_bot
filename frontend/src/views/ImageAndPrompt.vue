@@ -338,12 +338,14 @@ const resetForm = () => {
 :deep(textarea.ant-input) {
   background-color: var(--theme-card-strong-bg) !important;
   color: var(--theme-text-primary) !important;
+  -webkit-text-fill-color: var(--theme-text-primary) !important;
+  opacity: 1 !important;
   border-color: var(--theme-border) !important;
 }
 :deep(.ant-input::placeholder),
 :deep(.ant-input-textarea textarea::placeholder),
 :deep(textarea.ant-input::placeholder) {
-  color: var(--theme-text-secondary) !important;
+  color: var(--theme-input-placeholder) !important;
   opacity: 1 !important;
 }
 :deep(.ant-upload.ant-upload-drag) {

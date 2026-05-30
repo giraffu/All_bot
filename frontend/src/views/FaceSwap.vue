@@ -196,10 +196,12 @@ const { resetSwapState: resetForm } = useSwapResetController({
 :deep(.ant-input), :deep(.ant-input-affix-wrapper) {
   background-color: var(--theme-card-strong-bg) !important;
   color: var(--theme-text-primary) !important;
+  -webkit-text-fill-color: var(--theme-text-primary) !important;
+  opacity: 1 !important;
   border-color: var(--theme-border) !important;
 }
 :deep(.ant-input::placeholder) {
-  color: var(--theme-text-muted) !important;
+  color: var(--theme-input-placeholder) !important;
 }
 :deep(.ant-upload.ant-upload-drag) {
   background: var(--theme-card-strong-bg) !important;

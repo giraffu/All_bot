@@ -120,12 +120,14 @@ const resetForm = () => {
 :deep(.ant-input-textarea textarea) {
   background-color: var(--theme-card-strong-bg) !important;
   color: var(--theme-text-primary) !important;
+  -webkit-text-fill-color: var(--theme-text-primary) !important;
+  opacity: 1 !important;
   border-color: var(--theme-border) !important;
 }
 
 :deep(.ant-input::placeholder),
 :deep(.ant-input-textarea textarea::placeholder) {
-  color: var(--theme-text-muted) !important;
+  color: var(--theme-input-placeholder) !important;
 }
 
 :deep(.text-slate-200),

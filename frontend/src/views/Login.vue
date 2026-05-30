@@ -282,10 +282,12 @@ onMounted(async () => {
 }
 :deep(.ant-input) {
   background-color: transparent;
-  color: white;
+  color: var(--theme-text-primary);
+  -webkit-text-fill-color: var(--theme-text-primary);
+  opacity: 1;
 }
 :deep(.ant-input::placeholder) {
-  color: rgba(148, 163, 184, 1);
+  color: var(--theme-input-placeholder);
 }
 :deep(.ant-input-password-icon) {
   color: rgba(148, 163, 184, 1);

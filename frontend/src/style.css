@@ -19,6 +19,7 @@ html[data-theme='dark'] {
   --theme-text-primary: #f8fafc;
   --theme-text-secondary: #cbd5e1;
   --theme-text-muted: #94a3b8;
+  --theme-input-placeholder: #94a3b8;
   --theme-shadow: 0 12px 36px rgba(2, 6, 23, 0.3);
   --theme-canvas-bg: #0b0e14;
   --theme-canvas-star: #e2e8f0;
@@ -83,6 +84,7 @@ html[data-theme='light'] {
   --theme-text-primary: #0f172a;
   --theme-text-secondary: #334155;
   --theme-text-muted: #64748b;
+  --theme-input-placeholder: #334155;
   --theme-shadow: 0 12px 36px rgba(15, 23, 42, 0.08);
   --theme-canvas-bg: #eff6ff;
   --theme-canvas-star: #94a3b8;
