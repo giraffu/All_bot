@@ -8,7 +8,10 @@ from src.workflow_mapping_validation import (
     resolve_workflow_filename,
     validate_workflow_directory,
 )
-from workers.comfy_agent.workflow_task_patchers import TASK_SPECIFIC_PATCHERS
+try:
+    from .workflow_task_patchers import TASK_SPECIFIC_PATCHERS
+except ImportError:
+    from workflow_task_patchers import TASK_SPECIFIC_PATCHERS
 
 logger = logging.getLogger(__name__)
 
