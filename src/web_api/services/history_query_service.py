@@ -36,6 +36,27 @@ def build_gallery_post_map(posts):
     }
 
 
+def history_sort_key(history):
+    created_at = getattr(history, "created_at", None) or datetime.min
+    return (
+        1 if getattr(history, "is_visible", True) else 0,
+        1 if getattr(history, "output_file", None) else 0,
+        1 if getattr(history, "is_favorited", False) else 0,
+        created_at,
+        getattr(history, "id", 0) or 0,
+    )
+
+
+def pick_preferred_history(histories):
+    preferred = None
+    for history in histories:
+        if history is None:
+            continue
+        if preferred is None or history_sort_key(history) > history_sort_key(preferred):
+            preferred = history
+    return preferred
+
+
 async def fetch_recent_user_history(*, db, current_user_id: int, limit: int):
     result = await db.execute(
         select(History)
@@ -61,13 +82,22 @@ async def fetch_active_public_gallery_task_ids(*, db, task_ids: list[str]):
     return set(gallery_post_result.scalars().all())
 
 
-async def fetch_history_apply_context_entities(*, db, task_id: str, current_user_id: int):
+async def fetch_owned_histories_by_task_id(*, db, task_id: str, current_user_id: int):
     history_result = await db.execute(
-        select(History).where(
-            History.task_id == task_id, History.user_id == current_user_id
-        )
+        select(History)
+        .where(History.task_id == task_id, History.user_id == current_user_id)
+        .order_by(desc(History.id))
     )
-    history = history_result.scalar_one_or_none()
+    return history_result.scalars().all()
+
+
+async def fetch_history_apply_context_entities(*, db, task_id: str, current_user_id: int):
+    histories = await fetch_owned_histories_by_task_id(
+        db=db,
+        task_id=task_id,
+        current_user_id=current_user_id,
+    )
+    history = pick_preferred_history(histories)
     if not history:
         return None, None
 

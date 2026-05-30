@@ -1,5 +1,6 @@
 import json
 import logging
+import uuid
 from typing import Any, Dict
 
 import redis.asyncio as redis
@@ -155,6 +156,47 @@ class RedisClient:
         except Exception as e:
             logger.error(
                 f"Failed to remove pending web finalizer for {registry_task_id}: {e}"
+            )
+
+    async def acquire_pending_web_finalizer_lock(
+        self,
+        registry_task_id: str,
+        ttl_seconds: int = 900,
+    ) -> str | None:
+        key = f"{REDIS_PREFIX}pending_web_finalizer_lock:{registry_task_id}"
+        token = str(uuid.uuid4())
+        try:
+            locked = await self.redis.set(key, token, ex=ttl_seconds, nx=True)
+            return token if locked else None
+        except Exception as e:
+            logger.error(
+                "Failed to acquire pending web finalizer lock for %s: %s",
+                registry_task_id,
+                e,
+            )
+            return token
+
+    async def release_pending_web_finalizer_lock(
+        self,
+        registry_task_id: str,
+        token: str | None,
+    ) -> None:
+        if not token:
+            return
+        key = f"{REDIS_PREFIX}pending_web_finalizer_lock:{registry_task_id}"
+        release_script = """
+if redis.call("get", KEYS[1]) == ARGV[1] then
+    return redis.call("del", KEYS[1])
+end
+return 0
+"""
+        try:
+            await self.redis.eval(release_script, 1, key, token)
+        except Exception as e:
+            logger.error(
+                "Failed to release pending web finalizer lock for %s: %s",
+                registry_task_id,
+                e,
             )
 
     async def check_gallery_submit_limit(self, user_id: int, limit: int = 10) -> bool:

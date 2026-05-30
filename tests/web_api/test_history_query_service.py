@@ -1,61 +1,83 @@
-from unittest.mock import AsyncMock
+from datetime import datetime, timedelta
 
 import pytest
 
-from src.web_api.services.history_query_service import fetch_recent_user_history
-
-
-class _FakeScalarResult:
-    def __init__(self, items):
-        self._items = list(items)
-
-    def all(self):
-        return list(self._items)
+from src.database.models import GalleryPost, History
+from src.web_api.services import history_query_service
 
 
 class _FakeResult:
-    def __init__(self, items):
-        self._items = list(items)
+    def __init__(self, many):
+        self._many = list(many)
 
     def scalars(self):
-        return _FakeScalarResult(self._items)
+        return self
+
+    def all(self):
+        return list(self._many)
 
 
-class _CapturingSession:
-    def __init__(self, items):
-        self._items = list(items)
-        self.commit = AsyncMock()
-        self.last_stmt = None
+class _FakeSession:
+    def __init__(self, *results):
+        self._results = iter(results)
 
-    async def execute(self, stmt):
-        self.last_stmt = stmt
-        return _FakeResult(self._items)
+    async def execute(self, _stmt):
+        return next(self._results)
+
+
+def test_pick_preferred_history_prefers_visible_row_with_output_file():
+    now = datetime.now()
+    invisible_newer = History(
+        id=12,
+        user_id=1,
+        task_id="task-1",
+        output_file=None,
+        is_visible=False,
+        created_at=now + timedelta(minutes=1),
+    )
+    visible_older = History(
+        id=11,
+        user_id=1,
+        task_id="task-1",
+        output_file="bot-data/history/task-1/output.png",
+        is_visible=True,
+        created_at=now,
+    )
+
+    preferred = history_query_service.pick_preferred_history(
+        [invisible_newer, visible_older]
+    )
+
+    assert preferred is visible_older
 
 
 @pytest.mark.asyncio
-async def test_fetch_recent_user_history_hides_deleted_rows_without_backfilling_older_items():
-    visible_latest = type(
-        "HistoryRow",
-        (),
-        {"task_id": "task-visible-latest", "is_visible": True},
-    )()
-    hidden_latest = type(
-        "HistoryRow",
-        (),
-        {"task_id": "task-hidden-latest", "is_visible": False},
-    )()
-    db = _CapturingSession([visible_latest, hidden_latest])
-
-    histories, task_ids = await fetch_recent_user_history(
-        db=db,
-        current_user_id=123,
-        limit=8,
+async def test_fetch_history_apply_context_entities_prefers_duplicate_history_row():
+    older_history = History(
+        id=11,
+        user_id=1,
+        task_id="task-1",
+        output_file=None,
+        is_visible=False,
+    )
+    newer_history = History(
+        id=12,
+        user_id=1,
+        task_id="task-1",
+        output_file="bot-data/history/task-1/output.png",
+        is_visible=True,
+    )
+    gallery_post = GalleryPost(id=7, task_id="task-1", is_active=True)
+    db = _FakeSession(
+        _FakeResult([older_history, newer_history]),
+        _FakeResult([gallery_post]),
     )
 
-    assert histories == [visible_latest]
-    assert task_ids == ["task-visible-latest"]
-    assert db.last_stmt is not None
+    history, post = await history_query_service.fetch_history_apply_context_entities(
+        db=db,
+        task_id="task-1",
+        current_user_id=1,
+    )
 
-    compiled_sql = str(db.last_stmt)
-    assert "history.user_id" in compiled_sql
-    assert "history.is_visible = true" not in compiled_sql.lower()
+    assert history is newer_history
+    assert post is gallery_post

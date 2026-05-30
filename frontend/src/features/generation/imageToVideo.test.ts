@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import {
   buildDefaultLtxVideoLoraItem,
+  DEFAULT_WAN22_VIDEO_V2_NEGATIVE_PROMPT,
   getDefaultImageToVideoLoraSelection,
   getImageToVideoPayloadLoraName,
   getImageToVideoPayloadLoraStrength,
@@ -59,5 +60,10 @@ describe('imageToVideo LTX LoRA helpers', () => {
         strength: 0.76,
       },
     ])
+  })
+
+  it('exposes the default wan22 negative prompt preset', () => {
+    expect(DEFAULT_WAN22_VIDEO_V2_NEGATIVE_PROMPT).toContain('censored')
+    expect(DEFAULT_WAN22_VIDEO_V2_NEGATIVE_PROMPT).toContain('voluminous eyelashes')
   })
 })

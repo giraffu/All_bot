@@ -13,6 +13,7 @@ import { useTaskResult } from '@/composables/useTaskResult'
 import { useTaskStream } from '@/composables/useTaskStream'
 import { useUpload } from '@/composables/useUpload'
 import { buildGenerationTaskPayload } from '@/features/generation/buildGenerationTaskPayload'
+import { DEFAULT_WAN22_VIDEO_V2_NEGATIVE_PROMPT } from '@/features/generation/imageToVideo'
 import { useGenerationRouteConfig } from '@/features/generation/generationRouteConfig'
 
 const route = useRoute()
@@ -48,7 +49,7 @@ const {
 })
 
 const prompt = ref('')
-const negativePrompt = ref('')
+const negativePrompt = ref(DEFAULT_WAN22_VIDEO_V2_NEGATIVE_PROMPT)
 const useEndFrame = ref(false)
 const colorMatch = ref(false)
 const perfectLoop = ref(false)
@@ -95,7 +96,7 @@ const resetForm = () => {
   handleRemoveStart()
   handleRemoveEnd()
   prompt.value = ''
-  negativePrompt.value = ''
+  negativePrompt.value = DEFAULT_WAN22_VIDEO_V2_NEGATIVE_PROMPT
   useEndFrame.value = false
   colorMatch.value = false
   perfectLoop.value = false

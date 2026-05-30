@@ -11,6 +11,10 @@ from src.core.media_paths import (
 )
 from src.core.media_processor import generate_and_upload_thumbnail
 from src.database.models import GalleryPost, History
+from src.web_api.services.history_query_service import (
+    fetch_owned_histories_by_task_id,
+    pick_preferred_history,
+)
 
 
 def _get_favorite_limit_for_identity(identity: str | None) -> int:
@@ -44,9 +48,12 @@ async def _assert_can_add_favorite(*, db, current_user) -> None:
 
 
 async def _load_owned_history_by_task_id(*, db, user_id: int, task_id: str) -> History:
-    stmt = select(History).where(History.task_id == task_id, History.user_id == user_id)
-    result = await db.execute(stmt)
-    history = result.scalar_one_or_none()
+    histories = await fetch_owned_histories_by_task_id(
+        db=db,
+        task_id=task_id,
+        current_user_id=user_id,
+    )
+    history = pick_preferred_history(histories)
     if not history:
         raise HTTPException(status_code=404, detail="未找到原任务详情")
     return history

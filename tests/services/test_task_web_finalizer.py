@@ -30,6 +30,22 @@ def _build_record(
     }
 
 
+def _mock_finalizer_lock(monkeypatch, token: str | None = "lock-token"):
+    acquire_mock = AsyncMock(return_value=token)
+    release_mock = AsyncMock()
+    monkeypatch.setattr(
+        task_web_finalizer.redis_client,
+        "acquire_pending_web_finalizer_lock",
+        acquire_mock,
+    )
+    monkeypatch.setattr(
+        task_web_finalizer.redis_client,
+        "release_pending_web_finalizer_lock",
+        release_mock,
+    )
+    return acquire_mock, release_mock
+
+
 @pytest.mark.asyncio
 async def test_process_pending_web_finalizer_finalizes_done_and_removes_record(
     monkeypatch,
@@ -41,6 +57,7 @@ async def test_process_pending_web_finalizer_finalizes_done_and_removes_record(
     failure_mock = AsyncMock()
     remove_mock = AsyncMock()
     context_obj = object()
+    acquire_mock, release_mock = _mock_finalizer_lock(monkeypatch)
 
     async def _get_status(_backend_task_id):
         return {
@@ -86,6 +103,7 @@ async def test_process_pending_web_finalizer_finalizes_done_and_removes_record(
     )
 
     assert finalized is True
+    acquire_mock.assert_awaited_once_with("registry-1")
     success_mock.assert_awaited_once_with(
         backend_task_id="backend-1",
         internal_user_id=123,
@@ -99,6 +117,7 @@ async def test_process_pending_web_finalizer_finalizes_done_and_removes_record(
     cancellation_mock.assert_not_awaited()
     failure_mock.assert_not_awaited()
     remove_mock.assert_awaited_once_with("registry-1")
+    release_mock.assert_awaited_once_with("registry-1", "lock-token")
 
 
 @pytest.mark.asyncio
@@ -108,6 +127,7 @@ async def test_process_pending_web_finalizer_finalizes_error_and_removes_record(
     record = _build_record(cost=11)
     failure_mock = AsyncMock()
     remove_mock = AsyncMock()
+    _, release_mock = _mock_finalizer_lock(monkeypatch)
 
     monkeypatch.setattr(
         task_web_finalizer.image_service,
@@ -150,6 +170,7 @@ async def test_process_pending_web_finalizer_finalizes_error_and_removes_record(
         logger_override=task_web_finalizer.logger,
     )
     remove_mock.assert_awaited_once_with("registry-1")
+    release_mock.assert_awaited_once_with("registry-1", "lock-token")
 
 
 @pytest.mark.asyncio
@@ -159,6 +180,7 @@ async def test_process_pending_web_finalizer_finalizes_cancelled_and_removes_rec
     record = _build_record(cost=5)
     cancellation_mock = AsyncMock()
     remove_mock = AsyncMock()
+    _, release_mock = _mock_finalizer_lock(monkeypatch)
 
     monkeypatch.setattr(
         task_web_finalizer.image_service,
@@ -200,6 +222,7 @@ async def test_process_pending_web_finalizer_finalizes_cancelled_and_removes_rec
         logger_override=task_web_finalizer.logger,
     )
     remove_mock.assert_awaited_once_with("registry-1")
+    release_mock.assert_awaited_once_with("registry-1", "lock-token")
 
 
 @pytest.mark.asyncio
@@ -209,6 +232,7 @@ async def test_process_pending_web_finalizer_treats_backend_not_found_as_cancell
     record = _build_record(cost=13)
     cancellation_mock = AsyncMock()
     remove_mock = AsyncMock()
+    _, release_mock = _mock_finalizer_lock(monkeypatch)
 
     monkeypatch.setattr(
         task_web_finalizer.image_service,
@@ -250,6 +274,31 @@ async def test_process_pending_web_finalizer_treats_backend_not_found_as_cancell
         logger_override=task_web_finalizer.logger,
     )
     remove_mock.assert_awaited_once_with("registry-1")
+    release_mock.assert_awaited_once_with("registry-1", "lock-token")
+
+
+@pytest.mark.asyncio
+async def test_process_pending_web_finalizer_skips_when_lock_is_already_claimed(
+    monkeypatch,
+):
+    acquire_mock, release_mock = _mock_finalizer_lock(monkeypatch, token=None)
+    get_status_mock = AsyncMock()
+
+    monkeypatch.setattr(
+        task_web_finalizer.image_service,
+        "get_task_status",
+        get_status_mock,
+    )
+
+    finalized = await task_web_finalizer.process_pending_web_finalizer(
+        "registry-1",
+        record=_build_record(),
+    )
+
+    assert finalized is False
+    acquire_mock.assert_awaited_once_with("registry-1")
+    get_status_mock.assert_not_awaited()
+    release_mock.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -267,6 +316,7 @@ async def test_process_all_pending_web_finalizers_handles_recovered_records(monk
     success_mock = AsyncMock()
     remove_mock = AsyncMock()
     context_obj = object()
+    acquire_mock, release_mock = _mock_finalizer_lock(monkeypatch)
 
     async def _get_status(backend_task_id: str):
         if backend_task_id == "backend-done":
@@ -315,5 +365,7 @@ async def test_process_all_pending_web_finalizers_handles_recovered_records(monk
     finalized_count = await task_web_finalizer.process_all_pending_web_finalizers()
 
     assert finalized_count == 1
+    assert acquire_mock.await_count == 2
     success_mock.assert_awaited_once()
     remove_mock.assert_awaited_once_with("registry-done")
+    assert release_mock.await_count == 2

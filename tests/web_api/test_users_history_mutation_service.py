@@ -8,14 +8,24 @@ from src.web_api.services import users_history_mutation_service as mutation_serv
 
 
 class _FakeResult:
-    def __init__(self, *, single=None):
+    def __init__(self, *, single=None, many=None):
         self._single = single
+        if many is None:
+            self._many = [] if single is None else [single]
+        else:
+            self._many = list(many)
 
     def scalar_one_or_none(self):
         return self._single
 
     def scalar(self):
         return self._single
+
+    def scalars(self):
+        return self
+
+    def all(self):
+        return list(self._many)
 
 
 class _ExecuteResult:
@@ -87,6 +97,52 @@ async def test_favorite_user_history_updates_flag_when_below_identity_limit():
     assert history.is_favorited is True
     db.commit.assert_awaited_once()
     assert background_tasks.add_task.call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_favorite_user_history_prefers_latest_visible_duplicate_task_row():
+    older_history = History(
+        id=11,
+        user_id=123,
+        task_id="task-1",
+        type="image",
+        output_file="123/output_images/task-1-old.png",
+        is_favorited=False,
+        is_visible=False,
+    )
+    newer_history = History(
+        id=12,
+        user_id=123,
+        task_id="task-1",
+        type="image",
+        output_file="123/output_images/task-1-new.png",
+        is_favorited=False,
+        is_visible=True,
+    )
+    db = _FakeSession(
+        _FakeResult(many=[older_history, newer_history]),
+        _FakeResult(single=99),
+    )
+    background_tasks = MagicMock(spec=BackgroundTasks)
+    current_user = type("User", (), {"id": 123, "current_identity": "外门弟子"})()
+
+    response = await mutation_service.favorite_user_history(
+        task_id="task-1",
+        current_user=current_user,
+        db=db,
+        schedule_background_task=background_tasks.add_task,
+    )
+
+    assert response == {"status": "success", "message": "收藏成功"}
+    assert older_history.is_favorited is False
+    assert newer_history.is_favorited is True
+    db.commit.assert_awaited_once()
+    first_call = background_tasks.add_task.call_args_list[0]
+    assert first_call.args[1:] == (
+        "bot-data",
+        "123/output_images/task-1-new.png",
+        "history/task-1/original.png",
+    )
 
 
 @pytest.mark.asyncio

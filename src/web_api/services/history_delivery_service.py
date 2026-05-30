@@ -4,13 +4,16 @@ from dataclasses import dataclass
 
 import httpx
 from fastapi import HTTPException
-from sqlalchemy import select
 
 from config import BOT_TOKEN, TELEGRAM_API_BASE_URL
 from src.core.media_paths import resolve_storage_object
 from src.database.models import History
 from src.services.redis_client import redis_client
 from src.services.storage import storage
+from src.web_api.services.history_query_service import (
+    fetch_owned_histories_by_task_id,
+    pick_preferred_history,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -33,9 +36,12 @@ async def _acquire_send_to_bot_rate_limit(user_id: int):
 
 
 async def _load_owned_history_record(task_id: str, user_id: int, db) -> History:
-    stmt = select(History).where(History.task_id == task_id, History.user_id == user_id)
-    result = await db.execute(stmt)
-    history = result.scalar_one_or_none()
+    histories = await fetch_owned_histories_by_task_id(
+        db=db,
+        task_id=task_id,
+        current_user_id=user_id,
+    )
+    history = pick_preferred_history(histories)
     if not history:
         raise HTTPException(status_code=404, detail="未找到对应的任务记录")
     if not history.output_file:

@@ -17,6 +17,25 @@ from src.services.task_service_message_support import translate_context_text
 from src.services.task_service_support import get_acceleration_notice
 
 
+DEFAULT_WAN22_VIDEO_V2_NEGATIVE_PROMPT = (
+    "censored, mosaic censoring, bar censor, pixelated, glowing, bloom, blurry, "
+    "out of focus, low detail, bad anatomy, ugly, overexposed, underexposed, "
+    "distorted face, extra limbs, cartoonish, 3d render artifacts, duplicate "
+    "people, unnatural lighting, bad composition, missing shadows, low "
+    "resolution, poorly textured, glitch, noise, grain, static, motionless, "
+    "still frame, stylized, artwork, painting, illustration, many people in "
+    "background, three legs, walking backward, unnatural skin tone, discolored "
+    "eyelid, red eyelids, closed eyes, poorly drawn hands, extra fingers, fused "
+    "fingers, poorly drawn face, deformed, disfigured, malformed limbs, fog, "
+    "mist, voluminous eyelashes,"
+)
+
+
+def normalize_wan22_video_v2_negative_prompt(negative_prompt: str | None) -> str:
+    normalized = (negative_prompt or "").strip()
+    return normalized or DEFAULT_WAN22_VIDEO_V2_NEGATIVE_PROMPT
+
+
 async def process_wan22_video_v2_generation_task(
     *,
     context: Any,
@@ -42,6 +61,9 @@ async def process_wan22_video_v2_generation_task(
     source_post_id: Optional[int] = None,
 ) -> Tuple[Optional[bytes], Optional[str]]:
     internal_user_id = await resolve_internal_user_id(user_id, username)
+    normalized_negative_prompt = normalize_wan22_video_v2_negative_prompt(
+        negative_prompt
+    )
     notice = await get_acceleration_notice(
         internal_user_id,
         quota_manager=permission_service.quota_manager,
@@ -52,7 +74,7 @@ async def process_wan22_video_v2_generation_task(
         images=images,
         resolution=None,
         duration=5,
-        negative_prompt=negative_prompt,
+        negative_prompt=normalized_negative_prompt,
         use_end_frame=use_end_frame,
         color_match=color_match,
         perfect_loop=perfect_loop,

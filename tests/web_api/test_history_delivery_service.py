@@ -7,6 +7,25 @@ from fastapi import HTTPException
 from src.web_api.services import history_delivery_service
 
 
+class _FakeResult:
+    def __init__(self, many):
+        self._many = list(many)
+
+    def scalars(self):
+        return self
+
+    def all(self):
+        return list(self._many)
+
+
+class _FakeSession:
+    def __init__(self, *results):
+        self._results = iter(results)
+
+    async def execute(self, _stmt):
+        return next(self._results)
+
+
 @pytest.mark.asyncio
 async def test_send_history_record_to_telegram_requires_bound_telegram():
     with pytest.raises(HTTPException) as exc_info:
@@ -53,6 +72,31 @@ async def test_send_history_record_to_telegram_delegates_delivery_pipeline(monke
     load_history.assert_awaited_once()
     download_bytes.assert_awaited_once_with("bot-data/history/task-1/output.png")
     post_upload.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_load_owned_history_record_prefers_duplicate_row_with_output_file():
+    older_history = SimpleNamespace(
+        id=11,
+        task_id="task-1",
+        user_id=1,
+        output_file=None,
+        is_visible=False,
+        is_favorited=False,
+    )
+    newer_history = SimpleNamespace(
+        id=12,
+        task_id="task-1",
+        user_id=1,
+        output_file="bot-data/history/task-1/output.png",
+        is_visible=True,
+        is_favorited=False,
+    )
+    db = _FakeSession(_FakeResult([older_history, newer_history]))
+
+    history = await history_delivery_service._load_owned_history_record("task-1", 1, db)
+
+    assert history is newer_history
 
 
 @pytest.mark.asyncio

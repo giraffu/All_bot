@@ -1,5 +1,7 @@
 export const NO_IMAGE_TO_VIDEO_LORA = '__none__'
 export const NO_LTX_VIDEO_LORA = '__none__'
+export const DEFAULT_WAN22_VIDEO_V2_NEGATIVE_PROMPT =
+  'censored, mosaic censoring, bar censor, pixelated, glowing, bloom, blurry, out of focus, low detail, bad anatomy, ugly, overexposed, underexposed, distorted face, extra limbs, cartoonish, 3d render artifacts, duplicate people, unnatural lighting, bad composition, missing shadows, low resolution, poorly textured, glitch, noise, grain, static, motionless, still frame, stylized, artwork, painting, illustration, many people in background, three legs, walking backward, unnatural skin tone, discolored eyelid, red eyelids, closed eyes, poorly drawn hands, extra fingers, fused fingers, poorly drawn face, deformed, disfigured, malformed limbs, fog, mist, voluminous eyelashes,'
 
 export type UnifiedImageToVideoTaskType = 'custom_video' | 'video_lora'
 

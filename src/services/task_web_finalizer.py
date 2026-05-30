@@ -190,23 +190,36 @@ async def process_pending_web_finalizer(
     *,
     record: dict[str, Any] | None = None,
 ) -> bool:
-    record = record or await redis_client.get_pending_web_finalizer(registry_task_id)
-    if not record:
+    lock_token = await redis_client.acquire_pending_web_finalizer_lock(registry_task_id)
+    if not lock_token:
         return False
 
-    backend_task_id = record.get("backend_task_id")
-    if not backend_task_id:
-        return False
+    try:
+        record = record or await redis_client.get_pending_web_finalizer(registry_task_id)
+        if not record:
+            return False
 
-    status_data = await image_service.get_task_status(backend_task_id)
-    if not status_data:
-        status_data = {"status": BACKEND_STATUS_CANCELLED, "error_msg": "Task not found"}
+        backend_task_id = record.get("backend_task_id")
+        if not backend_task_id:
+            return False
 
-    if not is_backend_terminal_status(status_data.get("status")):
-        return False
+        status_data = await image_service.get_task_status(backend_task_id)
+        if not status_data:
+            status_data = {
+                "status": BACKEND_STATUS_CANCELLED,
+                "error_msg": "Task not found",
+            }
 
-    await _finalize_terminal_record(record, status_data)
-    return True
+        if not is_backend_terminal_status(status_data.get("status")):
+            return False
+
+        await _finalize_terminal_record(record, status_data)
+        return True
+    finally:
+        await redis_client.release_pending_web_finalizer_lock(
+            registry_task_id,
+            lock_token,
+        )
 
 
 async def process_all_pending_web_finalizers() -> int:

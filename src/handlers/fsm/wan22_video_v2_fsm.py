@@ -21,7 +21,9 @@ from src.handlers.fsm.fsm_shared import (
     translate_fsm_text,
 )
 from src.handlers.prompt_router import is_global_menu_command
-from src.services.task_service_generation_wan22 import process_wan22_video_v2_generation_task as process_wan22_video_v2_task
+from src.services.task_service_generation_wan22 import (
+    process_wan22_video_v2_generation_task as process_wan22_video_v2_task,
+)
 from src.services.fsm_temp_file_service import (
     cleanup_fsm_temp_files,
     download_telegram_file_to_fsm_temp,
@@ -44,6 +46,11 @@ TOGGLE_FIELDS = (
 
 
 _t = translate_fsm_text
+
+
+def _default_negative_prompt_label(context: ContextTypes.DEFAULT_TYPE) -> str:
+    lang = getattr(context, "lang", "zh")
+    return "Default negative prompt" if lang == "en" else "默认负面提示词"
 
 
 def _get_data(context: ContextTypes.DEFAULT_TYPE) -> dict | None:
@@ -176,7 +183,7 @@ def _build_settings_message(
             status_yes if data.get("extract_last_frame") else status_no
         ),
         prompt=str(data.get("prompt") or "").strip() or "-",
-        negative_prompt=negative_prompt or _t(context, "fsm.wan22_video_v2.no_negative_prompt"),
+        negative_prompt=negative_prompt or _default_negative_prompt_label(context),
         duration="5s" if lang == "en" else "5 秒",
         cost=WAN22_VIDEO_V2_COST,
     )
