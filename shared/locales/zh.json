@@ -617,7 +617,7 @@
       "submit": "🚀 正在提交高级视频任务，预计消耗 {cost} 灵石，请耐心等待..."
     },
     "wan22_video_v2": {
-      "start": "🎬 **已进入 图生视频v2 模式**。\n\n【第一步】请发送 1 张起始帧图片。\n\n随后你可以选择是否继续上传终止帧，并填写正负提示词与生成开关。\n\n随时可以发送 /cancel 退出流程。",
+      "start": "🎬 **已进入 图生视频v2 模式**。\n\n【第一步】请发送 1 张起始帧图片。\n\n随后你可以选择是否继续上传终止帧，并填写正负提示词与分辨率档位。\n\n随时可以发送 /cancel 退出流程。",
       "end_frame_choice": "【第二步】是否启用首尾帧模式？\n\n- 关闭：仅使用起始帧生成\n- 开启：还需要再上传 1 张终止帧",
       "enable_end_frame": "开启首尾帧",
       "disable_end_frame": "单图生成",
@@ -627,11 +627,14 @@
       "send_prompt": "【下一步】请发送**正面提示词**。",
       "send_negative_prompt": "【下一步】请发送**负面提示词**。\n\n如果没有负面提示词，可以点击下方按钮跳过。",
       "skip_negative_prompt": "跳过负面提示词",
+      "resolution_fast": "极速",
+      "resolution_standard": "标准",
+      "resolution_hd": "高清",
       "submit_button": "开始生成",
       "status_yes": "开启",
       "status_no": "关闭",
       "no_negative_prompt": "无",
-      "settings_text": "🎬 **图生视频v2 设置确认**\n\n- 首尾帧模式：{use_end_frame}\n- 终止帧就绪：{end_frame_ready}\n- 尾帧提取：默认开启并仅作存储\n- 固定时长：{duration}\n- 预计消耗：{cost} 灵石\n\n**正面提示词**\n`{prompt}`\n\n**负面提示词**\n`{negative_prompt}`\n\n确认后点击“开始生成”。",
+      "settings_text": "🎬 **图生视频v2 设置确认**\n\n- 首尾帧模式：{use_end_frame}\n- 终止帧就绪：{end_frame_ready}\n- 分辨率档位：{resolution_preset}\n- 尾帧提取：默认开启并仅作存储\n- 固定时长：{duration}\n- 预计消耗：{cost} 灵石\n\n**正面提示词**\n`{prompt}`\n\n**负面提示词**\n`{negative_prompt}`\n\n确认后点击“开始生成”。",
       "missing_end_image": "已开启首尾帧模式，请先上传终止帧图片。",
       "submitting": "🚀 正在提交图生视频v2任务 (消耗 {cost} 灵石)，请耐心等待...",
       "expired_alert": "交互已失效或任务已提交，请重新开始"

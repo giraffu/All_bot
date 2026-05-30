@@ -194,6 +194,7 @@ class Wan22VideoV2Request(BaseModel):
     end_image: Optional[str] = None
     negative_prompt: Optional[str] = " "
     use_end_frame: bool = False
+    resolution_preset: Optional[str] = "standard"
     upscale: bool = False
     extract_last_frame: bool = True
     length: int = 5

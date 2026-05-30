@@ -163,6 +163,43 @@ async def test_edit_image_empty_images_before_quota_check(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_edit_image_duplicate_prompt_during_submission_is_ignored(monkeypatch):
+    reply_mock = AsyncMock()
+    quota_mock = AsyncMock()
+
+    monkeypatch.setattr(edit_image_fsm, "is_global_menu_command", lambda _text: False)
+    monkeypatch.setattr(edit_image_fsm, "robust_reply_text", reply_mock)
+    monkeypatch.setattr(edit_image_fsm.permission_service, "check_quota", quota_mock)
+
+    update = SimpleNamespace(
+        effective_user=_build_user(),
+        effective_chat=SimpleNamespace(id=10001),
+        message=_build_message(text="duplicate prompt"),
+    )
+    context = SimpleNamespace(
+        bot=SimpleNamespace(),
+        user_data={
+            "in_conversation": "EDIT_IMAGE",
+            "edit_image_data": {
+                "mode": "edit",
+                "cost": 2,
+                "images": ["/tmp/demo.png"],
+                "lora_name": "",
+                "submitting": True,
+            }
+        },
+    )
+
+    result = await edit_image_fsm.receive_prompt(update, context)
+
+    assert result == ConversationHandler.END
+    quota_mock.assert_not_awaited()
+    reply_mock.assert_awaited_once()
+    assert "任务已提交" in reply_mock.await_args.args[1]
+    assert context.user_data["edit_image_data"]["submitting"] is True
+
+
+@pytest.mark.asyncio
 async def test_start_edit_image_routes_free_edit_to_lora_selection(monkeypatch):
     reply_mock = AsyncMock()
 

@@ -13,7 +13,12 @@ import { useTaskResult } from '@/composables/useTaskResult'
 import { useTaskStream } from '@/composables/useTaskStream'
 import { useUpload } from '@/composables/useUpload'
 import { buildGenerationTaskPayload } from '@/features/generation/buildGenerationTaskPayload'
-import { DEFAULT_WAN22_VIDEO_V2_NEGATIVE_PROMPT } from '@/features/generation/imageToVideo'
+import {
+  DEFAULT_WAN22_VIDEO_V2_NEGATIVE_PROMPT,
+  DEFAULT_WAN22_VIDEO_V2_RESOLUTION_PRESET,
+  WAN22_VIDEO_V2_RESOLUTION_OPTIONS,
+  type Wan22VideoV2ResolutionPreset,
+} from '@/features/generation/imageToVideo'
 import { useGenerationRouteConfig } from '@/features/generation/generationRouteConfig'
 
 const route = useRoute()
@@ -50,6 +55,7 @@ const {
 
 const prompt = ref('')
 const negativePrompt = ref(DEFAULT_WAN22_VIDEO_V2_NEGATIVE_PROMPT)
+const resolutionPreset = ref<Wan22VideoV2ResolutionPreset>(DEFAULT_WAN22_VIDEO_V2_RESOLUTION_PRESET)
 const hasEndFrame = computed(() => Boolean(endObjectKey.value))
 
 const handleGenerate = async () => {
@@ -68,6 +74,7 @@ const handleGenerate = async () => {
     promptTarget: 'inputs',
     extraInputs: {
       use_end_frame: hasEndFrame.value,
+      resolution_preset: resolutionPreset.value,
     },
   })
 
@@ -82,6 +89,7 @@ const resetForm = () => {
   handleRemoveEnd()
   prompt.value = ''
   negativePrompt.value = DEFAULT_WAN22_VIDEO_V2_NEGATIVE_PROMPT
+  resolutionPreset.value = DEFAULT_WAN22_VIDEO_V2_RESOLUTION_PRESET
   setSubmittedTaskId(null)
 }
 </script>
@@ -178,6 +186,27 @@ const resetForm = () => {
                 <div class="setting-desc">当前版本固定输出 5 秒</div>
               </div>
               <span class="wan22-video-v2__fixed-value text-sm font-semibold">5 秒</span>
+            </div>
+            <div class="wan22-video-v2__fixed-card rounded-xl p-3 md:col-span-2">
+              <div class="mb-3">
+                <div class="setting-title">分辨率档位</div>
+                <div class="setting-desc">档位越高越清晰，生成速度会更慢</div>
+              </div>
+              <a-radio-group v-model:value="resolutionPreset" class="w-full">
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <label
+                    v-for="option in WAN22_VIDEO_V2_RESOLUTION_OPTIONS"
+                    :key="option.value"
+                    class="wan22-video-v2__preset-card rounded-xl p-3 cursor-pointer"
+                    :class="{ 'wan22-video-v2__preset-card--active': resolutionPreset === option.value }"
+                  >
+                    <a-radio :value="option.value">
+                      <span class="setting-title">{{ option.label }}</span>
+                    </a-radio>
+                    <div class="setting-desc mt-2">{{ option.description }}</div>
+                  </label>
+                </div>
+              </a-radio-group>
             </div>
             <div class="wan22-video-v2__fixed-card rounded-xl p-3 flex items-center justify-between">
               <div>
@@ -301,6 +330,17 @@ const resetForm = () => {
 
 .wan22-video-v2__fixed-value {
   color: color-mix(in srgb, var(--theme-text-primary) 72%, #06b6d4 28%);
+}
+
+.wan22-video-v2__preset-card {
+  border: 1px solid var(--theme-border);
+  background: var(--theme-panel-bg);
+  transition: border-color 0.2s ease, background 0.2s ease;
+}
+
+.wan22-video-v2__preset-card--active {
+  border-color: #2563eb;
+  background: color-mix(in srgb, #2563eb 10%, var(--theme-panel-bg));
 }
 
 .setting-title {

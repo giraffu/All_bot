@@ -214,6 +214,7 @@ def test_workflow_patcher_patches_wan22_video_v2_boolean_gates_and_prefixes(tmp_
             "2584": {"inputs": {"enabled": True}},
             "2581": {"inputs": {"expression": "( a - 1 ) / b"}},
             "2586": {"inputs": {"value": 5}},
+            "2621": {"inputs": {"precision_presets": "0.52 MP - SD"}},
             "2601": {"inputs": {"enabled": True}},
             "2602": {"inputs": {"enabled": True}},
             "2605": {"inputs": {"enabled": True}},
@@ -307,6 +308,7 @@ def test_workflow_patcher_patches_wan22_video_v2_boolean_gates_and_prefixes(tmp_
             "prompt": "demo",
             "negative_prompt": "bad",
             "use_end_frame": False,
+            "resolution_preset": "hd",
             "length": 5,
             "seed": 42,
         },
@@ -332,6 +334,7 @@ def test_workflow_patcher_patches_wan22_video_v2_boolean_gates_and_prefixes(tmp_
     assert patched["2368"]["inputs"]["value"] == "demo"
     assert patched["2371"]["inputs"]["value"] == "bad"
     assert patched["2557"]["inputs"]["value"] is True
+    assert patched["2621"]["inputs"]["precision_presets"] == "0.65 MP - Balanced"
     assert patched["2581"]["inputs"]["expression"] == "max(1, round(( a - 1 ) / b))"
     assert patched["2542"]["inputs"]["clip_frames"] == ["2612", 0]
     assert patched["2563"]["inputs"]["image"] == ["2612", 0]

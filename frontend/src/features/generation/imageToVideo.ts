@@ -2,6 +2,19 @@ export const NO_IMAGE_TO_VIDEO_LORA = '__none__'
 export const NO_LTX_VIDEO_LORA = '__none__'
 export const DEFAULT_WAN22_VIDEO_V2_NEGATIVE_PROMPT =
   'censored, mosaic censoring, bar censor, pixelated, glowing, bloom, blurry, out of focus, low detail, bad anatomy, ugly, overexposed, underexposed, distorted face, extra limbs, cartoonish, 3d render artifacts, duplicate people, unnatural lighting, bad composition, missing shadows, low resolution, poorly textured, glitch, noise, grain, static, motionless, still frame, stylized, artwork, painting, illustration, many people in background, three legs, walking backward, unnatural skin tone, discolored eyelid, red eyelids, closed eyes, poorly drawn hands, extra fingers, fused fingers, poorly drawn face, deformed, disfigured, malformed limbs, fog, mist, voluminous eyelashes,'
+export type Wan22VideoV2ResolutionPreset = 'fast' | 'standard' | 'hd'
+
+export const DEFAULT_WAN22_VIDEO_V2_RESOLUTION_PRESET: Wan22VideoV2ResolutionPreset = 'standard'
+
+export const WAN22_VIDEO_V2_RESOLUTION_OPTIONS: Array<{
+  value: Wan22VideoV2ResolutionPreset
+  label: string
+  description: string
+}> = [
+  { value: 'fast', label: '极速', description: '0.36 MP，更快，细节更少' },
+  { value: 'standard', label: '标准', description: '0.52 MP，推荐默认档位' },
+  { value: 'hd', label: '高清', description: '0.65 MP，更清晰，生成更慢' },
+]
 
 export type UnifiedImageToVideoTaskType = 'custom_video' | 'video_lora'
 

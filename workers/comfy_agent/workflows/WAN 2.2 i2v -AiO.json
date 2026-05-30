@@ -1407,7 +1407,7 @@
   "2621": {
     "inputs": {
       "method": "Use Precision Presets",
-      "precision_presets": "0.65 MP - Balanced",
+      "precision_presets": "0.52 MP - SD",
       "resolution_presets": "1080p",
       "no_scale": false,
       "scale_from_image": true,

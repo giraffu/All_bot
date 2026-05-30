@@ -91,6 +91,7 @@ class _Wan22SubmissionContext:
     end_image_path: str | None
     use_end_frame: bool
     negative_prompt: str
+    resolution_preset: str
 
 
 @dataclass(frozen=True)
@@ -158,6 +159,7 @@ def _build_wan22_submission_context(inputs: Dict[str, Any]) -> _Wan22SubmissionC
         end_image_path=end_image_path,
         use_end_frame=use_end_frame,
         negative_prompt=inputs.get("negative_prompt", " "),
+        resolution_preset=inputs.get("resolution_preset", "standard"),
     )
 
 
@@ -466,6 +468,7 @@ class Wan22VideoV2Strategy(BaseTaskStrategy):
         return {
             "saved_inputs": _get_saved_input_images(inputs),
             "requested_duration": 5,
+            "resolution_preset": inputs.get("resolution_preset", "standard"),
         }
 
     async def submit_task(
@@ -481,6 +484,7 @@ class Wan22VideoV2Strategy(BaseTaskStrategy):
             end_image_path=submission.end_image_path,
             negative_prompt=submission.negative_prompt,
             use_end_frame=submission.use_end_frame,
+            resolution_preset=submission.resolution_preset,
             length=5,
             priority=priority,
         )

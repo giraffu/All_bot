@@ -16,6 +16,25 @@ from src.services.task_service_generation_common import (
 from src.services.task_service_message_support import translate_context_text
 from src.services.task_service_support import get_acceleration_notice
 
+WAN22_VIDEO_V2_RESOLUTION_PRESETS = {
+    "fast": {
+        "label_zh": "极速",
+        "label_en": "Fast",
+        "precision_preset": "0.36 MP - Small",
+    },
+    "standard": {
+        "label_zh": "标准",
+        "label_en": "Standard",
+        "precision_preset": "0.52 MP - SD",
+    },
+    "hd": {
+        "label_zh": "高清",
+        "label_en": "HD",
+        "precision_preset": "0.65 MP - Balanced",
+    },
+}
+WAN22_VIDEO_V2_DEFAULT_RESOLUTION_PRESET = "standard"
+
 
 DEFAULT_WAN22_VIDEO_V2_NEGATIVE_PROMPT = (
     "censored, mosaic censoring, bar censor, pixelated, glowing, bloom, blurry, "
@@ -34,6 +53,30 @@ DEFAULT_WAN22_VIDEO_V2_NEGATIVE_PROMPT = (
 def normalize_wan22_video_v2_negative_prompt(negative_prompt: str | None) -> str:
     normalized = (negative_prompt or "").strip()
     return normalized or DEFAULT_WAN22_VIDEO_V2_NEGATIVE_PROMPT
+
+
+def normalize_wan22_video_v2_resolution_preset(
+    resolution_preset: str | None,
+) -> str:
+    normalized = (resolution_preset or "").strip()
+    if normalized in WAN22_VIDEO_V2_RESOLUTION_PRESETS:
+        return normalized
+
+    for preset_key, preset in WAN22_VIDEO_V2_RESOLUTION_PRESETS.items():
+        if normalized == preset["precision_preset"]:
+            return preset_key
+
+    return WAN22_VIDEO_V2_DEFAULT_RESOLUTION_PRESET
+
+
+def get_wan22_video_v2_resolution_label(
+    resolution_preset: str | None,
+    *,
+    lang: str = "zh",
+) -> str:
+    preset_key = normalize_wan22_video_v2_resolution_preset(resolution_preset)
+    preset = WAN22_VIDEO_V2_RESOLUTION_PRESETS[preset_key]
+    return preset["label_en"] if lang == "en" else preset["label_zh"]
 
 
 async def process_wan22_video_v2_generation_task(
@@ -55,10 +98,14 @@ async def process_wan22_video_v2_generation_task(
     reply_markup: Any = None,
     allow_contribute: bool = True,
     source_post_id: Optional[int] = None,
+    resolution_preset: str | None = None,
 ) -> Tuple[Optional[bytes], Optional[str]]:
     internal_user_id = await resolve_internal_user_id(user_id, username)
     normalized_negative_prompt = normalize_wan22_video_v2_negative_prompt(
         negative_prompt
+    )
+    normalized_resolution_preset = normalize_wan22_video_v2_resolution_preset(
+        resolution_preset
     )
     notice = await get_acceleration_notice(
         internal_user_id,
@@ -72,6 +119,7 @@ async def process_wan22_video_v2_generation_task(
         duration=5,
         negative_prompt=normalized_negative_prompt,
         use_end_frame=use_end_frame,
+        resolution_preset=normalized_resolution_preset,
         upscale=False,
         extract_last_frame=True,
     )

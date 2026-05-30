@@ -57,6 +57,10 @@ async def test_start_wan22_video_v2_initializes_defaults(monkeypatch):
     assert result == wan22_video_v2_fsm.Wan22VideoV2State.WAIT_START_IMAGE
     assert context.user_data["in_conversation"] == wan22_video_v2_fsm.WAN22_VIDEO_V2_CONVERSATION_TAG
     assert context.user_data["wan22_video_v2_data"]["use_end_frame"] is False
+    assert (
+        context.user_data["wan22_video_v2_data"]["resolution_preset"]
+        == wan22_video_v2_fsm.WAN22_VIDEO_V2_DEFAULT_RESOLUTION_PRESET
+    )
     reply_mock.assert_awaited_once()
     assert "T:fsm.wan22_video_v2.start" in reply_mock.await_args.args[1]
 
@@ -135,6 +139,7 @@ async def test_submit_generation_forwards_wan22_payload(monkeypatch):
                 "start_image_path": "/tmp/start.png",
                 "end_image_path": "/tmp/end.png",
                 "use_end_frame": True,
+                "resolution_preset": "hd",
                 "prompt": "positive",
                 "negative_prompt": "negative",
             },
@@ -155,9 +160,44 @@ async def test_submit_generation_forwards_wan22_payload(monkeypatch):
         negative_prompt="negative",
         images=["/tmp/start.png", "/tmp/end.png"],
         use_end_frame=True,
+        resolution_preset="hd",
         cleanup=True,
     )
     create_background_task_mock.assert_called_once_with(context, ("bg-task",))
     assert "wan22_video_v2_data" not in context.user_data
     assert "in_conversation" not in context.user_data
     cleanup_mock.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_handle_settings_action_updates_resolution_preset(monkeypatch):
+    edit_mock = AsyncMock()
+    monkeypatch.setattr(wan22_video_v2_fsm, "robust_edit_text", edit_mock)
+
+    query = SimpleNamespace(
+        data="wan22v2_res_hd",
+        answer=AsyncMock(),
+        message=SimpleNamespace(),
+    )
+    update = SimpleNamespace(callback_query=query)
+    context = SimpleNamespace(
+        user_data={
+            "wan22_video_v2_data": {
+                "start_image_path": "/tmp/start.png",
+                "end_image_path": None,
+                "use_end_frame": False,
+                "resolution_preset": "standard",
+                "prompt": "positive",
+                "negative_prompt": "negative",
+            }
+        },
+        lang="zh",
+        t=lambda key, **kwargs: f"T:{key}",
+    )
+
+    result = await wan22_video_v2_fsm.handle_settings_action(update, context)
+
+    assert result == wan22_video_v2_fsm.Wan22VideoV2State.WAIT_SETTINGS
+    assert context.user_data["wan22_video_v2_data"]["resolution_preset"] == "hd"
+    query.answer.assert_awaited_once()
+    edit_mock.assert_awaited_once()

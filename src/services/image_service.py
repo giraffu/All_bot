@@ -40,6 +40,7 @@ class ImageService:
         end_image_path: str | None = None,
         negative_prompt: str = " ",
         use_end_frame: bool = False,
+        resolution_preset: str = "standard",
         length: int = 5,
         priority: int = 0,
     ) -> str:
@@ -50,6 +51,7 @@ class ImageService:
             end_image_path=end_image_path,
             negative_prompt=negative_prompt,
             use_end_frame=use_end_frame,
+            resolution_preset=resolution_preset,
             length=length,
             priority=priority,
         )

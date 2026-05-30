@@ -23,6 +23,20 @@ WAN22_VIDEO_V2_REMOVABLE_NODE_IDS = (
     "2623",
     "2624",
 )
+WAN22_VIDEO_V2_PRECISION_PRESET_BY_KEY = {
+    "fast": "0.36 MP - Small",
+    "standard": "0.52 MP - SD",
+    "hd": "0.65 MP - Balanced",
+}
+
+
+def _normalize_wan22_video_v2_precision_preset(value: Any) -> str:
+    normalized = str(value or "").strip()
+    if normalized in WAN22_VIDEO_V2_PRECISION_PRESET_BY_KEY:
+        return WAN22_VIDEO_V2_PRECISION_PRESET_BY_KEY[normalized]
+    if normalized in WAN22_VIDEO_V2_PRECISION_PRESET_BY_KEY.values():
+        return normalized
+    return WAN22_VIDEO_V2_PRECISION_PRESET_BY_KEY["standard"]
 
 
 def patch_img2img_workflow(
@@ -164,6 +178,14 @@ def patch_wan22_video_v2_workflow(
         node_id="2557",
         input_name="value",
         value=not use_end_frame,
+    )
+    set_node_input(
+        workflow,
+        node_id="2621",
+        input_name="precision_presets",
+        value=_normalize_wan22_video_v2_precision_preset(
+            params.get("resolution_preset")
+        ),
     )
 
     start_image = params.get("image")

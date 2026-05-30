@@ -135,6 +135,40 @@ def test_wan22_strategy_inherits_default_payload_and_upload_paths():
 
 
 @pytest.mark.asyncio
+async def test_wan22_strategy_forwards_resolution_preset(monkeypatch):
+    strategy = Wan22VideoV2Strategy()
+    submit_mock = AsyncMock(return_value="backend-task-id")
+    _patch_dispatch_image_service(
+        monkeypatch,
+        submit_wan22_video_v2_task=submit_mock,
+    )
+
+    result = await strategy.submit_task(
+        "task-1",
+        {
+            "prompt": "wan22 demo",
+            "saved_input_images": ["demo/start.png", "demo/end.png"],
+            "negative_prompt": "blur",
+            "resolution_preset": "hd",
+        },
+        priority=6,
+    )
+
+    assert result == "backend-task-id"
+    submit_mock.assert_awaited_once_with(
+        "task-1",
+        prompt="wan22 demo",
+        image_path="demo/start.png",
+        end_image_path="demo/end.png",
+        negative_prompt="blur",
+        use_end_frame=True,
+        resolution_preset="hd",
+        length=5,
+        priority=6,
+    )
+
+
+@pytest.mark.asyncio
 async def test_default_image_strategy_normalizes_legacy_lora_mode_before_submit(
     monkeypatch,
 ):
@@ -596,6 +630,7 @@ async def test_wan22_video_v2_submit_task_normalizes_optional_end_frame(monkeypa
         end_image_path="demo/end.png",
         negative_prompt="blurry",
         use_end_frame=True,
+        resolution_preset="standard",
         length=5,
         priority=5,
     )
@@ -628,6 +663,7 @@ async def test_wan22_video_v2_submit_task_falls_back_to_i2v_without_end_frame(mo
         end_image_path=None,
         negative_prompt=" ",
         use_end_frame=False,
+        resolution_preset="standard",
         length=5,
         priority=1,
     )
@@ -660,6 +696,7 @@ async def test_wan22_video_v2_submit_task_uses_default_context_when_optional_fie
         end_image_path=None,
         negative_prompt=" ",
         use_end_frame=False,
+        resolution_preset="standard",
         length=5,
         priority=9,
     )

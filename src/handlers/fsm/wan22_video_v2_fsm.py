@@ -22,6 +22,9 @@ from src.handlers.fsm.fsm_shared import (
 )
 from src.handlers.prompt_router import is_global_menu_command
 from src.services.task_service_generation_wan22 import (
+    WAN22_VIDEO_V2_DEFAULT_RESOLUTION_PRESET,
+    WAN22_VIDEO_V2_RESOLUTION_PRESETS,
+    get_wan22_video_v2_resolution_label,
     process_wan22_video_v2_generation_task as process_wan22_video_v2_task,
 )
 from src.services.fsm_temp_file_service import (
@@ -93,8 +96,37 @@ def _build_end_frame_choice_keyboard(context: ContextTypes.DEFAULT_TYPE) -> Inli
 def _build_settings_keyboard(
     context: ContextTypes.DEFAULT_TYPE, data: dict[str, object]
 ) -> InlineKeyboardMarkup:
+    current_resolution = str(
+        data.get("resolution_preset") or WAN22_VIDEO_V2_DEFAULT_RESOLUTION_PRESET
+    )
     return InlineKeyboardMarkup(
         [
+            [
+                InlineKeyboardButton(
+                    (
+                        f"• {_t(context, 'fsm.wan22_video_v2.resolution_fast')}"
+                        if current_resolution == "fast"
+                        else _t(context, "fsm.wan22_video_v2.resolution_fast")
+                    ),
+                    callback_data="wan22v2_res_fast",
+                ),
+                InlineKeyboardButton(
+                    (
+                        f"• {_t(context, 'fsm.wan22_video_v2.resolution_standard')}"
+                        if current_resolution == "standard"
+                        else _t(context, "fsm.wan22_video_v2.resolution_standard")
+                    ),
+                    callback_data="wan22v2_res_standard",
+                ),
+                InlineKeyboardButton(
+                    (
+                        f"• {_t(context, 'fsm.wan22_video_v2.resolution_hd')}"
+                        if current_resolution == "hd"
+                        else _t(context, "fsm.wan22_video_v2.resolution_hd")
+                    ),
+                    callback_data="wan22v2_res_hd",
+                ),
+            ],
             [
                 InlineKeyboardButton(
                     _t(context, "fsm.wan22_video_v2.submit_button"),
@@ -127,6 +159,10 @@ def _build_settings_message(
     status_yes = _t(context, "fsm.wan22_video_v2.status_yes")
     status_no = _t(context, "fsm.wan22_video_v2.status_no")
     negative_prompt = str(data.get("negative_prompt") or "").strip()
+    resolution_label = get_wan22_video_v2_resolution_label(
+        str(data.get("resolution_preset") or WAN22_VIDEO_V2_DEFAULT_RESOLUTION_PRESET),
+        lang=lang,
+    )
     return _t(
         context,
         "fsm.wan22_video_v2.settings_text",
@@ -138,6 +174,7 @@ def _build_settings_message(
         ),
         prompt=str(data.get("prompt") or "").strip() or "-",
         negative_prompt=negative_prompt or _default_negative_prompt_label(context),
+        resolution_preset=resolution_label,
         duration="5s" if lang == "en" else "5 秒",
         cost=WAN22_VIDEO_V2_COST,
     )
@@ -238,6 +275,7 @@ async def start_wan22_video_v2(
             "start_image_path": None,
             "end_image_path": None,
             "use_end_frame": False,
+            "resolution_preset": WAN22_VIDEO_V2_DEFAULT_RESOLUTION_PRESET,
             "prompt": "",
             "negative_prompt": "",
         },
@@ -407,6 +445,11 @@ async def handle_settings_action(
         return ConversationHandler.END
 
     callback_data = query.data or ""
+    if callback_data.startswith("wan22v2_res_"):
+        selected_preset = callback_data.removeprefix("wan22v2_res_")
+        if selected_preset in WAN22_VIDEO_V2_RESOLUTION_PRESETS:
+            data["resolution_preset"] = selected_preset
+
     if callback_data == "wan22v2_submit":
         return await submit_generation(update, context)
 
@@ -495,6 +538,10 @@ async def submit_generation(
             negative_prompt=str(data.get("negative_prompt") or "").strip(),
             images=images,
             use_end_frame=bool(data.get("use_end_frame")),
+            resolution_preset=str(
+                data.get("resolution_preset")
+                or WAN22_VIDEO_V2_DEFAULT_RESOLUTION_PRESET
+            ),
             cleanup=True,
         ),
     )
@@ -592,7 +639,7 @@ def get_wan22_video_v2_fsm_handler() -> ConversationHandler:
             Wan22VideoV2State.WAIT_SETTINGS: [
                 CallbackQueryHandler(
                     handle_settings_action,
-                    pattern=r"^wan22v2_submit$",
+                    pattern=r"^wan22v2_(submit|res_(fast|standard|hd))$",
                 ),
                 MessageHandler(
                     (filters.TEXT | filters.COMMAND) & ~filters.Regex(r"^/cancel$"),

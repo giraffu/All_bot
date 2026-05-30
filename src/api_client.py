@@ -417,6 +417,7 @@ class APIClient:
         end_image_path: str | None = None,
         negative_prompt: str = " ",
         use_end_frame: bool = False,
+        resolution_preset: str = "standard",
         length: int = 5,
         priority: int = 0,
     ) -> str:
@@ -426,6 +427,7 @@ class APIClient:
             "prompt": prompt,
             "negative_prompt": negative_prompt,
             "use_end_frame": use_end_frame,
+            "resolution_preset": resolution_preset,
             "length": length,
             "priority": priority,
         }
@@ -433,9 +435,10 @@ class APIClient:
             data["end_image"] = end_image_path
 
         logger.info(
-            "Submitting wan22_video_v2 task. Prompt: %s, Use end frame: %s, Priority: %s",
+            "Submitting wan22_video_v2 task. Prompt: %s, Use end frame: %s, Resolution preset: %s, Priority: %s",
             prompt,
             use_end_frame,
+            resolution_preset,
             priority,
         )
         r = await self._request("POST", WAN22_VIDEO_V2_ENDPOINT, json=data)

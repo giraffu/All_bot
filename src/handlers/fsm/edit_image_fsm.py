@@ -322,6 +322,9 @@ async def receive_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     if not fsm_data:
         await robust_reply_text(message, _t(context, "fsm.common.already_submitted"))
         return ConversationHandler.END
+    if fsm_data.get("submitting"):
+        await robust_reply_text(message, _t(context, "fsm.common.already_submitted"))
+        return ConversationHandler.END
 
     cost = fsm_data["cost"]
     mode = fsm_data["mode"]
@@ -335,7 +338,9 @@ async def receive_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         _cleanup_context(context, user_id)
         return ConversationHandler.END
 
+    fsm_data["submitting"] = True
     if not update.effective_user:
+        fsm_data.pop("submitting", None)
         return ConversationHandler.END
     user = update.effective_user
     try:
@@ -355,6 +360,7 @@ async def receive_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             await robust_send_message(context.bot, chat_id, msg, parse_mode="Markdown")
             _cleanup_context(context, user_id)
             return ConversationHandler.END
+        fsm_data.pop("submitting", None)
         raise e
 
     # 任务入口会接管这些临时文件的最终清理
