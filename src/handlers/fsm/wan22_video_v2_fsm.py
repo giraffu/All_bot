@@ -11,7 +11,7 @@ from telegram.ext import (
     filters,
 )
 
-from src.constants import MODE_WAN22_VIDEO_V2, TASK_COSTS
+from src.constants import MODE_WAN22_VIDEO_V2
 from src.filters.i18n_filter import I18nFilter
 from src.handlers.conversation_states import Wan22VideoV2State
 from src.handlers.fsm.fsm_shared import (
@@ -22,10 +22,13 @@ from src.handlers.fsm.fsm_shared import (
 )
 from src.handlers.prompt_router import is_global_menu_command
 from src.services.task_service_generation_wan22 import (
+    process_wan22_video_v2_generation_task as process_wan22_video_v2_task,
+)
+from src.services.wan22_video_v2_config import (
     WAN22_VIDEO_V2_DEFAULT_RESOLUTION_PRESET,
     WAN22_VIDEO_V2_RESOLUTION_PRESETS,
+    get_wan22_video_v2_cost,
     get_wan22_video_v2_resolution_label,
-    process_wan22_video_v2_generation_task as process_wan22_video_v2_task,
 )
 from src.services.fsm_temp_file_service import (
     cleanup_fsm_temp_files,
@@ -38,8 +41,6 @@ logger = logging.getLogger("fsm.wan22_video_v2")
 
 WAN22_VIDEO_V2_DATA_KEY = "wan22_video_v2_data"
 WAN22_VIDEO_V2_CONVERSATION_TAG = "WAN22_VIDEO_V2"
-WAN22_VIDEO_V2_COST = TASK_COSTS.get(MODE_WAN22_VIDEO_V2, 10)
-
 _t = translate_fsm_text
 
 
@@ -159,10 +160,14 @@ def _build_settings_message(
     status_yes = _t(context, "fsm.wan22_video_v2.status_yes")
     status_no = _t(context, "fsm.wan22_video_v2.status_no")
     negative_prompt = str(data.get("negative_prompt") or "").strip()
+    resolution_preset = str(
+        data.get("resolution_preset") or WAN22_VIDEO_V2_DEFAULT_RESOLUTION_PRESET
+    )
     resolution_label = get_wan22_video_v2_resolution_label(
-        str(data.get("resolution_preset") or WAN22_VIDEO_V2_DEFAULT_RESOLUTION_PRESET),
+        resolution_preset,
         lang=lang,
     )
+    cost = get_wan22_video_v2_cost(resolution_preset)
     return _t(
         context,
         "fsm.wan22_video_v2.settings_text",
@@ -176,7 +181,7 @@ def _build_settings_message(
         negative_prompt=negative_prompt or _default_negative_prompt_label(context),
         resolution_preset=resolution_label,
         duration="5s" if lang == "en" else "5 秒",
-        cost=WAN22_VIDEO_V2_COST,
+        cost=cost,
     )
 
 
@@ -488,12 +493,17 @@ async def submit_generation(
                 await query.answer(_t(context, "fsm.wan22_video_v2.missing_end_image"), show_alert=True)
         return Wan22VideoV2State.WAIT_SETTINGS
 
+    resolution_preset = str(
+        data.get("resolution_preset") or WAN22_VIDEO_V2_DEFAULT_RESOLUTION_PRESET
+    )
+    cost = get_wan22_video_v2_cost(resolution_preset)
+
     try:
         await permission_service.check_quota(
             user.id,
             user.username,
             user.full_name,
-            cost=WAN22_VIDEO_V2_COST,
+            cost=cost,
         )
     except Exception as exc:
         from src.core.exceptions import InsufficientCreditsError
@@ -523,7 +533,7 @@ async def submit_generation(
         with contextlib.suppress(Exception):
             await robust_edit_text(
                 query.message,
-                _t(context, "fsm.wan22_video_v2.submitting", cost=WAN22_VIDEO_V2_COST),
+                _t(context, "fsm.wan22_video_v2.submitting", cost=cost),
                 parse_mode="Markdown",
             )
 
@@ -538,10 +548,7 @@ async def submit_generation(
             negative_prompt=str(data.get("negative_prompt") or "").strip(),
             images=images,
             use_end_frame=bool(data.get("use_end_frame")),
-            resolution_preset=str(
-                data.get("resolution_preset")
-                or WAN22_VIDEO_V2_DEFAULT_RESOLUTION_PRESET
-            ),
+            resolution_preset=resolution_preset,
             cleanup=True,
         ),
     )

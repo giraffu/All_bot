@@ -134,6 +134,23 @@ def test_wan22_strategy_inherits_default_payload_and_upload_paths():
     ]
 
 
+@pytest.mark.parametrize(
+    ("resolution_preset", "expected_cost"),
+    [
+        ("fast", 10),
+        ("standard", 20),
+        ("hd", 30),
+        ("invalid", 20),
+    ],
+)
+def test_wan22_strategy_cost_follows_resolution_preset(
+    resolution_preset, expected_cost
+):
+    strategy = Wan22VideoV2Strategy()
+
+    assert strategy.get_cost({"resolution_preset": resolution_preset}) == expected_cost
+
+
 @pytest.mark.asyncio
 async def test_wan22_strategy_forwards_resolution_preset(monkeypatch):
     strategy = Wan22VideoV2Strategy()

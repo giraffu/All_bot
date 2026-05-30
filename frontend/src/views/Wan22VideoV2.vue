@@ -22,10 +22,10 @@ import {
 import { useGenerationRouteConfig } from '@/features/generation/generationRouteConfig'
 
 const route = useRoute()
-const { taskTitle, taskCost } = useGenerationRouteConfig(route, {
+const { taskTitle, taskCost: baseTaskCost } = useGenerationRouteConfig(route, {
   taskType: 'wan22_video_v2',
   title: '图生视频 v2',
-  cost: 10,
+  cost: 20,
 })
 
 const { uploadFile: uploadStartFile, uploading: startUploading, progress: startUploadProgress } = useUpload()
@@ -57,6 +57,10 @@ const prompt = ref('')
 const negativePrompt = ref(DEFAULT_WAN22_VIDEO_V2_NEGATIVE_PROMPT)
 const resolutionPreset = ref<Wan22VideoV2ResolutionPreset>(DEFAULT_WAN22_VIDEO_V2_RESOLUTION_PRESET)
 const hasEndFrame = computed(() => Boolean(endObjectKey.value))
+const selectedResolutionOption = computed(() =>
+  WAN22_VIDEO_V2_RESOLUTION_OPTIONS.find(option => option.value === resolutionPreset.value),
+)
+const taskCost = computed(() => selectedResolutionOption.value?.cost ?? baseTaskCost.value)
 
 const handleGenerate = async () => {
   if (!startObjectKey.value) {
@@ -203,6 +207,7 @@ const resetForm = () => {
                     <a-radio :value="option.value">
                       <span class="setting-title">{{ option.label }}</span>
                     </a-radio>
+                    <div class="wan22-video-v2__preset-cost mt-2">{{ option.cost }} 灵石</div>
                     <div class="setting-desc mt-2">{{ option.description }}</div>
                   </label>
                 </div>
@@ -341,6 +346,12 @@ const resetForm = () => {
 .wan22-video-v2__preset-card--active {
   border-color: #2563eb;
   background: color-mix(in srgb, #2563eb 10%, var(--theme-panel-bg));
+}
+
+.wan22-video-v2__preset-cost {
+  color: color-mix(in srgb, var(--theme-text-primary) 78%, #22d3ee 22%);
+  font-size: 0.75rem;
+  font-weight: 600;
 }
 
 .setting-title {

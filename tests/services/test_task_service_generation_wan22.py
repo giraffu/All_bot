@@ -1,6 +1,7 @@
 from src.services.task_service_generation_wan22 import (
     DEFAULT_WAN22_VIDEO_V2_NEGATIVE_PROMPT,
     WAN22_VIDEO_V2_DEFAULT_RESOLUTION_PRESET,
+    get_wan22_video_v2_cost,
     get_wan22_video_v2_resolution_label,
     normalize_wan22_video_v2_negative_prompt,
     normalize_wan22_video_v2_resolution_preset,
@@ -37,3 +38,10 @@ def test_normalize_wan22_video_v2_resolution_preset_accepts_precision_value():
 def test_get_wan22_video_v2_resolution_label_uses_language():
     assert get_wan22_video_v2_resolution_label("fast", lang="zh") == "极速"
     assert get_wan22_video_v2_resolution_label("fast", lang="en") == "Fast"
+
+
+def test_get_wan22_video_v2_cost_uses_resolution_preset():
+    assert get_wan22_video_v2_cost("fast") == 10
+    assert get_wan22_video_v2_cost("standard") == 20
+    assert get_wan22_video_v2_cost("hd") == 30
+    assert get_wan22_video_v2_cost("not-valid") == 20

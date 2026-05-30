@@ -15,25 +15,24 @@ from src.services.task_service_generation_common import (
 )
 from src.services.task_service_message_support import translate_context_text
 from src.services.task_service_support import get_acceleration_notice
+from src.services.wan22_video_v2_config import (
+    WAN22_VIDEO_V2_DEFAULT_RESOLUTION_PRESET,
+    WAN22_VIDEO_V2_RESOLUTION_PRESETS,
+    get_wan22_video_v2_cost,
+    get_wan22_video_v2_resolution_label,
+    normalize_wan22_video_v2_resolution_preset,
+)
 
-WAN22_VIDEO_V2_RESOLUTION_PRESETS = {
-    "fast": {
-        "label_zh": "极速",
-        "label_en": "Fast",
-        "precision_preset": "0.36 MP - Small",
-    },
-    "standard": {
-        "label_zh": "标准",
-        "label_en": "Standard",
-        "precision_preset": "0.52 MP - SD",
-    },
-    "hd": {
-        "label_zh": "高清",
-        "label_en": "HD",
-        "precision_preset": "0.65 MP - Balanced",
-    },
-}
-WAN22_VIDEO_V2_DEFAULT_RESOLUTION_PRESET = "standard"
+__all__ = [
+    "DEFAULT_WAN22_VIDEO_V2_NEGATIVE_PROMPT",
+    "WAN22_VIDEO_V2_DEFAULT_RESOLUTION_PRESET",
+    "WAN22_VIDEO_V2_RESOLUTION_PRESETS",
+    "get_wan22_video_v2_cost",
+    "get_wan22_video_v2_resolution_label",
+    "normalize_wan22_video_v2_negative_prompt",
+    "normalize_wan22_video_v2_resolution_preset",
+    "process_wan22_video_v2_generation_task",
+]
 
 
 DEFAULT_WAN22_VIDEO_V2_NEGATIVE_PROMPT = (
@@ -53,32 +52,6 @@ DEFAULT_WAN22_VIDEO_V2_NEGATIVE_PROMPT = (
 def normalize_wan22_video_v2_negative_prompt(negative_prompt: str | None) -> str:
     normalized = (negative_prompt or "").strip()
     return normalized or DEFAULT_WAN22_VIDEO_V2_NEGATIVE_PROMPT
-
-
-def normalize_wan22_video_v2_resolution_preset(
-    resolution_preset: str | None,
-) -> str:
-    normalized = (resolution_preset or "").strip()
-    if normalized in WAN22_VIDEO_V2_RESOLUTION_PRESETS:
-        return normalized
-
-    for preset_key, preset in WAN22_VIDEO_V2_RESOLUTION_PRESETS.items():
-        if normalized == preset["precision_preset"]:
-            return preset_key
-
-    return WAN22_VIDEO_V2_DEFAULT_RESOLUTION_PRESET
-
-
-def get_wan22_video_v2_resolution_label(
-    resolution_preset: str | None,
-    *,
-    lang: str = "zh",
-) -> str:
-    preset_key = normalize_wan22_video_v2_resolution_preset(resolution_preset)
-    preset = WAN22_VIDEO_V2_RESOLUTION_PRESETS[preset_key]
-    return preset["label_en"] if lang == "en" else preset["label_zh"]
-
-
 async def process_wan22_video_v2_generation_task(
     *,
     context: Any,

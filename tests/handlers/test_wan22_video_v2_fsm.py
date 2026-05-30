@@ -144,13 +144,13 @@ async def test_submit_generation_forwards_wan22_payload(monkeypatch):
                 "negative_prompt": "negative",
             },
         },
-        t=lambda key, **kwargs: f"T:{key}",
+        t=lambda key, **kwargs: f"T:{key}:{kwargs.get('cost', '')}",
     )
 
     result = await wan22_video_v2_fsm.submit_generation(update, context)
 
     assert result == ConversationHandler.END
-    quota_mock.assert_awaited_once()
+    quota_mock.assert_awaited_once_with(12345, "tester", "Test User", cost=30)
     process_task_mock.assert_called_once_with(
         context=context,
         chat_id=10001,
@@ -167,6 +167,31 @@ async def test_submit_generation_forwards_wan22_payload(monkeypatch):
     assert "wan22_video_v2_data" not in context.user_data
     assert "in_conversation" not in context.user_data
     cleanup_mock.assert_not_called()
+    assert edit_mock.await_args_list[-1].args[1] == "T:fsm.wan22_video_v2.submitting:30"
+    assert edit_mock.await_args_list[-1].kwargs == {"parse_mode": "Markdown"}
+
+
+@pytest.mark.asyncio
+async def test_build_settings_message_uses_selected_resolution_cost():
+    context = SimpleNamespace(
+        lang="zh",
+        t=lambda key, **kwargs: (
+            f"{key}:{kwargs['cost']}"
+            if key == "fsm.wan22_video_v2.settings_text"
+            else f"T:{key}"
+        ),
+    )
+    data = {
+        "use_end_frame": False,
+        "end_image_path": None,
+        "prompt": "positive",
+        "negative_prompt": "",
+        "resolution_preset": "fast",
+    }
+
+    message = wan22_video_v2_fsm._build_settings_message(context, data)
+
+    assert message == "fsm.wan22_video_v2.settings_text:10"
 
 
 @pytest.mark.asyncio

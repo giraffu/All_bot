@@ -19,6 +19,7 @@ from src.constants import (
 )
 from src.core.task_core_service_providers import get_task_core_image_service
 from src.lora_catalog import normalize_ltx_video_lora_items
+from src.services.wan22_video_v2_config import get_wan22_video_v2_cost
 
 
 EDIT_LIKE_TASK_TYPES = {MODE_EDIT, MODE_IMG2IMG_LORA}
@@ -462,7 +463,7 @@ class LtxVideoStrategy(BaseTaskStrategy):
 
 class Wan22VideoV2Strategy(BaseTaskStrategy):
     def get_cost(self, inputs: Dict[str, Any]) -> int:
-        return TASK_COSTS.get(MODE_WAN22_VIDEO_V2, 10)
+        return get_wan22_video_v2_cost(inputs.get("resolution_preset"))
 
     def get_metadata(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
         return {

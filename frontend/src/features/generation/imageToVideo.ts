@@ -10,10 +10,11 @@ export const WAN22_VIDEO_V2_RESOLUTION_OPTIONS: Array<{
   value: Wan22VideoV2ResolutionPreset
   label: string
   description: string
+  cost: number
 }> = [
-  { value: 'fast', label: '极速', description: '0.36 MP，更快，细节更少' },
-  { value: 'standard', label: '标准', description: '0.52 MP，推荐默认档位' },
-  { value: 'hd', label: '高清', description: '0.65 MP，更清晰，生成更慢' },
+  { value: 'fast', label: '极速', description: '0.36 MP，更快，细节更少', cost: 10 },
+  { value: 'standard', label: '标准', description: '0.52 MP，推荐默认档位', cost: 20 },
+  { value: 'hd', label: '高清', description: '0.65 MP，更清晰，生成更慢', cost: 30 },
 ]
 
 export type UnifiedImageToVideoTaskType = 'custom_video' | 'video_lora'

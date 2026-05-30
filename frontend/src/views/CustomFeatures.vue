@@ -94,7 +94,7 @@ const features = [
     description: 'lab.cards.wan22_video_v2_desc',
     icon: Video,
     color: 'bg-emerald-100 text-emerald-600',
-    cost: 10,
+    cost: 20,
     route: 'Wan22VideoV2'
   }
 ]

@@ -78,7 +78,7 @@ const routes: RouteRecordRaw[] = [
         path: 'wan22-video-v2',
         name: 'Wan22VideoV2',
         component: () => import('@/views/Wan22VideoV2.vue'),
-        meta: { generation: { taskType: 'wan22_video_v2', title: '图生视频 v2', cost: 10 } }
+        meta: { generation: { taskType: 'wan22_video_v2', title: '图生视频 v2', cost: 20 } }
       },
       {
         path: 'history',
