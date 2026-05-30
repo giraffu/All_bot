@@ -1,32 +1,17 @@
 from typing import Any
 
-
-BACKEND_STATUS_PENDING = "pending"
-BACKEND_STATUS_RUNNING = "running"
-BACKEND_STATUS_DONE = "done"
-BACKEND_STATUS_ERROR = "error"
-BACKEND_STATUS_CANCELLED = "cancelled"
-
-STREAM_STATUS_SUCCESS = "success"
-STREAM_STATUS_FAILED = "failed"
-STREAM_STATUS_CANCELLED = "cancelled"
-RESULT_STATUS_PENDING = "pending_result"
-
-BACKEND_TERMINAL_STATUSES = frozenset(
-    {BACKEND_STATUS_DONE, BACKEND_STATUS_ERROR, BACKEND_STATUS_CANCELLED}
+from src.core.task_lifecycle_contract import (
+    BACKEND_STATUS_CANCELLED,
+    BACKEND_STATUS_DONE,
+    BACKEND_STATUS_ERROR,
+    STREAM_STATUS_CANCELLED,
+    STREAM_STATUS_FAILED,
+    STREAM_STATUS_SUCCESS,
+    is_backend_terminal_status,
+    normalize_backend_status,
 )
 
-
-def normalize_backend_status(status: str | None) -> str | None:
-    if status == STREAM_STATUS_SUCCESS:
-        return BACKEND_STATUS_DONE
-    if status == STREAM_STATUS_FAILED:
-        return BACKEND_STATUS_ERROR
-    return status
-
-
-def is_backend_terminal_status(status: str | None) -> bool:
-    return normalize_backend_status(status) in BACKEND_TERMINAL_STATUSES
+RESULT_STATUS_PENDING = "pending_result"
 
 
 def map_backend_status_to_stream_status(status: str | None) -> str | None:

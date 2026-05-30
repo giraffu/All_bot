@@ -94,7 +94,6 @@ async def process_i2i_pro_task(
             cleanup=True,
             cleanup_paths=images,
             task_label="process_i2i_pro_task",
-            runtime_state=runtime_state,
             failure_policy=BotTaskFailurePolicy(
                 unexpected_should_refund=lambda state: state.task_submitted,
                 unexpected_error_log_message=build_unexpected_error_log_message(

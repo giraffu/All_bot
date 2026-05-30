@@ -4,9 +4,11 @@
 本模块负责统一提交、排队、监控、取消与清理图片/视频生成任务。当前架构下，任务调度不是单一 `task_core.py` 单体，而是由以下几层组成：
 
 - `src/core/task_core.py`：公开 facade，暴露稳定入口，如 `process_and_submit_task(...)`、`persist_successful_task_result(...)`
+- `src/core/task_lifecycle_contract.py`：共享任务生命周期 contract，统一 side-effect plan 归一化与 backend 终态判断
 - `src/core/task_core_service_providers.py`：provider/capability 边界，屏蔽 `image_service`、`TaskRegistry`、submission outbox 等基础设施实现
 - `src/core/task_core_default_dependencies.py`：默认依赖装配层，把 facade 所需运行时能力拼装为 `TaskCore*Dependencies`
 - `src/core/task_core_submission.py`：提交 Saga、注册表写入、派发与补偿
+- `src/services/task_lifecycle_runner.py`：共享 lifecycle runner / terminal router，负责 monitor->route 骨架与 success/cancelled/failure 分流
 - `src/services/task_web_monitor.py`：Web 端 side-effect finalizer 的 application/service 实现，负责成功持久化、取消/失败终态、运行态清理
 - `src/services/task_web_finalizer.py`：持久化 Web finalizer 队列与恢复循环，负责在进程重启后继续收口未完成的 Web 终态
 - `src/core/task_core_runtime.py`：双 ID 终止、best-effort cancel、并发锁与 registry 清理
@@ -68,7 +70,7 @@ sequenceDiagram
 - 基于 `TaskCoreProcessDependencies` 获取策略、输入准备与计费能力
 - 进行并发锁检查与扣费
 - 执行提交 Saga，写入 `registry_task_id` 并派发 `backend_task_id`
-- 提交成功后根据 `TaskSubmissionSideEffectPlan` 写入持久化 Web finalizer 或其他 side effect
+- 提交成功后根据 `TaskSubmissionSideEffectPlan` 写入持久化 Web finalizer 或其他 side effect；默认 Web side effect 装配由 dependency 层负责，facade 不直接 import `task_web_monitor`
 - 提交失败时执行补偿，并在未成功提交时释放并发锁
 
 ### 4.2 Web 监控门面
@@ -86,6 +88,7 @@ sequenceDiagram
 
 补充约束：
 - backend 执行面在发布 `done/error` 的 `comfy:task_events:{backend_task_id}` 终态事件时，应随事件携带 `task_type`，并尽量附带 `worker_id`、`created_at` 等最小详情，避免 Dashboard/stream 消费端与 Web monitor runtime cleanup 争抢 Redis 临时详情键而产生观测竞态。
+- Bot 轮询展示、Web monitor 和 stream/result fallback 对 backend `done/error/cancelled` 的判定，应共享 `task_lifecycle_contract.py`，避免多处写死终态名单。
 
 ### 4.3 Bot 主链路
 Bot 不再走字符串取消协议，也不再依赖厚重 compat wrapper。当前主链为：
@@ -111,6 +114,7 @@ Bot flow 已拆成五段式上下文：
 - `cleanup`
 
 取消态改为专用异常 `BotTaskCancelled`，不再依赖字符串 sentinel `"cancelled"`。
+当前 Bot `task_service_flow.py` 与 Web `task_web_monitor.py` 已共享 `task_lifecycle_runner.py` 的 monitor->route 骨架；Web monitor 与 `task_web_finalizer.py` 进一步共享 backend terminal router，避免多处重复写 success/cancelled/failure 分流。
 
 ## 5. API 口径
 当前 Web 任务入口以 `/api/tasks/generate` 为主，body 口径为：

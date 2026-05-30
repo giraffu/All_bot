@@ -2,11 +2,10 @@ import asyncio
 import logging
 from typing import Any
 
+from src.core.task_lifecycle_contract import build_task_terminal_snapshot
 from src.core.task_core_types import TaskSubmissionContext, VideoTaskRequest
 from src.core.task_status_mapper import (
     BACKEND_STATUS_CANCELLED,
-    BACKEND_STATUS_DONE,
-    BACKEND_STATUS_ERROR,
     is_backend_terminal_status,
     normalize_backend_status,
 )
@@ -18,6 +17,7 @@ from src.services.task_web_monitor import (
     finalize_monitored_web_task_failure_default,
     finalize_monitored_web_task_success_default,
 )
+from src.services.task_lifecycle_runner import route_backend_terminal_snapshot
 
 logger = logging.getLogger(__name__)
 
@@ -91,49 +91,98 @@ async def enqueue_pending_web_finalizer(
     )
 
 
+async def _finalize_pending_web_success(
+    *,
+    record: dict[str, Any],
+    registry_task_id: str,
+    terminal_snapshot,
+    remove_record_func,
+) -> None:
+    await finalize_monitored_web_task_success_default(
+        backend_task_id=record["backend_task_id"],
+        internal_user_id=record["internal_user_id"],
+        username=record["username"],
+        registry_task_id=registry_task_id,
+        submission_context=_deserialize_submission_context(
+            internal_user_id=record["internal_user_id"],
+            username=record["username"],
+            payload=record["submission_context"],
+        ),
+        result_path=terminal_snapshot.result_path,
+        extra_outputs=terminal_snapshot.extra_outputs,
+        logger_override=logger,
+    )
+    await remove_record_func()
+
+
+async def _finalize_pending_web_cancellation(
+    *,
+    record: dict[str, Any],
+    registry_task_id: str,
+    remove_record_func,
+) -> None:
+    await finalize_monitored_web_task_cancellation_default(
+        internal_user_id=record["internal_user_id"],
+        username=record["username"],
+        cost=int(record.get("cost", 0)),
+        registry_task_id=registry_task_id,
+        logger_override=logger,
+    )
+    await remove_record_func()
+
+
+async def _finalize_pending_web_failure(
+    *,
+    record: dict[str, Any],
+    registry_task_id: str,
+    terminal_snapshot,
+    remove_record_func,
+) -> None:
+    await finalize_monitored_web_task_failure_default(
+        internal_user_id=record["internal_user_id"],
+        username=record["username"],
+        cost=int(record.get("cost", 0)),
+        registry_task_id=registry_task_id,
+        final_status=terminal_snapshot.status,
+        logger_override=logger,
+    )
+    await remove_record_func()
+
+
 async def _finalize_terminal_record(record: dict[str, Any], status_data: dict[str, Any]) -> None:
     final_status = normalize_backend_status(status_data.get("status"))
     registry_task_id = record["registry_task_id"]
+    terminal_snapshot = build_task_terminal_snapshot(
+        status=final_status,
+        result_path=status_data.get("result_path"),
+        extra_outputs=status_data.get("extra_outputs"),
+        error=status_data.get("error") or status_data.get("error_msg"),
+        message=status_data.get("message"),
+    )
 
-    if final_status == BACKEND_STATUS_DONE and status_data.get("result_path"):
-        await finalize_monitored_web_task_success_default(
-            backend_task_id=record["backend_task_id"],
-            internal_user_id=record["internal_user_id"],
-            username=record["username"],
-            registry_task_id=registry_task_id,
-            submission_context=_deserialize_submission_context(
-                internal_user_id=record["internal_user_id"],
-                username=record["username"],
-                payload=record["submission_context"],
-            ),
-            result_path=status_data["result_path"],
-            extra_outputs=status_data.get("extra_outputs"),
-            logger_override=logger,
-        )
+    async def _remove_record() -> None:
         await redis_client.remove_pending_web_finalizer(registry_task_id)
-        return
 
-    if final_status == BACKEND_STATUS_CANCELLED:
-        await finalize_monitored_web_task_cancellation_default(
-            internal_user_id=record["internal_user_id"],
-            username=record["username"],
-            cost=int(record.get("cost", 0)),
+    await route_backend_terminal_snapshot(
+        terminal_snapshot=terminal_snapshot,
+        handle_success=lambda snapshot: _finalize_pending_web_success(
+            record=record,
             registry_task_id=registry_task_id,
-            logger_override=logger,
-        )
-        await redis_client.remove_pending_web_finalizer(registry_task_id)
-        return
-
-    if final_status == BACKEND_STATUS_ERROR:
-        await finalize_monitored_web_task_failure_default(
-            internal_user_id=record["internal_user_id"],
-            username=record["username"],
-            cost=int(record.get("cost", 0)),
+            terminal_snapshot=snapshot,
+            remove_record_func=_remove_record,
+        ),
+        handle_cancelled=lambda _snapshot: _finalize_pending_web_cancellation(
+            record=record,
             registry_task_id=registry_task_id,
-            final_status=final_status,
-            logger_override=logger,
-        )
-        await redis_client.remove_pending_web_finalizer(registry_task_id)
+            remove_record_func=_remove_record,
+        ),
+        handle_failure=lambda snapshot: _finalize_pending_web_failure(
+            record=record,
+            registry_task_id=registry_task_id,
+            terminal_snapshot=snapshot,
+            remove_record_func=_remove_record,
+        ),
+    )
 
 
 async def process_pending_web_finalizer(

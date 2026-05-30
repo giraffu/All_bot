@@ -30,6 +30,7 @@ from src.services.tg_task_runtime import (
     get_or_send_status_message,
     build_cancel_task_markup,
 )
+from src.services.task_lifecycle_runner import run_monitored_task_lifecycle
 from src.utils import robust_edit_text, robust_reply_text
 
 
@@ -300,36 +301,37 @@ async def execute_bot_task_stages(
         submission=submission,
     )
 
-    final_info = await run_bot_task_monitor_stage(
-        backend_task_id=execution.backend_task_id,
-        status_msg=execution.status_msg,
-        is_video=request.is_video,
-        internal_user_id=request.internal_user_id,
-        lang=resolve_context_lang(request.context),
-    )
-
-    return await run_bot_task_completion_stage(
-        context=request.context,
-        chat_id=request.chat_id,
-        status_msg=execution.status_msg,
-        runtime_state=flow.runtime_state,
-        internal_user_id=request.internal_user_id,
-        username=request.username,
-        prompt=request.prompt,
-        task_type=request.task_type,
-        registry_task_id=execution.registry_task_id,
-        backend_task_id=execution.backend_task_id,
-        saved_inputs=execution.saved_inputs or [],
-        final_info=final_info,
-        is_video=request.is_video,
-        message_spec=execution.message_spec or presentation.message_spec,
-        send_result=presentation.send_result,
-        reply_markup=presentation.reply_markup,
-        delete_status=presentation.delete_status,
-        allow_contribute=presentation.allow_contribute,
-        billing_resolution=billing.billing_resolution,
-        requested_duration=billing.requested_duration,
-        missing_output_should_refund=billing.missing_output_should_refund,
+    return await run_monitored_task_lifecycle(
+        monitor_stage_func=lambda: run_bot_task_monitor_stage(
+            backend_task_id=execution.backend_task_id,
+            status_msg=execution.status_msg,
+            is_video=request.is_video,
+            internal_user_id=request.internal_user_id,
+            lang=resolve_context_lang(request.context),
+        ),
+        route_terminal_result_func=lambda final_info: run_bot_task_completion_stage(
+            context=request.context,
+            chat_id=request.chat_id,
+            status_msg=execution.status_msg,
+            runtime_state=flow.runtime_state,
+            internal_user_id=request.internal_user_id,
+            username=request.username,
+            prompt=request.prompt,
+            task_type=request.task_type,
+            registry_task_id=execution.registry_task_id,
+            backend_task_id=execution.backend_task_id,
+            saved_inputs=execution.saved_inputs or [],
+            final_info=final_info,
+            is_video=request.is_video,
+            message_spec=execution.message_spec or presentation.message_spec,
+            send_result=presentation.send_result,
+            reply_markup=presentation.reply_markup,
+            delete_status=presentation.delete_status,
+            allow_contribute=presentation.allow_contribute,
+            billing_resolution=billing.billing_resolution,
+            requested_duration=billing.requested_duration,
+            missing_output_should_refund=billing.missing_output_should_refund,
+        ),
     )
 
 

@@ -2,6 +2,11 @@ import asyncio
 import logging
 from collections.abc import Awaitable, Callable
 
+from src.core.task_lifecycle_contract import (
+    is_backend_cancelled_status,
+    is_backend_failed_status,
+    is_backend_success_status,
+)
 from src.i18n.translator import get_text
 from src.services.tg_task_progress_presentation import (
     build_done_progress_text,
@@ -241,20 +246,21 @@ async def monitor_task_progress(
         status = info.get("status")
         progress = info.get("progress", 0)
 
-        if status == "done":
+        if is_backend_success_status(status):
             final_info = info
             if not is_video and last_progress != 100:
                 await update_status_message(build_done_progress_text(lang=lang))
             break
 
-        if status in ["error", "failed", "cancelled"]:
-            if status == "cancelled":
-                logger.warning("Task %s was cancelled.", task_id)
-                if on_cancelled is not None:
-                    maybe_awaitable = on_cancelled()
-                    if maybe_awaitable is not None:
-                        await maybe_awaitable
-                return None
+        if is_backend_cancelled_status(status):
+            logger.warning("Task %s was cancelled.", task_id)
+            if on_cancelled is not None:
+                maybe_awaitable = on_cancelled()
+                if maybe_awaitable is not None:
+                    await maybe_awaitable
+            return None
+
+        if is_backend_failed_status(status) or status == "failed":
             raise RuntimeError(info.get("error", "Unknown error"))
 
         if status == "pending":

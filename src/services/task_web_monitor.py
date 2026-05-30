@@ -18,7 +18,16 @@ from src.core.task_core_types import (
     CoreDomainError,
     TaskSubmissionSideEffectPlan,
 )
+from src.core.task_lifecycle_contract import (
+    build_task_terminal_snapshot,
+    is_backend_terminal_status,
+    normalize_task_submission_side_effect_plan,
+)
 from src.core.task_core_runtime import cleanup_task_runtime_state
+from src.services.task_lifecycle_runner import (
+    route_backend_terminal_snapshot,
+    run_monitored_task_lifecycle,
+)
 
 
 def get_default_task_core_monitor_dependencies():
@@ -89,10 +98,9 @@ def normalize_submission_side_effect_plan(
     client_type: str | None,
     source_post_id: int | None,
 ) -> TaskSubmissionSideEffectPlan:
-    if submission_side_effect_plan is not None:
-        return submission_side_effect_plan
-    return TaskSubmissionSideEffectPlan(
-        attach_web_monitor=client_type == "web",
+    return normalize_task_submission_side_effect_plan(
+        submission_side_effect_plan=submission_side_effect_plan,
+        client_type=client_type,
         source_post_id=source_post_id,
     )
 
@@ -248,56 +256,66 @@ async def monitor_task_and_release_lock(
     finalize_failure_func: Callable[..., Awaitable[None]],
     logger: logging.Logger,
 ):
-    final_status = None
-    result_path = None
-    extra_outputs = None
-    try:
-        async for progress in monitor_progress_func(
-            backend_task_id,
-            submission_context.is_video_task,
-        ):
-            normalized_status = normalize_terminal_status_func(progress.get("status"))
-            if normalized_status in ["done", "error", "cancelled"]:
-                final_status = normalized_status
-                result_path = progress.get("result_path")
-                extra_outputs = progress.get("extra_outputs")
-                break
-    except asyncio.CancelledError:
-        logger.error("Task monitor %s cancelled.", backend_task_id)
-        final_status = "cancelled"
-    except Exception as exc:
-        logger.error(
-            "Background monitoring error for task %s: %s",
-            backend_task_id,
-            exc,
-        )
-        final_status = "error"
-    finally:
-        if final_status == "done" and result_path:
-            await finalize_success_func(
+    async def _monitor_stage():
+        terminal_snapshot = build_task_terminal_snapshot(status=None)
+        try:
+            async for progress in monitor_progress_func(
+                backend_task_id,
+                submission_context.is_video_task,
+            ):
+                normalized_status = normalize_terminal_status_func(progress.get("status"))
+                if is_backend_terminal_status(normalized_status):
+                    terminal_snapshot = build_task_terminal_snapshot(
+                        status=normalized_status,
+                        result_path=progress.get("result_path"),
+                        extra_outputs=progress.get("extra_outputs"),
+                        error=progress.get("error") or progress.get("error_msg"),
+                        message=progress.get("message"),
+                    )
+                    break
+        except asyncio.CancelledError:
+            logger.error("Task monitor %s cancelled.", backend_task_id)
+            return build_task_terminal_snapshot(status="cancelled")
+        except Exception as exc:
+            logger.error(
+                "Background monitoring error for task %s: %s",
+                backend_task_id,
+                exc,
+            )
+            return build_task_terminal_snapshot(
+                status="error",
+                error=str(exc),
+            )
+        return terminal_snapshot
+
+    await run_monitored_task_lifecycle(
+        monitor_stage_func=_monitor_stage,
+        route_terminal_result_func=lambda terminal_snapshot: route_backend_terminal_snapshot(
+            terminal_snapshot=terminal_snapshot,
+            handle_success=lambda snapshot: finalize_success_func(
                 backend_task_id=backend_task_id,
                 internal_user_id=internal_user_id,
                 username=username,
                 registry_task_id=registry_task_id,
                 submission_context=submission_context,
-                result_path=result_path,
-                extra_outputs=extra_outputs,
-            )
-        elif final_status == "cancelled":
-            await finalize_cancellation_func(
+                result_path=snapshot.result_path,
+                extra_outputs=snapshot.extra_outputs,
+            ),
+            handle_cancelled=lambda _snapshot: finalize_cancellation_func(
                 internal_user_id=internal_user_id,
                 username=username,
                 cost=cost,
                 registry_task_id=registry_task_id,
-            )
-        else:
-            await finalize_failure_func(
+            ),
+            handle_failure=lambda snapshot: finalize_failure_func(
                 internal_user_id=internal_user_id,
                 username=username,
                 cost=cost,
                 registry_task_id=registry_task_id,
-                final_status=final_status,
-            )
+                final_status=snapshot.status,
+            ),
+        ),
+    )
 
 
 def attach_web_task_monitor_default(

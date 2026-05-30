@@ -33,7 +33,7 @@ async def test_process_and_submit_task_uses_explicit_process_dependencies():
             submission_context=SimpleNamespace(saved_inputs=["saved.png"]),
         )
     )
-    attach_side_effects = MagicMock()
+    attach_side_effects = AsyncMock()
     compensate_failed = AsyncMock()
     release_lock = AsyncMock()
     shield = AsyncMock()
@@ -90,7 +90,7 @@ async def test_attach_submission_side_effects_raises_domain_error_when_monitor_a
     schedule_apply = MagicMock()
 
     with pytest.raises(task_core.CoreDomainError, match="后台监控挂载失败: boom"):
-        task_web_monitor.attach_submission_side_effects(
+        await task_web_monitor.attach_submission_side_effects(
             backend_task_id="backend-1",
             internal_user_id=1,
             username="tester",

@@ -22,6 +22,7 @@ from src.core.task_core_dependencies import (
     TaskCoreProcessDependencies,
 )
 from src.core.task_core_default_dependencies import (
+    build_default_task_core_attach_submission_side_effects_func,
     build_default_task_core_process_dependencies as _build_task_core_process_dependencies_impl,
 )
 from src.core.task_core_persistence import (
@@ -52,9 +53,8 @@ from src.core.task_core_types import (
     VideoTaskRequest,
 )
 from src.core.task_core_video_request import build_video_task_request
-from src.services.task_web_monitor import (
-    attach_submission_side_effects_default as _attach_submission_side_effects,
-    normalize_submission_side_effect_plan as _normalize_submission_side_effect_plan,
+from src.core.task_lifecycle_contract import (
+    normalize_task_submission_side_effect_plan,
 )
 from src.logger import UserLogger
 
@@ -102,7 +102,11 @@ def _build_task_core_process_dependencies() -> TaskCoreProcessDependencies:
         check_concurrency_lock_func=check_concurrency_lock,
         check_and_deduct_credits_func=check_and_deduct_credits,
         execute_task_submission_saga_func=_execute_task_submission_saga,
-        attach_submission_side_effects_func=_attach_submission_side_effects,
+        attach_submission_side_effects_func=(
+            build_default_task_core_attach_submission_side_effects_func(
+                core_domain_error_cls=CoreDomainError
+            )
+        ),
         compensate_failed_submission_func=_compensate_failed_submission,
         release_concurrency_lock_func=release_concurrency_lock,
         get_strategy_func=StrategyFactory.get_strategy,
@@ -187,7 +191,7 @@ async def process_and_submit_task(
     dependencies: TaskCoreProcessDependencies | None = None,
 ) -> dict:
     dependencies = dependencies or get_default_task_core_process_dependencies()
-    submission_side_effect_plan = _normalize_submission_side_effect_plan(
+    submission_side_effect_plan = normalize_task_submission_side_effect_plan(
         submission_side_effect_plan=submission_side_effect_plan,
         client_type=client_type,
         source_post_id=source_post_id,

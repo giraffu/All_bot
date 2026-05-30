@@ -146,14 +146,19 @@ Web 统一入口在：
 ### 6.2 provider / dependency 边界
 当前 `task_core` 采用 facade + provider/dependencies 结构：
 - `src/core/task_core.py`
+- `src/core/task_lifecycle_contract.py`
 - `src/core/task_core_default_dependencies.py`
 - `src/core/task_core_service_providers.py`
 - `src/core/task_core_submission.py`
+- `src/services/task_lifecycle_runner.py`
 - `src/services/task_web_monitor.py`
 - `src/core/task_core_runtime.py`
 
 关键规则：
 - `core` 内不应重新直连基础设施实现
+- `task_core.py` facade 不再直接 import `task_web_monitor`，Web side effect 默认装配已下沉到 `task_core_default_dependencies.py`
+- Bot / Web / stream 对 backend `done/error/cancelled` 终态判断应共享 `task_lifecycle_contract.py`
+- Bot `task_service_flow.py` 与 Web `task_web_monitor.py` 现共享 `task_lifecycle_runner.py` 的 monitor->route 骨架；Web runtime monitor 与 `task_web_finalizer.py` 共享 terminal router
 - 默认 provider 注册由应用入口承担，不由 `core` 模块导入时自动注册
 - 单测优先走显式 `dependencies` 或 `*_func` seam
 
