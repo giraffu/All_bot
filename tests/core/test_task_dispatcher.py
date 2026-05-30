@@ -56,8 +56,8 @@ def test_strategy_factory_returns_correct_strategy():
     assert strategy.mode == "unknown_mode"
 
 
-def test_base_video_strategy_normalizes_legacy_image_to_video_mode():
-    strategy = BaseVideoStrategy("MODE_IMAGE_TO_VIDEO")
+def test_base_video_strategy_keeps_explicit_image_to_video_mode():
+    strategy = BaseVideoStrategy(MODE_IMAGE_TO_VIDEO)
 
     assert strategy.mode == MODE_IMAGE_TO_VIDEO
 
@@ -91,28 +91,11 @@ def test_strategy_metadata_keeps_lora_context(strategy, inputs):
     assert metadata["lora_strength"] == inputs["lora_strength"]
 
 
-@pytest.mark.parametrize(
-    ("legacy_task_type", "expected_mode"),
-    [
-        ("MODE_I2I_PRO", MODE_I2I_PRO),
-        ("MODE_IMG2IMG_LORA", MODE_IMG2IMG_LORA),
-        ("t2i-pornmaster-turbo", MODE_TXT2IMG),
-    ],
-)
-def test_strategy_factory_normalizes_legacy_string_task_types(
-    legacy_task_type, expected_mode
-):
-    strategy = StrategyFactory.get_strategy(legacy_task_type)
-
-    assert isinstance(strategy, DefaultImageStrategy)
-    assert strategy.mode == expected_mode
-
-
-def test_strategy_factory_normalizes_legacy_video_alias_into_video_fallback():
+def test_strategy_factory_treats_unknown_legacy_style_task_type_as_default_image():
     strategy = StrategyFactory.get_strategy("MODE_IMAGE_TO_VIDEO")
 
-    assert isinstance(strategy, BaseVideoStrategy)
-    assert strategy.mode == MODE_IMAGE_TO_VIDEO
+    assert isinstance(strategy, DefaultImageStrategy)
+    assert strategy.mode == "MODE_IMAGE_TO_VIDEO"
 
 
 def test_video_strategy_cost_calculation():
@@ -155,7 +138,7 @@ def test_wan22_strategy_inherits_default_payload_and_upload_paths():
 async def test_default_image_strategy_normalizes_legacy_lora_mode_before_submit(
     monkeypatch,
 ):
-    strategy = DefaultImageStrategy("MODE_IMG2IMG_LORA")
+    strategy = DefaultImageStrategy(MODE_IMG2IMG_LORA)
     submit_mock = AsyncMock(return_value="backend-task-id")
     _patch_dispatch_image_service(
         monkeypatch,
@@ -491,10 +474,9 @@ async def test_base_video_strategy_edit_branch_uses_default_submission_context(
     [
         (MODE_IMAGE_TO_VIDEO, "BreastGrow", "backend-lora", True),
         (MODE_IMAGE_TO_VIDEO, "", "backend-edit", False),
-        ("custom_video", "BreastGrow", "backend-lora", True),
         ("custom_video", "", "backend-edit", False),
-        ("video_edit", "BreastGrow", "backend-lora", True),
-        ("perfect_video_edit", "BreastGrow", "backend-lora", True),
+        ("video_edit", "BreastGrow", "backend-edit", False),
+        ("perfect_video_edit", "BreastGrow", "backend-edit", False),
     ],
 )
 async def test_base_video_strategy_routes_image_to_video_modes_by_lora_name(

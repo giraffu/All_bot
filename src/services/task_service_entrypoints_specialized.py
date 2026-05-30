@@ -21,6 +21,7 @@ from src.services.task_service_message_support import (
     build_status_message,
     translate_context_text,
 )
+from src.services.task_service_telegram_adapter import extract_actor_from_update
 from src.services.task_service_flow import run_bot_task_application
 from src.services.task_service_support import get_acceleration_notice
 from src.services.task_service_types import BotTaskFailurePolicy, BotTaskRuntimeState
@@ -41,10 +42,8 @@ async def process_ltx_video_task(
 ):
     from src.constants import MODE_LTX_VIDEO
 
-    chat_id = update.effective_chat.id
-    user_id = update.effective_user.id
-    username = update.effective_user.username
-    internal_user_id = await resolve_internal_user_id(user_id, username)
+    actor = extract_actor_from_update(update)
+    internal_user_id = await resolve_internal_user_id(actor.user_id, actor.username)
 
     mode = MODE_LTX_VIDEO
     resolution = context.user_data.get("ltx_video_resolution", "1280x704")
@@ -102,9 +101,9 @@ async def process_ltx_video_task(
         flow=build_bot_task_flow_context(
             context=context,
             update=update,
-            chat_id=chat_id,
+            chat_id=actor.chat_id,
             internal_user_id=internal_user_id,
-            username=username,
+            username=actor.username,
             task_type=mode,
             inputs=inputs,
             prompt=prompt,

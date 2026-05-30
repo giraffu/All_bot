@@ -1,11 +1,5 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import {
-  CloseCircleOutlined,
-  DownloadOutlined,
-  InboxOutlined,
-  VideoCameraOutlined
-} from '@ant-design/icons-vue'
 import { message } from 'ant-design-vue'
 import { useI18n } from 'vue-i18n'
 import { useTemplateApplyUpload } from '@/composables/useTemplateApplyUpload'
@@ -18,8 +12,6 @@ import {
   getImageToVideoPayloadLoraName,
   getImageToVideoPayloadLoraStrength,
   getImageToVideoRequestTaskType,
-  IMAGE_TO_VIDEO_LORA_OPTIONS,
-  LTX_VIDEO_LORA_OPTIONS,
   normalizeLtxVideoLoraItems,
   isUnifiedImageToVideoTaskType,
   normalizeImageToVideoLoraSelection,
@@ -28,11 +20,20 @@ import {
 import { useTemplateApplyStore } from '@/stores/templateApply'
 import type { TemplateApplyContext } from '@/types/templateApply'
 import { resolveTemplateVideoApplyState } from '@/utils/templateVideoApplyState'
+import { warnIfPropsExceedBudget } from '@/utils/componentPropsBudget'
+import TemplateApplyActionFooter from '@/components/template-apply/TemplateApplyActionFooter.vue'
+import TemplateApplyLoraPromptSection from '@/components/template-apply/TemplateApplyLoraPromptSection.vue'
+import TemplateApplyOutputSettingsSection from '@/components/template-apply/TemplateApplyOutputSettingsSection.vue'
+import TemplateApplyResultSection from '@/components/template-apply/TemplateApplyResultSection.vue'
+import TemplateApplyTemplateLocks from '@/components/template-apply/TemplateApplyTemplateLocks.vue'
+import TemplateApplyUploadSection from '@/components/template-apply/TemplateApplyUploadSection.vue'
 
 const props = defineProps<{
   sessionId: string
   context: TemplateApplyContext
 }>()
+
+warnIfPropsExceedBudget('TemplateImageToVideoPanel', Object.keys(props).length)
 
 const { t } = useI18n()
 const templateApplyStore = useTemplateApplyStore()
@@ -304,323 +305,63 @@ onBeforeUnmount(() => {
         <h2 class="text-2xl font-bold text-slate-100 mb-2">{{ taskTitle }}</h2>
         <p class="text-slate-400 text-sm mb-6">{{ t('template_apply.image_to_video.current_page_desc') }}</p>
 
-        <div
-          v-if="isTemplateApplied"
-          class="mb-4 rounded-xl border border-indigo-500/40 bg-indigo-500/15 px-4 py-3 text-sm text-slate-200"
-        >
-          {{ templateApplyNotice }}
-        </div>
+        <TemplateApplyTemplateLocks
+          class="mb-6"
+          :is-template-applied="isTemplateApplied"
+          :template-apply-notice="templateApplyNotice"
+          :template-settings-warning="templateSettingsWarning"
+        />
 
-        <div
-          v-if="templateSettingsWarning"
-          class="mb-6 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-200"
-        >
-          {{ templateSettingsWarning }}
-        </div>
+        <TemplateApplyUploadSection
+          :file-preview="filePreview"
+          :uploading-slots="uploadingSlots"
+          :progress-by-slot="progressBySlot"
+          :before-upload="beforeUpload"
+          @remove="handleRemove"
+        />
 
-        <div class="rounded-xl border border-slate-700 bg-slate-800/70 p-4">
-          <div class="text-sm font-semibold text-slate-200 mb-3">{{ t('template_apply.common.base_image') }}</div>
-          <div v-if="filePreview" class="relative rounded-xl overflow-hidden border border-slate-700 bg-slate-950/80">
-            <img :src="filePreview" class="h-56 w-full object-contain bg-slate-950/80" />
-            <button
-              class="absolute right-2 top-2 inline-flex h-7 w-7 items-center justify-center rounded-full bg-black/55 text-white"
-              @click="handleRemove"
-            >
-              <CloseCircleOutlined />
-            </button>
-          </div>
-          <a-upload-dragger
-            v-else
-            :before-upload="beforeUpload"
-            :show-upload-list="false"
-            accept="image/*"
-            class="template-upload"
-          >
-            <p class="ant-upload-drag-icon">
-              <InboxOutlined class="text-cyan-400" />
-            </p>
-            <p class="text-slate-200">{{ t('template_apply.common.upload_base_image') }}</p>
-            <p class="text-slate-400 text-xs">{{ t('template_apply.common.continue_after_close') }}</p>
-          </a-upload-dragger>
-        </div>
+        <TemplateApplyLoraPromptSection
+          class="mt-6"
+          :show-action-section="showActionSection"
+          :is-unified-image-to-video="isUnifiedImageToVideo"
+          :is-ltx-video="isLtxVideo"
+          :prompt="prompt"
+          :lora-selection="loraSelection"
+          :selected-ltx-lora-names="selectedLtxLoraNames"
+          :ltx-lora-items="ltxLoraItems"
+          :expanded-ltx-lora-editors="expandedLtxLoraEditors"
+          @update:prompt="prompt = $event"
+          @update:lora-selection="loraSelection = $event"
+          @sync-ltx-lora-items="syncLtxLoraItems"
+          @toggle-ltx-lora-strength-editor="toggleLtxLoraStrengthEditor"
+          @remove-ltx-lora-item="removeLtxLoraItem"
+          @update-ltx-lora-strength="updateLtxLoraStrength"
+        />
 
-        <div
-          v-if="Object.values(uploadingSlots).some(Boolean)"
-          class="mt-4 space-y-2"
-        >
-          <div
-            v-for="(progress, slot) in progressBySlot"
-            :key="slot"
-            v-show="uploadingSlots[slot]"
-            class="rounded-lg border border-slate-700 bg-slate-800/80 px-3 py-2"
-          >
-            <div class="flex items-center justify-between text-xs text-slate-300 mb-1">
-              <span>{{ slot }}</span>
-              <span>{{ progress }}%</span>
-            </div>
-            <a-progress :percent="progress" size="small" />
-          </div>
-        </div>
-
-        <div v-if="showActionSection" class="mt-6 rounded-xl border border-slate-700 bg-slate-800/70 p-4">
-          <div class="text-sm font-semibold text-slate-200 mb-3">
-            {{ isUnifiedImageToVideo ? t('template_apply.image_to_video.action_and_model') : t('template_apply.image_to_video.desc_and_params') }}
-          </div>
-          <div v-if="isUnifiedImageToVideo && !isLtxVideo" class="mb-3">
-            <a-select
-              v-model:value="loraSelection"
-              :placeholder="t('template_apply.image_to_video.select_addon')"
-              class="w-full"
-            >
-              <a-select-option
-                v-for="option in (isLtxVideo ? LTX_VIDEO_LORA_OPTIONS : IMAGE_TO_VIDEO_LORA_OPTIONS)"
-                :key="option.value"
-                :value="option.value"
-              >
-                {{ option.label }}
-              </a-select-option>
-            </a-select>
-            <p v-if="isLtxVideo && loraName && loraStrength != null" class="mt-2 text-xs text-slate-400">
-              默认强度：{{ loraStrength }}
-            </p>
-          </div>
-          <div v-else-if="isLtxVideo" class="mb-4 space-y-3">
-            <a-select
-              :value="selectedLtxLoraNames"
-              mode="multiple"
-              placeholder="选择要叠加的附加模型"
-              class="w-full"
-              :max-tag-count="2"
-              :max-tag-placeholder="(omittedValues: Array<{ label: string; value: string }>) => `+${omittedValues.length}`"
-              @change="syncLtxLoraItems($event as string[])"
-            >
-              <a-select-option
-                v-for="option in LTX_VIDEO_LORA_OPTIONS.filter(item => item.value !== '__none__')"
-                :key="option.value"
-                :value="option.value"
-              >
-                {{ option.label }}
-              </a-select-option>
-            </a-select>
-            <p class="text-xs text-slate-400">最多可叠加 3 个附加模型，每个模型可单独调整强度。</p>
-            <div v-if="ltxLoraItems.length > 0" class="space-y-3">
-              <div
-                v-for="item in ltxLoraItems"
-                :key="item.name"
-                class="rounded-xl border border-slate-700 bg-slate-900/70 px-3 py-3"
-              >
-                <div class="flex items-center justify-between gap-3">
-                  <div class="text-sm text-slate-100">
-                    {{ LTX_VIDEO_LORA_OPTIONS.find(option => option.value === item.name)?.label ?? item.name }}
-                  </div>
-                  <div class="flex items-center gap-2">
-                    <span class="text-xs text-slate-400">默认/当前强度：{{ item.strength.toFixed(2) }}</span>
-                    <a-button size="small" @click="toggleLtxLoraStrengthEditor(item.name)">
-                      {{ expandedLtxLoraEditors.includes(item.name) ? '收起设置' : '设置强度' }}
-                    </a-button>
-                    <a-button size="small" danger ghost @click="removeLtxLoraItem(item.name)">移除</a-button>
-                  </div>
-                </div>
-                <div v-if="expandedLtxLoraEditors.includes(item.name)" class="mt-3 flex items-center gap-3">
-                  <a-slider
-                    :min="0.1"
-                    :max="2"
-                    :step="0.05"
-                    :value="item.strength"
-                    class="flex-1"
-                    @update:value="updateLtxLoraStrength(item.name, $event as number)"
-                  />
-                  <a-input-number
-                    :min="0.1"
-                    :max="2"
-                    :step="0.05"
-                    :value="item.strength"
-                    size="small"
-                    @update:value="updateLtxLoraStrength(item.name, $event as number | null)"
-                  />
-                </div>
-              </div>
-            </div>
-          </div>
-          <a-textarea
-            v-model:value="prompt"
-            :rows="6"
-            :placeholder="isUnifiedImageToVideo ? t('template_apply.image_to_video.prompt_placeholder_video_lora') : t('template_apply.image_to_video.prompt_placeholder_custom')"
-          />
-        </div>
-
-        <div v-if="showOutputSettingsSection" class="mt-6 rounded-xl border border-slate-700 bg-slate-800/70 p-4">
-          <div class="text-sm font-semibold text-slate-200 mb-3">{{ t('template_apply.common.output_settings') }}</div>
-          <div class="space-y-4">
-            <div>
-              <label class="block text-xs font-medium text-slate-300 mb-2">{{ t('template_apply.common.resolution') }}</label>
-              <a-radio-group
-                v-if="isLtxVideo"
-                v-model:value="resolution"
-                button-style="solid"
-                class="w-full grid grid-cols-1 gap-2 max-w-[180px]"
-              >
-                <a-radio-button value="1280x704" class="w-full text-center">1280x704</a-radio-button>
-              </a-radio-group>
-              <a-radio-group
-                v-else
-                v-model:value="resolution"
-                button-style="solid"
-                class="w-full grid grid-cols-3 gap-2"
-              >
-                <a-radio-button value="512" class="w-full text-center">512p</a-radio-button>
-                <a-radio-button value="720" class="w-full text-center">720p</a-radio-button>
-                <a-radio-button value="1024" class="w-full text-center" :disabled="duration === '10'">1024p</a-radio-button>
-              </a-radio-group>
-            </div>
-
-            <div>
-              <label class="block text-xs font-medium text-slate-300 mb-2">{{ t('template_apply.common.duration') }}</label>
-              <a-radio-group
-                v-if="isLtxVideo"
-                v-model:value="duration"
-                button-style="solid"
-                class="w-full grid grid-cols-4 gap-2 max-w-[320px]"
-              >
-                <a-radio-button value="5" class="w-full text-center">5 {{ t('template_apply.common.seconds') }}</a-radio-button>
-                <a-radio-button value="10" class="w-full text-center">10 {{ t('template_apply.common.seconds') }}</a-radio-button>
-                <a-radio-button value="15" class="w-full text-center">15 {{ t('template_apply.common.seconds') }}</a-radio-button>
-                <a-radio-button value="20" class="w-full text-center">20 {{ t('template_apply.common.seconds') }}</a-radio-button>
-              </a-radio-group>
-              <a-radio-group
-                v-else
-                v-model:value="duration"
-                button-style="solid"
-                class="w-full grid grid-cols-3 gap-2 max-w-[240px]"
-              >
-                <a-radio-button value="5" class="w-full text-center">5 {{ t('template_apply.common.seconds') }}</a-radio-button>
-                <a-radio-button value="8" class="w-full text-center">8 {{ t('template_apply.common.seconds') }}</a-radio-button>
-                <a-radio-button value="10" class="w-full text-center" :disabled="resolution === '1024'">10 {{ t('template_apply.common.seconds') }}</a-radio-button>
-              </a-radio-group>
-            </div>
-          </div>
-        </div>
+        <TemplateApplyOutputSettingsSection
+          class="mt-6"
+          :show-output-settings-section="showOutputSettingsSection"
+          :is-ltx-video="isLtxVideo"
+          :resolution="resolution"
+          :duration="duration"
+          @update:resolution="resolution = $event"
+          @update:duration="duration = $event"
+        />
       </div>
 
-      <div class="border-t border-slate-700 px-6 py-4 flex items-center justify-between gap-4">
-        <div class="text-sm text-slate-300">
-          {{ t('template_apply.common.estimated_cost') }} <span class="text-cyan-300 font-semibold">{{ taskCost }}</span> {{ t('template_apply.common.credits_unit') }}
-        </div>
-        <a-button
-          type="primary"
-          size="large"
-          :loading="isSubmitting"
-          :disabled="hasPendingUploads || !objectKey"
-          @click="handleGenerate"
-        >
-          <template #icon>
-            <VideoCameraOutlined />
-          </template>
-          {{ t('template_apply.common.generate_video') }}
-        </a-button>
-      </div>
+      <TemplateApplyActionFooter
+        :task-cost="taskCost"
+        :is-submitting="isSubmitting"
+        :has-pending-uploads="hasPendingUploads"
+        :has-object-key="!!objectKey"
+        @generate="handleGenerate"
+      />
     </section>
 
-    <section class="w-full lg:w-[48%] flex flex-col bg-slate-900/70 rounded-2xl border border-slate-700/70 overflow-hidden">
-      <div class="p-6 border-b border-slate-700">
-        <h3 class="text-lg font-semibold text-slate-100">{{ t('template_apply.common.result_title') }}</h3>
-      </div>
-
-      <div class="flex-1 overflow-y-auto p-6">
-        <div v-if="currentTask" class="space-y-4">
-          <div class="rounded-xl border border-slate-700 bg-slate-800/70 p-4">
-            <div class="flex items-center justify-between text-sm text-slate-300">
-              <span>{{ currentTask.title }}</span>
-              <span>
-                {{
-                  currentTask.status === 'cancelled'
-                    ? '已取消'
-                    : currentTask.cancelRequested
-                      ? '撤销确认中'
-                      : currentTask.status
-                }}
-              </span>
-            </div>
-            <a-progress
-              class="mt-3"
-              :percent="currentTask.status === 'cancelled' ? 100 : currentTask.progress"
-              :status="currentTask.cancelRequested || currentTask.status === 'cancelled'
-                ? 'normal'
-                : currentTask.status === 'failed'
-                  ? 'exception'
-                  : 'active'"
-            />
-            <div v-if="currentTask.cancelRequested" class="mt-3 text-sm text-amber-300">
-              {{ currentTask.cancelMessage || '已提交撤销请求，等待执行端确认。' }}
-            </div>
-            <div
-              v-if="currentTask.cancelRequested || currentTask.status === 'cancelled'"
-              class="mt-1 text-xs text-slate-400"
-            >
-              {{ currentTask.refundMessage || '确认后将自动退回灵石。' }}
-            </div>
-            <div v-if="currentTask.error" class="mt-3 text-sm text-rose-300">
-              {{ currentTask.error }}
-            </div>
-          </div>
-
-          <div
-            v-if="currentTask.resultUrl"
-            class="rounded-xl border border-slate-700 bg-slate-950/80 p-3"
-          >
-            <img
-              v-if="isImageUrl(currentTask.resultUrl)"
-              :src="currentTask.resultUrl"
-              class="w-full rounded-xl object-contain"
-            />
-            <video
-              v-else
-              :src="currentTask.resultUrl"
-              controls
-              class="w-full rounded-xl"
-            />
-
-            <div class="mt-3 flex justify-end">
-              <a-button @click="downloadResult(currentTask.resultUrl, currentTask.title)">
-                <template #icon>
-                  <DownloadOutlined />
-                </template>
-                {{ t('template_apply.common.download_result') }}
-              </a-button>
-            </div>
-          </div>
-        </div>
-
-        <div
-          v-else
-          class="h-full min-h-[240px] flex items-center justify-center text-center text-slate-400"
-        >
-          {{ t('template_apply.common.result_empty') }}
-        </div>
-      </div>
-    </section>
+    <TemplateApplyResultSection
+      :current-task="currentTask"
+      :is-image-url="isImageUrl"
+      @download="downloadResult"
+    />
   </div>
 </template>
-
-<style scoped>
-.template-upload :deep(.ant-upload.ant-upload-drag) {
-  background: rgba(15, 23, 42, 0.75);
-  border-color: rgba(71, 85, 105, 0.9);
-}
-
-.template-upload :deep(.ant-upload.ant-upload-drag:hover) {
-  border-color: rgba(34, 211, 238, 0.8);
-}
-
-:deep(.ant-radio-button-wrapper) {
-  background: rgba(15, 23, 42, 0.6);
-  color: #cbd5e1;
-  border-color: rgba(71, 85, 105, 0.9);
-}
-
-:deep(.ant-radio-button-wrapper-checked:not(.ant-radio-button-wrapper-disabled)) {
-  background: rgba(34, 211, 238, 0.2);
-  color: #67e8f9;
-  border-color: rgba(34, 211, 238, 0.8);
-}
-</style>

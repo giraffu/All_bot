@@ -7,7 +7,7 @@
 - `src/core/task_core_service_providers.py`：provider/capability 边界，屏蔽 `image_service`、`TaskRegistry`、submission outbox 等基础设施实现
 - `src/core/task_core_default_dependencies.py`：默认依赖装配层，把 facade 所需运行时能力拼装为 `TaskCore*Dependencies`
 - `src/core/task_core_submission.py`：提交 Saga、注册表写入、派发与补偿
-- `src/core/task_core_web_monitor.py`：Web 端异步 side-effect monitor，负责成功持久化、取消/失败终态、运行态清理
+- `src/services/task_web_monitor.py`：Web 端异步 side-effect monitor 的 application/service 实现，负责成功持久化、取消/失败终态、运行态清理
 - `src/core/task_core_runtime.py`：双 ID 终止、best-effort cancel、并发锁与 registry 清理
 - `src/core/task_dispatcher.py`：StrategyFactory + payload/workflow 注入
 
@@ -73,7 +73,7 @@ sequenceDiagram
 ### 4.2 Web 监控门面
 当前 Web 异步 side effect 入口：
 
-- `src/core/task_core_web_monitor.py::monitor_task_and_release_lock_default(...)`
+- `src/services/task_web_monitor.py::monitor_task_and_release_lock_default(...)`
 
 职责：
 
@@ -93,6 +93,12 @@ Bot 不再走字符串取消协议，也不再依赖厚重 compat wrapper。当�
 - `src/services/task_service_entrypoints_specialized.py`
 - `src/services/task_service_entrypoints_video.py`
 - `src/services/task_service_flow.py::run_bot_task_application(...)`
+
+其中 generation 入口已继续按任务族下沉：
+
+- `src/services/task_service_generation_image.py`
+- `src/services/task_service_generation_video.py`
+- `src/services/task_service_generation_wan22.py`
 
 Bot flow 已拆成五段式上下文：
 

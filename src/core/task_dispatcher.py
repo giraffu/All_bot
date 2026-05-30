@@ -21,21 +21,8 @@ from src.core.task_core_service_providers import get_task_core_image_service
 from src.lora_catalog import normalize_ltx_video_lora_items
 
 
-LEGACY_TASK_TYPE_ALIASES = {
-    "MODE_EDIT": MODE_EDIT,
-    "MODE_IMAGE_TO_VIDEO": MODE_IMAGE_TO_VIDEO,
-    "MODE_I2I_PRO": MODE_I2I_PRO,
-    "MODE_I2I_DRAW": MODE_I2I_DRAW,
-    "MODE_IMG2IMG_LORA": MODE_IMG2IMG_LORA,
-    "t2i-pornmaster-turbo": MODE_TXT2IMG,
-}
-
 EDIT_LIKE_TASK_TYPES = {MODE_EDIT, MODE_IMG2IMG_LORA}
 FACE_VIDEO_TASK_TYPES = {"face_video", "face_video_step1", "face_video_step2"}
-
-
-def _normalize_task_type(task_type: str) -> str:
-    return LEGACY_TASK_TYPE_ALIASES.get(task_type, task_type)
 
 
 def _get_saved_input_images(inputs: Dict[str, Any]) -> list[str]:
@@ -286,7 +273,7 @@ class BaseTaskStrategy(ABC):
 
 class DefaultImageStrategy(BaseTaskStrategy):
     def __init__(self, mode: str):
-        self.mode = _normalize_task_type(mode)
+        self.mode = mode
 
     def get_cost(self, inputs: Dict[str, Any]) -> int:
         if self.mode in EDIT_LIKE_TASK_TYPES:
@@ -363,18 +350,13 @@ class FaceSwapStrategy(BaseTaskStrategy):
 
 
 class BaseVideoStrategy(BaseTaskStrategy):
-    IMAGE_TO_VIDEO_LORA_ENDPOINT_COMPAT_TASK_TYPES = {
-        MODE_IMAGE_TO_VIDEO,
-        "custom_video",
-        "video_edit",
-        "perfect_video_edit",
-    }
+    IMAGE_TO_VIDEO_LORA_TASK_TYPES = {MODE_IMAGE_TO_VIDEO}
 
     def __init__(self, mode: str):
-        self.mode = _normalize_task_type(mode)
+        self.mode = mode
 
     def _should_use_image_to_video_lora_endpoint(self, inputs: Dict[str, Any]) -> bool:
-        return self.mode in self.IMAGE_TO_VIDEO_LORA_ENDPOINT_COMPAT_TASK_TYPES and bool(
+        return self.mode in self.IMAGE_TO_VIDEO_LORA_TASK_TYPES and bool(
             inputs.get("lora_name")
         )
 
@@ -542,7 +524,6 @@ class StrategyFactory:
     def get_strategy(task_type: str) -> BaseTaskStrategy:
         from src.constants import VIDEO_TASK_TYPES
 
-        task_type = _normalize_task_type(task_type)
         builder = STRATEGY_BUILDERS.get(task_type)
         if builder is not None:
             return builder(task_type)

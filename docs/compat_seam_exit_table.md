@@ -20,7 +20,7 @@
 | --- | --- | --- | --- |
 | task_core submission 默认 wrapper | `src/core/task_core.py` | `src/core/task_core_submission.py` | 已下沉，`task_core.py` 仅保留 facade 绑定 |
 | task_core finalization 默认 wrapper | `src/core/task_core.py` | `src/core/task_core_finalization.py` | 已下沉，失败/取消默认依赖由子模块自装配 |
-| task_core web monitor 默认 wrapper | `src/core/task_core.py` | `src/core/task_core_web_monitor.py` | 已下沉，`task_core.py` 仅保留兼容导出符号 |
+| task_core web monitor 默认 wrapper | `src/core/task_core.py` | `src/services/task_web_monitor.py` | 已下沉，`task_core.py` 直接绑定 application 层 monitor 实现 |
 | task_core warmup/persistence 默认 wrapper | `src/core/task_core.py` | `src/core/task_core_web_history_warmup.py`、`src/core/task_core_persistence.py` | 已下沉，web history warmup 与成功持久化默认绑定不再堆在 facade |
 | TG gallery browse 链路 | `src/handlers/callbacks/gallery_callbacks.py` | `src/handlers/callbacks/gallery_callbacks_browse.py` | 已继续收口，分类菜单、`gallery_sort_`、`gallery_page_` 已直接在 browse 子模块注册，旧壳文件已删除 |
 | 旧单图页与模板工作台 payload 组装 | 多个 `.vue` 页面内联 | `frontend/src/features/generation/buildGenerationTaskPayload.ts` | 已统一，旧单图页与 A4 工作台共用提交 payload builder |

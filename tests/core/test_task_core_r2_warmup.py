@@ -10,7 +10,6 @@ from src.core.task_core_dependencies import (
 )
 from src.core import task_core_persistence
 from src.core import task_core_web_history_warmup
-from src.core import task_core_web_monitor
 from src.core.task_core_persistence_postprocess import (
     postprocess_successful_task_persistence,
 )
@@ -19,6 +18,7 @@ from src.core.task_core_types import (
     TaskSuccessPersistenceResult,
 )
 from src.services import storage as storage_module
+from src.services import task_web_monitor
 
 
 @pytest.mark.asyncio
@@ -69,7 +69,7 @@ async def test_monitor_task_and_release_lock_schedules_web_history_r2_warmup():
         )
 
     async def _finalize_success(**kwargs):
-        await task_core_web_monitor.finalize_monitored_web_task_success(
+        await task_web_monitor.finalize_monitored_web_task_success(
             **kwargs,
             persist_successful_web_history_func=_persist_successful_web_history,
             cleanup_task_runtime_state_func=cleanup_runtime,
@@ -92,7 +92,7 @@ async def test_monitor_task_and_release_lock_schedules_web_history_r2_warmup():
         ),
     )
 
-    await task_core_web_monitor.monitor_task_and_release_lock(
+    await task_web_monitor.monitor_task_and_release_lock(
         backend_task_id="task-1",
         internal_user_id=123,
         username="tester",
@@ -137,7 +137,7 @@ async def test_monitor_task_and_release_lock_uses_cancellation_finalize_for_canc
         final_priority=0,
     )
 
-    await task_core_web_monitor.monitor_task_and_release_lock(
+    await task_web_monitor.monitor_task_and_release_lock(
         backend_task_id="task-cancelled",
         internal_user_id=123,
         username="tester",
@@ -180,7 +180,7 @@ async def test_monitor_task_and_release_lock_uses_failure_finalize_for_error():
         final_priority=0,
     )
 
-    await task_core_web_monitor.monitor_task_and_release_lock(
+    await task_web_monitor.monitor_task_and_release_lock(
         backend_task_id="task-error",
         internal_user_id=321,
         username="tester",
@@ -315,9 +315,9 @@ def test_attach_web_task_monitor_uses_runtime_default_create_task_binding(monkey
     monitor_web_task = AsyncMock()
     submission_context = MagicMock()
 
-    monkeypatch.setattr(task_core_web_monitor.asyncio, "create_task", create_task)
+    monkeypatch.setattr(task_web_monitor.asyncio, "create_task", create_task)
 
-    task_core_web_monitor.attach_web_task_monitor(
+    task_web_monitor.attach_web_task_monitor(
         backend_task_id="backend-1",
         internal_user_id=123,
         username="tester",
@@ -366,7 +366,7 @@ async def test_process_and_submit_task_passes_requested_duration_to_web_monitor(
         captured_monitor_calls.append(kwargs)
 
     def _attach_side_effects(**kwargs):
-        task_core_web_monitor.attach_submission_side_effects(
+        task_web_monitor.attach_submission_side_effects(
             backend_task_id=kwargs["backend_task_id"],
             internal_user_id=kwargs["internal_user_id"],
             username=kwargs["username"],
@@ -581,6 +581,7 @@ async def test_postprocess_successful_task_persistence_logs_refreshes_and_warms_
         height=512,
         duration=None,
         requested_duration=None,
+        extra_outputs=None,
     )
     refresh_mock.assert_awaited_once_with(123)
     warmup_mock.assert_called_once_with(
@@ -628,6 +629,7 @@ async def test_persist_successful_web_history_routes_through_persistence_boundar
         allow_contribute=True,
         is_video=False,
         result_path="bot-data/worker/task-1.png",
+        extra_outputs=None,
         billing_resolution="1024",
         output_width=1024,
         output_height=1024,

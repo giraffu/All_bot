@@ -8,6 +8,7 @@ from src.core.task_core import (
     CoreDomainError,
     InsufficientCreditsError,
 )
+from src.web_api.routers import tasks as tasks_router
 from src.web_api.schemas.task_schema import TaskGenerateRequest, TaskGenerateResponse
 from src.web_api.services.task_action_api_service import (
     cancel_pending_task_payload,
@@ -107,39 +108,36 @@ async def test_submit_generation_task_copies_top_level_prompt_into_txt2img_input
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    ("side_effect", "status_code", "detail"),
+    "side_effect",
     [
-        (ConcurrencyLimitError("排队中"), 429, "排队中"),
-        (InsufficientCreditsError(1, 5), 402, "(1, 5)"),
-        (CoreDomainError("参数错误"), 400, "参数错误"),
+        ConcurrencyLimitError("排队中"),
+        InsufficientCreditsError(1, 5),
+        CoreDomainError("参数错误"),
     ],
 )
-async def test_submit_generation_task_maps_domain_errors(
-    side_effect,
-    status_code,
-    detail,
-):
+async def test_submit_generation_task_reraises_domain_errors(side_effect):
     request = TaskGenerateRequest(task_type="image", inputs={"prompt": "foo"})
     current_user = type("User", (), {"id": 123, "username": "tester"})()
+    logger = MagicMock()
 
     with patch(
         "src.web_api.services.task_submission_service.process_and_submit_task",
         new=AsyncMock(side_effect=side_effect),
     ):
-        with pytest.raises(HTTPException) as exc_info:
+        with pytest.raises(type(side_effect)) as exc_info:
             await submit_generation_task(
                 req=request,
                 current_user=current_user,
                 get_balance=AsyncMock(return_value=100),
-                logger=MagicMock(),
+                logger=logger,
             )
 
-    assert exc_info.value.status_code == status_code
-    assert detail in str(exc_info.value.detail)
+    assert str(exc_info.value) == str(side_effect)
+    logger.error.assert_called_once()
 
 
 @pytest.mark.asyncio
-async def test_submit_generation_task_maps_unexpected_error_to_500_and_logs():
+async def test_submit_generation_task_reraises_unexpected_error_and_logs():
     request = TaskGenerateRequest(task_type="image", inputs={"prompt": "foo"})
     current_user = type("User", (), {"id": 123, "username": "tester"})()
     logger = MagicMock()
@@ -148,7 +146,7 @@ async def test_submit_generation_task_maps_unexpected_error_to_500_and_logs():
         "src.web_api.services.task_submission_service.process_and_submit_task",
         new=AsyncMock(side_effect=RuntimeError("boom")),
     ):
-        with pytest.raises(HTTPException) as exc_info:
+        with pytest.raises(RuntimeError, match="boom"):
             await submit_generation_task(
                 req=request,
                 current_user=current_user,
@@ -156,6 +154,36 @@ async def test_submit_generation_task_maps_unexpected_error_to_500_and_logs():
                 logger=logger,
             )
 
-    assert exc_info.value.status_code == 500
-    assert exc_info.value.detail == "Internal server error"
     logger.error.assert_called_once()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("side_effect", "status_code", "detail"),
+    [
+        (ConcurrencyLimitError("排队中"), 429, "排队中"),
+        (InsufficientCreditsError(1, 5), 402, "(1, 5)"),
+        (CoreDomainError("参数错误"), 400, "参数错误"),
+        (RuntimeError("boom"), 500, "Internal server error"),
+    ],
+)
+async def test_create_generation_task_maps_service_errors_to_http(
+    side_effect,
+    status_code,
+    detail,
+):
+    request = TaskGenerateRequest(task_type="image", inputs={"prompt": "foo"})
+    current_user = type("User", (), {"id": 123, "username": "tester"})()
+
+    with patch(
+        "src.web_api.routers.tasks.submit_generation_task",
+        new=AsyncMock(side_effect=side_effect),
+    ):
+        with pytest.raises(HTTPException) as exc_info:
+            await tasks_router.create_generation_task(
+                request,
+                current_user=current_user,
+            )
+
+    assert exc_info.value.status_code == status_code
+    assert detail in str(exc_info.value.detail)

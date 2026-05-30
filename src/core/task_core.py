@@ -52,7 +52,7 @@ from src.core.task_core_types import (
     VideoTaskRequest,
 )
 from src.core.task_core_video_request import build_video_task_request
-from src.core.task_core_web_monitor import (
+from src.services.task_web_monitor import (
     attach_submission_side_effects_default as _attach_submission_side_effects,
     normalize_submission_side_effect_plan as _normalize_submission_side_effect_plan,
 )

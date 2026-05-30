@@ -2,14 +2,8 @@ import uuid
 from collections.abc import Awaitable, Callable
 
 from asgi_correlation_id import correlation_id
-from fastapi import HTTPException
 
-from src.core.task_core import (
-    ConcurrencyLimitError,
-    CoreDomainError,
-    InsufficientCreditsError,
-    process_and_submit_task,
-)
+from src.core.task_core import process_and_submit_task
 from src.core.task_core_types import TaskSubmissionSideEffectPlan
 from src.web_api.schemas.task_schema import TaskGenerateRequest, TaskGenerateResponse
 
@@ -53,13 +47,7 @@ async def submit_generation_task(
             cost=result["cost"],
             balance_remaining=balance,
         )
-    except ConcurrencyLimitError as exc:
-        raise HTTPException(status_code=429, detail=str(exc)) from exc
-    except InsufficientCreditsError as exc:
-        raise HTTPException(status_code=402, detail=str(exc)) from exc
-    except CoreDomainError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
         if logger is not None:
             logger.error("Task submission error: %s", exc, exc_info=True)
-        raise HTTPException(status_code=500, detail="Internal server error") from exc
+        raise

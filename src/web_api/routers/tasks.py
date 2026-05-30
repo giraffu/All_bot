@@ -1,7 +1,12 @@
 import logging
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 
+from src.core.task_core import (
+    ConcurrencyLimitError,
+    CoreDomainError,
+    InsufficientCreditsError,
+)
 from src.database.models import User
 from src.quota import QuotaManager
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -33,12 +38,21 @@ async def create_generation_task(
     """
     Submit a generation task (image/video).
     """
-    return await submit_generation_task(
-        req=req,
-        current_user=current_user,
-        get_balance=quota_manager.get_credits,
-        logger=logger,
-    )
+    try:
+        return await submit_generation_task(
+            req=req,
+            current_user=current_user,
+            get_balance=quota_manager.get_credits,
+            logger=logger,
+        )
+    except ConcurrencyLimitError as exc:
+        raise HTTPException(status_code=429, detail=str(exc)) from exc
+    except InsufficientCreditsError as exc:
+        raise HTTPException(status_code=402, detail=str(exc)) from exc
+    except CoreDomainError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail="Internal server error") from exc
 
 
 @router.get("/{task_id}/result", response_model=TaskResultResponse)

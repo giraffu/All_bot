@@ -1,23 +1,6 @@
 from typing import Any, AsyncGenerator
 
-from src.api_client import (
-    download_image,
-    download_video,
-    get_system_status,
-    listen_for_progress,
-    submit_image_to_video_task,
-    submit_face_swap,
-    submit_face_video,
-    submit_i2i_pro,
-    submit_i2i_draw,
-    submit_img2img,
-    submit_img2img_lora,
-    submit_ltx_video,
-    submit_perfect_video_edit,
-    submit_perfect_video_insert,
-    submit_txt2img,
-    submit_wan22_video_v2,
-)
+from src.api_client import api_client
 
 
 class ImageService:
@@ -35,7 +18,7 @@ class ImageService:
         priority: int = 0,
     ) -> str:
         """Submit ltx video task"""
-        return await submit_ltx_video(
+        return await api_client.submit_ltx_video(
             task_id,
             prompt,
             image_path,
@@ -64,7 +47,7 @@ class ImageService:
         length: int = 5,
         priority: int = 0,
     ) -> str:
-        return await submit_wan22_video_v2(
+        return await api_client.submit_wan22_video_v2(
             task_id,
             prompt,
             image_path,
@@ -89,7 +72,7 @@ class ImageService:
         priority: int = 0,
     ) -> str:
         """Submit face video task"""
-        return await submit_face_video(
+        return await api_client.submit_face_video(
             task_id,
             face_image_path,
             video_path,
@@ -107,7 +90,7 @@ class ImageService:
         priority: int = 0,
     ) -> str:
         """Submit image generation task"""
-        return await submit_img2img(
+        return await api_client.submit_img2img(
             task_id, prompt, image_paths, negative_prompt, priority=priority
         )
 
@@ -119,7 +102,7 @@ class ImageService:
         priority: int = 0,
     ) -> str:
         """Submit face swap task"""
-        return await submit_face_swap(
+        return await api_client.submit_face_swap(
             task_id, face_image_path, body_image_path, priority=priority
         )
 
@@ -127,7 +110,7 @@ class ImageService:
         self, task_id: str, prompt: str, image_path: str, seed: int, priority: int = 0
     ) -> str:
         """Submit i2i pro task"""
-        return await submit_i2i_pro(
+        return await api_client.submit_i2i_pro(
             task_id, prompt, image_path, seed, priority=priority
         )
 
@@ -135,13 +118,16 @@ class ImageService:
         self, task_id: str, prompt: str, image_path: str, seed: int, priority: int = 0
     ) -> str:
         """Submit i2i draw task"""
-        return await submit_i2i_draw(
+        return await api_client.submit_i2i_draw(
             task_id, prompt, image_path, seed, priority=priority
         )
 
     async def submit_txt2img_task(self, prompt: str, priority: int = 0) -> str:
         """Submit txt2img task"""
-        return await submit_txt2img(prompt, priority=priority)
+        return await api_client.submit_txt2img_task(
+            prompt,
+            priority=priority,
+        )
 
     async def submit_img2img_lora_task(
         self,
@@ -154,7 +140,7 @@ class ImageService:
         lora_strength: float = 1.0,
     ) -> str:
         """Submit img2img_lora task and get task_id."""
-        return await submit_img2img_lora(
+        return await api_client.submit_img2img_lora(
             task_id,
             prompt,
             image_paths,
@@ -175,7 +161,7 @@ class ImageService:
         priority: int = 0,
     ) -> str:
         """Submit perfect video edit task"""
-        return await submit_perfect_video_edit(
+        return await api_client.submit_perfect_video_edit(
             task_id,
             prompt,
             image_path,
@@ -197,7 +183,7 @@ class ImageService:
         priority: int = 0,
     ) -> str:
         """Submit unified image_to_video task"""
-        return await submit_image_to_video_task(
+        return await api_client.submit_image_to_video_task(
             task_id,
             prompt,
             image_path,
@@ -219,7 +205,7 @@ class ImageService:
         priority: int = 0,
     ) -> str:
         """Submit perfect video insert task"""
-        return await submit_perfect_video_insert(
+        return await api_client.submit_perfect_video_insert(
             task_id,
             prompt,
             image_path,
@@ -233,20 +219,20 @@ class ImageService:
         self, task_id: str, is_video: bool = False
     ) -> AsyncGenerator[dict, None]:
         """Monitor task progress"""
-        async for info in listen_for_progress(task_id, is_video):
+        async for info in api_client.listen_for_progress(task_id, is_video):
             yield info
 
     async def download_result(self, task_id: str) -> bytes:
         """Download generated image"""
-        return await download_image(task_id)
+        return await api_client.download_image(task_id)
 
     async def download_video_result(self, task_id: str) -> bytes:
         """Download generated video"""
-        return await download_video(task_id)
+        return await api_client.download_video(task_id)
 
     async def get_queue_info(self) -> dict:
         """Get system queue info"""
-        return await get_system_status()
+        return await api_client.get_system_status()
 
 
 # Singleton instance

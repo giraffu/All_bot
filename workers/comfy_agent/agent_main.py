@@ -3,12 +3,34 @@ import json
 import logging
 import os
 import sys
-from dataclasses import dataclass, field
 from typing import Any, Dict, Optional
 
 import httpx
 import websockets  # type: ignore
 from asgi_correlation_id import correlation_id
+from agent_input_preparation import (
+    prepare_task_inputs as prepare_agent_task_inputs,
+    process_single_input_asset as process_agent_single_input_asset,
+)
+from agent_result_assets import (
+    build_safe_result_object_name,
+    extract_ws_data_content,
+    pick_first_output_asset,
+    result_asset_priority,
+)
+from agent_result_materialization import (
+    materialize_task_outputs,
+    resolve_execution_result_from_history,
+)
+from agent_result_reporting import (
+    report_materialized_outputs,
+    upload_materialized_outputs,
+)
+from agent_runtime_types import TaskExecutionContext
+from agent_workflow_execution import (
+    submit_task_workflow,
+    wait_for_task_completion,
+)
 from comfy_client import ComfyClient
 from dotenv import load_dotenv
 from minio import Minio  # type: ignore
@@ -80,176 +102,6 @@ handlers.append(file_handler)
 
 logging.basicConfig(level=logging.INFO, handlers=handlers)
 logger = logging.getLogger("agent_main")
-
-
-@dataclass
-class TaskExecutionContext:
-    task_id: str
-    task_type: str
-    prompt_id: Optional[str] = None
-    task_result: Optional[str] = None
-    task_result_priority: int = -1
-    task_error: Optional[str] = None
-    completed_event: asyncio.Event = field(default_factory=asyncio.Event)
-
-
-RESULT_ASSET_KEYS = ("images", "gifs", "videos")
-
-
-def _coerce_first_mapping(value: Any) -> dict[str, Any]:
-    if isinstance(value, dict):
-        return value
-    if isinstance(value, list):
-        for item in value:
-            if isinstance(item, dict):
-                return item
-    return {}
-
-
-def _extract_ws_data_content(data: dict[str, Any]) -> dict[str, Any]:
-    return _coerce_first_mapping(data.get("data", {}))
-
-
-def _result_asset_keys_for_task(task_type: str | None) -> tuple[str, ...]:
-    if task_type == "wan22_video_v2":
-        # `wan22_video_v2` must always materialize a video as the primary result.
-        # Tail-frame images are auxiliary outputs and must not be used as fallback.
-        return ("videos", "gifs")
-    return RESULT_ASSET_KEYS
-
-
-def _pick_first_output_asset(
-    outputs: Any,
-    *,
-    task_type: str | None = None,
-) -> dict[str, Any] | None:
-    if not isinstance(outputs, dict):
-        return None
-    asset_keys = _result_asset_keys_for_task(task_type)
-    for asset_key in asset_keys:
-        for node_output in outputs.values():
-            if not isinstance(node_output, dict):
-                continue
-            assets = node_output.get(asset_key, [])
-            if assets:
-                asset = assets[0]
-                if isinstance(asset, dict):
-                    return {**asset, "_asset_key": asset_key}
-                return asset
-    return None
-
-
-def _result_asset_priority(asset: dict[str, Any] | None, *, task_type: str | None) -> int:
-    if not isinstance(asset, dict):
-        return -1
-    asset_key = str(asset.get("_asset_key") or "").strip().lower()
-    if task_type == "wan22_video_v2":
-        return {"videos": 3, "gifs": 2}.get(asset_key, 0)
-    return 0
-
-
-def _build_safe_result_object_name(task_id: str, asset: dict[str, Any]) -> str:
-    return (
-        f"{task_id}_{asset.get('subfolder', '')}_{asset.get('filename')}"
-        .replace("/", "_")
-        .lstrip("_")
-    )
-
-
-def _iter_output_assets(outputs: Any) -> list[dict[str, Any]]:
-    collected: list[dict[str, Any]] = []
-    if not isinstance(outputs, dict):
-        return collected
-    for node_output in outputs.values():
-        if not isinstance(node_output, dict):
-            continue
-        for asset_key in RESULT_ASSET_KEYS:
-            assets = node_output.get(asset_key, [])
-            if not isinstance(assets, list):
-                continue
-            for asset in assets:
-                if isinstance(asset, dict):
-                    collected.append(asset)
-    return collected
-
-
-def _resolve_history_result_asset(
-    history: dict[str, Any] | None,
-    *,
-    prompt_id: str | None,
-    task_id: str | None,
-    task_type: str | None = None,
-) -> dict[str, str] | None:
-    if not history or not prompt_id or not task_id or prompt_id not in history:
-        return None
-
-    outputs = history[prompt_id].get("outputs", {})
-    asset = _pick_first_output_asset(outputs, task_type=task_type)
-    if not asset:
-        return None
-
-    original_filename = asset.get("filename", "")
-    if not original_filename:
-        return None
-
-    return {
-        "safe_name": _build_safe_result_object_name(task_id, asset),
-        "filename": original_filename,
-        "subfolder": asset.get("subfolder", ""),
-        "type": asset.get("type", ""),
-        "asset_key": asset.get("_asset_key", ""),
-    }
-
-
-def _resolve_history_extra_output_assets(
-    history: dict[str, Any] | None,
-    *,
-    prompt_id: str | None,
-    task_id: str | None,
-    task_type: str | None = None,
-) -> dict[str, dict[str, Any]]:
-    if task_type != "wan22_video_v2" or not history or not prompt_id or not task_id:
-        return {}
-    prompt_history = history.get(prompt_id)
-    if not isinstance(prompt_history, dict):
-        return {}
-    outputs = prompt_history.get("outputs", {})
-    if not isinstance(outputs, dict):
-        return {}
-
-    resolved: dict[str, dict[str, Any]] = {}
-    for asset in _iter_output_assets(outputs):
-        filename = str(asset.get("filename") or "")
-        if "last_frame" not in filename.lower():
-            continue
-        resolved["last_frame"] = {
-            "path": _build_safe_result_object_name(task_id, asset),
-            "media_type": "image",
-            "filename": filename,
-            "subfolder": asset.get("subfolder", ""),
-            "type": asset.get("type", "output"),
-        }
-        break
-    return resolved
-
-
-def _resolve_comfy_view_type(asset: dict[str, Any] | None) -> str:
-    if not asset:
-        return "output"
-
-    asset_type = str(asset.get("type", "") or "").strip().lower()
-    if asset_type in {"temp", "output", "input"}:
-        return asset_type
-
-    subfolder = str(asset.get("subfolder", "") or "").strip().lower()
-    if subfolder == "temp" or subfolder.startswith("temp/") or "/temp/" in f"/{subfolder}/":
-        return "temp"
-
-    filename = str(asset.get("filename", "") or "").strip().lower()
-    if "/temp/" in filename or filename.startswith("temp/"):
-        return "temp"
-
-    return "output"
 
 
 class ComfyAgent:
@@ -416,41 +268,18 @@ class ComfyAgent:
         img_filename: str,
         param_key: str,
     ) -> None:
-        local_safe_filename = img_filename.replace("/", "_").replace("template:", "")
-        local_img_path = os.path.join(COMFY_INPUT_DIR, local_safe_filename)
-        try:
-            await asyncio.to_thread(
-                self.download_input_from_minio, img_filename, local_img_path
-            )
-            logger.info(f"Downloaded {param_key} to {local_img_path}")
-            if local_img_path not in downloaded_input_paths:
-                downloaded_input_paths.append(local_img_path)
-            upload_path = local_img_path
-            upload_name = local_safe_filename
-            if self._should_normalize_image_input(param_key, img_filename):
-                upload_path = await asyncio.to_thread(
-                    self._normalize_input_image_for_comfy, local_img_path
-                )
-                upload_name = os.path.basename(upload_path)
-                if upload_path not in downloaded_input_paths:
-                    downloaded_input_paths.append(upload_path)
-                logger.info(
-                    "Normalized %s input for ComfyUI: %s -> %s",
-                    param_key,
-                    local_img_path,
-                    upload_path,
-                )
-            await self._upload_prepared_input(
-                upload_path=upload_path,
-                upload_name=upload_name,
-                source_name=img_filename,
-            )
-            params[param_key] = upload_name
-        except Exception as e:
-            logger.error(f"Failed to process {param_key} {img_filename}: {e}")
-            raise RuntimeError(
-                f"Failed to prepare {param_key} input '{img_filename}'"
-            ) from e
+        await process_agent_single_input_asset(
+            params=params,
+            downloaded_input_paths=downloaded_input_paths,
+            img_filename=img_filename,
+            param_key=param_key,
+            comfy_input_dir=COMFY_INPUT_DIR,
+            download_input_func=self.download_input_from_minio,
+            should_normalize_image_input_func=self._should_normalize_image_input,
+            normalize_input_image_func=self._normalize_input_image_for_comfy,
+            upload_prepared_input_func=self._upload_prepared_input,
+            logger=logger,
+        )
 
     async def _prepare_task_inputs(
         self,
@@ -458,61 +287,11 @@ class ComfyAgent:
         params: dict[str, Any],
         downloaded_input_paths: list[str],
     ) -> None:
-        if (
-            "images" in params
-            and isinstance(params["images"], list)
-            and len(params["images"]) > 0
-        ):
-            images_list = params["images"]
-            tasks = []
-            keys = ["image", "image2", "image3"]
-            for i, img_filename in enumerate(images_list[:3]):
-                tasks.append(
-                    self._process_single_input_asset(
-                        params=params,
-                        downloaded_input_paths=downloaded_input_paths,
-                        img_filename=img_filename,
-                        param_key=keys[i],
-                    )
-                )
-            if tasks:
-                await asyncio.gather(*tasks)
-        else:
-            legacy_tasks = []
-            if "image" in params and params["image"]:
-                legacy_tasks.append(
-                    self._process_single_input_asset(
-                        params=params,
-                        downloaded_input_paths=downloaded_input_paths,
-                        img_filename=params["image"],
-                        param_key="image",
-                    )
-                )
-            if "image2" in params and params["image2"]:
-                legacy_tasks.append(
-                    self._process_single_input_asset(
-                        params=params,
-                        downloaded_input_paths=downloaded_input_paths,
-                        img_filename=params["image2"],
-                        param_key="image2",
-                    )
-                )
-            if legacy_tasks:
-                await asyncio.gather(*legacy_tasks)
-
-        other_tasks = []
-        for key in ["face_image", "body_image", "video", "end_image"]:
-            if key in params and params[key]:
-                other_tasks.append(
-                    self._process_single_input_asset(
-                        params=params,
-                        downloaded_input_paths=downloaded_input_paths,
-                        img_filename=params[key],
-                        param_key=key,
-                    )
-                )
-        if other_tasks:
-            await asyncio.gather(*other_tasks)
+        await prepare_agent_task_inputs(
+            params=params,
+            downloaded_input_paths=downloaded_input_paths,
+            process_single_input_asset_func=self._process_single_input_asset,
+        )
 
     async def report_heartbeat(self):
         try:
@@ -620,7 +399,7 @@ class ComfyAgent:
                             continue
                         try:
                             msg_type = data.get("type")
-                            data_content = _extract_ws_data_content(data)
+                            data_content = extract_ws_data_content(data)
                             prompt_id = data_content.get("prompt_id")
                             execution = self._active_execution
 
@@ -666,17 +445,17 @@ class ComfyAgent:
                             elif msg_type == "executed":
                                 logger.info(f"Node executed for prompt {prompt_id}")
                                 output = data_content.get("output") or {}
-                                asset = _pick_first_output_asset(
+                                asset = pick_first_output_asset(
                                     output,
                                     task_type=execution.task_type,
                                 )
                                 if asset and execution.task_id:
-                                    asset_priority = _result_asset_priority(
+                                    asset_priority = result_asset_priority(
                                         asset,
                                         task_type=execution.task_type,
                                     )
                                     if asset_priority >= execution.task_result_priority:
-                                        execution.task_result = _build_safe_result_object_name(
+                                        execution.task_result = build_safe_result_object_name(
                                             execution.task_id, asset
                                         )
                                         execution.task_result_priority = asset_priority
@@ -771,8 +550,6 @@ class ComfyAgent:
 
         logger.info(f"Processing task {task_id} of type {task_type}")
         execution = self._start_task_execution(task_id=task_id, task_type=task_type)
-        extra_outputs: dict[str, dict[str, Any]] = {}
-
         downloaded_input_paths = []
 
         try:
@@ -786,83 +563,35 @@ class ComfyAgent:
                 downloaded_input_paths=downloaded_input_paths,
             )
 
-            # 2. Load and patch workflow
-            workflow = self.patcher.load_workflow(task_type)
-            if not workflow:
-                raise ValueError(f"Workflow for {task_type} not found")
-
-            patched_workflow = self.patcher.patch_workflow(task_type, workflow, params)
-
-            # 3. Submit to ComfyUI
-            client_id = f"agent_{AGENT_ID}"
-            await self._wait_for_comfy_ready(operation=f"submitting task {task_id}")
-            execution.prompt_id = await self.comfy_client.queue_prompt(
-                patched_workflow, client_id
-            )
-            logger.info(
-                f"Submitted task {task_id} to ComfyUI, prompt_id: {execution.prompt_id}"
+            await submit_task_workflow(
+                task_id=task_id,
+                task_type=task_type,
+                params=params,
+                execution=execution,
+                patcher=self.patcher,
+                comfy_client=self.comfy_client,
+                wait_for_comfy_ready_func=self._wait_for_comfy_ready,
+                report_status_func=self.report_status,
+                agent_id=AGENT_ID,
+                logger=logger,
             )
 
-            await self.report_status(task_id, "running")
+            task_completed = await wait_for_task_completion(
+                task_id=task_id,
+                execution=execution,
+                check_task_cancelled_func=self.check_task_cancelled,
+                logger=logger,
+            )
+            if not task_completed:
+                await self.report_cancelled(task_id)
+                return
 
-            # 4. Wait for completion (via WS listener)
-            # Timeout after 10 minutes to avoid hanging forever.
-            # While waiting, periodically poll the master so cancellation
-            # requests can be finalized instead of lingering at running=1%.
-            loop = asyncio.get_running_loop()
-            deadline = loop.time() + 600.0
-            while not execution.completed_event.is_set():
-                if await self.check_task_cancelled(task_id):
-                    logger.info(
-                        f"Task {task_id} was cancelled during execution wait."
-                    )
-                    await self.report_cancelled(task_id)
-                    return
-
-                remaining = deadline - loop.time()
-                if remaining <= 0:
-                    logger.warning(
-                        f"Task execution timed out for {task_id}, will attempt to fetch result from history."
-                    )
-                    break
-
-                try:
-                    await asyncio.wait_for(
-                        execution.completed_event.wait(),
-                        timeout=min(2.0, remaining),
-                    )
-                except asyncio.TimeoutError:
-                    continue
-
-            if execution.task_error:
-                raise Exception(execution.task_error)
-
-            if not execution.task_result:
-                logger.info(
-                    f"Task result not set via WS, checking history for prompt {execution.prompt_id}"
-                )
-                try:
-                    history = await self.comfy_client.get_history(execution.prompt_id)
-                    history_result = _resolve_history_result_asset(
-                        history,
-                        prompt_id=execution.prompt_id,
-                        task_id=execution.task_id,
-                        task_type=task_type,
-                    )
-                    if history_result:
-                        execution.task_result = history_result["safe_name"]
-                        execution.task_result_priority = _result_asset_priority(
-                            history_result,
-                            task_type=task_type,
-                        )
-                    extra_outputs = _resolve_history_extra_output_assets(
-                        history,
-                        prompt_id=execution.prompt_id,
-                        task_id=execution.task_id,
-                        task_type=task_type,
-                    )
-                except Exception as e:
-                    logger.warning(f"Failed to fetch history: {e}")
+            await resolve_execution_result_from_history(
+                comfy_client=self.comfy_client,
+                execution=execution,
+                task_type=task_type,
+                logger=logger,
+            )
 
             if not execution.task_result:
                 raise Exception("Task completed but no result path found")
@@ -874,112 +603,28 @@ class ComfyAgent:
                 await self.report_cancelled(task_id)
                 return
 
-            # 5. Fetch result from ComfyUI API and Upload to MinIO
-            # We must fetch the file via the ComfyUI /view API since Agent might not have direct local disk access
-            # or the file might be in temp/output directories on the ComfyUI server.
             try:
-                # 现在的 task_result 格式如: task_id_subfolder_filename.png
-                # 我们需要提取出原始的 filename 来从 ComfyUI API 获取文件
-                # 由于 task_result 已经被替换过下划线，这里不能简单地 split('/')
-                # 我们假设原始文件名在最后一个 '_' 之后（这是一种简化的假设，更严谨的做法是在上报前保留原始文件名）
-                # 这里我们修改逻辑：在上报前，先提取 ComfyUI 原始返回的 filename 和 subfolder
-                # 由于前面我们将 result 加上了 task_id 前缀，我们需要回溯原始数据
-
-                # 为了不改变 ComfyUI 的请求逻辑，我们需要从 ComfyUI 的历史记录中重新提取原始 filename 和 subfolder
-                history = await self.comfy_client.get_history(execution.prompt_id)
-                history_result = _resolve_history_result_asset(
-                    history,
-                    prompt_id=execution.prompt_id,
-                    task_id=execution.task_id,
+                materialized_outputs = await materialize_task_outputs(
+                    comfy_client=self.comfy_client,
+                    execution=execution,
                     task_type=task_type,
+                    logger=logger,
                 )
-                extra_outputs = _resolve_history_extra_output_assets(
-                    history,
-                    prompt_id=execution.prompt_id,
-                    task_id=execution.task_id,
-                    task_type=task_type,
+                extra_outputs_payload = await upload_materialized_outputs(
+                    minio_client=self.minio_client,
+                    result_bucket=MINIO_RESULT_BUCKET,
+                    outputs=materialized_outputs,
+                    logger=logger,
                 )
-                if not history_result:
-                    raise Exception(
-                        "Could not retrieve original filename from ComfyUI history"
-                    )
-                if task_type == "wan22_video_v2":
-                    execution.task_result = history_result["safe_name"]
-                    execution.task_result_priority = _result_asset_priority(
-                        history_result,
-                        task_type=task_type,
-                    )
-                original_filename = history_result["filename"]
-                original_subfolder = history_result["subfolder"]
-
-                view_type = _resolve_comfy_view_type(history_result)
-
-                logger.info(
-                    f"Fetching result {original_filename} from ComfyUI API (subfolder: '{original_subfolder}', type: '{view_type}')"
-                )
-
-                file_data = await self.comfy_client.get_view(
-                    original_filename, original_subfolder, type=view_type
-                )
-
-                # Upload the fetched bytes directly to MinIO using the safe prefixed task_result name
-                import io
-
-                content_type = "image/png"
-                if original_filename.endswith(".mp4"):
-                    content_type = "video/mp4"
-                elif original_filename.endswith(".gif"):
-                    content_type = "image/gif"
-                elif original_filename.endswith(".jpg") or original_filename.endswith(
-                    ".jpeg"
-                ):
-                    content_type = "image/jpeg"
-
-                logger.info(
-                    f"Uploading result {execution.task_result} to MinIO bucket {MINIO_RESULT_BUCKET}"
-                )
-                await asyncio.to_thread(
-                    self.minio_client.put_object,
-                    MINIO_RESULT_BUCKET,
-                    execution.task_result,
-                    io.BytesIO(file_data),
-                    len(file_data),
-                    content_type=content_type,
-                )
-
-                for name, extra_output in list(extra_outputs.items()):
-                    extra_filename = extra_output.get("filename")
-                    extra_subfolder = extra_output.get("subfolder")
-                    if not extra_filename or extra_subfolder is None:
-                        continue
-                    extra_view_type = extra_output.get("type", "output")
-                    extra_file_data = await self.comfy_client.get_view(
-                        extra_filename,
-                        extra_subfolder,
-                        type=extra_view_type,
-                    )
-                    await asyncio.to_thread(
-                        self.minio_client.put_object,
-                        MINIO_RESULT_BUCKET,
-                        extra_output["path"],
-                        io.BytesIO(extra_file_data),
-                        len(extra_file_data),
-                        content_type="image/png",
-                    )
-                    extra_outputs[name] = {
-                        "path": extra_output["path"],
-                        "media_type": extra_output.get("media_type", "image"),
-                    }
-
             except Exception as e:
                 logger.error(f"Failed to fetch from ComfyUI or upload to MinIO: {e}")
                 raise Exception(f"Result processing failed: {e}")
 
-            # 6. Report completion
-            await self.report_complete(
-                task_id,
-                execution.task_result,
-                extra_outputs=extra_outputs,
+            await report_materialized_outputs(
+                report_complete_func=self.report_complete,
+                task_id=task_id,
+                result_path=execution.task_result,
+                extra_outputs_payload=extra_outputs_payload,
             )
             logger.info(f"Task {task_id} completed successfully")
 

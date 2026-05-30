@@ -149,7 +149,7 @@ Web 统一入口在：
 - `src/core/task_core_default_dependencies.py`
 - `src/core/task_core_service_providers.py`
 - `src/core/task_core_submission.py`
-- `src/core/task_core_web_monitor.py`
+- `src/services/task_web_monitor.py`
 - `src/core/task_core_runtime.py`
 
 关键规则：
@@ -329,7 +329,7 @@ Worker 上报的关键回调包括：
 
 ### 10.2 Web side-effect monitor
 Web 任务提交成功后，真正负责“收尾”的是：
-- `src/core/task_core_web_monitor.py`
+- `src/services/task_web_monitor.py`
 
 它负责把 backend 终态转为 Web 可消费的最终语义：
 - 成功时持久化历史
@@ -469,7 +469,7 @@ Web 端当前运行态与结果查询链路分成两层：
 - `src/web_api/services/task_result_service.py`
 - `src/core/task_core.py`
 - `src/core/task_core_submission.py`
-- `src/core/task_core_web_monitor.py`
+- `src/services/task_web_monitor.py`
 - `src/core/task_core_runtime.py`
 - `src/core/task_dispatcher.py`
 - `backend/app/main_simple_task_routes.py`

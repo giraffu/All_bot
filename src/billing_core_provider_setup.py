@@ -1,4 +1,4 @@
-from src.api_client import get_system_status
+from src.api_client import api_client
 from src.core.billing_core import (
     BillingCoreProviders,
     configure_billing_core_providers,
@@ -18,7 +18,7 @@ def ensure_billing_core_providers_registered() -> BillingCoreProviders:
 
     return configure_billing_core_providers(
         BillingCoreProviders(
-            get_system_status_func=get_system_status,
+            get_system_status_func=api_client.get_system_status,
             get_permission_service_func=lambda: permission_service,
             get_redis_client_func=lambda: redis_client,
             get_quota_manager_func=lambda: _quota_manager,

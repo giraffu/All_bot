@@ -19,6 +19,7 @@ from src.services.task_service_support import (
     get_acceleration_notice,
     resolve_custom_video_settings,
 )
+from src.services.task_service_telegram_adapter import extract_actor_from_update
 from src.services.task_service_message_support import (
     build_translated_cost_status_builder,
     build_message_spec,
@@ -48,9 +49,10 @@ async def process_video_task_template(
     status_msg_id: Optional[int] = None,
 ) -> Tuple[Optional[bytes], Optional[str]]:
     if update is not None:
-        chat_id = update.effective_chat.id
-        user_id = update.effective_user.id
-        username = update.effective_user.username
+        actor = extract_actor_from_update(update)
+        chat_id = actor.chat_id
+        user_id = actor.user_id
+        username = actor.username
     if chat_id is None or user_id is None:
         raise ValueError("process_video_task_template 缺少用户或聊天上下文")
     internal_user_id = await resolve_internal_user_id(user_id, username)
@@ -163,9 +165,7 @@ async def process_custom_video_task(
     cleanup: bool = True,
     source_post_id: Optional[int] = None,
 ):
-    chat_id = update.effective_chat.id
-    user_id = update.effective_user.id
-    username = update.effective_user.username
+    actor = extract_actor_from_update(update)
     resolution, duration, _res_val, _duration_val = await resolve_custom_video_settings(
         context,
         update=update,
@@ -174,9 +174,9 @@ async def process_custom_video_task(
 
     return await process_image_to_video_task(
         context=context,
-        chat_id=chat_id,
-        user_id=user_id,
-        username=username,
+        chat_id=actor.chat_id,
+        user_id=actor.user_id,
+        username=actor.username,
         prompt=prompt,
         images=[image_path] if image_path else [],
         resolution=resolution,
