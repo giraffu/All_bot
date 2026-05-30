@@ -12,6 +12,9 @@ class _FakeResult:
     def __init__(self, single=None):
         self._single = single
 
+    def scalar(self):
+        return self._single if isinstance(self._single, int) else 0
+
     def scalar_one_or_none(self):
         return self._single
 

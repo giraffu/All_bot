@@ -2,7 +2,6 @@ from typing import Any, Optional, Tuple
 
 from src.constants import MODE_WAN22_VIDEO_V2
 from src.services.permission_service import permission_service
-from src.services.task_service_entrypoints_common import resolve_internal_user_id
 from src.services.task_service_entrypoint_support import build_task_inputs
 from src.services.task_service_flow import run_bot_task_application
 from src.services.task_service_generation_common import (
@@ -10,6 +9,7 @@ from src.services.task_service_generation_common import (
     build_generation_flow_context,
     build_generation_message_spec,
     build_generation_submitted_status_builder,
+    resolve_internal_user_id,
     resolve_generation_billing_args,
     resolve_generation_display_mode_name,
 )

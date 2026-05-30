@@ -22,8 +22,8 @@ async def test_calculate_user_priority_newbie_bonus():
     permission_service.quota_manager.get_user_stats.return_value = {
         "generation_count": 2
     }
-    permission_service.get_user_group = AsyncMock(return_value="凡人")
-    permission_service.get_user_identity = AsyncMock(return_value="外门弟子")
+    permission_service.identity_priority.get_user_group = AsyncMock(return_value="凡人")
+    permission_service.identity_priority.get_user_identity = AsyncMock(return_value="外门弟子")
     permission_service.quota_manager.get_daily_usage = AsyncMock(return_value=0)
     priority = await permission_service.calculate_user_priority(123)
     assert priority == 0  # Fallback to normal calculation
@@ -33,8 +33,8 @@ async def test_calculate_user_priority_newbie_bonus():
 async def test_calculate_user_priority_nascent_soul():
     # Setup
     permission_service = PermissionService()
-    permission_service.get_user_group = AsyncMock(return_value="元婴期")
-    permission_service.get_user_identity = AsyncMock(return_value="外门弟子")
+    permission_service.identity_priority.get_user_group = AsyncMock(return_value="元婴期")
+    permission_service.identity_priority.get_user_identity = AsyncMock(return_value="外门弟子")
     permission_service.quota_manager.get_daily_usage = AsyncMock()
     permission_service.quota_manager.get_user_stats = AsyncMock(
         return_value={"generation_count": 10}
@@ -72,8 +72,8 @@ async def test_calculate_user_priority_nascent_soul():
 async def test_calculate_user_priority_golden_core():
     # Setup
     permission_service = PermissionService()
-    permission_service.get_user_group = AsyncMock(return_value="金丹期")
-    permission_service.get_user_identity = AsyncMock(return_value="外门弟子")
+    permission_service.identity_priority.get_user_group = AsyncMock(return_value="金丹期")
+    permission_service.identity_priority.get_user_identity = AsyncMock(return_value="外门弟子")
     permission_service.quota_manager.get_daily_usage = AsyncMock()
     permission_service.quota_manager.get_user_stats = AsyncMock(
         return_value={"generation_count": 10}
@@ -116,8 +116,8 @@ async def test_calculate_user_priority_golden_core():
 async def test_calculate_user_priority_foundation():
     # Setup
     permission_service = PermissionService()
-    permission_service.get_user_group = AsyncMock(return_value="筑基期")
-    permission_service.get_user_identity = AsyncMock(return_value="外门弟子")
+    permission_service.identity_priority.get_user_group = AsyncMock(return_value="筑基期")
+    permission_service.identity_priority.get_user_identity = AsyncMock(return_value="外门弟子")
     permission_service.quota_manager.get_daily_usage = AsyncMock()
     permission_service.quota_manager.get_user_stats = AsyncMock(
         return_value={"generation_count": 10}
@@ -140,8 +140,8 @@ async def test_calculate_user_priority_foundation():
 async def test_calculate_user_priority_qi_refining():
     # Setup
     permission_service = PermissionService()
-    permission_service.get_user_group = AsyncMock(return_value="练气期")
-    permission_service.get_user_identity = AsyncMock(return_value="外门弟子")
+    permission_service.identity_priority.get_user_group = AsyncMock(return_value="练气期")
+    permission_service.identity_priority.get_user_identity = AsyncMock(return_value="外门弟子")
     permission_service.quota_manager.get_daily_usage = AsyncMock()
     permission_service.quota_manager.get_user_stats = AsyncMock(
         return_value={"generation_count": 10}
@@ -164,8 +164,8 @@ async def test_calculate_user_priority_qi_refining():
 async def test_calculate_user_priority_mortal():
     # Setup
     permission_service = PermissionService()
-    permission_service.get_user_group = AsyncMock(return_value="凡人")
-    permission_service.get_user_identity = AsyncMock(return_value="外门弟子")
+    permission_service.identity_priority.get_user_group = AsyncMock(return_value="凡人")
+    permission_service.identity_priority.get_user_identity = AsyncMock(return_value="外门弟子")
     permission_service.quota_manager.get_daily_usage = AsyncMock()
     permission_service.quota_manager.get_user_stats = AsyncMock(
         return_value={"generation_count": 10}
@@ -186,8 +186,8 @@ async def test_calculate_user_priority_mortal():
 async def test_calculate_user_priority_addition():
     # Setup
     permission_service = PermissionService()
-    permission_service.get_user_group = AsyncMock(return_value="金丹期")  # gives 10
-    permission_service.get_user_identity = AsyncMock(
+    permission_service.identity_priority.get_user_group = AsyncMock(return_value="金丹期")  # gives 10
+    permission_service.identity_priority.get_user_identity = AsyncMock(
         return_value="真传弟子"
     )  # gives 45
     permission_service.quota_manager.get_daily_usage = AsyncMock()

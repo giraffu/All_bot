@@ -12,8 +12,6 @@ from telegram.ext import (
     filters,
 )
 
-from src.core.user_core import get_or_create_user_by_telegram
-from src.database.core import AsyncSessionLocal
 from src.handlers.conversation_states import AffiliateRedeemState
 from src.handlers.prompt_router import is_global_menu_command
 from src.services.affiliate_redeem_service import (
@@ -22,6 +20,11 @@ from src.services.affiliate_redeem_service import (
     AffiliateRedeemInsufficientBalanceError,
     query_affiliate_available_balance,
     redeem_affiliate_balance_to_credits,
+)
+from src.services.telegram_affiliate_service import (
+    query_affiliate_available_balance_for_telegram_user,
+    redeem_affiliate_credits_for_telegram_user,
+    resolve_internal_user_id_for_telegram_user,
 )
 from src.utils import robust_edit_text, robust_reply_text, safe_answer_query
 
@@ -75,19 +78,22 @@ def _release_busy_lock(context: ContextTypes.DEFAULT_TYPE) -> None:
 
 async def _get_internal_user_id(update: Update) -> int:
     tg_user = update.effective_user
-    internal_user, _ = await get_or_create_user_by_telegram(
-        tg_user.id,
-        tg_user.username,
-        tg_user.full_name,
-        tg_user.language_code,
+    return await resolve_internal_user_id_for_telegram_user(
+        telegram_user_id=tg_user.id,
+        username=tg_user.username,
+        full_name=tg_user.full_name,
+        language_code=tg_user.language_code,
     )
-    return int(internal_user.id)
 
 
 async def _query_available_balance(update: Update) -> Decimal:
-    internal_user_id = await _get_internal_user_id(update)
-    async with AsyncSessionLocal() as session:
-        return await query_affiliate_available_balance(session, internal_user_id)
+    tg_user = update.effective_user
+    return await query_affiliate_available_balance_for_telegram_user(
+        telegram_user_id=tg_user.id,
+        username=tg_user.username,
+        full_name=tg_user.full_name,
+        language_code=tg_user.language_code,
+    )
 
 
 async def start_custom_credits_redeem(
@@ -139,14 +145,16 @@ async def receive_custom_amount(
         return AffiliateRedeemState.WAIT_CREDITS_AMOUNT
 
     try:
+        tg_user = update.effective_user
         internal_user_id = await _get_internal_user_id(update)
-        async with AsyncSessionLocal() as session:
-            result = await redeem_affiliate_balance_to_credits(
-                session,
-                user_id=internal_user_id,
-                amount_usdt=amount_usdt,
-                idempotency_key=f"tg_affiliate_credits:{internal_user_id}:{uuid.uuid4().hex}",
-            )
+        result = await redeem_affiliate_credits_for_telegram_user(
+            telegram_user_id=tg_user.id,
+            username=tg_user.username,
+            full_name=tg_user.full_name,
+            language_code=tg_user.language_code,
+            amount_usdt=amount_usdt,
+            idempotency_key=f"tg_affiliate_credits:{internal_user_id}:{uuid.uuid4().hex}",
+        )
 
         msg = (
             "✅ **返佣兑灵石成功**\n\n"

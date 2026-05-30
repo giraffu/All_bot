@@ -38,6 +38,8 @@ from src.services.storage_minio_client import (
     build_public_minio_client,
     ensure_bucket_exists,
 )
+
+# Stable facade only: bootstrap, object IO, and R2 transfer details should stay in helper modules.
 from src.services.storage_presign import (
     generate_presigned_get_url,
     generate_presigned_put_url,

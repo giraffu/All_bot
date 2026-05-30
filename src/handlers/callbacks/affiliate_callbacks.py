@@ -7,10 +7,8 @@ from decimal import Decimal
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
 
-from src.core.user_core import get_or_create_user_by_telegram
-from src.core.user_facade import get_user_dashboard_info
-from src.database.core import AsyncSessionLocal
 from src.handlers.callback_router import register_callback
+from src.core.user_facade import get_user_dashboard_info
 from src.services.affiliate_redeem_service import (
     AFFILIATE_MEMBERSHIP_REDEEM_OPTIONS,
     AFFILIATE_CREDITS_REDEEM_ALLOWED_AMOUNTS_TEXT,
@@ -22,6 +20,12 @@ from src.services.affiliate_redeem_service import (
     query_affiliate_available_balance,
     redeem_affiliate_balance_to_credits,
     redeem_affiliate_balance_to_membership,
+)
+from src.services.telegram_affiliate_service import (
+    query_affiliate_available_balance_for_telegram_user,
+    redeem_affiliate_credits_for_telegram_user,
+    redeem_affiliate_membership_for_telegram_user,
+    resolve_internal_user_id_for_telegram_user,
 )
 from src.utils import robust_edit_text, safe_answer_query
 
@@ -155,19 +159,22 @@ async def _ensure_no_active_conversation(
 
 async def _get_internal_user_id(update: Update) -> int:
     tg_user = update.effective_user
-    internal_user, _ = await get_or_create_user_by_telegram(
-        tg_user.id,
-        tg_user.username,
-        tg_user.full_name,
-        tg_user.language_code,
+    return await resolve_internal_user_id_for_telegram_user(
+        telegram_user_id=tg_user.id,
+        username=tg_user.username,
+        full_name=tg_user.full_name,
+        language_code=tg_user.language_code,
     )
-    return int(internal_user.id)
 
 
 async def _query_available_balance(update: Update) -> Decimal:
-    internal_user_id = await _get_internal_user_id(update)
-    async with AsyncSessionLocal() as session:
-        return await query_affiliate_available_balance(session, internal_user_id)
+    tg_user = update.effective_user
+    return await query_affiliate_available_balance_for_telegram_user(
+        telegram_user_id=tg_user.id,
+        username=tg_user.username,
+        full_name=tg_user.full_name,
+        language_code=tg_user.language_code,
+    )
 
 
 async def _build_affiliate_home_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> str:
@@ -256,14 +263,16 @@ async def affiliate_redeem_credits_amount_callback(
             parse_mode="Markdown",
         )
 
+        tg_user = update.effective_user
         internal_user_id = await _get_internal_user_id(update)
-        async with AsyncSessionLocal() as session:
-            result = await redeem_affiliate_balance_to_credits(
-                session,
-                user_id=internal_user_id,
-                amount_usdt=amount_usdt,
-                idempotency_key=f"tg_affiliate_credits:{internal_user_id}:{uuid.uuid4().hex}",
-            )
+        result = await redeem_affiliate_credits_for_telegram_user(
+            telegram_user_id=tg_user.id,
+            username=tg_user.username,
+            full_name=tg_user.full_name,
+            language_code=tg_user.language_code,
+            amount_usdt=amount_usdt,
+            idempotency_key=f"tg_affiliate_credits:{internal_user_id}:{uuid.uuid4().hex}",
+        )
 
         msg = (
             "✅ **返佣兑灵石成功**\n\n"
@@ -381,16 +390,18 @@ async def affiliate_redeem_membership_option_callback(
             parse_mode="Markdown",
         )
 
+        tg_user = update.effective_user
         internal_user_id = await _get_internal_user_id(update)
-        async with AsyncSessionLocal() as session:
-            result = await redeem_affiliate_balance_to_membership(
-                session,
-                user_id=internal_user_id,
-                option_key=option_key,
-                idempotency_key=(
-                    f"tg_affiliate_membership:{internal_user_id}:{uuid.uuid4().hex}"
-                ),
-            )
+        result = await redeem_affiliate_membership_for_telegram_user(
+            telegram_user_id=tg_user.id,
+            username=tg_user.username,
+            full_name=tg_user.full_name,
+            language_code=tg_user.language_code,
+            option_key=option_key,
+            idempotency_key=(
+                f"tg_affiliate_membership:{internal_user_id}:{uuid.uuid4().hex}"
+            ),
+        )
 
         msg = (
             "✅ **返佣兑身份成功**\n\n"

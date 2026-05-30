@@ -7,7 +7,6 @@ from src.constants import MODE_FACE_VIDEO_STEP1
 from src.core.video_billing import normalize_requested_duration_seconds
 from src.services.permission_service import permission_service
 from src.services.task_service_cleanup import cleanup_task_files
-from src.services.task_service_entrypoints_common import resolve_internal_user_id
 from src.services.task_service_entrypoint_support import (
     build_bot_task_flow_context,
     build_cleanup_paths,
@@ -23,6 +22,7 @@ from src.services.task_service_message_support import (
 )
 from src.services.task_service_telegram_adapter import extract_actor_from_update
 from src.services.task_service_flow import run_bot_task_application
+from src.services.task_service_generation_common import resolve_internal_user_id
 from src.services.task_service_support import get_acceleration_notice
 from src.services.task_service_types import BotTaskFailurePolicy, BotTaskRuntimeState
 

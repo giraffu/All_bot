@@ -88,6 +88,7 @@ for group in "$@"; do
         tests/integration/test_saga_and_queue.py \
         tests/backend/test_main_helpers.py \
         tests/backend/test_queue_manager.py \
+        tests/core/test_task_core_submission.py \
         tests/web_api/test_tasks_action_api_service.py \
         tests/web_api/test_tasks_generate.py \
         tests/web_api/test_tasks_stream.py \
@@ -107,6 +108,8 @@ for group in "$@"; do
       ;;
     users-web)
       run_pytest_group "users-web" \
+        tests/services/test_user_persistence_service.py \
+        tests/core/test_user_core.py \
         tests/web_api/test_users_apply_context.py \
         tests/web_api/test_users_history_urls.py \
         tests/web_api/test_users_history_mutation_service.py \
@@ -115,6 +118,8 @@ for group in "$@"; do
       ;;
     gallery-web)
       run_pytest_group "gallery-web" \
+        tests/core/test_gallery_submission_and_interactions_core.py \
+        tests/handlers/callbacks/test_gallery_callbacks_interactions.py \
         tests/web_api/test_gallery_router_passthrough.py \
         tests/web_api/test_gallery_apply_context.py \
         tests/web_api/test_gallery_media_urls.py \

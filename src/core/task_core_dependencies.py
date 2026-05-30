@@ -17,6 +17,14 @@ class TaskCoreWarmupDependencies:
 class TaskCoreRuntimeDependencies:
     release_concurrency_lock_func: Callable[..., Awaitable[Any]]
     remove_task_func: Callable[..., Awaitable[Any]]
+    get_active_tasks_func: Callable[..., Awaitable[Any]]
+    get_all_user_concurrencies_func: Callable[..., Awaitable[Any]]
+    cancel_task_func: Callable[..., Awaitable[Any]]
+    get_task_func: Callable[..., Awaitable[Any]]
+    find_task_by_backend_task_id_func: Callable[..., Awaitable[Any]]
+    set_runtime_value_func: Callable[..., Awaitable[Any]]
+    expire_runtime_value_func: Callable[..., Awaitable[Any]]
+    delete_runtime_value_func: Callable[..., Awaitable[Any]]
 
 
 @dataclass(frozen=True)

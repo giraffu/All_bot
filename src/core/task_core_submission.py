@@ -7,6 +7,7 @@ from src.core.billing_core import refund_credits
 from src.core.task_core_default_dependencies import (
     build_default_task_core_submission_dependencies,
 )
+from src.core.task_core_dependencies import TaskCoreSubmissionDependencies
 from src.core.task_core_error_helpers import is_task_backend_busy_error
 from src.core.task_core_types import (
     CoreDomainError,
@@ -150,6 +151,22 @@ async def compensate_failed_submission(
         await shield_func(remove_task_func(registry_task_id))
 
 
+def _resolve_default_task_core_submission_dependencies(
+    *,
+    dependencies: TaskCoreSubmissionDependencies | None = None,
+    dispatch_to_worker_func,
+    is_task_backend_busy_error_func,
+    logger_override,
+) -> TaskCoreSubmissionDependencies:
+    if dependencies is not None:
+        return dependencies
+    return build_default_task_core_submission_dependencies(
+        dispatch_to_worker_func=dispatch_to_worker_func,
+        is_task_backend_busy_error_func=is_task_backend_busy_error_func,
+        logger_override=logger_override,
+    )
+
+
 async def register_task_submission_default(
     *,
     registry_task_id: str,
@@ -157,9 +174,11 @@ async def register_task_submission_default(
     username: str,
     cost: int,
     submission_context: TaskSubmissionContext,
+    dependencies=None,
     logger_override: logging.Logger | None = None,
 ) -> str:
-    dependencies = build_default_task_core_submission_dependencies(
+    dependencies = _resolve_default_task_core_submission_dependencies(
+        dependencies=dependencies,
         dispatch_to_worker_func=dispatch_to_worker,
         is_task_backend_busy_error_func=lambda _message: False,
         logger_override=logger_override or logging.getLogger(__name__),
@@ -180,10 +199,12 @@ async def dispatch_registered_task_default(
     task_type: str,
     inputs: dict,
     final_priority: int,
+    dependencies=None,
     is_task_backend_busy_error_func=is_task_backend_busy_error,
     logger_override: logging.Logger | None = None,
 ) -> str:
-    dependencies = build_default_task_core_submission_dependencies(
+    dependencies = _resolve_default_task_core_submission_dependencies(
+        dependencies=dependencies,
         dispatch_to_worker_func=dispatch_to_worker,
         is_task_backend_busy_error_func=is_task_backend_busy_error_func,
         logger_override=logger_override or logging.getLogger(__name__),
@@ -208,18 +229,30 @@ async def execute_task_submission_saga_default(
     registry_task_id: str,
     cost: int,
     submission_context: TaskSubmissionContext,
+    dependencies=None,
     is_task_backend_busy_error_func=is_task_backend_busy_error,
     logger_override: logging.Logger | None = None,
 ) -> TaskSubmissionExecutionResult:
+    dependencies = _resolve_default_task_core_submission_dependencies(
+        dependencies=dependencies,
+        dispatch_to_worker_func=dispatch_to_worker,
+        is_task_backend_busy_error_func=is_task_backend_busy_error_func,
+        logger_override=logger_override or logging.getLogger(__name__),
+    )
     return await execute_task_submission_saga(
         task_type=task_type,
         inputs=inputs,
         registry_task_id=registry_task_id,
         cost=cost,
         submission_context=submission_context,
-        register_task_submission_func=register_task_submission_default,
+        register_task_submission_func=lambda **kwargs: register_task_submission_default(
+            **kwargs,
+            dependencies=dependencies,
+            logger_override=logger_override,
+        ),
         dispatch_registered_task_func=lambda **kwargs: dispatch_registered_task_default(
             **kwargs,
+            dependencies=dependencies,
             is_task_backend_busy_error_func=is_task_backend_busy_error_func,
             logger_override=logger_override,
         ),
@@ -234,9 +267,11 @@ async def compensate_failed_submission_default(
     error: Exception,
     credits_deducted: bool,
     registry_task_id: str,
+    dependencies=None,
     logger_override: logging.Logger | None = None,
 ):
-    dependencies = build_default_task_core_submission_dependencies(
+    dependencies = _resolve_default_task_core_submission_dependencies(
+        dependencies=dependencies,
         dispatch_to_worker_func=dispatch_to_worker,
         is_task_backend_busy_error_func=lambda _message: False,
         logger_override=logger_override or logging.getLogger(__name__),

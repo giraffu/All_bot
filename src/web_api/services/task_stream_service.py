@@ -96,6 +96,124 @@ def _extract_message_payload(message_data: Any) -> str:
     return message_data
 
 
+async def _build_initial_stream_transition(
+    *,
+    runtime_task_id_val: str,
+    task_id: str,
+    user_id: int,
+    session_factory,
+    api_base: str,
+    httpx_async_client_factory,
+    logger,
+    build_not_found_progress_payload,
+    build_terminal_progress_payload,
+) -> tuple[list[dict[str, str]], bool, bool]:
+    events: list[dict[str, str]] = []
+    initial_status = await _fetch_task_status_full(
+        task_id=runtime_task_id_val,
+        api_base=api_base,
+        httpx_async_client_factory=httpx_async_client_factory,
+        logger=logger,
+    )
+    if not initial_status:
+        return events, False, False
+    if initial_status.get("not_found"):
+        events.append(
+            await _build_not_found_event(
+                task_id=task_id,
+                user_id=user_id,
+                session_factory=session_factory,
+                build_not_found_progress_payload=build_not_found_progress_payload,
+            )
+        )
+        return events, False, True
+
+    terminal_event, became_running, should_stop = _resolve_status_transition(
+        status_data=initial_status,
+        task_id=task_id,
+        build_terminal_progress_payload=build_terminal_progress_payload,
+    )
+    if terminal_event:
+        events.append(terminal_event)
+    return events, became_running, should_stop
+
+
+async def _build_pubsub_stream_transition(
+    *,
+    message,
+    task_id: str,
+    build_terminal_progress_payload,
+) -> tuple[dict[str, str] | None, bool, bool]:
+    if not message:
+        return None, False, False
+
+    data = _extract_message_payload(message["data"])
+    try:
+        parsed = json.loads(data)
+    except json.JSONDecodeError:
+        return _build_progress_event(data), False, False
+
+    terminal_event, became_running, should_stop = _resolve_status_transition(
+        status_data=parsed,
+        task_id=task_id,
+        build_terminal_progress_payload=build_terminal_progress_payload,
+    )
+    if terminal_event:
+        return terminal_event, became_running, should_stop
+    return _build_progress_event(parsed), became_running, should_stop
+
+
+async def _build_queue_poll_transition(
+    *,
+    runtime_task_id_val: str,
+    task_id: str,
+    user_id: int,
+    session_factory,
+    api_base: str,
+    httpx_async_client_factory,
+    logger,
+    build_not_found_progress_payload,
+    build_terminal_progress_payload,
+) -> tuple[list[dict[str, str]], bool, bool]:
+    events: list[dict[str, str]] = []
+    status_data = await _fetch_task_status_full(
+        task_id=runtime_task_id_val,
+        api_base=api_base,
+        httpx_async_client_factory=httpx_async_client_factory,
+        logger=logger,
+    )
+    if not status_data:
+        return events, False, False
+    if status_data.get("not_found"):
+        events.append(
+            await _build_not_found_event(
+                task_id=task_id,
+                user_id=user_id,
+                session_factory=session_factory,
+                build_not_found_progress_payload=build_not_found_progress_payload,
+            )
+        )
+        return events, False, True
+
+    terminal_event, became_running, should_stop = _resolve_status_transition(
+        status_data=status_data,
+        task_id=task_id,
+        build_terminal_progress_payload=build_terminal_progress_payload,
+    )
+    if terminal_event:
+        events.append(terminal_event)
+        return events, became_running, True
+    if should_stop:
+        return events, became_running, True
+
+    queue_pos = status_data.get("queue_pos")
+    if queue_pos is not None:
+        events.append(
+            _build_progress_event({"status": "pending", "queue_pos": queue_pos})
+        )
+    return events, became_running, False
+
+
 def build_task_status_stream_response(
     *,
     task_id: str,
@@ -117,37 +235,26 @@ def build_task_status_stream_response(
 
         try:
             yield _build_connected_event(task_id)
-
-            initial_status = await _fetch_task_status_full(
-                task_id=runtime_task_id_val,
-                api_base=api_base,
-                httpx_async_client_factory=httpx_async_client_factory,
-                logger=logger,
-            )
             is_running = False
-
-            if initial_status:
-                if initial_status.get("not_found"):
-                    yield await _build_not_found_event(
-                        task_id=task_id,
-                        user_id=user_id,
-                        session_factory=session_factory,
-                        build_not_found_progress_payload=build_not_found_progress_payload,
-                    )
-                    return
-
-                terminal_event, became_running, should_stop = _resolve_status_transition(
-                    status_data=initial_status,
+            initial_events, became_running, should_stop = (
+                await _build_initial_stream_transition(
+                    runtime_task_id_val=runtime_task_id_val,
                     task_id=task_id,
+                    user_id=user_id,
+                    session_factory=session_factory,
+                    api_base=api_base,
+                    httpx_async_client_factory=httpx_async_client_factory,
+                    logger=logger,
+                    build_not_found_progress_payload=build_not_found_progress_payload,
                     build_terminal_progress_payload=build_terminal_progress_payload,
                 )
-                if became_running:
-                    is_running = True
-                elif terminal_event:
-                    yield terminal_event
-                    return
-                elif should_stop:
-                    return
+            )
+            for event in initial_events:
+                yield event
+            if became_running:
+                is_running = True
+            if should_stop:
+                return
 
             last_queue_check = 0.0
 
@@ -156,76 +263,46 @@ def build_task_status_stream_response(
                     ignore_subscribe_messages=True,
                     timeout=1.0,
                 )
-                if message:
-                    data = _extract_message_payload(message["data"])
-
-                    try:
-                        parsed = json.loads(data)
-                        terminal_event, became_running, should_stop = (
-                            _resolve_status_transition(
-                            status_data=parsed,
-                            task_id=task_id,
-                            build_terminal_progress_payload=build_terminal_progress_payload,
-                            )
-                        )
-                        if terminal_event:
-                            yield terminal_event
-                        else:
-                            yield _build_progress_event(parsed)
-
-                        if became_running:
-                            is_running = True
-                        if should_stop:
-                            break
-                    except json.JSONDecodeError:
-                        yield _build_progress_event(data)
+                pubsub_event, became_running, should_stop = (
+                    await _build_pubsub_stream_transition(
+                        message=message,
+                        task_id=task_id,
+                        build_terminal_progress_payload=build_terminal_progress_payload,
+                    )
+                )
+                if pubsub_event:
+                    yield pubsub_event
+                if became_running:
+                    is_running = True
+                if should_stop:
+                    break
 
                 if not is_running:
                     current_time = asyncio.get_event_loop().time()
                     if current_time - last_queue_check > 5.0:
-                        status_data = await _fetch_task_status_full(
-                            task_id=runtime_task_id_val,
-                            api_base=api_base,
-                            httpx_async_client_factory=httpx_async_client_factory,
-                            logger=logger,
-                        )
-                        if status_data:
-                            if status_data.get("not_found"):
-                                yield await _build_not_found_event(
-                                    task_id=task_id,
-                                    user_id=user_id,
-                                    session_factory=session_factory,
-                                    build_not_found_progress_payload=(
-                                        build_not_found_progress_payload
-                                    ),
-                                )
-                                break
-
-                            terminal_event, became_running, should_stop = (
-                                _resolve_status_transition(
-                                    status_data=status_data,
-                                    task_id=task_id,
-                                    build_terminal_progress_payload=(
-                                        build_terminal_progress_payload
-                                    ),
-                                )
+                        queue_events, became_running, should_stop = (
+                            await _build_queue_poll_transition(
+                                runtime_task_id_val=runtime_task_id_val,
+                                task_id=task_id,
+                                user_id=user_id,
+                                session_factory=session_factory,
+                                api_base=api_base,
+                                httpx_async_client_factory=httpx_async_client_factory,
+                                logger=logger,
+                                build_not_found_progress_payload=(
+                                    build_not_found_progress_payload
+                                ),
+                                build_terminal_progress_payload=(
+                                    build_terminal_progress_payload
+                                ),
                             )
-                            if became_running:
-                                is_running = True
-                            elif terminal_event:
-                                yield terminal_event
-                                break
-                            elif should_stop:
-                                break
-
-                            queue_pos = status_data.get("queue_pos")
-                            if queue_pos is not None:
-                                yield _build_progress_event(
-                                    {
-                                        "status": "pending",
-                                        "queue_pos": queue_pos,
-                                    }
-                                )
+                        )
+                        for event in queue_events:
+                            yield event
+                        if became_running:
+                            is_running = True
+                        if should_stop:
+                            break
                         last_queue_check = current_time
 
                 await asyncio.sleep(0.5)

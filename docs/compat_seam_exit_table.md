@@ -13,6 +13,8 @@
 | `src/services/payment_fulfillment_service.py:LogService` 导入注释 | backward-compatible test patch target | 旧支付履约测试 | 相邻测试改贴 `src.services.log_service.LogService.log_action` | 已删除，支付履约文件不再暴露 compat patch target |
 | `src/services/task_service_generation_entrypoints.py` | `TaskService` 到 generation entrypoints 的纯转发壳 | `bot_task_service.py` 旧 facade 调用面 | `bot_task_service.py` 改为直接导入真实 entrypoint，focused tests 改贴公开函数/flow | 已删除，生成/I2I 入口不再经过 compat-only 转发文件 |
 | `src/services/task_service_entrypoints.py` | 仅聚合导出 TG task entrypoints 的 compat 壳 | `bot_task_service.py` 旧 facade 调用面 | `bot_task_service.py` 改为直接导入分域 entrypoint 模块 | 已删除，聚合 re-export 不再保留 |
+| `src/services/task_service_entrypoints_common.py` | 仅保留 `resolve_internal_user_id(...)` 的薄包装壳 | 多个 TG generation/video entrypoint | 统一改由 `task_service_generation_common.py` 提供共享 helper | 已删除，入口共用 helper 已并回 generation common |
+| `frontend/src/composables/useLegacySwapApply.ts` | 旧 swap 页 route apply 兼容壳 | `FaceSwap.vue`、`VideoSwap.vue` | 两个页面直接内联 route apply 初始化，旧壳不再承担中转职责 | 已删除，compat 逻辑已回收到页面 setup |
 
 ## 已在本轮下沉的默认装配
 
@@ -31,7 +33,6 @@
 | TG gallery 投稿 / 点赞主链 | `src/handlers/callbacks/gallery_callbacks.py` | `src/handlers/callbacks/gallery_callbacks_interactions.py` | 已继续收口，`public_share`、`rate_*`、`submit_gallery_`、`gallery_like_/gallery_dislike_` 已直接在 interactions 子模块注册，旧壳文件已删除 |
 | `Profile.vue` metric 组装 | `frontend/src/views/Profile.vue` | `frontend/src/composables/useProfileMetrics.ts` | 已下沉，统计与返佣卡片数据组装不再堆在页面脚本 |
 | `storage.py` R2 exists/cache runtime 细节 | `src/services/storage.py` | `src/services/storage_r2_exists.py` | 已下沉，`StorageService` 主要保留公开方法与薄包装 |
-| swap 旧路由 apply 初始化 | `FaceSwap.vue`、`VideoSwap.vue` 页面内联 | `frontend/src/composables/useLegacySwapApply.ts` | 已统一，旧页只保留 route 兼容入口与页面壳 |
 | `Profile.vue` 队列状态块 | `frontend/src/views/Profile.vue` | `frontend/src/components/profile/ProfileQueueStatusPanel.vue` | 已下沉，页面继续回到区块装配层 |
 | `storage.py` MinIO bootstrap / presign 细节 | `src/services/storage.py` | `src/services/storage_minio_client.py`、`src/services/storage_presign.py` | 已下沉，bucket name/public client/bucket ensure 与 presign get/put/expiry 不再堆在主文件 |
 | `Profile.vue` 欢迎区摘要 / 快捷入口装配 | `frontend/src/views/Profile.vue` | `frontend/src/composables/useProfileWelcomeSummary.ts`、`frontend/src/composables/useProfileQuickActions.ts` | 已下沉，欢迎区与快捷入口的数据/行为编排进一步退出页面脚本 |
@@ -51,11 +52,12 @@
 | `src/handlers/fsm/image_to_video_fsm.py:start_custom_video` | `/custom_video` 旧入口别名，对外保持稳定命令名 | `/custom_video` 命令、`menu.custom_video` 与 callback `fsm_start_custom_video` | 明确 `/custom_video` 是否长期保留为独立产品入口；若仅是图生视频变体，可与统一入口继续收口 | `D2` 后续轮次 |
 | `src/constants.py:MODE_IMAGE_TO_VIDEO = MODE_VIDEO_LORA` | 兼容历史任务类型值，避免旧记录/旧 payload 失配 | 历史任务类型、旧 apply-context、统计与计费链路 | 当前主链已统一补上 `image_to_video` 新主名：dispatcher、API client、image service、backend `/image_to_video` 路由与 FSM 新入口已切到中性命名；旧 `video_lora` 仅保留入口 alias、兼容路由与历史值锚点，后续在数据迁移完成后退出该值别名 | 已压缩到外层兼容 |
 | `src/database/models.py:Order.telegram_id` | 历史数据库列名，实际关联 `users.id` 内部用户主键 | 正式环境尚未执行迁移时的遗留 schema 名称 | 测试环境已实际执行 Alembic `7c0a4d5e6f71`，`orders` 物理列已切到 `internal_user_id`，ORM 也已删除 `telegram_id` alias；后续只需在生产切换窗口按同一 migration 执行正式环境升级 | `测试已完成 / 生产待执行` |
-| `frontend/src/composables/useLegacySwapApply.ts` | 旧 swap 页 route apply 兼容壳，把旧 query + session apply context 转成双文件页初始化 | `FaceSwap.vue`、`VideoSwap.vue` 旧入口与旧模板应用跳转 | Gallery / 模板应用工作台确认不再写旧 swap route query，且旧收藏/历史入口无存量流量 | `D2` 后续轮次 |
 | `src/services/order_v2_service.py` 的 `ORDER:` / `ORDER_V2:` 双载荷兼容 | 兼容历史支付回调载荷格式与旧本地单号语义 | 旧支付链路、回调解析与 payment presenter 的 `legacy_order_id` 展示 | 对外查询全面切到 `business_order_id`，旧支付通道不再回传 `ORDER:` 载荷，Dashboard/Web 不再展示旧本地单号为主 ID | `待支付链路收口后` |
+| `src/services/user_persistence_service.py` 的 `id == tg_id` legacy adopt 分支 | 兼容早期内部用户主键与 Telegram ID 混用的数据 | 仍存在历史用户记录但缺少 `telegram_id` 的存量数据 | 先确认正式/测试环境中不再存在 `id == tg_id && telegram_id is null` 的用户；随后移除 `_get_legacy_user_by_internal_id(...)` / `_adopt_legacy_internal_user(...)`，并保留 focused tests 作为删除前门禁 | `待数据治理完成后` |
 
 ## 删除原则
 
 1. 先迁调用方与测试，再删 compat 导出。
 2. 优先让测试 patch helper/service 边界，不再绑定 router 或 façade 私有符号。
 3. 删除 compat 后必须补 focused tests，防止回滚式复活。
+4. 对 legacy 双 ID 兼容分支，先做数据盘点与 focused tests，再删代码；不要在新增链路里继续把 compat 分支当成主路径。

@@ -3,10 +3,8 @@ import logging
 import httpx
 
 from src.core.billing_core import release_concurrency_lock
-from src.core.task_core_service_providers import (
-    get_task_core_api_client,
-    get_task_core_submission_outbox,
-    get_task_core_task_registry,
+from src.core.task_core_default_dependencies import (
+    build_default_task_core_runtime_dependencies,
 )
 from src.core.task_core_types import CoreDomainError
 
@@ -20,11 +18,18 @@ async def cleanup_task_runtime_state(
     release_lock: bool = True,
     release_concurrency_lock_func=None,
     remove_task_func=None,
+    runtime_dependencies=None,
 ):
-    if release_concurrency_lock_func is None:
-        release_concurrency_lock_func = release_concurrency_lock
-    if remove_task_func is None:
-        remove_task_func = get_task_core_task_registry().remove_task
+    if release_concurrency_lock_func is None or remove_task_func is None:
+        runtime_dependencies = runtime_dependencies or build_default_task_core_runtime_dependencies(
+            release_concurrency_lock_func=release_concurrency_lock
+        )
+        if release_concurrency_lock_func is None:
+            release_concurrency_lock_func = (
+                runtime_dependencies.release_concurrency_lock_func
+            )
+        if remove_task_func is None:
+            remove_task_func = runtime_dependencies.remove_task_func
 
     if release_lock:
         try:
@@ -41,14 +46,25 @@ async def cleanup_task_runtime_state(
             logger.error(f"Failed to remove registry task {registry_task_id}: {e}")
 
 
-async def get_system_task_stats(*, submission_outbox=None) -> tuple[dict, dict]:
+async def get_system_task_stats(
+    *,
+    submission_outbox=None,
+    runtime_dependencies=None,
+) -> tuple[dict, dict]:
     """
     获取全系统任务统计信息。
     返回 (active_tasks, user_concurrencies)
     """
-    redis_client = submission_outbox or get_task_core_submission_outbox()
-    active_tasks = await redis_client.get_active_tasks()
-    user_concurrencies = await redis_client.get_all_user_concurrencies()
+    if submission_outbox is not None:
+        active_tasks = await submission_outbox.get_active_tasks()
+        user_concurrencies = await submission_outbox.get_all_user_concurrencies()
+        return active_tasks, user_concurrencies
+
+    runtime_dependencies = runtime_dependencies or build_default_task_core_runtime_dependencies(
+        release_concurrency_lock_func=release_concurrency_lock
+    )
+    active_tasks = await runtime_dependencies.get_active_tasks_func()
+    user_concurrencies = await runtime_dependencies.get_all_user_concurrencies_func()
     return active_tasks, user_concurrencies
 
 
@@ -59,13 +75,17 @@ async def cancel_backend_task_best_effort(
     raise_on_error: bool = False,
     cancel_task_func=None,
     logger_override=logger,
+    runtime_dependencies=None,
 ) -> bool:
     """Best-effort backend cancellation shared by runtime cleanup call sites."""
     if not backend_task_id:
         return False
 
     if cancel_task_func is None:
-        cancel_task_func = get_task_core_api_client().cancel_task
+        runtime_dependencies = runtime_dependencies or build_default_task_core_runtime_dependencies(
+            release_concurrency_lock_func=release_concurrency_lock
+        )
+        cancel_task_func = runtime_dependencies.cancel_task_func
 
     try:
         await cancel_task_func(backend_task_id)
@@ -104,6 +124,7 @@ async def force_terminate_task(
     submission_outbox=None,
     cleanup_task_runtime_state_func=None,
     cancel_backend_task_best_effort_func=None,
+    runtime_dependencies=None,
 ):
     """
     强制终止一个活跃任务并释放对应的用户锁。
@@ -116,8 +137,13 @@ async def force_terminate_task(
     if cancel_backend_task_best_effort_func is None:
         cancel_backend_task_best_effort_func = cancel_backend_task_best_effort
 
-    redis_client = submission_outbox or get_task_core_submission_outbox()
-    tasks = await redis_client.get_active_tasks()
+    if submission_outbox is not None:
+        tasks = await submission_outbox.get_active_tasks()
+    else:
+        runtime_dependencies = runtime_dependencies or build_default_task_core_runtime_dependencies(
+            release_concurrency_lock_func=release_concurrency_lock
+        )
+        tasks = await runtime_dependencies.get_active_tasks_func()
     task_data = tasks.get(task_id, {}) if tasks else {}
     backend_task_id = task_data.get("backend_task_id")
 
@@ -143,20 +169,32 @@ async def sync_user_concurrency(
     actual_count: int,
     *,
     submission_outbox=None,
+    runtime_dependencies=None,
 ):
     """
     同步用户并发锁到指定数量，当 actual_count 为 0 时删除锁
     """
     from config import REDIS_PREFIX
 
-    redis_client = submission_outbox or get_task_core_submission_outbox()
     key = f"{REDIS_PREFIX}user_concurrency:{user_id}"
 
+    if submission_outbox is not None:
+        redis_client = submission_outbox
+        if actual_count > 0:
+            await redis_client.redis.set(key, actual_count)
+            await redis_client.redis.expire(key, 3600)
+        else:
+            await redis_client.redis.delete(key)
+        return
+
+    runtime_dependencies = runtime_dependencies or build_default_task_core_runtime_dependencies(
+        release_concurrency_lock_func=release_concurrency_lock
+    )
     if actual_count > 0:
-        await redis_client.redis.set(key, actual_count)
-        await redis_client.redis.expire(key, 3600)
+        await runtime_dependencies.set_runtime_value_func(key, actual_count)
+        await runtime_dependencies.expire_runtime_value_func(key, 3600)
     else:
-        await redis_client.redis.delete(key)
+        await runtime_dependencies.delete_runtime_value_func(key)
 
 
 async def cancel_user_task(
@@ -165,13 +203,26 @@ async def cancel_user_task(
     *,
     task_registry=None,
     cancel_task_func=None,
+    runtime_dependencies=None,
 ):
     """供用户主动调用的任务撤销逻辑"""
-    task_registry = task_registry or get_task_core_task_registry()
-    task = await task_registry.get_task(task_id)
+    runtime_dependencies = runtime_dependencies or build_default_task_core_runtime_dependencies(
+        release_concurrency_lock_func=release_concurrency_lock
+    )
+    if task_registry is None:
+        task = await runtime_dependencies.get_task_func(task_id)
+    else:
+        task = await task_registry.get_task(task_id)
     registry_task_id = task_id
     if not task:
-        registry_task_id, task = await task_registry.find_task_by_backend_task_id(task_id)
+        if task_registry is None:
+            registry_task_id, task = await runtime_dependencies.find_task_by_backend_task_id_func(
+                task_id
+            )
+        else:
+            registry_task_id, task = await task_registry.find_task_by_backend_task_id(
+                task_id
+            )
 
     if not task or not registry_task_id:
         raise CoreDomainError("任务不存在或已脱离排队阶段")
@@ -181,7 +232,7 @@ async def cancel_user_task(
 
     backend_task_id = task.get("backend_task_id") or registry_task_id
     try:
-        cancel_task_func = cancel_task_func or get_task_core_api_client().cancel_task
+        cancel_task_func = cancel_task_func or runtime_dependencies.cancel_task_func
         cancel_result = await cancel_task_func(backend_task_id)
     except httpx.HTTPStatusError as e:
         if e.response.status_code == 404:

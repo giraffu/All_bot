@@ -23,6 +23,7 @@ from src.database.models import (
 )
 from src.handlers import payment_handler
 from src.services import payment_fulfillment_service
+from src.services import telegram_payment_service
 from src.services import payment_validator
 
 
@@ -651,7 +652,7 @@ async def test_stars_duplicate_charge_concurrent_callback_is_idempotent_on_real_
 
     gate = _TwoPartyGate()
     monkeypatch.setattr(
-        payment_handler,
+        telegram_payment_service,
         "AsyncSessionLocal",
         lambda: _ProxySessionContext(DBSessionLocal, gate),
     )

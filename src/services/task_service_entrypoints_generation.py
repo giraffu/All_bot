@@ -4,9 +4,9 @@ from telegram.ext import ContextTypes
 
 from src.constants import MODE_I2I_PRO
 from src.services.permission_service import permission_service
-from src.services.task_service_entrypoints_common import resolve_internal_user_id
 from src.services.task_service_entrypoint_support import build_task_inputs
 from src.services.task_service_flow import run_bot_task_application
+from src.services.task_service_generation_common import resolve_internal_user_id
 from src.services.task_service_message_support import (
     build_message_spec,
     build_status_message,

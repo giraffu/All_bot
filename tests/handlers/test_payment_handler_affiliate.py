@@ -7,6 +7,8 @@ import pytest
 from sqlalchemy.dialects import postgresql
 
 from src.handlers import payment_handler
+from src.services import telegram_payment_service
+from src.services.telegram_payment_service import TelegramStarsPaymentResult
 
 
 class _ScalarResult:
@@ -105,14 +107,34 @@ def _build_inserted_order():
 
 
 @pytest.mark.asyncio
-async def test_successful_payment_callback_records_affiliate_transaction(monkeypatch):
+async def test_successful_payment_callback_delegates_and_replies(monkeypatch):
+    update = _build_update()
+    context = SimpleNamespace()
+    process_mock = AsyncMock(
+        return_value=TelegramStarsPaymentResult(
+            status="success",
+            plan_name="Stars Plan",
+            credits_granted=12,
+            final_identity="外门弟子",
+        )
+    )
+    monkeypatch.setattr(payment_handler, "process_successful_stars_payment", process_mock)
+
+    await payment_handler.successful_payment_callback(update, context)
+
+    process_mock.assert_awaited_once()
+    update.message.reply_text.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_process_successful_stars_payment_records_affiliate_transaction(
+    monkeypatch,
+):
     inserted_order = _build_inserted_order()
     session = _FakeSession(
         [_build_plan(), _build_user(), inserted_order.id],
         get_results={inserted_order.id: inserted_order},
     )
-    update = _build_update()
-    context = SimpleNamespace()
     referral = SimpleNamespace(inviter_id=1001)
 
     calculate_mock = AsyncMock(
@@ -123,10 +145,10 @@ async def test_successful_payment_callback_records_affiliate_transaction(monkeyp
     invalidate_mock = AsyncMock()
 
     monkeypatch.setattr(
-        payment_handler, "AsyncSessionLocal", lambda: _SessionContext(session)
+        telegram_payment_service, "AsyncSessionLocal", lambda: _SessionContext(session)
     )
     monkeypatch.setattr(
-        payment_handler,
+        telegram_payment_service,
         "is_membership_settlement_v2_enabled",
         lambda: False,
     )
@@ -143,34 +165,36 @@ async def test_successful_payment_callback_records_affiliate_transaction(monkeyp
         invalidate_mock,
     )
 
-    await payment_handler.successful_payment_callback(update, context)
+    result = await telegram_payment_service.process_successful_stars_payment(
+        payload="ORDER:12345:1:999",
+        total_amount=100,
+        telegram_payment_charge_id="charge-id-123",
+    )
 
     session.flush.assert_awaited_once()
     session.commit.assert_awaited_once()
     calculate_mock.assert_awaited_once()
     record_mock.assert_awaited_once()
     invalidate_mock.assert_awaited_once_with(1001)
-    update.message.reply_text.assert_awaited_once()
+    assert result.status == "success"
     compiled_user_query = session.statements[1].compile(dialect=postgresql.dialect())
     assert "FOR UPDATE" in str(compiled_user_query)
 
 
 @pytest.mark.asyncio
-async def test_successful_payment_callback_duplicate_charge_does_not_record_affiliate_transaction(
+async def test_process_successful_stars_payment_duplicate_charge_does_not_record_affiliate_transaction(
     monkeypatch,
 ):
     session = _FakeSession([_build_plan(), _build_user(), None])
-    update = _build_update()
-    context = SimpleNamespace()
 
     calculate_mock = AsyncMock()
     record_mock = AsyncMock()
 
     monkeypatch.setattr(
-        payment_handler, "AsyncSessionLocal", lambda: _SessionContext(session)
+        telegram_payment_service, "AsyncSessionLocal", lambda: _SessionContext(session)
     )
     monkeypatch.setattr(
-        payment_handler,
+        telegram_payment_service,
         "is_membership_settlement_v2_enabled",
         lambda: False,
     )
@@ -183,16 +207,20 @@ async def test_successful_payment_callback_duplicate_charge_does_not_record_affi
         record_mock,
     )
 
-    await payment_handler.successful_payment_callback(update, context)
+    result = await telegram_payment_service.process_successful_stars_payment(
+        payload="ORDER:12345:1:999",
+        total_amount=100,
+        telegram_payment_charge_id="charge-id-123",
+    )
 
     session.commit.assert_not_awaited()
     calculate_mock.assert_not_awaited()
     record_mock.assert_not_awaited()
-    update.message.reply_text.assert_not_awaited()
+    assert result.status == "noop"
 
 
 @pytest.mark.asyncio
-async def test_successful_payment_callback_handles_existing_naive_expire_at(
+async def test_process_successful_stars_payment_handles_existing_naive_expire_at(
     monkeypatch,
 ):
     plan = _build_plan()
@@ -205,8 +233,6 @@ async def test_successful_payment_callback_handles_existing_naive_expire_at(
         [plan, user, inserted_order.id],
         get_results={inserted_order.id: inserted_order},
     )
-    update = _build_update()
-    context = SimpleNamespace()
     referral = SimpleNamespace(inviter_id=1001)
 
     calculate_mock = AsyncMock(
@@ -217,10 +243,10 @@ async def test_successful_payment_callback_handles_existing_naive_expire_at(
     invalidate_mock = AsyncMock()
 
     monkeypatch.setattr(
-        payment_handler, "AsyncSessionLocal", lambda: _SessionContext(session)
+        telegram_payment_service, "AsyncSessionLocal", lambda: _SessionContext(session)
     )
     monkeypatch.setattr(
-        payment_handler,
+        telegram_payment_service,
         "is_membership_settlement_v2_enabled",
         lambda: False,
     )
@@ -237,7 +263,11 @@ async def test_successful_payment_callback_handles_existing_naive_expire_at(
         invalidate_mock,
     )
 
-    await payment_handler.successful_payment_callback(update, context)
+    result = await telegram_payment_service.process_successful_stars_payment(
+        payload="ORDER:12345:1:999",
+        total_amount=100,
+        telegram_payment_charge_id="charge-id-123",
+    )
 
     session.commit.assert_awaited_once()
     session.rollback.assert_not_awaited()
@@ -245,11 +275,11 @@ async def test_successful_payment_callback_handles_existing_naive_expire_at(
     invalidate_mock.assert_awaited_once_with(1001)
     assert isinstance(user.identity_expire_at, datetime)
     assert user.identity_expire_at > existing_expire_at
-    update.message.reply_text.assert_awaited_once()
+    assert result.status == "success"
 
 
 @pytest.mark.asyncio
-async def test_successful_payment_callback_logs_warning_when_affiliate_ledger_insert_is_skipped(
+async def test_process_successful_stars_payment_logs_warning_when_affiliate_ledger_insert_is_skipped(
     monkeypatch,
 ):
     inserted_order = _build_inserted_order()
@@ -257,8 +287,6 @@ async def test_successful_payment_callback_logs_warning_when_affiliate_ledger_in
         [_build_plan(), _build_user(), inserted_order.id],
         get_results={inserted_order.id: inserted_order},
     )
-    update = _build_update()
-    context = SimpleNamespace()
     referral = SimpleNamespace(inviter_id=1001)
 
     calculate_mock = AsyncMock(
@@ -270,10 +298,10 @@ async def test_successful_payment_callback_logs_warning_when_affiliate_ledger_in
     warning_mock = Mock()
 
     monkeypatch.setattr(
-        payment_handler, "AsyncSessionLocal", lambda: _SessionContext(session)
+        telegram_payment_service, "AsyncSessionLocal", lambda: _SessionContext(session)
     )
     monkeypatch.setattr(
-        payment_handler,
+        telegram_payment_service,
         "is_membership_settlement_v2_enabled",
         lambda: False,
     )
@@ -289,15 +317,19 @@ async def test_successful_payment_callback_logs_warning_when_affiliate_ledger_in
         "src.core.affiliate_core.invalidate_invitation_recharge_cache",
         invalidate_mock,
     )
-    monkeypatch.setattr(payment_handler.logger, "warning", warning_mock)
+    monkeypatch.setattr(telegram_payment_service.logger, "warning", warning_mock)
 
-    await payment_handler.successful_payment_callback(update, context)
+    await telegram_payment_service.process_successful_stars_payment(
+        payload="ORDER:12345:1:999",
+        total_amount=100,
+        telegram_payment_charge_id="charge-id-123",
+    )
 
     warning_mock.assert_called_once()
 
 
 @pytest.mark.asyncio
-async def test_successful_payment_callback_uses_unified_membership_settlement_when_enabled(
+async def test_process_successful_stars_payment_uses_unified_membership_settlement_when_enabled(
     monkeypatch,
 ):
     inserted_order = _build_inserted_order()
@@ -305,8 +337,6 @@ async def test_successful_payment_callback_uses_unified_membership_settlement_wh
         [_build_plan(), _build_user(), inserted_order.id],
         get_results={inserted_order.id: inserted_order},
     )
-    update = _build_update()
-    context = SimpleNamespace()
     referral = SimpleNamespace(inviter_id=1001)
 
     calculate_mock = AsyncMock(
@@ -329,7 +359,7 @@ async def test_successful_payment_callback_uses_unified_membership_settlement_wh
     )
 
     monkeypatch.setattr(
-        payment_handler, "AsyncSessionLocal", lambda: _SessionContext(session)
+        telegram_payment_service, "AsyncSessionLocal", lambda: _SessionContext(session)
     )
     monkeypatch.setattr(
         "src.core.affiliate_core.calculate_and_set_commission_for_paid_order",
@@ -344,17 +374,21 @@ async def test_successful_payment_callback_uses_unified_membership_settlement_wh
         invalidate_mock,
     )
     monkeypatch.setattr(
-        payment_handler,
+        telegram_payment_service,
         "is_membership_settlement_v2_enabled",
         lambda: True,
     )
     monkeypatch.setattr(
-        payment_handler,
+        telegram_payment_service,
         "settle_membership_plan_in_session",
         settle_mock,
     )
 
-    await payment_handler.successful_payment_callback(update, context)
+    await telegram_payment_service.process_successful_stars_payment(
+        payload="ORDER:12345:1:999",
+        total_amount=100,
+        telegram_payment_charge_id="charge-id-123",
+    )
 
     settle_mock.assert_awaited_once()
     session.commit.assert_awaited_once()
@@ -362,18 +396,9 @@ async def test_successful_payment_callback_uses_unified_membership_settlement_wh
 
 
 @pytest.mark.asyncio
-async def test_precheckout_callback_accepts_order_v2_after_strong_validation(
+async def test_validate_stars_precheckout_accepts_order_v2_after_strong_validation(
     monkeypatch,
 ):
-    query = SimpleNamespace(
-        invoice_payload="ORDER_V2:bo_123",
-        from_user=SimpleNamespace(id=12345),
-        total_amount=100,
-    )
-    update = SimpleNamespace(
-        pre_checkout_query=query, effective_user=SimpleNamespace(id=12345)
-    )
-    context = SimpleNamespace()
     session = _FakeSession(
         [
             SimpleNamespace(
@@ -385,24 +410,27 @@ async def test_precheckout_callback_accepts_order_v2_after_strong_validation(
             _build_plan(),
         ]
     )
-    safe_answer_mock = AsyncMock()
 
     monkeypatch.setattr(
-        payment_handler, "AsyncSessionLocal", lambda: _SessionContext(session)
+        telegram_payment_service, "AsyncSessionLocal", lambda: _SessionContext(session)
     )
     monkeypatch.setattr(
-        "src.core.user_core.get_or_create_user_by_telegram",
+        telegram_payment_service,
+        "get_or_create_user_by_telegram",
         AsyncMock(return_value=(SimpleNamespace(id=2002), False)),
     )
-    monkeypatch.setattr(payment_handler, "safe_answer_query", safe_answer_mock)
 
-    await payment_handler.precheckout_callback(update, context)
+    ok = await telegram_payment_service.validate_stars_precheckout(
+        payload="ORDER_V2:bo_123",
+        telegram_user_id=12345,
+        total_amount=100,
+    )
 
-    safe_answer_mock.assert_awaited_once_with(query, ok=True)
+    assert ok is True
 
 
 @pytest.mark.asyncio
-async def test_successful_payment_callback_updates_pending_order_for_order_v2(
+async def test_process_successful_stars_payment_updates_pending_order_for_order_v2(
     monkeypatch,
 ):
     pending_order = SimpleNamespace(
@@ -420,22 +448,12 @@ async def test_successful_payment_callback_updates_pending_order_for_order_v2(
         commission_usdt=Decimal("0.0000"),
     )
     session = _FakeSession([pending_order, _build_user(), _build_plan()])
-    message = SimpleNamespace(
-        successful_payment=SimpleNamespace(
-            invoice_payload="ORDER_V2:bo_123",
-            total_amount=100,
-            telegram_payment_charge_id="charge-id-456",
-        ),
-        reply_text=AsyncMock(),
-    )
-    update = SimpleNamespace(effective_user=SimpleNamespace(id=12345), message=message)
-    context = SimpleNamespace()
 
     monkeypatch.setattr(
-        payment_handler, "AsyncSessionLocal", lambda: _SessionContext(session)
+        telegram_payment_service, "AsyncSessionLocal", lambda: _SessionContext(session)
     )
     monkeypatch.setattr(
-        payment_handler,
+        telegram_payment_service,
         "is_membership_settlement_v2_enabled",
         lambda: False,
     )
@@ -452,7 +470,11 @@ async def test_successful_payment_callback_updates_pending_order_for_order_v2(
         AsyncMock(),
     )
 
-    await payment_handler.successful_payment_callback(update, context)
+    await telegram_payment_service.process_successful_stars_payment(
+        payload="ORDER_V2:bo_123",
+        total_amount=100,
+        telegram_payment_charge_id="charge-id-456",
+    )
 
     assert pending_order.status == "SUCCESS"
     assert pending_order.tx_hash == "charge-id-456"

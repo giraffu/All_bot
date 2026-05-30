@@ -6,7 +6,6 @@ import { useTaskStream } from '@/composables/useTaskStream'
 import { useTaskResult } from '@/composables/useTaskResult'
 import { useGalleryApplyContext } from '@/composables/useGalleryApplyContext'
 import { useDualFileUploadPreview } from '@/composables/useDualFileUploadPreview'
-import { useLegacySwapApply } from '@/composables/useLegacySwapApply'
 import { useSwapResetController } from '@/composables/useSwapResetController'
 import { useSwapTaskSubmit } from '@/composables/useSwapTaskSubmit'
 import { useRoute } from 'vue-router'
@@ -46,18 +45,27 @@ const {
 const isTemplateApplied = ref(false)
 const templateSourcePostId = ref<number | null>(null)
 
-const { initializeLegacySwapApply } = useLegacySwapApply({
-  routeApplyEnabled: routeApplyEnabled.value,
-  loadApplyContext,
-  expectedTaskType: 'face_swap',
-  applySecondaryTemplateTarget,
-  setTemplateApplied: (value) => {
-    isTemplateApplied.value = value
-  },
-  setSourcePostId: (value) => {
-    templateSourcePostId.value = value
-  },
-})
+const initializeLegacySwapApply = () => {
+  if (!routeApplyEnabled.value) {
+    return
+  }
+
+  const context = loadApplyContext()
+  if (!context || context.task_type !== 'face_swap' || !context.input_file) {
+    return
+  }
+
+  applySecondaryTemplateTarget({
+    objectKey: context.input_file,
+    previewUrl: context.input_file_url || null,
+  })
+
+  if (context.source_post_id != null) {
+    templateSourcePostId.value = Number(context.source_post_id)
+  }
+
+  isTemplateApplied.value = true
+}
 
 onMounted(() => {
   initializeLegacySwapApply()

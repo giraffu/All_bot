@@ -42,8 +42,16 @@
 - `src/services/task_service_message_support.py`
 - `src/services/task_service_entrypoint_support.py`
 - `backend/app/main.py`
+- `backend/app/main_bootstrap.py`
+- `backend/app/main_t2i_wiring.py`
+- `backend/app/dependencies.py`
+- `backend/app/routers/agent.py`
 - `backend/app/queue_manager.py`
 - `src/core/task_core.py`
+- `src/core/task_core_submission.py`
+- `src/web_api/__init__.py`
+- `src/web_api/main.py`
+- `src/web_api/dependencies.py`
 - `src/web_api/routers/tasks.py`
 - `src/web_api/services/task_submission_service.py`
 - `src/web_api/services/task_runtime_api_service.py`
@@ -57,11 +65,17 @@
 - `src/web_api/services/users_history_service.py`
 - `src/web_api/services/users_history_mutation_service.py`
 - `src/web_api/services/user_profile_service.py`
+- `src/services/user_persistence_service.py`
 - `src/web_api/routers/gallery.py`
 - `src/web_api/services/gallery_service_queries.py`
 - `src/web_api/services/gallery_service_mutations.py`
 - `src/web_api/services/gallery_service_comments.py`
 - `src/web_api/services/gallery_service_support.py`
+- `src/core/gallery_core.py`
+- `src/core/gallery_feed_queries.py`
+- `src/core/gallery_submission_core.py`
+- `src/core/gallery_interactions_core.py`
+- `src/services/gallery_repository.py`
 - `src/handlers/message_handler.py`
 - `src/handlers/message_handler_common.py`
 - `src/handlers/message_handler_profile.py`
@@ -118,7 +132,7 @@ pytest \
 
 如果改动涉及任务提交、取消、状态字段、completion/finalize seam，升级为执行“任务黄金路径最小必跑集”。
 
-### 4.2 修改 `backend/app/main.py`、`backend/app/queue_manager.py` 或 `src/core/task_core.py`
+### 4.2 修改 `backend/app/main.py`、`backend/app/queue_manager.py`、`src/core/task_core.py` 或 `src/core/task_core_submission.py`
 
 至少执行“任务黄金路径完整集”：
 
@@ -127,6 +141,7 @@ pytest \
   tests/integration/test_saga_and_queue.py \
   tests/backend/test_main_helpers.py \
   tests/backend/test_queue_manager.py \
+  tests/core/test_task_core_submission.py \
   tests/web_api/test_tasks_action_api_service.py \
   tests/web_api/test_tasks_generate.py \
   tests/web_api/test_tasks_stream.py \
@@ -141,6 +156,12 @@ pytest \
 
 - 这三处一旦漂移，通常会同时影响提交、排队、取消、同步等待、SSE 或历史兜底
 - 单点 focused tests 不足以覆盖跨层行为
+
+双入口职责补充：
+
+- `src/web_api` 只承接用户侧 Web/BFF 能力；新增用户可见 HTTP 能力默认放这里
+- `backend/app` 只承接执行面、中控、worker/agent 协议；不要把新的用户侧接口接到这里
+- 若 PR 同时修改 `src/web_api` 入口文件与 `backend/app` 入口文件，评审时必须显式说明该改动为何不属于入口漂移
 
 ### 4.3 修改 `tasks` Web API 入口
 
@@ -173,11 +194,14 @@ pytest \
 - `src/web_api/services/users_history_service.py`
 - `src/web_api/services/users_history_mutation_service.py`
 - `src/web_api/services/user_profile_service.py`
+- `src/services/user_persistence_service.py`
 
 至少执行：
 
 ```bash
 pytest \
+  tests/services/test_user_persistence_service.py \
+  tests/core/test_user_core.py \
   tests/web_api/test_users_apply_context.py \
   tests/web_api/test_users_history_urls.py \
   tests/web_api/test_users_history_mutation_service.py \
@@ -194,11 +218,18 @@ pytest \
 - `src/web_api/services/gallery_service_mutations.py`
 - `src/web_api/services/gallery_service_comments.py`
 - `src/web_api/services/gallery_service_support.py`
+- `src/core/gallery_core.py`
+- `src/core/gallery_feed_queries.py`
+- `src/core/gallery_submission_core.py`
+- `src/core/gallery_interactions_core.py`
+- `src/services/gallery_repository.py`
 
 至少执行：
 
 ```bash
 pytest \
+  tests/core/test_gallery_submission_and_interactions_core.py \
+  tests/handlers/callbacks/test_gallery_callbacks_interactions.py \
   tests/web_api/test_gallery_router_passthrough.py \
   tests/web_api/test_gallery_apply_context.py \
   tests/web_api/test_gallery_media_urls.py \
@@ -206,6 +237,12 @@ pytest \
   tests/web_api/test_gallery_post_deletion.py \
   tests/web_api/test_gallery_task_type_filters.py
 ```
+
+补充约束：
+
+- Gallery 的新查询/变更优先进入 repository/query seam，不要把 SQLAlchemy 查询继续堆回 callback/router/core 主流程。
+- `task_core_submission.py` 的默认依赖只允许通过统一 default dependency builder 解析，不要新增新的 `*_default` 函数内现建依赖。
+- `user_persistence_service.py` 中 `id == tg_id` 的旧双 ID 兼容分支属于待退出 seam；新增逻辑不得继续依赖该分支作为主路径。
 
 ### 4.6 修改 Telegram `message_handler` 入口
 
@@ -325,7 +362,7 @@ cd dashboard/frontend && npm exec -- vitest run \
 
 - 当前热点门禁已补齐 dashboard App 独立分组，但 branch protection 的 required checks 清单仍需在仓库设置侧正式固化
 - 页面家族已补到“列表切换 + 详情弹层 + 模板工作台”关键组合流，但仍未覆盖更重的跨页面端到端场景
-- workflow `paths` 仍有几处与当前代码结构不一致：Bot 分域 entrypoint 与 gallery 拆分 service 尚未全部具备稳定路径触发；修改这些文件时不能只依赖自动门禁
+- workflow `paths` 仍有少量与当前代码结构不一致的地方：Bot 分域 entrypoint 尚未全部具备稳定路径触发；修改这些文件时不能只依赖自动门禁
 - `frontend-shared` 当前实际已默认执行模板应用状态流测试，但文档早先的“两段式补跑”口径已不再适用，后续应统一按单一分组理解
 
 ## 8. 阶段 7 第一批收尾标志
@@ -352,5 +389,5 @@ cd dashboard/frontend && npm exec -- vitest run \
 阶段 7 主体完成后，后续治理建议保留三类长期项：
 
 1. 在仓库设置里固化 required checks / branch protection
-2. 继续补齐 workflow `paths` 与热点清单之间的剩余缺口，尤其是 Bot 分域 entrypoint 与 gallery 拆分 service
+2. 继续补齐 workflow `paths` 与热点清单之间的剩余缺口，尤其是 Bot 分域 entrypoint
 3. 视风险再补更重的跨页面端到端回归，而不是继续堆 focused tests 数量

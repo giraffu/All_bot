@@ -40,6 +40,12 @@ async def test_execute_task_submission_saga_returns_composed_result():
     submission_context = SimpleNamespace(
         user_logger=SimpleNamespace(user_id=42, username="tester"),
         final_priority=7,
+        task_type="face_swap",
+        log_prompt="prompt",
+        registry_saved_inputs=lambda: [],
+        is_video_task=False,
+        allow_contribute=True,
+        metadata={},
     )
     register_task_submission_func = AsyncMock(return_value="registry-2")
     dispatch_registered_task_func = AsyncMock(return_value="backend-2")
@@ -133,3 +139,48 @@ async def test_compensate_failed_submission_uses_runtime_default_shield_binding(
     )
     add_pending_refund.assert_not_awaited()
     remove_task.assert_awaited_once_with("registry-4")
+
+
+@pytest.mark.asyncio
+async def test_execute_task_submission_saga_default_reuses_single_default_dependencies(
+    monkeypatch,
+):
+    submission_context = SimpleNamespace(
+        user_logger=SimpleNamespace(user_id=42, username="tester"),
+        final_priority=7,
+        task_type="face_swap",
+        log_prompt="prompt",
+        registry_saved_inputs=lambda: [],
+        is_video_task=False,
+        allow_contribute=True,
+        metadata={},
+    )
+    dependencies = SimpleNamespace(
+        add_task_func=AsyncMock(return_value="registry-5"),
+        update_backend_task_id_func=AsyncMock(),
+        mark_task_status_func=AsyncMock(),
+        remove_task_func=AsyncMock(),
+        add_pending_refund_func=AsyncMock(),
+        dispatch_to_worker_func=AsyncMock(return_value="backend-5"),
+        is_task_backend_busy_error_func=lambda _message: False,
+        logger=SimpleNamespace(error=lambda *args, **kwargs: None),
+    )
+    build_mock = MagicMock(return_value=dependencies)
+
+    monkeypatch.setattr(
+        task_core_submission,
+        "build_default_task_core_submission_dependencies",
+        build_mock,
+    )
+
+    result = await task_core_submission.execute_task_submission_saga_default(
+        task_type="face_swap",
+        inputs={"foo": "bar"},
+        registry_task_id="seed-id",
+        cost=10,
+        submission_context=submission_context,
+    )
+
+    assert build_mock.call_count == 1
+    assert result.registry_task_id == "registry-5"
+    assert result.backend_task_id == "backend-5"

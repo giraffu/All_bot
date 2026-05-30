@@ -2,7 +2,6 @@ import contextlib
 import logging
 import re
 
-from sqlalchemy import update as sa_update
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.error import BadRequest
 from telegram.ext import ContextTypes
@@ -17,8 +16,10 @@ from src.core.gallery_core import (
     toggle_like,
 )
 from src.core.user_core import get_or_create_user_by_telegram
-from src.database.core import AsyncSessionLocal
-from src.database.models import History
+from src.services.telegram_gallery_history_service import (
+    mark_history_public_by_task_id,
+    update_history_rating_by_task_id,
+)
 from src.utils import (
     create_background_task,
     robust_edit_caption,
@@ -36,6 +37,13 @@ class DummyBackgroundTasks:
 
     def add_task(self, func, *args, **kwargs):
         create_background_task(self.context, func(*args, **kwargs))
+
+
+PUBLIC_SHARE_ACTIONS = {
+    "public_share_request",
+    "public_share",
+    "public_share_cancel",
+}
 
 
 def _extract_gallery_submit_media_metadata(query) -> tuple[str, int | None, int | None, int | None]:
@@ -117,6 +125,235 @@ def _build_gallery_reaction_reply_markup(
                 new_row.append(btn)
         keyboard.append(new_row)
     return InlineKeyboardMarkup(keyboard)
+
+
+def _get_public_share_meta(context, message_id: int) -> dict:
+    return context.bot_data.get(f"msg_meta_{message_id}", {})
+
+
+def _extract_original_public_share_caption(caption: str | None) -> str:
+    if not caption:
+        return ""
+    return caption.split("\n\n⚠️ 公开确认")[0].strip()
+
+
+def _contains_public_share_confirmation(caption: str | None) -> bool:
+    return bool(caption and "⚠️ 公开确认" in caption)
+
+
+def _is_public_share_confirmation_markup(reply_markup) -> bool:
+    if not reply_markup or not reply_markup.inline_keyboard:
+        return False
+    first_row = reply_markup.inline_keyboard[0]
+    if not first_row:
+        return False
+    first_btn = first_row[0]
+    return first_btn.callback_data == "public_share"
+
+
+def _find_forbidden_public_share_word(prompt: str) -> str | None:
+    prompt_lower = prompt.lower()
+    for word in FORBIDDEN_WORDS:
+        if word.lower() in prompt_lower:
+            return word
+    return None
+
+
+def _build_public_share_confirmation_markup() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton("✅ 确认公开", callback_data="public_share"),
+                InlineKeyboardButton("❌ 取消", callback_data="public_share_cancel"),
+            ]
+        ]
+    )
+
+
+def _build_public_share_confirmation_text() -> str:
+    return (
+        "⚠️ **公开确认**\n\n"
+        "您确定要公开此内容吗？\n"
+        "确认后，该内容将被转发到 **宗门公告栏**，供所有道友瞻仰。"
+    )
+
+
+def _build_public_share_cancel_markup(meta: dict | None) -> InlineKeyboardMarkup:
+    keyboard = [
+        [InlineKeyboardButton("公开", callback_data="public_share_request")],
+        [
+            InlineKeyboardButton("👍", callback_data="rate_like"),
+            InlineKeyboardButton("👎", callback_data="rate_dislike"),
+        ],
+    ]
+    if meta and meta.get("mode_name") == MODE_NAME_MAP.get(MODE_RANDOM_FACESWAP):
+        keyboard[0].append(
+            InlineKeyboardButton("🔄 再来一张", callback_data="random_faceswap_again")
+        )
+    return InlineKeyboardMarkup(keyboard)
+
+
+def _build_public_share_forward_caption(meta: dict, original_caption: str) -> str:
+    if not meta:
+        return original_caption
+    mode_name = meta.get("mode_name", "未知模式")
+    prompt = meta.get("prompt", "无提示词")
+    return f"✨ 模式：{mode_name}\n📝 提示词：{prompt}"
+
+
+async def _copy_or_forward_public_share_message(
+    *,
+    context: ContextTypes.DEFAULT_TYPE,
+    query,
+    channel_id,
+    message_id: int,
+    caption: str,
+) -> None:
+    try:
+        await context.bot.copy_message(
+            chat_id=channel_id,
+            from_chat_id=query.message.chat_id,
+            message_id=message_id,
+            caption=caption,
+            parse_mode="Markdown",
+        )
+        return
+    except Exception as exc:
+        logger.warning(
+            "gallery copy_message fallback to forward_message for msg_id=%s: %s",
+            message_id,
+            exc,
+        )
+
+    await context.bot.forward_message(
+        chat_id=channel_id,
+        from_chat_id=query.message.chat_id,
+        message_id=message_id,
+    )
+
+
+async def _handle_public_share_request(
+    *,
+    query,
+    context: ContextTypes.DEFAULT_TYPE,
+) -> None:
+    meta = _get_public_share_meta(context, query.message.message_id)
+    prompt = meta.get("prompt", "")
+    if prompt:
+        forbidden_word = _find_forbidden_public_share_word(prompt)
+        if forbidden_word:
+            await safe_answer_query(
+                query,
+                text=f"⚠️ 您的内容包含违禁词「{forbidden_word}」，无法公开！",
+                show_alert=True,
+            )
+            return
+
+    await safe_answer_query(query)
+
+    if _contains_public_share_confirmation(query.message.caption):
+        return
+    if _is_public_share_confirmation_markup(query.message.reply_markup):
+        return
+
+    reply_markup = _build_public_share_confirmation_markup()
+    confirmation_text = _build_public_share_confirmation_text()
+
+    if query.message.caption:
+        try:
+            await robust_edit_caption(
+                query.message,
+                caption=f"{query.message.caption}\n\n{confirmation_text}",
+                reply_markup=reply_markup,
+                parse_mode="Markdown",
+            )
+        except Exception:
+            await robust_edit_reply_markup(query.message, reply_markup=reply_markup)
+        return
+
+    await robust_edit_reply_markup(query.message, reply_markup=reply_markup)
+
+
+async def _handle_public_share_cancel(
+    *,
+    query,
+    context: ContextTypes.DEFAULT_TYPE,
+) -> None:
+    await safe_answer_query(query)
+    if query.message.reply_markup and query.message.reply_markup.inline_keyboard:
+        first_btn = query.message.reply_markup.inline_keyboard[0][0]
+        if first_btn.callback_data == "public_share_request":
+            return
+
+    if _contains_public_share_confirmation(query.message.caption):
+        with contextlib.suppress(Exception):
+            await robust_edit_caption(
+                query.message,
+                caption=_extract_original_public_share_caption(query.message.caption),
+                parse_mode="Markdown",
+            )
+
+    meta = _get_public_share_meta(context, query.message.message_id)
+    await robust_edit_reply_markup(
+        query.message,
+        reply_markup=_build_public_share_cancel_markup(meta),
+    )
+
+
+async def _handle_public_share_confirm(
+    *,
+    query,
+    context: ContextTypes.DEFAULT_TYPE,
+) -> None:
+    await safe_answer_query(query)
+    if query.message.caption and "📢 **已同步至宗门公告**" in query.message.caption:
+        return
+    if query.message.reply_markup is None:
+        return
+    if not REQUIRED_CHANNEL_ID:
+        await robust_send_message(
+            context.bot, query.message.chat_id, "❌ 未加入宗门，无法转发。"
+        )
+        return
+
+    msg_id = query.message.message_id
+    meta = _get_public_share_meta(context, msg_id)
+    original_caption = _extract_original_public_share_caption(query.message.caption)
+    final_caption = _build_public_share_forward_caption(meta, original_caption)
+
+    try:
+        await _copy_or_forward_public_share_message(
+            context=context,
+            query=query,
+            channel_id=REQUIRED_CHANNEL_ID,
+            message_id=msg_id,
+            caption=final_caption,
+        )
+
+        task_id = meta.get("task_id")
+        if task_id:
+            try:
+                await mark_history_public_by_task_id(task_id)
+            except Exception as exc:
+                logger.error("Error updating is_public: %s", exc)
+
+        await safe_answer_query(
+            query, text="✅ 已公开并转发至宗门公告栏！", show_alert=True
+        )
+
+        try:
+            await robust_edit_caption(
+                query.message,
+                caption=f"{original_caption}\n\n📢 **已同步至宗门公告**",
+                reply_markup=None,
+                parse_mode="Markdown",
+            )
+        except Exception:
+            await robust_edit_reply_markup(query.message, reply_markup=None)
+    except Exception as exc:
+        await robust_send_message(
+            context.bot, query.message.chat_id, f"❌ 转发失败: {exc}"
+        )
 
 
 async def handle_submit_gallery_callback(
@@ -247,186 +484,20 @@ async def handle_public_share_callback(
     query = update.callback_query
     data = query.data
 
-    if not ENABLE_PUBLIC_SHARE and data in [
-        "public_share_request",
-        "public_share",
-        "public_share_cancel",
-    ]:
+    if not ENABLE_PUBLIC_SHARE and data in PUBLIC_SHARE_ACTIONS:
         await safe_answer_query(query, text="⚠️ 公开功能已关闭", show_alert=True)
         return
 
     if data == "public_share_request":
-        msg_meta = context.bot_data.get(f"msg_meta_{query.message.message_id}", {})
-        prompt = msg_meta.get("prompt", "")
-        if prompt:
-            prompt_lower = prompt.lower()
-            for word in FORBIDDEN_WORDS:
-                if word.lower() in prompt_lower:
-                    await safe_answer_query(
-                        query,
-                        text=f"⚠️ 您的内容包含违禁词「{word}」，无法公开！",
-                        show_alert=True,
-                    )
-                    return
-
-        await safe_answer_query(query)
-
-        if query.message.caption and "⚠️ 公开确认" in query.message.caption:
-            return
-
-        if not query.message.caption and query.message.reply_markup:
-            first_btn = query.message.reply_markup.inline_keyboard[0][0]
-            if first_btn.callback_data == "public_share":
-                return
-
-        keyboard = [
-            [
-                InlineKeyboardButton("✅ 确认公开", callback_data="public_share"),
-                InlineKeyboardButton("❌ 取消", callback_data="public_share_cancel"),
-            ]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-
-        confirmation_text = (
-            "⚠️ **公开确认**\n\n"
-            "您确定要公开此内容吗？\n"
-            "确认后，该内容将被转发到 **宗门公告栏**，供所有道友瞻仰。"
-        )
-
-        if query.message.caption:
-            if "⚠️ 公开确认" in query.message.caption:
-                return
-
-            try:
-                await robust_edit_caption(
-                    query.message,
-                    caption=f"{query.message.caption}\n\n{confirmation_text}",
-                    reply_markup=reply_markup,
-                    parse_mode="Markdown",
-                )
-            except Exception:
-                await robust_edit_reply_markup(query.message, reply_markup=reply_markup)
-        else:
-            await robust_edit_reply_markup(query.message, reply_markup=reply_markup)
+        await _handle_public_share_request(query=query, context=context)
         return
 
     if data == "public_share_cancel":
-        await safe_answer_query(query)
-        if query.message.reply_markup:
-            first_btn = query.message.reply_markup.inline_keyboard[0][0]
-            if first_btn.callback_data == "public_share_request":
-                return
-
-        if query.message.caption and "⚠️ 公开确认" in query.message.caption:
-            original_caption = query.message.caption.split("\n\n⚠️ 公开确认")[0].strip()
-            with contextlib.suppress(Exception):
-                await robust_edit_caption(
-                    query.message, caption=original_caption, parse_mode="Markdown"
-                )
-
-        keyboard = [
-            [InlineKeyboardButton("公开", callback_data="public_share_request")],
-            [
-                InlineKeyboardButton("👍", callback_data="rate_like"),
-                InlineKeyboardButton("👎", callback_data="rate_dislike"),
-            ],
-        ]
-        msg_id = query.message.message_id
-        meta = context.bot_data.get(f"msg_meta_{msg_id}")
-        if meta and meta.get("mode_name") == MODE_NAME_MAP.get(MODE_RANDOM_FACESWAP):
-            keyboard[0].append(
-                InlineKeyboardButton("🔄 再来一张", callback_data="random_faceswap_again")
-            )
-
-        await robust_edit_reply_markup(
-            query.message, reply_markup=InlineKeyboardMarkup(keyboard)
-        )
+        await _handle_public_share_cancel(query=query, context=context)
         return
 
     if data == "public_share":
-        await safe_answer_query(query)
-        if query.message.caption and "📢 **已同步至宗门公告**" in query.message.caption:
-            return
-
-        if query.message.reply_markup is None:
-            return
-
-        if not REQUIRED_CHANNEL_ID:
-            await robust_send_message(
-                context.bot, query.message.chat_id, "❌ 未加入宗门，无法转发。"
-            )
-            return
-
-        try:
-            msg_id = query.message.message_id
-            meta = context.bot_data.get(f"msg_meta_{msg_id}")
-
-            original_caption = ""
-            if query.message.caption:
-                original_caption = query.message.caption.split("\n\n⚠️ 公开确认")[0].strip()
-
-            final_caption = original_caption
-            if meta:
-                mode_name = meta.get("mode_name", "未知模式")
-                prompt = meta.get("prompt", "无提示词")
-                final_caption = f"✨ 模式：{mode_name}\n📝 提示词：{prompt}"
-
-            sent = False
-            try:
-                await context.bot.copy_message(
-                    chat_id=REQUIRED_CHANNEL_ID,
-                    from_chat_id=query.message.chat_id,
-                    message_id=msg_id,
-                    caption=final_caption,
-                    parse_mode="Markdown",
-                )
-                sent = True
-            except Exception as exc:
-                logger.warning(
-                    "gallery copy_message fallback to forward_message for msg_id=%s: %s",
-                    msg_id,
-                    exc,
-                )
-
-            if not sent:
-                await context.bot.forward_message(
-                    chat_id=REQUIRED_CHANNEL_ID,
-                    from_chat_id=query.message.chat_id,
-                    message_id=query.message.message_id,
-                )
-                sent = True
-
-            if sent and meta and "task_id" in meta:
-                task_id = meta["task_id"]
-                try:
-                    async with AsyncSessionLocal() as session:
-                        await session.execute(
-                            sa_update(History)
-                            .where(History.task_id == task_id)
-                            .values(is_public=True)
-                        )
-                        await session.commit()
-                except Exception as e:
-                    logger.error(f"Error updating is_public: {e}")
-
-            await safe_answer_query(
-                query, text="✅ 已公开并转发至宗门公告栏！", show_alert=True
-            )
-
-            try:
-                await robust_edit_caption(
-                    query.message,
-                    caption=f"{original_caption}\n\n📢 **已同步至宗门公告**",
-                    reply_markup=None,
-                    parse_mode="Markdown",
-                )
-            except Exception:
-                await robust_edit_reply_markup(query.message, reply_markup=None)
-
-        except Exception as e:
-            await robust_send_message(
-                context.bot, query.message.chat_id, f"❌ 转发失败: {e}"
-            )
+        await _handle_public_share_confirm(query=query, context=context)
 
 
 async def handle_rate_action(
@@ -443,13 +514,7 @@ async def handle_rate_action(
     task_id = meta["task_id"]
 
     try:
-        async with AsyncSessionLocal() as session:
-            await session.execute(
-                sa_update(History)
-                .where(History.task_id == task_id)
-                .values(rating=rating_value)
-            )
-            await session.commit()
+        await update_history_rating_by_task_id(task_id, rating_value)
 
         keyboard = []
         for row in query.message.reply_markup.inline_keyboard:

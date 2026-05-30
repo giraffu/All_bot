@@ -1,6 +1,9 @@
 import logging
 from typing import Annotated, Any, Dict, Optional
 
+# Worker/agent protocol routes only.
+# User-facing Web APIs must stay in `src/web_api` to keep the entrypoint split clear.
+
 from app.agent_router_helpers import (
     check_task_payload,
     complete_task_payload,

@@ -43,6 +43,18 @@ class TaskCoreImageCapabilities:
     monitor_progress_func: Any
 
 
+@dataclass(frozen=True)
+class TaskCoreRuntimeCapabilities:
+    get_active_tasks_func: Any
+    get_all_user_concurrencies_func: Any
+    cancel_task_func: Any
+    get_task_func: Any
+    find_task_by_backend_task_id_func: Any
+    set_runtime_value_func: Any
+    expire_runtime_value_func: Any
+    delete_runtime_value_func: Any
+
+
 _configured_task_core_service_providers: TaskCoreServiceProviders | None = None
 
 
@@ -169,6 +181,22 @@ def build_task_core_image_capabilities() -> TaskCoreImageCapabilities:
         download_result_func=image_service.download_result,
         download_video_result_func=image_service.download_video_result,
         monitor_progress_func=image_service.monitor_progress,
+    )
+
+
+def build_task_core_runtime_capabilities() -> TaskCoreRuntimeCapabilities:
+    task_registry = get_task_core_task_registry()
+    submission_outbox = get_task_core_submission_outbox()
+    api_client = get_task_core_api_client()
+    return TaskCoreRuntimeCapabilities(
+        get_active_tasks_func=submission_outbox.get_active_tasks,
+        get_all_user_concurrencies_func=submission_outbox.get_all_user_concurrencies,
+        cancel_task_func=api_client.cancel_task,
+        get_task_func=task_registry.get_task,
+        find_task_by_backend_task_id_func=task_registry.find_task_by_backend_task_id,
+        set_runtime_value_func=submission_outbox.redis.set,
+        expire_runtime_value_func=submission_outbox.redis.expire,
+        delete_runtime_value_func=submission_outbox.redis.delete,
     )
 
 

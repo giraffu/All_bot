@@ -1,7 +1,3 @@
-import logging
-
-logger = logging.getLogger("utils.exchange_rates")
-
 async def get_exchange_rates() -> dict:
     """Get fixed exchange rates to USDT"""
     return {

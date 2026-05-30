@@ -472,6 +472,7 @@ async def test_complete_task_marks_done_removes_running_and_publishes_task_type(
             {
                 "status": "done",
                 "result_path": "outputs/result.mp4",
+                "extra_outputs": None,
                 "progress": 1.0,
                 "task_type": TaskType.LTX_VIDEO,
                 "worker_id": "worker-1",

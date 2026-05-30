@@ -13,6 +13,8 @@ from src.core.gallery_submission_core import (
     process_submit_to_gallery_result_impl,
 )
 
+# Stable facade only: keep submission/query/interaction implementations in submodules.
+
 __all__ = [
     "ALLOWED_WEB_SUBMIT_TYPES",
     "DuplicateInteractionError",

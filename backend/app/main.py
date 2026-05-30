@@ -3,6 +3,10 @@ import uuid
 from contextlib import asynccontextmanager
 from typing import Annotated, Optional
 
+# Execution-plane FastAPI entrypoint.
+# This app exposes Central API and worker-facing orchestration routes only.
+# New user-facing Web/BFF capabilities must be added under `src/web_api`.
+
 from app.config import settings
 from app.dependencies import get_queue_manager
 from app.main_bootstrap import (

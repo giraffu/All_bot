@@ -1,3 +1,5 @@
+from dataclasses import dataclass
+
 from fastapi import HTTPException
 from sqlalchemy import desc, func, select, update
 from sqlalchemy.exc import IntegrityError
@@ -14,19 +16,29 @@ from src.web_api.schemas.gallery_schema import (
 from src.web_api.services.gallery_response_builder import resolve_gallery_author_name
 
 
+@dataclass(frozen=True)
+class GalleryCommentDependencies:
+    redis_client: object
+
+
+def build_default_gallery_comment_dependencies() -> GalleryCommentDependencies:
+    from src.services.redis_client import redis_client as default_redis_client
+
+    return GalleryCommentDependencies(redis_client=default_redis_client)
+
+
 async def create_gallery_comment_payload(
     *,
     post_id: int,
     comment,
     current_user,
     db,
+    dependencies: GalleryCommentDependencies | None = None,
     redis_client=None,
     resolve_author_name=resolve_gallery_author_name,
 ) -> GalleryCommentResponse:
-    if redis_client is None:
-        from src.services.redis_client import redis_client as default_redis_client
-
-        redis_client = default_redis_client
+    dependencies = dependencies or build_default_gallery_comment_dependencies()
+    redis_client = redis_client or dependencies.redis_client
     unavailable_comment_error = "帖子已下架或已删除，无法发布评论"
 
     post = await db.get(GalleryPost, post_id)
