@@ -96,8 +96,9 @@ graph TD
   - Dashboard、支付 API、CS Bot 都是独立边界，不再是 Bot 的附属模块。
 - **接入与应用层**
   - `tg-bot` 负责 Telegram 交互、FSM、结果消息与支付通知。
-  - `web-api` 承担认证、任务提交、任务运行态、历史、广场、用户中心、返佣兑换等主能力。
+  - `web-api` 承担认证、任务提交、任务运行态、历史、广场、用户中心、返佣兑换与站点通知读取等主能力。
   - `payment-api` 负责 RMB 回调；Stars 与 TON 各有对应履约入口。
+  - `dashboard-backend` 除系统视图外，当前还承接站点通知的创建、编辑、置顶与删除管理入口。
 - **核心领域与调度**
   - `task_core.py` 当前是稳定 facade，不再承担所有细节逻辑。
   - 真实默认装配已下沉到 provider/dependencies、submission、web-monitor、runtime 等子模块。
@@ -158,6 +159,7 @@ sequenceDiagram
 - Web 认证当前是双入口：Telegram 验签登录 + 用户名密码登录。
 - JWT 以 `SECRET_KEY` 签发，并携带 `pwd_ver` / `channel` 等语义 claim。
 - 改密会导致旧 token 失效；权限变化会触发动态复核。
+- Telegram Bot 个人中心打开 Web/Mini App 时，当前通过 `build_versioned_mini_app_url()` 在 `MINI_APP_URL` 上追加 `v` 参数，借此主动击穿 Telegram 旧 WebView 快照。
 
 ### 2.3 支付、返佣与资产闭环
 - 支付域已经从单一充值升级为“支付履约 + 返佣入账 + affiliate 兑换灵石/会员”的复合域。
@@ -169,7 +171,12 @@ sequenceDiagram
 - `apply-context` 已成为 Web workbench 主路径。
 - Telegram 端 `gallery_apply_fsm` 仅应视作兼容链路，不再是主产品路径。
 
-### 2.5 CS Bot 闭环
+### 2.5 站点通知闭环
+- Dashboard 当前可维护全站站点通知，支持标题、正文、启用状态、置顶、目标修为与目标身份。
+- Web 侧通过 `/api/app/site-notice` 与 `/api/app/site-notices` 读取通知。
+- 通知可见性按用户当前 `group` / `identity` 做“任一命中即显示”过滤；两项都为空表示所有 Web 用户可见。
+
+### 2.6 CS Bot 闭环
 - `cs_bot` 当前通过 `LangGraph + SkillManager + ChatOpenAI(LM Studio 兼容接口)` 运行。
 - 当前记忆是进程内 `MemorySaver()`，不是 Redis 持久化记忆树。
 

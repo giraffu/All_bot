@@ -1,6 +1,6 @@
 # 图生视频 (Image-to-Video) 业务流与架构分析
 
-本文档描述当前系统中的图生视频链路，包括 LTX-Video、自定义视频、快捷视频与相关 Telegram / Web 任务流。
+本文档描述当前系统中的图生视频链路，包括 `ltx_video`、`wan22_video_v2`、自定义视频、快捷视频与相关 Telegram / Web 任务流。
 
 ## 一、 当前业务主链
 
@@ -30,6 +30,8 @@ sequenceDiagram
 - FSM 不再直接长轮询 `task_core`；真实主链是 `entrypoint -> run_bot_task_application(...) -> task_core facade`。
 - Bot 视频主链的取消态当前通过 `BotTaskCancelled` 收口，而不是字符串 sentinel。
 - `quick_video_fsm.py` 已不再通过构造假的 `Update/Message` 适配旧接口。
+- `ltx_video` 当前主协议是 `lora_items` 多选链路，最多 3 个 LoRA，旧 `lora_name / lora_strength` 只保留兼容。
+- `wan22_video_v2` 已进入统一视频主链；除主视频外，还可能通过 `extra_outputs.last_frame` 回传尾帧图片。
 
 ## 二、 数据流向
 
@@ -80,9 +82,10 @@ graph TD
 
 ## 三、 分层说明
 ### 3.1 交互层
-- `ltx_video_fsm.py`、`image_to_video_fsm.py`、`quick_video_fsm.py` 等负责分步收集参数。
+- `ltx_video_fsm.py`、`wan22_video_v2_fsm.py`、`image_to_video_fsm.py`、`quick_video_fsm.py` 等负责分步收集参数。
 - 全局菜单打断通过 `is_global_menu_command(...)` 统一识别。
 - 当前主 FSM 普遍使用 `conversation_timeout=300`。
+- `wan22_video_v2_fsm.py` 额外支持“起始帧 + 可选终止帧 + prompt/negative prompt + color_match/perfect_loop/upscale/extract_last_frame”组合输入。
 
 ### 3.2 Bot 任务流层
 - 视频任务入口主要位于：
@@ -91,6 +94,7 @@ graph TD
   - `task_service_entrypoints_generation.py`
 - 这些入口负责构造 `BotTaskFlowContext`，再进入 `run_bot_task_application(...)`。
 - `bot_task_service.py` 当前是薄兼容 facade，不应再被视为厚业务层。
+- `process_wan22_video_v2_task(...)` 位于 generation entrypoints，`process_ltx_video_task(...)` 位于 specialized entrypoints；两者都已走统一提交与前台监控主链。
 
 ### 3.3 Core 提交与监控层
 - `task_core.py` 负责统一提交语义。
@@ -104,6 +108,7 @@ graph TD
 
 ## 五、 结果发送与清理
 - Bot 完成后会发送 MP4、caption、reply markup 与后续交互入口。
+- `wan22_video_v2` 在开启 `extract_last_frame` 时，还会额外发送 `extra_outputs.last_frame` 对应的尾帧图片。
 - 运行结束后需清理：
   - status message
   - 本地临时文件
@@ -114,4 +119,6 @@ graph TD
 - 覆盖参数收集、菜单打断、超时退出。
 - 覆盖视频 entrypoint 到 `run_bot_task_application(...)` 的上下文装配。
 - 覆盖取消、失败、成功三条主分支。
+- 若修改 `wan22_video_v2`，需覆盖“单起始帧 / 双帧模式 / 尾帧开关”三类布尔门控与结果发送语义。
+- 若修改 `ltx_video`，需覆盖 `lora_items` 多选、单项兼容字段与无 LoRA 回退三类协议。
 - 若修改视频成本计算、requested_duration 或结果发送语义，需同步回归 focused tests 与黄金路径集。

@@ -43,6 +43,7 @@
 - 当前仓库的测试环境与正式环境已经使用独立数据库；`safe_deploy_test.sh` 只会基于 `.env.test` 校验并迁移测试库，`safe_deploy.sh` 只会基于 `.env` 校验并迁移正式库，两套迁移应按各自环境分别执行，互不替代。
 - 若启用隔离测试栈，应使用独立的 `.env.test`、`backend/docker-compose-test.yml` 与 `workers/docker-compose-test.yml`，并让测试入口服务指向独立的 Central API 端口与独立 Redis 队列。
 - 隔离测试栈的最低要求是：测试 Bot/Web/Payment 使用测试库，Central API 使用独立 Redis DB 作为队列，测试 workers 连接测试 Central API；否则仍会与正式环境共用任务调度面。
+- `workers/docker-compose-test.yml` 中的 `${...}` 插值不会读取 `env_file: ../.env.test` 的值；重建测试 worker 时若宿主 shell 未显式导出 `AGENT_SECRET_TOKEN`、`MINIO_BUCKET`、`MINIO_RESULT_BUCKET`，compose 会退回默认值，可能导致 401 或写错桶。
 
 ## 5. 常见问题与恢复约束
 - MinIO 503 / 上传假死
@@ -55,6 +56,9 @@
 - CS Bot 改代码不生效
   - 根因通常是只做了 `docker restart`
   - 处理必须是 `docker-compose up -d --build`
+- 测试 worker 重建后出现 401 / 读错桶
+  - 常见根因：`docker-compose-test.yml` 的 `${AGENT_SECRET_TOKEN}`、`${MINIO_BUCKET}`、`${MINIO_RESULT_BUCKET}` 没有从宿主 shell 注入，误以为 `env_file: ../.env.test` 会参与 compose 插值
+  - 处理：在执行测试 worker compose 前显式导出这些变量，或以等价方式在宿主层传入
 
 ## 6. 文档维护口径
 - 部署文档与运维技能必须和 `safe_deploy.sh` 的真实顺序保持一致。
