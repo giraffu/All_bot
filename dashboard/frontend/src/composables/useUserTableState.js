@@ -15,6 +15,8 @@ import {
 } from '../api/api'
 
 export function useUserTableState(formatDate) {
+  const DEFAULT_SORT_BY = 'created_at'
+  const DEFAULT_SORT_ORDER = 'desc'
   const users = ref([])
   const loading = ref(false)
   const error = ref(null)
@@ -28,6 +30,8 @@ export function useUserTableState(formatDate) {
   const filterUserGroup = ref(null)
   const searchUsername = ref('')
   const isUsernamePartial = ref(true)
+  const sortBy = ref(DEFAULT_SORT_BY)
+  const sortOrder = ref(DEFAULT_SORT_ORDER)
   const searchTimeout = ref(null)
   let latestUsersRequestId = 0
 
@@ -85,6 +89,19 @@ export function useUserTableState(formatDate) {
     '真传弟子',
   ]
 
+  const normalizeSorterOrder = (order) => {
+    if (order === 'ascend') return 'asc'
+    if (order === 'descend') return 'desc'
+    return DEFAULT_SORT_ORDER
+  }
+
+  const resolveSorterField = (sorter) => {
+    if (Array.isArray(sorter)) {
+      return resolveSorterField(sorter[0])
+    }
+    return sorter?.field || sorter?.columnKey || sorter?.column?.key || DEFAULT_SORT_BY
+  }
+
   const loadUsersData = async () => {
     const requestId = ++latestUsersRequestId
     loading.value = true
@@ -98,6 +115,8 @@ export function useUserTableState(formatDate) {
         user_group: filterUserGroup.value,
         username: searchUsername.value,
         username_partial: isUsernamePartial.value,
+        sort_by: sortBy.value,
+        sort_order: sortOrder.value,
       }
       const res = await fetchUsers(currentPage.value, pageSize.value, paramsObj)
       if (requestId !== latestUsersRequestId) {
@@ -118,9 +137,17 @@ export function useUserTableState(formatDate) {
     }
   }
 
-  const handleTableChange = (pagination) => {
-    currentPage.value = pagination.current
+  const handleTableChange = (pagination, filters, sorter) => {
+    const nextSortBy = resolveSorterField(sorter)
+    const nextSortOrder = normalizeSorterOrder(
+      Array.isArray(sorter) ? sorter[0]?.order : sorter?.order
+    )
+    const sortChanged = nextSortBy !== sortBy.value || nextSortOrder !== sortOrder.value
+
+    currentPage.value = sortChanged ? 1 : pagination.current
     pageSize.value = pagination.pageSize
+    sortBy.value = nextSortBy
+    sortOrder.value = nextSortOrder
     void loadUsersData()
   }
 
@@ -423,6 +450,8 @@ export function useUserTableState(formatDate) {
     filterUserGroup,
     searchUsername,
     isUsernamePartial,
+    sortBy,
+    sortOrder,
     statsModalVisible,
     statsLoading,
     currentUserStats,

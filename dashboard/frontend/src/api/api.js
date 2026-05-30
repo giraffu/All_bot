@@ -68,6 +68,8 @@ export const fetchUsers = async (page = 1, pageSize = 20, params_obj = {}) => {
     appendQueryParam(params, 'username_partial', params_obj.username_partial)
     appendQueryParam(params, 'identity', params_obj.identity)
     appendQueryParam(params, 'user_group', params_obj.user_group)
+    appendQueryParam(params, 'sort_by', params_obj.sort_by)
+    appendQueryParam(params, 'sort_order', params_obj.sort_order)
   }))
 }
 

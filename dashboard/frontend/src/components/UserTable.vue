@@ -1,4 +1,5 @@
 <script setup>
+import { computed } from 'vue'
 import { formatDate } from '../utils/helpers'
 import { useUserTableState } from '../composables/useUserTableState'
 import UserTableToolbar from './UserTableToolbar.vue'
@@ -20,6 +21,8 @@ const {
   filterUserGroup,
   searchUsername,
   isUsernamePartial,
+  sortBy,
+  sortOrder,
   statsModalVisible,
   statsLoading,
   currentUserStats,
@@ -78,7 +81,7 @@ const {
   submitGift,
 } = useUserTableState(formatDate)
 
-const columns = [
+const baseColumns = [
   {
     title: '#',
     key: 'index',
@@ -90,6 +93,7 @@ const columns = [
     dataIndex: 'id',
     key: 'id',
     width: 100,
+    sorter: true,
   },
   {
     title: '用户信息',
@@ -127,21 +131,21 @@ const columns = [
     dataIndex: 'credits',
     key: 'credits',
     width: 100,
-    sorter: (a, b) => a.credits - b.credits,
+    sorter: true,
   },
   {
     title: '累计签到',
     dataIndex: 'checkin_count',
     key: 'checkin_count',
     width: 100,
-    sorter: (a, b) => a.checkin_count - b.checkin_count,
+    sorter: true,
   },
   {
     title: '邀请人数',
     dataIndex: 'referral_count',
     key: 'referral_count',
     width: 100,
-    sorter: (a, b) => a.referral_count - b.referral_count,
+    sorter: true,
   },
   {
     title: '已入宗门',
@@ -154,25 +158,21 @@ const columns = [
     dataIndex: 'generation_count',
     key: 'generation_count',
     width: 100,
-    sorter: (a, b) => a.generation_count - b.generation_count,
+    sorter: true,
   },
   {
     title: '注册时间',
     dataIndex: 'created_at',
     key: 'created_at',
     width: 180,
-    sorter: (a, b) => new Date(a.created_at) - new Date(b.created_at),
+    sorter: true,
   },
   {
     title: '最新操作时间',
     dataIndex: 'last_activity',
     key: 'last_activity',
     width: 180,
-    sorter: (a, b) => {
-      const dateA = a.last_activity ? new Date(a.last_activity) : new Date(0);
-      const dateB = b.last_activity ? new Date(b.last_activity) : new Date(0);
-      return dateA - dateB;
-    },
+    sorter: true,
   },
   {
     title: '操作',
@@ -181,6 +181,32 @@ const columns = [
     width: 320,
   },
 ]
+
+const sortableColumnKeys = new Set([
+  'id',
+  'credits',
+  'checkin_count',
+  'referral_count',
+  'generation_count',
+  'created_at',
+  'last_activity',
+])
+
+const columns = computed(() =>
+  baseColumns.map(column => {
+    if (!sortableColumnKeys.has(column.key)) {
+      return column
+    }
+    const activeSortOrder =
+      sortBy.value === column.key
+        ? (sortOrder.value === 'asc' ? 'ascend' : 'descend')
+        : null
+    return {
+      ...column,
+      sortOrder: activeSortOrder,
+    }
+  })
+)
 </script>
 
 <template>

@@ -40,6 +40,52 @@ from src.web_api.services.users_history_service import get_my_favorites_payload
 
 logger = logging.getLogger("dashboard.users")
 
+USER_LIST_DEFAULT_SORT_BY = "created_at"
+USER_LIST_DEFAULT_SORT_ORDER = "desc"
+USER_LIST_SORT_FIELDS = {
+    "id": User.id,
+    "credits": User.credits,
+    "checkin_count": User.checkin_count,
+    "referral_count": User.referral_count,
+    "generation_count": User.generation_count,
+    "created_at": User.created_at,
+    "last_activity": User.last_activity,
+}
+
+
+def _normalize_user_list_sort(sort_by: str | None, sort_order: str | None) -> tuple[str, str]:
+    normalized_sort_by = (sort_by or USER_LIST_DEFAULT_SORT_BY).strip()
+    normalized_sort_order = (sort_order or USER_LIST_DEFAULT_SORT_ORDER).strip().lower()
+
+    if normalized_sort_by not in USER_LIST_SORT_FIELDS:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Invalid sort_by. Allowed values: "
+                + ", ".join(sorted(USER_LIST_SORT_FIELDS))
+            ),
+        )
+    if normalized_sort_order not in {"asc", "desc"}:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid sort_order. Allowed values: asc, desc",
+        )
+    return normalized_sort_by, normalized_sort_order
+
+
+def _apply_user_list_sort(stmt, sort_by: str, sort_order: str):
+    sort_column = USER_LIST_SORT_FIELDS[sort_by]
+    if sort_order == "asc":
+        primary_order = sort_column.asc()
+        secondary_order = User.id.asc()
+    else:
+        primary_order = sort_column.desc()
+        secondary_order = User.id.desc()
+
+    if sort_by == "id":
+        return stmt.order_by(primary_order)
+    return stmt.order_by(primary_order.nullslast(), secondary_order)
+
 
 async def get_users_payload(
     *,
@@ -52,10 +98,13 @@ async def get_users_payload(
     user_group: str | None = None,
     username: str | None = None,
     username_partial: bool = False,
+    sort_by: str | None = None,
+    sort_order: str | None = None,
     logger_override: logging.Logger | None = None,
 ) -> dict:
     active_logger = logger_override or logger
     try:
+        sort_by, sort_order = _normalize_user_list_sort(sort_by, sort_order)
         stmt = select(User)
 
         if query:
@@ -94,12 +143,9 @@ async def get_users_payload(
         total_result = await db.execute(count_stmt)
         total = total_result.scalar() or 0
 
-        stmt = (
-            stmt.options(selectinload(User.inviter_user))
-            .order_by(desc(User.created_at))
-            .offset(skip)
-            .limit(limit)
-        )
+        stmt = stmt.options(selectinload(User.inviter_user))
+        stmt = _apply_user_list_sort(stmt, sort_by, sort_order)
+        stmt = stmt.offset(skip).limit(limit)
         result = await db.execute(stmt)
         users = result.scalars().all()
 
@@ -127,7 +173,14 @@ async def get_users_payload(
                 user_dict["inviter_info"] = None
             items.append(user_dict)
 
-        return {"items": items, "total": total}
+        return {
+            "items": items,
+            "total": total,
+            "sort_by": sort_by,
+            "sort_order": sort_order,
+        }
+    except HTTPException:
+        raise
     except Exception as exc:
         active_logger.error(f"Error getting users: {exc}")
         raise HTTPException(status_code=500, detail=str(exc))

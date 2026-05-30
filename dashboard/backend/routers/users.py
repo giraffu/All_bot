@@ -42,6 +42,8 @@ async def get_users(
     user_group: str = None,
     username: str = None,
     username_partial: bool = False,
+    sort_by: str | None = Query(default=None),
+    sort_order: str | None = Query(default=None),
     db: AsyncSession = Depends(get_db),
 ):
     """Get paginated user list with basic info"""
@@ -55,6 +57,8 @@ async def get_users(
         user_group=user_group,
         username=username,
         username_partial=username_partial,
+        sort_by=sort_by,
+        sort_order=sort_order,
         logger_override=logger,
     )
 

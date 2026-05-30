@@ -30,6 +30,12 @@ class User(Base):
             func.lower(Column("username", String(100))),
             unique=True,
         ),
+        Index("ix_users_created_at_id", "created_at", "id"),
+        Index("ix_users_credits_id", "credits", "id"),
+        Index("ix_users_checkin_count_id", "checkin_count", "id"),
+        Index("ix_users_referral_count_id", "referral_count", "id"),
+        Index("ix_users_generation_count_id", "generation_count", "id"),
+        Index("ix_users_last_activity_id", "last_activity", "id"),
     )
 
     id = Column(

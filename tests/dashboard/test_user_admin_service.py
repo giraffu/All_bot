@@ -13,6 +13,9 @@ class _ScalarResult:
         self.value = value
         self.rows = list(rows or [])
 
+    def scalar(self):
+        return self.value
+
     def scalar_one_or_none(self):
         return self.value
 
@@ -63,6 +66,18 @@ class _FakeGiftSession:
 
     def add(self, obj):
         self.added.append(obj)
+
+
+class _FakeUserListDB:
+    def __init__(self, execute_results):
+        self.execute_results = list(execute_results)
+        self.executed_stmts = []
+
+    async def execute(self, stmt):
+        self.executed_stmts.append(str(stmt))
+        if not self.execute_results:
+            raise AssertionError("unexpected execute call")
+        return self.execute_results.pop(0)
 
 
 @pytest.mark.asyncio
@@ -181,3 +196,45 @@ async def test_update_user_channel_member_payload_triggers_reward_and_refresh(mo
         internal_user_id=123,
     )
     permission_service.refresh_user_group.assert_awaited_once_with(123, is_member=True)
+
+
+@pytest.mark.asyncio
+async def test_get_users_payload_applies_requested_sort_order():
+    db = _FakeUserListDB(
+        [
+            _ScalarResult(value=2),
+            _ScalarResult(
+                rows=[
+                    User(id=200, username="beta", credits=9, referral_count=3),
+                    User(id=100, username="alpha", credits=9, referral_count=2),
+                ]
+            ),
+        ]
+    )
+
+    result = await user_admin_service.get_users_payload(
+        db=db,
+        sort_by="credits",
+        sort_order="desc",
+    )
+
+    assert result["sort_by"] == "credits"
+    assert result["sort_order"] == "desc"
+    assert [item["id"] for item in result["items"]] == [200, 100]
+    list_stmt = db.executed_stmts[1]
+    assert "ORDER BY users.credits DESC NULLS LAST, users.id DESC" in list_stmt
+
+
+@pytest.mark.asyncio
+async def test_get_users_payload_rejects_unknown_sort_field():
+    db = _FakeUserListDB([])
+
+    with pytest.raises(user_admin_service.HTTPException) as exc_info:
+        await user_admin_service.get_users_payload(
+            db=db,
+            sort_by="full_name",
+            sort_order="asc",
+        )
+
+    assert exc_info.value.status_code == 400
+    assert "Invalid sort_by" in exc_info.value.detail
