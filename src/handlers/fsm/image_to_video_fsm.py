@@ -19,10 +19,16 @@ from src.constants import (
     RESOLUTION_COST,
     get_video_settings_keyboard,
 )
+from src.handlers.fsm.fsm_shared import (
+    handle_standard_fsm_cancel,
+    handle_standard_fsm_timeout,
+    handle_standard_fsm_unexpected_input,
+    translate_fsm_text,
+)
 from src.handlers.conversation_states import ImageToVideoState
-from src.handlers.prompt_router import GLOBAL_REVERSE_MAP, is_global_menu_command
+from src.handlers.prompt_router import is_global_menu_command
 from src.lora_catalog import VIDEO_LORA_MODELS, get_video_lora_display_name
-from src.services.bot_task_service import process_image_to_video_task
+from src.services.task_service_entrypoints_generation import process_image_to_video_task
 from src.services.permission_service import permission_service
 from src.services.fsm_temp_file_service import (
     cleanup_fsm_temp_files,
@@ -32,7 +38,6 @@ from src.utils import create_background_task, robust_edit_text, robust_reply_tex
 import contextlib
 
 from src.filters.i18n_filter import I18nFilter
-from src.i18n.translator import get_text
 
 logger = logging.getLogger("fsm.image_to_video")
 
@@ -40,14 +45,7 @@ IMAGE_TO_VIDEO_DATA_KEY = "image_to_video_data"
 IMAGE_TO_VIDEO_CONVERSATION_TAG = "IMAGE_TO_VIDEO"
 
 
-def _t(context: ContextTypes.DEFAULT_TYPE, key: str, **kwargs) -> str:
-    translator = getattr(context, "t", None)
-    if callable(translator):
-        return translator(key, **kwargs)
-    lang = getattr(context, "lang", None)
-    if not lang and getattr(context, "user_data", None):
-        lang = context.user_data.get("language_code")
-    return get_text(key, lang or "zh", **kwargs)
+_t = translate_fsm_text
 
 
 def _get_image_to_video_data(context: ContextTypes.DEFAULT_TYPE) -> dict | None:
@@ -514,47 +512,41 @@ async def receive_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 async def cancel_conversation(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> int:
-    user_id = update.effective_user.id
-    msg = _t(context, "fsm.common.cancelled")
-    await robust_reply_text(update.message, msg)
-    _cleanup_context(context, user_id)
-    return ConversationHandler.END
+    return await handle_standard_fsm_cancel(
+        update,
+        context,
+        cleanup_func=lambda: _cleanup_context(
+            context, update.effective_user.id if update.effective_user else 0
+        ),
+        translate_func=_t,
+        reply_text_func=robust_reply_text,
+    )
 
 
 async def timeout_conversation(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> int:
-    user_id = update.effective_user.id if update.effective_user else "Unknown"
-    if update and update.message:
-        await robust_reply_text(
-            update.message,
-            _t(context, "fsm.common.timeout"),
-        )
-    _cleanup_context(context, user_id)
-    return ConversationHandler.END
+    return await handle_standard_fsm_timeout(
+        update,
+        context,
+        cleanup_func=lambda: _cleanup_context(
+            context, update.effective_user.id if update.effective_user else 0
+        ),
+        translate_func=_t,
+        reply_text_func=robust_reply_text,
+    )
 
 
 async def unexpected_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    text = update.message.text if update.message else ""
-    if text and is_global_menu_command(text):
-        route_key = GLOBAL_REVERSE_MAP.get(text)
-        user_id = update.effective_user.id if update.effective_user else "Unknown"
-        _cleanup_context(context, user_id)
-        if route_key == "menu.switch_lang" and update.effective_user:
-            from src.handlers.message_handler_runtime import toggle_user_language
-
-            reply_text, reply_markup = await toggle_user_language(
-                context, update.effective_user
-            )
-            await robust_reply_text(
-                update.message, reply_text, reply_markup=reply_markup
-            )
-            return ConversationHandler.END
-        await robust_reply_text(update.message, _t(context, "system.fsm_exit_hint"))
-        return ConversationHandler.END
-
-    await robust_reply_text(update.message, _t(context, "system.fsm_in_progress_hint"))
-    return None
+    return await handle_standard_fsm_unexpected_input(
+        update,
+        context,
+        cleanup_func=lambda: _cleanup_context(
+            context, update.effective_user.id if update.effective_user else 0
+        ),
+        translate_func=_t,
+        reply_text_func=robust_reply_text,
+    )
 
 
 def _build_image_to_video_fsm_handler(

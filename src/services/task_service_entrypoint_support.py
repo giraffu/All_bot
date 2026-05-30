@@ -1,7 +1,17 @@
 from collections.abc import Iterable
-from typing import Any, Callable
+from typing import Any, Callable, Optional
 
 from src.core.video_billing import normalize_requested_billing_resolution
+from src.services.task_service_cleanup import cleanup_task_files
+from src.services.task_service_types import (
+    BotTaskBillingContext,
+    BotTaskCleanupPolicy,
+    BotTaskFailurePolicy,
+    BotTaskFlowContext,
+    BotTaskPresentationContext,
+    BotTaskRequestContext,
+    BotTaskRuntimeState,
+)
 
 
 def build_task_inputs(
@@ -73,3 +83,101 @@ def build_unexpected_error_log_message(task_label: str, *, verb: str = "in") -> 
     if verb == "processing":
         return f"Error processing {task_label} for {{internal_user_id}}: {{error}}"
     return f"Error in {task_label} for user {{internal_user_id}}: {{error}}"
+
+
+def build_default_bot_task_failure_policy(task_label: str) -> BotTaskFailurePolicy:
+    return BotTaskFailurePolicy(
+        unexpected_error_log_message=build_unexpected_error_log_message(task_label),
+        unexpected_error_prefix="出错了",
+    )
+
+
+def build_default_bot_task_cleanup_policy(
+    paths: Iterable[str | None] | None,
+    *,
+    cleanup: bool,
+    cleanup_files_func=cleanup_task_files,
+) -> BotTaskCleanupPolicy:
+    cleanup_paths = build_cleanup_paths(paths or [])
+    return BotTaskCleanupPolicy(
+        cleanup_paths=cleanup_paths,
+        cleanup_enabled=cleanup,
+        cleanup_files_func=cleanup_files_func,
+    )
+
+
+def build_bot_task_flow_context(
+    *,
+    context: Any,
+    chat_id: int,
+    internal_user_id: int,
+    username: Optional[str],
+    task_type: str,
+    inputs: dict[str, Any],
+    prompt: str,
+    is_video: bool,
+    message_spec: Any,
+    task_label: str,
+    cleanup: bool,
+    cleanup_paths: Iterable[str | None],
+    status_msg_id: Optional[int] = None,
+    update: Any = None,
+    source_post_id: Optional[int] = None,
+    deduct_quota: bool = True,
+    submitted_status_builder: Any = None,
+    send_result: bool = True,
+    reply_markup: Any = None,
+    delete_status: bool = True,
+    allow_contribute: bool = True,
+    prefer_edit_status: bool = False,
+    billing_resolution: Optional[str] = None,
+    requested_duration: Optional[int] = None,
+    missing_output_should_refund: Optional[bool] = None,
+    runtime_state: Optional[BotTaskRuntimeState] = None,
+    failure_policy: Optional[BotTaskFailurePolicy] = None,
+    cleanup_files_func=cleanup_task_files,
+) -> BotTaskFlowContext:
+    if runtime_state is None:
+        runtime_state = BotTaskRuntimeState()
+    if failure_policy is None:
+        failure_policy = build_default_bot_task_failure_policy(task_label)
+    if missing_output_should_refund is None:
+        missing_output_should_refund = deduct_quota
+
+    return BotTaskFlowContext(
+        runtime_state=runtime_state,
+        request=BotTaskRequestContext(
+            context=context,
+            update=update,
+            chat_id=chat_id,
+            status_msg_id=status_msg_id,
+            internal_user_id=internal_user_id,
+            username=username,
+            task_type=task_type,
+            inputs=inputs,
+            prompt=prompt,
+            is_video=is_video,
+            source_post_id=source_post_id,
+            deduct_quota=deduct_quota,
+        ),
+        presentation=BotTaskPresentationContext(
+            message_spec=message_spec,
+            submitted_status_builder=submitted_status_builder,
+            send_result=send_result,
+            reply_markup=reply_markup,
+            delete_status=delete_status,
+            allow_contribute=allow_contribute,
+            prefer_edit_status=prefer_edit_status,
+        ),
+        billing=BotTaskBillingContext(
+            billing_resolution=billing_resolution,
+            requested_duration=requested_duration,
+            missing_output_should_refund=missing_output_should_refund,
+        ),
+        failure_policy=failure_policy,
+        cleanup_policy=build_default_bot_task_cleanup_policy(
+            cleanup_paths,
+            cleanup=cleanup,
+            cleanup_files_func=cleanup_files_func,
+        ),
+    )

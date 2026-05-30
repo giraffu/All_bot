@@ -1,4 +1,5 @@
 import uuid
+from dataclasses import dataclass
 from typing import Callable, Optional
 
 from asgi_correlation_id import correlation_id
@@ -30,6 +31,15 @@ from src.services.tg_task_runtime import (
     build_cancel_task_markup,
 )
 from src.utils import robust_edit_text, robust_reply_text
+
+
+@dataclass
+class _BotTaskExecutionState:
+    status_msg: object | None = None
+    registry_task_id: str | None = None
+    backend_task_id: str | None = None
+    saved_inputs: list[str] | None = None
+    message_spec: BotTaskMessageSpec | None = None
 
 
 def mark_task_submission_succeeded(runtime_state, result: dict) -> list[str]:
@@ -265,17 +275,73 @@ async def cleanup_bot_task_flow(
         cleanup_files_func(cleanup_paths)
 
 
+async def execute_bot_task_stages(
+    *,
+    flow: BotTaskFlowContext,
+    execution: _BotTaskExecutionState,
+    submission: BotTaskSubmissionContext,
+) -> tuple[bytes | None, str | None]:
+    request = flow.request
+    presentation = flow.presentation
+    billing = flow.billing
+    (
+        execution.status_msg,
+        execution.registry_task_id,
+        execution.backend_task_id,
+        execution.saved_inputs,
+        execution.message_spec,
+    ) = await run_bot_task_submission_stage(
+        context=request.context,
+        update=request.update,
+        chat_id=request.chat_id,
+        status_msg_id=request.status_msg_id,
+        message_spec=presentation.message_spec,
+        submitted_status_builder=presentation.submitted_status_builder,
+        submission=submission,
+    )
+
+    final_info = await run_bot_task_monitor_stage(
+        backend_task_id=execution.backend_task_id,
+        status_msg=execution.status_msg,
+        is_video=request.is_video,
+        internal_user_id=request.internal_user_id,
+        lang=resolve_context_lang(request.context),
+    )
+
+    return await run_bot_task_completion_stage(
+        context=request.context,
+        chat_id=request.chat_id,
+        status_msg=execution.status_msg,
+        runtime_state=flow.runtime_state,
+        internal_user_id=request.internal_user_id,
+        username=request.username,
+        prompt=request.prompt,
+        task_type=request.task_type,
+        registry_task_id=execution.registry_task_id,
+        backend_task_id=execution.backend_task_id,
+        saved_inputs=execution.saved_inputs or [],
+        final_info=final_info,
+        is_video=request.is_video,
+        message_spec=execution.message_spec or presentation.message_spec,
+        send_result=presentation.send_result,
+        reply_markup=presentation.reply_markup,
+        delete_status=presentation.delete_status,
+        allow_contribute=presentation.allow_contribute,
+        billing_resolution=billing.billing_resolution,
+        requested_duration=billing.requested_duration,
+        missing_output_should_refund=billing.missing_output_should_refund,
+    )
+
+
 async def run_bot_task_application(
     *,
     flow: BotTaskFlowContext,
 ) -> tuple[bytes | None, str | None]:
-    media_bytes = None
-    full_output_path = None
     request = flow.request
     presentation = flow.presentation
-    billing = flow.billing
     failure_policy = flow.failure_policy
     cleanup_policy = flow.cleanup_policy
+    execution = _BotTaskExecutionState(message_spec=presentation.message_spec)
     submission = BotTaskSubmissionContext(
         runtime_state=flow.runtime_state,
         internal_user_id=request.internal_user_id,
@@ -287,54 +353,11 @@ async def run_bot_task_application(
     )
 
     try:
-        (
-            status_msg,
-            registry_task_id,
-            backend_task_id,
-            saved_inputs,
-            message_spec,
-        ) = await run_bot_task_submission_stage(
-            context=request.context,
-            update=request.update,
-            chat_id=request.chat_id,
-            status_msg_id=request.status_msg_id,
-            message_spec=presentation.message_spec,
-            submitted_status_builder=presentation.submitted_status_builder,
+        return await execute_bot_task_stages(
+            flow=flow,
+            execution=execution,
             submission=submission,
         )
-
-        final_info = await run_bot_task_monitor_stage(
-            backend_task_id=backend_task_id,
-            status_msg=status_msg,
-            is_video=request.is_video,
-            internal_user_id=request.internal_user_id,
-            lang=resolve_context_lang(request.context),
-        )
-
-        media_bytes, full_output_path = await run_bot_task_completion_stage(
-            context=request.context,
-            chat_id=request.chat_id,
-            status_msg=status_msg,
-            runtime_state=flow.runtime_state,
-            internal_user_id=request.internal_user_id,
-            username=request.username,
-            prompt=request.prompt,
-            task_type=request.task_type,
-            registry_task_id=registry_task_id,
-            backend_task_id=backend_task_id,
-            saved_inputs=saved_inputs,
-            final_info=final_info,
-            is_video=request.is_video,
-            message_spec=message_spec,
-            send_result=presentation.send_result,
-            reply_markup=presentation.reply_markup,
-            delete_status=presentation.delete_status,
-            allow_contribute=presentation.allow_contribute,
-            billing_resolution=billing.billing_resolution,
-            requested_duration=billing.requested_duration,
-            missing_output_should_refund=billing.missing_output_should_refund,
-        )
-
     except ConcurrencyLimitError as e:
         await task_service_finalize_helpers.send_bot_warning(request.context, request.chat_id, e)
         return None, None
@@ -343,11 +366,11 @@ async def run_bot_task_application(
         return None, None
     except BotTaskCancelled:
         return await task_service_finalize_helpers.handle_bot_cancelled_exception(
-            status_msg=locals().get("status_msg"),
+            status_msg=execution.status_msg,
             runtime_state=flow.runtime_state,
             internal_user_id=request.internal_user_id,
             username=request.username,
-            message_spec=locals().get("message_spec", presentation.message_spec),
+            message_spec=execution.message_spec or presentation.message_spec,
             deduct_quota=request.deduct_quota,
         )
     except CoreDomainError as e:
@@ -359,9 +382,7 @@ async def run_bot_task_application(
         return await task_service_finalize_helpers.handle_bot_unexpected_exception(
             context=request.context,
             chat_id=request.chat_id,
-            status_msg=(
-                locals().get("status_msg") if presentation.prefer_edit_status else None
-            ),
+            status_msg=(execution.status_msg if presentation.prefer_edit_status else None),
             runtime_state=flow.runtime_state,
             internal_user_id=request.internal_user_id,
             username=request.username,
@@ -387,5 +408,3 @@ async def run_bot_task_application(
             cleanup_paths=cleanup_policy.cleanup_paths,
             cleanup_files_func=cleanup_policy.cleanup_files_func,
         )
-
-    return media_bytes, full_output_path

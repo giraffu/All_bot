@@ -185,29 +185,6 @@ class ImageService:
             priority=priority,
         )
 
-    async def submit_perfect_video_lora(
-        self,
-        task_id: str,
-        prompt: str,
-        image_path: str,
-        lora_name: str,
-        width: int = 512,
-        height: int = 512,
-        length: int = 81,
-        priority: int = 0,
-    ) -> str:
-        """Compat wrapper for the legacy perfect video lora task"""
-        return await self.submit_image_to_video_task(
-            task_id=task_id,
-            prompt=prompt,
-            image_path=image_path,
-            lora_name=lora_name,
-            width=width,
-            height=height,
-            length=length,
-            priority=priority,
-        )
-
     async def submit_image_to_video_task(
         self,
         task_id: str,

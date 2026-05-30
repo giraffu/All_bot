@@ -19,7 +19,7 @@ from src.constants import (
 )
 from src.handlers.conversation_states import QuickImageState
 from src.handlers.prompt_router import GLOBAL_REVERSE_MAP, is_global_menu_command
-from src.services.bot_task_service import process_generation_task
+from src.services.task_service_entrypoints_generation import process_generation_task
 from src.services.permission_service import permission_service
 from src.services.fsm_temp_file_service import (
     cleanup_fsm_temp_files,

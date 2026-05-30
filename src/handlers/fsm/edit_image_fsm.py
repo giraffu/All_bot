@@ -18,7 +18,7 @@ from src.lora_catalog import (
     get_image_lora_display_name,
     get_lora_default_strength,
 )
-from src.services.bot_task_service import (
+from src.services.task_service_entrypoints_generation import (
     process_generation_task,
     process_i2i_pro_task,
 )
@@ -359,7 +359,7 @@ async def receive_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             return ConversationHandler.END
         raise e
 
-    # 转移文件所有权给 TaskService
+    # 任务入口会接管这些临时文件的最终清理
     fsm_data["images"] = []
 
     await robust_reply_text(

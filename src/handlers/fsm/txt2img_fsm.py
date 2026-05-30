@@ -11,25 +11,22 @@ from telegram.ext import (
 
 from src.constants import MODE_TXT2IMG, TASK_COSTS
 from src.handlers.conversation_states import Txt2ImgState
-from src.handlers.prompt_router import GLOBAL_REVERSE_MAP, is_global_menu_command
-from src.services.bot_task_service import process_generation_task
+from src.handlers.fsm.fsm_shared import (
+    handle_standard_fsm_cancel,
+    handle_standard_fsm_timeout,
+    handle_standard_fsm_unexpected_input,
+    translate_fsm_text,
+)
+from src.handlers.prompt_router import is_global_menu_command
+from src.services.task_service_entrypoints_generation import process_generation_task
 from src.services.permission_service import permission_service
 from src.utils import create_background_task, robust_reply_text
 
 from src.filters.i18n_filter import I18nFilter
-from src.i18n.translator import get_text
 
 logger = logging.getLogger("fsm.txt2img")
 
-
-def _t(context: ContextTypes.DEFAULT_TYPE, key: str, **kwargs) -> str:
-    translator = getattr(context, "t", None)
-    if callable(translator):
-        return translator(key, **kwargs)
-    lang = getattr(context, "lang", None)
-    if not lang and getattr(context, "user_data", None):
-        lang = context.user_data.get("language_code")
-    return get_text(key, lang or "zh", **kwargs)
+_t = translate_fsm_text
 
 
 def _cleanup_context(context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -143,42 +140,36 @@ async def receive_non_text_input(
 async def cancel_conversation(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> int:
-    await robust_reply_text(update.message, _t(context, "fsm.common.cancelled"))
-    _cleanup_context(context)
-    return ConversationHandler.END
+    return await handle_standard_fsm_cancel(
+        update,
+        context,
+        cleanup_func=lambda: _cleanup_context(context),
+        translate_func=_t,
+        reply_text_func=robust_reply_text,
+    )
 
 
 async def timeout_conversation(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> int:
-    if update and update.message:
-        await robust_reply_text(update.message, _t(context, "fsm.common.timeout"))
-    _cleanup_context(context)
-    return ConversationHandler.END
+    return await handle_standard_fsm_timeout(
+        update,
+        context,
+        cleanup_func=lambda: _cleanup_context(context),
+        translate_func=_t,
+        reply_text_func=robust_reply_text,
+    )
 
 
 async def unexpected_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    text = update.message.text if update.message else ""
-    if text and is_global_menu_command(text):
-        route_key = GLOBAL_REVERSE_MAP.get(text)
-        _cleanup_context(context)
-        if route_key == "menu.switch_lang" and update.effective_user:
-            from src.handlers.message_handler_runtime import toggle_user_language
-
-            reply_text, reply_markup = await toggle_user_language(
-                context, update.effective_user
-            )
-            await robust_reply_text(
-                update.message,
-                reply_text,
-                reply_markup=reply_markup,
-            )
-            return ConversationHandler.END
-        await robust_reply_text(update.message, _t(context, "system.fsm_exit_hint"))
-        return ConversationHandler.END
-
-    await robust_reply_text(update.message, _t(context, "system.fsm_in_progress_hint"))
-    return Txt2ImgState.WAIT_PROMPT
+    result = await handle_standard_fsm_unexpected_input(
+        update,
+        context,
+        cleanup_func=lambda: _cleanup_context(context),
+        translate_func=_t,
+        reply_text_func=robust_reply_text,
+    )
+    return Txt2ImgState.WAIT_PROMPT if result is None else result
 
 
 def get_txt2img_fsm_handler() -> ConversationHandler:

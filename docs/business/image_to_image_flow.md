@@ -8,7 +8,7 @@
 sequenceDiagram
     actor User as Telegram 用户
     participant FSM as edit_image_fsm / 其他 FSM
-    participant Entry as Bot entrypoints / bot_task_service
+    participant Entry as Bot entrypoints
     participant Flow as run_bot_task_application
     participant Core as task_core facade
     participant Backend as Central API / Worker

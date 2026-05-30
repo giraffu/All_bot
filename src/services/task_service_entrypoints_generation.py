@@ -15,6 +15,7 @@ from src.services.task_service_cleanup import cleanup_task_files
 from src.services.task_service_entrypoints_common import resolve_internal_user_id
 from src.services.task_service_entrypoint_support import (
     build_cleanup_paths,
+    build_bot_task_flow_context,
     build_log_prompt,
     build_task_inputs,
     build_unexpected_error_log_message,
@@ -32,37 +33,8 @@ from src.services.task_service_message_support import (
     translate_context_text,
 )
 from src.services.task_service_flow import run_bot_task_application
-from src.services.task_service_types import (
-    BotTaskBillingContext,
-    BotTaskCleanupPolicy,
-    BotTaskFailurePolicy,
-    BotTaskFlowContext,
-    BotTaskPresentationContext,
-    BotTaskRequestContext,
-    BotTaskRuntimeState,
-)
+from src.services.task_service_types import BotTaskFailurePolicy, BotTaskFlowContext
 from src.utils import robust_send_message
-
-
-def _build_default_failure_policy(entrypoint_name: str) -> BotTaskFailurePolicy:
-    return BotTaskFailurePolicy(
-        unexpected_error_log_message=build_unexpected_error_log_message(
-            entrypoint_name
-        ),
-        unexpected_error_prefix="出错了",
-    )
-
-
-def _build_default_cleanup_policy(
-    images: list[str],
-    *,
-    cleanup: bool,
-) -> BotTaskCleanupPolicy:
-    return BotTaskCleanupPolicy(
-        cleanup_paths=build_cleanup_paths(images),
-        cleanup_enabled=cleanup,
-        cleanup_files_func=cleanup_task_files,
-    )
 
 
 def _build_generation_message_spec(
@@ -168,37 +140,37 @@ def _build_generation_flow_context(
     cleanup: bool,
     entrypoint_name: str,
 ) -> BotTaskFlowContext:
-    return BotTaskFlowContext(
-        runtime_state=BotTaskRuntimeState(),
-        request=BotTaskRequestContext(
-            context=context,
-            chat_id=chat_id,
-            status_msg_id=status_msg_id,
-            internal_user_id=internal_user_id,
-            username=username,
-            task_type=task_type,
-            inputs=inputs,
-            prompt=prompt,
-            is_video=is_video,
-            source_post_id=source_post_id,
-            deduct_quota=deduct_quota,
-        ),
-        presentation=BotTaskPresentationContext(
-            message_spec=message_spec,
-            submitted_status_builder=submitted_status_builder,
-            send_result=send_result,
-            reply_markup=reply_markup,
-            delete_status=delete_status,
-            allow_contribute=allow_contribute,
-        ),
-        billing=BotTaskBillingContext(
-            billing_resolution=billing_resolution,
-            requested_duration=requested_duration,
-            missing_output_should_refund=deduct_quota,
-        ),
-        failure_policy=_build_default_failure_policy(entrypoint_name),
-        cleanup_policy=_build_default_cleanup_policy(images, cleanup=cleanup),
+    failure_policy = BotTaskFailurePolicy(
+        unexpected_error_log_message=build_unexpected_error_log_message(entrypoint_name),
+        unexpected_error_prefix="出错了",
     )
+    return build_bot_task_flow_context(
+        context=context,
+        chat_id=chat_id,
+        status_msg_id=status_msg_id,
+        internal_user_id=internal_user_id,
+        username=username,
+        task_type=task_type,
+        inputs=inputs,
+        prompt=prompt,
+        is_video=is_video,
+        source_post_id=source_post_id,
+        deduct_quota=deduct_quota,
+        message_spec=message_spec,
+        submitted_status_builder=submitted_status_builder,
+        send_result=send_result,
+        reply_markup=reply_markup,
+        delete_status=delete_status,
+        allow_contribute=allow_contribute,
+        billing_resolution=billing_resolution,
+        requested_duration=requested_duration,
+        cleanup=cleanup,
+        cleanup_paths=build_cleanup_paths(images),
+        cleanup_files_func=cleanup_task_files,
+        task_label=entrypoint_name,
+        failure_policy=failure_policy,
+    )
+
 
 
 async def process_image_to_video_task(
@@ -621,29 +593,28 @@ async def process_i2i_pro_task(
     )
 
     return await run_bot_task_application(
-        flow=BotTaskFlowContext(
+        flow=build_bot_task_flow_context(
+            context=context,
+            chat_id=chat_id,
+            internal_user_id=internal_user_id,
+            username=username,
+            task_type=MODE_I2I_PRO,
+            inputs=inputs,
+            prompt=prompt,
+            is_video=False,
+            source_post_id=source_post_id,
+            message_spec=message_spec,
+            submitted_status_builder=build_translated_cost_status_builder(
+                context,
+                "task.status_submitted_mode",
+                notice=notice,
+                mode_name=translate_context_text(context, "task.mode_i2i_pro"),
+            ),
+            allow_contribute=allow_contribute,
+            cleanup=True,
+            cleanup_paths=images,
+            task_label="process_i2i_pro_task",
             runtime_state=runtime_state,
-            request=BotTaskRequestContext(
-                context=context,
-                chat_id=chat_id,
-                internal_user_id=internal_user_id,
-                username=username,
-                task_type=MODE_I2I_PRO,
-                inputs=inputs,
-                prompt=prompt,
-                is_video=False,
-                source_post_id=source_post_id,
-            ),
-            presentation=BotTaskPresentationContext(
-                message_spec=message_spec,
-                submitted_status_builder=build_translated_cost_status_builder(
-                    context,
-                    "task.status_submitted_mode",
-                    notice=notice,
-                    mode_name=translate_context_text(context, "task.mode_i2i_pro"),
-                ),
-                allow_contribute=allow_contribute,
-            ),
             failure_policy=BotTaskFailurePolicy(
                 unexpected_should_refund=lambda state: state.task_submitted,
                 unexpected_error_log_message=build_unexpected_error_log_message(
@@ -651,10 +622,6 @@ async def process_i2i_pro_task(
                 ),
                 unexpected_error_prefix="出错了",
                 refund_suffix_mode="always",
-            ),
-            cleanup_policy=BotTaskCleanupPolicy(
-                cleanup_paths=build_cleanup_paths(images),
-                cleanup_files_func=cleanup_task_files,
             ),
         )
     )

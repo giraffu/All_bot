@@ -9,6 +9,7 @@ from src.services.permission_service import permission_service
 from src.services.task_service_cleanup import cleanup_task_files
 from src.services.task_service_entrypoints_common import resolve_internal_user_id
 from src.services.task_service_entrypoint_support import (
+    build_bot_task_flow_context,
     build_cleanup_paths,
     build_task_inputs,
     build_unexpected_error_log_message,
@@ -22,15 +23,7 @@ from src.services.task_service_message_support import (
 )
 from src.services.task_service_flow import run_bot_task_application
 from src.services.task_service_support import get_acceleration_notice
-from src.services.task_service_types import (
-    BotTaskBillingContext,
-    BotTaskCleanupPolicy,
-    BotTaskFailurePolicy,
-    BotTaskFlowContext,
-    BotTaskPresentationContext,
-    BotTaskRequestContext,
-    BotTaskRuntimeState,
-)
+from src.services.task_service_types import BotTaskFailurePolicy, BotTaskRuntimeState
 
 
 async def process_ltx_video_task(
@@ -106,36 +99,33 @@ async def process_ltx_video_task(
     )
 
     return await run_bot_task_application(
-        flow=BotTaskFlowContext(
+        flow=build_bot_task_flow_context(
+            context=context,
+            update=update,
+            chat_id=chat_id,
+            internal_user_id=internal_user_id,
+            username=username,
+            task_type=mode,
+            inputs=inputs,
+            prompt=prompt,
+            is_video=True,
+            source_post_id=source_post_id,
+            message_spec=message_spec,
+            submitted_status_builder=build_translated_cost_status_builder(
+                context,
+                "task.status_submitted_mode_with_settings",
+                notice=notice,
+                mode_name=translate_context_text(context, "task.mode_ltx_video"),
+                resolution=resolution,
+                duration=duration,
+            ),
+            allow_contribute=allow_contribute,
+            billing_resolution=billing_args["billing_resolution"],
+            requested_duration=billing_args["requested_duration"],
+            cleanup=cleanup,
+            cleanup_paths=build_cleanup_paths([image_path]),
             runtime_state=runtime_state,
-            request=BotTaskRequestContext(
-                context=context,
-                update=update,
-                chat_id=chat_id,
-                internal_user_id=internal_user_id,
-                username=username,
-                task_type=mode,
-                inputs=inputs,
-                prompt=prompt,
-                is_video=True,
-                source_post_id=source_post_id,
-            ),
-            presentation=BotTaskPresentationContext(
-                message_spec=message_spec,
-                submitted_status_builder=build_translated_cost_status_builder(
-                    context,
-                    "task.status_submitted_mode_with_settings",
-                    notice=notice,
-                    mode_name=translate_context_text(context, "task.mode_ltx_video"),
-                    resolution=resolution,
-                    duration=duration,
-                ),
-                allow_contribute=allow_contribute,
-            ),
-            billing=BotTaskBillingContext(
-                billing_resolution=billing_args["billing_resolution"],
-                requested_duration=billing_args["requested_duration"],
-            ),
+            task_label="ltx video task",
             failure_policy=BotTaskFailurePolicy(
                 unexpected_should_refund=lambda state: state.task_submitted
                 and state.actual_cost > 0,
@@ -143,11 +133,6 @@ async def process_ltx_video_task(
                     "ltx video task"
                 ),
                 unexpected_error_prefix="出错了",
-            ),
-            cleanup_policy=BotTaskCleanupPolicy(
-                cleanup_paths=build_cleanup_paths([image_path]),
-                cleanup_enabled=cleanup,
-                cleanup_files_func=cleanup_task_files,
             ),
         )
     )
@@ -212,34 +197,31 @@ async def process_face_video_task(
     )
 
     return await run_bot_task_application(
-        flow=BotTaskFlowContext(
+        flow=build_bot_task_flow_context(
+            context=context,
+            chat_id=chat_id,
+            status_msg_id=message_id,
+            internal_user_id=internal_user_id,
+            username=username,
+            task_type=mode,
+            inputs=inputs,
+            prompt="face video",
+            is_video=True,
+            source_post_id=source_post_id,
+            message_spec=message_spec,
+            submitted_status_builder=build_translated_cost_status_builder(
+                context,
+                "task.status_submitted_mode_with_resolution",
+                notice=notice,
+                mode_name=translate_context_text(context, "task.mode_face_video_step1"),
+                resolution=f"{resolution}p",
+            ),
+            prefer_edit_status=True,
+            billing_resolution=billing_args["billing_resolution"],
+            cleanup=cleanup,
+            cleanup_paths=build_cleanup_paths([face_image_path, video_path]),
             runtime_state=runtime_state,
-            request=BotTaskRequestContext(
-                context=context,
-                chat_id=chat_id,
-                status_msg_id=message_id,
-                internal_user_id=internal_user_id,
-                username=username,
-                task_type=mode,
-                inputs=inputs,
-                prompt="face video",
-                is_video=True,
-                source_post_id=source_post_id,
-            ),
-            presentation=BotTaskPresentationContext(
-                message_spec=message_spec,
-                submitted_status_builder=build_translated_cost_status_builder(
-                    context,
-                    "task.status_submitted_mode_with_resolution",
-                    notice=notice,
-                    mode_name=translate_context_text(context, "task.mode_face_video_step1"),
-                    resolution=f"{resolution}p",
-                ),
-                prefer_edit_status=True,
-            ),
-            billing=BotTaskBillingContext(
-                billing_resolution=billing_args["billing_resolution"],
-            ),
+            task_label="face video task",
             failure_policy=BotTaskFailurePolicy(
                 unexpected_should_refund=lambda state: state.task_submitted
                 and state.actual_cost > 0,
@@ -248,11 +230,6 @@ async def process_face_video_task(
                     verb="processing",
                 ),
                 unexpected_error_prefix="系统错误",
-            ),
-            cleanup_policy=BotTaskCleanupPolicy(
-                cleanup_paths=build_cleanup_paths([face_image_path, video_path]),
-                cleanup_enabled=cleanup,
-                cleanup_files_func=cleanup_task_files,
             ),
         )
     )

@@ -1,8 +1,9 @@
-"""
-Telegram Bot task entrypoints and minimal compatibility facade.
+"""Telegram Bot task entrypoints.
 
-Prefer importing the module-level async functions from this module directly.
-`TaskService` is kept only as a thin compatibility boundary for legacy callers.
+Prefer importing the domain entrypoint modules directly:
+- `task_service_entrypoints_generation`
+- `task_service_entrypoints_video`
+- `task_service_entrypoints_specialized`
 """
 
 from typing import Any, Optional, Tuple
@@ -390,29 +391,7 @@ async def process_i2i_pro_task(
     )
 
 
-class TaskService:
-    _with_submitted_status = staticmethod(with_submitted_status)
-    _cleanup_files = staticmethod(cleanup_task_files)
-
-    process_ltx_video_task = staticmethod(process_ltx_video_task)
-    process_face_video_task = staticmethod(process_face_video_task)
-    process_generation_task = staticmethod(process_generation_task)
-    process_image_to_video_task = staticmethod(process_image_to_video_task)
-    process_wan22_video_v2_task = staticmethod(process_wan22_video_v2_task)
-    process_blowjob_task = staticmethod(process_blowjob_task)
-    process_undress_tongue_task = staticmethod(process_undress_tongue_task)
-    process_doggy_style_task = staticmethod(process_doggy_style_task)
-    process_closeup_blowjob_task = staticmethod(process_closeup_blowjob_task)
-    process_perfect_video_insert_task = staticmethod(process_perfect_video_insert_task)
-    process_custom_video_task = staticmethod(process_custom_video_task)
-    process_video_task_template = staticmethod(process_video_task_template)
-    process_i2i_pro_task = staticmethod(process_i2i_pro_task)
-
-
-task_service = TaskService()
-
 __all__ = [
-    "TaskService",
     "cleanup_task_files",
     "process_blowjob_task",
     "process_closeup_blowjob_task",
@@ -427,5 +406,5 @@ __all__ = [
     "process_perfect_video_insert_task",
     "process_video_task_template",
     "process_undress_tongue_task",
-    "task_service",
+    "with_submitted_status",
 ]

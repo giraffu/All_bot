@@ -13,7 +13,7 @@ from telegram.ext import (
 from src.constants import RESOLUTION_COST
 from src.handlers.conversation_states import FaceVideoState
 from src.handlers.prompt_router import GLOBAL_REVERSE_MAP, is_global_menu_command
-from src.services.bot_task_service import process_face_video_task
+from src.services.task_service_entrypoints_specialized import process_face_video_task
 from src.services.permission_service import permission_service
 from src.services.fsm_temp_file_service import (
     cleanup_fsm_temp_files,
@@ -275,7 +275,7 @@ async def process_resolution_selection(
             duration=duration,
             cost=cost,
             message_id=query.message.message_id,
-            cleanup=True,  # TaskService will delete the files
+            cleanup=True,  # 任务入口会删除临时文件
         ),
     )
 

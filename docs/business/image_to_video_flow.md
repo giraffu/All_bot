@@ -8,7 +8,7 @@
 sequenceDiagram
     actor User as Telegram 用户
     participant FSM as Bot 交互层
-    participant Entry as Bot entrypoints / bot_task_service
+    participant Entry as Bot entrypoints
     participant Flow as run_bot_task_application
     participant Core as task_core facade
     participant Backend as Central API / Queue / Worker
@@ -93,7 +93,7 @@ graph TD
   - `task_service_entrypoints_specialized.py`
   - `task_service_entrypoints_generation.py`
 - 这些入口负责构造 `BotTaskFlowContext`，再进入 `run_bot_task_application(...)`。
-- `bot_task_service.py` 当前是薄兼容 facade，不应再被视为厚业务层。
+- 内部调用当前应优先直接进入分域 entrypoints；`bot_task_service.py` 仅保留模块级导出，不再作为默认调用入口。
 - `process_wan22_video_v2_task(...)` 位于 generation entrypoints，`process_ltx_video_task(...)` 位于 specialized entrypoints；两者都已走统一提交与前台监控主链。
 
 ### 3.3 Core 提交与监控层

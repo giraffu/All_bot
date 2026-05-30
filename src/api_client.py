@@ -168,30 +168,6 @@ class APIClient:
         return r.json()["task_id"]
 
     @async_retry(max_retries=3)
-    async def submit_perfect_video_lora(
-        self,
-        task_id: str,
-        prompt: str,
-        image_path: str,
-        lora_name: str,
-        width: int = 512,
-        height: int = 512,
-        length: int = 81,
-        priority: int = 0,
-    ) -> str:
-        """Compat wrapper for the legacy perfect_video_lora endpoint name."""
-        return await self.submit_image_to_video_task(
-            task_id=task_id,
-            prompt=prompt,
-            image_path=image_path,
-            lora_name=lora_name,
-            width=width,
-            height=height,
-            length=length,
-            priority=priority,
-        )
-
-    @async_retry(max_retries=3)
     async def submit_img2img(
         self,
         task_id: str,
@@ -647,7 +623,6 @@ api_client = APIClient()
 submit_perfect_video_insert = api_client.submit_perfect_video_insert
 submit_image_to_video_task = api_client.submit_image_to_video_task
 submit_perfect_video_edit = api_client.submit_perfect_video_edit
-submit_perfect_video_lora = api_client.submit_perfect_video_lora
 submit_img2img = api_client.submit_img2img
 submit_img2img_lora = api_client.submit_img2img_lora
 submit_face_swap = api_client.submit_face_swap

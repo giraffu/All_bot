@@ -31,7 +31,7 @@ stateDiagram-v2
 ### 3.1 FSM 到 Bot 任务流
 当前主链为：
 - FSM / message handler
-- `bot_task_service.py` 薄 facade 或分域 entrypoints
+- 分域 entrypoints
 - `task_service_entrypoints_generation.py`
 - `task_service_entrypoints_specialized.py`
 - `task_service_entrypoints_video.py`
@@ -53,6 +53,7 @@ FSM 入口与过程中，当前推荐组合为：
 - `is_global_menu_command(...)`
 
 在任意文字输入 handler 内，应优先判断 `is_global_menu_command(...)`，决定是否强制退出当前 FSM。
+- 若多个 FSM 共享同一类取消/超时/意外输入退出逻辑，优先复用 `fsm_shared.py`，不要在各文件继续复制 `_t/cancel/timeout/unexpected_input` 样板。
 
 ### 3.3 Callback 路由
 当前 callback 体系依赖：

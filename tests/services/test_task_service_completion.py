@@ -28,7 +28,15 @@ from src.services import task_service_finalize as support
 from src.services import task_service_entrypoints_video as video_entrypoints
 from src.services import tg_task_progress_presentation as tg_progress_helpers
 from src.services import tg_task_runtime as tg_runtime_helpers
-from src.services.bot_task_service import TaskService
+from src.services.task_service_entrypoints_generation import (
+    process_generation_task,
+    process_wan22_video_v2_task,
+)
+from src.services.task_service_entrypoints_specialized import (
+    process_face_video_task,
+    process_ltx_video_task,
+)
+from src.services.task_service_entrypoints_video import process_custom_video_task
 
 
 @pytest.mark.asyncio
@@ -824,7 +832,7 @@ async def test_process_generation_task_uses_finalize_task_cancellation(monkeypat
     monkeypatch.setattr("src.services.task_service_finalize.robust_send_message", AsyncMock())
 
     context = SimpleNamespace(user_data={}, bot=MagicMock())
-    result = await TaskService.process_generation_task(
+    result = await process_generation_task(
         context=context,
         chat_id=123,
         user_id=789,
@@ -894,7 +902,7 @@ async def test_process_generation_task_uses_finalize_task_failure(monkeypatch):
     monkeypatch.setattr("src.services.task_service_finalize.robust_send_message", send_message)
 
     context = SimpleNamespace(user_data={}, bot=MagicMock())
-    result = await TaskService.process_generation_task(
+    result = await process_generation_task(
         context=context,
         chat_id=123,
         user_id=789,
@@ -965,7 +973,7 @@ async def test_process_ltx_video_task_uses_finalize_task_cancellation(monkeypatc
         t=lambda value, **_kwargs: value,
     )
 
-    result = await TaskService.process_ltx_video_task(
+    result = await process_ltx_video_task(
         update=update,
         context=context,
         prompt="prompt",
@@ -1014,7 +1022,7 @@ async def test_process_ltx_video_task_includes_lora_context_in_inputs(monkeypatc
         t=lambda value, **_kwargs: value,
     )
 
-    result = await TaskService.process_ltx_video_task(
+    result = await process_ltx_video_task(
         update=update,
         context=context,
         prompt="prompt",
@@ -1102,7 +1110,7 @@ async def test_process_generation_task_delegates_video_modes_to_image_to_video_e
     )
 
     context = SimpleNamespace(user_data={}, bot=MagicMock())
-    result = await TaskService.process_generation_task(
+    result = await process_generation_task(
         context=context,
         chat_id=123,
         user_id=789,
@@ -1162,7 +1170,7 @@ async def test_process_wan22_video_v2_task_builds_expected_inputs(monkeypatch):
     )
 
     context = SimpleNamespace(user_data={}, bot=MagicMock(), t=lambda key, **kwargs: key)
-    result = await TaskService.process_wan22_video_v2_task(
+    result = await process_wan22_video_v2_task(
         context=context,
         chat_id=123,
         user_id=789,
@@ -1209,7 +1217,7 @@ async def test_process_custom_video_task_delegates_to_image_to_video_entrypoint(
     )
     context = SimpleNamespace(user_data={}, bot=MagicMock())
 
-    result = await TaskService.process_custom_video_task(
+    result = await process_custom_video_task(
         update=update,
         context=context,
         prompt="custom prompt",
@@ -1283,7 +1291,7 @@ async def test_process_face_video_task_uses_finalize_task_failure(monkeypatch):
     monkeypatch.setattr("src.services.task_service_finalize.robust_send_message", AsyncMock())
 
     context = SimpleNamespace(user_data={}, bot=MagicMock())
-    result = await TaskService.process_face_video_task(
+    result = await process_face_video_task(
         context=context,
         chat_id=123,
         user_id=789,
