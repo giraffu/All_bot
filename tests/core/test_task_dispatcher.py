@@ -199,7 +199,7 @@ async def test_default_image_strategy_routes_i2i_pro_with_seeded_submission_cont
 
 
 @pytest.mark.asyncio
-async def test_default_image_strategy_routes_txt2img_to_legacy_t2i_endpoint(
+async def test_default_image_strategy_routes_txt2img_to_standard_simple_route(
     monkeypatch,
 ):
     strategy = DefaultImageStrategy(MODE_TXT2IMG)
@@ -220,6 +220,7 @@ async def test_default_image_strategy_routes_txt2img_to_legacy_t2i_endpoint(
 
     assert result == "backend-task-id"
     submit_mock.assert_awaited_once_with(
+        "task-1",
         prompt="moonlit courtyard",
         priority=4,
     )

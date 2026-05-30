@@ -7,7 +7,8 @@
 - `src/core/task_core_service_providers.py`：provider/capability 边界，屏蔽 `image_service`、`TaskRegistry`、submission outbox 等基础设施实现
 - `src/core/task_core_default_dependencies.py`：默认依赖装配层，把 facade 所需运行时能力拼装为 `TaskCore*Dependencies`
 - `src/core/task_core_submission.py`：提交 Saga、注册表写入、派发与补偿
-- `src/services/task_web_monitor.py`：Web 端异步 side-effect monitor 的 application/service 实现，负责成功持久化、取消/失败终态、运行态清理
+- `src/services/task_web_monitor.py`：Web 端 side-effect finalizer 的 application/service 实现，负责成功持久化、取消/失败终态、运行态清理
+- `src/services/task_web_finalizer.py`：持久化 Web finalizer 队列与恢复循环，负责在进程重启后继续收口未完成的 Web 终态
 - `src/core/task_core_runtime.py`：双 ID 终止、best-effort cancel、并发锁与 registry 清理
 - `src/core/task_dispatcher.py`：StrategyFactory + payload/workflow 注入
 
@@ -51,7 +52,7 @@ sequenceDiagram
     Facade->>Registry: 3. 检查并发、扣费、写 registry_task_id
     Facade->>Dispatcher: 4. 生成 workflow/payload
     Dispatcher->>Backend: 5. 派发 backend_task_id
-    Facade->>Monitor: 6. 提交成功后挂载 Web side effect 或进入 Bot 前台监控
+    Facade->>Monitor: 6. 提交成功后写入持久化 Web finalizer 或进入 Bot 前台监控
     Monitor->>Registry: 7. 成功持久化 / 失败退款 / 释放锁 / 清理运行态
     Registry-->>U: 8. 返回 registry_task_id、终态 payload 或历史结果
 ```
@@ -67,17 +68,18 @@ sequenceDiagram
 - 基于 `TaskCoreProcessDependencies` 获取策略、输入准备与计费能力
 - 进行并发锁检查与扣费
 - 执行提交 Saga，写入 `registry_task_id` 并派发 `backend_task_id`
-- 提交成功后根据 `TaskSubmissionSideEffectPlan` 挂载 Web monitor 或其他 side effect
+- 提交成功后根据 `TaskSubmissionSideEffectPlan` 写入持久化 Web finalizer 或其他 side effect
 - 提交失败时执行补偿，并在未成功提交时释放并发锁
 
 ### 4.2 Web 监控门面
-当前 Web 异步 side effect 入口：
+当前 Web 异步收尾入口：
 
 - `src/services/task_web_monitor.py::monitor_task_and_release_lock_default(...)`
+- `src/services/task_web_finalizer.py::run_pending_web_finalizer_loop(...)`
 
 职责：
 
-- 监听运行态进度
+- 轮询 backend 终态并恢复上次进程未完成的 finalizer
 - 成功时持久化历史、可选 R2 warmup、清理 registry/锁
 - 取消时退款并终态清理
 - 失败时退款并终态清理
@@ -89,7 +91,7 @@ sequenceDiagram
 Bot 不再走字符串取消协议，也不再依赖厚重 compat wrapper。当前主链为：
 
 - FSM / handler
-- `src/services/task_service_entrypoints_generation.py`
+- `src/services/task_service_entrypoints_generation.py`（当前仅保留 `i2i_pro` 这类仍有独立业务语义的入口）
 - `src/services/task_service_entrypoints_specialized.py`
 - `src/services/task_service_entrypoints_video.py`
 - `src/services/task_service_flow.py::run_bot_task_application(...)`

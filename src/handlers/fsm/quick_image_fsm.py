@@ -19,7 +19,7 @@ from src.constants import (
 )
 from src.handlers.conversation_states import QuickImageState
 from src.handlers.prompt_router import GLOBAL_REVERSE_MAP, is_global_menu_command
-from src.services.task_service_entrypoints_generation import process_generation_task
+from src.services.task_service_generation_image import process_standard_generation_task as process_generation_task
 from src.services.permission_service import permission_service
 from src.services.fsm_temp_file_service import (
     cleanup_fsm_temp_files,
@@ -55,10 +55,127 @@ def _t(context: ContextTypes.DEFAULT_TYPE, key: str, **kwargs) -> str:
     return get_text(key, lang or "zh", **kwargs)
 
 
-def _cleanup_context(context: ContextTypes.DEFAULT_TYPE, user_id: int):
+def _cleanup_context(context: ContextTypes.DEFAULT_TYPE, _user_id: int):
     context.user_data.pop("in_conversation", None)
     fsm_data = context.user_data.pop("quick_image_data", {})
     cleanup_fsm_temp_files([fsm_data.get("image_path")])
+
+
+def _resolve_image_file_id(message) -> str | None:
+    if message.document:
+        if not message.document.mime_type.startswith("image/"):
+            return None
+        return message.document.file_id
+    if message.photo:
+        return message.photo[-1].file_id
+    return None
+
+
+async def _validate_quick_image_submission(
+    *,
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    user_id: int,
+    cost: int,
+) -> bool:
+    from src.core.user_core import get_or_create_user_by_telegram
+    from src.core.exceptions import InsufficientCreditsError
+    from src.utils import robust_send_message
+
+    message = update.message
+    internal_user, _ = await get_or_create_user_by_telegram(user_id)
+    priority = await permission_service.calculate_user_priority(internal_user.id)
+    if priority <= 0:
+        await robust_reply_text(
+            message,
+            _t(context, "fsm.quick_image.priority_exhausted"),
+        )
+        _cleanup_context(context, user_id)
+        return False
+
+    user = update.effective_user
+    if not user:
+        return False
+
+    try:
+        await permission_service.check_quota(
+            user.id, user.username, user.full_name, cost=cost
+        )
+    except Exception as exc:
+        if not isinstance(exc, InsufficientCreditsError):
+            raise
+        await robust_send_message(
+            context.bot,
+            update.effective_chat.id,
+            _t(
+                context,
+                "fsm.common.insufficient_credits",
+                current=exc.current,
+                cost=exc.cost,
+            ),
+            parse_mode="Markdown",
+        )
+        _cleanup_context(context, user_id)
+        return False
+    return True
+
+
+async def _download_quick_image_input(
+    *,
+    context: ContextTypes.DEFAULT_TYPE,
+    file_id: str,
+    user_id: int,
+) -> str | None:
+    try:
+        new_file = await context.bot.get_file(file_id)
+        return await download_telegram_file_to_fsm_temp(
+            telegram_file=new_file,
+            suffix=".png",
+            name_hint="quick_image",
+        )
+    except Exception as exc:
+        logger.error("Error downloading image for FSM user %s: %s", user_id, exc)
+        return None
+
+
+def _build_random_faceswap_reply_markup(context: ContextTypes.DEFAULT_TYPE):
+    keyboard = [
+        [
+            InlineKeyboardButton(
+                _t(context, "fsm.quick_image.again_button"),
+                callback_data="random_faceswap_again",
+            )
+        ],
+        [
+            InlineKeyboardButton("👍", callback_data="rate_like"),
+            InlineKeyboardButton("👎", callback_data="rate_dislike"),
+        ],
+    ]
+    if ENABLE_PUBLIC_SHARE:
+        keyboard[0].insert(
+            0,
+            InlineKeyboardButton(
+                _t(context, "fsm.quick_image.public_button"),
+                callback_data="public_share_request",
+            ),
+        )
+    return InlineKeyboardMarkup(keyboard)
+
+
+def _resolve_random_faceswap_submission(
+    *,
+    prompts_config: dict,
+    template_files: list[str],
+    image_path: str,
+) -> tuple[str, list[str], InlineKeyboardMarkup]:
+    random_template = random.choice(template_files)
+    template_path = f"template:{random_template}"
+    prompt = prompts_config.get("face_swap", "face swap")
+    return (
+        prompt,
+        [template_path, image_path],
+        _build_random_faceswap_reply_markup,
+    )
 
 
 async def start_quick_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -122,65 +239,25 @@ async def receive_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     mode = fsm_data["mode"]
     cost = fsm_data["cost"]
 
-    if message.document:
-        if not message.document.mime_type.startswith("image/"):
-            await robust_reply_text(message, _t(context, "fsm.common.invalid_image"))
-            return QuickImageState.WAIT_IMAGE
-        file_id = message.document.file_id
-    elif message.photo:
-        file_id = message.photo[-1].file_id
-    else:
+    file_id = _resolve_image_file_id(message)
+    if not file_id:
         await robust_reply_text(message, _t(context, "fsm.common.invalid_image"))
         return QuickImageState.WAIT_IMAGE
 
-    # Check Priority & Quota
-    from src.core.user_core import get_or_create_user_by_telegram
-
-    internal_user, _ = await get_or_create_user_by_telegram(user_id)
-    priority = await permission_service.calculate_user_priority(internal_user.id)
-    if priority <= 0:
-        await robust_reply_text(
-            message,
-            _t(context, "fsm.quick_image.priority_exhausted"),
-        )
-        _cleanup_context(context, user_id)
+    if not await _validate_quick_image_submission(
+        update=update,
+        context=context,
+        user_id=user_id,
+        cost=cost,
+    ):
         return ConversationHandler.END
 
-    if not update.effective_user:
-        return ConversationHandler.END
-    user = update.effective_user
-    try:
-        await permission_service.check_quota(
-            user.id, user.username, user.full_name, cost=cost
-        )
-    except Exception as e:
-        from src.core.exceptions import InsufficientCreditsError
-
-        if isinstance(e, InsufficientCreditsError):
-            chat_id = update.effective_chat.id
-            msg = _t(
-                context,
-                "fsm.common.insufficient_credits",
-                current=e.current,
-                cost=e.cost,
-            )
-            from src.utils import robust_send_message
-
-            await robust_send_message(context.bot, chat_id, msg, parse_mode="Markdown")
-            _cleanup_context(context, user_id)
-            return ConversationHandler.END
-        raise e
-
-    try:
-        new_file = await context.bot.get_file(file_id)
-        local_path = await download_telegram_file_to_fsm_temp(
-            telegram_file=new_file,
-            suffix=".png",
-            name_hint="quick_image",
-        )
-        fsm_data["image_path"] = local_path
-    except Exception as e:
-        logger.error(f"Error downloading image for FSM user {user_id}: {e}")
+    fsm_data["image_path"] = await _download_quick_image_input(
+        context=context,
+        file_id=file_id,
+        user_id=user_id,
+    )
+    if not fsm_data["image_path"]:
         await robust_reply_text(message, _t(context, "fsm.common.download_image_failed"))
         return QuickImageState.WAIT_IMAGE
 
@@ -214,33 +291,14 @@ async def receive_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
                 _cleanup_context(context, user_id)
                 return ConversationHandler.END
 
-            random_template = random.choice(template_files)
-            template_path = f"template:{random_template}"
-            prompt = prompts_config.get("face_swap", "face swap")
-            swapped_images = [template_path, image_path]
-
-            # Setup "Again" keyboard
-            keyboard = [
-                [
-                    InlineKeyboardButton(
-                        _t(context, "fsm.quick_image.again_button"),
-                        callback_data="random_faceswap_again",
-                    )
-                ],
-                [
-                    InlineKeyboardButton("👍", callback_data="rate_like"),
-                    InlineKeyboardButton("👎", callback_data="rate_dislike"),
-                ],
-            ]
-            if ENABLE_PUBLIC_SHARE:
-                keyboard[0].insert(
-                    0,
-                    InlineKeyboardButton(
-                        _t(context, "fsm.quick_image.public_button"),
-                        callback_data="public_share_request",
-                    ),
+            prompt, swapped_images, reply_markup_builder = (
+                _resolve_random_faceswap_submission(
+                    prompts_config=prompts_config,
+                    template_files=template_files,
+                    image_path=image_path,
                 )
-            reply_markup = InlineKeyboardMarkup(keyboard)
+            )
+            reply_markup = reply_markup_builder(context)
 
             # Save face image path globally for "Again" button (outside FSM)
             context.user_data["last_face_image"] = image_path

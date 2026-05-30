@@ -1,7 +1,9 @@
 """Telegram Bot task entrypoints.
 
-Prefer importing the domain entrypoint modules directly:
-- `task_service_entrypoints_generation`
+Prefer importing the domain generation modules directly:
+- `task_service_generation_image`
+- `task_service_generation_video`
+- `task_service_generation_wan22`
 - `task_service_entrypoints_video`
 - `task_service_entrypoints_specialized`
 """
@@ -22,10 +24,7 @@ from src.constants import (
 )
 from src.services.task_service_cleanup import cleanup_task_files
 from src.services.task_service_entrypoints_generation import (
-    process_generation_task as process_generation_task_impl,
     process_i2i_pro_task as process_i2i_pro_task_impl,
-    process_image_to_video_task as process_image_to_video_task_impl,
-    process_wan22_video_v2_task as process_wan22_video_v2_task_impl,
 )
 from src.services.task_service_entrypoints_specialized import (
     process_face_video_task as process_face_video_task_impl,
@@ -34,6 +33,15 @@ from src.services.task_service_entrypoints_specialized import (
 from src.services.task_service_entrypoints_video import (
     process_custom_video_task as process_custom_video_task_impl,
     process_video_task_template as process_video_task_template_impl,
+)
+from src.services.task_service_generation_image import (
+    process_standard_generation_task as process_generation_task_impl,
+)
+from src.services.task_service_generation_video import (
+    process_image_to_video_generation_task as process_image_to_video_task_impl,
+)
+from src.services.task_service_generation_wan22 import (
+    process_wan22_video_v2_generation_task as process_wan22_video_v2_task_impl,
 )
 from src.services.task_service_message_support import with_submitted_status
 

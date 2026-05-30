@@ -35,6 +35,12 @@ class T2ITaskResponse(BaseModel):
     image_url: Optional[str] = None
 
 
+class Txt2ImgRequest(BaseModel):
+    task_id: str
+    prompt: str
+    priority: int = 0
+
+
 class TaskStatusResponse(BaseModel):
     status: TaskStatus
     queue_pos: Optional[int] = None

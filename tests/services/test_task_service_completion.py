@@ -28,15 +28,15 @@ from src.services import task_service_finalize as support
 from src.services import task_service_entrypoints_video as video_entrypoints
 from src.services import tg_task_progress_presentation as tg_progress_helpers
 from src.services import tg_task_runtime as tg_runtime_helpers
-from src.services.task_service_entrypoints_generation import (
-    process_generation_task,
-    process_wan22_video_v2_task,
-)
 from src.services.task_service_entrypoints_specialized import (
     process_face_video_task,
     process_ltx_video_task,
 )
 from src.services.task_service_entrypoints_video import process_custom_video_task
+from src.services.task_service_generation_image import process_standard_generation_task as process_generation_task
+from src.services.task_service_generation_wan22 import (
+    process_wan22_video_v2_generation_task as process_wan22_video_v2_task,
+)
 
 
 @pytest.mark.asyncio
@@ -791,7 +791,7 @@ async def test_process_generation_task_uses_finalize_task_cancellation(monkeypat
     cleanup_runtime = AsyncMock()
 
     monkeypatch.setattr(
-        "src.services.task_service_entrypoints_generation.get_acceleration_notice",
+        "src.services.task_service_generation_image.get_acceleration_notice",
         acceleration_notice,
     )
     monkeypatch.setattr(
@@ -861,7 +861,7 @@ async def test_process_generation_task_uses_finalize_task_failure(monkeypatch):
     send_message = AsyncMock()
 
     monkeypatch.setattr(
-        "src.services.task_service_entrypoints_generation.get_acceleration_notice",
+        "src.services.task_service_generation_image.get_acceleration_notice",
         AsyncMock(return_value=""),
     )
     monkeypatch.setattr(
@@ -1105,7 +1105,7 @@ async def test_process_generation_task_delegates_video_modes_to_image_to_video_e
         AsyncMock(return_value=(SimpleNamespace(id=456), False)),
     )
     monkeypatch.setattr(
-        "src.services.task_service_entrypoints_generation.process_image_to_video_task",
+        "src.services.task_service_generation_image.process_image_to_video_generation_task",
         image_to_video_entry,
     )
 
@@ -1157,15 +1157,15 @@ async def test_process_wan22_video_v2_task_builds_expected_inputs(monkeypatch):
         return (b"video-bytes", "task-wan22")
 
     monkeypatch.setattr(
-        "src.services.task_service_entrypoints_generation.resolve_internal_user_id",
+        "src.services.task_service_generation_wan22.resolve_internal_user_id",
         AsyncMock(return_value=456),
     )
     monkeypatch.setattr(
-        "src.services.task_service_entrypoints_generation.get_acceleration_notice",
+        "src.services.task_service_generation_wan22.get_acceleration_notice",
         AsyncMock(return_value=""),
     )
     monkeypatch.setattr(
-        "src.services.task_service_entrypoints_generation.run_bot_task_application",
+        "src.services.task_service_generation_wan22.run_bot_task_application",
         fake_run_bot_task_application,
     )
 

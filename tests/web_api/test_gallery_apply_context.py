@@ -9,9 +9,9 @@ from src.database.models import GalleryPost, History
 from src.core import gallery_core
 from src.core import gallery_submission_effects
 from src.services import storage as storage_module
+from src.web_api.services.gallery_response_builder import build_gallery_post_responses
 from src.web_api.services.gallery_service_queries import get_gallery_apply_context_payload
 from src.web_api.services.gallery_service_support import (
-    build_gallery_post_responses,
     logger as gallery_support_logger,
     pick_gallery_media_urls,
     presenter_resolve_gallery_media_urls,

@@ -21,7 +21,7 @@ from src.handlers.fsm.fsm_shared import (
     translate_fsm_text,
 )
 from src.handlers.prompt_router import is_global_menu_command
-from src.services.task_service_entrypoints_generation import process_wan22_video_v2_task
+from src.services.task_service_generation_wan22 import process_wan22_video_v2_generation_task as process_wan22_video_v2_task
 from src.services.fsm_temp_file_service import (
     cleanup_fsm_temp_files,
     download_telegram_file_to_fsm_temp,

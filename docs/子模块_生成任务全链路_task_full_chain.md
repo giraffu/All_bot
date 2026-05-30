@@ -202,8 +202,8 @@ dispatcher 下游通常会继续经过：
 - `api_client.py` 负责实际 HTTP 请求到底层执行面
 
 注意：
-- 当前并非所有任务类型都走同一条 Central API simple route
-- 例如 `txt2img` 目前仍桥接 legacy `t2i-pornmaster-turbo`
+- 当前 simple route 仍可能映射到 legacy `TaskType`，但 `txt2img` 已和其他任务一样通过标准 simple route 提交，并显式携带上游 `task_id`
+- `image_service.py` / `api_client.py` 只负责把统一语义下沉到 Central API，不再由 `txt2img` 单独生成 backend task id
 
 ## 8. Central API / QueueManager 执行面
 ### 8.1 角色定位
@@ -232,7 +232,7 @@ Central API 是执行面，不是业务主入口。
 
 这里把上游任务 key 映射到 Central API 的 `TaskType`。
 
-当前需要特别注意：
+当前 simple route 成员至少包括：
 - `img2img`
 - `img2img_lora`
 - `face_swap`
@@ -240,9 +240,10 @@ Central API 是执行面，不是业务主入口。
 - `face_video`
 - `i2i_pro`
 - `i2i_draw`
+- `txt2img`
 - `ltx_video`
 
-而 `txt2img` 当前不是这里的标准 simple route 成员，而是通过 legacy `t2i-pornmaster-turbo` 兼容链路进入执行面。新增任务类型时，不要默认假设只改 `SIMPLE_TASK_TYPE_MAP` 就够。
+其中 `txt2img` 当前通过 `/txt2img` simple route 进入执行面，Central API 内部仍映射到 legacy `TaskType.T2I_PORNMASTER_TURBO`。新增任务类型时，不要默认假设只改 `SIMPLE_TASK_TYPE_MAP` 就够，还要确认 request model、dispatcher 和 worker workflow 映射是否齐全。
 
 ### 8.3 QueueManager 的职责
 QueueManager 负责执行面排队与 Worker 选择，关键职责包括：
@@ -327,9 +328,15 @@ Worker 上报的关键回调包括：
 - 节点当前负载
 - 完成结果路径
 
-### 10.2 Web side-effect monitor
+### 10.2 Web side-effect finalizer
 Web 任务提交成功后，真正负责“收尾”的是：
 - `src/services/task_web_monitor.py`
+- `src/services/task_web_finalizer.py`
+
+当前口径是“持久化 finalizer + 恢复循环”：
+- 提交成功时先把收尾上下文写入 Redis `pending_web_finalizers`
+- Web API 启动后持续运行 finalizer loop，按 `backend_task_id` 轮询终态
+- 即使 Web 进程重启，只要任务已成功提交，后续仍可恢复成功持久化 / 退款 / cleanup
 
 它负责把 backend 终态转为 Web 可消费的最终语义：
 - 成功时持久化历史
@@ -341,7 +348,7 @@ Web 任务提交成功后，真正负责“收尾”的是：
 这也是为什么：
 - router 不应该自己做历史落库
 - 前端不应该自己做终态补偿
-- 结果是否最终可见，不只取决于 Worker 是否执行成功，还取决于 monitor/persistence 是否收口完成
+- 结果是否最终可见，不只取决于 Worker 是否执行成功，还取决于 finalizer/persistence 是否收口完成
 
 ### 10.3 SSE 与结果查询
 Web 端当前运行态与结果查询链路分成两层：

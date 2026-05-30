@@ -6,16 +6,15 @@ from src.web_api.common.utils import (
     build_history_apply_context_response,
     build_storage_input_file_url,
 )
+from src.web_api.services.gallery_payload_builder import build_paginated_gallery_response
+from src.web_api.services.gallery_response_builder import build_gallery_post_responses
 from src.web_api.schemas.gallery_schema import ApplyContextResponse, PaginatedGalleryResponse
 from src.web_api.services.gallery_query_service import (
     fetch_gallery_apply_context_entities,
     fetch_my_favorite_posts_page,
     fetch_my_gallery_posts_page,
 )
-from src.web_api.services.gallery_service_support import (
-    build_gallery_post_responses,
-    default_should_return_gallery_apply_input_file,
-)
+from src.web_api.services.gallery_service_support import default_should_return_gallery_apply_input_file
 
 
 async def get_my_gallery_posts_payload(
@@ -39,9 +38,11 @@ async def get_my_gallery_posts_payload(
         posts=posts,
         current_user=current_user,
     )
-    pages = (total + size - 1) // size
-    return PaginatedGalleryResponse(
-        items=response_items, total=total, page=page, size=size, pages=pages
+    return build_paginated_gallery_response(
+        items=response_items,
+        total=total,
+        page=page,
+        size=size,
     )
 
 
@@ -89,9 +90,11 @@ async def get_my_favorite_posts_payload(
         posts=posts,
         current_user=current_user,
     )
-    pages = (total + size - 1) // size
-    return PaginatedGalleryResponse(
-        items=response_items, total=total, page=page, size=size, pages=pages
+    return build_paginated_gallery_response(
+        items=response_items,
+        total=total,
+        page=page,
+        size=size,
     )
 
 
@@ -151,13 +154,11 @@ async def get_gallery_posts_payload(
         posts=posts,
         current_user=current_user,
     )
-    pages = (total + size - 1) // size
-    return PaginatedGalleryResponse(
+    return build_paginated_gallery_response(
         items=response_items,
         total=total,
         page=page,
         size=size,
-        pages=pages,
     )
 
 

@@ -9,7 +9,7 @@ from src.web_api.schemas.user_social_schema import (
     PublicUserProfileResponse,
     PublicUserSummary,
 )
-from src.web_api.services.gallery_service_support import build_gallery_post_responses
+from src.web_api.services.gallery_response_builder import build_gallery_post_responses
 
 
 def _resolve_author_name(user: User) -> str:

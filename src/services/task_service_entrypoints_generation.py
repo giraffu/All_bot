@@ -1,20 +1,12 @@
-from typing import Any, Optional, Tuple
+from typing import Optional
 
-from telegram import InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 
-from src.constants import MODE_I2I_PRO, MODE_IMAGE_TO_VIDEO, MODE_WAN22_VIDEO_V2
+from src.constants import MODE_I2I_PRO
 from src.services.permission_service import permission_service
 from src.services.task_service_entrypoints_common import resolve_internal_user_id
 from src.services.task_service_entrypoint_support import build_task_inputs
 from src.services.task_service_flow import run_bot_task_application
-from src.services.task_service_generation_image import process_standard_generation_task
-from src.services.task_service_generation_video import (
-    process_image_to_video_generation_task,
-)
-from src.services.task_service_generation_wan22 import (
-    process_wan22_video_v2_generation_task,
-)
 from src.services.task_service_message_support import (
     build_message_spec,
     build_status_message,
@@ -24,154 +16,12 @@ from src.services.task_service_message_support import (
 from src.services.task_service_support import get_acceleration_notice
 from src.services.task_service_types import (
     BotTaskFailurePolicy,
-    BotTaskRuntimeState,
 )
 from src.utils import robust_send_message
 from src.services.task_service_entrypoint_support import (
     build_bot_task_flow_context,
     build_unexpected_error_log_message,
 )
-
-
-async def process_image_to_video_task(
-    *,
-    context: ContextTypes.DEFAULT_TYPE,
-    chat_id: int,
-    user_id: int,
-    username: str,
-    prompt: str,
-    images: list[str],
-    resolution: Any = None,
-    duration: Any = None,
-    status_msg_id: int = None,
-    delete_status: bool = True,
-    task_type: str = MODE_IMAGE_TO_VIDEO,
-    cleanup: bool = True,
-    send_result: bool = True,
-    deduct_quota: bool = True,
-    reply_markup: InlineKeyboardMarkup = None,
-    lora_name: str = None,
-    lora_strength: float = 1.0,
-    allow_contribute: bool = True,
-    source_post_id: Optional[int] = None,
-) -> Tuple[Optional[bytes], Optional[str]]:
-    return await process_image_to_video_generation_task(
-        context=context,
-        chat_id=chat_id,
-        user_id=user_id,
-        username=username,
-        prompt=prompt,
-        images=images,
-        resolution=resolution,
-        duration=duration,
-        status_msg_id=status_msg_id,
-        delete_status=delete_status,
-        task_type=task_type,
-        cleanup=cleanup,
-        send_result=send_result,
-        deduct_quota=deduct_quota,
-        reply_markup=reply_markup,
-        lora_name=lora_name,
-        lora_strength=lora_strength,
-        allow_contribute=allow_contribute,
-        source_post_id=source_post_id,
-    )
-
-
-async def process_wan22_video_v2_task(
-    *,
-    context: ContextTypes.DEFAULT_TYPE,
-    chat_id: int,
-    user_id: int,
-    username: str,
-    prompt: str,
-    negative_prompt: str,
-    images: list[str],
-    use_end_frame: bool,
-    color_match: bool,
-    perfect_loop: bool,
-    upscale: bool,
-    extract_last_frame: bool,
-    status_msg_id: int = None,
-    delete_status: bool = True,
-    task_type: str = MODE_WAN22_VIDEO_V2,
-    cleanup: bool = True,
-    send_result: bool = True,
-    deduct_quota: bool = True,
-    reply_markup: InlineKeyboardMarkup = None,
-    allow_contribute: bool = True,
-    source_post_id: Optional[int] = None,
-) -> Tuple[Optional[bytes], Optional[str]]:
-    return await process_wan22_video_v2_generation_task(
-        context=context,
-        chat_id=chat_id,
-        user_id=user_id,
-        username=username,
-        prompt=prompt,
-        negative_prompt=negative_prompt,
-        images=images,
-        use_end_frame=use_end_frame,
-        color_match=color_match,
-        perfect_loop=perfect_loop,
-        upscale=upscale,
-        extract_last_frame=extract_last_frame,
-        status_msg_id=status_msg_id,
-        delete_status=delete_status,
-        task_type=task_type,
-        cleanup=cleanup,
-        send_result=send_result,
-        deduct_quota=deduct_quota,
-        reply_markup=reply_markup,
-        allow_contribute=allow_contribute,
-        source_post_id=source_post_id,
-    )
-
-
-async def process_generation_task(
-    *,
-    context: ContextTypes.DEFAULT_TYPE,
-    chat_id: int,
-    user_id: int,
-    username: str,
-    prompt: str,
-    images: list[str],
-    is_video: bool = False,
-    status_msg_id: int = None,
-    delete_status: bool = True,
-    task_type: str = None,
-    cleanup: bool = True,
-    send_result: bool = True,
-    deduct_quota: bool = True,
-    reply_markup: InlineKeyboardMarkup = None,
-    lora_name: str = None,
-    lora_strength: float = 1.0,
-    allow_contribute: bool = True,
-    source_post_id: Optional[int] = None,
-    resolution: Any = None,
-    duration: Any = None,
-) -> Tuple[Optional[bytes], Optional[str]]:
-    return await process_standard_generation_task(
-        context=context,
-        chat_id=chat_id,
-        user_id=user_id,
-        username=username,
-        prompt=prompt,
-        images=images,
-        is_video=is_video,
-        status_msg_id=status_msg_id,
-        delete_status=delete_status,
-        task_type=task_type,
-        cleanup=cleanup,
-        send_result=send_result,
-        deduct_quota=deduct_quota,
-        reply_markup=reply_markup,
-        lora_name=lora_name,
-        lora_strength=lora_strength,
-        allow_contribute=allow_contribute,
-        source_post_id=source_post_id,
-        resolution=resolution,
-        duration=duration,
-    )
 
 
 async def process_i2i_pro_task(
@@ -192,7 +42,6 @@ async def process_i2i_pro_task(
         return None, None
 
     image_path = images[0]
-    runtime_state = BotTaskRuntimeState()
     notice = await get_acceleration_notice(
         internal_user_id,
         quota_manager=permission_service.quota_manager,

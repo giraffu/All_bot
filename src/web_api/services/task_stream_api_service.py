@@ -5,6 +5,11 @@ from typing import Any
 from fastapi import HTTPException
 from sqlalchemy import select
 
+from src.core.task_status_mapper import (
+    STREAM_STATUS_FAILED,
+    STREAM_STATUS_SUCCESS,
+    build_stream_terminal_payload,
+)
 from src.database.models import History
 from src.services.redis_client import redis_client
 from src.web_api.services.task_stream_service import build_task_status_stream_response
@@ -23,30 +28,7 @@ def build_terminal_progress_payload(
     status_data: dict[str, Any],
     task_id: str,
 ) -> dict[str, Any] | None:
-    payload = dict(status_data)
-    status_val = payload.get("status")
-
-    if status_val == "done":
-        payload["status"] = "success"
-        payload["task_id"] = task_id
-        payload["task_type"] = payload.get("task_type", "edit")
-        return payload
-
-    if status_val == "error":
-        payload["status"] = "failed"
-        payload["task_id"] = task_id
-        payload["error"] = payload.get("error_msg")
-        payload.pop("error_msg", None)
-        return payload
-
-    if status_val == "cancelled":
-        payload["status"] = "cancelled"
-        payload["task_id"] = task_id
-        payload["message"] = payload.get("error_msg") or "任务已取消"
-        payload.pop("error_msg", None)
-        return payload
-
-    return None
+    return build_stream_terminal_payload(status_data, task_id)
 
 
 async def get_user_history_record(
@@ -83,13 +65,13 @@ async def build_not_found_progress_payload(
     history = await get_user_history_record(task_id, user_id, session_factory)
     if history:
         return {
-            "status": "success",
+            "status": STREAM_STATUS_SUCCESS,
             "task_id": task_id,
             "task_type": history.type or "edit",
         }
 
     return {
-        "status": "failed",
+        "status": STREAM_STATUS_FAILED,
         "task_id": task_id,
         "error": "任务不存在或无权限",
     }

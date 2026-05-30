@@ -241,7 +241,7 @@ async def process_and_submit_task(
                 submission_context=submission_context,
             )
             registry_task_id = execution_result.registry_task_id
-            dependencies.attach_submission_side_effects_func(
+            await dependencies.attach_submission_side_effects_func(
                 backend_task_id=execution_result.backend_task_id,
                 internal_user_id=user_id,
                 username=username,

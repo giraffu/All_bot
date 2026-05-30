@@ -110,6 +110,53 @@ class RedisClient:
         except Exception as e:
             logger.error(f"Failed to add pending refund to Redis outbox: {e}")
 
+    async def add_pending_web_finalizer(
+        self,
+        registry_task_id: str,
+        finalizer_data: Dict[str, Any],
+    ) -> None:
+        key = f"{REDIS_PREFIX}pending_web_finalizers"
+        try:
+            await self.redis.hset(key, registry_task_id, json.dumps(finalizer_data))
+        except Exception as e:
+            logger.error(
+                f"Failed to persist pending web finalizer for {registry_task_id}: {e}"
+            )
+
+    async def get_pending_web_finalizer(
+        self,
+        registry_task_id: str,
+    ) -> Dict[str, Any] | None:
+        key = f"{REDIS_PREFIX}pending_web_finalizers"
+        try:
+            raw_data = await self.redis.hget(key, registry_task_id)
+            if not raw_data:
+                return None
+            return json.loads(raw_data)
+        except Exception as e:
+            logger.error(
+                f"Failed to get pending web finalizer for {registry_task_id}: {e}"
+            )
+            return None
+
+    async def get_pending_web_finalizers(self) -> Dict[str, Any]:
+        key = f"{REDIS_PREFIX}pending_web_finalizers"
+        try:
+            finalizers_raw = await self.redis.hgetall(key)
+            return {k: json.loads(v) for k, v in finalizers_raw.items()}
+        except Exception as e:
+            logger.error(f"Failed to get pending web finalizers from Redis: {e}")
+            return {}
+
+    async def remove_pending_web_finalizer(self, registry_task_id: str) -> None:
+        key = f"{REDIS_PREFIX}pending_web_finalizers"
+        try:
+            await self.redis.hdel(key, registry_task_id)
+        except Exception as e:
+            logger.error(
+                f"Failed to remove pending web finalizer for {registry_task_id}: {e}"
+            )
+
     async def check_gallery_submit_limit(self, user_id: int, limit: int = 10) -> bool:
         """检查今日是否已超过投稿上限"""
         import datetime

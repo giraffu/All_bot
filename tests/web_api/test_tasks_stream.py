@@ -432,6 +432,50 @@ async def test_task_status_stream_uses_runtime_task_id_for_status_poll_and_pubsu
 
 
 @pytest.mark.asyncio
+async def test_task_status_stream_stops_after_pubsub_success_alias():
+    status_calls = []
+    status_responses = [_FakeStatusResponse(200, {"status": "pending"})]
+    pubsub = _FakePubSub(
+        messages=[
+            {"data": json.dumps({"status": "success", "task_type": "txt2img"})},
+            RuntimeError("stream continued after terminal alias"),
+        ]
+    )
+
+    response = task_stream_api_service.build_task_status_stream_response(
+        task_id="task-1",
+        runtime_task_id=None,
+        user_id=123,
+        session_factory=_session_factory(None),
+        redis=_FakeRedis(pubsub),
+        api_base="http://127.0.0.1:8003",
+        httpx_async_client_factory=lambda: _FakeAsyncClient(status_responses, status_calls),
+        logger=tasks_router.logger,
+        build_not_found_progress_payload=(
+            task_stream_api_service.build_not_found_progress_payload
+        ),
+        build_terminal_progress_payload=(
+            task_stream_api_service.build_terminal_progress_payload
+        ),
+    )
+    events = await _collect_stream_events(response)
+
+    assert len(events) == 2
+    assert events[0] == {
+        "event": "connected",
+        "data": json.dumps({"status": "listening", "task_id": "task-1"}),
+    }
+    assert json.loads(events[1]["data"]) == {
+        "status": "success",
+        "task_id": "task-1",
+        "task_type": "txt2img",
+    }
+    assert status_calls == [("http://127.0.0.1:8003/status/task-1", 2.0)]
+    assert pubsub.unsubscribed == ["comfy:task_events:task-1"]
+    assert pubsub.closed is True
+
+
+@pytest.mark.asyncio
 async def test_task_status_stream_emits_failed_once_and_stops_when_queue_poll_later_returns_not_found_without_history(
     monkeypatch,
 ):

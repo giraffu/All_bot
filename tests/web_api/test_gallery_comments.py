@@ -8,11 +8,11 @@ from sqlalchemy.exc import IntegrityError
 from src.database.models import GalleryComment, GalleryPost, History, User
 from src.services import redis_client as redis_module
 from src.web_api.schemas.gallery_schema import CommentCreate
+from src.web_api.services.gallery_response_builder import build_gallery_post_responses
 from src.web_api.services.gallery_service_comments import (
     create_gallery_comment_payload,
     get_gallery_comments_payload,
 )
-from src.web_api.services.gallery_service_support import build_gallery_post_responses
 
 
 class _FakeResult:

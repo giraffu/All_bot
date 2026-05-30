@@ -313,6 +313,7 @@ class DefaultImageStrategy(BaseTaskStrategy):
             )
         elif self.mode == MODE_TXT2IMG:
             return await image_service.submit_txt2img_task(
+                task_id,
                 prompt=submission.prompt,
                 priority=priority,
             )

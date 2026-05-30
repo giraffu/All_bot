@@ -121,7 +121,7 @@ FACE_SWAP_ENDPOINT = f"{API_BASE}/face_swap"
 FACE_VIDEO_ENDPOINT = f"{API_BASE}/face_video"
 I2I_PRO_ENDPOINT = f"{API_BASE}/i2i_pro"
 I2I_DRAW_ENDPOINT = f"{API_BASE}/i2i_draw"
-TXT2IMG_ENDPOINT = f"{API_BASE}/api/v1/workflows/t2i-pornmaster-turbo"
+TXT2IMG_ENDPOINT = f"{API_BASE}/txt2img"
 LTX_VIDEO_ENDPOINT = f"{API_BASE}/api/v1/ltx_video"
 WAN22_VIDEO_V2_ENDPOINT = f"{API_BASE}/api/v1/wan22_video_v2"
 

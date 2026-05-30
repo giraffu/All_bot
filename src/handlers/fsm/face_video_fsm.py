@@ -51,6 +51,17 @@ def _cleanup_context(context: ContextTypes.DEFAULT_TYPE, _user_id: int):
     )
 
 
+def _consume_face_video_inputs(context: ContextTypes.DEFAULT_TYPE) -> tuple[str | None, str | None]:
+    fsm_data = context.user_data.get("face_video_data", {})
+    return fsm_data.pop("face_image_path", None), fsm_data.pop("video_path", None)
+
+
+def _resolve_face_video_resolution_selection(data: str) -> tuple[int, int, int]:
+    res_str = data.split("_")[-1]
+    resolution = int(res_str)
+    return resolution, RESOLUTION_COST.get(f"{res_str}p", 20), 121
+
+
 # --- Entry Point ---
 async def start_face_video(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Entry point for Video Face Swap."""
@@ -218,18 +229,21 @@ async def process_resolution_selection(
     user_id = query.from_user.id
     data = query.data
 
-    await query.answer(text=_t(context, "fsm.common.task_initializing"), cache_time=2)
-
     if data == "fsm_fv_cancel":
+        await query.answer(text=_t(context, "fsm.common.task_initializing"), cache_time=2)
         await robust_edit_text(query.message, _t(context, "fsm.face_video.cancelled_short"))
         _cleanup_context(context, user_id)
         return ConversationHandler.END
 
-    # Parse resolution
-    res_str = data.split("_")[-1]
-    resolution = int(res_str)
-    cost = RESOLUTION_COST.get(f"{res_str}p", 20)
-    duration = 121  # Assuming a max standard duration
+    fsm_data = context.user_data.get("face_video_data", {})
+    if not fsm_data:
+        with contextlib.suppress(Exception):
+            await query.answer(_t(context, "fsm.face_video.expired_alert"), show_alert=True)
+        return ConversationHandler.END
+
+    await query.answer(text=_t(context, "fsm.common.task_initializing"), cache_time=2)
+
+    resolution, cost, duration = _resolve_face_video_resolution_selection(data)
 
     # Validate Priority & Balance
     from src.core.user_core import get_or_create_user_by_telegram
@@ -244,14 +258,7 @@ async def process_resolution_selection(
         _cleanup_context(context, user_id)
         return ConversationHandler.END
 
-    fsm_data = context.user_data.get("face_video_data", {})
-    if not fsm_data:
-        with contextlib.suppress(Exception):
-            await query.answer(_t(context, "fsm.face_video.expired_alert"), show_alert=True)
-        return ConversationHandler.END
-
-    face_path = fsm_data.pop("face_image_path", None)
-    video_path = fsm_data.pop("video_path", None)
+    face_path, video_path = _consume_face_video_inputs(context)
 
     if not face_path or not video_path:
         return ConversationHandler.END  # Prevent double submit

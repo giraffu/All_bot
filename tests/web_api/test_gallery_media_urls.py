@@ -6,7 +6,7 @@ import pytest
 from src.core.media_paths import MINIO_BUCKET
 from src.database.models import GalleryPost, History, User
 from src.web_api.presenters import media_presenter
-from src.web_api.services.gallery_service_support import build_gallery_post_responses
+from src.web_api.services.gallery_response_builder import build_gallery_post_responses
 
 
 class _FakeScalarResult:
@@ -22,10 +22,15 @@ class _FakeScalarResult:
 
 class _FakeSession:
     def __init__(self, results):
-        self._results = iter(results)
+        self._results = list(results)
+        self._index = 0
 
     async def execute(self, _stmt):
-        return next(self._results)
+        if self._index >= len(self._results):
+            return _FakeScalarResult([])
+        result = self._results[self._index]
+        self._index += 1
+        return result
 
 
 @pytest.mark.asyncio

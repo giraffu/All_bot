@@ -3,6 +3,7 @@ import json
 from typing import Any, Awaitable, Callable
 
 from sse_starlette.sse import EventSourceResponse
+from src.core.task_status_mapper import is_backend_terminal_status
 
 
 async def _fetch_task_status_full(
@@ -68,6 +69,27 @@ def _build_terminal_event(
     return _build_progress_event(terminal_payload)
 
 
+def _resolve_status_transition(
+    *,
+    status_data: dict[str, Any],
+    task_id: str,
+    build_terminal_progress_payload: Callable[[dict[str, Any], str], dict[str, Any] | None],
+) -> tuple[dict[str, str] | None, bool, bool]:
+    status = status_data.get("status")
+    if status == "running":
+        return None, True, False
+
+    terminal_event = _build_terminal_event(
+        status_data=status_data,
+        task_id=task_id,
+        build_terminal_progress_payload=build_terminal_progress_payload,
+    )
+    if terminal_event is not None:
+        return terminal_event, False, True
+
+    return None, False, is_backend_terminal_status(status)
+
+
 def _extract_message_payload(message_data: Any) -> str:
     if isinstance(message_data, bytes):
         return message_data.decode("utf-8")
@@ -114,18 +136,18 @@ def build_task_status_stream_response(
                     )
                     return
 
-                status_val = initial_status.get("status")
-                if status_val == "running":
+                terminal_event, became_running, should_stop = _resolve_status_transition(
+                    status_data=initial_status,
+                    task_id=task_id,
+                    build_terminal_progress_payload=build_terminal_progress_payload,
+                )
+                if became_running:
                     is_running = True
-                else:
-                    terminal_event = _build_terminal_event(
-                        status_data=initial_status,
-                        task_id=task_id,
-                        build_terminal_progress_payload=build_terminal_progress_payload,
-                    )
-                    if terminal_event:
-                        yield terminal_event
-                        return
+                elif terminal_event:
+                    yield terminal_event
+                    return
+                elif should_stop:
+                    return
 
             last_queue_check = 0.0
 
@@ -139,20 +161,21 @@ def build_task_status_stream_response(
 
                     try:
                         parsed = json.loads(data)
-                        task_status = parsed.get("status")
-                        terminal_event = _build_terminal_event(
+                        terminal_event, became_running, should_stop = (
+                            _resolve_status_transition(
                             status_data=parsed,
                             task_id=task_id,
                             build_terminal_progress_payload=build_terminal_progress_payload,
+                            )
                         )
                         if terminal_event:
                             yield terminal_event
                         else:
                             yield _build_progress_event(parsed)
 
-                        if task_status == "running":
+                        if became_running:
                             is_running = True
-                        elif task_status in ["done", "error", "cancelled"]:
+                        if should_stop:
                             break
                     except json.JSONDecodeError:
                         yield _build_progress_event(data)
@@ -178,29 +201,31 @@ def build_task_status_stream_response(
                                 )
                                 break
 
-                            status_val = status_data.get("status")
-                            if status_val == "running":
-                                is_running = True
-                            else:
-                                terminal_event = _build_terminal_event(
+                            terminal_event, became_running, should_stop = (
+                                _resolve_status_transition(
                                     status_data=status_data,
                                     task_id=task_id,
                                     build_terminal_progress_payload=(
                                         build_terminal_progress_payload
                                     ),
                                 )
-                                if terminal_event:
-                                    yield terminal_event
-                                    break
+                            )
+                            if became_running:
+                                is_running = True
+                            elif terminal_event:
+                                yield terminal_event
+                                break
+                            elif should_stop:
+                                break
 
-                                queue_pos = status_data.get("queue_pos")
-                                if queue_pos is not None:
-                                    yield _build_progress_event(
-                                        {
-                                            "status": "pending",
-                                            "queue_pos": queue_pos,
-                                        }
-                                    )
+                            queue_pos = status_data.get("queue_pos")
+                            if queue_pos is not None:
+                                yield _build_progress_event(
+                                    {
+                                        "status": "pending",
+                                        "queue_pos": queue_pos,
+                                    }
+                                )
                         last_queue_check = current_time
 
                 await asyncio.sleep(0.5)

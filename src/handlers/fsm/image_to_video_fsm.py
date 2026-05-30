@@ -28,7 +28,7 @@ from src.handlers.fsm.fsm_shared import (
 from src.handlers.conversation_states import ImageToVideoState
 from src.handlers.prompt_router import is_global_menu_command
 from src.lora_catalog import VIDEO_LORA_MODELS, get_video_lora_display_name
-from src.services.task_service_entrypoints_generation import process_image_to_video_task
+from src.services.task_service_generation_video import process_image_to_video_generation_task as process_image_to_video_task
 from src.services.permission_service import permission_service
 from src.services.fsm_temp_file_service import (
     cleanup_fsm_temp_files,

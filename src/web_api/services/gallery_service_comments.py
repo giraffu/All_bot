@@ -11,9 +11,7 @@ from src.web_api.schemas.gallery_schema import (
     GalleryCommentResponse,
     PaginatedCommentResponse,
 )
-from src.web_api.services.gallery_service_support import (
-    resolve_gallery_author_name,
-)
+from src.web_api.services.gallery_response_builder import resolve_gallery_author_name
 
 
 async def create_gallery_comment_payload(

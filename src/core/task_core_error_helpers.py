@@ -1,3 +1,6 @@
+from src.core.task_status_mapper import normalize_backend_status
+
+
 TASK_BUSY_ERROR_KEYWORDS = (
     "Circuit is open",
     "All connection attempts failed",
@@ -8,11 +11,7 @@ TASK_BUSY_ERROR_KEYWORDS = (
 
 
 def normalize_terminal_status(status: str | None) -> str | None:
-    if status == "success":
-        return "done"
-    if status == "failed":
-        return "error"
-    return status
+    return normalize_backend_status(status)
 
 
 def is_task_backend_busy_error(error: Exception | str) -> bool:

@@ -42,62 +42,19 @@ async def build_post_responses(
     post_ids = [p.id for p in posts]
     task_ids = [p.task_id for p in posts if p.task_id]
 
-    user_likes = set()
-    user_dislikes = set()
-    following_user_ids = set()
-    if current_user and post_ids:
-        interactions = (
-            (
-                await session.execute(
-                    select(UserInteraction)
-                    .where(UserInteraction.user_id == current_user.id)
-                    .where(UserInteraction.post_id.in_(post_ids))
-                    .where(UserInteraction.action_type.in_(["like", "dislike"]))
-                )
-            )
-            .scalars()
-            .all()
-        )
-        for inter in interactions:
-            if inter.action_type == "like":
-                user_likes.add(inter.post_id)
-            elif inter.action_type == "dislike":
-                user_dislikes.add(inter.post_id)
-
-    history_map = {}
-    if task_ids:
-        histories = (
-            (await session.execute(select(History).where(History.task_id.in_(task_ids))))
-            .scalars()
-            .all()
-        )
-        history_map = {h.task_id: h for h in histories}
-
-    user_ids = list(set([p.user_id for p in posts if p.user_id]))
-    user_map = {}
-    if user_ids:
-        users = (
-            (await session.execute(select(User).where(User.id.in_(user_ids))))
-            .scalars()
-            .all()
-        )
-        for user in users:
-            user_map[user.id] = user
-
-    if current_user and user_ids:
-        follow_links = (
-            (
-                await session.execute(
-                    select(UserFollow.followee_id).where(
-                        UserFollow.follower_id == current_user.id,
-                        UserFollow.followee_id.in_(user_ids),
-                    )
-                )
-            )
-            .scalars()
-            .all()
-        )
-        following_user_ids = set(follow_links)
+    user_likes, user_dislikes = await _load_user_reactions(
+        session=session,
+        current_user=current_user,
+        post_ids=post_ids,
+    )
+    history_map = await _load_history_map(session=session, task_ids=task_ids)
+    user_ids = list({p.user_id for p in posts if p.user_id})
+    user_map = await _load_user_map(session=session, user_ids=user_ids)
+    following_user_ids = await _load_following_user_ids(
+        session=session,
+        current_user=current_user,
+        user_ids=user_ids,
+    )
 
     tasks = []
     for post in posts:
@@ -182,6 +139,77 @@ async def build_post_responses(
             )
         )
     return response_items
+
+
+async def _load_user_reactions(*, session, current_user, post_ids: list[int]) -> tuple[set[int], set[int]]:
+    user_likes: set[int] = set()
+    user_dislikes: set[int] = set()
+    if not current_user or not post_ids:
+        return user_likes, user_dislikes
+
+    interactions = (
+        (
+            await session.execute(
+                select(UserInteraction)
+                .where(UserInteraction.user_id == current_user.id)
+                .where(UserInteraction.post_id.in_(post_ids))
+                .where(UserInteraction.action_type.in_(["like", "dislike"]))
+            )
+        )
+        .scalars()
+        .all()
+    )
+    for interaction in interactions:
+        if interaction.action_type == "like":
+            user_likes.add(interaction.post_id)
+        elif interaction.action_type == "dislike":
+            user_dislikes.add(interaction.post_id)
+    return user_likes, user_dislikes
+
+
+async def _load_history_map(*, session, task_ids: list[str]) -> dict[str, History]:
+    if not task_ids:
+        return {}
+    histories = (
+        (await session.execute(select(History).where(History.task_id.in_(task_ids))))
+        .scalars()
+        .all()
+    )
+    return {history.task_id: history for history in histories}
+
+
+async def _load_user_map(*, session, user_ids: list[int]) -> dict[int, User]:
+    if not user_ids:
+        return {}
+    users = (
+        (await session.execute(select(User).where(User.id.in_(user_ids))))
+        .scalars()
+        .all()
+    )
+    return {user.id: user for user in users}
+
+
+async def _load_following_user_ids(
+    *,
+    session,
+    current_user,
+    user_ids: list[int],
+) -> set[int]:
+    if not current_user or not user_ids:
+        return set()
+    follow_links = (
+        (
+            await session.execute(
+                select(UserFollow.followee_id).where(
+                    UserFollow.follower_id == current_user.id,
+                    UserFollow.followee_id.in_(user_ids),
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    return set(follow_links)
 
 
 async def build_gallery_post_responses(

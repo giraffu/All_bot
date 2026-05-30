@@ -52,10 +52,10 @@ def attach_web_task_monitor(
     monitor_web_task_func: Callable[..., Awaitable[None]],
     create_task_func=None,
 ):
-    if create_task_func is None:
-        create_task_func = asyncio.create_task
+    del monitor_web_task_func, create_task_func
+    from src.services.task_web_finalizer import enqueue_pending_web_finalizer
 
-    monitor_coro = monitor_web_task_func(
+    return enqueue_pending_web_finalizer(
         backend_task_id=backend_task_id,
         internal_user_id=internal_user_id,
         username=username,
@@ -63,10 +63,6 @@ def attach_web_task_monitor(
         submission_context=submission_context,
         cost=cost,
     )
-    try:
-        create_task_func(monitor_coro, name="task-core-web-monitor")
-    except TypeError:
-        create_task_func(monitor_coro)
 
 
 def schedule_apply_interaction(
@@ -101,7 +97,7 @@ def normalize_submission_side_effect_plan(
     )
 
 
-def attach_submission_side_effects(
+async def attach_submission_side_effects(
     *,
     client_type: str | None = None,
     backend_task_id: str,
@@ -123,7 +119,7 @@ def attach_submission_side_effects(
     )
     if submission_side_effect_plan.attach_web_monitor:
         try:
-            attach_web_task_monitor_func(
+            maybe_awaitable = attach_web_task_monitor_func(
                 backend_task_id=backend_task_id,
                 internal_user_id=internal_user_id,
                 username=username,
@@ -131,6 +127,8 @@ def attach_submission_side_effects(
                 submission_context=submission_context,
                 cost=cost,
             )
+            if asyncio.iscoroutine(maybe_awaitable):
+                await maybe_awaitable
         except Exception as exc:
             raise core_domain_error_cls(f"后台监控挂载失败: {exc}")
 
@@ -342,7 +340,7 @@ def schedule_apply_interaction_default(
     )
 
 
-def attach_submission_side_effects_default(
+async def attach_submission_side_effects_default(
     *,
     client_type: str | None = None,
     backend_task_id: str,
@@ -359,7 +357,7 @@ def attach_submission_side_effects_default(
     dependencies=None,
 ):
     side_effect_dependencies = dependencies or get_default_task_core_side_effect_dependencies()
-    attach_submission_side_effects(
+    await attach_submission_side_effects(
         client_type=client_type,
         backend_task_id=backend_task_id,
         internal_user_id=internal_user_id,

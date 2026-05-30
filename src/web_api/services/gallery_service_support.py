@@ -13,11 +13,6 @@ from src.web_api.services.gallery_media_resolver import (
     pick_gallery_media_urls,
     resolve_gallery_post_media_urls,
 )
-from src.web_api.services.gallery_response_builder import (
-    build_gallery_post_responses,
-    build_post_responses,
-    resolve_gallery_author_name,
-)
 
 logger = logging.getLogger(__name__)
 
@@ -33,10 +28,6 @@ __all__ = [
     "pick_gallery_media_urls",
     "presenter_resolve_gallery_media_urls",
     "resolve_gallery_post_media_urls",
-    "resolve_gallery_author_name",
-    "build_post_responses",
-    "build_gallery_post_responses",
-    "call_gallery_service_with_optional_db",
 ]
 
 DEFAULT_GALLERY_ALLOWED_TYPE_CONFIGS = [

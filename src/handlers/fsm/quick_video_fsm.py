@@ -30,7 +30,7 @@ from src.handlers.fsm.fsm_shared import (
     translate_fsm_text,
 )
 from src.handlers.conversation_states import QuickVideoState
-from src.handlers.prompt_router import GLOBAL_REVERSE_MAP, is_global_menu_command
+from src.handlers.prompt_router import GLOBAL_REVERSE_MAP
 from src.services.permission_service import permission_service
 from src.services.task_service_entrypoints_video import process_video_task_template
 from src.services.fsm_temp_file_service import (
@@ -60,6 +60,86 @@ def _cleanup_context(context: ContextTypes.DEFAULT_TYPE, _user_id: int):
     context.user_data.pop("in_conversation", None)
     fsm_data = context.user_data.pop("quick_video_data", {})
     cleanup_fsm_temp_files([fsm_data.get("image_path")])
+
+
+def _resolve_quick_video_file_id(message) -> str | None:
+    if message.document:
+        if not message.document.mime_type.startswith("image/"):
+            return None
+        return message.document.file_id
+    if message.photo:
+        return message.photo[-1].file_id
+    return None
+
+
+def _calculate_quick_video_cost(resolution: str, duration: str) -> int:
+    base_cost = RESOLUTION_COST.get(resolution, 6)
+    multiplier = DURATION_MULTIPLIER.get(duration, 1.0)
+    return int(base_cost * multiplier)
+
+
+def _normalize_quick_video_selection(
+    *,
+    resolution: str,
+    duration: str,
+) -> tuple[str, str]:
+    if resolution == "1024p" and duration == "10s":
+        return "720p", "10s"
+    return resolution, duration
+
+
+async def _build_quick_video_settings_markup(
+    *,
+    context: ContextTypes.DEFAULT_TYPE,
+    user_id: int,
+    resolution: str,
+    duration: str,
+) -> InlineKeyboardMarkup:
+    from src.core.user_core import get_or_create_user_by_telegram
+
+    internal_user, _ = await get_or_create_user_by_telegram(user_id)
+    user_group = await permission_service.get_user_group(internal_user.id)
+    user_identity = await permission_service.get_user_identity(internal_user.id)
+    reply_markup = get_video_settings_keyboard(
+        user_group, user_identity, resolution, duration, context.lang
+    )
+    keyboard = list(reply_markup.inline_keyboard)
+    keyboard.append(
+        [
+            InlineKeyboardButton(
+                _t(context, "fsm.quick_video.start_button"),
+                callback_data="qvid_start_generation",
+            )
+        ]
+    )
+    return InlineKeyboardMarkup(keyboard)
+
+
+def _build_quick_video_settings_text(
+    *,
+    context: ContextTypes.DEFAULT_TYPE,
+    resolution: str,
+    duration: str,
+) -> str:
+    return _t(
+        context,
+        "fsm.quick_video.settings_text",
+        resolution=resolution,
+        duration=duration,
+        cost=_calculate_quick_video_cost(resolution, duration),
+        start_button=_t(context, "fsm.quick_video.start_button"),
+    )
+
+
+def _resolve_quick_video_mode_submission(mode: str) -> tuple[str, str] | None:
+    video_modes = {
+        MODE_PERFECT_VIDEO_INSERT: ("perfect_video_insert", "missionary sex"),
+        MODE_DOGGY_STYLE: ("doggy_style", "doggy style sex"),
+        MODE_BLOWJOB: ("blowjob", "undress blowjob"),
+        MODE_UNDRESS_TONGUE: ("undress_tongue", "undress and show tongue"),
+        MODE_CLOSEUP_BLOWJOB: ("closeup_blowjob", "closeup blowjob sex"),
+    }
+    return video_modes.get(mode)
 
 
 async def start_quick_video(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -111,14 +191,8 @@ async def receive_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     message = update.message
     fsm_data = context.user_data["quick_video_data"]
 
-    if message.document:
-        if not message.document.mime_type.startswith("image/"):
-            await robust_reply_text(message, _t(context, "fsm.common.invalid_image"))
-            return QuickVideoState.WAIT_IMAGE
-        file_id = message.document.file_id
-    elif message.photo:
-        file_id = message.photo[-1].file_id
-    else:
+    file_id = _resolve_quick_video_file_id(message)
+    if not file_id:
         await robust_reply_text(message, _t(context, "fsm.common.invalid_image"))
         return QuickVideoState.WAIT_IMAGE
 
@@ -135,44 +209,24 @@ async def receive_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         await robust_reply_text(message, _t(context, "fsm.common.download_image_failed"))
         return QuickVideoState.WAIT_IMAGE
 
-    # Send settings keyboard
-    from src.core.user_core import get_or_create_user_by_telegram
-
-    internal_user, _ = await get_or_create_user_by_telegram(user_id)
-    internal_user_id = internal_user.id
-
-    user_group = await permission_service.get_user_group(internal_user_id)
-    user_identity = await permission_service.get_user_identity(internal_user_id)
-
     res = fsm_data["resolution"]
     dur = fsm_data["duration"]
-    reply_markup = get_video_settings_keyboard(
-        user_group, user_identity, res, dur, context.lang
-    )
-
-    base_cost = RESOLUTION_COST.get(res, 6)
-    multiplier = DURATION_MULTIPLIER.get(dur, 1.0)
-    cost = int(base_cost * multiplier)
-
-    start_button_text = _t(context, "fsm.quick_video.start_button")
-    msg_text = _t(
-        context,
-        "fsm.quick_video.settings_text",
+    reply_markup = await _build_quick_video_settings_markup(
+        context=context,
+        user_id=user_id,
         resolution=res,
         duration=dur,
-        cost=cost,
-        start_button=start_button_text,
     )
-
-    # Add a "Start Generation" button
-    keyboard = list(reply_markup.inline_keyboard)
-    keyboard.append(
-        [InlineKeyboardButton(start_button_text, callback_data="qvid_start_generation")]
-    )
-    reply_markup = InlineKeyboardMarkup(keyboard)
 
     await robust_reply_text(
-        message, msg_text, reply_markup=reply_markup, parse_mode="Markdown"
+        message,
+        _build_quick_video_settings_text(
+            context=context,
+            resolution=res,
+            duration=dur,
+        ),
+        reply_markup=reply_markup,
+        parse_mode="Markdown",
     )
     return QuickVideoState.WAIT_SETTINGS
 
@@ -213,41 +267,23 @@ async def process_settings(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
     res = fsm_data["resolution"]
     dur = fsm_data["duration"]
-
-    from src.core.user_core import get_or_create_user_by_telegram
-
-    internal_user, _ = await get_or_create_user_by_telegram(user_id)
-    internal_user_id = internal_user.id
-
-    user_group = await permission_service.get_user_group(internal_user_id)
-    user_identity = await permission_service.get_user_identity(internal_user_id)
-    reply_markup = get_video_settings_keyboard(
-        user_group, user_identity, res, dur, context.lang
-    )
-
-    base_cost = RESOLUTION_COST.get(res, 6)
-    multiplier = DURATION_MULTIPLIER.get(dur, 1.0)
-    cost = int(base_cost * multiplier)
-
-    start_button_text = _t(context, "fsm.quick_video.start_button")
-    msg_text = _t(
-        context,
-        "fsm.quick_video.settings_text",
+    reply_markup = await _build_quick_video_settings_markup(
+        context=context,
+        user_id=user_id,
         resolution=res,
         duration=dur,
-        cost=cost,
-        start_button=start_button_text,
     )
-
-    keyboard = list(reply_markup.inline_keyboard)
-    keyboard.append(
-        [InlineKeyboardButton(start_button_text, callback_data="qvid_start_generation")]
-    )
-    reply_markup = InlineKeyboardMarkup(keyboard)
 
     with contextlib.suppress(Exception):
         await robust_edit_text(
-            query.message, msg_text, reply_markup=reply_markup, parse_mode="Markdown"
+            query.message,
+            _build_quick_video_settings_text(
+                context=context,
+                resolution=res,
+                duration=dur,
+            ),
+            reply_markup=reply_markup,
+            parse_mode="Markdown",
         )
 
     await query.answer(text=_t(context, "fsm.common.task_initializing"), cache_time=2)
@@ -276,17 +312,14 @@ async def start_generation(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         _cleanup_context(context, user_id)
         return ConversationHandler.END
 
-    res = fsm_data["resolution"]
-    dur = fsm_data["duration"]
+    res, dur = _normalize_quick_video_selection(
+        resolution=fsm_data["resolution"],
+        duration=fsm_data["duration"],
+    )
     mode = fsm_data["mode"]
-
-    if res == "1024p" and dur == "10s":
-        res = "720p"
-        fsm_data["resolution"] = "720p"
-
-    base_cost = RESOLUTION_COST.get(res, 6)
-    multiplier = DURATION_MULTIPLIER.get(dur, 1.0)
-    cost = int(base_cost * multiplier)
+    fsm_data["resolution"] = res
+    fsm_data["duration"] = dur
+    cost = _calculate_quick_video_cost(res, dur)
 
     # Keep the selected settings in context so the background task can resolve them.
     # until they are refactored to take params directly
@@ -326,16 +359,9 @@ async def start_generation(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         query.message, _t(context, "fsm.quick_video.submit", cost=cost)
     )
 
-    video_modes = {
-        MODE_PERFECT_VIDEO_INSERT: ("perfect_video_insert", "missionary sex"),
-        MODE_DOGGY_STYLE: ("doggy_style", "doggy style sex"),
-        MODE_BLOWJOB: ("blowjob", "undress blowjob"),
-        MODE_UNDRESS_TONGUE: ("undress_tongue", "undress and show tongue"),
-        MODE_CLOSEUP_BLOWJOB: ("closeup_blowjob", "closeup blowjob sex"),
-    }
-
-    if mode in video_modes:
-        default_prompt_key, default_prompt_text = video_modes[mode]
+    mode_submission = _resolve_quick_video_mode_submission(mode)
+    if mode_submission:
+        default_prompt_key, default_prompt_text = mode_submission
         create_background_task(
             context,
             process_video_task_template(

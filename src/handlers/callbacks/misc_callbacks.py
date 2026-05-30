@@ -8,7 +8,7 @@ from config import MINIO_TEMPLATE_BUCKET
 from src.constants import MODE_RANDOM_FACESWAP, TASK_COSTS
 from src.core.user_core import get_or_create_user_by_telegram
 from src.handlers.callback_router import register_callback
-from src.services.task_service_entrypoints_generation import process_generation_task
+from src.services.task_service_generation_image import process_standard_generation_task as process_generation_task
 from src.services.permission_service import permission_service
 from src.services.storage import storage
 from src.utils import (

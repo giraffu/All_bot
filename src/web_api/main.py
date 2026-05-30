@@ -1,5 +1,6 @@
 import os
 import logging
+import asyncio
 from contextlib import asynccontextmanager
 
 from asgi_correlation_id import CorrelationIdMiddleware
@@ -15,6 +16,7 @@ from src.core.exceptions import (
 )
 from src.billing_core_provider_setup import ensure_billing_core_providers_registered
 from src.task_core_provider_setup import ensure_task_core_service_providers_registered
+from src.services.task_web_finalizer import run_pending_web_finalizer_loop
 
 from src.database.core import engine
 from src.web_api.routers import auth, gallery, payment, site_notice, storage, tasks, users
@@ -47,9 +49,18 @@ async def lifespan(fastapi_app: FastAPI):
     logger.info("Web BFF API is starting up...")
     ensure_task_core_service_providers_registered()
     ensure_billing_core_providers_registered()
+    finalizer_task = asyncio.create_task(
+        run_pending_web_finalizer_loop(),
+        name="web-task-finalizer-loop",
+    )
     yield
     # Shutdown: cleanup resources
     logger.info("Web BFF API is shutting down...")
+    finalizer_task.cancel()
+    try:
+        await finalizer_task
+    except asyncio.CancelledError:
+        pass
     await engine.dispose()
 
 

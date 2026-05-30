@@ -18,10 +18,8 @@ from src.lora_catalog import (
     get_image_lora_display_name,
     get_lora_default_strength,
 )
-from src.services.task_service_entrypoints_generation import (
-    process_generation_task,
-    process_i2i_pro_task,
-)
+from src.services.task_service_entrypoints_generation import process_i2i_pro_task
+from src.services.task_service_generation_image import process_standard_generation_task as process_generation_task
 from src.services.permission_service import permission_service
 from src.services.fsm_temp_file_service import (
     cleanup_fsm_temp_files,

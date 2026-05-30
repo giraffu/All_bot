@@ -8,6 +8,7 @@ from app.models import (
     LtxVideoRequest,
     TaskResponse,
     TaskType,
+    Txt2ImgRequest,
     Wan22VideoV2Request,
     VideoEditRequest,
     VideoInsertRequest,
@@ -25,6 +26,7 @@ SIMPLE_TASK_TYPE_MAP = {
     "face_video": TaskType.FACE_VIDEO,
     "i2i_pro": TaskType.I2I_PRO,
     "i2i_draw": TaskType.I2I_DRAW,
+    "txt2img": TaskType.T2I_PORNMASTER_TURBO,
     "ltx_video": TaskType.LTX_VIDEO,
     "wan22_video_v2": TaskType.WAN22_VIDEO_V2,
 }
@@ -65,6 +67,7 @@ SIMPLE_TASK_ROUTE_SPECS = (
     ("/face_video", FaceVideoRequest, "face_video", "create_face_video_task"),
     ("/i2i_pro", I2IProRequest, "i2i_pro", "create_i2i_pro_task"),
     ("/i2i_draw", I2IDrawRequest, "i2i_draw", "create_i2i_draw_task"),
+    ("/txt2img", Txt2ImgRequest, "txt2img", "create_txt2img_task"),
     ("/api/v1/ltx_video", LtxVideoRequest, "ltx_video", "create_ltx_video_task"),
     (
         "/api/v1/wan22_video_v2",

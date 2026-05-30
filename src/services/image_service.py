@@ -122,9 +122,15 @@ class ImageService:
             task_id, prompt, image_path, seed, priority=priority
         )
 
-    async def submit_txt2img_task(self, prompt: str, priority: int = 0) -> str:
+    async def submit_txt2img_task(
+        self,
+        task_id: str,
+        prompt: str,
+        priority: int = 0,
+    ) -> str:
         """Submit txt2img task"""
         return await api_client.submit_txt2img_task(
+            task_id,
             prompt,
             priority=priority,
         )
@@ -233,6 +239,10 @@ class ImageService:
     async def get_queue_info(self) -> dict:
         """Get system queue info"""
         return await api_client.get_system_status()
+
+    async def get_task_status(self, task_id: str) -> dict[str, Any] | None:
+        """Get current backend task status"""
+        return await api_client.get_task_status(task_id)
 
 
 # Singleton instance

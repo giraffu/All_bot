@@ -18,7 +18,7 @@ from src.handlers.fsm.fsm_shared import (
     translate_fsm_text,
 )
 from src.handlers.prompt_router import is_global_menu_command
-from src.services.task_service_entrypoints_generation import process_generation_task
+from src.services.task_service_generation_image import process_standard_generation_task as process_generation_task
 from src.services.permission_service import permission_service
 from src.utils import create_background_task, robust_reply_text
 

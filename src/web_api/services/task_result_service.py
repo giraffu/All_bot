@@ -2,6 +2,10 @@ from fastapi import HTTPException
 from sqlalchemy import select
 
 from src.constants import VIDEO_TASK_TYPES
+from src.core.task_status_mapper import (
+    build_result_pending_payload,
+    build_result_success_payload,
+)
 from src.core.media_urls import build_r2_media_key_candidates
 from src.database.models import History
 from src.web_api.presenters.media_presenter import (
@@ -48,13 +52,11 @@ async def get_task_result_payload(*, task_id: str, current_user, db) -> dict:
     )
 
     if not hist:
-        return {
-            "status": "pending_result",
-            "task_id": task_id,
-            "task_type": None,
-            "media_type": None,
-            "extra_outputs": {},
-        }
+        return build_result_pending_payload(
+            task_id=task_id,
+            task_type=None,
+            media_type=None,
+        )
 
     if hist.user_id != current_user.id:
         raise HTTPException(status_code=403, detail="任务不存在或无权限")
@@ -65,31 +67,26 @@ async def get_task_result_payload(*, task_id: str, current_user, db) -> dict:
     if hist.output_file:
         result_url = await _resolve_task_result_url(hist)
         if not result_url:
-            return {
-                "status": "pending_result",
-                "task_id": task_id,
-                "task_type": hist.type,
-                "media_type": media_type,
-                "extra_outputs": {},
-            }
+            return build_result_pending_payload(
+                task_id=task_id,
+                task_type=hist.type,
+                media_type=media_type,
+            )
         extra_outputs = await resolve_history_extra_outputs(
             task_id=hist.task_id,
             extra_outputs=hist.extra_outputs,
             source=hist.source,
         )
-        return {
-            "status": "success",
-            "task_id": task_id,
-            "task_type": hist.type,
-            "media_type": media_type,
-            "result_url": result_url,
-            "extra_outputs": extra_outputs,
-        }
+        return build_result_success_payload(
+            task_id=task_id,
+            task_type=hist.type,
+            media_type=media_type,
+            result_url=result_url,
+            extra_outputs=extra_outputs,
+        )
 
-    return {
-        "status": "pending_result",
-        "task_id": task_id,
-        "task_type": hist.type,
-        "media_type": media_type,
-        "extra_outputs": {},
-    }
+    return build_result_pending_payload(
+        task_id=task_id,
+        task_type=hist.type,
+        media_type=media_type,
+    )
