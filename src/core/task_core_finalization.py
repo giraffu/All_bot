@@ -60,50 +60,6 @@ async def refund_cancelled_task(
     )
 
 
-async def refund_failed_task(
-    *,
-    internal_user_id: int,
-    username: str,
-    cost: int,
-    should_refund: bool,
-    refund_credits_func=None,
-) -> bool:
-    return await _refund_task_with_type(
-        internal_user_id=internal_user_id,
-        username=username,
-        cost=cost,
-        should_refund=should_refund,
-        refund_task_type="refund",
-        refund_credits_func=refund_credits_func,
-    )
-
-
-async def handle_failed_task_exception(
-    *,
-    internal_user_id: int,
-    username: str,
-    cost: int,
-    should_refund: bool,
-    error: Exception,
-    generic_error_prefix: str,
-    refund_suffix_mode: str = "if_refunded",
-    refund_credits_func=None,
-) -> str:
-    refunded = await refund_failed_task(
-        internal_user_id=internal_user_id,
-        username=username,
-        cost=cost,
-        should_refund=should_refund,
-        refund_credits_func=refund_credits_func,
-    )
-    return build_failed_task_user_message(
-        error=error,
-        generic_error_prefix=generic_error_prefix,
-        refunded=refunded,
-        refund_suffix_mode=refund_suffix_mode,
-    )
-
-
 async def send_task_finalization_notice_best_effort(
     *,
     message: str | None,

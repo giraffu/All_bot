@@ -1,4 +1,5 @@
 from src.handlers.message_handler_menu import (
+    build_switch_lang_message,
     build_queue_status_message,
 )
 from src.handlers.message_handler_profile import (
@@ -30,7 +31,7 @@ async def toggle_user_language(context, user) -> tuple[str, object]:
     context.user_data["language_code"] = result.new_lang
     context.lang = result.new_lang
     context.t = result.translator
-    return result.reply_text, result.reply_markup
+    return build_switch_lang_message(result.new_lang), result.reply_markup
 
 
 async def get_queue_status_reply(

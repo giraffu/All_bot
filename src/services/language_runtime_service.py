@@ -7,7 +7,6 @@ class LanguageToggleRuntimeResult:
     new_lang: str
     internal_user_id: int
     translator: Any
-    reply_text: str
     reply_markup: Any
 
 
@@ -50,7 +49,6 @@ async def toggle_user_language_runtime(
     user_model=None,
     translator_factory=None,
     keyboard_builder=None,
-    switch_message_builder=None,
 ) -> LanguageToggleRuntimeResult:
     if get_or_create_user_by_telegram_func is None:
         from src.core.user_core import get_or_create_user_by_telegram
@@ -72,10 +70,6 @@ async def toggle_user_language_runtime(
         from src.i18n.keyboards import get_main_menu_keyboard
 
         keyboard_builder = get_main_menu_keyboard
-    if switch_message_builder is None:
-        from src.handlers.message_handler_menu import build_switch_lang_message
-
-        switch_message_builder = build_switch_lang_message
     if redis_client_obj is None:
         from src.services.redis_client import redis_client as _redis_client
 
@@ -114,6 +108,5 @@ async def toggle_user_language_runtime(
         new_lang=new_lang,
         internal_user_id=internal_user.id,
         translator=translator_factory(new_lang),
-        reply_text=switch_message_builder(new_lang),
         reply_markup=keyboard_builder(new_lang),
     )

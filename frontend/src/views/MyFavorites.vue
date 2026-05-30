@@ -4,7 +4,6 @@ import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
 import api from '@/api'
-import { getMyLibraryPosts } from '@/api/gallery'
 import MySubmissionsPanel from '@/components/MySubmissionsPanel.vue'
 import FavoriteDetailActions from '@/components/FavoriteDetailActions.vue'
 import GalleryDetailModal from '@/components/GalleryDetailModal.vue'
@@ -15,32 +14,21 @@ import PostBrowserShell from '@/components/PostBrowserShell.vue'
 import PostTagPreview from '@/components/PostTagPreview.vue'
 import SegmentedTabsRail from '@/components/SegmentedTabsRail.vue'
 import StickyHeaderSection from '@/components/StickyHeaderSection.vue'
-import { usePagedPostBrowser } from '@/composables/usePagedPostBrowser'
 import { useMainLayoutContentRef } from '@/composables/useWorkbenchScrollLock'
-import { useTemplateApplyStore } from '@/stores/templateApply'
-import { useGalleryComments } from '@/composables/useGalleryComments'
-import { useGalleryPostInteractions } from '@/composables/useGalleryPostInteractions'
+import { useMyLibraryPostBrowser } from '@/composables/useMyLibraryPostBrowser'
 import { useScrollPrefetch } from '@/composables/useScrollPrefetch'
 import { useViewport } from '@/composables/useViewport'
 import { handleMediaCardImageError } from '@/utils/mediaCardFallback'
-import { resolveMediaCardView } from '@/utils/mediaCardView'
-import { useDetailTemplateApply } from '@/composables/useDetailTemplateApply'
 import { useGalleryDetailModalAdapter } from '@/composables/useGalleryDetailModalAdapter'
-import { usePostPromptCopy } from '@/composables/usePostPromptCopy'
 import { usePagedScrollNavigation } from '@/composables/usePagedScrollNavigation'
-import { useCurrentDetailMedia } from '@/composables/useCurrentDetailMedia'
 import { useGalleryConfig } from '@/composables/useGalleryConfig'
 import { useMyFavoritesFilters } from '@/composables/useMyFavoritesFilters'
-import {
-  formatGalleryTag,
-} from '@/utils/galleryPresentation'
 import type { GalleryPost as Post } from '@/types/gallery'
 
 const route = useRoute()
 const router = useRouter()
 const { t } = useI18n()
 const layoutContentRef = useMainLayoutContentRef()
-const templateApplyStore = useTemplateApplyStore()
 
 const { isMobile } = useViewport()
 const { allowedTypes, loadConfig } = useGalleryConfig({
@@ -72,40 +60,6 @@ const {
   loadPosts: loadBrowserPosts,
   openDetail,
   prefetchNextPage: prefetchBrowserNextPage,
-} = usePagedPostBrowser<Post>({
-  pageSize,
-  fetchPageData: async (pageNumber) => {
-    const data = await getMyLibraryPosts({
-      scope: filterType.value === 'favorite' ? 'favorite' : filterType.value,
-      page: pageNumber,
-      size: pageSize.value,
-      taskType: selectedTaskType.value,
-    })
-
-    return {
-      items: data.items.map((post: Post) => {
-        const cardView = resolveMediaCardView(post, {
-          fallbackToOriginalWithoutThumbnail: filterType.value !== 'favorite',
-        })
-        return {
-          ...post,
-          src: cardView.initialSrc,
-          cardIsVideo: cardView.isVideo,
-          cardPoster: cardView.posterSrc,
-        }
-      }),
-      total: data.total,
-      pages: data.pages,
-    }
-  },
-  onFetchError: (error) => {
-    console.error(error)
-    message.error(t('my_notes.load_failed'))
-  },
-  getFetchErrorMessage: () => t('my_notes.load_failed'),
-})
-
-const {
   comments,
   commentsLoading,
   commentsError,
@@ -117,9 +71,24 @@ const {
   submittingComment,
   loadComments,
   loadMoreComments,
-  submitComment
-} = useGalleryComments(currentPost, posts, detailVisible, {
-  resolvePostId: (post) => {
+  submitComment,
+  handleInteract,
+  applying,
+  handleApply,
+  currentDetailMedia,
+  formatTag,
+  copyPrompt,
+  favoriteSupportsPostDetail,
+} = useMyLibraryPostBrowser<Post>({
+  pageSize,
+  scope: () => (filterType.value === 'favorite' ? 'favorite' : filterType.value),
+  taskType: () => selectedTaskType.value,
+  t,
+  templateApplySource: () => (filterType.value === 'favorite' ? 'favorites' : 'gallery'),
+  detailItemId: (post) => (filterType.value === 'favorite' ? post.task_id : post.id),
+  detailEntryEntityId: (post) => post.id,
+  ignoreTemplateApplyNotFound: true,
+  resolveCommentsPostId: (post) => {
     if (!post) {
       return null
     }
@@ -134,18 +103,16 @@ const {
     }
 
     return postId
-  }
-})
-const { handleInteract } = useGalleryPostInteractions<Post>({
-  resolveSuccessMessage: (action, state) => {
+  },
+  resolveCardViewOptions: (scope) => ({
+    fallbackToOriginalWithoutThumbnail: scope !== 'favorite',
+  }),
+  shouldIgnoreInteractionError: (error) => error.response?.status === 404,
+  resolveInteractionSuccessMessage: (action, state) => {
     if (action === 'like') {
       return state === 'canceled' ? t('my_notes.like_removed') : t('my_notes.like_added')
     }
     return state === 'canceled' ? t('my_notes.dislike_removed') : t('my_notes.dislike_added')
-  },
-  shouldIgnoreError: (error) => error.response?.status === 404,
-  onError: (error) => {
-    console.error(error)
   },
 })
 const {
@@ -167,31 +134,6 @@ const {
   reloadPosts: () => {
     void loadBrowserPosts(true)
   },
-})
-const currentDetailMedia = useCurrentDetailMedia(currentPost)
-const formatTag = (tag: string) => formatGalleryTag(tag, t)
-const { copyPrompt } = usePostPromptCopy(t)
-const favoriteSupportsPostDetail = computed(() => {
-  const post = currentPost.value
-  if (filterType.value !== 'favorite') {
-    return true
-  }
-
-  if (!post) {
-    return false
-  }
-
-  return Number(post.id) > 0 && post.is_active !== false
-})
-const { applying, handleApply } = useDetailTemplateApply<Post>({
-  currentPost,
-  detailVisible,
-  itemId: (post) => (filterType.value === 'favorite' ? post.task_id : post.id),
-  source: () => (filterType.value === 'favorite' ? 'favorites' : 'gallery'),
-  entryEntityId: (post) => post.id,
-  templateApplyStore,
-  t,
-  ignoreNotFound: true
 })
 const favoritesDetailStandardActions = computed(() => ({
   showDesktopReaction: filterType.value !== 'favorite',

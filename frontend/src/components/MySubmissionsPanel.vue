@@ -9,22 +9,13 @@ import {
   Video,
 } from 'lucide-vue-next'
 import api from '@/api'
-import { getMyLibraryPosts } from '@/api/gallery'
 import { useViewport } from '@/composables/useViewport'
 import { useMainLayoutContentRef } from '@/composables/useWorkbenchScrollLock'
-import { useTemplateApplyStore } from '@/stores/templateApply'
-import { useGalleryComments } from '@/composables/useGalleryComments'
-import { usePagedPostBrowser } from '@/composables/usePagedPostBrowser'
-import { useGalleryPostInteractions } from '@/composables/useGalleryPostInteractions'
+import { useMyLibraryPostBrowser } from '@/composables/useMyLibraryPostBrowser'
 import { useScrollPrefetch } from '@/composables/useScrollPrefetch'
 import { handleMediaCardImageError } from '@/utils/mediaCardFallback'
-import { resolveMediaCardView } from '@/utils/mediaCardView'
-import { useDetailTemplateApply } from '@/composables/useDetailTemplateApply'
 import { useGalleryDetailModalAdapter } from '@/composables/useGalleryDetailModalAdapter'
-import { usePostPromptCopy } from '@/composables/usePostPromptCopy'
 import { usePagedScrollNavigation } from '@/composables/usePagedScrollNavigation'
-import { useCurrentDetailMedia } from '@/composables/useCurrentDetailMedia'
-import { formatGalleryTag } from '@/utils/galleryPresentation'
 import GalleryDetailModal from '@/components/GalleryDetailModal.vue'
 import GalleryMediaCard from '@/components/GalleryMediaCard.vue'
 import HeaderPaginationBar from '@/components/HeaderPaginationBar.vue'
@@ -43,7 +34,6 @@ const props = withDefaults(
     taskType: 'all',
   },
 )
-const templateApplyStore = useTemplateApplyStore()
 
 const { isMobile } = useViewport()
 const { t } = useI18n()
@@ -65,37 +55,6 @@ const {
   goNext,
   openDetail,
   prefetchNextPage,
-} = usePagedPostBrowser<Post>({
-  pageSize: size,
-  fetchPageData: async (pageNumber) => {
-    const data = await getMyLibraryPosts({
-      scope: 'submissions',
-      page: pageNumber,
-      size: size.value,
-      taskType: props.taskType,
-    })
-    return {
-      items: data.items.map((post: Post) => {
-        const cardView = resolveMediaCardView(post)
-        return {
-          ...post,
-          src: cardView.initialSrc,
-          cardIsVideo: cardView.isVideo,
-          cardPoster: cardView.posterSrc,
-        }
-      }),
-      total: data.total,
-      pages: data.pages,
-    }
-  },
-  onFetchError: (error) => {
-    console.error(error)
-    message.error(t('my_notes.load_failed'))
-  },
-  getFetchErrorMessage: () => t('my_notes.load_failed'),
-})
-
-const {
   comments,
   commentsLoading,
   commentsError,
@@ -107,29 +66,26 @@ const {
   submittingComment,
   loadComments,
   loadMoreComments,
-  submitComment
-} = useGalleryComments(currentPost, posts, detailVisible)
-const { handleInteract } = useGalleryPostInteractions<Post>({
-  resolveSuccessMessage: (action, state) => {
+  submitComment,
+  handleInteract,
+  applying,
+  handleApply,
+  currentDetailMedia,
+  formatTag,
+  copyPrompt,
+} = useMyLibraryPostBrowser<Post>({
+  pageSize: size,
+  scope: 'submissions',
+  taskType: () => props.taskType,
+  t,
+  templateApplySource: 'submissions',
+  detailItemId: (post) => post.id,
+  resolveInteractionSuccessMessage: (action, state) => {
     if (action === 'like') {
       return state === 'canceled' ? t('my_notes.like_removed') : t('my_notes.like_added')
     }
     return state === 'canceled' ? t('my_notes.dislike_removed') : t('my_notes.dislike_added')
   },
-  onError: (error) => {
-    console.error(error)
-  },
-})
-const currentDetailMedia = useCurrentDetailMedia(currentPost)
-const formatTag = (tag: string) => formatGalleryTag(tag, t)
-const { copyPrompt } = usePostPromptCopy(t)
-const { applying, handleApply } = useDetailTemplateApply<Post>({
-  currentPost,
-  detailVisible,
-  itemId: (post) => post.id,
-  source: 'submissions',
-  templateApplyStore,
-  t
 })
 const submissionDetailStandardActions = computed(() => ({
   showDesktopReaction: true,

@@ -49,6 +49,7 @@
 - `backend/app/queue_manager.py`
 - `src/core/task_core.py`
 - `src/core/task_core_submission.py`
+- `src/services/task_core_process_defaults.py`
 - `src/web_api/__init__.py`
 - `src/web_api/main.py`
 - `src/web_api/dependencies.py`
@@ -65,6 +66,7 @@
 - `src/web_api/services/users_history_service.py`
 - `src/web_api/services/users_history_mutation_service.py`
 - `src/web_api/services/user_profile_service.py`
+- `src/core/user_core_bindings.py`
 - `src/services/user_persistence_service.py`
 - `src/web_api/routers/gallery.py`
 - `src/web_api/services/gallery_service_queries.py`
@@ -72,6 +74,7 @@
 - `src/web_api/services/gallery_service_comments.py`
 - `src/web_api/services/gallery_service_support.py`
 - `src/core/gallery_core.py`
+- `src/core/gallery_core_dependencies.py`
 - `src/core/gallery_feed_queries.py`
 - `src/core/gallery_submission_core.py`
 - `src/core/gallery_interactions_core.py`
@@ -98,6 +101,7 @@
 - `frontend/src/components/GenerationWorkbenchShell.vue`
 - `frontend/src/components/template-apply/TemplateApplyWorkbenchHost.vue`
 - `frontend/src/composables/useDetailTemplateApply.ts`
+- `frontend/src/composables/useMyLibraryPostBrowser.ts`
 - `frontend/src/composables/useTemplateApplyCloseProtocol.ts`
 - `frontend/src/composables/useGalleryDetailModalAdapter.ts`
 - `frontend/src/router/index.ts`
@@ -195,6 +199,7 @@ pytest \
 - `src/web_api/services/users_history_mutation_service.py`
 - `src/web_api/services/user_profile_service.py`
 - `src/services/user_persistence_service.py`
+- `src/core/user_core_bindings.py`
 
 至少执行：
 
@@ -219,6 +224,7 @@ pytest \
 - `src/web_api/services/gallery_service_comments.py`
 - `src/web_api/services/gallery_service_support.py`
 - `src/core/gallery_core.py`
+- `src/core/gallery_core_dependencies.py`
 - `src/core/gallery_feed_queries.py`
 - `src/core/gallery_submission_core.py`
 - `src/core/gallery_interactions_core.py`
@@ -243,6 +249,7 @@ pytest \
 - Gallery 的新查询/变更优先进入 repository/query seam，不要把 SQLAlchemy 查询继续堆回 callback/router/core 主流程。
 - `task_core_submission.py` 的默认依赖只允许通过统一 default dependency builder 解析，不要新增新的 `*_default` 函数内现建依赖。
 - `user_persistence_service.py` 中 `id == tg_id` 的旧双 ID 兼容分支属于待退出 seam；新增逻辑不得继续依赖该分支作为主路径。
+- Gallery/MyLibrary 共享列表逻辑优先进入共享 composable（如 `useMyLibraryPostBrowser.ts`），不要再把分页、详情、评论、模板应用重复拼回页面组件。
 
 ### 4.6 修改 Telegram `message_handler` 入口
 
@@ -286,6 +293,7 @@ pytest \
 - `frontend/src/components/GenerationWorkbenchShell.vue`
 - `frontend/src/components/template-apply/TemplateApplyWorkbenchHost.vue`
 - `frontend/src/composables/useDetailTemplateApply.ts`
+- `frontend/src/composables/useMyLibraryPostBrowser.ts`
 - `frontend/src/composables/useTemplateApplyCloseProtocol.ts`
 - `frontend/src/composables/useGalleryDetailModalAdapter.ts`
 - `frontend/src/router/index.ts`
@@ -337,12 +345,14 @@ cd dashboard/frontend && npm exec -- vitest run \
 - 超过 300 行的新文件需要自查是否还能继续按职责拆分
 - 超过 500 行的新增或重写文件，必须在提交说明里解释为何不能继续拆
 - 若只是为了兼容测试或 monkeypatch seam 而保留 facade wrapper，应在说明里明确标注“兼容壳”
+- 新增 `compat` / `legacy` / `alias` 标记时，必须同步更新 `docs/compat_seam_exit_table.md`，写明删除前置条件与预计退出阶段。
 
 ## 6. CI 门禁入口
 
 当前已提供两层统一入口：
 
 - 本地/终端执行：`scripts/run_hotspot_regression.sh`
+- compat 登记门禁：`scripts/check_compat_registry.sh`
 - GitHub Actions 门禁：`.github/workflows/hotspot_regression_gate.yml`
 
 `hotspot_regression_gate.yml` 的行为约束如下：

@@ -1,7 +1,10 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Callable
 
-from src.core.gallery_core_dependencies import get_gallery_session_factory
+from src.gallery_core_dependencies import (
+    get_default_gallery_submission_dependencies,
+    get_gallery_session_factory,
+)
 from src.core.gallery_core_errors import DuplicateInteractionError, GalleryCoreError
 from src.core.gallery_feed_queries import fetch_gallery_feed_page
 from src.core.gallery_interactions_core import (
@@ -44,6 +47,15 @@ async def process_submit_to_gallery_result(
     increment_gallery_submit_func=None,
     build_gallery_submit_side_effects_func=None,
 ) -> GallerySubmitOutcome:
+    dependencies = None
+    if gallery_submission_outbox is not None:
+        default_dependencies = get_default_gallery_submission_dependencies()
+        dependencies = replace(
+            default_dependencies,
+            check_gallery_submit_limit_func=gallery_submission_outbox.check_gallery_submit_limit,
+            increment_gallery_submit_func=gallery_submission_outbox.increment_gallery_submit,
+        )
+
     return await process_submit_to_gallery_result_impl(
         gallery_submit_outcome_cls=GallerySubmitOutcome,
         user_id=user_id,
@@ -52,7 +64,7 @@ async def process_submit_to_gallery_result(
         height=height,
         duration=duration,
         session_factory=session_factory,
-        gallery_submission_outbox=gallery_submission_outbox,
+        dependencies=dependencies,
         check_gallery_submit_limit_func=check_gallery_submit_limit_func,
         increment_gallery_submit_func=increment_gallery_submit_func,
         build_gallery_submit_side_effects_func=build_gallery_submit_side_effects_func,

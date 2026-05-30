@@ -6,7 +6,8 @@
 - `src/core/task_core.py`：公开 facade，暴露稳定入口，如 `process_and_submit_task(...)`、`persist_successful_task_result(...)`
 - `src/core/task_lifecycle_contract.py`：共享任务生命周期 contract，统一 side-effect plan 归一化与 backend 终态判断
 - `src/core/task_core_service_providers.py`：provider/capability 边界，屏蔽 `image_service`、`TaskRegistry`、submission outbox 等基础设施实现
-- `src/core/task_core_default_dependencies.py`：默认依赖装配层，把 facade 所需运行时能力拼装为 `TaskCore*Dependencies`
+- `src/core/task_core_default_dependencies.py`：纯 builder 层，负责把 capability/provider 组合成 `TaskCore*Dependencies`
+- `src/services/task_core_process_defaults.py`：runtime-specific process 默认装配，负责把 billing / strategy / Web side effects 接到 process dependencies
 - `src/core/task_core_submission.py`：提交 Saga、注册表写入、派发与补偿
 - `src/services/task_lifecycle_runner.py`：共享 lifecycle runner / terminal router，负责 monitor->route 骨架与 success/cancelled/failure 分流
 - `src/services/task_web_side_effects.py`：Web 提交后的 side effect plan 归一化、pending finalizer 入队与 apply 互动记录

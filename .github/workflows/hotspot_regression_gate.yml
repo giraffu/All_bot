@@ -15,6 +15,9 @@ on:
       - 'backend/app/routers/agent.py'
       - 'backend/app/queue_manager.py'
       - 'src/core/task_core*.py'
+      - 'src/core/user_core_bindings.py'
+      - 'src/core/gallery_core_dependencies.py'
+      - 'src/services/task_core_process_defaults.py'
       - 'src/web_api/__init__.py'
       - 'src/web_api/main.py'
       - 'src/web_api/dependencies.py'
@@ -48,6 +51,7 @@ on:
       - 'frontend/src/components/template-apply/TemplateApplyWorkbenchHost.vue'
       - 'frontend/src/components/template-apply/TemplateApplyWorkbenchHost.test.ts'
       - 'frontend/src/composables/useDetailTemplateApply.ts'
+      - 'frontend/src/composables/useMyLibraryPostBrowser.ts'
       - 'frontend/src/composables/useTemplateApplyCloseProtocol.ts'
       - 'frontend/src/composables/useGalleryDetailModalAdapter.ts'
       - 'frontend/src/composables/useGalleryDetailModalAdapter.test.ts'
@@ -74,8 +78,10 @@ on:
       - 'src/tests/test_task_service_refactored.py'
       - 'src/tests/test_queue_logic.py'
       - 'scripts/run_hotspot_regression.sh'
+      - 'scripts/check_compat_registry.sh'
       - '.github/workflows/hotspot_regression_gate.yml'
       - 'docs/子模块_热点文件门禁与回归触发规则_hotspot_guardrails.md'
+      - 'docs/compat_seam_exit_table.md'
   push:
     branches:
       - main
@@ -88,6 +94,9 @@ on:
       - 'backend/app/routers/agent.py'
       - 'backend/app/queue_manager.py'
       - 'src/core/task_core*.py'
+      - 'src/core/user_core_bindings.py'
+      - 'src/core/gallery_core_dependencies.py'
+      - 'src/services/task_core_process_defaults.py'
       - 'src/web_api/__init__.py'
       - 'src/web_api/main.py'
       - 'src/web_api/dependencies.py'
@@ -121,6 +130,7 @@ on:
       - 'frontend/src/components/template-apply/TemplateApplyWorkbenchHost.vue'
       - 'frontend/src/components/template-apply/TemplateApplyWorkbenchHost.test.ts'
       - 'frontend/src/composables/useDetailTemplateApply.ts'
+      - 'frontend/src/composables/useMyLibraryPostBrowser.ts'
       - 'frontend/src/composables/useTemplateApplyCloseProtocol.ts'
       - 'frontend/src/composables/useGalleryDetailModalAdapter.ts'
       - 'frontend/src/composables/useGalleryDetailModalAdapter.test.ts'
@@ -147,8 +157,10 @@ on:
       - 'src/tests/test_task_service_refactored.py'
       - 'src/tests/test_queue_logic.py'
       - 'scripts/run_hotspot_regression.sh'
+      - 'scripts/check_compat_registry.sh'
       - '.github/workflows/hotspot_regression_gate.yml'
       - 'docs/子模块_热点文件门禁与回归触发规则_hotspot_guardrails.md'
+      - 'docs/compat_seam_exit_table.md'
   workflow_dispatch:
     inputs:
       groups:
@@ -173,6 +185,32 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      - name: Enforce compat registry updates
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha || '' }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha || '' }}
+          PUSH_BEFORE_SHA: ${{ github.event.before || '' }}
+          PUSH_AFTER_SHA: ${{ github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ "${EVENT_NAME}" == "pull_request" ]]; then
+            DIFF_RANGE="${PR_BASE_SHA}..${PR_HEAD_SHA}"
+          elif [[ "${EVENT_NAME}" == "push" && -n "${PUSH_BEFORE_SHA}" && "${PUSH_BEFORE_SHA}" != "0000000000000000000000000000000000000000" ]]; then
+            DIFF_RANGE="${PUSH_BEFORE_SHA}..${PUSH_AFTER_SHA}"
+          else
+            DIFF_RANGE=""
+          fi
+
+          if [[ -n "${DIFF_RANGE}" ]]; then
+            chmod +x scripts/check_compat_registry.sh
+            ./scripts/check_compat_registry.sh "${DIFF_RANGE}"
+          else
+            echo "Compat registry gate skipped: no diff range."
+          fi
 
       - name: Detect regression groups
         id: detect
@@ -256,7 +294,7 @@ jobs:
               while IFS= read -r file; do
                 [[ -z "${file}" ]] && continue
                 case "${file}" in
-                  backend/app/main.py|backend/app/main_bootstrap.py|backend/app/main_t2i_wiring.py|backend/app/dependencies.py|backend/app/routers/agent.py|backend/app/queue_manager.py|src/core/task_core.py|src/core/task_core_*.py|tests/core/test_task_core_submission.py|src/web_api/__init__.py|src/web_api/main.py|src/web_api/dependencies.py|tests/backend/test_main_helpers.py|tests/backend/test_queue_manager.py|tests/integration/test_saga_and_queue.py)
+                  backend/app/main.py|backend/app/main_bootstrap.py|backend/app/main_t2i_wiring.py|backend/app/dependencies.py|backend/app/routers/agent.py|backend/app/queue_manager.py|src/core/task_core.py|src/core/task_core_*.py|src/services/task_core_process_defaults.py|tests/core/test_task_core_submission.py|src/web_api/__init__.py|src/web_api/main.py|src/web_api/dependencies.py|tests/backend/test_main_helpers.py|tests/backend/test_queue_manager.py|tests/integration/test_saga_and_queue.py)
                     add_group "python" "task-full"
                     ;;
                   src/services/task_service.py|src/services/task_service_*.py|tests/services/test_task_service*.py|src/tests/test_task_service_refactored.py|src/tests/test_queue_logic.py)
@@ -266,22 +304,22 @@ jobs:
                   src/web_api/routers/tasks.py|src/web_api/services/task_stream_api_service.py|src/web_api/services/task_action_api_service.py|src/web_api/services/task_runtime_api_service.py|src/web_api/services/task_submission_service.py|src/web_api/services/task_result_service.py|tests/web_api/test_tasks*.py|tests/web_api/test_task_runtime_api_service.py)
                     add_group "python" "tasks-web"
                     ;;
-                  src/web_api/routers/users.py|src/web_api/services/users_history*.py|src/web_api/services/user_profile_service.py|src/services/user_persistence_service.py|tests/services/test_user_persistence_service.py|tests/core/test_user_core.py|tests/web_api/test_users*.py)
+                  src/web_api/routers/users.py|src/web_api/services/users_history*.py|src/web_api/services/user_profile_service.py|src/services/user_persistence_service.py|src/core/user_core_bindings.py|tests/services/test_user_persistence_service.py|tests/core/test_user_core.py|tests/web_api/test_users*.py)
                     add_group "python" "users-web"
                     ;;
-                  src/web_api/routers/gallery.py|src/web_api/services/gallery_service_queries.py|src/web_api/services/gallery_service_mutations.py|src/web_api/services/gallery_service_comments.py|src/web_api/services/gallery_service_support.py|src/core/gallery_core.py|src/core/gallery_feed_queries.py|src/core/gallery_submission_core.py|src/core/gallery_interactions_core.py|src/services/gallery_repository.py|tests/core/test_gallery_submission_and_interactions_core.py|tests/handlers/callbacks/test_gallery_callbacks_interactions.py|tests/web_api/test_gallery*.py)
+                  src/web_api/routers/gallery.py|src/web_api/services/gallery_service_queries.py|src/web_api/services/gallery_service_mutations.py|src/web_api/services/gallery_service_comments.py|src/web_api/services/gallery_service_support.py|src/core/gallery_core.py|src/core/gallery_core_dependencies.py|src/core/gallery_feed_queries.py|src/core/gallery_submission_core.py|src/core/gallery_interactions_core.py|src/services/gallery_repository.py|tests/core/test_gallery_submission_and_interactions_core.py|tests/handlers/callbacks/test_gallery_callbacks_interactions.py|tests/web_api/test_gallery*.py)
                     add_group "python" "gallery-web"
                     ;;
                   src/handlers/message_handler.py|src/handlers/message_handler_common.py|src/handlers/message_handler_profile.py|src/handlers/message_handler_media.py|src/handlers/message_handler_menu.py|tests/handlers/test_message_handler*.py)
                     add_group "python" "message-handler"
                     ;;
-                  frontend/src/views/Gallery.vue|frontend/src/views/Gallery.test.ts|frontend/src/views/GalleryWorkbenchFlow.test.ts|frontend/src/views/MyFavorites.vue|frontend/src/views/MyFavoritesFlow.test.ts|frontend/src/components/GalleryDetailModal.vue|frontend/src/components/GalleryDetailModal.test.ts|frontend/src/components/DetailModalShell.vue|frontend/src/components/DetailModalShell.test.ts|frontend/src/components/MySubmissionsPanel.vue|frontend/src/components/MySubmissionsPanelFlow.test.ts|frontend/src/components/PostBrowserShell.vue|frontend/src/components/PostBrowserShell.test.ts|frontend/src/components/ListStateBlock.vue|frontend/src/components/ListStateBlock.test.ts|frontend/src/components/GenerationWorkbenchShell.vue|frontend/src/components/GenerationWorkbenchShell.test.ts|frontend/src/components/template-apply/TemplateApplyWorkbenchHost.vue|frontend/src/components/template-apply/TemplateApplyWorkbenchHost.test.ts|frontend/src/composables/useDetailTemplateApply.ts|frontend/src/composables/useTemplateApplyCloseProtocol.ts|frontend/src/composables/useGalleryDetailModalAdapter.ts|frontend/src/composables/useGalleryDetailModalAdapter.test.ts|frontend/src/router/index.ts|frontend/src/router/index.test.ts|frontend/src/stores/tasksRuntime.test.ts|frontend/src/stores/taskResultState.test.ts|frontend/src/stores/templateApply.test.ts|frontend/src/composables/useTemplateApplyUpload.test.ts|frontend/src/utils/normalizeTemplateApplyContext.test.ts)
+                  frontend/src/views/Gallery.vue|frontend/src/views/Gallery.test.ts|frontend/src/views/GalleryWorkbenchFlow.test.ts|frontend/src/views/MyFavorites.vue|frontend/src/views/MyFavoritesFlow.test.ts|frontend/src/components/GalleryDetailModal.vue|frontend/src/components/GalleryDetailModal.test.ts|frontend/src/components/DetailModalShell.vue|frontend/src/components/DetailModalShell.test.ts|frontend/src/components/MySubmissionsPanel.vue|frontend/src/components/MySubmissionsPanelFlow.test.ts|frontend/src/components/PostBrowserShell.vue|frontend/src/components/PostBrowserShell.test.ts|frontend/src/components/ListStateBlock.vue|frontend/src/components/ListStateBlock.test.ts|frontend/src/components/GenerationWorkbenchShell.vue|frontend/src/components/GenerationWorkbenchShell.test.ts|frontend/src/components/template-apply/TemplateApplyWorkbenchHost.vue|frontend/src/components/template-apply/TemplateApplyWorkbenchHost.test.ts|frontend/src/composables/useDetailTemplateApply.ts|frontend/src/composables/useMyLibraryPostBrowser.ts|frontend/src/composables/useTemplateApplyCloseProtocol.ts|frontend/src/composables/useGalleryDetailModalAdapter.ts|frontend/src/composables/useGalleryDetailModalAdapter.test.ts|frontend/src/router/index.ts|frontend/src/router/index.test.ts|frontend/src/stores/tasksRuntime.test.ts|frontend/src/stores/taskResultState.test.ts|frontend/src/stores/templateApply.test.ts|frontend/src/composables/useTemplateApplyUpload.test.ts|frontend/src/utils/normalizeTemplateApplyContext.test.ts)
                     add_group "frontend" "frontend-shared"
                     ;;
                   dashboard/frontend/src/App.vue|dashboard/frontend/src/App.test.js|dashboard/frontend/package.json|dashboard/frontend/vitest.config.js)
                     add_group "dashboard" "dashboard-frontend"
                     ;;
-                  scripts/run_hotspot_regression.sh|.github/workflows/hotspot_regression_gate.yml)
+                  scripts/run_hotspot_regression.sh|scripts/check_compat_registry.sh|.github/workflows/hotspot_regression_gate.yml|docs/compat_seam_exit_table.md)
                     add_group "python" "task-min"
                     add_group "frontend" "frontend-shared"
                     add_group "dashboard" "dashboard-frontend"

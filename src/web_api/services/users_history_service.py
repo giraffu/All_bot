@@ -27,7 +27,6 @@ from src.web_api.services.history_response_builder import (
 logger = logging.getLogger(__name__)
 
 __all__ = [
-    "pick_history_media_urls",
     "pick_preferred_gallery_post",
     "build_gallery_post_map",
     "get_user_history_payload",
@@ -36,20 +35,6 @@ __all__ = [
     "get_history_apply_context_for_current_user",
     "get_my_favorites_payload",
 ]
-
-
-async def pick_history_media_urls(
-    *,
-    resolve_history_media_urls,
-    task_id: str | None,
-    output_file: str | None,
-    history_type: str | None,
-) -> tuple[str, str]:
-    return await resolve_history_media_urls(
-        task_id=task_id,
-        output_file=output_file,
-        history_type=history_type,
-    )
 
 
 async def get_user_history_payload(
@@ -158,9 +143,7 @@ async def get_my_favorites_payload(
     current_user,
     db,
     resolve_history_media_urls=resolve_history_media_urls,
-    resolve_history_billing_resolution=None,
 ) -> PaginatedGalleryResponse:
-    _ = resolve_history_billing_resolution
     histories, total = await fetch_favorite_gallery_histories(
         db=db,
         current_user_id=current_user.id,

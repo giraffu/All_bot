@@ -4,7 +4,6 @@ import pytest
 
 from src.database.models import History
 from src.web_api.presenters import media_presenter
-from src.web_api.services import users_history_service
 from src.web_api.routers import users as users_router
 
 
@@ -29,7 +28,7 @@ class _FakeSession:
 
 
 @pytest.mark.asyncio
-async def test_pick_history_media_urls_prefers_r2_media_and_thumbnail(monkeypatch):
+async def test_resolve_history_media_urls_prefers_r2_media_and_thumbnail(monkeypatch):
     get_presigned_url = MagicMock(return_value="minio-original-url")
 
     monkeypatch.setattr(media_presenter.storage, "get_presigned_url", get_presigned_url)
@@ -49,8 +48,7 @@ async def test_pick_history_media_urls_prefers_r2_media_and_thumbnail(monkeypatc
         AsyncMock(return_value=True),
     )
 
-    output_url, thumbnail_url = await users_history_service.pick_history_media_urls(
-        resolve_history_media_urls=media_presenter.resolve_history_media_urls,
+    output_url, thumbnail_url = await media_presenter.resolve_history_media_urls(
         task_id="task-1",
         output_file="123/output_images/task-1.mp4",
         history_type="custom_video",
@@ -62,7 +60,7 @@ async def test_pick_history_media_urls_prefers_r2_media_and_thumbnail(monkeypatc
 
 
 @pytest.mark.asyncio
-async def test_pick_history_media_urls_prefers_r2_thumbnail(monkeypatch):
+async def test_resolve_history_media_urls_prefers_r2_thumbnail(monkeypatch):
     get_presigned_url = MagicMock(return_value="minio-original-url")
 
     monkeypatch.setattr(media_presenter.storage, "get_presigned_url", get_presigned_url)
@@ -82,8 +80,7 @@ async def test_pick_history_media_urls_prefers_r2_thumbnail(monkeypatch):
         AsyncMock(return_value=True),
     )
 
-    output_url, thumbnail_url = await users_history_service.pick_history_media_urls(
-        resolve_history_media_urls=media_presenter.resolve_history_media_urls,
+    output_url, thumbnail_url = await media_presenter.resolve_history_media_urls(
         task_id="task-1",
         output_file="123/output_images/task-1.png",
         history_type="image",
@@ -98,7 +95,7 @@ async def test_pick_history_media_urls_prefers_r2_thumbnail(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_pick_history_media_urls_uses_legacy_r2_media_key_when_history_key_misses(
+async def test_resolve_history_media_urls_uses_legacy_r2_media_key_when_history_key_misses(
     monkeypatch,
 ):
     get_presigned_url = MagicMock(return_value="minio-original-url")
@@ -122,8 +119,7 @@ async def test_pick_history_media_urls_uses_legacy_r2_media_key_when_history_key
         AsyncMock(return_value=False),
     )
 
-    output_url, thumbnail_url = await users_history_service.pick_history_media_urls(
-        resolve_history_media_urls=media_presenter.resolve_history_media_urls,
+    output_url, thumbnail_url = await media_presenter.resolve_history_media_urls(
         task_id="task-1",
         output_file="123/output_images/task-1.mp4",
         history_type="custom_video",
@@ -137,7 +133,7 @@ async def test_pick_history_media_urls_uses_legacy_r2_media_key_when_history_key
 
 
 @pytest.mark.asyncio
-async def test_pick_history_media_urls_falls_back_to_minio_thumbnail(monkeypatch):
+async def test_resolve_history_media_urls_falls_back_to_minio_thumbnail(monkeypatch):
     get_presigned_url = MagicMock(
         side_effect=["minio-original-url", "minio-thumb-url"]
     )
@@ -154,8 +150,7 @@ async def test_pick_history_media_urls_falls_back_to_minio_thumbnail(monkeypatch
         AsyncMock(return_value=True),
     )
 
-    output_url, thumbnail_url = await users_history_service.pick_history_media_urls(
-        resolve_history_media_urls=media_presenter.resolve_history_media_urls,
+    output_url, thumbnail_url = await media_presenter.resolve_history_media_urls(
         task_id="task-1",
         output_file="123/output_images/task-1.png",
         history_type="image",

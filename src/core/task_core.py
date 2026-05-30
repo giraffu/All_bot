@@ -15,9 +15,6 @@ from src.core.media_processor import (
 from src.core.task_core_dependencies import (
     TaskCoreProcessDependencies,
 )
-from src.core.task_core_default_dependencies import (
-    build_runtime_default_task_core_process_dependencies as _build_task_core_process_dependencies_impl,
-)
 from src.core.task_core_process_flow import (
     build_prepared_task_submission_request,
     build_submission_failure_error,
@@ -94,7 +91,11 @@ __all__ = [
 ]
 
 def get_default_task_core_process_dependencies() -> TaskCoreProcessDependencies:
-    return _build_task_core_process_dependencies_impl(logger_override=logger)
+    from src.task_core_process_defaults import (
+        build_runtime_default_task_core_process_dependencies,
+    )
+
+    return build_runtime_default_task_core_process_dependencies(logger_override=logger)
 
 
 async def persist_successful_task_result(

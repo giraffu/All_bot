@@ -5,7 +5,7 @@ from src.core.media_paths import (
 )
 from src.core.media_processor import generate_and_upload_thumbnail
 
-from src.core.gallery_core_dependencies import get_gallery_storage_service
+from src.gallery_core_dependencies import get_gallery_storage_service
 
 
 async def async_copy_to_r2_background(

@@ -21,12 +21,9 @@ from src.core.task_core_dependencies import (
     TaskCoreWarmupDependencies,
 )
 from src.core.task_core_input_preparation import (
-    process_input_path,
     prepare_task_submission_payload as prepare_task_submission_payload_impl,
-    validate_local_input_paths,
 )
 from src.core.task_core_types import CoreDomainError
-from src.core.task_core_video_request import build_video_task_request
 from src.core.task_core_dependency_builders import (
     build_task_core_finalization_dependencies,
     build_task_core_monitor_dependencies,
@@ -201,23 +198,6 @@ def build_default_task_core_side_effect_dependencies(
     )
 
 
-def build_default_task_core_attach_submission_side_effects_func(
-    *,
-    core_domain_error_cls,
-):
-    async def _attach_submission_side_effects_func(**kwargs):
-        from src.services.task_web_side_effects import (
-            attach_submission_side_effects_default,
-        )
-
-        return await attach_submission_side_effects_default(
-            core_domain_error_cls=core_domain_error_cls,
-            **kwargs,
-        )
-
-    return _attach_submission_side_effects_func
-
-
 def build_default_task_core_process_dependencies(
     *,
     video_task_types,
@@ -270,48 +250,4 @@ def build_default_task_core_process_dependencies(
         release_concurrency_lock_func=release_concurrency_lock_func,
         shield_func=shield_func,
         logger=logger_override,
-    )
-
-
-def build_runtime_default_task_core_process_dependencies(
-    *,
-    logger_override=logger,
-) -> TaskCoreProcessDependencies:
-    from config import MINIO_BUCKET
-    from src.constants import VIDEO_TASK_TYPES
-    from src.core.billing_core import (
-        check_and_deduct_credits,
-        check_concurrency_lock,
-        get_user_priority_and_identity,
-        release_concurrency_lock,
-    )
-    from src.core.task_dispatcher import StrategyFactory
-    from src.core.task_core_submission import (
-        compensate_failed_submission_default,
-        execute_task_submission_saga_default,
-    )
-    from src.utils import load_prompts
-
-    return build_default_task_core_process_dependencies(
-        video_task_types=VIDEO_TASK_TYPES,
-        build_video_task_request_func=build_video_task_request,
-        check_concurrency_lock_func=check_concurrency_lock,
-        check_and_deduct_credits_func=check_and_deduct_credits,
-        execute_task_submission_saga_func=execute_task_submission_saga_default,
-        attach_submission_side_effects_func=(
-            build_default_task_core_attach_submission_side_effects_func(
-                core_domain_error_cls=CoreDomainError
-            )
-        ),
-        compensate_failed_submission_func=compensate_failed_submission_default,
-        release_concurrency_lock_func=release_concurrency_lock,
-        get_strategy_func=StrategyFactory.get_strategy,
-        user_logger_factory=UserLogger,
-        validate_local_input_paths_func=validate_local_input_paths,
-        get_user_priority_and_identity_func=get_user_priority_and_identity,
-        load_prompts_func=load_prompts,
-        process_input_path_func=process_input_path,
-        bucket_name=MINIO_BUCKET,
-        shield_func=asyncio.shield,
-        logger_override=logger_override,
     )

@@ -56,11 +56,3 @@ export const resolveTemplateApplyEntry = (
     meta
   }
 }
-
-export const buildLegacyTemplateRoute = (
-  entry: Extract<ResolvedTemplateApplyEntry, { status: 'legacy_supported' | 'workbench' }>,
-  t: (key: string) => string
-) => ({
-  name: entry.meta.legacyRouteName,
-  query: entry.meta.buildLegacyQuery(entry.context, t)
-})

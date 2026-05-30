@@ -47,14 +47,6 @@ const formatTime = (value?: string | null) => {
   return new Date(value).toLocaleString()
 }
 
-const previewContent = (content: string) => {
-  const normalized = content.trim()
-  if (normalized.length <= 48) {
-    return normalized
-  }
-  return `${normalized.slice(0, 48)}...`
-}
-
 const previewTitle = (title: string) => {
   const normalized = title.trim()
   if (normalized.length <= 10) {

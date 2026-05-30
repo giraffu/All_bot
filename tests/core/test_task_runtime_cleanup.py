@@ -99,46 +99,6 @@ async def test_refund_cancelled_task_skips_when_not_submitted_or_non_positive_co
     assert calls == []
 
 
-@pytest.mark.asyncio
-async def test_refund_failed_task_refunds_when_requested(monkeypatch):
-    calls = []
-
-    async def fake_refund(user_id: int, amount: int, task_type: str, username: str):
-        calls.append((user_id, amount, task_type, username))
-
-    monkeypatch.setattr(task_core_finalization, "refund_credits", fake_refund)
-
-    refunded = await task_core_finalization.refund_failed_task(
-        internal_user_id=789,
-        username="u2",
-        cost=15,
-        should_refund=True,
-    )
-
-    assert refunded is True
-    assert calls == [(789, 15, "refund", "u2")]
-
-
-@pytest.mark.asyncio
-async def test_refund_failed_task_skips_when_not_requested(monkeypatch):
-    calls = []
-
-    async def fake_refund(user_id: int, amount: int, task_type: str, username: str):
-        calls.append((user_id, amount, task_type, username))
-
-    monkeypatch.setattr(task_core_finalization, "refund_credits", fake_refund)
-
-    refunded = await task_core_finalization.refund_failed_task(
-        internal_user_id=789,
-        username="u2",
-        cost=15,
-        should_refund=False,
-    )
-
-    assert refunded is False
-    assert calls == []
-
-
 def test_build_failed_task_user_message_respects_refund_suffix_modes():
     error = RuntimeError("boom")
 
@@ -165,36 +125,21 @@ def test_build_failed_task_user_message_respects_refund_suffix_modes():
     assert always_suffix_message == "出错了：boom，已退还灵石"
 
 
-@pytest.mark.asyncio
-async def test_handle_failed_task_exception_builds_busy_message_and_optional_suffix(monkeypatch):
-    calls = []
-
-    async def fake_refund(user_id: int, amount: int, task_type: str, username: str):
-        calls.append((user_id, amount, task_type, username))
-
-    monkeypatch.setattr(task_core_finalization, "refund_credits", fake_refund)
-
-    busy_message = await task_core_finalization.handle_failed_task_exception(
-        internal_user_id=1,
-        username="u",
-        cost=10,
-        should_refund=True,
+def test_build_failed_task_user_message_handles_busy_and_non_refund_cases():
+    busy_message = task_core.build_failed_task_user_message(
         error=RuntimeError("Connection refused"),
         generic_error_prefix="出错了",
+        refunded=True,
     )
-    normal_message = await task_core_finalization.handle_failed_task_exception(
-        internal_user_id=1,
-        username="u",
-        cost=10,
-        should_refund=False,
+    normal_message = task_core.build_failed_task_user_message(
         error=RuntimeError("boom"),
         generic_error_prefix="系统错误",
+        refunded=False,
         refund_suffix_mode="never",
     )
 
     assert busy_message == "当前服务器繁忙，请稍后再试，已退还灵石"
     assert normal_message == "系统错误：boom"
-    assert calls == [(1, 10, "refund", "u")]
 
 
 @pytest.mark.asyncio

@@ -1,6 +1,6 @@
 import pytest
 
-from src.web_api.routers.utils import (
+from src.web_api.common.utils import (
     build_storage_input_file_url,
     call_with_optional_db,
     probe_apply_context_media_metadata,
@@ -102,7 +102,7 @@ def test_build_storage_input_file_url_uses_shared_storage_builder(monkeypatch):
         return f"https://storage.example/{bucket}/{object_name}"
 
     monkeypatch.setattr(
-        "src.web_api.routers.utils.storage.get_presigned_url",
+        "src.web_api.common.utils.storage.get_presigned_url",
         fake_get_presigned_url,
     )
 

@@ -1,22 +1,20 @@
+from __future__ import annotations
+
 import json
 import re
-from typing import Any, Callable
+from typing import TYPE_CHECKING, Any, Callable
 
 from src.constants import MODE_IMAGE_TO_VIDEO, MODE_NAME_MAP
-from src.database.models import History
-from src.core.gallery_core_dependencies import (
-    get_gallery_session_factory,
+from src.gallery_core_dependencies import (
+    GallerySubmissionDependencies,
+    get_default_gallery_submission_dependencies,
     get_gallery_submission_outbox,
 )
 from src.core.gallery_core_errors import GalleryCoreError
 from src.core.gallery_submission_effects import build_gallery_submit_side_effects
-from src.services.gallery_repository import (
-    create_gallery_post_from_history,
-    get_gallery_history_for_user_task,
-    get_gallery_post_by_task_id,
-    get_gallery_user,
-    reactivate_gallery_post_for_owner,
-)
+
+if TYPE_CHECKING:
+    from src.database.models import History
 
 ALLOWED_WEB_SUBMIT_TYPES = list(
     dict.fromkeys(
@@ -59,24 +57,28 @@ def _build_gallery_tags(history: History) -> list[str]:
 
 async def _resolve_gallery_submit_capabilities(
     *,
-    gallery_submission_outbox,
+    dependencies: GallerySubmissionDependencies | None,
     check_gallery_submit_limit_func,
     increment_gallery_submit_func,
 ):
+    dependencies = dependencies or get_default_gallery_submission_dependencies()
+    if check_gallery_submit_limit_func is None:
+        check_gallery_submit_limit_func = dependencies.check_gallery_submit_limit_func
+    if increment_gallery_submit_func is None:
+        increment_gallery_submit_func = dependencies.increment_gallery_submit_func
     if (
-        gallery_submission_outbox is None
-        and (
-            check_gallery_submit_limit_func is None
-            or increment_gallery_submit_func is None
-        )
+        check_gallery_submit_limit_func is None
+        or increment_gallery_submit_func is None
     ):
         gallery_submission_outbox = get_gallery_submission_outbox()
-    if check_gallery_submit_limit_func is None:
-        check_gallery_submit_limit_func = (
-            gallery_submission_outbox.check_gallery_submit_limit
-        )
-    if increment_gallery_submit_func is None:
-        increment_gallery_submit_func = gallery_submission_outbox.increment_gallery_submit
+        if check_gallery_submit_limit_func is None:
+            check_gallery_submit_limit_func = (
+                gallery_submission_outbox.check_gallery_submit_limit
+            )
+        if increment_gallery_submit_func is None:
+            increment_gallery_submit_func = (
+                gallery_submission_outbox.increment_gallery_submit
+            )
     return check_gallery_submit_limit_func, increment_gallery_submit_func
 
 
@@ -103,19 +105,20 @@ async def _reactivate_existing_gallery_post(
     user_id: int,
     task_id: str,
     gallery_submit_outcome_cls,
+    dependencies: GallerySubmissionDependencies,
 ):
     if existing.user_id != user_id:
         raise GalleryCoreError("无法操作他人的投稿！")
     if existing.is_active:
         raise GalleryCoreError("您已经投稿过此内容啦！")
 
-    history = await get_gallery_history_for_user_task(
+    history = await dependencies.get_gallery_history_for_user_task_func(
         session,
         task_id=task_id,
         user_id=user_id,
     )
-    user_obj = await get_gallery_user(session, user_id)
-    await reactivate_gallery_post_for_owner(
+    user_obj = await dependencies.get_gallery_user_func(session, user_id)
+    await dependencies.reactivate_gallery_post_for_owner_func(
         session,
         existing_post=existing,
         history=history,
@@ -139,8 +142,9 @@ async def _create_gallery_post_from_history(
     width: int | None,
     height: int | None,
     duration: int | None,
+    dependencies: GallerySubmissionDependencies,
 ):
-    history = await get_gallery_history_for_user_task(
+    history = await dependencies.get_gallery_history_for_user_task_func(
         session,
         task_id=task_id,
         user_id=user_id,
@@ -149,8 +153,8 @@ async def _create_gallery_post_from_history(
 
     media_type = _detect_media_type(history.output_file)
     tags = _build_gallery_tags(history)
-    user_obj = await get_gallery_user(session, user_id)
-    await create_gallery_post_from_history(
+    user_obj = await dependencies.get_gallery_user_func(session, user_id)
+    await dependencies.create_gallery_post_from_history_func(
         session,
         task_id=task_id,
         user_id=user_id,
@@ -182,17 +186,18 @@ async def process_submit_to_gallery_result_impl(
     height: int = None,
     duration: int = None,
     session_factory: Callable[[], Any] | None = None,
-    gallery_submission_outbox=None,
+    dependencies: GallerySubmissionDependencies | None = None,
     check_gallery_submit_limit_func=None,
     increment_gallery_submit_func=None,
     build_gallery_submit_side_effects_func=None,
 ):
-    session_factory = session_factory or get_gallery_session_factory()
+    dependencies = dependencies or get_default_gallery_submission_dependencies()
+    session_factory = session_factory or dependencies.session_factory
     (
         check_gallery_submit_limit_func,
         increment_gallery_submit_func,
     ) = await _resolve_gallery_submit_capabilities(
-        gallery_submission_outbox=gallery_submission_outbox,
+        dependencies=dependencies,
         check_gallery_submit_limit_func=check_gallery_submit_limit_func,
         increment_gallery_submit_func=increment_gallery_submit_func,
     )
@@ -205,7 +210,7 @@ async def process_submit_to_gallery_result_impl(
         raise GalleryCoreError("您今日的投稿次数已达 10 次上限，请明日再来~")
 
     async with session_factory() as session:
-        existing = await get_gallery_post_by_task_id(session, task_id)
+        existing = await dependencies.get_gallery_post_by_task_id_func(session, task_id)
 
         if existing:
             return await _reactivate_existing_gallery_post(
@@ -214,6 +219,7 @@ async def process_submit_to_gallery_result_impl(
                 user_id=user_id,
                 task_id=task_id,
                 gallery_submit_outcome_cls=gallery_submit_outcome_cls,
+                dependencies=dependencies,
             )
 
         history, media_type, tags = await _create_gallery_post_from_history(
@@ -223,6 +229,7 @@ async def process_submit_to_gallery_result_impl(
             width=width,
             height=height,
             duration=duration,
+            dependencies=dependencies,
         )
 
         side_effects = build_gallery_submit_side_effects_func(
