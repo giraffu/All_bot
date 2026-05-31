@@ -131,9 +131,14 @@ async def test_face_video_resolution_selection_schedules_background_task(monkeyp
     create_background_task_mock.assert_called_once()
     scheduled = create_background_task_mock.call_args.args[1]
     assert scheduled[0] == "bg-task"
-    assert scheduled[1][4] == "/tmp/face.png"
-    assert scheduled[1][5] == "/tmp/video.mp4"
-    assert scheduled[1][6] == 1024
+    assert scheduled[1] == ()
+    assert scheduled[2]["context"] is context
+    assert scheduled[2]["chat_id"] == 10001
+    assert scheduled[2]["user_id"] == 12345
+    assert scheduled[2]["username"] == "tester"
+    assert scheduled[2]["face_image_path"] == "/tmp/face.png"
+    assert scheduled[2]["video_path"] == "/tmp/video.mp4"
+    assert scheduled[2]["resolution"] == 1024
     assert scheduled[2]["cost"] == 36
     assert "in_conversation" not in context.user_data
     assert "face_video_data" not in context.user_data
