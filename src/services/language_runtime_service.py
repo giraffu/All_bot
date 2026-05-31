@@ -29,14 +29,51 @@ async def _read_cached_language_code(*, telegram_user_id: int, redis_client_obj)
 async def _persist_language_code(
     *,
     internal_user_id: int,
-    telegram_user_id: int,
+    telegram_user_id: int | None,
     new_lang: str,
     redis_client_obj,
 ) -> None:
     if not redis_client_obj or not redis_client_obj.redis:
         return
     await redis_client_obj.redis.set(f"allbot:user_lang:{internal_user_id}", new_lang)
-    await redis_client_obj.redis.set(f"allbot:user_lang:tg:{telegram_user_id}", new_lang)
+    if telegram_user_id is not None:
+        await redis_client_obj.redis.set(f"allbot:user_lang:tg:{telegram_user_id}", new_lang)
+
+
+async def persist_user_language_preference(
+    *,
+    db,
+    internal_user_id: int,
+    telegram_user_id: int | None,
+    language_code: str,
+    redis_client_obj=None,
+    user_model=None,
+) -> str:
+    from sqlalchemy import update
+
+    if user_model is None:
+        from src.database.models import User
+
+        user_model = User
+    if redis_client_obj is None:
+        from src.services.redis_client import redis_client as _redis_client
+
+        redis_client_obj = _redis_client
+
+    normalized_lang = normalize_supported_language_code(language_code)
+    await db.execute(
+        update(user_model)
+        .where(user_model.id == internal_user_id)
+        .values(language_code=normalized_lang)
+    )
+    await db.commit()
+    await _persist_language_code(
+        internal_user_id=internal_user_id,
+        telegram_user_id=telegram_user_id,
+        new_lang=normalized_lang,
+        redis_client_obj=redis_client_obj,
+    )
+    return normalized_lang
 
 
 async def toggle_user_language_runtime(

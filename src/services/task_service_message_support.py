@@ -30,12 +30,6 @@ def with_submitted_status(
     return replace(spec, submitted_status_text=submitted_status_text)
 
 
-def with_completion_caption(
-    spec: BotTaskMessageSpec, completion_caption: str
-) -> BotTaskMessageSpec:
-    return replace(spec, completion_caption=completion_caption)
-
-
 def resolve_context_lang(context) -> str:
     lang = getattr(context, "lang", None)
     if lang:
@@ -70,22 +64,6 @@ def build_status_message(
     if wait_text:
         return f"{message}\n{wait_text}"
     return message
-
-
-def build_cost_status_builder(
-    headline_template: str,
-    *,
-    notice: str = "",
-    wait_text: Optional[str] = None,
-) -> Callable[[int], str]:
-    def _builder(actual_cost: int) -> str:
-        return build_status_message(
-            headline_template.format(actual_cost=actual_cost),
-            notice=notice,
-            wait_text=wait_text,
-        )
-
-    return _builder
 
 
 def build_translated_cost_status_builder(

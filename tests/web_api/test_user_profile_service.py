@@ -5,7 +5,10 @@ import pytest
 
 from src.core.user_facade import BreakthroughConditionDTO, UserDashboardDTO
 from src.database.models import User
-from src.web_api.services import user_profile_service
+from src.web_api.services.user_task_api_service import (
+    get_current_user_profile_payload,
+    perform_user_checkin,
+)
 
 
 @pytest.mark.asyncio
@@ -56,7 +59,7 @@ async def test_get_current_user_profile_payload_maps_dashboard_dto(monkeypatch):
         fake_get_user_dashboard_info,
     )
 
-    response = await user_profile_service.get_current_user_profile_payload(user)
+    response = await get_current_user_profile_payload(user)
 
     assert response.credits == 120
     assert response.user_group == "筑基期"
@@ -82,7 +85,7 @@ async def test_perform_user_checkin_returns_schema_payload(monkeypatch):
         SimpleNamespace(perform_checkin=perform_checkin),
     )
 
-    response = await user_profile_service.perform_user_checkin(user)
+    response = await perform_user_checkin(user)
 
     perform_checkin.assert_awaited_once_with(54321, "tester", "测试修士")
     assert response.success is True

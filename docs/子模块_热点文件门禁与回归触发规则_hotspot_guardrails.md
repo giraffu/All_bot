@@ -58,14 +58,13 @@
 - `src/web_api/services/task_runtime_api_service.py`
 - `src/web_api/services/task_result_service.py`
 - `src/web_api/services/task_stream_api_service.py`
-- `src/web_api/services/task_action_api_service.py`
 
 ### 3.2 Web 接入层
 
 - `src/web_api/routers/users.py`
 - `src/web_api/services/users_history_service.py`
 - `src/web_api/services/users_history_mutation_service.py`
-- `src/web_api/services/user_profile_service.py`
+- `src/services/language_runtime_service.py`
 - `src/core/user_core_bindings.py`
 - `src/services/user_persistence_service.py`
 - `src/web_api/routers/gallery.py`
@@ -176,7 +175,6 @@ pytest \
 - `src/web_api/services/task_runtime_api_service.py`
 - `src/web_api/services/task_result_service.py`
 - `src/web_api/services/task_stream_api_service.py`
-- `src/web_api/services/task_action_api_service.py`
 
 至少执行：
 
@@ -197,7 +195,7 @@ pytest \
 - `src/web_api/routers/users.py`
 - `src/web_api/services/users_history_service.py`
 - `src/web_api/services/users_history_mutation_service.py`
-- `src/web_api/services/user_profile_service.py`
+- `src/services/language_runtime_service.py`
 - `src/services/user_persistence_service.py`
 - `src/core/user_core_bindings.py`
 

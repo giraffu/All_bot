@@ -16,7 +16,7 @@ from src.core.gallery_core import (
     toggle_like,
 )
 from src.core.user_core import get_or_create_user_by_telegram
-from src.services.telegram_gallery_history_service import (
+from src.services.gallery_repository import (
     mark_history_public_by_task_id,
     update_history_rating_by_task_id,
 )

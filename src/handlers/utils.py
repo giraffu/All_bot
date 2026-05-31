@@ -129,26 +129,3 @@ def _is_mentioned(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
                 if text.lower() == f"@{bot_username.lower()}":
                     return True
     return False
-
-
-class MockMessage:
-    """Mock Message object for reuse in utility functions"""
-
-    def __init__(self, bot, chat_id, message_id):
-        self.bot = bot
-        self.chat_id = chat_id
-        self.message_id = message_id
-        self.chat = type("obj", (object,), {"id": chat_id})
-
-    async def edit_text(self, text, **kwargs):
-        return await self.bot.edit_message_text(
-            chat_id=self.chat_id, message_id=self.message_id, text=text, **kwargs
-        )
-
-    async def delete(self):
-        return await self.bot.delete_message(
-            chat_id=self.chat_id, message_id=self.message_id
-        )
-
-    async def reply_text(self, text, **kwargs):
-        return await self.bot.send_message(chat_id=self.chat_id, text=text, **kwargs)

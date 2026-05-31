@@ -3,6 +3,7 @@ from __future__ import annotations
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.dialects.postgresql import insert
 
+from src.database.core import AsyncSessionLocal
 from src.database.models import GalleryPost, History, User, UserInteraction
 
 
@@ -199,3 +200,32 @@ async def increment_gallery_apply_counter(session, *, post_id: int):
         .where(GalleryPost.id == post_id)
         .values(applied_count=GalleryPost.applied_count + 1)
     )
+
+
+async def mark_history_public_by_task_id(
+    task_id: str,
+    *,
+    session_factory=None,
+) -> None:
+    if session_factory is None:
+        session_factory = AsyncSessionLocal
+    async with session_factory() as session:
+        await session.execute(
+            update(History).where(History.task_id == task_id).values(is_public=True)
+        )
+        await session.commit()
+
+
+async def update_history_rating_by_task_id(
+    task_id: str,
+    rating_value: int,
+    *,
+    session_factory=None,
+) -> None:
+    if session_factory is None:
+        session_factory = AsyncSessionLocal
+    async with session_factory() as session:
+        await session.execute(
+            update(History).where(History.task_id == task_id).values(rating=rating_value)
+        )
+        await session.commit()

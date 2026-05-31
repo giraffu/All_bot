@@ -2,7 +2,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from src.services import telegram_gallery_history_service
+from src.services import gallery_repository
 
 
 class _Session:
@@ -26,12 +26,12 @@ class _SessionContext:
 async def test_mark_history_public_by_task_id_commits(monkeypatch):
     session = _Session()
     monkeypatch.setattr(
-        telegram_gallery_history_service,
+        gallery_repository,
         "AsyncSessionLocal",
         lambda: _SessionContext(session),
     )
 
-    await telegram_gallery_history_service.mark_history_public_by_task_id("task-1")
+    await gallery_repository.mark_history_public_by_task_id("task-1")
 
     session.execute.assert_awaited_once()
     session.commit.assert_awaited_once()
@@ -41,12 +41,12 @@ async def test_mark_history_public_by_task_id_commits(monkeypatch):
 async def test_update_history_rating_by_task_id_commits(monkeypatch):
     session = _Session()
     monkeypatch.setattr(
-        telegram_gallery_history_service,
+        gallery_repository,
         "AsyncSessionLocal",
         lambda: _SessionContext(session),
     )
 
-    await telegram_gallery_history_service.update_history_rating_by_task_id(
+    await gallery_repository.update_history_rating_by_task_id(
         "task-1",
         1,
     )

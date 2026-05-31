@@ -10,16 +10,14 @@ from src.core.task_core import (
 )
 from src.web_api.routers import tasks as tasks_router
 from src.web_api.schemas.task_schema import TaskGenerateRequest, TaskGenerateResponse
-from src.web_api.services.task_action_api_service import (
-    cancel_pending_task_payload,
-)
 from src.web_api.services.task_submission_service import submit_generation_task
+from src.web_api.services.user_task_api_service import cancel_pending_task_payload
 
 
 @pytest.mark.asyncio
 async def test_cancel_pending_task_payload_returns_success_shape():
     with patch(
-        "src.web_api.services.task_action_api_service.cancel_user_task",
+        "src.web_api.services.user_task_api_service.cancel_user_task",
         new=AsyncMock(return_value={"message": "已取消", "state": "cancelled"}),
     ):
         payload = await cancel_pending_task_payload(task_id="task-1", user_id=123)
@@ -34,7 +32,7 @@ async def test_cancel_pending_task_payload_returns_success_shape():
 @pytest.mark.asyncio
 async def test_cancel_pending_task_payload_maps_domain_error_to_400():
     with patch(
-        "src.web_api.services.task_action_api_service.cancel_user_task",
+        "src.web_api.services.user_task_api_service.cancel_user_task",
         new=AsyncMock(side_effect=CoreDomainError("不能取消")),
     ):
         with pytest.raises(HTTPException) as exc_info:

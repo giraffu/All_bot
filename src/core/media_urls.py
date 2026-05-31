@@ -57,27 +57,6 @@ def build_r2_thumbnail_info(
     return thumb_file, deduped
 
 
-def build_public_r2_url(
-    *,
-    output_file: str | None,
-    public_url_builder,
-    task_id: str | None = None,
-    preferred_r2_object_name: str | None = None,
-) -> str:
-    if not output_file:
-        return ""
-
-    for object_key in build_r2_media_key_candidates(
-        output_file=output_file,
-        task_id=task_id,
-        preferred_r2_object_name=preferred_r2_object_name,
-    ):
-        url = public_url_builder(object_key)
-        if url:
-            return url
-    return output_file
-
-
 def build_storage_presigned_url(
     output_file: str | None,
     presigned_url_builder,

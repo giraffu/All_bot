@@ -3,11 +3,12 @@ from typing import Optional, Tuple
 from telegram import Update
 from telegram.ext import ContextTypes
 
-from src.constants import MODE_CUSTOM_VIDEO, MODE_NAME_MAP
+from src.constants import MODE_NAME_MAP
 from src.services.permission_service import permission_service
 from src.services.task_service_generation_common import resolve_internal_user_id
 from src.services.task_service_generation_video import process_image_to_video_generation_task as process_image_to_video_task
 from src.services.task_service_entrypoint_support import (
+    extract_actor_from_update,
     build_bot_task_flow_context,
     build_cleanup_paths,
     build_log_prompt,
@@ -19,7 +20,6 @@ from src.services.task_service_support import (
     get_acceleration_notice,
     resolve_custom_video_settings,
 )
-from src.services.task_service_telegram_adapter import extract_actor_from_update
 from src.services.task_service_message_support import (
     build_translated_cost_status_builder,
     build_message_spec,
@@ -153,35 +153,4 @@ async def process_video_task_template(
                 unexpected_error_prefix="出错了",
             ),
         )
-    )
-
-
-async def process_custom_video_task(
-    *,
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-    prompt: str,
-    image_path: str,
-    cleanup: bool = True,
-    source_post_id: Optional[int] = None,
-):
-    actor = extract_actor_from_update(update)
-    resolution, duration, _res_val, _duration_val = await resolve_custom_video_settings(
-        context,
-        update=update,
-        warn_invalid_combo=True,
-    )
-
-    return await process_image_to_video_task(
-        context=context,
-        chat_id=actor.chat_id,
-        user_id=actor.user_id,
-        username=actor.username,
-        prompt=prompt,
-        images=[image_path] if image_path else [],
-        resolution=resolution,
-        duration=duration,
-        task_type=MODE_CUSTOM_VIDEO,
-        cleanup=cleanup,
-        source_post_id=source_post_id,
     )

@@ -32,7 +32,6 @@ from src.services.task_service_entrypoints_specialized import (
     process_face_video_task,
     process_ltx_video_task,
 )
-from src.services.task_service_entrypoints_video import process_custom_video_task
 from src.services.task_service_generation_image import process_standard_generation_task as process_generation_task
 from src.services.task_service_generation_wan22 import (
     process_wan22_video_v2_generation_task as process_wan22_video_v2_task,
@@ -1280,53 +1279,6 @@ async def test_process_wan22_video_v2_task_builds_expected_inputs(monkeypatch):
     assert flow.request.inputs["upscale"] is False
     assert flow.request.inputs["extract_last_frame"] is True
     assert flow.billing.requested_duration == 5
-
-
-@pytest.mark.asyncio
-async def test_process_custom_video_task_delegates_to_image_to_video_entrypoint(
-    monkeypatch,
-):
-    image_to_video_entry = AsyncMock(return_value=(b"video-bytes", "task-custom-video"))
-    monkeypatch.setattr(
-        "src.services.task_service_entrypoints_video.process_image_to_video_task",
-        image_to_video_entry,
-    )
-    monkeypatch.setattr(
-        "src.services.task_service_entrypoints_video.resolve_custom_video_settings",
-        AsyncMock(return_value=("720p", "8s", 720, 8)),
-    )
-
-    update = SimpleNamespace(
-        effective_chat=SimpleNamespace(id=123),
-        effective_user=SimpleNamespace(id=789, username="tester"),
-        effective_message=SimpleNamespace(),
-    )
-    context = SimpleNamespace(user_data={}, bot=MagicMock())
-
-    result = await process_custom_video_task(
-        update=update,
-        context=context,
-        prompt="custom prompt",
-        image_path="input.png",
-        cleanup=False,
-        source_post_id=42,
-    )
-
-    assert result == (b"video-bytes", "task-custom-video")
-    image_to_video_entry.assert_awaited_once_with(
-        context=context,
-        chat_id=123,
-        user_id=789,
-        username="tester",
-        prompt="custom prompt",
-        images=["input.png"],
-        resolution="720p",
-        duration="8s",
-        task_type=MODE_CUSTOM_VIDEO,
-        cleanup=False,
-        source_post_id=42,
-    )
-
 
 @pytest.mark.asyncio
 async def test_process_face_video_task_uses_finalize_task_failure(monkeypatch):

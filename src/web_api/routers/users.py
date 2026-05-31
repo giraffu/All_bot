@@ -34,13 +34,6 @@ from src.web_api.services.wan22_history_chain_service import (
     get_wan22_history_chain_payload,
     stitch_wan22_history_chain_response,
 )
-from src.web_api.services.user_preferences_service import (
-    update_current_user_preferences_payload,
-)
-from src.web_api.services.user_profile_service import (
-    get_current_user_profile_payload,
-    perform_user_checkin,
-)
 from src.web_api.services.user_social_service import (
     follow_user_payload,
     get_my_following_payload,
@@ -55,6 +48,11 @@ from src.web_api.services.users_history_mutation_service import (
     favorite_user_history,
     soft_delete_user_history,
     unfavorite_user_history,
+)
+from src.web_api.services.user_task_api_service import (
+    get_current_user_profile_payload,
+    perform_user_checkin,
+    update_user_language_preference_payload,
 )
 from src.web_api.schemas.user_social_schema import (
     FollowActionResponse,
@@ -115,10 +113,11 @@ async def update_user_preferences(
     """
     Update user preferences like language_code.
     """
-    return await update_current_user_preferences_payload(
-        prefs=prefs,
-        current_user=current_user,
+    return await update_user_language_preference_payload(
         db=db,
+        user_id=current_user.id,
+        telegram_user_id=current_user.telegram_id,
+        language_code=prefs.language_code,
     )
 
 

@@ -136,30 +136,6 @@ class ComfyAgent:
         self._comfy_poll_paused = False
 
     @property
-    def current_task_id(self) -> Optional[str]:
-        return self._active_execution.task_id if self._active_execution else None
-
-    @property
-    def current_task_type(self) -> Optional[str]:
-        return self._active_execution.task_type if self._active_execution else None
-
-    @property
-    def current_prompt_id(self) -> Optional[str]:
-        return self._active_execution.prompt_id if self._active_execution else None
-
-    @property
-    def task_result(self) -> Optional[str]:
-        return self._active_execution.task_result if self._active_execution else None
-
-    @property
-    def task_result_priority(self) -> int:
-        return self._active_execution.task_result_priority if self._active_execution else -1
-
-    @property
-    def task_error(self) -> Optional[str]:
-        return self._active_execution.task_error if self._active_execution else None
-
-    @property
     def task_completed_event(self) -> asyncio.Event:
         if self._active_execution:
             return self._active_execution.completed_event

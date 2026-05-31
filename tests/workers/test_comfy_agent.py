@@ -125,11 +125,11 @@ def test_wan22_result_pick_prefers_video_over_images(monkeypatch):
         "video_node": {"videos": [{"filename": "result.mp4"}]},
     }
 
-    asset = module._pick_first_output_asset(outputs, task_type="wan22_video_v2")
+    asset = module.pick_first_output_asset(outputs, task_type="wan22_video_v2")
 
     assert asset is not None
     assert asset["filename"] == "result.mp4"
-    assert module._result_asset_priority(asset, task_type="wan22_video_v2") == 3
+    assert module.result_asset_priority(asset, task_type="wan22_video_v2") == 3
 
 
 @pytest.mark.asyncio
@@ -196,12 +196,7 @@ async def test_process_task_failure_resets_runtime_state(monkeypatch):
     assert reported[-1][0] == "task-1"
     assert reported[-1][1] == "failed"
     assert "Workflow for wan22_video_v2 not found" in reported[-1][2]
-    assert agent.current_task_id is None
-    assert agent.current_task_type is None
-    assert agent.current_prompt_id is None
-    assert agent.task_result is None
-    assert agent.task_result_priority == -1
-    assert agent.task_error is None
+    assert agent._active_execution is None
     assert agent.task_completed_event.is_set() is False
 
 

@@ -80,11 +80,6 @@ def normalize_requested_duration_seconds(duration: Any) -> int | None:
     return parsed if parsed > 0 else None
 
 
-def convert_ltx_seconds_to_length_frames(duration_seconds: Any) -> int:
-    seconds = normalize_requested_duration_seconds(duration_seconds) or 5
-    return seconds * 24 + 1
-
-
 def infer_legacy_ltx_requested_duration(duration: Any) -> int | None:
     normalized = normalize_requested_duration_seconds(duration)
     if normalized is None:

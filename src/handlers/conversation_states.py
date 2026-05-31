@@ -24,13 +24,6 @@ class FaceSwapState(IntEnum):
     WAIT_BODY_IMAGE = auto()
 
 
-class CustomVideoState(IntEnum):
-    """自定义视频流程的状态枚举"""
-
-    WAIT_IMAGE = auto()
-    WAIT_SETTINGS_AND_PROMPT = auto()
-
-
 class LtxVideoState(IntEnum):
     WAIT_LORA_SELECTION = auto()
     WAIT_IMAGE = auto()
@@ -80,9 +73,3 @@ class AffiliateRedeemState(IntEnum):
     """返佣兑换流程状态枚举"""
 
     WAIT_CREDITS_AMOUNT = auto()
-
-
-class CommonState(IntEnum):
-    """通用的 ConversationHandler 状态，比如超时"""
-
-    TIMEOUT = auto()

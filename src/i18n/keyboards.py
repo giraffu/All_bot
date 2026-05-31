@@ -1,5 +1,7 @@
 from functools import lru_cache
-from telegram import ReplyKeyboardMarkup, InlineKeyboardMarkup, InlineKeyboardButton
+
+from telegram import ReplyKeyboardMarkup
+
 from src.i18n.translator import get_text
 
 
@@ -68,34 +70,3 @@ def get_video_edit_keyboard(lang: str) -> ReplyKeyboardMarkup:
         [get_text("menu.back_main", lang)],
     ]
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
-
-
-@lru_cache(maxsize=10)
-def get_gallery_keyboard(lang: str) -> InlineKeyboardMarkup:
-    keyboard = [
-        [
-            InlineKeyboardButton(
-                get_text("menu.gallery_latest", lang),
-                callback_data="gallery_catmenu_latest",
-            )
-        ],
-        [
-            InlineKeyboardButton(
-                get_text("menu.gallery_likes", lang),
-                callback_data="gallery_catmenu_likes",
-            )
-        ],
-        [
-            InlineKeyboardButton(
-                get_text("menu.gallery_applied", lang),
-                callback_data="gallery_catmenu_applied",
-            )
-        ],
-        [
-            InlineKeyboardButton(
-                get_text("menu.gallery_mine", lang),
-                callback_data="gallery_catmenu_mine",
-            )
-        ],
-    ]
-    return InlineKeyboardMarkup(keyboard)
