@@ -1,4 +1,3 @@
-from src.constants import MODE_IMAGE_TO_VIDEO
 from src.logger import logger
 
 
@@ -6,14 +5,14 @@ TASK_TYPE_DISPLAY_NAMES = {
     "img2img": "task.img2img",
     "img2img_lora": "task.img2img_lora",
     "i2i_pro": "task.i2i_pro",
+    "i2i_draw": "task.mode_i2i_draw",
     "face_swap": "task.face_swap",
     "video_insert": "task.video_insert",
-    "video_edit": "task.video_edit",
+    "img2video_group": "task.mode_video_lora",
     "face_video": "task.face_video",
     "ltx_video": "task.ltx_video",
+    "wan22_video_v2": "task.mode_wan22_video_v2",
     "t2i-pornmaster-turbo": "task.t2i_pornmaster_turbo",
-    "custom_video": "task.custom_video",
-    MODE_IMAGE_TO_VIDEO: "task.video_lora",
 }
 
 
@@ -126,10 +125,14 @@ async def handle_queue_status_impl(
     reply_text,
     task_type_display_names,
 ):
+    user = update.effective_user
+    if not user:
+        return None
     return await reply_with_async_payload(
         update,
         reply_text=reply_text,
         build_payload=build_payload,
         context=context,
+        user=user,
         task_type_display_names=task_type_display_names,
     )

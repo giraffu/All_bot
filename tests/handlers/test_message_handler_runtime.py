@@ -81,32 +81,100 @@ async def test_toggle_user_language_persists_context_db_and_redis(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_get_queue_status_reply_handles_success_and_unavailable(monkeypatch):
-    context = SimpleNamespace(t=lambda key: f"T:{key}")
+    context = SimpleNamespace(t=lambda key, **kwargs: f"T:{key}:{kwargs}" if kwargs else f"T:{key}")
+    user = SimpleNamespace(id=123)
 
     monkeypatch.setattr(
         message_handler_runtime.image_service,
         "get_queue_info",
         AsyncMock(
             side_effect=[
-                {"queue_size": 2, "queue_by_type": {"img2img": 1, "custom_x": 1}},
+                {
+                    "queue_size": 7,
+                    "queue_by_type": {
+                        "img2img": 1,
+                        "video_edit": 2,
+                        "custom_video": 1,
+                        "video_lora": 1,
+                        "wan22_video_v2": 1,
+                        "custom_x": 1,
+                    },
+                },
                 None,
+            ]
+        ),
+    )
+    monkeypatch.setattr(
+        message_handler_runtime,
+        "_build_user_queue_tasks_for_display",
+        AsyncMock(
+            side_effect=[
+                [{"task_type": "img2img", "status_text": "全局排队第 2 位"}],
+                [],
             ]
         ),
     )
 
     text = await message_handler_runtime.get_queue_status_reply(
         context,
-        {"img2img": "task.img2img"},
+        {
+            "img2img": "task.img2img",
+            "img2video_group": "task.mode_video_lora",
+            "wan22_video_v2": "task.mode_wan22_video_v2",
+        },
+        user=user,
     )
     unavailable = await message_handler_runtime.get_queue_status_reply(
         context,
         {"img2img": "task.img2img"},
+        user=user,
     )
 
-    assert "T:profile.total_queue：`2` T:profile.tasks_unit" in text
+    assert "T:profile.total_queue：`7` T:profile.tasks_unit" in text
     assert "T:task.img2img：`1` T:profile.tasks_unit" in text
+    assert "T:task.mode_video_lora：`4` T:profile.tasks_unit" in text
+    assert "T:task.mode_wan22_video_v2：`1` T:profile.tasks_unit" in text
     assert "❓ T:profile.other_types (custom\\_x)：`1` T:profile.tasks_unit" in text
+    assert "**T:profile.my_tasks_title**" in text
+    assert "1. T:task.img2img：全局排队第 2 位" in text
     assert unavailable == "T:system.queue_unavailable"
+
+
+def test_normalize_queue_type_counts_for_display_merges_legacy_img2video_aliases():
+    normalized = message_handler_runtime._normalize_queue_type_counts_for_display(
+        {
+            "video_edit": 2,
+            "custom_video": 1,
+            "video_lora": 3,
+            "image_to_video": 4,
+            "wan22_video_v2": 5,
+        }
+    )
+
+    assert normalized == {
+        "img2video_group": 10,
+        "wan22_video_v2": 5,
+    }
+
+
+def test_build_user_task_status_text_prefers_queue_position():
+    context = SimpleNamespace(
+        t=lambda key, **kwargs: f"T:{key}:{kwargs}" if kwargs else f"T:{key}"
+    )
+
+    pending_text = message_handler_runtime._build_user_task_status_text(
+        {"status": "pending", "queue_pos": 3},
+        context,
+    )
+    running_text = message_handler_runtime._build_user_task_status_text(
+        {"status": "running"},
+        context,
+    )
+    submitting_text = message_handler_runtime._build_user_task_status_text(None, context)
+
+    assert pending_text == "T:profile.my_tasks_status_pending_position:{'queue_pos': 4}"
+    assert running_text == "T:profile.my_tasks_status_running"
+    assert submitting_text == "T:profile.my_tasks_status_submitting"
 
 
 @pytest.mark.asyncio

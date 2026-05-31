@@ -1,6 +1,8 @@
+from src.constants import MODE_IMAGE_TO_VIDEO
 from src.handlers.message_handler_menu import (
     build_switch_lang_message,
     build_queue_status_message,
+    build_user_queue_tasks_section,
 )
 from src.handlers.message_handler_profile import (
     build_checkin_repeat_message,
@@ -23,6 +25,96 @@ from src.utils import (
 normalize_supported_language_code = _normalize_supported_language_code
 
 
+def _normalize_queue_task_type_for_display(task_type: str | None) -> str:
+    if task_type in {"video_edit", "custom_video", MODE_IMAGE_TO_VIDEO, "image_to_video"}:
+        return "img2video_group"
+    return str(task_type or "")
+
+
+def _normalize_queue_type_counts_for_display(queue_by_type: dict | None) -> dict[str, int]:
+    raw_counts = queue_by_type or {}
+    normalized_counts: dict[str, int] = {}
+
+    for task_type, count in raw_counts.items():
+        normalized_task_type = _normalize_queue_task_type_for_display(task_type)
+        normalized_counts[normalized_task_type] = (
+            normalized_counts.get(normalized_task_type, 0) + int(count)
+        )
+
+    return normalized_counts
+
+
+def _format_queue_rank(raw_queue_pos) -> int | str | None:
+    if raw_queue_pos is None:
+        return None
+    try:
+        return int(raw_queue_pos) + 1
+    except (TypeError, ValueError):
+        return raw_queue_pos
+
+
+def _build_user_task_status_text(status_data: dict | None, context) -> str:
+    if not status_data:
+        return context.t("profile.my_tasks_status_submitting")
+
+    state = str(status_data.get("status") or "").lower()
+    if state == "pending":
+        queue_pos = _format_queue_rank(status_data.get("queue_pos"))
+        if queue_pos is not None:
+            return context.t("profile.my_tasks_status_pending_position", queue_pos=queue_pos)
+        return context.t("profile.my_tasks_status_pending")
+    if state == "running":
+        return context.t("profile.my_tasks_status_running")
+    if state == "done":
+        return context.t("profile.my_tasks_status_done")
+    if state == "error":
+        return context.t("profile.my_tasks_status_error")
+    if state == "cancelled":
+        return context.t("profile.my_tasks_status_cancelled")
+    return context.t("profile.my_tasks_status_unknown")
+
+
+async def _build_user_queue_tasks_for_display(user, context) -> list[dict]:
+    from src.core.task_core import get_system_task_stats
+    from src.core.user_core import get_or_create_user_by_telegram
+
+    internal_user, _ = await get_or_create_user_by_telegram(user.id)
+    active_tasks, _ = await get_system_task_stats()
+    if not active_tasks:
+        return []
+
+    user_tasks = [
+        {"registry_task_id": task_id, **task}
+        for task_id, task in active_tasks.items()
+        if task.get("user_id") == internal_user.id
+    ]
+    if not user_tasks:
+        return []
+
+    user_tasks.sort(
+        key=lambda task: (
+            float(task.get("created_at") or 0),
+            str(task.get("registry_task_id") or ""),
+        )
+    )
+
+    display_tasks: list[dict] = []
+    for task in user_tasks[:3]:
+        backend_task_id = task.get("backend_task_id")
+        status_data = (
+            await image_service.get_task_status(backend_task_id) if backend_task_id else None
+        )
+        display_tasks.append(
+            {
+                "task_type": _normalize_queue_task_type_for_display(
+                    task.get("task_type") or task.get("type")
+                ),
+                "status_text": _build_user_task_status_text(status_data, context),
+            }
+        )
+    return display_tasks
+
+
 async def toggle_user_language(context, user) -> tuple[str, object]:
     result = await toggle_user_language_runtime(
         telegram_user=user,
@@ -38,6 +130,7 @@ async def get_queue_status_reply(
     context,
     task_type_display_names: dict[str, str],
     *,
+    user,
     unavailable_message: str | None = None,
 ) -> str:
     unavailable_message = unavailable_message or context.t("system.queue_unavailable")
@@ -45,12 +138,18 @@ async def get_queue_status_reply(
     if not status:
         return unavailable_message
 
-    return build_queue_status_message(
+    base_message = build_queue_status_message(
         status.get("queue_size", 0),
-        status.get("queue_by_type", {}),
+        _normalize_queue_type_counts_for_display(status.get("queue_by_type", {})),
         context,
         task_type_display_names,
     )
+    user_tasks_section = build_user_queue_tasks_section(
+        await _build_user_queue_tasks_for_display(user, context),
+        context,
+        task_type_display_names,
+    )
+    return f"{base_message}{user_tasks_section}"
 
 
 def normalize_telegram_group_id(group_id: str | int | None) -> str | int | None:

@@ -62,7 +62,15 @@ def test_build_switch_lang_message_and_gallery_payload():
 
 
 def test_build_queue_status_message_includes_known_and_unknown_types():
-    context = SimpleNamespace(t=lambda key: f"T:{key}")
+    translations = {
+        "profile.queue_status_title": "排队状态",
+        "profile.total_queue": "总排队任务",
+        "profile.tasks_unit": "个",
+        "profile.other_types": "其他",
+        "task.img2img": "🎨 懒人/自由P图",
+        "task.video_edit": "🎬 视频编辑 (通用)",
+    }
+    context = SimpleNamespace(t=lambda key: translations[key])
     text = message_handler_menu.build_queue_status_message(
         3,
         {"img2img": 2, "custom_x": 1},
@@ -70,10 +78,40 @@ def test_build_queue_status_message_includes_known_and_unknown_types():
         {"img2img": "task.img2img", "video_edit": "task.video_edit"},
     )
 
-    assert "T:profile.total_queue：`3` T:profile.tasks_unit" in text
-    assert "T:task.img2img：`2` T:profile.tasks_unit" in text
-    assert "T:task.video_edit：`0` T:profile.tasks_unit" in text
-    assert "❓ T:profile.other_types (custom\\_x)：`1` T:profile.tasks_unit" in text
+    assert "👥 总排队任务：`3` 个" in text
+    assert "懒人/自由P图：`2` 个" in text
+    assert "视频编辑 (通用)：`0` 个" in text
+    assert "🎨 懒人/自由P图" not in text
+    assert "🎬 视频编辑 (通用)" not in text
+    assert "❓ 其他 (custom\\_x)：`1` 个" in text
+
+
+def test_build_user_queue_tasks_section_uses_display_names_and_status_text():
+    translations = {
+        "profile.my_tasks_title": "我的任务",
+        "profile.my_tasks_status_unknown": "状态未知",
+        "task.img2img": "🎨 懒人/自由P图",
+        "task.mode_video_lora": "🎬 图生视频",
+    }
+    context = SimpleNamespace(t=lambda key, **_: translations[key])
+
+    text = message_handler_menu.build_user_queue_tasks_section(
+        [
+            {"task_type": "img2img", "status_text": "全局排队第 2 位"},
+            {"task_type": "img2video_group", "status_text": "生成中"},
+        ],
+        context,
+        {
+            "img2img": "task.img2img",
+            "img2video_group": "task.mode_video_lora",
+        },
+    )
+
+    assert "**我的任务**" in text
+    assert "1. 懒人/自由P图：全局排队第 2 位" in text
+    assert "2. 图生视频：生成中" in text
+    assert "🎨" not in text
+    assert "🎬" not in text
 
 
 @pytest.mark.asyncio

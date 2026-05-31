@@ -71,6 +71,13 @@ def build_switch_lang_message(new_lang: str) -> str:
     )
 
 
+import re
+
+
+def _strip_queue_display_icon(label: str) -> str:
+    return re.sub(r"^[^\w\u4e00-\u9fff]+\s*", "", label)
+
+
 def build_queue_status_message(queue_size: int, queue_by_type: dict, context, task_type_display_names: dict) -> str:
     total_queue_label = context.t("profile.total_queue")
     tasks_unit = context.t("profile.tasks_unit")
@@ -81,7 +88,7 @@ def build_queue_status_message(queue_size: int, queue_by_type: dict, context, ta
 
     for task_type, i18n_key in task_type_display_names.items():
         count = queue_by_type.get(task_type, 0)
-        display_name = context.t(i18n_key)
+        display_name = _strip_queue_display_icon(context.t(i18n_key))
         msg_lines.append(f"{display_name}：`{count}` {tasks_unit}")
 
     for task_type, count in queue_by_type.items():
@@ -90,6 +97,24 @@ def build_queue_status_message(queue_size: int, queue_by_type: dict, context, ta
             msg_lines.append(
                 f"❓ {context.t('profile.other_types')} ({safe_task_type})：`{count}` {tasks_unit}"
             )
+
+    return "\n".join(msg_lines)
+
+
+def build_user_queue_tasks_section(user_tasks: list[dict], context, task_type_display_names: dict) -> str:
+    if not user_tasks:
+        return ""
+
+    msg_lines = ["", f"**{context.t('profile.my_tasks_title')}**"]
+    for index, task in enumerate(user_tasks, start=1):
+        task_type = task.get("task_type", "")
+        task_name = task_type
+        i18n_key = task_type_display_names.get(task_type)
+        if i18n_key:
+            task_name = _strip_queue_display_icon(context.t(i18n_key))
+
+        status_text = task.get("status_text") or context.t("profile.my_tasks_status_unknown")
+        msg_lines.append(f"{index}. {task_name}：{status_text}")
 
     return "\n".join(msg_lines)
 

@@ -390,6 +390,7 @@ async def test_async_menu_builder_keeps_queue_extra_kwargs():
             "get_queue_status_reply",
             {
                 "context": "CTX",
+                "user": "USER",
                 "task_type_display_names": message_handler.TASK_TYPE_DISPLAY_NAMES,
             },
         ),
@@ -407,6 +408,7 @@ async def test_async_menu_like_handlers_delegate_to_reply_with_async_payload(
         update.effective_user = "USER"
         context = "CTX"
     elif handler_name == "handle_queue_status":
+        update.effective_user = "USER"
         context = "CTX"
 
     await getattr(message_handler, handler_name)(update, context, text="noop")
