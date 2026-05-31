@@ -455,6 +455,7 @@
     "video_lora": "🎬 Img2Video",
     "wan22_start_frame": "Start Frame",
     "wan22_start_end_frame": "Start + End Frame",
+    "wan22_segment": "Segment {count}",
     "wan22_stitched_video": "Stitched Video-{count}",
     "cancel_success_refreshing_balance": "Task canceled, refreshing balance",
     "mode_edit": "Custom Edit",

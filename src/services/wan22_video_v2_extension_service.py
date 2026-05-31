@@ -145,6 +145,23 @@ def resolve_wan22_stitched_segment_count(extra_outputs: dict | None) -> int | No
     return None
 
 
+def resolve_wan22_segment_index(extra_outputs: dict | None) -> int | None:
+    if is_wan22_stitched_result(extra_outputs):
+        return None
+    context = extract_wan22_history_context(extra_outputs)
+    if not context:
+        return None
+    chain_task_ids = normalize_wan22_video_v2_chain_task_ids(
+        context.get("wan22_chain_task_ids")
+    )
+    if chain_task_ids:
+        return len(chain_task_ids) + 1
+    prev_task_id = str(context.get("wan22_prev_task_id") or "").strip()
+    if prev_task_id:
+        return 2
+    return 1
+
+
 def build_wan22_history_context_from_metadata(metadata: dict | None) -> dict[str, object]:
     if not isinstance(metadata, dict):
         return {}

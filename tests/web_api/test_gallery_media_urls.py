@@ -141,7 +141,64 @@ async def test_build_gallery_post_responses_appends_wan22_mode_tag_from_history(
     )
 
     assert len(items) == 1
-    assert items[0].tags == ["task.wan22_video_v2", "task.wan22_start_end_frame"]
+    assert items[0].tags == [
+        "task.wan22_video_v2",
+        "task.wan22_start_end_frame",
+        "task.wan22_segment:1",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_build_gallery_post_responses_appends_wan22_segment_tag_for_mid_segment():
+    post = GalleryPost(
+        id=10,
+        task_id="task-wan22-2",
+        user_id=123,
+        media_type="video",
+        tags='["task.wan22_video_v2"]',
+        likes_count=0,
+        dislikes_count=0,
+        applied_count=0,
+        comments_count=0,
+        is_active=True,
+        created_at=datetime(2026, 5, 31, 10, 26, 0),
+    )
+    history = History(
+        id=14,
+        user_id=123,
+        task_id="task-wan22-2",
+        type="wan22_video_v2",
+        prompt="test prompt 2",
+        output_file="123/output_images/task-wan22-2.mp4",
+        extra_outputs={
+            "_wan22_context": {
+                "wan22_use_end_frame": False,
+                "wan22_prev_task_id": "task-wan22-1",
+                "wan22_chain_task_ids": ["task-wan22-1"],
+            }
+        },
+    )
+    author = User(id=123, username="tester", full_name="测试账号")
+    session = _FakeSession(
+        [
+            _FakeScalarResult([history]),
+            _FakeScalarResult([author]),
+        ]
+    )
+
+    items = await build_gallery_post_responses(
+        session=session,
+        posts=[post],
+        current_user=None,
+        pick_gallery_media_urls=AsyncMock(return_value=("media-url", "thumb-url")),
+    )
+
+    assert len(items) == 1
+    assert items[0].tags == [
+        "task.wan22_video_v2",
+        "task.wan22_start_frame",
+        "task.wan22_segment:2",
+    ]
 
 
 @pytest.mark.asyncio

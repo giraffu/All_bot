@@ -54,7 +54,7 @@ def test_extract_history_tags_adds_wan22_mode_tag_for_single_start_frame():
         extra_outputs={"_wan22_context": {"wan22_use_end_frame": False}},
     )
 
-    assert tags == ["task.wan22_start_frame"]
+    assert tags == ["task.wan22_start_frame", "task.wan22_segment:1"]
 
 
 def test_extract_history_tags_adds_wan22_mode_tag_for_start_end_frame():
@@ -64,7 +64,23 @@ def test_extract_history_tags_adds_wan22_mode_tag_for_start_end_frame():
         extra_outputs={"_wan22_context": {"wan22_use_end_frame": True}},
     )
 
-    assert tags == ["task.wan22_start_end_frame"]
+    assert tags == ["task.wan22_start_end_frame", "task.wan22_segment:1"]
+
+
+def test_extract_history_tags_adds_wan22_segment_tag_for_non_first_segment():
+    tags = extract_history_tags(
+        "prompt",
+        task_type="wan22_video_v2",
+        extra_outputs={
+            "_wan22_context": {
+                "wan22_use_end_frame": False,
+                "wan22_prev_task_id": "task-prev",
+                "wan22_chain_task_ids": ["task-1", "task-2"],
+            }
+        },
+    )
+
+    assert tags == ["task.wan22_start_frame", "task.wan22_segment:3"]
 
 
 def test_extract_history_tags_skips_mode_tag_for_stitched_wan22_record():
@@ -94,6 +110,24 @@ def test_extract_history_result_meta_marks_stitched_wan22_record():
     )
 
     assert result_meta == {"wan22_is_stitched": True}
+
+
+def test_extract_history_result_meta_adds_segment_index_for_wan22_segment():
+    result_meta = extract_history_result_meta(
+        task_type="wan22_video_v2",
+        extra_outputs={
+            "_wan22_context": {
+                "wan22_use_end_frame": False,
+                "wan22_chain_task_ids": ["task-1"],
+            }
+        },
+    )
+
+    assert result_meta == {
+        "wan22_use_end_frame": False,
+        "wan22_chain_task_ids": ["task-1"],
+        "wan22_segment_index": 2,
+    }
 
 
 def test_build_wan22_chain_prompt_summary_splits_segments_cleanly():

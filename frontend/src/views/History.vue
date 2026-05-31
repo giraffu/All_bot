@@ -38,6 +38,12 @@ const handleImageError = (e: Event, record: any) => {
   }
 }
 
+const handleHistoryVideoLoaded = (event: Event) => {
+  const video = event.target as HTMLVideoElement
+  // Freeze on the first decoded frame to avoid looping previews in the history grid.
+  video.pause()
+}
+
 const {
   data,
   loading,
@@ -92,7 +98,18 @@ const {
             <Trash2 :size="14" />
           </button>
           <template v-if="record.output_file">
+            <video
+              v-if="isVideoFile(record.output_file)"
+              :src="record.output_file_url || getFileUrl(record.output_file)"
+              :poster="record.thumbnail_url || getThumbnailUrl(record.output_file)"
+              @loadeddata="handleHistoryVideoLoaded"
+              class="w-full h-auto object-cover min-h-[120px] transition-opacity duration-300 bg-black pointer-events-none"
+              muted
+              playsinline
+              preload="auto"
+            />
             <img
+              v-else
               :src="record.thumbnail_url || getThumbnailUrl(record.output_file)"
               @error="handleImageError($event, record)"
               class="w-full h-auto object-cover min-h-[120px] transition-opacity duration-300"

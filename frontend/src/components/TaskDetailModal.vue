@@ -36,6 +36,7 @@ const wan22ActionLoading = ref<'stitch' | null>(null)
 
 const isWan22Record = computed(() => currentRecord.value?.type === 'wan22_video_v2')
 const isWan22StitchedRecord = computed(() => Boolean(currentRecord.value?.result_meta?.wan22_is_stitched))
+const wan22SegmentIndex = computed(() => currentRecord.value?.result_meta?.wan22_segment_index ?? null)
 const canExtendWan22Chain = computed(
   () => isWan22Record.value && Boolean(currentRecord.value?.task_id && currentRecord.value?.extra_outputs?.last_frame?.path)
 )
@@ -158,6 +159,12 @@ const handleWan22ChainStitch = async () => {
                 <span class="task-detail-source-badge text-xs px-2 py-0.5 lg:text-sm lg:px-3 lg:py-1 rounded-md border"
                       :class="currentRecord.source === 'web' ? 'is-web' : 'is-bot'">
                   {{ currentRecord.source === 'web' ? '🌐 ' + $t('history.web_creation') : '🤖 ' + $t('history.bot_creation') }}
+                </span>
+                <span
+                  v-if="isWan22Record && !isWan22StitchedRecord && wan22SegmentIndex"
+                  class="task-detail-source-badge text-xs px-2 py-0.5 lg:text-sm lg:px-3 lg:py-1 rounded-md border is-web"
+                >
+                  {{ $t('task.wan22_segment', { count: wan22SegmentIndex }) }}
                 </span>
               </div>
             </div>

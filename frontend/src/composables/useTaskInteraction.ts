@@ -22,6 +22,19 @@ export function useTaskInteraction(options?: {
 }) {
   const submittingTasks = ref<Record<string, boolean>>({})
   const { getFileUrl, isVideoFile } = useTaskFormat()
+  const isMobileViewport = () => typeof window !== 'undefined' && window.innerWidth < 1024
+  const showGallerySubmitSuccess = (content: string) => {
+    if (isMobileViewport()) {
+      message.success({
+        content,
+        style: {
+          marginTop: '72px',
+        },
+      })
+      return
+    }
+    message.success(content)
+  }
 
   const submitToGallery = async (record: any) => {
     if (submittingTasks.value[record.task_id]) return
@@ -35,7 +48,7 @@ export function useTaskInteraction(options?: {
       }
       
       const res = await api.post(`/gallery/posts/submit/${record.task_id}`, payload)
-      message.success(res.data?.message || '投稿成功！')
+      showGallerySubmitSuccess(res.data?.message || '投稿成功！')
       record.is_public = true
     } catch (error: any) {
       console.error(error)

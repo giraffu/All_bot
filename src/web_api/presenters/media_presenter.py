@@ -7,6 +7,7 @@ from src.services.storage import storage
 from src.services.wan22_video_v2_extension_service import (
     extract_wan22_history_context,
     is_wan22_stitched_result,
+    resolve_wan22_segment_index,
 )
 
 
@@ -253,5 +254,9 @@ def extract_history_result_meta(
         result_meta = extract_wan22_history_context(extra_outputs)
         if is_wan22_stitched_result(extra_outputs):
             result_meta["wan22_is_stitched"] = True
+        else:
+            segment_index = resolve_wan22_segment_index(extra_outputs)
+            if segment_index:
+                result_meta["wan22_segment_index"] = segment_index
         return result_meta
     return {}

@@ -9,6 +9,7 @@ from src.lora_mapping import translate_tags
 from src.services.wan22_video_v2_extension_service import (
     extract_wan22_history_context,
     is_wan22_stitched_result,
+    resolve_wan22_segment_index,
     resolve_wan22_stitched_segment_count,
 )
 from src.web_api.common.utils import resolve_history_billing_resolution
@@ -41,9 +42,13 @@ def _append_history_mode_tags(
         if bool(result_meta.get("wan22_use_end_frame"))
         else "task.wan22_start_frame"
     )
-    if mode_tag in tags:
-        return tags
-    return [*tags, mode_tag]
+    next_tags = tags if mode_tag in tags else [*tags, mode_tag]
+    segment_index = resolve_wan22_segment_index(getattr(history, "extra_outputs", None))
+    if segment_index:
+        segment_tag = f"task.wan22_segment:{segment_index}"
+        if segment_tag not in next_tags:
+            next_tags = [*next_tags, segment_tag]
+    return next_tags
 
 
 def resolve_gallery_author_name(

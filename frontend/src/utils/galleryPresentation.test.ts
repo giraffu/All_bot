@@ -48,4 +48,14 @@ describe('formatGalleryTag', () => {
     expect(formatGalleryTag('task.wan22_stitched_video:2', t)).toBe('拼接视频-2')
     expect(formatGalleryTag('task.wan22_stitched_video:3', t)).toBe('拼接视频-3')
   })
+
+  it('formats wan22 segment tag with segment index', () => {
+    const t = (key: string, params?: Record<string, unknown>) =>
+      key === 'task.wan22_segment'
+        ? `第${params?.count as number}段`
+        : key
+
+    expect(formatGalleryTag('task.wan22_segment:1', t)).toBe('第1段')
+    expect(formatGalleryTag('task.wan22_segment:4', t)).toBe('第4段')
+  })
 })

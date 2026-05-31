@@ -4,6 +4,7 @@ from src.core.media_paths import get_media_type_from_history
 from src.services.wan22_video_v2_extension_service import (
     extract_wan22_history_context,
     is_wan22_stitched_result,
+    resolve_wan22_segment_index,
     resolve_wan22_stitched_segment_count,
 )
 from src.web_api.common.utils import (
@@ -43,6 +44,9 @@ def extract_history_tags(
             if bool(result_meta.get("wan22_use_end_frame"))
             else "task.wan22_start_frame"
         )
+        segment_index = resolve_wan22_segment_index(extra_outputs)
+        if segment_index:
+            tags.append(f"task.wan22_segment:{segment_index}")
     return tags
 
 

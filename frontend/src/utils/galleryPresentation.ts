@@ -8,6 +8,12 @@ export function formatGalleryTag(
       count: Number.parseInt(stitchedMatch[1], 10),
     })
   }
+  const segmentMatch = tag.match(/^task\.wan22_segment:(\d+)$/)
+  if (segmentMatch) {
+    return t('task.wan22_segment', {
+      count: Number.parseInt(segmentMatch[1], 10),
+    })
+  }
   if (tag.startsWith('#task.')) {
     const key = tag.substring(1)
     return '#' + t(key)
