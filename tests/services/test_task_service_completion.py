@@ -224,6 +224,81 @@ async def test_handle_task_completion_uses_module_default_completion_helpers(mon
 
 
 @pytest.mark.asyncio
+async def test_handle_task_completion_merges_wan22_result_meta_into_extra_outputs(
+    monkeypatch,
+):
+    download_output = AsyncMock(
+        return_value=TaskSuccessPersistenceResult(
+            media_bytes=b"video-bytes",
+            output_file="saved-output.mp4",
+            width=None,
+            height=None,
+            duration=5,
+        )
+    )
+    send_result_media = AsyncMock()
+    cleanup_status = AsyncMock()
+    monkeypatch.setattr(
+        "src.services.task_service_completion.download_and_log_task_output",
+        download_output,
+    )
+    monkeypatch.setattr(
+        "src.services.task_service_completion.send_result_media",
+        send_result_media,
+    )
+    monkeypatch.setattr(
+        "src.services.task_service_completion.cleanup_completion_status_message",
+        cleanup_status,
+    )
+
+    user_logger = SimpleNamespace(username="tester")
+    status_msg = MagicMock()
+
+    media_bytes, output_path = await completion_helpers.handle_task_completion(
+        context=SimpleNamespace(bot=MagicMock(), bot_data={}),
+        chat_id=123,
+        internal_user_id=456,
+        prompt="prompt",
+        task_type=MODE_WAN22_VIDEO_V2,
+        registry_task_id="registry-wan22",
+        backend_task_id="backend-wan22",
+        saved_input_images=["start.png", "end.png"],
+        user_logger=user_logger,
+        is_video=True,
+        send_result=True,
+        reply_markup=None,
+        status_msg=status_msg,
+        delete_status=True,
+        caption="done",
+        allow_contribute=True,
+        result_meta={
+            "wan22_resolution_preset": "hd",
+            "wan22_negative_prompt": "neg",
+            "wan22_use_end_frame": True,
+        },
+        extra_outputs={"last_frame": {"path": "tail.png"}},
+    )
+
+    assert media_bytes == b"video-bytes"
+    assert output_path == "saved-output.mp4"
+    download_output.assert_awaited_once()
+    assert download_output.await_args.kwargs["extra_outputs"] == {
+        "last_frame": {"path": "tail.png"},
+        "_wan22_context": {
+            "wan22_resolution_preset": "hd",
+            "wan22_negative_prompt": "neg",
+            "wan22_use_end_frame": True,
+        },
+    }
+    send_result_media.assert_awaited_once()
+    cleanup_status.assert_awaited_once_with(
+        status_msg=status_msg,
+        delete_status=True,
+        send_result=True,
+    )
+
+
+@pytest.mark.asyncio
 async def test_download_and_log_task_output_handles_image_branch(monkeypatch):
     persist_mock = AsyncMock(
         return_value=TaskSuccessPersistenceResult(

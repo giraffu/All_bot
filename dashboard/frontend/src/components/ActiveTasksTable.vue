@@ -35,14 +35,20 @@
         </a-select>
         <a-select
           v-model:value="typeFilter"
-          style="width: 150px"
+          style="width: 220px"
           placeholder="按任务类型筛选"
           allow-clear
+          show-search
+          :filter-option="(input, option) => option.label.toLowerCase().includes(input.toLowerCase())"
         >
-          <a-select-option value="video">所有视频</a-select-option>
-          <a-select-option value="image">所有图片</a-select-option>
-          <a-select-option value="face_swap">图片换脸</a-select-option>
-          <a-select-option value="face_video">视频换脸</a-select-option>
+          <a-select-option
+            v-for="option in typeOptions"
+            :key="option.value"
+            :value="option.value"
+            :label="option.label"
+          >
+            {{ option.label }}
+          </a-select-option>
         </a-select>
       </div>
     </div>
@@ -63,7 +69,7 @@
               <UserOutlined />
             </a-avatar>
             <div class="flex flex-col">
-              <span class="font-medium text-gray-800">{{ record.username || 'Unknown' }}</span>
+              <span class="font-medium text-gray-800">{{ record.display_name || record.username || 'Unknown' }}</span>
               <span class="text-xs text-gray-500">ID: {{ record.user_id }}</span>
             </div>
           </div>
@@ -158,6 +164,7 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { ReloadOutlined, UserOutlined, SyncOutlined } from '@ant-design/icons-vue'
 import { fetchActiveBotTasks, refundBotTask } from '../api/api'
 import { message } from 'ant-design-vue'
+import { TASK_TYPE_LABELS, getTaskTypeLabel } from '../constants/taskTypes'
 
 const loading = ref(false)
 const tableData = ref([])
@@ -169,19 +176,35 @@ const searchText = ref('')
 const statusFilter = ref(undefined)
 const typeFilter = ref(undefined)
 
+const typeOptions = computed(() => {
+  const knownTypes = Object.keys(TASK_TYPE_LABELS).filter(type => type !== 'unknown')
+  const activeTypes = tableData.value
+    .map(item => item.task_type)
+    .filter(Boolean)
+  const mergedTypes = Array.from(new Set([...activeTypes, ...knownTypes]))
+
+  return mergedTypes
+    .map(type => ({
+      value: type,
+      label: getTaskTypeLabel(type) === type ? type : `${getTaskTypeLabel(type)} (${type})`,
+    }))
+    .sort((a, b) => a.label.localeCompare(b.label, 'zh-CN'))
+})
+
 // 计算过滤后的数据
 const filteredTableData = computed(() => {
   return tableData.value.filter(item => {
     // 1. 搜索名称或ID
     const searchMatch = !searchText.value || 
+      (item.display_name && item.display_name.toLowerCase().includes(searchText.value.toLowerCase())) ||
       (item.username && item.username.toLowerCase().includes(searchText.value.toLowerCase())) ||
       (item.user_id && item.user_id.toString().includes(searchText.value))
       
     // 2. 状态筛选
     const statusMatch = !statusFilter.value || item.execution_status === statusFilter.value
     
-    // 3. 任务类型筛选 (模糊匹配，例如 video 可以匹配 custom_video, perfect_video_edit 等)
-    const typeMatch = !typeFilter.value || (item.task_type && item.task_type.includes(typeFilter.value))
+    // 3. 任务类型筛选
+    const typeMatch = !typeFilter.value || item.task_type === typeFilter.value
     
     return searchMatch && statusMatch && typeMatch
   })

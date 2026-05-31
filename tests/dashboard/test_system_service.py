@@ -205,7 +205,15 @@ async def test_get_active_bot_tasks_payload_merges_user_and_backend_status():
     result = await system_service.get_active_bot_tasks_payload(
         get_system_task_stats_func=AsyncMock(return_value=(tasks, {})),
         session_factory=lambda: _FakeDbSession(
-            [SimpleNamespace(id=123, user_group="金丹期", current_identity="核心弟子")]
+            [
+                SimpleNamespace(
+                    id=123,
+                    user_group="金丹期",
+                    current_identity="核心弟子",
+                    full_name="炼丹道人",
+                    username="tester_handle",
+                )
+            ]
         ),
         request_backend_status_func=AsyncMock(
             return_value=_FakeResponse({"status": "pending", "queue_pos": 4})
@@ -216,9 +224,11 @@ async def test_get_active_bot_tasks_payload_merges_user_and_backend_status():
     assert result["count"] == 2
     assert result["tasks"]["task-1"]["user_group"] == "金丹期"
     assert result["tasks"]["task-1"]["user_identity"] == "核心弟子"
+    assert result["tasks"]["task-1"]["display_name"] == "炼丹道人"
     assert result["tasks"]["task-1"]["execution_status"] == "pending"
     assert result["tasks"]["task-1"]["queue_position"] == 4
     assert result["tasks"]["task-2"]["user_group"] == "未知"
+    assert result["tasks"]["task-2"]["display_name"] == "User_456"
     assert result["tasks"]["task-2"]["execution_status"] == "submitting"
 
 

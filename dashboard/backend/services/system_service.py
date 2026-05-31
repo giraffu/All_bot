@@ -221,7 +221,13 @@ async def _load_active_task_user_info(*, user_ids: list[int], session_factory) -
         return {}
 
     async with session_factory() as db:
-        stmt = select(User.id, User.user_group, User.current_identity).where(
+        stmt = select(
+            User.id,
+            User.user_group,
+            User.current_identity,
+            User.full_name,
+            User.username,
+        ).where(
             User.id.in_(user_ids)
         )
         result = await db.execute(stmt)
@@ -229,6 +235,8 @@ async def _load_active_task_user_info(*, user_ids: list[int], session_factory) -
             row.id: {
                 "user_group": row.user_group,
                 "current_identity": row.current_identity,
+                "full_name": row.full_name,
+                "username": row.username,
             }
             for row in result.all()
         }
@@ -276,9 +284,21 @@ def _merge_backend_status_into_task(task: dict, *, backend_statuses: dict, user_
     if uid in user_info:
         task["user_group"] = user_info[uid]["user_group"]
         task["user_identity"] = user_info[uid]["current_identity"]
+        task["display_name"] = (
+            user_info[uid].get("full_name")
+            or user_info[uid].get("username")
+            or task.get("full_name")
+            or task.get("username")
+            or f"User_{uid}"
+        )
     else:
         task["user_group"] = "未知"
         task["user_identity"] = "外门弟子"
+        task["display_name"] = (
+            task.get("full_name")
+            or task.get("username")
+            or (f"User_{uid}" if uid else "Unknown")
+        )
 
     backend_id = task.get("backend_task_id")
     status_data = backend_statuses.get(backend_id)

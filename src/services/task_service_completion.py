@@ -13,6 +13,9 @@ from src.services.tg_task_runtime import (
     monitor_task_progress,
     send_result_media,
 )
+from src.services.wan22_video_v2_extension_service import (
+    merge_wan22_history_context_into_extra_outputs,
+)
 
 
 async def monitor_submitted_bot_task(
@@ -236,6 +239,11 @@ async def handle_task_completion(
     requested_duration: Optional[int] = None,
     lang: str = "zh",
 ):
+    persisted_extra_outputs = merge_wan22_history_context_into_extra_outputs(
+        task_type=task_type,
+        extra_outputs=extra_outputs,
+        metadata=result_meta,
+    )
     persistence_result = await download_and_log_task_output(
         internal_user_id=internal_user_id,
         username=user_logger.username,
@@ -246,7 +254,7 @@ async def handle_task_completion(
         saved_input_images=saved_input_images,
         is_video=is_video,
         allow_contribute=allow_contribute,
-        extra_outputs=extra_outputs,
+        extra_outputs=persisted_extra_outputs,
         billing_resolution=billing_resolution,
         requested_duration=requested_duration,
     )

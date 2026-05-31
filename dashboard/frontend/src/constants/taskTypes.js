@@ -25,12 +25,14 @@ export const TASK_TYPE_LABELS = {
   template_contribute: '模板共建',
   undress_tongue: '脱衣吐舌',
   closeup_blowjob: '特写口交',
+  txt2img: '文生图',
   text_to_image: '文生图',
   i2i_pro: '幻想换脸',
   i2i_draw: '局部重绘',
   img2img_lora: '图生图(附加模型)',
   video_lora: '图生视频(附加模型)',
   ltx_video: '高级图生视频',
+  wan22_video_v2: '图生视频 V2',
   unknown: '未知类型',
 }
 
@@ -48,6 +50,7 @@ export const TASK_TYPE_OPTIONS = [
   { label: '口交黑人', value: 'blowjob' },
   { label: '脱衣吐舌', value: 'undress_tongue' },
   { label: '快速抽插', value: 'penetration' },
+  { label: '文生图', value: 'txt2img' },
   { label: '文生图', value: 'text_to_image' },
   { label: '动图做爱', value: 'fuck' },
   { label: '动图露奶', value: 'face_show' },
@@ -56,10 +59,12 @@ export const TASK_TYPE_OPTIONS = [
   { label: '视频脱衣', value: 'video_undress' },
   { label: '随机换脸', value: 'random_faceswap' },
   { label: '视频生成', value: 'video' },
+  { label: '图生视频 V2', value: 'wan22_video_v2' },
   { label: '模板共建', value: 'template_contribute' },
   { label: '幻想换脸', value: 'i2i_pro' },
   { label: '局部重绘', value: 'i2i_draw' },
   { label: '图生图(附加模型)', value: 'img2img_lora' },
+  { label: '图生视频(附加模型)', value: 'video_lora' },
 ]
 
 export const TASK_TYPE_COLORS = {
@@ -87,9 +92,11 @@ export const TASK_TYPE_COLORS = {
   template_contribute: '#8c8c8c',
   undress_tongue: '#bae637',
   closeup_blowjob: '#ff4d4f',
+  txt2img: '#52c41a',
   text_to_image: '#52c41a',
   i2i_pro: '#ff85c0',
   ltx_video: '#722ed1',
+  wan22_video_v2: '#13c2c2',
   unknown: '#bfbfbf',
 }
 
