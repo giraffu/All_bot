@@ -1,4 +1,4 @@
-import type { TaskExtraOutputs } from '@/types/gallery'
+import type { TaskExtraOutputs, Wan22ResultMeta } from '@/types/gallery'
 
 export type TaskStatus = 'pending' | 'running' | 'success' | 'failed' | 'cancelled'
 export type TaskRefundStatus = 'pending' | 'refunded' | 'unconfirmed'
@@ -16,6 +16,7 @@ export interface Task {
   queuePos?: number
   resultUrl?: string
   extraOutputs?: TaskExtraOutputs
+  resultMeta?: Wan22ResultMeta
   error?: string
   eventSource?: TaskStreamHandle
   retryCount?: number

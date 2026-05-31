@@ -45,8 +45,11 @@ export function handleTaskProgressPayload(
 
   if (payload.progress !== undefined) {
     task.progress = payload.progress
-    if (task.status !== 'cancelled') {
+    if (task.status !== 'cancelled' && payload.status === 'running') {
       task.status = 'running'
+      task.queuePos = undefined
+    } else if (task.status !== 'cancelled' && payload.status === 'pending') {
+      task.status = 'pending'
     }
     touchTaskActivity(task)
   }

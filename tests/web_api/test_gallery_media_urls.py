@@ -99,3 +99,94 @@ async def test_build_post_responses_used_by_my_posts_generates_minio_urls_for_un
     assert presign_mock.call_args_list[0].kwargs == {"bucket": MINIO_BUCKET}
     assert presign_mock.call_args_list[1].args == ("123/output_images/task-1_thumb.webp",)
     assert presign_mock.call_args_list[1].kwargs == {"bucket": MINIO_BUCKET}
+
+
+@pytest.mark.asyncio
+async def test_build_gallery_post_responses_appends_wan22_mode_tag_from_history():
+    post = GalleryPost(
+        id=8,
+        task_id="task-wan22-1",
+        user_id=123,
+        media_type="video",
+        tags='["task.wan22_video_v2"]',
+        likes_count=0,
+        dislikes_count=0,
+        applied_count=0,
+        comments_count=0,
+        is_active=True,
+        created_at=datetime(2026, 5, 31, 10, 23, 0),
+    )
+    history = History(
+        id=12,
+        user_id=123,
+        task_id="task-wan22-1",
+        type="wan22_video_v2",
+        prompt="test prompt",
+        output_file="123/output_images/task-wan22-1.mp4",
+        extra_outputs={"_wan22_context": {"wan22_use_end_frame": True}},
+    )
+    author = User(id=123, username="tester", full_name="测试账号")
+    session = _FakeSession(
+        [
+            _FakeScalarResult([history]),
+            _FakeScalarResult([author]),
+        ]
+    )
+
+    items = await build_gallery_post_responses(
+        session=session,
+        posts=[post],
+        current_user=None,
+        pick_gallery_media_urls=AsyncMock(return_value=("media-url", "thumb-url")),
+    )
+
+    assert len(items) == 1
+    assert items[0].tags == ["task.wan22_video_v2", "task.wan22_start_end_frame"]
+
+
+@pytest.mark.asyncio
+async def test_build_gallery_post_responses_skips_mode_tag_for_stitched_wan22_record():
+    post = GalleryPost(
+        id=9,
+        task_id="task-wan22-stitched",
+        user_id=123,
+        media_type="video",
+        tags='["task.wan22_video_v2"]',
+        likes_count=0,
+        dislikes_count=0,
+        applied_count=0,
+        comments_count=0,
+        is_active=True,
+        created_at=datetime(2026, 5, 31, 10, 30, 0),
+    )
+    history = History(
+        id=13,
+        user_id=123,
+        task_id="task-wan22-stitched",
+        type="wan22_video_v2",
+        prompt="stitched prompt",
+        output_file="123/output_images/task-wan22-stitched.mp4",
+        extra_outputs={
+            "wan22_chain_stitch": {
+                "segment_count": 2,
+                "wan22_chain_task_ids": ["task-wan22-1", "task-wan22-2"],
+            }
+        },
+    )
+    author = User(id=123, username="tester", full_name="测试账号")
+    session = _FakeSession(
+        [
+            _FakeScalarResult([history]),
+            _FakeScalarResult([author]),
+        ]
+    )
+
+    items = await build_gallery_post_responses(
+        session=session,
+        posts=[post],
+        current_user=None,
+        pick_gallery_media_urls=AsyncMock(return_value=("media-url", "thumb-url")),
+    )
+
+    assert len(items) == 1
+    assert items[0].tags == ["task.wan22_video_v2", "task.wan22_stitched_video:2"]

@@ -39,7 +39,7 @@ declare module 'vue' {
     ASelectOption: typeof import('ant-design-vue/es')['SelectOption']
     ASlider: typeof import('ant-design-vue/es')['Slider']
     ASpin: typeof import('ant-design-vue/es')['Spin']
-    ASwitch: typeof import('ant-design-vue/es')['Switch']
+    ATag: typeof import('ant-design-vue/es')['Tag']
     ATextarea: typeof import('ant-design-vue/es')['Textarea']
     AUploadDragger: typeof import('ant-design-vue/es')['UploadDragger']
     DetailApplyActions: typeof import('./src/components/DetailApplyActions.vue')['default']

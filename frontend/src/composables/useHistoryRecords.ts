@@ -38,6 +38,12 @@ export function useHistoryRecords(options: UseHistoryRecordsOptions) {
     void options.router.replace({ query: {} })
   }
 
+  const applyRecentHistoryPayload = (recentHistory: Awaited<ReturnType<typeof getRecentHistory>>) => {
+    data.value = recentHistory.items
+    pagination.value.total = recentHistory.total
+    pagination.value.current = recentHistory.page
+  }
+
   const tryOpenTaskFromQuery = async (page: number) => {
     if (!options.route.query.task_id) {
       return
@@ -58,9 +64,7 @@ export function useHistoryRecords(options: UseHistoryRecordsOptions) {
     loading.value = true
     try {
       const recentHistory = await getRecentHistory()
-      data.value = recentHistory.items
-      pagination.value.total = recentHistory.total
-      pagination.value.current = recentHistory.page
+      applyRecentHistoryPayload(recentHistory)
       await tryOpenTaskFromQuery(page)
     } catch (error) {
       console.error('Failed to fetch history:', error)
@@ -101,7 +105,7 @@ export function useHistoryRecords(options: UseHistoryRecordsOptions) {
     void fetchHistory()
   })
 
-  watch(() => options.route.query.task_id, (newTaskId) => {
+  watch(() => options.route.query.task_id, async (newTaskId) => {
     if (!newTaskId) {
       return
     }
@@ -113,7 +117,19 @@ export function useHistoryRecords(options: UseHistoryRecordsOptions) {
       return
     }
 
-    void options.tasksStore.openDetailModal(newTaskId as string)
+    try {
+      const recentHistory = await getRecentHistory()
+      applyRecentHistoryPayload(recentHistory)
+      const refreshedRecord = recentHistory.items.find(item => item.task_id === newTaskId)
+      if (refreshedRecord) {
+        openDetail(refreshedRecord)
+      } else {
+        await options.tasksStore.openDetailModal(newTaskId as string)
+      }
+    } catch (error) {
+      console.error('Failed to refresh history for task query:', error)
+      await options.tasksStore.openDetailModal(newTaskId as string)
+    }
     clearTaskIdQuery()
   })
 

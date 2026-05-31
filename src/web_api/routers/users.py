@@ -12,8 +12,10 @@ from src.web_api.schemas.affiliate_redeem_schema import (
 from src.web_api.schemas.auth_schema import UserResponse
 from src.web_api.schemas.user_schema import (
     CheckinResponse,
+    HistoryItem,
     PaginatedHistory,
     PreferencesUpdate,
+    Wan22HistoryChainResponse,
 )
 from src.web_api.schemas.gallery_schema import (
     PaginatedGalleryResponse,
@@ -27,6 +29,10 @@ from src.web_api.services.users_history_service import (
     get_default_user_history_payload,
     get_history_apply_context_for_current_user,
     get_my_favorites_payload,
+)
+from src.web_api.services.wan22_history_chain_service import (
+    get_wan22_history_chain_payload,
+    stitch_wan22_history_chain_response,
 )
 from src.web_api.services.user_preferences_service import (
     update_current_user_preferences_payload,
@@ -261,6 +267,32 @@ async def send_history_to_bot(
     db: DbSessionDep,
 ):
     return await send_current_user_history_record_to_telegram(
+        task_id=task_id,
+        current_user=current_user,
+        db=db,
+    )
+
+
+@router.get("/history/{task_id}/wan22-chain", response_model=Wan22HistoryChainResponse)
+async def get_wan22_history_chain(
+    task_id: str,
+    current_user: CurrentUserDep,
+    db: DbSessionDep,
+):
+    return await get_wan22_history_chain_payload(
+        task_id=task_id,
+        current_user=current_user,
+        db=db,
+    )
+
+
+@router.post("/history/{task_id}/wan22-chain/stitch", response_model=HistoryItem)
+async def stitch_wan22_history_chain(
+    task_id: str,
+    current_user: CurrentUserDep,
+    db: DbSessionDep,
+):
+    return await stitch_wan22_history_chain_response(
         task_id=task_id,
         current_user=current_user,
         db=db,

@@ -151,6 +151,32 @@ def test_wan22_strategy_cost_follows_resolution_preset(
     assert strategy.get_cost({"resolution_preset": resolution_preset}) == expected_cost
 
 
+def test_wan22_strategy_metadata_keeps_chain_context():
+    strategy = Wan22VideoV2Strategy()
+
+    metadata = strategy.get_metadata(
+        {
+            "saved_input_images": ["demo/start.png", "demo/end.png"],
+            "resolution_preset": "hd",
+            "negative_prompt": "blur",
+            "use_end_frame": True,
+            "wan22_prev_task_id": "task-2",
+            "wan22_chain_task_ids": ["task-0", "task-1"],
+        }
+    )
+
+    assert metadata == {
+        "saved_inputs": ["demo/start.png", "demo/end.png"],
+        "requested_duration": 5,
+        "resolution_preset": "hd",
+        "wan22_resolution_preset": "hd",
+        "wan22_negative_prompt": "blur",
+        "wan22_use_end_frame": True,
+        "wan22_prev_task_id": "task-2",
+        "wan22_chain_task_ids": ["task-0", "task-1"],
+    }
+
+
 @pytest.mark.asyncio
 async def test_wan22_strategy_forwards_resolution_preset(monkeypatch):
     strategy = Wan22VideoV2Strategy()

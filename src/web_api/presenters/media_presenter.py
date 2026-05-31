@@ -4,6 +4,10 @@ from typing import Any
 from src.core.media_paths import get_media_type_from_history, resolve_storage_object
 from src.core.media_urls import build_r2_media_key_candidates, build_r2_thumbnail_info
 from src.services.storage import storage
+from src.services.wan22_video_v2_extension_service import (
+    extract_wan22_history_context,
+    is_wan22_stitched_result,
+)
 
 
 async def get_r2_url_if_exists(object_key: str) -> str:
@@ -235,5 +239,19 @@ def filter_user_visible_extra_outputs(
     if not isinstance(extra_outputs, dict):
         return {}
     if task_type == "wan22_video_v2":
-        return {}
+        last_frame = extra_outputs.get("last_frame")
+        return {"last_frame": last_frame} if isinstance(last_frame, dict) else {}
     return extra_outputs
+
+
+def extract_history_result_meta(
+    *,
+    task_type: str | None,
+    extra_outputs: dict[str, Any] | None,
+) -> dict[str, Any]:
+    if task_type == "wan22_video_v2":
+        result_meta = extract_wan22_history_context(extra_outputs)
+        if is_wan22_stitched_result(extra_outputs):
+            result_meta["wan22_is_stitched"] = True
+        return result_meta
+    return {}

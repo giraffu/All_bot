@@ -1,6 +1,8 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { Image as ImageIcon, Video, Clock, Download, Star, Trash2, Upload, Send } from 'lucide-vue-next'
+import { message } from 'ant-design-vue'
+import { useRouter } from 'vue-router'
 import { useViewport } from '@/composables/useViewport'
 import { useTasksStore } from '@/stores/tasks'
 import { useTaskFormat } from '@/composables/useTaskFormat'
@@ -8,10 +10,13 @@ import { useTaskInteraction } from '@/composables/useTaskInteraction'
 import { usePostPromptCopy } from '@/composables/usePostPromptCopy'
 import PromptPreviewPanel from '@/components/PromptPreviewPanel.vue'
 import { useI18n } from 'vue-i18n'
+import { stitchWan22HistoryChain } from '@/api/gallery'
+import type { HistoryItem } from '@/types/gallery'
 
 const { isMobile } = useViewport()
 const { t } = useI18n()
 const tasksStore = useTasksStore()
+const router = useRouter()
 
 const { formatDate, getTypeLabel, getFileUrl, isVideoFile } = useTaskFormat()
 const { copyPrompt } = usePostPromptCopy(t)
@@ -27,6 +32,20 @@ const detailVisible = computed({
 })
 
 const currentRecord = computed(() => tasksStore.currentDetailRecord)
+const wan22ActionLoading = ref<'stitch' | null>(null)
+
+const isWan22Record = computed(() => currentRecord.value?.type === 'wan22_video_v2')
+const isWan22StitchedRecord = computed(() => Boolean(currentRecord.value?.result_meta?.wan22_is_stitched))
+const canExtendWan22Chain = computed(
+  () => isWan22Record.value && Boolean(currentRecord.value?.task_id && currentRecord.value?.extra_outputs?.last_frame?.path)
+)
+const canRegenerateWan22Segment = computed(
+  () => isWan22Record.value && Boolean(currentRecord.value?.result_meta?.wan22_prev_task_id)
+)
+const canStitchWan22Chain = computed(
+  () => isWan22Record.value && Boolean(currentRecord.value?.result_meta?.wan22_prev_task_id)
+)
+const canShowWan22ChainCard = computed(() => isWan22Record.value && !isWan22StitchedRecord.value)
 
 const {
   submittingTasks,
@@ -43,6 +62,44 @@ const {
     }
   }
 })
+
+const openWan22Editor = async (mode: 'extend' | 'regenerate') => {
+  const record = currentRecord.value as HistoryItem | null
+  if (!record?.task_id) {
+    message.warning('当前记录缺少任务 ID，暂时无法继续编辑')
+    return
+  }
+  detailVisible.value = false
+  await router.push({
+    name: 'Wan22VideoV2',
+    query: {
+      mode,
+      task_id: record.task_id,
+    },
+  })
+}
+
+const handleWan22ChainStitch = async () => {
+  const record = currentRecord.value as HistoryItem | null
+  if (!record?.task_id) {
+    message.warning('当前记录缺少任务 ID，暂时无法拼接')
+    return
+  }
+  wan22ActionLoading.value = 'stitch'
+  const hide = message.loading('正在拼接整条视频链...', 0)
+  try {
+    const stitchedRecord = await stitchWan22HistoryChain(record.task_id)
+    tasksStore.showDetailRecord(stitchedRecord)
+    hide()
+    message.success('拼接完成，已生成新的闪回瓶记录')
+  } catch (error: any) {
+    console.error(error)
+    hide()
+    message.error(error?.response?.data?.detail || '拼接失败，请稍后再试')
+  } finally {
+    wan22ActionLoading.value = null
+  }
+}
 
 </script>
 
@@ -124,6 +181,53 @@ const {
               :copy-label="$t('my_posts.copy_prompt')"
               @copy="copyPrompt(currentRecord)"
             />
+
+            <div
+              v-if="canShowWan22ChainCard"
+              class="task-detail-chain-card rounded-2xl border p-4 space-y-3"
+            >
+              <div class="flex items-center justify-between gap-3">
+                <div>
+                  <div class="task-detail-section-label text-[10px] lg:text-xs uppercase tracking-wider">
+                    图生视频 v2 多段编辑
+                  </div>
+                  <div class="task-detail-chain-desc text-xs lg:text-sm mt-1">
+                    {{ isMobile ? '手机端会进入纵向链路编辑，按钮更适合单手连续操作。' : '大屏建议进入工作台连续编辑，可直接查看整条链路并切换段落。' }}
+                  </div>
+                </div>
+                <a-tag color="blue" class="self-start">
+                  {{ isMobile ? '移动端' : '桌面端' }}
+                </a-tag>
+              </div>
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <a-button
+                  type="primary"
+                  class="task-detail-primary-btn border-none rounded-xl"
+                  :disabled="!canExtendWan22Chain"
+                  @click="openWan22Editor('extend')"
+                >
+                  扩展下一段
+                </a-button>
+                <a-button
+                  class="task-detail-secondary-btn rounded-xl"
+                  :disabled="!canRegenerateWan22Segment"
+                  @click="openWan22Editor('regenerate')"
+                >
+                  重新生成本段
+                </a-button>
+                <a-button
+                  class="task-detail-secondary-btn rounded-xl sm:col-span-2"
+                  :disabled="!canStitchWan22Chain"
+                  :loading="wan22ActionLoading === 'stitch'"
+                  @click="handleWan22ChainStitch"
+                >
+                  完成整链拼接
+                </a-button>
+              </div>
+              <div class="task-detail-chain-tip text-[11px] lg:text-xs">
+                {{ canExtendWan22Chain ? '扩展会自动继承当前段尾帧；重生成只保留当前段之前的链路上下文。' : '当前记录缺少可用尾帧，暂时不能继续扩展。' }}
+              </div>
+            </div>
 
           </div>
 
@@ -382,6 +486,15 @@ html[data-theme='light'] .history-detail-modal {
 .task-detail-time-badge {
   background: var(--task-detail-time-bg);
   border: 1px solid var(--task-detail-time-border);
+  color: var(--task-detail-text-secondary);
+}
+
+.task-detail-chain-card {
+  background: color-mix(in srgb, var(--task-detail-secondary-bg) 78%, transparent);
+  border-color: var(--task-detail-secondary-border);
+}
+
+.task-detail-chain-desc {
   color: var(--task-detail-text-secondary);
 }
 

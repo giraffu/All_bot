@@ -78,6 +78,7 @@ def build_result_success_payload(
     media_type: str | None,
     result_url: str,
     extra_outputs: dict[str, Any] | None = None,
+    result_meta: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     return {
         "status": STREAM_STATUS_SUCCESS,
@@ -86,4 +87,5 @@ def build_result_success_payload(
         "media_type": media_type,
         "result_url": result_url,
         "extra_outputs": extra_outputs or {},
+        "result_meta": result_meta or {},
     }

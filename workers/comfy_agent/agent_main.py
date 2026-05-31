@@ -494,6 +494,15 @@ class ComfyAgent:
         if object_name.startswith("template:"):
             bucket_name = "bot-template"
             real_object_name = object_name.replace("template:", "")
+        elif object_name.startswith("comfyui-temp/"):
+            bucket_name = MINIO_RESULT_BUCKET
+            real_object_name = object_name.replace("comfyui-temp/", "", 1)
+        elif object_name.startswith(f"{MINIO_RESULT_BUCKET}/"):
+            bucket_name = MINIO_RESULT_BUCKET
+            real_object_name = object_name.replace(f"{MINIO_RESULT_BUCKET}/", "", 1)
+        elif object_name.startswith(f"{MINIO_INPUT_BUCKET}/"):
+            bucket_name = MINIO_INPUT_BUCKET
+            real_object_name = object_name.replace(f"{MINIO_INPUT_BUCKET}/", "", 1)
 
         logger.info(
             f"Downloading {real_object_name} from MinIO bucket {bucket_name} to {local_path}"

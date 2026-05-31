@@ -210,6 +210,7 @@ export async function probeDetachedTaskResult<T extends RuntimeTaskLike>(
         status: 'success',
         resultUrl: payload.result_url,
         extraOutputs: payload.extra_outputs ?? {},
+        resultMeta: payload.result_meta ?? {},
         awaitingResult: false,
         error: undefined
       }))

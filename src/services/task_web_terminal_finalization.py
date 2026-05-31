@@ -9,6 +9,9 @@ from src.core.task_core_finalization import (
 from src.core.task_core_persistence import persist_successful_web_history_default
 from src.core.task_core_runtime import cleanup_task_runtime_state
 from src.core.task_core_types import TaskSubmissionContext
+from src.services.wan22_video_v2_extension_service import (
+    merge_wan22_history_context_into_extra_outputs,
+)
 
 
 async def finalize_monitored_web_task_success(
@@ -25,6 +28,11 @@ async def finalize_monitored_web_task_success(
     logger: logging.Logger,
 ):
     try:
+        persisted_extra_outputs = merge_wan22_history_context_into_extra_outputs(
+            task_type=submission_context.task_type,
+            extra_outputs=extra_outputs,
+            metadata=submission_context.metadata,
+        )
         await persist_successful_web_history_func(
             backend_task_id=backend_task_id,
             registry_task_id=registry_task_id,
@@ -36,7 +44,7 @@ async def finalize_monitored_web_task_success(
             allow_contribute=submission_context.allow_contribute,
             is_video=submission_context.is_video_task,
             result_path=result_path,
-            extra_outputs=extra_outputs,
+            extra_outputs=persisted_extra_outputs,
             billing_resolution=submission_context.billing_resolution,
             output_width=submission_context.output_width,
             output_height=submission_context.output_height,

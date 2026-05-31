@@ -137,6 +137,8 @@
     "video_insert": "Video Gen",
     "video_lora": "Img2Video",
     "wan22_video_v2": "Img2Video V2",
+    "wan22_start_frame": "Start Frame",
+    "wan22_start_end_frame": "Start + End Frame",
     "face_video": "Video FaceSwap"
   },
   "api": {
@@ -451,6 +453,9 @@
     "t2i_pornmaster_turbo": "🎨 Text2Img",
     "custom_video": "🎬 Img2Video",
     "video_lora": "🎬 Img2Video",
+    "wan22_start_frame": "Start Frame",
+    "wan22_start_end_frame": "Start + End Frame",
+    "wan22_stitched_video": "Stitched Video-{count}",
     "cancel_success_refreshing_balance": "Task canceled, refreshing balance",
     "mode_edit": "Custom Edit",
     "mode_txt2img": "Text2Img",

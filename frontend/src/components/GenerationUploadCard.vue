@@ -17,6 +17,9 @@ const props = withDefaults(
     uploadText?: string
     uploadHint?: string
     showUploadList?: boolean
+    disabled?: boolean
+    locked?: boolean
+    lockedText?: string
     beforeUpload?: (file: any) => boolean | Promise<boolean>
   }>(),
   {
@@ -38,6 +41,9 @@ const props = withDefaults(
     uploadText: '点击/拖拽',
     uploadHint: 'JPG/PNG',
     showUploadList: false,
+    disabled: false,
+    locked: false,
+    lockedText: '已锁定',
     beforeUpload: undefined,
   },
 )
@@ -71,8 +77,18 @@ const emit = defineEmits<{
         />
       </slot>
 
-      <div class="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center pointer-events-none">
+      <div
+        class="absolute inset-0 bg-black/60 transition-opacity flex items-center justify-center pointer-events-none"
+        :class="props.locked ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'"
+      >
+        <span
+          v-if="props.locked"
+          class="generation-upload-card__locked-badge px-3 py-1 rounded-full text-xs font-medium"
+        >
+          {{ props.lockedText }}
+        </span>
         <a-button
+          v-else
           danger
           type="primary"
           class="pointer-events-auto"
@@ -90,6 +106,7 @@ const emit = defineEmits<{
       :name="name"
       :multiple="multiple"
       :accept="accept"
+      :disabled="disabled"
       :before-upload="beforeUpload"
       :show-upload-list="showUploadList"
       :class="draggerClass"
@@ -127,9 +144,20 @@ const emit = defineEmits<{
   background: var(--theme-card-strong-bg);
 }
 
+.generation-upload-card__locked-badge {
+  color: #ecfeff;
+  background: color-mix(in srgb, #0891b2 70%, black 30%);
+  border: 1px solid color-mix(in srgb, #67e8f9 55%, transparent);
+}
+
 :deep(.ant-upload.ant-upload-drag) {
   background: var(--theme-card-strong-bg) !important;
   border-color: var(--theme-border) !important;
+}
+
+:deep(.ant-upload.ant-upload-drag.ant-upload-disabled) {
+  cursor: not-allowed !important;
+  opacity: 0.75;
 }
 
 :deep(.ant-upload.ant-upload-drag:hover) {

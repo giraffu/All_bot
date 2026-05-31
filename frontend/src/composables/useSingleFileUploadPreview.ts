@@ -48,6 +48,13 @@ export function useSingleFileUploadPreview(
     objectKey.value = null
   }
 
+  const setRemoteFile = (key: string | null, previewUrl: string | null) => {
+    fileList.value = []
+    objectKey.value = key
+    revokePreview()
+    filePreview.value = previewUrl
+  }
+
   onBeforeUnmount(() => {
     revokePreview()
   })
@@ -58,5 +65,6 @@ export function useSingleFileUploadPreview(
     filePreview,
     beforeUpload,
     handleRemove,
+    setRemoteFile,
   }
 }

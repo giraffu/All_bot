@@ -13,6 +13,7 @@ class HistoryItem(BaseModel):
     prompt: Optional[str]
     input_file: Optional[str]
     output_file: Optional[str]
+    input_file_urls: List[str] = Field(default_factory=list)
     billing_resolution: Optional[str] = None
     width: Optional[int] = None
     height: Optional[int] = None
@@ -21,6 +22,7 @@ class HistoryItem(BaseModel):
     output_file_url: Optional[str] = None
     thumbnail_url: Optional[str] = None
     extra_outputs: Dict[str, Any] = Field(default_factory=dict)
+    result_meta: Dict[str, Any] = Field(default_factory=dict)
     created_at: datetime
     allow_contribute: Optional[bool] = True
     source: Optional[str] = "bot"
@@ -33,6 +35,11 @@ class PaginatedHistory(BaseModel):
     total: int
     page: int
     size: int
+
+
+class Wan22HistoryChainResponse(BaseModel):
+    current_task_id: str
+    items: List[HistoryItem]
 
 
 class CheckinResponse(BaseModel):

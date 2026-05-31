@@ -1,21 +1,24 @@
-import type { TaskExtraOutputs } from '@/types/gallery'
+import type { TaskExtraOutputs, Wan22ResultMeta } from '@/types/gallery'
 
 export interface TaskResultResponsePayload {
   status?: string
   result_url?: string | null
   extra_outputs?: TaskExtraOutputs | null
+  result_meta?: Wan22ResultMeta | null
 }
 
 export interface TaskResultDecision {
   type: 'resolved' | 'retry' | 'timeout' | 'forbidden'
   resultUrl?: string
   extraOutputs?: TaskExtraOutputs
+  resultMeta?: Wan22ResultMeta
 }
 
 export interface ResumableTaskLike {
   status: 'pending' | 'running' | 'success' | 'failed' | 'cancelled'
   resultUrl?: string
   extraOutputs?: TaskExtraOutputs
+  resultMeta?: Wan22ResultMeta
 }
 
 export interface RecoverableTaskLike extends ResumableTaskLike {
@@ -44,7 +47,8 @@ export function decideTaskResultFromResponse(
     return {
       type: 'resolved',
       resultUrl: payload.result_url,
-      extraOutputs: payload.extra_outputs ?? {}
+      extraOutputs: payload.extra_outputs ?? {},
+      resultMeta: payload.result_meta ?? {}
     }
   }
 
@@ -120,6 +124,7 @@ export function applyTaskResultResponseToTask<T extends RecoverableTaskLike>(
         status: 'success',
         resultUrl: decision.resultUrl,
         extraOutputs: decision.extraOutputs ?? {},
+        resultMeta: decision.resultMeta ?? {},
         awaitingResult: false,
         error: undefined
       }

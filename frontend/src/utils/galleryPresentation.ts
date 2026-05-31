@@ -1,7 +1,13 @@
 export function formatGalleryTag(
   tag: string,
-  t: (key: string) => string
+  t: (key: string, params?: Record<string, unknown>) => string
 ) {
+  const stitchedMatch = tag.match(/^task\.wan22_stitched_video:(\d+)$/)
+  if (stitchedMatch) {
+    return t('task.wan22_stitched_video', {
+      count: Number.parseInt(stitchedMatch[1], 10),
+    })
+  }
   if (tag.startsWith('#task.')) {
     const key = tag.substring(1)
     return '#' + t(key)

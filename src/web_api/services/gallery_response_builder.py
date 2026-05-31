@@ -6,11 +6,44 @@ from sqlalchemy import select
 
 from src.database.models import History, User, UserFollow, UserInteraction
 from src.lora_mapping import translate_tags
+from src.services.wan22_video_v2_extension_service import (
+    extract_wan22_history_context,
+    is_wan22_stitched_result,
+    resolve_wan22_stitched_segment_count,
+)
 from src.web_api.common.utils import resolve_history_billing_resolution
 from src.web_api.schemas.gallery_schema import GalleryPostResponse
 from src.web_api.services.gallery_media_resolver import resolve_gallery_post_media_urls
 
 logger = logging.getLogger(__name__)
+
+
+def _append_history_mode_tags(
+    *,
+    tags: list[str],
+    history: History | None,
+) -> list[str]:
+    if not history or history.type != "wan22_video_v2":
+        return tags
+    if is_wan22_stitched_result(getattr(history, "extra_outputs", None)):
+        segment_count = resolve_wan22_stitched_segment_count(
+            getattr(history, "extra_outputs", None)
+        )
+        if segment_count:
+            stitched_tag = f"task.wan22_stitched_video:{segment_count}"
+            if stitched_tag not in tags:
+                return [*tags, stitched_tag]
+        return tags
+
+    result_meta = extract_wan22_history_context(getattr(history, "extra_outputs", None))
+    mode_tag = (
+        "task.wan22_start_end_frame"
+        if bool(result_meta.get("wan22_use_end_frame"))
+        else "task.wan22_start_frame"
+    )
+    if mode_tag in tags:
+        return tags
+    return [*tags, mode_tag]
 
 
 def resolve_gallery_author_name(
@@ -75,9 +108,10 @@ async def build_post_responses(
             tags = json.loads(post.tags) if post.tags else []
         except Exception:
             tags = []
-        translated_tags = translate_tags_func(tags)
 
         history = history_map.get(post.task_id)
+        tags = _append_history_mode_tags(tags=tags, history=history)
+        translated_tags = translate_tags_func(tags)
         prompt = history.prompt if history else None
         task_type_from_history = history.type if history else None
 

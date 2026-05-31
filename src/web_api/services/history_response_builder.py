@@ -1,8 +1,17 @@
 import re
 
 from src.core.media_paths import get_media_type_from_history
-from src.web_api.common.utils import resolve_history_billing_resolution
+from src.services.wan22_video_v2_extension_service import (
+    extract_wan22_history_context,
+    is_wan22_stitched_result,
+    resolve_wan22_stitched_segment_count,
+)
+from src.web_api.common.utils import (
+    build_storage_input_file_url,
+    resolve_history_billing_resolution,
+)
 from src.web_api.presenters.media_presenter import (
+    extract_history_result_meta,
     filter_user_visible_extra_outputs,
     resolve_history_extra_outputs,
     resolve_history_media_urls,
@@ -11,13 +20,43 @@ from src.web_api.schemas.gallery_schema import GalleryPostResponse
 from src.web_api.schemas.user_schema import HistoryItem
 
 
-def extract_history_tags(prompt: str | None) -> list[str]:
+def extract_history_tags(
+    prompt: str | None,
+    *,
+    task_type: str | None = None,
+    extra_outputs: dict | None = None,
+) -> list[str]:
     tags: list[str] = []
     if prompt:
         match = re.search(r"\\[模型:\\s*(.*?)\\]", prompt)
         if match:
             tags.append(f"#{match.group(1).strip()}")
+    if task_type == "wan22_video_v2":
+        if is_wan22_stitched_result(extra_outputs):
+            segment_count = resolve_wan22_stitched_segment_count(extra_outputs)
+            if segment_count:
+                tags.append(f"task.wan22_stitched_video:{segment_count}")
+            return tags
+        result_meta = extract_wan22_history_context(extra_outputs)
+        tags.append(
+            "task.wan22_start_end_frame"
+            if bool(result_meta.get("wan22_use_end_frame"))
+            else "task.wan22_start_frame"
+        )
     return tags
+
+
+def _build_input_file_urls(input_file: str | None) -> list[str]:
+    if not input_file:
+        return []
+    urls: list[str] = []
+    for item in str(input_file).split("|"):
+        normalized = item.strip()
+        if not normalized:
+            continue
+        url = build_storage_input_file_url(normalized)
+        urls.append(url or normalized)
+    return urls
 
 
 async def build_user_history_payload(
@@ -44,6 +83,7 @@ async def build_user_history_payload(
                 prompt=history.prompt,
                 id=history.id,
                 input_file=history.input_file,
+                input_file_urls=_build_input_file_urls(history.input_file),
                 output_file=history.output_file,
                 output_file_url=media_url,
                 thumbnail_url=thumbnail_url,
@@ -56,6 +96,10 @@ async def build_user_history_payload(
                 allow_contribute=history.allow_contribute,
                 source=history.source,
                 is_favorited=history.is_favorited,
+                result_meta=extract_history_result_meta(
+                    task_type=history.type,
+                    extra_outputs=getattr(history, "extra_outputs", None),
+                ),
                 extra_outputs=filter_user_visible_extra_outputs(
                     task_type=history.type,
                     extra_outputs=resolved_extra_outputs,
@@ -96,7 +140,11 @@ async def build_favorite_gallery_payload(
                 width=gallery_post.width if gallery_post else history.width,
                 height=gallery_post.height if gallery_post else history.height,
                 duration=gallery_post.duration if gallery_post else history.duration,
-                tags=extract_history_tags(history.prompt),
+                tags=extract_history_tags(
+                    history.prompt,
+                    task_type=history.type,
+                    extra_outputs=getattr(history, "extra_outputs", None),
+                ),
                 likes_count=gallery_post.likes_count if gallery_post else 0,
                 dislikes_count=gallery_post.dislikes_count if gallery_post else 0,
                 applied_count=gallery_post.applied_count if gallery_post else 0,

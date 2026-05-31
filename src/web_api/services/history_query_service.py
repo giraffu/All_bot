@@ -143,3 +143,20 @@ async def fetch_gallery_posts_for_task_ids(*, db, task_ids: list[str]):
         return {}
     result = await db.execute(select(GalleryPost).where(GalleryPost.task_id.in_(task_ids)))
     return build_gallery_post_map(result.scalars().all())
+
+
+async def fetch_owned_histories_by_task_ids(
+    *,
+    db,
+    task_ids: list[str],
+    current_user_id: int,
+):
+    if not task_ids:
+        return []
+    result = await db.execute(
+        select(History).where(
+            History.task_id.in_(task_ids),
+            History.user_id == current_user_id,
+        )
+    )
+    return [history for history in result.scalars().all() if history.is_visible]

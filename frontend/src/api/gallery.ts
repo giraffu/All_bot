@@ -2,9 +2,11 @@ import api from '@/api'
 import type {
   ApplyContextSource,
   GalleryPost,
+  HistoryItem,
   LibraryCollectionScope,
   PaginatedGalleryResponse,
   RecentHistoryResponse,
+  Wan22HistoryChainResponse,
 } from '@/types/gallery'
 import type { RawApplyContextResponse } from '@/types/templateApply'
 
@@ -25,6 +27,16 @@ interface GalleryCommentsPage {
 
 export async function getRecentHistory(): Promise<RecentHistoryResponse> {
   const response = await api.get<RecentHistoryResponse>('/users/history')
+  return response.data
+}
+
+export async function getWan22HistoryChain(taskId: string): Promise<Wan22HistoryChainResponse> {
+  const response = await api.get<Wan22HistoryChainResponse>(`/users/history/${taskId}/wan22-chain`)
+  return response.data
+}
+
+export async function stitchWan22HistoryChain(taskId: string): Promise<HistoryItem> {
+  const response = await api.post<HistoryItem>(`/users/history/${taskId}/wan22-chain/stitch`)
   return response.data
 }
 

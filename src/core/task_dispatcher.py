@@ -20,6 +20,11 @@ from src.constants import (
 from src.core.task_core_service_providers import get_task_core_image_service
 from src.lora_catalog import normalize_ltx_video_lora_items
 from src.services.wan22_video_v2_config import get_wan22_video_v2_cost
+from src.services.wan22_video_v2_context import (
+    normalize_wan22_video_v2_chain_task_ids,
+    normalize_wan22_video_v2_negative_prompt,
+)
+from src.services.wan22_video_v2_config import normalize_wan22_video_v2_resolution_preset
 
 
 EDIT_LIKE_TASK_TYPES = {MODE_EDIT, MODE_IMG2IMG_LORA}
@@ -466,11 +471,29 @@ class Wan22VideoV2Strategy(BaseTaskStrategy):
         return get_wan22_video_v2_cost(inputs.get("resolution_preset"))
 
     def get_metadata(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
-        return {
+        metadata = {
             "saved_inputs": _get_saved_input_images(inputs),
             "requested_duration": 5,
-            "resolution_preset": inputs.get("resolution_preset", "standard"),
+            "resolution_preset": normalize_wan22_video_v2_resolution_preset(
+                inputs.get("resolution_preset", "standard")
+            ),
+            "wan22_resolution_preset": normalize_wan22_video_v2_resolution_preset(
+                inputs.get("resolution_preset", "standard")
+            ),
+            "wan22_negative_prompt": normalize_wan22_video_v2_negative_prompt(
+                inputs.get("negative_prompt")
+            ),
+            "wan22_use_end_frame": bool(inputs.get("use_end_frame")),
         }
+        prev_task_id = str(inputs.get("wan22_prev_task_id") or "").strip()
+        if prev_task_id:
+            metadata["wan22_prev_task_id"] = prev_task_id
+        chain_task_ids = normalize_wan22_video_v2_chain_task_ids(
+            inputs.get("wan22_chain_task_ids")
+        )
+        if chain_task_ids:
+            metadata["wan22_chain_task_ids"] = chain_task_ids
+        return metadata
 
     async def submit_task(
         self, task_id: str, inputs: Dict[str, Any], priority: int

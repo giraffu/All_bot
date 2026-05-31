@@ -242,7 +242,14 @@ async def test_get_task_result_resolves_history_extra_outputs(monkeypatch):
             "last_frame": {
                 "path": "123/output_images/task-1_last_frame.png",
                 "media_type": "image",
-            }
+            },
+            "_wan22_context": {
+                "wan22_resolution_preset": "hd",
+                "wan22_negative_prompt": "blur",
+                "wan22_use_end_frame": True,
+                "wan22_prev_task_id": "task-0",
+                "wan22_chain_task_ids": ["task-root", "task-0"],
+            },
         },
     )
     presign_mock = MagicMock(side_effect=[
@@ -263,5 +270,18 @@ async def test_get_task_result_resolves_history_extra_outputs(monkeypatch):
         "task_type": "wan22_video_v2",
         "media_type": "video",
         "result_url": "https://cdn.example/task-1.mp4",
-        "extra_outputs": {},
+        "extra_outputs": {
+            "last_frame": {
+                "path": "123/output_images/task-1_last_frame.png",
+                "media_type": "image",
+                "url": "https://cdn.example/task-1-last-frame.png",
+            }
+        },
+        "result_meta": {
+            "wan22_resolution_preset": "hd",
+            "wan22_negative_prompt": "blur",
+            "wan22_use_end_frame": True,
+            "wan22_prev_task_id": "task-0",
+            "wan22_chain_task_ids": ["task-root", "task-0"],
+        },
     }
