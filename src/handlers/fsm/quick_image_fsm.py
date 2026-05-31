@@ -306,12 +306,12 @@ async def receive_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
             create_background_task(
                 context,
                 process_generation_task(
-                    context,
-                    message.chat_id,
-                    user_id,
-                    update.effective_user.username,
-                    prompt,
-                    swapped_images,
+                    context=context,
+                    chat_id=message.chat_id,
+                    user_id=user_id,
+                    username=update.effective_user.username,
+                    prompt=prompt,
+                    images=swapped_images,
                     task_type="face_swap",
                     reply_markup=reply_markup,
                     cleanup=False,  # Kept for "Again"
@@ -329,12 +329,12 @@ async def receive_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         create_background_task(
             context,
             process_generation_task(
-                context,
-                message.chat_id,
-                user_id,
-                update.effective_user.username,
-                prompt,
-                [image_path],
+                context=context,
+                chat_id=message.chat_id,
+                user_id=user_id,
+                username=update.effective_user.username,
+                prompt=prompt,
+                images=[image_path],
                 task_type=mode,
                 cleanup=True,
             ),

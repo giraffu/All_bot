@@ -90,7 +90,7 @@ services:
     environment:
       - TZ=Asia/Shanghai
       - AGENT_ID=worker_test_05
-      - SUPPORTED_TASK_TYPES=video_insert,video_edit,wan22_video_v2
+      - SUPPORTED_TASK_TYPES=wan22_video_v2
       - MASTER_API_URL=http://127.0.0.1:8004
       - AGENT_SECRET_TOKEN=${AGENT_SECRET_TOKEN:-super_secret_agent_token_2026}
       - COMFY_API_URL=http://192.168.1.252:8189

@@ -146,12 +146,12 @@ def _submit_edit_image_task(
         create_background_task(
             context,
             process_i2i_pro_task(
-                context,
-                chat_id,
-                user_id,
-                username,
-                prompt,
-                images,
+                context=context,
+                chat_id=chat_id,
+                user_id=user_id,
+                username=username,
+                prompt=prompt,
+                images=images,
             ),
         )
         return
@@ -159,12 +159,12 @@ def _submit_edit_image_task(
     create_background_task(
         context,
         process_generation_task(
-            context,
-            chat_id,
-            user_id,
-            username,
-            prompt,
-            images,
+            context=context,
+            chat_id=chat_id,
+            user_id=user_id,
+            username=username,
+            prompt=prompt,
+            images=images,
             is_video=False,
             task_type=mode,
             cleanup=True,

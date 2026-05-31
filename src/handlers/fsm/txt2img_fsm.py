@@ -114,12 +114,12 @@ async def receive_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     create_background_task(
         context,
         process_generation_task(
-            context,
-            message.chat_id,
-            user.id,
-            user.username,
-            prompt,
-            [],
+            context=context,
+            chat_id=message.chat_id,
+            user_id=user.id,
+            username=user.username,
+            prompt=prompt,
+            images=[],
             is_video=False,
             task_type=MODE_TXT2IMG,
             cleanup=False,

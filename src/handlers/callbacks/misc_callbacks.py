@@ -132,12 +132,12 @@ async def random_faceswap_again_callback(
         create_background_task(
             context,
             process_generation_task(
-                context,
-                chat_id,
-                user_id,
-                username,
-                prompt,
-                swapped_images,
+                context=context,
+                chat_id=chat_id,
+                user_id=user_id,
+                username=username,
+                prompt=prompt,
+                images=swapped_images,
                 task_type="face_swap",
                 reply_markup=reply_markup,
                 cleanup=False,

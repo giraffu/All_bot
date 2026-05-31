@@ -11,7 +11,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "preview": "vite preview",
-    "deploy": "npm run build && scp -i ./ssh_key/id_rsa.pem -o StrictHostKeyChecking=no -r dist/* root@100.88.57.122:/root/dist/",
+    "deploy": "npm run deploy:edge-prod",
+    "deploy:edge-prod": "sh ./scripts/deploy-edge-prod.sh",
     "deploy:edge-test": "sh ./scripts/deploy-edge-test.sh"
   },
   "dependencies": {

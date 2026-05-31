@@ -104,6 +104,35 @@ wait_for_http_ready() {
     return 1
 }
 
+deploy_prod_web_to_edge_vps() {
+    local frontend_dir="$ROOT_DIR/frontend"
+    local prod_web_url="${PROD_WEB_URL:-https://web.aivison.it.com}"
+
+    if [ ! -d "$frontend_dir" ]; then
+        echo "❌ 未找到前端目录: $frontend_dir"
+        return 1
+    fi
+
+    if ! command -v npm >/dev/null 2>&1; then
+        echo "❌ 未找到 npm，无法执行生产 Web 发布。"
+        echo "👉 请先安装 Node.js/npm，或手动执行 frontend/scripts/deploy-edge-prod.sh。"
+        return 1
+    fi
+
+    if [ ! -f "$frontend_dir/scripts/deploy-edge-prod.sh" ]; then
+        echo "❌ 未找到生产 Web 发布脚本: $frontend_dir/scripts/deploy-edge-prod.sh"
+        return 1
+    fi
+
+    echo "9️⃣ 构建并发布生产 Web 静态站到边缘 VPS..."
+    (
+        cd "$frontend_dir"
+        npm run deploy:edge-prod
+    )
+    wait_for_http_ready "边缘 VPS 生产 Web" "$prod_web_url" 24 5
+    echo "✅ 边缘 VPS 生产 Web 发布完成。"
+}
+
 restart_prod_dashboard_frontend_only() {
     echo "🔁 单独重建生产 Dashboard 前端..."
     remove_compose_service_containers "dashboard-frontend"
@@ -152,6 +181,7 @@ echo "2️⃣ 开始监控生产环境活跃任务队列，等待当前任务处
 monitor_queue() {
     local container_name=$1
     local env_name=$2
+    local active_count
 
     if [ -n "$(docker ps -q -f name=^${container_name}$)" ]; then
         echo "   👉 开始监控 [${env_name}] 活跃任务队列..."
@@ -161,7 +191,6 @@ monitor_queue() {
 import sys
 try:
     import asyncio
-    import json
     from src.services.redis_client import redis_client
     from config import REDIS_PREFIX
 
@@ -187,15 +216,15 @@ EOF
 
         while true; do
             # 在容器内执行检测脚本
-            ACTIVE_COUNT=$(docker exec ${container_name} python -c "$CHECK_SCRIPT" 2>/dev/null | tail -n 1 | tr -d '\r')
+            active_count=$(docker exec "${container_name}" python -c "$CHECK_SCRIPT" 2>/dev/null | tail -n 1 | tr -d '\r')
             
             # 错误容忍：如果获取失败（可能是 Redis 短暂网络波动或代码异常），当作还有任务，继续等待
-            if [[ ! "$ACTIVE_COUNT" =~ ^[0-9]+$ ]]; then
+            if [[ ! "$active_count" =~ ^[0-9]+$ ]]; then
                 retry_count=$((retry_count+1))
-                echo "   ⚠️ 获取任务数量失败 ($ACTIVE_COUNT)，10秒后重试 ($retry_count/$max_retries)..."
+                echo "   ⚠️ 获取任务数量失败 ($active_count)，10秒后重试 ($retry_count/$max_retries)..."
                 if [ $retry_count -ge $max_retries ]; then
-                    echo "   ❌ 达到最大重试次数 ($max_retries)，强制跳过监控，直接继续..."
-                    break
+                    echo "   ❌ 达到最大重试次数 ($max_retries)，为避免带着未知运行态进入正式更新，停止部署。"
+                    return 1
                 fi
                 sleep 10
                 continue
@@ -204,11 +233,11 @@ EOF
             # 获取成功则重置连续失败计数
             retry_count=0
 
-            if [ "$ACTIVE_COUNT" -eq 0 ]; then
+            if [ "$active_count" -eq 0 ]; then
                 echo "   🎉 [${env_name}] 活跃任务队列已完全清空 (Count: 0)！"
                 break
             else
-                echo "   ⏳ [${env_name}] 当前仍有 $ACTIVE_COUNT 个任务正在生成中，请耐心等待 (10秒后再次检测)..."
+                echo "   ⏳ [${env_name}] 当前仍有 $active_count 个任务正在生成中，请耐心等待 (10秒后再次检测)..."
                 sleep 10
             fi
         done
@@ -310,7 +339,11 @@ wait_for_http_ready "Dashboard Frontend" "http://127.0.0.1:8085"
 echo "✅ Dashboard 服务重建完成。"
 
 # ==============================================================================
+deploy_prod_web_to_edge_vps
+
+# ==============================================================================
 DEPLOY_SUCCEEDED=1
 
 echo "🎉 生产环境服务更新与重建已成功完成！系统已自动解除维护模式并恢复服务。"
 echo "👉 请执行 'docker logs -f tg-bot' 查看主程序启动日志。"
+echo "👉 生产 Web 默认域名: ${PROD_WEB_URL:-https://web.aivison.it.com}"
