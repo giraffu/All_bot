@@ -5,6 +5,10 @@ from sqlalchemy import delete, select, update
 
 from src.database.core import AsyncSessionLocal
 from src.database.models import GalleryComment, GalleryPost, History, User, UserInteraction
+from src.services.submission_ban_service import (
+    SubmissionBannedError,
+    ensure_submission_allowed_for_user,
+)
 from src.services.storage_r2_cleanup import build_history_r2_cleanup_keys
 from src.services.storage import storage
 from src.web_api.common.utils import call_with_optional_db
@@ -58,6 +62,11 @@ async def update_gallery_post_status(
         raise HTTPException(status_code=404, detail="帖子不存在")
     if post.user_id != current_user.id:
         raise HTTPException(status_code=403, detail="无权操作此帖子")
+    if is_active:
+        try:
+            ensure_submission_allowed_for_user(current_user)
+        except SubmissionBannedError as exc:
+            raise HTTPException(status_code=403, detail=str(exc)) from exc
 
     state_changed = post.is_active != is_active
     post.is_active = is_active

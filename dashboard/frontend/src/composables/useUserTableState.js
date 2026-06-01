@@ -12,6 +12,7 @@ import {
   updateUserCredits,
   updateUserGroup,
   updateUserIdentity,
+  updateUserSubmissionBan,
 } from '../api/api'
 
 export function useUserTableState(formatDate) {
@@ -28,6 +29,7 @@ export function useUserTableState(formatDate) {
   const isQueryPartial = ref(true)
   const filterIdentity = ref(null)
   const filterUserGroup = ref(null)
+  const filterSubmissionBanned = ref(false)
   const searchUsername = ref('')
   const isUsernamePartial = ref(true)
   const sortBy = ref(DEFAULT_SORT_BY)
@@ -113,6 +115,7 @@ export function useUserTableState(formatDate) {
         query_partial: isQueryPartial.value,
         identity: filterIdentity.value,
         user_group: filterUserGroup.value,
+        submission_banned: filterSubmissionBanned.value ? true : null,
         username: searchUsername.value,
         username_partial: isUsernamePartial.value,
         sort_by: sortBy.value,
@@ -256,6 +259,36 @@ export function useUserTableState(formatDate) {
     currentChannelMemberUser.value = record
     newChannelMemberValue.value = !!record.is_channel_member
     editChannelMemberVisible.value = true
+  }
+
+  const handleToggleSubmissionBan = (record) => {
+    const nextStatus = !record.is_submission_banned
+    const targetName = record.full_name || record.username || record.id
+    Modal.confirm({
+      title: nextStatus ? '确认禁止该用户投稿？' : '确认解除该用户投稿封禁？',
+      content: nextStatus
+        ? `封禁后，用户在 Bot 端和 Web 端点击投稿相关功能时，都会提示“违禁被封，请联系管理员解封”。目标用户：${targetName}`
+        : `解除后，用户将恢复 Bot 端和 Web 端的投稿能力。目标用户：${targetName}`,
+      okText: nextStatus ? '确认封禁' : '确认解封',
+      okType: nextStatus ? 'danger' : 'primary',
+      cancelText: '取消',
+      async onOk() {
+        try {
+          const res = await updateUserSubmissionBan(record.id, nextStatus)
+          message.success(
+            nextStatus
+              ? `用户 ${record.id} 已禁止投稿`
+              : `用户 ${record.id} 已解除投稿封禁`
+          )
+          record.is_submission_banned = !!res.is_submission_banned
+          record.submission_ban_reason = res.submission_ban_reason || null
+          record.submission_banned_at = res.submission_banned_at || null
+          await loadUsersData()
+        } catch (err) {
+          message.error('更新失败: ' + (err.response?.data?.detail || err.message))
+        }
+      },
+    })
   }
 
   const searchTransferTargets = async (keyword = '') => {
@@ -448,6 +481,7 @@ export function useUserTableState(formatDate) {
     isQueryPartial,
     filterIdentity,
     filterUserGroup,
+    filterSubmissionBanned,
     searchUsername,
     isUsernamePartial,
     sortBy,
@@ -500,6 +534,7 @@ export function useUserTableState(formatDate) {
     handleEditIdentity,
     handleEditGroup,
     handleEditChannelMember,
+    handleToggleSubmissionBan,
     saveIdentity,
     saveGroup,
     saveChannelMember,

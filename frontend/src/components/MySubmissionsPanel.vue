@@ -188,7 +188,7 @@ const toggleStatus = async (post: Post) => {
       return
     }
     console.error(error)
-    message.error(t('my_notes.action_failed'))
+    message.error(error.response?.data?.detail || t('my_notes.action_failed'))
   }
 }
 

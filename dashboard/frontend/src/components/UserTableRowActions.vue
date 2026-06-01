@@ -12,6 +12,8 @@ import {
   DownOutlined,
   BookOutlined,
   SwapOutlined,
+  StopOutlined,
+  UnlockOutlined,
 } from '@ant-design/icons-vue'
 
 defineProps({
@@ -29,6 +31,7 @@ const emit = defineEmits([
   'edit-identity',
   'edit-group',
   'edit-channel-member',
+  'toggle-submission-ban',
   'edit-credits',
   'transfer-data',
   'clear-history',
@@ -80,6 +83,21 @@ const emit = defineEmits([
             <a-button type="text" size="small" class="w-full text-left" @click="emit('edit-channel-member', record)">
               <template #icon><team-outlined /></template>
               入宗状态
+            </a-button>
+          </a-menu-item>
+          <a-menu-item key="submission-ban">
+            <a-button
+              type="text"
+              size="small"
+              class="w-full text-left"
+              :danger="!record.is_submission_banned"
+              @click="emit('toggle-submission-ban', record)"
+            >
+              <template #icon>
+                <stop-outlined v-if="!record.is_submission_banned" />
+                <unlock-outlined v-else />
+              </template>
+              {{ record.is_submission_banned ? '解除投稿封禁' : '禁止投稿' }}
             </a-button>
           </a-menu-item>
           <a-menu-item key="credits">

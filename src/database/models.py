@@ -57,6 +57,9 @@ class User(Base):
     credits = Column(Integer, default=6)
     last_checkin = Column(Date, nullable=True)
     is_channel_member = Column(Boolean, default=False)
+    is_submission_banned = Column(Boolean, default=False, nullable=False, server_default=text("false"))
+    submission_banned_at = Column(DateTime, nullable=True)
+    submission_ban_reason = Column(String(255), nullable=True)
     user_group = Column(
         String(20), default="凡人"
     )  # 凡人, 练气期, 筑基期, 金丹期, 元婴期

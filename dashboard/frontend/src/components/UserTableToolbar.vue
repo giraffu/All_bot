@@ -10,6 +10,10 @@ defineProps({
     type: String,
     default: null,
   },
+  filterSubmissionBanned: {
+    type: Boolean,
+    default: false,
+  },
   searchUsername: {
     type: String,
     default: '',
@@ -35,6 +39,7 @@ defineProps({
 const emit = defineEmits([
   'update:filterIdentity',
   'update:filterUserGroup',
+  'update:filterSubmissionBanned',
   'update:searchUsername',
   'update:isUsernamePartial',
   'update:searchQuery',
@@ -76,6 +81,14 @@ const handleSearch = () => {
       <a-select-option value="筑基期">筑基期</a-select-option>
       <a-select-option value="金丹期">金丹期</a-select-option>
     </a-select>
+
+    <a-checkbox
+      :checked="filterSubmissionBanned"
+      @update:checked="emit('update:filterSubmissionBanned', $event)"
+      @change="handleSearch"
+    >
+      只看已禁止投稿用户
+    </a-checkbox>
 
     <div class="flex items-center gap-2">
       <a-input

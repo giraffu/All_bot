@@ -181,3 +181,35 @@ async def test_handle_template_contribution_saves_upload_and_updates_counter(mon
     record_mock.assert_awaited_once()
     assert context.user_data["contributed_count"] == 1
     reply_mock.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_handle_template_contribution_blocks_submission_banned_user(monkeypatch):
+    reply_mock = AsyncMock()
+    logger = MagicMock()
+    get_user_mock = AsyncMock(
+        return_value=(
+            SimpleNamespace(
+                id=7,
+                is_submission_banned=True,
+                submission_ban_reason=None,
+            ),
+            False,
+        )
+    )
+    update = SimpleNamespace(
+        message=SimpleNamespace(photo=[SimpleNamespace(file_id="photo-1")], video=None, document=None),
+        effective_user=SimpleNamespace(id=7, username="dao", full_name="Dao"),
+    )
+    context = SimpleNamespace(bot=SimpleNamespace(), user_data={})
+
+    monkeypatch.setattr(message_handler_media, "robust_reply_text", reply_mock)
+    monkeypatch.setattr(message_handler_media, "get_or_create_user_by_telegram", get_user_mock)
+
+    await message_handler_media.handle_template_contribution(update, context, logger)
+
+    get_user_mock.assert_awaited_once_with(7, "dao", "Dao")
+    reply_mock.assert_awaited_once_with(
+        update.message,
+        "⚠️ 违禁被封，请联系管理员解封",
+    )

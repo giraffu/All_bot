@@ -19,6 +19,7 @@ const {
   isQueryPartial,
   filterIdentity,
   filterUserGroup,
+  filterSubmissionBanned,
   searchUsername,
   isUsernamePartial,
   sortBy,
@@ -71,6 +72,7 @@ const {
   handleEditIdentity,
   handleEditGroup,
   handleEditChannelMember,
+  handleToggleSubmissionBan,
   saveIdentity,
   saveGroup,
   saveChannelMember,
@@ -215,6 +217,7 @@ const columns = computed(() =>
       <user-table-toolbar
         v-model:filter-identity="filterIdentity"
         v-model:filter-user-group="filterUserGroup"
+        v-model:filter-submission-banned="filterSubmissionBanned"
         v-model:search-username="searchUsername"
         v-model:is-username-partial="isUsernamePartial"
         v-model:search-query="searchQuery"
@@ -260,6 +263,9 @@ const columns = computed(() =>
           <div class="flex flex-col">
             <span class="font-medium text-gray-800">{{ record.full_name || '未知用户' }}</span>
             <span class="text-xs text-blue-500">@{{ record.username || 'n/a' }}</span>
+            <a-tag v-if="record.is_submission_banned" color="red" class="mt-1 w-fit">
+              投稿封禁
+            </a-tag>
           </div>
         </template>
         
@@ -350,6 +356,7 @@ const columns = computed(() =>
             @edit-identity="handleEditIdentity"
             @edit-group="handleEditGroup"
             @edit-channel-member="handleEditChannelMember"
+            @toggle-submission-ban="handleToggleSubmissionBan"
             @edit-credits="handleEditCredits"
             @transfer-data="handleTransferData"
             @clear-history="handleClearHistory"

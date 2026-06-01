@@ -6,7 +6,9 @@ from telegram import Update
 
 from config import MINIO_TEMPLATE_BUCKET
 from src.constants import MODE_NONE, MODE_TEMPLATE_CONTRIBUTE, TEMP_TEMPLATE_DIR
+from src.core.user_core import get_or_create_user_by_telegram
 from src.services.permission_service import permission_service
+from src.services.submission_ban_service import SubmissionBannedError, ensure_submission_allowed_for_user
 from src.services.storage import storage
 from src.utils import robust_reply_text
 
@@ -97,6 +99,13 @@ async def handle_template_contribution(update: Update, context, logger):
     message = update.message
     user = update.effective_user
     username = user.username
+
+    internal_user, _ = await get_or_create_user_by_telegram(user.id, username, user.full_name)
+    try:
+        ensure_submission_allowed_for_user(internal_user)
+    except SubmissionBannedError as exc:
+        await robust_reply_text(message, f"⚠️ {str(exc)}")
+        return None
 
     file_id, file_ext, file_type_name = resolve_template_upload_meta(message)
     if not file_id:

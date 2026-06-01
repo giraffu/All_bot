@@ -7,6 +7,7 @@ from dashboard.backend.schemas import (
     AdminGiftRequest,
     TransferUserDataRequest,
     TransferUserDataResponse,
+    UpdateSubmissionBanRequest,
     UpdateCreditsRequest,
     UpdateIdentityRequest,
     UpdateGroupRequest,
@@ -24,6 +25,7 @@ from dashboard.backend.services.user_admin_service import (
     update_user_credits_payload,
     update_user_group_payload,
     update_user_identity_payload,
+    update_user_submission_ban_payload,
 )
 from src.database.core import get_db
 from src.web_api.schemas.gallery_schema import PaginatedGalleryResponse
@@ -40,6 +42,7 @@ async def get_users(
     query_partial: bool = True,
     identity: str = None,
     user_group: str = None,
+    submission_banned: bool | None = Query(default=None),
     username: str = None,
     username_partial: bool = False,
     sort_by: str | None = Query(default=None),
@@ -55,6 +58,7 @@ async def get_users(
         query_partial=query_partial,
         identity=identity,
         user_group=user_group,
+        submission_banned=submission_banned,
         username=username,
         username_partial=username_partial,
         sort_by=sort_by,
@@ -175,6 +179,21 @@ async def update_user_channel_member(
 ):
     """Update user channel member status (已入宗门)"""
     return await update_user_channel_member_payload(
+        user_id=user_id,
+        request=request,
+        db=db,
+        logger_override=logger,
+    )
+
+
+@router.post("/{user_id}/submission_ban")
+async def update_user_submission_ban(
+    user_id: int,
+    request: UpdateSubmissionBanRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """Update user submission ban status across bot and web."""
+    return await update_user_submission_ban_payload(
         user_id=user_id,
         request=request,
         db=db,

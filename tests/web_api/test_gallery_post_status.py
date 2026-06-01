@@ -1,6 +1,7 @@
 from unittest.mock import AsyncMock
 
 import pytest
+from fastapi import HTTPException
 
 from src.database.models import GalleryPost, History, User
 from src.web_api.services.gallery_service_mutations import update_gallery_post_status
@@ -97,3 +98,35 @@ async def test_update_post_status_puts_submission_back_on_shelf_and_increments_t
     assert history.is_public is True
     assert user.total_contributions == 3
     session.commit.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_update_post_status_rejects_reactivation_for_submission_banned_user():
+    post = GalleryPost(
+        id=8,
+        task_id="task-2",
+        user_id=123,
+        media_type="image",
+        is_active=False,
+    )
+    session = _StatusSession([_FakeScalarResult(post)])
+
+    with pytest.raises(HTTPException) as exc_info:
+        await update_gallery_post_status(
+            post_id=8,
+            current_user=type(
+                "User",
+                (),
+                {
+                    "id": 123,
+                    "is_submission_banned": True,
+                    "submission_ban_reason": None,
+                },
+            )(),
+            db=session,
+            is_active=True,
+        )
+
+    assert exc_info.value.status_code == 403
+    assert exc_info.value.detail == "违禁被封，请联系管理员解封"
+    session.commit.assert_not_awaited()

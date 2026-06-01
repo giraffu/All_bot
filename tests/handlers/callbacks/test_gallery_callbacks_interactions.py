@@ -1,10 +1,12 @@
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 from telegram import InlineKeyboardButton
 
 from src.handlers.callbacks.gallery_callbacks_interactions import (
     _build_gallery_reaction_reply_markup,
     _extract_gallery_submit_media_metadata,
+    handle_submit_gallery_callback,
 )
 
 
@@ -58,3 +60,40 @@ def test_build_gallery_reaction_reply_markup_updates_like_and_dislike_buttons():
     assert markup.inline_keyboard[0][0].callback_data == "gallery_like_9_latest_all_1"
     assert markup.inline_keyboard[0][1].text == "👎 踩 (2)"
     assert markup.inline_keyboard[1][0].text == "其他"
+
+
+async def test_handle_submit_gallery_callback_rejects_submission_banned_user(monkeypatch):
+    query = SimpleNamespace(
+        data="submit_gallery_task-1",
+        from_user=SimpleNamespace(id=123),
+        message=SimpleNamespace(video=None, photo=[SimpleNamespace(width=512, height=512)]),
+    )
+    update = SimpleNamespace(callback_query=query)
+    context = SimpleNamespace()
+    safe_answer_query = AsyncMock()
+
+    monkeypatch.setattr(
+        "src.handlers.callbacks.gallery_callbacks_interactions.get_or_create_user_by_telegram",
+        AsyncMock(
+            return_value=(
+                SimpleNamespace(
+                    id=321,
+                    is_submission_banned=True,
+                    submission_ban_reason=None,
+                ),
+                False,
+            )
+        ),
+    )
+    monkeypatch.setattr(
+        "src.handlers.callbacks.gallery_callbacks_interactions.safe_answer_query",
+        safe_answer_query,
+    )
+
+    await handle_submit_gallery_callback(update, context)
+
+    safe_answer_query.assert_awaited_once_with(
+        query,
+        text="⚠️ 违禁被封，请联系管理员解封",
+        show_alert=True,
+    )

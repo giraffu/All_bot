@@ -23,6 +23,11 @@ class UpdateChannelMemberRequest(BaseModel):
     is_channel_member: bool
 
 
+class UpdateSubmissionBanRequest(BaseModel):
+    is_submission_banned: bool
+    reason: Optional[str] = None
+
+
 class AdminGiftRequest(BaseModel):
     plan_id: int
     note: Optional[str] = "后台手动赠送"

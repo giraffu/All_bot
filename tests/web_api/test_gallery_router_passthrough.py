@@ -114,3 +114,27 @@ async def test_submit_gallery_post_payload_maps_gallery_core_error_to_400():
 
     assert exc_info.value.status_code == 400
     assert exc_info.value.detail == "cannot submit"
+
+
+@pytest.mark.asyncio
+async def test_submit_gallery_post_payload_rejects_submission_banned_user():
+    with pytest.raises(HTTPException) as exc_info:
+        await submit_gallery_post_payload(
+            task_id="task-1",
+            schedule_background_task=BackgroundTasks().add_task,
+            request=None,
+            current_user=type(
+                "User",
+                (),
+                {
+                    "id": 123,
+                    "username": "tester",
+                    "is_submission_banned": True,
+                    "submission_ban_reason": None,
+                },
+            )(),
+            process_submit_to_gallery_fn=AsyncMock(),
+        )
+
+    assert exc_info.value.status_code == 403
+    assert exc_info.value.detail == "违禁被封，请联系管理员解封"

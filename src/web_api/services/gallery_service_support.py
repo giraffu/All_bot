@@ -4,6 +4,10 @@ from fastapi import HTTPException
 
 from src.constants import MODE_VIDEO_LORA, MODE_WAN22_VIDEO_V2
 from src.database.models import History
+from src.services.submission_ban_service import (
+    SubmissionBannedError,
+    ensure_submission_allowed_for_user,
+)
 from src.web_api.presenters.media_presenter import (
     resolve_gallery_media_urls as presenter_resolve_gallery_media_urls,
 )
@@ -82,6 +86,7 @@ async def submit_gallery_post_payload(
     process_submit_to_gallery_fn=None,
 ) -> dict:
     try:
+        ensure_submission_allowed_for_user(current_user)
         if process_submit_to_gallery_fn is None:
             from src.core.gallery_core import process_submit_to_gallery_result
 
@@ -102,6 +107,8 @@ async def submit_gallery_post_payload(
             for effect_func, effect_args in outcome.side_effects:
                 schedule_background_task(effect_func, *effect_args)
         return outcome.payload
+    except SubmissionBannedError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
     except HTTPException:
         raise
     except Exception as exc:

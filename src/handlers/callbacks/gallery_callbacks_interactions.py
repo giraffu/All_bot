@@ -20,6 +20,10 @@ from src.services.gallery_repository import (
     mark_history_public_by_task_id,
     update_history_rating_by_task_id,
 )
+from src.services.submission_ban_service import (
+    SubmissionBannedError,
+    ensure_submission_allowed_for_user,
+)
 from src.utils import (
     create_background_task,
     robust_edit_caption,
@@ -366,6 +370,11 @@ async def handle_submit_gallery_callback(
 
     try:
         internal_user, _ = await get_or_create_user_by_telegram(query.from_user.id)
+        try:
+            ensure_submission_allowed_for_user(internal_user)
+        except SubmissionBannedError as exc:
+            await safe_answer_query(query, text=f"⚠️ {str(exc)}", show_alert=True)
+            return
         _media_type, width, height, duration = _extract_gallery_submit_media_metadata(
             query
         )
@@ -487,6 +496,14 @@ async def handle_public_share_callback(
     if not ENABLE_PUBLIC_SHARE and data in PUBLIC_SHARE_ACTIONS:
         await safe_answer_query(query, text="⚠️ 公开功能已关闭", show_alert=True)
         return
+
+    if data in PUBLIC_SHARE_ACTIONS:
+        internal_user, _ = await get_or_create_user_by_telegram(query.from_user.id)
+        try:
+            ensure_submission_allowed_for_user(internal_user)
+        except SubmissionBannedError as exc:
+            await safe_answer_query(query, text=f"⚠️ {str(exc)}", show_alert=True)
+            return
 
     if data == "public_share_request":
         await _handle_public_share_request(query=query, context=context)

@@ -54,6 +54,7 @@ sequenceDiagram
 ### 4.1 投稿与原创保护
 - 投稿仍要求内容源自自己的 `History`。
 - `allow_contribute=False` 的模板衍生作品不能再次投稿，防止套娃搬运。
+- 用户级 `is_submission_banned=True` 时，Bot 端广场投稿、公开分享、模板共建，以及 Web 端一键投稿/重新上架都会被统一拦截，并提示“违禁被封，请联系管理员解封”。
 - 删除帖子采用软删除/下架思路，不是简单硬删所有内容暴力清空。
 
 ### 4.2 互动系统
@@ -94,6 +95,7 @@ sequenceDiagram
 ## 5. 核心红线
 - 捕获互动类 `IntegrityError` 前，必须先 `flush()`，避免 `autoflush` 提前把异常抛出到错误层级。
 - 点赞、点踩、评论计数都必须用数据库原子更新，不能先读后写覆盖。
+- 投稿封禁属于用户能力控制，不得通过篡改 `allow_contribute`、`current_identity` 或 `user_group` 去模拟。
 - `apply-context` 必须从 `History` 取请求语义字段，不能只依赖帖子展示用的输出元数据。
 - 对象存储异常只能降级，不能阻断广场浏览主链路。
 

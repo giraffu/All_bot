@@ -3,7 +3,11 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from dashboard.backend.schemas import AdminGiftRequest, UpdateChannelMemberRequest
+from dashboard.backend.schemas import (
+    AdminGiftRequest,
+    UpdateChannelMemberRequest,
+    UpdateSubmissionBanRequest,
+)
 from dashboard.backend.services import user_admin_service
 from src.database.models import User
 
@@ -199,6 +203,38 @@ async def test_update_user_channel_member_payload_triggers_reward_and_refresh(mo
 
 
 @pytest.mark.asyncio
+async def test_update_user_submission_ban_payload_sets_default_reason_and_timestamp(monkeypatch):
+    user = User(
+        id=123,
+        username="tester",
+        full_name="Tester",
+        credits=10,
+        is_submission_banned=False,
+        submission_ban_reason=None,
+    )
+    db = _FakeUsersDB(user)
+    log_action = AsyncMock()
+
+    monkeypatch.setattr(
+        "src.services.log_service.LogService.log_action",
+        log_action,
+    )
+
+    result = await user_admin_service.update_user_submission_ban_payload(
+        user_id=123,
+        request=UpdateSubmissionBanRequest(is_submission_banned=True),
+        db=db,
+    )
+
+    assert result["status"] == "ok"
+    assert result["is_submission_banned"] is True
+    assert result["submission_ban_reason"] == "违禁被封，请联系管理员解封"
+    assert result["submission_banned_at"] is not None
+    db.commit.assert_awaited_once()
+    log_action.assert_awaited_once()
+
+
+@pytest.mark.asyncio
 async def test_get_users_payload_applies_requested_sort_order():
     db = _FakeUserListDB(
         [
@@ -238,3 +274,29 @@ async def test_get_users_payload_rejects_unknown_sort_field():
 
     assert exc_info.value.status_code == 400
     assert "Invalid sort_by" in exc_info.value.detail
+
+
+@pytest.mark.asyncio
+async def test_get_users_payload_filters_submission_banned_users():
+    db = _FakeUserListDB(
+        [
+            _ScalarResult(value=1),
+            _ScalarResult(
+                rows=[
+                    User(id=300, username="blocked", is_submission_banned=True),
+                ]
+            ),
+        ]
+    )
+
+    result = await user_admin_service.get_users_payload(
+        db=db,
+        submission_banned=True,
+    )
+
+    assert result["total"] == 1
+    assert result["items"][0]["id"] == 300
+    count_stmt = db.executed_stmts[0]
+    list_stmt = db.executed_stmts[1]
+    assert "users.is_submission_banned IS true" in count_stmt
+    assert "users.is_submission_banned IS true" in list_stmt

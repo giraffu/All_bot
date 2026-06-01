@@ -68,6 +68,7 @@ export const fetchUsers = async (page = 1, pageSize = 20, params_obj = {}) => {
     appendQueryParam(params, 'username_partial', params_obj.username_partial)
     appendQueryParam(params, 'identity', params_obj.identity)
     appendQueryParam(params, 'user_group', params_obj.user_group)
+    appendQueryParam(params, 'submission_banned', params_obj.submission_banned)
     appendQueryParam(params, 'sort_by', params_obj.sort_by)
     appendQueryParam(params, 'sort_order', params_obj.sort_order)
   }))
@@ -121,6 +122,12 @@ export const updateUserGroup = async (userId, userGroup) =>
 
 export const updateUserChannelMember = async (userId, isChannelMember) =>
   post(`/api/users/${userId}/channel_member`, { is_channel_member: isChannelMember })
+
+export const updateUserSubmissionBan = async (userId, isSubmissionBanned, reason = null) => {
+  const payload = { is_submission_banned: isSubmissionBanned }
+  if (reason) payload.reason = reason
+  return post(`/api/users/${userId}/submission_ban`, payload)
+}
 
 export const clearUserHistory = async (userId) => del(`/api/users/${userId}/history`)
 

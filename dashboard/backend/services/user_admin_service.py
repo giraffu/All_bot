@@ -35,6 +35,7 @@ from src.services.membership_settlement_service import (
     MembershipSettlementAuditSource,
     settle_membership_plan_in_session,
 )
+from src.services.submission_ban_service import build_submission_ban_message
 from src.services.storage import storage
 from src.web_api.services.users_history_service import get_my_favorites_payload
 
@@ -96,6 +97,7 @@ async def get_users_payload(
     query_partial: bool = True,
     identity: str | None = None,
     user_group: str | None = None,
+    submission_banned: bool | None = None,
     username: str | None = None,
     username_partial: bool = False,
     sort_by: str | None = None,
@@ -133,6 +135,8 @@ async def get_users_payload(
                 stmt = stmt.where((User.user_group == user_group) | (User.user_group.is_(None)))
             else:
                 stmt = stmt.where(User.user_group == user_group)
+        if submission_banned is not None:
+            stmt = stmt.where(User.is_submission_banned.is_(submission_banned))
         if username:
             if username_partial:
                 stmt = stmt.where(User.username.ilike(f"%{username}%"))
@@ -818,6 +822,20 @@ async def transfer_user_data_payload(
         )
         target_user.language_code = target_user.language_code or source_user.language_code
         target_user.full_name = target_user.full_name or source_user.full_name
+        target_user.is_submission_banned = bool(
+            target_user.is_submission_banned or source_user.is_submission_banned
+        )
+        if target_user.is_submission_banned:
+            target_user.submission_banned_at = _max_value(
+                target_user.submission_banned_at,
+                source_user.submission_banned_at,
+            ) or datetime.now()
+            target_user.submission_ban_reason = build_submission_ban_message(
+                target_user.submission_ban_reason or source_user.submission_ban_reason
+            )
+        else:
+            target_user.submission_banned_at = None
+            target_user.submission_ban_reason = None
 
         merged_identity, merged_expire_at = _merge_membership_state(
             source_user,
@@ -879,6 +897,8 @@ async def transfer_user_data_payload(
                 "checkin_count": int(target_user.checkin_count or 0),
                 "generation_count": int(target_user.generation_count or 0),
                 "is_channel_member": bool(target_user.is_channel_member),
+                "is_submission_banned": bool(target_user.is_submission_banned),
+                "submission_ban_reason": target_user.submission_ban_reason,
             },
         }
     except HTTPException:
@@ -1043,4 +1063,62 @@ async def update_user_channel_member_payload(
         }
     except Exception as exc:
         active_logger.error(f"Error updating user channel member status: {exc}")
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+async def update_user_submission_ban_payload(
+    *,
+    user_id: int,
+    request,
+    db,
+    logger_override: logging.Logger | None = None,
+) -> dict:
+    active_logger = logger_override or logger
+    try:
+        user = await _load_user(db, user_id)
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        old_status = bool(user.is_submission_banned)
+        old_reason = user.submission_ban_reason
+
+        user.is_submission_banned = bool(request.is_submission_banned)
+        if user.is_submission_banned:
+            user.submission_banned_at = datetime.now()
+            user.submission_ban_reason = build_submission_ban_message(
+                getattr(request, "reason", None)
+            )
+        else:
+            user.submission_banned_at = None
+            user.submission_ban_reason = None
+        await db.commit()
+
+        from src.services.log_service import LogService
+
+        await LogService.log_action(
+            user_id=user_id,
+            username=user.username or user.full_name,
+            operation_type="admin_update_submission_ban",
+            credit_change=0,
+            current_balance=user.credits,
+            extra_info={
+                "old_status": old_status,
+                "new_status": user.is_submission_banned,
+                "old_reason": old_reason,
+                "new_reason": user.submission_ban_reason,
+                "source": "dashboard_admin_edit",
+            },
+        )
+
+        return {
+            "status": "ok",
+            "id": user.id,
+            "is_submission_banned": user.is_submission_banned,
+            "submission_banned_at": user.submission_banned_at,
+            "submission_ban_reason": user.submission_ban_reason,
+        }
+    except HTTPException:
+        raise
+    except Exception as exc:
+        active_logger.error(f"Error updating user submission ban status: {exc}")
         raise HTTPException(status_code=500, detail=str(exc))
