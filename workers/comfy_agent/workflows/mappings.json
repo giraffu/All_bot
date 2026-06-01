@@ -82,9 +82,7 @@
         "prompt": "2368",
         "prompt_input": "value",
         "negative_prompt": "2371",
-        "negative_prompt_input": "value",
-        "length": "2586",
-        "length_input": "value"
+        "negative_prompt_input": "value"
     },
     "img2img_lora": {
         "image": "8",

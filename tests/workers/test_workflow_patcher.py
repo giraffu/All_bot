@@ -185,13 +185,11 @@ def test_workflow_patcher_patches_wan22_video_v2_boolean_gates_and_prefixes(tmp_
                 "prompt_input": "value",
                 "negative_prompt": "2371",
                 "negative_prompt_input": "value",
-                "length": "2586",
-                "length_input": "value",
             }
         },
     )
     _write_json(
-        workflow_dir / "WAN 2.2 i2v -AiO.json",
+        workflow_dir / "WAN 2.2 i2v -AiO-new.json",
         {
             "9": {
                 "inputs": {
@@ -208,19 +206,13 @@ def test_workflow_patcher_patches_wan22_video_v2_boolean_gates_and_prefixes(tmp_
             "2563": {"inputs": {"image": ["2574", 0]}},
             "2564": {"inputs": {"values.a": ["2563", 0]}},
             "2565": {"inputs": {"values.a": ["2563", 1]}},
-            "2573": {"inputs": {"enabled": True}},
             "2574": {"inputs": {"original_images": ["2543", 1]}},
             "2575": {"inputs": {"image": ["2574", 0]}},
-            "2584": {"inputs": {"enabled": True}},
             "2581": {"inputs": {"expression": "( a - 1 ) / b"}},
             "2586": {"inputs": {"value": 5}},
             "2621": {"inputs": {"precision_presets": "0.52 MP - SD"}},
-            "2601": {"inputs": {"enabled": True}},
-            "2602": {"inputs": {"enabled": True}},
-            "2605": {"inputs": {"enabled": True}},
             "2612": {"inputs": {"switch": ["2557", 0]}},
             "2614": {"inputs": {"image_target": ["2612", 0]}},
-            "2615": {"inputs": {"enabled": True}},
             "2700": {
                 "inputs": {
                     "batch_index": 0,
@@ -236,63 +228,12 @@ def test_workflow_patcher_patches_wan22_video_v2_boolean_gates_and_prefixes(tmp_
                 },
                 "class_type": "VHS_VideoCombine",
             },
-            "2501": {
-                "inputs": {
-                    "enabled": True,
-                    "target_01": ["2503", 0],
-                },
-                "class_type": "DaSiWa_NodeStatusSwitch",
-            },
-            "2502": {
-                "inputs": {
-                    "filename_prefix": "wan22_video_v2_mini",
-                },
-                "class_type": "VHS_VideoCombine",
-            },
             "2503": {
                 "inputs": {
                     "filename_prefix": "wan22_video_v2_last_frame",
                     "images": ["2700", 0],
                 },
                 "class_type": "SaveImage",
-            },
-            "2547": {
-                "inputs": {
-                    "source": ["2552", 1],
-                },
-                "class_type": "PreviewAny",
-            },
-            "2548": {
-                "inputs": {
-                    "source": ["2549", 1],
-                },
-                "class_type": "PreviewAny",
-            },
-            "2587": {
-                "inputs": {
-                    "source": ["2580", 0],
-                },
-                "class_type": "PreviewAny",
-            },
-            "2589": {
-                "inputs": {
-                    "source": ["2581", 0],
-                },
-                "class_type": "PreviewAny",
-            },
-            "2623": {
-                "inputs": {
-                    "enabled": False,
-                    "action": "mute",
-                },
-                "class_type": "DaSiWa_NodeStatusSwitch",
-            },
-            "2624": {
-                "inputs": {
-                    "enabled": False,
-                    "action": "mute",
-                },
-                "class_type": "DaSiWa_NodeStatusSwitch",
             },
         },
     )
@@ -317,20 +258,6 @@ def test_workflow_patcher_patches_wan22_video_v2_boolean_gates_and_prefixes(tmp_
     assert patched["23"]["inputs"]["image"] == "start.png"
     assert patched["24"]["inputs"]["image"] == "start.png"
     assert "9" not in patched
-    assert "2501" not in patched
-    assert "2502" not in patched
-    assert "2547" not in patched
-    assert "2548" not in patched
-    assert "2573" not in patched
-    assert "2587" not in patched
-    assert "2589" not in patched
-    assert "2584" not in patched
-    assert "2601" not in patched
-    assert "2602" not in patched
-    assert "2605" not in patched
-    assert "2615" not in patched
-    assert "2623" not in patched
-    assert "2624" not in patched
     assert patched["2368"]["inputs"]["value"] == "demo"
     assert patched["2371"]["inputs"]["value"] == "bad"
     assert patched["2557"]["inputs"]["value"] is True
@@ -361,13 +288,11 @@ def test_workflow_patcher_strips_wan22_video_v2_last_frame_branch_when_disabled(
                 "prompt_input": "value",
                 "negative_prompt": "2371",
                 "negative_prompt_input": "value",
-                "length": "2586",
-                "length_input": "value",
             }
         },
     )
     _write_json(
-        workflow_dir / "WAN 2.2 i2v -AiO.json",
+        workflow_dir / "WAN 2.2 i2v -AiO-new.json",
         {
             "23": {"inputs": {"image": ""}},
             "24": {"inputs": {"image": ""}},

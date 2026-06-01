@@ -6,23 +6,8 @@ LTX_VIDEO_ADDITIONAL_LORA_NODE_IDS = ("256",)
 LTX_VIDEO_FIRST_PASS_MODEL_NODE_ID = "191"
 LTX_VIDEO_FIRST_PASS_CLIP_NODE_ID = "189"
 LTX_VIDEO_MAX_LORA_SLOTS = 10
-WAN22_VIDEO_V2_REMOVABLE_NODE_IDS = (
-    "9",
-    "2502",
-    "2501",
-    "2547",
-    "2548",
-    "2573",
-    "2587",
-    "2589",
-    "2584",
-    "2601",
-    "2602",
-    "2605",
-    "2615",
-    "2623",
-    "2624",
-)
+# `WAN 2.2 i2v -AiO-new.json` already prunes the old debug/preview branch nodes.
+WAN22_VIDEO_V2_REMOVABLE_NODE_IDS = ("9",)
 WAN22_VIDEO_V2_PRECISION_PRESET_BY_KEY = {
     "fast": "0.36 MP - Small",
     "standard": "0.52 MP - SD",
