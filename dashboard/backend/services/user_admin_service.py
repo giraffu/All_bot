@@ -93,6 +93,7 @@ async def get_users_payload(
     db,
     skip: int = 0,
     limit: int = 20,
+    user_id: int | None = None,
     query: str | None = None,
     query_partial: bool = True,
     identity: str | None = None,
@@ -109,6 +110,8 @@ async def get_users_payload(
         sort_by, sort_order = _normalize_user_list_sort(sort_by, sort_order)
         stmt = select(User)
 
+        if user_id is not None:
+            stmt = stmt.where(User.id == user_id)
         if query:
             query_filters = []
             if query.isdigit():

@@ -20,6 +20,7 @@ def parse_log_filter_date(date_str: str | None, *, end_of_day: bool = False) -> 
 async def get_logs_payload(
     *,
     user_id: int | None = None,
+    username: str | None = None,
     operation_type: str | None = None,
     start_date: str | None = None,
     end_date: str | None = None,
@@ -28,6 +29,7 @@ async def get_logs_payload(
 ):
     return await LogService.get_logs(
         user_id=user_id,
+        username=username,
         operation_type=operation_type,
         start_date=parse_log_filter_date(start_date),
         end_date=parse_log_filter_date(end_date, end_of_day=True),

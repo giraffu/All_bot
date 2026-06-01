@@ -26,6 +26,7 @@ async def test_get_logs_payload_parses_dates_before_calling_log_service(monkeypa
 
     result = await log_admin_service.get_logs_payload(
         user_id=7,
+        username="alice",
         operation_type="gift",
         start_date="2026-05-01",
         end_date="2026-05-02",
@@ -36,6 +37,7 @@ async def test_get_logs_payload_parses_dates_before_calling_log_service(monkeypa
     assert result == {"items": [], "total": 0}
     service_mock.assert_awaited_once_with(
         user_id=7,
+        username="alice",
         operation_type="gift",
         start_date=datetime(2026, 5, 1, 0, 0, 0),
         end_date=datetime(2026, 5, 2, 23, 59, 59),
@@ -52,6 +54,7 @@ async def test_get_logs_router_routes_to_service(monkeypatch):
 
     result = await logs_router.get_logs(
         user_id=9,
+        username="bob",
         operation_type="invite",
         start_date="2026-05-01",
         end_date="2026-05-03",
@@ -62,6 +65,7 @@ async def test_get_logs_router_routes_to_service(monkeypatch):
     assert result == expected
     service_mock.assert_awaited_once_with(
         user_id=9,
+        username="bob",
         operation_type="invite",
         start_date="2026-05-01",
         end_date="2026-05-03",

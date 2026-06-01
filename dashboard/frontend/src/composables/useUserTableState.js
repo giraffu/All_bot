@@ -25,6 +25,7 @@ export function useUserTableState(formatDate) {
   const currentPage = ref(1)
   const pageSize = ref(20)
   const totalUsers = ref(0)
+  const searchUserId = ref('')
   const searchQuery = ref('')
   const isQueryPartial = ref(true)
   const filterIdentity = ref(null)
@@ -111,6 +112,7 @@ export function useUserTableState(formatDate) {
 
     try {
       const paramsObj = {
+        user_id: searchUserId.value || null,
         query: searchQuery.value,
         query_partial: isQueryPartial.value,
         identity: filterIdentity.value,
@@ -477,6 +479,7 @@ export function useUserTableState(formatDate) {
     currentPage,
     pageSize,
     totalUsers,
+    searchUserId,
     searchQuery,
     isQueryPartial,
     filterIdentity,

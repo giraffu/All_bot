@@ -106,6 +106,7 @@ class LogService:
     @staticmethod
     async def get_logs(
         user_id: Optional[int] = None,
+        username: Optional[str] = None,
         operation_type: Optional[str] = None,
         start_date: Optional[datetime] = None,
         end_date: Optional[datetime] = None,
@@ -124,6 +125,8 @@ class LogService:
             conditions = []
             if user_id:
                 conditions.append(UserLog.user_id == user_id)
+            if username:
+                conditions.append(UserLog.username.ilike(f"%{username}%"))
             if operation_type:
                 conditions.append(UserLog.operation_type == operation_type)
             if start_date:

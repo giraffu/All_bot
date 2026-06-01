@@ -300,3 +300,25 @@ async def test_get_users_payload_filters_submission_banned_users():
     list_stmt = db.executed_stmts[1]
     assert "users.is_submission_banned IS true" in count_stmt
     assert "users.is_submission_banned IS true" in list_stmt
+
+
+@pytest.mark.asyncio
+async def test_get_users_payload_filters_by_user_id():
+    db = _FakeUserListDB(
+        [
+            _ScalarResult(value=1),
+            _ScalarResult(rows=[User(id=8106178029, username="cccmmmmm")]),
+        ]
+    )
+
+    result = await user_admin_service.get_users_payload(
+        db=db,
+        user_id=8106178029,
+    )
+
+    assert result["total"] == 1
+    assert result["items"][0]["id"] == 8106178029
+    count_stmt = db.executed_stmts[0]
+    list_stmt = db.executed_stmts[1]
+    assert "users.id = :id_1" in count_stmt
+    assert "users.id = :id_1" in list_stmt

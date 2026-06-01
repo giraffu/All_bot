@@ -38,6 +38,7 @@ logger = logging.getLogger("dashboard.users")
 async def get_users(
     skip: int = 0,
     limit: int = 20,
+    user_id: int | None = Query(default=None),
     query: str = None,
     query_partial: bool = True,
     identity: str = None,
@@ -54,6 +55,7 @@ async def get_users(
         db=db,
         skip=skip,
         limit=limit,
+        user_id=user_id,
         query=query,
         query_partial=query_partial,
         identity=identity,

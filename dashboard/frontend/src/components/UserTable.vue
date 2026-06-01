@@ -15,6 +15,7 @@ const {
   currentPage,
   pageSize,
   totalUsers,
+  searchUserId,
   searchQuery,
   isQueryPartial,
   filterIdentity,
@@ -218,6 +219,7 @@ const columns = computed(() =>
         v-model:filter-identity="filterIdentity"
         v-model:filter-user-group="filterUserGroup"
         v-model:filter-submission-banned="filterSubmissionBanned"
+        v-model:search-user-id="searchUserId"
         v-model:search-username="searchUsername"
         v-model:is-username-partial="isUsernamePartial"
         v-model:search-query="searchQuery"

@@ -62,6 +62,7 @@ export const fetchUsers = async (page = 1, pageSize = 20, params_obj = {}) => {
   return get(withQuery('/api/users', params => {
     appendQueryParam(params, 'skip', (page - 1) * pageSize)
     appendQueryParam(params, 'limit', pageSize)
+    appendQueryParam(params, 'user_id', params_obj.user_id)
     appendQueryParam(params, 'query', params_obj.query)
     appendQueryParam(params, 'query_partial', params_obj.query_partial)
     appendQueryParam(params, 'username', params_obj.username)
@@ -176,11 +177,12 @@ export const fetchTaskVideo = (taskId) => {
   return `${api.defaults.baseURL}/api/video/${taskId}`
 }
 
-export const fetchLogs = async ({ page = 1, pageSize = 20, userId = null, operationType = null, startDate = null, endDate = null }) => {
+export const fetchLogs = async ({ page = 1, pageSize = 20, userId = null, username = null, operationType = null, startDate = null, endDate = null }) => {
   return get(withQuery('/api/logs', params => {
     appendQueryParam(params, 'page', page)
     appendQueryParam(params, 'page_size', pageSize)
     appendQueryParam(params, 'user_id', userId)
+    appendQueryParam(params, 'username', username)
     appendQueryParam(params, 'operation_type', operationType)
     appendQueryParam(params, 'start_date', startDate)
     appendQueryParam(params, 'end_date', endDate)

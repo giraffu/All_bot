@@ -14,6 +14,10 @@ defineProps({
     type: Boolean,
     default: false,
   },
+  searchUserId: {
+    type: String,
+    default: '',
+  },
   searchUsername: {
     type: String,
     default: '',
@@ -40,6 +44,7 @@ const emit = defineEmits([
   'update:filterIdentity',
   'update:filterUserGroup',
   'update:filterSubmissionBanned',
+  'update:searchUserId',
   'update:searchUsername',
   'update:isUsernamePartial',
   'update:searchQuery',
@@ -89,6 +94,21 @@ const handleSearch = () => {
     >
       只看已禁止投稿用户
     </a-checkbox>
+
+    <div class="flex items-center gap-2">
+      <a-input
+        :value="searchUserId"
+        @update:value="emit('update:searchUserId', $event)"
+        @input="handleSearch"
+        placeholder="筛选用户ID"
+        allow-clear
+        class="w-36"
+      >
+        <template #prefix>
+          <search-outlined class="text-gray-400" />
+        </template>
+      </a-input>
+    </div>
 
     <div class="flex items-center gap-2">
       <a-input

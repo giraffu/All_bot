@@ -14,6 +14,7 @@ logger = logging.getLogger("dashboard.logs")
 @router.get("", response_model=LogListResponse)
 async def get_logs(
     user_id: Optional[int] = None,
+    username: Optional[str] = None,
     operation_type: Optional[str] = None,
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
@@ -27,6 +28,7 @@ async def get_logs(
     return await run_dashboard_route(
         lambda: get_logs_payload(
             user_id=user_id,
+            username=username,
             operation_type=operation_type,
             start_date=start_date,
             end_date=end_date,
