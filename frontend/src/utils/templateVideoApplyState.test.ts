@@ -18,6 +18,7 @@ describe('templateVideoApplyState', () => {
     expect(state).toEqual({
       prompt: 'cinematic action shot',
       loraName: null,
+      loraItems: [],
       sourcePostId: 72,
       resolution: '1024',
       duration: '8',
@@ -108,6 +109,7 @@ describe('templateVideoApplyState', () => {
     expect(state).toEqual({
       prompt: 'cinematic action shot',
       loraName: null,
+      loraItems: [],
       sourcePostId: null,
       resolution: null,
       duration: null,

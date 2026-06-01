@@ -1,6 +1,6 @@
 # AllBot AI 编程辅助技能库 (AI Skill Library)
 
-本目录与 `.trae/skills/` 同步，记录当前仓库内可用的系统级技能与适用边界。技能描述应反映代码“现状入口”，而不是历史实现路径；若技能说明与代码主入口冲突，应先更新技能与 `docs/`，再继续开发。
+本目录与 `.codex/skills/` 同步，记录当前仓库内可用的系统级技能与适用边界。迁移期内 `.trae/skills/` 作为历史 Trae 兼容镜像保留。技能描述应反映代码“现状入口”，而不是历史实现路径；若技能说明与代码主入口冲突，应先更新 `.codex/skills` 与 `docs/`，再继续开发。
 
 ## 1. 技能清单
 当前工作区包含以下核心技能：
@@ -19,18 +19,27 @@
 | `ops-log-monitor` | 多环境日志采集、异常归因、报告生成 | 需要排查线上日志或监控异常时 |
 | `backend-code-review` | Python/FastAPI 后端代码审查 | 审查后端文件或后端改动时 |
 | `vue-best-practices` | Vue 3 组合式 API、TypeScript、Pinia、Router 规范 | 修改前端 Vue 代码时 |
+| `frontend-browser-preview` | 本服务器浏览器预览、Playwright Chromium 截图、桌面/移动视觉验收 | 前端任务需要预览效果、对照参考图或检查响应式布局时 |
 
-## 2. 使用建议
+## 2. Codex 迁移约定
+- Codex 项目级技能主入口为 `.codex/skills/<skill>/SKILL.md`。当会话没有自动暴露项目 Skill 时，AI 助手必须按需手动读取该文件。
+- `.trae/skills/<skill>/SKILL.md` 是兼容旧 Trae 工作流的镜像；迁移期内更新技能时应同步两边，直到明确废弃 Trae。
+- `AGENTS.md` 只维护全局路由和高压红线，不承载长篇模块细节；业务规则、接口契约和排障策略放到对应 Skill 与 `/docs`。
+- 技能描述必须模型无关，不写死某个历史模型版本；重点描述触发场景、当前真实入口和不能越过的边界。
+
+## 3. 使用建议
 - 一个需求常常同时命中多个技能边界，例如“Web 端发起高级视频并扣费入队”通常需要同时加载：
   - `allbot-billing-auth`
   - `allbot-task-engine`
 - 当需求本质是“同步知识库”，优先加载 `allbot-kb-auto-updater`，再根据触达的业务面补充其他技能。
+- 当前端改动需要视觉确认时，加载 `frontend-browser-preview`；若同时修改 Vue 代码，也加载 `vue-best-practices`。
 - 当变更涉及核心门面、运行时依赖、状态流、接口 I/O、超时值、异常类型、双 ID 语义时，优先同步对应 `SKILL.md`。
 - 当测试已经迁移到 provider/dependencies seam，后续知识描述也应同步强调“显式依赖注入优先”，避免继续鼓励旧的模块级 patch 方式。
 
-## 3. 维护原则
+## 4. 维护原则
 - `docs/skills/README.md` 只维护技能目录与高层边界，不重复拷贝各 `SKILL.md` 的全部细节。
 - 若新增技能，必须同时同步：
+  - `.codex/skills/<skill>/SKILL.md`
   - `.trae/skills/<skill>/SKILL.md`
   - `AGENTS.md` 路由表
   - 本 README 的技能清单

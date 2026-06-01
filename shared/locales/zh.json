@@ -384,6 +384,54 @@
       "high_res_video_desc": "上传图像与提示词，使用最先进的模型生成高分辨率、更长时长的视频。",
       "wan22_video_v2_title": "图生视频 v2",
       "wan22_video_v2_desc": "支持正负提示词、首尾帧、色彩匹配、无缝循环、快速 2x 与尾帧提取。"
+    },
+    "workbench": {
+      "eyebrow": "统一创作工作台",
+      "hero_desc": "把常用创作模式收进同一个练功房里，先写提示词、再传参考图，需要时再展开更多设置。",
+      "hero_badge": "默认自由P图",
+      "ready_badge": "随时可开练",
+      "add_reference": "添加参考图",
+      "add_second_reference": "添加第 2 张参考图",
+      "remove_reference": "删除参考图",
+      "reference_count": "{count} 张",
+      "more_settings": "更多设置",
+      "close_advanced": "收起设置",
+      "advanced_title": "更多设置",
+      "advanced_subtitle": "低频参数收纳在这里，避免首屏过载。",
+      "no_advanced_options": "当前模式暂不需要额外参数，直接写提示词并提交即可。",
+      "cost_label": "预计消耗",
+      "uploading": "正在上传参考图...",
+      "submit_image": "生成图片",
+      "submit_video": "生成视频",
+      "result_empty_title": "结果预览区",
+      "result_empty_desc": "提交任务后，排队状态和最终结果会在这里持续刷新。",
+      "switch_confirm_title": "切换创作模式？",
+      "switch_confirm_content": "当前未提交的提示词或参考图会被清空，是否继续切换？",
+      "switch_confirm_ok": "确认切换",
+      "switch_confirm_cancel": "继续编辑",
+      "legacy_title": "高级模式入口",
+      "legacy_desc": "视频换脸、高清图生视频和 v2 仍保留独立工作台，先通过这里进入。",
+      "legacy_badge": "阶段三待评估",
+      "cost_hints": {
+        "edit": "自由P图支持双图融合，上传第 2 张图后会自动切到 6 灵石。",
+        "custom_video": "分辨率越高、时长越长，灵石消耗会按档位提升。"
+      },
+      "reference_titles": {
+        "portrait": "人物参考图"
+      },
+      "prompt_placeholders": {
+        "edit": "描述你希望 AI 如何修改这张图，例如：把背景换成海边，让人物戴上墨镜，整体更像电影剧照。",
+        "txt2img": "描述你想直接生成的画面，例如：cinematic portrait, moonlight, detailed face, soft rim light, realistic skin。",
+        "video": "描述视频里的动作和镜头，例如：人物微笑转头，风吹动发丝，镜头缓慢推近。"
+      },
+      "validation": {
+        "upload_first": "请先添加参考图",
+        "prompt_required": "请输入提示词"
+      },
+      "mode_kinds": {
+        "image": "图像",
+        "video": "视频"
+      }
     }
   },
   "history": {

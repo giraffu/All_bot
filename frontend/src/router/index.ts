@@ -13,6 +13,14 @@ const routes: RouteRecordRaw[] = [
     component: () => import('@/views/Login.vue'),
     meta: { requiresAuth: false, bypassTemplateApplyGuard: true }
   },
+  ...(import.meta.env.DEV
+    ? [{
+        path: '/lab-preview',
+        name: 'LabPreview',
+        component: () => import('@/views/CustomFeatures.vue'),
+        meta: { requiresAuth: false, bypassTemplateApplyGuard: true }
+      } satisfies RouteRecordRaw]
+    : []),
   {
     path: '/maintenance',
     name: 'Maintenance',
