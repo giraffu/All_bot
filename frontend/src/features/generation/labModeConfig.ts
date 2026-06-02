@@ -7,14 +7,26 @@ export type UnifiedLabModeId =
   | 'i2i_pro'
   | 'i2i_draw'
   | 'custom_video'
-
-export type LegacyLabModeId =
   | 'face_swap'
   | 'face_video'
   | 'ltx_video'
   | 'wan22_video_v2'
 
+export type LegacyLabModeId = never
+
 export type LabModeId = UnifiedLabModeId | LegacyLabModeId
+export type LabUploadSlotId = 'face_image' | 'target_image' | 'target_video'
+export type LabUploadPreviewKind = 'image' | 'video'
+
+export interface LabUploadSlotConfig {
+  id: LabUploadSlotId
+  labelKey: string
+  hintKey: string
+  buttonKey: string
+  accept: string
+  previewKind: LabUploadPreviewKind
+  required: boolean
+}
 
 export interface LabModeConfig {
   id: LabModeId
@@ -31,10 +43,16 @@ export interface LabModeConfig {
   supportsUpload: boolean
   supportsEditLora: boolean
   supportsVideoOptions: boolean
+  supportsVideoLora?: boolean
+  supportsLtxLoraItems?: boolean
+  supportsDurationOptions?: boolean
+  supportsNegativePrompt?: boolean
+  supportsWan22ResolutionPreset?: boolean
   supportsAdvancedOptions: boolean
   promptRequired: boolean
   unified: boolean
   legacyRouteName?: string
+  uploadSlots?: readonly LabUploadSlotConfig[]
 }
 
 export const EDIT_LORA_OPTIONS = [
@@ -66,8 +84,26 @@ export const VIDEO_DURATION_OPTIONS = [
   { value: '10', label: '10 秒' },
 ] as const
 
+export const LTX_VIDEO_RESOLUTION_OPTIONS = [
+  { value: '1280x704', label: '1280x704' },
+] as const
+
+export const LTX_VIDEO_DURATION_OPTIONS = [
+  { value: '5', label: '5 秒' },
+  { value: '10', label: '10 秒' },
+  { value: '15', label: '15 秒' },
+  { value: '20', label: '20 秒' },
+] as const
+
 export const DEFAULT_VIDEO_RESOLUTION = '512'
+export const DEFAULT_FACE_VIDEO_RESOLUTION = '720'
+export const DEFAULT_LTX_VIDEO_RESOLUTION = '1280x704'
 export const DEFAULT_VIDEO_DURATION = '5'
+
+export const FACE_VIDEO_RESOLUTION_OPTIONS = [
+  { value: '720', label: '720p' },
+  { value: '1024', label: '1024p' },
+] as const
 
 export const LAB_MODE_CONFIGS: LabModeConfig[] = [
   {
@@ -104,7 +140,7 @@ export const LAB_MODE_CONFIGS: LabModeConfig[] = [
     supportsEditLora: false,
     supportsVideoOptions: false,
     supportsAdvancedOptions: false,
-    promptRequired: true,
+    promptRequired: false,
     unified: true,
   },
   {
@@ -173,15 +209,34 @@ export const LAB_MODE_CONFIGS: LabModeConfig[] = [
     baseCost: 1,
     promptPlaceholderKey: 'lab.workbench.prompt_placeholders.edit',
     promptTarget: 'topLevel',
-    submitLabelKey: 'lab.workbench.submit_image',
-    maxImages: 1,
-    supportsUpload: true,
+    submitLabelKey: 'lab.workbench.submit_face_swap',
+    maxImages: 0,
+    supportsUpload: false,
     supportsEditLora: false,
     supportsVideoOptions: false,
     supportsAdvancedOptions: false,
     promptRequired: false,
-    unified: false,
-    legacyRouteName: 'FaceSwap',
+    unified: true,
+    uploadSlots: [
+      {
+        id: 'face_image',
+        labelKey: 'lab.workbench.upload_slots.face_image',
+        hintKey: 'lab.workbench.upload_slot_hints.face_image',
+        buttonKey: 'lab.workbench.upload_slot_buttons.face_image',
+        accept: 'image/png,image/jpeg,image/webp',
+        previewKind: 'image',
+        required: true,
+      },
+      {
+        id: 'target_image',
+        labelKey: 'lab.workbench.upload_slots.target_image',
+        hintKey: 'lab.workbench.upload_slot_hints.target_image',
+        buttonKey: 'lab.workbench.upload_slot_buttons.target_image',
+        accept: 'image/png,image/jpeg,image/webp',
+        previewKind: 'image',
+        required: true,
+      },
+    ],
   },
   {
     id: 'face_video',
@@ -192,15 +247,36 @@ export const LAB_MODE_CONFIGS: LabModeConfig[] = [
     baseCost: 18,
     promptPlaceholderKey: 'template_apply.image_to_video.prompt_placeholder_custom',
     promptTarget: 'inputs',
-    submitLabelKey: 'lab.workbench.submit_video',
-    maxImages: 1,
-    supportsUpload: true,
+    submitLabelKey: 'lab.workbench.submit_face_swap',
+    maxImages: 0,
+    supportsUpload: false,
     supportsEditLora: false,
     supportsVideoOptions: true,
-    supportsAdvancedOptions: false,
+    supportsVideoLora: false,
+    supportsDurationOptions: false,
+    supportsAdvancedOptions: true,
     promptRequired: false,
-    unified: false,
-    legacyRouteName: 'VideoSwap',
+    unified: true,
+    uploadSlots: [
+      {
+        id: 'face_image',
+        labelKey: 'lab.workbench.upload_slots.face_image',
+        hintKey: 'lab.workbench.upload_slot_hints.face_image',
+        buttonKey: 'lab.workbench.upload_slot_buttons.face_image',
+        accept: 'image/png,image/jpeg,image/webp',
+        previewKind: 'image',
+        required: true,
+      },
+      {
+        id: 'target_video',
+        labelKey: 'lab.workbench.upload_slots.target_video',
+        hintKey: 'lab.workbench.upload_slot_hints.target_video',
+        buttonKey: 'lab.workbench.upload_slot_buttons.target_video',
+        accept: 'video/mp4,video/quicktime,video/webm',
+        previewKind: 'video',
+        required: true,
+      },
+    ],
   },
   {
     id: 'ltx_video',
@@ -216,10 +292,11 @@ export const LAB_MODE_CONFIGS: LabModeConfig[] = [
     supportsUpload: true,
     supportsEditLora: false,
     supportsVideoOptions: true,
+    supportsVideoLora: false,
+    supportsLtxLoraItems: true,
     supportsAdvancedOptions: true,
-    promptRequired: true,
-    unified: false,
-    legacyRouteName: 'SingleImageToVideo',
+    promptRequired: false,
+    unified: true,
   },
   {
     id: 'wan22_video_v2',
@@ -231,14 +308,18 @@ export const LAB_MODE_CONFIGS: LabModeConfig[] = [
     promptPlaceholderKey: 'template_apply.image_to_video.prompt_placeholder_custom',
     promptTarget: 'inputs',
     submitLabelKey: 'lab.workbench.submit_video',
-    maxImages: 1,
+    referenceTitleKey: 'lab.workbench.reference_titles.start_frame',
+    maxImages: 2,
     supportsUpload: true,
     supportsEditLora: false,
     supportsVideoOptions: true,
+    supportsVideoLora: false,
+    supportsDurationOptions: false,
+    supportsNegativePrompt: true,
+    supportsWan22ResolutionPreset: true,
     supportsAdvancedOptions: true,
     promptRequired: true,
-    unified: false,
-    legacyRouteName: 'Wan22VideoV2',
+    unified: true,
   },
 ]
 
@@ -265,6 +346,14 @@ export const resolveLabModeIdFromTaskType = (taskType: string | null | undefined
     case 'custom_video':
     case 'video_lora':
       return 'custom_video'
+    case 'face_swap':
+      return 'face_swap'
+    case 'face_video':
+      return 'face_video'
+    case 'ltx_video':
+      return 'ltx_video'
+    case 'wan22_video_v2':
+      return 'wan22_video_v2'
     case 'img2img_lora':
     case 'edit':
     default:

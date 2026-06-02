@@ -359,6 +359,8 @@ Web 任务提交成功后，真正负责“收尾”的是：
 - 提交成功时先由 `task_web_side_effects.py` 把收尾上下文写入 Redis `pending_web_finalizers`
 - Web API 启动后持续运行 finalizer loop，按 `backend_task_id` 轮询终态
 - 即使 Web 进程重启，只要任务已成功提交，后续仍可恢复成功持久化 / 退款 / cleanup
+- 多 worker Web API 会同时运行 finalizer loop；处理单条 pending record 时必须先拿 Redis lock，并在锁后重新读取该 record。`hgetall` 的批量快照只能用于枚举候选 key，不能作为最终收口数据源。
+- Web 成功历史持久化必须以 `user_id + task_id + source` 幂等；重复终态收口时更新/跳过已有 `History`，并跳过重复 R2 warmup，避免同一任务写出多条历史。
 
 它负责把 backend 终态转为 Web 可消费的最终语义：
 - `task_web_lifecycle_monitor.py` 负责构造 terminal snapshot

@@ -21,15 +21,39 @@ async def _sync_gallery_history_public_flag(
     db,
     task_id: str | None,
     user_id: int,
+    is_public: bool,
 ):
     if not task_id:
         return None
 
-    return (
+    histories = (
         await db.execute(
             select(History).where(History.task_id == task_id, History.user_id == user_id)
         )
-    ).scalar_one_or_none()
+    ).scalars().all()
+    if not histories:
+        return None
+
+    primary_history = _select_primary_gallery_history(histories)
+    for history in histories:
+        history.is_public = is_public and history is primary_history
+    return primary_history
+
+
+def _select_primary_gallery_history(histories):
+    if not histories:
+        return None
+
+    return sorted(
+        histories,
+        key=lambda history: (
+            0 if getattr(history, "is_visible", True) else 1,
+            0 if getattr(history, "is_public", False) else 1,
+            getattr(history, "created_at", None) is None,
+            getattr(history, "created_at", None),
+            getattr(history, "id", 0) or 0,
+        ),
+    )[0]
 
 
 async def _adjust_user_total_contributions(
@@ -75,9 +99,8 @@ async def update_gallery_post_status(
         db=db,
         task_id=post.task_id,
         user_id=current_user.id,
+        is_public=is_active,
     )
-    if history:
-        history.is_public = is_active
 
     if state_changed:
         await _adjust_user_total_contributions(
@@ -125,15 +148,17 @@ async def delete_gallery_post(
     if post.user_id != current_user.id:
         raise HTTPException(status_code=403, detail="无权操作此帖子")
 
-    history = None
+    histories = []
+    primary_history = None
     if post.task_id:
-        history = (
+        histories = (
             await db.execute(
                 select(History).where(
                     History.task_id == post.task_id, History.user_id == current_user.id
                 )
             )
-        ).scalar_one_or_none()
+        ).scalars().all()
+        primary_history = _select_primary_gallery_history(histories)
 
     if post.is_active:
         user_record = await db.execute(
@@ -145,13 +170,14 @@ async def delete_gallery_post(
                 (user_obj.total_contributions or 0) - 1, 0
             )
 
-    if history:
-        history.is_public = False
-        if history.output_file:
+    if histories:
+        for history in histories:
+            history.is_public = False
+        if primary_history and primary_history.output_file:
             r2_cleanup_keys = build_history_r2_cleanup_keys(
                 post.task_id,
-                history.output_file,
-                history.type,
+                primary_history.output_file,
+                primary_history.type,
             )
     elif post.task_id:
         await db.execute(

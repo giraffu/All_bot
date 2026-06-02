@@ -6,6 +6,8 @@ interface UploadedReferenceItem {
   key: string
   preview: string
   name: string
+  uploading?: boolean
+  progress?: number
 }
 
 defineProps<{
@@ -21,32 +23,41 @@ const { t } = useI18n()
 </script>
 
 <template>
-  <div v-if="items.length > 0" class="lab-reference-tray rounded-3xl border p-4">
-    <div class="mb-3 flex items-center justify-between gap-3">
-      <div class="text-sm font-semibold">{{ title }}</div>
-      <div class="text-xs opacity-75">
-        {{ t('lab.workbench.reference_count', { count: items.length }) }}
-      </div>
+  <div v-if="items.length > 0" class="lab-reference-tray">
+    <div class="sr-only">
+      {{ title }} {{ t('lab.workbench.reference_count', { count: items.length }) }}
     </div>
 
-    <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+    <div class="flex flex-wrap gap-2">
       <div
         v-for="(item, index) in items"
         :key="item.key"
-        class="lab-reference-tray__item group relative overflow-hidden rounded-2xl"
+        class="lab-reference-tray__item group relative overflow-hidden rounded-xl"
+        :class="{ 'lab-reference-tray__item--uploading': item.uploading }"
       >
         <a-image
           :src="item.preview"
-          class="block h-20 w-full object-cover sm:h-24"
-          :preview="true"
+          class="lab-reference-tray__image block"
+          :preview="!item.uploading"
         />
 
+        <div v-if="item.uploading" class="lab-reference-tray__uploading absolute inset-0 flex items-center justify-center">
+          <a-progress
+            type="circle"
+            :percent="item.progress ?? 0"
+            :width="34"
+            :show-info="false"
+            stroke-color="#3b82f6"
+          />
+        </div>
+
         <a-button
+          v-if="!item.uploading"
           danger
           type="primary"
           size="small"
           shape="circle"
-          class="lab-reference-tray__remove absolute right-2 top-2"
+          class="lab-reference-tray__remove absolute -right-1 -top-1"
           :aria-label="t('lab.workbench.remove_reference')"
           @click="emit('remove', index)"
         >
@@ -54,36 +65,48 @@ const { t } = useI18n()
             <CloseOutlined />
           </template>
         </a-button>
-
-        <div class="lab-reference-tray__overlay absolute inset-x-0 bottom-0 flex items-end justify-between gap-3 p-3">
-          <div class="min-w-0 text-xs text-white">
-            <div class="truncate font-medium">{{ item.name }}</div>
-          </div>
-        </div>
       </div>
     </div>
   </div>
 </template>
 
 <style scoped>
-.lab-reference-tray {
-  background: var(--theme-panel-bg);
-  border-color: var(--theme-border);
-  color: var(--theme-text-primary);
-}
-
 .lab-reference-tray__item {
+  width: 56px;
+  height: 56px;
   border: 1px solid var(--theme-border);
   background: var(--theme-card-strong-bg);
 }
 
-.lab-reference-tray__overlay {
-  pointer-events: none;
-  background: linear-gradient(180deg, transparent, rgba(15, 23, 42, 0.82));
+:deep(.lab-reference-tray__image),
+:deep(.lab-reference-tray__image .ant-image-img),
+:deep(.lab-reference-tray__item .ant-image),
+:deep(.lab-reference-tray__item img) {
+  width: 56px !important;
+  height: 56px !important;
+  object-fit: cover !important;
+  display: block;
+}
+
+.lab-reference-tray__item--uploading :deep(img) {
+  filter: grayscale(1);
 }
 
 .lab-reference-tray__remove {
   z-index: 1;
-  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.25);
+  width: 18px !important;
+  min-width: 18px !important;
+  height: 18px !important;
+  box-shadow: 0 6px 12px rgba(15, 23, 42, 0.25);
+  font-size: 10px;
+}
+
+.lab-reference-tray__uploading {
+  background: rgba(15, 23, 42, 0.48);
+  backdrop-filter: grayscale(1);
+}
+
+:deep(.lab-reference-tray__uploading .ant-progress-inner) {
+  background: rgba(255, 255, 255, 0.22);
 }
 </style>

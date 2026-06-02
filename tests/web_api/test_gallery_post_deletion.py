@@ -14,6 +14,17 @@ class _FakeScalarResult:
         return self._single
 
 
+class _FakeScalarsResult:
+    def __init__(self, values):
+        self._values = values
+
+    def scalars(self):
+        return self
+
+    def all(self):
+        return self._values
+
+
 class _DeletePostSession:
     def __init__(self, results):
         self._results = iter(results)
@@ -52,7 +63,7 @@ async def test_delete_post_hard_deletes_record_and_cleans_r2_cache():
     session = _DeletePostSession(
         [
             _FakeScalarResult(post),
-            _FakeScalarResult(history),
+            _FakeScalarsResult([history]),
             _FakeScalarResult(user),
             _FakeScalarResult(),
             _FakeScalarResult(),
@@ -113,3 +124,64 @@ async def test_delete_post_without_history_cache_still_returns_success():
     assert response == {"status": "success", "message": "删除成功"}
     session.commit.assert_awaited_once()
     cleanup_mock.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_delete_post_handles_duplicate_histories_and_uses_primary_for_cache():
+    post = GalleryPost(
+        id=9,
+        task_id="task-dup",
+        user_id=123,
+        media_type="image",
+        is_active=True,
+    )
+    visible_history = History(
+        id=21,
+        user_id=123,
+        task_id="task-dup",
+        type="image",
+        output_file="123/output_images/task-dup.png",
+        is_public=True,
+        is_visible=True,
+    )
+    hidden_history = History(
+        id=22,
+        user_id=123,
+        task_id="task-dup",
+        type="image",
+        output_file="123/output_images/task-dup-copy.png",
+        is_public=False,
+        is_visible=False,
+    )
+    user = User(id=123, total_contributions=3)
+    session = _DeletePostSession(
+        [
+            _FakeScalarResult(post),
+            _FakeScalarsResult([hidden_history, visible_history]),
+            _FakeScalarResult(user),
+            _FakeScalarResult(),
+            _FakeScalarResult(),
+            _FakeScalarResult(),
+        ]
+    )
+    cleanup_mock = AsyncMock(return_value=4)
+
+    response = await delete_gallery_post(
+        post_id=9,
+        current_user=type("User", (), {"id": 123})(),
+        db=session,
+        storage_service=type("Storage", (), {"async_delete_r2_objects": cleanup_mock})(),
+    )
+
+    assert response == {"status": "success", "message": "删除成功"}
+    assert visible_history.is_public is False
+    assert hidden_history.is_public is False
+    assert user.total_contributions == 2
+    session.commit.assert_awaited_once()
+    cleanup_mock.assert_awaited_once()
+    assert set(cleanup_mock.await_args.args[0]) == {
+        "history/task-dup/original.png",
+        "history/task-dup/thumb.webp",
+        "task-dup.png",
+        "task-dup_thumb.webp",
+    }

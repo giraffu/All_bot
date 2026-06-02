@@ -22,9 +22,7 @@ const {
   currentMode,
   currentModeId,
   prompt,
-  uploadedReferences,
-  uploadProgress,
-  uploading,
+  displayedReferences,
   isSubmitting,
   currentTask,
   isImageUrl,
@@ -32,13 +30,17 @@ const {
   selectMode,
   openLegacyMode,
   beforeUpload,
+  beforeUploadSlot,
   handleRemoveReference,
+  handleRemoveUploadSlot,
   handleSubmit,
   resetAfterResult,
   cost,
   costHint,
   canSubmit,
   hasAdvancedOptions,
+  assetUploadSlots,
+  canUploadReference,
   referenceTitle,
   uploadButtonLabel,
   editLoraOptions,
@@ -46,6 +48,15 @@ const {
   customEditLoraStrength,
   videoLoraOptions,
   selectedVideoLora,
+  ltxLoraOptions,
+  selectedLtxLoraNames,
+  ltxLoraItems,
+  syncLtxLoraItems,
+  removeLtxLoraItem,
+  updateLtxLoraStrength,
+  negativePrompt,
+  wan22ResolutionOptions,
+  wan22ResolutionPreset,
   videoResolutionOptions,
   resolution,
   videoDurationOptions,
@@ -57,7 +68,7 @@ const {
   isTemplateVideoSettingsLocked,
 } = useLabWorkbench()
 
-const isVideoMode = computed(() => currentMode.value.id === 'custom_video')
+const isVideoMode = computed(() => currentMode.value.kindKey === 'lab.workbench.mode_kinds.video')
 
 const promptLockedHint = computed(() => (
   currentMode.value.id === 'custom_video'
@@ -67,44 +78,25 @@ const promptLockedHint = computed(() => (
 </script>
 
 <template>
-  <div class="lab-workbench mx-auto flex w-full max-w-7xl flex-col gap-6 px-2 py-4 sm:px-6">
-    <section class="lab-workbench__intro text-center">
-      <h2 class="text-3xl font-semibold tracking-tight sm:text-4xl">
-        {{ $t('lab.title') }}
-      </h2>
-      <p class="mx-auto mt-3 max-w-2xl text-sm leading-6 opacity-70 sm:text-base">
-        {{ $t('lab.workbench.hero_desc') }}
-      </p>
-
-      <div class="mt-5">
-        <LabModeRail
-          :modes="unifiedModes"
-          :active-mode-id="currentModeId"
-          :resolve-label="t"
-          @select="selectMode"
-        />
-      </div>
-    </section>
-
+  <div class="lab-workbench mx-auto flex w-full max-w-7xl flex-col gap-4 px-2 py-3 sm:px-6">
     <div
-      class="grid grid-cols-1 gap-5"
+      class="grid grid-cols-1 gap-4"
       :class="currentTask ? 'xl:grid-cols-[minmax(0,1.24fr)_minmax(360px,0.82fr)]' : ''"
     >
       <LabPromptComposer
         :title="t(currentMode.titleKey)"
         :description="t(currentMode.descriptionKey)"
-        :mode-kind-label="t(currentMode.kindKey)"
         :prompt="prompt"
-        :prompt-placeholder="t(currentMode.promptPlaceholderKey)"
         :prompt-locked="isTemplatePromptLocked"
         :prompt-locked-hint="promptLockedHint"
-        :references="uploadedReferences"
+        :references="displayedReferences"
+        :asset-upload-slots="assetUploadSlots"
         :reference-title="referenceTitle"
         :supports-upload="currentMode.supportsUpload"
+        :can-upload-reference="canUploadReference"
         :upload-button-label="uploadButtonLabel"
         :before-upload="beforeUpload"
-        :uploading="uploading"
-        :upload-progress="uploadProgress"
+        :before-upload-slot="beforeUploadSlot"
         :submit-text="t(currentMode.submitLabelKey)"
         :submit-disabled="!canSubmit"
         :submit-loading="isSubmitting"
@@ -115,6 +107,7 @@ const promptLockedHint = computed(() => (
         :warning="templateWarning"
         @update:prompt="prompt = $event"
         @remove-reference="handleRemoveReference"
+        @remove-upload-slot="handleRemoveUploadSlot"
         @submit="handleSubmit"
       >
         <template #advanced-panel="{ close }">
@@ -125,17 +118,28 @@ const promptLockedHint = computed(() => (
             :edit-lora-strength="customEditLoraStrength"
             :video-lora-options="videoLoraOptions"
             :selected-video-lora="selectedVideoLora"
+            :ltx-lora-options="ltxLoraOptions"
+            :selected-ltx-lora-names="selectedLtxLoraNames"
+            :ltx-lora-items="ltxLoraItems"
             :resolution-options="videoResolutionOptions"
             :selected-resolution="resolution"
             :duration-options="videoDurationOptions"
             :selected-duration="duration"
+            :negative-prompt="negativePrompt"
+            :wan22-resolution-options="wan22ResolutionOptions"
+            :selected-wan22-resolution-preset="wan22ResolutionPreset"
             :is-template-edit-settings-locked="isTemplateEditSettingsLocked"
             :is-template-video-settings-locked="isTemplateVideoSettingsLocked"
             @update:selected-edit-lora="selectedEditLora = $event"
             @update:edit-lora-strength="customEditLoraStrength = $event"
             @update:selected-video-lora="selectedVideoLora = $event"
+            @update:selected-ltx-lora-names="syncLtxLoraItems"
+            @update:ltx-lora-strength="updateLtxLoraStrength"
+            @remove-ltx-lora-item="removeLtxLoraItem"
             @update:selected-resolution="resolution = $event"
             @update:selected-duration="duration = $event"
+            @update:negative-prompt="negativePrompt = $event"
+            @update:selected-wan22-resolution-preset="wan22ResolutionPreset = $event as any"
           />
           <div class="mt-4 flex justify-end">
             <a-button class="rounded-full" @click="close()">
@@ -168,7 +172,17 @@ const promptLockedHint = computed(() => (
       </section>
     </div>
 
+    <div class="lab-workbench__mode-dock mx-auto w-full max-w-4xl">
+      <LabModeRail
+        :modes="unifiedModes"
+        :active-mode-id="currentModeId"
+        :resolve-label="t"
+        @select="selectMode"
+      />
+    </div>
+
     <LabLegacyModeGrid
+      v-if="legacyModes.length > 0"
       :modes="legacyModes"
       :resolve-label="t"
       @open="openLegacyMode"
@@ -181,14 +195,14 @@ const promptLockedHint = computed(() => (
   color: var(--theme-text-primary);
 }
 
-.lab-workbench__intro {
-  color: var(--theme-text-primary);
-}
-
 .lab-workbench__result {
   background: var(--theme-card-bg);
   border-color: var(--theme-border);
   color: var(--theme-text-primary);
   box-shadow: var(--theme-shadow);
+}
+
+.lab-workbench__mode-dock {
+  margin-top: -6px;
 }
 </style>

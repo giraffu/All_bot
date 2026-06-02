@@ -22,7 +22,7 @@ async def postprocess_successful_task_persistence(
     refresh_user_group_func: Callable[[int], Awaitable[object]] | None,
     schedule_web_history_r2_warmup_func: Callable[..., object],
 ):
-    await user_logger.log_task(
+    log_created = await user_logger.log_task(
         prompt,
         input_images,
         persistence_result.output_file,
@@ -37,6 +37,8 @@ async def postprocess_successful_task_persistence(
         requested_duration=requested_duration,
         extra_outputs=persistence_result.extra_outputs,
     )
+    if log_created is False:
+        return
 
     if refresh_user_group_after_log and refresh_user_group_func is not None:
         await refresh_user_group_func(internal_user_id)

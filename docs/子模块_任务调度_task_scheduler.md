@@ -91,6 +91,8 @@ sequenceDiagram
 - `task_web_finalizer.py` 负责恢复上次进程未完成的 pending finalizer
 
 补充约束：
+- Web API 可多 worker 运行，每个 worker 都可能启动 finalizer loop；`task_web_finalizer.py` 在获取 Redis lock 后必须重新读取单条 pending record，不能继续使用 `hgetall` 快照里的旧 record，避免 stale snapshot 重复收口。
+- 成功历史落库必须对 `user_id + task_id + source` 做幂等保护；重复收口时只能更新/跳过已有 `History`，不能再次插入，也不能重复触发 Web history R2 warmup。
 - backend 执行面在发布 `done/error` 的 `comfy:task_events:{backend_task_id}` 终态事件时，应随事件携带 `task_type`，并尽量附带 `worker_id`、`created_at` 等最小详情，避免 Dashboard/stream 消费端与 Web monitor runtime cleanup 争抢 Redis 临时详情键而产生观测竞态。
 - Bot 轮询展示、Web monitor 和 stream/result fallback 对 backend `done/error/cancelled` 的判定，应共享 `task_lifecycle_contract.py`，避免多处写死终态名单。
 

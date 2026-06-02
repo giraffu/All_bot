@@ -391,7 +391,11 @@
       "ready_badge": "Ready to Create",
       "add_reference": "Add Reference",
       "add_second_reference": "Add 2nd Reference",
+      "add_start_frame": "Add Start Frame",
+      "add_end_frame": "Add End Frame",
       "remove_reference": "Remove reference",
+      "remove_asset": "Remove asset",
+      "replace_asset": "Replace",
       "reference_count": "{count} item(s)",
       "more_settings": "More Settings",
       "close_advanced": "Close Settings",
@@ -400,8 +404,28 @@
       "no_advanced_options": "This mode does not need extra parameters yet. Write the prompt and submit directly.",
       "cost_label": "Estimated Cost",
       "uploading": "Uploading reference image...",
+      "ltx_lora_placeholder": "Choose addon models",
+      "ltx_lora_hint": "Up to 3 addon models can be stacked, each with its own strength.",
+      "negative_prompt": "Negative Prompt",
+      "negative_prompt_placeholder": "Enter visual traits to avoid, such as blur, deformation, or low quality.",
+      "upload_slots": {
+        "face_image": "Face Image",
+        "target_image": "Body Image",
+        "target_video": "Body Video"
+      },
+      "upload_slot_hints": {
+        "face_image": "Upload a clear face image",
+        "target_image": "Upload the body image to swap into",
+        "target_video": "Upload the body video to swap into"
+      },
+      "upload_slot_buttons": {
+        "face_image": "Add Face Image",
+        "target_image": "Add Body Image",
+        "target_video": "Add Body Video"
+      },
       "submit_image": "Generate Image",
       "submit_video": "Generate Video",
+      "submit_face_swap": "Start Face Swap",
       "result_empty_title": "Result Preview",
       "result_empty_desc": "Queue status and the final result keep updating here after submission.",
       "switch_confirm_title": "Switch creation mode?",
@@ -409,14 +433,22 @@
       "switch_confirm_ok": "Switch Mode",
       "switch_confirm_cancel": "Keep Editing",
       "legacy_title": "Advanced Mode Entry",
-      "legacy_desc": "Video Face Swap, High-Res Video, and V2 stay on dedicated pages for now.",
+      "legacy_desc": "High-Res Video and V2 stay on dedicated pages for now.",
       "legacy_badge": "Phase 3 Later",
       "cost_hints": {
         "edit": "Custom Edit supports dual-image fusion. Uploading the second image raises the cost to 6 credits.",
-        "custom_video": "Higher resolution and longer duration increase the credit cost by tier."
+        "custom_video": "Higher resolution and longer duration increase the credit cost by tier.",
+        "face_video": "Video Face Swap is priced by resolution: 720p costs 18 credits, 1024p costs 36 credits.",
+        "ltx_video": "High-Res Video uses fixed 1280x704 output; longer duration costs more.",
+        "wan22_video_v2": "Img2Video V2 outputs fixed 5s clips and is priced by resolution preset."
+      },
+      "template_notices": {
+        "face_swap": "Face swap template loaded. The body image is locked; upload a face image to start.",
+        "face_video": "Video face swap template loaded. The body video is locked; upload a face image to start."
       },
       "reference_titles": {
-        "portrait": "Portrait Reference"
+        "portrait": "Portrait Reference",
+        "start_frame": "Start / End Frame"
       },
       "prompt_placeholders": {
         "edit": "Describe how AI should edit the image, for example: change the background to a beach, add sunglasses, and make it feel like a cinematic still.",
@@ -425,7 +457,9 @@
       },
       "validation": {
         "upload_first": "Please add a reference image first",
-        "prompt_required": "Please enter a prompt"
+        "prompt_required": "Please enter a prompt",
+        "upload_slots_required": "Please add both the face asset and target asset",
+        "ltx_lora_limit": "You can choose up to 3 addon models"
       },
       "mode_kinds": {
         "image": "Image",

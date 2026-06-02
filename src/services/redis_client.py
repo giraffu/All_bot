@@ -174,7 +174,7 @@ class RedisClient:
                 registry_task_id,
                 e,
             )
-            return token
+            return None
 
     async def release_pending_web_finalizer_lock(
         self,

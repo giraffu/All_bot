@@ -15,6 +15,17 @@ class _FakeScalarResult:
         return self._single
 
 
+class _FakeScalarsResult:
+    def __init__(self, values):
+        self._values = values
+
+    def scalars(self):
+        return self
+
+    def all(self):
+        return self._values
+
+
 class _StatusSession:
     def __init__(self, results):
         self._results = iter(results)
@@ -43,7 +54,7 @@ async def test_update_post_status_puts_submission_off_shelf_and_syncs_history():
     session = _StatusSession(
         [
             _FakeScalarResult(post),
-            _FakeScalarResult(history),
+            _FakeScalarsResult([history]),
             _FakeScalarResult(user),
         ]
     )
@@ -81,7 +92,7 @@ async def test_update_post_status_puts_submission_back_on_shelf_and_increments_t
     session = _StatusSession(
         [
             _FakeScalarResult(post),
-            _FakeScalarResult(history),
+            _FakeScalarsResult([history]),
             _FakeScalarResult(user),
         ]
     )
@@ -130,3 +141,95 @@ async def test_update_post_status_rejects_reactivation_for_submission_banned_use
     assert exc_info.value.status_code == 403
     assert exc_info.value.detail == "违禁被封，请联系管理员解封"
     session.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_update_post_status_handles_duplicate_histories_when_off_shelf():
+    post = GalleryPost(
+        id=9,
+        task_id="task-dup",
+        user_id=123,
+        media_type="image",
+        is_active=True,
+    )
+    visible_history = History(
+        id=21,
+        user_id=123,
+        task_id="task-dup",
+        is_public=True,
+        is_visible=True,
+    )
+    hidden_history = History(
+        id=22,
+        user_id=123,
+        task_id="task-dup",
+        is_public=False,
+        is_visible=False,
+    )
+    user = User(id=123, total_contributions=3)
+    session = _StatusSession(
+        [
+            _FakeScalarResult(post),
+            _FakeScalarsResult([hidden_history, visible_history]),
+            _FakeScalarResult(user),
+        ]
+    )
+
+    response = await update_gallery_post_status(
+        post_id=9,
+        current_user=type("User", (), {"id": 123})(),
+        db=session,
+        is_active=False,
+    )
+
+    assert response == {"status": "success", "message": "已下架"}
+    assert visible_history.is_public is False
+    assert hidden_history.is_public is False
+    assert user.total_contributions == 2
+    session.commit.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_update_post_status_reactivates_only_primary_duplicate_history():
+    post = GalleryPost(
+        id=10,
+        task_id="task-dup",
+        user_id=123,
+        media_type="image",
+        is_active=False,
+    )
+    visible_history = History(
+        id=21,
+        user_id=123,
+        task_id="task-dup",
+        is_public=False,
+        is_visible=True,
+    )
+    hidden_history = History(
+        id=22,
+        user_id=123,
+        task_id="task-dup",
+        is_public=False,
+        is_visible=False,
+    )
+    user = User(id=123, total_contributions=2)
+    session = _StatusSession(
+        [
+            _FakeScalarResult(post),
+            _FakeScalarsResult([hidden_history, visible_history]),
+            _FakeScalarResult(user),
+        ]
+    )
+
+    response = await update_gallery_post_status(
+        post_id=10,
+        current_user=type("User", (), {"id": 123})(),
+        db=session,
+        is_active=True,
+    )
+
+    assert response == {"status": "success", "message": "已上架"}
+    assert visible_history.is_public is True
+    assert hidden_history.is_public is False
+    assert user.total_contributions == 3
+    session.commit.assert_awaited_once()

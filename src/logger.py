@@ -4,7 +4,7 @@ from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
 from asgi_correlation_id import correlation_id
-from sqlalchemy import select
+from sqlalchemy import select, text
 
 from .database.core import AsyncSessionLocal
 from .database.models import History, User
@@ -161,6 +161,46 @@ class UserLogger:
                 user = User(id=self.user_id)
                 session.add(user)
 
+            existing_history = None
+            if task_id:
+                await session.execute(
+                    text("SELECT pg_advisory_xact_lock(hashtext(:lock_key))"),
+                    {
+                        "lock_key": f"history:{self.user_id}:{task_id}:{source}",
+                    },
+                )
+                existing_result = await session.execute(
+                    select(History)
+                    .where(
+                        History.user_id == self.user_id,
+                        History.task_id == task_id,
+                        History.source == source,
+                    )
+                    .order_by(
+                        History.is_visible.desc(),
+                        History.is_public.desc(),
+                        History.id.asc(),
+                    )
+                    .limit(1)
+                )
+                existing_history = existing_result.scalar_one_or_none()
+
+            if existing_history:
+                existing_history.type = type
+                existing_history.prompt = prompt
+                existing_history.input_file = input_file_str
+                existing_history.output_file = output_image
+                existing_history.extra_outputs = extra_outputs
+                existing_history.billing_resolution = billing_resolution
+                existing_history.width = width
+                existing_history.height = height
+                existing_history.duration = duration
+                existing_history.requested_duration = requested_duration
+                existing_history.allow_contribute = allow_contribute
+                user.last_activity = datetime.now()
+                await session.commit()
+                return False
+
             history_entry = History(
                 user_id=self.user_id,
                 task_id=task_id,
@@ -185,3 +225,4 @@ class UserLogger:
             user.last_activity = datetime.now()
 
             await session.commit()
+            return True

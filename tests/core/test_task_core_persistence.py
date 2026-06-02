@@ -191,6 +191,47 @@ async def test_persist_successful_task_result_flow_materializes_then_postprocess
 
 
 @pytest.mark.asyncio
+async def test_postprocess_skips_warmup_when_history_log_is_duplicate():
+    user_logger = type(
+        "UserLogger",
+        (),
+        {"log_task": AsyncMock(return_value=False)},
+    )()
+    warmup = Mock()
+    refresh_group = AsyncMock()
+    persistence_result = TaskSuccessPersistenceResult(
+        media_bytes=b"bytes",
+        output_file="output.png",
+        width=1024,
+        height=1024,
+        duration=None,
+    )
+
+    await task_core_persistence_flow._postprocess_successful_task_persistence_impl(
+        user_logger=user_logger,
+        persistence_result=persistence_result,
+        registry_task_id="registry-1",
+        internal_user_id=123,
+        prompt="prompt",
+        task_type="image",
+        input_images=["input.png"],
+        allow_contribute=True,
+        source="web",
+        billing_resolution="1024",
+        requested_duration=None,
+        media_type="image",
+        refresh_user_group_after_log=True,
+        warmup_web_history=True,
+        refresh_user_group_func=refresh_group,
+        schedule_web_history_r2_warmup_func=warmup,
+    )
+
+    user_logger.log_task.assert_awaited_once()
+    refresh_group.assert_not_awaited()
+    warmup.assert_not_called()
+
+
+@pytest.mark.asyncio
 async def test_persist_successful_task_result_flow_uses_runtime_default_bindings(
     monkeypatch,
 ):

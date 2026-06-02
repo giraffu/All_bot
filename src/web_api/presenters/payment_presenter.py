@@ -1,6 +1,6 @@
 from decimal import Decimal
 
-from src.constants import TON_RECEIVER_ADDRESS
+from config import VITE_MERCHANT_ADDRESS
 from src.services.order_v2_service import get_order_public_id
 
 
@@ -24,7 +24,7 @@ def build_payment_plans_payload(plans) -> dict:
         "message": "success",
         "data": {
             "plans": [build_payment_plan_item(plan) for plan in plans],
-            "ton_receiver_address": TON_RECEIVER_ADDRESS,
+            "ton_receiver_address": VITE_MERCHANT_ADDRESS,
         },
     }
 
@@ -56,7 +56,7 @@ def build_ton_order_payload(
             "business_order_id": order.business_order_id,
             "legacy_order_id": order.order_id,
             "ton_comment": ton_comment,
-            "ton_receiver_address": TON_RECEIVER_ADDRESS,
+            "ton_receiver_address": VITE_MERCHANT_ADDRESS,
             "amount_ton": float(amount_ton),
             "amount_nanotons": str(
                 int(Decimal(str(amount_ton)) * Decimal("1000000000"))

@@ -69,7 +69,7 @@ const resetForm = () => {
             v-model:value="prompt"
             :rows="8"
             show-count
-            :maxlength="512"
+            :maxlength="2000"
             placeholder="例如：masterpiece, cinematic portrait, moonlight, detailed face, realistic skin, soft rim light"
           />
           <p class="mt-3 text-xs text-slate-400">

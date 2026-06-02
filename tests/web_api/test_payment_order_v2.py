@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from src.web_api.routers import payment as payment_router
+from src.web_api.presenters import payment_presenter
 from src.web_api.services import payment_api_service
 
 
@@ -67,6 +68,16 @@ async def test_get_plans_preserves_frontend_contract_fields():
     assert result["data"]["plans"][0]["price_ton"] == 1.1
     assert result["data"]["plans"][0]["credits_granted"] == 100
     assert result["data"]["plans"][0]["type"] == "monthly"
+
+
+@pytest.mark.asyncio
+async def test_get_plans_uses_configured_ton_receiver(monkeypatch):
+    db = _FakeSession([[_build_plan()]])
+    monkeypatch.setattr(payment_presenter, "VITE_MERCHANT_ADDRESS", "test_receiver")
+
+    result = await payment_router.get_plans(db=db)
+
+    assert result["data"]["ton_receiver_address"] == "test_receiver"
 
 
 @pytest.mark.asyncio
@@ -181,3 +192,23 @@ async def test_create_ton_order_returns_order_v2_comment_when_enabled(monkeypatc
     assert result["data"]["order_id"] == "bo_ton_1"
     assert result["data"]["ton_comment"] == "ORDER_V2:bo_ton_1"
     assert result["data"]["amount_nanotons"] == "1100000000"
+
+
+@pytest.mark.asyncio
+async def test_create_ton_order_uses_configured_ton_receiver(monkeypatch):
+    db = _FakeSession([_build_plan()])
+    current_user = SimpleNamespace(id=2002, telegram_id=12345)
+
+    monkeypatch.setattr(
+        payment_api_service, "generate_business_order_id", lambda: "bo_ton_receiver"
+    )
+    monkeypatch.setattr(payment_api_service, "is_order_v2_enabled", lambda: True)
+    monkeypatch.setattr(payment_presenter, "VITE_MERCHANT_ADDRESS", "test_receiver")
+
+    result = await payment_router.create_ton_order(
+        payment_router.CreateTonOrderRequest(plan_id=1),
+        current_user=current_user,
+        db=db,
+    )
+
+    assert result["data"]["ton_receiver_address"] == "test_receiver"

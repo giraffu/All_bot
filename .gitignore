@@ -72,6 +72,7 @@ yarn-error.log*
 *.webp
 *.svg
 *.ico
+!frontend/public/tonconnect-icon.png
 *.mp4
 *.mov
 *.avi

@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { nextTick, onMounted, ref, watch } from 'vue'
+
 import OverflowScrollRail from '@/components/OverflowScrollRail.vue'
 import type { LabModeConfig, UnifiedLabModeId } from '@/features/generation/labModeConfig'
 
@@ -11,6 +13,32 @@ const props = defineProps<{
 const emit = defineEmits<{
   select: [modeId: UnifiedLabModeId]
 }>()
+
+const modeButtonRefs = ref<Partial<Record<UnifiedLabModeId, HTMLButtonElement>>>({})
+
+const setModeButtonRef = (modeId: UnifiedLabModeId, element: unknown) => {
+  if (element instanceof HTMLButtonElement) {
+    modeButtonRefs.value[modeId] = element
+  } else {
+    delete modeButtonRefs.value[modeId]
+  }
+}
+
+const scrollActiveModeIntoView = async () => {
+  await nextTick()
+  modeButtonRefs.value[props.activeModeId]?.scrollIntoView({
+    behavior: 'smooth',
+    block: 'nearest',
+    inline: 'center',
+  })
+}
+
+onMounted(scrollActiveModeIntoView)
+
+watch(
+  () => props.activeModeId,
+  scrollActiveModeIntoView,
+)
 </script>
 
 <template>
@@ -21,6 +49,7 @@ const emit = defineEmits<{
     <button
       v-for="mode in modes"
       :key="mode.id"
+      :ref="(element) => setModeButtonRef(mode.id as UnifiedLabModeId, element)"
       type="button"
       class="lab-mode-rail__item rounded-full border px-3.5 py-2 text-left transition-all sm:px-4"
       :class="mode.id === activeModeId ? 'lab-mode-rail__item--active' : 'lab-mode-rail__item--idle'"

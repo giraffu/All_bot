@@ -42,6 +42,8 @@ description: "处理任务提交流程、provider/capability 装配、双 ID 运
 - 任何失败补偿必须与并发锁释放一起考虑，不能只退款不清 runtime。
 - 任何需要访问运行态或终止任务的地方，都必须显式区分 `registry_task_id` 与 `backend_task_id`。
 - Web 任务完成后的历史持久化、R2 warmup、runtime cleanup 不应由 router 或页面逻辑承担，应收口到 monitor / persistence 链。
+- Web finalizer 在多 worker 下可能并发扫描 pending 队列；拿到 Redis lock 后必须重新读取单条 pending record，不能使用 `hgetall` 的旧快照继续收口。
+- Web 成功历史落库必须对 `user_id + task_id + source` 幂等；重复收口时不能重复插入 `History`，也不能重复触发 Web history R2 warmup。
 - 默认依赖构造必须保持惰性，只在缺失且确实需要时才解析 provider，避免测试被误伤。
 
 ## 4. 边界条件处理

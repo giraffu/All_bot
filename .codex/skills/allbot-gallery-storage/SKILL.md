@@ -37,6 +37,7 @@ description: "处理对象存储、广场评论收藏、R2 媒体策略与 Web a
 - `apply` 次数不能在前端点击时预增，必须等任务真正进入成功链路后再记账。
 - `apply-context` 必须优先从 `History` 还原请求语义，不能只看展示用输出元数据。
 - 存储/R2 异常只能降级，不能阻断广场主流程。
+- 投稿删除/下架必须兼容同一 `task_id + user_id` 下多条 `History`；不得用 `scalar_one_or_none()` 假设唯一。上架时只允许主 history 公开，删除/下架时所有匹配 history 都要 `is_public=False`。
 
 ## 4. 边界条件处理
 - 帖子并发下架时，评论创建必须整体回滚而不是留下脏评论。

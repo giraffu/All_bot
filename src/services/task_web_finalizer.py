@@ -190,12 +190,13 @@ async def process_pending_web_finalizer(
     *,
     record: dict[str, Any] | None = None,
 ) -> bool:
+    del record
     lock_token = await redis_client.acquire_pending_web_finalizer_lock(registry_task_id)
     if not lock_token:
         return False
 
     try:
-        record = record or await redis_client.get_pending_web_finalizer(registry_task_id)
+        record = await redis_client.get_pending_web_finalizer(registry_task_id)
         if not record:
             return False
 

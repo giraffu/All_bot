@@ -8,13 +8,21 @@ import { useTaskResult } from '@/composables/useTaskResult'
 import { useTaskStream } from '@/composables/useTaskStream'
 import { useUpload } from '@/composables/useUpload'
 import { buildGenerationTaskPayload } from '@/features/generation/buildGenerationTaskPayload'
+import { buildSwapTaskPayload } from '@/features/generation/buildSwapTaskPayload'
 import {
+  DEFAULT_FACE_VIDEO_RESOLUTION,
   DEFAULT_LAB_MODE_ID,
+  DEFAULT_LTX_VIDEO_RESOLUTION,
   DEFAULT_VIDEO_DURATION,
   DEFAULT_VIDEO_RESOLUTION,
   EDIT_LORA_DEFAULT_STRENGTHS,
   EDIT_LORA_OPTIONS,
+  FACE_VIDEO_RESOLUTION_OPTIONS,
   LEGACY_LAB_MODES,
+  LTX_VIDEO_DURATION_OPTIONS,
+  LTX_VIDEO_RESOLUTION_OPTIONS,
+  type LabUploadPreviewKind,
+  type LabUploadSlotId,
   type LabModeConfig,
   type UnifiedLabModeId,
   UNIFIED_LAB_MODES,
@@ -26,8 +34,18 @@ import {
   resolveLabModeIdFromTaskType,
 } from '@/features/generation/labModeConfig'
 import {
+  buildDefaultLtxVideoLoraItem,
+  DEFAULT_WAN22_VIDEO_V2_NEGATIVE_PROMPT,
+  DEFAULT_WAN22_VIDEO_V2_RESOLUTION_PRESET,
   getImageToVideoRequestTaskType,
   getImageToVideoPayloadLoraName,
+  getImageToVideoPayloadLoraStrength,
+  LTX_VIDEO_LORA_OPTIONS,
+  normalizeImageToVideoLoraSelection,
+  normalizeLtxVideoLoraItems,
+  WAN22_VIDEO_V2_RESOLUTION_OPTIONS,
+  type LtxVideoLoraItem,
+  type Wan22VideoV2ResolutionPreset,
 } from '@/features/generation/imageToVideo'
 import { resolveTemplateVideoApplyState } from '@/utils/templateVideoApplyState'
 
@@ -35,6 +53,26 @@ type UploadedReference = {
   key: string
   preview: string
   name: string
+}
+
+type PendingReferenceUpload = UploadedReference & {
+  uploading: true
+}
+
+type UploadedSlotAsset = UploadedReference & {
+  previewKind: LabUploadPreviewKind
+  uploading?: true
+}
+
+type LabAssetUploadSlot = {
+  id: LabUploadSlotId
+  label: string
+  hint: string
+  buttonLabel: string
+  accept: string
+  previewKind: LabUploadPreviewKind
+  required: boolean
+  item: (UploadedSlotAsset & { progress?: number }) | null
 }
 
 type HydratedTemplateState = {
@@ -66,11 +104,17 @@ export function useLabWorkbench() {
   const currentModeId = ref<UnifiedLabModeId>(DEFAULT_LAB_MODE_ID)
   const prompt = ref('')
   const uploadedReferences = ref<UploadedReference[]>([])
+  const pendingReferenceUploads = ref<PendingReferenceUpload[]>([])
+  const uploadedSlotAssets = ref<Partial<Record<LabUploadSlotId, UploadedSlotAsset>>>({})
   const pendingUploads = ref(0)
 
   const selectedEditLora = ref('')
   const customEditLoraStrength = ref(DEFAULT_EDIT_LORA_STRENGTH)
   const selectedVideoLora = ref(getDefaultVideoLoraSelection())
+  const ltxLoraItems = ref<LtxVideoLoraItem[]>([])
+  const selectedLtxLoraNames = ref<string[]>([])
+  const negativePrompt = ref(DEFAULT_WAN22_VIDEO_V2_NEGATIVE_PROMPT)
+  const wan22ResolutionPreset = ref<Wan22VideoV2ResolutionPreset>(DEFAULT_WAN22_VIDEO_V2_RESOLUTION_PRESET)
   const resolution = ref(DEFAULT_VIDEO_RESOLUTION)
   const duration = ref(DEFAULT_VIDEO_DURATION)
 
@@ -87,21 +131,76 @@ export function useLabWorkbench() {
   const legacyModes = LEGACY_LAB_MODES
   const editLoraOptions = EDIT_LORA_OPTIONS
   const videoLoraOptions = getVideoLoraOptions()
-  const videoResolutionOptions = VIDEO_RESOLUTION_OPTIONS
-  const videoDurationOptions = VIDEO_DURATION_OPTIONS
+  const videoResolutionOptions = computed(() => (
+    currentMode.value.id === 'face_video'
+      ? FACE_VIDEO_RESOLUTION_OPTIONS
+      : currentMode.value.id === 'ltx_video'
+        ? LTX_VIDEO_RESOLUTION_OPTIONS
+        : VIDEO_RESOLUTION_OPTIONS
+  ))
+  const videoDurationOptions = computed(() => (
+    currentMode.value.id === 'ltx_video' ? LTX_VIDEO_DURATION_OPTIONS : VIDEO_DURATION_OPTIONS
+  ))
+  const ltxLoraOptions = LTX_VIDEO_LORA_OPTIONS
+  const wan22ResolutionOptions = WAN22_VIDEO_V2_RESOLUTION_OPTIONS
 
   const hasReferences = computed(() => uploadedReferences.value.length > 0)
   const hasAdvancedOptions = computed(() => currentMode.value.supportsAdvancedOptions)
+  const hasStructuredUploadSlots = computed(() => (currentMode.value.uploadSlots?.length ?? 0) > 0)
+  const displayedReferences = computed(() => [
+    ...uploadedReferences.value,
+    ...pendingReferenceUploads.value.map(item => ({
+      ...item,
+      progress: uploadProgress.value,
+    })),
+  ])
+  const canUploadReference = computed(() => (
+    currentMode.value.supportsUpload
+    && uploadedReferences.value.length + pendingReferenceUploads.value.length < currentMode.value.maxImages
+  ))
+
+  const assetUploadSlots = computed<LabAssetUploadSlot[]>(() => (
+    currentMode.value.uploadSlots?.map((slot) => {
+      const item = uploadedSlotAssets.value[slot.id] ?? null
+      return {
+        id: slot.id,
+        label: t(slot.labelKey),
+        hint: t(slot.hintKey),
+        buttonLabel: t(slot.buttonKey),
+        accept: slot.accept,
+        previewKind: slot.previewKind,
+        required: slot.required,
+        item: item
+          ? {
+              ...item,
+              progress: item.uploading ? uploadProgress.value : undefined,
+            }
+          : null,
+      }
+    }) ?? []
+  ))
 
   const referenceTitle = computed(() =>
     currentMode.value.referenceTitleKey ? t(currentMode.value.referenceTitleKey) : '',
   )
 
   const uploadButtonLabel = computed(() => (
-    currentMode.value.maxImages > 1 && uploadedReferences.value.length === 1
+    currentMode.value.id === 'wan22_video_v2' && uploadedReferences.value.length === 0
+      ? t('lab.workbench.add_start_frame')
+      : currentMode.value.id === 'wan22_video_v2' && uploadedReferences.value.length === 1
+        ? t('lab.workbench.add_end_frame')
+        : currentMode.value.maxImages > 1 && uploadedReferences.value.length === 1
       ? t('lab.workbench.add_second_reference')
       : t('lab.workbench.add_reference')
   ))
+
+  const getDefaultResolutionForMode = (modeId: UnifiedLabModeId) => (
+    modeId === 'face_video'
+      ? DEFAULT_FACE_VIDEO_RESOLUTION
+      : modeId === 'ltx_video'
+        ? DEFAULT_LTX_VIDEO_RESOLUTION
+        : DEFAULT_VIDEO_RESOLUTION
+  )
 
   const cost = computed(() => {
     if (currentMode.value.id === 'edit') {
@@ -119,6 +218,22 @@ export function useLabWorkbench() {
       return baseCost * multiplier
     }
 
+    if (currentMode.value.id === 'face_video') {
+      return resolution.value === '1024' ? 36 : 18
+    }
+
+    if (currentMode.value.id === 'ltx_video') {
+      let multiplier = 1
+      if (duration.value === '10') multiplier = 2
+      else if (duration.value === '15') multiplier = 3
+      else if (duration.value === '20') multiplier = 4
+      return 10 * multiplier
+    }
+
+    if (currentMode.value.id === 'wan22_video_v2') {
+      return WAN22_VIDEO_V2_RESOLUTION_OPTIONS.find(option => option.value === wan22ResolutionPreset.value)?.cost ?? 20
+    }
+
     return currentMode.value.baseCost
   })
 
@@ -131,21 +246,38 @@ export function useLabWorkbench() {
       return t('lab.workbench.cost_hints.custom_video')
     }
 
+    if (currentMode.value.id === 'face_video') {
+      return t('lab.workbench.cost_hints.face_video')
+    }
+
+    if (currentMode.value.id === 'ltx_video') {
+      return t('lab.workbench.cost_hints.ltx_video')
+    }
+
+    if (currentMode.value.id === 'wan22_video_v2') {
+      return t('lab.workbench.cost_hints.wan22_video_v2')
+    }
+
     return ''
   })
 
   const canSubmit = computed(() => {
-    const hasPrompt = isTemplatePromptLocked.value || prompt.value.trim().length > 0
+    const hasPrompt = !currentMode.value.promptRequired || isTemplatePromptLocked.value || prompt.value.trim().length > 0
     const hasRequiredUpload = !currentMode.value.supportsUpload || uploadedReferences.value.length > 0
-    return hasPrompt && hasRequiredUpload && pendingUploads.value === 0 && !uploading.value
+    const hasRequiredSlots = assetUploadSlots.value.every(slot => !slot.required || !!slot.item?.key)
+    return hasPrompt && hasRequiredUpload && hasRequiredSlots && pendingUploads.value === 0 && !uploading.value
   })
 
   const isDirty = computed(() => (
     prompt.value.trim().length > 0
     || uploadedReferences.value.length > 0
+    || Object.keys(uploadedSlotAssets.value).length > 0
     || selectedEditLora.value !== ''
     || selectedVideoLora.value !== getDefaultVideoLoraSelection()
-    || resolution.value !== DEFAULT_VIDEO_RESOLUTION
+    || selectedLtxLoraNames.value.length > 0
+    || negativePrompt.value !== DEFAULT_WAN22_VIDEO_V2_NEGATIVE_PROMPT
+    || wan22ResolutionPreset.value !== DEFAULT_WAN22_VIDEO_V2_RESOLUTION_PRESET
+    || resolution.value !== getDefaultResolutionForMode(currentModeId.value)
     || duration.value !== DEFAULT_VIDEO_DURATION
     || isTemplateApplied.value
   ))
@@ -158,7 +290,14 @@ export function useLabWorkbench() {
 
   const clearReferences = () => {
     uploadedReferences.value.forEach(item => revokeReferencePreview(item.preview))
+    pendingReferenceUploads.value.forEach(item => revokeReferencePreview(item.preview))
     uploadedReferences.value = []
+    pendingReferenceUploads.value = []
+  }
+
+  const clearSlotAssets = () => {
+    Object.values(uploadedSlotAssets.value).forEach(item => revokeReferencePreview(item?.preview))
+    uploadedSlotAssets.value = {}
   }
 
   const resetTemplateState = () => {
@@ -173,11 +312,16 @@ export function useLabWorkbench() {
 
   const resetFormState = (options?: { preserveMode?: boolean }) => {
     clearReferences()
+    clearSlotAssets()
     prompt.value = ''
     selectedEditLora.value = ''
     customEditLoraStrength.value = DEFAULT_EDIT_LORA_STRENGTH
     selectedVideoLora.value = getDefaultVideoLoraSelection()
-    resolution.value = DEFAULT_VIDEO_RESOLUTION
+    ltxLoraItems.value = []
+    selectedLtxLoraNames.value = []
+    negativePrompt.value = DEFAULT_WAN22_VIDEO_V2_NEGATIVE_PROMPT
+    wan22ResolutionPreset.value = DEFAULT_WAN22_VIDEO_V2_RESOLUTION_PRESET
+    resolution.value = getDefaultResolutionForMode(options?.preserveMode ? currentModeId.value : DEFAULT_LAB_MODE_ID)
     duration.value = DEFAULT_VIDEO_DURATION
     resetTemplateState()
 
@@ -194,6 +338,12 @@ export function useLabWorkbench() {
     uploadedReferences.value.splice(index, 1)
   }
 
+  const handleRemoveUploadSlot = (slotId: LabUploadSlotId) => {
+    const target = uploadedSlotAssets.value[slotId]
+    revokeReferencePreview(target?.preview)
+    delete uploadedSlotAssets.value[slotId]
+  }
+
   watch(selectedEditLora, (nextValue) => {
     if (isTemplateEditSettingsLocked.value) {
       return
@@ -203,6 +353,36 @@ export function useLabWorkbench() {
       ? (EDIT_LORA_DEFAULT_STRENGTHS[nextValue] ?? DEFAULT_EDIT_LORA_STRENGTH)
       : DEFAULT_EDIT_LORA_STRENGTH
   })
+
+  const syncLtxLoraItems = (names: string[]) => {
+    const uniqueNames = Array.from(new Set(names.filter(value => value && value !== '__none__'))).slice(0, 3)
+    if (uniqueNames.length < names.filter(value => value && value !== '__none__').length) {
+      message.warning(t('lab.workbench.validation.ltx_lora_limit'))
+    }
+    selectedLtxLoraNames.value = uniqueNames
+    ltxLoraItems.value = uniqueNames
+      .map((name) => {
+        const existing = ltxLoraItems.value.find(item => item.name === name)
+        return existing ?? buildDefaultLtxVideoLoraItem(name)
+      })
+      .filter((item): item is LtxVideoLoraItem => Boolean(item))
+  }
+
+  const removeLtxLoraItem = (name: string) => {
+    syncLtxLoraItems(selectedLtxLoraNames.value.filter(item => item !== name))
+  }
+
+  const updateLtxLoraStrength = (name: string, strength: number | null) => {
+    if (typeof strength !== 'number' || !Number.isFinite(strength)) {
+      return
+    }
+    const nextStrength = Math.min(2, Math.max(0.1, Number(strength.toFixed(2))))
+    ltxLoraItems.value = ltxLoraItems.value.map(item => (
+      item.name === name
+        ? { ...item, strength: nextStrength }
+        : item
+    ))
+  }
 
   watch(resolution, (value) => {
     if (currentMode.value.id !== 'custom_video') {
@@ -223,7 +403,7 @@ export function useLabWorkbench() {
   })
 
   const beforeUpload = async (file: File) => {
-    if (uploadedReferences.value.length + pendingUploads.value >= currentMode.value.maxImages) {
+    if (uploadedReferences.value.length + pendingReferenceUploads.value.length >= currentMode.value.maxImages) {
       message.warning(
         t('template_apply.image_prompt.max_images_warning', {
           count: currentMode.value.maxImages,
@@ -233,20 +413,88 @@ export function useLabWorkbench() {
     }
 
     pendingUploads.value += 1
+    const pendingKey = `pending-${Date.now()}-${file.name}`
+    const preview = URL.createObjectURL(file)
+    let objectKey: string | null = null
+    pendingReferenceUploads.value.push({
+      key: pendingKey,
+      preview,
+      name: file.name,
+      uploading: true,
+    })
+
     try {
-      const objectKey = await uploadFile(file)
+      objectKey = await uploadFile(file)
       if (!objectKey) {
         return false
       }
 
       uploadedReferences.value.push({
         key: objectKey,
-        preview: URL.createObjectURL(file),
+        preview,
         name: file.name,
       })
       return false
     } finally {
+      pendingReferenceUploads.value = pendingReferenceUploads.value.filter(item => item.key !== pendingKey)
+      if (!objectKey) {
+        revokeReferencePreview(preview)
+      }
       pendingUploads.value -= 1
+    }
+  }
+
+  const beforeUploadSlot = async (slotId: LabUploadSlotId, file: File) => {
+    const slot = currentMode.value.uploadSlots?.find(item => item.id === slotId)
+    if (!slot) {
+      return false
+    }
+
+    pendingUploads.value += 1
+    const preview = URL.createObjectURL(file)
+    const pendingKey = `pending-${slotId}-${Date.now()}-${file.name}`
+    let objectKey: string | null = null
+    handleRemoveUploadSlot(slotId)
+    uploadedSlotAssets.value[slotId] = {
+      key: pendingKey,
+      preview,
+      name: file.name,
+      previewKind: slot.previewKind,
+      uploading: true,
+    }
+
+    try {
+      objectKey = await uploadFile(file)
+      if (!objectKey) {
+        return false
+      }
+
+      uploadedSlotAssets.value[slotId] = {
+        key: objectKey,
+        preview,
+        name: file.name,
+        previewKind: slot.previewKind,
+      }
+      return false
+    } finally {
+      if (!objectKey && uploadedSlotAssets.value[slotId]?.key === pendingKey) {
+        delete uploadedSlotAssets.value[slotId]
+        revokeReferencePreview(preview)
+      }
+      pendingUploads.value -= 1
+    }
+  }
+
+  const applySlotTemplateTarget = (
+    slotId: LabUploadSlotId,
+    target: { objectKey: string; previewUrl?: string | null; name: string; previewKind: LabUploadPreviewKind },
+  ) => {
+    handleRemoveUploadSlot(slotId)
+    uploadedSlotAssets.value[slotId] = {
+      key: target.objectKey,
+      preview: target.previewUrl ?? '',
+      name: target.name,
+      previewKind: target.previewKind,
     }
   }
 
@@ -317,6 +565,7 @@ export function useLabWorkbench() {
     )
 
     currentModeId.value = nextModeId
+    resolution.value = getDefaultResolutionForMode(nextModeId)
 
     if (nextModeId === 'custom_video' && templateContext) {
       const templateState = resolveTemplateVideoApplyState(templateContext, String(templateContext.task_type ?? '') === 'video_lora' ? 'video_lora' : 'custom_video')
@@ -331,6 +580,51 @@ export function useLabWorkbench() {
         isTemplatePromptLocked.value = templateState.isTemplatePromptLocked
         isTemplateVideoSettingsLocked.value = templateState.isTemplateVideoSettingsLocked
         templateSourcePostId.value = templateState.sourcePostId
+      }
+      return
+    }
+
+    if (nextModeId === 'ltx_video' && templateContext) {
+      const templateState = resolveTemplateVideoApplyState(templateContext, 'ltx_video')
+      if (templateState) {
+        prompt.value = templateState.prompt ?? ''
+        selectedVideoLora.value = normalizeImageToVideoLoraSelection(templateState.loraName)
+        ltxLoraItems.value = normalizeLtxVideoLoraItems(templateState.loraItems)
+        selectedLtxLoraNames.value = ltxLoraItems.value.map(item => item.name)
+        resolution.value = templateState.resolution ?? DEFAULT_LTX_VIDEO_RESOLUTION
+        duration.value = templateState.duration ?? DEFAULT_VIDEO_DURATION
+        templateNotice.value = templateState.templateApplyNotice
+        templateWarning.value = templateState.templateSettingsWarning
+        isTemplateApplied.value = templateState.isTemplateApplied
+        isTemplatePromptLocked.value = templateState.isTemplatePromptLocked
+        isTemplateVideoSettingsLocked.value = templateState.isTemplateVideoSettingsLocked
+        templateSourcePostId.value = templateState.sourcePostId
+      }
+      return
+    }
+
+    if ((nextModeId === 'face_swap' || nextModeId === 'face_video') && templateContext) {
+      const rawTaskType = String(templateContext.task_type ?? '')
+      const targetSlotId = nextModeId === 'face_video' ? 'target_video' : 'target_image'
+      if (rawTaskType === nextModeId && templateContext.input_file) {
+        applySlotTemplateTarget(targetSlotId, {
+          objectKey: String(templateContext.input_file),
+          previewUrl: typeof templateContext.input_file_url === 'string'
+            ? templateContext.input_file_url
+            : null,
+          name: t(nextModeId === 'face_video'
+            ? 'lab.workbench.upload_slots.target_video'
+            : 'lab.workbench.upload_slots.target_image'),
+          previewKind: nextModeId === 'face_video' ? 'video' : 'image',
+        })
+        isTemplateApplied.value = true
+        templateNotice.value = t(nextModeId === 'face_video'
+          ? 'lab.workbench.template_notices.face_video'
+          : 'lab.workbench.template_notices.face_swap')
+        templateSourcePostId.value = toPositiveNumber(templateContext.source_post_id)
+        if (nextModeId === 'face_video' && templateContext.width != null) {
+          resolution.value = String(templateContext.width) === '1024' ? '1024' : DEFAULT_FACE_VIDEO_RESOLUTION
+        }
       }
       return
     }
@@ -407,13 +701,68 @@ export function useLabWorkbench() {
   }
 
   const handleSubmit = async () => {
+    if (hasStructuredUploadSlots.value && !assetUploadSlots.value.every(slot => !slot.required || !!slot.item?.key)) {
+      message.warning(t('lab.workbench.validation.upload_slots_required'))
+      return
+    }
+
     if (currentMode.value.supportsUpload && uploadedReferences.value.length === 0) {
       message.warning(t('lab.workbench.validation.upload_first'))
       return
     }
 
-    if (!isTemplatePromptLocked.value && prompt.value.trim().length === 0) {
+    if (currentMode.value.promptRequired && !isTemplatePromptLocked.value && prompt.value.trim().length === 0) {
       message.warning(t('lab.workbench.validation.prompt_required'))
+      return
+    }
+
+    if (currentMode.value.id === 'face_swap' || currentMode.value.id === 'face_video') {
+      const faceImage = uploadedSlotAssets.value.face_image?.key
+      const targetSlot = currentMode.value.id === 'face_video' ? 'target_video' : 'target_image'
+      const targetAsset = uploadedSlotAssets.value[targetSlot]?.key
+
+      if (!faceImage || !targetAsset) {
+        message.warning(t('lab.workbench.validation.upload_slots_required'))
+        return
+      }
+
+      const payload = buildSwapTaskPayload({
+        taskType: currentMode.value.id,
+        faceImage,
+        targetField: currentMode.value.id === 'face_video' ? 'target_video' : 'target_image',
+        targetAsset,
+        resolution: currentMode.value.id === 'face_video' ? Number(resolution.value) : undefined,
+        isTemplate: isTemplateApplied.value,
+        sourcePostId: templateSourcePostId.value,
+      })
+
+      const taskId = await submitTask(payload, t(currentMode.value.titleKey))
+      if (taskId) {
+        setSubmittedTaskId(taskId)
+      }
+      return
+    }
+
+    if (currentMode.value.id === 'wan22_video_v2') {
+      const payload = buildGenerationTaskPayload({
+        taskType: 'wan22_video_v2',
+        images: uploadedReferences.value.map(item => item.key),
+        duration: 5,
+        prompt: prompt.value,
+        negativePrompt: negativePrompt.value,
+        promptTarget: 'inputs',
+        extraInputs: {
+          use_end_frame: uploadedReferences.value.length >= 2,
+          resolution_preset: wan22ResolutionPreset.value,
+          wan22_prev_task_id: null,
+          wan22_chain_task_ids: [],
+        },
+      })
+
+      const taskId = await submitTask(payload, t(currentMode.value.titleKey))
+      if (taskId) {
+        setSubmittedTaskId(taskId)
+      }
       return
     }
 
@@ -429,9 +778,18 @@ export function useLabWorkbench() {
         : getImageToVideoPayloadLoraName(currentMode.value.taskType, selectedVideoLora.value),
       loraStrength: currentMode.value.id === 'edit' && selectedEditLora.value
         ? Number(customEditLoraStrength.value)
+        : currentMode.value.id === 'ltx_video'
+          ? getImageToVideoPayloadLoraStrength(currentMode.value.taskType, selectedVideoLora.value)
         : undefined,
-      resolution: currentMode.value.id === 'custom_video' ? Number(resolution.value) : undefined,
-      duration: currentMode.value.id === 'custom_video' ? Number(duration.value) : undefined,
+      resolution: currentMode.value.id === 'custom_video'
+        ? Number(resolution.value)
+        : currentMode.value.id === 'ltx_video'
+          ? resolution.value
+          : undefined,
+      duration: currentMode.value.id === 'custom_video' || currentMode.value.id === 'ltx_video'
+        ? Number(duration.value)
+        : undefined,
+      loraItems: currentMode.value.id === 'ltx_video' ? ltxLoraItems.value : undefined,
       normalizeEditLoraTask: currentMode.value.id === 'edit',
       isTemplate: isTemplateApplied.value,
       sourcePostId: templateSourcePostId.value,
@@ -449,6 +807,7 @@ export function useLabWorkbench() {
 
   onBeforeUnmount(() => {
     clearReferences()
+    clearSlotAssets()
   })
 
   return {
@@ -458,8 +817,9 @@ export function useLabWorkbench() {
     currentModeId,
     prompt,
     uploadedReferences,
-    uploadProgress,
-    uploading,
+    displayedReferences,
+    assetUploadSlots,
+    canUploadReference,
     isSubmitting,
     currentTask,
     isImageUrl,
@@ -467,7 +827,9 @@ export function useLabWorkbench() {
     selectMode,
     openLegacyMode,
     beforeUpload,
+    beforeUploadSlot,
     handleRemoveReference,
+    handleRemoveUploadSlot,
     handleSubmit,
     resetAfterResult,
     cost,
@@ -482,6 +844,15 @@ export function useLabWorkbench() {
     customEditLoraStrength,
     videoLoraOptions,
     selectedVideoLora,
+    ltxLoraOptions,
+    selectedLtxLoraNames,
+    ltxLoraItems,
+    syncLtxLoraItems,
+    removeLtxLoraItem,
+    updateLtxLoraStrength,
+    negativePrompt,
+    wan22ResolutionOptions,
+    wan22ResolutionPreset,
     videoResolutionOptions,
     resolution,
     videoDurationOptions,
