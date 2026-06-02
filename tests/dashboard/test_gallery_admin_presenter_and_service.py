@@ -79,8 +79,10 @@ def test_build_gallery_post_item_prefers_storage_file_url():
 @pytest.mark.asyncio
 async def test_get_all_gallery_posts_payload_uses_presenter():
     posts = [_build_post()]
+    captured_kwargs = {}
 
     async def _fake_get_gallery_feed(**kwargs):
+        captured_kwargs.update(kwargs)
         return posts, 1
 
     result = await gallery_admin_service.get_all_gallery_posts_payload(
@@ -90,12 +92,18 @@ async def test_get_all_gallery_posts_payload_uses_presenter():
         media_type="image",
         task_type="img2img",
         sort_by="latest",
+        username="tester",
+        prompt_contains="hello",
+        prompt_max_length=20,
         storage_service=_FakeStorage(),
         get_gallery_feed_func=_fake_get_gallery_feed,
     )
 
     assert result["total"] == 1
     assert result["items"][0]["media_url"] == "file://demo.png"
+    assert captured_kwargs["username"] == "tester"
+    assert captured_kwargs["prompt_contains"] == "hello"
+    assert captured_kwargs["prompt_max_length"] == 20
 
 
 def test_build_dashboard_comment_item_formats_author_name_and_post_metadata():

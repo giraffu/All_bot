@@ -35,6 +35,7 @@ import {
 } from '@/features/generation/labModeConfig'
 import {
   buildDefaultLtxVideoLoraItem,
+  DEFAULT_WAN22_VIDEO_V2_COST,
   DEFAULT_WAN22_VIDEO_V2_NEGATIVE_PROMPT,
   DEFAULT_WAN22_VIDEO_V2_RESOLUTION_PRESET,
   getImageToVideoRequestTaskType,
@@ -231,7 +232,8 @@ export function useLabWorkbench() {
     }
 
     if (currentMode.value.id === 'wan22_video_v2') {
-      return WAN22_VIDEO_V2_RESOLUTION_OPTIONS.find(option => option.value === wan22ResolutionPreset.value)?.cost ?? 20
+      return WAN22_VIDEO_V2_RESOLUTION_OPTIONS.find(option => option.value === wan22ResolutionPreset.value)?.cost
+        ?? DEFAULT_WAN22_VIDEO_V2_COST
     }
 
     return currentMode.value.baseCost

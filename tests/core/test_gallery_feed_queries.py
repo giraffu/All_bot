@@ -93,6 +93,43 @@ async def test_fetch_gallery_feed_page_uses_media_type_only_without_category_or_
 
 
 @pytest.mark.asyncio
+async def test_fetch_gallery_feed_page_supports_dashboard_author_and_prompt_filters():
+    session = _FakeSession([_ScalarResult(0), _ItemsResult([])])
+
+    await fetch_gallery_feed_page(
+        session=session,
+        page=1,
+        size=20,
+        media_type=None,
+        task_type=None,
+        lora_model=None,
+        sort_by="latest",
+        time_range="all",
+        user_id=None,
+        category=None,
+        is_active=None,
+        username="sk dom",
+        prompt_contains="cinematic",
+        prompt_max_length=120,
+    )
+
+    compiled = session.executed_statements[1].compile()
+    sql = str(compiled).lower()
+    params = list(compiled.params.values())
+
+    assert "join history" in sql
+    assert "join users" in sql
+    assert "users.username" in sql
+    assert "users.full_name" in sql
+    assert "history.prompt" in sql
+    assert "length" in sql
+    assert "trim" in sql
+    assert "%sk dom%" in params
+    assert "%cinematic%" in params
+    assert 120 in params
+
+
+@pytest.mark.asyncio
 async def test_fetch_gallery_feed_page_supports_edit_group_none_filter():
     session = _FakeSession([_ScalarResult(0), _ItemsResult([])])
 

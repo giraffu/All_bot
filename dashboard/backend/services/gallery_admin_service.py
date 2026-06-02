@@ -25,6 +25,9 @@ async def get_all_gallery_posts_payload(
     media_type,
     task_type,
     sort_by,
+    username=None,
+    prompt_contains=None,
+    prompt_max_length=None,
     storage_service=None,
     get_gallery_feed_func=None,
     logger_override: logging.Logger | None = None,
@@ -46,6 +49,9 @@ async def get_all_gallery_posts_payload(
             sort_by=sort_by or "latest",
             time_range="all",
             is_active=is_active,
+            username=username,
+            prompt_contains=prompt_contains,
+            prompt_max_length=prompt_max_length,
         )
         return {
             "total": total_count,

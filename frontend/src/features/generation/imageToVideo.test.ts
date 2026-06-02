@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import {
   buildDefaultLtxVideoLoraItem,
+  DEFAULT_WAN22_VIDEO_V2_COST,
   DEFAULT_WAN22_VIDEO_V2_RESOLUTION_PRESET,
   DEFAULT_WAN22_VIDEO_V2_NEGATIVE_PROMPT,
   WAN22_VIDEO_V2_RESOLUTION_OPTIONS,
@@ -72,6 +73,7 @@ describe('imageToVideo LTX LoRA helpers', () => {
 
   it('exposes the wan22 fast-lowest resolution option', () => {
     expect(DEFAULT_WAN22_VIDEO_V2_RESOLUTION_PRESET).toBe('preview')
+    expect(DEFAULT_WAN22_VIDEO_V2_COST).toBe(8)
     expect(WAN22_VIDEO_V2_RESOLUTION_OPTIONS[0]).toEqual({
       value: 'preview',
       label: '极速',

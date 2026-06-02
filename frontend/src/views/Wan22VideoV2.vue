@@ -24,6 +24,7 @@ import { useUpload } from '@/composables/useUpload'
 import { useViewport } from '@/composables/useViewport'
 import { buildGenerationTaskPayload } from '@/features/generation/buildGenerationTaskPayload'
 import {
+  DEFAULT_WAN22_VIDEO_V2_COST,
   DEFAULT_WAN22_VIDEO_V2_NEGATIVE_PROMPT,
   DEFAULT_WAN22_VIDEO_V2_RESOLUTION_PRESET,
   WAN22_VIDEO_V2_RESOLUTION_OPTIONS,
@@ -42,7 +43,7 @@ const { isMobile } = useViewport()
 const { taskTitle, taskCost: baseTaskCost } = useGenerationRouteConfig(route, {
   taskType: 'wan22_video_v2',
   title: '图生视频 v2',
-  cost: 20,
+  cost: DEFAULT_WAN22_VIDEO_V2_COST,
 })
 
 const { uploadFile: uploadStartFile, uploading: startUploading, progress: startUploadProgress } = useUpload()

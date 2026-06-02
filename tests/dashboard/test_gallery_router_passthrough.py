@@ -18,6 +18,9 @@ async def test_get_all_gallery_posts_routes_to_service(monkeypatch):
         media_type="image",
         task_type="img2img",
         sort_by="latest",
+        username="tester",
+        prompt_contains="demo",
+        prompt_max_length=80,
     )
 
     assert result == expected
@@ -28,6 +31,9 @@ async def test_get_all_gallery_posts_routes_to_service(monkeypatch):
         media_type="image",
         task_type="img2img",
         sort_by="latest",
+        username="tester",
+        prompt_contains="demo",
+        prompt_max_length=80,
         logger_override=gallery_router.logger,
     )
 

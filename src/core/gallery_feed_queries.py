@@ -6,7 +6,7 @@ from sqlalchemy import desc, func, not_, or_, select
 from sqlalchemy.orm import selectinload
 
 from src.constants import MODE_IMAGE_TO_VIDEO
-from src.database.models import GalleryPost, History
+from src.database.models import GalleryPost, History, User
 from src.lora_catalog import IMAGE_LORA_MODELS, VIDEO_LORA_MODELS
 
 GALLERY_LORA_MODEL_NONE = "__none__"
@@ -55,7 +55,6 @@ def _apply_task_type_or_category_filter(
         lora_model=lora_model,
     )
     if task_type_values:
-        query = query.join(History, GalleryPost.task_id == History.task_id)
         if len(task_type_values) == 1:
             return query.where(History.type == task_type_values[0])
         return query.where(History.type.in_(task_type_values))
@@ -63,7 +62,6 @@ def _apply_task_type_or_category_filter(
     if not category or category == "all":
         return query
 
-    query = query.join(History, GalleryPost.task_id == History.task_id)
     if category == "i2ipro":
         return query.where(History.type == "i2i_pro")
     if category == "faceswap":
@@ -78,6 +76,55 @@ def _apply_task_type_or_category_filter(
         return query.where(History.type == MODE_IMAGE_TO_VIDEO)
     if category == "ltxvid":
         return query.where(History.type == "ltx_video")
+    return query
+
+
+def _requires_history_join(
+    *,
+    task_type: str | None,
+    category: str | None,
+    prompt_contains: str | None,
+    prompt_max_length: int | None,
+) -> bool:
+    if task_type and task_type != "all":
+        return True
+    if category and category != "all":
+        return True
+    if prompt_contains and prompt_contains.strip():
+        return True
+    return prompt_max_length is not None
+
+
+def _apply_author_username_filter(query, *, username: str | None):
+    normalized_username = (username or "").strip()
+    if not normalized_username:
+        return query
+
+    pattern = f"%{normalized_username}%"
+    return query.join(User, GalleryPost.user_id == User.id).where(
+        or_(
+            User.username.ilike(pattern),
+            User.full_name.ilike(pattern),
+        )
+    )
+
+
+def _apply_prompt_filters(
+    query,
+    *,
+    prompt_contains: str | None,
+    prompt_max_length: int | None,
+):
+    normalized_prompt = (prompt_contains or "").strip()
+    if normalized_prompt:
+        query = query.where(History.prompt.ilike(f"%{normalized_prompt}%"))
+
+    if prompt_max_length is not None:
+        query = query.where(
+            History.prompt.is_not(None),
+            func.length(func.trim(History.prompt)) <= prompt_max_length,
+        )
+
     return query
 
 
@@ -167,9 +214,20 @@ def build_gallery_feed_query(
     user_id: int | None,
     category: str | None,
     is_active: bool | None,
+    username: str | None = None,
+    prompt_contains: str | None = None,
+    prompt_max_length: int | None = None,
 ):
     query = select(GalleryPost)
     query = _apply_active_filter(query, is_active=is_active)
+    history_join_required = _requires_history_join(
+        task_type=task_type,
+        category=category,
+        prompt_contains=prompt_contains,
+        prompt_max_length=prompt_max_length,
+    )
+    if history_join_required:
+        query = query.join(History, GalleryPost.task_id == History.task_id)
     query = _apply_task_type_or_category_filter(
         query,
         task_type=task_type,
@@ -186,6 +244,14 @@ def build_gallery_feed_query(
         sort_by=sort_by,
     )
     query = _apply_time_range_filter(query, time_range=time_range)
+    query = _apply_author_username_filter(query, username=username)
+    query = _apply_prompt_filters(
+        query,
+        prompt_contains=prompt_contains,
+        prompt_max_length=prompt_max_length,
+    )
+    if history_join_required:
+        query = query.distinct()
     query = _apply_sort(query, sort_by=sort_by)
     return query
 
@@ -203,6 +269,9 @@ async def fetch_gallery_feed_page(
     user_id: int | None,
     category: str | None,
     is_active: bool | None,
+    username: str | None = None,
+    prompt_contains: str | None = None,
+    prompt_max_length: int | None = None,
 ) -> tuple[list, int]:
     query = build_gallery_feed_query(
         media_type=media_type,
@@ -213,6 +282,9 @@ async def fetch_gallery_feed_page(
         user_id=user_id,
         category=category,
         is_active=is_active,
+        username=username,
+        prompt_contains=prompt_contains,
+        prompt_max_length=prompt_max_length,
     )
 
     total_query = select(func.count()).select_from(query.subquery())

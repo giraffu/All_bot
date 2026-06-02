@@ -8,7 +8,7 @@
 - 我的投稿 / 我的收藏
 - Web workbench 一键应用上下文
 - R2 媒体与缩略图优先返回
-- Dashboard 投稿用户展示、投稿封禁与用户级批量下架
+- Dashboard 投稿用户展示、用户名/提示词筛选、投稿封禁与用户级批量下架
 
 ## 2. 当前数据模型
 - `gallery_posts`
@@ -58,6 +58,7 @@ sequenceDiagram
 - 投稿仍要求内容源自自己的 `History`。
 - `allow_contribute=False` 的模板衍生作品不能再次投稿，防止套娃搬运。
 - 用户级 `is_submission_banned=True` 时，Bot 端广场投稿、公开分享、模板共建，以及 Web 端一键投稿/重新上架都会被统一拦截，并提示“违禁被封，请联系管理员解封”。
+- Dashboard 广场内容列表 `GET /api/gallery/all` 支持 `username`、`prompt_contains`、`prompt_max_length` 筛选；提示词条件以关联 `History.prompt` 为准，`prompt_max_length` 按去除首尾空白后的字符数过滤。
 - Dashboard 广场内容管理可通过 `POST /api/gallery/users/{user_id}/ban-submissions-and-takedown` 对投稿用户一键封禁并下架其所有广场投稿；接口返回 `affected_posts` 与 `affected_histories` 用于后台反馈。
 - 删除帖子采用软删除/下架思路，不是简单硬删所有内容暴力清空。
 

@@ -2,12 +2,15 @@
 import { ref, onMounted, h } from 'vue'
 import { message, Modal } from 'ant-design-vue'
 import {
+  AppstoreOutlined,
   ExclamationCircleOutlined,
   PictureOutlined,
   PlayCircleOutlined,
   CheckCircleOutlined,
   CloseCircleOutlined,
   CopyOutlined,
+  ReloadOutlined,
+  SearchOutlined,
   StopOutlined,
   UserOutlined
 } from '@ant-design/icons-vue'
@@ -50,6 +53,9 @@ const copyToClipboard = async (text) => {
 const filterActive = ref(undefined)
 const filterTaskType = ref('all')
 const filterSort = ref('created_at')
+const filterUsername = ref('')
+const filterPromptContains = ref('')
+const filterPromptMaxLength = ref(null)
 
 const sortOptions = [
   { label: '最新时间', value: 'created_at' },
@@ -167,6 +173,16 @@ const columns = [
   }
 ]
 
+const normalizeTextFilter = (value) => String(value ?? '').trim()
+
+const normalizePromptMaxLength = (value) => {
+  const numericValue = Number(value)
+  if (!Number.isFinite(numericValue) || numericValue < 1) {
+    return undefined
+  }
+  return Math.floor(numericValue)
+}
+
 const loadData = async (page = pagination.value.current) => {
   try {
     loading.value = true
@@ -183,6 +199,18 @@ const loadData = async (page = pagination.value.current) => {
     }
     if (filterSort.value && filterSort.value !== 'created_at') {
       params.sort_by = filterSort.value
+    }
+    const username = normalizeTextFilter(filterUsername.value)
+    if (username) {
+      params.username = username
+    }
+    const promptContains = normalizeTextFilter(filterPromptContains.value)
+    if (promptContains) {
+      params.prompt_contains = promptContains
+    }
+    const promptMaxLength = normalizePromptMaxLength(filterPromptMaxLength.value)
+    if (promptMaxLength !== undefined) {
+      params.prompt_max_length = promptMaxLength
     }
 
     const res = await fetchGalleryPosts(params)
@@ -205,6 +233,16 @@ const handleTableChange = (pag) => {
 }
 
 const onFilterChange = () => {
+  loadData(1)
+}
+
+const resetFilters = () => {
+  filterActive.value = undefined
+  filterTaskType.value = 'all'
+  filterSort.value = 'created_at'
+  filterUsername.value = ''
+  filterPromptContains.value = ''
+  filterPromptMaxLength.value = null
   loadData(1)
 }
 
@@ -338,8 +376,8 @@ onMounted(() => {
 <template>
   <div class="h-full flex flex-col">
     <!-- Header & Filters -->
-    <div class="mb-4 flex flex-wrap gap-4 items-center justify-between">
-      <div class="flex items-center gap-4">
+    <div class="mb-4 flex flex-wrap gap-3 items-center justify-between">
+      <div class="flex flex-wrap items-center gap-3">
         <h2 class="text-lg font-semibold m-0 flex items-center gap-2">
           <appstore-outlined class="text-blue-500" />
           广场内容管理
@@ -376,11 +414,62 @@ onMounted(() => {
             @change="onFilterChange"
           />
         </div>
+
+        <div class="flex items-center gap-2">
+          <span class="text-gray-500">用户名:</span>
+          <a-input
+            v-model:value="filterUsername"
+            allow-clear
+            class="w-40"
+            placeholder="用户名/昵称"
+            @pressEnter="onFilterChange"
+          >
+            <template #prefix>
+              <user-outlined class="text-gray-400" />
+            </template>
+          </a-input>
+        </div>
+
+        <div class="flex items-center gap-2">
+          <span class="text-gray-500">提示词包含:</span>
+          <a-input
+            v-model:value="filterPromptContains"
+            allow-clear
+            class="w-56"
+            placeholder="输入部分提示词"
+            @pressEnter="onFilterChange"
+          >
+            <template #prefix>
+              <search-outlined class="text-gray-400" />
+            </template>
+          </a-input>
+        </div>
+
+        <div class="flex items-center gap-2">
+          <span class="text-gray-500">提示词≤字数:</span>
+          <a-input-number
+            v-model:value="filterPromptMaxLength"
+            class="w-32"
+            :min="1"
+            :precision="0"
+            placeholder="如 80"
+          />
+        </div>
       </div>
-      
-      <a-button type="primary" @click="() => loadData(1)" :loading="loading">
-        刷新数据
-      </a-button>
+
+      <div class="flex flex-wrap items-center gap-2">
+        <a-button @click="resetFilters" :disabled="loading">
+          重置
+        </a-button>
+        <a-button @click="onFilterChange" :loading="loading">
+          <template #icon><search-outlined /></template>
+          筛选
+        </a-button>
+        <a-button type="primary" @click="() => loadData(1)" :loading="loading">
+          <template #icon><reload-outlined /></template>
+          刷新数据
+        </a-button>
+      </div>
     </div>
 
     <!-- Table -->
@@ -393,7 +482,7 @@ onMounted(() => {
         :loading="loading"
         @change="handleTableChange"
         size="middle"
-        :scroll="{ y: 'calc(100vh - 280px)', x: 'max-content' }"
+        :scroll="{ y: 'calc(100vh - 330px)', x: 'max-content' }"
         class="h-full"
       >
         <template #bodyCell="{ column, record }">

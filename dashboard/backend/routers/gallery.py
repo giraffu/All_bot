@@ -32,6 +32,9 @@ async def get_all_gallery_posts(
     media_type: Optional[str] = None,
     task_type: Optional[str] = None,
     sort_by: Optional[str] = None,
+    username: Optional[str] = Query(None, max_length=100),
+    prompt_contains: Optional[str] = Query(None, max_length=500),
+    prompt_max_length: Optional[int] = Query(None, ge=1, le=20000),
 ):
     return await get_all_gallery_posts_payload(
         page=page,
@@ -40,6 +43,9 @@ async def get_all_gallery_posts(
         media_type=media_type,
         task_type=task_type,
         sort_by=sort_by,
+        username=username,
+        prompt_contains=prompt_contains,
+        prompt_max_length=prompt_max_length,
         logger_override=logger,
     )
 

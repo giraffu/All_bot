@@ -17,6 +17,9 @@ export const WAN22_VIDEO_V2_RESOLUTION_OPTIONS: Array<{
   { value: 'hd', label: '高清', description: '约 810p，更清晰，生成更慢', cost: 30 },
 ]
 
+export const DEFAULT_WAN22_VIDEO_V2_COST =
+  WAN22_VIDEO_V2_RESOLUTION_OPTIONS.find(option => option.value === DEFAULT_WAN22_VIDEO_V2_RESOLUTION_PRESET)?.cost ?? 8
+
 export const normalizeWan22VideoV2ResolutionPreset = (
   value: string | null | undefined,
 ): Wan22VideoV2ResolutionPreset => {

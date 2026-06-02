@@ -1,5 +1,9 @@
 import type { PromptTarget } from './buildGenerationTaskPayload'
-import { IMAGE_TO_VIDEO_LORA_OPTIONS, NO_IMAGE_TO_VIDEO_LORA } from './imageToVideo'
+import {
+  DEFAULT_WAN22_VIDEO_V2_COST,
+  IMAGE_TO_VIDEO_LORA_OPTIONS,
+  NO_IMAGE_TO_VIDEO_LORA,
+} from './imageToVideo'
 
 export type UnifiedLabModeId =
   | 'edit'
@@ -304,7 +308,7 @@ export const LAB_MODE_CONFIGS: LabModeConfig[] = [
     titleKey: 'lab.cards.wan22_video_v2_title',
     descriptionKey: 'lab.cards.wan22_video_v2_desc',
     kindKey: 'lab.workbench.mode_kinds.video',
-    baseCost: 20,
+    baseCost: DEFAULT_WAN22_VIDEO_V2_COST,
     promptPlaceholderKey: 'template_apply.image_to_video.prompt_placeholder_custom',
     promptTarget: 'inputs',
     submitLabelKey: 'lab.workbench.submit_video',

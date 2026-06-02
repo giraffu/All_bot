@@ -14,7 +14,7 @@ description: "处理对象存储、广场评论收藏、R2 媒体策略与 Web a
 - **个人视图**：支持 `my-posts` 与 `my-favorites`，后者从互动记录反查点赞/应用历史。
 - **Web apply-context**：`/api/gallery/posts/{post_id}/apply-context` 已是模板应用主入口，返回 `prompt`、`lora_name`、`input_file_url`、`requested_duration`、`billing_resolution` 等上下文。
 - **媒体 URL 策略**：优先返回 R2 公网链接，找不到对象时回退原始存储路径；缩略图也有独立 key 解析逻辑。
-- **后台治理**：Dashboard 广场管理可显示投稿用户，并通过 `/api/gallery/users/{user_id}/ban-submissions-and-takedown` 一键设置 `is_submission_banned=True`、下架该用户全部 `GalleryPost`，同步取消相关 `History.is_public`。
+- **后台治理**：Dashboard 广场管理可显示投稿用户，列表接口 `GET /api/gallery/all` 支持 `username`、`prompt_contains`、`prompt_max_length` 治理筛选，并通过 `/api/gallery/users/{user_id}/ban-submissions-and-takedown` 一键设置 `is_submission_banned=True`、下架该用户全部 `GalleryPost`，同步取消相关 `History.is_public`。
 
 ## 2. 输入输出规范
 
@@ -31,6 +31,11 @@ description: "处理对象存储、广场评论收藏、R2 媒体策略与 Web a
 ### 应用上下文
 - **接口**：`GET /api/gallery/posts/{post_id}/apply-context`
 - **输出**：`source_post_id`、`prompt`、`lora_name`、`input_file_url`、`requested_duration`、`billing_resolution`、媒体尺寸等
+
+### 后台广场列表治理筛选
+- **接口**：`GET /api/gallery/all`
+- **输入**：`username` 可按 `User.username/full_name` 模糊筛选，`prompt_contains` 对 `History.prompt` 模糊匹配，`prompt_max_length` 按去除首尾空白后的提示词字符数过滤。
+- **输出**：分页投稿列表。
 
 ### 后台投稿封禁与批量下架
 - **接口**：`POST /api/gallery/users/{user_id}/ban-submissions-and-takedown`
