@@ -10,6 +10,7 @@
 - **作品发布**：用户可将个人历史中的作品推送到公共广场。
 - **原创保护**：若作品是基于他人模板衍生且 `allow_contribute=False`，系统强制拦截再次发布。
 - **投稿封禁**：管理员可对用户开启 `is_submission_banned`，统一禁止 Bot/Web 端投稿、公开分享与重新上架。
+- **后台治理**：Dashboard 广场管理展示投稿用户，并支持一键封禁该用户投稿能力、下架其全部广场投稿。
 - **社区展示与过滤**：支持按类型、时间范围、热度等维度筛选。
 - **社交互动**：点赞、点踩、收藏与一键应用模板。
 
@@ -46,6 +47,7 @@ sequenceDiagram
 - 发布入口基于历史记录与 gallery post 关联，不再把社区流程叙述成直接耦合旧单体 core。
 - 一键应用当前主路径是 Web apply-context / workbench，不应再把 Telegram compat 流程写成唯一主入口。
 - 互动防并发与去重依赖数据库约束与服务层收口，避免高并发下覆盖更新。
+- Dashboard 批量治理入口为 `POST /api/gallery/users/{user_id}/ban-submissions-and-takedown`，会设置用户投稿封禁、下架其所有 `GalleryPost`，并同步取消相关历史记录公开状态。
 
 ## 5. 用户操作手册
 ### 5.1 浏览与一键同款

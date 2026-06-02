@@ -444,6 +444,12 @@ const compactUploadLabel = (label: string) => label
   color: var(--theme-input-placeholder) !important;
 }
 
+:deep(.lab-composer__textarea.ant-input-textarea-show-count::after),
+:deep(.lab-composer__textarea .ant-input-data-count) {
+  color: var(--theme-text-secondary) !important;
+  opacity: 0.9;
+}
+
 .lab-composer__ghost-btn {
   border-color: var(--theme-border) !important;
   background: var(--theme-pill-bg) !important;

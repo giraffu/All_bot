@@ -9,9 +9,7 @@ def build_dashboard_comment_item(comment) -> dict:
         "post_is_active": comment.post.is_active if comment.post else None,
         "user_id": comment.user_id,
         "author_name": (
-            comment.user.full_name
-            or comment.user.username
-            or f"User {comment.user_id}"
+            comment.user.full_name or comment.user.username or f"User {comment.user_id}"
         )
         if comment.user
         else f"User {comment.user_id}",
@@ -21,7 +19,9 @@ def build_dashboard_comment_item(comment) -> dict:
     }
 
 
-def build_gallery_media_url(*, output_file: str | None, task_id: str, storage_service) -> str | None:
+def build_gallery_media_url(
+    *, output_file: str | None, task_id: str, storage_service
+) -> str | None:
     return build_storage_url(
         storage_service=storage_service,
         object_name=output_file,
@@ -32,11 +32,22 @@ def build_gallery_media_url(*, output_file: str | None, task_id: str, storage_se
 def build_gallery_post_item(*, post, storage_service) -> dict:
     first_history = post.histories[0] if post.histories else None
     output_file = first_history.output_file if first_history else None
+    author_full_name = getattr(post.user, "full_name", None) if post.user else None
+    author_username = getattr(post.user, "username", None) if post.user else None
+    author_name = author_full_name or author_username or f"User {post.user_id}"
     return {
         "id": post.id,
         "task_id": post.task_id,
         "user_id": post.user_id,
-        "username": post.user.username if post.user else None,
+        "username": author_username,
+        "full_name": author_full_name,
+        "author_name": author_name,
+        "is_submission_banned": bool(getattr(post.user, "is_submission_banned", False))
+        if post.user
+        else False,
+        "submission_ban_reason": getattr(post.user, "submission_ban_reason", None)
+        if post.user
+        else None,
         "media_type": post.media_type,
         "task_type": first_history.type if first_history else "unknown",
         "width": post.width,

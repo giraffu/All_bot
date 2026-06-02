@@ -1,8 +1,23 @@
 <script setup>
 import { ref, onMounted, h } from 'vue'
 import { message, Modal } from 'ant-design-vue'
-import { ExclamationCircleOutlined, PictureOutlined, PlayCircleOutlined, CheckCircleOutlined, CloseCircleOutlined, CopyOutlined } from '@ant-design/icons-vue'
-import { fetchGalleryPosts, updateGalleryPost, deleteGalleryPost, apiBaseUrl } from '../api/api'
+import {
+  ExclamationCircleOutlined,
+  PictureOutlined,
+  PlayCircleOutlined,
+  CheckCircleOutlined,
+  CloseCircleOutlined,
+  CopyOutlined,
+  StopOutlined,
+  UserOutlined
+} from '@ant-design/icons-vue'
+import {
+  banGalleryUserSubmissionsAndTakedown,
+  fetchGalleryPosts,
+  updateGalleryPost,
+  deleteGalleryPost,
+  apiBaseUrl
+} from '../api/api'
 import { copyTextWithFallback } from '../utils/helpers'
 
 const props = defineProps({
@@ -86,12 +101,38 @@ const getTaskTypeName = (type) => {
   return option ? option.label : type
 }
 
+const getAuthorDisplayName = (record) => {
+  return (
+    record.author_name ||
+    record.full_name ||
+    record.username ||
+    (record.user_id ? `用户 ${record.user_id}` : '未知用户')
+  )
+}
+
+const getAuthorMeta = (record) => {
+  const displayName = getAuthorDisplayName(record)
+  const parts = []
+  if (record.username && record.username !== displayName) {
+    parts.push(`@${record.username}`)
+  }
+  if (record.user_id) {
+    parts.push(`ID ${record.user_id}`)
+  }
+  return parts.join(' / ')
+}
+
 const columns = [
   {
     title: '预览',
     key: 'preview',
     width: 120,
     align: 'center'
+  },
+  {
+    title: '投稿用户',
+    key: 'author',
+    width: 170,
   },
   {
     title: '具体类型',
@@ -121,7 +162,7 @@ const columns = [
   {
     title: '操作',
     key: 'action',
-    width: 150,
+    width: 320,
     fixed: 'right'
   }
 ]
@@ -243,6 +284,34 @@ const confirmDelete = (record) => {
   })
 }
 
+const confirmBanAndTakedown = (record) => {
+  if (!record.user_id) {
+    message.warning('该投稿缺少用户 ID，无法执行用户级操作')
+    return
+  }
+
+  const targetName = getAuthorDisplayName(record)
+  Modal.confirm({
+    title: '确认封禁并下架该用户所有投稿?',
+    icon: h(ExclamationCircleOutlined),
+    content: record.is_submission_banned
+      ? `用户 ${targetName} 已处于投稿封禁状态。本次会继续下架该用户仍在展示的所有广场投稿。`
+      : `将禁止用户 ${targetName} 后续投稿，并下架该用户当前所有广场投稿。此操作不会删除文件或历史记录。`,
+    okText: '封禁并下架',
+    okType: 'danger',
+    cancelText: '取消',
+    onOk: async () => {
+      try {
+        const res = await banGalleryUserSubmissionsAndTakedown(record.user_id)
+        message.success(`已封禁用户 ${record.user_id}，下架 ${res.affected_posts || 0} 条投稿`)
+        await loadData()
+      } catch (error) {
+        message.error('操作失败: ' + (error.response?.data?.detail || error.message))
+      }
+    },
+  })
+}
+
 const getMediaUrl = (url) => {
   if (!url) return ''
   if (url.startsWith('http')) return url
@@ -346,6 +415,24 @@ onMounted(() => {
             </div>
           </template>
 
+          <!-- Author -->
+          <template v-else-if="column.key === 'author'">
+            <div class="min-w-[140px]">
+              <div class="flex items-center gap-1.5 text-sm text-gray-700">
+                <user-outlined class="text-gray-400 flex-shrink-0" />
+                <span class="font-medium truncate" :title="getAuthorDisplayName(record)">
+                  {{ getAuthorDisplayName(record) }}
+                </span>
+              </div>
+              <div v-if="getAuthorMeta(record)" class="text-xs text-gray-400 mt-1">
+                {{ getAuthorMeta(record) }}
+              </div>
+              <a-tag v-if="record.is_submission_banned" color="red" class="mt-1">
+                投稿封禁
+              </a-tag>
+            </div>
+          </template>
+
           <!-- Task Type -->
           <template v-else-if="column.key === 'task_type'">
             <a-tag :color="record.media_type === 'video' ? 'purple' : 'blue'">
@@ -411,9 +498,13 @@ onMounted(() => {
 
           <!-- Actions -->
           <template v-else-if="column.key === 'action'">
-            <div class="flex gap-2">
+            <div class="flex flex-wrap gap-2 w-[300px]">
               <a-button size="small" @click="editPost(record)">修改数据</a-button>
               <a-button size="small" @click="openCommentsManager(record)">评论管理</a-button>
+              <a-button size="small" danger @click="confirmBanAndTakedown(record)">
+                <template #icon><stop-outlined /></template>
+                {{ record.is_submission_banned ? '下架全部' : '封禁并下架' }}
+              </a-button>
               <a-button size="small" danger @click="confirmDelete(record)">删除</a-button>
             </div>
           </template>

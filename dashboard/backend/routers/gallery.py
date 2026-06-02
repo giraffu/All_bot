@@ -4,8 +4,13 @@ from typing import Optional
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from dashboard.backend.schemas import CommentUpdate, GalleryPostUpdate
+from dashboard.backend.schemas import (
+    CommentUpdate,
+    GalleryPostUpdate,
+    GalleryUserSubmissionModerationRequest,
+)
 from dashboard.backend.services.gallery_admin_service import (
+    ban_user_submissions_and_takedown_payload,
     delete_gallery_post_payload,
     get_all_gallery_comments_payload,
     get_all_gallery_posts_payload,
@@ -46,6 +51,20 @@ async def update_gallery_post(
     return await update_gallery_post_payload(
         post_id=post_id,
         update_data=update_data,
+        db=db,
+        logger_override=logger,
+    )
+
+
+@router.post("/users/{user_id:int}/ban-submissions-and-takedown")
+async def ban_user_submissions_and_takedown(
+    user_id: int,
+    request: GalleryUserSubmissionModerationRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    return await ban_user_submissions_and_takedown_payload(
+        user_id=user_id,
+        request=request,
         db=db,
         logger_override=logger,
     )

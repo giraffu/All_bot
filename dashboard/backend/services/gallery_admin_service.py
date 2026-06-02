@@ -1,4 +1,5 @@
 import logging
+from datetime import datetime
 
 from fastapi import HTTPException
 from sqlalchemy import desc, func, select, update
@@ -8,7 +9,8 @@ from dashboard.backend.presenters.gallery_admin_presenter import (
     build_dashboard_comment_item,
     build_gallery_post_item,
 )
-from src.database.models import GalleryComment, GalleryPost, History
+from src.database.models import GalleryComment, GalleryPost, History, User
+from src.services.submission_ban_service import build_submission_ban_message
 from src.services.storage import storage
 from src.services.storage_r2_cleanup import build_history_r2_cleanup_keys
 
@@ -110,24 +112,25 @@ async def delete_gallery_post_payload(
         if not post:
             raise HTTPException(status_code=404, detail="Post not found")
 
-        history = None
         if post.task_id:
-            history = (
-                await db.execute(
-                    select(History).where(
-                        History.task_id == post.task_id,
-                        History.user_id == post.user_id,
-                    )
+            history_result = await db.execute(
+                select(History).where(
+                    History.task_id == post.task_id,
+                    History.user_id == post.user_id,
                 )
-            ).scalar_one_or_none()
-            if history:
-                history.is_public = False
-                if history.output_file:
-                    r2_cleanup_keys = build_history_r2_cleanup_keys(
-                        post.task_id,
-                        history.output_file,
-                        history.type,
-                    )
+            )
+            histories = history_result.scalars().all()
+            if histories:
+                for history in histories:
+                    history.is_public = False
+                    if history.output_file:
+                        r2_cleanup_keys.update(
+                            build_history_r2_cleanup_keys(
+                                post.task_id,
+                                history.output_file,
+                                history.type,
+                            )
+                        )
             else:
                 await db.execute(
                     update(History)
@@ -156,6 +159,107 @@ async def delete_gallery_post_payload(
         raise
     except Exception as exc:
         active_logger.error(f"Failed to delete gallery post: {exc}")
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+async def ban_user_submissions_and_takedown_payload(
+    *,
+    user_id: int,
+    request,
+    db,
+    logger_override: logging.Logger | None = None,
+) -> dict:
+    active_logger = logger_override or logger
+    try:
+        user = (
+            await db.execute(select(User).where(User.id == user_id))
+        ).scalar_one_or_none()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        old_status = bool(user.is_submission_banned)
+        old_reason = user.submission_ban_reason
+        ban_reason = build_submission_ban_message(getattr(request, "reason", None))
+
+        task_id_rows = (
+            await db.execute(
+                select(GalleryPost.task_id).where(
+                    GalleryPost.user_id == user_id,
+                    GalleryPost.task_id.is_not(None),
+                )
+            )
+        ).all()
+        task_ids = sorted({row[0] for row in task_id_rows if row[0]})
+
+        user.is_submission_banned = True
+        user.submission_banned_at = datetime.now()
+        user.submission_ban_reason = ban_reason
+
+        post_result = await db.execute(
+            update(GalleryPost)
+            .where(
+                GalleryPost.user_id == user_id,
+                GalleryPost.is_active.is_(True),
+            )
+            .values(is_active=False)
+        )
+        affected_posts = max(getattr(post_result, "rowcount", 0) or 0, 0)
+
+        affected_histories = 0
+        if task_ids:
+            history_result = await db.execute(
+                update(History)
+                .where(
+                    History.user_id == user_id,
+                    History.task_id.in_(task_ids),
+                    History.is_public.is_(True),
+                )
+                .values(is_public=False)
+            )
+            affected_histories = max(
+                getattr(history_result, "rowcount", 0) or 0,
+                0,
+            )
+
+        await db.commit()
+
+        from src.services.log_service import LogService
+
+        await LogService.log_action(
+            user_id=user_id,
+            username=user.username or user.full_name,
+            operation_type="admin_gallery_submission_ban_takedown",
+            credit_change=0,
+            current_balance=user.credits or 0,
+            extra_info={
+                "old_status": old_status,
+                "new_status": True,
+                "old_reason": old_reason,
+                "new_reason": user.submission_ban_reason,
+                "affected_posts": affected_posts,
+                "affected_histories": affected_histories,
+                "source": "dashboard_gallery_admin",
+            },
+        )
+
+        return {
+            "status": "ok",
+            "user_id": user.id,
+            "is_submission_banned": user.is_submission_banned,
+            "submission_banned_at": user.submission_banned_at,
+            "submission_ban_reason": user.submission_ban_reason,
+            "affected_posts": affected_posts,
+            "affected_histories": affected_histories,
+        }
+    except HTTPException:
+        raise
+    except Exception as exc:
+        await db.rollback()
+        active_logger.error(
+            "Failed to ban and takedown gallery submissions for user %s: %s",
+            user_id,
+            exc,
+        )
         raise HTTPException(status_code=500, detail=str(exc))
 
 
@@ -218,7 +322,9 @@ async def get_gallery_comments_payload(
         if not post:
             raise HTTPException(status_code=404, detail="Post not found")
 
-        total_stmt = select(func.count(GalleryComment.id)).where(GalleryComment.post_id == post_id)
+        total_stmt = select(func.count(GalleryComment.id)).where(
+            GalleryComment.post_id == post_id
+        )
         total = await db.scalar(total_stmt) or 0
         active_total_stmt = select(func.count(GalleryComment.id)).where(
             GalleryComment.post_id == post_id,

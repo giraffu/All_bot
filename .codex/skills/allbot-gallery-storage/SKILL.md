@@ -14,6 +14,7 @@ description: "处理对象存储、广场评论收藏、R2 媒体策略与 Web a
 - **个人视图**：支持 `my-posts` 与 `my-favorites`，后者从互动记录反查点赞/应用历史。
 - **Web apply-context**：`/api/gallery/posts/{post_id}/apply-context` 已是模板应用主入口，返回 `prompt`、`lora_name`、`input_file_url`、`requested_duration`、`billing_resolution` 等上下文。
 - **媒体 URL 策略**：优先返回 R2 公网链接，找不到对象时回退原始存储路径；缩略图也有独立 key 解析逻辑。
+- **后台治理**：Dashboard 广场管理可显示投稿用户，并通过 `/api/gallery/users/{user_id}/ban-submissions-and-takedown` 一键设置 `is_submission_banned=True`、下架该用户全部 `GalleryPost`，同步取消相关 `History.is_public`。
 
 ## 2. 输入输出规范
 
@@ -31,6 +32,11 @@ description: "处理对象存储、广场评论收藏、R2 媒体策略与 Web a
 - **接口**：`GET /api/gallery/posts/{post_id}/apply-context`
 - **输出**：`source_post_id`、`prompt`、`lora_name`、`input_file_url`、`requested_duration`、`billing_resolution`、媒体尺寸等
 
+### 后台投稿封禁与批量下架
+- **接口**：`POST /api/gallery/users/{user_id}/ban-submissions-and-takedown`
+- **输入**：`reason` 可选；为空时使用默认封禁提示。
+- **输出**：`affected_posts`、`affected_histories`、`is_submission_banned`、封禁原因与时间。
+
 ## 3. 核心红线
 - 捕获互动类 `IntegrityError` 前必须先 `flush()`。
 - 点赞、点踩、评论计数必须走数据库原子更新，不能先查再加。
@@ -38,6 +44,7 @@ description: "处理对象存储、广场评论收藏、R2 媒体策略与 Web a
 - `apply-context` 必须优先从 `History` 还原请求语义，不能只看展示用输出元数据。
 - 存储/R2 异常只能降级，不能阻断广场主流程。
 - 投稿删除/下架必须兼容同一 `task_id + user_id` 下多条 `History`；不得用 `scalar_one_or_none()` 假设唯一。上架时只允许主 history 公开，删除/下架时所有匹配 history 都要 `is_public=False`。
+- 用户级批量下架不得只改 `GalleryPost.is_active`；必须同步把该用户投稿关联的 `History.is_public` 置为 `False`，避免旧公开资源入口继续可见。
 
 ## 4. 边界条件处理
 - 帖子并发下架时，评论创建必须整体回滚而不是留下脏评论。
@@ -49,3 +56,4 @@ description: "处理对象存储、广场评论收藏、R2 媒体策略与 Web a
 - 覆盖并发点赞/点踩一致性。
 - 覆盖评论限频、并发下架回滚、分页查询。
 - 覆盖 apply-context 返回的 `requested_duration`、`billing_resolution`、`input_file_url` 正确性。
+- 覆盖后台封禁投稿并批量下架时的用户状态、帖子状态与多条 `History` 同步。

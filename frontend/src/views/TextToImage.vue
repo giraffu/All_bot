@@ -130,6 +130,12 @@ const resetForm = () => {
   color: var(--theme-input-placeholder) !important;
 }
 
+:deep(.ant-input-textarea-show-count::after),
+:deep(.ant-input-data-count) {
+  color: var(--theme-text-secondary) !important;
+  opacity: 0.9;
+}
+
 :deep(.text-slate-200),
 :deep(.text-slate-300) {
   color: var(--theme-text-primary) !important;

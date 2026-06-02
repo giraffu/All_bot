@@ -237,6 +237,12 @@ export const fetchGalleryPosts = async (params) => get('/api/gallery/all', { par
 
 export const updateGalleryPost = async (postId, data) => put(`/api/gallery/${postId}`, data)
 
+export const banGalleryUserSubmissionsAndTakedown = async (userId, reason = null) => {
+  const payload = {}
+  if (reason) payload.reason = reason
+  return post(`/api/gallery/users/${userId}/ban-submissions-and-takedown`, payload)
+}
+
 export const fetchGalleryComments = async (params) => get('/api/gallery/comments', { params })
 
 export const fetchAllGalleryComments = async (params) =>

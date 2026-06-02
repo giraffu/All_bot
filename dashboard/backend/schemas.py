@@ -205,6 +205,10 @@ class GalleryPostUpdate(BaseModel):
     tags: Optional[str] = None
 
 
+class GalleryUserSubmissionModerationRequest(BaseModel):
+    reason: Optional[str] = None
+
+
 class CommentUpdate(BaseModel):
     is_active: bool
 

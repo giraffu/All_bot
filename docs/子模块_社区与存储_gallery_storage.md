@@ -8,6 +8,7 @@
 - 我的投稿 / 我的收藏
 - Web workbench 一键应用上下文
 - R2 媒体与缩略图优先返回
+- Dashboard 投稿用户展示、投稿封禁与用户级批量下架
 
 ## 2. 当前数据模型
 - `gallery_posts`
@@ -18,6 +19,8 @@
   - 评论表，按 `post_id + created_at` 建索引，支持活跃评论分页。
 - `history`
   - 仍是帖子内容来源与 apply-context 的事实源，包含 `prompt / input_file / requested_duration / billing_resolution / allow_contribute` 等字段。
+- `users`
+  - `is_submission_banned / submission_banned_at / submission_ban_reason` 控制用户是否仍可投稿，不能用身份或修为字段模拟。
 
 ## 3. 当前主流程
 
@@ -55,6 +58,7 @@ sequenceDiagram
 - 投稿仍要求内容源自自己的 `History`。
 - `allow_contribute=False` 的模板衍生作品不能再次投稿，防止套娃搬运。
 - 用户级 `is_submission_banned=True` 时，Bot 端广场投稿、公开分享、模板共建，以及 Web 端一键投稿/重新上架都会被统一拦截，并提示“违禁被封，请联系管理员解封”。
+- Dashboard 广场内容管理可通过 `POST /api/gallery/users/{user_id}/ban-submissions-and-takedown` 对投稿用户一键封禁并下架其所有广场投稿；接口返回 `affected_posts` 与 `affected_histories` 用于后台反馈。
 - 删除帖子采用软删除/下架思路，不是简单硬删所有内容暴力清空。
 
 ### 4.2 互动系统
@@ -96,6 +100,7 @@ sequenceDiagram
 - 捕获互动类 `IntegrityError` 前，必须先 `flush()`，避免 `autoflush` 提前把异常抛出到错误层级。
 - 点赞、点踩、评论计数都必须用数据库原子更新，不能先读后写覆盖。
 - 投稿封禁属于用户能力控制，不得通过篡改 `allow_contribute`、`current_identity` 或 `user_group` 去模拟。
+- 用户级批量下架必须同时更新 `GalleryPost.is_active=False` 与投稿关联的 `History.is_public=False`，避免只隐藏列表但保留旧公开资源入口。
 - `apply-context` 必须从 `History` 取请求语义字段，不能只依赖帖子展示用的输出元数据。
 - 对象存储异常只能降级，不能阻断广场浏览主链路。
 
@@ -105,6 +110,7 @@ sequenceDiagram
 - 评论并发下架时的回滚与 404
 - `my-favorites` 过滤 like/apply 的正确性
 - apply-context 对 `requested_duration` / `billing_resolution` / `input_file_url` 的返回准确性
+- Dashboard 封禁投稿并批量下架时，用户封禁状态、帖子上下架状态和多条 `History.is_public` 同步
 
 ## 7. 文档维护口径
 - 广场文档必须把“评论、收藏、apply-context、R2 优先 URL”视作现有能力，而不是扩展项。

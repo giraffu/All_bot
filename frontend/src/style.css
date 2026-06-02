@@ -161,6 +161,12 @@ body {
   background: transparent !important;
 }
 
+.ant-input-textarea-show-count::after,
+.ant-input-data-count {
+  color: var(--theme-text-secondary) !important;
+  opacity: 0.9;
+}
+
 .app-theme-overlay .ant-dropdown-menu,
 .app-theme-overlay .ant-select-dropdown,
 .app-theme-overlay.ant-select-dropdown {

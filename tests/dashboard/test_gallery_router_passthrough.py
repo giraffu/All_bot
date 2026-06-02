@@ -36,7 +36,9 @@ async def test_get_all_gallery_posts_routes_to_service(monkeypatch):
 async def test_get_all_gallery_comments_routes_to_service(monkeypatch):
     expected = {"items": [], "total": 0, "page": 1, "page_size": 20}
     service_mock = AsyncMock(return_value=expected)
-    monkeypatch.setattr(gallery_router, "get_all_gallery_comments_payload", service_mock)
+    monkeypatch.setattr(
+        gallery_router, "get_all_gallery_comments_payload", service_mock
+    )
     db = object()
 
     result = await gallery_router.get_all_gallery_comments(
@@ -65,7 +67,9 @@ async def test_get_gallery_comments_routes_to_service(monkeypatch):
     monkeypatch.setattr(gallery_router, "get_gallery_comments_payload", service_mock)
     db = object()
 
-    result = await gallery_router.get_gallery_comments(post_id=7, page=1, page_size=20, db=db)
+    result = await gallery_router.get_gallery_comments(
+        post_id=7, page=1, page_size=20, db=db
+    )
 
     assert result == expected
     service_mock.assert_awaited_once_with(
@@ -110,6 +114,33 @@ async def test_update_gallery_post_routes_to_service(monkeypatch):
     service_mock.assert_awaited_once_with(
         post_id=9,
         update_data=update_data,
+        db=db,
+        logger_override=gallery_router.logger,
+    )
+
+
+@pytest.mark.asyncio
+async def test_ban_user_submissions_and_takedown_routes_to_service(monkeypatch):
+    expected = {"status": "ok", "affected_posts": 2}
+    service_mock = AsyncMock(return_value=expected)
+    monkeypatch.setattr(
+        gallery_router,
+        "ban_user_submissions_and_takedown_payload",
+        service_mock,
+    )
+    db = object()
+    request = gallery_router.GalleryUserSubmissionModerationRequest(reason=None)
+
+    result = await gallery_router.ban_user_submissions_and_takedown(
+        123,
+        request,
+        db=db,
+    )
+
+    assert result == expected
+    service_mock.assert_awaited_once_with(
+        user_id=123,
+        request=request,
         db=db,
         logger_override=gallery_router.logger,
     )
