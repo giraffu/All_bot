@@ -86,6 +86,7 @@ const promptLockedHint = computed(() => (
       <LabPromptComposer
         :title="t(currentMode.titleKey)"
         :description="t(currentMode.descriptionKey)"
+        :prompt-placeholder="t('lab.workbench.prompt_placeholder')"
         :prompt="prompt"
         :prompt-locked="isTemplatePromptLocked"
         :prompt-locked-hint="promptLockedHint"

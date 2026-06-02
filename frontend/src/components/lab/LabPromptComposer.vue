@@ -37,6 +37,7 @@ type LabAssetUploadSlot = {
 const props = defineProps<{
   title: string
   description: string
+  promptPlaceholder: string
   prompt: string
   promptLocked: boolean
   promptLockedHint?: string
@@ -208,16 +209,16 @@ const compactUploadLabel = (label: string) => label
       <a-textarea
         v-else
         :value="prompt"
-        :auto-size="{ minRows: 1, maxRows: 6 }"
+        :auto-size="{ minRows: 2, maxRows: 6 }"
         :maxlength="2000"
         show-count
         class="lab-composer__textarea"
-        placeholder=""
+        :placeholder="promptPlaceholder"
         @update:value="emit('update:prompt', String($event))"
       />
 
       <div class="lab-composer__actions mt-3 flex items-center justify-between gap-2 border-t pt-3">
-        <div class="flex min-w-0 items-center gap-2 overflow-hidden">
+        <div class="lab-composer__actions-left flex min-w-0 items-center gap-2 overflow-hidden">
           <a-upload
             v-if="supportsUpload && !hasAssetUploadSlots && canUploadReference"
             accept="image/png,image/jpeg,image/webp"
@@ -269,7 +270,7 @@ const compactUploadLabel = (label: string) => label
           </a-button>
         </div>
 
-        <div class="flex shrink-0 items-center">
+        <div class="lab-composer__actions-submit flex shrink-0 items-center">
           <a-button
             type="primary"
             size="large"
@@ -430,7 +431,7 @@ const compactUploadLabel = (label: string) => label
 }
 
 :deep(.lab-composer__textarea textarea.ant-input) {
-  min-height: 26px;
+  min-height: 62px !important;
   border: none !important;
   background: transparent !important;
   box-shadow: none !important;
@@ -447,6 +448,7 @@ const compactUploadLabel = (label: string) => label
 :deep(.lab-composer__textarea.ant-input-textarea-show-count::after),
 :deep(.lab-composer__textarea .ant-input-data-count) {
   color: var(--theme-text-secondary) !important;
+  -webkit-text-fill-color: var(--theme-text-secondary) !important;
   opacity: 0.9;
 }
 
@@ -457,7 +459,19 @@ const compactUploadLabel = (label: string) => label
 }
 
 .lab-composer__actions {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) auto;
   min-width: 0;
+  width: 100%;
+  align-items: center;
+}
+
+.lab-composer__actions-left {
+  justify-self: start;
+}
+
+.lab-composer__actions-submit {
+  justify-self: end;
 }
 
 .lab-composer__compact-btn {

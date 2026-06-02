@@ -409,6 +409,7 @@
       "ltx_lora_hint": "最多可叠加 3 个附加模型，每个模型可单独调整强度。",
       "negative_prompt": "负面提示词",
       "negative_prompt_placeholder": "输入需要规避的画面特征，例如模糊、畸形、低质量等。",
+      "prompt_placeholder": "描述你想要的图片/视频",
       "upload_slots": {
         "face_image": "脸部图片",
         "target_image": "身体图片",

@@ -164,7 +164,17 @@ body {
 .ant-input-textarea-show-count::after,
 .ant-input-data-count {
   color: var(--theme-text-secondary) !important;
+  -webkit-text-fill-color: var(--theme-text-secondary) !important;
   opacity: 0.9;
+}
+
+html[data-theme='dark'] .ant-input-textarea-show-count::after,
+html[data-theme='dark'] .ant-input-data-count,
+body[data-theme='dark'] .ant-input-textarea-show-count::after,
+body[data-theme='dark'] .ant-input-data-count {
+  color: #cbd5e1 !important;
+  -webkit-text-fill-color: #cbd5e1 !important;
+  opacity: 0.92;
 }
 
 .app-theme-overlay .ant-dropdown-menu,

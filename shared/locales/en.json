@@ -408,6 +408,7 @@
       "ltx_lora_hint": "Up to 3 addon models can be stacked, each with its own strength.",
       "negative_prompt": "Negative Prompt",
       "negative_prompt_placeholder": "Enter visual traits to avoid, such as blur, deformation, or low quality.",
+      "prompt_placeholder": "Describe the image/video you want",
       "upload_slots": {
         "face_image": "Face Image",
         "target_image": "Body Image",
