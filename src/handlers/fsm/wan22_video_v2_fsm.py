@@ -1,5 +1,6 @@
 import contextlib
 import logging
+import re
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import (
@@ -30,6 +31,7 @@ from src.services.wan22_video_v2_config import (
     WAN22_VIDEO_V2_DEFAULT_RESOLUTION_PRESET,
     WAN22_VIDEO_V2_RESOLUTION_PRESETS,
     get_wan22_video_v2_cost,
+    get_wan22_video_v2_resolution_display,
     get_wan22_video_v2_resolution_label,
 )
 from src.services.fsm_temp_file_service import (
@@ -51,6 +53,11 @@ logger = logging.getLogger("fsm.wan22_video_v2")
 
 WAN22_VIDEO_V2_DATA_KEY = "wan22_video_v2_data"
 WAN22_VIDEO_V2_CONVERSATION_TAG = "WAN22_VIDEO_V2"
+WAN22_VIDEO_V2_SETTINGS_ACTION_PATTERN = (
+    rf"^wan22v2_(submit|res_("
+    rf"{'|'.join(re.escape(preset_key) for preset_key in WAN22_VIDEO_V2_RESOLUTION_PRESETS)}"
+    r"))$"
+)
 _t = translate_fsm_text
 
 
@@ -110,34 +117,22 @@ def _build_settings_keyboard(
     current_resolution = str(
         data.get("resolution_preset") or WAN22_VIDEO_V2_DEFAULT_RESOLUTION_PRESET
     )
+    lang = getattr(context, "lang", "zh")
+    resolution_buttons = []
+    for preset_key in WAN22_VIDEO_V2_RESOLUTION_PRESETS:
+        label = get_wan22_video_v2_resolution_label(preset_key, lang=lang)
+        if current_resolution == preset_key:
+            label = f"• {label}"
+        resolution_buttons.append(
+            InlineKeyboardButton(
+                label,
+                callback_data=f"wan22v2_res_{preset_key}",
+            )
+        )
+
     return InlineKeyboardMarkup(
         [
-            [
-                InlineKeyboardButton(
-                    (
-                        f"• {_t(context, 'fsm.wan22_video_v2.resolution_fast')}"
-                        if current_resolution == "fast"
-                        else _t(context, "fsm.wan22_video_v2.resolution_fast")
-                    ),
-                    callback_data="wan22v2_res_fast",
-                ),
-                InlineKeyboardButton(
-                    (
-                        f"• {_t(context, 'fsm.wan22_video_v2.resolution_standard')}"
-                        if current_resolution == "standard"
-                        else _t(context, "fsm.wan22_video_v2.resolution_standard")
-                    ),
-                    callback_data="wan22v2_res_standard",
-                ),
-                InlineKeyboardButton(
-                    (
-                        f"• {_t(context, 'fsm.wan22_video_v2.resolution_hd')}"
-                        if current_resolution == "hd"
-                        else _t(context, "fsm.wan22_video_v2.resolution_hd")
-                    ),
-                    callback_data="wan22v2_res_hd",
-                ),
-            ],
+            resolution_buttons,
             [
                 InlineKeyboardButton(
                     _t(context, "fsm.wan22_video_v2.submit_button"),
@@ -173,7 +168,7 @@ def _build_settings_message(
     resolution_preset = str(
         data.get("resolution_preset") or WAN22_VIDEO_V2_DEFAULT_RESOLUTION_PRESET
     )
-    resolution_label = get_wan22_video_v2_resolution_label(
+    resolution_display = get_wan22_video_v2_resolution_display(
         resolution_preset,
         lang=lang,
     )
@@ -189,7 +184,7 @@ def _build_settings_message(
         ),
         prompt=str(data.get("prompt") or "").strip() or "-",
         negative_prompt=negative_prompt or _default_negative_prompt_label(context),
-        resolution_preset=resolution_label,
+        resolution_preset=resolution_display,
         duration="5s" if lang == "en" else "5 秒",
         cost=cost,
     )
@@ -764,7 +759,7 @@ def get_wan22_video_v2_fsm_handler() -> ConversationHandler:
             Wan22VideoV2State.WAIT_SETTINGS: [
                 CallbackQueryHandler(
                     handle_settings_action,
-                    pattern=r"^wan22v2_(submit|res_(fast|standard|hd))$",
+                    pattern=WAN22_VIDEO_V2_SETTINGS_ACTION_PATTERN,
                 ),
                 MessageHandler(
                     (filters.TEXT | filters.COMMAND) & ~filters.Regex(r"^/cancel$"),

@@ -272,6 +272,53 @@ def test_workflow_patcher_patches_wan22_video_v2_boolean_gates_and_prefixes(tmp_
     assert patched["2503"]["inputs"]["filename_prefix"] == "wan22_video_v2_42_last_frame"
 
 
+def test_workflow_patcher_patches_wan22_video_v2_preview_resolution(tmp_path):
+    workflow_dir = tmp_path / "workflows"
+    workflow_dir.mkdir()
+
+    _write_json(
+        workflow_dir / "mappings.json",
+        {
+            "wan22_video_v2": {
+                "image": "23",
+                "image_input": "image",
+            }
+        },
+    )
+    _write_json(
+        workflow_dir / "WAN 2.2 i2v -AiO-new.json",
+        {
+            "23": {"inputs": {"image": ""}},
+            "24": {"inputs": {"image": ""}},
+            "2542": {"inputs": {"clip_frames": ["2614", 0]}},
+            "2557": {"inputs": {"value": True}},
+            "2563": {"inputs": {"image": ["2574", 0]}},
+            "2575": {"inputs": {"image": ["2574", 0]}},
+            "2581": {"inputs": {"expression": "( a - 1 ) / b"}},
+            "2586": {"inputs": {"value": 5}},
+            "2621": {"inputs": {"precision_presets": "0.52 MP - SD"}},
+            "2700": {"inputs": {"batch_index": 0, "length": 1, "image": ["2575", 0]}},
+            "28": {"inputs": {"filename_prefix": "wan22_video_v2", "images": ["2575", 0]}},
+            "2503": {"inputs": {"filename_prefix": "wan22_video_v2_last_frame", "images": ["2700", 0]}},
+        },
+    )
+
+    patcher = WorkflowPatcher(str(workflow_dir))
+    workflow = patcher.load_workflow("wan22_video_v2")
+
+    patched = patcher.patch_workflow(
+        "wan22_video_v2",
+        workflow,
+        {
+            "image": "start.png",
+            "resolution_preset": "preview",
+            "seed": 77,
+        },
+    )
+
+    assert patched["2621"]["inputs"]["precision_presets"] == "0.26 MP - Preview"
+
+
 def test_workflow_patcher_strips_wan22_video_v2_last_frame_branch_when_disabled(tmp_path):
     workflow_dir = tmp_path / "workflows"
     workflow_dir.mkdir()

@@ -2,9 +2,9 @@ export const NO_IMAGE_TO_VIDEO_LORA = '__none__'
 export const NO_LTX_VIDEO_LORA = '__none__'
 export const DEFAULT_WAN22_VIDEO_V2_NEGATIVE_PROMPT =
   'censored, mosaic censoring, bar censor, pixelated, glowing, bloom, blurry, out of focus, low detail, bad anatomy, ugly, overexposed, underexposed, distorted face, extra limbs, cartoonish, 3d render artifacts, duplicate people, unnatural lighting, bad composition, missing shadows, low resolution, poorly textured, glitch, noise, grain, static, motionless, still frame, stylized, artwork, painting, illustration, many people in background, three legs, walking backward, unnatural skin tone, discolored eyelid, red eyelids, closed eyes, poorly drawn hands, extra fingers, fused fingers, poorly drawn face, deformed, disfigured, malformed limbs, fog, mist, voluminous eyelashes,'
-export type Wan22VideoV2ResolutionPreset = 'fast' | 'standard' | 'hd'
+export type Wan22VideoV2ResolutionPreset = 'preview' | 'standard' | 'hd'
 
-export const DEFAULT_WAN22_VIDEO_V2_RESOLUTION_PRESET: Wan22VideoV2ResolutionPreset = 'standard'
+export const DEFAULT_WAN22_VIDEO_V2_RESOLUTION_PRESET: Wan22VideoV2ResolutionPreset = 'preview'
 
 export const WAN22_VIDEO_V2_RESOLUTION_OPTIONS: Array<{
   value: Wan22VideoV2ResolutionPreset
@@ -12,10 +12,30 @@ export const WAN22_VIDEO_V2_RESOLUTION_OPTIONS: Array<{
   description: string
   cost: number
 }> = [
-  { value: 'fast', label: '极速', description: '0.36 MP，更快，细节更少', cost: 10 },
-  { value: 'standard', label: '标准', description: '0.52 MP，推荐默认档位', cost: 20 },
-  { value: 'hd', label: '高清', description: '0.65 MP，更清晰，生成更慢', cost: 30 },
+  { value: 'preview', label: '极速', description: '约 512p，最低价，生成更快', cost: 8 },
+  { value: 'standard', label: '标准', description: '约 720p，平衡画质与速度', cost: 20 },
+  { value: 'hd', label: '高清', description: '约 810p，更清晰，生成更慢', cost: 30 },
 ]
+
+export const normalizeWan22VideoV2ResolutionPreset = (
+  value: string | null | undefined,
+): Wan22VideoV2ResolutionPreset => {
+  if (
+    value === 'preview'
+    || value === 'fast'
+    || value === '0.26 MP - Preview'
+    || value === '0.36 MP - Small'
+  ) {
+    return 'preview'
+  }
+  if (value === 'hd' || value === '0.65 MP - Balanced') {
+    return 'hd'
+  }
+  if (value === 'standard' || value === '0.52 MP - SD') {
+    return 'standard'
+  }
+  return DEFAULT_WAN22_VIDEO_V2_RESOLUTION_PRESET
+}
 
 export type UnifiedImageToVideoTaskType = 'custom_video' | 'video_lora'
 

@@ -1,6 +1,7 @@
 from typing import Any, Callable
 
 from src.lora_catalog import normalize_ltx_video_lora_items
+from src.services.wan22_video_v2_config import WAN22_VIDEO_V2_RESOLUTION_PRESETS
 
 LTX_VIDEO_ADDITIONAL_LORA_NODE_IDS = ("256",)
 LTX_VIDEO_FIRST_PASS_MODEL_NODE_ID = "191"
@@ -9,9 +10,8 @@ LTX_VIDEO_MAX_LORA_SLOTS = 10
 # `WAN 2.2 i2v -AiO-new.json` already prunes the old debug/preview branch nodes.
 WAN22_VIDEO_V2_REMOVABLE_NODE_IDS = ("9",)
 WAN22_VIDEO_V2_PRECISION_PRESET_BY_KEY = {
-    "fast": "0.36 MP - Small",
-    "standard": "0.52 MP - SD",
-    "hd": "0.65 MP - Balanced",
+    key: str(preset["precision_preset"])
+    for key, preset in WAN22_VIDEO_V2_RESOLUTION_PRESETS.items()
 }
 
 

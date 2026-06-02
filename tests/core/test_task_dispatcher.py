@@ -137,10 +137,11 @@ def test_wan22_strategy_inherits_default_payload_and_upload_paths():
 @pytest.mark.parametrize(
     ("resolution_preset", "expected_cost"),
     [
-        ("fast", 10),
+        ("preview", 8),
+        ("fast", 8),
         ("standard", 20),
         ("hd", 30),
-        ("invalid", 20),
+        ("invalid", 8),
     ],
 )
 def test_wan22_strategy_cost_follows_resolution_preset(

@@ -61,6 +61,7 @@ sequenceDiagram
 
 ### 4.2 计费契约
 - 视频成本通常由分辨率与时长组合计算。
+- `wan22_video_v2` 当前固定 5 秒，分辨率档位以 `src/services/wan22_video_v2_config.py` 为准：`preview`（展示为“极速”，约 512p，默认且最低价）8 灵石、`standard`（约 720p）20 灵石、`hd`（约 810p）30 灵石；旧 `fast` 仅作为兼容别名归一到 `preview`，不再作为可选档位展示。
 - 具体倍率与 guardrail 以当前服务实现为准，不在业务文档中固化旧常量值。
 
 ### 4.3 双 ID 语义

@@ -2,10 +2,13 @@ import { describe, expect, it } from 'vitest'
 
 import {
   buildDefaultLtxVideoLoraItem,
+  DEFAULT_WAN22_VIDEO_V2_RESOLUTION_PRESET,
   DEFAULT_WAN22_VIDEO_V2_NEGATIVE_PROMPT,
+  WAN22_VIDEO_V2_RESOLUTION_OPTIONS,
   getDefaultImageToVideoLoraSelection,
   getImageToVideoPayloadLoraName,
   getImageToVideoPayloadLoraStrength,
+  normalizeWan22VideoV2ResolutionPreset,
   normalizeLtxVideoLoraItems,
   NO_LTX_VIDEO_LORA,
 } from './imageToVideo'
@@ -65,5 +68,27 @@ describe('imageToVideo LTX LoRA helpers', () => {
   it('exposes the default wan22 negative prompt preset', () => {
     expect(DEFAULT_WAN22_VIDEO_V2_NEGATIVE_PROMPT).toContain('censored')
     expect(DEFAULT_WAN22_VIDEO_V2_NEGATIVE_PROMPT).toContain('voluminous eyelashes')
+  })
+
+  it('exposes the wan22 fast-lowest resolution option', () => {
+    expect(DEFAULT_WAN22_VIDEO_V2_RESOLUTION_PRESET).toBe('preview')
+    expect(WAN22_VIDEO_V2_RESOLUTION_OPTIONS[0]).toEqual({
+      value: 'preview',
+      label: '极速',
+      description: '约 512p，最低价，生成更快',
+      cost: 8,
+    })
+    expect(WAN22_VIDEO_V2_RESOLUTION_OPTIONS[1].description).toBe('约 720p，平衡画质与速度')
+    expect(WAN22_VIDEO_V2_RESOLUTION_OPTIONS[2].description).toBe('约 810p，更清晰，生成更慢')
+    expect(WAN22_VIDEO_V2_RESOLUTION_OPTIONS.map(option => option.value)).toEqual([
+      'preview',
+      'standard',
+      'hd',
+    ])
+  })
+
+  it('normalizes legacy wan22 fast resolution to preview', () => {
+    expect(normalizeWan22VideoV2ResolutionPreset('fast')).toBe('preview')
+    expect(normalizeWan22VideoV2ResolutionPreset('0.36 MP - Small')).toBe('preview')
   })
 })

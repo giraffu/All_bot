@@ -27,6 +27,7 @@ import {
   DEFAULT_WAN22_VIDEO_V2_NEGATIVE_PROMPT,
   DEFAULT_WAN22_VIDEO_V2_RESOLUTION_PRESET,
   WAN22_VIDEO_V2_RESOLUTION_OPTIONS,
+  normalizeWan22VideoV2ResolutionPreset,
   type Wan22VideoV2ResolutionPreset,
 } from '@/features/generation/imageToVideo'
 import { useGenerationRouteConfig } from '@/features/generation/generationRouteConfig'
@@ -242,7 +243,9 @@ const prefillFromChain = async (mode: 'extend' | 'regenerate', taskId: string) =
   }
   const recordIndex = items.findIndex(item => item.task_id === currentRecord.task_id)
   const previousRecord = recordIndex > 0 ? items[recordIndex - 1] : null
-  const resolution = (currentRecord.result_meta?.wan22_resolution_preset || DEFAULT_WAN22_VIDEO_V2_RESOLUTION_PRESET) as Wan22VideoV2ResolutionPreset
+  const resolution = normalizeWan22VideoV2ResolutionPreset(
+    currentRecord.result_meta?.wan22_resolution_preset,
+  )
   const negativePromptValue = currentRecord.result_meta?.wan22_negative_prompt || DEFAULT_WAN22_VIDEO_V2_NEGATIVE_PROMPT
   const chainTaskIds = items
     .map(item => item.task_id)
@@ -251,7 +254,7 @@ const prefillFromChain = async (mode: 'extend' | 'regenerate', taskId: string) =
   if (mode === 'extend') {
     const lastFrame = currentRecord.extra_outputs?.last_frame
     if (!lastFrame?.path) {
-      message.warning('当前段落没有可用尾帧，请先重新生成带尾帧提取的视频')
+      message.warning('当前段落没有可用尾帧，请先重新生成该段视频')
       return
     }
     applyRecordToEditor(currentRecord, {
@@ -587,7 +590,7 @@ onMounted(() => {
               <a-radio-group v-model:value="resolutionPreset" class="w-full">
                 <div
                   class="grid"
-                  :class="isMobile ? 'grid-cols-3 gap-2' : 'grid-cols-1 md:grid-cols-3 gap-3'"
+                  :class="isMobile ? 'grid-cols-2 gap-2' : 'grid-cols-2 gap-3'"
                 >
                   <label
                     v-for="option in WAN22_VIDEO_V2_RESOLUTION_OPTIONS"
@@ -760,12 +763,15 @@ onMounted(() => {
 }
 
 .wan22-video-v2__preset-card {
+  display: block;
+  min-height: 118px;
   border: 1px solid var(--theme-border);
   background: var(--theme-panel-bg);
   transition: border-color 0.2s ease, background 0.2s ease;
 }
 
 .wan22-video-v2__preset-card--compact {
+  min-height: 110px;
   padding: 10px 8px;
 }
 

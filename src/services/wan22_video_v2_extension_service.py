@@ -88,7 +88,7 @@ def resolve_last_frame_output_file(history: History) -> str:
     last_frame = extra_outputs.get("last_frame") if isinstance(extra_outputs, dict) else None
     output_file = last_frame.get("path") if isinstance(last_frame, dict) else None
     if not output_file:
-        raise Wan22VideoV2ExtensionError("这条记录没有可用的尾帧图片，请先重新生成带尾帧提取的视频。")
+        raise Wan22VideoV2ExtensionError("这条记录没有可用的尾帧图片，请先重新生成该段视频。")
     return str(output_file)
 
 

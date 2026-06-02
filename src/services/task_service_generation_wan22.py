@@ -24,6 +24,7 @@ from src.services.wan22_video_v2_config import (
     WAN22_VIDEO_V2_DEFAULT_RESOLUTION_PRESET,
     WAN22_VIDEO_V2_RESOLUTION_PRESETS,
     get_wan22_video_v2_cost,
+    get_wan22_video_v2_resolution_display,
     get_wan22_video_v2_resolution_label,
     normalize_wan22_video_v2_resolution_preset,
 )
@@ -34,6 +35,7 @@ __all__ = [
     "WAN22_VIDEO_V2_RESOLUTION_PRESETS",
     "build_wan22_video_v2_result_meta",
     "get_wan22_video_v2_cost",
+    "get_wan22_video_v2_resolution_display",
     "get_wan22_video_v2_resolution_label",
     "normalize_wan22_video_v2_chain_task_ids",
     "normalize_wan22_video_v2_negative_prompt",

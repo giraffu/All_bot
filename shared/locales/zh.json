@@ -383,7 +383,7 @@
       "high_res_video_title": "高级图生视频",
       "high_res_video_desc": "上传图像与提示词，使用最先进的模型生成高分辨率、更长时长的视频。",
       "wan22_video_v2_title": "图生视频 v2",
-      "wan22_video_v2_desc": "支持正负提示词、首尾帧、色彩匹配、无缝循环、快速 2x 与尾帧提取。"
+      "wan22_video_v2_desc": "支持正负提示词、首尾帧、色彩匹配、无缝循环与连续扩展。"
     },
     "workbench": {
       "eyebrow": "统一创作工作台",
@@ -727,14 +727,14 @@
       "send_negative_prompt": "【下一步】请发送**负面提示词**。\n\n如果没有负面提示词，可以点击下方按钮跳过。",
       "extension_start": "✨ 已自动载入上一段视频的**尾帧**作为新的起始帧。\n\n- 分辨率档位已保持为：{resolution_preset}\n- 本轮仍按之前流程填写正负提示词\n\n【下一步】请选择本段使用**单图模式**还是**首尾帧模式**。",
       "skip_negative_prompt": "跳过负面提示词",
-      "resolution_fast": "极速",
+      "resolution_preview": "极速",
       "resolution_standard": "标准",
       "resolution_hd": "高清",
       "submit_button": "开始生成",
       "status_yes": "开启",
       "status_no": "关闭",
       "no_negative_prompt": "无",
-      "settings_text": "🎬 **图生视频v2 设置确认**\n\n- 首尾帧模式：{use_end_frame}\n- 终止帧就绪：{end_frame_ready}\n- 分辨率档位：{resolution_preset}\n- 尾帧提取：默认开启并仅作存储\n- 固定时长：{duration}\n- 预计消耗：{cost} 灵石\n\n**正面提示词**\n`{prompt}`\n\n**负面提示词**\n`{negative_prompt}`\n\n确认后点击“开始生成”。",
+      "settings_text": "🎬 **图生视频v2 设置确认**\n\n- 首尾帧模式：{use_end_frame}\n- 终止帧就绪：{end_frame_ready}\n- 分辨率档位：{resolution_preset}\n- 固定时长：{duration}\n- 预计消耗：{cost} 灵石\n\n**正面提示词**\n`{prompt}`\n\n**负面提示词**\n`{negative_prompt}`\n\n确认后点击“开始生成”。",
       "missing_end_image": "已开启首尾帧模式，请先上传终止帧图片。",
       "submitting": "🚀 正在提交图生视频v2任务 (消耗 {cost} 灵石)，请耐心等待...",
       "expired_alert": "交互已失效或任务已提交，请重新开始"

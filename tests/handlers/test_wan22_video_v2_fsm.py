@@ -1,3 +1,4 @@
+import re
 from types import SimpleNamespace
 from unittest.mock import ANY, AsyncMock, MagicMock
 import warnings
@@ -41,6 +42,40 @@ def test_get_wan22_video_v2_fsm_handler_exposes_expected_entry_points():
 
     assert handler.name == "wan22_video_v2_fsm"
     assert len(handler.entry_points) == 4
+
+
+def test_settings_callback_pattern_accepts_all_resolution_presets():
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", category=PTBUserWarning)
+        handler = wan22_video_v2_fsm.get_wan22_video_v2_fsm_handler()
+
+    settings_callback = handler.states[wan22_video_v2_fsm.Wan22VideoV2State.WAIT_SETTINGS][0]
+    assert settings_callback.pattern.pattern == (
+        wan22_video_v2_fsm.WAN22_VIDEO_V2_SETTINGS_ACTION_PATTERN
+    )
+
+    pattern = re.compile(wan22_video_v2_fsm.WAN22_VIDEO_V2_SETTINGS_ACTION_PATTERN)
+    assert pattern.match("wan22v2_submit")
+    for preset_key in wan22_video_v2_fsm.WAN22_VIDEO_V2_RESOLUTION_PRESETS:
+        assert pattern.match(f"wan22v2_res_{preset_key}")
+    assert not pattern.match("wan22v2_res_fast")
+
+
+def test_settings_keyboard_renders_resolution_presets_in_one_row():
+    context = SimpleNamespace(lang="zh", t=lambda key, **kwargs: f"T:{key}")
+    data = {"resolution_preset": "preview"}
+
+    keyboard = wan22_video_v2_fsm._build_settings_keyboard(context, data)
+
+    assert [
+        button.callback_data
+        for button in keyboard.inline_keyboard[0]
+    ] == [
+        "wan22v2_res_preview",
+        "wan22v2_res_standard",
+        "wan22v2_res_hd",
+    ]
+    assert keyboard.inline_keyboard[1][0].callback_data == "wan22v2_submit"
 
 
 @pytest.mark.asyncio
@@ -401,7 +436,7 @@ async def test_build_settings_message_uses_selected_resolution_cost():
     context = SimpleNamespace(
         lang="zh",
         t=lambda key, **kwargs: (
-            f"{key}:{kwargs['cost']}"
+            f"{key}:{kwargs['resolution_preset']}:{kwargs['cost']}"
             if key == "fsm.wan22_video_v2.settings_text"
             else f"T:{key}"
         ),
@@ -411,12 +446,12 @@ async def test_build_settings_message_uses_selected_resolution_cost():
         "end_image_path": None,
         "prompt": "positive",
         "negative_prompt": "",
-        "resolution_preset": "fast",
+        "resolution_preset": "preview",
     }
 
     message = wan22_video_v2_fsm._build_settings_message(context, data)
 
-    assert message == "fsm.wan22_video_v2.settings_text:10"
+    assert message == "fsm.wan22_video_v2.settings_text:极速（约 512p）:8"
 
 
 @pytest.mark.asyncio
@@ -425,7 +460,7 @@ async def test_handle_settings_action_updates_resolution_preset(monkeypatch):
     monkeypatch.setattr(wan22_video_v2_fsm, "robust_edit_text", edit_mock)
 
     query = SimpleNamespace(
-        data="wan22v2_res_hd",
+        data="wan22v2_res_preview",
         answer=AsyncMock(),
         message=SimpleNamespace(),
     )
@@ -448,6 +483,6 @@ async def test_handle_settings_action_updates_resolution_preset(monkeypatch):
     result = await wan22_video_v2_fsm.handle_settings_action(update, context)
 
     assert result == wan22_video_v2_fsm.Wan22VideoV2State.WAIT_SETTINGS
-    assert context.user_data["wan22_video_v2_data"]["resolution_preset"] == "hd"
+    assert context.user_data["wan22_video_v2_data"]["resolution_preset"] == "preview"
     query.answer.assert_awaited_once()
     edit_mock.assert_awaited_once()

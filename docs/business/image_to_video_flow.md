@@ -114,6 +114,7 @@ graph TD
 
 ## 四、 计费与资源约束
 - 视频任务计费是动态的，通常由分辨率与时长组合决定。
+- `wan22_video_v2` 的分辨率档位统一维护在 `src/services/wan22_video_v2_config.py`，Bot / Web / dispatcher 共享同一语义；当前 5 秒固定时长下展示三档：`preview` = 极速 / 约 512p / `0.26 MP - Preview` / 8 灵石（默认且最低价），`standard` = 标准 / 约 720p / `0.52 MP - SD` / 20 灵石，`hd` = 高清 / 约 810p / `0.65 MP - Balanced` / 30 灵石。旧 `fast` / `0.36 MP - Small` 仅作为兼容别名归一到 `preview`，不再作为可选档位展示。Worker 会把档位写入 `DaSiWa_ResolutionScaleCalculator` 节点 `2621.inputs.precision_presets`。
 - 过高画质与过长时长组合仍可能触发 guardrail，避免显存溢出或节点拥塞。
 - 任何取消/失败路径都必须与并发锁释放和必要退款一并考虑。
 

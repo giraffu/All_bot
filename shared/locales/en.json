@@ -382,7 +382,7 @@
       "high_res_video_title": "High-Res Video",
       "high_res_video_desc": "Upload image and prompt, use state-of-the-art models to generate high-res video.",
       "wan22_video_v2_title": "Img2Video V2",
-      "wan22_video_v2_desc": "Supports positive and negative prompts, first/last frames, color match, perfect loop, fast 2x upscale, and last-frame extraction."
+      "wan22_video_v2_desc": "Supports positive and negative prompts, first/last frames, color match, perfect loop, and continuous extension."
     },
     "workbench": {
       "eyebrow": "Unified Creative Workbench",
@@ -725,14 +725,14 @@
       "send_negative_prompt": "**Next:** send the **negative prompt**.\n\nIf you do not need one, tap the button below to skip it.",
       "extension_start": "✨ The **last frame** from the previous video is loaded as the new start frame.\n\n- Resolution preset is kept as: {resolution_preset}\n- The positive/negative prompt flow stays the same\n\n**Next:** choose **single-frame** or **start/end-frame** mode for this segment.",
       "skip_negative_prompt": "Skip Negative Prompt",
-      "resolution_fast": "Fast",
+      "resolution_preview": "Fast",
       "resolution_standard": "Standard",
       "resolution_hd": "HD",
       "submit_button": "Start Generation",
       "status_yes": "On",
       "status_no": "Off",
       "no_negative_prompt": "None",
-      "settings_text": "🎬 **Img2Video V2 Settings**\n\n- First/last frame mode: {use_end_frame}\n- End frame ready: {end_frame_ready}\n- Resolution preset: {resolution_preset}\n- Last-frame extraction: always on and stored only\n- Fixed duration: {duration}\n- Estimated cost: {cost} credits\n\n**Positive prompt**\n`{prompt}`\n\n**Negative prompt**\n`{negative_prompt}`\n\nTap Start Generation when ready.",
+      "settings_text": "🎬 **Img2Video V2 Settings**\n\n- First/last frame mode: {use_end_frame}\n- End frame ready: {end_frame_ready}\n- Resolution preset: {resolution_preset}\n- Fixed duration: {duration}\n- Estimated cost: {cost} credits\n\n**Positive prompt**\n`{prompt}`\n\n**Negative prompt**\n`{negative_prompt}`\n\nTap Start Generation when ready.",
       "missing_end_image": "First/last frame mode is enabled. Please upload the end frame first.",
       "submitting": "🚀 Submitting the Img2Video V2 task (cost: {cost} credits). Please wait...",
       "expired_alert": "The interaction expired or the task was submitted. Please start again."
