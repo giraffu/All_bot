@@ -152,6 +152,7 @@ class APIClient:
         width: int = 512,
         height: int = 512,
         length: int = 5,
+        extract_last_frame: bool = True,
         priority: int = 0,
     ) -> str:
         """
@@ -171,6 +172,7 @@ class APIClient:
             "width": width,
             "height": height,
             "length": length,
+            "extract_last_frame": extract_last_frame,
             "priority": priority,
         }
         if end_image_path:

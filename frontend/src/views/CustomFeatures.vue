@@ -181,12 +181,12 @@ const promptLockedHint = computed(() => (
           <template #success-actions="{ task }">
             <div
               v-if="currentTaskIsWan22VideoV2"
-              class="mt-8 grid w-full grid-cols-1 gap-3 sm:flex sm:flex-wrap sm:justify-center"
+              class="lab-workbench__result-actions flex w-full flex-wrap items-center justify-center gap-2"
             >
               <a-button
                 type="primary"
                 size="large"
-                class="rounded-xl w-full sm:w-auto"
+                class="min-w-[94px] max-w-[112px] flex-1 rounded-xl !px-2 whitespace-nowrap"
                 @click="downloadResult(task.resultUrl, task.title)"
               >
                 <template #icon><DownloadOutlined /></template>
@@ -194,7 +194,7 @@ const promptLockedHint = computed(() => (
               </a-button>
               <a-button
                 size="large"
-                class="rounded-xl w-full sm:w-auto"
+                class="min-w-[94px] max-w-[112px] flex-1 rounded-xl !px-2 whitespace-nowrap"
                 :disabled="!wan22CurrentTaskCanExtend"
                 :loading="wan22ChainLoading"
                 @click="openWan22CurrentTaskEditor('extend')"
@@ -204,7 +204,7 @@ const promptLockedHint = computed(() => (
               </a-button>
               <a-button
                 size="large"
-                class="rounded-xl w-full sm:w-auto"
+                class="min-w-[94px] max-w-[112px] flex-1 rounded-xl !px-2 whitespace-nowrap"
                 :loading="wan22ChainLoading"
                 @click="openWan22CurrentTaskEditor('regenerate')"
               >
@@ -214,7 +214,7 @@ const promptLockedHint = computed(() => (
               <a-button
                 v-if="wan22CurrentTaskCanStitch"
                 size="large"
-                class="rounded-xl w-full sm:w-auto"
+                class="min-w-[94px] max-w-[112px] flex-1 rounded-xl !px-2 whitespace-nowrap"
                 :loading="wan22ChainStitching"
                 @click="stitchCurrentWan22Chain"
               >
@@ -222,7 +222,7 @@ const promptLockedHint = computed(() => (
                 {{ $t('lab.workbench.wan22_stitch_chain') }}
               </a-button>
             </div>
-            <div v-else class="mt-8 flex gap-4">
+            <div v-else class="flex gap-4">
               <a-button
                 type="primary"
                 size="large"

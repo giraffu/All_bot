@@ -210,7 +210,7 @@ async def test_submit_generation_forwards_wan22_payload(monkeypatch):
 @pytest.mark.asyncio
 async def test_start_wan22_video_v2_extension_prefills_tail_frame(monkeypatch):
     edit_mock = AsyncMock()
-    load_history_mock = AsyncMock(return_value=SimpleNamespace())
+    load_history_mock = AsyncMock(return_value=SimpleNamespace(type="wan22_video_v2"))
     download_last_frame_mock = AsyncMock(return_value="/tmp/tail.png")
 
     monkeypatch.setattr(wan22_video_v2_fsm, "robust_edit_text", edit_mock)
@@ -283,7 +283,7 @@ async def test_start_wan22_video_v2_extension_replies_for_media_message(monkeypa
     monkeypatch.setattr(
         wan22_video_v2_fsm,
         "load_owned_wan22_history",
-        AsyncMock(return_value=SimpleNamespace()),
+        AsyncMock(return_value=SimpleNamespace(type="wan22_video_v2")),
     )
     monkeypatch.setattr(
         wan22_video_v2_fsm,
@@ -451,7 +451,7 @@ async def test_build_settings_message_uses_selected_resolution_cost():
 
     message = wan22_video_v2_fsm._build_settings_message(context, data)
 
-    assert message == "fsm.wan22_video_v2.settings_text:极速（约 512p）:8"
+    assert message == "fsm.wan22_video_v2.settings_text:极速（约 512p）:6"
 
 
 @pytest.mark.asyncio

@@ -68,7 +68,7 @@ const taskCost = computed(() => {
     return baseCost * multiplier;
   }
   
-  return WAN22_VIDEO_V2_RESOLUTION_OPTIONS.find(option => option.value === resolution.value)?.cost ?? 8
+  return WAN22_VIDEO_V2_RESOLUTION_OPTIONS.find(option => option.value === resolution.value)?.cost ?? 6
 })
 const prompt = ref('')
 const loraSelection = ref(getDefaultImageToVideoLoraSelection(taskType.value))

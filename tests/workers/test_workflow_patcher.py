@@ -306,6 +306,120 @@ def test_workflow_patcher_patches_wan22_video_v2_preview_resolution(tmp_path):
     assert patched["2612"]["inputs"]["precision_presets"] == "0.26 MP - Preview"
 
 
+def test_workflow_patcher_injects_legacy_image_to_video_lora_and_model_profile(tmp_path):
+    workflow_dir = tmp_path / "workflows"
+    workflow_dir.mkdir()
+
+    _write_json(
+        workflow_dir / "mappings.json",
+        {
+            "image_to_video": {
+                "image": "23",
+                "image_input": "image",
+                "prompt": "2368",
+                "prompt_input": "value",
+            },
+            "wan22_video_v2": {
+                "image": "23",
+                "image_input": "image",
+                "prompt": "2368",
+                "prompt_input": "value",
+            },
+        },
+    )
+    _write_json(
+        workflow_dir / "Wan22AioV81.json",
+        {
+            "23": {"inputs": {"image": ""}},
+            "24": {"inputs": {"image": ""}},
+            "2368": {"inputs": {"value": ""}},
+            "2371": {"inputs": {"value": ""}},
+            "2558": {"inputs": {"value": False}},
+            "2578": {"inputs": {"value": 5}},
+            "2607": {"inputs": {"batch_index": 0, "length": 1, "image": ["2603", 0]}},
+            "2612": {"inputs": {"precision_presets": "0.52 MP - SD"}},
+            "2623": {"inputs": {"expression": "( a - 1 ) / b"}},
+            "2616": {"inputs": {"unet_name": "stale-high.safetensors"}},
+            "2617": {"inputs": {"unet_name": "stale-low.safetensors"}},
+            "26": {
+                "inputs": {
+                    "model": ["2569", 0],
+                    "clip": ["2529", 0],
+                    "lora_9": {"on": True, "lora": "stale", "strength": 1},
+                },
+                "class_type": "Power Lora Loader (rgthree)",
+            },
+            "18": {
+                "inputs": {
+                    "model": ["2560", 0],
+                    "clip": ["2529", 0],
+                    "lora_9": {"on": True, "lora": "stale", "strength": 1},
+                },
+                "class_type": "Power Lora Loader (rgthree)",
+            },
+            "28": {"inputs": {"filename_prefix": "wan22_video_v2", "images": ["2603", 0]}},
+            "2503": {"inputs": {"filename_prefix": "wan22_video_v2_last_frame", "images": ["2607", 0]}},
+        },
+    )
+
+    patcher = WorkflowPatcher(str(workflow_dir))
+    workflow = patcher.load_workflow("image_to_video")
+
+    patched = patcher.patch_workflow(
+        "image_to_video",
+        workflow,
+        {
+            "image": "start.png",
+            "prompt": "demo",
+            "lora_name": "BreastGrow",
+            "resolution_preset": "standard",
+            "seed": 77,
+        },
+    )
+
+    assert patched["2616"]["inputs"]["unet_name"] == (
+        "wan22EnhancedNSFWSVICamera_nsfwFASTMOVEV2FP8H.safetensors"
+    )
+    assert patched["2617"]["inputs"]["unet_name"] == (
+        "wan22EnhancedNSFWSVICamera_nsfwFASTMOVEV2FP8L.safetensors"
+    )
+    assert patched["26"]["inputs"]["lora_1"] == {
+        "on": True,
+        "lora": "BreastGrow_high_noise.safetensors",
+        "strength": 1,
+    }
+    assert patched["18"]["inputs"]["lora_1"] == {
+        "on": True,
+        "lora": "BreastGrow_low_noise.safetensors",
+        "strength": 1,
+    }
+    assert "lora_9" not in patched["26"]["inputs"]
+    assert "lora_9" not in patched["18"]["inputs"]
+
+    patched_v2 = patcher.patch_workflow(
+        "wan22_video_v2",
+        workflow,
+        {
+            "image": "start.png",
+            "prompt": "demo",
+            "lora_name": "BreastGrow",
+            "resolution_preset": "standard",
+            "seed": 78,
+        },
+    )
+
+    assert patched_v2["2616"]["inputs"]["unet_name"] == (
+        "DasiwaWAN22I2V14BLightspeed_snatchkissHighV11.safetensors"
+    )
+    assert patched_v2["2617"]["inputs"]["unet_name"] == (
+        "DasiwaWAN22I2V14BLightspeed_snatchkissLowV11.safetensors"
+    )
+    assert "lora_1" not in patched_v2["26"]["inputs"]
+    assert "lora_1" not in patched_v2["18"]["inputs"]
+    assert "lora_9" not in patched_v2["26"]["inputs"]
+    assert "lora_9" not in patched_v2["18"]["inputs"]
+
+
 def test_workflow_patcher_strips_wan22_video_v2_last_frame_branch_when_disabled(tmp_path):
     workflow_dir = tmp_path / "workflows"
     workflow_dir.mkdir()

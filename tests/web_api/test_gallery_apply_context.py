@@ -132,7 +132,7 @@ async def test_get_apply_context_backfills_missing_video_billing_resolution_from
     assert response.billing_resolution == "standard"
     assert response.width == 720
     assert response.height == 1280
-    assert response.duration == 8
+    assert response.duration == 5
     assert response.requested_duration == 5
     assert history.billing_resolution is None
     session.commit.assert_not_awaited()
@@ -319,7 +319,7 @@ async def test_get_apply_context_maps_legacy_ltx_media_duration_16_to_15():
 
 
 @pytest.mark.asyncio
-async def test_get_apply_context_maps_legacy_custom_video_duration_9_to_8():
+async def test_get_apply_context_maps_legacy_custom_video_duration_9_to_fixed_5():
     history = History(
         id=11,
         user_id=123,
@@ -349,13 +349,13 @@ async def test_get_apply_context_maps_legacy_custom_video_duration_9_to_8():
 
     response = await get_gallery_apply_context_payload(post_id=2, db=session)
 
-    assert response.duration == 9
+    assert response.duration == 5
     assert response.requested_duration == 5
     session.commit.assert_not_awaited()
 
 
 @pytest.mark.asyncio
-async def test_get_apply_context_maps_legacy_video_lora_duration_11_to_10():
+async def test_get_apply_context_maps_legacy_video_lora_duration_11_to_fixed_5():
     history = History(
         id=11,
         user_id=123,
@@ -385,7 +385,7 @@ async def test_get_apply_context_maps_legacy_video_lora_duration_11_to_10():
 
     response = await get_gallery_apply_context_payload(post_id=2, db=session)
 
-    assert response.duration == 11
+    assert response.duration == 5
     assert response.requested_duration == 5
     session.commit.assert_not_awaited()
 

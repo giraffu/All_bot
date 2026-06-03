@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'vitest'
 
 import {
+  POLL_TASK_RESULT_MAX_RETRIES,
   probeDetachedTaskResult,
   pollTaskResult,
   restoreTasksFromStorage,
@@ -256,9 +257,39 @@ test('pollTaskResult retries pending_result once and resolves on the next result
     awaitingResult: false,
     resultUrl: 'https://cdn.example/final.png',
     extraOutputs: {},
+    resultMeta: {},
     error: undefined,
     updatedAt: undefined
   })
+})
+
+test('pollTaskResult keeps waiting beyond the old short result window', async () => {
+  const activeTasks: RuntimeTaskLike[] = [
+    createTask({
+      status: 'running',
+      progress: 99,
+      awaitingResult: true
+    })
+  ]
+
+  let scheduledDelay: number | null = null
+  let timeoutCalls = 0
+
+  await pollTaskResult(activeTasks[0], activeTasks, {
+    apiGet: async () => ({ data: { status: 'pending_result' } }),
+    schedule: (_callback, delayMs) => {
+      scheduledDelay = delayMs
+    },
+    onTimeout: () => {
+      timeoutCalls += 1
+    }
+  }, 10)
+
+  assert.equal(timeoutCalls, 0)
+  assert.equal(scheduledDelay, 1500)
+  assert.equal(activeTasks[0].status, 'running')
+  assert.equal(activeTasks[0].awaitingResult, true)
+  assert.ok(POLL_TASK_RESULT_MAX_RETRIES > 10)
 })
 
 test('probeDetachedTaskResult keeps the floating task pending until history result becomes available', async () => {
@@ -318,6 +349,7 @@ test('probeDetachedTaskResult keeps the floating task pending until history resu
     awaitingResult: false,
     resultUrl: 'https://cdn.example/detached.png',
     extraOutputs: {},
+    resultMeta: {},
     error: undefined,
     updatedAt: undefined
   })

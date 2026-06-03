@@ -89,7 +89,7 @@ sequenceDiagram
 1. `useTaskStream.submitTask(...)` 调用 `POST /tasks/generate`
 2. 后端返回 `task_id` 后，前端把该任务写入 `tasksStore`
 3. `tasksStore.startListening(...)` 建立 `/tasks/{task_id}/stream`
-4. 收到终态 `success` 后，前端转入 `/tasks/{task_id}/result` 轮询
+4. 收到终态 `success` 后，前端转入 `/tasks/{task_id}/result` 轮询；结果 URL 未就绪时保持 99% 与 `awaitingResult=true`，当前轮询窗口约 120 次 * 1.5 秒，需覆盖视频 R2 warmup 可能超过 60 秒的情况
 5. 若历史已落库，也可能通过最近历史或详情弹层展示结果
 
 前端当前的状态语义重点：
@@ -396,7 +396,7 @@ Web 端当前运行态与结果查询链路分成两层：
 - `stream` 对外接收的是 `registry_task_id`
 - service 内部会尽量解析出真正的 `runtime_task_id` / `backend_task_id`
 - 若运行态已消失但历史已存在，SSE 应返回可终止的 fallback 语义，而不是无限轮询
-- `result` 对 Web 历史优先取 R2 公网结果地址；延迟敏感路径必须用 R2 公网 HEAD 快探测并在查对象存储前释放 DB 只读事务，不能用慢 S3 API HEAD 阻塞请求。R2 warmup 未就绪时，图片可对任务本人返回短有效期 MinIO presigned fallback；视频不走 MinIO 代理 fallback，应返回 `pending_result` 等下一轮轮询拿 R2，避免 99% 阶段被视频拉流或 R2 HEAD 阻塞拖成网络失败。
+- `result` 对 Web 历史优先取 R2 公网结果地址；延迟敏感路径必须用 R2 公网 HEAD 快探测并在查对象存储前释放 DB 只读事务，不能用慢 S3 API HEAD 阻塞请求。R2 warmup 未就绪时，图片可对任务本人返回短有效期 MinIO presigned fallback；视频不走 MinIO 代理 fallback，应返回 `pending_result` 等下一轮轮询拿 R2。前端结果轮询窗口必须覆盖分钟级 R2 warmup，避免 99% 阶段被视频拉流、R2 HEAD 阻塞或短轮询窗口拖成网络失败/不返回结果。
 
 ## 11. 历史、收藏、投稿与结果可见性
 对于 Web 一等任务类型，只打通底层执行链路通常还不够，还要看是否要进入这些链：

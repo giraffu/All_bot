@@ -73,12 +73,12 @@ describe('imageToVideo LTX LoRA helpers', () => {
 
   it('exposes the wan22 fast-lowest resolution option', () => {
     expect(DEFAULT_WAN22_VIDEO_V2_RESOLUTION_PRESET).toBe('preview')
-    expect(DEFAULT_WAN22_VIDEO_V2_COST).toBe(8)
+    expect(DEFAULT_WAN22_VIDEO_V2_COST).toBe(6)
     expect(WAN22_VIDEO_V2_RESOLUTION_OPTIONS[0]).toEqual({
       value: 'preview',
       label: '极速',
       description: '约 512p，最低价，生成更快',
-      cost: 8,
+      cost: 6,
     })
     expect(WAN22_VIDEO_V2_RESOLUTION_OPTIONS[1].description).toBe('约 720p，平衡画质与速度')
     expect(WAN22_VIDEO_V2_RESOLUTION_OPTIONS[2].description).toBe('约 810p，更清晰，生成更慢')

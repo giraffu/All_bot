@@ -20,6 +20,7 @@ from src.services.task_service_support import (
     get_acceleration_notice,
 )
 from src.services.wan22_video_v2_config import (
+    WAN22_LEGACY_IMAGE_TO_VIDEO_MODEL_PROFILE,
     get_wan22_video_v2_resolution_display,
     normalize_wan22_video_v2_resolution_preset,
 )
@@ -81,8 +82,13 @@ async def process_image_to_video_generation_task(
         "wan22_resolution_preset": normalized_resolution_preset,
         "wan22_negative_prompt": normalized_negative_prompt,
         "wan22_use_end_frame": use_end_frame_value,
+        "wan22_model_profile": WAN22_LEGACY_IMAGE_TO_VIDEO_MODEL_PROFILE,
         "wan22_chain_task_ids": normalized_chain_task_ids,
     }
+    normalized_lora_name = str(lora_name or "").strip()
+    if normalized_lora_name:
+        final_result_meta["lora_name"] = normalized_lora_name
+        final_result_meta["lora_strength"] = lora_strength
     normalized_prev_task_id = str(wan22_prev_task_id or "").strip()
     if normalized_prev_task_id:
         final_result_meta["wan22_prev_task_id"] = normalized_prev_task_id
@@ -104,6 +110,7 @@ async def process_image_to_video_generation_task(
         resolution_preset=normalized_resolution_preset,
         lora_name=lora_name,
         lora_strength=lora_strength,
+        extract_last_frame=True,
     )
     message_spec = build_generation_message_spec(
         context=context,

@@ -185,6 +185,8 @@ async def build_history_apply_context_response(
         requested_duration=requested_duration,
         duration=duration,
     )
+    if history.type in {"custom_video", "video_lora"} and requested_duration is not None:
+        duration = requested_duration
 
     return build_apply_context_response(
         post_id=post_id,

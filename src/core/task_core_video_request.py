@@ -42,7 +42,11 @@ def infer_requested_output_metadata(
 
 
 def infer_requested_billing_resolution(inputs: dict, task_type: str) -> str | None:
-    return normalize_requested_billing_resolution(inputs.get("resolution"), task_type)
+    for key in ("resolution", "resolution_preset", "wan22_resolution_preset"):
+        normalized = normalize_requested_billing_resolution(inputs.get(key), task_type)
+        if normalized is not None:
+            return normalized
+    return None
 
 
 def parse_resolution_edge(resolution: object) -> int:

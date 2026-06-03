@@ -1,7 +1,12 @@
+import asyncio
+import subprocess
+import tempfile
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from agent_result_assets import (
+    WAN22_AIO_VIDEO_TASK_TYPES,
     resolve_comfy_view_type,
     resolve_history_extra_output_assets,
     resolve_history_result_asset,
@@ -42,6 +47,101 @@ def _resolve_content_type(file_name: str) -> str:
     if lower_name.endswith(".jpg") or lower_name.endswith(".jpeg"):
         return "image/jpeg"
     return "image/png"
+
+
+def _build_fallback_last_frame_object_name(primary_object_name: str) -> str:
+    stem = str(primary_object_name or "").rsplit(".", 1)[0]
+    if "_video_" in stem:
+        prefix, suffix = stem.rsplit("_video_", 1)
+        stem = f"{prefix}_last_frame_{suffix}"
+    elif stem.endswith("_video"):
+        stem = f"{stem[:-6]}_last_frame"
+    else:
+        stem = f"{stem}_last_frame"
+    return f"{stem}.png"
+
+
+def _probe_video_duration_seconds(input_path: Path) -> float | None:
+    result = subprocess.run(
+        [
+            "ffprobe",
+            "-v",
+            "error",
+            "-show_entries",
+            "format=duration",
+            "-of",
+            "default=noprint_wrappers=1:nokey=1",
+            str(input_path),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        return None
+    try:
+        return float(result.stdout.strip())
+    except (TypeError, ValueError):
+        return None
+
+
+def _run_last_frame_ffmpeg(input_path: Path, output_path: Path) -> bool:
+    duration = _probe_video_duration_seconds(input_path)
+    commands: list[list[str]] = []
+    if duration and duration > 0:
+        commands.append(
+            [
+                "ffmpeg",
+                "-y",
+                "-ss",
+                f"{max(duration - 0.08, 0):.3f}",
+                "-i",
+                str(input_path),
+                "-frames:v",
+                "1",
+                str(output_path),
+            ]
+        )
+    commands.append(
+        [
+            "ffmpeg",
+            "-y",
+            "-sseof",
+            "-0.5",
+            "-i",
+            str(input_path),
+            "-frames:v",
+            "1",
+            str(output_path),
+        ]
+    )
+
+    for command in commands:
+        result = subprocess.run(command, check=False, capture_output=True)
+        if (
+            result.returncode == 0
+            and output_path.exists()
+            and output_path.stat().st_size
+        ):
+            return True
+    return False
+
+
+def _extract_last_frame_from_video_bytes(video_bytes: bytes, logger) -> bytes | None:
+    if not video_bytes:
+        return None
+    try:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            input_path = Path(tmpdir) / "input.mp4"
+            output_path = Path(tmpdir) / "last_frame.png"
+            input_path.write_bytes(video_bytes)
+            if not _run_last_frame_ffmpeg(input_path, output_path):
+                logger.warning("Failed to extract Wan22 fallback last frame with ffmpeg")
+                return None
+            return output_path.read_bytes()
+    except Exception as exc:
+        logger.warning("Failed to extract Wan22 fallback last frame: %s", exc)
+        return None
 
 
 async def materialize_task_outputs(
@@ -115,6 +215,24 @@ async def materialize_task_outputs(
             content_type=_resolve_content_type(extra_filename),
             file_data=extra_file_data,
         )
+
+    if (
+        task_type in WAN22_AIO_VIDEO_TASK_TYPES
+        and "last_frame" not in materialized_extra_outputs
+        and primary.content_type == "video/mp4"
+    ):
+        fallback_last_frame = await asyncio.to_thread(
+            _extract_last_frame_from_video_bytes,
+            primary.file_data,
+            logger,
+        )
+        if fallback_last_frame:
+            materialized_extra_outputs["last_frame"] = MaterializedExtraOutput(
+                object_name=_build_fallback_last_frame_object_name(primary.object_name),
+                media_type="image",
+                content_type="image/png",
+                file_data=fallback_last_frame,
+            )
 
     return MaterializedTaskOutputs(
         primary=primary,

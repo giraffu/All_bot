@@ -138,11 +138,11 @@ def test_wan22_strategy_inherits_default_payload_and_upload_paths():
 @pytest.mark.parametrize(
     ("resolution_preset", "expected_cost"),
     [
-        ("preview", 8),
-        ("fast", 8),
+        ("preview", 6),
+        ("fast", 6),
         ("standard", 20),
         ("hd", 30),
-        ("invalid", 8),
+        ("invalid", 6),
     ],
 )
 def test_wan22_strategy_cost_follows_resolution_preset(
@@ -601,6 +601,7 @@ async def test_base_video_strategy_routes_image_to_video_modes_by_lora_name(
             width=512,
             height=512,
             length=5,
+            extract_last_frame=True,
         )
         submit_edit_mock.assert_not_awaited()
     else:

@@ -61,9 +61,9 @@ def test_infer_legacy_tier_video_requested_duration(
 @pytest.mark.parametrize(
     ("width", "height", "task_type", "expected_billing_resolution"),
     [
-        (720, 1280, "custom_video", "720"),
-        (512, 768, "custom_video", "512"),
-        (1024, 1536, "video_lora", "1024"),
+        (720, 1280, "custom_video", "standard"),
+        (512, 768, "custom_video", "preview"),
+        (1024, 1536, "video_lora", "hd"),
     ],
 )
 def test_infer_billing_resolution_from_dimensions_uses_short_side_for_tier_video(
@@ -80,8 +80,8 @@ def test_infer_billing_resolution_from_dimensions_uses_short_side_for_tier_video
     [
         ("ltx_video", 20, 18, 20),
         ("ltx_video", None, 18, 20),
-        ("custom_video", None, 9, 8),
-        ("video_lora", None, 11, 10),
+        ("custom_video", None, 9, 5),
+        ("video_lora", None, 11, 5),
         ("image", None, 9, None),
     ],
 )

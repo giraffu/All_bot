@@ -148,12 +148,16 @@ describe('CustomFeatures Wan22 result actions', () => {
 
   it('shows extend and regenerate without the generic continue action', () => {
     const wrapper = mountView()
+    const actions = wrapper.find('.lab-workbench__result-actions')
 
     expect(wrapper.text()).toContain('下载结果')
     expect(wrapper.text()).toContain('扩展生成')
     expect(wrapper.text()).toContain('重新生成')
     expect(wrapper.text()).not.toContain('继续生成')
     expect(wrapper.text()).not.toContain('拼接')
+    expect(actions.exists()).toBe(true)
+    expect(actions.classes()).toContain('flex')
+    expect(actions.classes()).not.toContain('grid-cols-1')
   })
 
   it('shows stitch only for chained segments', () => {

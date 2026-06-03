@@ -29,7 +29,8 @@ test('decideTaskResultFromResponse resolves when result url becomes available', 
   assert.deepEqual(decision, {
     type: 'resolved',
     resultUrl: 'https://cdn.example/result.png',
-    extraOutputs: {}
+    extraOutputs: {},
+    resultMeta: {}
   })
 })
 
@@ -137,6 +138,7 @@ test('applyTaskResultResponseToTask transitions from pending_result retries to s
     awaitingResult: false,
     resultUrl: 'https://cdn.example/final.png',
     extraOutputs: {},
+    resultMeta: {},
     error: undefined
   })
 })

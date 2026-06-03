@@ -12,13 +12,13 @@ export const WAN22_VIDEO_V2_RESOLUTION_OPTIONS: Array<{
   description: string
   cost: number
 }> = [
-  { value: 'preview', label: '极速', description: '约 512p，最低价，生成更快', cost: 8 },
+  { value: 'preview', label: '极速', description: '约 512p，最低价，生成更快', cost: 6 },
   { value: 'standard', label: '标准', description: '约 720p，平衡画质与速度', cost: 20 },
   { value: 'hd', label: '高清', description: '约 810p，更清晰，生成更慢', cost: 30 },
 ]
 
 export const DEFAULT_WAN22_VIDEO_V2_COST =
-  WAN22_VIDEO_V2_RESOLUTION_OPTIONS.find(option => option.value === DEFAULT_WAN22_VIDEO_V2_RESOLUTION_PRESET)?.cost ?? 8
+  WAN22_VIDEO_V2_RESOLUTION_OPTIONS.find(option => option.value === DEFAULT_WAN22_VIDEO_V2_RESOLUTION_PRESET)?.cost ?? 6
 
 export const normalizeWan22VideoV2ResolutionPreset = (
   value: string | null | undefined,

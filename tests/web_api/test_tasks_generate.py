@@ -149,8 +149,8 @@ async def test_web_apply_submit_cost_for_custom_video(monkeypatch):
         "task-1", current_user=_build_current_user(), db=apply_session
     )
 
-    assert apply_context.billing_resolution == "720"
-    assert apply_context.duration == 8
+    assert apply_context.billing_resolution == "standard"
+    assert apply_context.duration == 5
     assert apply_context.prompt == "cinematic action shot"
 
     monitor_calls, deduct_credits = _patch_web_generate_dependencies(monkeypatch)
@@ -159,7 +159,7 @@ async def test_web_apply_submit_cost_for_custom_video(monkeypatch):
         task_type="custom_video",
         inputs={
             "images": ["123/input_images/base.png"],
-            "resolution": int(apply_context.billing_resolution),
+            "resolution_preset": apply_context.billing_resolution,
             "duration": apply_context.requested_duration or apply_context.duration,
             "prompt": apply_context.prompt,
         },
@@ -171,14 +171,14 @@ async def test_web_apply_submit_cost_for_custom_video(monkeypatch):
         request, current_user=_build_current_user()
     )
 
-    assert response.cost == 36
+    assert response.cost == 20
     assert response.balance_remaining == 888
     deduct_credits.assert_awaited_once()
     assert len(monitor_calls) == 1
-    assert monitor_calls[0]["cost"] == 36
+    assert monitor_calls[0]["cost"] == 20
     submission_context = monitor_calls[0]["submission_context"]
-    assert submission_context.billing_resolution == "720"
-    assert submission_context.requested_duration == 8
+    assert submission_context.billing_resolution == "standard"
+    assert submission_context.requested_duration == 5
 
 
 @pytest.mark.asyncio
@@ -207,8 +207,8 @@ async def test_web_apply_submit_cost_for_video_lora(monkeypatch):
         "task-2", current_user=_build_current_user(), db=apply_session
     )
 
-    assert apply_context.billing_resolution == "1024"
-    assert apply_context.duration == 8
+    assert apply_context.billing_resolution == "hd"
+    assert apply_context.duration == 5
     assert apply_context.prompt == "glowing neon city"
     assert apply_context.lora_name == "BreastGrow"
     assert apply_context.lora_strength == 0.8
@@ -219,7 +219,7 @@ async def test_web_apply_submit_cost_for_video_lora(monkeypatch):
         task_type="video_lora",
         inputs={
             "images": ["123/input_images/base.png"],
-            "resolution": int(apply_context.billing_resolution),
+            "resolution_preset": apply_context.billing_resolution,
             "duration": apply_context.requested_duration or apply_context.duration,
             "prompt": apply_context.prompt,
             "lora_name": apply_context.lora_name,
@@ -233,12 +233,12 @@ async def test_web_apply_submit_cost_for_video_lora(monkeypatch):
         request, current_user=_build_current_user()
     )
 
-    assert response.cost == 72
+    assert response.cost == 30
     assert response.balance_remaining == 888
     deduct_credits.assert_awaited_once()
     assert len(monitor_calls) == 1
-    assert monitor_calls[0]["cost"] == 72
+    assert monitor_calls[0]["cost"] == 30
     submission_context = monitor_calls[0]["submission_context"]
-    assert submission_context.billing_resolution == "1024"
-    assert submission_context.requested_duration == 8
+    assert submission_context.billing_resolution == "hd"
+    assert submission_context.requested_duration == 5
     assert submission_context.log_prompt == "[模型: BreastGrow] [强度: 0.80] glowing neon city"

@@ -52,7 +52,7 @@
 ### 0. 当前支持概览
 - **普通图生视频 / 自定义图生视频**：上游类型仍是 `custom_video` / `video_lora`，执行面统一入队 `TaskType.IMAGE_TO_VIDEO`，底层 workflow 为 `Wan22AioV81.json`。
 - **旧 LoRA 图生视频 (`video_lora`)**：继续接收 `lora_name` 前缀，由 `workflow_task_patchers.py` 按高噪/低噪双节点动态补入。`custom_video` 不带 LoRA 时会清空 LoRA 槽；`wan22_video_v2` 始终清空额外 LoRA 槽。
-- **规格口径**：旧图生视频固定 5 秒，分辨率和计费与 v2 对齐为 `preview=8`、`standard=20`、`hd=30`；旧投稿 `512p/720p/1024p` 分别映射为 `preview/standard/hd`。
+- **规格口径**：旧图生视频固定 5 秒，分辨率和计费与 v2 对齐为 `preview=6`、`standard=20`、`hd=30`；旧投稿 `512p/720p/1024p` 分别映射为 `preview/standard/hd`。
 - **高级图生视频 (`ltx_video`)**：现已升级为 `lora_items` 多选协议。Bot FSM、Web 单图视频页、模板应用面板都会提交最多 3 个 LoRA 项，每项独立携带 `name + strength`；旧 `lora_name / lora_strength` 仍保留兼容入口，但不再是主文档口径。
 
 ### 1. 模型文件部署 (Deployment)
@@ -74,7 +74,7 @@
 - **文件定位**：`backend/app/models.py` 和 `backend/app/main_simple_task_routes.py`。
 - **实施状态**：**无需修改**。
   - 后端网关已经定义了 `VideoLoraRequest`。
-  - 当前主 simple route 是 `/image_to_video`；兼容入口 `/perfect_video_lora` 仍会接收该请求，并统一**转化为 `TaskType.IMAGE_TO_VIDEO`** 推入 Redis 队列，同时将 `lora_name`、`resolution_preset`、`end_image` 等参数携带给下游 Worker。
+  - 当前主 simple route 是 `/image_to_video`；兼容入口 `/perfect_video_lora` 仍会接收该请求，并统一**转化为 `TaskType.IMAGE_TO_VIDEO`** 推入 Redis 队列，同时将 `lora_name`、`resolution_preset`、`end_image`、`extract_last_frame=True` 等参数携带给下游 Worker。
   - `video_edit` 仍继续走 `perfect_video_edit.json`，用于其它快捷视频，不应混入旧图生视频 LoRA 逻辑。
 
 ### 4. Worker 层：工作流动态注入 (Workflow Patcher)
@@ -85,6 +85,7 @@
     - `26.inputs.lora_1.lora = {lora_name}_high_noise.safetensors`
     - `18.inputs.lora_1.lora = {lora_name}_low_noise.safetensors`
   - 无 LoRA 的 `custom_video` 与 `wan22_video_v2` 必须清空 `26` / `18` 的 LoRA slot，避免 workflow 模板残留旧模型。
+  - 扩展生成、分段重生成和整链拼接依赖 `extra_outputs.last_frame`。Worker 会优先读取 Comfy `2503` 尾帧输出；若个别 Comfy 实例只返回主 MP4，`agent_result_materialization.py` 会用 worker 镜像内的 `ffmpeg/ffprobe` 从主视频补抽最后一帧，因此 `workers/Dockerfile` 必须保留 ffmpeg 依赖。
   - > ⚠️ **节点硬编码警告**：如果后续重导 `Wan22AioV81.json`，必须复核 `2616`、`2617`、`26`、`18`、`2612`、`23`、`24`、`2368`、`2371` 是否仍满足当前补丁与 mappings 逻辑，否则主模型、LoRA、分辨率或首尾帧输入会失效。
 
 ### 5. 验证与发布 (Testing & Restart)

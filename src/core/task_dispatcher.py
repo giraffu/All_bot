@@ -465,6 +465,7 @@ class BaseVideoStrategy(BaseTaskStrategy):
                 width=512,
                 height=512,
                 length=5,
+                extract_last_frame=True,
             )
         elif self.mode in FACE_VIDEO_TASK_TYPES:
             face_img, video_path = _resolve_face_video_saved_inputs(

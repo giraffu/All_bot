@@ -75,8 +75,8 @@ def test_get_wan22_video_v2_resolution_display_includes_approx_resolution():
 
 
 def test_get_wan22_video_v2_cost_uses_resolution_preset():
-    assert get_wan22_video_v2_cost("preview") == 8
-    assert get_wan22_video_v2_cost("fast") == 8
+    assert get_wan22_video_v2_cost("preview") == 6
+    assert get_wan22_video_v2_cost("fast") == 6
     assert get_wan22_video_v2_cost("standard") == 20
     assert get_wan22_video_v2_cost("hd") == 30
-    assert get_wan22_video_v2_cost("not-valid") == 8
+    assert get_wan22_video_v2_cost("not-valid") == 6

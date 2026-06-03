@@ -4,7 +4,7 @@ WAN22_VIDEO_V2_RESOLUTION_PRESETS = {
         "label_en": "Fast",
         "precision_preset": "0.26 MP - Preview",
         "approx_resolution": "512p",
-        "cost": 8,
+        "cost": 6,
     },
     "standard": {
         "label_zh": "标准",

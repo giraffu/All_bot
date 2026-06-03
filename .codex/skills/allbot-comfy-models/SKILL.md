@@ -59,7 +59,7 @@ description: "处理图生图/图生视频的附加模型(LoRA/ControlNet)配置
   - `{lora_name}_low_noise.safetensors`
   - *(例如：如果你的模型代号叫 `Dance`，则需要提供 `Dance_high_noise.safetensors` 和 `Dance_low_noise.safetensors`)*
 - 将上述两个文件放置到 ComfyUI 宿主机映射的对应 LoRA 模型目录中（如 `models/loras/`）。
-- 旧图生视频固定 5 秒，分辨率和计费与 v2 对齐为 `preview=8`、`standard=20`、`hd=30`；旧投稿 `512p/720p/1024p` 分别映射为 `preview/standard/hd`。
+- 旧图生视频固定 5 秒，分辨率和计费与 v2 对齐为 `preview=6`、`standard=20`、`hd=30`；旧投稿 `512p/720p/1024p` 分别映射为 `preview/standard/hd`。
 
 ### 2. Bot 层：更新用户交互菜单 (UI & FSM)
 - **文件定位**：`src/handlers/fsm/image_to_video_fsm.py`
@@ -73,7 +73,7 @@ description: "处理图生图/图生视频的附加模型(LoRA/ControlNet)配置
 - **文件定位**：`backend/app/models.py` 和 `backend/app/main_simple_task_routes.py`。
 - **实施状态**：**无需修改**。
   - 后端网关已经定义了 `VideoLoraRequest`。
-  - `/image_to_video` 和兼容入口 `/perfect_video_lora` 会入队到执行面 `TaskType.IMAGE_TO_VIDEO`，同时将 `lora_name`、`resolution_preset`、`end_image` 等参数携带给下游 Worker。
+  - `/image_to_video` 和兼容入口 `/perfect_video_lora` 会入队到执行面 `TaskType.IMAGE_TO_VIDEO`，同时将 `lora_name`、`resolution_preset`、`end_image`、`extract_last_frame=True` 等参数携带给下游 Worker。
   - `video_edit` 仍继续走 `perfect_video_edit.json`，用于其它快捷视频，不应混入旧图生视频 LoRA 逻辑。
 
 ### 4. Worker 层：工作流动态注入 (Workflow Patcher)
@@ -84,6 +84,7 @@ description: "处理图生图/图生视频的附加模型(LoRA/ControlNet)配置
     - `26.inputs.lora_1.lora = {lora_name}_high_noise.safetensors`
     - `18.inputs.lora_1.lora = {lora_name}_low_noise.safetensors`
   - 无 LoRA 的 `custom_video` 与 `wan22_video_v2` 必须清空 `26` / `18` 的 LoRA slot，避免 workflow 模板残留旧模型。
+  - 扩展生成、分段重生成和整链拼接依赖 `extra_outputs.last_frame`。Worker 会优先读取 Comfy `2503` 尾帧输出；若个别 Comfy 实例只返回主 MP4，`agent_result_materialization.py` 会用 worker 镜像内的 `ffmpeg/ffprobe` 从主视频补抽最后一帧，因此 `workers/Dockerfile` 必须保留 ffmpeg 依赖。
   - > ⚠️ **节点硬编码警告**：如果后续重导 `Wan22AioV81.json`，必须复核 `2616`、`2617`、`26`、`18`、`2612`、`23`、`24`、`2368`、`2371` 是否仍满足当前补丁与 mappings 逻辑，否则主模型、LoRA、分辨率或首尾帧输入会失效。
 
 ### 5. 验证与发布 (Testing & Restart)

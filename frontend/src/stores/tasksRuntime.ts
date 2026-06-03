@@ -53,6 +53,8 @@ export interface PersistableTaskLike extends RuntimeTaskLike {
 }
 
 export const STALE_ACTIVE_TASK_TTL_MS = 24 * 60 * 60 * 1000
+export const POLL_TASK_RESULT_MAX_RETRIES = 120
+export const POLL_TASK_RESULT_RETRY_DELAY_MS = 1500
 
 export function touchTaskActivity<T extends RuntimeTaskLike>(
   task: T,
@@ -114,7 +116,7 @@ export async function pollTaskResult<T extends RuntimeTaskLike>(
       currentTask,
       res.data as Parameters<typeof applyTaskResultResponseToTask<T>>[1],
       retryCount,
-      10
+      POLL_TASK_RESULT_MAX_RETRIES
     )
     Object.assign(currentTask, touchTaskActivity(transition.task))
 
@@ -131,7 +133,7 @@ export async function pollTaskResult<T extends RuntimeTaskLike>(
           deps,
           transition.nextRetryCount ?? retryCount + 1
         )
-      }, 1500)
+      }, POLL_TASK_RESULT_RETRY_DELAY_MS)
       return
     }
 
@@ -142,7 +144,7 @@ export async function pollTaskResult<T extends RuntimeTaskLike>(
       currentTask,
       error?.response?.status,
       retryCount,
-      10
+      POLL_TASK_RESULT_MAX_RETRIES
     )
     Object.assign(currentTask, touchTaskActivity(transition.task))
 
@@ -159,7 +161,7 @@ export async function pollTaskResult<T extends RuntimeTaskLike>(
           deps,
           transition.nextRetryCount ?? retryCount + 1
         )
-      }, 1500)
+      }, POLL_TASK_RESULT_RETRY_DELAY_MS)
       return
     }
 

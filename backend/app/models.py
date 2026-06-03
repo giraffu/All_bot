@@ -147,6 +147,7 @@ class VideoLoraRequest(BaseModel):
     width: int = 512
     height: int = 512
     length: int = 5
+    extract_last_frame: bool = True
     priority: int = 0
 
 
