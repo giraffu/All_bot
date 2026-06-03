@@ -7,6 +7,14 @@ import { useAuthStore } from '@/stores/auth'
 
 type PayMethod = 'alipay' | 'wxpay' | 'ton'
 type OrderStatus = 'PENDING' | 'SUCCESS' | 'FAILED' | 'TIMEOUT'
+type TelegramPaymentWebApp = {
+  openLink?: (url: string, options?: { try_instant_view?: boolean }) => void
+}
+type TelegramPaymentWindow = Window & {
+  Telegram?: {
+    WebApp?: TelegramPaymentWebApp
+  }
+}
 
 const DEFAULT_TON_RECEIVER = 'UQC2q_W2d061mO_g3zB-hK12v0p2u44-nI5z9F82L1j88g7b'
 const MAX_POLL_COUNT = 100
@@ -18,6 +26,40 @@ const TONCONNECT_TWA_RETURN_URL =
   (import.meta.env.VITE_TELEGRAM_BOT_USERNAME
     ? `https://t.me/${import.meta.env.VITE_TELEGRAM_BOT_USERNAME}`
     : undefined)
+
+export const getTelegramPaymentWebApp = (): TelegramPaymentWebApp | undefined =>
+  (window as TelegramPaymentWindow).Telegram?.WebApp
+
+export const hasTelegramExternalLinkOpener = () =>
+  typeof getTelegramPaymentWebApp()?.openLink === 'function'
+
+export const openExternalPaymentUrl = (
+  payUrl: string,
+  preopenedWindow?: Window | null
+) => {
+  const telegramWebApp = getTelegramPaymentWebApp()
+  if (typeof telegramWebApp?.openLink === 'function') {
+    try {
+      telegramWebApp.openLink(payUrl, { try_instant_view: false })
+      if (preopenedWindow && !preopenedWindow.closed) {
+        preopenedWindow.close()
+      }
+      return
+    } catch (error) {
+      console.warn('Telegram openLink failed, falling back to browser navigation:', error)
+    }
+  }
+
+  if (preopenedWindow && !preopenedWindow.closed) {
+    preopenedWindow.location.href = payUrl
+    return
+  }
+
+  const openedWindow = window.open(payUrl, '_blank')
+  if (!openedWindow) {
+    window.location.href = payUrl
+  }
+}
 
 export function useBillingPayments() {
   const authStore = useAuthStore()
@@ -209,7 +251,9 @@ export function useBillingPayments() {
     if (!selectedPlan.value) return
 
     isPaying.value = true
-    const newWin = window.open('about:blank', '_blank')
+    const newWin = hasTelegramExternalLinkOpener()
+      ? null
+      : window.open('about:blank', '_blank')
     const payType = payMethod.value === 'wxpay' ? 'wxpay' : 'alipay'
 
     try {
@@ -224,12 +268,7 @@ export function useBillingPayments() {
       }
 
       new URL(pay_url)
-      if (newWin) {
-        newWin.location.href = pay_url
-      } else {
-        window.location.href = pay_url
-        return
-      }
+      openExternalPaymentUrl(pay_url, newWin)
 
       showPaymentModal.value = true
       orderStatus.value = 'PENDING'
