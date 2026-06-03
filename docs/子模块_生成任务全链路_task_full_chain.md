@@ -176,6 +176,8 @@ Web 统一入口在：
 - Bot `task_service_flow.py` 与 Web lifecycle monitor 现共享 `task_lifecycle_runner.py` 的 monitor->route 骨架；Web runtime monitor 与 `task_web_finalizer.py` 共享 terminal router
 - 默认 provider 注册由应用入口承担，不由 `core` 模块导入时自动注册
 - 单测优先走显式 `dependencies` 或 `*_func` seam
+- 当前 `TaskCoreServiceProviders` 与 capability dataclass 仍有不少 `Any` 类型，是后续契约强化重点；新增 provider/capability 时优先补 `Protocol` 或精确 `Callable` 类型，不要继续扩大弱类型字段
+- provider 运行时注册仍依赖模块级全局状态，测试和离线路径应优先显式传入 dependencies，避免把模块级 patch 当成主测试策略
 
 ### 6.3 双 ID 语义
 当前链路中始终同时存在两个 ID：
@@ -341,6 +343,11 @@ Worker 执行流程：
 
 执行失败则走：
 - `/api/agent/task/status` 上报 `failed`
+
+维护口径：
+- `workers/comfy_agent/agent_main.py` 已拆出输入准备、workflow 执行、结果物化、结果上报等 helper，但 `process_task(...)` 仍是当前 Worker 主编排热点。
+- 新增输出类型、失败补偿、取消检查、重试策略或上报语义时，优先把阶段逻辑下沉到对应 helper，并补 `tests/workers/test_comfy_agent.py` / `tests/workers/test_agent_result_materialization.py` focused tests。
+- `_route_ws_event(...)` 仍承担多种 ComfyUI WebSocket 事件分发；新增事件类型时优先拆 handler map 或独立 handler，避免继续扩大单函数条件分支。
 
 ## 10. 状态回流与结果落地
 ### 10.1 Worker 到执行面

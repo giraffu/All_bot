@@ -14,7 +14,7 @@ description: "处理任务提交流程、provider/capability 装配、双 ID 运
 - 排障时不要只盯某一层；必须先判断问题位于前端提交、Web API、task core、执行面还是 worker/workflow
 
 ## 1. 模块功能描述
-- **Facade + Provider 架构**：`src/core/task_core.py` 仅保留稳定 facade；真实默认装配由 `task_core_service_providers.py`、`task_core_default_dependencies.py`、`task_core_submission.py`、`src/services/task_web_monitor.py`、`task_core_runtime.py` 承担。runtime-specific persistence 默认装配在 `src/task_core_persistence_defaults.py`，core 仅依赖 `src/core/user_logger_protocol.py`。
+- **Facade + Provider 架构**：`src/core/task_core.py` 仅保留稳定 facade；真实默认装配由 `task_core_service_providers.py`、`task_core_default_dependencies.py`、`task_core_submission.py`、`src/services/task_web_side_effects.py`、`src/services/task_web_lifecycle_monitor.py`、`src/services/task_web_terminal_finalization.py`、`task_core_runtime.py` 承担。runtime-specific persistence 默认装配在 `src/task_core_persistence_defaults.py`，core 仅依赖 `src/core/user_logger_protocol.py`。
 - **统一任务提交**：`process_and_submit_task(...)` 负责并发锁、扣费、输入准备、Saga 提交、side effect 挂载与失败补偿。
 - **双 ID 生命周期**：系统同时区分 `registry_task_id` 与 `backend_task_id`；恢复、取消、强制终止、僵尸任务清理都必须显式区分两者。
 - **Web side-effect monitor**：Web 提交成功后会异步挂载 monitor，负责成功持久化、取消退款、失败退款与 runtime cleanup。
@@ -46,6 +46,8 @@ description: "处理任务提交流程、provider/capability 装配、双 ID 运
 - Web finalizer 在多 worker 下可能并发扫描 pending 队列；拿到 Redis lock 后必须重新读取单条 pending record，不能使用 `hgetall` 的旧快照继续收口。
 - Web 成功历史落库必须对 `user_id + task_id + source` 幂等；重复收口时不能重复插入 `History`，也不能重复触发 Web history R2 warmup。
 - 默认依赖构造必须保持惰性，只在缺失且确实需要时才解析 provider，避免测试被误伤。
+- `TaskCoreServiceProviders` 与 capability dataclass 当前仍存在不少 `Any` 字段；新增 provider/capability 时优先补 `Protocol` 或精确 `Callable` 类型，不要继续扩大弱类型契约。
+- provider 注册依赖模块级全局状态；测试和离线路径优先显式传入 `dependencies`，避免继续把模块级 monkeypatch 当成主路径。
 
 ## 4. 边界条件处理
 - **客户端断连**：若客户端断连，仍需保证未成功提交的任务释放并发锁；已提交成功的 Web 任务由 side-effect monitor 继续收口。
@@ -70,7 +72,7 @@ description: "处理任务提交流程、provider/capability 装配、双 ID 运
 - **业务编排层**：`task_core.py` facade、submission、runtime、web monitor、persistence
 - **派发层**：`task_dispatcher.py`、`image_service.py`、`api_client.py`
 - **执行面**：Central API、QueueManager、agent router
-- **节点层**：`workers/comfy_agent/agent_main.py` 现已收口为 orchestration 壳；输入准备、工作流执行、结果物化、结果上传/回报分别下沉到 `agent_input_preparation.py`、`agent_workflow_execution.py`、`agent_result_materialization.py`、`agent_result_reporting.py` 等模块，再配合 `workflow_patcher.py`、workflow JSON、`mappings.json`
+- **节点层**：`workers/comfy_agent/agent_main.py` 已拆出输入准备、工作流执行、结果物化、结果上传/回报 helper，但 `process_task(...)` 仍是 Worker 主编排热点。新增输出类型、失败补偿、取消检查、重试策略或上报语义时，优先下沉到 `agent_input_preparation.py`、`agent_workflow_execution.py`、`agent_result_materialization.py`、`agent_result_reporting.py` 等阶段模块，并补 Worker focused tests。
 
 重要边界：
 - Web 主入口是 `POST /api/tasks/generate`，不是旧 generation params 口径
@@ -91,6 +93,7 @@ description: "处理任务提交流程、provider/capability 装配、双 ID 运
 - `task_dispatcher.py` 是否接入对应策略与提交方法
 - `image_service.py` / `api_client.py` 是否已新增底层提交调用
 - 是否需要 provider/capability 注入或 side-effect 调整
+- 若新增 provider/capability，是否避免继续使用裸 `Any`，并优先提供可测试的显式 dependencies seam
 
 ### 7.3 执行面
 - 若走标准 simple route，检查 `backend/app/main_simple_task_routes.py`
@@ -103,6 +106,7 @@ description: "处理任务提交流程、provider/capability 装配、双 ID 运
 - `workers/comfy_agent/workflows/mappings.json` 是否补了参数节点映射
 - `workflow_patcher.py` 是否支持新增参数
 - 目标环境 `SUPPORTED_TASK_TYPES` 是否包含该类型
+- 是否确认 `backend/workflows` 与 `workers/comfy_agent/workflows` 没有产生 Central 校验与 Worker 执行漂移
 
 ### 7.5 结果与回归
 - `task_result_service.py` 是否能返回结果：Web owner result 优先 R2，延迟敏感路径必须用 R2 公网 HEAD 快探测且不持有 DB 只读事务等待对象存储；R2 未 warmup 时图片可短签 MinIO fallback，视频必须返回 `pending_result` 等 R2；前端 `pollTaskResult` 等待窗口需覆盖分钟级 R2 warmup，避免 99% 阶段网络失败或过早停止轮询

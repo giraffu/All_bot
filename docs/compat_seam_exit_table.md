@@ -68,6 +68,16 @@
 | `src/database/models.py:Order.telegram_id` | 历史数据库列名，实际关联 `users.id` 内部用户主键 | 正式环境尚未执行迁移时的遗留 schema 名称 | 测试环境已实际执行 Alembic `7c0a4d5e6f71`，`orders` 物理列已切到 `internal_user_id`，ORM 也已删除 `telegram_id` alias；后续只需在生产切换窗口按同一 migration 执行正式环境升级 | `测试已完成 / 生产待执行` |
 | `src/services/order_v2_service.py` 的 `ORDER:` / `ORDER_V2:` 双载荷兼容 | 兼容历史支付回调载荷格式与旧本地单号语义 | 旧支付链路、回调解析与 payment presenter 的 `legacy_order_id` 展示 | 对外查询全面切到 `business_order_id`，旧支付通道不再回传 `ORDER:` 载荷，Dashboard/Web 不再展示旧本地单号为主 ID | `待支付链路收口后` |
 | `src/services/user_persistence_service.py` 的 `id == tg_id` legacy adopt 分支 | 兼容早期内部用户主键与 Telegram ID 混用的数据 | 仍存在历史用户记录但缺少 `telegram_id` 的存量数据 | 先确认正式/测试环境中不再存在 `id == tg_id && telegram_id is null` 的用户；随后移除 `_get_legacy_user_by_internal_id(...)` / `_adopt_legacy_internal_user(...)`，并保留 focused tests 作为删除前门禁 | `待数据治理完成后` |
+| `src/core/gallery_feed_queries.py` | `src.services.gallery_feed_queries` 的单行 re-export | 2026-06-03 静态扫描未发现生产或测试静态引用 | 删除前再跑 `rg "src.core.gallery_feed_queries"` 与 gallery focused tests；删除后同步热点门禁里 core compat 口径 | `可直接删除候选` |
+| `src/services/wan22_video_v2_config.py` | `src.domain_config.wan22_aio_video` 的兼容 re-export | `tg_task_result_presentation`、Wan22 extension service、FSM、history/gallery presenter 与部分测试仍引用旧路径 | 先把生产与测试引用迁到 `src.domain_config.wan22_aio_video`，再删除 re-export；迁移时不得改变 `custom_video/video_lora` 与 `wan22_video_v2` 的公开类型语义 | `迁引用后删除` |
+| `src/services/wan22_video_v2_context.py` | Wan22 chain context helper 的兼容 re-export | `src/services/wan22_video_v2_extension_service.py` 仍引用旧路径 | 同步迁到 `src.domain_config.wan22_aio_video` 或新的真实上下文模块，并补 Wan22 链路 focused tests 后删除 | `迁引用后删除` |
+| `backend/workflows/*` 与 `workers/comfy_agent/workflows/*` 双目录 workflow 资产 | Central 校验/镜像构建副本与 Worker 实际执行副本并存 | backend Dockerfile、backend compose 挂载、worker 镜像与运行时 workflow 选择链路 | 明确唯一 workflow 事实源；若保留双目录，必须建立同步/校验规则并在变更说明中证明 Central 校验与 Worker 执行不会漂移 | `待资产事实源收口` |
+
+## 冗余清理候选
+
+| 对象 | 当前状态 | 清理前置条件 | 建议动作 |
+| --- | --- | --- | --- |
+| `src/context.py:trace_id_ctx` | 2026-06-03 静态扫描未发现引用；实际 trace 语义使用 `asgi_correlation_id.correlation_id` | 删除前再跑 `rg "trace_id_ctx"`，确认没有动态引用或计划中的中间件使用 | 直接删除该变量，保留正在使用的 `user_id_ctx` |
 
 ## 保留观察
 

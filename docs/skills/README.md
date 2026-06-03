@@ -12,8 +12,8 @@
 | `allbot-gallery-storage` | MinIO/R2、广场投稿、评论、收藏、apply-context、对象存储生命周期 | 修改社区分享、互动、防刷、模板应用上下文、媒体 URL 策略时 |
 | `allbot-tg-fsm` | Telegram FSM、全局菜单黑盒退出、callback 注册路由、临时文件下载清理、语言切换同步 | 修改 Telegram 对话流、菜单跳转、文件交互时 |
 | `allbot-llm-ops` | CS Bot、LangGraph、LM Studio、本地工具化问答、群聊意图识别 | 修改 AI 客服、本地大模型接入、技能工具绑定时 |
-| `allbot-ops-deployment` | Docker Compose、Alembic、safe_deploy_test / safe_deploy、部署排障与恢复 | 调整部署、迁移、容器、环境变量或恢复脚本时 |
-| `allbot-comfy-models` | LoRA / ControlNet / ComfyUI 工作流参数透传与动态注入 | 修改附加模型、工作流映射、Bot 菜单参数时 |
+| `allbot-ops-deployment` | Docker Compose、Alembic、safe_deploy_test / safe_deploy、workflow 资产双目录同步、部署排障与恢复 | 调整部署、迁移、容器、环境变量、workflow 资产或恢复脚本时 |
+| `allbot-comfy-models` | LoRA / ControlNet / ComfyUI 工作流参数透传、动态注入、Central 校验副本与 Worker 执行副本一致性 | 修改附加模型、工作流映射、Bot 菜单参数时 |
 | `allbot-code-analyzer` | 全局静态分析、死代码检测、架构审查、质量评估 | 进行全盘质量分析或架构体检时 |
 | `allbot-kb-auto-updater` | 评估代码现状对知识库的影响并同步更新 docs/skills/memory | 代码新增功能、重构、接口变更后 |
 | `ops-log-monitor` | 多环境日志采集、异常归因、报告生成 | 需要排查线上日志或监控异常时 |

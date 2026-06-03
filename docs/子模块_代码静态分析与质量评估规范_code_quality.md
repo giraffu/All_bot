@@ -39,3 +39,34 @@
 - **保存文件**：将报告统一命名为 `code_analysis_report_<yyyyMMdd_HHmm>.md`，使用 UTF-8 编码，写入项目根目录的 `logs/` 文件夹下。
 - **清理中间产物**：**强制要求**在报告成功写入磁盘后，必须立即通过 Shell 命令彻底删除分析过程中产生的所有临时分析缓存、切片或暂存数据。
 - **最终输出**：排查结束时，仅在终端或对话中输出“报告已生成完毕”及文件的绝对路径，并简要总结全局量化指标与 Critical 级核心风险。**严禁输出大段代码或中间检测细节。**
+
+## 4. 2026-06-03 质量基线快照
+
+最新一次全局评估报告位于 `logs/code_analysis_report_20260603_2332.md`，评估范围覆盖 `src/`、`backend/app/`、`workers/comfy_agent/`、`cs_bot/`、`frontend/src/`、`tests/` 与核心部署脚本，并按当次要求降权或排除了 Dashboard、支付/订单/会员/affiliate 业务模块。
+
+### 4.1 当前总体结论
+- 系统整体已经稳定演进为“Bot/Web 双入口 + task core facade + Central API + Worker + Web side-effect monitor”的分层形态。
+- `src/core` 未发现直接依赖 Telegram `Update` 或 FastAPI `Request/APIRouter` 等平台对象，Core Isolation 当前成立。
+- 未发现 Critical 级架构阻断；后续重点是控制热点函数、测试耦合、workflow 资产漂移与 compat 壳残留。
+
+### 4.2 关键量化指标
+- 主代码规模约 75,857 行，测试规模约 33,634 行。
+- Python 复杂度块 1,832 个，平均圈复杂度约 2.94，整体为 A。
+- A 级复杂度约 86.8%，D 级复杂度 5 个。
+- 重复窗口估计约 2.3%，主要集中在 FSM 与生成页。
+- 静态 import graph 未发现 Python 模块强循环依赖。
+- `vulture --min-confidence 80` 未发现高置信死代码。
+- `ruff` 剩余 34 条，主要是 E402、E712 与测试小问题。
+- 主站前端 `vue-tsc --noEmit -p tsconfig.app.json` 通过。
+
+### 4.3 当前 P1/P2 整改队列
+- **workflow 资产事实源**：`backend/workflows` 与 `workers/comfy_agent/workflows` 同时存在，Central 校验与 Worker 执行可能读取不同副本。新增或修改 workflow 前必须先确认唯一事实源或同步双目录，避免镜像构建路径与 compose 运行路径漂移。
+- **task core provider 契约**：`TaskCoreServiceProviders` 与 capability dataclass 仍大量使用 `Any`，且 provider 注册依赖模块级全局状态。后续重构应优先引入 `Protocol` 或更精确的 `Callable` 类型，并让测试走显式 dependencies，而不是扩大模块级 patch。
+- **高复杂编排热点**：`workers/comfy_agent/agent_main.py::process_task`、`src/web_api/services/wan22_history_chain_service.py::stitch_wan22_history_chain_response`、`src/web_api/services/gallery_response_builder.py::build_post_responses`、`src/services/tg_task_runtime.py::monitor_task_progress` 与 `frontend/src/composables/useLabWorkbench.ts` 是下一批拆分优先级。
+- **测试耦合**：现有测试仍大量 patch `AsyncSessionLocal`、模块级导入符号、全局单例与 runtime。新增测试优先通过公开 dependencies/dataclass 或 service seam 注入能力。
+- **compat / 冗余清理**：`src/core/gallery_feed_queries.py` 当前是无引用 re-export；`src/services/wan22_video_v2_config.py` 与 `src/services/wan22_video_v2_context.py` 仍有生产引用，需先迁移到 `src.domain_config.wan22_aio_video` 后再删；`src/context.py:trace_id_ctx` 未被引用。
+
+### 4.4 知识库同步要求
+- 代码质量报告写入 `logs/`，不作为长期入口文档；重要结论应同步到本文件、热点门禁、compat 退出表以及相关 Skill。
+- 若报告发现的事实与 Skill 主张冲突，应先修 Skill，再继续开发。例如 Worker 虽已拆出多个 helper，但 `agent_main.py::process_task` 仍是当前执行链路热点，不能只写成“已完全薄壳化”。
+- 若后续清理 compat 壳或迁移测试 seam，必须同步 `docs/compat_seam_exit_table.md` 与 `scripts/check_compat_registry.sh` 覆盖口径。

@@ -27,6 +27,7 @@
 - 阶段 3：基本完成，`message_handler.py`、`users.py`、`gallery.py`、`tasks.py` 已完成主要薄控制器收口
 - 阶段 4：本轮完成收口，历史 `bot_task_service.py` compat 壳已下线，`backend/app/main.py`、`backend/app/queue_manager.py` 已通过完整阶段 4 回归
 - 阶段 7：第二批主体完成，已补齐共享详情弹层/工作台壳层 focused 回归、`MyFavorites` 组合流回归，以及 dashboard App 热点基线与独立门禁分组；但 router guard 仍未完全并入共享关闭协议，workflow 对部分新热点文件的 path 触发也仍有缺口
+- 2026-06-03 质量基线：未发现 Critical 级架构阻断，但 Worker 执行编排、Wan22 链式拼接、Gallery 响应组装、Bot 进度监控、练功房 composable 和 workflow 资产双源已进入下一批重点治理队列
 
 ## 3. 热点文件
 
@@ -58,6 +59,12 @@
 - `src/web_api/services/task_runtime_api_service.py`
 - `src/web_api/services/task_result_service.py`
 - `src/web_api/services/task_stream_api_service.py`
+- `workers/comfy_agent/agent_main.py`
+- `workers/comfy_agent/agent_input_preparation.py`
+- `workers/comfy_agent/agent_workflow_execution.py`
+- `workers/comfy_agent/agent_result_materialization.py`
+- `workers/comfy_agent/agent_result_reporting.py`
+- `src/services/tg_task_runtime.py`
 
 ### 3.2 Web 接入层
 
@@ -72,6 +79,8 @@
 - `src/web_api/services/gallery_service_mutations.py`
 - `src/web_api/services/gallery_service_comments.py`
 - `src/web_api/services/gallery_service_support.py`
+- `src/web_api/services/gallery_response_builder.py`
+- `src/web_api/services/wan22_history_chain_service.py`
 - `src/core/gallery_core.py`
 - `src/core/gallery_core_dependencies.py`
 - `src/services/gallery_feed_queries.py`
@@ -101,11 +110,33 @@
 - `frontend/src/components/GenerationWorkbenchShell.vue`
 - `frontend/src/components/template-apply/TemplateApplyWorkbenchHost.vue`
 - `frontend/src/composables/useDetailTemplateApply.ts`
+- `frontend/src/composables/useLabWorkbench.ts`
 - `frontend/src/composables/useMyLibraryPostBrowser.ts`
 - `frontend/src/composables/useTemplateApplyCloseProtocol.ts`
 - `frontend/src/composables/useGalleryDetailModalAdapter.ts`
 - `frontend/src/router/index.ts`
 - `dashboard/frontend/src/App.vue`
+
+### 3.4 生成页面重复热点
+
+- `frontend/src/views/TextToImage.vue`
+- `frontend/src/views/SingleImage.vue`
+- `frontend/src/views/ImageAndPrompt.vue`
+- `frontend/src/views/FaceSwap.vue`
+- `frontend/src/views/SingleImageToVideo.vue`
+
+这些页面仍存在相似的提交、上传、结果与状态编排逻辑。新增生成能力时，优先复用 `GenerationWorkbenchShell`、payload builder 与 composable，不要继续把状态块复制回页面。
+
+### 3.5 workflow 资产热点
+
+- `backend/workflows/*`
+- `workers/comfy_agent/workflows/*`
+- `workers/comfy_agent/workflows/mappings.json`
+- `src/workflow_mapping_validation.py`
+- `workers/comfy_agent/workflow_patcher.py`
+- `workers/comfy_agent/workflow_task_patchers.py`
+
+当前仓库仍同时存在 Central 校验副本与 Worker 执行副本。修改 workflow JSON 或 mappings 时，必须确认 Central API 校验目录与 Worker 实际执行目录一致，或在变更说明里写明只影响其中一侧的原因。
 
 ## 4. 回归触发规则
 
@@ -293,6 +324,7 @@ pytest \
 - `frontend/src/components/GenerationWorkbenchShell.vue`
 - `frontend/src/components/template-apply/TemplateApplyWorkbenchHost.vue`
 - `frontend/src/composables/useDetailTemplateApply.ts`
+- `frontend/src/composables/useLabWorkbench.ts`
 - `frontend/src/composables/useMyLibraryPostBrowser.ts`
 - `frontend/src/composables/useTemplateApplyCloseProtocol.ts`
 - `frontend/src/composables/useGalleryDetailModalAdapter.ts`
@@ -324,6 +356,7 @@ cd frontend && pnpm vitest run \
 
 - `frontend-shared` 分组当前默认就包含模板应用与生成工作台状态流相关测试，不再区分“基础壳层必跑”与“涉及时再补跑”两档
 - `useTemplateApplyCloseProtocol.ts` 已属于应纳入同组门禁的共享协议文件；在 workflow path 规则补齐前，修改该文件时应手动执行 `frontend-shared`
+- `useLabWorkbench.ts` 是练功房主状态热点；在 workflow path 规则补齐前，修改该文件时也应手动执行 `frontend-shared`，并按 Wan22 链路风险补跑 `src/features/generation/wan22Chain.test.ts` 与 `src/views/CustomFeatures.test.ts`
 
 ### 4.8 修改 dashboard App 壳层
 
@@ -337,6 +370,64 @@ cd frontend && pnpm vitest run \
 cd dashboard/frontend && npm exec -- vitest run \
   src/App.test.js
 ```
+
+### 4.9 修改 Worker / Wan22 链式视频 / Bot runtime
+
+适用文件：
+
+- `workers/comfy_agent/agent_main.py`
+- `workers/comfy_agent/agent_input_preparation.py`
+- `workers/comfy_agent/agent_workflow_execution.py`
+- `workers/comfy_agent/agent_result_materialization.py`
+- `workers/comfy_agent/agent_result_reporting.py`
+- `src/web_api/services/wan22_history_chain_service.py`
+- `src/services/tg_task_runtime.py`
+
+至少执行：
+
+```bash
+pytest \
+  tests/workers/test_comfy_agent.py \
+  tests/workers/test_agent_result_materialization.py \
+  tests/services/test_task_service_generation_wan22.py \
+  tests/services/test_task_service_completion.py \
+  tests/web_api/test_tasks_stream.py \
+  tests/web_api/test_tasks_result.py \
+  tests/web_api/test_history_response_builder.py \
+  tests/handlers/test_wan22_video_v2_fsm.py \
+  tests/handlers/test_wan22_video_v2_callbacks.py
+```
+
+说明：
+
+- `agent_main.py::process_task` 虽已拆出输入准备、执行、物化、上报 helper，但仍是当前 Worker 主编排热点；新增阶段逻辑应优先下沉到阶段 helper，并保留失败/取消/清理语义测试。
+- Wan22 整链拼接涉及查询、上传、历史写入、字段继承与响应构造，修改后要同时覆盖 Web 历史、Gallery 展示、前端链路恢复与 Bot 回调。
+- `tg_task_runtime.monitor_task_progress` 涉及 Telegram 队列态、运行态、终态与取消按钮刷新，修改后不得只跑单个 handler 测试。
+
+### 4.10 修改 workflow JSON / mappings
+
+适用文件：
+
+- `backend/workflows/*`
+- `workers/comfy_agent/workflows/*`
+- `workers/comfy_agent/workflows/mappings.json`
+- `src/workflow_mapping_validation.py`
+- `workers/comfy_agent/workflow_patcher.py`
+- `workers/comfy_agent/workflow_task_patchers.py`
+
+至少执行：
+
+```bash
+pytest \
+  tests/workers/test_comfy_agent.py \
+  tests/core/test_task_dispatcher.py \
+  tests/backend/test_main_helpers.py
+```
+
+补充约束：
+
+- 当前自动 workflow path 尚未完整覆盖双目录 workflow 资产；修改 workflow 资产时不能只依赖 GitHub Actions 自动触发。
+- 若只改 Worker 执行目录或只改 backend 校验目录，必须在变更说明里写清 Central 校验与 Worker 运行时不会漂移的依据。
 
 ## 5. 热点文件修改约束
 
@@ -372,7 +463,7 @@ cd dashboard/frontend && npm exec -- vitest run \
 
 - 当前热点门禁已补齐 dashboard App 独立分组，但 branch protection 的 required checks 清单仍需在仓库设置侧正式固化
 - 页面家族已补到“列表切换 + 详情弹层 + 模板工作台”关键组合流，但仍未覆盖更重的跨页面端到端场景
-- workflow `paths` 仍有少量与当前代码结构不一致的地方：Bot 分域 entrypoint 尚未全部具备稳定路径触发；修改这些文件时不能只依赖自动门禁
+- workflow `paths` 仍有少量与当前代码结构不一致的地方：Bot 分域 entrypoint、Worker 执行链路、Wan22 链式拼接、workflow 双目录资产与 `useLabWorkbench.ts` 尚未全部具备稳定路径触发；修改这些文件时不能只依赖自动门禁
 - `frontend-shared` 当前实际已默认执行模板应用状态流测试，但文档早先的“两段式补跑”口径已不再适用，后续应统一按单一分组理解
 
 ## 8. 阶段 7 第一批收尾标志
@@ -399,5 +490,5 @@ cd dashboard/frontend && npm exec -- vitest run \
 阶段 7 主体完成后，后续治理建议保留三类长期项：
 
 1. 在仓库设置里固化 required checks / branch protection
-2. 继续补齐 workflow `paths` 与热点清单之间的剩余缺口，尤其是 Bot 分域 entrypoint
+2. 继续补齐 workflow `paths` 与热点清单之间的剩余缺口，尤其是 Bot 分域 entrypoint、Worker 执行链路、Wan22 链式拼接、workflow 资产与练功房主 composable
 3. 视风险再补更重的跨页面端到端回归，而不是继续堆 focused tests 数量

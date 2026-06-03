@@ -231,3 +231,10 @@ sequenceDiagram
 - `src/bot_test.py` 是 Telegram Bot shared entrypoint，不只是测试入口。
 - 若修改 task core facade、provider/dependencies、submission、web-monitor、runtime、Bot 五段式上下文或 stream fallback，必须同步更新知识库。
 - 若技能文档与代码入口冲突，应先更新 skill / docs，再继续开发。
+
+### 5.1 2026-06-03 维护基线
+- 最新全局质量评估未发现 Critical 级架构阻断，`src/core` 未发现直接依赖 Telegram `Update` 或 FastAPI `Request/APIRouter` 等平台对象。
+- 当前主要风险集中在长期维护成本：Worker `agent_main.py::process_task`、Wan22 链式拼接、Gallery 响应组装、Bot 进度监控、练功房主 composable 与前端生成页重复逻辑。
+- `backend/workflows` 与 `workers/comfy_agent/workflows` 仍存在双目录 workflow 资产，新增或修改 workflow 时必须明确 Central 校验副本与 Worker 执行副本是否一致。
+- `TaskCoreServiceProviders` 与 capability dataclass 仍大量使用弱类型 `Any`，后续 provider/capability 重构应优先补强 `Protocol` 或精确 `Callable` 契约。
+- 详细质量基线见 `docs/子模块_代码静态分析与质量评估规范_code_quality.md` 与 `logs/code_analysis_report_20260603_2332.md`。

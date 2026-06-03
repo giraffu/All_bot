@@ -47,6 +47,13 @@
 - `workers/docker-compose-test.yml` 中的 `${...}` 插值不会读取 `env_file: ../.env.test` 的值；当前测试 compose 已让 `AGENT_SECRET_TOKEN` 从 `env_file` 注入，并将 `MINIO_INPUT_BUCKET` / `MINIO_RESULT_BUCKET` 默认到 `bot-data-test` / `comfyui-temp-test`。重建测试 worker 后仍要用 `docker exec <worker> env` 核对实际生效值，避免 401 或读写错误桶。
 - `safe_deploy_test.sh` 里的测试 Web VPS 发布依赖宿主机可执行 `npm`，并通过 `frontend/scripts/deploy-edge-test.sh` 使用 SSH/SCP 把 `build:edge-test` 产物同步到边缘 VPS；若私钥缺失、`npm` 未安装或边缘域名不可达，脚本会中止而不是假装发布成功。
 
+## 4.1 workflow 资产事实源
+- 当前仓库同时存在 `backend/workflows` 与 `workers/comfy_agent/workflows`。Central API 的校验/镜像构建路径与 Worker 的实际执行路径可能不是同一个目录。
+- 修改 workflow JSON、`mappings.json` 或 workflow patcher 时，必须先确认本次变更影响的是 Central 校验副本、Worker 执行副本，还是两者都影响。
+- 新增/更新 workflow 的默认口径是以 Worker 实际执行目录 `workers/comfy_agent/workflows` 为运行时事实源；若 backend 仍需要本地校验副本，必须同步更新并在部署说明中写明同步依据。
+- 若只重建 Central API 而未重建 Worker，或只重建 Worker 而未同步 backend 校验副本，可能出现“启动校验通过但执行失败”或“执行目录已更新但 Central 校验仍拒绝”的漂移。
+- 后续建议把 workflow 资产收口为共享目录或建立哈希校验门禁；在完成前，workflow 变更应手动对照 `find backend/workflows workers/comfy_agent/workflows -maxdepth 1 -type f` 与关键文件 hash。
+
 ## 5. 常见问题与恢复约束
 - MinIO 503 / 上传假死
   - 现象：Web 请求超时，甚至非上传接口也被拖慢。
@@ -67,3 +74,4 @@
 - 若测试栈流程、`.env.test` 口径、`safe_deploy_test.sh` 或“测试优先发布”策略发生变化，必须同步更新运维技能、`AGENTS.md` 与本子模块文档。
 - 任何涉及 Alembic 的说明，都应明确“先检查多 head，再在宿主机执行 upgrade head”。
 - 任何涉及容器代码更新的说明，都应先核对卷挂载，再决定是 `restart` 还是 `--build`。
+- 任何涉及 workflow 资产的说明，都应明确 Central 校验目录与 Worker 执行目录是否一致。
