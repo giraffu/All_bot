@@ -7,8 +7,10 @@ import { useGalleryApplyContext } from '@/composables/useGalleryApplyContext'
 import { useTaskResult } from '@/composables/useTaskResult'
 import { useTaskStream } from '@/composables/useTaskStream'
 import { useUpload } from '@/composables/useUpload'
+import { getWan22HistoryChain, stitchWan22HistoryChain } from '@/api/gallery'
 import { buildGenerationTaskPayload } from '@/features/generation/buildGenerationTaskPayload'
 import { buildSwapTaskPayload } from '@/features/generation/buildSwapTaskPayload'
+import { useTasksStore } from '@/stores/tasks'
 import {
   DEFAULT_FACE_VIDEO_RESOLUTION,
   DEFAULT_LAB_MODE_ID,
@@ -48,12 +50,20 @@ import {
   type LtxVideoLoraItem,
   type Wan22VideoV2ResolutionPreset,
 } from '@/features/generation/imageToVideo'
+import {
+  buildWan22ChainPrefill,
+  type Wan22ChainEditMode,
+  type Wan22ChainPrefillAsset,
+  type Wan22ChainPrefillErrorReason,
+} from '@/features/generation/wan22Chain'
 import { resolveTemplateVideoApplyState } from '@/utils/templateVideoApplyState'
 
 type UploadedReference = {
   key: string
   preview: string
   name: string
+  locked?: boolean
+  lockedLabel?: string
 }
 
 type PendingReferenceUpload = UploadedReference & {
@@ -87,6 +97,13 @@ type HydratedTemplateState = {
 }
 
 const DEFAULT_EDIT_LORA_STRENGTH = 1
+const WAN22_CHAIN_ERROR_KEYS: Record<Wan22ChainPrefillErrorReason, string> = {
+  history_empty: 'lab.workbench.wan22_chain_errors.history_empty',
+  record_not_found: 'lab.workbench.wan22_chain_errors.record_not_found',
+  last_frame_missing: 'lab.workbench.wan22_chain_errors.last_frame_missing',
+  previous_record_missing: 'lab.workbench.wan22_chain_errors.previous_record_missing',
+  previous_last_frame_missing: 'lab.workbench.wan22_chain_errors.previous_last_frame_missing',
+}
 
 const toPositiveNumber = (value: unknown): number | null => {
   const numeric = typeof value === 'number' ? value : Number(value)
@@ -101,6 +118,7 @@ export function useLabWorkbench() {
   const { uploading, progress: uploadProgress, uploadFile } = useUpload()
   const { isSubmitting, submitTask } = useTaskStream()
   const { currentTask, setSubmittedTaskId, isImageUrl, downloadResult } = useTaskResult()
+  const tasksStore = useTasksStore()
 
   const currentModeId = ref<UnifiedLabModeId>(DEFAULT_LAB_MODE_ID)
   const prompt = ref('')
@@ -118,6 +136,12 @@ export function useLabWorkbench() {
   const wan22ResolutionPreset = ref<Wan22VideoV2ResolutionPreset>(DEFAULT_WAN22_VIDEO_V2_RESOLUTION_PRESET)
   const resolution = ref(DEFAULT_VIDEO_RESOLUTION)
   const duration = ref(DEFAULT_VIDEO_DURATION)
+  const wan22ChainMode = ref<Wan22ChainEditMode | 'default'>('default')
+  const wan22PrevTaskId = ref<string | null>(null)
+  const wan22ChainTaskIds = ref<string[]>([])
+  const wan22ChainBanner = ref('')
+  const wan22ChainLoading = ref(false)
+  const wan22ChainStitching = ref(false)
 
   const templateNotice = ref('')
   const templateWarning = ref('')
@@ -144,6 +168,7 @@ export function useLabWorkbench() {
   ))
   const ltxLoraOptions = LTX_VIDEO_LORA_OPTIONS
   const wan22ResolutionOptions = WAN22_VIDEO_V2_RESOLUTION_OPTIONS
+  let wan22HydrationSeq = 0
 
   const hasReferences = computed(() => uploadedReferences.value.length > 0)
   const hasAdvancedOptions = computed(() => currentMode.value.supportsAdvancedOptions)
@@ -184,6 +209,17 @@ export function useLabWorkbench() {
   const referenceTitle = computed(() =>
     currentMode.value.referenceTitleKey ? t(currentMode.value.referenceTitleKey) : '',
   )
+  const composerNotice = computed(() => wan22ChainBanner.value || templateNotice.value)
+  const composerWarning = computed(() => templateWarning.value)
+  const currentTaskIsWan22VideoV2 = computed(() => currentTask.value?.type === 'wan22_video_v2')
+  const wan22CurrentTaskCanExtend = computed(() => (
+    currentTaskIsWan22VideoV2.value
+    && Boolean(currentTask.value?.id && currentTask.value?.extraOutputs?.last_frame?.path)
+  ))
+  const wan22CurrentTaskCanStitch = computed(() => (
+    currentTaskIsWan22VideoV2.value
+    && Boolean(currentTask.value?.id && currentTask.value?.resultMeta?.wan22_prev_task_id)
+  ))
 
   const uploadButtonLabel = computed(() => (
     currentMode.value.id === 'wan22_video_v2' && uploadedReferences.value.length === 0
@@ -279,6 +315,7 @@ export function useLabWorkbench() {
     || selectedLtxLoraNames.value.length > 0
     || negativePrompt.value !== DEFAULT_WAN22_VIDEO_V2_NEGATIVE_PROMPT
     || wan22ResolutionPreset.value !== DEFAULT_WAN22_VIDEO_V2_RESOLUTION_PRESET
+    || wan22ChainMode.value !== 'default'
     || resolution.value !== getDefaultResolutionForMode(currentModeId.value)
     || duration.value !== DEFAULT_VIDEO_DURATION
     || isTemplateApplied.value
@@ -312,6 +349,13 @@ export function useLabWorkbench() {
     templateSourcePostId.value = null
   }
 
+  const resetWan22ChainState = () => {
+    wan22ChainMode.value = 'default'
+    wan22PrevTaskId.value = null
+    wan22ChainTaskIds.value = []
+    wan22ChainBanner.value = ''
+  }
+
   const resetFormState = (options?: { preserveMode?: boolean }) => {
     clearReferences()
     clearSlotAssets()
@@ -326,6 +370,7 @@ export function useLabWorkbench() {
     resolution.value = getDefaultResolutionForMode(options?.preserveMode ? currentModeId.value : DEFAULT_LAB_MODE_ID)
     duration.value = DEFAULT_VIDEO_DURATION
     resetTemplateState()
+    resetWan22ChainState()
 
     if (!options?.preserveMode) {
       currentModeId.value = DEFAULT_LAB_MODE_ID
@@ -336,8 +381,109 @@ export function useLabWorkbench() {
 
   const handleRemoveReference = (index: number) => {
     const target = uploadedReferences.value[index]
+    if (target?.locked) {
+      message.info(target.lockedLabel || t('lab.workbench.wan22_locked_start_frame'))
+      return
+    }
     revokeReferencePreview(target?.preview)
     uploadedReferences.value.splice(index, 1)
+  }
+
+  const applyWan22PrefillAssets = (
+    startFrame: Wan22ChainPrefillAsset | null,
+    endFrame: Wan22ChainPrefillAsset | null,
+  ) => {
+    uploadedReferences.value = [startFrame, endFrame]
+      .filter((item): item is Wan22ChainPrefillAsset => Boolean(item))
+      .map(item => ({ ...item }))
+  }
+
+  const resolveWan22ChainErrorMessage = (reason: Wan22ChainPrefillErrorReason) =>
+    t(WAN22_CHAIN_ERROR_KEYS[reason])
+
+  const applyWan22ChainPrefill = async (
+    mode: Wan22ChainEditMode,
+    taskId: string,
+  ) => {
+    const requestSeq = ++wan22HydrationSeq
+    wan22ChainLoading.value = true
+    try {
+      const chain = await getWan22HistoryChain(taskId)
+      if (requestSeq !== wan22HydrationSeq) {
+        return false
+      }
+
+      const prefill = buildWan22ChainPrefill(mode, taskId, chain.items)
+      if (prefill.status === 'error') {
+        message.warning(resolveWan22ChainErrorMessage(prefill.reason))
+        return false
+      }
+
+      resetFormState({ preserveMode: true })
+      currentModeId.value = 'wan22_video_v2'
+
+      if (prefill.status === 'blank') {
+        wan22ChainBanner.value = t('lab.workbench.wan22_first_regenerate_notice')
+        return true
+      }
+
+      wan22ChainMode.value = prefill.mode
+      wan22PrevTaskId.value = prefill.prevTaskId
+      wan22ChainTaskIds.value = [...prefill.chainTaskIds]
+      applyWan22PrefillAssets(prefill.startFrame, prefill.endFrame)
+      prompt.value = prefill.prompt
+      negativePrompt.value = prefill.negativePrompt
+      wan22ResolutionPreset.value = prefill.resolutionPreset
+      wan22ChainBanner.value = prefill.mode === 'extend'
+        ? t('lab.workbench.wan22_extend_notice', {
+            count: prefill.segmentIndex,
+            context: prefill.contextCount,
+          })
+        : t('lab.workbench.wan22_regenerate_notice', {
+            count: prefill.segmentIndex,
+            context: prefill.contextCount,
+          })
+      return true
+    } catch (error: any) {
+      console.error(error)
+      message.error(error?.response?.data?.detail || t('lab.workbench.wan22_chain_errors.load_failed'))
+      return false
+    } finally {
+      if (requestSeq === wan22HydrationSeq) {
+        wan22ChainLoading.value = false
+      }
+    }
+  }
+
+  const openWan22CurrentTaskEditor = async (mode: Wan22ChainEditMode) => {
+    const taskId = currentTask.value?.id
+    if (!taskId) {
+      message.warning(t('lab.workbench.wan22_chain_errors.missing_task_id'))
+      return
+    }
+    await applyWan22ChainPrefill(mode, taskId)
+  }
+
+  const stitchCurrentWan22Chain = async () => {
+    const taskId = currentTask.value?.id
+    if (!taskId) {
+      message.warning(t('lab.workbench.wan22_chain_errors.missing_task_id'))
+      return
+    }
+    wan22ChainStitching.value = true
+    const hide = message.loading(t('lab.workbench.wan22_stitching'), 0)
+    try {
+      const stitchedRecord = await stitchWan22HistoryChain(taskId)
+      hide()
+      message.success(t('lab.workbench.wan22_stitch_success'))
+      tasksStore.showDetailRecord(stitchedRecord)
+    } catch (error: any) {
+      console.error(error)
+      hide()
+      message.error(error?.response?.data?.detail || t('lab.workbench.wan22_stitch_failed'))
+    } finally {
+      wan22ChainStitching.value = false
+    }
   }
 
   const handleRemoveUploadSlot = (slotId: LabUploadSlotId) => {
@@ -558,6 +704,10 @@ export function useLabWorkbench() {
     return null
   }
 
+  const resolveWan22RouteMode = (value: unknown): Wan22ChainEditMode | null => (
+    value === 'extend' || value === 'regenerate' ? value : null
+  )
+
   const hydrateFromRoute = () => {
     resetFormState({ preserveMode: true })
 
@@ -568,6 +718,17 @@ export function useLabWorkbench() {
 
     currentModeId.value = nextModeId
     resolution.value = getDefaultResolutionForMode(nextModeId)
+
+    if (nextModeId === 'wan22_video_v2') {
+      const wan22Mode = resolveWan22RouteMode(route.query.wan22_mode)
+      const wan22TaskId = typeof route.query.wan22_task_id === 'string'
+        ? route.query.wan22_task_id
+        : ''
+      if (wan22Mode && wan22TaskId) {
+        void applyWan22ChainPrefill(wan22Mode, wan22TaskId)
+      }
+      return
+    }
 
     if (nextModeId === 'custom_video' && templateContext) {
       const templateState = resolveTemplateVideoApplyState(templateContext, String(templateContext.task_type ?? '') === 'video_lora' ? 'video_lora' : 'custom_video')
@@ -644,7 +805,7 @@ export function useLabWorkbench() {
   }
 
   watch(
-    () => [route.query.type, route.query.apply],
+    () => [route.query.type, route.query.apply, route.query.wan22_mode, route.query.wan22_task_id],
     hydrateFromRoute,
     { immediate: true },
   )
@@ -756,8 +917,8 @@ export function useLabWorkbench() {
         extraInputs: {
           use_end_frame: uploadedReferences.value.length >= 2,
           resolution_preset: wan22ResolutionPreset.value,
-          wan22_prev_task_id: null,
-          wan22_chain_task_ids: [],
+          wan22_prev_task_id: wan22PrevTaskId.value,
+          wan22_chain_task_ids: wan22ChainTaskIds.value,
         },
       })
 
@@ -861,9 +1022,18 @@ export function useLabWorkbench() {
     duration,
     templateNotice,
     templateWarning,
+    composerNotice,
+    composerWarning,
     isTemplateApplied,
     isTemplatePromptLocked,
     isTemplateEditSettingsLocked,
     isTemplateVideoSettingsLocked,
+    currentTaskIsWan22VideoV2,
+    wan22CurrentTaskCanExtend,
+    wan22CurrentTaskCanStitch,
+    wan22ChainLoading,
+    wan22ChainStitching,
+    openWan22CurrentTaskEditor,
+    stitchCurrentWan22Chain,
   }
 }

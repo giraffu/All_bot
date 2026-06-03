@@ -221,3 +221,82 @@ async def test_report_heartbeat_uses_active_execution_context(monkeypatch):
     assert requests[0][0] == "/api/agent/task/heartbeat"
     assert requests[0][1]["status"] == "running"
     assert requests[1] == ("/api/agent/task/task_heartbeat", {"task_id": "task-99"})
+
+
+@pytest.mark.asyncio
+async def test_wait_for_task_completion_finishes_from_history_probe(monkeypatch):
+    module = build_agent_module(monkeypatch)
+    execution = module.TaskExecutionContext(
+        task_id="task-1",
+        task_type="img2img",
+        prompt_id="prompt-1",
+    )
+
+    class FakeComfyClient:
+        async def get_history(self, prompt_id):
+            return {
+                prompt_id: {
+                    "outputs": {
+                        "save": {
+                            "images": [
+                                {
+                                    "filename": "result.png",
+                                    "subfolder": "",
+                                    "type": "output",
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+
+    async def fake_check_task_cancelled(task_id):
+        return False
+
+    completed = await module.wait_for_task_completion(
+        task_id="task-1",
+        execution=execution,
+        check_task_cancelled_func=fake_check_task_cancelled,
+        logger=logging.getLogger("test"),
+        comfy_client=FakeComfyClient(),
+        task_type="img2img",
+        history_probe_start_seconds=0,
+        history_probe_interval_seconds=0.01,
+        timeout_seconds=1,
+    )
+
+    assert completed is True
+    assert execution.completed_event.is_set() is True
+    assert execution.task_result == "task-1__result.png"
+
+
+@pytest.mark.asyncio
+async def test_wait_for_task_completion_cancel_stops_before_history_probe(monkeypatch):
+    module = build_agent_module(monkeypatch)
+    execution = module.TaskExecutionContext(
+        task_id="task-1",
+        task_type="img2img",
+        prompt_id="prompt-1",
+    )
+
+    class UnexpectedComfyClient:
+        async def get_history(self, prompt_id):
+            raise AssertionError("history should not be probed after cancellation")
+
+    async def fake_check_task_cancelled(task_id):
+        return True
+
+    completed = await module.wait_for_task_completion(
+        task_id="task-1",
+        execution=execution,
+        check_task_cancelled_func=fake_check_task_cancelled,
+        logger=logging.getLogger("test"),
+        comfy_client=UnexpectedComfyClient(),
+        task_type="img2img",
+        history_probe_start_seconds=0,
+        history_probe_interval_seconds=0.01,
+        timeout_seconds=1,
+    )
+
+    assert completed is False
+    assert execution.completed_event.is_set() is False

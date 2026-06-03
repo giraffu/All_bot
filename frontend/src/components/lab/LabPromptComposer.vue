@@ -21,6 +21,8 @@ interface UploadedReferenceItem {
   name: string
   uploading?: boolean
   progress?: number
+  locked?: boolean
+  lockedLabel?: string
 }
 
 type LabAssetUploadSlot = {

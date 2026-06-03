@@ -48,7 +48,9 @@ def test_build_personal_center_payload_builds_unlocked_markup():
     assert "突破至筑基期" in msg
     assert "合欢密宗已解锁" in msg
     assert reply_markup is not None
-    assert reply_markup.inline_keyboard[0][0].text == "🌐 前往合欢密宗 (Web端)"
+    assert reply_markup.inline_keyboard[0][0].text == "📱 Mini App 自动登录"
+    assert reply_markup.inline_keyboard[0][0].web_app is not None
+    assert reply_markup.inline_keyboard[0][1].text == "🌐 浏览器 Web 登录"
 
 
 def test_build_checkin_messages_keep_disclaimer_and_stats():

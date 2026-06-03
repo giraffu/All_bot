@@ -566,6 +566,8 @@ class ComfyAgent:
                 execution=execution,
                 check_task_cancelled_func=self.check_task_cancelled,
                 logger=logger,
+                comfy_client=self.comfy_client,
+                task_type=task_type,
             )
             if not task_completed:
                 await self.report_cancelled(task_id)

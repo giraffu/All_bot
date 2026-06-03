@@ -1,8 +1,11 @@
 <script setup lang="ts">
 import {
+  BranchesOutlined,
   CloseCircleOutlined,
   DownloadOutlined,
+  LinkOutlined,
   PictureOutlined,
+  RetweetOutlined,
   VideoCameraOutlined,
 } from '@ant-design/icons-vue'
 import { computed } from 'vue'
@@ -63,9 +66,18 @@ const {
   duration,
   templateNotice,
   templateWarning,
+  composerNotice,
+  composerWarning,
   isTemplatePromptLocked,
   isTemplateEditSettingsLocked,
   isTemplateVideoSettingsLocked,
+  currentTaskIsWan22VideoV2,
+  wan22CurrentTaskCanExtend,
+  wan22CurrentTaskCanStitch,
+  wan22ChainLoading,
+  wan22ChainStitching,
+  openWan22CurrentTaskEditor,
+  stitchCurrentWan22Chain,
 } = useLabWorkbench()
 
 const isVideoMode = computed(() => currentMode.value.kindKey === 'lab.workbench.mode_kinds.video')
@@ -104,8 +116,8 @@ const promptLockedHint = computed(() => (
         :cost="cost"
         :cost-hint="costHint"
         :has-advanced-options="hasAdvancedOptions"
-        :notice="templateNotice"
-        :warning="templateWarning"
+        :notice="composerNotice || templateNotice"
+        :warning="composerWarning || templateWarning"
         @update:prompt="prompt = $event"
         @remove-reference="handleRemoveReference"
         @remove-upload-slot="handleRemoveUploadSlot"
@@ -165,6 +177,67 @@ const promptLockedHint = computed(() => (
           </template>
           <template #download-icon>
             <download-outlined />
+          </template>
+          <template #success-actions="{ task }">
+            <div
+              v-if="currentTaskIsWan22VideoV2"
+              class="mt-8 grid w-full grid-cols-1 gap-3 sm:flex sm:flex-wrap sm:justify-center"
+            >
+              <a-button
+                type="primary"
+                size="large"
+                class="rounded-xl w-full sm:w-auto"
+                @click="downloadResult(task.resultUrl, task.title)"
+              >
+                <template #icon><DownloadOutlined /></template>
+                {{ $t('template_apply.common.download_result') }}
+              </a-button>
+              <a-button
+                size="large"
+                class="rounded-xl w-full sm:w-auto"
+                :disabled="!wan22CurrentTaskCanExtend"
+                :loading="wan22ChainLoading"
+                @click="openWan22CurrentTaskEditor('extend')"
+              >
+                <template #icon><BranchesOutlined /></template>
+                {{ $t('lab.workbench.wan22_extend_generation') }}
+              </a-button>
+              <a-button
+                size="large"
+                class="rounded-xl w-full sm:w-auto"
+                :loading="wan22ChainLoading"
+                @click="openWan22CurrentTaskEditor('regenerate')"
+              >
+                <template #icon><RetweetOutlined /></template>
+                {{ $t('lab.workbench.wan22_regenerate_generation') }}
+              </a-button>
+              <a-button
+                v-if="wan22CurrentTaskCanStitch"
+                size="large"
+                class="rounded-xl w-full sm:w-auto"
+                :loading="wan22ChainStitching"
+                @click="stitchCurrentWan22Chain"
+              >
+                <template #icon><LinkOutlined /></template>
+                {{ $t('lab.workbench.wan22_stitch_chain') }}
+              </a-button>
+            </div>
+            <div v-else class="mt-8 flex gap-4">
+              <a-button
+                type="primary"
+                size="large"
+                class="bg-blue-600 rounded-xl"
+                @click="downloadResult(task.resultUrl, task.title)"
+              >
+                <template #icon>
+                  <DownloadOutlined />
+                </template>
+                {{ $t('template_apply.common.download_result') }}
+              </a-button>
+              <a-button size="large" class="rounded-xl" @click="resetAfterResult">
+                {{ $t('lab.workbench.continue_generation') }}
+              </a-button>
+            </div>
           </template>
           <template #failed-icon>
             <close-circle-outlined class="text-5xl text-red-500 mb-4" />

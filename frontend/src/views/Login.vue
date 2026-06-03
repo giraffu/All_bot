@@ -14,6 +14,8 @@ const route = useRoute()
 const authStore = useAuthStore()
 const loading = ref(false)
 const usernameInputRef = ref<{ focus?: () => void } | null>(null)
+const telegramWidgetContainerRef = ref<HTMLDivElement | null>(null)
+const telegramAuthHint = ref('')
 
 const pwdFormState = reactive({
   username: '',
@@ -123,16 +125,21 @@ const checkWebAppLogin = async () => {
     } finally {
       loading.value = false
     }
+  } else if (tg?.WebApp?.platform && tg.WebApp.platform !== 'unknown') {
+    telegramAuthHint.value = '当前入口缺少 Telegram 授权信息，请从 Bot 个人中心点击 Mini App 自动登录。'
   }
   return false // Not in WebApp or failed
 }
 
 const renderTelegramWidget = () => {
-  const container = document.getElementById('telegram-widget-container')
+  const container = telegramWidgetContainerRef.value
   if (!container) return
 
   // Prevent multiple widgets
   container.innerHTML = ''
+  if (!telegramAuthHint.value) {
+    telegramAuthHint.value = '正在加载 Telegram 授权...'
+  }
 
   // Create script tag for Telegram widget
   const script = document.createElement('script')
@@ -140,13 +147,29 @@ const renderTelegramWidget = () => {
   script.src = 'https://telegram.org/js/telegram-widget.js?22'
   
   // 从环境变量读取 Bot 用户名，或者直接在这里写死（注意：不带 @ 符号）
-  const botUsername = import.meta.env.VITE_TELEGRAM_BOT_USERNAME || 'YourBotUsername'
+  const botUsername = import.meta.env.VITE_TELEGRAM_BOT_USERNAME
+  if (!botUsername) {
+    telegramAuthHint.value = 'Telegram 授权配置缺失，请使用已绑定的道号与密咒登录。'
+    return
+  }
   
   script.setAttribute('data-telegram-login', botUsername) 
   script.setAttribute('data-size', 'large')
   script.setAttribute('data-radius', '8')
   script.setAttribute('data-request-access', 'write')
   script.setAttribute('data-userpic', 'false')
+  script.addEventListener('load', () => {
+    window.setTimeout(() => {
+      if (container.querySelector('iframe')) {
+        telegramAuthHint.value = ''
+      } else if (!telegramAuthHint.value.includes('Mini App')) {
+        telegramAuthHint.value = 'Telegram 授权未显示，请从 Bot 个人中心点击 Mini App 自动登录。'
+      }
+    }, 2500)
+  })
+  script.addEventListener('error', () => {
+    telegramAuthHint.value = 'Telegram 授权加载失败，请从 Bot 个人中心点击 Mini App 自动登录。'
+  })
 
   // Bind callback to global window object
   ;(window as any).onTelegramAuth = handleTelegramAuth
@@ -253,9 +276,15 @@ onMounted(async () => {
 
           <!-- Telegram 登录区域 -->
           <div class="flex justify-center">
-            <div class="bg-white/5 p-4 rounded-xl border border-white/10 backdrop-blur-sm w-full flex justify-center hover:bg-white/10 transition-colors duration-300">
-              <div id="telegram-widget-container" class="min-h-[40px] flex items-center justify-center">
+            <div class="bg-white/5 p-4 rounded-xl border border-white/10 backdrop-blur-sm w-full flex flex-col items-center justify-center hover:bg-white/10 transition-colors duration-300">
+              <div ref="telegramWidgetContainerRef" class="min-h-[40px] flex items-center justify-center">
                 <!-- Widget will be rendered here -->
+              </div>
+              <div
+                v-if="telegramAuthHint"
+                class="mt-3 text-center text-xs leading-5 text-indigo-100/80"
+              >
+                {{ telegramAuthHint }}
               </div>
             </div>
           </div>

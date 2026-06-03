@@ -72,10 +72,11 @@ const openWan22Editor = async (mode: 'extend' | 'regenerate') => {
   }
   detailVisible.value = false
   await router.push({
-    name: 'Wan22VideoV2',
+    name: 'CustomFeatures',
     query: {
-      mode,
-      task_id: record.task_id,
+      type: 'wan22_video_v2',
+      wan22_mode: mode,
+      wan22_task_id: record.task_id,
     },
   })
 }

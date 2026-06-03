@@ -9,6 +9,13 @@ const api = axios.create({
   timeout: 30000
 })
 
+const callerHandledUnauthorizedPaths = ['/auth/login', '/auth/telegram']
+
+function isCallerHandledUnauthorized(url?: string): boolean {
+  if (!url) return false
+  return callerHandledUnauthorizedPaths.some((path) => url.endsWith(path))
+}
+
 api.interceptors.request.use((config) => {
   const authStore = useAuthStore()
   if (authStore.token) {
@@ -30,6 +37,10 @@ api.interceptors.response.use(
     const data = error.response.data
 
     if (status === 401) {
+      if (isCallerHandledUnauthorized(error.config?.url)) {
+        return Promise.reject(error)
+      }
+
       const authStore = useAuthStore()
       authStore.logout()
       router.push('/login')

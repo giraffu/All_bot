@@ -2,6 +2,8 @@ import asyncio
 from collections.abc import Awaitable, Callable
 from typing import Any
 
+from agent_result_assets import resolve_history_result_asset, result_asset_priority
+
 
 async def submit_task_workflow(
     *,
@@ -32,26 +34,86 @@ async def submit_task_workflow(
     await report_status_func(task_id, "running")
 
 
+async def _probe_history_result(
+    *,
+    comfy_client,
+    execution,
+    task_type: str | None,
+    logger,
+) -> bool:
+    if not comfy_client or not execution.prompt_id:
+        return False
+
+    try:
+        history = await comfy_client.get_history(execution.prompt_id)
+    except Exception as exc:
+        logger.warning(
+            "History probe failed for prompt %s: %s",
+            execution.prompt_id,
+            exc,
+        )
+        return False
+
+    history_result = resolve_history_result_asset(
+        history,
+        prompt_id=execution.prompt_id,
+        task_id=execution.task_id,
+        task_type=task_type,
+    )
+    if not history_result:
+        return False
+
+    execution.task_result = history_result["safe_name"]
+    execution.task_result_priority = result_asset_priority(
+        history_result,
+        task_type=task_type,
+    )
+    execution.completed_event.set()
+    logger.info(
+        "History probe found completed result for task %s, prompt %s",
+        execution.task_id,
+        execution.prompt_id,
+    )
+    return True
+
+
 async def wait_for_task_completion(
     *,
     task_id: str,
     execution,
     check_task_cancelled_func: Callable[[str], Awaitable[bool]],
     logger,
-    timeout_seconds: float = 600.0,
+    comfy_client=None,
+    task_type: str | None = None,
+    history_probe_start_seconds: float = 45.0,
+    history_probe_interval_seconds: float = 12.0,
+    timeout_seconds: float = 1800.0,
 ) -> bool:
     loop = asyncio.get_running_loop()
     deadline = loop.time() + timeout_seconds
+    next_history_probe_at = loop.time() + history_probe_start_seconds
     while not execution.completed_event.is_set():
         if await check_task_cancelled_func(task_id):
             logger.info("Task %s was cancelled during execution wait.", task_id)
             return False
 
+        now = loop.time()
+        if now >= next_history_probe_at:
+            if await _probe_history_result(
+                comfy_client=comfy_client,
+                execution=execution,
+                task_type=task_type,
+                logger=logger,
+            ):
+                break
+            next_history_probe_at = now + history_probe_interval_seconds
+
         remaining = deadline - loop.time()
         if remaining <= 0:
             logger.warning(
-                "Task execution timed out for %s, will attempt to fetch result from history.",
+                "Task execution timed out for %s after %.0fs, will attempt final history fallback.",
                 task_id,
+                timeout_seconds,
             )
             break
 

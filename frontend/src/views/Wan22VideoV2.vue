@@ -28,9 +28,12 @@ import {
   DEFAULT_WAN22_VIDEO_V2_NEGATIVE_PROMPT,
   DEFAULT_WAN22_VIDEO_V2_RESOLUTION_PRESET,
   WAN22_VIDEO_V2_RESOLUTION_OPTIONS,
-  normalizeWan22VideoV2ResolutionPreset,
   type Wan22VideoV2ResolutionPreset,
 } from '@/features/generation/imageToVideo'
+import {
+  buildWan22ChainPrefill,
+  type Wan22ChainPrefillErrorReason,
+} from '@/features/generation/wan22Chain'
 import { useGenerationRouteConfig } from '@/features/generation/generationRouteConfig'
 import type { HistoryItem, Wan22ResultMeta } from '@/types/gallery'
 import { buildStorageFileUrl } from '@/utils/storageUrl'
@@ -102,11 +105,12 @@ const chainBanner = ref('')
 const currentResultChainLoadedForTaskId = ref<string | null>(null)
 
 const currentTaskResultMeta = computed<Wan22ResultMeta>(() => currentTask.value?.resultMeta ?? {})
-const currentTaskCanStitch = computed(() => Boolean(currentTaskResultMeta.value?.wan22_prev_task_id))
-const currentTaskCanRegenerate = computed(() => Boolean(currentTaskResultMeta.value?.wan22_prev_task_id))
 const canShowCurrentTaskChainActions = computed(
   () => currentTask.value?.status === 'success' && currentTask.value?.id && currentTask.value?.type === 'wan22_video_v2'
 )
+const currentTaskCanExtend = computed(() => Boolean(currentTask.value?.extraOutputs?.last_frame?.path))
+const currentTaskCanStitch = computed(() => Boolean(currentTaskResultMeta.value?.wan22_prev_task_id))
+const currentTaskCanRegenerate = computed(() => canShowCurrentTaskChainActions.value)
 const activeEditorSegmentIndex = computed(() => {
   if (!chainSourceTaskId.value) {
     return null
@@ -115,6 +119,9 @@ const activeEditorSegmentIndex = computed(() => {
   return index >= 0 ? index : null
 })
 const activeSubmitChainTaskIds = computed(() => {
+  if (chainMode.value === 'default') {
+    return []
+  }
   if (editingChainTaskIds.value.length) {
     return editingChainTaskIds.value
   }
@@ -161,22 +168,6 @@ const chainStripClasses = computed(() =>
 const chainCardBaseClass = computed(() =>
   isMobile.value ? 'w-full' : 'min-w-[220px]'
 )
-
-const resolveReusableLastFrameInputKey = (path?: string | null) => {
-  const normalizedPath = String(path || '').trim()
-  if (!normalizedPath) {
-    return ''
-  }
-  if (
-    normalizedPath.startsWith('comfyui-temp/')
-    || normalizedPath.startsWith('bot-data/')
-    || normalizedPath.startsWith('bot-data-test/')
-    || normalizedPath.startsWith('template:')
-  ) {
-    return normalizedPath
-  }
-  return `comfyui-temp/${normalizedPath}`
-}
 
 const resolveChainSummaryText = computed(() => {
   if (!chainRecords.value.length) {
@@ -232,70 +223,52 @@ const loadWan22Chain = async (taskId: string) => {
   }
 }
 
+const resolvePrefillErrorMessage = (reason: Wan22ChainPrefillErrorReason) => {
+  const messages: Record<Wan22ChainPrefillErrorReason, string> = {
+    history_empty: '未找到对应的链式视频记录',
+    record_not_found: '未找到对应段落记录',
+    last_frame_missing: '当前段落没有可用尾帧，请先重新生成该段视频',
+    previous_record_missing: '上一段记录缺少任务 ID，暂时无法重生成当前段',
+    previous_last_frame_missing: '上一段没有可用尾帧，暂时无法重生成当前段',
+  }
+  return messages[reason]
+}
+
 const prefillFromChain = async (mode: 'extend' | 'regenerate', taskId: string) => {
   const items = await loadWan22Chain(taskId)
-  if (!items.length) {
+  const prefill = buildWan22ChainPrefill(mode, taskId, items)
+  if (prefill.status === 'error') {
+    message.warning(resolvePrefillErrorMessage(prefill.reason))
     return
   }
-  const currentRecord = items.find(item => item.task_id === taskId)
-  if (!currentRecord?.task_id) {
+
+  if (prefill.status === 'blank') {
+    await resetForm()
+    chainBanner.value = '已切换为首段重新生成，请重新上传起始帧和可选终止帧。'
+    return
+  }
+
+  const currentRecord = items.find(item => item.task_id === prefill.sourceTaskId)
+  if (!currentRecord) {
     message.warning('未找到对应段落记录')
     return
   }
-  const recordIndex = items.findIndex(item => item.task_id === currentRecord.task_id)
-  const previousRecord = recordIndex > 0 ? items[recordIndex - 1] : null
-  const resolution = normalizeWan22VideoV2ResolutionPreset(
-    currentRecord.result_meta?.wan22_resolution_preset,
-  )
-  const negativePromptValue = currentRecord.result_meta?.wan22_negative_prompt || DEFAULT_WAN22_VIDEO_V2_NEGATIVE_PROMPT
-  const chainTaskIds = items
-    .map(item => item.task_id)
-    .filter((item): item is string => Boolean(item))
 
-  if (mode === 'extend') {
-    const lastFrame = currentRecord.extra_outputs?.last_frame
-    if (!lastFrame?.path) {
-      message.warning('当前段落没有可用尾帧，请先重新生成该段视频')
-      return
-    }
-    applyRecordToEditor(currentRecord, {
-      mode,
-      startKey: resolveReusableLastFrameInputKey(lastFrame.path),
-      startPreviewUrl: lastFrame.url || null,
-      promptValue: '',
-      negativePromptValue,
-      resolution,
-      prevTaskId: currentRecord.task_id,
-      chainTaskIds,
-      banner: `已载入第 ${recordIndex + 1} 段尾帧，下一段将延续当前链路继续生成。`,
-    })
-  } else {
-    if (!previousRecord?.task_id) {
-      message.warning('首段不支持从上一段尾帧重生成')
-      return
-    }
-    const previousLastFrame = previousRecord.extra_outputs?.last_frame
-    if (!previousLastFrame?.path) {
-      message.warning('上一段没有可用尾帧，暂时无法重生成当前段')
-      return
-    }
-    const useEndFrame = Boolean(currentRecord.result_meta?.wan22_use_end_frame)
-    const endKey = useEndFrame ? currentRecord.input_file?.split('|')[1]?.trim() || null : null
-    const endPreviewUrl = useEndFrame ? currentRecord.input_file_urls?.[1] || null : null
-    applyRecordToEditor(currentRecord, {
-      mode,
-      startKey: resolveReusableLastFrameInputKey(previousLastFrame.path),
-      startPreviewUrl: previousLastFrame.url || null,
-      endKey,
-      endPreviewUrl,
-      promptValue: currentRecord.prompt || '',
-      negativePromptValue,
-      resolution,
-      prevTaskId: previousRecord.task_id,
-      chainTaskIds: items.slice(0, recordIndex).map(item => item.task_id).filter((item): item is string => Boolean(item)),
-      banner: `已切换为第 ${recordIndex + 1} 段重生成模式，将复用上一段尾帧和当前段参数。`,
-    })
-  }
+  applyRecordToEditor(currentRecord, {
+    mode,
+    startKey: prefill.startFrame.key,
+    startPreviewUrl: prefill.startFrame.preview,
+    endKey: prefill.endFrame?.key ?? null,
+    endPreviewUrl: prefill.endFrame?.preview ?? null,
+    promptValue: prefill.prompt,
+    negativePromptValue: prefill.negativePrompt,
+    resolution: prefill.resolutionPreset,
+    prevTaskId: prefill.prevTaskId,
+    chainTaskIds: prefill.chainTaskIds,
+    banner: mode === 'extend'
+      ? `已载入第 ${prefill.segmentIndex} 段尾帧，下一段将延续当前链路继续生成。`
+      : `已切换为第 ${prefill.segmentIndex} 段重生成模式，将复用上一段尾帧和当前段参数。`,
+  })
 
   await router.replace({
     name: 'Wan22VideoV2',
@@ -489,10 +462,9 @@ onMounted(() => {
                   <a-button
                     size="small"
                     :block="isMobile"
-                    :disabled="!record.result_meta?.wan22_prev_task_id"
                     @click.stop="record.task_id && prefillFromChain('regenerate', record.task_id)"
                   >
-                    重生本段
+                    重新生成
                   </a-button>
                 </div>
               </button>
@@ -662,10 +634,11 @@ onMounted(() => {
               v-if="canShowCurrentTaskChainActions"
               size="large"
               class="rounded-xl w-full sm:w-auto"
+              :disabled="!currentTaskCanExtend"
               @click="task.id && prefillFromChain('extend', task.id)"
             >
               <template #icon><BranchesOutlined /></template>
-              扩展下一段
+              扩展生成
             </a-button>
             <a-button
               v-if="canShowCurrentTaskChainActions && currentTaskCanStitch"
@@ -684,10 +657,7 @@ onMounted(() => {
               @click="task.id && prefillFromChain('regenerate', task.id)"
             >
               <template #icon><RetweetOutlined /></template>
-              重生成本段
-            </a-button>
-            <a-button size="large" class="rounded-xl w-full sm:w-auto" @click="resetForm">
-              继续生成
+              重新生成
             </a-button>
           </div>
         </template>

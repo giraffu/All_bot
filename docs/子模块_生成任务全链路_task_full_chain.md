@@ -327,9 +327,11 @@ Worker 拉到任务后会先处理输入：
 Worker 执行流程：
 1. 向 ComfyUI 提交 patched workflow，拿到 `prompt_id`
 2. 通过 WebSocket 监听 `execution_start` / `progress` / `execution_success` / `execution_error`
-3. 执行完成后从 ComfyUI history 或 view API 取回结果文件
-4. 上传结果到 MinIO output bucket
-5. 向 Central API 调 `/api/agent/task/complete`
+3. `wait_for_task_completion(...)` 以 WebSocket 终态为快路径，同时在提交后约 45 秒开始周期性探测 ComfyUI `/history/{prompt_id}`，约每 12 秒探测一次；若 history 已有结果，会立即设置完成态，避免半活 WebSocket 让 Worker 等满旧的固定窗口
+4. Worker 保留约 30 分钟硬超时，超时后再走最终 history fallback；若仍无结果则按失败上报，避免真正卡死的任务无限占用节点
+5. 执行完成后从 ComfyUI history 或 view API 取回结果文件
+6. 上传结果到 MinIO output bucket
+7. 向 Central API 调 `/api/agent/task/complete`
 
 执行失败则走：
 - `/api/agent/task/status` 上报 `failed`

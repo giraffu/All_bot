@@ -125,11 +125,11 @@ def build_personal_center_payload(
     reply_markup = InlineKeyboardMarkup(
         [
             [
-                InlineKeyboardButton(get_text("profile_extra.web_button", lang), url=web_url),
                 InlineKeyboardButton(
                     get_text("profile_extra.miniapp_button", lang),
                     web_app=WebAppInfo(url=web_url),
                 ),
+                InlineKeyboardButton(get_text("profile_extra.web_button", lang), url=web_url),
             ]
         ]
     )

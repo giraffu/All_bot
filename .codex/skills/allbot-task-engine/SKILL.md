@@ -124,6 +124,7 @@ description: "处理任务提交流程、provider/capability 装配、双 ID 运
 - 查 `task_heartbeat` 是否继续更新
 - 查 workflow / mappings 是否正确
 - 查是否取消请求未被 worker 轮询到
+- Worker 等待 ComfyUI 完成时不应只依赖 WebSocket：`wait_for_task_completion(...)` 当前以 WS 终态为快路径，并在提交后约 45 秒开始每约 12 秒主动探测 `/history/{prompt_id}`；history 已有结果时立即收口，硬超时约 30 分钟后才做最终 fallback / 失败处理。
 
 ### 8.4 SSE 或取消异常
 - 先确认当前用的是 `registry_task_id` 还是 `backend_task_id`

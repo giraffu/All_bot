@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { CloseOutlined } from '@ant-design/icons-vue'
+import { CloseOutlined, LockOutlined } from '@ant-design/icons-vue'
 import { useI18n } from 'vue-i18n'
 
 interface UploadedReferenceItem {
@@ -8,6 +8,8 @@ interface UploadedReferenceItem {
   name: string
   uploading?: boolean
   progress?: number
+  locked?: boolean
+  lockedLabel?: string
 }
 
 defineProps<{
@@ -51,8 +53,17 @@ const { t } = useI18n()
           />
         </div>
 
+        <div
+          v-if="item.locked && !item.uploading"
+          class="lab-reference-tray__locked absolute bottom-1 left-1 right-1 flex items-center justify-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium"
+          :title="item.lockedLabel"
+        >
+          <LockOutlined />
+          <span class="truncate">{{ item.lockedLabel || item.name }}</span>
+        </div>
+
         <a-button
-          v-if="!item.uploading"
+          v-if="!item.uploading && !item.locked"
           danger
           type="primary"
           size="small"
@@ -104,6 +115,20 @@ const { t } = useI18n()
 .lab-reference-tray__uploading {
   background: rgba(15, 23, 42, 0.48);
   backdrop-filter: grayscale(1);
+}
+
+.lab-reference-tray__locked {
+  z-index: 1;
+  background: rgba(15, 23, 42, 0.78);
+  color: #f8fafc;
+  line-height: 1;
+}
+
+:deep(.lab-reference-tray__locked .anticon),
+:deep(.lab-reference-tray__locked svg) {
+  display: block;
+  flex: 0 0 auto;
+  font-size: 9px;
 }
 
 :deep(.lab-reference-tray__uploading .ant-progress-inner) {
