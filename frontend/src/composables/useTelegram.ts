@@ -1,12 +1,41 @@
 import { ref, onMounted, onUnmounted } from 'vue';
+import type { TelegramWebAppUser } from '@/types/telegram'
+
+interface TelegramWebAppLike {
+  initDataUnsafe?: {
+    user?: TelegramWebAppUser
+    [key: string]: unknown
+  }
+  ready: () => void
+  setHeaderColor: (color: string) => void
+  setBackgroundColor: (color: string) => void
+  showConfirm: (message: string, callback: (result: boolean) => void) => void
+  HapticFeedback?: {
+    impactOccurred: (style: 'light' | 'medium' | 'heavy' | 'rigid' | 'soft') => void
+  }
+  MainButton?: {
+    setText: (text: string) => void
+    show: () => void
+    hide: () => void
+    onClick: (callback: () => void) => void
+    offClick: (callback: () => void) => void
+    setParams: (params: { color: string; text_color: string }) => void
+  }
+}
+
+type TelegramWindow = Window & {
+  Telegram?: {
+    WebApp?: TelegramWebAppLike
+  }
+}
 
 export function useTelegram() {
-  const tg = (window as any).Telegram?.WebApp;
+  const tg = (window as TelegramWindow).Telegram?.WebApp;
   const isTMA = ref(!!tg && Object.keys(tg.initDataUnsafe || {}).length > 0);
 
   // 初始化 Telegram Web App
   onMounted(() => {
-    if (isTMA.value) {
+    if (isTMA.value && tg) {
       tg.ready();
       // 根据项目主题色设置 TMA 的 Header/Button 颜色
       try {

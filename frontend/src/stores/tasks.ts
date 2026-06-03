@@ -28,6 +28,7 @@ import {
   startTaskStreamListening,
 } from './taskStreamTransport'
 import type { Task } from './taskStoreTypes'
+import type { TaskRecord } from '@/types/gallery'
 import {
   countBlockingFloatingTasks,
   getOldestTerminalFloatingTaskIdsForNewTask,
@@ -39,11 +40,11 @@ export type { Task } from './taskStoreTypes'
 export const useTasksStore = defineStore('tasks', () => {
   const activeTasks = ref<Task[]>([])
   const detailModalVisible = ref(false)
-  const currentDetailRecord = ref<any>(null)
+  const currentDetailRecord = ref<TaskRecord | null>(null)
   const authStore = useAuthStore()
   const detachedResultProbeTaskIds = new Set<string>()
 
-  const showDetailRecord = (record: any) => {
+  const showDetailRecord = (record: TaskRecord) => {
     currentDetailRecord.value = record
     detailModalVisible.value = true
   }
@@ -83,14 +84,17 @@ export const useTasksStore = defineStore('tasks', () => {
     }
   }
 
-  const openDetailModal = async (taskId: string, fallbackRecord?: any) => {
+  const openDetailModal = async (
+    taskId: string,
+    fallbackRecord?: Partial<TaskRecord> & Record<string, unknown>,
+  ) => {
     const hide = message.loading('正在加载详情...', 0)
     try {
       const recentHistory = await getRecentHistory()
-      const record = recentHistory.items.find((item: any) => item.task_id === taskId)
+      const record = recentHistory.items.find((item) => item.task_id === taskId)
       
-      if (record) {
-        showDetailRecord(record)
+      if (record?.task_id && record.type) {
+        showDetailRecord(record as TaskRecord)
       } else if (fallbackRecord) {
         // 如果没找到，退退一步使用 mock / fallback 对象展示基础信息
         showDetailRecord({
@@ -99,7 +103,7 @@ export const useTasksStore = defineStore('tasks', () => {
           is_favorited: false,
           allow_contribute: false,
           created_at: new Date().toISOString()
-        })
+        } as TaskRecord)
       } else {
         hide()
         message.warning('未找到对应的任务记录')

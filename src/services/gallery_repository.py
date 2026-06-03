@@ -127,7 +127,6 @@ async def switch_gallery_reaction(
     *,
     post_id: int,
     previous_action: str,
-    next_action: str,
 ):
     res = await session.execute(
         update(GalleryPost)

@@ -33,6 +33,7 @@ sequenceDiagram
 - `ltx_video` 当前主协议是 `lora_items` 多选链路，最多 3 个 LoRA，旧 `lora_name / lora_strength` 只保留兼容。
 - `wan22_video_v2` 已进入统一视频主链；除主视频外，还可能通过 `extra_outputs.last_frame` 回传尾帧图片。
 - 旧图生视频 `custom_video` / `video_lora` 在执行面新增为 `image_to_video`，与 `wan22_video_v2` 共用 `Wan22AioV81.json`；历史、投稿和展示类型仍保留 `custom_video` / `video_lora`，不改写成 v2。
+- Wan22 AIO 视频配置事实源是 `src.domain_config.wan22_aio_video`：旧图生视频 `custom_video` / `video_lora` -> execution `image_to_video` -> `legacy_image_to_video` profile；图生视频 v2 `wan22_video_v2` -> execution `wan22_video_v2` -> `wan22_video_v2` profile。两者共享 worker workflow，但不是同一个用户功能。
 - 旧图生视频固定 5 秒，分辨率与计费对齐 v2 三档：`preview` / `standard` / `hd`。历史投稿中的 `512p` / `720p` / `1024p` 会分别映射到这三档，旧 duration 一律忽略为 5 秒。
 - `image_to_video` 和 `wan22_video_v2` 通过 `wan22_model_profile` 区分主模型：旧入口使用 legacy high/low 主模型，v2 使用 snatchkiss high/low 主模型。`video_lora` 仍保留旧 LoRA 前缀选择，`custom_video` 与 v2 会清空额外 LoRA 槽。
 - Web `wan22_video_v2`、`custom_video`、`video_lora` 已支持与 Bot 对齐的多段链：历史与 `/api/tasks/{task_id}/result` 会返回 `last_frame` 与 `result_meta`，并新增 `/api/users/history/{task_id}/wan22-chain`、`/api/users/history/{task_id}/wan22-chain/stitch` 供练功房继续扩展、分段重生成和整链拼接；其中整链拼接现在会把拼接后 MP4 上传存储，并新增一条 `History` 记录返回给前端，而不是只回下载流。
@@ -101,6 +102,7 @@ graph TD
   - `task_service_generation_image.py`
   - `task_service_generation_video.py`
   - `task_service_generation_wan22.py`
+- Wan22 AIO 图生视频 Bot 生成服务已收口到 `src/services/wan22_aio_video_generation.py`；`task_service_generation_video.py` 与 `task_service_generation_wan22.py` 保留薄 wrapper，前端/Bot 交互语义不随底层合并而改名。
 - 内部调用当前应优先直接进入分域 entrypoints；历史 `bot_task_service.py` compat 壳已删除，不再作为调用入口。
 - `process_wan22_video_v2_task(...)` 位于 generation entrypoints，`process_ltx_video_task(...)` 位于 specialized entrypoints；两者都已走统一提交与前台监控主链。
 
@@ -119,7 +121,7 @@ graph TD
 
 ## 四、 计费与资源约束
 - 视频任务计费是动态的，通常由分辨率与时长组合决定。
-- `wan22_video_v2` 的分辨率档位统一维护在 `src/services/wan22_video_v2_config.py`，Bot / Web / dispatcher 共享同一语义；当前 5 秒固定时长下展示三档：`preview` = 极速 / 约 512p / `0.26 MP - Preview` / 6 灵石（默认且最低价），`standard` = 标准 / 约 720p / `0.52 MP - SD` / 20 灵石，`hd` = 高清 / 约 810p / `0.65 MP - Balanced` / 30 灵石。旧 `fast` / `0.36 MP - Small` 仅作为兼容别名归一到 `preview`，不再作为可选档位展示。Worker 会把档位写入 `Wan22AioV81.json` 的 `DaSiWa_ResolutionScaleCalculator` 节点 `2612.inputs.precision_presets`。
+- Wan22 AIO 视频的分辨率档位统一维护在 `src.domain_config.wan22_aio_video`，Bot / Web / dispatcher / worker patcher 共享同一语义；当前 5 秒固定时长下展示三档：`preview` = 极速 / 约 512p / `0.26 MP - Preview` / 6 灵石（默认且最低价），`standard` = 标准 / 约 720p / `0.52 MP - SD` / 20 灵石，`hd` = 高清 / 约 810p / `0.65 MP - Balanced` / 30 灵石。旧 `fast` / `0.36 MP - Small` 仅作为兼容别名归一到 `preview`，不再作为可选档位展示。Worker 会把档位写入 `Wan22AioV81.json` 的 `DaSiWa_ResolutionScaleCalculator` 节点 `2612.inputs.precision_presets`。
 - `custom_video` / `video_lora` 现在完全对齐上述 v2 计费口径：固定 5 秒，`preview=6`、`standard=20`、`hd=30`。投稿一键应用恢复旧 `1024p` 时应自动选择 `hd`，提交消耗 30 灵石。
 - 过高画质与过长时长组合仍可能触发 guardrail，避免显存溢出或节点拥塞。
 - 任何取消/失败路径都必须与并发锁释放和必要退款一并考虑。

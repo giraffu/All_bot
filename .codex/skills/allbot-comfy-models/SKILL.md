@@ -49,7 +49,7 @@ description: "处理图生图/图生视频的附加模型(LoRA/ControlNet)配置
 
 ## 二、 旧图生视频附加模型（LoRA）实施方案
 
-旧图生视频的用户侧类型仍保留 `custom_video` / `video_lora`，但执行面已经改为 `image_to_video`，并与 `wan22_video_v2` 共用 `workers/comfy_agent/workflows/Wan22AioV81.json`。两者通过 `wan22_model_profile` 注入不同主模型：旧入口使用 legacy 主模型，v2 使用 snatchkiss 主模型。
+旧图生视频的用户侧类型仍保留 `custom_video` / `video_lora`，但执行面已经改为 `image_to_video`，并与 `wan22_video_v2` 共用 `workers/comfy_agent/workflows/Wan22AioV81.json`。两者通过 `src.domain_config.wan22_aio_video` 的 profile 注入不同主模型：旧入口使用 `legacy_image_to_video` profile，v2 使用 `wan22_video_v2` profile。`src.services.wan22_video_v2_config` 与 `src.services.wan22_video_v2_context` 仅作为兼容 re-export 保留。
 
 目前系统主要支持 LTX-2.3 和 Wan2.2/Wan2.1 视频生成工作流。关于 LTX-2.3 工作流的具体 LoRA 使用与提示词规范，请参考项目根目录的 `LTX_LoRA_Guide.md`。
 
@@ -60,6 +60,7 @@ description: "处理图生图/图生视频的附加模型(LoRA/ControlNet)配置
   - *(例如：如果你的模型代号叫 `Dance`，则需要提供 `Dance_high_noise.safetensors` 和 `Dance_low_noise.safetensors`)*
 - 将上述两个文件放置到 ComfyUI 宿主机映射的对应 LoRA 模型目录中（如 `models/loras/`）。
 - 旧图生视频固定 5 秒，分辨率和计费与 v2 对齐为 `preview=6`、`standard=20`、`hd=30`；旧投稿 `512p/720p/1024p` 分别映射为 `preview/standard/hd`。
+- Wan22 AIO 底层映射必须保持：旧图生视频 `custom_video` / `video_lora` -> execution `image_to_video` -> `legacy_image_to_video` profile；图生视频 v2 `wan22_video_v2` -> execution `wan22_video_v2` -> `wan22_video_v2` profile。两者共享 worker workflow，但不是同一个用户功能，历史/Gallery task type 不能互相改名。
 
 ### 2. Bot 层：更新用户交互菜单 (UI & FSM)
 - **文件定位**：`src/handlers/fsm/image_to_video_fsm.py`
@@ -79,6 +80,7 @@ description: "处理图生图/图生视频的附加模型(LoRA/ControlNet)配置
 ### 4. Worker 层：工作流动态注入 (Workflow Patcher)
 - **文件定位**：`workers/comfy_agent/workflow_task_patchers.py` 和 `workers/comfy_agent/workflows/Wan22AioV81.json`。
 - **实施状态**：**通常无需修改**，但需注意**硬编码防爆红线**。
+  - `patch_image_to_video_workflow` 与 `patch_wan22_video_v2_workflow` 只应作为薄入口，真实实现统一落在 `_patch_wan22_aio_workflow(...)`。
   - 主模型节点固定为 `2616`（high）和 `2617`（low）。patcher 会根据 `wan22_model_profile` 写入对应 high/low UNet 文件。
   - 旧 LoRA 注入节点固定为 `26`（high noise）和 `18`（low noise）：
     - `26.inputs.lora_1.lora = {lora_name}_high_noise.safetensors`

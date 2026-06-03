@@ -67,32 +67,11 @@ async def test_persist_successful_task_result_uses_runtime_default_flow_binding(
     runtime_download_video_result = AsyncMock()
     runtime_extract_from_bytes = AsyncMock()
     runtime_extract_from_storage = AsyncMock()
-    runtime_to_thread = AsyncMock()
 
     monkeypatch.setattr(
         task_core_persistence,
         "_persist_successful_task_result_flow_impl",
         flow,
-    )
-    monkeypatch.setattr(
-        task_core_persistence,
-        "UserLogger",
-        runtime_user_logger_factory,
-    )
-    monkeypatch.setattr(
-        task_core_persistence,
-        "extract_media_metadata_from_bytes_best_effort",
-        runtime_extract_from_bytes,
-    )
-    monkeypatch.setattr(
-        task_core_persistence,
-        "extract_media_metadata_from_storage_best_effort",
-        runtime_extract_from_storage,
-    )
-    monkeypatch.setattr(
-        task_core_persistence.asyncio,
-        "to_thread",
-        runtime_to_thread,
     )
     monkeypatch.setattr(
         task_core_persistence,
@@ -136,7 +115,7 @@ async def test_persist_successful_task_result_uses_runtime_default_flow_binding(
     )
     assert flow_kwargs["download_result_func"] is runtime_download_result
     assert flow_kwargs["download_video_result_func"] is runtime_download_video_result
-    assert flow_kwargs["to_thread_func"] is runtime_to_thread
+    assert flow_kwargs["to_thread_func"] is task_core_persistence.asyncio.to_thread
 
 
 @pytest.mark.asyncio
@@ -327,7 +306,7 @@ async def test_persist_successful_task_result_flow_uses_runtime_default_to_threa
 
 
 @pytest.mark.asyncio
-async def test_persist_successful_task_result_flow_uses_runtime_default_logger_and_extract_bindings(
+async def test_persist_successful_task_result_flow_uses_injected_logger_and_runtime_extract_bindings(
     monkeypatch,
 ):
     user_logger = object()
@@ -344,11 +323,6 @@ async def test_persist_successful_task_result_flow_uses_runtime_default_logger_a
     materialize = AsyncMock(return_value=persistence_result)
     postprocess = AsyncMock()
 
-    monkeypatch.setattr(
-        task_core_persistence_flow,
-        "UserLogger",
-        runtime_user_logger_factory,
-    )
     monkeypatch.setattr(
         task_core_persistence_flow,
         "extract_media_metadata_from_bytes_best_effort",
@@ -382,6 +356,7 @@ async def test_persist_successful_task_result_flow_uses_runtime_default_logger_a
         is_video=False,
         billing_resolution="1024",
         requested_duration=None,
+        user_logger_factory=runtime_user_logger_factory,
         download_result_func=AsyncMock(),
         download_video_result_func=AsyncMock(),
     )

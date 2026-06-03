@@ -1,6 +1,6 @@
 import pytest
 
-from src.core.gallery_feed_queries import fetch_gallery_feed_page
+from src.services.gallery_feed_queries import fetch_gallery_feed_page
 
 
 class _ScalarResult:

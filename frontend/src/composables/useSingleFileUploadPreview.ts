@@ -1,17 +1,14 @@
 import { onBeforeUnmount, ref, watch } from 'vue'
-
-interface UploadListItemLike {
-  originFileObj?: File
-}
+import type { UploadFileLike } from '@/types/upload'
 
 interface UseSingleFileUploadPreviewOptions {
-  uploadFile: (file: any) => Promise<string | null | undefined>
+  uploadFile: (file: File) => Promise<string | null | undefined>
 }
 
 export function useSingleFileUploadPreview(
   options: UseSingleFileUploadPreviewOptions
 ) {
-  const fileList = ref<any[]>([])
+  const fileList = ref<Array<UploadFileLike | File>>([])
   const objectKey = ref<string | null>(null)
   const filePreview = ref<string | null>(null)
 
@@ -22,19 +19,24 @@ export function useSingleFileUploadPreview(
     }
   }
 
-  watch(fileList, (newVal: UploadListItemLike[]) => {
-    if (newVal.length > 0 && newVal[0].originFileObj) {
+  const resolveOriginFile = (file: UploadFileLike | File): File | null => {
+    if (file instanceof File) {
+      return file
+    }
+    return file.originFileObj ?? null
+  }
+
+  watch(fileList, (newVal) => {
+    const file = newVal.length > 0 ? resolveOriginFile(newVal[0]) : null
+    if (file) {
       revokePreview()
-      filePreview.value = URL.createObjectURL(newVal[0].originFileObj)
-    } else if (newVal.length > 0 && newVal[0] instanceof File) {
-      revokePreview()
-      filePreview.value = URL.createObjectURL(newVal[0])
+      filePreview.value = URL.createObjectURL(file)
     } else {
       revokePreview()
     }
   })
 
-  const beforeUpload = async (file: any) => {
+  const beforeUpload = async (file: File) => {
     fileList.value = [file]
     const key = await options.uploadFile(file)
     if (key) {

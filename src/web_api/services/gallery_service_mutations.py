@@ -95,7 +95,7 @@ async def update_gallery_post_status(
     state_changed = post.is_active != is_active
     post.is_active = is_active
 
-    history = await _sync_gallery_history_public_flag(
+    await _sync_gallery_history_public_flag(
         db=db,
         task_id=post.task_id,
         user_id=current_user.id,

@@ -8,6 +8,7 @@ import { useTaskResult } from '@/composables/useTaskResult'
 import { useTaskStream } from '@/composables/useTaskStream'
 import { useUpload } from '@/composables/useUpload'
 import { getWan22HistoryChain, stitchWan22HistoryChain } from '@/api/gallery'
+import type { TaskRecord } from '@/types/gallery'
 import { buildGenerationTaskPayload } from '@/features/generation/buildGenerationTaskPayload'
 import { buildSwapTaskPayload } from '@/features/generation/buildSwapTaskPayload'
 import { useTasksStore } from '@/stores/tasks'
@@ -476,7 +477,9 @@ export function useLabWorkbench() {
       const stitchedRecord = await stitchWan22HistoryChain(taskId)
       hide()
       message.success(t('lab.workbench.wan22_stitch_success'))
-      tasksStore.showDetailRecord(stitchedRecord)
+      if (stitchedRecord.task_id && stitchedRecord.type) {
+        tasksStore.showDetailRecord(stitchedRecord as TaskRecord)
+      }
     } catch (error: any) {
       console.error(error)
       hide()

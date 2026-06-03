@@ -1,13 +1,13 @@
 from typing import Any, Callable
 
-from src.lora_catalog import normalize_ltx_video_lora_items
-from src.services.wan22_video_v2_config import (
+from src.domain_config.wan22_aio_video import (
     WAN22_LEGACY_IMAGE_TO_VIDEO_MODEL_PROFILE,
     WAN22_VIDEO_V2_MODEL_PROFILE,
     WAN22_VIDEO_V2_RESOLUTION_PRESETS,
     normalize_wan22_video_v2_resolution_preset,
     resolve_wan22_model_profile,
 )
+from src.lora_catalog import normalize_ltx_video_lora_items
 
 LTX_VIDEO_ADDITIONAL_LORA_NODE_IDS = ("256",)
 LTX_VIDEO_FIRST_PASS_MODEL_NODE_ID = "191"

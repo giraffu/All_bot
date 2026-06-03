@@ -57,7 +57,6 @@ async def toggle_like_impl(
                     session,
                     post_id=post_id,
                     previous_action=inter.action_type,
-                    next_action=action,
                 )
                 post.likes_count = updated[0]
                 post.dislikes_count = updated[1]

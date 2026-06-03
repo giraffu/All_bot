@@ -7,7 +7,6 @@ from src.core.task_lifecycle_contract import (
     STREAM_STATUS_CANCELLED,
     STREAM_STATUS_FAILED,
     STREAM_STATUS_SUCCESS,
-    is_backend_terminal_status,
     normalize_backend_status,
 )
 

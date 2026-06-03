@@ -1,6 +1,7 @@
 import contextlib
 import logging
 import re
+from typing import Any
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import (
@@ -94,6 +95,89 @@ def _cleanup_context(context: ContextTypes.DEFAULT_TYPE) -> None:
 def _release_context_without_files(context: ContextTypes.DEFAULT_TYPE) -> dict:
     context.user_data.pop("in_conversation", None)
     return _pop_data(context)
+
+
+def _resolve_submit_images(data: dict[str, Any]) -> list[str]:
+    images = [str(data["start_image_path"])]
+    if data.get("use_end_frame") and data.get("end_image_path"):
+        images.append(str(data["end_image_path"]))
+    return images
+
+
+def _build_chain_result_meta(data: dict[str, Any]) -> dict[str, Any] | None:
+    if not data.get("extension_prev_task_id"):
+        return None
+    return {
+        "wan22_prev_task_id": str(data["extension_prev_task_id"]),
+        "wan22_chain_task_ids": normalize_wan22_video_v2_chain_task_ids(
+            data.get("chain_task_ids")
+        ),
+    }
+
+
+def _resolve_legacy_lora_strength(data: dict[str, Any]) -> float:
+    try:
+        return float(data.get("lora_strength"))
+    except (TypeError, ValueError):
+        return 1.0
+
+
+def _build_submit_generation_task(
+    *,
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    user,
+    data: dict[str, Any],
+    images: list[str],
+    resolution_preset: str,
+):
+    prompt = str(data.get("prompt") or "").strip()
+    negative_prompt = str(data.get("negative_prompt") or "").strip()
+    use_end_frame = bool(data.get("use_end_frame"))
+    extension_task_type = str(data.get("extension_task_type") or MODE_WAN22_VIDEO_V2)
+
+    if extension_task_type == MODE_WAN22_VIDEO_V2:
+        return process_wan22_video_v2_task(
+            context=context,
+            chat_id=update.effective_chat.id,
+            user_id=user.id,
+            username=user.username,
+            prompt=prompt,
+            negative_prompt=negative_prompt,
+            images=images,
+            use_end_frame=use_end_frame,
+            resolution_preset=resolution_preset,
+            result_meta=_build_chain_result_meta(data),
+            cleanup=True,
+        )
+
+    return process_image_to_video_task(
+        context=context,
+        chat_id=update.effective_chat.id,
+        user_id=user.id,
+        username=user.username,
+        prompt=prompt,
+        negative_prompt=negative_prompt,
+        images=images,
+        use_end_frame=use_end_frame,
+        resolution_preset=resolution_preset,
+        wan22_prev_task_id=(
+            str(data["extension_prev_task_id"])
+            if data.get("extension_prev_task_id")
+            else None
+        ),
+        wan22_chain_task_ids=normalize_wan22_video_v2_chain_task_ids(
+            data.get("chain_task_ids")
+        ),
+        task_type=(
+            MODE_IMAGE_TO_VIDEO
+            if extension_task_type == MODE_IMAGE_TO_VIDEO
+            else MODE_CUSTOM_VIDEO
+        ),
+        lora_name=str(data.get("lora_name") or "").strip() or None,
+        lora_strength=_resolve_legacy_lora_strength(data),
+        cleanup=True,
+    )
 
 
 def _build_end_frame_choice_keyboard(context: ContextTypes.DEFAULT_TYPE) -> InlineKeyboardMarkup:
@@ -630,9 +714,7 @@ async def submit_generation(
             return ConversationHandler.END
         raise exc
 
-    images = [start_image_path]
-    if data.get("use_end_frame") and data.get("end_image_path"):
-        images.append(str(data["end_image_path"]))
+    images = _resolve_submit_images(data)
 
     if query:
         with contextlib.suppress(Exception):
@@ -642,66 +724,14 @@ async def submit_generation(
                 parse_mode="Markdown",
             )
 
-    extension_task_type = str(
-        data.get("extension_task_type") or MODE_WAN22_VIDEO_V2
+    task_coro = _build_submit_generation_task(
+        update=update,
+        context=context,
+        user=user,
+        data=data,
+        images=images,
+        resolution_preset=resolution_preset,
     )
-    chain_result_meta = (
-        {
-            "wan22_prev_task_id": str(data["extension_prev_task_id"]),
-            "wan22_chain_task_ids": normalize_wan22_video_v2_chain_task_ids(
-                data.get("chain_task_ids")
-            ),
-        }
-        if data.get("extension_prev_task_id")
-        else None
-    )
-    if extension_task_type == MODE_WAN22_VIDEO_V2:
-        task_coro = process_wan22_video_v2_task(
-            context=context,
-            chat_id=update.effective_chat.id,
-            user_id=user.id,
-            username=user.username,
-            prompt=str(data.get("prompt") or "").strip(),
-            negative_prompt=str(data.get("negative_prompt") or "").strip(),
-            images=images,
-            use_end_frame=bool(data.get("use_end_frame")),
-            resolution_preset=resolution_preset,
-            result_meta=chain_result_meta,
-            cleanup=True,
-        )
-    else:
-        raw_lora_strength = data.get("lora_strength")
-        try:
-            lora_strength = float(raw_lora_strength)
-        except (TypeError, ValueError):
-            lora_strength = 1.0
-        task_coro = process_image_to_video_task(
-            context=context,
-            chat_id=update.effective_chat.id,
-            user_id=user.id,
-            username=user.username,
-            prompt=str(data.get("prompt") or "").strip(),
-            negative_prompt=str(data.get("negative_prompt") or "").strip(),
-            images=images,
-            use_end_frame=bool(data.get("use_end_frame")),
-            resolution_preset=resolution_preset,
-            wan22_prev_task_id=(
-                str(data["extension_prev_task_id"])
-                if data.get("extension_prev_task_id")
-                else None
-            ),
-            wan22_chain_task_ids=normalize_wan22_video_v2_chain_task_ids(
-                data.get("chain_task_ids")
-            ),
-            task_type=(
-                MODE_IMAGE_TO_VIDEO
-                if extension_task_type == MODE_IMAGE_TO_VIDEO
-                else MODE_CUSTOM_VIDEO
-            ),
-            lora_name=str(data.get("lora_name") or "").strip() or None,
-            lora_strength=lora_strength,
-            cleanup=True,
-        )
     create_background_task(context, task_coro)
     _release_context_without_files(context)
     return ConversationHandler.END

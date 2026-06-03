@@ -13,6 +13,7 @@ description: "处理对象存储、广场评论收藏、R2 媒体策略与 Web a
 - **评论系统**：支持评论创建、分页查询、Redis 限频与 `comments_count` 原子维护。
 - **个人视图**：支持 `my-posts` 与 `my-favorites`，后者从互动记录反查点赞/应用历史。
 - **Web apply-context**：`/api/gallery/posts/{post_id}/apply-context` 已是模板应用主入口，返回 `prompt`、`lora_name`、`input_file_url`、`requested_duration`、`billing_resolution` 等上下文；旧 `custom_video` / `video_lora` 投稿会把旧分辨率映射为 Wan22 v2 档位并固定 5 秒。
+- **Feed 查询边界**：Gallery feed SQL 查询拼装位于 `src/services/gallery_feed_queries.py`；`src/core/gallery_feed_queries.py` 仅是兼容 re-export，新增查询条件不要回写到 core。
 - **媒体 URL 策略**：优先返回 R2 公网链接，找不到对象时回退原始存储路径；Web owner `/result` 延迟敏感路径必须用 R2 公网 HEAD 快探测，R2 warmup 未就绪时图片可短签 MinIO fallback，视频继续 `pending_result` 等 R2，缩略图也有独立 key 解析逻辑。
 - **后台治理**：Dashboard 广场管理可显示投稿用户，列表接口 `GET /api/gallery/all` 支持 `username`、`prompt_contains`、`prompt_max_length` 治理筛选，并通过 `/api/gallery/users/{user_id}/ban-submissions-and-takedown` 一键设置 `is_submission_banned=True`、下架该用户全部 `GalleryPost`，同步取消相关 `History.is_public`。
 

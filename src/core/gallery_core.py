@@ -6,7 +6,6 @@ from src.gallery_core_dependencies import (
     get_gallery_session_factory,
 )
 from src.core.gallery_core_errors import DuplicateInteractionError, GalleryCoreError
-from src.core.gallery_feed_queries import fetch_gallery_feed_page
 from src.core.gallery_interactions_core import (
     record_apply_interaction_impl,
     toggle_like_impl,
@@ -15,6 +14,7 @@ from src.core.gallery_submission_core import (
     ALLOWED_WEB_SUBMIT_TYPES,
     process_submit_to_gallery_result_impl,
 )
+from src.services.gallery_feed_queries import fetch_gallery_feed_page
 
 # Stable facade only: keep submission/query/interaction implementations in submodules.
 

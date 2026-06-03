@@ -91,7 +91,7 @@ onMounted(() => {
   }
 })
 
-const beforeUpload = async (file: any) => {
+const beforeUpload = async (file: File) => {
   if (uploadedImages.value.length + pendingUploads.value >= maxImages.value) {
     message.warning(`最多只能上传${maxImages.value}张图片！`)
     return false

@@ -1,9 +1,11 @@
 <script setup lang="ts">
+import type { UploadFileLike } from '@/types/upload'
+
 const props = withDefaults(
   defineProps<{
     title: string
     step?: string
-    fileList?: any[]
+    fileList?: UploadFileLike[]
     previewUrl?: string | null
     previewKind?: 'image' | 'video'
     name?: string
@@ -20,7 +22,7 @@ const props = withDefaults(
     disabled?: boolean
     locked?: boolean
     lockedText?: string
-    beforeUpload?: (file: any) => boolean | Promise<boolean>
+    beforeUpload?: (file: File) => boolean | Promise<boolean>
   }>(),
   {
     step: '',
@@ -49,7 +51,7 @@ const props = withDefaults(
 )
 
 const emit = defineEmits<{
-  'update:fileList': [files: any[]]
+  'update:fileList': [files: UploadFileLike[]]
   remove: []
 }>()
 </script>

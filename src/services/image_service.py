@@ -1,6 +1,10 @@
 from typing import Any, AsyncGenerator
 
 from src.api_client import api_client
+from src.domain_config.wan22_aio_video import (
+    WAN22_AIO_EXECUTION_IMAGE_TO_VIDEO,
+    WAN22_AIO_EXECUTION_WAN22_VIDEO_V2,
+)
 
 
 class ImageService:
@@ -45,10 +49,11 @@ class ImageService:
         length: int = 5,
         priority: int = 0,
     ) -> str:
-        return await api_client.submit_wan22_video_v2(
-            task_id,
-            prompt,
-            image_path,
+        return await self._submit_wan22_aio_video_task(
+            execution_task_type=WAN22_AIO_EXECUTION_WAN22_VIDEO_V2,
+            task_id=task_id,
+            prompt=prompt,
+            image_path=image_path,
             end_image_path=end_image_path,
             negative_prompt=negative_prompt,
             use_end_frame=use_end_frame,
@@ -192,11 +197,62 @@ class ImageService:
         priority: int = 0,
     ) -> str:
         """Submit unified image_to_video task"""
+        return await self._submit_wan22_aio_video_task(
+            execution_task_type=WAN22_AIO_EXECUTION_IMAGE_TO_VIDEO,
+            task_id=task_id,
+            prompt=prompt,
+            image_path=image_path,
+            lora_name=lora_name,
+            end_image_path=end_image_path,
+            negative_prompt=negative_prompt,
+            use_end_frame=use_end_frame,
+            resolution_preset=resolution_preset,
+            wan22_model_profile=wan22_model_profile,
+            width=width,
+            height=height,
+            length=length,
+            extract_last_frame=extract_last_frame,
+            priority=priority,
+        )
+
+    async def _submit_wan22_aio_video_task(
+        self,
+        *,
+        execution_task_type: str,
+        task_id: str,
+        prompt: str,
+        image_path: str,
+        end_image_path: str | None = None,
+        negative_prompt: str = " ",
+        use_end_frame: bool = False,
+        resolution_preset: str = "preview",
+        wan22_model_profile: str = "",
+        length: int = 5,
+        priority: int = 0,
+        lora_name: str | None = None,
+        width: int = 512,
+        height: int = 512,
+        extract_last_frame: bool = True,
+    ) -> str:
+        if execution_task_type == WAN22_AIO_EXECUTION_WAN22_VIDEO_V2:
+            return await api_client.submit_wan22_video_v2(
+                task_id,
+                prompt,
+                image_path,
+                end_image_path=end_image_path,
+                negative_prompt=negative_prompt,
+                use_end_frame=use_end_frame,
+                resolution_preset=resolution_preset,
+                wan22_model_profile=wan22_model_profile,
+                length=length,
+                priority=priority,
+            )
+
         return await api_client.submit_image_to_video_task(
             task_id,
             prompt,
             image_path,
-            lora_name,
+            lora_name or "",
             end_image_path=end_image_path,
             negative_prompt=negative_prompt,
             use_end_frame=use_end_frame,

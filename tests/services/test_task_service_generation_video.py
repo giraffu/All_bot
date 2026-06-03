@@ -21,15 +21,15 @@ async def test_process_image_to_video_task_persists_legacy_lora_context(monkeypa
         return (b"video-bytes", "task-image-to-video")
 
     monkeypatch.setattr(
-        "src.services.task_service_generation_video.resolve_internal_user_id",
+        "src.services.wan22_aio_video_generation.resolve_internal_user_id",
         AsyncMock(return_value=456),
     )
     monkeypatch.setattr(
-        "src.services.task_service_generation_video.get_acceleration_notice",
+        "src.services.wan22_aio_video_generation.get_acceleration_notice",
         AsyncMock(return_value=""),
     )
     monkeypatch.setattr(
-        "src.services.task_service_generation_video.run_bot_task_application",
+        "src.services.wan22_aio_video_generation.run_bot_task_application",
         fake_run_bot_task_application,
     )
 

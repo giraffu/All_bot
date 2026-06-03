@@ -4,7 +4,7 @@ import asyncio
 from contextlib import asynccontextmanager
 
 from asgi_correlation_id import CorrelationIdMiddleware
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
@@ -36,6 +36,7 @@ class MaintenanceMiddleware(BaseHTTPMiddleware):
                 status_code=503,
                 content={
                     "code": 5030,
+                    "reason": "MAINTENANCE",
                     "message": "System is under maintenance. Please try again later.",
                     "intent": "MAINTENANCE",
                 },
@@ -106,7 +107,35 @@ async def validation_exception_handler(request, exc: RequestValidationError):
     ]
     return JSONResponse(
         status_code=422,
-        content={"code": 4220, "message": "Validation Error", "details": error_details},
+        content={
+            "code": 4220,
+            "reason": "VALIDATION_ERROR",
+            "message": "Validation Error",
+            "details": error_details,
+        },
+    )
+
+
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request, exc: HTTPException):
+    detail = exc.detail
+    default_reason = f"HTTP_{exc.status_code}"
+    default_code = exc.status_code * 10
+    if isinstance(detail, dict):
+        content = dict(detail)
+        content.setdefault("detail", detail)
+        content.setdefault("message", str(detail.get("message") or detail))
+    else:
+        content = {
+            "detail": detail,
+            "message": str(detail),
+        }
+    content.setdefault("code", default_code)
+    content.setdefault("reason", content.get("intent") or default_reason)
+    return JSONResponse(
+        status_code=exc.status_code,
+        content=content,
+        headers=getattr(exc, "headers", None),
     )
 
 
@@ -118,6 +147,7 @@ async def insufficient_credits_exception_handler(
         status_code=402,
         content={
             "code": 4021,
+            "reason": "INSUFFICIENT_CREDITS",
             "message": "Insufficient credits",
             "intent": exc.intent,
             "data": {"current": exc.current, "cost": exc.cost},
@@ -131,6 +161,7 @@ async def access_denied_exception_handler(request, exc: AccessDeniedError):
         status_code=403,
         content={
             "code": 4031,
+            "reason": "ACCESS_DENIED",
             "message": "Access Denied. Please join the required channel.",
             "intent": exc.intent,
         },
@@ -141,7 +172,12 @@ async def access_denied_exception_handler(request, exc: AccessDeniedError):
 async def domain_exception_handler(request, exc: DomainException):
     return JSONResponse(
         status_code=400,
-        content={"code": 4001, "message": exc.message, "intent": exc.intent},
+        content={
+            "code": 4001,
+            "reason": exc.intent or "DOMAIN_ERROR",
+            "message": exc.message,
+            "intent": exc.intent,
+        },
     )
 
 

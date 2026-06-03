@@ -6,44 +6,63 @@ import { defineComponent } from 'vue'
 import i18n from '@/i18n'
 import Profile from '@/views/Profile.vue'
 
-const { authStoreMock, apiGetMock, routerPushMock } = vi.hoisted(() => ({
-  authStoreMock: {
-    token: 'token',
-    user: {
-      id: 1,
-      telegram_id: 123456789,
-      username: 'tester',
-      full_name: 'Tester',
-      language_code: 'zh',
-      credits: 999,
-      user_group: '练气期',
-      current_identity: '外门弟子',
-      identity_expire_at: null,
-      priority: 0,
-      generation_count: 12,
-      checkin_count: 5,
-      invitation_count: 8,
-      invitation_recharge: {
-        recharged_invitees_count: 3,
-        total_recharge_count: 5,
-        total_ton: 0,
-        total_rmb: 0,
-        total_stars: 0,
-        commission_usdt: 0,
-        total_commission_usdt: 300,
-        spent_commission_usdt: 67.65,
-        available_balance_usdt: 232.35,
+const { authStoreMock, themeStoreMock, templateApplyStoreMock, apiGetMock, routerPushMock } =
+  vi.hoisted(() => ({
+    authStoreMock: {
+      token: 'token',
+      user: {
+        id: 1,
+        telegram_id: 123456789,
+        username: 'tester',
+        full_name: 'Tester',
+        language_code: 'zh',
+        credits: 999,
+        user_group: '练气期',
+        current_identity: '外门弟子',
+        identity_expire_at: null,
+        priority: 0,
+        generation_count: 12,
+        checkin_count: 5,
+        invitation_count: 8,
+        invitation_recharge: {
+          recharged_invitees_count: 3,
+          total_recharge_count: 5,
+          total_ton: 0,
+          total_rmb: 0,
+          total_stars: 0,
+          commission_usdt: 0,
+          total_commission_usdt: 300,
+          spent_commission_usdt: 67.65,
+          available_balance_usdt: 232.35,
+        },
       },
+      fetchUser: vi.fn().mockResolvedValue(undefined),
+      setAuth: vi.fn(),
     },
-    fetchUser: vi.fn().mockResolvedValue(undefined),
-    setAuth: vi.fn(),
-  },
-  apiGetMock: vi.fn(),
-  routerPushMock: vi.fn(),
-}))
+    themeStoreMock: {
+      selectedTheme: 'system',
+      effectiveTheme: 'light',
+      setTheme: vi.fn(),
+      initTheme: vi.fn(),
+    },
+    templateApplyStoreMock: {
+      openWithPost: vi.fn(),
+      close: vi.fn(),
+    },
+    apiGetMock: vi.fn(),
+    routerPushMock: vi.fn(),
+  }))
 
 vi.mock('@/stores/auth', () => ({
   useAuthStore: () => authStoreMock,
+}))
+
+vi.mock('@/stores/theme', () => ({
+  useThemeStore: () => themeStoreMock,
+}))
+
+vi.mock('@/stores/templateApply', () => ({
+  useTemplateApplyStore: () => templateApplyStoreMock,
 }))
 
 vi.mock('vue-router', async () => {
@@ -151,7 +170,7 @@ describe('Profile affiliate commission display', () => {
     expect(text).toContain('$ 232.3500 USDT')
   })
 
-  it('routes submissions quick action to MyFavorites submissions tab', async () => {
+  it('routes billing quick action to the billing page', async () => {
     const wrapper = mount(Profile, {
       global: {
         plugins: [i18n],
@@ -177,14 +196,11 @@ describe('Profile affiliate commission display', () => {
 
     await flushPromises()
 
-    const submissionsAction = wrapper.find('[data-testid="quick-action-submissions"]')
-    expect(submissionsAction.exists()).toBe(true)
+    const billingAction = wrapper.find('[data-testid="quick-action-billing"]')
+    expect(billingAction.exists()).toBe(true)
 
-    await submissionsAction.trigger('click')
+    await billingAction.trigger('click')
 
-    expect(routerPushMock).toHaveBeenCalledWith({
-      name: 'MyFavorites',
-      query: { tab: 'submissions' },
-    })
+    expect(routerPushMock).toHaveBeenCalledWith('/billing')
   })
 })

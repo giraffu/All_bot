@@ -77,7 +77,10 @@ def test_infer_requested_output_metadata_parses_explicit_ltx_resolution():
 
 
 def test_infer_requested_billing_resolution_keeps_requested_tier():
-    assert infer_requested_billing_resolution({"resolution": 720}, "custom_video") == "720"
+    assert (
+        infer_requested_billing_resolution({"resolution": 720}, "custom_video")
+        == "standard"
+    )
 
 
 def test_infer_requested_billing_resolution_keeps_ltx_resolution_pair():

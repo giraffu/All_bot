@@ -23,7 +23,6 @@ from src.core.task_core_dependencies import (
 from src.core.task_core_input_preparation import (
     prepare_task_submission_payload as prepare_task_submission_payload_impl,
 )
-from src.core.task_core_types import CoreDomainError
 from src.core.task_core_dependency_builders import (
     build_task_core_finalization_dependencies,
     build_task_core_monitor_dependencies,
@@ -44,7 +43,6 @@ from src.core.task_core_service_providers import (
 )
 from src.core.task_core_error_helpers import is_task_backend_busy_error
 from src.core.task_dispatcher import dispatch_to_worker
-from src.logger import UserLogger
 
 logger = logging.getLogger("src.core.task_core")
 
@@ -123,7 +121,7 @@ def build_default_task_core_submission_dependencies(
 def build_default_task_core_persistence_dependencies(
     *,
     schedule_web_history_r2_warmup_func,
-    user_logger_factory=UserLogger,
+    user_logger_factory,
     extract_media_metadata_from_bytes_best_effort_func=(
         extract_media_metadata_from_bytes_best_effort
     ),

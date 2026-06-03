@@ -45,12 +45,13 @@
 
 ## 二、 旧图生视频附加模型（LoRA）实施方案
 
-旧图生视频的用户侧能力仍保留 `custom_video` / `video_lora` 两种历史类型，但执行面已经改为 `image_to_video`，并与 `wan22_video_v2` 共用 `workers/comfy_agent/workflows/Wan22AioV81.json`。两者通过 `wan22_model_profile` 注入不同主模型：旧入口使用 legacy 主模型，v2 使用 snatchkiss 主模型。
+旧图生视频的用户侧能力仍保留 `custom_video` / `video_lora` 两种历史类型，但执行面已经改为 `image_to_video`，并与 `wan22_video_v2` 共用 `workers/comfy_agent/workflows/Wan22AioV81.json`。两者通过 `src.domain_config.wan22_aio_video` 中的 profile 注入不同主模型：旧入口使用 `legacy_image_to_video`，v2 使用 `wan22_video_v2`。`src.services.wan22_video_v2_config` 与 `src.services.wan22_video_v2_context` 仅作为兼容 re-export 保留。
 
 目前系统主要支持 LTX-2.3 和 Wan2.2/Wan2.1 视频生成工作流。关于 LTX-2.3 工作流的具体 LoRA 使用与提示词规范，请参考项目根目录的 `LTX_LoRA_Guide.md`。
 
 ### 0. 当前支持概览
 - **普通图生视频 / 自定义图生视频**：上游类型仍是 `custom_video` / `video_lora`，执行面统一入队 `TaskType.IMAGE_TO_VIDEO`，底层 workflow 为 `Wan22AioV81.json`。
+- **Wan22 AIO profile 口径**：旧图生视频 `custom_video` / `video_lora` -> execution `image_to_video` -> `legacy_image_to_video` profile；图生视频 v2 `wan22_video_v2` -> execution `wan22_video_v2` -> `wan22_video_v2` profile。两者共享 worker workflow，但不是同一个用户功能。
 - **旧 LoRA 图生视频 (`video_lora`)**：继续接收 `lora_name` 前缀，由 `workflow_task_patchers.py` 按高噪/低噪双节点动态补入。`custom_video` 不带 LoRA 时会清空 LoRA 槽；`wan22_video_v2` 始终清空额外 LoRA 槽。
 - **规格口径**：旧图生视频固定 5 秒，分辨率和计费与 v2 对齐为 `preview=6`、`standard=20`、`hd=30`；旧投稿 `512p/720p/1024p` 分别映射为 `preview/standard/hd`。
 - **高级图生视频 (`ltx_video`)**：现已升级为 `lora_items` 多选协议。Bot FSM、Web 单图视频页、模板应用面板都会提交最多 3 个 LoRA 项，每项独立携带 `name + strength`；旧 `lora_name / lora_strength` 仍保留兼容入口，但不再是主文档口径。

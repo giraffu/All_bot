@@ -1,7 +1,7 @@
 from dataclasses import dataclass, field
 from typing import Any
 
-from src.logger import UserLogger
+from src.core.user_logger_protocol import UserLoggerProtocol
 from src.lora_mapping import decorate_prompt_with_lora_context
 
 
@@ -18,7 +18,7 @@ class VideoTaskRequest:
 class TaskSubmissionContext:
     task_type: str
     is_video_task: bool
-    user_logger: UserLogger
+    user_logger: UserLoggerProtocol
     prompt: str
     saved_inputs: list[str]
     metadata: dict[str, Any]

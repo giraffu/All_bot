@@ -6,7 +6,6 @@ from telegram.ext import ContextTypes
 from src.constants import MODE_FACE_VIDEO_STEP1
 from src.core.video_billing import normalize_requested_duration_seconds
 from src.services.permission_service import permission_service
-from src.services.task_service_cleanup import cleanup_task_files
 from src.services.task_service_entrypoint_support import (
     extract_actor_from_update,
     build_bot_task_flow_context,

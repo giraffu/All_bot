@@ -252,14 +252,12 @@ async def test_default_image_strategy_normalizes_legacy_lora_mode_before_submit(
 async def test_default_image_strategy_routes_i2i_pro_with_seeded_submission_context(
     monkeypatch,
 ):
-    strategy = DefaultImageStrategy(MODE_I2I_PRO)
+    strategy = DefaultImageStrategy(MODE_I2I_PRO, seed_provider=lambda: 42)
     submit_mock = AsyncMock(return_value="backend-task-id")
     _patch_dispatch_image_service(
         monkeypatch,
         submit_i2i_pro_task=submit_mock,
     )
-    monkeypatch.setattr("src.core.task_dispatcher._generate_dispatch_seed", lambda: 42)
-
     result = await strategy.submit_task(
         "task-1",
         {
@@ -311,14 +309,12 @@ async def test_default_image_strategy_routes_txt2img_to_standard_simple_route(
 async def test_default_image_strategy_default_branch_uses_submission_context(
     monkeypatch,
 ):
-    strategy = DefaultImageStrategy("unknown_mode")
+    strategy = DefaultImageStrategy("unknown_mode", seed_provider=lambda: 99)
     submit_mock = AsyncMock(return_value="backend-task-id")
     _patch_dispatch_image_service(
         monkeypatch,
         submit_task=submit_mock,
     )
-    monkeypatch.setattr("src.core.task_dispatcher._generate_dispatch_seed", lambda: 99)
-
     result = await strategy.submit_task(
         "task-1",
         {

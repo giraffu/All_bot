@@ -8,6 +8,8 @@
 - `src/core/task_core_service_providers.py`：provider/capability 边界，屏蔽 `image_service`、`TaskRegistry`、submission outbox 等基础设施实现
 - `src/core/task_core_default_dependencies.py`：纯 builder 层，负责把 capability/provider 组合成 `TaskCore*Dependencies`
 - `src/services/task_core_process_defaults.py`：runtime-specific process 默认装配，负责把 billing / strategy / Web side effects 接到 process dependencies
+- `src/task_core_persistence_defaults.py`：runtime-specific persistence 默认装配，负责把 `src.logger.UserLogger` 等基础设施注入到 core persistence dependencies
+- `src/core/user_logger_protocol.py`：core 侧只依赖 UserLogger protocol，不直接 import `src.logger`
 - `src/core/task_core_submission.py`：提交 Saga、注册表写入、派发与补偿
 - `src/services/task_lifecycle_runner.py`：共享 lifecycle runner / terminal router，负责 monitor->route 骨架与 success/cancelled/failure 分流
 - `src/services/task_web_side_effects.py`：Web 提交后的 side effect plan 归一化、pending finalizer 入队与 apply 互动记录
@@ -31,6 +33,7 @@
 
 - 生产运行时应先完成 `configure_task_core_service_providers(...)`
 - 单元测试优先显式传 `dependencies` 或 `*_func` seam，不依赖全局 provider 自动可用
+- `src/core` 不能直接 import Web/Bot 请求对象或 `src.logger.UserLogger` 等基础设施实现；需要日志或持久化能力时，通过 protocol/dependency 从 runtime 默认装配注入。
 
 ### 2.2 双 ID 语义
 任务链路中同时存在两个 ID：

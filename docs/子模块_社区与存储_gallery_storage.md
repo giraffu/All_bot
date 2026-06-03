@@ -29,7 +29,7 @@ sequenceDiagram
     autonumber
     actor U as 用户
     participant API as gallery router
-    participant Core as gallery_core
+    participant Core as gallery service / core facade
     participant PG as PostgreSQL
     participant R2 as Cloudflare R2
     participant S as Storage
@@ -79,6 +79,7 @@ sequenceDiagram
   - 我的投稿 `my-posts`
   - 我的收藏/应用历史 `my-favorites`
 - `my-favorites` 不是单独表，而是从 `user_interactions` 反查点赞和应用记录。
+- Gallery feed 查询拼装已从 `src/core` 迁到 `src/services/gallery_feed_queries.py`，`src/core/gallery_feed_queries.py` 仅作为兼容 re-export；新增列表查询条件应继续放在 service 层，避免 core 重新直连 SQL 细节。
 
 ### 4.5 Apply Context 已成为 Web 主路径
 - `GET /api/gallery/posts/{post_id}/apply-context` 会返回：

@@ -336,6 +336,89 @@ class ComfyAgent:
     async def report_cancelled(self, task_id: str):
         await self.report_status(task_id, "cancelled")
 
+    async def _receive_ws_message(self, websocket):
+        try:
+            return await asyncio.wait_for(websocket.recv(), timeout=60.0)
+        except asyncio.TimeoutError:
+            if websocket.state == websockets.protocol.State.CLOSED:
+                raise ConnectionError("WebSocket closed unexpectedly")
+            try:
+                await websocket.ping()
+            except Exception as exc:
+                raise ConnectionError(f"WebSocket ping failed: {exc}") from exc
+            return None
+
+    @staticmethod
+    def _decode_ws_message(message) -> dict[str, Any] | None:
+        if message is None or isinstance(message, bytes):
+            return None
+        try:
+            data = json.loads(message)
+        except json.JSONDecodeError:
+            return None
+        return data if isinstance(data, dict) else None
+
+    async def _route_ws_event(self, data: dict[str, Any]) -> None:
+        msg_type = data.get("type")
+        data_content = extract_ws_data_content(data)
+        prompt_id = data_content.get("prompt_id")
+        execution = self._active_execution
+
+        if not execution or not prompt_id or prompt_id != execution.prompt_id:
+            return
+
+        if msg_type == "execution_start":
+            logger.info(f"Execution started for prompt {prompt_id}")
+            if execution.task_id:
+                await self.report_status(execution.task_id, "running")
+            return
+
+        if msg_type == "progress":
+            value = data_content.get("value", 0)
+            max_val = data_content.get("max", 1)
+            if max_val > 0 and execution.task_id:
+                await self.report_status(
+                    execution.task_id,
+                    "running",
+                    progress=value / max_val,
+                )
+            return
+
+        if msg_type == "executing":
+            node = data_content.get("node")
+            if node is None:
+                logger.info(f"Execution fully completed for prompt {prompt_id}")
+                execution.completed_event.set()
+            return
+
+        if msg_type == "execution_success":
+            logger.info(f"Execution success received for prompt {prompt_id}")
+            execution.completed_event.set()
+            return
+
+        if msg_type == "executed":
+            logger.info(f"Node executed for prompt {prompt_id}")
+            output = data_content.get("output") or {}
+            asset = pick_first_output_asset(output, task_type=execution.task_type)
+            if asset and execution.task_id:
+                asset_priority = result_asset_priority(
+                    asset,
+                    task_type=execution.task_type,
+                )
+                if asset_priority >= execution.task_result_priority:
+                    execution.task_result = build_safe_result_object_name(
+                        execution.task_id,
+                        asset,
+                    )
+                    execution.task_result_priority = asset_priority
+            return
+
+        if msg_type == "execution_error":
+            error_msg = str(data_content.get("exception_message", "Unknown error"))
+            logger.error(f"Execution error for prompt {prompt_id}: {error_msg}")
+            execution.task_error = error_msg
+            execution.completed_event.set()
+
     async def ws_listener_loop(self):
         client_id = f"agent_{AGENT_ID}"
         uri = f"{COMFY_WS_URL}?clientId={client_id}"
@@ -348,106 +431,16 @@ class ComfyAgent:
                     logger.info(f"Connected to ComfyUI WebSocket at {uri}")
                     while True:
                         try:
-                            # Use timeout to periodically check connection state
-                            message = await asyncio.wait_for(
-                                websocket.recv(), timeout=60.0
-                            )
-                        except asyncio.TimeoutError:
-                            if websocket.state == websockets.protocol.State.CLOSED:
-                                logger.error("WebSocket closed unexpectedly")
-                                break
-                            try:
-                                await websocket.ping()
-                            except Exception as e:
-                                logger.error(f"WebSocket ping failed: {e}")
-                                break
-                            continue
+                            message = await self._receive_ws_message(websocket)
+                        except ConnectionError as exc:
+                            logger.error(str(exc))
+                            break
 
-                        if isinstance(message, bytes):
-                            continue
-
-                        try:
-                            data = json.loads(message)
-                        except json.JSONDecodeError:
-                            continue
-
-                        if not isinstance(data, dict):
+                        data = self._decode_ws_message(message)
+                        if data is None:
                             continue
                         try:
-                            msg_type = data.get("type")
-                            data_content = extract_ws_data_content(data)
-                            prompt_id = data_content.get("prompt_id")
-                            execution = self._active_execution
-
-                            if (
-                                not execution
-                                or not prompt_id
-                                or prompt_id != execution.prompt_id
-                            ):
-                                continue
-
-                            if msg_type == "execution_start":
-                                logger.info(f"Execution started for prompt {prompt_id}")
-                                if execution.task_id:
-                                    await self.report_status(
-                                        execution.task_id, "running"
-                                    )
-
-                            elif msg_type == "progress":
-                                value = data_content.get("value", 0)
-                                max_val = data_content.get("max", 1)
-                                if max_val > 0 and execution.task_id:
-                                    progress = value / max_val
-                                    await self.report_status(
-                                        execution.task_id,
-                                        "running",
-                                        progress=progress,
-                                    )
-
-                            elif msg_type == "executing":
-                                node = data_content.get("node")
-                                if node is None:
-                                    logger.info(
-                                        f"Execution fully completed for prompt {prompt_id}"
-                                    )
-                                    execution.completed_event.set()
-
-                            elif msg_type == "execution_success":
-                                logger.info(
-                                    f"Execution success received for prompt {prompt_id}"
-                                )
-                                execution.completed_event.set()
-
-                            elif msg_type == "executed":
-                                logger.info(f"Node executed for prompt {prompt_id}")
-                                output = data_content.get("output") or {}
-                                asset = pick_first_output_asset(
-                                    output,
-                                    task_type=execution.task_type,
-                                )
-                                if asset and execution.task_id:
-                                    asset_priority = result_asset_priority(
-                                        asset,
-                                        task_type=execution.task_type,
-                                    )
-                                    if asset_priority >= execution.task_result_priority:
-                                        execution.task_result = build_safe_result_object_name(
-                                            execution.task_id, asset
-                                        )
-                                        execution.task_result_priority = asset_priority
-                                    # Wait for execution completion to finalize upload/report.
-
-                            elif msg_type == "execution_error":
-                                error_msg = str(
-                                    data_content.get(
-                                        "exception_message", "Unknown error"
-                                    )
-                                )
-                                logger.error(
-                                    f"Execution error for prompt {prompt_id}: {error_msg}"
-                                )
-                                execution.task_error = error_msg
-                                execution.completed_event.set()
+                            await self._route_ws_event(data)
                         except Exception as message_error:
                             logger.warning(
                                 "Failed to parse WS message type=%s: %s",

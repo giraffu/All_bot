@@ -1,7 +1,7 @@
 import json
 import logging
 import os
-from typing import Any, Dict, Optional
+from typing import Any, Callable, Dict, Optional
 
 from src.workflow_mapping_validation import (
     load_workflow_mappings,
@@ -134,70 +134,155 @@ class WorkflowPatcher:
         inputs = node.setdefault("inputs", {})
         inputs[input_name] = value
 
+    def _patch_prompt_node(
+        self,
+        *,
+        node: dict[str, Any],
+        inputs: dict[str, Any],
+        class_type: str,
+        value: Any,
+        **_: Any,
+    ) -> None:
+        if not (
+            "CLIPTextEncode" in class_type
+            or "Prompt" in class_type
+            or "TextEncode" in class_type
+        ):
+            return
+        meta_title = node.get("_meta", {}).get("title", "").lower()
+        if "negative" in meta_title:
+            return
+        if "text" in inputs:
+            inputs["text"] = value
+        if "prompt" in inputs:
+            inputs["prompt"] = value
+
+    def _patch_seed_node(
+        self,
+        *,
+        inputs: dict[str, Any],
+        class_type: str,
+        value: Any,
+        **_: Any,
+    ) -> None:
+        if "Sampler" not in class_type and "Seed" not in class_type:
+            return
+        if "seed" in inputs and inputs["seed"] in (-1, None):
+            inputs["seed"] = value
+        if "noise_seed" in inputs and inputs["noise_seed"] in (-1, None):
+            inputs["noise_seed"] = value
+
+    def _patch_sampler_steps_node(
+        self,
+        *,
+        inputs: dict[str, Any],
+        class_type: str,
+        value: Any,
+        **_: Any,
+    ) -> None:
+        if "Sampler" in class_type and "steps" in inputs:
+            inputs["steps"] = value
+
+    def _patch_sampler_cfg_node(
+        self,
+        *,
+        inputs: dict[str, Any],
+        class_type: str,
+        value: Any,
+        **_: Any,
+    ) -> None:
+        if "Sampler" in class_type and "cfg" in inputs:
+            inputs["cfg"] = value
+
+    def _patch_width_node(
+        self,
+        *,
+        inputs: dict[str, Any],
+        class_type: str,
+        value: Any,
+        **_: Any,
+    ) -> None:
+        if "EmptyLatentImage" in class_type:
+            inputs["width"] = value
+        elif "FindPerfectResolution" in class_type:
+            inputs["desired_width"] = value
+
+    def _patch_height_node(
+        self,
+        *,
+        inputs: dict[str, Any],
+        class_type: str,
+        value: Any,
+        **_: Any,
+    ) -> None:
+        if "EmptyLatentImage" in class_type:
+            inputs["height"] = value
+        elif "FindPerfectResolution" in class_type:
+            inputs["desired_height"] = value
+
+    def _patch_lora_name_node(
+        self,
+        *,
+        node_id: str,
+        inputs: dict[str, Any],
+        class_type: str,
+        value: Any,
+        **_: Any,
+    ) -> None:
+        if "Power Lora Loader (rgthree)" not in class_type:
+            return
+        if str(node_id) == "272":
+            inputs["lora_1"] = {
+                "on": True,
+                "lora": f"{value}_high_noise.safetensors",
+                "strength": 1,
+            }
+        elif str(node_id) == "273":
+            inputs["lora_1"] = {
+                "on": True,
+                "lora": f"{value}_low_noise.safetensors",
+                "strength": 1,
+            }
+
+    def _patch_length_node(
+        self,
+        *,
+        inputs: dict[str, Any],
+        class_type: str,
+        value: Any,
+        **_: Any,
+    ) -> None:
+        if "PainterI2V" in class_type:
+            inputs["length"] = value
+
+    def _heuristic_patch_handlers(self) -> dict[str, Callable[..., None]]:
+        return {
+            "prompt": self._patch_prompt_node,
+            "seed": self._patch_seed_node,
+            "steps": self._patch_sampler_steps_node,
+            "cfg": self._patch_sampler_cfg_node,
+            "width": self._patch_width_node,
+            "height": self._patch_height_node,
+            "lora_name": self._patch_lora_name_node,
+            "length": self._patch_length_node,
+        }
+
     def heuristic_patch(self, workflow: Dict[str, Any], key: str, value: Any):
         # This is a best-effort patcher for API format workflows
+        handler = self._heuristic_patch_handlers().get(key)
+        if handler is None:
+            return
+
         for node_id, node in workflow.items():
             if not isinstance(node, dict) or "inputs" not in node:
                 continue
 
             inputs = node["inputs"]
             class_type = node.get("class_type", "")
-
-            if key == "prompt" and (
-                "CLIPTextEncode" in class_type
-                or "Prompt" in class_type
-                or "TextEncode" in class_type
-            ):
-                # Ensure we only patch Positive Prompts, not Negative Prompts
-                meta_title = node.get("_meta", {}).get("title", "").lower()
-                if "negative" not in meta_title:
-                    if "text" in inputs:
-                        inputs["text"] = value
-                    if "prompt" in inputs:
-                        inputs["prompt"] = value
-
-            elif key == "seed" and ("Sampler" in class_type or "Seed" in class_type):
-                # Only inject seed if the current value is a placeholder or -1, or if we passed None but we shouldn't because json.loads might convert it
-                if "seed" in inputs:
-                    if inputs["seed"] == -1 or inputs["seed"] is None:
-                        inputs["seed"] = value
-                if "noise_seed" in inputs:
-                    if inputs["noise_seed"] == -1 or inputs["noise_seed"] is None:
-                        inputs["noise_seed"] = value
-
-            elif key == "steps" and "Sampler" in class_type:
-                if "steps" in inputs:
-                    inputs["steps"] = value
-
-            elif key == "cfg" and "Sampler" in class_type:
-                if "cfg" in inputs:
-                    inputs["cfg"] = value
-
-            elif key == "width" and "EmptyLatentImage" in class_type:
-                inputs["width"] = value
-
-            elif key == "height" and "EmptyLatentImage" in class_type:
-                inputs["height"] = value
-
-            elif key == "width" and "FindPerfectResolution" in class_type:
-                inputs["desired_width"] = value
-
-            elif key == "height" and "FindPerfectResolution" in class_type:
-                inputs["desired_height"] = value
-
-            elif key == "lora_name" and "Power Lora Loader (rgthree)" in class_type:
-                if str(node_id) == "272":
-                    inputs["lora_1"] = {
-                        "on": True,
-                        "lora": f"{value}_high_noise.safetensors",
-                        "strength": 1,
-                    }
-                elif str(node_id) == "273":
-                    inputs["lora_1"] = {
-                        "on": True,
-                        "lora": f"{value}_low_noise.safetensors",
-                        "strength": 1,
-                    }
-
-            elif key == "length" and "PainterI2V" in class_type:
-                inputs["length"] = value
+            handler(
+                node_id=str(node_id),
+                node=node,
+                inputs=inputs,
+                class_type=class_type,
+                value=value,
+            )

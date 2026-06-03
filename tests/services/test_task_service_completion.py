@@ -5,7 +5,6 @@ import pytest
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 from src.core.task_core import (
-    CoreDomainError,
     TaskCancellationFinalizationResult,
     TaskFailureFinalizationResult,
     TaskPersistencePostprocessPlan,
@@ -17,7 +16,6 @@ from src.services.task_service_types import (
     BotTaskFailureContext,
 )
 from src.constants import (
-    MODE_CUSTOM_VIDEO,
     MODE_FACESWAP_STEP1,
     MODE_IMAGE_TO_VIDEO,
     MODE_NAME_MAP,
@@ -1245,15 +1243,15 @@ async def test_process_wan22_video_v2_task_builds_expected_inputs(monkeypatch):
         return (b"video-bytes", "task-wan22")
 
     monkeypatch.setattr(
-        "src.services.task_service_generation_wan22.resolve_internal_user_id",
+        "src.services.wan22_aio_video_generation.resolve_internal_user_id",
         AsyncMock(return_value=456),
     )
     monkeypatch.setattr(
-        "src.services.task_service_generation_wan22.get_acceleration_notice",
+        "src.services.wan22_aio_video_generation.get_acceleration_notice",
         AsyncMock(return_value=""),
     )
     monkeypatch.setattr(
-        "src.services.task_service_generation_wan22.run_bot_task_application",
+        "src.services.wan22_aio_video_generation.run_bot_task_application",
         fake_run_bot_task_application,
     )
 

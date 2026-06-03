@@ -6,7 +6,6 @@ from telegram.ext import ContextTypes
 from src.constants import MODE_NAME_MAP
 from src.services.permission_service import permission_service
 from src.services.task_service_generation_common import resolve_internal_user_id
-from src.services.task_service_generation_video import process_image_to_video_generation_task as process_image_to_video_task
 from src.services.task_service_entrypoint_support import (
     extract_actor_from_update,
     build_bot_task_flow_context,

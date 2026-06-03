@@ -70,6 +70,7 @@ describe('wan22Chain helpers', () => {
       status: 'blank',
       mode: 'regenerate',
       sourceTaskId: 'task-1',
+      taskType: 'wan22_video_v2',
       segmentIndex: 1,
       chainTaskIds: [],
       prevTaskId: null,

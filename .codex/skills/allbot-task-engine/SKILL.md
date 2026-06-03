@@ -14,7 +14,7 @@ description: "处理任务提交流程、provider/capability 装配、双 ID 运
 - 排障时不要只盯某一层；必须先判断问题位于前端提交、Web API、task core、执行面还是 worker/workflow
 
 ## 1. 模块功能描述
-- **Facade + Provider 架构**：`src/core/task_core.py` 仅保留稳定 facade；真实默认装配由 `task_core_service_providers.py`、`task_core_default_dependencies.py`、`task_core_submission.py`、`src/services/task_web_monitor.py`、`task_core_runtime.py` 承担。
+- **Facade + Provider 架构**：`src/core/task_core.py` 仅保留稳定 facade；真实默认装配由 `task_core_service_providers.py`、`task_core_default_dependencies.py`、`task_core_submission.py`、`src/services/task_web_monitor.py`、`task_core_runtime.py` 承担。runtime-specific persistence 默认装配在 `src/task_core_persistence_defaults.py`，core 仅依赖 `src/core/user_logger_protocol.py`。
 - **统一任务提交**：`process_and_submit_task(...)` 负责并发锁、扣费、输入准备、Saga 提交、side effect 挂载与失败补偿。
 - **双 ID 生命周期**：系统同时区分 `registry_task_id` 与 `backend_task_id`；恢复、取消、强制终止、僵尸任务清理都必须显式区分两者。
 - **Web side-effect monitor**：Web 提交成功后会异步挂载 monitor，负责成功持久化、取消退款、失败退款与 runtime cleanup。
@@ -39,6 +39,7 @@ description: "处理任务提交流程、provider/capability 装配、双 ID 运
 
 ## 3. 核心红线
 - 任务进入 core 后，`core` 目录禁止直接 import `src.services.*` 基础设施实现，必须经 provider/capability 获取。
+- `core` 目录禁止直接 import `src.logger.UserLogger`；需要用户日志时通过 `UserLoggerProtocol` 与显式 dependency 注入。
 - 任何失败补偿必须与并发锁释放一起考虑，不能只退款不清 runtime。
 - 任何需要访问运行态或终止任务的地方，都必须显式区分 `registry_task_id` 与 `backend_task_id`。
 - Web 任务完成后的历史持久化、R2 warmup、runtime cleanup 不应由 router 或页面逻辑承担，应收口到 monitor / persistence 链。
@@ -75,6 +76,7 @@ description: "处理任务提交流程、provider/capability 装配、双 ID 运
 - Web 主入口是 `POST /api/tasks/generate`，不是旧 generation params 口径
 - `task_core` 是业务编排门面，Central API 只是执行面
 - Worker 是通过 `pop` 主动拉取任务，不是上游直推 workflow
+- Wan22 AIO 视频配置事实源是 `src.domain_config.wan22_aio_video`：`custom_video` / `video_lora` -> execution `image_to_video` -> `legacy_image_to_video` profile；`wan22_video_v2` -> execution `wan22_video_v2` -> `wan22_video_v2` profile。前端入口与历史 task type 不因底层合并而改名。
 
 ## 7. 新任务类型添加 Checklist
 新增任务类型时，默认按以下顺序检查，不要只改单点：

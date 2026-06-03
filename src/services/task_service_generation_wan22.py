@@ -1,33 +1,21 @@
 from typing import Any, Optional, Tuple
 
 from src.constants import MODE_WAN22_VIDEO_V2
-from src.services.permission_service import permission_service
-from src.services.task_service_entrypoint_support import build_task_inputs
-from src.services.task_service_flow import run_bot_task_application
-from src.services.task_service_generation_common import (
-    build_generation_completion_caption,
-    build_generation_flow_context,
-    build_generation_message_spec,
-    build_generation_submitted_status_builder,
-    resolve_internal_user_id,
-    resolve_generation_billing_args,
-    resolve_generation_display_mode_name,
-)
-from src.services.wan22_video_v2_context import (
+from src.domain_config.wan22_aio_video import (
     DEFAULT_WAN22_VIDEO_V2_NEGATIVE_PROMPT,
-    normalize_wan22_video_v2_chain_task_ids,
-    normalize_wan22_video_v2_negative_prompt,
-)
-from src.services.task_service_message_support import translate_context_text
-from src.services.task_service_support import get_acceleration_notice
-from src.services.wan22_video_v2_config import (
-    WAN22_VIDEO_V2_MODEL_PROFILE,
     WAN22_VIDEO_V2_DEFAULT_RESOLUTION_PRESET,
+    WAN22_VIDEO_V2_MODEL_PROFILE,
     WAN22_VIDEO_V2_RESOLUTION_PRESETS,
+    build_wan22_aio_video_result_meta,
     get_wan22_video_v2_cost,
     get_wan22_video_v2_resolution_display,
     get_wan22_video_v2_resolution_label,
+    normalize_wan22_video_v2_chain_task_ids,
+    normalize_wan22_video_v2_negative_prompt,
     normalize_wan22_video_v2_resolution_preset,
+)
+from src.services.wan22_aio_video_generation import (
+    process_wan22_video_v2_aio_generation_task,
 )
 
 __all__ = [
@@ -53,23 +41,14 @@ def build_wan22_video_v2_result_meta(
     prev_task_id: str | None = None,
     chain_task_ids: Any = None,
 ) -> dict[str, Any]:
-    meta: dict[str, Any] = {
-        "wan22_resolution_preset": normalize_wan22_video_v2_resolution_preset(
-            resolution_preset
-        ),
-        "wan22_negative_prompt": normalize_wan22_video_v2_negative_prompt(
-            negative_prompt
-        ),
-        "wan22_use_end_frame": bool(use_end_frame),
-        "wan22_model_profile": WAN22_VIDEO_V2_MODEL_PROFILE,
-        "wan22_chain_task_ids": normalize_wan22_video_v2_chain_task_ids(
-            chain_task_ids
-        ),
-    }
-    prev_task_id = str(prev_task_id or "").strip()
-    if prev_task_id:
-        meta["wan22_prev_task_id"] = prev_task_id
-    return meta
+    return build_wan22_aio_video_result_meta(
+        profile=WAN22_VIDEO_V2_MODEL_PROFILE,
+        resolution_preset=resolution_preset,
+        negative_prompt=negative_prompt,
+        use_end_frame=use_end_frame,
+        prev_task_id=prev_task_id,
+        chain_task_ids=chain_task_ids,
+    )
 
 
 async def process_wan22_video_v2_generation_task(
@@ -93,92 +72,29 @@ async def process_wan22_video_v2_generation_task(
     allow_contribute: bool = True,
     source_post_id: Optional[int] = None,
     resolution_preset: str | None = None,
+    wan22_prev_task_id: str | None = None,
+    wan22_chain_task_ids: Any = None,
 ) -> Tuple[Optional[bytes], Optional[str]]:
-    internal_user_id = await resolve_internal_user_id(user_id, username)
-    normalized_negative_prompt = normalize_wan22_video_v2_negative_prompt(
-        negative_prompt
-    )
-    normalized_resolution_preset = normalize_wan22_video_v2_resolution_preset(
-        resolution_preset
-    )
-    final_result_meta = build_wan22_video_v2_result_meta(
-        resolution_preset=normalized_resolution_preset,
-        negative_prompt=normalized_negative_prompt,
-        use_end_frame=use_end_frame,
-    )
-    if isinstance(result_meta, dict):
-        final_result_meta.update(result_meta)
-    notice = await get_acceleration_notice(
-        internal_user_id,
-        quota_manager=permission_service.quota_manager,
-    )
-    display_mode_name = resolve_generation_display_mode_name(context, task_type)
-    inputs = build_task_inputs(
-        prompt=prompt,
-        images=images,
-        resolution=None,
-        duration=5,
-        negative_prompt=normalized_negative_prompt,
-        use_end_frame=use_end_frame,
-        resolution_preset=normalized_resolution_preset,
-        wan22_model_profile=WAN22_VIDEO_V2_MODEL_PROFILE,
-        upscale=False,
-        extract_last_frame=True,
-    )
-    message_spec = build_generation_message_spec(
+    return await process_wan22_video_v2_aio_generation_task(
         context=context,
-        notice=notice,
-        initial_status_text=translate_context_text(
-            context,
-            "task.status_processing_mode",
-            mode_name=display_mode_name,
-        ),
-        progress_wait_text=translate_context_text(
-            context, "task.status_wait_generating_video"
-        ),
-        completion_caption=build_generation_completion_caption(
-            context,
-            task_type,
-        ),
-    )
-    billing_args = resolve_generation_billing_args(
-        is_video=True,
-        resolution=None,
+        chat_id=chat_id,
+        user_id=user_id,
+        username=username,
+        prompt=prompt,
+        negative_prompt=negative_prompt,
+        images=images,
+        use_end_frame=use_end_frame,
+        status_msg_id=status_msg_id,
+        delete_status=delete_status,
         task_type=task_type,
-        duration=5,
-        allowed_task_types=(),
-    )
-
-    return await run_bot_task_application(
-        flow=build_generation_flow_context(
-            context=context,
-            chat_id=chat_id,
-            status_msg_id=status_msg_id,
-            internal_user_id=internal_user_id,
-            username=username,
-            task_type=task_type,
-            inputs=inputs,
-            prompt=prompt,
-            is_video=True,
-            source_post_id=source_post_id,
-            deduct_quota=deduct_quota,
-            message_spec=message_spec,
-            submitted_status_builder=build_generation_submitted_status_builder(
-                context,
-                "task.status_submitted_mode",
-                notice=notice,
-                wait_key="task.status_wait_generating_video",
-                mode_name=display_mode_name,
-            ),
-            send_result=send_result,
-            reply_markup=reply_markup,
-            result_meta=final_result_meta,
-            delete_status=delete_status,
-            allow_contribute=allow_contribute,
-            billing_resolution=billing_args["billing_resolution"],
-            requested_duration=5,
-            images=images,
-            cleanup=cleanup,
-            entrypoint_name="process_wan22_video_v2_task",
-        )
+        cleanup=cleanup,
+        send_result=send_result,
+        deduct_quota=deduct_quota,
+        reply_markup=reply_markup,
+        result_meta=result_meta,
+        allow_contribute=allow_contribute,
+        source_post_id=source_post_id,
+        resolution_preset=resolution_preset,
+        wan22_prev_task_id=wan22_prev_task_id,
+        wan22_chain_task_ids=wan22_chain_task_ids,
     )

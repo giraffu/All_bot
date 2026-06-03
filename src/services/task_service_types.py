@@ -121,7 +121,7 @@ class BotTaskFlowContext:
     cleanup_policy: BotTaskCleanupPolicy = field(default_factory=BotTaskCleanupPolicy)
 
 
-class BotTaskCancelled(CoreDomainError if False else Exception):
+class BotTaskCancelled(Exception):
     """Dedicated bot-task cancellation signal used across monitor/finalize stages."""
 
 

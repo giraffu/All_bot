@@ -4,6 +4,8 @@ import os
 import re
 import time
 from collections import defaultdict
+from dataclasses import dataclass
+from typing import Any
 
 import httpx
 from db import init_db, save_message
@@ -46,9 +48,6 @@ def get_cached_photo(chat_id: int, user_id: int) -> str:
 # 猴子补丁 (Monkey Patch): 修复 PTB 自定义文件服务器路径拼接 Bug
 # 避免 url 变成 http://ip:8082bot<token>/var/lib/...
 # ==========================================
-original_download_to_drive = File.download_to_drive
-
-
 async def custom_download_as_bytearray(
     self, _out=None, custom_path=None, read_timeout=120.0, *args, **kwargs
 ):
@@ -63,10 +62,11 @@ async def custom_download_as_bytearray(
             parsed = urllib.parse.urlparse(raw_path)
             raw_path = parsed.path
 
-        # 修正拼接：强制指向 8082 端口
-        fixed_url = f"http://69.63.220.115:8082{raw_path}"
+        fixed_url = _build_local_file_url(raw_path)
         # 处理 bot token 被错误拼接的情况
-        if f"8082bot{BOT_TOKEN}/" in fixed_url:
+        if f"{TELEGRAM_LOCAL_FILE_BASE_URL}/bot{BOT_TOKEN}/" in fixed_url:
+            fixed_url = fixed_url.replace(f"bot{BOT_TOKEN}/", "")
+        if f"{TELEGRAM_LOCAL_FILE_BASE_URL}bot{BOT_TOKEN}/" in fixed_url:
             fixed_url = fixed_url.replace(f"bot{BOT_TOKEN}/", "")
 
         logging.info(f"正在从 Local API Server 下载文件: {fixed_url}")
@@ -94,6 +94,14 @@ logging.basicConfig(
 # 加载环境变量
 load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
+TELEGRAM_LOCAL_BOT_API_BASE_URL = os.getenv(
+    "TELEGRAM_LOCAL_BOT_API_BASE_URL",
+    "http://69.63.220.115:8081/bot",
+).rstrip("/")
+TELEGRAM_LOCAL_FILE_BASE_URL = os.getenv(
+    "TELEGRAM_LOCAL_FILE_BASE_URL",
+    "http://69.63.220.115:8082",
+).rstrip("/")
 # 支持多个群组 ID，逗号分隔解析为整数列表
 allowed_groups_str = os.getenv("ALLOWED_GROUP_IDS", "")
 ALLOWED_GROUP_IDS = (
@@ -104,6 +112,147 @@ ALLOWED_GROUP_IDS = (
 
 # 代理配置
 PROXY_URL = os.getenv("PROXY_URL")
+
+
+def _normalize_local_bot_api_base_url(raw_url: str) -> str:
+    normalized = str(raw_url or "").strip().rstrip("/")
+    if not normalized:
+        return ""
+    return normalized if normalized.endswith("/bot") else f"{normalized}/bot"
+
+
+def _build_local_file_url(raw_path: str) -> str:
+    path = str(raw_path or "")
+    if not path.startswith("/"):
+        path = f"/{path}"
+    return f"{TELEGRAM_LOCAL_FILE_BASE_URL}{path}"
+
+
+@dataclass(frozen=True)
+class GroupMessageContext:
+    message: Any
+    raw_text: str
+    has_photo: bool
+    chat_type: str
+    chat_id: int
+    user_id: int
+    username: str
+    bot_username: str
+    user_text: str
+    is_asking_prompt: bool
+    is_reply_to_bot: bool
+    is_mentioned: bool
+    reply_photo_file_id: str | None
+
+
+def _build_group_message_context(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+) -> GroupMessageContext | None:
+    message = update.message
+    if not message:
+        return None
+
+    raw_text = message.text or message.caption or ""
+    has_photo = bool(message.photo)
+    from_user = message.from_user
+    user_id = from_user.id if from_user else 0
+    username = (from_user.first_name if from_user else None) or "未知弟子"
+    bot_username = context.bot.username
+    reply_to_message = message.reply_to_message
+    reply_from_user = getattr(reply_to_message, "from_user", None)
+    reply_photo_file_id = (
+        reply_to_message.photo[-1].file_id
+        if reply_to_message and reply_to_message.photo
+        else None
+    )
+
+    return GroupMessageContext(
+        message=message,
+        raw_text=raw_text,
+        has_photo=has_photo,
+        chat_type=message.chat.type,
+        chat_id=message.chat_id,
+        user_id=user_id,
+        username=username,
+        bot_username=bot_username,
+        user_text=raw_text.replace(f"@{bot_username}", "").strip(),
+        is_asking_prompt=bool(
+            re.search(r"(咒语|提示词|反推|焚诀|焚决|prompt)", raw_text, re.IGNORECASE)
+        ),
+        is_reply_to_bot=bool(
+            reply_from_user and reply_from_user.id == context.bot.id
+        ),
+        is_mentioned=f"@{bot_username}" in raw_text,
+        reply_photo_file_id=reply_photo_file_id,
+    )
+
+
+async def _should_skip_group_message(env: GroupMessageContext) -> bool:
+    if env.has_photo:
+        update_photo_cache(env.chat_id, env.user_id, env.message.photo[-1].file_id)
+
+    if not env.raw_text and not env.has_photo:
+        return True
+
+    if env.chat_type not in ["group", "supergroup"]:
+        await env.message.reply_text(
+            "师弟，大师姐这会儿正忙着呢，有什么问题去群里大家一起讨论呀~"
+        )
+        return True
+
+    if ALLOWED_GROUP_IDS and env.chat_id not in ALLOWED_GROUP_IDS:
+        logging.info(f"忽略非专属群组消息: {env.chat_id}")
+        return True
+
+    return False
+
+
+async def _is_help_seeking_message(env: GroupMessageContext) -> bool:
+    if env.is_mentioned or env.is_reply_to_bot:
+        return True
+
+    if env.is_asking_prompt:
+        if (
+            env.has_photo
+            or env.reply_photo_file_id
+            or get_cached_photo(env.chat_id, env.user_id)
+        ):
+            logging.info("收到图片并请求反推咒语，触发视觉大模型")
+            return True
+        return False
+
+    if not env.has_photo and len(env.user_text) > 3:
+        is_help_seeking = await check_intent(env.user_text)
+        if is_help_seeking:
+            logging.info(f"意图识别命中！用户正在求助: {env.user_text}")
+        return is_help_seeking
+
+    return False
+
+
+def _resolve_target_photo_file_id(env: GroupMessageContext) -> str | None:
+    if env.has_photo and (
+        env.is_asking_prompt or env.is_mentioned or env.is_reply_to_bot
+    ):
+        return env.message.photo[-1].file_id
+    if env.is_asking_prompt and env.reply_photo_file_id:
+        return env.reply_photo_file_id
+    if env.is_asking_prompt:
+        return get_cached_photo(env.chat_id, env.user_id)
+    return None
+
+
+async def _download_photo_as_base64(
+    *,
+    bot,
+    file_id: str | None,
+) -> str | None:
+    if not file_id:
+        return None
+    photo_file = await bot.get_file(file_id)
+    file_bytes = await photo_file.download_as_bytearray()
+    return base64.b64encode(file_bytes).decode("utf-8")
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -126,124 +275,41 @@ async def handle_group_message(update: Update, context: ContextTypes.DEFAULT_TYP
     2. 只响应被 @ 或者直接回复的消息
     3. 调用 LLM 获取并返回答案（支持文本和图片）
     """
-    message = update.message
-    if not message:
+    env = _build_group_message_context(update, context)
+    if env is None or await _should_skip_group_message(env):
         return
 
-    # 获取文本内容：可能是纯文本，也可能是图片的 caption
-    raw_text = message.text or message.caption or ""
-    has_photo = bool(message.photo)
-
-    chat_type = message.chat.type
-    # 核心拦截 1：只处理专属群组消息
-    chat_id = message.chat_id
-
-    user_id = message.from_user.id
-    username = message.from_user.first_name or "未知弟子"
-
-    if has_photo:
-        # 用户发了图片，无论是否有文字，都先更新到缓存中（备用）
-        update_photo_cache(chat_id, user_id, message.photo[-1].file_id)
-
-    if not raw_text and not has_photo:
+    if not await _is_help_seeking_message(env):
         return
 
-    if chat_type not in ["group", "supergroup"]:
-        await message.reply_text(
-            "师弟，大师姐这会儿正忙着呢，有什么问题去群里大家一起讨论呀~"
+    user_text = env.user_text
+    if not user_text and not env.has_photo:
+        user_text = "师姐，我需要帮忙~"
+
+    await context.bot.send_chat_action(chat_id=env.chat_id, action="typing")
+
+    try:
+        base64_image = await _download_photo_as_base64(
+            bot=context.bot,
+            file_id=_resolve_target_photo_file_id(env),
+        )
+    except Exception as e:
+        logging.error(f"下载或转换图片失败: {e}")
+        await env.message.reply_text(
+            "师弟，这张图的灵力波动太强，我没看清，能再发一次吗？"
         )
         return
 
-    if ALLOWED_GROUP_IDS and chat_id not in ALLOWED_GROUP_IDS:
-        logging.info(f"忽略非专属群组消息: {chat_id}")
-        return
-
-    # 核心判断 2：触发大师姐回复的条件
-    bot_username = context.bot.username
-
-    # 检查用户是否在询问反推咒语
-    # 触发词汇：咒语、提示词、反推、焚诀、焚决、prompt 等
-    is_asking_prompt = bool(
-        re.search(r"(咒语|提示词|反推|焚诀|焚决|prompt)", raw_text, re.IGNORECASE)
-    )
-
-    # 如果回复了某条包含图片的消息，也将其纳入考虑
-    reply_photo_file_id = None
-    if message.reply_to_message and message.reply_to_message.photo:
-        reply_photo_file_id = message.reply_to_message.photo[-1].file_id
-
-    is_reply_to_bot = (
-        message.reply_to_message
-        and message.reply_to_message.from_user.id == context.bot.id
-    )
-    is_mentioned = f"@{bot_username}" in raw_text
-
-    # 新增规则：使用大模型进行“意图识别”
-    # 如果没有被 @，也没有被直接回复，调用本地 LLM 判断是否属于求助
-    is_help_seeking = False
-
-    # 纯净的文本内容，用于意图识别和传递给大模型
-    user_text = raw_text.replace(f"@{bot_username}", "").strip()
-
-    # 1. 明确的交互 (被 @ 或回复了 Bot)
-    if is_mentioned or is_reply_to_bot:
-        is_help_seeking = True
-
-    # 2. 用户在索要咒语
-    elif is_asking_prompt:
-        if has_photo or reply_photo_file_id or get_cached_photo(chat_id, user_id):
-            # 有图并且要咒语，直接触发
-            is_help_seeking = True
-            logging.info("收到图片并请求反推咒语，触发视觉大模型")
-
-    # 3. 超过3个字的纯文本，使用大模型嗅探意图
-    elif not has_photo and len(user_text) > 3:
-        is_help_seeking = await check_intent(user_text)
-        if is_help_seeking:
-            logging.info(f"意图识别命中！用户正在求助: {user_text}")
-
-    # 如果没有任何意图被命中，直接返回（静默记录器依然会工作）
-    if not is_help_seeking:
-        return
-
-    # === 以下为确认需要回复的逻辑 ===
-    if not user_text and not has_photo:
-        user_text = "师姐，我需要帮忙~"
-
-    # 发送“正在输入”状态（让群友觉得是真人在思考）
-    await context.bot.send_chat_action(chat_id=chat_id, action="typing")
-
-    # 确定要发送给大模型的图片 file_id
-    target_file_id = None
-    if has_photo and (is_asking_prompt or is_mentioned or is_reply_to_bot):
-        target_file_id = message.photo[-1].file_id
-    elif is_asking_prompt and reply_photo_file_id:
-        target_file_id = reply_photo_file_id
-    elif is_asking_prompt and get_cached_photo(chat_id, user_id):
-        target_file_id = get_cached_photo(chat_id, user_id)
-
-    # 提取图片并转 Base64
-    base64_image = None
-    if target_file_id:
-        try:
-            # 获取最大分辨率的图片
-            photo_file = await context.bot.get_file(target_file_id)
-            # 下载到内存
-            file_bytes = await photo_file.download_as_bytearray()
-            # 转为 Base64
-            base64_image = base64.b64encode(file_bytes).decode("utf-8")
-        except Exception as e:
-            logging.error(f"下载或转换图片失败: {e}")
-            await message.reply_text(
-                "师弟，这张图的灵力波动太强，我没看清，能再发一次吗？"
-            )
-            return
-
     # 核心调用 3：向 LangGraph 获取 LLM 智能回复，附带上下文记忆和可能存在的图片
-    reply_text = await get_langgraph_reply(chat_id, username, user_text, base64_image)
+    reply_text = await get_langgraph_reply(
+        env.chat_id,
+        env.username,
+        user_text,
+        base64_image,
+    )
 
     # 核心返回 4：引用用户的原消息进行回复
-    await message.reply_text(reply_text, reply_to_message_id=message.message_id)
+    await env.message.reply_text(reply_text, reply_to_message_id=env.message.message_id)
 
 
 async def silent_logger_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -339,9 +405,15 @@ def main():
 
     # 强制使用您的 Telegram Local API 服务器，以解决国内连不上的问题
     # 这和您的 tg-bot 主项目保持一致
-    builder = builder.base_url("http://69.63.220.115:8081/bot")
-    builder = builder.base_file_url("http://69.63.220.115:8082")
-    logging.info("已配置使用 Telegram Local API 服务器 (69.63.220.115)")
+    builder = builder.base_url(
+        _normalize_local_bot_api_base_url(TELEGRAM_LOCAL_BOT_API_BASE_URL)
+    )
+    builder = builder.base_file_url(TELEGRAM_LOCAL_FILE_BASE_URL)
+    logging.info(
+        "已配置使用 Telegram Local API 服务器: bot_api=%s, file_api=%s",
+        _normalize_local_bot_api_base_url(TELEGRAM_LOCAL_BOT_API_BASE_URL),
+        TELEGRAM_LOCAL_FILE_BASE_URL,
+    )
 
     # 如果配置了代理，则注入代理配置 (备用)
     if PROXY_URL:

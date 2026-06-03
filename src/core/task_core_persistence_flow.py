@@ -11,10 +11,10 @@ from src.core.task_core_persistence_postprocess import (
     postprocess_successful_task_persistence as _postprocess_successful_task_persistence_impl,
 )
 from src.core.task_core_types import (
+    CoreDomainError,
     TaskPersistencePostprocessPlan,
     TaskSuccessPersistenceResult,
 )
-from src.logger import UserLogger
 
 
 async def persist_successful_task_result_flow(
@@ -59,7 +59,7 @@ async def persist_successful_task_result_flow(
         or _postprocess_successful_task_persistence_impl
     )
     if user_logger_factory is None:
-        user_logger_factory = UserLogger
+        raise CoreDomainError("user_logger_factory is required")
     if extract_media_metadata_from_bytes_best_effort_func is None:
         extract_media_metadata_from_bytes_best_effort_func = (
             extract_media_metadata_from_bytes_best_effort

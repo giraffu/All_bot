@@ -53,7 +53,7 @@
 | `billing_core` 私有 `_build_*` 测试 seam | `tests/core/test_billing_core.py` patch 私有 builder | `BillingCoreDependencies` 显式注入 | 已迁移，公开函数支持显式 dependencies，测试不再绑定私有 builder |
 | `task_core_persistence` 模块内 materialization builder seam | `src/core/task_core_persistence.py` | `persist_successful_task_result(...)` + `task_core_persistence_flow.py` | 已收口，下载/`to_thread` 默认绑定回到公开 persistence 边界与 flow |
 | `affiliate_redeem_service` membership 账本/结算混排 | `src/services/affiliate_redeem_service.py` | `_create_membership_redeem_ledger_entry(...)`、`_apply_affiliate_membership_settlement(...)` | 已拆开，主 service 继续保留事务/幂等编排，账本与结算边界更清晰 |
-| `gallery_core.py` feed 查询拼装 | `src/core/gallery_core.py` | `src/core/gallery_feed_queries.py` | 已下沉，category/media_type/sort/time_range/page/count 查询拼装不再堆在主文件 |
+| `gallery_core.py` feed 查询拼装 | `src/core/gallery_core.py` | `src/services/gallery_feed_queries.py` | 已下沉到 service 层，`src/core/gallery_feed_queries.py` 仅保留兼容 re-export；category/media_type/sort/time_range/page/count 查询拼装不再堆在 core 主文件 |
 | `storage.py` MinIO object IO facade | `src/services/storage.py` | `src/services/storage_minio_objects.py` | 已下沉，upload/list/download/object exists 回到独立 helper，主类保留薄代理与兼容签名 |
 | `gallery_core.py` 投稿 / 互动主链 | `src/core/gallery_core.py` | `src/core/gallery_submission_core.py`、`src/core/gallery_interactions_core.py`、`src/core/gallery_core_errors.py` | 已下沉，投稿/点赞/apply 计数与错误类型退出主文件，`gallery_core.py` 主要保留 outcome + facade |
 | `storage.py` R2 copy / public URL facade | `src/services/storage.py` | `src/services/storage_r2_transfer.py` | 已下沉，MinIO->R2 copy 与 public URL 规则回到独立 helper，主类只保留薄包装 |

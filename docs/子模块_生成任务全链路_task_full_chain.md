@@ -224,6 +224,8 @@ dispatcher 下游通常会继续经过：
 注意：
 - 当前 simple route 仍可能映射到 legacy `TaskType`，但 `txt2img` 已和其他任务一样通过标准 simple route 提交，并显式携带上游 `task_id`
 - `image_service.py` / `api_client.py` 只负责把统一语义下沉到 Central API，不再由 `txt2img` 单独生成 backend task id
+- Wan22 AIO 视频的稳定配置入口是 `src.domain_config.wan22_aio_video`。旧 `src.services.wan22_video_v2_config` / `src.services.wan22_video_v2_context` 仅保留兼容 re-export，不应作为新增逻辑的事实源。
+- `custom_video` / `video_lora` 与 `wan22_video_v2` 是两个用户功能入口，但底层由 `Wan22AioVideoStrategy` 与共享 submit helper 收口：公开类型继续写历史和展示，执行面类型用于 Central API / Worker 路由。
 
 ## 8. Central API / QueueManager 执行面
 ### 8.1 角色定位
@@ -265,7 +267,7 @@ Central API 是执行面，不是业务主入口。
 - `ltx_video`
 - `wan22_video_v2`
 
-其中 `txt2img` 当前通过 `/txt2img` simple route 进入执行面，Central API 内部仍映射到 legacy `TaskType.T2I_PORNMASTER_TURBO`。旧图生视频的 `/image_to_video` 与 `/perfect_video_lora` 会入队到执行面 `TaskType.IMAGE_TO_VIDEO`，但上游历史类型仍保留 `custom_video` / `video_lora`；`video_edit` 继续绑定 `perfect_video_edit.json`，不要把快捷视频误切到 Wan22。新增任务类型时，不要默认假设只改 `SIMPLE_TASK_TYPE_MAP` 就够，还要确认 request model、dispatcher 和 worker workflow 映射是否齐全。
+其中 `txt2img` 当前通过 `/txt2img` simple route 进入执行面，Central API 内部仍映射到 legacy `TaskType.T2I_PORNMASTER_TURBO`。旧图生视频的 `/image_to_video` 与 `/perfect_video_lora` 会入队到执行面 `TaskType.IMAGE_TO_VIDEO`，但上游历史类型仍保留 `custom_video` / `video_lora`；`video_edit` 继续绑定 `perfect_video_edit.json`，不要把快捷视频误切到 Wan22。Wan22 AIO 当前明确分两档 profile：旧图生视频 `custom_video` / `video_lora` -> execution `image_to_video` -> `legacy_image_to_video` profile；图生视频 v2 `wan22_video_v2` -> execution `wan22_video_v2` -> `wan22_video_v2` profile。新增任务类型时，不要默认假设只改 `SIMPLE_TASK_TYPE_MAP` 就够，还要确认 request model、dispatcher 和 worker workflow 映射是否齐全。
 
 ### 8.3 QueueManager 的职责
 QueueManager 负责执行面排队与 Worker 选择，关键职责包括：
@@ -319,7 +321,7 @@ Worker 拉到任务后会先处理输入：
 - `TASK_TYPE_WORKFLOW_FILENAMES` 决定任务类型默认绑定哪个 workflow JSON
 - `mappings.json` 决定输入参数如何映射到 workflow 节点
 - `workflow_patcher.py` 负责把运行时参数打进具体 workflow
-- `image_to_video` 与 `wan22_video_v2` 当前共用 `Wan22AioV81.json`。两者通过 `wan22_model_profile` 注入不同主模型；旧 `video_lora` 会把 `{lora_name}_high_noise.safetensors` / `{lora_name}_low_noise.safetensors` 写入工作流 LoRA 槽，v2 始终清空额外 LoRA 槽。
+- `image_to_video` 与 `wan22_video_v2` 当前共用 `Wan22AioV81.json`，由 `_patch_wan22_aio_workflow(...)` 统一 patch。两者通过 `wan22_model_profile` 注入不同主模型；旧 `video_lora` 会把 `{lora_name}_high_noise.safetensors` / `{lora_name}_low_noise.safetensors` 写入工作流 LoRA 槽，v2 始终清空额外 LoRA 槽。
 - 旧图生视频 Web/Bot 历史类型仍是 `custom_video` / `video_lora`，执行面 task type 才是 `image_to_video`。排障时需要同时确认上游历史类型、registry task type 和 backend task type。
 
 如果出现以下错误，优先看这三层：

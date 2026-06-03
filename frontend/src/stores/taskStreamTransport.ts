@@ -1,4 +1,4 @@
-import type { Task } from './taskStoreTypes'
+import type { Task, TaskProgressPayload } from './taskStoreTypes'
 import { touchTaskActivity } from './tasksRuntime'
 
 export interface TaskProgressMessageDeps {
@@ -12,7 +12,7 @@ export interface StartTaskStreamListeningDeps {
   apiBaseURL: string
   getToken: () => string | null
   fetchImpl?: typeof fetch
-  handleTaskProgressPayload: (task: Task, payload: Record<string, any>) => void
+  handleTaskProgressPayload: (task: Task, payload: TaskProgressPayload) => void
   closeTaskStream: (task: Task) => void
   touchTask: (task: Task) => void
   handleUnauthorized: () => void
@@ -35,7 +35,7 @@ export function closeTaskStream(task: Task): void {
 
 export function handleTaskProgressPayload(
   task: Task,
-  payload: Record<string, any>,
+  payload: TaskProgressPayload,
   deps: TaskProgressMessageDeps,
 ): void {
   if (payload.status === 'pending' && payload.queue_pos != null) {

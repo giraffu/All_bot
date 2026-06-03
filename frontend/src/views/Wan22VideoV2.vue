@@ -17,6 +17,7 @@ import GenerationUploadCard from '@/components/GenerationUploadCard.vue'
 import GenerationWorkbenchShell from '@/components/GenerationWorkbenchShell.vue'
 import TaskResultPreviewPanel from '@/components/TaskResultPreviewPanel.vue'
 import { getWan22HistoryChain, stitchWan22HistoryChain } from '@/api/gallery'
+import type { TaskRecord } from '@/types/gallery'
 import { useSingleFileUploadPreview } from '@/composables/useSingleFileUploadPreview'
 import { useTaskResult } from '@/composables/useTaskResult'
 import { useTaskStream } from '@/composables/useTaskStream'
@@ -345,7 +346,9 @@ const handleStitchCurrentChain = async () => {
       })
       return
     }
-    tasksStore.showDetailRecord(stitchedRecord)
+    if (stitchedRecord.task_id && stitchedRecord.type) {
+      tasksStore.showDetailRecord(stitchedRecord as TaskRecord)
+    }
   } catch (error: any) {
     console.error(error)
     hide()

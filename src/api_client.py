@@ -160,26 +160,24 @@ class APIClient:
         image_path: MinIO Object Key
         lora_name: Name of the LoRA to inject
         """
-        data = {
-            "task_id": task_id,
-            "image": image_path,
-            "prompt": prompt,
-            "lora_name": lora_name or "",
-            "negative_prompt": negative_prompt,
-            "use_end_frame": use_end_frame,
-            "resolution_preset": resolution_preset,
-            "wan22_model_profile": wan22_model_profile,
-            "width": width,
-            "height": height,
-            "length": length,
-            "extract_last_frame": extract_last_frame,
-            "priority": priority,
-        }
-        if end_image_path:
-            data["end_image"] = end_image_path
-
-        r = await self._request("POST", IMAGE_TO_VIDEO_ENDPOINT, json=data)
-        return r.json()["task_id"]
+        return await self._submit_wan22_aio_video_task(
+            endpoint=IMAGE_TO_VIDEO_ENDPOINT,
+            execution_task_type="image_to_video",
+            task_id=task_id,
+            prompt=prompt,
+            image_path=image_path,
+            end_image_path=end_image_path,
+            negative_prompt=negative_prompt,
+            use_end_frame=use_end_frame,
+            resolution_preset=resolution_preset,
+            wan22_model_profile=wan22_model_profile,
+            length=length,
+            priority=priority,
+            lora_name=lora_name or "",
+            width=width,
+            height=height,
+            extract_last_frame=extract_last_frame,
+        )
 
     @async_retry(max_retries=3)
     async def submit_img2img(
@@ -436,7 +434,42 @@ class APIClient:
         length: int = 5,
         priority: int = 0,
     ) -> str:
-        data = {
+        return await self._submit_wan22_aio_video_task(
+            endpoint=WAN22_VIDEO_V2_ENDPOINT,
+            execution_task_type="wan22_video_v2",
+            task_id=task_id,
+            prompt=prompt,
+            image_path=image_path,
+            end_image_path=end_image_path,
+            negative_prompt=negative_prompt,
+            use_end_frame=use_end_frame,
+            resolution_preset=resolution_preset,
+            wan22_model_profile=wan22_model_profile,
+            length=length,
+            priority=priority,
+        )
+
+    async def _submit_wan22_aio_video_task(
+        self,
+        *,
+        endpoint: str,
+        execution_task_type: str,
+        task_id: str,
+        prompt: str,
+        image_path: str,
+        end_image_path: str | None,
+        negative_prompt: str,
+        use_end_frame: bool,
+        resolution_preset: str,
+        wan22_model_profile: str,
+        length: int,
+        priority: int,
+        lora_name: str | None = None,
+        width: int | None = None,
+        height: int | None = None,
+        extract_last_frame: bool | None = None,
+    ) -> str:
+        data: dict[str, Any] = {
             "task_id": task_id,
             "image": image_path,
             "prompt": prompt,
@@ -449,16 +482,25 @@ class APIClient:
         }
         if end_image_path:
             data["end_image"] = end_image_path
+        if lora_name is not None:
+            data["lora_name"] = lora_name
+        if width is not None:
+            data["width"] = width
+        if height is not None:
+            data["height"] = height
+        if extract_last_frame is not None:
+            data["extract_last_frame"] = extract_last_frame
 
         logger.info(
-            "Submitting wan22_video_v2 task. Prompt: %s, Use end frame: %s, Resolution preset: %s, Priority: %s",
+            "Submitting %s task. Prompt: %s, Use end frame: %s, Resolution preset: %s, Priority: %s",
+            execution_task_type,
             prompt,
             use_end_frame,
             resolution_preset,
             priority,
         )
-        r = await self._request("POST", WAN22_VIDEO_V2_ENDPOINT, json=data)
-        return r.json()["task_id"]
+        response = await self._request("POST", endpoint, json=data)
+        return response.json()["task_id"]
 
     @async_retry(max_retries=3)
     async def cancel_task(self, task_id: str) -> dict:
@@ -498,31 +540,27 @@ class APIClient:
                 raise RuntimeError("后端未找到生成的视频文件。")
             raise RuntimeError(f"获取视频失败: HTTP {e.response.status_code}")
 
-    async def listen_for_progress(self, task_id: str, is_video: bool = False):
-        """
-        Async generator for task progress using Redis Pub/Sub.
-        """
-        status_url = f"{STATUS_ENDPOINT}/{task_id}"
+    async def _fetch_progress_status(self, status_url: str) -> dict[str, Any]:
+        response = await self._request("GET", status_url, timeout=10)
+        return self._normalize_progress_payload(response.json())
 
-        # Initial HTTP poll to get current state
-        try:
-            r = await self._request("GET", status_url, timeout=10)
-            info = r.json()
-            logger.debug(f"Task {task_id} initial status: {info}")
-            yield info
+    @staticmethod
+    def _normalize_progress_payload(payload: dict[str, Any]) -> dict[str, Any]:
+        normalized = dict(payload)
+        if "error_msg" in normalized and "error" not in normalized:
+            normalized["error"] = normalized["error_msg"]
+        return normalized
 
-            status = info.get("status")
-            if status == "done":
-                return
-            if status in ["error", "cancelled"]:
-                raise RuntimeError(info.get("error", "generation failed or cancelled"))
-        except Exception as e:
-            if isinstance(e, httpx.HTTPStatusError) and e.response.status_code == 404:
-                yield {"status": "cancelled", "error": "Task cancelled (404)"}
-                raise RuntimeError(f"Task {task_id} not found on server (404).")
-            logger.warning(f"Initial status fetch failed for {task_id}: {e}")
+    @staticmethod
+    def _is_terminal_progress_payload(payload: dict[str, Any]) -> bool:
+        status = payload.get("status")
+        if status == "done":
+            return True
+        if status in ["error", "cancelled"]:
+            raise RuntimeError(payload.get("error", "generation failed or cancelled"))
+        return False
 
-        # Subscribe to Pub/Sub
+    async def _iter_pubsub_progress(self, *, task_id: str, status_url: str):
         import json
 
         import redis.asyncio as redis
@@ -531,10 +569,10 @@ class APIClient:
 
         redis_client = None
         pubsub = None
+        channel = f"comfy:task_events:{task_id}"
         try:
             redis_client = redis.from_url(REDIS_URL, decode_responses=True)
             pubsub = redis_client.pubsub()
-            channel = f"comfy:task_events:{task_id}"
             await pubsub.subscribe(channel)
             logger.info(f"Subscribed to {channel}")
 
@@ -547,81 +585,86 @@ class APIClient:
                         timeout=15.0,
                     )
                     if message and message.get("data"):
-                        event_data = json.loads(message["data"])
-                        if "error_msg" in event_data and "error" not in event_data:
-                            event_data["error"] = event_data["error_msg"]
-
+                        event_data = self._normalize_progress_payload(
+                            json.loads(message["data"])
+                        )
                         logger.debug(f"Pub/Sub received for {task_id}: {event_data}")
                         yield event_data
-
-                        status = event_data.get("status")
-                        if status == "done":
+                        if self._is_terminal_progress_payload(event_data):
                             break
-                        if status in ["error", "cancelled"]:
-                            raise RuntimeError(
-                                event_data.get(
-                                    "error", "generation failed or cancelled"
-                                )
-                            )
                     else:
-                        # Periodically poll via HTTP just in case we miss a message
-                        r = await self._request("GET", status_url, timeout=10)
-                        info = r.json()
+                        info = await self._fetch_progress_status(status_url)
                         yield info
-
-                        status = info.get("status")
-                        if status == "done":
+                        if self._is_terminal_progress_payload(info):
                             break
-                        if status in ["error", "cancelled"]:
-                            raise RuntimeError(
-                                info.get("error", "generation failed or cancelled")
-                            )
                 except asyncio.TimeoutError:
-                    # Timeout from wait_for, do HTTP poll
-                    r = await self._request("GET", status_url, timeout=10)
-                    info = r.json()
+                    info = await self._fetch_progress_status(status_url)
                     yield info
-
-                    status = info.get("status")
-                    if status == "done":
+                    if self._is_terminal_progress_payload(info):
                         break
-                    if status in ["error", "cancelled"]:
-                        raise RuntimeError(
-                            info.get("error", "generation failed or cancelled")
-                        )
-        except Exception as e:
-            logger.error(
-                f"Pub/Sub error for {task_id}: {e}. Falling back to HTTP polling."
-            )
-            # Fallback to pure polling
-            while True:
-                try:
-                    r = await self._request("GET", status_url, timeout=10)
-                    info = r.json()
-                    yield info
-
-                    status = info.get("status")
-                    if status == "done":
-                        break
-                    if status in ["error", "cancelled"]:
-                        raise RuntimeError(
-                            info.get("error", "generation failed or cancelled")
-                        )
-
-                    await asyncio.sleep(POLL_INTERVAL)
-                except Exception as inner_e:
-                    if isinstance(inner_e, httpx.HTTPStatusError) and inner_e.response.status_code == 404:
-                        logger.warning(f"Task {task_id} deleted by central (404), treating as cancelled.")
-                        yield {"status": "cancelled", "error": "Task cancelled (404)"}
-                        raise RuntimeError("cancelled")
-                    logger.warning(f"Poll status failed for {task_id}: {inner_e}")
-                    await asyncio.sleep(POLL_INTERVAL)
         finally:
             if pubsub:
                 await pubsub.unsubscribe(channel)
                 await pubsub.close()
             if redis_client:
                 await redis_client.aclose()
+
+    async def _iter_poll_progress(self, *, task_id: str, status_url: str):
+        while True:
+            try:
+                info = await self._fetch_progress_status(status_url)
+                yield info
+                if self._is_terminal_progress_payload(info):
+                    break
+                await asyncio.sleep(POLL_INTERVAL)
+            except Exception as inner_e:
+                if (
+                    isinstance(inner_e, httpx.HTTPStatusError)
+                    and inner_e.response.status_code == 404
+                ):
+                    logger.warning(
+                        f"Task {task_id} deleted by central (404), treating as cancelled."
+                    )
+                    yield {"status": "cancelled", "error": "Task cancelled (404)"}
+                    raise RuntimeError("cancelled")
+                logger.warning(f"Poll status failed for {task_id}: {inner_e}")
+                await asyncio.sleep(POLL_INTERVAL)
+
+    async def listen_for_progress(self, task_id: str, is_video: bool = False):
+        """
+        Async generator for task progress using Redis Pub/Sub.
+        """
+        status_url = f"{STATUS_ENDPOINT}/{task_id}"
+
+        try:
+            info = await self._fetch_progress_status(status_url)
+            logger.debug(f"Task {task_id} initial status: {info}")
+            yield info
+            if self._is_terminal_progress_payload(info):
+                return
+        except Exception as e:
+            if isinstance(e, httpx.HTTPStatusError) and e.response.status_code == 404:
+                yield {"status": "cancelled", "error": "Task cancelled (404)"}
+                raise RuntimeError(f"Task {task_id} not found on server (404).")
+            logger.warning(f"Initial status fetch failed for {task_id}: {e}")
+
+        try:
+            async for event in self._iter_pubsub_progress(
+                task_id=task_id,
+                status_url=status_url,
+            ):
+                yield event
+        except Exception as e:
+            logger.error(
+                f"Pub/Sub error for {task_id}: {e}. Falling back to HTTP polling."
+            )
+            while True:
+                async for info in self._iter_poll_progress(
+                    task_id=task_id,
+                    status_url=status_url,
+                ):
+                    yield info
+                break
 
     @async_retry(max_retries=3)
     async def get_task_status(self, task_id: str) -> dict[str, Any] | None:

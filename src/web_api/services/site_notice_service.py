@@ -1,5 +1,3 @@
-from datetime import datetime
-
 from sqlalchemy import select
 
 from src.database.models import SiteNotice

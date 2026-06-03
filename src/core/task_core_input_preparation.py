@@ -5,7 +5,7 @@ from collections.abc import Awaitable, Callable
 from typing import Any
 
 from src.core.task_core_types import CoreDomainError, TaskSubmissionContext, VideoTaskRequest
-from src.logger import UserLogger
+from src.core.user_logger_protocol import UserLoggerProtocol
 
 
 def _call_with_supported_kwargs(func, **kwargs):
@@ -26,7 +26,7 @@ def _call_with_supported_kwargs(func, **kwargs):
 
 async def process_input_path(
     *,
-    user_logger: UserLogger,
+    user_logger: UserLoggerProtocol,
     path: str,
     bucket_name: str,
 ) -> str:
@@ -75,7 +75,7 @@ async def prepare_task_submission_payload(
     is_template: bool,
     is_video_task: bool,
     video_request: VideoTaskRequest,
-    user_logger_factory: Callable[[int, str], UserLogger],
+    user_logger_factory: Callable[[int, str], UserLoggerProtocol],
     validate_local_input_paths_func: Callable[..., None],
     get_user_priority_and_identity_func: Callable[[int], Awaitable[tuple[int, Any, Any]]],
     load_prompts_func: Callable[[], dict[str, str]],

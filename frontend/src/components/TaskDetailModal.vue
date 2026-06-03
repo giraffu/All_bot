@@ -11,7 +11,7 @@ import { usePostPromptCopy } from '@/composables/usePostPromptCopy'
 import PromptPreviewPanel from '@/components/PromptPreviewPanel.vue'
 import { useI18n } from 'vue-i18n'
 import { stitchWan22HistoryChain } from '@/api/gallery'
-import type { HistoryItem } from '@/types/gallery'
+import type { HistoryItem, TaskRecord } from '@/types/gallery'
 
 const { isMobile } = useViewport()
 const { t } = useI18n()
@@ -95,7 +95,9 @@ const handleWan22ChainStitch = async () => {
   const hide = message.loading('正在拼接整条视频链...', 0)
   try {
     const stitchedRecord = await stitchWan22HistoryChain(record.task_id)
-    tasksStore.showDetailRecord(stitchedRecord)
+    if (stitchedRecord.task_id && stitchedRecord.type) {
+      tasksStore.showDetailRecord(stitchedRecord as TaskRecord)
+    }
     hide()
     message.success('拼接完成，已生成新的闪回瓶记录')
   } catch (error: any) {

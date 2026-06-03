@@ -74,6 +74,11 @@ export interface HistoryItem {
   is_favorited?: boolean | null
 }
 
+export type TaskRecord = Omit<HistoryItem, 'task_id' | 'type'> & {
+  task_id: string
+  type: string
+}
+
 export interface PaginatedGalleryResponse<TItem = GalleryPost> {
   items: TItem[]
   total: number

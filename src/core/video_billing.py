@@ -2,7 +2,7 @@ import re
 from typing import Any
 
 from src.constants import MODE_IMAGE_TO_VIDEO, VIDEO_TASK_TYPES
-from src.services.wan22_video_v2_config import (
+from src.domain_config.wan22_aio_video import (
     normalize_wan22_video_v2_resolution_preset,
 )
 

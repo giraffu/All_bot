@@ -156,7 +156,20 @@
     "too_many_tasks": "Too many tasks in queue, please try again later",
     "system_error": "System error, please try again later",
     "network_error": "Network error, please check your connection",
-    "validation_error": "Validation error: {msg}"
+    "validation_error": "Validation error: {msg}",
+    "errors": {
+      "4000": "The request could not be processed. Please check and try again",
+      "4001": "The request could not be processed. Please check and try again",
+      "4010": "Session expired, please login again",
+      "4021": "Insufficient balance, please recharge",
+      "4030": "Permission denied. Please check your account status",
+      "4031": "Permission denied. Please join the required channel first",
+      "4040": "Resource not found or access denied",
+      "4220": "Validation failed. Please check your input",
+      "4290": "Too many requests. Please try again later",
+      "5000": "System error, please try again later",
+      "5030": "System under maintenance. Please try again later"
+    }
   },
   "group": {
     "凡人": "Mortal",

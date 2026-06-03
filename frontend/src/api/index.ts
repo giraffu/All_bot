@@ -16,6 +16,44 @@ function isCallerHandledUnauthorized(url?: string): boolean {
   return callerHandledUnauthorizedPaths.some((path) => url.endsWith(path))
 }
 
+type ApiErrorPayload = {
+  code?: string | number
+  reason?: unknown
+  intent?: unknown
+  message?: unknown
+  detail?: unknown
+}
+
+function asNonEmptyString(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined
+  const normalized = value.trim()
+  return normalized || undefined
+}
+
+function resolveApiErrorMessage(data: ApiErrorPayload | undefined, fallback: string): string {
+  const code = String(data?.code ?? '').trim()
+  if (code) {
+    const codeKey = `api.errors.${code}`
+    if (i18n.global.te(codeKey)) return i18n.global.t(codeKey)
+  }
+
+  const reason = asNonEmptyString(data?.reason) || asNonEmptyString(data?.intent)
+  if (reason) {
+    const reasonKey = `api.reasons.${reason}`
+    if (i18n.global.te(reasonKey)) return i18n.global.t(reasonKey)
+  }
+
+  const detailMessage = typeof data?.detail === 'object' && data.detail !== null
+    ? asNonEmptyString((data.detail as { message?: unknown }).message)
+    : asNonEmptyString(data?.detail)
+
+  return (
+    asNonEmptyString(data?.message)
+    || detailMessage
+    || fallback
+  )
+}
+
 api.interceptors.request.use((config) => {
   const authStore = useAuthStore()
   if (authStore.token) {
@@ -46,9 +84,9 @@ api.interceptors.response.use(
       router.push('/login')
       message.error(t('api.session_expired'))
     } else if (status === 402) {
-      message.warning(data?.message || t('api.insufficient_balance'))
+      message.warning(resolveApiErrorMessage(data, t('api.insufficient_balance')))
     } else if (status === 429) {
-      message.warning(data?.detail || t('api.too_many_tasks'))
+      message.warning(resolveApiErrorMessage(data, t('api.too_many_tasks')))
     } else if (status === 422) {
       // Handle Pydantic validation errors
       let errMsg = t('api.validation_error', { msg: 'Invalid parameters' })
@@ -69,7 +107,7 @@ api.interceptors.response.use(
         message.error(t('api.system_error'))
       }
     } else {
-      message.error(data?.message || data?.detail || t('api.system_error'))
+      message.error(resolveApiErrorMessage(data, t('api.system_error')))
     }
     return Promise.reject(error)
   }

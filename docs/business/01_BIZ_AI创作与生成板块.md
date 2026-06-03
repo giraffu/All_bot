@@ -13,7 +13,7 @@
 
 **前置依赖**：用户必须具备足够灵石，且同一时刻受并发锁约束。
 
-**当前视频口径**：旧 `custom_video` / `video_lora` 与 `wan22_video_v2` 共用 Wan22 AIO 工作流；旧入口固定 5 秒，分辨率与计费对齐 v2 三档，`video_lora` 额外保留旧 LoRA 选择。历史与投稿类型仍保留旧值，执行面才使用 `image_to_video`。
+**当前视频口径**：旧 `custom_video` / `video_lora` 与 `wan22_video_v2` 共用 Wan22 AIO 底层内核和 worker workflow，但仍是两个用户功能入口。旧入口固定 5 秒，分辨率与计费对齐 v2 三档，`video_lora` 额外保留旧 LoRA 选择。历史与投稿类型仍保留旧值，执行面才使用 `image_to_video`。
 
 ## 3. 当前业务主链
 
@@ -63,7 +63,7 @@ sequenceDiagram
 
 ### 4.2 计费契约
 - 视频成本通常由分辨率与时长组合计算。
-- `wan22_video_v2` 当前固定 5 秒，分辨率档位以 `src/services/wan22_video_v2_config.py` 为准：`preview`（展示为“极速”，约 512p，默认且最低价）6 灵石、`standard`（约 720p）20 灵石、`hd`（约 810p）30 灵石；旧 `fast` 仅作为兼容别名归一到 `preview`，不再作为可选档位展示。
+- Wan22 AIO 视频配置事实源是 `src.domain_config.wan22_aio_video`；`wan22_video_v2` 当前固定 5 秒，分辨率档位为 `preview`（展示为“极速”，约 512p，默认且最低价）6 灵石、`standard`（约 720p）20 灵石、`hd`（约 810p）30 灵石；旧 `fast` 仅作为兼容别名归一到 `preview`，不再作为可选档位展示。
 - 旧 `custom_video` / `video_lora` 当前同样固定 5 秒并对齐上述 v2 档位计费；旧投稿中的 `512p/720p/1024p` 会映射为 `preview/standard/hd`。
 - 具体倍率与 guardrail 以当前服务实现为准，不在业务文档中固化旧常量值。
 
