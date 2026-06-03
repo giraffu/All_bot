@@ -451,7 +451,7 @@ async def test_edit_image_special_lora_normalizes_prompt_before_submit(monkeypat
     create_background_task_mock.assert_called_once()
     service_call = create_background_task_mock.call_args.args[1]
     assert service_call[0] == "bg-task"
-    assert service_call[1][4] == "adjust her pussy and anus, make it better"
+    assert service_call[2]["prompt"] == "adjust her pussy and anus, make it better"
 
 
 @pytest.mark.asyncio
@@ -972,12 +972,57 @@ async def test_image_to_video_receive_prompt_uses_unified_image_to_video_service
     service_call = create_background_task_mock.call_args.args[1]
     assert service_call[0] == "bg-task"
     assert service_call[1]["task_type"] == expected_task_type
-    assert service_call[1]["resolution"] == "720p"
-    assert service_call[1]["duration"] == "8s"
+    assert service_call[1]["resolution"] == "standard"
+    assert service_call[1]["duration"] == 5
+    assert service_call[1]["use_end_frame"] is False
     assert service_call[1]["lora_name"] == lora_name
     assert "in_conversation" not in context.user_data
     assert "video_lora_data" not in context.user_data
     assert "image_to_video_data" not in context.user_data
+
+
+@pytest.mark.asyncio
+async def test_image_to_video_receive_prompt_submits_optional_end_frame(monkeypatch):
+    reply_mock = AsyncMock()
+    quota_mock = AsyncMock()
+    create_background_task_mock = Mock()
+
+    monkeypatch.setattr(image_to_video_fsm, "is_global_menu_command", lambda _text: False)
+    monkeypatch.setattr(image_to_video_fsm, "robust_reply_text", reply_mock)
+    monkeypatch.setattr(image_to_video_fsm.permission_service, "check_quota", quota_mock)
+    monkeypatch.setattr(image_to_video_fsm, "create_background_task", create_background_task_mock)
+    monkeypatch.setattr(
+        image_to_video_fsm,
+        "process_image_to_video_task",
+        lambda **kwargs: ("bg-task", kwargs),
+    )
+
+    update = _build_update_with_message()
+    context = SimpleNamespace(
+        bot=SimpleNamespace(),
+        user_data={
+            "in_conversation": image_to_video_fsm.IMAGE_TO_VIDEO_CONVERSATION_TAG,
+            "image_to_video_data": {
+                "resolution": "1024p",
+                "duration": "10s",
+                "lora_name": "BreastGrow",
+                "image_path": "/tmp/start.png",
+                "end_image_path": "/tmp/end.png",
+                "use_end_frame": True,
+            },
+        },
+    )
+
+    result = await image_to_video_fsm.receive_prompt(update, context)
+
+    assert result == ConversationHandler.END
+    create_background_task_mock.assert_called_once()
+    service_call = create_background_task_mock.call_args.args[1]
+    assert service_call[1]["images"] == ["/tmp/start.png", "/tmp/end.png"]
+    assert service_call[1]["resolution"] == "hd"
+    assert service_call[1]["duration"] == 5
+    assert service_call[1]["use_end_frame"] is True
+    assert service_call[1]["lora_name"] == "BreastGrow"
 
 
 @pytest.mark.asyncio

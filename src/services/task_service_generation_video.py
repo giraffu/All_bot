@@ -18,7 +18,14 @@ from src.services.task_service_generation_common import (
 )
 from src.services.task_service_support import (
     get_acceleration_notice,
-    resolve_custom_video_settings,
+)
+from src.services.wan22_video_v2_config import (
+    get_wan22_video_v2_resolution_display,
+    normalize_wan22_video_v2_resolution_preset,
+)
+from src.services.wan22_video_v2_context import (
+    normalize_wan22_video_v2_chain_task_ids,
+    normalize_wan22_video_v2_negative_prompt,
 )
 from src.services.task_service_message_support import translate_context_text
 
@@ -33,6 +40,12 @@ async def process_image_to_video_generation_task(
     images: list[str],
     resolution: Any = None,
     duration: Any = None,
+    negative_prompt: str | None = None,
+    use_end_frame: bool | None = None,
+    resolution_preset: str | None = None,
+    wan22_prev_task_id: str | None = None,
+    wan22_chain_task_ids: Any = None,
+    result_meta: dict[str, Any] | None = None,
     status_msg_id: int = None,
     delete_status: bool = True,
     task_type: str = MODE_IMAGE_TO_VIDEO,
@@ -46,13 +59,35 @@ async def process_image_to_video_generation_task(
     source_post_id: Optional[int] = None,
 ) -> Tuple[Optional[bytes], Optional[str]]:
     internal_user_id = await resolve_internal_user_id(user_id, username)
-    resolution_text, duration_text, resolution_value, duration_value = (
-        await resolve_custom_video_settings(
-            context,
-            resolution=resolution,
-            duration=duration,
-        )
+    normalized_resolution_preset = normalize_wan22_video_v2_resolution_preset(
+        resolution_preset or resolution
     )
+    normalized_negative_prompt = normalize_wan22_video_v2_negative_prompt(
+        negative_prompt
+    )
+    duration_text = "5s"
+    duration_value = 5
+    resolution_text = get_wan22_video_v2_resolution_display(
+        normalized_resolution_preset,
+        lang=getattr(context, "lang", "zh"),
+    )
+    use_end_frame_value = (
+        bool(use_end_frame) if use_end_frame is not None else len(images) > 1
+    )
+    normalized_chain_task_ids = normalize_wan22_video_v2_chain_task_ids(
+        wan22_chain_task_ids
+    )
+    final_result_meta: dict[str, Any] = {
+        "wan22_resolution_preset": normalized_resolution_preset,
+        "wan22_negative_prompt": normalized_negative_prompt,
+        "wan22_use_end_frame": use_end_frame_value,
+        "wan22_chain_task_ids": normalized_chain_task_ids,
+    }
+    normalized_prev_task_id = str(wan22_prev_task_id or "").strip()
+    if normalized_prev_task_id:
+        final_result_meta["wan22_prev_task_id"] = normalized_prev_task_id
+    if isinstance(result_meta, dict):
+        final_result_meta.update(result_meta)
 
     notice = await get_acceleration_notice(
         internal_user_id,
@@ -62,8 +97,11 @@ async def process_image_to_video_generation_task(
     inputs = build_task_inputs(
         prompt=prompt,
         images=images,
-        resolution=resolution_value,
+        resolution=normalized_resolution_preset,
         duration=duration_value,
+        negative_prompt=normalized_negative_prompt,
+        use_end_frame=use_end_frame_value,
+        resolution_preset=normalized_resolution_preset,
         lora_name=lora_name,
         lora_strength=lora_strength,
     )
@@ -87,7 +125,7 @@ async def process_image_to_video_generation_task(
     )
     log_prompt = build_log_prompt(
         prompt,
-        resolution=resolution_text,
+        resolution=normalized_resolution_preset,
         duration=duration_text,
         lora_name=lora_name,
         task_type=task_type,
@@ -95,7 +133,7 @@ async def process_image_to_video_generation_task(
     )
     billing_args = resolve_generation_billing_args(
         is_video=True,
-        resolution=resolution_value,
+        resolution=normalized_resolution_preset,
         task_type=task_type,
         duration=duration_value,
         allowed_task_types=(MODE_CUSTOM_VIDEO, MODE_IMAGE_TO_VIDEO),
@@ -126,10 +164,11 @@ async def process_image_to_video_generation_task(
             ),
             send_result=send_result,
             reply_markup=reply_markup,
+            result_meta=final_result_meta,
             delete_status=delete_status,
             allow_contribute=allow_contribute,
             billing_resolution=billing_args["billing_resolution"],
-            requested_duration=billing_args["requested_duration"],
+            requested_duration=5,
             images=images,
             cleanup=cleanup,
             entrypoint_name="process_image_to_video_task",

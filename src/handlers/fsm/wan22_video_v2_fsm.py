@@ -12,7 +12,7 @@ from telegram.ext import (
     filters,
 )
 
-from src.constants import MODE_WAN22_VIDEO_V2
+from src.constants import MODE_CUSTOM_VIDEO, MODE_IMAGE_TO_VIDEO, MODE_WAN22_VIDEO_V2
 from src.filters.i18n_filter import I18nFilter
 from src.handlers.conversation_states import Wan22VideoV2State
 from src.handlers.fsm.fsm_shared import (
@@ -22,8 +22,10 @@ from src.handlers.fsm.fsm_shared import (
     translate_fsm_text,
 )
 from src.handlers.prompt_router import is_global_menu_command
+from src.services.task_service_generation_video import (
+    process_image_to_video_generation_task as process_image_to_video_task,
+)
 from src.services.task_service_generation_wan22 import (
-    build_wan22_video_v2_result_meta,
     normalize_wan22_video_v2_chain_task_ids,
     process_wan22_video_v2_generation_task as process_wan22_video_v2_task,
 )
@@ -298,6 +300,7 @@ async def start_wan22_video_v2(
             "resolution_preset": WAN22_VIDEO_V2_DEFAULT_RESOLUTION_PRESET,
             "prompt": "",
             "negative_prompt": "",
+            "extension_task_type": MODE_WAN22_VIDEO_V2,
         },
     )
     await _send_or_edit_message(update, _t(context, "fsm.wan22_video_v2.start"))
@@ -365,6 +368,9 @@ async def start_wan22_video_v2_extension(
             "prompt": "",
             "negative_prompt": "",
             "extension_prev_task_id": base_task_id,
+            "extension_task_type": history.type,
+            "lora_name": str(meta.get("lora_name") or "").strip(),
+            "lora_strength": meta.get("lora_strength"),
             "chain_task_ids": build_full_chain_task_ids(
                 chain_task_ids=resolve_extension_chain_task_ids(meta),
                 current_task_id=base_task_id,
@@ -636,9 +642,21 @@ async def submit_generation(
                 parse_mode="Markdown",
             )
 
-    create_background_task(
-        context,
-        process_wan22_video_v2_task(
+    extension_task_type = str(
+        data.get("extension_task_type") or MODE_WAN22_VIDEO_V2
+    )
+    chain_result_meta = (
+        {
+            "wan22_prev_task_id": str(data["extension_prev_task_id"]),
+            "wan22_chain_task_ids": normalize_wan22_video_v2_chain_task_ids(
+                data.get("chain_task_ids")
+            ),
+        }
+        if data.get("extension_prev_task_id")
+        else None
+    )
+    if extension_task_type == MODE_WAN22_VIDEO_V2:
+        task_coro = process_wan22_video_v2_task(
             context=context,
             chat_id=update.effective_chat.id,
             user_id=user.id,
@@ -648,19 +666,43 @@ async def submit_generation(
             images=images,
             use_end_frame=bool(data.get("use_end_frame")),
             resolution_preset=resolution_preset,
-            result_meta=(
-                {
-                    "wan22_prev_task_id": str(data["extension_prev_task_id"]),
-                    "wan22_chain_task_ids": normalize_wan22_video_v2_chain_task_ids(
-                        data.get("chain_task_ids")
-                    ),
-                }
+            result_meta=chain_result_meta,
+            cleanup=True,
+        )
+    else:
+        raw_lora_strength = data.get("lora_strength")
+        try:
+            lora_strength = float(raw_lora_strength)
+        except (TypeError, ValueError):
+            lora_strength = 1.0
+        task_coro = process_image_to_video_task(
+            context=context,
+            chat_id=update.effective_chat.id,
+            user_id=user.id,
+            username=user.username,
+            prompt=str(data.get("prompt") or "").strip(),
+            negative_prompt=str(data.get("negative_prompt") or "").strip(),
+            images=images,
+            use_end_frame=bool(data.get("use_end_frame")),
+            resolution_preset=resolution_preset,
+            wan22_prev_task_id=(
+                str(data["extension_prev_task_id"])
                 if data.get("extension_prev_task_id")
                 else None
             ),
+            wan22_chain_task_ids=normalize_wan22_video_v2_chain_task_ids(
+                data.get("chain_task_ids")
+            ),
+            task_type=(
+                MODE_IMAGE_TO_VIDEO
+                if extension_task_type == MODE_IMAGE_TO_VIDEO
+                else MODE_CUSTOM_VIDEO
+            ),
+            lora_name=str(data.get("lora_name") or "").strip() or None,
+            lora_strength=lora_strength,
             cleanup=True,
-        ),
-    )
+        )
+    create_background_task(context, task_coro)
     _release_context_without_files(context)
     return ConversationHandler.END
 

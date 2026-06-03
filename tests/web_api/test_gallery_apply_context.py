@@ -93,7 +93,7 @@ async def test_build_post_responses_includes_billing_resolution_for_gallery_list
     )
 
     assert len(responses) == 1
-    assert responses[0].billing_resolution == "720"
+    assert responses[0].billing_resolution == "standard"
     assert responses[0].media_url == "media-url"
     assert responses[0].thumbnail_url == "thumb-url"
 
@@ -129,11 +129,11 @@ async def test_get_apply_context_backfills_missing_video_billing_resolution_from
 
     assert response.post_id == 2
     assert response.source_post_id == 2
-    assert response.billing_resolution == "720"
+    assert response.billing_resolution == "standard"
     assert response.width == 720
     assert response.height == 1280
     assert response.duration == 8
-    assert response.requested_duration == 8
+    assert response.requested_duration == 5
     assert history.billing_resolution is None
     session.commit.assert_not_awaited()
 
@@ -350,7 +350,7 @@ async def test_get_apply_context_maps_legacy_custom_video_duration_9_to_8():
     response = await get_gallery_apply_context_payload(post_id=2, db=session)
 
     assert response.duration == 9
-    assert response.requested_duration == 8
+    assert response.requested_duration == 5
     session.commit.assert_not_awaited()
 
 
@@ -386,7 +386,7 @@ async def test_get_apply_context_maps_legacy_video_lora_duration_11_to_10():
     response = await get_gallery_apply_context_payload(post_id=2, db=session)
 
     assert response.duration == 11
-    assert response.requested_duration == 10
+    assert response.requested_duration == 5
     session.commit.assert_not_awaited()
 
 

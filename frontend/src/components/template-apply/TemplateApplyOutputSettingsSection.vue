@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { WAN22_VIDEO_V2_RESOLUTION_OPTIONS } from '@/features/generation/imageToVideo'
 import { warnIfPropsExceedBudget } from '@/utils/componentPropsBudget'
 
 const props = defineProps<{
@@ -38,9 +39,15 @@ const emit = defineEmits<{
           class="w-full grid grid-cols-3 gap-2"
           @update:value="emit('update:resolution', String($event ?? ''))"
         >
-          <a-radio-button value="512" class="w-full text-center">512p</a-radio-button>
-          <a-radio-button value="720" class="w-full text-center">720p</a-radio-button>
-          <a-radio-button value="1024" class="w-full text-center" :disabled="duration === '10'">1024p</a-radio-button>
+          <a-radio-button
+            v-for="option in WAN22_VIDEO_V2_RESOLUTION_OPTIONS"
+            :key="option.value"
+            :value="option.value"
+            class="w-full text-center"
+          >
+            {{ option.label }}
+            <span class="block text-[10px] opacity-75">{{ option.cost }} {{ $t('template_apply.common.credits_unit') }}</span>
+          </a-radio-button>
         </a-radio-group>
       </div>
 
@@ -60,14 +67,11 @@ const emit = defineEmits<{
         </a-radio-group>
         <a-radio-group
           v-else
-          :value="duration"
+          value="5"
           button-style="solid"
-          class="w-full grid grid-cols-3 gap-2 max-w-[240px]"
-          @update:value="emit('update:duration', String($event ?? ''))"
+          class="w-full grid grid-cols-1 gap-2 max-w-[120px]"
         >
           <a-radio-button value="5" class="w-full text-center">5 {{ $t('template_apply.common.seconds') }}</a-radio-button>
-          <a-radio-button value="8" class="w-full text-center">8 {{ $t('template_apply.common.seconds') }}</a-radio-button>
-          <a-radio-button value="10" class="w-full text-center" :disabled="resolution === '1024'">10 {{ $t('template_apply.common.seconds') }}</a-radio-button>
         </a-radio-group>
       </div>
     </div>

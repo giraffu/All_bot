@@ -36,6 +36,8 @@ class ImageToVideoState(IntEnum):
 
     WAIT_LORA_SELECTION = auto()
     WAIT_IMAGE = auto()
+    WAIT_END_FRAME_CHOICE = auto()
+    WAIT_END_IMAGE = auto()
     WAIT_SETTINGS_AND_PROMPT = auto()
 
 

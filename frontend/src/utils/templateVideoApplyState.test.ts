@@ -20,8 +20,8 @@ describe('templateVideoApplyState', () => {
       loraName: null,
       loraItems: [],
       sourcePostId: 72,
-      resolution: '1024',
-      duration: '8',
+      resolution: 'hd',
+      duration: '5',
       isTemplateApplied: true,
       isTemplateVideoSettingsLocked: true,
       isTemplatePromptLocked: true,
@@ -43,8 +43,8 @@ describe('templateVideoApplyState', () => {
       'custom_video'
     )
 
-    expect(state?.resolution).toBe('720')
-    expect(state?.duration).toBe('8')
+    expect(state?.resolution).toBe('standard')
+    expect(state?.duration).toBe('5')
     expect(state?.isTemplateVideoSettingsLocked).toBe(true)
   })
 
@@ -71,13 +71,13 @@ describe('templateVideoApplyState', () => {
       'custom_video'
     )
 
-    expect(missingState?.resolution).toBe('720')
-    expect(invalidState?.resolution).toBe('720')
-    expect(missingState?.duration).toBe('8')
-    expect(invalidState?.duration).toBe('8')
+    expect(missingState?.resolution).toBe('standard')
+    expect(invalidState?.resolution).toBe('standard')
+    expect(missingState?.duration).toBe('5')
+    expect(invalidState?.duration).toBe('5')
   })
 
-  it('maps legacy custom_video media duration 9s back to canonical 8s when requested_duration is missing', () => {
+  it('ignores legacy custom_video media duration and locks to 5s', () => {
     const state = resolveTemplateVideoApplyState(
       {
         task_type: 'custom_video',
@@ -90,8 +90,8 @@ describe('templateVideoApplyState', () => {
       'custom_video'
     )
 
-    expect(state?.resolution).toBe('720')
-    expect(state?.duration).toBe('8')
+    expect(state?.resolution).toBe('standard')
+    expect(state?.duration).toBe('5')
     expect(state?.isTemplateVideoSettingsLocked).toBe(true)
   })
 
@@ -137,7 +137,7 @@ describe('templateVideoApplyState', () => {
     expect(state?.templateSettingsWarning).toContain('模板缺少完整的提示词或模型信息')
   })
 
-  it('maps legacy video_lora media duration 11s back to canonical 10s when requested_duration is missing', () => {
+  it('ignores legacy video_lora media duration and locks to 5s', () => {
     const state = resolveTemplateVideoApplyState(
       {
         task_type: 'video_lora',
@@ -151,8 +151,8 @@ describe('templateVideoApplyState', () => {
       'video_lora'
     )
 
-    expect(state?.resolution).toBe('1024')
-    expect(state?.duration).toBe('10')
+    expect(state?.resolution).toBe('hd')
+    expect(state?.duration).toBe('5')
     expect(state?.isTemplateVideoSettingsLocked).toBe(true)
   })
 

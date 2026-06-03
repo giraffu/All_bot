@@ -458,7 +458,7 @@
       "legacy_badge": "Phase 3 Later",
       "cost_hints": {
         "edit": "Custom Edit supports dual-image fusion. Uploading the second image raises the cost to 6 credits.",
-        "custom_video": "Higher resolution and longer duration increase the credit cost by tier.",
+        "custom_video": "Img2Video outputs fixed 5s clips and is priced by resolution preset.",
         "face_video": "Video Face Swap is priced by resolution: 720p costs 18 credits, 1024p costs 36 credits.",
         "ltx_video": "High-Res Video uses fixed 1280x704 output; longer duration costs more.",
         "wan22_video_v2": "Img2Video V2 outputs fixed 5s clips and is priced by resolution preset."
@@ -715,7 +715,12 @@
       "send_image": "**Next:** send one **base image**.",
       "image_note": "(This mode generates video, so make sure your prompt describes a reasonable motion.)",
       "select_lora": "🎬 **Entered Img2Video mode.**\n\n**Step 1:** Choose an addon model (optional).\nSelecting \"None\" falls back to regular Img2Video.\n\nYou can send /cancel anytime to exit.",
-      "settings_text": "⚙️ Current quality: {resolution} | Duration: {duration} | Cost: {cost} credits\nAddon model: **{model_name}**\n\nChoose the quality and duration below (some settings require a higher realm or membership):\n\n*Hint: higher quality and longer duration cost more credits. 1024p and 10s cannot be selected together.*\n\n**Next:** send the **prompt text** to start generation.",
+      "end_frame_choice": "✅ Start image received.\n\nEnable first/last frame mode?\n\n- Single Frame: use only the start image\n- Add End Frame: upload 1 more end image",
+      "enable_end_frame": "Add End Frame",
+      "disable_end_frame": "Single Frame",
+      "send_end_image": "✅ First/last frame mode enabled.\n\nPlease send 1 **end image**.",
+      "end_image_received": "✅ End image received.",
+      "settings_text": "⚙️ Current quality: {resolution} | Duration: {duration} | Cost: {cost} credits\nAddon model: **{model_name}**\n\nChoose the quality preset below. Img2Video now generates fixed 5s clips.\n\n*Hint: higher quality costs more credits.*\n\n**Next:** send the **prompt text** to start generation.",
       "submit_plain": "🚀 Submitting the Img2Video task. Estimated cost: {cost} credits. Please wait...",
       "submit_lora": "🚀 Submitting the addon Img2Video task. Estimated cost: {cost} credits. Please wait...",
       "expired_alert": "The interaction expired or the task was submitted. Please start again.",

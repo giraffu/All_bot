@@ -22,6 +22,8 @@ import {
   normalizeLtxVideoLoraItems,
   isUnifiedImageToVideoTaskType,
   normalizeImageToVideoLoraSelection,
+  normalizeWan22VideoV2ResolutionPreset,
+  WAN22_VIDEO_V2_RESOLUTION_OPTIONS,
   type LtxVideoLoraItem
 } from '@/features/generation/imageToVideo'
 import GenerationActionBar from '@/components/GenerationActionBar.vue'
@@ -51,7 +53,7 @@ const {
 } = useSingleFileUploadPreview({
   uploadFile
 })
-const resolution = ref('512')
+const resolution = ref('preview')
 const duration = ref('5')
 const templateSourcePostId = ref<number | null>(null)
 
@@ -66,18 +68,7 @@ const taskCost = computed(() => {
     return baseCost * multiplier;
   }
   
-  const res = resolution.value;
-  const dur = duration.value;
-  
-  let baseCost = 6;
-  if (res === '720') baseCost = 18;
-  else if (res === '1024') baseCost = 36;
-  
-  let multiplier = 1;
-  if (dur === '8') multiplier = 2;
-  else if (dur === '10') multiplier = 3;
-  
-  return baseCost * multiplier;
+  return WAN22_VIDEO_V2_RESOLUTION_OPTIONS.find(option => option.value === resolution.value)?.cost ?? 8
 })
 const prompt = ref('')
 const loraSelection = ref(getDefaultImageToVideoLoraSelection(taskType.value))
@@ -152,6 +143,9 @@ const templateApplyNotice = computed(() => {
 onMounted(() => {
   if (isLtxVideo.value) {
     resolution.value = '1280x704'
+  } else {
+    resolution.value = 'preview'
+    duration.value = '5'
   }
   
   if (routeApplyEnabled.value) {
@@ -172,11 +166,12 @@ onMounted(() => {
         if (templateState.sourcePostId != null) {
           templateSourcePostId.value = templateState.sourcePostId
         }
-        if (templateState.resolution) resolution.value = templateState.resolution
-        if (templateState.duration) duration.value = templateState.duration
-        if (!isLtxVideo.value && resolution.value === '1024' && duration.value === '10') {
-          resolution.value = '720'
+        if (templateState.resolution) {
+          resolution.value = isLtxVideo.value
+            ? templateState.resolution
+            : normalizeWan22VideoV2ResolutionPreset(templateState.resolution)
         }
+        duration.value = isLtxVideo.value ? (templateState.duration ?? '5') : '5'
 
         templateSettingsWarning.value = templateState.templateSettingsWarning
         isTemplateApplied.value = templateState.isTemplateApplied
@@ -195,18 +190,6 @@ watch(isLtxVideo, (value) => {
   }
 }, { immediate: true })
 
-watch(resolution, (val) => {
-  if (val === '1024' && duration.value === '10') {
-    duration.value = '8'
-  }
-})
-
-watch(duration, (val) => {
-  if (val === '10' && resolution.value === '1024') {
-    resolution.value = '720'
-  }
-})
-
 const handleGenerate = async () => {
   if (!objectKey.value) {
     message.warning('请先上传图片！')
@@ -216,13 +199,19 @@ const handleGenerate = async () => {
   const payload = buildGenerationTaskPayload({
     taskType: getImageToVideoRequestTaskType(taskType.value, loraSelection.value),
     images: [objectKey.value],
-    resolution: isLtxVideo.value ? resolution.value : Number(resolution.value),
-    duration: Number(duration.value),
+    resolution: isLtxVideo.value ? resolution.value : undefined,
+    duration: isLtxVideo.value ? Number(duration.value) : 5,
     prompt: (isUnifiedImageToVideo.value || isLtxVideo.value) ? prompt.value : undefined,
     promptTarget: 'inputs',
     loraName: loraName.value,
     loraStrength: loraStrength.value,
     loraItems: isLtxVideo.value ? ltxLoraItems.value : undefined,
+    extraInputs: !isLtxVideo.value
+      ? {
+          resolution_preset: normalizeWan22VideoV2ResolutionPreset(resolution.value),
+          use_end_frame: false,
+        }
+      : undefined,
     isTemplate: isTemplateApplied.value,
     sourcePostId: templateSourcePostId.value,
   })
@@ -408,9 +397,14 @@ const resetForm = () => {
               <a-radio-button value="1280x704" class="w-full text-center py-1.5 h-auto text-xs rounded-lg !border-none !border-l-0 shadow-sm leading-tight flex items-center justify-center">1280x704 (自动适应)</a-radio-button>
             </a-radio-group>
             <a-radio-group v-else v-model:value="resolution" button-style="solid" class="compact-option-group w-full grid grid-cols-3 gap-2">
-              <a-radio-button value="512" class="w-full text-center py-1.5 h-auto text-xs rounded-lg !border-none !border-l-0 shadow-sm leading-tight flex items-center justify-center">512p</a-radio-button>
-              <a-radio-button value="720" class="w-full text-center py-1.5 h-auto text-xs rounded-lg !border-none !border-l-0 shadow-sm leading-tight flex items-center justify-center">720p</a-radio-button>
-              <a-radio-button value="1024" class="w-full text-center py-1.5 h-auto text-xs rounded-lg !border-none !border-l-0 shadow-sm leading-tight flex items-center justify-center" :disabled="duration === '10'">1024p</a-radio-button>
+              <a-radio-button
+                v-for="option in WAN22_VIDEO_V2_RESOLUTION_OPTIONS"
+                :key="option.value"
+                :value="option.value"
+                class="w-full text-center py-1.5 h-auto text-xs rounded-lg !border-none !border-l-0 shadow-sm leading-tight flex items-center justify-center"
+              >
+                {{ option.label }}
+              </a-radio-button>
             </a-radio-group>
           </div>
           <div class="rounded-xl bg-slate-900/20 border border-slate-400/30 p-3">
@@ -421,10 +415,8 @@ const resetForm = () => {
               <a-radio-button value="15" class="w-full text-center py-1.5 h-auto text-xs rounded-lg !border-none !border-l-0 shadow-sm leading-tight flex items-center justify-center">15 秒</a-radio-button>
               <a-radio-button value="20" class="w-full text-center py-1.5 h-auto text-xs rounded-lg !border-none !border-l-0 shadow-sm leading-tight flex items-center justify-center">20 秒</a-radio-button>
             </a-radio-group>
-            <a-radio-group v-else v-model:value="duration" button-style="solid" class="compact-option-group w-full grid grid-cols-3 gap-2">
+            <a-radio-group v-else value="5" button-style="solid" class="compact-option-group w-full grid grid-cols-1 gap-2 max-w-[120px]">
               <a-radio-button value="5" class="w-full text-center py-1.5 h-auto text-xs rounded-lg !border-none !border-l-0 shadow-sm leading-tight flex items-center justify-center">5 秒</a-radio-button>
-              <a-radio-button value="8" class="w-full text-center py-1.5 h-auto text-xs rounded-lg !border-none !border-l-0 shadow-sm leading-tight flex items-center justify-center">8 秒</a-radio-button>
-              <a-radio-button value="10" class="w-full text-center py-1.5 h-auto text-xs rounded-lg !border-none !border-l-0 shadow-sm leading-tight flex items-center justify-center" :disabled="resolution === '1024'">10 秒</a-radio-button>
             </a-radio-group>
           </div>
         </div>

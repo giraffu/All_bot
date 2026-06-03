@@ -48,7 +48,7 @@ sequenceDiagram
     else 获取应用上下文
         API->>PG: 读取 History + GalleryPost
         API->>S: 生成 input_file 预签名 URL
-        API-->>U: prompt / lora / requested_duration / billing_resolution
+        API-->>U: prompt / lora / requested_duration / billing_resolution / 分辨率档位
     end
 ```
 
@@ -90,6 +90,7 @@ sequenceDiagram
   - `requested_duration`
   - `billing_resolution`
   - 宽高与媒体元数据
+- 旧图生视频 `custom_video` / `video_lora` 投稿应用时会把旧 `512p/720p/1024p` 归一为 Wan22 v2 档位 `preview/standard/hd`，并把历史 duration 固定恢复为 5 秒；`video_lora` 还会从历史 prompt 中的 `[模型: xxx]` 兼容解析 `lora_name`。
 - 这已经是 Web workbench 模板应用的主入口，Telegram 内的老 `gallery_apply_fsm` 只应视为兼容路径。
 
 ### 4.6 媒体 URL 策略

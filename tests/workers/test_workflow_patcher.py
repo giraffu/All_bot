@@ -189,7 +189,7 @@ def test_workflow_patcher_patches_wan22_video_v2_boolean_gates_and_prefixes(tmp_
         },
     )
     _write_json(
-        workflow_dir / "WAN 2.2 i2v -AiO-new.json",
+        workflow_dir / "Wan22AioV81.json",
         {
             "9": {
                 "inputs": {
@@ -201,37 +201,29 @@ def test_workflow_patcher_patches_wan22_video_v2_boolean_gates_and_prefixes(tmp_
             "24": {"inputs": {"image": ""}},
             "2368": {"inputs": {"value": ""}},
             "2371": {"inputs": {"value": ""}},
-            "2542": {"inputs": {"clip_frames": ["2614", 0]}},
-            "2557": {"inputs": {"value": True}},
-            "2563": {"inputs": {"image": ["2574", 0]}},
-            "2564": {"inputs": {"values.a": ["2563", 0]}},
-            "2565": {"inputs": {"values.a": ["2563", 1]}},
-            "2574": {"inputs": {"original_images": ["2543", 1]}},
-            "2575": {"inputs": {"image": ["2574", 0]}},
-            "2581": {"inputs": {"expression": "( a - 1 ) / b"}},
-            "2586": {"inputs": {"value": 5}},
-            "2621": {"inputs": {"precision_presets": "0.52 MP - SD"}},
-            "2612": {"inputs": {"switch": ["2557", 0]}},
-            "2614": {"inputs": {"image_target": ["2612", 0]}},
-            "2700": {
+            "2558": {"inputs": {"value": False}},
+            "2578": {"inputs": {"value": 5}},
+            "2612": {"inputs": {"precision_presets": "0.52 MP - SD"}},
+            "2623": {"inputs": {"expression": "( a - 1 ) / b"}},
+            "2607": {
                 "inputs": {
                     "batch_index": 0,
                     "length": 1,
-                    "image": ["2575", 0],
+                    "image": ["2603", 0],
                 },
                 "class_type": "ImageFromBatch",
             },
             "28": {
                 "inputs": {
                     "filename_prefix": "wan22_video_v2",
-                    "images": ["2575", 0],
+                    "images": ["2603", 0],
                 },
                 "class_type": "VHS_VideoCombine",
             },
             "2503": {
                 "inputs": {
                     "filename_prefix": "wan22_video_v2_last_frame",
-                    "images": ["2700", 0],
+                    "images": ["2607", 0],
                 },
                 "class_type": "SaveImage",
             },
@@ -260,16 +252,14 @@ def test_workflow_patcher_patches_wan22_video_v2_boolean_gates_and_prefixes(tmp_
     assert "9" not in patched
     assert patched["2368"]["inputs"]["value"] == "demo"
     assert patched["2371"]["inputs"]["value"] == "bad"
-    assert patched["2557"]["inputs"]["value"] is True
-    assert patched["2621"]["inputs"]["precision_presets"] == "0.65 MP - Balanced"
-    assert patched["2581"]["inputs"]["expression"] == "max(1, round(( a - 1 ) / b))"
-    assert patched["2542"]["inputs"]["clip_frames"] == ["2612", 0]
-    assert patched["2563"]["inputs"]["image"] == ["2612", 0]
-    assert patched["2575"]["inputs"]["image"] == ["2612", 0]
-    assert patched["28"]["inputs"]["images"] == ["2612", 0]
-    assert patched["2700"]["inputs"]["image"] == ["2612", 0]
+    assert patched["2558"]["inputs"]["value"] is True
+    assert patched["2612"]["inputs"]["precision_presets"] == "0.65 MP - Balanced"
+    assert patched["2623"]["inputs"]["expression"] == "max(1, round(( a - 1 ) / b))"
+    assert patched["28"]["inputs"]["images"] == ["2603", 0]
+    assert patched["2607"]["inputs"]["image"] == ["2603", 0]
     assert patched["28"]["inputs"]["filename_prefix"] == "wan22_video_v2_42_video"
     assert patched["2503"]["inputs"]["filename_prefix"] == "wan22_video_v2_42_last_frame"
+    assert patched["2503"]["inputs"]["images"] == ["2607", 0]
 
 
 def test_workflow_patcher_patches_wan22_video_v2_preview_resolution(tmp_path):
@@ -286,20 +276,17 @@ def test_workflow_patcher_patches_wan22_video_v2_preview_resolution(tmp_path):
         },
     )
     _write_json(
-        workflow_dir / "WAN 2.2 i2v -AiO-new.json",
+        workflow_dir / "Wan22AioV81.json",
         {
             "23": {"inputs": {"image": ""}},
             "24": {"inputs": {"image": ""}},
-            "2542": {"inputs": {"clip_frames": ["2614", 0]}},
-            "2557": {"inputs": {"value": True}},
-            "2563": {"inputs": {"image": ["2574", 0]}},
-            "2575": {"inputs": {"image": ["2574", 0]}},
-            "2581": {"inputs": {"expression": "( a - 1 ) / b"}},
-            "2586": {"inputs": {"value": 5}},
-            "2621": {"inputs": {"precision_presets": "0.52 MP - SD"}},
-            "2700": {"inputs": {"batch_index": 0, "length": 1, "image": ["2575", 0]}},
-            "28": {"inputs": {"filename_prefix": "wan22_video_v2", "images": ["2575", 0]}},
-            "2503": {"inputs": {"filename_prefix": "wan22_video_v2_last_frame", "images": ["2700", 0]}},
+            "2558": {"inputs": {"value": False}},
+            "2578": {"inputs": {"value": 5}},
+            "2607": {"inputs": {"batch_index": 0, "length": 1, "image": ["2603", 0]}},
+            "2612": {"inputs": {"precision_presets": "0.52 MP - SD"}},
+            "2623": {"inputs": {"expression": "( a - 1 ) / b"}},
+            "28": {"inputs": {"filename_prefix": "wan22_video_v2", "images": ["2603", 0]}},
+            "2503": {"inputs": {"filename_prefix": "wan22_video_v2_last_frame", "images": ["2607", 0]}},
         },
     )
 
@@ -316,7 +303,7 @@ def test_workflow_patcher_patches_wan22_video_v2_preview_resolution(tmp_path):
         },
     )
 
-    assert patched["2621"]["inputs"]["precision_presets"] == "0.26 MP - Preview"
+    assert patched["2612"]["inputs"]["precision_presets"] == "0.26 MP - Preview"
 
 
 def test_workflow_patcher_strips_wan22_video_v2_last_frame_branch_when_disabled(tmp_path):
@@ -339,42 +326,37 @@ def test_workflow_patcher_strips_wan22_video_v2_last_frame_branch_when_disabled(
         },
     )
     _write_json(
-        workflow_dir / "WAN 2.2 i2v -AiO-new.json",
+        workflow_dir / "Wan22AioV81.json",
         {
             "23": {"inputs": {"image": ""}},
             "24": {"inputs": {"image": ""}},
             "2368": {"inputs": {"value": ""}},
             "2371": {"inputs": {"value": ""}},
-            "2542": {"inputs": {"clip_frames": ["2614", 0]}},
-            "2557": {"inputs": {"value": True}},
-            "2563": {"inputs": {"image": ["2574", 0]}},
-            "2574": {"inputs": {"original_images": ["2543", 1]}},
-            "2575": {"inputs": {"image": ["2574", 0]}},
-            "2581": {"inputs": {"expression": "( a - 1 ) / b"}},
-            "2586": {"inputs": {"value": 5}},
-            "2612": {"inputs": {"switch": ["2557", 0]}},
-            "2614": {"inputs": {"image_target": ["2612", 0]}},
+            "2558": {"inputs": {"value": False}},
+            "2578": {"inputs": {"value": 5}},
+            "2607": {
+                "inputs": {
+                    "batch_index": 0,
+                    "length": 1,
+                    "image": ["2603", 0],
+                },
+                "class_type": "ImageFromBatch",
+            },
+            "2612": {"inputs": {"precision_presets": "0.52 MP - SD"}},
+            "2623": {"inputs": {"expression": "( a - 1 ) / b"}},
             "28": {
                 "inputs": {
                     "filename_prefix": "wan22_video_v2",
-                    "images": ["2575", 0],
+                    "images": ["2603", 0],
                 },
                 "class_type": "VHS_VideoCombine",
             },
             "2503": {
                 "inputs": {
                     "filename_prefix": "wan22_video_v2_last_frame",
-                    "images": ["2700", 0],
+                    "images": ["2607", 0],
                 },
                 "class_type": "SaveImage",
-            },
-            "2700": {
-                "inputs": {
-                    "batch_index": 0,
-                    "length": 1,
-                    "image": ["2575", 0],
-                },
-                "class_type": "ImageFromBatch",
             },
         },
     )
@@ -397,9 +379,8 @@ def test_workflow_patcher_strips_wan22_video_v2_last_frame_branch_when_disabled(
     )
 
     assert patched["24"]["inputs"]["image"] == "end.png"
-    assert patched["2557"]["inputs"]["value"] is False
-    assert patched["2542"]["inputs"]["clip_frames"] == ["2612", 0]
-    assert patched["28"]["inputs"]["images"] == ["2612", 0]
-    assert patched["2700"]["inputs"]["image"] == ["2612", 0]
+    assert patched["2558"]["inputs"]["value"] is False
+    assert patched["28"]["inputs"]["images"] == ["2603", 0]
+    assert patched["2607"]["inputs"]["image"] == ["2603", 0]
     assert patched["28"]["inputs"]["filename_prefix"] == "wan22_video_v2_99_video"
-    assert patched["2503"]["inputs"]["images"] == ["2700", 0]
+    assert patched["2503"]["inputs"]["images"] == ["2607", 0]

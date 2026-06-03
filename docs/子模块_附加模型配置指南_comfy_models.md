@@ -43,13 +43,16 @@
 
 ---
 
-## 二、 新增图生视频附加模型（LoRA）实施方案
+## 二、 旧图生视频附加模型（LoRA）实施方案
 
-图生视频底层复用了 `video_edit`（自定义图生视频）的工作流和任务队列，通过动态注入 `lora_name` 参数来实现差异化。
-目前系统主要支持 LTX-2.3 和 Wan2.1 视频生成工作流。关于 LTX-2.3 工作流的具体 LoRA 使用与提示词规范，请参考项目根目录的 `LTX_LoRA_Guide.md`。
+旧图生视频的用户侧能力仍保留 `custom_video` / `video_lora` 两种历史类型，但执行面已经改为 `image_to_video`，并与 `wan22_video_v2` 共用 `workers/comfy_agent/workflows/Wan22AioV81.json`。两者通过 `wan22_model_profile` 注入不同主模型：旧入口使用 legacy 主模型，v2 使用 snatchkiss 主模型。
+
+目前系统主要支持 LTX-2.3 和 Wan2.2/Wan2.1 视频生成工作流。关于 LTX-2.3 工作流的具体 LoRA 使用与提示词规范，请参考项目根目录的 `LTX_LoRA_Guide.md`。
 
 ### 0. 当前支持概览
-- **普通图生视频 / 自定义图生视频**：继续沿用 `video_edit` / `image_to_video` 体系，`lora_name` 为模型前缀名，由 `workflow_patcher.py` 按高噪/低噪双节点动态补入。
+- **普通图生视频 / 自定义图生视频**：上游类型仍是 `custom_video` / `video_lora`，执行面统一入队 `TaskType.IMAGE_TO_VIDEO`，底层 workflow 为 `Wan22AioV81.json`。
+- **旧 LoRA 图生视频 (`video_lora`)**：继续接收 `lora_name` 前缀，由 `workflow_task_patchers.py` 按高噪/低噪双节点动态补入。`custom_video` 不带 LoRA 时会清空 LoRA 槽；`wan22_video_v2` 始终清空额外 LoRA 槽。
+- **规格口径**：旧图生视频固定 5 秒，分辨率和计费与 v2 对齐为 `preview=8`、`standard=20`、`hd=30`；旧投稿 `512p/720p/1024p` 分别映射为 `preview/standard/hd`。
 - **高级图生视频 (`ltx_video`)**：现已升级为 `lora_items` 多选协议。Bot FSM、Web 单图视频页、模板应用面板都会提交最多 3 个 LoRA 项，每项独立携带 `name + strength`；旧 `lora_name / lora_strength` 仍保留兼容入口，但不再是主文档口径。
 
 ### 1. 模型文件部署 (Deployment)
@@ -65,25 +68,30 @@
   - 找到存储模型映射的常量字典 `LORA_MODELS`。
   - 在字典中追加新模型配置：将**模型前缀名**（即上述的 `{lora_name}`，如 `"Dance"`）作为键，映射到用户可见的**中文按钮标签**（如 `"跳舞"`）。
   - 保存后，Telegram 机器人中的【图生视频(附加模型)】菜单会自动渲染出这个新按钮。
+  - 旧入口不再提供 8s/10s 选择；菜单与 Web 投稿应用都应固定 5s，并展示 v2 三档分辨率。
 
 ### 3. Backend 层：参数网关透传 (API Routing)
-- **文件定位**：`backend/app/models.py` 和 `backend/app/main.py`。
+- **文件定位**：`backend/app/models.py` 和 `backend/app/main_simple_task_routes.py`。
 - **实施状态**：**无需修改**。
   - 后端网关已经定义了 `VideoLoraRequest`。
-  - 当前主 simple route 已是 `/image_to_video`；兼容入口 `/perfect_video_lora` 仍会接收该请求，并统一**转化为 `TaskType.VIDEO_EDIT`** 推入 Redis 队列，同时将 `lora_name` 携带在参数中透传给下游 Worker。
+  - 当前主 simple route 是 `/image_to_video`；兼容入口 `/perfect_video_lora` 仍会接收该请求，并统一**转化为 `TaskType.IMAGE_TO_VIDEO`** 推入 Redis 队列，同时将 `lora_name`、`resolution_preset`、`end_image` 等参数携带给下游 Worker。
+  - `video_edit` 仍继续走 `perfect_video_edit.json`，用于其它快捷视频，不应混入旧图生视频 LoRA 逻辑。
 
 ### 4. Worker 层：工作流动态注入 (Workflow Patcher)
-- **文件定位**：`workers/comfy_agent/workflow_patcher.py` 和 `workers/comfy_agent/workflows/perfect_video_edit.json`。
+- **文件定位**：`workers/comfy_agent/workflow_task_patchers.py` 和 `workers/comfy_agent/workflows/Wan22AioV81.json`。
 - **实施状态**：**通常无需修改**，但需注意**硬编码防爆红线**。
-  - **原理解析**：在 `workflow_patcher.py` 的 `heuristic_patch` 方法中，系统会根据传入的 `lora_name` 动态寻找类型为 `Power Lora Loader (rgthree)` 的节点：
-    - 若节点 ID 为 `272`，则动态注入 `{lora_name}_high_noise.safetensors`。
-    - 若节点 ID 为 `273`，则动态注入 `{lora_name}_low_noise.safetensors`。
-  - > ⚠️ **节点硬编码警告**：如果你后续在 ComfyUI 本地调试并更新了图生视频的基础工作流模板（`perfect_video_edit.json`），**绝对不能改变这两个 LoRA 加载节点（rgthree）的 ID（必须保持为 272 和 273）**。一旦节点 ID 发生改变，Python 代码将无法找到对应的注入点，导致附加动作模型彻底失效！
+  - 主模型节点固定为 `2616`（high）和 `2617`（low）。patcher 会根据 `wan22_model_profile` 写入对应 high/low UNet 文件。
+  - 旧 LoRA 注入节点固定为 `26`（high noise）和 `18`（low noise）：
+    - `26.inputs.lora_1.lora = {lora_name}_high_noise.safetensors`
+    - `18.inputs.lora_1.lora = {lora_name}_low_noise.safetensors`
+  - 无 LoRA 的 `custom_video` 与 `wan22_video_v2` 必须清空 `26` / `18` 的 LoRA slot，避免 workflow 模板残留旧模型。
+  - > ⚠️ **节点硬编码警告**：如果后续重导 `Wan22AioV81.json`，必须复核 `2616`、`2617`、`26`、`18`、`2612`、`23`、`24`、`2368`、`2371` 是否仍满足当前补丁与 mappings 逻辑，否则主模型、LoRA、分辨率或首尾帧输入会失效。
 
 ### 5. 验证与发布 (Testing & Restart)
 - 上传好 `.safetensors` 模型文件后，重启 Bot 进程（以重载 `LORA_MODELS` 字典）。
 - 在 Telegram 中唤起【图生视频(附加模型)】菜单，点击新添加的动作按钮。
-- 观察 Worker (Agent) 的控制台日志，确认 `workflow_patcher.py` 成功将 `{lora_name}_high_noise.safetensors` 和 `{lora_name}_low_noise.safetensors` 注入到了 `272` 和 `273` 节点中，且 ComfyUI 能够正常加载文件并启动推理。
+- 观察 Worker (Agent) 的控制台日志，确认 `workflow_task_patchers.py` 成功将 `{lora_name}_high_noise.safetensors` 和 `{lora_name}_low_noise.safetensors` 注入到了 `26` 和 `18` 节点中，且 ComfyUI 能够正常加载文件并启动推理。
+- 同时验证旧投稿一键应用：prompt 恢复、`[模型: xxx]` 能解析为 `lora_name`、`1024p` 映射 `hd`、固定 5s、消耗 30 灵石。
 
 ---
 

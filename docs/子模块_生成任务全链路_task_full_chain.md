@@ -257,13 +257,15 @@ Central API 是执行面，不是业务主入口。
 - `img2img_lora`
 - `face_swap`
 - `video_edit`
+- `image_to_video`
 - `face_video`
 - `i2i_pro`
 - `i2i_draw`
 - `txt2img`
 - `ltx_video`
+- `wan22_video_v2`
 
-其中 `txt2img` 当前通过 `/txt2img` simple route 进入执行面，Central API 内部仍映射到 legacy `TaskType.T2I_PORNMASTER_TURBO`。新增任务类型时，不要默认假设只改 `SIMPLE_TASK_TYPE_MAP` 就够，还要确认 request model、dispatcher 和 worker workflow 映射是否齐全。
+其中 `txt2img` 当前通过 `/txt2img` simple route 进入执行面，Central API 内部仍映射到 legacy `TaskType.T2I_PORNMASTER_TURBO`。旧图生视频的 `/image_to_video` 与 `/perfect_video_lora` 会入队到执行面 `TaskType.IMAGE_TO_VIDEO`，但上游历史类型仍保留 `custom_video` / `video_lora`；`video_edit` 继续绑定 `perfect_video_edit.json`，不要把快捷视频误切到 Wan22。新增任务类型时，不要默认假设只改 `SIMPLE_TASK_TYPE_MAP` 就够，还要确认 request model、dispatcher 和 worker workflow 映射是否齐全。
 
 ### 8.3 QueueManager 的职责
 QueueManager 负责执行面排队与 Worker 选择，关键职责包括：
@@ -317,6 +319,8 @@ Worker 拉到任务后会先处理输入：
 - `TASK_TYPE_WORKFLOW_FILENAMES` 决定任务类型默认绑定哪个 workflow JSON
 - `mappings.json` 决定输入参数如何映射到 workflow 节点
 - `workflow_patcher.py` 负责把运行时参数打进具体 workflow
+- `image_to_video` 与 `wan22_video_v2` 当前共用 `Wan22AioV81.json`。两者通过 `wan22_model_profile` 注入不同主模型；旧 `video_lora` 会把 `{lora_name}_high_noise.safetensors` / `{lora_name}_low_noise.safetensors` 写入工作流 LoRA 槽，v2 始终清空额外 LoRA 槽。
+- 旧图生视频 Web/Bot 历史类型仍是 `custom_video` / `video_lora`，执行面 task type 才是 `image_to_video`。排障时需要同时确认上游历史类型、registry task type 和 backend task type。
 
 如果出现以下错误，优先看这三层：
 - Worker 报 `Workflow for xxx not found`
@@ -392,7 +396,7 @@ Web 端当前运行态与结果查询链路分成两层：
 - `stream` 对外接收的是 `registry_task_id`
 - service 内部会尽量解析出真正的 `runtime_task_id` / `backend_task_id`
 - 若运行态已消失但历史已存在，SSE 应返回可终止的 fallback 语义，而不是无限轮询
-- `result` 对 Web 历史优先取公网可访问结果地址；若公网地址还未就绪，应返回 `pending_result`
+- `result` 对 Web 历史优先取 R2 公网结果地址；延迟敏感路径必须用 R2 公网 HEAD 快探测并在查对象存储前释放 DB 只读事务，不能用慢 S3 API HEAD 阻塞请求。R2 warmup 未就绪时，图片可对任务本人返回短有效期 MinIO presigned fallback；视频不走 MinIO 代理 fallback，应返回 `pending_result` 等下一轮轮询拿 R2，避免 99% 阶段被视频拉流或 R2 HEAD 阻塞拖成网络失败。
 
 ## 11. 历史、收藏、投稿与结果可见性
 对于 Web 一等任务类型，只打通底层执行链路通常还不够，还要看是否要进入这些链：
@@ -473,8 +477,8 @@ Web 端当前运行态与结果查询链路分成两层：
 ### 13.5 历史有记录，但结果预览空白
 优先检查：
 - `History.output_file` 是否已写入
-- Web 结果地址是否已切到公网可访问路径
-- R2 公网地址是否已准备完成
+- Web 结果地址是否能通过 R2 或 owner-only MinIO 短签解析
+- R2 公网地址是否已准备完成；R2 未 ready 时 `/result` 图片可返回 MinIO fallback，视频应继续 `pending_result`，同时检查 R2 公网 HEAD 快探测是否被短超时保护
 - `/api/tasks/{task_id}/result` 当前返回的是 `success` 还是 `pending_result`
 
 ### 13.6 新任务类型在某环境不接单

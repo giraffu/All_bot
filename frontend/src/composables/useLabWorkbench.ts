@@ -46,6 +46,7 @@ import {
   LTX_VIDEO_LORA_OPTIONS,
   normalizeImageToVideoLoraSelection,
   normalizeLtxVideoLoraItems,
+  normalizeWan22VideoV2ResolutionPreset,
   WAN22_VIDEO_V2_RESOLUTION_OPTIONS,
   type LtxVideoLoraItem,
   type Wan22VideoV2ResolutionPreset,
@@ -211,7 +212,11 @@ export function useLabWorkbench() {
   )
   const composerNotice = computed(() => wan22ChainBanner.value || templateNotice.value)
   const composerWarning = computed(() => templateWarning.value)
-  const currentTaskIsWan22VideoV2 = computed(() => currentTask.value?.type === 'wan22_video_v2')
+  const currentTaskIsWan22VideoV2 = computed(() => (
+    currentTask.value?.type === 'wan22_video_v2'
+    || currentTask.value?.type === 'custom_video'
+    || currentTask.value?.type === 'video_lora'
+  ))
   const wan22CurrentTaskCanExtend = computed(() => (
     currentTaskIsWan22VideoV2.value
     && Boolean(currentTask.value?.id && currentTask.value?.extraOutputs?.last_frame?.path)
@@ -222,9 +227,9 @@ export function useLabWorkbench() {
   ))
 
   const uploadButtonLabel = computed(() => (
-    currentMode.value.id === 'wan22_video_v2' && uploadedReferences.value.length === 0
+    (currentMode.value.id === 'wan22_video_v2' || currentMode.value.id === 'custom_video') && uploadedReferences.value.length === 0
       ? t('lab.workbench.add_start_frame')
-      : currentMode.value.id === 'wan22_video_v2' && uploadedReferences.value.length === 1
+      : (currentMode.value.id === 'wan22_video_v2' || currentMode.value.id === 'custom_video') && uploadedReferences.value.length === 1
         ? t('lab.workbench.add_end_frame')
         : currentMode.value.maxImages > 1 && uploadedReferences.value.length === 1
       ? t('lab.workbench.add_second_reference')
@@ -245,14 +250,8 @@ export function useLabWorkbench() {
     }
 
     if (currentMode.value.id === 'custom_video') {
-      let baseCost = 6
-      if (resolution.value === '720') baseCost = 18
-      else if (resolution.value === '1024') baseCost = 36
-
-      let multiplier = 1
-      if (duration.value === '8') multiplier = 2
-      else if (duration.value === '10') multiplier = 3
-      return baseCost * multiplier
+      return WAN22_VIDEO_V2_RESOLUTION_OPTIONS.find(option => option.value === wan22ResolutionPreset.value)?.cost
+        ?? DEFAULT_WAN22_VIDEO_V2_COST
     }
 
     if (currentMode.value.id === 'face_video') {
@@ -420,7 +419,7 @@ export function useLabWorkbench() {
       }
 
       resetFormState({ preserveMode: true })
-      currentModeId.value = 'wan22_video_v2'
+      currentModeId.value = prefill.taskType === 'wan22_video_v2' ? 'wan22_video_v2' : 'custom_video'
 
       if (prefill.status === 'blank') {
         wan22ChainBanner.value = t('lab.workbench.wan22_first_regenerate_notice')
@@ -434,6 +433,7 @@ export function useLabWorkbench() {
       prompt.value = prefill.prompt
       negativePrompt.value = prefill.negativePrompt
       wan22ResolutionPreset.value = prefill.resolutionPreset
+      selectedVideoLora.value = normalizeImageToVideoLoraSelection(prefill.loraName)
       wan22ChainBanner.value = prefill.mode === 'extend'
         ? t('lab.workbench.wan22_extend_notice', {
             count: prefill.segmentIndex,
@@ -531,24 +531,6 @@ export function useLabWorkbench() {
         : item
     ))
   }
-
-  watch(resolution, (value) => {
-    if (currentMode.value.id !== 'custom_video') {
-      return
-    }
-    if (value === '1024' && duration.value === '10') {
-      duration.value = '8'
-    }
-  })
-
-  watch(duration, (value) => {
-    if (currentMode.value.id !== 'custom_video') {
-      return
-    }
-    if (value === '10' && resolution.value === '1024') {
-      resolution.value = '720'
-    }
-  })
 
   const beforeUpload = async (file: File) => {
     if (uploadedReferences.value.length + pendingReferenceUploads.value.length >= currentMode.value.maxImages) {
@@ -719,15 +701,18 @@ export function useLabWorkbench() {
     currentModeId.value = nextModeId
     resolution.value = getDefaultResolutionForMode(nextModeId)
 
-    if (nextModeId === 'wan22_video_v2') {
+    if (nextModeId === 'wan22_video_v2' || nextModeId === 'custom_video') {
       const wan22Mode = resolveWan22RouteMode(route.query.wan22_mode)
       const wan22TaskId = typeof route.query.wan22_task_id === 'string'
         ? route.query.wan22_task_id
         : ''
       if (wan22Mode && wan22TaskId) {
         void applyWan22ChainPrefill(wan22Mode, wan22TaskId)
+        return
       }
-      return
+      if (nextModeId === 'wan22_video_v2') {
+        return
+      }
     }
 
     if (nextModeId === 'custom_video' && templateContext) {
@@ -735,8 +720,8 @@ export function useLabWorkbench() {
       if (templateState) {
         prompt.value = templateState.prompt ?? ''
         selectedVideoLora.value = templateState.loraName ?? getDefaultVideoLoraSelection()
-        resolution.value = templateState.resolution ?? DEFAULT_VIDEO_RESOLUTION
-        duration.value = templateState.duration ?? DEFAULT_VIDEO_DURATION
+        wan22ResolutionPreset.value = normalizeWan22VideoV2ResolutionPreset(templateState.resolution)
+        duration.value = DEFAULT_VIDEO_DURATION
         templateNotice.value = templateState.templateApplyNotice
         templateWarning.value = templateState.templateSettingsWarning
         isTemplateApplied.value = templateState.isTemplateApplied
@@ -906,20 +891,28 @@ export function useLabWorkbench() {
       return
     }
 
-    if (currentMode.value.id === 'wan22_video_v2') {
+    if (currentMode.value.id === 'custom_video' || currentMode.value.id === 'wan22_video_v2') {
+      const taskType = currentMode.value.id === 'wan22_video_v2'
+        ? 'wan22_video_v2'
+        : getImageToVideoRequestTaskType(currentMode.value.taskType, selectedVideoLora.value)
       const payload = buildGenerationTaskPayload({
-        taskType: 'wan22_video_v2',
+        taskType,
         images: uploadedReferences.value.map(item => item.key),
         duration: 5,
         prompt: prompt.value,
         negativePrompt: negativePrompt.value,
         promptTarget: 'inputs',
+        loraName: currentMode.value.id === 'custom_video'
+          ? getImageToVideoPayloadLoraName(currentMode.value.taskType, selectedVideoLora.value)
+          : undefined,
         extraInputs: {
           use_end_frame: uploadedReferences.value.length >= 2,
           resolution_preset: wan22ResolutionPreset.value,
           wan22_prev_task_id: wan22PrevTaskId.value,
           wan22_chain_task_ids: wan22ChainTaskIds.value,
         },
+        isTemplate: isTemplateApplied.value,
+        sourcePostId: templateSourcePostId.value,
       })
 
       const taskId = await submitTask(payload, t(currentMode.value.titleKey))
@@ -930,9 +923,7 @@ export function useLabWorkbench() {
     }
 
     const payload = buildGenerationTaskPayload({
-      taskType: currentMode.value.id === 'custom_video'
-        ? getImageToVideoRequestTaskType(currentMode.value.taskType, selectedVideoLora.value)
-        : currentMode.value.taskType,
+      taskType: currentMode.value.taskType,
       images: uploadedReferences.value.map(item => item.key),
       prompt: prompt.value,
       promptTarget: currentMode.value.promptTarget,
@@ -944,12 +935,10 @@ export function useLabWorkbench() {
         : currentMode.value.id === 'ltx_video'
           ? getImageToVideoPayloadLoraStrength(currentMode.value.taskType, selectedVideoLora.value)
         : undefined,
-      resolution: currentMode.value.id === 'custom_video'
-        ? Number(resolution.value)
-        : currentMode.value.id === 'ltx_video'
+      resolution: currentMode.value.id === 'ltx_video'
           ? resolution.value
           : undefined,
-      duration: currentMode.value.id === 'custom_video' || currentMode.value.id === 'ltx_video'
+      duration: currentMode.value.id === 'ltx_video'
         ? Number(duration.value)
         : undefined,
       loraItems: currentMode.value.id === 'ltx_video' ? ltxLoraItems.value : undefined,

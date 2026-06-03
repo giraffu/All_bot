@@ -301,9 +301,10 @@ describe('TemplateImageToVideoPanel', () => {
       task_type: 'custom_video',
       inputs: {
         images: ['uploads/base.png'],
-        resolution: 720,
-        duration: 8,
-        prompt: 'cinematic action shot'
+        duration: 5,
+        prompt: 'cinematic action shot',
+        resolution_preset: 'standard',
+        use_end_frame: false
       },
       priority: 0,
       is_template: true,
@@ -361,13 +362,14 @@ describe('TemplateImageToVideoPanel', () => {
     expect(uploadFileMock).toHaveBeenCalledWith(file, { slot: 'base_image' })
     expect(submitTaskMock).toHaveBeenCalledTimes(1)
     expect(submitTaskMock.mock.calls[0]?.[0]).toEqual({
-      task_type: 'custom_video',
+      task_type: 'video_lora',
       inputs: {
         images: ['uploads/base.png'],
-        resolution: 1024,
-        duration: 8,
+        duration: 5,
         prompt: 'glowing neon city',
-        lora_name: 'BreastGrow'
+        lora_name: 'BreastGrow',
+        resolution_preset: 'hd',
+        use_end_frame: false
       },
       priority: 0,
       is_template: true,
@@ -377,7 +379,7 @@ describe('TemplateImageToVideoPanel', () => {
     expect(setSubmittedTaskIdMock).toHaveBeenLastCalledWith('task-789')
   })
 
-  it('maps legacy custom_video media duration 9s to canonical 8s before submit', async () => {
+  it('ignores legacy custom_video media duration and submits fixed 5s', async () => {
     const wrapper = mountPanel({
       raw: {
         post_id: 4,
@@ -426,9 +428,10 @@ describe('TemplateImageToVideoPanel', () => {
       task_type: 'custom_video',
       inputs: {
         images: ['uploads/base.png'],
-        resolution: 720,
-        duration: 8,
-        prompt: 'cinematic action shot'
+        duration: 5,
+        prompt: 'cinematic action shot',
+        resolution_preset: 'standard',
+        use_end_frame: false
       },
       priority: 0,
       is_template: true,
@@ -436,7 +439,7 @@ describe('TemplateImageToVideoPanel', () => {
     })
   })
 
-  it('maps legacy video_lora media duration 11s to canonical 10s before submit', async () => {
+  it('ignores legacy video_lora media duration and submits fixed 5s', async () => {
     const wrapper = mountPanel({
       raw: {
         post_id: 5,
@@ -484,13 +487,14 @@ describe('TemplateImageToVideoPanel', () => {
 
     expect(submitTaskMock).toHaveBeenCalledTimes(1)
     expect(submitTaskMock.mock.calls[0]?.[0]).toEqual({
-      task_type: 'custom_video',
+      task_type: 'video_lora',
       inputs: {
         images: ['uploads/base.png'],
-        resolution: 720,
-        duration: 10,
+        duration: 5,
         prompt: 'glowing neon city',
-        lora_name: 'BreastGrow'
+        lora_name: 'BreastGrow',
+        resolution_preset: 'hd',
+        use_end_frame: false
       },
       priority: 0,
       is_template: true,
@@ -547,9 +551,10 @@ describe('TemplateImageToVideoPanel', () => {
       task_type: 'custom_video',
       inputs: {
         images: ['uploads/base.png'],
-        resolution: 720,
-        duration: 8,
-        prompt: 'gentle motion'
+        duration: 5,
+        prompt: 'gentle motion',
+        resolution_preset: 'standard',
+        use_end_frame: false
       },
       priority: 0,
       is_template: true,

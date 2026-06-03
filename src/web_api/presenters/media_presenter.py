@@ -1,6 +1,8 @@
 import asyncio
 from typing import Any
 
+import httpx
+
 from src.core.media_paths import get_media_type_from_history, resolve_storage_object
 from src.core.media_urls import build_r2_media_key_candidates, build_r2_thumbnail_info
 from src.services.storage import storage
@@ -9,22 +11,85 @@ from src.services.wan22_video_v2_extension_service import (
     is_wan22_stitched_result,
     resolve_wan22_segment_index,
 )
+from src.services.wan22_video_v2_config import is_wan22_chain_history_task_type
 
 
-async def get_r2_url_if_exists(object_key: str) -> str:
+async def r2_public_url_exists(
+    public_url: str,
+    *,
+    timeout_seconds: float,
+) -> bool:
+    if not public_url:
+        return False
+
+    request_timeout = httpx.Timeout(
+        timeout_seconds,
+        connect=min(timeout_seconds, 1.0),
+    )
+    try:
+        async with httpx.AsyncClient(timeout=request_timeout, trust_env=False) as client:
+            response = await client.head(public_url, follow_redirects=True)
+            if response.status_code == 405:
+                response = await client.get(
+                    public_url,
+                    headers={"Range": "bytes=0-0"},
+                    follow_redirects=True,
+                )
+    except httpx.HTTPError:
+        return False
+
+    return response.status_code in {200, 204, 206, 301, 302, 304}
+
+
+def mark_r2_object_exists(object_key: str) -> None:
+    mark_exists = getattr(storage, "mark_r2_object_exists", None)
+    if callable(mark_exists):
+        mark_exists(object_key)
+
+
+async def get_r2_url_if_exists(
+    object_key: str,
+    *,
+    timeout_seconds: float | None = None,
+) -> str:
     public_url = storage.get_r2_public_url(object_key)
     if not public_url:
         return ""
-    if await storage.async_r2_object_exists(object_key):
+
+    if timeout_seconds:
+        if await r2_public_url_exists(
+            public_url,
+            timeout_seconds=timeout_seconds,
+        ):
+            mark_r2_object_exists(object_key)
+            return public_url
+        return ""
+
+    exists_coro = storage.async_r2_object_exists(object_key)
+    try:
+        exists = (
+            await asyncio.wait_for(exists_coro, timeout=timeout_seconds)
+            if timeout_seconds
+            else await exists_coro
+        )
+    except asyncio.TimeoutError:
+        return ""
+    if exists:
         return public_url
     return ""
 
 
-async def get_first_r2_url_if_exists(*object_keys: str) -> str:
+async def get_first_r2_url_if_exists(
+    *object_keys: str,
+    timeout_seconds: float | None = None,
+) -> str:
     for object_key in object_keys:
         if not object_key:
             continue
-        url = await get_r2_url_if_exists(object_key)
+        url = await get_r2_url_if_exists(
+            object_key,
+            timeout_seconds=timeout_seconds,
+        )
         if url:
             return url
     return ""
@@ -239,7 +304,7 @@ def filter_user_visible_extra_outputs(
 ) -> dict[str, dict[str, Any]]:
     if not isinstance(extra_outputs, dict):
         return {}
-    if task_type == "wan22_video_v2":
+    if is_wan22_chain_history_task_type(task_type):
         last_frame = extra_outputs.get("last_frame")
         return {"last_frame": last_frame} if isinstance(last_frame, dict) else {}
     return extra_outputs
@@ -250,7 +315,7 @@ def extract_history_result_meta(
     task_type: str | None,
     extra_outputs: dict[str, Any] | None,
 ) -> dict[str, Any]:
-    if task_type == "wan22_video_v2":
+    if is_wan22_chain_history_task_type(task_type):
         result_meta = extract_wan22_history_context(extra_outputs)
         if is_wan22_stitched_result(extra_outputs):
             result_meta["wan22_is_stitched"] = True

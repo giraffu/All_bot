@@ -16,6 +16,7 @@ from src.services.storage import storage
 from src.services.wan22_video_v2_context import normalize_wan22_video_v2_chain_task_ids
 from src.services.wan22_video_v2_config import (
     WAN22_VIDEO_V2_DEFAULT_RESOLUTION_PRESET,
+    is_wan22_chain_history_task_type,
     normalize_wan22_video_v2_resolution_preset,
 )
 
@@ -58,8 +59,8 @@ async def load_owned_wan22_history(
         history = result.scalar_one_or_none()
     if history is None:
         raise Wan22VideoV2ExtensionError("未找到对应的视频记录，或该记录不属于您。")
-    if history.type != "wan22_video_v2":
-        raise Wan22VideoV2ExtensionError("当前仅支持图生视频 v2 的扩展生成。")
+    if not is_wan22_chain_history_task_type(history.type):
+        raise Wan22VideoV2ExtensionError("当前仅支持图生视频链路记录的扩展生成。")
     return history
 
 
@@ -78,8 +79,8 @@ async def load_owned_wan22_history_for_internal_user(
         history = result.scalar_one_or_none()
     if history is None:
         raise Wan22VideoV2ExtensionError("未找到对应的视频记录，或该记录不属于您。")
-    if history.type != "wan22_video_v2":
-        raise Wan22VideoV2ExtensionError("当前仅支持图生视频 v2 的扩展生成。")
+    if not is_wan22_chain_history_task_type(history.type):
+        raise Wan22VideoV2ExtensionError("当前仅支持图生视频链路记录的扩展生成。")
     return history
 
 
@@ -174,6 +175,14 @@ def build_wan22_history_context_from_metadata(metadata: dict | None) -> dict[str
     if negative_prompt:
         context["wan22_negative_prompt"] = negative_prompt
     context["wan22_use_end_frame"] = bool(metadata.get("wan22_use_end_frame"))
+    model_profile = str(metadata.get("wan22_model_profile") or "").strip()
+    if model_profile:
+        context["wan22_model_profile"] = model_profile
+    lora_name = str(metadata.get("lora_name") or "").strip()
+    if lora_name:
+        context["lora_name"] = lora_name
+    if metadata.get("lora_strength") is not None:
+        context["lora_strength"] = metadata.get("lora_strength")
     prev_task_id = str(metadata.get("wan22_prev_task_id") or "").strip()
     if prev_task_id:
         context["wan22_prev_task_id"] = prev_task_id
@@ -191,11 +200,14 @@ def merge_wan22_history_context_into_extra_outputs(
     extra_outputs: dict | None,
     metadata: dict | None,
 ) -> dict[str, object] | None:
-    if task_type != "wan22_video_v2":
+    if not is_wan22_chain_history_task_type(task_type):
         return extra_outputs
     context = build_wan22_history_context_from_metadata(metadata)
+    if not context and not extra_outputs:
+        return extra_outputs
     merged = dict(extra_outputs or {})
-    merged[WAN22_HISTORY_CONTEXT_KEY] = context
+    if context:
+        merged[WAN22_HISTORY_CONTEXT_KEY] = context
     return merged
 
 

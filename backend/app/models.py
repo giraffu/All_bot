@@ -18,6 +18,7 @@ class TaskType(str, Enum):
     FACE_SWAP = "face_swap"
     VIDEO_INSERT = "video_insert"
     VIDEO_EDIT = "video_edit"
+    IMAGE_TO_VIDEO = "image_to_video"
     FACE_VIDEO = "face_video"
     T2I_PORNMASTER_TURBO = "t2i-pornmaster-turbo"
     I2I_PRO = "i2i_pro"
@@ -137,10 +138,15 @@ class VideoLoraRequest(BaseModel):
     task_id: str
     image: str
     prompt: str
-    lora_name: str
+    lora_name: Optional[str] = ""
+    end_image: Optional[str] = None
+    negative_prompt: Optional[str] = " "
+    use_end_frame: bool = False
+    resolution_preset: Optional[str] = "preview"
+    wan22_model_profile: Optional[str] = ""
     width: int = 512
     height: int = 512
-    length: int = 81
+    length: int = 5
     priority: int = 0
 
 
@@ -195,6 +201,7 @@ class Wan22VideoV2Request(BaseModel):
     negative_prompt: Optional[str] = " "
     use_end_frame: bool = False
     resolution_preset: Optional[str] = "standard"
+    wan22_model_profile: Optional[str] = ""
     upscale: bool = False
     extract_last_frame: bool = True
     length: int = 5

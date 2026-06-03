@@ -4,7 +4,13 @@ import logging
 from telegram import Update
 from telegram.ext import ContextTypes
 
+from src.constants import MODE_CUSTOM_VIDEO, MODE_IMAGE_TO_VIDEO, MODE_WAN22_VIDEO_V2
 from src.handlers.callback_router import register_callback
+from src.lora_mapping import extract_prompt_lora_context
+from src.core.video_billing import resolve_apply_prompt_and_requested_duration
+from src.services.task_service_generation_video import (
+    process_image_to_video_generation_task as process_image_to_video_task,
+)
 from src.services.task_service_generation_wan22 import (
     normalize_wan22_video_v2_chain_task_ids,
     process_wan22_video_v2_generation_task as process_wan22_video_v2_task,
@@ -60,6 +66,22 @@ def _resolve_current_task_id(meta: dict) -> str:
 
 def _resolve_prev_task_id(meta: dict) -> str:
     return str(meta.get("wan22_prev_task_id") or "").strip()
+
+
+def _resolve_reusable_history_prompt_and_lora(history, meta: dict) -> tuple[str, str | None, float]:
+    prompt, _requested_duration = resolve_apply_prompt_and_requested_duration(
+        getattr(history, "type", None),
+        getattr(history, "prompt", None),
+        getattr(history, "requested_duration", None),
+    )
+    prompt, parsed_lora_name, parsed_lora_strength = extract_prompt_lora_context(prompt)
+    lora_name = str(meta.get("lora_name") or parsed_lora_name or "").strip() or None
+    lora_strength = meta.get("lora_strength")
+    try:
+        normalized_lora_strength = float(lora_strength)
+    except (TypeError, ValueError):
+        normalized_lora_strength = parsed_lora_strength or 1.0
+    return prompt, lora_name, normalized_lora_strength
 
 
 @register_callback("wan22v2_stitch_chain")
@@ -161,24 +183,51 @@ async def regenerate_wan22_video_v2_callback(
         )
         create_background_task(
             context,
-            process_wan22_video_v2_task(
-                context=context,
-                chat_id=update.effective_chat.id,
-                user_id=update.effective_user.id,
-                username=update.effective_user.username,
-                prompt=str(current_history.prompt or "").strip(),
-                negative_prompt=str(meta.get("wan22_negative_prompt") or "").strip(),
-                images=images,
-                use_end_frame=use_end_frame,
-                status_msg_id=getattr(status_msg, "message_id", None),
-                resolution_preset=resolve_extension_resolution_preset(meta),
-                result_meta={
-                    "wan22_prev_task_id": prev_task_id,
-                    "wan22_chain_task_ids": normalize_wan22_video_v2_chain_task_ids(
+            (
+                process_wan22_video_v2_task(
+                    context=context,
+                    chat_id=update.effective_chat.id,
+                    user_id=update.effective_user.id,
+                    username=update.effective_user.username,
+                    prompt=str(current_history.prompt or "").strip(),
+                    negative_prompt=str(meta.get("wan22_negative_prompt") or "").strip(),
+                    images=images,
+                    use_end_frame=use_end_frame,
+                    status_msg_id=getattr(status_msg, "message_id", None),
+                    resolution_preset=resolve_extension_resolution_preset(meta),
+                    result_meta={
+                        "wan22_prev_task_id": prev_task_id,
+                        "wan22_chain_task_ids": normalize_wan22_video_v2_chain_task_ids(
+                            meta.get("wan22_chain_task_ids")
+                        ),
+                    },
+                    cleanup=True,
+                )
+                if current_history.type == MODE_WAN22_VIDEO_V2
+                else process_image_to_video_task(
+                    context=context,
+                    chat_id=update.effective_chat.id,
+                    user_id=update.effective_user.id,
+                    username=update.effective_user.username,
+                    prompt=_resolve_reusable_history_prompt_and_lora(current_history, meta)[0],
+                    negative_prompt=str(meta.get("wan22_negative_prompt") or "").strip(),
+                    images=images,
+                    use_end_frame=use_end_frame,
+                    status_msg_id=getattr(status_msg, "message_id", None),
+                    resolution_preset=resolve_extension_resolution_preset(meta),
+                    wan22_prev_task_id=prev_task_id,
+                    wan22_chain_task_ids=normalize_wan22_video_v2_chain_task_ids(
                         meta.get("wan22_chain_task_ids")
                     ),
-                },
-                cleanup=True,
+                    task_type=(
+                        MODE_IMAGE_TO_VIDEO
+                        if current_history.type == MODE_IMAGE_TO_VIDEO
+                        else MODE_CUSTOM_VIDEO
+                    ),
+                    lora_name=_resolve_reusable_history_prompt_and_lora(current_history, meta)[1],
+                    lora_strength=_resolve_reusable_history_prompt_and_lora(current_history, meta)[2],
+                    cleanup=True,
+                )
             ),
         )
     except Wan22VideoV2ExtensionError as exc:

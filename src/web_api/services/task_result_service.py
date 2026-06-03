@@ -1,3 +1,9 @@
+import asyncio
+import copy
+import logging
+from dataclasses import dataclass
+from typing import Any
+
 from fastapi import HTTPException
 from sqlalchemy import select
 
@@ -16,19 +22,95 @@ from src.web_api.presenters.media_presenter import (
     resolve_history_extra_outputs,
 )
 
+WEB_RESULT_STORAGE_FALLBACK_EXPIRES_HOURS = 1
+WEB_RESULT_R2_LOOKUP_TIMEOUT_SECONDS = 2.5
+WEB_RESULT_EXTRA_OUTPUTS_TIMEOUT_SECONDS = 5.0
 
-async def _resolve_task_result_url(hist: History) -> str:
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class _HistorySnapshot:
+    user_id: int
+    task_id: str
+    type: str | None
+    output_file: str | None
+    source: str | None
+    extra_outputs: dict[str, Any] | None
+
+
+def _snapshot_history(hist: History) -> _HistorySnapshot:
+    extra_outputs = (
+        copy.deepcopy(hist.extra_outputs)
+        if isinstance(hist.extra_outputs, dict)
+        else None
+    )
+    return _HistorySnapshot(
+        user_id=hist.user_id,
+        task_id=hist.task_id,
+        type=hist.type,
+        output_file=hist.output_file,
+        source=hist.source,
+        extra_outputs=extra_outputs,
+    )
+
+
+async def _release_read_transaction(db) -> None:
+    in_transaction = getattr(db, "in_transaction", None)
+    if callable(in_transaction):
+        try:
+            if not in_transaction():
+                return
+        except Exception:
+            pass
+
+    rollback = getattr(db, "rollback", None)
+    if not callable(rollback):
+        return
+
+    try:
+        await rollback()
+    except Exception as exc:
+        logger.warning("Failed to release task result read transaction: %s", exc)
+
+
+async def _resolve_web_r2_url(hist: _HistorySnapshot) -> str:
+    try:
+        return await asyncio.wait_for(
+            get_first_r2_url_if_exists(
+                *build_r2_media_key_candidates(
+                    output_file=hist.output_file,
+                    task_id=hist.task_id,
+                ),
+                timeout_seconds=WEB_RESULT_R2_LOOKUP_TIMEOUT_SECONDS,
+            ),
+            timeout=WEB_RESULT_R2_LOOKUP_TIMEOUT_SECONDS,
+        )
+    except asyncio.TimeoutError:
+        logger.warning(
+            "Timed out resolving web result R2 URL for task_id=%s",
+            hist.task_id,
+        )
+        return ""
+
+
+async def _resolve_task_result_url(hist: _HistorySnapshot, *, media_type: str) -> str:
     if not hist.output_file:
         return ""
 
     if hist.source == "web":
-        r2_url = await get_first_r2_url_if_exists(
-            *build_r2_media_key_candidates(
-                output_file=hist.output_file,
-                task_id=hist.task_id,
-            )
+        r2_url = await _resolve_web_r2_url(hist)
+        if r2_url:
+            return r2_url
+
+        if media_type == "video":
+            return ""
+
+        return build_storage_media_url(
+            hist.output_file,
+            expires_hours=WEB_RESULT_STORAGE_FALLBACK_EXPIRES_HOURS,
         )
-        return r2_url or ""
 
     return (
         build_storage_media_url(
@@ -39,13 +121,36 @@ async def _resolve_task_result_url(hist: History) -> str:
     )
 
 
+async def _resolve_visible_extra_outputs(hist: _HistorySnapshot) -> dict[str, dict[str, Any]]:
+    try:
+        extra_outputs = await asyncio.wait_for(
+            resolve_history_extra_outputs(
+                task_id=hist.task_id,
+                extra_outputs=hist.extra_outputs,
+                source=hist.source,
+            ),
+            timeout=WEB_RESULT_EXTRA_OUTPUTS_TIMEOUT_SECONDS,
+        )
+    except asyncio.TimeoutError:
+        logger.warning(
+            "Timed out resolving task result extra outputs for task_id=%s",
+            hist.task_id,
+        )
+        extra_outputs = {}
+    return filter_user_visible_extra_outputs(
+        task_type=hist.type,
+        extra_outputs=extra_outputs,
+    )
+
+
 async def get_task_result_payload(*, task_id: str, current_user, db) -> dict:
+    user_id = current_user.id
     hist = (
         (
             await db.execute(
                 select(History).where(
                     History.task_id == task_id,
-                    History.user_id == current_user.id,
+                    History.user_id == user_id,
                 )
             )
         )
@@ -54,49 +159,48 @@ async def get_task_result_payload(*, task_id: str, current_user, db) -> dict:
     )
 
     if not hist:
+        await _release_read_transaction(db)
         return build_result_pending_payload(
             task_id=task_id,
             task_type=None,
             media_type=None,
         )
 
-    if hist.user_id != current_user.id:
+    hist_snapshot = _snapshot_history(hist)
+    await _release_read_transaction(db)
+
+    if hist_snapshot.user_id != user_id:
         raise HTTPException(status_code=403, detail="任务不存在或无权限")
 
-    is_video = hist.type in VIDEO_TASK_TYPES if hist.type else False
+    is_video = hist_snapshot.type in VIDEO_TASK_TYPES if hist_snapshot.type else False
     media_type = "video" if is_video else "image"
 
-    if hist.output_file:
-        result_url = await _resolve_task_result_url(hist)
+    if hist_snapshot.output_file:
+        result_url = await _resolve_task_result_url(
+            hist_snapshot,
+            media_type=media_type,
+        )
         if not result_url:
             return build_result_pending_payload(
                 task_id=task_id,
-                task_type=hist.type,
+                task_type=hist_snapshot.type,
                 media_type=media_type,
             )
-        extra_outputs = await resolve_history_extra_outputs(
-            task_id=hist.task_id,
-            extra_outputs=hist.extra_outputs,
-            source=hist.source,
-        )
-        visible_extra_outputs = filter_user_visible_extra_outputs(
-            task_type=hist.type,
-            extra_outputs=extra_outputs,
-        )
+        visible_extra_outputs = await _resolve_visible_extra_outputs(hist_snapshot)
         return build_result_success_payload(
             task_id=task_id,
-            task_type=hist.type,
+            task_type=hist_snapshot.type,
             media_type=media_type,
             result_url=result_url,
             extra_outputs=visible_extra_outputs,
             result_meta=extract_history_result_meta(
-                task_type=hist.type,
-                extra_outputs=hist.extra_outputs,
+                task_type=hist_snapshot.type,
+                extra_outputs=hist_snapshot.extra_outputs,
             ),
         )
 
     return build_result_pending_payload(
         task_id=task_id,
-        task_type=hist.type,
+        task_type=hist_snapshot.type,
         media_type=media_type,
     )

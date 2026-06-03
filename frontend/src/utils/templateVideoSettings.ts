@@ -74,14 +74,28 @@ const normalizeTierFromVideoSide = (side: number | null): string | null => {
   }
 
   if (side >= 960) {
-    return '1024'
+    return 'hd'
   }
 
   if (side >= 700) {
-    return '720'
+    return 'standard'
   }
 
-  return '512'
+  return 'preview'
+}
+
+const resolveApproxWidthFromWan22Preset = (value: unknown): number | null => {
+  const normalized = normalizePersistedTierBillingResolution(value)
+  if (normalized === 'hd') {
+    return 1024
+  }
+  if (normalized === 'standard') {
+    return 720
+  }
+  if (normalized === 'preview') {
+    return 512
+  }
+  return null
 }
 
 export const normalizePersistedTierBillingResolution = (value: unknown): string | null => {
@@ -98,8 +112,12 @@ export const normalizePersistedTierBillingResolution = (value: unknown): string 
     normalized = normalized.slice(0, -1)
   }
 
-  if (normalized === '512' || normalized === '720' || normalized === '1024') {
+  if (normalized === 'preview' || normalized === 'standard' || normalized === 'hd') {
     return normalized
+  }
+
+  if (normalized === '512' || normalized === '720' || normalized === '1024') {
+    return normalizeTierFromVideoSide(Number(normalized))
   }
 
   const explicitResolution = /^(\d+)x(\d+)$/.exec(normalized)
@@ -139,7 +157,9 @@ export const getTemplateVideoSettings = (
   requiresHeight = false,
   taskType?: string
 ): TemplateVideoSettings | null => {
+  const isLegacyWan22Video = taskType === 'custom_video' || taskType === 'video_lora'
   const width = toPositiveInteger(ctx?.width)
+    ?? (isLegacyWan22Video ? resolveApproxWidthFromWan22Preset(ctx?.billing_resolution) : null)
   const height = toPositiveInteger(ctx?.height)
   const requestedDuration = toPositiveInteger(ctx?.requested_duration)
   const mediaDuration = toPositiveInteger(ctx?.duration)
@@ -152,12 +172,8 @@ export const getTemplateVideoSettings = (
           : (mediaDuration && LTX_ALLOWED_DURATIONS.has(mediaDuration)
               ? mediaDuration
               : legacyCompatibleLtxDuration))
-      : ((taskType === 'custom_video' || taskType === 'video_lora')
-          ? (requestedDuration && TIER_VIDEO_ALLOWED_DURATIONS.has(requestedDuration)
-              ? requestedDuration
-              : (mediaDuration && TIER_VIDEO_ALLOWED_DURATIONS.has(mediaDuration)
-                  ? mediaDuration
-                  : legacyCompatibleTierDuration))
+      : (isLegacyWan22Video
+          ? 5
           : (requestedDuration ?? mediaDuration))
 
   if (width === null || duration === null) {

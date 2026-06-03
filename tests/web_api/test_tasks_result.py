@@ -1,3 +1,4 @@
+import asyncio
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -24,9 +25,18 @@ class _FakeResult:
 class _FakeDB:
     def __init__(self, results):
         self._results = iter(results)
+        self.rollback_count = 0
+        self._in_transaction = True
 
     async def execute(self, _stmt):
         return next(self._results)
+
+    def in_transaction(self):
+        return self._in_transaction
+
+    async def rollback(self):
+        self.rollback_count += 1
+        self._in_transaction = False
 
 
 @pytest.mark.asyncio
@@ -98,6 +108,7 @@ async def test_get_task_result_uses_resolved_storage_object_for_bucket_prefixed_
         "media_type": "image",
         "result_url": "https://cdn.example/task-1.png",
         "extra_outputs": {},
+        "result_meta": {},
     }
     presign_mock.assert_called_once_with(
         "history/task-1/output.png",
@@ -133,6 +144,7 @@ async def test_get_task_result_uses_primary_bucket_for_unprefixed_history_video_
         "media_type": "video",
         "result_url": "https://cdn.example/task-1.mp4",
         "extra_outputs": {},
+        "result_meta": {},
     }
     presign_mock.assert_called_once_with(
         "123/output_images/task-1.mp4",
@@ -171,13 +183,51 @@ async def test_get_task_result_prefers_public_r2_url_for_web_history(
         "media_type": "image",
         "result_url": "https://r2-test.aivison.it.com/history/task-1/original.png",
         "extra_outputs": {},
+        "result_meta": {},
     }
     presign_mock.assert_not_called()
     r2_mock.assert_awaited_once()
 
 
 @pytest.mark.asyncio
-async def test_get_task_result_keeps_polling_when_web_history_public_url_not_ready(
+async def test_get_task_result_releases_read_transaction_before_r2_lookup(
+    monkeypatch,
+):
+    history = History(
+        id=11,
+        user_id=123,
+        task_id="task-1",
+        type="txt2img",
+        output_file="123/output_images/task-1.png",
+        source="web",
+    )
+    db = _FakeDB([_FakeResult(single=history)])
+
+    async def r2_lookup(*_object_keys, **_kwargs):
+        assert db.rollback_count == 1
+        return "https://r2-test.aivison.it.com/history/task-1/original.png"
+
+    monkeypatch.setattr(
+        task_result_service,
+        "get_first_r2_url_if_exists",
+        r2_lookup,
+    )
+
+    response = await tasks_router.get_task_result(
+        "task-1",
+        current_user=type("User", (), {"id": 123})(),
+        db=db,
+    )
+
+    assert response["status"] == "success"
+    assert response["result_url"] == (
+        "https://r2-test.aivison.it.com/history/task-1/original.png"
+    )
+    assert db.rollback_count == 1
+
+
+@pytest.mark.asyncio
+async def test_get_task_result_falls_back_to_storage_url_when_web_history_r2_not_ready(
     monkeypatch,
 ):
     history = History(
@@ -200,13 +250,137 @@ async def test_get_task_result_keeps_polling_when_web_history_public_url_not_rea
     )
 
     assert response == {
+        "status": "success",
+        "task_id": "task-1",
+        "task_type": "txt2img",
+        "media_type": "image",
+        "result_url": "http://192.168.1.115:9000/internal.png",
+        "extra_outputs": {},
+        "result_meta": {},
+    }
+    presign_mock.assert_called_once_with(
+        "123/output_images/task-1.png",
+        expires_hours=task_result_service.WEB_RESULT_STORAGE_FALLBACK_EXPIRES_HOURS,
+        bucket=MINIO_BUCKET,
+    )
+    r2_mock.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_get_task_result_keeps_web_video_pending_when_r2_not_ready(
+    monkeypatch,
+):
+    history = History(
+        id=11,
+        user_id=123,
+        task_id="task-1",
+        type="custom_video",
+        output_file="123/output_images/task-1.mp4",
+        source="web",
+    )
+    r2_mock = AsyncMock(return_value="")
+    presign_mock = MagicMock(return_value="http://192.168.1.115:9000/internal.mp4")
+    monkeypatch.setattr(task_result_service, "get_first_r2_url_if_exists", r2_mock)
+    monkeypatch.setattr(media_presenter.storage, "get_presigned_url", presign_mock)
+
+    response = await tasks_router.get_task_result(
+        "task-1",
+        current_user=type("User", (), {"id": 123})(),
+        db=_FakeDB([_FakeResult(single=history)]),
+    )
+
+    assert response == {
+        "status": "pending_result",
+        "task_id": "task-1",
+        "task_type": "custom_video",
+        "media_type": "video",
+        "extra_outputs": {},
+    }
+    presign_mock.assert_not_called()
+    r2_mock.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_get_task_result_keeps_web_video_pending_when_r2_lookup_times_out(
+    monkeypatch,
+):
+    history = History(
+        id=11,
+        user_id=123,
+        task_id="task-1",
+        type="custom_video",
+        output_file="123/output_images/task-1.mp4",
+        source="web",
+    )
+
+    async def slow_r2_lookup(*_object_keys, **_kwargs):
+        await asyncio.sleep(1)
+        return "https://r2-test.aivison.it.com/history/task-1/original.mp4"
+
+    monkeypatch.setattr(
+        task_result_service,
+        "WEB_RESULT_R2_LOOKUP_TIMEOUT_SECONDS",
+        0.01,
+    )
+    monkeypatch.setattr(
+        task_result_service,
+        "get_first_r2_url_if_exists",
+        slow_r2_lookup,
+    )
+    presign_mock = MagicMock(return_value="http://192.168.1.115:9000/internal.mp4")
+    monkeypatch.setattr(media_presenter.storage, "get_presigned_url", presign_mock)
+
+    response = await tasks_router.get_task_result(
+        "task-1",
+        current_user=type("User", (), {"id": 123})(),
+        db=_FakeDB([_FakeResult(single=history)]),
+    )
+
+    assert response == {
+        "status": "pending_result",
+        "task_id": "task-1",
+        "task_type": "custom_video",
+        "media_type": "video",
+        "extra_outputs": {},
+    }
+    presign_mock.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_get_task_result_keeps_polling_when_web_history_has_no_available_url(
+    monkeypatch,
+):
+    history = History(
+        id=11,
+        user_id=123,
+        task_id="task-1",
+        type="txt2img",
+        output_file="123/output_images/task-1.png",
+        source="web",
+    )
+    r2_mock = AsyncMock(return_value="")
+    presign_mock = MagicMock(return_value="")
+    monkeypatch.setattr(task_result_service, "get_first_r2_url_if_exists", r2_mock)
+    monkeypatch.setattr(media_presenter.storage, "get_presigned_url", presign_mock)
+
+    response = await tasks_router.get_task_result(
+        "task-1",
+        current_user=type("User", (), {"id": 123})(),
+        db=_FakeDB([_FakeResult(single=history)]),
+    )
+
+    assert response == {
         "status": "pending_result",
         "task_id": "task-1",
         "task_type": "txt2img",
         "media_type": "image",
         "extra_outputs": {},
     }
-    presign_mock.assert_not_called()
+    presign_mock.assert_called_once_with(
+        "123/output_images/task-1.png",
+        expires_hours=task_result_service.WEB_RESULT_STORAGE_FALLBACK_EXPIRES_HOURS,
+        bucket=MINIO_BUCKET,
+    )
     r2_mock.assert_awaited_once()
 
 
@@ -283,5 +457,6 @@ async def test_get_task_result_resolves_history_extra_outputs(monkeypatch):
             "wan22_use_end_frame": True,
             "wan22_prev_task_id": "task-0",
             "wan22_chain_task_ids": ["task-root", "task-0"],
+            "wan22_segment_index": 3,
         },
     }

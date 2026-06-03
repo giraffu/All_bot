@@ -21,6 +21,7 @@ from src.services.wan22_video_v2_context import (
 from src.services.task_service_message_support import translate_context_text
 from src.services.task_service_support import get_acceleration_notice
 from src.services.wan22_video_v2_config import (
+    WAN22_VIDEO_V2_MODEL_PROFILE,
     WAN22_VIDEO_V2_DEFAULT_RESOLUTION_PRESET,
     WAN22_VIDEO_V2_RESOLUTION_PRESETS,
     get_wan22_video_v2_cost,
@@ -60,6 +61,7 @@ def build_wan22_video_v2_result_meta(
             negative_prompt
         ),
         "wan22_use_end_frame": bool(use_end_frame),
+        "wan22_model_profile": WAN22_VIDEO_V2_MODEL_PROFILE,
         "wan22_chain_task_ids": normalize_wan22_video_v2_chain_task_ids(
             chain_task_ids
         ),
@@ -119,6 +121,7 @@ async def process_wan22_video_v2_generation_task(
         negative_prompt=normalized_negative_prompt,
         use_end_frame=use_end_frame,
         resolution_preset=normalized_resolution_preset,
+        wan22_model_profile=WAN22_VIDEO_V2_MODEL_PROFILE,
         upscale=False,
         extract_last_frame=True,
     )

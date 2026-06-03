@@ -20,6 +20,9 @@ from config import (
     R2_EXISTS_CACHE_MAX_ENTRIES,
     R2_EXISTS_NEGATIVE_TTL_SECONDS,
     R2_EXISTS_POSITIVE_TTL_SECONDS,
+    R2_HEAD_CONNECT_TIMEOUT_SECONDS,
+    R2_HEAD_MAX_ATTEMPTS,
+    R2_HEAD_READ_TIMEOUT_SECONDS,
     R2_HEAD_SEMAPHORE_LIMIT,
     R2_MAX_POOL_CONNECTIONS,
     R2_PUBLIC_DOMAIN,
@@ -203,16 +206,32 @@ class StorageService:
                     ),
                     region_name="auto",
                 )
+                self.r2_head_client = boto3.client(
+                    "s3",
+                    endpoint_url=R2_ENDPOINT,
+                    aws_access_key_id=R2_ACCESS_KEY,
+                    aws_secret_access_key=R2_SECRET_KEY,
+                    config=BotoConfig(
+                        signature_version="s3v4",
+                        max_pool_connections=R2_MAX_POOL_CONNECTIONS,
+                        connect_timeout=R2_HEAD_CONNECT_TIMEOUT_SECONDS,
+                        read_timeout=R2_HEAD_READ_TIMEOUT_SECONDS,
+                        retries={"max_attempts": R2_HEAD_MAX_ATTEMPTS},
+                    ),
+                    region_name="auto",
+                )
                 self.r2_bucket = R2_BUCKET
                 logger.info("Cloudflare R2 client initialized for gallery")
             else:
                 self.r2_client = None
+                self.r2_head_client = None
                 logger.warning(
                     "R2 configuration missing, gallery upload will be disabled"
                 )
         except Exception as e:
             logger.error(f"Failed to init R2 client: {e}")
             self.r2_client = None
+            self.r2_head_client = None
 
     def _sync_upload_to_r2(
         self, bucket_name: str, object_name: str, r2_object_name: str = None

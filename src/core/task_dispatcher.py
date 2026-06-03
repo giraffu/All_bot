@@ -6,6 +6,7 @@ from src.constants import (
     DURATION_MULTIPLIER,
     LTX_DURATION_MULTIPLIER,
     LTX_RESOLUTION_COST,
+    MODE_CUSTOM_VIDEO,
     MODE_EDIT,
     MODE_FACESWAP_STEP1,
     MODE_IMAGE_TO_VIDEO,
@@ -19,7 +20,11 @@ from src.constants import (
 )
 from src.core.task_core_service_providers import get_task_core_image_service
 from src.lora_catalog import normalize_ltx_video_lora_items
-from src.services.wan22_video_v2_config import get_wan22_video_v2_cost
+from src.services.wan22_video_v2_config import (
+    WAN22_LEGACY_IMAGE_TO_VIDEO_MODEL_PROFILE,
+    WAN22_VIDEO_V2_MODEL_PROFILE,
+    get_wan22_video_v2_cost,
+)
 from src.services.wan22_video_v2_context import (
     normalize_wan22_video_v2_chain_task_ids,
     normalize_wan22_video_v2_negative_prompt,
@@ -98,6 +103,7 @@ class _Wan22SubmissionContext:
     use_end_frame: bool
     negative_prompt: str
     resolution_preset: str
+    model_profile: str
 
 
 @dataclass(frozen=True)
@@ -158,14 +164,19 @@ def _build_ltx_submission_context(inputs: Dict[str, Any]) -> _LtxSubmissionConte
 
 def _build_wan22_submission_context(inputs: Dict[str, Any]) -> _Wan22SubmissionContext:
     saved_images = _get_saved_input_images(inputs)
-    use_end_frame, end_image_path = _resolve_wan22_end_frame(saved_images)
+    inferred_use_end_frame, end_image_path = _resolve_wan22_end_frame(saved_images)
+    use_end_frame = bool(inputs.get("use_end_frame")) and bool(end_image_path)
     return _Wan22SubmissionContext(
         prompt=_get_input_prompt(inputs, "wan22 video"),
         image_path=saved_images[0] if saved_images else "",
         end_image_path=end_image_path,
-        use_end_frame=use_end_frame,
+        use_end_frame=use_end_frame or inferred_use_end_frame,
         negative_prompt=inputs.get("negative_prompt", " "),
-        resolution_preset=inputs.get("resolution_preset", "standard"),
+        resolution_preset=inputs.get("resolution_preset")
+        or inputs.get("wan22_resolution_preset")
+        or inputs.get("resolution")
+        or "preview",
+        model_profile=str(inputs.get("wan22_model_profile") or "").strip(),
     )
 
 
@@ -346,17 +357,25 @@ class FaceSwapStrategy(BaseTaskStrategy):
 
 
 class BaseVideoStrategy(BaseTaskStrategy):
-    IMAGE_TO_VIDEO_LORA_TASK_TYPES = {MODE_IMAGE_TO_VIDEO}
+    WAN22_IMAGE_TO_VIDEO_TASK_TYPES = {MODE_CUSTOM_VIDEO, MODE_IMAGE_TO_VIDEO}
 
     def __init__(self, mode: str):
         self.mode = mode
 
-    def _should_use_image_to_video_lora_endpoint(self, inputs: Dict[str, Any]) -> bool:
-        return self.mode in self.IMAGE_TO_VIDEO_LORA_TASK_TYPES and bool(
-            inputs.get("lora_name")
+    def _is_wan22_image_to_video_task(self) -> bool:
+        return self.mode in self.WAN22_IMAGE_TO_VIDEO_TASK_TYPES
+
+    def _resolve_wan22_resolution_preset(self, inputs: Dict[str, Any]) -> str:
+        return normalize_wan22_video_v2_resolution_preset(
+            inputs.get("resolution_preset")
+            or inputs.get("wan22_resolution_preset")
+            or inputs.get("resolution")
         )
 
     def get_cost(self, inputs: Dict[str, Any]) -> int:
+        if self._is_wan22_image_to_video_task():
+            return get_wan22_video_v2_cost(self._resolve_wan22_resolution_preset(inputs))
+
         resolution = inputs.get("resolution", 512)
         duration = inputs.get("duration", 5)
 
@@ -370,6 +389,37 @@ class BaseVideoStrategy(BaseTaskStrategy):
         base_cost = RESOLUTION_COST.get(res_str, TASK_COSTS.get(self.mode, 6))
         multiplier = DURATION_MULTIPLIER.get(dur_str, 1.0)
         return int(base_cost * multiplier)
+
+    def get_metadata(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
+        if not self._is_wan22_image_to_video_task():
+            return super().get_metadata(inputs)
+
+        saved_images = _get_saved_input_images(inputs)
+        resolution_preset = self._resolve_wan22_resolution_preset(inputs)
+        use_end_frame = bool(inputs.get("use_end_frame")) and len(saved_images) > 1
+        metadata = _append_lora_metadata(
+            {
+                "saved_inputs": saved_images,
+                "requested_duration": 5,
+                "resolution_preset": resolution_preset,
+                "wan22_resolution_preset": resolution_preset,
+                "wan22_negative_prompt": normalize_wan22_video_v2_negative_prompt(
+                    inputs.get("negative_prompt")
+                ),
+                "wan22_use_end_frame": use_end_frame,
+                "wan22_model_profile": WAN22_LEGACY_IMAGE_TO_VIDEO_MODEL_PROFILE,
+            },
+            inputs,
+        )
+        prev_task_id = str(inputs.get("wan22_prev_task_id") or "").strip()
+        if prev_task_id:
+            metadata["wan22_prev_task_id"] = prev_task_id
+        chain_task_ids = normalize_wan22_video_v2_chain_task_ids(
+            inputs.get("wan22_chain_task_ids")
+        )
+        if chain_task_ids:
+            metadata["wan22_chain_task_ids"] = chain_task_ids
+        return metadata
 
     def get_file_paths_to_upload(self, inputs: Dict[str, Any]) -> list[str]:
         if self.mode in FACE_VIDEO_TASK_TYPES:
@@ -396,16 +446,25 @@ class BaseVideoStrategy(BaseTaskStrategy):
                 length=submission.frame_length,
                 priority=priority,
             )
-        elif self._should_use_image_to_video_lora_endpoint(inputs):
+        elif self._is_wan22_image_to_video_task():
+            wan22_submission = _build_wan22_submission_context(inputs)
+            resolution_preset = self._resolve_wan22_resolution_preset(inputs)
             return await image_service.submit_image_to_video_task(
                 task_id,
-                prompt=submission.prompt,
-                image_path=submission.image_path,
-                lora_name=inputs.get("lora_name"),
+                prompt=wan22_submission.prompt,
+                image_path=wan22_submission.image_path,
+                lora_name=inputs.get("lora_name") or "",
+                end_image_path=wan22_submission.end_image_path,
+                negative_prompt=normalize_wan22_video_v2_negative_prompt(
+                    wan22_submission.negative_prompt
+                ),
+                use_end_frame=wan22_submission.use_end_frame,
+                resolution_preset=resolution_preset,
+                wan22_model_profile=WAN22_LEGACY_IMAGE_TO_VIDEO_MODEL_PROFILE,
                 priority=priority,
-                width=submission.width,
-                height=submission.height,
-                length=submission.frame_length,
+                width=512,
+                height=512,
+                length=5,
             )
         elif self.mode in FACE_VIDEO_TASK_TYPES:
             face_img, video_path = _resolve_face_video_saved_inputs(
@@ -484,6 +543,7 @@ class Wan22VideoV2Strategy(BaseTaskStrategy):
                 inputs.get("negative_prompt")
             ),
             "wan22_use_end_frame": bool(inputs.get("use_end_frame")),
+            "wan22_model_profile": WAN22_VIDEO_V2_MODEL_PROFILE,
         }
         prev_task_id = str(inputs.get("wan22_prev_task_id") or "").strip()
         if prev_task_id:
@@ -509,6 +569,7 @@ class Wan22VideoV2Strategy(BaseTaskStrategy):
             negative_prompt=submission.negative_prompt,
             use_end_frame=submission.use_end_frame,
             resolution_preset=submission.resolution_preset,
+            wan22_model_profile=WAN22_VIDEO_V2_MODEL_PROFILE,
             length=5,
             priority=priority,
         )

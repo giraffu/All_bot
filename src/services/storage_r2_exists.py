@@ -110,6 +110,10 @@ def mark_r2_object_exists(service, object_name: str):
     set_r2_exists_cache(service, object_name, True)
 
 
+def get_r2_head_client(service):
+    return getattr(service, "r2_head_client", None) or service.r2_client
+
+
 async def remove_r2_inflight_task(service, object_name: str, task: asyncio.Task):
     if service._r2_exists_inflight_lock is None:
         return
@@ -130,10 +134,11 @@ def attach_r2_inflight_cleanup(service, object_name: str, task: asyncio.Task):
 
 
 def r2_object_exists_with_cache_hint(service, object_name: str, *, logger):
-    if not service.r2_client or not service.r2_bucket:
+    head_client = get_r2_head_client(service)
+    if not head_client or not service.r2_bucket:
         return False, False
     try:
-        service.r2_client.head_object(Bucket=service.r2_bucket, Key=object_name)
+        head_client.head_object(Bucket=service.r2_bucket, Key=object_name)
         return True, True
     except ClientError as exc:
         error = exc.response.get("Error", {}) if exc.response else {}
@@ -185,7 +190,7 @@ async def async_r2_object_exists(service, object_name: str, *, logger):
     if cached is not None:
         return cached
 
-    if not service.r2_client or not service.r2_bucket:
+    if not get_r2_head_client(service) or not service.r2_bucket:
         return False
 
     ensure_r2_async_primitives(service)

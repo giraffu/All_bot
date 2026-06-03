@@ -7,6 +7,7 @@ from src.services.wan22_video_v2_extension_service import (
     resolve_wan22_segment_index,
     resolve_wan22_stitched_segment_count,
 )
+from src.services.wan22_video_v2_config import is_wan22_chain_history_task_type
 from src.web_api.common.utils import (
     build_storage_input_file_url,
     resolve_history_billing_resolution,
@@ -32,7 +33,7 @@ def extract_history_tags(
         match = re.search(r"\\[模型:\\s*(.*?)\\]", prompt)
         if match:
             tags.append(f"#{match.group(1).strip()}")
-    if task_type == "wan22_video_v2":
+    if is_wan22_chain_history_task_type(task_type):
         if is_wan22_stitched_result(extra_outputs):
             segment_count = resolve_wan22_stitched_segment_count(extra_outputs)
             if segment_count:

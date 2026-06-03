@@ -265,6 +265,7 @@ const showStandardResolutionOptions = computed(() => props.mode.supportsVideoOpt
           <a-radio-group
             :value="selectedWan22ResolutionPreset"
             class="lab-advanced-panel__preset-grid"
+            :disabled="isTemplateVideoSettingsLocked"
             @update:value="emit('update:selectedWan22ResolutionPreset', String($event))"
           >
             <label

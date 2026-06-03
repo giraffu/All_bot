@@ -109,6 +109,11 @@ async def stitch_wan22_history_chain_response(
     except Wan22VideoV2ExtensionError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     stitched_task_id = f"wan22_chain_{uuid.uuid4().hex[:24]}"
+    stitched_type = (
+        str(getattr(ordered_histories[-1], "type", "") or "").strip()
+        if ordered_histories
+        else "wan22_video_v2"
+    ) or "wan22_video_v2"
     output_object_name = f"{current_user.id}/output_images/{stitched_task_id}.mp4"
     output_file = storage.upload_bytes(
         stitched_video,
@@ -121,7 +126,7 @@ async def stitch_wan22_history_chain_response(
     stitched_history = History(
         user_id=current_user.id,
         task_id=stitched_task_id,
-        type="wan22_video_v2",
+        type=stitched_type,
         prompt=build_wan22_chain_prompt_summary(ordered_histories),
         output_file=output_file,
         extra_outputs=build_wan22_stitched_extra_outputs(

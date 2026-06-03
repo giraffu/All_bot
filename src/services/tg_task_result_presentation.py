@@ -13,6 +13,7 @@ from src.constants import (
     MODE_UNDRESS,
     MODE_WAN22_VIDEO_V2,
 )
+from src.services.wan22_video_v2_config import is_wan22_chain_history_task_type
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 
@@ -39,11 +40,11 @@ def _build_gallery_button_row(task_id: str) -> list[InlineKeyboardButton]:
 
 
 def _supports_wan22_extension(task_type: str, result_meta: dict | None) -> bool:
-    return task_type == MODE_WAN22_VIDEO_V2 and isinstance(result_meta, dict)
+    return is_wan22_chain_history_task_type(task_type) and isinstance(result_meta, dict)
 
 
 def _supports_wan22_regenerate(task_type: str, result_meta: dict | None) -> bool:
-    return task_type == MODE_WAN22_VIDEO_V2 and bool(
+    return is_wan22_chain_history_task_type(task_type) and bool(
         isinstance(result_meta, dict) and result_meta.get("wan22_prev_task_id")
     )
 
@@ -210,6 +211,7 @@ def record_result_message_meta(
         return
     meta = {
         "mode_name": resolve_result_mode_name(task_type),
+        "task_type": task_type,
         "prompt": prompt,
         "task_id": task_id,
     }

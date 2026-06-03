@@ -44,7 +44,7 @@
 - 当前仓库的测试环境与正式环境已经使用独立数据库；`safe_deploy_test.sh` 只会基于 `.env.test` 校验并迁移测试库，`safe_deploy.sh` 只会基于 `.env` 校验并迁移正式库，两套迁移应按各自环境分别执行，互不替代。
 - 若启用隔离测试栈，应使用独立的 `.env.test`、`backend/docker-compose-test.yml` 与 `workers/docker-compose-test.yml`，并让测试入口服务指向独立的 Central API 端口与独立 Redis 队列。
 - 隔离测试栈的最低要求是：测试 Bot/Web/Payment 使用测试库，Central API 使用独立 Redis DB 作为队列，测试 workers 连接测试 Central API；否则仍会与正式环境共用任务调度面。
-- `workers/docker-compose-test.yml` 中的 `${...}` 插值不会读取 `env_file: ../.env.test` 的值；重建测试 worker 时若宿主 shell 未显式导出 `AGENT_SECRET_TOKEN`、`MINIO_BUCKET`、`MINIO_RESULT_BUCKET`，compose 会退回默认值，可能导致 401 或写错桶。
+- `workers/docker-compose-test.yml` 中的 `${...}` 插值不会读取 `env_file: ../.env.test` 的值；当前测试 compose 已让 `AGENT_SECRET_TOKEN` 从 `env_file` 注入，并将 `MINIO_INPUT_BUCKET` / `MINIO_RESULT_BUCKET` 默认到 `bot-data-test` / `comfyui-temp-test`。重建测试 worker 后仍要用 `docker exec <worker> env` 核对实际生效值，避免 401 或读写错误桶。
 - `safe_deploy_test.sh` 里的测试 Web VPS 发布依赖宿主机可执行 `npm`，并通过 `frontend/scripts/deploy-edge-test.sh` 使用 SSH/SCP 把 `build:edge-test` 产物同步到边缘 VPS；若私钥缺失、`npm` 未安装或边缘域名不可达，脚本会中止而不是假装发布成功。
 
 ## 5. 常见问题与恢复约束
@@ -59,8 +59,8 @@
   - 根因通常是只做了 `docker restart`
   - 处理必须是 `docker-compose up -d --build`
 - 测试 worker 重建后出现 401 / 读错桶
-  - 常见根因：`docker-compose-test.yml` 的 `${AGENT_SECRET_TOKEN}`、`${MINIO_BUCKET}`、`${MINIO_RESULT_BUCKET}` 没有从宿主 shell 注入，误以为 `env_file: ../.env.test` 会参与 compose 插值
-  - 处理：在执行测试 worker compose 前显式导出这些变量，或以等价方式在宿主层传入
+  - 常见根因：把 `env_file` 当成 compose `${...}` 插值来源，或测试 worker 容器内实际 `AGENT_SECRET_TOKEN`、`MINIO_INPUT_BUCKET`、`MINIO_RESULT_BUCKET` 与 `.env.test` 口径不一致
+  - 处理：核对 `workers/docker-compose-test.yml` 默认值是否仍为测试桶，重建后用 `docker exec <worker> env` 验证 `MINIO_INPUT_BUCKET=bot-data-test`、`MINIO_RESULT_BUCKET=comfyui-temp-test`，并确认 token 与测试 Central API 一致
 
 ## 6. 文档维护口径
 - 部署文档与运维技能必须和 `safe_deploy.sh` 的真实顺序保持一致。

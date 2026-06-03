@@ -15,6 +15,8 @@ import {
   normalizeLtxVideoLoraItems,
   isUnifiedImageToVideoTaskType,
   normalizeImageToVideoLoraSelection,
+  normalizeWan22VideoV2ResolutionPreset,
+  WAN22_VIDEO_V2_RESOLUTION_OPTIONS,
   type LtxVideoLoraItem
 } from '@/features/generation/imageToVideo'
 import { useTemplateApplyStore } from '@/stores/templateApply'
@@ -52,7 +54,7 @@ const taskTitle = computed(() => {
 
 const objectKey = ref<string | null>(null)
 const filePreview = ref<string | null>(null)
-const resolution = ref('512')
+const resolution = ref('preview')
 const duration = ref('5')
 const prompt = ref('')
 const loraSelection = ref(getDefaultImageToVideoLoraSelection(taskType.value))
@@ -121,18 +123,7 @@ const taskCost = computed(() => {
     return baseCost * multiplier
   }
 
-  const res = resolution.value
-  const dur = duration.value
-
-  let baseCost = 6
-  if (res === '720') baseCost = 18
-  else if (res === '1024') baseCost = 36
-
-  let multiplier = 1
-  if (dur === '8') multiplier = 2
-  else if (dur === '10') multiplier = 3
-
-  return baseCost * multiplier
+  return WAN22_VIDEO_V2_RESOLUTION_OPTIONS.find(option => option.value === resolution.value)?.cost ?? 8
 })
 
 watch(
@@ -158,18 +149,6 @@ watch(
   { immediate: true }
 )
 
-watch(resolution, (value) => {
-  if (!isLtxVideo.value && value === '1024' && duration.value === '10') {
-    duration.value = '8'
-  }
-})
-
-watch(duration, (value) => {
-  if (!isLtxVideo.value && value === '10' && resolution.value === '1024') {
-    resolution.value = '720'
-  }
-})
-
 watch(isLtxVideo, (value) => {
   if (!value) {
     ltxLoraItems.value = []
@@ -192,6 +171,9 @@ const cleanup = async () => {
 const initializeFromContext = () => {
   if (isLtxVideo.value) {
     resolution.value = '1280x704'
+  } else {
+    resolution.value = 'preview'
+    duration.value = '5'
   }
 
   const templateState = resolveTemplateVideoApplyState(
@@ -207,11 +189,12 @@ const initializeFromContext = () => {
     if (templateState.sourcePostId != null) {
       templateSourcePostId.value = templateState.sourcePostId
     }
-    if (templateState.resolution) resolution.value = templateState.resolution
-    if (templateState.duration) duration.value = templateState.duration
-    if (!isLtxVideo.value && resolution.value === '1024' && duration.value === '10') {
-      resolution.value = '720'
+    if (templateState.resolution) {
+      resolution.value = isLtxVideo.value
+        ? templateState.resolution
+        : normalizeWan22VideoV2ResolutionPreset(templateState.resolution)
     }
+    duration.value = isLtxVideo.value ? (templateState.duration ?? '5') : '5'
 
     templateSettingsWarning.value = templateState.templateSettingsWarning
     templateApplyNotice.value = templateState.templateApplyNotice
@@ -265,13 +248,19 @@ const handleGenerate = async () => {
   const payload = buildGenerationTaskPayload({
     taskType: getImageToVideoRequestTaskType(taskType.value, loraSelection.value),
     images: [objectKey.value],
-    resolution: isLtxVideo.value ? resolution.value : Number(resolution.value),
-    duration: Number(duration.value),
+    resolution: isLtxVideo.value ? resolution.value : undefined,
+    duration: isLtxVideo.value ? Number(duration.value) : 5,
     prompt: (isUnifiedImageToVideo.value || isLtxVideo.value) ? prompt.value : undefined,
     promptTarget: 'inputs',
     loraName: loraName.value,
     loraStrength: loraStrength.value,
     loraItems: isLtxVideo.value ? ltxLoraItems.value : undefined,
+    extraInputs: !isLtxVideo.value
+      ? {
+          resolution_preset: normalizeWan22VideoV2ResolutionPreset(resolution.value),
+          use_end_frame: false,
+        }
+      : undefined,
     isTemplate: isTemplateApplied.value,
     sourcePostId: templateSourcePostId.value,
   })

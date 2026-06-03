@@ -142,10 +142,16 @@ class APIClient:
         task_id: str,
         prompt: str,
         image_path: str,
-        lora_name: str,
+        lora_name: str | None = "",
+        *,
+        end_image_path: str | None = None,
+        negative_prompt: str = " ",
+        use_end_frame: bool = False,
+        resolution_preset: str = "preview",
+        wan22_model_profile: str = "",
         width: int = 512,
         height: int = 512,
-        length: int = 81,
+        length: int = 5,
         priority: int = 0,
     ) -> str:
         """
@@ -157,12 +163,18 @@ class APIClient:
             "task_id": task_id,
             "image": image_path,
             "prompt": prompt,
-            "lora_name": lora_name,
+            "lora_name": lora_name or "",
+            "negative_prompt": negative_prompt,
+            "use_end_frame": use_end_frame,
+            "resolution_preset": resolution_preset,
+            "wan22_model_profile": wan22_model_profile,
             "width": width,
             "height": height,
             "length": length,
             "priority": priority,
         }
+        if end_image_path:
+            data["end_image"] = end_image_path
 
         r = await self._request("POST", IMAGE_TO_VIDEO_ENDPOINT, json=data)
         return r.json()["task_id"]
@@ -418,6 +430,7 @@ class APIClient:
         negative_prompt: str = " ",
         use_end_frame: bool = False,
         resolution_preset: str = "preview",
+        wan22_model_profile: str = "",
         length: int = 5,
         priority: int = 0,
     ) -> str:
@@ -428,6 +441,7 @@ class APIClient:
             "negative_prompt": negative_prompt,
             "use_end_frame": use_end_frame,
             "resolution_preset": resolution_preset,
+            "wan22_model_profile": wan22_model_profile,
             "length": length,
             "priority": priority,
         }

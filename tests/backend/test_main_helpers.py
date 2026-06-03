@@ -313,9 +313,9 @@ async def test_create_t2i_pornmaster_turbo_task_reraises_prompt_http_error(monke
 def test_simple_task_type_map_keeps_image_to_video_and_video_lora_compatibility():
     assert (
         main_simple_task_routes.SIMPLE_TASK_TYPE_MAP["image_to_video"]
-        == TaskType.VIDEO_EDIT
+        == TaskType.IMAGE_TO_VIDEO
     )
-    assert main_simple_task_routes.SIMPLE_TASK_TYPE_MAP["video_lora"] == TaskType.VIDEO_EDIT
+    assert main_simple_task_routes.SIMPLE_TASK_TYPE_MAP["video_lora"] == TaskType.IMAGE_TO_VIDEO
     assert (
         main_simple_task_routes.SIMPLE_TASK_TYPE_MAP["wan22_video_v2"]
         == TaskType.WAN22_VIDEO_V2

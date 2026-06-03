@@ -10,15 +10,7 @@ from telegram.ext import (
     filters,
 )
 
-from src.constants import (
-    DEFAULT_DURATION,
-    DEFAULT_RESOLUTION,
-    DURATION_MULTIPLIER,
-    MODE_CUSTOM_VIDEO,
-    MODE_IMAGE_TO_VIDEO,
-    RESOLUTION_COST,
-    get_video_settings_keyboard,
-)
+from src.constants import MODE_CUSTOM_VIDEO, MODE_IMAGE_TO_VIDEO
 from src.handlers.fsm.fsm_shared import (
     handle_standard_fsm_cancel,
     handle_standard_fsm_timeout,
@@ -29,6 +21,14 @@ from src.handlers.conversation_states import ImageToVideoState
 from src.handlers.prompt_router import is_global_menu_command
 from src.lora_catalog import VIDEO_LORA_MODELS, get_video_lora_display_name
 from src.services.task_service_generation_video import process_image_to_video_generation_task as process_image_to_video_task
+from src.services.wan22_video_v2_config import (
+    WAN22_VIDEO_V2_DEFAULT_RESOLUTION_PRESET,
+    WAN22_VIDEO_V2_RESOLUTION_PRESETS,
+    get_wan22_video_v2_cost,
+    get_wan22_video_v2_resolution_display,
+    get_wan22_video_v2_resolution_label,
+    normalize_wan22_video_v2_resolution_preset,
+)
 from src.services.permission_service import permission_service
 from src.services.fsm_temp_file_service import (
     cleanup_fsm_temp_files,
@@ -67,7 +67,9 @@ def _pop_image_to_video_data(context: ContextTypes.DEFAULT_TYPE) -> dict:
 def _cleanup_context(context: ContextTypes.DEFAULT_TYPE, _user_id: int):
     context.user_data.pop("in_conversation", None)
     pending_files = _pop_image_to_video_data(context)
-    cleanup_fsm_temp_files([pending_files.get("image_path")])
+    cleanup_fsm_temp_files(
+        [pending_files.get("image_path"), pending_files.get("end_image_path")]
+    )
 
 
 def _get_lora_display_name(lora_name: str | None, *, lang: str = "zh") -> str:
@@ -85,6 +87,23 @@ def _build_lora_selection_keyboard(lang: str = "zh") -> InlineKeyboardMarkup:
     ]
     keyboard = [buttons[i : i + 2] for i in range(0, len(buttons), 2)]
     return InlineKeyboardMarkup(keyboard)
+
+
+def _build_end_frame_choice_keyboard(context: ContextTypes.DEFAULT_TYPE) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton(
+                    _t(context, "fsm.image_to_video.enable_end_frame"),
+                    callback_data="i2v_end_frame_yes",
+                ),
+                InlineKeyboardButton(
+                    _t(context, "fsm.image_to_video.disable_end_frame"),
+                    callback_data="i2v_end_frame_no",
+                ),
+            ]
+        ]
+    )
 
 
 def _build_image_request_text(
@@ -109,8 +128,11 @@ def _build_image_request_text(
 def _build_settings_message(
     fsm_data: dict[str, object], cost: int, *, lang: str = "zh"
 ) -> str:
-    resolution = fsm_data["resolution"]
-    duration = fsm_data["duration"]
+    resolution = get_wan22_video_v2_resolution_display(
+        str(fsm_data["resolution"]),
+        lang=lang,
+    )
+    duration = "5s"
     lora_display_name = _get_lora_display_name(fsm_data.get("lora_name"), lang=lang)
 
     from src.i18n.translator import get_text
@@ -133,9 +155,7 @@ def _build_submit_message(lora_name: str | None, cost: int, *, lang: str = "zh")
 
 
 def _compute_video_generation_cost(resolution: str, duration: str) -> int:
-    base_cost = RESOLUTION_COST.get(resolution, 6)
-    multiplier = DURATION_MULTIPLIER.get(duration, 1.0)
-    return int(base_cost * multiplier)
+    return get_wan22_video_v2_cost(resolution)
 
 
 def _resolve_image_to_video_task_type(context: ContextTypes.DEFAULT_TYPE) -> str:
@@ -165,14 +185,26 @@ async def _build_video_settings_view_model(
     user_id: int,
     fsm_data: dict[str, object],
 ) -> tuple[InlineKeyboardMarkup, int, str]:
-    _internal_user_id, user_group, user_identity = (
-        await _load_video_generation_access_profile(user_id=user_id)
+    lang = getattr(context, "lang", "zh")
+    resolution = normalize_wan22_video_v2_resolution_preset(
+        str(fsm_data["resolution"])
     )
-    resolution = str(fsm_data["resolution"])
-    duration = str(fsm_data["duration"])
-    reply_markup = get_video_settings_keyboard(
-        user_group, user_identity, resolution, duration, getattr(context, "lang", "zh")
-    )
+    fsm_data["resolution"] = resolution
+    duration = "5s"
+    from src.i18n.translator import get_text
+
+    credits_text = get_text("app.credits", lang)
+    row = []
+    for preset_key in WAN22_VIDEO_V2_RESOLUTION_PRESETS:
+        label = get_wan22_video_v2_resolution_label(preset_key, lang=lang)
+        cost_for_preset = get_wan22_video_v2_cost(preset_key)
+        text = f"{label} ({cost_for_preset}{credits_text})"
+        if preset_key == resolution:
+            text = f"✅ {text}"
+        row.append(
+            InlineKeyboardButton(text, callback_data=f"set_res_{preset_key}")
+        )
+    reply_markup = InlineKeyboardMarkup([row])
     cost = _compute_video_generation_cost(resolution, duration)
     msg_text = _build_settings_message(
         fsm_data, cost, lang=getattr(context, "lang", "zh")
@@ -213,9 +245,11 @@ def _initialize_image_to_video_context(
 ) -> None:
     context.user_data["in_conversation"] = conversation_tag
     data = {
-        "resolution": DEFAULT_RESOLUTION,
-        "duration": DEFAULT_DURATION,
+        "resolution": WAN22_VIDEO_V2_DEFAULT_RESOLUTION_PRESET,
+        "duration": "5s",
         "image_path": None,
+        "end_image_path": None,
+        "use_end_frame": False,
         "lora_name": preset_lora_name,
     }
     _set_image_to_video_data(context, data)
@@ -327,6 +361,37 @@ async def handle_lora_selection(
     return ImageToVideoState.WAIT_IMAGE
 
 
+async def _download_image_message(
+    *,
+    message,
+    context: ContextTypes.DEFAULT_TYPE,
+    user_id: int,
+    name_hint: str,
+) -> str | None:
+    if message.document:
+        if not message.document.mime_type.startswith("image/"):
+            await robust_reply_text(message, _t(context, "fsm.common.invalid_image"))
+            return None
+        file_id = message.document.file_id
+    elif message.photo:
+        file_id = message.photo[-1].file_id
+    else:
+        await robust_reply_text(message, _t(context, "fsm.common.invalid_image"))
+        return None
+
+    try:
+        new_file = await context.bot.get_file(file_id)
+        return await download_telegram_file_to_fsm_temp(
+            telegram_file=new_file,
+            suffix=".png",
+            name_hint=name_hint,
+        )
+    except Exception as e:
+        logger.error(f"Error downloading image for FSM user {user_id}: {e}")
+        await robust_reply_text(message, _t(context, "fsm.common.download_image_failed"))
+        return None
+
+
 async def receive_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user_id = update.effective_user.id
     message = update.message
@@ -337,29 +402,84 @@ async def receive_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         )
         return ConversationHandler.END
 
-    if message.document:
-        if not message.document.mime_type.startswith("image/"):
-            await robust_reply_text(message, _t(context, "fsm.common.invalid_image"))
-            return ImageToVideoState.WAIT_IMAGE
-        file_id = message.document.file_id
-    elif message.photo:
-        file_id = message.photo[-1].file_id
-    else:
-        await robust_reply_text(message, _t(context, "fsm.common.invalid_image"))
+    local_path = await _download_image_message(
+        message=message,
+        context=context,
+        user_id=user_id,
+        name_hint="image_to_video_start",
+    )
+    if not local_path:
         return ImageToVideoState.WAIT_IMAGE
 
-    try:
-        new_file = await context.bot.get_file(file_id)
-        local_path = await download_telegram_file_to_fsm_temp(
-            telegram_file=new_file,
-            suffix=".png",
-            name_hint="image_to_video",
+    fsm_data["image_path"] = local_path
+    fsm_data["end_image_path"] = None
+    fsm_data["use_end_frame"] = False
+
+    await robust_reply_text(
+        message,
+        _t(context, "fsm.image_to_video.end_frame_choice"),
+        reply_markup=_build_end_frame_choice_keyboard(context),
+        parse_mode="Markdown",
+    )
+    return ImageToVideoState.WAIT_END_FRAME_CHOICE
+
+
+async def choose_end_frame_mode(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    fsm_data = _get_image_to_video_data(context) or {}
+    if not fsm_data:
+        with contextlib.suppress(Exception):
+            await query.answer(_t(context, "fsm.image_to_video.expired_alert"), show_alert=True)
+        return ConversationHandler.END
+
+    use_end_frame = query.data == "i2v_end_frame_yes"
+    fsm_data["use_end_frame"] = use_end_frame
+
+    if use_end_frame:
+        with contextlib.suppress(Exception):
+            await robust_edit_text(
+                query.message,
+                _t(context, "fsm.image_to_video.send_end_image"),
+                parse_mode="Markdown",
+            )
+        await query.answer(text=_t(context, "fsm.common.task_initializing"), cache_time=2)
+        return ImageToVideoState.WAIT_END_IMAGE
+
+    fsm_data["end_image_path"] = None
+    reply_markup, _cost, msg_text = await _build_video_settings_view_model(
+        context=context,
+        user_id=query.from_user.id,
+        fsm_data=fsm_data,
+    )
+    with contextlib.suppress(Exception):
+        await robust_edit_text(
+            query.message, msg_text, reply_markup=reply_markup, parse_mode="Markdown"
         )
-        fsm_data["image_path"] = local_path
-    except Exception as e:
-        logger.error(f"Error downloading image for FSM user {user_id}: {e}")
-        await robust_reply_text(message, _t(context, "fsm.common.download_image_failed"))
-        return ImageToVideoState.WAIT_IMAGE
+    await query.answer(text=_t(context, "fsm.common.task_initializing"), cache_time=2)
+    return ImageToVideoState.WAIT_SETTINGS_AND_PROMPT
+
+
+async def receive_end_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    user_id = update.effective_user.id
+    message = update.message
+    fsm_data = _get_image_to_video_data(context)
+    if not fsm_data:
+        await robust_reply_text(
+            message, _t(context, "fsm.common.expired_cleaned")
+        )
+        return ConversationHandler.END
+
+    local_path = await _download_image_message(
+        message=message,
+        context=context,
+        user_id=user_id,
+        name_hint="image_to_video_end",
+    )
+    if not local_path:
+        return ImageToVideoState.WAIT_END_IMAGE
+
+    fsm_data["end_image_path"] = local_path
+    fsm_data["use_end_frame"] = True
 
     reply_markup, _cost, msg_text = await _build_video_settings_view_model(
         context=context,
@@ -368,7 +488,10 @@ async def receive_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     )
 
     await robust_reply_text(
-        message, msg_text, reply_markup=reply_markup, parse_mode="Markdown"
+        message,
+        f"{_t(context, 'fsm.image_to_video.end_image_received')}\n\n{msg_text}",
+        reply_markup=reply_markup,
+        parse_mode="Markdown",
     )
     return ImageToVideoState.WAIT_SETTINGS_AND_PROMPT
 
@@ -386,23 +509,9 @@ async def process_settings(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         return ConversationHandler.END
 
     if data.startswith("set_res_"):
-        new_res = data.split("_")[2]
-        if new_res == "1024p" and fsm_data.get("duration") == "10s":
-            fsm_data["duration"] = "8s"
-            with contextlib.suppress(Exception):
-                await query.answer(
-                    _t(context, "fsm.image_to_video.res_dur_conflict"), show_alert=True
-                )
-        fsm_data["resolution"] = new_res
-    elif data.startswith("set_dur_"):
-        new_dur = data.split("_")[2]
-        if new_dur == "10s" and fsm_data.get("resolution") == "1024p":
-            fsm_data["resolution"] = "720p"
-            with contextlib.suppress(Exception):
-                await query.answer(
-                    _t(context, "fsm.image_to_video.dur_res_conflict"), show_alert=True
-                )
-        fsm_data["duration"] = new_dur
+        fsm_data["resolution"] = normalize_wan22_video_v2_resolution_preset(
+            data.removeprefix("set_res_")
+        )
 
     reply_markup, _cost, msg_text = await _build_video_settings_view_model(
         context=context,
@@ -432,13 +541,9 @@ async def receive_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await robust_reply_text(message, _t(context, "fsm.common.already_submitted"))
         return ConversationHandler.END
 
-    res = fsm_data["resolution"]
-    dur = fsm_data["duration"]
+    res = normalize_wan22_video_v2_resolution_preset(str(fsm_data["resolution"]))
+    dur = "5s"
     lora_name = fsm_data["lora_name"]
-
-    if res == "1024p" and dur == "10s":
-        res = "720p"
-        fsm_data["resolution"] = "720p"
 
     cost = _compute_video_generation_cost(res, dur)
 
@@ -482,6 +587,11 @@ async def receive_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await robust_reply_text(message, _t(context, "fsm.common.already_submitted"))
         _cleanup_context(context, user_id)
         return ConversationHandler.END
+    end_image_path = fsm_data.pop("end_image_path", None)
+    use_end_frame = bool(fsm_data.get("use_end_frame") and end_image_path)
+    submit_images = [image_path]
+    if use_end_frame:
+        submit_images.append(end_image_path)
 
     await robust_reply_text(
         message, _build_submit_message(lora_name, cost, lang=getattr(context, "lang", "zh"))
@@ -496,9 +606,11 @@ async def receive_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             user_id=user_id,
             username=update.effective_user.username,
             prompt=prompt,
-            images=[image_path],
+            images=submit_images,
             resolution=res,
-            duration=dur,
+            duration=5,
+            use_end_frame=use_end_frame,
+            resolution_preset=res,
             task_type=task_type,
             cleanup=True,
             lora_name=lora_name,
@@ -571,8 +683,28 @@ def _build_image_to_video_fsm_handler(
                     unexpected_input,
                 ),
             ],
+            ImageToVideoState.WAIT_END_FRAME_CHOICE: [
+                CallbackQueryHandler(
+                    choose_end_frame_mode,
+                    pattern="^i2v_end_frame_(yes|no)$",
+                ),
+                MessageHandler(
+                    (filters.TEXT | filters.COMMAND) & ~filters.Regex(r"^/cancel$"),
+                    unexpected_input,
+                ),
+                MessageHandler(
+                    filters.PHOTO | filters.Document.IMAGE, unexpected_input
+                ),
+            ],
+            ImageToVideoState.WAIT_END_IMAGE: [
+                MessageHandler(filters.PHOTO | filters.Document.IMAGE, receive_end_image),
+                MessageHandler(
+                    (filters.TEXT | filters.COMMAND) & ~filters.Regex(r"^/cancel$"),
+                    unexpected_input,
+                ),
+            ],
             ImageToVideoState.WAIT_SETTINGS_AND_PROMPT: [
-                CallbackQueryHandler(process_settings, pattern="^set_(res|dur)_"),
+                CallbackQueryHandler(process_settings, pattern="^set_res_"),
                 MessageHandler(
                     (filters.TEXT | filters.COMMAND) & ~filters.Regex(r"^/cancel$"),
                     receive_prompt,

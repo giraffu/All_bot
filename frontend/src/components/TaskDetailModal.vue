@@ -34,7 +34,11 @@ const detailVisible = computed({
 const currentRecord = computed(() => tasksStore.currentDetailRecord)
 const wan22ActionLoading = ref<'stitch' | null>(null)
 
-const isWan22Record = computed(() => currentRecord.value?.type === 'wan22_video_v2')
+const isWan22Record = computed(() => (
+  currentRecord.value?.type === 'wan22_video_v2'
+  || currentRecord.value?.type === 'custom_video'
+  || currentRecord.value?.type === 'video_lora'
+))
 const isWan22StitchedRecord = computed(() => Boolean(currentRecord.value?.result_meta?.wan22_is_stitched))
 const wan22SegmentIndex = computed(() => currentRecord.value?.result_meta?.wan22_segment_index ?? null)
 const canExtendWan22Chain = computed(
@@ -74,7 +78,7 @@ const openWan22Editor = async (mode: 'extend' | 'regenerate') => {
   await router.push({
     name: 'CustomFeatures',
     query: {
-      type: 'wan22_video_v2',
+      type: record.type,
       wan22_mode: mode,
       wan22_task_id: record.task_id,
     },
@@ -197,7 +201,7 @@ const handleWan22ChainStitch = async () => {
               <div class="flex items-center justify-between gap-3">
                 <div>
                   <div class="task-detail-section-label text-[10px] lg:text-xs uppercase tracking-wider">
-                    图生视频 v2 多段编辑
+                    图生视频多段编辑
                   </div>
                   <div class="task-detail-chain-desc text-xs lg:text-sm mt-1">
                     {{ isMobile ? '手机端会进入纵向链路编辑，按钮更适合单手连续操作。' : '大屏建议进入工作台连续编辑，可直接查看整条链路并切换段落。' }}

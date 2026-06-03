@@ -2,6 +2,9 @@ import re
 from typing import Any
 
 from src.constants import MODE_IMAGE_TO_VIDEO, VIDEO_TASK_TYPES
+from src.services.wan22_video_v2_config import (
+    normalize_wan22_video_v2_resolution_preset,
+)
 
 
 VIDEO_BILLING_TASK_TYPES = frozenset(VIDEO_TASK_TYPES)
@@ -10,6 +13,10 @@ MAX_LEGACY_LTX_DURATION_DRIFT = 2
 TIER_VIDEO_ALLOWED_DURATIONS = (5, 8, 10)
 MAX_LEGACY_TIER_VIDEO_DURATION_DRIFT = 2
 LEGACY_TIER_VIDEO_TASK_TYPES = frozenset({"custom_video", MODE_IMAGE_TO_VIDEO})
+
+
+def _is_legacy_wan22_video_task_type(task_type: str | None) -> bool:
+    return task_type in LEGACY_TIER_VIDEO_TASK_TYPES
 
 
 def _normalize_tier_from_video_side(side: int | None) -> str | None:
@@ -35,6 +42,9 @@ def normalize_requested_billing_resolution(
     text = str(resolution).strip().lower()
     if not text:
         return None
+
+    if _is_legacy_wan22_video_task_type(task_type):
+        return normalize_wan22_video_v2_resolution_preset(text)
 
     if text.endswith("p"):
         text = text[:-1]
@@ -128,6 +138,8 @@ def resolve_legacy_requested_duration(
     requested_duration: Any,
     duration: Any,
 ) -> int | None:
+    if _is_legacy_wan22_video_task_type(task_type):
+        return 5
     if requested_duration is not None:
         return requested_duration
     return infer_legacy_video_requested_duration(task_type, duration)
@@ -139,7 +151,7 @@ def resolve_apply_prompt_and_requested_duration(
     requested_duration: Any,
 ) -> tuple[str, int | None]:
     resolved_prompt = prompt or ""
-    if task_type == "ltx_video":
+    if task_type == "ltx_video" or _is_legacy_wan22_video_task_type(task_type):
         _, _, resolved_prompt = extract_video_prompt_prefix(resolved_prompt)
     return resolved_prompt, requested_duration
 
@@ -174,4 +186,7 @@ def infer_billing_resolution_from_dimensions(
         inferred_side = min(width, height)
     else:
         inferred_side = width or height or None
-    return _normalize_tier_from_video_side(inferred_side)
+    tier = _normalize_tier_from_video_side(inferred_side)
+    if _is_legacy_wan22_video_task_type(task_type):
+        return normalize_wan22_video_v2_resolution_preset(tier) if tier else None
+    return tier

@@ -103,7 +103,7 @@ description: "处理任务提交流程、provider/capability 装配、双 ID 运
 - 目标环境 `SUPPORTED_TASK_TYPES` 是否包含该类型
 
 ### 7.5 结果与回归
-- `task_result_service.py` 是否能返回公网可访问结果
+- `task_result_service.py` 是否能返回结果：Web owner result 优先 R2，延迟敏感路径必须用 R2 公网 HEAD 快探测且不持有 DB 只读事务等待对象存储；R2 未 warmup 时图片可短签 MinIO fallback，视频必须返回 `pending_result` 等 R2，避免 99% 阶段网络失败
 - Web monitor / persistence 是否能落历史并完成 cleanup
 - focused tests、SSE/result/history 回归、热点门禁是否已补齐
 
@@ -135,7 +135,7 @@ description: "处理任务提交流程、provider/capability 装配、双 ID 运
 ### 8.5 结果不可见
 - 看 worker 是否已成功 `/complete`
 - 看 history 是否已落库
-- 看公网结果地址是否可解析
+- 看 R2 公网结果地址是否可解析；若 R2 未 ready，确认图片 owner result 是否返回 MinIO 短签 fallback、视频 owner result 是否继续 `pending_result`，并检查 R2 公网 HEAD 快探测短超时是否生效
 - 看 `/result` 返回的是成功态还是 `pending_result`
 
 ## 9. 交付要求

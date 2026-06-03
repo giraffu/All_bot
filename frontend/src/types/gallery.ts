@@ -14,6 +14,9 @@ export interface Wan22ResultMeta {
   wan22_chain_task_ids?: string[]
   wan22_segment_index?: number
   wan22_is_stitched?: boolean
+  wan22_model_profile?: string
+  lora_name?: string
+  lora_strength?: number
 }
 
 export interface GalleryPost {

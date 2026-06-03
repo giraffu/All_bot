@@ -285,11 +285,11 @@ async def test_get_favorite_apply_context_probes_media_after_session_closes(
     )
 
     assert response.task_id == "task-1"
-    assert response.billing_resolution == "1024"
+    assert response.billing_resolution == "hd"
     assert response.width == 1024
     assert response.height == 1024
     assert response.duration == 8
-    assert response.requested_duration == 8
+    assert response.requested_duration == 5
     assert history.billing_resolution is None
     assert history.width is None
     assert history.height is None
@@ -354,11 +354,11 @@ async def test_get_favorite_apply_context_prefers_active_newer_gallery_post_meta
 
     assert response.post_id == 2
     assert response.source_post_id == 2
-    assert response.billing_resolution == "1024"
+    assert response.billing_resolution == "hd"
     assert response.width == 1024
     assert response.height == 1024
     assert response.duration == 10
-    assert response.requested_duration == 10
+    assert response.requested_duration == 5
     assert history.billing_resolution is None
     session.commit.assert_not_awaited()
 
@@ -391,11 +391,11 @@ async def test_get_favorite_apply_context_uses_short_side_for_video_billing_tier
         db=session,
     )
 
-    assert response.billing_resolution == "720"
+    assert response.billing_resolution == "standard"
     assert response.width == 720
     assert response.height == 1280
     assert response.duration == 8
-    assert response.requested_duration == 8
+    assert response.requested_duration == 5
     assert history.billing_resolution is None
     session.commit.assert_not_awaited()
 
@@ -428,7 +428,7 @@ async def test_get_favorite_apply_context_maps_512x768_to_512_billing_tier(
         db=session,
     )
 
-    assert response.billing_resolution == "512"
+    assert response.billing_resolution == "preview"
     assert response.width == 512
     assert response.height == 768
     assert response.duration == 5
@@ -464,11 +464,11 @@ async def test_get_favorite_apply_context_maps_1024x1536_to_1024_billing_tier(
         db=session,
     )
 
-    assert response.billing_resolution == "1024"
+    assert response.billing_resolution == "hd"
     assert response.width == 1024
     assert response.height == 1536
     assert response.duration == 10
-    assert response.requested_duration == 10
+    assert response.requested_duration == 5
     session.commit.assert_not_awaited()
 
 
@@ -609,7 +609,7 @@ async def test_get_favorite_apply_context_maps_legacy_custom_video_duration_9_to
     )
 
     assert response.duration == 9
-    assert response.requested_duration == 8
+    assert response.requested_duration == 5
     session.commit.assert_not_awaited()
 
 
@@ -644,7 +644,7 @@ async def test_get_favorite_apply_context_maps_legacy_video_lora_duration_11_to_
     )
 
     assert response.duration == 11
-    assert response.requested_duration == 10
+    assert response.requested_duration == 5
     session.commit.assert_not_awaited()
 
 

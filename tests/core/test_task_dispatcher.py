@@ -1,4 +1,4 @@
-from unittest.mock import AsyncMock
+from unittest.mock import ANY, AsyncMock
 
 import pytest
 
@@ -11,6 +11,7 @@ from src.core.task_dispatcher import (
     Wan22VideoV2Strategy,
 )
 from src.constants import (
+    MODE_CUSTOM_VIDEO,
     MODE_I2I_PRO,
     MODE_IMAGE_TO_VIDEO,
     MODE_IMG2IMG_LORA,
@@ -173,6 +174,7 @@ def test_wan22_strategy_metadata_keeps_chain_context():
         "wan22_resolution_preset": "hd",
         "wan22_negative_prompt": "blur",
         "wan22_use_end_frame": True,
+        "wan22_model_profile": "wan22_video_v2",
         "wan22_prev_task_id": "task-2",
         "wan22_chain_task_ids": ["task-0", "task-1"],
     }
@@ -207,6 +209,7 @@ async def test_wan22_strategy_forwards_resolution_preset(monkeypatch):
         negative_prompt="blur",
         use_end_frame=True,
         resolution_preset="hd",
+        wan22_model_profile="wan22_video_v2",
         length=5,
         priority=6,
     )
@@ -549,17 +552,17 @@ async def test_base_video_strategy_edit_branch_uses_default_submission_context(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    ("mode", "lora_name", "expected_backend_task_id", "use_lora_endpoint"),
+    ("mode", "lora_name", "expected_backend_task_id", "use_wan22_endpoint"),
     [
         (MODE_IMAGE_TO_VIDEO, "BreastGrow", "backend-lora", True),
-        (MODE_IMAGE_TO_VIDEO, "", "backend-edit", False),
-        ("custom_video", "", "backend-edit", False),
+        (MODE_IMAGE_TO_VIDEO, "", "backend-lora", True),
+        (MODE_CUSTOM_VIDEO, "", "backend-lora", True),
         ("video_edit", "BreastGrow", "backend-edit", False),
         ("perfect_video_edit", "BreastGrow", "backend-edit", False),
     ],
 )
 async def test_base_video_strategy_routes_image_to_video_modes_by_lora_name(
-    monkeypatch, mode, lora_name, expected_backend_task_id, use_lora_endpoint
+    monkeypatch, mode, lora_name, expected_backend_task_id, use_wan22_endpoint
 ):
     strategy = StrategyFactory.get_strategy(mode)
     submit_lora_mock = AsyncMock(return_value="backend-lora")
@@ -583,16 +586,21 @@ async def test_base_video_strategy_routes_image_to_video_modes_by_lora_name(
     )
 
     assert result == expected_backend_task_id
-    if use_lora_endpoint:
+    if use_wan22_endpoint:
         submit_lora_mock.assert_awaited_once_with(
             "task-1",
             prompt="cinematic motion",
             image_path="demo/input.png",
             lora_name=lora_name,
+            end_image_path=None,
+            negative_prompt=ANY,
+            use_end_frame=False,
+            resolution_preset="standard",
+            wan22_model_profile="legacy_image_to_video",
             priority=3,
-            width=720,
-            height=720,
-            length=129,
+            width=512,
+            height=512,
+            length=5,
         )
         submit_edit_mock.assert_not_awaited()
     else:
@@ -674,7 +682,8 @@ async def test_wan22_video_v2_submit_task_normalizes_optional_end_frame(monkeypa
         end_image_path="demo/end.png",
         negative_prompt="blurry",
         use_end_frame=True,
-        resolution_preset="standard",
+        resolution_preset="preview",
+        wan22_model_profile="wan22_video_v2",
         length=5,
         priority=5,
     )
@@ -707,7 +716,8 @@ async def test_wan22_video_v2_submit_task_falls_back_to_i2v_without_end_frame(mo
         end_image_path=None,
         negative_prompt=" ",
         use_end_frame=False,
-        resolution_preset="standard",
+        resolution_preset="preview",
+        wan22_model_profile="wan22_video_v2",
         length=5,
         priority=1,
     )
@@ -740,7 +750,8 @@ async def test_wan22_video_v2_submit_task_uses_default_context_when_optional_fie
         end_image_path=None,
         negative_prompt=" ",
         use_end_frame=False,
-        resolution_preset="standard",
+        resolution_preset="preview",
+        wan22_model_profile="wan22_video_v2",
         length=5,
         priority=9,
     )

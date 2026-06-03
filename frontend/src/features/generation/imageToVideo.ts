@@ -26,15 +26,17 @@ export const normalizeWan22VideoV2ResolutionPreset = (
   if (
     value === 'preview'
     || value === 'fast'
+    || value === '512'
+    || value === '512p'
     || value === '0.26 MP - Preview'
     || value === '0.36 MP - Small'
   ) {
     return 'preview'
   }
-  if (value === 'hd' || value === '0.65 MP - Balanced') {
+  if (value === 'hd' || value === '1024' || value === '1024p' || value === '0.65 MP - Balanced') {
     return 'hd'
   }
-  if (value === 'standard' || value === '0.52 MP - SD') {
+  if (value === 'standard' || value === '720' || value === '720p' || value === '0.52 MP - SD') {
     return 'standard'
   }
   return DEFAULT_WAN22_VIDEO_V2_RESOLUTION_PRESET
@@ -171,11 +173,15 @@ export const normalizeLtxVideoLoraItems = (
 
 export const getImageToVideoRequestTaskType = (
   taskType: string,
-  _loraSelection: string,
+  loraSelection: string,
 ): string => {
   if (taskType === 'ltx_video') {
     return 'ltx_video'
   }
 
-  return isUnifiedImageToVideoTaskType(taskType) ? 'custom_video' : taskType
+  if (!isUnifiedImageToVideoTaskType(taskType)) {
+    return taskType
+  }
+
+  return loraSelection === NO_IMAGE_TO_VIDEO_LORA ? 'custom_video' : 'video_lora'
 }

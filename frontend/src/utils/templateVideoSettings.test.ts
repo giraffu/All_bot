@@ -100,7 +100,7 @@ describe('templateVideoSettings', () => {
     })
   })
 
-  it('uses nearest legacy tier-video duration compatibility when canonical duration is missing', () => {
+  it('ignores legacy tier-video duration and locks to 5s', () => {
     expect(
       getTemplateVideoSettings({
         width: '720',
@@ -111,7 +111,7 @@ describe('templateVideoSettings', () => {
     ).toEqual({
       width: 720,
       height: 1280,
-      duration: 8
+      duration: 5
     })
   })
 
@@ -126,7 +126,7 @@ describe('templateVideoSettings', () => {
     ).toBeNull()
   })
 
-  it('rejects dirty probed duration for legacy tier-video templates without canonical duration', () => {
+  it('ignores dirty probed duration for legacy tier-video templates', () => {
     expect(
       getTemplateVideoSettings({
         width: '720',
@@ -134,7 +134,11 @@ describe('templateVideoSettings', () => {
         duration: '13',
         requested_duration: null
       }, false, 'custom_video')
-    ).toBeNull()
+    ).toEqual({
+      width: 720,
+      height: 1280,
+      duration: 5
+    })
   })
 
   it('locks prompt controls only when template prompt config is complete', () => {
@@ -159,11 +163,11 @@ describe('templateVideoSettings', () => {
   })
 
   it('normalizes persisted billing tiers and explicit resolutions', () => {
-    expect(normalizePersistedTierBillingResolution('720p')).toBe('720')
-    expect(normalizePersistedTierBillingResolution('1024')).toBe('1024')
-    expect(normalizePersistedTierBillingResolution('720x1280')).toBe('720')
-    expect(normalizePersistedTierBillingResolution('512x768')).toBe('512')
-    expect(normalizePersistedTierBillingResolution('1024x1536')).toBe('1024')
+    expect(normalizePersistedTierBillingResolution('720p')).toBe('standard')
+    expect(normalizePersistedTierBillingResolution('1024')).toBe('hd')
+    expect(normalizePersistedTierBillingResolution('720x1280')).toBe('standard')
+    expect(normalizePersistedTierBillingResolution('512x768')).toBe('preview')
+    expect(normalizePersistedTierBillingResolution('1024x1536')).toBe('hd')
     expect(normalizePersistedTierBillingResolution('bad-tier')).toBeNull()
   })
 
@@ -174,7 +178,7 @@ describe('templateVideoSettings', () => {
         width: 640,
         height: 800
       })
-    ).toBe('720')
+    ).toBe('standard')
 
     expect(
       resolveTierBillingResolution({
@@ -182,7 +186,7 @@ describe('templateVideoSettings', () => {
         width: 720,
         height: 1280
       })
-    ).toBe('720')
+    ).toBe('standard')
 
     expect(
       resolveTierBillingResolution({
@@ -190,7 +194,7 @@ describe('templateVideoSettings', () => {
         width: 512,
         height: 768
       })
-    ).toBe('512')
+    ).toBe('preview')
 
     expect(
       resolveTierBillingResolution({
@@ -198,6 +202,6 @@ describe('templateVideoSettings', () => {
         width: 1024,
         height: 1536
       })
-    ).toBe('1024')
+    ).toBe('hd')
   })
 })

@@ -1,6 +1,7 @@
 from typing import Any
 
 RESULT_ASSET_KEYS = ("images", "gifs", "videos")
+WAN22_AIO_VIDEO_TASK_TYPES = {"wan22_video_v2", "image_to_video"}
 
 
 def coerce_first_mapping(value: Any) -> dict[str, Any]:
@@ -18,7 +19,7 @@ def extract_ws_data_content(data: dict[str, Any]) -> dict[str, Any]:
 
 
 def result_asset_keys_for_task(task_type: str | None) -> tuple[str, ...]:
-    if task_type == "wan22_video_v2":
+    if task_type in WAN22_AIO_VIDEO_TASK_TYPES:
         return ("videos", "gifs")
     return RESULT_ASSET_KEYS
 
@@ -48,7 +49,7 @@ def result_asset_priority(asset: dict[str, Any] | None, *, task_type: str | None
     if not isinstance(asset, dict):
         return -1
     asset_key = str(asset.get("_asset_key") or "").strip().lower()
-    if task_type == "wan22_video_v2":
+    if task_type in WAN22_AIO_VIDEO_TASK_TYPES:
         return {"videos": 3, "gifs": 2}.get(asset_key, 0)
     return 0
 
@@ -113,7 +114,7 @@ def resolve_history_extra_output_assets(
     task_id: str | None,
     task_type: str | None = None,
 ) -> dict[str, dict[str, Any]]:
-    if task_type != "wan22_video_v2" or not history or not prompt_id or not task_id:
+    if task_type not in WAN22_AIO_VIDEO_TASK_TYPES or not history or not prompt_id or not task_id:
         return {}
     prompt_history = history.get(prompt_id)
     if not isinstance(prompt_history, dict):

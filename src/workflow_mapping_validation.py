@@ -8,6 +8,7 @@ TASK_TYPE_WORKFLOW_FILENAMES = {
     "face_swap": "face_swap.json",
     "video_insert": "perfect_video_insert.json",
     "video_edit": "perfect_video_edit.json",
+    "image_to_video": "Wan22AioV81.json",
     "face_video": "face_video.json",
     "t2i-pornmaster-turbo": (
         "Pornmaster Z-Image Turbo_t2i_Double checkpoints & realism enhancer_V1_2026_01_24.json"
@@ -16,7 +17,7 @@ TASK_TYPE_WORKFLOW_FILENAMES = {
     "i2i_draw": "I2I_draw.json",
     "img2img_lora": "Qwen-Rapid-AIO.json",
     "ltx_video": "LTX 2.3 I2V 6.1.json",
-    "wan22_video_v2": "WAN 2.2 i2v -AiO-new.json",
+    "wan22_video_v2": "Wan22AioV81.json",
 }
 
 

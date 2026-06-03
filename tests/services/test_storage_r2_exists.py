@@ -13,6 +13,7 @@ def storage_service():
     service = StorageService()
     service._init_r2_runtime_state()
     service.r2_client = MagicMock()
+    service.r2_head_client = service.r2_client
     service.r2_bucket = "unit-test-bucket"
     yield service
     service._init_r2_runtime_state()
@@ -31,6 +32,23 @@ def test_r2_not_found_is_cacheable_negative_result(storage_service):
 
     assert exists is False
     assert cacheable is True
+
+
+def test_r2_exists_uses_dedicated_head_client(storage_service):
+    upload_client = MagicMock()
+    head_client = MagicMock()
+    storage_service.r2_client = upload_client
+    storage_service.r2_head_client = head_client
+
+    exists, cacheable = storage_service._r2_object_exists_with_cache_hint("ready-key")
+
+    assert exists is True
+    assert cacheable is True
+    head_client.head_object.assert_called_once_with(
+        Bucket="unit-test-bucket",
+        Key="ready-key",
+    )
+    upload_client.head_object.assert_not_called()
 
 
 def test_r2_exists_cache_trim_handles_three_value_entries(storage_service):

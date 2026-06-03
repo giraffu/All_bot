@@ -1,14 +1,32 @@
 from typing import Any, Callable
 
 from src.lora_catalog import normalize_ltx_video_lora_items
-from src.services.wan22_video_v2_config import WAN22_VIDEO_V2_RESOLUTION_PRESETS
+from src.services.wan22_video_v2_config import (
+    WAN22_LEGACY_IMAGE_TO_VIDEO_MODEL_PROFILE,
+    WAN22_VIDEO_V2_MODEL_PROFILE,
+    WAN22_VIDEO_V2_RESOLUTION_PRESETS,
+    normalize_wan22_video_v2_resolution_preset,
+    resolve_wan22_model_profile,
+)
 
 LTX_VIDEO_ADDITIONAL_LORA_NODE_IDS = ("256",)
 LTX_VIDEO_FIRST_PASS_MODEL_NODE_ID = "191"
 LTX_VIDEO_FIRST_PASS_CLIP_NODE_ID = "189"
 LTX_VIDEO_MAX_LORA_SLOTS = 10
-# `WAN 2.2 i2v -AiO-new.json` already prunes the old debug/preview branch nodes.
+# `Wan22AioV81.json` keeps the old prune output node, but the worker stores
+# video and last-frame outputs explicitly.
 WAN22_VIDEO_V2_REMOVABLE_NODE_IDS = ("9",)
+WAN22_VIDEO_V2_DURATION_SECONDS_NODE_ID = "2578"
+WAN22_VIDEO_V2_SINGLE_FRAME_SWITCH_NODE_ID = "2558"
+WAN22_VIDEO_V2_RESOLUTION_NODE_ID = "2612"
+WAN22_VIDEO_V2_FRAME_RATE_EXPRESSION_NODE_ID = "2623"
+WAN22_VIDEO_V2_FINAL_FRAMES_REF = ["2603", 0]
+WAN22_VIDEO_V2_LAST_FRAME_NODE_ID = "2607"
+WAN22_HIGH_UNET_NODE_ID = "2616"
+WAN22_LOW_UNET_NODE_ID = "2617"
+WAN22_HIGH_LORA_NODE_ID = "26"
+WAN22_LOW_LORA_NODE_ID = "18"
+WAN22_MAX_LORA_SLOTS = 10
 WAN22_VIDEO_V2_PRECISION_PRESET_BY_KEY = {
     key: str(preset["precision_preset"])
     for key, preset in WAN22_VIDEO_V2_RESOLUTION_PRESETS.items()
@@ -16,12 +34,69 @@ WAN22_VIDEO_V2_PRECISION_PRESET_BY_KEY = {
 
 
 def _normalize_wan22_video_v2_precision_preset(value: Any) -> str:
-    normalized = str(value or "").strip()
+    normalized = normalize_wan22_video_v2_resolution_preset(value)
     if normalized in WAN22_VIDEO_V2_PRECISION_PRESET_BY_KEY:
         return WAN22_VIDEO_V2_PRECISION_PRESET_BY_KEY[normalized]
-    if normalized in WAN22_VIDEO_V2_PRECISION_PRESET_BY_KEY.values():
-        return normalized
-    return WAN22_VIDEO_V2_PRECISION_PRESET_BY_KEY["standard"]
+    return WAN22_VIDEO_V2_PRECISION_PRESET_BY_KEY["preview"]
+
+
+def _set_wan22_model_profile(
+    workflow: dict[str, Any],
+    *,
+    profile_name: str | None,
+    set_node_input: Callable[..., None],
+) -> None:
+    profile = resolve_wan22_model_profile(profile_name)
+    set_node_input(
+        workflow,
+        node_id=WAN22_HIGH_UNET_NODE_ID,
+        input_name="unet_name",
+        value=profile["high"],
+    )
+    set_node_input(
+        workflow,
+        node_id=WAN22_LOW_UNET_NODE_ID,
+        input_name="unet_name",
+        value=profile["low"],
+    )
+
+
+def _clear_wan22_lora_slots(workflow: dict[str, Any]) -> None:
+    for node_id in (WAN22_HIGH_LORA_NODE_ID, WAN22_LOW_LORA_NODE_ID):
+        node = workflow.get(node_id)
+        if not isinstance(node, dict):
+            continue
+        inputs = node.setdefault("inputs", {})
+        for slot_index in range(1, WAN22_MAX_LORA_SLOTS + 1):
+            inputs.pop(f"lora_{slot_index}", None)
+
+
+def _patch_wan22_lora(
+    workflow: dict[str, Any],
+    *,
+    lora_name: str | None,
+    allow_lora: bool,
+) -> None:
+    _clear_wan22_lora_slots(workflow)
+    normalized_lora_name = str(lora_name or "").strip()
+    if not allow_lora or not normalized_lora_name:
+        return
+
+    high_node = workflow.get(WAN22_HIGH_LORA_NODE_ID)
+    if isinstance(high_node, dict):
+        high_node.setdefault("inputs", {})["lora_1"] = {
+            "on": True,
+            "lora": f"{normalized_lora_name}_high_noise.safetensors",
+            "strength": 1,
+        }
+
+    low_node = workflow.get(WAN22_LOW_LORA_NODE_ID)
+    if isinstance(low_node, dict):
+        low_node.setdefault("inputs", {})["lora_1"] = {
+            "on": True,
+            "lora": f"{normalized_lora_name}_low_noise.safetensors",
+            "strength": 1,
+        }
 
 
 def patch_img2img_workflow(
@@ -138,21 +213,40 @@ def patch_ltx_video_workflow(
         _strip_ltx_video_lora_nodes(workflow)
 
 
-def patch_wan22_video_v2_workflow(
+def _patch_wan22_aio_workflow(
     workflow: dict[str, Any],
     *,
     params: dict[str, Any],
     set_node_input: Callable[..., None],
     unique_id: Any,
+    default_model_profile: str,
+    output_task_prefix: str,
+    allow_lora: bool,
     **_: Any,
 ) -> None:
     for node_id in WAN22_VIDEO_V2_REMOVABLE_NODE_IDS:
         workflow.pop(node_id, None)
 
-    set_node_input(workflow, node_id="2586", input_name="value", value=5)
+    _set_wan22_model_profile(
+        workflow,
+        profile_name=params.get("wan22_model_profile") or default_model_profile,
+        set_node_input=set_node_input,
+    )
+    _patch_wan22_lora(
+        workflow,
+        lora_name=params.get("lora_name"),
+        allow_lora=allow_lora,
+    )
+
     set_node_input(
         workflow,
-        node_id="2581",
+        node_id=WAN22_VIDEO_V2_DURATION_SECONDS_NODE_ID,
+        input_name="value",
+        value=5,
+    )
+    set_node_input(
+        workflow,
+        node_id=WAN22_VIDEO_V2_FRAME_RATE_EXPRESSION_NODE_ID,
         input_name="expression",
         value="max(1, round(( a - 1 ) / b))",
     )
@@ -160,13 +254,13 @@ def patch_wan22_video_v2_workflow(
     use_end_frame = bool(params.get("use_end_frame")) and bool(params.get("end_image"))
     set_node_input(
         workflow,
-        node_id="2557",
+        node_id=WAN22_VIDEO_V2_SINGLE_FRAME_SWITCH_NODE_ID,
         input_name="value",
         value=not use_end_frame,
     )
     set_node_input(
         workflow,
-        node_id="2621",
+        node_id=WAN22_VIDEO_V2_RESOLUTION_NODE_ID,
         input_name="precision_presets",
         value=_normalize_wan22_video_v2_precision_preset(
             params.get("resolution_preset")
@@ -177,39 +271,23 @@ def patch_wan22_video_v2_workflow(
     if not use_end_frame and start_image:
         set_node_input(workflow, node_id="24", input_name="image", value=start_image)
 
-    decoded_frames_ref = ["2612", 0]
-    set_node_input(
-        workflow,
-        node_id="2542",
-        input_name="clip_frames",
-        value=decoded_frames_ref,
-    )
+    final_frames_ref = WAN22_VIDEO_V2_FINAL_FRAMES_REF
 
     set_node_input(
         workflow,
-        node_id="2563",
-        input_name="image",
-        value=decoded_frames_ref,
-    )
-    set_node_input(
-        workflow,
-        node_id="2575",
-        input_name="image",
-        value=decoded_frames_ref,
-    )
-
-    final_frames_ref = decoded_frames_ref
-
-    set_node_input(
-        workflow,
-        node_id="2700",
+        node_id=WAN22_VIDEO_V2_LAST_FRAME_NODE_ID,
         input_name="batch_index",
         value=16384,
     )
-    set_node_input(workflow, node_id="2700", input_name="length", value=1)
     set_node_input(
         workflow,
-        node_id="2700",
+        node_id=WAN22_VIDEO_V2_LAST_FRAME_NODE_ID,
+        input_name="length",
+        value=1,
+    )
+    set_node_input(
+        workflow,
+        node_id=WAN22_VIDEO_V2_LAST_FRAME_NODE_ID,
         input_name="image",
         value=final_frames_ref,
     )
@@ -217,7 +295,7 @@ def patch_wan22_video_v2_workflow(
         workflow,
         node_id="2503",
         input_name="images",
-        value=["2700", 0],
+        value=[WAN22_VIDEO_V2_LAST_FRAME_NODE_ID, 0],
     )
 
     safe_unique_id = unique_id or "wan22"
@@ -225,7 +303,7 @@ def patch_wan22_video_v2_workflow(
         workflow,
         node_id="28",
         input_name="filename_prefix",
-        value=f"wan22_video_v2_{safe_unique_id}_video",
+        value=f"{output_task_prefix}_{safe_unique_id}_video",
     )
     set_node_input(
         workflow,
@@ -237,7 +315,33 @@ def patch_wan22_video_v2_workflow(
         workflow,
         node_id="2503",
         input_name="filename_prefix",
-        value=f"wan22_video_v2_{safe_unique_id}_last_frame",
+        value=f"{output_task_prefix}_{safe_unique_id}_last_frame",
+    )
+
+
+def patch_wan22_video_v2_workflow(
+    workflow: dict[str, Any],
+    **kwargs: Any,
+) -> None:
+    _patch_wan22_aio_workflow(
+        workflow,
+        default_model_profile=WAN22_VIDEO_V2_MODEL_PROFILE,
+        output_task_prefix="wan22_video_v2",
+        allow_lora=False,
+        **kwargs,
+    )
+
+
+def patch_image_to_video_workflow(
+    workflow: dict[str, Any],
+    **kwargs: Any,
+) -> None:
+    _patch_wan22_aio_workflow(
+        workflow,
+        default_model_profile=WAN22_LEGACY_IMAGE_TO_VIDEO_MODEL_PROFILE,
+        output_task_prefix="image_to_video",
+        allow_lora=True,
+        **kwargs,
     )
 
 
@@ -246,5 +350,6 @@ TASK_SPECIFIC_PATCHERS = {
     "img2img_lora": patch_img2img_workflow,
     "i2i_draw": patch_i2i_draw_workflow,
     "ltx_video": patch_ltx_video_workflow,
+    "image_to_video": patch_image_to_video_workflow,
     "wan22_video_v2": patch_wan22_video_v2_workflow,
 }

@@ -12,6 +12,7 @@ from src.services.wan22_video_v2_extension_service import (
     resolve_wan22_segment_index,
     resolve_wan22_stitched_segment_count,
 )
+from src.services.wan22_video_v2_config import is_wan22_chain_history_task_type
 from src.web_api.common.utils import resolve_history_billing_resolution
 from src.web_api.schemas.gallery_schema import GalleryPostResponse
 from src.web_api.services.gallery_media_resolver import resolve_gallery_post_media_urls
@@ -24,7 +25,7 @@ def _append_history_mode_tags(
     tags: list[str],
     history: History | None,
 ) -> list[str]:
-    if not history or history.type != "wan22_video_v2":
+    if not history or not is_wan22_chain_history_task_type(history.type):
         return tags
     if is_wan22_stitched_result(getattr(history, "extra_outputs", None)):
         segment_count = resolve_wan22_stitched_segment_count(

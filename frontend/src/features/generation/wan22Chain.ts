@@ -30,6 +30,7 @@ export type Wan22ChainPrefillResult =
       status: 'ready'
       mode: Wan22ChainEditMode
       sourceTaskId: string
+      taskType: string
       prevTaskId: string | null
       chainTaskIds: string[]
       startFrame: Wan22ChainPrefillAsset
@@ -37,6 +38,7 @@ export type Wan22ChainPrefillResult =
       prompt: string
       negativePrompt: string
       resolutionPreset: Wan22VideoV2ResolutionPreset
+      loraName: string | null
       segmentIndex: number
       contextCount: number
     }
@@ -44,6 +46,7 @@ export type Wan22ChainPrefillResult =
       status: 'blank'
       mode: 'regenerate'
       sourceTaskId: string
+      taskType: string
       segmentIndex: 1
       chainTaskIds: []
       prevTaskId: null
@@ -146,6 +149,7 @@ export const buildWan22ChainPrefill = (
       status: 'ready',
       mode,
       sourceTaskId: currentRecord.task_id,
+      taskType: currentRecord.type || 'wan22_video_v2',
       prevTaskId: currentRecord.task_id,
       chainTaskIds: allChainTaskIds,
       startFrame,
@@ -153,6 +157,7 @@ export const buildWan22ChainPrefill = (
       prompt: '',
       negativePrompt: resolveNegativePrompt(currentRecord),
       resolutionPreset: resolveResolutionPreset(currentRecord),
+      loraName: currentRecord.result_meta?.lora_name || null,
       segmentIndex,
       contextCount: allChainTaskIds.length,
     }
@@ -164,6 +169,7 @@ export const buildWan22ChainPrefill = (
       status: 'blank',
       mode: 'regenerate',
       sourceTaskId: currentRecord.task_id,
+      taskType: currentRecord.type || 'wan22_video_v2',
       segmentIndex: 1,
       chainTaskIds: [],
       prevTaskId: null,
@@ -183,6 +189,7 @@ export const buildWan22ChainPrefill = (
     status: 'ready',
     mode,
     sourceTaskId: currentRecord.task_id,
+    taskType: currentRecord.type || 'wan22_video_v2',
     prevTaskId: previousRecord.task_id,
     chainTaskIds: contextTaskIds,
     startFrame,
@@ -190,6 +197,7 @@ export const buildWan22ChainPrefill = (
     prompt: currentRecord.prompt || '',
     negativePrompt: resolveNegativePrompt(currentRecord),
     resolutionPreset: resolveResolutionPreset(currentRecord),
+    loraName: currentRecord.result_meta?.lora_name || null,
     segmentIndex,
     contextCount: contextTaskIds.length,
   }

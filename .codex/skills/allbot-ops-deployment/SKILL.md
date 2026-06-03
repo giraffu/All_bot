@@ -14,7 +14,7 @@ description: "处理 Docker Compose 编排、safe_deploy/safe_deploy_test、Alem
 - **宿主机迁移执行**：通过后直接在宿主机执行 `alembic upgrade head`，不依赖容器启动时自动迁移。
 - **分阶段重建**：按 workers -> central api -> 主服务群 -> dashboard -> 测试环境的顺序重建。
 - **故障恢复**：处理 MinIO 503、Nginx 404/502、容器代码未更新、环境变量未生效等典型问题。
-- **测试 worker 变量陷阱**：`workers/docker-compose-test.yml` 内的 `${...}` 插值不会读取 `env_file: ../.env.test`，重建测试 worker 时需要从宿主 shell 显式传入关键变量，避免 401 或读写错误桶。
+- **测试 worker 变量陷阱**：`workers/docker-compose-test.yml` 内的 `${...}` 插值不会读取 `env_file: ../.env.test`；当前测试 compose 已使用测试桶默认值并让 `AGENT_SECRET_TOKEN` 来自 `env_file`，重建后仍必须核对容器内实际生效变量，避免 401 或读写错误桶。
 
 ## 2. 操作规范
 - 修改数据库结构时：
@@ -27,7 +27,7 @@ description: "处理 Docker Compose 编排、safe_deploy/safe_deploy_test、Alem
 - 功能研发默认目标环境是隔离测试栈：`.env.test`、`backend/docker-compose-test.yml`、`workers/docker-compose-test.yml`、`deploy/docker-compose-test.yml`。
 - 测试完成前，不得默认重建生产 Bot、生产 Web API、生产 Payment API、生产 Central API 或正式 Dashboard。
 - 交付前必须把“测试环境已验证通过、准备正式发布”作为显式阶段切换条件，不得自行跳过用户验收。
-- 若重建测试 worker，必须额外核对宿主 shell 是否已显式导出 `AGENT_SECRET_TOKEN`、`MINIO_BUCKET`、`MINIO_RESULT_BUCKET`；不要误以为 compose 插值会自动读取 `.env.test` 的 `env_file` 值。
+- 若重建测试 worker，必须额外核对容器内实际生效的 `AGENT_SECRET_TOKEN`、`MINIO_INPUT_BUCKET=bot-data-test`、`MINIO_RESULT_BUCKET=comfyui-temp-test`；不要误以为 compose `${...}` 插值会自动读取 `.env.test` 的 `env_file` 值。
 
 ## 3. 核心红线
 - 不要在普通功能研发过程中默认执行 `safe_deploy.sh`、生产 compose 或任何正式环境重建动作。
@@ -36,7 +36,7 @@ description: "处理 Docker Compose 编排、safe_deploy/safe_deploy_test、Alem
 - 不要在存在 multiple heads 的情况下继续部署。
 - 不要忽略卷挂载差异直接判断“代码已生效”。
 - 不要把 `docker restart` 当作代码发布手段，特别是 `web-api`、Dashboard、CS Bot 等 COPY 型服务。
-- 不要把 `env_file` 与 compose `${...}` 插值混为一谈；测试 worker 的变量未显式导出时，默认值可能悄悄生效。
+- 不要把 `env_file` 与 compose `${...}` 插值混为一谈；测试 worker 的 compose 默认值必须保持测试环境口径，重建后用 `docker exec <worker> env` 核对。
 
 ## 4. 测试与验证
 - 测试研发阶段先验证隔离测试栈健康检查、关键 API 可达、测试库/测试 Redis/测试中控链路正确。

@@ -13,6 +13,8 @@
 
 **前置依赖**：用户必须具备足够灵石，且同一时刻受并发锁约束。
 
+**当前视频口径**：旧 `custom_video` / `video_lora` 与 `wan22_video_v2` 共用 Wan22 AIO 工作流；旧入口固定 5 秒，分辨率与计费对齐 v2 三档，`video_lora` 额外保留旧 LoRA 选择。历史与投稿类型仍保留旧值，执行面才使用 `image_to_video`。
+
 ## 3. 当前业务主链
 
 ```mermaid
@@ -51,8 +53,8 @@ sequenceDiagram
   "task_type": "custom_video",
   "inputs": {
     "prompt": "A beautiful fairy flying in the sky",
-    "resolution": "1280x704",
-    "duration": "10s",
+    "resolution_preset": "standard",
+    "duration": 5,
     "image_url": "bot-data/user_uploads/123/img.jpg"
   },
   "source_post_id": 123
@@ -62,6 +64,7 @@ sequenceDiagram
 ### 4.2 计费契约
 - 视频成本通常由分辨率与时长组合计算。
 - `wan22_video_v2` 当前固定 5 秒，分辨率档位以 `src/services/wan22_video_v2_config.py` 为准：`preview`（展示为“极速”，约 512p，默认且最低价）8 灵石、`standard`（约 720p）20 灵石、`hd`（约 810p）30 灵石；旧 `fast` 仅作为兼容别名归一到 `preview`，不再作为可选档位展示。
+- 旧 `custom_video` / `video_lora` 当前同样固定 5 秒并对齐上述 v2 档位计费；旧投稿中的 `512p/720p/1024p` 会映射为 `preview/standard/hd`。
 - 具体倍率与 guardrail 以当前服务实现为准，不在业务文档中固化旧常量值。
 
 ### 4.3 双 ID 语义
@@ -88,7 +91,7 @@ sequenceDiagram
 4. 点击立即生成。
 5. 通过任务详情、stream 与历史记录查看运行态和结果。
 
-> `图生视频 v2` 已并入统一练功房；历史详情和结果区会回到练功房完成扩展生成、重新生成与多段拼接。独立 `Wan22VideoV2` 页面仅作为兼容入口保留。
+> `图生视频 v2` 已并入统一练功房；旧图生视频与 v2 的历史详情和结果区都会回到练功房完成扩展生成、重新生成与多段拼接。独立 `Wan22VideoV2` 页面仅作为兼容入口保留。
 
 ## 7. 维护原则
 - 若修改 Bot entrypoints、`run_bot_task_application(...)`、`task_core facade`、`task_stream/history fallback`，需同步更新本业务文档。
