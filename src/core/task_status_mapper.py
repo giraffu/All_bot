@@ -7,10 +7,20 @@ from src.core.task_lifecycle_contract import (
     STREAM_STATUS_CANCELLED,
     STREAM_STATUS_FAILED,
     STREAM_STATUS_SUCCESS,
+    is_backend_terminal_status,
     normalize_backend_status,
 )
 
 RESULT_STATUS_PENDING = "pending_result"
+
+__all__ = [
+    "RESULT_STATUS_PENDING",
+    "build_result_pending_payload",
+    "build_result_success_payload",
+    "build_stream_terminal_payload",
+    "is_backend_terminal_status",
+    "map_backend_status_to_stream_status",
+]
 
 
 def map_backend_status_to_stream_status(status: str | None) -> str | None:
