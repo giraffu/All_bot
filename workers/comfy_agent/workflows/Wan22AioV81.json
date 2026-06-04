@@ -285,7 +285,7 @@
       "refiner_step": 2,
       "cfg": 1,
       "sampler_name": "euler",
-      "scheduler": "linear_quadratic"
+      "scheduler": "simple"
     },
     "class_type": "KSampler Config (rgthree)",
     "_meta": {
@@ -497,7 +497,7 @@
   },
   "2560": {
     "inputs": {
-      "shift": 5,
+      "shift": 8,
       "model": [
         "2552",
         0
@@ -541,7 +541,7 @@
   },
   "2569": {
     "inputs": {
-      "shift": 5,
+      "shift": 8,
       "model": [
         "2551",
         0

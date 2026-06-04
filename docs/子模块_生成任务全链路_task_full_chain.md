@@ -304,6 +304,7 @@ QueueManager 负责执行面排队与 Worker 选择，关键职责包括：
 运维含义：
 - 某任务长时间 pending 时，要先看是否有 Worker 声明支持该任务类型
 - Worker 存活但 `SUPPORTED_TASK_TYPES` 不匹配，任务依然不会被接单
+- `image_to_video` 是旧图生视频 `custom_video` / `video_lora` 的执行面类型；生产 worker 接入该类型时可以与 `video_edit` 共存，不应为补 `image_to_video` 误删 `video_edit` 支持。
 
 ### 9.2 输入准备
 Worker 拉到任务后会先处理输入：

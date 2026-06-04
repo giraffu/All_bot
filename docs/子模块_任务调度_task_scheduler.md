@@ -187,6 +187,7 @@ SSE 侧当前已把运行态 not-found 收口为明确终止 / fallback 语义�
 
 - 测试环境：`safe_deploy_test.sh`
 - 正式环境：仅在明确确认后执行 `safe_deploy.sh`
+- 正式部署前应确认生产 worker 的 `SUPPORTED_TASK_TYPES` 覆盖本次上线的执行面类型；旧图生视频入口实际依赖 `image_to_video`，同时不要误删仍在使用的 `video_edit`。
 
 ### 8.2 回滚
 若本轮改动涉及 provider/dependencies 边界，回滚时除了代码版本，还应确认：

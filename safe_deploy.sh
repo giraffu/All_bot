@@ -80,6 +80,7 @@ fi
 
 set -a
 source "$PROD_ENV_FILE"
+export BOT_TYPE=PROD
 set +a
 
 wait_for_http_ready() {

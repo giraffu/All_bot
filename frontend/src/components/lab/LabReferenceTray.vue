@@ -64,13 +64,13 @@ const { t } = useI18n()
 
         <a-button
           v-if="!item.uploading && !item.locked"
-          danger
-          type="primary"
+          type="text"
           size="small"
           shape="circle"
-          class="lab-reference-tray__remove absolute -right-1 -top-1"
+          class="lab-reference-tray__remove absolute right-1 top-1"
           :aria-label="t('lab.workbench.remove_reference')"
-          @click="emit('remove', index)"
+          :title="t('lab.workbench.remove_reference')"
+          @click.stop.prevent="emit('remove', index)"
         >
           <template #icon>
             <CloseOutlined />
@@ -104,12 +104,26 @@ const { t } = useI18n()
 }
 
 .lab-reference-tray__remove {
-  z-index: 1;
-  width: 18px !important;
-  min-width: 18px !important;
-  height: 18px !important;
-  box-shadow: 0 6px 12px rgba(15, 23, 42, 0.25);
-  font-size: 10px;
+  z-index: 2;
+  width: 22px !important;
+  min-width: 22px !important;
+  height: 22px !important;
+  border: 1px solid rgba(248, 250, 252, 0.88) !important;
+  background: rgba(15, 23, 42, 0.82) !important;
+  box-shadow: 0 8px 16px rgba(15, 23, 42, 0.34);
+  color: #f8fafc !important;
+  font-size: 11px;
+}
+
+.lab-reference-tray__remove:hover,
+.lab-reference-tray__remove:focus-visible {
+  background: rgba(239, 68, 68, 0.95) !important;
+  color: #ffffff !important;
+}
+
+:deep(.lab-reference-tray__remove .anticon),
+:deep(.lab-reference-tray__remove svg) {
+  display: block;
 }
 
 .lab-reference-tray__uploading {

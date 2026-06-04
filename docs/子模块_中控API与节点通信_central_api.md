@@ -75,6 +75,7 @@ sequenceDiagram
 - Central API 是独立部署的 backend 执行面服务。
 - 若分发逻辑异常导致任务堆积，应先检查：
   - worker 心跳是否正常
+  - worker `SUPPORTED_TASK_TYPES` 是否覆盖任务的执行面类型，例如旧图生视频入口最终会排队为 `image_to_video`
   - queue 是否持续堆积
   - 上游 task core submission 是否仍在正常写入任务
 - 队列中的待执行任务通常具有可恢复性，重启执行面服务不应被表述为必然丢任务。

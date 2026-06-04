@@ -11,8 +11,8 @@ description: "处理 Docker Compose 编排、safe_deploy/safe_deploy_test、Alem
 - **测试优先部署**：功能研发、联调、修复与配置调整默认先更新隔离测试栈，优先使用根目录 `safe_deploy_test.sh`；只有在用户明确要求正式发布或交付验收通过后，才允许使用 `safe_deploy.sh` 更新生产环境。
 - **标准部署入口**：测试环境优先使用 `safe_deploy_test.sh`，生产环境使用 `safe_deploy.sh`，避免手工拼接多个目录的容器命令。
 - **迁移保护**：部署前检查 Alembic multiple heads；发现多 head 立即中止。
-- **宿主机迁移执行**：通过后直接在宿主机执行 `alembic upgrade head`，不依赖容器启动时自动迁移。
-- **分阶段重建**：按 workers -> central api -> 主服务群 -> dashboard -> 测试环境的顺序重建。
+- **宿主机迁移执行**：通过后直接在宿主机执行 `alembic upgrade head`，不依赖容器启动时自动迁移；生产脚本加载 `.env` 后显式导出 `BOT_TYPE=PROD`。
+- **分阶段重建**：按 workers -> central api -> 主服务群 -> dashboard -> 生产 Web 边缘静态站的顺序重建/发布。
 - **故障恢复**：处理 MinIO 503、Nginx 404/502、容器代码未更新、环境变量未生效等典型问题。
 - **测试 worker 变量陷阱**：`workers/docker-compose-test.yml` 内的 `${...}` 插值不会读取 `env_file: ../.env.test`；当前测试 compose 已使用测试桶默认值并让 `AGENT_SECRET_TOKEN` 来自 `env_file`，重建后仍必须核对容器内实际生效变量，避免 401 或读写错误桶。
 - **workflow 资产双源风险**：仓库同时存在 `backend/workflows` 与 `workers/comfy_agent/workflows`。Worker 实际执行以 worker 目录为准，Central API/镜像构建仍可能读取 backend 侧副本做校验或 fallback；修改 workflow 时必须确认两侧是否同步。
@@ -36,6 +36,7 @@ description: "处理 Docker Compose 编排、safe_deploy/safe_deploy_test、Alem
 - 不要把“帮我改功能/修 Bug/做联调”自动理解为“允许正式部署”；除非用户明确提出上线、交付、发布、同步生产。
 - 不要再写“容器下次启动会自动应用 Alembic 变更”，这不是当前标准流程。
 - 不要在存在 multiple heads 的情况下继续部署。
+- 不要让生产 Alembic 迁移依赖 `config.py` 的默认 `BOT_TYPE`；生产脚本应显式 `BOT_TYPE=PROD`，测试脚本显式 `BOT_TYPE=TEST`。
 - 不要忽略卷挂载差异直接判断“代码已生效”。
 - 不要把 `docker restart` 当作代码发布手段，特别是 `web-api`、Dashboard、CS Bot 等 COPY 型服务。
 - 不要把 `env_file` 与 compose `${...}` 插值混为一谈；测试 worker 的 compose 默认值必须保持测试环境口径，重建后用 `docker exec <worker> env` 核对。

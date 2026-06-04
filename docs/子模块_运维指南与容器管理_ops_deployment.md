@@ -13,12 +13,12 @@
   - 等待活跃任务清空
   - 清理僵尸任务与 Redis 锁
   - 检查 Alembic 多 head
-  - 宿主机执行 `alembic upgrade head`
+  - 生产脚本基于 `.env` 并显式 `BOT_TYPE=PROD`，宿主机执行 `alembic upgrade head`
   - 重建 workers
   - 重建 central api
   - 重建主服务群
   - 重建 dashboard
-  - 发布测试 Web 静态站到边缘 VPS
+  - 发布生产 Web 静态站到边缘 VPS
 - `safe_deploy.sh` 到此结束，不会顺带重建测试环境。
 - 若仅更新隔离测试栈，可执行 `bash safe_deploy_test.sh`；它会处理 `.env.test`、测试数据库迁移、测试 workers、测试 central api、测试入口服务，以及 `frontend/scripts/deploy-edge-test.sh` 对应的边缘 VPS 测试站静态资源发布；不会重建生产服务，也不会重建正式 Dashboard。
 
@@ -33,6 +33,7 @@
 - 脚本会先寻找可用的 Alembic 可执行文件，再检查 `heads` 数量。
 - 一旦发现多个 head，脚本会直接中止，要求先合并 migration，而不是带病部署。
 - 通过多 head 检查后，脚本会立即执行 `alembic upgrade head`。
+- 生产脚本在加载 `.env` 后显式导出 `BOT_TYPE=PROD`，避免 `config.py` 的默认 TEST 语义影响生产迁移环境选择。
 
 这意味着知识库里以下旧说法都应删除：
 - “等容器启动时自动迁移”
