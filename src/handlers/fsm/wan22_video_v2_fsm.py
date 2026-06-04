@@ -38,6 +38,7 @@ from src.services.wan22_video_v2_config import (
     get_wan22_video_v2_cost,
     get_wan22_video_v2_resolution_display,
     get_wan22_video_v2_resolution_label,
+    normalize_wan22_video_v2_resolution_preset,
 )
 from src.services.fsm_temp_file_service import (
     cleanup_fsm_temp_files,
@@ -70,6 +71,15 @@ WAN22_VIDEO_V2_SETTINGS_ACTION_PATTERN = (
     rf"^wan22v2_(submit|res_("
     rf"{'|'.join(re.escape(preset_key) for preset_key in WAN22_VIDEO_V2_RESOLUTION_PRESETS)}"
     r"))$"
+)
+WAN22_VIDEO_V2_SETUP_MODE_SINGLE = "wan22v2_setup_mode_single"
+WAN22_VIDEO_V2_SETUP_MODE_END = "wan22v2_setup_mode_end"
+WAN22_VIDEO_V2_SETUP_RES_PREFIX = "wan22v2_setup_res_"
+WAN22_VIDEO_V2_SETUP_CONFIRM = "wan22v2_setup_confirm"
+WAN22_VIDEO_V2_SETUP_ACTION_PATTERN = (
+    rf"^wan22v2_setup_(mode_(single|end)|res_("
+    rf"{'|'.join(re.escape(preset_key) for preset_key in WAN22_VIDEO_V2_RESOLUTION_PRESETS)}"
+    r")|confirm)$"
 )
 _t = translate_fsm_text
 
@@ -261,6 +271,123 @@ def _build_end_frame_choice_keyboard(context: ContextTypes.DEFAULT_TYPE) -> Inli
                 ),
             ]
         ]
+    )
+
+
+def _selected_button_label(label: str, *, selected: bool) -> str:
+    return f"✅ {label}" if selected else label
+
+
+def _get_frame_mode_label(
+    context: ContextTypes.DEFAULT_TYPE,
+    use_end_frame: bool,
+) -> str:
+    key = (
+        "fsm.wan22_video_v2.frame_mode_end"
+        if use_end_frame
+        else "fsm.wan22_video_v2.frame_mode_single"
+    )
+    return _t(context, key)
+
+
+def _normalize_selected_resolution(data: dict[str, object]) -> str:
+    selected_resolution = normalize_wan22_video_v2_resolution_preset(
+        str(data.get("resolution_preset") or WAN22_VIDEO_V2_DEFAULT_RESOLUTION_PRESET)
+    )
+    data["resolution_preset"] = selected_resolution
+    return selected_resolution
+
+
+def _build_initial_setup_keyboard(
+    context: ContextTypes.DEFAULT_TYPE,
+    data: dict[str, object],
+) -> InlineKeyboardMarkup:
+    lang = getattr(context, "lang", "zh")
+    selected_resolution = _normalize_selected_resolution(data)
+    use_end_frame = bool(data.get("use_end_frame"))
+    credits_text = _t(context, "app.credits")
+    resolution_row = []
+    for preset_key in WAN22_VIDEO_V2_RESOLUTION_PRESETS:
+        label = get_wan22_video_v2_resolution_label(preset_key, lang=lang)
+        cost_for_preset = get_wan22_video_v2_cost(preset_key)
+        resolution_row.append(
+            InlineKeyboardButton(
+                _selected_button_label(
+                    f"{label} ({cost_for_preset}{credits_text})",
+                    selected=preset_key == selected_resolution,
+                ),
+                callback_data=f"{WAN22_VIDEO_V2_SETUP_RES_PREFIX}{preset_key}",
+            )
+        )
+
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton(
+                    _selected_button_label(
+                        _t(context, "fsm.wan22_video_v2.disable_end_frame"),
+                        selected=not use_end_frame,
+                    ),
+                    callback_data=WAN22_VIDEO_V2_SETUP_MODE_SINGLE,
+                ),
+                InlineKeyboardButton(
+                    _selected_button_label(
+                        _t(context, "fsm.wan22_video_v2.enable_end_frame"),
+                        selected=use_end_frame,
+                    ),
+                    callback_data=WAN22_VIDEO_V2_SETUP_MODE_END,
+                ),
+            ],
+            resolution_row,
+            [
+                InlineKeyboardButton(
+                    _t(context, "fsm.wan22_video_v2.setup_confirm"),
+                    callback_data=WAN22_VIDEO_V2_SETUP_CONFIRM,
+                )
+            ],
+        ]
+    )
+
+
+def _build_initial_setup_message(
+    context: ContextTypes.DEFAULT_TYPE,
+    data: dict[str, object],
+) -> str:
+    lang = getattr(context, "lang", "zh")
+    resolution = _normalize_selected_resolution(data)
+    use_end_frame = bool(data.get("use_end_frame"))
+    return _t(
+        context,
+        "fsm.wan22_video_v2.setup_text",
+        frame_mode=_get_frame_mode_label(context, use_end_frame),
+        image_count=2 if use_end_frame else 1,
+        resolution=get_wan22_video_v2_resolution_display(resolution, lang=lang),
+        duration="5s" if lang == "en" else "5 秒",
+        cost=get_wan22_video_v2_cost(resolution),
+    )
+
+
+def _build_start_image_request_message(
+    context: ContextTypes.DEFAULT_TYPE,
+    data: dict[str, object],
+) -> str:
+    lang = getattr(context, "lang", "zh")
+    resolution = _normalize_selected_resolution(data)
+    use_end_frame = bool(data.get("use_end_frame"))
+    note_key = (
+        "fsm.wan22_video_v2.start_note_end_frame"
+        if use_end_frame
+        else "fsm.wan22_video_v2.start_note_single"
+    )
+    return _t(
+        context,
+        "fsm.wan22_video_v2.send_start_after_setup",
+        frame_mode=_get_frame_mode_label(context, use_end_frame),
+        image_count=2 if use_end_frame else 1,
+        resolution=get_wan22_video_v2_resolution_display(resolution, lang=lang),
+        duration="5s" if lang == "en" else "5 秒",
+        cost=get_wan22_video_v2_cost(resolution),
+        note=_t(context, note_key),
     )
 
 
@@ -500,8 +627,13 @@ async def start_wan22_video_v2(
             "extension_task_type": MODE_WAN22_VIDEO_V2,
         },
     )
-    await _send_or_edit_message(update, _t(context, "fsm.wan22_video_v2.start"))
-    return Wan22VideoV2State.WAIT_START_IMAGE
+    data = _get_data(context) or {}
+    await _send_or_edit_message(
+        update,
+        _build_initial_setup_message(context, data),
+        reply_markup=_build_initial_setup_keyboard(context, data),
+    )
+    return Wan22VideoV2State.WAIT_SETUP
 
 
 async def start_wan22_video_v2_extension(
@@ -700,6 +832,48 @@ async def start_wan22_video_v2_regeneration(
     return await _ask_for_prompt(update, context)
 
 
+async def handle_initial_setup_action(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+) -> int:
+    query = update.callback_query
+    await query.answer(text=_t(context, "fsm.common.task_initializing"), cache_time=2)
+    data = _get_data(context)
+    if not data:
+        with contextlib.suppress(Exception):
+            await query.answer(_t(context, "fsm.wan22_video_v2.expired_alert"), show_alert=True)
+        return ConversationHandler.END
+
+    callback_data = query.data or ""
+    if callback_data == WAN22_VIDEO_V2_SETUP_MODE_SINGLE:
+        data["use_end_frame"] = False
+        data["end_image_path"] = None
+    elif callback_data == WAN22_VIDEO_V2_SETUP_MODE_END:
+        data["use_end_frame"] = True
+        data["end_image_path"] = None
+    elif callback_data.startswith(WAN22_VIDEO_V2_SETUP_RES_PREFIX):
+        data["resolution_preset"] = normalize_wan22_video_v2_resolution_preset(
+            callback_data.removeprefix(WAN22_VIDEO_V2_SETUP_RES_PREFIX)
+        )
+    elif callback_data == WAN22_VIDEO_V2_SETUP_CONFIRM:
+        await robust_edit_text(
+            query.message,
+            _build_start_image_request_message(context, data),
+            parse_mode="Markdown",
+        )
+        return Wan22VideoV2State.WAIT_START_IMAGE
+    else:
+        return Wan22VideoV2State.WAIT_SETUP
+
+    await robust_edit_text(
+        query.message,
+        _build_initial_setup_message(context, data),
+        reply_markup=_build_initial_setup_keyboard(context, data),
+        parse_mode="Markdown",
+    )
+    return Wan22VideoV2State.WAIT_SETUP
+
+
 async def receive_start_image(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> int:
@@ -725,13 +899,21 @@ async def receive_start_image(
         await robust_reply_text(message, _t(context, "fsm.common.download_image_failed"))
         return Wan22VideoV2State.WAIT_START_IMAGE
 
+    data["end_image_path"] = None
+    if data.get("use_end_frame"):
+        await robust_reply_text(
+            message,
+            _t(context, "fsm.wan22_video_v2.send_end_image"),
+            parse_mode="Markdown",
+        )
+        return Wan22VideoV2State.WAIT_END_IMAGE
+
     await robust_reply_text(
         message,
-        _t(context, "fsm.wan22_video_v2.end_frame_choice"),
-        reply_markup=_build_end_frame_choice_keyboard(context),
+        _t(context, "fsm.wan22_video_v2.start_image_received"),
         parse_mode="Markdown",
     )
-    return Wan22VideoV2State.WAIT_END_FRAME_CHOICE
+    return await _ask_for_prompt(update, context)
 
 
 async def choose_end_frame_mode(
@@ -1028,6 +1210,17 @@ def get_wan22_video_v2_fsm_handler() -> ConversationHandler:
             ),
         ],
         states={
+            Wan22VideoV2State.WAIT_SETUP: [
+                CallbackQueryHandler(
+                    handle_initial_setup_action,
+                    pattern=WAN22_VIDEO_V2_SETUP_ACTION_PATTERN,
+                ),
+                MessageHandler(
+                    (filters.TEXT | filters.COMMAND) & ~filters.Regex(r"^/cancel$"),
+                    unexpected_input,
+                ),
+                MessageHandler(filters.PHOTO | filters.Document.IMAGE, unexpected_input),
+            ],
             Wan22VideoV2State.WAIT_START_IMAGE: [
                 MessageHandler(
                     filters.PHOTO | filters.Document.IMAGE, receive_start_image

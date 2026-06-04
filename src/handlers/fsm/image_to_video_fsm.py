@@ -43,6 +43,17 @@ logger = logging.getLogger("fsm.image_to_video")
 
 IMAGE_TO_VIDEO_DATA_KEY = "image_to_video_data"
 IMAGE_TO_VIDEO_CONVERSATION_TAG = "IMAGE_TO_VIDEO"
+I2V_LORA_BUTTONS_PER_ROW = 4
+I2V_SETUP_LORA_PREFIX = "i2v_setup_lora_"
+I2V_SETUP_MODE_SINGLE = "i2v_setup_mode_single"
+I2V_SETUP_MODE_END = "i2v_setup_mode_end"
+I2V_SETUP_RES_PREFIX = "i2v_setup_res_"
+I2V_SETUP_CONFIRM = "i2v_setup_confirm"
+I2V_SETUP_ACTION_PATTERN = (
+    rf"^i2v_setup_(lora_.*|mode_(single|end)|res_("
+    + "|".join(WAN22_VIDEO_V2_RESOLUTION_PRESETS.keys())
+    + r")|confirm)$"
+)
 
 
 _t = translate_fsm_text
@@ -77,6 +88,27 @@ def _get_lora_display_name(lora_name: str | None, *, lang: str = "zh") -> str:
     return get_video_lora_display_name(normalized_name, lang)
 
 
+def _selected_button_label(label: str, *, selected: bool) -> str:
+    return f"✅ {label}" if selected else label
+
+
+def _chunk_buttons(
+    buttons: list[InlineKeyboardButton], size: int
+) -> list[list[InlineKeyboardButton]]:
+    return [buttons[i : i + size] for i in range(0, len(buttons), size)]
+
+
+def _get_frame_mode_label(
+    context: ContextTypes.DEFAULT_TYPE, use_end_frame: bool
+) -> str:
+    key = (
+        "fsm.image_to_video.frame_mode_end"
+        if use_end_frame
+        else "fsm.image_to_video.frame_mode_single"
+    )
+    return _t(context, key)
+
+
 def _build_lora_selection_keyboard(lang: str = "zh") -> InlineKeyboardMarkup:
     buttons = [
         InlineKeyboardButton(
@@ -87,6 +119,80 @@ def _build_lora_selection_keyboard(lang: str = "zh") -> InlineKeyboardMarkup:
     ]
     keyboard = [buttons[i : i + 2] for i in range(0, len(buttons), 2)]
     return InlineKeyboardMarkup(keyboard)
+
+
+def _build_initial_setup_keyboard(
+    context: ContextTypes.DEFAULT_TYPE,
+    fsm_data: dict[str, object],
+) -> InlineKeyboardMarkup:
+    lang = getattr(context, "lang", "zh")
+    selected_lora = str(fsm_data.get("lora_name") or "")
+    allow_lora_selection = bool(fsm_data.get("allow_lora_selection", True))
+    selected_resolution = normalize_wan22_video_v2_resolution_preset(
+        str(fsm_data.get("resolution") or WAN22_VIDEO_V2_DEFAULT_RESOLUTION_PRESET)
+    )
+    fsm_data["resolution"] = selected_resolution
+    use_end_frame = bool(fsm_data.get("use_end_frame"))
+    credits_text = _t(context, "app.credits")
+
+    lora_options = (
+        VIDEO_LORA_MODELS.keys()
+        if allow_lora_selection
+        else ("",)
+    )
+    lora_buttons = [
+        InlineKeyboardButton(
+            _selected_button_label(
+                get_video_lora_display_name(backend_name, lang),
+                selected=backend_name == selected_lora,
+            ),
+            callback_data=f"{I2V_SETUP_LORA_PREFIX}{backend_name}",
+        )
+        for backend_name in lora_options
+    ]
+    mode_row = [
+        InlineKeyboardButton(
+            _selected_button_label(
+                _t(context, "fsm.image_to_video.disable_end_frame"),
+                selected=not use_end_frame,
+            ),
+            callback_data=I2V_SETUP_MODE_SINGLE,
+        ),
+        InlineKeyboardButton(
+            _selected_button_label(
+                _t(context, "fsm.image_to_video.enable_end_frame"),
+                selected=use_end_frame,
+            ),
+            callback_data=I2V_SETUP_MODE_END,
+        ),
+    ]
+    resolution_row = []
+    for preset_key in WAN22_VIDEO_V2_RESOLUTION_PRESETS:
+        label = get_wan22_video_v2_resolution_label(preset_key, lang=lang)
+        cost_for_preset = get_wan22_video_v2_cost(preset_key)
+        resolution_row.append(
+            InlineKeyboardButton(
+                _selected_button_label(
+                    f"{label} ({cost_for_preset}{credits_text})",
+                    selected=preset_key == selected_resolution,
+                ),
+                callback_data=f"{I2V_SETUP_RES_PREFIX}{preset_key}",
+            )
+        )
+
+    return InlineKeyboardMarkup(
+        [
+            *_chunk_buttons(lora_buttons, I2V_LORA_BUTTONS_PER_ROW),
+            mode_row,
+            resolution_row,
+            [
+                InlineKeyboardButton(
+                    _t(context, "fsm.image_to_video.setup_confirm"),
+                    callback_data=I2V_SETUP_CONFIRM,
+                )
+            ],
+        ]
+    )
 
 
 def _build_end_frame_choice_keyboard(context: ContextTypes.DEFAULT_TYPE) -> InlineKeyboardMarkup:
@@ -107,7 +213,12 @@ def _build_end_frame_choice_keyboard(context: ContextTypes.DEFAULT_TYPE) -> Inli
 
 
 def _build_image_request_text(
-    lora_name: str | None, *, from_compat_alias: bool, lang: str = "zh"
+    lora_name: str | None,
+    *,
+    from_compat_alias: bool,
+    lang: str = "zh",
+    use_end_frame: bool = False,
+    resolution: str | None = None,
 ) -> str:
     lora_display_name = get_video_lora_display_name(lora_name or "", lang)
     from src.i18n.translator import get_text
@@ -115,13 +226,82 @@ def _build_image_request_text(
     header = get_text("fsm.image_to_video.mode_header", lang)
     if from_compat_alias:
         header = get_text("fsm.image_to_video.compat_mode_header", lang)
+    frame_mode = get_text(
+        (
+            "fsm.image_to_video.frame_mode_end"
+            if use_end_frame
+            else "fsm.image_to_video.frame_mode_single"
+        ),
+        lang,
+    )
+    image_count = 2 if use_end_frame else 1
+    settings_lines = [
+        get_text(
+            "fsm.image_to_video.current_lora",
+            lang,
+            model_name=lora_display_name,
+        ),
+        get_text(
+            "fsm.image_to_video.current_frame_mode",
+            lang,
+            frame_mode=frame_mode,
+            image_count=image_count,
+        ),
+    ]
+    if resolution:
+        settings_lines.append(
+            get_text(
+                "fsm.image_to_video.current_resolution",
+                lang,
+                resolution=get_wan22_video_v2_resolution_display(
+                    resolution, lang=lang
+                ),
+            )
+        )
+    image_note_key = (
+        "fsm.image_to_video.image_note_end_frame"
+        if use_end_frame
+        else "fsm.image_to_video.image_note"
+    )
+    image_note_text = get_text(image_note_key, lang)
 
     return (
         f"{header}\n\n"
-        f"{get_text('fsm.image_to_video.current_lora', lang, model_name=lora_display_name)}\n\n"
+        f"{chr(10).join(settings_lines)}\n\n"
         f"{get_text('fsm.image_to_video.send_image', lang)}\n"
-        f"{get_text('fsm.image_to_video.image_note', lang)}\n\n"
+        f"{image_note_text}\n\n"
         "随时可以发送 /cancel 退出流程。"
+    )
+
+
+def _build_initial_setup_message(
+    context: ContextTypes.DEFAULT_TYPE,
+    fsm_data: dict[str, object],
+    *,
+    from_compat_alias: bool,
+) -> str:
+    lang = getattr(context, "lang", "zh")
+    header_key = (
+        "fsm.image_to_video.compat_mode_header"
+        if from_compat_alias
+        else "fsm.image_to_video.mode_header"
+    )
+    resolution = normalize_wan22_video_v2_resolution_preset(
+        str(fsm_data.get("resolution") or WAN22_VIDEO_V2_DEFAULT_RESOLUTION_PRESET)
+    )
+    fsm_data["resolution"] = resolution
+    use_end_frame = bool(fsm_data.get("use_end_frame"))
+    cost = _compute_video_generation_cost(resolution, "5s")
+    return _t(
+        context,
+        "fsm.image_to_video.setup_text",
+        header=_t(context, header_key),
+        model_name=_get_lora_display_name(fsm_data.get("lora_name"), lang=lang),
+        frame_mode=_get_frame_mode_label(context, use_end_frame),
+        image_count=2 if use_end_frame else 1,
+        resolution=get_wan22_video_v2_resolution_display(resolution, lang=lang),
+        duration="5s",
+        cost=cost,
     )
 
 
@@ -152,6 +332,32 @@ def _build_submit_message(lora_name: str | None, cost: int, *, lang: str = "zh")
 
     key = "fsm.image_to_video.submit_plain" if not lora_name else "fsm.image_to_video.submit_lora"
     return get_text(key, lang, cost=cost)
+
+
+def _build_prompt_request_text(
+    context: ContextTypes.DEFAULT_TYPE,
+    fsm_data: dict[str, object],
+    *,
+    received_key: str,
+) -> str:
+    lang = getattr(context, "lang", "zh")
+    resolution = normalize_wan22_video_v2_resolution_preset(
+        str(fsm_data.get("resolution") or WAN22_VIDEO_V2_DEFAULT_RESOLUTION_PRESET)
+    )
+    fsm_data["resolution"] = resolution
+    cost = _compute_video_generation_cost(resolution, "5s")
+    prompt_text = _t(
+        context,
+        "fsm.image_to_video.prompt_request_text",
+        resolution=get_wan22_video_v2_resolution_display(resolution, lang=lang),
+        frame_mode=_get_frame_mode_label(
+            context, bool(fsm_data.get("use_end_frame"))
+        ),
+        duration="5s",
+        cost=cost,
+        model_name=_get_lora_display_name(fsm_data.get("lora_name"), lang=lang),
+    )
+    return f"{_t(context, received_key)}\n\n{prompt_text}"
 
 
 def _compute_video_generation_cost(resolution: str, duration: str) -> int:
@@ -242,6 +448,7 @@ def _initialize_image_to_video_context(
     *,
     conversation_tag: str,
     preset_lora_name: str | None = None,
+    allow_lora_selection: bool = True,
 ) -> None:
     context.user_data["in_conversation"] = conversation_tag
     data = {
@@ -251,6 +458,7 @@ def _initialize_image_to_video_context(
         "end_image_path": None,
         "use_end_frame": False,
         "lora_name": preset_lora_name,
+        "allow_lora_selection": allow_lora_selection,
     }
     _set_image_to_video_data(context, data)
 
@@ -261,6 +469,7 @@ async def _start_image_to_video_flow(
     *,
     conversation_tag: str = IMAGE_TO_VIDEO_CONVERSATION_TAG,
     preset_lora_name: str | None = None,
+    allow_lora_selection: bool = True,
     skip_lora_selection: bool = False,
 ) -> int:
     query = update.callback_query
@@ -292,24 +501,33 @@ async def _start_image_to_video_flow(
         context,
         conversation_tag=conversation_tag,
         preset_lora_name=preset_lora_name,
+        allow_lora_selection=allow_lora_selection,
     )
 
     if skip_lora_selection:
+        fsm_data = _get_image_to_video_data(context) or {}
         await _send_start_message(
             update,
             _build_image_request_text(
                 preset_lora_name,
                 from_compat_alias=conversation_tag == "CUSTOM_VIDEO",
                 lang=getattr(context, "lang", "zh"),
+                use_end_frame=bool(fsm_data.get("use_end_frame")),
+                resolution=str(fsm_data.get("resolution") or ""),
             ),
         )
         return ImageToVideoState.WAIT_IMAGE
 
-    msg = _t(context, "fsm.image_to_video.select_lora")
+    fsm_data = _get_image_to_video_data(context) or {}
+    from_compat_alias = conversation_tag == "CUSTOM_VIDEO"
     await _send_start_message(
         update,
-        msg,
-        reply_markup=_build_lora_selection_keyboard(getattr(context, "lang", "zh")),
+        _build_initial_setup_message(
+            context,
+            fsm_data,
+            from_compat_alias=from_compat_alias,
+        ),
+        reply_markup=_build_initial_setup_keyboard(context, fsm_data),
     )
     return ImageToVideoState.WAIT_LORA_SELECTION
 
@@ -332,8 +550,67 @@ async def start_custom_video(
         context,
         conversation_tag="CUSTOM_VIDEO",
         preset_lora_name="",
-        skip_lora_selection=True,
+        allow_lora_selection=False,
     )
+
+
+async def handle_initial_setup_selection(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> int:
+    query = update.callback_query
+    await query.answer(text=_t(context, "fsm.common.task_initializing"), cache_time=2)
+    callback_data = query.data or ""
+
+    fsm_data = _get_image_to_video_data(context) or {}
+    if not fsm_data:
+        await query.edit_message_text(_t(context, "fsm.image_to_video.expired_alert"))
+        return ConversationHandler.END
+
+    if callback_data.startswith(I2V_SETUP_LORA_PREFIX):
+        fsm_data["lora_name"] = (
+            callback_data.removeprefix(I2V_SETUP_LORA_PREFIX)
+            if fsm_data.get("allow_lora_selection", True)
+            else ""
+        )
+    elif callback_data == I2V_SETUP_MODE_SINGLE:
+        fsm_data["use_end_frame"] = False
+        fsm_data["end_image_path"] = None
+    elif callback_data == I2V_SETUP_MODE_END:
+        fsm_data["use_end_frame"] = True
+        fsm_data["end_image_path"] = None
+    elif callback_data.startswith(I2V_SETUP_RES_PREFIX):
+        fsm_data["resolution"] = normalize_wan22_video_v2_resolution_preset(
+            callback_data.removeprefix(I2V_SETUP_RES_PREFIX)
+        )
+    elif callback_data == I2V_SETUP_CONFIRM:
+        await robust_edit_text(
+            query.message,
+            _build_image_request_text(
+                fsm_data.get("lora_name"),
+                from_compat_alias=context.user_data.get("in_conversation")
+                == "CUSTOM_VIDEO",
+                lang=getattr(context, "lang", "zh"),
+                use_end_frame=bool(fsm_data.get("use_end_frame")),
+                resolution=str(fsm_data.get("resolution") or ""),
+            ),
+            parse_mode="Markdown",
+        )
+        return ImageToVideoState.WAIT_IMAGE
+    else:
+        return ImageToVideoState.WAIT_LORA_SELECTION
+
+    await robust_edit_text(
+        query.message,
+        _build_initial_setup_message(
+            context,
+            fsm_data,
+            from_compat_alias=context.user_data.get("in_conversation")
+            == "CUSTOM_VIDEO",
+        ),
+        reply_markup=_build_initial_setup_keyboard(context, fsm_data),
+        parse_mode="Markdown",
+    )
+    return ImageToVideoState.WAIT_LORA_SELECTION
 
 
 async def handle_lora_selection(
@@ -352,13 +629,22 @@ async def handle_lora_selection(
         await query.edit_message_text(_t(context, "fsm.image_to_video.expired_alert"))
         return ConversationHandler.END
 
-    fsm_data["lora_name"] = lora_name
-
-    msg = _build_image_request_text(
-        lora_name, from_compat_alias=False, lang=getattr(context, "lang", "zh")
+    fsm_data["lora_name"] = (
+        lora_name if fsm_data.get("allow_lora_selection", True) else ""
     )
-    await robust_edit_text(query.message, msg, parse_mode="Markdown")
-    return ImageToVideoState.WAIT_IMAGE
+
+    await robust_edit_text(
+        query.message,
+        _build_initial_setup_message(
+            context,
+            fsm_data,
+            from_compat_alias=context.user_data.get("in_conversation")
+            == "CUSTOM_VIDEO",
+        ),
+        reply_markup=_build_initial_setup_keyboard(context, fsm_data),
+        parse_mode="Markdown",
+    )
+    return ImageToVideoState.WAIT_LORA_SELECTION
 
 
 async def _download_image_message(
@@ -413,15 +699,25 @@ async def receive_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
 
     fsm_data["image_path"] = local_path
     fsm_data["end_image_path"] = None
-    fsm_data["use_end_frame"] = False
+
+    if fsm_data.get("use_end_frame"):
+        await robust_reply_text(
+            message,
+            _t(context, "fsm.image_to_video.send_end_image"),
+            parse_mode="Markdown",
+        )
+        return ImageToVideoState.WAIT_END_IMAGE
 
     await robust_reply_text(
         message,
-        _t(context, "fsm.image_to_video.end_frame_choice"),
-        reply_markup=_build_end_frame_choice_keyboard(context),
+        _build_prompt_request_text(
+            context,
+            fsm_data,
+            received_key="fsm.image_to_video.start_image_received",
+        ),
         parse_mode="Markdown",
     )
-    return ImageToVideoState.WAIT_END_FRAME_CHOICE
+    return ImageToVideoState.WAIT_SETTINGS_AND_PROMPT
 
 
 async def choose_end_frame_mode(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -481,16 +777,13 @@ async def receive_end_image(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     fsm_data["end_image_path"] = local_path
     fsm_data["use_end_frame"] = True
 
-    reply_markup, _cost, msg_text = await _build_video_settings_view_model(
-        context=context,
-        user_id=user_id,
-        fsm_data=fsm_data,
-    )
-
     await robust_reply_text(
         message,
-        f"{_t(context, 'fsm.image_to_video.end_image_received')}\n\n{msg_text}",
-        reply_markup=reply_markup,
+        _build_prompt_request_text(
+            context,
+            fsm_data,
+            received_key="fsm.image_to_video.end_image_received",
+        ),
         parse_mode="Markdown",
     )
     return ImageToVideoState.WAIT_SETTINGS_AND_PROMPT
@@ -670,6 +963,10 @@ def _build_image_to_video_fsm_handler(
         entry_points=entry_points,
         states={
             ImageToVideoState.WAIT_LORA_SELECTION: [
+                CallbackQueryHandler(
+                    handle_initial_setup_selection,
+                    pattern=I2V_SETUP_ACTION_PATTERN,
+                ),
                 CallbackQueryHandler(handle_lora_selection, pattern="^lora_select_"),
                 MessageHandler(
                     (filters.TEXT | filters.COMMAND) & ~filters.Regex(r"^/cancel$"),

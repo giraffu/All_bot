@@ -49,6 +49,18 @@ def test_settings_callback_pattern_accepts_all_resolution_presets():
         warnings.filterwarnings("ignore", category=PTBUserWarning)
         handler = wan22_video_v2_fsm.get_wan22_video_v2_fsm_handler()
 
+    setup_callback = handler.states[wan22_video_v2_fsm.Wan22VideoV2State.WAIT_SETUP][0]
+    assert setup_callback.pattern.pattern == (
+        wan22_video_v2_fsm.WAN22_VIDEO_V2_SETUP_ACTION_PATTERN
+    )
+    setup_pattern = re.compile(wan22_video_v2_fsm.WAN22_VIDEO_V2_SETUP_ACTION_PATTERN)
+    assert setup_pattern.match("wan22v2_setup_mode_single")
+    assert setup_pattern.match("wan22v2_setup_mode_end")
+    assert setup_pattern.match("wan22v2_setup_confirm")
+    for preset_key in wan22_video_v2_fsm.WAN22_VIDEO_V2_RESOLUTION_PRESETS:
+        assert setup_pattern.match(f"wan22v2_setup_res_{preset_key}")
+    assert not setup_pattern.match("wan22v2_setup_res_fast")
+
     settings_callback = handler.states[wan22_video_v2_fsm.Wan22VideoV2State.WAIT_SETTINGS][0]
     assert settings_callback.pattern.pattern == (
         wan22_video_v2_fsm.WAN22_VIDEO_V2_SETTINGS_ACTION_PATTERN
@@ -103,7 +115,7 @@ async def test_start_wan22_video_v2_initializes_defaults(monkeypatch):
 
     result = await wan22_video_v2_fsm.start_wan22_video_v2(update, context)
 
-    assert result == wan22_video_v2_fsm.Wan22VideoV2State.WAIT_START_IMAGE
+    assert result == wan22_video_v2_fsm.Wan22VideoV2State.WAIT_SETUP
     assert context.user_data["in_conversation"] == wan22_video_v2_fsm.WAN22_VIDEO_V2_CONVERSATION_TAG
     assert context.user_data["wan22_video_v2_data"]["use_end_frame"] is False
     assert (
@@ -111,7 +123,171 @@ async def test_start_wan22_video_v2_initializes_defaults(monkeypatch):
         == wan22_video_v2_fsm.WAN22_VIDEO_V2_DEFAULT_RESOLUTION_PRESET
     )
     reply_mock.assert_awaited_once()
-    assert "T:fsm.wan22_video_v2.start" in reply_mock.await_args.args[1]
+    assert "T:fsm.wan22_video_v2.setup_text" in reply_mock.await_args.args[1]
+    keyboard = reply_mock.await_args.kwargs["reply_markup"]
+    assert keyboard.inline_keyboard[0][0].callback_data == "wan22v2_setup_mode_single"
+    assert keyboard.inline_keyboard[0][0].text.startswith("✅ ")
+    assert keyboard.inline_keyboard[0][1].callback_data == "wan22v2_setup_mode_end"
+    assert [
+        button.callback_data
+        for button in keyboard.inline_keyboard[1]
+    ] == [
+        "wan22v2_setup_res_preview",
+        "wan22v2_setup_res_standard",
+        "wan22v2_setup_res_hd",
+    ]
+    assert keyboard.inline_keyboard[2][0].callback_data == "wan22v2_setup_confirm"
+
+
+@pytest.mark.asyncio
+async def test_handle_initial_setup_action_updates_frame_mode_and_resolution(monkeypatch):
+    edit_mock = AsyncMock()
+    monkeypatch.setattr(wan22_video_v2_fsm, "robust_edit_text", edit_mock)
+
+    context = SimpleNamespace(
+        user_data={
+            "wan22_video_v2_data": {
+                "start_image_path": None,
+                "end_image_path": "/tmp/old-end.png",
+                "use_end_frame": False,
+                "resolution_preset": "preview",
+            }
+        },
+        lang="zh",
+        t=lambda key, **kwargs: f"T:{key}",
+    )
+
+    mode_query = SimpleNamespace(
+        data="wan22v2_setup_mode_end",
+        answer=AsyncMock(),
+        message=SimpleNamespace(),
+    )
+    mode_result = await wan22_video_v2_fsm.handle_initial_setup_action(
+        SimpleNamespace(callback_query=mode_query),
+        context,
+    )
+
+    assert mode_result == wan22_video_v2_fsm.Wan22VideoV2State.WAIT_SETUP
+    assert context.user_data["wan22_video_v2_data"]["use_end_frame"] is True
+    assert context.user_data["wan22_video_v2_data"]["end_image_path"] is None
+    mode_query.answer.assert_awaited_once()
+
+    res_query = SimpleNamespace(
+        data="wan22v2_setup_res_hd",
+        answer=AsyncMock(),
+        message=SimpleNamespace(),
+    )
+    res_result = await wan22_video_v2_fsm.handle_initial_setup_action(
+        SimpleNamespace(callback_query=res_query),
+        context,
+    )
+
+    assert res_result == wan22_video_v2_fsm.Wan22VideoV2State.WAIT_SETUP
+    assert context.user_data["wan22_video_v2_data"]["resolution_preset"] == "hd"
+    assert edit_mock.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_handle_initial_setup_confirm_requests_start_image(monkeypatch):
+    edit_mock = AsyncMock()
+    monkeypatch.setattr(wan22_video_v2_fsm, "robust_edit_text", edit_mock)
+
+    query = SimpleNamespace(
+        data="wan22v2_setup_confirm",
+        answer=AsyncMock(),
+        message=SimpleNamespace(),
+    )
+    update = SimpleNamespace(callback_query=query)
+    context = SimpleNamespace(
+        user_data={
+            "wan22_video_v2_data": {
+                "start_image_path": None,
+                "end_image_path": None,
+                "use_end_frame": True,
+                "resolution_preset": "standard",
+            }
+        },
+        lang="zh",
+        t=lambda key, **kwargs: f"T:{key}",
+    )
+
+    result = await wan22_video_v2_fsm.handle_initial_setup_action(update, context)
+
+    assert result == wan22_video_v2_fsm.Wan22VideoV2State.WAIT_START_IMAGE
+    query.answer.assert_awaited_once()
+    edit_mock.assert_awaited_once_with(
+        query.message,
+        "T:fsm.wan22_video_v2.send_start_after_setup",
+        parse_mode="Markdown",
+    )
+
+
+@pytest.mark.asyncio
+async def test_receive_start_image_single_frame_moves_to_prompt(monkeypatch):
+    reply_mock = AsyncMock()
+    download_mock = AsyncMock(return_value="/tmp/start.png")
+    monkeypatch.setattr(wan22_video_v2_fsm, "robust_reply_text", reply_mock)
+    monkeypatch.setattr(wan22_video_v2_fsm, "_download_image_to_temp", download_mock)
+
+    message = SimpleNamespace(
+        document=None,
+        photo=[SimpleNamespace(file_id="start-file")],
+    )
+    update = SimpleNamespace(message=message, callback_query=None)
+    context = SimpleNamespace(
+        user_data={
+            "wan22_video_v2_data": {
+                "start_image_path": None,
+                "end_image_path": None,
+                "use_end_frame": False,
+                "resolution_preset": "preview",
+            }
+        },
+        t=lambda key, **kwargs: f"T:{key}",
+    )
+
+    result = await wan22_video_v2_fsm.receive_start_image(update, context)
+
+    assert result == wan22_video_v2_fsm.Wan22VideoV2State.WAIT_PROMPT
+    assert context.user_data["wan22_video_v2_data"]["start_image_path"] == "/tmp/start.png"
+    download_mock.assert_awaited_once()
+    assert reply_mock.await_args_list[0].args[1] == "T:fsm.wan22_video_v2.start_image_received"
+    assert reply_mock.await_args_list[1].args[1] == "T:fsm.wan22_video_v2.send_prompt"
+
+
+@pytest.mark.asyncio
+async def test_receive_start_image_end_frame_mode_waits_for_end_image(monkeypatch):
+    reply_mock = AsyncMock()
+    download_mock = AsyncMock(return_value="/tmp/start.png")
+    monkeypatch.setattr(wan22_video_v2_fsm, "robust_reply_text", reply_mock)
+    monkeypatch.setattr(wan22_video_v2_fsm, "_download_image_to_temp", download_mock)
+
+    message = SimpleNamespace(
+        document=None,
+        photo=[SimpleNamespace(file_id="start-file")],
+    )
+    update = SimpleNamespace(message=message, callback_query=None)
+    context = SimpleNamespace(
+        user_data={
+            "wan22_video_v2_data": {
+                "start_image_path": None,
+                "end_image_path": None,
+                "use_end_frame": True,
+                "resolution_preset": "preview",
+            }
+        },
+        t=lambda key, **kwargs: f"T:{key}",
+    )
+
+    result = await wan22_video_v2_fsm.receive_start_image(update, context)
+
+    assert result == wan22_video_v2_fsm.Wan22VideoV2State.WAIT_END_IMAGE
+    assert context.user_data["wan22_video_v2_data"]["start_image_path"] == "/tmp/start.png"
+    reply_mock.assert_awaited_once_with(
+        message,
+        "T:fsm.wan22_video_v2.send_end_image",
+        parse_mode="Markdown",
+    )
 
 
 @pytest.mark.asyncio

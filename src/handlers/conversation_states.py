@@ -44,6 +44,7 @@ class ImageToVideoState(IntEnum):
 class Wan22VideoV2State(IntEnum):
     """图生视频 v2 流程状态枚举"""
 
+    WAIT_SETUP = auto()
     WAIT_START_IMAGE = auto()
     WAIT_END_FRAME_CHOICE = auto()
     WAIT_END_IMAGE = auto()

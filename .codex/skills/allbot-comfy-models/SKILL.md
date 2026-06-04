@@ -76,10 +76,11 @@ description: "处理图生图/图生视频的附加模型(LoRA/ControlNet)配置
 ### 2. Bot 层：更新用户交互菜单 (UI & FSM)
 - **文件定位**：`src/handlers/fsm/image_to_video_fsm.py`
 - **实施步骤**：
-  - 找到存储模型映射的常量字典 `LORA_MODELS`。
+  - 找到存储模型映射的常量字典 `VIDEO_LORA_MODELS`（定义在 `src/lora_catalog.py`，由 `image_to_video_fsm.py` 渲染）。
   - 在字典中追加新模型配置：将**模型前缀名**（即上述的 `{lora_name}`，如 `"Dance"`）作为键，映射到用户可见的**中文按钮标签**（如 `"跳舞"`）。
-  - 保存后，Telegram 机器人中的【图生视频(附加模型)】菜单会自动渲染出这个新按钮。
-  - 旧入口不再提供 8s/10s 选择；菜单与 Web 投稿应用都应固定 5s，并展示 v2 三档分辨率。
+  - 保存后，Telegram 机器人中的【图生视频】入口会在启动时展示同屏设置面板：第一组为附加模型按钮，第二组为“单图生成/添加终止帧”，第三组为 `preview/standard/hd` 分辨率档位，第四组为确认。
+  - 用户确认后再上传图片：单图模式收 1 张起始图，首尾帧模式依次收起始图和终止图，然后发送提示词提交。
+  - 旧入口不再提供 8s/10s 选择；菜单与 Web 投稿应用都应固定 5s，并展示 v2 三档分辨率。`/custom_video` 兼容入口应保持无 LoRA，避免把带 LoRA 的任务写成 `custom_video` 历史类型。
 
 ### 3. Backend 层：参数网关透传 (API Routing)
 - **文件定位**：`backend/app/models.py` 和 `backend/app/main_simple_task_routes.py`。
@@ -101,8 +102,8 @@ description: "处理图生图/图生视频的附加模型(LoRA/ControlNet)配置
   - > ⚠️ **节点硬编码警告**：如果后续重导 `Wan22AioV81.json`，必须复核 `2616`、`2617`、`26`、`18`、`2612`、`23`、`24`、`2368`、`2371` 是否仍满足当前补丁与 mappings 逻辑，否则主模型、LoRA、分辨率或首尾帧输入会失效。
 
 ### 5. 验证与发布 (Testing & Restart)
-- 上传好 `.safetensors` 模型文件后，重启 Bot 进程（以重载 `LORA_MODELS` 字典）。
-- 在 Telegram 中唤起【图生视频(附加模型)】菜单，点击新添加的动作按钮。
+- 上传好 `.safetensors` 模型文件后，重启 Bot 进程（以重载 `VIDEO_LORA_MODELS` 字典）。
+- 在 Telegram 中唤起【图生视频】菜单，确认新添加的动作按钮出现在首个设置区；选择模型、帧模式和分辨率后点击“确定”。
 - 观察 Worker (Agent) 的控制台日志，确认 `workflow_task_patchers.py` 成功将 `{lora_name}_high_noise.safetensors` 和 `{lora_name}_low_noise.safetensors` 注入到了 `26` 和 `18` 节点中，且 ComfyUI 能够正常加载文件并启动推理。
 - 同时验证旧投稿一键应用：prompt 恢复、`[模型: xxx]` 能解析为 `lora_name`、`1024p` 映射 `hd`、固定 5s、消耗 30 灵石。
 

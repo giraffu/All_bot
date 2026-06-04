@@ -880,8 +880,238 @@ async def test_start_image_to_video_english_lora_buttons(monkeypatch):
 
     assert result == image_to_video_fsm.ImageToVideoState.WAIT_LORA_SELECTION
     keyboard = reply_mock.await_args.kwargs["reply_markup"]
-    assert keyboard.inline_keyboard[0][0].text == "None"
+    assert keyboard.inline_keyboard[0][0].text == "✅ None"
     assert keyboard.inline_keyboard[0][1].text == "Breast Growth"
+    assert len(keyboard.inline_keyboard[0]) == 4
+    assert len(keyboard.inline_keyboard[1]) == 4
+    assert [
+        button.callback_data
+        for row in keyboard.inline_keyboard[:2]
+        for button in row
+    ] == [
+        "i2v_setup_lora_",
+        "i2v_setup_lora_BreastGrow",
+        "i2v_setup_lora_BreastInsertion",
+        "i2v_setup_lora_Cum",
+        "i2v_setup_lora_Cunilingus",
+        "i2v_setup_lora_Flatchested",
+        "i2v_setup_lora_Footjob",
+        "i2v_setup_lora_Insertion",
+    ]
+    assert [
+        button.callback_data
+        for button in keyboard.inline_keyboard[2]
+    ] == [
+        image_to_video_fsm.I2V_SETUP_MODE_SINGLE,
+        image_to_video_fsm.I2V_SETUP_MODE_END,
+    ]
+    assert [
+        button.callback_data
+        for button in keyboard.inline_keyboard[3]
+    ] == [
+        "i2v_setup_res_preview",
+        "i2v_setup_res_standard",
+        "i2v_setup_res_hd",
+    ]
+    assert keyboard.inline_keyboard[4][0].callback_data == image_to_video_fsm.I2V_SETUP_CONFIRM
+
+
+@pytest.mark.asyncio
+async def test_image_to_video_initial_setup_updates_all_choices_and_confirms(monkeypatch):
+    edit_mock = AsyncMock()
+    monkeypatch.setattr(image_to_video_fsm, "robust_edit_text", edit_mock)
+
+    query = SimpleNamespace(
+        data="i2v_setup_mode_end",
+        answer=AsyncMock(),
+        edit_message_text=AsyncMock(),
+        message=SimpleNamespace(),
+    )
+    update = SimpleNamespace(callback_query=query)
+    context = SimpleNamespace(
+        user_data={
+            "in_conversation": image_to_video_fsm.IMAGE_TO_VIDEO_CONVERSATION_TAG,
+            "image_to_video_data": {
+                "resolution": "preview",
+                "duration": "5s",
+                "image_path": None,
+                "end_image_path": None,
+                "use_end_frame": False,
+                "lora_name": "",
+            },
+        },
+        lang="zh",
+    )
+
+    result = await image_to_video_fsm.handle_initial_setup_selection(update, context)
+
+    assert result == image_to_video_fsm.ImageToVideoState.WAIT_LORA_SELECTION
+    assert context.user_data["image_to_video_data"]["use_end_frame"] is True
+    assert edit_mock.await_args.kwargs["reply_markup"].inline_keyboard[2][1].text.startswith("✅")
+
+    query.data = "i2v_setup_res_hd"
+    await image_to_video_fsm.handle_initial_setup_selection(update, context)
+    assert context.user_data["image_to_video_data"]["resolution"] == "hd"
+
+    query.data = "i2v_setup_lora_BreastGrow"
+    await image_to_video_fsm.handle_initial_setup_selection(update, context)
+    assert context.user_data["image_to_video_data"]["lora_name"] == "BreastGrow"
+
+    query.data = image_to_video_fsm.I2V_SETUP_CONFIRM
+    result = await image_to_video_fsm.handle_initial_setup_selection(update, context)
+
+    assert result == image_to_video_fsm.ImageToVideoState.WAIT_IMAGE
+    assert "起始图片" in edit_mock.await_args.args[1]
+    query.answer.assert_awaited()
+
+
+@pytest.mark.asyncio
+async def test_image_to_video_receive_single_image_requests_prompt(monkeypatch):
+    reply_mock = AsyncMock()
+    download_mock = AsyncMock(return_value="/tmp/start.png")
+    monkeypatch.setattr(image_to_video_fsm, "robust_reply_text", reply_mock)
+    monkeypatch.setattr(
+        image_to_video_fsm,
+        "download_telegram_file_to_fsm_temp",
+        download_mock,
+    )
+
+    message = SimpleNamespace(
+        document=None,
+        photo=[SimpleNamespace(file_id="photo-file-id")],
+        chat_id=10001,
+    )
+    update = SimpleNamespace(
+        effective_user=_build_user(),
+        message=message,
+    )
+    context = SimpleNamespace(
+        bot=SimpleNamespace(get_file=AsyncMock(return_value=SimpleNamespace())),
+        user_data={
+            "image_to_video_data": {
+                "resolution": "standard",
+                "duration": "5s",
+                "image_path": None,
+                "end_image_path": None,
+                "use_end_frame": False,
+                "lora_name": "",
+            }
+        },
+        lang="zh",
+    )
+
+    result = await image_to_video_fsm.receive_image(update, context)
+
+    assert result == image_to_video_fsm.ImageToVideoState.WAIT_SETTINGS_AND_PROMPT
+    assert context.user_data["image_to_video_data"]["image_path"] == "/tmp/start.png"
+    assert context.user_data["image_to_video_data"]["end_image_path"] is None
+    reply_mock.assert_awaited_once()
+    assert "已收到起始图片" in reply_mock.await_args.args[1]
+    assert "请直接发送提示词" in reply_mock.await_args.args[1]
+    assert reply_mock.await_args.kwargs == {"parse_mode": "Markdown"}
+
+
+@pytest.mark.asyncio
+async def test_image_to_video_receive_start_image_in_end_frame_mode_waits_for_end_image(
+    monkeypatch,
+):
+    reply_mock = AsyncMock()
+    monkeypatch.setattr(image_to_video_fsm, "robust_reply_text", reply_mock)
+    monkeypatch.setattr(
+        image_to_video_fsm,
+        "download_telegram_file_to_fsm_temp",
+        AsyncMock(return_value="/tmp/start.png"),
+    )
+
+    message = SimpleNamespace(
+        document=None,
+        photo=[SimpleNamespace(file_id="photo-file-id")],
+        chat_id=10001,
+    )
+    update = SimpleNamespace(
+        effective_user=_build_user(),
+        message=message,
+    )
+    context = SimpleNamespace(
+        bot=SimpleNamespace(get_file=AsyncMock(return_value=SimpleNamespace())),
+        user_data={
+            "image_to_video_data": {
+                "resolution": "hd",
+                "duration": "5s",
+                "image_path": None,
+                "end_image_path": None,
+                "use_end_frame": True,
+                "lora_name": "BreastGrow",
+            }
+        },
+        lang="zh",
+    )
+
+    result = await image_to_video_fsm.receive_image(update, context)
+
+    assert result == image_to_video_fsm.ImageToVideoState.WAIT_END_IMAGE
+    assert context.user_data["image_to_video_data"]["use_end_frame"] is True
+    assert "终止图片" in reply_mock.await_args.args[1]
+
+
+@pytest.mark.asyncio
+async def test_image_to_video_receive_end_image_requests_prompt(monkeypatch):
+    reply_mock = AsyncMock()
+    monkeypatch.setattr(image_to_video_fsm, "robust_reply_text", reply_mock)
+    monkeypatch.setattr(
+        image_to_video_fsm,
+        "download_telegram_file_to_fsm_temp",
+        AsyncMock(return_value="/tmp/end.png"),
+    )
+
+    message = SimpleNamespace(
+        document=None,
+        photo=[SimpleNamespace(file_id="photo-file-id")],
+        chat_id=10001,
+    )
+    update = SimpleNamespace(
+        effective_user=_build_user(),
+        message=message,
+    )
+    context = SimpleNamespace(
+        bot=SimpleNamespace(get_file=AsyncMock(return_value=SimpleNamespace())),
+        user_data={
+            "image_to_video_data": {
+                "resolution": "hd",
+                "duration": "5s",
+                "image_path": "/tmp/start.png",
+                "end_image_path": None,
+                "use_end_frame": True,
+                "lora_name": "BreastGrow",
+            }
+        },
+        lang="zh",
+    )
+
+    result = await image_to_video_fsm.receive_end_image(update, context)
+
+    assert result == image_to_video_fsm.ImageToVideoState.WAIT_SETTINGS_AND_PROMPT
+    assert context.user_data["image_to_video_data"]["end_image_path"] == "/tmp/end.png"
+    assert "已收到终止图片" in reply_mock.await_args.args[1]
+    assert "请直接发送提示词" in reply_mock.await_args.args[1]
+
+
+@pytest.mark.asyncio
+async def test_start_custom_video_setup_keeps_lora_fixed_to_none(monkeypatch):
+    reply_mock = AsyncMock()
+    monkeypatch.setattr("src.utils.is_maintenance_mode", lambda: False)
+    monkeypatch.setattr(image_to_video_fsm, "robust_reply_text", reply_mock)
+
+    update = _build_update_with_message(text="🎬 自定义图生视频")
+    context = SimpleNamespace(user_data={}, lang="zh")
+
+    result = await image_to_video_fsm.start_custom_video(update, context)
+
+    assert result == image_to_video_fsm.ImageToVideoState.WAIT_LORA_SELECTION
+    assert context.user_data["image_to_video_data"]["allow_lora_selection"] is False
+    keyboard = reply_mock.await_args.kwargs["reply_markup"]
+    assert len(keyboard.inline_keyboard[0]) == 1
+    assert keyboard.inline_keyboard[0][0].callback_data == "i2v_setup_lora_"
 
 
 @pytest.mark.asyncio

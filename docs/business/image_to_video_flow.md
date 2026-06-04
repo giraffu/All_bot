@@ -15,7 +15,7 @@ sequenceDiagram
     participant Store as MinIO
 
     User->>FSM: 发送图生视频命令
-    FSM-->>User: 提示上传图片、选择设置、输入提示词
+    FSM-->>User: 同屏选择模型/帧模式/分辨率，再上传图片并输入提示词
     FSM->>Entry: 进入视频 entrypoint
     Entry->>Flow: 组装 BotTaskFlowContext 五段式上下文
     Flow->>Core: process_and_submit_task(...)
@@ -35,7 +35,8 @@ sequenceDiagram
 - 旧图生视频 `custom_video` / `video_lora` 在执行面新增为 `image_to_video`，与 `wan22_video_v2` 共用 `Wan22AioV81.json`；历史、投稿和展示类型仍保留 `custom_video` / `video_lora`，不改写成 v2。
 - Wan22 AIO 视频配置事实源是 `src.domain_config.wan22_aio_video`：旧图生视频 `custom_video` / `video_lora` -> execution `image_to_video` -> `legacy_image_to_video` profile；图生视频 v2 `wan22_video_v2` -> execution `wan22_video_v2` -> `wan22_video_v2` profile。两者共享 worker workflow，但不是同一个用户功能。
 - 旧图生视频固定 5 秒，分辨率与计费对齐 v2 三档：`preview` / `standard` / `hd`。历史投稿中的 `512p` / `720p` / `1024p` 会分别映射到这三档，旧 duration 一律忽略为 5 秒。
-- `image_to_video` 和 `wan22_video_v2` 通过 `wan22_model_profile` 区分主模型：旧入口使用 legacy high/low 主模型，v2 使用 snatchkiss high/low 主模型。`video_lora` 仍保留旧 LoRA 前缀选择，`custom_video` 与 v2 会清空额外 LoRA 槽。
+- Telegram `image_to_video_fsm.py` 的旧图生视频主入口会先展示同屏设置面板：附加模型、单图/首尾帧、`preview/standard/hd` 分辨率与确认按钮。确认后单图模式收 1 张起始图，首尾帧模式依次收起始图与终止图，然后要求发送提示词提交。
+- `image_to_video` 和 `wan22_video_v2` 通过 `wan22_model_profile` 区分主模型：旧入口使用 legacy high/low 主模型，v2 使用 snatchkiss high/low 主模型。`video_lora` 仍保留旧 LoRA 前缀选择，`custom_video` 兼容入口保持无 LoRA，v2 会清空额外 LoRA 槽。
 - Web `wan22_video_v2`、`custom_video`、`video_lora` 已支持与 Bot 对齐的多段链：历史与 `/api/tasks/{task_id}/result` 会返回 `last_frame` 与 `result_meta`，并新增 `/api/users/history/{task_id}/wan22-chain`、`/api/users/history/{task_id}/wan22-chain/stitch` 供练功房继续扩展、分段重生成和整链拼接；其中整链拼接现在会把拼接后 MP4 上传存储，并新增一条 `History` 记录返回给前端，而不是只回下载流。
 
 ## 二、 数据流向
@@ -87,10 +88,10 @@ graph TD
 
 ## 三、 分层说明
 ### 3.1 交互层
-- `ltx_video_fsm.py`、`wan22_video_v2_fsm.py`、`image_to_video_fsm.py`、`quick_video_fsm.py` 等负责分步收集参数。
+- `ltx_video_fsm.py`、`wan22_video_v2_fsm.py`、`image_to_video_fsm.py`、`quick_video_fsm.py` 等负责收集图片、提示词与参数；其中旧图生视频会在上传图片前用同屏设置面板收集附加模型、帧模式和分辨率，`wan22_video_v2` 主入口会先同屏选择单图/首尾帧和分辨率，再按所选模式收 1 张或 2 张图片。
 - 全局菜单打断通过 `is_global_menu_command(...)` 统一识别。
 - 当前主 FSM 普遍使用 `conversation_timeout=300`。
-- `wan22_video_v2_fsm.py` 现已收口为“起始帧 + 可选终止帧 + prompt/negative prompt”输入；是否启用首尾帧由是否上传第二张图自动判断，尾帧提取固定开启且仅作存储，不再开放 `color_match`、`perfect_loop`、`upscale`、`extract_last_frame` 给用户。
+- `wan22_video_v2_fsm.py` 现已收口为“启动设置面板 + 起始帧 + 可选终止帧 + prompt/negative prompt”输入；主入口先选择单图或首尾帧、分辨率档位，确认后再根据帧模式决定收 1 张或 2 张图片。续写入口仍会预载上一段尾帧，再沿用兼容的单图/首尾帧选择。尾帧提取固定开启且仅作存储，不再开放 `color_match`、`perfect_loop`、`upscale`、`extract_last_frame` 给用户。
 
 ### 3.2 Bot 任务流层
 - 视频任务入口主要位于：
