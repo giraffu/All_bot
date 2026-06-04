@@ -35,10 +35,12 @@ describe('DetailApplyActions', () => {
         inline: true,
         compactApply: true,
         applyLabel: '一键应用',
+        hintText: '移动端不展示长提示',
       },
     })
 
     expect(wrapper.text()).toContain('一键应用')
     expect(wrapper.text()).not.toContain('复制提示词')
+    expect(wrapper.text()).not.toContain('移动端不展示长提示')
   })
 })

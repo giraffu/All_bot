@@ -211,7 +211,7 @@ const mountHarness = () => {
   })
 }
 
-const openDetailAndFindApplyButton = async () => {
+const openSubmissionsDetail = async () => {
   const wrapper = mountHarness()
   await flushPromises()
   await flushPromises()
@@ -220,9 +220,17 @@ const openDetailAndFindApplyButton = async () => {
   await flushPromises()
   await flushPromises()
 
-  const applyButton = wrapper
+  return wrapper
+}
+
+const findApplyButton = (wrapper: ReturnType<typeof mountHarness>) =>
+  wrapper
     .findAll('button')
     .find(button => button.text().includes('一键应用'))
+
+const openDetailAndFindApplyButton = async () => {
+  const wrapper = await openSubmissionsDetail()
+  const applyButton = findApplyButton(wrapper)
 
   expect(applyButton).toBeTruthy()
 
@@ -265,7 +273,7 @@ describe('MySubmissionsPanel workbench flow', () => {
     expect(hostModal?.attributes('data-open')).toBe('true')
   })
 
-  it('disables template apply for stitched Wan22 submissions', async () => {
+  it('hides template apply for stitched Wan22 submissions', async () => {
     primeSubmissionsApi({
       items: [{
         ...samplePost,
@@ -279,13 +287,11 @@ describe('MySubmissionsPanel workbench flow', () => {
       }]
     })
 
-    const { applyButton } = await openDetailAndFindApplyButton()
+    const wrapper = await openSubmissionsDetail()
 
-    expect(applyButton.attributes('disabled')).toBeDefined()
-
-    await applyButton.trigger('click')
-    await flushPromises()
-
+    expect(wrapper.text()).toContain('删除')
+    expect(wrapper.text()).toContain('下架')
+    expect(findApplyButton(wrapper)).toBeUndefined()
     expect(
       apiGetMock.mock.calls.some(([url]) => String(url).includes('apply-context'))
     ).toBe(false)

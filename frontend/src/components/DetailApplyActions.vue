@@ -35,25 +35,27 @@ const emit = defineEmits<{
 </script>
 
 <template>
-  <div :class="inline ? 'flex space-x-2' : 'space-y-4'">
-    <PromptCopyButton
-      v-if="showCopy"
-      :full-width="!inline"
-      :compact="compactCopy"
-      :label="copyLabel"
-      @click="emit('copy')"
-    />
-    <TemplateApplyButton
-      :full-width="!inline"
-      :compact="compactApply"
-      :loading="applyLoading"
-      :disabled="applyDisabled"
-      :label="applyLabel"
-      :loading-label="applyLoadingLabel"
-      @click="emit('apply')"
-    />
+  <div :class="inline ? 'flex flex-col items-end gap-1 min-w-0' : 'space-y-4'">
+    <div :class="inline ? 'flex items-center gap-2 min-w-0' : 'space-y-4'">
+      <PromptCopyButton
+        v-if="showCopy"
+        :full-width="!inline"
+        :compact="compactCopy"
+        :label="copyLabel"
+        @click="emit('copy')"
+      />
+      <TemplateApplyButton
+        :full-width="!inline"
+        :compact="compactApply"
+        :loading="applyLoading"
+        :disabled="applyDisabled"
+        :label="applyLabel"
+        :loading-label="applyLoadingLabel"
+        @click="emit('apply')"
+      />
+    </div>
     <p
-      v-if="hintText"
+      v-if="hintText && !inline"
       class="detail-apply-hint text-center text-xs mt-3"
     >
       {{ hintText }}

@@ -79,7 +79,6 @@ const {
   applying,
   handleApply,
   currentTemplateApplyDisabledReason,
-  currentTemplateApplyDisabledMessage,
   currentDetailMedia,
   formatTag,
   copyPrompt,
@@ -97,19 +96,22 @@ const {
     return state === 'canceled' ? t('my_notes.dislike_removed') : t('my_notes.dislike_added')
   },
 })
+const currentTemplateApplySupported = computed(
+  () => currentTemplateApplyDisabledReason.value === null,
+)
 const submissionDetailStandardActions = computed(() => ({
   showDesktopReaction: true,
-  showDesktopApply: true,
+  showDesktopApply: currentTemplateApplySupported.value,
   showDesktopCopy: true,
   showMobileReaction: true,
-  showMobileApply: true,
+  showMobileApply: currentTemplateApplySupported.value,
   showMobileCopy: true,
   desktopApplyPlacement: 'after' as const,
   desktopApplyInline: true,
   applyLabel: t('gallery.modal.apply_btn'),
   applyLoading: applying.value,
-  applyDisabled: currentTemplateApplyDisabledReason.value !== null,
-  applyHint: currentTemplateApplyDisabledMessage.value,
+  applyDisabled: false,
+  applyHint: '',
   copyLabel: t('my_posts.copy_prompt'),
   onLike: () => {
     if (currentPost.value) {
@@ -167,7 +169,7 @@ const {
   commentsSectionClass:
     'mt-6 flex flex-col min-h-[200px] lg:flex-1 lg:max-h-none lg:overflow-hidden border-t border-slate-700 lg:border-slate-400/30 pt-4',
   mobileLeftClass: 'flex items-center gap-4',
-  mobileRightClass: 'ml-2',
+  mobileRightClass: 'ml-2 shrink-0',
 })
 
 const { navigateToPage } = usePagedScrollNavigation({
@@ -344,7 +346,10 @@ watch(
       </template>
 
       <template #after-comments-extra="{ post }">
-        <div class="lg:hidden mt-auto pt-6 pb-2">
+        <div
+          v-if="currentTemplateApplySupported"
+          class="lg:hidden mt-auto pt-6 pb-2"
+        >
           <SubmissionManageButtons
             compact
             :is-active="post.is_active"
@@ -355,6 +360,20 @@ watch(
             @delete="deletePost(post)"
           />
         </div>
+      </template>
+
+      <template #mobile-right-extra="{ post }">
+        <SubmissionManageButtons
+          v-if="!currentTemplateApplySupported"
+          compact
+          class="w-[148px] max-w-[42vw] shrink-0"
+          :is-active="post.is_active"
+          :on-shelf-label="t('my_posts.put_on_shelf')"
+          :off-shelf-label="t('my_posts.put_off_shelf')"
+          :delete-label="t('my_posts.delete')"
+          @toggle="toggleStatus(post)"
+          @delete="deletePost(post)"
+        />
       </template>
 
     </GalleryDetailModal>

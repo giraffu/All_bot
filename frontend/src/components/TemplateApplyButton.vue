@@ -29,7 +29,7 @@ const emit = defineEmits<{
     type="button"
     :disabled="loading || disabled"
     :class="compact
-      ? `template-apply-button-compact px-5 py-2 rounded-full font-bold text-sm shadow-lg flex items-center ${fullWidth ? 'w-full justify-center' : ''}`
+      ? `template-apply-button-compact px-5 py-2 rounded-full font-bold text-sm shadow-lg flex items-center whitespace-nowrap ${fullWidth ? 'w-full justify-center' : 'shrink-0'}`
       : `template-apply-button rounded-xl font-bold text-lg transition-all transform hover:scale-[1.02] flex items-center justify-center relative overflow-hidden group ${fullWidth ? 'w-full py-4' : 'flex-1 py-4'}`
     "
     @click="emit('click')"
