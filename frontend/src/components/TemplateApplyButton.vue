@@ -4,6 +4,7 @@ import { Wand2 } from 'lucide-vue-next'
 withDefaults(
   defineProps<{
     loading?: boolean
+    disabled?: boolean
     compact?: boolean
     label: string
     loadingLabel?: string
@@ -11,6 +12,7 @@ withDefaults(
   }>(),
   {
     loading: false,
+    disabled: false,
     compact: false,
     loadingLabel: '...',
     fullWidth: false,
@@ -25,7 +27,7 @@ const emit = defineEmits<{
 <template>
   <button
     type="button"
-    :disabled="loading"
+    :disabled="loading || disabled"
     :class="compact
       ? `template-apply-button-compact px-5 py-2 rounded-full font-bold text-sm shadow-lg flex items-center ${fullWidth ? 'w-full justify-center' : ''}`
       : `template-apply-button rounded-xl font-bold text-lg transition-all transform hover:scale-[1.02] flex items-center justify-center relative overflow-hidden group ${fullWidth ? 'w-full py-4' : 'flex-1 py-4'}`

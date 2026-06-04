@@ -85,6 +85,7 @@ sequenceDiagram
 - `GET /api/gallery/posts/{post_id}/apply-context` 会返回：
   - `source_post_id`
   - `prompt`
+  - `negative_prompt`
   - `lora_name`
   - `task_type`
   - `input_file` 与预签名 `input_file_url`
@@ -92,6 +93,8 @@ sequenceDiagram
   - `billing_resolution`
   - 宽高与媒体元数据
 - 旧图生视频 `custom_video` / `video_lora` 投稿应用时会把旧 `512p/720p/1024p` 归一为 Wan22 v2 档位 `preview/standard/hd`，并把历史 duration 固定恢复为 5 秒；`video_lora` 还会从历史 prompt 中的 `[模型: xxx]` 兼容解析 `lora_name`。
+- `wan22_video_v2` 单段投稿支持一键应用，回填正向提示词、`_wan22_context.wan22_negative_prompt`、`_wan22_context.wan22_resolution_preset` 和固定 5 秒，不复刻首尾帧或链式上下文。
+- 所有 Wan22 stitched 拼接记录（旧 `custom_video` / `video_lora` 与 `wan22_video_v2`）都不支持一键应用：列表/详情应返回 `template_apply_supported=false` 与 `template_apply_disabled_reason="wan22_stitched"`，apply-context 入口必须返回 400 防绕过。
 - 这已经是 Web workbench 模板应用的主入口，Telegram 内的老 `gallery_apply_fsm` 只应视为兼容路径。
 
 ### 4.6 媒体 URL 策略
@@ -105,6 +108,7 @@ sequenceDiagram
 - 投稿封禁属于用户能力控制，不得通过篡改 `allow_contribute`、`current_identity` 或 `user_group` 去模拟。
 - 用户级批量下架必须同时更新 `GalleryPost.is_active=False` 与投稿关联的 `History.is_public=False`，避免只隐藏列表但保留旧公开资源入口。
 - `apply-context` 必须从 `History` 取请求语义字段，不能只依赖帖子展示用的输出元数据。
+- `apply-context` 必须服务端拒绝 Wan22 stitched 拼接记录，不能只靠前端隐藏按钮。
 - 对象存储异常只能降级，不能阻断广场浏览主链路。
 
 ## 6. 测试关注面
@@ -112,7 +116,8 @@ sequenceDiagram
 - 并发点赞/点踩的一致性
 - 评论并发下架时的回滚与 404
 - `my-favorites` 过滤 like/apply 的正确性
-- apply-context 对 `requested_duration` / `billing_resolution` / `input_file_url` 的返回准确性
+- apply-context 对 `requested_duration` / `billing_resolution` / `negative_prompt` / `input_file_url` 的返回准确性
+- Wan22 v2 单段一键应用回填与 stitched 拼接记录禁用、400 拒绝
 - Dashboard 封禁投稿并批量下架时，用户封禁状态、帖子上下架状态和多条 `History.is_public` 同步
 
 ## 7. 文档维护口径

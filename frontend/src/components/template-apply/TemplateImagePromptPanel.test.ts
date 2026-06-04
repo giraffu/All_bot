@@ -164,6 +164,7 @@ const buildContext = (overrides: Record<string, unknown> = {}): TemplateApplyCon
   supportMode: 'workbench',
   sourcePostId: 91,
   prompt: 'preset prompt',
+  negativePrompt: null,
   loraName: 'qwen/YARN_1.0.safetensors',
   loraStrength: 0.3,
   loraItems: [],

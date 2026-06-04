@@ -8,6 +8,7 @@ from src.web_api.schemas.gallery_schema import PaginatedGalleryResponse
 from src.web_api.schemas.user_schema import PaginatedHistory
 from src.web_api.services.apply_context_service import (
     build_history_apply_context_response,
+    resolve_history_template_apply_disabled_reason,
 )
 from src.web_api.services.history_query_service import (
     build_gallery_post_map,
@@ -85,6 +86,9 @@ async def get_history_apply_context_payload(
     )
     if not history:
         raise HTTPException(status_code=404, detail="未找到原任务详情")
+    disabled_reason = resolve_history_template_apply_disabled_reason(history)
+    if disabled_reason:
+        raise HTTPException(status_code=400, detail=disabled_reason)
 
     return await build_history_apply_context_response(
         history=history,

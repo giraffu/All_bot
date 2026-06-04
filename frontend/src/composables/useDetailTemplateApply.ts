@@ -31,6 +31,8 @@ interface UseDetailTemplateApplyOptions<TPost extends DetailApplyTarget> {
   successMessageKey?: string
   errorMessageKey?: string
   ignoreNotFound?: boolean
+  isApplyDisabled?: (post: TPost) => boolean
+  getApplyDisabledMessage?: (post: TPost) => string
 }
 
 export function useDetailTemplateApply<TPost extends DetailApplyTarget>(
@@ -91,6 +93,12 @@ export function useDetailTemplateApply<TPost extends DetailApplyTarget>(
   const handleApply = async () => {
     const post = options.currentPost.value
     if (!post || applying.value) {
+      return
+    }
+    if (options.isApplyDisabled?.(post)) {
+      const disabledMessage = options.getApplyDisabledMessage?.(post)
+        || options.t('template_apply.disabled.unsupported')
+      message.warning(disabledMessage)
       return
     }
 

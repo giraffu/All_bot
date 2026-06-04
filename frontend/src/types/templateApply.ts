@@ -9,6 +9,7 @@ export type TemplateApplyTaskType =
   | 'face_video'
   | 'custom_video'
   | 'video_lora'
+  | 'wan22_video_v2'
   | 'ltx_video'
 
 export type TemplateApplySupportMode = 'workbench' | 'legacy' | 'unknown'
@@ -28,6 +29,7 @@ export interface RawApplyContextResponse {
   task_id?: unknown
   media_type?: unknown
   prompt?: unknown
+  negative_prompt?: unknown
   lora_name?: unknown
   lora_strength?: unknown
   lora_items?: unknown
@@ -54,6 +56,7 @@ export interface TemplateApplyContext {
   supportMode: TemplateApplySupportMode
   sourcePostId: number | null
   prompt: string | null
+  negativePrompt: string | null
   loraName: string | null
   loraStrength: number | null
   loraItems: Array<{ name: string; strength: number }>

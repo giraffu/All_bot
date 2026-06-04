@@ -27,6 +27,7 @@ interface DetailStandardActions {
   desktopApplyInline?: boolean
   applyLabel?: string
   applyLoading?: boolean
+  applyDisabled?: boolean
   applyLoadingLabel?: string
   applyHint?: string
   copyLabel?: string
@@ -221,6 +222,7 @@ const handleNewCommentInput = (event: Event) => {
               <DetailApplyActions
                 :apply-label="standardActions.applyLabel || title"
                 :apply-loading="standardActions.applyLoading"
+                :apply-disabled="standardActions.applyDisabled"
                 :apply-loading-label="standardActions.applyLoadingLabel"
                 :hint-text="standardActions.applyHint"
                 @apply="standardActions.onApply?.()"
@@ -266,6 +268,7 @@ const handleNewCommentInput = (event: Event) => {
                 :copy-label="standardActions.copyLabel || ''"
                 :apply-label="standardActions.applyLabel || title"
                 :apply-loading="standardActions.applyLoading"
+                :apply-disabled="standardActions.applyDisabled"
                 :apply-loading-label="standardActions.applyLoadingLabel"
                 :hint-text="standardActions.applyHint"
                 @copy="standardActions.onCopy?.()"
@@ -330,7 +333,9 @@ const handleNewCommentInput = (event: Event) => {
               compact-apply
               :apply-label="standardActions.applyLabel || title"
               :apply-loading="standardActions.applyLoading"
+              :apply-disabled="standardActions.applyDisabled"
               :apply-loading-label="standardActions.applyLoadingLabel"
+              :hint-text="standardActions.applyHint"
               @apply="standardActions.onApply?.()"
             />
           </slot>

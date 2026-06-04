@@ -14,7 +14,11 @@ from src.services.wan22_video_v2_extension_service import (
 )
 from src.services.wan22_video_v2_config import is_wan22_chain_history_task_type
 from src.web_api.common.utils import resolve_history_billing_resolution
+from src.web_api.presenters.media_presenter import extract_history_result_meta
 from src.web_api.schemas.gallery_schema import GalleryPostResponse
+from src.web_api.services.apply_context_service import (
+    resolve_history_template_apply_disabled_reason,
+)
 from src.web_api.services.gallery_media_resolver import resolve_gallery_post_media_urls
 
 logger = logging.getLogger(__name__)
@@ -120,6 +124,13 @@ async def build_post_responses(
         translated_tags = translate_tags_func(tags)
         prompt = history.prompt if history else None
         task_type_from_history = history.type if history else None
+        result_meta = extract_history_result_meta(
+            task_type=task_type_from_history,
+            extra_outputs=getattr(history, "extra_outputs", None),
+        )
+        template_apply_disabled_reason = (
+            resolve_history_template_apply_disabled_reason(history)
+        )
 
         url_result = urls_results[index]
         if isinstance(url_result, Exception):
@@ -164,6 +175,9 @@ async def build_post_responses(
                 is_active=post.is_active,
                 prompt=prompt,
                 task_type=task_type_from_history,
+                result_meta=result_meta,
+                template_apply_supported=template_apply_disabled_reason is None,
+                template_apply_disabled_reason=template_apply_disabled_reason,
                 has_liked=post.id in user_likes,
                 has_disliked=post.id in user_dislikes,
                 author_id=post.user_id,

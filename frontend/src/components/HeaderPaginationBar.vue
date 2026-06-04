@@ -7,12 +7,14 @@ const props = withDefaults(
     totalPages: number
     disabled?: boolean
     compact?: boolean
+    showJump?: boolean
     wrapperClass?: string
     innerClass?: string
   }>(),
   {
     disabled: false,
     compact: false,
+    showJump: false,
     wrapperClass: 'flex justify-center',
     innerClass: 'pagination-shell rounded-2xl px-3 py-2',
   },
@@ -31,6 +33,7 @@ const emit = defineEmits<{
         :total-pages="totalPages"
         :disabled="disabled"
         :compact="compact"
+        :show-jump="showJump"
         @change="emit('change', $event)"
       />
     </div>

@@ -274,6 +274,10 @@
     "invalid_context": "Template data is incomplete and cannot be opened right now.",
     "open_failed": "Failed to open the template workbench. Please try again later.",
     "unknown_task_type": "This template is not supported yet.",
+    "disabled": {
+      "wan22_stitched": "Stitched videos cannot be applied as templates. Please choose a single video segment.",
+      "unsupported": "This post cannot be applied as a template."
+    },
     "close": {
       "title": "Close Template Workbench",
       "confirm": "Close",
@@ -336,6 +340,7 @@
     "image_to_video": {
       "title_custom_video": "Img2Video",
       "title_video_lora": "Img2Video",
+      "title_wan22_video_v2": "Img2Video V2",
       "title_ltx_video": "High-Res Video",
       "current_page_desc": "Upload a base image and complete template fill-in plus video submission on this page.",
       "template_notice_complete": "The original prompt, resolution, and duration have been restored from the template. You only need to upload the base image.",
@@ -760,6 +765,8 @@
       "single_frame_confirmed": "✅ Single-frame mode selected.",
       "end_image_received": "✅ End frame received.",
       "send_prompt": "**Next:** send the **positive prompt**.",
+      "regenerate_prompt": "🔁 Current segment context is loaded.\n\nSend a new **positive prompt** to regenerate this segment, or tap the button below to keep the original prompt.\n\n**Original prompt**\n`{prompt}`",
+      "use_original_prompt": "Use Original Prompt",
       "send_negative_prompt": "**Next:** send the **negative prompt**.\n\nIf you do not need one, tap the button below to skip it.",
       "extension_start": "✨ The **last frame** from the previous video is loaded as the new start frame.\n\n- Resolution preset is kept as: {resolution_preset}\n- The positive/negative prompt flow stays the same\n\n**Next:** choose **single-frame** or **start/end-frame** mode for this segment.",
       "skip_negative_prompt": "Skip Negative Prompt",
@@ -771,8 +778,10 @@
       "status_no": "Off",
       "no_negative_prompt": "None",
       "settings_text": "🎬 **Img2Video V2 Settings**\n\n- First/last frame mode: {use_end_frame}\n- End frame ready: {end_frame_ready}\n- Resolution preset: {resolution_preset}\n- Fixed duration: {duration}\n- Estimated cost: {cost} credits\n\n**Positive prompt**\n`{prompt}`\n\n**Negative prompt**\n`{negative_prompt}`\n\nTap Start Generation when ready.",
+      "legacy_settings_text": "🎬 **Img2Video Settings**\n\n- First/last frame mode: {use_end_frame}\n- End frame ready: {end_frame_ready}\n- Resolution preset: {resolution_preset}\n- Fixed duration: {duration}\n- Estimated cost: {cost} credits\n\n**Positive prompt**\n`{prompt}`\n\n**Negative prompt**\n`{negative_prompt}`\n\nTap Start Generation when ready.",
       "missing_end_image": "First/last frame mode is enabled. Please upload the end frame first.",
       "submitting": "🚀 Submitting the Img2Video V2 task (cost: {cost} credits). Please wait...",
+      "submitting_legacy": "🚀 Submitting the Img2Video task (cost: {cost} credits). Please wait...",
       "expired_alert": "The interaction expired or the task was submitted. Please start again."
     },
     "quick_image": {

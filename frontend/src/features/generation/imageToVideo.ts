@@ -43,6 +43,7 @@ export const normalizeWan22VideoV2ResolutionPreset = (
 }
 
 export type UnifiedImageToVideoTaskType = 'custom_video' | 'video_lora'
+export type Wan22TemplateVideoTaskType = UnifiedImageToVideoTaskType | 'wan22_video_v2'
 
 export type ImageToVideoLoraOption = {
   value: string
@@ -88,6 +89,11 @@ export const isUnifiedImageToVideoTaskType = (
   taskType: string,
 ): taskType is UnifiedImageToVideoTaskType =>
   taskType === 'custom_video' || taskType === 'video_lora'
+
+export const isWan22TemplateVideoTaskType = (
+  taskType: string,
+): taskType is Wan22TemplateVideoTaskType =>
+  taskType === 'wan22_video_v2' || isUnifiedImageToVideoTaskType(taskType)
 
 export const getDefaultImageToVideoLoraSelection = (taskType: string): string =>
   taskType === 'video_lora'
@@ -177,6 +183,10 @@ export const getImageToVideoRequestTaskType = (
 ): string => {
   if (taskType === 'ltx_video') {
     return 'ltx_video'
+  }
+
+  if (taskType === 'wan22_video_v2') {
+    return 'wan22_video_v2'
   }
 
   if (!isUnifiedImageToVideoTaskType(taskType)) {

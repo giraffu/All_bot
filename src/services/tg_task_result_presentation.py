@@ -16,6 +16,37 @@ from src.constants import (
 from src.services.wan22_video_v2_config import is_wan22_chain_history_task_type
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
+WAN22_EXTEND_CALLBACK_PREFIX = "wan22v2_extend"
+WAN22_REGENERATE_CALLBACK_PREFIX = "wan22v2_regenerate"
+WAN22_STITCH_CALLBACK_PREFIX = "wan22v2_stitch_chain"
+GALLERY_SUBMIT_CALLBACK_PREFIX = "submit_gallery_"
+
+
+def build_task_bound_callback_data(prefix: str, task_id: str) -> str:
+    normalized_task_id = str(task_id or "").strip()
+    if not normalized_task_id:
+        return prefix
+    return f"{prefix}:{normalized_task_id}"
+
+
+def resolve_task_id_from_callback_data(callback_data: str | None, prefix: str) -> str:
+    normalized_data = str(callback_data or "").strip()
+    token = f"{prefix}:"
+    if not normalized_data.startswith(token):
+        return ""
+    return normalized_data.removeprefix(token).strip()
+
+
+def resolve_task_id_from_reply_markup(reply_markup: InlineKeyboardMarkup | None) -> str:
+    if reply_markup is None:
+        return ""
+    for row in getattr(reply_markup, "inline_keyboard", []) or []:
+        for button in row:
+            callback_data = str(getattr(button, "callback_data", "") or "").strip()
+            if callback_data.startswith(GALLERY_SUBMIT_CALLBACK_PREFIX):
+                return callback_data.removeprefix(GALLERY_SUBMIT_CALLBACK_PREFIX).strip()
+    return ""
+
 
 def _supports_gallery_submission(task_type: str, allow_contribute: bool) -> bool:
     allowed_gallery_types = {
@@ -34,7 +65,7 @@ def _build_gallery_button_row(task_id: str) -> list[InlineKeyboardButton]:
     return [
         InlineKeyboardButton(
             "🚀 一键投稿至广场",
-            callback_data=f"submit_gallery_{task_id}",
+            callback_data=f"{GALLERY_SUBMIT_CALLBACK_PREFIX}{task_id}",
         )
     ]
 
@@ -54,6 +85,7 @@ def _supports_wan22_stitch(task_type: str, result_meta: dict | None) -> bool:
 
 
 def _build_wan22_extension_button(
+    task_id: str,
     result_meta: dict | None,
 ) -> InlineKeyboardButton | None:
     if not isinstance(result_meta, dict):
@@ -63,14 +95,20 @@ def _build_wan22_extension_button(
         return None
     return InlineKeyboardButton(
         "✨ 扩展生成",
-        callback_data="wan22v2_extend",
+        callback_data=build_task_bound_callback_data(
+            WAN22_EXTEND_CALLBACK_PREFIX,
+            task_id,
+        ),
     )
 
 
-def _build_wan22_regenerate_button() -> InlineKeyboardButton:
+def _build_wan22_regenerate_button(task_id: str) -> InlineKeyboardButton:
     return InlineKeyboardButton(
         "🔁 重新生成",
-        callback_data="wan22v2_regenerate",
+        callback_data=build_task_bound_callback_data(
+            WAN22_REGENERATE_CALLBACK_PREFIX,
+            task_id,
+        ),
     )
 
 
@@ -93,9 +131,10 @@ def _build_result_action_rows(
     if _supports_gallery_submission(task_type, allow_contribute):
         primary_row.extend(_build_gallery_button_row(task_id))
     if _supports_wan22_regenerate(task_type, result_meta):
-        primary_row.append(_build_wan22_regenerate_button())
+        primary_row.append(_build_wan22_regenerate_button(task_id))
     if _supports_wan22_extension(task_type, result_meta):
         extension_button = _build_wan22_extension_button(
+            task_id=task_id,
             result_meta=result_meta,
         )
         if extension_button is not None:

@@ -4,6 +4,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from fastapi import HTTPException
 
 from src.database.models import GalleryPost, History
 from src.core import gallery_core
@@ -96,6 +97,50 @@ async def test_build_post_responses_includes_billing_resolution_for_gallery_list
     assert responses[0].billing_resolution == "standard"
     assert responses[0].media_url == "media-url"
     assert responses[0].thumbnail_url == "thumb-url"
+
+
+@pytest.mark.asyncio
+async def test_build_post_responses_marks_wan22_stitched_template_apply_disabled():
+    history = History(
+        id=11,
+        user_id=123,
+        task_id="task-stitched",
+        type="wan22_video_v2",
+        prompt="stitched summary",
+        output_file="bot-data/history/task-stitched/output.mp4",
+        extra_outputs={
+            "wan22_chain_stitch": {
+                "segment_count": 2,
+                "wan22_chain_task_ids": ["task-a", "task-b"],
+            }
+        },
+    )
+    post = GalleryPost(
+        id=2,
+        task_id="task-stitched",
+        media_type="video",
+        width=720,
+        height=1280,
+        duration=10,
+        tags="[]",
+        likes_count=0,
+        dislikes_count=0,
+        applied_count=0,
+        is_active=True,
+        created_at=datetime.now(),
+    )
+    session = _FakeSession([_FakeResult(many=[history])])
+
+    responses = await build_gallery_post_responses(
+        session=session,
+        posts=[post],
+        current_user=None,
+        pick_gallery_media_urls=AsyncMock(return_value=("media-url", "thumb-url")),
+    )
+
+    assert responses[0].result_meta == {"wan22_is_stitched": True}
+    assert responses[0].template_apply_supported is False
+    assert responses[0].template_apply_disabled_reason == "wan22_stitched"
 
 
 @pytest.mark.asyncio
@@ -387,6 +432,94 @@ async def test_get_apply_context_maps_legacy_video_lora_duration_11_to_fixed_5()
 
     assert response.duration == 5
     assert response.requested_duration == 5
+    session.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_get_apply_context_restores_wan22_video_v2_single_segment_context():
+    history = History(
+        id=11,
+        user_id=123,
+        task_id="task-wan22-v2",
+        type="wan22_video_v2",
+        prompt="cinematic v2 motion",
+        billing_resolution=None,
+        width=512,
+        height=768,
+        duration=13,
+        requested_duration=None,
+        extra_outputs={
+            "_wan22_context": {
+                "wan22_resolution_preset": "standard",
+                "wan22_negative_prompt": "low quality blur",
+                "wan22_use_end_frame": False,
+            }
+        },
+    )
+    post = GalleryPost(
+        id=2,
+        task_id="task-wan22-v2",
+        media_type="video",
+        width=512,
+        height=768,
+        duration=13,
+    )
+    session = _FakeSession(
+        [
+            _FakeResult(single=post),
+            _FakeResult(many=[history]),
+        ]
+    )
+
+    response = await get_gallery_apply_context_payload(post_id=2, db=session)
+
+    assert response.prompt == "cinematic v2 motion"
+    assert response.negative_prompt == "low quality blur"
+    assert response.billing_resolution == "standard"
+    assert response.duration == 13
+    assert response.requested_duration == 5
+    session.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("task_type", ["custom_video", "video_lora", "wan22_video_v2"])
+async def test_get_apply_context_rejects_wan22_stitched_records(task_type):
+    history = History(
+        id=11,
+        user_id=123,
+        task_id="task-stitched",
+        type=task_type,
+        prompt="stitched summary",
+        width=720,
+        height=1280,
+        duration=10,
+        extra_outputs={
+            "wan22_chain_stitch": {
+                "segment_count": 2,
+                "wan22_chain_task_ids": ["task-a", "task-b"],
+            }
+        },
+    )
+    post = GalleryPost(
+        id=2,
+        task_id="task-stitched",
+        media_type="video",
+        width=720,
+        height=1280,
+        duration=10,
+    )
+    session = _FakeSession(
+        [
+            _FakeResult(single=post),
+            _FakeResult(many=[history]),
+        ]
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        await get_gallery_apply_context_payload(post_id=2, db=session)
+
+    assert exc_info.value.status_code == 400
+    assert exc_info.value.detail == "wan22_stitched"
     session.commit.assert_not_awaited()
 
 

@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -57,6 +57,9 @@ class GalleryPostResponse(BaseModel):
     is_active: bool = True
     prompt: Optional[str] = None
     task_type: Optional[str] = None
+    result_meta: Dict[str, Any] = Field(default_factory=dict)
+    template_apply_supported: bool = True
+    template_apply_disabled_reason: Optional[str] = None
 
     # User interaction status for current user
     has_liked: bool = False
@@ -83,6 +86,7 @@ class ApplyContextResponse(BaseModel):
     task_id: str
     media_type: str
     prompt: Optional[str]
+    negative_prompt: Optional[str] = None
     lora_name: Optional[str] = None
     lora_strength: Optional[float] = None
     lora_items: Optional[list[dict]] = None

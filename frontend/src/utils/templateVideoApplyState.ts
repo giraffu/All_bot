@@ -8,7 +8,7 @@ import {
 } from './templateVideoSettings.ts'
 import i18n from '@/i18n'
 
-type SupportedVideoTaskType = 'custom_video' | 'video_lora' | 'ltx_video'
+type SupportedVideoTaskType = 'custom_video' | 'video_lora' | 'wan22_video_v2' | 'ltx_video'
 
 export type TemplateVideoApplyContext = TemplateVideoContext & {
   task_type?: unknown
@@ -18,6 +18,7 @@ export type TemplateVideoApplyContext = TemplateVideoContext & {
 
 export type ResolvedTemplateVideoApplyState = {
   prompt: string | null
+  negativePrompt: string | null
   loraName: string | null
   loraItems: LtxVideoLoraItem[]
   sourcePostId: number | null
@@ -79,6 +80,7 @@ export const resolveTemplateVideoApplyState = (
 
   return {
     prompt: hasNonEmptyString(ctx.prompt) ? ctx.prompt : null,
+    negativePrompt: hasNonEmptyString(ctx.negative_prompt) ? ctx.negative_prompt : null,
     loraName: hasNonEmptyString(ctx.lora_name) ? ctx.lora_name : null,
     loraItems: taskType === 'ltx_video'
       ? normalizeLtxVideoLoraItems(

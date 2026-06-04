@@ -8,12 +8,14 @@ import { useTaskStream } from '@/composables/useTaskStream'
 import { buildGenerationTaskPayload } from '@/features/generation/buildGenerationTaskPayload'
 import {
   buildDefaultLtxVideoLoraItem,
+  DEFAULT_WAN22_VIDEO_V2_NEGATIVE_PROMPT,
   getDefaultImageToVideoLoraSelection,
   getImageToVideoPayloadLoraName,
   getImageToVideoPayloadLoraStrength,
   getImageToVideoRequestTaskType,
   normalizeLtxVideoLoraItems,
   isUnifiedImageToVideoTaskType,
+  isWan22TemplateVideoTaskType,
   normalizeImageToVideoLoraSelection,
   normalizeWan22VideoV2ResolutionPreset,
   WAN22_VIDEO_V2_RESOLUTION_OPTIONS,
@@ -46,8 +48,10 @@ const { uploadFile, uploadingSlots, progressBySlot, hasPendingUploads } = useTem
 
 const taskType = computed(() => props.context.taskType ?? 'custom_video')
 const isUnifiedImageToVideo = computed(() => isUnifiedImageToVideoTaskType(taskType.value))
+const isWan22VideoV2 = computed(() => taskType.value === 'wan22_video_v2')
 const isLtxVideo = computed(() => taskType.value === 'ltx_video')
 const taskTitle = computed(() => {
+  if (isWan22VideoV2.value) return t('template_apply.image_to_video.title_wan22_video_v2')
   if (isLtxVideo.value) return t('template_apply.image_to_video.title_ltx_video')
   return t('template_apply.image_to_video.title_custom_video')
 })
@@ -57,6 +61,7 @@ const filePreview = ref<string | null>(null)
 const resolution = ref('preview')
 const duration = ref('5')
 const prompt = ref('')
+const negativePrompt = ref(DEFAULT_WAN22_VIDEO_V2_NEGATIVE_PROMPT)
 const loraSelection = ref(getDefaultImageToVideoLoraSelection(taskType.value))
 const loraName = computed(() => getImageToVideoPayloadLoraName(taskType.value, loraSelection.value))
 const loraStrength = computed(() => getImageToVideoPayloadLoraStrength(taskType.value, loraSelection.value))
@@ -76,6 +81,7 @@ const initialObjectKey = ref<string | null>(null)
 const initialResolution = ref('512')
 const initialDuration = ref('5')
 const initialPrompt = ref('')
+const initialNegativePrompt = ref(DEFAULT_WAN22_VIDEO_V2_NEGATIVE_PROMPT)
 const initialLoraSelection = ref(getDefaultImageToVideoLoraSelection(taskType.value))
 const initialLtxLoraItems = ref<LtxVideoLoraItem[]>([])
 
@@ -135,13 +141,14 @@ watch(
 )
 
 watch(
-  [objectKey, resolution, duration, prompt, loraSelection, ltxLoraItems],
+  [objectKey, resolution, duration, prompt, negativePrompt, loraSelection, ltxLoraItems],
   () => {
     const isDirty =
       objectKey.value !== initialObjectKey.value
       || resolution.value !== initialResolution.value
       || duration.value !== initialDuration.value
       || prompt.value.trim() !== initialPrompt.value
+      || negativePrompt.value.trim() !== initialNegativePrompt.value
       || loraSelection.value !== initialLoraSelection.value
       || JSON.stringify(ltxLoraItems.value) !== JSON.stringify(initialLtxLoraItems.value)
     templateApplyStore.setDirtyState(isDirty)
@@ -175,14 +182,18 @@ const initializeFromContext = () => {
     resolution.value = 'preview'
     duration.value = '5'
   }
+  negativePrompt.value = DEFAULT_WAN22_VIDEO_V2_NEGATIVE_PROMPT
 
   const templateState = resolveTemplateVideoApplyState(
     props.context.raw as any,
-    taskType.value as 'custom_video' | 'video_lora' | 'ltx_video'
+    taskType.value as 'custom_video' | 'video_lora' | 'wan22_video_v2' | 'ltx_video'
   )
 
   if (templateState) {
     if (templateState.prompt) prompt.value = templateState.prompt
+    if (isWan22VideoV2.value) {
+      negativePrompt.value = templateState.negativePrompt || DEFAULT_WAN22_VIDEO_V2_NEGATIVE_PROMPT
+    }
     loraSelection.value = normalizeImageToVideoLoraSelection(templateState.loraName)
     ltxLoraItems.value = normalizeLtxVideoLoraItems(templateState.loraItems)
     selectedLtxLoraNames.value = ltxLoraItems.value.map(item => item.name)
@@ -207,6 +218,7 @@ const initializeFromContext = () => {
   initialResolution.value = resolution.value
   initialDuration.value = duration.value
   initialPrompt.value = prompt.value.trim()
+  initialNegativePrompt.value = negativePrompt.value.trim()
   initialLoraSelection.value = loraSelection.value
   initialLtxLoraItems.value = [...ltxLoraItems.value]
 }
@@ -250,7 +262,8 @@ const handleGenerate = async () => {
     images: [objectKey.value],
     resolution: isLtxVideo.value ? resolution.value : undefined,
     duration: isLtxVideo.value ? Number(duration.value) : 5,
-    prompt: (isUnifiedImageToVideo.value || isLtxVideo.value) ? prompt.value : undefined,
+    prompt: (isWan22TemplateVideoTaskType(taskType.value) || isLtxVideo.value) ? prompt.value : undefined,
+    negativePrompt: isWan22VideoV2.value ? negativePrompt.value : undefined,
     promptTarget: 'inputs',
     loraName: loraName.value,
     loraStrength: loraStrength.value,

@@ -166,13 +166,16 @@ const faceSwapContext = {
   prompt: 'demo prompt'
 }
 
-const primeSubmissionsApi = (options?: { empty?: boolean }) => {
+const primeSubmissionsApi = (
+  options?: { empty?: boolean, items?: Array<typeof samplePost & Record<string, unknown>> }
+) => {
   apiGetMock.mockImplementation((url: string) => {
     if (url === '/gallery/my-posts') {
+      const items = options?.items ?? [samplePost]
       return Promise.resolve({
         data: {
-          items: options?.empty ? [] : [samplePost],
-          total: options?.empty ? 0 : 1,
+          items: options?.empty ? [] : items,
+          total: options?.empty ? 0 : items.length,
           page: 1,
           pages: 1
         }
@@ -260,6 +263,33 @@ describe('MySubmissionsPanel workbench flow', () => {
     expect(templateApplyStore.visible).toBe(true)
     expect(templateApplyStore.panelKind).toBe('faceSwap')
     expect(hostModal?.attributes('data-open')).toBe('true')
+  })
+
+  it('disables template apply for stitched Wan22 submissions', async () => {
+    primeSubmissionsApi({
+      items: [{
+        ...samplePost,
+        media_type: 'video',
+        task_type: 'wan22_video_v2',
+        result_meta: {
+          wan22_is_stitched: true
+        },
+        template_apply_supported: false,
+        template_apply_disabled_reason: 'wan22_stitched'
+      }]
+    })
+
+    const { applyButton } = await openDetailAndFindApplyButton()
+
+    expect(applyButton.attributes('disabled')).toBeDefined()
+
+    await applyButton.trigger('click')
+    await flushPromises()
+
+    expect(
+      apiGetMock.mock.calls.some(([url]) => String(url).includes('apply-context'))
+    ).toBe(false)
+    expect(useTemplateApplyStore().visible).toBe(false)
   })
 
   it('renders the shared empty state block when the submissions list is empty', async () => {

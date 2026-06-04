@@ -369,7 +369,7 @@ def test_build_result_reply_markup_supports_wan22_video_v2_gallery_button():
 
     first_row = final_markup.inline_keyboard[0]
     assert first_row[0].callback_data == "submit_gallery_task-wan22"
-    assert first_row[1].callback_data == "wan22v2_extend"
+    assert first_row[1].callback_data == "wan22v2_extend:task-wan22"
 
 
 def test_build_result_reply_markup_supports_wan22_video_v2_non_first_segment_buttons():
@@ -389,8 +389,8 @@ def test_build_result_reply_markup_supports_wan22_video_v2_non_first_segment_but
     second_row = final_markup.inline_keyboard[1]
     assert [btn.callback_data for btn in first_row] == [
         "submit_gallery_task-wan22-2",
-        "wan22v2_regenerate",
-        "wan22v2_extend",
+        "wan22v2_regenerate:task-wan22-2",
+        "wan22v2_extend:task-wan22-2",
     ]
     assert second_row[0].callback_data == "wan22v2_stitch_chain"
 

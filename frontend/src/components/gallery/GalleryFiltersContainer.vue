@@ -140,6 +140,7 @@ const sortOptions = [
       :total-pages="totalPages"
       :disabled="loading"
       :compact="isMobile"
+      :show-jump="true"
       @change="emit('pageChange', $event)"
     />
   </StickyHeaderSection>

@@ -12,7 +12,7 @@ description: "处理对象存储、广场评论收藏、R2 媒体策略与 Web a
 - **互动防刷**：`user_interactions` 记录 `like/dislike/apply`，依赖唯一约束与原子更新防止连点覆盖。
 - **评论系统**：支持评论创建、分页查询、Redis 限频与 `comments_count` 原子维护。
 - **个人视图**：支持 `my-posts` 与 `my-favorites`，后者从互动记录反查点赞/应用历史。
-- **Web apply-context**：`/api/gallery/posts/{post_id}/apply-context` 已是模板应用主入口，返回 `prompt`、`lora_name`、`input_file_url`、`requested_duration`、`billing_resolution` 等上下文；旧 `custom_video` / `video_lora` 投稿会把旧分辨率映射为 Wan22 v2 档位并固定 5 秒。
+- **Web apply-context**：`/api/gallery/posts/{post_id}/apply-context` 已是模板应用主入口，返回 `prompt`、`negative_prompt`、`lora_name`、`input_file_url`、`requested_duration`、`billing_resolution` 等上下文；旧 `custom_video` / `video_lora` 投稿会把旧分辨率映射为 Wan22 v2 档位并固定 5 秒，`wan22_video_v2` 单段投稿可回填正向/负面提示词与分辨率档位。
 - **Feed 查询边界**：Gallery feed SQL 查询拼装位于 `src/services/gallery_feed_queries.py`；`src/core/gallery_feed_queries.py` 仅是兼容 re-export，新增查询条件不要回写到 core。
 - **媒体 URL 策略**：优先返回 R2 公网链接，找不到对象时回退原始存储路径；Web owner `/result` 延迟敏感路径必须用 R2 公网 HEAD 快探测，R2 warmup 未就绪时图片可短签 MinIO fallback，视频继续 `pending_result` 等 R2，缩略图也有独立 key 解析逻辑。
 - **后台治理**：Dashboard 广场管理可显示投稿用户，列表接口 `GET /api/gallery/all` 支持 `username`、`prompt_contains`、`prompt_max_length` 治理筛选，并通过 `/api/gallery/users/{user_id}/ban-submissions-and-takedown` 一键设置 `is_submission_banned=True`、下架该用户全部 `GalleryPost`，同步取消相关 `History.is_public`。
@@ -31,8 +31,9 @@ description: "处理对象存储、广场评论收藏、R2 媒体策略与 Web a
 
 ### 应用上下文
 - **接口**：`GET /api/gallery/posts/{post_id}/apply-context`
-- **输出**：`source_post_id`、`prompt`、`lora_name`、`input_file_url`、`requested_duration`、`billing_resolution`、媒体尺寸等
-- **旧图生视频兼容**：`512p/720p/1024p` 分别映射为 `preview/standard/hd`，历史 duration 一律恢复为 5 秒，`video_lora` 需兼容从 prompt 的 `[模型: xxx]` 解析 `lora_name`。
+- **输出**：`source_post_id`、`prompt`、`negative_prompt`、`lora_name`、`input_file_url`、`requested_duration`、`billing_resolution`、媒体尺寸等
+- **Wan22 图生视频兼容**：旧 `custom_video` / `video_lora` 的 `512p/720p/1024p` 分别映射为 `preview/standard/hd`，历史 duration 一律恢复为 5 秒，`video_lora` 需兼容从 prompt 的 `[模型: xxx]` 解析 `lora_name`；`wan22_video_v2` 单段投稿从 `_wan22_context` 恢复 `wan22_negative_prompt` 与 `wan22_resolution_preset`。
+- **拼接记录禁用**：所有 Wan22 stitched 记录（旧 `custom_video` / `video_lora` 与 `wan22_video_v2`）都不能返回 apply-context，接口应返回 400，列表/详情响应需给出 `template_apply_supported=false` 与 `template_apply_disabled_reason="wan22_stitched"`。
 
 ### 后台广场列表治理筛选
 - **接口**：`GET /api/gallery/all`
@@ -49,6 +50,7 @@ description: "处理对象存储、广场评论收藏、R2 媒体策略与 Web a
 - 点赞、点踩、评论计数必须走数据库原子更新，不能先查再加。
 - `apply` 次数不能在前端点击时预增，必须等任务真正进入成功链路后再记账。
 - `apply-context` 必须优先从 `History` 还原请求语义，不能只看展示用输出元数据。
+- `apply-context` 必须服务端拒绝 Wan22 stitched 记录，不能只依赖前端按钮禁用。
 - 存储/R2 异常只能降级，不能阻断广场主流程。
 - 投稿删除/下架必须兼容同一 `task_id + user_id` 下多条 `History`；不得用 `scalar_one_or_none()` 假设唯一。上架时只允许主 history 公开，删除/下架时所有匹配 history 都要 `is_public=False`。
 - 用户级批量下架不得只改 `GalleryPost.is_active`；必须同步把该用户投稿关联的 `History.is_public` 置为 `False`，避免旧公开资源入口继续可见。
@@ -62,5 +64,5 @@ description: "处理对象存储、广场评论收藏、R2 媒体策略与 Web a
 - 覆盖重复投稿与 `allow_contribute=False` 拦截。
 - 覆盖并发点赞/点踩一致性。
 - 覆盖评论限频、并发下架回滚、分页查询。
-- 覆盖 apply-context 返回的 `requested_duration`、`billing_resolution`、`input_file_url` 正确性；旧图生视频需额外覆盖固定 5 秒、`512/720/1024 -> preview/standard/hd` 和 LoRA prompt 解析。
+- 覆盖 apply-context 返回的 `requested_duration`、`billing_resolution`、`negative_prompt`、`input_file_url` 正确性；旧图生视频需额外覆盖固定 5 秒、`512/720/1024 -> preview/standard/hd` 和 LoRA prompt 解析，v2 单段需覆盖 `_wan22_context` 负面词/档位回填，Wan22 stitched 需覆盖 apply-context 400 与列表禁用字段。
 - 覆盖后台封禁投稿并批量下架时的用户状态、帖子状态与多条 `History` 同步。

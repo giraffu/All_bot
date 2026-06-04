@@ -17,6 +17,7 @@ export interface GalleryDetailStandardActions {
   desktopApplyInline?: boolean
   applyLabel?: string
   applyLoading?: boolean
+  applyDisabled?: boolean
   applyLoadingLabel?: string
   applyHint?: string
   copyLabel?: string

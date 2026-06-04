@@ -6,6 +6,9 @@ from src.web_api.common.utils import (
     build_history_apply_context_response,
     build_storage_input_file_url,
 )
+from src.web_api.services.apply_context_service import (
+    resolve_history_template_apply_disabled_reason,
+)
 from src.web_api.services.gallery_response_builder import build_gallery_post_responses
 from src.web_api.schemas.gallery_schema import ApplyContextResponse, PaginatedGalleryResponse
 from src.web_api.services.gallery_query_service import (
@@ -222,6 +225,9 @@ async def build_apply_context_payload(
         raise HTTPException(status_code=404, detail="帖子不存在或已失效")
     if not history:
         raise HTTPException(status_code=404, detail="未找到原任务详情")
+    disabled_reason = resolve_history_template_apply_disabled_reason(history)
+    if disabled_reason:
+        raise HTTPException(status_code=400, detail=disabled_reason)
 
     return await build_history_apply_context_response_fn(
         history=history,

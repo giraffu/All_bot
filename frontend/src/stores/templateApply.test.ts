@@ -64,6 +64,30 @@ describe('templateApply store', () => {
     expect(store.featureTitleKey).toBe('lab.cards.i2i_pro_title')
   })
 
+  it('opens wan22_video_v2 in the image-to-video workbench', async () => {
+    const store = useTemplateApplyStore()
+
+    const result = await store.openFromRawContext({
+      source: 'gallery',
+      entryEntityId: 12,
+      rawContext: {
+        post_id: 12,
+        source_post_id: 12,
+        task_type: 'wan22_video_v2',
+        prompt: 'cinematic v2 motion',
+        negative_prompt: 'low quality blur',
+        billing_resolution: 'standard',
+        requested_duration: 5
+      }
+    })
+
+    expect(result.status).toBe('opened')
+    expect(store.taskType).toBe('wan22_video_v2')
+    expect(store.panelKind).toBe('imageToVideo')
+    expect(store.featureTitleKey).toBe('lab.cards.wan22_video_v2_title')
+    expect(store.context?.negativePrompt).toBe('low quality blur')
+  })
+
   it('returns legacy fallback for unknown tasks', async () => {
     const store = useTemplateApplyStore()
 

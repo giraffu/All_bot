@@ -189,6 +189,7 @@ const buildContext = (overrides: Record<string, unknown> = {}): TemplateApplyCon
   supportMode: 'workbench',
   sourcePostId: 77,
   prompt: 'cinematic action shot',
+  negativePrompt: null,
   loraName: null,
   loraStrength: null,
   loraItems: [],
@@ -559,6 +560,69 @@ describe('TemplateImageToVideoPanel', () => {
       priority: 0,
       is_template: true,
       source_post_id: 122
+    })
+  })
+
+  it('submits the expected template payload for wan22_video_v2 with negative prompt', async () => {
+    const wrapper = mountPanel({
+      raw: {
+        post_id: 7,
+        source_post_id: 123,
+        task_id: 'task-template-wan22-v2',
+        media_type: 'video',
+        task_type: 'wan22_video_v2',
+        prompt: 'cinematic v2 motion',
+        negative_prompt: 'low quality blur',
+        width: 512,
+        height: 768,
+        duration: 13,
+        requested_duration: null,
+        billing_resolution: 'standard'
+      },
+      rawEntityId: 7,
+      rawTaskType: 'wan22_video_v2',
+      taskType: 'wan22_video_v2',
+      sourcePostId: 123,
+      prompt: 'cinematic v2 motion',
+      negativePrompt: 'low quality blur',
+      width: 512,
+      height: 768,
+      duration: 13,
+      requestedDuration: null,
+      billingResolution: 'standard'
+    })
+    await nextTick()
+
+    const file = new File(['base'], 'base.png', { type: 'image/png' })
+    const uploader = wrapper.findComponent(UploadDraggerStub)
+    await uploader.props('beforeUpload')(file)
+    await flushPromises()
+
+    const generateButton = wrapper
+      .findAllComponents(ButtonStub)
+      .find(button => button.text().includes('生成视频'))
+
+    if (!generateButton) {
+      throw new Error('Expected generate button to exist')
+    }
+
+    await generateButton.trigger('click')
+    await flushPromises()
+
+    expect(submitTaskMock).toHaveBeenCalledTimes(1)
+    expect(submitTaskMock.mock.calls[0]?.[0]).toEqual({
+      task_type: 'wan22_video_v2',
+      inputs: {
+        images: ['uploads/base.png'],
+        duration: 5,
+        prompt: 'cinematic v2 motion',
+        negative_prompt: 'low quality blur',
+        resolution_preset: 'standard',
+        use_end_frame: false
+      },
+      priority: 0,
+      is_template: true,
+      source_post_id: 123
     })
   })
 

@@ -46,6 +46,7 @@ sequenceDiagram
 ## 4. 当前接口与数据契约
 - 发布入口基于历史记录与 gallery post 关联，不再把社区流程叙述成直接耦合旧单体 core。
 - 一键应用当前主路径是 Web apply-context / workbench，不应再把 Telegram compat 流程写成唯一主入口。
+- Wan22 一键应用只开放单段记录：旧 `custom_video` / `video_lora` 与 `wan22_video_v2` 单段可进入模板应用，所有 stitched 拼接结果必须禁用按钮并由 apply-context 返回 400；v2 单段需回填负面提示词与分辨率档位。
 - 互动防并发与去重依赖数据库约束与服务层收口，避免高并发下覆盖更新。
 - Dashboard 广场列表入口为 `GET /api/gallery/all`，后台治理筛选可使用 `username`、`prompt_contains`、`prompt_max_length`，其中提示词条件基于 `History.prompt`。
 - Dashboard 批量治理入口为 `POST /api/gallery/users/{user_id}/ban-submissions-and-takedown`，会设置用户投稿封禁、下架其所有 `GalleryPost`，并同步取消相关历史记录公开状态。

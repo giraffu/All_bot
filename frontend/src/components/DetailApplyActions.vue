@@ -8,6 +8,7 @@ withDefaults(
     copyLabel?: string
     applyLabel: string
     applyLoading?: boolean
+    applyDisabled?: boolean
     applyLoadingLabel?: string
     hintText?: string
     inline?: boolean
@@ -18,6 +19,7 @@ withDefaults(
     showCopy: false,
     copyLabel: '',
     applyLoading: false,
+    applyDisabled: false,
     applyLoadingLabel: '...',
     hintText: '',
     inline: false,
@@ -45,6 +47,7 @@ const emit = defineEmits<{
       :full-width="!inline"
       :compact="compactApply"
       :loading="applyLoading"
+      :disabled="applyDisabled"
       :label="applyLabel"
       :loading-label="applyLoadingLabel"
       @click="emit('apply')"

@@ -83,6 +83,8 @@ const {
   handleInteract,
   applying,
   handleApply,
+  currentTemplateApplyDisabledReason,
+  currentTemplateApplyDisabledMessage,
   currentDetailMedia,
   formatTag,
   copyPrompt,
@@ -156,8 +158,9 @@ const favoritesDetailStandardActions = computed(() => ({
   desktopApplyPlacement: 'after' as const,
   applyLabel: t('gallery.modal.apply_btn'),
   applyLoading: applying.value,
+  applyDisabled: currentTemplateApplyDisabledReason.value !== null,
   applyLoadingLabel: t('my_notes.applying_template'),
-  applyHint: t('gallery.modal.apply_hint'),
+  applyHint: currentTemplateApplyDisabledMessage.value || t('gallery.modal.apply_hint'),
   copyLabel: t('my_posts.copy_prompt'),
   onLike: () => {
     if (currentPost.value) {

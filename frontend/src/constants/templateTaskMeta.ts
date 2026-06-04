@@ -91,6 +91,14 @@ export const TEMPLATE_TASK_META_MAP: Record<TemplateApplyTaskType, TemplateTaskM
     legacyTitleKey: 'lab.cards.custom_video_title',
     legacyCost: 6
   }),
+  wan22_video_v2: createMeta({
+    taskType: 'wan22_video_v2',
+    supportMode: 'workbench',
+    panelKind: 'imageToVideo',
+    legacyRouteName: 'Wan22VideoV2',
+    legacyTitleKey: 'lab.cards.wan22_video_v2_title',
+    legacyCost: 6
+  }),
   ltx_video: createMeta({
     taskType: 'ltx_video',
     supportMode: 'workbench',

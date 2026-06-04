@@ -2,6 +2,7 @@ from datetime import datetime, timedelta
 from unittest.mock import AsyncMock
 
 import pytest
+from fastapi import HTTPException
 
 from src.database import core as db_core
 from src.database.models import GalleryPost, History
@@ -182,6 +183,45 @@ async def test_build_favorite_gallery_payload_resolves_media_urls_with_keyword_a
     assert response_items[0].task_id == "task-1"
     assert response_items[0].media_url == "https://example.com/output.png"
     assert response_items[0].thumbnail_url == "https://example.com/thumb.png"
+
+
+@pytest.mark.asyncio
+async def test_build_favorite_gallery_payload_marks_wan22_stitched_template_apply_disabled(
+    monkeypatch,
+):
+    history = History(
+        id=11,
+        user_id=123,
+        task_id="task-stitched",
+        type="wan22_video_v2",
+        prompt="stitched summary",
+        output_file="bot-data/history/task-stitched/output.mp4",
+        created_at=datetime.now(),
+        extra_outputs={
+            "wan22_chain_stitch": {
+                "segment_count": 2,
+                "wan22_chain_task_ids": ["task-a", "task-b"],
+            }
+        },
+    )
+
+    async def _fake_resolve_history_media_urls(**_kwargs):
+        return ("https://example.com/output.mp4", "https://example.com/thumb.png")
+
+    monkeypatch.setattr(
+        history_response_builder,
+        "resolve_history_media_urls",
+        _fake_resolve_history_media_urls,
+    )
+
+    response_items = await build_favorite_gallery_payload(
+        histories=[history],
+        gallery_post_map={},
+    )
+
+    assert response_items[0].result_meta == {"wan22_is_stitched": True}
+    assert response_items[0].template_apply_supported is False
+    assert response_items[0].template_apply_disabled_reason == "wan22_stitched"
 
 
 @pytest.mark.asyncio
@@ -645,6 +685,93 @@ async def test_get_favorite_apply_context_maps_legacy_video_lora_duration_11_to_
 
     assert response.duration == 5
     assert response.requested_duration == 5
+    session.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_get_favorite_apply_context_restores_wan22_video_v2_single_segment_context(
+    monkeypatch,
+):
+    history = History(
+        id=11,
+        user_id=123,
+        task_id="task-wan22-v2",
+        type="wan22_video_v2",
+        prompt="cinematic v2 motion",
+        billing_resolution=None,
+        width=512,
+        height=768,
+        duration=13,
+        requested_duration=None,
+        extra_outputs={
+            "_wan22_context": {
+                "wan22_resolution_preset": "standard",
+                "wan22_negative_prompt": "low quality blur",
+                "wan22_use_end_frame": False,
+            }
+        },
+    )
+    session = _FakeSession(
+        [
+            _FakeResult(single=history),
+            _FakeResult(many=[]),
+        ]
+    )
+
+    monkeypatch.setattr(db_core, "AsyncSessionLocal", lambda: session)
+    response = await users_router.get_favorite_apply_context(
+        "task-wan22-v2",
+        current_user=type("User", (), {"id": 123})(),
+        db=session,
+    )
+
+    assert response.prompt == "cinematic v2 motion"
+    assert response.negative_prompt == "low quality blur"
+    assert response.billing_resolution == "standard"
+    assert response.duration == 13
+    assert response.requested_duration == 5
+    session.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("task_type", ["custom_video", "video_lora", "wan22_video_v2"])
+async def test_get_favorite_apply_context_rejects_wan22_stitched_records(
+    monkeypatch,
+    task_type,
+):
+    history = History(
+        id=11,
+        user_id=123,
+        task_id="task-stitched",
+        type=task_type,
+        prompt="stitched summary",
+        width=720,
+        height=1280,
+        duration=10,
+        extra_outputs={
+            "wan22_chain_stitch": {
+                "segment_count": 2,
+                "wan22_chain_task_ids": ["task-a", "task-b"],
+            }
+        },
+    )
+    session = _FakeSession(
+        [
+            _FakeResult(single=history),
+            _FakeResult(many=[]),
+        ]
+    )
+
+    monkeypatch.setattr(db_core, "AsyncSessionLocal", lambda: session)
+    with pytest.raises(HTTPException) as exc_info:
+        await users_router.get_favorite_apply_context(
+            "task-stitched",
+            current_user=type("User", (), {"id": 123})(),
+            db=session,
+        )
+
+    assert exc_info.value.status_code == 400
+    assert exc_info.value.detail == "wan22_stitched"
     session.commit.assert_not_awaited()
 
 

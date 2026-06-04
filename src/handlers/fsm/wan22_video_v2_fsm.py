@@ -23,6 +23,8 @@ from src.handlers.fsm.fsm_shared import (
     translate_fsm_text,
 )
 from src.handlers.prompt_router import is_global_menu_command
+from src.lora_mapping import extract_prompt_lora_context
+from src.core.video_billing import resolve_apply_prompt_and_requested_duration
 from src.services.task_service_generation_video import (
     process_image_to_video_generation_task as process_image_to_video_task,
 )
@@ -45,10 +47,18 @@ from src.services.permission_service import permission_service
 from src.services.wan22_video_v2_extension_service import (
     Wan22VideoV2ExtensionError,
     build_full_chain_task_ids,
+    download_history_input_file_to_fsm_temp,
     download_last_frame_to_fsm_temp,
+    extract_wan22_history_context,
     load_owned_wan22_history,
     resolve_extension_chain_task_ids,
     resolve_extension_resolution_preset,
+)
+from src.services.tg_task_result_presentation import (
+    WAN22_EXTEND_CALLBACK_PREFIX,
+    WAN22_REGENERATE_CALLBACK_PREFIX,
+    resolve_task_id_from_callback_data,
+    resolve_task_id_from_reply_markup,
 )
 from src.utils import create_background_task, robust_edit_text, robust_reply_text
 
@@ -120,6 +130,63 @@ def _resolve_legacy_lora_strength(data: dict[str, Any]) -> float:
         return float(data.get("lora_strength"))
     except (TypeError, ValueError):
         return 1.0
+
+
+def _is_legacy_image_to_video_context(data: dict[str, Any] | dict[str, object]) -> bool:
+    extension_task_type = str(data.get("extension_task_type") or MODE_WAN22_VIDEO_V2)
+    return extension_task_type != MODE_WAN22_VIDEO_V2
+
+
+def _resolve_reusable_history_prompt_and_lora(
+    history,
+    meta: dict,
+) -> tuple[str, str | None, float]:
+    prompt, _requested_duration = resolve_apply_prompt_and_requested_duration(
+        getattr(history, "type", None),
+        getattr(history, "prompt", None),
+        getattr(history, "requested_duration", None),
+    )
+    prompt, parsed_lora_name, parsed_lora_strength = extract_prompt_lora_context(prompt)
+    lora_name = str(meta.get("lora_name") or parsed_lora_name or "").strip() or None
+    lora_strength = meta.get("lora_strength")
+    try:
+        normalized_lora_strength = float(lora_strength)
+    except (TypeError, ValueError):
+        normalized_lora_strength = parsed_lora_strength or 1.0
+    return prompt, lora_name, normalized_lora_strength
+
+
+def _resolve_callback_task_id(
+    *,
+    meta: dict,
+    query,
+    callback_prefix: str,
+) -> str:
+    task_id = str(meta.get("task_id") or "").strip()
+    if task_id:
+        return task_id
+    task_id = resolve_task_id_from_callback_data(
+        getattr(query, "data", None),
+        callback_prefix,
+    )
+    if task_id:
+        return task_id
+    message = getattr(query, "message", None)
+    return resolve_task_id_from_reply_markup(getattr(message, "reply_markup", None))
+
+
+def _merge_history_context_into_meta(history, meta: dict) -> dict[str, object]:
+    return {
+        **extract_wan22_history_context(getattr(history, "extra_outputs", None)),
+        **meta,
+    }
+
+
+async def _reply_callback_notice(update: Update, text: str) -> None:
+    query = update.callback_query
+    target_message = query.message if query else update.effective_message
+    if target_message:
+        await robust_reply_text(target_message, text, parse_mode="Markdown")
 
 
 def _build_submit_generation_task(
@@ -244,6 +311,21 @@ def _build_skip_negative_prompt_keyboard(
     )
 
 
+def _build_use_original_prompt_keyboard(
+    context: ContextTypes.DEFAULT_TYPE,
+) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton(
+                    _t(context, "fsm.wan22_video_v2.use_original_prompt"),
+                    callback_data="wan22v2_use_original_prompt",
+                )
+            ]
+        ]
+    )
+
+
 def _build_settings_message(
     context: ContextTypes.DEFAULT_TYPE, data: dict[str, object]
 ) -> str:
@@ -259,9 +341,14 @@ def _build_settings_message(
         lang=lang,
     )
     cost = get_wan22_video_v2_cost(resolution_preset)
+    settings_key = (
+        "fsm.wan22_video_v2.legacy_settings_text"
+        if _is_legacy_image_to_video_context(data)
+        else "fsm.wan22_video_v2.settings_text"
+    )
     return _t(
         context,
-        "fsm.wan22_video_v2.settings_text",
+        settings_key,
         use_end_frame=status_yes if data.get("use_end_frame") else status_no,
         end_frame_ready=(
             status_yes
@@ -314,8 +401,34 @@ async def _send_or_edit_message(
 async def _ask_for_prompt(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> int:
+    data = _get_data(context) or {}
+    original_prompt = str(data.get("prefill_prompt") or "").strip()
+    if original_prompt:
+        await _send_or_edit_message(
+            update,
+            _t(
+                context,
+                "fsm.wan22_video_v2.regenerate_prompt",
+                prompt=original_prompt,
+            ),
+            reply_markup=_build_use_original_prompt_keyboard(context),
+        )
+        return Wan22VideoV2State.WAIT_PROMPT
+
     await _send_or_edit_message(update, _t(context, "fsm.wan22_video_v2.send_prompt"))
     return Wan22VideoV2State.WAIT_PROMPT
+
+
+async def _ask_for_negative_prompt(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+) -> int:
+    await _send_or_edit_message(
+        update,
+        _t(context, "fsm.wan22_video_v2.send_negative_prompt"),
+        reply_markup=_build_skip_negative_prompt_keyboard(context),
+    )
+    return Wan22VideoV2State.WAIT_NEGATIVE_PROMPT
 
 
 async def _show_settings(
@@ -401,9 +514,7 @@ async def start_wan22_video_v2_extension(
             await query.answer(text=_t(context, "fsm.common.task_initializing"), cache_time=2)
 
     if context.user_data.get("in_conversation"):
-        if query:
-            with contextlib.suppress(Exception):
-                await query.answer(_t(context, "fsm.common.conflict"), show_alert=True)
+        await _reply_callback_notice(update, _t(context, "fsm.common.conflict"))
         return ConversationHandler.END
 
     meta = (
@@ -411,11 +522,13 @@ async def start_wan22_video_v2_extension(
         if query and query.message
         else {}
     )
-    base_task_id = str(meta.get("task_id") or "").strip()
+    base_task_id = _resolve_callback_task_id(
+        meta=meta,
+        query=query,
+        callback_prefix=WAN22_EXTEND_CALLBACK_PREFIX,
+    )
     if not base_task_id:
-        if query:
-            with contextlib.suppress(Exception):
-                await query.answer(_t(context, "fsm.wan22_video_v2.expired_alert"), show_alert=True)
+        await _reply_callback_notice(update, _t(context, "fsm.wan22_video_v2.expired_alert"))
         return ConversationHandler.END
     try:
         history = await load_owned_wan22_history(
@@ -423,6 +536,7 @@ async def start_wan22_video_v2_extension(
             telegram_user_id=update.effective_user.id,
             username=update.effective_user.username,
         )
+        meta = _merge_history_context_into_meta(history, meta)
         start_image_path = await download_last_frame_to_fsm_temp(history=history)
     except Wan22VideoV2ExtensionError as exc:
         target_message = query.message if query else update.effective_message
@@ -476,6 +590,114 @@ async def start_wan22_video_v2_extension(
         reply_markup=_build_end_frame_choice_keyboard(context),
     )
     return Wan22VideoV2State.WAIT_END_FRAME_CHOICE
+
+
+async def start_wan22_video_v2_regeneration(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+) -> int:
+    query = update.callback_query
+    if query:
+        with contextlib.suppress(Exception):
+            await query.answer(text=_t(context, "fsm.common.task_initializing"), cache_time=2)
+
+    if context.user_data.get("in_conversation"):
+        await _reply_callback_notice(update, _t(context, "fsm.common.conflict"))
+        return ConversationHandler.END
+
+    meta = (
+        context.bot_data.get(f"msg_meta_{query.message.message_id}", {})
+        if query and query.message
+        else {}
+    )
+    current_task_id = _resolve_callback_task_id(
+        meta=meta,
+        query=query,
+        callback_prefix=WAN22_REGENERATE_CALLBACK_PREFIX,
+    )
+    if not current_task_id:
+        await _reply_callback_notice(update, _t(context, "fsm.wan22_video_v2.expired_alert"))
+        return ConversationHandler.END
+
+    try:
+        current_history = await load_owned_wan22_history(
+            task_id=current_task_id,
+            telegram_user_id=update.effective_user.id,
+            username=update.effective_user.username,
+        )
+        meta = _merge_history_context_into_meta(current_history, meta)
+        prev_task_id = str(meta.get("wan22_prev_task_id") or "").strip()
+        if not prev_task_id:
+            await _reply_callback_notice(
+                update,
+                _t(context, "fsm.wan22_video_v2.expired_alert"),
+            )
+            return ConversationHandler.END
+        prev_history = await load_owned_wan22_history(
+            task_id=prev_task_id,
+            telegram_user_id=update.effective_user.id,
+            username=update.effective_user.username,
+        )
+        start_image_path = await download_last_frame_to_fsm_temp(
+            history=prev_history,
+            name_hint="wan22_video_v2_regenerate_start",
+        )
+        use_end_frame = bool(meta.get("wan22_use_end_frame"))
+        end_image_path = None
+        if use_end_frame:
+            end_image_path = await download_history_input_file_to_fsm_temp(
+                history=current_history,
+                index=1,
+                name_hint="wan22_video_v2_regenerate_end",
+            )
+    except Wan22VideoV2ExtensionError as exc:
+        target_message = query.message if query else update.effective_message
+        if target_message:
+            with contextlib.suppress(Exception):
+                await robust_reply_text(target_message, f"❌ {exc}")
+        return ConversationHandler.END
+    except Exception as exc:
+        logger.error("prepare wan22_video_v2 regeneration failed: %s", exc)
+        target_message = query.message if query else update.effective_message
+        if target_message:
+            with contextlib.suppress(Exception):
+                await robust_reply_text(
+                    target_message,
+                    f"❌ {_t(context, 'fsm.common.download_image_failed')}",
+                )
+        return ConversationHandler.END
+
+    if current_history.type == MODE_WAN22_VIDEO_V2:
+        prompt = str(current_history.prompt or "").strip()
+        lora_name = None
+        lora_strength = None
+    else:
+        prompt, lora_name, lora_strength = _resolve_reusable_history_prompt_and_lora(
+            current_history,
+            meta,
+        )
+
+    context.user_data["in_conversation"] = WAN22_VIDEO_V2_CONVERSATION_TAG
+    _set_data(
+        context,
+        {
+            "start_image_path": start_image_path,
+            "end_image_path": end_image_path,
+            "use_end_frame": use_end_frame,
+            "resolution_preset": resolve_extension_resolution_preset(meta),
+            "prompt": prompt,
+            "prefill_prompt": prompt,
+            "negative_prompt": str(meta.get("wan22_negative_prompt") or "").strip(),
+            "extension_prev_task_id": prev_task_id,
+            "extension_task_type": current_history.type,
+            "lora_name": lora_name,
+            "lora_strength": lora_strength,
+            "chain_task_ids": normalize_wan22_video_v2_chain_task_ids(
+                meta.get("wan22_chain_task_ids")
+            ),
+        },
+    )
+    return await _ask_for_prompt(update, context)
 
 
 async def receive_start_image(
@@ -586,13 +808,25 @@ async def receive_prompt(
         return ConversationHandler.END
 
     data["prompt"] = prompt
-    await robust_reply_text(
-        message,
-        _t(context, "fsm.wan22_video_v2.send_negative_prompt"),
-        reply_markup=_build_skip_negative_prompt_keyboard(context),
-        parse_mode="Markdown",
-    )
-    return Wan22VideoV2State.WAIT_NEGATIVE_PROMPT
+    return await _ask_for_negative_prompt(update, context)
+
+
+async def use_original_prompt(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+) -> int:
+    query = update.callback_query
+    await query.answer(text=_t(context, "fsm.common.task_initializing"), cache_time=2)
+    data = _get_data(context)
+    if not data:
+        with contextlib.suppress(Exception):
+            await query.answer(_t(context, "fsm.wan22_video_v2.expired_alert"), show_alert=True)
+        return ConversationHandler.END
+
+    data["prompt"] = str(
+        data.get("prompt") or data.get("prefill_prompt") or ""
+    ).strip()
+    return await _ask_for_negative_prompt(update, context)
 
 
 async def receive_negative_prompt(
@@ -718,9 +952,14 @@ async def submit_generation(
 
     if query:
         with contextlib.suppress(Exception):
+            submitting_key = (
+                "fsm.wan22_video_v2.submitting_legacy"
+                if _is_legacy_image_to_video_context(data)
+                else "fsm.wan22_video_v2.submitting"
+            )
             await robust_edit_text(
                 query.message,
-                _t(context, "fsm.wan22_video_v2.submitting", cost=cost),
+                _t(context, submitting_key, cost=cost),
                 parse_mode="Markdown",
             )
 
@@ -781,7 +1020,11 @@ def get_wan22_video_v2_fsm_handler() -> ConversationHandler:
             ),
             CallbackQueryHandler(
                 start_wan22_video_v2_extension,
-                pattern=r"^wan22v2_extend$",
+                pattern=rf"^{WAN22_EXTEND_CALLBACK_PREFIX}(?::.+)?$",
+            ),
+            CallbackQueryHandler(
+                start_wan22_video_v2_regeneration,
+                pattern=rf"^{WAN22_REGENERATE_CALLBACK_PREFIX}(?::.+)?$",
             ),
         ],
         states={
@@ -812,6 +1055,10 @@ def get_wan22_video_v2_fsm_handler() -> ConversationHandler:
                 ),
             ],
             Wan22VideoV2State.WAIT_PROMPT: [
+                CallbackQueryHandler(
+                    use_original_prompt,
+                    pattern="^wan22v2_use_original_prompt$",
+                ),
                 MessageHandler(
                     (filters.TEXT | filters.COMMAND) & ~filters.Regex(r"^/cancel$"),
                     receive_prompt,

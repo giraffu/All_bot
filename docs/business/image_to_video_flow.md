@@ -118,6 +118,10 @@ graph TD
 - 扩展生成会把当前段 `extra_outputs.last_frame` 作为锁定起始帧，清空本段正向 prompt，并提交 `wan22_prev_task_id = 当前段` 与包含当前段在内的 `wan22_chain_task_ids`。
 - 重新生成第一段只清空表单并保持 `wan22_video_v2` 模式，不自动复用原始素材或参数；第二段及以后会复用上一段尾帧、当前段 prompt/负面 prompt/分辨率和可选终止帧，且只继承当前段之前的链路上下文。
 - 历史详情 `TaskDetailModal.vue` 已为 `wan22_video_v2`、`custom_video`、`video_lora` 提供“扩展下一段 / 重新生成本段 / 完成整链拼接”入口；编辑入口会携带 `type=<来源类型>&wan22_mode=extend|regenerate&wan22_task_id=...` 回到练功房。点击“完成整链拼接”后，前端会直接打开新生成的拼接历史记录，提示词按“第 N 段”分段汇总各子片段 prompt，拼接历史类型保持来源链路类型。
+- Gallery 一键应用只支持 Wan22 单段记录：旧 `custom_video` / `video_lora` 继续恢复 prompt、旧 LoRA 与分辨率档位，`wan22_video_v2` 单段恢复 prompt、negative prompt、分辨率档位和固定 5 秒；所有 stitched 拼接记录都禁用一键应用，apply-context 服务端返回 400。
+- Telegram Bot 第二段及以后点击“重新生成”会进入可编辑 FSM：锁定上一段尾帧，继承当前段终止帧、负面提示词、分辨率和旧 LoRA 上下文，并展示原 prompt；用户可以发送新 prompt，或点击“使用原提示词”继续。
+- Telegram Bot 结果按钮不能只依赖 `context.bot_data["msg_meta_<message_id>"]` 里的内存元数据；`扩展生成 / 重新生成` callback 需携带当前 `task_id`，旧消息则允许从同条消息的 `submit_gallery_<task_id>` 按钮兜底恢复，再从历史 `extra_outputs._wan22_context` 补齐分辨率、上一段、负面提示词和 LoRA 上下文。若仍无法恢复，必须回一条明确失效提示，避免只显示“任务初始化中”。
+- Telegram Bot 点击“完成拼接”后也会把拼接 MP4 上传存储并新增一条 `source=bot` 的历史记录；结果消息使用新 `task_id` 注入“投稿至广场”按钮，继续复用 `submit_gallery_<task_id>` 投稿链路。
 
 ## 四、 计费与资源约束
 - 视频任务计费是动态的，通常由分辨率与时长组合决定。
@@ -143,5 +147,6 @@ graph TD
 - 若修改 Wan22 Web 链式编辑，需额外覆盖 `wan22_video_v2`、`custom_video`、`video_lora` 三类历史的 `result_meta`、历史链查询、结果区按钮、练功房路由恢复、整链拼接、首段重生成清空、以及“后续段重生成只继承前序链路”的提交上下文截断语义。
 - 若修改 Wan22 尾帧物化逻辑，需覆盖 Comfy 返回 `2503` 和只返回主 MP4 的兜底抽帧两类路径，确保旧图生视频生成后仍可扩展和拼接。
 - 若修改旧图生视频投稿一键应用，需覆盖 prompt、`[模型: xxx]` LoRA 解析、旧分辨率到 `preview/standard/hd` 映射、固定 5 秒和 v2 灵石消耗。
+- 若修改 Wan22 Gallery 一键应用，需覆盖 v2 单段 `negative_prompt` / `wan22_resolution_preset` 回填，以及旧/v2 stitched 拼接记录列表禁用与 apply-context 400 拒绝。
 - 若修改 `ltx_video`，需覆盖 `lora_items` 多选、单项兼容字段与无 LoRA 回退三类协议。
 - 若修改视频成本计算、requested_duration 或结果发送语义，需同步回归 focused tests 与黄金路径集。

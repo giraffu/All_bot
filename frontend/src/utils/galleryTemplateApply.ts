@@ -1,0 +1,40 @@
+import type { GalleryPost } from '@/types/gallery'
+
+export const GALLERY_TEMPLATE_APPLY_DISABLED_REASON_WAN22_STITCHED = 'wan22_stitched'
+
+export const resolveGalleryTemplateApplyDisabledReason = (
+  post: GalleryPost | null | undefined
+): string | null => {
+  if (!post) {
+    return null
+  }
+
+  if (post.template_apply_supported === false) {
+    return post.template_apply_disabled_reason
+      || (post.result_meta?.wan22_is_stitched
+        ? GALLERY_TEMPLATE_APPLY_DISABLED_REASON_WAN22_STITCHED
+        : 'unsupported')
+  }
+
+  if (post.template_apply_supported === true) {
+    return null
+  }
+
+  return post.result_meta?.wan22_is_stitched
+    ? GALLERY_TEMPLATE_APPLY_DISABLED_REASON_WAN22_STITCHED
+    : null
+}
+
+export const isGalleryTemplateApplySupported = (
+  post: GalleryPost | null | undefined
+): boolean => resolveGalleryTemplateApplyDisabledReason(post) === null
+
+export const resolveGalleryTemplateApplyDisabledMessage = (
+  t: (key: string) => string,
+  reason: string | null | undefined
+): string => {
+  if (reason === GALLERY_TEMPLATE_APPLY_DISABLED_REASON_WAN22_STITCHED) {
+    return t('template_apply.disabled.wan22_stitched')
+  }
+  return t('template_apply.disabled.unsupported')
+}

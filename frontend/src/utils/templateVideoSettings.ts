@@ -5,6 +5,7 @@ export type TemplateVideoContext = {
   duration?: unknown
   requested_duration?: unknown
   prompt?: unknown
+  negative_prompt?: unknown
   lora_name?: unknown
 }
 
@@ -157,9 +158,10 @@ export const getTemplateVideoSettings = (
   requiresHeight = false,
   taskType?: string
 ): TemplateVideoSettings | null => {
-  const isLegacyWan22Video = taskType === 'custom_video' || taskType === 'video_lora'
+  const isWan22TierVideo =
+    taskType === 'custom_video' || taskType === 'video_lora' || taskType === 'wan22_video_v2'
   const width = toPositiveInteger(ctx?.width)
-    ?? (isLegacyWan22Video ? resolveApproxWidthFromWan22Preset(ctx?.billing_resolution) : null)
+    ?? (isWan22TierVideo ? resolveApproxWidthFromWan22Preset(ctx?.billing_resolution) : null)
   const height = toPositiveInteger(ctx?.height)
   const requestedDuration = toPositiveInteger(ctx?.requested_duration)
   const mediaDuration = toPositiveInteger(ctx?.duration)
@@ -172,7 +174,7 @@ export const getTemplateVideoSettings = (
           : (mediaDuration && LTX_ALLOWED_DURATIONS.has(mediaDuration)
               ? mediaDuration
               : legacyCompatibleLtxDuration))
-      : (isLegacyWan22Video
+      : (isWan22TierVideo
           ? 5
           : (requestedDuration ?? mediaDuration))
 
@@ -199,7 +201,7 @@ export const canLockTemplateVideoPromptControls = (
     return hasNonEmptyString(ctx?.prompt) && hasNonEmptyString(ctx?.lora_name)
   }
 
-  if (taskType === 'custom_video' || taskType === 'ltx_video') {
+  if (taskType === 'custom_video' || taskType === 'ltx_video' || taskType === 'wan22_video_v2') {
     return hasNonEmptyString(ctx?.prompt)
   }
 

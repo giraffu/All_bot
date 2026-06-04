@@ -20,6 +20,9 @@ from src.web_api.presenters.media_presenter import (
 )
 from src.web_api.schemas.gallery_schema import GalleryPostResponse
 from src.web_api.schemas.user_schema import HistoryItem
+from src.web_api.services.apply_context_service import (
+    resolve_history_template_apply_disabled_reason,
+)
 
 
 def extract_history_tags(
@@ -71,6 +74,10 @@ async def build_user_history_payload(
 ):
     items = []
     for history in histories:
+        result_meta = extract_history_result_meta(
+            task_type=history.type,
+            extra_outputs=getattr(history, "extra_outputs", None),
+        )
         media_url, thumbnail_url = await resolve_history_media_urls(
             task_id=history.task_id,
             output_file=history.output_file,
@@ -101,10 +108,7 @@ async def build_user_history_payload(
                 allow_contribute=history.allow_contribute,
                 source=history.source,
                 is_favorited=history.is_favorited,
-                result_meta=extract_history_result_meta(
-                    task_type=history.type,
-                    extra_outputs=getattr(history, "extra_outputs", None),
-                ),
+                result_meta=result_meta,
                 extra_outputs=filter_user_visible_extra_outputs(
                     task_type=history.type,
                     extra_outputs=resolved_extra_outputs,
@@ -122,6 +126,13 @@ async def build_favorite_gallery_payload(
     items = []
     for history in histories:
         gallery_post = gallery_post_map.get(history.task_id)
+        result_meta = extract_history_result_meta(
+            task_type=history.type,
+            extra_outputs=getattr(history, "extra_outputs", None),
+        )
+        template_apply_disabled_reason = resolve_history_template_apply_disabled_reason(
+            history
+        )
         media_url, thumbnail_url = await resolve_history_media_urls(
             task_id=history.task_id,
             output_file=history.output_file,
@@ -160,6 +171,9 @@ async def build_favorite_gallery_payload(
                 is_active=gallery_post.is_active if gallery_post else False,
                 prompt=history.prompt,
                 task_type=history.type,
+                result_meta=result_meta,
+                template_apply_supported=template_apply_disabled_reason is None,
+                template_apply_disabled_reason=template_apply_disabled_reason,
                 has_liked=False,
                 has_disliked=False,
                 author_name="我",

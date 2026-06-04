@@ -78,6 +78,8 @@ const {
   handleInteract,
   applying,
   handleApply,
+  currentTemplateApplyDisabledReason,
+  currentTemplateApplyDisabledMessage,
   currentDetailMedia,
   formatTag,
   copyPrompt,
@@ -106,6 +108,8 @@ const submissionDetailStandardActions = computed(() => ({
   desktopApplyInline: true,
   applyLabel: t('gallery.modal.apply_btn'),
   applyLoading: applying.value,
+  applyDisabled: currentTemplateApplyDisabledReason.value !== null,
+  applyHint: currentTemplateApplyDisabledMessage.value,
   copyLabel: t('my_posts.copy_prompt'),
   onLike: () => {
     if (currentPost.value) {

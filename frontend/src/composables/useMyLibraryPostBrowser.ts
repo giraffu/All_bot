@@ -10,6 +10,10 @@ import { usePostPromptCopy } from '@/composables/usePostPromptCopy'
 import { useTemplateApplyStore } from '@/stores/templateApply'
 import type { GalleryPost, LibraryCollectionScope } from '@/types/gallery'
 import { formatGalleryTag } from '@/utils/galleryPresentation'
+import {
+  resolveGalleryTemplateApplyDisabledMessage,
+  resolveGalleryTemplateApplyDisabledReason,
+} from '@/utils/galleryTemplateApply'
 import { resolveMediaCardView } from '@/utils/mediaCardView'
 
 type MaybeGetter<T> = T | (() => T)
@@ -119,6 +123,17 @@ export function useMyLibraryPostBrowser<Post extends GalleryPost>(
   })
 
   const currentPostRef = currentPost as Ref<Post | null>
+  const currentTemplateApplyDisabledReason = computed(() =>
+    resolveGalleryTemplateApplyDisabledReason(currentPost.value)
+  )
+  const currentTemplateApplyDisabledMessage = computed(() =>
+    currentTemplateApplyDisabledReason.value
+      ? resolveGalleryTemplateApplyDisabledMessage(
+          options.t,
+          currentTemplateApplyDisabledReason.value
+        )
+      : ''
+  )
   const { applying, handleApply } = useDetailTemplateApply<Post>({
     currentPost: currentPostRef,
     detailVisible,
@@ -128,6 +143,12 @@ export function useMyLibraryPostBrowser<Post extends GalleryPost>(
     templateApplyStore,
     t: options.t,
     ignoreNotFound: options.ignoreTemplateApplyNotFound,
+    isApplyDisabled: (post) => resolveGalleryTemplateApplyDisabledReason(post) !== null,
+    getApplyDisabledMessage: (post) =>
+      resolveGalleryTemplateApplyDisabledMessage(
+        options.t,
+        resolveGalleryTemplateApplyDisabledReason(post)
+      ),
   })
 
   const currentDetailMedia = useCurrentDetailMedia(currentPostRef)
@@ -179,6 +200,8 @@ export function useMyLibraryPostBrowser<Post extends GalleryPost>(
     handleInteract,
     applying,
     handleApply,
+    currentTemplateApplyDisabledReason,
+    currentTemplateApplyDisabledMessage,
     currentDetailMedia,
     formatTag,
     copyPrompt,

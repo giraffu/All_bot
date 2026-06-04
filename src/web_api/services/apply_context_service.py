@@ -11,7 +11,14 @@ from src.core.video_billing import (
 )
 from src.database.models import GalleryPost, History
 from src.lora_mapping import extract_prompt_lora_context
+from src.services.wan22_video_v2_config import is_wan22_chain_history_task_type
+from src.services.wan22_video_v2_extension_service import (
+    extract_wan22_history_context,
+    is_wan22_stitched_result,
+)
 from src.web_api.schemas.gallery_schema import ApplyContextResponse
+
+TEMPLATE_APPLY_DISABLED_REASON_WAN22_STITCHED = "wan22_stitched"
 
 
 def _pick_first_non_none(*values):
@@ -19,6 +26,30 @@ def _pick_first_non_none(*values):
         if value is not None:
             return value
     return None
+
+
+def resolve_history_template_apply_disabled_reason(
+    history: History | None,
+) -> str | None:
+    if history and is_wan22_stitched_result(getattr(history, "extra_outputs", None)):
+        return TEMPLATE_APPLY_DISABLED_REASON_WAN22_STITCHED
+    return None
+
+
+def is_history_template_apply_supported(history: History | None) -> bool:
+    return resolve_history_template_apply_disabled_reason(history) is None
+
+
+def resolve_wan22_apply_context_metadata(history: History) -> dict[str, object]:
+    if not is_wan22_chain_history_task_type(history.type):
+        return {}
+    return extract_wan22_history_context(getattr(history, "extra_outputs", None))
+
+
+def resolve_wan22_apply_negative_prompt(history: History) -> str | None:
+    context = resolve_wan22_apply_context_metadata(history)
+    negative_prompt = str(context.get("wan22_negative_prompt") or "").strip()
+    return negative_prompt or None
 
 
 def build_apply_context_response(
@@ -30,6 +61,7 @@ def build_apply_context_response(
     task_id: str,
     media_type: str,
     prompt: str | None,
+    negative_prompt: str | None,
     lora_name: str | None,
     lora_strength: float | None,
     lora_items: list[dict] | None,
@@ -48,6 +80,7 @@ def build_apply_context_response(
         task_id=task_id,
         media_type=media_type,
         prompt=prompt,
+        negative_prompt=negative_prompt,
         lora_name=lora_name,
         lora_strength=lora_strength,
         lora_items=lora_items,
@@ -72,6 +105,17 @@ def resolve_history_billing_resolution(
     if history.billing_resolution:
         normalized = normalize_requested_billing_resolution(
             history.billing_resolution, history.type
+        )
+        if normalized is not None:
+            return normalized
+    wan22_context = resolve_wan22_apply_context_metadata(history)
+    wan22_resolution_preset = str(
+        wan22_context.get("wan22_resolution_preset") or ""
+    ).strip()
+    if wan22_resolution_preset:
+        normalized = normalize_requested_billing_resolution(
+            wan22_resolution_preset,
+            history.type,
         )
         if normalized is not None:
             return normalized
@@ -143,6 +187,7 @@ async def build_history_apply_context_response(
         history.requested_duration,
     )
     prompt, lora_name, lora_strength = extract_prompt_lora_context(prompt)
+    negative_prompt = resolve_wan22_apply_negative_prompt(history)
     lora_items = None
     if history.type == "ltx_video" and lora_name:
         lora_items = [{"name": lora_name, "strength": lora_strength or 1.0}]
@@ -196,6 +241,7 @@ async def build_history_apply_context_response(
         task_id=history.task_id,
         media_type=media_type,
         prompt=prompt,
+        negative_prompt=negative_prompt,
         lora_name=lora_name,
         lora_strength=lora_strength,
         lora_items=lora_items,

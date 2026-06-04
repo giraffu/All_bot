@@ -41,6 +41,9 @@ export interface GalleryPost {
   is_active: boolean
   prompt: string | null
   task_type?: string | null
+  result_meta?: Wan22ResultMeta
+  template_apply_supported?: boolean
+  template_apply_disabled_reason?: 'wan22_stitched' | string | null
   author_name?: string | null
   author_username?: string | null
   is_following_author?: boolean

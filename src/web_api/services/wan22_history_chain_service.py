@@ -1,17 +1,12 @@
-import uuid
-
 from fastapi import HTTPException
 
-from src.database.models import History
-from src.services.storage import storage
 from src.services.wan22_video_v2_extension_service import (
     Wan22VideoV2ExtensionError,
-    build_wan22_chain_prompt_summary,
+    Wan22VideoV2PersistenceError,
     build_full_chain_task_ids,
-    build_wan22_stitched_extra_outputs,
     extract_wan22_history_context,
     load_owned_wan22_history_for_internal_user,
-    stitch_history_videos,
+    stitch_histories_and_create_history,
 )
 from src.web_api.schemas.user_schema import HistoryItem
 from src.web_api.schemas.user_schema import Wan22HistoryChainResponse
@@ -105,76 +100,20 @@ async def stitch_wan22_history_chain_response(
         if item.task_id in histories_by_task_id
     ]
     try:
-        stitched_video = await stitch_history_videos(ordered_histories)
+        stitched_result = await stitch_histories_and_create_history(
+            histories=ordered_histories,
+            user_id=current_user.id,
+            source_task_id=task_id,
+            source="web",
+            session=db,
+        )
+    except Wan22VideoV2PersistenceError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
     except Wan22VideoV2ExtensionError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    stitched_task_id = f"wan22_chain_{uuid.uuid4().hex[:24]}"
-    stitched_type = (
-        str(getattr(ordered_histories[-1], "type", "") or "").strip()
-        if ordered_histories
-        else "wan22_video_v2"
-    ) or "wan22_video_v2"
-    output_object_name = f"{current_user.id}/output_images/{stitched_task_id}.mp4"
-    output_file = storage.upload_bytes(
-        stitched_video,
-        output_object_name,
-        content_type="video/mp4",
-    )
-    if not output_file:
-        raise HTTPException(status_code=500, detail="拼接视频上传失败，请稍后再试")
-
-    stitched_history = History(
-        user_id=current_user.id,
-        task_id=stitched_task_id,
-        type=stitched_type,
-        prompt=build_wan22_chain_prompt_summary(ordered_histories),
-        output_file=output_file,
-        extra_outputs=build_wan22_stitched_extra_outputs(
-            chain_task_ids=[item.task_id for item in chain_payload.items if item.task_id],
-            source_task_id=task_id,
-        ),
-        billing_resolution=next(
-            (
-                getattr(history, "billing_resolution", None)
-                for history in reversed(ordered_histories)
-                if getattr(history, "billing_resolution", None)
-            ),
-            None,
-        ),
-        width=next(
-            (
-                getattr(history, "width", None)
-                for history in reversed(ordered_histories)
-                if getattr(history, "width", None) is not None
-            ),
-            None,
-        ),
-        height=next(
-            (
-                getattr(history, "height", None)
-                for history in reversed(ordered_histories)
-                if getattr(history, "height", None) is not None
-            ),
-            None,
-        ),
-        duration=sum(int(getattr(history, "duration", 0) or 0) for history in ordered_histories)
-        or None,
-        requested_duration=sum(
-            int(getattr(history, "requested_duration", 0) or 0) for history in ordered_histories
-        )
-        or None,
-        allow_contribute=all(
-            getattr(history, "allow_contribute", True) is not False
-            for history in ordered_histories
-        ),
-        source="web",
-    )
-    db.add(stitched_history)
-    await db.commit()
-    await db.refresh(stitched_history)
 
     payload_items = await build_user_history_payload(
-        histories=[stitched_history],
+        histories=[stitched_result.history],
         gallery_task_ids=set(),
     )
     if not payload_items:

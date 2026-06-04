@@ -17,6 +17,10 @@ import { useTemplateApplyStore } from '@/stores/templateApply'
 import type { GalleryPost as Post } from '@/types/gallery'
 import { resolveMediaCardView } from '@/utils/mediaCardView'
 import { formatGalleryTag } from '@/utils/galleryPresentation'
+import {
+  resolveGalleryTemplateApplyDisabledMessage,
+  resolveGalleryTemplateApplyDisabledReason,
+} from '@/utils/galleryTemplateApply'
 import type { PublicUserProfileResponse } from '@/types/social'
 
 const props = defineProps<{
@@ -151,6 +155,17 @@ const {
   loadMoreComments,
   submitComment,
 } = useGalleryComments(currentPost, recentPosts, detailVisible)
+const currentTemplateApplyDisabledReason = computed(() =>
+  resolveGalleryTemplateApplyDisabledReason(currentPost.value)
+)
+const currentTemplateApplyDisabledMessage = computed(() =>
+  currentTemplateApplyDisabledReason.value
+    ? resolveGalleryTemplateApplyDisabledMessage(
+        t,
+        currentTemplateApplyDisabledReason.value
+      )
+    : ''
+)
 const { applying, handleApply } = useDetailTemplateApply<Post>({
   currentPost,
   detailVisible,
@@ -158,6 +173,12 @@ const { applying, handleApply } = useDetailTemplateApply<Post>({
   source: 'gallery',
   templateApplyStore,
   t,
+  isApplyDisabled: (post) => resolveGalleryTemplateApplyDisabledReason(post) !== null,
+  getApplyDisabledMessage: (post) =>
+    resolveGalleryTemplateApplyDisabledMessage(
+      t,
+      resolveGalleryTemplateApplyDisabledReason(post)
+    ),
 })
 const detailStandardActions = computed(() => ({
   showDesktopReaction: true,
@@ -172,7 +193,8 @@ const detailStandardActions = computed(() => ({
   desktopApplyPlacement: 'before' as const,
   applyLabel: t('gallery.modal.apply_btn'),
   applyLoading: applying.value,
-  applyHint: t('gallery.modal.apply_hint'),
+  applyDisabled: currentTemplateApplyDisabledReason.value !== null,
+  applyHint: currentTemplateApplyDisabledMessage.value || t('gallery.modal.apply_hint'),
   copyLabel: t('my_posts.copy_prompt'),
   onLike: () => {
     if (currentPost.value) {

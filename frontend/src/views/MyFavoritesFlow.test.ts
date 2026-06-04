@@ -189,7 +189,7 @@ const faceSwapContext = {
 const primeFavoritesApi = (options?: {
   empty?: boolean
   submissionsEmpty?: boolean
-  favoriteItems?: typeof samplePost[]
+  favoriteItems?: Array<typeof samplePost & Record<string, unknown>>
 }) => {
   apiGetMock.mockImplementation((url: string) => {
     if (url === '/gallery/config') {
@@ -333,6 +333,44 @@ describe('MyFavorites workbench flow', () => {
     expect(templateApplyStore.visible).toBe(true)
     expect(templateApplyStore.panelKind).toBe('faceSwap')
     expect(hostModal?.attributes('data-open')).toBe('true')
+  })
+
+  it('disables template apply for stitched Wan22 favorite records', async () => {
+    primeFavoritesApi({
+      favoriteItems: [{
+        ...samplePost,
+        media_type: 'video',
+        task_type: 'wan22_video_v2',
+        result_meta: {
+          wan22_is_stitched: true
+        },
+        template_apply_supported: false,
+        template_apply_disabled_reason: 'wan22_stitched'
+      }]
+    })
+
+    const wrapper = mountHarness()
+    await flushPromises()
+    await flushPromises()
+
+    await wrapper.get('.group.cursor-pointer').trigger('click')
+    await flushPromises()
+    await flushPromises()
+
+    const applyButton = wrapper
+      .findAll('button')
+      .find(button => button.text().includes('一键应用'))
+
+    expect(applyButton).toBeTruthy()
+    expect(applyButton!.attributes('disabled')).toBeDefined()
+
+    await applyButton!.trigger('click')
+    await flushPromises()
+
+    expect(
+      apiGetMock.mock.calls.some(([url]) => String(url).includes('apply-context'))
+    ).toBe(false)
+    expect(useTemplateApplyStore().visible).toBe(false)
   })
 
   it('keeps legacy favorites playable while hiding post-only comment UI', async () => {

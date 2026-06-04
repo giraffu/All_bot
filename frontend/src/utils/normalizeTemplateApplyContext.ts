@@ -61,6 +61,7 @@ export const normalizeTemplateApplyContext = (
     task_id: rawContext.task_id ?? null,
     media_type: rawContext.media_type ?? null,
     prompt: rawContext.prompt ?? null,
+    negative_prompt: rawContext.negative_prompt ?? null,
     lora_name: rawContext.lora_name ?? null,
     lora_strength: rawContext.lora_strength ?? null,
     lora_items: rawContext.lora_items ?? null,
@@ -82,6 +83,7 @@ export const normalizeTemplateApplyContext = (
     supportMode: meta?.supportMode ?? 'unknown',
     sourcePostId: asPositiveInteger(rawContext.source_post_id),
     prompt: asNonEmptyString(rawContext.prompt),
+    negativePrompt: asNonEmptyString(rawContext.negative_prompt),
     loraName: asNonEmptyString(rawContext.lora_name),
     loraStrength: asNullableNumber(rawContext.lora_strength),
     loraItems: normalizeLtxVideoLoraItems(

@@ -169,6 +169,7 @@ const buildContext = (overrides: Record<string, unknown> = {}): TemplateApplyCon
   supportMode: 'workbench',
   sourcePostId: 55,
   prompt: null,
+  negativePrompt: null,
   loraName: null,
   loraStrength: null,
   loraItems: [],

@@ -17,6 +17,7 @@ describe('templateVideoApplyState', () => {
 
     expect(state).toEqual({
       prompt: 'cinematic action shot',
+      negativePrompt: null,
       loraName: null,
       loraItems: [],
       sourcePostId: 72,
@@ -108,6 +109,7 @@ describe('templateVideoApplyState', () => {
 
     expect(state).toEqual({
       prompt: 'cinematic action shot',
+      negativePrompt: null,
       loraName: null,
       loraItems: [],
       sourcePostId: null,
@@ -154,6 +156,31 @@ describe('templateVideoApplyState', () => {
     expect(state?.resolution).toBe('hd')
     expect(state?.duration).toBe('5')
     expect(state?.isTemplateVideoSettingsLocked).toBe(true)
+  })
+
+  it('restores wan22_video_v2 prompt, negative prompt, tier settings, and fixed duration', () => {
+    const state = resolveTemplateVideoApplyState(
+      {
+        task_type: 'wan22_video_v2',
+        prompt: 'cinematic v2 motion',
+        negative_prompt: 'low quality blur',
+        width: 512,
+        height: 768,
+        duration: 13,
+        requested_duration: null,
+        billing_resolution: 'standard',
+        source_post_id: 91
+      },
+      'wan22_video_v2'
+    )
+
+    expect(state?.prompt).toBe('cinematic v2 motion')
+    expect(state?.negativePrompt).toBe('low quality blur')
+    expect(state?.resolution).toBe('standard')
+    expect(state?.duration).toBe('5')
+    expect(state?.sourcePostId).toBe(91)
+    expect(state?.isTemplateVideoSettingsLocked).toBe(true)
+    expect(state?.isTemplatePromptLocked).toBe(true)
   })
 
   it('uses exact width and height for ltx_video templates', () => {

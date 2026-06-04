@@ -41,7 +41,7 @@ def test_get_wan22_video_v2_fsm_handler_exposes_expected_entry_points():
         handler = wan22_video_v2_fsm.get_wan22_video_v2_fsm_handler()
 
     assert handler.name == "wan22_video_v2_fsm"
-    assert len(handler.entry_points) == 4
+    assert len(handler.entry_points) == 5
 
 
 def test_settings_callback_pattern_accepts_all_resolution_presets():
@@ -59,6 +59,20 @@ def test_settings_callback_pattern_accepts_all_resolution_presets():
     for preset_key in wan22_video_v2_fsm.WAN22_VIDEO_V2_RESOLUTION_PRESETS:
         assert pattern.match(f"wan22v2_res_{preset_key}")
     assert not pattern.match("wan22v2_res_fast")
+
+    entry_patterns = [
+        getattr(entry, "pattern", None).pattern
+        for entry in handler.entry_points
+        if getattr(entry, "pattern", None)
+    ]
+    assert any(
+        re.compile(pattern).match("wan22v2_extend:task-1")
+        for pattern in entry_patterns
+    )
+    assert any(
+        re.compile(pattern).match("wan22v2_regenerate:task-2")
+        for pattern in entry_patterns
+    )
 
 
 def test_settings_keyboard_renders_resolution_presets_in_one_row():
@@ -275,6 +289,148 @@ async def test_start_wan22_video_v2_extension_prefills_tail_frame(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_start_wan22_video_v2_extension_recovers_context_without_bot_data(
+    monkeypatch,
+):
+    edit_mock = AsyncMock()
+    history = SimpleNamespace(
+        type="wan22_video_v2",
+        extra_outputs={
+            "_wan22_context": {
+                "wan22_resolution_preset": "hd",
+                "wan22_chain_task_ids": ["task-0"],
+            }
+        },
+    )
+
+    monkeypatch.setattr(wan22_video_v2_fsm, "robust_edit_text", edit_mock)
+    monkeypatch.setattr(
+        wan22_video_v2_fsm,
+        "load_owned_wan22_history",
+        AsyncMock(return_value=history),
+    )
+    monkeypatch.setattr(
+        wan22_video_v2_fsm,
+        "download_last_frame_to_fsm_temp",
+        AsyncMock(return_value="/tmp/tail.png"),
+    )
+
+    query = SimpleNamespace(
+        data="wan22v2_extend:task-1",
+        answer=AsyncMock(),
+        message=SimpleNamespace(text="existing", message_id=123),
+    )
+    update = SimpleNamespace(
+        callback_query=query,
+        effective_user=_build_user(),
+        effective_chat=SimpleNamespace(id=10001),
+    )
+    context = SimpleNamespace(
+        bot_data={},
+        user_data={},
+        lang="zh",
+        t=lambda key, **kwargs: (
+            f"{key}:{kwargs['resolution_preset']}"
+            if key == "fsm.wan22_video_v2.extension_start"
+            else f"T:{key}"
+        ),
+    )
+
+    result = await wan22_video_v2_fsm.start_wan22_video_v2_extension(update, context)
+
+    assert result == wan22_video_v2_fsm.Wan22VideoV2State.WAIT_END_FRAME_CHOICE
+    data = context.user_data["wan22_video_v2_data"]
+    assert data["extension_prev_task_id"] == "task-1"
+    assert data["resolution_preset"] == "hd"
+    assert data["chain_task_ids"] == ["task-0", "task-1"]
+    edit_mock.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_start_wan22_video_v2_extension_recovers_task_id_from_gallery_button(
+    monkeypatch,
+):
+    edit_mock = AsyncMock()
+    history = SimpleNamespace(type="wan22_video_v2", extra_outputs={})
+
+    monkeypatch.setattr(wan22_video_v2_fsm, "robust_edit_text", edit_mock)
+    monkeypatch.setattr(
+        wan22_video_v2_fsm,
+        "load_owned_wan22_history",
+        AsyncMock(return_value=history),
+    )
+    monkeypatch.setattr(
+        wan22_video_v2_fsm,
+        "download_last_frame_to_fsm_temp",
+        AsyncMock(return_value="/tmp/tail.png"),
+    )
+
+    query = SimpleNamespace(
+        data="wan22v2_extend",
+        answer=AsyncMock(),
+        message=SimpleNamespace(
+            text="existing",
+            message_id=123,
+            reply_markup=SimpleNamespace(
+                inline_keyboard=[
+                    [SimpleNamespace(callback_data="submit_gallery_task-1")]
+                ]
+            ),
+        ),
+    )
+    update = SimpleNamespace(
+        callback_query=query,
+        effective_user=_build_user(),
+        effective_chat=SimpleNamespace(id=10001),
+    )
+    context = SimpleNamespace(
+        bot_data={},
+        user_data={},
+        lang="zh",
+        t=lambda key, **kwargs: (
+            f"{key}:{kwargs['resolution_preset']}"
+            if key == "fsm.wan22_video_v2.extension_start"
+            else f"T:{key}"
+        ),
+    )
+
+    result = await wan22_video_v2_fsm.start_wan22_video_v2_extension(update, context)
+
+    assert result == wan22_video_v2_fsm.Wan22VideoV2State.WAIT_END_FRAME_CHOICE
+    assert context.user_data["wan22_video_v2_data"]["extension_prev_task_id"] == "task-1"
+
+
+@pytest.mark.asyncio
+async def test_start_wan22_video_v2_extension_replies_when_task_id_missing(
+    monkeypatch,
+):
+    reply_mock = AsyncMock()
+    monkeypatch.setattr(wan22_video_v2_fsm, "robust_reply_text", reply_mock)
+
+    message = SimpleNamespace(message_id=123, reply_markup=None)
+    query = SimpleNamespace(
+        data="wan22v2_extend",
+        answer=AsyncMock(),
+        message=message,
+    )
+    update = SimpleNamespace(callback_query=query)
+    context = SimpleNamespace(
+        bot_data={},
+        user_data={},
+        t=lambda key, **kwargs: f"T:{key}",
+    )
+
+    result = await wan22_video_v2_fsm.start_wan22_video_v2_extension(update, context)
+
+    assert result == ConversationHandler.END
+    reply_mock.assert_awaited_once_with(
+        message,
+        "T:fsm.wan22_video_v2.expired_alert",
+        parse_mode="Markdown",
+    )
+
+
+@pytest.mark.asyncio
 async def test_start_wan22_video_v2_extension_replies_for_media_message(monkeypatch):
     edit_mock = AsyncMock()
     reply_mock = AsyncMock()
@@ -375,6 +531,123 @@ async def test_start_wan22_video_v2_extension_surfaces_missing_tail_frame_error(
 
 
 @pytest.mark.asyncio
+async def test_start_wan22_video_v2_regeneration_waits_for_editable_prompt(
+    monkeypatch,
+):
+    edit_mock = AsyncMock()
+    load_history_mock = AsyncMock(
+        side_effect=[
+            SimpleNamespace(
+                prompt="[standard|5s] [模型: BreastGrow] current prompt",
+                requested_duration=5,
+                type=wan22_video_v2_fsm.MODE_IMAGE_TO_VIDEO,
+            ),
+            SimpleNamespace(type="wan22_video_v2"),
+        ]
+    )
+
+    monkeypatch.setattr(wan22_video_v2_fsm, "robust_edit_text", edit_mock)
+    monkeypatch.setattr(
+        wan22_video_v2_fsm,
+        "load_owned_wan22_history",
+        load_history_mock,
+    )
+    monkeypatch.setattr(
+        wan22_video_v2_fsm,
+        "download_last_frame_to_fsm_temp",
+        AsyncMock(return_value="/tmp/start.png"),
+    )
+
+    query = SimpleNamespace(
+        data="wan22v2_regenerate",
+        answer=AsyncMock(),
+        message=SimpleNamespace(text="existing", message_id=123),
+    )
+    update = SimpleNamespace(
+        callback_query=query,
+        effective_user=_build_user(),
+        effective_chat=SimpleNamespace(id=10001),
+    )
+    context = SimpleNamespace(
+        bot_data={
+            "msg_meta_123": {
+                "task_id": "task-3",
+                "wan22_prev_task_id": "task-2",
+                "wan22_chain_task_ids": ["task-1", "task-2"],
+                "wan22_negative_prompt": "negative",
+                "wan22_resolution_preset": "standard",
+                "wan22_use_end_frame": False,
+                "lora_name": "BreastGrow",
+                "lora_strength": 1.0,
+            }
+        },
+        user_data={},
+        lang="zh",
+        t=lambda key, **kwargs: (
+            f"regen:{kwargs['prompt']}"
+            if key == "fsm.wan22_video_v2.regenerate_prompt"
+            else f"T:{key}"
+        ),
+    )
+
+    result = await wan22_video_v2_fsm.start_wan22_video_v2_regeneration(
+        update,
+        context,
+    )
+
+    assert result == wan22_video_v2_fsm.Wan22VideoV2State.WAIT_PROMPT
+    data = context.user_data["wan22_video_v2_data"]
+    assert data["start_image_path"] == "/tmp/start.png"
+    assert data["prompt"] == "current prompt"
+    assert data["prefill_prompt"] == "current prompt"
+    assert data["negative_prompt"] == "negative"
+    assert data["extension_prev_task_id"] == "task-2"
+    assert data["extension_task_type"] == wan22_video_v2_fsm.MODE_IMAGE_TO_VIDEO
+    assert data["lora_name"] == "BreastGrow"
+    assert data["lora_strength"] == 1.0
+    assert data["chain_task_ids"] == ["task-1", "task-2"]
+    edit_mock.assert_awaited_once_with(
+        query.message,
+        "regen:current prompt",
+        reply_markup=ANY,
+        parse_mode="Markdown",
+    )
+
+
+@pytest.mark.asyncio
+async def test_use_original_prompt_moves_to_negative_prompt(monkeypatch):
+    edit_mock = AsyncMock()
+    monkeypatch.setattr(wan22_video_v2_fsm, "robust_edit_text", edit_mock)
+
+    query = SimpleNamespace(
+        data="wan22v2_use_original_prompt",
+        answer=AsyncMock(),
+        message=SimpleNamespace(text="existing"),
+    )
+    update = SimpleNamespace(callback_query=query)
+    context = SimpleNamespace(
+        user_data={
+            "wan22_video_v2_data": {
+                "prompt": "current prompt",
+                "prefill_prompt": "current prompt",
+            }
+        },
+        t=lambda key, **kwargs: f"T:{key}",
+    )
+
+    result = await wan22_video_v2_fsm.use_original_prompt(update, context)
+
+    assert result == wan22_video_v2_fsm.Wan22VideoV2State.WAIT_NEGATIVE_PROMPT
+    assert context.user_data["wan22_video_v2_data"]["prompt"] == "current prompt"
+    edit_mock.assert_awaited_once_with(
+        query.message,
+        "T:fsm.wan22_video_v2.send_negative_prompt",
+        reply_markup=ANY,
+        parse_mode="Markdown",
+    )
+
+
+@pytest.mark.asyncio
 async def test_submit_generation_for_extension_adds_stitch_context(monkeypatch):
     edit_mock = AsyncMock()
     quota_mock = AsyncMock()
@@ -432,6 +705,66 @@ async def test_submit_generation_for_extension_adds_stitch_context(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_submit_generation_for_legacy_extension_uses_legacy_submitting_text(
+    monkeypatch,
+):
+    edit_mock = AsyncMock()
+    quota_mock = AsyncMock()
+    create_background_task_mock = MagicMock()
+    process_task_mock = MagicMock(return_value=("bg-task",))
+
+    monkeypatch.setattr(wan22_video_v2_fsm, "robust_edit_text", edit_mock)
+    monkeypatch.setattr(
+        wan22_video_v2_fsm.permission_service, "check_quota", quota_mock
+    )
+    monkeypatch.setattr(
+        wan22_video_v2_fsm, "create_background_task", create_background_task_mock
+    )
+    monkeypatch.setattr(
+        wan22_video_v2_fsm, "process_image_to_video_task", process_task_mock
+    )
+
+    query = SimpleNamespace(
+        data="wan22v2_submit",
+        answer=AsyncMock(),
+        message=SimpleNamespace(),
+    )
+    update = SimpleNamespace(
+        callback_query=query,
+        effective_user=_build_user(),
+        effective_chat=SimpleNamespace(id=10001),
+    )
+    context = SimpleNamespace(
+        bot=SimpleNamespace(),
+        user_data={
+            "in_conversation": wan22_video_v2_fsm.WAN22_VIDEO_V2_CONVERSATION_TAG,
+            "wan22_video_v2_data": {
+                "start_image_path": "/tmp/start.png",
+                "end_image_path": None,
+                "use_end_frame": False,
+                "resolution_preset": "standard",
+                "prompt": "positive",
+                "negative_prompt": "negative",
+                "extension_prev_task_id": "task-1",
+                "extension_task_type": wan22_video_v2_fsm.MODE_IMAGE_TO_VIDEO,
+                "chain_task_ids": ["task-1"],
+                "lora_name": "BreastGrow",
+                "lora_strength": 1.0,
+            },
+        },
+        t=lambda key, **kwargs: f"T:{key}:{kwargs.get('cost', '')}",
+    )
+
+    result = await wan22_video_v2_fsm.submit_generation(update, context)
+
+    assert result == ConversationHandler.END
+    process_task_mock.assert_called_once()
+    assert edit_mock.await_args_list[-1].args[1] == (
+        "T:fsm.wan22_video_v2.submitting_legacy:20"
+    )
+
+
+@pytest.mark.asyncio
 async def test_build_settings_message_uses_selected_resolution_cost():
     context = SimpleNamespace(
         lang="zh",
@@ -452,6 +785,30 @@ async def test_build_settings_message_uses_selected_resolution_cost():
     message = wan22_video_v2_fsm._build_settings_message(context, data)
 
     assert message == "fsm.wan22_video_v2.settings_text:极速（约 512p）:6"
+
+
+@pytest.mark.asyncio
+async def test_build_settings_message_uses_legacy_title_for_legacy_context():
+    context = SimpleNamespace(
+        lang="zh",
+        t=lambda key, **kwargs: (
+            f"{key}:{kwargs['resolution_preset']}:{kwargs['cost']}"
+            if key == "fsm.wan22_video_v2.legacy_settings_text"
+            else f"T:{key}"
+        ),
+    )
+    data = {
+        "use_end_frame": False,
+        "end_image_path": None,
+        "prompt": "positive",
+        "negative_prompt": "",
+        "resolution_preset": "preview",
+        "extension_task_type": wan22_video_v2_fsm.MODE_IMAGE_TO_VIDEO,
+    }
+
+    message = wan22_video_v2_fsm._build_settings_message(context, data)
+
+    assert message == "fsm.wan22_video_v2.legacy_settings_text:极速（约 512p）:6"
 
 
 @pytest.mark.asyncio

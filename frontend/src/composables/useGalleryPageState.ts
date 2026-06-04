@@ -26,6 +26,10 @@ import {
   formatGalleryTag,
   resolveGalleryTaskTypeLabel,
 } from '@/utils/galleryPresentation'
+import {
+  resolveGalleryTemplateApplyDisabledMessage,
+  resolveGalleryTemplateApplyDisabledReason,
+} from '@/utils/galleryTemplateApply'
 import { handleMediaCardImageError } from '@/utils/mediaCardFallback'
 import { resolveMediaCardView } from '@/utils/mediaCardView'
 import { useViewport } from '@/composables/useViewport'
@@ -153,6 +157,17 @@ export function useGalleryPageState() {
       console.error(error)
     },
   })
+  const currentTemplateApplyDisabledReason = computed(() =>
+    resolveGalleryTemplateApplyDisabledReason(currentPost.value)
+  )
+  const currentTemplateApplyDisabledMessage = computed(() =>
+    currentTemplateApplyDisabledReason.value
+      ? resolveGalleryTemplateApplyDisabledMessage(
+          t,
+          currentTemplateApplyDisabledReason.value
+        )
+      : ''
+  )
 
   const { applying, handleApply } = useDetailTemplateApply<GalleryPost>({
     currentPost,
@@ -161,6 +176,12 @@ export function useGalleryPageState() {
     source: 'gallery',
     templateApplyStore,
     t,
+    isApplyDisabled: (post) => resolveGalleryTemplateApplyDisabledReason(post) !== null,
+    getApplyDisabledMessage: (post) =>
+      resolveGalleryTemplateApplyDisabledMessage(
+        t,
+        resolveGalleryTemplateApplyDisabledReason(post)
+      ),
   })
 
   const currentDetailMedia = useCurrentDetailMedia(currentPost, {
@@ -182,7 +203,8 @@ export function useGalleryPageState() {
     desktopApplyPlacement: 'before' as const,
     applyLabel: t('gallery.modal.apply_btn'),
     applyLoading: applying.value,
-    applyHint: t('gallery.modal.apply_hint'),
+    applyDisabled: currentTemplateApplyDisabledReason.value !== null,
+    applyHint: currentTemplateApplyDisabledMessage.value || t('gallery.modal.apply_hint'),
     copyLabel: t('my_posts.copy_prompt'),
     onLike: () => {
       if (currentPost.value) {

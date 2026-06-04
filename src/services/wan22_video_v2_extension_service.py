@@ -3,6 +3,7 @@ import shutil
 import subprocess
 import tempfile
 import uuid
+from dataclasses import dataclass
 from pathlib import Path
 
 from sqlalchemy import select
@@ -26,6 +27,23 @@ WAN22_STITCH_RESULT_KEY = "wan22_chain_stitch"
 
 class Wan22VideoV2ExtensionError(Exception):
     """Raised when WAN2.2 extension or stitching prerequisites are not met."""
+
+
+class Wan22VideoV2PersistenceError(Wan22VideoV2ExtensionError):
+    """Raised when a stitched WAN2.2 result cannot be persisted."""
+
+
+@dataclass(frozen=True)
+class Wan22StitchedHistoryResult:
+    video_bytes: bytes
+    task_id: str
+    task_type: str
+    prompt: str
+    output_file: str
+    extra_outputs: dict[str, object]
+    allow_contribute: bool
+    segment_count: int
+    history: History
 
 
 async def resolve_internal_user_id_from_telegram(
@@ -235,6 +253,119 @@ def build_wan22_stitched_extra_outputs(
     if normalized_source_task_id:
         stitched_payload["source_task_id"] = normalized_source_task_id
     return {WAN22_STITCH_RESULT_KEY: stitched_payload}
+
+
+def _resolve_stitched_history_type(histories: list[History]) -> str:
+    if histories:
+        stitched_type = str(getattr(histories[-1], "type", "") or "").strip()
+        if stitched_type:
+            return stitched_type
+    return "wan22_video_v2"
+
+
+def _resolve_latest_history_value(histories: list[History], field_name: str):
+    for history in reversed(histories):
+        value = getattr(history, field_name, None)
+        if value is None:
+            continue
+        if isinstance(value, str) and not value:
+            continue
+        return value
+    return None
+
+
+def _sum_history_int_values(histories: list[History], field_name: str) -> int | None:
+    total = sum(int(getattr(history, field_name, 0) or 0) for history in histories)
+    return total or None
+
+
+def _build_stitched_history(
+    *,
+    histories: list[History],
+    user_id: int,
+    task_id: str,
+    output_file: str,
+    source_task_id: str | None,
+    source: str,
+) -> History:
+    chain_task_ids = [
+        str(getattr(history, "task_id", "") or "").strip()
+        for history in histories
+        if str(getattr(history, "task_id", "") or "").strip()
+    ]
+    return History(
+        user_id=user_id,
+        task_id=task_id,
+        type=_resolve_stitched_history_type(histories),
+        prompt=build_wan22_chain_prompt_summary(histories),
+        output_file=output_file,
+        extra_outputs=build_wan22_stitched_extra_outputs(
+            chain_task_ids=chain_task_ids,
+            source_task_id=source_task_id,
+        ),
+        billing_resolution=_resolve_latest_history_value(histories, "billing_resolution"),
+        width=_resolve_latest_history_value(histories, "width"),
+        height=_resolve_latest_history_value(histories, "height"),
+        duration=_sum_history_int_values(histories, "duration"),
+        requested_duration=_sum_history_int_values(histories, "requested_duration"),
+        allow_contribute=all(
+            getattr(history, "allow_contribute", True) is not False
+            for history in histories
+        ),
+        source=source,
+    )
+
+
+async def stitch_histories_and_create_history(
+    *,
+    histories: list[History],
+    user_id: int,
+    source_task_id: str | None,
+    source: str,
+    session=None,
+) -> Wan22StitchedHistoryResult:
+    stitched_video = await stitch_history_videos(histories)
+    stitched_task_id = f"wan22_chain_{uuid.uuid4().hex[:24]}"
+    output_object_name = f"{user_id}/output_images/{stitched_task_id}.mp4"
+    output_file = storage.upload_bytes(
+        stitched_video,
+        output_object_name,
+        content_type="video/mp4",
+    )
+    if not output_file:
+        raise Wan22VideoV2PersistenceError("拼接视频上传失败，请稍后再试")
+
+    stitched_history = _build_stitched_history(
+        histories=histories,
+        user_id=user_id,
+        task_id=stitched_task_id,
+        output_file=output_file,
+        source_task_id=source_task_id,
+        source=source,
+    )
+
+    async def _persist(active_session):
+        active_session.add(stitched_history)
+        await active_session.commit()
+        await active_session.refresh(stitched_history)
+
+    if session is not None:
+        await _persist(session)
+    else:
+        async with AsyncSessionLocal() as new_session:
+            await _persist(new_session)
+
+    return Wan22StitchedHistoryResult(
+        video_bytes=stitched_video,
+        task_id=stitched_task_id,
+        task_type=str(stitched_history.type or ""),
+        prompt=str(stitched_history.prompt or ""),
+        output_file=str(stitched_history.output_file or ""),
+        extra_outputs=dict(stitched_history.extra_outputs or {}),
+        allow_contribute=getattr(stitched_history, "allow_contribute", True) is not False,
+        segment_count=len(histories),
+        history=stitched_history,
+    )
 
 
 async def download_output_file_to_fsm_temp(

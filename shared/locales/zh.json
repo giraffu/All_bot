@@ -275,6 +275,10 @@
     "invalid_context": "模板数据缺失，暂时无法打开。",
     "open_failed": "模板工作台打开失败，请稍后重试。",
     "unknown_task_type": "当前模板暂不支持打开",
+    "disabled": {
+      "wan22_stitched": "拼接视频暂不支持一键应用，请选择单段视频模板。",
+      "unsupported": "当前作品暂不支持一键应用。"
+    },
     "close": {
       "title": "关闭模板工作台",
       "confirm": "确认关闭",
@@ -337,6 +341,7 @@
     "image_to_video": {
       "title_custom_video": "图生视频",
       "title_video_lora": "图生视频",
+      "title_wan22_video_v2": "图生视频 v2",
       "title_ltx_video": "高级图生视频",
       "current_page_desc": "上传基础图片，在当前页直接完成模板回填与视频提交。",
       "template_notice_complete": "已加载一键应用模板，原作品的提示词、分辨率与时长等参数已自动填入，您只需上传基础图片即可生成同款大片。",
@@ -762,6 +767,8 @@
       "single_frame_confirmed": "✅ 已切换为单图模式。",
       "end_image_received": "✅ 已收到终止帧。",
       "send_prompt": "【下一步】请发送**正面提示词**。",
+      "regenerate_prompt": "🔁 已载入当前段落的上下文。\n\n你可以直接发送新的**正面提示词**重新生成本段；如果想保持原提示词，请点击下方按钮。\n\n**原提示词**\n`{prompt}`",
+      "use_original_prompt": "使用原提示词",
       "send_negative_prompt": "【下一步】请发送**负面提示词**。\n\n如果没有负面提示词，可以点击下方按钮跳过。",
       "extension_start": "✨ 已自动载入上一段视频的**尾帧**作为新的起始帧。\n\n- 分辨率档位已保持为：{resolution_preset}\n- 本轮仍按之前流程填写正负提示词\n\n【下一步】请选择本段使用**单图模式**还是**首尾帧模式**。",
       "skip_negative_prompt": "跳过负面提示词",
@@ -773,8 +780,10 @@
       "status_no": "关闭",
       "no_negative_prompt": "无",
       "settings_text": "🎬 **图生视频v2 设置确认**\n\n- 首尾帧模式：{use_end_frame}\n- 终止帧就绪：{end_frame_ready}\n- 分辨率档位：{resolution_preset}\n- 固定时长：{duration}\n- 预计消耗：{cost} 灵石\n\n**正面提示词**\n`{prompt}`\n\n**负面提示词**\n`{negative_prompt}`\n\n确认后点击“开始生成”。",
+      "legacy_settings_text": "🎬 **图生视频设置确认**\n\n- 首尾帧模式：{use_end_frame}\n- 终止帧就绪：{end_frame_ready}\n- 分辨率档位：{resolution_preset}\n- 固定时长：{duration}\n- 预计消耗：{cost} 灵石\n\n**正面提示词**\n`{prompt}`\n\n**负面提示词**\n`{negative_prompt}`\n\n确认后点击“开始生成”。",
       "missing_end_image": "已开启首尾帧模式，请先上传终止帧图片。",
       "submitting": "🚀 正在提交图生视频v2任务 (消耗 {cost} 灵石)，请耐心等待...",
+      "submitting_legacy": "🚀 正在提交图生视频任务 (消耗 {cost} 灵石)，请耐心等待...",
       "expired_alert": "交互已失效或任务已提交，请重新开始"
     },
     "quick_image": {

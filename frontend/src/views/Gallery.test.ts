@@ -302,6 +302,57 @@ describe('Gallery template apply integration', () => {
     expect(messageSuccessMock).toHaveBeenCalledWith('已载入模板工作台')
   })
 
+  it('disables template apply for stitched Wan22 gallery posts', async () => {
+    const stitchedPost = {
+      ...samplePost,
+      id: 3,
+      task_id: 'task-stitched',
+      media_type: 'video',
+      task_type: 'wan22_video_v2',
+      result_meta: {
+        wan22_is_stitched: true
+      },
+      template_apply_supported: false,
+      template_apply_disabled_reason: 'wan22_stitched'
+    }
+    apiGetMock.mockImplementation((url: string) => {
+      if (url === '/gallery/config') {
+        return Promise.resolve({
+          data: {
+            allowed_types: [],
+            lora_models: [],
+            img2img_lora_models: []
+          }
+        })
+      }
+      if (url === '/gallery/posts') {
+        return Promise.resolve({
+          data: {
+            items: [stitchedPost],
+            total: 1,
+            page: 1,
+            pages: 1
+          }
+        })
+      }
+      throw new Error(`Unexpected GET request: ${url}`)
+    })
+
+    const { applyButton } = await openDetailAndFindApplyButton()
+
+    expect(applyButton.attributes('disabled')).toBeDefined()
+    expect(applyButton.text()).toContain('一键应用')
+    expect(applyButton.text()).not.toContain('拼接视频')
+
+    await applyButton.trigger('click')
+    await flushPromises()
+
+    expect(
+      apiGetMock.mock.calls.some(([url]) => String(url).includes('apply-context'))
+    ).toBe(false)
+    expect(templateApplyStoreMock.openFromRawContext).not.toHaveBeenCalled()
+  })
+
   it('switches page with paged navigation and requests the target page', async () => {
     primeGalleryApi({ paged: true })
 

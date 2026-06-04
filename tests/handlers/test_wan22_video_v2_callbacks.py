@@ -38,8 +38,8 @@ async def test_regenerate_wan22_video_v2_callback_reuses_previous_segment_contex
         "load_owned_wan22_history",
         AsyncMock(
             side_effect=[
-                SimpleNamespace(),
                 SimpleNamespace(prompt="current prompt", type=MODE_WAN22_VIDEO_V2),
+                SimpleNamespace(),
             ]
         ),
     )
@@ -110,12 +110,12 @@ async def test_regenerate_legacy_video_lora_callback_reuses_lora_context(
         "load_owned_wan22_history",
         AsyncMock(
             side_effect=[
-                SimpleNamespace(),
                 SimpleNamespace(
                     prompt="[standard|5s] [模型: BreastGrow] current prompt",
                     requested_duration=5,
                     type=MODE_IMAGE_TO_VIDEO,
                 ),
+                SimpleNamespace(),
             ]
         ),
     )
@@ -163,12 +163,81 @@ async def test_regenerate_legacy_video_lora_callback_reuses_lora_context(
 
 
 @pytest.mark.asyncio
+async def test_regenerate_callback_recovers_context_from_task_bound_callback(
+    monkeypatch,
+):
+    safe_answer = AsyncMock()
+    send_message = AsyncMock(return_value=SimpleNamespace(message_id=88))
+    create_background_task = MagicMock()
+    process_task = MagicMock(return_value=("bg-task",))
+    current_history = SimpleNamespace(
+        prompt="current prompt",
+        type=MODE_WAN22_VIDEO_V2,
+        extra_outputs={
+            "_wan22_context": {
+                "wan22_prev_task_id": "task-2",
+                "wan22_chain_task_ids": ["task-1", "task-2"],
+                "wan22_negative_prompt": "neg",
+                "wan22_resolution_preset": "standard",
+                "wan22_use_end_frame": False,
+            }
+        },
+    )
+
+    monkeypatch.setattr(wan22_video_v2_callbacks, "safe_answer_query", safe_answer)
+    monkeypatch.setattr(wan22_video_v2_callbacks, "robust_send_message", send_message)
+    monkeypatch.setattr(
+        wan22_video_v2_callbacks, "create_background_task", create_background_task
+    )
+    monkeypatch.setattr(
+        wan22_video_v2_callbacks, "process_wan22_video_v2_task", process_task
+    )
+    load_history_mock = AsyncMock(side_effect=[current_history, SimpleNamespace()])
+    monkeypatch.setattr(
+        wan22_video_v2_callbacks,
+        "load_owned_wan22_history",
+        load_history_mock,
+    )
+    monkeypatch.setattr(
+        wan22_video_v2_callbacks,
+        "download_last_frame_to_fsm_temp",
+        AsyncMock(return_value="/tmp/start.png"),
+    )
+
+    message = SimpleNamespace(message_id=77)
+    query = SimpleNamespace(data="wan22v2_regenerate:task-3", message=message)
+    update = _build_update(query)
+    context = SimpleNamespace(bot=MagicMock(), bot_data={})
+
+    await wan22_video_v2_callbacks.regenerate_wan22_video_v2_callback(update, context)
+
+    assert [call.kwargs["task_id"] for call in load_history_mock.await_args_list] == [
+        "task-3",
+        "task-2",
+    ]
+    process_task.assert_called_once()
+    kwargs = process_task.call_args.kwargs
+    assert kwargs["prompt"] == "current prompt"
+    assert kwargs["negative_prompt"] == "neg"
+    assert kwargs["resolution_preset"] == "standard"
+    assert kwargs["result_meta"] == {
+        "wan22_prev_task_id": "task-2",
+        "wan22_chain_task_ids": ["task-1", "task-2"],
+    }
+    create_background_task.assert_called_once_with(context, ("bg-task",))
+
+
+@pytest.mark.asyncio
 async def test_stitch_wan22_video_v2_callback_uses_full_chain(monkeypatch):
     safe_answer = AsyncMock()
     send_message = AsyncMock()
-    send_video = AsyncMock()
+    send_video = AsyncMock(return_value=SimpleNamespace(message_id=99))
     edit_reply_markup = AsyncMock()
-    histories = [SimpleNamespace(), SimpleNamespace(), SimpleNamespace()]
+    histories = [
+        SimpleNamespace(user_id=321, task_id="task-1"),
+        SimpleNamespace(user_id=321, task_id="task-2"),
+        SimpleNamespace(user_id=321, task_id="task-3"),
+    ]
 
     monkeypatch.setattr(wan22_video_v2_callbacks, "safe_answer_query", safe_answer)
     monkeypatch.setattr(wan22_video_v2_callbacks, "robust_send_message", send_message)
@@ -181,9 +250,19 @@ async def test_stitch_wan22_video_v2_callback_uses_full_chain(monkeypatch):
         "load_owned_wan22_history",
         AsyncMock(side_effect=histories),
     )
-    stitch_mock = AsyncMock(return_value=b"stitched-video")
+    stitch_mock = AsyncMock(
+        return_value=SimpleNamespace(
+            video_bytes=b"stitched-video",
+            task_id="stitched-task",
+            task_type=MODE_IMAGE_TO_VIDEO,
+            prompt="stitched prompt",
+            extra_outputs={"wan22_chain_stitch": {"segment_count": 3}},
+            allow_contribute=True,
+            segment_count=3,
+        )
+    )
     monkeypatch.setattr(
-        wan22_video_v2_callbacks, "stitch_history_videos", stitch_mock
+        wan22_video_v2_callbacks, "stitch_histories_and_create_history", stitch_mock
     )
 
     message = SimpleNamespace(
@@ -207,8 +286,16 @@ async def test_stitch_wan22_video_v2_callback_uses_full_chain(monkeypatch):
     await wan22_video_v2_callbacks.stitch_wan22_video_v2_callback(update, context)
 
     stitch_mock.assert_awaited_once()
-    stitched_histories = stitch_mock.await_args.args[0]
+    stitched_histories = stitch_mock.await_args.kwargs["histories"]
     assert len(stitched_histories) == 3
+    assert stitch_mock.await_args.kwargs["user_id"] == 321
+    assert stitch_mock.await_args.kwargs["source_task_id"] == "task-3"
+    assert stitch_mock.await_args.kwargs["source"] == "bot"
     send_video.assert_awaited_once()
     assert send_video.await_args.kwargs["caption"] == "✅ 3 段视频已拼接完成"
+    reply_markup = send_video.await_args.kwargs["reply_markup"]
+    first_row = reply_markup.inline_keyboard[0]
+    assert first_row[0].callback_data == "submit_gallery_stitched-task"
+    assert context.bot_data["msg_meta_99"]["task_id"] == "stitched-task"
+    assert context.bot_data["msg_meta_99"]["prompt"] == "stitched prompt"
     edit_reply_markup.assert_awaited_once()
