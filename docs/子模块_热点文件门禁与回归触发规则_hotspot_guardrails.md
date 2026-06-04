@@ -129,14 +129,13 @@
 
 ### 3.5 workflow 资产热点
 
-- `backend/workflows/*`
 - `workers/comfy_agent/workflows/*`
 - `workers/comfy_agent/workflows/mappings.json`
 - `src/workflow_mapping_validation.py`
 - `workers/comfy_agent/workflow_patcher.py`
 - `workers/comfy_agent/workflow_task_patchers.py`
 
-当前仓库仍同时存在 Central 校验副本与 Worker 执行副本。修改 workflow JSON 或 mappings 时，必须确认 Central API 校验目录与 Worker 实际执行目录一致，或在变更说明里写明只影响其中一侧的原因。
+当前 workflow 资产事实源为 `workers/comfy_agent/workflows`。修改 workflow JSON 或 mappings 时，必须确认目标 Worker 会加载该 task type，并同步复核 `TASK_TYPE_WORKFLOW_FILENAMES`、`mappings.json` 与 patcher 硬编码节点。
 
 ## 4. 回归触发规则
 
@@ -408,7 +407,6 @@ pytest \
 
 适用文件：
 
-- `backend/workflows/*`
 - `workers/comfy_agent/workflows/*`
 - `workers/comfy_agent/workflows/mappings.json`
 - `src/workflow_mapping_validation.py`
@@ -426,8 +424,8 @@ pytest \
 
 补充约束：
 
-- 当前自动 workflow path 尚未完整覆盖双目录 workflow 资产；修改 workflow 资产时不能只依赖 GitHub Actions 自动触发。
-- 若只改 Worker 执行目录或只改 backend 校验目录，必须在变更说明里写清 Central 校验与 Worker 运行时不会漂移的依据。
+- 当前自动 workflow path 尚未完整覆盖 Worker workflow 资产；修改 workflow 资产时不能只依赖 GitHub Actions 自动触发。
+- workflow 变更必须落在 `workers/comfy_agent/workflows`，并在变更说明里写清目标 Worker、task type 与必要的 focused tests。
 
 ## 5. 热点文件修改约束
 

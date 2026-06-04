@@ -15,7 +15,7 @@ description: "处理 Docker Compose 编排、safe_deploy/safe_deploy_test、Alem
 - **分阶段重建**：按 workers -> central api -> 主服务群 -> dashboard -> 生产 Web 边缘静态站的顺序重建/发布。
 - **故障恢复**：处理 MinIO 503、Nginx 404/502、容器代码未更新、环境变量未生效等典型问题。
 - **测试 worker 变量陷阱**：`workers/docker-compose-test.yml` 内的 `${...}` 插值不会读取 `env_file: ../.env.test`；当前测试 compose 已使用测试桶默认值并让 `AGENT_SECRET_TOKEN` 来自 `env_file`，重建后仍必须核对容器内实际生效变量，避免 401 或读写错误桶。
-- **workflow 资产双源风险**：仓库同时存在 `backend/workflows` 与 `workers/comfy_agent/workflows`。Worker 实际执行以 worker 目录为准，Central API/镜像构建仍可能读取 backend 侧副本做校验或 fallback；修改 workflow 时必须确认两侧是否同步。
+- **workflow 资产事实源**：`workers/comfy_agent/workflows` 是唯一 workflow 目录。Central API 不再挂载、COPY 或启动校验 workflow；修改 workflow 时默认只更新 Worker 目录，并重建/重启对应 Worker。
 
 ## 2. 操作规范
 - 修改数据库结构时：
@@ -29,7 +29,7 @@ description: "处理 Docker Compose 编排、safe_deploy/safe_deploy_test、Alem
 - 测试完成前，不得默认重建生产 Bot、生产 Web API、生产 Payment API、生产 Central API 或正式 Dashboard。
 - 交付前必须把“测试环境已验证通过、准备正式发布”作为显式阶段切换条件，不得自行跳过用户验收。
 - 若重建测试 worker，必须额外核对容器内实际生效的 `AGENT_SECRET_TOKEN`、`MINIO_INPUT_BUCKET=bot-data-test`、`MINIO_RESULT_BUCKET=comfyui-temp-test`；不要误以为 compose `${...}` 插值会自动读取 `.env.test` 的 `env_file` 值。
-- 修改 workflow JSON、`mappings.json` 或 workflow patcher 时，默认以 `workers/comfy_agent/workflows` 为运行时事实源；若 backend 仍保留同名副本，必须同步更新或说明该副本不参与当前任务类型。
+- 修改 workflow JSON、`mappings.json` 或 workflow patcher 时，默认以 `workers/comfy_agent/workflows` 为运行时事实源；Central API 不再维护 backend 副本，也不再执行 workflow 启动校验。
 
 ## 3. 核心红线
 - 不要在普通功能研发过程中默认执行 `safe_deploy.sh`、生产 compose 或任何正式环境重建动作。
@@ -40,7 +40,7 @@ description: "处理 Docker Compose 编排、safe_deploy/safe_deploy_test、Alem
 - 不要忽略卷挂载差异直接判断“代码已生效”。
 - 不要把 `docker restart` 当作代码发布手段，特别是 `web-api`、Dashboard、CS Bot 等 COPY 型服务。
 - 不要把 `env_file` 与 compose `${...}` 插值混为一谈；测试 worker 的 compose 默认值必须保持测试环境口径，重建后用 `docker exec <worker> env` 核对。
-- 不要只更新 `backend/workflows` 或只更新 `workers/comfy_agent/workflows` 后直接发布；必须确认 Central 校验目录与 Worker 执行目录不会漂移。
+- 不要把 workflow 放到 Central API 或 backend 目录后期待 Worker 执行；必须更新 `workers/comfy_agent/workflows` 并确认目标 Worker 支持该 task type。
 
 ## 4. 测试与验证
 - 测试研发阶段先验证隔离测试栈健康检查、关键 API 可达、测试库/测试 Redis/测试中控链路正确。

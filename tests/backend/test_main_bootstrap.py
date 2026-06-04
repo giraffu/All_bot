@@ -88,31 +88,3 @@ async def test_lifespan_sets_minio_client_on_app_state():
         assert app.state.minio_client._region_map["bot-data"] == "us-east-1"
     assert zombie_task.cancelled() is True
 
-
-@pytest.mark.asyncio
-async def test_lifespan_validates_workflows_before_startup():
-    app = SimpleNamespace(state=SimpleNamespace())
-    logger = MagicMock()
-    validate_workflows = MagicMock()
-
-    async def noop_loop():
-        return None
-
-    settings = SimpleNamespace(
-        workflows_dir="/tmp/workflows",
-        minio_endpoint="minio:9000",
-        minio_access_key="key",
-        minio_secret_key="secret",
-        minio_secure=False,
-    )
-
-    async with lifespan(
-        fastapi_app=app,
-        settings=settings,
-        logger=logger,
-        check_zombie_tasks_loop_func=noop_loop,
-        validate_workflows_func=validate_workflows,
-    ):
-        pass
-
-    validate_workflows.assert_called_once_with("/tmp/workflows")

@@ -71,7 +71,7 @@
 | `src/core/gallery_feed_queries.py` | `src.services.gallery_feed_queries` 的单行 re-export | 2026-06-03 静态扫描未发现生产或测试静态引用 | 删除前再跑 `rg "src.core.gallery_feed_queries"` 与 gallery focused tests；删除后同步热点门禁里 core compat 口径 | `可直接删除候选` |
 | `src/services/wan22_video_v2_config.py` | `src.domain_config.wan22_aio_video` 的兼容 re-export | `tg_task_result_presentation`、Wan22 extension service、FSM、history/gallery presenter 与部分测试仍引用旧路径 | 先把生产与测试引用迁到 `src.domain_config.wan22_aio_video`，再删除 re-export；迁移时不得改变 `custom_video/video_lora` 与 `wan22_video_v2` 的公开类型语义 | `迁引用后删除` |
 | `src/services/wan22_video_v2_context.py` | Wan22 chain context helper 的兼容 re-export | `src/services/wan22_video_v2_extension_service.py` 仍引用旧路径 | 同步迁到 `src.domain_config.wan22_aio_video` 或新的真实上下文模块，并补 Wan22 链路 focused tests 后删除 | `迁引用后删除` |
-| `backend/workflows/*` 与 `workers/comfy_agent/workflows/*` 双目录 workflow 资产 | Central 校验/镜像构建副本与 Worker 实际执行副本并存 | backend Dockerfile、backend compose 挂载、worker 镜像与运行时 workflow 选择链路 | 明确唯一 workflow 事实源；若保留双目录，必须建立同步/校验规则并在变更说明中证明 Central 校验与 Worker 执行不会漂移 | `待资产事实源收口` |
+| `backend/workflows/*` 与 `workers/comfy_agent/workflows/*` 双目录 workflow 资产 | 已退出：`backend/workflows` 删除，Central API 不再挂载、COPY 或启动校验 workflow | Worker 镜像与运行时 workflow 选择链路 | 后续 workflow 只维护 `workers/comfy_agent/workflows`；新增 task type 仍需同步 `TASK_TYPE_WORKFLOW_FILENAMES`、`mappings.json` 与目标 Worker `SUPPORTED_TASK_TYPES` | `已收口` |
 
 ## 冗余清理候选
 

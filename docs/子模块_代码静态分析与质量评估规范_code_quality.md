@@ -60,7 +60,7 @@
 - 主站前端 `vue-tsc --noEmit -p tsconfig.app.json` 通过。
 
 ### 4.3 当前 P1/P2 整改队列
-- **workflow 资产事实源**：`backend/workflows` 与 `workers/comfy_agent/workflows` 同时存在，Central 校验与 Worker 执行可能读取不同副本。新增或修改 workflow 前必须先确认唯一事实源或同步双目录，避免镜像构建路径与 compose 运行路径漂移。
+- **workflow 资产事实源**：workflow 已收口到 `workers/comfy_agent/workflows`，Central API 不再维护 backend 副本或执行 workflow 启动校验。新增或修改 workflow 时仍需复核 Worker 映射、patcher 和 `SUPPORTED_TASK_TYPES`。
 - **task core provider 契约**：`TaskCoreServiceProviders` 与 capability dataclass 仍大量使用 `Any`，且 provider 注册依赖模块级全局状态。后续重构应优先引入 `Protocol` 或更精确的 `Callable` 类型，并让测试走显式 dependencies，而不是扩大模块级 patch。
 - **高复杂编排热点**：`workers/comfy_agent/agent_main.py::process_task`、`src/web_api/services/wan22_history_chain_service.py::stitch_wan22_history_chain_response`、`src/web_api/services/gallery_response_builder.py::build_post_responses`、`src/services/tg_task_runtime.py::monitor_task_progress` 与 `frontend/src/composables/useLabWorkbench.ts` 是下一批拆分优先级。
 - **测试耦合**：现有测试仍大量 patch `AsyncSessionLocal`、模块级导入符号、全局单例与 runtime。新增测试优先通过公开 dependencies/dataclass 或 service seam 注入能力。

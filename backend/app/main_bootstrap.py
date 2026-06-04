@@ -94,11 +94,8 @@ async def lifespan(
     settings,
     logger,
     check_zombie_tasks_loop_func,
-    validate_workflows_func=None,
 ):
     zombie_task = None
-    if validate_workflows_func is not None:
-        validate_workflows_func(settings.workflows_dir)
     zombie_task = asyncio.create_task(
         check_zombie_tasks_loop_func(),
         name="backend-check-zombie-tasks",

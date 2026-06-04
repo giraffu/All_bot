@@ -49,11 +49,10 @@
 - `safe_deploy_test.sh` 里的测试 Web VPS 发布依赖宿主机可执行 `npm`，并通过 `frontend/scripts/deploy-edge-test.sh` 使用 SSH/SCP 把 `build:edge-test` 产物同步到边缘 VPS；若私钥缺失、`npm` 未安装或边缘域名不可达，脚本会中止而不是假装发布成功。
 
 ## 4.1 workflow 资产事实源
-- 当前仓库同时存在 `backend/workflows` 与 `workers/comfy_agent/workflows`。Central API 的校验/镜像构建路径与 Worker 的实际执行路径可能不是同一个目录。
-- 修改 workflow JSON、`mappings.json` 或 workflow patcher 时，必须先确认本次变更影响的是 Central 校验副本、Worker 执行副本，还是两者都影响。
-- 新增/更新 workflow 的默认口径是以 Worker 实际执行目录 `workers/comfy_agent/workflows` 为运行时事实源；若 backend 仍需要本地校验副本，必须同步更新并在部署说明中写明同步依据。
-- 若只重建 Central API 而未重建 Worker，或只重建 Worker 而未同步 backend 校验副本，可能出现“启动校验通过但执行失败”或“执行目录已更新但 Central 校验仍拒绝”的漂移。
-- 后续建议把 workflow 资产收口为共享目录或建立哈希校验门禁；在完成前，workflow 变更应手动对照 `find backend/workflows workers/comfy_agent/workflows -maxdepth 1 -type f` 与关键文件 hash。
+- `workers/comfy_agent/workflows` 是唯一 workflow 运行时事实源；`backend/workflows` 已退出，Central API 不再挂载、COPY 或启动校验 workflow 目录。
+- 修改 workflow JSON、`mappings.json` 或 workflow patcher 时，只更新 Worker 目录，并重建或重启会执行该 task type 的 Worker。
+- Worker 初始化 `WorkflowPatcher` 时仍会校验 `workers/comfy_agent/workflows/mappings.json`，确保映射节点和输入名存在；Central API 只负责请求参数与队列，不再以 workflow 文件作为启动门禁。
+- 若只重建 Central API 而未重建 Worker，workflow 变更不会生效；新增 task type 还必须同步 `TASK_TYPE_WORKFLOW_FILENAMES`、`mappings.json` 和目标 Worker 的 `SUPPORTED_TASK_TYPES`。
 
 ## 5. 常见问题与恢复约束
 - MinIO 503 / 上传假死

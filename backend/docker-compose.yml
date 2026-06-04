@@ -8,7 +8,6 @@ services:
     environment:
       - REDIS_URL=redis://:redispassword@host.docker.internal:6379/2
       - AUTH_TOKEN=your_secure_token_here
-      - WORKFLOWS_DIR=/app/workflows
       - MINIO_ENDPOINT=host.docker.internal:9000
       - MINIO_ACCESS_KEY=chuzeyu
       - MINIO_SECRET_KEY=@Cv1347968277
@@ -19,7 +18,6 @@ services:
       - MINIO_SECURE=false
       - AGENT_SECRET_TOKEN=${AGENT_SECRET_TOKEN:-super_secret_agent_token_2026}
     volumes:
-      - ../workers/comfy_agent/workflows:/app/workflows
       - ./app:/app/app
       - ../src:/app/src
     extra_hosts:

@@ -106,7 +106,7 @@ description: "处理任务提交流程、provider/capability 装配、双 ID 运
 - `workers/comfy_agent/workflows/mappings.json` 是否补了参数节点映射
 - `workflow_patcher.py` 是否支持新增参数
 - 目标环境 `SUPPORTED_TASK_TYPES` 是否包含该类型
-- 是否确认 `backend/workflows` 与 `workers/comfy_agent/workflows` 没有产生 Central 校验与 Worker 执行漂移
+- 是否确认 workflow 已落在唯一事实源 `workers/comfy_agent/workflows`，并且目标 Worker 会加载该 task type
 
 ### 7.5 结果与回归
 - `task_result_service.py` 是否能返回结果：Web owner result 优先 R2，延迟敏感路径必须用 R2 公网 HEAD 快探测且不持有 DB 只读事务等待对象存储；R2 未 warmup 时图片可短签 MinIO fallback，视频必须返回 `pending_result` 等 R2；前端 `pollTaskResult` 等待窗口需覆盖分钟级 R2 warmup，避免 99% 阶段网络失败或过早停止轮询

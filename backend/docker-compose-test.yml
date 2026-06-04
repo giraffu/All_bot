@@ -12,7 +12,6 @@ services:
       - TZ=Asia/Shanghai
       - REDIS_URL=redis://:redispassword@host.docker.internal:6379/4
     volumes:
-      - ../workers/comfy_agent/workflows:/app/workflows
       - ./app:/app/app
       - ../src:/app/src
     extra_hosts:
