@@ -112,10 +112,13 @@ def _build_wan22_regenerate_button(task_id: str) -> InlineKeyboardButton:
     )
 
 
-def _build_wan22_stitch_button() -> InlineKeyboardButton:
+def _build_wan22_stitch_button(task_id: str) -> InlineKeyboardButton:
     return InlineKeyboardButton(
         "🔗 完成拼接",
-        callback_data="wan22v2_stitch_chain",
+        callback_data=build_task_bound_callback_data(
+            WAN22_STITCH_CALLBACK_PREFIX,
+            task_id,
+        ),
     )
 
 
@@ -142,7 +145,7 @@ def _build_result_action_rows(
     if primary_row:
         rows.append(primary_row)
     if _supports_wan22_stitch(task_type, result_meta):
-        rows.append([_build_wan22_stitch_button()])
+        rows.append([_build_wan22_stitch_button(task_id)])
     return rows
 
 

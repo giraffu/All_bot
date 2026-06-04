@@ -162,13 +162,13 @@ def _resolve_callback_task_id(
     query,
     callback_prefix: str,
 ) -> str:
-    task_id = str(meta.get("task_id") or "").strip()
-    if task_id:
-        return task_id
     task_id = resolve_task_id_from_callback_data(
         getattr(query, "data", None),
         callback_prefix,
     )
+    if task_id:
+        return task_id
+    task_id = str(meta.get("task_id") or "").strip()
     if task_id:
         return task_id
     message = getattr(query, "message", None)

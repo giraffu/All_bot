@@ -120,7 +120,7 @@ graph TD
 - 历史详情 `TaskDetailModal.vue` 已为 `wan22_video_v2`、`custom_video`、`video_lora` 提供“扩展下一段 / 重新生成本段 / 完成整链拼接”入口；编辑入口会携带 `type=<来源类型>&wan22_mode=extend|regenerate&wan22_task_id=...` 回到练功房。点击“完成整链拼接”后，前端会直接打开新生成的拼接历史记录，提示词按“第 N 段”分段汇总各子片段 prompt，拼接历史类型保持来源链路类型。
 - Gallery 一键应用只支持 Wan22 单段记录：旧 `custom_video` / `video_lora` 继续恢复 prompt、旧 LoRA 与分辨率档位，`wan22_video_v2` 单段恢复 prompt、negative prompt、分辨率档位和固定 5 秒；所有 stitched 拼接记录都禁用一键应用，apply-context 服务端返回 400。
 - Telegram Bot 第二段及以后点击“重新生成”会进入可编辑 FSM：锁定上一段尾帧，继承当前段终止帧、负面提示词、分辨率和旧 LoRA 上下文，并展示原 prompt；用户可以发送新 prompt，或点击“使用原提示词”继续。
-- Telegram Bot 结果按钮不能只依赖 `context.bot_data["msg_meta_<message_id>"]` 里的内存元数据；`扩展生成 / 重新生成` callback 需携带当前 `task_id`，旧消息则允许从同条消息的 `submit_gallery_<task_id>` 按钮兜底恢复，再从历史 `extra_outputs._wan22_context` 补齐分辨率、上一段、负面提示词和 LoRA 上下文。若仍无法恢复，必须回一条明确失效提示，避免只显示“任务初始化中”。
+- Telegram Bot 结果按钮不能只依赖 `context.bot_data["msg_meta_<message_id>"]` 里的内存元数据；`扩展生成 / 重新生成 / 完成拼接` callback 需携带当前 `task_id`，旧消息则允许从同条消息的 `submit_gallery_<task_id>` 按钮兜底恢复，再从历史 `extra_outputs._wan22_context` 补齐分辨率、上一段、负面提示词、LoRA 和拼接链路上下文。若仍无法恢复，必须回一条明确失效提示，避免只显示“任务初始化中”。
 - Telegram Bot 点击“完成拼接”后也会把拼接 MP4 上传存储并新增一条 `source=bot` 的历史记录；结果消息使用新 `task_id` 注入“投稿至广场”按钮，继续复用 `submit_gallery_<task_id>` 投稿链路。
 
 ## 四、 计费与资源约束

@@ -27,6 +27,7 @@ from src.services.wan22_video_v2_extension_service import (
 )
 from src.services.tg_task_result_presentation import (
     WAN22_REGENERATE_CALLBACK_PREFIX,
+    WAN22_STITCH_CALLBACK_PREFIX,
     build_result_reply_markup,
     record_result_message_meta,
     resolve_task_id_from_callback_data,
@@ -94,13 +95,13 @@ def _resolve_reusable_history_prompt_and_lora(history, meta: dict) -> tuple[str,
 
 
 def _resolve_callback_task_id(*, meta: dict, query, callback_prefix: str) -> str:
-    task_id = _resolve_current_task_id(meta)
-    if task_id:
-        return task_id
     task_id = resolve_task_id_from_callback_data(
         getattr(query, "data", None),
         callback_prefix,
     )
+    if task_id:
+        return task_id
+    task_id = _resolve_current_task_id(meta)
     if task_id:
         return task_id
     message = getattr(query, "message", None)
@@ -126,10 +127,29 @@ async def stitch_wan22_video_v2_callback(update: Update, context: ContextTypes.D
     await safe_answer_query(query, text="🔗 正在拼接视频，请稍候...", cache_time=1)
 
     meta = _resolve_result_message_meta(context, query)
+    current_task_id = _resolve_callback_task_id(
+        meta=meta,
+        query=query,
+        callback_prefix=WAN22_STITCH_CALLBACK_PREFIX,
+    )
+    if not current_task_id:
+        await safe_answer_query(query, text="记录已失效，请重新生成后再试", show_alert=True)
+        return
+
+    try:
+        current_history = await load_owned_wan22_history(
+            task_id=current_task_id,
+            telegram_user_id=update.effective_user.id,
+            username=update.effective_user.username,
+        )
+        meta = _merge_history_context_into_meta(current_history, meta)
+    except Wan22VideoV2ExtensionError as exc:
+        await safe_answer_query(query, text=str(exc), show_alert=True)
+        return
+
     chain_task_ids = normalize_wan22_video_v2_chain_task_ids(
         meta.get("wan22_chain_task_ids")
     )
-    current_task_id = _resolve_current_task_id(meta)
     full_task_ids = build_full_chain_task_ids(
         chain_task_ids=chain_task_ids,
         current_task_id=current_task_id,
@@ -139,14 +159,18 @@ async def stitch_wan22_video_v2_callback(update: Update, context: ContextTypes.D
         return
 
     try:
-        histories = [
-            await load_owned_wan22_history(
-                task_id=task_id,
-                telegram_user_id=update.effective_user.id,
-                username=update.effective_user.username,
-            )
-            for task_id in full_task_ids
-        ]
+        history_cache = {current_task_id: current_history}
+        histories = []
+        for task_id in full_task_ids:
+            history = history_cache.get(task_id)
+            if history is None:
+                history = await load_owned_wan22_history(
+                    task_id=task_id,
+                    telegram_user_id=update.effective_user.id,
+                    username=update.effective_user.username,
+                )
+                history_cache[task_id] = history
+            histories.append(history)
         await robust_send_message(
             context.bot,
             update.effective_chat.id,

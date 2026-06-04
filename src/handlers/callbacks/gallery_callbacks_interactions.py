@@ -24,6 +24,7 @@ from src.services.submission_ban_service import (
     SubmissionBannedError,
     ensure_submission_allowed_for_user,
 )
+from src.services.tg_task_result_presentation import resolve_task_id_from_reply_markup
 from src.utils import (
     create_background_task,
     robust_edit_caption,
@@ -523,12 +524,15 @@ async def handle_rate_action(
     query = update.callback_query
     msg_id = query.message.message_id
     meta = context.bot_data.get(f"msg_meta_{msg_id}")
+    task_id = str(meta.get("task_id") or "").strip() if meta else ""
+    if not task_id:
+        task_id = resolve_task_id_from_reply_markup(
+            getattr(query.message, "reply_markup", None)
+        )
 
-    if not meta or "task_id" not in meta:
+    if not task_id:
         await safe_answer_query(query, text="❌ 无法找到对应任务记录", show_alert=True)
         return
-
-    task_id = meta["task_id"]
 
     try:
         await update_history_rating_by_task_id(task_id, rating_value)

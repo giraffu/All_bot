@@ -1,11 +1,13 @@
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
-from telegram import InlineKeyboardButton
+import pytest
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 from src.handlers.callbacks.gallery_callbacks_interactions import (
     _build_gallery_reaction_reply_markup,
     _extract_gallery_submit_media_metadata,
+    handle_rate_action,
     handle_submit_gallery_callback,
 )
 
@@ -62,6 +64,7 @@ def test_build_gallery_reaction_reply_markup_updates_like_and_dislike_buttons():
     assert markup.inline_keyboard[1][0].text == "其他"
 
 
+@pytest.mark.asyncio
 async def test_handle_submit_gallery_callback_rejects_submission_banned_user(monkeypatch):
     query = SimpleNamespace(
         data="submit_gallery_task-1",
@@ -97,3 +100,46 @@ async def test_handle_submit_gallery_callback_rejects_submission_banned_user(mon
         text="⚠️ 违禁被封，请联系管理员解封",
         show_alert=True,
     )
+
+
+@pytest.mark.asyncio
+async def test_handle_rate_action_recovers_task_id_from_gallery_button(monkeypatch):
+    query = SimpleNamespace(
+        message=SimpleNamespace(
+            message_id=77,
+            reply_markup=InlineKeyboardMarkup(
+                [
+                    [
+                        InlineKeyboardButton(
+                            "🚀 一键投稿至广场",
+                            callback_data="submit_gallery_task-9",
+                        )
+                    ],
+                    [
+                        InlineKeyboardButton("👍", callback_data="rate_like"),
+                        InlineKeyboardButton("👎", callback_data="rate_dislike"),
+                    ],
+                ]
+            ),
+        )
+    )
+    update = SimpleNamespace(callback_query=query)
+    context = SimpleNamespace(bot_data={})
+    update_rating = AsyncMock()
+
+    monkeypatch.setattr(
+        "src.handlers.callbacks.gallery_callbacks_interactions.update_history_rating_by_task_id",
+        update_rating,
+    )
+    monkeypatch.setattr(
+        "src.handlers.callbacks.gallery_callbacks_interactions.robust_edit_reply_markup",
+        AsyncMock(),
+    )
+    monkeypatch.setattr(
+        "src.handlers.callbacks.gallery_callbacks_interactions.safe_answer_query",
+        AsyncMock(),
+    )
+
+    await handle_rate_action(update, context, 1)
+
+    update_rating.assert_awaited_once_with("task-9", 1)

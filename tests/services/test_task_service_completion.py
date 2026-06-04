@@ -392,7 +392,7 @@ def test_build_result_reply_markup_supports_wan22_video_v2_non_first_segment_but
         "wan22v2_regenerate:task-wan22-2",
         "wan22v2_extend:task-wan22-2",
     ]
-    assert second_row[0].callback_data == "wan22v2_stitch_chain"
+    assert second_row[0].callback_data == "wan22v2_stitch_chain:task-wan22-2"
 
 
 def test_record_result_message_meta_uses_special_mode_mapping_for_face_swap():
