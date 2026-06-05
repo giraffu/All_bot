@@ -142,6 +142,10 @@ async def test_get_system_status_proxy_payload_uses_active_task_registry_counts(
         "queue_size": 71,
         "queue_by_type": {"i2i_pro": 23, "ltx_video": 33},
         "active_workers": 9,
+        "healthy_workers": 7,
+        "error_workers": 1,
+        "quarantined_workers": 1,
+        "workers_by_status": {"running": 3, "idle": 4, "error": 1, "quarantined": 1},
         "comfy_online": True,
     }
     active_tasks = {
@@ -164,6 +168,15 @@ async def test_get_system_status_proxy_payload_uses_active_task_registry_counts(
     assert data["middleware_queue_size"] == 71
     assert data["middleware_queue_by_type"] == {"i2i_pro": 23, "ltx_video": 33}
     assert data["concurrency_locks"] == 3
+    assert data["healthy_workers"] == 7
+    assert data["error_workers"] == 1
+    assert data["quarantined_workers"] == 1
+    assert data["workers_by_status"] == {
+        "running": 3,
+        "idle": 4,
+        "error": 1,
+        "quarantined": 1,
+    }
 
 
 @pytest.mark.asyncio

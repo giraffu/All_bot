@@ -52,6 +52,9 @@ sequenceDiagram
 - 读取聚合后的系统任务统计
 - 补充 worker / queue 视图
 - 不把旧字段名固定成唯一契约
+- Worker 视图区分 `active_workers` 与 `healthy_workers`：前者表示有 heartbeat，后者表示 `idle/running` 且可接单
+- `comfy_online` 按 `healthy_workers > 0` 判定；全部节点 `error/quarantined` 时必须显示不可用
+- Worker 卡片应展示 `error` / `quarantined`、最近错误、失败次数、心跳时间与预计恢复时间，不能把故障节点渲染为空闲
 
 ### 4.2 强制终止
 - Dashboard 应优先调用 core 暴露的系统任务管理入口，如 `force_terminate_task(...)`
@@ -60,6 +63,8 @@ sequenceDiagram
 ## 5. 测试要求
 - 覆盖 Dashboard 鉴权中间件
 - 覆盖系统统计接口的基础返回
+- 覆盖 `healthy_workers`、`error_workers`、`quarantined_workers` 与 `workers_by_status` 聚合
+- 覆盖 Dashboard 对 `error/quarantined` Worker 的红色/隔离态展示
 - 覆盖管理员强制终止时的：
   - `registry_task_id` 清理
   - `backend_task_id` best-effort cancel

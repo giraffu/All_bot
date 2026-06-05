@@ -443,6 +443,45 @@ async def test_update_agent_heartbeat_uses_agent_key_helper():
 
 
 @pytest.mark.asyncio
+async def test_update_agent_heartbeat_persists_and_clears_health_fields():
+    redis = _FakeRedis()
+    manager = QueueManager(redis)
+
+    await manager.update_agent_heartbeat(
+        "agent-health",
+        "ltx_video",
+        "error",
+        health_reason="comfy_probe_failed",
+        last_error="ComfyUI /system_stats probe failed",
+        last_error_at=123.0,
+        consecutive_failures=3,
+        quarantined_until=456.0,
+    )
+
+    key = manager._agent_heartbeat_key("agent-health")
+    assert redis.hashes[key]["status"] == "error"
+    assert redis.hashes[key]["health_reason"] == "comfy_probe_failed"
+    assert redis.hashes[key]["last_error"] == "ComfyUI /system_stats probe failed"
+    assert redis.hashes[key]["last_error_at"] == 123.0
+    assert redis.hashes[key]["consecutive_failures"] == 3
+    assert redis.hashes[key]["quarantined_until"] == 456.0
+
+    workers = await manager.get_all_workers()
+    assert workers[0]["last_error_at"] == 123.0
+    assert workers[0]["consecutive_failures"] == 3
+    assert workers[0]["quarantined_until"] == 456.0
+
+    await manager.update_agent_heartbeat("agent-health", "ltx_video", "idle")
+
+    assert redis.hashes[key]["status"] == "idle"
+    assert redis.hashes[key]["health_reason"] == ""
+    assert redis.hashes[key]["last_error"] == ""
+    assert redis.hashes[key]["last_error_at"] == ""
+    assert redis.hashes[key]["consecutive_failures"] == 0
+    assert redis.hashes[key]["quarantined_until"] == ""
+
+
+@pytest.mark.asyncio
 async def test_complete_task_marks_done_removes_running_and_publishes_task_type():
     redis = _FakeRedis()
     manager = QueueManager(redis)

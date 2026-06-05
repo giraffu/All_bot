@@ -104,13 +104,29 @@ async def build_system_workers_response(queue_manager) -> SystemWorkersResponse:
 
 async def build_system_status_response(queue_manager) -> SystemStatusResponse:
     queue_size = await queue_manager.get_queue_size()
-    active_workers = await queue_manager.get_active_workers_count()
+    workers = await queue_manager.get_all_workers()
+    active_workers = len(workers)
+    workers_by_status: dict[str, int] = {}
+    for worker in workers:
+        status = str(worker.get("status") or "unknown")
+        workers_by_status[status] = workers_by_status.get(status, 0) + 1
+    healthy_workers = sum(
+        count
+        for status, count in workers_by_status.items()
+        if status in {"idle", "running"}
+    )
+    error_workers = workers_by_status.get("error", 0)
+    quarantined_workers = workers_by_status.get("quarantined", 0)
     queue_by_type = await queue_manager.get_queue_metrics_by_type()
     return SystemStatusResponse(
         queue_size=queue_size,
         queue_by_type=queue_by_type,
         active_workers=active_workers,
-        comfy_online=active_workers > 0,
+        healthy_workers=healthy_workers,
+        error_workers=error_workers,
+        quarantined_workers=quarantined_workers,
+        workers_by_status=workers_by_status,
+        comfy_online=healthy_workers > 0,
     )
 
 

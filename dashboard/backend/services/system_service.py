@@ -449,15 +449,27 @@ async def get_system_status_proxy_payload(
                 "queue_size": 0,
                 "queue_by_type": {},
                 "active_workers": 0,
+                "healthy_workers": 0,
+                "error_workers": 0,
+                "quarantined_workers": 0,
+                "workers_by_status": {},
                 "comfy_online": False,
                 "error": f"Middleware returned {status_code}",
             }
+        data.setdefault("healthy_workers", data.get("active_workers", 0) if data.get("comfy_online") else 0)
+        data.setdefault("error_workers", 0)
+        data.setdefault("quarantined_workers", 0)
+        data.setdefault("workers_by_status", {})
     except Exception as exc:
         active_logger.error(f"Error proxying system status: {exc}")
         data = {
             "queue_size": 0,
             "queue_by_type": {},
             "active_workers": 0,
+            "healthy_workers": 0,
+            "error_workers": 0,
+            "quarantined_workers": 0,
+            "workers_by_status": {},
             "comfy_online": False,
             "error": str(exc),
         }

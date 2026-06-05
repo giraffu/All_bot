@@ -3,6 +3,7 @@ import json
 import logging
 import os
 import sys
+import time
 from typing import Any, Dict, Optional
 
 import httpx
@@ -82,6 +83,45 @@ COMFY_READY_RETRY_DELAY_SECONDS = float(
     os.getenv("COMFY_READY_RETRY_DELAY_SECONDS", "2")
 )
 COMFY_UPLOAD_RETRY_ATTEMPTS = int(os.getenv("COMFY_UPLOAD_RETRY_ATTEMPTS", "3"))
+COMFY_HEALTH_FAILURE_THRESHOLD = int(os.getenv("COMFY_HEALTH_FAILURE_THRESHOLD", "3"))
+COMFY_HEALTH_RECOVERY_THRESHOLD = int(os.getenv("COMFY_HEALTH_RECOVERY_THRESHOLD", "2"))
+COMFY_ERROR_POLL_SECONDS = float(os.getenv("COMFY_ERROR_POLL_SECONDS", "15"))
+COMFY_WS_LOST_PROBE_FAILURE_THRESHOLD = int(
+    os.getenv("COMFY_WS_LOST_PROBE_FAILURE_THRESHOLD", "2")
+)
+COMFY_TASK_INFRA_FAILURE_THRESHOLD = int(
+    os.getenv("COMFY_TASK_INFRA_FAILURE_THRESHOLD", "3")
+)
+COMFY_QUARANTINE_SECONDS = float(os.getenv("COMFY_QUARANTINE_SECONDS", "300"))
+
+USER_INPUT_ERROR_MARKERS = (
+    "downloaded file is not a valid image",
+    "prompt is required",
+    "invalid input",
+    "bad request",
+    "validation",
+)
+INFRA_ERROR_MARKERS = (
+    "comfyui",
+    "websocket",
+    "history probe",
+    "queue prompt",
+    "prompt_id",
+    "connection",
+    "timeout",
+    "timed out",
+    "service lost",
+    "upload",
+    "minio",
+    "result processing",
+    "no result path",
+    "workflow",
+    "model",
+    "node",
+    "out of memory",
+    "oom",
+    "cuda",
+)
 
 log_format = (
     "%(asctime)s - %(name)s - %(levelname)s - [%(correlation_id)s] - %(message)s"
@@ -134,6 +174,14 @@ class ComfyAgent:
         self._active_execution: Optional[TaskExecutionContext] = None
         self.running = False
         self._comfy_poll_paused = False
+        self.consecutive_failures = 0
+        self.consecutive_successes = 0
+        self.is_error_state = False
+        self.health_reason = ""
+        self.last_error = ""
+        self.last_error_at: float | None = None
+        self.task_infra_failures = 0
+        self.quarantined_until: float | None = None
 
     @property
     def task_completed_event(self) -> asyncio.Event:
@@ -162,6 +210,130 @@ class ComfyAgent:
             return response.status_code == 200
         except Exception:
             return False
+
+    def _now(self) -> float:
+        return time.time()
+
+    def _record_health_failure(self, *, reason: str, error: str) -> None:
+        self.consecutive_failures += 1
+        self.consecutive_successes = 0
+        self.health_reason = reason
+        self.last_error = error
+        self.last_error_at = self._now()
+        if self.consecutive_failures >= COMFY_HEALTH_FAILURE_THRESHOLD:
+            if not self.is_error_state:
+                logger.error(
+                    "Agent %s reached ComfyUI health failure threshold; marking worker as error",
+                    AGENT_ID,
+                )
+            self.is_error_state = True
+
+    def _record_health_success(self) -> None:
+        self.consecutive_successes += 1
+        if (
+            self.is_error_state
+            and self.consecutive_successes < COMFY_HEALTH_RECOVERY_THRESHOLD
+        ):
+            return
+        self.consecutive_failures = 0
+        self.consecutive_successes = 0
+        if self.is_error_state:
+            logger.info("ComfyUI health recovered; clearing worker error state")
+        self.is_error_state = False
+        self.health_reason = ""
+        self.last_error = ""
+        self.last_error_at = None
+
+    def _is_quarantined(self) -> bool:
+        return self.quarantined_until is not None and self.quarantined_until > self._now()
+
+    def _clear_expired_quarantine(self) -> bool:
+        if self.quarantined_until is None:
+            return False
+        if self.quarantined_until > self._now():
+            return False
+        logger.info("Worker quarantine expired; health checks may resume task polling")
+        self.quarantined_until = None
+        self.task_infra_failures = 0
+        if self.health_reason == "task_infra_failures":
+            self.health_reason = ""
+            self.last_error = ""
+            self.last_error_at = None
+        return True
+
+    def _enter_quarantine(self, *, error: str) -> None:
+        self.quarantined_until = self._now() + COMFY_QUARANTINE_SECONDS
+        self.health_reason = "task_infra_failures"
+        self.last_error = error
+        self.last_error_at = self._now()
+        logger.error(
+            "Agent %s entered quarantine for %.0fs after %s consecutive infrastructure failures",
+            AGENT_ID,
+            COMFY_QUARANTINE_SECONDS,
+            self.task_infra_failures,
+        )
+
+    @staticmethod
+    def _is_infrastructure_failure(error: Exception) -> bool:
+        message = str(error).lower()
+        if any(marker in message for marker in USER_INPUT_ERROR_MARKERS):
+            return False
+        return any(marker in message for marker in INFRA_ERROR_MARKERS)
+
+    def _record_task_failure_for_health(self, error: Exception) -> None:
+        if not self._is_infrastructure_failure(error):
+            self.task_infra_failures = 0
+            return
+        self.task_infra_failures += 1
+        if self.task_infra_failures >= COMFY_TASK_INFRA_FAILURE_THRESHOLD:
+            self._enter_quarantine(error=str(error))
+
+    def _record_task_success_for_health(self) -> None:
+        self.task_infra_failures = 0
+
+    def _worker_status(self) -> str:
+        if self._is_quarantined():
+            return "quarantined"
+        if self.is_error_state:
+            return "error"
+        return "running" if self._active_execution else "idle"
+
+    def _heartbeat_health_payload(self) -> dict[str, Any]:
+        failure_count = (
+            self.task_infra_failures
+            if self._is_quarantined()
+            else self.consecutive_failures
+        )
+        return {
+            "health_reason": self.health_reason,
+            "last_error": self.last_error,
+            "last_error_at": self.last_error_at or "",
+            "consecutive_failures": failure_count,
+            "quarantined_until": self.quarantined_until or "",
+        }
+
+    async def _handle_ws_connection_error(self, error: Exception | str) -> None:
+        execution = self._active_execution
+        if not execution:
+            return
+
+        probe_failures = 0
+        for _ in range(COMFY_WS_LOST_PROBE_FAILURE_THRESHOLD):
+            if await self._probe_comfy_ready():
+                logger.warning(
+                    "HTTP probe succeeded after WebSocket error; keeping execution wait alive"
+                )
+                return
+            probe_failures += 1
+            await asyncio.sleep(COMFY_READY_RETRY_DELAY_SECONDS)
+
+        if probe_failures >= COMFY_WS_LOST_PROBE_FAILURE_THRESHOLD:
+            execution.task_error = f"ComfyUI service lost during execution: {error}"
+            execution.completed_event.set()
+            self._record_health_failure(
+                reason="comfy_ws_lost",
+                error=execution.task_error,
+            )
 
     async def _wait_for_comfy_ready(self, *, operation: str) -> None:
         for attempt in range(1, COMFY_READY_RETRY_ATTEMPTS + 1):
@@ -272,13 +444,14 @@ class ComfyAgent:
     async def report_heartbeat(self):
         try:
             active_execution = self._active_execution
-            status = "running" if active_execution else "idle"
+            status = self._worker_status()
             await self.master_client.post(
                 "/api/agent/task/heartbeat",
                 json={
                     "agent_id": AGENT_ID,
                     "types": SUPPORTED_TASK_TYPES,
                     "status": status,
+                    **self._heartbeat_health_payload(),
                 },
             )
             if active_execution:
@@ -434,6 +607,7 @@ class ComfyAgent:
                             message = await self._receive_ws_message(websocket)
                         except ConnectionError as exc:
                             logger.error(str(exc))
+                            await self._handle_ws_connection_error(exc)
                             break
 
                         data = self._decode_ws_message(message)
@@ -451,6 +625,7 @@ class ComfyAgent:
 
             except Exception as e:
                 logger.error(f"WebSocket connection error: {e}")
+                await self._handle_ws_connection_error(e)
                 await asyncio.sleep(5)
 
     def download_input_from_minio(self, object_name: str, local_path: str):
@@ -606,10 +781,12 @@ class ComfyAgent:
                 result_path=execution.task_result,
                 extra_outputs_payload=extra_outputs_payload,
             )
+            self._record_task_success_for_health()
             logger.info(f"Task {task_id} completed successfully")
 
         except Exception as e:
             logger.error(f"Task {task_id} failed: {e}")
+            self._record_task_failure_for_health(e)
             await self.report_status(task_id, "failed", error=str(e))
         finally:
             self._clear_task_execution(execution)
@@ -627,14 +804,37 @@ class ComfyAgent:
         )
         while getattr(self, "running", True):
             try:
-                if not await self._probe_comfy_ready():
-                    if not self._comfy_poll_paused:
-                        logger.warning(
-                            "ComfyUI is unavailable; pausing task polling until it recovers"
-                        )
-                        self._comfy_poll_paused = True
-                    await asyncio.sleep(COMFY_READY_RETRY_DELAY_SECONDS)
+                if self._is_quarantined():
+                    self._comfy_poll_paused = True
+                    await asyncio.sleep(COMFY_ERROR_POLL_SECONDS)
                     continue
+
+                self._clear_expired_quarantine()
+
+                if not await self._probe_comfy_ready():
+                    self._comfy_poll_paused = True
+                    self._record_health_failure(
+                        reason="comfy_probe_failed",
+                        error="ComfyUI /system_stats probe failed",
+                    )
+                    logger.warning(
+                        "ComfyUI pre-flight check failed (%s/%s).",
+                        self.consecutive_failures,
+                        COMFY_HEALTH_FAILURE_THRESHOLD,
+                    )
+                    sleep_seconds = (
+                        COMFY_ERROR_POLL_SECONDS
+                        if self.is_error_state
+                        else COMFY_READY_RETRY_DELAY_SECONDS
+                    )
+                    await asyncio.sleep(sleep_seconds)
+                    continue
+
+                self._record_health_success()
+                if self.is_error_state:
+                    await asyncio.sleep(COMFY_ERROR_POLL_SECONDS)
+                    continue
+
                 if self._comfy_poll_paused:
                     logger.info("ComfyUI is reachable again; resuming task polling")
                     self._comfy_poll_paused = False

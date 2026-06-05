@@ -1,4 +1,5 @@
 <script setup>
+import { computed } from 'vue'
 import { 
   ThunderboltOutlined, 
   PictureOutlined, 
@@ -58,6 +59,83 @@ const formatDuration = (timestamp) => {
   return `${m}m ${s}s`
 }
 
+const formatTimeUntil = (timestamp) => {
+  if (!timestamp) return '-'
+  const diff = Math.ceil(Number(timestamp) - Date.now() / 1000)
+  if (diff <= 0) return '即将恢复'
+  if (diff < 60) return `${diff}s 后`
+  const m = Math.floor(diff / 60)
+  const s = diff % 60
+  return `${m}m ${s}s 后`
+}
+
+const healthSummary = computed(() => {
+  const activeWorkers = Number(status.value.active_workers || 0)
+  const healthyWorkers = Number(status.value.healthy_workers || 0)
+  const errorWorkers = Number(status.value.error_workers || 0)
+  const quarantinedWorkers = Number(status.value.quarantined_workers || 0)
+  const problemWorkers = errorWorkers + quarantinedWorkers
+
+  if (activeWorkers <= 0) {
+    return { color: 'error', text: '离线', online: false }
+  }
+  if (healthyWorkers <= 0) {
+    return { color: 'error', text: '全部故障', online: false }
+  }
+  if (problemWorkers > 0) {
+    return { color: 'warning', text: '部分故障', online: true }
+  }
+  return { color: 'success', text: '可用', online: true }
+})
+
+const getWorkerStatusMeta = (worker) => {
+  if (worker.status === 'running') {
+    return {
+      cardClass: 'border-t-2 border-t-green-500',
+      badgeStatus: 'processing',
+      text: '忙碌',
+      iconClass: 'text-green-500',
+      emptyText: '任务执行中',
+    }
+  }
+  if (worker.status === 'idle') {
+    return {
+      cardClass: 'border-t-2 border-t-gray-300',
+      badgeStatus: 'default',
+      text: '空闲',
+      iconClass: 'text-gray-400',
+      emptyText: '等待任务分发中...',
+    }
+  }
+  if (worker.status === 'error') {
+    return {
+      cardClass: 'border-t-2 border-t-red-500',
+      badgeStatus: 'error',
+      text: '故障',
+      iconClass: 'text-red-500',
+      emptyText: 'ComfyUI 节点故障',
+    }
+  }
+  if (worker.status === 'quarantined') {
+    return {
+      cardClass: 'border-t-2 border-t-orange-600',
+      badgeStatus: 'warning',
+      text: '已隔离',
+      iconClass: 'text-orange-600',
+      emptyText: '熔断隔离中',
+    }
+  }
+  return {
+    cardClass: 'border-t-2 border-t-gray-300',
+    badgeStatus: 'default',
+    text: '未知',
+    iconClass: 'text-gray-400',
+    emptyText: '状态未知',
+  }
+}
+
+const isFaultWorker = (worker) => ['error', 'quarantined'].includes(worker.status)
+
 const handleSyncLock = async (userId) => {
   try {
     const res = await syncLock(userId)
@@ -88,12 +166,12 @@ const handleSyncLock = async (userId) => {
           <template #icon><clear-outlined /></template>
           一键清理卡死任务
         </a-button>
-        <a-tag :color="status.comfy_online ? 'success' : 'error'">
+        <a-tag :color="healthSummary.color">
           <template #icon>
-            <check-circle-outlined v-if="status.comfy_online" />
+            <check-circle-outlined v-if="healthSummary.online" />
             <close-circle-outlined v-else />
           </template>
-          ComfyUI {{ status.comfy_online ? '在线' : '离线' }}
+          ComfyUI {{ healthSummary.text }}
         </a-tag>
       </div>
     </div>
@@ -127,7 +205,9 @@ const handleSyncLock = async (userId) => {
               <robot-outlined />
             </template>
             <template #suffix>
-              <span class="text-xs text-gray-400 font-normal ml-1">个节点</span>
+              <span class="text-xs text-gray-400 font-normal ml-1">
+                可接单 {{ status.healthy_workers || 0 }} / 故障 {{ (status.error_workers || 0) + (status.quarantined_workers || 0) }}
+              </span>
             </template>
           </a-statistic>
         </a-card>
@@ -184,11 +264,11 @@ const handleSyncLock = async (userId) => {
     </div>
     <a-row :gutter="[16, 16]">
       <a-col :xs="24" :sm="12" :md="8" :lg="6" v-for="worker in workers" :key="worker.agent_id">
-        <a-card size="small" hoverable class="worker-card h-full flex flex-col" :class="{'border-t-2 border-t-green-500': worker.status === 'running', 'border-t-2 border-t-gray-300': worker.status === 'idle'}">
+        <a-card size="small" hoverable class="worker-card h-full flex flex-col" :class="getWorkerStatusMeta(worker).cardClass">
           <template #title>
             <div class="flex justify-between items-center w-full">
               <span class="font-mono text-sm font-bold truncate pr-2" :title="worker.agent_id">{{ worker.agent_id }}</span>
-              <a-badge :status="worker.status === 'running' ? 'processing' : 'default'" :text="worker.status === 'running' ? '忙碌' : '空闲'" />
+              <a-badge :status="getWorkerStatusMeta(worker).badgeStatus" :text="getWorkerStatusMeta(worker).text" />
             </div>
           </template>
           
@@ -218,9 +298,31 @@ const handleSyncLock = async (userId) => {
             </div>
             
             <!-- 空闲状态 -->
+            <div v-else-if="isFaultWorker(worker)" class="flex-grow bg-red-50/70 border border-red-100 p-2 rounded text-sm">
+              <div class="flex items-center gap-2 mb-2">
+                <close-circle-outlined :class="getWorkerStatusMeta(worker).iconClass" />
+                <span class="font-bold text-gray-700">{{ getWorkerStatusMeta(worker).emptyText }}</span>
+              </div>
+              <div class="text-xs text-gray-500 mb-1">原因</div>
+              <div class="text-xs text-gray-700 break-words mb-2">{{ worker.last_error || worker.health_reason || '暂无错误详情' }}</div>
+              <div class="grid grid-cols-2 gap-2 text-xs text-gray-500">
+                <div>
+                  <div>失败次数</div>
+                  <span class="font-mono text-gray-700">{{ worker.consecutive_failures || 0 }}</span>
+                </div>
+                <div>
+                  <div>{{ worker.status === 'quarantined' ? '预计恢复' : '故障时间' }}</div>
+                  <span class="font-mono text-gray-700">
+                    {{ worker.status === 'quarantined' ? formatTimeUntil(worker.quarantined_until) : formatDuration(worker.last_error_at) }}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <!-- 空闲或未知状态 -->
             <div v-else class="flex-grow flex flex-col items-center justify-center py-4 text-gray-400">
-              <picture-outlined class="text-2xl mb-2 opacity-50" />
-              <span class="text-xs">等待任务分发中...</span>
+              <picture-outlined class="text-2xl mb-2 opacity-50" :class="getWorkerStatusMeta(worker).iconClass" />
+              <span class="text-xs">{{ getWorkerStatusMeta(worker).emptyText }}</span>
             </div>
             
             <div class="mt-auto pt-2 border-t border-gray-100 text-xs text-gray-400 flex justify-between">

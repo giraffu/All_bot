@@ -403,11 +403,27 @@ class QueueManager:
             fail_zombie_task_if_needed_func=self._fail_zombie_task_if_needed,
         )
 
-    async def update_agent_heartbeat(self, agent_id: str, types: str, status: str):
+    async def update_agent_heartbeat(
+        self,
+        agent_id: str,
+        types: str,
+        status: str,
+        *,
+        health_reason: str = "",
+        last_error: str = "",
+        last_error_at: float | str | None = None,
+        consecutive_failures: int | str | None = None,
+        quarantined_until: float | str | None = None,
+    ):
         await update_agent_heartbeat_flow(
             agent_id=agent_id,
             types=types,
             status=status,
+            health_reason=health_reason,
+            last_error=last_error,
+            last_error_at=last_error_at,
+            consecutive_failures=consecutive_failures,
+            quarantined_until=quarantined_until,
             agent_heartbeat_key_func=self._agent_heartbeat_key,
             hset_func=self.redis.hset,
             expire_func=self.redis.expire,

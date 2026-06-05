@@ -11,6 +11,10 @@ const defaultStatus = () => ({
   queue_size: 0,
   queue_by_type: {},
   active_workers: 0,
+  healthy_workers: 0,
+  error_workers: 0,
+  quarantined_workers: 0,
+  workers_by_status: {},
   comfy_online: false,
 })
 

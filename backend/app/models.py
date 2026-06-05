@@ -61,6 +61,11 @@ class WorkerInfo(BaseModel):
     types: str
     status: str
     last_seen: float
+    health_reason: Optional[str] = None
+    last_error: Optional[str] = None
+    last_error_at: Optional[float] = None
+    consecutive_failures: Optional[int] = None
+    quarantined_until: Optional[float] = None
     current_task_id: Optional[str] = None
     current_task_type: Optional[str] = None
     current_task_progress: Optional[float] = None
@@ -76,6 +81,10 @@ class SystemStatusResponse(BaseModel):
     queue_size: int
     queue_by_type: dict[str, int] = {}
     active_workers: int
+    healthy_workers: int = 0
+    error_workers: int = 0
+    quarantined_workers: int = 0
+    workers_by_status: dict[str, int] = {}
     comfy_online: bool
 
 

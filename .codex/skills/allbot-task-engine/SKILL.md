@@ -73,6 +73,7 @@ description: "处理任务提交流程、provider/capability 装配、双 ID 运
 - **派发层**：`task_dispatcher.py`、`image_service.py`、`api_client.py`
 - **执行面**：Central API、QueueManager、agent router
 - **节点层**：`workers/comfy_agent/agent_main.py` 已拆出输入准备、工作流执行、结果物化、结果上传/回报 helper，但 `process_task(...)` 仍是 Worker 主编排热点。新增输出类型、失败补偿、取消检查、重试策略或上报语义时，优先下沉到 `agent_input_preparation.py`、`agent_workflow_execution.py`、`agent_result_materialization.py`、`agent_result_reporting.py` 等阶段模块，并补 Worker focused tests。
+- **Worker 健康态**：Comfy Agent heartbeat 状态包含 `idle`、`running`、`error`、`quarantined`；`active_workers` 只表示有心跳，`healthy_workers` 才表示可接单。Comfy 探活持续失败进入 `error`，连续基础设施类任务失败进入 `quarantined`，Dashboard 必须按健康字段展示故障而不是当作空闲。
 
 重要边界：
 - Web 主入口是 `POST /api/tasks/generate`，不是旧 generation params 口径
@@ -123,7 +124,7 @@ description: "处理任务提交流程、provider/capability 装配、双 ID 运
 - 看 Central API 是否收到任务
 - 看 queue 是否堆积
 - 看是否存在支持该 `task_type` 的 Worker
-- 看 worker heartbeat 与 `SUPPORTED_TASK_TYPES`
+- 看 worker heartbeat、`healthy_workers`、节点 `error/quarantined` 状态与 `SUPPORTED_TASK_TYPES`
 
 ### 8.3 running 卡死
 - 查 worker 日志与 ComfyUI WebSocket

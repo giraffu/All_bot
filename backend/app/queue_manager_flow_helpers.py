@@ -94,6 +94,33 @@ async def build_worker_info_flow(
     worker_info = decode_redis_dict_func(raw_data)
     worker_info["agent_id"] = agent_id
 
+    for numeric_key in ("last_error_at", "quarantined_until"):
+        if numeric_key not in worker_info:
+            continue
+        value = worker_info.get(numeric_key)
+        if value in (None, ""):
+            worker_info[numeric_key] = None
+            continue
+        try:
+            worker_info[numeric_key] = float(value)
+        except (TypeError, ValueError):
+            worker_info[numeric_key] = None
+
+    if "consecutive_failures" in worker_info:
+        failure_count = worker_info.get("consecutive_failures")
+        if failure_count in (None, ""):
+            worker_info["consecutive_failures"] = 0
+        else:
+            try:
+                worker_info["consecutive_failures"] = int(float(failure_count))
+            except (TypeError, ValueError):
+                worker_info["consecutive_failures"] = 0
+
+    if "last_error" in worker_info and worker_info.get("last_error") is None:
+        worker_info["last_error"] = ""
+    if "health_reason" in worker_info and worker_info.get("health_reason") is None:
+        worker_info["health_reason"] = ""
+
     current_task_id = worker_info.get("current_task_id")
     if worker_info.get("status") == "running" and current_task_id:
         task_data = await get_task_status_func(current_task_id)
@@ -342,13 +369,27 @@ async def update_agent_heartbeat_flow(
     agent_id: str,
     types: str,
     status: str,
+    health_reason: str = "",
+    last_error: str = "",
+    last_error_at: float | str | None = None,
+    consecutive_failures: int | str | None = None,
+    quarantined_until: float | str | None = None,
     agent_heartbeat_key_func,
     hset_func,
     expire_func,
     time_func=time.time,
 ) -> None:
     key = agent_heartbeat_key_func(agent_id)
-    data = {"types": types, "status": status, "last_seen": time_func()}
+    data = {
+        "types": types,
+        "status": status,
+        "last_seen": time_func(),
+        "health_reason": health_reason or "",
+        "last_error": last_error or "",
+        "last_error_at": last_error_at or "",
+        "consecutive_failures": consecutive_failures or 0,
+        "quarantined_until": quarantined_until or "",
+    }
     await hset_func(key, mapping=data)
     await expire_func(key, 30)
 

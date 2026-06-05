@@ -114,8 +114,28 @@ async def task_heartbeat_payload(*, task_id: str, agent_id: str | None, queue_ma
     return {"status": "ok"}
 
 
-async def heartbeat_payload(*, agent_id: str, types: str, status: str, queue_manager) -> dict:
-    await queue_manager.update_agent_heartbeat(agent_id, types, status)
+async def heartbeat_payload(
+    *,
+    agent_id: str,
+    types: str,
+    status: str,
+    queue_manager,
+    health_reason: str = "",
+    last_error: str = "",
+    last_error_at=None,
+    consecutive_failures=None,
+    quarantined_until=None,
+) -> dict:
+    await queue_manager.update_agent_heartbeat(
+        agent_id,
+        types,
+        status,
+        health_reason=health_reason,
+        last_error=last_error,
+        last_error_at=last_error_at,
+        consecutive_failures=consecutive_failures,
+        quarantined_until=quarantined_until,
+    )
     return {"status": "ok"}
 
 

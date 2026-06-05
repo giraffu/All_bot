@@ -468,8 +468,13 @@ async def test_build_system_status_response_uses_queue_metrics_and_worker_count(
         async def get_queue_size(self):
             return 3
 
-        async def get_active_workers_count(self):
-            return 2
+        async def get_all_workers(self):
+            return [
+                {"agent_id": "agent-1", "status": "running"},
+                {"agent_id": "agent-2", "status": "idle"},
+                {"agent_id": "agent-3", "status": "error"},
+                {"agent_id": "agent-4", "status": "quarantined"},
+            ]
 
         async def get_queue_metrics_by_type(self):
             return {"ltx_video": 2, "i2i_pro": 1}
@@ -479,9 +484,44 @@ async def test_build_system_status_response_uses_queue_metrics_and_worker_count(
     )
 
     assert response.queue_size == 3
-    assert response.active_workers == 2
+    assert response.active_workers == 4
+    assert response.healthy_workers == 2
+    assert response.error_workers == 1
+    assert response.quarantined_workers == 1
+    assert response.workers_by_status == {
+        "running": 1,
+        "idle": 1,
+        "error": 1,
+        "quarantined": 1,
+    }
     assert response.comfy_online is True
     assert response.queue_by_type == {"ltx_video": 2, "i2i_pro": 1}
+
+
+@pytest.mark.asyncio
+async def test_build_system_status_response_marks_offline_when_all_workers_unhealthy():
+    class FakeQueueManager:
+        async def get_queue_size(self):
+            return 0
+
+        async def get_all_workers(self):
+            return [
+                {"agent_id": "agent-1", "status": "error"},
+                {"agent_id": "agent-2", "status": "quarantined"},
+            ]
+
+        async def get_queue_metrics_by_type(self):
+            return {}
+
+    response = await main_response_helpers.build_system_status_response(
+        FakeQueueManager()
+    )
+
+    assert response.active_workers == 2
+    assert response.healthy_workers == 0
+    assert response.error_workers == 1
+    assert response.quarantined_workers == 1
+    assert response.comfy_online is False
 
 
 @pytest.mark.asyncio

@@ -43,7 +43,12 @@ class CompleteRequest(BaseModel):
 class HeartbeatRequest(BaseModel):
     agent_id: str
     types: str
-    status: str = "idle"  # idle or running
+    status: str = "idle"
+    health_reason: str = ""
+    last_error: str = ""
+    last_error_at: Optional[float] = None
+    consecutive_failures: Optional[int] = None
+    quarantined_until: Optional[float] = None
 
 
 def verify_token(authorization: Optional[str] = Header(None)):
@@ -131,5 +136,10 @@ async def heartbeat(
         agent_id=req.agent_id,
         types=req.types,
         status=req.status,
+        health_reason=req.health_reason,
+        last_error=req.last_error,
+        last_error_at=req.last_error_at,
+        consecutive_failures=req.consecutive_failures,
+        quarantined_until=req.quarantined_until,
         queue_manager=queue_manager,
     )

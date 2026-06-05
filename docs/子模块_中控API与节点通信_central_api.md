@@ -63,18 +63,22 @@ sequenceDiagram
 
 ### 5.2 节点通信
 - Worker 心跳、可用性与执行中状态是 Central API / Queue 视图的一部分
+- Worker heartbeat 状态约定为 `idle`、`running`、`error`、`quarantined`；其中 `error` 表示 ComfyUI 探活持续失败，`quarantined` 表示连续基础设施类任务失败后的冷却隔离
+- heartbeat 可携带 `health_reason`、`last_error`、`last_error_at`、`consecutive_failures`、`quarantined_until`，用于 Dashboard 节点卡片展示和排障
+- `/system/status` 中 `active_workers` 只表示有 heartbeat 的节点数；`healthy_workers` 才表示当前可接单节点数，`comfy_online` 按 `healthy_workers > 0` 计算
 - 文档不再固化 Redis DB 编号与具体低层队列命名为稳定架构事实
 
 ## 6. 测试要求
 - 覆盖任务成功下发到可用 Worker
 - 覆盖无可用 Worker 时的重试或回退语义
 - 覆盖 `DELETE /api/tasks/{task_id}` 的 best-effort cancel
-- 覆盖 worker 心跳与节点视图
+- 覆盖 worker 心跳、健康字段、`error/quarantined` 节点视图与 `healthy_workers` 聚合统计
 
 ## 7. 部署与回滚
 - Central API 是独立部署的 backend 执行面服务。
 - 若分发逻辑异常导致任务堆积，应先检查：
-  - worker 心跳是否正常
+  - worker 是否仍有 heartbeat，以及 `healthy_workers` 是否大于 0
+  - worker 是否处于 `error` 或 `quarantined`，并查看 `last_error` / `health_reason`
   - worker `SUPPORTED_TASK_TYPES` 是否覆盖任务的执行面类型，例如旧图生视频入口最终会排队为 `image_to_video`
   - queue 是否持续堆积
   - 上游 task core submission 是否仍在正常写入任务

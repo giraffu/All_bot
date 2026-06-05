@@ -224,6 +224,155 @@ async def test_report_heartbeat_uses_active_execution_context(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_report_heartbeat_sends_error_health_fields(monkeypatch):
+    module = build_agent_module(monkeypatch)
+    agent = module.ComfyAgent()
+    requests = []
+
+    async def fake_post(path, json):
+        requests.append((path, json))
+        return SimpleNamespace(status_code=200)
+
+    agent.master_client.post = fake_post
+    agent.is_error_state = True
+    agent.consecutive_failures = 3
+    agent.health_reason = "comfy_probe_failed"
+    agent.last_error = "ComfyUI /system_stats probe failed"
+    agent.last_error_at = 123.0
+
+    await agent.report_heartbeat()
+
+    payload = requests[0][1]
+    assert payload["status"] == "error"
+    assert payload["health_reason"] == "comfy_probe_failed"
+    assert payload["last_error"] == "ComfyUI /system_stats probe failed"
+    assert payload["last_error_at"] == 123.0
+    assert payload["consecutive_failures"] == 3
+
+
+@pytest.mark.asyncio
+async def test_poll_loop_marks_error_and_does_not_pop_when_comfy_unhealthy(monkeypatch):
+    module = build_agent_module(monkeypatch)
+    agent = module.ComfyAgent()
+    agent.running = True
+    sleep_calls = []
+    master_get_called = False
+
+    async def fake_probe():
+        return False
+
+    async def fake_get(*args, **kwargs):
+        nonlocal master_get_called
+        master_get_called = True
+        return SimpleNamespace(status_code=404)
+
+    async def fake_sleep(seconds):
+        sleep_calls.append(seconds)
+        if len(sleep_calls) >= module.COMFY_HEALTH_FAILURE_THRESHOLD:
+            agent.running = False
+
+    agent._probe_comfy_ready = fake_probe
+    agent.master_client.get = fake_get
+    monkeypatch.setattr(module.asyncio, "sleep", fake_sleep)
+
+    await agent.poll_loop()
+
+    assert agent.is_error_state is True
+    assert agent.consecutive_failures == module.COMFY_HEALTH_FAILURE_THRESHOLD
+    assert master_get_called is False
+    assert sleep_calls[-1] == module.COMFY_ERROR_POLL_SECONDS
+
+
+@pytest.mark.asyncio
+async def test_poll_loop_recovers_after_required_successful_probes(monkeypatch):
+    module = build_agent_module(monkeypatch)
+    agent = module.ComfyAgent()
+    agent.running = True
+    probes = [False, False, False, True, True]
+    master_get_called = False
+
+    async def fake_probe():
+        return probes.pop(0) if probes else True
+
+    async def fake_get(*args, **kwargs):
+        nonlocal master_get_called
+        master_get_called = True
+        agent.running = False
+        return SimpleNamespace(status_code=404)
+
+    async def fake_sleep(_seconds):
+        return None
+
+    agent._probe_comfy_ready = fake_probe
+    agent.master_client.get = fake_get
+    monkeypatch.setattr(module.asyncio, "sleep", fake_sleep)
+
+    await agent.poll_loop()
+
+    assert master_get_called is True
+    assert agent.is_error_state is False
+    assert agent.consecutive_failures == 0
+
+
+def test_task_infra_failures_enter_and_clear_quarantine(monkeypatch):
+    module = build_agent_module(monkeypatch)
+    agent = module.ComfyAgent()
+
+    for _ in range(module.COMFY_TASK_INFRA_FAILURE_THRESHOLD):
+        agent._record_task_failure_for_health(RuntimeError("ComfyUI upload timeout"))
+
+    assert agent._worker_status() == "quarantined"
+    assert agent.health_reason == "task_infra_failures"
+    assert agent.last_error == "ComfyUI upload timeout"
+
+    agent.quarantined_until = agent._now() - 1
+    agent._clear_expired_quarantine()
+
+    assert agent._worker_status() == "idle"
+    assert agent.task_infra_failures == 0
+    assert agent.last_error == ""
+
+
+def test_user_input_failure_does_not_count_toward_quarantine(monkeypatch):
+    module = build_agent_module(monkeypatch)
+    agent = module.ComfyAgent()
+
+    agent._record_task_failure_for_health(
+        RuntimeError("Downloaded file is not a valid image: /tmp/bad.txt")
+    )
+
+    assert agent.task_infra_failures == 0
+    assert agent._worker_status() == "idle"
+
+
+@pytest.mark.asyncio
+async def test_ws_disconnect_fails_active_task_when_http_probe_fails(monkeypatch):
+    module = build_agent_module(monkeypatch)
+    agent = module.ComfyAgent()
+    execution = module.TaskExecutionContext(
+        task_id="task-ws",
+        task_type="img2img",
+        prompt_id="prompt-ws",
+    )
+    agent._active_execution = execution
+
+    async def fake_probe():
+        return False
+
+    async def fake_sleep(_seconds):
+        return None
+
+    agent._probe_comfy_ready = fake_probe
+    monkeypatch.setattr(module.asyncio, "sleep", fake_sleep)
+
+    await agent._handle_ws_connection_error("lost")
+
+    assert execution.completed_event.is_set() is True
+    assert "ComfyUI service lost during execution" in execution.task_error
+    assert agent.health_reason == "comfy_ws_lost"
+
+
+@pytest.mark.asyncio
 async def test_wait_for_task_completion_finishes_from_history_probe(monkeypatch):
     module = build_agent_module(monkeypatch)
     execution = module.TaskExecutionContext(
