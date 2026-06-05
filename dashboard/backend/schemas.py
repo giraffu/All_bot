@@ -36,6 +36,7 @@ class AdminGiftRequest(BaseModel):
 class TransferUserDataRequest(BaseModel):
     target_user_id: int = Field(..., gt=0)
     note: Optional[str] = "后台用户数据转移"
+    dry_run: bool = False
 
 
 class TransferUserDataResponse(BaseModel):
@@ -45,6 +46,8 @@ class TransferUserDataResponse(BaseModel):
     target_user_id: int
     moved_counts: Dict[str, int] = Field(default_factory=dict)
     merged_profile: Dict[str, Any] = Field(default_factory=dict)
+    dry_run: bool = False
+    transfer_plan: Dict[str, Any] = Field(default_factory=dict)
 
 
 class MembershipPlanCreate(BaseModel):

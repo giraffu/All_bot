@@ -332,6 +332,14 @@ class AffiliateRedeem(Base):
     user = relationship("User", backref="affiliate_redeems")
 
 
+class RuntimeCheckpoint(Base):
+    __tablename__ = "runtime_checkpoints"
+
+    key = Column(String(128), primary_key=True)
+    value = Column(JSON, nullable=False, default=dict, server_default=text("'{}'::json"))
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now, nullable=False)
+
+
 class WorkerLog(Base):
     __tablename__ = "worker_logs"
 

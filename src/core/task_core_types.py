@@ -76,6 +76,30 @@ class TaskSuccessPersistenceResult:
 
 
 @dataclass(frozen=True, slots=True)
+class TaskSuccessPersistenceCommand:
+    backend_task_id: str
+    registry_task_id: str
+    internal_user_id: int
+    username: str
+    prompt: str
+    task_type: str
+    input_images: list[str]
+    allow_contribute: bool
+    is_video: bool
+    billing_resolution: str | None
+    requested_duration: int | None
+    output_width: int | None = None
+    output_height: int | None = None
+    output_duration: int | None = None
+    result_path: str | None = None
+    extra_outputs: dict[str, object] | None = None
+    source: str = "bot"
+    refresh_user_group_after_log: bool = False
+    warmup_web_history: bool = False
+    postprocess_plan: "TaskPersistencePostprocessPlan | None" = None
+
+
+@dataclass(frozen=True, slots=True)
 class TaskFinalizationResult:
     refunded: bool
     user_message: str | None = None

@@ -281,6 +281,75 @@ async def test_transfer_user_data_payload_moves_business_data_and_deletes_source
 
 
 @pytest.mark.asyncio
+async def test_transfer_user_data_payload_dry_run_does_not_mutate(monkeypatch):
+    engine, session = await _create_transfer_session()
+    now = datetime.now()
+    source = User(
+        id=1,
+        username="source",
+        full_name="Source User",
+        credits=10,
+        checkin_count=2,
+        generation_count=5,
+        current_identity="内门弟子",
+        identity_expire_at=now + timedelta(days=10),
+        is_channel_member=True,
+    )
+    target = User(
+        id=2,
+        username="target",
+        full_name="Target User",
+        credits=6,
+        checkin_count=3,
+        generation_count=8,
+        current_identity="外门弟子",
+        identity_expire_at=None,
+        is_channel_member=False,
+    )
+    session.add_all(
+        [
+            source,
+            target,
+            History(user_id=1, task_id="task-dry-run", type="image"),
+        ]
+    )
+    await session.commit()
+
+    log_action = AsyncMock()
+    monkeypatch.setattr("src.services.log_service.LogService.log_action", log_action)
+
+    result = await user_admin_service.transfer_user_data_payload(
+        user_id=1,
+        request=TransferUserDataRequest(
+            target_user_id=2,
+            note="dry run",
+            dry_run=True,
+        ),
+        db=session,
+    )
+
+    assert result["status"] == "ok"
+    assert result["dry_run"] is True
+    assert result["moved_counts"]["history_rows"] == 1
+    assert result["merged_profile"]["credits"] == 16
+    assert result["transfer_plan"]["dry_run"] is True
+    log_action.assert_not_awaited()
+
+    assert await session.get(User, 1) is not None
+    merged_target = await session.get(User, 2)
+    assert merged_target.credits == 6
+    history_owner = (
+        await session.execute(
+            select(History.user_id).where(History.task_id == "task-dry-run")
+        )
+    ).scalar_one()
+    assert history_owner == 1
+
+    await session.close()
+    await engine.dispose()
+
+
+@pytest.mark.asyncio
 async def test_transfer_user_route_delegates_to_service(monkeypatch):
     expected = {
         "status": "ok",

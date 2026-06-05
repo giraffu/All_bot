@@ -6,6 +6,7 @@ from src.core import task_core_persistence_flow
 from src.core.task_core_dependencies import TaskCorePersistenceDependencies
 from src.core.task_core_types import (
     TaskPersistencePostprocessPlan,
+    TaskSuccessPersistenceCommand,
     TaskSuccessPersistenceResult,
 )
 
@@ -55,6 +56,42 @@ async def test_persist_successful_task_result_routes_through_flow(monkeypatch):
     assert kwargs["download_video_result_func"] is download_video_result
     assert kwargs["to_thread_func"] is to_thread
     assert kwargs["postprocess_plan"] == TaskPersistencePostprocessPlan()
+
+
+@pytest.mark.asyncio
+async def test_persist_successful_task_result_command_routes_through_flow():
+    flow = AsyncMock(return_value="done")
+    dependencies = TaskCorePersistenceDependencies(
+        user_logger_factory=Mock(),
+        download_result_func=AsyncMock(),
+        download_video_result_func=AsyncMock(),
+        extract_media_metadata_from_bytes_best_effort_func=AsyncMock(),
+        extract_media_metadata_from_storage_best_effort_func=AsyncMock(),
+        schedule_web_history_r2_warmup_func=Mock(),
+        refresh_user_group_func=None,
+    )
+
+    result = await task_core_persistence.persist_successful_task_result_command(
+        command=TaskSuccessPersistenceCommand(
+            backend_task_id="backend-command",
+            registry_task_id="registry-command",
+            internal_user_id=123,
+            username="tester",
+            prompt="prompt",
+            task_type="image",
+            input_images=["input.png"],
+            allow_contribute=True,
+            is_video=False,
+            billing_resolution="1024",
+            requested_duration=None,
+        ),
+        materialize_successful_task_result_flow_func=flow,
+        dependencies=dependencies,
+    )
+
+    assert result == "done"
+    flow.assert_awaited_once()
+    assert flow.await_args.kwargs["backend_task_id"] == "backend-command"
 
 
 @pytest.mark.asyncio

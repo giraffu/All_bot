@@ -4,6 +4,7 @@
 本模块负责统一提交、排队、监控、取消与清理图片/视频生成任务。当前架构下，任务调度不是单一 `task_core.py` 单体，而是由以下几层组成：
 
 - `src/core/task_core.py`：公开 facade，暴露稳定入口，如 `process_and_submit_task(...)`、`persist_successful_task_result(...)`
+- `src/core/task_core_types.py`：任务 core 数据契约，包含 `TaskSuccessPersistenceCommand` 等成功持久化命令对象
 - `src/core/task_lifecycle_contract.py`：共享任务生命周期 contract，统一 side-effect plan 归一化与 backend 终态判断
 - `src/core/task_core_service_providers.py`：provider/capability 边界，屏蔽 `image_service`、`TaskRegistry`、submission outbox 等基础设施实现
 - `src/core/task_core_default_dependencies.py`：纯 builder 层，负责把 capability/provider 组合成 `TaskCore*Dependencies`
@@ -81,6 +82,8 @@ sequenceDiagram
 - 提交成功后根据 `TaskSubmissionSideEffectPlan` 写入持久化 Web finalizer 或其他 side effect；默认 Web side effect 装配由 dependency 层负责，facade 不直接 import Web application 层实现
 - 提交失败时执行补偿，并在未成功提交时释放并发锁
 
+默认 process dependencies 已按 input、billing、submission、side-effect 四组 builder 拆分。新增装配能力时应优先落在对应 builder，保持 `build_default_task_core_process_dependencies(...)` 作为聚合入口，而不是重新把基础设施解析堆回 facade。
+
 ### 4.2 Web 监控门面
 当前 Web 异步收尾入口：
 
@@ -99,6 +102,8 @@ sequenceDiagram
 - 成功历史落库必须对 `user_id + task_id + source` 做幂等保护；重复收口时只能更新/跳过已有 `History`，不能再次插入，也不能重复触发 Web history R2 warmup。
 - backend 执行面在发布 `done/error` 的 `comfy:task_events:{backend_task_id}` 终态事件时，应随事件携带 `task_type`，并尽量附带 `worker_id`、`created_at` 等最小详情，避免 Dashboard/stream 消费端与 Web monitor runtime cleanup 争抢 Redis 临时详情键而产生观测竞态。
 - Bot 轮询展示、Web monitor 和 stream/result fallback 对 backend `done/error/cancelled` 的判定，应共享 `task_lifecycle_contract.py`，避免多处写死终态名单。
+
+成功历史持久化的对象入口为 `persist_successful_task_result_command(TaskSuccessPersistenceCommand(...))`；旧 `persist_successful_task_result(...)` 签名保留为兼容层。新增代码和测试优先构造 command 与 `TaskCorePersistenceDependencies`，不要扩大模块级 monkeypatch。
 
 ### 4.3 Bot 主链路
 Bot 不再走字符串取消协议，也不再依赖厚重 compat wrapper。当前主链为：
@@ -127,6 +132,7 @@ Bot flow 已拆成五段式上下文：
 
 取消态改为专用异常 `BotTaskCancelled`，不再依赖字符串 sentinel `"cancelled"`。
 当前 Bot `task_service_flow.py` 与 Web `task_web_lifecycle_monitor.py` 已共享 `task_lifecycle_runner.py` 的 monitor->route 骨架；Web monitor 与 `task_web_finalizer.py` 进一步共享 backend terminal router，避免多处重复写 success/cancelled/failure 分流。
+Bot 前台 `monitor_task_progress(...)` 已进一步拆出纯状态渲染 `render_progress_transition(...)`；Telegram I/O、取消/失败处理仍留在 runtime 层，双 ID 与 FSM 全局菜单退出语义不变。
 
 ## 5. API 口径
 当前 Web 任务入口以 `/api/tasks/generate` 为主，body 口径为：

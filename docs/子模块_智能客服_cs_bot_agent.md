@@ -36,7 +36,8 @@ sequenceDiagram
 
 ## 3. 已落地实现事实
 - 模型接入通过 `ChatOpenAI(base_url=LLM_API_BASE, api_key='lm-studio')` 兼容层完成。
-- `SkillManager` 会在启动时加载 `cs_bot/skills` 目录中的 prompt 与 tools，再统一绑定到 LLM。
+- `langgraph_client.py` 使用 `build_langgraph_app()` / `get_langgraph_runtime()` 懒初始化运行时，首次调用时才加载 `SkillManager`、绑定 tools 并编译图，避免模块 import 即连接或构造 LLM。
+- `SkillManager` 会在运行时初始化时加载 `cs_bot/skills` 目录中的 prompt 与 tools，再统一绑定到 LLM。
 - LangGraph 的状态只维护 `messages`；没有单独的 Redis 持久化记忆树。
 - 当前记忆组件是 `MemorySaver()`，属于进程内存检查点；如果容器重启，会话历史不会天然持久化。
 - 文本消息与图片消息使用不同 `thread_id`：
@@ -55,6 +56,7 @@ sequenceDiagram
 - 不要把 `MemorySaver` 写成 Redis 持久化记忆；当前实现不是。
 - 不要把技能能力写成“仅提示词优化服务”；当前主能力是客服问答与工具化 LangGraph 对话。
 - 本地 LLM 故障时必须优雅降级，返回友好提示，不能把异常上抛到 Telegram 更新循环。
+- 不要在 `langgraph_client.py` 模块导入阶段新增全局 LangGraph / LLM 初始化；新增入口应复用 `get_langgraph_runtime()`。
 
 ## 6. 测试关注面
 - 意图识别对“闲聊 / 求助”区分

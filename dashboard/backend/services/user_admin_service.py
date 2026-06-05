@@ -2,6 +2,8 @@ import json
 import logging
 import math
 import uuid
+from dataclasses import dataclass
+from datetime import date
 from datetime import datetime, timedelta
 from types import SimpleNamespace
 
@@ -54,6 +56,33 @@ USER_LIST_SORT_FIELDS = {
 }
 
 
+@dataclass(frozen=True)
+class UserListQuery:
+    skip: int = 0
+    limit: int = 20
+    user_id: int | None = None
+    query: str | None = None
+    query_partial: bool = True
+    identity: str | None = None
+    user_group: str | None = None
+    submission_banned: bool | None = None
+    username: str | None = None
+    username_partial: bool = False
+    sort_by: str | None = None
+    sort_order: str | None = None
+
+
+@dataclass(frozen=True)
+class UserTransferPlan:
+    source_snapshot: dict
+    target_before_snapshot: dict
+    target_after_profile: dict
+    membership_decision: dict
+    ban_decision: dict
+    stats_decision: dict
+    dry_run: bool = False
+
+
 def _normalize_user_list_sort(sort_by: str | None, sort_order: str | None) -> tuple[str, str]:
     normalized_sort_by = (sort_by or USER_LIST_DEFAULT_SORT_BY).strip()
     normalized_sort_order = (sort_order or USER_LIST_DEFAULT_SORT_ORDER).strip().lower()
@@ -88,6 +117,76 @@ def _apply_user_list_sort(stmt, sort_by: str, sort_order: str):
     return stmt.order_by(primary_order.nullslast(), secondary_order)
 
 
+def _build_user_list_stmt(query: UserListQuery):
+    stmt = select(User)
+
+    if query.user_id is not None:
+        stmt = stmt.where(User.id == query.user_id)
+    if query.query:
+        query_filters = []
+        if query.query.isdigit():
+            query_filters.append(User.id == int(query.query))
+        if query.query_partial:
+            query_filters.extend(
+                [
+                    User.full_name.ilike(f"%{query.query}%"),
+                    User.username.ilike(f"%{query.query}%"),
+                ]
+            )
+        else:
+            query_filters.extend(
+                [User.full_name == query.query, User.username == query.query]
+            )
+        stmt = stmt.where(or_(*query_filters))
+    if query.identity:
+        if query.identity == "外门弟子":
+            stmt = stmt.where(
+                (User.current_identity == query.identity)
+                | (User.current_identity.is_(None))
+            )
+        else:
+            stmt = stmt.where(User.current_identity == query.identity)
+    if query.user_group:
+        if query.user_group == "凡人":
+            stmt = stmt.where(
+                (User.user_group == query.user_group) | (User.user_group.is_(None))
+            )
+        else:
+            stmt = stmt.where(User.user_group == query.user_group)
+    if query.submission_banned is not None:
+        stmt = stmt.where(User.is_submission_banned.is_(query.submission_banned))
+    if query.username:
+        if query.username_partial:
+            stmt = stmt.where(User.username.ilike(f"%{query.username}%"))
+        else:
+            stmt = stmt.where(User.username == query.username)
+    return stmt
+
+
+def _present_user_list_item(user: User) -> dict:
+    user_dict = {column.name: getattr(user, column.name) for column in user.__table__.columns}
+    user_dict["referral_count"] = user.referral_count or 0
+    user_dict["last_activity"] = user.last_activity
+    user_dict["generation_count"] = user.generation_count or 0
+    user_dict["checkin_count"] = user.checkin_count or 0
+    user_dict["current_identity"] = user.current_identity or "外门弟子"
+    user_dict["identity_expire_at"] = user.identity_expire_at
+    user_dict["total_contributions"] = int(user.total_contributions or 0)
+    user_dict["approved_contributions"] = int(user.approved_contributions or 0)
+    user_dict["channel_joined"] = (
+        bool(user.is_channel_member) if hasattr(user, "is_channel_member") else False
+    )
+    if user.inviter_user:
+        user_dict["inviter_info"] = {
+            "id": user.inviter_user.id,
+            "username": user.inviter_user.username,
+            "full_name": user.inviter_user.full_name,
+        }
+    else:
+        user_dict["inviter_info"] = None
+    return user_dict
+
+
 async def get_users_payload(
     *,
     db,
@@ -107,84 +206,39 @@ async def get_users_payload(
 ) -> dict:
     active_logger = logger_override or logger
     try:
-        sort_by, sort_order = _normalize_user_list_sort(sort_by, sort_order)
-        stmt = select(User)
-
-        if user_id is not None:
-            stmt = stmt.where(User.id == user_id)
-        if query:
-            query_filters = []
-            if query.isdigit():
-                query_filters.append(User.id == int(query))
-            if query_partial:
-                query_filters.extend(
-                    [
-                        User.full_name.ilike(f"%{query}%"),
-                        User.username.ilike(f"%{query}%"),
-                    ]
-                )
-            else:
-                query_filters.extend([User.full_name == query, User.username == query])
-            stmt = stmt.where(or_(*query_filters))
-        if identity:
-            if identity == "外门弟子":
-                stmt = stmt.where(
-                    (User.current_identity == identity) | (User.current_identity.is_(None))
-                )
-            else:
-                stmt = stmt.where(User.current_identity == identity)
-        if user_group:
-            if user_group == "凡人":
-                stmt = stmt.where((User.user_group == user_group) | (User.user_group.is_(None)))
-            else:
-                stmt = stmt.where(User.user_group == user_group)
-        if submission_banned is not None:
-            stmt = stmt.where(User.is_submission_banned.is_(submission_banned))
-        if username:
-            if username_partial:
-                stmt = stmt.where(User.username.ilike(f"%{username}%"))
-            else:
-                stmt = stmt.where(User.username == username)
-
-        count_stmt = select(func.count()).select_from(stmt.subquery())
-        total_result = await db.execute(count_stmt)
+        user_query = UserListQuery(
+            skip=skip,
+            limit=limit,
+            user_id=user_id,
+            query=query,
+            query_partial=query_partial,
+            identity=identity,
+            user_group=user_group,
+            submission_banned=submission_banned,
+            username=username,
+            username_partial=username_partial,
+            sort_by=sort_by,
+            sort_order=sort_order,
+        )
+        normalized_sort_by, normalized_sort_order = _normalize_user_list_sort(
+            user_query.sort_by,
+            user_query.sort_order,
+        )
+        stmt = _build_user_list_stmt(user_query)
+        total_result = await db.execute(select(func.count()).select_from(stmt.subquery()))
         total = total_result.scalar() or 0
 
         stmt = stmt.options(selectinload(User.inviter_user))
-        stmt = _apply_user_list_sort(stmt, sort_by, sort_order)
-        stmt = stmt.offset(skip).limit(limit)
+        stmt = _apply_user_list_sort(stmt, normalized_sort_by, normalized_sort_order)
+        stmt = stmt.offset(user_query.skip).limit(user_query.limit)
         result = await db.execute(stmt)
-        users = result.scalars().all()
-
-        items = []
-        for user in users:
-            user_dict = {column.name: getattr(user, column.name) for column in user.__table__.columns}
-            user_dict["referral_count"] = user.referral_count or 0
-            user_dict["last_activity"] = user.last_activity
-            user_dict["generation_count"] = user.generation_count or 0
-            user_dict["checkin_count"] = user.checkin_count or 0
-            user_dict["current_identity"] = user.current_identity or "外门弟子"
-            user_dict["identity_expire_at"] = user.identity_expire_at
-            user_dict["total_contributions"] = int(user.total_contributions or 0)
-            user_dict["approved_contributions"] = int(user.approved_contributions or 0)
-            user_dict["channel_joined"] = (
-                bool(user.is_channel_member) if hasattr(user, "is_channel_member") else False
-            )
-            if user.inviter_user:
-                user_dict["inviter_info"] = {
-                    "id": user.inviter_user.id,
-                    "username": user.inviter_user.username,
-                    "full_name": user.inviter_user.full_name,
-                }
-            else:
-                user_dict["inviter_info"] = None
-            items.append(user_dict)
+        items = [_present_user_list_item(user) for user in result.scalars().all()]
 
         return {
             "items": items,
             "total": total,
-            "sort_by": sort_by,
-            "sort_order": sort_order,
+            "sort_by": normalized_sort_by,
+            "sort_order": normalized_sort_order,
         }
     except HTTPException:
         raise
@@ -592,11 +646,152 @@ def _merge_transfer_profile(*, source_user: User, target_user: User) -> None:
     )
 
 
+def _json_safe(value):
+    if isinstance(value, (datetime, date)):
+        return value.isoformat()
+    return value
+
+
+def _snapshot_transfer_user(user: User) -> dict:
+    keys = [
+        "id",
+        "username",
+        "full_name",
+        "credits",
+        "checkin_count",
+        "generation_count",
+        "total_contributions",
+        "approved_contributions",
+        "last_checkin",
+        "last_activity",
+        "created_at",
+        "is_channel_member",
+        "language_code",
+        "is_submission_banned",
+        "submission_banned_at",
+        "submission_ban_reason",
+        "current_identity",
+        "identity_expire_at",
+        "user_group",
+        "referral_count",
+    ]
+    return {key: _json_safe(getattr(user, key, None)) for key in keys}
+
+
+def _clone_transfer_user(user: User) -> SimpleNamespace:
+    return SimpleNamespace(
+        id=user.id,
+        username=user.username,
+        full_name=user.full_name,
+        credits=user.credits,
+        checkin_count=user.checkin_count,
+        generation_count=user.generation_count,
+        total_contributions=user.total_contributions,
+        approved_contributions=user.approved_contributions,
+        last_checkin=user.last_checkin,
+        last_activity=user.last_activity,
+        created_at=user.created_at,
+        is_channel_member=user.is_channel_member,
+        language_code=user.language_code,
+        is_submission_banned=user.is_submission_banned,
+        submission_banned_at=user.submission_banned_at,
+        submission_ban_reason=user.submission_ban_reason,
+        current_identity=user.current_identity,
+        identity_expire_at=user.identity_expire_at,
+        user_group=user.user_group,
+        referral_count=user.referral_count,
+    )
+
+
+def _build_user_transfer_plan(
+    *,
+    source_user: User,
+    target_user: User,
+    dry_run: bool,
+) -> UserTransferPlan:
+    preview_source = _clone_transfer_user(source_user)
+    preview_target = _clone_transfer_user(target_user)
+    before = _snapshot_transfer_user(target_user)
+    _merge_transfer_profile(source_user=preview_source, target_user=preview_target)
+    after = _snapshot_transfer_user(preview_target)
+    return UserTransferPlan(
+        source_snapshot=_snapshot_transfer_user(source_user),
+        target_before_snapshot=before,
+        target_after_profile=after,
+        membership_decision={
+            "from": {
+                "source_identity": source_user.current_identity,
+                "source_expire_at": _json_safe(source_user.identity_expire_at),
+                "target_identity": target_user.current_identity,
+                "target_expire_at": _json_safe(target_user.identity_expire_at),
+            },
+            "to": {
+                "identity": after.get("current_identity"),
+                "expire_at": after.get("identity_expire_at"),
+            },
+        },
+        ban_decision={
+            "source_banned": bool(source_user.is_submission_banned),
+            "target_banned": bool(target_user.is_submission_banned),
+            "merged_banned": bool(after.get("is_submission_banned")),
+            "merged_reason": after.get("submission_ban_reason"),
+        },
+        stats_decision={
+            "credits_delta": int(source_user.credits or 0),
+            "checkin_count_delta": int(source_user.checkin_count or 0),
+            "generation_count_delta": int(source_user.generation_count or 0),
+            "total_contributions_delta": int(source_user.total_contributions or 0),
+            "approved_contributions_delta": int(source_user.approved_contributions or 0),
+        },
+        dry_run=dry_run,
+    )
+
+
+def _transfer_plan_to_dict(plan: UserTransferPlan) -> dict:
+    return {
+        "source_snapshot": plan.source_snapshot,
+        "target_before_snapshot": plan.target_before_snapshot,
+        "target_after_profile": plan.target_after_profile,
+        "membership_decision": plan.membership_decision,
+        "ban_decision": plan.ban_decision,
+        "stats_decision": plan.stats_decision,
+        "dry_run": plan.dry_run,
+    }
+
+
+async def _estimate_transfer_counts(
+    *,
+    db,
+    source_user_id: int,
+) -> dict[str, int]:
+    count_specs = [
+        ("history_rows", History, History.user_id),
+        ("template_contributions", TemplateContribution, TemplateContribution.user_id),
+        ("checkin_history_rows", CheckinHistory, CheckinHistory.user_id),
+        ("user_logs", UserLog, UserLog.user_id),
+        ("orders", Order, Order.internal_user_id),
+        ("affiliate_transactions", AffiliateTransaction, AffiliateTransaction.user_id),
+        ("affiliate_redeems", AffiliateRedeem, AffiliateRedeem.user_id),
+        ("gallery_posts", GalleryPost, GalleryPost.user_id),
+        ("gallery_comments", GalleryComment, GalleryComment.user_id),
+        ("user_interactions", UserInteraction, UserInteraction.user_id),
+    ]
+    counts = {}
+    for count_key, model, owner_column in count_specs:
+        result = await db.execute(
+            select(func.count(model.id)).where(owner_column == source_user_id)
+        )
+        counts[count_key] = int(result.scalar() or 0)
+    counts["source_user_deleted"] = 1
+    return counts
+
+
 async def _write_user_transfer_log(
     *,
     source_user: User,
     target_user: User,
     moved_counts: dict[str, int],
+    transfer_plan: UserTransferPlan,
     note: str | None,
     logger_override: logging.Logger,
 ) -> None:
@@ -616,6 +811,7 @@ async def _write_user_transfer_log(
                 "source_full_name": source_user.full_name,
                 "note": note,
                 "moved_counts": moved_counts,
+                "transfer_plan": _transfer_plan_to_dict(transfer_plan),
                 "source_deleted": True,
             },
         )
@@ -633,15 +829,22 @@ def _build_transfer_user_response(
     source_user_id: int,
     target_user: User,
     moved_counts: dict[str, int],
+    transfer_plan: UserTransferPlan,
 ) -> dict:
     target_user_id = target_user.id
     return {
         "status": "ok",
-        "message": f"已将用户 {source_user_id} 的业务数据转移到用户 {target_user_id}，并删除源用户",
+        "message": (
+            f"已预演用户 {source_user_id} 到用户 {target_user_id} 的业务数据转移"
+            if transfer_plan.dry_run
+            else f"已将用户 {source_user_id} 的业务数据转移到用户 {target_user_id}，并删除源用户"
+        ),
         "source_user_id": source_user_id,
         "target_user_id": target_user_id,
         "moved_counts": moved_counts,
-        "merged_profile": {
+        "merged_profile": transfer_plan.target_after_profile
+        if transfer_plan.dry_run
+        else {
             "credits": int(target_user.credits or 0),
             "current_identity": target_user.current_identity,
             "identity_expire_at": target_user.identity_expire_at,
@@ -653,6 +856,8 @@ def _build_transfer_user_response(
             "is_submission_banned": bool(target_user.is_submission_banned),
             "submission_ban_reason": target_user.submission_ban_reason,
         },
+        "dry_run": transfer_plan.dry_run,
+        "transfer_plan": _transfer_plan_to_dict(transfer_plan),
     }
 
 
@@ -908,6 +1113,26 @@ async def transfer_user_data_payload(
             source_user_id=user_id,
             target_user_id=target_user_id,
         )
+        dry_run = bool(getattr(request, "dry_run", False))
+        transfer_plan = _build_user_transfer_plan(
+            source_user=source_user,
+            target_user=target_user,
+            dry_run=dry_run,
+        )
+        if dry_run:
+            moved_counts = await _estimate_transfer_counts(
+                db=db,
+                source_user_id=user_id,
+            )
+            response = _build_transfer_user_response(
+                source_user_id=user_id,
+                target_user=target_user,
+                moved_counts=moved_counts,
+                transfer_plan=transfer_plan,
+            )
+            await db.rollback()
+            return response
+
         moved_counts = await _move_user_owned_rows(
             db=db,
             source_user_id=user_id,
@@ -934,6 +1159,7 @@ async def transfer_user_data_payload(
             source_user=source_user,
             target_user=target_user,
             moved_counts=moved_counts,
+            transfer_plan=transfer_plan,
             note=getattr(request, "note", None),
             logger_override=active_logger,
         )
@@ -942,6 +1168,7 @@ async def transfer_user_data_payload(
             source_user_id=user_id,
             target_user=target_user,
             moved_counts=moved_counts,
+            transfer_plan=transfer_plan,
         )
     except HTTPException:
         await db.rollback()

@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+from dataclasses import dataclass
 
 from sqlalchemy import select
 
@@ -148,24 +149,26 @@ def resolve_gallery_author_name(
     return "匿名修士"
 
 
-async def build_post_responses(
+@dataclass(frozen=True)
+class GalleryPostBulkContext:
+    user_likes: set[int]
+    user_dislikes: set[int]
+    history_map: dict
+    user_map: dict
+    following_user_ids: set[int]
+    unlocked_prompt_post_ids: set[int]
+    urls_results: list
+
+
+async def load_gallery_post_bulk_context(
     *,
     session,
     posts,
     current_user,
-    translate_tags_func,
-    resolve_history_billing_resolution_func,
-    resolve_author_name,
     pick_gallery_media_urls_func,
-    logger_override,
-    gallery_post_response_cls,
-) -> list:
-    if not posts:
-        return []
-
+) -> GalleryPostBulkContext:
     post_ids = [p.id for p in posts]
     task_ids = [p.task_id for p in posts if p.task_id]
-
     user_likes, user_dislikes = await _load_user_reactions(
         session=session,
         current_user=current_user,
@@ -184,28 +187,59 @@ async def build_post_responses(
         current_user=current_user,
         post_ids=post_ids,
     )
-
     tasks = _build_gallery_media_url_tasks(
         posts=posts,
         history_map=history_map,
         pick_gallery_media_urls_func=pick_gallery_media_urls_func,
     )
     urls_results = await asyncio.gather(*tasks, return_exceptions=True)
+    return GalleryPostBulkContext(
+        user_likes=user_likes,
+        user_dislikes=user_dislikes,
+        history_map=history_map,
+        user_map=user_map,
+        following_user_ids=following_user_ids,
+        unlocked_prompt_post_ids=unlocked_prompt_post_ids,
+        urls_results=list(urls_results),
+    )
+
+
+async def build_post_responses(
+    *,
+    session,
+    posts,
+    current_user,
+    translate_tags_func,
+    resolve_history_billing_resolution_func,
+    resolve_author_name,
+    pick_gallery_media_urls_func,
+    logger_override,
+    gallery_post_response_cls,
+) -> list:
+    if not posts:
+        return []
+
+    bulk_context = await load_gallery_post_bulk_context(
+        session=session,
+        posts=posts,
+        current_user=current_user,
+        pick_gallery_media_urls_func=pick_gallery_media_urls_func,
+    )
 
     response_items = []
     for index, post in enumerate(posts):
-        history = history_map.get(post.task_id)
+        history = bulk_context.history_map.get(post.task_id)
         response_items.append(
             _build_single_post_response(
                 post=post,
                 history=history,
-                url_result=urls_results[index],
+                url_result=bulk_context.urls_results[index],
                 current_user=current_user,
-                unlocked_prompt_post_ids=unlocked_prompt_post_ids,
-                user_likes=user_likes,
-                user_dislikes=user_dislikes,
-                user_map=user_map,
-                following_user_ids=following_user_ids,
+                unlocked_prompt_post_ids=bulk_context.unlocked_prompt_post_ids,
+                user_likes=bulk_context.user_likes,
+                user_dislikes=bulk_context.user_dislikes,
+                user_map=bulk_context.user_map,
+                following_user_ids=bulk_context.following_user_ids,
                 translate_tags_func=translate_tags_func,
                 resolve_history_billing_resolution_func=(
                     resolve_history_billing_resolution_func

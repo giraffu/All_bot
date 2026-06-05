@@ -34,13 +34,14 @@ sequenceDiagram
         PG-->>Bot: 写 users + user_logs 同事务提交
     else RMB 支付
         Bot->>PG: 预建 PENDING 订单
-        RMB->>PG: payment_fulfillment_service.fulfill_order()
+        RMB->>PG: fulfill_order() 兼容包装 -> fulfill_payment_command()
         PG->>Aff: 计算首单返佣并写 affiliate_transactions
     else Telegram Stars 支付
-        TG->>PG: payment_handler 回调履约
+        TG->>PG: Stars 回调适配 -> fulfill_payment_command()
         PG->>Aff: 同步写返佣账本
     else TON 支付
-        TON->>PG: 按 tx_hash 幂等插入 SUCCESS/FAILED 订单
+        TON->>PG: TON 轮询适配 -> fulfill_payment_command()
+        TON->>PG: 成功前移 runtime_checkpoints last_lt
         PG->>Aff: 成功单写返佣账本
     end
 
@@ -60,6 +61,9 @@ sequenceDiagram
 - `affiliate_redeems`
   - 返佣兑换记录表，按 `(user_id, idempotency_key)` 保证单用户幂等。
   - `details` 中落地 `current_credits` 与 `available_balance_usdt` 快照，供重放时稳定返回首次成功结果。
+- `runtime_checkpoints`
+  - 保存跨进程运行时游标，当前首个用途是 TON 轮询 `last_lt`。
+  - TON key 形如 `ton:<merchant_address>:last_lt`，`value` 保存 JSON 快照并记录 `updated_at`。
 
 ## 4. 核心实现事实
 
@@ -71,8 +75,10 @@ sequenceDiagram
   - 当前身份/境界是否仍满足 Web 访问条件，防止“先登录后降权”继续访问。
 
 ### 4.2 订单履约红线
-- RMB 回调通过 `fulfill_order()` 处理，按 `order_id` 加 `FOR UPDATE` 锁，先校验金额，再更新订单与用户资产。
-- TON 不依赖单一 Webhook，而是由轮询器抓链上交易，按 `tx_hash` 唯一约束落单，避免重复到账。
+- 当前支付履约共享内核是 `payment_fulfillment_service.fulfill_payment_command(PaymentFulfillmentCommand(...))`，返回 `PaymentFulfillmentResult`；RMB `fulfill_order(...)` 只保留旧 bool 兼容包装。
+- RMB 适配层按本地业务单定位订单；TON / Stars 适配层只负责通道解析、金额单位适配、外部流水与通知回调，资产副作用必须进入共享内核。
+- 共享内核会按幂等锚点锁定/创建订单，先校验金额，再在同一事务内更新订单与用户资产。
+- TON 不依赖单一 Webhook，而是由轮询器抓链上交易，按 `tx_hash` 唯一约束落单，避免重复到账；轮询 `last_lt` 从 `runtime_checkpoints` 恢复，处理失败时不能前移游标。
 - 各支付渠道发货完成后都会同步尝试：
   - 计算首单返佣 `commission_usdt`
   - 写入 `affiliate_transactions`

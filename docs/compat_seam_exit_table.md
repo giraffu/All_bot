@@ -25,6 +25,7 @@
 | `src/web_api/common/__init__.py` | 纯 re-export 包壳 | 无业务引用 | 仓库内调用方均直接引用 `src.web_api.common.utils` | 已删除，`common` 包不再保留空壳入口 |
 | `src/core/task_core_service_providers.py` 中未调用的 getter wrapper | 历史 provider 细粒度透传符号 | 无业务引用 | 全仓确认无静态调用方 | 已删除，保留真实 capability builder 与运行时入口 |
 | `cs_bot/skill_manager.py:skill_manager` | 未使用的模块级单例 | 无业务引用 | `langgraph_client.py` 已自行实例化 `SkillManager` | 已删除，技能管理只保留真实构造路径 |
+| `src/context.py:trace_id_ctx` | 旧 trace context 变量 | 无业务引用；实际 trace 语义使用 `asgi_correlation_id.correlation_id` | `rg "trace_id_ctx"` 确认无动态引用 | 已删除，保留正在使用的 `user_id_ctx` |
 
 ## 已在本轮下沉的默认装配
 
@@ -41,7 +42,7 @@
 | `gallery_core` 默认 provider / side effects | `src/core/gallery_core.py` | `src/core/gallery_core_dependencies.py`、`src/core/gallery_submission_effects.py` | 已下沉，默认装配与投稿 side effects 不再堆在主文件顶部 |
 | `user_core` 的默认持久化绑定 | `src/core/user_core.py` | `src/core/user_core_bindings.py` | 已下沉，`user_core.py` 仅保留稳定 facade 与 binding 解析 |
 | `gallery_submission_core` / `gallery_interactions_core` 的 repository 默认绑定 | `src/core/gallery_submission_core.py`、`src/core/gallery_interactions_core.py` | `src/core/gallery_core_dependencies.py` | 已下沉，投稿/互动主链改走显式 dependencies，不再在子模块顶部直连 repository |
-| task core runtime process 默认装配 | `src/core/task_core_default_dependencies.py` | `src/task_core_process_defaults.py` | 已下沉，runtime-specific billing / strategy / web side-effect 装配退出热点 core builder |
+| task core runtime process 默认装配 | `src/core/task_core_default_dependencies.py` | `src/task_core_process_defaults.py` + input/billing/submission/side-effect builder | 已下沉，runtime-specific billing / strategy / web side-effect 装配退出热点 core builder，聚合入口按四组 builder 组合 |
 | `run_bot_task_flow(...)` | `src/services/task_service_flow.py` | `run_bot_task_application(...)` | 已删除，Bot entrypoints 现直接构造 `BotTaskFlowContext(request/presentation/billing/failure/cleanup)` 后调用单一真实入口 |
 | TG gallery 投稿 / 点赞主链 | `src/handlers/callbacks/gallery_callbacks.py` | `src/handlers/callbacks/gallery_callbacks_interactions.py` | 已继续收口，`public_share`、`rate_*`、`submit_gallery_`、`gallery_like_/gallery_dislike_` 已直接在 interactions 子模块注册，旧壳文件已删除 |
 | `Profile.vue` metric 组装 | `frontend/src/views/Profile.vue` | `frontend/src/composables/useProfileMetrics.ts` | 已下沉，统计与返佣卡片数据组装不再堆在页面脚本 |
@@ -51,7 +52,7 @@
 | `Profile.vue` 欢迎区摘要 / 快捷入口装配 | `frontend/src/views/Profile.vue` | `frontend/src/composables/useProfileWelcomeSummary.ts`、`frontend/src/composables/useProfileQuickActions.ts` | 已下沉，欢迎区与快捷入口的数据/行为编排进一步退出页面脚本 |
 | swap 双文件页结果重置 controller | `FaceSwap.vue`、`VideoSwap.vue` 页面内联 | `frontend/src/composables/useSwapResetController.ts` | 已统一，reset 会同步清上传态、taskId、分辨率与模板态/sourcePostId |
 | `billing_core` 私有 `_build_*` 测试 seam | `tests/core/test_billing_core.py` patch 私有 builder | `BillingCoreDependencies` 显式注入 | 已迁移，公开函数支持显式 dependencies，测试不再绑定私有 builder |
-| `task_core_persistence` 模块内 materialization builder seam | `src/core/task_core_persistence.py` | `persist_successful_task_result(...)` + `task_core_persistence_flow.py` | 已收口，下载/`to_thread` 默认绑定回到公开 persistence 边界与 flow |
+| `task_core_persistence` 模块内 materialization builder seam | `src/core/task_core_persistence.py` | `TaskSuccessPersistenceCommand` + `persist_successful_task_result_command(...)` + `task_core_persistence_flow.py` | 已收口，旧 `persist_successful_task_result(...)` 仅保留兼容包装，下载/`to_thread` 默认绑定回到公开 persistence 边界与 flow |
 | `affiliate_redeem_service` membership 账本/结算混排 | `src/services/affiliate_redeem_service.py` | `_create_membership_redeem_ledger_entry(...)`、`_apply_affiliate_membership_settlement(...)` | 已拆开，主 service 继续保留事务/幂等编排，账本与结算边界更清晰 |
 | `gallery_core.py` feed 查询拼装 | `src/core/gallery_core.py` | `src/services/gallery_feed_queries.py` | 已下沉到 service 层，旧 `src/core/gallery_feed_queries.py` 兼容 re-export 已删除；category/media_type/sort/time_range/page/count 查询拼装不再堆在 core 主文件 |
 | `storage.py` MinIO object IO facade | `src/services/storage.py` | `src/services/storage_minio_objects.py` | 已下沉，upload/list/download/object exists 回到独立 helper，主类保留薄代理与兼容签名 |
@@ -77,7 +78,7 @@
 
 | 对象 | 当前状态 | 清理前置条件 | 建议动作 |
 | --- | --- | --- | --- |
-| `src/context.py:trace_id_ctx` | 2026-06-03 静态扫描未发现引用；实际 trace 语义使用 `asgi_correlation_id.correlation_id` | 删除前再跑 `rg "trace_id_ctx"`，确认没有动态引用或计划中的中间件使用 | 直接删除该变量，保留正在使用的 `user_id_ctx` |
+| 暂无 | 本轮已完成 `trace_id_ctx` 清理 | 后续静态扫描发现新候选再补充 | 保持本表同步 |
 
 ## 保留观察
 

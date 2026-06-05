@@ -18,6 +18,7 @@ description: "处理任务提交流程、provider/capability 装配、双 ID 运
 - **统一任务提交**：`process_and_submit_task(...)` 负责并发锁、扣费、输入准备、Saga 提交、side effect 挂载与失败补偿。
 - **双 ID 生命周期**：系统同时区分 `registry_task_id` 与 `backend_task_id`；恢复、取消、强制终止、僵尸任务清理都必须显式区分两者。
 - **Web side-effect monitor**：Web 提交成功后会异步挂载 monitor，负责成功持久化、取消退款、失败退款与 runtime cleanup。
+- **成功持久化命令对象**：成功历史落库优先使用 `TaskSuccessPersistenceCommand` + `persist_successful_task_result_command(...)`；旧 `persist_successful_task_result(...)` 签名保留为薄兼容层，新增测试优先传 command / dependencies 对象。
 - **僵尸任务自愈**：后台会扫描运行态 registry，执行 best-effort backend cancel、释放并发锁、清理注册表并处理退款/补偿。
 
 ## 2. 输入输出规范
@@ -46,6 +47,7 @@ description: "处理任务提交流程、provider/capability 装配、双 ID 运
 - Web finalizer 在多 worker 下可能并发扫描 pending 队列；拿到 Redis lock 后必须重新读取单条 pending record，不能使用 `hgetall` 的旧快照继续收口。
 - Web 成功历史落库必须对 `user_id + task_id + source` 幂等；重复收口时不能重复插入 `History`，也不能重复触发 Web history R2 warmup。
 - 默认依赖构造必须保持惰性，只在缺失且确实需要时才解析 provider，避免测试被误伤。
+- `build_default_task_core_process_dependencies(...)` 已按 input、billing、submission、side-effect builder 拆分；后续扩展优先加在对应 builder，避免继续膨胀总装配函数。
 - `TaskCoreServiceProviders` 与主要 capability 已补强 `Protocol` / 精确 `Callable` 类型；新增 provider/capability 时继续保持显式契约，不要扩大弱类型字段。
 - provider 注册依赖模块级全局状态；测试和离线路径优先显式传入 `dependencies`，避免继续把模块级 monkeypatch 当成主路径。
 
@@ -59,6 +61,7 @@ description: "处理任务提交流程、provider/capability 装配、双 ID 运
 - `process_and_submit_task(...)` 同时覆盖默认装配与显式 `dependencies` 路径。
 - `cleanup_task_runtime_state(...)`、`force_terminate_task(...)` 覆盖双 ID 与 cleanup seam。
 - Web monitor 覆盖成功持久化、取消退款、失败退款三条主分支。
+- 成功持久化需覆盖旧签名和 `TaskSuccessPersistenceCommand` 两条调用路径。
 - 任务提交、history fallback、stream terminal payload 与 Bot 主链回归应纳入黄金路径回归集。
 
 ## 6. 当前生成任务全链路口径

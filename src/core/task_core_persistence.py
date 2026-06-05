@@ -5,6 +5,7 @@ from src.core.task_core_persistence_flow import (
 )
 from src.core.task_core_types import (
     TaskPersistencePostprocessPlan,
+    TaskSuccessPersistenceCommand,
     TaskSuccessPersistenceResult,
 )
 
@@ -67,27 +68,9 @@ async def _persist_successful_web_history(
     )
 
 
-async def persist_successful_task_result(
+async def persist_successful_task_result_command(
     *,
-    backend_task_id: str,
-    registry_task_id: str,
-    internal_user_id: int,
-    username: str,
-    prompt: str,
-    task_type: str,
-    input_images: list[str],
-    allow_contribute: bool,
-    is_video: bool,
-    billing_resolution: str | None,
-    requested_duration: int | None,
-    output_width: int | None = None,
-    output_height: int | None = None,
-    output_duration: int | None = None,
-    result_path: str | None = None,
-    extra_outputs: dict[str, object] | None = None,
-    source: str = "bot",
-    refresh_user_group_after_log: bool = False,
-    warmup_web_history: bool = False,
+    command: TaskSuccessPersistenceCommand,
     user_logger_factory=None,
     download_result_func=None,
     download_video_result_func=None,
@@ -99,7 +82,6 @@ async def persist_successful_task_result(
     to_thread_func=None,
     refresh_user_group_func=None,
     postprocess_successful_task_persistence_func=None,
-    postprocess_plan: TaskPersistencePostprocessPlan | None = None,
     dependencies=None,
 ) -> TaskSuccessPersistenceResult:
     if materialize_successful_task_result_flow_func is None:
@@ -142,33 +124,34 @@ async def persist_successful_task_result(
             refresh_user_group_func = dependencies.refresh_user_group_func
     if to_thread_func is None:
         to_thread_func = asyncio.to_thread
+    postprocess_plan = command.postprocess_plan
     if postprocess_plan is None:
         postprocess_plan = TaskPersistencePostprocessPlan(
-            source=source,
-            refresh_user_group_after_log=refresh_user_group_after_log,
-            warmup_web_history=warmup_web_history,
+            source=command.source,
+            refresh_user_group_after_log=command.refresh_user_group_after_log,
+            warmup_web_history=command.warmup_web_history,
         )
 
     return await materialize_successful_task_result_flow_func(
-        backend_task_id=backend_task_id,
-        registry_task_id=registry_task_id,
-        internal_user_id=internal_user_id,
-        username=username,
-        prompt=prompt,
-        task_type=task_type,
-        input_images=input_images,
-        allow_contribute=allow_contribute,
-        is_video=is_video,
-        source=source,
-        billing_resolution=billing_resolution,
-        requested_duration=requested_duration,
-        output_width=output_width,
-        output_height=output_height,
-        output_duration=output_duration,
-        result_path=result_path,
-        extra_outputs=extra_outputs,
-        refresh_user_group_after_log=refresh_user_group_after_log,
-        warmup_web_history=warmup_web_history,
+        backend_task_id=command.backend_task_id,
+        registry_task_id=command.registry_task_id,
+        internal_user_id=command.internal_user_id,
+        username=command.username,
+        prompt=command.prompt,
+        task_type=command.task_type,
+        input_images=command.input_images,
+        allow_contribute=command.allow_contribute,
+        is_video=command.is_video,
+        source=command.source,
+        billing_resolution=command.billing_resolution,
+        requested_duration=command.requested_duration,
+        output_width=command.output_width,
+        output_height=command.output_height,
+        output_duration=command.output_duration,
+        result_path=command.result_path,
+        extra_outputs=command.extra_outputs,
+        refresh_user_group_after_log=command.refresh_user_group_after_log,
+        warmup_web_history=command.warmup_web_history,
         postprocess_plan=postprocess_plan,
         schedule_web_history_r2_warmup_func=schedule_web_history_r2_warmup_func,
         user_logger_factory=user_logger_factory,
@@ -188,6 +171,87 @@ async def persist_successful_task_result(
         postprocess_successful_task_persistence_func=(
             postprocess_successful_task_persistence_func
         ),
+    )
+
+
+async def persist_successful_task_result(
+    *,
+    backend_task_id: str,
+    registry_task_id: str,
+    internal_user_id: int,
+    username: str,
+    prompt: str,
+    task_type: str,
+    input_images: list[str],
+    allow_contribute: bool,
+    is_video: bool,
+    billing_resolution: str | None,
+    requested_duration: int | None,
+    output_width: int | None = None,
+    output_height: int | None = None,
+    output_duration: int | None = None,
+    result_path: str | None = None,
+    extra_outputs: dict[str, object] | None = None,
+    source: str = "bot",
+    refresh_user_group_after_log: bool = False,
+    warmup_web_history: bool = False,
+    user_logger_factory=None,
+    download_result_func=None,
+    download_video_result_func=None,
+    extract_media_metadata_from_bytes_best_effort_func=None,
+    extract_media_metadata_from_storage_best_effort_func=None,
+    schedule_web_history_r2_warmup_func=None,
+    materialize_successful_task_result_flow_func=None,
+    materialize_successful_task_output_func=None,
+    to_thread_func=None,
+    refresh_user_group_func=None,
+    postprocess_successful_task_persistence_func=None,
+    postprocess_plan: TaskPersistencePostprocessPlan | None = None,
+    dependencies=None,
+) -> TaskSuccessPersistenceResult:
+    return await persist_successful_task_result_command(
+        command=TaskSuccessPersistenceCommand(
+            backend_task_id=backend_task_id,
+            registry_task_id=registry_task_id,
+            internal_user_id=internal_user_id,
+            username=username,
+            prompt=prompt,
+            task_type=task_type,
+            input_images=input_images,
+            allow_contribute=allow_contribute,
+            is_video=is_video,
+            billing_resolution=billing_resolution,
+            requested_duration=requested_duration,
+            output_width=output_width,
+            output_height=output_height,
+            output_duration=output_duration,
+            result_path=result_path,
+            extra_outputs=extra_outputs,
+            source=source,
+            refresh_user_group_after_log=refresh_user_group_after_log,
+            warmup_web_history=warmup_web_history,
+            postprocess_plan=postprocess_plan,
+        ),
+        user_logger_factory=user_logger_factory,
+        download_result_func=download_result_func,
+        download_video_result_func=download_video_result_func,
+        extract_media_metadata_from_bytes_best_effort_func=(
+            extract_media_metadata_from_bytes_best_effort_func
+        ),
+        extract_media_metadata_from_storage_best_effort_func=(
+            extract_media_metadata_from_storage_best_effort_func
+        ),
+        schedule_web_history_r2_warmup_func=schedule_web_history_r2_warmup_func,
+        materialize_successful_task_result_flow_func=(
+            materialize_successful_task_result_flow_func
+        ),
+        materialize_successful_task_output_func=materialize_successful_task_output_func,
+        to_thread_func=to_thread_func,
+        refresh_user_group_func=refresh_user_group_func,
+        postprocess_successful_task_persistence_func=(
+            postprocess_successful_task_persistence_func
+        ),
+        dependencies=dependencies,
     )
 
 

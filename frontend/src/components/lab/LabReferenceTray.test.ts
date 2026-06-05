@@ -28,23 +28,6 @@ vi.mock('@ant-design/icons-vue', async () => {
   }
 })
 
-const ButtonStub = defineComponent({
-  name: 'AButton',
-  props: ['ariaLabel', 'title'],
-  emits: ['click'],
-  template: `
-    <button
-      class="a-button-stub"
-      :aria-label="ariaLabel"
-      :title="title"
-      @click="$emit('click', $event)"
-    >
-      <slot name="icon" />
-      <slot />
-    </button>
-  `,
-})
-
 const ImageStub = defineComponent({
   name: 'AImage',
   props: ['src'],
@@ -64,7 +47,6 @@ const mountTray = (items: InstanceType<typeof LabReferenceTray>['$props']['items
   },
   global: {
     stubs: {
-      'a-button': ButtonStub,
       'a-image': ImageStub,
       'a-progress': ProgressStub,
     },
@@ -83,7 +65,8 @@ describe('LabReferenceTray', () => {
 
     const removeButton = wrapper.get('.lab-reference-tray__remove')
     expect(removeButton.attributes('aria-label')).toBe('删除参考图')
-    expect(removeButton.classes()).toEqual(expect.arrayContaining(['right-1', 'top-1']))
+    expect(removeButton.element.tagName).toBe('BUTTON')
+    expect(removeButton.classes()).toEqual(expect.arrayContaining(['right-0.5', 'top-0.5']))
 
     await removeButton.trigger('click')
 

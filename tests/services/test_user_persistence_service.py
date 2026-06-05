@@ -23,7 +23,7 @@ async def test_user_persistence_service_flushes_before_commit():
         async def __aenter__(self):
             return mock_session
 
-        async def __aexit__(self, exc_type, exc_val, exc_tb):
+        async def __aexit__(self, exc_type, _exc_val, _exc_tb):
             return False
 
     with patch(
@@ -62,7 +62,7 @@ async def test_user_persistence_service_adopts_legacy_internal_id_user():
         async def __aenter__(self):
             return mock_session
 
-        async def __aexit__(self, exc_type, exc_val, exc_tb):
+        async def __aexit__(self, exc_type, _exc_val, _exc_tb):
             return False
 
     with patch(

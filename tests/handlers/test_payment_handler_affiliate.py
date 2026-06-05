@@ -179,6 +179,8 @@ async def test_process_successful_stars_payment_records_affiliate_transaction(
     assert result.status == "success"
     compiled_user_query = session.statements[1].compile(dialect=postgresql.dialect())
     assert "FOR UPDATE" in str(compiled_user_query)
+    compiled_insert = session.statements[2].compile(dialect=postgresql.dialect())
+    assert compiled_insert.params["internal_user_id"] == 2002
 
 
 @pytest.mark.asyncio

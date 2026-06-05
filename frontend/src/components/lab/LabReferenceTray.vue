@@ -62,20 +62,16 @@ const { t } = useI18n()
           <span class="truncate">{{ item.lockedLabel || item.name }}</span>
         </div>
 
-        <a-button
+        <button
           v-if="!item.uploading && !item.locked"
-          type="text"
-          size="small"
-          shape="circle"
-          class="lab-reference-tray__remove absolute right-1 top-1"
+          type="button"
+          class="lab-reference-tray__remove absolute right-0.5 top-0.5 inline-flex items-center justify-center rounded-full"
           :aria-label="t('lab.workbench.remove_reference')"
           :title="t('lab.workbench.remove_reference')"
           @click.stop.prevent="emit('remove', index)"
         >
-          <template #icon>
-            <CloseOutlined />
-          </template>
-        </a-button>
+          <CloseOutlined />
+        </button>
       </div>
     </div>
   </div>
@@ -103,22 +99,30 @@ const { t } = useI18n()
   filter: grayscale(1);
 }
 
+.lab-reference-tray__item :deep(.ant-image-mask) {
+  z-index: 1;
+}
+
 .lab-reference-tray__remove {
-  z-index: 2;
-  width: 22px !important;
-  min-width: 22px !important;
-  height: 22px !important;
-  border: 1px solid rgba(248, 250, 252, 0.88) !important;
-  background: rgba(15, 23, 42, 0.82) !important;
+  z-index: 20;
+  width: 24px;
+  height: 24px;
+  border: 1px solid rgba(255, 255, 255, 0.94);
+  background: rgba(239, 68, 68, 0.96);
   box-shadow: 0 8px 16px rgba(15, 23, 42, 0.34);
-  color: #f8fafc !important;
-  font-size: 11px;
+  color: #ffffff;
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1;
+  padding: 0;
 }
 
 .lab-reference-tray__remove:hover,
 .lab-reference-tray__remove:focus-visible {
-  background: rgba(239, 68, 68, 0.95) !important;
-  color: #ffffff !important;
+  background: rgba(220, 38, 38, 1);
+  color: #ffffff;
+  outline: 2px solid rgba(255, 255, 255, 0.78);
+  outline-offset: 1px;
 }
 
 :deep(.lab-reference-tray__remove .anticon),

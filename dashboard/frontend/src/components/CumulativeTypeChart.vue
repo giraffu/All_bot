@@ -1,7 +1,6 @@
 <template>
-  <div class="chart-wrapper flex flex-col">
-    <div class="flex justify-between items-center mb-4 shrink-0">
-      <h3 class="text-base font-semibold text-gray-800 m-0">{{ props.title }}</h3>
+  <DashboardChartFrame :title="props.title">
+    <template #controls>
       <a-radio-group 
         v-model:value="timeRange" 
         @change="handleRangeChange"
@@ -16,14 +15,12 @@
           {{ opt.label }}
         </a-radio-button>
       </a-radio-group>
-    </div>
-    <div class="flex-1 min-h-0 relative">
-      <v-chart class="chart" :option="option" autoresize :loading="loading" />
-    </div>
-  </div>
+    </template>
+    <v-chart class="chart" :option="option" autoresize :loading="loading" />
+  </DashboardChartFrame>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { use } from 'echarts/core';
 import { CanvasRenderer } from 'echarts/renderers';
 import { PieChart } from 'echarts/charts';
@@ -34,6 +31,7 @@ import {
 } from 'echarts/components';
 import VChart from 'vue-echarts';
 import { computed, ref, onMounted } from 'vue';
+import DashboardChartFrame from './DashboardChartFrame.vue';
 import { fetchCumulativeTypeDistribution } from '../api/api';
 import { TASK_TYPE_COLORS, TASK_TYPE_LABELS } from '../constants/taskTypes';
 
@@ -45,15 +43,12 @@ use([
   LegendComponent
 ]);
 
-const props = defineProps({
-  title: {
-    type: String,
-    default: '累计生成类型分布'
-  },
-  donut: {
-    type: Boolean,
-    default: false
-  }
+const props = withDefaults(defineProps<{
+  title?: string
+  donut?: boolean
+}>(), {
+  title: '累计生成类型分布',
+  donut: false
 });
 
 const timeRangeOptions = [
@@ -66,15 +61,15 @@ const timeRangeOptions = [
   { label: '1年', value: 365 }
 ];
 
-const timeRange = ref(7); // Default 7 days
+const timeRange = ref<number>(7);
 const loading = ref(false);
-const chartData = ref({});
+const chartData = ref<Record<string, number>>({});
 
 const fetchData = async () => {
   loading.value = true;
   try {
     const data = await fetchCumulativeTypeDistribution(timeRange.value);
-    chartData.value = data;
+    chartData.value = data as Record<string, number>;
   } catch (error) {
     console.error('Failed to fetch cumulative type distribution:', error);
   } finally {
@@ -93,10 +88,10 @@ onMounted(() => {
 const transformedData = computed(() => {
   if (!chartData.value) return [];
   return Object.entries(chartData.value).map(([key, value]) => ({
-    name: TASK_TYPE_LABELS[key] || key,
+    name: (TASK_TYPE_LABELS as Record<string, string>)[key] || key,
     value: value,
     itemStyle: {
-      color: TASK_TYPE_COLORS[key] || undefined
+      color: (TASK_TYPE_COLORS as Record<string, string>)[key] || undefined
     }
   }));
 });
@@ -137,17 +132,6 @@ const option = computed(() => ({
 </script>
 
 <style scoped>
-.chart-wrapper {
-  width: 100%;
-  height: 100%;
-  min-height: 300px;
-  background: white;
-  border-radius: 8px;
-  padding: 16px;
-  border: 1px solid #f0f0f0;
-  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.03);
-}
-
 .chart {
   height: 100%;
   width: 100%;

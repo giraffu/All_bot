@@ -155,9 +155,7 @@ async def test_get_system_status_proxy_payload_uses_active_task_registry_counts(
     }
 
     data = await system_service.get_system_status_proxy_payload(
-        httpx_async_client_factory=lambda trust_env=False: _FakeAsyncClient(
-            middleware_payload
-        ),
+        httpx_async_client_factory=lambda **_kwargs: _FakeAsyncClient(middleware_payload),
         get_system_task_stats_func=AsyncMock(
             return_value=(active_tasks, {1001: 1, 1002: 2})
         ),

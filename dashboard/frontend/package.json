@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "typecheck": "vue-tsc --noEmit -p tsconfig.app.json",
+    "build": "npm run typecheck && vite build",
     "preview": "vite preview",
     "test": "vitest run"
   },
@@ -18,13 +19,16 @@
     "vue-echarts": "^8.0.1"
   },
   "devDependencies": {
-    "@vue/test-utils": "^2.4.10",
     "@vitejs/plugin-vue": "^6.0.1",
+    "@vue/test-utils": "^2.4.10",
+    "@vue/tsconfig": "^0.9.1",
     "autoprefixer": "^10.4.24",
     "jsdom": "^29.1.1",
     "postcss": "^8.5.6",
     "tailwindcss": "^3.4.17",
+    "typescript": "^6.0.3",
     "vite": "^7.2.4",
-    "vitest": "^4.1.6"
+    "vitest": "^4.1.6",
+    "vue-tsc": "^3.3.3"
   }
 }

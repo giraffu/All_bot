@@ -40,6 +40,7 @@ sequenceDiagram
 - 系统大盘与管理视图
 - task stats、worker/queue 状态聚合
 - 管理员显式触发的终止、清理与只读查询
+- 用户列表过滤/排序与用户资产迁移预览；用户转移接口支持 `dry_run=true` 先返回迁移计划且不修改数据库
 - 管理接口鉴权与审计
 
 ### 3.2 Dashboard 不负责什么
@@ -55,10 +56,16 @@ sequenceDiagram
 - Worker 视图区分 `active_workers` 与 `healthy_workers`：前者表示有 heartbeat，后者表示 `idle/running` 且可接单
 - `comfy_online` 按 `healthy_workers > 0` 判定；全部节点 `error/quarantined` 时必须显示不可用
 - Worker 卡片应展示 `error` / `quarantined`、最近错误、失败次数、心跳时间与预计恢复时间，不能把故障节点渲染为空闲
+- Worker listener 应作为受监督后台循环运行；异常后由外层循环重试，不递归 `create_task`，并且每轮退出都显式关闭 pubsub / Redis client。
 
 ### 4.2 强制终止
 - Dashboard 应优先调用 core 暴露的系统任务管理入口，如 `force_terminate_task(...)`
 - 退款、锁释放、runtime cleanup 与双 ID 清理由 core/runtime 统一完成
+
+### 4.3 用户转移
+- 用户列表入口的查询条件应先归一化为 `UserListQuery`，再进入查询与 presenter，保持路由参数和响应字段兼容。
+- 用户转移先计算 `UserTransferPlan`，再执行真实迁移；`dry_run=true` 时只返回 before/after、预计 moved_counts 与合并决策，不写库、不写审计日志。
+- 真实转移的 `extra_info` 必须包含 before/after 快照、moved_counts，以及 membership / ban / stats 的合并决策，便于后续追溯。
 
 ## 5. 测试要求
 - 覆盖 Dashboard 鉴权中间件
@@ -70,6 +77,7 @@ sequenceDiagram
   - `backend_task_id` best-effort cancel
   - runtime cleanup / 锁释放
 - 覆盖 worker / queue 视图补齐与异常场景
+- 覆盖用户列表筛选/排序、用户转移 dry-run 无副作用，以及真实转移审计快照
 
 ## 6. 部署与运维
 - Dashboard 随部署脚本更新，但不应被文档描述为“僵尸任务自动自愈中心”。

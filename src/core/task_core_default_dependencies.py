@@ -145,6 +145,7 @@ def build_default_task_core_persistence_dependencies(
         schedule_web_history_r2_warmup_func=schedule_web_history_r2_warmup_func,
     )
 
+
 def build_default_task_core_monitor_dependencies(
     *,
     normalize_terminal_status_func,
@@ -196,6 +197,70 @@ def build_default_task_core_side_effect_dependencies(
     )
 
 
+def build_default_task_core_process_input_builder(
+    *,
+    user_logger_factory,
+    validate_local_input_paths_func,
+    get_user_priority_and_identity_func,
+    load_prompts_func,
+    process_input_path_func,
+    bucket_name,
+):
+    async def prepare_task_submission_payload_func(**kwargs):
+        return await prepare_task_submission_payload_impl(
+            user_id=kwargs["user_id"],
+            username=kwargs["username"],
+            task_type=kwargs["task_type"],
+            inputs=kwargs["inputs"],
+            strategy=kwargs["strategy"],
+            base_priority=kwargs["base_priority"],
+            is_template=kwargs["is_template"],
+            is_video_task=kwargs["is_video_task"],
+            video_request=kwargs["video_request"],
+            user_logger_factory=user_logger_factory,
+            validate_local_input_paths_func=validate_local_input_paths_func,
+            get_user_priority_and_identity_func=get_user_priority_and_identity_func,
+            load_prompts_func=load_prompts_func,
+            process_input_path_func=process_input_path_func,
+            bucket_name=bucket_name,
+        )
+
+    return prepare_task_submission_payload_func
+
+
+def build_default_task_core_process_billing_bindings(
+    *,
+    check_concurrency_lock_func,
+    check_and_deduct_credits_func,
+    release_concurrency_lock_func,
+) -> dict:
+    return {
+        "check_concurrency_lock_func": check_concurrency_lock_func,
+        "check_and_deduct_credits_func": check_and_deduct_credits_func,
+        "release_concurrency_lock_func": release_concurrency_lock_func,
+    }
+
+
+def build_default_task_core_process_submission_bindings(
+    *,
+    execute_task_submission_saga_func,
+    compensate_failed_submission_func,
+) -> dict:
+    return {
+        "execute_task_submission_saga_func": execute_task_submission_saga_func,
+        "compensate_failed_submission_func": compensate_failed_submission_func,
+    }
+
+
+def build_default_task_core_process_side_effect_bindings(
+    *,
+    attach_submission_side_effects_func,
+) -> dict:
+    return {
+        "attach_submission_side_effects_func": attach_submission_side_effects_func,
+    }
+
+
 def build_default_task_core_process_dependencies(
     *,
     video_task_types,
@@ -216,36 +281,34 @@ def build_default_task_core_process_dependencies(
     shield_func=asyncio.shield,
     logger_override=logger,
 ) -> TaskCoreProcessDependencies:
-    async def prepare_task_submission_payload_func(**kwargs):
-        return await prepare_task_submission_payload_impl(
-            user_id=kwargs["user_id"],
-            username=kwargs["username"],
-            task_type=kwargs["task_type"],
-            inputs=kwargs["inputs"],
-            strategy=kwargs["strategy"],
-            base_priority=kwargs["base_priority"],
-            is_template=kwargs["is_template"],
-            is_video_task=kwargs["is_video_task"],
-            video_request=kwargs["video_request"],
-            user_logger_factory=user_logger_factory,
-            validate_local_input_paths_func=validate_local_input_paths_func,
-            get_user_priority_and_identity_func=get_user_priority_and_identity_func,
-            load_prompts_func=load_prompts_func,
-            process_input_path_func=process_input_path_func,
-            bucket_name=bucket_name,
-        )
-
+    prepare_task_submission_payload_func = build_default_task_core_process_input_builder(
+        user_logger_factory=user_logger_factory,
+        validate_local_input_paths_func=validate_local_input_paths_func,
+        get_user_priority_and_identity_func=get_user_priority_and_identity_func,
+        load_prompts_func=load_prompts_func,
+        process_input_path_func=process_input_path_func,
+        bucket_name=bucket_name,
+    )
+    billing_bindings = build_default_task_core_process_billing_bindings(
+        check_concurrency_lock_func=check_concurrency_lock_func,
+        check_and_deduct_credits_func=check_and_deduct_credits_func,
+        release_concurrency_lock_func=release_concurrency_lock_func,
+    )
+    submission_bindings = build_default_task_core_process_submission_bindings(
+        execute_task_submission_saga_func=execute_task_submission_saga_func,
+        compensate_failed_submission_func=compensate_failed_submission_func,
+    )
+    side_effect_bindings = build_default_task_core_process_side_effect_bindings(
+        attach_submission_side_effects_func=attach_submission_side_effects_func,
+    )
     return build_task_core_process_dependencies(
         get_strategy_func=get_strategy_func,
         video_task_types=video_task_types,
         build_video_task_request_func=build_video_task_request_func,
-        check_concurrency_lock_func=check_concurrency_lock_func,
         prepare_task_submission_payload_func=prepare_task_submission_payload_func,
-        check_and_deduct_credits_func=check_and_deduct_credits_func,
-        execute_task_submission_saga_func=execute_task_submission_saga_func,
-        attach_submission_side_effects_func=attach_submission_side_effects_func,
-        compensate_failed_submission_func=compensate_failed_submission_func,
-        release_concurrency_lock_func=release_concurrency_lock_func,
+        **billing_bindings,
+        **submission_bindings,
+        **side_effect_bindings,
         shield_func=shield_func,
         logger=logger_override,
     )

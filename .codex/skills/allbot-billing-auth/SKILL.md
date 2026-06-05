@@ -10,7 +10,7 @@ description: "处理 Web 鉴权、JWT、password_version、支付履约、affili
 ## 1. 模块功能描述
 - **Web 认证与会话安全**：支持 Telegram Mini App / Login Widget 验签、用户名密码登录、绑定密码、改密后 `password_version` 失效旧 token 与安全通知。
 - **JWT 体系**：JWT 由 Web 安全层签发，当前认证链会把 `pwd_ver` / `channel` 等 claim 纳入令牌语义；旧 token 失效依赖 `password_version` 与 Redis 黑名单协同收口。
-- **多支付通道履约**：RMB 履约当前走会员结算主路径 `settle_membership_plan_in_session(...)`，并保留 legacy fallback；TON 依赖 `tx_hash` 幂等；Stars 走 Telegram 支付履约。
+- **多支付通道履约**：RMB、TON、Telegram Stars 均收口到 `payment_fulfillment_service.fulfill_payment_command(...)` 的共享履约内核；RMB `fulfill_order(...)` 仅作为兼容包装保留，TON / Stars 适配层只负责通道解析、金额校验输入与通知适配。
 - **Affiliate 账本闭环**：支付成功后可计算首单返佣并落 `affiliate_transactions`；affiliate 余额既可兑换灵石，也可兑换会员/权益，并保留完整审计流水。
 - **站内灵石转账**：用户之间的灵石转移使用 `QuotaManager.transfer_credits(...)`，在同一事务内锁定双方用户、扣减买家、增加收款方并写入双方 `user_logs`；Gallery 提示词解锁固定走此入口。
 - **Provider 化 billing core**：billing core 相关默认能力已收口到 provider/dependencies 模式，新增逻辑应优先走 provider 注册与依赖注入边界。
@@ -29,9 +29,10 @@ description: "处理 Web 鉴权、JWT、password_version、支付履约、affili
 - **语义**：成功后需更新 `password_version` 并触发安全通知链路
 
 ### 支付履约
-- **RMB**：`fulfill_order(...)` / 会员结算主路径
-- **输入**：本地订单号、外部流水、实付金额
-- **输出**：是否完成幂等履约
+- **共享入口**：`fulfill_payment_command(PaymentFulfillmentCommand(...), dependencies=...)`
+- **兼容入口**：RMB `fulfill_order(...)` 仍返回旧 bool 语义
+- **输入**：通道、订单定位信息、外部流水、实付金额/单位、通知适配函数
+- **输出**：`PaymentFulfillmentResult(status, user_id, plan_name, applied_snapshot)`
 - **红线**：履约与会员结算、审计、affiliate 副作用必须保持同事务或同一幂等锚点语义
 
 ### Affiliate 兑换
@@ -51,10 +52,12 @@ description: "处理 Web 鉴权、JWT、password_version、支付履约、affili
 - Affiliate 缓存失效必须放在最终提交成功后执行，不能在提交前删除缓存。
 - 汇率缺失、金额不匹配或结算参数冲突时必须 fail fast，不能静默降级。
 - 新增 billing/auth 改动优先走 provider/dependency 注入模式，不回退到 core 直连基础设施实现。
+- TON 轮询游标必须持久化到 `runtime_checkpoints`，key 形如 `ton:<merchant_address>:last_lt`；抓链失败或履约失败时不得前移游标。
 
 ## 4. 边界条件处理
 - **密码改密**：必须递增 `password_version` 并使旧 token 失效。
 - **重复支付通知**：RMB / TON / Stars 都必须保持幂等履约。
+- **TON 轮询重启**：`last_lt` 从 `RuntimeCheckpoint` 恢复；只有成功处理到新的链上交易后才更新 checkpoint。
 - **同幂等键重放**：Affiliate 兑换相同参数返回首次成功快照；不同参数必须冲突失败。
 - **纯灵石套餐**：`duration_days == 0` 时只增加灵石，不改变身份。
 - **RMB 会员结算**：新老路径兼容时，文档与代码都必须明确“主路径 + legacy fallback”的职责边界。

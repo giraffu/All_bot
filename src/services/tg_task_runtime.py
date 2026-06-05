@@ -182,6 +182,66 @@ def build_vip_suffix(identity_str=None, user_group=None, *, lang: str = "zh"):
     return get_text("task.status_vip_suffix", lang, privileges=" + ".join(privileges))
 
 
+def render_progress_transition(
+    *,
+    info: dict,
+    is_video: bool,
+    last_progress: int,
+    last_status,
+    last_queue_pos,
+    vip_suffix: str,
+    lang: str,
+) -> dict | None:
+    status = info.get("status")
+    progress = info.get("progress", 0)
+    if status == "pending":
+        queue_pos = normalize_pending_queue_position(info)
+        if queue_pos is not None:
+            if queue_pos == last_queue_pos and last_status == "pending":
+                return None
+            return {
+                "text": build_pending_status_text(
+                    info=info,
+                    vip_suffix=vip_suffix,
+                    lang=lang,
+                ),
+                "show_cancel_button": True,
+                "parse_mode": "Markdown",
+                "last_queue_pos": queue_pos,
+                "last_status": "pending",
+                "last_progress": last_progress,
+            }
+        if last_status == "pending":
+            return None
+        return {
+            "text": build_pending_status_text(
+                info=info,
+                vip_suffix=vip_suffix,
+                lang=lang,
+            ),
+            "show_cancel_button": True,
+            "parse_mode": "Markdown",
+            "last_queue_pos": last_queue_pos,
+            "last_status": "pending",
+            "last_progress": last_progress,
+        }
+
+    if progress == last_progress and last_status != "pending":
+        return None
+    return {
+        "text": build_running_status_text(
+            is_video=is_video,
+            progress=progress,
+            lang=lang,
+        ),
+        "show_cancel_button": False,
+        "parse_mode": None,
+        "last_queue_pos": last_queue_pos,
+        "last_status": status,
+        "last_progress": progress,
+    }
+
+
 async def monitor_task_progress(
     *,
     task_id,
@@ -216,7 +276,6 @@ async def monitor_task_progress(
 
     async for info in monitor_func(task_id, is_video=is_video):
         status = info.get("status")
-        progress = info.get("progress", 0)
 
         if is_backend_success_status(status):
             final_info = info
@@ -235,44 +294,25 @@ async def monitor_task_progress(
         if is_backend_failed_status(status) or status == "failed":
             raise RuntimeError(info.get("error", "Unknown error"))
 
-        if status == "pending":
-            queue_pos = normalize_pending_queue_position(info)
-
-            if queue_pos is not None:
-                if queue_pos != last_queue_pos or last_status != "pending":
-                    if await update_status_message(
-                        build_pending_status_text(
-                            info=info,
-                            vip_suffix=vip_suffix,
-                            lang=lang,
-                        ),
-                        show_cancel_button=True,
-                        parse_mode="Markdown",
-                    ):
-                        last_queue_pos = queue_pos
-                        last_status = "pending"
-            else:
-                if last_status != "pending":
-                    if await update_status_message(
-                        build_pending_status_text(
-                            info=info,
-                            vip_suffix=vip_suffix,
-                            lang=lang,
-                        ),
-                        show_cancel_button=True,
-                        parse_mode="Markdown",
-                    ):
-                        last_status = "pending"
+        transition = render_progress_transition(
+            info=info,
+            is_video=is_video,
+            last_progress=last_progress,
+            last_status=last_status,
+            last_queue_pos=last_queue_pos,
+            vip_suffix=vip_suffix,
+            lang=lang,
+        )
+        if transition is None:
             continue
 
-        if progress != last_progress or last_status == "pending":
-            text = build_running_status_text(
-                is_video=is_video,
-                progress=progress,
-                lang=lang,
-            )
-            if await update_status_message(text):
-                last_progress = progress
-                last_status = status
+        if await update_status_message(
+            transition["text"],
+            show_cancel_button=transition["show_cancel_button"],
+            parse_mode=transition["parse_mode"],
+        ):
+            last_progress = transition["last_progress"]
+            last_status = transition["last_status"]
+            last_queue_pos = transition["last_queue_pos"]
 
     return final_info

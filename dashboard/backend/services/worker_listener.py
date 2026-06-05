@@ -30,39 +30,155 @@ def _build_task_info_from_event(event_data):
 
 async def start_worker_listener(task_registry: set | None = None):
     """Background task to listen for ComfyUI task events and record worker logs."""
+    restart_delay_seconds = int(os.getenv("WORKER_LISTENER_RESTART_DELAY", "5"))
+    while True:
+        try:
+            await _run_worker_listener_once(task_registry=task_registry)
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            logger.error(
+                "!!! [WORKER_LISTENER] Worker listener crashed: %s",
+                e,
+                exc_info=True,
+            )
+            await asyncio.sleep(restart_delay_seconds)
+
+
+async def _close_redis_resource(resource) -> None:
+    close = getattr(resource, "aclose", None) or getattr(resource, "close", None)
+    if close is None:
+        return
+    result = close()
+    if asyncio.iscoroutine(result):
+        await result
+
+
+async def _run_worker_listener_once(task_registry: set | None = None):
+    logger.info("Starting Worker Task Listener...")
+    redis_url_worker = os.getenv("WORKER_REDIS_URL", "redis://redis:6379/2")
+    r_worker = redis.from_url(redis_url_worker, decode_responses=True)
+
+    redis_url_bot = os.getenv("REDIS_URL", "redis://redis:6379/1")
+    r_bot = redis.from_url(redis_url_bot, decode_responses=True)
+
+    pubsub = r_worker.pubsub()
+    background_tasks = set()
     try:
-        logger.info("Starting Worker Task Listener...")
-        # Connect to Redis
-        redis_url_worker = os.getenv("WORKER_REDIS_URL", "redis://redis:6379/2")
-        r_worker = redis.from_url(redis_url_worker, decode_responses=True)
-
-        redis_url_bot = os.getenv("REDIS_URL", "redis://redis:6379/1")
-        r_bot = redis.from_url(redis_url_bot, decode_responses=True)
-
-        pubsub = r_worker.pubsub()
         await pubsub.psubscribe("comfy:task_events:*")
-
         logger.info("Subscribed to comfy:task_events:*")
-
-        background_tasks = set()
 
         async for message in pubsub.listen():
             if message["type"] == "pmessage":
-                # Do not block the pubsub listener loop
                 task = asyncio.create_task(process_message(message, r_worker, r_bot))
                 background_tasks.add(task)
                 task.add_done_callback(background_tasks.discard)
+    finally:
+        for task in list(background_tasks):
+            task.cancel()
+        if background_tasks:
+            await asyncio.gather(*background_tasks, return_exceptions=True)
+        await _close_redis_resource(pubsub)
+        await _close_redis_resource(r_worker)
+        await _close_redis_resource(r_bot)
 
-    except Exception as e:
+
+async def resolve_task_info(task_id: str, event_data: dict, r_worker, r_bot) -> dict:
+    task_info = _build_task_info_from_event(event_data) or {}
+    task_key = f"comfy:task:{task_id}"
+    if not task_info:
+        task_info = await r_worker.hgetall(task_key)
+
+    if not task_info:
+        task_info = await r_worker.hgetall(task_id)
+
+    if not task_info:
+        active_tasks_key = f"{os.getenv('REDIS_PREFIX', 'prod_bot_')}active_tasks"
+        active_tasks_str = await r_bot.hget(active_tasks_key, task_id)
+        if active_tasks_str:
+            try:
+                bot_task_data = json.loads(active_tasks_str)
+                task_info = {
+                    "worker_id": "unknown",
+                    "type": bot_task_data.get("task_type", "unknown"),
+                    "created_at": bot_task_data.get("created_at"),
+                }
+            except Exception as e:
+                logger.error("Error parsing bot task data: %s", e)
+
+    if not task_info:
+        task_info = await r_bot.hgetall(task_key)
+        if not task_info:
+            task_info = await r_bot.hgetall(task_id)
+
+    if task_info:
+        return task_info
+
+    logger.warning("Task %s completed/failed but no details found in Redis.", task_id)
+    return {
+        "worker_id": "unknown",
+        "type": "unknown",
+        "created_at": datetime.now().timestamp(),
+    }
+
+
+def build_worker_log(task_id: str, event_data: dict, task_info: dict) -> WorkerLog:
+    worker_id = task_info.get("worker_id", "unknown")
+    task_type = task_info.get("type", "unknown")
+    created_at_val = task_info.get("created_at")
+    if created_at_val:
+        try:
+            created_at_ts = float(created_at_val)
+        except ValueError:
+            created_at_ts = None
+    else:
+        created_at_ts = None
+
+    start_time = datetime.fromtimestamp(created_at_ts) if created_at_ts else datetime.now()
+    end_time = datetime.now()
+    duration = int((end_time - start_time).total_seconds())
+    error_msg = event_data.get("error_msg", "") or task_info.get("error_msg", "")
+    final_status = "success" if event_data.get("status") == "done" else "failed"
+
+    return WorkerLog(
+        worker_id=worker_id,
+        task_id=task_id,
+        task_type=task_type,
+        status=final_status,
+        start_time=start_time,
+        end_time=end_time,
+        duration=duration,
+        error_message=str(error_msg),
+    )
+
+
+async def persist_worker_log_once(log_entry: WorkerLog) -> bool:
+    try:
+        async with AsyncSessionLocal() as session:
+            existing = await session.execute(
+                select(WorkerLog).where(WorkerLog.task_id == log_entry.task_id)
+            )
+            if existing.scalars().first():
+                return False
+            session.add(log_entry)
+            try:
+                await session.commit()
+                logger.info(
+                    "Recorded worker log for task %s by %s (%s)",
+                    log_entry.task_id,
+                    log_entry.worker_id,
+                    log_entry.status,
+                )
+                return True
+            except Exception:
+                return False
+    except Exception as inner_e:
         logger.error(
-            f"!!! [WORKER_LISTENER] Worker listener crashed: {e}", exc_info=True
+            "!!! [WORKER_LISTENER] Inner error: %s",
+            inner_e,
+            exc_info=True,
         )
-        # Retry logic could be added here
-        await asyncio.sleep(5)
-        task = asyncio.create_task(start_worker_listener(task_registry=task_registry))
-        if task_registry is not None:
-            task_registry.add(task)
-            task.add_done_callback(task_registry.discard)
+        return False
 
 
 async def process_message(message, r_worker, r_bot):
@@ -75,118 +191,18 @@ async def process_message(message, r_worker, r_bot):
         status = event_data.get("status")
 
         if status in ["done", "error"]:
-            # Prevent duplicate processing using Redis lock
             lock_key = f"worker_listener:lock:{task_id}:{status}"
             acquired = await r_worker.set(lock_key, "1", ex=3600, nx=True)
             if not acquired:
                 return
 
-            task_info = _build_task_info_from_event(event_data) or {}
-
-            # 1. Fetch from worker DB
-            task_key = f"comfy:task:{task_id}"
-            if not task_info:
-                task_info = await r_worker.hgetall(task_key)
-
-            # 2. Try another pattern in worker DB just in case
-            if not task_info:
-                task_info = await r_worker.hgetall(task_id)
-
-            # 3. If not found, fetch from bot DB active tasks
-            if not task_info:
-                active_tasks_key = (
-                    f"{os.getenv('REDIS_PREFIX', 'prod_bot_')}active_tasks"
-                )
-                active_tasks_str = await r_bot.hget(active_tasks_key, task_id)
-                if active_tasks_str:
-                    try:
-                        bot_task_data = json.loads(active_tasks_str)
-                        task_info = {
-                            "worker_id": "unknown",
-                            "type": bot_task_data.get("task_type", "unknown"),
-                            "created_at": bot_task_data.get("created_at"),
-                        }
-                    except Exception as e:
-                        logger.error(f"Error parsing bot task data: {e}")
-
-            # 4. Try from DB 1 direct key
-            if not task_info:
-                task_info = await r_bot.hgetall(task_key)
-                if not task_info:
-                    task_info = await r_bot.hgetall(task_id)
-
-            if not task_info:
-                logger.warning(
-                    f"Task {task_id} completed/failed but no details found in Redis."
-                )
-                # Fallback to default structure so we don't drop the log
-                task_info = {
-                    "worker_id": "unknown",
-                    "type": "unknown",
-                    "created_at": datetime.now().timestamp(),
-                }
-
-            worker_id = task_info.get("worker_id", "unknown")
-            task_type = task_info.get("type", "unknown")
-
-            # Safe float conversion
-            created_at_val = task_info.get("created_at")
-            if created_at_val:
-                try:
-                    created_at_ts = float(created_at_val)
-                except ValueError:
-                    created_at_ts = None
-            else:
-                created_at_ts = None
-
-            start_time = (
-                datetime.fromtimestamp(created_at_ts)
-                if created_at_ts
-                else datetime.now()
-            )
-            end_time = datetime.now()
-            duration = int((end_time - start_time).total_seconds())
-
-            error_msg = event_data.get("error_msg", "") or task_info.get(
-                "error_msg", ""
-            )
-            final_status = "success" if status == "done" else "failed"
-
             logger.info(
-                f"Saving log: worker_id={worker_id}, task_id={task_id}, type={task_type}"
+                "Saving log for task_id=%s status=%s",
+                task_id,
+                status,
             )
-
-            # Save to database
-            try:
-                async with AsyncSessionLocal() as session:
-                    # Check if already exists to prevent duplicate logs from multiple gunicorn workers
-                    existing = await session.execute(
-                        select(WorkerLog).where(WorkerLog.task_id == task_id)
-                    )
-                    if not existing.scalars().first():
-                        log_entry = WorkerLog(
-                            worker_id=worker_id,
-                            task_id=task_id,
-                            task_type=task_type,
-                            status=final_status,
-                            start_time=start_time,
-                            end_time=end_time,
-                            duration=duration,
-                            error_message=str(error_msg),
-                        )
-                        session.add(log_entry)
-                        try:
-                            await session.commit()
-                            logger.info(
-                                f"Recorded worker log for task {task_id} by {worker_id} ({final_status})"
-                            )
-                        except Exception:
-                            # Might be IntegrityError if multiple workers try to insert simultaneously
-                            pass
-            except Exception as inner_e:
-                logger.error(
-                    f"!!! [WORKER_LISTENER] Inner error: {inner_e}", exc_info=True
-                )
+            task_info = await resolve_task_info(task_id, event_data, r_worker, r_bot)
+            await persist_worker_log_once(build_worker_log(task_id, event_data, task_info))
 
     except json.JSONDecodeError:
         logger.error(

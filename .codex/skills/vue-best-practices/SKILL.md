@@ -8,6 +8,7 @@ description: "MUST be used for Vue.js tasks. Strongly recommends Composition API
 ## 1. 核心规范 (Core Principles)
 - **Composition API First**：所有新组件必须使用 `<script setup lang="ts">`，全面弃用 Options API。
 - **TypeScript 强类型**：使用 TypeScript 声明 `defineProps`、`defineEmits` 和所有响应式数据的类型。
+- **Dashboard 类型门禁**：`dashboard/frontend` 已启用 `typescript`、`vue-tsc` 与 `@vue/tsconfig`；构建脚本先执行 `npm run typecheck`，新增 Dashboard 组件同样使用 `<script setup lang="ts">`。
 - **状态管理**：使用 Pinia 替代 Vuex。
 
 ## 2. 国际化架构 (i18n Architecture)

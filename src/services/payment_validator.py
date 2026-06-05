@@ -2,22 +2,22 @@ import asyncio
 import logging
 import os
 from datetime import datetime
-from decimal import Decimal
 
 import aiohttp
 from sqlalchemy.dialects.postgresql import insert
-from sqlalchemy.future import select
 
 from config import VITE_MERCHANT_ADDRESS
 from src.database.core import AsyncSessionLocal
-from src.database.models import MembershipPlan, Order, User, UserLog
+from src.database.models import RuntimeCheckpoint
 from src.services.affiliate_redeem_service import is_membership_settlement_v2_enabled
-from src.services.membership_settlement_service import (
-    MembershipSettlementAuditSource,
-    settle_membership_plan_in_session,
+from src.services.membership_settlement_service import settle_membership_plan_in_session
+from src.services.payment_fulfillment_service import (
+    PaymentFulfillmentCommand,
+    PaymentFulfillmentDependencies,
+    PaymentFulfillmentResult,
+    fulfill_payment_command,
 )
 from src.services.order_v2_service import (
-    build_order_public_lookup_stmt,
     parse_order_payload,
 )
 
@@ -80,6 +80,11 @@ class TonPaymentValidator:
             ),
         )
         self.current_poll_interval_seconds = self.poll_interval_seconds
+        self._last_lt_loaded = False
+
+    @property
+    def _last_lt_checkpoint_key(self) -> str:
+        return f"ton:{self.merchant_address}:last_lt"
 
     def _reset_poll_interval(self) -> None:
         self.current_poll_interval_seconds = self.poll_interval_seconds
@@ -130,6 +135,51 @@ class TonPaymentValidator:
                 logger.error(f"Error in TON polling task: {e}")
 
             await asyncio.sleep(self.current_poll_interval_seconds)
+
+    async def _ensure_last_lt_loaded(self) -> None:
+        if self._last_lt_loaded:
+            return
+        self._last_lt_loaded = True
+        try:
+            async with AsyncSessionLocal() as db:
+                checkpoint = await db.get(
+                    RuntimeCheckpoint,
+                    self._last_lt_checkpoint_key,
+                )
+                value = getattr(checkpoint, "value", None)
+                if isinstance(value, dict):
+                    self.last_lt = max(self.last_lt, int(value.get("last_lt", 0) or 0))
+        except Exception as exc:
+            logger.warning("Failed to load TON last_lt checkpoint: %s", exc)
+
+    async def _persist_last_lt(self) -> None:
+        try:
+            async with AsyncSessionLocal() as db:
+                stmt = (
+                    insert(RuntimeCheckpoint)
+                    .values(
+                        key=self._last_lt_checkpoint_key,
+                        value={"last_lt": self.last_lt},
+                        updated_at=datetime.now(),
+                    )
+                    .on_conflict_do_update(
+                        index_elements=["key"],
+                        set_={
+                            "value": {"last_lt": self.last_lt},
+                            "updated_at": datetime.now(),
+                        },
+                    )
+                )
+                await db.execute(stmt)
+                await db.commit()
+        except Exception as exc:
+            logger.warning("Failed to persist TON last_lt checkpoint: %s", exc)
+
+    async def _advance_last_lt(self, tx_lt: int) -> None:
+        if tx_lt <= self.last_lt:
+            return
+        self.last_lt = tx_lt
+        await self._persist_last_lt()
 
     async def _check_new_transactions(self):
         headers = {"X-API-Key": self.api_key} if self.api_key else None
@@ -189,6 +239,8 @@ class TonPaymentValidator:
                     return
 
                 self._reset_poll_interval()
+                if transactions:
+                    await self._ensure_last_lt_loaded()
 
                 # Process from oldest to newest in the current batch
                 for tx in reversed(transactions):
@@ -211,7 +263,7 @@ class TonPaymentValidator:
 
                     in_msg = tx.get("in_msg", {})
                     if not isinstance(in_msg, dict) or not in_msg:
-                        self.last_lt = tx_lt
+                        await self._advance_last_lt(tx_lt)
                         continue
 
                     try:
@@ -220,7 +272,7 @@ class TonPaymentValidator:
                         amount_nanotons = 0
 
                     if amount_nanotons <= 0:
-                        self.last_lt = tx_lt
+                        await self._advance_last_lt(tx_lt)
                         continue
 
                     # Extract message/payload
@@ -247,13 +299,67 @@ class TonPaymentValidator:
                             order_id, amount_nanotons, tx_hash
                         )
                         if success:
-                            self.last_lt = tx_lt
+                            await self._advance_last_lt(tx_lt)
                         else:
                             # If a transaction fails to process (e.g. DB error), we should stop
                             # advancing last_lt and break, so it can be retried in the next poll.
                             break
                     else:
-                        self.last_lt = tx_lt
+                        await self._advance_last_lt(tx_lt)
+
+    def _build_fulfillment_dependencies(self) -> PaymentFulfillmentDependencies:
+        from src.core.affiliate_core import (
+            calculate_and_set_commission_for_paid_order,
+            invalidate_invitation_recharge_cache,
+            record_affiliate_commission_transaction,
+        )
+
+        return PaymentFulfillmentDependencies(
+            session_factory=AsyncSessionLocal,
+            is_settlement_v2_enabled=is_membership_settlement_v2_enabled,
+            settle_membership_plan_in_session_func=settle_membership_plan_in_session,
+            calculate_commission_func=calculate_and_set_commission_for_paid_order,
+            record_affiliate_transaction_func=record_affiliate_commission_transaction,
+            invalidate_invitation_cache_func=invalidate_invitation_recharge_cache,
+            warning_func=logger.warning,
+        )
+
+    async def _notify_successful_ton_payment(
+        self,
+        result: PaymentFulfillmentResult,
+    ) -> None:
+        if result.status != "success" or result.notify_chat_id is None:
+            return
+        msg_text = (
+            f"🎉 <b>充值成功！</b>\n\n"
+            f"恭喜道友，您已成功购买【{result.plan_name}】。\n"
+            f"💎 获得灵石：+{result.credits_granted}\n"
+        )
+        if result.is_downgrade:
+            msg_text += f"🪪 当前身份保持为：<b>{result.final_identity}</b>\n"
+            if result.converted_days > 0:
+                msg_text += (
+                    "⚖️ 新套餐价值已折算为 "
+                    f"<b>{result.converted_days}</b> 天当前高级身份时长\n"
+                )
+        else:
+            msg_text += f"🪪 当前身份晋升为：<b>{result.final_identity}</b>\n"
+            if result.converted_days > 0:
+                msg_text += (
+                    "⚖️ 老套餐残值已折算为 "
+                    f"<b>{result.converted_days}</b> 天新套餐时长\n"
+                )
+
+        if result.final_expire_at:
+            msg_text += f"⏳ 到期时间：{result.final_expire_at}\n\n祝您仙途坦荡！"
+        else:
+            msg_text += "\n祝您仙途坦荡！"
+
+        await self.bot_app.bot.send_message(
+            chat_id=result.notify_chat_id,
+            text=msg_text,
+            parse_mode="HTML",
+        )
 
     async def _process_order(
         self, order_id: str, amount_nanotons: int, tx_hash: str
@@ -272,287 +378,41 @@ class TonPaymentValidator:
                 logger.warning(f"Invalid order format: {order_id}")
                 return True
 
-            from src.core.user_core import get_or_create_user_by_telegram
+            legacy_internal_user_id = None
+            legacy_display_user_id = None
+            legacy_plan_id = None
+            order_lookup = None
+            if parsed_payload.kind == "v2" and parsed_payload.business_order_id:
+                order_lookup = parsed_payload.business_order_id
+            else:
+                from src.core.user_core import get_or_create_user_by_telegram
 
-            async with AsyncSessionLocal() as db:
-                try:
-                    tg_user_id = None
-                    existing_pending_order = None
-                    if parsed_payload.kind == "v2" and parsed_payload.business_order_id:
-                        existing_pending_order = (
-                            await db.execute(
-                                build_order_public_lookup_stmt(
-                                    parsed_payload.business_order_id, for_update=True
-                                )
-                            )
-                        ).scalar_one_or_none()
-                        if not existing_pending_order:
-                            logger.warning(
-                                "business_order_id not found for TON payment: %s",
-                                parsed_payload.business_order_id,
-                            )
-                            return True
-                        plan_id = existing_pending_order.plan_id
-                        internal_user_id = existing_pending_order.internal_user_id
-                        tg_user_id = internal_user_id
-                        plan = (
-                            await db.execute(
-                                select(MembershipPlan).where(
-                                    MembershipPlan.id == existing_pending_order.plan_id
-                                )
-                            )
-                        ).scalar_one_or_none()
-                        user = (
-                            await db.execute(
-                                select(User)
-                                .where(User.id == existing_pending_order.internal_user_id)
-                                .with_for_update()
-                            )
-                        ).scalar_one_or_none()
-                    else:
-                        internal_user, _ = await get_or_create_user_by_telegram(
-                            int(parsed_payload.telegram_user_id)
-                        )
-                        internal_user_id = internal_user.id
-                        tg_user_id = int(parsed_payload.telegram_user_id)
-                        plan_id = int(parsed_payload.plan_id)
+                legacy_display_user_id = int(parsed_payload.telegram_user_id)
+                internal_user, _ = await get_or_create_user_by_telegram(
+                    legacy_display_user_id
+                )
+                legacy_internal_user_id = internal_user.id
+                legacy_plan_id = int(parsed_payload.plan_id)
 
-                        existing_order = await db.execute(
-                            select(Order).where(Order.order_id == order_id)
-                        )
-                        if existing_order.scalar_one_or_none():
-                            order_id = f"{order_id}_{tx_hash[:8]}"
-
-                        plan = (
-                            await db.execute(
-                                select(MembershipPlan).where(MembershipPlan.id == plan_id)
-                            )
-                        ).scalar_one_or_none()
-                        user = (
-                            await db.execute(
-                                select(User)
-                                .where(User.id == internal_user_id)
-                                .with_for_update()
-                            )
-                        ).scalar_one_or_none()
-
-                    if not plan:
-                        logger.error(f"Plan {plan_id} not found for order {order_id}")
-                        return True
-                    if not user:
-                        logger.error(
-                            f"User {internal_user_id} not found for order {order_id}"
-                        )
-                        return True
-
-                    # Exact price match with tiny slippage allowed
-                    from src.constants import TON_SLIPPAGE_NANOTON, TON_TO_NANOTON
-
-                    expected_min_nanotons = (
-                        int(plan.price_ton * Decimal(str(TON_TO_NANOTON)))
-                        - TON_SLIPPAGE_NANOTON
-                    )
-                    if expected_min_nanotons < 0:
-                        expected_min_nanotons = 0
-
-                    if amount_nanotons < expected_min_nanotons:
-                        logger.warning(
-                            f"Insufficient funds for order {order_id}: {amount_nanotons} < {expected_min_nanotons}"
-                        )
-                        status = "FAILED"
-                    else:
-                        status = "SUCCESS"
-
-                    if existing_pending_order is not None:
-                        if existing_pending_order.status == "SUCCESS":
-                            logger.info("Transaction %s already processed.", tx_hash)
-                            return True
-                        existing_pending_order.status = status
-                        existing_pending_order.tx_hash = tx_hash
-                        existing_pending_order.payment_channel = "TON"
-                        existing_pending_order.final_price = Decimal(amount_nanotons) / Decimal(
-                            str(TON_TO_NANOTON)
-                        )
-                        existing_pending_order.paid_at = (
-                            datetime.now() if status == "SUCCESS" else None
-                        )
-                        new_order = existing_pending_order
-                        await db.flush()
-                    else:
-                        inserted_order_id = (
-                            await db.execute(
-                                insert(Order)
-                                .values(
-                                    order_id=order_id,
-                                    internal_user_id=internal_user_id,
-                                    plan_id=plan_id,
-                                    original_price=plan.price_ton,
-                                    final_price=Decimal(amount_nanotons)
-                                    / Decimal(str(TON_TO_NANOTON)),
-                                    status=status,
-                                    tx_hash=tx_hash,
-                                    payment_channel="TON",
-                                    paid_at=datetime.now()
-                                    if status == "SUCCESS"
-                                    else None,
-                                )
-                                .on_conflict_do_nothing(index_elements=["tx_hash"])
-                                .returning(Order.id)
-                            )
-                        ).scalar_one_or_none()
-                        if inserted_order_id is None:
-                            logger.info(f"Transaction {tx_hash} already processed.")
-                            return True
-
-                        new_order = await db.get(Order, inserted_order_id)
-                        if new_order is None:
-                            raise RuntimeError(
-                                f"failed to reload inserted TON order for tx_hash: {tx_hash}"
-                            )
-                        if new_order.tx_hash != tx_hash:
-                            raise RuntimeError(
-                                f"inserted TON order tx_hash mismatch for tx_hash: {tx_hash}"
-                            )
-
-                    if status == "SUCCESS":
-                        from src.core.affiliate_core import (
-                            calculate_and_set_commission_for_paid_order,
-                            invalidate_invitation_recharge_cache,
-                            record_affiliate_commission_transaction,
-                        )
-
-                        await db.flush()
-                        referral = await calculate_and_set_commission_for_paid_order(
-                            db, new_order
-                        )
-                        if referral and Decimal(str(new_order.commission_usdt or 0)) > 0:
-                            inserted = await record_affiliate_commission_transaction(
-                                db,
-                                new_order,
-                                referral,
-                                source="ton_payment_validator",
-                            )
-                            if not inserted:
-                                logger.warning(
-                                    "affiliate ledger insert skipped for TON order_id=%s order_pk=%s tx_hash=%s",
-                                    new_order.order_id,
-                                    new_order.id,
-                                    new_order.tx_hash,
-                                )
-
-                        now = datetime.now()
-                        if is_membership_settlement_v2_enabled():
-                            applied_snapshot = await settle_membership_plan_in_session(
-                                locked_user=user,
-                                plan=plan,
-                                audit_source=MembershipSettlementAuditSource(
-                                    source="ton_payment_validator",
-                                    source_channel="TON",
-                                    source_order_id=str(new_order.order_id),
-                                    source_tx_hash=tx_hash,
-                                ),
-                                session=db,
-                                now=now,
-                                grant_reward_credits=True,
-                            )
-                        else:
-                            from src.core.billing_core import calculate_identity_conversion
-                            import json
-
-                            final_identity, new_expire_at = calculate_identity_conversion(
-                                current_identity=user.current_identity,
-                                current_expire_at=user.identity_expire_at,
-                                new_identity=plan.identity_name,
-                                duration_days=plan.duration_days,
-                            )
-                            user.credits += plan.reward_credits
-                            user.current_identity = final_identity
-                            user.identity_expire_at = new_expire_at
-                            applied_snapshot = {
-                                "credits_granted": int(plan.reward_credits or 0),
-                                "converted_days": 0,
-                                "final_identity": final_identity,
-                                "final_expire_at": new_expire_at.isoformat()
-                                if new_expire_at
-                                else None,
-                                "is_downgrade": False,
-                            }
-                            log = UserLog(
-                                user_id=user.id,
-                                username=user.username,
-                                operation_type="recharge",
-                                credit_change=plan.reward_credits,
-                                current_balance=user.credits,
-                                extra_info=json.dumps(
-                                    {
-                                        "order_id": order_id,
-                                        "plan": plan.name,
-                                        "tx_hash": tx_hash,
-                                    },
-                                    ensure_ascii=False,
-                                ),
-                            )
-                            db.add(log)
-
-                        await db.commit()
-                        if referral:
-                            await invalidate_invitation_recharge_cache(
-                                referral.inviter_id
-                            )
-                        logger.info(
-                            f"Successfully fulfilled order {order_id} for user {tg_user_id}"
-                        )
-
-                        # 5. Notify User
-                        try:
-                            credits_granted = int(applied_snapshot.get("credits_granted", 0))
-                            converted_days = int(applied_snapshot.get("converted_days", 0))
-                            final_identity = str(
-                                applied_snapshot.get("final_identity", user.current_identity)
-                            )
-                            final_expire_at = applied_snapshot.get("final_expire_at")
-                            is_downgrade = bool(applied_snapshot.get("is_downgrade", False))
-                            msg_text = (
-                                f"🎉 <b>充值成功！</b>\n\n"
-                                f"恭喜道友，您已成功购买【{plan.name}】。\n"
-                                f"💎 获得灵石：+{credits_granted}\n"
-                            )
-                            if is_downgrade:
-                                msg_text += (
-                                    f"🪪 当前身份保持为：<b>{final_identity}</b>\n"
-                                )
-                                if converted_days > 0:
-                                    msg_text += f"⚖️ 新套餐价值已折算为 <b>{converted_days}</b> 天当前高级身份时长\n"
-                            else:
-                                msg_text += (
-                                    f"🪪 当前身份晋升为：<b>{final_identity}</b>\n"
-                                )
-                                if converted_days > 0:
-                                    msg_text += f"⚖️ 老套餐残值已折算为 <b>{converted_days}</b> 天新套餐时长\n"
-
-                            if final_expire_at:
-                                msg_text += (
-                                    f"⏳ 到期时间：{final_expire_at}\n\n祝您仙途坦荡！"
-                                )
-                            else:
-                                msg_text += "\n祝您仙途坦荡！"
-
-                            await self.bot_app.bot.send_message(
-                                chat_id=tg_user_id, text=msg_text, parse_mode="HTML"
-                            )
-                        except Exception as e:
-                            logger.error(
-                                f"Failed to send success message to {tg_user_id}: {e}"
-                            )
-                    else:
-                        await db.commit()
-
-                    return True
-
-                except Exception as db_e:
-                    await db.rollback()
-                    logger.error(f"Database error processing order {order_id}: {db_e}")
-                    return False
+            result = await fulfill_payment_command(
+                PaymentFulfillmentCommand(
+                    channel="TON",
+                    order_lookup=order_lookup,
+                    external_tx_id=tx_hash,
+                    paid_amount=amount_nanotons,
+                    paid_unit="nanoton",
+                    source="ton_payment_validator",
+                    affiliate_source="ton_payment_validator",
+                    audit_source="ton_payment_validator",
+                    legacy_order_id=order_id if parsed_payload.kind == "legacy" else None,
+                    legacy_internal_user_id=legacy_internal_user_id,
+                    legacy_display_user_id=legacy_display_user_id,
+                    legacy_plan_id=legacy_plan_id,
+                    notify=self._notify_successful_ton_payment,
+                ),
+                dependencies=self._build_fulfillment_dependencies(),
+            )
+            return result.status in {"success", "amount_mismatch", "noop"}
 
         except Exception as e:
             logger.error(f"Error processing order {order_id}: {e}")
