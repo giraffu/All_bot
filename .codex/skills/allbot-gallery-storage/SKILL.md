@@ -32,7 +32,7 @@ description: "处理对象存储、广场评论收藏、R2 媒体策略与 Web a
 ### 应用上下文
 - **接口**：`GET /api/gallery/posts/{post_id}/apply-context`
 - **输出**：`source_post_id`、`prompt`、`negative_prompt`、`lora_name`、`input_file_url`、`requested_duration`、`billing_resolution`、媒体尺寸等
-- **Wan22 图生视频兼容**：旧 `custom_video` / `video_lora` 的 `512p/720p/1024p` 分别映射为 `preview/standard/hd`，历史 canonical duration 恢复为 `5s/8s/10s`，缺失或非 canonical 时回退 5 秒；`video_lora` 需兼容从 prompt 的 `[模型: xxx]` 解析 `lora_name`；`wan22_video_v2` 单段投稿从 `_wan22_context` 恢复 `wan22_negative_prompt`、`wan22_resolution_preset` 与 `wan22_duration_seconds`。
+- **Wan22 图生视频兼容**：旧 `custom_video` / `video_lora` 的 `512p/720p/1024p` 分别映射为 `preview/standard/hd`，`0.36 MP - Small` 映射为 `small`，历史 canonical duration 恢复为 `5s/8s/10s`，缺失或非 canonical 时回退 5 秒；`video_lora` 需兼容从 prompt 的 `[模型: xxx]` 解析 `lora_name`；`wan22_video_v2` 单段投稿从 `_wan22_context` 恢复 `wan22_negative_prompt`、`wan22_resolution_preset` 与 `wan22_duration_seconds`。
 - **拼接记录禁用**：所有 Wan22 stitched 记录（旧 `custom_video` / `video_lora` 与 `wan22_video_v2`）都不能返回 apply-context，接口应返回 400，列表/详情响应需给出 `template_apply_supported=false` 与 `template_apply_disabled_reason="wan22_stitched"`。
 
 ### 后台广场列表治理筛选
@@ -64,5 +64,5 @@ description: "处理对象存储、广场评论收藏、R2 媒体策略与 Web a
 - 覆盖重复投稿与 `allow_contribute=False` 拦截。
 - 覆盖并发点赞/点踩一致性。
 - 覆盖评论限频、并发下架回滚、分页查询。
-- 覆盖 apply-context 返回的 `requested_duration`、`billing_resolution`、`negative_prompt`、`input_file_url` 正确性；旧图生视频需额外覆盖 `5s/8s/10s` 恢复、`512/720/1024 -> preview/standard/hd` 和 LoRA prompt 解析，v2 单段需覆盖 `_wan22_context` 负面词/档位/时长回填，Wan22 stitched 需覆盖 apply-context 400 与列表禁用字段。
+- 覆盖 apply-context 返回的 `requested_duration`、`billing_resolution`、`negative_prompt`、`input_file_url` 正确性；旧图生视频需额外覆盖 `5s/8s/10s` 恢复、`512/720/1024 -> preview/standard/hd`、`0.36 MP - Small -> small` 和 LoRA prompt 解析，v2 单段需覆盖 `_wan22_context` 负面词/档位/时长回填，Wan22 stitched 需覆盖 apply-context 400 与列表禁用字段。
 - 覆盖后台封禁投稿并批量下架时的用户状态、帖子状态与多条 `History` 同步。

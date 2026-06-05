@@ -910,6 +910,7 @@ async def test_start_image_to_video_english_lora_buttons(monkeypatch):
         for button in keyboard.inline_keyboard[3]
     ] == [
         "i2v_setup_res_preview",
+        "i2v_setup_res_small",
         "i2v_setup_res_standard",
         "i2v_setup_res_hd",
     ]
@@ -920,6 +921,11 @@ async def test_start_image_to_video_english_lora_buttons(monkeypatch):
         "i2v_setup_dur_5",
         "i2v_setup_dur_8",
         "i2v_setup_dur_10",
+    ]
+    assert [button.text for button in keyboard.inline_keyboard[4]] == [
+        "✅ 5s (*1)",
+        "8s (*2)",
+        "10s (*3)",
     ]
     assert keyboard.inline_keyboard[5][0].callback_data == image_to_video_fsm.I2V_SETUP_CONFIRM
 

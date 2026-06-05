@@ -140,6 +140,7 @@ def test_wan22_strategy_inherits_default_payload_and_upload_paths():
     [
         ("preview", 6),
         ("fast", 6),
+        ("small", 12),
         ("standard", 20),
         ("hd", 30),
         ("invalid", 6),

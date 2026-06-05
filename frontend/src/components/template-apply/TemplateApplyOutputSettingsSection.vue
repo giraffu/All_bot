@@ -39,7 +39,7 @@ const emit = defineEmits<{
           v-else
           :value="resolution"
           button-style="solid"
-          class="w-full grid grid-cols-3 gap-2"
+          class="w-full grid grid-cols-2 sm:grid-cols-4 gap-2"
           @update:value="emit('update:resolution', String($event ?? ''))"
         >
           <a-radio-button

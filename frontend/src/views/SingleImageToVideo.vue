@@ -404,7 +404,7 @@ const resetForm = () => {
             <a-radio-group v-if="isLtxVideo" v-model:value="resolution" button-style="solid" class="w-full grid grid-cols-1 gap-2 max-w-[160px]">
               <a-radio-button value="1280x704" class="w-full text-center py-1.5 h-auto text-xs rounded-lg !border-none !border-l-0 shadow-sm leading-tight flex items-center justify-center">1280x704 (自动适应)</a-radio-button>
             </a-radio-group>
-            <a-radio-group v-else v-model:value="resolution" button-style="solid" class="compact-option-group w-full grid grid-cols-3 gap-2">
+            <a-radio-group v-else v-model:value="resolution" button-style="solid" class="compact-option-group w-full grid grid-cols-2 sm:grid-cols-4 gap-2">
               <a-radio-button
                 v-for="option in WAN22_VIDEO_V2_RESOLUTION_OPTIONS"
                 :key="option.value"

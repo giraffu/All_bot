@@ -179,8 +179,14 @@ describe('templateVideoSettings', () => {
 
   it('normalizes persisted billing tiers and explicit resolutions', () => {
     expect(normalizePersistedTierBillingResolution('720p')).toBe('standard')
+    expect(normalizePersistedTierBillingResolution('small')).toBe('small')
+    expect(normalizePersistedTierBillingResolution('0.26 MP - Preview')).toBe('preview')
+    expect(normalizePersistedTierBillingResolution('0.36 MP - Small')).toBe('small')
+    expect(normalizePersistedTierBillingResolution('0.52 MP - SD')).toBe('standard')
+    expect(normalizePersistedTierBillingResolution('0.65 MP - Balanced')).toBe('hd')
     expect(normalizePersistedTierBillingResolution('1024')).toBe('hd')
     expect(normalizePersistedTierBillingResolution('720x1280')).toBe('standard')
+    expect(normalizePersistedTierBillingResolution('600x960')).toBe('small')
     expect(normalizePersistedTierBillingResolution('512x768')).toBe('preview')
     expect(normalizePersistedTierBillingResolution('1024x1536')).toBe('hd')
     expect(normalizePersistedTierBillingResolution('bad-tier')).toBeNull()
@@ -202,6 +208,14 @@ describe('templateVideoSettings', () => {
         height: 1280
       })
     ).toBe('standard')
+
+    expect(
+      resolveTierBillingResolution({
+        billing_resolution: null,
+        width: 600,
+        height: 960
+      })
+    ).toBe('small')
 
     expect(
       resolveTierBillingResolution({

@@ -319,6 +319,50 @@ def test_workflow_patcher_patches_wan22_video_v2_preview_resolution(tmp_path):
     assert patched["2612"]["inputs"]["precision_presets"] == "0.26 MP - Preview"
 
 
+def test_workflow_patcher_patches_wan22_video_v2_small_resolution(tmp_path):
+    workflow_dir = tmp_path / "workflows"
+    workflow_dir.mkdir()
+
+    _write_json(
+        workflow_dir / "mappings.json",
+        {
+            "wan22_video_v2": {
+                "image": "23",
+                "image_input": "image",
+            }
+        },
+    )
+    _write_json(
+        workflow_dir / "Wan22AioV82.json",
+        {
+            "23": {"inputs": {"image": ""}},
+            "24": {"inputs": {"image": ""}},
+            "2558": {"inputs": {"value": False}},
+            "2578": {"inputs": {"value": 5}},
+            "2607": {"inputs": {"batch_index": 0, "length": 1, "image": ["2603", 0]}},
+            "2612": {"inputs": {"precision_presets": "0.52 MP - SD"}},
+            "2623": {"inputs": {"expression": "( a - 1 ) / b"}},
+            "28": {"inputs": {"filename_prefix": "wan22_video_v2", "images": ["2603", 0]}},
+            "2503": {"inputs": {"filename_prefix": "wan22_video_v2_last_frame", "images": ["2607", 0]}},
+        },
+    )
+
+    patcher = WorkflowPatcher(str(workflow_dir))
+    workflow = patcher.load_workflow("wan22_video_v2")
+
+    patched = patcher.patch_workflow(
+        "wan22_video_v2",
+        workflow,
+        {
+            "image": "start.png",
+            "resolution_preset": "small",
+            "seed": 77,
+        },
+    )
+
+    assert patched["2612"]["inputs"]["precision_presets"] == "0.36 MP - Small"
+
+
 def test_workflow_patcher_injects_legacy_image_to_video_lora_and_model_profile(tmp_path):
     workflow_dir = tmp_path / "workflows"
     workflow_dir.mkdir()

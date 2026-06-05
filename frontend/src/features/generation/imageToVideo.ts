@@ -2,7 +2,7 @@ export const NO_IMAGE_TO_VIDEO_LORA = '__none__'
 export const NO_LTX_VIDEO_LORA = '__none__'
 export const DEFAULT_WAN22_VIDEO_V2_NEGATIVE_PROMPT =
   'censored, mosaic censoring, bar censor, pixelated, glowing, bloom, blurry, out of focus, low detail, bad anatomy, ugly, overexposed, underexposed, distorted face, extra limbs, cartoonish, 3d render artifacts, duplicate people, unnatural lighting, bad composition, missing shadows, low resolution, poorly textured, glitch, noise, grain, static, motionless, still frame, stylized, artwork, painting, illustration, many people in background, three legs, walking backward, unnatural skin tone, discolored eyelid, red eyelids, closed eyes, poorly drawn hands, extra fingers, fused fingers, poorly drawn face, deformed, disfigured, malformed limbs, fog, mist, voluminous eyelashes,'
-export type Wan22VideoV2ResolutionPreset = 'preview' | 'standard' | 'hd'
+export type Wan22VideoV2ResolutionPreset = 'preview' | 'small' | 'standard' | 'hd'
 export type Wan22VideoV2DurationSeconds = '5' | '8' | '10'
 
 export const DEFAULT_WAN22_VIDEO_V2_RESOLUTION_PRESET: Wan22VideoV2ResolutionPreset = 'preview'
@@ -15,6 +15,7 @@ export const WAN22_VIDEO_V2_RESOLUTION_OPTIONS: Array<{
   cost: number
 }> = [
   { value: 'preview', label: '极速', description: '约 512p，最低价，生成更快', cost: 6 },
+  { value: 'small', label: '清晰', description: '约 600p，清晰度提升', cost: 12 },
   { value: 'standard', label: '标准', description: '约 720p，平衡画质与速度', cost: 20 },
   { value: 'hd', label: '高清', description: '约 810p，更清晰，生成更慢', cost: 30 },
 ]
@@ -36,20 +37,39 @@ export const DEFAULT_WAN22_VIDEO_V2_COST =
 export const normalizeWan22VideoV2ResolutionPreset = (
   value: string | null | undefined,
 ): Wan22VideoV2ResolutionPreset => {
+  const normalized = String(value ?? '').trim()
+  const normalizedLower = normalized.toLowerCase()
   if (
-    value === 'preview'
-    || value === 'fast'
-    || value === '512'
-    || value === '512p'
-    || value === '0.26 MP - Preview'
-    || value === '0.36 MP - Small'
+    normalizedLower === 'preview'
+    || normalizedLower === 'fast'
+    || normalizedLower === '512'
+    || normalizedLower === '512p'
+    || normalizedLower === '0.26 mp - preview'
   ) {
     return 'preview'
   }
-  if (value === 'hd' || value === '1024' || value === '1024p' || value === '0.65 MP - Balanced') {
+  if (
+    normalizedLower === 'small'
+    || normalizedLower === '600'
+    || normalizedLower === '600p'
+    || normalizedLower === '0.36 mp - small'
+  ) {
+    return 'small'
+  }
+  if (
+    normalizedLower === 'hd'
+    || normalizedLower === '1024'
+    || normalizedLower === '1024p'
+    || normalizedLower === '0.65 mp - balanced'
+  ) {
     return 'hd'
   }
-  if (value === 'standard' || value === '720' || value === '720p' || value === '0.52 MP - SD') {
+  if (
+    normalizedLower === 'standard'
+    || normalizedLower === '720'
+    || normalizedLower === '720p'
+    || normalizedLower === '0.52 mp - sd'
+  ) {
     return 'standard'
   }
   return DEFAULT_WAN22_VIDEO_V2_RESOLUTION_PRESET

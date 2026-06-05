@@ -28,6 +28,7 @@ from src.services.wan22_video_v2_config import (
     WAN22_VIDEO_V2_RESOLUTION_PRESETS,
     get_wan22_video_v2_cost,
     get_wan22_video_v2_duration_label,
+    get_wan22_video_v2_duration_multiplier_label,
     get_wan22_video_v2_resolution_display,
     get_wan22_video_v2_resolution_label,
     normalize_wan22_video_v2_duration_seconds,
@@ -199,14 +200,13 @@ def _build_initial_setup_keyboard(
     duration_row = []
     for duration_seconds in WAN22_VIDEO_V2_DURATION_SECONDS:
         label = get_wan22_video_v2_duration_label(duration_seconds, lang=lang)
-        cost_for_duration = get_wan22_video_v2_cost(
-            selected_resolution,
-            duration_seconds,
+        multiplier_label = get_wan22_video_v2_duration_multiplier_label(
+            duration_seconds
         )
         duration_row.append(
             InlineKeyboardButton(
                 _selected_button_label(
-                    f"{label} ({cost_for_duration}{credits_text})",
+                    f"{label} ({multiplier_label})",
                     selected=duration_seconds == selected_duration,
                 ),
                 callback_data=f"{I2V_SETUP_DUR_PREFIX}{duration_seconds}",
@@ -460,8 +460,10 @@ async def _build_video_settings_view_model(
     duration_row = []
     for duration_seconds in WAN22_VIDEO_V2_DURATION_SECONDS:
         label = get_wan22_video_v2_duration_label(duration_seconds, lang=lang)
-        cost_for_duration = get_wan22_video_v2_cost(resolution, duration_seconds)
-        text = f"{label} ({cost_for_duration}{credits_text})"
+        multiplier_label = get_wan22_video_v2_duration_multiplier_label(
+            duration_seconds
+        )
+        text = f"{label} ({multiplier_label})"
         if duration_seconds == duration:
             text = f"✅ {text}"
         duration_row.append(

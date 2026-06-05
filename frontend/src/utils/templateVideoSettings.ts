@@ -21,6 +21,12 @@ const MAX_LEGACY_LTX_DURATION_DRIFT = 2
 const TIER_VIDEO_ALLOWED_DURATIONS = new Set([5, 8, 10])
 const TIER_VIDEO_ALLOWED_DURATION_VALUES = [5, 8, 10]
 const MAX_LEGACY_TIER_VIDEO_DURATION_DRIFT = 2
+const WAN22_PRECISION_PRESET_ALIASES: Record<string, string> = {
+  '0.26 mp - preview': 'preview',
+  '0.36 mp - small': 'small',
+  '0.52 mp - sd': 'standard',
+  '0.65 mp - balanced': 'hd'
+}
 
 export const toPositiveInteger = (value: unknown): number | null => {
   if (value === null || value === undefined || value === '') {
@@ -82,6 +88,10 @@ const normalizeTierFromVideoSide = (side: number | null): string | null => {
     return 'standard'
   }
 
+  if (side >= 600) {
+    return 'small'
+  }
+
   return 'preview'
 }
 
@@ -92,6 +102,9 @@ const resolveApproxWidthFromWan22Preset = (value: unknown): number | null => {
   }
   if (normalized === 'standard') {
     return 720
+  }
+  if (normalized === 'small') {
+    return 600
   }
   if (normalized === 'preview') {
     return 512
@@ -113,8 +126,13 @@ export const normalizePersistedTierBillingResolution = (value: unknown): string 
     normalized = normalized.slice(0, -1)
   }
 
-  if (normalized === 'preview' || normalized === 'standard' || normalized === 'hd') {
+  if (normalized === 'preview' || normalized === 'small' || normalized === 'standard' || normalized === 'hd') {
     return normalized
+  }
+
+  const precisionPresetAlias = WAN22_PRECISION_PRESET_ALIASES[normalized]
+  if (precisionPresetAlias) {
+    return precisionPresetAlias
   }
 
   if (normalized === '512' || normalized === '720' || normalized === '1024') {

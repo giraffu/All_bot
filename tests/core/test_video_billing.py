@@ -62,6 +62,7 @@ def test_infer_legacy_tier_video_requested_duration(
     ("width", "height", "task_type", "expected_billing_resolution"),
     [
         (720, 1280, "custom_video", "standard"),
+        (600, 960, "custom_video", "small"),
         (512, 768, "custom_video", "preview"),
         (1024, 1536, "video_lora", "hd"),
     ],

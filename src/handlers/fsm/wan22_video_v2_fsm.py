@@ -39,6 +39,7 @@ from src.services.wan22_video_v2_config import (
     WAN22_VIDEO_V2_RESOLUTION_PRESETS,
     get_wan22_video_v2_cost,
     get_wan22_video_v2_duration_label,
+    get_wan22_video_v2_duration_multiplier_label,
     get_wan22_video_v2_resolution_display,
     get_wan22_video_v2_resolution_label,
     normalize_wan22_video_v2_duration_seconds,
@@ -347,14 +348,13 @@ def _build_initial_setup_keyboard(
     duration_row = []
     for duration_seconds in WAN22_VIDEO_V2_DURATION_SECONDS:
         label = get_wan22_video_v2_duration_label(duration_seconds, lang=lang)
-        cost_for_duration = get_wan22_video_v2_cost(
-            selected_resolution,
-            duration_seconds,
+        multiplier_label = get_wan22_video_v2_duration_multiplier_label(
+            duration_seconds
         )
         duration_row.append(
             InlineKeyboardButton(
                 _selected_button_label(
-                    f"{label} ({cost_for_duration}{credits_text})",
+                    f"{label} ({multiplier_label})",
                     selected=duration_seconds == selected_duration,
                 ),
                 callback_data=f"{WAN22_VIDEO_V2_SETUP_DUR_PREFIX}{duration_seconds}",
@@ -457,6 +457,10 @@ def _build_settings_keyboard(
     duration_buttons = []
     for duration_seconds in WAN22_VIDEO_V2_DURATION_SECONDS:
         label = get_wan22_video_v2_duration_label(duration_seconds, lang=lang)
+        multiplier_label = get_wan22_video_v2_duration_multiplier_label(
+            duration_seconds
+        )
+        label = f"{label} ({multiplier_label})"
         if current_duration == duration_seconds:
             label = f"• {label}"
         duration_buttons.append(
@@ -614,18 +618,6 @@ async def _ask_for_negative_prompt(
         reply_markup=_build_skip_negative_prompt_keyboard(context),
     )
     return Wan22VideoV2State.WAIT_NEGATIVE_PROMPT
-
-
-async def _show_settings(
-    update: Update, context: ContextTypes.DEFAULT_TYPE
-) -> int:
-    data = _get_data(context) or {}
-    await _send_or_edit_message(
-        update,
-        _build_settings_message(context, data),
-        reply_markup=_build_settings_keyboard(context, data),
-    )
-    return Wan22VideoV2State.WAIT_SETTINGS
 
 
 def _extract_image_file_id(message) -> str | None:
@@ -1090,7 +1082,7 @@ async def receive_negative_prompt(
         return ConversationHandler.END
 
     data["negative_prompt"] = negative_prompt
-    return await _show_settings(update, context)
+    return await submit_generation(update, context)
 
 
 async def skip_negative_prompt(
@@ -1105,7 +1097,7 @@ async def skip_negative_prompt(
         return ConversationHandler.END
 
     data["negative_prompt"] = ""
-    return await _show_settings(update, context)
+    return await submit_generation(update, context)
 
 
 async def handle_settings_action(
@@ -1165,7 +1157,7 @@ async def submit_generation(
         if query:
             with contextlib.suppress(Exception):
                 await query.answer(_t(context, "fsm.wan22_video_v2.missing_end_image"), show_alert=True)
-        return Wan22VideoV2State.WAIT_SETTINGS
+        return Wan22VideoV2State.WAIT_END_IMAGE
 
     resolution_preset = str(
         data.get("resolution_preset") or WAN22_VIDEO_V2_DEFAULT_RESOLUTION_PRESET
@@ -1211,6 +1203,21 @@ async def submit_generation(
             )
             await robust_edit_text(
                 query.message,
+                _t(context, submitting_key, cost=cost),
+                parse_mode="Markdown",
+            )
+    else:
+        submitting_key = (
+            "fsm.wan22_video_v2.submitting_legacy"
+            if _is_legacy_image_to_video_context(data)
+            else "fsm.wan22_video_v2.submitting"
+        )
+        target_message = getattr(update, "effective_message", None) or getattr(
+            update, "message", None
+        )
+        if target_message:
+            await robust_reply_text(
+                target_message,
                 _t(context, submitting_key, cost=cost),
                 parse_mode="Markdown",
             )

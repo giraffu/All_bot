@@ -84,10 +84,17 @@ describe('imageToVideo LTX LoRA helpers', () => {
       description: '约 512p，最低价，生成更快',
       cost: 6,
     })
-    expect(WAN22_VIDEO_V2_RESOLUTION_OPTIONS[1].description).toBe('约 720p，平衡画质与速度')
-    expect(WAN22_VIDEO_V2_RESOLUTION_OPTIONS[2].description).toBe('约 810p，更清晰，生成更慢')
+    expect(WAN22_VIDEO_V2_RESOLUTION_OPTIONS[1]).toEqual({
+      value: 'small',
+      label: '清晰',
+      description: '约 600p，清晰度提升',
+      cost: 12,
+    })
+    expect(WAN22_VIDEO_V2_RESOLUTION_OPTIONS[2].description).toBe('约 720p，平衡画质与速度')
+    expect(WAN22_VIDEO_V2_RESOLUTION_OPTIONS[3].description).toBe('约 810p，更清晰，生成更慢')
     expect(WAN22_VIDEO_V2_RESOLUTION_OPTIONS.map(option => option.value)).toEqual([
       'preview',
+      'small',
       'standard',
       'hd',
     ])
@@ -101,13 +108,16 @@ describe('imageToVideo LTX LoRA helpers', () => {
 
   it('normalizes legacy wan22 fast resolution to preview', () => {
     expect(normalizeWan22VideoV2ResolutionPreset('fast')).toBe('preview')
-    expect(normalizeWan22VideoV2ResolutionPreset('0.36 MP - Small')).toBe('preview')
+    expect(normalizeWan22VideoV2ResolutionPreset('0.36 mp - small')).toBe('small')
+    expect(normalizeWan22VideoV2ResolutionPreset('600p')).toBe('small')
   })
 
   it('normalizes wan22 duration and applies duration cost multipliers', () => {
     expect(normalizeWan22VideoV2DurationSeconds('8s')).toBe('8')
     expect(normalizeWan22VideoV2DurationSeconds(10)).toBe('10')
     expect(normalizeWan22VideoV2DurationSeconds('oops')).toBe('5')
+    expect(getWan22VideoV2Cost('small', '5')).toBe(12)
+    expect(getWan22VideoV2Cost('small', '10')).toBe(36)
     expect(getWan22VideoV2Cost('standard', '8')).toBe(40)
     expect(getWan22VideoV2Cost('hd', 10)).toBe(90)
   })

@@ -18,6 +18,13 @@ WAN22_VIDEO_V2_RESOLUTION_PRESETS = {
         "approx_resolution": "512p",
         "cost": 6,
     },
+    "small": {
+        "label_zh": "清晰",
+        "label_en": "Small",
+        "precision_preset": "0.36 MP - Small",
+        "approx_resolution": "600p",
+        "cost": 12,
+    },
     "standard": {
         "label_zh": "标准",
         "label_en": "Standard",
@@ -36,9 +43,10 @@ WAN22_VIDEO_V2_RESOLUTION_PRESETS = {
 
 WAN22_VIDEO_V2_LEGACY_RESOLUTION_ALIASES = {
     "fast": "preview",
-    "0.36 MP - Small": "preview",
     "512": "preview",
     "512p": "preview",
+    "600": "small",
+    "600p": "small",
     "720": "standard",
     "720p": "standard",
     "1024": "hd",
@@ -138,13 +146,18 @@ def normalize_wan22_video_v2_resolution_preset(
     resolution_preset: str | None,
 ) -> str:
     normalized = (resolution_preset or "").strip()
+    normalized_lower = normalized.lower()
     if normalized in WAN22_VIDEO_V2_RESOLUTION_PRESETS:
         return normalized
-    if normalized in WAN22_VIDEO_V2_LEGACY_RESOLUTION_ALIASES:
-        return WAN22_VIDEO_V2_LEGACY_RESOLUTION_ALIASES[normalized]
+    for preset_key in WAN22_VIDEO_V2_RESOLUTION_PRESETS:
+        if normalized_lower == preset_key.lower():
+            return preset_key
+    for alias, preset_key in WAN22_VIDEO_V2_LEGACY_RESOLUTION_ALIASES.items():
+        if normalized_lower == alias.lower():
+            return preset_key
 
     for preset_key, preset in WAN22_VIDEO_V2_RESOLUTION_PRESETS.items():
-        if normalized == preset["precision_preset"]:
+        if normalized_lower == str(preset["precision_preset"]).lower():
             return preset_key
 
     return WAN22_VIDEO_V2_DEFAULT_RESOLUTION_PRESET
@@ -194,6 +207,12 @@ def get_wan22_video_v2_duration_label(
 ) -> str:
     seconds = normalize_wan22_video_v2_duration_seconds(duration)
     return f"{seconds}s" if lang == "en" else f"{seconds} 秒"
+
+
+def get_wan22_video_v2_duration_multiplier_label(duration: Any) -> str:
+    seconds = normalize_wan22_video_v2_duration_seconds(duration)
+    multiplier = WAN22_VIDEO_V2_DURATION_COST_MULTIPLIERS[seconds]
+    return f"*{float(multiplier):g}"
 
 
 def get_wan22_video_v2_frame_count(duration: Any) -> int:

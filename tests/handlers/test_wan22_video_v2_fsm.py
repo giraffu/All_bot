@@ -98,10 +98,16 @@ def test_settings_keyboard_renders_resolution_presets_in_one_row():
         for button in keyboard.inline_keyboard[0]
     ] == [
         "wan22v2_res_preview",
+        "wan22v2_res_small",
         "wan22v2_res_standard",
         "wan22v2_res_hd",
     ]
-    assert keyboard.inline_keyboard[1][0].callback_data == "wan22v2_submit"
+    assert [button.text for button in keyboard.inline_keyboard[1]] == [
+        "• 5 秒 (*1)",
+        "8 秒 (*2)",
+        "10 秒 (*3)",
+    ]
+    assert keyboard.inline_keyboard[2][0].callback_data == "wan22v2_submit"
 
 
 @pytest.mark.asyncio
@@ -133,10 +139,16 @@ async def test_start_wan22_video_v2_initializes_defaults(monkeypatch):
         for button in keyboard.inline_keyboard[1]
     ] == [
         "wan22v2_setup_res_preview",
+        "wan22v2_setup_res_small",
         "wan22v2_setup_res_standard",
         "wan22v2_setup_res_hd",
     ]
-    assert keyboard.inline_keyboard[2][0].callback_data == "wan22v2_setup_confirm"
+    assert [button.text for button in keyboard.inline_keyboard[2]] == [
+        "✅ 5 秒 (*1)",
+        "8 秒 (*2)",
+        "10 秒 (*3)",
+    ]
+    assert keyboard.inline_keyboard[3][0].callback_data == "wan22v2_setup_confirm"
 
 
 @pytest.mark.asyncio
@@ -386,6 +398,7 @@ async def test_submit_generation_forwards_wan22_payload(monkeypatch):
         images=["/tmp/start.png", "/tmp/end.png"],
         use_end_frame=True,
         resolution_preset="hd",
+        duration=5,
         result_meta=None,
         cleanup=True,
     )
@@ -395,6 +408,112 @@ async def test_submit_generation_forwards_wan22_payload(monkeypatch):
     cleanup_mock.assert_not_called()
     assert edit_mock.await_args_list[-1].args[1] == "T:fsm.wan22_video_v2.submitting:30"
     assert edit_mock.await_args_list[-1].kwargs == {"parse_mode": "Markdown"}
+
+
+@pytest.mark.asyncio
+async def test_skip_negative_prompt_submits_without_settings_confirmation(monkeypatch):
+    edit_mock = AsyncMock()
+    quota_mock = AsyncMock()
+    create_background_task_mock = MagicMock()
+    process_task_mock = MagicMock(return_value=("bg-task",))
+
+    monkeypatch.setattr(wan22_video_v2_fsm, "robust_edit_text", edit_mock)
+    monkeypatch.setattr(
+        wan22_video_v2_fsm.permission_service, "check_quota", quota_mock
+    )
+    monkeypatch.setattr(
+        wan22_video_v2_fsm, "create_background_task", create_background_task_mock
+    )
+    monkeypatch.setattr(
+        wan22_video_v2_fsm, "process_wan22_video_v2_task", process_task_mock
+    )
+
+    query = SimpleNamespace(
+        data="wan22v2_skip_negative_prompt",
+        answer=AsyncMock(),
+        message=SimpleNamespace(),
+    )
+    update = SimpleNamespace(
+        callback_query=query,
+        effective_user=_build_user(),
+        effective_chat=SimpleNamespace(id=10001),
+    )
+    context = SimpleNamespace(
+        bot=SimpleNamespace(),
+        user_data={
+            "in_conversation": wan22_video_v2_fsm.WAN22_VIDEO_V2_CONVERSATION_TAG,
+            "wan22_video_v2_data": {
+                "start_image_path": "/tmp/start.png",
+                "end_image_path": None,
+                "use_end_frame": False,
+                "resolution_preset": "small",
+                "duration": 8,
+                "prompt": "positive",
+            },
+        },
+        t=lambda key, **kwargs: f"T:{key}:{kwargs.get('cost', '')}",
+    )
+
+    result = await wan22_video_v2_fsm.skip_negative_prompt(update, context)
+
+    assert result == ConversationHandler.END
+    query.answer.assert_awaited_once()
+    quota_mock.assert_awaited_once_with(12345, "tester", "Test User", cost=24)
+    process_task_mock.assert_called_once()
+    assert process_task_mock.call_args.kwargs["negative_prompt"] == ""
+    create_background_task_mock.assert_called_once_with(context, ("bg-task",))
+    assert edit_mock.await_args_list[-1].args[1] == "T:fsm.wan22_video_v2.submitting:24"
+    assert "wan22_video_v2_data" not in context.user_data
+
+
+@pytest.mark.asyncio
+async def test_receive_negative_prompt_submits_without_settings_confirmation(monkeypatch):
+    reply_mock = AsyncMock()
+    quota_mock = AsyncMock()
+    create_background_task_mock = MagicMock()
+    process_task_mock = MagicMock(return_value=("bg-task",))
+
+    monkeypatch.setattr(wan22_video_v2_fsm, "robust_reply_text", reply_mock)
+    monkeypatch.setattr(
+        wan22_video_v2_fsm.permission_service, "check_quota", quota_mock
+    )
+    monkeypatch.setattr(
+        wan22_video_v2_fsm, "create_background_task", create_background_task_mock
+    )
+    monkeypatch.setattr(
+        wan22_video_v2_fsm, "process_wan22_video_v2_task", process_task_mock
+    )
+
+    update = _build_update_with_message(text="custom negative")
+    context = SimpleNamespace(
+        bot=SimpleNamespace(),
+        user_data={
+            "in_conversation": wan22_video_v2_fsm.WAN22_VIDEO_V2_CONVERSATION_TAG,
+            "wan22_video_v2_data": {
+                "start_image_path": "/tmp/start.png",
+                "end_image_path": None,
+                "use_end_frame": False,
+                "resolution_preset": "preview",
+                "duration": 5,
+                "prompt": "positive",
+            },
+        },
+        t=lambda key, **kwargs: f"T:{key}:{kwargs.get('cost', '')}",
+    )
+
+    result = await wan22_video_v2_fsm.receive_negative_prompt(update, context)
+
+    assert result == ConversationHandler.END
+    quota_mock.assert_awaited_once_with(12345, "tester", "Test User", cost=6)
+    process_task_mock.assert_called_once()
+    assert process_task_mock.call_args.kwargs["negative_prompt"] == "custom negative"
+    create_background_task_mock.assert_called_once_with(context, ("bg-task",))
+    reply_mock.assert_awaited_once_with(
+        update.message,
+        "T:fsm.wan22_video_v2.submitting:6",
+        parse_mode="Markdown",
+    )
+    assert "wan22_video_v2_data" not in context.user_data
 
 
 @pytest.mark.asyncio

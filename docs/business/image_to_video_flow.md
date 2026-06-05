@@ -35,8 +35,8 @@ sequenceDiagram
 - 旧图生视频 `custom_video` / `video_lora` 在执行面新增为 `image_to_video`，与 `wan22_video_v2` 共用 `Wan22AioV82.json`；历史、投稿和展示类型仍保留 `custom_video` / `video_lora`，不改写成 v2。
 - `Wan22AioV82.json` 在 `2603` 最终帧序列后接入 `265` (`FL_RIFE`, `multiplier=4`) 插帧；worker patcher 会把主视频输出、帧数统计和尾帧提取都切到 `["265", 0]`，避免插帧后视频时长变慢。
 - Wan22 AIO 视频配置事实源是 `src.domain_config.wan22_aio_video`：旧图生视频 `custom_video` / `video_lora` -> execution `image_to_video` -> `legacy_image_to_video` profile；图生视频 v2 `wan22_video_v2` -> execution `wan22_video_v2` -> `wan22_video_v2` profile。两者共享 worker workflow，但不是同一个用户功能。
-- 旧图生视频支持 `5s/8s/10s`，对应 `81/129/161` 帧；分辨率与计费基数对齐 v2 三档：`preview` / `standard` / `hd`。历史投稿中的 `512p` / `720p` / `1024p` 会分别映射到这三档，canonical duration 会恢复为 `5s/8s/10s`，缺失或非 canonical 时回退 5 秒。
-- Telegram `image_to_video_fsm.py` 的旧图生视频主入口会先展示同屏设置面板：附加模型、单图/首尾帧、`preview/standard/hd` 分辨率与确认按钮。确认后单图模式收 1 张起始图，首尾帧模式依次收起始图与终止图，然后要求发送提示词提交。
+- 旧图生视频支持 `5s/8s/10s`，对应 `81/129/161` 帧；分辨率与计费基数对齐 v2 四档：`preview` / `small` / `standard` / `hd`。历史投稿中的 `512p` / `720p` / `1024p` 会分别映射到 `preview/standard/hd`，`0.36 MP - Small` 会映射到 `small`，canonical duration 会恢复为 `5s/8s/10s`，缺失或非 canonical 时回退 5 秒。
+- Telegram `image_to_video_fsm.py` 的旧图生视频主入口会先展示同屏设置面板：附加模型、单图/首尾帧、`preview/small/standard/hd` 分辨率与确认按钮。确认后单图模式收 1 张起始图，首尾帧模式依次收起始图与终止图，然后要求发送提示词提交。
 - `image_to_video` 和 `wan22_video_v2` 通过 `wan22_model_profile` 区分主模型：旧入口使用 legacy high/low 主模型，v2 使用 snatchkiss high/low 主模型。`video_lora` 仍保留旧 LoRA 前缀选择，`custom_video` 兼容入口保持无 LoRA，v2 会清空额外 LoRA 槽。
 - Web `wan22_video_v2`、`custom_video`、`video_lora` 已支持与 Bot 对齐的多段链：历史与 `/api/tasks/{task_id}/result` 会返回 `last_frame` 与 `result_meta`，并新增 `/api/users/history/{task_id}/wan22-chain`、`/api/users/history/{task_id}/wan22-chain/stitch` 供练功房继续扩展、分段重生成和整链拼接；其中整链拼接现在会把拼接后 MP4 上传存储，并新增一条 `History` 记录返回给前端，而不是只回下载流。
 
@@ -92,7 +92,7 @@ graph TD
 - `ltx_video_fsm.py`、`wan22_video_v2_fsm.py`、`image_to_video_fsm.py`、`quick_video_fsm.py` 等负责收集图片、提示词与参数；其中旧图生视频会在上传图片前用同屏设置面板收集附加模型、帧模式、分辨率和时长，`wan22_video_v2` 主入口会先同屏选择单图/首尾帧、分辨率和时长，再按所选模式收 1 张或 2 张图片。
 - 全局菜单打断通过 `is_global_menu_command(...)` 统一识别。
 - 当前主 FSM 普遍使用 `conversation_timeout=300`。
-- `wan22_video_v2_fsm.py` 现已收口为“启动设置面板 + 起始帧 + 可选终止帧 + prompt/negative prompt”输入；主入口先选择单图或首尾帧、分辨率档位，确认后再根据帧模式决定收 1 张或 2 张图片。续写入口仍会预载上一段尾帧，再沿用兼容的单图/首尾帧选择。尾帧提取固定开启且仅作存储，不再开放 `color_match`、`perfect_loop`、`upscale`、`extract_last_frame` 给用户。
+- `wan22_video_v2_fsm.py` 现已收口为“启动设置面板 + 起始帧 + 可选终止帧 + prompt/negative prompt”输入；主入口先选择单图或首尾帧、分辨率档位和时长，确认后再根据帧模式决定收 1 张或 2 张图片。填写或跳过负面提示词后直接提交任务，不再展示后置设置确认页；`WAIT_SETTINGS` 仅保留用于兼容已发出的旧确认消息。续写入口仍会预载上一段尾帧，再沿用兼容的单图/首尾帧选择。尾帧提取固定开启且仅作存储，不再开放 `color_match`、`perfect_loop`、`upscale`、`extract_last_frame` 给用户。
 
 ### 3.2 Bot 任务流层
 - 视频任务入口主要位于：
@@ -127,7 +127,7 @@ graph TD
 
 ## 四、 计费与资源约束
 - 视频任务计费是动态的，通常由分辨率与时长组合决定。
-- Wan22 AIO 视频的分辨率档位统一维护在 `src.domain_config.wan22_aio_video`，Bot / Web / dispatcher / worker patcher 共享同一语义；分辨率基数为 `preview` = 极速 / 约 512p / `0.26 MP - Preview` / 6 灵石（默认且最低价），`standard` = 标准 / 约 720p / `0.52 MP - SD` / 20 灵石，`hd` = 高清 / 约 810p / `0.65 MP - Balanced` / 30 灵石。旧 `fast` / `0.36 MP - Small` 仅作为兼容别名归一到 `preview`，不再作为可选档位展示。Worker 会把档位写入 `Wan22AioV82.json` 的 `DaSiWa_ResolutionScaleCalculator` 节点 `2612.inputs.precision_presets`。
+- Wan22 AIO 视频的分辨率档位统一维护在 `src.domain_config.wan22_aio_video`，Bot / Web / dispatcher / worker patcher 共享同一语义；分辨率基数为 `preview` = 极速 / 约 512p / `0.26 MP - Preview` / 6 灵石（默认且最低价），`small` = 清晰 / 约 600p / `0.36 MP - Small` / 12 灵石，`standard` = 标准 / 约 720p / `0.52 MP - SD` / 20 灵石，`hd` = 高清 / 约 810p / `0.65 MP - Balanced` / 30 灵石。旧 `fast` 仅作为兼容别名归一到 `preview`。Worker 会把档位写入 `Wan22AioV82.json` 的 `DaSiWa_ResolutionScaleCalculator` 节点 `2612.inputs.precision_presets`。
 - Wan22 AIO 视频的时长统一为 `5s/8s/10s`，对应 `81/129/161` 帧，计费倍率为 `1x/2x/3x`；worker patcher 会把秒数写入 `Wan22AioV82.json` 的 `2578.inputs.value`。`custom_video` / `video_lora` 现在完全对齐上述 v2 计费口径；投稿一键应用恢复旧 `1024p` 时应自动选择 `hd`，并按历史 canonical duration 计算灵石。
 - 过高画质与过长时长组合仍可能触发 guardrail，避免显存溢出或节点拥塞。
 - 任何取消/失败路径都必须与并发锁释放和必要退款一并考虑。
@@ -148,7 +148,7 @@ graph TD
 - 若修改 `wan22_video_v2`，需覆盖“单起始帧 / 双帧模式 / 尾帧开关”三类布尔门控与结果发送语义。
 - 若修改 Wan22 Web 链式编辑，需额外覆盖 `wan22_video_v2`、`custom_video`、`video_lora` 三类历史的 `result_meta`、历史链查询、结果区按钮、练功房路由恢复、整链拼接、首段重生成清空、以及“后续段重生成只继承前序链路”的提交上下文截断语义。
 - 若修改 Wan22 尾帧物化逻辑，需覆盖 Comfy 返回 `2503` 和只返回主 MP4 的兜底抽帧两类路径，确保旧图生视频生成后仍可扩展和拼接。
-- 若修改旧图生视频投稿一键应用，需覆盖 prompt、`[模型: xxx]` LoRA 解析、旧分辨率到 `preview/standard/hd` 映射、`5s/8s/10s` 恢复和 v2 灵石消耗。
+- 若修改旧图生视频投稿一键应用，需覆盖 prompt、`[模型: xxx]` LoRA 解析、旧分辨率到 `preview/small/standard/hd` 映射、`5s/8s/10s` 恢复和 v2 灵石消耗。
 - 若修改 Wan22 Gallery 一键应用，需覆盖 v2 单段 `negative_prompt` / `wan22_resolution_preset` 回填，以及旧/v2 stitched 拼接记录列表禁用与 apply-context 400 拒绝。
 - 若修改 `ltx_video`，需覆盖 `lora_items` 多选、单项兼容字段与无 LoRA 回退三类协议。
 - 若修改视频成本计算、requested_duration 或结果发送语义，需同步回归 focused tests 与黄金路径集。

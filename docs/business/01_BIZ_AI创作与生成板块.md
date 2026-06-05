@@ -13,7 +13,7 @@
 
 **前置依赖**：用户必须具备足够灵石，且同一时刻受并发锁约束。
 
-**当前视频口径**：旧 `custom_video` / `video_lora` 与 `wan22_video_v2` 共用 Wan22 AIO 底层内核和 worker workflow，但仍是两个用户功能入口。旧入口支持 `5s/8s/10s`，分辨率与计费对齐 v2 三档，`video_lora` 额外保留旧 LoRA 选择。历史与投稿类型仍保留旧值，执行面才使用 `image_to_video`。
+**当前视频口径**：旧 `custom_video` / `video_lora` 与 `wan22_video_v2` 共用 Wan22 AIO 底层内核和 worker workflow，但仍是两个用户功能入口。旧入口支持 `5s/8s/10s`，分辨率与计费对齐 v2 四档，`video_lora` 额外保留旧 LoRA 选择。历史与投稿类型仍保留旧值，执行面才使用 `image_to_video`。
 
 ## 3. 当前业务主链
 
@@ -63,8 +63,8 @@ sequenceDiagram
 
 ### 4.2 计费契约
 - 视频成本通常由分辨率与时长组合计算。
-- Wan22 AIO 视频配置事实源是 `src.domain_config.wan22_aio_video`；`wan22_video_v2` 的分辨率档位为 `preview`（展示为“极速”，约 512p，默认且最低价）6 灵石、`standard`（约 720p）20 灵石、`hd`（约 810p）30 灵石；旧 `fast` 仅作为兼容别名归一到 `preview`，不再作为可选档位展示。时长支持 `5s/8s/10s`，对应 `81/129/161` 帧，计费倍率为 `1x/2x/3x`。
-- 旧 `custom_video` / `video_lora` 当前同样支持 `5s/8s/10s` 并对齐上述 v2 档位计费；旧投稿中的 `512p/720p/1024p` 会映射为 `preview/standard/hd`。
+- Wan22 AIO 视频配置事实源是 `src.domain_config.wan22_aio_video`；`wan22_video_v2` 的分辨率档位为 `preview`（展示为“极速”，约 512p，默认且最低价）6 灵石、`small`（展示为“清晰”，约 600p）12 灵石、`standard`（约 720p）20 灵石、`hd`（约 810p）30 灵石；旧 `fast` 仅作为兼容别名归一到 `preview`。时长支持 `5s/8s/10s`，对应 `81/129/161` 帧，计费倍率为 `1x/2x/3x`。
+- 旧 `custom_video` / `video_lora` 当前同样支持 `5s/8s/10s` 并对齐上述 v2 档位计费；旧投稿中的 `512p/720p/1024p` 会映射为 `preview/standard/hd`，`0.36 MP - Small` 会映射为 `small`。
 - 具体倍率与 guardrail 以当前服务实现为准，不在业务文档中固化旧常量值。
 
 ### 4.3 双 ID 语义
@@ -81,7 +81,7 @@ sequenceDiagram
 ### 6.1 Telegram 端
 1. 选择对应创作入口。
 2. 通过 FSM 收集图片、视频设置、提示词等参数。
-3. 确认消耗后提交任务。
+3. 按入口流程确认或直接提交任务；`图生视频 v2` 在前置设置确认后，填写或跳过负面提示词即直接进入生成。
 4. 等待 Bot 前台进度通知与结果回传。
 
 ### 6.2 Web 端

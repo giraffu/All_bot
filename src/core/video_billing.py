@@ -27,13 +27,19 @@ def _is_wan22_tier_video_task_type(task_type: str | None) -> bool:
     return task_type in WAN22_TIER_VIDEO_TASK_TYPES
 
 
-def _normalize_tier_from_video_side(side: int | None) -> str | None:
+def _normalize_tier_from_video_side(
+    side: int | None,
+    *,
+    include_small: bool = False,
+) -> str | None:
     if side is None or side <= 0:
         return None
     if side >= 960:
         return "1024"
     if side >= 700:
         return "720"
+    if include_small and side >= 600:
+        return "small"
     return "512"
 
 
@@ -196,7 +202,10 @@ def infer_billing_resolution_from_dimensions(
         inferred_side = min(width, height)
     else:
         inferred_side = width or height or None
-    tier = _normalize_tier_from_video_side(inferred_side)
+    tier = _normalize_tier_from_video_side(
+        inferred_side,
+        include_small=_is_wan22_tier_video_task_type(task_type),
+    )
     if _is_wan22_tier_video_task_type(task_type):
         return normalize_wan22_video_v2_resolution_preset(tier) if tier else None
     return tier
