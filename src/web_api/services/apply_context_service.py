@@ -52,6 +52,16 @@ def resolve_wan22_apply_negative_prompt(history: History) -> str | None:
     return negative_prompt or None
 
 
+def resolve_wan22_apply_requested_duration(history: History) -> object:
+    if not is_wan22_chain_history_task_type(history.type):
+        return history.requested_duration
+    context = resolve_wan22_apply_context_metadata(history)
+    return _pick_first_non_none(
+        history.requested_duration,
+        context.get("wan22_duration_seconds"),
+    )
+
+
 def build_apply_context_response(
     *,
     post_id: int,
@@ -184,7 +194,7 @@ async def build_history_apply_context_response(
     prompt, requested_duration = resolve_apply_prompt_and_requested_duration(
         history.type,
         history.prompt,
-        history.requested_duration,
+        resolve_wan22_apply_requested_duration(history),
     )
     prompt, lora_name, lora_strength = extract_prompt_lora_context(prompt)
     negative_prompt = resolve_wan22_apply_negative_prompt(history)
@@ -230,7 +240,10 @@ async def build_history_apply_context_response(
         requested_duration=requested_duration,
         duration=duration,
     )
-    if history.type in {"custom_video", "video_lora"} and requested_duration is not None:
+    if (
+        history.type in {"custom_video", "video_lora", "wan22_video_v2"}
+        and requested_duration is not None
+    ):
         duration = requested_duration
 
     return build_apply_context_response(

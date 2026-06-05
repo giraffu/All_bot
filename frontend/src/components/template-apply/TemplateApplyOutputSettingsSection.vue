@@ -1,5 +1,8 @@
 <script setup lang="ts">
-import { WAN22_VIDEO_V2_RESOLUTION_OPTIONS } from '@/features/generation/imageToVideo'
+import {
+  WAN22_VIDEO_V2_DURATION_OPTIONS,
+  WAN22_VIDEO_V2_RESOLUTION_OPTIONS,
+} from '@/features/generation/imageToVideo'
 import { warnIfPropsExceedBudget } from '@/utils/componentPropsBudget'
 
 const props = defineProps<{
@@ -67,11 +70,19 @@ const emit = defineEmits<{
         </a-radio-group>
         <a-radio-group
           v-else
-          value="5"
+          :value="duration"
           button-style="solid"
-          class="w-full grid grid-cols-1 gap-2 max-w-[120px]"
+          class="w-full grid grid-cols-3 gap-2 max-w-[320px]"
+          @update:value="emit('update:duration', String($event ?? ''))"
         >
-          <a-radio-button value="5" class="w-full text-center">5 {{ $t('template_apply.common.seconds') }}</a-radio-button>
+          <a-radio-button
+            v-for="option in WAN22_VIDEO_V2_DURATION_OPTIONS"
+            :key="option.value"
+            :value="option.value"
+            class="w-full text-center"
+          >
+            {{ option.label }}
+          </a-radio-button>
         </a-radio-group>
       </div>
     </div>

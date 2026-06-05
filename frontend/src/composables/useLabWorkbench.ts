@@ -41,12 +41,14 @@ import {
   DEFAULT_WAN22_VIDEO_V2_COST,
   DEFAULT_WAN22_VIDEO_V2_NEGATIVE_PROMPT,
   DEFAULT_WAN22_VIDEO_V2_RESOLUTION_PRESET,
+  getWan22VideoV2Cost,
   getImageToVideoRequestTaskType,
   getImageToVideoPayloadLoraName,
   getImageToVideoPayloadLoraStrength,
   LTX_VIDEO_LORA_OPTIONS,
   normalizeImageToVideoLoraSelection,
   normalizeLtxVideoLoraItems,
+  normalizeWan22VideoV2DurationSeconds,
   normalizeWan22VideoV2ResolutionPreset,
   WAN22_VIDEO_V2_RESOLUTION_OPTIONS,
   type LtxVideoLoraItem,
@@ -251,8 +253,7 @@ export function useLabWorkbench() {
     }
 
     if (currentMode.value.id === 'custom_video') {
-      return WAN22_VIDEO_V2_RESOLUTION_OPTIONS.find(option => option.value === wan22ResolutionPreset.value)?.cost
-        ?? DEFAULT_WAN22_VIDEO_V2_COST
+      return getWan22VideoV2Cost(wan22ResolutionPreset.value, duration.value)
     }
 
     if (currentMode.value.id === 'face_video') {
@@ -268,8 +269,7 @@ export function useLabWorkbench() {
     }
 
     if (currentMode.value.id === 'wan22_video_v2') {
-      return WAN22_VIDEO_V2_RESOLUTION_OPTIONS.find(option => option.value === wan22ResolutionPreset.value)?.cost
-        ?? DEFAULT_WAN22_VIDEO_V2_COST
+      return getWan22VideoV2Cost(wan22ResolutionPreset.value, duration.value)
     }
 
     return currentMode.value.baseCost
@@ -434,6 +434,7 @@ export function useLabWorkbench() {
       prompt.value = prefill.prompt
       negativePrompt.value = prefill.negativePrompt
       wan22ResolutionPreset.value = prefill.resolutionPreset
+      duration.value = prefill.duration
       selectedVideoLora.value = normalizeImageToVideoLoraSelection(prefill.loraName)
       wan22ChainBanner.value = prefill.mode === 'extend'
         ? t('lab.workbench.wan22_extend_notice', {
@@ -713,18 +714,25 @@ export function useLabWorkbench() {
         void applyWan22ChainPrefill(wan22Mode, wan22TaskId)
         return
       }
-      if (nextModeId === 'wan22_video_v2') {
+      if (nextModeId === 'wan22_video_v2' && !templateContext) {
         return
       }
     }
 
-    if (nextModeId === 'custom_video' && templateContext) {
-      const templateState = resolveTemplateVideoApplyState(templateContext, String(templateContext.task_type ?? '') === 'video_lora' ? 'video_lora' : 'custom_video')
+    if ((nextModeId === 'custom_video' || nextModeId === 'wan22_video_v2') && templateContext) {
+      const rawTemplateTaskType = String(templateContext.task_type ?? '')
+      const templateTaskType: 'custom_video' | 'video_lora' | 'wan22_video_v2' = nextModeId === 'wan22_video_v2'
+        ? 'wan22_video_v2'
+        : rawTemplateTaskType === 'video_lora' ? 'video_lora' : 'custom_video'
+      const templateState = resolveTemplateVideoApplyState(templateContext, templateTaskType)
       if (templateState) {
         prompt.value = templateState.prompt ?? ''
+        if (nextModeId === 'wan22_video_v2') {
+          negativePrompt.value = templateState.negativePrompt || DEFAULT_WAN22_VIDEO_V2_NEGATIVE_PROMPT
+        }
         selectedVideoLora.value = templateState.loraName ?? getDefaultVideoLoraSelection()
         wan22ResolutionPreset.value = normalizeWan22VideoV2ResolutionPreset(templateState.resolution)
-        duration.value = DEFAULT_VIDEO_DURATION
+        duration.value = normalizeWan22VideoV2DurationSeconds(templateState.duration)
         templateNotice.value = templateState.templateApplyNotice
         templateWarning.value = templateState.templateSettingsWarning
         isTemplateApplied.value = templateState.isTemplateApplied
@@ -901,7 +909,7 @@ export function useLabWorkbench() {
       const payload = buildGenerationTaskPayload({
         taskType,
         images: uploadedReferences.value.map(item => item.key),
-        duration: 5,
+        duration: Number(normalizeWan22VideoV2DurationSeconds(duration.value)),
         prompt: prompt.value,
         negativePrompt: negativePrompt.value,
         promptTarget: 'inputs',

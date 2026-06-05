@@ -380,7 +380,7 @@ describe('TemplateImageToVideoPanel', () => {
     expect(setSubmittedTaskIdMock).toHaveBeenLastCalledWith('task-789')
   })
 
-  it('ignores legacy custom_video media duration and submits fixed 5s', async () => {
+  it('falls back to 5s when custom_video requested_duration is missing', async () => {
     const wrapper = mountPanel({
       raw: {
         post_id: 4,
@@ -440,7 +440,7 @@ describe('TemplateImageToVideoPanel', () => {
     })
   })
 
-  it('ignores legacy video_lora media duration and submits fixed 5s', async () => {
+  it('falls back to 5s when video_lora requested_duration is missing', async () => {
     const wrapper = mountPanel({
       raw: {
         post_id: 5,
@@ -576,7 +576,7 @@ describe('TemplateImageToVideoPanel', () => {
         width: 512,
         height: 768,
         duration: 13,
-        requested_duration: null,
+        requested_duration: 10,
         billing_resolution: 'standard'
       },
       rawEntityId: 7,
@@ -588,7 +588,7 @@ describe('TemplateImageToVideoPanel', () => {
       width: 512,
       height: 768,
       duration: 13,
-      requestedDuration: null,
+      requestedDuration: 10,
       billingResolution: 'standard'
     })
     await nextTick()
@@ -614,7 +614,7 @@ describe('TemplateImageToVideoPanel', () => {
       task_type: 'wan22_video_v2',
       inputs: {
         images: ['uploads/base.png'],
-        duration: 5,
+        duration: 10,
         prompt: 'cinematic v2 motion',
         negative_prompt: 'low quality blur',
         resolution_preset: 'standard',

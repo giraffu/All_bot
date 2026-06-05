@@ -3,8 +3,10 @@ export const NO_LTX_VIDEO_LORA = '__none__'
 export const DEFAULT_WAN22_VIDEO_V2_NEGATIVE_PROMPT =
   'censored, mosaic censoring, bar censor, pixelated, glowing, bloom, blurry, out of focus, low detail, bad anatomy, ugly, overexposed, underexposed, distorted face, extra limbs, cartoonish, 3d render artifacts, duplicate people, unnatural lighting, bad composition, missing shadows, low resolution, poorly textured, glitch, noise, grain, static, motionless, still frame, stylized, artwork, painting, illustration, many people in background, three legs, walking backward, unnatural skin tone, discolored eyelid, red eyelids, closed eyes, poorly drawn hands, extra fingers, fused fingers, poorly drawn face, deformed, disfigured, malformed limbs, fog, mist, voluminous eyelashes,'
 export type Wan22VideoV2ResolutionPreset = 'preview' | 'standard' | 'hd'
+export type Wan22VideoV2DurationSeconds = '5' | '8' | '10'
 
 export const DEFAULT_WAN22_VIDEO_V2_RESOLUTION_PRESET: Wan22VideoV2ResolutionPreset = 'preview'
+export const DEFAULT_WAN22_VIDEO_V2_DURATION_SECONDS: Wan22VideoV2DurationSeconds = '5'
 
 export const WAN22_VIDEO_V2_RESOLUTION_OPTIONS: Array<{
   value: Wan22VideoV2ResolutionPreset
@@ -15,6 +17,17 @@ export const WAN22_VIDEO_V2_RESOLUTION_OPTIONS: Array<{
   { value: 'preview', label: '极速', description: '约 512p，最低价，生成更快', cost: 6 },
   { value: 'standard', label: '标准', description: '约 720p，平衡画质与速度', cost: 20 },
   { value: 'hd', label: '高清', description: '约 810p，更清晰，生成更慢', cost: 30 },
+]
+
+export const WAN22_VIDEO_V2_DURATION_OPTIONS: Array<{
+  value: Wan22VideoV2DurationSeconds
+  label: string
+  frameCount: number
+  multiplier: number
+}> = [
+  { value: '5', label: '5 秒', frameCount: 81, multiplier: 1 },
+  { value: '8', label: '8 秒', frameCount: 129, multiplier: 2 },
+  { value: '10', label: '10 秒', frameCount: 161, multiplier: 3 },
 ]
 
 export const DEFAULT_WAN22_VIDEO_V2_COST =
@@ -40,6 +53,26 @@ export const normalizeWan22VideoV2ResolutionPreset = (
     return 'standard'
   }
   return DEFAULT_WAN22_VIDEO_V2_RESOLUTION_PRESET
+}
+
+export const normalizeWan22VideoV2DurationSeconds = (
+  value: string | number | null | undefined,
+): Wan22VideoV2DurationSeconds => {
+  const normalized = String(value ?? '').trim().replace(/s$/i, '')
+  return normalized === '8' || normalized === '10'
+    ? normalized
+    : DEFAULT_WAN22_VIDEO_V2_DURATION_SECONDS
+}
+
+export const getWan22VideoV2Cost = (
+  resolutionPreset: string | null | undefined,
+  duration: string | number | null | undefined = DEFAULT_WAN22_VIDEO_V2_DURATION_SECONDS,
+): number => {
+  const resolution = normalizeWan22VideoV2ResolutionPreset(resolutionPreset)
+  const durationSeconds = normalizeWan22VideoV2DurationSeconds(duration)
+  const baseCost = WAN22_VIDEO_V2_RESOLUTION_OPTIONS.find(option => option.value === resolution)?.cost ?? DEFAULT_WAN22_VIDEO_V2_COST
+  const multiplier = WAN22_VIDEO_V2_DURATION_OPTIONS.find(option => option.value === durationSeconds)?.multiplier ?? 1
+  return baseCost * multiplier
 }
 
 export type UnifiedImageToVideoTaskType = 'custom_video' | 'video_lora'

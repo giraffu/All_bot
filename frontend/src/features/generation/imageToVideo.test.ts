@@ -3,8 +3,12 @@ import { describe, expect, it } from 'vitest'
 import {
   buildDefaultLtxVideoLoraItem,
   DEFAULT_WAN22_VIDEO_V2_COST,
+  DEFAULT_WAN22_VIDEO_V2_DURATION_SECONDS,
   DEFAULT_WAN22_VIDEO_V2_RESOLUTION_PRESET,
   DEFAULT_WAN22_VIDEO_V2_NEGATIVE_PROMPT,
+  getWan22VideoV2Cost,
+  normalizeWan22VideoV2DurationSeconds,
+  WAN22_VIDEO_V2_DURATION_OPTIONS,
   WAN22_VIDEO_V2_RESOLUTION_OPTIONS,
   getDefaultImageToVideoLoraSelection,
   getImageToVideoPayloadLoraName,
@@ -87,10 +91,24 @@ describe('imageToVideo LTX LoRA helpers', () => {
       'standard',
       'hd',
     ])
+    expect(DEFAULT_WAN22_VIDEO_V2_DURATION_SECONDS).toBe('5')
+    expect(WAN22_VIDEO_V2_DURATION_OPTIONS.map(option => option.frameCount)).toEqual([
+      81,
+      129,
+      161,
+    ])
   })
 
   it('normalizes legacy wan22 fast resolution to preview', () => {
     expect(normalizeWan22VideoV2ResolutionPreset('fast')).toBe('preview')
     expect(normalizeWan22VideoV2ResolutionPreset('0.36 MP - Small')).toBe('preview')
+  })
+
+  it('normalizes wan22 duration and applies duration cost multipliers', () => {
+    expect(normalizeWan22VideoV2DurationSeconds('8s')).toBe('8')
+    expect(normalizeWan22VideoV2DurationSeconds(10)).toBe('10')
+    expect(normalizeWan22VideoV2DurationSeconds('oops')).toBe('5')
+    expect(getWan22VideoV2Cost('standard', '8')).toBe(40)
+    expect(getWan22VideoV2Cost('hd', 10)).toBe(90)
   })
 })

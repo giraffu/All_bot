@@ -66,7 +66,7 @@ async def test_probe_apply_context_media_metadata_backfills_missing_values():
     assert width == 1024
     assert height == 1024
     assert duration == 8
-    assert billing_resolution == "1024"
+    assert billing_resolution == "hd"
 
 
 @pytest.mark.asyncio

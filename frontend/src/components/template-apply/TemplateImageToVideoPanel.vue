@@ -18,7 +18,9 @@ import {
   isWan22TemplateVideoTaskType,
   normalizeImageToVideoLoraSelection,
   normalizeWan22VideoV2ResolutionPreset,
-  WAN22_VIDEO_V2_RESOLUTION_OPTIONS,
+  normalizeWan22VideoV2DurationSeconds,
+  getWan22VideoV2Cost,
+  DEFAULT_WAN22_VIDEO_V2_DURATION_SECONDS,
   type LtxVideoLoraItem
 } from '@/features/generation/imageToVideo'
 import { useTemplateApplyStore } from '@/stores/templateApply'
@@ -129,7 +131,7 @@ const taskCost = computed(() => {
     return baseCost * multiplier
   }
 
-  return WAN22_VIDEO_V2_RESOLUTION_OPTIONS.find(option => option.value === resolution.value)?.cost ?? 6
+  return getWan22VideoV2Cost(resolution.value, duration.value)
 })
 
 watch(
@@ -180,7 +182,7 @@ const initializeFromContext = () => {
     resolution.value = '1280x704'
   } else {
     resolution.value = 'preview'
-    duration.value = '5'
+    duration.value = DEFAULT_WAN22_VIDEO_V2_DURATION_SECONDS
   }
   negativePrompt.value = DEFAULT_WAN22_VIDEO_V2_NEGATIVE_PROMPT
 
@@ -205,7 +207,9 @@ const initializeFromContext = () => {
         ? templateState.resolution
         : normalizeWan22VideoV2ResolutionPreset(templateState.resolution)
     }
-    duration.value = isLtxVideo.value ? (templateState.duration ?? '5') : '5'
+    duration.value = isLtxVideo.value
+      ? (templateState.duration ?? '5')
+      : normalizeWan22VideoV2DurationSeconds(templateState.duration)
 
     templateSettingsWarning.value = templateState.templateSettingsWarning
     templateApplyNotice.value = templateState.templateApplyNotice
@@ -261,7 +265,9 @@ const handleGenerate = async () => {
     taskType: getImageToVideoRequestTaskType(taskType.value, loraSelection.value),
     images: [objectKey.value],
     resolution: isLtxVideo.value ? resolution.value : undefined,
-    duration: isLtxVideo.value ? Number(duration.value) : 5,
+    duration: isLtxVideo.value
+      ? Number(duration.value)
+      : Number(normalizeWan22VideoV2DurationSeconds(duration.value)),
     prompt: (isWan22TemplateVideoTaskType(taskType.value) || isLtxVideo.value) ? prompt.value : undefined,
     negativePrompt: isWan22VideoV2.value ? negativePrompt.value : undefined,
     promptTarget: 'inputs',

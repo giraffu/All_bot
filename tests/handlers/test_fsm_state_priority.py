@@ -913,7 +913,15 @@ async def test_start_image_to_video_english_lora_buttons(monkeypatch):
         "i2v_setup_res_standard",
         "i2v_setup_res_hd",
     ]
-    assert keyboard.inline_keyboard[4][0].callback_data == image_to_video_fsm.I2V_SETUP_CONFIRM
+    assert [
+        button.callback_data
+        for button in keyboard.inline_keyboard[4]
+    ] == [
+        "i2v_setup_dur_5",
+        "i2v_setup_dur_8",
+        "i2v_setup_dur_10",
+    ]
+    assert keyboard.inline_keyboard[5][0].callback_data == image_to_video_fsm.I2V_SETUP_CONFIRM
 
 
 @pytest.mark.asyncio
@@ -1203,7 +1211,7 @@ async def test_image_to_video_receive_prompt_uses_unified_image_to_video_service
     assert service_call[0] == "bg-task"
     assert service_call[1]["task_type"] == expected_task_type
     assert service_call[1]["resolution"] == "standard"
-    assert service_call[1]["duration"] == 5
+    assert service_call[1]["duration"] == 8
     assert service_call[1]["use_end_frame"] is False
     assert service_call[1]["lora_name"] == lora_name
     assert "in_conversation" not in context.user_data
@@ -1250,7 +1258,7 @@ async def test_image_to_video_receive_prompt_submits_optional_end_frame(monkeypa
     service_call = create_background_task_mock.call_args.args[1]
     assert service_call[1]["images"] == ["/tmp/start.png", "/tmp/end.png"]
     assert service_call[1]["resolution"] == "hd"
-    assert service_call[1]["duration"] == 5
+    assert service_call[1]["duration"] == 10
     assert service_call[1]["use_end_frame"] is True
     assert service_call[1]["lora_name"] == "BreastGrow"
 

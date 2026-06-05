@@ -8,6 +8,7 @@ export type TaskExtraOutputs = Record<string, TaskExtraOutput>
 
 export interface Wan22ResultMeta {
   wan22_resolution_preset?: string
+  wan22_duration_seconds?: number
   wan22_negative_prompt?: string
   wan22_use_end_frame?: boolean
   wan22_prev_task_id?: string

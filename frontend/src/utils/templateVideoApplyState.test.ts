@@ -78,7 +78,7 @@ describe('templateVideoApplyState', () => {
     expect(invalidState?.duration).toBe('5')
   })
 
-  it('ignores legacy custom_video media duration and locks to 5s', () => {
+  it('falls back to 5s when custom_video lacks canonical requested_duration', () => {
     const state = resolveTemplateVideoApplyState(
       {
         task_type: 'custom_video',
@@ -139,7 +139,7 @@ describe('templateVideoApplyState', () => {
     expect(state?.templateSettingsWarning).toContain('模板缺少完整的提示词或模型信息')
   })
 
-  it('ignores legacy video_lora media duration and locks to 5s', () => {
+  it('falls back to 5s when video_lora lacks canonical requested_duration', () => {
     const state = resolveTemplateVideoApplyState(
       {
         task_type: 'video_lora',
@@ -158,7 +158,7 @@ describe('templateVideoApplyState', () => {
     expect(state?.isTemplateVideoSettingsLocked).toBe(true)
   })
 
-  it('restores wan22_video_v2 prompt, negative prompt, tier settings, and fixed duration', () => {
+  it('restores wan22_video_v2 prompt, negative prompt, tier settings, and requested duration', () => {
     const state = resolveTemplateVideoApplyState(
       {
         task_type: 'wan22_video_v2',
@@ -167,7 +167,7 @@ describe('templateVideoApplyState', () => {
         width: 512,
         height: 768,
         duration: 13,
-        requested_duration: null,
+        requested_duration: 10,
         billing_resolution: 'standard',
         source_post_id: 91
       },
@@ -177,7 +177,7 @@ describe('templateVideoApplyState', () => {
     expect(state?.prompt).toBe('cinematic v2 motion')
     expect(state?.negativePrompt).toBe('low quality blur')
     expect(state?.resolution).toBe('standard')
-    expect(state?.duration).toBe('5')
+    expect(state?.duration).toBe('10')
     expect(state?.sourcePostId).toBe(91)
     expect(state?.isTemplateVideoSettingsLocked).toBe(true)
     expect(state?.isTemplatePromptLocked).toBe(true)

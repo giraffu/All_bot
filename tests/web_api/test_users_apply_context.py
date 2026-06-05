@@ -707,6 +707,7 @@ async def test_get_favorite_apply_context_restores_wan22_video_v2_single_segment
             "_wan22_context": {
                 "wan22_resolution_preset": "standard",
                 "wan22_negative_prompt": "low quality blur",
+                "wan22_duration_seconds": 10,
                 "wan22_use_end_frame": False,
             }
         },
@@ -728,8 +729,8 @@ async def test_get_favorite_apply_context_restores_wan22_video_v2_single_segment
     assert response.prompt == "cinematic v2 motion"
     assert response.negative_prompt == "low quality blur"
     assert response.billing_resolution == "standard"
-    assert response.duration == 13
-    assert response.requested_duration == 5
+    assert response.duration == 10
+    assert response.requested_duration == 10
     session.commit.assert_not_awaited()
 
 

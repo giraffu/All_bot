@@ -4,13 +4,18 @@ from src.constants import MODE_WAN22_VIDEO_V2
 from src.domain_config.wan22_aio_video import (
     DEFAULT_WAN22_VIDEO_V2_NEGATIVE_PROMPT,
     WAN22_VIDEO_V2_DEFAULT_RESOLUTION_PRESET,
+    WAN22_VIDEO_V2_DEFAULT_DURATION_SECONDS,
+    WAN22_VIDEO_V2_DURATION_SECONDS,
     WAN22_VIDEO_V2_MODEL_PROFILE,
     WAN22_VIDEO_V2_RESOLUTION_PRESETS,
     build_wan22_aio_video_result_meta,
     get_wan22_video_v2_cost,
+    get_wan22_video_v2_duration_label,
+    get_wan22_video_v2_frame_count,
     get_wan22_video_v2_resolution_display,
     get_wan22_video_v2_resolution_label,
     normalize_wan22_video_v2_chain_task_ids,
+    normalize_wan22_video_v2_duration_seconds,
     normalize_wan22_video_v2_negative_prompt,
     normalize_wan22_video_v2_resolution_preset,
 )
@@ -20,13 +25,18 @@ from src.services.wan22_aio_video_generation import (
 
 __all__ = [
     "DEFAULT_WAN22_VIDEO_V2_NEGATIVE_PROMPT",
+    "WAN22_VIDEO_V2_DEFAULT_DURATION_SECONDS",
     "WAN22_VIDEO_V2_DEFAULT_RESOLUTION_PRESET",
+    "WAN22_VIDEO_V2_DURATION_SECONDS",
     "WAN22_VIDEO_V2_RESOLUTION_PRESETS",
     "build_wan22_video_v2_result_meta",
     "get_wan22_video_v2_cost",
+    "get_wan22_video_v2_duration_label",
+    "get_wan22_video_v2_frame_count",
     "get_wan22_video_v2_resolution_display",
     "get_wan22_video_v2_resolution_label",
     "normalize_wan22_video_v2_chain_task_ids",
+    "normalize_wan22_video_v2_duration_seconds",
     "normalize_wan22_video_v2_negative_prompt",
     "normalize_wan22_video_v2_resolution_preset",
     "process_wan22_video_v2_generation_task",
@@ -38,12 +48,14 @@ def build_wan22_video_v2_result_meta(
     resolution_preset: str | None,
     negative_prompt: str | None,
     use_end_frame: bool,
+    duration_seconds: Any = None,
     prev_task_id: str | None = None,
     chain_task_ids: Any = None,
 ) -> dict[str, Any]:
     return build_wan22_aio_video_result_meta(
         profile=WAN22_VIDEO_V2_MODEL_PROFILE,
         resolution_preset=resolution_preset,
+        duration_seconds=duration_seconds,
         negative_prompt=negative_prompt,
         use_end_frame=use_end_frame,
         prev_task_id=prev_task_id,
@@ -72,6 +84,7 @@ async def process_wan22_video_v2_generation_task(
     allow_contribute: bool = True,
     source_post_id: Optional[int] = None,
     resolution_preset: str | None = None,
+    duration: Any = None,
     wan22_prev_task_id: str | None = None,
     wan22_chain_task_ids: Any = None,
 ) -> Tuple[Optional[bytes], Optional[str]]:
@@ -95,6 +108,7 @@ async def process_wan22_video_v2_generation_task(
         allow_contribute=allow_contribute,
         source_post_id=source_post_id,
         resolution_preset=resolution_preset,
+        duration=duration,
         wan22_prev_task_id=wan22_prev_task_id,
         wan22_chain_task_ids=wan22_chain_task_ids,
     )

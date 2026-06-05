@@ -22,7 +22,11 @@ import {
   normalizeLtxVideoLoraItems,
   isUnifiedImageToVideoTaskType,
   normalizeImageToVideoLoraSelection,
+  normalizeWan22VideoV2DurationSeconds,
   normalizeWan22VideoV2ResolutionPreset,
+  getWan22VideoV2Cost,
+  DEFAULT_WAN22_VIDEO_V2_DURATION_SECONDS,
+  WAN22_VIDEO_V2_DURATION_OPTIONS,
   WAN22_VIDEO_V2_RESOLUTION_OPTIONS,
   type LtxVideoLoraItem
 } from '@/features/generation/imageToVideo'
@@ -68,7 +72,7 @@ const taskCost = computed(() => {
     return baseCost * multiplier;
   }
   
-  return WAN22_VIDEO_V2_RESOLUTION_OPTIONS.find(option => option.value === resolution.value)?.cost ?? 6
+  return getWan22VideoV2Cost(resolution.value, duration.value)
 })
 const prompt = ref('')
 const loraSelection = ref(getDefaultImageToVideoLoraSelection(taskType.value))
@@ -145,7 +149,7 @@ onMounted(() => {
     resolution.value = '1280x704'
   } else {
     resolution.value = 'preview'
-    duration.value = '5'
+    duration.value = DEFAULT_WAN22_VIDEO_V2_DURATION_SECONDS
   }
   
   if (routeApplyEnabled.value) {
@@ -171,7 +175,9 @@ onMounted(() => {
             ? templateState.resolution
             : normalizeWan22VideoV2ResolutionPreset(templateState.resolution)
         }
-        duration.value = isLtxVideo.value ? (templateState.duration ?? '5') : '5'
+        duration.value = isLtxVideo.value
+          ? (templateState.duration ?? '5')
+          : normalizeWan22VideoV2DurationSeconds(templateState.duration)
 
         templateSettingsWarning.value = templateState.templateSettingsWarning
         isTemplateApplied.value = templateState.isTemplateApplied
@@ -200,7 +206,9 @@ const handleGenerate = async () => {
     taskType: getImageToVideoRequestTaskType(taskType.value, loraSelection.value),
     images: [objectKey.value],
     resolution: isLtxVideo.value ? resolution.value : undefined,
-    duration: isLtxVideo.value ? Number(duration.value) : 5,
+    duration: isLtxVideo.value
+      ? Number(duration.value)
+      : Number(normalizeWan22VideoV2DurationSeconds(duration.value)),
     prompt: (isUnifiedImageToVideo.value || isLtxVideo.value) ? prompt.value : undefined,
     promptTarget: 'inputs',
     loraName: loraName.value,
@@ -415,8 +423,15 @@ const resetForm = () => {
               <a-radio-button value="15" class="w-full text-center py-1.5 h-auto text-xs rounded-lg !border-none !border-l-0 shadow-sm leading-tight flex items-center justify-center">15 秒</a-radio-button>
               <a-radio-button value="20" class="w-full text-center py-1.5 h-auto text-xs rounded-lg !border-none !border-l-0 shadow-sm leading-tight flex items-center justify-center">20 秒</a-radio-button>
             </a-radio-group>
-            <a-radio-group v-else value="5" button-style="solid" class="compact-option-group w-full grid grid-cols-1 gap-2 max-w-[120px]">
-              <a-radio-button value="5" class="w-full text-center py-1.5 h-auto text-xs rounded-lg !border-none !border-l-0 shadow-sm leading-tight flex items-center justify-center">5 秒</a-radio-button>
+            <a-radio-group v-else v-model:value="duration" button-style="solid" class="compact-option-group w-full grid grid-cols-3 gap-2">
+              <a-radio-button
+                v-for="option in WAN22_VIDEO_V2_DURATION_OPTIONS"
+                :key="option.value"
+                :value="option.value"
+                class="w-full text-center py-1.5 h-auto text-xs rounded-lg !border-none !border-l-0 shadow-sm leading-tight flex items-center justify-center"
+              >
+                {{ option.label }}
+              </a-radio-button>
             </a-radio-group>
           </div>
         </div>

@@ -1,9 +1,12 @@
 from src.services.task_service_generation_wan22 import (
     DEFAULT_WAN22_VIDEO_V2_NEGATIVE_PROMPT,
+    WAN22_VIDEO_V2_DEFAULT_DURATION_SECONDS,
     WAN22_VIDEO_V2_DEFAULT_RESOLUTION_PRESET,
     get_wan22_video_v2_cost,
+    get_wan22_video_v2_frame_count,
     get_wan22_video_v2_resolution_display,
     get_wan22_video_v2_resolution_label,
+    normalize_wan22_video_v2_duration_seconds,
     normalize_wan22_video_v2_negative_prompt,
     normalize_wan22_video_v2_resolution_preset,
 )
@@ -80,3 +83,16 @@ def test_get_wan22_video_v2_cost_uses_resolution_preset():
     assert get_wan22_video_v2_cost("standard") == 20
     assert get_wan22_video_v2_cost("hd") == 30
     assert get_wan22_video_v2_cost("not-valid") == 6
+
+
+def test_wan22_video_v2_duration_options_drive_cost_and_frames():
+    assert normalize_wan22_video_v2_duration_seconds("8s") == 8
+    assert normalize_wan22_video_v2_duration_seconds(10) == 10
+    assert normalize_wan22_video_v2_duration_seconds("oops") == (
+        WAN22_VIDEO_V2_DEFAULT_DURATION_SECONDS
+    )
+    assert get_wan22_video_v2_cost("standard", 8) == 40
+    assert get_wan22_video_v2_cost("hd", "10s") == 90
+    assert get_wan22_video_v2_frame_count(5) == 81
+    assert get_wan22_video_v2_frame_count(8) == 129
+    assert get_wan22_video_v2_frame_count(10) == 161

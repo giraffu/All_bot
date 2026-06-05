@@ -22,11 +22,15 @@ from src.handlers.prompt_router import is_global_menu_command
 from src.lora_catalog import VIDEO_LORA_MODELS, get_video_lora_display_name
 from src.services.task_service_generation_video import process_image_to_video_generation_task as process_image_to_video_task
 from src.services.wan22_video_v2_config import (
+    WAN22_VIDEO_V2_DEFAULT_DURATION_SECONDS,
     WAN22_VIDEO_V2_DEFAULT_RESOLUTION_PRESET,
+    WAN22_VIDEO_V2_DURATION_SECONDS,
     WAN22_VIDEO_V2_RESOLUTION_PRESETS,
     get_wan22_video_v2_cost,
+    get_wan22_video_v2_duration_label,
     get_wan22_video_v2_resolution_display,
     get_wan22_video_v2_resolution_label,
+    normalize_wan22_video_v2_duration_seconds,
     normalize_wan22_video_v2_resolution_preset,
 )
 from src.services.permission_service import permission_service
@@ -48,11 +52,15 @@ I2V_SETUP_LORA_PREFIX = "i2v_setup_lora_"
 I2V_SETUP_MODE_SINGLE = "i2v_setup_mode_single"
 I2V_SETUP_MODE_END = "i2v_setup_mode_end"
 I2V_SETUP_RES_PREFIX = "i2v_setup_res_"
+I2V_SETUP_DUR_PREFIX = "i2v_setup_dur_"
 I2V_SETUP_CONFIRM = "i2v_setup_confirm"
+I2V_DURATION_ACTION_VALUES = "|".join(
+    str(duration) for duration in WAN22_VIDEO_V2_DURATION_SECONDS
+)
 I2V_SETUP_ACTION_PATTERN = (
     rf"^i2v_setup_(lora_.*|mode_(single|end)|res_("
     + "|".join(WAN22_VIDEO_V2_RESOLUTION_PRESETS.keys())
-    + r")|confirm)$"
+    + rf")|dur_({I2V_DURATION_ACTION_VALUES})|confirm)$"
 )
 
 
@@ -109,6 +117,14 @@ def _get_frame_mode_label(
     return _t(context, key)
 
 
+def _normalize_selected_duration(fsm_data: dict[str, object]) -> int:
+    selected_duration = normalize_wan22_video_v2_duration_seconds(
+        fsm_data.get("duration") or WAN22_VIDEO_V2_DEFAULT_DURATION_SECONDS
+    )
+    fsm_data["duration"] = selected_duration
+    return selected_duration
+
+
 def _build_lora_selection_keyboard(lang: str = "zh") -> InlineKeyboardMarkup:
     buttons = [
         InlineKeyboardButton(
@@ -132,6 +148,7 @@ def _build_initial_setup_keyboard(
         str(fsm_data.get("resolution") or WAN22_VIDEO_V2_DEFAULT_RESOLUTION_PRESET)
     )
     fsm_data["resolution"] = selected_resolution
+    selected_duration = _normalize_selected_duration(fsm_data)
     use_end_frame = bool(fsm_data.get("use_end_frame"))
     credits_text = _t(context, "app.credits")
 
@@ -169,7 +186,7 @@ def _build_initial_setup_keyboard(
     resolution_row = []
     for preset_key in WAN22_VIDEO_V2_RESOLUTION_PRESETS:
         label = get_wan22_video_v2_resolution_label(preset_key, lang=lang)
-        cost_for_preset = get_wan22_video_v2_cost(preset_key)
+        cost_for_preset = get_wan22_video_v2_cost(preset_key, selected_duration)
         resolution_row.append(
             InlineKeyboardButton(
                 _selected_button_label(
@@ -179,12 +196,29 @@ def _build_initial_setup_keyboard(
                 callback_data=f"{I2V_SETUP_RES_PREFIX}{preset_key}",
             )
         )
+    duration_row = []
+    for duration_seconds in WAN22_VIDEO_V2_DURATION_SECONDS:
+        label = get_wan22_video_v2_duration_label(duration_seconds, lang=lang)
+        cost_for_duration = get_wan22_video_v2_cost(
+            selected_resolution,
+            duration_seconds,
+        )
+        duration_row.append(
+            InlineKeyboardButton(
+                _selected_button_label(
+                    f"{label} ({cost_for_duration}{credits_text})",
+                    selected=duration_seconds == selected_duration,
+                ),
+                callback_data=f"{I2V_SETUP_DUR_PREFIX}{duration_seconds}",
+            )
+        )
 
     return InlineKeyboardMarkup(
         [
             *_chunk_buttons(lora_buttons, I2V_LORA_BUTTONS_PER_ROW),
             mode_row,
             resolution_row,
+            duration_row,
             [
                 InlineKeyboardButton(
                     _t(context, "fsm.image_to_video.setup_confirm"),
@@ -219,6 +253,7 @@ def _build_image_request_text(
     lang: str = "zh",
     use_end_frame: bool = False,
     resolution: str | None = None,
+    duration: object | None = None,
 ) -> str:
     lora_display_name = get_video_lora_display_name(lora_name or "", lang)
     from src.i18n.translator import get_text
@@ -258,6 +293,13 @@ def _build_image_request_text(
                 ),
             )
         )
+    settings_lines.append(
+        get_text(
+            "fsm.image_to_video.current_duration",
+            lang,
+            duration=get_wan22_video_v2_duration_label(duration, lang=lang),
+        )
+    )
     image_note_key = (
         "fsm.image_to_video.image_note_end_frame"
         if use_end_frame
@@ -290,8 +332,9 @@ def _build_initial_setup_message(
         str(fsm_data.get("resolution") or WAN22_VIDEO_V2_DEFAULT_RESOLUTION_PRESET)
     )
     fsm_data["resolution"] = resolution
+    duration = _normalize_selected_duration(fsm_data)
     use_end_frame = bool(fsm_data.get("use_end_frame"))
-    cost = _compute_video_generation_cost(resolution, "5s")
+    cost = _compute_video_generation_cost(resolution, duration)
     return _t(
         context,
         "fsm.image_to_video.setup_text",
@@ -300,7 +343,7 @@ def _build_initial_setup_message(
         frame_mode=_get_frame_mode_label(context, use_end_frame),
         image_count=2 if use_end_frame else 1,
         resolution=get_wan22_video_v2_resolution_display(resolution, lang=lang),
-        duration="5s",
+        duration=get_wan22_video_v2_duration_label(duration, lang=lang),
         cost=cost,
     )
 
@@ -312,7 +355,10 @@ def _build_settings_message(
         str(fsm_data["resolution"]),
         lang=lang,
     )
-    duration = "5s"
+    duration = get_wan22_video_v2_duration_label(
+        _normalize_selected_duration(fsm_data),
+        lang=lang,
+    )
     lora_display_name = _get_lora_display_name(fsm_data.get("lora_name"), lang=lang)
 
     from src.i18n.translator import get_text
@@ -345,7 +391,8 @@ def _build_prompt_request_text(
         str(fsm_data.get("resolution") or WAN22_VIDEO_V2_DEFAULT_RESOLUTION_PRESET)
     )
     fsm_data["resolution"] = resolution
-    cost = _compute_video_generation_cost(resolution, "5s")
+    duration = _normalize_selected_duration(fsm_data)
+    cost = _compute_video_generation_cost(resolution, duration)
     prompt_text = _t(
         context,
         "fsm.image_to_video.prompt_request_text",
@@ -353,15 +400,15 @@ def _build_prompt_request_text(
         frame_mode=_get_frame_mode_label(
             context, bool(fsm_data.get("use_end_frame"))
         ),
-        duration="5s",
+        duration=get_wan22_video_v2_duration_label(duration, lang=lang),
         cost=cost,
         model_name=_get_lora_display_name(fsm_data.get("lora_name"), lang=lang),
     )
     return f"{_t(context, received_key)}\n\n{prompt_text}"
 
 
-def _compute_video_generation_cost(resolution: str, duration: str) -> int:
-    return get_wan22_video_v2_cost(resolution)
+def _compute_video_generation_cost(resolution: str, duration: object) -> int:
+    return get_wan22_video_v2_cost(resolution, duration)
 
 
 def _resolve_image_to_video_task_type(context: ContextTypes.DEFAULT_TYPE) -> str:
@@ -396,21 +443,31 @@ async def _build_video_settings_view_model(
         str(fsm_data["resolution"])
     )
     fsm_data["resolution"] = resolution
-    duration = "5s"
+    duration = _normalize_selected_duration(fsm_data)
     from src.i18n.translator import get_text
 
     credits_text = get_text("app.credits", lang)
     row = []
     for preset_key in WAN22_VIDEO_V2_RESOLUTION_PRESETS:
         label = get_wan22_video_v2_resolution_label(preset_key, lang=lang)
-        cost_for_preset = get_wan22_video_v2_cost(preset_key)
+        cost_for_preset = get_wan22_video_v2_cost(preset_key, duration)
         text = f"{label} ({cost_for_preset}{credits_text})"
         if preset_key == resolution:
             text = f"✅ {text}"
         row.append(
             InlineKeyboardButton(text, callback_data=f"set_res_{preset_key}")
         )
-    reply_markup = InlineKeyboardMarkup([row])
+    duration_row = []
+    for duration_seconds in WAN22_VIDEO_V2_DURATION_SECONDS:
+        label = get_wan22_video_v2_duration_label(duration_seconds, lang=lang)
+        cost_for_duration = get_wan22_video_v2_cost(resolution, duration_seconds)
+        text = f"{label} ({cost_for_duration}{credits_text})"
+        if duration_seconds == duration:
+            text = f"✅ {text}"
+        duration_row.append(
+            InlineKeyboardButton(text, callback_data=f"set_dur_{duration_seconds}")
+        )
+    reply_markup = InlineKeyboardMarkup([row, duration_row])
     cost = _compute_video_generation_cost(resolution, duration)
     msg_text = _build_settings_message(
         fsm_data, cost, lang=getattr(context, "lang", "zh")
@@ -453,7 +510,7 @@ def _initialize_image_to_video_context(
     context.user_data["in_conversation"] = conversation_tag
     data = {
         "resolution": WAN22_VIDEO_V2_DEFAULT_RESOLUTION_PRESET,
-        "duration": "5s",
+        "duration": WAN22_VIDEO_V2_DEFAULT_DURATION_SECONDS,
         "image_path": None,
         "end_image_path": None,
         "use_end_frame": False,
@@ -514,6 +571,7 @@ async def _start_image_to_video_flow(
                 lang=getattr(context, "lang", "zh"),
                 use_end_frame=bool(fsm_data.get("use_end_frame")),
                 resolution=str(fsm_data.get("resolution") or ""),
+                duration=fsm_data.get("duration"),
             ),
         )
         return ImageToVideoState.WAIT_IMAGE
@@ -582,6 +640,10 @@ async def handle_initial_setup_selection(
         fsm_data["resolution"] = normalize_wan22_video_v2_resolution_preset(
             callback_data.removeprefix(I2V_SETUP_RES_PREFIX)
         )
+    elif callback_data.startswith(I2V_SETUP_DUR_PREFIX):
+        fsm_data["duration"] = normalize_wan22_video_v2_duration_seconds(
+            callback_data.removeprefix(I2V_SETUP_DUR_PREFIX)
+        )
     elif callback_data == I2V_SETUP_CONFIRM:
         await robust_edit_text(
             query.message,
@@ -592,6 +654,7 @@ async def handle_initial_setup_selection(
                 lang=getattr(context, "lang", "zh"),
                 use_end_frame=bool(fsm_data.get("use_end_frame")),
                 resolution=str(fsm_data.get("resolution") or ""),
+                duration=fsm_data.get("duration"),
             ),
             parse_mode="Markdown",
         )
@@ -805,6 +868,10 @@ async def process_settings(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         fsm_data["resolution"] = normalize_wan22_video_v2_resolution_preset(
             data.removeprefix("set_res_")
         )
+    elif data.startswith("set_dur_"):
+        fsm_data["duration"] = normalize_wan22_video_v2_duration_seconds(
+            data.removeprefix("set_dur_")
+        )
 
     reply_markup, _cost, msg_text = await _build_video_settings_view_model(
         context=context,
@@ -835,7 +902,7 @@ async def receive_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         return ConversationHandler.END
 
     res = normalize_wan22_video_v2_resolution_preset(str(fsm_data["resolution"]))
-    dur = "5s"
+    dur = _normalize_selected_duration(fsm_data)
     lora_name = fsm_data["lora_name"]
 
     cost = _compute_video_generation_cost(res, dur)
@@ -901,7 +968,7 @@ async def receive_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             prompt=prompt,
             images=submit_images,
             resolution=res,
-            duration=5,
+            duration=dur,
             use_end_frame=use_end_frame,
             resolution_preset=res,
             task_type=task_type,
@@ -1001,7 +1068,7 @@ def _build_image_to_video_fsm_handler(
                 ),
             ],
             ImageToVideoState.WAIT_SETTINGS_AND_PROMPT: [
-                CallbackQueryHandler(process_settings, pattern="^set_res_"),
+                CallbackQueryHandler(process_settings, pattern=r"^set_(res|dur)_"),
                 MessageHandler(
                     (filters.TEXT | filters.COMMAND) & ~filters.Regex(r"^/cancel$"),
                     receive_prompt,

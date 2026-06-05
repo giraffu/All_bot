@@ -189,7 +189,7 @@ def test_workflow_patcher_patches_wan22_video_v2_boolean_gates_and_prefixes(tmp_
         },
     )
     _write_json(
-        workflow_dir / "Wan22AioV81.json",
+        workflow_dir / "Wan22AioV82.json",
         {
             "9": {
                 "inputs": {
@@ -205,6 +205,7 @@ def test_workflow_patcher_patches_wan22_video_v2_boolean_gates_and_prefixes(tmp_
             "2578": {"inputs": {"value": 5}},
             "2612": {"inputs": {"precision_presets": "0.52 MP - SD"}},
             "2623": {"inputs": {"expression": "( a - 1 ) / b"}},
+            "2575": {"inputs": {"images": ["2603", 0]}},
             "2607": {
                 "inputs": {
                     "batch_index": 0,
@@ -219,6 +220,15 @@ def test_workflow_patcher_patches_wan22_video_v2_boolean_gates_and_prefixes(tmp_
                     "images": ["2603", 0],
                 },
                 "class_type": "VHS_VideoCombine",
+            },
+            "265": {
+                "inputs": {
+                    "ckpt_name": "rife49",
+                    "multiplier": 4,
+                    "ensemble": False,
+                    "images": ["2603", 0],
+                },
+                "class_type": "FL_RIFE",
             },
             "2503": {
                 "inputs": {
@@ -242,7 +252,7 @@ def test_workflow_patcher_patches_wan22_video_v2_boolean_gates_and_prefixes(tmp_
             "negative_prompt": "bad",
             "use_end_frame": False,
             "resolution_preset": "hd",
-            "length": 5,
+            "length": 8,
             "seed": 42,
         },
     )
@@ -253,10 +263,13 @@ def test_workflow_patcher_patches_wan22_video_v2_boolean_gates_and_prefixes(tmp_
     assert patched["2368"]["inputs"]["value"] == "demo"
     assert patched["2371"]["inputs"]["value"] == "bad"
     assert patched["2558"]["inputs"]["value"] is True
+    assert patched["2578"]["inputs"]["value"] == 8
     assert patched["2612"]["inputs"]["precision_presets"] == "0.65 MP - Balanced"
     assert patched["2623"]["inputs"]["expression"] == "max(1, round(( a - 1 ) / b))"
-    assert patched["28"]["inputs"]["images"] == ["2603", 0]
-    assert patched["2607"]["inputs"]["image"] == ["2603", 0]
+    assert patched["265"]["inputs"]["images"] == ["2603", 0]
+    assert patched["2575"]["inputs"]["images"] == ["265", 0]
+    assert patched["28"]["inputs"]["images"] == ["265", 0]
+    assert patched["2607"]["inputs"]["image"] == ["265", 0]
     assert patched["28"]["inputs"]["filename_prefix"] == "wan22_video_v2_42_video"
     assert patched["2503"]["inputs"]["filename_prefix"] == "wan22_video_v2_42_last_frame"
     assert patched["2503"]["inputs"]["images"] == ["2607", 0]
@@ -276,7 +289,7 @@ def test_workflow_patcher_patches_wan22_video_v2_preview_resolution(tmp_path):
         },
     )
     _write_json(
-        workflow_dir / "Wan22AioV81.json",
+        workflow_dir / "Wan22AioV82.json",
         {
             "23": {"inputs": {"image": ""}},
             "24": {"inputs": {"image": ""}},
@@ -328,7 +341,7 @@ def test_workflow_patcher_injects_legacy_image_to_video_lora_and_model_profile(t
         },
     )
     _write_json(
-        workflow_dir / "Wan22AioV81.json",
+        workflow_dir / "Wan22AioV82.json",
         {
             "23": {"inputs": {"image": ""}},
             "24": {"inputs": {"image": ""}},
@@ -373,6 +386,7 @@ def test_workflow_patcher_injects_legacy_image_to_video_lora_and_model_profile(t
             "prompt": "demo",
             "lora_name": "BreastGrow",
             "resolution_preset": "standard",
+            "length": 10,
             "seed": 77,
         },
     )
@@ -393,6 +407,7 @@ def test_workflow_patcher_injects_legacy_image_to_video_lora_and_model_profile(t
         "lora": "BreastGrow_low_noise.safetensors",
         "strength": 1,
     }
+    assert patched["2578"]["inputs"]["value"] == 10
     assert "lora_9" not in patched["26"]["inputs"]
     assert "lora_9" not in patched["18"]["inputs"]
 
@@ -440,7 +455,7 @@ def test_workflow_patcher_strips_wan22_video_v2_last_frame_branch_when_disabled(
         },
     )
     _write_json(
-        workflow_dir / "Wan22AioV81.json",
+        workflow_dir / "Wan22AioV82.json",
         {
             "23": {"inputs": {"image": ""}},
             "24": {"inputs": {"image": ""}},
@@ -448,6 +463,7 @@ def test_workflow_patcher_strips_wan22_video_v2_last_frame_branch_when_disabled(
             "2371": {"inputs": {"value": ""}},
             "2558": {"inputs": {"value": False}},
             "2578": {"inputs": {"value": 5}},
+            "2575": {"inputs": {"images": ["2603", 0]}},
             "2607": {
                 "inputs": {
                     "batch_index": 0,
@@ -464,6 +480,15 @@ def test_workflow_patcher_strips_wan22_video_v2_last_frame_branch_when_disabled(
                     "images": ["2603", 0],
                 },
                 "class_type": "VHS_VideoCombine",
+            },
+            "265": {
+                "inputs": {
+                    "ckpt_name": "rife49",
+                    "multiplier": 4,
+                    "ensemble": False,
+                    "images": ["2603", 0],
+                },
+                "class_type": "FL_RIFE",
             },
             "2503": {
                 "inputs": {
@@ -494,7 +519,8 @@ def test_workflow_patcher_strips_wan22_video_v2_last_frame_branch_when_disabled(
 
     assert patched["24"]["inputs"]["image"] == "end.png"
     assert patched["2558"]["inputs"]["value"] is False
-    assert patched["28"]["inputs"]["images"] == ["2603", 0]
-    assert patched["2607"]["inputs"]["image"] == ["2603", 0]
+    assert patched["2575"]["inputs"]["images"] == ["265", 0]
+    assert patched["28"]["inputs"]["images"] == ["265", 0]
+    assert patched["2607"]["inputs"]["image"] == ["265", 0]
     assert patched["28"]["inputs"]["filename_prefix"] == "wan22_video_v2_99_video"
     assert patched["2503"]["inputs"]["images"] == ["2607", 0]

@@ -33,11 +33,15 @@ from src.services.task_service_generation_wan22 import (
     process_wan22_video_v2_generation_task as process_wan22_video_v2_task,
 )
 from src.services.wan22_video_v2_config import (
+    WAN22_VIDEO_V2_DEFAULT_DURATION_SECONDS,
     WAN22_VIDEO_V2_DEFAULT_RESOLUTION_PRESET,
+    WAN22_VIDEO_V2_DURATION_SECONDS,
     WAN22_VIDEO_V2_RESOLUTION_PRESETS,
     get_wan22_video_v2_cost,
+    get_wan22_video_v2_duration_label,
     get_wan22_video_v2_resolution_display,
     get_wan22_video_v2_resolution_label,
+    normalize_wan22_video_v2_duration_seconds,
     normalize_wan22_video_v2_resolution_preset,
 )
 from src.services.fsm_temp_file_service import (
@@ -70,16 +74,17 @@ WAN22_VIDEO_V2_CONVERSATION_TAG = "WAN22_VIDEO_V2"
 WAN22_VIDEO_V2_SETTINGS_ACTION_PATTERN = (
     rf"^wan22v2_(submit|res_("
     rf"{'|'.join(re.escape(preset_key) for preset_key in WAN22_VIDEO_V2_RESOLUTION_PRESETS)}"
-    r"))$"
+    rf")|dur_({'|'.join(str(duration) for duration in WAN22_VIDEO_V2_DURATION_SECONDS)}))$"
 )
 WAN22_VIDEO_V2_SETUP_MODE_SINGLE = "wan22v2_setup_mode_single"
 WAN22_VIDEO_V2_SETUP_MODE_END = "wan22v2_setup_mode_end"
 WAN22_VIDEO_V2_SETUP_RES_PREFIX = "wan22v2_setup_res_"
+WAN22_VIDEO_V2_SETUP_DUR_PREFIX = "wan22v2_setup_dur_"
 WAN22_VIDEO_V2_SETUP_CONFIRM = "wan22v2_setup_confirm"
 WAN22_VIDEO_V2_SETUP_ACTION_PATTERN = (
     rf"^wan22v2_setup_(mode_(single|end)|res_("
     rf"{'|'.join(re.escape(preset_key) for preset_key in WAN22_VIDEO_V2_RESOLUTION_PRESETS)}"
-    r")|confirm)$"
+    rf")|dur_({'|'.join(str(duration) for duration in WAN22_VIDEO_V2_DURATION_SECONDS)})|confirm)$"
 )
 _t = translate_fsm_text
 
@@ -166,6 +171,22 @@ def _resolve_reusable_history_prompt_and_lora(
     return prompt, lora_name, normalized_lora_strength
 
 
+def _normalize_selected_duration(data: dict[str, object]) -> int:
+    selected_duration = normalize_wan22_video_v2_duration_seconds(
+        data.get("duration") or WAN22_VIDEO_V2_DEFAULT_DURATION_SECONDS
+    )
+    data["duration"] = selected_duration
+    return selected_duration
+
+
+def _resolve_history_duration_seconds(history, meta: dict) -> int:
+    return normalize_wan22_video_v2_duration_seconds(
+        meta.get("wan22_duration_seconds")
+        or getattr(history, "requested_duration", None)
+        or getattr(history, "duration", None)
+    )
+
+
 def _resolve_callback_task_id(
     *,
     meta: dict,
@@ -212,6 +233,7 @@ def _build_submit_generation_task(
     negative_prompt = str(data.get("negative_prompt") or "").strip()
     use_end_frame = bool(data.get("use_end_frame"))
     extension_task_type = str(data.get("extension_task_type") or MODE_WAN22_VIDEO_V2)
+    duration_seconds = _normalize_selected_duration(data)
 
     if extension_task_type == MODE_WAN22_VIDEO_V2:
         return process_wan22_video_v2_task(
@@ -224,6 +246,7 @@ def _build_submit_generation_task(
             images=images,
             use_end_frame=use_end_frame,
             resolution_preset=resolution_preset,
+            duration=duration_seconds,
             result_meta=_build_chain_result_meta(data),
             cleanup=True,
         )
@@ -238,6 +261,7 @@ def _build_submit_generation_task(
         images=images,
         use_end_frame=use_end_frame,
         resolution_preset=resolution_preset,
+        duration=duration_seconds,
         wan22_prev_task_id=(
             str(data["extension_prev_task_id"])
             if data.get("extension_prev_task_id")
@@ -304,12 +328,13 @@ def _build_initial_setup_keyboard(
 ) -> InlineKeyboardMarkup:
     lang = getattr(context, "lang", "zh")
     selected_resolution = _normalize_selected_resolution(data)
+    selected_duration = _normalize_selected_duration(data)
     use_end_frame = bool(data.get("use_end_frame"))
     credits_text = _t(context, "app.credits")
     resolution_row = []
     for preset_key in WAN22_VIDEO_V2_RESOLUTION_PRESETS:
         label = get_wan22_video_v2_resolution_label(preset_key, lang=lang)
-        cost_for_preset = get_wan22_video_v2_cost(preset_key)
+        cost_for_preset = get_wan22_video_v2_cost(preset_key, selected_duration)
         resolution_row.append(
             InlineKeyboardButton(
                 _selected_button_label(
@@ -317,6 +342,22 @@ def _build_initial_setup_keyboard(
                     selected=preset_key == selected_resolution,
                 ),
                 callback_data=f"{WAN22_VIDEO_V2_SETUP_RES_PREFIX}{preset_key}",
+            )
+        )
+    duration_row = []
+    for duration_seconds in WAN22_VIDEO_V2_DURATION_SECONDS:
+        label = get_wan22_video_v2_duration_label(duration_seconds, lang=lang)
+        cost_for_duration = get_wan22_video_v2_cost(
+            selected_resolution,
+            duration_seconds,
+        )
+        duration_row.append(
+            InlineKeyboardButton(
+                _selected_button_label(
+                    f"{label} ({cost_for_duration}{credits_text})",
+                    selected=duration_seconds == selected_duration,
+                ),
+                callback_data=f"{WAN22_VIDEO_V2_SETUP_DUR_PREFIX}{duration_seconds}",
             )
         )
 
@@ -339,6 +380,7 @@ def _build_initial_setup_keyboard(
                 ),
             ],
             resolution_row,
+            duration_row,
             [
                 InlineKeyboardButton(
                     _t(context, "fsm.wan22_video_v2.setup_confirm"),
@@ -355,6 +397,7 @@ def _build_initial_setup_message(
 ) -> str:
     lang = getattr(context, "lang", "zh")
     resolution = _normalize_selected_resolution(data)
+    duration = _normalize_selected_duration(data)
     use_end_frame = bool(data.get("use_end_frame"))
     return _t(
         context,
@@ -362,8 +405,8 @@ def _build_initial_setup_message(
         frame_mode=_get_frame_mode_label(context, use_end_frame),
         image_count=2 if use_end_frame else 1,
         resolution=get_wan22_video_v2_resolution_display(resolution, lang=lang),
-        duration="5s" if lang == "en" else "5 秒",
-        cost=get_wan22_video_v2_cost(resolution),
+        duration=get_wan22_video_v2_duration_label(duration, lang=lang),
+        cost=get_wan22_video_v2_cost(resolution, duration),
     )
 
 
@@ -373,6 +416,7 @@ def _build_start_image_request_message(
 ) -> str:
     lang = getattr(context, "lang", "zh")
     resolution = _normalize_selected_resolution(data)
+    duration = _normalize_selected_duration(data)
     use_end_frame = bool(data.get("use_end_frame"))
     note_key = (
         "fsm.wan22_video_v2.start_note_end_frame"
@@ -385,8 +429,8 @@ def _build_start_image_request_message(
         frame_mode=_get_frame_mode_label(context, use_end_frame),
         image_count=2 if use_end_frame else 1,
         resolution=get_wan22_video_v2_resolution_display(resolution, lang=lang),
-        duration="5s" if lang == "en" else "5 秒",
-        cost=get_wan22_video_v2_cost(resolution),
+        duration=get_wan22_video_v2_duration_label(duration, lang=lang),
+        cost=get_wan22_video_v2_cost(resolution, duration),
         note=_t(context, note_key),
     )
 
@@ -398,6 +442,7 @@ def _build_settings_keyboard(
         data.get("resolution_preset") or WAN22_VIDEO_V2_DEFAULT_RESOLUTION_PRESET
     )
     lang = getattr(context, "lang", "zh")
+    current_duration = _normalize_selected_duration(data)
     resolution_buttons = []
     for preset_key in WAN22_VIDEO_V2_RESOLUTION_PRESETS:
         label = get_wan22_video_v2_resolution_label(preset_key, lang=lang)
@@ -409,10 +454,22 @@ def _build_settings_keyboard(
                 callback_data=f"wan22v2_res_{preset_key}",
             )
         )
+    duration_buttons = []
+    for duration_seconds in WAN22_VIDEO_V2_DURATION_SECONDS:
+        label = get_wan22_video_v2_duration_label(duration_seconds, lang=lang)
+        if current_duration == duration_seconds:
+            label = f"• {label}"
+        duration_buttons.append(
+            InlineKeyboardButton(
+                label,
+                callback_data=f"wan22v2_dur_{duration_seconds}",
+            )
+        )
 
     return InlineKeyboardMarkup(
         [
             resolution_buttons,
+            duration_buttons,
             [
                 InlineKeyboardButton(
                     _t(context, "fsm.wan22_video_v2.submit_button"),
@@ -467,7 +524,8 @@ def _build_settings_message(
         resolution_preset,
         lang=lang,
     )
-    cost = get_wan22_video_v2_cost(resolution_preset)
+    duration = _normalize_selected_duration(data)
+    cost = get_wan22_video_v2_cost(resolution_preset, duration)
     settings_key = (
         "fsm.wan22_video_v2.legacy_settings_text"
         if _is_legacy_image_to_video_context(data)
@@ -485,7 +543,7 @@ def _build_settings_message(
         prompt=str(data.get("prompt") or "").strip() or "-",
         negative_prompt=negative_prompt or _default_negative_prompt_label(context),
         resolution_preset=resolution_display,
-        duration="5s" if lang == "en" else "5 秒",
+        duration=get_wan22_video_v2_duration_label(duration, lang=lang),
         cost=cost,
     )
 
@@ -622,6 +680,7 @@ async def start_wan22_video_v2(
             "end_image_path": None,
             "use_end_frame": False,
             "resolution_preset": WAN22_VIDEO_V2_DEFAULT_RESOLUTION_PRESET,
+            "duration": WAN22_VIDEO_V2_DEFAULT_DURATION_SECONDS,
             "prompt": "",
             "negative_prompt": "",
             "extension_task_type": MODE_WAN22_VIDEO_V2,
@@ -695,6 +754,7 @@ async def start_wan22_video_v2_extension(
             "end_image_path": None,
             "use_end_frame": False,
             "resolution_preset": resolve_extension_resolution_preset(meta),
+            "duration": _resolve_history_duration_seconds(history, meta),
             "prompt": "",
             "negative_prompt": "",
             "extension_prev_task_id": base_task_id,
@@ -817,6 +877,7 @@ async def start_wan22_video_v2_regeneration(
             "end_image_path": end_image_path,
             "use_end_frame": use_end_frame,
             "resolution_preset": resolve_extension_resolution_preset(meta),
+            "duration": _resolve_history_duration_seconds(current_history, meta),
             "prompt": prompt,
             "prefill_prompt": prompt,
             "negative_prompt": str(meta.get("wan22_negative_prompt") or "").strip(),
@@ -854,6 +915,10 @@ async def handle_initial_setup_action(
     elif callback_data.startswith(WAN22_VIDEO_V2_SETUP_RES_PREFIX):
         data["resolution_preset"] = normalize_wan22_video_v2_resolution_preset(
             callback_data.removeprefix(WAN22_VIDEO_V2_SETUP_RES_PREFIX)
+        )
+    elif callback_data.startswith(WAN22_VIDEO_V2_SETUP_DUR_PREFIX):
+        data["duration"] = normalize_wan22_video_v2_duration_seconds(
+            callback_data.removeprefix(WAN22_VIDEO_V2_SETUP_DUR_PREFIX)
         )
     elif callback_data == WAN22_VIDEO_V2_SETUP_CONFIRM:
         await robust_edit_text(
@@ -1059,6 +1124,10 @@ async def handle_settings_action(
         selected_preset = callback_data.removeprefix("wan22v2_res_")
         if selected_preset in WAN22_VIDEO_V2_RESOLUTION_PRESETS:
             data["resolution_preset"] = selected_preset
+    elif callback_data.startswith("wan22v2_dur_"):
+        data["duration"] = normalize_wan22_video_v2_duration_seconds(
+            callback_data.removeprefix("wan22v2_dur_")
+        )
 
     if callback_data == "wan22v2_submit":
         return await submit_generation(update, context)
@@ -1101,7 +1170,8 @@ async def submit_generation(
     resolution_preset = str(
         data.get("resolution_preset") or WAN22_VIDEO_V2_DEFAULT_RESOLUTION_PRESET
     )
-    cost = get_wan22_video_v2_cost(resolution_preset)
+    duration = _normalize_selected_duration(data)
+    cost = get_wan22_video_v2_cost(resolution_preset, duration)
 
     try:
         await permission_service.check_quota(

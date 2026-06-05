@@ -3,6 +3,7 @@ from typing import Any
 
 from src.constants import MODE_IMAGE_TO_VIDEO, MODE_WAN22_VIDEO_V2, VIDEO_TASK_TYPES
 from src.domain_config.wan22_aio_video import (
+    normalize_wan22_video_v2_duration_seconds,
     normalize_wan22_video_v2_resolution_preset,
 )
 
@@ -146,6 +147,8 @@ def resolve_legacy_requested_duration(
     duration: Any,
 ) -> int | None:
     if _is_wan22_tier_video_task_type(task_type):
+        if requested_duration is not None:
+            return normalize_wan22_video_v2_duration_seconds(requested_duration)
         return 5
     if requested_duration is not None:
         return requested_duration

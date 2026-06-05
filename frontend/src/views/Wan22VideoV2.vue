@@ -26,8 +26,12 @@ import { useViewport } from '@/composables/useViewport'
 import { buildGenerationTaskPayload } from '@/features/generation/buildGenerationTaskPayload'
 import {
   DEFAULT_WAN22_VIDEO_V2_COST,
+  DEFAULT_WAN22_VIDEO_V2_DURATION_SECONDS,
   DEFAULT_WAN22_VIDEO_V2_NEGATIVE_PROMPT,
   DEFAULT_WAN22_VIDEO_V2_RESOLUTION_PRESET,
+  getWan22VideoV2Cost,
+  normalizeWan22VideoV2DurationSeconds,
+  WAN22_VIDEO_V2_DURATION_OPTIONS,
   WAN22_VIDEO_V2_RESOLUTION_OPTIONS,
   type Wan22VideoV2ResolutionPreset,
 } from '@/features/generation/imageToVideo'
@@ -80,11 +84,9 @@ const {
 const prompt = ref('')
 const negativePrompt = ref(DEFAULT_WAN22_VIDEO_V2_NEGATIVE_PROMPT)
 const resolutionPreset = ref<Wan22VideoV2ResolutionPreset>(DEFAULT_WAN22_VIDEO_V2_RESOLUTION_PRESET)
+const duration = ref(DEFAULT_WAN22_VIDEO_V2_DURATION_SECONDS)
 const hasEndFrame = computed(() => Boolean(endObjectKey.value))
-const selectedResolutionOption = computed(() =>
-  WAN22_VIDEO_V2_RESOLUTION_OPTIONS.find(option => option.value === resolutionPreset.value),
-)
-const taskCost = computed(() => selectedResolutionOption.value?.cost ?? baseTaskCost.value)
+const taskCost = computed(() => getWan22VideoV2Cost(resolutionPreset.value, duration.value) ?? baseTaskCost.value)
 const isStartFrameLocked = computed(() => chainMode.value !== 'default')
 const resolvedStartPreview = computed(() => {
   if (startPreview.value) {
@@ -188,6 +190,7 @@ const applyRecordToEditor = (
     promptValue: string
     negativePromptValue: string
     resolution: Wan22VideoV2ResolutionPreset
+    duration: string
     prevTaskId: string | null
     chainTaskIds: string[]
     banner: string
@@ -207,6 +210,7 @@ const applyRecordToEditor = (
   prompt.value = options.promptValue
   negativePrompt.value = options.negativePromptValue
   resolutionPreset.value = options.resolution
+  duration.value = normalizeWan22VideoV2DurationSeconds(options.duration)
 }
 
 const loadWan22Chain = async (taskId: string) => {
@@ -264,6 +268,7 @@ const prefillFromChain = async (mode: 'extend' | 'regenerate', taskId: string) =
     promptValue: prefill.prompt,
     negativePromptValue: prefill.negativePrompt,
     resolution: prefill.resolutionPreset,
+    duration: prefill.duration,
     prevTaskId: prefill.prevTaskId,
     chainTaskIds: prefill.chainTaskIds,
     banner: mode === 'extend'
@@ -290,7 +295,7 @@ const handleGenerate = async () => {
     images: hasEndFrame.value && endObjectKey.value
       ? [startObjectKey.value, endObjectKey.value]
       : [startObjectKey.value],
-    duration: 5,
+    duration: Number(normalizeWan22VideoV2DurationSeconds(duration.value)),
     prompt: prompt.value,
     negativePrompt: negativePrompt.value,
     promptTarget: 'inputs',
@@ -315,6 +320,7 @@ const resetForm = async () => {
   prompt.value = ''
   negativePrompt.value = DEFAULT_WAN22_VIDEO_V2_NEGATIVE_PROMPT
   resolutionPreset.value = DEFAULT_WAN22_VIDEO_V2_RESOLUTION_PRESET
+  duration.value = DEFAULT_WAN22_VIDEO_V2_DURATION_SECONDS
   setSubmittedTaskId(null)
   chainMode.value = 'default'
   chainSourceTaskId.value = null
@@ -551,12 +557,34 @@ onMounted(() => {
         <div class="wan22-video-v2__section rounded-xl p-4">
           <h3 class="wan22-video-v2__section-title text-sm font-bold mb-3">生成设置</h3>
           <div class="grid grid-cols-1 gap-3">
-            <div class="wan22-video-v2__fixed-card rounded-xl p-3 flex items-center justify-between">
-              <div>
+            <div class="wan22-video-v2__fixed-card rounded-xl p-3">
+              <div class="mb-3">
                 <div class="setting-title">生成时长</div>
-                <div class="setting-desc">当前版本固定输出 5 秒</div>
+                <div class="setting-desc">时长越长，消耗灵石越多</div>
               </div>
-              <span class="wan22-video-v2__fixed-value text-sm font-semibold">5 秒</span>
+              <a-radio-group v-model:value="duration" class="w-full">
+                <div
+                  class="grid"
+                  :class="isMobile ? 'grid-cols-2 gap-2' : 'grid-cols-3 gap-3'"
+                >
+                  <label
+                    v-for="option in WAN22_VIDEO_V2_DURATION_OPTIONS"
+                    :key="option.value"
+                    class="wan22-video-v2__preset-card rounded-xl p-3 cursor-pointer"
+                    :class="[
+                      { 'wan22-video-v2__preset-card--active': duration === option.value },
+                      isMobile ? 'wan22-video-v2__preset-card--compact' : '',
+                    ]"
+                  >
+                    <a-radio :value="option.value">
+                      <span class="setting-title">{{ option.label }}</span>
+                    </a-radio>
+                    <div class="setting-desc mt-2" :class="{ 'wan22-video-v2__preset-desc--compact': isMobile }">
+                      {{ option.frameCount }} 帧
+                    </div>
+                  </label>
+                </div>
+              </a-radio-group>
             </div>
             <div class="wan22-video-v2__fixed-card rounded-xl p-3">
               <div class="mb-3">
@@ -580,7 +608,7 @@ onMounted(() => {
                     <a-radio :value="option.value">
                       <span class="setting-title">{{ option.label }}</span>
                     </a-radio>
-                    <div class="wan22-video-v2__preset-cost mt-2">{{ option.cost }} 灵石</div>
+                    <div class="wan22-video-v2__preset-cost mt-2">{{ getWan22VideoV2Cost(option.value, duration) }} 灵石</div>
                     <div class="setting-desc mt-2" :class="{ 'wan22-video-v2__preset-desc--compact': isMobile }">
                       {{ option.description }}
                     </div>

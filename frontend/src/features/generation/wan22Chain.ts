@@ -4,7 +4,9 @@ import { buildStorageFileUrl } from '@/utils/storageUrl'
 import {
   DEFAULT_WAN22_VIDEO_V2_NEGATIVE_PROMPT,
   DEFAULT_WAN22_VIDEO_V2_RESOLUTION_PRESET,
+  normalizeWan22VideoV2DurationSeconds,
   normalizeWan22VideoV2ResolutionPreset,
+  type Wan22VideoV2DurationSeconds,
   type Wan22VideoV2ResolutionPreset,
 } from './imageToVideo'
 
@@ -38,6 +40,7 @@ export type Wan22ChainPrefillResult =
       prompt: string
       negativePrompt: string
       resolutionPreset: Wan22VideoV2ResolutionPreset
+      duration: Wan22VideoV2DurationSeconds
       loraName: string | null
       segmentIndex: number
       contextCount: number
@@ -85,6 +88,13 @@ const resolveNegativePrompt = (record: HistoryItem) =>
 const resolveResolutionPreset = (record: HistoryItem) =>
   normalizeWan22VideoV2ResolutionPreset(
     record.result_meta?.wan22_resolution_preset || DEFAULT_WAN22_VIDEO_V2_RESOLUTION_PRESET,
+  )
+
+const resolveDuration = (record: HistoryItem) =>
+  normalizeWan22VideoV2DurationSeconds(
+    record.result_meta?.wan22_duration_seconds
+    ?? record.requested_duration
+    ?? record.duration
   )
 
 const buildLastFrameAsset = (
@@ -157,6 +167,7 @@ export const buildWan22ChainPrefill = (
       prompt: '',
       negativePrompt: resolveNegativePrompt(currentRecord),
       resolutionPreset: resolveResolutionPreset(currentRecord),
+      duration: resolveDuration(currentRecord),
       loraName: currentRecord.result_meta?.lora_name || null,
       segmentIndex,
       contextCount: allChainTaskIds.length,
@@ -197,6 +208,7 @@ export const buildWan22ChainPrefill = (
     prompt: currentRecord.prompt || '',
     negativePrompt: resolveNegativePrompt(currentRecord),
     resolutionPreset: resolveResolutionPreset(currentRecord),
+    duration: resolveDuration(currentRecord),
     loraName: currentRecord.result_meta?.lora_name || null,
     segmentIndex,
     contextCount: contextTaskIds.length,

@@ -153,6 +153,13 @@ def test_wan22_strategy_cost_follows_resolution_preset(
     assert strategy.get_cost({"resolution_preset": resolution_preset}) == expected_cost
 
 
+def test_wan22_strategy_cost_follows_duration_multiplier():
+    strategy = Wan22VideoV2Strategy()
+
+    assert strategy.get_cost({"resolution_preset": "standard", "duration": "8s"}) == 40
+    assert strategy.get_cost({"resolution_preset": "hd", "duration": 10}) == 90
+
+
 def test_wan22_strategy_metadata_keeps_chain_context():
     strategy = Wan22VideoV2Strategy()
 
@@ -160,6 +167,7 @@ def test_wan22_strategy_metadata_keeps_chain_context():
         {
             "saved_input_images": ["demo/start.png", "demo/end.png"],
             "resolution_preset": "hd",
+            "duration": "8s",
             "negative_prompt": "blur",
             "use_end_frame": True,
             "wan22_prev_task_id": "task-2",
@@ -169,9 +177,10 @@ def test_wan22_strategy_metadata_keeps_chain_context():
 
     assert metadata == {
         "saved_inputs": ["demo/start.png", "demo/end.png"],
-        "requested_duration": 5,
+        "requested_duration": 8,
         "resolution_preset": "hd",
         "wan22_resolution_preset": "hd",
+        "wan22_duration_seconds": 8,
         "wan22_negative_prompt": "blur",
         "wan22_use_end_frame": True,
         "wan22_model_profile": "wan22_video_v2",
@@ -196,6 +205,7 @@ async def test_wan22_strategy_forwards_resolution_preset(monkeypatch):
             "saved_input_images": ["demo/start.png", "demo/end.png"],
             "negative_prompt": "blur",
             "resolution_preset": "hd",
+            "duration": 8,
         },
         priority=6,
     )
@@ -210,7 +220,7 @@ async def test_wan22_strategy_forwards_resolution_preset(monkeypatch):
         use_end_frame=True,
         resolution_preset="hd",
         wan22_model_profile="wan22_video_v2",
-        length=5,
+        length=8,
         priority=6,
     )
 
@@ -596,7 +606,7 @@ async def test_base_video_strategy_routes_image_to_video_modes_by_lora_name(
             priority=3,
             width=512,
             height=512,
-            length=5,
+            length=8,
             extract_last_frame=True,
         )
         submit_edit_mock.assert_not_awaited()

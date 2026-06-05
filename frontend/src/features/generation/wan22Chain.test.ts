@@ -26,6 +26,7 @@ const buildHistory = (overrides: Partial<HistoryItem>): HistoryItem => ({
   result_meta: {
     wan22_negative_prompt: 'bad blur',
     wan22_resolution_preset: 'standard',
+    wan22_duration_seconds: 8,
     wan22_use_end_frame: false,
   },
   created_at: '2026-06-02T00:00:00Z',
@@ -59,6 +60,7 @@ describe('wan22Chain helpers', () => {
     expect(result.prompt).toBe('')
     expect(result.negativePrompt).toBe('bad blur')
     expect(result.resolutionPreset).toBe('standard')
+    expect(result.duration).toBe('8')
   })
 
   it('returns blank first-segment regenerate state without reusing source assets', () => {
@@ -89,6 +91,7 @@ describe('wan22Chain helpers', () => {
         result_meta: {
           wan22_negative_prompt: 'low quality',
           wan22_resolution_preset: 'hd',
+          wan22_duration_seconds: 10,
           wan22_use_end_frame: true,
           wan22_prev_task_id: 'task-1',
           wan22_chain_task_ids: ['task-1'],
@@ -109,6 +112,7 @@ describe('wan22Chain helpers', () => {
     expect(result.prompt).toBe('second prompt')
     expect(result.negativePrompt).toBe('low quality')
     expect(result.resolutionPreset).toBe('hd')
+    expect(result.duration).toBe('10')
   })
 
   it('reports missing tail frames before extension can be applied', () => {

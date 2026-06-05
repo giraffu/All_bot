@@ -43,6 +43,7 @@ async def test_process_image_to_video_task_persists_legacy_lora_context(monkeypa
         images=["start.png"],
         task_type=MODE_IMAGE_TO_VIDEO,
         resolution_preset="standard",
+        duration=8,
         lora_name="BreastGrow",
         lora_strength=1.0,
         cleanup=False,
@@ -52,9 +53,12 @@ async def test_process_image_to_video_task_persists_legacy_lora_context(monkeypa
     flow = captured_flow["flow"]
     assert flow.request.inputs["lora_name"] == "BreastGrow"
     assert flow.request.inputs["resolution_preset"] == "standard"
+    assert flow.request.inputs["duration"] == 8
     assert flow.request.inputs["extract_last_frame"] is True
+    assert flow.billing.requested_duration == 8
     assert flow.presentation.result_meta == {
         "wan22_resolution_preset": "standard",
+        "wan22_duration_seconds": 8,
         "wan22_negative_prompt": flow.presentation.result_meta["wan22_negative_prompt"],
         "wan22_use_end_frame": False,
         "wan22_model_profile": WAN22_LEGACY_IMAGE_TO_VIDEO_MODEL_PROFILE,

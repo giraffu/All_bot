@@ -22,6 +22,7 @@ from src.core.task_core_service_providers import get_task_core_image_service
 from src.domain_config.wan22_aio_video import (
     build_wan22_aio_video_result_meta,
     get_wan22_video_v2_cost,
+    normalize_wan22_video_v2_duration_seconds,
     normalize_wan22_video_v2_negative_prompt,
     normalize_wan22_video_v2_resolution_preset,
     resolve_wan22_aio_video_profile,
@@ -376,22 +377,35 @@ class Wan22AioVideoStrategy(BaseTaskStrategy):
             or inputs.get("resolution")
         )
 
+    def _resolve_duration_seconds(self, inputs: Dict[str, Any]) -> int:
+        return normalize_wan22_video_v2_duration_seconds(
+            inputs.get("duration")
+            or inputs.get("length")
+            or inputs.get("requested_duration")
+            or self.profile.default_duration_seconds
+        )
+
     def get_cost(self, inputs: Dict[str, Any]) -> int:
-        return get_wan22_video_v2_cost(self._resolve_resolution_preset(inputs))
+        return get_wan22_video_v2_cost(
+            self._resolve_resolution_preset(inputs),
+            self._resolve_duration_seconds(inputs),
+        )
 
     def get_metadata(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
         saved_images = _get_saved_input_images(inputs)
         resolution_preset = self._resolve_resolution_preset(inputs)
+        duration_seconds = self._resolve_duration_seconds(inputs)
         use_end_frame = bool(inputs.get("use_end_frame")) and len(saved_images) > 1
         metadata = {
             "saved_inputs": saved_images,
-            "requested_duration": self.profile.default_duration_seconds,
+            "requested_duration": duration_seconds,
             "resolution_preset": resolution_preset,
         }
         metadata.update(
             build_wan22_aio_video_result_meta(
                 profile=self.profile,
                 resolution_preset=resolution_preset,
+                duration_seconds=duration_seconds,
                 negative_prompt=inputs.get("negative_prompt"),
                 use_end_frame=use_end_frame,
                 prev_task_id=inputs.get("wan22_prev_task_id"),
@@ -412,6 +426,7 @@ class Wan22AioVideoStrategy(BaseTaskStrategy):
         image_service = _get_dispatch_image_service()
         submission = _build_wan22_submission_context(inputs)
         resolution_preset = self._resolve_resolution_preset(inputs)
+        duration_seconds = self._resolve_duration_seconds(inputs)
 
         if self.profile.allow_lora:
             return await image_service.submit_image_to_video_task(
@@ -429,7 +444,7 @@ class Wan22AioVideoStrategy(BaseTaskStrategy):
                 priority=priority,
                 width=512,
                 height=512,
-                length=self.profile.default_duration_seconds,
+                length=duration_seconds,
                 extract_last_frame=True,
             )
 
@@ -442,7 +457,7 @@ class Wan22AioVideoStrategy(BaseTaskStrategy):
             use_end_frame=submission.use_end_frame,
             resolution_preset=resolution_preset,
             wan22_model_profile=self.profile.model_profile,
-            length=self.profile.default_duration_seconds,
+            length=duration_seconds,
             priority=priority,
         )
 

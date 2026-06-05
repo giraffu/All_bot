@@ -81,6 +81,7 @@ def test_infer_billing_resolution_from_dimensions_uses_short_side_for_tier_video
         ("ltx_video", 20, 18, 20),
         ("ltx_video", None, 18, 20),
         ("custom_video", None, 9, 5),
+        ("wan22_video_v2", 10, 9, 10),
         ("video_lora", None, 11, 5),
         ("image", None, 9, None),
     ],

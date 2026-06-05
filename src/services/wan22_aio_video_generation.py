@@ -6,7 +6,9 @@ from src.domain_config.wan22_aio_video import (
     WAN22_VIDEO_V2_MODEL_PROFILE,
     Wan22AioVideoProfile,
     build_wan22_aio_video_result_meta,
+    get_wan22_video_v2_duration_label,
     get_wan22_video_v2_resolution_display,
+    normalize_wan22_video_v2_duration_seconds,
     normalize_wan22_video_v2_negative_prompt,
     normalize_wan22_video_v2_resolution_preset,
     resolve_wan22_aio_video_profile,
@@ -40,6 +42,7 @@ def _build_wan22_aio_inputs(
     prompt: str,
     images: list[str],
     resolution_preset: str,
+    duration_seconds: int,
     negative_prompt: str,
     use_end_frame: bool,
     lora_name: str | None,
@@ -50,7 +53,7 @@ def _build_wan22_aio_inputs(
             prompt=prompt,
             images=images,
             resolution=resolution_preset,
-            duration=profile.default_duration_seconds,
+            duration=duration_seconds,
             negative_prompt=negative_prompt,
             use_end_frame=use_end_frame,
             resolution_preset=resolution_preset,
@@ -64,7 +67,7 @@ def _build_wan22_aio_inputs(
         prompt=prompt,
         images=images,
         resolution=None,
-        duration=profile.default_duration_seconds,
+        duration=duration_seconds,
         negative_prompt=negative_prompt,
         use_end_frame=use_end_frame,
         resolution_preset=resolution_preset,
@@ -109,6 +112,9 @@ async def process_wan22_aio_video_generation_task(
     normalized_resolution_preset = normalize_wan22_video_v2_resolution_preset(
         resolution_preset or resolution
     )
+    normalized_duration_seconds = normalize_wan22_video_v2_duration_seconds(
+        duration
+    )
     normalized_negative_prompt = normalize_wan22_video_v2_negative_prompt(
         negative_prompt
     )
@@ -120,6 +126,7 @@ async def process_wan22_aio_video_generation_task(
     final_result_meta = build_wan22_aio_video_result_meta(
         profile=profile,
         resolution_preset=normalized_resolution_preset,
+        duration_seconds=normalized_duration_seconds,
         negative_prompt=normalized_negative_prompt,
         use_end_frame=use_end_frame_value,
         prev_task_id=wan22_prev_task_id,
@@ -140,6 +147,7 @@ async def process_wan22_aio_video_generation_task(
         prompt=prompt,
         images=images,
         resolution_preset=normalized_resolution_preset,
+        duration_seconds=normalized_duration_seconds,
         negative_prompt=normalized_negative_prompt,
         use_end_frame=use_end_frame_value,
         lora_name=normalized_lora_name or None,
@@ -147,7 +155,11 @@ async def process_wan22_aio_video_generation_task(
     )
 
     if _is_legacy_profile(profile):
-        duration_text = f"{profile.default_duration_seconds}s"
+        duration_text = get_wan22_video_v2_duration_label(
+            normalized_duration_seconds,
+            lang=getattr(context, "lang", "zh"),
+        )
+        log_duration_text = f"{normalized_duration_seconds}s"
         resolution_text = get_wan22_video_v2_resolution_display(
             normalized_resolution_preset,
             lang=getattr(context, "lang", "zh"),
@@ -171,7 +183,7 @@ async def process_wan22_aio_video_generation_task(
         flow_prompt = build_log_prompt(
             prompt,
             resolution=normalized_resolution_preset,
-            duration=duration_text,
+            duration=log_duration_text,
             lora_name=normalized_lora_name or None,
             task_type=public_task_type,
             lora_task_types=(MODE_IMAGE_TO_VIDEO, "img2img_lora"),
@@ -184,8 +196,8 @@ async def process_wan22_aio_video_generation_task(
         )
         submitted_status_key = "task.status_submitted_mode"
         submitted_status_kwargs = {"mode_name": display_mode_name}
-        billing_resolution = None
-        allowed_task_types = ()
+        billing_resolution = normalized_resolution_preset
+        allowed_task_types = profile.public_task_types
         entrypoint_name = "process_wan22_video_v2_task"
         flow_prompt = prompt
 
@@ -205,7 +217,7 @@ async def process_wan22_aio_video_generation_task(
         is_video=True,
         resolution=billing_resolution,
         task_type=public_task_type,
-        duration=profile.default_duration_seconds,
+        duration=normalized_duration_seconds,
         allowed_task_types=allowed_task_types,
     )
 
@@ -236,7 +248,7 @@ async def process_wan22_aio_video_generation_task(
             delete_status=delete_status,
             allow_contribute=allow_contribute,
             billing_resolution=billing_args["billing_resolution"],
-            requested_duration=profile.default_duration_seconds,
+            requested_duration=normalized_duration_seconds,
             images=images,
             cleanup=cleanup,
             entrypoint_name=entrypoint_name,

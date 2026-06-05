@@ -4,6 +4,7 @@ from src.domain_config.wan22_aio_video import (
     WAN22_LEGACY_IMAGE_TO_VIDEO_MODEL_PROFILE,
     WAN22_VIDEO_V2_MODEL_PROFILE,
     WAN22_VIDEO_V2_RESOLUTION_PRESETS,
+    normalize_wan22_video_v2_duration_seconds,
     normalize_wan22_video_v2_resolution_preset,
     resolve_wan22_model_profile,
 )
@@ -13,14 +14,16 @@ LTX_VIDEO_ADDITIONAL_LORA_NODE_IDS = ("256",)
 LTX_VIDEO_FIRST_PASS_MODEL_NODE_ID = "191"
 LTX_VIDEO_FIRST_PASS_CLIP_NODE_ID = "189"
 LTX_VIDEO_MAX_LORA_SLOTS = 10
-# `Wan22AioV81.json` keeps the old prune output node, but the worker stores
+# `Wan22AioV82.json` keeps the old prune output node, but the worker stores
 # video and last-frame outputs explicitly.
 WAN22_VIDEO_V2_REMOVABLE_NODE_IDS = ("9",)
 WAN22_VIDEO_V2_DURATION_SECONDS_NODE_ID = "2578"
 WAN22_VIDEO_V2_SINGLE_FRAME_SWITCH_NODE_ID = "2558"
 WAN22_VIDEO_V2_RESOLUTION_NODE_ID = "2612"
 WAN22_VIDEO_V2_FRAME_RATE_EXPRESSION_NODE_ID = "2623"
-WAN22_VIDEO_V2_FINAL_FRAMES_REF = ["2603", 0]
+WAN22_VIDEO_V2_BASE_FRAMES_REF = ["2603", 0]
+WAN22_VIDEO_V2_RIFE_NODE_ID = "265"
+WAN22_VIDEO_V2_FRAME_COUNT_NODE_ID = "2575"
 WAN22_VIDEO_V2_LAST_FRAME_NODE_ID = "2607"
 WAN22_HIGH_UNET_NODE_ID = "2616"
 WAN22_LOW_UNET_NODE_ID = "2617"
@@ -38,6 +41,14 @@ def _normalize_wan22_video_v2_precision_preset(value: Any) -> str:
     if normalized in WAN22_VIDEO_V2_PRECISION_PRESET_BY_KEY:
         return WAN22_VIDEO_V2_PRECISION_PRESET_BY_KEY[normalized]
     return WAN22_VIDEO_V2_PRECISION_PRESET_BY_KEY["preview"]
+
+
+def _resolve_wan22_duration_seconds(params: dict[str, Any]) -> int:
+    for key in ("length", "duration", "requested_duration"):
+        value = params.get(key)
+        if value is not None:
+            return normalize_wan22_video_v2_duration_seconds(value)
+    return normalize_wan22_video_v2_duration_seconds(None)
 
 
 def _set_wan22_model_profile(
@@ -97,6 +108,15 @@ def _patch_wan22_lora(
             "lora": f"{normalized_lora_name}_low_noise.safetensors",
             "strength": 1,
         }
+
+
+def _resolve_wan22_final_frames_ref(workflow: dict[str, Any]) -> list[Any]:
+    node = workflow.get(WAN22_VIDEO_V2_RIFE_NODE_ID)
+    if isinstance(node, dict) and node.get("class_type") == "FL_RIFE":
+        inputs = node.setdefault("inputs", {})
+        inputs.setdefault("images", list(WAN22_VIDEO_V2_BASE_FRAMES_REF))
+        return [WAN22_VIDEO_V2_RIFE_NODE_ID, 0]
+    return list(WAN22_VIDEO_V2_BASE_FRAMES_REF)
 
 
 def patch_img2img_workflow(
@@ -242,7 +262,7 @@ def _patch_wan22_aio_workflow(
         workflow,
         node_id=WAN22_VIDEO_V2_DURATION_SECONDS_NODE_ID,
         input_name="value",
-        value=5,
+        value=_resolve_wan22_duration_seconds(params),
     )
     set_node_input(
         workflow,
@@ -271,7 +291,14 @@ def _patch_wan22_aio_workflow(
     if not use_end_frame and start_image:
         set_node_input(workflow, node_id="24", input_name="image", value=start_image)
 
-    final_frames_ref = WAN22_VIDEO_V2_FINAL_FRAMES_REF
+    final_frames_ref = _resolve_wan22_final_frames_ref(workflow)
+
+    set_node_input(
+        workflow,
+        node_id=WAN22_VIDEO_V2_FRAME_COUNT_NODE_ID,
+        input_name="images",
+        value=final_frames_ref,
+    )
 
     set_node_input(
         workflow,

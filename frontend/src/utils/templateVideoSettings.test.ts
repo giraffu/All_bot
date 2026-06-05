@@ -100,7 +100,7 @@ describe('templateVideoSettings', () => {
     })
   })
 
-  it('ignores legacy tier-video duration and locks to 5s', () => {
+  it('falls back to 5s when tier-video requested_duration is missing', () => {
     expect(
       getTemplateVideoSettings({
         width: '720',
@@ -112,6 +112,21 @@ describe('templateVideoSettings', () => {
       width: 720,
       height: 1280,
       duration: 5
+    })
+  })
+
+  it('restores canonical requested_duration for tier-video templates', () => {
+    expect(
+      getTemplateVideoSettings({
+        width: '720',
+        height: '1280',
+        duration: '9',
+        requested_duration: 8
+      }, false, 'custom_video')
+    ).toEqual({
+      width: 720,
+      height: 1280,
+      duration: 8
     })
   })
 

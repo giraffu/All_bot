@@ -46,6 +46,18 @@ WAN22_VIDEO_V2_LEGACY_RESOLUTION_ALIASES = {
 }
 
 WAN22_VIDEO_V2_DEFAULT_RESOLUTION_PRESET = "preview"
+WAN22_VIDEO_V2_DEFAULT_DURATION_SECONDS = 5
+WAN22_VIDEO_V2_DURATION_SECONDS = (5, 8, 10)
+WAN22_VIDEO_V2_FRAME_COUNT_BY_DURATION = {
+    5: 81,
+    8: 129,
+    10: 161,
+}
+WAN22_VIDEO_V2_DURATION_COST_MULTIPLIERS = {
+    5: 1.0,
+    8: 2.0,
+    10: 3.0,
+}
 
 WAN22_VIDEO_V2_MODEL_PROFILE = "wan22_video_v2"
 WAN22_LEGACY_IMAGE_TO_VIDEO_MODEL_PROFILE = "legacy_image_to_video"
@@ -83,7 +95,7 @@ class Wan22AioVideoProfile:
     model_profile: str
     allow_lora: bool
     output_task_prefix: str
-    default_duration_seconds: int = 5
+    default_duration_seconds: int = WAN22_VIDEO_V2_DEFAULT_DURATION_SECONDS
     resolution_presets: Mapping[str, Mapping[str, Any]] = field(
         default_factory=lambda: WAN22_VIDEO_V2_RESOLUTION_PRESETS
     )
@@ -162,10 +174,42 @@ def get_wan22_video_v2_resolution_display(
     return f"{label}（约 {approx_resolution}）"
 
 
-def get_wan22_video_v2_cost(resolution_preset: str | None) -> int:
+def normalize_wan22_video_v2_duration_seconds(duration: Any) -> int:
+    text = str(duration or "").strip().lower()
+    if text.endswith("s"):
+        text = text[:-1]
+    try:
+        seconds = int(text)
+    except (TypeError, ValueError):
+        return WAN22_VIDEO_V2_DEFAULT_DURATION_SECONDS
+    if seconds in WAN22_VIDEO_V2_DURATION_SECONDS:
+        return seconds
+    return WAN22_VIDEO_V2_DEFAULT_DURATION_SECONDS
+
+
+def get_wan22_video_v2_duration_label(
+    duration: Any,
+    *,
+    lang: str = "zh",
+) -> str:
+    seconds = normalize_wan22_video_v2_duration_seconds(duration)
+    return f"{seconds}s" if lang == "en" else f"{seconds} 秒"
+
+
+def get_wan22_video_v2_frame_count(duration: Any) -> int:
+    seconds = normalize_wan22_video_v2_duration_seconds(duration)
+    return WAN22_VIDEO_V2_FRAME_COUNT_BY_DURATION[seconds]
+
+
+def get_wan22_video_v2_cost(
+    resolution_preset: str | None,
+    duration: Any = None,
+) -> int:
     preset_key = normalize_wan22_video_v2_resolution_preset(resolution_preset)
     preset = WAN22_VIDEO_V2_RESOLUTION_PRESETS[preset_key]
-    return int(preset["cost"])
+    duration_seconds = normalize_wan22_video_v2_duration_seconds(duration)
+    multiplier = WAN22_VIDEO_V2_DURATION_COST_MULTIPLIERS[duration_seconds]
+    return int(round(float(preset["cost"]) * multiplier))
 
 
 def resolve_wan22_model_profile(profile_name: str | None) -> dict[str, str]:
@@ -210,6 +254,7 @@ def build_wan22_aio_video_result_meta(
     resolution_preset: str | None,
     negative_prompt: str | None,
     use_end_frame: bool,
+    duration_seconds: Any = None,
     prev_task_id: str | None = None,
     chain_task_ids: Any = None,
     lora_name: str | None = None,
@@ -223,6 +268,9 @@ def build_wan22_aio_video_result_meta(
     meta: dict[str, Any] = {
         "wan22_resolution_preset": normalize_wan22_video_v2_resolution_preset(
             resolution_preset
+        ),
+        "wan22_duration_seconds": normalize_wan22_video_v2_duration_seconds(
+            duration_seconds
         ),
         "wan22_negative_prompt": normalize_wan22_video_v2_negative_prompt(
             negative_prompt

@@ -166,7 +166,6 @@ export const getTemplateVideoSettings = (
   const requestedDuration = toPositiveInteger(ctx?.requested_duration)
   const mediaDuration = toPositiveInteger(ctx?.duration)
   const legacyCompatibleLtxDuration = inferLegacyLtxRequestedDuration(ctx?.duration)
-  const legacyCompatibleTierDuration = inferLegacyTierVideoRequestedDuration(ctx?.duration)
   const duration =
     taskType === 'ltx_video'
       ? (requestedDuration && LTX_ALLOWED_DURATIONS.has(requestedDuration)
@@ -175,7 +174,9 @@ export const getTemplateVideoSettings = (
               ? mediaDuration
               : legacyCompatibleLtxDuration))
       : (isWan22TierVideo
-          ? 5
+          ? (requestedDuration && TIER_VIDEO_ALLOWED_DURATIONS.has(requestedDuration)
+              ? requestedDuration
+              : 5)
           : (requestedDuration ?? mediaDuration))
 
   if (width === null || duration === null) {
