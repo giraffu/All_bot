@@ -555,7 +555,7 @@
     "dislike_removed": "已取消点踩",
     "prompt_empty": "此投稿没有提示词",
     "prompt_copied": "提示词已复制到剪贴板",
-    "prompt_unlock_success": "提示词已解锁",
+    "prompt_unlock_success": "提示词已解锁，灵石已发送给作者",
     "prompt_already_unlocked": "此提示词已解锁",
     "copy_failed": "复制失败",
     "template_loaded": "已载入模板",

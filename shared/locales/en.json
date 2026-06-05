@@ -554,7 +554,7 @@
     "dislike_removed": "Dislike removed",
     "prompt_empty": "This post has no prompt",
     "prompt_copied": "Prompt copied to clipboard",
-    "prompt_unlock_success": "Prompt unlocked",
+    "prompt_unlock_success": "Prompt unlocked. Credits have been sent to the author.",
     "prompt_already_unlocked": "This prompt is already unlocked",
     "copy_failed": "Copy failed",
     "template_loaded": "Template loaded",
