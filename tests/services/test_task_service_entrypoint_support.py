@@ -41,7 +41,7 @@ def test_resolve_video_billing_args_applies_duration_transform():
         duration_transform=lambda value: 5 if value == "5s" else 0,
     )
 
-    assert args["billing_resolution"] == "720"
+    assert args["billing_resolution"] == "standard"
     assert args["requested_duration"] == 5
 
 

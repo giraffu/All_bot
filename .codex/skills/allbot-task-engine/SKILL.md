@@ -46,7 +46,7 @@ description: "处理任务提交流程、provider/capability 装配、双 ID 运
 - Web finalizer 在多 worker 下可能并发扫描 pending 队列；拿到 Redis lock 后必须重新读取单条 pending record，不能使用 `hgetall` 的旧快照继续收口。
 - Web 成功历史落库必须对 `user_id + task_id + source` 幂等；重复收口时不能重复插入 `History`，也不能重复触发 Web history R2 warmup。
 - 默认依赖构造必须保持惰性，只在缺失且确实需要时才解析 provider，避免测试被误伤。
-- `TaskCoreServiceProviders` 与 capability dataclass 当前仍存在不少 `Any` 字段；新增 provider/capability 时优先补 `Protocol` 或精确 `Callable` 类型，不要继续扩大弱类型契约。
+- `TaskCoreServiceProviders` 与主要 capability 已补强 `Protocol` / 精确 `Callable` 类型；新增 provider/capability 时继续保持显式契约，不要扩大弱类型字段。
 - provider 注册依赖模块级全局状态；测试和离线路径优先显式传入 `dependencies`，避免继续把模块级 monkeypatch 当成主路径。
 
 ## 4. 边界条件处理
@@ -94,7 +94,7 @@ description: "处理任务提交流程、provider/capability 装配、双 ID 运
 - `task_dispatcher.py` 是否接入对应策略与提交方法
 - `image_service.py` / `api_client.py` 是否已新增底层提交调用
 - 是否需要 provider/capability 注入或 side-effect 调整
-- 若新增 provider/capability，是否避免继续使用裸 `Any`，并优先提供可测试的显式 dependencies seam
+- 若新增 provider/capability，是否继续使用显式 `Protocol` / 精确 `Callable`，并优先提供可测试的 dependencies seam
 
 ### 7.3 执行面
 - 若走标准 simple route，检查 `backend/app/main_simple_task_routes.py`

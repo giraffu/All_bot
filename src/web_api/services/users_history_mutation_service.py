@@ -25,8 +25,8 @@ def _get_favorite_limit_for_identity(identity: str | None) -> int:
 async def _count_visible_favorites_for_user(*, db, user_id: int) -> int:
     stmt = select(func.count(History.id)).where(
         History.user_id == user_id,
-        History.is_favorited == True,
-        History.is_visible == True,
+        History.is_favorited.is_(True),
+        History.is_visible.is_(True),
     )
     result = await db.execute(stmt)
     return int(result.scalar() or 0)
@@ -155,7 +155,7 @@ async def soft_delete_user_history(
             .where(
                 GalleryPost.task_id == history.task_id,
                 GalleryPost.user_id == current_user.id,
-                GalleryPost.is_active == True,
+                GalleryPost.is_active.is_(True),
             )
             .values(is_active=False)
         )

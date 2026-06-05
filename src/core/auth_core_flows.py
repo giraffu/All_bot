@@ -1,9 +1,12 @@
 from collections.abc import Awaitable, Callable
-from typing import Any
+from typing import Protocol
 
 from sqlalchemy.exc import IntegrityError
 
-from src.database.models import User
+
+class AuthUserLike(Protocol):
+    id: int
+    telegram_id: int
 
 
 async def authenticate_and_get_user_flow(
@@ -16,7 +19,7 @@ async def authenticate_and_get_user_flow(
     get_or_create_user_by_telegram_func,
     get_user_detailed_stats_func: Callable[[int], Awaitable[dict]],
     invalid_signature_error_factory: Callable[[str], Exception],
-) -> tuple[User, dict]:
+) -> tuple[AuthUserLike, dict]:
     if init_data:
         user_data = verify_telegram_webapp_initdata_func(init_data)
         if not user_data:
@@ -63,6 +66,7 @@ async def authenticate_user_by_password_flow(
     is_rate_limited_func,
     authenticate_password_credentials_func,
     verify_password_func,
+    get_user_by_username_func,
     increment_rate_limit_func,
     check_web_access_func: Callable[[int], Awaitable[bool]],
     clear_rate_limit_func,
@@ -72,7 +76,7 @@ async def authenticate_user_by_password_flow(
     insufficient_permission_error_factory: Callable[[str], Exception],
     check_script: str,
     incr_script: str,
-) -> tuple[User, dict]:
+) -> tuple[AuthUserLike, dict]:
     ip_key, user_key = build_login_rate_limit_keys_func(
         client_ip=client_ip,
         username=username,
@@ -93,6 +97,7 @@ async def authenticate_user_by_password_flow(
             username=username,
             password=password,
             verify_password_func=verify_password_func,
+            get_user_by_username_func=get_user_by_username_func,
         )
 
         if not login_attempt.is_valid or login_attempt.user is None:
@@ -130,6 +135,7 @@ async def bind_user_password_flow(
     check_web_access_func: Callable[[int], Awaitable[bool]],
     bind_password_to_user_func,
     get_password_hash_func,
+    get_user_by_id_func,
     increment_rate_limit_func,
     clear_rate_limit_func,
     blacklist_password_version_func,
@@ -162,6 +168,7 @@ async def bind_user_password_flow(
             insufficient_permission_error_factory=lambda: insufficient_permission_error_factory(
                 "权限不足：只有练气期及以上境界，或内门及以上身份的弟子才能绑定 Web 端账号"
             ),
+            get_user_by_id_func=get_user_by_id_func,
         )
 
         try:

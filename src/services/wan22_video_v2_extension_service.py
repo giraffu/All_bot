@@ -14,8 +14,8 @@ from src.database.core import AsyncSessionLocal
 from src.database.models import History
 from src.services.fsm_temp_file_service import FSM_TEMP_DIR
 from src.services.storage import storage
-from src.services.wan22_video_v2_context import normalize_wan22_video_v2_chain_task_ids
-from src.services.wan22_video_v2_config import (
+from src.domain_config.wan22_aio_video import normalize_wan22_video_v2_chain_task_ids
+from src.domain_config.wan22_aio_video import (
     WAN22_VIDEO_V2_DEFAULT_RESOLUTION_PRESET,
     is_wan22_chain_history_task_type,
     normalize_wan22_video_v2_resolution_preset,

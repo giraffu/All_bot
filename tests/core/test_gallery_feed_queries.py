@@ -84,7 +84,7 @@ async def test_fetch_gallery_feed_page_uses_media_type_only_without_category_or_
 
     assert "gallery_posts.media_type" in sql
     assert "gallery_posts.user_id" in sql
-    assert "gallery_posts.is_active = false" in sql
+    assert "gallery_posts.is_active is false" in sql
     assert "gallery_posts.created_at >=" in sql
     assert "history.type" not in sql
     assert "video" in compiled.params.values()

@@ -3,6 +3,7 @@ from typing import Any, Callable
 
 from src.gallery_core_dependencies import (
     get_default_gallery_submission_dependencies,
+    get_gallery_feed_query_func,
     get_gallery_session_factory,
 )
 from src.core.gallery_core_errors import DuplicateInteractionError, GalleryCoreError
@@ -14,8 +15,6 @@ from src.core.gallery_submission_core import (
     ALLOWED_WEB_SUBMIT_TYPES,
     process_submit_to_gallery_result_impl,
 )
-from src.services.gallery_feed_queries import fetch_gallery_feed_page
-
 # Stable facade only: keep submission/query/interaction implementations in submodules.
 
 __all__ = [
@@ -114,15 +113,19 @@ async def get_gallery_feed(
     prompt_contains: str = None,
     prompt_max_length: int = None,
     session_factory: Callable[[], Any] | None = None,
+    fetch_gallery_feed_page_func: Callable[..., Any] | None = None,
 ) -> tuple[list, int]:
     """
     Core logic to fetch paginated gallery feed.
     Returns (posts, total_count).
     """
     session_factory = session_factory or get_gallery_session_factory()
+    fetch_gallery_feed_page_func = (
+        fetch_gallery_feed_page_func or get_gallery_feed_query_func()
+    )
 
     async with session_factory() as session:
-        return await fetch_gallery_feed_page(
+        return await fetch_gallery_feed_page_func(
             session=session,
             page=page,
             size=size,

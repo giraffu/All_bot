@@ -32,6 +32,12 @@ class GalleryInteractionDependencies:
     increment_gallery_apply_counter_func: object
 
 
+def get_gallery_feed_query_func():
+    from src.services.gallery_feed_queries import fetch_gallery_feed_page
+
+    return fetch_gallery_feed_page
+
+
 def get_gallery_storage_service():
     return get_task_core_storage_service()
 

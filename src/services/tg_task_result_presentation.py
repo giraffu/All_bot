@@ -13,7 +13,7 @@ from src.constants import (
     MODE_UNDRESS,
     MODE_WAN22_VIDEO_V2,
 )
-from src.services.wan22_video_v2_config import is_wan22_chain_history_task_type
+from src.domain_config.wan22_aio_video import is_wan22_chain_history_task_type
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 WAN22_EXTEND_CALLBACK_PREFIX = "wan22v2_extend"

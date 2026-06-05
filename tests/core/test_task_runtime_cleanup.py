@@ -8,7 +8,6 @@ from config import REDIS_PREFIX
 from src.core import task_core
 from src.core import task_core_finalization
 from src.core import task_core_runtime
-from src.services import task_registry as task_registry_module
 
 
 @pytest.mark.asyncio

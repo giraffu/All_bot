@@ -61,7 +61,6 @@ async def test_process_pending_web_finalizer_finalizes_done_and_removes_record(
     monkeypatch,
 ):
     record = _build_record()
-    deserialize_mock = AsyncMock(return_value=None)
     success_mock = AsyncMock()
     cancellation_mock = AsyncMock()
     failure_mock = AsyncMock()

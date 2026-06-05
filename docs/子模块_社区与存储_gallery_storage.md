@@ -88,7 +88,7 @@ sequenceDiagram
   - 我的提示词模版 `my-prompt-unlocks`
 - `my-favorites` 不是单独表，而是从 `user_interactions` 反查点赞和应用记录。
 - `my-prompt-unlocks` 从 `gallery_prompt_unlocks` 反查当前用户已解锁提示词的活跃帖子；服务端会根据是否作者/是否已解锁决定返回完整 prompt 或遮罩 prompt。
-- Gallery feed 查询拼装已从 `src/core` 迁到 `src/services/gallery_feed_queries.py`，`src/core/gallery_feed_queries.py` 仅作为兼容 re-export；新增列表查询条件应继续放在 service 层，避免 core 重新直连 SQL 细节。
+- Gallery feed 查询拼装已从 `src/core` 迁到 `src/services/gallery_feed_queries.py`，旧 `src/core/gallery_feed_queries.py` 兼容 re-export 已删除；新增列表查询条件应继续放在 service 层，避免 core 重新直连 SQL 细节。
 
 ### 4.5 提示词付费解锁
 - Gallery 列表与详情响应新增 `prompt_unlocked`、`prompt_unlockable`、`prompt_is_masked`、`prompt_unlock_price` 字段。

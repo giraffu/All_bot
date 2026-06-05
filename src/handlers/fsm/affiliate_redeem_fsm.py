@@ -18,8 +18,6 @@ from src.services.affiliate_redeem_service import (
     AFFILIATE_CREDITS_REDEEM_ALLOWED_AMOUNTS_TEXT,
     AffiliateRedeemConflictError,
     AffiliateRedeemInsufficientBalanceError,
-    query_affiliate_available_balance,
-    redeem_affiliate_balance_to_credits,
 )
 from src.services.telegram_affiliate_service import (
     query_affiliate_available_balance_for_telegram_user,

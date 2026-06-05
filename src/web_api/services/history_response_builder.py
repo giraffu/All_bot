@@ -7,7 +7,7 @@ from src.services.wan22_video_v2_extension_service import (
     resolve_wan22_segment_index,
     resolve_wan22_stitched_segment_count,
 )
-from src.services.wan22_video_v2_config import is_wan22_chain_history_task_type
+from src.domain_config.wan22_aio_video import is_wan22_chain_history_task_type
 from src.web_api.common.utils import (
     build_storage_input_file_url,
     resolve_history_billing_resolution,

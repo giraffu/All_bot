@@ -37,9 +37,9 @@ def _resolve_grouped_task_type_values(
 
 def _apply_active_filter(query, *, is_active: bool | None):
     if is_active is True:
-        return query.where(GalleryPost.is_active == True)
+        return query.where(GalleryPost.is_active.is_(True))
     if is_active is False:
-        return query.where(GalleryPost.is_active == False)
+        return query.where(GalleryPost.is_active.is_(False))
     return query
 
 

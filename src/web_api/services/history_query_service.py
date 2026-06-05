@@ -76,7 +76,7 @@ async def fetch_active_public_gallery_task_ids(*, db, task_ids: list[str]):
     gallery_post_result = await db.execute(
         select(GalleryPost.task_id).where(
             GalleryPost.task_id.in_(task_ids),
-            GalleryPost.is_active == True,
+            GalleryPost.is_active.is_(True),
         )
     )
     return set(gallery_post_result.scalars().all())
@@ -121,8 +121,8 @@ async def fetch_favorite_gallery_histories(
         select(History)
         .where(
             History.user_id == current_user_id,
-            History.is_favorited == True,
-            History.is_visible == True,
+            History.is_favorited.is_(True),
+            History.is_visible.is_(True),
         )
         .order_by(desc(History.id))
     )

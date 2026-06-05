@@ -222,7 +222,11 @@ async def test_schedule_web_history_r2_warmup_still_prunes_when_copy_fails(monke
     prune_mock = AsyncMock(return_value=None)
     warning_mock = MagicMock()
 
-    monkeypatch.setattr(task_core.asyncio, "create_task", _capture_create_task)
+    monkeypatch.setattr(
+        task_core_web_history_warmup.asyncio,
+        "create_task",
+        _capture_create_task,
+    )
     monkeypatch.setattr(
         task_core,
         "resolve_storage_object",
@@ -250,7 +254,7 @@ async def test_schedule_web_history_r2_warmup_still_prunes_when_copy_fails(monke
             storage_module.storage.async_prune_user_web_history_r2_cache
         ),
         logger=task_core.logger,
-        create_task_func=task_core.asyncio.create_task,
+        create_task_func=task_core_web_history_warmup.asyncio.create_task,
     )
 
     assert len(scheduled_tasks) == 1

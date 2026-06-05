@@ -11,7 +11,7 @@ from src.core.video_billing import (
 )
 from src.database.models import GalleryPost, History
 from src.lora_mapping import extract_prompt_lora_context
-from src.services.wan22_video_v2_config import is_wan22_chain_history_task_type
+from src.domain_config.wan22_aio_video import is_wan22_chain_history_task_type
 from src.services.wan22_video_v2_extension_service import (
     extract_wan22_history_context,
     is_wan22_stitched_result,

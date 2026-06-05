@@ -15,12 +15,14 @@ from src.database.models import (
     CheckinHistory,
     GalleryComment,
     GalleryPost,
+    GalleryPromptUnlock,
     History,
     MembershipPlan,
     Order,
     Referral,
     TemplateContribution,
     User,
+    UserFollow,
     UserInteraction,
     UserLog,
 )
@@ -39,6 +41,7 @@ async def _create_transfer_session():
     )
     async with engine.begin() as conn:
         await conn.run_sync(User.__table__.create)
+        await conn.run_sync(UserFollow.__table__.create)
         await conn.run_sync(MembershipPlan.__table__.create)
         await conn.run_sync(Referral.__table__.create)
         await conn.run_sync(History.__table__.create)
@@ -50,6 +53,7 @@ async def _create_transfer_session():
         await conn.run_sync(AffiliateRedeem.__table__.create)
         await conn.run_sync(GalleryPost.__table__.create)
         await conn.run_sync(UserInteraction.__table__.create)
+        await conn.run_sync(GalleryPromptUnlock.__table__.create)
         await conn.run_sync(GalleryComment.__table__.create)
 
     session_factory = async_sessionmaker(engine, expire_on_commit=False)

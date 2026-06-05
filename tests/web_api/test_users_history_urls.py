@@ -17,6 +17,14 @@ class _FakeResult:
     def scalar_one_or_none(self):
         return self._single
 
+    def scalars(self):
+        return self
+
+    def all(self):
+        if self._single is None or isinstance(self._single, int):
+            return []
+        return [self._single]
+
 
 class _FakeSession:
     def __init__(self, history):

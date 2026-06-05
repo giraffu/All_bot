@@ -1,4 +1,3 @@
-import pytest
 
 from src.core import media_processor
 

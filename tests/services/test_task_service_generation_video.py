@@ -7,7 +7,7 @@ from src.constants import MODE_IMAGE_TO_VIDEO
 from src.services.task_service_generation_video import (
     process_image_to_video_generation_task,
 )
-from src.services.wan22_video_v2_config import (
+from src.domain_config.wan22_aio_video import (
     WAN22_LEGACY_IMAGE_TO_VIDEO_MODEL_PROFILE,
 )
 

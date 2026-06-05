@@ -228,7 +228,7 @@ sequenceDiagram
 
 ## 5. 当前架构口径与维护约束
 - 文档中的入口函数、异常类型、超时值、双 ID 语义必须与代码保持一致。
-- `src/bot_test.py` 是 Telegram Bot shared entrypoint，不只是测试入口。
+- `src/bot_main.py` 是 Telegram Bot shared entrypoint；`src/bot_test.py` 仅保留历史兼容 shim。
 - 若修改 task core facade、provider/dependencies、submission、web-monitor、runtime、Bot 五段式上下文或 stream fallback，必须同步更新知识库。
 - 若技能文档与代码入口冲突，应先更新 skill / docs，再继续开发。
 
@@ -236,5 +236,5 @@ sequenceDiagram
 - 最新全局质量评估未发现 Critical 级架构阻断，`src/core` 未发现直接依赖 Telegram `Update` 或 FastAPI `Request/APIRouter` 等平台对象。
 - 当前主要风险集中在长期维护成本：Worker `agent_main.py::process_task`、Wan22 链式拼接、Gallery 响应组装、Bot 进度监控、练功房主 composable 与前端生成页重复逻辑。
 - workflow 资产已收口到 `workers/comfy_agent/workflows`；Central API 不再维护 backend 副本，也不再执行 workflow 启动校验。
-- `TaskCoreServiceProviders` 与 capability dataclass 仍大量使用弱类型 `Any`，后续 provider/capability 重构应优先补强 `Protocol` 或精确 `Callable` 契约。
+- `TaskCoreServiceProviders` 与主要 capability 已补强 `Protocol` / 精确 `Callable` 契约；新增 provider/capability 时继续沿用显式类型与 dependencies seam。
 - 详细质量基线见 `docs/子模块_代码静态分析与质量评估规范_code_quality.md` 与 `logs/code_analysis_report_20260603_2332.md`。

@@ -53,7 +53,7 @@
 | `billing_core` 私有 `_build_*` 测试 seam | `tests/core/test_billing_core.py` patch 私有 builder | `BillingCoreDependencies` 显式注入 | 已迁移，公开函数支持显式 dependencies，测试不再绑定私有 builder |
 | `task_core_persistence` 模块内 materialization builder seam | `src/core/task_core_persistence.py` | `persist_successful_task_result(...)` + `task_core_persistence_flow.py` | 已收口，下载/`to_thread` 默认绑定回到公开 persistence 边界与 flow |
 | `affiliate_redeem_service` membership 账本/结算混排 | `src/services/affiliate_redeem_service.py` | `_create_membership_redeem_ledger_entry(...)`、`_apply_affiliate_membership_settlement(...)` | 已拆开，主 service 继续保留事务/幂等编排，账本与结算边界更清晰 |
-| `gallery_core.py` feed 查询拼装 | `src/core/gallery_core.py` | `src/services/gallery_feed_queries.py` | 已下沉到 service 层，`src/core/gallery_feed_queries.py` 仅保留兼容 re-export；category/media_type/sort/time_range/page/count 查询拼装不再堆在 core 主文件 |
+| `gallery_core.py` feed 查询拼装 | `src/core/gallery_core.py` | `src/services/gallery_feed_queries.py` | 已下沉到 service 层，旧 `src/core/gallery_feed_queries.py` 兼容 re-export 已删除；category/media_type/sort/time_range/page/count 查询拼装不再堆在 core 主文件 |
 | `storage.py` MinIO object IO facade | `src/services/storage.py` | `src/services/storage_minio_objects.py` | 已下沉，upload/list/download/object exists 回到独立 helper，主类保留薄代理与兼容签名 |
 | `gallery_core.py` 投稿 / 互动主链 | `src/core/gallery_core.py` | `src/core/gallery_submission_core.py`、`src/core/gallery_interactions_core.py`、`src/core/gallery_core_errors.py` | 已下沉，投稿/点赞/apply 计数与错误类型退出主文件，`gallery_core.py` 主要保留 outcome + facade |
 | `storage.py` R2 copy / public URL facade | `src/services/storage.py` | `src/services/storage_r2_transfer.py` | 已下沉，MinIO->R2 copy 与 public URL 规则回到独立 helper，主类只保留薄包装 |
@@ -68,9 +68,9 @@
 | `src/database/models.py:Order.telegram_id` | 历史数据库列名，实际关联 `users.id` 内部用户主键 | 正式环境尚未执行迁移时的遗留 schema 名称 | 测试环境已实际执行 Alembic `7c0a4d5e6f71`，`orders` 物理列已切到 `internal_user_id`，ORM 也已删除 `telegram_id` alias；后续只需在生产切换窗口按同一 migration 执行正式环境升级 | `测试已完成 / 生产待执行` |
 | `src/services/order_v2_service.py` 的 `ORDER:` / `ORDER_V2:` 双载荷兼容 | 兼容历史支付回调载荷格式与旧本地单号语义 | 旧支付链路、回调解析与 payment presenter 的 `legacy_order_id` 展示 | 对外查询全面切到 `business_order_id`，旧支付通道不再回传 `ORDER:` 载荷，Dashboard/Web 不再展示旧本地单号为主 ID | `待支付链路收口后` |
 | `src/services/user_persistence_service.py` 的 `id == tg_id` legacy adopt 分支 | 兼容早期内部用户主键与 Telegram ID 混用的数据 | 仍存在历史用户记录但缺少 `telegram_id` 的存量数据 | 先确认正式/测试环境中不再存在 `id == tg_id && telegram_id is null` 的用户；随后移除 `_get_legacy_user_by_internal_id(...)` / `_adopt_legacy_internal_user(...)`，并保留 focused tests 作为删除前门禁 | `待数据治理完成后` |
-| `src/core/gallery_feed_queries.py` | `src.services.gallery_feed_queries` 的单行 re-export | 2026-06-03 静态扫描未发现生产或测试静态引用 | 删除前再跑 `rg "src.core.gallery_feed_queries"` 与 gallery focused tests；删除后同步热点门禁里 core compat 口径 | `可直接删除候选` |
-| `src/services/wan22_video_v2_config.py` | `src.domain_config.wan22_aio_video` 的兼容 re-export | `tg_task_result_presentation`、Wan22 extension service、FSM、history/gallery presenter 与部分测试仍引用旧路径 | 先把生产与测试引用迁到 `src.domain_config.wan22_aio_video`，再删除 re-export；迁移时不得改变 `custom_video/video_lora` 与 `wan22_video_v2` 的公开类型语义 | `迁引用后删除` |
-| `src/services/wan22_video_v2_context.py` | Wan22 chain context helper 的兼容 re-export | `src/services/wan22_video_v2_extension_service.py` 仍引用旧路径 | 同步迁到 `src.domain_config.wan22_aio_video` 或新的真实上下文模块，并补 Wan22 链路 focused tests 后删除 | `迁引用后删除` |
+| `src/core/gallery_feed_queries.py` | `src.services.gallery_feed_queries` 的单行 re-export | 静态引用已清零，gallery focused tests 已通过 | 已删除；后续只保留 `src/services/gallery_feed_queries.py` 事实源 | `已删除` |
+| `src/services/wan22_video_v2_config.py` | `src.domain_config.wan22_aio_video` 的兼容 re-export | 生产与测试引用已迁到 `src.domain_config.wan22_aio_video` | 已删除；继续保持 `custom_video/video_lora` 与 `wan22_video_v2` 的公开类型语义不变 | `已删除` |
+| `src/services/wan22_video_v2_context.py` | Wan22 chain context helper 的兼容 re-export | Wan22 extension service 已迁到 `src.domain_config.wan22_aio_video` | 已删除；Wan22 链路 focused tests 已通过 | `已删除` |
 | `backend/workflows/*` 与 `workers/comfy_agent/workflows/*` 双目录 workflow 资产 | 已退出：`backend/workflows` 删除，Central API 不再挂载、COPY 或启动校验 workflow | Worker 镜像与运行时 workflow 选择链路 | 后续 workflow 只维护 `workers/comfy_agent/workflows`；新增 task type 仍需同步 `TASK_TYPE_WORKFLOW_FILENAMES`、`mappings.json` 与目标 Worker `SUPPORTED_TASK_TYPES` | `已收口` |
 
 ## 冗余清理候选

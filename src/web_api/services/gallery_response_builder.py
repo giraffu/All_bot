@@ -18,7 +18,7 @@ from src.services.wan22_video_v2_extension_service import (
     resolve_wan22_segment_index,
     resolve_wan22_stitched_segment_count,
 )
-from src.services.wan22_video_v2_config import is_wan22_chain_history_task_type
+from src.domain_config.wan22_aio_video import is_wan22_chain_history_task_type
 from src.web_api.common.utils import resolve_history_billing_resolution
 from src.web_api.presenters.media_presenter import extract_history_result_meta
 from src.web_api.schemas.gallery_schema import GalleryPostResponse
@@ -185,6 +185,45 @@ async def build_post_responses(
         post_ids=post_ids,
     )
 
+    tasks = _build_gallery_media_url_tasks(
+        posts=posts,
+        history_map=history_map,
+        pick_gallery_media_urls_func=pick_gallery_media_urls_func,
+    )
+    urls_results = await asyncio.gather(*tasks, return_exceptions=True)
+
+    response_items = []
+    for index, post in enumerate(posts):
+        history = history_map.get(post.task_id)
+        response_items.append(
+            _build_single_post_response(
+                post=post,
+                history=history,
+                url_result=urls_results[index],
+                current_user=current_user,
+                unlocked_prompt_post_ids=unlocked_prompt_post_ids,
+                user_likes=user_likes,
+                user_dislikes=user_dislikes,
+                user_map=user_map,
+                following_user_ids=following_user_ids,
+                translate_tags_func=translate_tags_func,
+                resolve_history_billing_resolution_func=(
+                    resolve_history_billing_resolution_func
+                ),
+                resolve_author_name=resolve_author_name,
+                logger_override=logger_override,
+                gallery_post_response_cls=gallery_post_response_cls,
+            )
+        )
+    return response_items
+
+
+def _build_gallery_media_url_tasks(
+    *,
+    posts,
+    history_map,
+    pick_gallery_media_urls_func,
+) -> list:
     tasks = []
     for post in posts:
         history = history_map.get(post.task_id)
@@ -196,99 +235,144 @@ async def build_post_responses(
                 media_type=post.media_type,
             )
         )
-    urls_results = await asyncio.gather(*tasks, return_exceptions=True)
+    return tasks
 
-    response_items = []
-    for index, post in enumerate(posts):
-        try:
-            tags = json.loads(post.tags) if post.tags else []
-        except Exception:
-            tags = []
 
-        history = history_map.get(post.task_id)
-        tags = _append_history_mode_tags(tags=tags, history=history)
-        translated_tags = translate_tags_func(tags)
-        raw_prompt = history.prompt if history else None
-        prompt_visibility = resolve_gallery_prompt_visibility(
-            prompt=raw_prompt,
-            post=post,
-            current_user=current_user,
-            unlocked_prompt_post_ids=unlocked_prompt_post_ids,
-        )
-        task_type_from_history = history.type if history else None
-        result_meta = extract_history_result_meta(
-            task_type=task_type_from_history,
-            extra_outputs=getattr(history, "extra_outputs", None),
-        )
-        template_apply_disabled_reason = (
-            resolve_history_template_apply_disabled_reason(history)
-        )
+def _parse_gallery_post_tags(raw_tags: str | None) -> list[str]:
+    try:
+        tags = json.loads(raw_tags) if raw_tags else []
+    except Exception:
+        return []
+    return tags if isinstance(tags, list) else []
 
-        url_result = urls_results[index]
-        if isinstance(url_result, Exception):
-            logger_override.warning(
-                "Failed to build gallery media URLs for post_id=%s task_id=%s: %s",
-                post.id,
-                post.task_id,
-                url_result,
-                exc_info=url_result,
-            )
-            media_url = history.output_file if history and history.output_file else ""
-            thumbnail_url = ""
-        else:
-            media_url, thumbnail_url = url_result
 
-        billing_resolution = None
-        if history:
-            billing_resolution = resolve_history_billing_resolution_func(
-                history,
-                width=post.width if post.width is not None else history.width,
-                height=post.height if post.height is not None else history.height,
-                gallery_post=post,
-            )
+def _resolve_gallery_media_urls(
+    *,
+    url_result,
+    post,
+    history,
+    logger_override,
+) -> tuple[str, str]:
+    if not isinstance(url_result, Exception):
+        return url_result
 
-        response_items.append(
-            gallery_post_response_cls(
-                id=post.id,
-                task_id=post.task_id,
-                media_type=post.media_type,
-                billing_resolution=billing_resolution,
-                width=post.width,
-                height=post.height,
-                duration=post.duration,
-                tags=translated_tags,
-                likes_count=post.likes_count,
-                dislikes_count=post.dislikes_count,
-                applied_count=post.applied_count,
-                comments_count=post.comments_count or 0,
-                thumbnail_url=thumbnail_url,
-                media_url=media_url,
-                created_at=post.created_at,
-                is_active=post.is_active,
-                prompt=prompt_visibility["prompt"],
-                prompt_unlocked=prompt_visibility["prompt_unlocked"],
-                prompt_unlockable=prompt_visibility["prompt_unlockable"],
-                prompt_is_masked=prompt_visibility["prompt_is_masked"],
-                prompt_unlock_price=prompt_visibility["prompt_unlock_price"],
-                task_type=task_type_from_history,
-                result_meta=result_meta,
-                template_apply_supported=template_apply_disabled_reason is None,
-                template_apply_disabled_reason=template_apply_disabled_reason,
-                has_liked=post.id in user_likes,
-                has_disliked=post.id in user_dislikes,
-                author_id=post.user_id,
-                author_name=resolve_author_name(user_map.get(post.user_id), post.user_id)
-                if post.user_id
-                else resolve_author_name(None),
-                author_username=user_map.get(post.user_id).username
-                if post.user_id and user_map.get(post.user_id)
-                else None,
-                is_following_author=post.user_id in following_user_ids
-                if post.user_id
-                else False,
-            )
-        )
-    return response_items
+    logger_override.warning(
+        "Failed to build gallery media URLs for post_id=%s task_id=%s: %s",
+        post.id,
+        post.task_id,
+        url_result,
+        exc_info=url_result,
+    )
+    media_url = history.output_file if history and history.output_file else ""
+    return media_url, ""
+
+
+def _resolve_gallery_billing_resolution(
+    *,
+    post,
+    history,
+    resolve_history_billing_resolution_func,
+):
+    if not history:
+        return None
+    return resolve_history_billing_resolution_func(
+        history,
+        width=post.width if post.width is not None else history.width,
+        height=post.height if post.height is not None else history.height,
+        gallery_post=post,
+    )
+
+
+def _build_single_post_response(
+    *,
+    post,
+    history,
+    url_result,
+    current_user,
+    unlocked_prompt_post_ids,
+    user_likes,
+    user_dislikes,
+    user_map,
+    following_user_ids,
+    translate_tags_func,
+    resolve_history_billing_resolution_func,
+    resolve_author_name,
+    logger_override,
+    gallery_post_response_cls,
+):
+    tags = _append_history_mode_tags(
+        tags=_parse_gallery_post_tags(post.tags),
+        history=history,
+    )
+    translated_tags = translate_tags_func(tags)
+    prompt_visibility = resolve_gallery_prompt_visibility(
+        prompt=history.prompt if history else None,
+        post=post,
+        current_user=current_user,
+        unlocked_prompt_post_ids=unlocked_prompt_post_ids,
+    )
+    task_type_from_history = history.type if history else None
+    result_meta = extract_history_result_meta(
+        task_type=task_type_from_history,
+        extra_outputs=getattr(history, "extra_outputs", None),
+    )
+    template_apply_disabled_reason = resolve_history_template_apply_disabled_reason(
+        history
+    )
+    media_url, thumbnail_url = _resolve_gallery_media_urls(
+        url_result=url_result,
+        post=post,
+        history=history,
+        logger_override=logger_override,
+    )
+    billing_resolution = _resolve_gallery_billing_resolution(
+        post=post,
+        history=history,
+        resolve_history_billing_resolution_func=(
+            resolve_history_billing_resolution_func
+        ),
+    )
+    author = user_map.get(post.user_id) if post.user_id else None
+
+    return gallery_post_response_cls(
+        id=post.id,
+        task_id=post.task_id,
+        media_type=post.media_type,
+        billing_resolution=billing_resolution,
+        width=post.width,
+        height=post.height,
+        duration=post.duration,
+        tags=translated_tags,
+        likes_count=post.likes_count,
+        dislikes_count=post.dislikes_count,
+        applied_count=post.applied_count,
+        comments_count=post.comments_count or 0,
+        thumbnail_url=thumbnail_url,
+        media_url=media_url,
+        created_at=post.created_at,
+        is_active=post.is_active,
+        prompt=prompt_visibility["prompt"],
+        prompt_unlocked=prompt_visibility["prompt_unlocked"],
+        prompt_unlockable=prompt_visibility["prompt_unlockable"],
+        prompt_is_masked=prompt_visibility["prompt_is_masked"],
+        prompt_unlock_price=prompt_visibility["prompt_unlock_price"],
+        task_type=task_type_from_history,
+        result_meta=result_meta,
+        template_apply_supported=template_apply_disabled_reason is None,
+        template_apply_disabled_reason=template_apply_disabled_reason,
+        has_liked=post.id in user_likes,
+        has_disliked=post.id in user_dislikes,
+        author_id=post.user_id,
+        author_name=(
+            resolve_author_name(author, post.user_id)
+            if post.user_id
+            else resolve_author_name(None)
+        ),
+        author_username=author.username if author else None,
+        is_following_author=(
+            post.user_id in following_user_ids if post.user_id else False
+        ),
+    )
 
 
 async def _load_user_reactions(*, session, current_user, post_ids: list[int]) -> tuple[set[int], set[int]]:

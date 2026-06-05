@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
-import { TonConnectButton, useTonWallet, useTonConnectUI } from '@tonconnect/ui-react';
+import type { ComponentType } from 'react'
 import WebApp from '@twa-dev/sdk'
-import { beginCell } from '@ton/core'
 import './App.css'
 
 interface Plan {
@@ -15,14 +14,31 @@ interface Plan {
   applied_rules: string[];
 }
 
-function App() {
-  const wallet = useTonWallet();
-  const [tonConnectUI] = useTonConnectUI();
-  
+interface TonPaymentRuntime {
+  WalletButton: ComponentType;
+  walletConnected: boolean;
+  openWalletModal: () => void;
+  buildOrderPayload: (orderId: string) => string;
+  sendPaymentTransaction: (transaction: {
+    validUntil: number;
+    messages: Array<{
+      address: string;
+      amount: string;
+      payload: string;
+    }>;
+  }) => Promise<unknown>;
+}
+
+interface AppProps {
+  tonRuntime: TonPaymentRuntime;
+}
+
+function App({ tonRuntime }: AppProps) {
   const [plans, setPlans] = useState<Plan[]>([]);
   const [selectedPlanId, setSelectedPlanId] = useState<number | null>(null);
   const [paying, setPaying] = useState(false);
   const [loadingPlans, setLoadingPlans] = useState(true);
+  const WalletButton = tonRuntime.WalletButton;
 
   const merchantAddress = import.meta.env.VITE_MERCHANT_ADDRESS;
 
@@ -78,8 +94,8 @@ function App() {
       return;
     }
     
-    if (!wallet) {
-      tonConnectUI.openModal();
+    if (!tonRuntime.walletConnected) {
+      tonRuntime.openWalletModal();
       return;
     }
 
@@ -94,19 +110,10 @@ function App() {
       // Create payload: "ORDER:{tgUserId}:{planId}:{timestamp}"
       const orderId = `ORDER:${tgUserId}:${selectedPlan.id}:${Date.now()}`;
       
-      // Build BOC payload with text comment
-      const body = beginCell()
-        .storeUint(0, 32) // Write 32 zero bits to indicate that a text comment will follow
-        .storeStringTail(orderId) // Write our text comment
-        .endCell();
-        
-      const payloadBoc = body.toBoc().toString("base64");
-
-      // Calculate nanotons
+      const payloadBoc = tonRuntime.buildOrderPayload(orderId);
       const amountNanotons = Math.floor(selectedPlan.final_price * 1e9).toString();
 
-      // Send TON Transaction
-      await tonConnectUI.sendTransaction({
+      await tonRuntime.sendPaymentTransaction({
         validUntil: Math.floor(Date.now() / 1000) + 600,
         messages: [
           {
@@ -118,9 +125,10 @@ function App() {
       });
 
       WebApp.showAlert('交易已发送！链上确认后，灵石将自动发放，请耐心等待（约 15-30 秒）。');
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error(err);
-      WebApp.showAlert(`支付失败或已取消: ${err.message || '未知错误'}`);
+      const message = err instanceof Error ? err.message : '未知错误';
+      WebApp.showAlert(`支付失败或已取消: ${message}`);
     } finally {
       setPaying(false);
     }
@@ -131,7 +139,7 @@ function App() {
       <header className="header">
         <h1>合欢宗账房</h1>
         <div className="wallet-section">
-          <TonConnectButton />
+          <WalletButton />
         </div>
       </header>
 

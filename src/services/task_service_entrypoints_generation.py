@@ -35,11 +35,11 @@ async def process_i2i_pro_task(
     allow_contribute: bool = True,
     source_post_id: Optional[int] = None,
 ):
-    internal_user_id = await resolve_internal_user_id(user_id, username)
-
     if not images or len(images) == 0:
         await robust_send_message(context.bot, chat_id, "❌ 请先发送参考图片。")
         return None, None
+
+    internal_user_id = await resolve_internal_user_id(user_id, username)
 
     image_path = images[0]
     notice = await get_acceleration_notice(

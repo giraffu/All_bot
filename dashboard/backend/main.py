@@ -1,7 +1,9 @@
+# ruff: noqa: E402
 import asyncio
 import logging
 import os
 import sys
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -35,45 +37,18 @@ from src.database.core import init_db
 from src.task_core_provider_setup import ensure_task_core_service_providers_registered
 
 logging.basicConfig(level=logging.INFO)
+background_tasks = set()
 logger = logging.getLogger("dashboard")
 
-app = FastAPI(title="TeleBot Dashboard API")
 
-app.include_router(auth_router, prefix="/api/auth", tags=["auth"])
-app.include_router(stats.router)
-app.include_router(users.router)
-app.include_router(history.router)
-app.include_router(plans.router)
-app.include_router(templates.router)
-app.include_router(system.router)
-app.include_router(logs.router)
-app.include_router(workers.router)
-app.include_router(gallery.router)
-app.include_router(referrals.router)
-app.include_router(site_notice.router)
-
-background_tasks = set()
-app.state.dashboard_health = {
-    "database_ready": False,
-    "startup_complete": False,
-    "database_error": None,
-}
+def _initial_dashboard_health() -> dict:
+    return {
+        "database_ready": False,
+        "startup_complete": False,
+        "database_error": None,
+    }
 
 
-def _build_auth_error_response(request: Request, detail: str):
-    response = fastapi.responses.JSONResponse(
-        status_code=401,
-        content={"detail": detail},
-    )
-    origin = request.headers.get("origin")
-    if origin:
-        response.headers["Access-Control-Allow-Origin"] = "*"
-        response.headers["Access-Control-Allow-Methods"] = "*"
-        response.headers["Access-Control-Allow-Headers"] = "*"
-    return response
-
-
-@app.on_event("startup")
 async def startup_event():
     FastAPICache.init(InMemoryBackend(), prefix="fastapi-cache")
     ensure_task_core_service_providers_registered()
@@ -88,7 +63,7 @@ async def startup_event():
         app.state.dashboard_health["database_error"] = str(e)
 
     # Start background worker listener and keep a strong reference
-    task = asyncio.create_task(start_worker_listener())
+    task = asyncio.create_task(start_worker_listener(task_registry=background_tasks))
     background_tasks.add(task)
     task.add_done_callback(background_tasks.discard)
 
@@ -97,6 +72,53 @@ async def startup_event():
     background_tasks.add(balance_task)
     balance_task.add_done_callback(background_tasks.discard)
     app.state.dashboard_health["startup_complete"] = True
+
+
+async def shutdown_event():
+    for task in list(background_tasks):
+        task.cancel()
+    if background_tasks:
+        await asyncio.gather(*background_tasks, return_exceptions=True)
+    background_tasks.clear()
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    await startup_event()
+    try:
+        yield
+    finally:
+        await shutdown_event()
+
+
+app = FastAPI(title="TeleBot Dashboard API", lifespan=lifespan)
+app.state.dashboard_health = _initial_dashboard_health()
+
+app.include_router(auth_router, prefix="/api/auth", tags=["auth"])
+app.include_router(stats.router)
+app.include_router(users.router)
+app.include_router(history.router)
+app.include_router(plans.router)
+app.include_router(templates.router)
+app.include_router(system.router)
+app.include_router(logs.router)
+app.include_router(workers.router)
+app.include_router(gallery.router)
+app.include_router(referrals.router)
+app.include_router(site_notice.router)
+
+
+def _build_auth_error_response(request: Request, detail: str):
+    response = fastapi.responses.JSONResponse(
+        status_code=401,
+        content={"detail": detail},
+    )
+    origin = request.headers.get("origin")
+    if origin:
+        response.headers["Access-Control-Allow-Origin"] = "*"
+        response.headers["Access-Control-Allow-Methods"] = "*"
+        response.headers["Access-Control-Allow-Headers"] = "*"
+    return response
 
 
 app.add_middleware(

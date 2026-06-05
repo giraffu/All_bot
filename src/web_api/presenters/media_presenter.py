@@ -11,7 +11,7 @@ from src.services.wan22_video_v2_extension_service import (
     is_wan22_stitched_result,
     resolve_wan22_segment_index,
 )
-from src.services.wan22_video_v2_config import is_wan22_chain_history_task_type
+from src.domain_config.wan22_aio_video import is_wan22_chain_history_task_type
 
 
 async def r2_public_url_exists(

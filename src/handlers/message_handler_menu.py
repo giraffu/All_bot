@@ -1,3 +1,5 @@
+import re
+
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 
 from config import WEBAPP_URL
@@ -69,10 +71,6 @@ def build_switch_lang_message(new_lang: str) -> str:
         if new_lang == "zh"
         else "🌐 Language switched to English."
     )
-
-
-import re
-
 
 def _strip_queue_display_icon(label: str) -> str:
     return re.sub(r"^[^\w\u4e00-\u9fff]+\s*", "", label)

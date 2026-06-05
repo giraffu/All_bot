@@ -20,7 +20,7 @@ def _get_nested_translation_value(translations: dict, key: str):
 def prompt_route(i18n_key: str):
     """
     Register a handler for a specific i18n menu key.
-    Commands should be registered using CommandHandler in bot_test.py instead.
+    Commands should be registered using CommandHandler in bot_main.py instead.
     """
 
     def decorator(func):

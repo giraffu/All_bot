@@ -1,3 +1,5 @@
+import asyncio
+import logging
 from typing import Annotated
 
 from fastapi import Depends, HTTPException, status
@@ -12,11 +14,8 @@ from src.web_api.core.security import verify_token
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login", auto_error=False)
 
-
-import asyncio
-import logging
-
 logger = logging.getLogger(__name__)
+
 
 async def get_db():
     session = AsyncSessionLocal()

@@ -1,10 +1,9 @@
 import logging
+import time
 
 from src.services.redis_client import redis_client
 
 logger = logging.getLogger(__name__)
-
-import time
 
 
 class TaskRegistry:

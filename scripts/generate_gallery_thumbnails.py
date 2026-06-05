@@ -1,7 +1,8 @@
+# ruff: noqa: E402
 import asyncio
 import logging
-import sys
 import os
+import sys
 
 # Add project root to path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -25,7 +26,7 @@ async def main():
         query = (
             select(GalleryPost.id, GalleryPost.media_type, History.output_file)
             .join(History, GalleryPost.task_id == History.task_id)
-            .where(GalleryPost.is_active == True)
+            .where(GalleryPost.is_active.is_(True))
         )
         
         result = await session.execute(query)

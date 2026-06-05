@@ -8,11 +8,8 @@ import time
 # 确保能找到 src 包
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from src.core.task_core import (
-    finalize_terminated_task,
-    get_system_task_stats,
-    sync_user_concurrency,
-)
+from src.core.task_core import get_system_task_stats, sync_user_concurrency
+from src.core.task_core_finalization import finalize_terminated_task
 from src.services.redis_client import redis_client
 
 logging.basicConfig(level=logging.INFO)

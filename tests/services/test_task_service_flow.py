@@ -215,6 +215,7 @@ async def test_run_bot_task_application_monitors_with_backend_task_id_and_comple
             registry_task_id="registry-123",
             backend_task_id="backend-456",
             task_submitted=True,
+            actual_cost=0,
             terminal_state_finalized=False,
         ),
         request=SimpleNamespace(
@@ -236,6 +237,7 @@ async def test_run_bot_task_application_monitors_with_backend_task_id_and_comple
             submitted_status_builder=None,
             send_result=True,
             reply_markup=None,
+            result_meta=None,
             delete_status=True,
             allow_contribute=True,
             prefer_edit_status=False,

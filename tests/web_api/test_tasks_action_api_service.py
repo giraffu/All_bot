@@ -46,13 +46,6 @@ async def test_cancel_pending_task_payload_maps_domain_error_to_400():
 async def test_submit_generation_task_returns_submission_result():
     request = TaskGenerateRequest(task_type="image", inputs={"prompt": "foo"})
     current_user = type("User", (), {"id": 123, "username": "tester"})()
-    expected = TaskGenerateResponse(
-        task_id="task-1",
-        status="submitted",
-        message="任务已提交",
-        cost=5,
-        balance_remaining=95,
-    )
 
     with patch(
         "src.web_api.services.task_submission_service.process_and_submit_task",

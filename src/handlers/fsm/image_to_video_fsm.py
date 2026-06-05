@@ -21,7 +21,7 @@ from src.handlers.conversation_states import ImageToVideoState
 from src.handlers.prompt_router import is_global_menu_command
 from src.lora_catalog import VIDEO_LORA_MODELS, get_video_lora_display_name
 from src.services.task_service_generation_video import process_image_to_video_generation_task as process_image_to_video_task
-from src.services.wan22_video_v2_config import (
+from src.domain_config.wan22_aio_video import (
     WAN22_VIDEO_V2_DEFAULT_DURATION_SECONDS,
     WAN22_VIDEO_V2_DEFAULT_RESOLUTION_PRESET,
     WAN22_VIDEO_V2_DURATION_SECONDS,
@@ -59,7 +59,7 @@ I2V_DURATION_ACTION_VALUES = "|".join(
     str(duration) for duration in WAN22_VIDEO_V2_DURATION_SECONDS
 )
 I2V_SETUP_ACTION_PATTERN = (
-    rf"^i2v_setup_(lora_.*|mode_(single|end)|res_("
+    r"^i2v_setup_(lora_.*|mode_(single|end)|res_("
     + "|".join(WAN22_VIDEO_V2_RESOLUTION_PRESETS.keys())
     + rf")|dur_({I2V_DURATION_ACTION_VALUES})|confirm)$"
 )

@@ -17,9 +17,6 @@ from src.services.affiliate_redeem_service import (
     is_affiliate_membership_redeem_enabled,
     is_membership_settlement_v2_enabled,
     list_affiliate_credits_redeem_packages,
-    query_affiliate_available_balance,
-    redeem_affiliate_balance_to_credits,
-    redeem_affiliate_balance_to_membership,
 )
 from src.services.telegram_affiliate_service import (
     query_affiliate_available_balance_for_telegram_user,

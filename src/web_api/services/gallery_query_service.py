@@ -52,7 +52,7 @@ async def fetch_my_favorite_posts_page(
         .where(
             UserInteraction.user_id == current_user_id,
             UserInteraction.action_type.in_(action_types),
-            GalleryPost.is_active == True,
+            GalleryPost.is_active.is_(True),
         )
         .distinct()
         .order_by(desc(GalleryPost.id))
@@ -81,7 +81,7 @@ async def fetch_my_prompt_unlocked_posts_page(
         .join(GalleryPromptUnlock, GalleryPost.id == GalleryPromptUnlock.post_id)
         .where(
             GalleryPromptUnlock.user_id == current_user_id,
-            GalleryPost.is_active == True,
+            GalleryPost.is_active.is_(True),
         )
         .order_by(desc(GalleryPromptUnlock.created_at), desc(GalleryPost.id))
     )

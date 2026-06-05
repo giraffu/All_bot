@@ -1,5 +1,5 @@
 import logging
-from typing import Optional, Tuple
+from typing import Optional
 
 from config import BOT_TOKEN, BOT_TOKEN_TEST
 from src.core.auth_core_dependencies import build_auth_core_dependencies
@@ -32,7 +32,6 @@ from src.core.auth_core_rate_limit import (
     increment_rate_limit,
     is_rate_limited,
 )
-from src.database.models import User
 
 logger = logging.getLogger(__name__)
 
@@ -121,7 +120,7 @@ def verify_telegram_webapp_initdata(init_data: str) -> Optional[dict]:
 
 async def authenticate_and_get_user(
     init_data: Optional[str] = None, widget_data: Optional[dict] = None
-) -> Tuple[User, dict]:
+) -> tuple[object, dict]:
     dependencies = build_auth_core_dependencies()
     return await authenticate_and_get_user_flow(
         init_data=init_data,
@@ -139,7 +138,7 @@ async def authenticate_and_get_user(
 
 async def authenticate_user_by_password(
     username: str, password: str, client_ip: str
-) -> Tuple[User, dict]:
+) -> tuple[object, dict]:
     dependencies = build_auth_core_dependencies()
     return await authenticate_user_by_password_flow(
         username=username,
@@ -151,6 +150,7 @@ async def authenticate_user_by_password(
         is_rate_limited_func=is_rate_limited,
         authenticate_password_credentials_func=authenticate_password_credentials,
         verify_password_func=verify_password,
+        get_user_by_username_func=dependencies.get_user_by_username_func,
         increment_rate_limit_func=increment_rate_limit,
         check_web_access_func=dependencies.check_web_access_func,
         clear_rate_limit_func=clear_rate_limit,
@@ -180,6 +180,7 @@ async def bind_user_password(
         check_web_access_func=dependencies.check_web_access_func,
         bind_password_to_user_func=bind_password_to_user,
         get_password_hash_func=get_password_hash,
+        get_user_by_id_func=dependencies.get_user_by_id_func,
         increment_rate_limit_func=increment_rate_limit,
         clear_rate_limit_func=clear_rate_limit,
         blacklist_password_version_func=blacklist_password_version,

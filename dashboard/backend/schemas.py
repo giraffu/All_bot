@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class UpdateCreditsRequest(BaseModel):
@@ -70,6 +70,8 @@ class MembershipPlanUpdate(BaseModel):
 
 
 class MembershipPlanResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     name: str
     identity_name: str
@@ -80,11 +82,10 @@ class MembershipPlanResponse(BaseModel):
     price_rmb: float
     is_active: bool
 
-    class Config:
-        from_attributes = True
-
 
 class OrderResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     order_id: str
     internal_user_id: int
@@ -97,9 +98,6 @@ class OrderResponse(BaseModel):
     created_at: datetime
     username: Optional[str] = None
     plan_name: Optional[str] = None
-
-    class Config:
-        from_attributes = True
 
 
 class OrderListResponse(BaseModel):
@@ -127,6 +125,8 @@ class WorkerHistoryListResponse(BaseModel):
 
 
 class HistoryResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     user_id: int
     task_id: Optional[str] = None
@@ -143,9 +143,6 @@ class HistoryResponse(BaseModel):
     input_file_url: Optional[str] = None
     output_file_url: Optional[str] = None
     source: str = "bot"
-
-    class Config:
-        from_attributes = True
 
 
 class HistoryListResponse(BaseModel):

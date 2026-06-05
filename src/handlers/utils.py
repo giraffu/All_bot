@@ -10,7 +10,13 @@ from src.core.task_core import (
     CoreDomainError,
     InsufficientCreditsError,
 )
+from src.services.permission_service import permission_service
 from src.utils import robust_send_message
+from src.utils import (
+    create_background_task,
+    get_user_channel_status,
+    notify_inviter_reward,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -72,14 +78,6 @@ def with_unified_error_handler(func):
                 await robust_send_message(f"❌ {user_msg}")
 
     return wrapper
-
-
-from src.services.permission_service import permission_service
-from src.utils import (
-    get_user_channel_status,
-    create_background_task,
-    notify_inviter_reward,
-)
 
 
 async def ensure_access_and_reward(

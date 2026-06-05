@@ -28,7 +28,7 @@ def _build_task_info_from_event(event_data):
     }
 
 
-async def start_worker_listener():
+async def start_worker_listener(task_registry: set | None = None):
     """Background task to listen for ComfyUI task events and record worker logs."""
     try:
         logger.info("Starting Worker Task Listener...")
@@ -59,11 +59,10 @@ async def start_worker_listener():
         )
         # Retry logic could be added here
         await asyncio.sleep(5)
-        task = asyncio.create_task(start_worker_listener())
-        from dashboard.backend.main import background_tasks
-
-        background_tasks.add(task)
-        task.add_done_callback(background_tasks.discard)
+        task = asyncio.create_task(start_worker_listener(task_registry=task_registry))
+        if task_registry is not None:
+            task_registry.add(task)
+            task.add_done_callback(task_registry.discard)
 
 
 async def process_message(message, r_worker, r_bot):
@@ -181,7 +180,7 @@ async def process_message(message, r_worker, r_bot):
                             logger.info(
                                 f"Recorded worker log for task {task_id} by {worker_id} ({final_status})"
                             )
-                        except Exception as e:
+                        except Exception:
                             # Might be IntegrityError if multiple workers try to insert simultaneously
                             pass
             except Exception as inner_e:

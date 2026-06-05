@@ -1,58 +1,97 @@
+from collections.abc import AsyncIterator, Awaitable
 from dataclasses import dataclass
-from typing import Any, Callable
+from typing import Any, Callable, Protocol
+
+
+AsyncCallable = Callable[..., Awaitable[Any]]
+
+
+class TaskCoreImageServiceProtocol(Protocol):
+    download_result: AsyncCallable
+    download_video_result: AsyncCallable
+    monitor_progress: Callable[..., AsyncIterator[dict[str, Any]]]
+
+
+class TaskCoreStorageServiceProtocol(Protocol):
+    async_copy_to_r2: AsyncCallable
+    async_prune_user_web_history_r2_cache: AsyncCallable
+
+
+class TaskCoreTaskRegistryProtocol(Protocol):
+    add_task: AsyncCallable
+    update_backend_task_id: AsyncCallable
+    mark_task_status: AsyncCallable
+    remove_task: AsyncCallable
+    get_task: AsyncCallable
+    find_task_by_backend_task_id: AsyncCallable
+
+
+class TaskCorePermissionServiceProtocol(Protocol):
+    refresh_user_group: AsyncCallable
+
+
+class TaskCoreSubmissionOutboxProtocol(Protocol):
+    redis: Any
+    add_pending_refund: AsyncCallable
+    get_active_tasks: AsyncCallable
+    get_all_user_concurrencies: AsyncCallable
+
+
+class TaskCoreApiClientProtocol(Protocol):
+    cancel_task: AsyncCallable
 
 
 @dataclass(frozen=True)
 class TaskCoreServiceProviders:
-    get_image_service: Callable[[], Any]
-    get_storage_service: Callable[[], Any]
-    get_task_registry: Callable[[], Any]
-    get_permission_service: Callable[[], Any]
-    get_submission_outbox: Callable[[], Any]
-    get_api_client: Callable[[], Any]
+    get_image_service: Callable[[], TaskCoreImageServiceProtocol]
+    get_storage_service: Callable[[], TaskCoreStorageServiceProtocol]
+    get_task_registry: Callable[[], TaskCoreTaskRegistryProtocol]
+    get_permission_service: Callable[[], TaskCorePermissionServiceProtocol]
+    get_submission_outbox: Callable[[], TaskCoreSubmissionOutboxProtocol]
+    get_api_client: Callable[[], TaskCoreApiClientProtocol]
 
 
 @dataclass(frozen=True)
 class TaskCoreStorageCapabilities:
-    copy_to_r2_func: Any
-    prune_user_web_history_r2_cache_func: Any
+    copy_to_r2_func: AsyncCallable
+    prune_user_web_history_r2_cache_func: AsyncCallable
 
 
 @dataclass(frozen=True)
 class TaskCoreTaskRegistryCapabilities:
-    add_task_func: Any
-    update_backend_task_id_func: Any
-    mark_task_status_func: Any
-    remove_task_func: Any
+    add_task_func: AsyncCallable
+    update_backend_task_id_func: AsyncCallable
+    mark_task_status_func: AsyncCallable
+    remove_task_func: AsyncCallable
 
 
 @dataclass(frozen=True)
 class TaskCorePermissionCapabilities:
-    refresh_user_group_func: Any
+    refresh_user_group_func: AsyncCallable
 
 
 @dataclass(frozen=True)
 class TaskCoreSubmissionOutboxCapabilities:
-    add_pending_refund_func: Any
+    add_pending_refund_func: AsyncCallable
 
 
 @dataclass(frozen=True)
 class TaskCoreImageCapabilities:
-    download_result_func: Any
-    download_video_result_func: Any
-    monitor_progress_func: Any
+    download_result_func: AsyncCallable
+    download_video_result_func: AsyncCallable
+    monitor_progress_func: Callable[..., AsyncIterator[dict[str, Any]]]
 
 
 @dataclass(frozen=True)
 class TaskCoreRuntimeCapabilities:
-    get_active_tasks_func: Any
-    get_all_user_concurrencies_func: Any
-    cancel_task_func: Any
-    get_task_func: Any
-    find_task_by_backend_task_id_func: Any
-    set_runtime_value_func: Any
-    expire_runtime_value_func: Any
-    delete_runtime_value_func: Any
+    get_active_tasks_func: AsyncCallable
+    get_all_user_concurrencies_func: AsyncCallable
+    cancel_task_func: AsyncCallable
+    get_task_func: AsyncCallable
+    find_task_by_backend_task_id_func: AsyncCallable
+    set_runtime_value_func: AsyncCallable
+    expire_runtime_value_func: AsyncCallable
+    delete_runtime_value_func: AsyncCallable
 
 
 _configured_task_core_service_providers: TaskCoreServiceProviders | None = None
@@ -92,12 +131,12 @@ def get_configured_task_core_service_providers() -> TaskCoreServiceProviders | N
 
 def build_task_core_service_providers(
     *,
-    get_image_service: Callable[[], Any] | None = None,
-    get_storage_service: Callable[[], Any] | None = None,
-    get_task_registry: Callable[[], Any] | None = None,
-    get_permission_service: Callable[[], Any] | None = None,
-    get_submission_outbox: Callable[[], Any] | None = None,
-    get_api_client: Callable[[], Any] | None = None,
+    get_image_service: Callable[[], TaskCoreImageServiceProtocol] | None = None,
+    get_storage_service: Callable[[], TaskCoreStorageServiceProtocol] | None = None,
+    get_task_registry: Callable[[], TaskCoreTaskRegistryProtocol] | None = None,
+    get_permission_service: Callable[[], TaskCorePermissionServiceProtocol] | None = None,
+    get_submission_outbox: Callable[[], TaskCoreSubmissionOutboxProtocol] | None = None,
+    get_api_client: Callable[[], TaskCoreApiClientProtocol] | None = None,
 ) -> TaskCoreServiceProviders:
     default_providers = (
         get_configured_task_core_service_providers()

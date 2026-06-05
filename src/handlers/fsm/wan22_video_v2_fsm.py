@@ -32,7 +32,7 @@ from src.services.task_service_generation_wan22 import (
     normalize_wan22_video_v2_chain_task_ids,
     process_wan22_video_v2_generation_task as process_wan22_video_v2_task,
 )
-from src.services.wan22_video_v2_config import (
+from src.domain_config.wan22_aio_video import (
     WAN22_VIDEO_V2_DEFAULT_DURATION_SECONDS,
     WAN22_VIDEO_V2_DEFAULT_RESOLUTION_PRESET,
     WAN22_VIDEO_V2_DURATION_SECONDS,

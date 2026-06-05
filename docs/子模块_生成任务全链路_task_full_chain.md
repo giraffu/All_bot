@@ -176,7 +176,7 @@ Web 统一入口在：
 - Bot `task_service_flow.py` 与 Web lifecycle monitor 现共享 `task_lifecycle_runner.py` 的 monitor->route 骨架；Web runtime monitor 与 `task_web_finalizer.py` 共享 terminal router
 - 默认 provider 注册由应用入口承担，不由 `core` 模块导入时自动注册
 - 单测优先走显式 `dependencies` 或 `*_func` seam
-- 当前 `TaskCoreServiceProviders` 与 capability dataclass 仍有不少 `Any` 类型，是后续契约强化重点；新增 provider/capability 时优先补 `Protocol` 或精确 `Callable` 类型，不要继续扩大弱类型字段
+- 当前 `TaskCoreServiceProviders` 与主要 capability 已补强 `Protocol` / 精确 `Callable` 类型；新增 provider/capability 时继续沿用显式契约，不要扩大弱类型字段
 - provider 运行时注册仍依赖模块级全局状态，测试和离线路径应优先显式传入 dependencies，避免把模块级 patch 当成主测试策略
 
 ### 6.3 双 ID 语义
@@ -226,7 +226,7 @@ dispatcher 下游通常会继续经过：
 注意：
 - 当前 simple route 仍可能映射到 legacy `TaskType`，但 `txt2img` 已和其他任务一样通过标准 simple route 提交，并显式携带上游 `task_id`
 - `image_service.py` / `api_client.py` 只负责把统一语义下沉到 Central API，不再由 `txt2img` 单独生成 backend task id
-- Wan22 AIO 视频的稳定配置入口是 `src.domain_config.wan22_aio_video`。旧 `src.services.wan22_video_v2_config` / `src.services.wan22_video_v2_context` 仅保留兼容 re-export，不应作为新增逻辑的事实源。
+- Wan22 AIO 视频的稳定配置入口是 `src.domain_config.wan22_aio_video`。旧 `src.services.wan22_video_v2_config` / `src.services.wan22_video_v2_context` 兼容 re-export 已删除，不应作为新增逻辑的事实源。
 - `custom_video` / `video_lora` 与 `wan22_video_v2` 是两个用户功能入口，但底层由 `Wan22AioVideoStrategy` 与共享 submit helper 收口：公开类型继续写历史和展示，执行面类型用于 Central API / Worker 路由。
 
 ## 8. Central API / QueueManager 执行面

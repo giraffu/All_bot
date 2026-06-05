@@ -1,19 +1,21 @@
 from collections.abc import Awaitable, Callable
 
-from sqlalchemy.ext.asyncio import AsyncSession
-
-from src.database.models import User
+from src.auth_core_repository_bindings import get_default_auth_core_repository_bindings
 
 
 async def get_bindable_user(
     *,
-    session: AsyncSession,
+    session,
     user_id: int,
     check_web_access_func: Callable[[int], Awaitable[bool]],
     user_not_found_error_factory: Callable[[], Exception],
     insufficient_permission_error_factory: Callable[[], Exception],
-) -> User:
-    user = await session.get(User, user_id)
+    get_user_by_id_func: Callable[..., Awaitable[object | None]] | None = None,
+):
+    if get_user_by_id_func is None:
+        get_user_by_id_func = get_default_auth_core_repository_bindings().get_user_by_id_func
+
+    user = await get_user_by_id_func(session, user_id)
     if not user:
         raise user_not_found_error_factory()
 
@@ -25,8 +27,8 @@ async def get_bindable_user(
 
 async def bind_password_to_user(
     *,
-    session: AsyncSession,
-    user: User,
+    session,
+    user,
     username: str,
     password: str,
     get_password_hash_func: Callable[[str], Awaitable[str]],

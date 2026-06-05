@@ -519,6 +519,10 @@ async def test_affiliate_redeem_api_succeeds_with_real_auth_session_chain(monkey
         AsyncMock(return_value={"identity": "内门弟子", "group": "练气期"}),
     )
     monkeypatch.setattr(
+        "src.services.permission_service.permission_service.get_user_detailed_stats_by_user_id",
+        AsyncMock(return_value={"identity": "内门弟子", "group": "练气期"}),
+    )
+    monkeypatch.setattr(
         "src.web_api.services.user_affiliate_redeem_api_service.invalidate_affiliate_redeem_cache_after_commit",
         invalidate_mock,
     )
@@ -725,6 +729,10 @@ async def test_affiliate_membership_redeem_api_succeeds_with_feature_flags(
     monkeypatch.setattr("src.services.log_service.LogService.log_action", log_action_mock)
     monkeypatch.setattr(
         "src.services.permission_service.permission_service.get_user_detailed_stats",
+        AsyncMock(return_value={"identity": "内门弟子", "group": "练气期"}),
+    )
+    monkeypatch.setattr(
+        "src.services.permission_service.permission_service.get_user_detailed_stats_by_user_id",
         AsyncMock(return_value={"identity": "内门弟子", "group": "练气期"}),
     )
     monkeypatch.setattr(

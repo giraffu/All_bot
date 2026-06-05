@@ -206,7 +206,9 @@ async def test_verify_password_helper_uses_runtime_default_bindings(monkeypatch)
 def test_telegram_validation_helpers_accept_valid_widget_and_webapp_payloads():
     logger = MagicMock()
     token = "prod-token"
-    auth_date_checker = lambda *_args, **_kwargs: True
+
+    def auth_date_checker(*_args, **_kwargs):
+        return True
 
     widget_payload = {
         "id": "42",

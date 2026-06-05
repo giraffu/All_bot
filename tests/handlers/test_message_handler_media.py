@@ -163,7 +163,10 @@ async def test_handle_template_contribution_saves_upload_and_updates_counter(mon
         video=None,
         document=None,
     )
-    update = SimpleNamespace(message=message, effective_user=SimpleNamespace(id=7, username="dao"))
+    update = SimpleNamespace(
+        message=message,
+        effective_user=SimpleNamespace(id=7, username="dao", full_name="Dao User"),
+    )
     context = SimpleNamespace(bot=bot, user_data={})
 
     monkeypatch.setattr(message_handler_media, "robust_reply_text", reply_mock)

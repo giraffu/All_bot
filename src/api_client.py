@@ -5,6 +5,7 @@ import uuid
 from typing import Any, Optional
 
 import httpx
+from asgi_correlation_id import correlation_id
 
 from config import (
     API_BASE,
@@ -33,8 +34,6 @@ logger = logging.getLogger(__name__)
 
 # Circuit Breaker Instance
 circuit_breaker = CircuitBreaker(failure_threshold=15, reset_timeout=30)
-
-from asgi_correlation_id import correlation_id
 
 
 class APIClient:

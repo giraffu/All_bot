@@ -15,15 +15,11 @@ from dashboard.backend.services.stats_service_utils import (
 from src.database.models import History, Order, Referral, TemplateContribution, User
 
 
-async def load_dashboard_stats_impl(
-    *,
-    db: AsyncSession,
-    logger: Logger,
-    video_types: list[str],
-    user_group_keys: list[str],
-) -> dict:
-    video_cost_case = case((History.type.in_(video_types), 6), else_=2)
+def _build_video_cost_case(video_types: list[str]):
+    return case((History.type.in_(video_types), 6), else_=2)
 
+
+async def _load_user_summary(db: AsyncSession) -> dict:
     user_stats_stmt = select(
         func.count(User.id).label("total_db_users"),
         func.coalesce(
@@ -51,14 +47,30 @@ async def load_dashboard_stats_impl(
     total_zh_users = int(user_stats_row.total_zh_users)
     total_credits = user_stats_row.total_credits
     total_active_credits = user_stats_row.total_active_credits
+    return {
+        "total_db_users": total_db_users,
+        "total_users": total_users,
+        "total_password_users": total_password_users,
+        "total_en_users": total_en_users,
+        "total_zh_users": total_zh_users,
+        "total_credits": total_credits,
+        "total_active_credits": total_active_credits,
+    }
 
+
+async def _load_identity_counts(db: AsyncSession) -> dict:
     identity_result = await db.execute(
         select(User.current_identity, func.count(User.id)).group_by(User.current_identity)
     )
-    identity_counts = {
+    return {
         row.current_identity: row.count for row in identity_result if row.current_identity
     }
 
+
+async def _load_user_group_distribution(
+    db: AsyncSession,
+    user_group_keys: list[str],
+) -> dict:
     user_group_result = await db.execute(
         select(User.user_group, func.count(User.id)).group_by(User.user_group)
     )
@@ -67,13 +79,23 @@ async def load_dashboard_stats_impl(
     }
     for key in user_group_keys:
         user_group_distribution.setdefault(key, 0)
+    return user_group_distribution
 
+
+async def _load_global_activity_totals(db: AsyncSession, video_cost_case) -> dict:
     total_generations = (await db.execute(select(func.count(History.id)))).scalar()
     total_referrals = (await db.execute(select(func.count(Referral.id)))).scalar() or 0
     total_consumed_credits = (
         await db.execute(select(func.sum(video_cost_case)))
     ).scalar() or 0
+    return {
+        "total_generations": total_generations,
+        "total_referrals": total_referrals,
+        "total_consumed_credits": total_consumed_credits,
+    }
 
+
+async def _load_template_contribution_totals(db: AsyncSession) -> dict:
     template_stmt = select(
         func.count(TemplateContribution.id).label("total"),
         func.coalesce(
@@ -84,7 +106,13 @@ async def load_dashboard_stats_impl(
     template_row = (await db.execute(template_stmt)).first()
     total_template_contributions = template_row.total or 0
     total_approved_contributions = int(template_row.approved)
+    return {
+        "total_template_contributions": total_template_contributions,
+        "total_approved_contributions": total_approved_contributions,
+    }
 
+
+async def _load_invitation_revenue_totals(db: AsyncSession) -> dict:
     invitation_stmt = (
         select(
             func.coalesce(
@@ -107,8 +135,14 @@ async def load_dashboard_stats_impl(
     total_invitation_rmb = float(invitation_row.rmb_sum)
     total_invitation_stars = int(invitation_row.stars_sum)
     total_invitation_ton = float(invitation_row.ton_sum)
+    return {
+        "total_invitation_rmb": total_invitation_rmb,
+        "total_invitation_stars": total_invitation_stars,
+        "total_invitation_ton": total_invitation_ton,
+    }
 
-    today = date.today()
+
+async def _load_today_user_summary(db: AsyncSession, today: date) -> dict:
     today_user_stmt = select(
         func.count(User.id).label("today_users_all"),
         func.coalesce(
@@ -126,7 +160,20 @@ async def load_dashboard_stats_impl(
     today_checkins = (
         await db.execute(select(func.count(User.id)).where(User.last_checkin == today))
     ).scalar() or 0
+    return {
+        "today_users_all": today_users_all,
+        "today_users": today_users,
+        "today_password_users": today_password_users,
+        "today_checkins": today_checkins,
+    }
 
+
+async def _load_history_today_summary(
+    *,
+    db: AsyncSession,
+    today: date,
+    video_cost_case,
+) -> dict:
     history_stats_stmt = select(
         func.count(History.id).label("today_generations"),
         func.count(func.distinct(History.user_id)).label("today_active_users"),
@@ -153,7 +200,9 @@ async def load_dashboard_stats_impl(
     }
     total_type_distribution = {
         row.type or "unknown": row.count
-        for row in await db.execute(select(History.type, func.count(History.id)).group_by(History.type))
+        for row in await db.execute(
+            select(History.type, func.count(History.id)).group_by(History.type)
+        )
     }
 
     dialect = db.bind.dialect.name
@@ -165,7 +214,19 @@ async def load_dashboard_stats_impl(
         .order_by(hour_expr)
     )
     today_hourly_distribution = build_hourly_distribution(hourly_result)
+    return {
+        "today_generations": history_stats_row.today_generations or 0,
+        "today_active_users": history_stats_row.today_active_users or 0,
+        "today_web_users": history_stats_row.today_web_users or 0,
+        "today_consumed_credits": history_stats_row.today_consumed_credits or 0,
+        "total_web_users": total_web_users,
+        "today_type_distribution": today_type_distribution,
+        "total_type_distribution": total_type_distribution,
+        "today_hourly_distribution": today_hourly_distribution,
+    }
 
+
+async def _load_generation_distribution(db: AsyncSession) -> dict:
     user_gen_count = func.coalesce(User.generation_count, 0)
     gen_case = case(
         (user_gen_count == 0, "0"),
@@ -207,7 +268,10 @@ async def load_dashboard_stats_impl(
     for row in gen_dist_result:
         if row.range in gen_distribution:
             gen_distribution[row.range] = row.count
+    return gen_distribution
 
+
+async def _load_avg_daily_distribution(db: AsyncSession, dialect: str) -> dict:
     days_diff = get_days_diff_expr(User.created_at, dialect)
     days_valid = case((days_diff < 1, 1), else_=days_diff)
     avg_daily = func.cast(func.coalesce(User.generation_count, 0), Float) / days_valid
@@ -229,12 +293,24 @@ async def load_dashboard_stats_impl(
     for row in avg_dist_result:
         if row.range in avg_distribution:
             avg_distribution[row.range] = row.count
+    return avg_distribution
 
+
+def _build_consumed_subquery(video_cost_case):
     consumed_sub = (
         select(History.user_id, func.sum(video_cost_case).label("consumed"))
         .group_by(History.user_id)
         .subquery()
     )
+    return consumed_sub
+
+
+async def _load_credit_distribution(
+    *,
+    db: AsyncSession,
+    total_db_users: int,
+    consumed_sub,
+) -> dict:
     consumed_col = consumed_sub.c.consumed
     credit_dist_case = case(
         ((consumed_col >= 1) & (consumed_col <= 10), "1-10"),
@@ -268,7 +344,17 @@ async def load_dashboard_stats_impl(
             credit_distribution[row.range] = row.count
             users_with_consumption += row.count
     credit_distribution["0"] = max(0, total_db_users - users_with_consumption)
+    return credit_distribution
 
+
+async def _load_avg_daily_credit_distribution(
+    *,
+    db: AsyncSession,
+    total_db_users: int,
+    dialect: str,
+    consumed_sub,
+) -> dict:
+    consumed_col = consumed_sub.c.consumed
     days_diff_sub = get_days_diff_expr(User.created_at, dialect)
     days_valid_sub = case((days_diff_sub < 1, 1), else_=days_diff_sub)
     avg_daily_credit = func.cast(consumed_col, Float) / days_valid_sub
@@ -296,7 +382,10 @@ async def load_dashboard_stats_impl(
             avg_credit_distribution[row.range] = row.count
             users_with_avg_credit += row.count
     avg_credit_distribution["0"] = max(0, total_db_users - users_with_avg_credit)
+    return avg_credit_distribution
 
+
+async def _load_credit_holding_distribution(db: AsyncSession) -> dict:
     user_credits = func.coalesce(User.credits, 0)
     holding_case = case(
         (user_credits <= 0, "0"),
@@ -328,11 +417,13 @@ async def load_dashboard_stats_impl(
     for row in holding_dist_result:
         if row.range in holding_distribution:
             holding_distribution[row.range] = row.count
+    return holding_distribution
 
+
+async def _load_external_balances_from_cache(logger: Logger) -> dict:
     ton_balance = 0.0
     usdt_balance = 0.0
     star_balance = 0
-    rmb_balance = 0.0
     try:
         from src.services.redis_client import redis_client
 
@@ -350,7 +441,15 @@ async def load_dashboard_stats_impl(
                 star_balance = int(star_balance_str)
     except Exception as e:
         logger.error(f"Error fetching external balances from Redis: {e}")
+    return {
+        "ton_balance": ton_balance,
+        "usdt_balance": usdt_balance,
+        "star_balance": star_balance,
+    }
 
+
+async def _load_rmb_balance(db: AsyncSession, logger: Logger) -> float:
+    rmb_balance = 0.0
     try:
         rmb_stmt = select(func.coalesce(func.sum(Order.final_price), 0)).where(
             Order.status == "SUCCESS", Order.payment_channel == "RMB"
@@ -358,45 +457,90 @@ async def load_dashboard_stats_impl(
         rmb_balance += float((await db.execute(rmb_stmt)).scalar())
     except Exception as e:
         logger.error(f"Error calculating RMB balance: {e}")
+    return rmb_balance
+
+
+async def load_dashboard_stats_impl(
+    *,
+    db: AsyncSession,
+    logger: Logger,
+    video_types: list[str],
+    user_group_keys: list[str],
+) -> dict:
+    video_cost_case = _build_video_cost_case(video_types)
+    today = date.today()
+    dialect = db.bind.dialect.name
+
+    user_summary = await _load_user_summary(db)
+    total_db_users = user_summary["total_db_users"]
+    identity_counts = await _load_identity_counts(db)
+    user_group_distribution = await _load_user_group_distribution(db, user_group_keys)
+    global_activity_totals = await _load_global_activity_totals(db, video_cost_case)
+    template_totals = await _load_template_contribution_totals(db)
+    invitation_totals = await _load_invitation_revenue_totals(db)
+    today_user_summary = await _load_today_user_summary(db, today)
+    today_history_summary = await _load_history_today_summary(
+        db=db,
+        today=today,
+        video_cost_case=video_cost_case,
+    )
+
+    gen_distribution = await _load_generation_distribution(db)
+    avg_distribution = await _load_avg_daily_distribution(db, dialect)
+    consumed_sub = _build_consumed_subquery(video_cost_case)
+    credit_distribution = await _load_credit_distribution(
+        db=db,
+        total_db_users=total_db_users,
+        consumed_sub=consumed_sub,
+    )
+    avg_credit_distribution = await _load_avg_daily_credit_distribution(
+        db=db,
+        total_db_users=total_db_users,
+        dialect=dialect,
+        consumed_sub=consumed_sub,
+    )
+    holding_distribution = await _load_credit_holding_distribution(db)
+    external_balances = await _load_external_balances_from_cache(logger)
+    rmb_balance = await _load_rmb_balance(db, logger)
 
     return {
-        "total_users": total_users,
-        "total_password_users": total_password_users,
-        "today_password_users": today_password_users,
-        "total_en_users": total_en_users,
-        "total_zh_users": total_zh_users,
+        "total_users": user_summary["total_users"],
+        "total_password_users": user_summary["total_password_users"],
+        "today_password_users": today_user_summary["today_password_users"],
+        "total_en_users": user_summary["total_en_users"],
+        "total_zh_users": user_summary["total_zh_users"],
         "inner_disciple_count": identity_counts.get("内门弟子", 0),
         "core_disciple_count": identity_counts.get("核心弟子", 0),
         "true_disciple_count": identity_counts.get("真传弟子", 0),
-        "total_generations": total_generations,
-        "total_credits": total_credits,
-        "total_active_credits": total_active_credits,
-        "total_referrals": total_referrals,
-        "total_consumed_credits": total_consumed_credits,
-        "total_template_contributions": total_template_contributions,
-        "total_approved_contributions": total_approved_contributions,
-        "today_users": today_users,
-        "today_users_all": today_users_all,
-        "today_generations": history_stats_row.today_generations or 0,
-        "today_active_users": history_stats_row.today_active_users or 0,
-        "total_web_users": total_web_users,
-        "today_web_users": history_stats_row.today_web_users or 0,
-        "today_checkins": today_checkins,
-        "today_consumed_credits": history_stats_row.today_consumed_credits or 0,
-        "today_type_distribution": today_type_distribution,
-        "total_type_distribution": total_type_distribution,
-        "today_hourly_distribution": today_hourly_distribution,
+        "total_generations": global_activity_totals["total_generations"],
+        "total_credits": user_summary["total_credits"],
+        "total_active_credits": user_summary["total_active_credits"],
+        "total_referrals": global_activity_totals["total_referrals"],
+        "total_consumed_credits": global_activity_totals["total_consumed_credits"],
+        "total_template_contributions": template_totals["total_template_contributions"],
+        "total_approved_contributions": template_totals["total_approved_contributions"],
+        "today_users": today_user_summary["today_users"],
+        "today_users_all": today_user_summary["today_users_all"],
+        "today_generations": today_history_summary["today_generations"],
+        "today_active_users": today_history_summary["today_active_users"],
+        "total_web_users": today_history_summary["total_web_users"],
+        "today_web_users": today_history_summary["today_web_users"],
+        "today_checkins": today_user_summary["today_checkins"],
+        "today_consumed_credits": today_history_summary["today_consumed_credits"],
+        "today_type_distribution": today_history_summary["today_type_distribution"],
+        "total_type_distribution": today_history_summary["total_type_distribution"],
+        "today_hourly_distribution": today_history_summary["today_hourly_distribution"],
         "generation_distribution": gen_distribution,
         "avg_daily_distribution": avg_distribution,
         "credit_distribution": credit_distribution,
         "avg_daily_credit_distribution": avg_credit_distribution,
         "credit_holding_distribution": holding_distribution,
         "user_group_distribution": user_group_distribution,
-        "ton_balance": ton_balance,
-        "usdt_balance": usdt_balance,
-        "star_balance": star_balance,
+        "ton_balance": external_balances["ton_balance"],
+        "usdt_balance": external_balances["usdt_balance"],
+        "star_balance": external_balances["star_balance"],
         "rmb_balance": round(rmb_balance, 2),
-        "total_invitation_ton": round(total_invitation_ton, 2),
-        "total_invitation_rmb": round(total_invitation_rmb, 2),
-        "total_invitation_stars": total_invitation_stars,
+        "total_invitation_ton": round(invitation_totals["total_invitation_ton"], 2),
+        "total_invitation_rmb": round(invitation_totals["total_invitation_rmb"], 2),
+        "total_invitation_stars": invitation_totals["total_invitation_stars"],
     }

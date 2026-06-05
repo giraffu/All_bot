@@ -9,7 +9,10 @@ from src.core import auth_core_dependencies
 @pytest.mark.asyncio
 async def test_build_auth_core_dependencies_accepts_explicit_runtime_dependencies():
     redis = SimpleNamespace()
-    session_factory = lambda: "session"
+
+    def session_factory():
+        return "session"
+
     get_or_create_user = AsyncMock(return_value=("user", False))
     get_user_detailed_stats = AsyncMock(return_value={"identity": "inner"})
     check_web_access = AsyncMock(return_value=True)

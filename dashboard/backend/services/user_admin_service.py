@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 from types import SimpleNamespace
 
 from fastapi import HTTPException
-from sqlalchemy import case, delete, desc, func, or_, select, update
+from sqlalchemy import case, delete, func, or_, select, update
 from sqlalchemy.orm import selectinload
 
 from src.core.billing_core_membership import (
@@ -457,6 +457,205 @@ async def _merge_referral_graph(*, db, source_user: User, target_user: User) -> 
     }
 
 
+async def _load_transfer_users(*, db, source_user_id: int, target_user_id: int):
+    result = await db.execute(
+        select(User)
+        .where(User.id.in_([source_user_id, target_user_id]))
+        .with_for_update()
+    )
+    users_by_id = {user.id: user for user in result.scalars().all()}
+    source_user = users_by_id.get(source_user_id)
+    target_user = users_by_id.get(target_user_id)
+
+    if not source_user:
+        raise HTTPException(status_code=404, detail="源用户不存在")
+    if not target_user:
+        raise HTTPException(status_code=404, detail="目标用户不存在")
+    return source_user, target_user
+
+
+async def _move_user_owned_rows(*, db, source_user_id: int, target_user_id: int) -> dict[str, int]:
+    moved_counts: dict[str, int] = {}
+    update_specs = [
+        ("history_rows", History, History.user_id, {"user_id": target_user_id}),
+        (
+            "template_contributions",
+            TemplateContribution,
+            TemplateContribution.user_id,
+            {"user_id": target_user_id},
+        ),
+        (
+            "checkin_history_rows",
+            CheckinHistory,
+            CheckinHistory.user_id,
+            {"user_id": target_user_id},
+        ),
+        ("user_logs", UserLog, UserLog.user_id, {"user_id": target_user_id}),
+        (
+            "orders",
+            Order,
+            Order.internal_user_id,
+            {"internal_user_id": target_user_id},
+        ),
+        (
+            "affiliate_transactions",
+            AffiliateTransaction,
+            AffiliateTransaction.user_id,
+            {"user_id": target_user_id},
+        ),
+        (
+            "affiliate_redeems",
+            AffiliateRedeem,
+            AffiliateRedeem.user_id,
+            {"user_id": target_user_id},
+        ),
+        ("gallery_posts", GalleryPost, GalleryPost.user_id, {"user_id": target_user_id}),
+        (
+            "gallery_comments",
+            GalleryComment,
+            GalleryComment.user_id,
+            {"user_id": target_user_id},
+        ),
+    ]
+
+    for count_key, model, owner_column, values in update_specs:
+        result = await db.execute(
+            update(model).where(owner_column == source_user_id).values(**values)
+        )
+        moved_counts[count_key] = _safe_rowcount(result)
+
+    moved_counts.update(
+        await _merge_user_interactions(
+            db=db,
+            source_user_id=source_user_id,
+            target_user_id=target_user_id,
+        )
+    )
+    return moved_counts
+
+
+def _merge_transfer_profile(*, source_user: User, target_user: User) -> None:
+    target_user.credits = int(target_user.credits or 0) + int(source_user.credits or 0)
+    target_user.checkin_count = int(target_user.checkin_count or 0) + int(
+        source_user.checkin_count or 0
+    )
+    target_user.generation_count = int(target_user.generation_count or 0) + int(
+        source_user.generation_count or 0
+    )
+    target_user.total_contributions = int(target_user.total_contributions or 0) + int(
+        source_user.total_contributions or 0
+    )
+    target_user.approved_contributions = int(target_user.approved_contributions or 0) + int(
+        source_user.approved_contributions or 0
+    )
+    target_user.last_checkin = _max_value(
+        target_user.last_checkin,
+        source_user.last_checkin,
+    )
+    target_user.last_activity = _max_value(
+        target_user.last_activity,
+        source_user.last_activity,
+    )
+    target_user.created_at = _min_value(target_user.created_at, source_user.created_at)
+    target_user.is_channel_member = bool(
+        target_user.is_channel_member or source_user.is_channel_member
+    )
+    target_user.language_code = target_user.language_code or source_user.language_code
+    target_user.full_name = target_user.full_name or source_user.full_name
+    target_user.is_submission_banned = bool(
+        target_user.is_submission_banned or source_user.is_submission_banned
+    )
+
+    if target_user.is_submission_banned:
+        target_user.submission_banned_at = _max_value(
+            target_user.submission_banned_at,
+            source_user.submission_banned_at,
+        ) or datetime.now()
+        target_user.submission_ban_reason = build_submission_ban_message(
+            target_user.submission_ban_reason or source_user.submission_ban_reason
+        )
+    else:
+        target_user.submission_banned_at = None
+        target_user.submission_ban_reason = None
+
+    merged_identity, merged_expire_at = _merge_membership_state(
+        source_user,
+        target_user,
+    )
+    target_user.current_identity = merged_identity
+    target_user.identity_expire_at = merged_expire_at
+    target_user.user_group = _compute_user_group(
+        referral_count=int(target_user.referral_count or 0),
+        checkin_count=int(target_user.checkin_count or 0),
+        generation_count=int(target_user.generation_count or 0),
+        is_channel_member=bool(target_user.is_channel_member),
+    )
+
+
+async def _write_user_transfer_log(
+    *,
+    source_user: User,
+    target_user: User,
+    moved_counts: dict[str, int],
+    note: str | None,
+    logger_override: logging.Logger,
+) -> None:
+    try:
+        from src.services.log_service import LogService
+
+        await LogService.log_action(
+            user_id=target_user.id,
+            username=target_user.username or target_user.full_name,
+            operation_type="admin_transfer_user_data",
+            credit_change=int(source_user.credits or 0),
+            current_balance=int(target_user.credits or 0),
+            extra_info={
+                "source_user_id": source_user.id,
+                "target_user_id": target_user.id,
+                "source_username": source_user.username,
+                "source_full_name": source_user.full_name,
+                "note": note,
+                "moved_counts": moved_counts,
+                "source_deleted": True,
+            },
+        )
+    except Exception as log_exc:
+        logger_override.warning(
+            "User transfer succeeded but log write failed for %s -> %s: %s",
+            source_user.id,
+            target_user.id,
+            log_exc,
+        )
+
+
+def _build_transfer_user_response(
+    *,
+    source_user_id: int,
+    target_user: User,
+    moved_counts: dict[str, int],
+) -> dict:
+    target_user_id = target_user.id
+    return {
+        "status": "ok",
+        "message": f"已将用户 {source_user_id} 的业务数据转移到用户 {target_user_id}，并删除源用户",
+        "source_user_id": source_user_id,
+        "target_user_id": target_user_id,
+        "moved_counts": moved_counts,
+        "merged_profile": {
+            "credits": int(target_user.credits or 0),
+            "current_identity": target_user.current_identity,
+            "identity_expire_at": target_user.identity_expire_at,
+            "user_group": target_user.user_group,
+            "referral_count": int(target_user.referral_count or 0),
+            "checkin_count": int(target_user.checkin_count or 0),
+            "generation_count": int(target_user.generation_count or 0),
+            "is_channel_member": bool(target_user.is_channel_member),
+            "is_submission_banned": bool(target_user.is_submission_banned),
+            "submission_ban_reason": target_user.submission_ban_reason,
+        },
+    }
+
+
 async def delete_user_payload(*, user_id: int, db, logger_override: logging.Logger | None = None) -> dict:
     active_logger = logger_override or logger
     try:
@@ -704,91 +903,15 @@ async def transfer_user_data_payload(
         if user_id == target_user_id:
             raise HTTPException(status_code=400, detail="源用户和目标用户不能相同")
 
-        result = await db.execute(
-            select(User)
-            .where(User.id.in_([user_id, target_user_id]))
-            .with_for_update()
+        source_user, target_user = await _load_transfer_users(
+            db=db,
+            source_user_id=user_id,
+            target_user_id=target_user_id,
         )
-        users_by_id = {user.id: user for user in result.scalars().all()}
-        source_user = users_by_id.get(user_id)
-        target_user = users_by_id.get(target_user_id)
-
-        if not source_user:
-            raise HTTPException(status_code=404, detail="源用户不存在")
-        if not target_user:
-            raise HTTPException(status_code=404, detail="目标用户不存在")
-
-        moved_counts: dict[str, int] = {}
-
-        history_update_result = await db.execute(
-            update(History).where(History.user_id == user_id).values(user_id=target_user_id)
-        )
-        moved_counts["history_rows"] = _safe_rowcount(history_update_result)
-
-        template_update_result = await db.execute(
-            update(TemplateContribution)
-            .where(TemplateContribution.user_id == user_id)
-            .values(user_id=target_user_id)
-        )
-        moved_counts["template_contributions"] = _safe_rowcount(template_update_result)
-
-        checkin_update_result = await db.execute(
-            update(CheckinHistory)
-            .where(CheckinHistory.user_id == user_id)
-            .values(user_id=target_user_id)
-        )
-        moved_counts["checkin_history_rows"] = _safe_rowcount(checkin_update_result)
-
-        user_log_update_result = await db.execute(
-            update(UserLog).where(UserLog.user_id == user_id).values(user_id=target_user_id)
-        )
-        moved_counts["user_logs"] = _safe_rowcount(user_log_update_result)
-
-        order_update_result = await db.execute(
-            update(Order)
-            .where(Order.internal_user_id == user_id)
-            .values(internal_user_id=target_user_id)
-        )
-        moved_counts["orders"] = _safe_rowcount(order_update_result)
-
-        affiliate_tx_update_result = await db.execute(
-            update(AffiliateTransaction)
-            .where(AffiliateTransaction.user_id == user_id)
-            .values(user_id=target_user_id)
-        )
-        moved_counts["affiliate_transactions"] = _safe_rowcount(
-            affiliate_tx_update_result
-        )
-
-        affiliate_redeem_update_result = await db.execute(
-            update(AffiliateRedeem)
-            .where(AffiliateRedeem.user_id == user_id)
-            .values(user_id=target_user_id)
-        )
-        moved_counts["affiliate_redeems"] = _safe_rowcount(
-            affiliate_redeem_update_result
-        )
-
-        gallery_post_update_result = await db.execute(
-            update(GalleryPost)
-            .where(GalleryPost.user_id == user_id)
-            .values(user_id=target_user_id)
-        )
-        moved_counts["gallery_posts"] = _safe_rowcount(gallery_post_update_result)
-
-        gallery_comment_update_result = await db.execute(
-            update(GalleryComment)
-            .where(GalleryComment.user_id == user_id)
-            .values(user_id=target_user_id)
-        )
-        moved_counts["gallery_comments"] = _safe_rowcount(gallery_comment_update_result)
-
-        moved_counts.update(
-            await _merge_user_interactions(
-                db=db,
-                source_user_id=user_id,
-                target_user_id=target_user_id,
-            )
+        moved_counts = await _move_user_owned_rows(
+            db=db,
+            source_user_id=user_id,
+            target_user_id=target_user_id,
         )
         moved_counts.update(
             await _merge_referral_graph(
@@ -798,112 +921,28 @@ async def transfer_user_data_payload(
             )
         )
 
-        target_user.credits = int(target_user.credits or 0) + int(source_user.credits or 0)
-        target_user.checkin_count = int(target_user.checkin_count or 0) + int(
-            source_user.checkin_count or 0
-        )
-        target_user.generation_count = int(target_user.generation_count or 0) + int(
-            source_user.generation_count or 0
-        )
-        target_user.total_contributions = int(target_user.total_contributions or 0) + int(
-            source_user.total_contributions or 0
-        )
-        target_user.approved_contributions = int(
-            target_user.approved_contributions or 0
-        ) + int(source_user.approved_contributions or 0)
-        target_user.last_checkin = _max_value(
-            target_user.last_checkin,
-            source_user.last_checkin,
-        )
-        target_user.last_activity = _max_value(
-            target_user.last_activity,
-            source_user.last_activity,
-        )
-        target_user.created_at = _min_value(target_user.created_at, source_user.created_at)
-        target_user.is_channel_member = bool(
-            target_user.is_channel_member or source_user.is_channel_member
-        )
-        target_user.language_code = target_user.language_code or source_user.language_code
-        target_user.full_name = target_user.full_name or source_user.full_name
-        target_user.is_submission_banned = bool(
-            target_user.is_submission_banned or source_user.is_submission_banned
-        )
-        if target_user.is_submission_banned:
-            target_user.submission_banned_at = _max_value(
-                target_user.submission_banned_at,
-                source_user.submission_banned_at,
-            ) or datetime.now()
-            target_user.submission_ban_reason = build_submission_ban_message(
-                target_user.submission_ban_reason or source_user.submission_ban_reason
-            )
-        else:
-            target_user.submission_banned_at = None
-            target_user.submission_ban_reason = None
-
-        merged_identity, merged_expire_at = _merge_membership_state(
-            source_user,
-            target_user,
-        )
-        target_user.current_identity = merged_identity
-        target_user.identity_expire_at = merged_expire_at
-        target_user.user_group = _compute_user_group(
-            referral_count=int(target_user.referral_count or 0),
-            checkin_count=int(target_user.checkin_count or 0),
-            generation_count=int(target_user.generation_count or 0),
-            is_channel_member=bool(target_user.is_channel_member),
+        _merge_transfer_profile(
+            source_user=source_user,
+            target_user=target_user,
         )
 
         await db.delete(source_user)
         await db.commit()
 
         moved_counts["source_user_deleted"] = 1
+        await _write_user_transfer_log(
+            source_user=source_user,
+            target_user=target_user,
+            moved_counts=moved_counts,
+            note=getattr(request, "note", None),
+            logger_override=active_logger,
+        )
 
-        try:
-            from src.services.log_service import LogService
-
-            await LogService.log_action(
-                user_id=target_user_id,
-                username=target_user.username or target_user.full_name,
-                operation_type="admin_transfer_user_data",
-                credit_change=int(source_user.credits or 0),
-                current_balance=int(target_user.credits or 0),
-                extra_info={
-                    "source_user_id": user_id,
-                    "target_user_id": target_user_id,
-                    "source_username": source_user.username,
-                    "source_full_name": source_user.full_name,
-                    "note": getattr(request, "note", None),
-                    "moved_counts": moved_counts,
-                    "source_deleted": True,
-                },
-            )
-        except Exception as log_exc:
-            active_logger.warning(
-                "User transfer succeeded but log write failed for %s -> %s: %s",
-                user_id,
-                target_user_id,
-                log_exc,
-            )
-
-        return {
-            "status": "ok",
-            "message": f"已将用户 {user_id} 的业务数据转移到用户 {target_user_id}，并删除源用户",
-            "source_user_id": user_id,
-            "target_user_id": target_user_id,
-            "moved_counts": moved_counts,
-            "merged_profile": {
-                "credits": int(target_user.credits or 0),
-                "current_identity": target_user.current_identity,
-                "identity_expire_at": target_user.identity_expire_at,
-                "user_group": target_user.user_group,
-                "referral_count": int(target_user.referral_count or 0),
-                "checkin_count": int(target_user.checkin_count or 0),
-                "generation_count": int(target_user.generation_count or 0),
-                "is_channel_member": bool(target_user.is_channel_member),
-                "is_submission_banned": bool(target_user.is_submission_banned),
-                "submission_ban_reason": target_user.submission_ban_reason,
-            },
-        }
+        return _build_transfer_user_response(
+            source_user_id=user_id,
+            target_user=target_user,
+            moved_counts=moved_counts,
+        )
     except HTTPException:
         await db.rollback()
         raise

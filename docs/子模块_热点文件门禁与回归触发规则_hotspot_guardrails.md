@@ -84,7 +84,6 @@
 - `src/core/gallery_core.py`
 - `src/core/gallery_core_dependencies.py`
 - `src/services/gallery_feed_queries.py`
-- `src/core/gallery_feed_queries.py`
 - `src/core/gallery_submission_core.py`
 - `src/core/gallery_interactions_core.py`
 - `src/services/gallery_repository.py`
@@ -255,7 +254,6 @@ pytest \
 - `src/core/gallery_core.py`
 - `src/core/gallery_core_dependencies.py`
 - `src/services/gallery_feed_queries.py`
-- `src/core/gallery_feed_queries.py`
 - `src/core/gallery_submission_core.py`
 - `src/core/gallery_interactions_core.py`
 - `src/services/gallery_repository.py`

@@ -20,4 +20,4 @@ COPY . .
 ENV PYTHONPATH=/app
 
 # Run the bot
-CMD ["python", "src/bot_test.py"]
+CMD ["python", "src/bot_main.py"]

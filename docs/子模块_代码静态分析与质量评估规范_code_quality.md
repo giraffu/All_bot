@@ -61,10 +61,10 @@
 
 ### 4.3 当前 P1/P2 整改队列
 - **workflow 资产事实源**：workflow 已收口到 `workers/comfy_agent/workflows`，Central API 不再维护 backend 副本或执行 workflow 启动校验。新增或修改 workflow 时仍需复核 Worker 映射、patcher 和 `SUPPORTED_TASK_TYPES`。
-- **task core provider 契约**：`TaskCoreServiceProviders` 与 capability dataclass 仍大量使用 `Any`，且 provider 注册依赖模块级全局状态。后续重构应优先引入 `Protocol` 或更精确的 `Callable` 类型，并让测试走显式 dependencies，而不是扩大模块级 patch。
+- **task core provider 契约**：`TaskCoreServiceProviders` 与主要 capability 已引入 `Protocol` / 精确 `Callable` 类型。后续新增 provider/capability 应继续保持显式类型，并让测试走 dependencies seam，而不是扩大模块级 patch。
 - **高复杂编排热点**：`workers/comfy_agent/agent_main.py::process_task`、`src/web_api/services/wan22_history_chain_service.py::stitch_wan22_history_chain_response`、`src/web_api/services/gallery_response_builder.py::build_post_responses`、`src/services/tg_task_runtime.py::monitor_task_progress` 与 `frontend/src/composables/useLabWorkbench.ts` 是下一批拆分优先级。
 - **测试耦合**：现有测试仍大量 patch `AsyncSessionLocal`、模块级导入符号、全局单例与 runtime。新增测试优先通过公开 dependencies/dataclass 或 service seam 注入能力。
-- **compat / 冗余清理**：`src/core/gallery_feed_queries.py` 当前是无引用 re-export；`src/services/wan22_video_v2_config.py` 与 `src/services/wan22_video_v2_context.py` 仍有生产引用，需先迁移到 `src.domain_config.wan22_aio_video` 后再删；`src/context.py:trace_id_ctx` 未被引用。
+- **compat / 冗余清理**：`src/core/gallery_feed_queries.py`、`src/services/wan22_video_v2_config.py` 与 `src/services/wan22_video_v2_context.py` 已删除，调用方已迁到真实 service/domain_config 入口；`src/context.py:trace_id_ctx` 仍是待复核的未引用候选。
 
 ### 4.4 知识库同步要求
 - 代码质量报告写入 `logs/`，不作为长期入口文档；重要结论应同步到本文件、热点门禁、compat 退出表以及相关 Skill。

@@ -128,7 +128,10 @@ async def test_persist_successful_task_result_flow_materializes_then_postprocess
         height=1024,
         duration=None,
     )
-    user_logger_factory = lambda internal_user_id, username: user_logger
+
+    def user_logger_factory(internal_user_id, username):
+        return user_logger
+
     materialize = AsyncMock(return_value=persistence_result)
     postprocess = AsyncMock()
     download_result = AsyncMock()

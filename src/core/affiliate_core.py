@@ -1,13 +1,11 @@
 from decimal import Decimal, ROUND_HALF_UP
 import logging
 
-from sqlalchemy import select
-from sqlalchemy.dialects.postgresql import insert
-from sqlalchemy.ext.asyncio import AsyncSession
-
+from src.affiliate_core_repository_bindings import (
+    get_default_affiliate_core_repository_bindings,
+)
 from src.constants import COMMISSION_RATE
 from src.core.billing_core import get_default_billing_core_providers
-from src.database.models import AffiliateTransaction, Order, Referral, User
 from src.exchange_rates import get_exchange_rates
 
 logger = logging.getLogger(__name__)
@@ -27,7 +25,7 @@ def _zero_commission() -> Decimal:
     return ZERO_COMMISSION
 
 
-def _is_commission_eligible_paid_order(order: Order) -> bool:
+def _is_commission_eligible_paid_order(order) -> bool:
     return (
         order.status == "SUCCESS"
         and order.payment_channel in VALID_PAYMENT_CHANNELS
@@ -55,26 +53,39 @@ async def invalidate_invitation_recharge_cache(inviter_id: int | None) -> None:
             )
 
 
-async def lock_affiliate_balance_owner(
-    session: AsyncSession, inviter_id: int
-) -> User:
+async def lock_affiliate_balance_owner(session, inviter_id: int):
     """
     Serialize affiliate balance mutations on the inviter's user row.
 
     Redeems already lock `users` via `FOR UPDATE`, so commission accrual must
     use the same row-level lock to avoid stale balance reads under concurrency.
     """
-    inviter = (
-        await session.execute(select(User).where(User.id == inviter_id).with_for_update())
-    ).scalar_one_or_none()
-    if inviter is None:
-        raise ValueError(f"affiliate inviter user not found: inviter_id={inviter_id}")
-    return inviter
+    return await (
+        get_default_affiliate_core_repository_bindings().lock_affiliate_balance_owner_func
+    )(session, inviter_id)
 
 
 async def calculate_and_set_commission_for_paid_order(
-    session: AsyncSession, order: Order
-) -> Referral | None:
+    session,
+    order,
+    *,
+    get_referral_for_invitee_func=None,
+    lock_affiliate_balance_owner_func=None,
+    get_existing_successful_paid_order_id_func=None,
+):
+    repository_bindings = get_default_affiliate_core_repository_bindings()
+    get_referral_for_invitee_func = (
+        get_referral_for_invitee_func
+        or repository_bindings.get_referral_for_invitee_func
+    )
+    lock_affiliate_balance_owner_func = (
+        lock_affiliate_balance_owner_func or lock_affiliate_balance_owner
+    )
+    get_existing_successful_paid_order_id_func = (
+        get_existing_successful_paid_order_id_func
+        or repository_bindings.get_existing_successful_paid_order_id_func
+    )
+
     if order.id is None:
         await session.flush()
 
@@ -82,33 +93,19 @@ async def calculate_and_set_commission_for_paid_order(
         order.commission_usdt = _zero_commission()
         return None
 
-    referral = (
-        await session.execute(
-            select(Referral)
-            .where(Referral.invitee_id == order.internal_user_id)
-            .with_for_update()
-        )
-    ).scalar_one_or_none()
+    referral = await get_referral_for_invitee_func(session, order.internal_user_id)
     if not referral:
         order.commission_usdt = _zero_commission()
         return None
 
-    await lock_affiliate_balance_owner(session, referral.inviter_id)
+    await lock_affiliate_balance_owner_func(session, referral.inviter_id)
 
-    existing_successful_paid_order = (
-        await session.execute(
-            select(Order.id)
-            .where(
-                Order.internal_user_id == order.internal_user_id,
-                Order.status == "SUCCESS",
-                Order.payment_channel.in_(VALID_PAYMENT_CHANNELS),
-                Order.final_price > 0,
-                Order.paid_at.is_not(None),
-                Order.id != order.id,
-            )
-            .limit(1)
-        )
-    ).scalar_one_or_none()
+    existing_successful_paid_order = await get_existing_successful_paid_order_id_func(
+        session=session,
+        internal_user_id=order.internal_user_id,
+        exclude_order_id=order.id,
+        valid_payment_channels=VALID_PAYMENT_CHANNELS,
+    )
     if existing_successful_paid_order:
         order.commission_usdt = _zero_commission()
         return referral
@@ -137,12 +134,19 @@ async def calculate_and_set_commission_for_paid_order(
 
 
 async def record_affiliate_commission_transaction(
-    session: AsyncSession,
-    order: Order,
-    referral: Referral,
+    session,
+    order,
+    referral,
     *,
     source: str = "payment_success",
+    insert_affiliate_commission_transaction_func=None,
 ) -> bool:
+    if insert_affiliate_commission_transaction_func is None:
+        insert_affiliate_commission_transaction_func = (
+            get_default_affiliate_core_repository_bindings()
+            .insert_affiliate_commission_transaction_func
+        )
+
     if order.id is None:
         await session.flush()
 
@@ -156,15 +160,12 @@ async def record_affiliate_commission_transaction(
             f"referral.invitee_id={referral.invitee_id}"
         )
 
-    stmt = insert(AffiliateTransaction).values(
+    return await insert_affiliate_commission_transaction_func(
+        session=session,
         user_id=referral.inviter_id,
         amount_usdt=commission_amount,
-        transaction_type="COMMISSION_ACCRUAL",
-        direction="IN",
-        reference_type="ORDER",
         reference_id=str(order.id),
         idempotency_key=f"affiliate:commission:order:{order.id}",
-        status="SUCCESS",
         details={
             "order_pk": order.id,
             "order_id": str(order.order_id or ""),
@@ -176,8 +177,3 @@ async def record_affiliate_commission_transaction(
             "source": source,
         },
     )
-    stmt = stmt.on_conflict_do_nothing(
-        index_elements=["idempotency_key"]
-    ).returning(AffiliateTransaction.id)
-    result = await session.execute(stmt)
-    return result.scalar_one_or_none() is not None

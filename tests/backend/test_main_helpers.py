@@ -69,10 +69,12 @@ def test_prepare_t2i_request_payload_validates_prompt_and_builds_params(monkeypa
 
 
 def test_build_t2i_terminal_response_returns_done_payload():
-    build_result_url = lambda result_path: main_response_helpers.build_result_url(
-        result_path=result_path,
-        settings=backend_main.settings,
-    )
+    def build_result_url(result_path):
+        return main_response_helpers.build_result_url(
+            result_path=result_path,
+            settings=backend_main.settings,
+        )
+
     response = t2i_helpers.build_t2i_terminal_response(
         task_id="task-1",
         status="done",
@@ -89,10 +91,12 @@ def test_build_t2i_terminal_response_returns_done_payload():
 
 
 def test_build_t2i_terminal_response_raises_for_error_status():
-    build_result_url = lambda result_path: main_response_helpers.build_result_url(
-        result_path=result_path,
-        settings=backend_main.settings,
-    )
+    def build_result_url(result_path):
+        return main_response_helpers.build_result_url(
+            result_path=result_path,
+            settings=backend_main.settings,
+        )
+
     with pytest.raises(HTTPException) as exc_info:
         t2i_helpers.build_t2i_terminal_response(
             task_id="task-2",
@@ -118,10 +122,12 @@ def test_decode_t2i_pubsub_message_ignores_invalid_json():
 
 @pytest.mark.asyncio
 async def test_get_immediate_t2i_terminal_response_returns_done_payload():
-    build_result_url = lambda result_path: main_response_helpers.build_result_url(
-        result_path=result_path,
-        settings=backend_main.settings,
-    )
+    def build_result_url(result_path):
+        return main_response_helpers.build_result_url(
+            result_path=result_path,
+            settings=backend_main.settings,
+        )
+
     build_terminal_response = partial(
         t2i_helpers.build_t2i_terminal_response,
         response_cls=backend_main.T2ITaskResponse,

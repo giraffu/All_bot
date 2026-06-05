@@ -1,18 +1,4 @@
-import { computed, markRaw, type Component, type Ref } from 'vue'
-
-import DashboardMonitorView from '../components/DashboardMonitorView.vue'
-import GalleryCommentsTable from '../components/GalleryCommentsTable.vue'
-import FinanceDashboard from '../components/FinanceDashboard.vue'
-import GalleryTable from '../components/GalleryTable.vue'
-import HistoryTable from '../components/HistoryTable.vue'
-import HomeDashboard from '../components/HomeDashboard.vue'
-import LogTable from '../components/LogTable.vue'
-import RechargeSystem from '../components/RechargeSystem.vue'
-import ReferralTable from '../components/ReferralTable.vue'
-import SiteNoticeSettings from '../components/SiteNoticeSettings.vue'
-import TemplateManager from '../components/TemplateManager.vue'
-import UserTable from '../components/UserTable.vue'
-import WorkerHistoryTable from '../components/WorkerHistoryTable.vue'
+import { computed, defineAsyncComponent, markRaw, type Component, type Ref } from 'vue'
 
 type DashboardBindings = Record<string, unknown>
 
@@ -46,19 +32,21 @@ const PANEL_CONTAINER_CLASS =
   'flex-1 bg-white rounded-xl shadow-sm border p-6 flex flex-col min-h-0'
 
 const TAB_COMPONENTS = {
-  home: markRaw(HomeDashboard),
-  finance: markRaw(FinanceDashboard),
-  monitor: markRaw(DashboardMonitorView),
-  users: markRaw(UserTable),
-  history: markRaw(HistoryTable),
-  worker_history: markRaw(WorkerHistoryTable),
-  logs: markRaw(LogTable),
-  recharge: markRaw(RechargeSystem),
-  templates: markRaw(TemplateManager),
-  gallery: markRaw(GalleryTable),
-  gallery_comments: markRaw(GalleryCommentsTable),
-  referrals: markRaw(ReferralTable),
-  site_notice: markRaw(SiteNoticeSettings),
+  home: markRaw(defineAsyncComponent(() => import('../components/HomeDashboard.vue'))),
+  finance: markRaw(defineAsyncComponent(() => import('../components/FinanceDashboard.vue'))),
+  monitor: markRaw(defineAsyncComponent(() => import('../components/DashboardMonitorView.vue'))),
+  users: markRaw(defineAsyncComponent(() => import('../components/UserTable.vue'))),
+  history: markRaw(defineAsyncComponent(() => import('../components/HistoryTable.vue'))),
+  worker_history: markRaw(defineAsyncComponent(() => import('../components/WorkerHistoryTable.vue'))),
+  logs: markRaw(defineAsyncComponent(() => import('../components/LogTable.vue'))),
+  recharge: markRaw(defineAsyncComponent(() => import('../components/RechargeSystem.vue'))),
+  templates: markRaw(defineAsyncComponent(() => import('../components/TemplateManager.vue'))),
+  gallery: markRaw(defineAsyncComponent(() => import('../components/GalleryTable.vue'))),
+  gallery_comments: markRaw(
+    defineAsyncComponent(() => import('../components/GalleryCommentsTable.vue'))
+  ),
+  referrals: markRaw(defineAsyncComponent(() => import('../components/ReferralTable.vue'))),
+  site_notice: markRaw(defineAsyncComponent(() => import('../components/SiteNoticeSettings.vue'))),
 } satisfies Record<string, Component>
 
 export function useDashboardTabView(
