@@ -4,7 +4,13 @@ import logging
 
 from sqlalchemy import select
 
-from src.database.models import History, User, UserFollow, UserInteraction
+from src.database.models import (
+    GalleryPromptUnlock,
+    History,
+    User,
+    UserFollow,
+    UserInteraction,
+)
 from src.lora_mapping import translate_tags
 from src.services.wan22_video_v2_extension_service import (
     extract_wan22_history_context,
@@ -22,6 +28,81 @@ from src.web_api.services.apply_context_service import (
 from src.web_api.services.gallery_media_resolver import resolve_gallery_post_media_urls
 
 logger = logging.getLogger(__name__)
+PROMPT_UNLOCK_PRICE_CREDITS = 1
+
+
+def mask_gallery_prompt_for_public(
+    prompt: str | None,
+    *,
+    visible_ratio: float = 0.5,
+) -> str | None:
+    if prompt is None:
+        return None
+
+    normalized_prompt = prompt.strip()
+    if not normalized_prompt:
+        return None
+
+    safe_ratio = min(1.0, max(0.0, visible_ratio))
+    visible_chars = sum(1 for char in normalized_prompt if not char.isspace())
+    visible_target = int((visible_chars * safe_ratio) + 0.999999)
+    visible_count = 0
+    masked_chars: list[str] = []
+
+    for char in normalized_prompt:
+        if char.isspace():
+            masked_chars.append(char)
+            continue
+        if visible_count < visible_target:
+            visible_count += 1
+            masked_chars.append(char)
+        else:
+            masked_chars.append("*")
+    return "".join(masked_chars)
+
+
+def resolve_gallery_prompt_visibility(
+    *,
+    prompt: str | None,
+    post,
+    current_user,
+    unlocked_prompt_post_ids: set[int],
+) -> dict:
+    normalized_prompt = prompt.strip() if isinstance(prompt, str) else ""
+    if not normalized_prompt:
+        return {
+            "prompt": None,
+            "prompt_unlocked": False,
+            "prompt_unlockable": False,
+            "prompt_is_masked": False,
+            "prompt_unlock_price": PROMPT_UNLOCK_PRICE_CREDITS,
+        }
+
+    is_owner = bool(current_user and post.user_id == current_user.id)
+    prompt_unlocked = is_owner or post.id in unlocked_prompt_post_ids
+    prompt_unlockable = bool(
+        current_user
+        and post.user_id
+        and post.user_id != current_user.id
+        and not prompt_unlocked
+    )
+
+    if prompt_unlocked:
+        return {
+            "prompt": normalized_prompt,
+            "prompt_unlocked": True,
+            "prompt_unlockable": False,
+            "prompt_is_masked": False,
+            "prompt_unlock_price": PROMPT_UNLOCK_PRICE_CREDITS,
+        }
+
+    return {
+        "prompt": mask_gallery_prompt_for_public(normalized_prompt),
+        "prompt_unlocked": False,
+        "prompt_unlockable": prompt_unlockable,
+        "prompt_is_masked": True,
+        "prompt_unlock_price": PROMPT_UNLOCK_PRICE_CREDITS,
+    }
 
 
 def _append_history_mode_tags(
@@ -98,6 +179,11 @@ async def build_post_responses(
         current_user=current_user,
         user_ids=user_ids,
     )
+    unlocked_prompt_post_ids = await _load_unlocked_prompt_post_ids(
+        session=session,
+        current_user=current_user,
+        post_ids=post_ids,
+    )
 
     tasks = []
     for post in posts:
@@ -122,7 +208,13 @@ async def build_post_responses(
         history = history_map.get(post.task_id)
         tags = _append_history_mode_tags(tags=tags, history=history)
         translated_tags = translate_tags_func(tags)
-        prompt = history.prompt if history else None
+        raw_prompt = history.prompt if history else None
+        prompt_visibility = resolve_gallery_prompt_visibility(
+            prompt=raw_prompt,
+            post=post,
+            current_user=current_user,
+            unlocked_prompt_post_ids=unlocked_prompt_post_ids,
+        )
         task_type_from_history = history.type if history else None
         result_meta = extract_history_result_meta(
             task_type=task_type_from_history,
@@ -173,7 +265,11 @@ async def build_post_responses(
                 media_url=media_url,
                 created_at=post.created_at,
                 is_active=post.is_active,
-                prompt=prompt,
+                prompt=prompt_visibility["prompt"],
+                prompt_unlocked=prompt_visibility["prompt_unlocked"],
+                prompt_unlockable=prompt_visibility["prompt_unlockable"],
+                prompt_is_masked=prompt_visibility["prompt_is_masked"],
+                prompt_unlock_price=prompt_visibility["prompt_unlock_price"],
                 task_type=task_type_from_history,
                 result_meta=result_meta,
                 template_apply_supported=template_apply_disabled_reason is None,
@@ -264,6 +360,28 @@ async def _load_following_user_ids(
         .all()
     )
     return set(follow_links)
+
+
+async def _load_unlocked_prompt_post_ids(
+    *,
+    session,
+    current_user,
+    post_ids: list[int],
+) -> set[int]:
+    if not current_user or not post_ids:
+        return set()
+    unlocks = (
+        (
+            await session.execute(
+                select(GalleryPromptUnlock.post_id)
+                .where(GalleryPromptUnlock.user_id == current_user.id)
+                .where(GalleryPromptUnlock.post_id.in_(post_ids))
+            )
+        )
+        .scalars()
+        .all()
+    )
+    return set(unlocks)
 
 
 async def build_gallery_post_responses(

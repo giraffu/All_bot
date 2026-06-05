@@ -12,6 +12,7 @@ description: "处理 Web 鉴权、JWT、password_version、支付履约、affili
 - **JWT 体系**：JWT 由 Web 安全层签发，当前认证链会把 `pwd_ver` / `channel` 等 claim 纳入令牌语义；旧 token 失效依赖 `password_version` 与 Redis 黑名单协同收口。
 - **多支付通道履约**：RMB 履约当前走会员结算主路径 `settle_membership_plan_in_session(...)`，并保留 legacy fallback；TON 依赖 `tx_hash` 幂等；Stars 走 Telegram 支付履约。
 - **Affiliate 账本闭环**：支付成功后可计算首单返佣并落 `affiliate_transactions`；affiliate 余额既可兑换灵石，也可兑换会员/权益，并保留完整审计流水。
+- **站内灵石转账**：用户之间的灵石转移使用 `QuotaManager.transfer_credits(...)`，在同一事务内锁定双方用户、扣减买家、增加收款方并写入双方 `user_logs`；Gallery 提示词解锁固定走此入口。
 - **Provider 化 billing core**：billing core 相关默认能力已收口到 provider/dependencies 模式，新增逻辑应优先走 provider 注册与依赖注入边界。
 
 ## 2. 输入输出规范
@@ -37,9 +38,15 @@ description: "处理 Web 鉴权、JWT、password_version、支付履约、affili
 - **灵石兑换**：`redeem_affiliate_balance_to_credits(...)`
 - **会员兑换**：affiliate 余额可进一步兑换会员权益，需遵守统一结算语义与审计链
 
+### 站内灵石转账
+- **接口/入口**：`QuotaManager.transfer_credits(...)`
+- **语义**：同事务完成转出方扣减、转入方增加与双方 `user_logs`；调用方可复用外部 `AsyncSession` 并负责最终提交。
+- **典型场景**：Gallery 提示词解锁，买家消耗 1 灵石，作者获得 1 灵石。
+
 ## 3. 核心红线
 - 严禁手写 `UPDATE users SET credits = ...` 绕过账本与既有结算逻辑。
 - 任何资产副作用前，必须先有唯一业务单、外部流水或幂等键作为锚点。
+- 用户间灵石转账不得拆成两个独立事务；必须用同一幂等锚点与同一事务保证扣减、入账、审计一致。
 - 复用外部 `AsyncSession` 时，`user_logs`、affiliate 流水与会员结算审计必须保持同事务语义。
 - Affiliate 缓存失效必须放在最终提交成功后执行，不能在提交前删除缓存。
 - 汇率缺失、金额不匹配或结算参数冲突时必须 fail fast，不能静默降级。

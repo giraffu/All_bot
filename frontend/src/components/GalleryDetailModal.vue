@@ -21,6 +21,7 @@ interface DetailStandardActions {
   showMobileApply?: boolean
   showMobileCopy?: boolean
   showPromptPanelCopy?: boolean
+  showPromptPanelUnlock?: boolean
   maskPromptText?: boolean
   promptVisibleRatio?: number
   desktopApplyPlacement?: 'before' | 'after'
@@ -31,11 +32,14 @@ interface DetailStandardActions {
   applyLoadingLabel?: string
   applyHint?: string
   copyLabel?: string
+  unlockLabel?: string
+  unlockLoading?: boolean
   onLike?: () => void
   onDislike?: () => void
   onComment?: () => void
   onApply?: () => void
   onCopy?: () => void
+  onUnlockPrompt?: () => void
 }
 
 const props = withDefaults(
@@ -187,10 +191,14 @@ const handleNewCommentInput = (event: Event) => {
           :expand-label="$t('prompt_panel.expand')"
           :collapse-label="$t('prompt_panel.collapse')"
           :show-copy="!!standardActions?.showPromptPanelCopy"
+          :show-unlock="!!standardActions?.showPromptPanelUnlock"
           :mask-text="!!standardActions?.maskPromptText"
           :visible-ratio="standardActions?.promptVisibleRatio ?? 0.5"
           :copy-label="standardActions?.copyLabel || ''"
+          :unlock-label="standardActions?.unlockLabel || ''"
+          :unlock-loading="!!standardActions?.unlockLoading"
           @copy="standardActions?.onCopy?.()"
+          @unlock="standardActions?.onUnlockPrompt?.()"
         />
 
         <slot

@@ -15,6 +15,7 @@ import { useScrollPrefetch } from '@/composables/useScrollPrefetch'
 import { useCurrentDetailMedia } from '@/composables/useCurrentDetailMedia'
 import { useDetailTemplateApply } from '@/composables/useDetailTemplateApply'
 import { usePostPromptCopy } from '@/composables/usePostPromptCopy'
+import { useGalleryPromptUnlock } from '@/composables/useGalleryPromptUnlock'
 import { useRenderSettling } from '@/composables/useRenderSettling'
 import { useTemplateApplyStore } from '@/stores/templateApply'
 import type { GalleryPost } from '@/types/gallery'
@@ -189,6 +190,11 @@ export function useGalleryPageState() {
   })
   const formatTag = (tag: string) => formatGalleryTag(tag, t)
   const { copyPrompt } = usePostPromptCopy(t)
+  const { promptUnlockingPostId, handleUnlockPrompt } = useGalleryPromptUnlock({
+    posts,
+    currentPost,
+    t,
+  })
 
   const galleryDetailStandardActions = computed(() => ({
     showDesktopReaction: true,
@@ -197,8 +203,13 @@ export function useGalleryPageState() {
     showMobileReaction: true,
     showMobileApply: true,
     showMobileCopy: false,
-    showPromptPanelCopy: false,
-    maskPromptText: true,
+    showPromptPanelCopy: currentPost.value?.prompt_unlocked === true,
+    showPromptPanelUnlock: !!currentPost.value?.prompt_unlockable,
+    maskPromptText: currentPost.value?.prompt_unlocked === true
+      ? false
+      : currentPost.value?.prompt_is_masked === true
+        ? false
+        : true,
     promptVisibleRatio: 0.5,
     desktopApplyPlacement: 'before' as const,
     applyLabel: t('gallery.modal.apply_btn'),
@@ -206,6 +217,12 @@ export function useGalleryPageState() {
     applyDisabled: currentTemplateApplyDisabledReason.value !== null,
     applyHint: currentTemplateApplyDisabledMessage.value || t('gallery.modal.apply_hint'),
     copyLabel: t('my_posts.copy_prompt'),
+    unlockLabel: t('prompt_panel.unlock', {
+      cost: currentPost.value?.prompt_unlock_price ?? 1,
+    }),
+    unlockLoading: currentPost.value
+      ? promptUnlockingPostId.value === Number(currentPost.value.id)
+      : false,
     onLike: () => {
       if (currentPost.value) {
         void handleInteract(currentPost.value, 'like')
@@ -226,6 +243,9 @@ export function useGalleryPageState() {
       if (currentPost.value) {
         copyPrompt(currentPost.value)
       }
+    },
+    onUnlockPrompt: () => {
+      void handleUnlockPrompt()
     },
   }))
 

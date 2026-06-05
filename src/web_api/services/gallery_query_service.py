@@ -1,6 +1,6 @@
-from sqlalchemy import desc, func, select
+from sqlalchemy import desc, exists, func, select
 
-from src.database.models import GalleryPost, History, UserInteraction
+from src.database.models import GalleryPost, GalleryPromptUnlock, History, UserInteraction
 
 
 async def fetch_my_gallery_posts_page(
@@ -60,6 +60,41 @@ async def fetch_my_favorite_posts_page(
 
     if task_type:
         query = query.where(History.type == task_type)
+
+    total_query = select(func.count()).select_from(query.subquery())
+    total = (await db.execute(total_query)).scalar()
+    offset = (page - 1) * size
+    posts = (await db.execute(query.offset(offset).limit(size))).scalars().all()
+    return posts, total
+
+
+async def fetch_my_prompt_unlocked_posts_page(
+    *,
+    db,
+    current_user_id: int,
+    page: int,
+    size: int,
+    task_type: str | None,
+):
+    query = (
+        select(GalleryPost)
+        .join(GalleryPromptUnlock, GalleryPost.id == GalleryPromptUnlock.post_id)
+        .where(
+            GalleryPromptUnlock.user_id == current_user_id,
+            GalleryPost.is_active == True,
+        )
+        .order_by(desc(GalleryPromptUnlock.created_at), desc(GalleryPost.id))
+    )
+
+    if task_type:
+        query = query.where(
+            exists(
+                select(1).where(
+                    History.task_id == GalleryPost.task_id,
+                    History.type == task_type,
+                )
+            )
+        )
 
     total_query = select(func.count()).select_from(query.subquery())
     total = (await db.execute(total_query)).scalar()

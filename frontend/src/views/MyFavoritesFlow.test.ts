@@ -205,7 +205,7 @@ const primeFavoritesApi = (options?: {
       })
     }
 
-    if (url === '/users/my-favorites' || url === '/gallery/my-favorites') {
+    if (url === '/users/my-favorites' || url === '/gallery/my-favorites' || url === '/gallery/my-prompt-unlocks') {
       const favoriteItems = options?.favoriteItems ?? [samplePost]
       return Promise.resolve({
         data: {
@@ -439,6 +439,37 @@ describe('MyFavorites workbench flow', () => {
     expect(wrapper.text()).not.toContain('您还没有收藏过任何作品')
     expect(wrapper.text()).toContain('已上架')
     expect(wrapper.findAll('.group.cursor-pointer')).toHaveLength(1)
+  })
+
+  it('loads unlocked prompt templates tab from prompt unlocks endpoint', async () => {
+    primeFavoritesApi()
+
+    const wrapper = mountHarness()
+    await flushPromises()
+    await flushPromises()
+
+    const promptTemplatesTab = wrapper
+      .findAll('button')
+      .find(button => button.text().trim() === '提示词模版')
+
+    expect(promptTemplatesTab).toBeTruthy()
+
+    await promptTemplatesTab!.trigger('click')
+    await flushPromises()
+    await flushPromises()
+
+    expect(routerReplaceMock).toHaveBeenCalledWith({
+      name: 'MyFavorites',
+      query: {
+        tab: 'prompt_templates'
+      }
+    })
+    expect(apiGetMock).toHaveBeenCalledWith('/gallery/my-prompt-unlocks', expect.objectContaining({
+      params: expect.objectContaining({
+        page: 1,
+        task_type: undefined
+      })
+    }))
   })
 
   it('renders translated task type tabs instead of raw task mode keys', async () => {

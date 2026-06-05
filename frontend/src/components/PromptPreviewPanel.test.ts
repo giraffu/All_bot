@@ -61,4 +61,28 @@ describe('PromptPreviewPanel', () => {
     expect(contentText).not.toContain('fghij')
     expect(/[•·◦*]/.test(contentText)).toBe(true)
   })
+
+  it('renders unlock action and emits unlock', async () => {
+    const wrapper = mount(PromptPreviewPanel, {
+      props: {
+        title: '提示词预览',
+        prompt: 'abcde*****',
+        expandLabel: '展开全文',
+        collapseLabel: '收起',
+        showUnlock: true,
+        unlockLabel: '解锁提示词（1灵石）',
+      },
+    })
+
+    const unlockButton = wrapper
+      .findAll('.prompt-preview-action-btn')
+      .find((button) => button.text().includes('解锁提示词'))
+
+    expect(unlockButton).toBeTruthy()
+    await unlockButton!.trigger('click')
+    expect(wrapper.emitted('unlock')).toHaveLength(1)
+
+    await wrapper.setProps({ unlockLoading: true })
+    expect(unlockButton!.attributes('disabled')).toBeDefined()
+  })
 })

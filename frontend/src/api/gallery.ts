@@ -25,6 +25,17 @@ interface GalleryCommentsPage {
   pages: number
 }
 
+export interface PromptUnlockResponse {
+  post_id: number
+  prompt: string
+  prompt_unlocked: boolean
+  prompt_unlockable: boolean
+  prompt_is_masked: boolean
+  prompt_unlock_price: number
+  current_credits: number
+  already_unlocked: boolean
+}
+
 export async function getRecentHistory(): Promise<RecentHistoryResponse> {
   const response = await api.get<RecentHistoryResponse>('/users/history')
   return response.data
@@ -56,6 +67,17 @@ export async function getMyLibraryPosts(
     return response.data
   }
 
+  if (scope === 'prompt_templates') {
+    const response = await api.get<PaginatedGalleryResponse<GalleryPost>>('/gallery/my-prompt-unlocks', {
+      params: {
+        page,
+        size,
+        task_type: taskType === 'all' ? undefined : taskType,
+      },
+    })
+    return response.data
+  }
+
   if (scope === 'favorite') {
     const response = await api.get<PaginatedGalleryResponse<GalleryPost>>('/users/my-favorites', {
       params: {
@@ -75,6 +97,11 @@ export async function getMyLibraryPosts(
       task_type: taskType === 'all' ? undefined : taskType,
     },
   })
+  return response.data
+}
+
+export async function unlockGalleryPrompt(postId: number): Promise<PromptUnlockResponse> {
+  const response = await api.post<PromptUnlockResponse>(`/gallery/posts/${postId}/prompt-unlock`)
   return response.data
 }
 

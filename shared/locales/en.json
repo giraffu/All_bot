@@ -538,11 +538,13 @@
       "favorite": "Favorites",
       "like": "Likes",
       "apply": "Applied",
+      "prompt_templates": "Prompt Templates",
       "submissions": "My Submissions"
     },
     "empty_favorite": "No favorited works yet",
     "empty_like": "No liked works yet",
     "empty_apply": "No applied templates yet",
+    "empty_prompt_templates": "No unlocked prompt templates yet",
     "load_failed": "Failed to load content",
     "action_failed": "Action failed",
     "favorite_removed": "Removed from favorites",
@@ -552,6 +554,8 @@
     "dislike_removed": "Dislike removed",
     "prompt_empty": "This post has no prompt",
     "prompt_copied": "Prompt copied to clipboard",
+    "prompt_unlock_success": "Prompt unlocked",
+    "prompt_already_unlocked": "This prompt is already unlocked",
     "copy_failed": "Copy failed",
     "template_loaded": "Template loaded",
     "template_loaded_with_upload_hint": "Template loaded, please upload your reference image",
@@ -568,6 +572,7 @@
   },
   "prompt_panel": {
     "title": "Prompt Preview",
+    "unlock": "Unlock Prompt ({cost} credit)",
     "expand": "Expand",
     "collapse": "Collapse"
   },

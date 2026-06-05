@@ -88,6 +88,8 @@ const {
   currentDetailMedia,
   formatTag,
   copyPrompt,
+  promptUnlockingPostId,
+  handleUnlockPrompt,
   favoriteSupportsPostDetail,
 } = useMyLibraryPostBrowser<Post>({
   pageSize,
@@ -148,12 +150,17 @@ const {
 const favoritesDetailStandardActions = computed(() => ({
   showDesktopReaction: filterType.value !== 'favorite',
   showDesktopApply: true,
-  showDesktopCopy: filterType.value !== 'like',
+  showDesktopCopy: filterType.value !== 'like' && currentPost.value?.prompt_unlocked === true,
   showMobileReaction: filterType.value !== 'favorite',
   showMobileApply: true,
-  showMobileCopy: filterType.value !== 'like',
-  showPromptPanelCopy: filterType.value !== 'like',
-  maskPromptText: filterType.value === 'like',
+  showMobileCopy: filterType.value !== 'like' && currentPost.value?.prompt_unlocked === true,
+  showPromptPanelCopy: filterType.value !== 'like' && currentPost.value?.prompt_unlocked === true,
+  showPromptPanelUnlock: !!currentPost.value?.prompt_unlockable,
+  maskPromptText: currentPost.value?.prompt_unlocked === true
+    ? false
+    : currentPost.value?.prompt_is_masked === true
+      ? false
+      : filterType.value === 'like',
   promptVisibleRatio: 0.5,
   desktopApplyPlacement: 'after' as const,
   applyLabel: t('gallery.modal.apply_btn'),
@@ -162,6 +169,12 @@ const favoritesDetailStandardActions = computed(() => ({
   applyLoadingLabel: t('my_notes.applying_template'),
   applyHint: currentTemplateApplyDisabledMessage.value || t('gallery.modal.apply_hint'),
   copyLabel: t('my_posts.copy_prompt'),
+  unlockLabel: t('prompt_panel.unlock', {
+    cost: currentPost.value?.prompt_unlock_price ?? 1,
+  }),
+  unlockLoading: currentPost.value
+    ? promptUnlockingPostId.value === Number(currentPost.value.id)
+    : false,
   onLike: () => {
     if (currentPost.value) {
       void handleInteract(currentPost.value, 'like')
@@ -179,6 +192,9 @@ const favoritesDetailStandardActions = computed(() => ({
     if (currentPost.value) {
       void copyPrompt(currentPost.value)
     }
+  },
+  onUnlockPrompt: () => {
+    void handleUnlockPrompt()
   },
   onApply: () => {
     void handleApply()

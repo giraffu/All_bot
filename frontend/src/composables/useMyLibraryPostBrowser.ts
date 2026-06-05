@@ -7,6 +7,7 @@ import { useGalleryComments } from '@/composables/useGalleryComments'
 import { useGalleryPostInteractions } from '@/composables/useGalleryPostInteractions'
 import { usePagedPostBrowser } from '@/composables/usePagedPostBrowser'
 import { usePostPromptCopy } from '@/composables/usePostPromptCopy'
+import { useGalleryPromptUnlock } from '@/composables/useGalleryPromptUnlock'
 import { useTemplateApplyStore } from '@/stores/templateApply'
 import type { GalleryPost, LibraryCollectionScope } from '@/types/gallery'
 import { formatGalleryTag } from '@/utils/galleryPresentation'
@@ -154,6 +155,11 @@ export function useMyLibraryPostBrowser<Post extends GalleryPost>(
   const currentDetailMedia = useCurrentDetailMedia(currentPostRef)
   const formatTag = (tag: string) => formatGalleryTag(tag, options.t)
   const { copyPrompt } = usePostPromptCopy(options.t)
+  const { promptUnlockingPostId, handleUnlockPrompt } = useGalleryPromptUnlock({
+    posts,
+    currentPost: currentPostRef,
+    t: options.t,
+  })
 
   const favoriteSupportsPostDetail = computed(() => {
     if (resolveValue(options.scope) !== 'favorite') {
@@ -205,6 +211,8 @@ export function useMyLibraryPostBrowser<Post extends GalleryPost>(
     currentDetailMedia,
     formatTag,
     copyPrompt,
+    promptUnlockingPostId,
+    handleUnlockPrompt,
     favoriteSupportsPostDetail,
   }
 }

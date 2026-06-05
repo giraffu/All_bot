@@ -3,11 +3,16 @@ import type { RouteLocationNormalizedLoaded, Router } from 'vue-router'
 import type { GalleryTaskTypeOption } from '@/composables/useGalleryConfig'
 import { resolveGalleryTaskTypeLabel } from '@/utils/galleryPresentation'
 
-export type FavoriteFilterTab = 'favorite' | 'like' | 'apply' | 'submissions'
+export type FavoriteFilterTab = 'favorite' | 'like' | 'apply' | 'prompt_templates' | 'submissions'
 
 function normalizeFilterType(tabValue: unknown): FavoriteFilterTab {
   const value = typeof tabValue === 'string' ? tabValue : ''
-  if (value === 'like' || value === 'apply' || value === 'submissions') {
+  if (
+    value === 'like'
+    || value === 'apply'
+    || value === 'prompt_templates'
+    || value === 'submissions'
+  ) {
     return value
   }
   return 'favorite'
@@ -32,6 +37,7 @@ export function useMyFavoritesFilters(options: UseMyFavoritesFiltersOptions) {
     { id: 'favorite' as const, name: options.t('my_notes.tabs.favorite') },
     { id: 'like' as const, name: options.t('my_notes.tabs.like') },
     { id: 'apply' as const, name: options.t('my_notes.tabs.apply') },
+    { id: 'prompt_templates' as const, name: options.t('my_notes.tabs.prompt_templates') },
     { id: 'submissions' as const, name: options.t('my_notes.tabs.submissions') },
   ])
 
@@ -46,6 +52,7 @@ export function useMyFavoritesFilters(options: UseMyFavoritesFiltersOptions) {
   const emptyStateText = computed(() => {
     if (filterType.value === 'like') return options.t('my_notes.empty_like')
     if (filterType.value === 'apply') return options.t('my_notes.empty_apply')
+    if (filterType.value === 'prompt_templates') return options.t('my_notes.empty_prompt_templates')
     return options.t('my_notes.empty_favorite')
   })
 

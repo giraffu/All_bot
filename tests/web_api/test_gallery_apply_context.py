@@ -144,6 +144,55 @@ async def test_build_post_responses_marks_wan22_stitched_template_apply_disabled
 
 
 @pytest.mark.asyncio
+async def test_build_post_responses_masks_locked_prompt_for_non_author():
+    history = History(
+        id=11,
+        user_id=123,
+        task_id="task-locked-prompt",
+        type="image",
+        prompt="abcdefghij",
+        output_file="bot-data/history/task-locked-prompt/output.png",
+    )
+    post = GalleryPost(
+        id=2,
+        task_id="task-locked-prompt",
+        user_id=123,
+        media_type="image",
+        width=1024,
+        height=1024,
+        duration=None,
+        tags="[]",
+        likes_count=0,
+        dislikes_count=0,
+        applied_count=0,
+        is_active=True,
+        created_at=datetime.now(),
+    )
+    session = _FakeSession(
+        [
+            _FakeResult(many=[]),
+            _FakeResult(many=[history]),
+            _FakeResult(many=[]),
+            _FakeResult(many=[]),
+            _FakeResult(many=[]),
+        ]
+    )
+
+    responses = await build_gallery_post_responses(
+        session=session,
+        posts=[post],
+        current_user=SimpleNamespace(id=999),
+        pick_gallery_media_urls=AsyncMock(return_value=("media-url", "thumb-url")),
+    )
+
+    assert responses[0].prompt == "abcde*****"
+    assert responses[0].prompt_unlocked is False
+    assert responses[0].prompt_unlockable is True
+    assert responses[0].prompt_is_masked is True
+    assert responses[0].prompt_unlock_price == 1
+
+
+@pytest.mark.asyncio
 async def test_get_apply_context_backfills_missing_video_billing_resolution_from_short_side():
     history = History(
         id=11,

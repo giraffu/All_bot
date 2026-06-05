@@ -56,6 +56,10 @@ class GalleryPostResponse(BaseModel):
     created_at: datetime
     is_active: bool = True
     prompt: Optional[str] = None
+    prompt_unlocked: bool = False
+    prompt_unlockable: bool = False
+    prompt_is_masked: bool = False
+    prompt_unlock_price: int = 1
     task_type: Optional[str] = None
     result_meta: Dict[str, Any] = Field(default_factory=dict)
     template_apply_supported: bool = True
@@ -76,6 +80,17 @@ class PaginatedGalleryResponse(BaseModel):
     page: int
     size: int
     pages: int
+
+
+class PromptUnlockResponse(BaseModel):
+    post_id: int
+    prompt: str
+    prompt_unlocked: bool = True
+    prompt_unlockable: bool = False
+    prompt_is_masked: bool = False
+    prompt_unlock_price: int = 1
+    current_credits: int
+    already_unlocked: bool = False
 
 
 class ApplyContextResponse(BaseModel):

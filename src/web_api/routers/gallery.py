@@ -26,6 +26,10 @@ from src.web_api.services.gallery_service_queries import (
     get_gallery_posts_api_payload,
     get_my_favorite_posts_api_payload,
     get_my_gallery_posts_api_payload,
+    get_my_prompt_unlocked_posts_api_payload,
+)
+from src.web_api.services.gallery_prompt_unlock_service import (
+    unlock_gallery_prompt_payload,
 )
 from src.web_api.services.users_history_service import (
     get_history_apply_context_for_current_user,
@@ -42,6 +46,7 @@ from src.web_api.schemas.gallery_schema import (
     CommentCreate,
     GalleryCommentResponse,
     PaginatedCommentResponse,
+    PromptUnlockResponse,
 )
 
 router = APIRouter()
@@ -115,6 +120,23 @@ async def get_my_favorite_posts(
     )
 
 
+@router.get("/my-prompt-unlocks", response_model=PaginatedGalleryResponse)
+async def get_my_prompt_unlocked_posts(
+    current_user: CurrentUserDep,
+    db: DbSessionDep = None,
+    page: int = Query(1, ge=1),
+    size: int = Query(20, ge=1, le=100),
+    task_type: Optional[str] = None,
+):
+    return await get_my_prompt_unlocked_posts_api_payload(
+        current_user=current_user,
+        page=page,
+        size=size,
+        task_type=task_type,
+        db=db,
+    )
+
+
 @router.put("/posts/{post_id}/status")
 async def update_post_status(
     post_id: int,
@@ -149,6 +171,19 @@ async def interact_with_post(
         post_id=post_id,
         action=action,
         current_user=current_user,
+    )
+
+
+@router.post("/posts/{post_id}/prompt-unlock", response_model=PromptUnlockResponse)
+async def unlock_post_prompt(
+    post_id: int,
+    current_user: CurrentUserDep,
+    db: DbSessionDep,
+):
+    return await unlock_gallery_prompt_payload(
+        post_id=post_id,
+        current_user=current_user,
+        db=db,
     )
 
 

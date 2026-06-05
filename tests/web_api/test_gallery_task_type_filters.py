@@ -6,6 +6,7 @@ from src.web_api.services.gallery_service_queries import (
     get_gallery_posts_payload,
     get_my_favorite_posts_payload,
     get_my_gallery_posts_payload,
+    get_my_prompt_unlocked_posts_payload,
 )
 
 
@@ -101,6 +102,28 @@ async def test_get_my_favorite_posts_applies_task_type_filter():
         page=1,
         size=20,
         filter_type="apply",
+        task_type="custom_video",
+        current_user=type("User", (), {"id": 123})(),
+        db=session,
+    )
+
+    assert response.total == 0
+    assert any(
+        _statement_contains_task_type_filter(stmt, "custom_video")
+        for stmt in session.executed_statements
+    )
+
+
+@pytest.mark.asyncio
+async def test_get_my_prompt_unlocked_posts_applies_task_type_filter():
+    session = _AsyncSessionContext([
+        _ScalarResult(0),
+        _ItemsResult([]),
+    ])
+
+    response = await get_my_prompt_unlocked_posts_payload(
+        page=1,
+        size=20,
         task_type="custom_video",
         current_user=type("User", (), {"id": 123})(),
         db=session,

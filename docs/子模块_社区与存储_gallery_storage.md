@@ -6,6 +6,7 @@
 - 点赞/点踩/应用记录
 - 评论系统与评论计数
 - 我的投稿 / 我的收藏
+- 提示词付费解锁与我的提示词模版
 - Web workbench 一键应用上下文
 - R2 媒体与缩略图优先返回
 - Dashboard 投稿用户展示、用户名/提示词筛选、投稿封禁与用户级批量下架
@@ -17,6 +18,8 @@
   - 记录 `like / dislike / apply`，通过唯一约束拦截重复互动。
 - `gallery_comments`
   - 评论表，按 `post_id + created_at` 建索引，支持活跃评论分页。
+- `gallery_prompt_unlocks`
+  - 提示词解锁表，`user_id + post_id` 唯一，记录买家、帖子、作者与解锁灵石成本，是提示词解锁的幂等锚点。
 - `history`
   - 仍是帖子内容来源与 apply-context 的事实源，包含 `prompt / input_file / requested_duration / billing_resolution / allow_contribute` 等字段。
 - `users`
@@ -34,7 +37,7 @@ sequenceDiagram
     participant R2 as Cloudflare R2
     participant S as Storage
 
-    U->>API: 投稿 / 点赞 / 评论 / 一键应用
+    U->>API: 投稿 / 点赞 / 评论 / 解锁提示词 / 一键应用
     alt 投稿
         API->>Core: process_submit_to_gallery()
         Core->>PG: 校验 History 所有权与 allow_contribute
@@ -45,6 +48,10 @@ sequenceDiagram
     else 评论
         API->>PG: 插入 gallery_comments
         PG->>PG: 原子 +1 comments_count，并再次校验帖子仍 active
+    else 解锁提示词
+        API->>PG: 插入 gallery_prompt_unlocks
+        API->>PG: 同事务扣买家 1 灵石、给作者 +1 灵石、写 user_logs
+        API-->>U: 返回完整 prompt 与当前余额
     else 获取应用上下文
         API->>PG: 读取 History + GalleryPost
         API->>S: 生成 input_file 预签名 URL
@@ -78,10 +85,19 @@ sequenceDiagram
   - 广场列表 `posts`
   - 我的投稿 `my-posts`
   - 我的收藏/应用历史 `my-favorites`
+  - 我的提示词模版 `my-prompt-unlocks`
 - `my-favorites` 不是单独表，而是从 `user_interactions` 反查点赞和应用记录。
+- `my-prompt-unlocks` 从 `gallery_prompt_unlocks` 反查当前用户已解锁提示词的活跃帖子；服务端会根据是否作者/是否已解锁决定返回完整 prompt 或遮罩 prompt。
 - Gallery feed 查询拼装已从 `src/core` 迁到 `src/services/gallery_feed_queries.py`，`src/core/gallery_feed_queries.py` 仅作为兼容 re-export；新增列表查询条件应继续放在 service 层，避免 core 重新直连 SQL 细节。
 
-### 4.5 Apply Context 已成为 Web 主路径
+### 4.5 提示词付费解锁
+- Gallery 列表与详情响应新增 `prompt_unlocked`、`prompt_unlockable`、`prompt_is_masked`、`prompt_unlock_price` 字段。
+- 未解锁且非作者访问时，服务端只返回半公开的遮罩 prompt；前端不能依赖客户端遮罩来保护完整提示词。
+- 解锁入口为 `POST /api/gallery/posts/{post_id}/prompt-unlock`，固定消耗 1 灵石；扣减买家与奖励作者必须通过 `QuotaManager.transfer_credits(...)` 在同一事务内完成，并各自写入 `user_logs`。
+- 重复解锁同一帖子必须命中 `gallery_prompt_unlocks.user_id + post_id` 唯一约束或既有记录，不得重复扣费。
+- 作者查看自己的帖子视为已解锁，不创建解锁记录、不发生灵石转账。
+
+### 4.6 Apply Context 已成为 Web 主路径
 - `GET /api/gallery/posts/{post_id}/apply-context` 会返回：
   - `source_post_id`
   - `prompt`
@@ -97,7 +113,7 @@ sequenceDiagram
 - 所有 Wan22 stitched 拼接记录（旧 `custom_video` / `video_lora` 与 `wan22_video_v2`）都不支持一键应用：列表/详情应返回 `template_apply_supported=false` 与 `template_apply_disabled_reason="wan22_stitched"`，apply-context 入口必须返回 400 防绕过。
 - 这已经是 Web workbench 模板应用的主入口，Telegram 内的老 `gallery_apply_fsm` 只应视为兼容路径。
 
-### 4.6 媒体 URL 策略
+### 4.7 媒体 URL 策略
 - 列表返回媒体时优先尝试 R2 公网 URL。
 - 若 R2 对象不存在，则回退到原始存储路径。
 - 缩略图也有独立的 R2 key 选择逻辑，不再是“简单拼接后缀”即可概括的模型。
@@ -105,6 +121,8 @@ sequenceDiagram
 ## 5. 核心红线
 - 捕获互动类 `IntegrityError` 前，必须先 `flush()`，避免 `autoflush` 提前把异常抛出到错误层级。
 - 点赞、点踩、评论计数都必须用数据库原子更新，不能先读后写覆盖。
+- 提示词解锁必须先有 `gallery_prompt_unlocks` 唯一记录作为幂等锚点，灵石扣减与作者入账必须同事务完成。
+- 未解锁提示词的完整内容不得通过 gallery 列表/详情响应泄漏；只允许返回服务端生成的遮罩 prompt。
 - 投稿封禁属于用户能力控制，不得通过篡改 `allow_contribute`、`current_identity` 或 `user_group` 去模拟。
 - 用户级批量下架必须同时更新 `GalleryPost.is_active=False` 与投稿关联的 `History.is_public=False`，避免只隐藏列表但保留旧公开资源入口。
 - `apply-context` 必须从 `History` 取请求语义字段，不能只依赖帖子展示用的输出元数据。
@@ -116,6 +134,7 @@ sequenceDiagram
 - 并发点赞/点踩的一致性
 - 评论并发下架时的回滚与 404
 - `my-favorites` 过滤 like/apply 的正确性
+- 提示词解锁首次扣费、重复请求不重复扣费、唯一约束并发冲突回滚、`my-prompt-unlocks` 列表过滤
 - apply-context 对 `requested_duration` / `billing_resolution` / `negative_prompt` / `input_file_url` 的返回准确性
 - Wan22 v2 单段一键应用回填与 stitched 拼接记录禁用、400 拒绝
 - Dashboard 封禁投稿并批量下架时，用户封禁状态、帖子上下架状态和多条 `History.is_public` 同步

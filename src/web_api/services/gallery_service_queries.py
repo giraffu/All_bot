@@ -15,6 +15,7 @@ from src.web_api.services.gallery_query_service import (
     fetch_gallery_apply_context_entities,
     fetch_my_favorite_posts_page,
     fetch_my_gallery_posts_page,
+    fetch_my_prompt_unlocked_posts_page,
 )
 from src.web_api.services.gallery_service_support import (
     default_should_return_gallery_apply_input_file,
@@ -138,6 +139,56 @@ async def get_my_favorite_posts_api_payload(
         page=page,
         size=size,
         filter_type=filter_type,
+        task_type=task_type,
+    )
+
+
+async def get_my_prompt_unlocked_posts_payload(
+    *,
+    current_user,
+    db,
+    page: int,
+    size: int,
+    task_type: str | None,
+    build_post_responses_fn=build_gallery_post_responses,
+) -> PaginatedGalleryResponse:
+    posts, total = await fetch_my_prompt_unlocked_posts_page(
+        db=db,
+        current_user_id=current_user.id,
+        page=page,
+        size=size,
+        task_type=task_type,
+    )
+    response_items = await build_post_responses_fn(
+        session=db,
+        posts=posts,
+        current_user=current_user,
+    )
+    return _build_paginated_gallery_response(
+        items=response_items,
+        total=total,
+        page=page,
+        size=size,
+    )
+
+
+async def get_my_prompt_unlocked_posts_api_payload(
+    *,
+    current_user,
+    page: int,
+    size: int,
+    task_type: str | None,
+    db=None,
+    session_factory=None,
+    service_fn=None,
+) -> PaginatedGalleryResponse:
+    return await call_with_optional_db(
+        db=db,
+        service_fn=service_fn or get_my_prompt_unlocked_posts_payload,
+        session_factory=session_factory or AsyncSessionLocal,
+        current_user=current_user,
+        page=page,
+        size=size,
         task_type=task_type,
     )
 

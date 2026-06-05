@@ -41,6 +41,10 @@ export interface GalleryPost {
   author_id?: number | null
   is_active: boolean
   prompt: string | null
+  prompt_unlocked?: boolean
+  prompt_unlockable?: boolean
+  prompt_is_masked?: boolean
+  prompt_unlock_price?: number
   task_type?: string | null
   result_meta?: Wan22ResultMeta
   template_apply_supported?: boolean
@@ -103,5 +107,5 @@ export interface Wan22HistoryChainResponse {
   items: HistoryItem[]
 }
 
-export type LibraryCollectionScope = 'favorite' | 'like' | 'apply' | 'submissions'
+export type LibraryCollectionScope = 'favorite' | 'like' | 'apply' | 'prompt_templates' | 'submissions'
 export type ApplyContextSource = 'gallery' | 'favorites' | 'submissions'

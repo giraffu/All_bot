@@ -539,11 +539,13 @@
       "favorite": "收藏",
       "like": "点赞",
       "apply": "应用",
+      "prompt_templates": "提示词模版",
       "submissions": "我的投稿"
     },
     "empty_favorite": "您还没有收藏过任何作品",
     "empty_like": "您还没有点赞过任何作品",
     "empty_apply": "您还没有应用过任何模板",
+    "empty_prompt_templates": "您还没有解锁过任何提示词模版",
     "load_failed": "获取内容失败",
     "action_failed": "操作失败",
     "favorite_removed": "已取消收藏",
@@ -553,6 +555,8 @@
     "dislike_removed": "已取消点踩",
     "prompt_empty": "此投稿没有提示词",
     "prompt_copied": "提示词已复制到剪贴板",
+    "prompt_unlock_success": "提示词已解锁",
+    "prompt_already_unlocked": "此提示词已解锁",
     "copy_failed": "复制失败",
     "template_loaded": "已载入模板",
     "template_loaded_with_upload_hint": "已载入模板，请上传您的参考图",
@@ -569,6 +573,7 @@
   },
   "prompt_panel": {
     "title": "提示词预览",
+    "unlock": "解锁提示词（{cost}灵石）",
     "expand": "展开全文",
     "collapse": "收起"
   },

@@ -27,6 +27,12 @@ class CreditChangeResult:
     username: str | None
 
 
+@dataclass(frozen=True)
+class CreditTransferResult:
+    from_user: CreditChangeResult
+    to_user: CreditChangeResult
+
+
 AuditMode = Literal["auto", "skip"]
 
 
@@ -102,6 +108,20 @@ class QuotaManager:
         stmt = select(User).where(User.id == user_id).with_for_update()
         result = await session.execute(stmt)
         return result.scalar_one_or_none()
+
+    async def _get_users_for_update(
+        self, session: AsyncSession, user_ids: list[int]
+    ) -> dict[int, User]:
+        if not user_ids:
+            return {}
+        stmt = (
+            select(User)
+            .where(User.id.in_(sorted(set(user_ids))))
+            .order_by(User.id)
+            .with_for_update()
+        )
+        result = await session.execute(stmt)
+        return {user.id: user for user in result.scalars().all()}
 
     async def _apply_credit_delta(
         self, session: AsyncSession, user_id: int, credit_delta: int
@@ -256,6 +276,128 @@ class QuotaManager:
             extra_info=extra_info,
             audit_mode=audit_mode,
         )
+
+    async def _transfer_credits_in_session(
+        self,
+        *,
+        session: AsyncSession,
+        from_user_id: int,
+        to_user_id: int,
+        amount: int,
+        from_username: str = None,
+        to_username: str = None,
+        debit_task_type: str,
+        credit_task_type: str,
+        extra_info: Optional[dict[str, Any]] = None,
+        audit_mode: AuditMode = "auto",
+    ) -> CreditTransferResult:
+        users = await self._get_users_for_update(
+            session,
+            [from_user_id, to_user_id],
+        )
+        from_user = users.get(from_user_id)
+        to_user = users.get(to_user_id)
+        if not from_user:
+            raise ValueError(f"User {from_user_id} not found")
+        if not to_user:
+            raise ValueError(f"User {to_user_id} not found")
+
+        from_old_balance = int(from_user.credits or 0)
+        if from_old_balance < amount:
+            raise InsufficientCreditsError(current=from_old_balance, cost=amount)
+
+        to_old_balance = int(to_user.credits or 0)
+        from_user.credits = from_old_balance - amount
+        to_user.credits = to_old_balance + amount
+        now = datetime.now()
+        from_user.last_activity = now
+        to_user.last_activity = now
+        await session.flush()
+
+        from_result = CreditChangeResult(
+            old_balance=from_old_balance,
+            new_balance=int(from_user.credits or 0),
+            username=from_user.username,
+        )
+        to_result = CreditChangeResult(
+            old_balance=to_old_balance,
+            new_balance=int(to_user.credits or 0),
+            username=to_user.username,
+        )
+
+        await self._log_credit_change(
+            user_id=from_user_id,
+            username=from_username,
+            task_type=debit_task_type,
+            result=from_result,
+            extra_info=extra_info,
+            session=session,
+            audit_mode=audit_mode,
+        )
+        await self._log_credit_change(
+            user_id=to_user_id,
+            username=to_username,
+            task_type=credit_task_type,
+            result=to_result,
+            extra_info=extra_info,
+            session=session,
+            audit_mode=audit_mode,
+        )
+        return CreditTransferResult(from_user=from_result, to_user=to_result)
+
+    async def transfer_credits(
+        self,
+        *,
+        from_user_id: int,
+        to_user_id: int,
+        amount: int,
+        from_username: str = None,
+        to_username: str = None,
+        debit_task_type: str = "credit_transfer_out",
+        credit_task_type: str = "credit_transfer_in",
+        session: AsyncSession | None = None,
+        extra_info: Optional[dict[str, Any]] = None,
+        audit_mode: AuditMode = "auto",
+    ) -> CreditTransferResult:
+        """Atomically transfer credits between two users with audit logs."""
+        if amount <= 0:
+            raise ValueError("amount must be positive")
+        if from_user_id == to_user_id:
+            raise ValueError("from_user_id and to_user_id must be different")
+
+        if session is not None:
+            return await self._transfer_credits_in_session(
+                session=session,
+                from_user_id=from_user_id,
+                to_user_id=to_user_id,
+                amount=amount,
+                from_username=from_username,
+                to_username=to_username,
+                debit_task_type=debit_task_type,
+                credit_task_type=credit_task_type,
+                extra_info=extra_info,
+                audit_mode=audit_mode,
+            )
+
+        async with AsyncSessionLocal() as managed_session:
+            try:
+                result = await self._transfer_credits_in_session(
+                    session=managed_session,
+                    from_user_id=from_user_id,
+                    to_user_id=to_user_id,
+                    amount=amount,
+                    from_username=from_username,
+                    to_username=to_username,
+                    debit_task_type=debit_task_type,
+                    credit_task_type=credit_task_type,
+                    extra_info=extra_info,
+                    audit_mode=audit_mode,
+                )
+                await managed_session.commit()
+            except Exception:
+                await managed_session.rollback()
+                raise
+        return result
 
     async def checkin(
         self,

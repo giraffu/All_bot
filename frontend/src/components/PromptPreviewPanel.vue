@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { ChevronDown, ChevronUp, Copy } from 'lucide-vue-next'
+import { ChevronDown, ChevronUp, Copy, LockKeyhole } from 'lucide-vue-next'
 
 const props = withDefaults(
   defineProps<{
@@ -10,6 +10,9 @@ const props = withDefaults(
     collapseLabel: string
     copyLabel?: string
     showCopy?: boolean
+    unlockLabel?: string
+    showUnlock?: boolean
+    unlockLoading?: boolean
     collapsedLines?: number
     collapsedChars?: number
     maskText?: boolean
@@ -19,6 +22,9 @@ const props = withDefaults(
     prompt: '',
     copyLabel: '',
     showCopy: false,
+    unlockLabel: '',
+    showUnlock: false,
+    unlockLoading: false,
     collapsedLines: 4,
     collapsedChars: 220,
     maskText: false,
@@ -28,6 +34,7 @@ const props = withDefaults(
 
 const emit = defineEmits<{
   copy: []
+  unlock: []
 }>()
 
 const expanded = ref(false)
@@ -93,15 +100,27 @@ watch(normalizedPrompt, () => {
           {{ displayPrompt.length }} chars
         </div>
       </div>
-      <button
-        v-if="showCopy"
-        type="button"
-        class="prompt-preview-action-btn shrink-0 inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-medium transition-colors"
-        @click="emit('copy')"
-      >
-        <Copy :size="14" />
-        <span>{{ copyLabel }}</span>
-      </button>
+      <div class="prompt-preview-actions shrink-0 flex items-center gap-2">
+        <button
+          v-if="showUnlock"
+          type="button"
+          class="prompt-preview-action-btn inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-medium transition-colors"
+          :disabled="unlockLoading"
+          @click="emit('unlock')"
+        >
+          <LockKeyhole :size="14" />
+          <span>{{ unlockLabel }}</span>
+        </button>
+        <button
+          v-if="showCopy"
+          type="button"
+          class="prompt-preview-action-btn inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-medium transition-colors"
+          @click="emit('copy')"
+        >
+          <Copy :size="14" />
+          <span>{{ copyLabel }}</span>
+        </button>
+      </div>
     </div>
 
     <p
@@ -156,6 +175,11 @@ watch(normalizedPrompt, () => {
   border: 1px solid var(--prompt-preview-action-border, rgba(148, 163, 184, 0.24));
   background: var(--prompt-preview-action-bg, rgba(51, 65, 85, 0.35));
   color: var(--prompt-preview-action-text, var(--detail-modal-text-primary, #f8fafc));
+}
+
+.prompt-preview-action-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
 }
 
 .prompt-preview-action-btn:hover {

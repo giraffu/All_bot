@@ -402,6 +402,42 @@ class UserInteraction(Base):
     post = relationship("GalleryPost", backref="interactions")
 
 
+class GalleryPromptUnlock(Base):
+    __tablename__ = "gallery_prompt_unlocks"
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id",
+            "post_id",
+            name="uq_gallery_prompt_unlocks_user_post",
+        ),
+        Index(
+            "ix_gallery_prompt_unlocks_user_created_at",
+            "user_id",
+            "created_at",
+        ),
+        Index(
+            "ix_gallery_prompt_unlocks_post_created_at",
+            "post_id",
+            "created_at",
+        ),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(BigInteger, ForeignKey("users.id"), nullable=False, index=True)
+    post_id = Column(Integer, ForeignKey("gallery_posts.id"), nullable=False, index=True)
+    author_id = Column(BigInteger, ForeignKey("users.id"), nullable=False, index=True)
+    cost_credits = Column(Integer, nullable=False, default=1, server_default=text("1"))
+    created_at = Column(DateTime, default=datetime.now, nullable=False)
+
+    user = relationship("User", foreign_keys=[user_id], backref="prompt_unlocks")
+    author = relationship(
+        "User",
+        foreign_keys=[author_id],
+        backref="prompt_unlock_sales",
+    )
+    post = relationship("GalleryPost", backref="prompt_unlocks")
+
+
 class GalleryComment(Base):
     __tablename__ = "gallery_comments"
     __table_args__ = (
