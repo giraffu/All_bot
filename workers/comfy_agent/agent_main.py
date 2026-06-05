@@ -307,9 +307,9 @@ class ComfyAgent:
         return {
             "health_reason": self.health_reason,
             "last_error": self.last_error,
-            "last_error_at": self.last_error_at or "",
+            "last_error_at": self.last_error_at,
             "consecutive_failures": failure_count,
-            "quarantined_until": self.quarantined_until or "",
+            "quarantined_until": self.quarantined_until,
         }
 
     async def _handle_ws_connection_error(self, error: Exception | str) -> None:

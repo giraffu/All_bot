@@ -251,6 +251,26 @@ async def test_report_heartbeat_sends_error_health_fields(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_report_heartbeat_sends_null_numeric_health_fields_when_idle(monkeypatch):
+    module = build_agent_module(monkeypatch)
+    agent = module.ComfyAgent()
+    requests = []
+
+    async def fake_post(path, json):
+        requests.append((path, json))
+        return SimpleNamespace(status_code=200)
+
+    agent.master_client.post = fake_post
+
+    await agent.report_heartbeat()
+
+    payload = requests[0][1]
+    assert payload["status"] == "idle"
+    assert payload["last_error_at"] is None
+    assert payload["quarantined_until"] is None
+
+
+@pytest.mark.asyncio
 async def test_poll_loop_marks_error_and_does_not_pop_when_comfy_unhealthy(monkeypatch):
     module = build_agent_module(monkeypatch)
     agent = module.ComfyAgent()

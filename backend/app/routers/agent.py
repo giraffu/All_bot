@@ -46,9 +46,9 @@ class HeartbeatRequest(BaseModel):
     status: str = "idle"
     health_reason: str = ""
     last_error: str = ""
-    last_error_at: Optional[float] = None
-    consecutive_failures: Optional[int] = None
-    quarantined_until: Optional[float] = None
+    last_error_at: Optional[Any] = None
+    consecutive_failures: Optional[Any] = None
+    quarantined_until: Optional[Any] = None
 
 
 def verify_token(authorization: Optional[str] = Header(None)):

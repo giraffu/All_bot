@@ -93,6 +93,8 @@ async def build_worker_info_flow(
 
     worker_info = decode_redis_dict_func(raw_data)
     worker_info["agent_id"] = agent_id
+    if not all(worker_info.get(field) for field in ("types", "status", "last_seen")):
+        return None
 
     for numeric_key in ("last_error_at", "quarantined_until"):
         if numeric_key not in worker_info:

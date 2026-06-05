@@ -417,6 +417,17 @@ async def test_get_all_workers_enriches_running_task_details():
 
 
 @pytest.mark.asyncio
+async def test_get_all_workers_ignores_partial_agent_task_binding_without_heartbeat():
+    redis = _FakeRedis()
+    manager = QueueManager(redis)
+    worker_key = f"{manager.agent_heartbeat_prefix}agent-partial"
+
+    await redis.hset(worker_key, mapping={"current_task_id": "task-1"})
+
+    assert await manager.get_all_workers() == []
+
+
+@pytest.mark.asyncio
 async def test_get_active_workers_count_counts_agent_heartbeat_keys_only():
     redis = _FakeRedis()
     manager = QueueManager(redis)

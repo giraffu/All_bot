@@ -7,17 +7,32 @@ from fastapi import HTTPException
 from app.agent_router_helpers import (
     check_task_payload,
     complete_task_payload,
+    heartbeat_payload,
     parse_allowed_types,
     pop_task_payload,
     task_heartbeat_payload,
     update_status_payload,
     verify_agent_token,
 )
+from app.routers.agent import HeartbeatRequest
 
 
 def test_parse_allowed_types_trims_csv_values():
     assert parse_allowed_types(None) is None
     assert parse_allowed_types("img2img, face_swap") == ["img2img", "face_swap"]
+
+
+def test_heartbeat_request_accepts_legacy_empty_numeric_health_fields():
+    request = HeartbeatRequest(
+        agent_id="agent-1",
+        types="img2img",
+        status="idle",
+        last_error_at="",
+        quarantined_until="",
+    )
+
+    assert request.last_error_at == ""
+    assert request.quarantined_until == ""
 
 
 @pytest.mark.asyncio
@@ -109,6 +124,35 @@ async def test_task_heartbeat_payload_binds_agent_when_present():
     assert payload == {"status": "ok"}
     queue_manager.update_task_heartbeat.assert_awaited_once_with("task-1")
     queue_manager.bind_agent_task.assert_awaited_once_with("task-1", "agent-1")
+
+
+@pytest.mark.asyncio
+async def test_heartbeat_payload_forwards_legacy_empty_health_values():
+    queue_manager = SimpleNamespace(update_agent_heartbeat=AsyncMock())
+
+    payload = await heartbeat_payload(
+        agent_id="agent-1",
+        types="img2img",
+        status="idle",
+        health_reason="",
+        last_error="",
+        last_error_at="",
+        consecutive_failures=0,
+        quarantined_until="",
+        queue_manager=queue_manager,
+    )
+
+    assert payload == {"status": "ok"}
+    queue_manager.update_agent_heartbeat.assert_awaited_once_with(
+        "agent-1",
+        "img2img",
+        "idle",
+        health_reason="",
+        last_error="",
+        last_error_at="",
+        consecutive_failures=0,
+        quarantined_until="",
+    )
 
 
 @pytest.mark.asyncio
