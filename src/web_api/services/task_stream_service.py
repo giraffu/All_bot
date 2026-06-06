@@ -107,8 +107,20 @@ async def _build_initial_stream_transition(
     logger,
     build_not_found_progress_payload,
     build_terminal_progress_payload,
+    history_terminal: bool = False,
 ) -> tuple[list[dict[str, str]], bool, bool]:
     events: list[dict[str, str]] = []
+    if history_terminal:
+        events.append(
+            await _build_not_found_event(
+                task_id=task_id,
+                user_id=user_id,
+                session_factory=session_factory,
+                build_not_found_progress_payload=build_not_found_progress_payload,
+            )
+        )
+        return events, False, True
+
     initial_status = await _fetch_task_status_full(
         task_id=runtime_task_id_val,
         api_base=api_base,
@@ -226,6 +238,7 @@ def build_task_status_stream_response(
     logger,
     build_not_found_progress_payload: Callable[[str, int, Any], Awaitable[dict[str, Any]]],
     build_terminal_progress_payload: Callable[[dict[str, Any], str], dict[str, Any] | None],
+    history_terminal: bool = False,
 ) -> EventSourceResponse:
     async def event_generator():
         pubsub = redis.pubsub()
@@ -247,6 +260,7 @@ def build_task_status_stream_response(
                     logger=logger,
                     build_not_found_progress_payload=build_not_found_progress_payload,
                     build_terminal_progress_payload=build_terminal_progress_payload,
+                    history_terminal=history_terminal,
                 )
             )
             for event in initial_events:

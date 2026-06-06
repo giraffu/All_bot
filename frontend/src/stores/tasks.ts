@@ -44,7 +44,20 @@ export const useTasksStore = defineStore('tasks', () => {
   const authStore = useAuthStore()
   const detachedResultProbeTaskIds = new Set<string>()
 
+  const dismissActiveTaskForDetailRecord = (record: TaskRecord) => {
+    const taskId = record.task_id
+    const task = activeTasks.value.find(item => item.id === taskId)
+    if (!task) {
+      return
+    }
+
+    closeTaskStream(task)
+    removeTaskSession(activeTasks.value, taskId, closeTaskStream)
+    detachedResultProbeTaskIds.delete(taskId)
+  }
+
   const showDetailRecord = (record: TaskRecord) => {
+    dismissActiveTaskForDetailRecord(record)
     currentDetailRecord.value = record
     detailModalVisible.value = true
   }

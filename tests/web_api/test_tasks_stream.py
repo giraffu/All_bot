@@ -334,6 +334,61 @@ async def test_build_task_stream_response_payload_uses_backend_task_id_for_runti
 
 
 @pytest.mark.asyncio
+async def test_task_status_stream_emits_history_success_without_status_poll_when_history_only():
+    status_calls = []
+    pubsub = _FakePubSub()
+    history = History(
+        id=11,
+        user_id=123,
+        task_id="task-1",
+        type="custom_video",
+        output_file="bot-data/history/task-1/output.mp4",
+    )
+
+    dependencies = task_stream_api_service.TaskStreamResponseDependencies(
+        get_owned_active_task_func=AsyncMock(return_value=None),
+        get_user_history_record_func=AsyncMock(return_value=history),
+        build_not_found_progress_payload_func=(
+            task_stream_api_service.build_not_found_progress_payload
+        ),
+        build_terminal_progress_payload_func=(
+            task_stream_api_service.build_terminal_progress_payload
+        ),
+        build_task_status_stream_response_func=(
+            task_stream_api_service.build_task_status_stream_response
+        ),
+    )
+
+    response = await task_stream_api_service.build_task_stream_response_payload(
+        task_id="task-1",
+        user_id=123,
+        session_factory=_session_factory(history),
+        redis=_FakeRedis(pubsub),
+        api_base="http://127.0.0.1:8003",
+        httpx_async_client_factory=lambda: _FakeAsyncClient([], status_calls),
+        logger=tasks_router.logger,
+        dependencies=dependencies,
+    )
+    events = await _collect_stream_events(response)
+
+    assert len(events) == 2
+    assert events[0] == {
+        "event": "connected",
+        "data": json.dumps({"status": "listening", "task_id": "task-1"}),
+    }
+    assert events[1]["event"] == "progress"
+    assert json.loads(events[1]["data"]) == {
+        "status": "success",
+        "task_id": "task-1",
+        "task_type": "custom_video",
+    }
+    assert status_calls == []
+    assert pubsub.subscribed == ["comfy:task_events:task-1"]
+    assert pubsub.unsubscribed == ["comfy:task_events:task-1"]
+    assert pubsub.closed is True
+
+
+@pytest.mark.asyncio
 async def test_task_status_stream_emits_success_once_and_stops_when_initial_status_is_not_found_with_history(
     monkeypatch,
 ):

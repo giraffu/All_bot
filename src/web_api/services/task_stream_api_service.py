@@ -107,19 +107,25 @@ async def build_task_stream_response_payload(
     if not owned_active_task and not owned_history:
         raise HTTPException(status_code=404, detail="任务不存在或无权限")
 
-    return dependencies.build_task_status_stream_response_func(
-        task_id=task_id,
-        runtime_task_id=runtime_task_id,
-        user_id=user_id,
-        session_factory=session_factory,
-        redis=redis,
-        api_base=api_base,
-        httpx_async_client_factory=httpx_async_client_factory,
-        logger=logger,
-        build_not_found_progress_payload=(
+    stream_kwargs = {
+        "task_id": task_id,
+        "runtime_task_id": runtime_task_id,
+        "user_id": user_id,
+        "session_factory": session_factory,
+        "redis": redis,
+        "api_base": api_base,
+        "httpx_async_client_factory": httpx_async_client_factory,
+        "logger": logger,
+        "build_not_found_progress_payload": (
             dependencies.build_not_found_progress_payload_func
         ),
-        build_terminal_progress_payload=(
+        "build_terminal_progress_payload": (
             dependencies.build_terminal_progress_payload_func
         ),
+    }
+    if owned_history and not owned_active_task:
+        stream_kwargs["history_terminal"] = True
+
+    return dependencies.build_task_status_stream_response_func(
+        **stream_kwargs,
     )
