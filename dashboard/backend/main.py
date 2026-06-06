@@ -39,6 +39,10 @@ from src.task_core_provider_setup import ensure_task_core_service_providers_regi
 logging.basicConfig(level=logging.INFO)
 background_tasks = set()
 logger = logging.getLogger("dashboard")
+DB_INIT_RETRY_ATTEMPTS = 5
+DB_INIT_RETRY_DELAY_SECONDS = 2
+DB_INIT_BACKGROUND_RETRY_ATTEMPTS = 36
+DB_INIT_BACKGROUND_RETRY_DELAY_SECONDS = 5
 
 
 def _initial_dashboard_health() -> dict:
@@ -52,15 +56,21 @@ def _initial_dashboard_health() -> dict:
 async def startup_event():
     FastAPICache.init(InMemoryBackend(), prefix="fastapi-cache")
     ensure_task_core_service_providers_registered()
-    try:
-        await init_db()
-        logger.info("Database initialized successfully")
-        app.state.dashboard_health["database_ready"] = True
-        app.state.dashboard_health["database_error"] = None
-    except Exception as e:
-        logger.error(f"Failed to initialize database: {e}")
-        app.state.dashboard_health["database_ready"] = False
-        app.state.dashboard_health["database_error"] = str(e)
+    database_ready = await _initialize_database_with_retries(
+        attempts=DB_INIT_RETRY_ATTEMPTS,
+        delay_seconds=DB_INIT_RETRY_DELAY_SECONDS,
+        phase="startup",
+    )
+    if not database_ready:
+        db_retry_task = asyncio.create_task(
+            _initialize_database_with_retries(
+                attempts=DB_INIT_BACKGROUND_RETRY_ATTEMPTS,
+                delay_seconds=DB_INIT_BACKGROUND_RETRY_DELAY_SECONDS,
+                phase="background",
+            )
+        )
+        background_tasks.add(db_retry_task)
+        db_retry_task.add_done_callback(background_tasks.discard)
 
     # Start background worker listener and keep a strong reference
     task = asyncio.create_task(start_worker_listener(task_registry=background_tasks))
@@ -72,6 +82,38 @@ async def startup_event():
     background_tasks.add(balance_task)
     balance_task.add_done_callback(background_tasks.discard)
     app.state.dashboard_health["startup_complete"] = True
+
+
+async def _initialize_database_with_retries(
+    *, attempts: int, delay_seconds: int, phase: str
+) -> bool:
+    for attempt in range(1, attempts + 1):
+        try:
+            await init_db()
+            logger.info("Database initialized successfully during %s", phase)
+            app.state.dashboard_health["database_ready"] = True
+            app.state.dashboard_health["database_error"] = None
+            return True
+        except Exception as e:
+            app.state.dashboard_health["database_ready"] = False
+            app.state.dashboard_health["database_error"] = str(e)
+            if attempt >= attempts:
+                logger.error(
+                    "Failed to initialize database during %s after %s attempts: %s",
+                    phase,
+                    attempts,
+                    e,
+                )
+                return False
+            logger.warning(
+                "Database initialization failed during %s on attempt %s/%s: %s; retrying in %ss",
+                phase,
+                attempt,
+                attempts,
+                e,
+                delay_seconds,
+            )
+            await asyncio.sleep(delay_seconds)
 
 
 async def shutdown_event():

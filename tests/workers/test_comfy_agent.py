@@ -271,6 +271,69 @@ async def test_report_heartbeat_sends_null_numeric_health_fields_when_idle(monke
 
 
 @pytest.mark.asyncio
+async def test_report_complete_retries_transient_disconnect(monkeypatch):
+    module = build_agent_module(monkeypatch)
+    agent = module.ComfyAgent()
+    attempts = []
+    sleep_calls = []
+
+    async def fake_post(path, json):
+        attempts.append((path, json))
+        if len(attempts) < 3:
+            raise RuntimeError("server disconnected")
+        return SimpleNamespace(status_code=200)
+
+    async def fake_sleep(seconds):
+        sleep_calls.append(seconds)
+
+    agent.master_client.post = fake_post
+    monkeypatch.setattr(module, "COMPLETE_REPORT_MAX_ATTEMPTS", 3)
+    monkeypatch.setattr(module, "COMPLETE_REPORT_RETRY_BASE_SECONDS", 0.25)
+    monkeypatch.setattr(module.asyncio, "sleep", fake_sleep)
+
+    await agent.report_complete(
+        "task-1",
+        "task-1__result.png",
+        extra_outputs={"mask": {"path": "mask.png"}},
+    )
+
+    assert len(attempts) == 3
+    assert attempts[-1] == (
+        "/api/agent/task/complete",
+        {
+            "task_id": "task-1",
+            "agent_id": module.AGENT_ID,
+            "result": "task-1__result.png",
+            "extra_outputs": {"mask": {"path": "mask.png"}},
+        },
+    )
+    assert sleep_calls == [0.25, 0.5]
+
+
+@pytest.mark.asyncio
+async def test_report_complete_raises_after_retry_exhaustion(monkeypatch):
+    module = build_agent_module(monkeypatch)
+    agent = module.ComfyAgent()
+    attempts = []
+
+    async def fake_post(path, json):
+        attempts.append((path, json))
+        return SimpleNamespace(status_code=503)
+
+    async def fake_sleep(_seconds):
+        return None
+
+    agent.master_client.post = fake_post
+    monkeypatch.setattr(module, "COMPLETE_REPORT_MAX_ATTEMPTS", 2)
+    monkeypatch.setattr(module.asyncio, "sleep", fake_sleep)
+
+    with pytest.raises(RuntimeError, match="Failed to report completion"):
+        await agent.report_complete("task-1", "task-1__result.png")
+
+    assert len(attempts) == 2
+
+
+@pytest.mark.asyncio
 async def test_poll_loop_marks_error_and_does_not_pop_when_comfy_unhealthy(monkeypatch):
     module = build_agent_module(monkeypatch)
     agent = module.ComfyAgent()

@@ -9,7 +9,8 @@ import { nodePolyfills } from 'vite-plugin-node-polyfills'
 // https://vite.dev/config/
 export default defineConfig(({ mode }) => {
   const apiProxyTarget =
-    mode === 'test' ? 'http://127.0.0.1:8001' : 'http://127.0.0.1:8000'
+    process.env.VITE_API_PROXY_TARGET ||
+    (mode === 'test' ? 'http://127.0.0.1:8001' : 'http://127.0.0.1:8000')
 
   return {
     build: {

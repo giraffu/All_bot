@@ -56,6 +56,7 @@ async def _close_redis_resource(resource) -> None:
 
 async def _run_worker_listener_once(task_registry: set | None = None):
     logger.info("Starting Worker Task Listener...")
+    poll_timeout_seconds = float(os.getenv("WORKER_LISTENER_POLL_TIMEOUT", "30"))
     redis_url_worker = os.getenv("WORKER_REDIS_URL", "redis://redis:6379/2")
     r_worker = redis.from_url(redis_url_worker, decode_responses=True)
 
@@ -68,7 +69,13 @@ async def _run_worker_listener_once(task_registry: set | None = None):
         await pubsub.psubscribe("comfy:task_events:*")
         logger.info("Subscribed to comfy:task_events:*")
 
-        async for message in pubsub.listen():
+        while True:
+            message = await pubsub.get_message(
+                ignore_subscribe_messages=True,
+                timeout=poll_timeout_seconds,
+            )
+            if message is None:
+                continue
             if message["type"] == "pmessage":
                 task = asyncio.create_task(process_message(message, r_worker, r_bot))
                 background_tasks.add(task)

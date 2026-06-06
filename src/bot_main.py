@@ -170,11 +170,19 @@ async def post_init(application):
     if "bg_tasks" not in application.bot_data:
         application.bot_data["bg_tasks"] = set()
 
-    # Initialize and start Payment Validator
-    payment_validator = TonPaymentValidator(bot_app=application)
-    task_payment = asyncio.create_task(payment_validator.poll_transactions())
-    application.bot_data["bg_tasks"].add(task_payment)
-    task_payment.add_done_callback(application.bot_data["bg_tasks"].discard)
+    ton_polling_enabled = (
+        os.getenv("TON_PAYMENT_POLLING_ENABLED", "true").strip().lower()
+        in {"1", "true", "yes", "on"}
+    )
+    if ton_polling_enabled:
+        payment_validator = TonPaymentValidator(bot_app=application)
+        task_payment = asyncio.create_task(payment_validator.poll_transactions())
+        application.bot_data["bg_tasks"].add(task_payment)
+        task_payment.add_done_callback(application.bot_data["bg_tasks"].discard)
+    else:
+        logging.getLogger("bot.core").info(
+            "TON payment polling disabled by TON_PAYMENT_POLLING_ENABLED"
+        )
 
     # Recover tasks from Redis
     task_recover = asyncio.create_task(recover_active_tasks(application))

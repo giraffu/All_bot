@@ -1,0 +1,198 @@
+services:
+  central-api-test:
+    build:
+      context: ../backend
+    container_name: cloud-central-api-test
+    restart: always
+    env_file:
+      - ../.env.cloud.test
+    environment:
+      TZ: Asia/Shanghai
+      REDIS_URL: ${CLOUD_TEST_WORKER_REDIS_URL:?CLOUD_TEST_WORKER_REDIS_URL is required}
+      MINIO_ENDPOINT: ${MINIO_ENDPOINT:?MINIO_ENDPOINT is required}
+      MINIO_SECURE: ${MINIO_SECURE:-false}
+      MINIO_INPUT_BUCKET: ${MINIO_INPUT_BUCKET:-bot-data-test}
+      MINIO_RESULT_BUCKET: ${MINIO_RESULT_BUCKET:-comfyui-temp-test}
+    volumes:
+      - ../backend/app:/app/app
+      - ../src:/app/src
+    ports:
+      - "${CLOUD_TEST_BIND_IP:-127.0.0.1}:8004:8003"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import sys, urllib.request; sys.exit(0) if urllib.request.urlopen('http://127.0.0.1:8003/health', timeout=5).status == 200 else sys.exit(1)",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  web-api-test:
+    build:
+      context: ../
+      dockerfile: Dockerfile
+    container_name: cloud-web-api-test
+    restart: always
+    env_file:
+      - ../.env.cloud.test
+    environment:
+      BOT_TYPE: TEST
+      REDIS_PREFIX: cloud_test_bot_
+      TZ: Asia/Shanghai
+      API_BASE: http://central-api-test:8003
+      API_BASE_TEST: http://central-api-test:8003
+      DATABASE_URL: ${CLOUD_TEST_DATABASE_URL:?CLOUD_TEST_DATABASE_URL is required}
+      DATABASE_URL_TEST: ${CLOUD_TEST_DATABASE_URL:?CLOUD_TEST_DATABASE_URL is required}
+      REDIS_URL: ${CLOUD_TEST_REDIS_URL:?CLOUD_TEST_REDIS_URL is required}
+      REDIS_URL_TEST: ${CLOUD_TEST_REDIS_URL:?CLOUD_TEST_REDIS_URL is required}
+      WORKER_REDIS_URL: ${CLOUD_TEST_WORKER_REDIS_URL:?CLOUD_TEST_WORKER_REDIS_URL is required}
+      MINIO_ENDPOINT: ${MINIO_ENDPOINT:?MINIO_ENDPOINT is required}
+      MINIO_PUBLIC_URL: ${MINIO_PUBLIC_URL:-}
+      MINIO_SECURE: ${MINIO_SECURE:-false}
+      IMGPROXY_URL: http://imgproxy-test:8084
+      DB_POOL_SIZE: 5
+      DB_MAX_OVERFLOW: 5
+    volumes:
+      - ../logs/cloud-test:/app/logs
+    ports:
+      - "${CLOUD_TEST_BIND_IP:-127.0.0.1}:8001:8001"
+    depends_on:
+      central-api-test:
+        condition: service_healthy
+    command:
+      [
+        "uvicorn",
+        "src.web_api.main:app",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8001",
+        "--workers",
+        "2",
+      ]
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import sys, urllib.request; sys.exit(0) if urllib.request.urlopen('http://127.0.0.1:8001/api/health', timeout=5).status == 200 else sys.exit(1)",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  dashboard-backend-test:
+    build:
+      context: ../
+      dockerfile: dashboard/backend/Dockerfile
+    container_name: cloud-dashboard-backend-test
+    restart: always
+    env_file:
+      - ../.env.cloud.test
+    environment:
+      BOT_TYPE: TEST
+      REDIS_PREFIX: cloud_test_bot_
+      TZ: Asia/Shanghai
+      DATABASE_URL: ${CLOUD_TEST_DATABASE_URL:?CLOUD_TEST_DATABASE_URL is required}
+      DATABASE_URL_TEST: ${CLOUD_TEST_DATABASE_URL:?CLOUD_TEST_DATABASE_URL is required}
+      REDIS_URL: ${CLOUD_TEST_REDIS_URL:?CLOUD_TEST_REDIS_URL is required}
+      REDIS_URL_TEST: ${CLOUD_TEST_REDIS_URL:?CLOUD_TEST_REDIS_URL is required}
+      WORKER_REDIS_URL: ${CLOUD_TEST_WORKER_REDIS_URL:?CLOUD_TEST_WORKER_REDIS_URL is required}
+      MINIO_ENDPOINT: ${MINIO_ENDPOINT:?MINIO_ENDPOINT is required}
+      MINIO_PUBLIC_URL: ${MINIO_PUBLIC_URL:-}
+      MINIO_SECURE: ${MINIO_SECURE:-false}
+      DASHBOARD_ADMIN_USERNAME: ${DASHBOARD_ADMIN_USERNAME:-admin}
+      DASHBOARD_ADMIN_PASSWORD_HASH: ${DASHBOARD_ADMIN_PASSWORD_HASH:?DASHBOARD_ADMIN_PASSWORD_HASH is required}
+      DASHBOARD_SECRET_KEY: ${DASHBOARD_SECRET_KEY:?DASHBOARD_SECRET_KEY is required}
+      DB_POOL_SIZE: 1
+      DB_MAX_OVERFLOW: 2
+    volumes:
+      - ../.env.cloud.test:/app/.env:ro
+      - ../logs/cloud-test:/app/logs
+    ports:
+      - "${CLOUD_TEST_BIND_IP:-127.0.0.1}:8044:8044"
+    command:
+      [
+        "gunicorn",
+        "dashboard.backend.main:app",
+        "-w",
+        "2",
+        "-k",
+        "uvicorn.workers.UvicornWorker",
+        "--bind",
+        "0.0.0.0:8044",
+      ]
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import sys, urllib.request; sys.exit(0) if urllib.request.urlopen('http://127.0.0.1:8044/api/health', timeout=5).status == 200 else sys.exit(1)",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  imgproxy-test:
+    image: darthsim/imgproxy:latest
+    container_name: cloud-imgproxy-test
+    restart: always
+    environment:
+      IMGPROXY_BIND: :8084
+      IMGPROXY_ENFORCE_WEBP: "true"
+      IMGPROXY_MAX_SRC_RESOLUTION: 50
+      IMGPROXY_MAX_ANIMATION_FRAMES: 1
+      IMGPROXY_DOWNLOAD_TIMEOUT: 5
+      IMGPROXY_CONCURRENCY: 4
+    ports:
+      - "${CLOUD_TEST_BIND_IP:-127.0.0.1}:8084:8084"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "sh",
+          "-c",
+          "[ \"$$(ps -o comm= 1)\" = \"imgproxy\" ]",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 20s
+
+  bot-test:
+    build:
+      context: ../
+      dockerfile: Dockerfile
+    container_name: cloud-tg-bot-test
+    profiles: ["bot"]
+    restart: always
+    env_file:
+      - ../.env.cloud.test
+    environment:
+      BOT_TYPE: TEST
+      REDIS_PREFIX: cloud_test_bot_
+      ENABLE_PUBLIC_SHARE: "false"
+      API_BASE: http://central-api-test:8003
+      API_BASE_TEST: http://central-api-test:8003
+      DATABASE_URL: ${CLOUD_TEST_DATABASE_URL:?CLOUD_TEST_DATABASE_URL is required}
+      DATABASE_URL_TEST: ${CLOUD_TEST_DATABASE_URL:?CLOUD_TEST_DATABASE_URL is required}
+      REDIS_URL: ${CLOUD_TEST_REDIS_URL:?CLOUD_TEST_REDIS_URL is required}
+      REDIS_URL_TEST: ${CLOUD_TEST_REDIS_URL:?CLOUD_TEST_REDIS_URL is required}
+      MINIO_ENDPOINT: ${MINIO_ENDPOINT:?MINIO_ENDPOINT is required}
+      MINIO_PUBLIC_URL: ${MINIO_PUBLIC_URL:-}
+      MINIO_SECURE: ${MINIO_SECURE:-false}
+      TON_PAYMENT_POLLING_ENABLED: ${CLOUD_TEST_TON_PAYMENT_POLLING_ENABLED:-false}
+      TZ: Asia/Shanghai
+    volumes:
+      - ../logs/cloud-test:/app/logs
+    depends_on:
+      central-api-test:
+        condition: service_healthy

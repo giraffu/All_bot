@@ -256,7 +256,7 @@ def build_task_status_stream_response(
             if should_stop:
                 return
 
-            last_queue_check = 0.0
+            last_status_check = asyncio.get_event_loop().time() - 9999.0
 
             while True:
                 message = await pubsub.get_message(
@@ -277,33 +277,33 @@ def build_task_status_stream_response(
                 if should_stop:
                     break
 
-                if not is_running:
-                    current_time = asyncio.get_event_loop().time()
-                    if current_time - last_queue_check > 5.0:
-                        queue_events, became_running, should_stop = (
-                            await _build_queue_poll_transition(
-                                runtime_task_id_val=runtime_task_id_val,
-                                task_id=task_id,
-                                user_id=user_id,
-                                session_factory=session_factory,
-                                api_base=api_base,
-                                httpx_async_client_factory=httpx_async_client_factory,
-                                logger=logger,
-                                build_not_found_progress_payload=(
-                                    build_not_found_progress_payload
-                                ),
-                                build_terminal_progress_payload=(
-                                    build_terminal_progress_payload
-                                ),
-                            )
+                current_time = asyncio.get_event_loop().time()
+                status_check_interval = 10.0 if is_running else 5.0
+                if current_time - last_status_check > status_check_interval:
+                    queue_events, became_running, should_stop = (
+                        await _build_queue_poll_transition(
+                            runtime_task_id_val=runtime_task_id_val,
+                            task_id=task_id,
+                            user_id=user_id,
+                            session_factory=session_factory,
+                            api_base=api_base,
+                            httpx_async_client_factory=httpx_async_client_factory,
+                            logger=logger,
+                            build_not_found_progress_payload=(
+                                build_not_found_progress_payload
+                            ),
+                            build_terminal_progress_payload=(
+                                build_terminal_progress_payload
+                            ),
                         )
-                        for event in queue_events:
-                            yield event
-                        if became_running:
-                            is_running = True
-                        if should_stop:
-                            break
-                        last_queue_check = current_time
+                    )
+                    for event in queue_events:
+                        yield event
+                    if became_running:
+                        is_running = True
+                    if should_stop:
+                        break
+                    last_status_check = current_time
 
                 await asyncio.sleep(0.5)
 

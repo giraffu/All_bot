@@ -342,7 +342,7 @@ Worker 执行流程：
 4. Worker 保留约 30 分钟硬超时，超时后再走最终 history fallback；若仍无结果则按失败上报，避免真正卡死的任务无限占用节点
 5. 执行完成后从 ComfyUI history 或 view API 取回结果文件
 6. 上传结果到 MinIO output bucket
-7. 向 Central API 调 `/api/agent/task/complete`
+7. 向 Central API 调 `/api/agent/task/complete`。完成回报是任务收口的硬依赖：Worker 会对断连或 4xx/5xx 进行短退避重试，全部失败后必须抛错进入失败路径，不能吞掉异常后继续记录 `completed successfully`，否则会出现“结果已上传但 Central 仍按 heartbeat lost 判失败”的假完成。
 
 执行失败则走：
 - `/api/agent/task/status` 上报 `failed`
@@ -408,6 +408,7 @@ Web 端当前运行态与结果查询链路分成两层：
 - `stream` 对外接收的是 `registry_task_id`
 - service 内部会尽量解析出真正的 `runtime_task_id` / `backend_task_id`
 - 若运行态已消失但历史已存在，SSE 应返回可终止的 fallback 语义，而不是无限轮询
+- SSE 不能只依赖 Redis Pub/Sub 事件。任务进入 `running` 后仍需周期性查询 Central `/status/{backend_task_id}`，用于补偿终态事件丢失、Web 连接断开重连或 worker 回报路径异常时的前端收口。
 - `result` 对 Web 历史优先取 R2 公网结果地址；延迟敏感路径必须用 R2 公网 HEAD 快探测并在查对象存储前释放 DB 只读事务，不能用慢 S3 API HEAD 阻塞请求。R2 warmup 未就绪时，图片可对任务本人返回短有效期 MinIO presigned fallback；视频不走 MinIO 代理 fallback，应返回 `pending_result` 等下一轮轮询拿 R2。前端结果轮询窗口必须覆盖分钟级 R2 warmup，避免 99% 阶段被视频拉流、R2 HEAD 阻塞或短轮询窗口拖成网络失败/不返回结果。
 
 ## 11. 历史、收藏、投稿与结果可见性

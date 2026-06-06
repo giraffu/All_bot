@@ -53,6 +53,7 @@ description: "处理 Web 鉴权、JWT、password_version、支付履约、affili
 - 汇率缺失、金额不匹配或结算参数冲突时必须 fail fast，不能静默降级。
 - 新增 billing/auth 改动优先走 provider/dependency 注入模式，不回退到 core 直连基础设施实现。
 - TON 轮询游标必须持久化到 `runtime_checkpoints`，key 形如 `ton:<merchant_address>:last_lt`；抓链失败或履约失败时不得前移游标。
+- `TON_PAYMENT_POLLING_ENABLED=false` 可禁用 Bot 启动时的 TON 链上轮询；云测试 `bot-test` 默认关闭该轮询，避免空测试库回扫真实商户地址历史交易。生产默认仍为开启。
 
 ## 4. 边界条件处理
 - **密码改密**：必须递增 `password_version` 并使旧 token 失效。

@@ -43,6 +43,9 @@
 
 如果技能提示词不足以覆盖你的需求，请前往 `/docs` 目录查阅详尽的系统设计：
 - **系统全景图**：`/docs/system_architecture_report.md`
+- **系统资源与容量画像**：`/docs/子模块_系统资源与容量画像_resource_inventory.md`（主服务器、本地 GPU、网络、数据存储与运行负载快照）
+- **云控制面 SSH 密钥管理**：`/docs/子模块_云控制面SSH密钥管理_cloud_ssh_access.md`（DigitalOcean SSH key、登录入口、安全基线与轮换策略）
+- **云测试控制面部署**：`/docs/子模块_云测试控制面部署_cloud_test_control_plane.md`（DigitalOcean 云测试控制面 compose、部署脚本、端口转发与验证命令）
 - **生成任务全链路**：`/docs/子模块_生成任务全链路_task_full_chain.md`（前端提交、task core、执行面、worker、结果回流、扩展与排障）
 - **前端预览截图**：`/docs/子模块_前端浏览器预览截图_frontend_browser_preview.md`
 - **业务领域设计**：`/docs/business/`（包含生成、商业化、社区、用户体系的深度文档）

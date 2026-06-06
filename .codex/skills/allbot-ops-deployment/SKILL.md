@@ -10,9 +10,11 @@ description: "处理 Docker Compose 编排、safe_deploy/safe_deploy_test、Alem
 ## 1. 模块功能描述
 - **测试优先部署**：功能研发、联调、修复与配置调整默认先更新隔离测试栈，优先使用根目录 `safe_deploy_test.sh`；只有在用户明确要求正式发布或交付验收通过后，才允许使用 `safe_deploy.sh` 更新生产环境。
 - **标准部署入口**：测试环境优先使用 `safe_deploy_test.sh`，生产环境使用 `safe_deploy.sh`，避免手工拼接多个目录的容器命令。
+- **云测试控制面入口**：DigitalOcean SGP1 云端测试控制面使用 `scripts/safe_deploy_cloud_test.sh` 与 `deploy/docker-compose-cloud-test.yml`。云端运行 Central API、Web API、Dashboard Backend、imgproxy、测试 Bot，并通过 `CLOUD_TEST_DATABASE_URL` 连接 DigitalOcean 托管 PostgreSQL，通过 `CLOUD_TEST_REDIS_URL`/`CLOUD_TEST_WORKER_REDIS_URL` 连接 DigitalOcean 托管 Valkey；GPU worker 仍在本地主服务器以 `workers/docker-compose-cloud-worker-test.yml` 运行，并经 Tailscale 访问云端 Central API；对象存储事实源为 R2。
 - **迁移保护**：部署前检查 Alembic multiple heads；发现多 head 立即中止。
 - **宿主机迁移执行**：通过后直接在宿主机执行 `alembic upgrade head`，不依赖容器启动时自动迁移；生产脚本加载 `.env` 后显式导出 `BOT_TYPE=PROD`。
 - **分阶段重建**：按 workers -> central api -> 主服务群 -> dashboard -> 生产 Web 边缘静态站的顺序重建/发布。
+- **生产单服务重建**：当用户明确要求只重建某个正式服务时，使用目标 compose 目录内的单 service 流程；必须避免全量 `safe_deploy.sh`、避免 `--remove-orphans`、避免旧版 `docker-compose` 直接 `--force-recreate` 触发 `ContainerConfig` 兼容错误。
 - **故障恢复**：处理 MinIO 503、Nginx 404/502、容器代码未更新、环境变量未生效等典型问题。
 - **测试 worker 变量陷阱**：`workers/docker-compose-test.yml` 内的 `${...}` 插值不会读取 `env_file: ../.env.test`；当前测试 compose 已使用测试桶默认值并让 `AGENT_SECRET_TOKEN` 来自 `env_file`，重建后仍必须核对容器内实际生效变量，避免 401 或读写错误桶。
 - **workflow 资产事实源**：`workers/comfy_agent/workflows` 是唯一 workflow 目录。Central API 不再挂载、COPY 或启动校验 workflow；修改 workflow 时默认只更新 Worker 目录，并重建/重启对应 Worker。
@@ -26,10 +28,45 @@ description: "处理 Docker Compose 编排、safe_deploy/safe_deploy_test、Alem
   - 只有在用户明确要求正式发布时，才通过 `safe_deploy.sh` 或生产库宿主机 Alembic 执行升级
 - 修改未挂载源码卷的服务代码时：必须 `--build` 重建镜像，不能只 `restart`。
 - 功能研发默认目标环境是隔离测试栈：`.env.test`、`backend/docker-compose-test.yml`、`workers/docker-compose-test.yml`、`deploy/docker-compose-test.yml`。
+- 若用户明确要把测试控制面部署到 DigitalOcean Droplet，使用 `scripts/safe_deploy_cloud_test.sh`。该脚本使用 `.env.cloud.test`，要求 `CLOUD_TEST_DATABASE_URL` 指向 DigitalOcean 托管 PostgreSQL，`CLOUD_TEST_REDIS_URL`/`CLOUD_TEST_WORKER_REDIS_URL` 指向 DigitalOcean 托管 Valkey；云端不再启动容器版 Redis。服务端口默认绑定到云主机 `127.0.0.1`，配置 `CLOUD_TEST_BIND_IP` 后绑定到云服务器 Tailscale IP，`.env.cloud.test` 不得提交。当前云测试对象存储直连 R2：`MINIO_SECURE=true`，`MINIO_BUCKET/MINIO_INPUT_BUCKET/MINIO_RESULT_BUCKET/MINIO_TEMPLATE_BUCKET=user-data-test`、`MINIO_PUBLIC_URL=`、`R2_PUBLIC_DOMAIN=https://r2-test.aivison.it.com`；Web owner 视频结果依赖 R2 公网 URL，缺失会停在 99% / `pending_result`。Web 直传依赖 R2 桶 CORS，`user-data-test` 必须允许 `web-test.aivison.it.com`/`web.aivison.it.com` 的 `GET/PUT/HEAD`。
+- 云测试公网 Web 入口继续使用 `web-test.aivison.it.com` 的边缘 VPS 静态站；前端静态资源由 `frontend npm run deploy:edge-test` 发布到 `web` VPS `/root/dist-test`，VPS Nginx 的 `/api/` 必须反代到云端测试 Web API `http://100.107.220.127:8001`。
+- 云端全链路切换前，先用 `scripts/stop_local_test_preserve.sh` 停止本地主服务器原测试栈但保留数据，再用 `scripts/start_cloud_worker_test.sh` 启动 7 个 `cloud-comfy-agent-test-*` 本地 GPU worker。
+- 云测试 `bot-test` 默认禁用 TON 链上支付轮询；若需要支付联调，先确认测试库 checkpoint 与通知目标，再通过 `.env.cloud.test` 显式设置 `CLOUD_TEST_TON_PAYMENT_POLLING_ENABLED=true`。
 - 测试完成前，不得默认重建生产 Bot、生产 Web API、生产 Payment API、生产 Central API 或正式 Dashboard。
 - 交付前必须把“测试环境已验证通过、准备正式发布”作为显式阶段切换条件，不得自行跳过用户验收。
-- 若重建测试 worker，必须额外核对容器内实际生效的 `AGENT_SECRET_TOKEN`、`MINIO_INPUT_BUCKET=bot-data-test`、`MINIO_RESULT_BUCKET=comfyui-temp-test`；不要误以为 compose `${...}` 插值会自动读取 `.env.test` 的 `env_file` 值。
+- 若重建本地隔离测试 worker，必须额外核对容器内实际生效的 `AGENT_SECRET_TOKEN`、`MINIO_INPUT_BUCKET=bot-data-test`、`MINIO_RESULT_BUCKET=comfyui-temp-test`；不要误以为 compose `${...}` 插值会自动读取 `.env.test` 的 `env_file` 值。若重建云测试 cloud-worker，则核对 `MINIO_ENDPOINT=<R2 endpoint host>`、`MINIO_INPUT_BUCKET=user-data-test`、`MINIO_RESULT_BUCKET=user-data-test`、`MINIO_TEMPLATE_BUCKET=user-data-test`、`MINIO_SECURE=true`。
 - 修改 workflow JSON、`mappings.json` 或 workflow patcher 时，默认以 `workers/comfy_agent/workflows` 为运行时事实源；Central API 不再维护 backend 副本，也不再执行 workflow 启动校验。
+
+### 2.1 生产单服务重建标准流程
+用户明确要求“只重建某个正式服务”时，先确认目标 service 存在，再按以下规则处理：
+
+1. **加载生产环境变量再运行 compose**：`env_file` 只传给容器，不参与 compose 文件里的 `${...}` 插值；进入 `workers/`、`backend/`、`dashboard/` 等子目录执行生产 compose 前，必须先 `source /home/hfy/APP/All_bot/.env` 并 `export BOT_TYPE=PROD`。
+2. **先 build，后替换目标容器**：先执行 `docker-compose build <service>`；构建成功后，只删除目标 service 的精确容器或 compose label 残留，再执行 `docker-compose up -d --no-deps <service>`。
+3. **不要直接 force recreate**：当前宿主机可能使用 `docker-compose 1.29.2`，对新镜像元数据直接执行 `docker-compose up -d --no-deps --build --force-recreate <service>` 可能报 `KeyError: 'ContainerConfig'`。若已经触发该错误，只清理目标 service 的残留容器后重试，不要清理整组服务。
+4. **不要清理 orphan**：workers 目录下测试栈容器可能被正式 compose 识别为 orphan。除非用户明确要求清理测试栈，否则不要加 `--remove-orphans`。
+5. **避免误伤全组服务**：单服务重建时禁止执行未带 service 名的 `docker-compose rm -fsv`、`docker-compose up -d --build` 或 `docker rm -f $(docker ps -a -q -f name=comfy-agent)`。
+
+生产 `comfy-agent-2` 这类 worker 的推荐流程：
+
+```bash
+set -euo pipefail
+set -a
+source /home/hfy/APP/All_bot/.env
+export BOT_TYPE=PROD
+set +a
+
+cd /home/hfy/APP/All_bot/workers
+docker-compose config --services | rg '^comfy-agent-2$'
+docker-compose build comfy-agent-2
+docker rm -f comfy-agent-2 2>/dev/null || true
+docker ps -aq \
+  --filter "label=com.docker.compose.project=workers" \
+  --filter "label=com.docker.compose.service=comfy-agent-2" \
+  | xargs -r docker rm -f
+docker-compose up -d --no-deps comfy-agent-2
+```
+
+若目标 worker 正在处理任务，非紧急情况下应先告知用户会中断该 worker 当前任务，并尽量等待任务完成或确认可以中断；正式全量发布仍走 `safe_deploy.sh` 的队列门禁流程。
 
 ## 3. 核心红线
 - 不要在普通功能研发过程中默认执行 `safe_deploy.sh`、生产 compose 或任何正式环境重建动作。
@@ -40,11 +77,16 @@ description: "处理 Docker Compose 编排、safe_deploy/safe_deploy_test、Alem
 - 不要忽略卷挂载差异直接判断“代码已生效”。
 - 不要把 `docker restart` 当作代码发布手段，特别是 `web-api`、Dashboard、CS Bot 等 COPY 型服务。
 - 不要把 `env_file` 与 compose `${...}` 插值混为一谈；测试 worker 的 compose 默认值必须保持测试环境口径，重建后用 `docker exec <worker> env` 核对。
+- 不要在单服务生产重建时使用 `--remove-orphans`、无 service 名的 compose 命令或全组 `docker rm` 过滤器；只允许清理目标 service 的容器和同 service label 残留。
 - 不要把 workflow 放到 Central API 或 backend 目录后期待 Worker 执行；必须更新 `workers/comfy_agent/workflows` 并确认目标 Worker 支持该 task type。
+- 不要默认启动云端 `bot-test` profile；除非已经确认本地主服务器的 `tg-bot-test` 停止，避免同一个测试 Telegram token 双实例冲突。
+- 不要把云端 Tailscale 接入做成 subnet router；当前只允许本地主服务器访问云端测试端口，不暴露武汉家庭内网。
 
 ## 4. 测试与验证
 - 测试研发阶段先验证隔离测试栈健康检查、关键 API 可达、测试库/测试 Redis/测试中控链路正确。
 - 只有在测试环境完成功能验证并得到用户确认后，才进入正式环境部署验证。
 - 验证 migration 在空库可顺利 `upgrade head`。
 - 验证重建后容器确实运行的是新镜像，而不是旧容器旧代码。
-- 若测试 worker 涉及认证或对象存储，额外验证实际生效的 `AGENT_SECRET_TOKEN`、输入桶和结果桶与 `.env.test` 期望一致。
+- 云测试控制面验证至少包括 `docker compose --env-file .env.cloud.test -f deploy/docker-compose-cloud-test.yml ps`，以及 `8004/health`、`8001/api/health`、`8044/api/health` 三个健康检查；全链路还要确认 `/system/workers` 能看到 7 个 `cloud_worker_test_*` heartbeat。
+- 若测试 worker 涉及认证或对象存储，额外验证实际生效的 `AGENT_SECRET_TOKEN`、输入桶和结果桶与目标环境一致；云测试 R2 直连还要验证 R2 S3 `list/head`、Web API 预签名 URL 读取 200，以及从 `https://web-test.aivison.it.com` Origin 发起的 R2 `PUT` CORS 预检返回 204/200。
+- 生产单服务重建后必须验证：目标容器 `Up`、`RestartCount=0`、最近日志无 `ERROR/Traceback/Exception`、关键非敏感环境变量符合正式口径。worker 需额外确认 heartbeat、Central API、ComfyUI WebSocket、MinIO 桶名正常；日志和总结中不要输出密钥值。

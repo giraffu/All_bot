@@ -15,7 +15,8 @@ description: "处理对象存储、广场评论收藏、R2 媒体策略与 Web a
 - **提示词付费解锁**：Gallery 列表/详情未解锁时只能返回服务端遮罩 prompt；`POST /api/gallery/posts/{post_id}/prompt-unlock` 固定消耗 1 灵石并给作者入账，`gallery_prompt_unlocks.user_id + post_id` 是幂等锚点。
 - **Web apply-context**：`/api/gallery/posts/{post_id}/apply-context` 已是模板应用主入口，返回 `prompt`、`negative_prompt`、`lora_name`、`input_file_url`、`requested_duration`、`billing_resolution` 等上下文；旧 `custom_video` / `video_lora` 投稿会把旧分辨率映射为 Wan22 v2 档位，并恢复 canonical `5s/8s/10s` 时长；`wan22_video_v2` 单段投稿可回填正向/负面提示词、分辨率档位与 canonical 时长。
 - **Feed 查询边界**：Gallery feed SQL 查询拼装位于 `src/services/gallery_feed_queries.py`；旧 `src/core/gallery_feed_queries.py` 兼容 re-export 已删除，新增查询条件不要回写到 core。
-- **媒体 URL 策略**：优先返回 R2 公网链接，找不到对象时回退原始存储路径；Web owner `/result` 延迟敏感路径必须用 R2 公网 HEAD 快探测，R2 warmup 未就绪时图片可短签 MinIO fallback，视频继续 `pending_result` 等 R2，缩略图也有独立 key 解析逻辑。
+- **媒体 URL 策略**：公网域名已验证时优先返回 R2 公网链接，找不到对象时回退原始存储路径；Web owner `/result` 延迟敏感路径必须用 R2 公网 HEAD 快探测，R2 warmup 未就绪时图片可短签 MinIO/R2 S3 fallback，视频继续 `pending_result` 等 R2，缩略图也有独立 key 解析逻辑。
+- **云测试 R2 直连**：`.env.cloud.test` 可将 `MINIO_*` 兼容变量全部指向 R2 S3 endpoint 与 `user-data-test` 桶；当前云测试应保持 `MINIO_PUBLIC_URL=`，并设置 `R2_PUBLIC_DOMAIN=https://r2-test.aivison.it.com`。Web owner 视频 `/result` 依赖 R2 公网 URL，`R2_PUBLIC_DOMAIN` 缺失会停在 99% / `pending_result`；若公开域名临时返回 403，图片可走短签 fallback，视频必须优先修复公开域名或实现受控 fallback。旧测试 MinIO 对象镜像到 R2 桶根路径，不能额外加旧桶名前缀，否则历史 `output_file` 无法命中。Web 参考图/视频上传会由浏览器直传 R2，`user-data-test` 桶必须配置 CORS：允许 `https://web-test.aivison.it.com`、`https://web.aivison.it.com` 的 `GET/PUT/HEAD`、`AllowedHeaders=["*"]`、`ExposeHeaders=["ETag"]`；否则前端会报 `Network error during upload`。
 - **后台治理**：Dashboard 广场管理可显示投稿用户，列表接口 `GET /api/gallery/all` 支持 `username`、`prompt_contains`、`prompt_max_length` 治理筛选，并通过 `/api/gallery/users/{user_id}/ban-submissions-and-takedown` 一键设置 `is_submission_banned=True`、下架该用户全部 `GalleryPost`，同步取消相关 `History.is_public`。
 
 ## 2. 输入输出规范

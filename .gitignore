@@ -111,6 +111,7 @@ workers/comfy_agent*/input/
 
 # Environment and Secret files
 .env
+.env.cloud.*
 .env.local
 .env.development.local
 .env.test

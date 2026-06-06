@@ -28,6 +28,19 @@
 - 只有在用户明确表达“上线”“发布”“部署正式环境”“交付生产”后，才允许切换到 `safe_deploy.sh` 或生产 compose。
 - 在用户完成测试验收前，不得把测试环境变更直接同步到正式 Bot、正式 Web、正式 Payment、正式 Central API 或正式 Dashboard。
 
+## 2.2 云端测试控制面
+- DigitalOcean SGP1 Droplet 上的云测试控制面入口为 `scripts/safe_deploy_cloud_test.sh`，compose 文件为 `deploy/docker-compose-cloud-test.yml`。
+- 云测试控制面默认部署 Postgres、Redis、Central API、Web API、Dashboard Backend 与 imgproxy；不启动 Telegram test bot，也不启动 GPU worker。当前对象存储事实源是 Cloudflare R2，兼容 MinIO 仅通过 `compat-minio` profile 按需启动，Payment API 仅通过 `payment` profile 按需启动。
+- 云测试 `.env.cloud.test` 已被 `.gitignore` 忽略，不能提交到仓库。
+- 云端服务端口默认绑定 `127.0.0.1`；配置 `CLOUD_TEST_BIND_IP=<云服务器 Tailscale IPv4>` 后，测试入口服务绑定到 Tailscale IP，不直接开放公网。
+- 云测试全链路 worker 使用 `workers/docker-compose-cloud-worker-test.yml`，容器名为 `cloud-comfy-agent-test-*`，从本地主服务器经 Tailscale 访问云端 `8004` Central API，并直接访问 R2 S3 endpoint 读写 `user-data-test`。
+- 停止本地测试栈但保留数据时使用 `scripts/stop_local_test_preserve.sh`；启动本地 cloud-worker 测试栈使用 `scripts/start_cloud_worker_test.sh`。
+- 云测试 `bot-test` 默认通过 `TON_PAYMENT_POLLING_ENABLED=false` 禁用 TON 链上轮询，避免空云测试库回扫真实商户地址历史交易；仅在专门支付联调时显式开启 `CLOUD_TEST_TON_PAYMENT_POLLING_ENABLED=true`。
+- 云测试库若为空，脚本使用当前 ORM schema 初始化并 `alembic stamp head`；若已有 schema，脚本执行 `alembic upgrade head`。这是云测试控制面的特殊兼容策略，不改变生产脚本的迁移口径。
+- 云测试 `.env.cloud.test` 中 `MINIO_*` 是项目兼容变量名；R2 直连时应保持 `MINIO_SECURE=true`、`MINIO_BUCKET/MINIO_INPUT_BUCKET/MINIO_RESULT_BUCKET/MINIO_TEMPLATE_BUCKET=user-data-test`、`MINIO_PUBLIC_URL=`、`R2_PUBLIC_DOMAIN=https://r2-test.aivison.it.com`。Web owner 视频结果接口依赖 R2 公网 URL，公开域名缺失会导致视频停在 99% / `pending_result`。
+- 云测试公网 Web 使用 `web-test.aivison.it.com` 的边缘 VPS 静态站，`/api/` 反代到云端测试 Web API `http://100.107.220.127:8001`；云端 `web-frontend-test` / `dashboard-frontend-test` dev 容器只在临时调试时启用 `frontend` profile。
+- 详细说明见 `/docs/子模块_云测试控制面部署_cloud_test_control_plane.md`。
+
 ## 3. 当前真实迁移口径
 - 迁移入口在 `safe_deploy.sh` 第 4 步。
 - 脚本会先寻找可用的 Alembic 可执行文件，再检查 `heads` 数量。
@@ -68,6 +81,9 @@
 - 测试 worker 重建后出现 401 / 读错桶
   - 常见根因：把 `env_file` 当成 compose `${...}` 插值来源，或测试 worker 容器内实际 `AGENT_SECRET_TOKEN`、`MINIO_INPUT_BUCKET`、`MINIO_RESULT_BUCKET` 与 `.env.test` 口径不一致
   - 处理：核对 `workers/docker-compose-test.yml` 默认值是否仍为测试桶，重建后用 `docker exec <worker> env` 验证 `MINIO_INPUT_BUCKET=bot-data-test`、`MINIO_RESULT_BUCKET=comfyui-temp-test`，并确认 token 与测试 Central API 一致
+- 云测试 R2 新对象公开域名返回 403
+  - 现象：R2 S3 API `head_object` 成功，但 `https://r2-test.aivison.it.com/<new-key>` 返回 403
+  - 处理：若只是图片结果，可临时使用 R2 S3 预签名 URL 闭环；若是 Web 视频结果，必须优先修复公开域名或改造 owner result fallback，否则 `/api/tasks/{task_id}/result` 会持续 `pending_result`
 
 ## 6. 文档维护口径
 - 部署文档与运维技能必须和 `safe_deploy.sh` 的真实顺序保持一致。

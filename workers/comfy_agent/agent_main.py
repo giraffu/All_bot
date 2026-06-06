@@ -78,6 +78,13 @@ MINIO_ACCESS_KEY = os.getenv("MINIO_ACCESS_KEY", "your_key")
 MINIO_SECRET_KEY = os.getenv("MINIO_SECRET_KEY", "your_secret")
 MINIO_INPUT_BUCKET = os.getenv("MINIO_INPUT_BUCKET", "comfyui-input")
 MINIO_RESULT_BUCKET = os.getenv("MINIO_RESULT_BUCKET", "comfyui-output")
+MINIO_TEMPLATE_BUCKET = os.getenv("MINIO_TEMPLATE_BUCKET", "bot-template")
+MINIO_SECURE = os.getenv("MINIO_SECURE", "false").strip().lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
 COMFY_READY_RETRY_ATTEMPTS = int(os.getenv("COMFY_READY_RETRY_ATTEMPTS", "5"))
 COMFY_READY_RETRY_DELAY_SECONDS = float(
     os.getenv("COMFY_READY_RETRY_DELAY_SECONDS", "2")
@@ -93,6 +100,13 @@ COMFY_TASK_INFRA_FAILURE_THRESHOLD = int(
     os.getenv("COMFY_TASK_INFRA_FAILURE_THRESHOLD", "3")
 )
 COMFY_QUARANTINE_SECONDS = float(os.getenv("COMFY_QUARANTINE_SECONDS", "300"))
+COMPLETE_REPORT_MAX_ATTEMPTS = int(os.getenv("COMPLETE_REPORT_MAX_ATTEMPTS", "5"))
+COMPLETE_REPORT_RETRY_BASE_SECONDS = float(
+    os.getenv("COMPLETE_REPORT_RETRY_BASE_SECONDS", "1.0")
+)
+COMPLETE_REPORT_RETRY_MAX_SECONDS = float(
+    os.getenv("COMPLETE_REPORT_RETRY_MAX_SECONDS", "10.0")
+)
 
 USER_INPUT_ERROR_MARKERS = (
     "downloaded file is not a valid image",
@@ -162,7 +176,7 @@ class ComfyAgent:
                 MINIO_ENDPOINT,
                 access_key=MINIO_ACCESS_KEY,
                 secret_key=MINIO_SECRET_KEY,
-                secure=False,  # Set to True if using HTTPS
+                secure=MINIO_SECURE,
             )
             logger.info("MinIO client initialized")
         except Exception as e:
@@ -493,18 +507,57 @@ class ComfyAgent:
         *,
         extra_outputs: dict[str, Any] | None = None,
     ):
-        try:
-            await self.master_client.post(
-                "/api/agent/task/complete",
-                json={
-                    "task_id": task_id,
-                    "agent_id": AGENT_ID,
-                    "result": result_path,
-                    "extra_outputs": extra_outputs or {},
-                },
-            )
-        except Exception as e:
-            logger.error(f"Failed to report completion for task {task_id}: {e}")
+        payload = {
+            "task_id": task_id,
+            "agent_id": AGENT_ID,
+            "result": result_path,
+            "extra_outputs": extra_outputs or {},
+        }
+        attempts = max(1, COMPLETE_REPORT_MAX_ATTEMPTS)
+        last_error: Exception | None = None
+
+        for attempt in range(1, attempts + 1):
+            try:
+                response = await self.master_client.post(
+                    "/api/agent/task/complete",
+                    json=payload,
+                )
+                status_code = getattr(response, "status_code", 200)
+                if status_code >= 400:
+                    raise RuntimeError(
+                        f"Central API returned HTTP {status_code} for completion"
+                    )
+                return
+            except Exception as e:
+                last_error = e
+                if attempt >= attempts:
+                    logger.error(
+                        "Failed to report completion for task %s after %s attempts: %s",
+                        task_id,
+                        attempts,
+                        e,
+                    )
+                    raise RuntimeError(
+                        f"Failed to report completion for task {task_id}"
+                    ) from e
+
+                delay = min(
+                    COMPLETE_REPORT_RETRY_BASE_SECONDS * (2 ** (attempt - 1)),
+                    COMPLETE_REPORT_RETRY_MAX_SECONDS,
+                )
+                logger.warning(
+                    "Failed to report completion for task %s (attempt %s/%s): %s; retrying in %.1fs",
+                    task_id,
+                    attempt,
+                    attempts,
+                    e,
+                    delay,
+                )
+                await asyncio.sleep(delay)
+
+        raise RuntimeError(
+            f"Failed to report completion for task {task_id}"
+        ) from last_error
 
     async def report_cancelled(self, task_id: str):
         await self.report_status(task_id, "cancelled")
@@ -636,7 +689,7 @@ class ComfyAgent:
         real_object_name = object_name
 
         if object_name.startswith("template:"):
-            bucket_name = "bot-template"
+            bucket_name = MINIO_TEMPLATE_BUCKET
             real_object_name = object_name.replace("template:", "")
         elif object_name.startswith("comfyui-temp/"):
             bucket_name = MINIO_RESULT_BUCKET

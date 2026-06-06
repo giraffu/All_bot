@@ -48,7 +48,7 @@
 ### 5.1 测试 Web 边缘发布
 - 测试静态站推荐独立子域名 `web-test.aivison.it.com`，与正式 `web.aivison.it.com` 共用边缘 VPS，但必须使用独立静态目录 `/root/dist-test`。
 - 推荐先使用仓库内 [all_bot_nginx_web_test.conf](file:///home/hfy/APP/All_bot/all_bot_nginx_web_test.conf) 作为 HTTP 初始配置，再在边缘 VPS 上执行 `certbot --nginx -d web-test.aivison.it.com` 生成 HTTPS 配置。
-- 测试站 `/api/` 必须回源到测试 Web API `100.99.254.53:8001`，不要误指到正式 `8000`。
+- 测试站 `/api/` 必须回源到当前测试 Web API。云测试控制面接管后，`web-test.aivison.it.com` 的边缘 VPS Nginx 应指向云端 Tailscale API `100.107.220.127:8001`，不要误指到正式 `8000` 或已停用的本地主服务器测试 `100.99.254.53:8001`。
 - 前端测试静态资源可通过 `frontend` 下的 `npm run deploy:edge-test` 发布到边缘 VPS 的 `/root/dist-test`。
 - 若测试 Web 需要启用 Telegram Widget/Mini App，需额外确认前端测试构建使用测试 bot 的用户名，而不是正式 bot。
 
