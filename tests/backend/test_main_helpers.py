@@ -539,6 +539,114 @@ async def test_build_system_status_response_marks_offline_when_all_workers_unhea
 
 
 @pytest.mark.asyncio
+async def test_build_task_status_response_uses_short_task_snapshot_cache(monkeypatch):
+    class FakeQueueManager:
+        def __init__(self):
+            self.redis = object()
+            self.pending_key = "pending"
+            self.running_key = "running"
+            self.agent_heartbeat_prefix = "agent:"
+            self.status_calls = 0
+            self.position_calls = 0
+
+        async def get_task_status(self, task_id):
+            assert task_id == "task-1"
+            self.status_calls += 1
+            return {
+                "status": "pending",
+                "progress": "0.25",
+                "error_msg": "",
+                "result_path": "",
+                "extra_outputs": "",
+            }
+
+        async def get_queue_position(self, task_id):
+            assert task_id == "task-1"
+            self.position_calls += 1
+            return 4
+
+        @staticmethod
+        def _maybe_parse_json_dict(value):
+            return None if not value else value
+
+        @staticmethod
+        def _as_bool(value):
+            return bool(value)
+
+    monkeypatch.setattr(main_response_helpers, "TASK_STATUS_CACHE_TTL_SECONDS", 2.0)
+    queue_manager = FakeQueueManager()
+
+    first = await main_response_helpers.build_task_status_response(
+        task_id="task-1",
+        queue_manager=queue_manager,
+        build_result_url_func=lambda _path: "unused",
+    )
+    second = await main_response_helpers.build_task_status_response(
+        task_id="task-1",
+        queue_manager=queue_manager,
+        build_result_url_func=lambda _path: "unused",
+    )
+
+    assert first.queue_pos == 4
+    assert second.queue_pos == 4
+    assert queue_manager.status_calls == 1
+    assert queue_manager.position_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_build_task_status_response_prunes_old_task_snapshot_cache(monkeypatch):
+    class FakeQueueManager:
+        def __init__(self):
+            self.redis = object()
+            self.pending_key = "pending"
+            self.running_key = "running"
+            self.agent_heartbeat_prefix = "agent:"
+            self.status_calls = []
+
+        async def get_task_status(self, task_id):
+            self.status_calls.append(task_id)
+            return {
+                "status": "done",
+                "progress": "1.0",
+                "error_msg": "",
+                "result_path": "",
+                "extra_outputs": "",
+            }
+
+        @staticmethod
+        def _maybe_parse_json_dict(value):
+            return None if not value else value
+
+        @staticmethod
+        def _as_bool(value):
+            return bool(value)
+
+    monkeypatch.setattr(main_response_helpers, "TASK_STATUS_CACHE_TTL_SECONDS", 30.0)
+    monkeypatch.setattr(main_response_helpers, "TASK_STATUS_CACHE_STALE_SECONDS", 30.0)
+    monkeypatch.setattr(main_response_helpers, "TASK_STATUS_CACHE_MAX_ENTRIES", 1)
+    queue_manager = FakeQueueManager()
+
+    await main_response_helpers.build_task_status_response(
+        task_id="task-1",
+        queue_manager=queue_manager,
+        build_result_url_func=lambda _path: "unused",
+    )
+    await main_response_helpers.build_task_status_response(
+        task_id="task-2",
+        queue_manager=queue_manager,
+        build_result_url_func=lambda _path: "unused",
+    )
+    await main_response_helpers.build_task_status_response(
+        task_id="task-1",
+        queue_manager=queue_manager,
+        build_result_url_func=lambda _path: "unused",
+    )
+
+    assert len(main_response_helpers._task_status_snapshot_cache) == 1
+    assert queue_manager.status_calls == ["task-1", "task-2", "task-1"]
+
+
+@pytest.mark.asyncio
 async def test_system_status_and_workers_share_short_worker_snapshot_cache():
     class FakeQueueManager:
         def __init__(self):

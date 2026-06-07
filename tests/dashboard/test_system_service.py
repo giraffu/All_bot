@@ -48,6 +48,13 @@ class _FakeDbSession:
         return SimpleNamespace(all=lambda: self._rows)
 
 
+@pytest.fixture(autouse=True)
+def _clear_backend_task_status_cache():
+    system_service.clear_backend_task_status_cache()
+    yield
+    system_service.clear_backend_task_status_cache()
+
+
 @pytest.mark.asyncio
 async def test_refund_bot_task_payload_uses_finalize_terminated_task():
     finalize_terminated_task = AsyncMock(
@@ -241,6 +248,75 @@ async def test_get_active_bot_tasks_payload_merges_user_and_backend_status():
     assert result["tasks"]["task-2"]["user_group"] == "未知"
     assert result["tasks"]["task-2"]["display_name"] == "User_456"
     assert result["tasks"]["task-2"]["execution_status"] == "submitting"
+
+
+@pytest.mark.asyncio
+async def test_fetch_backend_task_statuses_uses_short_cache(monkeypatch):
+    request_backend_status_func = AsyncMock(
+        return_value=_FakeResponse({"status": "pending", "queue_pos": 5})
+    )
+    monkeypatch.setattr(
+        system_service,
+        "BACKEND_TASK_STATUS_CACHE_TTL_SECONDS",
+        5.0,
+    )
+
+    first = await system_service._fetch_backend_task_statuses(
+        tasks={"task-1": {"backend_task_id": "backend-1"}},
+        api_base="http://127.0.0.1:8003",
+        request_backend_status_func=request_backend_status_func,
+    )
+    second = await system_service._fetch_backend_task_statuses(
+        tasks={"task-1": {"backend_task_id": "backend-1"}},
+        api_base="http://127.0.0.1:8003",
+        request_backend_status_func=request_backend_status_func,
+    )
+
+    assert first == {"backend-1": {"status": "pending", "queue_pos": 5}}
+    assert second == {"backend-1": {"status": "pending", "queue_pos": 5}}
+    request_backend_status_func.assert_awaited_once_with("backend-1")
+
+
+@pytest.mark.asyncio
+async def test_fetch_backend_task_statuses_prunes_old_cache(monkeypatch):
+    request_backend_status_func = AsyncMock(
+        side_effect=[
+            _FakeResponse({"status": "pending"}),
+            _FakeResponse({"status": "running"}),
+            _FakeResponse({"status": "done"}),
+        ]
+    )
+    monkeypatch.setattr(
+        system_service,
+        "BACKEND_TASK_STATUS_CACHE_TTL_SECONDS",
+        30.0,
+    )
+    monkeypatch.setattr(
+        system_service,
+        "BACKEND_TASK_STATUS_CACHE_MAX_ENTRIES",
+        1,
+    )
+
+    await system_service._fetch_backend_task_statuses(
+        tasks={"task-1": {"backend_task_id": "backend-1"}},
+        api_base="http://127.0.0.1:8003",
+        request_backend_status_func=request_backend_status_func,
+    )
+    await system_service._fetch_backend_task_statuses(
+        tasks={"task-2": {"backend_task_id": "backend-2"}},
+        api_base="http://127.0.0.1:8003",
+        request_backend_status_func=request_backend_status_func,
+    )
+    await system_service._fetch_backend_task_statuses(
+        tasks={"task-1": {"backend_task_id": "backend-1"}},
+        api_base="http://127.0.0.1:8003",
+        request_backend_status_func=request_backend_status_func,
+    )
+
+    assert len(system_service._backend_task_status_cache) == 1
+    assert [
+        call.args[0] for call in request_backend_status_func.await_args_list
+    ] == ["backend-1", "backend-2", "backend-1"]
 
 
 @pytest.mark.asyncio

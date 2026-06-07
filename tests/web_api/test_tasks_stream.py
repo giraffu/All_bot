@@ -9,7 +9,11 @@ from fastapi import HTTPException
 from src.database.models import History
 from src.database import core as db_core
 from src.web_api.routers import tasks as tasks_router
-from src.web_api.services import task_runtime_api_service, task_stream_api_service
+from src.web_api.services import (
+    task_runtime_api_service,
+    task_stream_api_service,
+    task_stream_service,
+)
 
 
 class _FakeResult:
@@ -129,6 +133,18 @@ async def _collect_stream_events(response):
     async for event in response.body_iterator:
         events.append(event)
     return events
+
+
+@pytest.fixture(autouse=True)
+def _clear_task_stream_status_cache(monkeypatch):
+    monkeypatch.setattr(
+        task_stream_service,
+        "TASK_STREAM_STATUS_CACHE_TTL_SECONDS",
+        0,
+    )
+    task_stream_service.clear_task_stream_status_cache()
+    yield
+    task_stream_service.clear_task_stream_status_cache()
 
 
 def test_build_terminal_progress_payload_maps_backend_terminal_states():
@@ -386,6 +402,89 @@ async def test_task_status_stream_emits_history_success_without_status_poll_when
     assert pubsub.subscribed == ["comfy:task_events:task-1"]
     assert pubsub.unsubscribed == ["comfy:task_events:task-1"]
     assert pubsub.closed is True
+
+
+@pytest.mark.asyncio
+async def test_fetch_task_status_full_uses_short_shared_cache(monkeypatch):
+    status_calls = []
+    status_responses = [
+        _FakeStatusResponse(200, {"status": "pending", "queue_pos": 3})
+    ]
+    monkeypatch.setattr(
+        task_stream_service,
+        "TASK_STREAM_STATUS_CACHE_TTL_SECONDS",
+        2.0,
+    )
+
+    first = await task_stream_service._fetch_task_status_full(
+        task_id="backend-1",
+        api_base="http://127.0.0.1:8003",
+        httpx_async_client_factory=lambda: _FakeAsyncClient(
+            status_responses,
+            status_calls,
+        ),
+        logger=tasks_router.logger,
+    )
+    second = await task_stream_service._fetch_task_status_full(
+        task_id="backend-1",
+        api_base="http://127.0.0.1:8003",
+        httpx_async_client_factory=lambda: _FakeAsyncClient([], status_calls),
+        logger=tasks_router.logger,
+    )
+
+    assert first == {"status": "pending", "queue_pos": 3}
+    assert second == {"status": "pending", "queue_pos": 3}
+    assert status_calls == [("http://127.0.0.1:8003/status/backend-1", 2.0)]
+
+
+@pytest.mark.asyncio
+async def test_fetch_task_status_full_prunes_old_shared_cache(monkeypatch):
+    status_calls = []
+    monkeypatch.setattr(
+        task_stream_service,
+        "TASK_STREAM_STATUS_CACHE_TTL_SECONDS",
+        30.0,
+    )
+    monkeypatch.setattr(
+        task_stream_service,
+        "TASK_STREAM_STATUS_CACHE_MAX_ENTRIES",
+        1,
+    )
+
+    await task_stream_service._fetch_task_status_full(
+        task_id="backend-1",
+        api_base="http://127.0.0.1:8003",
+        httpx_async_client_factory=lambda: _FakeAsyncClient(
+            [_FakeStatusResponse(200, {"status": "pending"})],
+            status_calls,
+        ),
+        logger=tasks_router.logger,
+    )
+    await task_stream_service._fetch_task_status_full(
+        task_id="backend-2",
+        api_base="http://127.0.0.1:8003",
+        httpx_async_client_factory=lambda: _FakeAsyncClient(
+            [_FakeStatusResponse(200, {"status": "running"})],
+            status_calls,
+        ),
+        logger=tasks_router.logger,
+    )
+    await task_stream_service._fetch_task_status_full(
+        task_id="backend-1",
+        api_base="http://127.0.0.1:8003",
+        httpx_async_client_factory=lambda: _FakeAsyncClient(
+            [_FakeStatusResponse(200, {"status": "done"})],
+            status_calls,
+        ),
+        logger=tasks_router.logger,
+    )
+
+    assert len(task_stream_service._task_stream_status_cache) == 1
+    assert status_calls == [
+        ("http://127.0.0.1:8003/status/backend-1", 2.0),
+        ("http://127.0.0.1:8003/status/backend-2", 2.0),
+        ("http://127.0.0.1:8003/status/backend-1", 2.0),
+    ]
 
 
 @pytest.mark.asyncio

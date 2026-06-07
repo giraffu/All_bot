@@ -1,12 +1,110 @@
 import asyncio
 import json
+import os
+import time
 from typing import Any, Awaitable, Callable
 
 from sse_starlette.sse import EventSourceResponse
 from src.core.task_status_mapper import is_backend_terminal_status
 
+TASK_STREAM_STATUS_CACHE_TTL_SECONDS = float(
+    os.getenv("TASK_STREAM_STATUS_CACHE_TTL_SECONDS", "2.0")
+)
+TASK_STREAM_STATUS_CACHE_MAX_ENTRIES = int(
+    os.getenv("TASK_STREAM_STATUS_CACHE_MAX_ENTRIES", "5000")
+)
+
+_task_stream_status_cache: dict[tuple[str, str], tuple[float, dict[str, Any]]] = {}
+_task_stream_status_locks: dict[tuple[str, str], asyncio.Lock] = {}
+
+
+def clear_task_stream_status_cache() -> None:
+    _task_stream_status_cache.clear()
+    _task_stream_status_locks.clear()
+
+
+def _prune_task_stream_status_cache(now: float) -> None:
+    if (
+        TASK_STREAM_STATUS_CACHE_MAX_ENTRIES <= 0
+        or len(_task_stream_status_cache) <= TASK_STREAM_STATUS_CACHE_MAX_ENTRIES
+    ):
+        return
+
+    def remove_if_unlocked(cache_key: tuple[str, str]) -> bool:
+        lock = _task_stream_status_locks.get(cache_key)
+        if lock and lock.locked():
+            return False
+        _task_stream_status_cache.pop(cache_key, None)
+        _task_stream_status_locks.pop(cache_key, None)
+        return True
+
+    for cache_key, (expires_at, _data) in list(_task_stream_status_cache.items()):
+        if expires_at <= now:
+            remove_if_unlocked(cache_key)
+
+    overflow = len(_task_stream_status_cache) - TASK_STREAM_STATUS_CACHE_MAX_ENTRIES
+    if overflow <= 0:
+        return
+
+    for cache_key, _cached in sorted(
+        _task_stream_status_cache.items(),
+        key=lambda item: item[1][0],
+    ):
+        if overflow <= 0:
+            break
+        if remove_if_unlocked(cache_key):
+            overflow -= 1
+
 
 async def _fetch_task_status_full(
+    *,
+    task_id: str,
+    api_base: str,
+    httpx_async_client_factory,
+    logger,
+) -> dict[str, Any] | None:
+    cache_key = (api_base, task_id)
+    now = time.monotonic()
+    cached = _task_stream_status_cache.get(cache_key)
+    if (
+        TASK_STREAM_STATUS_CACHE_TTL_SECONDS > 0
+        and cached
+        and cached[0] > now
+    ):
+        return dict(cached[1])
+
+    lock = _task_stream_status_locks.setdefault(cache_key, asyncio.Lock())
+    async with lock:
+        now = time.monotonic()
+        cached = _task_stream_status_cache.get(cache_key)
+        if (
+            TASK_STREAM_STATUS_CACHE_TTL_SECONDS > 0
+            and cached
+            and cached[0] > now
+        ):
+            return dict(cached[1])
+
+        status_data = await _fetch_task_status_uncached(
+            task_id=task_id,
+            api_base=api_base,
+            httpx_async_client_factory=httpx_async_client_factory,
+            logger=logger,
+        )
+        if status_data is None:
+            _task_stream_status_locks.pop(cache_key, None)
+            return None
+        if status_data is not None and TASK_STREAM_STATUS_CACHE_TTL_SECONDS > 0:
+            now = time.monotonic()
+            expires_at = now + TASK_STREAM_STATUS_CACHE_TTL_SECONDS
+            _task_stream_status_cache[cache_key] = (
+                expires_at,
+                dict(status_data),
+            )
+            _prune_task_stream_status_cache(now)
+        return status_data
+
+
+async def _fetch_task_status_uncached(
     *,
     task_id: str,
     api_base: str,

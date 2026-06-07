@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import os
 import time
 
 import httpx
@@ -15,6 +16,52 @@ from src.database.models import User
 from src.services.image_service import image_service
 
 logger = logging.getLogger("dashboard.system")
+BACKEND_TASK_STATUS_CACHE_TTL_SECONDS = float(
+    os.getenv("DASHBOARD_BACKEND_TASK_STATUS_CACHE_TTL_SECONDS", "5.0")
+)
+BACKEND_TASK_STATUS_CACHE_MAX_ENTRIES = int(
+    os.getenv("DASHBOARD_BACKEND_TASK_STATUS_CACHE_MAX_ENTRIES", "2000")
+)
+_backend_task_status_cache: dict[tuple[str, str], tuple[float, dict]] = {}
+_backend_task_status_locks: dict[tuple[str, str], asyncio.Lock] = {}
+
+
+def clear_backend_task_status_cache() -> None:
+    _backend_task_status_cache.clear()
+    _backend_task_status_locks.clear()
+
+
+def _prune_backend_task_status_cache(now: float) -> None:
+    if (
+        BACKEND_TASK_STATUS_CACHE_MAX_ENTRIES <= 0
+        or len(_backend_task_status_cache) <= BACKEND_TASK_STATUS_CACHE_MAX_ENTRIES
+    ):
+        return
+
+    def remove_if_unlocked(cache_key: tuple[str, str]) -> bool:
+        lock = _backend_task_status_locks.get(cache_key)
+        if lock and lock.locked():
+            return False
+        _backend_task_status_cache.pop(cache_key, None)
+        _backend_task_status_locks.pop(cache_key, None)
+        return True
+
+    for cache_key, (expires_at, _data) in list(_backend_task_status_cache.items()):
+        if expires_at <= now:
+            remove_if_unlocked(cache_key)
+
+    overflow = len(_backend_task_status_cache) - BACKEND_TASK_STATUS_CACHE_MAX_ENTRIES
+    if overflow <= 0:
+        return
+
+    for cache_key, _cached in sorted(
+        _backend_task_status_cache.items(),
+        key=lambda item: item[1][0],
+    ):
+        if overflow <= 0:
+            break
+        if remove_if_unlocked(cache_key):
+            overflow -= 1
 
 
 def count_tasks_by_type(tasks: dict) -> dict[str, int]:
@@ -265,11 +312,43 @@ async def _fetch_backend_task_statuses(
         return {}
 
     async def fetch_status(backend_id: str):
-        try:
-            response = await request_backend_status_func(backend_id)
-            return backend_id, response.json()
-        except Exception:
-            return backend_id, None
+        cache_key = (api_base, backend_id)
+        now = time.monotonic()
+        cached = _backend_task_status_cache.get(cache_key)
+        if (
+            BACKEND_TASK_STATUS_CACHE_TTL_SECONDS > 0
+            and cached
+            and cached[0] > now
+        ):
+            return backend_id, dict(cached[1])
+
+        lock = _backend_task_status_locks.setdefault(cache_key, asyncio.Lock())
+        async with lock:
+            now = time.monotonic()
+            cached = _backend_task_status_cache.get(cache_key)
+            if (
+                BACKEND_TASK_STATUS_CACHE_TTL_SECONDS > 0
+                and cached
+                and cached[0] > now
+            ):
+                return backend_id, dict(cached[1])
+
+            try:
+                response = await request_backend_status_func(backend_id)
+                status_data = response.json()
+                if BACKEND_TASK_STATUS_CACHE_TTL_SECONDS > 0:
+                    now = time.monotonic()
+                    expires_at = now + BACKEND_TASK_STATUS_CACHE_TTL_SECONDS
+                    _backend_task_status_cache[cache_key] = (
+                        expires_at,
+                        dict(status_data),
+                    )
+                    _prune_backend_task_status_cache(now)
+                return backend_id, status_data
+            except Exception:
+                if cache_key not in _backend_task_status_cache:
+                    _backend_task_status_locks.pop(cache_key, None)
+                return backend_id, None
 
     results = await asyncio.gather(*(fetch_status(task_id) for task_id in task_ids[:20]))
     return {
