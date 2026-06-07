@@ -11,6 +11,7 @@ from src.core import gallery_core
 from src.core import gallery_submission_effects
 from src.services import storage as storage_module
 from src.web_api.services.gallery_response_builder import build_gallery_post_responses
+from src.web_api.services import gallery_media_resolver
 from src.web_api.services.gallery_service_queries import get_gallery_apply_context_payload
 from src.web_api.services.gallery_service_support import (
     logger as gallery_support_logger,
@@ -654,6 +655,12 @@ async def test_pick_gallery_media_urls_prefers_existing_history_task_key(
     )
     async_exists_mock = AsyncMock(side_effect=[True, True])
     monkeypatch.setattr(storage_module.storage, "async_r2_object_exists", async_exists_mock)
+    public_probe_mock = AsyncMock(return_value=True)
+    monkeypatch.setattr(
+        gallery_media_resolver,
+        "r2_public_url_exists",
+        public_probe_mock,
+    )
 
     media_url, thumbnail_url = await resolve_gallery_post_media_urls(
         task_id="task-1",
@@ -664,10 +671,11 @@ async def test_pick_gallery_media_urls_prefers_existing_history_task_key(
     assert media_url == "https://cdn.example/history/task-1/original.png"
     assert thumbnail_url == "https://cdn.example/history/task-1/thumb.webp"
     assert async_exists_mock.await_count == 2
+    assert public_probe_mock.await_count == 2
 
 
 @pytest.mark.asyncio
-async def test_pick_gallery_media_urls_falls_back_to_legacy_keys_when_history_keys_missing(
+async def test_pick_gallery_media_urls_falls_back_to_original_object_keys_when_history_keys_missing(
     monkeypatch,
 ):
     monkeypatch.setattr(
@@ -677,6 +685,12 @@ async def test_pick_gallery_media_urls_falls_back_to_legacy_keys_when_history_ke
     )
     async_exists_mock = AsyncMock(side_effect=[False, True, False, True])
     monkeypatch.setattr(storage_module.storage, "async_r2_object_exists", async_exists_mock)
+    public_probe_mock = AsyncMock(return_value=True)
+    monkeypatch.setattr(
+        gallery_media_resolver,
+        "r2_public_url_exists",
+        public_probe_mock,
+    )
 
     media_url, thumbnail_url = await resolve_gallery_post_media_urls(
         task_id="task-1",
@@ -684,9 +698,88 @@ async def test_pick_gallery_media_urls_falls_back_to_legacy_keys_when_history_ke
         media_type="image",
     )
 
-    assert media_url == "https://cdn.example/task-1.png"
-    assert thumbnail_url == "https://cdn.example/task-1_thumb.webp"
+    assert media_url == "https://cdn.example/123/output_images/task-1.png"
+    assert thumbnail_url == "https://cdn.example/123/output_images/task-1_thumb.webp"
     assert async_exists_mock.await_count == 4
+    assert public_probe_mock.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_pick_gallery_media_urls_can_use_raw_bot_data_r2_prefix(
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        storage_module.storage,
+        "get_r2_public_url",
+        lambda key: f"https://cdn.example/{key}",
+    )
+    async_exists_mock = AsyncMock(
+        side_effect=[False, False, True, False, False, True]
+    )
+    monkeypatch.setattr(storage_module.storage, "async_r2_object_exists", async_exists_mock)
+    public_probe_mock = AsyncMock(return_value=True)
+    monkeypatch.setattr(
+        gallery_media_resolver,
+        "r2_public_url_exists",
+        public_probe_mock,
+    )
+
+    media_url, thumbnail_url = await resolve_gallery_post_media_urls(
+        task_id="task-1",
+        output_file="bot-data/history/task-1/output.png",
+        media_type="image",
+    )
+
+    assert media_url == "https://cdn.example/bot-data/history/task-1/output.png"
+    assert thumbnail_url == "https://cdn.example/bot-data/history/task-1/output_thumb.webp"
+    assert async_exists_mock.await_count == 6
+    assert public_probe_mock.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_pick_gallery_media_urls_returns_presigned_url_when_public_r2_misses(
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        storage_module.storage,
+        "get_r2_public_url",
+        lambda key: f"https://cdn.example/{key}",
+    )
+    async_exists_mock = AsyncMock(side_effect=[True, True])
+    monkeypatch.setattr(storage_module.storage, "async_r2_object_exists", async_exists_mock)
+    public_probe_mock = AsyncMock(return_value=False)
+    monkeypatch.setattr(
+        gallery_media_resolver,
+        "r2_public_url_exists",
+        public_probe_mock,
+    )
+    presign_mock = MagicMock(
+        side_effect=[
+            "https://r2-s3.example/original-presigned",
+            "https://r2-s3.example/thumb-presigned",
+        ]
+    )
+    monkeypatch.setattr(
+        gallery_media_resolver,
+        "build_r2_presigned_url",
+        presign_mock,
+    )
+
+    media_url, thumbnail_url = await resolve_gallery_post_media_urls(
+        task_id="task-1",
+        output_file="123/output_images/task-1.png",
+        media_type="image",
+    )
+
+    assert media_url == "https://r2-s3.example/original-presigned"
+    assert thumbnail_url == "https://r2-s3.example/thumb-presigned"
+    assert async_exists_mock.await_count == 2
+    assert public_probe_mock.await_count == 2
+    assert presign_mock.call_args_list[0].args == (
+        "history/task-1/original.png",
+    )
+    assert presign_mock.call_args_list[1].args == ("history/task-1/thumb.webp",)
+    assert presign_mock.call_args_list[0].kwargs == {"expires_hours": 1.0}
 
 
 @pytest.mark.asyncio
@@ -721,7 +814,7 @@ async def test_pick_gallery_media_urls_falls_back_to_presigned_storage_urls_when
 
     assert media_url == "https://minio.example/original.png"
     assert thumbnail_url == "https://minio.example/thumb.webp"
-    assert async_exists_mock.await_count == 4
+    assert async_exists_mock.await_count == 6
     assert presign_mock.call_count == 2
 
 
@@ -763,6 +856,11 @@ async def test_build_post_responses_uses_r2_fallback_chain(monkeypatch):
         "async_r2_object_exists",
         AsyncMock(side_effect=[False, True, False, True]),
     )
+    monkeypatch.setattr(
+        gallery_media_resolver,
+        "r2_public_url_exists",
+        AsyncMock(return_value=True),
+    )
 
     responses = await build_gallery_post_responses(
         session=session,
@@ -771,8 +869,8 @@ async def test_build_post_responses_uses_r2_fallback_chain(monkeypatch):
     )
 
     assert len(responses) == 1
-    assert responses[0].media_url == "https://cdn.example/task-1.png"
-    assert responses[0].thumbnail_url == "https://cdn.example/task-1_thumb.webp"
+    assert responses[0].media_url == "https://cdn.example/123/output_images/task-1.png"
+    assert responses[0].thumbnail_url == "https://cdn.example/123/output_images/task-1_thumb.webp"
 
 
 @pytest.mark.asyncio

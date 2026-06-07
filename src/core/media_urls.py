@@ -30,6 +30,7 @@ def build_r2_media_key_candidates(
     elif task_id:
         candidates.append(build_history_r2_media_key(task_id, output_file))
     candidates.append(build_storage_r2_object_key(output_file))
+    candidates.append(output_file)
     candidates.append(build_legacy_r2_key(output_file))
 
     seen = set()
@@ -53,6 +54,7 @@ def build_r2_thumbnail_info(
     elif task_id:
         candidates.append(build_history_r2_thumbnail_key(task_id, media_type))
     candidates.append(build_storage_r2_object_key(thumb_file))
+    candidates.append(thumb_file)
     candidates.append(build_legacy_r2_key(thumb_file))
 
     seen = set()
