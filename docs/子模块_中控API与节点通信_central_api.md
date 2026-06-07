@@ -66,7 +66,11 @@ sequenceDiagram
 - Worker heartbeat 状态约定为 `idle`、`running`、`error`、`quarantined`；其中 `error` 表示 ComfyUI 探活持续失败，`quarantined` 表示连续基础设施类任务失败后的冷却隔离
 - heartbeat 可携带 `health_reason`、`last_error`、`last_error_at`、`consecutive_failures`、`quarantined_until`，用于 Dashboard 节点卡片展示和排障
 - `/system/status` 中 `active_workers` 只表示有 heartbeat 的节点数；`healthy_workers` 才表示当前可接单节点数，`comfy_online` 按 `healthy_workers > 0` 计算
+- `/system/status` 与 `/system/workers` 是高频观测接口，不是强一致调度入口。Central API 会对同一 Redis 连接参数与队列 key 组合的队列/worker 快照做约 10 秒短 TTL 缓存，并在刷新中返回短时 stale 快照，避免 Bot、Web 与 Dashboard 并发轮询时重复扫描 Redis 导致状态接口超时或触发 Bot 熔断。实际任务分发、Worker `pop`、状态上报与完成回流仍走实时 Redis/HTTP 路径，不依赖该观测缓存。
+- Central FastAPI 生命周期内复用共享 Redis 客户端；依赖注入优先使用 `request.app.state.redis`，只有离线/测试场景缺失 app state 时才回退到临时 Redis 连接。不要把 `get_redis()` 再改回每请求新建连接的模式。
 - `/api/agent/task/complete` 是结果成功回流的唯一确认点。Worker 端必须对完成回报进行有限重试，并在全部失败后显式失败，避免 Central 因未收到 `complete` 而把已生成任务误判为 heartbeat lost。
+- `/api/agent/task/status` 是运行态观测回报，Worker 端对瞬时断连或 5xx 做轻量重试；重试耗尽只记录错误，不应直接让正在生成的任务失败。
+- Worker 等待 ComfyUI 结果时，WebSocket 终态不是唯一信号；当 WS 未及时设置结果时，worker 会按策略探测 `/history/{prompt_id}` 收口。日志里的 `Task result not set via WS, checking history` 通常解释为 ComfyUI/worker 本地执行链路的短暂停顿，不等同于 Central 状态接口慢。
 - 文档不再固化 Redis DB 编号与具体低层队列命名为稳定架构事实
 
 ## 6. 测试要求
@@ -84,7 +88,9 @@ sequenceDiagram
   - queue 是否持续堆积
   - 上游 task core submission 是否仍在正常写入任务
 - 队列中的待执行任务通常具有可恢复性，重启执行面服务不应被表述为必然丢任务。
+- 云正式 Central 单服务热修可只重建 `central-api-prod`；短时间内 worker heartbeat/status 上报可能抖动，但 pending 队列与 worker 内正在执行的 ComfyUI 任务不因 Central 容器重建本身立即丢失。
 
 ## 8. 维护原则
 - 中控文档要以“执行面”而不是“业务主入口”来描述 Central API。
 - 不再把客户端直连中控、Redis DB2、固定 Pub/Sub 同步等待写成全局主叙事。
+- 不要把 Dashboard/状态观测缓存误认为调度缓存；修改调度、取消、完成回流时仍需按实时 Redis/HTTP 主链测试。

@@ -420,7 +420,7 @@ async def get_system_status_payload(
 
 async def _request_json(url: str, *, httpx_async_client_factory=httpx.AsyncClient) -> tuple[int, dict | None]:
     async with httpx_async_client_factory(trust_env=False) as client:
-        response = await client.get(url, timeout=5.0)
+        response = await client.get(url, timeout=10.0)
         if response.status_code == 200:
             return response.status_code, response.json()
         return response.status_code, None

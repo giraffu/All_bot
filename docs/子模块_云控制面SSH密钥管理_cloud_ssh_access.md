@@ -2,11 +2,11 @@
 
 ## 1. 目标与范围
 
-本文档记录 AllBot 云控制面服务器的 SSH 密钥、登录入口、权限边界和轮换策略。云控制面当前用于 DigitalOcean Singapore Droplet，承载 Bot、Web API、Payment API、Central API、Dashboard、imgproxy、反向代理与监控等控制面服务。
+本文档记录 AllBot 云控制面服务器的 SSH 密钥、登录入口、权限边界和轮换策略。云控制面当前用于 DigitalOcean Singapore Droplet，承载正式 Bot、Web API、Payment API、Central API、Dashboard Backend、imgproxy 与运维入口等控制面服务。
 
 本文档不记录私钥内容、云服务密码、token、R2 key、数据库密码或任何可直接登录生产环境的敏感凭据。
 
-最近一次更新：2026-06-06，Asia/Shanghai。
+最近一次更新：2026-06-07，Asia/Shanghai。
 
 ## 2. 当前 SSH 密钥
 
@@ -110,13 +110,14 @@ ssh allbot-do-sgp1-control-root
 
 ## 6. `$48/mo` Droplet 的使用边界
 
-DigitalOcean Basic Regular `$48/mo` Droplet 的页面规格为 `4 vCPU / 8GB RAM / 160GB SSD / 5TB transfer`。它可以作为云测试栈和过渡生产控制面使用，但必须满足下面条件：
+DigitalOcean Basic Regular `$48/mo` Droplet 的页面规格为 `4 vCPU / 8GB RAM / 160GB SSD / 5TB transfer`。它当前承接正式过渡生产控制面，但必须满足下面条件：
 
 - Postgres 使用托管数据库或外部数据库，不在这台 Droplet 上长期自托管生产库。
 - Redis/Valkey 使用托管服务或外部 Redis，不在这台 Droplet 上承载完整生产 Redis。
 - MinIO 不迁到这台 Droplet；公开媒体走 Cloudflare R2，本地 MinIO 只作为武汉热缓存。
-- 本地 GPU 和 ComfyUI 不迁移；`comfy-agent-1..7` 通过 Tailscale 访问云 Central API。
+- 本地 GPU 和 ComfyUI 不迁移；`cloud-prod-comfy-agent-1..7` 通过 Tailscale 访问云 Central API。
 - `web-api`、Dashboard backend、imgproxy 的 worker/concurrency 需要按 4 vCPU 控制，不照搬主服务器的宽松配置。
+- 云端运行目录为 `/home/deploy/APP/All_bot`；日常热修应先备份被覆盖文件，不能假设远端目录一定是完整 Git 工作区。
 
 建议初始运行参数：
 
@@ -135,7 +136,7 @@ DigitalOcean Basic Regular `$48/mo` Droplet 的页面规格为 `4 vCPU / 8GB RAM
 - 可用内存长期低于 1.5GB 或出现 OOM。
 - Web API p95 延迟明显上升，或 Cloudflare 502/504 增加。
 - Postgres/Valkey 连接池耗尽。
-- Central queue/running 状态正常但 API 响应变慢。
+- Central queue/running 状态正常但 API 响应变慢，且状态观测缓存、Dashboard stats 缓存和 Valkey 连接复用后仍无法缓解。
 - Dashboard 查询影响 Web/API 响应。
 
 若触发以上任一条件，应升级到 `8 vCPU / 16GB RAM / 320GB SSD / 6TB transfer` 的 `$96/mo` 规格，或把 Dashboard/后台任务拆到第二台节点。

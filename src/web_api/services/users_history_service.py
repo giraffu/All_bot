@@ -3,7 +3,7 @@ import logging
 from fastapi import HTTPException
 
 from src.core.media_processor import extract_media_metadata_from_storage
-from src.web_api.common.utils import build_storage_input_file_url
+from src.web_api.common.utils import build_storage_input_file_url, release_read_transaction
 from src.web_api.schemas.gallery_schema import PaginatedGalleryResponse
 from src.web_api.schemas.user_schema import PaginatedHistory
 from src.web_api.services.apply_context_service import (
@@ -49,6 +49,7 @@ async def get_user_history_payload(
         limit=limit,
     )
     active_task_ids = await fetch_active_public_gallery_task_ids(db=db, task_ids=task_ids)
+    await release_read_transaction(db)
     response_items = await build_user_history_payload(
         histories=histories,
         gallery_task_ids=active_task_ids,
@@ -89,6 +90,7 @@ async def get_history_apply_context_payload(
     disabled_reason = resolve_history_template_apply_disabled_reason(history)
     if disabled_reason:
         raise HTTPException(status_code=400, detail=disabled_reason)
+    await release_read_transaction(db)
 
     return await build_history_apply_context_response(
         history=history,
@@ -140,6 +142,7 @@ async def get_my_favorites_payload(
         db=db,
         task_ids=[history.task_id for history in histories if history.task_id],
     )
+    await release_read_transaction(db)
     response_items = await build_favorite_gallery_payload(
         histories=histories,
         gallery_post_map=gallery_post_map,

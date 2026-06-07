@@ -94,17 +94,23 @@ async def lifespan(
     settings,
     logger,
     check_zombie_tasks_loop_func,
+    redis_from_url=Redis.from_url,
 ):
     zombie_task = None
+    shared_redis = None
     zombie_task = asyncio.create_task(
         check_zombie_tasks_loop_func(),
         name="backend-check-zombie-tasks",
     )
     fastapi_app.state.zombie_tasks_loop_task = zombie_task
+    shared_redis = redis_from_url(settings.redis_url)
+    fastapi_app.state.redis = shared_redis
     fastapi_app.state.minio_client = init_minio_client(settings=settings, logger=logger)
     try:
         yield
     finally:
+        if shared_redis is not None:
+            await shared_redis.close()
         if zombie_task is not None:
             zombie_task.cancel()
             try:

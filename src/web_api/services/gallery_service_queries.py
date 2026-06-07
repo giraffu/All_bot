@@ -5,6 +5,7 @@ from src.web_api.common.utils import call_with_optional_db
 from src.web_api.common.utils import (
     build_history_apply_context_response,
     build_storage_input_file_url,
+    release_read_transaction,
 )
 from src.web_api.services.apply_context_service import (
     resolve_history_template_apply_disabled_reason,
@@ -279,6 +280,7 @@ async def build_apply_context_payload(
     disabled_reason = resolve_history_template_apply_disabled_reason(history)
     if disabled_reason:
         raise HTTPException(status_code=400, detail=disabled_reason)
+    await release_read_transaction(db)
 
     return await build_history_apply_context_response_fn(
         history=history,

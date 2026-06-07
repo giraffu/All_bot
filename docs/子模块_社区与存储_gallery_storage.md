@@ -114,12 +114,14 @@ sequenceDiagram
 - 这已经是 Web workbench 模板应用的主入口，Telegram 内的老 `gallery_apply_fsm` 只应视为兼容路径。
 
 ### 4.7 媒体 URL 策略
-- 列表返回媒体时优先尝试 R2 公网 URL。
+- 列表返回媒体时优先构造 R2 公网 URL，但不在列表热路径对每个媒体做公网 `HEAD` 探测；列表只做轻量对象存在性判断和可降级 URL 选择，避免用户刷新广场时被对象存储探测拖慢。
 - R2 key 候选顺序为标准历史 key、原始 object key、旧 basename。例如 `history/{task_id}/original.ext` 未命中时，会继续探测 `123/output_images/file.ext`，从而兼容迁移期镜像到 R2 根路径的老对象。
 - 云正式迁移期可通过 `LEGACY_MINIO_*` 启用本地 MinIO 只读回源；R2 对象不存在且 legacy 对象存在时，Web API 返回 legacy 短签 URL。该 fallback 只用于读旧历史媒体，新生成数据仍写入 R2。
 - 历史详情、Gallery/Wan22 历史预览等读路径会先对 R2 公网 URL 做短超时可读性探测；若公网自定义域名返回 404/不可读但 R2 S3 `HEAD` 命中，可返回 R2 S3 短签 URL 保证用户可读。Web owner `/result` 仍是延迟敏感路径，视频结果未就绪时继续返回 `pending_result`，不要把它和历史详情 fallback 混为一谈。
 - `input_file_url` 也支持 legacy MinIO 只读回源，保障 Gallery apply-context 和历史模板应用能恢复旧输入图。
 - 缩略图也有独立的 R2 key 选择逻辑，不再是“简单拼接后缀”即可概括的模型；legacy 回源会先验证旧缩略图对象存在。迁移脚本可先从 legacy 复制已有缩略图，再用 `--source-storage current --generate-missing-thumbnails` 从已预热到 R2 的原文件生成缺失缩略图；legacy 源批量生成受保护拦截。
+- Web API 在历史、用户历史和 Gallery 响应构造中会尽量先释放只读数据库事务，再进行对象存储 URL 解析、R2/legacy fallback 或缩略图处理。新增读路径时不要在 DB 事务内等待慢对象存储。
+- 云正式已为 Gallery/History 热路径补充并发索引：活跃帖子按创建时间翻页、`history.task_id`、用户历史倒序、用户可见收藏、`task_id + user_id` 与 `user_interactions(user_id, action_type, post_id)`。新增列表查询条件时，应优先确认是否命中现有索引。
 
 ## 5. 核心红线
 - 捕获互动类 `IntegrityError` 前，必须先 `flush()`，避免 `autoflush` 提前把异常抛出到错误层级。
@@ -131,6 +133,7 @@ sequenceDiagram
 - `apply-context` 必须从 `History` 取请求语义字段，不能只依赖帖子展示用的输出元数据。
 - `apply-context` 必须服务端拒绝 Wan22 stitched 拼接记录，不能只靠前端隐藏按钮。
 - 对象存储异常只能降级，不能阻断广场浏览主链路。
+- 广场列表热路径不得恢复为“每条媒体公网 HEAD 探测 + 持有 DB 只读事务等待对象存储”的模式。
 
 ## 6. 测试关注面
 - 重复投稿与 `allow_contribute=False` 拦截
@@ -141,6 +144,7 @@ sequenceDiagram
 - apply-context 对 `requested_duration` / `billing_resolution` / `negative_prompt` / `input_file_url` 的返回准确性
 - Wan22 v2 单段一键应用回填与 stitched 拼接记录禁用、400 拒绝
 - Dashboard 封禁投稿并批量下架时，用户封禁状态、帖子上下架状态和多条 `History.is_public` 同步
+- Gallery 列表、我的投稿、我的收藏和历史详情需要覆盖 R2 hit、R2 miss + legacy fallback、缩略图 fallback 与对象存储慢响应场景。
 
 ## 7. 文档维护口径
 - 广场文档必须把“评论、收藏、apply-context、R2 优先 URL”视作现有能力，而不是扩展项。

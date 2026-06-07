@@ -32,11 +32,11 @@ graph TD
         VLAN[Tailscale]
     end
 
-    subgraph Gateway[接入与应用层]
-        BOT[tg-bot]
-        API[web-api / FastAPI]
-        PAYAPI[payment-api]
-        DBACK[dashboard-backend]
+    subgraph Gateway[云正式接入与应用层]
+        BOT[cloud-tg-bot-prod]
+        API[cloud-web-api-prod / FastAPI]
+        PAYAPI[cloud-payment-api-prod]
+        DBACK[cloud-dashboard-backend-prod]
         CS[cs_bot]
     end
 
@@ -53,10 +53,10 @@ graph TD
     end
 
     subgraph Infra[基础设施]
-        PG[(PostgreSQL)]
-        REDIS[(Redis)]
-        MINIO[(MinIO 热桶)]
-        R2[(Cloudflare R2)]
+        PG[(托管 PostgreSQL)]
+        REDIS[(托管 Valkey / Redis)]
+        MINIO[(本地 legacy MinIO)]
+        R2[(Cloudflare R2 user-data-prod)]
     end
 
     TG --> TGAPI --> BOT
@@ -78,7 +78,7 @@ graph TD
 
     TASKSUB --> REDIS
     TASKSUB --> CENTRAL --> WORKERS
-    WORKERS --> MINIO
+    WORKERS --> R2
     GAL --> MINIO
     GAL --> R2
     AUTH --> PG
@@ -102,11 +102,17 @@ graph TD
 - **核心领域与调度**
   - `task_core.py` 当前是稳定 facade，不再承担所有细节逻辑。
   - 真实默认装配已下沉到 provider/dependencies、submission、web-monitor、runtime 等子模块。
-  - 任务执行仍由 `Central API + ComfyUI Workers` 完成。
+  - 任务执行仍由 `Central API + ComfyUI Workers` 完成；正式 Central 已运行在云控制面，本地 7 个 GPU worker 通过 Tailscale 接入。
 - **基础设施层**
-  - PostgreSQL 保存主数据与业务账本。
-  - Redis 同时承载队列、并发锁、登录限流、任务运行态与黑名单等能力。
-  - MinIO 是主存储；R2 用于公开分发与读路径优化。
+  - 正式 PostgreSQL 与 Valkey/Redis 已迁到云侧托管/外部服务，保存主数据、业务账本、队列、并发锁、登录限流、任务运行态与 worker heartbeat。
+  - 新生成对象写入 R2 `user-data-prod`；本地 MinIO 保留为 legacy 历史媒体只读 fallback 与本地热数据备份。
+
+### 1.3 云正式生产口径
+2026-06-07 晚间正式生产已经切到“云控制面 + 托管 PostgreSQL/Valkey + R2 + 本地 GPU worker”：
+- 云端 Droplet `allbot-do-sgp1-control` 承载 `cloud-central-api-prod`、`cloud-web-api-prod`、`cloud-payment-api-prod`、`cloud-dashboard-backend-prod`、`cloud-imgproxy-prod` 与 `cloud-tg-bot-prod`。
+- 本地 `cloud-prod-comfy-agent-1..7` 继续连接武汉内网 ComfyUI，作为正式算力池。
+- `web.aivison.it.com /api/` 与 `rmb.aivison.it.com` 已回源云端；`assets.aivison.it.com` 保留本地 legacy MinIO 只读回源。
+- 长期运维细节见 `docs/子模块_云正式控制面部署_cloud_prod_control_plane.md`。
 
 ---
 
@@ -122,10 +128,10 @@ sequenceDiagram
     participant Auth as Auth / Permission
     participant Facade as task_core facade
     participant Deps as provider / dependencies
-    participant Central as Central API
+    participant Central as 云 Central API
     participant Worker as ComfyUI Worker
-    participant Store as MinIO / R2
-    participant PG as PostgreSQL
+    participant Store as R2 / legacy MinIO fallback
+    participant PG as 托管 PostgreSQL
 
     U->>Entry: 提交生成请求
     Entry->>Auth: 校验身份/境界/登录态
@@ -133,7 +139,7 @@ sequenceDiagram
     Facade->>Deps: 组装默认依赖或使用显式注入依赖
     Facade->>PG: 计费、历史、状态写入
     Facade->>Central: 派发 backend_task_id
-    Worker->>Store: 写产物
+    Worker->>Store: 新产物写 R2
     alt Web
         Facade->>Facade: 异步挂载 side-effect monitor
         Facade->>PG: 成功持久化/失败退款/释放锁
@@ -198,7 +204,7 @@ sequenceDiagram
 - **任务调度与节点通信**
   - task core facade、provider/capability、Web monitor、runtime cleanup、QueueManager、Central API、Workers。
 - **对象存储与媒体交付**
-  - MinIO 热桶、R2 公开读路径、结果 URL 生命周期。
+  - R2 正式写入、legacy MinIO 只读 fallback、结果 URL 生命周期。
 - **交互状态机与回调路由**
   - Telegram FSM、全局菜单黑盒退出、callback prefix 路由、临时文件服务。
 
@@ -230,6 +236,7 @@ sequenceDiagram
 - 文档中的入口函数、异常类型、超时值、双 ID 语义必须与代码保持一致。
 - `src/bot_main.py` 是 Telegram Bot shared entrypoint；`src/bot_test.py` 仅保留历史兼容 shim。
 - 若修改 task core facade、provider/dependencies、submission、web-monitor、runtime、Bot 五段式上下文或 stream fallback，必须同步更新知识库。
+- 若修改云正式 compose、worker compose、边缘 upstream、R2/legacy fallback、Central 状态观测缓存或 Dashboard 高频监控策略，必须同步更新云正式部署文档与相关 skills。
 - 若技能文档与代码入口冲突，应先更新 skill / docs，再继续开发。
 
 ### 5.1 2026-06-03 维护基线

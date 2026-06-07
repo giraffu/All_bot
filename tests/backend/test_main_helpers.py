@@ -1,3 +1,4 @@
+import asyncio
 from functools import partial
 from unittest.mock import AsyncMock
 
@@ -11,6 +12,13 @@ from app import main_status_result_routes
 from app import main_t2i_helpers as t2i_helpers
 from app.main_t2i_wiring import T2IWiring
 from app.models import TaskType
+
+
+@pytest.fixture(autouse=True)
+def _clear_system_snapshot_cache():
+    main_response_helpers.clear_system_snapshot_cache()
+    yield
+    main_response_helpers.clear_system_snapshot_cache()
 
 
 def test_validate_t2i_prompt_accepts_valid_prompt():
@@ -528,6 +536,166 @@ async def test_build_system_status_response_marks_offline_when_all_workers_unhea
     assert response.error_workers == 1
     assert response.quarantined_workers == 1
     assert response.comfy_online is False
+
+
+@pytest.mark.asyncio
+async def test_system_status_and_workers_share_short_worker_snapshot_cache():
+    class FakeQueueManager:
+        def __init__(self):
+            self.worker_calls = 0
+            self.queue_size_calls = 0
+            self.queue_metrics_calls = 0
+
+        async def get_queue_size(self):
+            self.queue_size_calls += 1
+            return 3
+
+        async def get_all_workers(self):
+            self.worker_calls += 1
+            return [
+                {
+                    "agent_id": "agent-1",
+                    "types": "ltx_video",
+                    "status": "running",
+                    "last_seen": "123.0",
+                },
+                {
+                    "agent_id": "agent-2",
+                    "types": "i2i_pro",
+                    "status": "idle",
+                    "last_seen": "456.0",
+                },
+            ]
+
+        async def get_queue_metrics_by_type(self):
+            self.queue_metrics_calls += 1
+            return {"ltx_video": 2, "i2i_pro": 1}
+
+    queue_manager = FakeQueueManager()
+
+    status_response = await main_response_helpers.build_system_status_response(
+        queue_manager
+    )
+    workers_response = await main_response_helpers.build_system_workers_response(
+        queue_manager
+    )
+    cached_status_response = await main_response_helpers.build_system_status_response(
+        queue_manager
+    )
+
+    assert status_response.active_workers == 2
+    assert workers_response.count == 2
+    assert cached_status_response.queue_size == 3
+    assert queue_manager.worker_calls == 1
+    assert queue_manager.queue_size_calls == 1
+    assert queue_manager.queue_metrics_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_system_status_cache_key_follows_shared_redis_client():
+    class FakeRedis:
+        def __init__(self):
+            self.connection_pool = type(
+                "ConnectionPool",
+                (),
+                {"connection_kwargs": {"host": "redis", "port": 6379, "db": 0}},
+            )()
+
+    class FakeQueueManager:
+        def __init__(self, redis):
+            self.redis = redis
+            self.pending_key = "comfy:queue:pending"
+            self.running_key = "comfy:queue:running"
+            self.agent_heartbeat_prefix = "comfy:agent:heartbeat:"
+            self.queue_size_calls = 0
+            self.worker_calls = 0
+            self.queue_metrics_calls = 0
+
+        async def get_queue_size(self):
+            self.queue_size_calls += 1
+            return 7
+
+        async def get_all_workers(self):
+            self.worker_calls += 1
+            return [{"agent_id": "agent-1", "status": "idle"}]
+
+        async def get_queue_metrics_by_type(self):
+            self.queue_metrics_calls += 1
+            return {"img2img": 7}
+
+    first_manager = FakeQueueManager(FakeRedis())
+    second_manager = FakeQueueManager(FakeRedis())
+
+    first_response = await main_response_helpers.build_system_status_response(
+        first_manager
+    )
+    second_response = await main_response_helpers.build_system_status_response(
+        second_manager
+    )
+
+    assert first_response.queue_size == 7
+    assert second_response.queue_size == 7
+    assert first_manager.queue_size_calls == 1
+    assert first_manager.worker_calls == 1
+    assert first_manager.queue_metrics_calls == 1
+    assert second_manager.queue_size_calls == 0
+    assert second_manager.worker_calls == 0
+    assert second_manager.queue_metrics_calls == 0
+
+
+@pytest.mark.asyncio
+async def test_cached_snapshot_returns_stale_while_refreshing():
+    cache = {}
+    locks = {}
+    now = 100.0
+    calls = 0
+
+    async def collect_snapshot():
+        nonlocal calls
+        calls += 1
+        await asyncio.sleep(0)
+        return f"snapshot-{calls}"
+
+    def now_func():
+        return now
+
+    first = await main_response_helpers._get_cached_snapshot(
+        cache=cache,
+        locks=locks,
+        cache_key=1,
+        collect_func=collect_snapshot,
+        ttl_seconds=1.0,
+        stale_seconds=120.0,
+        now_func=now_func,
+    )
+    assert first == "snapshot-1"
+
+    now = 102.0
+    second = await main_response_helpers._get_cached_snapshot(
+        cache=cache,
+        locks=locks,
+        cache_key=1,
+        collect_func=collect_snapshot,
+        ttl_seconds=1.0,
+        stale_seconds=120.0,
+        now_func=now_func,
+    )
+    assert second == "snapshot-1"
+
+    await asyncio.sleep(0)
+    await asyncio.sleep(0)
+
+    third = await main_response_helpers._get_cached_snapshot(
+        cache=cache,
+        locks=locks,
+        cache_key=1,
+        collect_func=collect_snapshot,
+        ttl_seconds=1.0,
+        stale_seconds=120.0,
+        now_func=now_func,
+    )
+    assert third == "snapshot-2"
+    assert calls == 2
 
 
 @pytest.mark.asyncio

@@ -53,9 +53,12 @@ sequenceDiagram
 - 读取聚合后的系统任务统计
 - 补充 worker / queue 视图
 - 不把旧字段名固定成唯一契约
+- Dashboard 大盘 stats 属于高成本查询，后端使用短 TTL 进程内缓存与 single-flight 合并并发请求；前端 stats 请求不得强制附加 `_t` 缓存击穿参数。
 - Worker 视图区分 `active_workers` 与 `healthy_workers`：前者表示有 heartbeat，后者表示 `idle/running` 且可接单
 - `comfy_online` 按 `healthy_workers > 0` 判定；全部节点 `error/quarantined` 时必须显示不可用
 - Worker 卡片应展示 `error` / `quarantined`、最近错误、失败次数、心跳时间与预计恢复时间，不能把故障节点渲染为空闲
+- Worker/queue 监控通过云 Central `/system/status` 与 `/system/workers` 获取短缓存观测快照；这两个接口不是强一致调度入口，管理后台不要用高频轮询压垮 Central/Valkey。
+- 前端队列监控轮询保持秒级，当前默认约 2 秒；除非有明确压测证据，不要降到 1 秒或更高频。
 - Worker listener 应作为受监督后台循环运行；异常后由外层循环重试，不递归 `create_task`，并且每轮退出都显式关闭 pubsub / Redis client。
 
 ### 4.2 强制终止
@@ -77,12 +80,14 @@ sequenceDiagram
   - `backend_task_id` best-effort cancel
   - runtime cleanup / 锁释放
 - 覆盖 worker / queue 视图补齐与异常场景
+- 覆盖 stats 缓存命中、single-flight 并发合并、Central proxy 超时兜底与前端不击穿 stats 缓存
 - 覆盖用户列表筛选/排序、用户转移 dry-run 无副作用，以及真实转移审计快照
 
 ## 6. 部署与运维
 - Dashboard 随部署脚本更新，但不应被文档描述为“僵尸任务自动自愈中心”。
 - 若出现 stuck task，应优先通过 Dashboard 管理动作或 core 暴露的终止入口处理。
 - Redis 手工删键只作为极端故障兜底，不作为标准 SOP。
+- 管理后台卡顿时先区分三类问题：Dashboard stats 重查询、Central 观测接口慢、GPU/ComfyUI 执行停顿。GPU 生成短暂停顿不等同于 Dashboard worker 监控慢。
 
 ## 7. 告警建议
 - 任务终态异常率

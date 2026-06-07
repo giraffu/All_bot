@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from fastapi import HTTPException, Request
 
+from app.dependencies import get_redis
 from app.main_bootstrap import (
     build_request_state_getter,
     check_zombie_tasks_loop,
@@ -64,6 +65,7 @@ async def test_lifespan_sets_minio_client_on_app_state():
     app = SimpleNamespace(state=SimpleNamespace())
     logger = MagicMock()
     zombie_task = None
+    redis = SimpleNamespace(close=AsyncMock())
 
     async def noop_loop():
         await asyncio.Event().wait()
@@ -75,11 +77,14 @@ async def test_lifespan_sets_minio_client_on_app_state():
             minio_access_key="key",
             minio_secret_key="secret",
             minio_secure=False,
+            redis_url="redis://example",
         ),
         logger=logger,
         check_zombie_tasks_loop_func=noop_loop,
+        redis_from_url=lambda url: redis,
     ):
         assert hasattr(app.state, "minio_client")
+        assert app.state.redis is redis
         zombie_task = app.state.zombie_tasks_loop_task
         assert zombie_task is not None
         assert zombie_task.done() is False
@@ -87,4 +92,16 @@ async def test_lifespan_sets_minio_client_on_app_state():
         assert app.state.minio_client._region_map["comfyui-temp"] == "us-east-1"
         assert app.state.minio_client._region_map["bot-data"] == "us-east-1"
     assert zombie_task.cancelled() is True
+    redis.close.assert_awaited_once()
 
+
+@pytest.mark.asyncio
+async def test_get_redis_reuses_app_state_client():
+    redis = SimpleNamespace(close=AsyncMock())
+    app = SimpleNamespace(state=SimpleNamespace(redis=redis))
+    dependency = get_redis(SimpleNamespace(app=app))
+
+    assert await dependency.__anext__() is redis
+    with pytest.raises(StopAsyncIteration):
+        await dependency.__anext__()
+    redis.close.assert_not_called()

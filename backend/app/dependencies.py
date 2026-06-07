@@ -1,11 +1,16 @@
-from fastapi import Depends
+from fastapi import Depends, Request
 from redis.asyncio import Redis
 
 from app.config import settings
 from app.queue_manager import QueueManager
 
 
-async def get_redis():
+async def get_redis(request: Request):
+    shared_redis = getattr(request.app.state, "redis", None)
+    if shared_redis is not None:
+        yield shared_redis
+        return
+
     redis = Redis.from_url(settings.redis_url)
     try:
         yield redis

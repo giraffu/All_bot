@@ -232,6 +232,7 @@ dispatcher 下游通常会继续经过：
 ## 8. Central API / QueueManager 执行面
 ### 8.1 角色定位
 Central API 是执行面，不是业务主入口。
+云正式当前运行在 `cloud-central-api-prod`，本地 `cloud-prod-comfy-agent-*` 通过 Tailscale 从云 Central 拉取任务。
 
 核心文件包括：
 - `backend/app/main.py`
@@ -249,6 +250,7 @@ Central API 是执行面，不是业务主入口。
 - 接收运行态状态更新
 - 接收完成上报
 - best-effort cancel
+- 提供 `/system/status` 与 `/system/workers` 观测快照；这两个接口使用短 TTL/stale 缓存，不参与真实调度和终态收口
 
 ### 8.2 simple task route 与特例
 常规 simple task route 在：
@@ -343,6 +345,7 @@ Worker 执行流程：
 5. 执行完成后从 ComfyUI history 或 view API 取回结果文件
 6. 上传结果到 MinIO output bucket
 7. 向 Central API 调 `/api/agent/task/complete`。完成回报是任务收口的硬依赖：Worker 会对断连或 4xx/5xx 进行短退避重试，全部失败后必须抛错进入失败路径，不能吞掉异常后继续记录 `completed successfully`，否则会出现“结果已上传但 Central 仍按 heartbeat lost 判失败”的假完成。
+8. 向 Central API 调 `/api/agent/task/status` 的运行态上报也会做轻量重试；status 上报重试耗尽只记录错误，不应直接让当前生成任务失败。Dashboard 上看到的短暂状态缺口要和真正的任务终态失败区分开。
 
 执行失败则走：
 - `/api/agent/task/status` 上报 `failed`
@@ -409,6 +412,7 @@ Web 端当前运行态与结果查询链路分成两层：
 - service 内部会尽量解析出真正的 `runtime_task_id` / `backend_task_id`
 - 若运行态已消失但历史已存在，SSE 应返回可终止的 fallback 语义，而不是无限轮询
 - SSE 不能只依赖 Redis Pub/Sub 事件。任务进入 `running` 后仍需周期性查询 Central `/status/{backend_task_id}`，用于补偿终态事件丢失、Web 连接断开重连或 worker 回报路径异常时的前端收口。
+- Central `/system/status` 与 `/system/workers` 是 Dashboard/Bot 的观测接口，使用短 TTL/stale 快照缓存；它们不参与真实任务分发和终态收口。排查排队或 running 异常时，不要只看这两个接口的一次返回。
 - `result` 对 Web 历史优先取 R2 公网结果地址；延迟敏感路径必须用 R2 公网 HEAD 快探测并在查对象存储前释放 DB 只读事务，不能用慢 S3 API HEAD 阻塞请求。R2 warmup 未就绪时，图片可对任务本人返回短有效期 MinIO presigned fallback；视频不走 MinIO 代理 fallback，应返回 `pending_result` 等下一轮轮询拿 R2。前端结果轮询窗口必须覆盖分钟级 R2 warmup，避免 99% 阶段被视频拉流、R2 HEAD 阻塞或短轮询窗口拖成网络失败/不返回结果。
 
 ## 11. 历史、收藏、投稿与结果可见性
@@ -467,6 +471,7 @@ Web 端当前运行态与结果查询链路分成两层：
 ### 13.2 一直 pending，不进入 running
 优先检查：
 - Central API 是否收到 backend 任务
+- `/system/status` 是否只是观测缓存滞后；真实判断应结合 worker 日志、Central `pop/status/complete` 访问日志与队列指标
 - Queue 是否持续堆积
 - 是否存在支持该 `task_type` 的 Worker
 - Worker `SUPPORTED_TASK_TYPES` 是否匹配

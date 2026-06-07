@@ -51,6 +51,7 @@ class APIClient:
         """
         Internal request wrapper with Circuit Breaker and Tracing.
         """
+        use_circuit_breaker = kwargs.pop("use_circuit_breaker", True)
         trace_id = correlation_id.get()
         if not trace_id:
             trace_id = str(uuid.uuid4())
@@ -68,7 +69,9 @@ class APIClient:
             return response
 
         try:
-            return await circuit_breaker.call(_do_request)
+            if use_circuit_breaker:
+                return await circuit_breaker.call(_do_request)
+            return await _do_request()
         except CircuitBreakerOpenException:
             logger.error(
                 f"[{trace_id}] Circuit Breaker is OPEN. Request to {url} blocked."
@@ -510,7 +513,12 @@ class APIClient:
     async def get_system_status(self) -> Optional[dict]:
         url = f"{API_BASE}/system/status"
         try:
-            r = await self._request("GET", url, timeout=5)
+            r = await self._request(
+                "GET",
+                url,
+                timeout=12,
+                use_circuit_breaker=False,
+            )
             return r.json()
         except Exception:
             return None

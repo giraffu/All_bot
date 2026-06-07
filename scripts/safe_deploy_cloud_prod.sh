@@ -154,6 +154,10 @@ check_env_contract() {
         DASHBOARD_ADMIN_PASSWORD_HASH
         DASHBOARD_SECRET_KEY
         BOT_TOKEN
+        REQUIRED_CHANNEL_ID
+        CHANNEL_INVITE_LINK
+        REFUGE_GROUP_ID
+        REFUGE_INVITE_LINK
     )
 
     local key

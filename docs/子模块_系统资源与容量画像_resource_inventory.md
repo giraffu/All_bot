@@ -5,10 +5,10 @@
 
 本文档不是实时监控面板。除明确标注为固定事实的硬件配置外，数据库行数、队列积压、桶容量、活跃用户等都应视为快照数据；做迁移、采购或扩容决策前，必须重新采集。
 
-最近一次快照时间：2026-06-05 晚间，Asia/Shanghai。
+最近一次结构性更新时间：2026-06-07 晚间，Asia/Shanghai。表内容量数字若未单独标注，仍是历史快照，扩容或迁移决策前必须重新采集。
 
 ## 2. 主服务器
-当前主服务器是系统核心控制面与数据面所在宿主机，运行 Bot、Web API、Payment API、Central API、Dashboard、Postgres、Redis、MinIO、imgproxy、监控与文件管理等主要容器。
+当前主服务器不再是正式公开控制面的主承载点。正式 Bot/Web/Payment/Central/Dashboard 已迁到云控制面；本机主要保留本地 GPU worker、ComfyUI 访问、legacy MinIO 数据、本地旧正式数据保留、测试/开发辅助容器和运维工具。
 
 | 项目 | 当前事实 |
 | :--- | :--- |
@@ -36,7 +36,7 @@
 | `/mnt/remote_data/192.168.1.2/data` | 936G | 379G | 518G | 远端 GPU 节点 SSHFS |
 
 ## 2.1 云控制面 Droplet
-云控制面 Droplet 已于 2026-06-06 创建，用于承接“云控制面 + R2 + 本地 GPU”迁移方案的测试、预生产与后续正式入口。
+云控制面 Droplet 已于 2026-06-06 创建，并于 2026-06-07 晚间承接正式生产控制面。
 
 | 项目 | 当前事实 |
 | :--- | :--- |
@@ -54,18 +54,22 @@
 | SSH root 入口 | `ssh allbot-do-sgp1-control-root`，仅初始化/救援使用 |
 
 使用边界：
-- `$48/mo` Droplet 可作为过渡生产控制面，但不应承载生产 Postgres、Redis/Valkey 或 MinIO 大对象存储。
-- 公开媒体继续优先走 Cloudflare R2，本地 MinIO 保留武汉热缓存。
-- 本地 7 张 GPU 和 ComfyUI 不迁移；worker 通过 Tailscale/出站隧道访问云 Central API。
+- `$48/mo` Droplet 当前作为正式过渡控制面；生产 Postgres、Valkey 与对象存储不在该 Droplet 上长期自托管。
+- 公开媒体与新生成对象走 Cloudflare R2 `user-data-prod`；本地 MinIO 保留为 legacy 历史媒体只读 fallback 与本地热数据保留。
+- 本地 7 张 GPU 和 ComfyUI 不迁移；`cloud-prod-comfy-agent-*` 通过 Tailscale 访问云 Central API。
 - 长期稳妥生产规格仍建议升级到 8 vCPU / 16GB RAM 档，或把 Dashboard/后台任务拆到第二台节点。
 
 ## 3. 服务与容器分布
-生产与测试服务当前共享同一主服务器，但通过不同 compose、端口、环境变量、数据库与 Redis DB 隔离。
+正式控制面当前在云端，本地主服务器保留本地 GPU worker 与旧数据。测试/开发服务仍可能在本地或云测试控制面运行，必须按 compose、端口、环境变量、数据库与 Valkey/Redis DB 隔离。
 
-常驻服务类型：
-- 生产入口：`tg-bot`、`web-api`、`payment-api`
-- 生产执行面：`backend_api_1` / Central API，监听宿主机 `8003`
-- 生产 worker agent：`comfy-agent-1` 至 `comfy-agent-7`
+当前正式生产常驻类型：
+- 云端正式入口：`cloud-tg-bot-prod`、`cloud-web-api-prod`、`cloud-payment-api-prod`
+- 云端正式执行面：`cloud-central-api-prod`，Tailscale `100.107.220.127:8003`
+- 云端正式管理面：`cloud-dashboard-backend-prod`、`cloud-imgproxy-prod`
+- 本地正式 worker agent：`cloud-prod-comfy-agent-1` 至 `cloud-prod-comfy-agent-7`
+- 本地 legacy 数据：原 PostgreSQL/Redis/MinIO 只作为保留或 fallback，不应继续作为正式写入事实源
+
+测试/辅助服务类型：
 - 测试入口：`tg-bot-test`、`web-api-test`、`payment-api-test`
 - 测试执行面：`central-api-test`，宿主机 `8004 -> 8003`
 - 测试 worker agent：`comfy-agent-test-1` 至 `comfy-agent-test-7`
@@ -75,8 +79,9 @@
 
 重要运行约束：
 - `web-api`、Dashboard、Payment API 等 COPY 型服务改代码后必须重建镜像，不能只 `restart`。
-- 生产发布必须走 `safe_deploy.sh`，测试发布优先走 `safe_deploy_test.sh`。
+- 云正式生产发布优先走 `scripts/safe_deploy_cloud_prod.sh` 或 cloud-prod compose 单服务重建；旧本地正式栈才使用 `safe_deploy.sh`。
 - 生产单服务重建时不得使用 `--remove-orphans` 或无 service 名的批量 compose 操作。
+- 本地云正式 worker 使用旧版 `docker-compose` 时，遇到 `ContainerConfig` 兼容错误只能清理目标 worker 容器和同 service label 残留。
 
 ## 4. 本地 GPU 算力池
 本地算力池由 4 台 GPU 服务器组成，共 7 张 GPU。项目容量口径以 GPU 监控截图与用户确认的硬件事实为准：3 张 RTX 5090 32G，4 张 RTX 4090 48G，总名义显存约 288GB。
@@ -85,12 +90,12 @@
 
 | GPU 服务器 | 物理 GPU | ComfyUI 端口 | 生产 Agent | 主要支持任务 |
 | :--- | :--- | :--- | :--- | :--- |
-| `192.168.1.226` | 1 x RTX 5090 32G | `8188` | `worker_local_01` | `face_swap`、`i2i_pro`、`i2i_draw`、`face_video`、`video_edit`、`image_to_video`、`t2i-pornmaster-turbo` |
-| `192.168.1.177` | 2 x RTX 5090 32G | `8188`、`8189` | `worker_local_02`、`worker_local_03` | `video_insert`、`video_edit`、`image_to_video`、`ltx_video` |
-| `192.168.1.252` | 2 x RTX 4090 48G | `8188`、`8189` | `worker_local_04`、`worker_local_05` | `img2img`、`img2img_lora`、`wan22_video_v2`、`video_edit`、`image_to_video` |
-| `192.168.1.2` | 2 x RTX 4090 48G | `8188`、`8189` | `worker_local_06`、`worker_local_07` | `img2img`、`img2img_lora`、`video_insert`、`video_edit`、`image_to_video` |
+| `192.168.1.226` | 1 x RTX 5090 32G | `8188` | `cloud_prod_worker_01` | `face_swap`、`i2i_pro`、`i2i_draw`、`face_video`、`video_edit`、`image_to_video`、`t2i-pornmaster-turbo` |
+| `192.168.1.177` | 2 x RTX 5090 32G | `8188`、`8189` | `cloud_prod_worker_02`、`cloud_prod_worker_03` | `video_insert`、`video_edit`、`image_to_video`、`ltx_video` |
+| `192.168.1.252` | 2 x RTX 4090 48G | `8188`、`8189` | `cloud_prod_worker_04`、`cloud_prod_worker_05` | `img2img`、`img2img_lora`、`wan22_video_v2`、`video_edit`、`image_to_video` |
+| `192.168.1.2` | 2 x RTX 4090 48G | `8188`、`8189` | `cloud_prod_worker_06`、`cloud_prod_worker_07` | `img2img`、`img2img_lora`、`video_insert`、`video_edit`、`image_to_video` |
 
-同一批 ComfyUI 节点也被测试 agent 使用，测试 agent 连接测试 Central API `8004`，生产 agent 连接生产 Central API `8003`。测试与生产共享物理 GPU 时，要避免把测试任务当成免费容量；大模型/视频任务压测会直接影响生产排队。
+同一批 ComfyUI 节点也可能被测试 agent 使用。正式 agent 连接云 Central API `100.107.220.127:8003`；测试 agent 连接测试 Central。测试与生产共享物理 GPU 时，要避免把测试任务当成免费容量；大模型/视频任务压测会直接影响生产排队。
 
 ComfyUI 版本快照：
 
@@ -114,8 +119,8 @@ ComfyUI 版本快照：
 
 当前云侧与边缘事实：
 - 前端静态资源、部分公开分发能力与域名解析依赖 Cloudflare。
-- R2 已作为公开媒体分发与历史结果优先访问路径的一部分。
-- MinIO 仍是本地热桶和 worker 输入/结果中转的重要事实源。
+- R2 `user-data-prod` 是正式新对象写入与公开媒体分发事实源。
+- MinIO 不再承接正式新写入公开事实源；`assets.aivison.it.com` 仅作为 legacy 历史媒体只读回源。
 - Web/API 的海外访问路径详见 [网络暴露与代理穿透](./子模块_网络暴露与代理穿透_network_proxy.md) 与 [边缘节点运维指南](./子模块_边缘节点运维指南_edge_node_ops.md)。
 
 ## 6. 数据存储快照
@@ -148,7 +153,7 @@ ComfyUI 版本快照：
 | 近 30 天历史记录 | 755,736 |
 
 ### Redis
-Redis 当前用于 Bot/Web 运行态、Central API 队列、worker 心跳、并发锁、pending finalizer、限流等短生命周期数据。
+正式运行态当前由云侧 Valkey/Redis 承载，用于 Bot/Web 运行态、Central API 队列、worker 心跳、并发锁、pending finalizer、限流等短生命周期数据。下表为迁移前/迁移期本地快照，不代表当前云正式实时值。
 
 | 指标 | 当前值 |
 | :--- | ---: |
@@ -165,7 +170,7 @@ Redis 当前用于 Bot/Web 运行态、Central API 队列、worker 心跳、并�
 | Central task hashes | 23,361 |
 
 ### MinIO
-MinIO 本地数据目录：`/home/hfy/APP/minio-deploy/data`，当前总量约 453GB。
+MinIO 本地数据目录：`/home/hfy/APP/minio-deploy/data`，迁移前快照总量约 453GB。当前正式新数据写入 R2；本地 MinIO 保留 legacy 历史媒体、旧输入和本地热数据，不应作为新生成结果公开事实源。
 
 | 桶/目录 | 当前体积 | 备注 |
 | :--- | ---: | :--- |
@@ -176,22 +181,22 @@ MinIO 本地数据目录：`/home/hfy/APP/minio-deploy/data`，当前总量约 4
 | `bot-data-test` | 266MB | 测试输入桶 |
 | `comfyui-input` | 17MB | 旧/兼容输入目录 |
 
-MinIO 是当前主服务器内存占用大户之一。规划云化或高可用时，应优先拆分“用户公开访问路径”和“worker 热中转路径”：公开访问优先 R2，本地 MinIO 保留热缓存和 worker 内网中转。
+MinIO 是主服务器历史数据与内存占用大户之一。规划清理时应先确认 R2 命中率和 legacy fallback 访问量，再逐步缩短本地热数据生命周期。
 
 ## 7. 当前容量判断
 当前系统瓶颈顺序大致为：
 1. GPU 任务吞吐与视频任务长尾耗时。
-2. 武汉家庭宽带作为公网入口时的稳定性、上行与跨境链路延迟。
+2. 云控制面到本地 GPU/ComfyUI 的 Tailscale/内网链路稳定性，以及本地 GPU 节点短暂停顿。
 3. MinIO 热桶容量、内存占用与回源压力。
-4. 单主服务器承载 Postgres/Redis/MinIO/API 的故障集中风险。
+4. 云控制面规格较小导致的 Web/Dashboard/状态观测资源竞争，以及托管 Valkey/PostgreSQL 连接池压力。
 5. `192.168.1.177` 远端挂载盘可用空间偏低。
 
 当前 CPU、Redis、Postgres 数据体积都不是第一瓶颈。若做云化，优先迁移控制面、公开对象分发与数据库备份，不应优先把本地 7 张 GPU 全量替换为云 GPU。
 
 推荐容量策略：
-- 控制面云化：Bot/Web/Payment/Central/Dashboard 可以迁到云 VM 或小型容器平台。
-- 数据面分层：Postgres/Redis 可先做云端副本或托管迁移；R2 承接公开媒体分发。
-- 本地 GPU 保留：4 台 GPU 服务器继续作为主算力池，worker 通过出站隧道连接云 Central API。
+- 控制面云化：Bot/Web/Payment/Central/Dashboard 已迁到云 VM，后续重点是规格升级、拆分 Dashboard 或引入第二控制面节点。
+- 数据面分层：Postgres/Valkey 已采用云侧口径；R2 承接公开媒体分发和新对象写入。
+- 本地 GPU 保留：4 台 GPU 服务器继续作为主算力池，worker 通过 Tailscale 连接云 Central API。
 - 云 GPU 弹性：只在队列积压或单类任务爆发时临时拉起，不建议 24/7 常驻替代本地 GPU。
 - MinIO 生命周期：生产热结果保留有限天数，长期公开访问走 R2，定期清理测试桶和临时桶。
 

@@ -1,4 +1,5 @@
 from collections.abc import Awaitable, Callable
+from inspect import isawaitable
 from typing import TypeVar
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -25,6 +26,7 @@ __all__ = [
     "build_storage_input_file_url",
     "run_with_optional_db",
     "call_with_optional_db",
+    "release_read_transaction",
 ]
 
 
@@ -80,3 +82,17 @@ async def call_with_optional_db(
         action=_action,
         session_factory=session_factory,
     )
+
+
+async def release_read_transaction(db: AsyncSession) -> None:
+    """Release a read-only transaction before slower non-DB work runs."""
+    in_transaction = getattr(db, "in_transaction", None)
+    if not callable(in_transaction) or not in_transaction():
+        return
+
+    commit = getattr(db, "commit", None)
+    if not callable(commit):
+        return
+    result = commit()
+    if isawaitable(result):
+        await result

@@ -20,7 +20,10 @@ from src.services.wan22_video_v2_extension_service import (
     resolve_wan22_stitched_segment_count,
 )
 from src.domain_config.wan22_aio_video import is_wan22_chain_history_task_type
-from src.web_api.common.utils import resolve_history_billing_resolution
+from src.web_api.common.utils import (
+    release_read_transaction,
+    resolve_history_billing_resolution,
+)
 from src.web_api.presenters.media_presenter import extract_history_result_meta
 from src.web_api.schemas.gallery_schema import GalleryPostResponse
 from src.web_api.services.apply_context_service import (
@@ -187,6 +190,7 @@ async def load_gallery_post_bulk_context(
         current_user=current_user,
         post_ids=post_ids,
     )
+    await release_read_transaction(session)
     tasks = _build_gallery_media_url_tasks(
         posts=posts,
         history_map=history_map,

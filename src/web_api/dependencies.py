@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.core.auth_core_password_version import is_password_version_blacklisted
 from src.database.core import AsyncSessionLocal
 from src.database.models import User
+from src.web_api.common.utils import release_read_transaction
 from src.web_api.core.security import verify_token
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login", auto_error=False)
@@ -79,6 +80,8 @@ async def _get_current_user_from_session(db: AsyncSession, token: str) -> User:
 
     if user is None:
         raise credentials_exception
+
+    await release_read_transaction(db)
 
     # Check if the token's password version is blacklisted (if they changed password recently)
     token_pwd_ver = payload.get("pwd_ver", 0)

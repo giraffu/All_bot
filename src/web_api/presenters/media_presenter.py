@@ -308,16 +308,14 @@ async def resolve_gallery_media_urls(
         return "", ""
 
     try:
-        media_url, thumbnail_url = await asyncio.gather(
-            build_media_url(
-                output_file,
-                task_id=task_id,
-            ),
-            build_thumbnail_url(
-                output_file,
-                media_type,
-                task_id=task_id,
-            ),
+        media_url = await build_media_url(
+            output_file,
+            task_id=task_id,
+        )
+        thumbnail_url = await build_thumbnail_url(
+            output_file,
+            media_type,
+            task_id=task_id,
         )
         return media_url or output_file, thumbnail_url
     except Exception as exc:

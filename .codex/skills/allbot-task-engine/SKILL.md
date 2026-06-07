@@ -77,6 +77,8 @@ description: "处理任务提交流程、provider/capability 装配、双 ID 运
 - **执行面**：Central API、QueueManager、agent router
 - **节点层**：`workers/comfy_agent/agent_main.py` 已拆出输入准备、工作流执行、结果物化、结果上传/回报 helper，但 `process_task(...)` 仍是 Worker 主编排热点。新增输出类型、失败补偿、取消检查、重试策略或上报语义时，优先下沉到 `agent_input_preparation.py`、`agent_workflow_execution.py`、`agent_result_materialization.py`、`agent_result_reporting.py` 等阶段模块，并补 Worker focused tests。
 - **Worker 健康态**：Comfy Agent heartbeat 状态包含 `idle`、`running`、`error`、`quarantined`；`active_workers` 只表示有心跳，`healthy_workers` 才表示可接单。Comfy 探活持续失败进入 `error`，连续基础设施类任务失败进入 `quarantined`，Dashboard 必须按健康字段展示故障而不是当作空闲。
+- **Central 观测态**：`/system/status` 与 `/system/workers` 是高频观测接口，使用共享 Redis 客户端和短 TTL/stale 快照缓存；它们不参与真实任务分发、Worker `pop`、状态上报或完成回流。排障时不要把 Dashboard/观测接口延迟直接等同于队列调度卡住。
+- **Worker 回报语义**：`/api/agent/task/complete` 是成功收口硬依赖，必须有限重试并在失败后进入失败路径；`/api/agent/task/status` 是运行态观测回报，允许轻量重试且重试耗尽只记录错误，不应直接让当前生成任务失败。
 
 重要边界：
 - Web 主入口是 `POST /api/tasks/generate`，不是旧 generation params 口径
@@ -128,6 +130,7 @@ description: "处理任务提交流程、provider/capability 装配、双 ID 运
 - 看 queue 是否堆积
 - 看是否存在支持该 `task_type` 的 Worker
 - 看 worker heartbeat、`healthy_workers`、节点 `error/quarantined` 状态与 `SUPPORTED_TASK_TYPES`
+- 看 `/system/status` 是否只是观测缓存滞后；真实判断还要结合 worker 日志、Central `pop`/status/complete 日志和队列指标
 
 ### 8.3 running 卡死
 - 查 worker 日志与 ComfyUI WebSocket
@@ -135,6 +138,7 @@ description: "处理任务提交流程、provider/capability 装配、双 ID 运
 - 查 workflow / mappings 是否正确
 - 查是否取消请求未被 worker 轮询到
 - Worker 等待 ComfyUI 完成时不应只依赖 WebSocket：`wait_for_task_completion(...)` 当前以 WS 终态为快路径，并在提交后约 45 秒开始每约 12 秒主动探测 `/history/{prompt_id}`；history 已有结果时立即收口，硬超时约 30 分钟后才做最终 fallback / 失败处理。
+- 日志中 `Task result not set via WS, checking history` 通常说明 worker 正在用 `/history/{prompt_id}` 补偿 WebSocket 终态缺失；这类本地 GPU/ComfyUI 短暂停顿不是 Central `/system/status` 延迟的同一根因。
 
 ### 8.4 SSE 或取消异常
 - 先确认当前用的是 `registry_task_id` 还是 `backend_task_id`
@@ -147,6 +151,7 @@ description: "处理任务提交流程、provider/capability 装配、双 ID 运
 - 看 history 是否已落库
 - 看 R2 公网结果地址是否可解析；若 R2 未 ready，确认图片 owner result 是否返回 MinIO 短签 fallback、视频 owner result 是否继续 `pending_result`，并检查 R2 公网 HEAD 快探测短超时和前端 99% 结果轮询窗口是否生效
 - 看 `/result` 返回的是成功态还是 `pending_result`
+- 若 worker 已上传对象但 Central 未收到 `complete`，优先查完成回报重试日志；不要只凭 worker 本地“uploaded”日志判定任务已成功收口。
 
 ## 9. 交付要求
 - 若本轮修改改变了任务提交主链、双 ID 语义、provider 注册入口、worker 支持类型或 workflow 绑定，必须同步更新：

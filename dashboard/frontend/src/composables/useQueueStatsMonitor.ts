@@ -107,7 +107,7 @@ export function useQueueStatsMonitor() {
     void updateQueue()
     timer = setInterval(() => {
       void updateQueue()
-    }, 1000)
+    }, 2000)
   })
 
   onUnmounted(() => {

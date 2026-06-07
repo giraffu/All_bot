@@ -1,11 +1,196 @@
+import asyncio
+import logging
 import os
-from typing import Optional
+import time
+from dataclasses import dataclass
+from typing import Any, Awaitable, Callable, Optional
 
 from fastapi import BackgroundTasks, HTTPException
 from fastapi.responses import FileResponse
 
 from app.models import SystemStatusResponse, SystemWorkersResponse, TaskStatusResponse
 from minio import Minio
+
+SYSTEM_STATUS_CACHE_TTL_SECONDS = float(
+    os.getenv("SYSTEM_STATUS_CACHE_TTL_SECONDS", "10.0")
+)
+SYSTEM_STATUS_STALE_SECONDS = float(os.getenv("SYSTEM_STATUS_STALE_SECONDS", "120.0"))
+logger = logging.getLogger(__name__)
+
+
+@dataclass
+class _CachedSnapshot:
+    value: Any
+    cached_at: float
+    expires_at: float
+
+
+_worker_snapshot_cache: dict[Any, _CachedSnapshot] = {}
+_worker_snapshot_locks: dict[Any, asyncio.Lock] = {}
+_status_snapshot_cache: dict[Any, _CachedSnapshot] = {}
+_status_snapshot_locks: dict[Any, asyncio.Lock] = {}
+
+
+def clear_system_snapshot_cache() -> None:
+    _worker_snapshot_cache.clear()
+    _worker_snapshot_locks.clear()
+    _status_snapshot_cache.clear()
+    _status_snapshot_locks.clear()
+
+
+async def _get_cached_snapshot(
+    *,
+    cache: dict[Any, _CachedSnapshot],
+    locks: dict[Any, asyncio.Lock],
+    cache_key: Any,
+    collect_func: Callable[[], Awaitable[Any]],
+    ttl_seconds: float = SYSTEM_STATUS_CACHE_TTL_SECONDS,
+    stale_seconds: float = SYSTEM_STATUS_STALE_SECONDS,
+    now_func: Callable[[], float] = time.monotonic,
+) -> Any:
+    if ttl_seconds <= 0:
+        return await collect_func()
+
+    now = now_func()
+    cached = cache.get(cache_key)
+    if cached and cached.expires_at > now:
+        return cached.value
+
+    lock = locks.setdefault(cache_key, asyncio.Lock())
+    if cached and (now - cached.cached_at) <= stale_seconds:
+        if not lock.locked():
+            asyncio.create_task(
+                _refresh_cached_snapshot(
+                    cache=cache,
+                    lock=lock,
+                    cache_key=cache_key,
+                    collect_func=collect_func,
+                    ttl_seconds=ttl_seconds,
+                    now_func=now_func,
+                )
+            )
+        return cached.value
+
+    async with lock:
+        now = now_func()
+        cached = cache.get(cache_key)
+        if cached and cached.expires_at > now:
+            return cached.value
+
+        value = await collect_func()
+        cache[cache_key] = _CachedSnapshot(
+            value=value,
+            cached_at=now,
+            expires_at=now + ttl_seconds,
+        )
+        return value
+
+
+async def _refresh_cached_snapshot(
+    *,
+    cache: dict[Any, _CachedSnapshot],
+    lock: asyncio.Lock,
+    cache_key: Any,
+    collect_func: Callable[[], Awaitable[Any]],
+    ttl_seconds: float,
+    now_func: Callable[[], float],
+) -> None:
+    async with lock:
+        now = now_func()
+        cached = cache.get(cache_key)
+        if cached and cached.expires_at > now:
+            return
+
+        try:
+            value = await collect_func()
+        except Exception:
+            logger.exception("Failed to refresh cached system snapshot")
+            return
+
+        now = now_func()
+        cache[cache_key] = _CachedSnapshot(
+            value=value,
+            cached_at=now,
+            expires_at=now + ttl_seconds,
+        )
+
+
+def _copy_workers(workers: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [dict(worker) for worker in workers]
+
+
+def _queue_manager_cache_key(queue_manager) -> tuple[Any, ...]:
+    redis = getattr(queue_manager, "redis", None)
+    pool = getattr(redis, "connection_pool", None)
+    connection_kwargs = getattr(pool, "connection_kwargs", None) or {}
+    redis_identity = tuple(
+        (key, str(connection_kwargs.get(key)))
+        for key in ("host", "port", "db", "path", "username", "client_name")
+        if key in connection_kwargs
+    )
+    if not redis_identity and redis is not None:
+        redis_identity = (("object_id", str(id(redis))),)
+
+    return (
+        redis_identity,
+        getattr(queue_manager, "pending_key", ""),
+        getattr(queue_manager, "running_key", ""),
+        getattr(queue_manager, "agent_heartbeat_prefix", ""),
+    )
+
+
+async def _get_worker_snapshot(queue_manager) -> list[dict[str, Any]]:
+    async def collect_workers() -> list[dict[str, Any]]:
+        return _copy_workers(await queue_manager.get_all_workers())
+
+    workers = await _get_cached_snapshot(
+        cache=_worker_snapshot_cache,
+        locks=_worker_snapshot_locks,
+        cache_key=_queue_manager_cache_key(queue_manager),
+        collect_func=collect_workers,
+    )
+    return _copy_workers(workers)
+
+
+def _build_worker_status_counts(workers: list[dict[str, Any]]) -> dict[str, int]:
+    workers_by_status: dict[str, int] = {}
+    for worker in workers:
+        status = str(worker.get("status") or "unknown")
+        workers_by_status[status] = workers_by_status.get(status, 0) + 1
+    return workers_by_status
+
+
+async def _get_system_status_snapshot(queue_manager) -> dict[str, Any]:
+    async def collect_status() -> dict[str, Any]:
+        queue_size, workers, queue_by_type = await asyncio.gather(
+            queue_manager.get_queue_size(),
+            _get_worker_snapshot(queue_manager),
+            queue_manager.get_queue_metrics_by_type(),
+        )
+        workers_by_status = _build_worker_status_counts(workers)
+        healthy_workers = sum(
+            count
+            for status, count in workers_by_status.items()
+            if status in {"idle", "running"}
+        )
+        return {
+            "queue_size": queue_size,
+            "queue_by_type": dict(queue_by_type),
+            "active_workers": len(workers),
+            "healthy_workers": healthy_workers,
+            "error_workers": workers_by_status.get("error", 0),
+            "quarantined_workers": workers_by_status.get("quarantined", 0),
+            "workers_by_status": workers_by_status,
+            "comfy_online": healthy_workers > 0,
+        }
+
+    snapshot = await _get_cached_snapshot(
+        cache=_status_snapshot_cache,
+        locks=_status_snapshot_locks,
+        cache_key=_queue_manager_cache_key(queue_manager),
+        collect_func=collect_status,
+    )
+    return dict(snapshot)
 
 
 def build_result_url(*, result_path: str, settings) -> str:
@@ -98,36 +283,12 @@ async def serve_task_result_file(
 
 
 async def build_system_workers_response(queue_manager) -> SystemWorkersResponse:
-    workers = await queue_manager.get_all_workers()
+    workers = await _get_worker_snapshot(queue_manager)
     return SystemWorkersResponse(workers=workers, count=len(workers))
 
 
 async def build_system_status_response(queue_manager) -> SystemStatusResponse:
-    queue_size = await queue_manager.get_queue_size()
-    workers = await queue_manager.get_all_workers()
-    active_workers = len(workers)
-    workers_by_status: dict[str, int] = {}
-    for worker in workers:
-        status = str(worker.get("status") or "unknown")
-        workers_by_status[status] = workers_by_status.get(status, 0) + 1
-    healthy_workers = sum(
-        count
-        for status, count in workers_by_status.items()
-        if status in {"idle", "running"}
-    )
-    error_workers = workers_by_status.get("error", 0)
-    quarantined_workers = workers_by_status.get("quarantined", 0)
-    queue_by_type = await queue_manager.get_queue_metrics_by_type()
-    return SystemStatusResponse(
-        queue_size=queue_size,
-        queue_by_type=queue_by_type,
-        active_workers=active_workers,
-        healthy_workers=healthy_workers,
-        error_workers=error_workers,
-        quarantined_workers=quarantined_workers,
-        workers_by_status=workers_by_status,
-        comfy_online=healthy_workers > 0,
-    )
+    return SystemStatusResponse(**await _get_system_status_snapshot(queue_manager))
 
 
 async def cancel_task_or_404(queue_manager, task_id: str):

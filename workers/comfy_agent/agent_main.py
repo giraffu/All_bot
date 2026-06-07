@@ -107,6 +107,13 @@ COMPLETE_REPORT_RETRY_BASE_SECONDS = float(
 COMPLETE_REPORT_RETRY_MAX_SECONDS = float(
     os.getenv("COMPLETE_REPORT_RETRY_MAX_SECONDS", "10.0")
 )
+STATUS_REPORT_MAX_ATTEMPTS = int(os.getenv("STATUS_REPORT_MAX_ATTEMPTS", "3"))
+STATUS_REPORT_RETRY_BASE_SECONDS = float(
+    os.getenv("STATUS_REPORT_RETRY_BASE_SECONDS", "0.5")
+)
+STATUS_REPORT_RETRY_MAX_SECONDS = float(
+    os.getenv("STATUS_REPORT_RETRY_MAX_SECONDS", "3.0")
+)
 
 USER_INPUT_ERROR_MARKERS = (
     "downloaded file is not a valid image",
@@ -486,19 +493,49 @@ class ComfyAgent:
     async def report_status(
         self, task_id: str, status: str, progress: float = 0.0, error: str = ""
     ):
-        try:
-            await self.master_client.post(
-                "/api/agent/task/status",
-                json={
-                    "task_id": task_id,
-                    "agent_id": AGENT_ID,
-                    "status": status,
-                    "progress": progress,
-                    "error": error,
-                },
-            )
-        except Exception as e:
-            logger.error(f"Failed to report status for task {task_id}: {e}")
+        payload = {
+            "task_id": task_id,
+            "agent_id": AGENT_ID,
+            "status": status,
+            "progress": progress,
+            "error": error,
+        }
+        attempts = max(1, STATUS_REPORT_MAX_ATTEMPTS)
+
+        for attempt in range(1, attempts + 1):
+            try:
+                response = await self.master_client.post(
+                    "/api/agent/task/status",
+                    json=payload,
+                )
+                status_code = getattr(response, "status_code", 200)
+                if status_code >= 400:
+                    raise RuntimeError(
+                        f"Central API returned HTTP {status_code} for status report"
+                    )
+                return
+            except Exception as e:
+                if attempt >= attempts:
+                    logger.error(
+                        "Failed to report status for task %s after %s attempts: %s",
+                        task_id,
+                        attempts,
+                        e,
+                    )
+                    return
+                delay = min(
+                    STATUS_REPORT_RETRY_BASE_SECONDS * (2 ** (attempt - 1)),
+                    STATUS_REPORT_RETRY_MAX_SECONDS,
+                )
+                logger.debug(
+                    "Failed to report status for task %s on attempt %s/%s; retrying in %.1fs: %s",
+                    task_id,
+                    attempt,
+                    attempts,
+                    delay,
+                    e,
+                )
+                await asyncio.sleep(delay)
 
     async def report_complete(
         self,

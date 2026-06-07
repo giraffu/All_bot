@@ -27,7 +27,9 @@ api.interceptors.request.use(config => {
     config.headers.Authorization = `Bearer ${token}`
   }
 
-  if (config.method === 'get') {
+  const url = config.url || ''
+  const shouldBypassCache = !url.startsWith('/api/stats')
+  if (config.method === 'get' && shouldBypassCache) {
     config.params = config.params || {}
     config.params._t = Date.now()
   }

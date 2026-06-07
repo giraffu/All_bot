@@ -1,3 +1,4 @@
+import asyncio
 import re
 
 from src.core.media_paths import get_media_type_from_history
@@ -72,22 +73,37 @@ async def build_user_history_payload(
     histories,
     gallery_task_ids: set[str],
 ):
+    media_results = await asyncio.gather(
+        *(
+            resolve_history_media_urls(
+                task_id=history.task_id,
+                output_file=history.output_file,
+                history_type=history.type,
+            )
+            for history in histories
+        )
+    )
+    extra_output_results = await asyncio.gather(
+        *(
+            resolve_history_extra_outputs(
+                task_id=history.task_id,
+                extra_outputs=getattr(history, "extra_outputs", None),
+                source=getattr(history, "source", None),
+            )
+            for history in histories
+        )
+    )
     items = []
-    for history in histories:
+    for history, media_result, resolved_extra_outputs in zip(
+        histories,
+        media_results,
+        extra_output_results,
+    ):
         result_meta = extract_history_result_meta(
             task_type=history.type,
             extra_outputs=getattr(history, "extra_outputs", None),
         )
-        media_url, thumbnail_url = await resolve_history_media_urls(
-            task_id=history.task_id,
-            output_file=history.output_file,
-            history_type=history.type,
-        )
-        resolved_extra_outputs = await resolve_history_extra_outputs(
-            task_id=history.task_id,
-            extra_outputs=getattr(history, "extra_outputs", None),
-            source=getattr(history, "source", None),
-        )
+        media_url, thumbnail_url = media_result
         items.append(
             HistoryItem(
                 task_id=history.task_id,
@@ -123,8 +139,18 @@ async def build_favorite_gallery_payload(
     histories,
     gallery_post_map: dict[str, object],
 ):
+    media_results = await asyncio.gather(
+        *(
+            resolve_history_media_urls(
+                task_id=history.task_id,
+                output_file=history.output_file,
+                history_type=history.type,
+            )
+            for history in histories
+        )
+    )
     items = []
-    for history in histories:
+    for history, media_result in zip(histories, media_results):
         gallery_post = gallery_post_map.get(history.task_id)
         result_meta = extract_history_result_meta(
             task_type=history.type,
@@ -133,11 +159,7 @@ async def build_favorite_gallery_payload(
         template_apply_disabled_reason = resolve_history_template_apply_disabled_reason(
             history
         )
-        media_url, thumbnail_url = await resolve_history_media_urls(
-            task_id=history.task_id,
-            output_file=history.output_file,
-            history_type=history.type,
-        )
+        media_url, thumbnail_url = media_result
         items.append(
             GalleryPostResponse(
                 id=gallery_post.id if gallery_post else 0,

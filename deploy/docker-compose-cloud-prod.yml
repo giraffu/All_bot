@@ -80,8 +80,8 @@ services:
       R2_BUCKET: ${R2_BUCKET:-user-data-prod}
       R2_PUBLIC_DOMAIN: ${R2_PUBLIC_DOMAIN:?R2_PUBLIC_DOMAIN is required}
       IMGPROXY_URL: http://imgproxy-prod:8084
-      DB_POOL_SIZE: 2
-      DB_MAX_OVERFLOW: 1
+      DB_POOL_SIZE: 4
+      DB_MAX_OVERFLOW: 4
     volumes:
       - ../logs/cloud-prod:/app/logs
     ports:
@@ -187,8 +187,8 @@ services:
       DASHBOARD_ADMIN_USERNAME: ${DASHBOARD_ADMIN_USERNAME:?DASHBOARD_ADMIN_USERNAME is required}
       DASHBOARD_ADMIN_PASSWORD_HASH: ${DASHBOARD_ADMIN_PASSWORD_HASH:?DASHBOARD_ADMIN_PASSWORD_HASH is required}
       DASHBOARD_SECRET_KEY: ${DASHBOARD_SECRET_KEY:?DASHBOARD_SECRET_KEY is required}
-      DB_POOL_SIZE: 1
-      DB_MAX_OVERFLOW: 0
+      DB_POOL_SIZE: 4
+      DB_MAX_OVERFLOW: 2
     volumes:
       - ../.env.cloud.prod:/app/.env:ro
       - ../logs/cloud-prod:/app/logs
