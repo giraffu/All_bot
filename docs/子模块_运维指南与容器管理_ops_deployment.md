@@ -52,7 +52,7 @@
 - 云正式 R2 在线口径为 `user-data-prod` 单桶，`MINIO_*` 兼容变量和 `R2_*` 都指向正式 R2；`MINIO_PUBLIC_URL` 保持空，结果公开读取依赖 `R2_PUBLIC_DOMAIN=https://r2.aivison.it.com`。
 - 迁移期旧媒体不再要求切换前全量搬完 `bot-data`；Web API / Dashboard 可通过 `LEGACY_MINIO_*` 只读回源本地 MinIO。该 fallback 只用于 R2 miss 后读取旧历史媒体，worker 仍只写 R2，不得把 legacy MinIO 配进 worker 写路径。
 - 用户可见历史对象预热使用 `scripts/backfill_history_r2_objects.py --visible-scope user-visible --source-storage legacy`，默认 dry-run，真实复制必须显式 `--apply`。推荐先 `--media-only` 预热 `history/{task_id}/original.ext`，再 legacy copy-only 复制已有缩略图，最后用 `--source-storage current --generate-missing-thumbnails` 从已预热到 R2 的原文件生成缺失缩略图。
-- 云正式历史详情、Gallery/Wan22 预览等读路径需要验收“返回 URL 可读”，不能只验 R2 S3 `HEAD`。若 `R2_PUBLIC_DOMAIN` 对部分 key 返回 404，但 R2 S3 `HEAD` 命中，历史详情读路径可返回 R2 S3 短签 URL 兜底；Web owner `/result` 视频仍应按真实结果接口单独验收，不要用历史详情 fallback 代替。
+- 云正式历史详情、Gallery/Wan22 预览等读路径需要验收“返回 URL 可读”，不能只验 R2 S3 `HEAD`。若 `R2_PUBLIC_DOMAIN` 对部分 key 返回 404，但 R2 S3 `HEAD` 命中，Gallery 列表应直接返回 R2 S3 短签 URL，历史详情读路径可返回 R2 S3 短签 URL 兜底；Web owner `/result` 视频仍应按真实结果接口单独验收，不要用历史详情 fallback 代替。
 - 云正式边缘 Web 主模板必须保留 `assets.aivison.it.com` 到本地 MinIO 的 legacy 代理；不要为了维护 `web.aivison.it.com /api/` 删除 assets server。当前 `web.aivison.it.com /api/` 已指向云 Web API；RMB 支付入口继续使用 Cloudflare Tunnel 回源云 Payment API。如需紧急回滚 RMB 回源，用 `scripts/rollback_rmb_tunnel_to_local_prod.sh --execute` 切回本地 Payment API。切换/回滚脚本默认 dry-run，真实执行必须显式 `--execute`。
 - 真实 `docker compose config` 会展开密钥，输出只能本地查看，不得贴到日志、文档或聊天中。
 - 云正式 Central 高频观测接口已加入短缓存和 stale-while-revalidate；Dashboard stats 也有短缓存与 single-flight。不要通过前端 `_t` 或脚本高频击穿缓存。
