@@ -115,8 +115,11 @@ sequenceDiagram
 
 ### 4.7 媒体 URL 策略
 - 列表返回媒体时优先尝试 R2 公网 URL。
-- 若 R2 对象不存在，则回退到原始存储路径。
-- 缩略图也有独立的 R2 key 选择逻辑，不再是“简单拼接后缀”即可概括的模型。
+- R2 key 候选顺序为标准历史 key、原始 object key、旧 basename。例如 `history/{task_id}/original.ext` 未命中时，会继续探测 `123/output_images/file.ext`，从而兼容迁移期镜像到 R2 根路径的老对象。
+- 云正式迁移期可通过 `LEGACY_MINIO_*` 启用本地 MinIO 只读回源；R2 对象不存在且 legacy 对象存在时，Web API 返回 legacy 短签 URL。该 fallback 只用于读旧历史媒体，新生成数据仍写入 R2。
+- 历史详情、Gallery/Wan22 历史预览等读路径会先对 R2 公网 URL 做短超时可读性探测；若公网自定义域名返回 404/不可读但 R2 S3 `HEAD` 命中，可返回 R2 S3 短签 URL 保证用户可读。Web owner `/result` 仍是延迟敏感路径，视频结果未就绪时继续返回 `pending_result`，不要把它和历史详情 fallback 混为一谈。
+- `input_file_url` 也支持 legacy MinIO 只读回源，保障 Gallery apply-context 和历史模板应用能恢复旧输入图。
+- 缩略图也有独立的 R2 key 选择逻辑，不再是“简单拼接后缀”即可概括的模型；legacy 回源会先验证旧缩略图对象存在。迁移脚本可先从 legacy 复制已有缩略图，再用 `--source-storage current --generate-missing-thumbnails` 从已预热到 R2 的原文件生成缺失缩略图；legacy 源批量生成受保护拦截。
 
 ## 5. 核心红线
 - 捕获互动类 `IntegrityError` 前，必须先 `flush()`，避免 `autoflush` 提前把异常抛出到错误层级。

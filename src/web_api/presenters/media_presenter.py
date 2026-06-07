@@ -3,7 +3,11 @@ from typing import Any
 
 import httpx
 
-from src.core.media_paths import get_media_type_from_history, resolve_storage_object
+from src.core.media_paths import (
+    get_media_type_from_history,
+    resolve_legacy_storage_object,
+    resolve_storage_object,
+)
 from src.core.media_urls import build_r2_media_key_candidates, build_r2_thumbnail_info
 from src.services.storage import storage
 from src.services.wan22_video_v2_extension_service import (
@@ -12,6 +16,9 @@ from src.services.wan22_video_v2_extension_service import (
     resolve_wan22_segment_index,
 )
 from src.domain_config.wan22_aio_video import is_wan22_chain_history_task_type
+
+
+HISTORY_R2_LOOKUP_TIMEOUT_SECONDS = 2.5
 
 
 async def r2_public_url_exists(
@@ -47,10 +54,34 @@ def mark_r2_object_exists(object_key: str) -> None:
         mark_exists(object_key)
 
 
+def build_r2_presigned_url(
+    object_key: str,
+    *,
+    expires_hours: float = 1.0,
+) -> str:
+    r2_client = getattr(storage, "r2_client", None)
+    r2_bucket = getattr(storage, "r2_bucket", None)
+    if not r2_client or not r2_bucket:
+        return ""
+    try:
+        return (
+            r2_client.generate_presigned_url(
+                "get_object",
+                Params={"Bucket": r2_bucket, "Key": object_key},
+                ExpiresIn=int(expires_hours * 3600),
+            )
+            or ""
+        )
+    except Exception:
+        return ""
+
+
 async def get_r2_url_if_exists(
     object_key: str,
     *,
     timeout_seconds: float | None = None,
+    fallback_to_presigned: bool = False,
+    presigned_expires_hours: float = 1.0,
 ) -> str:
     public_url = storage.get_r2_public_url(object_key)
     if not public_url:
@@ -63,6 +94,11 @@ async def get_r2_url_if_exists(
         ):
             mark_r2_object_exists(object_key)
             return public_url
+        if fallback_to_presigned and await storage.async_r2_object_exists(object_key):
+            return build_r2_presigned_url(
+                object_key,
+                expires_hours=presigned_expires_hours,
+            )
         return ""
 
     exists_coro = storage.async_r2_object_exists(object_key)
@@ -82,6 +118,8 @@ async def get_r2_url_if_exists(
 async def get_first_r2_url_if_exists(
     *object_keys: str,
     timeout_seconds: float | None = None,
+    fallback_to_presigned: bool = False,
+    presigned_expires_hours: float = 1.0,
 ) -> str:
     for object_key in object_keys:
         if not object_key:
@@ -89,6 +127,8 @@ async def get_first_r2_url_if_exists(
         url = await get_r2_url_if_exists(
             object_key,
             timeout_seconds=timeout_seconds,
+            fallback_to_presigned=fallback_to_presigned,
+            presigned_expires_hours=presigned_expires_hours,
         )
         if url:
             return url
@@ -103,11 +143,41 @@ def build_storage_media_url(
     if not output_file:
         return ""
 
+    legacy_url = build_legacy_storage_media_url(
+        output_file,
+        expires_hours=expires_hours,
+    )
+    if legacy_url:
+        return legacy_url
+
     bucket_name, object_name = resolve_storage_object(output_file)
     kwargs = {"bucket": bucket_name}
     if expires_hours is not None:
         kwargs["expires_hours"] = expires_hours
     return storage.get_presigned_url(object_name, **kwargs) or ""
+
+
+def build_legacy_storage_media_url(
+    output_file: str | None,
+    *,
+    expires_hours: int | None = None,
+) -> str:
+    if not output_file:
+        return ""
+
+    has_legacy_storage = getattr(storage, "has_legacy_storage_configured", None)
+    if not callable(has_legacy_storage) or not has_legacy_storage():
+        return ""
+
+    legacy_bucket, legacy_object = resolve_legacy_storage_object(output_file)
+    legacy_exists = getattr(storage, "legacy_object_exists", None)
+    if callable(legacy_exists) and not legacy_exists(legacy_bucket, legacy_object):
+        return ""
+
+    kwargs = {"bucket": legacy_bucket}
+    if expires_hours is not None:
+        kwargs["expires_hours"] = expires_hours
+    return storage.get_legacy_presigned_url(legacy_object, **kwargs) or ""
 
 
 async def resolve_media_url(
@@ -128,7 +198,9 @@ async def resolve_media_url(
                 output_file=output_file,
                 task_id=task_id,
                 preferred_r2_object_name=preferred_r2_object_name,
-            )
+            ),
+            timeout_seconds=HISTORY_R2_LOOKUP_TIMEOUT_SECONDS,
+            fallback_to_presigned=True,
         )
         if r2_url:
             return r2_url
@@ -160,9 +232,29 @@ async def resolve_thumbnail_url(
         return ""
 
     if prefer_r2:
-        r2_url = await get_first_r2_url_if_exists(*thumb_r2_keys)
+        r2_url = await get_first_r2_url_if_exists(
+            *thumb_r2_keys,
+            timeout_seconds=HISTORY_R2_LOOKUP_TIMEOUT_SECONDS,
+            fallback_to_presigned=True,
+        )
         if r2_url:
             return r2_url
+
+    has_legacy_storage = getattr(storage, "has_legacy_storage_configured", None)
+    if callable(has_legacy_storage) and has_legacy_storage():
+        legacy_bucket, legacy_object = resolve_legacy_storage_object(thumb_file)
+        legacy_exists = getattr(storage, "async_legacy_object_exists", None)
+        if callable(legacy_exists) and await legacy_exists(
+            legacy_bucket,
+            legacy_object,
+        ):
+            return (
+                storage.get_legacy_presigned_url(
+                    legacy_object,
+                    bucket=legacy_bucket,
+                )
+                or ""
+            )
 
     bucket_name, object_name = resolve_storage_object(thumb_file)
     if await storage.async_object_exists(bucket_name, object_name):

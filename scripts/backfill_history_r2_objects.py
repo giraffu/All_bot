@@ -2,12 +2,18 @@ import argparse
 import asyncio
 import json
 import logging
+import os
+import shutil
+import subprocess
 import sys
+import tempfile
 from dataclasses import asdict, dataclass
+from io import BytesIO
 from pathlib import Path
-from typing import Literal
+from typing import Callable, Literal
 
-from sqlalchemy import func, select
+from PIL import Image, ImageOps
+from sqlalchemy import desc, func, select, union
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -19,15 +25,24 @@ from src.core.media_paths import (  # noqa: E402
     build_history_r2_thumbnail_key,
     build_legacy_r2_key,
     get_media_type_from_history,
+    resolve_legacy_storage_object,
     resolve_storage_object,
 )
 from src.core.media_processor import generate_and_upload_thumbnail  # noqa: E402
 from src.core.media_urls import build_thumbnail_file_path  # noqa: E402
 from src.database.core import AsyncSessionLocal  # noqa: E402
-from src.database.models import History, User  # noqa: E402
+from src.database.models import (  # noqa: E402
+    GalleryPost,
+    GalleryPromptUnlock,
+    History,
+    User,
+    UserInteraction,
+)
 from src.services.storage import storage  # noqa: E402
 
 logger = logging.getLogger(__name__)
+
+ResolveSourceObjectFunc = Callable[[str], tuple[str, str]]
 
 MediaStatus = Literal[
     "exists",
@@ -104,11 +119,12 @@ def build_history_r2_candidate(
     task_id: str | None,
     history_type: str | None,
     output_file: str,
+    resolve_source_object_func: ResolveSourceObjectFunc = resolve_storage_object,
 ) -> HistoryR2Candidate:
     media_type = get_media_type_from_history(history_type)
-    source_bucket, source_object = resolve_storage_object(output_file)
+    source_bucket, source_object = resolve_source_object_func(output_file)
     thumbnail_file = build_thumbnail_file_path(output_file, media_type)
-    thumbnail_source_bucket, thumbnail_source_object = resolve_storage_object(
+    thumbnail_source_bucket, thumbnail_source_object = resolve_source_object_func(
         thumbnail_file
     )
 
@@ -141,6 +157,130 @@ def build_history_r2_candidate(
     )
 
 
+def build_user_visible_history_ids_stmt(*, recent_limit: int):
+    recent_ranked = (
+        select(
+            History.id.label("history_id"),
+            func.row_number()
+            .over(partition_by=History.user_id, order_by=desc(History.id))
+            .label("row_number"),
+        )
+        .subquery()
+    )
+    recent_ids = select(recent_ranked.c.history_id).where(
+        recent_ranked.c.row_number <= recent_limit
+    )
+    gallery_ids = (
+        select(History.id.label("history_id"))
+        .join(GalleryPost, GalleryPost.task_id == History.task_id)
+        .where(History.is_visible.is_not(False))
+    )
+    favorited_history_ids = select(History.id.label("history_id")).where(
+        History.is_favorited.is_(True),
+        History.is_visible.is_not(False),
+    )
+    interacted_gallery_ids = (
+        select(History.id.label("history_id"))
+        .join(GalleryPost, GalleryPost.task_id == History.task_id)
+        .join(UserInteraction, UserInteraction.post_id == GalleryPost.id)
+        .where(
+            GalleryPost.is_active.is_(True),
+            UserInteraction.action_type.in_(["like", "apply"]),
+            History.is_visible.is_not(False),
+        )
+    )
+    prompt_unlocked_gallery_ids = (
+        select(History.id.label("history_id"))
+        .join(GalleryPost, GalleryPost.task_id == History.task_id)
+        .join(GalleryPromptUnlock, GalleryPromptUnlock.post_id == GalleryPost.id)
+        .where(
+            GalleryPost.is_active.is_(True),
+            History.is_visible.is_not(False),
+        )
+    )
+
+    return union(
+        recent_ids,
+        gallery_ids,
+        favorited_history_ids,
+        interacted_gallery_ids,
+        prompt_unlocked_gallery_ids,
+    ).subquery()
+
+
+async def collect_limited_user_visible_history_ids(
+    session,
+    *,
+    recent_limit: int,
+    limit: int,
+) -> list[int]:
+    _ = recent_limit
+    seen: set[int] = set()
+    history_ids: list[int] = []
+
+    async def collect_from_stmt(stmt) -> None:
+        remaining = limit - len(history_ids)
+        if remaining <= 0:
+            return
+        rows = (await session.execute(stmt.limit(remaining))).scalars().all()
+        for history_id in rows:
+            if history_id in seen:
+                continue
+            seen.add(history_id)
+            history_ids.append(history_id)
+            if len(history_ids) >= limit:
+                return
+
+    common_history_filters = (
+        History.output_file.is_not(None),
+        History.output_file != "",
+        History.is_visible.is_not(False),
+    )
+
+    await collect_from_stmt(
+        select(History.id)
+        .where(*common_history_filters)
+        .order_by(desc(History.id))
+    )
+    await collect_from_stmt(
+        select(History.id)
+        .join(GalleryPost, GalleryPost.task_id == History.task_id)
+        .where(*common_history_filters)
+        .order_by(desc(History.id))
+    )
+    await collect_from_stmt(
+        select(History.id)
+        .where(
+            *common_history_filters,
+            History.is_favorited.is_(True),
+        )
+        .order_by(desc(History.id))
+    )
+    await collect_from_stmt(
+        select(History.id)
+        .join(GalleryPost, GalleryPost.task_id == History.task_id)
+        .join(UserInteraction, UserInteraction.post_id == GalleryPost.id)
+        .where(
+            *common_history_filters,
+            GalleryPost.is_active.is_(True),
+            UserInteraction.action_type.in_(["like", "apply"]),
+        )
+        .order_by(desc(History.id))
+    )
+    await collect_from_stmt(
+        select(History.id)
+        .join(GalleryPost, GalleryPost.task_id == History.task_id)
+        .join(GalleryPromptUnlock, GalleryPromptUnlock.post_id == GalleryPost.id)
+        .where(
+            *common_history_filters,
+            GalleryPost.is_active.is_(True),
+        )
+        .order_by(desc(History.id))
+    )
+
+    return history_ids
+
+
 async def collect_history_r2_candidates(
     session,
     *,
@@ -150,7 +290,10 @@ async def collect_history_r2_candidates(
     favorited_only: bool = False,
     source: str | None = None,
     media_type: Literal["all", "video", "image"] = "all",
+    visible_scope: Literal["all", "user-visible"] = "all",
+    recent_limit: int = 8,
     limit: int | None = None,
+    resolve_source_object_func: ResolveSourceObjectFunc = resolve_storage_object,
 ) -> list[HistoryR2Candidate]:
     stmt = (
         select(
@@ -166,6 +309,27 @@ async def collect_history_r2_candidates(
         .where(History.output_file.is_not(None), History.output_file != "")
         .order_by(History.created_at.desc(), History.id.desc())
     )
+
+    if visible_scope == "user-visible" and limit is not None:
+        limited_history_ids = await collect_limited_user_visible_history_ids(
+            session,
+            recent_limit=recent_limit,
+            limit=limit,
+        )
+        if not limited_history_ids:
+            return []
+        stmt = stmt.where(History.id.in_(limited_history_ids))
+        limit = None
+    elif visible_scope == "user-visible":
+        visible_history_ids = build_user_visible_history_ids_stmt(
+            recent_limit=recent_limit
+        )
+        stmt = stmt.join(
+            visible_history_ids,
+            History.id == visible_history_ids.c.history_id,
+        ).where(
+            History.is_visible.is_not(False),
+        )
 
     if username is not None:
         stmt = stmt.where(func.lower(User.username) == username.lower())
@@ -189,6 +353,7 @@ async def collect_history_r2_candidates(
             task_id=row_task_id,
             history_type=row_history_type,
             output_file=row_output_file,
+            resolve_source_object_func=resolve_source_object_func,
         )
         for (
             history_id,
@@ -210,10 +375,12 @@ async def process_history_r2_candidate(
     *,
     apply_changes: bool,
     media_only: bool,
+    generate_missing_thumbnails: bool,
     async_object_exists_func,
     async_r2_object_exists_func,
     async_copy_to_r2_func,
     generate_and_upload_thumbnail_func,
+    generate_and_upload_thumbnail_from_r2_media_func,
 ) -> CandidateResult:
     media_source_exists = await async_object_exists_func(
         candidate.source_bucket,
@@ -256,6 +423,26 @@ async def process_history_r2_candidate(
                         candidate.thumbnail_r2_key,
                     )
                     thumbnail_status = "copied" if uploaded else "copy_failed"
+            elif not generate_missing_thumbnails:
+                thumbnail_status = "source_missing"
+            elif media_r2_exists:
+                if not apply_changes:
+                    thumbnail_status = "would_generate"
+                else:
+                    try:
+                        await generate_and_upload_thumbnail_from_r2_media_func(
+                            candidate.media_r2_key,
+                            candidate.media_type,
+                            candidate.thumbnail_r2_key,
+                        )
+                        thumbnail_status = "generated"
+                    except Exception:
+                        logger.exception(
+                            "Failed to generate thumbnail from R2 for history_id=%s task_id=%s",
+                            candidate.history_id,
+                            candidate.task_id,
+                        )
+                        thumbnail_status = "generate_failed"
             elif not media_source_exists:
                 thumbnail_status = "source_missing"
             elif not apply_changes:
@@ -281,6 +468,87 @@ async def process_history_r2_candidate(
         media_status=media_status,
         thumbnail_status=thumbnail_status,
     )
+
+
+async def generate_and_upload_thumbnail_from_r2_media(
+    media_r2_key: str,
+    media_type: str,
+    thumbnail_r2_key: str,
+) -> None:
+    """Generate a standard history thumbnail from an already-warmed R2 original."""
+    if not storage.r2_client or not storage.r2_bucket:
+        raise RuntimeError("R2 client 未初始化，无法从 R2 原文件生成缩略图。")
+
+    temp_dir = tempfile.mkdtemp(prefix="r2-thumb-")
+    try:
+        thumb_ext = ".jpg" if media_type == "video" else ".webp"
+        thumb_local_path = os.path.join(temp_dir, f"thumb{thumb_ext}")
+
+        if media_type == "video":
+            input_url = await asyncio.to_thread(
+                storage.r2_client.generate_presigned_url,
+                "get_object",
+                Params={"Bucket": storage.r2_bucket, "Key": media_r2_key},
+                ExpiresIn=3600,
+            )
+            ffmpeg_cmd = [
+                "ffmpeg",
+                "-y",
+                "-ss",
+                "00:00:00.000",
+                "-i",
+                input_url,
+                "-frames:v",
+                "1",
+                "-q:v",
+                "5",
+                thumb_local_path,
+            ]
+            await asyncio.to_thread(
+                subprocess.run,
+                ffmpeg_cmd,
+                check=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            content_type = "image/jpeg"
+        else:
+            response = await asyncio.to_thread(
+                storage.r2_client.get_object,
+                Bucket=storage.r2_bucket,
+                Key=media_r2_key,
+            )
+            try:
+                media_bytes = await asyncio.to_thread(response["Body"].read)
+            finally:
+                response["Body"].close()
+
+            def process_image() -> None:
+                with Image.open(BytesIO(media_bytes)) as img:
+                    img = ImageOps.exif_transpose(img)
+                    if img.mode in ("RGBA", "P"):
+                        img = img.convert("RGB")
+                    max_width = 600
+                    if img.width > max_width:
+                        ratio = max_width / img.width
+                        img = img.resize(
+                            (max_width, int(img.height * ratio)),
+                            Image.Resampling.LANCZOS,
+                        )
+                    img.save(thumb_local_path, "WEBP", quality=80, method=6)
+
+            await asyncio.to_thread(process_image)
+            content_type = "image/webp"
+
+        await asyncio.to_thread(
+            storage.r2_client.upload_file,
+            thumb_local_path,
+            storage.r2_bucket,
+            thumbnail_r2_key,
+            ExtraArgs={"ContentType": content_type},
+        )
+    finally:
+        shutil.rmtree(temp_dir, ignore_errors=True)
 
 
 def summarize_results(
@@ -314,6 +582,78 @@ def summarize_results(
     )
 
 
+async def process_history_r2_candidates(
+    candidates: list[HistoryR2Candidate],
+    *,
+    concurrency: int,
+    apply_changes: bool,
+    media_only: bool,
+    generate_missing_thumbnails: bool,
+    async_object_exists_func,
+    async_r2_object_exists_func,
+    async_copy_to_r2_func,
+    generate_and_upload_thumbnail_func,
+    generate_and_upload_thumbnail_from_r2_media_func,
+) -> list[CandidateResult]:
+    safe_concurrency = max(1, concurrency)
+    queue: asyncio.Queue[HistoryR2Candidate] = asyncio.Queue()
+    for candidate in candidates:
+        queue.put_nowait(candidate)
+
+    results: list[CandidateResult] = []
+    results_lock = asyncio.Lock()
+    total = len(candidates)
+    processed = 0
+
+    async def worker() -> None:
+        nonlocal processed
+        while True:
+            try:
+                candidate = queue.get_nowait()
+            except asyncio.QueueEmpty:
+                return
+
+            try:
+                result = await process_history_r2_candidate(
+                    candidate,
+                    apply_changes=apply_changes,
+                    media_only=media_only,
+                    generate_missing_thumbnails=generate_missing_thumbnails,
+                    async_object_exists_func=async_object_exists_func,
+                    async_r2_object_exists_func=async_r2_object_exists_func,
+                    async_copy_to_r2_func=async_copy_to_r2_func,
+                    generate_and_upload_thumbnail_func=(
+                        generate_and_upload_thumbnail_func
+                    ),
+                    generate_and_upload_thumbnail_from_r2_media_func=(
+                        generate_and_upload_thumbnail_from_r2_media_func
+                    ),
+                )
+                async with results_lock:
+                    results.append(result)
+                    processed += 1
+                    current = processed
+                logger.info(
+                    "[%s/%s] history_id=%s task_id=%s user=%s media=%s "
+                    "media_status=%s thumb_status=%s r2_media=%s r2_thumb=%s",
+                    current,
+                    total,
+                    candidate.history_id,
+                    candidate.task_id,
+                    candidate.username or candidate.user_id,
+                    candidate.media_type,
+                    result.media_status,
+                    result.thumbnail_status,
+                    candidate.media_r2_key,
+                    candidate.thumbnail_r2_key,
+                )
+            finally:
+                queue.task_done()
+
+    await asyncio.gather(*(worker() for _ in range(safe_concurrency)))
+    return results
+
+
 def build_argument_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="扫描 History 表并把缺失的历史原文件/缩略图回填到 R2。默认 dry-run。"
@@ -327,6 +667,27 @@ def build_argument_parser() -> argparse.ArgumentParser:
         "--favorited-only",
         action="store_true",
         help="仅扫描已收藏的历史记录，适合先验证收藏视频问题。",
+    )
+    parser.add_argument(
+        "--visible-scope",
+        choices=["all", "user-visible"],
+        default="all",
+        help=(
+            "扫描范围。user-visible 仅覆盖最近 8 条闪回瓶、投稿、收藏、"
+            "广场 like/apply 和提示词解锁可见历史。"
+        ),
+    )
+    parser.add_argument(
+        "--recent-limit",
+        type=int,
+        default=8,
+        help="visible-scope=user-visible 时每个用户纳入的最近原始历史条数。",
+    )
+    parser.add_argument(
+        "--source-storage",
+        choices=["current", "legacy"],
+        default="current",
+        help="对象复制源。云正式预热旧数据时使用 legacy。",
     )
     parser.add_argument(
         "--username",
@@ -358,6 +719,17 @@ def build_argument_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="仅处理原文件 media R2 回填，不处理缩略图。",
     )
+    parser.add_argument(
+        "--generate-missing-thumbnails",
+        action="store_true",
+        help="当源缩略图不存在但原文件存在时生成缩略图；legacy 批量预热默认不启用。",
+    )
+    parser.add_argument(
+        "--concurrency",
+        type=int,
+        default=1,
+        help="并发处理数量；大批预热建议从 4-8 开始。",
+    )
     return parser
 
 
@@ -368,6 +740,23 @@ async def run_backfill(args) -> BackfillSummary:
         raise RuntimeError("R2 client 未初始化，无法执行回填。")
     storage._ensure_r2_async_primitives()
 
+    resolve_source_object_func: ResolveSourceObjectFunc = resolve_storage_object
+    async_object_exists_func = storage.async_object_exists
+    async_copy_to_r2_func = storage.async_copy_to_r2
+
+    if args.source_storage == "legacy":
+        if args.generate_missing_thumbnails:
+            raise RuntimeError(
+                "legacy 源批量预热暂不支持生成缺失缩略图；请先复制已有缩略图，"
+                "再单独安排缩略图生成批次。"
+            )
+        has_legacy_storage = getattr(storage, "has_legacy_storage_configured", None)
+        if not callable(has_legacy_storage) or not has_legacy_storage():
+            raise RuntimeError("LEGACY_MINIO_* 未配置，无法从 legacy MinIO 预热。")
+        resolve_source_object_func = resolve_legacy_storage_object
+        async_object_exists_func = storage.async_legacy_object_exists
+        async_copy_to_r2_func = storage.async_copy_legacy_to_r2
+
     async with AsyncSessionLocal() as session:
         candidates = await collect_history_r2_candidates(
             session,
@@ -377,38 +766,32 @@ async def run_backfill(args) -> BackfillSummary:
             favorited_only=args.favorited_only,
             source=args.source,
             media_type=args.media_type,
+            visible_scope=args.visible_scope,
+            recent_limit=args.recent_limit,
             limit=args.limit,
+            resolve_source_object_func=resolve_source_object_func,
         )
 
-    logger.info("Collected %s history rows for R2 scan.", len(candidates))
-    results: list[CandidateResult] = []
-    for idx, candidate in enumerate(candidates, 1):
-        logger.info(
-            "[%s/%s] Scan history_id=%s task_id=%s user=%s media=%s",
-            idx,
-            len(candidates),
-            candidate.history_id,
-            candidate.task_id,
-            candidate.username or candidate.user_id,
-            candidate.media_type,
-        )
-        result = await process_history_r2_candidate(
-            candidate,
-            apply_changes=args.apply,
-            media_only=args.media_only,
-            async_object_exists_func=storage.async_object_exists,
-            async_r2_object_exists_func=storage._async_r2_object_exists_uncached,
-            async_copy_to_r2_func=storage.async_copy_to_r2,
-            generate_and_upload_thumbnail_func=generate_and_upload_thumbnail,
-        )
-        results.append(result)
-        logger.info(
-            "   media=%s thumb=%s r2_media=%s r2_thumb=%s",
-            result.media_status,
-            result.thumbnail_status,
-            candidate.media_r2_key,
-            candidate.thumbnail_r2_key,
-        )
+    logger.info(
+        "Collected %s history rows for R2 scan. visible_scope=%s source_storage=%s",
+        len(candidates),
+        args.visible_scope,
+        args.source_storage,
+    )
+    results = await process_history_r2_candidates(
+        candidates,
+        concurrency=args.concurrency,
+        apply_changes=args.apply,
+        media_only=args.media_only,
+        generate_missing_thumbnails=args.generate_missing_thumbnails,
+        async_object_exists_func=async_object_exists_func,
+        async_r2_object_exists_func=storage._async_r2_object_exists_uncached,
+        async_copy_to_r2_func=async_copy_to_r2_func,
+        generate_and_upload_thumbnail_func=generate_and_upload_thumbnail,
+        generate_and_upload_thumbnail_from_r2_media_func=(
+            generate_and_upload_thumbnail_from_r2_media
+        ),
+    )
 
     summary = summarize_results(results, apply_changes=args.apply)
     logger.info("Backfill summary: %s", json.dumps(summary.to_dict(), ensure_ascii=False))

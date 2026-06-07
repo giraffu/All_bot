@@ -109,9 +109,13 @@ async def test_resolve_history_media_urls_uses_legacy_r2_media_key_when_history_
     get_presigned_url = MagicMock(return_value="minio-original-url")
     r2_probe_calls = []
 
-    async def fake_get_first_r2_url_if_exists(*object_keys):
-        r2_probe_calls.append(object_keys)
-        if object_keys == ("history/task-1/original.mp4", "task-1.mp4"):
+    async def fake_get_first_r2_url_if_exists(*object_keys, **kwargs):
+        r2_probe_calls.append((object_keys, kwargs))
+        if object_keys == (
+            "history/task-1/original.mp4",
+            "123/output_images/task-1.mp4",
+            "task-1.mp4",
+        ):
             return "https://r2.example/task-1.mp4"
         return ""
 
@@ -135,8 +139,28 @@ async def test_resolve_history_media_urls_uses_legacy_r2_media_key_when_history_
 
     assert output_url == "https://r2.example/task-1.mp4"
     assert thumbnail_url == ""
-    assert ("history/task-1/original.mp4", "task-1.mp4") in r2_probe_calls
-    assert ("history/task-1/thumb.jpg", "task-1_thumb.jpg") in r2_probe_calls
+    assert (
+        (
+            "history/task-1/original.mp4",
+            "123/output_images/task-1.mp4",
+            "task-1.mp4",
+        ),
+        {
+            "timeout_seconds": media_presenter.HISTORY_R2_LOOKUP_TIMEOUT_SECONDS,
+            "fallback_to_presigned": True,
+        },
+    ) in r2_probe_calls
+    assert (
+        (
+            "history/task-1/thumb.jpg",
+            "123/output_images/task-1_thumb.jpg",
+            "task-1_thumb.jpg",
+        ),
+        {
+            "timeout_seconds": media_presenter.HISTORY_R2_LOOKUP_TIMEOUT_SECONDS,
+            "fallback_to_presigned": True,
+        },
+    ) in r2_probe_calls
     get_presigned_url.assert_not_called()
 
 

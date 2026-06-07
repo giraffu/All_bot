@@ -112,6 +112,46 @@ def test_build_storage_input_file_url_uses_shared_storage_builder(monkeypatch):
     assert presigned_calls == [("history/task-1/input.png", "bot-data")]
 
 
+def test_build_storage_input_file_url_prefers_legacy_storage_when_object_exists(
+    monkeypatch,
+):
+    current_presigned = []
+    legacy_presigned = []
+
+    monkeypatch.setattr(
+        "src.web_api.common.utils.storage.has_legacy_storage_configured",
+        lambda: True,
+    )
+    monkeypatch.setattr(
+        "src.web_api.common.utils.storage.legacy_object_exists",
+        lambda bucket, object_name: (bucket, object_name)
+        == ("bot-data", "history/task-1/input.png"),
+    )
+
+    def fake_get_presigned_url(object_name: str, *, bucket: str):
+        current_presigned.append((object_name, bucket))
+        return f"https://storage.example/{bucket}/{object_name}"
+
+    def fake_get_legacy_presigned_url(object_name: str, *, bucket: str):
+        legacy_presigned.append((object_name, bucket))
+        return f"https://legacy.example/{bucket}/{object_name}"
+
+    monkeypatch.setattr(
+        "src.web_api.common.utils.storage.get_presigned_url",
+        fake_get_presigned_url,
+    )
+    monkeypatch.setattr(
+        "src.web_api.common.utils.storage.get_legacy_presigned_url",
+        fake_get_legacy_presigned_url,
+    )
+
+    url = build_storage_input_file_url("bot-data/history/task-1/input.png")
+
+    assert url == "https://legacy.example/bot-data/history/task-1/input.png"
+    assert legacy_presigned == [("history/task-1/input.png", "bot-data")]
+    assert current_presigned == []
+
+
 @pytest.mark.asyncio
 async def test_run_with_optional_db_uses_fallback_session_factory_when_db_missing():
     used_sessions = []

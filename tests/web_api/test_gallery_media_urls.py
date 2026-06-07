@@ -85,6 +85,42 @@ async def test_get_r2_url_if_exists_skips_s3_head_when_public_probe_misses(
 
 
 @pytest.mark.asyncio
+async def test_get_r2_url_if_exists_can_fallback_to_presigned_when_public_probe_misses(
+    monkeypatch,
+):
+    public_url = "https://r2-test.example/history/task-1/original.mp4"
+    public_probe_mock = AsyncMock(return_value=False)
+    storage_exists_mock = AsyncMock(return_value=True)
+    presign_mock = MagicMock(return_value="https://r2-s3.example/presigned")
+    monkeypatch.setattr(
+        media_presenter.storage,
+        "get_r2_public_url",
+        MagicMock(return_value=public_url),
+    )
+    monkeypatch.setattr(
+        media_presenter.storage,
+        "async_r2_object_exists",
+        storage_exists_mock,
+    )
+    monkeypatch.setattr(media_presenter, "build_r2_presigned_url", presign_mock)
+    monkeypatch.setattr(media_presenter, "r2_public_url_exists", public_probe_mock)
+
+    url = await media_presenter.get_r2_url_if_exists(
+        "history/task-1/original.mp4",
+        timeout_seconds=2.5,
+        fallback_to_presigned=True,
+    )
+
+    assert url == "https://r2-s3.example/presigned"
+    public_probe_mock.assert_awaited_once_with(public_url, timeout_seconds=2.5)
+    storage_exists_mock.assert_awaited_once_with("history/task-1/original.mp4")
+    presign_mock.assert_called_once_with(
+        "history/task-1/original.mp4",
+        expires_hours=1.0,
+    )
+
+
+@pytest.mark.asyncio
 async def test_build_post_responses_used_by_my_posts_generates_minio_urls_for_unprefixed_history_path(
     monkeypatch,
 ):

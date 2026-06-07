@@ -60,7 +60,7 @@ server {
 本模块处理的是 4 层与 7 层的网络转发，其主要网络契约如下：
 - `100.x.x.x:8000` (Tailscale) -> Web BFF API
 - `100.x.x.x:8003` (Tailscale) -> Central API
-- `Cloudflare Tunnel (Public URL)` -> 映射到本地 `8021` 供支付网关回调。
+- `Cloudflare Tunnel (Public URL)` -> `rmb.aivison.it.com` 默认映射到本地 `127.0.0.1:8021` 供支付网关回调；正式迁云维护窗口内通过 `scripts/switch_rmb_tunnel_to_cloud_prod.sh --execute` 切到云 Payment API `100.107.220.127:8021`，通过 `scripts/rollback_rmb_tunnel_to_local_prod.sh --execute` 回滚到本地。
 
 > **注**：边缘节点的 Nginx 运维细则、大文件流式传输优化及 MinIO 代理的防签名失效红线，请参阅专项文档：[边缘节点运维指南](./子模块_边缘节点运维指南_edge_node_ops.md)。
 

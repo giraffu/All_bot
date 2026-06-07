@@ -1,0 +1,285 @@
+version: '3.8'
+
+services:
+  central-api-prod:
+    build:
+      context: ../backend
+    container_name: cloud-central-api-prod
+    restart: always
+    env_file:
+      - ../.env.cloud.prod
+    environment:
+      TZ: Asia/Shanghai
+      REDIS_URL: ${CLOUD_PROD_WORKER_REDIS_URL:?CLOUD_PROD_WORKER_REDIS_URL is required}
+      AUTH_TOKEN: ${AUTH_TOKEN:?AUTH_TOKEN is required}
+      AGENT_SECRET_TOKEN: ${AGENT_SECRET_TOKEN:?AGENT_SECRET_TOKEN is required}
+      MINIO_ENDPOINT: ${MINIO_ENDPOINT:?MINIO_ENDPOINT is required}
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:?MINIO_ACCESS_KEY is required}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:?MINIO_SECRET_KEY is required}
+      MINIO_BUCKET: ${MINIO_BUCKET:-user-data-prod}
+      MINIO_INPUT_BUCKET: ${MINIO_INPUT_BUCKET:-user-data-prod}
+      MINIO_RESULT_BUCKET: ${MINIO_RESULT_BUCKET:-user-data-prod}
+      MINIO_TEMPLATE_BUCKET: ${MINIO_TEMPLATE_BUCKET:-user-data-prod}
+      MINIO_SECURE: ${MINIO_SECURE:-true}
+    volumes:
+      - ../backend/app:/app/app:ro
+      - ../src:/app/src:ro
+      - ../logs/cloud-prod:/app/logs
+    ports:
+      - "${CLOUD_PROD_BIND_IP:-127.0.0.1}:8003:8003"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import sys, urllib.request; sys.exit(0) if urllib.request.urlopen('http://127.0.0.1:8003/health', timeout=5).status == 200 else sys.exit(1)",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  web-api-prod:
+    build:
+      context: ../
+      dockerfile: Dockerfile
+    container_name: cloud-web-api-prod
+    restart: always
+    env_file:
+      - ../.env.cloud.prod
+    environment:
+      BOT_TYPE: PROD
+      REDIS_PREFIX: prod_bot_
+      TZ: Asia/Shanghai
+      API_BASE: http://central-api-prod:8003
+      API_TOKEN: ${API_TOKEN:?API_TOKEN is required}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:?JWT_SECRET_KEY is required}
+      DATABASE_URL: ${CLOUD_PROD_DATABASE_URL:?CLOUD_PROD_DATABASE_URL is required}
+      REDIS_URL: ${CLOUD_PROD_REDIS_URL:?CLOUD_PROD_REDIS_URL is required}
+      WORKER_REDIS_URL: ${CLOUD_PROD_WORKER_REDIS_URL:?CLOUD_PROD_WORKER_REDIS_URL is required}
+      MINIO_ENDPOINT: ${MINIO_ENDPOINT:?MINIO_ENDPOINT is required}
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:?MINIO_ACCESS_KEY is required}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:?MINIO_SECRET_KEY is required}
+      MINIO_BUCKET: ${MINIO_BUCKET:-user-data-prod}
+      MINIO_INPUT_BUCKET: ${MINIO_INPUT_BUCKET:-user-data-prod}
+      MINIO_RESULT_BUCKET: ${MINIO_RESULT_BUCKET:-user-data-prod}
+      MINIO_TEMPLATE_BUCKET: ${MINIO_TEMPLATE_BUCKET:-user-data-prod}
+      MINIO_PUBLIC_URL: ${MINIO_PUBLIC_URL:-}
+      MINIO_SECURE: ${MINIO_SECURE:-true}
+      LEGACY_MINIO_ENDPOINT: ${LEGACY_MINIO_ENDPOINT:-}
+      LEGACY_MINIO_ACCESS_KEY: ${LEGACY_MINIO_ACCESS_KEY:-}
+      LEGACY_MINIO_SECRET_KEY: ${LEGACY_MINIO_SECRET_KEY:-}
+      LEGACY_MINIO_BUCKET: ${LEGACY_MINIO_BUCKET:-bot-data}
+      LEGACY_MINIO_RESULT_BUCKET: ${LEGACY_MINIO_RESULT_BUCKET:-comfyui-temp}
+      LEGACY_MINIO_PUBLIC_URL: ${LEGACY_MINIO_PUBLIC_URL:-}
+      LEGACY_MINIO_SECURE: ${LEGACY_MINIO_SECURE:-false}
+      R2_ENDPOINT: ${R2_ENDPOINT:?R2_ENDPOINT is required}
+      R2_ACCESS_KEY: ${R2_ACCESS_KEY:?R2_ACCESS_KEY is required}
+      R2_SECRET_KEY: ${R2_SECRET_KEY:?R2_SECRET_KEY is required}
+      R2_BUCKET: ${R2_BUCKET:-user-data-prod}
+      R2_PUBLIC_DOMAIN: ${R2_PUBLIC_DOMAIN:?R2_PUBLIC_DOMAIN is required}
+      IMGPROXY_URL: http://imgproxy-prod:8084
+      DB_POOL_SIZE: 2
+      DB_MAX_OVERFLOW: 1
+    volumes:
+      - ../logs/cloud-prod:/app/logs
+    ports:
+      - "${CLOUD_PROD_BIND_IP:-127.0.0.1}:8000:8000"
+    depends_on:
+      central-api-prod:
+        condition: service_healthy
+      imgproxy-prod:
+        condition: service_healthy
+    command:
+      [
+        "uvicorn",
+        "src.web_api.main:app",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8000",
+        "--workers",
+        "4",
+      ]
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import sys, urllib.request; sys.exit(0) if urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=5).status == 200 else sys.exit(1)",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  payment-api-prod:
+    build:
+      context: ../
+      dockerfile: Dockerfile
+    container_name: cloud-payment-api-prod
+    restart: always
+    env_file:
+      - ../.env.cloud.prod
+    environment:
+      BOT_TYPE: PROD
+      REDIS_PREFIX: prod_bot_
+      TZ: Asia/Shanghai
+      DATABASE_URL: ${CLOUD_PROD_DATABASE_URL:?CLOUD_PROD_DATABASE_URL is required}
+      REDIS_URL: ${CLOUD_PROD_REDIS_URL:?CLOUD_PROD_REDIS_URL is required}
+      PAYMENT_API_PORT: ${PAYMENT_API_PORT:-8021}
+      DB_POOL_SIZE: 2
+      DB_MAX_OVERFLOW: 1
+    volumes:
+      - ../logs/cloud-prod:/app/logs
+    ports:
+      - "${CLOUD_PROD_BIND_IP:-127.0.0.1}:8021:8021"
+    command: ["python", "src/payment_api_server.py"]
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import sys, urllib.request; sys.exit(0) if urllib.request.urlopen('http://127.0.0.1:8021/pay/result', timeout=5).status == 200 else sys.exit(1)",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  dashboard-backend-prod:
+    build:
+      context: ../
+      dockerfile: dashboard/backend/Dockerfile
+    container_name: cloud-dashboard-backend-prod
+    restart: always
+    env_file:
+      - ../.env.cloud.prod
+    environment:
+      BOT_TYPE: PROD
+      REDIS_PREFIX: prod_bot_
+      TZ: Asia/Shanghai
+      DATABASE_URL: ${CLOUD_PROD_DATABASE_URL:?CLOUD_PROD_DATABASE_URL is required}
+      REDIS_URL: ${CLOUD_PROD_REDIS_URL:?CLOUD_PROD_REDIS_URL is required}
+      WORKER_REDIS_URL: ${CLOUD_PROD_WORKER_REDIS_URL:?CLOUD_PROD_WORKER_REDIS_URL is required}
+      MINIO_ENDPOINT: ${MINIO_ENDPOINT:?MINIO_ENDPOINT is required}
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:?MINIO_ACCESS_KEY is required}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:?MINIO_SECRET_KEY is required}
+      MINIO_BUCKET: ${MINIO_BUCKET:-user-data-prod}
+      MINIO_TEMPLATE_BUCKET: ${MINIO_TEMPLATE_BUCKET:-user-data-prod}
+      MINIO_PUBLIC_URL: ${MINIO_PUBLIC_URL:-}
+      MINIO_SECURE: ${MINIO_SECURE:-true}
+      LEGACY_MINIO_ENDPOINT: ${LEGACY_MINIO_ENDPOINT:-}
+      LEGACY_MINIO_ACCESS_KEY: ${LEGACY_MINIO_ACCESS_KEY:-}
+      LEGACY_MINIO_SECRET_KEY: ${LEGACY_MINIO_SECRET_KEY:-}
+      LEGACY_MINIO_BUCKET: ${LEGACY_MINIO_BUCKET:-bot-data}
+      LEGACY_MINIO_RESULT_BUCKET: ${LEGACY_MINIO_RESULT_BUCKET:-comfyui-temp}
+      LEGACY_MINIO_PUBLIC_URL: ${LEGACY_MINIO_PUBLIC_URL:-}
+      LEGACY_MINIO_SECURE: ${LEGACY_MINIO_SECURE:-false}
+      R2_ENDPOINT: ${R2_ENDPOINT:?R2_ENDPOINT is required}
+      R2_ACCESS_KEY: ${R2_ACCESS_KEY:?R2_ACCESS_KEY is required}
+      R2_SECRET_KEY: ${R2_SECRET_KEY:?R2_SECRET_KEY is required}
+      R2_BUCKET: ${R2_BUCKET:-user-data-prod}
+      R2_PUBLIC_DOMAIN: ${R2_PUBLIC_DOMAIN:?R2_PUBLIC_DOMAIN is required}
+      DASHBOARD_ADMIN_USERNAME: ${DASHBOARD_ADMIN_USERNAME:?DASHBOARD_ADMIN_USERNAME is required}
+      DASHBOARD_ADMIN_PASSWORD_HASH: ${DASHBOARD_ADMIN_PASSWORD_HASH:?DASHBOARD_ADMIN_PASSWORD_HASH is required}
+      DASHBOARD_SECRET_KEY: ${DASHBOARD_SECRET_KEY:?DASHBOARD_SECRET_KEY is required}
+      DB_POOL_SIZE: 1
+      DB_MAX_OVERFLOW: 0
+    volumes:
+      - ../.env.cloud.prod:/app/.env:ro
+      - ../logs/cloud-prod:/app/logs
+    ports:
+      - "${CLOUD_PROD_BIND_IP:-127.0.0.1}:8043:8043"
+    command:
+      [
+        "gunicorn",
+        "dashboard.backend.main:app",
+        "-w",
+        "1",
+        "-k",
+        "uvicorn.workers.UvicornWorker",
+        "--bind",
+        "0.0.0.0:8043",
+      ]
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import sys, urllib.request; sys.exit(0) if urllib.request.urlopen('http://127.0.0.1:8043/api/health', timeout=5).status == 200 else sys.exit(1)",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  imgproxy-prod:
+    image: darthsim/imgproxy:latest
+    container_name: cloud-imgproxy-prod
+    restart: always
+    environment:
+      IMGPROXY_BIND: :8084
+      IMGPROXY_ENFORCE_WEBP: "true"
+      IMGPROXY_MAX_SRC_RESOLUTION: 50
+      IMGPROXY_MAX_ANIMATION_FRAMES: 1
+      IMGPROXY_DOWNLOAD_TIMEOUT: 5
+      IMGPROXY_CONCURRENCY: 4
+    ports:
+      - "${CLOUD_PROD_BIND_IP:-127.0.0.1}:8084:8084"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "sh",
+          "-c",
+          "[ \"$$(ps -o comm= 1)\" = \"imgproxy\" ]",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 20s
+
+  bot-prod:
+    build:
+      context: ../
+      dockerfile: Dockerfile
+    container_name: cloud-tg-bot-prod
+    profiles: ["bot"]
+    restart: always
+    env_file:
+      - ../.env.cloud.prod
+    environment:
+      BOT_TYPE: PROD
+      REDIS_PREFIX: prod_bot_
+      ENABLE_PUBLIC_SHARE: "false"
+      API_BASE: http://central-api-prod:8003
+      API_TOKEN: ${API_TOKEN:?API_TOKEN is required}
+      DATABASE_URL: ${CLOUD_PROD_DATABASE_URL:?CLOUD_PROD_DATABASE_URL is required}
+      REDIS_URL: ${CLOUD_PROD_REDIS_URL:?CLOUD_PROD_REDIS_URL is required}
+      WORKER_REDIS_URL: ${CLOUD_PROD_WORKER_REDIS_URL:?CLOUD_PROD_WORKER_REDIS_URL is required}
+      MINIO_ENDPOINT: ${MINIO_ENDPOINT:?MINIO_ENDPOINT is required}
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:?MINIO_ACCESS_KEY is required}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:?MINIO_SECRET_KEY is required}
+      MINIO_BUCKET: ${MINIO_BUCKET:-user-data-prod}
+      MINIO_INPUT_BUCKET: ${MINIO_INPUT_BUCKET:-user-data-prod}
+      MINIO_RESULT_BUCKET: ${MINIO_RESULT_BUCKET:-user-data-prod}
+      MINIO_TEMPLATE_BUCKET: ${MINIO_TEMPLATE_BUCKET:-user-data-prod}
+      MINIO_PUBLIC_URL: ${MINIO_PUBLIC_URL:-}
+      MINIO_SECURE: ${MINIO_SECURE:-true}
+      R2_ENDPOINT: ${R2_ENDPOINT:?R2_ENDPOINT is required}
+      R2_ACCESS_KEY: ${R2_ACCESS_KEY:?R2_ACCESS_KEY is required}
+      R2_SECRET_KEY: ${R2_SECRET_KEY:?R2_SECRET_KEY is required}
+      R2_BUCKET: ${R2_BUCKET:-user-data-prod}
+      R2_PUBLIC_DOMAIN: ${R2_PUBLIC_DOMAIN:?R2_PUBLIC_DOMAIN is required}
+      TON_PAYMENT_POLLING_ENABLED: ${TON_PAYMENT_POLLING_ENABLED:-true}
+      TZ: Asia/Shanghai
+    volumes:
+      - ../logs/cloud-prod:/app/logs
+    depends_on:
+      central-api-prod:
+        condition: service_healthy

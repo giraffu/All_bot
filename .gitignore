@@ -118,6 +118,7 @@ workers/comfy_agent*/input/
 .env.test.local
 .env.production.local
 !.env.example
+!.env.cloud.prod.example
 
 # Project specific (重要：忽略用户数据和临时生成内容)
 backups/

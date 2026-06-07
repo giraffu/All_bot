@@ -2,6 +2,7 @@ from src.core.media_paths import (
     build_history_r2_media_key,
     build_history_r2_thumbnail_key,
     build_legacy_r2_key,
+    build_storage_r2_object_key,
     resolve_storage_object,
 )
 
@@ -28,6 +29,7 @@ def build_r2_media_key_candidates(
         candidates.append(preferred_r2_object_name)
     elif task_id:
         candidates.append(build_history_r2_media_key(task_id, output_file))
+    candidates.append(build_storage_r2_object_key(output_file))
     candidates.append(build_legacy_r2_key(output_file))
 
     seen = set()
@@ -50,6 +52,7 @@ def build_r2_thumbnail_info(
         candidates.append(preferred_r2_object_name)
     elif task_id:
         candidates.append(build_history_r2_thumbnail_key(task_id, media_type))
+    candidates.append(build_storage_r2_object_key(thumb_file))
     candidates.append(build_legacy_r2_key(thumb_file))
 
     seen = set()

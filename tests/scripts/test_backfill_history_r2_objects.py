@@ -9,6 +9,10 @@ from scripts.backfill_history_r2_objects import (
 )
 
 
+async def fail_generate_thumbnail_from_r2_media(_media_r2_key, _media_type, _r2_key):
+    raise AssertionError("test case should not generate thumbnails from R2 media")
+
+
 def test_build_history_r2_candidate_prefers_history_namespace_keys():
     candidate = build_history_r2_candidate(
         history_id=1,
@@ -71,10 +75,14 @@ async def test_process_history_r2_candidate_plans_upload_and_thumbnail_generatio
         candidate,
         apply_changes=False,
         media_only=False,
+        generate_missing_thumbnails=True,
         async_object_exists_func=fake_async_object_exists,
         async_r2_object_exists_func=fake_async_r2_object_exists,
         async_copy_to_r2_func=fake_async_copy_to_r2,
         generate_and_upload_thumbnail_func=fake_generate_and_upload_thumbnail,
+        generate_and_upload_thumbnail_from_r2_media_func=(
+            fail_generate_thumbnail_from_r2_media
+        ),
     )
 
     assert result.media_status == "would_upload"
@@ -113,10 +121,14 @@ async def test_process_history_r2_candidate_applies_copy_and_copy_thumbnail():
         candidate,
         apply_changes=True,
         media_only=False,
+        generate_missing_thumbnails=True,
         async_object_exists_func=fake_async_object_exists,
         async_r2_object_exists_func=fake_async_r2_object_exists,
         async_copy_to_r2_func=fake_async_copy_to_r2,
         generate_and_upload_thumbnail_func=fake_generate_and_upload_thumbnail,
+        generate_and_upload_thumbnail_from_r2_media_func=(
+            fail_generate_thumbnail_from_r2_media
+        ),
     )
 
     assert result.media_status == "uploaded"
@@ -188,10 +200,14 @@ async def test_process_history_r2_candidate_media_only_skips_thumbnail_work():
         candidate,
         apply_changes=True,
         media_only=True,
+        generate_missing_thumbnails=True,
         async_object_exists_func=fake_async_object_exists,
         async_r2_object_exists_func=fake_async_r2_object_exists,
         async_copy_to_r2_func=fake_async_copy_to_r2,
         generate_and_upload_thumbnail_func=fake_generate_and_upload_thumbnail,
+        generate_and_upload_thumbnail_from_r2_media_func=(
+            fail_generate_thumbnail_from_r2_media
+        ),
     )
 
     assert result.media_status == "uploaded"

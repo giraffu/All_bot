@@ -1,0 +1,110 @@
+x-worker-cloud-prod-env: &worker-cloud-prod-env
+  TZ: Asia/Shanghai
+  MASTER_API_URL: http://${CLOUD_PROD_TAILSCALE_IP:?CLOUD_PROD_TAILSCALE_IP is required}:8003
+  AGENT_SECRET_TOKEN: ${AGENT_SECRET_TOKEN:?AGENT_SECRET_TOKEN is required}
+  MINIO_ENDPOINT: ${MINIO_ENDPOINT:?MINIO_ENDPOINT is required}
+  MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:?MINIO_ACCESS_KEY is required}
+  MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:?MINIO_SECRET_KEY is required}
+  MINIO_BUCKET: ${MINIO_BUCKET:-user-data-prod}
+  MINIO_INPUT_BUCKET: ${MINIO_INPUT_BUCKET:-user-data-prod}
+  MINIO_RESULT_BUCKET: ${MINIO_RESULT_BUCKET:-user-data-prod}
+  MINIO_TEMPLATE_BUCKET: ${MINIO_TEMPLATE_BUCKET:-user-data-prod}
+  MINIO_SECURE: ${MINIO_SECURE:-true}
+
+x-worker-base-cloud-prod: &worker-base-cloud-prod
+  build:
+    context: ./
+    dockerfile: Dockerfile
+  restart: always
+  env_file:
+    - ../.env.cloud.prod
+  network_mode: "host"
+  volumes:
+    - ../logs/workers-cloud-prod:/app/logs
+    - ./comfy_agent/workflows:/app/worker/workflows
+    - ../src:/app/src
+
+services:
+  cloud-prod-comfy-agent-1:
+    <<: *worker-base-cloud-prod
+    container_name: cloud-prod-comfy-agent-1
+    environment:
+      <<: *worker-cloud-prod-env
+      AGENT_ID: cloud_prod_worker_01
+      SUPPORTED_TASK_TYPES: face_swap,i2i_pro,i2i_draw,face_video,video_edit,image_to_video,t2i-pornmaster-turbo
+      COMFY_API_URL: http://192.168.1.226:8188
+      COMFY_WS_URL: ws://192.168.1.226:8188/ws
+      COMFY_INPUT_DIR: /tmp/input
+      COMFY_OUTPUT_DIR: /tmp/output
+
+  cloud-prod-comfy-agent-2:
+    <<: *worker-base-cloud-prod
+    container_name: cloud-prod-comfy-agent-2
+    environment:
+      <<: *worker-cloud-prod-env
+      AGENT_ID: cloud_prod_worker_02
+      SUPPORTED_TASK_TYPES: video_insert,video_edit,image_to_video
+      COMFY_API_URL: http://192.168.1.177:8188
+      COMFY_WS_URL: ws://192.168.1.177:8188/ws
+      COMFY_INPUT_DIR: /tmp/input
+      COMFY_OUTPUT_DIR: /tmp/output
+
+  cloud-prod-comfy-agent-3:
+    <<: *worker-base-cloud-prod
+    container_name: cloud-prod-comfy-agent-3
+    environment:
+      <<: *worker-cloud-prod-env
+      AGENT_ID: cloud_prod_worker_03
+      SUPPORTED_TASK_TYPES: ltx_video
+      COMFY_API_URL: http://192.168.1.177:8189
+      COMFY_WS_URL: ws://192.168.1.177:8189/ws
+      COMFY_INPUT_DIR: /tmp/input
+      COMFY_OUTPUT_DIR: /tmp/output
+
+  cloud-prod-comfy-agent-4:
+    <<: *worker-base-cloud-prod
+    container_name: cloud-prod-comfy-agent-4
+    environment:
+      <<: *worker-cloud-prod-env
+      AGENT_ID: cloud_prod_worker_04
+      SUPPORTED_TASK_TYPES: img2img,img2img_lora
+      COMFY_API_URL: http://192.168.1.252:8188
+      COMFY_WS_URL: ws://192.168.1.252:8188/ws
+      COMFY_INPUT_DIR: /tmp/input
+      COMFY_OUTPUT_DIR: /tmp/output
+
+  cloud-prod-comfy-agent-5:
+    <<: *worker-base-cloud-prod
+    container_name: cloud-prod-comfy-agent-5
+    environment:
+      <<: *worker-cloud-prod-env
+      AGENT_ID: cloud_prod_worker_05
+      SUPPORTED_TASK_TYPES: wan22_video_v2,video_edit,image_to_video
+      COMFY_API_URL: http://192.168.1.252:8189
+      COMFY_WS_URL: ws://192.168.1.252:8189/ws
+      COMFY_INPUT_DIR: /tmp/input
+      COMFY_OUTPUT_DIR: /tmp/output
+
+  cloud-prod-comfy-agent-6:
+    <<: *worker-base-cloud-prod
+    container_name: cloud-prod-comfy-agent-6
+    environment:
+      <<: *worker-cloud-prod-env
+      AGENT_ID: cloud_prod_worker_06
+      SUPPORTED_TASK_TYPES: img2img,img2img_lora
+      COMFY_API_URL: http://192.168.1.2:8188
+      COMFY_WS_URL: ws://192.168.1.2:8188/ws
+      COMFY_INPUT_DIR: /tmp/input
+      COMFY_OUTPUT_DIR: /tmp/output
+
+  cloud-prod-comfy-agent-7:
+    <<: *worker-base-cloud-prod
+    container_name: cloud-prod-comfy-agent-7
+    environment:
+      <<: *worker-cloud-prod-env
+      AGENT_ID: cloud_prod_worker_07
+      SUPPORTED_TASK_TYPES: video_insert,video_edit,image_to_video
+      COMFY_API_URL: http://192.168.1.2:8189
+      COMFY_WS_URL: ws://192.168.1.2:8189/ws
+      COMFY_INPUT_DIR: /tmp/input
+      COMFY_OUTPUT_DIR: /tmp/output

@@ -41,6 +41,24 @@
 - 云测试公网 Web 使用 `web-test.aivison.it.com` 的边缘 VPS 静态站，`/api/` 反代到云端测试 Web API `http://100.107.220.127:8001`；云端 `web-frontend-test` / `dashboard-frontend-test` dev 容器只在临时调试时启用 `frontend` profile。
 - 详细说明见 `/docs/子模块_云测试控制面部署_cloud_test_control_plane.md`。
 
+## 2.3 云正式控制面切换前准备
+- 正式控制面迁云准备入口为 `deploy/docker-compose-cloud-prod.yml`、`workers/docker-compose-cloud-prod-worker.yml`、`scripts/safe_deploy_cloud_prod.sh`、`scripts/start_cloud_prod_worker.sh`、`scripts/stop_local_prod_entry_preserve.sh`、`all_bot_nginx_cloud_prod.conf` 和 `all_bot_nginx_cloud_prod_rmb.conf`。
+- `.env.cloud.prod` 是本机私有文件，已被 `.gitignore` 忽略；`.env.cloud.prod.example` 只提供变量契约和占位值。`.dockerignore` 必须忽略 `.env.*`，避免 root Docker build 把真实云正式变量 COPY 进镜像。
+- 云正式 Web API 需要 `JWT_SECRET_KEY`，且不能使用默认占位值；该 key 已纳入 `.env.cloud.prod.example` 和 `scripts/safe_deploy_cloud_prod.sh` preflight 必填检查。
+- 云测试环境退役入口为 `scripts/cleanup_cloud_test_for_prod.sh`。脚本默认 dry-run，真实清理必须传 `--execute`；它只清云测试容器、本地 `cloud-comfy-agent-test-*`、`bot_db_test` 和 Valkey DB3/DB4，不删除 R2 `user-data-test`，不改 `web-test.aivison.it.com` 边缘站。
+- 准备阶段默认只做门禁：`scripts/safe_deploy_cloud_prod.sh --preflight-only`、`scripts/start_cloud_prod_worker.sh --preflight-only`、`scripts/stop_local_prod_entry_preserve.sh --dry-run`。预启动控制面、启动 worker 或停止本地入口都需要显式参数，且不代表正式切流授权。
+- 云正式控制面包含 Central API、Web API、Payment API、Dashboard Backend 和 imgproxy；`cloud-tg-bot-prod` 使用 `bot` profile，维护窗口前不得启动 polling。
+- 云正式首发 worker 只派生当前本地正式 7 个 worker，容器名为 `cloud-prod-comfy-agent-*`，`worker_remote_01/02` 不纳入首发时必须确认任务类型没有缺口。
+- 启动云正式 worker 后必须在云 Central `/system/workers` 验证 7 个 `cloud_prod_worker_*` heartbeat，状态不能是 `error` 或 `quarantined`，且 `SUPPORTED_TASK_TYPES` union 应与当前本地正式 7 worker 一致；启动 worker 不等于允许切流或启动 Bot。
+- 云正式 R2 在线口径为 `user-data-prod` 单桶，`MINIO_*` 兼容变量和 `R2_*` 都指向正式 R2；`MINIO_PUBLIC_URL` 保持空，结果公开读取依赖 `R2_PUBLIC_DOMAIN=https://r2.aivison.it.com`。
+- 迁移期旧媒体不再要求切换前全量搬完 `bot-data`；Web API / Dashboard 可通过 `LEGACY_MINIO_*` 只读回源本地 MinIO。该 fallback 只用于 R2 miss 后读取旧历史媒体，worker 仍只写 R2，不得把 legacy MinIO 配进 worker 写路径。
+- 用户可见历史对象预热使用 `scripts/backfill_history_r2_objects.py --visible-scope user-visible --source-storage legacy`，默认 dry-run，真实复制必须显式 `--apply`。推荐先 `--media-only` 预热 `history/{task_id}/original.ext`，再 legacy copy-only 复制已有缩略图，最后用 `--source-storage current --generate-missing-thumbnails` 从已预热到 R2 的原文件生成缺失缩略图。
+- 云正式历史详情、Gallery/Wan22 预览等读路径需要验收“返回 URL 可读”，不能只验 R2 S3 `HEAD`。若 `R2_PUBLIC_DOMAIN` 对部分 key 返回 404，但 R2 S3 `HEAD` 命中，历史详情读路径可返回 R2 S3 短签 URL 兜底；Web owner `/result` 视频仍应按真实结果接口单独验收，不要用历史详情 fallback 代替。
+- 云正式边缘 Web 主模板必须保留 `assets.aivison.it.com` 到本地 MinIO 的 legacy 代理；不要为了切 `web.aivison.it.com /api/` 删除 assets server。当前边缘 VPS 尚无 `rmb.aivison.it.com` 证书，RMB 支付入口首选继续使用 Cloudflare Tunnel。维护窗口内用 `scripts/switch_rmb_tunnel_to_cloud_prod.sh --execute` 把 tunnel 回源切到云 Payment API；如需回滚，用 `scripts/rollback_rmb_tunnel_to_local_prod.sh --execute` 切回本地 Payment API。两个脚本默认 dry-run，准备阶段只能 dry-run。
+- 真实 `docker compose config` 会展开密钥，输出只能本地查看，不得贴到日志、文档或聊天中。
+- 本轮选择不新增 `PAYMENT_CREATION_DISABLED`；若维护窗口仅使用 Web `MAINTENANCE`，Bot RMB/Stars callback 仍可能创建订单。本轮正式切换口径已确认接受该低频风险：维护窗口先只开启 Web 维护状态并等待当前队列自然归零，不立即停止本地 Bot 或旧 worker；最终 dump 前再停止本地 Bot/旧入口，并导出 `orders` 中 `PENDING`/`CREATED` 待处理订单最终快照。
+- 维护窗口前完整门禁见 `/docs/正式云环境切换前准备清单.md`，迁移总手册见根目录 `正式服务_云发布环境迁移计划.md`。
+
 ## 3. 当前真实迁移口径
 - 迁移入口在 `safe_deploy.sh` 第 4 步。
 - 脚本会先寻找可用的 Alembic 可执行文件，再检查 `heads` 数量。
