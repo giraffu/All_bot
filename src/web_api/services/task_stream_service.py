@@ -13,6 +13,35 @@ TASK_STREAM_STATUS_CACHE_TTL_SECONDS = float(
 TASK_STREAM_STATUS_CACHE_MAX_ENTRIES = int(
     os.getenv("TASK_STREAM_STATUS_CACHE_MAX_ENTRIES", "5000")
 )
+TASK_STREAM_PENDING_STATUS_POLL_INITIAL_SECONDS = float(
+    os.getenv("TASK_STREAM_PENDING_STATUS_POLL_INITIAL_SECONDS", "5.0")
+)
+TASK_STREAM_PENDING_STATUS_POLL_MAX_SECONDS = float(
+    os.getenv("TASK_STREAM_PENDING_STATUS_POLL_MAX_SECONDS", "20.0")
+)
+TASK_STREAM_RUNNING_STATUS_POLL_INITIAL_SECONDS = float(
+    os.getenv("TASK_STREAM_RUNNING_STATUS_POLL_INITIAL_SECONDS", "10.0")
+)
+TASK_STREAM_RUNNING_STATUS_POLL_MAX_SECONDS = float(
+    os.getenv("TASK_STREAM_RUNNING_STATUS_POLL_MAX_SECONDS", "20.0")
+)
+TASK_STREAM_STATUS_POLL_BACKOFF_MULTIPLIER = float(
+    os.getenv("TASK_STREAM_STATUS_POLL_BACKOFF_MULTIPLIER", "2.0")
+)
+
+_TASK_STREAM_POLL_SIGNATURE_FIELDS = (
+    "status",
+    "queue_pos",
+    "progress",
+    "progress_percent",
+    "progress_percentage",
+    "percentage",
+    "current_step",
+    "total_steps",
+    "eta",
+    "error_msg",
+)
+_TASK_STREAM_STATUS_FETCH_ERROR_SIGNATURE = ("fetch_error",)
 
 _task_stream_status_cache: dict[tuple[str, str], tuple[float, dict[str, Any]]] = {}
 _task_stream_status_locks: dict[tuple[str, str], asyncio.Lock] = {}
@@ -54,6 +83,48 @@ def _prune_task_stream_status_cache(now: float) -> None:
             break
         if remove_if_unlocked(cache_key):
             overflow -= 1
+
+
+def _task_stream_status_poll_initial_interval(is_running: bool) -> float:
+    configured = (
+        TASK_STREAM_RUNNING_STATUS_POLL_INITIAL_SECONDS
+        if is_running
+        else TASK_STREAM_PENDING_STATUS_POLL_INITIAL_SECONDS
+    )
+    return max(configured, 0.5)
+
+
+def _task_stream_status_poll_max_interval(is_running: bool) -> float:
+    initial_interval = _task_stream_status_poll_initial_interval(is_running)
+    configured = (
+        TASK_STREAM_RUNNING_STATUS_POLL_MAX_SECONDS
+        if is_running
+        else TASK_STREAM_PENDING_STATUS_POLL_MAX_SECONDS
+    )
+    return max(configured, initial_interval)
+
+
+def _next_task_stream_status_poll_interval(
+    *,
+    current_interval: float,
+    is_running: bool,
+    status_changed: bool,
+) -> float:
+    initial_interval = _task_stream_status_poll_initial_interval(is_running)
+    if status_changed:
+        return initial_interval
+
+    multiplier = max(TASK_STREAM_STATUS_POLL_BACKOFF_MULTIPLIER, 1.0)
+    max_interval = _task_stream_status_poll_max_interval(is_running)
+    return min(max_interval, max(current_interval, initial_interval) * multiplier)
+
+
+def _build_task_stream_status_poll_signature(
+    status_data: dict[str, Any],
+) -> tuple[Any, ...]:
+    if status_data.get("not_found"):
+        return ("not_found",)
+    return tuple(status_data.get(field) for field in _TASK_STREAM_POLL_SIGNATURE_FIELDS)
 
 
 async def _fetch_task_status_full(
@@ -206,7 +277,7 @@ async def _build_initial_stream_transition(
     build_not_found_progress_payload,
     build_terminal_progress_payload,
     history_terminal: bool = False,
-) -> tuple[list[dict[str, str]], bool, bool]:
+) -> tuple[list[dict[str, str]], bool, bool, tuple[Any, ...] | None]:
     events: list[dict[str, str]] = []
     if history_terminal:
         events.append(
@@ -217,7 +288,7 @@ async def _build_initial_stream_transition(
                 build_not_found_progress_payload=build_not_found_progress_payload,
             )
         )
-        return events, False, True
+        return events, False, True, None
 
     initial_status = await _fetch_task_status_full(
         task_id=runtime_task_id_val,
@@ -226,7 +297,8 @@ async def _build_initial_stream_transition(
         logger=logger,
     )
     if not initial_status:
-        return events, False, False
+        return events, False, False, _TASK_STREAM_STATUS_FETCH_ERROR_SIGNATURE
+    status_signature = _build_task_stream_status_poll_signature(initial_status)
     if initial_status.get("not_found"):
         events.append(
             await _build_not_found_event(
@@ -236,7 +308,7 @@ async def _build_initial_stream_transition(
                 build_not_found_progress_payload=build_not_found_progress_payload,
             )
         )
-        return events, False, True
+        return events, False, True, status_signature
 
     terminal_event, became_running, should_stop = _resolve_status_transition(
         status_data=initial_status,
@@ -245,7 +317,7 @@ async def _build_initial_stream_transition(
     )
     if terminal_event:
         events.append(terminal_event)
-    return events, became_running, should_stop
+    return events, became_running, should_stop, status_signature
 
 
 async def _build_pubsub_stream_transition(
@@ -284,7 +356,7 @@ async def _build_queue_poll_transition(
     logger,
     build_not_found_progress_payload,
     build_terminal_progress_payload,
-) -> tuple[list[dict[str, str]], bool, bool]:
+) -> tuple[list[dict[str, str]], bool, bool, tuple[Any, ...] | None]:
     events: list[dict[str, str]] = []
     status_data = await _fetch_task_status_full(
         task_id=runtime_task_id_val,
@@ -293,7 +365,8 @@ async def _build_queue_poll_transition(
         logger=logger,
     )
     if not status_data:
-        return events, False, False
+        return events, False, False, _TASK_STREAM_STATUS_FETCH_ERROR_SIGNATURE
+    status_signature = _build_task_stream_status_poll_signature(status_data)
     if status_data.get("not_found"):
         events.append(
             await _build_not_found_event(
@@ -303,7 +376,7 @@ async def _build_queue_poll_transition(
                 build_not_found_progress_payload=build_not_found_progress_payload,
             )
         )
-        return events, False, True
+        return events, False, True, status_signature
 
     terminal_event, became_running, should_stop = _resolve_status_transition(
         status_data=status_data,
@@ -312,16 +385,16 @@ async def _build_queue_poll_transition(
     )
     if terminal_event:
         events.append(terminal_event)
-        return events, became_running, True
+        return events, became_running, True, status_signature
     if should_stop:
-        return events, became_running, True
+        return events, became_running, True, status_signature
 
     queue_pos = status_data.get("queue_pos")
     if queue_pos is not None:
         events.append(
             _build_progress_event({"status": "pending", "queue_pos": queue_pos})
         )
-    return events, became_running, False
+    return events, became_running, False, status_signature
 
 
 def build_task_status_stream_response(
@@ -347,7 +420,7 @@ def build_task_status_stream_response(
         try:
             yield _build_connected_event(task_id)
             is_running = False
-            initial_events, became_running, should_stop = (
+            initial_events, became_running, should_stop, last_status_signature = (
                 await _build_initial_stream_transition(
                     runtime_task_id_val=runtime_task_id_val,
                     task_id=task_id,
@@ -368,7 +441,10 @@ def build_task_status_stream_response(
             if should_stop:
                 return
 
-            last_status_check = asyncio.get_event_loop().time() - 9999.0
+            status_check_interval = _task_stream_status_poll_initial_interval(is_running)
+            last_status_check = (
+                asyncio.get_event_loop().time() - status_check_interval - 0.001
+            )
 
             while True:
                 message = await pubsub.get_message(
@@ -386,13 +462,22 @@ def build_task_status_stream_response(
                     yield pubsub_event
                 if became_running:
                     is_running = True
+                    status_check_interval = _task_stream_status_poll_initial_interval(
+                        is_running
+                    )
                 if should_stop:
                     break
 
                 current_time = asyncio.get_event_loop().time()
-                status_check_interval = 10.0 if is_running else 5.0
+                if pubsub_event:
+                    last_status_check = current_time
                 if current_time - last_status_check > status_check_interval:
-                    queue_events, became_running, should_stop = (
+                    (
+                        queue_events,
+                        became_running,
+                        should_stop,
+                        status_signature,
+                    ) = (
                         await _build_queue_poll_transition(
                             runtime_task_id_val=runtime_task_id_val,
                             task_id=task_id,
@@ -413,6 +498,14 @@ def build_task_status_stream_response(
                         yield event
                     if became_running:
                         is_running = True
+                    status_changed = status_signature != last_status_signature
+                    status_check_interval = _next_task_stream_status_poll_interval(
+                        current_interval=status_check_interval,
+                        is_running=is_running,
+                        status_changed=status_changed,
+                    )
+                    if status_signature is not None:
+                        last_status_signature = status_signature
                     if should_stop:
                         break
                     last_status_check = current_time

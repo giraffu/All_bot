@@ -487,6 +487,65 @@ async def test_fetch_task_status_full_prunes_old_shared_cache(monkeypatch):
     ]
 
 
+def test_task_stream_status_poll_interval_backs_off_to_configured_cap(monkeypatch):
+    monkeypatch.setattr(
+        task_stream_service,
+        "TASK_STREAM_PENDING_STATUS_POLL_INITIAL_SECONDS",
+        5.0,
+    )
+    monkeypatch.setattr(
+        task_stream_service,
+        "TASK_STREAM_PENDING_STATUS_POLL_MAX_SECONDS",
+        20.0,
+    )
+    monkeypatch.setattr(
+        task_stream_service,
+        "TASK_STREAM_STATUS_POLL_BACKOFF_MULTIPLIER",
+        2.0,
+    )
+
+    first_backoff = task_stream_service._next_task_stream_status_poll_interval(
+        current_interval=5.0,
+        is_running=False,
+        status_changed=False,
+    )
+    second_backoff = task_stream_service._next_task_stream_status_poll_interval(
+        current_interval=first_backoff,
+        is_running=False,
+        status_changed=False,
+    )
+    capped_backoff = task_stream_service._next_task_stream_status_poll_interval(
+        current_interval=second_backoff,
+        is_running=False,
+        status_changed=False,
+    )
+    reset_interval = task_stream_service._next_task_stream_status_poll_interval(
+        current_interval=capped_backoff,
+        is_running=False,
+        status_changed=True,
+    )
+
+    assert first_backoff == 10.0
+    assert second_backoff == 20.0
+    assert capped_backoff == 20.0
+    assert reset_interval == 5.0
+
+
+def test_task_stream_status_poll_signature_tracks_status_and_progress_fields():
+    base = task_stream_service._build_task_stream_status_poll_signature(
+        {"status": "pending", "queue_pos": 3, "debug": "ignored"}
+    )
+    same = task_stream_service._build_task_stream_status_poll_signature(
+        {"status": "pending", "queue_pos": 3, "debug": "changed"}
+    )
+    changed = task_stream_service._build_task_stream_status_poll_signature(
+        {"status": "pending", "queue_pos": 2, "debug": "ignored"}
+    )
+
+    assert same == base
+    assert changed != base
+
+
 @pytest.mark.asyncio
 async def test_task_status_stream_emits_success_once_and_stops_when_initial_status_is_not_found_with_history(
     monkeypatch,
