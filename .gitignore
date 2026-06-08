@@ -23,6 +23,7 @@ __pycache__/
 venv/
 ENV/
 env/
+!remote_workers/env/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
@@ -119,6 +120,7 @@ workers/comfy_agent*/input/
 .env.production.local
 !.env.example
 !.env.cloud.prod.example
+!remote_workers/env/*.env.example
 
 # Project specific (重要：忽略用户数据和临时生成内容)
 backups/
