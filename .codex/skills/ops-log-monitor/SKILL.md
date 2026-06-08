@@ -25,7 +25,7 @@ When invoked to perform log monitoring or bug troubleshooting, strictly follow t
 当用户反馈正式 Web 卡顿、生成排队、Dashboard 卡顿或“云端负载高”时，按下面顺序拆解，不要只看单一容器 CPU：
 
 1. **云控制面基础资源**：`ssh allbot-do-sgp1-control 'uptime; free -h; df -hT -x tmpfs -x devtmpfs /; docker ps; docker stats --no-stream ...'`。若云内 `100.107.220.127:8000/8003/8043` 毫秒级返回，而公网域名秒级返回，优先归因到边缘/公网链路而非应用 CPU。
-2. **延迟分段**：至少测三段：云机内部 `http://100.107.220.127:8000/api/health`、Web 边缘到云 Web API、外部访问 `https://web.aivison.it.com/api/health`。本次基线经验是云内 5-40ms、边缘到云约 0.5s、外部公网 1.6-2.8s；超过该量级时继续查边缘、Cloudflare/Tailscale 与运营商链路。
+2. **延迟分段**：正式 Web 已切 Cloudflare Pages；至少测三段：云机内部 `http://100.107.220.127:8000/api/health`、公网 API `https://api.aivison.it.com/api/health`、Pages 静态站 `https://web.aivison.it.com`。`https://web.aivison.it.com/api/health` 会返回 Pages SPA HTML，不再是 API 健康检查。历史 Web 边缘到云约 0.5s 的基线只适用于回滚、`web-test` 或 `assets` 排障；超过该量级时继续查 Cloudflare Tunnel、运营商链路、R2/legacy 回源和前端串行请求。
 3. **Central 队列事实**：用 `/system/status` 与 `/system/workers` 看 `queue_size`、`queue_by_type`、`healthy_workers`、`error_workers`、`quarantined_workers`、`workers_by_status`。同时从 Central Redis 聚合 `comfy:queue:pending`、`comfy:queue:running` 与 `comfy:task_heartbeat:*` TTL；pending 最老等待时间比单看 `queue_size` 更能解释用户体感。
 4. **GPU 实际利用率**：逐台执行 `nvidia-smi --query-gpu=index,name,memory.total,memory.used,utilization.gpu,utilization.memory,power.draw,temperature.gpu --format=csv,noheader,nounits`，并查 7 个 ComfyUI `/queue`。显存高但 GPU 利用率低可能是模型常驻、加载、等待、后处理或 IO，不等同于“卡死”。
 5. **Web 结果和媒体链路**：统计 `cloud-web-api-prod` 中 `Timed out resolving web result R2 URL`、`Unexpected object_exists failure`，并统计边缘 `assets.aivison.it.com` 的 `upstream prematurely closed` / `upstream timed out`。这些会直接影响历史、结果页和 Gallery。

@@ -107,13 +107,15 @@ bash scripts/check_cloudflare_canary.sh
 ## 4. 回滚与边界
 
 - canary 失败时，删除或停用 `web-cf-test` Pages custom domain 和 `api-cf-test` public hostname 即可，不影响 `web.aivison.it.com`。
-- `web.aivison.it.com`、正式 `api.aivison.it.com`、`assets.aivison.it.com` 本轮不切换。
+- 历史 canary 阶段不切 `web.aivison.it.com` 和正式 `api.aivison.it.com`；2026-06-08 19:30 CST 后正式 Web/API 已按第 5 节切换，`assets.aivison.it.com` 仍不迁移。
 - 不能复用本地主服务器现有 RMB tunnel 暴露 Web API；API connector 必须在云控制面机器上运行。
 - 不要把 Cloudflare tunnel token、`.env.cloud.prod`、Bot token 或 R2 密钥写入文档、日志或聊天。
 
 ## 5. 正式切换准备
 
 正式切换必须在 canary 人工验收通过后单独确认；不得因为 canary 通过就自动改 `web.aivison.it.com`。
+
+2026-06-08 19:30 CST 后，正式 `api.aivison.it.com` 已切到云机 Cloudflare Tunnel，正式 `web.aivison.it.com` 已绑定 Pages 项目 `allbot-web-prod`。`assets.aivison.it.com` 继续保留在 Web/Nginx VPS。
 
 ### 5.1 正式 API 域名
 
@@ -163,6 +165,8 @@ curl -sS -o /dev/null -w "%{http_code} %{time_total}\n" \
 ### 5.3 正式 Web 域名切换
 
 只有当 `allbot-web-prod.pages.dev`、`api.aivison.it.com`、R2 上传、登录、Gallery、History、任务状态流和结果页都验证通过后，才在 Pages custom domains 添加 `web.aivison.it.com`。
+
+当前状态：`web.aivison.it.com` 已添加到 Pages custom domains。正式 Web root 200，JS bundle `router-gHlI8HGB.js` 仅包含 `https://api.aivison.it.com/api`，不再包含 `api-cf-test`；`https://web.aivison.it.com/api/health` 会返回 Pages SPA HTML，不再作为 API 健康检查。
 
 回滚方式：
 

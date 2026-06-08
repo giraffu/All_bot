@@ -2,7 +2,7 @@
 
 ## 1. 目标与范围
 
-本文档记录 AllBot 当前两台海外 VPS 边缘节点的职责范围、资源配置、服务入口、运维红线和排障流程。边缘节点不是业务事实源；它们负责公网入口、静态资源、反向代理、legacy 媒体回源和 Telegram 大文件本地 API。Cloudflare Pages/API Tunnel canary 入口不运行在 Web VPS 上，排障时不要到 VPS Nginx 查 `web-cf-test.aivison.it.com` 或 `api-cf-test.aivison.it.com` 的静态站/API 回源。
+本文档记录 AllBot 当前两台海外 VPS 边缘节点的职责范围、资源配置、服务入口、运维红线和排障流程。边缘节点不是业务事实源；它们负责 legacy 媒体回源、测试静态站、历史回滚入口和 Telegram 大文件本地 API。2026-06-08 晚间起，正式 `web.aivison.it.com` 已切到 Cloudflare Pages，正式 Web API 独立走 `api.aivison.it.com` Cloudflare Tunnel；排障时不要到 VPS Nginx 查正式 Web 静态站、正式 `/api/`、`web-cf-test.aivison.it.com` 或 `api-cf-test.aivison.it.com`。
 
 本文档不是实时监控面板。CPU、内存、磁盘、公网状态和服务端口都是采集时快照；做切流、清理、扩容或证书变更前必须重新采集。
 
@@ -12,7 +12,7 @@
 
 | 节点 | 入口 | 主要职责 | 当前状态 |
 | :--- | :--- | :--- | :--- |
-| Web/Nginx 边缘 VPS | Tailscale `100.88.57.122`，公网 `154.17.30.113`，SSH `root@100.88.57.122` 使用 `frontend/ssh_key/id_rsa.pem` | `web.aivison.it.com` / `web-test.aivison.it.com` 静态站，`/api/` 反代，`assets.aivison.it.com` legacy MinIO 代理 | SSH 可用，Nginx/Tailscale active，根盘 96% 高风险 |
+| Web/Nginx 边缘 VPS | Tailscale `100.88.57.122`，公网 `154.17.30.113`，SSH `root@100.88.57.122` 使用 `frontend/ssh_key/id_rsa.pem` | `assets.aivison.it.com` legacy MinIO 代理、`web-test.aivison.it.com` 测试静态站、正式 Web 回滚用 `/root/dist` | SSH 可用，Nginx/Tailscale active，根盘 96% 高风险；不再承接正式 `web.aivison.it.com` 主流量 |
 | Telegram Local API VPS | 公网 `69.63.220.115` | Telegram Local Bot API `8081`，文件 HTTP 服务 `8082`，支撑大文件下载/上传绕过官方 Bot API 限制 | 8081/8082/22 公网端口可达；当前主服务器未配置可用 SSH key，资源需补采 |
 
 ## 3. Web/Nginx 边缘 VPS
@@ -35,7 +35,7 @@
 | 运行服务 | Nginx active，Tailscale active，Docker 未安装/未运行，cloudflared inactive |
 | Nginx | `nginx/1.24.0 (Ubuntu)`，`nginx -t` 通过 |
 | 监听端口 | 80/443/22，Tailscale 内部监听端口 |
-| 静态目录 | `/root/dist`、`/root/dist-test`，各约 2.6M |
+| 静态目录 | `/root/dist` 为正式 Web 回滚副本，`/root/dist-test` 为测试 Web 静态站，各约 2.6M |
 
 容量风险：
 - 根盘只剩约 `1.7G`，这是当前 Web 边缘节点第一风险。
@@ -53,7 +53,7 @@
 
 | 域名 | 边缘职责 | 当前 upstream |
 | :--- | :--- | :--- |
-| `web.aivison.it.com` | 正式 Web 静态站；`/api/` 反代正式云 Web API | `http://100.107.220.127:8000` |
+| `web.aivison.it.com` | 已由 Cloudflare Pages `allbot-web-prod` 承接；VPS 只保留回滚副本 | 不经过 VPS；前端调用 `https://api.aivison.it.com/api` |
 | `web-test.aivison.it.com` | 测试 Web 静态站；`/api/` 反代云测试 Web API | `http://100.107.220.127:8001` |
 | `assets.aivison.it.com` | legacy MinIO 只读/兼容回源，用于历史媒体 fallback | `http://100.99.254.53:9000` |
 
@@ -61,6 +61,8 @@
 
 | 域名 | 承接方 | 说明 |
 | :--- | :--- | :--- |
+| `web.aivison.it.com` | Cloudflare Pages | 正式静态站，项目 `allbot-web-prod`，构建模式 `frontend npm run build:cf-prod` |
+| `api.aivison.it.com` | Cloudflare Tunnel on `allbot-do-sgp1-control` | 正式 Web API 入口，回源 `http://100.107.220.127:8000` |
 | `web-cf-test.aivison.it.com` | Cloudflare Pages | canary 静态站，构建模式 `frontend npm run build:cf-test` |
 | `api-cf-test.aivison.it.com` | Cloudflare Tunnel on `allbot-do-sgp1-control` | canary Web API 入口，回源 `http://100.107.220.127:8000` |
 
@@ -68,8 +70,9 @@
 
 | URL | 状态 |
 | :--- | :--- |
-| `https://web.aivison.it.com` | 200 |
-| `https://web.aivison.it.com/api/health` | 200 |
+| `https://web.aivison.it.com` | 200，Cloudflare Pages |
+| `https://api.aivison.it.com/api/health` | 200，正式 Web API |
+| `https://web.aivison.it.com/api/health` | 返回 Pages SPA HTML；不再作为 API 健康检查 |
 | `https://web-test.aivison.it.com` | 200 |
 | `https://web-test.aivison.it.com/api/health` | 502，本轮保留测试边缘站但测试 API 入口可能未稳定运行 |
 | `https://assets.aivison.it.com` | 根路径 403；这不等同于具体对象不可读，验收 legacy 对象时必须测真实 object URL |
@@ -89,13 +92,20 @@
 - `client_max_body_size 50m;` 必须保留。
 
 Web API/SSE 红线：
-- `/api/` 需要 `proxy_buffering off; proxy_cache off; chunked_transfer_encoding off;`，避免 SSE 和任务状态流被缓存或分块延迟。
-- 正式 Web `/api/` 当前应回源云 Web API `100.107.220.127:8000`，不要误改回本地主服务器旧入口。
+- 正式 `web.aivison.it.com` 不再通过 VPS `/api/` 反代；前端生产包必须使用 `VITE_API_BASE_URL=https://api.aivison.it.com/api`。
+- 若回滚到 VPS `/root/dist`，`/api/` 才需要 `proxy_buffering off; proxy_cache off; chunked_transfer_encoding off;`，避免 SSE 和任务状态流被缓存或分块延迟。
 - 测试 Web `/api/` 当前应回源云测试 Web API `100.107.220.127:8001`，不要误指正式 `8000`。
 
 ### 3.4 发布与回滚
 
-正式 Web 静态站：
+正式 Web 静态站当前通过 Cloudflare Pages 发布：
+
+```bash
+cd /home/hfy/APP/All_bot/frontend
+npm run build:cf-prod
+```
+
+Cloudflare Pages 项目 `allbot-web-prod` 使用 Git 集成，生产分支 `deploy`，构建命令 `npm ci && npm run build:cf-prod`。VPS `/root/dist` 仅作为紧急回滚副本；需要回滚到 VPS 时才使用：
 
 ```bash
 cd /home/hfy/APP/All_bot/frontend

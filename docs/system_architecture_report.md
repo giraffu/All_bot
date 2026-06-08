@@ -111,7 +111,7 @@ graph TD
 2026-06-07 晚间正式生产已经切到“云控制面 + 托管 PostgreSQL/Valkey + R2 + 本地 GPU worker”：
 - 云端 Droplet `allbot-do-sgp1-control` 承载 `cloud-central-api-prod`、`cloud-web-api-prod`、`cloud-payment-api-prod`、`cloud-dashboard-backend-prod`、`cloud-imgproxy-prod` 与 `cloud-tg-bot-prod`。
 - 本地 `cloud-prod-comfy-agent-1..7` 继续连接武汉内网 ComfyUI，作为正式算力池。
-- `web.aivison.it.com /api/` 与 `rmb.aivison.it.com` 已回源云端；`assets.aivison.it.com` 保留本地 legacy MinIO 只读回源。
+- `web.aivison.it.com` 已由 Cloudflare Pages 承接静态前端；正式 Web API 独立走 `api.aivison.it.com` Cloudflare Tunnel 回源云 Web API；`rmb.aivison.it.com` 回源云 Payment API；`assets.aivison.it.com` 保留本地 legacy MinIO 只读回源。
 - 长期运维细节见 `docs/子模块_云正式控制面部署_cloud_prod_control_plane.md`。
 
 ---

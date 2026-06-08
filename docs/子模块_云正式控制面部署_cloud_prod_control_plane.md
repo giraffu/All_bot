@@ -86,11 +86,11 @@ GPU 节点上的 ComfyUI 服务不在本 compose 内。`cloud-prod-comfy-agent-*
 
 1. 云机内部：`http://100.107.220.127:8000/api/health`、`http://100.107.220.127:8003/system/status`、`http://100.107.220.127:8043/api/health`
 2. Web 边缘到云 Web API：在 `100.88.57.122` 上 curl `http://100.107.220.127:8000/api/health`
-3. 公网域名：从本地主服务器或用户侧 curl `https://web.aivison.it.com/api/health`
+3. 公网域名：从本地主服务器或用户侧 curl `https://api.aivison.it.com/api/health`，并验证 `https://web.aivison.it.com` Pages 静态站 200
 4. 结果/媒体依赖：统计 `cloud-web-api-prod` 的 `Timed out resolving web result R2 URL` 与 `Unexpected object_exists failure`
 5. 生成队列：统计 Central Redis pending/running、pending 最老等待时间、`queue_by_type` 与 heartbeat TTL
 
-参考基线：云内通常 5-40ms，边缘到云约 0.5s，外部公网域名可到 1.6-2.8s；若云内正常但公网慢，优先查边缘/Cloudflare/Tailscale/运营商链路、前端串行请求和 R2/legacy 回源，而不是先重建 Web API。
+参考基线：云内通常 5-40ms，Cloudflare Tunnel API 公网约 0.3-0.7s；若云内正常但公网慢，优先查 Cloudflare Tunnel/运营商链路、前端串行请求和 R2/legacy 回源，而不是先重建 Web API。历史边缘 VPS 到云约 0.5s 的基线只适用于回滚或 `web-test`/`assets` 排障。
 
 常见日志信号：
 - `cloud-web-api-prod` 高频 `Timed out resolving web result R2 URL`：结果页或历史详情可能卡在 R2 URL 探测，应优先做短超时、缓存或 `pending_result` 快速返回。
@@ -140,7 +140,7 @@ docker compose --env-file .env.cloud.prod -f deploy/docker-compose-cloud-prod.ym
 bash scripts/check_cloudflare_canary.sh
 ```
 
-验收通过前不得把 `web.aivison.it.com` 或正式 `api.aivison.it.com` 切到 Cloudflare Pages/API Tunnel。`assets.aivison.it.com` 本轮继续留在 Web/Nginx VPS，作为 legacy MinIO fallback。
+历史 canary 验收通过后，2026-06-08 晚间已将正式 `api.aivison.it.com` 切到云机 Cloudflare Tunnel，并将 `web.aivison.it.com` 绑定到 Cloudflare Pages 项目 `allbot-web-prod`。`assets.aivison.it.com` 继续留在 Web/Nginx VPS，作为 legacy MinIO fallback。
 
 ### 4.4 本地云正式 worker 更新
 worker 镜像 COPY 代码，修改 `workers/comfy_agent` 后必须重建镜像并重建容器。
@@ -185,7 +185,8 @@ docker inspect cloud-central-api-prod --format 'restart={{.RestartCount}} health
 ```
 
 Web、Payment、Dashboard 验证：
-- `https://web.aivison.it.com/api/health`
+- `https://web.aivison.it.com` Pages 静态站 200，且 JS bundle 指向 `https://api.aivison.it.com/api`
+- `https://api.aivison.it.com/api/health`
 - `https://api-cf-test.aivison.it.com/api/health` 仅在 canary tunnel 已配置时验证；若未配置，不得把 502 当作云 Web API 故障。
 - `https://rmb.aivison.it.com/pay/result`
 - Dashboard 登录后系统状态、worker 卡片与大盘统计能刷新。
