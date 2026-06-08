@@ -80,6 +80,8 @@ app.add_middleware(
     allow_origins=[
         "https://web.aivison.it.com",
         "https://web-test.aivison.it.com",
+        "https://web-cf-test.aivison.it.com",
+        "https://allbot-web-cf-test.pages.dev",
         "http://localhost:8085",
         "http://localhost:5173",
         "http://localhost:5174",

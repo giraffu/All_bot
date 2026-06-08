@@ -2,7 +2,7 @@
 
 ## 1. 目标与范围
 
-本文档记录 AllBot 当前两台海外 VPS 边缘节点的职责范围、资源配置、服务入口、运维红线和排障流程。边缘节点不是业务事实源；它们负责公网入口、静态资源、反向代理、legacy 媒体回源和 Telegram 大文件本地 API。
+本文档记录 AllBot 当前两台海外 VPS 边缘节点的职责范围、资源配置、服务入口、运维红线和排障流程。边缘节点不是业务事实源；它们负责公网入口、静态资源、反向代理、legacy 媒体回源和 Telegram 大文件本地 API。Cloudflare Pages/API Tunnel canary 入口不运行在 Web VPS 上，排障时不要到 VPS Nginx 查 `web-cf-test.aivison.it.com` 或 `api-cf-test.aivison.it.com` 的静态站/API 回源。
 
 本文档不是实时监控面板。CPU、内存、磁盘、公网状态和服务端口都是采集时快照；做切流、清理、扩容或证书变更前必须重新采集。
 
@@ -56,6 +56,13 @@
 | `web.aivison.it.com` | 正式 Web 静态站；`/api/` 反代正式云 Web API | `http://100.107.220.127:8000` |
 | `web-test.aivison.it.com` | 测试 Web 静态站；`/api/` 反代云测试 Web API | `http://100.107.220.127:8001` |
 | `assets.aivison.it.com` | legacy MinIO 只读/兼容回源，用于历史媒体 fallback | `http://100.99.254.53:9000` |
+
+不在 Web VPS 上的 Cloudflare canary 入口：
+
+| 域名 | 承接方 | 说明 |
+| :--- | :--- | :--- |
+| `web-cf-test.aivison.it.com` | Cloudflare Pages | canary 静态站，构建模式 `frontend npm run build:cf-test` |
+| `api-cf-test.aivison.it.com` | Cloudflare Tunnel on `allbot-do-sgp1-control` | canary Web API 入口，回源 `http://100.107.220.127:8000` |
 
 公网快照：
 
@@ -215,6 +222,8 @@ curl -sS -o /dev/null -w "%{http_code} %{time_total}\n" --max-time 10 http://69.
 | `web.aivison.it.com` 白屏或静态资源 404 | Web 边缘 `/root/dist`、Nginx `web.aivison.it.com` server、Cloudflare DNS/cache |
 | Web `/api/health` 502/504 | Web 边缘 Nginx upstream、Tailscale 到云 Web API `100.107.220.127:8000` |
 | Web API 普遍慢但云内 health 毫秒级 | 比较边缘到云、公网域名、Cloudflare/Tailscale 链路；统计 499 高频端点 |
+| `api-cf-test.aivison.it.com/api/health` 502 | 先查 Cloudflare Tunnel connector 是否在云机 active、public hostname 是否回源 `100.107.220.127:8000`；不要查 Web VPS Nginx |
+| `web-cf-test.aivison.it.com` 白屏或 404 | 先查 Cloudflare Pages 部署、custom domain、构建产物和 `VITE_API_BASE_URL`；不要查 `/root/dist` |
 | `web-test.aivison.it.com/api/health` 502 | 测试 Web API `100.107.220.127:8001` 是否运行；不要误改正式站 |
 | legacy 历史媒体打不开或加载慢 | `assets.aivison.it.com` Nginx MinIO proxy、Tailscale 到 `100.99.254.53:9000`、真实 object URL；不要只看 `/minio/health/live` |
 | `/api/tasks/{id}/result`、Gallery、History 大量 499 | 用户端等待过久断开；联动查 Web API R2 result timeout、legacy object_exists failure、边缘公网延迟 |
@@ -232,3 +241,4 @@ curl -sS -o /dev/null -w "%{http_code} %{time_total}\n" --max-time 10 http://69.
 - Nginx cache/log 生命周期调整。
 - Web 边缘根盘扩容、清理或 cache 迁移。
 - Cloudflare Tunnel / RMB 入口回源策略变化。
+- Cloudflare Pages/API Tunnel canary 入口创建、下线或升级为正式入口。

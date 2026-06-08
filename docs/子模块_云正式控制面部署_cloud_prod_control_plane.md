@@ -11,6 +11,7 @@
 - 本地 MinIO：只作为 legacy 历史媒体只读 fallback 和本地热数据保留，不再是新生成结果的公开事实源。
 - 本地 GPU/ComfyUI：仍在武汉内网运行，worker 默认通过本机 `cloud-prod-worker-relay` 访问云 Central API；relay 再经 Tailscale 访问云端。
 - 公共 Web API 与 RMB 支付入口已经由云端控制面承接；`assets.aivison.it.com` 继续保留 legacy MinIO 只读回源。
+- Cloudflare Pages/API Tunnel 测试入口正在按 canary 口径推进：目标是 `web-cf-test.aivison.it.com` 由 Cloudflare Pages 承接，`api-cf-test.aivison.it.com` 通过云机上的 Cloudflare Tunnel 回源云 Web API `100.107.220.127:8000`。Cloudflare 控制台完成前，这两个入口不得视为已上线。
 
 ## 2. 服务分布
 
@@ -55,6 +56,8 @@ GPU 节点上的 ComfyUI 服务不在本 compose 内。`cloud-prod-comfy-agent-*
 - `web.aivison.it.com`：静态前端由边缘 VPS 承接，`/api/` 反代到云 Web API。
 - `rmb.aivison.it.com`：优先通过 Cloudflare Tunnel 回源到云 Payment API。
 - `assets.aivison.it.com`：保留到本地 legacy MinIO 的只读代理，用于历史媒体 fallback。
+- `web-cf-test.aivison.it.com`：Cloudflare Pages canary 静态站，构建模式为 `frontend npm run build:cf-test`；只用于小范围人工验收，不切正式用户。
+- `api-cf-test.aivison.it.com`：Cloudflare Tunnel canary API 入口，connector 必须运行在 `allbot-do-sgp1-control` 云机，回源 `http://100.107.220.127:8000`；不要复用本地主服务器上的 RMB tunnel。
 
 ## 3. 运行态与性能口径
 
@@ -125,7 +128,21 @@ docker compose --env-file .env.cloud.prod -f deploy/docker-compose-cloud-prod.ym
 
 目标 service 可替换为 `web-api-prod`、`dashboard-backend-prod`、`payment-api-prod` 或 `bot-prod`。生产热修前建议先备份被覆盖文件；当前云端运行目录不应假设一定是完整 Git 工作区。
 
-### 4.3 本地云正式 worker 更新
+### 4.3 Cloudflare Pages/API Tunnel canary
+测试入口迁移分为两个暂停点：
+
+1. 先由人工在 Cloudflare Zero Trust 创建 `allbot-cloud-web-api-canary` tunnel，并把 public hostname `api-cf-test.aivison.it.com` 指向 `http://100.107.220.127:8000`。connector 安装命令含 token，不得贴到聊天、文档或 Git。
+2. `api-cf-test` 健康检查 200 后，只热更云端 `web-api-prod` 使 CORS allowlist 生效；不要重建 Central、Payment、Bot、Dashboard 或 worker。
+3. 再由人工在 Cloudflare Pages Git 集成创建 `allbot-web-cf-test`，仓库分支 `deploy`，root directory `frontend`，build command 推荐 `npm ci && npm run build:cf-test`，output directory `dist`，环境变量至少设置 `NODE_VERSION=24`。
+4. Pages 自定义域名绑定 `web-cf-test.aivison.it.com` 后，执行 canary 验收脚本：
+
+```bash
+bash scripts/check_cloudflare_canary.sh
+```
+
+验收通过前不得把 `web.aivison.it.com` 或正式 `api.aivison.it.com` 切到 Cloudflare Pages/API Tunnel。`assets.aivison.it.com` 本轮继续留在 Web/Nginx VPS，作为 legacy MinIO fallback。
+
+### 4.4 本地云正式 worker 更新
 worker 镜像 COPY 代码，修改 `workers/comfy_agent` 后必须重建镜像并重建容器。
 
 ```bash
@@ -169,6 +186,7 @@ docker inspect cloud-central-api-prod --format 'restart={{.RestartCount}} health
 
 Web、Payment、Dashboard 验证：
 - `https://web.aivison.it.com/api/health`
+- `https://api-cf-test.aivison.it.com/api/health` 仅在 canary tunnel 已配置时验证；若未配置，不得把 502 当作云 Web API 故障。
 - `https://rmb.aivison.it.com/pay/result`
 - Dashboard 登录后系统状态、worker 卡片与大盘统计能刷新。
 - Web 卡顿专项需额外记录云内、边缘到云、公网三段延迟，并统计边缘 499、Web R2 result timeout、Dashboard circuit breaker 和 `assets` 回源异常。

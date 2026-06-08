@@ -7,6 +7,7 @@
     "dev": "vite",
     "dev:test": "vite --mode test",
     "build": "vue-tsc -b && vite build",
+    "build:cf-test": "vue-tsc -b && vite build --mode cf-test",
     "build:edge-test": "vue-tsc -b && vite build --mode edge-test",
     "test": "vitest run",
     "test:watch": "vitest",
