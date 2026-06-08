@@ -373,8 +373,8 @@ const handleForceRefund = async (taskId) => {
 
 onMounted(() => {
   loadData()
-  // Auto refresh every 5 seconds
-  timer = setInterval(loadData, 5000)
+  // Auto refresh every 15 seconds
+  timer = setInterval(loadData, 15000)
   // Update time every second for duration display
   timeTimer = setInterval(() => {
     currentTime.value = Math.floor(Date.now() / 1000)

@@ -58,7 +58,9 @@ sequenceDiagram
 - `comfy_online` 按 `healthy_workers > 0` 判定；全部节点 `error/quarantined` 时必须显示不可用
 - Worker 卡片应展示 `error` / `quarantined`、最近错误、失败次数、心跳时间与预计恢复时间，不能把故障节点渲染为空闲
 - Worker/queue 监控通过云 Central `/system/status` 与 `/system/workers` 获取短缓存观测快照；这两个接口不是强一致调度入口，管理后台不要用高频轮询压垮 Central/Valkey。
-- 前端队列监控轮询保持秒级，当前默认约 2 秒；除非有明确压测证据，不要降到 1 秒或更高频。
+- 本地局域网 Dashboard 默认走 `http://192.168.1.115:8086/` 的 Nginx 生产网关，静态资源由本地主服务器提供，`/api/` 通过 Tailscale 反代云端 Dashboard Backend `100.107.220.127:8043`。
+- 前端队列监控默认约 10 秒轮询一次；并发统计约 60 秒刷新一次；活动任务表约 15 秒刷新一次。除非有明确压测证据，不要降到 2 秒或更高频。
+- 本地 Dashboard 网关会对 `/api/stats*` 做约 15 秒短缓存，对 `/api/system/status`、`/api/system/workers`、`/api/system/concurrency_stats` 做约 5 秒短缓存；登录、退款、封禁、删除、清理僵尸任务等写操作不得缓存。
 - Worker listener 应作为受监督后台循环运行；异常后由外层循环重试，不递归 `create_task`，并且每轮退出都显式关闭 pubsub / Redis client。
 
 ### 4.2 强制终止
@@ -88,6 +90,8 @@ sequenceDiagram
 - 若出现 stuck task，应优先通过 Dashboard 管理动作或 core 暴露的终止入口处理。
 - Redis 手工删键只作为极端故障兜底，不作为标准 SOP。
 - 管理后台卡顿时先区分三类问题：Dashboard stats 重查询、Central 观测接口慢、GPU/ComfyUI 执行停顿。GPU 生成短暂停顿不等同于 Dashboard worker 监控慢。
+- 本地管理后台入口由 `dashboard/docker-compose-local-gateway.yml` 管理。上线流程是先启动 `dashboard-local-gateway-8085` canary，验证后停止旧 `8086` Vite dev 进程，再启动 `dashboard-local-gateway-8086`。该流程不需要重建云端正式 Dashboard Backend。
+- 旧的 `0.0.0.0:8043` SSH 转发只作为临时兼容入口；长期应移除或收紧到 `127.0.0.1`，避免绕过本地网关直连云后端。
 
 ## 7. 告警建议
 - 任务终态异常率

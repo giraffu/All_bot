@@ -18,6 +18,9 @@ const defaultStatus = () => ({
   comfy_online: false,
 })
 
+const queueRefreshIntervalMs = 10000
+const concurrencyRefreshTicks = 6
+
 export function useQueueStatsMonitor() {
   const status = ref(defaultStatus())
   const workers = ref<any[]>([])
@@ -61,7 +64,7 @@ export function useQueueStatsMonitor() {
         workers.value = workersData.workers
       }
 
-      if (tick % 5 === 0) {
+      if (tick % concurrencyRefreshTicks === 0) {
         await loadConcurrencyStats()
       }
       tick += 1
@@ -107,7 +110,7 @@ export function useQueueStatsMonitor() {
     void updateQueue()
     timer = setInterval(() => {
       void updateQueue()
-    }, 2000)
+    }, queueRefreshIntervalMs)
   })
 
   onUnmounted(() => {

@@ -1,0 +1,138 @@
+proxy_cache_path /var/cache/nginx/dashboard_stats
+    levels=1:2
+    keys_zone=dashboard_stats_cache:10m
+    max_size=64m
+    inactive=2m
+    use_temp_path=off;
+
+proxy_cache_path /var/cache/nginx/dashboard_system
+    levels=1:2
+    keys_zone=dashboard_system_cache:10m
+    max_size=32m
+    inactive=1m
+    use_temp_path=off;
+
+limit_req_zone $binary_remote_addr zone=dashboard_auth_limit:10m rate=2r/s;
+
+map $request_method $dashboard_no_cache_method {
+    default 1;
+    GET 0;
+    HEAD 0;
+}
+
+upstream dashboard_cloud_backend {
+    server ${DASHBOARD_BACKEND_HOST};
+    keepalive 16;
+}
+
+server {
+    listen ${DASHBOARD_GATEWAY_PORT};
+    server_name _;
+
+    server_tokens off;
+
+    allow 127.0.0.1;
+    allow ::1;
+    allow 10.0.0.0/8;
+    allow 172.16.0.0/12;
+    allow 192.168.0.0/16;
+    allow 100.64.0.0/10;
+    deny all;
+
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header Content-Security-Policy "frame-ancestors 'self' https://*.telegram.org https://telegram.org;" always;
+
+    location = /index.html {
+        root /usr/share/nginx/html;
+        add_header Cache-Control "no-store, no-cache, must-revalidate" always;
+        add_header Pragma "no-cache" always;
+        add_header Expires "0" always;
+    }
+
+    location /assets/ {
+        root /usr/share/nginx/html;
+        expires 1y;
+        add_header Cache-Control "public, immutable" always;
+        access_log off;
+    }
+
+    location / {
+        root /usr/share/nginx/html;
+        index index.html index.htm;
+        try_files $uri $uri/ /index.html;
+        add_header Cache-Control "no-store, no-cache, must-revalidate" always;
+        add_header Pragma "no-cache" always;
+        add_header Expires "0" always;
+    }
+
+    location ~ ^/api/auth/(login|bind-password) {
+        limit_req zone=dashboard_auth_limit burst=5 nodelay;
+        limit_req_status 429;
+
+        proxy_pass http://dashboard_cloud_backend;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        add_header Cache-Control "no-store, no-cache, must-revalidate" always;
+        add_header Pragma "no-cache" always;
+        add_header Expires "0" always;
+    }
+
+    location ~ ^/api/stats(?:/|$) {
+        proxy_pass http://dashboard_cloud_backend;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        proxy_cache dashboard_stats_cache;
+        proxy_cache_methods GET HEAD;
+        proxy_cache_key "$scheme|$request_method|$host|$request_uri|$http_authorization";
+        proxy_cache_valid 200 15s;
+        proxy_ignore_headers Cache-Control Expires;
+        proxy_cache_bypass $dashboard_no_cache_method $arg__t;
+        proxy_no_cache $dashboard_no_cache_method;
+        add_header X-Dashboard-Cache $upstream_cache_status;
+        add_header Cache-Control "private, max-age=15";
+    }
+
+    location ~ ^/api/system/(status|workers|concurrency_stats)$ {
+        proxy_pass http://dashboard_cloud_backend;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        proxy_cache dashboard_system_cache;
+        proxy_cache_methods GET HEAD;
+        proxy_cache_key "$scheme|$request_method|$host|$request_uri|$http_authorization";
+        proxy_cache_valid 200 5s;
+        proxy_ignore_headers Cache-Control Expires;
+        proxy_cache_bypass $dashboard_no_cache_method $arg__t;
+        proxy_no_cache $dashboard_no_cache_method;
+        add_header X-Dashboard-Cache $upstream_cache_status;
+        add_header Cache-Control "private, max-age=5";
+    }
+
+    location /api/ {
+        proxy_pass http://dashboard_cloud_backend;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        add_header Cache-Control "no-store, no-cache, must-revalidate" always;
+        add_header Pragma "no-cache" always;
+        add_header Expires "0" always;
+    }
+}

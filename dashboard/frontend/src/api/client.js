@@ -17,6 +17,29 @@ const resolveApiBaseUrl = () => {
 
 export const apiBaseUrl = resolveApiBaseUrl()
 
+const cacheableGetPaths = new Set([
+  '/api/system/status',
+  '/api/system/workers',
+  '/api/system/concurrency_stats',
+])
+
+const resolveRequestPath = (url) => {
+  if (!url) {
+    return ''
+  }
+
+  try {
+    return new URL(url, window.location.origin).pathname
+  } catch {
+    return url.split('?')[0]
+  }
+}
+
+export const shouldBypassDashboardCache = (url) => {
+  const path = resolveRequestPath(url)
+  return !(path.startsWith('/api/stats') || cacheableGetPaths.has(path))
+}
+
 export const api = axios.create({
   baseURL: apiBaseUrl
 })
@@ -28,8 +51,7 @@ api.interceptors.request.use(config => {
   }
 
   const url = config.url || ''
-  const shouldBypassCache = !url.startsWith('/api/stats')
-  if (config.method === 'get' && shouldBypassCache) {
+  if (config.method === 'get' && shouldBypassDashboardCache(url)) {
     config.params = config.params || {}
     config.params._t = Date.now()
   }
