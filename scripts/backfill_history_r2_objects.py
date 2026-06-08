@@ -60,6 +60,7 @@ HOTSET_WAVE_CAPS = {
     "second": 12000,
 }
 HOTSET_MAX_BATCH_SIZE = 500
+HOTSET_COPY_TIMEOUT_SECONDS = int(os.getenv("HOTSET_COPY_TIMEOUT_SECONDS", "180"))
 
 MediaStatus = Literal[
     "exists",
@@ -664,14 +665,28 @@ async def process_history_r2_candidate(
         source_object: str,
         r2_key: str,
         *,
-        attempts: int = 3,
+        attempts: int = 2,
     ) -> bool:
         for attempt in range(1, attempts + 1):
-            uploaded = await async_copy_to_r2_func(
-                source_bucket,
-                source_object,
-                r2_key,
-            )
+            try:
+                uploaded = await asyncio.wait_for(
+                    async_copy_to_r2_func(
+                        source_bucket,
+                        source_object,
+                        r2_key,
+                    ),
+                    timeout=HOTSET_COPY_TIMEOUT_SECONDS,
+                )
+            except asyncio.TimeoutError:
+                logger.warning(
+                    "Timed out copying to R2 after %ss for key=%s",
+                    HOTSET_COPY_TIMEOUT_SECONDS,
+                    r2_key,
+                )
+                uploaded = False
+            except Exception:
+                logger.exception("Unexpected copy to R2 failure for key=%s", r2_key)
+                uploaded = False
             if uploaded:
                 return True
             if attempt < attempts:

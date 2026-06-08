@@ -75,6 +75,7 @@ sequenceDiagram
 - `complete/failed/cancelled` 终态回报只记录 task 的 `worker_id`，并用 compare-and-clear 清理 agent `current_task_id`：只有当前指针仍等于该 task 时才清除，避免旧任务后台 complete 抹掉新任务展示。
 - Worker 等待 ComfyUI 结果时，WebSocket 终态不是唯一信号；当 WS 未及时设置结果时，worker 会按策略探测 `/history/{prompt_id}` 收口。日志里的 `Task result not set via WS, checking history` 通常解释为 ComfyUI/worker 本地执行链路的短暂停顿，不等同于 Central 状态接口慢。
 - 云正式 worker 可在本地主机通过 `workers/local_relay/relay_main.py` 访问 Central。该 relay 透明代理 `pop/check/peek/complete/heartbeat/task_heartbeat`，保留 query/body 新字段；对非终态 `running` status 做本地快速 ACK 和最新值合并转发；`complete`、`failed`、`cancelled`、`pop`、`check` 必须同步转发成功后才返回。relay 同时提供本地上传 sidecar，worker 只有在 R2/S3 put 成功后才调用 `/complete`，因此 Central 仍是唯一队列事实源。
+- 非 Tailscale 远程 Windows GPU 节点使用 `remote_workers/` 独立 venv 包时，bundled `remote_relay` 也必须遵守同样的同步转发与 sidecar 上传确认语义；差异仅在于 relay 的上游 Central 地址是 worker 专用 Cloudflare Tunnel 域名。
 - 文档不再固化 Redis DB 编号与具体低层队列命名为稳定架构事实
 
 ## 6. 测试要求

@@ -4,4 +4,6 @@ minio
 pydantic
 python-dotenv
 uvicorn
-
+websockets
+asgi-correlation-id
+Pillow

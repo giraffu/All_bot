@@ -1,0 +1,376 @@
+{
+  "1": {
+    "inputs": {
+      "text": "过曝，静态，细节模糊不清，字幕，风格，作品，画作，画面，静止，整体发灰，最差质量，低质量，JPEG压缩残留，丑陋的，残缺的，多余的手指，画得不好的手部，画得不好的脸部，畸形的，毁容的，形态畸形的肢体，手指融合，静止不动的画面，杂乱的背景，三条腿，背景人很多，倒着走",
+      "clip": [
+        "272",
+        1
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIP Text Encode (Negative Prompt)"
+    }
+  },
+  "29": {
+    "inputs": {
+      "samples": [
+        "118",
+        0
+      ],
+      "vae": [
+        "35",
+        0
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "VAE解码"
+    }
+  },
+  "30": {
+    "inputs": {
+      "shift": 8,
+      "model": [
+        "201",
+        0
+      ]
+    },
+    "class_type": "ModelSamplingSD3",
+    "_meta": {
+      "title": "采样算法（SD3）"
+    }
+  },
+  "31": {
+    "inputs": {
+      "shift": 8.000000000000002,
+      "model": [
+        "203",
+        0
+      ]
+    },
+    "class_type": "ModelSamplingSD3",
+    "_meta": {
+      "title": "采样算法（SD3）"
+    }
+  },
+  "32": {
+    "inputs": {
+      "unet_name": "wan22EnhancedNSFWSVICamera_nsfwFASTMOVEV2FP8L.safetensors",
+      "weight_dtype": "default"
+    },
+    "class_type": "UNETLoader",
+    "_meta": {
+      "title": "UNet加载器"
+    }
+  },
+  "33": {
+    "inputs": {
+      "clip_name": "umt5_xxl_fp8_e4m3fn_scaled.safetensors",
+      "type": "wan",
+      "device": "default"
+    },
+    "class_type": "CLIPLoader",
+    "_meta": {
+      "title": "加载CLIP"
+    }
+  },
+  "34": {
+    "inputs": {
+      "unet_name": "wan22EnhancedNSFWSVICamera_nsfwFASTMOVEV2FP8H.safetensors",
+      "weight_dtype": "default"
+    },
+    "class_type": "UNETLoader",
+    "_meta": {
+      "title": "UNet加载器"
+    }
+  },
+  "35": {
+    "inputs": {
+      "vae_name": "wan_2.1_vae.safetensors"
+    },
+    "class_type": "VAELoader",
+    "_meta": {
+      "title": "加载VAE"
+    }
+  },
+  "117": {
+    "inputs": {
+      "add_noise": "enable",
+      "noise_seed": 168033849531311,
+      "steps": 4,
+      "cfg": 1,
+      "sampler_name": "euler",
+      "scheduler": "simple",
+      "start_at_step": 0,
+      "end_at_step": 2,
+      "return_with_leftover_noise": "enable",
+      "model": [
+        "272",
+        0
+      ],
+      "positive": [
+        "285",
+        0
+      ],
+      "negative": [
+        "285",
+        1
+      ],
+      "latent_image": [
+        "285",
+        2
+      ]
+    },
+    "class_type": "KSamplerAdvanced",
+    "_meta": {
+      "title": "K采样器（高级）"
+    }
+  },
+  "118": {
+    "inputs": {
+      "add_noise": "disable",
+      "noise_seed": 0,
+      "steps": 4,
+      "cfg": 1,
+      "sampler_name": "euler",
+      "scheduler": "simple",
+      "start_at_step": 2,
+      "end_at_step": 4,
+      "return_with_leftover_noise": "disable",
+      "model": [
+        "273",
+        0
+      ],
+      "positive": [
+        "285",
+        0
+      ],
+      "negative": [
+        "285",
+        1
+      ],
+      "latent_image": [
+        "117",
+        0
+      ]
+    },
+    "class_type": "KSamplerAdvanced",
+    "_meta": {
+      "title": "K采样器（高级）"
+    }
+  },
+  "195": {
+    "inputs": {
+      "text": "女人快速脱掉身上所有衣服，清晰的露出奶子和阴部，浑身赤裸，女子躺在床榻上，双腿分开，女人始终看向镜头；一名男子从下方探入。他握着勃起的阴茎，缓缓插入她阴道。",
+      "clip": [
+        "272",
+        1
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIP Text Encode (Positive Prompt)"
+    }
+  },
+  "201": {
+    "inputs": {
+      "enable_fp16_accumulation": true,
+      "model": [
+        "202",
+        0
+      ]
+    },
+    "class_type": "ModelPatchTorchSettings",
+    "_meta": {
+      "title": "Model Patch Torch Settings"
+    }
+  },
+  "202": {
+    "inputs": {
+      "sage_attention": "auto",
+      "allow_compile": false,
+      "model": [
+        "34",
+        0
+      ]
+    },
+    "class_type": "PathchSageAttentionKJ",
+    "_meta": {
+      "title": "Patch Sage Attention KJ"
+    }
+  },
+  "203": {
+    "inputs": {
+      "enable_fp16_accumulation": true,
+      "model": [
+        "204",
+        0
+      ]
+    },
+    "class_type": "ModelPatchTorchSettings",
+    "_meta": {
+      "title": "Model Patch Torch Settings"
+    }
+  },
+  "204": {
+    "inputs": {
+      "sage_attention": "auto",
+      "allow_compile": false,
+      "model": [
+        "32",
+        0
+      ]
+    },
+    "class_type": "PathchSageAttentionKJ",
+    "_meta": {
+      "title": "Patch Sage Attention KJ"
+    }
+  },
+  "263": {
+    "inputs": {
+      "desired_width": 512,
+      "desired_height": 512,
+      "divisible_by": 16,
+      "upscale": false,
+      "upscale_method": "lanczos",
+      "small_image_mode": "none",
+      "pad_color": "#000000",
+      "image": [
+        "294",
+        0
+      ]
+    },
+    "class_type": "FindPerfectResolution",
+    "_meta": {
+      "title": "Find Perfect Resolution"
+    }
+  },
+  "265": {
+    "inputs": {
+      "ckpt_name": "rife49",
+      "multiplier": 4,
+      "ensemble": false,
+      "images": [
+        "29",
+        0
+      ]
+    },
+    "class_type": "FL_RIFE",
+    "_meta": {
+      "title": "FL RIFE Frame Interpolation"
+    }
+  },
+  "272": {
+    "inputs": {
+      "PowerLoraLoaderHeaderWidget": {
+        "type": "PowerLoraLoaderHeaderWidget"
+      },
+      "lora_1": {
+        "on": true,
+        "lora": "PenInsert_high_noise.safetensors",
+        "strength": 1
+      },
+      "➕ Add Lora": "",
+      "model": [
+        "30",
+        0
+      ],
+      "clip": [
+        "33",
+        0
+      ]
+    },
+    "class_type": "Power Lora Loader (rgthree)",
+    "_meta": {
+      "title": "Power Lora Loader (rgthree)"
+    }
+  },
+  "273": {
+    "inputs": {
+      "PowerLoraLoaderHeaderWidget": {
+        "type": "PowerLoraLoaderHeaderWidget"
+      },
+      "lora_1": {
+        "on": true,
+        "lora": "PenInsert_low_noise.safetensors",
+        "strength": 1
+      },
+      "➕ Add Lora": "",
+      "model": [
+        "31",
+        0
+      ]
+    },
+    "class_type": "Power Lora Loader (rgthree)",
+    "_meta": {
+      "title": "Power Lora Loader (rgthree)"
+    }
+  },
+  "285": {
+    "inputs": {
+      "width": [
+        "263",
+        0
+      ],
+      "height": [
+        "263",
+        1
+      ],
+      "length": 81,
+      "batch_size": 1,
+      "motion_amplitude": 1.15,
+      "positive": [
+        "195",
+        0
+      ],
+      "negative": [
+        "1",
+        0
+      ],
+      "vae": [
+        "35",
+        0
+      ],
+      "start_image": [
+        "294",
+        0
+      ]
+    },
+    "class_type": "PainterI2V",
+    "_meta": {
+      "title": "PainterI2V"
+    }
+  },
+  "290": {
+    "inputs": {
+      "frame_rate": 64,
+      "loop_count": 0,
+      "filename_prefix": "AnimateDiff",
+      "format": "video/h264-mp4",
+      "pix_fmt": "yuv420p",
+      "crf": 19,
+      "save_metadata": true,
+      "trim_to_audio": false,
+      "pingpong": false,
+      "save_output": true,
+      "images": [
+        "265",
+        0
+      ]
+    },
+    "class_type": "VHS_VideoCombine",
+    "_meta": {
+      "title": "Video Combine 🎥🅥🅗🅢"
+    }
+  },
+  "294": {
+    "inputs": {
+      "image": "IMG_2833.png"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "加载图像"
+    }
+  }
+}

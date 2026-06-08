@@ -1,0 +1,4 @@
+MODE_CUSTOM_VIDEO = "custom_video"
+MODE_VIDEO_LORA = "video_lora"
+MODE_IMAGE_TO_VIDEO = MODE_VIDEO_LORA
+MODE_WAN22_VIDEO_V2 = "wan22_video_v2"

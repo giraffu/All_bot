@@ -25,6 +25,7 @@
 - Central API 是执行面，不负责上游计费、并发锁和历史持久化
 - Worker 通过主动 `pop` 拉取任务，不是上游直接把 workflow 推到 Worker
 - 本地 relay/sidecar 只优化 worker 到云 Central/R2 的固定开销，不拥有队列事实；任务仍只有在 R2 上传成功且 Central `/complete` 成功后才算成功收口
+- 无法接入 Tailscale 的远程 Windows GPU 节点可使用 `remote_workers/` 独立 venv 包运行 bundled `comfy_agent` 与 `remote_relay`；它复用同一 Central `pop/status/complete/heartbeat` 语义，只是通过专用 Cloudflare Tunnel 域名访问云 Central
 
 ## 3. 分层职责图
 
@@ -293,6 +294,7 @@ QueueManager 负责执行面排队与 Worker 选择，关键职责包括：
 ### 9.1 Worker 主循环
 当前底层 Worker 主循环主要在：
 - `workers/comfy_agent/agent_main.py`
+- `remote_workers/comfy_agent/agent_main.py` 是给非 Tailscale 远程 Windows 节点 sparse-checkout 使用的同源 bundled 副本
 
 启动后主要做三件事：
 - `poll_loop()`: 向 Central API 拉取可执行任务

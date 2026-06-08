@@ -3,9 +3,11 @@ __pycache__/
 *.py[cod]
 logs/
 spool/
+input/
+output/
+prefetch-cache/
 *.log
 
 # Real per-node env files contain secrets. Keep only *.example in git.
 env/*.env
 !env/*.env.example
-
