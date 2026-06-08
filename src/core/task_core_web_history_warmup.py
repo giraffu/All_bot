@@ -27,7 +27,12 @@ def schedule_web_history_r2_warmup(
     if create_task_func is None:
         create_task_func = asyncio.create_task
 
-    if source != "web" or not user_id or not task_id or not output_file:
+    if (
+        source not in {"web", "bot"}
+        or not user_id
+        or not task_id
+        or not output_file
+    ):
         return
 
     async def _runner():
@@ -48,22 +53,24 @@ def schedule_web_history_r2_warmup(
         for step_name, result in zip(("copy", "thumbnail"), warmup_results):
             if isinstance(result, Exception):
                 logger.warning(
-                    "Web history R2 warmup %s failed for task %s user %s: %s",
+                    "History R2 warmup %s failed for task %s user %s source %s: %s",
                     step_name,
                     task_id,
                     user_id,
+                    source,
                     result,
                 )
 
-        try:
-            await prune_user_web_history_r2_cache_func(user_id)
-        except Exception as exc:
-            logger.warning(
-                "Web history R2 warmup prune failed for task %s user %s: %s",
-                task_id,
-                user_id,
-                exc,
-            )
+        if source == "web":
+            try:
+                await prune_user_web_history_r2_cache_func(user_id)
+            except Exception as exc:
+                logger.warning(
+                    "Web history R2 warmup prune failed for task %s user %s: %s",
+                    task_id,
+                    user_id,
+                    exc,
+                )
 
     warmup_coro = _runner()
     try:

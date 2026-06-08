@@ -113,9 +113,11 @@ async def build_gallery_thumbnail_url(
     media_type: str,
     *,
     task_id: str | None,
+    fast_list_mode: bool = True,
     resolve_thumbnail_url_fn=resolve_thumbnail_url,
     resolve_storage_object_fn=resolve_storage_object,
     build_thumbnail_object_name_fn=build_thumbnail_object_name,
+    async_r2_object_exists_fn=None,
     async_object_exists_fn=storage.async_object_exists,
     get_presigned_url_fn=storage.get_presigned_url,
 ) -> str:
@@ -124,10 +126,14 @@ async def build_gallery_thumbnail_url(
             output_file=output_file,
             media_type=media_type,
             task_id=task_id,
-        )
+        ),
+        async_r2_object_exists_fn=async_r2_object_exists_fn,
     )
     if r2_url:
         return r2_url
+
+    if fast_list_mode:
+        return ""
 
     thumbnail_url = await resolve_thumbnail_url_fn(
         output_file,

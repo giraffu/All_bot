@@ -153,12 +153,7 @@ async def test_build_post_responses_used_by_my_posts_generates_minio_urls_for_un
             _FakeScalarResult([author]),
         ]
     )
-    presign_mock = MagicMock(
-        side_effect=[
-            "https://minio.example/original.png",
-            "https://minio.example/thumb.webp",
-        ]
-    )
+    presign_mock = MagicMock(return_value="https://minio.example/original.png")
 
     monkeypatch.setattr(media_presenter.storage, "get_r2_public_url", MagicMock(return_value=""))
     monkeypatch.setattr(
@@ -181,11 +176,10 @@ async def test_build_post_responses_used_by_my_posts_generates_minio_urls_for_un
 
     assert len(items) == 1
     assert items[0].media_url == "https://minio.example/original.png"
-    assert items[0].thumbnail_url == "https://minio.example/thumb.webp"
+    assert items[0].thumbnail_url == ""
     assert presign_mock.call_args_list[0].args == ("123/output_images/task-1.png",)
     assert presign_mock.call_args_list[0].kwargs == {"bucket": MINIO_BUCKET}
-    assert presign_mock.call_args_list[1].args == ("123/output_images/task-1_thumb.webp",)
-    assert presign_mock.call_args_list[1].kwargs == {"bucket": MINIO_BUCKET}
+    assert presign_mock.call_count == 1
 
 
 @pytest.mark.asyncio

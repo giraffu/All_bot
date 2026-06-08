@@ -275,6 +275,49 @@ async def test_schedule_web_history_r2_warmup_still_prunes_when_copy_fails(monke
 
 
 @pytest.mark.asyncio
+async def test_schedule_web_history_r2_warmup_handles_bot_source_without_prune():
+    scheduled_coroutines = []
+    copy_mock = AsyncMock(return_value=None)
+    thumb_mock = AsyncMock(return_value=None)
+    prune_mock = AsyncMock(return_value=None)
+
+    def _capture_create_task(coro, **_kwargs):
+        scheduled_coroutines.append(coro)
+        return None
+
+    task_core_web_history_warmup.schedule_web_history_r2_warmup(
+        user_id=123,
+        task_id="task-bot",
+        output_file="123/output_images/task-bot.png",
+        media_type="image",
+        source="bot",
+        resolve_storage_object_func=lambda _output_file: (
+            "bot-data",
+            "123/output_images/task-bot.png",
+        ),
+        copy_to_r2_func=copy_mock,
+        generate_and_upload_thumbnail_func=thumb_mock,
+        prune_user_web_history_r2_cache_func=prune_mock,
+        logger=MagicMock(),
+        create_task_func=_capture_create_task,
+    )
+
+    assert len(scheduled_coroutines) == 1
+    await scheduled_coroutines[0]
+    copy_mock.assert_awaited_once_with(
+        "bot-data",
+        "123/output_images/task-bot.png",
+        "history/task-bot/original.png",
+    )
+    thumb_mock.assert_awaited_once_with(
+        "123/output_images/task-bot.png",
+        "image",
+        "history/task-bot/thumb.webp",
+    )
+    prune_mock.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_schedule_web_history_r2_warmup_uses_runtime_default_create_task_binding(
     monkeypatch,
 ):

@@ -58,6 +58,13 @@ class _FakeSession:
         return False
 
 
+def _async_r2_exists_for(existing_keys: set[str]):
+    async def _exists(object_key):
+        return object_key in existing_keys
+
+    return AsyncMock(side_effect=_exists)
+
+
 @pytest.mark.asyncio
 async def test_build_post_responses_includes_billing_resolution_for_gallery_lists():
     history = History(
@@ -653,7 +660,12 @@ async def test_pick_gallery_media_urls_prefers_existing_history_task_key(
         "get_r2_public_url",
         lambda key: f"https://cdn.example/{key}",
     )
-    async_exists_mock = AsyncMock(side_effect=[True, True])
+    async_exists_mock = _async_r2_exists_for(
+        {
+            "history/task-1/original.png",
+            "history/task-1/thumb.webp",
+        }
+    )
     monkeypatch.setattr(storage_module.storage, "async_r2_object_exists", async_exists_mock)
     monkeypatch.setattr(
         gallery_media_resolver,
@@ -681,7 +693,12 @@ async def test_pick_gallery_media_urls_falls_back_to_original_object_keys_when_h
         "get_r2_public_url",
         lambda key: f"https://cdn.example/{key}",
     )
-    async_exists_mock = AsyncMock(side_effect=[False, True, False, True])
+    async_exists_mock = _async_r2_exists_for(
+        {
+            "123/output_images/task-1.png",
+            "123/output_images/task-1_thumb.webp",
+        }
+    )
     monkeypatch.setattr(storage_module.storage, "async_r2_object_exists", async_exists_mock)
     monkeypatch.setattr(
         gallery_media_resolver,
@@ -709,8 +726,11 @@ async def test_pick_gallery_media_urls_can_use_raw_bot_data_r2_prefix(
         "get_r2_public_url",
         lambda key: f"https://cdn.example/{key}",
     )
-    async_exists_mock = AsyncMock(
-        side_effect=[False, False, True, False, False, True]
+    async_exists_mock = _async_r2_exists_for(
+        {
+            "bot-data/history/task-1/output.png",
+            "bot-data/history/task-1/output_thumb.webp",
+        }
     )
     monkeypatch.setattr(storage_module.storage, "async_r2_object_exists", async_exists_mock)
     monkeypatch.setattr(
@@ -739,7 +759,12 @@ async def test_pick_gallery_media_urls_returns_public_url_when_presign_unavailab
         "get_r2_public_url",
         lambda key: f"https://cdn.example/{key}",
     )
-    async_exists_mock = AsyncMock(side_effect=[True, True])
+    async_exists_mock = _async_r2_exists_for(
+        {
+            "history/task-1/original.png",
+            "history/task-1/thumb.webp",
+        }
+    )
     monkeypatch.setattr(storage_module.storage, "async_r2_object_exists", async_exists_mock)
     monkeypatch.setattr(
         gallery_media_resolver,
@@ -759,7 +784,7 @@ async def test_pick_gallery_media_urls_returns_public_url_when_presign_unavailab
 
 
 @pytest.mark.asyncio
-async def test_pick_gallery_media_urls_falls_back_to_presigned_storage_urls_when_r2_missing(
+async def test_pick_gallery_media_urls_falls_back_to_media_storage_but_skips_slow_thumbnail_fallback_when_r2_missing(
     monkeypatch,
 ):
     monkeypatch.setattr(
@@ -774,12 +799,7 @@ async def test_pick_gallery_media_urls_falls_back_to_presigned_storage_urls_when
         "async_object_exists",
         AsyncMock(return_value=True),
     )
-    presign_mock = MagicMock(
-        side_effect=[
-            "https://minio.example/original.png",
-            "https://minio.example/thumb.webp",
-        ]
-    )
+    presign_mock = MagicMock(return_value="https://minio.example/original.png")
     monkeypatch.setattr(storage_module.storage, "get_presigned_url", presign_mock)
 
     media_url, thumbnail_url = await resolve_gallery_post_media_urls(
@@ -789,9 +809,48 @@ async def test_pick_gallery_media_urls_falls_back_to_presigned_storage_urls_when
     )
 
     assert media_url == "https://minio.example/original.png"
-    assert thumbnail_url == "https://minio.example/thumb.webp"
+    assert thumbnail_url == ""
     assert async_exists_mock.await_count == 6
-    assert presign_mock.call_count == 2
+    assert presign_mock.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_build_gallery_thumbnail_url_fast_mode_skips_storage_fallback():
+    async def fake_async_r2_object_exists(_object_key):
+        return False
+
+    async def fail_resolve_thumbnail_url(*_args, **_kwargs):
+        raise AssertionError("fast list mode must not call thumbnail fallback")
+
+    thumbnail_url = await gallery_media_resolver.build_gallery_thumbnail_url(
+        "123/output_images/task-1.png",
+        "image",
+        task_id="task-1",
+        resolve_thumbnail_url_fn=fail_resolve_thumbnail_url,
+        async_r2_object_exists_fn=fake_async_r2_object_exists,
+    )
+
+    assert thumbnail_url == ""
+
+
+@pytest.mark.asyncio
+async def test_build_gallery_thumbnail_url_full_mode_preserves_thumbnail_fallback():
+    async def fake_async_r2_object_exists(_object_key):
+        return False
+
+    async def fake_resolve_thumbnail_url(*_args, **_kwargs):
+        return "https://legacy.example/thumb.webp"
+
+    thumbnail_url = await gallery_media_resolver.build_gallery_thumbnail_url(
+        "123/output_images/task-1.png",
+        "image",
+        task_id="task-1",
+        fast_list_mode=False,
+        resolve_thumbnail_url_fn=fake_resolve_thumbnail_url,
+        async_r2_object_exists_fn=fake_async_r2_object_exists,
+    )
+
+    assert thumbnail_url == "https://legacy.example/thumb.webp"
 
 
 @pytest.mark.asyncio
@@ -830,7 +889,12 @@ async def test_build_post_responses_uses_r2_fallback_chain(monkeypatch):
     monkeypatch.setattr(
         storage_module.storage,
         "async_r2_object_exists",
-        AsyncMock(side_effect=[False, True, False, True]),
+        _async_r2_exists_for(
+            {
+                "123/output_images/task-1.png",
+                "123/output_images/task-1_thumb.webp",
+            }
+        ),
     )
     monkeypatch.setattr(
         gallery_media_resolver,

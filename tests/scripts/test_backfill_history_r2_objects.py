@@ -4,13 +4,36 @@ import pytest
 
 from scripts.backfill_history_r2_objects import (
     build_history_r2_candidate,
+    collect_cloud_prod_lag_fix_history_ids,
     process_history_r2_candidate,
+    select_hotset_batch,
     summarize_results,
 )
 
 
 async def fail_generate_thumbnail_from_r2_media(_media_r2_key, _media_type, _r2_key):
     raise AssertionError("test case should not generate thumbnails from R2 media")
+
+
+class _ScalarResult:
+    def __init__(self, items):
+        self._items = list(items)
+
+    def scalars(self):
+        return self
+
+    def all(self):
+        return list(self._items)
+
+
+class _SequentialSession:
+    def __init__(self, result_sets):
+        self._result_sets = list(result_sets)
+
+    async def execute(self, _stmt):
+        if not self._result_sets:
+            return _ScalarResult([])
+        return _ScalarResult(self._result_sets.pop(0))
 
 
 def test_build_history_r2_candidate_prefers_history_namespace_keys():
@@ -42,6 +65,44 @@ def test_build_history_r2_candidate_falls_back_to_legacy_keys_without_task_id():
     assert candidate.media_type == "image"
     assert candidate.media_r2_key == "legacy.png"
     assert candidate.thumbnail_r2_key == "legacy_thumb.webp"
+
+
+@pytest.mark.asyncio
+async def test_collect_cloud_prod_lag_fix_history_ids_dedupes_in_priority_order():
+    session = _SequentialSession(
+        [
+            [10, 9, 8],
+            [9, 7],
+            [6, 5],
+            [10, 4],
+            [3],
+            [2],
+            [1],
+        ]
+    )
+
+    history_ids, source_counts = await collect_cloud_prod_lag_fix_history_ids(
+        session,
+        wave="first",
+        total_limit=5,
+    )
+
+    assert history_ids == [10, 9, 8, 7, 6]
+    assert source_counts["gallery_latest"] == {"raw": 3, "added": 3}
+    assert source_counts["gallery_likes_top"] == {"raw": 2, "added": 1}
+    assert source_counts["gallery_applied_top"] == {"raw": 2, "added": 1}
+    assert source_counts["recent_history"] == {"raw": 0, "added": 0}
+
+
+def test_select_hotset_batch_skips_processed_history_ids():
+    batch, skipped = select_hotset_batch(
+        [10, 9, 8, 7, 6],
+        batch_size=2,
+        processed_history_ids={10, 9},
+    )
+
+    assert batch == [8, 7]
+    assert skipped == 2
 
 
 @pytest.mark.asyncio
@@ -137,6 +198,47 @@ async def test_process_history_r2_candidate_applies_copy_and_copy_thumbnail():
         ("bot-data", "123/output_images/task-4.png", "history/task-4/original.png"),
         ("bot-data", "123/output_images/task-4_thumb.webp", "history/task-4/thumb.webp"),
     ]
+
+
+@pytest.mark.asyncio
+async def test_process_history_r2_candidate_does_not_overwrite_existing_r2_objects():
+    candidate = build_history_r2_candidate(
+        history_id=40,
+        user_id=440,
+        username="warm-user",
+        task_id="task-warm",
+        history_type="txt2img",
+        output_file="123/output_images/task-warm.png",
+    )
+
+    async def fake_async_object_exists(_bucket_name, _object_name):
+        return True
+
+    async def fake_async_r2_object_exists(_object_name):
+        return True
+
+    async def fake_async_copy_to_r2(_bucket_name, _object_name, _r2_key):
+        raise AssertionError("existing R2 objects must not be overwritten")
+
+    async def fake_generate_and_upload_thumbnail(_output_file, _media_type, _r2_key):
+        raise AssertionError("existing R2 thumbnails must not be regenerated")
+
+    result = await process_history_r2_candidate(
+        candidate,
+        apply_changes=True,
+        media_only=False,
+        generate_missing_thumbnails=True,
+        async_object_exists_func=fake_async_object_exists,
+        async_r2_object_exists_func=fake_async_r2_object_exists,
+        async_copy_to_r2_func=fake_async_copy_to_r2,
+        generate_and_upload_thumbnail_func=fake_generate_and_upload_thumbnail,
+        generate_and_upload_thumbnail_from_r2_media_func=(
+            fail_generate_thumbnail_from_r2_media
+        ),
+    )
+
+    assert result.media_status == "exists"
+    assert result.thumbnail_status == "exists"
 
 
 def test_summarize_results_counts_dry_run_statuses():

@@ -8,6 +8,7 @@ import subprocess
 import sys
 import tempfile
 from dataclasses import asdict, dataclass
+from datetime import datetime
 from io import BytesIO
 from pathlib import Path
 from typing import Callable, Literal
@@ -43,6 +44,22 @@ from src.services.storage import storage  # noqa: E402
 logger = logging.getLogger(__name__)
 
 ResolveSourceObjectFunc = Callable[[str], tuple[str, str]]
+
+HOTSET_PROFILE_CLOUD_PROD_LAG_FIX = "cloud-prod-lag-fix"
+HOTSET_SOURCE_LIMITS = {
+    "gallery_latest": 300,
+    "gallery_likes_top": 1000,
+    "gallery_applied_top": 1000,
+    "recent_history": 3000,
+    "recent_like_apply_interactions": 3000,
+    "recent_favorites": 1000,
+    "recent_prompt_unlocks": 1000,
+}
+HOTSET_WAVE_CAPS = {
+    "first": 5000,
+    "second": 12000,
+}
+HOTSET_MAX_BATCH_SIZE = 500
 
 MediaStatus = Literal[
     "exists",
@@ -106,6 +123,20 @@ class BackfillSummary:
     thumbnail_would_generate: int
     thumbnail_generated: int
     thumbnail_failed: int
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+
+@dataclass
+class HotsetSelection:
+    profile: str
+    wave: str
+    candidate_cap: int
+    selected_count: int
+    batch_count: int
+    skipped_by_cursor: int
+    source_counts: dict[str, dict[str, int]]
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -281,9 +312,239 @@ async def collect_limited_user_visible_history_ids(
     return history_ids
 
 
+def _append_unique_history_ids(
+    target: list[int],
+    seen: set[int],
+    source_rows: list[int],
+    *,
+    cap: int,
+) -> int:
+    added = 0
+    for history_id in source_rows:
+        if history_id in seen:
+            continue
+        seen.add(history_id)
+        target.append(history_id)
+        added += 1
+        if len(target) >= cap:
+            break
+    return added
+
+
+async def _fetch_history_ids(session, stmt) -> list[int]:
+    rows = (await session.execute(stmt)).scalars().all()
+    return [int(history_id) for history_id in rows if history_id is not None]
+
+
+async def collect_cloud_prod_lag_fix_history_ids(
+    session,
+    *,
+    wave: Literal["first", "second"] = "first",
+    total_limit: int | None = None,
+) -> tuple[list[int], dict[str, dict[str, int]]]:
+    wave_cap = HOTSET_WAVE_CAPS[wave]
+    cap = min(wave_cap, total_limit) if total_limit else wave_cap
+    if cap <= 0:
+        return [], {}
+
+    common_history_filters = (
+        History.output_file.is_not(None),
+        History.output_file != "",
+        History.is_visible.is_not(False),
+    )
+    selected: list[int] = []
+    seen: set[int] = set()
+    source_counts: dict[str, dict[str, int]] = {}
+
+    async def collect_source(label: str, stmt) -> None:
+        if len(selected) >= cap:
+            source_counts[label] = {"raw": 0, "added": 0}
+            return
+        rows = await _fetch_history_ids(session, stmt)
+        added = _append_unique_history_ids(selected, seen, rows, cap=cap)
+        source_counts[label] = {"raw": len(rows), "added": added}
+
+    gallery_latest = (
+        select(
+            GalleryPost.task_id.label("task_id"),
+            GalleryPost.created_at.label("sort_created_at"),
+            GalleryPost.id.label("post_id"),
+        )
+        .where(GalleryPost.is_active.is_(True), GalleryPost.task_id.is_not(None))
+        .order_by(GalleryPost.created_at.desc(), GalleryPost.id.desc())
+        .limit(HOTSET_SOURCE_LIMITS["gallery_latest"])
+        .subquery()
+    )
+    await collect_source(
+        "gallery_latest",
+        select(History.id)
+        .select_from(gallery_latest)
+        .join(History, History.task_id == gallery_latest.c.task_id)
+        .where(*common_history_filters)
+        .order_by(
+            gallery_latest.c.sort_created_at.desc(),
+            gallery_latest.c.post_id.desc(),
+            History.id.desc(),
+        ),
+    )
+
+    gallery_likes = (
+        select(
+            GalleryPost.task_id.label("task_id"),
+            GalleryPost.likes_count.label("sort_count"),
+            GalleryPost.id.label("post_id"),
+        )
+        .where(GalleryPost.is_active.is_(True), GalleryPost.task_id.is_not(None))
+        .order_by(GalleryPost.likes_count.desc(), GalleryPost.id.desc())
+        .limit(HOTSET_SOURCE_LIMITS["gallery_likes_top"])
+        .subquery()
+    )
+    await collect_source(
+        "gallery_likes_top",
+        select(History.id)
+        .select_from(gallery_likes)
+        .join(History, History.task_id == gallery_likes.c.task_id)
+        .where(*common_history_filters)
+        .order_by(
+            gallery_likes.c.sort_count.desc(),
+            gallery_likes.c.post_id.desc(),
+            History.id.desc(),
+        ),
+    )
+
+    gallery_applied = (
+        select(
+            GalleryPost.task_id.label("task_id"),
+            GalleryPost.applied_count.label("sort_count"),
+            GalleryPost.id.label("post_id"),
+        )
+        .where(GalleryPost.is_active.is_(True), GalleryPost.task_id.is_not(None))
+        .order_by(GalleryPost.applied_count.desc(), GalleryPost.id.desc())
+        .limit(HOTSET_SOURCE_LIMITS["gallery_applied_top"])
+        .subquery()
+    )
+    await collect_source(
+        "gallery_applied_top",
+        select(History.id)
+        .select_from(gallery_applied)
+        .join(History, History.task_id == gallery_applied.c.task_id)
+        .where(*common_history_filters)
+        .order_by(
+            gallery_applied.c.sort_count.desc(),
+            gallery_applied.c.post_id.desc(),
+            History.id.desc(),
+        ),
+    )
+
+    await collect_source(
+        "recent_history",
+        select(History.id)
+        .where(*common_history_filters)
+        .order_by(History.id.desc())
+        .limit(HOTSET_SOURCE_LIMITS["recent_history"]),
+    )
+
+    recent_interactions = (
+        select(
+            UserInteraction.post_id.label("post_id"),
+            UserInteraction.id.label("interaction_id"),
+        )
+        .where(UserInteraction.action_type.in_(["like", "apply"]))
+        .order_by(UserInteraction.id.desc())
+        .limit(HOTSET_SOURCE_LIMITS["recent_like_apply_interactions"])
+        .subquery()
+    )
+    await collect_source(
+        "recent_like_apply_interactions",
+        select(History.id)
+        .select_from(recent_interactions)
+        .join(GalleryPost, GalleryPost.id == recent_interactions.c.post_id)
+        .join(History, History.task_id == GalleryPost.task_id)
+        .where(GalleryPost.is_active.is_(True), *common_history_filters)
+        .order_by(recent_interactions.c.interaction_id.desc(), History.id.desc()),
+    )
+
+    await collect_source(
+        "recent_favorites",
+        select(History.id)
+        .where(*common_history_filters, History.is_favorited.is_(True))
+        .order_by(History.id.desc())
+        .limit(HOTSET_SOURCE_LIMITS["recent_favorites"]),
+    )
+
+    recent_prompt_unlocks = (
+        select(
+            GalleryPromptUnlock.post_id.label("post_id"),
+            GalleryPromptUnlock.id.label("unlock_id"),
+        )
+        .order_by(GalleryPromptUnlock.id.desc())
+        .limit(HOTSET_SOURCE_LIMITS["recent_prompt_unlocks"])
+        .subquery()
+    )
+    await collect_source(
+        "recent_prompt_unlocks",
+        select(History.id)
+        .select_from(recent_prompt_unlocks)
+        .join(GalleryPost, GalleryPost.id == recent_prompt_unlocks.c.post_id)
+        .join(History, History.task_id == GalleryPost.task_id)
+        .where(GalleryPost.is_active.is_(True), *common_history_filters)
+        .order_by(recent_prompt_unlocks.c.unlock_id.desc(), History.id.desc()),
+    )
+
+    return selected, source_counts
+
+
+def select_hotset_batch(
+    history_ids: list[int],
+    *,
+    batch_size: int,
+    processed_history_ids: set[int] | None = None,
+) -> tuple[list[int], int]:
+    processed_history_ids = processed_history_ids or set()
+    batch: list[int] = []
+    skipped = 0
+    for history_id in history_ids:
+        if history_id in processed_history_ids:
+            skipped += 1
+            continue
+        batch.append(history_id)
+        if len(batch) >= batch_size:
+            break
+    return batch, skipped
+
+
+def read_hotset_cursor(cursor_file: Path | None) -> set[int]:
+    if cursor_file is None or not cursor_file.exists():
+        return set()
+    payload = json.loads(cursor_file.read_text(encoding="utf-8"))
+    processed = payload.get("processed_history_ids", [])
+    return {int(history_id) for history_id in processed}
+
+
+def write_hotset_cursor(
+    cursor_file: Path,
+    *,
+    profile: str,
+    wave: str,
+    processed_history_ids: set[int],
+) -> None:
+    cursor_file.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "profile": profile,
+        "wave": wave,
+        "updated_at": datetime.now().isoformat(timespec="seconds"),
+        "processed_history_ids": sorted(processed_history_ids),
+    }
+    cursor_file.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+
 async def collect_history_r2_candidates(
     session,
     *,
+    history_ids: list[int] | None = None,
     username: str | None = None,
     user_id: int | None = None,
     task_id: str | None = None,
@@ -331,6 +592,11 @@ async def collect_history_r2_candidates(
             History.is_visible.is_not(False),
         )
 
+    if history_ids is not None:
+        if not history_ids:
+            return []
+        stmt = stmt.where(History.id.in_(history_ids))
+        limit = None
     if username is not None:
         stmt = stmt.where(func.lower(User.username) == username.lower())
     if user_id is not None:
@@ -365,6 +631,17 @@ async def collect_history_r2_candidates(
         ) in rows
     ]
 
+    if history_ids is not None:
+        history_id_order = {
+            history_id: index for index, history_id in enumerate(history_ids)
+        }
+        candidates.sort(
+            key=lambda candidate: history_id_order.get(
+                candidate.history_id,
+                len(history_id_order),
+            )
+        )
+
     if media_type == "all":
         return candidates
     return [candidate for candidate in candidates if candidate.media_type == media_type]
@@ -382,6 +659,31 @@ async def process_history_r2_candidate(
     generate_and_upload_thumbnail_func,
     generate_and_upload_thumbnail_from_r2_media_func,
 ) -> CandidateResult:
+    async def copy_to_r2_with_retries(
+        source_bucket: str,
+        source_object: str,
+        r2_key: str,
+        *,
+        attempts: int = 3,
+    ) -> bool:
+        for attempt in range(1, attempts + 1):
+            uploaded = await async_copy_to_r2_func(
+                source_bucket,
+                source_object,
+                r2_key,
+            )
+            if uploaded:
+                return True
+            if attempt < attempts:
+                logger.warning(
+                    "Retrying copy to R2 after failed attempt %s/%s for key=%s",
+                    attempt,
+                    attempts,
+                    r2_key,
+                )
+                await asyncio.sleep(min(2 * attempt, 5))
+        return False
+
     media_source_exists = await async_object_exists_func(
         candidate.source_bucket,
         candidate.source_object,
@@ -395,7 +697,7 @@ async def process_history_r2_candidate(
     elif not apply_changes:
         media_status = "would_upload"
     else:
-        uploaded = await async_copy_to_r2_func(
+        uploaded = await copy_to_r2_with_retries(
             candidate.source_bucket,
             candidate.source_object,
             candidate.media_r2_key,
@@ -417,7 +719,7 @@ async def process_history_r2_candidate(
                 if not apply_changes:
                     thumbnail_status = "would_copy"
                 else:
-                    uploaded = await async_copy_to_r2_func(
+                    uploaded = await copy_to_r2_with_retries(
                         candidate.thumbnail_source_bucket,
                         candidate.thumbnail_source_object,
                         candidate.thumbnail_r2_key,
@@ -582,6 +884,102 @@ def summarize_results(
     )
 
 
+def should_mark_hotset_processed(result: CandidateResult) -> bool:
+    """Keep transient transfer failures retryable in later hotset batches."""
+    if result.media_status == "upload_failed":
+        return False
+    if result.thumbnail_status in {"copy_failed", "generate_failed"}:
+        return False
+    return True
+
+
+def write_backfill_report(
+    *,
+    report_dir: Path,
+    summary: BackfillSummary,
+    results: list[CandidateResult],
+    source_storage: Literal["current", "legacy"],
+    media_only: bool,
+    generate_missing_thumbnails: bool,
+    concurrency: int,
+    hotset_selection: HotsetSelection | None = None,
+) -> tuple[Path, Path]:
+    report_dir.mkdir(parents=True, exist_ok=True)
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    profile = hotset_selection.profile if hotset_selection else "standard"
+    base_name = f"media_hotset_backfill_{profile}_{timestamp}"
+    json_path = report_dir / f"{base_name}.json"
+    md_path = report_dir / f"{base_name}.md"
+
+    result_rows = [
+        {
+            "history_id": result.candidate.history_id,
+            "user_id": result.candidate.user_id,
+            "task_id": result.candidate.task_id,
+            "media_type": result.candidate.media_type,
+            "media_status": result.media_status,
+            "thumbnail_status": result.thumbnail_status,
+            "media_r2_key": result.candidate.media_r2_key,
+            "thumbnail_r2_key": result.candidate.thumbnail_r2_key,
+        }
+        for result in results
+    ]
+    payload = {
+        "generated_at": datetime.now().isoformat(timespec="seconds"),
+        "source_storage": source_storage,
+        "media_only": media_only,
+        "generate_missing_thumbnails": generate_missing_thumbnails,
+        "concurrency": concurrency,
+        "hotset": hotset_selection.to_dict() if hotset_selection else None,
+        "summary": summary.to_dict(),
+        "results": result_rows,
+    }
+    json_path.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+    lines = [
+        "# Media Hotset Backfill Report",
+        "",
+        f"- generated_at: `{payload['generated_at']}`",
+        f"- mode: `{summary.mode}`",
+        f"- source_storage: `{source_storage}`",
+        f"- scanned: `{summary.scanned}`",
+        f"- media_only: `{media_only}`",
+        f"- generate_missing_thumbnails: `{generate_missing_thumbnails}`",
+        f"- concurrency: `{concurrency}`",
+        "",
+        "## Summary",
+        "",
+    ]
+    for key, value in summary.to_dict().items():
+        lines.append(f"- {key}: `{value}`")
+    if hotset_selection:
+        lines.extend(["", "## Hotset", ""])
+        for key, value in hotset_selection.to_dict().items():
+            if key == "source_counts":
+                continue
+            lines.append(f"- {key}: `{value}`")
+        lines.extend(["", "## Source Counts", ""])
+        for label, counts in hotset_selection.source_counts.items():
+            lines.append(
+                f"- {label}: raw `{counts.get('raw', 0)}`, "
+                f"added `{counts.get('added', 0)}`"
+            )
+    lines.extend(["", "## Results", ""])
+    for row in result_rows:
+        lines.append(
+            "- history_id `{history_id}` task `{task_id}` media `{media_type}` "
+            "media_status `{media_status}` thumb_status `{thumbnail_status}` "
+            "media_key `{media_r2_key}` thumb_key `{thumbnail_r2_key}`".format(
+                **row
+            )
+        )
+    md_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return json_path, md_path
+
+
 async def process_history_r2_candidates(
     candidates: list[HistoryR2Candidate],
     *,
@@ -686,8 +1084,47 @@ def build_argument_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--source-storage",
         choices=["current", "legacy"],
-        default="current",
-        help="对象复制源。云正式预热旧数据时使用 legacy。",
+        default=None,
+        help=(
+            "对象复制源。云正式热集模式默认 legacy；非热集模式默认 current。"
+        ),
+    )
+    parser.add_argument(
+        "--hotset-profile",
+        choices=[HOTSET_PROFILE_CLOUD_PROD_LAG_FIX],
+        help="启用固定热集候选采集模式；cloud-prod-lag-fix 用于云正式非全量预热。",
+    )
+    parser.add_argument(
+        "--hotset-wave",
+        choices=["first", "second"],
+        default="first",
+        help="热集批次范围。first 最多 5000 个候选，second 最多 12000 个候选。",
+    )
+    parser.add_argument(
+        "--batch-size",
+        type=int,
+        help="热集模式单批处理条数；最大会被限制为 500。",
+    )
+    parser.add_argument(
+        "--cursor-file",
+        type=Path,
+        help="热集模式游标文件；默认写入 logs/media_hotset_<profile>_<wave>_cursor.json。",
+    )
+    parser.add_argument(
+        "--no-cursor",
+        action="store_true",
+        help="热集模式不读取/更新游标；仅建议一次性验证时使用。",
+    )
+    parser.add_argument(
+        "--report-dir",
+        type=Path,
+        default=Path("logs"),
+        help="热集模式报告输出目录，默认 logs。",
+    )
+    parser.add_argument(
+        "--no-report",
+        action="store_true",
+        help="不写入热集扫描报告。",
     )
     parser.add_argument(
         "--username",
@@ -727,8 +1164,11 @@ def build_argument_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--concurrency",
         type=int,
-        default=1,
-        help="并发处理数量；大批预热建议从 4-8 开始。",
+        default=None,
+        help=(
+            "并发处理数量。热集模式默认 media/copy 为 3，"
+            "generate-missing-thumbnails 为 1；非热集默认 1。"
+        ),
     )
     return parser
 
@@ -740,11 +1180,22 @@ async def run_backfill(args) -> BackfillSummary:
         raise RuntimeError("R2 client 未初始化，无法执行回填。")
     storage._ensure_r2_async_primitives()
 
+    source_storage: Literal["current", "legacy"] = (
+        args.source_storage
+        or ("legacy" if args.hotset_profile else "current")
+    )
+    if args.concurrency is not None:
+        effective_concurrency = args.concurrency
+    elif args.hotset_profile:
+        effective_concurrency = 1 if args.generate_missing_thumbnails else 3
+    else:
+        effective_concurrency = 1
+
     resolve_source_object_func: ResolveSourceObjectFunc = resolve_storage_object
     async_object_exists_func = storage.async_object_exists
     async_copy_to_r2_func = storage.async_copy_to_r2
 
-    if args.source_storage == "legacy":
+    if source_storage == "legacy":
         if args.generate_missing_thumbnails:
             raise RuntimeError(
                 "legacy 源批量预热暂不支持生成缺失缩略图；请先复制已有缩略图，"
@@ -757,9 +1208,48 @@ async def run_backfill(args) -> BackfillSummary:
         async_object_exists_func = storage.async_legacy_object_exists
         async_copy_to_r2_func = storage.async_copy_legacy_to_r2
 
+    hotset_selection: HotsetSelection | None = None
+    cursor_file: Path | None = None
+    processed_history_ids: set[int] = set()
     async with AsyncSessionLocal() as session:
+        history_ids = None
+        if args.hotset_profile == HOTSET_PROFILE_CLOUD_PROD_LAG_FIX:
+            selected_ids, source_counts = await collect_cloud_prod_lag_fix_history_ids(
+                session,
+                wave=args.hotset_wave,
+                total_limit=args.limit,
+            )
+            batch_size = min(
+                max(1, args.batch_size or HOTSET_MAX_BATCH_SIZE),
+                HOTSET_MAX_BATCH_SIZE,
+            )
+            if not args.no_cursor:
+                cursor_file = args.cursor_file or Path(
+                    "logs",
+                    f"media_hotset_{args.hotset_profile}_{args.hotset_wave}_cursor.json",
+                )
+                processed_history_ids = read_hotset_cursor(cursor_file)
+            history_ids, skipped_by_cursor = select_hotset_batch(
+                selected_ids,
+                batch_size=batch_size,
+                processed_history_ids=processed_history_ids,
+            )
+            hotset_selection = HotsetSelection(
+                profile=args.hotset_profile,
+                wave=args.hotset_wave,
+                candidate_cap=min(
+                    HOTSET_WAVE_CAPS[args.hotset_wave],
+                    args.limit or HOTSET_WAVE_CAPS[args.hotset_wave],
+                ),
+                selected_count=len(selected_ids),
+                batch_count=len(history_ids),
+                skipped_by_cursor=skipped_by_cursor,
+                source_counts=source_counts,
+            )
+
         candidates = await collect_history_r2_candidates(
             session,
+            history_ids=history_ids,
             username=args.username,
             user_id=args.user_id,
             task_id=args.task_id,
@@ -768,19 +1258,20 @@ async def run_backfill(args) -> BackfillSummary:
             media_type=args.media_type,
             visible_scope=args.visible_scope,
             recent_limit=args.recent_limit,
-            limit=args.limit,
+            limit=None if history_ids is not None else args.limit,
             resolve_source_object_func=resolve_source_object_func,
         )
 
     logger.info(
-        "Collected %s history rows for R2 scan. visible_scope=%s source_storage=%s",
+        "Collected %s history rows for R2 scan. visible_scope=%s source_storage=%s hotset=%s",
         len(candidates),
         args.visible_scope,
-        args.source_storage,
+        source_storage,
+        args.hotset_profile or "",
     )
     results = await process_history_r2_candidates(
         candidates,
-        concurrency=args.concurrency,
+        concurrency=effective_concurrency,
         apply_changes=args.apply,
         media_only=args.media_only,
         generate_missing_thumbnails=args.generate_missing_thumbnails,
@@ -795,6 +1286,31 @@ async def run_backfill(args) -> BackfillSummary:
 
     summary = summarize_results(results, apply_changes=args.apply)
     logger.info("Backfill summary: %s", json.dumps(summary.to_dict(), ensure_ascii=False))
+    if args.apply and cursor_file and hotset_selection:
+        processed_history_ids.update(
+            result.candidate.history_id
+            for result in results
+            if should_mark_hotset_processed(result)
+        )
+        write_hotset_cursor(
+            cursor_file,
+            profile=hotset_selection.profile,
+            wave=hotset_selection.wave,
+            processed_history_ids=processed_history_ids,
+        )
+        logger.info("Updated hotset cursor: %s", cursor_file)
+    if hotset_selection and not args.no_report:
+        json_path, md_path = write_backfill_report(
+            report_dir=args.report_dir,
+            summary=summary,
+            results=results,
+            source_storage=source_storage,
+            media_only=args.media_only,
+            generate_missing_thumbnails=args.generate_missing_thumbnails,
+            concurrency=effective_concurrency,
+            hotset_selection=hotset_selection,
+        )
+        logger.info("Wrote hotset reports: %s %s", json_path, md_path)
     return summary
 
 
