@@ -108,3 +108,60 @@ bash scripts/check_cloudflare_canary.sh
 - `web.aivison.it.com`、正式 `api.aivison.it.com`、`assets.aivison.it.com` 本轮不切换。
 - 不能复用本地主服务器现有 RMB tunnel 暴露 Web API；API connector 必须在云控制面机器上运行。
 - 不要把 Cloudflare tunnel token、`.env.cloud.prod`、Bot token 或 R2 密钥写入文档、日志或聊天。
+
+## 5. 正式切换准备
+
+正式切换必须在 canary 人工验收通过后单独确认；不得因为 canary 通过就自动改 `web.aivison.it.com`。
+
+### 5.1 正式 API 域名
+
+`api.aivison.it.com` 应作为正式 Web API 独立入口，回源同一云 Web API：
+
+| 字段 | 值 |
+| :--- | :--- |
+| Hostname | `api.aivison.it.com` |
+| Type | `HTTP` |
+| URL | `100.107.220.127:8000` |
+
+正式切换前必须确认旧的本地主服务器 RMB tunnel 不再承接 `api.aivison.it.com`。历史上本地 `/home/hfy/.cloudflared/config.yml` 曾配置 `api.aivison.it.com -> 127.0.0.1:8003`，若仍生效会导致正式 API 502 或误打 Central。
+
+验证：
+
+```bash
+curl -fsS https://api.aivison.it.com/api/health
+curl -sS -o /dev/null -w "%{http_code} %{time_total}\n" \
+  -X OPTIONS \
+  -H "Origin: https://web.aivison.it.com" \
+  -H "Access-Control-Request-Method: GET" \
+  -H "Access-Control-Request-Headers: authorization,content-type" \
+  https://api.aivison.it.com/api/health
+```
+
+### 5.2 正式 Pages 项目
+
+推荐创建独立 Pages 项目 `allbot-web-prod`，不要把 canary 项目直接改名承接生产。Git 集成配置：
+
+| 字段 | 值 |
+| :--- | :--- |
+| Repo | `giraffu/All_bot` |
+| Branch | `deploy` |
+| Root directory | `frontend` |
+| Build command | `npm ci && npm run build:cf-prod` |
+| Build output directory | `dist` |
+| Environment variable | `NODE_VERSION=24` |
+
+`build:cf-prod` 使用 `frontend/.env.cf-prod`：
+
+- `VITE_API_BASE_URL=https://api.aivison.it.com/api`
+- `VITE_STORAGE_URL=https://assets.aivison.it.com`
+- `VITE_TONCONNECT_MANIFEST_URL=https://web.aivison.it.com/tonconnect-manifest.json`
+
+### 5.3 正式 Web 域名切换
+
+只有当 `allbot-web-prod.pages.dev`、`api.aivison.it.com`、R2 上传、登录、Gallery、History、任务状态流和结果页都验证通过后，才在 Pages custom domains 添加 `web.aivison.it.com`。
+
+回滚方式：
+
+- 若 Pages 静态站异常：把 `web.aivison.it.com` 从 Pages custom domain 移除或把 DNS 指回 Web/Nginx VPS。
+- 若正式 API 域异常：将正式 Pages 重新部署为旧 API 入口，或临时恢复 `web.aivison.it.com/api` 的 VPS 反代。
+- `assets.aivison.it.com` 本阶段不迁移，继续保留在 Web/Nginx VPS，直到 legacy/R2 回填另行完成。
