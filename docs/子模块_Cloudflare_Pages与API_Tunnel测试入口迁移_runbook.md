@@ -69,6 +69,8 @@ sudo systemctl status cloudflared --no-pager
 
 保留已有 `https://web.aivison.it.com` 和 `https://web-test.aivison.it.com`，不要用这次 canary 配置覆盖掉旧规则。
 
+2026-06-08 18:36 CST：正式 R2 桶 `user-data-prod` 已追加 `https://web-cf-test.aivison.it.com` 与 `https://allbot-web-cf-test.pages.dev`，两者的 `PUT` 预检均返回 204。
+
 ## 3. 我方执行与验证
 
 Cloudflare API Tunnel healthy 后，先验证 API 入口：
