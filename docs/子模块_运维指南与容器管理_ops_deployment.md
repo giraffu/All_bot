@@ -54,6 +54,7 @@
 - 用户可见历史对象预热使用 `scripts/backfill_history_r2_objects.py --visible-scope user-visible --source-storage legacy`，默认 dry-run，真实复制必须显式 `--apply`。推荐先 `--media-only` 预热 `history/{task_id}/original.ext`，再 legacy copy-only 复制已有缩略图，最后用 `--source-storage current --generate-missing-thumbnails` 从已预热到 R2 的原文件生成缺失缩略图。
 - 云正式历史详情、Gallery/Wan22 预览等读路径需要验收“返回 URL 可读”，不能只验 R2 S3 `HEAD`。若 `R2_PUBLIC_DOMAIN` 对部分 key 返回 404，但 R2 S3 `HEAD` 命中，Gallery 列表应直接返回 R2 S3 短签 URL，历史详情读路径可返回 R2 S3 短签 URL 兜底；Web owner `/result` 视频仍应按真实结果接口单独验收，不要用历史详情 fallback 代替。
 - 云正式边缘 Web 主模板必须保留 `assets.aivison.it.com` 到本地 MinIO 的 legacy 代理；不要为了维护 `web.aivison.it.com /api/` 删除 assets server。当前 `web.aivison.it.com /api/` 已指向云 Web API；RMB 支付入口继续使用 Cloudflare Tunnel 回源云 Payment API。如需紧急回滚 RMB 回源，用 `scripts/rollback_rmb_tunnel_to_local_prod.sh --execute` 切回本地 Payment API。切换/回滚脚本默认 dry-run，真实执行必须显式 `--execute`。
+- 边缘 VPS 当前至少包含 Web/Nginx 节点 `100.88.57.122`/`154.17.30.113` 与 Telegram Local API 节点 `69.63.220.115`。Web 节点根盘仅约 1.7G 可用，发布静态资源、调整 Nginx cache 或开启详细日志前必须先查 `df -h`；Telegram 节点当前主服务器未配置可用 SSH key，只能做 8081/8082 公网端口探测，完整容器/磁盘排障需先补 SSH。详情见 `docs/子模块_边缘节点运维指南_edge_node_ops.md`。
 - 真实 `docker compose config` 会展开密钥，输出只能本地查看，不得贴到日志、文档或聊天中。
 - 云正式 Central 高频观测接口已加入短缓存和 stale-while-revalidate；Dashboard stats 也有短缓存与 single-flight。不要通过前端 `_t` 或脚本高频击穿缓存。
 - 云正式最新长期 SOP 见 `/docs/子模块_云正式控制面部署_cloud_prod_control_plane.md`；历史门禁证据见 `/docs/正式云环境切换前准备清单.md`，迁移总手册见根目录 `正式服务_云发布环境迁移计划.md`。
@@ -86,6 +87,17 @@
 - Worker 初始化 `WorkflowPatcher` 时仍会校验 `workers/comfy_agent/workflows/mappings.json`，确保映射节点和输入名存在；Central API 只负责请求参数与队列，不再以 workflow 文件作为启动门禁。
 - 若只重建 Central API 而未重建 Worker，workflow 变更不会生效；新增 task type 还必须同步 `TASK_TYPE_WORKFLOW_FILENAMES`、`mappings.json` 和目标 Worker 的 `SUPPORTED_TASK_TYPES`。
 
+## 4.2 局域网 GPU 节点操作边界
+- 局域网 GPU 节点的 SSH、硬件、ComfyUI 容器、模型挂载和安全操作边界分别见：
+  - `/docs/子模块_局域网GPU节点SSH管理_lan_gpu_ssh_access.md`
+  - `/docs/子模块_局域网GPU节点资源与运维_lan_gpu_resource_ops.md`
+- `cloud-prod-comfy-agent-*` 是本地主服务器上的 worker 容器；GPU 节点上的 `comfy0/comfy1` 或宿主机 ComfyUI 是另一层。替换 worker 不会自动重启 ComfyUI，重启 ComfyUI 也不会更新 worker 代码。
+- 双卡 GPU 节点上，`comfy0` 与 `comfy1` 绑定不同 GPU 和不同 `inst0/inst1` 输入输出目录，但共享模型目录和宿主机资源。单个任务类型或单个 worker 异常时，只操作目标 worker 和目标 Comfy 容器。
+- 禁止因为一个 Comfy 容器异常而整机 reboot、无 service 名 `docker compose down/up`、批量删除所有 Comfy 容器或清理整个共享模型目录。
+- `allbot-gpu-226` 的 ComfyUI 是宿主机进程，cwd 为 `/home/ubantu/comfyui`，不是 Docker Comfy 容器；不要对它执行 `docker restart comfy0`。
+- GPU 节点 ComfyUI 素材清理优先使用 `scripts/cleanup_lan_comfy_artifacts.sh`；脚本默认 dry-run，必须显式 `--execute` 才删除。当前保守策略是 `output/temp` 清 60 分钟以前文件，`input` 只清 24 小时以前文件。不要把“只保留 1 小时”直接套到 `input`，也不要清理 `models/custom_nodes/workflows`。
+- 2026-06-08 已清理一次旧素材，但 `input/output/temp` 会持续增长；模型下载、Docker pull/build 或大视频输出前必须重新检查 `df -hT`。
+
 ## 5. 常见问题与恢复约束
 - MinIO 503 / 上传假死
   - 现象：Web 请求超时，甚至非上传接口也被拖慢。
@@ -109,6 +121,9 @@
 - 本地 GPU 生成中“停几秒再继续”
   - 常见根因：ComfyUI 模型/LoRA 加载、显存切换、WebSocket 终态未及时返回、worker 转 `/history/{prompt_id}` 轮询收口。
   - 处理：查对应 `cloud-prod-comfy-agent-*` 日志和 ComfyUI `/system_stats`，不要直接归因为 Central 状态接口慢。
+- 双卡 GPU 节点只坏一个 ComfyUI
+  - 现象：同一台 GPU 服务器上一个端口异常，另一个端口仍正常。
+  - 处理：按 worker 到 Comfy 的映射只重启目标 `comfy0` 或 `comfy1`，并验证未操作端口 `/system_stats` 仍可用。不要整机重启，也不要执行无 service 名 compose 操作。
 
 ## 6. 文档维护口径
 - 部署文档与运维技能必须和 `safe_deploy.sh` 的真实顺序保持一致。
@@ -116,3 +131,4 @@
 - 任何涉及 Alembic 的说明，都应明确“先检查多 head，再在宿主机执行 upgrade head”。
 - 任何涉及容器代码更新的说明，都应先核对卷挂载，再决定是 `restart` 还是 `--build`。
 - 任何涉及 workflow 资产的说明，都应明确 Central 校验目录与 Worker 执行目录是否一致。
+- 任何涉及 GPU 节点运维的说明，都应明确 worker 容器、ComfyUI 容器、模型目录和 `inst0/inst1` 目录是否共享或隔离。

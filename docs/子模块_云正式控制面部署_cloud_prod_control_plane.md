@@ -45,7 +45,11 @@
 | `cloud-prod-comfy-agent-6` | `cloud_prod_worker_06` | `192.168.1.2:8188` |
 | `cloud-prod-comfy-agent-7` | `cloud_prod_worker_07` | `192.168.1.2:8189` |
 
+`cloud-prod-comfy-agent-3` 当前支持 `ltx_video,image_to_video`。该节点对应 `192.168.1.177:8189` / `comfy1`；2026-06-08 已在 ComfyUI 侧补齐 `socksio` 并重启，使 `FL_RIFE` 正常暴露，compose 不再需要 `WAN22_RIFE_NODE_CLASS`。
+
 worker 写入 R2 `user-data-prod`，不得配置 legacy MinIO 写路径。启用 sidecar 时，worker 先把 ComfyUI 结果写入 `/app/spool`，由 `cloud-prod-worker-relay` 上传 R2；只有 sidecar 确认 put 成功后，worker 才调用 Central `/complete`。
+
+GPU 节点上的 ComfyUI 服务不在本 compose 内。`cloud-prod-comfy-agent-*` 只替换本地主服务器上的 worker 容器，不会自动重启 GPU 节点上的 `comfy0/comfy1` 或宿主机 ComfyUI。GPU 节点硬件、容器、模型挂载和单容器运维边界见 `docs/子模块_局域网GPU节点资源与运维_lan_gpu_resource_ops.md`。
 
 ### 2.3 边缘入口
 - `web.aivison.it.com`：静态前端由边缘 VPS 承接，`/api/` 反代到云 Web API。
@@ -72,6 +76,24 @@ worker 写入 R2 `user-data-prod`，不得配置 legacy MinIO 写路径。启用
 - Worker 运行态 `status` 上报也有轻量重试，用于减少云网络瞬断导致的监控漏报；status 上报失败不会直接判定生成任务失败。
 - Worker 可在当前图生图/换脸类任务执行期间通过 relay 调 Central 只读 `/api/agent/task/peek` 预取同类型下一单输入。`peek` 不会把任务标记 running，真实执行仍以后续 `/pop` 命中的 `task_id` 为准。
 - 本地 GPU “停几秒再继续”通常是 ComfyUI/worker 执行链路现象，例如模型/LoRA 加载、WebSocket 终态未及时返回、worker 转 `/history/{prompt_id}` 轮询收口，不应直接归因到 Central `/system/status` 慢。
+
+### 3.4 Web 卡顿与负载判读
+
+2026-06-08 17:10 巡检确认，云正式 Web 卡顿不应直接等同于云 Droplet 负载打满。排查时先拆成五段：
+
+1. 云机内部：`http://100.107.220.127:8000/api/health`、`http://100.107.220.127:8003/system/status`、`http://100.107.220.127:8043/api/health`
+2. Web 边缘到云 Web API：在 `100.88.57.122` 上 curl `http://100.107.220.127:8000/api/health`
+3. 公网域名：从本地主服务器或用户侧 curl `https://web.aivison.it.com/api/health`
+4. 结果/媒体依赖：统计 `cloud-web-api-prod` 的 `Timed out resolving web result R2 URL` 与 `Unexpected object_exists failure`
+5. 生成队列：统计 Central Redis pending/running、pending 最老等待时间、`queue_by_type` 与 heartbeat TTL
+
+参考基线：云内通常 5-40ms，边缘到云约 0.5s，外部公网域名可到 1.6-2.8s；若云内正常但公网慢，优先查边缘/Cloudflare/Tailscale/运营商链路、前端串行请求和 R2/legacy 回源，而不是先重建 Web API。
+
+常见日志信号：
+- `cloud-web-api-prod` 高频 `Timed out resolving web result R2 URL`：结果页或历史详情可能卡在 R2 URL 探测，应优先做短超时、缓存或 `pending_result` 快速返回。
+- Web 边缘 499 高频集中在 `/api/tasks/{id}/result`、`/api/gallery/posts`、`/api/gallery/my-favorites`、`/api/users/history`：通常是用户端等待过久主动断开。
+- `assets.aivison.it.com` 出现 `upstream prematurely closed connection` / `upstream timed out`：legacy MinIO 回源链路不稳，优先查边缘 cache/log 磁盘、Tailscale 到本地 MinIO、真实 object URL。
+- `cloud-dashboard-backend-prod` 高频 `Circuit Breaker is OPEN`：管理后台观测或外部余额接口降级，不代表 Central 任务调度一定失败。
 
 ## 4. 部署 SOP
 
@@ -149,6 +171,7 @@ Web、Payment、Dashboard 验证：
 - `https://web.aivison.it.com/api/health`
 - `https://rmb.aivison.it.com/pay/result`
 - Dashboard 登录后系统状态、worker 卡片与大盘统计能刷新。
+- Web 卡顿专项需额外记录云内、边缘到云、公网三段延迟，并统计边缘 499、Web R2 result timeout、Dashboard circuit breaker 和 `assets` 回源异常。
 
 ### 5.2 Worker
 ```bash
@@ -162,6 +185,7 @@ docker logs --since 2m --tail 100 cloud-prod-comfy-agent-1
 - `healthy_workers=7`
 - `error_workers=0`
 - `quarantined_workers=0`
+- Central Redis 中 `comfy:queue:pending`、`comfy:queue:running`、`comfy:task_heartbeat:*` TTL 与 `/system/status` 口径一致
 - `cloud-prod-worker-relay` 最近日志无 `relay_forward_failed`、`sidecar_upload_failed`
 
 ### 5.3 数据与媒体
@@ -175,3 +199,4 @@ docker logs --since 2m --tail 100 cloud-prod-comfy-agent-1
 - worker 更新后如果单节点异常，可只重建对应 `cloud-prod-comfy-agent-N`；不要全量清理 `workers` project。
 - 已经启动云 Bot 并产生新写入后，不做简单整站回滚；走数据核对与定向修复。
 - `/system/status` 慢或 Dashboard 卡顿时，先检查 Central 状态观测缓存、托管 Valkey 连接、Dashboard stats 缓存和前端轮询频率，不要把 GPU 生成停顿直接当成控制面故障。
+- Web 公网慢但云内健康时，不要优先重启 Web API；先检查 Web 边缘磁盘、Nginx 499/5xx、Cloudflare/Tailscale 链路、R2 result timeout 与 legacy assets 回源。

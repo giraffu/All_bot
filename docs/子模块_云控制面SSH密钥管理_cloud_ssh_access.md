@@ -4,6 +4,8 @@
 
 本文档记录 AllBot 云控制面服务器的 SSH 密钥、登录入口、权限边界和轮换策略。云控制面当前用于 DigitalOcean Singapore Droplet，承载正式 Bot、Web API、Payment API、Central API、Dashboard Backend、imgproxy 与运维入口等控制面服务。
 
+武汉局域网 GPU 节点的 SSH 管理独立记录在 `docs/子模块_局域网GPU节点SSH管理_lan_gpu_ssh_access.md`，不要把 GPU 节点密码或私钥混入云控制面文档。
+
 本文档不记录私钥内容、云服务密码、token、R2 key、数据库密码或任何可直接登录生产环境的敏感凭据。
 
 最近一次更新：2026-06-07，Asia/Shanghai。

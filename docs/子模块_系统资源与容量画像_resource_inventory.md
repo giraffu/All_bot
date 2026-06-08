@@ -5,7 +5,9 @@
 
 本文档不是实时监控面板。除明确标注为固定事实的硬件配置外，数据库行数、队列积压、桶容量、活跃用户等都应视为快照数据；做迁移、采购或扩容决策前，必须重新采集。
 
-最近一次结构性更新时间：2026-06-07 晚间，Asia/Shanghai。表内容量数字若未单独标注，仍是历史快照，扩容或迁移决策前必须重新采集。
+最近一次结构性更新时间：2026-06-08，Asia/Shanghai。表内容量数字若未单独标注，仍是历史快照，扩容或迁移决策前必须重新采集。
+最近一次局域网 GPU ComfyUI 素材清理：2026-06-08，Asia/Shanghai。
+最近一次云正式负载巡检：2026-06-08 17:10，Asia/Shanghai。
 
 ## 2. 主服务器
 当前主服务器不再是正式公开控制面的主承载点。正式 Bot/Web/Payment/Central/Dashboard 已迁到云控制面；本机主要保留本地 GPU worker、ComfyUI 访问、legacy MinIO 数据、本地旧正式数据保留、测试/开发辅助容器和运维工具。
@@ -29,11 +31,13 @@
 
 | 挂载点 | 容量 | 已用 | 可用 | 备注 |
 | :--- | ---: | ---: | ---: | :--- |
-| `/` | 3.6T | 1.4T | 2.1T | 主系统盘与 Docker 数据共盘 |
-| `/mnt/remote_data/192.168.1.226/ubantu` | 1.8T | 1.1T | 668G | 远端 GPU 节点 SSHFS |
-| `/mnt/remote_data/192.168.1.177/data` | 915G | 823G | 46G | 远端 GPU 节点 SSHFS，容量紧张 |
-| `/mnt/remote_data/192.168.1.252/user` | 937G | 519G | 371G | 远端 GPU 节点 SSHFS |
-| `/mnt/remote_data/192.168.1.2/data` | 936G | 379G | 518G | 远端 GPU 节点 SSHFS |
+| `/` | 3.6T | 1.3T | 2.2T | 主系统盘与 Docker 数据共盘 |
+| `/mnt/remote_data/192.168.1.226/ubantu` | 1.8T | 573G | 1.2T | 远端 GPU 节点 SSHFS，2026-06-08 清理后 |
+| `/mnt/remote_data/192.168.1.177/data` | 915G | 508G | 361G | 远端 GPU 节点 SSHFS，2026-06-08 清理后 |
+| `/mnt/remote_data/192.168.1.177/ubantui` | 915G | 508G | 361G | 同一远端根分区的用户目录挂载，2026-06-08 清理后 |
+| `/mnt/remote_data/192.168.1.252/user` | 937G | 178G | 712G | 远端 GPU 节点 SSHFS，2026-06-08 清理后 |
+| `/mnt/remote_data/192.168.1.2/data` | 936G | 171G | 726G | 远端 GPU 节点 SSHFS，2026-06-08 清理后 |
+| `/mnt/remote_data/192.168.1.2/chuzeyu` | 936G | 171G | 726G | 同一远端根分区的用户目录挂载，2026-06-08 清理后 |
 
 ## 2.1 云控制面 Droplet
 云控制面 Droplet 已于 2026-06-06 创建，并于 2026-06-07 晚间承接正式生产控制面。
@@ -49,7 +53,7 @@
 | 规格 | Basic Regular `$48/mo`，4 vCPU / 8GB RAM / 160GB SSD / 5TB transfer |
 | 实测 CPU | 4 vCPU |
 | 实测内存 | 约 7.8GiB |
-| 实测系统盘 | 约 154G，总量；创建后约 152G 可用 |
+| 实测系统盘 | 约 154G，总量；当前约 58G 已用、97G 可用 |
 | SSH 日常入口 | `ssh allbot-do-sgp1-control`，默认 `deploy` 用户 |
 | SSH root 入口 | `ssh allbot-do-sgp1-control-root`，仅初始化/救援使用 |
 
@@ -58,6 +62,32 @@
 - 公开媒体与新生成对象走 Cloudflare R2 `user-data-prod`；本地 MinIO 保留为 legacy 历史媒体只读 fallback 与本地热数据保留。
 - 本地 7 张 GPU 和 ComfyUI 不迁移；`cloud-prod-comfy-agent-*` 通过 Tailscale 访问云 Central API。
 - 长期稳妥生产规格仍建议升级到 8 vCPU / 16GB RAM 档，或把 Dashboard/后台任务拆到第二台节点。
+
+### 2.2 云正式负载巡检快照
+
+2026-06-08 17:10 Asia/Shanghai 的只读巡检显示，云控制面 CPU、内存和磁盘未打满，Web 卡顿更主要来自公网/边缘链路、结果媒体依赖和 GPU 队列等待。
+
+| 指标 | 快照 | 判断 |
+| :--- | :--- | :--- |
+| 云 Droplet load average | 约 `1.90 / 2.08 / 2.18` | 4 vCPU 未打满 |
+| 云 Droplet 内存 | 7.8GiB，总 available 约 3.2GiB | 未内存耗尽 |
+| 云 Droplet 磁盘 | 154G 总量，约 58G 已用，97G 可用 | 使用率约 38% |
+| `cloud-web-api-prod` | CPU 约 24%，内存约 2.0GiB | 有负载但不是满载 |
+| `cloud-tg-bot-prod` | CPU 约 40%，内存约 1.15GiB | Bot 有明显活跃负载 |
+| `cloud-central-api-prod` | CPU 约 8%，内存约 101MiB | Central 非 CPU 瓶颈 |
+| 托管 PostgreSQL | 连接约 75ms；2 active、24 idle、1 idle in transaction、0 waiting locks | 暂未见连接池/锁打满 |
+| 托管 Valkey/Redis | used_memory 约 40MB，connected_clients 81，blocked_clients 0 | 暂未见 Redis 打满 |
+
+延迟拆分基线：
+- 云机内部访问 `100.107.220.127:8000/8003/8043` 通常为 5-40ms。
+- Web 边缘 VPS 到云 Web API 约 0.51-0.55s。
+- 本地主服务器经公网访问 `web.aivison.it.com` API 约 1.6-2.8s。
+- 本地主服务器到云 Central Tailscale 约 0.7-2.1s。
+
+队列与媒体压力：
+- Central 当时约 pending 23-24、running 12，最老 pending 约 2873 秒；`healthy_workers=7`、`error_workers=0`、`quarantined_workers=0`。
+- 队列主要集中在 `video_edit`、`image_to_video`、`wan22_video_v2`、`face_swap`、`i2i_pro` 等长耗时或高峰任务。
+- Web API 30 分钟内曾观测到约 172 次 R2 result URL 解析超时；边缘 30 分钟内约 202 次 499，`assets.aivison.it.com` legacy 回源约 37 次 upstream 异常。
 
 ## 3. 服务与容器分布
 正式控制面当前在云端，本地主服务器保留本地 GPU worker 与旧数据。测试/开发服务仍可能在本地或云测试控制面运行，必须按 compose、端口、环境变量、数据库与 Valkey/Redis DB 隔离。
@@ -84,7 +114,7 @@
 - 本地云正式 worker 使用旧版 `docker-compose` 时，遇到 `ContainerConfig` 兼容错误只能清理目标 worker 容器和同 service label 残留。
 
 ## 4. 本地 GPU 算力池
-本地算力池由 4 台 GPU 服务器组成，共 7 张 GPU。项目容量口径以 GPU 监控截图与用户确认的硬件事实为准：3 张 RTX 5090 32G，4 张 RTX 4090 48G，总名义显存约 288GB。
+本地算力池由 4 台 GPU 服务器组成，共 7 张 GPU。项目容量口径以 GPU 监控截图与用户确认的硬件事实为准：3 张 RTX 5090 32G，4 张 RTX 4090 48G，总名义显存约 288GB。详细容器、模型挂载和安全运维边界见 `docs/子模块_局域网GPU节点资源与运维_lan_gpu_resource_ops.md`。
 
 > 注意：部分 ComfyUI 进程通过设备隔离启动，`/system_stats` 中会统一显示为 `cuda:0`。判断真实 GPU 数量时，不要把 Comfy 端口数、`cuda:0` 文本和物理 GPU 数混为一谈。
 
@@ -96,6 +126,25 @@
 | `192.168.1.2` | 2 x RTX 4090 48G | `8188`、`8189` | `cloud_prod_worker_06`、`cloud_prod_worker_07` | `img2img`、`img2img_lora`、`video_insert`、`video_edit`、`image_to_video` |
 
 同一批 ComfyUI 节点也可能被测试 agent 使用。正式 agent 连接云 Central API `100.107.220.127:8003`；测试 agent 连接测试 Central。测试与生产共享物理 GPU 时，要避免把测试任务当成免费容量；大模型/视频任务压测会直接影响生产排队。
+
+本地主服务器已配置局域网 GPU 节点 SSH 别名：`allbot-gpu-226`、`allbot-gpu-177`、`allbot-gpu-252`、`allbot-gpu-002`。密钥、权限边界与验证命令见 `docs/子模块_局域网GPU节点SSH管理_lan_gpu_ssh_access.md`。
+
+GPU 节点运行方式与模型挂载快照：
+
+| GPU 服务器 | ComfyUI 运行方式 | 模型目录 | 实例隔离 | 运维注意 |
+| :--- | :--- | :--- | :--- | :--- |
+| `192.168.1.226` | 宿主机进程，cwd `/home/ubantu/comfyui`，端口 `8188` | `/home/ubantu/comfyui/models`，约 325G | 单实例 | 不是 Comfy Docker 容器；重启前先确认进程管理方式 |
+| `192.168.1.177` | Docker `comfy0`/`comfy1`，分别绑定 GPU 0/1，端口 `8188`/`8189` | `/data/comfy/models`，约 444G，共享 | `inst0`/`inst1` 的 input/output/temp/custom_nodes/workflows 分离 | 2026-06-08 清理后根分区可用约 361G；`8189` 已修复 `FL_RIFE` |
+| `192.168.1.252` | Docker `comfy0`/`comfy1`，分别绑定 GPU 0/1，端口 `8188`/`8189` | `/home/user/APP/data/models`，约 121G，共享 | `inst0`/`inst1` 的 input/output/temp/custom_nodes/workflows 分离 | `comfy0` 主打 img2img，`comfy1` 主打视频/Wan22 |
+| `192.168.1.2` | Docker `comfy0`/`comfy1`，分别绑定 GPU 0/1，端口 `8188`/`8189` | `/data/comfy/models`，约 85G，共享 | `inst0`/`inst1` 的 input/output/temp/custom_nodes/workflows 分离 | 可只重启目标 Comfy 容器，不要整机重启 |
+
+双卡节点的重要边界：`comfy0` 与 `comfy1` 是独立容器、独立 GPU、独立输入输出目录，但共享模型目录和宿主机资源。处理某个 worker 或某个 ComfyUI 的问题时，只操作对应 worker 容器或对应 GPU 节点上的 `comfy0`/`comfy1`；不要使用整机 reboot、无 service 名 `docker compose down/up` 或批量 `docker rm`。
+
+ComfyUI 素材清理口径：
+- 2026-06-08 检查确认 GPU 节点没有项目级 ComfyUI 素材自动清理机制，只有系统默认 tmp/log 清理。
+- 已执行一次安全清理：`output/temp` 删除 60 分钟以前文件，`input` 只删除 24 小时以前文件。
+- 长期清理脚本为 `scripts/cleanup_lan_comfy_artifacts.sh`，默认 dry-run，必须显式 `--execute` 才删除。
+- 不要把“只保留最近 1 小时”套到 `input` 目录；已进入 ComfyUI 队列的任务可能仍引用输入文件。
 
 ComfyUI 版本快照：
 
@@ -122,6 +171,20 @@ ComfyUI 版本快照：
 - R2 `user-data-prod` 是正式新对象写入与公开媒体分发事实源。
 - MinIO 不再承接正式新写入公开事实源；`assets.aivison.it.com` 仅作为 legacy 历史媒体只读回源。
 - Web/API 的海外访问路径详见 [网络暴露与代理穿透](./子模块_网络暴露与代理穿透_network_proxy.md) 与 [边缘节点运维指南](./子模块_边缘节点运维指南_edge_node_ops.md)。
+
+### 边缘 VPS
+
+当前海外边缘层至少包含两台 VPS。详细运维 SOP 见 `docs/子模块_边缘节点运维指南_edge_node_ops.md`。
+
+| 节点 | 入口 | 资源快照 | 当前职责 | 风险 |
+| :--- | :--- | :--- | :--- | :--- |
+| Web/Nginx 边缘 VPS `web` | Tailscale `100.88.57.122`，公网 `154.17.30.113`，SSH `root@100.88.57.122` 使用 `frontend/ssh_key/id_rsa.pem` | Ubuntu 24.04，2 vCPU，1.9GiB RAM，40G 根盘，已用 36G，可用 1.7G | `web.aivison.it.com`/`web-test.aivison.it.com` 静态站与 `/api/` 反代，`assets.aivison.it.com` legacy MinIO 代理 | 根盘 96%，主要来自 `/var/cache/nginx` 约 26G 和 `/var/log/nginx` 约 4.4G |
+| Telegram Local API VPS | 公网 `69.63.220.115` | 本轮 SSH key 未打通，CPU/内存/磁盘待补采；公网 22/8081/8082 可达 | Telegram Local Bot API `8081` 与文件服务 `8082`，支撑大文件下载/上传 | 当前主服务器未纳入 SSH 免密管理，资源与容器状态不可远程只读确认 |
+
+边缘容量判断：
+- Web 边缘根盘低于 10% 可用时，不建议发布新静态资源、扩大 Nginx cache 或新增大日志调试。
+- `assets.aivison.it.com` 根路径返回 403 不代表具体历史对象不可读；验收 legacy fallback 必须测试真实 object URL。
+- Telegram Local API 节点如果 SSH 不可用，发生 8081/8082 故障时只能做公网端口判断，无法快速查看容器日志和挂载目录，应优先补齐 SSH key 管理。
 
 ## 6. 数据存储快照
 ### PostgreSQL
@@ -186,10 +249,11 @@ MinIO 是主服务器历史数据与内存占用大户之一。规划清理时�
 ## 7. 当前容量判断
 当前系统瓶颈顺序大致为：
 1. GPU 任务吞吐与视频任务长尾耗时。
-2. 云控制面到本地 GPU/ComfyUI 的 Tailscale/内网链路稳定性，以及本地 GPU 节点短暂停顿。
-3. MinIO 热桶容量、内存占用与回源压力。
-4. 云控制面规格较小导致的 Web/Dashboard/状态观测资源竞争，以及托管 Valkey/PostgreSQL 连接池压力。
-5. `192.168.1.177` 远端挂载盘可用空间偏低。
+2. 公网/Cloudflare/Web 边缘到云控制面的链路延迟，以及前端多接口串行等待。
+3. R2 result URL 探测、legacy MinIO 回源与 `assets.aivison.it.com` 边缘缓存/磁盘压力。
+4. 云控制面到本地 GPU/ComfyUI 的 Tailscale/内网链路稳定性，以及本地 GPU 节点短暂停顿。
+5. Dashboard stats/外部接口熔断与托管 Valkey/PostgreSQL 连接池压力。
+6. ComfyUI 本地 `input/output/temp` 会继续随视频任务快速增长，若缺少定期巡检，远端 GPU 节点仍可能再次磁盘吃紧。
 
 当前 CPU、Redis、Postgres 数据体积都不是第一瓶颈。若做云化，优先迁移控制面、公开对象分发与数据库备份，不应优先把本地 7 张 GPU 全量替换为云 GPU。
 
@@ -199,16 +263,20 @@ MinIO 是主服务器历史数据与内存占用大户之一。规划清理时�
 - 本地 GPU 保留：4 台 GPU 服务器继续作为主算力池，worker 通过 Tailscale 连接云 Central API。
 - 云 GPU 弹性：只在队列积压或单类任务爆发时临时拉起，不建议 24/7 常驻替代本地 GPU。
 - MinIO 生命周期：生产热结果保留有限天数，长期公开访问走 R2，定期清理测试桶和临时桶。
+- Web 体验优化：优先减少首屏/结果页串行 API 等待，R2 result 探测失败时快速返回 `pending_result` 或缓存快照，降低用户端 499。
 
 ## 8. 重新采集 Checklist
 做采购、迁移或扩容决策前，至少重新采集：
 - `hostnamectl`、`lscpu`、`free -h`、`df -hT`
 - `docker ps`、`docker stats --no-stream`
+- 云内、Web 边缘到云、公网域名三段 API 延迟
 - Postgres 数据库大小、表大小、近 1/7/30 天活跃与历史量
 - Redis `INFO memory`、`INFO keyspace`、Central pending/running/heartbeat
+- Central pending 最老等待时间、`queue_by_type`、`healthy/error/quarantined` worker 数
 - MinIO 桶大小与最近 7 天出入站量
 - 所有 ComfyUI `/system_stats` 与 Dashboard GPU 监控
-- Cloudflare/R2 命中率、MinIO 回源量、边缘 VPS 502/504 错误率
+- Cloudflare/R2 命中率、R2 result timeout、MinIO 回源量、边缘 VPS 499/502/504 错误率
 - 各 GPU 节点磁盘剩余空间，尤其是 `192.168.1.177`
+- GPU 节点上 `comfy0`/`comfy1` 的 GPU 绑定、模型目录和 `inst0`/`inst1` 挂载是否仍与 `docs/子模块_局域网GPU节点资源与运维_lan_gpu_resource_ops.md` 一致
 
 采集结果必须标注具体日期和时区，避免把实时队列或短期活动峰值写成长期容量。

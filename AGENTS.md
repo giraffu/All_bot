@@ -45,6 +45,8 @@
 - **系统全景图**：`/docs/system_architecture_report.md`
 - **系统资源与容量画像**：`/docs/子模块_系统资源与容量画像_resource_inventory.md`（主服务器、本地 GPU、网络、数据存储与运行负载快照）
 - **云控制面 SSH 密钥管理**：`/docs/子模块_云控制面SSH密钥管理_cloud_ssh_access.md`（DigitalOcean SSH key、登录入口、安全基线与轮换策略）
+- **局域网 GPU 节点 SSH 管理**：`/docs/子模块_局域网GPU节点SSH管理_lan_gpu_ssh_access.md`（本地 GPU 节点 SSH key、Host 别名、权限边界与验证命令）
+- **局域网 GPU 节点资源与运维**：`/docs/子模块_局域网GPU节点资源与运维_lan_gpu_resource_ops.md`（GPU 节点硬件、ComfyUI 容器、模型挂载与单容器安全操作边界）
 - **云测试控制面部署**：`/docs/子模块_云测试控制面部署_cloud_test_control_plane.md`（DigitalOcean 云测试控制面 compose、部署脚本、端口转发与验证命令）
 - **生成任务全链路**：`/docs/子模块_生成任务全链路_task_full_chain.md`（前端提交、task core、执行面、worker、结果回流、扩展与排障）
 - **前端预览截图**：`/docs/子模块_前端浏览器预览截图_frontend_browser_preview.md`

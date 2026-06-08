@@ -3,6 +3,12 @@
 ## 1. 目标与范围
 本模块致力于突破 Telegram 官方 Bot API 在云端下载 20MB、上传 50MB 的多媒体文件体积限制。通过在海外独立 VPS 部署官方提供的 `telegram-bot-api` 容器并开启 `TELEGRAM_LOCAL=1`，配合 Python HTTP 文件服务器和底层的 Monkey Patch，实现了针对高分辨率 AI 生成长视频的极速直传与下载能力。
 
+当前 Telegram Local API VPS 公网 IP 为 `69.63.220.115`：
+- API base：`http://69.63.220.115:8081`
+- File base：`http://69.63.220.115:8082`
+- 2026-06-08 公网探测：22/8081/8082 端口可达；8081 根路径返回 404 属正常现象，真实健康需用 `/bot<TOKEN>/getMe`；8082 根路径返回 200。
+- 当前主服务器尚未配置该 VPS 的可用 SSH key，`root@69.63.220.115` publickey 登录失败；资源、Docker 容器、挂载目录需补齐 SSH 后再采集。
+
 ## 2. 架构图与调用链
 
 ```mermaid
@@ -44,7 +50,7 @@ async def custom_download_as_bytearray(self, out=None, custom_path=None, read_ti
     """
     raw_path = self.file_path
     # 核心修复：直接通过直连下载，跳过代理和错误的 token 拼接
-    target_url = f"http://<VPS_IP>:8082{raw_path}"
+    target_url = f"http://69.63.220.115:8082{raw_path}"
     
     async with httpx.AsyncClient(proxy=None) as client:
         response = await client.get(target_url, timeout=read_timeout)
@@ -62,8 +68,8 @@ telegram.File.download_as_bytearray = custom_download_as_bytearray
 application = (
     ApplicationBuilder()
     .token(BOT_TOKEN)
-    .base_url("http://<VPS_IP>:8081/bot")
-    .base_file_url("http://<VPS_IP>:8082") # 仅提供前缀，通过 Patch 截断
+    .base_url("http://69.63.220.115:8081/bot")
+    .base_file_url("http://69.63.220.115:8082") # 仅提供前缀，通过 Patch 截断
     .build()
 )
 ```
@@ -82,6 +88,7 @@ application = (
   docker run -d -p 8081:8081 --name tg-local-api -e TELEGRAM_LOCAL=1 -v /var/lib/telegram-bot-api:/var/lib/telegram-bot-api aiogram/telegram-bot-api
   docker run -d -p 8082:8000 -v /var/lib/telegram-bot-api:/var/lib/telegram-bot-api:ro python:3.9 python -m http.server 8000 --directory /
   ```
+  上述命令只作为形态参考；生产恢复前必须先 SSH 到 `69.63.220.115` 核对现有容器、镜像、挂载与 token 来源，不要盲目覆盖运行中的容器。
 - **故障回滚**：
   如果 VPS 宕机，临时注释掉 `base_url` 与 `base_file_url`，并重启 Bot。这会使 Bot 回退到官方服务器限制，大于 20MB 的视频暂时报错，但其他业务恢复可用。
 
@@ -90,3 +97,4 @@ application = (
 - **SLO**：文件下载请求的成功率 > 99%，大文件（100MB）下载速度 > 5MB/s。
 - **告警策略**：
   - **Critical**：如果 Monkey Patch 中持续抛出 `httpx.HTTPStatusError: 404 Not Found`，意味着路径拼接逻辑失效或目录权限错误，需立刻通知运维人工核对 VPS 目录挂载。
+  - **SSH 管理缺口**：当前主服务器没有该 VPS 的可用免密 SSH；若 8081/8082 故障，只能先做公网端口判断。需要把运维公钥加入该节点 root 或专用 deploy 用户后，才能按完整 SOP 查看 `docker logs`、挂载目录和磁盘空间。

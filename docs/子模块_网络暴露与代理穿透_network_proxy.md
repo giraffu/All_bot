@@ -12,14 +12,14 @@ sequenceDiagram
     participant CF as Cloudflare 边缘加速
     participant VPS as 海外 Web VPS (Nginx)
     participant TS as Tailscale VLAN
-    participant BFF as 武汉底座 Web BFF (8000)
+    participant BFF as 云 Web BFF (8000)
     
     User->>CF: 1. 访问 web.aivison.it.com
     CF->>VPS: 2. 边缘路由到海外 VPS
     VPS->>VPS: 3. Nginx 托管静态前端资源 (Vue)
     alt API 动态请求
         VPS->>TS: 4. Nginx 匹配 /api/ 代理至 Tailscale IP
-        TS->>BFF: 5. 隧道加密传输至国内 8000 端口
+        TS->>BFF: 5. 隧道加密传输至云正式 Web API 8000 端口
         BFF-->>VPS: 6. 返回 JSON / SSE 流
         VPS-->>User: 7. 响应用户
     end
@@ -41,10 +41,10 @@ server {
         try_files $uri $uri/ /index.html;
     }
 
-    # 核心红线：动态 API 必须通过 Tailscale 内网 IP 穿透到国内底座
+    # 核心红线：动态 API 必须通过 Tailscale 内网 IP 回源到云正式 Web API
     # 绝对禁止在 proxy_pass 末尾加斜杠，否则会导致路由截断
     location /api/ {
-        proxy_pass http://100.x.x.x:8000;
+        proxy_pass http://100.107.220.127:8000;
         
         # 针对 SSE 长连接的特殊支持
         proxy_set_header Connection '';
@@ -58,8 +58,11 @@ server {
 
 ## 4. 接口定义 (网络契约)
 本模块处理的是 4 层与 7 层的网络转发，其主要网络契约如下：
-- `100.x.x.x:8000` (Tailscale) -> Web BFF API
-- `100.x.x.x:8003` (Tailscale) -> Central API
+- `100.107.220.127:8000` (Tailscale) -> 云正式 Web BFF API
+- `100.107.220.127:8001` (Tailscale) -> 云测试 Web BFF API
+- `100.107.220.127:8003` (Tailscale) -> 云正式 Central API
+- `100.99.254.53:9000` (Tailscale) -> 本地 legacy MinIO，只供 `assets.aivison.it.com` fallback
+- `69.63.220.115:8081/8082` -> Telegram Local Bot API 与文件服务边缘节点
 - `Cloudflare Tunnel (Public URL)` -> `rmb.aivison.it.com` 默认映射到本地 `127.0.0.1:8021` 供支付网关回调；正式迁云维护窗口内通过 `scripts/switch_rmb_tunnel_to_cloud_prod.sh --execute` 切到云 Payment API `100.107.220.127:8021`，通过 `scripts/rollback_rmb_tunnel_to_local_prod.sh --execute` 回滚到本地。
 
 > **注**：边缘节点的 Nginx 运维细则、大文件流式传输优化及 MinIO 代理的防签名失效红线，请参阅专项文档：[边缘节点运维指南](./子模块_边缘节点运维指南_edge_node_ops.md)。
@@ -73,7 +76,7 @@ server {
 ## 6. 部署与回滚步骤
 - **部署前端**：
   在项目 `/frontend` 目录下运行自动化发布脚本：
-  `npm run build && scp -i ssh_key/id_rsa.pem -r dist/* root@<VPS_IP>:/root/dist/`
+  `npm run build && scp -i ssh_key/id_rsa.pem -r dist/* root@100.88.57.122:/root/dist/`
 - **故障回滚**：
   如果 Tailscale 节点掉线导致 502 错误，需 SSH 登录国内底座并运行 `tailscale up --authkey=...` 重新注册节点。
 

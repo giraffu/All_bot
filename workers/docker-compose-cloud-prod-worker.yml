@@ -88,7 +88,7 @@ services:
     environment:
       <<: *worker-cloud-prod-env
       AGENT_ID: cloud_prod_worker_03
-      SUPPORTED_TASK_TYPES: ltx_video
+      SUPPORTED_TASK_TYPES: ltx_video,image_to_video
       COMFY_API_URL: http://192.168.1.177:8189
       COMFY_WS_URL: ws://192.168.1.177:8189/ws
       COMFY_INPUT_DIR: /tmp/input
