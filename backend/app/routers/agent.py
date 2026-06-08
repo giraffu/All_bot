@@ -8,6 +8,7 @@ from app.agent_router_helpers import (
     check_task_payload,
     complete_task_payload,
     heartbeat_payload,
+    peek_task_payload,
     pop_task_payload,
     task_heartbeat_payload,
     update_status_payload,
@@ -66,6 +67,20 @@ async def pop_task(
     queue_manager: QueueManagerDep = None,
 ):
     return await pop_task_payload(types=types, queue_manager=queue_manager)
+
+
+@router.get("/peek")
+async def peek_task(
+    types: Optional[str] = None,
+    limit: int = 1,
+    _authorized: bool = Depends(verify_token),
+    queue_manager: QueueManagerDep = None,
+):
+    return await peek_task_payload(
+        types=types,
+        limit=limit,
+        queue_manager=queue_manager,
+    )
 
 
 @router.get("/check/{task_id}")

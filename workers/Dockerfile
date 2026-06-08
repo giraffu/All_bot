@@ -12,6 +12,7 @@ COPY worker_requirements.txt .
 RUN pip install --no-cache-dir -i https://mirrors.aliyun.com/pypi/simple/ -r worker_requirements.txt
 
 COPY comfy_agent /app/worker
+COPY local_relay /app/local_relay
 
 # 设置 Python 寻址路径
 ENV PYTHONPATH=/app

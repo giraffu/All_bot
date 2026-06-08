@@ -67,6 +67,11 @@ sequenceDiagram
     Registry-->>U: 8. 返回 registry_task_id、终态 payload 或历史结果
 ```
 
+执行面补充口径：
+- Central API / QueueManager 仍是唯一队列事实源。worker 真实接单只能通过 `/api/agent/task/pop`，该接口会把任务从 pending 转 running 并写 task heartbeat。
+- `/api/agent/task/peek?types=...&limit=1` 只用于 worker 输入预取，只读扫描 pending 候选任务；不得移除 pending、不得写 running、不得更新任务状态或 heartbeat。取消、僵尸检测和终态收口不能依赖 peek。
+- 云正式本地 worker 可通过 `workers/local_relay` 访问云 Central，并用 relay 内的上传 sidecar 把本地 spool 结果上传 R2；但任务成功语义不变，必须 R2/S3 put 成功后才 `/complete`。
+
 ## 4. 公开入口与职责
 ### 4.1 任务提交门面
 当前统一提交入口：
@@ -195,6 +200,7 @@ SSE 侧当前已把运行态 not-found 收口为明确终止 / fallback 语义�
 - 测试环境：`safe_deploy_test.sh`
 - 正式环境：仅在明确确认后执行 `safe_deploy.sh`
 - 正式部署前应确认生产 worker 的 `SUPPORTED_TASK_TYPES` 覆盖本次上线的执行面类型；旧图生视频入口实际依赖 `image_to_video`，同时不要误删仍在使用的 `video_edit`。
+- 云正式 worker compose 现在包含本地 relay/sidecar 服务；更新 worker 主链或 `workers/local_relay` 时，应把 relay 与目标 worker 一起纳入测试 canary，先确认 relay `/health`、Central `/system/workers`、R2 上传和 `/complete` 成功链路。
 
 ### 8.2 回滚
 若本轮改动涉及 provider/dependencies 边界，回滚时除了代码版本，还应确认：

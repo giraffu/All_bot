@@ -201,6 +201,143 @@ async def test_process_task_failure_resets_runtime_state(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_process_task_uses_prefetched_inputs_without_repreparing(monkeypatch):
+    module = build_agent_module(monkeypatch)
+    agent = module.ComfyAgent()
+    submitted_params = {}
+    completed = []
+
+    async def fake_check_task_cancelled(task_id):
+        return False
+
+    async def unexpected_prepare_task_inputs(*args, **kwargs):
+        raise AssertionError("prefetch hit should skip input preparation")
+
+    async def fake_submit_task_workflow(**kwargs):
+        submitted_params.update(kwargs["params"])
+        kwargs["execution"].prompt_id = "prompt-1"
+        kwargs["execution"].task_result = "result.png"
+
+    async def fake_wait_for_task_completion(**kwargs):
+        return True
+
+    async def fake_resolve_execution_result_from_history(**kwargs):
+        return {}
+
+    async def fake_materialize_task_outputs(**kwargs):
+        return SimpleNamespace(primary=SimpleNamespace(object_name="result.png"), extra_outputs={})
+
+    async def fake_upload_materialized_outputs(**kwargs):
+        return {}
+
+    async def fake_report_materialized_outputs(**kwargs):
+        completed.append(kwargs["task_id"])
+
+    agent.check_task_cancelled = fake_check_task_cancelled
+    agent._prepare_task_inputs = unexpected_prepare_task_inputs
+    agent._prefetch_cache["task-1"] = {
+        "task_id": "task-1",
+        "task_type": "img2img",
+        "params": {"image": "prepared.png", "prompt": "cached"},
+        "downloaded_input_paths": ["/tmp/not-real-prefetch.png"],
+    }
+    monkeypatch.setattr(module, "submit_task_workflow", fake_submit_task_workflow)
+    monkeypatch.setattr(module, "wait_for_task_completion", fake_wait_for_task_completion)
+    monkeypatch.setattr(
+        module,
+        "resolve_execution_result_from_history",
+        fake_resolve_execution_result_from_history,
+    )
+    monkeypatch.setattr(module, "materialize_task_outputs", fake_materialize_task_outputs)
+    monkeypatch.setattr(module, "upload_materialized_outputs", fake_upload_materialized_outputs)
+    monkeypatch.setattr(module, "report_materialized_outputs", fake_report_materialized_outputs)
+
+    await agent.process_task(
+        {
+            "task_id": "task-1",
+            "type": "img2img",
+            "params": '{"image": "remote.png", "prompt": "original"}',
+        }
+    )
+
+    assert submitted_params == {"image": "prepared.png", "prompt": "cached"}
+    assert completed == ["task-1"]
+    assert agent._prefetch_cache == {}
+
+
+@pytest.mark.asyncio
+async def test_process_task_sidecar_upload_failure_reports_failed_without_complete(monkeypatch):
+    module = build_agent_module(monkeypatch)
+    agent = module.ComfyAgent()
+    reported = []
+    completed = []
+
+    async def fake_check_task_cancelled(task_id):
+        return False
+
+    async def fake_prepare_task_inputs(*args, **kwargs):
+        return None
+
+    async def fake_submit_task_workflow(**kwargs):
+        kwargs["execution"].prompt_id = "prompt-1"
+        kwargs["execution"].task_result = "result.png"
+
+    async def fake_wait_for_task_completion(**kwargs):
+        return True
+
+    async def fake_resolve_execution_result_from_history(**kwargs):
+        return {}
+
+    async def fake_materialize_task_outputs(**kwargs):
+        return SimpleNamespace(primary=SimpleNamespace(object_name="result.png"), extra_outputs={})
+
+    async def fake_spool_materialized_outputs(**kwargs):
+        return "spooled"
+
+    async def fake_upload_spooled_outputs_via_sidecar(**kwargs):
+        raise RuntimeError("sidecar upload failed")
+
+    async def fake_report_materialized_outputs(**kwargs):
+        completed.append(kwargs["task_id"])
+
+    async def fake_report_status(task_id, status, progress=0.0, error=""):
+        reported.append((task_id, status, error))
+
+    agent.check_task_cancelled = fake_check_task_cancelled
+    agent._prepare_task_inputs = fake_prepare_task_inputs
+    agent.report_status = fake_report_status
+    monkeypatch.setattr(module, "UPLOAD_SIDECAR_URL", "http://127.0.0.1:8013")
+    monkeypatch.setattr(module, "submit_task_workflow", fake_submit_task_workflow)
+    monkeypatch.setattr(module, "wait_for_task_completion", fake_wait_for_task_completion)
+    monkeypatch.setattr(
+        module,
+        "resolve_execution_result_from_history",
+        fake_resolve_execution_result_from_history,
+    )
+    monkeypatch.setattr(module, "materialize_task_outputs", fake_materialize_task_outputs)
+    monkeypatch.setattr(module, "spool_materialized_outputs", fake_spool_materialized_outputs)
+    monkeypatch.setattr(
+        module,
+        "upload_spooled_outputs_via_sidecar",
+        fake_upload_spooled_outputs_via_sidecar,
+    )
+    monkeypatch.setattr(module, "report_materialized_outputs", fake_report_materialized_outputs)
+
+    await agent.process_task(
+        {
+            "task_id": "task-1",
+            "type": "img2img",
+            "params": "{}",
+        }
+    )
+
+    assert completed == []
+    assert reported[-1][0] == "task-1"
+    assert reported[-1][1] == "failed"
+    assert "Result processing failed" in reported[-1][2]
+
+
+@pytest.mark.asyncio
 async def test_report_heartbeat_uses_active_execution_context(monkeypatch):
     module = build_agent_module(monkeypatch)
     agent = module.ComfyAgent()

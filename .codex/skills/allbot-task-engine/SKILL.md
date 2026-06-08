@@ -67,18 +67,19 @@ description: "处理任务提交流程、provider/capability 装配、双 ID 运
 ## 6. 当前生成任务全链路口径
 当前更准确的生成任务主链是：
 
-`Frontend -> /api/tasks/generate -> task_submission_service -> task_core.process_and_submit_task(...) -> task_core_submission / task_dispatcher / image_service / api_client -> Central API / QueueManager -> comfy_agent -> ComfyUI -> status/complete 回流 -> Web monitor / history / result / SSE`
+`Frontend -> /api/tasks/generate -> task_submission_service -> task_core.process_and_submit_task(...) -> task_core_submission / task_dispatcher / image_service / api_client -> Central API / QueueManager -> comfy_agent（可经 local relay/sidecar）-> ComfyUI -> status/complete 回流 -> Web monitor / history / result / SSE`
 
 实践中应始终按下面分层定位：
 - **前端层**：页面表单、payload 构造、`useTaskStream` 提交、`tasksStore` 的 SSE 与结果轮询
 - **Web API 层**：`src/web_api/routers/tasks.py` 与 `task_submission_service.py`
 - **业务编排层**：`task_core.py` facade、submission、runtime、web monitor、persistence
 - **派发层**：`task_dispatcher.py`、`image_service.py`、`api_client.py`
-- **执行面**：Central API、QueueManager、agent router
-- **节点层**：`workers/comfy_agent/agent_main.py` 已拆出输入准备、工作流执行、结果物化、结果上传/回报 helper，但 `process_task(...)` 仍是 Worker 主编排热点。新增输出类型、失败补偿、取消检查、重试策略或上报语义时，优先下沉到 `agent_input_preparation.py`、`agent_workflow_execution.py`、`agent_result_materialization.py`、`agent_result_reporting.py` 等阶段模块，并补 Worker focused tests。
+- **执行面**：Central API、QueueManager、agent router。`/api/agent/task/peek?types=...&limit=1` 是只读预取 hint，不能移除 pending、不能写 running、不能更新 status/heartbeat；真实执行仍必须走 `/pop`。
+- **节点层**：`workers/comfy_agent/agent_main.py` 已拆出输入准备、工作流执行、结果物化、结果上传/回报 helper，但 `process_task(...)` 仍是 Worker 主编排热点。`workers/local_relay/relay_main.py` 是本地 worker 网关与上传 sidecar：非终态 status 可合并转发，`pop/check/complete/failed/cancelled` 必须同步转发。新增输出类型、失败补偿、取消检查、重试策略、预取或上报语义时，优先下沉到 `agent_input_preparation.py`、`agent_workflow_execution.py`、`agent_result_materialization.py`、`agent_result_reporting.py` 等阶段模块，并补 Worker focused tests。
 - **Worker 健康态**：Comfy Agent heartbeat 状态包含 `idle`、`running`、`error`、`quarantined`；`active_workers` 只表示有心跳，`healthy_workers` 才表示可接单。Comfy 探活持续失败进入 `error`，连续基础设施类任务失败进入 `quarantined`，Dashboard 必须按健康字段展示故障而不是当作空闲。
 - **Central 观测态**：`/system/status` 与 `/system/workers` 是高频观测接口，使用共享 Redis 客户端和短 TTL/stale 快照缓存；它们不参与真实任务分发、Worker `pop`、状态上报或完成回流。排障时不要把 Dashboard/观测接口延迟直接等同于队列调度卡住。
 - **Worker 回报语义**：`/api/agent/task/complete` 是成功收口硬依赖，必须有限重试并在失败后进入失败路径；`/api/agent/task/status` 是运行态观测回报，允许轻量重试且重试耗尽只记录错误，不应直接让当前生成任务失败。
+- **Worker 预取/上传语义**：预取只能在当前 ComfyUI 执行期间通过只读 `peek` 下载/规范化/上传同类型下一单输入；真实 `/pop` 的 `task_id` 命中才可复用，miss 必须丢弃缓存。使用上传 sidecar 时，worker 必须等待 R2/S3 put 成功后才 `/complete`，sidecar 上传失败按当前任务失败上报。
 
 重要边界：
 - Web 主入口是 `POST /api/tasks/generate`，不是旧 generation params 口径

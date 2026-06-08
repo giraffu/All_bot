@@ -12,7 +12,7 @@ description: "处理 Docker Compose 编排、safe_deploy/safe_deploy_test、Alem
 - **标准部署入口**：测试环境优先使用 `safe_deploy_test.sh`，生产环境使用 `safe_deploy.sh`，避免手工拼接多个目录的容器命令。
 - **云测试控制面入口**：DigitalOcean SGP1 云端测试控制面使用 `scripts/safe_deploy_cloud_test.sh` 与 `deploy/docker-compose-cloud-test.yml`。云端运行 Central API、Web API、Dashboard Backend、imgproxy、测试 Bot，并通过 `CLOUD_TEST_DATABASE_URL` 连接 DigitalOcean 托管 PostgreSQL，通过 `CLOUD_TEST_REDIS_URL`/`CLOUD_TEST_WORKER_REDIS_URL` 连接 DigitalOcean 托管 Valkey；GPU worker 仍在本地主服务器以 `workers/docker-compose-cloud-worker-test.yml` 运行，并经 Tailscale 访问云端 Central API；对象存储事实源为 R2。
 - **云正式切换前准备入口**：正式控制面迁云准备使用 `.env.cloud.prod`、`deploy/docker-compose-cloud-prod.yml`、`workers/docker-compose-cloud-prod-worker.yml`、`scripts/safe_deploy_cloud_prod.sh`、`scripts/start_cloud_prod_worker.sh` 与 `scripts/stop_local_prod_entry_preserve.sh`。这些文件只用于维护窗口前门禁、预启动和保留式停止，不代表正式切流授权；`cloud-tg-bot-prod` 使用 `bot` profile，默认不得启动。云正式 Web API 必须配置非占位 `JWT_SECRET_KEY`，preflight 应在启动前拦截缺失或默认值。
-- **云正式当前生产入口**：2026-06-07 晚间正式生产已切到 DigitalOcean 云控制面。云端运行 `cloud-central-api-prod`、`cloud-web-api-prod`、`cloud-payment-api-prod`、`cloud-dashboard-backend-prod`、`cloud-imgproxy-prod` 与 `cloud-tg-bot-prod`；本地只运行 `cloud-prod-comfy-agent-1..7` 连接云 Central。云正式长期 SOP 见 `docs/子模块_云正式控制面部署_cloud_prod_control_plane.md`。生产热修优先用 `scripts/safe_deploy_cloud_prod.sh` 或 cloud-prod compose 单服务重建，不再默认走旧本地 `safe_deploy.sh`。
+- **云正式当前生产入口**：2026-06-07 晚间正式生产已切到 DigitalOcean 云控制面。云端运行 `cloud-central-api-prod`、`cloud-web-api-prod`、`cloud-payment-api-prod`、`cloud-dashboard-backend-prod`、`cloud-imgproxy-prod` 与 `cloud-tg-bot-prod`；本地运行 `cloud-prod-worker-relay` 与 `cloud-prod-comfy-agent-1..7`，worker 默认先连本机 relay，再由 relay 访问云 Central。云正式长期 SOP 见 `docs/子模块_云正式控制面部署_cloud_prod_control_plane.md`。生产热修优先用 `scripts/safe_deploy_cloud_prod.sh` 或 cloud-prod compose 单服务重建，不再默认走旧本地 `safe_deploy.sh`。
 - **云正式旧媒体策略**：新数据写入 R2 `user-data-prod`；旧 `bot-data` 不再要求切换前全量强搬，改用 `scripts/backfill_history_r2_objects.py --visible-scope user-visible --source-storage legacy` 预热用户可见集合，并通过 `LEGACY_MINIO_*` 在 Web API / Dashboard 读路径启用本地 MinIO 只读 fallback。Worker 写路径不得配置 legacy MinIO。预热顺序推荐为原文件 `--media-only`、legacy 缩略图 copy-only、再用 `--source-storage current --generate-missing-thumbnails` 从已预热 R2 原文件生成缺失缩略图；历史详情/Gallery/Wan22 预览必须做返回 URL 可读验收，不能只验 S3 HEAD。
 - **云正式边缘入口模板**：`all_bot_nginx_cloud_prod.conf` 是 Web 主模板，必须保留 `assets.aivison.it.com` 到本地 MinIO 的 legacy 代理；当前 `web.aivison.it.com /api/` 已切到云 Web API。RMB 正式入口首选继续使用 Cloudflare Tunnel，当前回源为云 Payment API；如需紧急回滚，用 `scripts/rollback_rmb_tunnel_to_local_prod.sh --execute` 切回本地 Payment API。切换/回滚脚本默认 dry-run，真实执行必须显式 `--execute`。
 - **云测试退役入口**：当云服务器后续只作为正式控制面使用时，使用 `scripts/cleanup_cloud_test_for_prod.sh` 退役云测试。脚本默认 dry-run，真实清理必须 `--execute`；只清云测试容器、本地 `cloud-comfy-agent-test-*`、托管 PostgreSQL `bot_db_test` 与 Valkey DB3/DB4，不删除 R2 `user-data-test`，不改 `web-test.aivison.it.com` 静态站。
@@ -50,6 +50,7 @@ description: "处理 Docker Compose 编排、safe_deploy/safe_deploy_test、Alem
 - 若重建本地隔离测试 worker，必须额外核对容器内实际生效的 `AGENT_SECRET_TOKEN`、`MINIO_INPUT_BUCKET=bot-data-test`、`MINIO_RESULT_BUCKET=comfyui-temp-test`；不要误以为 compose `${...}` 插值会自动读取 `.env.test` 的 `env_file` 值。若重建云测试 cloud-worker，则核对 `MINIO_ENDPOINT=<R2 endpoint host>`、`MINIO_INPUT_BUCKET=user-data-test`、`MINIO_RESULT_BUCKET=user-data-test`、`MINIO_TEMPLATE_BUCKET=user-data-test`、`MINIO_SECURE=true`。
 - 修改 workflow JSON、`mappings.json` 或 workflow patcher 时，默认以 `workers/comfy_agent/workflows` 为运行时事实源；Central API 不再维护 backend 副本，也不再执行 workflow 启动校验。
 - 云正式 Central 高频观测接口使用共享 Redis 客户端与短 TTL/stale 缓存；Dashboard stats 也有短缓存和 single-flight。排查管理后台卡顿时先区分 Central 观测慢、Dashboard stats 慢和本地 GPU/ComfyUI 生成停顿。
+- 云正式 worker compose 包含本地 relay/上传 sidecar。更新 `workers/comfy_agent`、`workers/local_relay`、`worker_requirements.txt` 或 worker compose 时，测试 canary 需额外验证 relay `/health`、`relay_forward_failed`/`sidecar_upload_failed` 日志、R2 上传成功后才 `/complete`，以及 Central `/system/workers` 无 error/quarantined。
 
 ### 2.1 生产单服务重建标准流程
 用户明确要求“只重建某个正式服务”时，先确认目标 service 存在，再按以下规则处理：
@@ -91,7 +92,7 @@ source /home/hfy/APP/All_bot/.env.cloud.prod
 set +a
 
 cd /home/hfy/APP/All_bot/workers
-services="cloud-prod-comfy-agent-1 cloud-prod-comfy-agent-2 cloud-prod-comfy-agent-3 cloud-prod-comfy-agent-4 cloud-prod-comfy-agent-5 cloud-prod-comfy-agent-6 cloud-prod-comfy-agent-7"
+services="cloud-prod-worker-relay cloud-prod-comfy-agent-1 cloud-prod-comfy-agent-2 cloud-prod-comfy-agent-3 cloud-prod-comfy-agent-4 cloud-prod-comfy-agent-5 cloud-prod-comfy-agent-6 cloud-prod-comfy-agent-7"
 docker-compose -f docker-compose-cloud-prod-worker.yml build $services
 docker-compose -f docker-compose-cloud-prod-worker.yml up -d --no-deps $services
 ```
@@ -123,6 +124,6 @@ docker-compose -f docker-compose-cloud-prod-worker.yml up -d --no-deps $services
 - 验证重建后容器确实运行的是新镜像，而不是旧容器旧代码。
 - 云测试控制面验证至少包括 `docker compose --env-file .env.cloud.test -f deploy/docker-compose-cloud-test.yml ps`，以及 `8004/health`、`8001/api/health`、`8044/api/health` 三个健康检查；全链路还要确认 `/system/workers` 能看到 7 个 `cloud_worker_test_*` heartbeat。
 - 云正式准备验证至少包括：cloud-prod control compose config、worker compose config、`.env.cloud.prod` 占位值/重复 key/`API_TOKEN == AUTH_TOKEN` 检查、R2 `user-data-prod` list/head、Telegram Local Bot API reachability，以及 `8003/health`、`8000/api/health`、`8021/pay/result`、`8043/api/health` 健康检查。正式 Bot profile 不在准备阶段启动。
-- 云正式当前生产验证至少包括：云端 `8003/health`、`8000/api/health`、`8021/pay/result`、`8043/api/health`，公共 `web.aivison.it.com/api/health` 与 `rmb.aivison.it.com/pay/result`，Central `/system/status` 与 `/system/workers`，7 个 `cloud-prod-comfy-agent-*` `RestartCount=0`，以及最近日志无 `ERROR/Traceback/Exception`。
+- 云正式当前生产验证至少包括：云端 `8003/health`、`8000/api/health`、`8021/pay/result`、`8043/api/health`，公共 `web.aivison.it.com/api/health` 与 `rmb.aivison.it.com/pay/result`，本机 relay `127.0.0.1:8013/health`，Central `/system/status` 与 `/system/workers`，`cloud-prod-worker-relay` 与 7 个 `cloud-prod-comfy-agent-*` `RestartCount=0`，以及最近日志无 `ERROR/Traceback/Exception`。
 - 若测试 worker 涉及认证或对象存储，额外验证实际生效的 `AGENT_SECRET_TOKEN`、输入桶和结果桶与目标环境一致；云测试 R2 直连还要验证 R2 S3 `list/head`、Web API 预签名 URL 读取 200，以及从 `https://web-test.aivison.it.com` Origin 发起的 R2 `PUT` CORS 预检返回 204/200。
 - 生产单服务重建后必须验证：目标容器 `Up`、`RestartCount=0`、最近日志无 `ERROR/Traceback/Exception`、关键非敏感环境变量符合正式口径。worker 需额外确认 heartbeat、Central API、ComfyUI WebSocket、MinIO 桶名正常；日志和总结中不要输出密钥值。

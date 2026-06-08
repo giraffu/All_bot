@@ -9,6 +9,7 @@ from app.agent_router_helpers import (
     complete_task_payload,
     heartbeat_payload,
     parse_allowed_types,
+    peek_task_payload,
     pop_task_payload,
     task_heartbeat_payload,
     update_status_payload,
@@ -46,6 +47,41 @@ async def test_pop_task_payload_returns_missing_message_when_task_details_absent
 
     assert payload == {"task": None, "message": "Task details not found"}
     queue_manager.dequeue_task.assert_awaited_once_with(allowed_types=["img2img"])
+
+
+@pytest.mark.asyncio
+async def test_peek_task_payload_returns_first_pending_match_without_dequeue():
+    task = {"task_id": "task-1", "type": "img2img", "status": "pending"}
+    queue_manager = SimpleNamespace(peek_pending_tasks=AsyncMock(return_value=[task]))
+
+    payload = await peek_task_payload(
+        types="img2img, face_swap",
+        limit=1,
+        queue_manager=queue_manager,
+    )
+
+    assert payload == {"task": task}
+    queue_manager.peek_pending_tasks.assert_awaited_once_with(
+        allowed_types=["img2img", "face_swap"],
+        limit=1,
+    )
+
+
+@pytest.mark.asyncio
+async def test_peek_task_payload_returns_no_task_message_when_empty():
+    queue_manager = SimpleNamespace(peek_pending_tasks=AsyncMock(return_value=[]))
+
+    payload = await peek_task_payload(
+        types=None,
+        limit=0,
+        queue_manager=queue_manager,
+    )
+
+    assert payload == {"task": None, "message": "No pending tasks"}
+    queue_manager.peek_pending_tasks.assert_awaited_once_with(
+        allowed_types=None,
+        limit=1,
+    )
 
 
 @pytest.mark.asyncio

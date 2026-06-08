@@ -1,6 +1,6 @@
 x-worker-cloud-prod-env: &worker-cloud-prod-env
   TZ: Asia/Shanghai
-  MASTER_API_URL: http://${CLOUD_PROD_TAILSCALE_IP:?CLOUD_PROD_TAILSCALE_IP is required}:8003
+  MASTER_API_URL: http://127.0.0.1:${CLOUD_PROD_LOCAL_RELAY_PORT:-8013}
   AGENT_SECRET_TOKEN: ${AGENT_SECRET_TOKEN:?AGENT_SECRET_TOKEN is required}
   MINIO_ENDPOINT: ${MINIO_ENDPOINT:?MINIO_ENDPOINT is required}
   MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:?MINIO_ACCESS_KEY is required}
@@ -10,21 +10,50 @@ x-worker-cloud-prod-env: &worker-cloud-prod-env
   MINIO_RESULT_BUCKET: ${MINIO_RESULT_BUCKET:-user-data-prod}
   MINIO_TEMPLATE_BUCKET: ${MINIO_TEMPLATE_BUCKET:-user-data-prod}
   MINIO_SECURE: ${MINIO_SECURE:-true}
+  UPLOAD_SIDECAR_URL: http://127.0.0.1:${CLOUD_PROD_LOCAL_RELAY_PORT:-8013}
+  RESULT_SPOOL_DIR: /app/spool
+  PREFETCH_ENABLED: ${PREFETCH_ENABLED:-true}
+  PREFETCH_DEPTH: ${PREFETCH_DEPTH:-1}
+  PREFETCH_TASK_TYPES: ${PREFETCH_TASK_TYPES:-img2img,img2img_lora,face_swap,i2i_draw,i2i_pro}
+  PREFETCH_CACHE_DIR: /app/prefetch-cache
 
 x-worker-base-cloud-prod: &worker-base-cloud-prod
   build:
     context: ./
     dockerfile: Dockerfile
   restart: always
+  depends_on:
+    - cloud-prod-worker-relay
   env_file:
     - ../.env.cloud.prod
   network_mode: "host"
   volumes:
     - ../logs/workers-cloud-prod:/app/logs
+    - ../logs/worker-spool-cloud-prod:/app/spool
     - ./comfy_agent/workflows:/app/worker/workflows
     - ../src:/app/src
 
 services:
+  cloud-prod-worker-relay:
+    build:
+      context: ./
+      dockerfile: Dockerfile
+    container_name: cloud-prod-worker-relay
+    restart: always
+    env_file:
+      - ../.env.cloud.prod
+    network_mode: "host"
+    command: ["python", "/app/local_relay/relay_main.py"]
+    environment:
+      <<: *worker-cloud-prod-env
+      CENTRAL_API_URL: http://${CLOUD_PROD_TAILSCALE_IP:?CLOUD_PROD_TAILSCALE_IP is required}:8003
+      LOCAL_RELAY_HOST: 127.0.0.1
+      LOCAL_RELAY_PORT: ${CLOUD_PROD_LOCAL_RELAY_PORT:-8013}
+      RESULT_SPOOL_DIR: /app/spool
+    volumes:
+      - ../logs/workers-cloud-prod:/app/logs
+      - ../logs/worker-spool-cloud-prod:/app/spool
+
   cloud-prod-comfy-agent-1:
     <<: *worker-base-cloud-prod
     container_name: cloud-prod-comfy-agent-1

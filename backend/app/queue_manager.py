@@ -304,6 +304,49 @@ class QueueManager:
         data = await self.redis.hgetall(task_key)
         return self._decode_redis_dict(data)
 
+    async def peek_pending_tasks(
+        self,
+        allowed_types: Optional[list[str]] = None,
+        *,
+        limit: int = 1,
+        batch_size: int = 50,
+    ) -> list[Dict[str, Any]]:
+        if limit <= 0:
+            return []
+
+        matched_tasks: list[Dict[str, Any]] = []
+        offset = 0
+        allowed_type_set = set(allowed_types or [])
+
+        while len(matched_tasks) < limit:
+            tasks_with_scores = await self.redis.zrange(
+                self.pending_key,
+                offset,
+                offset + batch_size - 1,
+                withscores=True,
+            )
+            if not tasks_with_scores:
+                break
+
+            for task_id_raw, _score in tasks_with_scores:
+                task_id = self._decode_redis_value(task_id_raw)
+                task_details = await self.get_task_status(task_id)
+                if not task_details:
+                    continue
+                if task_details.get("status") != TaskStatus.PENDING:
+                    continue
+                task_type = task_details.get("type")
+                if allowed_type_set and task_type not in allowed_type_set:
+                    continue
+
+                matched_tasks.append(task_details)
+                if len(matched_tasks) >= limit:
+                    break
+
+            offset += batch_size
+
+        return matched_tasks
+
     async def dequeue_task(
         self, allowed_types: Optional[list[str]] = None
     ) -> Optional[Tuple[str, float]]:

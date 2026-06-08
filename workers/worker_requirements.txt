@@ -5,3 +5,5 @@ python-dotenv
 asgi-correlation-id
 pydantic
 Pillow
+fastapi
+uvicorn

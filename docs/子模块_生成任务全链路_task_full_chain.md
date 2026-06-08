@@ -17,13 +17,14 @@
 ## 2. 一句话主链
 当前系统中更准确的生成任务主链是：
 
-`Frontend Page/Form -> /api/tasks/generate -> task_submission_service -> task_core.process_and_submit_task(...) -> task_core_submission / task_dispatcher / image_service / api_client -> Central API / QueueManager -> comfy_agent -> ComfyUI -> status/complete 回流 -> Web monitor / history / result / SSE`
+`Frontend Page/Form -> /api/tasks/generate -> task_submission_service -> task_core.process_and_submit_task(...) -> task_core_submission / task_dispatcher / image_service / api_client -> Central API / QueueManager -> comfy_agent（可经本地 relay/sidecar）-> ComfyUI -> status/complete 回流 -> Web monitor / history / result / SSE`
 
 要点：
 - Web 主入口是 `POST /api/tasks/generate`，不是旧的 generation params 风格接口
 - `task_core` 是统一门面，负责业务编排，不是 Central API
 - Central API 是执行面，不负责上游计费、并发锁和历史持久化
 - Worker 通过主动 `pop` 拉取任务，不是上游直接把 workflow 推到 Worker
+- 本地 relay/sidecar 只优化 worker 到云 Central/R2 的固定开销，不拥有队列事实；任务仍只有在 R2 上传成功且 Central `/complete` 成功后才算成功收口
 
 ## 3. 分层职责图
 
@@ -247,6 +248,7 @@ Central API 是执行面，不是业务主入口。
 - 写入 pending 队列
 - 维护 worker 心跳视图
 - 处理 agent `pop`
+- 提供只读 agent `peek` 供 worker 预取输入；`peek` 不能改变 pending/running/status/heartbeat，真实接单仍必须走 `pop`
 - 接收运行态状态更新
 - 接收完成上报
 - best-effort cancel
@@ -280,6 +282,7 @@ QueueManager 负责执行面排队与 Worker 选择，关键职责包括：
 - 按可用类型给 Worker 分配任务
 - 维护 worker heartbeat 与 task heartbeat
 - 支持取消、dequeue、zombie 扫描和状态迁移
+- 支持 `peek_pending_tasks(...)` 只读扫描 pending 队列，供预取流水线观察“下一单候选”，但不做 reservation
 
 从系统语义上看：
 - Web/Bot 提交成功不代表 Worker 已接单
@@ -302,6 +305,12 @@ QueueManager 负责执行面排队与 Worker 选择，关键职责包括：
 - `MASTER_API_URL`
 - `COMFY_API_URL`
 - `COMFY_WS_URL`
+- `UPLOAD_SIDECAR_URL`
+- `PREFETCH_ENABLED`
+- `PREFETCH_DEPTH`
+- `PREFETCH_TASK_TYPES`
+- `PREFETCH_CACHE_DIR`
+- `RESULT_SPOOL_DIR`
 
 运维含义：
 - 某任务长时间 pending 时，要先看是否有 Worker 声明支持该任务类型
@@ -313,6 +322,7 @@ Worker 拉到任务后会先处理输入：
 - 从 MinIO 下载输入图片或视频
 - 把输入通过 ComfyUI API 上传到 ComfyUI input 区
 - 补全 `image` / `image2` / `image3` / `face_image` / `body_image` / `video` 等参数
+- 开启 `PREFETCH_ENABLED` 时，worker 会在当前 ComfyUI 执行期间通过 relay/Central `/api/agent/task/peek` 只读查看同类型下一单，并提前下载、规范化和上传输入。真实 `/pop` 后只有 `task_id` 命中预取缓存才复用；miss 或类型不匹配会丢弃缓存并回退原输入准备流程。预取阶段不做取消检查，不改变 Central 队列状态。
 
 无输入的任务类型也必须确认 workflow patcher 对纯文本场景兼容，例如 `txt2img`。
 
@@ -343,8 +353,8 @@ Worker 执行流程：
 3. `wait_for_task_completion(...)` 以 WebSocket 终态为快路径，同时在提交后约 45 秒开始周期性探测 ComfyUI `/history/{prompt_id}`，约每 12 秒探测一次；若 history 已有结果，会立即设置完成态，避免半活 WebSocket 让 Worker 等满旧的固定窗口
 4. Worker 保留约 30 分钟硬超时，超时后再走最终 history fallback；若仍无结果则按失败上报，避免真正卡死的任务无限占用节点
 5. 执行完成后从 ComfyUI history 或 view API 取回结果文件
-6. 上传结果到 MinIO output bucket
-7. 向 Central API 调 `/api/agent/task/complete`。完成回报是任务收口的硬依赖：Worker 会对断连或 4xx/5xx 进行短退避重试，全部失败后必须抛错进入失败路径，不能吞掉异常后继续记录 `completed successfully`，否则会出现“结果已上传但 Central 仍按 heartbeat lost 判失败”的假完成。
+6. 上传结果到当前 output bucket。云正式/云测试 worker 可先把结果写入本地 `RESULT_SPOOL_DIR`，再交给本地 relay sidecar 上传 R2；未配置 `UPLOAD_SIDECAR_URL` 时继续由 worker 进程直接上传。
+7. 向 Central API 调 `/api/agent/task/complete`。完成回报是任务收口的硬依赖：Worker 会对断连或 4xx/5xx 进行短退避重试，全部失败后必须抛错进入失败路径，不能吞掉异常后继续记录 `completed successfully`，否则会出现“结果已上传但 Central 仍按 heartbeat lost 判失败”的假完成。无论是否使用 sidecar，都必须先拿到 R2/S3 put 成功确认，再 `/complete`。
 8. 向 Central API 调 `/api/agent/task/status` 的运行态上报也会做轻量重试；status 上报重试耗尽只记录错误，不应直接让当前生成任务失败。Dashboard 上看到的短暂状态缺口要和真正的任务终态失败区分开。
 
 执行失败则走：
@@ -352,6 +362,7 @@ Worker 执行流程：
 
 维护口径：
 - `workers/comfy_agent/agent_main.py` 已拆出输入准备、workflow 执行、结果物化、结果上报等 helper，但 `process_task(...)` 仍是当前 Worker 主编排热点。
+- `workers/local_relay/relay_main.py` 是本地 worker relay 与上传 sidecar；非终态 status 可本地 ACK 后合并转发，`pop/check/complete/failed/cancelled` 必须同步转发。sidecar 上传失败时当前任务应走 failed/status 路径，不得提前 complete。
 - 新增输出类型、失败补偿、取消检查、重试策略或上报语义时，优先把阶段逻辑下沉到对应 helper，并补 `tests/workers/test_comfy_agent.py` / `tests/workers/test_agent_result_materialization.py` focused tests。
 - `_route_ws_event(...)` 仍承担多种 ComfyUI WebSocket 事件分发；新增事件类型时优先拆 handler map 或独立 handler，避免继续扩大单函数条件分支。
 
@@ -362,6 +373,7 @@ Worker 上报的关键回调包括：
 - `/api/agent/task/complete`
 - `/api/agent/task/heartbeat`
 - `/api/agent/task/task_heartbeat`
+- `/api/agent/task/peek`（只读预取 hint，不是接单）
 
 执行面据此更新：
 - 任务状态

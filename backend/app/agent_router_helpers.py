@@ -38,6 +38,21 @@ async def pop_task_payload(*, types: str | None, queue_manager) -> dict:
     return {"task": task_details}
 
 
+async def peek_task_payload(
+    *,
+    types: str | None,
+    limit: int,
+    queue_manager,
+) -> dict:
+    tasks = await queue_manager.peek_pending_tasks(
+        allowed_types=parse_allowed_types(types),
+        limit=max(1, limit),
+    )
+    if not tasks:
+        return {"task": None, "message": "No pending tasks"}
+    return {"task": tasks[0]}
+
+
 async def check_task_payload(*, task_id: str, queue_manager) -> dict:
     task_details = await queue_manager.get_task_status(task_id)
     if not task_details:

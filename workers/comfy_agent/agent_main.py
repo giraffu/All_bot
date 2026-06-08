@@ -25,7 +25,9 @@ from agent_result_materialization import (
 )
 from agent_result_reporting import (
     report_materialized_outputs,
+    spool_materialized_outputs,
     upload_materialized_outputs,
+    upload_spooled_outputs_via_sidecar,
 )
 from agent_runtime_types import TaskExecutionContext
 from agent_workflow_execution import (
@@ -113,6 +115,23 @@ STATUS_REPORT_RETRY_BASE_SECONDS = float(
 )
 STATUS_REPORT_RETRY_MAX_SECONDS = float(
     os.getenv("STATUS_REPORT_RETRY_MAX_SECONDS", "3.0")
+)
+UPLOAD_SIDECAR_URL = os.getenv("UPLOAD_SIDECAR_URL", "").rstrip("/")
+RESULT_SPOOL_DIR = os.getenv("RESULT_SPOOL_DIR", "/app/spool")
+PREFETCH_ENABLED = os.getenv("PREFETCH_ENABLED", "false").strip().lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
+PREFETCH_DEPTH = int(os.getenv("PREFETCH_DEPTH", "1"))
+PREFETCH_TASK_TYPES = os.getenv(
+    "PREFETCH_TASK_TYPES",
+    "img2img,img2img_lora,face_swap,i2i_draw,i2i_pro",
+)
+PREFETCH_CACHE_DIR = os.getenv("PREFETCH_CACHE_DIR", "/app/prefetch-cache")
+PREFETCH_CONSUME_WAIT_SECONDS = float(
+    os.getenv("PREFETCH_CONSUME_WAIT_SECONDS", "0.25")
 )
 
 USER_INPUT_ERROR_MARKERS = (
@@ -203,6 +222,13 @@ class ComfyAgent:
         self.last_error_at: float | None = None
         self.task_infra_failures = 0
         self.quarantined_until: float | None = None
+        self._prefetch_cache: dict[str, dict[str, Any]] = {}
+        self._prefetch_task: asyncio.Task | None = None
+        self._prefetch_task_types = {
+            task_type.strip()
+            for task_type in PREFETCH_TASK_TYPES.split(",")
+            if task_type.strip()
+        }
 
     @property
     def task_completed_event(self) -> asyncio.Event:
@@ -436,13 +462,14 @@ class ComfyAgent:
         downloaded_input_paths: list[str],
         img_filename: str,
         param_key: str,
+        comfy_input_dir: str = COMFY_INPUT_DIR,
     ) -> None:
         await process_agent_single_input_asset(
             params=params,
             downloaded_input_paths=downloaded_input_paths,
             img_filename=img_filename,
             param_key=param_key,
-            comfy_input_dir=COMFY_INPUT_DIR,
+            comfy_input_dir=comfy_input_dir,
             download_input_func=self.download_input_from_minio,
             should_normalize_image_input_func=self._should_normalize_image_input,
             normalize_input_image_func=self._normalize_input_image_for_comfy,
@@ -455,11 +482,151 @@ class ComfyAgent:
         *,
         params: dict[str, Any],
         downloaded_input_paths: list[str],
+        comfy_input_dir: str = COMFY_INPUT_DIR,
     ) -> None:
+        async def process_with_input_dir(**kwargs):
+            await self._process_single_input_asset(
+                **kwargs,
+                comfy_input_dir=comfy_input_dir,
+            )
+
         await prepare_agent_task_inputs(
             params=params,
             downloaded_input_paths=downloaded_input_paths,
-            process_single_input_asset_func=self._process_single_input_asset,
+            process_single_input_asset_func=process_with_input_dir,
+        )
+
+    @staticmethod
+    def _parse_task_params(task: dict[str, Any]) -> dict[str, Any]:
+        params_str = task.get("params", "{}")
+        if isinstance(params_str, str):
+            parsed = json.loads(params_str)
+        else:
+            parsed = params_str
+        return dict(parsed or {})
+
+    def _should_prefetch_task_type(self, task_type: str) -> bool:
+        if not PREFETCH_ENABLED or PREFETCH_DEPTH <= 0:
+            return False
+        return task_type in self._prefetch_task_types
+
+    def _cleanup_input_paths(self, paths: list[str]) -> None:
+        for path in paths:
+            try:
+                if os.path.exists(path):
+                    os.remove(path)
+                    logger.info(f"Cleaned up input file: {path}")
+            except Exception as e:
+                logger.warning(f"Failed to clean up input file {path}: {e}")
+
+    def _discard_prefetch_cache(self, *, except_task_id: str | None = None) -> None:
+        task_ids = list(self._prefetch_cache.keys())
+        for cached_task_id in task_ids:
+            if except_task_id and cached_task_id == except_task_id:
+                continue
+            cached = self._prefetch_cache.pop(cached_task_id, None)
+            if cached:
+                self._cleanup_input_paths(cached.get("downloaded_input_paths", []))
+
+    async def _wait_for_prefetch_settle(self) -> None:
+        if not self._prefetch_task or self._prefetch_task.done():
+            return
+        try:
+            await asyncio.wait_for(
+                asyncio.shield(self._prefetch_task),
+                timeout=max(0.0, PREFETCH_CONSUME_WAIT_SECONDS),
+            )
+        except asyncio.TimeoutError:
+            return
+        except Exception as exc:
+            logger.debug("Prefetch settle failed: %s", exc)
+
+    async def _cancel_prefetch_task(self) -> None:
+        if not self._prefetch_task or self._prefetch_task.done():
+            return
+        self._prefetch_task.cancel()
+        try:
+            await self._prefetch_task
+        except asyncio.CancelledError:
+            pass
+
+    def _consume_prefetched_inputs(
+        self,
+        *,
+        task_id: str,
+        task_type: str,
+    ) -> dict[str, Any] | None:
+        cached = self._prefetch_cache.pop(task_id, None)
+        self._discard_prefetch_cache()
+        if not cached:
+            return None
+        if cached.get("task_type") != task_type:
+            self._cleanup_input_paths(cached.get("downloaded_input_paths", []))
+            return None
+        logger.info("Using prefetched inputs for task %s", task_id)
+        return cached
+
+    async def _prefetch_next_task_inputs(
+        self,
+        *,
+        task_type_filter: str | None = None,
+    ) -> None:
+        if not PREFETCH_ENABLED or PREFETCH_DEPTH <= 0:
+            return
+        if self._prefetch_cache:
+            return
+
+        params = {"limit": PREFETCH_DEPTH}
+        if task_type_filter and task_type_filter in self._prefetch_task_types:
+            prefetch_types = task_type_filter
+        else:
+            prefetch_types = ",".join(sorted(self._prefetch_task_types))
+        if prefetch_types:
+            params["types"] = prefetch_types
+
+        try:
+            response = await self.master_client.get("/api/agent/task/peek", params=params)
+            if response.status_code != 200:
+                logger.debug("Prefetch peek returned HTTP %s", response.status_code)
+                return
+            task = response.json().get("task")
+            if not task:
+                return
+
+            task_id = str(task.get("task_id", ""))
+            task_type = str(task.get("type", ""))
+            if not task_id or not self._should_prefetch_task_type(task_type):
+                return
+
+            prefetch_params = self._parse_task_params(task)
+            downloaded_input_paths: list[str] = []
+            await self._prepare_task_inputs(
+                params=prefetch_params,
+                downloaded_input_paths=downloaded_input_paths,
+                comfy_input_dir=PREFETCH_CACHE_DIR,
+            )
+            self._discard_prefetch_cache()
+            self._prefetch_cache[task_id] = {
+                "task_id": task_id,
+                "task_type": task_type,
+                "params": prefetch_params,
+                "downloaded_input_paths": downloaded_input_paths,
+            }
+            logger.info("Prefetched inputs for pending task %s (%s)", task_id, task_type)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            logger.warning("Prefetch failed: %s", exc)
+
+    def _schedule_prefetch(self, *, current_task_type: str) -> None:
+        if not PREFETCH_ENABLED:
+            return
+        if not self._should_prefetch_task_type(current_task_type):
+            return
+        if self._prefetch_task and not self._prefetch_task.done():
+            return
+        self._prefetch_task = asyncio.create_task(
+            self._prefetch_next_task_inputs(task_type_filter=current_task_type)
         )
 
     async def report_heartbeat(self):
@@ -784,12 +951,7 @@ class ComfyAgent:
             return
 
         task_type = str(task.get("type", ""))
-        params_str = task.get("params", "{}")
-
-        if isinstance(params_str, str):
-            params = json.loads(params_str)
-        else:
-            params = params_str
+        params = self._parse_task_params(task)
 
         logger.info(f"Processing task {task_id} of type {task_type}")
         execution = self._start_task_execution(task_id=task_id, task_type=task_type)
@@ -798,13 +960,26 @@ class ComfyAgent:
         try:
             if await self.check_task_cancelled(task_id):
                 logger.info(f"Task {task_id} was cancelled before processing.")
+                self._discard_prefetch_cache(except_task_id=None)
                 await self.report_cancelled(task_id)
                 return
 
-            await self._prepare_task_inputs(
-                params=params,
-                downloaded_input_paths=downloaded_input_paths,
+            await self._wait_for_prefetch_settle()
+            prefetched_inputs = self._consume_prefetched_inputs(
+                task_id=task_id,
+                task_type=task_type,
             )
+            if prefetched_inputs:
+                params = dict(prefetched_inputs["params"])
+                downloaded_input_paths.extend(
+                    prefetched_inputs.get("downloaded_input_paths", [])
+                )
+            else:
+                await self._cancel_prefetch_task()
+                await self._prepare_task_inputs(
+                    params=params,
+                    downloaded_input_paths=downloaded_input_paths,
+                )
 
             await submit_task_workflow(
                 task_id=task_id,
@@ -818,6 +993,8 @@ class ComfyAgent:
                 agent_id=AGENT_ID,
                 logger=logger,
             )
+
+            self._schedule_prefetch(current_task_type=task_type)
 
             task_completed = await wait_for_task_completion(
                 task_id=task_id,
@@ -855,14 +1032,29 @@ class ComfyAgent:
                     task_type=task_type,
                     logger=logger,
                 )
-                extra_outputs_payload = await upload_materialized_outputs(
-                    minio_client=self.minio_client,
-                    result_bucket=MINIO_RESULT_BUCKET,
-                    outputs=materialized_outputs,
-                    logger=logger,
-                )
+                if UPLOAD_SIDECAR_URL:
+                    spooled_outputs = await spool_materialized_outputs(
+                        outputs=materialized_outputs,
+                        spool_dir=RESULT_SPOOL_DIR,
+                        task_id=task_id,
+                        logger=logger,
+                    )
+                    extra_outputs_payload = await upload_spooled_outputs_via_sidecar(
+                        sidecar_url=UPLOAD_SIDECAR_URL,
+                        result_bucket=MINIO_RESULT_BUCKET,
+                        task_id=task_id,
+                        spooled_outputs=spooled_outputs,
+                        logger=logger,
+                    )
+                else:
+                    extra_outputs_payload = await upload_materialized_outputs(
+                        minio_client=self.minio_client,
+                        result_bucket=MINIO_RESULT_BUCKET,
+                        outputs=materialized_outputs,
+                        logger=logger,
+                    )
             except Exception as e:
-                logger.error(f"Failed to fetch from ComfyUI or upload to MinIO: {e}")
+                logger.error(f"Failed to fetch from ComfyUI or upload result: {e}")
                 raise Exception(f"Result processing failed: {e}")
 
             await report_materialized_outputs(
@@ -880,13 +1072,7 @@ class ComfyAgent:
             await self.report_status(task_id, "failed", error=str(e))
         finally:
             self._clear_task_execution(execution)
-            for path in downloaded_input_paths:
-                try:
-                    if os.path.exists(path):
-                        os.remove(path)
-                        logger.info(f"Cleaned up input file: {path}")
-                except Exception as e:
-                    logger.warning(f"Failed to clean up input file {path}: {e}")
+            self._cleanup_input_paths(downloaded_input_paths)
 
     async def poll_loop(self):
         logger.info(
@@ -960,6 +1146,8 @@ class ComfyAgent:
         # Ensure directories exist
         os.makedirs(COMFY_INPUT_DIR, exist_ok=True)
         os.makedirs(COMFY_OUTPUT_DIR, exist_ok=True)
+        os.makedirs(PREFETCH_CACHE_DIR, exist_ok=True)
+        os.makedirs(RESULT_SPOOL_DIR, exist_ok=True)
 
         # Start WS listener, polling loops, and heartbeat
         self.running = True
@@ -992,6 +1180,8 @@ class ComfyAgent:
         # Cancel all running background loops
         for task in list(getattr(self, "tasks", [])):
             task.cancel()
+        await self._cancel_prefetch_task()
+        self._discard_prefetch_cache(except_task_id=None)
 
         # Close HTTP clients
         await self.master_client.aclose()

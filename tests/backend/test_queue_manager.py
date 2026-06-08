@@ -176,6 +176,56 @@ async def test_dequeue_task_respects_allowed_types_and_marks_task_running():
 
 
 @pytest.mark.asyncio
+async def test_peek_pending_tasks_respects_allowed_types_without_mutating_queue_state():
+    redis = _FakeRedis()
+    manager = QueueManager(redis)
+    task_a = f"{manager.task_prefix}task-a"
+    task_b = f"{manager.task_prefix}task-b"
+
+    await redis.hset(task_a, mapping={"task_id": "task-a", "type": TaskType.IMG2IMG, "status": TaskStatus.PENDING})
+    await redis.hset(task_b, mapping={"task_id": "task-b", "type": TaskType.LTX_VIDEO, "status": TaskStatus.PENDING})
+    await redis.zadd(manager.pending_key, {"task-a": 1.0, "task-b": 2.0})
+
+    result = await manager.peek_pending_tasks(
+        allowed_types=[TaskType.LTX_VIDEO],
+        limit=1,
+    )
+
+    assert result == [{"task_id": "task-b", "type": TaskType.LTX_VIDEO, "status": TaskStatus.PENDING}]
+    assert redis.sorted_sets[manager.pending_key] == {"task-a": 1.0, "task-b": 2.0}
+    assert redis.sets.get(manager.running_key, set()) == set()
+    assert manager._task_heartbeat_key("task-b") not in redis.values
+
+
+@pytest.mark.asyncio
+async def test_peek_pending_tasks_skips_non_pending_tasks_left_in_pending_zset():
+    redis = _FakeRedis()
+    manager = QueueManager(redis)
+
+    await redis.hset(
+        f"{manager.task_prefix}task-cancelled",
+        mapping={"task_id": "task-cancelled", "type": TaskType.IMG2IMG, "status": TaskStatus.CANCELLED},
+    )
+    await redis.hset(
+        f"{manager.task_prefix}task-pending",
+        mapping={"task_id": "task-pending", "type": TaskType.IMG2IMG, "status": TaskStatus.PENDING},
+    )
+    await redis.zadd(
+        manager.pending_key,
+        {"task-cancelled": 1.0, "task-pending": 2.0, "task-missing": 3.0},
+    )
+
+    result = await manager.peek_pending_tasks(
+        allowed_types=[TaskType.IMG2IMG],
+        limit=1,
+    )
+
+    assert result == [{"task_id": "task-pending", "type": TaskType.IMG2IMG, "status": TaskStatus.PENDING}]
+    assert "task-cancelled" in redis.sorted_sets[manager.pending_key]
+    assert "task-pending" in redis.sorted_sets[manager.pending_key]
+
+
+@pytest.mark.asyncio
 async def test_dequeue_task_without_type_filter_pops_first_pending_task():
     redis = _FakeRedis()
     manager = QueueManager(redis)

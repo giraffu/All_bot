@@ -1,6 +1,6 @@
 x-worker-cloud-env: &worker-cloud-env
   TZ: Asia/Shanghai
-  MASTER_API_URL: http://${CLOUD_TEST_TAILSCALE_IP:?CLOUD_TEST_TAILSCALE_IP is required}:8004
+  MASTER_API_URL: http://127.0.0.1:${CLOUD_TEST_LOCAL_RELAY_PORT:-8014}
   AGENT_SECRET_TOKEN: ${AGENT_SECRET_TOKEN:?AGENT_SECRET_TOKEN is required}
   MINIO_ENDPOINT: ${MINIO_ENDPOINT:?MINIO_ENDPOINT is required}
   MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:?MINIO_ACCESS_KEY is required}
@@ -9,21 +9,50 @@ x-worker-cloud-env: &worker-cloud-env
   MINIO_RESULT_BUCKET: ${MINIO_RESULT_BUCKET:-comfyui-temp-test}
   MINIO_TEMPLATE_BUCKET: ${MINIO_TEMPLATE_BUCKET:-bot-template-test}
   MINIO_SECURE: ${MINIO_SECURE:-false}
+  UPLOAD_SIDECAR_URL: http://127.0.0.1:${CLOUD_TEST_LOCAL_RELAY_PORT:-8014}
+  RESULT_SPOOL_DIR: /app/spool
+  PREFETCH_ENABLED: ${PREFETCH_ENABLED:-true}
+  PREFETCH_DEPTH: ${PREFETCH_DEPTH:-1}
+  PREFETCH_TASK_TYPES: ${PREFETCH_TASK_TYPES:-img2img,img2img_lora,face_swap,i2i_draw,i2i_pro}
+  PREFETCH_CACHE_DIR: /app/prefetch-cache
 
 x-worker-base-cloud-test: &worker-base-cloud-test
   build:
     context: ./
     dockerfile: Dockerfile
   restart: always
+  depends_on:
+    - cloud-worker-relay-test
   env_file:
     - ../.env.cloud.test
   network_mode: "host"
   volumes:
     - ../logs/workers-cloud-test:/app/logs
+    - ../logs/worker-spool-cloud-test:/app/spool
     - ./comfy_agent/workflows:/app/worker/workflows
     - ../src:/app/src
 
 services:
+  cloud-worker-relay-test:
+    build:
+      context: ./
+      dockerfile: Dockerfile
+    container_name: cloud-worker-relay-test
+    restart: always
+    env_file:
+      - ../.env.cloud.test
+    network_mode: "host"
+    command: ["python", "/app/local_relay/relay_main.py"]
+    environment:
+      <<: *worker-cloud-env
+      CENTRAL_API_URL: http://${CLOUD_TEST_TAILSCALE_IP:?CLOUD_TEST_TAILSCALE_IP is required}:8004
+      LOCAL_RELAY_HOST: 127.0.0.1
+      LOCAL_RELAY_PORT: ${CLOUD_TEST_LOCAL_RELAY_PORT:-8014}
+      RESULT_SPOOL_DIR: /app/spool
+    volumes:
+      - ../logs/workers-cloud-test:/app/logs
+      - ../logs/worker-spool-cloud-test:/app/spool
+
   cloud-comfy-agent-test-1:
     <<: *worker-base-cloud-test
     container_name: cloud-comfy-agent-test-1

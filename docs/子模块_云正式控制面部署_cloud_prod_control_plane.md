@@ -9,7 +9,7 @@
 - 本地 GPU worker compose：`workers/docker-compose-cloud-prod-worker.yml`。
 - 正式对象存储事实源：Cloudflare R2 `user-data-prod`。
 - 本地 MinIO：只作为 legacy 历史媒体只读 fallback 和本地热数据保留，不再是新生成结果的公开事实源。
-- 本地 GPU/ComfyUI：仍在武汉内网运行，worker 通过 Tailscale 访问云 Central API。
+- 本地 GPU/ComfyUI：仍在武汉内网运行，worker 默认通过本机 `cloud-prod-worker-relay` 访问云 Central API；relay 再经 Tailscale 访问云端。
 - 公共 Web API 与 RMB 支付入口已经由云端控制面承接；`assets.aivison.it.com` 继续保留 legacy MinIO 只读回源。
 
 ## 2. 服务分布
@@ -29,7 +29,11 @@
 云端不长期自托管正式 PostgreSQL、Valkey 或 MinIO；正式库与运行态 Redis/Valkey 使用托管服务或外部服务。
 
 ### 2.2 本地执行面
-本地主服务器只运行云正式 GPU worker：
+本地主服务器运行云正式 GPU worker 和一个本地 worker relay/上传 sidecar：
+
+| 容器 | 说明 |
+| :--- | :--- |
+| `cloud-prod-worker-relay` | 本地 worker 网关与上传 sidecar，默认监听 `127.0.0.1:8013`，向云 Central `:8003` 转发 agent API |
 
 | 容器 | AGENT_ID | ComfyUI |
 | :--- | :--- | :--- |
@@ -41,7 +45,7 @@
 | `cloud-prod-comfy-agent-6` | `cloud_prod_worker_06` | `192.168.1.2:8188` |
 | `cloud-prod-comfy-agent-7` | `cloud_prod_worker_07` | `192.168.1.2:8189` |
 
-worker 写入 R2 `user-data-prod`，不得配置 legacy MinIO 写路径。
+worker 写入 R2 `user-data-prod`，不得配置 legacy MinIO 写路径。启用 sidecar 时，worker 先把 ComfyUI 结果写入 `/app/spool`，由 `cloud-prod-worker-relay` 上传 R2；只有 sidecar 确认 put 成功后，worker 才调用 Central `/complete`。
 
 ### 2.3 边缘入口
 - `web.aivison.it.com`：静态前端由边缘 VPS 承接，`/api/` 反代到云 Web API。
@@ -63,8 +67,10 @@ worker 写入 R2 `user-data-prod`，不得配置 legacy MinIO 写路径。
 - 队列/worker 轮询保持秒级即可，当前前端监控默认约 2 秒轮询，不应再改成更高频刷新。
 
 ### 3.3 Worker 状态回报
+- 本地 `cloud-prod-worker-relay` 透明代理 worker 的 `pop/check/peek/complete/heartbeat/task_heartbeat` 到云 Central。非终态 `running` status 可在本地快速 ACK 并合并转发，终态 `complete/failed/cancelled` 必须同步转发成功。
 - Worker `complete` 回报是任务成功收口硬依赖，必须保留有限重试；全部失败后进入失败路径。
 - Worker 运行态 `status` 上报也有轻量重试，用于减少云网络瞬断导致的监控漏报；status 上报失败不会直接判定生成任务失败。
+- Worker 可在当前图生图/换脸类任务执行期间通过 relay 调 Central 只读 `/api/agent/task/peek` 预取同类型下一单输入。`peek` 不会把任务标记 running，真实执行仍以后续 `/pop` 命中的 `task_id` 为准。
 - 本地 GPU “停几秒再继续”通常是 ComfyUI/worker 执行链路现象，例如模型/LoRA 加载、WebSocket 终态未及时返回、worker 转 `/history/{prompt_id}` 轮询收口，不应直接归因到 Central `/system/status` 慢。
 
 ## 4. 部署 SOP
@@ -107,7 +113,7 @@ source /home/hfy/APP/All_bot/.env.cloud.prod
 set +a
 
 cd /home/hfy/APP/All_bot/workers
-services="cloud-prod-comfy-agent-1 cloud-prod-comfy-agent-2 cloud-prod-comfy-agent-3 cloud-prod-comfy-agent-4 cloud-prod-comfy-agent-5 cloud-prod-comfy-agent-6 cloud-prod-comfy-agent-7"
+services="cloud-prod-worker-relay cloud-prod-comfy-agent-1 cloud-prod-comfy-agent-2 cloud-prod-comfy-agent-3 cloud-prod-comfy-agent-4 cloud-prod-comfy-agent-5 cloud-prod-comfy-agent-6 cloud-prod-comfy-agent-7"
 docker-compose -f docker-compose-cloud-prod-worker.yml build $services
 docker-compose -f docker-compose-cloud-prod-worker.yml up -d --no-deps $services
 ```
@@ -146,7 +152,8 @@ Web、Payment、Dashboard 验证：
 
 ### 5.2 Worker
 ```bash
-docker ps --format '{{.Names}}\t{{.Status}}' | rg '^cloud-prod-comfy-agent-'
+docker ps --format '{{.Names}}\t{{.Status}}' | rg '^cloud-prod-(worker-relay|comfy-agent-)'
+curl -fsS http://127.0.0.1:8013/health
 docker logs --since 2m --tail 100 cloud-prod-comfy-agent-1
 ```
 
@@ -155,6 +162,7 @@ docker logs --since 2m --tail 100 cloud-prod-comfy-agent-1
 - `healthy_workers=7`
 - `error_workers=0`
 - `quarantined_workers=0`
+- `cloud-prod-worker-relay` 最近日志无 `relay_forward_failed`、`sidecar_upload_failed`
 
 ### 5.3 数据与媒体
 - Alembic 当前 head 应与仓库 migration head 一致。
