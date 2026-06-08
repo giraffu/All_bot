@@ -82,6 +82,7 @@ app.add_middleware(
         "https://web-test.aivison.it.com",
         "https://web-cf-test.aivison.it.com",
         "https://allbot-web-cf-test.pages.dev",
+        "https://allbot-web-prod.pages.dev",
         "http://localhost:8085",
         "http://localhost:5173",
         "http://localhost:5174",

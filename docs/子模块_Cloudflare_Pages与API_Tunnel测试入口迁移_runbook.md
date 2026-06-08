@@ -156,6 +156,8 @@ curl -sS -o /dev/null -w "%{http_code} %{time_total}\n" \
 - `VITE_STORAGE_URL=https://assets.aivison.it.com`
 - `VITE_TONCONNECT_MANIFEST_URL=https://web.aivison.it.com/tonconnect-manifest.json`
 
+正式 Pages 默认域 `https://allbot-web-prod.pages.dev` 必须加入 Web API CORS allowlist，用于正式自定义域切换前做登录、上传、Gallery、History 与任务状态流验收。
+
 ### 5.3 正式 Web 域名切换
 
 只有当 `allbot-web-prod.pages.dev`、`api.aivison.it.com`、R2 上传、登录、Gallery、History、任务状态流和结果页都验证通过后，才在 Pages custom domains 添加 `web.aivison.it.com`。
