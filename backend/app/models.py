@@ -54,6 +54,8 @@ class TaskStatusResponse(BaseModel):
     extra_outputs: Optional[Dict[str, Any]] = None
     cancel_requested: Optional[bool] = None
     cancel_requested_at: Optional[float] = None
+    cancel_locked: Optional[bool] = None
+    execution_phase: Optional[str] = None
 
 
 class WorkerInfo(BaseModel):

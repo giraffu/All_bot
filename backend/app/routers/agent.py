@@ -32,6 +32,9 @@ class StatusUpdateRequest(BaseModel):
     status: str
     progress: float = 0.0
     error: str = ""
+    execution_phase: Optional[str] = None
+    cancel_locked: Optional[bool] = None
+    set_current: bool = True
 
 
 class CompleteRequest(BaseModel):
@@ -63,10 +66,15 @@ def verify_token(authorization: Optional[str] = Header(None)):
 @router.get("/pop")
 async def pop_task(
     types: Optional[str] = None,
+    cancel_lock: bool = False,
     _authorized: bool = Depends(verify_token),
     queue_manager: QueueManagerDep = None,
 ):
-    return await pop_task_payload(types=types, queue_manager=queue_manager)
+    return await pop_task_payload(
+        types=types,
+        queue_manager=queue_manager,
+        cancel_lock=cancel_lock,
+    )
 
 
 @router.get("/peek")
@@ -104,6 +112,9 @@ async def update_status(
         status=req.status,
         progress=req.progress,
         error=req.error,
+        execution_phase=req.execution_phase,
+        cancel_locked=req.cancel_locked,
+        set_current=req.set_current,
         queue_manager=queue_manager,
     )
 

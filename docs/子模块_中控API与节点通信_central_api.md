@@ -54,12 +54,11 @@ sequenceDiagram
 
 ## 5. 接口语义
 ### 5.1 任务取消
-- `DELETE /api/tasks/{task_id}` 仍可视为 backend 执行面的终止入口
-- 它的职责是：
-  - 根据 backend 运行态定位任务
-  - 向关联 Worker 发起 best-effort cancel
-  - 返回成功、未找到或失败结果
-- 上游仍需自行完成 registry cleanup、锁释放、退款与终态收口
+- `DELETE /api/tasks/{task_id}` 仍可视为 backend 执行面的终止入口。
+- pending 任务可直接从队列移除并进入取消退款链路。
+- Worker 可在真实 `/api/agent/task/pop?cancel_lock=true` 时把任务标记为 `cancel_locked=1`、`execution_phase=preparing`；这表示任务已进入输入准备或执行流水线，用户取消接口应返回 `not_cancellable` / `reason=cancel_locked`，不再写 `cancel_requested`。
+- legacy 未锁定 running 任务仍保留 `cancel_requested` 兼容语义，等待执行端确认。
+- 上游仍需自行完成 registry cleanup、锁释放、退款与终态收口。
 
 ### 5.2 节点通信
 - Worker 心跳、可用性与执行中状态是 Central API / Queue 视图的一部分
@@ -70,10 +69,12 @@ sequenceDiagram
 - `/status/{backend_task_id}` 是单任务观测接口，也会对同一 Redis/队列 key 与 task id 做短 TTL 缓存、最大条目数限制和单飞刷新，默认约 2 秒 TTL、4 秒 stale 窗口，用于吸收 Web SSE、Dashboard active task 与 Bot fallback 的重复轮询。Web SSE 侧还有补偿轮询退避：同一任务状态/队列位置/进度连续不变时，从 pending 约 5 秒、running 约 10 秒逐步退到默认最多约 20 秒，状态变化后恢复初始间隔。它不改变 pending/running/done 的事实源，终态收口仍以 Worker `/complete`、Redis 事件和上游 monitor/history 为准。
 - Central FastAPI 生命周期内复用共享 Redis 客户端；依赖注入优先使用 `request.app.state.redis`，只有离线/测试场景缺失 app state 时才回退到临时 Redis 连接。不要把 `get_redis()` 再改回每请求新建连接的模式。
 - `/api/agent/task/complete` 是结果成功回流的唯一确认点。Worker 端必须对完成回报进行有限重试，并在全部失败后显式失败，避免 Central 因未收到 `complete` 而把已生成任务误判为 heartbeat lost。
-- `/api/agent/task/status` 是运行态观测回报，Worker 端对瞬时断连或 5xx 做轻量重试；重试耗尽只记录错误，不应直接让正在生成的任务失败。
+- `/api/agent/task/status` 是运行态观测回报，Worker 端对瞬时断连或 5xx 做轻量重试；重试耗尽只记录错误，不应直接让正在生成的任务失败。status 可携带 `execution_phase`、`cancel_locked` 与 `set_current=false`，用于双槽流水线下更新阶段而不覆盖 agent 当前任务指针。
+- `/api/agent/task/pop?cancel_lock=true` 是 V2 worker 流水线的真实接单入口；它仍会从 pending 转 running 并写 task heartbeat，同时写取消锁字段。Central 仍是唯一队列事实源，worker 不得绕过 pop 直接执行 peek 结果。
 - `/api/agent/task/peek?types=...&limit=1` 是只读预取 hint，只扫描 pending 队列中最早匹配的任务并返回 `{ "task": task_details | null }`。它不得 `zrem` pending、不得写 running set、不得标记 `running`、不得写 task heartbeat；真实接单和取消语义仍必须以后续 `/api/agent/task/pop` 为准。
+- `complete/failed/cancelled` 终态回报只记录 task 的 `worker_id`，并用 compare-and-clear 清理 agent `current_task_id`：只有当前指针仍等于该 task 时才清除，避免旧任务后台 complete 抹掉新任务展示。
 - Worker 等待 ComfyUI 结果时，WebSocket 终态不是唯一信号；当 WS 未及时设置结果时，worker 会按策略探测 `/history/{prompt_id}` 收口。日志里的 `Task result not set via WS, checking history` 通常解释为 ComfyUI/worker 本地执行链路的短暂停顿，不等同于 Central 状态接口慢。
-- 云正式 worker 可在本地主机通过 `workers/local_relay/relay_main.py` 访问 Central。该 relay 透明代理 `pop/check/peek/complete/heartbeat/task_heartbeat`，对非终态 `running` status 做本地快速 ACK 和最新值合并转发；`complete`、`failed`、`cancelled`、`pop`、`check` 必须同步转发成功后才返回。relay 同时提供本地上传 sidecar，worker 只有在 R2/S3 put 成功后才调用 `/complete`，因此 Central 仍是唯一队列事实源。
+- 云正式 worker 可在本地主机通过 `workers/local_relay/relay_main.py` 访问 Central。该 relay 透明代理 `pop/check/peek/complete/heartbeat/task_heartbeat`，保留 query/body 新字段；对非终态 `running` status 做本地快速 ACK 和最新值合并转发；`complete`、`failed`、`cancelled`、`pop`、`check` 必须同步转发成功后才返回。relay 同时提供本地上传 sidecar，worker 只有在 R2/S3 put 成功后才调用 `/complete`，因此 Central 仍是唯一队列事实源。
 - 文档不再固化 Redis DB 编号与具体低层队列命名为稳定架构事实
 
 ## 6. 测试要求
@@ -82,6 +83,8 @@ sequenceDiagram
 - 覆盖 `DELETE /api/tasks/{task_id}` 的 best-effort cancel
 - 覆盖 worker 心跳、健康字段、`error/quarantined` 节点视图与 `healthy_workers` 聚合统计
 - 覆盖 `peek` 只读语义：不修改 pending/running/status/task heartbeat，且不返回已取消任务
+- 覆盖 `pop(cancel_lock=true)` 写入取消锁，locked running cancel 返回不可取消且不写 `cancel_requested`
+- 覆盖双槽 worker 下旧任务终态 compare-clear 不会清掉新任务 `current_task_id`
 - 覆盖本地 relay 对终态同步转发、非终态 status 合并转发、sidecar 上传成功后才允许 worker complete
 
 ## 7. 部署与回滚

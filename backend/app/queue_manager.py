@@ -1,4 +1,5 @@
 import json
+import time
 from typing import Any, Dict, Optional, Tuple
 
 from app.models import TaskStatus, TaskType
@@ -177,12 +178,15 @@ class QueueManager:
         )
 
     async def _activate_dequeued_task(
-        self, next_task: Optional[Tuple[str, float]]
+        self,
+        next_task: Optional[Tuple[str, float]],
+        *,
+        cancel_lock: bool = False,
     ) -> Optional[Tuple[str, float]]:
         if not next_task:
             return None
         task_id, score = next_task
-        await self._mark_task_running(task_id)
+        await self._mark_task_running(task_id, cancel_lock=cancel_lock)
         return task_id, score
 
     async def _build_worker_info(
@@ -348,21 +352,35 @@ class QueueManager:
         return matched_tasks
 
     async def dequeue_task(
-        self, allowed_types: Optional[list[str]] = None
+        self,
+        allowed_types: Optional[list[str]] = None,
+        *,
+        cancel_lock: bool = False,
     ) -> Optional[Tuple[str, float]]:
         return await dequeue_task_flow(
             allowed_types=allowed_types,
             pop_next_pending_task_func=self._pop_next_pending_task,
             find_next_allowed_task_func=self._find_next_allowed_task,
             activate_dequeued_task_func=self._activate_dequeued_task,
+            cancel_lock=cancel_lock,
         )
 
-    async def _mark_task_running(self, task_id: str):
+    async def _mark_task_running(self, task_id: str, *, cancel_lock: bool = False):
         # Move to running set
         await self.redis.sadd(self.running_key, task_id)
-        # Update status
         task_key = self._task_key(task_id)
-        await self.redis.hset(task_key, "status", TaskStatus.RUNNING)
+        task_mapping: dict[str, Any] = {"status": TaskStatus.RUNNING}
+        if cancel_lock:
+            task_mapping.update(
+                {
+                    "cancel_locked": 1,
+                    "cancel_locked_at": time.time(),
+                    "execution_phase": "preparing",
+                    "cancel_requested": 0,
+                    "cancel_requested_at": "",
+                }
+            )
+        await self.redis.hset(task_key, mapping=task_mapping)
         # Initialize heartbeat to prevent immediate zombie detection
         await self.update_task_heartbeat(task_id)
 
@@ -395,6 +413,33 @@ class QueueManager:
             task_id=task_id,
             progress=progress,
             persist_task_update_func=self._persist_task_update,
+        )
+
+    async def update_task_runtime_metadata(
+        self,
+        task_id: str,
+        *,
+        progress: float | None = None,
+        execution_phase: str | None = None,
+        cancel_locked: bool | None = None,
+    ) -> None:
+        task_mapping: dict[str, Any] = {}
+        event_payload: dict[str, Any] = {"status": "running"}
+        if progress is not None:
+            task_mapping["progress"] = progress
+            event_payload["progress"] = progress
+        if execution_phase is not None:
+            task_mapping["execution_phase"] = execution_phase
+            event_payload["execution_phase"] = execution_phase
+        if cancel_locked is not None:
+            task_mapping["cancel_locked"] = 1 if cancel_locked else 0
+            event_payload["cancel_locked"] = cancel_locked
+        if not task_mapping:
+            return
+        await self._persist_task_update(
+            task_id,
+            task_mapping=task_mapping,
+            event_payload=event_payload,
         )
 
     async def cancel_task(self, task_id: str) -> Optional[Dict[str, Any]]:
@@ -473,16 +518,31 @@ class QueueManager:
         )
 
     async def bind_agent_task(self, task_id: str, agent_id: str):
-        await self.redis.hset(self._task_key(task_id), "worker_id", agent_id)
+        await self.record_task_worker(task_id, agent_id)
         await self.redis.hset(
             self._agent_heartbeat_key(agent_id),
             "current_task_id",
             task_id,
         )
 
-    async def clear_agent_current_task(self, agent_id: str):
+    async def record_task_worker(self, task_id: str, agent_id: str):
+        await self.redis.hset(self._task_key(task_id), "worker_id", agent_id)
+
+    async def clear_agent_current_task(
+        self,
+        agent_id: str,
+        *,
+        task_id: str | None = None,
+    ):
+        key = self._agent_heartbeat_key(agent_id)
+        if task_id is not None:
+            current_task_id = self._decode_redis_value(
+                await self.redis.hget(key, "current_task_id")
+            )
+            if current_task_id != task_id:
+                return
         await self.redis.hdel(
-            self._agent_heartbeat_key(agent_id),
+            key,
             "current_task_id",
         )
 

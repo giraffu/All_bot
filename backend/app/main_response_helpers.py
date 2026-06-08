@@ -309,6 +309,8 @@ async def build_task_status_response(
                 if task.get("cancel_requested_at")
                 else None
             ),
+            "cancel_locked": queue_manager._as_bool(task.get("cancel_locked")),
+            "execution_phase": task.get("execution_phase") or None,
         }
         if include_image_url and status == "done" and result_path:
             response_kwargs["image_url"] = build_result_url_func(result_path)

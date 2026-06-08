@@ -38,12 +38,17 @@ async def dequeue_task_flow(
     pop_next_pending_task_func,
     find_next_allowed_task_func,
     activate_dequeued_task_func,
+    cancel_lock: bool = False,
 ):
     if not allowed_types:
-        return await activate_dequeued_task_func(await pop_next_pending_task_func())
+        return await activate_dequeued_task_func(
+            await pop_next_pending_task_func(),
+            cancel_lock=cancel_lock,
+        )
 
     return await activate_dequeued_task_func(
-        await find_next_allowed_task_func(allowed_types)
+        await find_next_allowed_task_func(allowed_types),
+        cancel_lock=cancel_lock,
     )
 
 
@@ -201,6 +206,10 @@ async def complete_task_flow(
             "extra_outputs": serialized_extra_outputs,
             "progress": 1.0,
             "cancel_requested": 0,
+            "cancel_requested_at": "",
+            "cancel_locked": 0,
+            "execution_phase": "",
+            "cancel_locked_at": "",
         },
         event_payload={
             "status": "done",
@@ -226,6 +235,10 @@ async def fail_task_flow(
             "status": error_status,
             "error_msg": error_msg,
             "cancel_requested": 0,
+            "cancel_requested_at": "",
+            "cancel_locked": 0,
+            "execution_phase": "",
+            "cancel_locked_at": "",
         },
         event_payload={"status": "error", "error_msg": error_msg},
         remove_from_running=True,
@@ -243,6 +256,14 @@ async def update_progress_flow(
         task_mapping={"progress": progress},
         event_payload={"status": "running", "progress": progress},
     )
+
+
+def is_truthy_flag(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.lower() in {"1", "true", "yes", "on"}
+    return bool(value)
 
 
 async def cancel_task_flow(
@@ -265,11 +286,20 @@ async def cancel_task_flow(
     if removed_from_pending:
         return await cancel_pending_task_func(task_id)
 
+    task_data = await get_task_status_func(task_id)
+    if task_data and is_truthy_flag(task_data.get("cancel_locked")):
+        return build_cancel_result_func(
+            "not_cancellable",
+            task_id,
+            "任务已进入输入准备或执行阶段，无法再取消",
+            reason="cancel_locked",
+            cancel_locked=True,
+        )
+
     is_running = bool(await sismember_func(task_id))
     if is_running:
         return await request_running_task_cancellation_func(task_id)
 
-    task_data = await get_task_status_func(task_id)
     status = task_data.get("status") if task_data else None
     if status == "running":
         return await request_running_task_cancellation_func(task_id)
@@ -306,6 +336,9 @@ async def cancel_pending_task_flow(
             "status": cancelled_status,
             "cancel_requested": 0,
             "cancel_requested_at": "",
+            "cancel_locked": 0,
+            "execution_phase": "",
+            "cancel_locked_at": "",
         },
         event_payload={"status": "cancelled"},
         remove_from_running=True,
@@ -326,6 +359,9 @@ async def cancel_running_task_flow(
             "status": cancelled_status,
             "cancel_requested": 0,
             "cancel_requested_at": "",
+            "cancel_locked": 0,
+            "execution_phase": "",
+            "cancel_locked_at": "",
         },
         event_payload={"status": "cancelled"},
         remove_from_running=True,

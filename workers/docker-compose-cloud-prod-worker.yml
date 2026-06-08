@@ -16,6 +16,10 @@ x-worker-cloud-prod-env: &worker-cloud-prod-env
   PREFETCH_DEPTH: ${PREFETCH_DEPTH:-1}
   PREFETCH_TASK_TYPES: ${PREFETCH_TASK_TYPES:-img2img,img2img_lora,face_swap,i2i_draw,i2i_pro}
   PREFETCH_CACHE_DIR: /app/prefetch-cache
+  PIPELINE_ENABLED: ${PIPELINE_ENABLED:-true}
+  PIPELINE_MAX_RUNNING_TASKS: ${PIPELINE_MAX_RUNNING_TASKS:-2}
+  PIPELINE_TASK_TYPES: ${PIPELINE_TASK_TYPES:-all}
+  CANCEL_LOCK_ON_POP: ${CANCEL_LOCK_ON_POP:-true}
 
 x-worker-base-cloud-prod: &worker-base-cloud-prod
   build:

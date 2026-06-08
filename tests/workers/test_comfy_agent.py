@@ -58,6 +58,9 @@ class DummyAsyncClient:
     def __init__(self, *args, **kwargs):
         self.closed = False
 
+    async def post(self, *args, **kwargs):
+        return SimpleNamespace(status_code=200)
+
     async def aclose(self):
         self.closed = True
 
@@ -138,7 +141,7 @@ async def test_shutdown_before_start_reports_and_closes_clients(monkeypatch):
     agent = module.ComfyAgent()
     reported = []
 
-    async def fake_report_status(task_id, status, progress=None, error=None):
+    async def fake_report_status(task_id, status, progress=None, error=None, **kwargs):
         reported.append((task_id, status, error))
 
     agent._active_execution = module.TaskExecutionContext(
@@ -171,7 +174,7 @@ async def test_process_task_failure_resets_runtime_state(monkeypatch):
     async def fake_prepare_task_inputs(*args, **kwargs):
         return None
 
-    async def fake_report_status(task_id, status, progress=None, error=None):
+    async def fake_report_status(task_id, status, progress=None, error=None, **kwargs):
         reported.append((task_id, status, error))
 
     agent.check_task_cancelled = fake_check_task_cancelled
@@ -300,7 +303,7 @@ async def test_process_task_sidecar_upload_failure_reports_failed_without_comple
     async def fake_report_materialized_outputs(**kwargs):
         completed.append(kwargs["task_id"])
 
-    async def fake_report_status(task_id, status, progress=0.0, error=""):
+    async def fake_report_status(task_id, status, progress=0.0, error="", **kwargs):
         reported.append((task_id, status, error))
 
     agent.check_task_cancelled = fake_check_task_cancelled
@@ -335,6 +338,120 @@ async def test_process_task_sidecar_upload_failure_reports_failed_without_comple
     assert reported[-1][0] == "task-1"
     assert reported[-1][1] == "failed"
     assert "Result processing failed" in reported[-1][2]
+
+
+@pytest.mark.asyncio
+async def test_pipeline_launch_schedules_background_finalizer(monkeypatch):
+    module = build_agent_module(monkeypatch)
+    agent = module.ComfyAgent()
+    finalizer_started = module.asyncio.Event()
+    release_finalizer = module.asyncio.Event()
+    completed = []
+
+    async def fake_prepare_task_inputs(*args, **kwargs):
+        return None
+
+    async def fake_submit_task_workflow(**kwargs):
+        kwargs["execution"].prompt_id = "prompt-1"
+        kwargs["execution"].task_result = "result.png"
+
+    async def fake_wait_for_task_completion(**kwargs):
+        finalizer_started.set()
+        await release_finalizer.wait()
+        return True
+
+    async def fake_resolve_execution_result_from_history(**kwargs):
+        return {}
+
+    async def fake_materialize_task_outputs(**kwargs):
+        return SimpleNamespace(primary=SimpleNamespace(object_name="result.png"), extra_outputs={})
+
+    async def fake_upload_materialized_outputs(**kwargs):
+        return {}
+
+    async def fake_report_materialized_outputs(**kwargs):
+        completed.append(kwargs["task_id"])
+
+    agent._prepare_task_inputs = fake_prepare_task_inputs
+    monkeypatch.setattr(module, "submit_task_workflow", fake_submit_task_workflow)
+    monkeypatch.setattr(module, "wait_for_task_completion", fake_wait_for_task_completion)
+    monkeypatch.setattr(
+        module,
+        "resolve_execution_result_from_history",
+        fake_resolve_execution_result_from_history,
+    )
+    monkeypatch.setattr(module, "materialize_task_outputs", fake_materialize_task_outputs)
+    monkeypatch.setattr(module, "upload_materialized_outputs", fake_upload_materialized_outputs)
+    monkeypatch.setattr(module, "report_materialized_outputs", fake_report_materialized_outputs)
+
+    await agent._launch_pipeline_task(
+        {
+            "task_id": "task-1",
+            "type": "img2img",
+            "params": "{}",
+        }
+    )
+
+    await module.asyncio.wait_for(finalizer_started.wait(), timeout=1)
+    assert completed == []
+    assert "task-1" in agent._executions
+
+    background_tasks = list(agent._execution_tasks)
+    release_finalizer.set()
+    await module.asyncio.gather(*background_tasks)
+
+    assert completed == ["task-1"]
+    assert agent._executions == {}
+
+
+@pytest.mark.asyncio
+async def test_ws_events_route_by_prompt_id_without_cross_talk(monkeypatch):
+    module = build_agent_module(monkeypatch)
+    agent = module.ComfyAgent()
+    reported = []
+
+    async def fake_report_status(task_id, status, progress=0.0, error="", **kwargs):
+        reported.append((task_id, status, progress, kwargs))
+
+    agent.report_status = fake_report_status
+    execution_a = agent._start_task_execution(task_id="task-a", task_type="img2img")
+    execution_a.prompt_id = "prompt-a"
+    agent._register_prompt_execution(execution_a)
+    execution_b = agent._start_task_execution(task_id="task-b", task_type="img2img")
+    execution_b.prompt_id = "prompt-b"
+    agent._register_prompt_execution(execution_b)
+
+    await agent._route_ws_event(
+        {
+            "type": "executed",
+            "data": {
+                "prompt_id": "prompt-b",
+                "output": {
+                    "save": {
+                        "images": [
+                            {
+                                "filename": "result-b.png",
+                                "subfolder": "",
+                                "type": "output",
+                            }
+                        ]
+                    }
+                },
+            },
+        }
+    )
+    await agent._route_ws_event(
+        {
+            "type": "execution_success",
+            "data": {"prompt_id": "prompt-b"},
+        }
+    )
+
+    assert execution_a.task_result is None
+    assert execution_a.completed_event.is_set() is False
+    assert execution_b.task_result == "task-b__result-b.png"
+    assert execution_b.completed_event.is_set() is True
+    assert reported == []
 
 
 @pytest.mark.asyncio

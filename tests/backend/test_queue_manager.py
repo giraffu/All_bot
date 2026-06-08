@@ -42,6 +42,15 @@ class _FakeRedis:
     async def hgetall(self, key):
         return dict(self.hashes.get(key, {}))
 
+    async def hdel(self, key, *fields):
+        bucket = self.hashes.setdefault(key, {})
+        removed = 0
+        for field in fields:
+            if field in bucket:
+                removed += 1
+                bucket.pop(field, None)
+        return removed
+
     async def exists(self, key):
         return int(
             key in self.hashes
@@ -173,6 +182,27 @@ async def test_dequeue_task_respects_allowed_types_and_marks_task_running():
     assert redis.hashes[task_b]["status"] == TaskStatus.RUNNING
     assert "comfy:task_heartbeat:task-b" in redis.values
     assert "task-b" not in redis.sorted_sets[manager.pending_key]
+
+
+@pytest.mark.asyncio
+async def test_dequeue_task_with_cancel_lock_marks_task_uncancellable_phase():
+    redis = _FakeRedis()
+    manager = QueueManager(redis)
+    task_key = f"{manager.task_prefix}task-lock"
+
+    await redis.hset(task_key, mapping={"type": TaskType.IMG2IMG, "status": TaskStatus.PENDING})
+    await redis.zadd(manager.pending_key, {"task-lock": 1.0})
+
+    result = await manager.dequeue_task(cancel_lock=True)
+
+    assert result == ("task-lock", 1.0)
+    stored = redis.hashes[task_key]
+    assert stored["status"] == TaskStatus.RUNNING
+    assert stored["cancel_locked"] == 1
+    assert stored["execution_phase"] == "preparing"
+    assert stored["cancel_requested"] == 0
+    assert stored["cancel_requested_at"] == ""
+    assert stored["cancel_locked_at"]
 
 
 @pytest.mark.asyncio
@@ -317,6 +347,34 @@ async def test_cancel_task_requests_running_task_cancellation():
         "cancel_requested": True,
         "message": "已请求取消，等待执行端确认",
     }
+
+
+@pytest.mark.asyncio
+async def test_cancel_task_rejects_cancel_locked_running_task():
+    redis = _FakeRedis()
+    manager = QueueManager(redis)
+    task_key = f"{manager.task_prefix}task-locked"
+
+    await redis.hset(
+        task_key,
+        mapping={
+            "status": TaskStatus.RUNNING,
+            "type": TaskType.IMG2IMG,
+            "cancel_locked": 1,
+        },
+    )
+    await redis.sadd(manager.running_key, "task-locked")
+
+    result = await manager.cancel_task("task-locked")
+
+    assert result == {
+        "state": "not_cancellable",
+        "task_id": "task-locked",
+        "message": "任务已进入输入准备或执行阶段，无法再取消",
+        "reason": "cancel_locked",
+        "cancel_locked": True,
+    }
+    assert redis.hashes[task_key].get("cancel_requested") is None
 
 
 @pytest.mark.asyncio
@@ -478,6 +536,23 @@ async def test_get_all_workers_ignores_partial_agent_task_binding_without_heartb
 
 
 @pytest.mark.asyncio
+async def test_clear_agent_current_task_compare_and_clear_preserves_newer_task():
+    redis = _FakeRedis()
+    manager = QueueManager(redis)
+    worker_key = f"{manager.agent_heartbeat_prefix}agent-1"
+
+    await redis.hset(worker_key, mapping={"current_task_id": "task-new"})
+
+    await manager.clear_agent_current_task("agent-1", task_id="task-old")
+
+    assert redis.hashes[worker_key]["current_task_id"] == "task-new"
+
+    await manager.clear_agent_current_task("agent-1", task_id="task-new")
+
+    assert "current_task_id" not in redis.hashes[worker_key]
+
+
+@pytest.mark.asyncio
 async def test_get_active_workers_count_counts_agent_heartbeat_keys_only():
     redis = _FakeRedis()
     manager = QueueManager(redis)
@@ -565,6 +640,8 @@ async def test_complete_task_marks_done_removes_running_and_publishes_task_type(
     assert redis.hashes[task_key]["result_path"] == "outputs/result.mp4"
     assert redis.hashes[task_key]["progress"] == 1.0
     assert redis.hashes[task_key]["cancel_requested"] == 0
+    assert redis.hashes[task_key]["cancel_locked"] == 0
+    assert redis.hashes[task_key]["execution_phase"] == ""
     assert "task-done" not in redis.sets[manager.running_key]
     assert (
         "comfy:task_events:task-done",
@@ -621,6 +698,8 @@ async def test_fail_task_marks_error_removes_running_and_publishes_error():
     assert redis.hashes[task_key]["status"] == TaskStatus.ERROR
     assert redis.hashes[task_key]["error_msg"] == "boom"
     assert redis.hashes[task_key]["cancel_requested"] == 0
+    assert redis.hashes[task_key]["cancel_locked"] == 0
+    assert redis.hashes[task_key]["execution_phase"] == ""
     assert "task-error" not in redis.sets[manager.running_key]
     assert (
         "comfy:task_events:task-error",

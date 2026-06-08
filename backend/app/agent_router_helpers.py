@@ -20,13 +20,20 @@ async def clear_agent_current_task(
     *,
     queue_manager,
     agent_id: str,
+    task_id: str | None = None,
 ) -> None:
-    await queue_manager.clear_agent_current_task(agent_id)
+    await queue_manager.clear_agent_current_task(agent_id, task_id=task_id)
 
 
-async def pop_task_payload(*, types: str | None, queue_manager) -> dict:
+async def pop_task_payload(
+    *,
+    types: str | None,
+    queue_manager,
+    cancel_lock: bool = False,
+) -> dict:
     task_data = await queue_manager.dequeue_task(
         allowed_types=parse_allowed_types(types),
+        cancel_lock=cancel_lock,
     )
     if not task_data:
         return {"task": None, "message": "No pending tasks"}
@@ -60,6 +67,8 @@ async def check_task_payload(*, task_id: str, queue_manager) -> dict:
     return {
         "status": task_details.get("status"),
         "cancel_requested": queue_manager._as_bool(task_details.get("cancel_requested")),
+        "cancel_locked": queue_manager._as_bool(task_details.get("cancel_locked")),
+        "execution_phase": task_details.get("execution_phase") or "",
     }
 
 
@@ -71,26 +80,44 @@ async def update_status_payload(
     progress: float,
     error: str,
     queue_manager,
+    execution_phase: str | None = None,
+    cancel_locked: bool | None = None,
+    set_current: bool = True,
 ) -> dict:
-    await bind_agent_task(
-        queue_manager=queue_manager,
-        task_id=task_id,
-        agent_id=agent_id,
-    )
+    if status in {"failed", "cancelled"}:
+        await queue_manager.record_task_worker(task_id, agent_id)
+    elif set_current:
+        await bind_agent_task(
+            queue_manager=queue_manager,
+            task_id=task_id,
+            agent_id=agent_id,
+        )
+    else:
+        await queue_manager.record_task_worker(task_id, agent_id)
     await queue_manager.update_task_heartbeat(task_id)
 
-    if status == "running" and progress > 0:
-        await queue_manager.update_progress(task_id, progress)
+    if status == "running":
+        if execution_phase is not None or cancel_locked is not None:
+            await queue_manager.update_task_runtime_metadata(
+                task_id,
+                progress=progress if progress > 0 else None,
+                execution_phase=execution_phase,
+                cancel_locked=cancel_locked,
+            )
+        elif progress > 0:
+            await queue_manager.update_progress(task_id, progress)
     elif status == "cancelled":
         await clear_agent_current_task(
             queue_manager=queue_manager,
             agent_id=agent_id,
+            task_id=task_id,
         )
         await queue_manager.cancel_running_task(task_id)
     elif status == "failed":
         await clear_agent_current_task(
             queue_manager=queue_manager,
             agent_id=agent_id,
+            task_id=task_id,
         )
         await queue_manager.fail_task(task_id, error)
 
@@ -105,14 +132,11 @@ async def complete_task_payload(
     extra_outputs: dict | None = None,
     queue_manager,
 ) -> dict:
-    await bind_agent_task(
-        queue_manager=queue_manager,
-        task_id=task_id,
-        agent_id=agent_id,
-    )
+    await queue_manager.record_task_worker(task_id, agent_id)
     await clear_agent_current_task(
         queue_manager=queue_manager,
         agent_id=agent_id,
+        task_id=task_id,
     )
     await queue_manager.complete_task(task_id, result, extra_outputs=extra_outputs)
     return {"status": "ok"}

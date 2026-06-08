@@ -133,6 +133,23 @@ PREFETCH_CACHE_DIR = os.getenv("PREFETCH_CACHE_DIR", "/app/prefetch-cache")
 PREFETCH_CONSUME_WAIT_SECONDS = float(
     os.getenv("PREFETCH_CONSUME_WAIT_SECONDS", "0.25")
 )
+PIPELINE_ENABLED = os.getenv("PIPELINE_ENABLED", "false").strip().lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
+PIPELINE_MAX_RUNNING_TASKS = max(
+    1,
+    int(os.getenv("PIPELINE_MAX_RUNNING_TASKS", "2")),
+)
+PIPELINE_TASK_TYPES = os.getenv("PIPELINE_TASK_TYPES", "all")
+CANCEL_LOCK_ON_POP = os.getenv("CANCEL_LOCK_ON_POP", "true").strip().lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
 
 USER_INPUT_ERROR_MARKERS = (
     "downloaded file is not a valid image",
@@ -212,6 +229,9 @@ class ComfyAgent:
         self.tasks = []
         self._idle_completed_event = asyncio.Event()
         self._active_execution: Optional[TaskExecutionContext] = None
+        self._executions: dict[str, TaskExecutionContext] = {}
+        self._prompt_executions: dict[str, TaskExecutionContext] = {}
+        self._execution_tasks: set[asyncio.Task] = set()
         self.running = False
         self._comfy_poll_paused = False
         self.consecutive_failures = 0
@@ -229,6 +249,11 @@ class ComfyAgent:
             for task_type in PREFETCH_TASK_TYPES.split(",")
             if task_type.strip()
         }
+        self._pipeline_task_types = {
+            task_type.strip()
+            for task_type in PIPELINE_TASK_TYPES.split(",")
+            if task_type.strip()
+        }
 
     @property
     def task_completed_event(self) -> asyncio.Event:
@@ -241,13 +266,29 @@ class ComfyAgent:
     ) -> TaskExecutionContext:
         execution = TaskExecutionContext(task_id=task_id, task_type=task_type)
         self._active_execution = execution
+        self._executions[task_id] = execution
         return execution
+
+    def _register_prompt_execution(self, execution: TaskExecutionContext) -> None:
+        if execution.prompt_id:
+            self._prompt_executions[execution.prompt_id] = execution
 
     def _clear_task_execution(
         self, execution: TaskExecutionContext | None = None
     ) -> None:
-        if execution is not None and self._active_execution is not execution:
+        if execution is not None:
+            self._executions.pop(execution.task_id, None)
+            if execution.prompt_id:
+                self._prompt_executions.pop(execution.prompt_id, None)
+            if self._active_execution is execution:
+                self._active_execution = next(
+                    iter(self._executions.values()),
+                    None,
+                )
+            self._idle_completed_event.clear()
             return
+        self._executions.clear()
+        self._prompt_executions.clear()
         self._active_execution = None
         self._idle_completed_event.clear()
 
@@ -343,7 +384,13 @@ class ComfyAgent:
             return "quarantined"
         if self.is_error_state:
             return "error"
-        return "running" if self._active_execution else "idle"
+        return "running" if self._executions or self._active_execution else "idle"
+
+    def _heartbeat_executions(self) -> list[TaskExecutionContext]:
+        executions = list(self._executions.values())
+        if not executions and self._active_execution:
+            executions.append(self._active_execution)
+        return executions
 
     def _heartbeat_health_payload(self) -> dict[str, Any]:
         failure_count = (
@@ -360,8 +407,14 @@ class ComfyAgent:
         }
 
     async def _handle_ws_connection_error(self, error: Exception | str) -> None:
-        execution = self._active_execution
-        if not execution:
+        executions = [
+            execution
+            for execution in self._prompt_executions.values()
+            if not execution.completed_event.is_set()
+        ]
+        if not executions and self._active_execution:
+            executions = [self._active_execution]
+        if not executions:
             return
 
         probe_failures = 0
@@ -375,11 +428,13 @@ class ComfyAgent:
             await asyncio.sleep(COMFY_READY_RETRY_DELAY_SECONDS)
 
         if probe_failures >= COMFY_WS_LOST_PROBE_FAILURE_THRESHOLD:
-            execution.task_error = f"ComfyUI service lost during execution: {error}"
-            execution.completed_event.set()
+            task_error = f"ComfyUI service lost during execution: {error}"
+            for execution in executions:
+                execution.task_error = task_error
+                execution.completed_event.set()
             self._record_health_failure(
                 reason="comfy_ws_lost",
-                error=execution.task_error,
+                error=task_error,
             )
 
     async def _wait_for_comfy_ready(self, *, operation: str) -> None:
@@ -631,7 +686,6 @@ class ComfyAgent:
 
     async def report_heartbeat(self):
         try:
-            active_execution = self._active_execution
             status = self._worker_status()
             await self.master_client.post(
                 "/api/agent/task/heartbeat",
@@ -642,11 +696,10 @@ class ComfyAgent:
                     **self._heartbeat_health_payload(),
                 },
             )
-            if active_execution:
-                # Add task heartbeat specifically
+            for execution in self._heartbeat_executions():
                 await self.master_client.post(
                     "/api/agent/task/task_heartbeat",
-                    json={"task_id": active_execution.task_id},
+                    json={"task_id": execution.task_id},
                 )
         except Exception as e:
             logger.debug(f"Failed to report heartbeat: {e}")
@@ -658,7 +711,15 @@ class ComfyAgent:
             await asyncio.sleep(15)  # Send heartbeat every 15 seconds
 
     async def report_status(
-        self, task_id: str, status: str, progress: float = 0.0, error: str = ""
+        self,
+        task_id: str,
+        status: str,
+        progress: float = 0.0,
+        error: str = "",
+        *,
+        execution_phase: str | None = None,
+        cancel_locked: bool | None = None,
+        set_current: bool = True,
     ):
         payload = {
             "task_id": task_id,
@@ -667,6 +728,12 @@ class ComfyAgent:
             "progress": progress,
             "error": error,
         }
+        if execution_phase is not None:
+            payload["execution_phase"] = execution_phase
+        if cancel_locked is not None:
+            payload["cancel_locked"] = cancel_locked
+        if not set_current:
+            payload["set_current"] = False
         attempts = max(1, STATUS_REPORT_MAX_ATTEMPTS)
 
         for attempt in range(1, attempts + 1):
@@ -792,15 +859,20 @@ class ComfyAgent:
         msg_type = data.get("type")
         data_content = extract_ws_data_content(data)
         prompt_id = data_content.get("prompt_id")
-        execution = self._active_execution
+        execution = self._prompt_executions.get(prompt_id or "")
 
-        if not execution or not prompt_id or prompt_id != execution.prompt_id:
+        if not execution or not prompt_id:
             return
 
         if msg_type == "execution_start":
             logger.info(f"Execution started for prompt {prompt_id}")
+            execution.phase = "running"
             if execution.task_id:
-                await self.report_status(execution.task_id, "running")
+                await self.report_status(
+                    execution.task_id,
+                    "running",
+                    execution_phase="running",
+                )
             return
 
         if msg_type == "progress":
@@ -811,6 +883,7 @@ class ComfyAgent:
                     execution.task_id,
                     "running",
                     progress=value / max_val,
+                    execution_phase="running",
                 )
             return
 
@@ -818,11 +891,13 @@ class ComfyAgent:
             node = data_content.get("node")
             if node is None:
                 logger.info(f"Execution fully completed for prompt {prompt_id}")
+                execution.phase = "gpu_done"
                 execution.completed_event.set()
             return
 
         if msg_type == "execution_success":
             logger.info(f"Execution success received for prompt {prompt_id}")
+            execution.phase = "gpu_done"
             execution.completed_event.set()
             return
 
@@ -940,7 +1015,52 @@ class ComfyAgent:
             logger.debug(f"Failed to check task status: {e}")
         return False
 
-    async def process_task(self, task: Dict[str, Any]):
+    def _pipeline_enabled_for_task_type(self, task_type: str) -> bool:
+        if not PIPELINE_ENABLED or PIPELINE_MAX_RUNNING_TASKS <= 1:
+            return False
+        if "all" in self._pipeline_task_types:
+            return True
+        return task_type in self._pipeline_task_types
+
+    def _pipeline_pop_types(self) -> str:
+        supported_types = {
+            task_type.strip()
+            for task_type in SUPPORTED_TASK_TYPES.split(",")
+            if task_type.strip()
+        }
+        if not self._pipeline_task_types or "all" in self._pipeline_task_types:
+            return SUPPORTED_TASK_TYPES
+        if not supported_types:
+            return ",".join(sorted(self._pipeline_task_types))
+        return ",".join(sorted(supported_types & self._pipeline_task_types))
+
+    def _build_pop_params(self, *, pipeline: bool = False) -> dict[str, str]:
+        params: dict[str, str] = {}
+        types = self._pipeline_pop_types() if pipeline else SUPPORTED_TASK_TYPES
+        if types:
+            params["types"] = types
+        if CANCEL_LOCK_ON_POP:
+            params["cancel_lock"] = "true"
+        return params
+
+    async def _pop_next_task(self, *, pipeline: bool = False) -> dict[str, Any] | None:
+        response = await self.master_client.get(
+            "/api/agent/task/pop",
+            params=self._build_pop_params(pipeline=pipeline),
+        )
+        if response.status_code == 200:
+            data = response.json()
+            return data.get("task")
+        if response.status_code != 404:
+            logger.warning(f"Unexpected response from master: {response.status_code}")
+        return None
+
+    async def _prepare_and_submit_task(
+        self,
+        task: Dict[str, Any],
+        *,
+        allow_cancel_check: bool = True,
+    ) -> TaskExecutionContext | None:
         trace_id = task.get("trace_id", "")
         if trace_id:
             correlation_id.set(trace_id)
@@ -955,47 +1075,61 @@ class ComfyAgent:
 
         logger.info(f"Processing task {task_id} of type {task_type}")
         execution = self._start_task_execution(task_id=task_id, task_type=task_type)
-        downloaded_input_paths = []
+        downloaded_input_paths = execution.downloaded_input_paths
 
-        try:
-            if await self.check_task_cancelled(task_id):
-                logger.info(f"Task {task_id} was cancelled before processing.")
-                self._discard_prefetch_cache(except_task_id=None)
-                await self.report_cancelled(task_id)
-                return
+        if allow_cancel_check and await self.check_task_cancelled(task_id):
+            logger.info(f"Task {task_id} was cancelled before processing.")
+            self._discard_prefetch_cache(except_task_id=None)
+            await self.report_cancelled(task_id)
+            self._clear_task_execution(execution)
+            return None
 
-            await self._wait_for_prefetch_settle()
-            prefetched_inputs = self._consume_prefetched_inputs(
-                task_id=task_id,
-                task_type=task_type,
+        await self.report_status(
+            task_id,
+            "running",
+            execution_phase="preparing",
+            cancel_locked=CANCEL_LOCK_ON_POP,
+        )
+
+        await self._wait_for_prefetch_settle()
+        prefetched_inputs = self._consume_prefetched_inputs(
+            task_id=task_id,
+            task_type=task_type,
+        )
+        if prefetched_inputs:
+            params = dict(prefetched_inputs["params"])
+            downloaded_input_paths.extend(
+                prefetched_inputs.get("downloaded_input_paths", [])
             )
-            if prefetched_inputs:
-                params = dict(prefetched_inputs["params"])
-                downloaded_input_paths.extend(
-                    prefetched_inputs.get("downloaded_input_paths", [])
-                )
-            else:
-                await self._cancel_prefetch_task()
-                await self._prepare_task_inputs(
-                    params=params,
-                    downloaded_input_paths=downloaded_input_paths,
-                )
-
-            await submit_task_workflow(
-                task_id=task_id,
-                task_type=task_type,
+        else:
+            await self._cancel_prefetch_task()
+            await self._prepare_task_inputs(
                 params=params,
-                execution=execution,
-                patcher=self.patcher,
-                comfy_client=self.comfy_client,
-                wait_for_comfy_ready_func=self._wait_for_comfy_ready,
-                report_status_func=self.report_status,
-                agent_id=AGENT_ID,
-                logger=logger,
+                downloaded_input_paths=downloaded_input_paths,
             )
 
-            self._schedule_prefetch(current_task_type=task_type)
+        await submit_task_workflow(
+            task_id=task_id,
+            task_type=task_type,
+            params=params,
+            execution=execution,
+            patcher=self.patcher,
+            comfy_client=self.comfy_client,
+            wait_for_comfy_ready_func=self._wait_for_comfy_ready,
+            report_status_func=self.report_status,
+            agent_id=AGENT_ID,
+            logger=logger,
+        )
+        self._register_prompt_execution(execution)
+        execution.phase = "queued"
+        await self.report_status(task_id, "running", execution_phase="queued")
+        self._schedule_prefetch(current_task_type=task_type)
+        return execution
 
+    async def _finalize_execution(self, execution: TaskExecutionContext) -> None:
+        task_id = execution.task_id
+        task_type = execution.task_type
+        try:
             task_completed = await wait_for_task_completion(
                 task_id=task_id,
                 execution=execution,
@@ -1008,6 +1142,14 @@ class ComfyAgent:
                 await self.report_cancelled(task_id)
                 return
 
+            execution.phase = "finalizing"
+            await self.report_status(
+                task_id,
+                "running",
+                execution_phase="finalizing",
+                set_current=False,
+            )
+
             await resolve_execution_result_from_history(
                 comfy_client=self.comfy_client,
                 execution=execution,
@@ -1018,7 +1160,7 @@ class ComfyAgent:
             if not execution.task_result:
                 raise Exception("Task completed but no result path found")
 
-            if await self.check_task_cancelled(task_id):
+            if not CANCEL_LOCK_ON_POP and await self.check_task_cancelled(task_id):
                 logger.info(
                     f"Task {task_id} was cancelled during execution, skipping upload."
                 )
@@ -1072,7 +1214,51 @@ class ComfyAgent:
             await self.report_status(task_id, "failed", error=str(e))
         finally:
             self._clear_task_execution(execution)
-            self._cleanup_input_paths(downloaded_input_paths)
+            self._cleanup_input_paths(execution.downloaded_input_paths)
+
+    def _track_execution_task(self, task: asyncio.Task) -> None:
+        self._execution_tasks.add(task)
+        task.add_done_callback(self._execution_tasks.discard)
+
+    async def _launch_pipeline_task(self, task: Dict[str, Any]) -> None:
+        task_id = str(task.get("task_id", ""))
+        try:
+            execution = await self._prepare_and_submit_task(
+                task,
+                allow_cancel_check=not CANCEL_LOCK_ON_POP,
+            )
+            if not execution:
+                return
+            finalizer_task = asyncio.create_task(self._finalize_execution(execution))
+            self._track_execution_task(finalizer_task)
+        except Exception as e:
+            logger.error(f"Task {task_id} failed before pipeline submission: {e}")
+            self._record_task_failure_for_health(e)
+            if task_id:
+                await self.report_status(task_id, "failed", error=str(e))
+            execution = self._executions.get(task_id)
+            if execution:
+                self._clear_task_execution(execution)
+                self._cleanup_input_paths(execution.downloaded_input_paths)
+
+    async def process_task(self, task: Dict[str, Any]):
+        task_id = str(task.get("task_id", ""))
+        execution: TaskExecutionContext | None = None
+        try:
+            execution = await self._prepare_and_submit_task(task)
+            if not execution:
+                return
+            await self._finalize_execution(execution)
+        except Exception as e:
+            logger.error(f"Task {task_id} failed: {e}")
+            self._record_task_failure_for_health(e)
+            if task_id:
+                await self.report_status(task_id, "failed", error=str(e))
+            if execution is None and task_id:
+                execution = self._executions.get(task_id)
+            if execution:
+                self._clear_task_execution(execution)
+                self._cleanup_input_paths(execution.downloaded_input_paths)
 
     async def poll_loop(self):
         logger.info(
@@ -1115,24 +1301,23 @@ class ComfyAgent:
                     logger.info("ComfyUI is reachable again; resuming task polling")
                     self._comfy_poll_paused = False
 
-                # Poll for tasks with optional type filtering
-                params = {}
-                if SUPPORTED_TASK_TYPES:
-                    params["types"] = SUPPORTED_TASK_TYPES
-
-                response = await self.master_client.get(
-                    "/api/agent/task/pop", params=params
-                )
-                if response.status_code == 200:
-                    data = response.json()
-                    task = data.get("task")
+                if PIPELINE_ENABLED:
+                    if len(self._executions) >= PIPELINE_MAX_RUNNING_TASKS:
+                        await asyncio.sleep(0.5)
+                        continue
+                    task = await self._pop_next_task(pipeline=True)
+                    if task:
+                        task_type = str(task.get("type", ""))
+                        if self._pipeline_enabled_for_task_type(task_type):
+                            await self._launch_pipeline_task(task)
+                        else:
+                            await self.process_task(task)
+                        continue
+                else:
+                    task = await self._pop_next_task()
                     if task:
                         await self.process_task(task)
                         continue  # Immediately poll again after finishing
-                elif response.status_code != 404:  # 404 means no tasks, which is fine
-                    logger.warning(
-                        f"Unexpected response from master: {response.status_code}"
-                    )
 
             except httpx.RequestError as e:
                 logger.error(f"Connection to master failed: {e}")
@@ -1162,9 +1347,9 @@ class ComfyAgent:
         logger.info("Initiating graceful shutdown...")
         self.running = False
 
-        # If there is a task currently running, report it as failed/interrupted back to master
-        active_execution = self._active_execution
-        if active_execution:
+        # Return unfinished local tasks to Central as failed/interrupted.
+        active_executions = self._heartbeat_executions()
+        for active_execution in active_executions:
             logger.info(
                 f"Returning task {active_execution.task_id} to master due to shutdown"
             )
@@ -1180,6 +1365,10 @@ class ComfyAgent:
         # Cancel all running background loops
         for task in list(getattr(self, "tasks", [])):
             task.cancel()
+        for task in list(self._execution_tasks):
+            task.cancel()
+        if self._execution_tasks:
+            await asyncio.gather(*self._execution_tasks, return_exceptions=True)
         await self._cancel_prefetch_task()
         self._discard_prefetch_cache(except_task_id=None)
 

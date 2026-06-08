@@ -43,10 +43,17 @@ async def test_pop_task_payload_returns_missing_message_when_task_details_absent
         get_task_status=AsyncMock(return_value=None),
     )
 
-    payload = await pop_task_payload(types="img2img", queue_manager=queue_manager)
+    payload = await pop_task_payload(
+        types="img2img",
+        queue_manager=queue_manager,
+        cancel_lock=True,
+    )
 
     assert payload == {"task": None, "message": "Task details not found"}
-    queue_manager.dequeue_task.assert_awaited_once_with(allowed_types=["img2img"])
+    queue_manager.dequeue_task.assert_awaited_once_with(
+        allowed_types=["img2img"],
+        cancel_lock=True,
+    )
 
 
 @pytest.mark.asyncio
@@ -99,6 +106,7 @@ async def test_check_task_payload_raises_when_task_missing():
 async def test_update_status_payload_clears_current_task_and_fails_task():
     queue_manager = SimpleNamespace(
         bind_agent_task=AsyncMock(),
+        record_task_worker=AsyncMock(),
         clear_agent_current_task=AsyncMock(),
         update_task_heartbeat=AsyncMock(),
         update_progress=AsyncMock(),
@@ -114,8 +122,12 @@ async def test_update_status_payload_clears_current_task_and_fails_task():
     )
 
     assert payload == {"status": "ok"}
-    queue_manager.bind_agent_task.assert_awaited_once_with("task-1", "agent-1")
-    queue_manager.clear_agent_current_task.assert_awaited_once_with("agent-1")
+    queue_manager.bind_agent_task.assert_not_awaited()
+    queue_manager.record_task_worker.assert_awaited_once_with("task-1", "agent-1")
+    queue_manager.clear_agent_current_task.assert_awaited_once_with(
+        "agent-1",
+        task_id="task-1",
+    )
     queue_manager.fail_task.assert_awaited_once_with("task-1", "boom")
 
 
@@ -123,6 +135,7 @@ async def test_update_status_payload_clears_current_task_and_fails_task():
 async def test_update_status_payload_clears_current_task_and_cancels_task():
     queue_manager = SimpleNamespace(
         bind_agent_task=AsyncMock(),
+        record_task_worker=AsyncMock(),
         clear_agent_current_task=AsyncMock(),
         update_task_heartbeat=AsyncMock(),
         update_progress=AsyncMock(),
@@ -139,8 +152,12 @@ async def test_update_status_payload_clears_current_task_and_cancels_task():
     )
 
     assert payload == {"status": "ok"}
-    queue_manager.bind_agent_task.assert_awaited_once_with("task-1", "agent-1")
-    queue_manager.clear_agent_current_task.assert_awaited_once_with("agent-1")
+    queue_manager.bind_agent_task.assert_not_awaited()
+    queue_manager.record_task_worker.assert_awaited_once_with("task-1", "agent-1")
+    queue_manager.clear_agent_current_task.assert_awaited_once_with(
+        "agent-1",
+        task_id="task-1",
+    )
     queue_manager.cancel_running_task.assert_awaited_once_with("task-1")
     queue_manager.fail_task.assert_not_awaited()
 
@@ -192,9 +209,42 @@ async def test_heartbeat_payload_forwards_legacy_empty_health_values():
 
 
 @pytest.mark.asyncio
+async def test_update_status_payload_forwards_phase_without_setting_current():
+    queue_manager = SimpleNamespace(
+        bind_agent_task=AsyncMock(),
+        record_task_worker=AsyncMock(),
+        update_task_heartbeat=AsyncMock(),
+        update_task_runtime_metadata=AsyncMock(),
+    )
+
+    payload = await update_status_payload(
+        task_id="task-1",
+        agent_id="agent-1",
+        status="running",
+        progress=0.0,
+        error="",
+        execution_phase="finalizing",
+        cancel_locked=None,
+        set_current=False,
+        queue_manager=queue_manager,
+    )
+
+    assert payload == {"status": "ok"}
+    queue_manager.bind_agent_task.assert_not_awaited()
+    queue_manager.record_task_worker.assert_awaited_once_with("task-1", "agent-1")
+    queue_manager.update_task_runtime_metadata.assert_awaited_once_with(
+        "task-1",
+        progress=None,
+        execution_phase="finalizing",
+        cancel_locked=None,
+    )
+
+
+@pytest.mark.asyncio
 async def test_complete_task_payload_binds_agent_before_clearing_current_task():
     queue_manager = SimpleNamespace(
         bind_agent_task=AsyncMock(),
+        record_task_worker=AsyncMock(),
         clear_agent_current_task=AsyncMock(),
         complete_task=AsyncMock(),
     )
@@ -206,8 +256,12 @@ async def test_complete_task_payload_binds_agent_before_clearing_current_task():
     )
 
     assert payload == {"status": "ok"}
-    queue_manager.bind_agent_task.assert_awaited_once_with("task-1", "agent-1")
-    queue_manager.clear_agent_current_task.assert_awaited_once_with("agent-1")
+    queue_manager.bind_agent_task.assert_not_awaited()
+    queue_manager.record_task_worker.assert_awaited_once_with("task-1", "agent-1")
+    queue_manager.clear_agent_current_task.assert_awaited_once_with(
+        "agent-1",
+        task_id="task-1",
+    )
     queue_manager.complete_task.assert_awaited_once_with(
         "task-1",
         "/tmp/result.png",
@@ -219,6 +273,7 @@ async def test_complete_task_payload_binds_agent_before_clearing_current_task():
 async def test_complete_task_payload_forwards_extra_outputs():
     queue_manager = SimpleNamespace(
         bind_agent_task=AsyncMock(),
+        record_task_worker=AsyncMock(),
         clear_agent_current_task=AsyncMock(),
         complete_task=AsyncMock(),
     )
