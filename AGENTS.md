@@ -9,7 +9,7 @@
 - **技能优先 (Skills First)**：遇到具体业务开发时，**必须第一时间加载对应 Skill**，以获取该模块最新的架构红线、接口契约和容灾规范。若当前 Codex 会话未自动暴露该项目 Skill，请手动读取 `.codex/skills/<skill-name>/SKILL.md`。
 - **查阅文档 (Read Docs)**：在进行系统级重构、了解历史背景或不确定业务逻辑时，请主动读取 `/docs` 目录下的相关说明。
 - **核心层隔离 (Core Isolation)**：`/src/core/` 下的代码**绝对禁止**引入任何与 Telegram `Update` 或 Web `Request` 相关的特定平台对象，必须使用内部统一的 `internal_user_id` 流转。
-- **测试优先部署 (Test First Deploy)**：功能研发、联调、缺陷修复与配置调整，默认只更新隔离测试环境；当前首选云测试控制面 `scripts/safe_deploy_cloud_test.sh`，旧本地隔离测试栈 `safe_deploy_test.sh` 仅作为本地兼容路径。只有在用户明确要求进入交付验证/正式发布时，才允许执行生产部署或更新正式服务。
+- **测试优先部署 (Test First Deploy)**：功能研发、联调、缺陷修复与配置调整，默认只更新云测试控制面 `scripts/safe_deploy_cloud_test.sh`。旧本地测试栈脚本仅作历史保留/人工取证，不再作为受支持的测试或回滚环境；本地主服务器只保留云正式整体故障时的临时正式灾备方案。只有在用户明确要求进入交付验证/正式发布时，才允许执行生产部署或更新正式服务。
 
 ## 2. Codex 工作区知识布局 (Workspace Knowledge Layout)
 

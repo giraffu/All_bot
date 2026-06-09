@@ -119,7 +119,7 @@ PY
 
 log "Stopping cloud test writers"
 docker-compose --env-file "$CLOUD_ENV" -f "${ROOT_DIR}/${WORKER_COMPOSE}" stop || true
-ssh -o BatchMode=yes "$REMOTE_HOST" "cd '${REMOTE_DIR}' && docker compose --env-file .env.cloud.test -f '${CLOUD_COMPOSE}' --profile bot --profile frontend stop bot-test web-frontend-test dashboard-frontend-test web-api-test payment-api-test dashboard-backend-test central-api-test || true"
+ssh -o BatchMode=yes "$REMOTE_HOST" "cd '${REMOTE_DIR}' && docker compose --env-file .env.cloud.test -f '${CLOUD_COMPOSE}' --profile bot stop bot-test dashboard-frontend-test web-api-test dashboard-backend-test central-api-test imgproxy-test || true"
 
 log "Creating cloud backup directory: ${REMOTE_BACKUP_DIR}"
 ssh -o BatchMode=yes "$REMOTE_HOST" "mkdir -p '${REMOTE_BACKUP_DIR}'"
@@ -300,7 +300,7 @@ PY
 
 log "Restarting cloud test control plane"
 ssh -o BatchMode=yes "$REMOTE_HOST" "cd '${REMOTE_DIR}' && ./scripts/safe_deploy_cloud_test.sh"
-ssh -o BatchMode=yes "$REMOTE_HOST" "cd '${REMOTE_DIR}' && docker compose --env-file .env.cloud.test -f '${CLOUD_COMPOSE}' --profile bot --profile frontend up -d bot-test web-frontend-test dashboard-frontend-test"
+ssh -o BatchMode=yes "$REMOTE_HOST" "cd '${REMOTE_DIR}' && docker compose --env-file .env.cloud.test -f '${CLOUD_COMPOSE}' --profile bot up -d bot-test"
 
 log "Restarting local cloud GPU workers"
 "${ROOT_DIR}/scripts/start_cloud_worker_test.sh"
@@ -309,6 +309,7 @@ log "Running post-migration health checks"
 curl --noproxy '*' -fsS "http://${CLOUD_TS_IP}:8004/health" >/dev/null
 curl --noproxy '*' -fsS "http://${CLOUD_TS_IP}:8001/api/health" >/dev/null
 curl --noproxy '*' -fsS "http://${CLOUD_TS_IP}:8044/api/health" >/dev/null
+curl --noproxy '*' -fsS "http://${CLOUD_TS_IP}:8087/api/health" >/dev/null
 curl --noproxy '*' -fsS "http://${CLOUD_TS_IP}:8004/system/workers" | python3 -m json.tool | sed -n '1,180p'
 
 log "Migration complete"

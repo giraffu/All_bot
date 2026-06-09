@@ -202,6 +202,34 @@ services:
       retries: 12
       start_period: 30s
 
+  dashboard-frontend-test:
+    build:
+      context: ../dashboard/frontend
+      dockerfile: Dockerfile.cloud
+    container_name: cloud-dashboard-frontend-test
+    restart: always
+    environment:
+      DASHBOARD_GATEWAY_PORT: ${DASHBOARD_FRONTEND_TEST_PORT:-8087}
+      DASHBOARD_BACKEND_HOST: dashboard-backend-test:8044
+      TZ: Asia/Shanghai
+    ports:
+      - "${CLOUD_TEST_BIND_IP:-127.0.0.1}:${DASHBOARD_FRONTEND_TEST_PORT:-8087}:${DASHBOARD_FRONTEND_TEST_PORT:-8087}"
+    depends_on:
+      dashboard-backend-test:
+        condition: service_healthy
+    volumes:
+      - cloud-dashboard-frontend-test-cache:/var/cache/nginx
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "wget -q -O /dev/null http://127.0.0.1:$${DASHBOARD_GATEWAY_PORT}/ && wget -q -O /dev/null http://127.0.0.1:$${DASHBOARD_GATEWAY_PORT}/api/health",
+        ]
+      interval: 20s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
   imgproxy-test:
     image: darthsim/imgproxy:latest
     container_name: cloud-imgproxy-test
@@ -265,3 +293,4 @@ services:
 volumes:
   cloud-postgres-test-data:
   cloud-redis-test-data:
+  cloud-dashboard-frontend-test-cache:

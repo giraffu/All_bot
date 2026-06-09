@@ -218,6 +218,34 @@ services:
       retries: 12
       start_period: 30s
 
+  dashboard-frontend-prod:
+    build:
+      context: ../dashboard/frontend
+      dockerfile: Dockerfile.cloud
+    container_name: cloud-dashboard-frontend-prod
+    restart: always
+    environment:
+      DASHBOARD_GATEWAY_PORT: ${DASHBOARD_FRONTEND_PORT:-8086}
+      DASHBOARD_BACKEND_HOST: dashboard-backend-prod:8043
+      TZ: Asia/Shanghai
+    ports:
+      - "${CLOUD_PROD_BIND_IP:-127.0.0.1}:${DASHBOARD_FRONTEND_PORT:-8086}:${DASHBOARD_FRONTEND_PORT:-8086}"
+    depends_on:
+      dashboard-backend-prod:
+        condition: service_healthy
+    volumes:
+      - cloud-dashboard-frontend-prod-cache:/var/cache/nginx
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "wget -q -O /dev/null http://127.0.0.1:$${DASHBOARD_GATEWAY_PORT}/ && wget -q -O /dev/null http://127.0.0.1:$${DASHBOARD_GATEWAY_PORT}/api/health",
+        ]
+      interval: 20s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
   imgproxy-prod:
     image: darthsim/imgproxy:latest
     container_name: cloud-imgproxy-prod
@@ -283,3 +311,6 @@ services:
     depends_on:
       central-api-prod:
         condition: service_healthy
+
+volumes:
+  cloud-dashboard-frontend-prod-cache:

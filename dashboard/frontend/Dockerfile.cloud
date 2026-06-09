@@ -1,0 +1,25 @@
+# Stage 1: build the Vue dashboard.
+FROM node:22-alpine AS build
+
+WORKDIR /app
+
+COPY package*.json ./
+RUN npm config set registry https://registry.npmmirror.com && npm ci
+
+COPY index.html postcss.config.js tailwind.config.js tsconfig*.json vite.config.js vitest.config.js ./
+COPY public ./public
+COPY src ./src
+RUN npm run build
+
+# Stage 2: serve the built dashboard through a locked-down Nginx gateway.
+FROM nginx:1.27-alpine
+
+ENV DASHBOARD_GATEWAY_PORT=8086
+ENV DASHBOARD_BACKEND_HOST=dashboard-backend-prod:8043
+
+COPY --from=build /app/dist /usr/share/nginx/html
+COPY nginx.cloud-gateway.conf.template /etc/nginx/templates/default.conf.template
+
+EXPOSE 8086
+
+CMD ["nginx", "-g", "daemon off;"]

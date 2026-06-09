@@ -101,6 +101,7 @@ yarn-error.log*
 logs/
 tmp/
 temp/
+.dbg/
 *.diff
 *.patch
 *_progress.json
@@ -113,6 +114,7 @@ workers/comfy_agent*/input/
 .env
 .env.cloud.*
 .env.local
+.env.backup.local
 .env.development.local
 .env.test
 .env.test.local

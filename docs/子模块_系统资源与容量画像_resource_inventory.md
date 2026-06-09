@@ -78,8 +78,8 @@
 | 操作系统 | Ubuntu 24.04 LTS x64 |
 | 规格 | Basic Regular `$12/mo`，1 vCPU / 2GB RAM / 50GB SSD / 2TB transfer |
 | SSH 日常入口 | `ssh allbot-do-sgp1-test-control`，默认 `deploy` 用户 |
-| 运行服务 | `cloud-postgres-test`、`cloud-redis-test`、`cloud-central-api-test`、`cloud-web-api-test`、`cloud-dashboard-backend-test`、`cloud-imgproxy-test`、`cloud-tg-bot-test` |
-| 公网保护 | 服务端口绑定 `100.82.124.91`；`allbot-cloud-test-firewall.service` drop 公网 eth0 的 `8001/8004/8044/8084` |
+| 运行服务 | `cloud-postgres-test`、`cloud-redis-test`、`cloud-central-api-test`、`cloud-web-api-test`、`cloud-dashboard-backend-test`、`cloud-dashboard-frontend-test`、`cloud-imgproxy-test`、`cloud-tg-bot-test` |
+| 公网保护 | 服务端口绑定 `100.82.124.91`；`allbot-cloud-test-firewall.service` drop 公网 eth0 的 `8001/8004/8044/8084/8087` |
 
 使用边界：
 - 测试 PostgreSQL 与 Redis 均为同机容器，只服务云测试栈，不连接正式托管 PostgreSQL/Valkey。
@@ -119,21 +119,21 @@
 当前正式生产常驻类型：
 - 云端正式入口：`cloud-tg-bot-prod`、`cloud-web-api-prod`、`cloud-payment-api-prod`
 - 云端正式执行面：`cloud-central-api-prod`，Tailscale `100.107.220.127:8003`
-- 云端正式管理面：`cloud-dashboard-backend-prod`、`cloud-imgproxy-prod`
+- 云端正式管理面：`cloud-dashboard-backend-prod`、`cloud-dashboard-frontend-prod`、`cloud-imgproxy-prod`
 - 本地正式 worker agent：`cloud-prod-comfy-agent-1` 至 `cloud-prod-comfy-agent-7`
 - 本地 legacy 数据：原 PostgreSQL/Redis/MinIO 只作为保留或 fallback，不应继续作为正式写入事实源
 
 测试/辅助服务类型：
-- 云测试入口：`cloud-tg-bot-test`、`cloud-web-api-test`、`cloud-dashboard-backend-test`、`cloud-imgproxy-test`
+- 云测试入口：`cloud-tg-bot-test`、`cloud-web-api-test`、`cloud-dashboard-backend-test`、`cloud-dashboard-frontend-test`、`cloud-imgproxy-test`
 - 云测试执行面：`cloud-central-api-test`，Tailscale `100.82.124.91:8004`
 - 云测试数据面：`cloud-postgres-test`、`cloud-redis-test`，仅 Docker 内网可达
 - 本地云测试 worker：`cloud-comfy-agent-test-1` 至 `cloud-comfy-agent-test-7`
-- 本地旧测试栈：仅作为兼容/回滚路径，默认应停止并保留数据
+- 本地旧测试栈：不再作为受支持测试或回滚环境；仅作为历史取证材料，默认应停止并保留数据
 - 本地运维与历史数据：`postgres-server`、`redis-server`、`minio-server`、`pgadmin-server`、`filebrowser`、`portainer_agent`
 
 重要运行约束：
 - `web-api`、Dashboard、Payment API 等 COPY 型服务改代码后必须重建镜像，不能只 `restart`。
-- 云正式生产发布优先走 `scripts/safe_deploy_cloud_prod.sh` 或 cloud-prod compose 单服务重建；旧本地正式栈才使用 `safe_deploy.sh`。
+- 云正式生产发布优先走 `scripts/safe_deploy_cloud_prod.sh` 或 cloud-prod compose 单服务重建；只有云正式整体故障、本地主服务器临时接管正式服务时才使用 `safe_deploy.sh`。
 - 生产单服务重建时不得使用 `--remove-orphans` 或无 service 名的批量 compose 操作。
 - 本地云正式 worker 使用旧版 `docker-compose` 时，遇到 `ContainerConfig` 兼容错误只能清理目标 worker 容器和同 service label 残留。
 

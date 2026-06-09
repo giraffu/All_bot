@@ -1,7 +1,7 @@
 # 子模块: 云测试控制面部署 (Cloud Test Control Plane)
 
 ## 1. 目标与边界
-本模块记录 DigitalOcean SGP1 独立测试 Droplet `allbot-do-sgp1-test-control` 上的云端测试控制面部署方式。当前云端测试栈用于验证 Web API、Central API、Dashboard Backend、同机测试 PostgreSQL、同机测试 Redis、R2 对象存储、imgproxy 与测试 Bot。
+本模块记录 DigitalOcean SGP1 独立测试 Droplet `allbot-do-sgp1-test-control` 上的云端测试控制面部署方式。当前云端测试栈用于验证 Web API、Central API、Dashboard Backend、Dashboard Frontend、同机测试 PostgreSQL、同机测试 Redis、R2 对象存储、imgproxy 与测试 Bot。
 
 当前推荐形态是云端运行测试控制面、测试数据库、测试缓存与测试 Bot，本地主服务器运行 7 个 cloud-worker 测试容器并继续使用武汉局域网内的 ComfyUI/GPU 节点。云端与本地主服务器之间使用 Tailscale 私有网络互联；SSH 端口转发只作为应急方案。
 
@@ -68,11 +68,11 @@ cd /home/deploy/APP/All_bot
 脚本执行顺序：
 1. 校验 `CLOUD_TEST_DATABASE_URL`、`CLOUD_TEST_REDIS_URL`、`CLOUD_TEST_WORKER_REDIS_URL` 与同机 Postgres/Redis 密码。
 2. 启动并等待 `postgres-test`、`redis-test` 健康。
-3. 构建 Central API、Web API、Dashboard Backend 镜像。
+3. 构建 Central API、Web API、Dashboard Backend、Dashboard Frontend 镜像。
 4. 检查 Alembic 只有一个 head。
 5. 初始化或迁移云测试数据库。
-6. 重启控制面服务与 imgproxy。
-7. 校验 Central API、Web API、Dashboard API 健康检查。
+6. 重启控制面服务、Dashboard Frontend 与 imgproxy。
+7. 校验 Central API、Web API、Dashboard API、Dashboard Frontend 健康检查。
 
 启动测试 Bot：
 
@@ -81,7 +81,7 @@ docker compose --env-file .env.cloud.test -f deploy/docker-compose-cloud-test.ym
   --profile bot up -d bot-test
 ```
 
-切换前先在本地主服务器停止本地测试栈但保留数据：
+若历史本地测试栈仍在本地主服务器运行，切换云测试前先停止并保留数据：
 
 ```bash
 ./scripts/stop_local_test_preserve.sh
@@ -142,9 +142,10 @@ VPS Nginx 配置文件为 `/etc/nginx/sites-available/web-test.aivison.it.com`�
 | Central API | `cloud-central-api-test` | `8004` | 任务控制面 API，本地 cloud-worker 访问 |
 | Web API | `cloud-web-api-test` | `8001` | Web BFF / 主 API |
 | Dashboard Backend | `cloud-dashboard-backend-test` | `8044` | Dashboard 后端 |
+| Dashboard Frontend | `cloud-dashboard-frontend-test` | `8087` | Dashboard 云端 Nginx 前端，仅 Tailscale/受控来源访问 |
 | imgproxy | `cloud-imgproxy-test` | `8084` | 图片代理 |
 
-测试机 systemd 服务 `allbot-cloud-test-firewall.service` 管理公网保护规则，脚本路径为 `/usr/local/sbin/allbot-cloud-test-firewall.sh`，规则写入 Docker `DOCKER-USER` 链。当前公网 eth0 上的 `8001/8004/8044/8084` 全部 drop；Tailscale `tailscale0` 不受该规则影响。
+测试机 systemd 服务 `allbot-cloud-test-firewall.service` 管理公网保护规则，脚本路径为 `/usr/local/sbin/allbot-cloud-test-firewall.sh`，规则写入 Docker `DOCKER-USER` 链。当前公网 eth0 上的 `8001/8004/8044/8084/8087` 全部 drop；Tailscale `tailscale0` 不受该规则影响。
 
 云测试缓存与队列使用同机容器 `redis-test`，不复用正式 Valkey/Redis：
 
@@ -170,6 +171,7 @@ VS Code Remote 或本地 SSH 仍可通过端口转发作为应急访问：
 ssh -N \
   -L 8001:100.82.124.91:8001 \
   -L 8044:100.82.124.91:8044 \
+  -L 8087:100.82.124.91:8087 \
   -L 8004:100.82.124.91:8004 \
   allbot-do-sgp1-test-control
 ```
@@ -181,6 +183,7 @@ docker compose --env-file .env.cloud.test -f deploy/docker-compose-cloud-test.ym
 curl -fsS http://100.82.124.91:8004/health
 curl -fsS http://100.82.124.91:8001/api/health
 curl -fsS http://100.82.124.91:8044/api/health
+curl -fsS http://100.82.124.91:8087/api/health
 docker stats --no-stream
 df -h /
 ```
@@ -205,8 +208,8 @@ df -h /
 - 公网 eth0 测试端口已由 `allbot-cloud-test-firewall.service` drop。
 
 2026-06-09 云端测试容器口径：
-- 云端核心容器：Postgres、Redis、Central API、Web API、Dashboard Backend、imgproxy、bot-test。
-- 云端不运行前端 dev 容器，公网测试 Web 入口使用边缘 VPS 静态站。
+- 云端核心容器：Postgres、Redis、Central API、Web API、Dashboard Backend、Dashboard Frontend、imgproxy、bot-test。
+- 云端不运行 Web 前端 dev 容器，公网测试 Web 入口使用边缘 VPS 静态站；Dashboard 测试前端由 `cloud-dashboard-frontend-test` 提供，默认端口 `8087`，只面向 Tailscale/受控来源。
 - Dashboard Backend 仅供少量管理员使用，云测试连接池显式压缩为 `DB_POOL_SIZE=1`、`DB_MAX_OVERFLOW=2`。
 - Dashboard Backend 使用项目 `config.py`，`BOT_TYPE=TEST` 时必须显式设置 `DATABASE_URL_TEST` 与 `REDIS_URL_TEST`，否则 `.env.cloud.test` 里的旧测试变量会覆盖 compose 中的 `DATABASE_URL`/`REDIS_URL`。
 
@@ -231,13 +234,12 @@ docker compose --env-file .env.cloud.test -f deploy/docker-compose-cloud-test.ym
 
 GPU worker 不在云服务器运行；本地 `workers/docker-compose-cloud-worker-test.yml` 会启动 7 个 `cloud-comfy-agent-test-*` 容器，经 `CLOUD_TEST_CONTROL_HOST` 连接云端 Central API，并通过 R2 S3 endpoint 直接读写 `user-data-test`。
 
-## 9. 回滚
-回滚到本地主服务器测试栈：
+## 9. 停止与退役
+云测试控制面是当前唯一受支持的测试环境，不再维护“回滚到本地主服务器旧测试栈”的标准方案。需要暂停云测试时，先停测试 Bot，再停本地 cloud-worker 测试栈；云端控制面是否停止取决于当次维护目标。
 
 ```bash
 docker-compose --env-file .env.cloud.test -f workers/docker-compose-cloud-worker-test.yml stop
 ssh allbot-do-sgp1-test-control 'cd /home/deploy/APP/All_bot && docker compose --env-file .env.cloud.test -f deploy/docker-compose-cloud-test.yml --profile bot stop bot-test'
-docker-compose --env-file .env.test -f deploy/docker-compose-test.yml start
-docker-compose --env-file .env.test -f backend/docker-compose-test.yml start
-docker-compose --env-file .env.test -f workers/docker-compose-test.yml start
 ```
+
+旧本地测试 compose 和 `safe_deploy_test.sh` 仅作为历史迁移/人工取证材料保留。若必须短时启动，应另起临时排障计划，确认不会抢占测试 token、GPU、Redis 队列、对象桶或边缘 `web-test` 入口，结束后立即停止并保留数据。

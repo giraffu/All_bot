@@ -10,6 +10,7 @@
 | `web.aivison.it.com` | Cloudflare Pages `allbot-web-prod` | 正式 Web 静态站；生产包调用 `https://api.aivison.it.com/api` |
 | `api.aivison.it.com` | Cloudflare Tunnel on `allbot-do-sgp1-control` | 回源云 Web API `http://100.107.220.127:8000` |
 | `rmb.aivison.it.com` | Cloudflare Tunnel | 当前回源云 Payment API `http://100.107.220.127:8021`；可用脚本切回本地 Payment API |
+| 管理后台云端前端 | Tailscale/受控入口 | `http://100.107.220.127:8086`，如需公网域名必须走 Cloudflare Tunnel + Access |
 | `assets.aivison.it.com` | Web/Nginx VPS `100.88.57.122` | 回源本地 legacy MinIO `http://100.99.254.53:9000` |
 | `web-test.aivison.it.com` | Web/Nginx VPS `100.88.57.122` | `/root/dist-test` 静态站，`/api/` 回源云测试 Web API `http://100.82.124.91:8001` |
 | Telegram Local API | VPS `69.63.220.115` | `8081` Bot API，`8082` 文件服务 |
@@ -66,13 +67,15 @@ sequenceDiagram
 | `100.107.220.127:8003` | 云正式 Central API | 本地正式 worker relay 使用 |
 | `100.107.220.127:8021` | 云正式 Payment API | RMB Tunnel 当前回源 |
 | `100.107.220.127:8043` | 云正式 Dashboard Backend | 本地 Dashboard 网关使用 |
+| `100.107.220.127:8086` | 云正式 Dashboard Frontend | 仅 Tailscale/Cloudflare Access 受控入口；同源反代 Dashboard Backend |
 | `100.82.124.91:8001` | 云测试 Web API | Web/Nginx VPS `web-test` upstream |
 | `100.82.124.91:8004` | 云测试 Central API | 本地云测试 worker 使用 |
 | `100.82.124.91:8044` | 云测试 Dashboard Backend | 测试管理入口 |
+| `100.82.124.91:8087` | 云测试 Dashboard Frontend | 测试管理前端，仅 Tailscale/受控来源访问 |
 | `100.99.254.53:9000` | 本地 legacy MinIO | 只做 `assets.aivison.it.com` fallback |
 | `69.63.220.115:8081/8082` | Telegram Local API / 文件服务 | Bot 大文件能力依赖 |
 
-云测试端口绑定云测试 Tailscale IP `100.82.124.91`，公网 eth0 端口由 `allbot-cloud-test-firewall.service` drop。不要把云测试 DB/Redis 暴露到公网。
+云测试端口绑定云测试 Tailscale IP `100.82.124.91`，公网 eth0 上的 `8001/8004/8044/8084/8087` 由 `allbot-cloud-test-firewall.service` drop。不要把云测试 DB/Redis 暴露到公网。
 
 ## 5. RMB Tunnel 切换
 
@@ -113,6 +116,7 @@ curl -fsS https://web.aivison.it.com
 curl -fsS https://api.aivison.it.com/api/health
 curl -fsS https://rmb.aivison.it.com/pay/result
 curl -fsS https://web-test.aivison.it.com/api/health
+curl -fsS http://100.107.220.127:8086/api/health
 
 ssh -i frontend/ssh_key/id_rsa.pem root@100.88.57.122 'nginx -t && systemctl is-active nginx tailscaled'
 ssh allbot-do-sgp1-control 'curl -fsS http://100.107.220.127:8000/api/health'
@@ -123,6 +127,7 @@ ssh allbot-do-sgp1-test-control 'curl -fsS http://100.82.124.91:8001/api/health'
 - 不要把 `web.aivison.it.com/api/health` 当作正式 API 健康检查；它会返回 Pages SPA HTML 或前端路由结果。
 - 不要让 Web/Nginx VPS 的 `web-test.aivison.it.com` upstream 指向正式 Web API。
 - 不要复用本地主服务器 RMB Tunnel 来承接正式 `api.aivison.it.com`。
+- 不要把管理后台 `8086` 或 Dashboard Backend `8043` 裸露到公网；公网管理入口必须有 Cloudflare Access 或等价身份层、管理员 allowlist 和 MFA。
 - 不要把 Tailscale 配成武汉家庭内网 subnet router。
 - 不要在文档、日志或聊天中输出 Tunnel token、Bot token、R2 密钥或 `.env.cloud.*`。
 - 不要在 `assets.aivison.it.com` 的 MinIO proxy_pass 后追加 URI 或尾部斜杠。
@@ -130,6 +135,6 @@ ssh allbot-do-sgp1-test-control 'curl -fsS http://100.82.124.91:8001/api/health'
 ## 9. 文档维护
 以下变化发生时必须同步更新本文档、边缘节点文档、资源画像和运维 skill：
 - Cloudflare Pages 项目、Tunnel connector 或 public hostname 变化。
-- `api.aivison.it.com`、`rmb.aivison.it.com`、`web-test.aivison.it.com`、`assets.aivison.it.com` 回源变化。
+- `api.aivison.it.com`、`rmb.aivison.it.com`、管理后台公网域名、`web-test.aivison.it.com`、`assets.aivison.it.com` 回源变化。
 - 云正式或云测试 Tailscale IP 变化。
 - Web/Nginx VPS、Telegram Local API VPS、Tailscale ACL 或防火墙策略变化。

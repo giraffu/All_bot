@@ -29,6 +29,8 @@ CLOUD_TEST_POSTGRES_DB_VALUE="${CLOUD_TEST_POSTGRES_DB:-$(read_env_value CLOUD_T
 CLOUD_TEST_POSTGRES_USER_VALUE="${CLOUD_TEST_POSTGRES_USER:-$(read_env_value CLOUD_TEST_POSTGRES_USER)}"
 CLOUD_TEST_POSTGRES_PASSWORD_VALUE="${CLOUD_TEST_POSTGRES_PASSWORD:-$(read_env_value CLOUD_TEST_POSTGRES_PASSWORD)}"
 CLOUD_TEST_REDIS_PASSWORD_VALUE="${CLOUD_TEST_REDIS_PASSWORD:-$(read_env_value CLOUD_TEST_REDIS_PASSWORD)}"
+DASHBOARD_FRONTEND_TEST_PORT_VALUE="${DASHBOARD_FRONTEND_TEST_PORT:-$(read_env_value DASHBOARD_FRONTEND_TEST_PORT)}"
+DASHBOARD_FRONTEND_TEST_PORT_VALUE="${DASHBOARD_FRONTEND_TEST_PORT_VALUE:-8087}"
 
 if [ -z "$CLOUD_TEST_DATABASE_URL_VALUE" ]; then
     echo "❌ 未配置 CLOUD_TEST_DATABASE_URL。"
@@ -191,7 +193,7 @@ wait_for_container_ready \
     3
 
 echo "3️⃣ 构建云测试控制面镜像..."
-compose build central-api-test web-api-test dashboard-backend-test
+compose build central-api-test web-api-test dashboard-backend-test dashboard-frontend-test
 
 echo "4️⃣ 检查 Alembic head..."
 HEAD_COUNT="$(compose run --rm --no-deps web-api-test sh -lc 'alembic heads | wc -l' | tr -d '[:space:]')"
@@ -212,14 +214,16 @@ else
 fi
 
 echo "6️⃣ 启动云测试控制面服务..."
-compose up -d --force-recreate central-api-test web-api-test dashboard-backend-test imgproxy-test
+compose up -d --force-recreate central-api-test web-api-test dashboard-backend-test dashboard-frontend-test imgproxy-test
 
 echo "7️⃣ 等待健康检查..."
 wait_for_http_ready "云测试 Central API" "http://${CLOUD_TEST_HEALTH_HOST}:8004/health" 40 5
 wait_for_http_ready "云测试 Web API" "http://${CLOUD_TEST_HEALTH_HOST}:8001/api/health" 40 5
 wait_for_http_ready "云测试 Dashboard API" "http://${CLOUD_TEST_HEALTH_HOST}:8044/api/health" 40 5
+wait_for_http_ready "云测试 Dashboard Frontend" "http://${CLOUD_TEST_HEALTH_HOST}:${DASHBOARD_FRONTEND_TEST_PORT_VALUE}/api/health" 40 5
 
 echo "✅ 云端测试控制面部署完成。"
 echo "👉 查看服务: ${COMPOSE_CMD[*]} --env-file .env.cloud.test -f deploy/docker-compose-cloud-test.yml ps"
-echo "👉 公网测试 Web 已迁移到 web-test.aivison.it.com 的边缘 VPS；云端前端 dev 容器默认不启动。"
+echo "👉 Dashboard 测试前端: http://${CLOUD_TEST_HEALTH_HOST}:${DASHBOARD_FRONTEND_TEST_PORT_VALUE}/ （仅限 Tailscale/受控来源访问）。"
+echo "👉 公网测试 Web 已迁移到 web-test.aivison.it.com 的边缘 VPS；Web 前端 dev 容器默认不启动。"
 echo "👉 不要启动 bot-test，除非你已经停止本地 tg-bot-test。"

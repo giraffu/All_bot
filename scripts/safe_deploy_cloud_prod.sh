@@ -21,7 +21,7 @@ starts cloud-tg-bot-prod and never changes edge Nginx/DNS routing.
 
 Options:
   --preflight-only       Validate env, compose rendering, R2 and Telegram API reachability.
-  --start-control-plane  Build and start Central/Web/Payment/Dashboard/imgproxy.
+  --start-control-plane  Build and start Central/Web/Payment/Dashboard Backend/Frontend/imgproxy.
   --with-db-upgrade      With --start-control-plane, run alembic upgrade head on the configured cloud DB.
   --skip-network-checks  Skip R2 and Telegram Local Bot API probes.
 EOF
@@ -173,6 +173,10 @@ check_env_contract() {
         echo "REDIS_PREFIX must be prod_bot_."
         exit 1
     fi
+    if [ "$(read_env_value CLOUD_PROD_BIND_IP)" = "0.0.0.0" ]; then
+        echo "CLOUD_PROD_BIND_IP must not be 0.0.0.0 for cloud production."
+        exit 1
+    fi
     if [ "$(read_env_value API_TOKEN)" != "$(read_env_value AUTH_TOKEN)" ]; then
         echo "API_TOKEN and AUTH_TOKEN must be identical."
         exit 1
@@ -305,7 +309,7 @@ fi
 mkdir -p "$ROOT_DIR/logs/cloud-prod"
 
 echo "Building cloud production control-plane images..."
-compose build central-api-prod web-api-prod payment-api-prod dashboard-backend-prod
+compose build central-api-prod web-api-prod payment-api-prod dashboard-backend-prod dashboard-frontend-prod
 
 echo "Checking Alembic head count..."
 HEAD_COUNT="$(compose run --rm --no-deps web-api-prod sh -lc 'alembic heads | wc -l' | tr -d '[:space:]')"
@@ -323,14 +327,20 @@ else
 fi
 
 echo "Starting cloud production control plane without Telegram bot profile..."
-compose up -d --force-recreate central-api-prod web-api-prod payment-api-prod dashboard-backend-prod imgproxy-prod
+compose up -d --force-recreate central-api-prod web-api-prod payment-api-prod dashboard-backend-prod dashboard-frontend-prod imgproxy-prod
 
 CLOUD_PROD_HEALTH_HOST="$(read_env_value CLOUD_PROD_BIND_IP)"
 CLOUD_PROD_HEALTH_HOST="${CLOUD_PROD_HEALTH_HOST:-127.0.0.1}"
+if [ "$CLOUD_PROD_HEALTH_HOST" = "0.0.0.0" ]; then
+    CLOUD_PROD_HEALTH_HOST="127.0.0.1"
+fi
+DASHBOARD_FRONTEND_PORT="$(read_env_value DASHBOARD_FRONTEND_PORT)"
+DASHBOARD_FRONTEND_PORT="${DASHBOARD_FRONTEND_PORT:-8086}"
 
 wait_for_http_ready "Central API" "http://${CLOUD_PROD_HEALTH_HOST}:8003/health" 40 5
 wait_for_http_ready "Web API" "http://${CLOUD_PROD_HEALTH_HOST}:8000/api/health" 40 5
 wait_for_http_ready "Payment API" "http://${CLOUD_PROD_HEALTH_HOST}:8021/pay/result" 40 5
 wait_for_http_ready "Dashboard API" "http://${CLOUD_PROD_HEALTH_HOST}:8043/api/health" 40 5
+wait_for_http_ready "Dashboard Frontend" "http://${CLOUD_PROD_HEALTH_HOST}:${DASHBOARD_FRONTEND_PORT}/api/health" 40 5
 
 echo "Cloud production control plane is ready. Bot polling and edge routing were not changed."

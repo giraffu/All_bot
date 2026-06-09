@@ -111,7 +111,7 @@ curl -fsS http://127.0.0.1:8003/system/status
 docker-compose -f deploy/docker-compose.yml up -d --build bot
 ```
 
-`safe_deploy.sh` 只允许在本地正式灾备或旧本地正式维护窗口中使用。该脚本会重建本地 worker、Central、Bot/Web/Payment、Dashboard，并发布旧边缘静态站；它不是当前云正式生产的发布入口。
+`safe_deploy.sh` 只允许在本地正式灾备窗口中使用。该脚本会重建本地 worker、Central、Bot/Web/Payment、Dashboard，并发布旧边缘静态站；它不是当前云正式生产的发布入口。
 
 ## 5. 切换公网入口
 
