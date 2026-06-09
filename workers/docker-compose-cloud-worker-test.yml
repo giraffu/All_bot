@@ -49,7 +49,7 @@ services:
     command: ["python", "/app/local_relay/relay_main.py"]
     environment:
       <<: *worker-cloud-env
-      CENTRAL_API_URL: http://${CLOUD_TEST_TAILSCALE_IP:?CLOUD_TEST_TAILSCALE_IP is required}:8004
+      CENTRAL_API_URL: http://${CLOUD_TEST_CONTROL_HOST:?CLOUD_TEST_CONTROL_HOST is required}:8004
       LOCAL_RELAY_HOST: 127.0.0.1
       LOCAL_RELAY_PORT: ${CLOUD_TEST_LOCAL_RELAY_PORT:-8014}
       RESULT_SPOOL_DIR: /app/spool

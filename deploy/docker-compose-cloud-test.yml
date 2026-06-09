@@ -1,4 +1,53 @@
 services:
+  postgres-test:
+    image: postgres:15
+    container_name: cloud-postgres-test
+    restart: always
+    env_file:
+      - ../.env.cloud.test
+    environment:
+      POSTGRES_DB: ${CLOUD_TEST_POSTGRES_DB:-bot_db_test}
+      POSTGRES_USER: ${CLOUD_TEST_POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${CLOUD_TEST_POSTGRES_PASSWORD:?CLOUD_TEST_POSTGRES_PASSWORD is required}
+      TZ: Asia/Shanghai
+    volumes:
+      - cloud-postgres-test-data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\"",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  redis-test:
+    image: redis:7-alpine
+    container_name: cloud-redis-test
+    restart: always
+    env_file:
+      - ../.env.cloud.test
+    command:
+      [
+        "sh",
+        "-lc",
+        "redis-server --appendonly yes --save 60 1 --requirepass \"$${CLOUD_TEST_REDIS_PASSWORD}\"",
+      ]
+    volumes:
+      - cloud-redis-test-data:/data
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "redis-cli -a \"$${CLOUD_TEST_REDIS_PASSWORD}\" ping | grep -q PONG",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
   central-api-test:
     build:
       context: ../backend
@@ -18,6 +67,9 @@ services:
       - ../src:/app/src
     ports:
       - "${CLOUD_TEST_BIND_IP:-127.0.0.1}:8004:8003"
+    depends_on:
+      redis-test:
+        condition: service_healthy
     healthcheck:
       test:
         [
@@ -61,6 +113,10 @@ services:
     ports:
       - "${CLOUD_TEST_BIND_IP:-127.0.0.1}:8001:8001"
     depends_on:
+      postgres-test:
+        condition: service_healthy
+      redis-test:
+        condition: service_healthy
       central-api-test:
         condition: service_healthy
     command:
@@ -117,6 +173,11 @@ services:
       - ../logs/cloud-test:/app/logs
     ports:
       - "${CLOUD_TEST_BIND_IP:-127.0.0.1}:8044:8044"
+    depends_on:
+      postgres-test:
+        condition: service_healthy
+      redis-test:
+        condition: service_healthy
     command:
       [
         "gunicorn",
@@ -194,5 +255,13 @@ services:
     volumes:
       - ../logs/cloud-test:/app/logs
     depends_on:
+      postgres-test:
+        condition: service_healthy
+      redis-test:
+        condition: service_healthy
       central-api-test:
         condition: service_healthy
+
+volumes:
+  cloud-postgres-test-data:
+  cloud-redis-test-data:

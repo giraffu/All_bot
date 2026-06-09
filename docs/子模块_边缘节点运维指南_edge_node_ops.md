@@ -54,7 +54,7 @@
 | 域名 | 边缘职责 | 当前 upstream |
 | :--- | :--- | :--- |
 | `web.aivison.it.com` | 已由 Cloudflare Pages `allbot-web-prod` 承接；VPS 只保留回滚副本 | 不经过 VPS；前端调用 `https://api.aivison.it.com/api` |
-| `web-test.aivison.it.com` | 测试 Web 静态站；`/api/` 反代云测试 Web API | `http://100.107.220.127:8001` |
+| `web-test.aivison.it.com` | 测试 Web 静态站；`/api/` 反代云测试 Web API | `http://100.82.124.91:8001` |
 | `assets.aivison.it.com` | legacy MinIO 只读/兼容回源，用于历史媒体 fallback | `http://100.99.254.53:9000` |
 
 不在 Web VPS 上的 Cloudflare canary 入口：
@@ -74,7 +74,7 @@
 | `https://api.aivison.it.com/api/health` | 200，正式 Web API |
 | `https://web.aivison.it.com/api/health` | 返回 Pages SPA HTML；不再作为 API 健康检查 |
 | `https://web-test.aivison.it.com` | 200 |
-| `https://web-test.aivison.it.com/api/health` | 502，本轮保留测试边缘站但测试 API 入口可能未稳定运行 |
+| `https://web-test.aivison.it.com/api/health` | 应返回测试 Web BFF health；502 时先查 `web-test` upstream 与云测试白名单 |
 | `https://assets.aivison.it.com` | 根路径 403；这不等同于具体对象不可读，验收 legacy 对象时必须测真实 object URL |
 
 ### 3.3 Nginx 配置红线
@@ -94,7 +94,7 @@
 Web API/SSE 红线：
 - 正式 `web.aivison.it.com` 不再通过 VPS `/api/` 反代；前端生产包必须使用 `VITE_API_BASE_URL=https://api.aivison.it.com/api`。
 - 若回滚到 VPS `/root/dist`，`/api/` 才需要 `proxy_buffering off; proxy_cache off; chunked_transfer_encoding off;`，避免 SSE 和任务状态流被缓存或分块延迟。
-- 测试 Web `/api/` 当前应回源云测试 Web API `100.107.220.127:8001`，不要误指正式 `8000`。
+- 测试 Web `/api/` 当前应回源云测试 Tailscale Web API `100.82.124.91:8001`。不要误指正式 `8000`。
 
 ### 3.4 发布与回滚
 
@@ -234,7 +234,7 @@ curl -sS -o /dev/null -w "%{http_code} %{time_total}\n" --max-time 10 http://69.
 | Web API 普遍慢但云内 health 毫秒级 | 比较边缘到云、公网域名、Cloudflare/Tailscale 链路；统计 499 高频端点 |
 | `api-cf-test.aivison.it.com/api/health` 502 | 先查 Cloudflare Tunnel connector 是否在云机 active、public hostname 是否回源 `100.107.220.127:8000`；不要查 Web VPS Nginx |
 | `web-cf-test.aivison.it.com` 白屏或 404 | 先查 Cloudflare Pages 部署、custom domain、构建产物和 `VITE_API_BASE_URL`；不要查 `/root/dist` |
-| `web-test.aivison.it.com/api/health` 502 | 测试 Web API `100.107.220.127:8001` 是否运行；不要误改正式站 |
+| `web-test.aivison.it.com/api/health` 502 | 测试 Web API `100.82.124.91:8001` 是否运行、边缘 VPS Tailscale 是否在线；不要误改正式站 |
 | legacy 历史媒体打不开或加载慢 | `assets.aivison.it.com` Nginx MinIO proxy、Tailscale 到 `100.99.254.53:9000`、真实 object URL；不要只看 `/minio/health/live` |
 | `/api/tasks/{id}/result`、Gallery、History 大量 499 | 用户端等待过久断开；联动查 Web API R2 result timeout、legacy object_exists failure、边缘公网延迟 |
 | 上传中文/空格文件 403 | 检查 `assets` proxy_pass 是否带 URI 或尾斜杠 |

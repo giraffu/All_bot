@@ -22,11 +22,16 @@ read_env_value() {
     sed -n "s/^${key}=//p" "$ENV_FILE" | tail -n 1
 }
 
+CLOUD_TEST_CONTROL_HOST_VALUE="${CLOUD_TEST_CONTROL_HOST:-$(read_env_value CLOUD_TEST_CONTROL_HOST)}"
 CLOUD_TEST_TAILSCALE_IP_VALUE="${CLOUD_TEST_TAILSCALE_IP:-$(read_env_value CLOUD_TEST_TAILSCALE_IP)}"
-if [ -z "$CLOUD_TEST_TAILSCALE_IP_VALUE" ]; then
-    echo "❌ 未配置 CLOUD_TEST_TAILSCALE_IP，请先让云服务器加入 Tailscale 并写入 .env.cloud.test。"
+if [ -z "$CLOUD_TEST_CONTROL_HOST_VALUE" ]; then
+    CLOUD_TEST_CONTROL_HOST_VALUE="$CLOUD_TEST_TAILSCALE_IP_VALUE"
+fi
+if [ -z "$CLOUD_TEST_CONTROL_HOST_VALUE" ]; then
+    echo "❌ 未配置 CLOUD_TEST_CONTROL_HOST 或 CLOUD_TEST_TAILSCALE_IP。"
     exit 1
 fi
+export CLOUD_TEST_CONTROL_HOST="$CLOUD_TEST_CONTROL_HOST_VALUE"
 
 if docker compose version >/dev/null 2>&1; then
     COMPOSE_CMD=(docker compose)
@@ -34,8 +39,8 @@ else
     COMPOSE_CMD=(docker-compose)
 fi
 
-echo "🔎 检查云测试 Central API: http://${CLOUD_TEST_TAILSCALE_IP_VALUE}:8004/health"
-curl --noproxy '*' -fsS "http://${CLOUD_TEST_TAILSCALE_IP_VALUE}:8004/health" >/dev/null
+echo "🔎 检查云测试 Central API: http://${CLOUD_TEST_CONTROL_HOST_VALUE}:8004/health"
+curl --noproxy '*' -fsS "http://${CLOUD_TEST_CONTROL_HOST_VALUE}:8004/health" >/dev/null
 
 MINIO_SECURE_VALUE="${MINIO_SECURE:-$(read_env_value MINIO_SECURE)}"
 MINIO_ENDPOINT_VALUE="${MINIO_ENDPOINT:-$(read_env_value MINIO_ENDPOINT)}"
@@ -81,6 +86,7 @@ fi
 
 echo "🚀 启动本地 GPU cloud-worker 测试栈..."
 if [ "${COMPOSE_CMD[0]}" = "docker-compose" ]; then
+    docker ps -aq --filter "name=cloud-worker-relay-test" | xargs -r docker rm -f >/dev/null 2>&1 || true
     docker ps -aq --filter "name=cloud-comfy-agent-test" | xargs -r docker rm -f >/dev/null 2>&1 || true
 fi
 "${COMPOSE_CMD[@]}" --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d --build

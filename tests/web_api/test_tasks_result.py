@@ -280,8 +280,14 @@ async def test_get_task_result_keeps_web_video_pending_when_r2_not_ready(
     )
     r2_mock = AsyncMock(return_value="")
     presign_mock = MagicMock(return_value="http://192.168.1.115:9000/internal.mp4")
+    r2_exists_mock = AsyncMock(return_value=False)
     monkeypatch.setattr(task_result_service, "get_first_r2_url_if_exists", r2_mock)
     monkeypatch.setattr(media_presenter.storage, "get_presigned_url", presign_mock)
+    monkeypatch.setattr(
+        task_result_service.storage,
+        "async_r2_object_exists",
+        r2_exists_mock,
+    )
 
     response = await tasks_router.get_task_result(
         "task-1",
@@ -298,6 +304,70 @@ async def test_get_task_result_keeps_web_video_pending_when_r2_not_ready(
     }
     presign_mock.assert_not_called()
     r2_mock.assert_awaited_once()
+    assert r2_exists_mock.await_count == 3
+
+
+@pytest.mark.asyncio
+async def test_get_task_result_uses_parallel_r2_presigned_fallback_for_web_video(
+    monkeypatch,
+):
+    history = History(
+        id=11,
+        user_id=123,
+        task_id="task-1",
+        type="custom_video",
+        output_file="123/output_images/task-1.mp4",
+        source="web",
+    )
+    r2_mock = AsyncMock(return_value="")
+    r2_exists_mock = AsyncMock(return_value=True)
+    presigned_mock = MagicMock(return_value="https://r2-s3.example/presigned.mp4")
+    presign_mock = MagicMock(return_value="http://192.168.1.115:9000/internal.mp4")
+    monkeypatch.setattr(task_result_service, "get_first_r2_url_if_exists", r2_mock)
+    monkeypatch.setattr(
+        task_result_service.storage,
+        "async_r2_object_exists",
+        r2_exists_mock,
+    )
+    monkeypatch.setattr(
+        task_result_service,
+        "build_r2_presigned_url",
+        presigned_mock,
+    )
+    monkeypatch.setattr(media_presenter.storage, "get_presigned_url", presign_mock)
+
+    response = await tasks_router.get_task_result(
+        "task-1",
+        current_user=type("User", (), {"id": 123})(),
+        db=_FakeDB([_FakeResult(single=history)]),
+    )
+
+    assert response == {
+        "status": "success",
+        "task_id": "task-1",
+        "task_type": "custom_video",
+        "media_type": "video",
+        "result_url": "https://r2-s3.example/presigned.mp4",
+        "extra_outputs": {},
+        "result_meta": {},
+    }
+    presign_mock.assert_not_called()
+    r2_mock.assert_awaited_once_with(
+        "history/task-1/original.mp4",
+        "123/output_images/task-1.mp4",
+        "task-1.mp4",
+        timeout_seconds=task_result_service.WEB_RESULT_R2_LOOKUP_TIMEOUT_SECONDS,
+        fallback_to_presigned=False,
+    )
+    assert [call.args[0] for call in r2_exists_mock.await_args_list] == [
+        "history/task-1/original.mp4",
+        "123/output_images/task-1.mp4",
+        "task-1.mp4",
+    ]
+    presigned_mock.assert_called_once_with(
+        "history/task-1/original.mp4",
+        expires_hours=task_result_service.WEB_RESULT_STORAGE_FALLBACK_EXPIRES_HOURS,
+    )
 
 
 @pytest.mark.asyncio
@@ -329,6 +399,12 @@ async def test_get_task_result_keeps_web_video_pending_when_r2_lookup_times_out(
     )
     presign_mock = MagicMock(return_value="http://192.168.1.115:9000/internal.mp4")
     monkeypatch.setattr(media_presenter.storage, "get_presigned_url", presign_mock)
+    r2_exists_mock = AsyncMock(return_value=False)
+    monkeypatch.setattr(
+        task_result_service.storage,
+        "async_r2_object_exists",
+        r2_exists_mock,
+    )
 
     response = await tasks_router.get_task_result(
         "task-1",
@@ -344,6 +420,82 @@ async def test_get_task_result_keeps_web_video_pending_when_r2_lookup_times_out(
         "extra_outputs": {},
     }
     presign_mock.assert_not_called()
+    assert r2_exists_mock.await_count == 3
+
+
+@pytest.mark.asyncio
+async def test_get_task_result_uses_r2_presigned_fallback_when_public_lookup_times_out(
+    monkeypatch,
+):
+    history = History(
+        id=11,
+        user_id=123,
+        task_id="task-1",
+        type="custom_video",
+        output_file="123/output_images/task-1.mp4",
+        source="web",
+    )
+
+    async def slow_r2_lookup(*_object_keys, **_kwargs):
+        await asyncio.sleep(1)
+        return ""
+
+    monkeypatch.setattr(
+        task_result_service,
+        "WEB_RESULT_R2_LOOKUP_TIMEOUT_SECONDS",
+        0.01,
+    )
+    monkeypatch.setattr(
+        task_result_service,
+        "get_first_r2_url_if_exists",
+        slow_r2_lookup,
+    )
+    r2_exists_mock = AsyncMock(return_value=True)
+    presigned_mock = MagicMock(return_value="https://r2-s3.example/presigned.mp4")
+    minio_presign_mock = MagicMock(
+        return_value="http://192.168.1.115:9000/internal.mp4"
+    )
+    monkeypatch.setattr(
+        task_result_service.storage,
+        "async_r2_object_exists",
+        r2_exists_mock,
+    )
+    monkeypatch.setattr(
+        task_result_service,
+        "build_r2_presigned_url",
+        presigned_mock,
+    )
+    monkeypatch.setattr(
+        media_presenter.storage,
+        "get_presigned_url",
+        minio_presign_mock,
+    )
+
+    response = await tasks_router.get_task_result(
+        "task-1",
+        current_user=type("User", (), {"id": 123})(),
+        db=_FakeDB([_FakeResult(single=history)]),
+    )
+
+    assert response == {
+        "status": "success",
+        "task_id": "task-1",
+        "task_type": "custom_video",
+        "media_type": "video",
+        "result_url": "https://r2-s3.example/presigned.mp4",
+        "extra_outputs": {},
+        "result_meta": {},
+    }
+    assert [call.args[0] for call in r2_exists_mock.await_args_list] == [
+        "history/task-1/original.mp4",
+        "123/output_images/task-1.mp4",
+        "task-1.mp4",
+    ]
+    presigned_mock.assert_called_once_with(
+        "history/task-1/original.mp4",
+        expires_hours=task_result_service.WEB_RESULT_STORAGE_FALLBACK_EXPIRES_HOURS,
+    )
+    minio_presign_mock.assert_not_called()
 
 
 @pytest.mark.asyncio

@@ -2,17 +2,17 @@
 
 ## 1. 目标与范围
 
-本文档记录 AllBot 云控制面服务器的 SSH 密钥、登录入口、权限边界和轮换策略。云控制面当前用于 DigitalOcean Singapore Droplet，承载正式 Bot、Web API、Payment API、Central API、Dashboard Backend、imgproxy 与运维入口等控制面服务。
+本文档记录 AllBot 云控制面服务器的 SSH 密钥、登录入口、权限边界和轮换策略。当前包含正式云控制面 Droplet 与独立云测试控制面 Droplet；两者必须用清晰 Host 别名区分，避免误把测试操作打到正式服务。
 
 武汉局域网 GPU 节点的 SSH 管理独立记录在 `docs/子模块_局域网GPU节点SSH管理_lan_gpu_ssh_access.md`，不要把 GPU 节点密码或私钥混入云控制面文档。
 
 本文档不记录私钥内容、云服务密码、token、R2 key、数据库密码或任何可直接登录生产环境的敏感凭据。
 
-最近一次更新：2026-06-07，Asia/Shanghai。
+最近一次更新：2026-06-09，Asia/Shanghai。
 
 ## 2. 当前 SSH 密钥
 
-当前 Droplet：
+正式 Droplet：
 
 | 项目 | 当前值 |
 | :--- | :--- |
@@ -24,6 +24,20 @@
 | 规格 | Basic Regular `$48/mo`，4 vCPU / 8GB RAM / 160GB SSD / 5TB transfer |
 | 默认研发登录用户 | `deploy` |
 | root 初始化入口 | `allbot-do-sgp1-control-root` |
+
+独立测试 Droplet：
+
+| 项目 | 当前值 |
+| :--- | :--- |
+| Droplet 名称 | `allbot-do-sgp1-test-control` |
+| 区域 | DigitalOcean Singapore `SGP1` |
+| 公网 IPv4 | `168.144.128.133` |
+| Tailscale IPv4 | `100.82.124.91` |
+| VPC/私网 IPv4 | `10.104.0.5` |
+| 系统 | Ubuntu 24.04 LTS |
+| 规格 | Basic Regular `$12/mo`，1 vCPU / 2GB RAM / 50GB SSD / 2TB transfer |
+| 默认研发登录用户 | `deploy` |
+| root 初始化入口 | `allbot-do-sgp1-test-control-root` |
 
 | 项目 | 当前值 |
 | :--- | :--- |
@@ -82,12 +96,36 @@ Host allbot-do-sgp1-control
     ServerAliveInterval 30
     ServerAliveCountMax 3
     StrictHostKeyChecking accept-new
+
+Host allbot-do-sgp1-test-control-root
+    HostName 168.144.128.133
+    User root
+    IdentityFile ~/.ssh/allbot_do_sgp1_control_20260606_ed25519
+    IdentitiesOnly yes
+    ServerAliveInterval 30
+    ServerAliveCountMax 3
+    StrictHostKeyChecking accept-new
+
+Host allbot-do-sgp1-test-control
+    HostName 168.144.128.133
+    User deploy
+    IdentityFile ~/.ssh/allbot_do_sgp1_control_20260606_ed25519
+    IdentitiesOnly yes
+    ServerAliveInterval 30
+    ServerAliveCountMax 3
+    StrictHostKeyChecking accept-new
 ```
 
 日常 VS Code Remote-SSH、Codex 远程研发和常规运维默认使用：
 
 ```bash
 ssh allbot-do-sgp1-control
+```
+
+云测试环境运维使用：
+
+```bash
+ssh allbot-do-sgp1-test-control
 ```
 
 只在初始化、救援或明确需要 root 时使用：

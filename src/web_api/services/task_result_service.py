@@ -15,15 +15,18 @@ from src.core.task_status_mapper import (
 from src.core.media_urls import build_r2_media_key_candidates
 from src.database.models import History
 from src.web_api.presenters.media_presenter import (
+    build_r2_presigned_url,
     build_storage_media_url,
     extract_history_result_meta,
     filter_user_visible_extra_outputs,
     get_first_r2_url_if_exists,
     resolve_history_extra_outputs,
 )
+from src.services.storage import storage
 
 WEB_RESULT_STORAGE_FALLBACK_EXPIRES_HOURS = 1
 WEB_RESULT_R2_LOOKUP_TIMEOUT_SECONDS = 2.5
+WEB_RESULT_R2_S3_FALLBACK_TIMEOUT_SECONDS = 1.0
 WEB_RESULT_EXTRA_OUTPUTS_TIMEOUT_SECONDS = 5.0
 
 
@@ -76,14 +79,16 @@ async def _release_read_transaction(db) -> None:
 
 
 async def _resolve_web_r2_url(hist: _HistorySnapshot) -> str:
+    object_keys = build_r2_media_key_candidates(
+        output_file=hist.output_file,
+        task_id=hist.task_id,
+    )
     try:
-        return await asyncio.wait_for(
+        public_url = await asyncio.wait_for(
             get_first_r2_url_if_exists(
-                *build_r2_media_key_candidates(
-                    output_file=hist.output_file,
-                    task_id=hist.task_id,
-                ),
+                *object_keys,
                 timeout_seconds=WEB_RESULT_R2_LOOKUP_TIMEOUT_SECONDS,
+                fallback_to_presigned=False,
             ),
             timeout=WEB_RESULT_R2_LOOKUP_TIMEOUT_SECONDS,
         )
@@ -92,7 +97,51 @@ async def _resolve_web_r2_url(hist: _HistorySnapshot) -> str:
             "Timed out resolving web result R2 URL for task_id=%s",
             hist.task_id,
         )
+    else:
+        if public_url:
+            return public_url
+
+    return await _resolve_web_r2_presigned_url_from_s3(object_keys)
+
+
+async def _resolve_web_r2_presigned_url_from_s3(object_keys: list[str]) -> str:
+    valid_object_keys = [object_key for object_key in object_keys if object_key]
+    if not valid_object_keys:
         return ""
+
+    exists_results = await asyncio.gather(
+        *(
+            _web_r2_object_exists_with_timeout(object_key)
+            for object_key in valid_object_keys
+        )
+    )
+    for object_key, exists in zip(valid_object_keys, exists_results):
+        if not exists:
+            continue
+        presigned_url = build_r2_presigned_url(
+            object_key,
+            expires_hours=WEB_RESULT_STORAGE_FALLBACK_EXPIRES_HOURS,
+        )
+        if presigned_url:
+            return presigned_url
+    return ""
+
+
+async def _web_r2_object_exists_with_timeout(object_key: str) -> bool:
+    try:
+        return await asyncio.wait_for(
+            storage.async_r2_object_exists(object_key),
+            timeout=WEB_RESULT_R2_S3_FALLBACK_TIMEOUT_SECONDS,
+        )
+    except asyncio.TimeoutError:
+        return False
+    except Exception as exc:
+        logger.warning(
+            "Failed to verify web result R2 object via S3 key=%s: %s",
+            object_key,
+            exc,
+        )
+        return False
 
 
 async def _resolve_task_result_url(hist: _HistorySnapshot, *, media_type: str) -> str:
