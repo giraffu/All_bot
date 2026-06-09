@@ -32,34 +32,50 @@ sequenceDiagram
 
 ## 3. 核心代码片段
 
-### Monkey Patch 文件下载逻辑 (src/bot_prod.py)
-[`bot_prod.py:L15-L42`](file:///home/hfy/APP/All_bot/src/bot_prod.py#L15)
+### 主 Bot 文件下载补丁 (`src/bot_main.py`)
+[`src/bot_main.py`](../src/bot_main.py)
 ```python
-import telegram
-from telegram.ext import ApplicationBuilder
 import httpx
+from telegram import File
 
-# 保存原始方法
-_original_download_to_drive = telegram.File.download_to_drive
+original_download_to_drive = File.download_to_drive
 
-async def custom_download_as_bytearray(self, out=None, custom_path=None, read_timeout=120.0, *args, **kwargs):
-    """
-    拦截 python-telegram-bot 的下载行为，
-    防止其将 base_file_url 强制拼接 'bot<token>' 导致 404。
-    提取 file_path，强制指向 8082 HTTP 文件服务器。
-    """
-    raw_path = self.file_path
-    # 核心修复：直接通过直连下载，跳过代理和错误的 token 拼接
-    target_url = f"http://69.63.220.115:8082{raw_path}"
-    
-    async with httpx.AsyncClient(proxy=None) as client:
-        response = await client.get(target_url, timeout=read_timeout)
-        response.raise_for_status()
-        return bytearray(response.content)
 
-# 动态替换类方法
-telegram.File.download_as_bytearray = custom_download_as_bytearray
+async def custom_download_to_drive(
+    self,
+    custom_path=None,
+    read_timeout=None,
+    write_timeout=None,
+    connect_timeout=None,
+    pool_timeout=None,
+):
+    bot = self.get_bot()
+    if bot.base_file_url and "8082" in bot.base_file_url:
+        raw_path = self.file_path
+        # 省略 urlparse 与前导斜杠归一化
+        url = f"http://69.63.220.115:8082{raw_path}"
+
+        async with httpx.AsyncClient(proxy=None) as client:
+            response = await client.get(url, timeout=120.0)
+            response.raise_for_status()
+            with open(custom_path, "wb") as f:
+                f.write(response.content)
+        return self
+
+    return await original_download_to_drive(
+        self,
+        custom_path,
+        read_timeout,
+        write_timeout,
+        connect_timeout,
+        pool_timeout,
+    )
+
+
+File.download_to_drive = custom_download_to_drive
 ```
+
+独立 `cs_bot` 另有自己的 Telegram 文件下载补丁，落点在 [`cs_bot/bot.py`](../cs_bot/bot.py)。修改 Telegram Local API、文件下载或群聊图片处理时，需要同时确认主 Bot 与 CS Bot 的补丁语义是否都需要调整。
 
 ## 4. 接口定义 (网络契约)
 本模块对外表现为 PTB 框架内的 `ApplicationBuilder` 参数配置：
@@ -78,8 +94,9 @@ application = (
 - **覆盖率基准**：不涉及业务，但 Monkey Patch 代码要求 **100%** 的集成测试通过率。
 - **核心用例**：
   1. `test_local_api_connection`：在 Bot 启动前，测试 `http://<VPS_IP>:8081/bot<TOKEN>/getMe` 是否返回正常的 Bot 信息，而非 502。
-  2. `test_large_file_download`：用户上传一个 45MB 的视频文件，断言 `custom_download_as_bytearray` 能在 `read_timeout` 内无阻碍地返回完整的 `bytearray`，且 HTTP 状态码为 200。
-  3. `test_directory_permissions`：验证 `telegram-bot-api` 写入宿主机的文件能被 8082 端口读取，不报 403 Forbidden 错误。
+  2. `test_large_file_download`：用户上传一个 45MB 的视频文件，断言主 Bot `custom_download_to_drive` 能在 `read_timeout` 内无阻碍地落盘，且 HTTP 状态码为 200。
+  3. `test_cs_bot_large_file_download`：若改动涉及 CS Bot，额外断言 `cs_bot/bot.py` 的 `custom_download_as_bytearray` 能正确读取 8082 文件流。
+  4. `test_directory_permissions`：验证 `telegram-bot-api` 写入宿主机的文件能被 8082 端口读取，不报 403 Forbidden 错误。
 
 ## 6. 部署与回滚步骤
 - **VPS 端部署**：

@@ -33,10 +33,10 @@ Notes when using this skill:
 
 ## Checklist
 
-- db schema design: if the review scope includes code/files under `src/database/` or `backend/app/`, follow [.codex/skills/backend-code-review/references/db-schema-rule.md](.codex/skills/backend-code-review/references/db-schema-rule.md) to perform the review
-- architecture: if the review scope involves handler/router/service/core-domain/libs/model layering, dependency direction, or moving responsibilities across modules, follow [.codex/skills/backend-code-review/references/architecture-rule.md](.codex/skills/backend-code-review/references/architecture-rule.md) to perform the review
-- repositories abstraction: if the review scope contains table/model operations (e.g., `select(...)`, `session.execute(...)`, joins, CRUD) and is not under `src/database/` or `backend/app/models.py`, follow [.codex/skills/backend-code-review/references/repositories-rule.md](.codex/skills/backend-code-review/references/repositories-rule.md) to perform the review
-- sqlalchemy patterns: if the review scope involves SQLAlchemy session/query usage, db transaction/crud usage, or raw SQL usage, follow [.codex/skills/backend-code-review/references/sqlalchemy-rule.md](.codex/skills/backend-code-review/references/sqlalchemy-rule.md) to perform the review
+- db schema design: if the review scope includes code/files under `src/database/` or `backend/app/`, follow [references/db-schema-rule.md](references/db-schema-rule.md) to perform the review
+- architecture: if the review scope involves handler/router/service/core-domain/libs/model layering, dependency direction, or moving responsibilities across modules, follow [references/architecture-rule.md](references/architecture-rule.md) to perform the review
+- repositories abstraction: if the review scope contains table/model operations (e.g., `select(...)`, `session.execute(...)`, joins, CRUD) and is not under `src/database/` or `backend/app/models.py`, follow [references/repositories-rule.md](references/repositories-rule.md) to perform the review
+- sqlalchemy patterns: if the review scope involves SQLAlchemy session/query usage, db transaction/crud usage, or raw SQL usage, follow [references/sqlalchemy-rule.md](references/sqlalchemy-rule.md) to perform the review
 
 ## General Review Rules
 

@@ -11,7 +11,7 @@
 - 本地 MinIO：只作为 legacy 历史媒体只读 fallback 和本地热数据保留，不再是新生成结果的公开事实源。
 - 本地 GPU/ComfyUI：仍在武汉内网运行，worker 默认通过本机 `cloud-prod-worker-relay` 访问云 Central API；relay 再经 Tailscale 访问云端。
 - 公共 Web API 与 RMB 支付入口已经由云端控制面承接；`assets.aivison.it.com` 继续保留 legacy MinIO 只读回源。
-- Cloudflare Pages/API Tunnel 测试入口正在按 canary 口径推进：目标是 `web-cf-test.aivison.it.com` 由 Cloudflare Pages 承接，`api-cf-test.aivison.it.com` 通过云机上的 Cloudflare Tunnel 回源云 Web API `100.107.220.127:8000`。Cloudflare 控制台完成前，这两个入口不得视为已上线。
+- Cloudflare Pages/API Tunnel 已成为正式入口：`web.aivison.it.com` 由 Pages 项目 `allbot-web-prod` 承接，`api.aivison.it.com` 通过云机上的 Cloudflare Tunnel 回源云 Web API `100.107.220.127:8000`。历史 `web-cf-test`/`api-cf-test` 仅作为 canary/归档语义，不再是迁移待办。
 
 ## 2. 服务分布
 
@@ -55,11 +55,12 @@ worker 写入 R2 `user-data-prod`，不得配置 legacy MinIO 写路径。启用
 GPU 节点上的 ComfyUI 服务不在本 compose 内。`cloud-prod-comfy-agent-*` 只替换本地主服务器上的 worker 容器，不会自动重启 GPU 节点上的 `comfy0/comfy1` 或宿主机 ComfyUI。GPU 节点硬件、容器、模型挂载和单容器运维边界见 `docs/子模块_局域网GPU节点资源与运维_lan_gpu_resource_ops.md`。
 
 ### 2.3 边缘入口
-- `web.aivison.it.com`：静态前端由边缘 VPS 承接，`/api/` 反代到云 Web API。
-- `rmb.aivison.it.com`：优先通过 Cloudflare Tunnel 回源到云 Payment API。
+- `web.aivison.it.com`：静态前端由 Cloudflare Pages 项目 `allbot-web-prod` 承接，生产前端调用 `https://api.aivison.it.com/api`。
+- `api.aivison.it.com`：Cloudflare Tunnel 连接器运行在 `allbot-do-sgp1-control`，回源 `http://100.107.220.127:8000`。
+- `rmb.aivison.it.com`：Cloudflare Tunnel 回源到云 Payment API `http://100.107.220.127:8021`；紧急切回本地 Payment API 使用 `scripts/rollback_rmb_tunnel_to_local_prod.sh --execute`。
 - `assets.aivison.it.com`：保留到本地 legacy MinIO 的只读代理，用于历史媒体 fallback。
-- `web-cf-test.aivison.it.com`：Cloudflare Pages canary 静态站，构建模式为 `frontend npm run build:cf-test`；只用于小范围人工验收，不切正式用户。
-- `api-cf-test.aivison.it.com`：Cloudflare Tunnel canary API 入口，connector 必须运行在 `allbot-do-sgp1-control` 云机，回源 `http://100.107.220.127:8000`；不要复用本地主服务器上的 RMB tunnel。
+- `web-test.aivison.it.com`：独立云测试环境的公网 Web 入口，由 Web/Nginx VPS 提供静态站并反代云测试 Web API `100.82.124.91:8001`。
+- `web-cf-test.aivison.it.com` / `api-cf-test.aivison.it.com`：历史 canary 入口；若保留，仍不得复用本地主服务器 RMB tunnel。
 
 ## 3. 运行态与性能口径
 
@@ -130,19 +131,20 @@ docker compose --env-file .env.cloud.prod -f deploy/docker-compose-cloud-prod.ym
 
 目标 service 可替换为 `web-api-prod`、`dashboard-backend-prod`、`payment-api-prod` 或 `bot-prod`。生产热修前建议先备份被覆盖文件；当前云端运行目录不应假设一定是完整 Git 工作区。
 
-### 4.3 Cloudflare Pages/API Tunnel canary
-测试入口迁移分为两个暂停点：
+### 4.3 Cloudflare Pages/API Tunnel 维护
+正式 Web/API 已完成切换。日常维护只需要确认 Pages 项目、Tunnel connector 和 CORS allowlist 仍与正式域名一致。
 
-1. 先由人工在 Cloudflare Zero Trust 创建 `allbot-cloud-web-api-canary` tunnel，并把 public hostname `api-cf-test.aivison.it.com` 指向 `http://100.107.220.127:8000`。connector 安装命令含 token，不得贴到聊天、文档或 Git。
-2. `api-cf-test` 健康检查 200 后，只热更云端 `web-api-prod` 使 CORS allowlist 生效；不要重建 Central、Payment、Bot、Dashboard 或 worker。
-3. 再由人工在 Cloudflare Pages Git 集成创建 `allbot-web-cf-test`，仓库分支 `deploy`，root directory `frontend`，build command 推荐 `npm ci && npm run build:cf-test`，output directory `dist`，环境变量至少设置 `NODE_VERSION=24`。
-4. Pages 自定义域名绑定 `web-cf-test.aivison.it.com` 后，执行 canary 验收脚本：
+历史 canary 流程已经归档到 `docs/archive/2026-06-cloud-migration/`；以下原则仍有效：
+
+- Tunnel connector 必须运行在云机 `allbot-do-sgp1-control`，不得复用本地主服务器 RMB tunnel。
+- Cloudflare 控制台 token、connector 安装命令和 `.env.cloud.prod` 不得贴到聊天、文档或 Git。
+- 若重新启用 canary，可执行：
 
 ```bash
 bash scripts/check_cloudflare_canary.sh
 ```
 
-历史 canary 验收通过后，2026-06-08 晚间已将正式 `api.aivison.it.com` 切到云机 Cloudflare Tunnel，并将 `web.aivison.it.com` 绑定到 Cloudflare Pages 项目 `allbot-web-prod`。`assets.aivison.it.com` 继续留在 Web/Nginx VPS，作为 legacy MinIO fallback。
+2026-06-08 晚间已将正式 `api.aivison.it.com` 切到云机 Cloudflare Tunnel，并将 `web.aivison.it.com` 绑定到 Cloudflare Pages 项目 `allbot-web-prod`。`assets.aivison.it.com` 继续留在 Web/Nginx VPS，作为 legacy MinIO fallback。
 
 ### 4.4 本地云正式 worker 更新
 worker 镜像 COPY 代码，修改 `workers/comfy_agent` 后必须重建镜像并重建容器。
@@ -219,5 +221,6 @@ docker logs --since 2m --tail 100 cloud-prod-comfy-agent-1
 - 只重建 Central/Web/Dashboard 代码后，若服务异常，优先回滚目标容器代码或恢复热修前备份文件，再只重建目标服务。
 - worker 更新后如果单节点异常，可只重建对应 `cloud-prod-comfy-agent-N`；不要全量清理 `workers` project。
 - 已经启动云 Bot 并产生新写入后，不做简单整站回滚；走数据核对与定向修复。
+- 云正式整体不可用且短时无法恢复时，才执行本地正式灾备切换。具体步骤见 `docs/子模块_本地正式灾备切换_local_prod_fallback.md`；切换前必须保证生产 Bot 单实例，并接受本地数据库非实时同步带来的对账成本。
 - `/system/status` 慢或 Dashboard 卡顿时，先检查 Central 状态观测缓存、托管 Valkey 连接、Dashboard stats 缓存和前端轮询频率，不要把 GPU 生成停顿直接当成控制面故障。
 - Web 公网慢但云内健康时，不要优先重启 Web API；先检查 Web 边缘磁盘、Nginx 499/5xx、Cloudflare/Tailscale 链路、R2 result timeout 与 legacy assets 回源。

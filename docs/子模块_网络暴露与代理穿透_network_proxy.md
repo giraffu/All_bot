@@ -1,87 +1,135 @@
 # 子模块: 网络暴露与代理穿透 (Network & Proxy)
 
 ## 1. 目标与范围
-本模块负责系统在全球网络中的连通性、安全性与带宽加速。因为核心高算力底座部署在国内（无固定公网 IP，且受防火墙限制），所以必须通过海外 VPS 部署边缘节点，并结合 Tailscale 虚拟局域网（VLAN）、Cloudflare Tunnel 与 FRP，将内部的 API 和 Dashboard 面板安全地穿透暴露给公网用户和第三方回调网关。
+本文档记录 AllBot 当前公网入口、Cloudflare、Tailscale、Web/Nginx VPS 与本地主服务器之间的真实网络契约。当前正式生产已经迁到云控制面；本地主服务器主要承担 GPU worker、legacy MinIO 和本地灾备，不再是正式 Web/API 主入口。
 
-## 2. 架构图与流向
+## 2. 当前入口总览
+
+| 域名/入口 | 当前承接方 | 回源/职责 |
+| :--- | :--- | :--- |
+| `web.aivison.it.com` | Cloudflare Pages `allbot-web-prod` | 正式 Web 静态站；生产包调用 `https://api.aivison.it.com/api` |
+| `api.aivison.it.com` | Cloudflare Tunnel on `allbot-do-sgp1-control` | 回源云 Web API `http://100.107.220.127:8000` |
+| `rmb.aivison.it.com` | Cloudflare Tunnel | 当前回源云 Payment API `http://100.107.220.127:8021`；可用脚本切回本地 Payment API |
+| `assets.aivison.it.com` | Web/Nginx VPS `100.88.57.122` | 回源本地 legacy MinIO `http://100.99.254.53:9000` |
+| `web-test.aivison.it.com` | Web/Nginx VPS `100.88.57.122` | `/root/dist-test` 静态站，`/api/` 回源云测试 Web API `http://100.82.124.91:8001` |
+| Telegram Local API | VPS `69.63.220.115` | `8081` Bot API，`8082` 文件服务 |
+
+Web/Nginx VPS 的 `web.aivison.it.com` Nginx 配置只作为正式 Web 回滚副本，不是当前正式主路径。正式 Web 健康检查使用 `https://web.aivison.it.com`；正式 API 健康检查使用 `https://api.aivison.it.com/api/health`。
+
+## 3. 网络流向
 
 ```mermaid
 sequenceDiagram
     autonumber
-    actor User as 全球用户
-    participant CF as Cloudflare 边缘加速
-    participant VPS as 海外 Web VPS (Nginx)
-    participant TS as Tailscale VLAN
-    participant BFF as 云 Web BFF (8000)
-    
-    User->>CF: 1. 访问 web.aivison.it.com
-    CF->>VPS: 2. 边缘路由到海外 VPS
-    VPS->>VPS: 3. Nginx 托管静态前端资源 (Vue)
-    alt API 动态请求
-        VPS->>TS: 4. Nginx 匹配 /api/ 代理至 Tailscale IP
-        TS->>BFF: 5. 隧道加密传输至云正式 Web API 8000 端口
-        BFF-->>VPS: 6. 返回 JSON / SSE 流
-        VPS-->>User: 7. 响应用户
-    end
+    actor User as 用户浏览器
+    participant Pages as Cloudflare Pages
+    participant Tunnel as Cloudflare Tunnel
+    participant Cloud as 云正式控制面
+    participant VPS as Web/Nginx VPS
+    participant Local as 本地主服务器
+
+    User->>Pages: GET web.aivison.it.com
+    Pages-->>User: Vue/静态资源
+    User->>Tunnel: API 请求 api.aivison.it.com/api/*
+    Tunnel->>Cloud: http://100.107.220.127:8000
+    Cloud-->>Tunnel: JSON/SSE
+    Tunnel-->>User: 响应
+
+    User->>VPS: 历史媒体 assets.aivison.it.com/*
+    VPS->>Local: Tailscale -> MinIO 100.99.254.53:9000
+    Local-->>VPS: legacy object
+    VPS-->>User: 媒体响应
 ```
 
-## 3. 核心代码片段
+云测试流向：
 
-### Nginx 反向代理配置 (海外 VPS)
-[`/etc/nginx/sites-available/web_frontend.conf`](file:///etc/nginx/sites-available/web_frontend.conf#L12)
-```nginx
-server {
-    listen 443 ssl;
-    server_name web.aivison.it.com;
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Tester as 测试用户
+    participant VPS as Web/Nginx VPS
+    participant TestCloud as 云测试控制面
+    participant Local as 本地主服务器测试 worker
 
-    # 静态资源由海外 VPS 极速响应
-    location / {
-        root /root/dist;
-        index index.html;
-        try_files $uri $uri/ /index.html;
-    }
-
-    # 核心红线：动态 API 必须通过 Tailscale 内网 IP 回源到云正式 Web API
-    # 绝对禁止在 proxy_pass 末尾加斜杠，否则会导致路由截断
-    location /api/ {
-        proxy_pass http://100.107.220.127:8000;
-        
-        # 针对 SSE 长连接的特殊支持
-        proxy_set_header Connection '';
-        proxy_http_version 1.1;
-        chunked_transfer_encoding off;
-        proxy_buffering off;
-        proxy_cache off;
-    }
-}
+    Tester->>VPS: web-test.aivison.it.com
+    VPS-->>Tester: /root/dist-test 静态站
+    Tester->>VPS: /api/*
+    VPS->>TestCloud: http://100.82.124.91:8001
+    Local->>TestCloud: worker -> http://100.82.124.91:8004
 ```
 
-## 4. 接口定义 (网络契约)
-本模块处理的是 4 层与 7 层的网络转发，其主要网络契约如下：
-- `100.107.220.127:8000` (Tailscale) -> 云正式 Web BFF API
-- `100.107.220.127:8001` (Tailscale) -> 云测试 Web BFF API
-- `100.107.220.127:8003` (Tailscale) -> 云正式 Central API
-- `100.99.254.53:9000` (Tailscale) -> 本地 legacy MinIO，只供 `assets.aivison.it.com` fallback
-- `69.63.220.115:8081/8082` -> Telegram Local Bot API 与文件服务边缘节点
-- `Cloudflare Tunnel (Public URL)` -> `rmb.aivison.it.com` 默认映射到本地 `127.0.0.1:8021` 供支付网关回调；正式迁云维护窗口内通过 `scripts/switch_rmb_tunnel_to_cloud_prod.sh --execute` 切到云 Payment API `100.107.220.127:8021`，通过 `scripts/rollback_rmb_tunnel_to_local_prod.sh --execute` 回滚到本地。
+## 4. 关键网络契约
 
-> **注**：边缘节点的 Nginx 运维细则、大文件流式传输优化及 MinIO 代理的防签名失效红线，请参阅专项文档：[边缘节点运维指南](./子模块_边缘节点运维指南_edge_node_ops.md)。
+| 地址 | 用途 | 约束 |
+| :--- | :--- | :--- |
+| `100.107.220.127:8000` | 云正式 Web API | 只通过 Tailscale/Tunnel/受控来源访问 |
+| `100.107.220.127:8003` | 云正式 Central API | 本地正式 worker relay 使用 |
+| `100.107.220.127:8021` | 云正式 Payment API | RMB Tunnel 当前回源 |
+| `100.107.220.127:8043` | 云正式 Dashboard Backend | 本地 Dashboard 网关使用 |
+| `100.82.124.91:8001` | 云测试 Web API | Web/Nginx VPS `web-test` upstream |
+| `100.82.124.91:8004` | 云测试 Central API | 本地云测试 worker 使用 |
+| `100.82.124.91:8044` | 云测试 Dashboard Backend | 测试管理入口 |
+| `100.99.254.53:9000` | 本地 legacy MinIO | 只做 `assets.aivison.it.com` fallback |
+| `69.63.220.115:8081/8082` | Telegram Local API / 文件服务 | Bot 大文件能力依赖 |
 
-## 5. 单元与集成测试要求
-- **核心用例**：
-  1. `test_nginx_static_routing`：向海外 VPS 发起 `GET /`，断言返回的 HTML 文件状态码为 200，且延迟小于 100ms。
-  2. `test_tailscale_api_proxy`：向海外 VPS 发起 `GET /api/health`，断言 Nginx 成功将请求通过 Tailscale 转发至国内并返回 200，而不是 502 Bad Gateway。
-  3. `test_sse_connection_keepalive`：使用客户端建立长连接至 `/api/tasks/stream`，断言 Nginx 未缓存块数据且连接能保持 10 分钟以上不断开。
+云测试端口绑定云测试 Tailscale IP `100.82.124.91`，公网 eth0 端口由 `allbot-cloud-test-firewall.service` drop。不要把云测试 DB/Redis 暴露到公网。
 
-## 6. 部署与回滚步骤
-- **部署前端**：
-  在项目 `/frontend` 目录下运行自动化发布脚本：
-  `npm run build && scp -i ssh_key/id_rsa.pem -r dist/* root@100.88.57.122:/root/dist/`
-- **故障回滚**：
-  如果 Tailscale 节点掉线导致 502 错误，需 SSH 登录国内底座并运行 `tailscale up --authkey=...` 重新注册节点。
+## 5. RMB Tunnel 切换
 
-## 7. 监控告警规则 (SLI/SLO)
-- **SLI**：Nginx 的 502 (Bad Gateway) 和 504 (Gateway Timeout) 错误率。
-- **SLO**：穿透隧道的可用性需达到 99.9%。
-- **告警策略**：
-  - **Critical**：若 Nginx 日志中每分钟出现超过 50 个 502 错误，表示国内底座已宕机或 Tailscale 组网断开，触发最高级别 P0 告警，运维需立即介入检查网络连通性。
+RMB 入口由本地主服务器上的管理脚本维护。脚本默认 dry-run，真实变更必须显式 `--execute`。
+
+切到云正式：
+
+```bash
+scripts/switch_rmb_tunnel_to_cloud_prod.sh --dry-run
+scripts/switch_rmb_tunnel_to_cloud_prod.sh --execute
+```
+
+切回本地灾备：
+
+```bash
+scripts/rollback_rmb_tunnel_to_local_prod.sh --dry-run
+scripts/rollback_rmb_tunnel_to_local_prod.sh --execute
+```
+
+切换前后必须验证：
+
+```bash
+curl -fsS https://rmb.aivison.it.com/pay/result
+```
+
+## 6. 本地正式灾备网络切换
+
+云正式整体不可用时，按 `docs/子模块_本地正式灾备切换_local_prod_fallback.md` 操作。网络层只允许选择一条切换路径：
+- 修改 `api.aivison.it.com` Cloudflare Tunnel 回源到本地 Web API。
+- 或回滚 `web.aivison.it.com` 到 Web/Nginx VPS `/root/dist` 并让 `/api/` 回源本地主服务器。
+
+不要同时修改 Pages、Tunnel、Nginx 和 DNS 多处入口，否则回滚和对账会变复杂。
+
+## 7. 验证命令
+
+```bash
+curl -fsS https://web.aivison.it.com
+curl -fsS https://api.aivison.it.com/api/health
+curl -fsS https://rmb.aivison.it.com/pay/result
+curl -fsS https://web-test.aivison.it.com/api/health
+
+ssh -i frontend/ssh_key/id_rsa.pem root@100.88.57.122 'nginx -t && systemctl is-active nginx tailscaled'
+ssh allbot-do-sgp1-control 'curl -fsS http://100.107.220.127:8000/api/health'
+ssh allbot-do-sgp1-test-control 'curl -fsS http://100.82.124.91:8001/api/health'
+```
+
+## 8. 红线
+- 不要把 `web.aivison.it.com/api/health` 当作正式 API 健康检查；它会返回 Pages SPA HTML 或前端路由结果。
+- 不要让 Web/Nginx VPS 的 `web-test.aivison.it.com` upstream 指向正式 Web API。
+- 不要复用本地主服务器 RMB Tunnel 来承接正式 `api.aivison.it.com`。
+- 不要把 Tailscale 配成武汉家庭内网 subnet router。
+- 不要在文档、日志或聊天中输出 Tunnel token、Bot token、R2 密钥或 `.env.cloud.*`。
+- 不要在 `assets.aivison.it.com` 的 MinIO proxy_pass 后追加 URI 或尾部斜杠。
+
+## 9. 文档维护
+以下变化发生时必须同步更新本文档、边缘节点文档、资源画像和运维 skill：
+- Cloudflare Pages 项目、Tunnel connector 或 public hostname 变化。
+- `api.aivison.it.com`、`rmb.aivison.it.com`、`web-test.aivison.it.com`、`assets.aivison.it.com` 回源变化。
+- 云正式或云测试 Tailscale IP 变化。
+- Web/Nginx VPS、Telegram Local API VPS、Tailscale ACL 或防火墙策略变化。

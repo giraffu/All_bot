@@ -1,91 +1,52 @@
-# All_Bot 安全更新与部署脚本 (`safe_deploy.sh` / `safe_deploy_test.sh`) 使用说明
+# All_Bot 本地旧部署脚本说明 (`safe_deploy.sh` / `safe_deploy_test.sh`)
 
-`safe_deploy.sh` 与 `safe_deploy_test.sh` 是一键式自动化部署脚本，分别用于正式环境与隔离测试环境。它们的目标是：在发布期间尽量避免打断正在收口的任务，并通过现行 runtime/registry/queue 视图判断是否可以安全重建服务。
+本文档只说明根目录旧本地脚本的使用边界。当前正式生产已经切到云控制面，日常生产热修不再使用 `safe_deploy.sh`；当前研发验证首选云测试控制面。
 
----
+当前主入口：
+- 云正式生产：`scripts/safe_deploy_cloud_prod.sh`、`deploy/docker-compose-cloud-prod.yml`、`workers/docker-compose-cloud-prod-worker.yml`
+- 云测试环境：`scripts/safe_deploy_cloud_test.sh`、`deploy/docker-compose-cloud-test.yml`、`workers/docker-compose-cloud-worker-test.yml`
+- 本地正式灾备：`docs/子模块_本地正式灾备切换_local_prod_fallback.md`
 
-## 1. 执行前置条件
-1. 代码已同步到目标版本。
-2. 正式环境 `.env` 与测试环境 `.env.test` 已正确配置。
-3. 功能研发、联调、修复与配置验证默认只允许发布到测试环境；只有在明确确认后才允许执行正式发布。
+## 1. `safe_deploy.sh` 的当前边界
 
----
+`safe_deploy.sh` 是旧本地正式整栈脚本，只在以下场景使用：
+- 云正式整体故障，需要本地主服务器临时接管正式服务。
+- 明确维护本地旧正式栈，且已经确认不会影响当前云正式生产。
 
-## 2. 如何执行脚本
-在项目根目录执行：
+它会重建本地 worker、Central API、Bot/Web/Payment、Dashboard，并发布旧边缘静态站。它不是当前云正式生产发布入口，不能用于更新 `cloud-*` 容器。
+
+执行前必须确认：
+- 本地 `.env` 是生产口径，未混入测试库、测试 Redis 或测试桶。
+- 生产 Telegram Bot token 全网只有一个 polling 实例。
+- 需要本地接管时已按本地灾备文档处理 Cloudflare/API/RMB 入口。
+
+## 2. `safe_deploy_test.sh` 的当前边界
+
+`safe_deploy_test.sh` 是旧本地隔离测试栈脚本。当前默认测试环境已经迁到独立 DigitalOcean 测试机 `allbot-do-sgp1-test-control`，因此新研发、联调和配置验证优先走：
 
 ```bash
-# 测试环境（默认研发路径）
-bash safe_deploy_test.sh
-
-# 正式环境（仅在明确要求上线时执行）
-bash safe_deploy.sh
+ssh allbot-do-sgp1-test-control
+cd /home/deploy/APP/All_bot
+./scripts/safe_deploy_cloud_test.sh
 ```
 
----
+仅当明确要恢复或维护本地主服务器旧测试栈时，才使用：
 
-## 3. 默认发布策略
-- 研发、联调、缺陷修复、配置调整：默认执行 `safe_deploy_test.sh`
-- 用户验收通过、明确要求上线：才执行 `safe_deploy.sh`
-- 未经明确确认，不得把研发改动直接部署到正式环境
+```bash
+bash safe_deploy_test.sh
+```
 
-## 4. 当前部署主口径
-### 4.1 维护模式
-- 脚本会先阻止新任务继续进入主链，避免发布过程中持续增加增量任务。
+## 3. 旧脚本共同规则
 
-### 4.2 等待运行态收口
-- 当前推荐口径是不再把“Redis `active_tasks` 哈希长度”当成唯一依据。
-- 发布前应依据现行 runtime/registry/queue 视图判断是否仍有未收口任务。
-- 若存在长任务，优先等待其正常完成；若明确已卡死，再走统一的 runtime cleanup / force terminate 路径。
+- 有 Alembic 变更时，先检查 multiple heads，再在宿主机执行 `alembic upgrade head`；不要写“容器启动自动迁移”。
+- COPY 型服务改代码后必须 `--build` 重建镜像，不能只 `docker restart`。
+- 本地 `docker-compose 1.29.2` 可能遇到 `KeyError: 'ContainerConfig'`；恢复时只清理目标 service 容器，不要批量清理 unrelated 容器。
+- 不要在普通功能研发时执行 `safe_deploy.sh`。
+- 不要把旧本地测试栈、云测试栈、云正式栈混用同一数据库、Redis DB、Bot token 或对象桶。
 
-### 4.3 异常任务处理
-- 不再把 `zombie_cleaner_service.py` 视为部署脚本标准前置步骤。
-- 当前异常任务清理应优先通过：
-  - Dashboard 管理动作
-  - core 暴露的 force terminate / runtime cleanup
-  - 必要时结合 queue / worker 视图判断 backend 是否仍活跃
+## 4. 参考文档
 
-### 4.4 数据库迁移
-- 数据库结构变更必须通过 Alembic。
-- 当前标准流程是脚本在宿主机主动执行 Alembic，不再依赖“部署完成后手动进容器跑 upgrade head”。
-
-### 4.5 服务重建
-- workers、central API、主服务群与 Dashboard 按脚本编排顺序重建。
-- 测试脚本只作用于测试栈；生产脚本只作用于生产栈。
-
----
-
-## 5. 测试环境脚本说明
-`safe_deploy_test.sh` 用于隔离测试栈，主要处理：
-- 测试入口服务维护模式与运行态收口检查
-- 测试数据库迁移
-- 测试 workers / central API / 入口服务重建
-- 测试 Web 静态站发布到边缘 VPS（调用 `frontend/scripts/deploy-edge-test.sh`）
-
-它不会重建正式环境服务；`safe_deploy.sh` 也不会顺带更新测试环境。
-
----
-
-## 6. 常见问题与排障
-### Q1: 脚本卡在“等待运行态收口”怎么办？
-- 可能存在一个超长视频任务仍在执行。
-- 也可能某个 backend/worker 已异常，任务无法自然终态。
-- 处理顺序建议：
-  1. 查看 worker / central API 日志确认任务是否仍在推进。
-  2. 通过 Dashboard 查看系统任务与 worker 视图。
-  3. 若确认任务已卡死，优先走 Dashboard 管理动作或 core 统一终止入口。
-  4. Redis 手工删键只作为极端故障兜底，不作为常规操作。
-
-### Q2: 执行时提示 `docker-compose: command not found`？
-- 可能系统使用的是新版 Docker 插件 `docker compose`。
-- 需要按运行环境实际命令口径调整脚本。
-
-### Q3: 为什么某些独立侧车服务没有被更新？
-- 某些服务边界相对独立，默认不会被所有部署脚本全量重建。
-- 若本次改动涉及这些侧车服务，应按其独立 compose 或部署入口补充更新。
-
----
-
-## 7. 维护原则
-- 部署文档不再把旧的 `active_tasks` 哈希、`DB1/DB2`、`zombie_cleaner_service` 写成主知识口径。
-- 当前标准认知应是：依据 runtime/registry/queue 视图判断运行态，异常任务通过 core/runtime 统一收口。
+- 云正式长期 SOP：`docs/子模块_云正式控制面部署_cloud_prod_control_plane.md`
+- 云测试长期 SOP：`docs/子模块_云测试控制面部署_cloud_test_control_plane.md`
+- 本地正式灾备：`docs/子模块_本地正式灾备切换_local_prod_fallback.md`
+- 运维总览：`docs/子模块_运维指南与容器管理_ops_deployment.md`

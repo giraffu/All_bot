@@ -26,9 +26,10 @@ graph TD
     end
 
     subgraph Edge[边缘与网络层]
-        NGINX[Web 边缘 Nginx]
+        CFPAGES[Cloudflare Pages]
+        CFTUNNEL[Cloudflare Tunnel]
+        WEBVPS[Web/Nginx VPS: assets / web-test / rollback]
         TGAPI[Telegram Local API / 文件服务]
-        TUNNEL[Cloudflare Tunnel / FRP]
         VLAN[Tailscale]
     end
 
@@ -60,9 +61,10 @@ graph TD
     end
 
     TG --> TGAPI --> BOT
-    WEB --> NGINX --> API
-    DASH --> TUNNEL --> DBACK
-    PAY --> TUNNEL --> PAYAPI
+    WEB --> CFPAGES
+    WEB --> CFTUNNEL --> API
+    DASH --> VLAN --> DBACK
+    PAY --> CFTUNNEL --> PAYAPI
     GROUP --> CS
 
     BOT --> AUTH
@@ -77,9 +79,9 @@ graph TD
     CS --> LLM
 
     TASKSUB --> REDIS
-    TASKSUB --> CENTRAL --> WORKERS
+    TASKSUB --> CENTRAL --> VLAN --> WORKERS
     WORKERS --> R2
-    GAL --> MINIO
+    GAL --> WEBVPS --> MINIO
     GAL --> R2
     AUTH --> PG
     BILL --> PG
@@ -106,6 +108,7 @@ graph TD
 - **基础设施层**
   - 正式 PostgreSQL 与 Valkey/Redis 已迁到云侧托管/外部服务，保存主数据、业务账本、队列、并发锁、登录限流、任务运行态与 worker heartbeat。
   - 新生成对象写入 R2 `user-data-prod`；本地 MinIO 保留为 legacy 历史媒体只读 fallback 与本地热数据备份。
+  - Web/Nginx VPS 不再承接正式 `web.aivison.it.com` 主流量；它保留 `assets.aivison.it.com` legacy 回源、`web-test.aivison.it.com` 测试静态站和正式 Web 回滚副本。
 
 ### 1.3 云正式生产口径
 2026-06-07 晚间正式生产已经切到“云控制面 + 托管 PostgreSQL/Valkey + R2 + 本地 GPU worker”：
@@ -113,6 +116,11 @@ graph TD
 - 本地 `cloud-prod-comfy-agent-1..7` 继续连接武汉内网 ComfyUI，作为正式算力池。
 - `web.aivison.it.com` 已由 Cloudflare Pages 承接静态前端；正式 Web API 独立走 `api.aivison.it.com` Cloudflare Tunnel 回源云 Web API；`rmb.aivison.it.com` 回源云 Payment API；`assets.aivison.it.com` 保留本地 legacy MinIO 只读回源。
 - 长期运维细节见 `docs/子模块_云正式控制面部署_cloud_prod_control_plane.md`。
+
+### 1.4 云测试与本地灾备口径
+- 云测试控制面运行在独立 DigitalOcean Droplet `allbot-do-sgp1-test-control`，Tailscale IP `100.82.124.91`。同机容器承载测试 PostgreSQL、Redis、Central API、Web API、Dashboard Backend、imgproxy 与测试 Bot；本地主服务器运行 7 个 cloud-worker 测试容器并连接云测试 Central。
+- 云测试 Web 公网入口是 `web-test.aivison.it.com`，由 Web/Nginx VPS 提供 `/root/dist-test` 静态站，`/api/` 回源云测试 Web API `100.82.124.91:8001`。云测试端口绑定 Tailscale IP，公网 eth0 端口由测试机防火墙 drop。
+- 本地主服务器不再保留一套日常正式入口；只保留云正式整体故障时的临时本地正式灾备方案。操作手册见 `docs/子模块_本地正式灾备切换_local_prod_fallback.md`。
 
 ---
 

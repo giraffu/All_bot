@@ -5,12 +5,12 @@ description: "评估代码现状对 docs/skills/memory 的影响，并同步更�
 
 # AllBot 智能知识库自动更新 (KB Auto-Updater)
 
-本技能用于维护 AllBot 的知识体系与代码现状一致。当核心门面、运行时依赖、状态流、接口 I/O、测试策略或技能边界发生变化时，应优先用本技能同步 `docs/`、`.codex/skills/`、Trae 兼容镜像与项目记忆。
+本技能用于维护 AllBot 的知识体系与代码现状一致。当核心门面、运行时依赖、状态流、接口 I/O、测试策略或技能边界发生变化时，应优先用本技能同步 `docs/`、`.codex/skills/` 与项目记忆。
 
 ## 1. 模块核心能力
 - **现状扫描优先**：优先基于代码现状、关键入口、公开 facade、provider/dependencies 边界判断知识是否失真；必要时再结合 `git diff` 或用户提供的片段。
 - **技能失真识别**：当 `SKILL.md` 主张与代码入口冲突时，先更新技能，再继续开发，避免旧技能误导后续改动。
-- **结构一致性维护**：确保 `AGENTS.md`、`.codex/skills/`、`.trae/skills/`、`docs/` 与项目记忆在高层路由、入口文件、异常类型、超时值、双 ID 语义等关键点上一致。Codex 目录为主，Trae 目录为迁移期兼容镜像。
+- **结构一致性维护**：确保 `AGENTS.md`、`.codex/skills/`、`docs/` 与项目记忆在高层路由、入口文件、异常类型、超时值、双 ID 语义等关键点上一致。
 - **变更日志输出**：在交付时给出清晰的知识库 Changelog，说明改了哪些文件、为什么改、对应哪类代码变化。
 
 ## 2. 输入输出规范
@@ -20,7 +20,7 @@ description: "评估代码现状对 docs/skills/memory 的影响，并同步更�
   - 架构重构、接口变化、主入口迁移、provider/capability 重构
   - 需要同步 `docs/`、`SKILL.md`、memory 的任务
 - **输出**：
-  - 需更新的 docs / `.codex/skills` / `.trae/skills` / memory 清单
+  - 需更新的 docs / `.codex/skills` / memory 清单
   - 更新后的文档与技能内容
   - Changelog 与一致性说明
 

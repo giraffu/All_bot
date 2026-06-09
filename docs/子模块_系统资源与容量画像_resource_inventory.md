@@ -5,9 +5,10 @@
 
 本文档不是实时监控面板。除明确标注为固定事实的硬件配置外，数据库行数、队列积压、桶容量、活跃用户等都应视为快照数据；做迁移、采购或扩容决策前，必须重新采集。
 
-最近一次结构性更新时间：2026-06-08，Asia/Shanghai。表内容量数字若未单独标注，仍是历史快照，扩容或迁移决策前必须重新采集。
+最近一次结构性更新时间：2026-06-09，Asia/Shanghai。表内容量数字若未单独标注，仍是历史快照，扩容或迁移决策前必须重新采集。
 最近一次局域网 GPU ComfyUI 素材清理：2026-06-08，Asia/Shanghai。
 最近一次云正式负载巡检：2026-06-08 17:10，Asia/Shanghai。
+最近一次云测试控制面核对：2026-06-09，Asia/Shanghai。
 
 ## 2. 主服务器
 当前主服务器不再是正式公开控制面的主承载点。正式 Bot/Web/Payment/Central/Dashboard 已迁到云控制面；本机主要保留本地 GPU worker、ComfyUI 访问、legacy MinIO 数据、本地旧正式数据保留、测试/开发辅助容器和运维工具。
@@ -63,7 +64,30 @@
 - 本地 7 张 GPU 和 ComfyUI 不迁移；`cloud-prod-comfy-agent-*` 通过 Tailscale 访问云 Central API。
 - 长期稳妥生产规格仍建议升级到 8 vCPU / 16GB RAM 档，或把 Dashboard/后台任务拆到第二台节点。
 
-### 2.2 云正式负载巡检快照
+### 2.2 云测试控制面 Droplet
+云测试控制面 Droplet 于 2026-06-09 创建，用于替代旧本地常驻测试入口，降低正式与测试环境交叉风险。
+
+| 项目 | 当前事实 |
+| :--- | :--- |
+| 云厂商 | DigitalOcean |
+| 区域 | Singapore `SGP1` |
+| Droplet 名称 | `allbot-do-sgp1-test-control` |
+| 公网 IPv4 | `168.144.128.133` |
+| VPC/私网 IPv4 | `10.104.0.5` |
+| Tailscale IPv4 | `100.82.124.91` |
+| 操作系统 | Ubuntu 24.04 LTS x64 |
+| 规格 | Basic Regular `$12/mo`，1 vCPU / 2GB RAM / 50GB SSD / 2TB transfer |
+| SSH 日常入口 | `ssh allbot-do-sgp1-test-control`，默认 `deploy` 用户 |
+| 运行服务 | `cloud-postgres-test`、`cloud-redis-test`、`cloud-central-api-test`、`cloud-web-api-test`、`cloud-dashboard-backend-test`、`cloud-imgproxy-test`、`cloud-tg-bot-test` |
+| 公网保护 | 服务端口绑定 `100.82.124.91`；`allbot-cloud-test-firewall.service` drop 公网 eth0 的 `8001/8004/8044/8084` |
+
+使用边界：
+- 测试 PostgreSQL 与 Redis 均为同机容器，只服务云测试栈，不连接正式托管 PostgreSQL/Valkey。
+- 测试对象存储事实源为 R2 `user-data-test`，公网读取域名 `https://r2-test.aivison.it.com`。
+- 本地主服务器运行 `cloud-comfy-agent-test-1..7`，通过 `CLOUD_TEST_CONTROL_HOST=100.82.124.91` 访问云测试 Central `8004`。
+- 公网测试 Web 入口是 `web-test.aivison.it.com`，由 Web/Nginx VPS 静态站 `/root/dist-test` 反代到云测试 Web API `100.82.124.91:8001`。
+
+### 2.3 云正式负载巡检快照
 
 2026-06-08 17:10 Asia/Shanghai 的只读巡检显示，云控制面 CPU、内存和磁盘未打满，Web 卡顿更主要来自公网/边缘链路、结果媒体依赖和 GPU 队列等待。
 
@@ -80,8 +104,8 @@
 
 延迟拆分基线：
 - 云机内部访问 `100.107.220.127:8000/8003/8043` 通常为 5-40ms。
-- Web 边缘 VPS 到云 Web API 约 0.51-0.55s。
-- 本地主服务器经公网访问 `web.aivison.it.com` API 约 1.6-2.8s。
+- Web 边缘 VPS 到云 Web API 约 0.51-0.55s；该基线主要用于 `assets`/回滚/`web-test` 排障，不代表当前正式 Pages 主路径。
+- 本地主服务器经公网访问 `api.aivison.it.com` API 约 0.3-0.7s；旧 `web.aivison.it.com/api` 不再作为 API 健康检查入口。
 - 本地主服务器到云 Central Tailscale 约 0.7-2.1s。
 
 队列与媒体压力：
@@ -100,12 +124,12 @@
 - 本地 legacy 数据：原 PostgreSQL/Redis/MinIO 只作为保留或 fallback，不应继续作为正式写入事实源
 
 测试/辅助服务类型：
-- 测试入口：`tg-bot-test`、`web-api-test`、`payment-api-test`
-- 测试执行面：`central-api-test`，宿主机 `8004 -> 8003`
-- 测试 worker agent：`comfy-agent-test-1` 至 `comfy-agent-test-7`
-- 管理与数据：`postgres-server`、`redis-server`、`minio-server`、`pgadmin-server`、`filebrowser`、`portainer_agent`
-- 媒体与监控：`imgproxy`、`monitor_node_exporter`
-- Dashboard：生产与测试各自运行 frontend/backend 容器
+- 云测试入口：`cloud-tg-bot-test`、`cloud-web-api-test`、`cloud-dashboard-backend-test`、`cloud-imgproxy-test`
+- 云测试执行面：`cloud-central-api-test`，Tailscale `100.82.124.91:8004`
+- 云测试数据面：`cloud-postgres-test`、`cloud-redis-test`，仅 Docker 内网可达
+- 本地云测试 worker：`cloud-comfy-agent-test-1` 至 `cloud-comfy-agent-test-7`
+- 本地旧测试栈：仅作为兼容/回滚路径，默认应停止并保留数据
+- 本地运维与历史数据：`postgres-server`、`redis-server`、`minio-server`、`pgadmin-server`、`filebrowser`、`portainer_agent`
 
 重要运行约束：
 - `web-api`、Dashboard、Payment API 等 COPY 型服务改代码后必须重建镜像，不能只 `restart`。
@@ -168,6 +192,7 @@ ComfyUI 版本快照：
 
 当前云侧与边缘事实：
 - 前端静态资源、部分公开分发能力与域名解析依赖 Cloudflare。
+- 正式 Web 静态站由 Cloudflare Pages 承接；正式 Web API 与 RMB 支付入口由 Cloudflare Tunnel 回源云控制面。
 - R2 `user-data-prod` 是正式新对象写入与公开媒体分发事实源。
 - MinIO 不再承接正式新写入公开事实源；`assets.aivison.it.com` 仅作为 legacy 历史媒体只读回源。
 - Web/API 的海外访问路径详见 [网络暴露与代理穿透](./子模块_网络暴露与代理穿透_network_proxy.md) 与 [边缘节点运维指南](./子模块_边缘节点运维指南_edge_node_ops.md)。
@@ -178,7 +203,7 @@ ComfyUI 版本快照：
 
 | 节点 | 入口 | 资源快照 | 当前职责 | 风险 |
 | :--- | :--- | :--- | :--- | :--- |
-| Web/Nginx 边缘 VPS `web` | Tailscale `100.88.57.122`，公网 `154.17.30.113`，SSH `root@100.88.57.122` 使用 `frontend/ssh_key/id_rsa.pem` | Ubuntu 24.04，2 vCPU，1.9GiB RAM，40G 根盘，已用 36G，可用 1.7G | `web.aivison.it.com`/`web-test.aivison.it.com` 静态站与 `/api/` 反代，`assets.aivison.it.com` legacy MinIO 代理 | 根盘 96%，主要来自 `/var/cache/nginx` 约 26G 和 `/var/log/nginx` 约 4.4G |
+| Web/Nginx 边缘 VPS `web` | Tailscale `100.88.57.122`，公网 `154.17.30.113`，SSH `root@100.88.57.122` 使用 `frontend/ssh_key/id_rsa.pem` | Ubuntu 24.04，2 vCPU，1.9GiB RAM，40G 根盘，已用 36G，可用 1.7G | `web-test.aivison.it.com` 测试静态站与 `/api/` 反代，`assets.aivison.it.com` legacy MinIO 代理，`/root/dist` 正式 Web 回滚副本 | 根盘 96%，主要来自 `/var/cache/nginx` 约 26G 和 `/var/log/nginx` 约 4.4G；不再承接正式 `web.aivison.it.com` 主流量 |
 | Telegram Local API VPS | 公网 `69.63.220.115` | 本轮 SSH key 未打通，CPU/内存/磁盘待补采；公网 22/8081/8082 可达 | Telegram Local Bot API `8081` 与文件服务 `8082`，支撑大文件下载/上传 | 当前主服务器未纳入 SSH 免密管理，资源与容器状态不可远程只读确认 |
 
 边缘容量判断：

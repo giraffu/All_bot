@@ -21,13 +21,13 @@
 ### 2.2 支撑板块
 - **社群客服与本地大模型**
   - 当前由独立 `cs_bot` 服务承载，核心能力是 LangGraph 客服、群聊意图识别、技能工具绑定。
-  - 详见 [子模块_智能客服_cs_bot_agent.md](file:///home/hfy/APP/All_bot/docs/子模块_智能客服_cs_bot_agent.md)
+  - 详见 [子模块_智能客服_cs_bot_agent.md](../子模块_智能客服_cs_bot_agent.md)
 - **后台管控与运营观测**
   - 当前包含 Dashboard 鉴权、Worker 历史、返佣统计、评论管理等后台能力。
-  - 详见 [子模块_后台监控与清理_dashboard_monitoring.md](file:///home/hfy/APP/All_bot/docs/子模块_后台监控与清理_dashboard_monitoring.md)
+  - 详见 [子模块_后台监控与清理_dashboard_monitoring.md](../子模块_后台监控与清理_dashboard_monitoring.md)
 - **任务调度与节点通信**
   - 当前由 Redis、Central API 与 ComfyUI Worker 集群共同完成。
-  - 详见 [子模块_任务调度_task_scheduler.md](file:///home/hfy/APP/All_bot/docs/子模块_任务调度_task_scheduler.md)
+  - 详见 [子模块_任务调度_task_scheduler.md](../子模块_任务调度_task_scheduler.md)
 
 ## 3. 总览层维护规则
 
@@ -44,7 +44,7 @@
 
 ## 4. 相关索引
 - 全局数据字典：[`00_DICT_全局业务数据字典.md`](./00_DICT_全局业务数据字典.md)
-- 系统架构总览：[`system_architecture_report.md`](file:///home/hfy/APP/All_bot/docs/system_architecture_report.md)
+- 系统架构总览：[`system_architecture_report.md`](../system_architecture_report.md)
 
 ## 5. 文档维护声明
 - `00_INDEX` 只维护板块边界与全局口径，不复制各 `BIZ` 文档的完整细节。

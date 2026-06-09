@@ -201,8 +201,8 @@ SSE 侧当前已把运行态 not-found 收口为明确终止 / fallback 语义�
 ### 8.1 部署
 默认遵循“测试优先部署”：
 
-- 测试环境：`safe_deploy_test.sh`
-- 正式环境：仅在明确确认后执行 `safe_deploy.sh`
+- 测试环境：默认云测试控制面 `scripts/safe_deploy_cloud_test.sh`，旧本地测试栈 `safe_deploy_test.sh` 仅作兼容路径。
+- 正式环境：仅在明确确认后执行云正式 `scripts/safe_deploy_cloud_prod.sh` 或 cloud-prod compose 单服务重建；`safe_deploy.sh` 只用于本地正式灾备/旧本地维护。
 - 正式部署前应确认生产 worker 的 `SUPPORTED_TASK_TYPES` 覆盖本次上线的执行面类型；旧图生视频入口实际依赖 `image_to_video`，同时不要误删仍在使用的 `video_edit`。
 - 云正式 worker compose 现在包含本地 relay/sidecar 服务；更新 worker 主链或 `workers/local_relay` 时，应把 relay 与目标 worker 一起纳入测试 canary，先确认 relay `/health`、Central `/system/workers`、R2 上传和 `/complete` 成功链路。
 - V2 pipeline 可用 `PIPELINE_ENABLED=false` 按 worker 回退到旧串行路径；生产灰度优先替换单个图生图 worker，观察 GPU 空档、`relay_forward_failed`、`sidecar_upload_failed`、`complete` 失败和 Central zombie 增长。

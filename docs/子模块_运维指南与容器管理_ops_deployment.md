@@ -2,13 +2,14 @@
 
 ## 1. 目标与范围
 本模块记录当前仓库真实生效的部署顺序、迁移策略与常见故障恢复方式。最重要的事实更新有两点：
-- 数据库迁移已经由 `safe_deploy.sh` 在宿主机上主动执行，不再依赖“容器下次启动自动迁移”。
+- 旧本地正式脚本的数据库迁移由 `safe_deploy.sh` 在宿主机上主动执行，不再依赖“容器下次启动自动迁移”；云正式/云测试分别以 cloud deploy 脚本和目标环境 Alembic 口径为准。
 - `web-api` 等服务若未挂载源码卷，代码变更后必须 `--build` 重建镜像才会生效。
 
 ## 2. 当前推荐部署路径
-- 功能研发、联调、修复、配置调整：首选隔离测试栈或云测试控制面，按目标环境使用 `bash safe_deploy_test.sh` 或 `scripts/safe_deploy_cloud_test.sh`
+- 功能研发、联调、修复、配置调整：首选云测试控制面 `scripts/safe_deploy_cloud_test.sh`；旧本地隔离测试栈 `bash safe_deploy_test.sh` 仅作兼容/回滚路径
 - 当前云正式生产热修：按云正式文档使用 `scripts/safe_deploy_cloud_prod.sh` 或目标 cloud-prod compose 单服务重建
-- 旧本地正式整栈发布：仅在明确需要维护本地旧正式栈时才执行 `bash safe_deploy.sh`
+- 本地正式灾备：仅在云正式整体不可用时按 `docs/子模块_本地正式灾备切换_local_prod_fallback.md` 切回本地主服务器
+- 旧本地正式整栈发布：仅在本地灾备或明确维护本地旧正式栈时才执行 `bash safe_deploy.sh`
 - 原因：脚本已经把以下步骤串成标准顺序：
   - 进入维护模式
   - 等待活跃任务清空
@@ -20,18 +21,18 @@
   - 重建主服务群
   - 重建 dashboard
   - 发布生产 Web 静态站到边缘 VPS
-- `safe_deploy.sh` 到此结束，不会顺带重建测试环境；它不代表当前云正式控制面的首选发布入口。
-- 若仅更新隔离测试栈，可执行 `bash safe_deploy_test.sh`；它会处理 `.env.test`、测试数据库迁移、测试 workers、测试 central api、测试入口服务，以及 `frontend/scripts/deploy-edge-test.sh` 对应的边缘 VPS 测试站静态资源发布；不会重建生产服务，也不会重建正式 Dashboard。
+- `safe_deploy.sh` 到此结束，不会顺带重建测试环境；它不代表当前云正式控制面的发布入口。
+- 若明确需要恢复旧本地隔离测试栈，可执行 `bash safe_deploy_test.sh`；它会处理 `.env.test`、测试数据库迁移、测试 workers、测试 central api、测试入口服务，以及 `frontend/scripts/deploy-edge-test.sh` 对应的边缘 VPS 测试站静态资源发布；不会重建生产服务，也不会重建正式 Dashboard。
 
 ## 2.1 当前默认发布策略
 - AI 在功能研发期间默认只能更新隔离测试环境，不得主动执行生产部署。
 - “帮我改功能”“帮我修 Bug”“帮我联调”“帮我验证配置”这类请求，默认理解为测试环境操作。
-- 只有在用户明确表达“上线”“发布”“部署正式环境”“交付生产”后，才允许切换到 `safe_deploy.sh` 或生产 compose。
+- 只有在用户明确表达“上线”“发布”“部署正式环境”“交付生产”后，才允许切换到云正式脚本或生产 compose；`safe_deploy.sh` 只用于本地正式灾备或旧本地正式维护。
 - 在用户完成测试验收前，不得把测试环境变更直接同步到正式 Bot、正式 Web、正式 Payment、正式 Central API 或正式 Dashboard。
 
 ## 2.2 云端测试控制面
 - DigitalOcean SGP1 Droplet 上的云测试控制面入口为 `scripts/safe_deploy_cloud_test.sh`，compose 文件为 `deploy/docker-compose-cloud-test.yml`。
-- 云测试控制面默认部署同机 Postgres、同机 Redis、Central API、Web API、Dashboard Backend 与 imgproxy；不启动 Telegram test bot，也不启动 GPU worker。当前对象存储事实源是 Cloudflare R2，兼容 MinIO 仅通过 `compat-minio` profile 按需启动，Payment API 仅通过 `payment` profile 按需启动。
+- 云测试控制面默认部署同机 Postgres、同机 Redis、Central API、Web API、Dashboard Backend 与 imgproxy；`bot-test` 只通过 `bot` profile 手动启动，本地主服务器另行启动 GPU worker。当前对象存储事实源是 Cloudflare R2，云测试 compose 当前不包含 MinIO、Payment API 或前端 dev 容器。
 - 云测试 `.env.cloud.test` 已被 `.gitignore` 忽略，不能提交到仓库。
 - 云端服务端口绑定到云测试 Tailscale IP `100.82.124.91`，不直接开放公网。若临时使用 `CLOUD_TEST_BIND_IP=0.0.0.0`，必须配合源 IP 白名单，只允许边缘 VPS 与本地主服务器访问测试 API 端口，恢复后必须收回公网白名单。
 - 云测试全链路 worker 使用 `workers/docker-compose-cloud-worker-test.yml`，容器名为 `cloud-comfy-agent-test-*`，从本地主服务器经 `CLOUD_TEST_CONTROL_HOST=100.82.124.91` 访问云端 `8004` Central API，并直接访问 R2 S3 endpoint 读写 `user-data-test`。
@@ -39,7 +40,7 @@
 - 云测试 `bot-test` 默认通过 `TON_PAYMENT_POLLING_ENABLED=false` 禁用 TON 链上轮询，避免空云测试库回扫真实商户地址历史交易；仅在专门支付联调时显式开启 `CLOUD_TEST_TON_PAYMENT_POLLING_ENABLED=true`。
 - 云测试库若为空，脚本使用当前 ORM schema 初始化并 `alembic stamp head`；若已有 schema，脚本执行 `alembic upgrade head`。这是云测试控制面的特殊兼容策略，不改变生产脚本的迁移口径。
 - 云测试 `.env.cloud.test` 中 `MINIO_*` 是项目兼容变量名；R2 直连时应保持 `MINIO_SECURE=true`、`MINIO_BUCKET/MINIO_INPUT_BUCKET/MINIO_RESULT_BUCKET/MINIO_TEMPLATE_BUCKET=user-data-test`、`MINIO_PUBLIC_URL=`、`R2_PUBLIC_DOMAIN=https://r2-test.aivison.it.com`。Web owner 视频结果接口依赖 R2 公网 URL，公开域名缺失会导致视频停在 99% / `pending_result`。
-- 云测试公网 Web 使用 `web-test.aivison.it.com` 的边缘 VPS 静态站，`/api/` 反代到云端测试 Web API `http://100.82.124.91:8001`。云端 `web-frontend-test` / `dashboard-frontend-test` dev 容器只在临时调试时启用 `frontend` profile。
+- 云测试公网 Web 使用 `web-test.aivison.it.com` 的边缘 VPS 静态站，`/api/` 反代到云端测试 Web API `http://100.82.124.91:8001`；云端不运行前端 dev 容器。
 - 详细说明见 `/docs/子模块_云测试控制面部署_cloud_test_control_plane.md`。
 
 ## 2.3 云正式控制面
@@ -57,10 +58,19 @@
 - 边缘 VPS 当前至少包含 Web/Nginx 节点 `100.88.57.122`/`154.17.30.113` 与 Telegram Local API 节点 `69.63.220.115`。Web 节点根盘仅约 1.7G 可用，发布静态资源、调整 Nginx cache 或开启详细日志前必须先查 `df -h`；Telegram 节点当前主服务器未配置可用 SSH key，只能做 8081/8082 公网端口探测，完整容器/磁盘排障需先补 SSH。详情见 `docs/子模块_边缘节点运维指南_edge_node_ops.md`。
 - 真实 `docker compose config` 会展开密钥，输出只能本地查看，不得贴到日志、文档或聊天中。
 - 云正式 Central 高频观测接口已加入短缓存和 stale-while-revalidate；Dashboard stats 也有短缓存与 single-flight。不要通过前端 `_t` 或脚本高频击穿缓存。
-- 云正式最新长期 SOP 见 `/docs/子模块_云正式控制面部署_cloud_prod_control_plane.md`；历史门禁证据见 `/docs/正式云环境切换前准备清单.md`，迁移总手册见根目录 `正式服务_云发布环境迁移计划.md`。
+- 云正式最新长期 SOP 见 `/docs/子模块_云正式控制面部署_cloud_prod_control_plane.md`；本地正式灾备 SOP 见 `/docs/子模块_本地正式灾备切换_local_prod_fallback.md`；历史迁云证据已归档到 `/docs/archive/2026-06-cloud-migration/`。
 
-## 3. 当前真实迁移口径
-- 迁移入口在 `safe_deploy.sh` 第 4 步。
+## 2.4 本地正式灾备
+- 本地主服务器只保留一套临时本地正式接管方案，不再保留日常正式入口。
+- 触发条件是云正式控制面、Tunnel 或云侧数据面整体不可用，且短时间无法恢复。
+- 切换前必须确认 `cloud-tg-bot-prod` 已停止或不可用，避免生产 Bot token 双实例 polling。
+- 本地 `.env` 必须是生产口径；如果能从云端导出最新数据库，应先恢复到本地 PostgreSQL 再开放写入口。云端完全不可用时，要接受本地快照导致的对账成本。
+- 旧本地 compose 仍有历史硬编码默认值和占位值；本地灾备前必须核对 Central API、Dashboard 与 worker 的 compose 渲染和容器内实际环境变量，不能只依赖 `source .env` 判断配置已生效。渲染输出和 `env` 输出可能包含密钥，只能本机查看。
+- 切换 Web/API/RMB 入口前，优先只选一条网络路径，不要同时改 Pages、Tunnel、Nginx 和 DNS。
+- 回切云端时必须先冻结本地新增写入并导出灾备期间的订单、用户资产、任务历史和必要日志，再恢复云端入口。
+
+## 3. 旧本地脚本迁移口径
+- 旧本地正式脚本的迁移入口在 `safe_deploy.sh` 第 4 步。
 - 脚本会先寻找可用的 Alembic 可执行文件，再检查 `heads` 数量。
 - 一旦发现多个 head，脚本会直接中止，要求先合并 migration，而不是带病部署。
 - 通过多 head 检查后，脚本会立即执行 `alembic upgrade head`。
@@ -74,8 +84,8 @@
 - `web-api`、`payment-api`、Dashboard、CS Bot 等通过镜像 `COPY` 代码的服务，修改代码后都要重建镜像，单纯 `restart` 不会拿到新代码。
 - `workers` 更新环境变量时，应使用 `docker-compose up -d` 触发重新创建，而不是只做 `restart`。
 - 当前仓库的测试环境与正式环境已经使用独立数据库；`safe_deploy_test.sh` 只会基于 `.env.test` 校验并迁移测试库，`safe_deploy.sh` 只会基于 `.env` 校验并迁移正式库，两套迁移应按各自环境分别执行，互不替代。
-- 若启用隔离测试栈，应使用独立的 `.env.test`、`backend/docker-compose-test.yml` 与 `workers/docker-compose-test.yml`，并让测试入口服务指向独立的 Central API 端口与独立 Redis 队列。
-- 隔离测试栈的最低要求是：测试 Bot/Web/Payment 使用测试库，Central API 使用独立 Redis DB 作为队列，测试 workers 连接测试 Central API；否则仍会与正式环境共用任务调度面。
+- 若启用旧本地隔离测试栈，应使用独立的 `.env.test`、`backend/docker-compose-test.yml` 与 `workers/docker-compose-test.yml`，并让测试入口服务指向独立的 Central API 端口与独立 Redis 队列。
+- 旧本地隔离测试栈的最低要求是：测试 Bot/Web/Payment 使用测试库，Central API 使用独立 Redis DB 作为队列，测试 workers 连接测试 Central API；否则仍会与正式环境共用任务调度面。
 - `workers/docker-compose-test.yml` 中的 `${...}` 插值不会读取 `env_file: ../.env.test` 的值；当前测试 compose 已让 `AGENT_SECRET_TOKEN` 从 `env_file` 注入，并将 `MINIO_INPUT_BUCKET` / `MINIO_RESULT_BUCKET` 默认到 `bot-data-test` / `comfyui-temp-test`。重建测试 worker 后仍要用 `docker exec <worker> env` 核对实际生效值，避免 401 或读写错误桶。
 - `safe_deploy_test.sh` 里的测试 Web VPS 发布依赖宿主机可执行 `npm`，并通过 `frontend/scripts/deploy-edge-test.sh` 使用 SSH/SCP 把 `build:edge-test` 产物同步到边缘 VPS；若私钥缺失、`npm` 未安装或边缘域名不可达，脚本会中止而不是假装发布成功。
 - 云正式本地 worker 使用 `workers/docker-compose-cloud-prod-worker.yml`。本地主服务器仍可能是 `docker-compose 1.29.2`，目标 worker `up` 触发 `KeyError: 'ContainerConfig'` 时，只删除目标正式 worker 容器和同 service label 残留，再 `up -d --no-deps`；不得使用 `--remove-orphans`，不得清理测试 worker 或旧本地 worker。
@@ -126,8 +136,9 @@
   - 处理：按 worker 到 Comfy 的映射只重启目标 `comfy0` 或 `comfy1`，并验证未操作端口 `/system_stats` 仍可用。不要整机重启，也不要执行无 service 名 compose 操作。
 
 ## 6. 文档维护口径
-- 部署文档与运维技能必须和 `safe_deploy.sh` 的真实顺序保持一致。
-- 若测试栈流程、`.env.test` 口径、`safe_deploy_test.sh` 或“测试优先发布”策略发生变化，必须同步更新运维技能、`AGENTS.md` 与本子模块文档。
+- 涉及旧本地正式栈的文档必须和 `safe_deploy.sh` 的真实顺序保持一致；云正式和云测试文档必须分别以对应 cloud compose / cloud deploy 脚本为准。
+- 若云测试流程、旧本地测试栈口径、`safe_deploy_cloud_test.sh`、`safe_deploy_test.sh` 或“测试优先发布”策略发生变化，必须同步更新运维技能、`AGENTS.md` 与本子模块文档。
+- 若云正式、本地灾备、Cloudflare Tunnel、Pages 或边缘 upstream 发生变化，必须同步更新云正式、网络、边缘、资源画像和本地灾备文档。
 - 任何涉及 Alembic 的说明，都应明确“先检查多 head，再在宿主机执行 upgrade head”。
 - 任何涉及容器代码更新的说明，都应先核对卷挂载，再决定是 `restart` 还是 `--build`。
 - 任何涉及 workflow 资产的说明，都应明确 Central 校验目录与 Worker 执行目录是否一致。

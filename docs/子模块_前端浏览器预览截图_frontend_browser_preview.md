@@ -7,7 +7,6 @@
 对应技能：
 
 - `.codex/skills/frontend-browser-preview/SKILL.md`
-- `.trae/skills/frontend-browser-preview/SKILL.md`
 
 ## 2. 稳定方案
 
@@ -75,6 +74,5 @@ npm run dev -- --host 127.0.0.1
 若后续引入正式 Playwright 测试依赖、截图脚本或 CI 视觉回归，应同步更新：
 
 - `.codex/skills/frontend-browser-preview/SKILL.md`
-- `.trae/skills/frontend-browser-preview/SKILL.md`
 - `docs/skills/README.md`
 - 本文档

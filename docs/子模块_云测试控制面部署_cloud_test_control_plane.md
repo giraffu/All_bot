@@ -168,9 +168,9 @@ VS Code Remote 或本地 SSH 仍可通过端口转发作为应急访问：
 
 ```bash
 ssh -N \
-  -L 8001:127.0.0.1:8001 \
-  -L 8044:127.0.0.1:8044 \
-  -L 8004:127.0.0.1:8004 \
+  -L 8001:100.82.124.91:8001 \
+  -L 8044:100.82.124.91:8044 \
+  -L 8004:100.82.124.91:8004 \
   allbot-do-sgp1-test-control
 ```
 
@@ -178,9 +178,9 @@ ssh -N \
 ```bash
 cd /home/deploy/APP/All_bot
 docker compose --env-file .env.cloud.test -f deploy/docker-compose-cloud-test.yml ps
-curl -fsS http://127.0.0.1:8004/health
-curl -fsS http://127.0.0.1:8001/api/health
-curl -fsS http://127.0.0.1:8044/api/health
+curl -fsS http://100.82.124.91:8004/health
+curl -fsS http://100.82.124.91:8001/api/health
+curl -fsS http://100.82.124.91:8044/api/health
 docker stats --no-stream
 df -h /
 ```

@@ -6,7 +6,7 @@
 
 本文档不是实时监控面板。CPU、内存、磁盘、公网状态和服务端口都是采集时快照；做切流、清理、扩容或证书变更前必须重新采集。
 
-最近一次采集：2026-06-08，Asia/Shanghai。
+最近一次采集：2026-06-09，Asia/Shanghai。
 
 ## 2. 边缘节点总览
 
@@ -44,7 +44,7 @@
 - 存在 `/etc/logrotate.d/nginx` 配置，但本次未看到 `/var/lib/logrotate/status` 或 `/etc/cron.daily/logrotate`，需要单独确认 logrotate 是否实际运行。
 
 2026-06-08 17:10 Web 卡顿巡检补充：
-- Web 边缘到云 Web API `100.107.220.127:8000` 约 `0.51-0.55s`；本地主服务器经公网访问 `web.aivison.it.com` API 可到 `1.6-2.8s`。
+- Web 边缘到云 Web API `100.107.220.127:8000` 约 `0.51-0.55s`，该基线主要用于回滚、`web-test` 与 `assets` 排障；当前正式 API 公网入口是 `api.aivison.it.com`。
 - 最近 30 分钟窗口曾观测到约 `202` 次 499，集中在 `/api/tasks/{id}/result`、`/api/gallery/posts`、`/api/gallery/my-favorites`、`/api/users/history` 等等待型接口。
 - `assets.aivison.it.com` legacy 回源曾在 30 分钟内出现约 `37` 次 upstream 异常；其中大量为 `upstream prematurely closed connection`，少量为 `upstream timed out`。
 - `/minio/health/live` 返回 200 只能证明本地 MinIO 基础健康，不代表具体历史图片/视频对象读取链路稳定；验收必须测真实对象 URL 或至少统计 `assets` error.log。
@@ -57,14 +57,14 @@
 | `web-test.aivison.it.com` | 测试 Web 静态站；`/api/` 反代云测试 Web API | `http://100.82.124.91:8001` |
 | `assets.aivison.it.com` | legacy MinIO 只读/兼容回源，用于历史媒体 fallback | `http://100.99.254.53:9000` |
 
-不在 Web VPS 上的 Cloudflare canary 入口：
+不在 Web VPS 上的历史 Cloudflare canary 入口：
 
 | 域名 | 承接方 | 说明 |
 | :--- | :--- | :--- |
 | `web.aivison.it.com` | Cloudflare Pages | 正式静态站，项目 `allbot-web-prod`，构建模式 `frontend npm run build:cf-prod` |
 | `api.aivison.it.com` | Cloudflare Tunnel on `allbot-do-sgp1-control` | 正式 Web API 入口，回源 `http://100.107.220.127:8000` |
-| `web-cf-test.aivison.it.com` | Cloudflare Pages | canary 静态站，构建模式 `frontend npm run build:cf-test` |
-| `api-cf-test.aivison.it.com` | Cloudflare Tunnel on `allbot-do-sgp1-control` | canary Web API 入口，回源 `http://100.107.220.127:8000` |
+| `web-cf-test.aivison.it.com` | Cloudflare Pages | 历史 canary 静态站；如未配置，不作为当前测试入口 |
+| `api-cf-test.aivison.it.com` | Cloudflare Tunnel on `allbot-do-sgp1-control` | 历史 canary API；如未配置，不作为当前测试入口 |
 
 公网快照：
 
@@ -129,7 +129,7 @@ nginx -s reload
 ```
 
 操作边界：
-- 改 `all_bot` 会影响正式 Web 和 `assets.aivison.it.com` legacy fallback。
+- 改 `all_bot` 会影响 `assets.aivison.it.com` legacy fallback 和正式 Web 回滚副本；当前正式 `web.aivison.it.com` 主流量不经过该 Nginx server。
 - 改 `web-test.aivison.it.com` 只影响测试静态站和测试 `/api/`。
 - 不要用 `systemctl restart nginx` 作为常规动作；优先 `nginx -t && nginx -s reload`。
 - 不要删除 `/etc/letsencrypt`、`/root/dist`、`/root/dist-test`、`/etc/nginx/sites-available/*` 或备份目录。
@@ -229,9 +229,9 @@ curl -sS -o /dev/null -w "%{http_code} %{time_total}\n" --max-time 10 http://69.
 
 | 故障现象 | 优先检查 |
 | :--- | :--- |
-| `web.aivison.it.com` 白屏或静态资源 404 | Web 边缘 `/root/dist`、Nginx `web.aivison.it.com` server、Cloudflare DNS/cache |
-| Web `/api/health` 502/504 | Web 边缘 Nginx upstream、Tailscale 到云 Web API `100.107.220.127:8000` |
-| Web API 普遍慢但云内 health 毫秒级 | 比较边缘到云、公网域名、Cloudflare/Tailscale 链路；统计 499 高频端点 |
+| `web.aivison.it.com` 白屏或静态资源 404 | Cloudflare Pages 项目 `allbot-web-prod`、Pages 部署、custom domain、前端构建产物；不要优先查 VPS `/root/dist` |
+| `api.aivison.it.com/api/health` 502/504 | 云机 Cloudflare Tunnel connector、public hostname、云 Web API `100.107.220.127:8000` |
+| Web API 普遍慢但云内 health 毫秒级 | 比较 Cloudflare Tunnel 公网、云内 API、R2/legacy 回源和前端串行请求；统计 499 高频端点 |
 | `api-cf-test.aivison.it.com/api/health` 502 | 先查 Cloudflare Tunnel connector 是否在云机 active、public hostname 是否回源 `100.107.220.127:8000`；不要查 Web VPS Nginx |
 | `web-cf-test.aivison.it.com` 白屏或 404 | 先查 Cloudflare Pages 部署、custom domain、构建产物和 `VITE_API_BASE_URL`；不要查 `/root/dist` |
 | `web-test.aivison.it.com/api/health` 502 | 测试 Web API `100.82.124.91:8001` 是否运行、边缘 VPS Tailscale 是否在线；不要误改正式站 |
