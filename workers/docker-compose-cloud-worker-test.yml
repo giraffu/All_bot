@@ -123,7 +123,12 @@ services:
     environment:
       <<: *worker-cloud-env
       AGENT_ID: cloud_worker_test_06
-      SUPPORTED_TASK_TYPES: img2img,img2img_lora
+      POOL_MANAGED: "true"
+      POOL_PROVIDER: lan_ssh
+      POOL_NODE_ID: gpu-002
+      POOL_GPU_INDEX: "0"
+      POOL_RUNTIME_PROFILE: ${CLOUD_TEST_WORKER_06_RUNTIME_PROFILE:-img2img_lora}
+      SUPPORTED_TASK_TYPES: ${CLOUD_TEST_WORKER_06_TASK_TYPES:-img2img,img2img_lora}
       COMFY_API_URL: http://192.168.1.2:8188
       COMFY_WS_URL: ws://192.168.1.2:8188/ws
       COMFY_INPUT_DIR: /tmp/input
@@ -135,7 +140,12 @@ services:
     environment:
       <<: *worker-cloud-env
       AGENT_ID: cloud_worker_test_07
-      SUPPORTED_TASK_TYPES: video_insert,image_to_video
+      POOL_MANAGED: "true"
+      POOL_PROVIDER: lan_ssh
+      POOL_NODE_ID: gpu-002
+      POOL_GPU_INDEX: "1"
+      POOL_RUNTIME_PROFILE: ${CLOUD_TEST_WORKER_07_RUNTIME_PROFILE:-video_basic}
+      SUPPORTED_TASK_TYPES: ${CLOUD_TEST_WORKER_07_TASK_TYPES:-video_insert,image_to_video}
       COMFY_API_URL: http://192.168.1.2:8189
       COMFY_WS_URL: ws://192.168.1.2:8189/ws
       COMFY_INPUT_DIR: /tmp/input

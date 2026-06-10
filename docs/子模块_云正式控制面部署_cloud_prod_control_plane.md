@@ -47,6 +47,17 @@
 | `cloud-prod-comfy-agent-6` | `cloud_prod_worker_06` | `192.168.1.2:8188` |
 | `cloud-prod-comfy-agent-7` | `cloud_prod_worker_07` | `192.168.1.2:8189` |
 
+运行态分层口径：
+
+| AGENT_ID | Worker Agent 管理 | ComfyUI Runtime | Runtime 纳管口径 |
+| :--- | :--- | :--- | :--- |
+| `cloud_prod_worker_01` | 本地主服务器 `cloud-prod-comfy-agent-1` 容器 | `gpu-226:8188` 宿主机进程，cwd `/home/ubantu/comfyui` | `comfy_runtime_kind=host_service`，不要执行 `docker restart comfy0` |
+| `cloud_prod_worker_02/03` | 本地主服务器 agent 容器 | `gpu-177` 的 `comfy0/comfy1` Docker 容器 | 只在维护窗口按目标容器操作 |
+| `cloud_prod_worker_04/05` | 本地主服务器 agent 容器 | `gpu-252` 的 `comfy0/comfy1` Docker 容器 | 只在维护窗口按目标容器操作 |
+| `cloud_prod_worker_06/07` | 本地主服务器 agent 容器 | `gpu-002` 的 `comfy0/comfy1` Docker 容器 | 只在维护窗口按目标容器操作 |
+
+`POOL_IMAGE_REF`、`runtime_profile`、`node_id` 等 heartbeat/compose 字段是 GPU pool 观测与期望配置声明，不等于底层 ComfyUI runtime 已经被替换成该镜像。确认某个 ComfyUI 的真实运行方式时，以 `docs/子模块_局域网GPU节点资源与运维_lan_gpu_resource_ops.md`、SSH 盘点和 Comfy `/system_stats` 为准。
+
 `cloud-prod-comfy-agent-3` 当前支持 `ltx_video,image_to_video`。该节点对应 `192.168.1.177:8189` / `comfy1`；2026-06-08 已在 ComfyUI 侧补齐 `socksio` 并重启，使 `FL_RIFE` 正常暴露，compose 不再需要 `WAN22_RIFE_NODE_CLASS`。
 
 worker 写入 R2 `user-data-prod`，不得配置 legacy MinIO 写路径。启用 sidecar 时，worker 先把 ComfyUI 结果写入 `/app/spool`，由 `cloud-prod-worker-relay` 上传 R2；只有 sidecar 确认 put 成功后，worker 才调用 Central `/complete`。
@@ -82,6 +93,7 @@ GPU 节点上的 ComfyUI 服务不在本 compose 内。`cloud-prod-comfy-agent-*
 - 本地 `cloud-prod-worker-relay` 透明代理 worker 的 `pop/check/peek/complete/heartbeat/task_heartbeat` 到云 Central。非终态 `running` status 可在本地快速 ACK 并合并转发，终态 `complete/failed/cancelled` 必须同步转发成功。
 - Worker `complete` 回报是任务成功收口硬依赖，必须保留有限重试；全部失败后进入失败路径。
 - Worker 运行态 `status` 上报也有轻量重试，用于减少云网络瞬断导致的监控漏报；status 上报失败不会直接判定生成任务失败。
+- 2026-06-10 巡检发现 Central Redis 写连接偶发 `ConnectionResetError: Connection lost`，可导致 `/status/{task_id}` 或 worker heartbeat/status 短暂 500；这不是队列停摆证据，但应作为 P1 后续修复，在 Central Redis 关键读写路径增加有限 retry/reconnect，并覆盖 `/status/{task_id}`、`task_heartbeat`、`status` focused tests。
 - Worker 可在当前图生图/换脸类任务执行期间通过 relay 调 Central 只读 `/api/agent/task/peek` 预取同类型下一单输入。`peek` 不会把任务标记 running，真实执行仍以后续 `/pop` 命中的 `task_id` 为准。
 - 本地 GPU “停几秒再继续”通常是 ComfyUI/worker 执行链路现象，例如模型/LoRA 加载、WebSocket 终态未及时返回、worker 转 `/history/{prompt_id}` 轮询收口，不应直接归因到 Central `/system/status` 慢。
 
@@ -133,7 +145,112 @@ docker compose --env-file .env.cloud.prod -f deploy/docker-compose-cloud-prod.ym
 
 目标 service 可替换为 `web-api-prod`、`dashboard-backend-prod`、`dashboard-frontend-prod`、`payment-api-prod` 或 `bot-prod`。生产热修前建议先备份被覆盖文件；当前云端运行目录不应假设一定是完整 Git 工作区。
 
-### 4.3 Cloudflare Pages/API Tunnel 维护
+### 4.3 Agent control 正式灰度更新指南
+
+2026-06-10 已在云测试环境验证 `draining/disabled` worker 控制链路：`cloud-central-api-test` 暴露 `GET/POST /api/agent/task/control/{agent_id}`，测试 worker 重建后真实 `/pop` 会携带 `agent_id=cloud_worker_test_*`，`disabled` worker 的 `/pop` 返回空任务且不移除 pending。
+
+正式环境后续更新必须同时覆盖两层：
+
+1. 云正式 Central API 代码：让 `cloud-central-api-prod` 具备 control route、control Redis key 读写、`pop(agent_id=...)` 拒绝接单能力。
+2. 本地主服务器正式 worker 镜像：让 `cloud-prod-comfy-agent-*` 在真实 `/pop` query 中携带 `agent_id=cloud_prod_worker_*`。如果只更新 Central、不重建 worker，control 接口存在但实际 worker 仍不受 drain 控制。
+
+测试环境踩坑记录：
+- 远端 `/home/deploy/APP/All_bot` 不应假设是 Git 工作区；生产热修前先备份文件，再用 `rsync -R` 保留相对路径同步。
+- `backend/app/queue_manager.py` 与 `backend/app/queue_manager_flow_helpers.py` 必须一起同步；只同步前者会导致 heartbeat metadata 参数不兼容。
+- 云正式 compose 中 `central-api-prod` 挂载 `../backend/app:/app/app:ro`，同步 Python 文件后重启 `central-api-prod` 即可生效；如同时更新依赖或镜像内文件，再执行 build。
+
+正式更新步骤：
+
+```bash
+# 1. 本地主服务器先跑后端 focused tests
+cd /home/hfy/APP/All_bot
+python -m pytest tests/backend/test_agent_router_helpers.py tests/backend/test_queue_manager.py -q
+
+# 2. 备份云正式 Central 文件
+ssh allbot-do-sgp1-control '
+  set -euo pipefail
+  cd /home/deploy/APP/All_bot
+  backup_dir="/home/deploy/APP/All_bot/backups/central-agent-control-$(date +%Y%m%d_%H%M%S)"
+  mkdir -p "$backup_dir/routers"
+  cp backend/app/agent_router_helpers.py backend/app/queue_manager.py backend/app/queue_manager_flow_helpers.py backend/app/models.py "$backup_dir"/
+  cp backend/app/routers/agent.py "$backup_dir/routers"/
+  echo "$backup_dir"
+'
+
+# 3. 同步 Central 相关文件，-R 用于保留 backend/app/... 相对路径
+rsync -avhR \
+  backend/app/agent_router_helpers.py \
+  backend/app/queue_manager.py \
+  backend/app/queue_manager_flow_helpers.py \
+  backend/app/models.py \
+  backend/app/routers/agent.py \
+  allbot-do-sgp1-control:/home/deploy/APP/All_bot/
+
+# 4. 只重启云正式 Central API
+ssh allbot-do-sgp1-control '
+  set -euo pipefail
+  cd /home/deploy/APP/All_bot
+  docker compose --env-file .env.cloud.prod -f deploy/docker-compose-cloud-prod.yml restart central-api-prod
+  docker compose --env-file .env.cloud.prod -f deploy/docker-compose-cloud-prod.yml ps central-api-prod
+'
+```
+
+Central 验证命令：
+
+```bash
+ssh allbot-do-sgp1-control '
+  set -euo pipefail
+  cd /home/deploy/APP/All_bot
+  TOKEN="$(sed -n "s/^AGENT_SECRET_TOKEN=//p" .env.cloud.prod | tail -n1)"
+  CENTRAL="http://100.107.220.127:8003"
+  curl -fsS "$CENTRAL/health"
+  curl -fsS -H "Authorization: Bearer $TOKEN" \
+    "$CENTRAL/api/agent/task/control/cloud_prod_worker_06"
+  curl -fsS -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+    -d "{\"state\":\"disabled\",\"reason\":\"prod control route validation\",\"ttl_seconds\":60}" \
+    "$CENTRAL/api/agent/task/control/cloud_prod_worker_06"
+  curl -fsS -H "Authorization: Bearer $TOKEN" \
+    "$CENTRAL/api/agent/task/pop?types=img2img_lora&agent_id=cloud_prod_worker_06&cancel_lock=true"
+  curl -fsS -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+    -d "{\"state\":\"enabled\",\"reason\":\"\"}" \
+    "$CENTRAL/api/agent/task/control/cloud_prod_worker_06"
+'
+```
+
+期望结果：
+- `/control/cloud_prod_worker_06` 初始返回 `state=enabled`。
+- 设置 `disabled` 后，带 `agent_id=cloud_prod_worker_06` 的 `/pop` 返回 `task: null`，并说明该 worker 不接新任务。
+- 验证结束必须恢复 `enabled`。
+- Central 最近日志无 `500 Internal Server Error`、`TypeError`、`Traceback`。
+
+正式 worker 更新：
+
+```bash
+set -euo pipefail
+set -a
+source /home/hfy/APP/All_bot/.env.cloud.prod
+set +a
+
+cd /home/hfy/APP/All_bot/workers
+services="cloud-prod-worker-relay cloud-prod-comfy-agent-1 cloud-prod-comfy-agent-2 cloud-prod-comfy-agent-3 cloud-prod-comfy-agent-4 cloud-prod-comfy-agent-5 cloud-prod-comfy-agent-6 cloud-prod-comfy-agent-7"
+docker-compose -f docker-compose-cloud-prod-worker.yml build $services
+docker-compose -f docker-compose-cloud-prod-worker.yml up -d --no-deps $services
+```
+
+首次上正式时注意：旧生产 worker 尚未携带 `agent_id` 前，不能依赖 Central drain 来保护 worker 重建；应选择队列低峰、确认目标 worker 无当前任务，或按单 worker 逐个更新并接受该 worker 当前任务可能中断。完成更新后，从云 Central 日志确认真实 `/pop` URL 已出现 `agent_id=cloud_prod_worker_*`。
+
+最终验收：
+- `curl http://100.107.220.127:8003/health` 正常。
+- `/system/workers` 看到 7 个 `cloud_prod_worker_*` heartbeat。
+- 7 个 worker control 状态均为 `enabled`。
+- 抽选一个低风险 worker 短 TTL 设置 `disabled`，实际 `/pop` 不再接单；随后恢复 `enabled`。
+- 本地 relay `127.0.0.1:8013/ready` 正常，worker 日志无 `relay_forward_failed`、`sidecar_upload_failed`。
+
+回滚：
+- Central 异常时，恢复备份目录中的 `backend/app/*.py` 与 `backend/app/routers/agent.py`，只重启 `central-api-prod`。
+- Worker 异常时，只回滚或重建对应 `cloud-prod-comfy-agent-N`；不得对 `workers` project 使用 `--remove-orphans`，不得清理测试 worker。
+
+### 4.4 Cloudflare Pages/API Tunnel 维护
 正式 Web/API 已完成切换。日常维护只需要确认 Pages 项目、Tunnel connector 和 CORS allowlist 仍与正式域名一致。
 
 历史 canary 流程已经归档到 `docs/archive/2026-06-cloud-migration/`；以下原则仍有效：
@@ -148,7 +265,7 @@ bash scripts/check_cloudflare_canary.sh
 
 2026-06-08 晚间已将正式 `api.aivison.it.com` 切到云机 Cloudflare Tunnel，并将 `web.aivison.it.com` 绑定到 Cloudflare Pages 项目 `allbot-web-prod`。`assets.aivison.it.com` 继续留在 Web/Nginx VPS，作为 legacy MinIO fallback。
 
-### 4.4 本地云正式 worker 更新
+### 4.5 本地云正式 worker 更新
 worker 镜像 COPY 代码，修改 `workers/comfy_agent` 后必须重建镜像并重建容器。
 
 ```bash
@@ -176,7 +293,7 @@ done
 docker-compose -f docker-compose-cloud-prod-worker.yml up -d --no-deps $services
 ```
 
-worker 正在处理任务时重建会中断该 worker 当前单任务；用户已确认可在需要时直接更新，不要求为此开启全站维护。紧急修复之外，仍建议先看 `/system/status` 和 worker 日志，确认影响范围。
+worker 正在处理任务时重建会中断该 worker 当前单任务。常规正式 worker/relay 更新应先开启 Web/Bot 维护或等价门禁，阻止新生成任务进入，等待 pending/running 或至少目标 worker 当前任务自然归零，再重建 relay/worker，最后关闭维护并验收。紧急抢修可以按目标 worker 直接处理，但必须明确接受该 worker 当前任务可能中断。
 
 ## 5. 验证 Checklist
 
@@ -197,6 +314,7 @@ Web、Payment、Dashboard 验证：
 - `https://rmb.aivison.it.com/pay/result`
 - `http://100.107.220.127:8086/api/health` 仅在云正式 Dashboard Frontend 已启动后验证；如果配置了公网管理域名，还必须确认该域名受 Cloudflare Access 或等价身份层保护。
 - Dashboard 登录后系统状态、worker 卡片与大盘统计能刷新。
+- Dashboard Backend 启动入口必须调用 `ensure_billing_core_providers_registered()`；退款、强制终止和资产类管理接口会进入 billing core，若只注册 task core provider，会出现 `Billing core providers 未注册`。
 - Web 卡顿专项需额外记录云内、边缘到云、公网三段延迟，并统计边缘 499、Web R2 result timeout、Dashboard circuit breaker 和 `assets` 回源异常。
 
 ### 5.2 Worker

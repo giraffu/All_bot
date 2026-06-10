@@ -33,6 +33,7 @@ from fastapi_cache import FastAPICache
 from fastapi_cache.backends.inmemory import InMemoryBackend
 from dashboard.backend.services.worker_listener import start_worker_listener
 from dashboard.backend.services.balance_monitor import update_external_balances
+from src.billing_core_provider_setup import ensure_billing_core_providers_registered
 from src.database.core import init_db
 from src.task_core_provider_setup import ensure_task_core_service_providers_registered
 
@@ -56,6 +57,7 @@ def _initial_dashboard_health() -> dict:
 async def startup_event():
     FastAPICache.init(InMemoryBackend(), prefix="fastapi-cache")
     ensure_task_core_service_providers_registered()
+    ensure_billing_core_providers_registered()
     database_ready = await _initialize_database_with_retries(
         attempts=DB_INIT_RETRY_ATTEMPTS,
         delay_seconds=DB_INIT_RETRY_DELAY_SECONDS,

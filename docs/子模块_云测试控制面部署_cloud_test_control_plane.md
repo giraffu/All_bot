@@ -234,6 +234,56 @@ docker compose --env-file .env.cloud.test -f deploy/docker-compose-cloud-test.ym
 
 GPU worker 不在云服务器运行；本地 `workers/docker-compose-cloud-worker-test.yml` 会启动 7 个 `cloud-comfy-agent-test-*` 容器，经 `CLOUD_TEST_CONTROL_HOST` 连接云端 Central API，并通过 R2 S3 endpoint 直接读写 `user-data-test`。
 
+### 8.1 Worker 6/7 GPU pool 控制测试
+`cloud-comfy-agent-test-6` 与 `cloud-comfy-agent-test-7` 用于 GPU pool 小范围验证时，可以临时覆盖任务类型与 runtime profile，不需要修改 `.env.cloud.test`：
+
+```bash
+set -a
+source .env.cloud.test
+set +a
+
+CENTRAL="http://${CLOUD_TEST_CONTROL_HOST}:8004"
+AUTH_HEADER="Authorization: Bearer ${AGENT_SECRET_TOKEN}"
+
+curl -fsS -X POST -H "$AUTH_HEADER" -H 'Content-Type: application/json' \
+  -d '{"state":"disabled","reason":"gpu-pool canary","ttl_seconds":900}' \
+  "$CENTRAL/api/agent/task/control/cloud_worker_test_06"
+curl -fsS -X POST -H "$AUTH_HEADER" -H 'Content-Type: application/json' \
+  -d '{"state":"draining","reason":"gpu-pool canary","ttl_seconds":900}' \
+  "$CENTRAL/api/agent/task/control/cloud_worker_test_07"
+
+docker ps -aq --filter name=cloud-comfy-agent-test-6 --filter name=cloud-comfy-agent-test-7 \
+  | xargs -r docker rm -f
+
+CLOUD_TEST_WORKER_06_TASK_TYPES='video_insert,image_to_video' \
+CLOUD_TEST_WORKER_06_RUNTIME_PROFILE='video_basic_canary' \
+CLOUD_TEST_WORKER_07_TASK_TYPES='img2img,img2img_lora' \
+CLOUD_TEST_WORKER_07_RUNTIME_PROFILE='img2img_lora_canary' \
+docker-compose --env-file .env.cloud.test -f workers/docker-compose-cloud-worker-test.yml \
+  up -d --no-deps cloud-comfy-agent-test-6 cloud-comfy-agent-test-7
+```
+
+验证点：
+- `/system/workers` 能看到 `cloud_worker_test_06/07` 的 `types`、`node_id=gpu-002`、`gpu_index`、`runtime_profile` 与 `pool_managed=true` 随容器环境更新。
+- `disabled/draining` 状态下，带 `agent_id` 的 `/api/agent/task/pop` 返回空任务，不影响其它 worker。
+- 本地主服务器旧版 `docker-compose 1.29.2` 可能在 `--force-recreate` 时报 `KeyError: 'ContainerConfig'`；只删除目标 6/7 容器再 `up -d --no-deps`，不要 `--remove-orphans`。
+
+恢复默认类型：
+
+```bash
+docker ps -aq --filter name=cloud-comfy-agent-test-6 --filter name=cloud-comfy-agent-test-7 \
+  | xargs -r docker rm -f
+docker-compose --env-file .env.cloud.test -f workers/docker-compose-cloud-worker-test.yml \
+  up -d --no-deps cloud-comfy-agent-test-6 cloud-comfy-agent-test-7
+
+curl -fsS -X POST -H "$AUTH_HEADER" -H 'Content-Type: application/json' \
+  -d '{"state":"enabled","reason":"restore after gpu-pool canary"}' \
+  "$CENTRAL/api/agent/task/control/cloud_worker_test_06"
+curl -fsS -X POST -H "$AUTH_HEADER" -H 'Content-Type: application/json' \
+  -d '{"state":"enabled","reason":"restore after gpu-pool canary"}' \
+  "$CENTRAL/api/agent/task/control/cloud_worker_test_07"
+```
+
 ## 9. 停止与退役
 云测试控制面是当前唯一受支持的测试环境，不再维护“回滚到本地主服务器旧测试栈”的标准方案。需要暂停云测试时，先停测试 Bot，再停本地 cloud-worker 测试栈；云端控制面是否停止取决于当次维护目标。
 

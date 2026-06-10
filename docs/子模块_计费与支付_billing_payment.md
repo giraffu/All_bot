@@ -101,6 +101,11 @@ sequenceDiagram
 - 路由层如果传入外部事务，核心服务应复用该事务并由调用方统一 `commit`；核心服务不能擅自提前提交半个闭环。
 - “先持久化唯一业务单/外部流水，再做资产副作用”仍是支付与返佣相关逻辑的统一基线。
 
+### 4.5 Provider 注册入口
+- Billing core 不在模块 import 时自动装配 provider；应用入口负责调用 `ensure_billing_core_providers_registered()`。
+- 当前必须注册 billing provider 的入口包括 `src/web_api/main.py`、`src/bot_main.py`、`src/payment_api_server.py` 和 `dashboard/backend/main.py`。
+- Dashboard Backend 的退款、强制终止、资产调整和订单处理会进入 billing core；若只注册 task core provider，会触发 `Billing core providers 未注册`。
+
 ## 5. 对外接口口径
 - RMB 支付回调：`POST /api/payment/notify`
   - 仅适用于 RMB 网关异步通知。
@@ -124,6 +129,9 @@ sequenceDiagram
 - 审计闭环
   - `users.credits` 变化必须与 `user_logs` 对平。
   - `affiliate_transactions` IN/OUT 汇总必须能回推出当前可兑换余额。
+- Provider 启动回归
+  - Dashboard Backend、Web API、Payment API、Bot 启动测试应覆盖 billing provider 已注册。
+  - 管理后台退款/强制终止路径不得在运行时才暴露 `Billing core providers 未注册`。
 
 ## 7. 文档维护约束
 - 不要再把本模块描述成“只有一个 `/api/payment/notify` 回调”。这已经只覆盖 RMB 子链路。

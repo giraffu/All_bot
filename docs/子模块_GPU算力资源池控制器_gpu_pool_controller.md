@@ -21,6 +21,15 @@
 
 无法 SSH 管理的 `remote_workers` 不属于本地动态 GPU 资源池；它们仍可作为外部静态 worker 存在。
 
+资源池必须分清两层运行态，后续 planner、canary 和运维文档都按这个边界写：
+
+| 层级 | 当前事实 | Controller v1 可做什么 |
+| :--- | :--- | :--- |
+| Worker Agent 层 | 本地主服务器上的 `cloud-prod-comfy-agent-*` 容器，负责 `pop/status/complete/heartbeat`、工作流 patch、上传回报 | 可通过 `enabled/draining/disabled` 控制接单，可重建 agent 容器，可上报 `node_id/gpu_index/runtime_profile` |
+| ComfyUI Runtime 层 | 局域网 GPU 节点上的真实 ComfyUI。`gpu-226:8188` 是宿主机进程；`gpu-177/252/002` 是 `comfy0/comfy1` Docker 容器 | 第一阶段只盘点、canary、渲染计划；不默认重启、不默认替换、不把宿主机 runtime 当容器管理 |
+
+因此，“GPU pool worker 新协议已生效”只表示 Worker Agent 层已支持 `agent_id`、控制键和 heartbeat 元数据，不表示所有 ComfyUI runtime 都已经容器化或可由 Controller 自动接管。尤其 `cloud_prod_worker_01` 对应 `gpu-226:8188` 的宿主机 ComfyUI，`POOL_IMAGE_REF` 只能作为期望 profile/镜像声明，不能当作当前 runtime 镜像事实。
+
 ## 3. 声明式配置
 业务层后续主要改 `assignments.yml`：
 - `nodes.yml`：节点、GPU、Comfy 实例、模型目录、worker 对应关系
@@ -96,6 +105,9 @@ worker heartbeat 现在可选携带 GPU pool 元数据：
 - `image_ref`
 - `model_bundle_versions`
 - `pool_managed`
+- `worker_agent_managed`
+- `comfy_runtime_kind`：`host_service` 或 `docker_container`
+- `comfy_runtime_managed`：第一阶段 `gpu-226` 必须为 `false`；Docker Comfy 也只有在明确维护窗口内才允许执行变更
 
 新 worker 在 `/api/agent/task/pop` 时会带 `agent_id`。Central 会读取 Redis 控制键判断该 worker 是否可接新单：
 - `enabled`：可正常 pop
@@ -108,8 +120,12 @@ worker heartbeat 现在可选携带 GPU pool 元数据：
 
 这些接口使用现有 `AGENT_SECRET_TOKEN` 鉴权。旧 worker 不传 `agent_id` 时仍按旧逻辑取任务，保证灰度兼容。
 
+2026-06-10 已在云测试环境验证该控制链路：Central API 支持 control route，测试 worker 重建后真实 `/pop` 会携带 `agent_id=cloud_worker_test_*`，`disabled` worker 不会接新任务。随后用 `cloud_worker_test_06/07` 验证了多 worker 控制与任务类型声明切换：两个 worker 可通过 compose 环境覆盖临时交换 `SUPPORTED_TASK_TYPES`，heartbeat 会同步上报 `node_id/gpu_index/runtime_profile/pool_managed`，控制态仍能拦截新 `/pop`。云正式后续更新必须同时升级 `cloud-central-api-prod` 与本地 `cloud-prod-comfy-agent-*` worker 镜像；正式 SOP 见 `docs/子模块_云正式控制面部署_cloud_prod_control_plane.md` 的 “Agent control 正式灰度更新指南”。
+
 ## 6. 运维边界
 - Controller v1 只负责声明、盘点、计划、canary 和命令渲染；不默认重启 worker、ComfyUI 或 GPU 节点。
+- 切换任务类型的第一阶段对象是 Worker Agent 的 `SUPPORTED_TASK_TYPES` 与模型/工作流可用性声明；是否重建或替换 ComfyUI runtime 必须由 `comfy_runtime_kind` 决定。
+- 对 `host_service` runtime 只允许生成人工操作建议，不生成 `docker restart/pull/up` 计划；`gpu-226` 不存在 `comfy0/comfy1`。
 - 同步模型只允许写目标共享 `models` 目录，不碰 `input/output/temp/custom_nodes/workflows`。
 - 双卡节点只操作目标实例；不要整机 reboot、无 service 名 `docker compose down/up` 或批量删除容器。
 - RunPod 后续作为 `RunPodProvider` 接入同一 planner/provider 边界，不把远程 Pod 加入本地 SSH 节点池。

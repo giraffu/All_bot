@@ -68,13 +68,18 @@ description: "处理 Docker Compose 编排、云正式/云测试控制面、本�
 - GPU worker 自动恢复入口为 `scripts/watch_cloud_worker_recovery.sh --env cloud-test|cloud-prod --mode dry-run|execute`。云测试可用 execute 做故障注入验证；云正式默认只允许 dry-run 观测，真实 execute 必须用户另行明确确认。watchdog 只可精确恢复本地主服务器上的 relay 或单个 `cloud-*-comfy-agent-*` 容器，禁止重启 GPU 节点、ComfyUI 容器、全量 compose 或 `--remove-orphans`。relay `/ready` 返回 404 表示当前运行 relay 仍是旧版本，watchdog 只能记录 `relay_ready_endpoint_missing`，不得把重启当成版本升级手段。
 - 远程登录局域网 GPU 节点时默认使用 SSH Host alias，不在命令、日志或文档中输出密码；当前 4 台 GPU 节点均不是免密 sudo，驱动、系统服务、Docker daemon 或 ComfyUI 服务级修改应先确认维护窗口。
 - `cloud-prod-comfy-agent-*` 是本地主服务器上的 worker 容器，GPU 节点上的 `comfy0/comfy1` 或宿主机 ComfyUI 是另一层。替换 worker 不会自动重启 ComfyUI；重启 ComfyUI 也不会替换 worker 代码。
+- 2026-06-10 云正式更新后口径：Worker Agent 新协议生效只表示 7 个 `cloud-prod-comfy-agent-*` 已携带 `agent_id`、GPU pool heartbeat 元数据并通过 relay `/ready`；不表示底层 ComfyUI runtime 都已容器化或被 Controller 接管。`POOL_IMAGE_REF` 是期望 profile/镜像声明，不能当作实际 ComfyUI 镜像事实。
 - GPU Pool Controller 切换任务能力前应先通过 agent control 将目标 worker 置为 `draining`，等待当前任务自然结束，再同步模型或调整 compose；不要用强制重启代替 drain。
+- agent control 已在云测试验证：Central API 必须包含 `control/{agent_id}` 与 `pop(agent_id=...)` 控制逻辑，worker 也必须重建到真实 `/pop` 携带 `agent_id` 的版本；正式更新指南见 `docs/子模块_云正式控制面部署_cloud_prod_control_plane.md`。同步 Central 文件时不要漏 `backend/app/queue_manager_flow_helpers.py`，否则 heartbeat metadata 会 500。
+- 云测试 `cloud-comfy-agent-test-6/7` 已作为 GPU pool 小范围验证入口：可用 `CLOUD_TEST_WORKER_06_TASK_TYPES`、`CLOUD_TEST_WORKER_07_TASK_TYPES` 及对应 `*_RUNTIME_PROFILE` 临时覆盖任务类型，默认值仍是 6=`img2img,img2img_lora`、7=`video_insert,image_to_video`；旧 `docker-compose 1.29.2` 切换时优先删除目标 6/7 容器再 `up -d --no-deps`，不要 `--force-recreate` 或 `--remove-orphans`。
 - 本地 Docker registry 使用 `deploy/docker-compose-local-registry.yml` / `scripts/manage_local_registry.sh` 管理，数据目录为 `/srv/allbot/docker-registry`，同时绑定 `127.0.0.1:5000` 和 `192.168.1.115:5000`。主服务器本机 push/pull 使用 `localhost:5000`，GPU 节点后续 pull 前才需要在维护窗口信任 `192.168.1.115:5000` insecure registry。
 - 本地模型仓库事实源为 `/srv/allbot/model-registry`，首轮通过 `workflow-model-check`、`model-import-plan`、`model-import-execute` 导入业务 workflow/LoRA/Wan22 profile 实际引用模型；bundle manifest 引用 sha256 blob，同一模型不得复制多份。
 - 双卡 GPU 节点的 `comfy0/comfy1` 绑定不同 GPU 和不同 `inst0/inst1` 输入输出目录，但共享模型目录。排障或更新功能时只能操作目标 worker/目标 Comfy 容器；禁止因为一个容器异常而整机 reboot、无 service 名 `docker compose down/up` 或批量删除所有 Comfy 容器。
 - `allbot-gpu-226` 的 ComfyUI 是宿主机进程，cwd 为 `/home/ubantu/comfyui`，不是 Docker Comfy 容器；不要对它执行 `docker restart comfy0`。
 - GPU 节点模型下载、Docker pull/build 或大视频输出前必须重新检查 `df -hT`；2026-06-08 已清理 ComfyUI 旧素材，但 `input/output/temp` 会持续增长。
 - ComfyUI 旧素材清理要优先走 `scripts/cleanup_lan_comfy_artifacts.sh` 并先 dry-run；双卡节点通过 `comfy0/comfy1` 容器内路径分别清理，`allbot-gpu-226` 走宿主机 `/home/ubantu/comfyui/{input,output,temp}`。生产环境不建议把 `input` 保留窗口降到 1 小时。
+- Dashboard Backend 启动入口必须注册 billing core providers。若管理接口涉及退款、强制终止、资产调整或订单处理，确认 `dashboard/backend/main.py` 已调用 `ensure_billing_core_providers_registered()`；只注册 task core provider 会触发 `Billing core providers 未注册`。
+- Central Redis 关键读写路径仍有 P1 后续项：2026-06-10 巡检见到偶发写连接 reset 导致 `/status/{task_id}` 或 worker heartbeat/status 短暂 500。排障时先看是否可重试恢复，后续修复应加有限 retry/reconnect 和 focused tests。
 
 ### 2.1 生产单服务重建标准流程
 用户明确要求“只重建某个正式服务”时，先确认目标 service 存在，再按以下规则处理：
@@ -121,7 +126,7 @@ docker-compose -f docker-compose-cloud-prod-worker.yml build $services
 docker-compose -f docker-compose-cloud-prod-worker.yml up -d --no-deps $services
 ```
 
-本地主服务器旧版 `docker-compose 1.29.2` 可能在 recreate 时触发 `KeyError: 'ContainerConfig'`。恢复时只删除目标 `cloud-prod-comfy-agent-*` 容器和同 service label 残留，再 `up -d --no-deps`；禁止 `--remove-orphans`，禁止清理测试 worker 或旧本地 worker。用户已确认云正式 worker 热更新可不启用全站维护；这只会中断被重建 worker 当时正在跑的单任务。
+本地主服务器旧版 `docker-compose 1.29.2` 可能在 recreate 时触发 `KeyError: 'ContainerConfig'`。恢复时只删除目标 `cloud-prod-comfy-agent-*` 容器和同 service label 残留，再 `up -d --no-deps`；禁止 `--remove-orphans`，禁止清理测试 worker 或旧本地 worker。常规云正式 worker/relay 更新优先开启维护或等价门禁，阻止新生成任务进入，等待 pending/running 或目标 worker 当前任务归零后再重建；紧急抢修才按目标 worker 直接处理，并明确接受该 worker 当前任务可能中断。
 
 ## 3. 核心红线
 - 不要在普通功能研发过程中默认执行 `safe_deploy.sh`、生产 compose 或任何正式环境重建动作。

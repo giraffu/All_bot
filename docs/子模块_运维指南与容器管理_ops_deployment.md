@@ -88,7 +88,7 @@
 - 若人工取证确需短时启动旧本地隔离测试栈，应使用独立的 `.env.test`、`backend/docker-compose-test.yml` 与 `workers/docker-compose-test.yml`，并让测试入口服务指向独立的 Central API 端口与独立 Redis 队列；否则可能与正式或云测试环境共用任务调度面。
 - `workers/docker-compose-test.yml` 中的 `${...}` 插值不会读取 `env_file: ../.env.test` 的值。短时启动旧本地测试 worker 后仍要用 `docker exec <worker> env` 核对实际生效值，避免 401 或读写错误桶；取证完成后立即停止旧本地测试栈。
 - 云正式本地 worker 使用 `workers/docker-compose-cloud-prod-worker.yml`。本地主服务器仍可能是 `docker-compose 1.29.2`，目标 worker `up` 触发 `KeyError: 'ContainerConfig'` 时，只删除目标正式 worker 容器和同 service label 残留，再 `up -d --no-deps`；不得使用 `--remove-orphans`，不得清理测试 worker 或旧本地 worker。
-- 用户已确认云正式 worker 热更新可以不启用全站维护；但 worker 正在处理任务时重建会中断该 worker 当前单任务。紧急修复可直接更新，非紧急修复仍建议先评估队列和 worker 运行态。
+- 常规云正式 worker/relay 更新优先进入维护或等价门禁，阻止新生成任务进入，等待 pending/running 或至少目标 worker 当前任务归零后再重建；worker 正在处理任务时重建会中断该 worker 当前单任务。紧急抢修可按目标 worker 直接处理，但必须明确接受该 worker 当前任务可能中断。
 
 ## 4.1 workflow 资产事实源
 - `workers/comfy_agent/workflows` 是唯一 workflow 运行时事实源；`backend/workflows` 已退出，Central API 不再挂载、COPY 或启动校验 workflow 目录。

@@ -1,6 +1,6 @@
 # 双入口职责矩阵
 
-更新时间: 2026-05-25
+更新时间: 2026-06-10
 
 ## 1. 目的
 本文档用于明确 `backend/app` 与 `src/web_api` 的长期职责边界，作为 P0-1 的独立交付物。目标不是重复系统总览，而是提供后续评审可以直接引用的模块级职责矩阵。
@@ -51,6 +51,11 @@
 - 不要在 `backend/app` 新增普通 Web/BFF 用户功能。
 - 不要让 `src/web_api` 直接承担 worker 协议、QueueManager 内部状态机或 backend 执行面职责。
 - 不要让两个入口都定义同一用户功能的长期主路径；如确有兼容残留，必须写入 inventory。
+
+### 4.4 跨入口 provider 注册补充
+- provider 注册由应用入口负责，core 模块不在 import 时自动装配。
+- `src/web_api/main.py`、`src/bot_main.py`、`src/payment_api_server.py` 和 `dashboard/backend/main.py` 只要会调用 billing core，都必须调用 `ensure_billing_core_providers_registered()`。
+- Dashboard Backend 的退款、强制终止、资产调整等管理接口会进入 billing core；不能只注册 task core provider。
 
 ## 5. 冻结规则建议
 在 P0-2 完成前，评审时可先采用以下临时规则：

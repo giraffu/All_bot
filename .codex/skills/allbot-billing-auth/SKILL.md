@@ -14,6 +14,7 @@ description: "处理 Web 鉴权、JWT、password_version、支付履约、affili
 - **Affiliate 账本闭环**：支付成功后可计算首单返佣并落 `affiliate_transactions`；affiliate 余额既可兑换灵石，也可兑换会员/权益，并保留完整审计流水。
 - **站内灵石转账**：用户之间的灵石转移使用 `QuotaManager.transfer_credits(...)`，在同一事务内锁定双方用户、扣减买家、增加收款方并写入双方 `user_logs`；Gallery 提示词解锁固定走此入口。
 - **Provider 化 billing core**：billing core 相关默认能力已收口到 provider/dependencies 模式，新增逻辑应优先走 provider 注册与依赖注入边界。
+- **入口负责 provider 注册**：Bot、Web API、Payment API 和 Dashboard Backend 只要会调用 billing core，都必须在启动入口调用 `ensure_billing_core_providers_registered()`。Dashboard 的退款、强制终止和资产类管理接口也会进入 billing core；只注册 task core provider 会触发 `Billing core providers 未注册`。
 
 ## 2. 输入输出规范
 ### 认证

@@ -62,6 +62,17 @@
 
 `PIPELINE_ENABLED=true`，`PIPELINE_MAX_RUNNING_TASKS=2`。worker 重建只影响对应 agent；不会自动重启目标 GPU 节点的 ComfyUI。
 
+GPU pool 相关环境变量只描述 Worker Agent 的观测和期望能力，不能直接推断底层 ComfyUI runtime：
+
+| 字段 | 含义 | 运维判断 |
+| :--- | :--- | :--- |
+| `POOL_IMAGE_REF` / `image_ref` | 期望 profile 或镜像引用 | 对宿主机 ComfyUI 仅为声明；不是运行中 ComfyUI 镜像 digest |
+| `runtime_profile` | Worker 声明的任务运行 profile | 可用于任务类型分配和 canary 选择 |
+| `comfy_runtime_kind` | `host_service` 或 `docker_container` | 决定是否能生成 Docker 操作计划 |
+| `comfy_runtime_managed` | Controller 是否允许直接改 runtime | 第一阶段默认谨慎，`gpu-226` 必须为 `false` |
+
+2026-06-10 正式更新已验证的是 Worker Agent 新协议：7 个 `cloud-prod-comfy-agent-*` 均能携带 `agent_id`、GPU pool heartbeat 元数据并通过 relay `/ready`。这不表示 7 个底层 ComfyUI 都是容器；`cloud-prod-comfy-agent-1` 调用的 `gpu-226:8188` 仍是宿主机 ComfyUI。
+
 ## 5. GPU 节点明细
 
 ### 5.1 `allbot-gpu-226` / `192.168.1.226`
