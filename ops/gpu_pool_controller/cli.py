@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from pathlib import Path
 
 from .canary import ComfyCanary
@@ -11,6 +12,7 @@ from .model_importer import ModelImportPlanner, plan_to_json
 from .model_repo import ModelRegistry
 from .planner import GpuPoolPlanner
 from .providers.lan_ssh import LanSshProvider
+from .runtime import RuntimePlanner, runtime_plan_to_jsonable
 
 
 def _print_json(payload) -> None:
@@ -29,6 +31,70 @@ def _cmd_plan(args) -> int:
     config = load_controller_config(args.config_root)
     _print_json(GpuPoolPlanner(config).to_jsonable())
     return 0
+
+
+def _cmd_runtime_plan(args) -> int:
+    config = load_controller_config(args.config_root)
+    planner = RuntimePlanner(config)
+    if args.assignment:
+        payload = runtime_plan_to_jsonable(
+            planner.build_plan(
+                args.assignment,
+                target_profile_id=args.profile,
+            )
+        )
+    else:
+        payload = [
+            runtime_plan_to_jsonable(item)
+            for item in planner.build_all_plans()
+        ]
+    _print_json(payload)
+    return 0
+
+
+def _cmd_runtime_render(args) -> int:
+    config = load_controller_config(args.config_root)
+    print(
+        RuntimePlanner(config).render_compose(
+            args.assignment,
+            target_profile_id=args.profile,
+        ),
+        end="",
+    )
+    return 0
+
+
+def _cmd_runtime_apply(args) -> int:
+    config = load_controller_config(args.config_root)
+    payload = RuntimePlanner(config).build_dry_run_action(
+        "runtime-apply",
+        args.assignment,
+        execute=args.execute,
+    )
+    _print_json(payload)
+    return 2 if args.execute else 0
+
+
+def _cmd_switch_profile(args) -> int:
+    config = load_controller_config(args.config_root)
+    payload = RuntimePlanner(config).build_dry_run_action(
+        "switch-profile",
+        args.assignment,
+        target_profile_id=args.profile,
+        execute=args.execute,
+    )
+    _print_json(payload)
+    return 2 if args.execute else 0
+
+
+def _cmd_rollback_profile(args) -> int:
+    config = load_controller_config(args.config_root)
+    payload = RuntimePlanner(config).build_rollback_plan(
+        args.assignment,
+        execute=args.execute,
+    )
+    _print_json(payload)
+    return 2 if args.execute else 0
 
 
 def _cmd_canary(args) -> int:
@@ -134,6 +200,32 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers.add_parser("inventory").set_defaults(func=_cmd_inventory)
     subparsers.add_parser("plan").set_defaults(func=_cmd_plan)
 
+    runtime_plan = subparsers.add_parser("runtime-plan")
+    runtime_plan.add_argument("--assignment", default=None)
+    runtime_plan.add_argument("--profile", default=None)
+    runtime_plan.set_defaults(func=_cmd_runtime_plan)
+
+    runtime_render = subparsers.add_parser("runtime-render")
+    runtime_render.add_argument("--assignment", required=True)
+    runtime_render.add_argument("--profile", default=None)
+    runtime_render.set_defaults(func=_cmd_runtime_render)
+
+    runtime_apply = subparsers.add_parser("runtime-apply")
+    runtime_apply.add_argument("--assignment", required=True)
+    runtime_apply.add_argument("--execute", action="store_true")
+    runtime_apply.set_defaults(func=_cmd_runtime_apply)
+
+    switch_profile = subparsers.add_parser("switch-profile")
+    switch_profile.add_argument("--assignment", required=True)
+    switch_profile.add_argument("--profile", required=True)
+    switch_profile.add_argument("--execute", action="store_true")
+    switch_profile.set_defaults(func=_cmd_switch_profile)
+
+    rollback_profile = subparsers.add_parser("rollback-profile")
+    rollback_profile.add_argument("--assignment", required=True)
+    rollback_profile.add_argument("--execute", action="store_true")
+    rollback_profile.set_defaults(func=_cmd_rollback_profile)
+
     canary = subparsers.add_parser("canary")
     canary.add_argument("--assignment", required=True)
     canary.add_argument("--timeout", type=float, default=8.0)
@@ -189,7 +281,18 @@ def build_parser() -> argparse.ArgumentParser:
 def main() -> int:
     parser = build_parser()
     args = parser.parse_args()
-    return args.func(args)
+    try:
+        return args.func(args)
+    except ValueError as exc:
+        print(
+            json.dumps(
+                {"ok": False, "error": str(exc)},
+                ensure_ascii=False,
+                indent=2,
+            ),
+            file=sys.stderr,
+        )
+        return 2
 
 
 if __name__ == "__main__":

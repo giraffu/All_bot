@@ -43,6 +43,9 @@ class LanSshProvider:
                         "gpu_index": comfy.gpu_index,
                         "worker_id": comfy.worker_id,
                         "model_dir": comfy.model_dir,
+                        "comfy_runtime_kind": comfy.comfy_runtime_kind,
+                        "comfy_runtime_managed": comfy.comfy_runtime_managed,
+                        "container_name": comfy.container_name,
                         "supported_task_types": list(comfy.supported_task_types),
                     }
                     for comfy in node.comfy

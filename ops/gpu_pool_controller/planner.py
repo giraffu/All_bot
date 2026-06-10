@@ -71,6 +71,14 @@ class GpuPoolPlanner:
             warnings.append(
                 f"comfy worker_id {comfy.worker_id} differs from assignment worker_id {assignment.worker_id}"
             )
+        if comfy.comfy_runtime_kind == "host_service":
+            warnings.append(
+                "host_service runtime is observation-only; do not generate Docker operations"
+            )
+        elif comfy.comfy_runtime_kind == "docker_container" and not comfy.comfy_runtime_managed:
+            warnings.append(
+                "docker runtime is not marked managed; execute requires an explicit maintenance window"
+            )
         if profile.min_vram_gb is not None and comfy.gpu_index is not None:
             gpu = next((item for item in node.gpus if item.index == comfy.gpu_index), None)
             if gpu and gpu.vram_gb < profile.min_vram_gb:
@@ -95,7 +103,11 @@ class GpuPoolPlanner:
             f"# sync model bundles {','.join(profile.model_bundles) or '-'} to {node.ssh_alias}:{comfy.model_dir}",
             f"# render worker env SUPPORTED_TASK_TYPES={tasks}",
         ]
-        if profile.image_ref:
+        if comfy.comfy_runtime_kind == "host_service":
+            commands.append(
+                f"# host_service: no Docker runtime action for {node.id}/{comfy.id}; validate manually"
+            )
+        elif profile.image_ref:
             commands.append(f"# ensure image available: docker pull {profile.image_ref}")
         commands.append(
             f"# canary: python -m ops.gpu_pool_controller.cli canary --assignment {assignment.id}"

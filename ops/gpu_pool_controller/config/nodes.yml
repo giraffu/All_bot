@@ -23,6 +23,14 @@ nodes:
         instance_dir: /home/ubantu/comfyui
         custom_nodes_dir: /home/ubantu/comfyui/custom_nodes
         workflows_dir: /home/ubantu/comfyui/user/default/workflows
+        input_dir: /home/ubantu/comfyui/input
+        output_dir: /home/ubantu/comfyui/output
+        temp_dir: /home/ubantu/comfyui/temp
+        comfy_runtime_kind: host_service
+        comfy_runtime_managed: false
+        container_port: 8188
+        compose_template: host_service_observation_only
+        rollback_state: {}
         supported_task_types:
           - face_swap
           - i2i_pro
@@ -60,6 +68,15 @@ nodes:
         instance_dir: /data/comfy/inst0
         custom_nodes_dir: /data/comfy/inst0/custom_nodes
         workflows_dir: /data/comfy/inst0/workflows
+        input_dir: /data/comfy/inst0/input
+        output_dir: /data/comfy/inst0/output
+        temp_dir: /data/comfy/inst0/temp
+        comfy_runtime_kind: docker_container
+        comfy_runtime_managed: false
+        container_name: allbot-comfy-gpu0
+        container_port: 8188
+        compose_template: standard_comfy_runtime_v1
+        rollback_state: {}
         supported_task_types:
           - video_insert
           - video_edit
@@ -76,6 +93,15 @@ nodes:
         instance_dir: /data/comfy/inst1
         custom_nodes_dir: /data/comfy/inst1/custom_nodes
         workflows_dir: /data/comfy/inst1/workflows
+        input_dir: /data/comfy/inst1/input
+        output_dir: /data/comfy/inst1/output
+        temp_dir: /data/comfy/inst1/temp
+        comfy_runtime_kind: docker_container
+        comfy_runtime_managed: false
+        container_name: allbot-comfy-gpu1
+        container_port: 8188
+        compose_template: standard_comfy_runtime_v1
+        rollback_state: {}
         supported_task_types:
           - ltx_video
           - image_to_video
@@ -108,6 +134,15 @@ nodes:
         instance_dir: /home/user/APP/data/inst0
         custom_nodes_dir: /home/user/APP/data/inst0/custom_nodes
         workflows_dir: /home/user/APP/data/inst0/workflows
+        input_dir: /home/user/APP/data/inst0/input
+        output_dir: /home/user/APP/data/inst0/output
+        temp_dir: /home/user/APP/data/inst0/temp
+        comfy_runtime_kind: docker_container
+        comfy_runtime_managed: false
+        container_name: allbot-comfy-gpu0
+        container_port: 8188
+        compose_template: standard_comfy_runtime_v1
+        rollback_state: {}
         supported_task_types:
           - img2img
           - img2img_lora
@@ -123,6 +158,15 @@ nodes:
         instance_dir: /home/user/APP/data/inst1
         custom_nodes_dir: /home/user/APP/data/inst1/custom_nodes
         workflows_dir: /home/user/APP/data/inst1/workflows
+        input_dir: /home/user/APP/data/inst1/input
+        output_dir: /home/user/APP/data/inst1/output
+        temp_dir: /home/user/APP/data/inst1/temp
+        comfy_runtime_kind: docker_container
+        comfy_runtime_managed: false
+        container_name: allbot-comfy-gpu1
+        container_port: 8189
+        compose_template: standard_comfy_runtime_v1
+        rollback_state: {}
         supported_task_types:
           - wan22_video_v2
           - video_edit
@@ -156,6 +200,19 @@ nodes:
         instance_dir: /data/comfy/inst0
         custom_nodes_dir: /data/comfy/inst0/custom_nodes
         workflows_dir: /data/comfy/inst0/workflows
+        input_dir: /data/comfy/inst0/input
+        output_dir: /data/comfy/inst0/output
+        temp_dir: /data/comfy/inst0/temp
+        comfy_runtime_kind: docker_container
+        comfy_runtime_managed: true
+        container_name: allbot-comfy-gpu0
+        container_port: 8188
+        compose_template: standard_comfy_runtime_v1
+        rollback_state:
+          image_ref: yanwk/comfyui-boot:cu128-slim
+          task_types: img2img,img2img_lora
+          runtime_profile: img2img_lora
+          container_name: comfy0
         supported_task_types:
           - img2img
           - img2img_lora
@@ -171,6 +228,19 @@ nodes:
         instance_dir: /data/comfy/inst1
         custom_nodes_dir: /data/comfy/inst1/custom_nodes
         workflows_dir: /data/comfy/inst1/workflows
+        input_dir: /data/comfy/inst1/input
+        output_dir: /data/comfy/inst1/output
+        temp_dir: /data/comfy/inst1/temp
+        comfy_runtime_kind: docker_container
+        comfy_runtime_managed: true
+        container_name: allbot-comfy-gpu1
+        container_port: 8188
+        compose_template: standard_comfy_runtime_v1
+        rollback_state:
+          image_ref: yanwk/comfyui-boot:cu128-slim
+          task_types: video_insert,video_edit,image_to_video
+          runtime_profile: video_basic
+          container_name: comfy1
         supported_task_types:
           - video_insert
           - video_edit

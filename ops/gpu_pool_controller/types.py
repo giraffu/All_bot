@@ -26,6 +26,16 @@ class ComfyInstance:
     instance_dir: str | None = None
     custom_nodes_dir: str | None = None
     workflows_dir: str | None = None
+    input_dir: str | None = None
+    output_dir: str | None = None
+    temp_dir: str | None = None
+    comfy_runtime_kind: str = "unknown"
+    comfy_runtime_managed: bool = False
+    container_name: str | None = None
+    container_port: int | None = None
+    compose_template: str | None = None
+    rollback_state: dict[str, Any] = field(default_factory=dict)
+    health: dict[str, str] = field(default_factory=dict)
     supported_task_types: tuple[str, ...] = ()
 
 
@@ -96,6 +106,24 @@ class PlanItem:
     task_types: tuple[str, ...]
     model_bundles: tuple[str, ...]
     image_ref: str | None
+    warnings: tuple[str, ...] = ()
+    commands: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class RuntimePlanItem:
+    assignment_id: str
+    worker_id: str
+    node_id: str
+    comfy_id: str
+    runtime_kind: str
+    runtime_managed: bool
+    target_profile_id: str
+    target_task_types: tuple[str, ...]
+    model_bundle_versions: dict[str, str]
+    worker_env: dict[str, str]
+    runtime: dict[str, Any]
+    diff: dict[str, Any]
     warnings: tuple[str, ...] = ()
     commands: tuple[str, ...] = ()
 

@@ -46,6 +46,8 @@ python scripts/gpu_pool_controller.py image-plan \
   --source-image workers_cloud-prod-comfy-agent-1:latest \
   --repository allbot/worker-agent \
   --tag "$(git rev-parse --short HEAD)"
+python scripts/gpu_pool_controller.py runtime-plan --assignment lan-002-8188-worker-06
+python scripts/gpu_pool_controller.py runtime-render --assignment lan-002-8188-worker-06
 ```
 
 Comfy canary 会检查 `/system_stats`、`/queue`、`/object_info` 和最低显存，默认不提交真实任务：
@@ -53,6 +55,20 @@ Comfy canary 会检查 `/system_stats`、`/queue`、`/object_info` 和最低显�
 ```bash
 python scripts/gpu_pool_controller.py canary --assignment lan-252-8188-worker-04
 ```
+
+Runtime dry-run 命令：
+- `runtime-plan` 输出 runtime / image / model bundle / worker env diff；不连接远端、不修改 worker。
+- `runtime-render` 渲染标准 ComfyUI runtime compose；当前只支持 `docker_container`。
+- `runtime-apply`、`switch-profile`、`rollback-profile` 已保留 CLI 接口；默认只输出 dry-run，传 `--execute` 会明确拒绝执行，直到 Phase 1 canary 和维护窗口完成。
+- `gpu-226` 属于 `host_service`，只能观测和手工 canary；Controller 不得为它生成 Docker pull/up/restart 操作。
+
+Runtime schema 已补充到 `nodes.yml` 的每个 Comfy 实例：
+- `comfy_runtime_kind`：`host_service` 或 `docker_container`
+- `comfy_runtime_managed`：是否允许进入后续受控接管流程；当前只有 `gpu-002` 试点为 `true`
+- `container_name`、`container_port`、`input_dir`、`output_dir`、`temp_dir`
+- `compose_template`、`rollback_state`、`health`
+
+`gpu-177` 与 `gpu-252` 仍可生成 Docker runtime 计划，但未标记为 managed；正式接管必须在 `gpu-002` 云测试 canary 通过后另行推进。
 
 ## 4. 本地仓库
 模型仓库默认根目录：

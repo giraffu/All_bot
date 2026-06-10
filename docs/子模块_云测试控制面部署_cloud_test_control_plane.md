@@ -235,7 +235,7 @@ docker compose --env-file .env.cloud.test -f deploy/docker-compose-cloud-test.ym
 GPU worker 不在云服务器运行；本地 `workers/docker-compose-cloud-worker-test.yml` 会启动 7 个 `cloud-comfy-agent-test-*` 容器，经 `CLOUD_TEST_CONTROL_HOST` 连接云端 Central API，并通过 R2 S3 endpoint 直接读写 `user-data-test`。
 
 ### 8.1 Worker 6/7 GPU pool 控制测试
-`cloud-comfy-agent-test-6` 与 `cloud-comfy-agent-test-7` 用于 GPU pool 小范围验证时，可以临时覆盖任务类型与 runtime profile，不需要修改 `.env.cloud.test`：
+`cloud-comfy-agent-test-6` 与 `cloud-comfy-agent-test-7` 用于 GPU pool 小范围验证时，可以临时覆盖任务类型、runtime profile 和 Comfy URL，不需要修改 `.env.cloud.test`：
 
 ```bash
 set -a
@@ -257,14 +257,19 @@ docker ps -aq --filter name=cloud-comfy-agent-test-6 --filter name=cloud-comfy-a
 
 CLOUD_TEST_WORKER_06_TASK_TYPES='video_insert,image_to_video' \
 CLOUD_TEST_WORKER_06_RUNTIME_PROFILE='video_basic_canary' \
+CLOUD_TEST_WORKER_06_COMFY_API_URL='http://192.168.1.2:8190' \
+CLOUD_TEST_WORKER_06_COMFY_WS_URL='ws://192.168.1.2:8190/ws' \
 CLOUD_TEST_WORKER_07_TASK_TYPES='img2img,img2img_lora' \
 CLOUD_TEST_WORKER_07_RUNTIME_PROFILE='img2img_lora_canary' \
+CLOUD_TEST_WORKER_07_COMFY_API_URL='http://192.168.1.2:8191' \
+CLOUD_TEST_WORKER_07_COMFY_WS_URL='ws://192.168.1.2:8191/ws' \
 docker-compose --env-file .env.cloud.test -f workers/docker-compose-cloud-worker-test.yml \
   up -d --no-deps cloud-comfy-agent-test-6 cloud-comfy-agent-test-7
 ```
 
 验证点：
 - `/system/workers` 能看到 `cloud_worker_test_06/07` 的 `types`、`node_id=gpu-002`、`gpu_index`、`runtime_profile` 与 `pool_managed=true` 随容器环境更新。
+- 备用端口 canary 时，`cloud_worker_test_06/07` 的 `COMFY_API_URL` / `COMFY_WS_URL` 指向 `gpu-002` 新 runtime 端口，不影响正式 worker 默认使用的 `8188/8189`。
 - `disabled/draining` 状态下，带 `agent_id` 的 `/api/agent/task/pop` 返回空任务，不影响其它 worker。
 - 本地主服务器旧版 `docker-compose 1.29.2` 可能在 `--force-recreate` 时报 `KeyError: 'ContainerConfig'`；只删除目标 6/7 容器再 `up -d --no-deps`，不要 `--remove-orphans`。
 

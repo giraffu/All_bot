@@ -14,10 +14,25 @@ python scripts/gpu_pool_controller.py image-plan \
   --repository allbot/worker-agent \
   --tag "$(git rev-parse --short HEAD)"
 python scripts/gpu_pool_controller.py canary --assignment lan-252-8188-worker-04
+python scripts/gpu_pool_controller.py runtime-plan --assignment lan-002-8188-worker-06
+python scripts/gpu_pool_controller.py runtime-render --assignment lan-002-8188-worker-06
+python scripts/gpu_pool_controller.py switch-profile \
+  --assignment lan-002-8188-worker-06 \
+  --profile video_basic
 python scripts/gpu_pool_controller.py workflow-model-check
 python scripts/gpu_pool_controller.py model-import-plan
 python scripts/gpu_pool_controller.py model-import-execute
 ```
+
+Runtime commands are dry-run first:
+
+- `runtime-plan` emits runtime/image/model/worker-env diffs.
+- `runtime-render` renders a standard ComfyUI Docker Compose file for review.
+- `runtime-apply`, `switch-profile`, and `rollback-profile` accept `--execute`,
+  but execution is intentionally disabled until Phase 1 canary validation and a
+  maintenance window.
+- `host_service` runtimes such as `gpu-226` are observation-only and never render
+  Docker runtime operations.
 
 Model registry layout:
 

@@ -9,6 +9,7 @@ from ops.gpu_pool_controller.model_importer import (
 )
 from ops.gpu_pool_controller.model_repo import ModelRegistry
 from ops.gpu_pool_controller.planner import GpuPoolPlanner
+from ops.gpu_pool_controller.runtime import RuntimePlanner
 from ops.gpu_pool_controller.types import ComfyInstance, TaskProfile
 
 
@@ -33,6 +34,71 @@ def test_default_gpu_pool_config_loads_and_plans_all_local_workers():
     wan22 = next(item for item in plan if item["worker_id"] == "cloud_prod_worker_05")
     assert wan22["node_id"] == "gpu-252"
     assert "wan22_video_v2_baseline" in wan22["model_bundles"]
+
+    host_service = next(item for item in plan if item["worker_id"] == "cloud_prod_worker_01")
+    assert "docker pull" not in "\n".join(host_service["commands"])
+    assert any("host_service" in warning for warning in host_service["warnings"])
+
+
+def test_runtime_schema_defaults_and_managed_pilot_flags_load():
+    config = load_controller_config()
+
+    gpu_226 = config.nodes["gpu-226"].comfy[0]
+    assert gpu_226.comfy_runtime_kind == "host_service"
+    assert gpu_226.comfy_runtime_managed is False
+    assert gpu_226.input_dir == "/home/ubantu/comfyui/input"
+
+    gpu_002 = next(item for item in config.nodes["gpu-002"].comfy if item.id == "comfy0")
+    assert gpu_002.comfy_runtime_kind == "docker_container"
+    assert gpu_002.comfy_runtime_managed is True
+    assert gpu_002.container_name == "allbot-comfy-gpu0"
+    assert gpu_002.rollback_state["container_name"] == "comfy0"
+
+
+def test_runtime_plan_renders_worker_env_and_diffs_for_gpu_002():
+    config = load_controller_config()
+    payload = RuntimePlanner(config).build_plan("lan-002-8188-worker-06")
+
+    assert payload.runtime_kind == "docker_container"
+    assert payload.runtime_managed is True
+    assert payload.worker_env["POOL_RUNTIME_PROFILE"] == "img2img_lora"
+    assert payload.worker_env["SUPPORTED_TASK_TYPES"] == "img2img,img2img_lora"
+    assert payload.model_bundle_versions == {"img2img_lora_baseline": "2026-06-10"}
+    assert payload.diff["runtime_image"]["current"] == "yanwk/comfyui-boot:cu128-slim"
+    assert payload.diff["runtime_image"]["target"].endswith("/allbot/comfy-cu128-img2img:baseline")
+    assert payload.diff["runtime_image"]["changed"] is True
+
+
+def test_runtime_render_outputs_standard_compose_for_gpu_002():
+    config = load_controller_config()
+    rendered = RuntimePlanner(config).render_compose("lan-002-8188-worker-06")
+
+    assert "container_name: allbot-comfy-gpu0" in rendered
+    assert "- 8188:8188" in rendered
+    assert "/data/comfy/inst0/input:/data/comfy/input" in rendered
+    assert "allbot.gpu_pool.runtime_profile: img2img_lora" in rendered
+    assert "rendered_for: dry_run_review" in rendered
+
+
+def test_runtime_render_rejects_host_service_runtime():
+    config = load_controller_config()
+
+    try:
+        RuntimePlanner(config).render_compose("lan-226-8188-worker-01")
+    except ValueError as exc:
+        assert "host_service" in str(exc)
+    else:  # pragma: no cover
+        raise AssertionError("host_service runtime-render should fail")
+
+
+def test_runtime_rollback_plan_exposes_previous_state_without_execute():
+    config = load_controller_config()
+    payload = RuntimePlanner(config).build_rollback_plan("lan-002-8188-worker-06")
+
+    assert payload["ok"] is True
+    assert payload["dry_run"] is True
+    assert payload["rollback_state"]["container_name"] == "comfy0"
+    assert payload["commands"]
 
 
 def test_model_registry_imports_file_by_sha_and_renders_rsync_plan(tmp_path: Path):

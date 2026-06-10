@@ -73,6 +73,8 @@ GPU pool 相关环境变量只描述 Worker Agent 的观测和期望能力，不
 
 2026-06-10 正式更新已验证的是 Worker Agent 新协议：7 个 `cloud-prod-comfy-agent-*` 均能携带 `agent_id`、GPU pool heartbeat 元数据并通过 relay `/ready`。这不表示 7 个底层 ComfyUI 都是容器；`cloud-prod-comfy-agent-1` 调用的 `gpu-226:8188` 仍是宿主机 ComfyUI。
 
+Controller 已补 `runtime-plan` / `runtime-render` dry-run 入口与 runtime schema。当前只有 `gpu-002` 标记为 Phase 1 试点 managed runtime；`gpu-177`/`gpu-252` 仍可规划但不执行，`gpu-226` 作为 `host_service` 只允许观测和手工 canary。
+
 ## 5. GPU 节点明细
 
 ### 5.1 `allbot-gpu-226` / `192.168.1.226`

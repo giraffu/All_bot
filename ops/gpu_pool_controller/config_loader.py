@@ -47,6 +47,48 @@ def _as_tuple(value: Any) -> tuple[str, ...]:
     return tuple(str(item).strip() for item in value if str(item).strip())
 
 
+def _as_bool(value: Any, *, default: bool = False) -> bool:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _runtime_kind(item: dict[str, Any], node_runtime: str) -> str:
+    explicit = item.get("comfy_runtime_kind")
+    if explicit:
+        return str(explicit)
+    runtime = str(item.get("runtime") or node_runtime)
+    if runtime in {"host_process", "host_service"}:
+        return "host_service"
+    if runtime in {"docker", "docker_container"}:
+        return "docker_container"
+    return runtime
+
+
+def _default_instance_child_dir(
+    item: dict[str, Any],
+    name: str,
+) -> str | None:
+    if item.get(f"{name}_dir"):
+        return str(item[f"{name}_dir"])
+    instance_dir = item.get("instance_dir")
+    if instance_dir:
+        return str(Path(str(instance_dir)) / name)
+    return None
+
+
+def _default_health(item: dict[str, Any]) -> dict[str, str]:
+    health = dict(item.get("health") or {})
+    health.setdefault("system_stats", "/system_stats")
+    health.setdefault("queue", "/queue")
+    health.setdefault("object_info", "/object_info")
+    return health
+
+
 def _parse_nodes(raw_nodes: dict[str, Any]) -> dict[str, GpuNode]:
     nodes: dict[str, GpuNode] = {}
     for node_id, data in raw_nodes.items():
@@ -58,26 +100,48 @@ def _parse_nodes(raw_nodes: dict[str, Any]) -> dict[str, GpuNode]:
             )
             for item in data.get("gpus", [])
         )
-        comfy_instances = tuple(
-            ComfyInstance(
-                id=str(item["id"]),
-                port=int(item["port"]),
-                gpu_index=(
-                    int(item["gpu_index"]) if item.get("gpu_index") is not None else None
-                ),
-                worker_id=item.get("worker_id"),
-                api_url=str(item["api_url"]),
-                ws_url=str(item["ws_url"]),
-                model_dir=str(item.get("model_dir") or data["model_dir"]),
-                runtime=str(item.get("runtime") or data["runtime"]),
-                image=item.get("image"),
-                instance_dir=item.get("instance_dir"),
-                custom_nodes_dir=item.get("custom_nodes_dir"),
-                workflows_dir=item.get("workflows_dir"),
-                supported_task_types=_as_tuple(item.get("supported_task_types")),
+        comfy = []
+        for item in data.get("comfy", []):
+            gpu_index = int(item["gpu_index"]) if item.get("gpu_index") is not None else None
+            runtime_kind = _runtime_kind(item, str(data["runtime"]))
+            container_name = item.get("container_name")
+            if container_name is None and runtime_kind == "docker_container" and gpu_index is not None:
+                container_name = f"allbot-comfy-gpu{gpu_index}"
+            comfy.append(
+                ComfyInstance(
+                    id=str(item["id"]),
+                    port=int(item["port"]),
+                    gpu_index=gpu_index,
+                    worker_id=item.get("worker_id"),
+                    api_url=str(item["api_url"]),
+                    ws_url=str(item["ws_url"]),
+                    model_dir=str(item.get("model_dir") or data["model_dir"]),
+                    runtime=str(item.get("runtime") or data["runtime"]),
+                    image=item.get("image"),
+                    instance_dir=item.get("instance_dir"),
+                    custom_nodes_dir=item.get("custom_nodes_dir"),
+                    workflows_dir=item.get("workflows_dir"),
+                    input_dir=_default_instance_child_dir(item, "input"),
+                    output_dir=_default_instance_child_dir(item, "output"),
+                    temp_dir=_default_instance_child_dir(item, "temp"),
+                    comfy_runtime_kind=runtime_kind,
+                    comfy_runtime_managed=_as_bool(
+                        item.get("comfy_runtime_managed"),
+                        default=False,
+                    ),
+                    container_name=container_name,
+                    container_port=(
+                        int(item["container_port"])
+                        if item.get("container_port") is not None
+                        else 8188
+                    ),
+                    compose_template=item.get("compose_template"),
+                    rollback_state=dict(item.get("rollback_state") or {}),
+                    health=_default_health(item),
+                    supported_task_types=_as_tuple(item.get("supported_task_types")),
+                )
             )
-            for item in data.get("comfy", [])
-        )
+        comfy_instances = tuple(comfy)
         nodes[node_id] = GpuNode(
             id=node_id,
             provider=str(data.get("provider", "lan_ssh")),
