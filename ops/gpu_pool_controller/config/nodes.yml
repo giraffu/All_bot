@@ -1,0 +1,177 @@
+nodes:
+  gpu-226:
+    provider: lan_ssh
+    host: allbot-gpu-226
+    ssh_alias: allbot-gpu-226
+    ip: 192.168.1.226
+    runtime: host_process
+    model_dir: /home/ubantu/comfyui/models
+    notes: Single RTX 5090 node. ComfyUI is a host process, not Docker.
+    gpus:
+      - index: 0
+        name: NVIDIA GeForce RTX 5090
+        vram_gb: 32
+    comfy:
+      - id: comfy-8188
+        port: 8188
+        gpu_index: 0
+        worker_id: cloud_prod_worker_01
+        api_url: http://192.168.1.226:8188
+        ws_url: ws://192.168.1.226:8188/ws
+        model_dir: /home/ubantu/comfyui/models
+        runtime: host_process
+        instance_dir: /home/ubantu/comfyui
+        custom_nodes_dir: /home/ubantu/comfyui/custom_nodes
+        workflows_dir: /home/ubantu/comfyui/user/default/workflows
+        supported_task_types:
+          - face_swap
+          - i2i_pro
+          - i2i_draw
+          - face_video
+          - video_edit
+          - image_to_video
+          - t2i-pornmaster-turbo
+
+  gpu-177:
+    provider: lan_ssh
+    host: allbot-gpu-177
+    ssh_alias: allbot-gpu-177
+    ip: 192.168.1.177
+    runtime: docker
+    model_dir: /data/comfy/models
+    notes: Dual RTX 5090 node. comfy0/comfy1 share model dir and split inst0/inst1.
+    gpus:
+      - index: 0
+        name: NVIDIA GeForce RTX 5090
+        vram_gb: 32
+      - index: 1
+        name: NVIDIA GeForce RTX 5090
+        vram_gb: 32
+    comfy:
+      - id: comfy0
+        port: 8188
+        gpu_index: 0
+        worker_id: cloud_prod_worker_02
+        api_url: http://192.168.1.177:8188
+        ws_url: ws://192.168.1.177:8188/ws
+        model_dir: /data/comfy/models
+        runtime: docker
+        image: yanwk/comfyui-boot:cu130-slim
+        instance_dir: /data/comfy/inst0
+        custom_nodes_dir: /data/comfy/inst0/custom_nodes
+        workflows_dir: /data/comfy/inst0/workflows
+        supported_task_types:
+          - video_insert
+          - video_edit
+          - image_to_video
+      - id: comfy1
+        port: 8189
+        gpu_index: 1
+        worker_id: cloud_prod_worker_03
+        api_url: http://192.168.1.177:8189
+        ws_url: ws://192.168.1.177:8189/ws
+        model_dir: /data/comfy/models
+        runtime: docker
+        image: yanwk/comfyui-boot:cu130-slim
+        instance_dir: /data/comfy/inst1
+        custom_nodes_dir: /data/comfy/inst1/custom_nodes
+        workflows_dir: /data/comfy/inst1/workflows
+        supported_task_types:
+          - ltx_video
+          - image_to_video
+
+  gpu-252:
+    provider: lan_ssh
+    host: allbot-gpu-252
+    ssh_alias: allbot-gpu-252
+    ip: 192.168.1.252
+    runtime: docker
+    model_dir: /home/user/APP/data/models
+    notes: Dual RTX 4090 48GB node. swap pressure has been observed.
+    gpus:
+      - index: 0
+        name: NVIDIA GeForce RTX 4090
+        vram_gb: 48
+      - index: 1
+        name: NVIDIA GeForce RTX 4090
+        vram_gb: 48
+    comfy:
+      - id: comfy0
+        port: 8188
+        gpu_index: 0
+        worker_id: cloud_prod_worker_04
+        api_url: http://192.168.1.252:8188
+        ws_url: ws://192.168.1.252:8188/ws
+        model_dir: /home/user/APP/data/models
+        runtime: docker
+        image: yanwk/comfyui-boot:cu128-slim
+        instance_dir: /home/user/APP/data/inst0
+        custom_nodes_dir: /home/user/APP/data/inst0/custom_nodes
+        workflows_dir: /home/user/APP/data/inst0/workflows
+        supported_task_types:
+          - img2img
+          - img2img_lora
+      - id: comfy1
+        port: 8189
+        gpu_index: 1
+        worker_id: cloud_prod_worker_05
+        api_url: http://192.168.1.252:8189
+        ws_url: ws://192.168.1.252:8189/ws
+        model_dir: /home/user/APP/data/models
+        runtime: docker
+        image: yanwk/comfyui-boot:cu128-slim
+        instance_dir: /home/user/APP/data/inst1
+        custom_nodes_dir: /home/user/APP/data/inst1/custom_nodes
+        workflows_dir: /home/user/APP/data/inst1/workflows
+        supported_task_types:
+          - wan22_video_v2
+          - video_edit
+          - image_to_video
+
+  gpu-002:
+    provider: lan_ssh
+    host: allbot-gpu-002
+    ssh_alias: allbot-gpu-002
+    ip: 192.168.1.2
+    runtime: docker
+    model_dir: /data/comfy/models
+    notes: Dual RTX 4090 48GB node.
+    gpus:
+      - index: 0
+        name: NVIDIA GeForce RTX 4090
+        vram_gb: 48
+      - index: 1
+        name: NVIDIA GeForce RTX 4090
+        vram_gb: 48
+    comfy:
+      - id: comfy0
+        port: 8188
+        gpu_index: 0
+        worker_id: cloud_prod_worker_06
+        api_url: http://192.168.1.2:8188
+        ws_url: ws://192.168.1.2:8188/ws
+        model_dir: /data/comfy/models
+        runtime: docker
+        image: yanwk/comfyui-boot:cu128-slim
+        instance_dir: /data/comfy/inst0
+        custom_nodes_dir: /data/comfy/inst0/custom_nodes
+        workflows_dir: /data/comfy/inst0/workflows
+        supported_task_types:
+          - img2img
+          - img2img_lora
+      - id: comfy1
+        port: 8189
+        gpu_index: 1
+        worker_id: cloud_prod_worker_07
+        api_url: http://192.168.1.2:8189
+        ws_url: ws://192.168.1.2:8189/ws
+        model_dir: /data/comfy/models
+        runtime: docker
+        image: yanwk/comfyui-boot:cu128-slim
+        instance_dir: /data/comfy/inst1
+        custom_nodes_dir: /data/comfy/inst1/custom_nodes
+        workflows_dir: /data/comfy/inst1/workflows
+        supported_task_types:
+          - video_insert
+          - video_edit
+          - image_to_video

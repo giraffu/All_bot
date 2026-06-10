@@ -128,6 +128,33 @@ async def build_worker_info_flow(
     if "health_reason" in worker_info and worker_info.get("health_reason") is None:
         worker_info["health_reason"] = ""
 
+    if "gpu_index" in worker_info:
+        value = worker_info.get("gpu_index")
+        if value in (None, ""):
+            worker_info["gpu_index"] = None
+        else:
+            try:
+                worker_info["gpu_index"] = int(float(value))
+            except (TypeError, ValueError):
+                worker_info["gpu_index"] = None
+
+    if "pool_managed" in worker_info:
+        worker_info["pool_managed"] = (
+            str(worker_info.get("pool_managed")).strip().lower()
+            in {"1", "true", "yes", "on"}
+        )
+
+    if "model_bundle_versions" in worker_info:
+        value = worker_info.get("model_bundle_versions")
+        if isinstance(value, str) and value:
+            try:
+                parsed = json.loads(value)
+            except (TypeError, ValueError):
+                parsed = None
+            worker_info["model_bundle_versions"] = (
+                parsed if isinstance(parsed, dict) else None
+            )
+
     current_task_id = worker_info.get("current_task_id")
     if worker_info.get("status") == "running" and current_task_id:
         task_data = await get_task_status_func(current_task_id)
@@ -412,6 +439,7 @@ async def update_agent_heartbeat_flow(
     last_error_at: float | str | None = None,
     consecutive_failures: int | str | None = None,
     quarantined_until: float | str | None = None,
+    metadata: dict[str, Any] | None = None,
     agent_heartbeat_key_func,
     hset_func,
     expire_func,
@@ -428,6 +456,18 @@ async def update_agent_heartbeat_flow(
         "consecutive_failures": consecutive_failures or 0,
         "quarantined_until": quarantined_until or "",
     }
+    allowed_metadata_keys = {
+        "node_id",
+        "provider",
+        "gpu_index",
+        "runtime_profile",
+        "image_ref",
+        "model_bundle_versions",
+        "pool_managed",
+    }
+    for metadata_key, value in (metadata or {}).items():
+        if metadata_key in allowed_metadata_keys and value not in (None, ""):
+            data[metadata_key] = value
     await hset_func(key, mapping=data)
     await expire_func(key, 30)
 

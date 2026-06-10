@@ -24,6 +24,7 @@
 - `task_core` 是统一门面，负责业务编排，不是 Central API
 - Central API 是执行面，不负责上游计费、并发锁和历史持久化
 - Worker 通过主动 `pop` 拉取任务，不是上游直接把 workflow 推到 Worker
+- 新版 worker 的 `pop` 会带 `agent_id`；GPU Pool Controller 可把单个 worker 标记为 `draining/disabled`，用于模型同步、任务能力切换和 canary 前停止接新单
 - 本地 relay/sidecar 只优化 worker 到云 Central/R2 的固定开销，不拥有队列事实；任务仍只有在 R2 上传成功且 Central `/complete` 成功后才算成功收口
 - 本地 relay `/health` 是轻量存活检查，`/ready` 会检查云 Central 与上传 client；worker 到 relay/Central 的控制面半断持续超过默认阈值时，agent 会退出并交给 Docker restart。这个自愈只恢复 worker 进程，不改变任务成功必须 `/complete` 的语义
 - 无法接入 Tailscale 的远程 Windows GPU 节点可使用 `remote_workers/` 独立 venv 包运行 bundled `comfy_agent` 与 `remote_relay`；它复用同一 Central `pop/status/complete/heartbeat` 语义，只是通过专用 Cloudflare Tunnel 域名访问云 Central

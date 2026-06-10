@@ -365,7 +365,7 @@
   },
   "137": {
     "inputs": {
-      "unet_name": "z image\\z_image_turbo_fp8_e4m3fn.safetensors",
+      "unet_name": "z-image-turbo-fp8-e4m3fn.safetensors",
       "weight_dtype": "default"
     },
     "class_type": "UNETLoader",

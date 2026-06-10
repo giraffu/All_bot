@@ -72,6 +72,13 @@ class WorkerInfo(BaseModel):
     current_task_type: Optional[str] = None
     current_task_progress: Optional[float] = None
     current_task_created_at: Optional[float] = None
+    node_id: Optional[str] = None
+    provider: Optional[str] = None
+    gpu_index: Optional[int] = None
+    runtime_profile: Optional[str] = None
+    image_ref: Optional[str] = None
+    model_bundle_versions: Optional[Dict[str, Any]] = None
+    pool_managed: Optional[bool] = None
 
 
 class SystemWorkersResponse(BaseModel):

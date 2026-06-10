@@ -1,0 +1,79 @@
+profiles:
+  face_i2i_t2i:
+    runtime_profile: face_i2i_t2i
+    task_types:
+      - face_swap
+      - i2i_pro
+      - i2i_draw
+      - face_video
+      - video_edit
+      - image_to_video
+      - t2i-pornmaster-turbo
+    model_bundles:
+      - face_i2i_t2i_baseline
+      - video_basic_baseline
+    required_nodes:
+      - FL_RIFE
+      - VHS_VideoCombine
+    min_vram_gb: 32
+    image_ref: 192.168.1.115:5000/allbot/comfy-cu130-face-i2i:baseline
+
+  video_basic:
+    runtime_profile: video_basic
+    task_types:
+      - video_insert
+      - video_edit
+      - image_to_video
+    model_bundles:
+      - video_basic_baseline
+    required_nodes:
+      - FL_RIFE
+      - UNETLoader
+      - VHS_VideoCombine
+    workflow: workers/comfy_agent/workflows/perfect_video_insert.json
+    min_vram_gb: 32
+    image_ref: 192.168.1.115:5000/allbot/comfy-cu130-video-basic:baseline
+
+  ltx_video:
+    runtime_profile: ltx_video
+    task_types:
+      - ltx_video
+      - image_to_video
+    model_bundles:
+      - ltx_video_baseline
+    required_nodes:
+      - Power Lora Loader (rgthree)
+      - VHS_VideoCombine
+    workflow: workers/comfy_agent/workflows/LTX 2.3 I2V 6.1.json
+    min_vram_gb: 32
+    image_ref: 192.168.1.115:5000/allbot/comfy-cu130-ltx:baseline
+
+  img2img_lora:
+    runtime_profile: img2img_lora
+    task_types:
+      - img2img
+      - img2img_lora
+    model_bundles:
+      - img2img_lora_baseline
+    required_nodes:
+      - UNETLoader
+    workflow: workers/comfy_agent/workflows/Qwen-Rapid-AIO.json
+    min_vram_gb: 32
+    image_ref: 192.168.1.115:5000/allbot/comfy-cu128-img2img:baseline
+
+  wan22_video_v2:
+    runtime_profile: wan22_video_v2
+    task_types:
+      - wan22_video_v2
+      - video_edit
+      - image_to_video
+    model_bundles:
+      - wan22_video_v2_baseline
+      - video_basic_baseline
+    required_nodes:
+      - FL_RIFE
+      - UNETLoader
+      - VHS_VideoCombine
+    workflow: workers/comfy_agent/workflows/Wan22AioV82.json
+    min_vram_gb: 48
+    image_ref: 192.168.1.115:5000/allbot/comfy-cu128-wan22:baseline

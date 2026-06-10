@@ -7,9 +7,11 @@ from typing import Annotated, Any, Dict, Optional
 from app.agent_router_helpers import (
     check_task_payload,
     complete_task_payload,
+    get_agent_control_payload,
     heartbeat_payload,
     peek_task_payload,
     pop_task_payload,
+    set_agent_control_payload,
     task_heartbeat_payload,
     update_status_payload,
     verify_agent_token,
@@ -53,6 +55,19 @@ class HeartbeatRequest(BaseModel):
     last_error_at: Optional[Any] = None
     consecutive_failures: Optional[Any] = None
     quarantined_until: Optional[Any] = None
+    node_id: Optional[str] = None
+    provider: Optional[str] = None
+    gpu_index: Optional[Any] = None
+    runtime_profile: Optional[str] = None
+    image_ref: Optional[str] = None
+    model_bundle_versions: Optional[Any] = None
+    pool_managed: Optional[Any] = None
+
+
+class AgentControlRequest(BaseModel):
+    state: str
+    reason: str = ""
+    ttl_seconds: Optional[int] = None
 
 
 def verify_token(authorization: Optional[str] = Header(None)):
@@ -66,12 +81,14 @@ def verify_token(authorization: Optional[str] = Header(None)):
 @router.get("/pop")
 async def pop_task(
     types: Optional[str] = None,
+    agent_id: Optional[str] = None,
     cancel_lock: bool = False,
     _authorized: bool = Depends(verify_token),
     queue_manager: QueueManagerDep = None,
 ):
     return await pop_task_payload(
         types=types,
+        agent_id=agent_id,
         queue_manager=queue_manager,
         cancel_lock=cancel_lock,
     )
@@ -158,6 +175,15 @@ async def heartbeat(
     _authorized: bool = Depends(verify_token),
     queue_manager: QueueManagerDep = None,
 ):
+    metadata = {
+        "node_id": req.node_id,
+        "provider": req.provider,
+        "gpu_index": req.gpu_index,
+        "runtime_profile": req.runtime_profile,
+        "image_ref": req.image_ref,
+        "model_bundle_versions": req.model_bundle_versions,
+        "pool_managed": req.pool_managed,
+    }
     return await heartbeat_payload(
         agent_id=req.agent_id,
         types=req.types,
@@ -167,5 +193,31 @@ async def heartbeat(
         last_error_at=req.last_error_at,
         consecutive_failures=req.consecutive_failures,
         quarantined_until=req.quarantined_until,
+        metadata=metadata,
         queue_manager=queue_manager,
     )
+
+
+@router.post("/control/{agent_id}")
+async def set_agent_control(
+    agent_id: str,
+    req: AgentControlRequest,
+    _authorized: bool = Depends(verify_token),
+    queue_manager: QueueManagerDep = None,
+):
+    return await set_agent_control_payload(
+        agent_id=agent_id,
+        state=req.state,
+        reason=req.reason,
+        ttl_seconds=req.ttl_seconds,
+        queue_manager=queue_manager,
+    )
+
+
+@router.get("/control/{agent_id}")
+async def get_agent_control(
+    agent_id: str,
+    _authorized: bool = Depends(verify_token),
+    queue_manager: QueueManagerDep = None,
+):
+    return await get_agent_control_payload(agent_id=agent_id, queue_manager=queue_manager)

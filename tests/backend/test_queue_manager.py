@@ -275,6 +275,74 @@ async def test_dequeue_task_without_type_filter_pops_first_pending_task():
 
 
 @pytest.mark.asyncio
+async def test_agent_control_state_blocks_pop_when_draining():
+    redis = _FakeRedis()
+    manager = QueueManager(redis)
+
+    control = await manager.set_agent_control_state(
+        "agent-1",
+        "draining",
+        reason="model sync",
+        ttl_seconds=120,
+    )
+    enabled, reason = await manager.is_agent_pop_enabled("agent-1")
+
+    assert control["state"] == "draining"
+    assert enabled is False
+    assert reason == "model sync"
+
+    await manager.set_agent_control_state("agent-1", "enabled")
+    enabled, reason = await manager.is_agent_pop_enabled("agent-1")
+
+    assert enabled is True
+    assert reason == ""
+
+
+@pytest.mark.asyncio
+async def test_worker_info_includes_gpu_pool_metadata():
+    redis = _FakeRedis()
+    manager = QueueManager(redis)
+
+    await manager.update_agent_heartbeat(
+        "agent-1",
+        "wan22_video_v2",
+        "idle",
+        metadata={
+            "node_id": "gpu-252",
+            "provider": "lan_ssh",
+            "gpu_index": "1",
+            "runtime_profile": "wan22_video_v2",
+            "image_ref": "192.168.1.115:5000/allbot/comfy-cu128-wan22:baseline",
+            "model_bundle_versions": '{"wan22_video_v2_baseline":"2026-06-10"}',
+            "pool_managed": "true",
+        },
+    )
+
+    workers = await manager.get_all_workers()
+
+    assert workers == [
+        {
+            "agent_id": "agent-1",
+            "types": "wan22_video_v2",
+            "status": "idle",
+            "last_seen": workers[0]["last_seen"],
+            "health_reason": "",
+            "last_error": "",
+            "last_error_at": None,
+            "consecutive_failures": 0,
+            "quarantined_until": None,
+            "node_id": "gpu-252",
+            "provider": "lan_ssh",
+            "gpu_index": 1,
+            "runtime_profile": "wan22_video_v2",
+            "image_ref": "192.168.1.115:5000/allbot/comfy-cu128-wan22:baseline",
+            "model_bundle_versions": {"wan22_video_v2_baseline": "2026-06-10"},
+            "pool_managed": True,
+        }
+    ]
+
+
+@pytest.mark.asyncio
 async def test_activate_dequeued_task_returns_none_when_no_task():
     redis = _FakeRedis()
     manager = QueueManager(redis)

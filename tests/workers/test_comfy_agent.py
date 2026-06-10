@@ -474,7 +474,10 @@ async def test_report_heartbeat_uses_active_execution_context(monkeypatch):
 
     assert requests[0][0] == "/api/agent/task/heartbeat"
     assert requests[0][1]["status"] == "running"
-    assert requests[1] == ("/api/agent/task/task_heartbeat", {"task_id": "task-99"})
+    assert requests[1] == (
+        "/api/agent/task/task_heartbeat",
+        {"task_id": "task-99", "agent_id": module.AGENT_ID},
+    )
 
 
 @pytest.mark.asyncio
@@ -522,6 +525,48 @@ async def test_report_heartbeat_sends_null_numeric_health_fields_when_idle(monke
     assert payload["status"] == "idle"
     assert payload["last_error_at"] is None
     assert payload["quarantined_until"] is None
+
+
+def test_build_pop_params_includes_agent_id_for_drain_control(monkeypatch):
+    module = build_agent_module(monkeypatch)
+    agent = module.ComfyAgent()
+
+    params = agent._build_pop_params()
+
+    assert params["agent_id"] == module.AGENT_ID
+    assert params["types"] == module.SUPPORTED_TASK_TYPES
+
+
+@pytest.mark.asyncio
+async def test_report_heartbeat_includes_pool_metadata(monkeypatch):
+    monkeypatch.setenv("POOL_NODE_ID", "gpu-252")
+    monkeypatch.setenv("POOL_PROVIDER", "lan_ssh")
+    monkeypatch.setenv("POOL_GPU_INDEX", "1")
+    monkeypatch.setenv("POOL_RUNTIME_PROFILE", "wan22_video_v2")
+    monkeypatch.setenv("POOL_IMAGE_REF", "192.168.1.115:5000/allbot/comfy-cu128-wan22:baseline")
+    monkeypatch.setenv(
+        "POOL_MODEL_BUNDLE_VERSIONS",
+        '{"wan22_video_v2_baseline":"2026-06-10"}',
+    )
+    monkeypatch.setenv("POOL_MANAGED", "true")
+    module = build_agent_module(monkeypatch)
+    agent = module.ComfyAgent()
+    requests = []
+
+    async def fake_post(path, json):
+        requests.append((path, json))
+        return SimpleNamespace(status_code=200)
+
+    agent.master_client.post = fake_post
+
+    await agent.report_heartbeat()
+
+    payload = requests[0][1]
+    assert payload["node_id"] == "gpu-252"
+    assert payload["provider"] == "lan_ssh"
+    assert payload["gpu_index"] == "1"
+    assert payload["runtime_profile"] == "wan22_video_v2"
+    assert payload["pool_managed"] == "true"
 
 
 @pytest.mark.asyncio

@@ -64,6 +64,13 @@ services:
     environment:
       <<: *worker-cloud-prod-env
       AGENT_ID: cloud_prod_worker_01
+      POOL_MANAGED: "true"
+      POOL_PROVIDER: lan_ssh
+      POOL_NODE_ID: gpu-226
+      POOL_GPU_INDEX: "0"
+      POOL_RUNTIME_PROFILE: face_i2i_t2i
+      POOL_IMAGE_REF: 192.168.1.115:5000/allbot/comfy-cu130-face-i2i:baseline
+      POOL_MODEL_BUNDLE_VERSIONS: '{"face_i2i_t2i_baseline":"2026-06-10","video_basic_baseline":"2026-06-10"}'
       SUPPORTED_TASK_TYPES: face_swap,i2i_pro,i2i_draw,face_video,video_edit,image_to_video,t2i-pornmaster-turbo
       COMFY_API_URL: http://192.168.1.226:8188
       COMFY_WS_URL: ws://192.168.1.226:8188/ws
@@ -76,6 +83,13 @@ services:
     environment:
       <<: *worker-cloud-prod-env
       AGENT_ID: cloud_prod_worker_02
+      POOL_MANAGED: "true"
+      POOL_PROVIDER: lan_ssh
+      POOL_NODE_ID: gpu-177
+      POOL_GPU_INDEX: "0"
+      POOL_RUNTIME_PROFILE: video_basic
+      POOL_IMAGE_REF: 192.168.1.115:5000/allbot/comfy-cu130-video-basic:baseline
+      POOL_MODEL_BUNDLE_VERSIONS: '{"video_basic_baseline":"2026-06-10"}'
       SUPPORTED_TASK_TYPES: video_insert,video_edit,image_to_video
       COMFY_API_URL: http://192.168.1.177:8188
       COMFY_WS_URL: ws://192.168.1.177:8188/ws
@@ -88,6 +102,13 @@ services:
     environment:
       <<: *worker-cloud-prod-env
       AGENT_ID: cloud_prod_worker_03
+      POOL_MANAGED: "true"
+      POOL_PROVIDER: lan_ssh
+      POOL_NODE_ID: gpu-177
+      POOL_GPU_INDEX: "1"
+      POOL_RUNTIME_PROFILE: ltx_video
+      POOL_IMAGE_REF: 192.168.1.115:5000/allbot/comfy-cu130-ltx:baseline
+      POOL_MODEL_BUNDLE_VERSIONS: '{"ltx_video_baseline":"2026-06-10"}'
       SUPPORTED_TASK_TYPES: ltx_video,image_to_video
       COMFY_API_URL: http://192.168.1.177:8189
       COMFY_WS_URL: ws://192.168.1.177:8189/ws
@@ -100,6 +121,13 @@ services:
     environment:
       <<: *worker-cloud-prod-env
       AGENT_ID: cloud_prod_worker_04
+      POOL_MANAGED: "true"
+      POOL_PROVIDER: lan_ssh
+      POOL_NODE_ID: gpu-252
+      POOL_GPU_INDEX: "0"
+      POOL_RUNTIME_PROFILE: img2img_lora
+      POOL_IMAGE_REF: 192.168.1.115:5000/allbot/comfy-cu128-img2img:baseline
+      POOL_MODEL_BUNDLE_VERSIONS: '{"img2img_lora_baseline":"2026-06-10"}'
       SUPPORTED_TASK_TYPES: img2img,img2img_lora
       COMFY_API_URL: http://192.168.1.252:8188
       COMFY_WS_URL: ws://192.168.1.252:8188/ws
@@ -112,6 +140,13 @@ services:
     environment:
       <<: *worker-cloud-prod-env
       AGENT_ID: cloud_prod_worker_05
+      POOL_MANAGED: "true"
+      POOL_PROVIDER: lan_ssh
+      POOL_NODE_ID: gpu-252
+      POOL_GPU_INDEX: "1"
+      POOL_RUNTIME_PROFILE: wan22_video_v2
+      POOL_IMAGE_REF: 192.168.1.115:5000/allbot/comfy-cu128-wan22:baseline
+      POOL_MODEL_BUNDLE_VERSIONS: '{"wan22_video_v2_baseline":"2026-06-10","video_basic_baseline":"2026-06-10"}'
       SUPPORTED_TASK_TYPES: wan22_video_v2,video_edit,image_to_video
       COMFY_API_URL: http://192.168.1.252:8189
       COMFY_WS_URL: ws://192.168.1.252:8189/ws
@@ -124,6 +159,13 @@ services:
     environment:
       <<: *worker-cloud-prod-env
       AGENT_ID: cloud_prod_worker_06
+      POOL_MANAGED: "true"
+      POOL_PROVIDER: lan_ssh
+      POOL_NODE_ID: gpu-002
+      POOL_GPU_INDEX: "0"
+      POOL_RUNTIME_PROFILE: img2img_lora
+      POOL_IMAGE_REF: 192.168.1.115:5000/allbot/comfy-cu128-img2img:baseline
+      POOL_MODEL_BUNDLE_VERSIONS: '{"img2img_lora_baseline":"2026-06-10"}'
       SUPPORTED_TASK_TYPES: img2img,img2img_lora
       COMFY_API_URL: http://192.168.1.2:8188
       COMFY_WS_URL: ws://192.168.1.2:8188/ws
@@ -136,6 +178,13 @@ services:
     environment:
       <<: *worker-cloud-prod-env
       AGENT_ID: cloud_prod_worker_07
+      POOL_MANAGED: "true"
+      POOL_PROVIDER: lan_ssh
+      POOL_NODE_ID: gpu-002
+      POOL_GPU_INDEX: "1"
+      POOL_RUNTIME_PROFILE: video_basic
+      POOL_IMAGE_REF: 192.168.1.115:5000/allbot/comfy-cu128-video-basic:baseline
+      POOL_MODEL_BUNDLE_VERSIONS: '{"video_basic_baseline":"2026-06-10"}'
       SUPPORTED_TASK_TYPES: video_insert,video_edit,image_to_video
       COMFY_API_URL: http://192.168.1.2:8189
       COMFY_WS_URL: ws://192.168.1.2:8189/ws

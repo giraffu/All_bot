@@ -36,6 +36,7 @@ class QueueManager:
         self.running_key = "comfy:queue:running"
         self.task_prefix = "comfy:task:"
         self.agent_heartbeat_prefix = "comfy:agent:heartbeat:"
+        self.agent_control_prefix = "comfy:agent:control:"
         self.ttl = 86400  # 24 hours
 
     @staticmethod
@@ -85,6 +86,9 @@ class QueueManager:
 
     def _agent_heartbeat_key(self, agent_id: str) -> str:
         return f"{self.agent_heartbeat_prefix}{agent_id}"
+
+    def _agent_control_key(self, agent_id: str) -> str:
+        return f"{self.agent_control_prefix}{agent_id}"
 
     async def _publish_task_event(self, task_id: str, payload: Dict[str, Any]) -> None:
         await self.redis.publish(self._task_event_channel(task_id), json.dumps(payload))
@@ -502,6 +506,7 @@ class QueueManager:
         last_error_at: float | str | None = None,
         consecutive_failures: int | str | None = None,
         quarantined_until: float | str | None = None,
+        metadata: dict[str, Any] | None = None,
     ):
         await update_agent_heartbeat_flow(
             agent_id=agent_id,
@@ -512,10 +517,53 @@ class QueueManager:
             last_error_at=last_error_at,
             consecutive_failures=consecutive_failures,
             quarantined_until=quarantined_until,
+            metadata=metadata,
             agent_heartbeat_key_func=self._agent_heartbeat_key,
             hset_func=self.redis.hset,
             expire_func=self.redis.expire,
         )
+
+    async def get_agent_control_state(self, agent_id: str) -> dict[str, Any]:
+        data = self._decode_redis_dict(
+            await self.redis.hgetall(self._agent_control_key(agent_id))
+        )
+        state = str(data.get("state") or "enabled").strip().lower()
+        if state not in {"enabled", "draining", "disabled"}:
+            state = "enabled"
+        data["state"] = state
+        return data
+
+    async def set_agent_control_state(
+        self,
+        agent_id: str,
+        state: str,
+        *,
+        reason: str = "",
+        ttl_seconds: int | None = None,
+    ) -> dict[str, Any]:
+        normalized_state = state.strip().lower()
+        if normalized_state not in {"enabled", "draining", "disabled"}:
+            raise ValueError("agent control state must be enabled, draining, or disabled")
+        key = self._agent_control_key(agent_id)
+        if normalized_state == "enabled":
+            await self.redis.hdel(key, "state", "reason", "updated_at")
+            return {"agent_id": agent_id, "state": "enabled", "reason": ""}
+        payload = {
+            "state": normalized_state,
+            "reason": reason,
+            "updated_at": time.time(),
+        }
+        await self.redis.hset(key, mapping=payload)
+        if ttl_seconds:
+            await self.redis.expire(key, ttl_seconds)
+        return {"agent_id": agent_id, **payload}
+
+    async def is_agent_pop_enabled(self, agent_id: str) -> tuple[bool, str]:
+        control = await self.get_agent_control_state(agent_id)
+        state = control.get("state")
+        if state in {"draining", "disabled"}:
+            return False, str(control.get("reason") or state)
+        return True, ""
 
     async def bind_agent_task(self, task_id: str, agent_id: str):
         await self.record_task_worker(task_id, agent_id)

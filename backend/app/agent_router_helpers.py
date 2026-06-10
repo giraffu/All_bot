@@ -4,7 +4,7 @@ from fastapi import HTTPException, status
 def parse_allowed_types(types: str | None) -> list[str] | None:
     if not types:
         return None
-    return [task_type.strip() for task_type in types.split(",")]
+    return [task_type.strip() for task_type in types.split(",") if task_type.strip()]
 
 
 async def bind_agent_task(
@@ -29,8 +29,17 @@ async def pop_task_payload(
     *,
     types: str | None,
     queue_manager,
+    agent_id: str | None = None,
     cancel_lock: bool = False,
 ) -> dict:
+    if agent_id and hasattr(queue_manager, "is_agent_pop_enabled"):
+        enabled, reason = await queue_manager.is_agent_pop_enabled(agent_id)
+        if not enabled:
+            return {
+                "task": None,
+                "message": f"Agent {agent_id} is not accepting new tasks: {reason}",
+            }
+
     task_data = await queue_manager.dequeue_task(
         allowed_types=parse_allowed_types(types),
         cancel_lock=cancel_lock,
@@ -164,6 +173,7 @@ async def heartbeat_payload(
     last_error_at=None,
     consecutive_failures=None,
     quarantined_until=None,
+    metadata: dict | None = None,
 ) -> dict:
     await queue_manager.update_agent_heartbeat(
         agent_id,
@@ -174,8 +184,30 @@ async def heartbeat_payload(
         last_error_at=last_error_at,
         consecutive_failures=consecutive_failures,
         quarantined_until=quarantined_until,
+        metadata=metadata,
     )
     return {"status": "ok"}
+
+
+async def set_agent_control_payload(
+    *,
+    agent_id: str,
+    state: str,
+    reason: str,
+    ttl_seconds: int | None,
+    queue_manager,
+) -> dict:
+    return await queue_manager.set_agent_control_state(
+        agent_id,
+        state,
+        reason=reason,
+        ttl_seconds=ttl_seconds,
+    )
+
+
+async def get_agent_control_payload(*, agent_id: str, queue_manager) -> dict:
+    control = await queue_manager.get_agent_control_state(agent_id)
+    return {"agent_id": agent_id, **control}
 
 
 def verify_agent_token(*, authorization: str | None, agent_token: str | None, logger) -> bool:

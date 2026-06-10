@@ -1,0 +1,65 @@
+bundles:
+  face_i2i_t2i_baseline:
+    version: 2026-06-10
+    profiles:
+      - face_i2i_t2i
+    source:
+      node_id: gpu-226
+      comfy_id: comfy-8188
+      model_dir: /home/ubantu/comfyui/models
+      discovered_size_gb: 325
+      import_status: planned
+      notes: Known-good face/i2i/t2i production model set from 192.168.1.226.
+    files: []
+
+  video_basic_baseline:
+    version: 2026-06-10
+    profiles:
+      - video_basic
+    source:
+      node_id: gpu-177
+      comfy_id: comfy0
+      model_dir: /data/comfy/models
+      discovered_size_gb: 444
+      import_status: planned
+      notes: Known-good video_insert/video_edit/image_to_video baseline, also present on gpu-002.
+    files: []
+
+  ltx_video_baseline:
+    version: 2026-06-10
+    profiles:
+      - ltx_video
+    source:
+      node_id: gpu-177
+      comfy_id: comfy1
+      model_dir: /data/comfy/models
+      discovered_size_gb: 444
+      import_status: planned
+      notes: Known-good LTX 2.3 environment and LoRA set.
+    files: []
+
+  img2img_lora_baseline:
+    version: 2026-06-10
+    profiles:
+      - img2img_lora
+    source:
+      node_id: gpu-252
+      comfy_id: comfy0
+      model_dir: /home/user/APP/data/models
+      discovered_size_gb: 121
+      import_status: planned
+      notes: Known-good img2img/img2img_lora set. gpu-002 has a smaller compatible mirror.
+    files: []
+
+  wan22_video_v2_baseline:
+    version: 2026-06-10
+    profiles:
+      - wan22_video_v2
+    source:
+      node_id: gpu-252
+      comfy_id: comfy1
+      model_dir: /home/user/APP/data/models
+      discovered_size_gb: 121
+      import_status: planned
+      notes: Wan22 v2 Dasiwa high/low model files are currently tied to gpu-252.
+    files: []

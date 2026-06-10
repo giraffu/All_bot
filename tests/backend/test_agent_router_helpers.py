@@ -7,10 +7,12 @@ from fastapi import HTTPException
 from app.agent_router_helpers import (
     check_task_payload,
     complete_task_payload,
+    get_agent_control_payload,
     heartbeat_payload,
     parse_allowed_types,
     peek_task_payload,
     pop_task_payload,
+    set_agent_control_payload,
     task_heartbeat_payload,
     update_status_payload,
     verify_agent_token,
@@ -36,6 +38,16 @@ def test_heartbeat_request_accepts_legacy_empty_numeric_health_fields():
     assert request.quarantined_until == ""
 
 
+def test_heartbeat_request_accepts_pool_bundle_versions_json_string():
+    request = HeartbeatRequest(
+        agent_id="agent-1",
+        types="wan22_video_v2",
+        model_bundle_versions='{"wan22_video_v2_baseline":"2026-06-10"}',
+    )
+
+    assert request.model_bundle_versions == '{"wan22_video_v2_baseline":"2026-06-10"}'
+
+
 @pytest.mark.asyncio
 async def test_pop_task_payload_returns_missing_message_when_task_details_absent():
     queue_manager = SimpleNamespace(
@@ -54,6 +66,26 @@ async def test_pop_task_payload_returns_missing_message_when_task_details_absent
         allowed_types=["img2img"],
         cancel_lock=True,
     )
+
+
+@pytest.mark.asyncio
+async def test_pop_task_payload_respects_agent_draining_state():
+    queue_manager = SimpleNamespace(
+        is_agent_pop_enabled=AsyncMock(return_value=(False, "maintenance")),
+        dequeue_task=AsyncMock(),
+    )
+
+    payload = await pop_task_payload(
+        types="img2img",
+        agent_id="agent-1",
+        queue_manager=queue_manager,
+    )
+
+    assert payload == {
+        "task": None,
+        "message": "Agent agent-1 is not accepting new tasks: maintenance",
+    }
+    queue_manager.dequeue_task.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -205,7 +237,53 @@ async def test_heartbeat_payload_forwards_legacy_empty_health_values():
         last_error_at="",
         consecutive_failures=0,
         quarantined_until="",
+        metadata=None,
     )
+
+
+@pytest.mark.asyncio
+async def test_heartbeat_payload_forwards_gpu_pool_metadata():
+    queue_manager = SimpleNamespace(update_agent_heartbeat=AsyncMock())
+
+    payload = await heartbeat_payload(
+        agent_id="agent-1",
+        types="wan22_video_v2",
+        status="idle",
+        metadata={"node_id": "gpu-252", "gpu_index": "1", "pool_managed": "true"},
+        queue_manager=queue_manager,
+    )
+
+    assert payload == {"status": "ok"}
+    assert queue_manager.update_agent_heartbeat.await_args.kwargs["metadata"] == {
+        "node_id": "gpu-252",
+        "gpu_index": "1",
+        "pool_managed": "true",
+    }
+
+
+@pytest.mark.asyncio
+async def test_agent_control_payloads_delegate_to_queue_manager():
+    queue_manager = SimpleNamespace(
+        set_agent_control_state=AsyncMock(
+            return_value={"agent_id": "agent-1", "state": "draining"}
+        ),
+        get_agent_control_state=AsyncMock(return_value={"state": "draining"}),
+    )
+
+    set_payload = await set_agent_control_payload(
+        agent_id="agent-1",
+        state="draining",
+        reason="canary",
+        ttl_seconds=60,
+        queue_manager=queue_manager,
+    )
+    get_payload = await get_agent_control_payload(
+        agent_id="agent-1",
+        queue_manager=queue_manager,
+    )
+
+    assert set_payload == {"agent_id": "agent-1", "state": "draining"}
+    assert get_payload == {"agent_id": "agent-1", "state": "draining"}
 
 
 @pytest.mark.asyncio

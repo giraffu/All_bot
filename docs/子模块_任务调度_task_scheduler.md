@@ -71,6 +71,7 @@ sequenceDiagram
 - Central API / QueueManager 仍是唯一队列事实源。worker 真实接单只能通过 `/api/agent/task/pop`，该接口会把任务从 pending 转 running 并写 task heartbeat。
 - V2 worker 可用 `/api/agent/task/pop?cancel_lock=true` 真实接单并立即写 `cancel_locked=1`、`execution_phase=preparing`；pending 仍可取消，locked running 任务应返回不可取消，不再写 `cancel_requested`。legacy 未锁 running 任务保留旧 request-cancel 兼容语义。
 - `/api/agent/task/peek?types=...&limit=1` 只用于 worker 输入预取，只读扫描 pending 候选任务；不得移除 pending、不得写 running、不得更新任务状态或 heartbeat。取消、僵尸检测和终态收口不能依赖 peek。
+- 新版 worker 在真实 `/api/agent/task/pop` 时会携带 `agent_id`，Central 可通过 agent control 键将单个 worker 标记为 `draining/disabled`，让它不再接新单但不影响其它 worker。该能力用于 GPU Pool Controller 切换任务类型、同步模型或单点 canary 前的安全 drain。
 - 云正式本地 worker 可通过 `workers/local_relay` 访问云 Central，并用 relay 内的上传 sidecar 把本地 spool 结果上传 R2；但任务成功语义不变，必须 R2/S3 put 成功后才 `/complete`。
 - 开启 `PIPELINE_ENABLED` 时，每个 worker 默认最多持有 2 个 Central running 任务：一个 ComfyUI active/queued，一个 finalizing。上一单 GPU 完成后进入后台 finalizer 上传并 complete，下一单可提前完成输入准备和 `queue_prompt`。Worker 必须按 `prompt_id` 路由 WS 事件，并对所有本地 running/finalizing task 发送 task heartbeat，防止 zombie 误杀。
 
