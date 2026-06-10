@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 from sqlalchemy import func
 
@@ -37,6 +37,14 @@ def parse_stats_target_date(date_str: str | None) -> date:
     if date_str:
         return datetime.strptime(date_str, "%Y-%m-%d").date()
     return date.today()
+
+
+def day_bounds(target_date: date) -> tuple[date, date]:
+    return target_date, target_date + timedelta(days=1)
+
+
+def trailing_start_date(days: int) -> date:
+    return date.today() - timedelta(days=days - 1)
 
 
 def build_finance_hourly_distribution(rows) -> dict[str, dict[str, int]]:

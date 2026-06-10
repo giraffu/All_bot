@@ -128,7 +128,11 @@ server {
         proxy_cache dashboard_stats_cache;
         proxy_cache_methods GET HEAD;
         proxy_cache_key "$scheme|$request_method|$host|$request_uri|$http_authorization";
-        proxy_cache_valid 200 15s;
+        proxy_cache_lock on;
+        proxy_cache_lock_timeout 30s;
+        proxy_cache_lock_age 30s;
+        proxy_cache_use_stale updating error timeout http_500 http_502 http_503 http_504;
+        proxy_cache_valid 200 60s;
         proxy_ignore_headers Cache-Control Expires;
         proxy_cache_bypass $dashboard_no_cache_method $arg__t;
         proxy_no_cache $dashboard_no_cache_method;
@@ -137,7 +141,7 @@ server {
         add_header X-Frame-Options "DENY" always;
         add_header Content-Security-Policy $dashboard_csp always;
         add_header X-Dashboard-Cache $upstream_cache_status;
-        add_header Cache-Control "private, max-age=15";
+        add_header Cache-Control "private, max-age=60";
     }
 
     location ~ ^/api/system/(status|workers|concurrency_stats)$ {

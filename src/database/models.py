@@ -130,7 +130,13 @@ class UserFollow(Base):
 
 class History(Base):
     __tablename__ = "history"
-    __table_args__ = (Index("idx_history_user_favorite", "user_id", "is_favorited"),)
+    __table_args__ = (
+        Index("idx_history_user_favorite", "user_id", "is_favorited"),
+        Index("ix_history_created_at", "created_at"),
+        Index("ix_history_created_at_type", "created_at", "type"),
+        Index("ix_history_created_at_user_id", "created_at", "user_id"),
+        Index("ix_history_source_created_at_user_id", "source", "created_at", "user_id"),
+    )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     user_id = Column(BigInteger, ForeignKey("users.id"))
@@ -174,6 +180,7 @@ class TemplateContribution(Base):
 
 class CheckinHistory(Base):
     __tablename__ = "checkin_history"
+    __table_args__ = (Index("ix_checkin_history_checkin_date", "checkin_date"),)
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     user_id = Column(BigInteger, ForeignKey("users.id"), index=True)

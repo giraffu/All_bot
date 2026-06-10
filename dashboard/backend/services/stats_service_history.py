@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import timedelta
 from logging import Logger
 
 from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from dashboard.backend.services.stats_service_utils import date_key
+from dashboard.backend.services.stats_service_utils import date_key, trailing_start_date
 from src.database.models import CheckinHistory, History, MembershipPlan, Order, User
 from src.exchange_rates import get_exchange_rates
 
@@ -21,15 +21,15 @@ async def load_dashboard_stats_history_impl(
 ) -> list[dict]:
     _ = logger
     video_cost_case = case((History.type.in_(video_types), 6), else_=2)
-    start_date = date.today() - timedelta(days=days - 1)
+    start_date = trailing_start_date(days)
 
     user_history = await _load_date_count_map(
         db,
         select(
             func.date(User.created_at).label("date"),
-            func.count(User.id).label("count"),
+            func.count().label("count"),
         )
-        .where(func.date(User.created_at) >= start_date, User.is_channel_member.is_(True))
+        .where(User.created_at >= start_date, User.is_channel_member.is_(True))
         .group_by(func.date(User.created_at))
         .order_by(func.date(User.created_at)),
     )
@@ -37,9 +37,9 @@ async def load_dashboard_stats_history_impl(
         db,
         select(
             func.date(User.created_at).label("date"),
-            func.count(User.id).label("count"),
+            func.count().label("count"),
         )
-        .where(func.date(User.created_at) >= start_date)
+        .where(User.created_at >= start_date)
         .group_by(func.date(User.created_at))
         .order_by(func.date(User.created_at)),
     )
@@ -47,9 +47,9 @@ async def load_dashboard_stats_history_impl(
         db,
         select(
             func.date(User.created_at).label("date"),
-            func.count(User.id).label("count"),
+            func.count().label("count"),
         )
-        .where(func.date(User.created_at) >= start_date, User.language_code.like("en%"))
+        .where(User.created_at >= start_date, User.language_code.like("en%"))
         .group_by(func.date(User.created_at))
         .order_by(func.date(User.created_at)),
     )
@@ -57,9 +57,9 @@ async def load_dashboard_stats_history_impl(
         db,
         select(
             func.date(User.created_at).label("date"),
-            func.count(User.id).label("count"),
+            func.count().label("count"),
         )
-        .where(func.date(User.created_at) >= start_date, User.language_code.like("zh%"))
+        .where(User.created_at >= start_date, User.language_code.like("zh%"))
         .group_by(func.date(User.created_at))
         .order_by(func.date(User.created_at)),
     )
@@ -67,10 +67,10 @@ async def load_dashboard_stats_history_impl(
         db,
         select(
             func.date(User.created_at).label("date"),
-            func.count(User.id).label("count"),
+            func.count().label("count"),
         )
         .where(
-            func.date(User.created_at) >= start_date,
+            User.created_at >= start_date,
             User.hashed_password.is_not(None),
         )
         .group_by(func.date(User.created_at))
@@ -88,7 +88,7 @@ async def load_dashboard_stats_history_impl(
         func.coalesce(
             func.sum(case((User.hashed_password.is_not(None), 1), else_=0)), 0
         ).label("cumulative_pwd_users"),
-    ).where(func.date(User.created_at) < start_date)
+    ).where(User.created_at < start_date)
     users_before_row = (await db.execute(users_before_stmt)).first()
     current_cumulative = users_before_row.cumulative_users or 0
     current_cumulative_en = int(users_before_row.cumulative_en_users)
@@ -132,9 +132,9 @@ async def load_dashboard_stats_history_impl(
         db,
         select(
             func.date(History.created_at).label("date"),
-            func.count(History.id).label("count"),
+            func.count().label("count"),
         )
-        .where(func.date(History.created_at) >= start_date)
+        .where(History.created_at >= start_date)
         .group_by(func.date(History.created_at))
         .order_by(func.date(History.created_at)),
     )
@@ -144,7 +144,7 @@ async def load_dashboard_stats_history_impl(
             func.date(History.created_at).label("date"),
             func.count(func.distinct(History.user_id)).label("count"),
         )
-        .where(func.date(History.created_at) >= start_date)
+        .where(History.created_at >= start_date)
         .group_by(func.date(History.created_at))
         .order_by(func.date(History.created_at)),
     )
@@ -154,7 +154,7 @@ async def load_dashboard_stats_history_impl(
             func.date(History.created_at).label("date"),
             func.count(func.distinct(History.user_id)).label("count"),
         )
-        .where(func.date(History.created_at) >= start_date, History.source == "web")
+        .where(History.created_at >= start_date, History.source == "web")
         .group_by(func.date(History.created_at))
         .order_by(func.date(History.created_at)),
     )
@@ -162,9 +162,9 @@ async def load_dashboard_stats_history_impl(
         db,
         select(
             func.date(CheckinHistory.checkin_date).label("date"),
-            func.count(CheckinHistory.id).label("count"),
+            func.count().label("count"),
         )
-        .where(func.date(CheckinHistory.checkin_date) >= start_date)
+        .where(CheckinHistory.checkin_date >= start_date)
         .group_by(func.date(CheckinHistory.checkin_date))
         .order_by(func.date(CheckinHistory.checkin_date)),
     )
@@ -174,12 +174,13 @@ async def load_dashboard_stats_history_impl(
             func.date(History.created_at).label("date"),
             func.sum(video_cost_case).label("count"),
         )
-        .where(func.date(History.created_at) >= start_date)
+        .where(History.created_at >= start_date)
         .group_by(func.date(History.created_at))
         .order_by(func.date(History.created_at)),
     )
 
-    order_paid_date = func.date(func.coalesce(Order.paid_at, Order.created_at))
+    order_paid_expr = func.coalesce(Order.paid_at, Order.created_at)
+    order_paid_date = func.date(order_paid_expr)
     orders_before_stmt = (
         select(
             func.coalesce(
@@ -197,7 +198,7 @@ async def load_dashboard_stats_history_impl(
             func.coalesce(func.sum(MembershipPlan.reward_credits), 0).label("credits_sum"),
         )
         .join(MembershipPlan, Order.plan_id == MembershipPlan.id)
-        .where(Order.status == "SUCCESS", order_paid_date < start_date)
+        .where(Order.status == "SUCCESS", order_paid_expr < start_date)
     )
     before_row = (await db.execute(orders_before_stmt)).first()
     current_ton_cumulative = float(before_row.ton_sum) if before_row else 0.0
@@ -235,7 +236,7 @@ async def load_dashboard_stats_history_impl(
             ).label("true_count"),
         )
         .join(MembershipPlan, Order.plan_id == MembershipPlan.id)
-        .where(Order.status == "SUCCESS", order_paid_date >= start_date)
+        .where(Order.status == "SUCCESS", order_paid_expr >= start_date)
         .group_by(order_paid_date)
     )
     order_result = await db.execute(order_stmt)

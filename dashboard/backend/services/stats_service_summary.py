@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from dashboard.backend.services.stats_service_utils import (
     build_hourly_distribution,
     build_zeroed_distribution,
+    day_bounds,
     get_days_diff_expr,
     get_hour_expr,
 )
@@ -83,8 +84,10 @@ async def _load_user_group_distribution(
 
 
 async def _load_global_activity_totals(db: AsyncSession, video_cost_case) -> dict:
-    total_generations = (await db.execute(select(func.count(History.id)))).scalar()
-    total_referrals = (await db.execute(select(func.count(Referral.id)))).scalar() or 0
+    total_generations = (await db.execute(select(func.count()).select_from(History))).scalar()
+    total_referrals = (
+        await db.execute(select(func.count()).select_from(Referral))
+    ).scalar() or 0
     total_consumed_credits = (
         await db.execute(select(func.sum(video_cost_case)))
     ).scalar() or 0
@@ -143,15 +146,16 @@ async def _load_invitation_revenue_totals(db: AsyncSession) -> dict:
 
 
 async def _load_today_user_summary(db: AsyncSession, today: date) -> dict:
+    start_date, end_date = day_bounds(today)
     today_user_stmt = select(
-        func.count(User.id).label("today_users_all"),
+        func.count().label("today_users_all"),
         func.coalesce(
             func.sum(case((User.is_channel_member.is_(True), 1), else_=0)), 0
         ).label("today_users"),
         func.coalesce(
             func.sum(case((User.hashed_password.is_not(None), 1), else_=0)), 0
         ).label("today_password_users"),
-    ).where(func.date(User.created_at) == today)
+    ).where(User.created_at >= start_date, User.created_at < end_date)
     today_user_row = (await db.execute(today_user_stmt)).first()
     today_users_all = today_user_row.today_users_all or 0
     today_users = int(today_user_row.today_users)
@@ -174,14 +178,15 @@ async def _load_history_today_summary(
     today: date,
     video_cost_case,
 ) -> dict:
+    start_date, end_date = day_bounds(today)
     history_stats_stmt = select(
-        func.count(History.id).label("today_generations"),
+        func.count().label("today_generations"),
         func.count(func.distinct(History.user_id)).label("today_active_users"),
         func.count(
             func.distinct(case((History.source == "web", History.user_id), else_=None))
         ).label("today_web_users"),
         func.coalesce(func.sum(video_cost_case), 0).label("today_consumed_credits"),
-    ).where(func.date(History.created_at) == today)
+    ).where(History.created_at >= start_date, History.created_at < end_date)
     history_stats_row = (await db.execute(history_stats_stmt)).first()
 
     total_web_users = (
@@ -193,23 +198,23 @@ async def _load_history_today_summary(
     today_type_distribution = {
         row.type or "unknown": row.count
         for row in await db.execute(
-            select(History.type, func.count(History.id))
-            .where(func.date(History.created_at) == today)
+            select(History.type, func.count().label("count"))
+            .where(History.created_at >= start_date, History.created_at < end_date)
             .group_by(History.type)
         )
     }
     total_type_distribution = {
         row.type or "unknown": row.count
         for row in await db.execute(
-            select(History.type, func.count(History.id)).group_by(History.type)
+            select(History.type, func.count().label("count")).group_by(History.type)
         )
     }
 
     dialect = db.bind.dialect.name
     hour_expr = get_hour_expr(History.created_at, dialect)
     hourly_result = await db.execute(
-        select(hour_expr.label("hour"), func.count(History.id).label("count"))
-        .where(func.date(History.created_at) == today)
+        select(hour_expr.label("hour"), func.count().label("count"))
+        .where(History.created_at >= start_date, History.created_at < end_date)
         .group_by(hour_expr)
         .order_by(hour_expr)
     )

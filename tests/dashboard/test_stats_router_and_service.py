@@ -3,15 +3,50 @@ from unittest.mock import AsyncMock
 
 import pytest
 from fastapi import HTTPException
+from sqlalchemy.dialects import postgresql
 
 from dashboard.backend.routers import stats as stats_router
 from dashboard.backend.services import stats_service
+from dashboard.backend.services import stats_service_activity
+from dashboard.backend.services.stats_service_utils import day_bounds
+
+
+class _FakeStatsDB:
+    def __init__(self):
+        self.bind = type(
+            "Bind",
+            (),
+            {"dialect": type("Dialect", (), {"name": "postgresql"})()},
+        )()
+        self.statements = []
+
+    async def execute(self, statement):
+        self.statements.append(statement)
+        return []
+
+
+def _compile_postgresql(statement) -> str:
+    return str(
+        statement.compile(
+            dialect=postgresql.dialect(),
+            compile_kwargs={"literal_binds": True},
+        )
+    )
 
 
 def test_parse_stats_target_date_defaults_to_today():
     result = stats_service.parse_stats_target_date(None)
 
     assert result == stats_service.date.today()
+
+
+def test_stats_day_bounds_returns_half_open_range():
+    target_date = stats_service.date(2026, 6, 10)
+
+    start_date, end_date = day_bounds(target_date)
+
+    assert start_date == target_date
+    assert end_date == stats_service.date(2026, 6, 11)
 
 
 def test_build_hourly_distribution_maps_none_hour_to_zero_slot():
@@ -29,12 +64,14 @@ def test_build_hourly_distribution_maps_none_hour_to_zero_slot():
 
 @pytest.mark.asyncio
 async def test_get_stats_routes_through_loader(monkeypatch):
+    stats_router._stats_cache.clear()
+    stats_router._stats_cache_locks.clear()
     expected = {"total_users": 1}
     loader = AsyncMock(return_value=expected)
     monkeypatch.setattr(stats_router, "load_dashboard_stats", loader)
     db = object()
 
-    result = await stats_router.get_stats.__wrapped__(db=db)
+    result = await stats_router.get_stats(db=db)
 
     assert result == expected
     loader.assert_awaited_once_with(db=db, logger=stats_router.logger)
@@ -71,13 +108,30 @@ async def test_load_hourly_generation_stats_by_date_str_parses_before_delegate(m
 
 
 @pytest.mark.asyncio
+async def test_generation_stats_filter_created_at_without_date_function():
+    db = _FakeStatsDB()
+
+    await stats_service_activity.load_hourly_generation_stats_impl(
+        db=db,
+        target_date=stats_service.date(2026, 6, 10),
+    )
+
+    sql = _compile_postgresql(db.statements[0]).lower()
+    assert "date(history.created_at)" not in sql
+    assert "history.created_at >=" in sql
+    assert "history.created_at <" in sql
+
+
+@pytest.mark.asyncio
 async def test_get_stats_history_wraps_loader_exception(monkeypatch):
+    stats_router._stats_cache.clear()
+    stats_router._stats_cache_locks.clear()
     loader = AsyncMock(side_effect=RuntimeError("boom"))
     monkeypatch.setattr(stats_router, "load_dashboard_stats_history", loader)
     db = object()
 
     with pytest.raises(HTTPException) as exc_info:
-        await stats_router.get_stats_history.__wrapped__(days=7, db=db)
+        await stats_router.get_stats_history(days=7, db=db)
 
     assert exc_info.value.status_code == 500
     assert exc_info.value.detail == "boom"
