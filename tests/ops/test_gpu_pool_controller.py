@@ -9,7 +9,7 @@ from ops.gpu_pool_controller.model_importer import (
 )
 from ops.gpu_pool_controller.model_repo import ModelRegistry
 from ops.gpu_pool_controller.planner import GpuPoolPlanner
-from ops.gpu_pool_controller.runtime import RuntimePlanner
+from ops.gpu_pool_controller.runtime import RuntimePlanner, RuntimeRenderOverrides
 from ops.gpu_pool_controller.types import ComfyInstance, TaskProfile
 
 
@@ -80,6 +80,71 @@ def test_runtime_render_outputs_standard_compose_for_gpu_002():
     assert "rendered_for: dry_run_review" in rendered
 
 
+def test_runtime_render_outputs_canary_compose_for_gpu_002():
+    config = load_controller_config()
+    rendered = RuntimePlanner(config).render_compose(
+        "lan-002-8188-worker-06",
+        target_profile_id="video_basic",
+        overrides=RuntimeRenderOverrides(host_port=8190),
+    )
+
+    assert "name: allbot-comfy-gpu-002-comfy0-canary-8190" in rendered
+    assert "container_name: allbot-comfy-gpu0-canary" in rendered
+    assert "- 8190:8188" in rendered
+    assert "allbot.gpu_pool.render_mode: canary" in rendered
+    assert "allbot.gpu_pool.production_port_unchanged: 'true'" in rendered
+    assert "render_mode: canary" in rendered
+    assert "production_port_unchanged: true" in rendered
+    assert "comfy_api_url: http://192.168.1.2:8190" in rendered
+    assert "comfy_ws_url: ws://192.168.1.2:8190/ws" in rendered
+
+
+def test_runtime_plan_canary_overrides_worker_env_for_gpu_002():
+    config = load_controller_config()
+    payload = RuntimePlanner(config).build_plan(
+        "lan-002-8188-worker-06",
+        target_profile_id="video_basic",
+        overrides=RuntimeRenderOverrides(host_port=8190),
+    )
+
+    assert payload.worker_env["COMFY_API_URL"] == "http://192.168.1.2:8190"
+    assert payload.worker_env["COMFY_WS_URL"] == "ws://192.168.1.2:8190/ws"
+    assert payload.runtime["render_mode"] == "canary"
+    assert payload.runtime["production_port_unchanged"] is True
+    assert payload.diff["container"]["target_name"] == "allbot-comfy-gpu0-canary"
+    assert payload.diff["container"]["host_port"] == 8190
+    assert any("canary render only" in warning for warning in payload.warnings)
+    assert any("--profile video_basic --host-port 8190" in command for command in payload.commands)
+    assert not any("docker up" in command or "restart" in command for command in payload.commands)
+
+
+def test_runtime_canary_explicit_overrides_take_precedence():
+    config = load_controller_config()
+    overrides = RuntimeRenderOverrides(
+        host_port=8190,
+        container_name="allbot-comfy-gpu0-review",
+        api_url="http://127.0.0.1:9190",
+        ws_url="ws://127.0.0.1:9190/ws",
+    )
+    planner = RuntimePlanner(config)
+    payload = planner.build_plan(
+        "lan-002-8188-worker-06",
+        target_profile_id="video_basic",
+        overrides=overrides,
+    )
+    rendered = planner.render_compose(
+        "lan-002-8188-worker-06",
+        target_profile_id="video_basic",
+        overrides=overrides,
+    )
+
+    assert payload.worker_env["COMFY_API_URL"] == "http://127.0.0.1:9190"
+    assert payload.worker_env["COMFY_WS_URL"] == "ws://127.0.0.1:9190/ws"
+    assert payload.diff["container"]["target_name"] == "allbot-comfy-gpu0-review"
+    assert "container_name: allbot-comfy-gpu0-review" in rendered
+    assert "comfy_api_url: http://127.0.0.1:9190" in rendered
+
+
 def test_runtime_render_rejects_host_service_runtime():
     config = load_controller_config()
 
@@ -89,6 +154,29 @@ def test_runtime_render_rejects_host_service_runtime():
         assert "host_service" in str(exc)
     else:  # pragma: no cover
         raise AssertionError("host_service runtime-render should fail")
+
+
+def test_runtime_plan_rejects_host_service_overrides():
+    config = load_controller_config()
+
+    try:
+        RuntimePlanner(config).build_plan(
+            "lan-226-8188-worker-01",
+            overrides=RuntimeRenderOverrides(host_port=8190),
+        )
+    except ValueError as exc:
+        assert "host_service" in str(exc)
+    else:  # pragma: no cover
+        raise AssertionError("host_service runtime-plan override should fail")
+
+
+def test_runtime_overrides_reject_invalid_host_port():
+    try:
+        RuntimeRenderOverrides(host_port=70000)
+    except ValueError as exc:
+        assert "--host-port" in str(exc)
+    else:  # pragma: no cover
+        raise AssertionError("invalid host port should fail")
 
 
 def test_runtime_rollback_plan_exposes_previous_state_without_execute():

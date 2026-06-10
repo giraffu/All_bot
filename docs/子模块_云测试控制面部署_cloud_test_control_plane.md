@@ -237,6 +237,19 @@ GPU worker 不在云服务器运行；本地 `workers/docker-compose-cloud-worke
 ### 8.1 Worker 6/7 GPU pool 控制测试
 `cloud-comfy-agent-test-6` 与 `cloud-comfy-agent-test-7` 用于 GPU pool 小范围验证时，可以临时覆盖任务类型、runtime profile 和 Comfy URL，不需要修改 `.env.cloud.test`：
 
+在改动测试 worker 前，先从 Controller 生成备用端口 canary plan / compose 供审阅；该步骤只渲染 dry-run 输出，不启动或重启任何 ComfyUI 容器：
+
+```bash
+python scripts/gpu_pool_controller.py runtime-plan \
+  --assignment lan-002-8188-worker-06 \
+  --profile video_basic \
+  --host-port 8190
+python scripts/gpu_pool_controller.py runtime-render \
+  --assignment lan-002-8188-worker-06 \
+  --profile video_basic \
+  --host-port 8190
+```
+
 ```bash
 set -a
 source .env.cloud.test

@@ -12,7 +12,7 @@ from .model_importer import ModelImportPlanner, plan_to_json
 from .model_repo import ModelRegistry
 from .planner import GpuPoolPlanner
 from .providers.lan_ssh import LanSshProvider
-from .runtime import RuntimePlanner, runtime_plan_to_jsonable
+from .runtime import RuntimePlanner, RuntimeRenderOverrides, runtime_plan_to_jsonable
 
 
 def _print_json(payload) -> None:
@@ -36,11 +36,15 @@ def _cmd_plan(args) -> int:
 def _cmd_runtime_plan(args) -> int:
     config = load_controller_config(args.config_root)
     planner = RuntimePlanner(config)
+    overrides = _runtime_overrides_from_args(args)
+    if not args.assignment and overrides.has_any:
+        raise ValueError("runtime-plan overrides require --assignment")
     if args.assignment:
         payload = runtime_plan_to_jsonable(
             planner.build_plan(
                 args.assignment,
                 target_profile_id=args.profile,
+                overrides=overrides,
             )
         )
     else:
@@ -58,10 +62,20 @@ def _cmd_runtime_render(args) -> int:
         RuntimePlanner(config).render_compose(
             args.assignment,
             target_profile_id=args.profile,
+            overrides=_runtime_overrides_from_args(args),
         ),
         end="",
     )
     return 0
+
+
+def _runtime_overrides_from_args(args) -> RuntimeRenderOverrides:
+    return RuntimeRenderOverrides(
+        host_port=getattr(args, "host_port", None),
+        container_name=getattr(args, "container_name", None),
+        api_url=getattr(args, "api_url", None),
+        ws_url=getattr(args, "ws_url", None),
+    )
 
 
 def _cmd_runtime_apply(args) -> int:
@@ -203,11 +217,19 @@ def build_parser() -> argparse.ArgumentParser:
     runtime_plan = subparsers.add_parser("runtime-plan")
     runtime_plan.add_argument("--assignment", default=None)
     runtime_plan.add_argument("--profile", default=None)
+    runtime_plan.add_argument("--host-port", type=int, default=None)
+    runtime_plan.add_argument("--container-name", default=None)
+    runtime_plan.add_argument("--api-url", default=None)
+    runtime_plan.add_argument("--ws-url", default=None)
     runtime_plan.set_defaults(func=_cmd_runtime_plan)
 
     runtime_render = subparsers.add_parser("runtime-render")
     runtime_render.add_argument("--assignment", required=True)
     runtime_render.add_argument("--profile", default=None)
+    runtime_render.add_argument("--host-port", type=int, default=None)
+    runtime_render.add_argument("--container-name", default=None)
+    runtime_render.add_argument("--api-url", default=None)
+    runtime_render.add_argument("--ws-url", default=None)
     runtime_render.set_defaults(func=_cmd_runtime_render)
 
     runtime_apply = subparsers.add_parser("runtime-apply")

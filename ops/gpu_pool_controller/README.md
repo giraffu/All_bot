@@ -16,6 +16,14 @@ python scripts/gpu_pool_controller.py image-plan \
 python scripts/gpu_pool_controller.py canary --assignment lan-252-8188-worker-04
 python scripts/gpu_pool_controller.py runtime-plan --assignment lan-002-8188-worker-06
 python scripts/gpu_pool_controller.py runtime-render --assignment lan-002-8188-worker-06
+python scripts/gpu_pool_controller.py runtime-plan \
+  --assignment lan-002-8188-worker-06 \
+  --profile video_basic \
+  --host-port 8190
+python scripts/gpu_pool_controller.py runtime-render \
+  --assignment lan-002-8188-worker-06 \
+  --profile video_basic \
+  --host-port 8190
 python scripts/gpu_pool_controller.py switch-profile \
   --assignment lan-002-8188-worker-06 \
   --profile video_basic
@@ -28,6 +36,10 @@ Runtime commands are dry-run first:
 
 - `runtime-plan` emits runtime/image/model/worker-env diffs.
 - `runtime-render` renders a standard ComfyUI Docker Compose file for review.
+- `runtime-plan` and `runtime-render` accept canary overrides such as
+  `--host-port 8190`, `--container-name`, `--api-url`, and `--ws-url`; a host
+  port different from the configured production port renders canary metadata
+  and leaves the production port unchanged.
 - `runtime-apply`, `switch-profile`, and `rollback-profile` accept `--execute`,
   but execution is intentionally disabled until Phase 1 canary validation and a
   maintenance window.

@@ -48,6 +48,14 @@ python scripts/gpu_pool_controller.py image-plan \
   --tag "$(git rev-parse --short HEAD)"
 python scripts/gpu_pool_controller.py runtime-plan --assignment lan-002-8188-worker-06
 python scripts/gpu_pool_controller.py runtime-render --assignment lan-002-8188-worker-06
+python scripts/gpu_pool_controller.py runtime-plan \
+  --assignment lan-002-8188-worker-06 \
+  --profile video_basic \
+  --host-port 8190
+python scripts/gpu_pool_controller.py runtime-render \
+  --assignment lan-002-8188-worker-06 \
+  --profile video_basic \
+  --host-port 8190
 ```
 
 Comfy canary 会检查 `/system_stats`、`/queue`、`/object_info` 和最低显存，默认不提交真实任务：
@@ -59,8 +67,10 @@ python scripts/gpu_pool_controller.py canary --assignment lan-252-8188-worker-04
 Runtime dry-run 命令：
 - `runtime-plan` 输出 runtime / image / model bundle / worker env diff；不连接远端、不修改 worker。
 - `runtime-render` 渲染标准 ComfyUI runtime compose；当前只支持 `docker_container`。
+- `runtime-plan` / `runtime-render` 支持备用端口 canary 覆盖：`--host-port 8190` 会渲染 `8190:8188`、默认派生 `allbot-comfy-gpu0-canary`，并在 plan 中把 `COMFY_API_URL` / `COMFY_WS_URL` 指向备用端口；也可显式传 `--container-name`、`--api-url`、`--ws-url` 覆盖。
 - `runtime-apply`、`switch-profile`、`rollback-profile` 已保留 CLI 接口；默认只输出 dry-run，传 `--execute` 会明确拒绝执行，直到 Phase 1 canary 和维护窗口完成。
 - `gpu-226` 属于 `host_service`，只能观测和手工 canary；Controller 不得为它生成 Docker pull/up/restart 操作。
+- 对 `host_service` 使用 `runtime-render` 或带备用端口覆盖的 `runtime-plan` 必须失败；这用于防止把 `gpu-226` 当 Docker runtime 处理。
 
 Runtime schema 已补充到 `nodes.yml` 的每个 Comfy 实例：
 - `comfy_runtime_kind`：`host_service` 或 `docker_container`

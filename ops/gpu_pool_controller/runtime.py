@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+from dataclasses import dataclass
 from typing import Any
 
 from .config_loader import ControllerConfig
@@ -10,6 +11,30 @@ from .types import Assignment, ComfyInstance, GpuNode, RuntimePlanItem, TaskProf
 
 DOCKER_RUNTIME_KIND = "docker_container"
 HOST_RUNTIME_KIND = "host_service"
+
+
+@dataclass(frozen=True)
+class RuntimeRenderOverrides:
+    host_port: int | None = None
+    container_name: str | None = None
+    api_url: str | None = None
+    ws_url: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.host_port is not None and not 1 <= self.host_port <= 65535:
+            raise ValueError("--host-port must be between 1 and 65535")
+
+    @property
+    def has_any(self) -> bool:
+        return any(
+            value is not None
+            for value in (
+                self.host_port,
+                self.container_name,
+                self.api_url,
+                self.ws_url,
+            )
+        )
 
 
 class RuntimePlanner:
@@ -28,11 +53,19 @@ class RuntimePlanner:
         assignment_id: str,
         *,
         target_profile_id: str | None = None,
+        overrides: RuntimeRenderOverrides | None = None,
     ) -> RuntimePlanItem:
+        overrides = overrides or RuntimeRenderOverrides()
         assignment = self._assignment_for(assignment_id)
         node = self._node_for(assignment)
         comfy = self._comfy_for(node, assignment)
         profile = self._profile_for(target_profile_id or assignment.profile_id)
+        self._validate_overrides(
+            assignment=assignment,
+            comfy=comfy,
+            overrides=overrides,
+            for_render=False,
+        )
         target_task_types = (
             profile.task_types if target_profile_id else assignment.task_types
         )
@@ -44,6 +77,7 @@ class RuntimePlanner:
             profile=profile,
             target_task_types=target_task_types,
             bundle_versions=bundle_versions,
+            overrides=overrides,
         )
         warnings = self._warnings(
             assignment=assignment,
@@ -51,6 +85,7 @@ class RuntimePlanner:
             comfy=comfy,
             profile=profile,
             target_task_types=target_task_types,
+            overrides=overrides,
         )
         return RuntimePlanItem(
             assignment_id=assignment.id,
@@ -63,12 +98,14 @@ class RuntimePlanner:
             target_task_types=target_task_types,
             model_bundle_versions=bundle_versions,
             worker_env=worker_env,
-            runtime=self._runtime_payload(node=node, comfy=comfy),
+            runtime=self._runtime_payload(node=node, comfy=comfy, overrides=overrides),
             diff=self._diff(
+                node=node,
                 comfy=comfy,
                 profile=profile,
                 target_task_types=target_task_types,
                 bundle_versions=bundle_versions,
+                overrides=overrides,
             ),
             warnings=tuple(warnings),
             commands=tuple(
@@ -78,6 +115,7 @@ class RuntimePlanner:
                     comfy=comfy,
                     profile=profile,
                     target_task_types=target_task_types,
+                    overrides=overrides,
                 )
             ),
         )
@@ -87,35 +125,53 @@ class RuntimePlanner:
         assignment_id: str,
         *,
         target_profile_id: str | None = None,
+        overrides: RuntimeRenderOverrides | None = None,
     ) -> str:
+        overrides = overrides or RuntimeRenderOverrides()
         assignment = self._assignment_for(assignment_id)
         node = self._node_for(assignment)
         comfy = self._comfy_for(node, assignment)
         profile = self._profile_for(target_profile_id or assignment.profile_id)
+        self._validate_overrides(
+            assignment=assignment,
+            comfy=comfy,
+            overrides=overrides,
+            for_render=True,
+        )
         if comfy.comfy_runtime_kind != DOCKER_RUNTIME_KIND:
             raise ValueError(
                 f"{assignment.id} uses {comfy.comfy_runtime_kind}; "
                 "runtime-render only supports docker_container"
             )
-        service_name = comfy.container_name or f"allbot-comfy-gpu{comfy.gpu_index or 0}"
+        service_name = self._effective_container_name(comfy, overrides)
         image_ref = profile.image_ref or comfy.image
         if not image_ref:
             raise ValueError(f"{profile.id} has no image_ref and {comfy.id} has no image")
 
         bundle_versions = self._bundle_versions(profile)
+        host_port = self._effective_host_port(comfy, overrides)
+        container_port = comfy.container_port or 8188
+        render_mode = self._render_mode(comfy, overrides)
+        production_port_unchanged = self._production_port_unchanged(comfy, overrides)
+        api_url = self._effective_api_url(node=node, comfy=comfy, overrides=overrides)
+        ws_url = self._effective_ws_url(node=node, comfy=comfy, overrides=overrides)
         compose = {
-            "name": self._compose_project_name(node=node, comfy=comfy),
+            "name": self._compose_project_name(
+                node=node,
+                comfy=comfy,
+                overrides=overrides,
+            ),
             "services": {
                 service_name: {
                     "image": image_ref,
                     "container_name": service_name,
                     "restart": "unless-stopped",
-                    "ports": [f"{comfy.port}:{comfy.container_port or 8188}"],
+                    "ports": [f"{host_port}:{container_port}"],
                     "environment": {
                         "TZ": "Asia/Shanghai",
                         "NVIDIA_VISIBLE_DEVICES": str(comfy.gpu_index or 0),
                         "COMFY_HOST": "0.0.0.0",
-                        "COMFY_PORT": str(comfy.container_port or 8188),
+                        "COMFY_PORT": str(container_port),
                         "COMFY_MODEL_DIR": "/data/comfy/models",
                         "COMFY_INPUT_DIR": "/data/comfy/input",
                         "COMFY_OUTPUT_DIR": "/data/comfy/output",
@@ -130,13 +186,17 @@ class RuntimePlanner:
                         "allbot.gpu_pool.comfy_id": comfy.id,
                         "allbot.gpu_pool.worker_id": assignment.worker_id,
                         "allbot.gpu_pool.runtime_profile": profile.runtime_profile,
+                        "allbot.gpu_pool.render_mode": render_mode,
+                        "allbot.gpu_pool.production_port_unchanged": str(
+                            production_port_unchanged
+                        ).lower(),
                     },
                     "healthcheck": {
                         "test": [
                             "CMD-SHELL",
                             (
                                 "curl -fsS "
-                                f"http://127.0.0.1:{comfy.container_port or 8188}"
+                                f"http://127.0.0.1:{container_port}"
                                 f"{comfy.health.get('system_stats', '/system_stats')} "
                                 ">/dev/null || exit 1"
                             ),
@@ -161,7 +221,18 @@ class RuntimePlanner:
                 "runtime_profile": profile.runtime_profile,
                 "image_ref": image_ref,
                 "model_bundle_versions": bundle_versions,
-                "rendered_for": "dry_run_review",
+                "rendered_for": (
+                    "canary_dry_run_review"
+                    if render_mode == "canary"
+                    else "dry_run_review"
+                ),
+                "render_mode": render_mode,
+                "production_port_unchanged": production_port_unchanged,
+                "host_port": host_port,
+                "container_port": container_port,
+                "container_name": service_name,
+                "comfy_api_url": api_url,
+                "comfy_ws_url": ws_url,
             },
         }
         try:
@@ -256,6 +327,20 @@ class RuntimePlanner:
             versions[bundle_id] = bundle.version if bundle else "undefined"
         return versions
 
+    def _validate_overrides(
+        self,
+        *,
+        assignment: Assignment,
+        comfy: ComfyInstance,
+        overrides: RuntimeRenderOverrides,
+        for_render: bool,
+    ) -> None:
+        if comfy.comfy_runtime_kind == HOST_RUNTIME_KIND and (for_render or overrides.has_any):
+            operation = "runtime-render" if for_render else "runtime-plan override"
+            raise ValueError(
+                f"{assignment.id} uses host_service; {operation} only supports docker_container"
+            )
+
     def _worker_env(
         self,
         *,
@@ -265,6 +350,7 @@ class RuntimePlanner:
         profile: TaskProfile,
         target_task_types: tuple[str, ...],
         bundle_versions: dict[str, str],
+        overrides: RuntimeRenderOverrides,
     ) -> dict[str, str]:
         return {
             "AGENT_ID": assignment.worker_id,
@@ -280,11 +366,26 @@ class RuntimePlanner:
                 separators=(",", ":"),
             ),
             "SUPPORTED_TASK_TYPES": ",".join(target_task_types),
-            "COMFY_API_URL": comfy.api_url,
-            "COMFY_WS_URL": comfy.ws_url,
+            "COMFY_API_URL": self._effective_api_url(
+                node=node,
+                comfy=comfy,
+                overrides=overrides,
+            ),
+            "COMFY_WS_URL": self._effective_ws_url(
+                node=node,
+                comfy=comfy,
+                overrides=overrides,
+            ),
         }
 
-    def _runtime_payload(self, *, node: GpuNode, comfy: ComfyInstance) -> dict[str, Any]:
+    def _runtime_payload(
+        self,
+        *,
+        node: GpuNode,
+        comfy: ComfyInstance,
+        overrides: RuntimeRenderOverrides,
+    ) -> dict[str, Any]:
+        host_port = self._effective_host_port(comfy, overrides)
         return {
             "provider": node.provider,
             "host": node.host,
@@ -292,8 +393,10 @@ class RuntimePlanner:
             "ssh_alias": node.ssh_alias,
             "kind": comfy.comfy_runtime_kind,
             "managed": comfy.comfy_runtime_managed,
-            "container_name": comfy.container_name,
-            "host_port": comfy.port,
+            "container_name": self._effective_container_name(comfy, overrides),
+            "configured_container_name": comfy.container_name,
+            "host_port": host_port,
+            "configured_host_port": comfy.port,
             "container_port": comfy.container_port,
             "gpu_index": comfy.gpu_index,
             "current_image": comfy.image,
@@ -306,17 +409,35 @@ class RuntimePlanner:
             "temp_dir": comfy.temp_dir,
             "compose_template": comfy.compose_template,
             "health": comfy.health,
+            "render_mode": self._render_mode(comfy, overrides),
+            "production_port_unchanged": self._production_port_unchanged(
+                comfy,
+                overrides,
+            ),
+            "api_url": self._effective_api_url(
+                node=node,
+                comfy=comfy,
+                overrides=overrides,
+            ),
+            "ws_url": self._effective_ws_url(
+                node=node,
+                comfy=comfy,
+                overrides=overrides,
+            ),
         }
 
     def _diff(
         self,
         *,
+        node: GpuNode,
         comfy: ComfyInstance,
         profile: TaskProfile,
         target_task_types: tuple[str, ...],
         bundle_versions: dict[str, str],
+        overrides: RuntimeRenderOverrides,
     ) -> dict[str, Any]:
         current_tasks = tuple(comfy.supported_task_types)
+        host_port = self._effective_host_port(comfy, overrides)
         return {
             "runtime_image": {
                 "current": comfy.image,
@@ -335,9 +456,28 @@ class RuntimePlanner:
                 "target": bundle_versions,
             },
             "container": {
-                "target_name": comfy.container_name,
-                "host_port": comfy.port,
+                "target_name": self._effective_container_name(comfy, overrides),
+                "current_name": comfy.container_name,
+                "host_port": host_port,
+                "configured_host_port": comfy.port,
                 "container_port": comfy.container_port,
+            },
+            "render": {
+                "mode": self._render_mode(comfy, overrides),
+                "production_port_unchanged": self._production_port_unchanged(
+                    comfy,
+                    overrides,
+                ),
+                "api_url": self._effective_api_url(
+                    node=node,
+                    comfy=comfy,
+                    overrides=overrides,
+                ),
+                "ws_url": self._effective_ws_url(
+                    node=node,
+                    comfy=comfy,
+                    overrides=overrides,
+                ),
             },
         }
 
@@ -349,6 +489,7 @@ class RuntimePlanner:
         comfy: ComfyInstance,
         profile: TaskProfile,
         target_task_types: tuple[str, ...],
+        overrides: RuntimeRenderOverrides,
     ) -> list[str]:
         warnings: list[str] = []
         if comfy.comfy_runtime_kind == HOST_RUNTIME_KIND:
@@ -360,6 +501,10 @@ class RuntimePlanner:
         elif not comfy.comfy_runtime_managed:
             warnings.append(
                 "docker runtime is not marked managed; runtime-apply must remain disabled"
+            )
+        if self._render_mode(comfy, overrides) == "canary":
+            warnings.append(
+                "canary render only; production port remains unchanged and no runtime mutation is executed"
             )
 
         missing_tasks = sorted(set(target_task_types) - set(profile.task_types))
@@ -390,7 +535,32 @@ class RuntimePlanner:
         comfy: ComfyInstance,
         profile: TaskProfile,
         target_task_types: tuple[str, ...],
+        overrides: RuntimeRenderOverrides,
     ) -> list[str]:
+        render_mode = self._render_mode(comfy, overrides)
+        api_url = self._effective_api_url(node=node, comfy=comfy, overrides=overrides)
+        ws_url = self._effective_ws_url(node=node, comfy=comfy, overrides=overrides)
+        if render_mode == "canary":
+            commands = [
+                (
+                    f"# canary render: production port {comfy.port} remains unchanged; "
+                    f"review host port {self._effective_host_port(comfy, overrides)}"
+                ),
+                f"# sync model bundles {','.join(profile.model_bundles) or '-'} to {node.ssh_alias}:{comfy.model_dir}",
+                "# render test worker env "
+                f"SUPPORTED_TASK_TYPES={','.join(target_task_types)} "
+                f"POOL_RUNTIME_PROFILE={profile.runtime_profile} "
+                f"COMFY_API_URL={api_url} COMFY_WS_URL={ws_url}",
+            ]
+            if profile.image_ref:
+                commands.append(
+                    f"# maintenance window required before live canary: ssh {node.ssh_alias} 'docker pull {profile.image_ref}'"
+                )
+            commands.append(
+                f"# dry-run render: {self._render_command(assignment, profile, overrides)}"
+            )
+            return commands
+
         commands = [
             f"# set {assignment.worker_id} draining before any mutation",
             f"# wait until {assignment.worker_id} has no running task and {comfy.api_url}/queue is empty",
@@ -412,8 +582,7 @@ class RuntimePlanner:
                     f"# maintenance window required: ssh {node.ssh_alias} 'docker pull {profile.image_ref}'"
                 )
             commands.append(
-                "# dry-run render: "
-                f"python scripts/gpu_pool_controller.py runtime-render --assignment {assignment.id}"
+                f"# dry-run render: {self._render_command(assignment, profile, overrides)}"
             )
             commands.append(
                 f"# canary: python scripts/gpu_pool_controller.py canary --assignment {assignment.id}"
@@ -452,9 +621,99 @@ class RuntimePlanner:
         ]
         return [f"{host}:{container}" for host, container in mounts if host]
 
-    def _compose_project_name(self, *, node: GpuNode, comfy: ComfyInstance) -> str:
+    def _compose_project_name(
+        self,
+        *,
+        node: GpuNode,
+        comfy: ComfyInstance,
+        overrides: RuntimeRenderOverrides,
+    ) -> str:
         raw = f"allbot-comfy-{node.id}-{comfy.id}"
+        if self._render_mode(comfy, overrides) == "canary":
+            raw = f"{raw}-canary-{self._effective_host_port(comfy, overrides)}"
         return re.sub(r"[^a-zA-Z0-9_-]+", "-", raw).lower()
+
+    def _render_command(
+        self,
+        assignment: Assignment,
+        profile: TaskProfile,
+        overrides: RuntimeRenderOverrides,
+    ) -> str:
+        args = [
+            "python scripts/gpu_pool_controller.py runtime-render",
+            f"--assignment {assignment.id}",
+            f"--profile {profile.id}",
+        ]
+        if overrides.host_port is not None:
+            args.append(f"--host-port {overrides.host_port}")
+        if overrides.container_name:
+            args.append(f"--container-name {overrides.container_name}")
+        if overrides.api_url:
+            args.append(f"--api-url {overrides.api_url}")
+        if overrides.ws_url:
+            args.append(f"--ws-url {overrides.ws_url}")
+        return " ".join(args)
+
+    def _render_mode(
+        self,
+        comfy: ComfyInstance,
+        overrides: RuntimeRenderOverrides,
+    ) -> str:
+        if overrides.host_port is not None and overrides.host_port != comfy.port:
+            return "canary"
+        return "standard"
+
+    def _production_port_unchanged(
+        self,
+        comfy: ComfyInstance,
+        overrides: RuntimeRenderOverrides,
+    ) -> bool:
+        return self._render_mode(comfy, overrides) == "canary"
+
+    def _effective_host_port(
+        self,
+        comfy: ComfyInstance,
+        overrides: RuntimeRenderOverrides,
+    ) -> int:
+        return overrides.host_port if overrides.host_port is not None else comfy.port
+
+    def _effective_container_name(
+        self,
+        comfy: ComfyInstance,
+        overrides: RuntimeRenderOverrides,
+    ) -> str:
+        if overrides.container_name:
+            return overrides.container_name
+        base = comfy.container_name or f"allbot-comfy-gpu{comfy.gpu_index or 0}"
+        if self._render_mode(comfy, overrides) == "canary":
+            return f"{base}-canary"
+        return base
+
+    def _effective_api_url(
+        self,
+        *,
+        node: GpuNode,
+        comfy: ComfyInstance,
+        overrides: RuntimeRenderOverrides,
+    ) -> str:
+        if overrides.api_url:
+            return overrides.api_url
+        if self._render_mode(comfy, overrides) == "canary":
+            return f"http://{node.ip}:{self._effective_host_port(comfy, overrides)}"
+        return comfy.api_url
+
+    def _effective_ws_url(
+        self,
+        *,
+        node: GpuNode,
+        comfy: ComfyInstance,
+        overrides: RuntimeRenderOverrides,
+    ) -> str:
+        if overrides.ws_url:
+            return overrides.ws_url
+        if self._render_mode(comfy, overrides) == "canary":
+            return f"ws://{node.ip}:{self._effective_host_port(comfy, overrides)}/ws"
+        return comfy.ws_url
 
 
 def runtime_plan_to_jsonable(item: RuntimePlanItem) -> dict[str, Any]:
