@@ -56,6 +56,21 @@ for proxy_var in [
 os.environ["NO_PROXY"] = "*"
 os.environ["no_proxy"] = "*"
 
+TRUE_ENV_VALUES = {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
+
+CONTROL_PLANE_RECOVERY_EXIT_CODE = 75
+
+
+class ControlPlaneRecoveryExit(BaseException):
+    """Raised when the agent should exit and let Docker restart it."""
+
+    pass
+
 
 class CorrelationIdFilter(logging.Filter):
     def filter(self, record):
@@ -81,12 +96,7 @@ MINIO_SECRET_KEY = os.getenv("MINIO_SECRET_KEY", "your_secret")
 MINIO_INPUT_BUCKET = os.getenv("MINIO_INPUT_BUCKET", "comfyui-input")
 MINIO_RESULT_BUCKET = os.getenv("MINIO_RESULT_BUCKET", "comfyui-output")
 MINIO_TEMPLATE_BUCKET = os.getenv("MINIO_TEMPLATE_BUCKET", "bot-template")
-MINIO_SECURE = os.getenv("MINIO_SECURE", "false").strip().lower() in {
-    "1",
-    "true",
-    "yes",
-    "on",
-}
+MINIO_SECURE = os.getenv("MINIO_SECURE", "false").strip().lower() in TRUE_ENV_VALUES
 COMFY_READY_RETRY_ATTEMPTS = int(os.getenv("COMFY_READY_RETRY_ATTEMPTS", "5"))
 COMFY_READY_RETRY_DELAY_SECONDS = float(
     os.getenv("COMFY_READY_RETRY_DELAY_SECONDS", "2")
@@ -144,12 +154,19 @@ PIPELINE_MAX_RUNNING_TASKS = max(
     int(os.getenv("PIPELINE_MAX_RUNNING_TASKS", "2")),
 )
 PIPELINE_TASK_TYPES = os.getenv("PIPELINE_TASK_TYPES", "all")
-CANCEL_LOCK_ON_POP = os.getenv("CANCEL_LOCK_ON_POP", "true").strip().lower() in {
-    "1",
-    "true",
-    "yes",
-    "on",
-}
+CANCEL_LOCK_ON_POP = (
+    os.getenv("CANCEL_LOCK_ON_POP", "true").strip().lower() in TRUE_ENV_VALUES
+)
+AGENT_CONTROL_PLANE_RECOVERY_ENABLED = (
+    os.getenv("AGENT_CONTROL_PLANE_RECOVERY_ENABLED", "true").strip().lower()
+    in TRUE_ENV_VALUES
+)
+AGENT_CONTROL_PLANE_RECOVERY_MIN_FAILURES = int(
+    os.getenv("AGENT_CONTROL_PLANE_RECOVERY_MIN_FAILURES", "12")
+)
+AGENT_CONTROL_PLANE_RECOVERY_SECONDS = float(
+    os.getenv("AGENT_CONTROL_PLANE_RECOVERY_SECONDS", "300")
+)
 
 USER_INPUT_ERROR_MARKERS = (
     "downloaded file is not a valid image",
@@ -242,6 +259,10 @@ class ComfyAgent:
         self.last_error_at: float | None = None
         self.task_infra_failures = 0
         self.quarantined_until: float | None = None
+        self.control_plane_failures = 0
+        self.control_plane_failure_started_at: float | None = None
+        self.control_plane_last_error = ""
+        self.control_plane_recovery_requested = False
         self._prefetch_cache: dict[str, dict[str, Any]] = {}
         self._prefetch_task: asyncio.Task | None = None
         self._prefetch_task_types = {
@@ -301,6 +322,77 @@ class ComfyAgent:
 
     def _now(self) -> float:
         return time.time()
+
+    def _record_control_plane_success(self) -> None:
+        if self.control_plane_failures:
+            logger.info(
+                "Control plane recovered after %s consecutive failed request(s)",
+                self.control_plane_failures,
+            )
+        self.control_plane_failures = 0
+        self.control_plane_failure_started_at = None
+        self.control_plane_last_error = ""
+
+    def _record_control_plane_failure(self, error: Exception | str) -> None:
+        if not AGENT_CONTROL_PLANE_RECOVERY_ENABLED:
+            return
+
+        now = self._now()
+        if self.control_plane_failure_started_at is None:
+            self.control_plane_failure_started_at = now
+        self.control_plane_failures += 1
+        self.control_plane_last_error = str(error)
+
+        failed_seconds = now - self.control_plane_failure_started_at
+        if (
+            self.control_plane_failures < AGENT_CONTROL_PLANE_RECOVERY_MIN_FAILURES
+            or failed_seconds < AGENT_CONTROL_PLANE_RECOVERY_SECONDS
+        ):
+            return
+
+        self.control_plane_recovery_requested = True
+        self.running = False
+        logger.error(
+            "Agent %s control plane recovery threshold reached after %s failure(s) "
+            "over %.1fs; exiting with code %s for Docker restart",
+            AGENT_ID,
+            self.control_plane_failures,
+            failed_seconds,
+            CONTROL_PLANE_RECOVERY_EXIT_CODE,
+        )
+        raise ControlPlaneRecoveryExit(self.control_plane_last_error)
+
+    async def _master_get(self, path: str, **kwargs):
+        try:
+            response = await self.master_client.get(path, **kwargs)
+        except Exception as exc:
+            self._record_control_plane_failure(exc)
+            raise
+
+        status_code = getattr(response, "status_code", 200)
+        if status_code >= 500:
+            self._record_control_plane_failure(
+                f"GET {path} returned HTTP {status_code}"
+            )
+        else:
+            self._record_control_plane_success()
+        return response
+
+    async def _master_post(self, path: str, **kwargs):
+        try:
+            response = await self.master_client.post(path, **kwargs)
+        except Exception as exc:
+            self._record_control_plane_failure(exc)
+            raise
+
+        status_code = getattr(response, "status_code", 200)
+        if status_code >= 500:
+            self._record_control_plane_failure(
+                f"POST {path} returned HTTP {status_code}"
+            )
+        else:
+            self._record_control_plane_success()
+        return response
 
     def _record_health_failure(self, *, reason: str, error: str) -> None:
         self.consecutive_failures += 1
@@ -640,7 +732,7 @@ class ComfyAgent:
             params["types"] = prefetch_types
 
         try:
-            response = await self.master_client.get("/api/agent/task/peek", params=params)
+            response = await self._master_get("/api/agent/task/peek", params=params)
             if response.status_code != 200:
                 logger.debug("Prefetch peek returned HTTP %s", response.status_code)
                 return
@@ -687,7 +779,7 @@ class ComfyAgent:
     async def report_heartbeat(self):
         try:
             status = self._worker_status()
-            await self.master_client.post(
+            await self._master_post(
                 "/api/agent/task/heartbeat",
                 json={
                     "agent_id": AGENT_ID,
@@ -697,7 +789,7 @@ class ComfyAgent:
                 },
             )
             for execution in self._heartbeat_executions():
-                await self.master_client.post(
+                await self._master_post(
                     "/api/agent/task/task_heartbeat",
                     json={"task_id": execution.task_id},
                 )
@@ -738,7 +830,7 @@ class ComfyAgent:
 
         for attempt in range(1, attempts + 1):
             try:
-                response = await self.master_client.post(
+                response = await self._master_post(
                     "/api/agent/task/status",
                     json=payload,
                 )
@@ -789,7 +881,7 @@ class ComfyAgent:
 
         for attempt in range(1, attempts + 1):
             try:
-                response = await self.master_client.post(
+                response = await self._master_post(
                     "/api/agent/task/complete",
                     json=payload,
                 )
@@ -1006,7 +1098,7 @@ class ComfyAgent:
 
     async def check_task_cancelled(self, task_id: str) -> bool:
         try:
-            response = await self.master_client.get(f"/api/agent/task/check/{task_id}")
+            response = await self._master_get(f"/api/agent/task/check/{task_id}")
             if response.status_code == 200:
                 data = response.json()
                 if data.get("status") == "cancelled" or data.get("cancel_requested"):
@@ -1044,7 +1136,7 @@ class ComfyAgent:
         return params
 
     async def _pop_next_task(self, *, pipeline: bool = False) -> dict[str, Any] | None:
-        response = await self.master_client.get(
+        response = await self._master_get(
             "/api/agent/task/pop",
             params=self._build_pop_params(pipeline=pipeline),
         )
@@ -1343,24 +1435,25 @@ class ComfyAgent:
         ]
         await asyncio.gather(*self.tasks)
 
-    async def shutdown(self):
+    async def shutdown(self, *, report_interrupted_tasks: bool = True):
         logger.info("Initiating graceful shutdown...")
         self.running = False
 
         # Return unfinished local tasks to Central as failed/interrupted.
-        active_executions = self._heartbeat_executions()
-        for active_execution in active_executions:
-            logger.info(
-                f"Returning task {active_execution.task_id} to master due to shutdown"
-            )
-            try:
-                await self.report_status(
-                    active_execution.task_id,
-                    "failed",
-                    error="Agent was shut down while processing the task. Task should be retried.",
+        if report_interrupted_tasks:
+            active_executions = self._heartbeat_executions()
+            for active_execution in active_executions:
+                logger.info(
+                    f"Returning task {active_execution.task_id} to master due to shutdown"
                 )
-            except Exception as e:
-                logger.error(f"Failed to report task failure during shutdown: {e}")
+                try:
+                    await self.report_status(
+                        active_execution.task_id,
+                        "failed",
+                        error="Agent was shut down while processing the task. Task should be retried.",
+                    )
+                except Exception as e:
+                    logger.error(f"Failed to report task failure during shutdown: {e}")
 
         # Cancel all running background loops
         for task in list(getattr(self, "tasks", [])):
@@ -1393,6 +1486,9 @@ if __name__ == "__main__":
 
     try:
         loop.run_until_complete(agent.start())
+    except ControlPlaneRecoveryExit:
+        loop.run_until_complete(agent.shutdown(report_interrupted_tasks=False))
+        sys.exit(CONTROL_PLANE_RECOVERY_EXIT_CODE)
     except asyncio.CancelledError:
         pass
     except KeyboardInterrupt:

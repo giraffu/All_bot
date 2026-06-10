@@ -21,6 +21,7 @@ CENTRAL_API_URL = os.getenv("CENTRAL_API_URL") or os.getenv(
 AGENT_SECRET_TOKEN = os.getenv("AGENT_SECRET_TOKEN", "")
 REQUEST_TIMEOUT_SECONDS = float(os.getenv("RELAY_REQUEST_TIMEOUT_SECONDS", "30"))
 REQUEST_RETRY_ATTEMPTS = int(os.getenv("RELAY_REQUEST_RETRY_ATTEMPTS", "3"))
+RELAY_READY_TIMEOUT_SECONDS = float(os.getenv("RELAY_READY_TIMEOUT_SECONDS", "3"))
 STATUS_FLUSH_INTERVAL_SECONDS = float(
     os.getenv("RELAY_STATUS_FLUSH_INTERVAL_SECONDS", "0.5")
 )
@@ -231,6 +232,38 @@ async def shutdown() -> None:
 @app.get("/health")
 async def health() -> dict[str, Any]:
     return {"status": "ok", "upstream": CENTRAL_API_URL}
+
+
+@app.get("/ready")
+async def ready() -> Any:
+    checks: dict[str, Any] = {
+        "upstream": CENTRAL_API_URL,
+        "upstream_ok": False,
+        "client_ready": state.client is not None,
+        "upload_client_ready": state.minio_client is not None,
+        "pending_statuses": len(state.pending_statuses),
+    }
+    if state.client is None:
+        checks["error"] = "upstream client is not ready"
+        return JSONResponse(status_code=503, content={"status": "error", **checks})
+    if state.minio_client is None:
+        checks["error"] = "upload client is not ready"
+        return JSONResponse(status_code=503, content={"status": "error", **checks})
+
+    try:
+        response = await state.client.get(
+            "/health",
+            timeout=RELAY_READY_TIMEOUT_SECONDS,
+        )
+        checks["upstream_status_code"] = response.status_code
+        checks["upstream_ok"] = response.status_code < 500
+    except Exception as exc:
+        checks["error"] = str(exc)
+        return JSONResponse(status_code=503, content={"status": "error", **checks})
+
+    if not checks["upstream_ok"]:
+        return JSONResponse(status_code=503, content={"status": "error", **checks})
+    return {"status": "ok", **checks}
 
 
 @app.get("/api/agent/task/pop")

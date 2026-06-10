@@ -583,6 +583,7 @@ async def test_report_status_logs_and_swallows_retry_exhaustion(monkeypatch, cap
 
     assert len(attempts) == 2
     assert "Failed to report status for task task-1 after 2 attempts" in caplog.text
+    assert agent.control_plane_failures == 2
 
 
 @pytest.mark.asyncio
@@ -646,6 +647,7 @@ async def test_report_complete_raises_after_retry_exhaustion(monkeypatch):
         await agent.report_complete("task-1", "task-1__result.png")
 
     assert len(attempts) == 2
+    assert agent.control_plane_failures == 2
 
 
 @pytest.mark.asyncio
@@ -729,6 +731,37 @@ def test_task_infra_failures_enter_and_clear_quarantine(monkeypatch):
     assert agent._worker_status() == "idle"
     assert agent.task_infra_failures == 0
     assert agent.last_error == ""
+
+
+def test_control_plane_success_resets_failure_window(monkeypatch):
+    module = build_agent_module(monkeypatch)
+    agent = module.ComfyAgent()
+
+    agent._record_control_plane_failure("relay failed")
+    assert agent.control_plane_failures == 1
+    assert agent.control_plane_last_error == "relay failed"
+
+    agent._record_control_plane_success()
+
+    assert agent.control_plane_failures == 0
+    assert agent.control_plane_failure_started_at is None
+    assert agent.control_plane_last_error == ""
+
+
+def test_control_plane_failures_request_process_recovery(monkeypatch):
+    module = build_agent_module(monkeypatch)
+    agent = module.ComfyAgent()
+
+    monkeypatch.setattr(module, "AGENT_CONTROL_PLANE_RECOVERY_MIN_FAILURES", 2)
+    monkeypatch.setattr(module, "AGENT_CONTROL_PLANE_RECOVERY_SECONDS", 0)
+
+    agent._record_control_plane_failure("first failure")
+    with pytest.raises(module.ControlPlaneRecoveryExit):
+        agent._record_control_plane_failure("second failure")
+
+    assert agent.control_plane_recovery_requested is True
+    assert agent.running is False
+    assert agent.control_plane_failures == 2
 
 
 def test_user_input_failure_does_not_count_toward_quarantine(monkeypatch):

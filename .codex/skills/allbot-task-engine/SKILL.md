@@ -75,8 +75,8 @@ description: "处理任务提交流程、provider/capability 装配、双 ID 运
 - **业务编排层**：`task_core.py` facade、submission、runtime、web monitor、persistence
 - **派发层**：`task_dispatcher.py`、`image_service.py`、`api_client.py`
 - **执行面**：Central API、QueueManager、agent router。`/api/agent/task/peek?types=...&limit=1` 是只读预取 hint，不能移除 pending、不能写 running、不能更新 status/heartbeat；真实执行仍必须走 `/pop`。V2 worker 可用 `/api/agent/task/pop?cancel_lock=true` 真实接单并写 `cancel_locked=1`、`execution_phase=preparing`；pending 仍可取消，locked running 返回不可取消，legacy 未锁 running 保留 `cancel_requested` 兼容语义。
-- **节点层**：`workers/comfy_agent/agent_main.py` 已拆出输入准备、工作流执行、结果物化、结果上传/回报 helper；旧 `process_task(...)` 保留串行兼容路径，双槽主链由 `_launch_pipeline_task(...)`、`_prepare_and_submit_task(...)` 与 `_finalize_execution(...)` 协作完成。`workers/local_relay/relay_main.py` 是本地 worker 网关与上传 sidecar：非终态 status 可合并转发，`pop/check/complete/failed/cancelled` 必须同步转发。新增输出类型、失败补偿、取消检查、重试策略、预取、pipeline 或上报语义时，优先下沉到 `agent_input_preparation.py`、`agent_workflow_execution.py`、`agent_result_materialization.py`、`agent_result_reporting.py` 等阶段模块，并补 Worker focused tests。
-- **Worker 健康态**：Comfy Agent heartbeat 状态包含 `idle`、`running`、`error`、`quarantined`；`active_workers` 只表示有心跳，`healthy_workers` 才表示可接单。Comfy 探活持续失败进入 `error`，连续基础设施类任务失败进入 `quarantined`，Dashboard 必须按健康字段展示故障而不是当作空闲。
+- **节点层**：`workers/comfy_agent/agent_main.py` 已拆出输入准备、工作流执行、结果物化、结果上传/回报 helper；旧 `process_task(...)` 保留串行兼容路径，双槽主链由 `_launch_pipeline_task(...)`、`_prepare_and_submit_task(...)` 与 `_finalize_execution(...)` 协作完成。`workers/local_relay/relay_main.py` 是本地 worker 网关与上传 sidecar：非终态 status 可合并转发，`pop/check/complete/failed/cancelled` 必须同步转发，`/health` 是轻量存活检查，`/ready` 会探测 Central 与上传 client。新增输出类型、失败补偿、取消检查、重试策略、预取、pipeline、健康检查或上报语义时，优先下沉到 `agent_input_preparation.py`、`agent_workflow_execution.py`、`agent_result_materialization.py`、`agent_result_reporting.py` 等阶段模块，并补 Worker focused tests。
+- **Worker 健康态**：Comfy Agent heartbeat 状态包含 `idle`、`running`、`error`、`quarantined`；`active_workers` 只表示有心跳，`healthy_workers` 才表示可接单。Comfy 探活持续失败进入 `error`，连续基础设施类任务失败进入 `quarantined`。Agent 到 relay/Central 的控制面请求连续失败默认达到 12 次且持续 300 秒时会以退出码 75 退出，让 Docker restart 接管；这不替代 task heartbeat zombie 清理。Dashboard 必须按健康字段展示故障而不是当作空闲。
 - **Central 观测态**：`/system/status` 与 `/system/workers` 是高频观测接口，使用共享 Redis 客户端和短 TTL/stale 快照缓存；它们不参与真实任务分发、Worker `pop`、状态上报或完成回流。排障时不要把 Dashboard/观测接口延迟直接等同于队列调度卡住。
 - **Worker 回报语义**：`/api/agent/task/complete` 是成功收口硬依赖，必须有限重试并在失败后进入失败路径；`/api/agent/task/status` 是运行态观测回报，允许轻量重试且重试耗尽只记录错误，不应直接让当前生成任务失败。
 - **Worker 预取/上传/pipeline 语义**：预取只能在当前 ComfyUI 执行期间通过只读 `peek` 下载/规范化/上传同类型下一单输入；真实 `/pop` 的 `task_id` 命中才可复用，miss 必须丢弃缓存。开启 `PIPELINE_ENABLED` 时，每个 worker 默认最多 2 个 Central running 任务：一个 ComfyUI active/queued，一个 finalizing；WS 必须按 `prompt_id` 路由，heartbeat 必须覆盖所有本地 running/finalizing context。使用上传 sidecar 时，worker 必须等待 R2/S3 put 成功后才 `/complete`，sidecar 上传失败按当前任务失败上报。
@@ -131,6 +131,7 @@ description: "处理任务提交流程、provider/capability 装配、双 ID 运
 - 看 queue 是否堆积
 - 看是否存在支持该 `task_type` 的 Worker
 - 看 worker heartbeat、`healthy_workers`、节点 `error/quarantined` 状态与 `SUPPORTED_TASK_TYPES`
+- 看本地 relay `/ready` 与 watchdog dry-run；生产只观测，不要让自动恢复直接 execute，除非用户明确确认。`/ready` 返回 404 通常表示运行中的 relay 还是旧版本，watchdog 应记录 `relay_ready_endpoint_missing` 而不是反复重启。
 - 看 `/system/status` 是否只是观测缓存滞后；真实判断还要结合 worker 日志、Central `pop`/status/complete 日志和队列指标
 
 ### 8.3 running 卡死

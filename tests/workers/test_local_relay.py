@@ -1,7 +1,7 @@
 import asyncio
 import sys
 from pathlib import Path
-from types import ModuleType
+from types import ModuleType, SimpleNamespace
 
 import pytest
 from fastapi.responses import JSONResponse
@@ -26,6 +26,57 @@ class FakeRequest:
 
     async def json(self):
         return self._payload
+
+
+@pytest.mark.asyncio
+async def test_ready_checks_upstream_and_clients():
+    class FakeClient:
+        async def get(self, path, timeout=None):
+            assert path == "/health"
+            assert timeout == relay.RELAY_READY_TIMEOUT_SECONDS
+            return SimpleNamespace(status_code=200)
+
+    relay.state.client = FakeClient()
+    relay.state.minio_client = object()
+    relay.state.pending_statuses = {"task-1": {"status": "running"}}
+
+    response = await relay.ready()
+
+    assert response["status"] == "ok"
+    assert response["upstream_ok"] is True
+    assert response["client_ready"] is True
+    assert response["upload_client_ready"] is True
+    assert response["pending_statuses"] == 1
+
+
+@pytest.mark.asyncio
+async def test_ready_returns_503_when_upstream_unhealthy():
+    class FakeClient:
+        async def get(self, path, timeout=None):
+            return SimpleNamespace(status_code=503)
+
+    relay.state.client = FakeClient()
+    relay.state.minio_client = object()
+    relay.state.pending_statuses = {}
+
+    response = await relay.ready()
+
+    assert response.status_code == 503
+
+
+@pytest.mark.asyncio
+async def test_ready_returns_503_when_upstream_raises():
+    class FakeClient:
+        async def get(self, path, timeout=None):
+            raise RuntimeError("network unreachable")
+
+    relay.state.client = FakeClient()
+    relay.state.minio_client = object()
+    relay.state.pending_statuses = {}
+
+    response = await relay.ready()
+
+    assert response.status_code == 503
 
 
 @pytest.mark.asyncio

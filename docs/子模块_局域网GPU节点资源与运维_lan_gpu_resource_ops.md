@@ -300,7 +300,23 @@ curl -fsS http://100.107.220.127:8003/system/status
 
 不要跳过 worker 到 Comfy 的对应关系。比如 `cloud-prod-comfy-agent-5` 只对应 `192.168.1.252:8189` / `comfy1`，不应该重启 `192.168.1.252` 上的 `comfy0`。
 
-## 9. 单容器更新流程
+## 9. Worker 自动恢复边界
+
+本地主服务器提供宿主机 watchdog：
+
+```bash
+scripts/watch_cloud_worker_recovery.sh --env cloud-test --mode dry-run
+scripts/watch_cloud_worker_recovery.sh --env cloud-prod --mode dry-run
+```
+
+安全边界：
+- 云测试可在故障注入时显式使用 `--mode execute` 精确恢复 `cloud-worker-relay-test` 或单个 `cloud-comfy-agent-test-*`。
+- 云正式默认只运行 dry-run；真实 execute 必须另行确认。
+- watchdog 只恢复本地主服务器上的 relay/agent 容器，不重启 GPU 节点、不重启 `comfy0/comfy1` 或 `allbot-gpu-226` 宿主机 ComfyUI、不执行全量 compose。
+- 若 Central 与多个 ComfyUI 同时不可达，判定为网络中断，等待网络恢复，不做容器重启动作。
+- relay `/ready` 返回 404 代表当前运行 relay 仍是旧版本，watchdog 只记录 `relay_ready_endpoint_missing`，不通过重启替代部署升级。
+
+## 10. 单容器更新流程
 
 更新某个 GPU 节点上的单个 Comfy 容器时：
 
@@ -331,7 +347,7 @@ docker-compose -f docker-compose-cloud-prod-worker.yml up -d --no-deps cloud-pro
 
 这只替换 worker 容器，不会重启 GPU 节点上的 `comfy1`。
 
-## 10. 采集命令
+## 11. 采集命令
 
 硬件与容器：
 
@@ -381,7 +397,7 @@ ssh allbot-gpu-252 'docker inspect comfy0 comfy1 --format "{{.Name}} {{range .Mo
 ssh allbot-gpu-002 'docker inspect comfy0 comfy1 --format "{{.Name}} {{range .Mounts}}{{println .Source \"->\" .Destination}}{{end}}"'
 ```
 
-## 11. 文档维护规则
+## 12. 文档维护规则
 
 以下事件发生后应更新本文档和 `docs/子模块_系统资源与容量画像_resource_inventory.md`：
 - GPU 节点新增、下线、换卡或换 IP。
