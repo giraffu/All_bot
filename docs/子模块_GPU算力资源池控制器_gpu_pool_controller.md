@@ -125,14 +125,26 @@ python scripts/gpu_pool_controller.py runpod render-create \
 
 - `scripts/upload_model_bundle_to_r2.py` 支持重复传 `--bundle` 生成去重 union manifest，例如 `--bundle video_basic_baseline --bundle wan22_video_v2_baseline --prefix wan22_aio_video/2026-06-12-test --bucket allbot-model-cache`。脚本会对 R2 做 `HEAD`，输出已存在对象、待上传对象和本地 registry 缺失 blob；相同 `relative_path` 但 sha256/size 不一致会直接失败，避免 manifest 覆盖错模型。真实上传仍需 `--execute`，若缺本地 blob 只能先用 transfer Pod 补齐，不能上传包含缺失对象的 manifest。
 - `scripts/create_runpod_model_transfer_pod.py` 支持 `--batch-file`，batch JSON 可为 `files` / `transfers` 列表，字段为 `source_url`、`key`、`relative_path`、`sha256`、`size_bytes`。默认 dry-run 会渲染单个 model-transfer Pod 请求并脱敏 URL；真实创建必须有 `RUNPOD_API_KEY` 且满足 `RUNPOD_DRY_RUN=false`、`RUNPOD_AUTOSCALER_ENABLED=true`、`RUNPOD_MAX_PODS_TOTAL=1`，完成后必须删除 Pod 并核验无 orphan。
-- `scripts/build_runpod_profile_image.sh --profile wan22_aio_video` 会构建 `remote_workers/docker/runpod_profiles/wan22_aio_video/Dockerfile`，镜像只 baked Wan22 workflow 所需 custom nodes、`ffmpeg/ffprobe` 和运行依赖，不 baked Wan22 high/low UNet、VAE、text encoder 或旧视频 LoRA；只有显式 `--push` 才推 GHCR，push 后需用空 `DOCKER_CONFIG` 匿名 pull/inspect 验证 package public。
+- Wan22 profile 镜像优先通过 GitHub Actions `.github/workflows/runpod_wan22_profile_image.yml` 构建和发布到 GHCR。该 workflow 仅手动 `workflow_dispatch` 触发，默认构建 `ghcr.io/giraffu/allbot-comfy-runpod-wan22-aio-video:<tag>`，使用仓库 `GITHUB_TOKEN` 登录 GHCR，运行同一套本地 smoke test，并在 push 后用空 `DOCKER_CONFIG` 做匿名 manifest 检查。`scripts/build_runpod_profile_image.sh --profile wan22_aio_video` 仍保留为本机调试/兜底入口，会构建 `remote_workers/docker/runpod_profiles/wan22_aio_video/Dockerfile`，镜像只 baked Wan22 workflow 所需 custom nodes、`ffmpeg/ffprobe` 和运行依赖，不 baked Wan22 high/low UNet、VAE、text encoder 或旧视频 LoRA。
 
 GHCR / GitHub token 口径：
 
-- `scripts/build_runpod_profile_image.sh` 不读取 GitHub token 变量；它只负责 `docker build`、smoke test 和可选 `docker push`。执行 `--push` 前必须先用 GitHub/GHCR token 对 Docker CLI 登录 `ghcr.io`，例如把密钥临时导出为 `GITHUB_TOKEN` 或 `GHCR_TOKEN` 后执行 `printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u <github_user> --password-stdin`。
+- GitHub Actions build 路径优先使用 workflow 自动注入的 `secrets.GITHUB_TOKEN`，不需要把 `.env.cloud.*` 里的 GitHub token 传给 GitHub runner。`scripts/build_runpod_profile_image.sh` 不读取 GitHub token 变量；它只负责 `docker build`、smoke test 和可选 `docker push`。若本机执行 `--push`，必须先用 GitHub/GHCR token 对 Docker CLI 登录 `ghcr.io`，例如把密钥临时导出为 `GITHUB_TOKEN` 或 `GHCR_TOKEN` 后执行 `printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u <github_user> --password-stdin`。
 - `.env.cloud.test` / `.env.cloud.prod` 中可保存 GitHub token 作为本机密钥来源，但真实 token 不得写入 docs、日志、compose config 或命令历史。当前环境文件里使用的 `all-github-token` 是人工记录用 key；因为包含中划线，不能被 `source .env.cloud.prod` 变成合法 shell 变量。需要推 GHCR 时，手工把它的值映射到当前 shell 的 `GHCR_TOKEN` / `GITHUB_TOKEN`，或后续另行补一个合法别名变量。
 - GHCR token 只用于向 GitHub Container Registry push / package 管理，不是 `RUNPOD_API_KEY`、不是 R2 S3 key、也不是 RunPod Pod env。RunPod 拉镜像时应优先使用 public GHCR image；push 后必须用空 `DOCKER_CONFIG` 匿名 `docker manifest inspect` 或 `docker pull` 验证 package 已公开，否则 RunPod 付费 Pod 可能因无 registry 凭据拉取失败。
 - `img2img_lora` 已验证 public image 为 `ghcr.io/giraffu/allbot-comfy-runpod-img2img:20260612-img2img-lora-kjnodes7967a946`；Wan22 cloud-test 目标前缀为 `ghcr.io/giraffu/allbot-comfy-runpod-wan22-aio-video:`，尚需 build、push、public 验证和真实 canary。
+
+Wan22 GHCR workflow 触发示例：
+
+```bash
+gh workflow run runpod_wan22_profile_image.yml \
+  --ref deploy \
+  -f image_tag=20260613-wan22aio-test \
+  -f push_image=true \
+  -f verify_public_pull=true
+```
+
+workflow 绿色后，把摘要里的 `RUNPOD_IMAGE_NAME_WAN22_AIO_VIDEO=<image-ref>` 写入 `.env.cloud.test` 或作为命令行临时 env，再跑 `runpod canary --task-type wan22_aio_video` dry-run。若匿名 manifest 检查失败，需要先在 GitHub Packages UI 把 `allbot-comfy-runpod-wan22-aio-video` package 调为 public，再重新跑 workflow 或重新执行匿名验证。
 
 RunPod v0 创建 Pod 时默认不把本地 `.env.cloud.test` 中的 `AGENT_SECRET_TOKEN`、`MINIO_ACCESS_KEY`、`MINIO_SECRET_KEY` 明文写入 create JSON，而是引用 RunPod Secrets：
 

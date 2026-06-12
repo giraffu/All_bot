@@ -169,7 +169,19 @@ scripts/build_runpod_profile_image.sh \
   --kjnodes-source /path/to/ComfyUI-KJNodes
 ```
 
-Only push after choosing a registry namespace that RunPod can pull:
+Prefer GitHub Actions for the Wan22 RunPod profile image:
+
+```text
+.github/workflows/runpod_wan22_profile_image.yml
+```
+
+Run the workflow manually with an optional `image_tag`. It builds
+`ghcr.io/giraffu/allbot-comfy-runpod-wan22-aio-video:<tag>`, runs the same smoke
+test, pushes with the repository `GITHUB_TOKEN`, and verifies anonymous GHCR
+manifest access before the image is used by RunPod.
+
+Use the local script as a fallback or for profile debugging. Only push locally
+after choosing a registry namespace that RunPod can pull:
 
 ```bash
 printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u <github_user> --password-stdin
