@@ -1,7 +1,7 @@
 # 子模块: GPU 算力资源池控制器 (GPU Pool Controller)
 
 ## 1. 目标与范围
-本模块记录 AllBot 第一阶段 GPU 算力资源池方案：不用 K8s/K3s，先以 `SSH + Docker + 本地文件模型仓库 + registry:2 + dry-run Controller` 管理本地 4 台局域网 GPU 服务器，并为后续 RunPod provider 预留边界。
+本模块记录 AllBot 第一阶段 GPU 算力资源池方案：不用 K8s/K3s，先以 `SSH + Docker + 本地文件模型仓库 + registry:2 + dry-run Controller` 管理本地 4 台局域网 GPU 服务器，并以 RunPod Pods provider v0 承接云测试弹性 worker canary。
 
 当前实现入口：
 - 控制器包：`ops/gpu_pool_controller/`
@@ -9,8 +9,13 @@
 - CLI：`scripts/gpu_pool_controller.py`
 - 本地镜像仓库 compose：`deploy/docker-compose-local-registry.yml`
 - 本地镜像仓库管理脚本：`scripts/manage_local_registry.sh`
+- RunPod provider：`ops/gpu_pool_controller/providers/runpod.py`
+- RunPod worker 镜像入口：`remote_workers/Dockerfile.runpod`、`remote_workers/scripts/runpod_entrypoint.sh`
+- RunPod 云测试 bootstrap：`remote_workers/scripts/runpod_bootstrap_from_git.sh`
 
 第一阶段默认不批量接管生产 worker，不自动重启 GPU 节点或 ComfyUI，不自动同步大模型。所有危险动作都应先 dry-run。
+
+RunPod Provider v0 当前只服务云测试前置闭环：用 1 个 RunPod Pod 替补 `cloud_prod_worker_04` 缺失的 `img2img,img2img_lora` 能力。它不属于局域网 SSH 资源池，不会出现在 `LanSshProvider.inventory_from_config()` 结果里，也不得触发本地 GPU 节点 SSH/Docker 操作。
 
 ## 2. 当前资源池口径
 资源池只纳入可 SSH 管理的局域网 GPU 节点：
@@ -57,6 +62,54 @@ python scripts/gpu_pool_controller.py runtime-render \
   --profile video_basic \
   --host-port 8190
 ```
+
+RunPod v0 dry-run / 只读命令：
+
+```bash
+python scripts/gpu_pool_controller.py runpod render-create \
+  --task-type img2img_lora \
+  --env cloud-test
+python scripts/gpu_pool_controller.py runpod create-pod \
+  --task-type img2img_lora \
+  --env cloud-test
+python scripts/gpu_pool_controller.py runpod validate-key
+python scripts/gpu_pool_controller.py runpod list-pods
+python scripts/gpu_pool_controller.py runpod reconcile-managed-pods
+```
+
+`render-create` 不需要 `RUNPOD_API_KEY`，只渲染 `POST /pods` 请求；`create-pod` 默认仍是 dry-run。真实 `create/start/stop/delete` 必须同时显式满足：
+
+```dotenv
+RUNPOD_DRY_RUN=false
+RUNPOD_AUTOSCALER_ENABLED=true
+RUNPOD_MAX_PODS_TOTAL=1
+RUNPOD_MAX_PODS_PER_TYPE=1
+```
+
+并建议设置 `RUNPOD_PROJECTED_COST_PER_HR_IMG2IMG_LORA` 与 `RUNPOD_MAX_HOURLY_COST_USD` 形成小时成本门禁。所有 CLI 输出会脱敏 API key、agent token、R2 secret 和 presigned URL signature。
+
+RunPod v0 创建 Pod 时默认不把本地 `.env.cloud.test` 中的 `AGENT_SECRET_TOKEN`、`MINIO_ACCESS_KEY`、`MINIO_SECRET_KEY` 明文写入 create JSON，而是引用 RunPod Secrets：
+
+```dotenv
+AGENT_SECRET_TOKEN={{ RUNPOD_SECRET_allbot_cloud_test_agent_secret_token }}
+MINIO_ACCESS_KEY={{ RUNPOD_SECRET_allbot_cloud_test_r2_access_key }}
+MINIO_SECRET_KEY={{ RUNPOD_SECRET_allbot_cloud_test_r2_secret_key }}
+```
+
+如未来 Secret 名称调整，可用 `RUNPOD_AGENT_SECRET_TOKEN_REF`、`RUNPOD_R2_ACCESS_KEY_REF`、`RUNPOD_R2_SECRET_KEY_REF` 覆盖引用字符串；`MINIO_ENDPOINT` 仍来自 `.env.cloud.test`，因为它不是密钥。2026-06-11 已同步 RunPod template `x750yt0uln` 的 `MINIO_ENDPOINT`，不再保留 UI 创建时的中文占位值。
+
+RunPod REST `Pod` schema 没有 `uptimeSeconds` 字段，不要把字段缺失当作 `uptime=0` 作为 readiness 结论。排查 Pod 初始化时以 RunPod UI Telemetry、REST `publicIp`、REST `portMappings` 和 `runpodctl ssh info` 为主；官方文档说明 `portMappings` 为空表示 Pod 仍在初始化，绿色 Running 点只表示 Pod 处于期望运行状态，不代表容器和服务已经 ready。AllBot worker 的业务 ready 仍以云测试 Central `/system/workers` 出现 `runpod_test_img2img_lora_*` healthy heartbeat 为准。
+
+2026-06-11 已完成一次云测试真实 RunPod Pod 前置闭环验证：使用 `yanwk/comfyui-boot:cu128-slim` 作为基础镜像、`dockerStartCmd` 注入 `remote_workers/scripts/runpod_bootstrap_from_git.sh`，不使用 RunPod Network Volume，创建 1 个 RTX 4090 Pod 后自动完成 `ComfyUI /system_stats ready -> remote relay /health ready -> comfy_agent heartbeat`。Central `/system/workers` 可看到 `runpod_test_img2img_lora_*`，状态为 `idle`，能力为 `img2img,img2img_lora`；验证后已 stop/delete Pod，`runpod list-pods` 确认无 orphan managed Pod。
+
+本轮排查得到的 RunPod v0 启动约束：
+- `runpod_bootstrap_from_git.sh` 必须把 `remote_workers/` 根目录加入 `PYTHONPATH`，否则 `comfy_agent/workflow_patcher.py` 无法 import `src.workflow_mapping_validation`。
+- RunPod 不会自动展开 env 中的 `AGENT_ID=runpod_test_img2img_lora_${RUNPOD_POD_ID:-pending}`；bootstrap 需检测字面量占位并用 `RUNPOD_POD_ID`、`POD_ID` 或 `hostname` 生成唯一 agent id。
+- `remote_relay` 当前以 `/health` 作为可靠 ready probe；本地代码已兼容 `/ready`，bootstrap 默认等 `/health`。
+- RunPod REST / runpodctl 当前不提供稳定容器日志读取接口；UI Logs 或 SSH proxy 是主要现场取证入口。`ports=22/tcp` 的 direct TCP 可能映射出来但仍连接拒绝，不能把 direct SSH 当成自动化依赖。
+- 诊断 canary 可开启 `RUNPOD_KEEPALIVE_ON_BOOTSTRAP_FAILURE=true` 保留失败现场；真实生产扩容应在镜像稳定后关闭或缩短保留策略。
+
+当前 real task canary 尚未完成。原因是 `yanwk/comfyui-boot:cu128-slim` 基础镜像只提供可启动 ComfyUI，未包含 AllBot `img2img_lora` workflow 所需的真实模型文件；现场只发现 workflow JSON，没有 `Qwen-Rapid-AIO-NSFW-v23.safetensors`、`qwen/YARN_1.0.safetensors` 等模型。下一步真实 3 任务 canary 前，必须把必要 checkpoint/LoRA/custom nodes 固化到 RunPod 镜像，或从 Hugging Face/R2 做可控热缓存；不得从本地主服务器或局域网 registry 跨公网拉大模型。
 
 Comfy canary 会检查 `/system_stats`、`/queue`、`/object_info` 和最低显存，默认不提交真实任务：
 
@@ -154,4 +207,4 @@ worker heartbeat 现在可选携带 GPU pool 元数据：
 - 对 `host_service` runtime 只允许生成人工操作建议，不生成 `docker restart/pull/up` 计划；`gpu-226` 不存在 `comfy0/comfy1`。
 - 同步模型只允许写目标共享 `models` 目录，不碰 `input/output/temp/custom_nodes/workflows`。
 - 双卡节点只操作目标实例；不要整机 reboot、无 service 名 `docker compose down/up` 或批量删除容器。
-- RunPod 后续作为 `RunPodProvider` 接入同一 planner/provider 边界，不把远程 Pod 加入本地 SSH 节点池。
+- RunPod 作为 `RunPodProvider v0` 接入同一 provider 边界，不把远程 Pod 加入本地 SSH 节点池；当前只允许云测试 `img2img_lora` canary，生产自动扩容不开启。

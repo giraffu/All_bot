@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 import os
+import random
 import sys
 import time
 from typing import Any, Dict, Optional
@@ -23,6 +24,7 @@ from agent_result_materialization import (
     materialize_task_outputs,
     resolve_execution_result_from_history,
 )
+from agent_result_quality import assess_materialized_output_quality
 from agent_result_reporting import (
     report_materialized_outputs,
     spool_materialized_outputs,
@@ -173,6 +175,10 @@ AGENT_CONTROL_PLANE_RECOVERY_MIN_FAILURES = int(
 )
 AGENT_CONTROL_PLANE_RECOVERY_SECONDS = float(
     os.getenv("AGENT_CONTROL_PLANE_RECOVERY_SECONDS", "300")
+)
+I2I_PRO_QUALITY_RETRY_ATTEMPTS = max(
+    0,
+    int(os.getenv("I2I_PRO_QUALITY_RETRY_ATTEMPTS", "1")),
 )
 
 USER_INPUT_ERROR_MARKERS = (
@@ -1233,11 +1239,123 @@ class ComfyAgent:
             agent_id=AGENT_ID,
             logger=logger,
         )
+        execution.params = dict(params)
         self._register_prompt_execution(execution)
         execution.phase = "queued"
         await self.report_status(task_id, "running", execution_phase="queued")
         self._schedule_prefetch(current_task_type=task_type)
         return execution
+
+    def _reset_execution_for_retry(
+        self,
+        execution: TaskExecutionContext,
+        *,
+        seed: int,
+    ) -> dict[str, Any]:
+        if execution.prompt_id:
+            self._prompt_executions.pop(execution.prompt_id, None)
+        execution.prompt_id = None
+        execution.task_result = None
+        execution.task_result_priority = -1
+        execution.task_error = None
+        execution.completed_event = asyncio.Event()
+        retry_params = dict(execution.params)
+        retry_params["seed"] = seed
+        execution.params = retry_params
+        return retry_params
+
+    async def _retry_execution_after_quality_issue(
+        self,
+        execution: TaskExecutionContext,
+        *,
+        issue_reason: str,
+        retry_number: int,
+    ) -> bool:
+        task_id = execution.task_id
+        task_type = execution.task_type
+        retry_seed = random.randint(1, 1125899906842624)
+        retry_params = self._reset_execution_for_retry(execution, seed=retry_seed)
+        logger.warning(
+            "Retrying i2i_pro task %s after output quality issue (%s), attempt %s/%s",
+            task_id,
+            issue_reason,
+            retry_number,
+            I2I_PRO_QUALITY_RETRY_ATTEMPTS,
+        )
+        await submit_task_workflow(
+            task_id=task_id,
+            task_type=task_type,
+            params=retry_params,
+            execution=execution,
+            patcher=self.patcher,
+            comfy_client=self.comfy_client,
+            wait_for_comfy_ready_func=self._wait_for_comfy_ready,
+            report_status_func=self.report_status,
+            agent_id=AGENT_ID,
+            logger=logger,
+        )
+        execution.params = dict(retry_params)
+        self._register_prompt_execution(execution)
+        execution.phase = "queued"
+        await self.report_status(task_id, "running", execution_phase="queued")
+        return await wait_for_task_completion(
+            task_id=task_id,
+            execution=execution,
+            check_task_cancelled_func=self.check_task_cancelled,
+            logger=logger,
+            comfy_client=self.comfy_client,
+            task_type=task_type,
+        )
+
+    async def _materialize_outputs_with_quality_retry(
+        self,
+        *,
+        execution: TaskExecutionContext,
+        task_type: str,
+    ):
+        quality_retry_count = 0
+        while True:
+            await resolve_execution_result_from_history(
+                comfy_client=self.comfy_client,
+                execution=execution,
+                task_type=task_type,
+                logger=logger,
+            )
+
+            if not execution.task_result:
+                raise Exception("Task completed but no result path found")
+
+            materialized_outputs = await materialize_task_outputs(
+                comfy_client=self.comfy_client,
+                execution=execution,
+                task_type=task_type,
+                logger=logger,
+            )
+            issue = await assess_materialized_output_quality(
+                task_type=task_type,
+                params=execution.params,
+                outputs=materialized_outputs,
+                comfy_client=self.comfy_client,
+                logger=logger,
+            )
+            if issue is None:
+                return materialized_outputs
+
+            if quality_retry_count >= I2I_PRO_QUALITY_RETRY_ATTEMPTS:
+                raise RuntimeError(
+                    "i2i_pro output quality check failed after retry: "
+                    f"{issue.reason} metric={issue.metric:.2f} "
+                    f"threshold={issue.threshold:.2f}"
+                )
+
+            quality_retry_count += 1
+            task_completed = await self._retry_execution_after_quality_issue(
+                execution,
+                issue_reason=issue.reason,
+                retry_number=quality_retry_count,
+            )
+            if not task_completed:
+                return None
 
     async def _finalize_execution(self, execution: TaskExecutionContext) -> None:
         task_id = execution.task_id
@@ -1263,16 +1381,6 @@ class ComfyAgent:
                 set_current=False,
             )
 
-            await resolve_execution_result_from_history(
-                comfy_client=self.comfy_client,
-                execution=execution,
-                task_type=task_type,
-                logger=logger,
-            )
-
-            if not execution.task_result:
-                raise Exception("Task completed but no result path found")
-
             if not CANCEL_LOCK_ON_POP and await self.check_task_cancelled(task_id):
                 logger.info(
                     f"Task {task_id} was cancelled during execution, skipping upload."
@@ -1281,12 +1389,13 @@ class ComfyAgent:
                 return
 
             try:
-                materialized_outputs = await materialize_task_outputs(
-                    comfy_client=self.comfy_client,
+                materialized_outputs = await self._materialize_outputs_with_quality_retry(
                     execution=execution,
                     task_type=task_type,
-                    logger=logger,
                 )
+                if materialized_outputs is None:
+                    await self.report_cancelled(task_id)
+                    return
                 if UPLOAD_SIDECAR_URL:
                     spooled_outputs = await spool_materialized_outputs(
                         outputs=materialized_outputs,

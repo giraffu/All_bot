@@ -12,6 +12,7 @@ from .model_importer import ModelImportPlanner, plan_to_json
 from .model_repo import ModelRegistry
 from .planner import GpuPoolPlanner
 from .providers.lan_ssh import LanSshProvider
+from .providers.runpod import RunPodProvider, RunPodSettings
 from .runtime import RuntimePlanner, RuntimeRenderOverrides, runtime_plan_to_jsonable
 
 
@@ -206,6 +207,99 @@ def _cmd_image_plan(args) -> int:
     return 0
 
 
+def _runpod_provider_from_args(_args) -> RunPodProvider:
+    return RunPodProvider(RunPodSettings.from_env())
+
+
+def _cmd_runpod_validate_key(args) -> int:
+    payload = _runpod_provider_from_args(args).validate_key()
+    _print_json(payload)
+    return 0 if payload.get("ok") else 2
+
+
+def _cmd_runpod_list_pods(args) -> int:
+    payload = _runpod_provider_from_args(args).list_pods(
+        managed_only=not args.all,
+        desired_status=args.desired_status,
+    )
+    _print_json(payload)
+    return 0 if payload.get("ok") else 2
+
+
+def _cmd_runpod_get_pod(args) -> int:
+    payload = _runpod_provider_from_args(args).get_pod(pod_id=args.pod_id)
+    _print_json(payload)
+    return 0 if payload.get("ok") else 2
+
+
+def _cmd_runpod_pod_readiness(args) -> int:
+    payload = _runpod_provider_from_args(args).pod_readiness(pod_id=args.pod_id)
+    _print_json(payload)
+    return 0 if payload.get("ok") else 2
+
+
+def _cmd_runpod_render_create(args) -> int:
+    payload = _runpod_provider_from_args(args).render_create_pod_request(
+        task_type=args.task_type,
+        environment=args.env,
+    )
+    _print_json(payload)
+    return 0
+
+
+def _cmd_runpod_reconcile(args) -> int:
+    provider = _runpod_provider_from_args(args)
+    if args.from_file:
+        pods = json.loads(args.from_file.read_text(encoding="utf-8"))
+        if isinstance(pods, dict):
+            pods = pods.get("pods", [])
+        payload = provider.reconcile_managed_pods(pods=list(pods))
+    else:
+        payload = provider.reconcile_managed_pods()
+    _print_json(payload)
+    return 0 if payload.get("ok") else 2
+
+
+def _cmd_runpod_create(args) -> int:
+    payload = _runpod_provider_from_args(args).create_pod(
+        task_type=args.task_type,
+        environment=args.env,
+        execute=args.execute,
+    )
+    _print_json(payload)
+    return 0 if payload.get("ok") else 2
+
+
+def _cmd_runpod_start(args) -> int:
+    payload = _runpod_provider_from_args(args).start_pod(
+        pod_id=args.pod_id,
+        task_type=args.task_type,
+        execute=args.execute,
+    )
+    _print_json(payload)
+    return 0 if payload.get("ok") else 2
+
+
+def _cmd_runpod_stop(args) -> int:
+    payload = _runpod_provider_from_args(args).stop_pod(
+        pod_id=args.pod_id,
+        task_type=args.task_type,
+        execute=args.execute,
+    )
+    _print_json(payload)
+    return 0 if payload.get("ok") else 2
+
+
+def _cmd_runpod_delete(args) -> int:
+    payload = _runpod_provider_from_args(args).delete_pod(
+        pod_id=args.pod_id,
+        task_type=args.task_type,
+        execute=args.execute,
+    )
+    _print_json(payload)
+    return 0 if payload.get("ok") else 2
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="AllBot GPU pool controller v1")
     parser.add_argument("--config-root", type=Path, default=None)
@@ -296,6 +390,58 @@ def build_parser() -> argparse.ArgumentParser:
     image_plan.add_argument("--repository", required=True)
     image_plan.add_argument("--tag", required=True)
     image_plan.set_defaults(func=_cmd_image_plan)
+
+    runpod = subparsers.add_parser("runpod")
+    runpod_subparsers = runpod.add_subparsers(dest="runpod_command", required=True)
+
+    runpod_validate = runpod_subparsers.add_parser("validate-key")
+    runpod_validate.set_defaults(func=_cmd_runpod_validate_key)
+
+    runpod_list = runpod_subparsers.add_parser("list-pods")
+    runpod_list.add_argument("--all", action="store_true", help="include unmanaged pods")
+    runpod_list.add_argument("--desired-status", default=None)
+    runpod_list.set_defaults(func=_cmd_runpod_list_pods)
+
+    runpod_get = runpod_subparsers.add_parser("get-pod")
+    runpod_get.add_argument("--pod-id", required=True)
+    runpod_get.set_defaults(func=_cmd_runpod_get_pod)
+
+    runpod_readiness = runpod_subparsers.add_parser("pod-readiness")
+    runpod_readiness.add_argument("--pod-id", required=True)
+    runpod_readiness.set_defaults(func=_cmd_runpod_pod_readiness)
+
+    runpod_render = runpod_subparsers.add_parser("render-create")
+    runpod_render.add_argument("--task-type", default="img2img_lora")
+    runpod_render.add_argument("--env", default="cloud-test")
+    runpod_render.set_defaults(func=_cmd_runpod_render_create)
+
+    runpod_reconcile = runpod_subparsers.add_parser("reconcile-managed-pods")
+    runpod_reconcile.add_argument("--from-file", type=Path, default=None)
+    runpod_reconcile.set_defaults(func=_cmd_runpod_reconcile)
+
+    runpod_create = runpod_subparsers.add_parser("create-pod")
+    runpod_create.add_argument("--task-type", default="img2img_lora")
+    runpod_create.add_argument("--env", default="cloud-test")
+    runpod_create.add_argument("--execute", action="store_true")
+    runpod_create.set_defaults(func=_cmd_runpod_create)
+
+    runpod_start = runpod_subparsers.add_parser("start-pod")
+    runpod_start.add_argument("--pod-id", required=True)
+    runpod_start.add_argument("--task-type", default="img2img_lora")
+    runpod_start.add_argument("--execute", action="store_true")
+    runpod_start.set_defaults(func=_cmd_runpod_start)
+
+    runpod_stop = runpod_subparsers.add_parser("stop-pod")
+    runpod_stop.add_argument("--pod-id", required=True)
+    runpod_stop.add_argument("--task-type", default="img2img_lora")
+    runpod_stop.add_argument("--execute", action="store_true")
+    runpod_stop.set_defaults(func=_cmd_runpod_stop)
+
+    runpod_delete = runpod_subparsers.add_parser("delete-pod")
+    runpod_delete.add_argument("--pod-id", required=True)
+    runpod_delete.add_argument("--task-type", default="img2img_lora")
+    runpod_delete.add_argument("--execute", action="store_true")
+    runpod_delete.set_defaults(func=_cmd_runpod_delete)
 
     return parser
 

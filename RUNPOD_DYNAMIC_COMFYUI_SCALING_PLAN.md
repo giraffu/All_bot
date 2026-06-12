@@ -14,6 +14,22 @@
 
 推荐第一阶段使用 **RunPod Pods**，而不是直接上 RunPod Serverless。原因是当前 AllBot 已经是 Central queue + worker 长轮询模型，`remote_workers/` 已经支持远程 GPU 节点通过 worker 专用 Central 域名接入，RunPod Pod 可以直接复用这条链路；Serverless 的原生 `QUEUE_DELAY` 扩容很诱人，但需要把任务提交改造成 RunPod job/request 模式，改造面更大。
 
+## 1.1 2026-06-11 v0 落地状态
+
+本轮已把 RunPod 接入从方案推进到云测试真实 Pod heartbeat 前置闭环：
+
+- 已新增 `RunPodProvider v0`：`ops/gpu_pool_controller/providers/runpod.py`。
+- 已新增 CLI：`python scripts/gpu_pool_controller.py runpod validate-key|list-pods|render-create|reconcile-managed-pods|create-pod|start-pod|stop-pod|delete-pod`。
+- 首个目标改为 **云测试 RunPod Pod 替补 `cloud_prod_worker_04` 的 `img2img,img2img_lora` 能力**；生产自动扩容不开启。
+- 当前生产现场事实：`cloud-prod-comfy-agent-4` 已退出，`gpu-252:8188` 不通，`gpu-252` 宿主只识别到 1 张 4090；`cloud-prod-comfy-agent-5` / `gpu-252:8189` 正常，不能自动重启或改动。
+- `RunPodProvider v0` 只支持 `environment=cloud-test`、`task_type=img2img_lora/img2img`，创建请求会固定 `SUPPORTED_TASK_TYPES=img2img,img2img_lora`、`POOL_PROVIDER=runpod`、`POOL_RUNTIME_PROFILE=img2img_lora`、`PIPELINE_MAX_RUNNING_TASKS=1`、`COMFY_API_URL=http://127.0.0.1:8188`，并将测试对象存储桶固定为 `user-data-test`。
+- 默认安全态是 `RUNPOD_DRY_RUN=true`、`RUNPOD_AUTOSCALER_ENABLED=false`。真实 `create/start/stop/delete` 必须同时满足 `RUNPOD_DRY_RUN=false`、`RUNPOD_AUTOSCALER_ENABLED=true`、`RUNPOD_MAX_PODS_TOTAL=1`、`RUNPOD_MAX_PODS_PER_TYPE=1`，并通过小时成本门禁。
+- 已新增 RunPod worker 镜像入口：`remote_workers/Dockerfile.runpod` 和 `remote_workers/scripts/runpod_entrypoint.sh`。云测试当前使用 `yanwk/comfyui-boot:cu128-slim` + `remote_workers/scripts/runpod_bootstrap_from_git.sh` 作为轻量 bootstrap 路径，启动顺序固定为 ComfyUI ready -> remote relay ready -> comfy agent heartbeat。
+- 2026-06-11 已用 RunPod API 创建 1 个 RTX 4090 云测试 Pod，自动完成 `ComfyUI /system_stats ready -> remote relay /health ready -> comfy_agent heartbeat`，Central `/system/workers` 看到 `runpod_test_img2img_lora_*` `idle`，能力 `img2img,img2img_lora`；验证后已 stop/delete，确认无 orphan managed Pod。
+- 本轮未执行真实生成任务 canary：基础镜像未包含 `img2img_lora` 所需模型文件，真实任务会在 ComfyUI 执行阶段失败。
+
+因此，下一步真实 canary 的前置条件是：准备包含必要模型文件的 RunPod image/template 或可控模型热缓存，并显式打开一次性执行开关提交 3 个云测试任务。
+
 ## 2. 官方文档依据
 
 本方案按 2026-06-10 查询到的 RunPod 官方文档设计：
@@ -36,7 +52,7 @@
 - 任务类型由 worker 的 `SUPPORTED_TASK_TYPES` 控制；如果没有匹配 worker，任务会持续 pending。
 - 生产 worker 已使用 `CANCEL_LOCK_ON_POP=true`、`PIPELINE_ENABLED=true`、`PIPELINE_MAX_RUNNING_TASKS=2`。
 - `remote_workers/` 已经提供非 Tailscale 远程 GPU 节点接入方式，可通过 worker 专用 Cloudflare Tunnel 域名访问云 Central，不能复用公开 Web API 域名。
-- 结果文件应继续写入生产 R2 路径，RunPod 不应依赖本地主服务器 MinIO。
+- 云测试 v0 canary 固定写入 R2 `user-data-test`；后续生产 canary 才能写入生产 R2 路径。RunPod 不应依赖本地主服务器 MinIO。
 
 对 RunPod 来说，它只需要表现为“一个临时远程 GPU worker”：
 
@@ -219,6 +235,9 @@ RUNPOD_TERMINATE_AFTER_STOPPED_SECONDS=86400
 - RunPod 官方建议用 custom template 预装依赖和模型，提升启动一致性和速度。
 - ComfyUI 端口默认不对公网开放；worker 只需要出站访问 Central worker 域名和 R2。
 - 敏感变量通过 RunPod secrets 或安全环境变量注入，不写入仓库。
+- 如果使用 `dockerStartCmd` bootstrap，必须设置 `PYTHONPATH` 包含 `remote_workers/` 根目录，否则 `comfy_agent` 无法 import `src.workflow_mapping_validation`。
+- RunPod env 不保证展开 `${RUNPOD_POD_ID}` 这类 shell 占位；agent id 应由 bootstrap 在容器内基于 `RUNPOD_POD_ID`、`POD_ID` 或 `hostname` 生成。
+- RunPod Pod direct TCP SSH 可能映射后仍拒绝连接，排障以 Console Logs 或 SSH proxy 为准；自动扩容闭环不得依赖 SSH。
 
 建议环境变量：
 
@@ -347,8 +366,13 @@ RUNPOD_API_KEY=<secret>
 RUNPOD_ALLOWED_DATACENTERS=US-TX-3,US-GA-1,US-WA-1
 RUNPOD_GPU_TYPE_IDS_WAN22=NVIDIA GeForce RTX 4090,NVIDIA GeForce RTX 5090,NVIDIA L40S
 RUNPOD_GPU_TYPE_IDS_LTX=NVIDIA GeForce RTX 4090,NVIDIA RTX A5000,NVIDIA L40S
+RUNPOD_GPU_TYPE_IDS_IMG2IMG_LORA=NVIDIA GeForce RTX 4090,NVIDIA GeForce RTX 5090,NVIDIA L40S
 RUNPOD_TEMPLATE_ID_WAN22=<secret-or-config>
 RUNPOD_TEMPLATE_ID_LTX=<secret-or-config>
+RUNPOD_TEMPLATE_ID_IMG2IMG_LORA=<secret-or-config>
+RUNPOD_IMAGE_NAME_IMG2IMG_LORA=<optional-image-name>
+RUNPOD_CLOUD_TEST_CENTRAL_API_URL=https://worker-central-test.aivison.it.com
+RUNPOD_PROJECTED_COST_PER_HR_IMG2IMG_LORA=0
 RUNPOD_MAX_PODS_TOTAL=2
 RUNPOD_MAX_PODS_PER_TYPE=1
 RUNPOD_MAX_HOURLY_COST_USD=5
@@ -429,16 +453,16 @@ Dashboard / 日志至少展示：
 
 动作：
 
-1. 构建 `allbot-comfy-runpod` 镜像。
-2. 创建 `ltx_video` 或 `wan22_video_v2` 专属 RunPod template。
-3. 使用云测试 worker 专用 Central 域名。
-4. 只放测试 token 和测试 R2/存储配置。
+1. 构建 `allbot-comfy-runpod` 镜像，或基于 `remote_workers/Dockerfile.runpod` 准备可启动 ComfyUI 的 template。
+2. 首个 template/profile 固定为 `img2img_lora`，声明 `SUPPORTED_TASK_TYPES=img2img,img2img_lora`。
+3. 使用云测试 worker 专用 Central 域名 `worker-central-test.aivison.it.com`，不要复用 `api.aivison.it.com`。
+4. 只放测试 token 和测试 R2/存储配置，bucket 固定 `user-data-test`。
 5. 手动启动 1 台 Pod，确认 heartbeat、pop、complete、result upload。
-6. 跑 3-5 个真实测试任务，记录冷启动时间、生成时间、失败率。
+6. 跑 3 个真实 `img2img/img2img_lora` 测试任务，记录冷启动时间、生成时间、失败率。
 
 验收：
 
-- Central 能看到 `runpod_*` worker healthy。
+- Central 能看到 `runpod_test_img2img_lora_*` worker healthy。
 - 任务能完成并回传结果。
 - 关闭 Pod 后 Central 不再分配任务给该 worker。
 
@@ -586,10 +610,10 @@ for task_type in managed_task_types:
 
 第一阶段按以下最小路径执行：
 
-1. 先做 `ltx_video` 或 `wan22_video_v2` 的 RunPod Pod template。
-2. 只跑云测试 canary，确认 agent、ComfyUI、R2、Central complete 全链路。
-3. 生产手动启动 1 台 RunPod 专属 worker，观察真实任务。
+1. 先做 `img2img_lora` 的 RunPod Pod template，用来云测试替补当前不可用的 `worker_04` 能力。
+2. 只跑云测试 canary，确认 agent、ComfyUI、R2 `user-data-test`、Central complete 全链路。
+3. Drain + stop Pod，确认 Central 不再分配任务，RunPod 无 orphan Pod。
 4. 部署 dry-run 控制器，验证“最大 pending 等待超过 20 分钟”触发是否准确。
-5. 再开启 `RUNPOD_MAX_PODS_TOTAL=1` 的有限自动扩容。
+5. 再评估是否进入生产手动 canary；生产自动扩容必须另行明确确认。
 
 这样可以最快复用现有 worker 架构，同时把成本风险、生产风险和任务统计口径都控制住。

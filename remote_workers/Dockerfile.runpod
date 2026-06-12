@@ -1,0 +1,21 @@
+ARG BASE_IMAGE=yanwk/comfyui-boot:cu128-slim
+FROM ${BASE_IMAGE}
+
+WORKDIR /opt/allbot/remote_workers
+
+RUN if command -v apt-get >/dev/null 2>&1; then \
+      apt-get update && \
+      apt-get install -y --no-install-recommends curl ffmpeg python3-pip && \
+      rm -rf /var/lib/apt/lists/*; \
+    fi
+
+COPY remote_workers/requirements.txt ./requirements.txt
+RUN python3 -m pip install --no-cache-dir -r requirements.txt
+
+COPY remote_workers/ ./
+
+ENV PYTHONPATH=/opt/allbot/remote_workers \
+    NO_PROXY=* \
+    no_proxy=*
+
+CMD ["bash", "/opt/allbot/remote_workers/scripts/runpod_entrypoint.sh"]

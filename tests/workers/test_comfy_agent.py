@@ -1,4 +1,5 @@
 import importlib.util
+import io
 import logging
 import sys
 from contextlib import ExitStack
@@ -7,6 +8,7 @@ from types import ModuleType, SimpleNamespace
 from unittest import mock
 
 import pytest
+from PIL import Image
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -34,18 +36,30 @@ def load_agent_main_module():
         minio_module = ModuleType("minio")
         minio_module.Minio = DummyMinio
         sys.modules["minio"] = minio_module
-    if "PIL" not in sys.modules:
+    try:
+        import PIL  # noqa: F401
+        import PIL.Image  # noqa: F401
+        import PIL.ImageChops  # noqa: F401
+        import PIL.ImageOps  # noqa: F401
+        import PIL.ImageStat  # noqa: F401
+    except Exception:
         pil_module = ModuleType("PIL")
         image_module = ModuleType("PIL.Image")
         image_module.open = None
+        imagechops_module = ModuleType("PIL.ImageChops")
+        imagestat_module = ModuleType("PIL.ImageStat")
         imageops_module = ModuleType("PIL.ImageOps")
         imageops_module.exif_transpose = lambda image: image
         pil_module.Image = image_module
+        pil_module.ImageChops = imagechops_module
+        pil_module.ImageStat = imagestat_module
         pil_module.ImageOps = imageops_module
         pil_module.UnidentifiedImageError = RuntimeError
         sys.modules["PIL"] = pil_module
         sys.modules["PIL.Image"] = image_module
+        sys.modules["PIL.ImageChops"] = imagechops_module
         sys.modules["PIL.ImageOps"] = imageops_module
+        sys.modules["PIL.ImageStat"] = imagestat_module
 
     spec = importlib.util.spec_from_file_location("test_agent_main_module", MODULE_PATH)
     module = importlib.util.module_from_spec(spec)
@@ -99,6 +113,12 @@ class DummyFileHandler(logging.Handler):
 
     def emit(self, record):
         return None
+
+
+def _png_bytes(color: tuple[int, int, int], *, size: tuple[int, int] = (32, 32)) -> bytes:
+    buffer = io.BytesIO()
+    Image.new("RGB", size, color).save(buffer, format="PNG")
+    return buffer.getvalue()
 
 
 def build_agent_module(monkeypatch):
@@ -338,6 +358,89 @@ async def test_process_task_sidecar_upload_failure_reports_failed_without_comple
     assert reported[-1][0] == "task-1"
     assert reported[-1][1] == "failed"
     assert "Result processing failed" in reported[-1][2]
+
+
+@pytest.mark.asyncio
+async def test_i2i_pro_quality_issue_requeues_once_before_complete(monkeypatch):
+    module = build_agent_module(monkeypatch)
+    agent = module.ComfyAgent()
+    submit_calls = []
+    completed = []
+    materialize_count = 0
+
+    async def fake_check_task_cancelled(task_id):
+        return False
+
+    async def fake_prepare_task_inputs(*, params, downloaded_input_paths, **kwargs):
+        params["image"] = "prepared-reference.png"
+
+    async def fake_get_view(filename, subfolder="", type="output"):
+        assert filename == "prepared-reference.png"
+        assert type == "input"
+        return _png_bytes((40, 50, 60))
+
+    async def fake_submit_task_workflow(**kwargs):
+        submit_calls.append(dict(kwargs["params"]))
+        kwargs["execution"].prompt_id = f"prompt-{len(submit_calls)}"
+
+    async def fake_wait_for_task_completion(**kwargs):
+        return True
+
+    async def fake_resolve_execution_result_from_history(**kwargs):
+        execution = kwargs["execution"]
+        execution.task_result = f"{execution.task_id}__{execution.prompt_id}.png"
+
+    async def fake_materialize_task_outputs(**kwargs):
+        nonlocal materialize_count
+        materialize_count += 1
+        file_data = (
+            _png_bytes((0, 0, 0))
+            if materialize_count == 1
+            else _png_bytes((220, 210, 200))
+        )
+        return SimpleNamespace(
+            primary=SimpleNamespace(
+                object_name=kwargs["execution"].task_result,
+                content_type="image/png",
+                file_data=file_data,
+            ),
+            extra_outputs={},
+        )
+
+    async def fake_upload_materialized_outputs(**kwargs):
+        return {}
+
+    async def fake_report_materialized_outputs(**kwargs):
+        completed.append(kwargs["result_path"])
+
+    agent.comfy_client.get_view = fake_get_view
+    agent.check_task_cancelled = fake_check_task_cancelled
+    agent._prepare_task_inputs = fake_prepare_task_inputs
+    monkeypatch.setattr(module, "I2I_PRO_QUALITY_RETRY_ATTEMPTS", 1)
+    monkeypatch.setattr(module, "submit_task_workflow", fake_submit_task_workflow)
+    monkeypatch.setattr(module, "wait_for_task_completion", fake_wait_for_task_completion)
+    monkeypatch.setattr(
+        module,
+        "resolve_execution_result_from_history",
+        fake_resolve_execution_result_from_history,
+    )
+    monkeypatch.setattr(module, "materialize_task_outputs", fake_materialize_task_outputs)
+    monkeypatch.setattr(module, "upload_materialized_outputs", fake_upload_materialized_outputs)
+    monkeypatch.setattr(module, "report_materialized_outputs", fake_report_materialized_outputs)
+
+    await agent.process_task(
+        {
+            "task_id": "task-1",
+            "type": "i2i_pro",
+            "params": '{"image": "remote.png", "prompt": "demo"}',
+        }
+    )
+
+    assert len(submit_calls) == 2
+    assert submit_calls[0]["image"] == "prepared-reference.png"
+    assert submit_calls[1]["image"] == "prepared-reference.png"
+    assert submit_calls[1]["seed"] != submit_calls[0].get("seed")
+    assert completed == ["task-1__prompt-2.png"]
 
 
 @pytest.mark.asyncio

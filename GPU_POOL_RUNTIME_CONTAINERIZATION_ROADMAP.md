@@ -1,7 +1,7 @@
 # AllBot GPU Pool Runtime 容器化接管路线图
 
-更新时间：2026-06-10  
-当前口径：Worker Agent 新协议、模型仓库、镜像仓库、Controller Phase 0 dry-run 能力与 Phase 1A 备用端口 canary 渲染能力已经完成；底层 ComfyUI Runtime 仍未全量纳入 Controller 自动接管。`POOL_IMAGE_REF`、profile 镜像、bundle 版本、`runtime-plan` 与 `runtime-render --host-port` 输出均是目标声明或 dry-run / render 计划，不等于当前 ComfyUI Runtime 已经由对应镜像实际运行。
+更新时间：2026-06-11
+当前口径：Worker Agent 新协议、模型仓库、镜像仓库、Controller Phase 0 dry-run 能力与 Phase 1A 备用端口 canary 渲染能力已经完成；Phase 1B 只读预检已完成，但 live canary 尚未执行。底层 ComfyUI Runtime 仍未全量纳入 Controller 自动接管。`POOL_IMAGE_REF`、profile 镜像、bundle 版本、`runtime-plan` 与 `runtime-render --host-port` 输出均是目标声明或 dry-run / render 计划，不等于当前 ComfyUI Runtime 已经由对应镜像实际运行。
 
 本文是后续更新的执行指南。任何实现者继续推进时，先按本文确认当前阶段、允许动作和验收条件，再修改代码或执行运维。
 
@@ -17,6 +17,8 @@
 - 云测试 `cloud_worker_test_06/07` 已验证 agent control 与任务类型声明切换。
 - 本地模型仓库已建立在 `/srv/allbot/model-registry`，首轮 5 个 bundle manifest 已生成。
 - 本地 Docker registry 已建立在 `/srv/allbot/docker-registry`，监听 `127.0.0.1:5000` 与 `192.168.1.115:5000`。
+  - 2026-06-11 预检确认 registry 可访问。
+  - 但 `allbot/comfy-cu130-video-basic:baseline` 与 `allbot/comfy-cu128-img2img:baseline` 当前未发布到 registry，仍是 Phase 1B live canary 阻断项。
 - Controller Phase 0 已完成：
   - runtime schema 已落到 `ops/gpu_pool_controller/config/nodes.yml`
   - 新增 `ops/gpu_pool_controller/runtime.py`
@@ -36,6 +38,13 @@
   - canary compose 会渲染备用 host port，例如 `8190:8188`，并在 labels / `x-allbot-runtime` 标记 `render_mode=canary`、`production_port_unchanged=true`
   - canary `runtime-plan` 会把 worker env 的 `COMFY_API_URL` / `COMFY_WS_URL` 默认指向 `http://<node.ip>:<host_port>` 与 `ws://<node.ip>:<host_port>/ws`
   - `host_service` 对 `runtime-render` 或带端口覆盖的 `runtime-plan` 一律失败，防止误操作 `gpu-226`
+- Phase 1B 只读预检已完成：
+  - focused tests 通过：`16 passed`
+  - `gpu-002` worker 06 可生成 `video_basic` 的 `8190:8188` canary plan / compose
+  - `gpu-002` worker 07 可生成 `img2img_lora` 的 `8191:8188` canary plan / compose
+  - `gpu-226` host_service render guard 按预期失败
+  - `gpu-002` 磁盘充足，生产 `8188/8189` 当前健康，备用 `8190/8191` 未监听
+  - 预检时生产 `8188/8189` 队列非空，因此不得进入 live canary
 
 ### 1.2 当前 GPU 节点事实
 
@@ -88,8 +97,10 @@ python scripts/gpu_pool_controller.py plan
 python scripts/gpu_pool_controller.py runtime-plan
 python scripts/gpu_pool_controller.py runtime-plan --assignment lan-002-8188-worker-06
 python scripts/gpu_pool_controller.py runtime-plan --assignment lan-002-8188-worker-06 --profile video_basic --host-port 8190
+python scripts/gpu_pool_controller.py runtime-plan --assignment lan-002-8189-worker-07 --profile img2img_lora --host-port 8191
 python scripts/gpu_pool_controller.py runtime-render --assignment lan-002-8188-worker-06
 python scripts/gpu_pool_controller.py runtime-render --assignment lan-002-8188-worker-06 --profile video_basic --host-port 8190
+python scripts/gpu_pool_controller.py runtime-render --assignment lan-002-8189-worker-07 --profile img2img_lora --host-port 8191
 python scripts/gpu_pool_controller.py canary --assignment lan-252-8188-worker-04
 python scripts/gpu_pool_controller.py workflow-model-check
 python scripts/gpu_pool_controller.py model-import-plan
@@ -101,8 +112,10 @@ python scripts/gpu_pool_controller.py model-import-execute
 - `plan`：输出 7 个 assignment 的资源池 dry-run。`gpu-226` 只允许出现 host_service 警告，不得出现 Docker pull/up/restart。
 - `runtime-plan`：输出 runtime / image / model bundle / worker env diff。
 - `runtime-plan --host-port 8190`：输出备用端口 canary worker env，默认指向 `http://192.168.1.2:8190` / `ws://192.168.1.2:8190/ws`，只给测试 worker 审阅和后续手工覆盖使用。
+- `runtime-plan --host-port 8191`：用于 `gpu-002` worker 07 canary，默认指向 `http://192.168.1.2:8191` / `ws://192.168.1.2:8191/ws`。
 - `runtime-render`：仅支持 `docker_container`；对 `gpu-226` 应返回结构化错误并退出非 0。
 - `runtime-render --host-port 8190`：渲染 `8190:8188` 的 canary compose，默认容器名为 `allbot-comfy-gpu0-canary`，不会覆盖生产 `8188`。
+- `runtime-render --host-port 8191`：渲染 `8191:8188` 的 canary compose，默认容器名为 `allbot-comfy-gpu1-canary`，不会覆盖生产 `8189`。
 - `canary`：只检查 Comfy HTTP 接口、queue、required nodes 和 VRAM；不会提交真实生成任务。
 
 ### 3.2 已保留但不执行的命令
@@ -216,17 +229,77 @@ python scripts/gpu_pool_controller.py runtime-render --assignment lan-226-8188-w
 
 ### Phase 1B：`gpu-002` 云测试 live canary
 
-状态：等待 Phase 1A 和维护窗口。
+状态：只读预检已完成；live canary 尚未执行，当前被目标镜像缺失和队列非空阻断。
 
-只允许在用户明确确认维护窗口后执行。
+只允许在用户明确确认维护窗口后执行。当前不得启动备用 runtime，不得重建 worker，不得配置 GPU 节点 registry。
 
-执行顺序：
+已完成的只读预检：
+
+1. 本地测试通过：
+
+   ```bash
+   python -m pytest tests/ops/test_gpu_pool_controller.py -q
+   ```
+
+   结果：`16 passed`。
+
+2. `gpu-002` worker 06 dry-run / render 通过：
+
+   ```bash
+   python scripts/gpu_pool_controller.py runtime-plan --assignment lan-002-8188-worker-06 --profile video_basic --host-port 8190
+   python scripts/gpu_pool_controller.py runtime-render --assignment lan-002-8188-worker-06 --profile video_basic --host-port 8190
+   ```
+
+   结果：渲染 `allbot-comfy-gpu0-canary`，端口为 `8190:8188`，`x-allbot-runtime.render_mode=canary`，`production_port_unchanged=true`。
+
+3. `gpu-002` worker 07 dry-run / render 通过：
+
+   ```bash
+   python scripts/gpu_pool_controller.py runtime-plan --assignment lan-002-8189-worker-07 --profile img2img_lora --host-port 8191
+   python scripts/gpu_pool_controller.py runtime-render --assignment lan-002-8189-worker-07 --profile img2img_lora --host-port 8191
+   ```
+
+   结果：渲染 `allbot-comfy-gpu1-canary`，端口为 `8191:8188`，`x-allbot-runtime.render_mode=canary`，`production_port_unchanged=true`。
+
+4. `gpu-226` host_service 安全负例通过：
+
+   ```bash
+   python scripts/gpu_pool_controller.py runtime-render --assignment lan-226-8188-worker-01 --host-port 8190
+   ```
+
+   结果：结构化失败并退出 `2`。
+
+5. `gpu-002` 只读环境检查：
+
+   - `/` 和 `/data` 可用空间约 `675G`，使用率约 `25%`。
+   - 当前生产容器为 `comfy0` / `comfy1`，镜像仍是 `yanwk/comfyui-boot:cu128-slim`。
+   - `8188/8189` 正常监听，`8190/8191` 未监听。
+   - `8188/8189` 的 `/system_stats`、`/queue`、`/object_info` 可读。
+   - 预检时 `8188/8189` 队列非空，`python scripts/gpu_pool_controller.py canary --assignment lan-002-8188-worker-06` 与 `lan-002-8189-worker-07` 均因 `queue_empty=false` 返回失败；这不是接口不可用，而是维护条件未满足。
+
+6. 本地 registry 只读检查：
+
+   - `http://127.0.0.1:5000/v2/_catalog` 可读。
+   - 当前 catalog 仅包含 `allbot/comfyui-boot`、`allbot/worker-agent`、`allbot/worker-relay`。
+   - `allbot/comfy-cu130-video-basic:baseline` 与 `allbot/comfy-cu128-img2img:baseline` 当前返回 `404`，不能进入 live canary。
+
+阻断项：
+
+1. 目标 profile 镜像未发布：
+   - `192.168.1.115:5000/allbot/comfy-cu130-video-basic:baseline`
+   - `192.168.1.115:5000/allbot/comfy-cu128-img2img:baseline`
+2. `gpu-002` 生产 `8188/8189` 队列在预检时非空。
+3. 维护窗口尚未确认。
+
+解除阻断后的执行顺序：
 
 1. 运行 dry-run：
 
    ```bash
    python scripts/gpu_pool_controller.py runtime-plan --assignment lan-002-8188-worker-06 --profile video_basic --host-port 8190
    python scripts/gpu_pool_controller.py runtime-render --assignment lan-002-8188-worker-06 --profile video_basic --host-port 8190
+   python scripts/gpu_pool_controller.py runtime-plan --assignment lan-002-8189-worker-07 --profile img2img_lora --host-port 8191
+   python scripts/gpu_pool_controller.py runtime-render --assignment lan-002-8189-worker-07 --profile img2img_lora --host-port 8191
    ```
 
 2. 只读检查 `gpu-002`：
@@ -240,19 +313,32 @@ python scripts/gpu_pool_controller.py runtime-render --assignment lan-226-8188-w
    ```bash
    curl -fsS http://127.0.0.1:5000/v2/_catalog
    curl -fsS http://127.0.0.1:5000/v2/allbot/comfy-cu130-video-basic/tags/list
+   curl -fsS http://127.0.0.1:5000/v2/allbot/comfy-cu128-img2img/tags/list
    ```
 
-4. 若 GPU 节点尚未信任 `192.168.1.115:5000`，在维护窗口内配置 Docker daemon insecure registry。
-5. 在 `gpu-002` 启动备用端口 runtime，不碰现有 `comfy0/comfy1`。
-6. 对备用端口运行：
+4. 检查生产队列已达到维护条件：
 
    ```bash
-   curl -fsS http://192.168.1.2:8190/system_stats
-   curl -fsS http://192.168.1.2:8190/queue
-   curl -fsS http://192.168.1.2:8190/object_info
+   curl --noproxy '*' -fsS http://192.168.1.2:8188/queue
+   curl --noproxy '*' -fsS http://192.168.1.2:8189/queue
    ```
 
-7. 用云测试 worker 6/7 指向备用端口：
+   注意：当前本地主机存在 `http_proxy/https_proxy/all_proxy`，访问局域网 Comfy 端口时建议显式使用 `--noproxy '*'`，避免空端口被代理误报为 502。
+
+5. 若 GPU 节点尚未信任 `192.168.1.115:5000`，在维护窗口内配置 Docker daemon insecure registry。
+6. 在 `gpu-002` 启动备用端口 runtime，不碰现有 `comfy0/comfy1`。
+7. 对备用端口运行：
+
+   ```bash
+   curl --noproxy '*' -fsS http://192.168.1.2:8190/system_stats
+   curl --noproxy '*' -fsS http://192.168.1.2:8190/queue
+   curl --noproxy '*' -fsS http://192.168.1.2:8190/object_info
+   curl --noproxy '*' -fsS http://192.168.1.2:8191/system_stats
+   curl --noproxy '*' -fsS http://192.168.1.2:8191/queue
+   curl --noproxy '*' -fsS http://192.168.1.2:8191/object_info
+   ```
+
+8. 用云测试 worker 6/7 指向备用端口：
 
    ```bash
    set -a
@@ -263,13 +349,17 @@ python scripts/gpu_pool_controller.py runtime-render --assignment lan-226-8188-w
    CLOUD_TEST_WORKER_06_RUNTIME_PROFILE='video_basic_canary' \
    CLOUD_TEST_WORKER_06_COMFY_API_URL='http://192.168.1.2:8190' \
    CLOUD_TEST_WORKER_06_COMFY_WS_URL='ws://192.168.1.2:8190/ws' \
+   CLOUD_TEST_WORKER_07_TASK_TYPES='img2img,img2img_lora' \
+   CLOUD_TEST_WORKER_07_RUNTIME_PROFILE='img2img_lora_canary' \
+   CLOUD_TEST_WORKER_07_COMFY_API_URL='http://192.168.1.2:8191' \
+   CLOUD_TEST_WORKER_07_COMFY_WS_URL='ws://192.168.1.2:8191/ws' \
    docker-compose --env-file .env.cloud.test -f workers/docker-compose-cloud-worker-test.yml \
-     up -d --no-deps cloud-comfy-agent-test-6
+     up -d --no-deps cloud-comfy-agent-test-6 cloud-comfy-agent-test-7
    ```
 
-8. 验证 `/system/workers` 中 `cloud_worker_test_06` 的 task types、runtime profile、node/gpu 元数据和 healthy 状态。
-9. 提交真实测试任务 canary，确认结果上传到 R2 `user-data-test`。
-10. 恢复测试 worker 默认配置，并停止备用端口 runtime。
+9. 验证 `/system/workers` 中 `cloud_worker_test_06/07` 的 task types、runtime profile、node/gpu 元数据和 healthy 状态。
+10. 提交真实测试任务 canary，确认结果上传到 R2 `user-data-test`。
+11. 恢复测试 worker 默认配置，并停止备用端口 runtime。
 
 验收：
 
@@ -483,7 +573,9 @@ previous:
 
 ## 9. 当前未完成事项
 
-- Phase 1A 只完成了 dry-run / render 能力，尚未执行 `gpu-002` 备用端口 live canary。
+- Phase 1B 只读预检已完成，尚未执行 `gpu-002` 备用端口 live canary。
+- `allbot/comfy-cu130-video-basic:baseline` 与 `allbot/comfy-cu128-img2img:baseline` 尚未发布到本地 registry。
+- `gpu-002` 生产 `8188/8189` 队列预检时非空，live canary 前必须等待维护条件满足。
 - `runtime-apply/switch-profile/rollback-profile --execute` 尚未实现真实执行器。
 - profile 专用镜像矩阵尚未全部构建和验证。
 - `runtime-plan` 尚未做远端磁盘/swap/registry 信任状态采集。
@@ -495,10 +587,17 @@ previous:
 
 下一轮最小闭环：
 
-1. 审阅 `gpu-002` 的 `8190/8191` canary plan 与 compose 输出。
-2. 在只读模式下验证 registry catalog、目标 image tag、`gpu-002` 磁盘和当前容器布局。
+1. 先补齐或重新定义 Phase 1B 使用的目标镜像：
+   - 推荐补齐并 push `allbot/comfy-cu130-video-basic:baseline`
+   - 推荐补齐并 push `allbot/comfy-cu128-img2img:baseline`
+   - 若短期只想验证 runtime 挂载/端口，也可以另行决定先使用现有 `allbot/comfyui-boot:*gpu002*` 镜像，但必须同步修改 plan 口径，避免把它当 profile 专用镜像验收
+2. 重新运行只读预检：
+   - `python -m pytest tests/ops/test_gpu_pool_controller.py -q`
+   - `runtime-plan/render` 覆盖 worker 06 的 `8190` 与 worker 07 的 `8191`
+   - registry target tags 可读
+   - `gpu-002` `8188/8189` queue 为空或达到维护条件
 3. 用户确认维护窗口后，执行 `gpu-002` 备用端口 live canary。
-4. live canary 通过后，记录测试 R2 结果和 `/system/workers` 状态。
+4. live canary 通过后，记录测试 R2 结果、`/system/workers` 状态和备用 runtime 清理结果。
 5. 再实现 `runtime-apply --execute` 的最小安全执行器。
 
 这条路线的原则：先把已经是 Docker 的 `gpu-002` 用备用端口纳入 Controller 验证，再考虑替换生产端口；最后才迁移最特殊的 `gpu-226`。

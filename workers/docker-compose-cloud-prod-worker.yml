@@ -133,6 +133,9 @@ services:
       COMFY_WS_URL: ws://192.168.1.252:8188/ws
       COMFY_INPUT_DIR: /tmp/input
       COMFY_OUTPUT_DIR: /tmp/output
+      PIPELINE_MAX_RUNNING_TASKS: "1"
+      COMFY_HEALTH_FAILURE_THRESHOLD: "30"
+      COMFY_WS_LOST_PROBE_FAILURE_THRESHOLD: "90"
 
   cloud-prod-comfy-agent-5:
     <<: *worker-base-cloud-prod
@@ -143,7 +146,7 @@ services:
       POOL_MANAGED: "true"
       POOL_PROVIDER: lan_ssh
       POOL_NODE_ID: gpu-252
-      POOL_GPU_INDEX: "1"
+      POOL_GPU_INDEX: "0"
       POOL_RUNTIME_PROFILE: wan22_video_v2
       POOL_IMAGE_REF: 192.168.1.115:5000/allbot/comfy-cu128-wan22:baseline
       POOL_MODEL_BUNDLE_VERSIONS: '{"wan22_video_v2_baseline":"2026-06-10","video_basic_baseline":"2026-06-10"}'
@@ -152,6 +155,9 @@ services:
       COMFY_WS_URL: ws://192.168.1.252:8189/ws
       COMFY_INPUT_DIR: /tmp/input
       COMFY_OUTPUT_DIR: /tmp/output
+      PIPELINE_MAX_RUNNING_TASKS: "1"
+      COMFY_HEALTH_FAILURE_THRESHOLD: "30"
+      COMFY_WS_LOST_PROBE_FAILURE_THRESHOLD: "90"
 
   cloud-prod-comfy-agent-6:
     <<: *worker-base-cloud-prod

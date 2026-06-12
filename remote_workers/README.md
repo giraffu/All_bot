@@ -130,6 +130,49 @@ powershell -ExecutionPolicy Bypass -File scripts/check_relay.ps1
 
 The expected response includes `{"status":"ok"}` and the configured upstream.
 
+## RunPod Pod Template Entry
+
+RunPod cloud-test canaries use the same bundled remote worker package, but run
+inside a single Pod with ComfyUI, the relay/upload sidecar, and the agent:
+
+```bash
+docker build \
+  -f remote_workers/Dockerfile.runpod \
+  -t allbot/comfy-runpod-img2img:canary \
+  .
+```
+
+The image entrypoint is `remote_workers/scripts/runpod_entrypoint.sh`. Its
+startup order is fixed:
+
+```text
+ComfyUI ready -> remote relay ready -> comfy agent heartbeat
+```
+
+For the first cloud-test canary, the expected profile is:
+
+```env
+RUNPOD_MANAGED=true
+RUNPOD_ENVIRONMENT=cloud-test
+RUNPOD_TASK_TYPE=img2img_lora
+AGENT_ID=runpod_test_img2img_lora_${RUNPOD_POD_ID:-pending}
+CENTRAL_API_URL=https://worker-central-test.aivison.it.com
+SUPPORTED_TASK_TYPES=img2img,img2img_lora
+POOL_PROVIDER=runpod
+POOL_RUNTIME_PROFILE=img2img_lora
+PIPELINE_MAX_RUNNING_TASKS=1
+COMFY_API_URL=http://127.0.0.1:8188
+MINIO_INPUT_BUCKET=user-data-test
+MINIO_RESULT_BUCKET=user-data-test
+MINIO_TEMPLATE_BUCKET=user-data-test
+```
+
+The Pod should not expose ComfyUI publicly. It only needs outbound access to the
+cloud-test worker Central hostname and R2. Model files should come from the
+image, a RunPod volume, Hugging Face cache, or R2 warm cache; do not pull large
+models from the local main server or the LAN Docker registry over the public
+internet.
+
 ## Legacy Old Agent Option
 
 The bundled agent is preferred. If you must keep the old Comfy agent on the same

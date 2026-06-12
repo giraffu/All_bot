@@ -39,6 +39,15 @@ CLOUD_TEST_WORKER_REDIS_URL=redis://:<password>@redis-test:6379/4
 
 `CLOUD_TEST_BIND_IP` 用于云端服务端口绑定；当前绑定云测试 Tailscale IP `100.82.124.91`，不直接开放公网。`CLOUD_TEST_CONTROL_HOST` 用于本地 GPU worker 访问云端 Central API，也应填 `100.82.124.91`。当前云测试对象存储直接使用 Cloudflare R2 S3 兼容接口，`MINIO_*` 是项目内兼容变量名但值指向 R2；`MINIO_PUBLIC_URL` 继续留空，`R2_PUBLIC_DOMAIN` 使用已验证的新对象公网域名。Web owner 视频结果接口只在 R2 公网 URL 可解析时返回成功，若临时清空 `R2_PUBLIC_DOMAIN`，视频任务可能在 99% / `pending_result` 等待结果 URL。
 
+RunPod 云测试远程 worker 使用独立 worker Central 域名 `worker-central-test.aivison.it.com`，回源云测试 Central `http://100.82.124.91:8004`。2026-06-11 已在 `allbot-do-sgp1-test-control` 安装 `cloudflared` 2026.6.0，并以 Cloudflare Tunnel `RunPod-test` token 安装 systemd 服务 `cloudflared.service`；服务已能连接 Cloudflare。该 tunnel 已配置 Published application / Public hostname：
+
+```text
+Hostname: worker-central-test.aivison.it.com
+Service:  http://100.82.124.91:8004
+```
+
+验收：`https://worker-central-test.aivison.it.com/health` 返回 Central API OK，`/system/status` 可读云测试队列状态。该域名只供 remote worker / RunPod Pod 访问 Central agent API，不得复用 `api.aivison.it.com`，也不要开启会拦截 worker 请求的 Cloudflare Access 登录页；先依赖 `AGENT_SECRET_TOKEN` 鉴权，并在 Cloudflare 侧加 WAF/rate limit。`cloudflared.service` 由 token-based install 创建，`systemctl status cloudflared` 可能显示 tunnel token，排障时不得把完整输出贴入文档或聊天。
+
 Web 前端上传参考图/视频时会先调用云端 Web API 获取预签名地址，再由浏览器直接 `PUT` 到 R2 S3 endpoint。R2 `user-data-test` 桶必须配置 CORS，否则前端会显示 `Network error during upload`：
 
 ```json

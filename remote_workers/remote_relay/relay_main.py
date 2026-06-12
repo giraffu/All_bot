@@ -263,6 +263,7 @@ async def shutdown() -> None:
 
 
 @app.get("/health")
+@app.get("/ready")
 async def health() -> dict[str, Any]:
     return {"status": "ok", "upstream": CENTRAL_API_URL}
 
@@ -297,7 +298,7 @@ async def check_task(task_id: str) -> JSONResponse:
 
 
 @app.post("/api/agent/task/status")
-async def update_status(request: Request) -> dict[str, str] | JSONResponse:
+async def update_status(request: Request):
     payload = await request.json()
     status = str(payload.get("status", ""))
     if status in {"failed", "cancelled"}:
@@ -442,4 +443,3 @@ if __name__ == "__main__":
         port=int(os.getenv("LOCAL_RELAY_PORT", "8013")),
         log_level=LOG_LEVEL.lower(),
     )
-
