@@ -20,6 +20,7 @@ from .runpod_canary import (
 )
 from .runpod_prod_worker import (
     RunPodProdWorkerRunner,
+    apply_prod_worker_selection_to_env,
     load_env_file_for_prod_worker,
     options_from_args_env as prod_worker_options_from_args_env,
 )
@@ -330,10 +331,12 @@ def _cmd_runpod_prod_worker(args) -> int:
             protect_existing_prefixes=("RUNPOD_",),
         )
     )
+    selection = apply_prod_worker_selection_to_env(args)
     provider = _runpod_provider_from_args(args)
     options = prod_worker_options_from_args_env(args)
     payload = RunPodProdWorkerRunner(provider, options).run()
     payload["env_files"] = env_files
+    payload["selection"] = selection
     _print_json(payload)
     return 0 if payload.get("ok") else 2
 
@@ -549,6 +552,11 @@ def build_parser() -> argparse.ArgumentParser:
         dest="prod_env_file",
     )
     prod_worker_common.add_argument("--agent-id", default=None)
+    prod_worker_common.add_argument(
+        "--slot",
+        default=None,
+        help="manual prod RunPod worker slot, e.g. 01 or NN",
+    )
     prod_worker_common.add_argument("--central-url", default=None)
     prod_worker_common.add_argument("--web-api-url", default=None)
     prod_worker_common.add_argument("--web-user-id", type=int, default=None)
@@ -580,6 +588,14 @@ def build_parser() -> argparse.ArgumentParser:
         )
         prod_worker_command.add_argument("--execute", action="store_true")
         prod_worker_command.set_defaults(func=_cmd_runpod_prod_worker)
+
+    prod_worker_scale = prod_worker_subparsers.add_parser(
+        "scale",
+        parents=[prod_worker_common],
+    )
+    prod_worker_scale.add_argument("--desired", type=int, required=True)
+    prod_worker_scale.add_argument("--execute", action="store_true")
+    prod_worker_scale.set_defaults(func=_cmd_runpod_prod_worker)
 
     return parser
 

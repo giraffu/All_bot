@@ -6,7 +6,7 @@ import re
 import urllib.error
 import urllib.parse
 import urllib.request
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Callable
 
@@ -24,6 +24,10 @@ RUNPOD_PROD_R2_SECRET_KEY_REF = "{{ RUNPOD_SECRET_allbot_cloud_prod_r2_secret_ke
 RUNPOD_MODEL_CACHE_R2_ACCESS_KEY_REF = "{{ RUNPOD_SECRET_allbot_model_cache_r2_access_key }}"
 RUNPOD_MODEL_CACHE_R2_SECRET_KEY_REF = "{{ RUNPOD_SECRET_allbot_model_cache_r2_secret_key }}"
 RUNPOD_PROD_WORKER_CENTRAL_URL = "https://worker-central.aivison.it.com"
+RUNPOD_PROD_AGENT_ID_PREFIX = "runpod_prod_img2img_manual_"
+RUNPOD_PROD_POD_NAME_PREFIX = "allbot-runpod-prod-img2img-manual-"
+RUNPOD_PROD_DEFAULT_MAX_MANUAL_SLOTS = 2
+RUNPOD_PROD_MAX_MANUAL_SLOTS = RUNPOD_PROD_DEFAULT_MAX_MANUAL_SLOTS
 RUNPOD_PROD_AGENT_ID = "runpod_prod_img2img_manual_01"
 RUNPOD_PROD_NODE_ID = "runpod-cloud-prod"
 RUNPOD_PROD_BUCKET = "user-data-prod"
@@ -121,6 +125,76 @@ def _int_env(value: str | None, *, default: int) -> int:
     if value is None or not value.strip():
         return default
     return int(value)
+
+
+def prod_agent_id_from_slot(
+    slot: str | int,
+    *,
+    max_manual_slots: int | None = None,
+) -> str:
+    normalized = _normalize_prod_worker_slot(
+        slot,
+        max_manual_slots=max_manual_slots,
+    )
+    return f"{RUNPOD_PROD_AGENT_ID_PREFIX}{normalized}"
+
+
+def prod_slot_from_agent_id(
+    agent_id: str,
+    *,
+    max_manual_slots: int | None = None,
+) -> str:
+    if not agent_id.startswith(RUNPOD_PROD_AGENT_ID_PREFIX):
+        raise ValueError(
+            f"prod RunPod agent_id must start with {RUNPOD_PROD_AGENT_ID_PREFIX}"
+        )
+    return _normalize_prod_worker_slot(
+        agent_id.removeprefix(RUNPOD_PROD_AGENT_ID_PREFIX),
+        max_manual_slots=max_manual_slots,
+    )
+
+
+def prod_pod_name_from_agent_id(
+    agent_id: str,
+    *,
+    max_manual_slots: int | None = None,
+) -> str:
+    slot = prod_slot_from_agent_id(
+        agent_id,
+        max_manual_slots=max_manual_slots,
+    )
+    return f"{RUNPOD_PROD_POD_NAME_PREFIX}{slot}"
+
+
+def _normalize_prod_worker_slot(
+    slot: str | int,
+    *,
+    max_manual_slots: int | None = None,
+) -> str:
+    raw = str(slot).strip()
+    if not raw:
+        raise ValueError("prod RunPod slot is required")
+    if not raw.isdigit():
+        raise ValueError("prod RunPod slot must be numeric")
+    value = int(raw, 10)
+    max_slots = (
+        max_manual_slots
+        if max_manual_slots is not None
+        else _prod_max_manual_slots_from_env()
+    )
+    if value < 1 or value > max_slots:
+        raise ValueError(
+            "prod RunPod slot must be between "
+            f"01 and {max_slots:02d}"
+        )
+    return f"{value:02d}"
+
+
+def _prod_max_manual_slots_from_env() -> int:
+    return _int_env(
+        os.getenv("RUNPOD_PROD_MAX_MANUAL_SLOTS"),
+        default=RUNPOD_PROD_DEFAULT_MAX_MANUAL_SLOTS,
+    )
 
 
 def _float_env(value: str | None, *, default: float) -> float:
@@ -226,6 +300,7 @@ class RunPodSettings:
     prod_agent_id: str = RUNPOD_PROD_AGENT_ID
     prod_supported_task_types: tuple[str, ...] = RUNPOD_PROD_SUPPORTED_TASK_TYPES
     prod_gpu_type_ids: tuple[str, ...] = RUNPOD_PROD_GPU_TYPE_IDS
+    prod_max_manual_slots: int = RUNPOD_PROD_DEFAULT_MAX_MANUAL_SLOTS
     prod_node_id: str = RUNPOD_PROD_NODE_ID
     prod_bucket: str = RUNPOD_PROD_BUCKET
     prod_agent_secret_token_ref: str = RUNPOD_PROD_AGENT_SECRET_TOKEN_REF
@@ -348,6 +423,7 @@ class RunPodSettings:
                 default=cls.prod_gpu_type_ids,
             )
             or RUNPOD_PROD_GPU_TYPE_IDS,
+            prod_max_manual_slots=_prod_max_manual_slots_from_env(),
             prod_node_id=os.getenv("RUNPOD_PROD_NODE_ID", RUNPOD_PROD_NODE_ID),
             prod_bucket=os.getenv("RUNPOD_PROD_BUCKET", RUNPOD_PROD_BUCKET),
             prod_agent_secret_token_ref=os.getenv(
@@ -655,6 +731,16 @@ class RunPodProvider:
             execute=execute,
         )
 
+    def for_prod_agent_id(self, agent_id: str) -> "RunPodProvider":
+        prod_slot_from_agent_id(
+            agent_id,
+            max_manual_slots=self.settings.prod_max_manual_slots,
+        )
+        return RunPodProvider(
+            replace(self.settings, prod_agent_id=agent_id),
+            request_func=self._request_func,
+        )
+
     @staticmethod
     def is_managed_pod(pod: dict[str, Any]) -> bool:
         env = pod.get("env") or {}
@@ -787,8 +873,8 @@ class RunPodProvider:
             execute
             and not self.settings.dry_run
             and self.settings.autoscaler_enabled
-            and self.settings.max_pods_total == 1
-            and self.settings.max_pods_per_type == 1
+            and 1 <= self.settings.max_pods_total <= self.settings.prod_max_manual_slots
+            and 1 <= self.settings.max_pods_per_type <= self.settings.prod_max_manual_slots
         )
 
     def _create_pod_body(self, *, task_type: str, environment: str) -> dict[str, Any]:
@@ -914,13 +1000,18 @@ class RunPodProvider:
         if environment == "cloud-prod":
             env["AGENT_ID"] = env_config["agent_id"]
             env["AGENT_ID_PREFIX"] = env_config["agent_id"]
-            env["POOL_IMAGE_REF"] = self._image_name_for(profile) or RUNPOD_PUBLIC_IMG2IMG_LORA_IMAGE
+            env["POOL_IMAGE_REF"] = (
+                self._image_name_for(profile) or RUNPOD_PUBLIC_IMG2IMG_LORA_IMAGE
+            )
         env.update(self.settings.extra_env)
         return env
 
     def _pod_name(self, *, profile: RunPodTaskProfile, environment: str) -> str:
         if environment == "cloud-prod":
-            return "allbot-runpod-prod-img2img-manual-01"
+            return prod_pod_name_from_agent_id(
+                self.settings.prod_agent_id,
+                max_manual_slots=self.settings.prod_max_manual_slots,
+            )
         return f"allbot-runpod-test-{profile.runtime_profile.replace('_', '-')}"
 
     def _environment_config(
@@ -991,10 +1082,19 @@ class RunPodProvider:
             reasons.append("RUNPOD_DRY_RUN=true")
         if not self.settings.autoscaler_enabled:
             reasons.append("RUNPOD_AUTOSCALER_ENABLED=false")
-        if self.settings.max_pods_total != 1:
-            reasons.append("RUNPOD_MAX_PODS_TOTAL must be 1 for v0")
-        if self.settings.max_pods_per_type != 1:
-            reasons.append("RUNPOD_MAX_PODS_PER_TYPE must be 1 for v0")
+        max_manual_slots = self.settings.prod_max_manual_slots
+        if not 1 <= self.settings.max_pods_total <= max_manual_slots:
+            reasons.append(
+                "RUNPOD_MAX_PODS_TOTAL must be between "
+                f"1 and {max_manual_slots} for v0"
+            )
+        if not 1 <= self.settings.max_pods_per_type <= max_manual_slots:
+            reasons.append(
+                "RUNPOD_MAX_PODS_PER_TYPE must be between "
+                f"1 and {max_manual_slots} for v0"
+            )
+        if self.settings.max_pods_per_type > self.settings.max_pods_total:
+            reasons.append("RUNPOD_MAX_PODS_PER_TYPE must not exceed RUNPOD_MAX_PODS_TOTAL")
 
         if action in {"create", "start"}:
             active = [pod for pod in existing_pods if self._is_active(pod)]

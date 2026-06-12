@@ -7,7 +7,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
@@ -16,16 +16,15 @@ from .providers.runpod import (
     RUNPOD_MODEL_CACHE_R2_ACCESS_KEY_REF,
     RUNPOD_MODEL_CACHE_R2_SECRET_KEY_REF,
     RUNPOD_PROD_AGENT_ID,
-    RUNPOD_PROD_AGENT_SECRET_TOKEN_REF,
+    RUNPOD_PROD_AGENT_ID_PREFIX,
     RUNPOD_PROD_BUCKET,
-    RUNPOD_PROD_GPU_TYPE_IDS,
-    RUNPOD_PROD_NODE_ID,
-    RUNPOD_PROD_R2_ACCESS_KEY_REF,
-    RUNPOD_PROD_R2_SECRET_KEY_REF,
+    RUNPOD_PROD_POD_NAME_PREFIX,
     RUNPOD_PROD_SUPPORTED_TASK_TYPES,
-    RUNPOD_PROD_WORKER_CENTRAL_URL,
     RUNPOD_PUBLIC_IMG2IMG_LORA_IMAGE,
     RunPodProvider,
+    prod_agent_id_from_slot,
+    prod_pod_name_from_agent_id,
+    prod_slot_from_agent_id,
     redact_payload,
     redact_text,
 )
@@ -34,14 +33,12 @@ from .runpod_canary import result_url_path, write_canary_png
 
 PROD_ENVIRONMENT = "cloud-prod"
 PROD_TASK_TYPE = "img2img"
-PROD_SUPPORTED_TASK_TYPES = ",".join(RUNPOD_PROD_SUPPORTED_TASK_TYPES)
 PROD_CONTROL_HOST = "100.107.220.127"
 PROD_WORKER_CENTRAL_PORT = 8003
 PROD_WEB_API_PORT = 8000
 PROD_MODEL_BUCKET = "allbot-model-cache"
 PROD_MODEL_PREFIX = "img2img_lora/2026-06-10"
 PROD_MODEL_MANIFEST_KEY = "img2img_lora/2026-06-10/manifest.json"
-PROD_POD_NAME = "allbot-runpod-prod-img2img-manual-01"
 HEALTHY_WORKER_STATUSES = {"idle", "running"}
 TERMINAL_TASK_STATUSES = {"done", "error", "cancelled"}
 
@@ -57,6 +54,7 @@ class RunPodProdWorkerOptions:
     task_type: str = PROD_TASK_TYPE
     environment: str = PROD_ENVIRONMENT
     agent_id: str = RUNPOD_PROD_AGENT_ID
+    desired_count: int | None = None
     central_url: str = ""
     web_api_url: str = ""
     web_user_id: int = 3
@@ -108,25 +106,62 @@ def load_env_file_for_prod_worker(
     }
 
 
+def apply_prod_worker_selection_to_env(args: Any) -> dict[str, str]:
+    agent_id = prod_worker_agent_id_from_args_env(args)
+    os.environ["RUNPOD_PROD_AGENT_ID"] = agent_id
+    return {
+        "agent_id": agent_id,
+        "slot": prod_slot_from_agent_id(agent_id),
+        "pod_name": prod_pod_name_from_agent_id(agent_id),
+    }
+
+
+def prod_worker_agent_id_from_args_env(args: Any) -> str:
+    explicit_agent_id = (
+        getattr(args, "agent_id", None)
+        or os.getenv("RUNPOD_PROD_WORKER_AGENT_ID")
+        or ""
+    ).strip()
+    explicit_slot = (
+        str(getattr(args, "slot", "") or os.getenv("RUNPOD_PROD_WORKER_SLOT") or "")
+    ).strip()
+    if explicit_agent_id:
+        prod_slot_from_agent_id(explicit_agent_id)
+        if explicit_slot:
+            slot_agent_id = prod_agent_id_from_slot(explicit_slot)
+            if slot_agent_id != explicit_agent_id:
+                raise RunPodProdWorkerError(
+                    "--slot and --agent-id refer to different prod RunPod workers"
+                )
+        return explicit_agent_id
+    if explicit_slot:
+        return prod_agent_id_from_slot(explicit_slot)
+    agent_id = os.getenv("RUNPOD_PROD_AGENT_ID", RUNPOD_PROD_AGENT_ID)
+    prod_slot_from_agent_id(agent_id)
+    return agent_id
+
+
 def options_from_args_env(args: Any) -> RunPodProdWorkerOptions:
     control_host = (
         os.getenv("RUNPOD_PROD_WORKER_CONTROL_HOST")
         or os.getenv("CLOUD_PROD_TAILSCALE_IP")
         or PROD_CONTROL_HOST
     )
+    agent_id = prod_worker_agent_id_from_args_env(args)
     default_download_dir = (
         Path("runpod_canary_results")
         / "prod"
         / datetime.now(timezone.utc).strftime("%Y%m%d")
     )
     return RunPodProdWorkerOptions(
-        action=str(getattr(args, "prod_worker_command", "") or getattr(args, "action", "") or "status"),
-        execute=bool(getattr(args, "execute", False)),
-        agent_id=(
-            getattr(args, "agent_id", None)
-            or os.getenv("RUNPOD_PROD_WORKER_AGENT_ID")
-            or RUNPOD_PROD_AGENT_ID
+        action=str(
+            getattr(args, "prod_worker_command", "")
+            or getattr(args, "action", "")
+            or "status"
         ),
+        execute=bool(getattr(args, "execute", False)),
+        agent_id=agent_id,
+        desired_count=getattr(args, "desired", None),
         central_url=(
             getattr(args, "central_url", None)
             or os.getenv("RUNPOD_PROD_WORKER_CENTRAL_URL")
@@ -229,6 +264,8 @@ class RunPodProdWorkerRunner:
                 self._run_down(summary)
             elif action == "canary":
                 self._run_canary(summary)
+            elif action == "scale":
+                self._run_scale(summary)
             else:
                 raise RunPodProdWorkerError(f"unsupported prod-worker action: {self.options.action}")
             summary.setdefault("ok", True)
@@ -242,9 +279,14 @@ class RunPodProdWorkerRunner:
             raise RunPodProdWorkerError("prod-worker only supports environment=cloud-prod")
         if self.options.task_type != PROD_TASK_TYPE:
             raise RunPodProdWorkerError("prod-worker only supports task_type=img2img")
-        if self.options.agent_id != RUNPOD_PROD_AGENT_ID:
+        prod_slot_from_agent_id(
+            self.options.agent_id,
+            max_manual_slots=self.provider.settings.prod_max_manual_slots,
+        )
+        if self.options.agent_id != self.provider.settings.prod_agent_id:
             raise RunPodProdWorkerError(
-                f"prod-worker agent_id is fixed to {RUNPOD_PROD_AGENT_ID}"
+                "prod-worker agent_id must match provider RUNPOD_PROD_AGENT_ID "
+                f"({self.provider.settings.prod_agent_id})"
             )
 
     def _run_render(self, summary: dict[str, Any]) -> None:
@@ -394,6 +436,345 @@ class RunPodProdWorkerRunner:
                 summary["ok"] = False
                 summary["restore_control_error"] = redact_text(str(exc))
 
+    def _run_scale(self, summary: dict[str, Any]) -> None:
+        desired = self._desired_count()
+        max_slots = self.provider.settings.prod_max_manual_slots
+        if desired > max_slots:
+            raise RunPodProdWorkerError(
+                f"--desired must be <= RUNPOD_PROD_MAX_MANUAL_SLOTS ({max_slots})"
+            )
+        summary["desired_count"] = desired
+        summary["max_manual_slots"] = max_slots
+
+        self._phase(summary, "runpod_validate_key", "running")
+        validate = self.provider.validate_key()
+        self._require_ok(validate, "runpod validate-key failed")
+        self._phase(summary, "runpod_validate_key", "ok")
+
+        self._phase(summary, "runpod_list_pods", "running")
+        listed = self.provider.list_pods(managed_only=True)
+        self._require_ok(listed, "runpod list-pods failed")
+        managed_pods = list(listed.get("pods") or [])
+        slot_pods = _prod_manual_slot_pods(
+            managed_pods,
+            max_manual_slots=max_slots,
+        )
+        self._phase(
+            summary,
+            "runpod_list_pods",
+            "ok",
+            {
+                "managed_count": listed.get("count", 0),
+                "prod_slot_count": len(slot_pods),
+            },
+        )
+
+        self._phase(summary, "runpod_reconcile", "running")
+        reconcile = self.provider.reconcile_managed_pods()
+        self._require_ok(reconcile, "runpod reconcile-managed-pods failed")
+        summary["reconcile"] = {
+            "managed_count": reconcile.get("managed_count"),
+            "orphans": reconcile.get("orphans", []),
+            "by_task_type": reconcile.get("by_task_type", {}),
+        }
+        self._phase(summary, "runpod_reconcile", "ok", summary["reconcile"])
+
+        self._phase(summary, "central_health", "running")
+        health = self._http_json("GET", _join_url(self.options.central_url, "health"))
+        summary["central_health"] = redact_payload(health)
+        self._phase(summary, "central_health", "ok", {"central_url": self.options.central_url})
+
+        workers = self._fetch_workers()
+        controls = self._scale_control_snapshot(
+            desired=desired,
+            slot_pods=slot_pods,
+        )
+        plan = self._build_scale_plan(
+            desired=desired,
+            slot_pods=slot_pods,
+            workers=workers,
+            controls=controls,
+        )
+        summary["scale_plan"] = plan
+        if not self.options.execute:
+            summary["ok"] = True
+            summary["would_execute"] = self._scale_would_execute(plan)
+            return
+
+        self._require_agent_token()
+        self._require_runpod_mutation_gates(
+            required_pod_limit=desired if plan["create_slots"] else 0,
+        )
+        operations: list[dict[str, Any]] = []
+        for slot in plan["create_slots"]:
+            operations.append(self._scale_create_slot(slot, summary))
+        for slot in plan["enable_slots"]:
+            operations.append(self._scale_enable_slot(slot, summary))
+        for slot in plan["delete_slots"]:
+            pod = slot_pods.get(slot)
+            if pod is None:
+                continue
+            operations.append(self._scale_delete_slot(slot, pod, summary))
+        summary["operations"] = operations
+
+        listed_after = self.provider.list_pods(managed_only=True)
+        reconcile_after = self.provider.reconcile_managed_pods()
+        summary["post_reconcile"] = {
+            "list_pods": {
+                "ok": listed_after.get("ok"),
+                "count": listed_after.get("count"),
+            },
+            "reconcile": {
+                "ok": reconcile_after.get("ok"),
+                "managed_count": reconcile_after.get("managed_count"),
+                "orphans": reconcile_after.get("orphans", []),
+            },
+        }
+        summary["ok"] = bool(listed_after.get("ok") and reconcile_after.get("ok"))
+
+    def _desired_count(self) -> int:
+        if self.options.desired_count is None:
+            raise RunPodProdWorkerError("prod-worker scale requires --desired")
+        try:
+            desired = int(self.options.desired_count)
+        except (TypeError, ValueError) as exc:
+            raise RunPodProdWorkerError("--desired must be an integer") from exc
+        if desired < 0:
+            raise RunPodProdWorkerError("--desired must be >= 0")
+        return desired
+
+    def _build_scale_plan(
+        self,
+        *,
+        desired: int,
+        slot_pods: dict[str, dict[str, Any]],
+        workers: list[dict[str, Any]],
+        controls: dict[str, dict[str, Any]],
+    ) -> dict[str, Any]:
+        desired_slots = set(_prod_slot_sequence(desired))
+        existing_slots = set(slot_pods)
+        create_slots = sorted(
+            desired_slots - existing_slots,
+            key=_slot_sort_key,
+        )
+        enable_slots = sorted(
+            desired_slots & existing_slots,
+            key=_slot_sort_key,
+        )
+        delete_slots = sorted(
+            existing_slots - desired_slots,
+            key=_slot_sort_key,
+            reverse=True,
+        )
+        slots: dict[str, Any] = {}
+        for slot in sorted(existing_slots | desired_slots, key=_slot_sort_key):
+            agent_id = prod_agent_id_from_slot(
+                slot,
+                max_manual_slots=self.provider.settings.prod_max_manual_slots,
+            )
+            worker = _find_worker(workers, agent_id)
+            slots[slot] = {
+                "agent_id": agent_id,
+                "pod": _pod_minimal(slot_pods[slot]) if slot in slot_pods else None,
+                "worker": _worker_summary(worker) if worker else None,
+                "control": controls.get(slot),
+            }
+        return {
+            "desired_slots": sorted(desired_slots, key=_slot_sort_key),
+            "existing_slots": sorted(existing_slots, key=_slot_sort_key),
+            "create_slots": create_slots,
+            "enable_slots": enable_slots,
+            "delete_slots": delete_slots,
+            "slots": slots,
+        }
+
+    def _scale_control_snapshot(
+        self,
+        *,
+        desired: int,
+        slot_pods: dict[str, dict[str, Any]],
+    ) -> dict[str, dict[str, Any]]:
+        slots = sorted(
+            set(_prod_slot_sequence(desired)) | set(slot_pods),
+            key=_slot_sort_key,
+        )
+        snapshot: dict[str, dict[str, Any]] = {}
+        for slot in slots:
+            agent_id = prod_agent_id_from_slot(
+                slot,
+                max_manual_slots=self.provider.settings.prod_max_manual_slots,
+            )
+            if not self.options.agent_token:
+                snapshot[slot] = {
+                    "agent_id": agent_id,
+                    "state": "unknown",
+                    "note": "AGENT_SECRET_TOKEN not loaded; control was not queried",
+                }
+                continue
+            try:
+                snapshot[slot] = redact_payload(
+                    self._get_agent_control_for_agent(agent_id)
+                )
+            except Exception as exc:
+                snapshot[slot] = {
+                    "agent_id": agent_id,
+                    "state": "unknown",
+                    "error": redact_text(str(exc)),
+                }
+        return snapshot
+
+    def _scale_would_execute(self, plan: dict[str, Any]) -> list[str]:
+        actions: list[str] = []
+        for slot in plan["create_slots"]:
+            agent_id = prod_agent_id_from_slot(
+                slot,
+                max_manual_slots=self.provider.settings.prod_max_manual_slots,
+            )
+            actions.extend(
+                [
+                    f"set Central control for {agent_id} to disabled",
+                    f"create cloud-prod RunPod pod for slot {slot}",
+                    f"wait for slot {slot} Pod readiness and disabled heartbeat",
+                    f"set Central control for {agent_id} to enabled",
+                ]
+            )
+        for slot in plan["enable_slots"]:
+            agent_id = prod_agent_id_from_slot(
+                slot,
+                max_manual_slots=self.provider.settings.prod_max_manual_slots,
+            )
+            actions.append(f"verify slot {slot} heartbeat and set {agent_id} to enabled")
+        for slot in plan["delete_slots"]:
+            agent_id = prod_agent_id_from_slot(
+                slot,
+                max_manual_slots=self.provider.settings.prod_max_manual_slots,
+            )
+            actions.extend(
+                [
+                    f"set Central control for {agent_id} to disabled",
+                    f"wait until slot {slot} worker has no current_task_id",
+                    f"delete cloud-prod RunPod pod for slot {slot}",
+                ]
+            )
+        if not actions:
+            actions.append("no changes; desired RunPod prod worker count already matches")
+        return actions
+
+    def _scale_create_slot(
+        self,
+        slot: str,
+        summary: dict[str, Any],
+    ) -> dict[str, Any]:
+        agent_id = prod_agent_id_from_slot(
+            slot,
+            max_manual_slots=self.provider.settings.prod_max_manual_slots,
+        )
+        provider = self._provider_for_agent(agent_id)
+        operation: dict[str, Any] = {
+            "action": "create",
+            "slot": slot,
+            "agent_id": agent_id,
+        }
+        render = self._render(redact=False, agent_id=agent_id, provider=provider)
+        operation["render"] = self._render_summary(render)
+        operation["disable_control"] = self._set_agent_control_for_agent(
+            agent_id,
+            "disabled",
+            reason="runpod_prod_worker_scale_up",
+        )
+        create_payload = provider.create_pod(
+            task_type=self.options.task_type,
+            environment=self.options.environment,
+            execute=True,
+        )
+        self._require_ok(create_payload, f"runpod create-pod failed for slot {slot}")
+        pod_id = _extract_pod_id(create_payload)
+        operation["pod"] = _pod_summary(create_payload, operation["render"].get("imageName", ""))
+        self._phase(summary, f"runpod_create_pod_{slot}", "ok", {"pod_id": pod_id})
+        self._wait_pod_readiness(pod_id, summary, provider=provider)
+        worker = self._wait_prod_worker_for_agent(
+            agent_id,
+            summary,
+            require_disabled=True,
+        )
+        operation["worker"] = _worker_summary(worker)
+        operation["enable_control"] = self._set_agent_control_for_agent(
+            agent_id,
+            "enabled",
+            reason="runpod_prod_worker_scale_enable",
+        )
+        return operation
+
+    def _scale_enable_slot(
+        self,
+        slot: str,
+        summary: dict[str, Any],
+    ) -> dict[str, Any]:
+        agent_id = prod_agent_id_from_slot(
+            slot,
+            max_manual_slots=self.provider.settings.prod_max_manual_slots,
+        )
+        worker = self._wait_prod_worker_for_agent(
+            agent_id,
+            summary,
+            require_disabled=False,
+        )
+        control = self._set_agent_control_for_agent(
+            agent_id,
+            "enabled",
+            reason="runpod_prod_worker_scale_enable",
+        )
+        return {
+            "action": "enable",
+            "slot": slot,
+            "agent_id": agent_id,
+            "worker": _worker_summary(worker),
+            "control": control,
+        }
+
+    def _scale_delete_slot(
+        self,
+        slot: str,
+        pod: dict[str, Any],
+        summary: dict[str, Any],
+    ) -> dict[str, Any]:
+        agent_id = prod_agent_id_from_slot(
+            slot,
+            max_manual_slots=self.provider.settings.prod_max_manual_slots,
+        )
+        provider = self._provider_for_agent(agent_id)
+        operation: dict[str, Any] = {
+            "action": "delete",
+            "slot": slot,
+            "agent_id": agent_id,
+        }
+        operation["disable_control"] = self._set_agent_control_for_agent(
+            agent_id,
+            "disabled",
+            reason="runpod_prod_worker_scale_down",
+        )
+        worker = self._wait_worker_drained_for_agent(agent_id, summary)
+        operation["worker"] = _worker_summary(worker) if worker else {}
+        pod_id = str(pod.get("id") or pod.get("podId") or "")
+        if not pod_id:
+            raise RunPodProdWorkerError(f"managed prod pod for slot {slot} did not include an id")
+        delete_payload = provider.delete_pod(
+            pod_id=pod_id,
+            task_type=self.options.task_type,
+            execute=True,
+        )
+        self._require_ok(delete_payload, f"runpod delete-pod failed for slot {slot}")
+        operation["pod_delete"] = {"pod_id": pod_id, "ok": True}
+        self._phase(summary, f"runpod_delete_pod_{slot}", "ok", {"pod_id": pod_id})
+        return operation
+
+    def _provider_for_agent(self, agent_id: str) -> Any:
+        if hasattr(self.provider, "for_prod_agent_id"):
+            return self.provider.for_prod_agent_id(agent_id)
+        return RunPodProvider(
+            replace(self.provider.settings, prod_agent_id=agent_id),
+        )
+
     def _run_preflight(
         self,
         summary: dict[str, Any],
@@ -463,18 +844,38 @@ class RunPodProdWorkerRunner:
             },
         )
 
-    def _render(self, *, redact: bool) -> dict[str, Any]:
-        render = self.provider.render_create_pod_request(
+    def _render(
+        self,
+        *,
+        redact: bool,
+        agent_id: str | None = None,
+        provider: Any | None = None,
+    ) -> dict[str, Any]:
+        target_provider = provider or self.provider
+        target_agent_id = agent_id or self.options.agent_id
+        render = target_provider.render_create_pod_request(
             task_type=self.options.task_type,
             environment=self.options.environment,
             redact=redact,
         )
-        self._validate_render(render)
+        self._validate_render(
+            render,
+            agent_id=target_agent_id,
+            settings=target_provider.settings,
+        )
         return render
 
-    def _validate_render(self, render: dict[str, Any]) -> None:
+    def _validate_render(
+        self,
+        render: dict[str, Any],
+        *,
+        agent_id: str | None = None,
+        settings: Any | None = None,
+    ) -> None:
         body = render.get("json") or {}
         env = body.get("env") or {}
+        target_agent_id = agent_id or self.options.agent_id
+        target_settings = settings or self.provider.settings
         failures: list[str] = []
         if body.get("templateId"):
             failures.append("templateId must be empty for prod GHCR baked image")
@@ -483,17 +884,17 @@ class RunPodProdWorkerRunner:
         expected_env = {
             "ENVIRONMENT": "prod",
             "RUNPOD_ENVIRONMENT": PROD_ENVIRONMENT,
-            "AGENT_ID": RUNPOD_PROD_AGENT_ID,
-            "AGENT_ID_PREFIX": RUNPOD_PROD_AGENT_ID,
-            "CENTRAL_API_URL": RUNPOD_PROD_WORKER_CENTRAL_URL,
-            "SUPPORTED_TASK_TYPES": PROD_SUPPORTED_TASK_TYPES,
+            "AGENT_ID": target_agent_id,
+            "AGENT_ID_PREFIX": target_agent_id,
+            "CENTRAL_API_URL": target_settings.worker_central_url_cloud_prod,
+            "SUPPORTED_TASK_TYPES": ",".join(target_settings.prod_supported_task_types),
             "POOL_PROVIDER": "runpod",
-            "POOL_NODE_ID": RUNPOD_PROD_NODE_ID,
+            "POOL_NODE_ID": target_settings.prod_node_id,
             "POOL_RUNTIME_PROFILE": "img2img_lora",
-            "MINIO_BUCKET": RUNPOD_PROD_BUCKET,
-            "MINIO_INPUT_BUCKET": RUNPOD_PROD_BUCKET,
-            "MINIO_RESULT_BUCKET": RUNPOD_PROD_BUCKET,
-            "MINIO_TEMPLATE_BUCKET": RUNPOD_PROD_BUCKET,
+            "MINIO_BUCKET": target_settings.prod_bucket,
+            "MINIO_INPUT_BUCKET": target_settings.prod_bucket,
+            "MINIO_RESULT_BUCKET": target_settings.prod_bucket,
+            "MINIO_TEMPLATE_BUCKET": target_settings.prod_bucket,
             "RUNPOD_MODEL_SYNC_ENABLED": "true",
             "RUNPOD_MODEL_BUCKET": PROD_MODEL_BUCKET,
             "RUNPOD_MODEL_PREFIX": PROD_MODEL_PREFIX,
@@ -506,16 +907,16 @@ class RunPodProdWorkerRunner:
         for key, expected in expected_env.items():
             if str(env.get(key) or "") != expected:
                 failures.append(f"{key} must be {expected}")
-        if list(body.get("gpuTypeIds") or []) != list(RUNPOD_PROD_GPU_TYPE_IDS):
+        if list(body.get("gpuTypeIds") or []) != list(target_settings.prod_gpu_type_ids):
             failures.append(
                 "gpuTypeIds must be "
-                + ",".join(RUNPOD_PROD_GPU_TYPE_IDS)
+                + ",".join(target_settings.prod_gpu_type_ids)
                 + " for prod-worker"
             )
         expected_refs = {
-            "AGENT_SECRET_TOKEN": RUNPOD_PROD_AGENT_SECRET_TOKEN_REF,
-            "MINIO_ACCESS_KEY": RUNPOD_PROD_R2_ACCESS_KEY_REF,
-            "MINIO_SECRET_KEY": RUNPOD_PROD_R2_SECRET_KEY_REF,
+            "AGENT_SECRET_TOKEN": target_settings.prod_agent_secret_token_ref,
+            "MINIO_ACCESS_KEY": target_settings.prod_minio_access_key_ref,
+            "MINIO_SECRET_KEY": target_settings.prod_minio_secret_key_ref,
             "RUNPOD_MODEL_ACCESS_KEY": RUNPOD_MODEL_CACHE_R2_ACCESS_KEY_REF,
             "RUNPOD_MODEL_SECRET_KEY": RUNPOD_MODEL_CACHE_R2_SECRET_KEY_REF,
         }
@@ -604,7 +1005,15 @@ class RunPodProdWorkerRunner:
         return payload
 
     def _prod_pods(self, pods: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        return [pod for pod in pods if _is_prod_pod(pod, self.options.agent_id)]
+        return [
+            pod
+            for pod in pods
+            if _is_prod_pod(
+                pod,
+                self.options.agent_id,
+                max_manual_slots=self.provider.settings.prod_max_manual_slots,
+            )
+        ]
 
     def _single_prod_pod(self, summary: dict[str, Any]) -> dict[str, Any] | None:
         listed = self.provider.list_pods(managed_only=True)
@@ -617,12 +1026,19 @@ class RunPodProdWorkerRunner:
             raise RunPodProdWorkerError("refusing down: multiple managed prod RunPod pods found")
         return prod_pods[0]
 
-    def _wait_pod_readiness(self, pod_id: str, summary: dict[str, Any]) -> None:
+    def _wait_pod_readiness(
+        self,
+        pod_id: str,
+        summary: dict[str, Any],
+        *,
+        provider: Any | None = None,
+    ) -> None:
+        target_provider = provider or self.provider
         self._phase(summary, "pod_readiness", "running", {"pod_id": pod_id})
         deadline = time.monotonic() + self.options.readiness_timeout_seconds
         last_payload: dict[str, Any] | None = None
         while time.monotonic() <= deadline:
-            payload = self.provider.pod_readiness(pod_id=pod_id)
+            payload = target_provider.pod_readiness(pod_id=pod_id)
             self._require_ok(payload, "runpod pod-readiness failed")
             last_payload = payload
             readiness = payload.get("readiness") or {}
@@ -646,13 +1062,26 @@ class RunPodProdWorkerRunner:
         *,
         require_disabled: bool,
     ) -> dict[str, Any]:
+        return self._wait_prod_worker_for_agent(
+            self.options.agent_id,
+            summary,
+            require_disabled=require_disabled,
+        )
+
+    def _wait_prod_worker_for_agent(
+        self,
+        agent_id: str,
+        summary: dict[str, Any],
+        *,
+        require_disabled: bool,
+    ) -> dict[str, Any]:
         self._phase(summary, "prod_worker_heartbeat", "running")
         deadline = time.monotonic() + self.options.worker_timeout_seconds
         last_worker: dict[str, Any] | None = None
         last_control: dict[str, Any] | None = None
         while time.monotonic() <= deadline:
-            worker = _find_worker(self._fetch_workers(), self.options.agent_id)
-            control = self._get_agent_control()
+            worker = _find_worker(self._fetch_workers(), agent_id)
+            control = self._get_agent_control_for_agent(agent_id)
             last_worker = worker
             last_control = control
             if worker and _worker_supports_img2img(worker):
@@ -671,7 +1100,7 @@ class RunPodProdWorkerRunner:
             "prod worker heartbeat timeout: "
             + json.dumps(
                 {
-                    "agent_id": self.options.agent_id,
+                    "agent_id": agent_id,
                     "last_worker": _worker_summary(last_worker) if last_worker else None,
                     "last_control": redact_payload(last_control),
                 },
@@ -680,11 +1109,18 @@ class RunPodProdWorkerRunner:
         )
 
     def _wait_worker_drained(self, summary: dict[str, Any]) -> dict[str, Any] | None:
+        return self._wait_worker_drained_for_agent(self.options.agent_id, summary)
+
+    def _wait_worker_drained_for_agent(
+        self,
+        agent_id: str,
+        summary: dict[str, Any],
+    ) -> dict[str, Any] | None:
         self._phase(summary, "worker_drain", "running")
         deadline = time.monotonic() + self.options.drain_timeout_seconds
         last_worker: dict[str, Any] | None = None
         while time.monotonic() <= deadline:
-            worker = _find_worker(self._fetch_workers(), self.options.agent_id)
+            worker = _find_worker(self._fetch_workers(), agent_id)
             last_worker = worker
             current_task_id = str((worker or {}).get("current_task_id") or "")
             if not current_task_id:
@@ -894,19 +1330,35 @@ class RunPodProdWorkerRunner:
         return body
 
     def _get_agent_control(self) -> dict[str, Any]:
+        return self._get_agent_control_for_agent(self.options.agent_id)
+
+    def _get_agent_control_for_agent(self, agent_id: str) -> dict[str, Any]:
         self._require_agent_token()
         return self._http_json(
             "GET",
-            _join_url(self.options.central_url, "api", "agent", "task", "control", self.options.agent_id),
+            _join_url(self.options.central_url, "api", "agent", "task", "control", agent_id),
             headers=self._agent_headers(),
         )
 
     def _set_agent_control(self, state: str, *, reason: str) -> dict[str, Any]:
+        return self._set_agent_control_for_agent(
+            self.options.agent_id,
+            state,
+            reason=reason,
+        )
+
+    def _set_agent_control_for_agent(
+        self,
+        agent_id: str,
+        state: str,
+        *,
+        reason: str,
+    ) -> dict[str, Any]:
         self._require_agent_token()
         body = {"state": state, "reason": reason}
         payload = self._http_json(
             "POST",
-            _join_url(self.options.central_url, "api", "agent", "task", "control", self.options.agent_id),
+            _join_url(self.options.central_url, "api", "agent", "task", "control", agent_id),
             json_body=body,
             headers=self._agent_headers(),
         )
@@ -1011,17 +1463,41 @@ class RunPodProdWorkerRunner:
             )
         return {"status": status, "text": text, "raw": raw}
 
-    def _require_runpod_mutation_gates(self) -> None:
+    def _require_runpod_mutation_gates(
+        self,
+        *,
+        required_pod_limit: int | None = None,
+    ) -> None:
         settings = self.provider.settings
+        max_manual_slots = settings.prod_max_manual_slots
+        if required_pod_limit is None:
+            required_pod_limit = int(
+                prod_slot_from_agent_id(
+                    self.options.agent_id,
+                    max_manual_slots=max_manual_slots,
+                )
+            )
         missing_gates: list[str] = []
         if settings.dry_run:
             missing_gates.append("RUNPOD_DRY_RUN=false")
         if not settings.autoscaler_enabled:
             missing_gates.append("RUNPOD_AUTOSCALER_ENABLED=true")
-        if settings.max_pods_total != 1:
-            missing_gates.append("RUNPOD_MAX_PODS_TOTAL=1")
-        if settings.max_pods_per_type != 1:
-            missing_gates.append("RUNPOD_MAX_PODS_PER_TYPE=1")
+        if settings.max_pods_total < required_pod_limit:
+            missing_gates.append(f"RUNPOD_MAX_PODS_TOTAL>={required_pod_limit}")
+        if settings.max_pods_total > max_manual_slots:
+            missing_gates.append(
+                f"RUNPOD_MAX_PODS_TOTAL<={max_manual_slots}"
+            )
+        if settings.max_pods_per_type < required_pod_limit:
+            missing_gates.append(f"RUNPOD_MAX_PODS_PER_TYPE>={required_pod_limit}")
+        if settings.max_pods_per_type > max_manual_slots:
+            missing_gates.append(
+                f"RUNPOD_MAX_PODS_PER_TYPE<={max_manual_slots}"
+            )
+        if settings.max_pods_per_type > settings.max_pods_total:
+            missing_gates.append(
+                "RUNPOD_MAX_PODS_PER_TYPE<=RUNPOD_MAX_PODS_TOTAL"
+            )
         if missing_gates:
             raise RunPodProdWorkerError(
                 "execute requires RunPod prod-worker gates: " + ", ".join(missing_gates)
@@ -1166,17 +1642,86 @@ def _pod_minimal(pod: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _is_prod_pod(pod: dict[str, Any], agent_id: str) -> bool:
+def _is_prod_pod(
+    pod: dict[str, Any],
+    agent_id: str,
+    *,
+    max_manual_slots: int | None = None,
+) -> bool:
     env = pod.get("env") if isinstance(pod.get("env"), dict) else {}
     name = str(pod.get("name") or "")
     return (
-        name == PROD_POD_NAME
-        or str(env.get("AGENT_ID") or "") == agent_id
-        or (
-            str(env.get("RUNPOD_ENVIRONMENT") or "") == PROD_ENVIRONMENT
-            and str(env.get("POOL_NODE_ID") or "") == RUNPOD_PROD_NODE_ID
+        name == prod_pod_name_from_agent_id(
+            agent_id,
+            max_manual_slots=max_manual_slots,
         )
+        or str(env.get("AGENT_ID") or "") == agent_id
+        or str(env.get("AGENT_ID_PREFIX") or "") == agent_id
     )
+
+
+def _prod_manual_slot_pods(
+    pods: list[dict[str, Any]],
+    *,
+    max_manual_slots: int,
+) -> dict[str, dict[str, Any]]:
+    slot_pods: dict[str, dict[str, Any]] = {}
+    for pod in pods:
+        slot = _prod_manual_slot_from_pod(pod)
+        if not slot:
+            continue
+        if int(slot) > max_manual_slots:
+            raise RunPodProdWorkerError(
+                f"managed prod RunPod slot {slot} exceeds "
+                f"RUNPOD_PROD_MAX_MANUAL_SLOTS={max_manual_slots}"
+            )
+        if slot in slot_pods:
+            raise RunPodProdWorkerError(
+                f"multiple managed prod RunPod pods found for slot {slot}"
+            )
+        slot_pods[slot] = pod
+    return slot_pods
+
+
+def _prod_manual_slot_from_pod(pod: dict[str, Any]) -> str:
+    env = pod.get("env") if isinstance(pod.get("env"), dict) else {}
+    for key in ("AGENT_ID", "AGENT_ID_PREFIX"):
+        slot = _prod_manual_slot_from_agent_id(str(env.get(key) or ""))
+        if slot:
+            return slot
+    return _prod_manual_slot_from_pod_name(str(pod.get("name") or ""))
+
+
+def _prod_manual_slot_from_agent_id(agent_id: str) -> str:
+    if not agent_id.startswith(RUNPOD_PROD_AGENT_ID_PREFIX):
+        return ""
+    raw = agent_id.removeprefix(RUNPOD_PROD_AGENT_ID_PREFIX).strip()
+    if not raw.isdigit():
+        return ""
+    value = int(raw, 10)
+    if value < 1:
+        return ""
+    return f"{value:02d}"
+
+
+def _prod_manual_slot_from_pod_name(name: str) -> str:
+    if not name.startswith(RUNPOD_PROD_POD_NAME_PREFIX):
+        return ""
+    raw = name.removeprefix(RUNPOD_PROD_POD_NAME_PREFIX).strip()
+    if not raw.isdigit():
+        return ""
+    value = int(raw, 10)
+    if value < 1:
+        return ""
+    return f"{value:02d}"
+
+
+def _prod_slot_sequence(count: int) -> list[str]:
+    return [f"{index:02d}" for index in range(1, count + 1)]
+
+
+def _slot_sort_key(slot: str) -> int:
+    return int(slot)
 
 
 def _find_worker(workers: list[dict[str, Any]], agent_id: str) -> dict[str, Any] | None:

@@ -161,6 +161,7 @@ RunPod / R2 环境变量字典：
 | `RUNPOD_AGENT_SECRET_TOKEN_REF` / `RUNPOD_R2_ACCESS_KEY_REF` / `RUNPOD_R2_SECRET_KEY_REF` | 云测试 Pod 的 Central 鉴权与用户数据桶 secret 引用。 | `allbot_cloud_test_agent_secret_token` / `allbot_cloud_test_r2_access_key` / `allbot_cloud_test_r2_secret_key` | 不用于正式 |
 | `RUNPOD_PROD_AGENT_SECRET_TOKEN_REF` / `RUNPOD_PROD_R2_ACCESS_KEY_REF` / `RUNPOD_PROD_R2_SECRET_KEY_REF` | 正式 Pod 的 Central 鉴权与用户数据桶 secret 引用。 | 不用于云测试 canary | `allbot_cloud_prod_agent_secret_token` / `allbot_cloud_prod_r2_access_key` / `allbot_cloud_prod_r2_secret_key` |
 | `RUNPOD_DRY_RUN` / `RUNPOD_AUTOSCALER_ENABLED` / `RUNPOD_MAX_PODS_TOTAL` / `RUNPOD_MAX_PODS_PER_TYPE` | mutation guard；任何真实 create/start/stop/delete 都必须同时显式打开，默认 dry-run。 | 默认 `RUNPOD_DRY_RUN=true`、`RUNPOD_AUTOSCALER_ENABLED=false`、Pod 上限 1 | 真实手动正式 worker 同样要求四重门禁和 `--execute` |
+| `RUNPOD_PROD_MAX_MANUAL_SLOTS` | 正式手动 RunPod 图生图 slot 上限；默认 2，只限制 `runpod_prod_img2img_manual_01..NN` 这一组 prod img2img/img2img_lora worker。 | 通常不设置，默认 2 | 扩到 3 台及以上前必须显式设置为目标上限，并同步设置 `RUNPOD_MAX_PODS_TOTAL` / `RUNPOD_MAX_PODS_PER_TYPE` |
 | `RUNPOD_IMAGE_NAME_*` / `RUNPOD_USE_TEMPLATE_*` / `RUNPOD_GPU_TYPE_IDS_*` | 每个 task profile 的镜像、template 开关和 GPU 限定；不要把 img2img 与 Wan22 混用。 | `img2img_lora` 使用已验证 public GHCR 4090/5090/L40S 口径；`wan22_aio_video` 固定 5090-only、GHCR Wan22 image 前缀 | 当前手动正式 worker 固定 public `img2img_lora` GHCR image 和 `NVIDIA GeForce RTX 4090` |
 | `GITHUB_TOKEN` / `GHCR_TOKEN` / `all-github-token` | GitHub/GHCR package push 凭据；只给 Docker CLI login 或 GitHub API 使用，不进入 RunPod Pod env。 | 可存在 `.env.cloud.test`，但 `all-github-token` 需手工映射为合法 shell 变量后使用 | 可存在 `.env.cloud.prod`，不得随 compose config 输出或写入知识库真实值 |
 
@@ -180,7 +181,7 @@ RunPod 正式 worker Central 入口口径：
 - 正式 RunPod Pod 不应访问 `api.aivison.it.com`，也不能访问仅 Tailscale 可达的 `100.107.220.127:8003`；应使用 worker 专用 Cloudflare Tunnel hostname。
 - 当前已验证的正式 worker hostname 是 `https://worker-central.aivison.it.com`，回源正式 Central `http://100.107.220.127:8003`，`/health` 返回 Central OK。
 - 2026-06-12 已在正式云机新增 `cloudflared-runpod-prod.service`，使用 root-only token file，回源同一个正式 Central，供 RunPod-Prod 独立 tunnel 使用。若要使用新的 RunPod 专用域名，需先在 Cloudflare Public Hostname 绑定该 tunnel 并验证 `/health`，再把它写入 RunPod profile 的 `CENTRAL_API_URL`。
-- 正式 Pod 的 `AGENT_ID` 应使用稳定、可 drain 的前缀，例如 `runpod_prod_img2img_manual_01`。当前手动正式 worker 已开放 `SUPPORTED_TASK_TYPES=img2img,img2img_lora`，并默认将 `gpuTypeIds` 固定为 `NVIDIA GeForce RTX 4090`，避免 RunPod 按 availability 自动分配 L40S/5090。
+- 正式 Pod 的 `AGENT_ID` 应使用稳定、可 drain 的前缀，例如 `runpod_prod_img2img_manual_01`；当前 v0 默认只开放 `manual_01` 和 `manual_02`，可通过 `RUNPOD_PROD_MAX_MANUAL_SLOTS=N` 显式扩展到 `manual_01..NN`。当前手动正式 worker 已开放 `SUPPORTED_TASK_TYPES=img2img,img2img_lora`，并默认将 `gpuTypeIds` 固定为 `NVIDIA GeForce RTX 4090`，避免 RunPod 按 availability 自动分配 L40S/5090。
 
 手动正式 RunPod 图生图 worker CLI：
 
@@ -192,12 +193,13 @@ python scripts/gpu_pool_controller.py runpod prod-worker enable
 python scripts/gpu_pool_controller.py runpod prod-worker disable
 python scripts/gpu_pool_controller.py runpod prod-worker down
 python scripts/gpu_pool_controller.py runpod prod-worker canary
+python scripts/gpu_pool_controller.py runpod prod-worker scale --desired N
 ```
 
-`prod-worker` 会默认先加载 `.env.cloud.test` 里的 RunPod API/profile 默认值，再加载 `.env.cloud.prod` 覆盖正式 Central/Web/R2/JWT 变量；已在 shell 中显式设置的 `RUNPOD_*` 门禁不会被 prod env 文件覆盖。Pod 内业务入口固定为 `CENTRAL_API_URL=https://worker-central.aivison.it.com`，CLI 控制与 canary 默认走云正式 Tailscale 内网 `http://100.107.220.127:8003` / `http://100.107.220.127:8000/api`，避免 Cloudflare WAF 影响内部 control/status。
+`prod-worker` 会默认先加载 `.env.cloud.test` 里的 RunPod API/profile 默认值，再加载 `.env.cloud.prod` 覆盖正式 Central/Web/R2/JWT 变量；已在 shell 中显式设置的 `RUNPOD_*` 门禁不会被 prod env 文件覆盖。默认管理 `runpod_prod_img2img_manual_01`，单 slot 命令可追加 `--slot NN`，CLI 会在创建 provider 前把目标 agent 切到 `runpod_prod_img2img_manual_NN` / `allbot-runpod-prod-img2img-manual-NN`。默认最大 slot 是 2，`--slot 03` 或 `scale --desired 3` 必须先显式设置 `RUNPOD_PROD_MAX_MANUAL_SLOTS=3` 或更高。Pod 内业务入口固定为 `CENTRAL_API_URL=https://worker-central.aivison.it.com`，CLI 控制与 canary 默认走云正式 Tailscale 内网 `http://100.107.220.127:8003` / `http://100.107.220.127:8000/api`，避免 Cloudflare WAF 影响内部 control/status。
 
 正式 profile 固定值：
-- `AGENT_ID=runpod_prod_img2img_manual_01`
+- `AGENT_ID=runpod_prod_img2img_manual_01`，`--slot NN` 或 `scale --desired N` 渲染为 `runpod_prod_img2img_manual_NN`
 - `SUPPORTED_TASK_TYPES=img2img,img2img_lora`
 - `RUNPOD_PROD_GPU_TYPE_IDS=NVIDIA GeForce RTX 4090`
 - `POOL_PROVIDER=runpod`
@@ -222,7 +224,7 @@ RUNPOD_MODEL_SECRET_KEY={{ RUNPOD_SECRET_allbot_model_cache_r2_secret_key }}
 
 其中前三个 secret 用于正式 Central 鉴权和 `user-data-prod` 读写，必须在 RunPod Secrets UI 中单独创建；后两个 secret 用于 `allbot-model-cache` 模型 manifest 热同步，可复用云测试阶段已创建的 `allbot_model_cache_r2_access_key` / `allbot_model_cache_r2_secret_key`。如果 RunPod UI 里缺少 `allbot_cloud_prod_agent_secret_token`、`allbot_cloud_prod_r2_access_key`、`allbot_cloud_prod_r2_secret_key`，Pod 可能停在 system log 的 `start container ... begin` 后没有 bootstrap 输出，也不会产生 Central heartbeat；这种 Pod 不能靠本地代码热修，需要创建 secret 后删除并重建。
 
-真实 `up/down` 必须同时显式满足四重门禁并带 `--execute`：
+真实 `up/down/scale` 必须同时显式满足四重门禁并带 `--execute`：
 
 ```bash
 RUNPOD_DRY_RUN=false \
@@ -232,11 +234,39 @@ RUNPOD_MAX_PODS_PER_TYPE=1 \
 python scripts/gpu_pool_controller.py runpod prod-worker up --execute
 ```
 
-`up --execute` 的顺序固定为：RunPod/Central/render 预检 -> 先把 `runpod_prod_img2img_manual_01` 写入 Central control `disabled` -> 创建 1 个 cloud-prod Pod -> 等 Pod readiness -> 等正式 Central heartbeat 且 control 仍为 `disabled`。因此新 Pod ready 后默认不会抢正式订单。
+创建第二台时必须显式选择 slot 并把门禁开到 2：
+
+```bash
+RUNPOD_DRY_RUN=false \
+RUNPOD_AUTOSCALER_ENABLED=true \
+RUNPOD_MAX_PODS_TOTAL=2 \
+RUNPOD_MAX_PODS_PER_TYPE=2 \
+python scripts/gpu_pool_controller.py runpod prod-worker up --slot 02 --execute
+```
+
+扩到 N 台推荐先跑 `scale` dry-run，再执行：
+
+```bash
+RUNPOD_PROD_MAX_MANUAL_SLOTS=4 \
+RUNPOD_MAX_PODS_TOTAL=4 \
+RUNPOD_MAX_PODS_PER_TYPE=4 \
+python scripts/gpu_pool_controller.py runpod prod-worker scale --desired 4
+
+RUNPOD_PROD_MAX_MANUAL_SLOTS=4 \
+RUNPOD_DRY_RUN=false \
+RUNPOD_AUTOSCALER_ENABLED=true \
+RUNPOD_MAX_PODS_TOTAL=4 \
+RUNPOD_MAX_PODS_PER_TYPE=4 \
+python scripts/gpu_pool_controller.py runpod prod-worker scale --desired 4 --execute
+```
+
+`up --execute` 的顺序固定为：RunPod/Central/render 预检 -> 先把目标 agent 写入 Central control `disabled` -> 创建 1 个 cloud-prod Pod -> 等 Pod readiness -> 等正式 Central heartbeat 且 control 仍为 `disabled`。因此新 Pod ready 后默认不会抢正式订单。
 
 `down --execute` 的顺序固定为：预检 -> 设置 `disabled` -> 轮询 worker heartbeat，确认无 `current_task_id` -> 删除唯一的 managed prod Pod -> `list-pods/reconcile-managed-pods`。若仍有 `current_task_id`，命令拒绝删除，不提供隐式 force。
 
-`canary --execute` 不会禁用任何现有正式 worker。它只会临时 enable `runpod_prod_img2img_manual_01`，用内部 `user_id=3` Web JWT 上传一张 512x512 PNG 到 `user-data-prod` 并提交 1 条正式 `img2img`，完成后下载结果到 `runpod_canary_results/prod/<date>/`，最后恢复 `disabled`。如果任务被现有 `cloud_prod_worker_*` 接走，命令会记录“正式任务完成但 RunPod pop 未命中”，不会把它算作 RunPod 闭环验证。
+`scale --desired N` 的目标是让 `runpod_prod_img2img_manual_01..N` 最终成为可接单 worker。未带 `--execute` 时只输出 plan 和 `would_execute`，不会写 Central control 或调用 RunPod mutation。真实扩容按 slot 顺序执行 `disabled -> create Pod -> wait pod readiness -> wait disabled heartbeat -> enabled`；真实缩容从最高 slot 往下执行 `disabled -> wait no current_task_id -> delete Pod -> post reconcile`，忙碌 worker 会失败退出，不强杀任务。`scale --desired 0` 允许安全缩到 0，但仍必须通过 drain。
+
+`canary --execute` 不会禁用任何现有正式 worker。它只会临时 enable 目标 agent，用内部 `user_id=3` Web JWT 上传一张 512x512 PNG 到 `user-data-prod` 并提交 1 条正式 `img2img`，完成后下载结果到 `runpod_canary_results/prod/<date>/`，最后恢复 `disabled`。如果任务被现有 `cloud_prod_worker_*` 接走，命令会记录“正式任务完成但 RunPod pop 未命中”，不会把它算作 RunPod 闭环验证。
 
 2026-06-11 已完成一次云测试真实 RunPod Pod 前置闭环验证：使用 `yanwk/comfyui-boot:cu128-slim` 作为基础镜像、`dockerStartCmd` 注入 `remote_workers/scripts/runpod_bootstrap_from_git.sh`，不使用 RunPod Network Volume，创建 1 个 RTX 4090 Pod 后自动完成 `ComfyUI /system_stats ready -> remote relay /health ready -> comfy_agent heartbeat`。Central `/system/workers` 可看到 `runpod_test_img2img_lora_*`，状态为 `idle`，能力为 `img2img,img2img_lora`；验证后已 stop/delete Pod，`runpod list-pods` 确认无 orphan managed Pod。
 

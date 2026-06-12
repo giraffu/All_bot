@@ -18,6 +18,7 @@ from ops.gpu_pool_controller.providers.runpod import (
     RunPodProvider,
     RunPodProviderError,
     RunPodSettings,
+    prod_agent_id_from_slot,
 )
 from ops.gpu_pool_controller.types import GpuNode
 
@@ -491,6 +492,61 @@ def test_render_create_cloud_prod_manual_worker_uses_prod_refs_and_bucket():
     assert '"MINIO_SECRET_KEY": "r2_secret_key"' not in rendered
 
 
+def test_render_create_cloud_prod_manual_worker_can_use_second_slot():
+    agent_id = prod_agent_id_from_slot("02")
+    provider = RunPodProvider(
+        _settings(
+            image_name_img2img_lora=RUNPOD_PUBLIC_IMG2IMG_LORA_IMAGE,
+            prod_agent_id=agent_id,
+        )
+    )
+
+    payload = provider.render_create_pod_request(
+        task_type="img2img",
+        environment="cloud-prod",
+        redact=False,
+    )
+    body = payload["json"]
+    env = body["env"]
+
+    assert body["name"] == "allbot-runpod-prod-img2img-manual-02"
+    assert env["AGENT_ID"] == "runpod_prod_img2img_manual_02"
+    assert env["AGENT_ID_PREFIX"] == "runpod_prod_img2img_manual_02"
+
+
+def test_prod_slot_default_max_rejects_third_slot(monkeypatch):
+    monkeypatch.delenv("RUNPOD_PROD_MAX_MANUAL_SLOTS", raising=False)
+
+    try:
+        prod_agent_id_from_slot("03")
+    except ValueError as exc:
+        assert "between 01 and 02" in str(exc)
+    else:
+        raise AssertionError("slot 03 should require explicit max slot configuration")
+
+
+def test_render_create_cloud_prod_manual_worker_can_use_configured_eighth_slot():
+    agent_id = prod_agent_id_from_slot("08", max_manual_slots=8)
+    provider = RunPodProvider(
+        _settings(
+            image_name_img2img_lora=RUNPOD_PUBLIC_IMG2IMG_LORA_IMAGE,
+            prod_agent_id=agent_id,
+            prod_max_manual_slots=8,
+        )
+    )
+
+    payload = provider.render_create_pod_request(
+        task_type="img2img",
+        environment="cloud-prod",
+        redact=False,
+    )
+    body = payload["json"]
+    env = body["env"]
+
+    assert body["name"] == "allbot-runpod-prod-img2img-manual-08"
+    assert env["AGENT_ID"] == "runpod_prod_img2img_manual_08"
+
+
 def test_render_create_uses_network_volume_without_ephemeral_volume():
     provider = RunPodProvider(
         _settings(
@@ -666,12 +722,111 @@ def test_execute_create_posts_runpod_secret_references_not_inline_local_secrets(
     assert "inline_r2_secret_value" not in rendered
 
 
-def test_mutation_gate_requires_v0_max_pods_total_one():
+def test_execute_create_allows_second_prod_manual_worker_when_limit_is_two():
+    fake = FakeRunPodApi({"id": "pod-created"})
     provider = RunPodProvider(
         _settings(
             dry_run=False,
             autoscaler_enabled=True,
             max_pods_total=2,
+            max_pods_per_type=2,
+            image_name_img2img_lora=RUNPOD_PUBLIC_IMG2IMG_LORA_IMAGE,
+            prod_agent_id=prod_agent_id_from_slot("02"),
+        ),
+        request_func=fake,
+    )
+    existing = [
+        {
+            "id": "pod-existing",
+            "name": "allbot-runpod-prod-img2img-manual-01",
+            "desiredStatus": "RUNNING",
+            "env": {
+                "RUNPOD_ENVIRONMENT": "cloud-prod",
+                "RUNPOD_TASK_TYPE": "img2img_lora",
+                "AGENT_ID": "runpod_prod_img2img_manual_01",
+            },
+        }
+    ]
+
+    payload = provider.create_pod(
+        task_type="img2img",
+        environment="cloud-prod",
+        existing_pods=existing,
+        execute=True,
+    )
+
+    assert payload["ok"] is True
+    assert (
+        fake.calls[0]["json_body"]["name"]
+        == "allbot-runpod-prod-img2img-manual-02"
+    )
+    assert (
+        fake.calls[0]["json_body"]["env"]["AGENT_ID"]
+        == "runpod_prod_img2img_manual_02"
+    )
+
+
+def test_execute_create_allows_third_prod_manual_worker_when_configured_limit_is_three():
+    fake = FakeRunPodApi({"id": "pod-created"})
+    provider = RunPodProvider(
+        _settings(
+            dry_run=False,
+            autoscaler_enabled=True,
+            max_pods_total=3,
+            max_pods_per_type=3,
+            image_name_img2img_lora=RUNPOD_PUBLIC_IMG2IMG_LORA_IMAGE,
+            prod_agent_id=prod_agent_id_from_slot("03", max_manual_slots=8),
+            prod_max_manual_slots=8,
+        ),
+        request_func=fake,
+    )
+    existing = [
+        {
+            "id": "pod-existing-01",
+            "name": "allbot-runpod-prod-img2img-manual-01",
+            "desiredStatus": "RUNNING",
+            "env": {
+                "RUNPOD_ENVIRONMENT": "cloud-prod",
+                "RUNPOD_TASK_TYPE": "img2img_lora",
+                "AGENT_ID": "runpod_prod_img2img_manual_01",
+            },
+        },
+        {
+            "id": "pod-existing-02",
+            "name": "allbot-runpod-prod-img2img-manual-02",
+            "desiredStatus": "RUNNING",
+            "env": {
+                "RUNPOD_ENVIRONMENT": "cloud-prod",
+                "RUNPOD_TASK_TYPE": "img2img_lora",
+                "AGENT_ID": "runpod_prod_img2img_manual_02",
+            },
+        },
+    ]
+
+    payload = provider.create_pod(
+        task_type="img2img",
+        environment="cloud-prod",
+        existing_pods=existing,
+        execute=True,
+    )
+
+    assert payload["ok"] is True
+    assert (
+        fake.calls[0]["json_body"]["name"]
+        == "allbot-runpod-prod-img2img-manual-03"
+    )
+    assert (
+        fake.calls[0]["json_body"]["env"]["AGENT_ID"]
+        == "runpod_prod_img2img_manual_03"
+    )
+
+
+def test_mutation_gate_caps_v0_managed_pods_at_two():
+    provider = RunPodProvider(
+        _settings(
+            dry_run=False,
+            autoscaler_enabled=True,
+            max_pods_total=3,
         ),
         request_func=FakeRunPodApi({"id": "pod-created"}),
     )
@@ -684,7 +839,35 @@ def test_mutation_gate_requires_v0_max_pods_total_one():
     )
 
     assert payload["ok"] is False
-    assert "RUNPOD_MAX_PODS_TOTAL must be 1 for v0" in payload["guard"]["reasons"]
+    assert (
+        "RUNPOD_MAX_PODS_TOTAL must be between 1 and 2 for v0"
+        in payload["guard"]["reasons"]
+    )
+
+
+def test_mutation_gate_caps_v0_managed_pods_at_configured_max():
+    provider = RunPodProvider(
+        _settings(
+            dry_run=False,
+            autoscaler_enabled=True,
+            max_pods_total=9,
+            prod_max_manual_slots=8,
+        ),
+        request_func=FakeRunPodApi({"id": "pod-created"}),
+    )
+
+    payload = provider.create_pod(
+        task_type="img2img_lora",
+        environment="cloud-test",
+        existing_pods=[],
+        execute=True,
+    )
+
+    assert payload["ok"] is False
+    assert (
+        "RUNPOD_MAX_PODS_TOTAL must be between 1 and 8 for v0"
+        in payload["guard"]["reasons"]
+    )
 
 
 def test_start_stop_delete_are_guarded_by_default():

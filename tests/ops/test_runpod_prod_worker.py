@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 
 from ops.gpu_pool_controller.cli import build_parser
@@ -10,34 +11,59 @@ from ops.gpu_pool_controller.providers.runpod import (
     RUNPOD_PUBLIC_IMG2IMG_LORA_IMAGE,
     RunPodProvider,
     RunPodSettings,
+    prod_agent_id_from_slot,
+    prod_pod_name_from_agent_id,
 )
 from ops.gpu_pool_controller.runpod_prod_worker import (
     RunPodProdWorkerOptions,
     RunPodProdWorkerRunner,
+    apply_prod_worker_selection_to_env,
     load_env_file_for_prod_worker,
 )
 
 
 class FakeRunPodProvider:
-    def __init__(self, settings: RunPodSettings | None = None) -> None:
+    def __init__(
+        self,
+        settings: RunPodSettings | None = None,
+        *,
+        pods: list[dict] | None = None,
+        create_log: list[dict] | None = None,
+        delete_log: list[dict] | None = None,
+    ) -> None:
         self.settings = settings or RunPodSettings(api_key="rp_test_key")
-        self.create_calls = 0
-        self.delete_calls = 0
+        self.pods = pods if pods is not None else []
+        self.create_log = create_log if create_log is not None else []
+        self.delete_log = delete_log if delete_log is not None else []
         self.list_calls = 0
+
+    @property
+    def create_calls(self) -> int:
+        return len(self.create_log)
+
+    @property
+    def delete_calls(self) -> int:
+        return len(self.delete_log)
 
     def validate_key(self):
         return {"ok": True}
 
     def list_pods(self, *, managed_only=True, desired_status=None):
         self.list_calls += 1
-        return {"ok": True, "count": 0, "pods": []}
+        return {"ok": True, "count": len(self.pods), "pods": list(self.pods)}
 
     def reconcile_managed_pods(self, pods=None):
-        return {"ok": True, "managed_count": 0, "orphans": [], "by_task_type": {}}
+        pods = self.pods if pods is None else pods
+        return {
+            "ok": True,
+            "managed_count": len(pods),
+            "orphans": [],
+            "by_task_type": {"img2img_lora": len(pods)} if pods else {},
+        }
 
     def render_create_pod_request(self, *, task_type, environment, redact=True):
-        settings = RunPodSettings(
-            api_key="rp_test_key",
+        settings = replace(
+            self.settings,
             image_name_img2img_lora=RUNPOD_PUBLIC_IMG2IMG_LORA_IMAGE,
             minio_endpoint="https://r2.example.test",
         )
@@ -48,35 +74,69 @@ class FakeRunPodProvider:
         )
 
     def create_pod(self, *, task_type, environment, execute):
-        self.create_calls += 1
-        return {"ok": True, "pod": {"id": "pod-prod-1", "name": "allbot-runpod-prod-img2img-manual-01"}}
+        slot = self.settings.prod_agent_id.rsplit("_", 1)[-1]
+        pod = {
+            "id": f"pod-prod-{slot}",
+            "name": prod_pod_name_from_agent_id(
+                self.settings.prod_agent_id,
+                max_manual_slots=self.settings.prod_max_manual_slots,
+            ),
+            "desiredStatus": "RUNNING",
+            "env": {
+                "RUNPOD_ENVIRONMENT": "cloud-prod",
+                "RUNPOD_TASK_TYPE": "img2img_lora",
+                "AGENT_ID": self.settings.prod_agent_id,
+                "AGENT_ID_PREFIX": self.settings.prod_agent_id,
+            },
+        }
+        self.create_log.append({"agent_id": self.settings.prod_agent_id, "pod": pod})
+        self.pods.append(pod)
+        return {
+            "ok": True,
+            "pod": pod,
+        }
 
     def delete_pod(self, *, pod_id, task_type, execute):
-        self.delete_calls += 1
+        self.delete_log.append({"pod_id": pod_id, "agent_id": self.settings.prod_agent_id})
+        self.pods[:] = [
+            pod
+            for pod in self.pods
+            if str(pod.get("id") or pod.get("podId") or "") != pod_id
+        ]
         return {"ok": True}
 
     def pod_readiness(self, *, pod_id):
         return {"ok": True, "readiness": {"infrastructure_ready": True}}
 
+    def for_prod_agent_id(self, agent_id: str):
+        return FakeRunPodProvider(
+            replace(self.settings, prod_agent_id=agent_id),
+            pods=self.pods,
+            create_log=self.create_log,
+            delete_log=self.delete_log,
+        )
+
 
 class FakeHttpProdWorkerRunner(RunPodProdWorkerRunner):
-    def __init__(self, *args, **kwargs) -> None:
+    def __init__(self, *args, workers=None, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         self.http_calls = []
         self.control_calls = []
+        self.workers = workers if workers is not None else []
 
     def _http_json(self, method, url, **kwargs):
         self.http_calls.append({"method": method, "url": url, "kwargs": kwargs})
         if "/api/agent/task/control/" in url:
             self.control_calls.append({"method": method, "url": url, "kwargs": kwargs})
             body = kwargs.get("json_body") or {}
+            agent_id = url.rstrip("/").rsplit("/", 1)[-1]
             return {
-                "agent_id": RUNPOD_PROD_AGENT_ID,
+                "agent_id": agent_id,
                 "state": body.get("state", "disabled"),
                 "reason": body.get("reason", ""),
             }
         if url.endswith("/system/workers"):
-            return {"workers": []}
+            return {"workers": list(self.workers)}
         if url.endswith("/health"):
             return {"ok": True}
         return {"ok": True}
@@ -94,6 +154,45 @@ def _settings(**overrides) -> RunPodSettings:
     }
     values.update(overrides)
     return RunPodSettings(**values)
+
+
+def _prod_pod(slot: str, *, max_manual_slots: int = 8) -> dict:
+    agent_id = prod_agent_id_from_slot(slot, max_manual_slots=max_manual_slots)
+    return {
+        "id": f"pod-prod-{slot}",
+        "name": prod_pod_name_from_agent_id(
+            agent_id,
+            max_manual_slots=max_manual_slots,
+        ),
+        "desiredStatus": "RUNNING",
+        "env": {
+            "RUNPOD_ENVIRONMENT": "cloud-prod",
+            "RUNPOD_TASK_TYPE": "img2img_lora",
+            "AGENT_ID": agent_id,
+            "AGENT_ID_PREFIX": agent_id,
+        },
+    }
+
+
+def _worker(slot: str, *, current_task_id: str | None = None, max_manual_slots: int = 8) -> dict:
+    return {
+        "agent_id": prod_agent_id_from_slot(slot, max_manual_slots=max_manual_slots),
+        "types": "img2img,img2img_lora",
+        "status": "running" if current_task_id else "idle",
+        "current_task_id": current_task_id,
+        "current_task_type": "img2img_lora" if current_task_id else None,
+    }
+
+
+def _control_posts(runner: FakeHttpProdWorkerRunner) -> list[tuple[str, str]]:
+    posts: list[tuple[str, str]] = []
+    for call in runner.control_calls:
+        if call["method"] != "POST":
+            continue
+        agent_id = call["url"].rstrip("/").rsplit("/", 1)[-1]
+        state = (call["kwargs"].get("json_body") or {}).get("state")
+        posts.append((agent_id, state))
+    return posts
 
 
 def test_prod_worker_render_dry_run_uses_verified_image_and_prod_defaults():
@@ -116,6 +215,44 @@ def test_prod_worker_render_dry_run_uses_verified_image_and_prod_defaults():
     assert provider.delete_calls == 0
 
 
+def test_prod_worker_render_can_target_second_manual_slot():
+    agent_id = prod_agent_id_from_slot("02")
+    provider = FakeRunPodProvider(_settings(prod_agent_id=agent_id))
+    options = RunPodProdWorkerOptions(action="render", agent_id=agent_id, quiet=True)
+
+    payload = RunPodProdWorkerRunner(provider, options).run()
+
+    assert payload["ok"] is True
+    assert payload["render"]["pod_name"] == "allbot-runpod-prod-img2img-manual-02"
+    assert payload["render"]["agent_id"] == "runpod_prod_img2img_manual_02"
+
+
+def test_prod_worker_default_max_slot_rejects_third_slot(monkeypatch):
+    monkeypatch.delenv("RUNPOD_PROD_MAX_MANUAL_SLOTS", raising=False)
+
+    try:
+        prod_agent_id_from_slot("03")
+    except ValueError as exc:
+        assert "between 01 and 02" in str(exc)
+    else:
+        raise AssertionError("slot 03 should require explicit max slot configuration")
+
+
+def test_prod_worker_env_max_slot_allows_rendering_eighth_slot(monkeypatch):
+    monkeypatch.setenv("RUNPOD_PROD_MAX_MANUAL_SLOTS", "8")
+    agent_id = prod_agent_id_from_slot("08")
+    provider = FakeRunPodProvider(
+        _settings(prod_agent_id=agent_id, prod_max_manual_slots=8)
+    )
+    options = RunPodProdWorkerOptions(action="render", agent_id=agent_id, quiet=True)
+
+    payload = RunPodProdWorkerRunner(provider, options).run()
+
+    assert payload["ok"] is True
+    assert payload["render"]["pod_name"] == "allbot-runpod-prod-img2img-manual-08"
+    assert payload["render"]["agent_id"] == "runpod_prod_img2img_manual_08"
+
+
 def test_prod_worker_up_dry_run_preflights_without_mutation():
     provider = FakeRunPodProvider(_settings())
     options = RunPodProdWorkerOptions(action="up", execute=False, quiet=True)
@@ -127,6 +264,154 @@ def test_prod_worker_up_dry_run_preflights_without_mutation():
     assert "set Central control" in payload["would_execute"][0]
     assert provider.create_calls == 0
     assert runner.control_calls == []
+
+
+def test_prod_worker_scale_dry_run_plans_missing_third_slot_without_mutation():
+    provider = FakeRunPodProvider(
+        _settings(prod_max_manual_slots=8),
+        pods=[_prod_pod("01"), _prod_pod("02")],
+    )
+    options = RunPodProdWorkerOptions(
+        action="scale",
+        desired_count=3,
+        quiet=True,
+    )
+    runner = FakeHttpProdWorkerRunner(
+        provider,
+        options,
+        workers=[_worker("01"), _worker("02")],
+        sleep_func=lambda _seconds: None,
+    )
+
+    payload = runner.run()
+
+    assert payload["ok"] is True
+    assert payload["scale_plan"]["create_slots"] == ["03"]
+    assert payload["scale_plan"]["delete_slots"] == []
+    assert provider.create_calls == 0
+    assert runner.control_calls == []
+    assert "create cloud-prod RunPod pod for slot 03" in payload["would_execute"]
+
+
+def test_prod_worker_scale_execute_creates_and_enables_missing_slot():
+    provider = FakeRunPodProvider(
+        _settings(
+            dry_run=False,
+            autoscaler_enabled=True,
+            max_pods_total=3,
+            max_pods_per_type=3,
+            prod_max_manual_slots=8,
+        ),
+        pods=[_prod_pod("01"), _prod_pod("02")],
+    )
+    options = RunPodProdWorkerOptions(
+        action="scale",
+        execute=True,
+        desired_count=3,
+        agent_token="agent_token",
+        quiet=True,
+    )
+    runner = FakeHttpProdWorkerRunner(
+        provider,
+        options,
+        workers=[_worker("01"), _worker("02"), _worker("03")],
+        sleep_func=lambda _seconds: None,
+    )
+
+    payload = runner.run()
+
+    assert payload["ok"] is True
+    assert provider.create_calls == 1
+    assert provider.create_log[0]["agent_id"] == "runpod_prod_img2img_manual_03"
+    assert _control_posts(runner) == [
+        ("runpod_prod_img2img_manual_03", "disabled"),
+        ("runpod_prod_img2img_manual_03", "enabled"),
+        ("runpod_prod_img2img_manual_01", "enabled"),
+        ("runpod_prod_img2img_manual_02", "enabled"),
+    ]
+
+
+def test_prod_worker_scale_down_refuses_busy_highest_slot():
+    provider = FakeRunPodProvider(
+        _settings(
+            dry_run=False,
+            autoscaler_enabled=True,
+            max_pods_total=1,
+            max_pods_per_type=1,
+        ),
+        pods=[_prod_pod("01", max_manual_slots=2), _prod_pod("02", max_manual_slots=2)],
+    )
+    options = RunPodProdWorkerOptions(
+        action="scale",
+        execute=True,
+        desired_count=1,
+        agent_token="agent_token",
+        drain_timeout_seconds=0.001,
+        poll_interval_seconds=0.001,
+        quiet=True,
+    )
+    runner = FakeHttpProdWorkerRunner(
+        provider,
+        options,
+        workers=[
+            _worker("01", max_manual_slots=2),
+            _worker("02", current_task_id="busy-task", max_manual_slots=2),
+        ],
+        sleep_func=lambda _seconds: None,
+    )
+
+    payload = runner.run()
+
+    assert payload["ok"] is False
+    assert "current_task_id=busy-task" in payload["error"]
+    assert provider.delete_calls == 0
+
+
+def test_prod_worker_scale_desired_zero_drains_and_deletes_all_slots():
+    provider = FakeRunPodProvider(
+        _settings(
+            dry_run=False,
+            autoscaler_enabled=True,
+            max_pods_total=1,
+            max_pods_per_type=1,
+        ),
+        pods=[_prod_pod("01", max_manual_slots=2), _prod_pod("02", max_manual_slots=2)],
+    )
+    options = RunPodProdWorkerOptions(
+        action="scale",
+        execute=True,
+        desired_count=0,
+        agent_token="agent_token",
+        quiet=True,
+    )
+    runner = FakeHttpProdWorkerRunner(
+        provider,
+        options,
+        workers=[_worker("01", max_manual_slots=2), _worker("02", max_manual_slots=2)],
+        sleep_func=lambda _seconds: None,
+    )
+
+    payload = runner.run()
+
+    assert payload["ok"] is True
+    assert [item["pod_id"] for item in provider.delete_log] == [
+        "pod-prod-02",
+        "pod-prod-01",
+    ]
+    assert _control_posts(runner) == [
+        ("runpod_prod_img2img_manual_02", "disabled"),
+        ("runpod_prod_img2img_manual_01", "disabled"),
+    ]
+
+
+def test_prod_worker_scale_rejects_desired_above_max_slots():
+    provider = FakeRunPodProvider(_settings(prod_max_manual_slots=2))
+    options = RunPodProdWorkerOptions(action="scale", desired_count=3, quiet=True)
+
+    payload = RunPodProdWorkerRunner(provider, options).run()
+
+    assert payload["ok"] is False
+    assert "--desired must be <= RUNPOD_PROD_MAX_MANUAL_SLOTS (2)" in payload["error"]
 
 
 def test_prod_worker_up_execute_requires_gates_before_control_or_create():
@@ -144,6 +429,35 @@ def test_prod_worker_up_execute_requires_gates_before_control_or_create():
     assert payload["ok"] is False
     assert "RUNPOD_DRY_RUN=false" in payload["error"]
     assert "RUNPOD_AUTOSCALER_ENABLED=true" in payload["error"]
+    assert provider.create_calls == 0
+    assert runner.control_calls == []
+
+
+def test_prod_worker_up_second_slot_execute_requires_two_pod_gates():
+    agent_id = prod_agent_id_from_slot("02")
+    provider = FakeRunPodProvider(
+        _settings(
+            dry_run=False,
+            autoscaler_enabled=True,
+            max_pods_total=1,
+            max_pods_per_type=1,
+            prod_agent_id=agent_id,
+        )
+    )
+    options = RunPodProdWorkerOptions(
+        action="up",
+        execute=True,
+        agent_id=agent_id,
+        agent_token="agent_token",
+        quiet=True,
+    )
+    runner = FakeHttpProdWorkerRunner(provider, options, sleep_func=lambda _seconds: None)
+
+    payload = runner.run()
+
+    assert payload["ok"] is False
+    assert "RUNPOD_MAX_PODS_TOTAL>=2" in payload["error"]
+    assert "RUNPOD_MAX_PODS_PER_TYPE>=2" in payload["error"]
     assert provider.create_calls == 0
     assert runner.control_calls == []
 
@@ -171,12 +485,34 @@ def test_prod_worker_env_loader_protects_explicit_runpod_gates(tmp_path: Path, m
     assert __import__("os").environ["AGENT_SECRET_TOKEN"] == "prod_agent_token"
 
 
+def test_prod_worker_selection_slot_updates_provider_agent_env(monkeypatch):
+    monkeypatch.delenv("RUNPOD_PROD_AGENT_ID", raising=False)
+    args = build_parser().parse_args(
+        [
+            "runpod",
+            "prod-worker",
+            "status",
+            "--slot",
+            "02",
+        ]
+    )
+
+    selection = apply_prod_worker_selection_to_env(args)
+
+    assert selection["slot"] == "02"
+    assert selection["agent_id"] == "runpod_prod_img2img_manual_02"
+    assert selection["pod_name"] == "allbot-runpod-prod-img2img-manual-02"
+    assert __import__("os").environ["RUNPOD_PROD_AGENT_ID"] == selection["agent_id"]
+
+
 def test_cli_parses_runpod_prod_worker_up_command():
     args = build_parser().parse_args(
         [
             "runpod",
             "prod-worker",
             "up",
+            "--slot",
+            "02",
             "--runpod-env-file",
             ".env.cloud.test",
             "--prod-env-file",
@@ -188,7 +524,28 @@ def test_cli_parses_runpod_prod_worker_up_command():
 
     assert args.runpod_command == "prod-worker"
     assert args.prod_worker_command == "up"
+    assert args.slot == "02"
     assert args.runpod_env_file == Path(".env.cloud.test")
     assert args.prod_env_file == Path(".env.cloud.prod")
+    assert args.execute is True
+    assert args.quiet is True
+
+
+def test_cli_parses_runpod_prod_worker_scale_command():
+    args = build_parser().parse_args(
+        [
+            "runpod",
+            "prod-worker",
+            "scale",
+            "--desired",
+            "3",
+            "--execute",
+            "--quiet",
+        ]
+    )
+
+    assert args.runpod_command == "prod-worker"
+    assert args.prod_worker_command == "scale"
+    assert args.desired == 3
     assert args.execute is True
     assert args.quiet is True
