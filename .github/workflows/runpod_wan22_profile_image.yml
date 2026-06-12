@@ -36,6 +36,7 @@ concurrency:
 
 env:
   IMAGE_NAME: allbot-comfy-runpod-wan22-aio-video
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 jobs:
   build:
